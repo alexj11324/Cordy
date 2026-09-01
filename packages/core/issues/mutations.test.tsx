@@ -46,8 +46,12 @@ function makeIssue(idx: number, overrides: Partial<Issue> = {}): Issue {
     description: null,
     status: "todo",
     priority: "none",
-    assignee_type: null,
-    assignee_id: null,
+    owner_type: null,
+    owner_id: null,
+    executor_type: null,
+    executor_id: null,
+    reviewer_type: null,
+    reviewer_id: null,
     creator_type: "member",
     creator_id: "user-1",
     parent_issue_id: null,
@@ -138,7 +142,7 @@ describe("useCreateCommentSubIssue", () => {
 describe("useUpdateIssue — optimistic move keeps every bucketed board in sync", () => {
   const sort: IssueSortParam = { sort_by: "position", sort_direction: undefined };
   const myScope = "assigned";
-  const myFilter = { assignee_id: "user-1" };
+  const myFilter = { owner_id: "user-1" };
   const projectScope = "project:p1";
   const projectFilter = { project_id: "p1" };
   const wsKey = issueKeys.listSorted(WS_ID, sort);
@@ -614,7 +618,7 @@ describe("useUpdateIssue — detaching a sub-issue prunes the old parent's child
 describe("useBatchUpdateIssues — optimistic patch covers filtered boards too", () => {
   const sort: IssueSortParam = { sort_by: "position", sort_direction: undefined };
   const myScope = "assigned";
-  const myFilter = { assignee_id: "user-1" };
+  const myFilter = { owner_id: "user-1" };
   const wsKey = issueKeys.listSorted(WS_ID, sort);
   const myKey = issueKeys.myListSorted(WS_ID, myScope, myFilter, sort);
 

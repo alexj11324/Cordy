@@ -15,7 +15,7 @@ func TestRuntimeReadyOmitsUnmeasuredDuration(t *testing.T) {
 }
 
 func TestFailedEventsUseWillRetry(t *testing.T) {
-	runEv := AutomationRunFailed("user-1", "workspace-1", "automation-1", "run-1", "manual", AutomationAssignee{AgentID: "agent-1", AssigneeType: "agent"}, "manual", "task failed", "task_error", false, 10)
+	runEv := AutomationRunFailed("user-1", "workspace-1", "automation-1", "run-1", "manual", AutomationAssignee{AgentID: "agent-1", ExecutorType: "agent"}, "manual", "task failed", "task_error", false, 10)
 	if got := runEv.Properties["will_retry"]; got != false {
 		t.Fatalf("automation will_retry = %v, want false", got)
 	}

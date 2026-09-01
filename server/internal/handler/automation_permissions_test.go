@@ -45,7 +45,7 @@ func createAutomationAs(t *testing.T, userID, title string) string {
 
 	body := map[string]any{
 		"title":          title,
-		"assignee_id":    agentID,
+		"executor_id":    agentID,
 		"execution_mode": "create_issue",
 	}
 	w := httptest.NewRecorder()

@@ -91,8 +91,8 @@ type QuickActionResponse struct {
 	WorkspaceID  string  `json:"workspace_id"`
 	Name         string  `json:"name"`
 	Description  string  `json:"description"`
-	AssigneeType string  `json:"assignee_type"`
-	AssigneeID   string  `json:"assignee_id"`
+	ExecutorType string  `json:"executor_type"`
+	ExecutorID   string  `json:"executor_id"`
 	Prompt       string  `json:"prompt"`
 	Visibility   string  `json:"visibility"`
 	Status       string  `json:"status"`
@@ -119,8 +119,8 @@ type QuickActionResponse struct {
 type CreateQuickActionRequest struct {
 	Name         string `json:"name"`
 	Description  string `json:"description"`
-	AssigneeType string `json:"assignee_type"`
-	AssigneeID   string `json:"assignee_id"`
+	ExecutorType string `json:"executor_type"`
+	ExecutorID   string `json:"executor_id"`
 	Prompt       string `json:"prompt"`
 	Visibility   string `json:"visibility"`
 }
@@ -128,8 +128,8 @@ type CreateQuickActionRequest struct {
 type UpdateQuickActionRequest struct {
 	Name         *string `json:"name"`
 	Description  *string `json:"description"`
-	AssigneeType *string `json:"assignee_type"`
-	AssigneeID   *string `json:"assignee_id"`
+	ExecutorType *string `json:"executor_type"`
+	ExecutorID   *string `json:"executor_id"`
 	Prompt       *string `json:"prompt"`
 	Visibility   *string `json:"visibility"`
 	Status       *string `json:"status"`
@@ -175,10 +175,10 @@ func validateQuickActionPrompt(raw string) (string, error) {
 
 func validateQuickActionAssignee(assigneeType, assigneeID string) error {
 	if assigneeType != "agent" && assigneeType != "team" {
-		return fmt.Errorf("assignee_type must be \"agent\" or \"team\"")
+		return fmt.Errorf("executor_type must be \"agent\" or \"team\"")
 	}
 	if strings.TrimSpace(assigneeID) == "" {
-		return fmt.Errorf("assignee_id is required")
+		return fmt.Errorf("executor_id is required")
 	}
 	return nil
 }
@@ -219,10 +219,10 @@ type quickActionTarget struct {
 // agent, or a missing/archived team, resolves to Found=false — the caller
 // renders that as an unavailable target rather than failing the whole list.
 func (h *Handler) resolveQuickActionTarget(ctx context.Context, qa db.QuickAction) quickActionTarget {
-	switch qa.AssigneeType {
+	switch qa.ExecutorType {
 	case "team":
 		team, err := h.Queries.GetTeamInWorkspace(ctx, db.GetTeamInWorkspaceParams{
-			ID:          qa.AssigneeID,
+			ID:          qa.ExecutorID,
 			WorkspaceID: qa.WorkspaceID,
 		})
 		if err != nil || team.ArchivedAt.Valid {
@@ -245,7 +245,7 @@ func (h *Handler) resolveQuickActionTarget(ctx context.Context, qa db.QuickActio
 			Found:       true,
 		}
 	default:
-		agent, err := h.Queries.GetAgent(ctx, qa.AssigneeID)
+		agent, err := h.Queries.GetAgent(ctx, qa.ExecutorID)
 		if err != nil || agent.ArchivedAt.Valid || uuidToString(agent.WorkspaceID) != uuidToString(qa.WorkspaceID) {
 			return quickActionTarget{}
 		}
@@ -344,8 +344,8 @@ func (h *Handler) loadQuickActionCatalog(ctx context.Context, workspaceID pgtype
 // entirely from the pre-loaded maps. The two must agree; the shared shape of
 // quickActionTarget is what keeps them honest.
 func (c quickActionCatalog) resolve(qa db.QuickAction) (quickActionTarget, bool) {
-	if qa.AssigneeType == "team" {
-		team, ok := c.teams[uuidToString(qa.AssigneeID)]
+	if qa.ExecutorType == "team" {
+		team, ok := c.teams[uuidToString(qa.ExecutorID)]
 		if !ok || team.ArchivedAt.Valid {
 			return quickActionTarget{}, false
 		}
@@ -357,7 +357,7 @@ func (c quickActionCatalog) resolve(qa db.QuickAction) (quickActionTarget, bool)
 		return quickActionTarget{Agent: leader, Name: name, Found: true},
 			c.publicAgents[uuidToString(leader.ID)] && leader.PermissionMode == "public_to"
 	}
-	agent, ok := c.agents[uuidToString(qa.AssigneeID)]
+	agent, ok := c.agents[uuidToString(qa.ExecutorID)]
 	if !ok {
 		return quickActionTarget{}, false
 	}
@@ -385,8 +385,8 @@ func baseQuickActionResponse(qa db.QuickAction) QuickActionResponse {
 		WorkspaceID:  uuidToString(qa.WorkspaceID),
 		Name:         qa.Name,
 		Description:  qa.Description,
-		AssigneeType: qa.AssigneeType,
-		AssigneeID:   uuidToString(qa.AssigneeID),
+		ExecutorType: qa.ExecutorType,
+		ExecutorID:   uuidToString(qa.ExecutorID),
 		Prompt:       qa.Prompt,
 		Visibility:   qa.Visibility,
 		Status:       qa.Status,
@@ -547,11 +547,11 @@ func (h *Handler) CreateQuickAction(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := validateQuickActionAssignee(req.AssigneeType, req.AssigneeID); err != nil {
+	if err := validateQuickActionAssignee(req.ExecutorType, req.ExecutorID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	assigneeUUID, ok := parseUUIDOrBadRequest(w, req.AssigneeID, "assignee_id")
+	assigneeUUID, ok := parseUUIDOrBadRequest(w, req.ExecutorID, "executor_id")
 	if !ok {
 		return
 	}
@@ -564,7 +564,7 @@ func (h *Handler) CreateQuickAction(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !h.validateQuickActionBinding(w, r, req.AssigneeType, assigneeUUID, wsUUID, visibility) {
+	if !h.validateQuickActionBinding(w, r, req.ExecutorType, assigneeUUID, wsUUID, visibility) {
 		return
 	}
 
@@ -578,8 +578,8 @@ func (h *Handler) CreateQuickAction(w http.ResponseWriter, r *http.Request) {
 		WorkspaceID:   wsUUID,
 		Name:          name,
 		Description:   description,
-		AssigneeType:  req.AssigneeType,
-		AssigneeID:    assigneeUUID,
+		ExecutorType:  req.ExecutorType,
+		ExecutorID:    assigneeUUID,
 		Prompt:        prompt,
 		Visibility:    visibility,
 		CreatedByType: "member",
@@ -654,29 +654,29 @@ func (h *Handler) UpdateQuickAction(w http.ResponseWriter, r *http.Request) {
 		params.Description = pgtype.Text{String: description, Valid: true}
 	}
 
-	// assignee_type and assignee_id move together so a type swap can never
+	// executor_type and executor_id move together so a type swap can never
 	// land with a mismatched id (the same rule automation enforces). The
 	// binding is re-validated against the RESULTING visibility, so flipping an
 	// action to public with a private agent still bound is caught here.
-	newType := existing.AssigneeType
-	newID := uuidToString(existing.AssigneeID)
-	if req.AssigneeType != nil {
-		newType = *req.AssigneeType
+	newType := existing.ExecutorType
+	newID := uuidToString(existing.ExecutorID)
+	if req.ExecutorType != nil {
+		newType = *req.ExecutorType
 	}
-	if req.AssigneeID != nil {
-		newID = *req.AssigneeID
+	if req.ExecutorID != nil {
+		newID = *req.ExecutorID
 	}
 	if err := validateQuickActionAssignee(newType, newID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	newUUID, ok := parseUUIDOrBadRequest(w, newID, "assignee_id")
+	newUUID, ok := parseUUIDOrBadRequest(w, newID, "executor_id")
 	if !ok {
 		return
 	}
-	if req.AssigneeType != nil || req.AssigneeID != nil {
-		params.AssigneeType = pgtype.Text{String: newType, Valid: true}
-		params.AssigneeID = newUUID
+	if req.ExecutorType != nil || req.ExecutorID != nil {
+		params.ExecutorType = pgtype.Text{String: newType, Valid: true}
+		params.ExecutorID = newUUID
 	}
 	if !h.validateQuickActionBinding(w, r, newType, newUUID, wsUUID, visibility) {
 		return
@@ -765,7 +765,7 @@ func trimmedWithinLimit(w http.ResponseWriter, raw string, limit int, field stri
 // and, for a `public` action, that every member can invoke it. Writes the 400
 // itself and returns false when the binding is rejected.
 func (h *Handler) validateQuickActionBinding(w http.ResponseWriter, r *http.Request, assigneeType string, id, workspaceID pgtype.UUID, visibility string) bool {
-	qa := db.QuickAction{AssigneeType: assigneeType, AssigneeID: id, WorkspaceID: workspaceID}
+	qa := db.QuickAction{ExecutorType: assigneeType, ExecutorID: id, WorkspaceID: workspaceID}
 	target := h.resolveQuickActionTarget(r.Context(), qa)
 	if !target.Found {
 		writeError(w, http.StatusBadRequest, "assignee not found in this workspace")
@@ -912,8 +912,8 @@ func (h *Handler) RunQuickAction(w http.ResponseWriter, r *http.Request) {
 	h.publish(protocol.EventCommentCreated, workspaceID, actorType, actorID, map[string]any{
 		"comment":             resp,
 		"issue_title":         issue.Title,
-		"issue_assignee_type": textToPtr(issue.AssigneeType),
-		"issue_assignee_id":   uuidToPtr(issue.AssigneeID),
+		"issue_executor_type": textToPtr(issue.ExecutorType),
+		"issue_executor_id":   uuidToPtr(issue.ExecutorID),
 		"issue_status":        issue.Status,
 		"issue_revision":      created.IssueRevision,
 	})

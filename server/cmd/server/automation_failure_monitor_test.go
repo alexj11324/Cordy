@@ -34,8 +34,8 @@ func seedAutomation(t *testing.T, queries *db.Queries, title, creatorType string
 	ap, err := queries.CreateAutomation(ctx, db.CreateAutomationParams{
 		WorkspaceID:   parseUUID(testWorkspaceID),
 		Title:         title,
-		AssigneeType:  "agent",
-		AssigneeID:    agentID,
+		ExecutorType:  "agent",
+		ExecutorID:    agentID,
 		Status:        "active",
 		ExecutionMode: "run_only",
 		CreatedByType: creatorType,

@@ -74,8 +74,10 @@ describe("AssigneePicker search keyboard defaults", () => {
     await user.keyboard("{Enter}");
 
     expect(onUpdate).toHaveBeenCalledWith({
-      assignee_type: "member",
-      assignee_id: "user-2",
+      owner_type: "member",
+      owner_id: "user-2",
+      executor_type: null,
+      executor_id: null,
     });
   });
 

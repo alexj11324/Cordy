@@ -242,8 +242,8 @@ func TestCreateIssue_AssignToPrivateAgentForbidsPlainMember(t *testing.T) {
 			"title":         "assign-to-private-agent test " + actorID,
 			"status":        "todo",
 			"priority":      "medium",
-			"assignee_type": "agent",
-			"assignee_id":   agentID,
+			"executor_type": "agent",
+			"executor_id":   agentID,
 		}
 	}
 
@@ -533,7 +533,7 @@ func TestShouldEnqueueOnComment_PrivateAgentGate(t *testing.T) {
 	var issueID string
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO issue (workspace_id, title, status, priority, creator_type, creator_id,
-		                   assignee_type, assignee_id, number)
+		                   executor_type, executor_id, number)
 		VALUES ($1, 'on_comment private-agent gate test', 'todo', 'medium', 'member', $2,
 		        'agent', $3,
 		        COALESCE((SELECT MAX(number) FROM issue WHERE workspace_id = $1), 0) + 1)

@@ -62,12 +62,12 @@ func TestEnqueueTaskForMentionCoalescesDuplicatePendingTask(t *testing.T) {
 
 	issueStruct := db.Issue{
 		ID:           util.MustParseUUID(issueID),
-		AssigneeID:   util.MustParseUUID(agentID),
+		ExecutorID:   util.MustParseUUID(agentID),
 		Priority:     "medium",
 		CreatorType:  "member",
 		CreatorID:    util.MustParseUUID(userID),
 		WorkspaceID:  util.MustParseUUID(workspaceID),
-		AssigneeType: pgtype.Text{String: "agent", Valid: true},
+		ExecutorType: pgtype.Text{String: "agent", Valid: true},
 	}
 	svc := &TaskService{Queries: q, TxStarter: pool, Bus: events.New()}
 

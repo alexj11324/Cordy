@@ -11,7 +11,13 @@ import type { BoardColumnGroup } from "../components/board-column";
 
 export type DragMoveTargetUpdates = Pick<
   UpdateIssueRequest,
-  "status" | "assignee_type" | "assignee_id" | "project_id" | "position"
+  | "status"
+  | "owner_type"
+  | "owner_id"
+  | "executor_type"
+  | "executor_id"
+  | "project_id"
+  | "position"
 >;
 
 export type DragMoveUpdates = DragMoveTargetUpdates & {
@@ -78,7 +84,10 @@ export function getIssueGroupId(
     }
     return propertyGroupId(propertyId, optionId);
   }
-  return assigneeGroupId(issue.assignee_type, issue.assignee_id);
+  return assigneeGroupId(
+    issue.executor_type ?? issue.owner_type,
+    issue.executor_id ?? issue.owner_id,
+  );
 }
 
 export function buildColumns(
@@ -163,9 +172,11 @@ export function issueMatchesGroup(issue: Issue, group: BoardColumnGroup): boolea
   if (group.projectId !== undefined) {
     return (issue.project_id ?? null) === group.projectId;
   }
+  const type = issue.executor_type ?? issue.owner_type;
+  const id = issue.executor_id ?? issue.owner_id;
   return (
-    (issue.assignee_type ?? null) === (group.assigneeType ?? null) &&
-    (issue.assignee_id ?? null) === (group.assigneeId ?? null)
+    (type ?? null) === (group.assigneeType ?? null) &&
+    (id ?? null) === (group.assigneeId ?? null)
   );
 }
 
@@ -193,9 +204,27 @@ export function getMoveUpdates(
   if (group.projectId !== undefined) {
     return { project_id: group.projectId, position };
   }
+  if (group.assigneeType === "member") {
+    return {
+      owner_type: "member",
+      owner_id: group.assigneeId ?? null,
+      executor_type: null,
+      executor_id: null,
+      position,
+    };
+  }
+  if (!group.assigneeType) {
+    return {
+      owner_type: null,
+      owner_id: null,
+      executor_type: null,
+      executor_id: null,
+      position,
+    };
+  }
   return {
-    assignee_type: group.assigneeType ?? null,
-    assignee_id: group.assigneeId ?? null,
+    executor_type: group.assigneeType,
+    executor_id: group.assigneeId ?? null,
     position,
   };
 }

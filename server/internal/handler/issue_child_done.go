@@ -109,10 +109,11 @@ func (h *Handler) notifyParentOfChildDone(ctx context.Context, prev, issue db.Is
 	if parentStatus == "backlog" {
 		return
 	}
-	// Human-assigned parents read their own timeline; an automated system
-	// comment is just noise and there is no agent task to trigger. Skip the
-	// whole notification (comment + mention + inbox row) — MUL-2538.
-	if parent.AssigneeType.Valid && parent.AssigneeType.String == "member" {
+	// Human-owned parents (owner set, no executor) read their own timeline;
+	// an automated system comment is just noise and there is no agent task
+	// to trigger. Skip the whole notification — MUL-2538. Member is never a
+	// valid executor after the owner/executor split.
+	if parentAssigneeIsHuman(parent) {
 		return
 	}
 
@@ -203,7 +204,7 @@ func (h *Handler) notifyParentsOfBatchChildDone(ctx context.Context, completed [
 		if parentStatus == "backlog" {
 			continue
 		}
-		if parent.AssigneeType.Valid && parent.AssigneeType.String == "member" {
+		if parentAssigneeIsHuman(parent) {
 			continue
 		}
 
@@ -335,8 +336,8 @@ func (h *Handler) postChildDoneComment(ctx context.Context, parent, completed db
 	h.publish(protocol.EventCommentCreated, uuidToString(parent.WorkspaceID), "system", "", map[string]any{
 		"comment":             commentToResponse(comment, nil, nil),
 		"issue_title":         parent.Title,
-		"issue_assignee_type": textToPtr(parent.AssigneeType),
-		"issue_assignee_id":   uuidToPtr(parent.AssigneeID),
+		"issue_executor_type": textToPtr(parent.ExecutorType),
+		"issue_executor_id":   uuidToPtr(parent.ExecutorID),
 		"issue_status":        parent.Status,
 		"issue_revision":      created.IssueRevision,
 	})
@@ -509,19 +510,26 @@ func sanitizeChildTitleForSystemComment(title string) string {
 	return cleaned
 }
 
+func parentAssigneeIsHuman(parent db.Issue) bool {
+	if parent.ExecutorType.Valid {
+		return false
+	}
+	return parent.OwnerType.Valid && parent.OwnerType.String == "member"
+}
+
 // buildParentAssigneeMention returns the markdown prefix that the system
 // comment should lead with, including a trailing space, so the body reads
 // like a normal mention-led comment. Returns the empty string when the
 // parent has no assignee or the assignee row could not be loaded.
 func (h *Handler) buildParentAssigneeMention(ctx context.Context, parent db.Issue) string {
-	if !parent.AssigneeType.Valid || !parent.AssigneeID.Valid {
+	if !parent.ExecutorType.Valid || !parent.ExecutorID.Valid {
 		return ""
 	}
-	label, ok := h.resolveAssigneeMentionLabel(ctx, parent.WorkspaceID, parent.AssigneeType.String, parent.AssigneeID)
+	label, ok := h.resolveAssigneeMentionLabel(ctx, parent.WorkspaceID, parent.ExecutorType.String, parent.ExecutorID)
 	if !ok {
 		return ""
 	}
-	return fmt.Sprintf("[@%s](mention://%s/%s) ", label, parent.AssigneeType.String, uuidToString(parent.AssigneeID))
+	return fmt.Sprintf("[@%s](mention://%s/%s) ", label, parent.ExecutorType.String, uuidToString(parent.ExecutorID))
 }
 
 // resolveAssigneeMentionLabel returns the label text to render inside the
@@ -618,11 +626,11 @@ func sanitizeMentionLabel(name string) string {
 //   - Readiness: archived agents / missing runtimes are silently skipped
 //     so a closed-out agent does not surface as a phantom assignee.
 func (h *Handler) dispatchParentAssigneeTrigger(ctx context.Context, parent db.Issue, systemComment db.Comment) {
-	if !parent.AssigneeType.Valid || !parent.AssigneeID.Valid {
+	if !parent.ExecutorType.Valid || !parent.ExecutorID.Valid {
 		return
 	}
 
-	switch parent.AssigneeType.String {
+	switch parent.ExecutorType.String {
 	case "agent":
 		h.triggerChildDoneAgent(ctx, parent, systemComment.ID)
 	case "team":
@@ -645,7 +653,7 @@ func (h *Handler) dispatchParentAssigneeTrigger(ctx context.Context, parent db.I
 // self-trigger path relies on it (see computeMentionedAgentCommentTriggers).
 func (h *Handler) triggerChildDoneAgent(ctx context.Context, parent db.Issue, triggerCommentID pgtype.UUID) {
 	agent, err := h.Queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{
-		ID:          parent.AssigneeID,
+		ID:          parent.ExecutorID,
 		WorkspaceID: parent.WorkspaceID,
 	})
 	if err != nil || !agent.RuntimeID.Valid || agent.ArchivedAt.Valid {
@@ -654,7 +662,7 @@ func (h *Handler) triggerChildDoneAgent(ctx context.Context, parent db.Issue, tr
 
 	hasPending, err := h.Queries.HasPendingTaskForIssueAndAgent(ctx, db.HasPendingTaskForIssueAndAgentParams{
 		IssueID: parent.ID,
-		AgentID: parent.AssigneeID,
+		AgentID: parent.ExecutorID,
 		// Key dedup on the reviewed head (TEN-356).
 		HeadSha: h.TaskService.ResolveIssueReviewSHAParam(ctx, parent.ID),
 	})
@@ -662,11 +670,11 @@ func (h *Handler) triggerChildDoneAgent(ctx context.Context, parent db.Issue, tr
 		return
 	}
 
-	if _, err := h.TaskService.EnqueueTaskForMention(ctx, parent, parent.AssigneeID, triggerCommentID); err != nil {
+	if _, err := h.TaskService.EnqueueTaskForMention(ctx, parent, parent.ExecutorID, triggerCommentID); err != nil {
 		slog.Warn("child done: enqueue parent agent task failed",
 			"error", err,
 			"parent_id", uuidToString(parent.ID),
-			"agent_id", uuidToString(parent.AssigneeID))
+			"agent_id", uuidToString(parent.ExecutorID))
 	}
 }
 
@@ -697,7 +705,7 @@ func (h *Handler) triggerChildDoneAgent(ctx context.Context, parent db.Issue, tr
 // check below, exactly as the agent path relies on it.
 func (h *Handler) triggerChildDoneTeam(ctx context.Context, parent db.Issue, triggerCommentID pgtype.UUID) {
 	team, err := h.Queries.GetTeamInWorkspace(ctx, db.GetTeamInWorkspaceParams{
-		ID:          parent.AssigneeID,
+		ID:          parent.ExecutorID,
 		WorkspaceID: parent.WorkspaceID,
 	})
 	if err != nil {

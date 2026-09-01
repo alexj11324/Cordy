@@ -284,7 +284,7 @@
     "section_agent": "에이전트",
     "section_assignee": "담당자",
     "select_agent": "에이전트 선택",
-    "select_assignee": "에이전트 또는 스쿼드 선택",
+    "select_assignee": "에이전트 또는 팀 선택",
     "section_project": "프로젝트",
     "project_hint": "실행 환경도 결정합니다 — 해당 프로젝트의 저장소 또는 로컬 디렉터리",
     "no_project": "프로젝트 없음",
@@ -318,7 +318,7 @@
     "schedule_empty": "일정이 없습니다. 이 오토파일럿은 수동으로 실행할 때만 동작합니다.",
     "schedule_add": "일정 추가",
     "error_title_required": "오토파일럿 이름을 입력하세요.",
-    "error_assignee_required": "실행할 에이전트 또는 스쿼드를 선택하세요.",
+    "error_assignee_required": "실행할 에이전트 또는 팀을 선택하세요.",
     "output_modes": {
       "create_issue": {
         "label": "태스크 생성",
@@ -417,13 +417,13 @@
     }
   },
   "agent_picker": {
-    "filter_placeholder": "에이전트 또는 스쿼드 필터...",
+    "filter_placeholder": "에이전트 또는 팀 필터...",
     "select_agent": "에이전트 선택",
-    "select_assignee": "에이전트 또는 스쿼드 선택",
+    "select_assignee": "에이전트 또는 팀 선택",
     "agents_group": "에이전트",
-    "teams_group": "스쿼드",
+    "teams_group": "팀",
     "agent_runtime_required": "이 에이전트를 선택하기 전에 런타임을 연결하세요",
-    "team_runtime_required": "선택하기 전에 이 스쿼드 리더에 런타임을 연결하세요"
+    "team_runtime_required": "선택하기 전에 이 팀 리더에 런타임을 연결하세요"
   },
   "timezone_picker": {
     "search_placeholder": "시간대 검색..."

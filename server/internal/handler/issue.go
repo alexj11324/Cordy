@@ -22,6 +22,7 @@ import (
 	"github.com/patchbay-ai/patchbay/server/internal/channelmedia"
 	"github.com/patchbay-ai/patchbay/server/internal/dispatch"
 	"github.com/patchbay-ai/patchbay/server/internal/issueguard"
+	"github.com/patchbay-ai/patchbay/server/internal/issueroles"
 	"github.com/patchbay-ai/patchbay/server/internal/issuestatus"
 	"github.com/patchbay-ai/patchbay/server/internal/logger"
 	obsmetrics "github.com/patchbay-ai/patchbay/server/internal/metrics"
@@ -63,8 +64,12 @@ type IssueResponse struct {
 	// (MUL-6749)
 	StatusName    string  `json:"status_name"`
 	Priority      string  `json:"priority"`
-	AssigneeType  *string `json:"assignee_type"`
-	AssigneeID    *string `json:"assignee_id"`
+	OwnerType     *string `json:"owner_type"`
+	OwnerID       *string `json:"owner_id"`
+	ExecutorType  *string `json:"executor_type"`
+	ExecutorID    *string `json:"executor_id"`
+	ReviewerType  *string `json:"reviewer_type"`
+	ReviewerID    *string `json:"reviewer_id"`
 	CreatorType   string  `json:"creator_type"`
 	CreatorID     string  `json:"creator_id"`
 	ParentIssueID *string `json:"parent_issue_id"`
@@ -290,6 +295,97 @@ func (h *Handler) fillStatusCategory(ctx context.Context, wsID pgtype.UUID, resp
 	h.newStatusCategoryFiller(ctx, wsID)(resp)
 }
 
+func textOrEmpty(t pgtype.Text) string {
+	if !t.Valid {
+		return ""
+	}
+	return t.String
+}
+
+func uuidOrEmpty(id pgtype.UUID) string {
+	if !id.Valid {
+		return ""
+	}
+	return uuidToString(id)
+}
+
+func actorRefOrNil(typ pgtype.Text, id pgtype.UUID) *issueroles.ActorRef {
+	if !typ.Valid || !id.Valid || typ.String == "" {
+		return nil
+	}
+	return &issueroles.ActorRef{Type: typ.String, ID: uuidToString(id)}
+}
+
+func (h *Handler) statusCategory(ctx context.Context, workspaceID pgtype.UUID, statusKey string) (string, error) {
+	if issuestatus.IsBuiltIn(statusKey) {
+		return statusKey, nil
+	}
+	entry, err := issuestatus.Resolve(ctx, h.Queries, workspaceID, statusKey)
+	if err != nil {
+		return "", err
+	}
+	if entry.Category != "" {
+		return entry.Category, nil
+	}
+	return statusKey, nil
+}
+
+func writeWorkflowGateError(w http.ResponseWriter, v issueroles.WorkflowViolation) {
+	switch v {
+	case issueroles.ActiveExecutorRequired:
+		writeError(w, http.StatusBadRequest, "in_progress, in_review, and blocked issues require an executor")
+	case issueroles.ReviewHandoffRequired:
+		writeError(w, http.StatusBadRequest, "moving to in_review requires a reviewer distinct from the executor")
+	default:
+		writeError(w, http.StatusBadRequest, string(v))
+	}
+}
+
+func (h *Handler) issueWorkflowViolation(ctx context.Context, workspaceID pgtype.UUID, prevStatus, nextStatus string, nextExecutor, nextReviewer *issueroles.ActorRef) (*issueroles.WorkflowViolation, error) {
+	prevCat := ""
+	if prevStatus != "" {
+		var err error
+		prevCat, err = h.statusCategory(ctx, workspaceID, prevStatus)
+		if err != nil {
+			return nil, err
+		}
+	}
+	nextCat, err := h.statusCategory(ctx, workspaceID, nextStatus)
+	if err != nil {
+		return nil, err
+	}
+	return issueroles.WorkflowGate(prevCat, nextCat, nextExecutor, nextReviewer), nil
+}
+
+func (h *Handler) enforceIssueWorkflowGate(ctx context.Context, w http.ResponseWriter, workspaceID pgtype.UUID, prevStatus, nextStatus string, nextExecutor, nextReviewer *issueroles.ActorRef) bool {
+	v, err := h.issueWorkflowViolation(ctx, workspaceID, prevStatus, nextStatus, nextExecutor, nextReviewer)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid status")
+		return false
+	}
+	if v != nil {
+		writeWorkflowGateError(w, *v)
+		return false
+	}
+	return true
+}
+
+func (h *Handler) validateOwnerPair(ctx context.Context, workspaceID pgtype.UUID, ownerType pgtype.Text, ownerID pgtype.UUID) (int, string) {
+	if msg := issueroles.ValidatePair(textOrEmpty(ownerType), uuidOrEmpty(ownerID), "owner", issueroles.IsOwnerType); msg != "" {
+		return http.StatusBadRequest, msg
+	}
+	if !ownerType.Valid {
+		return 0, ""
+	}
+	if _, err := h.Queries.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
+		UserID:      ownerID,
+		WorkspaceID: workspaceID,
+	}); err != nil {
+		return http.StatusBadRequest, "owner_id does not refer to a member of this workspace"
+	}
+	return 0, ""
+}
+
 func issueToResponse(i db.Issue, issuePrefix string) IssueResponse {
 	identifier := issuePrefix + "-" + strconv.Itoa(int(i.Number))
 	// A built-in status IS its own category, so this costs no catalog lookup and
@@ -310,8 +406,12 @@ func issueToResponse(i db.Issue, issuePrefix string) IssueResponse {
 		Status:         i.Status,
 		StatusCategory: statusCategory,
 		Priority:       i.Priority,
-		AssigneeType:   textToPtr(i.AssigneeType),
-		AssigneeID:     uuidToPtr(i.AssigneeID),
+		OwnerType:      textToPtr(i.OwnerType),
+		OwnerID:        uuidToPtr(i.OwnerID),
+		ExecutorType:   textToPtr(i.ExecutorType),
+		ExecutorID:     uuidToPtr(i.ExecutorID),
+		ReviewerType:   textToPtr(i.ReviewerType),
+		ReviewerID:     uuidToPtr(i.ReviewerID),
 		CreatorType:    i.CreatorType,
 		CreatorID:      uuidToString(i.CreatorID),
 		ParentIssueID:  uuidToPtr(i.ParentIssueID),
@@ -327,6 +427,28 @@ func issueToResponse(i db.Issue, issuePrefix string) IssueResponse {
 		Metadata:       parseIssueMetadata(i.Metadata),
 		Properties:     parseIssueProperties(i.Properties),
 	}
+}
+
+// EffectiveAssignee is executor if set, otherwise owner. Matches grouping,
+// filters, avatars, and inbox assignment.
+func (i IssueResponse) EffectiveAssignee() (typ *string, id *string) {
+	if i.ExecutorType != nil && i.ExecutorID != nil {
+		return i.ExecutorType, i.ExecutorID
+	}
+	return i.OwnerType, i.OwnerID
+}
+
+func assigneePtrsEqual(aType, aID, bType, bID *string) bool {
+	if (aType == nil) != (bType == nil) || (aID == nil) != (bID == nil) {
+		return false
+	}
+	if aType != nil && *aType != *bType {
+		return false
+	}
+	if aID != nil && *aID != *bID {
+		return false
+	}
+	return true
 }
 
 // issueListRowToResponse converts a list-query row (no description) to an IssueResponse.
@@ -347,8 +469,12 @@ func issueListRowToResponse(i db.ListIssuesRow, issuePrefix string) IssueRespons
 		Status:         i.Status,
 		StatusCategory: statusCategory,
 		Priority:       i.Priority,
-		AssigneeType:   textToPtr(i.AssigneeType),
-		AssigneeID:     uuidToPtr(i.AssigneeID),
+		OwnerType:      textToPtr(i.OwnerType),
+		OwnerID:        uuidToPtr(i.OwnerID),
+		ExecutorType:   textToPtr(i.ExecutorType),
+		ExecutorID:     uuidToPtr(i.ExecutorID),
+		ReviewerType:   textToPtr(i.ReviewerType),
+		ReviewerID:     uuidToPtr(i.ReviewerID),
 		CreatorType:    i.CreatorType,
 		CreatorID:      uuidToString(i.CreatorID),
 		ParentIssueID:  uuidToPtr(i.ParentIssueID),
@@ -416,8 +542,12 @@ func openIssueRowToResponse(i db.ListOpenIssuesRow, issuePrefix string) IssueRes
 		Status:         i.Status,
 		StatusCategory: statusCategory,
 		Priority:       i.Priority,
-		AssigneeType:   textToPtr(i.AssigneeType),
-		AssigneeID:     uuidToPtr(i.AssigneeID),
+		OwnerType:      textToPtr(i.OwnerType),
+		OwnerID:        uuidToPtr(i.OwnerID),
+		ExecutorType:   textToPtr(i.ExecutorType),
+		ExecutorID:     uuidToPtr(i.ExecutorID),
+		ReviewerType:   textToPtr(i.ReviewerType),
+		ReviewerID:     uuidToPtr(i.ReviewerID),
 		CreatorType:    i.CreatorType,
 		CreatorID:      uuidToString(i.CreatorID),
 		ParentIssueID:  uuidToPtr(i.ParentIssueID),
@@ -437,8 +567,10 @@ func openIssueRowToResponse(i db.ListOpenIssuesRow, issuePrefix string) IssueRes
 
 type IssueAssigneeGroupResponse struct {
 	ID           string          `json:"id"`
-	AssigneeType *string         `json:"assignee_type"`
-	AssigneeID   *string         `json:"assignee_id"`
+	OwnerType    *string         `json:"owner_type,omitempty"`
+	OwnerID      *string         `json:"owner_id,omitempty"`
+	ExecutorType *string         `json:"executor_type"`
+	ExecutorID   *string         `json:"executor_id"`
 	Issues       []IssueResponse `json:"issues"`
 	Total        int64           `json:"total"`
 }
@@ -857,7 +989,7 @@ func buildSearchQuery(phrase string, terms []string, queryNum int, hasNum bool, 
 	offsetParam := nextArg(nil) // placeholder
 
 	query := fmt.Sprintf(`SELECT i.id, i.workspace_id, i.title, i.description, i.status, i.priority,
-		i.assignee_type, i.assignee_id, i.creator_type, i.creator_id,
+		i.owner_type, i.owner_id, i.executor_type, i.executor_id, i.reviewer_type, i.reviewer_id, i.creator_type, i.creator_id,
 		i.parent_issue_id, i.acceptance_criteria, i.context_refs, i.position,
 		i.start_date, i.due_date, i.created_at, i.updated_at, i.last_activity_at, i.number, i.project_id,
 		i.revision,
@@ -944,8 +1076,12 @@ func (h *Handler) SearchIssues(w http.ResponseWriter, r *http.Request) {
 				&sr.issue.Description,
 				&sr.issue.Status,
 				&sr.issue.Priority,
-				&sr.issue.AssigneeType,
-				&sr.issue.AssigneeID,
+				&sr.issue.OwnerType,
+				&sr.issue.OwnerID,
+				&sr.issue.ExecutorType,
+				&sr.issue.ExecutorID,
+				&sr.issue.ReviewerType,
+				&sr.issue.ReviewerID,
 				&sr.issue.CreatorType,
 				&sr.issue.CreatorID,
 				&sr.issue.ParentIssueID,
@@ -1065,19 +1201,27 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 	if p := r.URL.Query().Get("priority"); p != "" {
 		priorityFilter = pgtype.Text{String: p, Valid: true}
 	}
+	var ownerFilter pgtype.UUID
+	if a := r.URL.Query().Get("owner_id"); a != "" {
+		id, ok := parseUUIDOrBadRequest(w, a, "owner_id")
+		if !ok {
+			return
+		}
+		ownerFilter = id
+	}
 	var assigneeFilter pgtype.UUID
-	if a := r.URL.Query().Get("assignee_id"); a != "" {
-		id, ok := parseUUIDOrBadRequest(w, a, "assignee_id")
+	if a := r.URL.Query().Get("executor_id"); a != "" {
+		id, ok := parseUUIDOrBadRequest(w, a, "executor_id")
 		if !ok {
 			return
 		}
 		assigneeFilter = id
 	}
 	var assigneeIdsFilter []pgtype.UUID
-	if ids := r.URL.Query().Get("assignee_ids"); ids != "" {
+	if ids := r.URL.Query().Get("executor_ids"); ids != "" {
 		for _, raw := range strings.Split(ids, ",") {
 			if s := strings.TrimSpace(raw); s != "" {
-				id, ok := parseUUIDOrBadRequest(w, s, "assignee_ids")
+				id, ok := parseUUIDOrBadRequest(w, s, "executor_ids")
 				if !ok {
 					return
 				}
@@ -1104,7 +1248,7 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 	// involves_user_id widens the assignee filter to surface issues where the
 	// user is the indirect assignee (their owned agent, or a team they belong
 	// to / lead / have an agent inside). Direct member-assignment is excluded
-	// by design — that is the meaning of `assignee_id` (tab 1), and tab 3 must
+	// by design — that is the meaning of `executor_id` (tab 1), and tab 3 must
 	// be disjoint from tab 1.
 	var involvesUserFilter pgtype.UUID
 	if u := r.URL.Query().Get("involves_user_id"); u != "" {
@@ -1150,8 +1294,9 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 			WorkspaceID:        wsUUID,
 			TerminalStatusKeys: terminalStatusKeys,
 			Priority:           priorityFilter,
-			AssigneeID:         assigneeFilter,
-			AssigneeIds:        assigneeIdsFilter,
+			OwnerID:            ownerFilter,
+			ExecutorID:         assigneeFilter,
+			ExecutorIds:        assigneeIdsFilter,
 			CreatorID:          creatorFilter,
 			ProjectID:          projectFilter,
 			InvolvesUserID:     involvesUserFilter,
@@ -1221,14 +1366,14 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 		prioritiesFilter = splitCommaParam(r.URL.Query().Get("priority"))
 	}
 
-	// assignee_types narrows the list to issues assigned to the given actor
+	// executor_types narrows the list to issues assigned to the given actor
 	// kinds (member / agent / team). Mirrors the same param on
 	// ListGroupedIssues so the workspace Members/Agents tabs can filter
 	// server-side instead of post-filtering loaded pages on the client.
-	assigneeTypesFilter := splitCommaParam(r.URL.Query().Get("assignee_types"))
+	assigneeTypesFilter := splitCommaParam(r.URL.Query().Get("executor_types"))
 	for _, assigneeType := range assigneeTypesFilter {
 		if !isIssueActorType(assigneeType) {
-			writeError(w, http.StatusBadRequest, "invalid assignee_types")
+			writeError(w, http.StatusBadRequest, "invalid executor_types")
 			return
 		}
 	}
@@ -1330,14 +1475,17 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 	if len(prioritiesFilter) > 0 {
 		where = append(where, fmt.Sprintf("i.priority = ANY(%s::text[])", addArg(prioritiesFilter)))
 	}
+	if ownerFilter.Valid {
+		where = append(where, fmt.Sprintf("i.owner_id = %s::uuid", addArg(ownerFilter)))
+	}
 	if assigneeFilter.Valid {
-		where = append(where, fmt.Sprintf("i.assignee_id = %s::uuid", addArg(assigneeFilter)))
+		where = append(where, fmt.Sprintf("i.executor_id = %s::uuid", addArg(assigneeFilter)))
 	}
 	if len(assigneeIdsFilter) > 0 {
-		where = append(where, fmt.Sprintf("i.assignee_id = ANY(%s::uuid[])", addArg(assigneeIdsFilter)))
+		where = append(where, fmt.Sprintf("i.executor_id = ANY(%s::uuid[])", addArg(assigneeIdsFilter)))
 	}
 	if len(assigneeTypesFilter) > 0 {
-		where = append(where, fmt.Sprintf("i.assignee_type = ANY(%s::text[])", addArg(assigneeTypesFilter)))
+		where = append(where, fmt.Sprintf("%s = ANY(%s::text[])", effectiveAssigneeTypeSQL, addArg(assigneeTypesFilter)))
 	}
 	if creatorFilter.Valid {
 		where = append(where, fmt.Sprintf("i.creator_id = %s::uuid", addArg(creatorFilter)))
@@ -1358,13 +1506,15 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 		ors := make([]string, 0, len(assigneeFilters)+1)
 		for _, filter := range assigneeFilters {
 			ors = append(ors, fmt.Sprintf(
-				"(i.assignee_type = %s::text AND i.assignee_id = %s::uuid)",
+				"(%s = %s::text AND %s = %s::uuid)",
+				effectiveAssigneeTypeSQL,
 				addArg(filter.actorType),
+				effectiveAssigneeIDSQL,
 				addArg(filter.actorID),
 			))
 		}
 		if includeNoAssignee {
-			ors = append(ors, "(i.assignee_type IS NULL AND i.assignee_id IS NULL)")
+			ors = append(ors, "("+effectiveAssigneeTypeSQL+" IS NULL AND "+effectiveAssigneeIDSQL+" IS NULL)")
 		}
 		where = append(where, "("+strings.Join(ors, " OR ")+")")
 	}
@@ -1442,12 +1592,12 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 	if involvesUserFilter.Valid {
 		ref := addArg(involvesUserFilter)
 		where = append(where, fmt.Sprintf(`(
-    (i.assignee_type = 'agent' AND i.assignee_id IN (
+    (i.executor_type = 'agent' AND i.executor_id IN (
        SELECT a.id FROM agent a
         WHERE a.workspace_id = $1
           AND a.owner_id     = %[1]s::uuid
     ))
-    OR (i.assignee_type = 'team' AND i.assignee_id IN (
+    OR (i.executor_type = 'team' AND i.executor_id IN (
        SELECT sm.team_id
          FROM team_member sm
          JOIN team s ON s.id = sm.team_id
@@ -1500,7 +1650,7 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 	limitRef := addArg(int64(limit))
 
 	query := fmt.Sprintf(`SELECT i.id, i.workspace_id, i.title, i.description, i.status, i.priority,
-       i.assignee_type, i.assignee_id, i.creator_type, i.creator_id,
+       i.owner_type, i.owner_id, i.executor_type, i.executor_id, i.reviewer_type, i.reviewer_id, i.creator_type, i.creator_id,
        i.parent_issue_id, i.position, i.start_date, i.due_date, i.created_at, i.updated_at, i.last_activity_at, i.number, i.project_id, i.metadata, i.stage, i.properties,
 	   i.revision
 FROM issue i
@@ -1526,8 +1676,12 @@ LIMIT %s OFFSET %s`, whereSql, orderBy, limitRef, offsetRef)
 			&row.Description,
 			&row.Status,
 			&row.Priority,
-			&row.AssigneeType,
-			&row.AssigneeID,
+			&row.OwnerType,
+			&row.OwnerID,
+			&row.ExecutorType,
+			&row.ExecutorID,
+			&row.ReviewerType,
+			&row.ReviewerID,
 			&row.CreatorType,
 			&row.CreatorID,
 			&row.ParentIssueID,
@@ -1703,6 +1857,12 @@ func isIssueActorType(s string) bool {
 	return s == "member" || s == "agent" || s == "team"
 }
 
+// Effective assignee for grouping/filters: executor if set, otherwise owner.
+const (
+	effectiveAssigneeTypeSQL = "COALESCE(i.executor_type, i.owner_type)"
+	effectiveAssigneeIDSQL   = "COALESCE(i.executor_id, i.owner_id)"
+)
+
 func parseUUIDParamList(w http.ResponseWriter, raw, fieldName string) ([]pgtype.UUID, bool) {
 	parts := splitCommaParam(raw)
 	if len(parts) == 0 {
@@ -1821,31 +1981,31 @@ func (h *Handler) ListGroupedIssues(w http.ResponseWriter, r *http.Request) {
 		where = append(where, fmt.Sprintf("i.priority = ANY(%s::text[])", addArg(priorities)))
 	}
 
-	assigneeTypes := splitCommaParam(r.URL.Query().Get("assignee_types"))
+	assigneeTypes := splitCommaParam(r.URL.Query().Get("executor_types"))
 	if len(assigneeTypes) > 0 {
 		for _, assigneeType := range assigneeTypes {
 			if !isIssueActorType(assigneeType) {
-				writeError(w, http.StatusBadRequest, "invalid assignee_types")
+				writeError(w, http.StatusBadRequest, "invalid executor_types")
 				return
 			}
 		}
-		where = append(where, fmt.Sprintf("i.assignee_type = ANY(%s::text[])", addArg(assigneeTypes)))
+		where = append(where, fmt.Sprintf("%s = ANY(%s::text[])", effectiveAssigneeTypeSQL, addArg(assigneeTypes)))
 	}
 
-	if raw := r.URL.Query().Get("assignee_id"); raw != "" {
-		id, ok := parseUUIDOrBadRequest(w, raw, "assignee_id")
+	if raw := r.URL.Query().Get("executor_id"); raw != "" {
+		id, ok := parseUUIDOrBadRequest(w, raw, "executor_id")
 		if !ok {
 			return
 		}
-		where = append(where, fmt.Sprintf("i.assignee_id = %s::uuid", addArg(id)))
+		where = append(where, fmt.Sprintf("%s = %s::uuid", effectiveAssigneeIDSQL, addArg(id)))
 	}
-	if raw := r.URL.Query().Get("assignee_ids"); raw != "" {
-		ids, ok := parseUUIDParamList(w, raw, "assignee_ids")
+	if raw := r.URL.Query().Get("executor_ids"); raw != "" {
+		ids, ok := parseUUIDParamList(w, raw, "executor_ids")
 		if !ok {
 			return
 		}
 		if len(ids) > 0 {
-			where = append(where, fmt.Sprintf("i.assignee_id = ANY(%s::uuid[])", addArg(ids)))
+			where = append(where, fmt.Sprintf("%s = ANY(%s::uuid[])", effectiveAssigneeIDSQL, addArg(ids)))
 		}
 	}
 	if raw := r.URL.Query().Get("creator_id"); raw != "" {
@@ -1876,7 +2036,7 @@ func (h *Handler) ListGroupedIssues(w http.ResponseWriter, r *http.Request) {
 	// ListOpenIssues / CountIssues. ListGroupedIssues is a hand-written dynamic
 	// SQL builder that does not share parameters with sqlc, so the fragment is
 	// re-implemented here in lock-step. Member-direct assignment is excluded by
-	// design: that semantics belongs to tab 1 (`assignee_id`), and tab 3 must
+	// design: that semantics belongs to tab 1 (`executor_id`), and tab 3 must
 	// stay disjoint from tab 1.
 	if raw := r.URL.Query().Get("involves_user_id"); raw != "" {
 		id, ok := parseUUIDOrBadRequest(w, raw, "involves_user_id")
@@ -1885,12 +2045,12 @@ func (h *Handler) ListGroupedIssues(w http.ResponseWriter, r *http.Request) {
 		}
 		ref := addArg(id)
 		where = append(where, fmt.Sprintf(`(
-    (i.assignee_type = 'agent' AND i.assignee_id IN (
+    (i.executor_type = 'agent' AND i.executor_id IN (
        SELECT a.id FROM agent a
         WHERE a.workspace_id = $1
           AND a.owner_id     = %[1]s::uuid
     ))
-    OR (i.assignee_type = 'team' AND i.assignee_id IN (
+    OR (i.executor_type = 'team' AND i.executor_id IN (
        SELECT sm.team_id
          FROM team_member sm
          JOIN team s ON s.id = sm.team_id
@@ -1926,13 +2086,15 @@ func (h *Handler) ListGroupedIssues(w http.ResponseWriter, r *http.Request) {
 		ors := make([]string, 0, len(assigneeFilters)+1)
 		for _, filter := range assigneeFilters {
 			ors = append(ors, fmt.Sprintf(
-				"(i.assignee_type = %s::text AND i.assignee_id = %s::uuid)",
+				"(%s = %s::text AND %s = %s::uuid)",
+				effectiveAssigneeTypeSQL,
 				addArg(filter.actorType),
+				effectiveAssigneeIDSQL,
 				addArg(filter.actorID),
 			))
 		}
 		if includeNoAssignee {
-			ors = append(ors, "(i.assignee_type IS NULL AND i.assignee_id IS NULL)")
+			ors = append(ors, "("+effectiveAssigneeTypeSQL+" IS NULL AND "+effectiveAssigneeIDSQL+" IS NULL)")
 		}
 		where = append(where, "("+strings.Join(ors, " OR ")+")")
 	}
@@ -1986,26 +2148,28 @@ func (h *Handler) ListGroupedIssues(w http.ResponseWriter, r *http.Request) {
 	}
 	where = appendIssueDateFilter(where, addArg, dateFilter)
 
-	if groupAssigneeType := r.URL.Query().Get("group_assignee_type"); groupAssigneeType != "" {
-		if groupAssigneeType == "none" {
-			where = append(where, "(i.assignee_type IS NULL AND i.assignee_id IS NULL)")
+	if groupExecutorType := r.URL.Query().Get("group_executor_type"); groupExecutorType != "" {
+		if groupExecutorType == "none" {
+			where = append(where, "("+effectiveAssigneeTypeSQL+" IS NULL AND "+effectiveAssigneeIDSQL+" IS NULL)")
 		} else {
-			if !isIssueActorType(groupAssigneeType) {
-				writeError(w, http.StatusBadRequest, "invalid group_assignee_type")
+			if !isIssueActorType(groupExecutorType) {
+				writeError(w, http.StatusBadRequest, "invalid group_executor_type")
 				return
 			}
-			rawID := r.URL.Query().Get("group_assignee_id")
+			rawID := r.URL.Query().Get("group_executor_id")
 			if rawID == "" {
-				writeError(w, http.StatusBadRequest, "invalid group_assignee_id")
+				writeError(w, http.StatusBadRequest, "invalid group_executor_id")
 				return
 			}
-			assigneeID, ok := parseUUIDOrBadRequest(w, rawID, "group_assignee_id")
+			assigneeID, ok := parseUUIDOrBadRequest(w, rawID, "group_executor_id")
 			if !ok {
 				return
 			}
 			where = append(where, fmt.Sprintf(
-				"(i.assignee_type = %s::text AND i.assignee_id = %s::uuid)",
-				addArg(groupAssigneeType),
+				"(%s = %s::text AND %s = %s::uuid)",
+				effectiveAssigneeTypeSQL,
+				addArg(groupExecutorType),
+				effectiveAssigneeIDSQL,
 				addArg(assigneeID),
 			))
 		}
@@ -2091,12 +2255,13 @@ func (h *Handler) ListGroupedIssues(w http.ResponseWriter, r *http.Request) {
 WITH ranked AS (
 	SELECT
 		i.id, i.workspace_id, i.title, i.description, i.status, i.priority,
-		i.assignee_type, i.assignee_id, i.creator_type, i.creator_id,
+		i.owner_type, i.owner_id, i.executor_type, i.executor_id, i.reviewer_type, i.reviewer_id,
+		i.creator_type, i.creator_id,
 		i.parent_issue_id, i.position, i.start_date, i.due_date, i.created_at, i.updated_at, i.last_activity_at,
 		i.number, i.project_id, i.metadata, i.stage, i.properties, i.revision,
-		COUNT(*) OVER (PARTITION BY i.assignee_type, i.assignee_id) AS group_total,
+		COUNT(*) OVER (PARTITION BY %s, %s) AS group_total,
 		ROW_NUMBER() OVER (
-			PARTITION BY i.assignee_type, i.assignee_id
+			PARTITION BY %s, %s
 			ORDER BY %s
 		) AS rn
 	FROM issue i
@@ -2104,21 +2269,22 @@ WITH ranked AS (
 )
 SELECT
 	id, workspace_id, title, description, status, priority,
-	assignee_type, assignee_id, creator_type, creator_id,
+	owner_type, owner_id, executor_type, executor_id, reviewer_type, reviewer_id,
+	creator_type, creator_id,
 	parent_issue_id, position, start_date, due_date, created_at, updated_at, last_activity_at,
 	number, project_id, metadata, stage, properties, revision, group_total
 FROM ranked
 WHERE rn > %s AND rn <= %s + %s
 ORDER BY
-	CASE assignee_type
+	CASE COALESCE(executor_type, owner_type)
 		WHEN 'member' THEN 0
 		WHEN 'agent' THEN 1
 		WHEN 'team' THEN 2
 		ELSE 3
 	END,
-	assignee_type NULLS LAST,
-	assignee_id NULLS LAST,
-	rn`, intraGroupOrder, strings.Join(where, " AND "), offsetRef, offsetRef, limitRef)
+	COALESCE(executor_type, owner_type) NULLS LAST,
+	COALESCE(executor_id, owner_id) NULLS LAST,
+	rn`, effectiveAssigneeTypeSQL, effectiveAssigneeIDSQL, effectiveAssigneeTypeSQL, effectiveAssigneeIDSQL, intraGroupOrder, strings.Join(where, " AND "), offsetRef, offsetRef, limitRef)
 
 	rows, err := h.DB.Query(ctx, query, args...)
 	if err != nil {
@@ -2138,8 +2304,12 @@ ORDER BY
 			&row.Description,
 			&row.Status,
 			&row.Priority,
-			&row.AssigneeType,
-			&row.AssigneeID,
+			&row.OwnerType,
+			&row.OwnerID,
+			&row.ExecutorType,
+			&row.ExecutorID,
+			&row.ReviewerType,
+			&row.ReviewerID,
 			&row.CreatorType,
 			&row.CreatorID,
 			&row.ParentIssueID,
@@ -2182,15 +2352,23 @@ ORDER BY
 	groups := []IssueAssigneeGroupResponse{}
 	groupIndex := map[string]int{}
 	for _, row := range groupedRows {
-		groupID := assigneeGroupID(row.AssigneeType, row.AssigneeID)
+		groupType := row.ExecutorType
+		groupIDVal := row.ExecutorID
+		if !groupType.Valid {
+			groupType = row.OwnerType
+			groupIDVal = row.OwnerID
+		}
+		groupID := assigneeGroupID(groupType, groupIDVal)
 		idx, exists := groupIndex[groupID]
 		if !exists {
 			idx = len(groups)
 			groupIndex[groupID] = idx
 			groups = append(groups, IssueAssigneeGroupResponse{
 				ID:           groupID,
-				AssigneeType: textToPtr(row.AssigneeType),
-				AssigneeID:   uuidToPtr(row.AssigneeID),
+				OwnerType:    textToPtr(row.OwnerType),
+				OwnerID:      uuidToPtr(row.OwnerID),
+				ExecutorType: textToPtr(row.ExecutorType),
+				ExecutorID:   uuidToPtr(row.ExecutorID),
 				Issues:       []IssueResponse{},
 				Total:        row.GroupTotal,
 			})
@@ -2448,7 +2626,7 @@ func (h *Handler) ChildIssueProgress(w http.ResponseWriter, r *http.Request) {
 // the user submits via manual or agent mode.
 type QuickCreateIssueRequest struct {
 	AgentID       string   `json:"agent_id,omitempty"`
-	TeamID       string   `json:"team_id,omitempty"`
+	TeamID        string   `json:"team_id,omitempty"`
 	Prompt        string   `json:"prompt"`
 	Priority      string   `json:"priority,omitempty"`
 	DueDate       string   `json:"due_date,omitempty"`
@@ -2769,8 +2947,12 @@ type CreateIssueRequest struct {
 	Description   *string  `json:"description"`
 	Status        string   `json:"status"`
 	Priority      string   `json:"priority"`
-	AssigneeType  *string  `json:"assignee_type"`
-	AssigneeID    *string  `json:"assignee_id"`
+	OwnerType     *string  `json:"owner_type"`
+	OwnerID       *string  `json:"owner_id"`
+	ExecutorType  *string  `json:"executor_type"`
+	ExecutorID    *string  `json:"executor_id"`
+	ReviewerType  *string  `json:"reviewer_type"`
+	ReviewerID    *string  `json:"reviewer_id"`
 	ParentIssueID *string  `json:"parent_issue_id"`
 	ProjectID     *string  `json:"project_id"`
 	Stage         *int32   `json:"stage,omitempty"`
@@ -2842,11 +3024,11 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 
 	var assigneeType pgtype.Text
 	var assigneeID pgtype.UUID
-	if req.AssigneeType != nil {
-		assigneeType = pgtype.Text{String: *req.AssigneeType, Valid: true}
+	if req.ExecutorType != nil {
+		assigneeType = pgtype.Text{String: *req.ExecutorType, Valid: true}
 	}
-	if req.AssigneeID != nil {
-		id, ok := parseUUIDOrBadRequest(w, *req.AssigneeID, "assignee_id")
+	if req.ExecutorID != nil {
+		id, ok := parseUUIDOrBadRequest(w, *req.ExecutorID, "executor_id")
 		if !ok {
 			return
 		}
@@ -2887,6 +3069,43 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 
 	if status, msg := h.validateAssigneePair(r.Context(), r, workspaceID, assigneeType, assigneeID, assignScope); status != 0 {
 		writeError(w, status, msg)
+		return
+	}
+
+	var ownerType pgtype.Text
+	var ownerID pgtype.UUID
+	if req.OwnerType != nil {
+		ownerType = pgtype.Text{String: *req.OwnerType, Valid: true}
+	}
+	if req.OwnerID != nil {
+		id, ok := parseUUIDOrBadRequest(w, *req.OwnerID, "owner_id")
+		if !ok {
+			return
+		}
+		ownerID = id
+	}
+	if status, msg := h.validateOwnerPair(r.Context(), wsUUID, ownerType, ownerID); status != 0 {
+		writeError(w, status, msg)
+		return
+	}
+
+	var reviewerType pgtype.Text
+	var reviewerID pgtype.UUID
+	if req.ReviewerType != nil {
+		reviewerType = pgtype.Text{String: *req.ReviewerType, Valid: true}
+	}
+	if req.ReviewerID != nil {
+		id, ok := parseUUIDOrBadRequest(w, *req.ReviewerID, "reviewer_id")
+		if !ok {
+			return
+		}
+		reviewerID = id
+	}
+	if msg := issueroles.ValidatePair(textOrEmpty(reviewerType), uuidOrEmpty(reviewerID), "reviewer", issueroles.IsReviewerType); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
+		return
+	}
+	if !h.enforceIssueWorkflowGate(r.Context(), w, wsUUID, "", status, actorRefOrNil(assigneeType, assigneeID), actorRefOrNil(reviewerType, reviewerID)) {
 		return
 	}
 
@@ -3024,8 +3243,12 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 		Description:    ptrToText(req.Description),
 		Status:         status,
 		Priority:       priority,
-		AssigneeType:   assigneeType,
-		AssigneeID:     assigneeID,
+		ExecutorType:   assigneeType,
+		ExecutorID:     assigneeID,
+		OwnerType:      ownerType,
+		OwnerID:        ownerID,
+		ReviewerType:   reviewerType,
+		ReviewerID:     reviewerID,
 		CreatorType:    creatorType,
 		CreatorID:      parseUUID(actualCreatorID),
 		ParentIssueID:  parentIssueID,
@@ -3127,8 +3350,12 @@ type UpdateIssueRequest struct {
 	DescriptionBase *string  `json:"description_base,omitempty"`
 	Status          *string  `json:"status"`
 	Priority        *string  `json:"priority"`
-	AssigneeType    *string  `json:"assignee_type"`
-	AssigneeID      *string  `json:"assignee_id"`
+	OwnerType       *string  `json:"owner_type"`
+	OwnerID         *string  `json:"owner_id"`
+	ExecutorType    *string  `json:"executor_type"`
+	ExecutorID      *string  `json:"executor_id"`
+	ReviewerType    *string  `json:"reviewer_type"`
+	ReviewerID      *string  `json:"reviewer_id"`
 	Position        *float64 `json:"position"`
 	StartDate       *string  `json:"start_date"`
 	DueDate         *string  `json:"due_date"`
@@ -3203,15 +3430,27 @@ func mergeIssueChannelMediaDescription(current, incoming string, base *string, a
 }
 
 func refreshUntouchedNullableIssueParams(params *db.UpdateIssueParams, current db.Issue, rawFields map[string]json.RawMessage) {
-	_, assigneeTypeTouched := rawFields["assignee_type"]
-	_, assigneeIDTouched := rawFields["assignee_id"]
+	_, assigneeTypeTouched := rawFields["executor_type"]
+	_, assigneeIDTouched := rawFields["executor_id"]
 	// Assignee type and id form one validated value. If either half was
 	// supplied, retain the pre-validation counterpart in params rather than
 	// combining the supplied half with a concurrently-written counterpart that
 	// has never been validated with it.
 	if !assigneeTypeTouched && !assigneeIDTouched {
-		params.AssigneeType = current.AssigneeType
-		params.AssigneeID = current.AssigneeID
+		params.ExecutorType = current.ExecutorType
+		params.ExecutorID = current.ExecutorID
+	}
+	_, ownerTypeTouched := rawFields["owner_type"]
+	_, ownerIDTouched := rawFields["owner_id"]
+	if !ownerTypeTouched && !ownerIDTouched {
+		params.OwnerType = current.OwnerType
+		params.OwnerID = current.OwnerID
+	}
+	_, reviewerTypeTouched := rawFields["reviewer_type"]
+	_, reviewerIDTouched := rawFields["reviewer_id"]
+	if !reviewerTypeTouched && !reviewerIDTouched {
+		params.ReviewerType = current.ReviewerType
+		params.ReviewerID = current.ReviewerID
 	}
 	if _, touched := rawFields["start_date"]; !touched {
 		params.StartDate = current.StartDate
@@ -3357,8 +3596,12 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	// Pre-fill nullable fields (bare sqlc.narg) with current values
 	params := db.UpdateIssueParams{
 		ID:            prevIssue.ID,
-		AssigneeType:  prevIssue.AssigneeType,
-		AssigneeID:    prevIssue.AssigneeID,
+		OwnerType:     prevIssue.OwnerType,
+		OwnerID:       prevIssue.OwnerID,
+		ExecutorType:  prevIssue.ExecutorType,
+		ExecutorID:    prevIssue.ExecutorID,
+		ReviewerType:  prevIssue.ReviewerType,
+		ReviewerID:    prevIssue.ReviewerID,
 		StartDate:     prevIssue.StartDate,
 		DueDate:       prevIssue.DueDate,
 		ParentIssueID: prevIssue.ParentIssueID,
@@ -3406,22 +3649,58 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 		params.Position = pgtype.Float8{Float64: *req.Position, Valid: true}
 	}
 	// Nullable fields — only override when explicitly present in JSON
-	if _, ok := rawFields["assignee_type"]; ok {
-		if req.AssigneeType != nil {
-			params.AssigneeType = pgtype.Text{String: *req.AssigneeType, Valid: true}
+	if _, ok := rawFields["executor_type"]; ok {
+		if req.ExecutorType != nil {
+			params.ExecutorType = pgtype.Text{String: *req.ExecutorType, Valid: true}
 		} else {
-			params.AssigneeType = pgtype.Text{Valid: false} // explicit null = unassign
+			params.ExecutorType = pgtype.Text{Valid: false} // explicit null = unassign
 		}
 	}
-	if _, ok := rawFields["assignee_id"]; ok {
-		if req.AssigneeID != nil {
-			id, ok := parseUUIDOrBadRequest(w, *req.AssigneeID, "assignee_id")
+	if _, ok := rawFields["executor_id"]; ok {
+		if req.ExecutorID != nil {
+			id, ok := parseUUIDOrBadRequest(w, *req.ExecutorID, "executor_id")
 			if !ok {
 				return
 			}
-			params.AssigneeID = id
+			params.ExecutorID = id
 		} else {
-			params.AssigneeID = pgtype.UUID{Valid: false} // explicit null = unassign
+			params.ExecutorID = pgtype.UUID{Valid: false} // explicit null = unassign
+		}
+	}
+	if _, ok := rawFields["owner_type"]; ok {
+		if req.OwnerType != nil {
+			params.OwnerType = pgtype.Text{String: *req.OwnerType, Valid: true}
+		} else {
+			params.OwnerType = pgtype.Text{Valid: false}
+		}
+	}
+	if _, ok := rawFields["owner_id"]; ok {
+		if req.OwnerID != nil {
+			id, ok := parseUUIDOrBadRequest(w, *req.OwnerID, "owner_id")
+			if !ok {
+				return
+			}
+			params.OwnerID = id
+		} else {
+			params.OwnerID = pgtype.UUID{Valid: false}
+		}
+	}
+	if _, ok := rawFields["reviewer_type"]; ok {
+		if req.ReviewerType != nil {
+			params.ReviewerType = pgtype.Text{String: *req.ReviewerType, Valid: true}
+		} else {
+			params.ReviewerType = pgtype.Text{Valid: false}
+		}
+	}
+	if _, ok := rawFields["reviewer_id"]; ok {
+		if req.ReviewerID != nil {
+			id, ok := parseUUIDOrBadRequest(w, *req.ReviewerID, "reviewer_id")
+			if !ok {
+				return
+			}
+			params.ReviewerID = id
+		} else {
+			params.ReviewerID = pgtype.UUID{Valid: false}
 		}
 	}
 	if _, ok := rawFields["start_date"]; ok {
@@ -3523,7 +3802,7 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Validate the resulting (assignee_type, assignee_id) pair when the caller
+	// Validate the resulting (executor_type, executor_id) pair when the caller
 	// touches either field. Existing data on the issue is left alone if the
 	// caller is not changing it.
 	//
@@ -3532,13 +3811,36 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	// creating a child under it. Before MUL-6691 this passed nil, so the reported
 	// flow — create DRA-109 unassigned, then assign it — was refused even though
 	// the identical lineage was accepted on the create path.
-	_, touchedType := rawFields["assignee_type"]
-	_, touchedID := rawFields["assignee_id"]
+	_, touchedType := rawFields["executor_type"]
+	_, touchedID := rawFields["executor_id"]
 	if touchedType || touchedID {
-		if status, msg := h.validateAssigneePair(r.Context(), r, workspaceID, params.AssigneeType, params.AssigneeID, scopeExistingIssue(&prevIssue)); status != 0 {
+		if status, msg := h.validateAssigneePair(r.Context(), r, workspaceID, params.ExecutorType, params.ExecutorID, scopeExistingIssue(&prevIssue)); status != 0 {
 			writeError(w, status, msg)
 			return
 		}
+	}
+	_, touchedOwnerType := rawFields["owner_type"]
+	_, touchedOwnerID := rawFields["owner_id"]
+	if touchedOwnerType || touchedOwnerID {
+		if status, msg := h.validateOwnerPair(r.Context(), prevIssue.WorkspaceID, params.OwnerType, params.OwnerID); status != 0 {
+			writeError(w, status, msg)
+			return
+		}
+	}
+	_, touchedReviewerType := rawFields["reviewer_type"]
+	_, touchedReviewerID := rawFields["reviewer_id"]
+	if touchedReviewerType || touchedReviewerID {
+		if msg := issueroles.ValidatePair(textOrEmpty(params.ReviewerType), uuidOrEmpty(params.ReviewerID), "reviewer", issueroles.IsReviewerType); msg != "" {
+			writeError(w, http.StatusBadRequest, msg)
+			return
+		}
+	}
+	nextStatus := prevIssue.Status
+	if params.Status.Valid {
+		nextStatus = params.Status.String
+	}
+	if !h.enforceIssueWorkflowGate(r.Context(), w, prevIssue.WorkspaceID, prevIssue.Status, nextStatus, actorRefOrNil(params.ExecutorType, params.ExecutorID), actorRefOrNil(params.ReviewerType, params.ReviewerID)) {
+		return
 	}
 
 	attachmentIDs, ok := parseUUIDSliceOrBadRequest(w, req.AttachmentIDs, "attachment_ids")
@@ -3591,8 +3893,10 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	slog.Info("issue updated", append(logger.RequestAttrs(r), "issue_id", id, "workspace_id", workspaceID)...)
 
 	h.fillStatusCategory(r.Context(), issue.WorkspaceID, &resp)
-	assigneeChanged := (req.AssigneeType != nil || req.AssigneeID != nil) &&
-		(prevIssue.AssigneeType.String != issue.AssigneeType.String || uuidToString(prevIssue.AssigneeID) != uuidToString(issue.AssigneeID))
+	prevResp := issueToResponse(prevIssue, prefix)
+	prevEffType, prevEffID := prevResp.EffectiveAssignee()
+	nextEffType, nextEffID := resp.EffectiveAssignee()
+	assigneeChanged := !assigneePtrsEqual(prevEffType, prevEffID, nextEffType, nextEffID)
 	statusChanged := req.Status != nil && prevIssue.Status != issue.Status
 	priorityChanged := req.Priority != nil && prevIssue.Priority != issue.Priority
 	// project_changed gates the client's per-project issue-list refetch the way
@@ -3620,8 +3924,10 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 		"description_changed": descriptionChanged,
 		"title_changed":       titleChanged,
 		"prev_title":          prevIssue.Title,
-		"prev_assignee_type":  textToPtr(prevIssue.AssigneeType),
-		"prev_assignee_id":    uuidToPtr(prevIssue.AssigneeID),
+		"prev_executor_type":  textToPtr(prevIssue.ExecutorType),
+		"prev_executor_id":    uuidToPtr(prevIssue.ExecutorID),
+		"prev_owner_type":     textToPtr(prevIssue.OwnerType),
+		"prev_owner_id":       uuidToPtr(prevIssue.OwnerID),
 		"prev_status":         prevIssue.Status,
 		"prev_priority":       prevIssue.Priority,
 		"prev_start_date":     prevStartDate,
@@ -3681,7 +3987,7 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// validateAssigneePair verifies the (assignee_type, assignee_id) pair refers
+// validateAssigneePair verifies the (executor_type, executor_id) pair refers
 // to an existing entity in the workspace. For agent and team assignees it
 // also rejects archived targets and runs the INVOKE gate — canInvokeAgent, not
 // the softer canAccessPrivateAgent view gate: assigning an issue produces a
@@ -3705,28 +4011,20 @@ func (h *Handler) validateAssigneePair(ctx context.Context, r *http.Request, wor
 	}
 	// Exactly one of type/id provided → callers must always pair them.
 	if assigneeType.Valid != assigneeID.Valid {
-		return http.StatusBadRequest, "assignee_type and assignee_id must be provided together"
+		return http.StatusBadRequest, "executor_type and executor_id must be provided together"
 	}
 	wsUUID, err := util.ParseUUID(workspaceID)
 	if err != nil {
 		return http.StatusBadRequest, "invalid workspace_id"
 	}
 	switch assigneeType.String {
-	case "member":
-		if _, err := h.Queries.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
-			UserID:      assigneeID,
-			WorkspaceID: wsUUID,
-		}); err != nil {
-			return http.StatusBadRequest, "assignee_id does not refer to a member of this workspace"
-		}
-		return 0, ""
 	case "agent":
 		agent, err := h.Queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{
 			ID:          assigneeID,
 			WorkspaceID: wsUUID,
 		})
 		if err != nil {
-			return http.StatusBadRequest, "assignee_id does not refer to an agent of this workspace"
+			return http.StatusBadRequest, "executor_id does not refer to an agent of this workspace"
 		}
 		if agent.ArchivedAt.Valid {
 			return http.StatusBadRequest, "cannot assign to archived agent"
@@ -3751,7 +4049,7 @@ func (h *Handler) validateAssigneePair(ctx context.Context, r *http.Request, wor
 			WorkspaceID: wsUUID,
 		})
 		if err != nil {
-			return http.StatusBadRequest, "assignee_id does not refer to a team in this workspace"
+			return http.StatusBadRequest, "executor_id does not refer to a team in this workspace"
 		}
 		if team.ArchivedAt.Valid {
 			return http.StatusBadRequest, "cannot assign to an archived team"
@@ -3769,7 +4067,7 @@ func (h *Handler) validateAssigneePair(ctx context.Context, r *http.Request, wor
 		}
 		return 0, ""
 	default:
-		return http.StatusBadRequest, "assignee_type must be 'member', 'agent', or 'team'"
+		return http.StatusBadRequest, "executor_type must be 'agent' or 'team'"
 	}
 }
 
@@ -3802,10 +4100,10 @@ func (h *Handler) shouldEnqueueAssigneeFallback(ctx context.Context, issue db.Is
 }
 
 func (h *Handler) assigneeFallbackAgent(ctx context.Context, issue db.Issue, actorType, actorID string, opts commentTriggerComputeOptions) (db.Agent, bool, bool) {
-	if !issue.AssigneeType.Valid || issue.AssigneeType.String != "agent" || !issue.AssigneeID.Valid {
+	if !issue.ExecutorType.Valid || issue.ExecutorType.String != "agent" || !issue.ExecutorID.Valid {
 		return db.Agent{}, false, false
 	}
-	agent, err := h.Queries.GetAgent(ctx, issue.AssigneeID)
+	agent, err := h.Queries.GetAgent(ctx, issue.ExecutorID)
 	if err != nil || !agent.RuntimeID.Valid || agent.ArchivedAt.Valid {
 		return db.Agent{}, false, false
 	}
@@ -3814,7 +4112,7 @@ func (h *Handler) assigneeFallbackAgent(ctx context.Context, issue db.Issue, act
 	}
 	// Coalescing queue: pending is still a valid route target, but callers
 	// that actually enqueue tasks use this flag to avoid piling on duplicates.
-	hasPending, err := h.hasPendingTaskForIssueAndAgent(ctx, issue.ID, issue.AssigneeID, opts)
+	hasPending, err := h.hasPendingTaskForIssueAndAgent(ctx, issue.ID, issue.ExecutorID, opts)
 	if err != nil {
 		return db.Agent{}, false, false
 	}
@@ -3861,11 +4159,11 @@ func (h *Handler) isAgentRunningOnIssue(r *http.Request, actorType string, issue
 // isAgentAssigneeReady checks if an issue is assigned to an active agent
 // with a valid runtime.
 func (h *Handler) isAgentAssigneeReady(ctx context.Context, issue db.Issue) bool {
-	if !issue.AssigneeType.Valid || issue.AssigneeType.String != "agent" || !issue.AssigneeID.Valid {
+	if !issue.ExecutorType.Valid || issue.ExecutorType.String != "agent" || !issue.ExecutorID.Valid {
 		return false
 	}
 
-	agent, err := h.Queries.GetAgent(ctx, issue.AssigneeID)
+	agent, err := h.Queries.GetAgent(ctx, issue.ExecutorID)
 	if err != nil {
 		return false
 	}
@@ -4069,7 +4367,7 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 		req.Updates.Priority != nil ||
 		req.Updates.Position != nil
 	if !hasMutation {
-		for _, k := range []string{"assignee_type", "assignee_id", "start_date", "due_date", "parent_issue_id", "project_id", "stage"} {
+		for _, k := range []string{"executor_type", "executor_id", "start_date", "due_date", "parent_issue_id", "project_id", "stage"} {
 			if _, ok := rawUpdates[k]; ok {
 				hasMutation = true
 				break
@@ -4150,8 +4448,12 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 
 		params := db.UpdateIssueParams{
 			ID:            prevIssue.ID,
-			AssigneeType:  prevIssue.AssigneeType,
-			AssigneeID:    prevIssue.AssigneeID,
+			OwnerType:     prevIssue.OwnerType,
+			OwnerID:       prevIssue.OwnerID,
+			ExecutorType:  prevIssue.ExecutorType,
+			ExecutorID:    prevIssue.ExecutorID,
+			ReviewerType:  prevIssue.ReviewerType,
+			ReviewerID:    prevIssue.ReviewerID,
 			StartDate:     prevIssue.StartDate,
 			DueDate:       prevIssue.DueDate,
 			ParentIssueID: prevIssue.ParentIssueID,
@@ -4174,22 +4476,58 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 		if req.Updates.Position != nil {
 			params.Position = pgtype.Float8{Float64: *req.Updates.Position, Valid: true}
 		}
-		if _, ok := rawUpdates["assignee_type"]; ok {
-			if req.Updates.AssigneeType != nil {
-				params.AssigneeType = pgtype.Text{String: *req.Updates.AssigneeType, Valid: true}
+		if _, ok := rawUpdates["executor_type"]; ok {
+			if req.Updates.ExecutorType != nil {
+				params.ExecutorType = pgtype.Text{String: *req.Updates.ExecutorType, Valid: true}
 			} else {
-				params.AssigneeType = pgtype.Text{Valid: false}
+				params.ExecutorType = pgtype.Text{Valid: false}
 			}
 		}
-		if _, ok := rawUpdates["assignee_id"]; ok {
-			if req.Updates.AssigneeID != nil {
-				assigneeUUID, err := util.ParseUUID(*req.Updates.AssigneeID)
+		if _, ok := rawUpdates["executor_id"]; ok {
+			if req.Updates.ExecutorID != nil {
+				assigneeUUID, err := util.ParseUUID(*req.Updates.ExecutorID)
 				if err != nil {
 					continue
 				}
-				params.AssigneeID = assigneeUUID
+				params.ExecutorID = assigneeUUID
 			} else {
-				params.AssigneeID = pgtype.UUID{Valid: false}
+				params.ExecutorID = pgtype.UUID{Valid: false}
+			}
+		}
+		if _, ok := rawUpdates["owner_type"]; ok {
+			if req.Updates.OwnerType != nil {
+				params.OwnerType = pgtype.Text{String: *req.Updates.OwnerType, Valid: true}
+			} else {
+				params.OwnerType = pgtype.Text{Valid: false}
+			}
+		}
+		if _, ok := rawUpdates["owner_id"]; ok {
+			if req.Updates.OwnerID != nil {
+				ownerUUID, err := util.ParseUUID(*req.Updates.OwnerID)
+				if err != nil {
+					continue
+				}
+				params.OwnerID = ownerUUID
+			} else {
+				params.OwnerID = pgtype.UUID{Valid: false}
+			}
+		}
+		if _, ok := rawUpdates["reviewer_type"]; ok {
+			if req.Updates.ReviewerType != nil {
+				params.ReviewerType = pgtype.Text{String: *req.Updates.ReviewerType, Valid: true}
+			} else {
+				params.ReviewerType = pgtype.Text{Valid: false}
+			}
+		}
+		if _, ok := rawUpdates["reviewer_id"]; ok {
+			if req.Updates.ReviewerID != nil {
+				reviewerUUID, err := util.ParseUUID(*req.Updates.ReviewerID)
+				if err != nil {
+					continue
+				}
+				params.ReviewerID = reviewerUUID
+			} else {
+				params.ReviewerID = pgtype.UUID{Valid: false}
 			}
 		}
 		if _, ok := rawUpdates["start_date"]; ok {
@@ -4278,12 +4616,33 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 		// agent-reachable authorization point — a task token authenticates as its
 		// bound workspace member, so requireUserID above is satisfied and
 		// resolveActor still classifies the caller as an agent (MUL-6691).
-		_, batchTouchedType := rawUpdates["assignee_type"]
-		_, batchTouchedID := rawUpdates["assignee_id"]
+		_, batchTouchedType := rawUpdates["executor_type"]
+		_, batchTouchedID := rawUpdates["executor_id"]
 		if batchTouchedType || batchTouchedID {
-			if status, _ := h.validateAssigneePair(r.Context(), r, workspaceID, params.AssigneeType, params.AssigneeID, scopeExistingIssue(&prevIssue)); status != 0 {
+			if status, _ := h.validateAssigneePair(r.Context(), r, workspaceID, params.ExecutorType, params.ExecutorID, scopeExistingIssue(&prevIssue)); status != 0 {
 				continue
 			}
+		}
+		_, batchTouchedOwnerType := rawUpdates["owner_type"]
+		_, batchTouchedOwnerID := rawUpdates["owner_id"]
+		if batchTouchedOwnerType || batchTouchedOwnerID {
+			if status, _ := h.validateOwnerPair(r.Context(), prevIssue.WorkspaceID, params.OwnerType, params.OwnerID); status != 0 {
+				continue
+			}
+		}
+		_, batchTouchedReviewerType := rawUpdates["reviewer_type"]
+		_, batchTouchedReviewerID := rawUpdates["reviewer_id"]
+		if batchTouchedReviewerType || batchTouchedReviewerID {
+			if msg := issueroles.ValidatePair(textOrEmpty(params.ReviewerType), uuidOrEmpty(params.ReviewerID), "reviewer", issueroles.IsReviewerType); msg != "" {
+				continue
+			}
+		}
+		batchNextStatus := prevIssue.Status
+		if params.Status.Valid {
+			batchNextStatus = params.Status.String
+		}
+		if v, err := h.issueWorkflowViolation(r.Context(), prevIssue.WorkspaceID, prevIssue.Status, batchNextStatus, actorRefOrNil(params.ExecutorType, params.ExecutorID), actorRefOrNil(params.ReviewerType, params.ReviewerID)); err != nil || v != nil {
+			continue
 		}
 
 		var issue db.Issue
@@ -4321,18 +4680,24 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 		actorType, actorID := h.resolveActor(r, userID, workspaceID)
 
 		fillBatch(&resp)
-		assigneeChanged := (req.Updates.AssigneeType != nil || req.Updates.AssigneeID != nil) &&
-			(prevIssue.AssigneeType.String != issue.AssigneeType.String || uuidToString(prevIssue.AssigneeID) != uuidToString(issue.AssigneeID))
+		prevResp := issueToResponse(prevIssue, prefix)
+		prevEffType, prevEffID := prevResp.EffectiveAssignee()
+		nextEffType, nextEffID := resp.EffectiveAssignee()
+		assigneeChanged := !assigneePtrsEqual(prevEffType, prevEffID, nextEffType, nextEffID)
 		statusChanged := req.Updates.Status != nil && prevIssue.Status != issue.Status
 		priorityChanged := req.Updates.Priority != nil && prevIssue.Priority != issue.Priority
 		projectChanged := req.Updates.ProjectID != nil && uuidToString(prevIssue.ProjectID) != uuidToString(issue.ProjectID)
 
 		h.publish(protocol.EventIssueUpdated, workspaceID, actorType, actorID, map[string]any{
-			"issue":            resp,
-			"assignee_changed": assigneeChanged,
-			"status_changed":   statusChanged,
-			"priority_changed": priorityChanged,
-			"project_changed":  projectChanged,
+			"issue":              resp,
+			"assignee_changed":   assigneeChanged,
+			"status_changed":     statusChanged,
+			"priority_changed":   priorityChanged,
+			"project_changed":    projectChanged,
+			"prev_executor_type": textToPtr(prevIssue.ExecutorType),
+			"prev_executor_id":   uuidToPtr(prevIssue.ExecutorID),
+			"prev_owner_type":    textToPtr(prevIssue.OwnerType),
+			"prev_owner_id":      uuidToPtr(prevIssue.OwnerID),
 		})
 
 		// Reassignment does not cancel existing tasks (#4963 / MUL-4113) —

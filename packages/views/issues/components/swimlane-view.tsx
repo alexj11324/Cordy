@@ -93,8 +93,10 @@ type SwimLaneMoveTargetUpdates = Pick<
   UpdateIssueRequest,
   | "parent_issue_id"
   | "project_id"
-  | "assignee_type"
-  | "assignee_id"
+  | "owner_type"
+  | "owner_id"
+  | "executor_type"
+  | "executor_id"
   | "status"
   | "position"
 >;
@@ -411,9 +413,9 @@ function buildAssigneeLanes(
 ): LaneGroup[] {
   const seen = new Map<string, LaneGroup>();
   for (const issue of visibleIssues) {
-    if (issue.assignee_type === null || issue.assignee_id === null) continue;
-    const assigneeType: IssueAssigneeType = issue.assignee_type;
-    const assigneeId = issue.assignee_id;
+    const assigneeType = (issue.executor_type ?? issue.owner_type) as IssueAssigneeType | null;
+    const assigneeId = issue.executor_id ?? issue.owner_id;
+    if (assigneeType === null || assigneeId === null) continue;
     const rawId = `${assigneeType}:${assigneeId}`;
     const key = `assignee:${rawId}`;
     if (seen.has(key)) continue;
@@ -428,11 +430,12 @@ function buildAssigneeLanes(
       project: null,
       actor: { type: assigneeType, id: assigneeId },
       matches: (i) =>
-        i.assignee_type === assigneeType && i.assignee_id === assigneeId,
-      moveUpdates: {
-        assignee_type: assigneeType,
-        assignee_id: assigneeId,
-      },
+        (i.executor_type ?? i.owner_type) === assigneeType &&
+        (i.executor_id ?? i.owner_id) === assigneeId,
+      moveUpdates:
+        assigneeType === "member"
+          ? { owner_type: "member", owner_id: assigneeId, executor_type: null, executor_id: null }
+          : { executor_type: assigneeType, executor_id: assigneeId },
     });
   }
 
@@ -463,8 +466,8 @@ function buildAssigneeLanes(
       parentIssue: null,
       project: null,
       actor: null,
-      matches: (i) => i.assignee_id === null,
-      moveUpdates: { assignee_type: null, assignee_id: null },
+      matches: (i) => i.executor_id === null,
+      moveUpdates: { executor_type: null, executor_id: null },
     },
     ...ordered,
   ];
@@ -528,12 +531,19 @@ function buildServerLanes(
         actor,
         matches: (issue) =>
           actor
-            ? issue.assignee_type === actor.type &&
-              issue.assignee_id === actor.id
-            : issue.assignee_type === null && issue.assignee_id === null,
+            ? actor.type === "member"
+              ? issue.owner_type === "member" && issue.owner_id === actor.id
+              : issue.executor_type === actor.type &&
+                issue.executor_id === actor.id
+            : issue.executor_type === null &&
+              issue.executor_id === null &&
+              issue.owner_type === null &&
+              issue.owner_id === null,
         moveUpdates: actor
-          ? { assignee_type: actor.type, assignee_id: actor.id }
-          : { assignee_type: null, assignee_id: null },
+          ? actor.type === "member"
+            ? { owner_type: "member" as const, owner_id: actor.id, executor_type: null, executor_id: null }
+            : { executor_type: actor.type, executor_id: actor.id }
+          : { executor_type: null, executor_id: null, owner_type: null, owner_id: null },
         total: descriptor.count,
         serverCellKeys,
       }];

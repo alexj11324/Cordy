@@ -387,10 +387,14 @@ function ScheduledRow({
           </span>
           <span className="truncate flex-1">{issue.title}</span>
           {project && <ProjectIcon project={project} size="sm" />}
-          {issue.assignee_type && issue.assignee_id && (
+          {(issue.executor_type && issue.executor_id
+            ? { type: issue.executor_type, id: issue.executor_id }
+            : issue.owner_type && issue.owner_id
+              ? { type: issue.owner_type, id: issue.owner_id }
+              : null) && (
             <ActorAvatar
-              actorType={issue.assignee_type}
-              actorId={issue.assignee_id}
+              actorType={(issue.executor_type ?? issue.owner_type)!}
+              actorId={(issue.executor_id ?? issue.owner_id)!}
               size="sm"
               enableHoverCard
             />

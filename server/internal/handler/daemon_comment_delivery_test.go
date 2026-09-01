@@ -353,7 +353,7 @@ func TestClaimTaskByRuntime_CoalescedOnlyStaleTaskDoesNotReuseDeletedTriggerCapa
 		t.Skip("database not available")
 	}
 	fixture := createCommentDeliveryFixture(t, "Deleted trigger stale claim")
-	if _, err := testPool.Exec(context.Background(), `UPDATE issue SET assignee_type = 'agent', assignee_id = $2 WHERE id = $1`, fixture.issueID, fixture.agentID); err != nil {
+	if _, err := testPool.Exec(context.Background(), `UPDATE issue SET executor_type = 'agent', executor_id = $2 WHERE id = $1`, fixture.issueID, fixture.agentID); err != nil {
 		t.Fatalf("assign stale-claim issue: %v", err)
 	}
 	if _, err := testPool.Exec(context.Background(), `DELETE FROM comment WHERE id = $1`, fixture.commentID[2]); err != nil {
@@ -386,7 +386,7 @@ func TestUpdateComment_RequeuesSurvivingCoalescedBatch(t *testing.T) {
 		t.Skip("database not available")
 	}
 	fixture := createCommentDeliveryFixture(t, "Edited trigger batch repair")
-	if _, err := testPool.Exec(context.Background(), `UPDATE issue SET assignee_type = 'agent', assignee_id = $2 WHERE id = $1`, fixture.issueID, fixture.agentID); err != nil {
+	if _, err := testPool.Exec(context.Background(), `UPDATE issue SET executor_type = 'agent', executor_id = $2 WHERE id = $1`, fixture.issueID, fixture.agentID); err != nil {
 		t.Fatalf("assign edited-trigger issue: %v", err)
 	}
 
@@ -408,7 +408,7 @@ func TestDeleteComment_RequeuesSurvivingCoalescedBatch(t *testing.T) {
 		t.Skip("database not available")
 	}
 	fixture := createCommentDeliveryFixture(t, "Deleted trigger batch repair")
-	if _, err := testPool.Exec(context.Background(), `UPDATE issue SET assignee_type = 'agent', assignee_id = $2 WHERE id = $1`, fixture.issueID, fixture.agentID); err != nil {
+	if _, err := testPool.Exec(context.Background(), `UPDATE issue SET executor_type = 'agent', executor_id = $2 WHERE id = $1`, fixture.issueID, fixture.agentID); err != nil {
 		t.Fatalf("assign deleted-trigger issue: %v", err)
 	}
 
@@ -435,7 +435,7 @@ func TestUpdateComment_CancelsAndRequeuesWhenEditedInputIsCoalesced(t *testing.T
 		t.Skip("database not available")
 	}
 	fixture := createCommentDeliveryFixture(t, "Edited coalesced input repair")
-	if _, err := testPool.Exec(context.Background(), `UPDATE issue SET assignee_type = 'agent', assignee_id = $2 WHERE id = $1`, fixture.issueID, fixture.agentID); err != nil {
+	if _, err := testPool.Exec(context.Background(), `UPDATE issue SET executor_type = 'agent', executor_id = $2 WHERE id = $1`, fixture.issueID, fixture.agentID); err != nil {
 		t.Fatalf("assign edited-coalesced issue: %v", err)
 	}
 
@@ -457,7 +457,7 @@ func TestDeleteComment_CancelsAndRequeuesWhenDeletedInputIsCoalesced(t *testing.
 		t.Skip("database not available")
 	}
 	fixture := createCommentDeliveryFixture(t, "Deleted coalesced input repair")
-	if _, err := testPool.Exec(context.Background(), `UPDATE issue SET assignee_type = 'agent', assignee_id = $2 WHERE id = $1`, fixture.issueID, fixture.agentID); err != nil {
+	if _, err := testPool.Exec(context.Background(), `UPDATE issue SET executor_type = 'agent', executor_id = $2 WHERE id = $1`, fixture.issueID, fixture.agentID); err != nil {
 		t.Fatalf("assign deleted-coalesced issue: %v", err)
 	}
 
@@ -477,7 +477,7 @@ func TestDeleteComment_FailureRestoresCancelledCompleteBatch(t *testing.T) {
 		t.Skip("database not available")
 	}
 	fixture := createCommentDeliveryFixture(t, "Failed deletion batch repair")
-	if _, err := testPool.Exec(context.Background(), `UPDATE issue SET assignee_type = 'agent', assignee_id = $2 WHERE id = $1`, fixture.issueID, fixture.agentID); err != nil {
+	if _, err := testPool.Exec(context.Background(), `UPDATE issue SET executor_type = 'agent', executor_id = $2 WHERE id = $1`, fixture.issueID, fixture.agentID); err != nil {
 		t.Fatalf("assign failed-delete issue: %v", err)
 	}
 
@@ -506,7 +506,7 @@ func TestDeleteComment_ConcurrentNoOpIsReportedAndRestoresCancelledBatch(t *test
 		t.Skip("database not available")
 	}
 	fixture := createCommentDeliveryFixture(t, "Concurrent deletion batch repair")
-	if _, err := testPool.Exec(context.Background(), `UPDATE issue SET assignee_type = 'agent', assignee_id = $2 WHERE id = $1`, fixture.issueID, fixture.agentID); err != nil {
+	if _, err := testPool.Exec(context.Background(), `UPDATE issue SET executor_type = 'agent', executor_id = $2 WHERE id = $1`, fixture.issueID, fixture.agentID); err != nil {
 		t.Fatalf("assign concurrent-delete issue: %v", err)
 	}
 
@@ -591,7 +591,7 @@ func TestClaimTaskByRuntime_PayloadOverflowReceiptsOnlyEmbeddedPrefix(t *testing
 	if _, err := testPool.Exec(context.Background(), `UPDATE comment SET content = $2 WHERE id = $1`, fixture.commentID[0], oversized); err != nil {
 		t.Fatalf("make first coalesced comment oversized: %v", err)
 	}
-	if _, err := testPool.Exec(context.Background(), `UPDATE issue SET assignee_type = 'agent', assignee_id = $2 WHERE id = $1`, fixture.issueID, fixture.agentID); err != nil {
+	if _, err := testPool.Exec(context.Background(), `UPDATE issue SET executor_type = 'agent', executor_id = $2 WHERE id = $1`, fixture.issueID, fixture.agentID); err != nil {
 		t.Fatalf("assign overflow issue: %v", err)
 	}
 
@@ -720,7 +720,7 @@ func TestRerunIssue_PreservesSourceCommentPlanAndResetsReceipt(t *testing.T) {
 	ctx := context.Background()
 	runtimeID := createClaimReclaimRuntime(t, ctx, "Comment manual rerun runtime")
 	agentID, issueID := createClaimReclaimAgentAndIssue(t, ctx, runtimeID, "Comment manual rerun agent")
-	if _, err := testPool.Exec(ctx, `UPDATE issue SET assignee_type = 'agent', assignee_id = $2 WHERE id = $1`, issueID, agentID); err != nil {
+	if _, err := testPool.Exec(ctx, `UPDATE issue SET executor_type = 'agent', executor_id = $2 WHERE id = $1`, issueID, agentID); err != nil {
 		t.Fatalf("assign rerun issue: %v", err)
 	}
 
@@ -780,7 +780,7 @@ func TestRerunIssue_PromotesNewestSurvivorAfterSourceTriggerDeleted(t *testing.T
 	}
 	ctx := context.Background()
 	fixture := createCommentDeliveryFixture(t, "Deleted trigger manual rerun")
-	if _, err := testPool.Exec(ctx, `UPDATE issue SET assignee_type = 'agent', assignee_id = $2 WHERE id = $1`, fixture.issueID, fixture.agentID); err != nil {
+	if _, err := testPool.Exec(ctx, `UPDATE issue SET executor_type = 'agent', executor_id = $2 WHERE id = $1`, fixture.issueID, fixture.agentID); err != nil {
 		t.Fatalf("assign deleted-trigger rerun issue: %v", err)
 	}
 	if _, err := testPool.Exec(ctx, `

@@ -108,7 +108,7 @@ func TestCreateAutomation_UnboundAgentRejected(t *testing.T) {
 	w := httptest.NewRecorder()
 	req := newRequest("POST", "/api/automations?workspace_id="+testWorkspaceID, map[string]any{
 		"title":          "must not start unbound",
-		"assignee_id":    agentID,
+		"executor_id":    agentID,
 		"execution_mode": "run_only",
 	})
 	testHandler.CreateAutomation(w, req)
@@ -118,7 +118,7 @@ func TestCreateAutomation_UnboundAgentRejected(t *testing.T) {
 
 	var rows int
 	if err := testPool.QueryRow(ctx,
-		`SELECT count(*) FROM automation WHERE title = 'must not start unbound' AND assignee_id = $1`,
+		`SELECT count(*) FROM automation WHERE title = 'must not start unbound' AND executor_id = $1`,
 		agentID,
 	).Scan(&rows); err != nil {
 		t.Fatalf("count automations: %v", err)
@@ -140,7 +140,7 @@ func TestUpdateAutomation_UnboundAgentCannotResume(t *testing.T) {
 	var automationID string
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO automation (
-			workspace_id, title, assignee_type, assignee_id, status,
+			workspace_id, title, executor_type, executor_id, status,
 			execution_mode, created_by_type, created_by_id
 		)
 		VALUES ($1, 'cannot resume unbound', 'agent', $2, 'active',

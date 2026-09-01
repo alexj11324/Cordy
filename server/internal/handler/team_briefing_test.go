@@ -418,7 +418,7 @@ func queueTeamIssueTaskFor(t *testing.T, teamID, agentID, runtimeID string, issu
 	if err := testPool.QueryRow(ctx, `
 INSERT INTO issue (
 workspace_id, title, status, priority, creator_id, creator_type,
-assignee_type, assignee_id, number, position
+executor_type, executor_id, number, position
 ) VALUES ($1, 'Team briefing claim test', 'todo', 'medium', $2, 'member',
 'team', $3, $4, 0)
 RETURNING id

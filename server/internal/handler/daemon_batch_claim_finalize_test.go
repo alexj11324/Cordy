@@ -285,7 +285,7 @@ func TestClaimTasksByRuntime_RepairsStaleCommentPlan(t *testing.T) {
 	rt := createClaimReclaimRuntime(t, ctx, "Stale plan rt")
 	agentID, issueID := createClaimReclaimAgentAndIssue(t, ctx, rt, "Stale plan agent")
 	// Assign the issue to the agent so the surviving comment re-routes to it.
-	if _, err := testPool.Exec(ctx, `UPDATE issue SET assignee_type='agent', assignee_id=$1 WHERE id=$2`, agentID, issueID); err != nil {
+	if _, err := testPool.Exec(ctx, `UPDATE issue SET executor_type='agent', executor_id=$1 WHERE id=$2`, agentID, issueID); err != nil {
 		t.Fatalf("assign issue: %v", err)
 	}
 

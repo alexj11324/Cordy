@@ -2278,7 +2278,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		// @team-mention (even when the issue itself is assigned to a
 		// plain agent — the MUL-3724 case), sub-issue done callback,
 		// automation team-assignee, and retry-clone inheritance. The old
-		// issue.AssigneeType=="team" gate missed the comment-mention
+		// issue.ExecutorType=="team" gate missed the comment-mention
 		// path, so the leader booted with zero team context and
 		// degraded into doing the work itself instead of orchestrating.
 		//
@@ -2321,9 +2321,9 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 					// would let a guest team push someone else's in-flight issue
 					// to in_review, so we gate it on the issue actually being
 					// assigned to this team.
-					ownsIssueStatus := issue.AssigneeType.Valid &&
-						issue.AssigneeType.String == "team" &&
-						uuidToString(issue.AssigneeID) == uuidToString(team.ID)
+					ownsIssueStatus := issue.ExecutorType.Valid &&
+						issue.ExecutorType.String == "team" &&
+						uuidToString(issue.ExecutorID) == uuidToString(team.ID)
 					briefing := buildTeamLeaderBriefing(r.Context(), h.Queries, team, ownsIssueStatus)
 					if strings.TrimSpace(resp.Agent.Instructions) == "" {
 						resp.Agent.Instructions = briefing

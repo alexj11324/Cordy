@@ -62,8 +62,12 @@ function makeIssue(overrides: Partial<Issue> = {}): Issue {
     description: null,
     status: "todo",
     priority: "none",
-    assignee_type: null,
-    assignee_id: null,
+    owner_type: null,
+    owner_id: null,
+    executor_type: null,
+    executor_id: null,
+    reviewer_type: null,
+    reviewer_id: null,
     creator_type: "member",
     creator_id: "user-1",
     parent_issue_id: null,
@@ -87,8 +91,8 @@ beforeEach(() => {
 describe("BatchActionToolbar picker wiring", () => {
   it("reflects the shared status / priority / assignee of the selected issues", () => {
     const issues = [
-      makeIssue({ id: "a", status: "in_progress", priority: "high", assignee_type: "member", assignee_id: "u-1" }),
-      makeIssue({ id: "b", status: "in_progress", priority: "high", assignee_type: "member", assignee_id: "u-1" }),
+      makeIssue({ id: "a", status: "in_progress", priority: "high", owner_type: "member", owner_id: "u-1" }),
+      makeIssue({ id: "b", status: "in_progress", priority: "high", owner_type: "member", owner_id: "u-1" }),
     ];
     selection.selectedIds = new Set(["a", "b"]);
 
@@ -104,8 +108,8 @@ describe("BatchActionToolbar picker wiring", () => {
 
   it("falls back to an empty (no-checkmark) state when the selection is mixed", () => {
     const issues = [
-      makeIssue({ id: "a", status: "todo", priority: "none", assignee_type: "member", assignee_id: "u-1" }),
-      makeIssue({ id: "b", status: "done", priority: "urgent", assignee_type: "agent", assignee_id: "ag-1" }),
+      makeIssue({ id: "a", status: "todo", priority: "none", owner_type: "member", owner_id: "u-1" }),
+      makeIssue({ id: "b", status: "done", priority: "urgent", executor_type: "agent", executor_id: "ag-1" }),
     ];
     selection.selectedIds = new Set(["a", "b"]);
 
@@ -118,8 +122,8 @@ describe("BatchActionToolbar picker wiring", () => {
 
   it("treats an all-unassigned selection as unassigned, not mixed", () => {
     const issues = [
-      makeIssue({ id: "a", assignee_type: null, assignee_id: null }),
-      makeIssue({ id: "b", assignee_type: null, assignee_id: null }),
+      makeIssue({ id: "a", executor_type: null, executor_id: null }),
+      makeIssue({ id: "b", executor_type: null, executor_id: null }),
     ];
     selection.selectedIds = new Set(["a", "b"]);
 

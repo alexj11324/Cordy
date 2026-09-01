@@ -157,8 +157,8 @@ function IssueHoverCardBody({
   }
 
   const preview = issue.description ? descriptionPreview(issue.description) : "";
-  const assigneeType = issue.assignee_type;
-  const assigneeId = issue.assignee_id;
+  const assigneeType = issue.executor_type ?? issue.owner_type;
+  const assigneeId = issue.executor_id ?? issue.owner_id;
   const hasAssignee = !!assigneeType && !!assigneeId;
   const progress = childProgress?.get(issue.id);
   const hasProgress = !!progress && progress.total > 0;

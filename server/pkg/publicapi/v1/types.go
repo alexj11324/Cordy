@@ -41,8 +41,12 @@ type Issue struct {
 	Status         string         `json:"status"`
 	StatusCategory string         `json:"status_category,omitempty"`
 	Priority       string         `json:"priority"`
-	AssigneeType   *string        `json:"assignee_type"`
-	AssigneeID     *string        `json:"assignee_id"`
+	OwnerType      *string        `json:"owner_type"`
+	OwnerID        *string        `json:"owner_id"`
+	ExecutorType   *string        `json:"executor_type"`
+	ExecutorID     *string        `json:"executor_id"`
+	ReviewerType   *string        `json:"reviewer_type"`
+	ReviewerID     *string        `json:"reviewer_id"`
 	CreatorType    string         `json:"creator_type"`
 	CreatorID      string         `json:"creator_id"`
 	ParentIssueID  *string        `json:"parent_issue_id"`

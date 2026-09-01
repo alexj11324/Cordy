@@ -156,7 +156,7 @@ func TestCreateMediaGatedIssueCommitsDeferredTaskAtomicallyBeforeCreatedEvent(t 
 		if err := pool.QueryRow(ctx, `
 			SELECT i.id, a.runtime_id
 			FROM issue i
-			JOIN agent a ON a.id = i.assignee_id
+			JOIN agent a ON a.id = i.executor_id
 			WHERE i.workspace_id = $1 AND i.title = 'Media-gated issue'`, workspaceUUID).
 			Scan(&issueID, &runtimeID); err != nil {
 			competingErr = fmt.Errorf("discover committed issue: %w", err)
@@ -234,8 +234,8 @@ func TestCreateMediaGatedIssueCommitsDeferredTaskAtomicallyBeforeCreatedEvent(t 
 		Title:        "Media-gated issue",
 		Status:       "todo",
 		Priority:     "medium",
-		AssigneeType: pgtype.Text{String: "agent", Valid: true},
-		AssigneeID:   agentUUID,
+		ExecutorType: pgtype.Text{String: "agent", Valid: true},
+		ExecutorID:   agentUUID,
 		CreatorType:  "member",
 		CreatorID:    userUUID,
 	}, IssueCreateOpts{AssignedAgentRunFireAt: time.Now().Add(time.Minute)})
@@ -283,8 +283,8 @@ func TestHydrateDeferredChannelIssueTaskOverlayDoesNotOverwriteMergedCommentPlan
 	task, err := plainService.EnqueueDeferredChannelIssueTask(ctx, db.Issue{
 		ID:           util.MustParseUUID(issueID),
 		WorkspaceID:  util.MustParseUUID(workspaceID),
-		AssigneeType: pgtype.Text{String: "agent", Valid: true},
-		AssigneeID:   util.MustParseUUID(agentID),
+		ExecutorType: pgtype.Text{String: "agent", Valid: true},
+		ExecutorID:   util.MustParseUUID(agentID),
 		CreatorType:  "member",
 		CreatorID:    userUUID,
 		Priority:     "medium",

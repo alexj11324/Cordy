@@ -19,10 +19,10 @@ func TestAutomationTeamAttribution(t *testing.T) {
 		ap   db.Automation
 		want pgtype.UUID
 	}{
-		{"agent assignee returns zero", db.Automation{AssigneeType: "agent", AssigneeID: id}, pgtype.UUID{}},
-		{"team assignee returns team id", db.Automation{AssigneeType: "team", AssigneeID: id}, id},
-		{"team with invalid id returns zero", db.Automation{AssigneeType: "team", AssigneeID: pgtype.UUID{}}, pgtype.UUID{}},
-		{"unset type defaults to non-team", db.Automation{AssigneeID: id}, pgtype.UUID{}},
+		{"agent assignee returns zero", db.Automation{ExecutorType: "agent", ExecutorID: id}, pgtype.UUID{}},
+		{"team assignee returns team id", db.Automation{ExecutorType: "team", ExecutorID: id}, id},
+		{"team with invalid id returns zero", db.Automation{ExecutorType: "team", ExecutorID: pgtype.UUID{}}, pgtype.UUID{}},
+		{"unset type defaults to non-team", db.Automation{ExecutorID: id}, pgtype.UUID{}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -44,11 +44,11 @@ func TestFormatAdmissionReason(t *testing.T) {
 		raw  string
 		want string
 	}{
-		{"agent archived", db.Automation{AssigneeType: "agent"}, "agent is archived", "assignee agent is archived"},
-		{"team archived", db.Automation{AssigneeType: "team"}, "agent is archived", "team leader agent is archived"},
-		{"agent no runtime", db.Automation{AssigneeType: "agent"}, "agent has no runtime bound", "assignee agent has no runtime bound"},
-		{"team no runtime", db.Automation{AssigneeType: "team"}, "agent has no runtime bound", "team leader agent has no runtime bound"},
-		{"runtime offline retains MUL-1899 suffix", db.Automation{AssigneeType: "agent"}, "agent runtime is offline", "agent runtime is offline at dispatch time"},
+		{"agent archived", db.Automation{ExecutorType: "agent"}, "agent is archived", "assignee agent is archived"},
+		{"team archived", db.Automation{ExecutorType: "team"}, "agent is archived", "team leader agent is archived"},
+		{"agent no runtime", db.Automation{ExecutorType: "agent"}, "agent has no runtime bound", "assignee agent has no runtime bound"},
+		{"team no runtime", db.Automation{ExecutorType: "team"}, "agent has no runtime bound", "team leader agent has no runtime bound"},
+		{"runtime offline retains MUL-1899 suffix", db.Automation{ExecutorType: "agent"}, "agent runtime is offline", "agent runtime is offline at dispatch time"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

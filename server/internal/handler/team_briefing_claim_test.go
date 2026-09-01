@@ -63,14 +63,14 @@ type teamBriefingClaimFixture struct {
 	RuntimeID string
 	AgentID   string // team leader, has the runtime and empty instructions
 	TeamID   string
-	IssueID   string // assignee_type='agent' (NOT team) — reproduces MUL-3724
+	IssueID   string // executor_type='agent' (NOT team) — reproduces MUL-3724
 }
 
 func newTeamBriefingClaimFixture(t *testing.T, ctx context.Context, name string) teamBriefingClaimFixture {
 	t.Helper()
 
 	runtimeID := createClaimReclaimRuntime(t, ctx, name+" runtime")
-	// Leader agent + an issue assigned to that agent (assignee_type='agent').
+	// Leader agent + an issue assigned to that agent (executor_type='agent').
 	agentID, issueID := createClaimReclaimAgentAndIssue(t, ctx, runtimeID, name+" leader")
 	// Force empty instructions so the test asserts the briefing alone — this
 	// mirrors MUL-3724 where the leader's own instructions were blank.
@@ -78,10 +78,10 @@ func newTeamBriefingClaimFixture(t *testing.T, ctx context.Context, name string)
 		t.Fatalf("clear leader instructions: %v", err)
 	}
 	// Make the issue assignee an agent (NOT the team). The pre-fix code only
-	// injected the briefing when issue.assignee_type='team', so this is the
+	// injected the briefing when issue.executor_type='team', so this is the
 	// exact gap the fix closes: a comment @team-mention leader task running on
 	// an agent-assigned issue.
-	if _, err := testPool.Exec(ctx, `UPDATE issue SET assignee_type = 'agent', assignee_id = $2 WHERE id = $1`, issueID, agentID); err != nil {
+	if _, err := testPool.Exec(ctx, `UPDATE issue SET executor_type = 'agent', executor_id = $2 WHERE id = $1`, issueID, agentID); err != nil {
 		t.Fatalf("set issue agent assignee: %v", err)
 	}
 
@@ -126,7 +126,7 @@ func enqueueClaimTask(t *testing.T, ctx context.Context, fx teamBriefingClaimFix
 // TestClaim_LeaderTaskFromCommentMention_InjectsBriefing is the MUL-3724
 // reproduction: a leader task (is_leader_task=true) carrying a team_id, on an
 // issue assigned to a plain AGENT (not the team). The pre-fix gate
-// (issue.assignee_type='team') would NOT inject the briefing here, so the
+// (issue.executor_type='team') would NOT inject the briefing here, so the
 // leader booted with no team context and degraded into doing the work itself.
 // After the fix the briefing is keyed off the task flag + team_id, so it is
 // injected regardless of issue assignee.

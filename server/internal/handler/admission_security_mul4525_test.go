@@ -186,7 +186,7 @@ func TestRerunIssue_PrivateHistoricalAgent(t *testing.T) {
 
 	var issueID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO issue (workspace_id, title, creator_type, creator_id, assignee_type, assignee_id, priority)
+		INSERT INTO issue (workspace_id, title, creator_type, creator_id, executor_type, executor_id, priority)
 		VALUES ($1, 'rerun private agent', 'member', $2, 'agent', $3, 'medium')
 		RETURNING id`, testWorkspaceID, ownerID, agentID).Scan(&issueID); err != nil {
 		t.Fatalf("seed issue: %v", err)
@@ -199,12 +199,12 @@ func TestRerunIssue_PrivateHistoricalAgent(t *testing.T) {
 	// A historical task run by the private agent.
 	orig, err := testHandler.TaskService.EnqueueTaskForIssue(ctx, db.Issue{
 		ID:           util.MustParseUUID(issueID),
-		AssigneeID:   util.MustParseUUID(agentID),
+		ExecutorID:   util.MustParseUUID(agentID),
 		Priority:     "medium",
 		CreatorType:  "member",
 		CreatorID:    util.MustParseUUID(ownerID),
 		WorkspaceID:  util.MustParseUUID(testWorkspaceID),
-		AssigneeType: pgtype.Text{String: "agent", Valid: true},
+		ExecutorType: pgtype.Text{String: "agent", Valid: true},
 	})
 	if err != nil {
 		t.Fatalf("enqueue original task: %v", err)
@@ -217,7 +217,7 @@ func TestRerunIssue_PrivateHistoricalAgent(t *testing.T) {
 	// the current assignee, testUserID would be allowed — so the 403 below proves
 	// the gate is keyed on the historical private agent named by task_id.
 	currentAgentID := createHandlerTestAgent(t, "RerunCurrentAssignee", []byte("[]"))
-	if _, err := testPool.Exec(ctx, `UPDATE issue SET assignee_id = $1 WHERE id = $2`, currentAgentID, issueID); err != nil {
+	if _, err := testPool.Exec(ctx, `UPDATE issue SET executor_id = $1 WHERE id = $2`, currentAgentID, issueID); err != nil {
 		t.Fatalf("reassign issue to second agent: %v", err)
 	}
 

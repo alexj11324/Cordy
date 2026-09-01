@@ -103,7 +103,7 @@ func newTeamCommentTriggerFixture(t *testing.T) teamCommentTriggerFixture {
 
 	var issueID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO issue (workspace_id, creator_type, creator_id, title, assignee_type, assignee_id)
+		INSERT INTO issue (workspace_id, creator_type, creator_id, title, executor_type, executor_id)
 		VALUES ($1, 'member', $2, $3, 'team', $4)
 		RETURNING id
 	`, testWorkspaceID, testUserID, "team comment trigger", teamID).Scan(&issueID); err != nil {

@@ -153,12 +153,12 @@ func TestActivityIssueUpdated_AssigneeChanged(t *testing.T) {
 				Priority:     "medium",
 				CreatorType:  "member",
 				CreatorID:    testUserID,
-				AssigneeType: &assigneeType,
-				AssigneeID:   &assigneeID,
+				ExecutorType: &assigneeType,
+				ExecutorID:   &assigneeID,
 			},
 			"assignee_changed":   true,
-			"prev_assignee_type": (*string)(nil),
-			"prev_assignee_id":   (*string)(nil),
+			"prev_executor_type": (*string)(nil),
+			"prev_executor_id":   (*string)(nil),
 		},
 	})
 

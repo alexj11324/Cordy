@@ -13,8 +13,8 @@ import (
 
 const countAssigneeChangesByActor = `-- name: CountAssigneeChangesByActor :many
 SELECT
-  details->>'to_type' as assignee_type,
-  details->>'to_id' as assignee_id,
+  details->>'to_type' as executor_type,
+  details->>'to_id' as executor_id,
   COUNT(*)::bigint as frequency
 FROM activity_log
 WHERE workspace_id = $1
@@ -32,8 +32,8 @@ type CountAssigneeChangesByActorParams struct {
 }
 
 type CountAssigneeChangesByActorRow struct {
-	AssigneeType interface{} `json:"assignee_type"`
-	AssigneeID   interface{} `json:"assignee_id"`
+	ExecutorType interface{} `json:"executor_type"`
+	ExecutorID   interface{} `json:"executor_id"`
 	Frequency    int64       `json:"frequency"`
 }
 
@@ -47,7 +47,7 @@ func (q *Queries) CountAssigneeChangesByActor(ctx context.Context, arg CountAssi
 	items := []CountAssigneeChangesByActorRow{}
 	for rows.Next() {
 		var i CountAssigneeChangesByActorRow
-		if err := rows.Scan(&i.AssigneeType, &i.AssigneeID, &i.Frequency); err != nil {
+		if err := rows.Scan(&i.ExecutorType, &i.ExecutorID, &i.Frequency); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

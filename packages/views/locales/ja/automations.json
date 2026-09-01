@@ -284,7 +284,7 @@
     "section_agent": "エージェント",
     "section_assignee": "担当者",
     "select_agent": "エージェントを選択",
-    "select_assignee": "エージェントまたはスクワッドを選択",
+    "select_assignee": "エージェントまたはチームを選択",
     "section_project": "プロジェクト",
     "project_hint": "実行環境も決まります — このプロジェクトのリポジトリまたはローカルディレクトリ",
     "no_project": "プロジェクトなし",
@@ -318,7 +318,7 @@
     "schedule_empty": "スケジュールはありません。このオートパイロットは手動で実行したときだけ動きます。",
     "schedule_add": "スケジュールを追加",
     "error_title_required": "オートパイロット名を入力してください。",
-    "error_assignee_required": "実行するエージェントまたはスクワッドを選択してください。",
+    "error_assignee_required": "実行するエージェントまたはチームを選択してください。",
     "output_modes": {
       "create_issue": {
         "label": "タスクを作成",
@@ -417,13 +417,13 @@
     }
   },
   "agent_picker": {
-    "filter_placeholder": "エージェントまたはスクワッドを絞り込み...",
+    "filter_placeholder": "エージェントまたはチームを絞り込み...",
     "select_agent": "エージェントを選択",
-    "select_assignee": "エージェントまたはスクワッドを選択",
+    "select_assignee": "エージェントまたはチームを選択",
     "agents_group": "エージェント",
-    "teams_group": "スクワッド",
+    "teams_group": "チーム",
     "agent_runtime_required": "このエージェントを選択する前にランタイムをバインドしてください",
-    "team_runtime_required": "選択する前に、このスクワッドのリーダーにランタイムをバインドしてください"
+    "team_runtime_required": "選択する前に、このチームのリーダーにランタイムをバインドしてください"
   },
   "timezone_picker": {
     "search_placeholder": "タイムゾーンを検索..."

@@ -94,21 +94,21 @@ func (q *Queries) ArchiveAutomation(ctx context.Context, id pgtype.UUID) error {
 
 const createAutomation = `-- name: CreateAutomation :one
 INSERT INTO automation (
-    workspace_id, title, description, assignee_type, assignee_id,
+    workspace_id, title, description, executor_type, executor_id,
     status, execution_mode, issue_title_template, project_id,
     created_by_type, created_by_id
 ) VALUES (
     $1, $2, $9, $3, $4,
     $5, $6, $10, $11,
     $7, $8
-) RETURNING id, workspace_id, title, description, assignee_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, assignee_type, project_id, pause_reason
+) RETURNING id, workspace_id, title, description, executor_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, executor_type, project_id, pause_reason
 `
 
 type CreateAutomationParams struct {
 	WorkspaceID        pgtype.UUID `json:"workspace_id"`
 	Title              string      `json:"title"`
-	AssigneeType       string      `json:"assignee_type"`
-	AssigneeID         pgtype.UUID `json:"assignee_id"`
+	ExecutorType       string      `json:"executor_type"`
+	ExecutorID         pgtype.UUID `json:"executor_id"`
 	Status             string      `json:"status"`
 	ExecutionMode      string      `json:"execution_mode"`
 	CreatedByType      string      `json:"created_by_type"`
@@ -122,8 +122,8 @@ func (q *Queries) CreateAutomation(ctx context.Context, arg CreateAutomationPara
 	row := q.db.QueryRow(ctx, createAutomation,
 		arg.WorkspaceID,
 		arg.Title,
-		arg.AssigneeType,
-		arg.AssigneeID,
+		arg.ExecutorType,
+		arg.ExecutorID,
 		arg.Status,
 		arg.ExecutionMode,
 		arg.CreatedByType,
@@ -138,7 +138,7 @@ func (q *Queries) CreateAutomation(ctx context.Context, arg CreateAutomationPara
 		&i.WorkspaceID,
 		&i.Title,
 		&i.Description,
-		&i.AssigneeID,
+		&i.ExecutorID,
 		&i.Status,
 		&i.ExecutionMode,
 		&i.IssueTitleTemplate,
@@ -147,7 +147,7 @@ func (q *Queries) CreateAutomation(ctx context.Context, arg CreateAutomationPara
 		&i.LastRunAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.AssigneeType,
+		&i.ExecutorType,
 		&i.ProjectID,
 		&i.PauseReason,
 	)
@@ -234,7 +234,7 @@ type CreateAutomationRunParams struct {
 // Automation Run Management
 // =====================
 // team_id is an attribution hook: set to the assignee team when the
-// parent automation has assignee_type='team', NULL otherwise. The executing
+// parent automation has executor_type='team', NULL otherwise. The executing
 // agent_id on agent_task_queue still records who actually ran the work
 // (the team leader); team_id lets reports group by team without a join.
 //
@@ -685,7 +685,7 @@ func (q *Queries) GetActiveAutomationRuleVersion(ctx context.Context, arg GetAct
 }
 
 const getAutomation = `-- name: GetAutomation :one
-SELECT id, workspace_id, title, description, assignee_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, assignee_type, project_id, pause_reason FROM automation
+SELECT id, workspace_id, title, description, executor_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, executor_type, project_id, pause_reason FROM automation
 WHERE id = $1
 `
 
@@ -697,7 +697,7 @@ func (q *Queries) GetAutomation(ctx context.Context, id pgtype.UUID) (Automation
 		&i.WorkspaceID,
 		&i.Title,
 		&i.Description,
-		&i.AssigneeID,
+		&i.ExecutorID,
 		&i.Status,
 		&i.ExecutionMode,
 		&i.IssueTitleTemplate,
@@ -706,7 +706,7 @@ func (q *Queries) GetAutomation(ctx context.Context, id pgtype.UUID) (Automation
 		&i.LastRunAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.AssigneeType,
+		&i.ExecutorType,
 		&i.ProjectID,
 		&i.PauseReason,
 	)
@@ -714,7 +714,7 @@ func (q *Queries) GetAutomation(ctx context.Context, id pgtype.UUID) (Automation
 }
 
 const getAutomationInWorkspace = `-- name: GetAutomationInWorkspace :one
-SELECT id, workspace_id, title, description, assignee_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, assignee_type, project_id, pause_reason FROM automation
+SELECT id, workspace_id, title, description, executor_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, executor_type, project_id, pause_reason FROM automation
 WHERE id = $1 AND workspace_id = $2
 `
 
@@ -731,7 +731,7 @@ func (q *Queries) GetAutomationInWorkspace(ctx context.Context, arg GetAutomatio
 		&i.WorkspaceID,
 		&i.Title,
 		&i.Description,
-		&i.AssigneeID,
+		&i.ExecutorID,
 		&i.Status,
 		&i.ExecutionMode,
 		&i.IssueTitleTemplate,
@@ -740,7 +740,7 @@ func (q *Queries) GetAutomationInWorkspace(ctx context.Context, arg GetAutomatio
 		&i.LastRunAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.AssigneeType,
+		&i.ExecutorType,
 		&i.ProjectID,
 		&i.PauseReason,
 	)
@@ -1357,7 +1357,7 @@ func (q *Queries) ListAutomationTriggers(ctx context.Context, automationID pgtyp
 const listAutomations = `-- name: ListAutomations :many
 
 SELECT
-  a.id, a.workspace_id, a.title, a.description, a.assignee_id, a.status, a.execution_mode, a.issue_title_template, a.created_by_type, a.created_by_id, a.last_run_at, a.created_at, a.updated_at, a.assignee_type, a.project_id, a.pause_reason,
+  a.id, a.workspace_id, a.title, a.description, a.executor_id, a.status, a.execution_mode, a.issue_title_template, a.created_by_type, a.created_by_id, a.last_run_at, a.created_at, a.updated_at, a.executor_type, a.project_id, a.pause_reason,
   (
     SELECT array_agg(DISTINCT t.kind ORDER BY t.kind)
     FROM automation_trigger t
@@ -1419,7 +1419,7 @@ func (q *Queries) ListAutomations(ctx context.Context, arg ListAutomationsParams
 			&i.Automation.WorkspaceID,
 			&i.Automation.Title,
 			&i.Automation.Description,
-			&i.Automation.AssigneeID,
+			&i.Automation.ExecutorID,
 			&i.Automation.Status,
 			&i.Automation.ExecutionMode,
 			&i.Automation.IssueTitleTemplate,
@@ -1428,7 +1428,7 @@ func (q *Queries) ListAutomations(ctx context.Context, arg ListAutomationsParams
 			&i.Automation.LastRunAt,
 			&i.Automation.CreatedAt,
 			&i.Automation.UpdatedAt,
-			&i.Automation.AssigneeType,
+			&i.Automation.ExecutorType,
 			&i.Automation.ProjectID,
 			&i.Automation.PauseReason,
 			&i.TriggerKinds,
@@ -1518,7 +1518,7 @@ func (q *Queries) ListSchedulableAutomationTriggers(ctx context.Context) ([]List
 }
 
 const lockAutomationForUpdate = `-- name: LockAutomationForUpdate :one
-SELECT id, workspace_id, title, description, assignee_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, assignee_type, project_id, pause_reason FROM automation
+SELECT id, workspace_id, title, description, executor_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, executor_type, project_id, pause_reason FROM automation
 WHERE id = $1 AND workspace_id = $2
 FOR UPDATE
 `
@@ -1539,7 +1539,7 @@ func (q *Queries) LockAutomationForUpdate(ctx context.Context, arg LockAutomatio
 		&i.WorkspaceID,
 		&i.Title,
 		&i.Description,
-		&i.AssigneeID,
+		&i.ExecutorID,
 		&i.Status,
 		&i.ExecutionMode,
 		&i.IssueTitleTemplate,
@@ -1548,7 +1548,7 @@ func (q *Queries) LockAutomationForUpdate(ctx context.Context, arg LockAutomatio
 		&i.LastRunAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.AssigneeType,
+		&i.ExecutorType,
 		&i.ProjectID,
 		&i.PauseReason,
 	)
@@ -1562,18 +1562,18 @@ SET status = 'paused',
     updated_at = now()
 WHERE a.status = 'active'
   AND (
-    (a.assignee_type = 'agent' AND a.assignee_id = ANY($1::uuid[]))
+    (a.executor_type = 'agent' AND a.executor_id = ANY($1::uuid[]))
     OR (
-      a.assignee_type = 'team'
+      a.executor_type = 'team'
       AND EXISTS (
         SELECT 1
         FROM team s
-        WHERE s.id = a.assignee_id
+        WHERE s.id = a.executor_id
           AND s.leader_id = ANY($1::uuid[])
       )
     )
   )
-RETURNING a.id, a.workspace_id, a.title, a.description, a.assignee_id, a.status, a.execution_mode, a.issue_title_template, a.created_by_type, a.created_by_id, a.last_run_at, a.created_at, a.updated_at, a.assignee_type, a.project_id, a.pause_reason
+RETURNING a.id, a.workspace_id, a.title, a.description, a.executor_id, a.status, a.execution_mode, a.issue_title_template, a.created_by_type, a.created_by_id, a.last_run_at, a.created_at, a.updated_at, a.executor_type, a.project_id, a.pause_reason
 `
 
 // A runtime delete is a persistent admission failure, not a per-tick event.
@@ -1594,7 +1594,7 @@ func (q *Queries) PauseAutomationsByUnboundAgents(ctx context.Context, agentIds 
 			&i.WorkspaceID,
 			&i.Title,
 			&i.Description,
-			&i.AssigneeID,
+			&i.ExecutorID,
 			&i.Status,
 			&i.ExecutionMode,
 			&i.IssueTitleTemplate,
@@ -1603,7 +1603,7 @@ func (q *Queries) PauseAutomationsByUnboundAgents(ctx context.Context, agentIds 
 			&i.LastRunAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-			&i.AssigneeType,
+			&i.ExecutorType,
 			&i.ProjectID,
 			&i.PauseReason,
 		); err != nil {
@@ -1623,9 +1623,9 @@ SET status = 'paused',
     pause_reason = 'agent_runtime_required',
     updated_at = now()
 WHERE status = 'active'
-  AND assignee_type = 'team'
-  AND assignee_id = $1
-RETURNING id, workspace_id, title, description, assignee_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, assignee_type, project_id, pause_reason
+  AND executor_type = 'team'
+  AND executor_id = $1
+RETURNING id, workspace_id, title, description, executor_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, executor_type, project_id, pause_reason
 `
 
 // Rotating a team to an already-unbound leader has the same persistent
@@ -1645,7 +1645,7 @@ func (q *Queries) PauseAutomationsByUnrunnableTeam(ctx context.Context, teamID p
 			&i.WorkspaceID,
 			&i.Title,
 			&i.Description,
-			&i.AssigneeID,
+			&i.ExecutorID,
 			&i.Status,
 			&i.ExecutionMode,
 			&i.IssueTitleTemplate,
@@ -1654,7 +1654,7 @@ func (q *Queries) PauseAutomationsByUnrunnableTeam(ctx context.Context, teamID p
 			&i.LastRunAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-			&i.AssigneeType,
+			&i.ExecutorType,
 			&i.ProjectID,
 			&i.PauseReason,
 		); err != nil {
@@ -1788,7 +1788,7 @@ WITH stats AS (
     WHERE created_at >= $3::timestamptz
     GROUP BY automation_id
 )
-SELECT a.id, a.workspace_id, a.title, a.assignee_id,
+SELECT a.id, a.workspace_id, a.title, a.executor_id,
        a.created_by_type, a.created_by_id,
        s.total::bigint  AS total_runs,
        s.failed::bigint AS failed_runs
@@ -1810,7 +1810,7 @@ type SelectAutomationsExceedingFailureThresholdRow struct {
 	ID            pgtype.UUID `json:"id"`
 	WorkspaceID   pgtype.UUID `json:"workspace_id"`
 	Title         string      `json:"title"`
-	AssigneeID    pgtype.UUID `json:"assignee_id"`
+	ExecutorID    pgtype.UUID `json:"executor_id"`
 	CreatedByType string      `json:"created_by_type"`
 	CreatedByID   pgtype.UUID `json:"created_by_id"`
 	TotalRuns     int64       `json:"total_runs"`
@@ -1844,7 +1844,7 @@ func (q *Queries) SelectAutomationsExceedingFailureThreshold(ctx context.Context
 			&i.ID,
 			&i.WorkspaceID,
 			&i.Title,
-			&i.AssigneeID,
+			&i.ExecutorID,
 			&i.CreatedByType,
 			&i.CreatedByID,
 			&i.TotalRuns,
@@ -1993,7 +1993,7 @@ const systemPauseAutomation = `-- name: SystemPauseAutomation :one
 UPDATE automation
 SET status = 'paused', pause_reason = NULL, updated_at = now()
 WHERE id = $1 AND status = 'active'
-RETURNING id, workspace_id, title, description, assignee_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, assignee_type, project_id, pause_reason
+RETURNING id, workspace_id, title, description, executor_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, executor_type, project_id, pause_reason
 `
 
 // Atomically pauses an automation only if it is currently active. Returns no
@@ -2008,7 +2008,7 @@ func (q *Queries) SystemPauseAutomation(ctx context.Context, id pgtype.UUID) (Au
 		&i.WorkspaceID,
 		&i.Title,
 		&i.Description,
-		&i.AssigneeID,
+		&i.ExecutorID,
 		&i.Status,
 		&i.ExecutionMode,
 		&i.IssueTitleTemplate,
@@ -2017,7 +2017,7 @@ func (q *Queries) SystemPauseAutomation(ctx context.Context, id pgtype.UUID) (Au
 		&i.LastRunAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.AssigneeType,
+		&i.ExecutorType,
 		&i.ProjectID,
 		&i.PauseReason,
 	)
@@ -2044,8 +2044,8 @@ const updateAutomation = `-- name: UpdateAutomation :one
 UPDATE automation SET
     title = COALESCE($2, title),
     description = COALESCE($3, description),
-    assignee_type = COALESCE($4, assignee_type),
-    assignee_id = COALESCE($5::uuid, assignee_id),
+    executor_type = COALESCE($4, executor_type),
+    executor_id = COALESCE($5::uuid, executor_id),
     status = COALESCE($6, status),
     pause_reason = CASE
       WHEN $6::text IS NOT NULL THEN NULL
@@ -2056,15 +2056,15 @@ UPDATE automation SET
     project_id = $9,
     updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, title, description, assignee_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, assignee_type, project_id, pause_reason
+RETURNING id, workspace_id, title, description, executor_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, executor_type, project_id, pause_reason
 `
 
 type UpdateAutomationParams struct {
 	ID                 pgtype.UUID `json:"id"`
 	Title              pgtype.Text `json:"title"`
 	Description        pgtype.Text `json:"description"`
-	AssigneeType       pgtype.Text `json:"assignee_type"`
-	AssigneeID         pgtype.UUID `json:"assignee_id"`
+	ExecutorType       pgtype.Text `json:"executor_type"`
+	ExecutorID         pgtype.UUID `json:"executor_id"`
 	Status             pgtype.Text `json:"status"`
 	ExecutionMode      pgtype.Text `json:"execution_mode"`
 	IssueTitleTemplate pgtype.Text `json:"issue_title_template"`
@@ -2076,8 +2076,8 @@ func (q *Queries) UpdateAutomation(ctx context.Context, arg UpdateAutomationPara
 		arg.ID,
 		arg.Title,
 		arg.Description,
-		arg.AssigneeType,
-		arg.AssigneeID,
+		arg.ExecutorType,
+		arg.ExecutorID,
 		arg.Status,
 		arg.ExecutionMode,
 		arg.IssueTitleTemplate,
@@ -2089,7 +2089,7 @@ func (q *Queries) UpdateAutomation(ctx context.Context, arg UpdateAutomationPara
 		&i.WorkspaceID,
 		&i.Title,
 		&i.Description,
-		&i.AssigneeID,
+		&i.ExecutorID,
 		&i.Status,
 		&i.ExecutionMode,
 		&i.IssueTitleTemplate,
@@ -2098,7 +2098,7 @@ func (q *Queries) UpdateAutomation(ctx context.Context, arg UpdateAutomationPara
 		&i.LastRunAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.AssigneeType,
+		&i.ExecutorType,
 		&i.ProjectID,
 		&i.PauseReason,
 	)

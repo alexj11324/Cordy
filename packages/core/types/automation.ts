@@ -2,11 +2,11 @@ export type AutomationStatus = "active" | "paused" | "archived";
 
 export type AutomationExecutionMode = "create_issue" | "run_only";
 
-// `assignee_type` selects which polymorphic actor backs the automation:
-// "agent" → assignee_id references agent(id); "team" → assignee_id references
-// team(id) and dispatch resolves to team.leader_id at run time (MUL-2429,
-// Path A). Older servers omit this field — callers should default to "agent".
-export type AutomationAssigneeType = "agent" | "team";
+// `executor_type` selects which polymorphic actor backs the automation:
+// "agent" → executor_id references agent(id); "team" → executor_id references
+// team(id) and dispatch resolves to team.leader_id at run time.
+export type AutomationExecutorType = "agent" | "team";
+export type AutomationAssigneeType = AutomationExecutorType;
 
 export type AutomationTriggerKind = "schedule" | "webhook" | "api";
 
@@ -29,8 +29,8 @@ export interface Automation {
   title: string;
   description: string | null;
   project_id?: string | null;
-  assignee_type: AutomationAssigneeType;
-  assignee_id: string;
+  executor_type: AutomationExecutorType;
+  executor_id: string;
   status: AutomationStatus;
   // Additive machine-readable explanation for a system pause. Null for manual
   // pauses and older servers.
@@ -159,8 +159,8 @@ export interface CreateAutomationRequest {
   project_id?: string | null;
   // Optional on the wire — when omitted the server defaults to "agent" so
   // older clients keep working.
-  assignee_type?: AutomationAssigneeType;
-  assignee_id: string;
+  executor_type?: AutomationExecutorType;
+  executor_id: string;
   execution_mode: AutomationExecutionMode;
   issue_title_template?: string;
   subscribers?: AutomationSubscriberInput[];
@@ -170,10 +170,10 @@ export interface UpdateAutomationRequest {
   title?: string;
   description?: string | null;
   project_id?: string | null;
-  // Send `assignee_type` together with `assignee_id` whenever you change the
+  // Send `executor_type` together with `executor_id` whenever you change the
   // assignee — the server requires both for a type swap.
-  assignee_type?: AutomationAssigneeType;
-  assignee_id?: string;
+  executor_type?: AutomationExecutorType;
+  executor_id?: string;
   status?: AutomationStatus;
   execution_mode?: AutomationExecutionMode;
   issue_title_template?: string | null;

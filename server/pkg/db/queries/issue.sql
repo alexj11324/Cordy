@@ -2,19 +2,21 @@
 -- involves_user_id widens the assignee filter to surface issues where the user
 -- is *indirectly* the assignee — via an owned agent or a team they belong to /
 -- lead / have an agent inside. The semantics intentionally exclude direct
--- member assignment (`assignee_type='member' AND assignee_id=involves_user_id`)
--- because that is already the meaning of the `assignee_id` filter (tab 1
+-- member ownership (`owner_type='member' AND owner_id=involves_user_id`)
+-- because that is already the meaning of the `owner_id` filter (tab 1
 -- "Assigned to me"), and the two filters must produce disjoint result sets.
 SELECT i.id, i.workspace_id, i.title, i.description, i.status, i.priority,
-       i.assignee_type, i.assignee_id, i.creator_type, i.creator_id,
+       i.owner_type, i.owner_id, i.executor_type, i.executor_id,
+       i.reviewer_type, i.reviewer_id, i.creator_type, i.creator_id,
        i.parent_issue_id, i.position, i.start_date, i.due_date, i.created_at, i.updated_at, i.last_activity_at, i.number, i.project_id, i.metadata, i.stage, i.properties,
        i.revision
 FROM issue i
 WHERE i.workspace_id = $1
   AND (sqlc.narg('status')::text IS NULL OR i.status = sqlc.narg('status'))
   AND (sqlc.narg('priority')::text IS NULL OR i.priority = sqlc.narg('priority'))
-  AND (sqlc.narg('assignee_id')::uuid IS NULL OR i.assignee_id = sqlc.narg('assignee_id'))
-  AND (sqlc.narg('assignee_ids')::uuid[] IS NULL OR i.assignee_id = ANY(sqlc.narg('assignee_ids')::uuid[]))
+  AND (sqlc.narg('owner_id')::uuid IS NULL OR i.owner_id = sqlc.narg('owner_id'))
+  AND (sqlc.narg('executor_id')::uuid IS NULL OR i.executor_id = sqlc.narg('executor_id'))
+  AND (sqlc.narg('executor_ids')::uuid[] IS NULL OR i.executor_id = ANY(sqlc.narg('executor_ids')::uuid[]))
   AND (sqlc.narg('creator_id')::uuid IS NULL OR i.creator_id = sqlc.narg('creator_id'))
   AND (sqlc.narg('project_id')::uuid IS NULL OR i.project_id = sqlc.narg('project_id'))
   AND (sqlc.narg('scheduled')::bool IS NULL OR (i.start_date IS NOT NULL OR i.due_date IS NOT NULL))
@@ -22,13 +24,13 @@ WHERE i.workspace_id = $1
   AND (
     sqlc.narg('involves_user_id')::uuid IS NULL
     -- (1) assignee is an agent owned by the user
-    OR (i.assignee_type = 'agent' AND i.assignee_id IN (
+    OR (i.executor_type = 'agent' AND i.executor_id IN (
           SELECT a.id FROM agent a
            WHERE a.workspace_id = $1
              AND a.owner_id     = sqlc.narg('involves_user_id')::uuid
     ))
     -- (2)(3)(4) assignee is a team related to the user — three relations
-    OR (i.assignee_type = 'team' AND i.assignee_id IN (
+    OR (i.executor_type = 'team' AND i.executor_id IN (
           -- (2) the user is a human member of the team
           SELECT sm.team_id
             FROM team_member sm
@@ -144,12 +146,14 @@ RETURNING *;
 -- name: CreateIssue :one
 INSERT INTO issue (
     workspace_id, title, description, status, priority,
-    assignee_type, assignee_id, creator_type, creator_id,
+    executor_type, executor_id, creator_type, creator_id,
     parent_issue_id, position, start_date, due_date, number, project_id,
-    stage, last_activity_at, id
+    stage, last_activity_at, id,
+    owner_type, owner_id, reviewer_type, reviewer_id
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
-    sqlc.narg('stage'), now(), COALESCE(sqlc.narg('id')::uuid, gen_random_uuid())
+    sqlc.narg('stage'), now(), COALESCE(sqlc.narg('id')::uuid, gen_random_uuid()),
+    sqlc.narg('owner_type'), sqlc.narg('owner_id'), sqlc.narg('reviewer_type'), sqlc.narg('reviewer_id')
 ) RETURNING *;
 
 -- name: GetIssueByNumber :one
@@ -164,8 +168,12 @@ WITH candidate AS (
         COALESCE(sqlc.narg('description')::text, i.description) AS next_description,
         COALESCE(sqlc.narg('status')::text, i.status) AS next_status,
         COALESCE(sqlc.narg('priority')::text, i.priority) AS next_priority,
-        sqlc.narg('assignee_type')::text AS next_assignee_type,
-        sqlc.narg('assignee_id')::uuid AS next_assignee_id,
+        sqlc.narg('executor_type')::text AS next_executor_type,
+        sqlc.narg('executor_id')::uuid AS next_executor_id,
+        sqlc.narg('owner_type')::text AS next_owner_type,
+        sqlc.narg('owner_id')::uuid AS next_owner_id,
+        sqlc.narg('reviewer_type')::text AS next_reviewer_type,
+        sqlc.narg('reviewer_id')::uuid AS next_reviewer_id,
         CASE
             -- An explicit position wins. Cross-column drag-and-drop sends
             -- status and position together and means the slot it dropped on.
@@ -206,19 +214,23 @@ WITH candidate AS (
     SELECT
         candidate.*,
         ROW(
-            title, description, status, priority, assignee_type, assignee_id,
+            title, description, status, priority, executor_type, executor_id,
+            owner_type, owner_id, reviewer_type, reviewer_id,
             position, start_date, due_date, parent_issue_id, project_id, stage
         ) IS DISTINCT FROM ROW(
             next_title, next_description, next_status, next_priority,
-            next_assignee_type, next_assignee_id, next_position, next_start_date,
+            next_executor_type, next_executor_id, next_owner_type, next_owner_id,
+            next_reviewer_type, next_reviewer_id, next_position, next_start_date,
             next_due_date, next_parent_issue_id, next_project_id, next_stage
         ) AS did_change,
         ROW(
-            title, description, status, priority, assignee_type, assignee_id,
+            title, description, status, priority, executor_type, executor_id,
+            owner_type, owner_id, reviewer_type, reviewer_id,
             start_date, due_date, parent_issue_id, project_id, stage
         ) IS DISTINCT FROM ROW(
             next_title, next_description, next_status, next_priority,
-            next_assignee_type, next_assignee_id, next_start_date, next_due_date,
+            next_executor_type, next_executor_id, next_owner_type, next_owner_id,
+            next_reviewer_type, next_reviewer_id, next_start_date, next_due_date,
             next_parent_issue_id, next_project_id, next_stage
         ) AS did_activity
     FROM candidate
@@ -228,8 +240,12 @@ UPDATE issue AS i SET
     description = changed.next_description,
     status = changed.next_status,
     priority = changed.next_priority,
-    assignee_type = changed.next_assignee_type,
-    assignee_id = changed.next_assignee_id,
+    executor_type = changed.next_executor_type,
+    executor_id = changed.next_executor_id,
+    owner_type = changed.next_owner_type,
+    owner_id = changed.next_owner_id,
+    reviewer_type = changed.next_reviewer_type,
+    reviewer_id = changed.next_reviewer_id,
     position = changed.next_position,
     start_date = changed.next_start_date,
     due_date = changed.next_due_date,
@@ -277,12 +293,14 @@ RETURNING *;
 -- name: CreateIssueWithOrigin :one
 INSERT INTO issue (
     workspace_id, title, description, status, priority,
-    assignee_type, assignee_id, creator_type, creator_id,
+    executor_type, executor_id, creator_type, creator_id,
     parent_issue_id, position, start_date, due_date, number, project_id,
-    origin_type, origin_id, stage, last_activity_at, id
+    origin_type, origin_id, stage, last_activity_at, id,
+    owner_type, owner_id, reviewer_type, reviewer_id
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
-    sqlc.narg('origin_type'), sqlc.narg('origin_id'), sqlc.narg('stage'), now(), COALESCE(sqlc.narg('id')::uuid, gen_random_uuid())
+    sqlc.narg('origin_type'), sqlc.narg('origin_id'), sqlc.narg('stage'), now(), COALESCE(sqlc.narg('id')::uuid, gen_random_uuid()),
+    sqlc.narg('owner_type'), sqlc.narg('owner_id'), sqlc.narg('reviewer_type'), sqlc.narg('reviewer_id')
 ) RETURNING *;
 
 -- name: LockIssueDuplicateKey :exec
@@ -348,7 +366,8 @@ DELETE FROM issue WHERE issue.id IN (SELECT target.id FROM target);
 -- See ListIssues for the semantics of involves_user_id (mirrors the 4-branch
 -- filter; member-direct assignment is intentionally excluded).
 SELECT i.id, i.workspace_id, i.title, i.description, i.status, i.priority,
-       i.assignee_type, i.assignee_id, i.creator_type, i.creator_id,
+       i.owner_type, i.owner_id, i.executor_type, i.executor_id,
+       i.reviewer_type, i.reviewer_id, i.creator_type, i.creator_id,
        i.parent_issue_id, i.position, i.start_date, i.due_date, i.created_at, i.updated_at, i.last_activity_at, i.number, i.project_id, i.metadata, i.stage, i.properties,
        i.revision
 FROM issue i
@@ -356,8 +375,9 @@ WHERE i.workspace_id = $1
   -- Negate only known terminal keys so an unknown legacy key remains visible.
   AND NOT (i.status = ANY(sqlc.arg('terminal_status_keys')::text[]))
   AND (sqlc.narg('priority')::text IS NULL OR i.priority = sqlc.narg('priority'))
-  AND (sqlc.narg('assignee_id')::uuid IS NULL OR i.assignee_id = sqlc.narg('assignee_id'))
-  AND (sqlc.narg('assignee_ids')::uuid[] IS NULL OR i.assignee_id = ANY(sqlc.narg('assignee_ids')::uuid[]))
+  AND (sqlc.narg('owner_id')::uuid IS NULL OR i.owner_id = sqlc.narg('owner_id'))
+  AND (sqlc.narg('executor_id')::uuid IS NULL OR i.executor_id = sqlc.narg('executor_id'))
+  AND (sqlc.narg('executor_ids')::uuid[] IS NULL OR i.executor_id = ANY(sqlc.narg('executor_ids')::uuid[]))
   AND (sqlc.narg('creator_id')::uuid IS NULL OR i.creator_id = sqlc.narg('creator_id'))
   AND (sqlc.narg('project_id')::uuid IS NULL OR i.project_id = sqlc.narg('project_id'))
   AND (sqlc.narg('metadata_filter')::jsonb IS NULL OR i.metadata @> sqlc.narg('metadata_filter')::jsonb)
@@ -415,12 +435,12 @@ WHERE i.workspace_id = $1
   )
   AND (
     sqlc.narg('involves_user_id')::uuid IS NULL
-    OR (i.assignee_type = 'agent' AND i.assignee_id IN (
+    OR (i.executor_type = 'agent' AND i.executor_id IN (
           SELECT a.id FROM agent a
            WHERE a.workspace_id = $1
              AND a.owner_id     = sqlc.narg('involves_user_id')::uuid
     ))
-    OR (i.assignee_type = 'team' AND i.assignee_id IN (
+    OR (i.executor_type = 'team' AND i.executor_id IN (
           SELECT sm.team_id
             FROM team_member sm
             JOIN team s ON s.id = sm.team_id
@@ -453,20 +473,21 @@ SELECT count(*) FROM issue i
 WHERE i.workspace_id = $1
   AND (sqlc.narg('status')::text IS NULL OR i.status = sqlc.narg('status'))
   AND (sqlc.narg('priority')::text IS NULL OR i.priority = sqlc.narg('priority'))
-  AND (sqlc.narg('assignee_id')::uuid IS NULL OR i.assignee_id = sqlc.narg('assignee_id'))
-  AND (sqlc.narg('assignee_ids')::uuid[] IS NULL OR i.assignee_id = ANY(sqlc.narg('assignee_ids')::uuid[]))
+  AND (sqlc.narg('owner_id')::uuid IS NULL OR i.owner_id = sqlc.narg('owner_id'))
+  AND (sqlc.narg('executor_id')::uuid IS NULL OR i.executor_id = sqlc.narg('executor_id'))
+  AND (sqlc.narg('executor_ids')::uuid[] IS NULL OR i.executor_id = ANY(sqlc.narg('executor_ids')::uuid[]))
   AND (sqlc.narg('creator_id')::uuid IS NULL OR i.creator_id = sqlc.narg('creator_id'))
   AND (sqlc.narg('project_id')::uuid IS NULL OR i.project_id = sqlc.narg('project_id'))
   AND (sqlc.narg('scheduled')::bool IS NULL OR (i.start_date IS NOT NULL OR i.due_date IS NOT NULL))
   AND (sqlc.narg('metadata_filter')::jsonb IS NULL OR i.metadata @> sqlc.narg('metadata_filter')::jsonb)
   AND (
     sqlc.narg('involves_user_id')::uuid IS NULL
-    OR (i.assignee_type = 'agent' AND i.assignee_id IN (
+    OR (i.executor_type = 'agent' AND i.executor_id IN (
           SELECT a.id FROM agent a
            WHERE a.workspace_id = $1
              AND a.owner_id     = sqlc.narg('involves_user_id')::uuid
     ))
-    OR (i.assignee_type = 'team' AND i.assignee_id IN (
+    OR (i.executor_type = 'team' AND i.executor_id IN (
           SELECT sm.team_id
             FROM team_member sm
             JOIN team s ON s.id = sm.team_id
@@ -531,16 +552,16 @@ LIMIT 1;
 -- name: CountCreatedIssueAssignees :many
 -- Count assignees on issues created by a specific user.
 SELECT
-  assignee_type,
-  assignee_id,
+  executor_type,
+  executor_id,
   COUNT(*)::bigint as frequency
 FROM issue
 WHERE workspace_id = $1
   AND creator_id = $2
   AND creator_type = 'member'
-  AND assignee_type IS NOT NULL
-  AND assignee_id IS NOT NULL
-GROUP BY assignee_type, assignee_id;
+  AND executor_type IS NOT NULL
+  AND executor_id IS NOT NULL
+GROUP BY executor_type, executor_id;
 
 -- name: ChildIssueProgress :many
 SELECT parent_issue_id,

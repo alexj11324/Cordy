@@ -246,7 +246,7 @@ func TestCreateComment_WorkerAgentCommentWakesPrivateTeamLeader_MUL4015(t *testi
 	// keeps the assign-time originator resolution to M.
 	var issueID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO issue (workspace_id, creator_type, creator_id, title, assignee_type, assignee_id)
+		INSERT INTO issue (workspace_id, creator_type, creator_id, title, executor_type, executor_id)
 		VALUES ($1, 'member', $2, 'private team worker-comment MUL-4015', 'team', $3)
 		RETURNING id
 	`, testWorkspaceID, testUserID, teamID).Scan(&issueID); err != nil {

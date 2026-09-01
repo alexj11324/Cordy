@@ -114,7 +114,7 @@ func systemCommentOn(t *testing.T, issueID string) (content, authorIDStr string,
 // only mention we ever inject (see MUL-2538 Option C — covered separately
 // in TestChildDoneMentionsParentAssignee_* below).
 func TestChildDoneNotifiesParent(t *testing.T) {
-	fx := newChildDoneFixture(t, "in_progress")
+	fx := newChildDoneFixture(t, "todo")
 
 	updateChildStatus(t, fx.child.ID, "done")
 
@@ -264,11 +264,24 @@ func TestChildDoneSkippedWhenNoParent(t *testing.T) {
 // type without queuing a parallel agent task at setup.
 func setIssueAssigneeDirect(t *testing.T, issueID, assigneeType, assigneeID string) {
 	t.Helper()
-	if _, err := testPool.Exec(context.Background(),
-		`UPDATE issue SET assignee_type = $2, assignee_id = $3 WHERE id = $1`,
+	if assigneeType == "member" {
+		if _, err := testPool.Exec(context.Background(),
+			`UPDATE issue SET owner_type = 'member', owner_id = $2, executor_type = NULL, executor_id = NULL WHERE id = $1`,
+			issueID, assigneeID,
+		); err != nil {
+			t.Fatalf("set parent owner: %v", err)
+		}
+	} else if _, err := testPool.Exec(context.Background(),
+		`UPDATE issue SET executor_type = $2, executor_id = $3 WHERE id = $1`,
 		issueID, assigneeType, assigneeID,
 	); err != nil {
-		t.Fatalf("set parent assignee: %v", err)
+		t.Fatalf("set parent executor: %v", err)
+	}
+	if _, err := testPool.Exec(context.Background(),
+		`DELETE FROM agent_task_queue WHERE issue_id = $1 AND status IN ('queued','dispatched','running')`,
+		issueID,
+	); err != nil {
+		t.Fatalf("clear leftover tasks after assignee rewrite: %v", err)
 	}
 }
 
@@ -581,8 +594,8 @@ func TestStageLeaderPrepareTimeoutRetryCanAdvanceNextStage(t *testing.T) {
 		"status":          "backlog",
 		"parent_issue_id": fx.parent.ID,
 		"stage":           2,
-		"assignee_type":   "team",
-		"assignee_id":     sq.TeamID,
+		"executor_type":   "team",
+		"executor_id":     sq.TeamID,
 	})
 	testHandler.CreateIssue(w, req)
 	if w.Code != http.StatusCreated {

@@ -95,10 +95,15 @@ func TestBatchUpdateValidUpdatesPersistAndCount(t *testing.T) {
 	t.Cleanup(func() { deleteTestIssue(t, a) })
 	t.Cleanup(func() { deleteTestIssue(t, b) })
 
+	agentID := handlerSeededAgentID(t)
 	w := httptest.NewRecorder()
 	req := newRequest("POST", "/api/issues/batch-update", map[string]any{
 		"issue_ids": []string{a, b},
-		"updates":   map[string]any{"status": "in_progress"},
+		"updates": map[string]any{
+			"status":        "in_progress",
+			"executor_type": "agent",
+			"executor_id":   agentID,
+		},
 	})
 	testHandler.BatchUpdateIssues(w, req)
 	if w.Code != http.StatusOK {
@@ -164,11 +169,11 @@ func TestBatchUpdateStageOnly(t *testing.T) {
 func createTestIssue(t *testing.T, title, status, priority string) string {
 	t.Helper()
 	w := httptest.NewRecorder()
-	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
+	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, withIssueRoleDefaults(t, map[string]any{
 		"title":    title,
 		"status":   status,
 		"priority": priority,
-	})
+	}))
 	testHandler.CreateIssue(w, req)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("CreateIssue %q: expected 201, got %d: %s", title, w.Code, w.Body.String())
@@ -215,7 +220,7 @@ func newStagedBatchFixture(t *testing.T) stagedBatchFixture {
 	pw := httptest.NewRecorder()
 	preq := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
 		"title":  "batch-stage parent " + time.Now().Format(time.RFC3339Nano),
-		"status": "in_progress",
+		"status": "todo",
 	})
 	testHandler.CreateIssue(pw, preq)
 	if pw.Code != http.StatusCreated {
@@ -238,11 +243,11 @@ func newStagedBatchFixture(t *testing.T) stagedBatchFixture {
 
 	mkChild := func(stage int32) IssueResponse {
 		cw := httptest.NewRecorder()
-		creq := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
+		creq := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, withIssueRoleDefaults(t, map[string]any{
 			"title":           "batch-stage child " + time.Now().Format(time.RFC3339Nano),
 			"status":          "in_progress",
 			"parent_issue_id": parent.ID,
-		})
+		}))
 		testHandler.CreateIssue(cw, creq)
 		if cw.Code != http.StatusCreated {
 			t.Fatalf("create child: expected 201, got %d: %s", cw.Code, cw.Body.String())

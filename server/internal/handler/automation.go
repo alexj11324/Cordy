@@ -38,11 +38,11 @@ type AutomationResponse struct {
 	Title       string  `json:"title"`
 	Description *string `json:"description"`
 	ProjectID   *string `json:"project_id"`
-	// AssigneeType is "agent" or "team". Path A from MUL-2429: when set
-	// to "team", AssigneeID points at team(id) rather than agent(id) and
+	// ExecutorType is "agent" or "team". Path A from MUL-2429: when set
+	// to "team", ExecutorID points at team(id) rather than agent(id) and
 	// dispatch resolves to team.leader_id at run time.
-	AssigneeType       string  `json:"assignee_type"`
-	AssigneeID         string  `json:"assignee_id"`
+	ExecutorType       string  `json:"executor_type"`
+	ExecutorID         string  `json:"executor_id"`
 	Status             string  `json:"status"`
 	PauseReason        *string `json:"pause_reason"`
 	ExecutionMode      string  `json:"execution_mode"`
@@ -183,7 +183,7 @@ type AutomationRunResponse struct {
 // ── Converters ──────────────────────────────────────────────────────────────
 
 func automationToResponse(a db.Automation, subscribers []db.AutomationSubscriber) AutomationResponse {
-	assigneeType := a.AssigneeType
+	assigneeType := a.ExecutorType
 	if assigneeType == "" {
 		// Older rows pre-MUL-2429 may surface as "" against an out-of-date
 		// schema view; default to "agent" so the API contract stays
@@ -204,8 +204,8 @@ func automationToResponse(a db.Automation, subscribers []db.AutomationSubscriber
 		Title:              a.Title,
 		Description:        textToPtr(a.Description),
 		ProjectID:          uuidToPtr(a.ProjectID),
-		AssigneeType:       assigneeType,
-		AssigneeID:         uuidToString(a.AssigneeID),
+		ExecutorType:       assigneeType,
+		ExecutorID:         uuidToString(a.ExecutorID),
 		Status:             a.Status,
 		PauseReason:        textToPtr(a.PauseReason),
 		ExecutionMode:      a.ExecutionMode,
@@ -327,10 +327,10 @@ type CreateAutomationRequest struct {
 	Title       string  `json:"title"`
 	Description *string `json:"description"`
 	ProjectID   *string `json:"project_id"`
-	// AssigneeType is optional and defaults to "agent" — preserves backward
+	// ExecutorType is optional and defaults to "agent" — preserves backward
 	// compatibility with desktop clients shipped before MUL-2429.
-	AssigneeType       *string           `json:"assignee_type"`
-	AssigneeID         string            `json:"assignee_id"`
+	ExecutorType       *string           `json:"executor_type"`
+	ExecutorID         string            `json:"executor_id"`
 	ExecutionMode      string            `json:"execution_mode"`
 	IssueTitleTemplate *string           `json:"issue_title_template"`
 	Subscribers        []SubscriberInput `json:"subscribers"`
@@ -340,8 +340,8 @@ type UpdateAutomationRequest struct {
 	Title              *string `json:"title"`
 	Description        *string `json:"description"`
 	ProjectID          *string `json:"project_id"`
-	AssigneeType       *string `json:"assignee_type"`
-	AssigneeID         *string `json:"assignee_id"`
+	ExecutorType       *string `json:"executor_type"`
+	ExecutorID         *string `json:"executor_id"`
 	Status             *string `json:"status"`
 	ExecutionMode      *string `json:"execution_mode"`
 	IssueTitleTemplate *string `json:"issue_title_template"`
@@ -652,8 +652,8 @@ func (h *Handler) CreateAutomation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "title is required")
 		return
 	}
-	if req.AssigneeID == "" {
-		writeError(w, http.StatusBadRequest, "assignee_id is required")
+	if req.ExecutorID == "" {
+		writeError(w, http.StatusBadRequest, "executor_id is required")
 		return
 	}
 	if req.ExecutionMode == "" {
@@ -677,7 +677,7 @@ func (h *Handler) CreateAutomation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	assigneeUUID, ok := parseUUIDOrBadRequest(w, req.AssigneeID, "assignee_id")
+	assigneeUUID, ok := parseUUIDOrBadRequest(w, req.ExecutorID, "executor_id")
 	if !ok {
 		return
 	}
@@ -687,11 +687,11 @@ func (h *Handler) CreateAutomation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	assigneeType := "agent"
-	if req.AssigneeType != nil && *req.AssigneeType != "" {
-		assigneeType = *req.AssigneeType
+	if req.ExecutorType != nil && *req.ExecutorType != "" {
+		assigneeType = *req.ExecutorType
 	}
 	if !isValidAutomationAssigneeType(assigneeType) {
-		writeError(w, http.StatusBadRequest, "assignee_type must be agent or team")
+		writeError(w, http.StatusBadRequest, "executor_type must be agent or team")
 		return
 	}
 	projectID, ok := h.parseAutomationProjectID(w, r, req.ProjectID, wsUUID)
@@ -732,8 +732,8 @@ func (h *Handler) CreateAutomation(w http.ResponseWriter, r *http.Request) {
 	automation, err := qtx.CreateAutomation(r.Context(), db.CreateAutomationParams{
 		WorkspaceID:        wsUUID,
 		Title:              req.Title,
-		AssigneeType:       assigneeType,
-		AssigneeID:         assigneeUUID,
+		ExecutorType:       assigneeType,
+		ExecutorID:         assigneeUUID,
 		Status:             "active",
 		ExecutionMode:      req.ExecutionMode,
 		CreatedByType:      "member",
@@ -899,7 +899,7 @@ func (h *Handler) UpdateAutomation(w http.ResponseWriter, r *http.Request) {
 	params := db.UpdateAutomationParams{
 		ID:                 prev.ID,
 		Description:        prev.Description,
-		AssigneeID:         prev.AssigneeID,
+		ExecutorID:         prev.ExecutorID,
 		IssueTitleTemplate: prev.IssueTitleTemplate,
 		ProjectID:          prev.ProjectID,
 	}
@@ -931,46 +931,46 @@ func (h *Handler) UpdateAutomation(w http.ResponseWriter, r *http.Request) {
 		}
 		params.ProjectID = projectID
 	}
-	// assignee_type and assignee_id are validated as a pair: switching
+	// executor_type and executor_id are validated as a pair: switching
 	// between agent and team without supplying a new id would leave the
 	// row pointing at the wrong table. The client is expected to send both
 	// fields on any change; partial updates that change only one are
 	// rejected.
-	_, typeSent := rawFields["assignee_type"]
-	_, idSent := rawFields["assignee_id"]
-	nextType := prev.AssigneeType
-	nextID := prev.AssigneeID
+	_, typeSent := rawFields["executor_type"]
+	_, idSent := rawFields["executor_id"]
+	nextType := prev.ExecutorType
+	nextID := prev.ExecutorID
 	if typeSent || idSent {
-		if typeSent && req.AssigneeType != nil && *req.AssigneeType != "" {
-			nextType = *req.AssigneeType
+		if typeSent && req.ExecutorType != nil && *req.ExecutorType != "" {
+			nextType = *req.ExecutorType
 		}
 		if !isValidAutomationAssigneeType(nextType) {
-			writeError(w, http.StatusBadRequest, "assignee_type must be agent or team")
+			writeError(w, http.StatusBadRequest, "executor_type must be agent or team")
 			return
 		}
 		if idSent {
-			if req.AssigneeID == nil {
-				writeError(w, http.StatusBadRequest, "assignee_id cannot be null")
+			if req.ExecutorID == nil {
+				writeError(w, http.StatusBadRequest, "executor_id cannot be null")
 				return
 			}
-			parsed, ok := parseUUIDOrBadRequest(w, *req.AssigneeID, "assignee_id")
+			parsed, ok := parseUUIDOrBadRequest(w, *req.ExecutorID, "executor_id")
 			if !ok {
 				return
 			}
 			nextID = parsed
 		}
 		// Reject the agent↔team switch without a paired id, otherwise the
-		// row would address agent(id) under assignee_type='team' or vice
+		// row would address agent(id) under executor_type='team' or vice
 		// versa.
-		if typeSent && !idSent && nextType != prev.AssigneeType {
-			writeError(w, http.StatusBadRequest, "assignee_id is required when changing assignee_type")
+		if typeSent && !idSent && nextType != prev.ExecutorType {
+			writeError(w, http.StatusBadRequest, "executor_id is required when changing executor_type")
 			return
 		}
 		if typeSent {
-			params.AssigneeType = pgtype.Text{String: nextType, Valid: true}
+			params.ExecutorType = pgtype.Text{String: nextType, Valid: true}
 		}
 		if idSent {
-			params.AssigneeID = nextID
+			params.ExecutorID = nextID
 		}
 	}
 
@@ -1107,7 +1107,7 @@ func (h *Handler) UpdateAutomation(w http.ResponseWriter, r *http.Request) {
 // WHAT the automation instructs the agent to do, or WHO / WHETHER it runs, and so
 // transfers accountability to the editor (MUL-4302 §3.4; boundary pinned with Elon):
 //
-//   - assignee_type / assignee_id — who (agent / team leader) executes;
+//   - executor_type / executor_id — who (agent / team leader) executes;
 //   - status — enabled state (active / paused / archived);
 //   - execution_mode — run_only vs create_issue;
 //   - description — the product surfaces this as the run PROMPT, i.e. the task
@@ -1125,8 +1125,8 @@ func (h *Handler) UpdateAutomation(w http.ResponseWriter, r *http.Request) {
 // TRIGGER and handled in UpdateAutomationTrigger; archive and system-pause republish in
 // their own paths.
 func automationRuleSubstantiveChange(prev, next db.Automation) bool {
-	return prev.AssigneeType != next.AssigneeType ||
-		prev.AssigneeID != next.AssigneeID ||
+	return prev.ExecutorType != next.ExecutorType ||
+		prev.ExecutorID != next.ExecutorID ||
 		prev.Status != next.Status ||
 		prev.ExecutionMode != next.ExecutionMode ||
 		prev.Description != next.Description ||
@@ -1655,7 +1655,7 @@ func (h *Handler) validateAutomationAssigneeForSave(
 		// otherwise produce an unbroken stream of skipped runs against a
 		// team that can never be revived without an explicit un-archive.
 		// Pair with TransferTeamAutomationsToLeader on DeleteTeam so any
-		// automation that survives the archive flips to assignee_type='agent'
+		// automation that survives the archive flips to executor_type='agent'
 		// (the leader) and stops referencing the dead team row.
 		if team.ArchivedAt.Valid {
 			writeError(w, http.StatusUnprocessableEntity, "team is archived; pick a different team")
@@ -1686,7 +1686,7 @@ func (h *Handler) validateAutomationAssigneeForSave(
 		}
 		return true
 	default:
-		writeError(w, http.StatusBadRequest, "assignee_type must be agent or team")
+		writeError(w, http.StatusBadRequest, "executor_type must be agent or team")
 		return false
 	}
 }

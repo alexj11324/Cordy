@@ -19,11 +19,11 @@
  * (MUL-6243)
  *
  * Behavioral parity:
- *   - Same `Issue` type, same `assignee_type`/`assignee_id` semantics
+ *   - Same `Issue` type, same owner/executor semantics
  *     (root CLAUDE.md "Data identity must agree").
- *   - Mirrors web `packages/views/issues/components/list-row.tsx:52`:
- *     render the assignee whenever `assignee_type && assignee_id` are both
- *     truthy — `ActorAvatar` itself handles member / agent / team rendering
+ *   - Mirrors web `packages/views/issues/components/list-row.tsx`:
+ *     render the assignee whenever executor or owner is set —
+ *     `ActorAvatar` itself handles member / agent / team rendering
  *     (rounded square + people glyph or `team.avatar_url` for teams). A
  *     future fourth enum value falls through to ActorAvatar's initials
  *     fallback, which is the real "enum drift downgrades, not crashes"
@@ -75,10 +75,10 @@ export function IssueRow({ issue, onPress, showStatus = false }: Props) {
           </Text>
           <CustomStatusChip status={issue.status} catalog={catalog} />
         </View>
-        {issue.assignee_type && issue.assignee_id ? (
+        {(issue.executor_type && issue.executor_id) || (issue.owner_type && issue.owner_id) ? (
           <ActorAvatar
-            type={issue.assignee_type}
-            id={issue.assignee_id}
+            type={(issue.executor_type ?? issue.owner_type)!}
+            id={(issue.executor_id ?? issue.owner_id)!}
             size={20}
             showPresence
           />

@@ -15,7 +15,7 @@ func insertListTestAutomation(t *testing.T, agentID, title string) string {
 	var id string
 	if err := testPool.QueryRow(context.Background(), `
 		INSERT INTO automation (
-			workspace_id, title, assignee_type, assignee_id,
+			workspace_id, title, executor_type, executor_id,
 			status, execution_mode, created_by_type, created_by_id
 		)
 		VALUES ($1, $2, 'agent', $3, 'active', 'run_only', 'member', $4)

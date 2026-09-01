@@ -1916,8 +1916,8 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 	h.publish(protocol.EventCommentCreated, uuidToString(issue.WorkspaceID), authorType, authorID, map[string]any{
 		"comment":             resp,
 		"issue_title":         issue.Title,
-		"issue_assignee_type": textToPtr(issue.AssigneeType),
-		"issue_assignee_id":   uuidToPtr(issue.AssigneeID),
+		"issue_executor_type": textToPtr(issue.ExecutorType),
+		"issue_executor_id":   uuidToPtr(issue.ExecutorID),
 		"issue_status":        issue.Status,
 		"issue_revision":      created.IssueRevision,
 	})
@@ -2694,7 +2694,7 @@ func (h *Handler) computeCommentAgentTriggers(ctx context.Context, issue db.Issu
 		// routeAssignedTeamLeaderFallback. Explicit @agent / @team mentions
 		// are already handled above, so this never double-enqueues a mentioned
 		// target alongside the assigned leader.
-		if issue.AssigneeType.Valid && issue.AssigneeType.String == "team" {
+		if issue.ExecutorType.Valid && issue.ExecutorType.String == "team" {
 			if trigger, ok := h.routeAssignedTeamLeaderFallback(ctx, issue, actorType, actorID, opts); ok {
 				return []commentAgentTrigger{trigger}, nil
 			}
@@ -2915,10 +2915,10 @@ func (h *Handler) routeConversationContinuationToAgent(ctx context.Context, issu
 }
 
 func (h *Handler) routeAssigneeFallback(ctx context.Context, issue db.Issue, authorType, authorID string, opts commentTriggerComputeOptions) (commentAgentTrigger, bool) {
-	if !issue.AssigneeType.Valid || !issue.AssigneeID.Valid {
+	if !issue.ExecutorType.Valid || !issue.ExecutorID.Valid {
 		return commentAgentTrigger{}, false
 	}
-	switch issue.AssigneeType.String {
+	switch issue.ExecutorType.String {
 	case "agent":
 		agent, hasPending, ok := h.assigneeFallbackAgent(ctx, issue, authorType, authorID, opts)
 		if !ok {
@@ -2934,7 +2934,7 @@ func (h *Handler) routeAssigneeFallback(ctx context.Context, issue db.Issue, aut
 
 func (h *Handler) routeAssignedTeamLeaderFallback(ctx context.Context, issue db.Issue, authorType, authorID string, opts commentTriggerComputeOptions) (commentAgentTrigger, bool) {
 	team, err := h.Queries.GetTeamInWorkspace(ctx, db.GetTeamInWorkspaceParams{
-		ID:          issue.AssigneeID,
+		ID:          issue.ExecutorID,
 		WorkspaceID: issue.WorkspaceID,
 	})
 	if err != nil {

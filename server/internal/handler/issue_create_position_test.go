@@ -156,7 +156,7 @@ func TestAutomationCreateIssuePositionBelowCurrentMinimum(t *testing.T) {
 	w = httptest.NewRecorder()
 	req = newRequest("POST", "/api/automations?workspace_id="+testWorkspaceID, map[string]any{
 		"title":                "Position automation",
-		"assignee_id":          agentID,
+		"executor_id":          agentID,
 		"execution_mode":       "create_issue",
 		"issue_title_template": automationIssueTitle,
 	})

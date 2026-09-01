@@ -1926,7 +1926,7 @@ func TestStartTask_AutomationRunOnlyTask_ResolvesWorkspace(t *testing.T) {
 	automationID := dbfx.Insert(t, "automation", testutil.Cols{
 		"workspace_id":    testWorkspaceID,
 		"title":           "run_only fixture",
-		"assignee_id":     agentID,
+		"executor_id":     agentID,
 		"execution_mode":  "run_only",
 		"created_by_type": "member",
 		"created_by_id":   testUserID,
@@ -2237,7 +2237,7 @@ func TestClaimTask_AutomationRunOnly_PopulatesWorkspaceAndProjectContext(t *test
 		"workspace_id":    testWorkspaceID,
 		"project_id":      projectID,
 		"title":           "claim workspace fixture",
-		"assignee_id":     agentID,
+		"executor_id":     agentID,
 		"execution_mode":  "run_only",
 		"created_by_type": "member",
 		"created_by_id":   testUserID,
@@ -3660,7 +3660,7 @@ func TestGetAutomationRunGCCheck(t *testing.T) {
 	automationID := dbfx.Insert(t, "automation", testutil.Cols{
 		"workspace_id":    testWorkspaceID,
 		"title":           "gc-check automation",
-		"assignee_id":     agentID,
+		"executor_id":     agentID,
 		"execution_mode":  "run_only",
 		"created_by_type": "member",
 		"created_by_id":   testUserID,

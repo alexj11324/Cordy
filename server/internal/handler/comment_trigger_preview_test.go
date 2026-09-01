@@ -36,7 +36,7 @@ func createCommentTriggerPreviewIssue(t *testing.T, title string, assigneeType, 
 
 	var issueID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO issue (workspace_id, creator_type, creator_id, title, assignee_type, assignee_id, number, last_activity_at)
+		INSERT INTO issue (workspace_id, creator_type, creator_id, title, executor_type, executor_id, number, last_activity_at)
 		VALUES ($1, 'member', $2, $3, $4, $5, $6, now())
 		RETURNING id
 	`, testWorkspaceID, testUserID, title, assigneeTypeArg, assigneeIDArg, number).Scan(&issueID); err != nil {

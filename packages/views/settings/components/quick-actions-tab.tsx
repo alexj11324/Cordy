@@ -178,8 +178,8 @@ function toFormState(action: QuickAction): FormState {
   return {
     name: action.name,
     description: action.description,
-    assigneeType: action.assignee_type === "team" ? "team" : "agent",
-    assigneeId: action.assignee_id,
+    assigneeType: action.executor_type === "team" ? "team" : "agent",
+    assigneeId: action.executor_id,
     prompt: action.prompt,
     visibility: action.visibility === "private" ? "private" : "public",
   };
@@ -396,8 +396,8 @@ export function QuickActionsTab() {
               id: editing.id,
               name: form.name,
               description: form.description,
-              assignee_type: form.assigneeType,
-              assignee_id: form.assigneeId,
+              executor_type: form.assigneeType,
+              executor_id: form.assigneeId,
               prompt: form.prompt,
               visibility: form.visibility,
             });
@@ -405,8 +405,8 @@ export function QuickActionsTab() {
             await createMutation.mutateAsync({
               name: form.name,
               description: form.description,
-              assignee_type: form.assigneeType,
-              assignee_id: form.assigneeId,
+              executor_type: form.assigneeType,
+              executor_id: form.assigneeId,
               prompt: form.prompt,
               visibility: form.visibility,
             });

@@ -112,6 +112,7 @@ const actions: IssueSurfaceActions = {
 };
 
 function makeIssue(assigneeType: IssueAssigneeType): Issue {
+  const isMember = assigneeType === "member";
   return {
     id: `issue-${assigneeType}`,
     workspace_id: "ws-1",
@@ -121,8 +122,12 @@ function makeIssue(assigneeType: IssueAssigneeType): Issue {
     description: null,
     status: "todo",
     priority: "none",
-    assignee_type: assigneeType,
-    assignee_id: `${assigneeType}-1`,
+    owner_type: isMember ? "member" : null,
+    owner_id: isMember ? `${assigneeType}-1` : null,
+    executor_type: isMember ? null : assigneeType,
+    executor_id: isMember ? null : `${assigneeType}-1`,
+    reviewer_type: null,
+    reviewer_id: null,
     creator_type: "member",
     creator_id: "member-1",
     parent_issue_id: null,

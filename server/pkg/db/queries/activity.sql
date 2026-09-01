@@ -47,8 +47,8 @@ SELECT EXISTS (
 -- name: CountAssigneeChangesByActor :many
 -- Count how many times a user assigned each target via assignee_changed activities.
 SELECT
-  details->>'to_type' as assignee_type,
-  details->>'to_id' as assignee_id,
+  details->>'to_type' as executor_type,
+  details->>'to_id' as executor_id,
   COUNT(*)::bigint as frequency
 FROM activity_log
 WHERE workspace_id = $1

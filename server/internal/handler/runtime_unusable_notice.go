@@ -48,8 +48,8 @@ func (h *Handler) noteRuntimeUnusable(ctx context.Context, issue db.Issue, agent
 	h.publish(protocol.EventCommentCreated, uuidToString(issue.WorkspaceID), "system", "", map[string]any{
 		"comment":             commentToResponse(comment, nil, nil),
 		"issue_title":         issue.Title,
-		"issue_assignee_type": textToPtr(issue.AssigneeType),
-		"issue_assignee_id":   uuidToPtr(issue.AssigneeID),
+		"issue_executor_type": textToPtr(issue.ExecutorType),
+		"issue_executor_id":   uuidToPtr(issue.ExecutorID),
 		"issue_status":        issue.Status,
 		"issue_revision":      created.IssueRevision,
 	})

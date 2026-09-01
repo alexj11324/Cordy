@@ -270,14 +270,14 @@ function AssigneeCell({ automation }: { automation: Automation }) {
   return (
     <ListGridCell className="gap-1.5">
       <ActorAvatar
-        actorType={automation.assignee_type}
-        actorId={automation.assignee_id}
+        actorType={automation.executor_type}
+        actorId={automation.executor_id}
         size="sm"
-        enableHoverCard={automation.assignee_type === "agent"}
-        showStatusDot={automation.assignee_type === "agent"}
+        enableHoverCard={automation.executor_type === "agent"}
+        showStatusDot={automation.executor_type === "agent"}
       />
       <span className="min-w-0 truncate text-caption text-muted-foreground">
-        {getActorName(automation.assignee_type, automation.assignee_id)}
+        {getActorName(automation.executor_type, automation.executor_id)}
       </span>
     </ListGridCell>
   );
@@ -675,7 +675,7 @@ export function AutomationsPage() {
       if (
         filters.assignees.length > 0 &&
         !filters.assignees.includes(
-          actorFilterValue(a.assignee_type, a.assignee_id),
+          actorFilterValue(a.executor_type, a.executor_id),
         )
       ) {
         return false;

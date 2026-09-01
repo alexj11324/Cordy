@@ -63,7 +63,7 @@ type IssueTriggerInput struct {
 type IssueRunTrigger struct {
 	IssueID      pgtype.UUID
 	AgentID      pgtype.UUID
-	AssigneeType string
+	ExecutorType string
 	Source       RunEnqueueSource
 }
 
@@ -96,7 +96,7 @@ func allowAllAgents(db.Agent) bool { return true }
 //     same unique index, so the assignee still ends up with one pending run.
 func (s *IssueService) WillEnqueueRun(ctx context.Context, in IssueTriggerInput, probe IssueTriggerProbe) (IssueRunTrigger, bool) {
 	issue := in.Issue
-	if !issue.AssigneeType.Valid || !issue.AssigneeID.Valid {
+	if !issue.ExecutorType.Valid || !issue.ExecutorID.Valid {
 		return IssueRunTrigger{}, false
 	}
 	canAccess := probe.CanAccessAgent
@@ -139,9 +139,9 @@ func (s *IssueService) WillEnqueueRun(ctx context.Context, in IssueTriggerInput,
 		return IssueRunTrigger{}, false
 	}
 
-	switch issue.AssigneeType.String {
+	switch issue.ExecutorType.String {
 	case "agent":
-		agent, err := s.Queries.GetAgent(ctx, issue.AssigneeID)
+		agent, err := s.Queries.GetAgent(ctx, issue.ExecutorID)
 		if err != nil || !agent.RuntimeID.Valid || agent.ArchivedAt.Valid {
 			return IssueRunTrigger{}, false
 		}
@@ -149,16 +149,16 @@ func (s *IssueService) WillEnqueueRun(ctx context.Context, in IssueTriggerInput,
 			return IssueRunTrigger{}, false
 		}
 		if source == RunSourceAssign && !in.IsCreate && probe.SuppressActiveSelfAssignment != nil &&
-			probe.SuppressActiveSelfAssignment(issue.AssigneeID) {
+			probe.SuppressActiveSelfAssignment(issue.ExecutorID) {
 			return IssueRunTrigger{}, false
 		}
-		if source == RunSourceStatus && s.hasPendingRun(ctx, issue.ID, issue.AssigneeID) {
+		if source == RunSourceStatus && s.hasPendingRun(ctx, issue.ID, issue.ExecutorID) {
 			return IssueRunTrigger{}, false
 		}
 		return IssueRunTrigger{
 			IssueID:      issue.ID,
-			AgentID:      issue.AssigneeID,
-			AssigneeType: "agent",
+			AgentID:      issue.ExecutorID,
+			ExecutorType: "agent",
 			Source:       source,
 		}, true
 
@@ -170,7 +170,7 @@ func (s *IssueService) WillEnqueueRun(ctx context.Context, in IssueTriggerInput,
 		// than a redundant direct self-claim. The status path below still uses
 		// the leader's pending-task guard.
 		team, err := s.Queries.GetTeamInWorkspace(ctx, db.GetTeamInWorkspaceParams{
-			ID:          issue.AssigneeID,
+			ID:          issue.ExecutorID,
 			WorkspaceID: issue.WorkspaceID,
 		})
 		if err != nil {
@@ -193,7 +193,7 @@ func (s *IssueService) WillEnqueueRun(ctx context.Context, in IssueTriggerInput,
 		return IssueRunTrigger{
 			IssueID:      issue.ID,
 			AgentID:      team.LeaderID,
-			AssigneeType: "team",
+			ExecutorType: "team",
 			Source:       source,
 		}, true
 	}

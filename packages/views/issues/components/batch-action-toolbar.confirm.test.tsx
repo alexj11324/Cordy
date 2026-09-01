@@ -54,11 +54,11 @@ vi.mock("./pickers", () => ({
     <div>
       <button
         data-testid="assign-agent"
-        onClick={() => onUpdate({ assignee_type: "agent", assignee_id: "agent-1" })}
+        onClick={() => onUpdate({ executor_type: "agent", executor_id: "agent-1" })}
       />
       <button
         data-testid="assign-member"
-        onClick={() => onUpdate({ assignee_type: "member", assignee_id: "user-1" })}
+        onClick={() => onUpdate({ owner_type: "member", owner_id: "user-1", executor_type: null, executor_id: null })}
       />
     </div>
   ),
@@ -74,8 +74,12 @@ function makeIssue(overrides: Partial<Issue> = {}): Issue {
     description: null,
     status: "todo",
     priority: "none",
-    assignee_type: null,
-    assignee_id: null,
+    owner_type: null,
+    owner_id: null,
+    executor_type: null,
+    executor_id: null,
+    reviewer_type: null,
+    reviewer_id: null,
     creator_type: "member",
     creator_id: "user-1",
     parent_issue_id: null,
@@ -130,7 +134,7 @@ describe("BatchActionToolbar status routing (MUL-4155)", () => {
     expect(openModal).not.toHaveBeenCalled();
     expect(batchUpdate).toHaveBeenCalledWith({
       ids: ["a"],
-      updates: { assignee_type: "member", assignee_id: "user-1" },
+      updates: { owner_type: "member", owner_id: "user-1", executor_type: null, executor_id: null },
     });
   });
 

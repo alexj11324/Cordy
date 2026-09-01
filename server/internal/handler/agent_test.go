@@ -286,22 +286,30 @@ func TestListWorkspaceWorkingAgents(t *testing.T) {
 		assigneeType, assigneeID any,
 	) string {
 		t.Helper()
+		var ownerType, ownerID, executorType, executorID any
+		if typ, ok := assigneeType.(string); ok && typ == "member" {
+			ownerType, ownerID = assigneeType, assigneeID
+		} else {
+			executorType, executorID = assigneeType, assigneeID
+		}
 		var issueID string
 		if err := testPool.QueryRow(ctx, `
 			INSERT INTO issue (
 				workspace_id, number, title, status, priority,
-				assignee_type, assignee_id, creator_type, creator_id
+				owner_type, owner_id, executor_type, executor_id, creator_type, creator_id
 			)
 			SELECT $1, COALESCE(MIN(number), 0) - 1, $2, 'todo', 'none',
-			       $3, $4, $5, $6
+			       $3, $4, $5, $6, $7, $8
 			FROM issue
 			WHERE workspace_id = $1
 			RETURNING id
 		`,
 			testWorkspaceID,
 			title,
-			assigneeType,
-			assigneeID,
+			ownerType,
+			ownerID,
+			executorType,
+			executorID,
 			creatorType,
 			creatorID,
 		).Scan(&issueID); err != nil {
@@ -373,10 +381,10 @@ func TestListWorkspaceWorkingAgents(t *testing.T) {
 	// to prove source precedence keeps it out of type=issue.
 	insertedTaskIDs := make([]string, 0, 10)
 	for _, fixture := range []struct {
-		agentID        string
-		status         string
-		issueID        any
-		chatSessionID  any
+		agentID         string
+		status          string
+		issueID         any
+		chatSessionID   any
 		automationRunID any
 	}{
 		{workingAgentID, "running", assignedIssueID, nil, nil},

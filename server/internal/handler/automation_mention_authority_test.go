@@ -50,7 +50,7 @@ func newAutomationDelegationFixture(t *testing.T, targetAgentID, automationCreat
 	// satisfies the assignee reference).
 	var automationID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO automation (workspace_id, title, assignee_id, execution_mode, created_by_type, created_by_id)
+		INSERT INTO automation (workspace_id, title, executor_id, execution_mode, created_by_type, created_by_id)
 		VALUES ($1, 'MUL-4857 delegation', $2, 'create_issue', 'member', $3) RETURNING id
 	`, testWorkspaceID, targetAgentID, automationCreatorUserID).Scan(&automationID); err != nil {
 		t.Fatalf("create automation: %v", err)
@@ -78,7 +78,7 @@ func newAutomationDelegationFixture(t *testing.T, targetAgentID, automationCreat
 	}
 	var issueID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO issue (workspace_id, creator_type, creator_id, title, assignee_type, assignee_id, number, origin_type, origin_id)
+		INSERT INTO issue (workspace_id, creator_type, creator_id, title, executor_type, executor_id, number, origin_type, origin_id)
 		VALUES ($1, 'agent', $2, 'MUL-4857 delegation issue', 'agent', $2, $3, $4, $5)
 		RETURNING id
 	`, testWorkspaceID, leaderID, number, originTypeArg, originIDArg).Scan(&issueID); err != nil {
@@ -556,7 +556,7 @@ func TestCreateComment_AutomationWorkerResultWakesTeamLeader(t *testing.T) {
 
 	var automationID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO automation (workspace_id, title, assignee_id, execution_mode, created_by_type, created_by_id)
+		INSERT INTO automation (workspace_id, title, executor_id, execution_mode, created_by_type, created_by_id)
 		VALUES ($1, 'MUL-4857 team', $2, 'create_issue', 'member', $3) RETURNING id
 	`, testWorkspaceID, leaderID, ownerID).Scan(&automationID); err != nil {
 		t.Fatalf("create automation: %v", err)
@@ -574,7 +574,7 @@ func TestCreateComment_AutomationWorkerResultWakesTeamLeader(t *testing.T) {
 
 	var issueID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO issue (workspace_id, creator_type, creator_id, title, assignee_type, assignee_id, number, origin_type, origin_id)
+		INSERT INTO issue (workspace_id, creator_type, creator_id, title, executor_type, executor_id, number, origin_type, origin_id)
 		VALUES ($1, 'agent', $2, 'MUL-4857 team issue', 'team', $3, $4, 'automation', $5) RETURNING id
 	`, testWorkspaceID, leaderID, teamID, nextWorkspaceIssueNumber(t), automationID).Scan(&issueID); err != nil {
 		t.Fatalf("create team issue: %v", err)

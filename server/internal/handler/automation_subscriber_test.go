@@ -64,7 +64,7 @@ func TestCreateAutomationPersistsMemberSubscribers(t *testing.T) {
 	w := httptest.NewRecorder()
 	req := newRequest("POST", "/api/automations?workspace_id="+testWorkspaceID, map[string]any{
 		"title":          "Subscriber template automation",
-		"assignee_id":    agentID,
+		"executor_id":    agentID,
 		"execution_mode": "create_issue",
 		"subscribers": []map[string]any{
 			{"user_type": "member", "user_id": testUserID},
@@ -112,7 +112,7 @@ func TestCreateAutomationRejectsNonMemberSubscriberType(t *testing.T) {
 	w := httptest.NewRecorder()
 	req := newRequest("POST", "/api/automations?workspace_id="+testWorkspaceID, map[string]any{
 		"title":          "Bad subscriber type",
-		"assignee_id":    agentID,
+		"executor_id":    agentID,
 		"execution_mode": "create_issue",
 		"subscribers": []map[string]any{
 			{"user_type": "agent", "user_id": agentID},
@@ -136,7 +136,7 @@ func TestCreateAutomationRejectsForeignSubscriber(t *testing.T) {
 	w := httptest.NewRecorder()
 	req := newRequest("POST", "/api/automations?workspace_id="+testWorkspaceID, map[string]any{
 		"title":          "Foreign subscriber",
-		"assignee_id":    agentID,
+		"executor_id":    agentID,
 		"execution_mode": "create_issue",
 		"subscribers": []map[string]any{
 			{"user_type": "member", "user_id": "00000000-0000-0000-0000-000000000000"},
@@ -175,7 +175,7 @@ func TestAutomationSubscriberSave_LosesToConcurrentRevoke(t *testing.T) {
 					w := httptest.NewRecorder()
 					req := newRequest("POST", "/api/automations?workspace_id="+testWorkspaceID, map[string]any{
 						"title":          title,
-						"assignee_id":    agentID,
+						"executor_id":    agentID,
 						"execution_mode": "create_issue",
 						"subscribers": []map[string]any{
 							{"user_type": "member", "user_id": targetUserID},
@@ -194,7 +194,7 @@ func TestAutomationSubscriberSave_LosesToConcurrentRevoke(t *testing.T) {
 			prepare: func(t *testing.T, targetUserID string) func() (int, string, string) {
 				createReq := newRequest("POST", "/api/automations?workspace_id="+testWorkspaceID, map[string]any{
 					"title":          fmt.Sprintf("Concurrent revoke update %d", time.Now().UnixNano()),
-					"assignee_id":    agentID,
+					"executor_id":    agentID,
 					"execution_mode": "create_issue",
 				})
 				var created AutomationResponse
@@ -312,7 +312,7 @@ func TestCreateAutomationRollsBackWhenSubscriberInsertFails(t *testing.T) {
 	w := httptest.NewRecorder()
 	req := newRequest("POST", "/api/automations?workspace_id="+testWorkspaceID, map[string]any{
 		"title":          title,
-		"assignee_id":    agentID,
+		"executor_id":    agentID,
 		"execution_mode": "create_issue",
 		"subscribers": []map[string]any{
 			{"user_type": "member", "user_id": testUserID},
@@ -356,7 +356,7 @@ func TestUpdateAutomationFullReplaceSubscribers(t *testing.T) {
 	w := httptest.NewRecorder()
 	req := newRequest("POST", "/api/automations?workspace_id="+testWorkspaceID, map[string]any{
 		"title":          "Replace subscribers automation",
-		"assignee_id":    agentID,
+		"executor_id":    agentID,
 		"execution_mode": "create_issue",
 		"subscribers": []map[string]any{
 			{"user_type": "member", "user_id": testUserID},
@@ -418,7 +418,7 @@ func TestUpdateAutomationRollsBackWhenSubscriberInsertFails(t *testing.T) {
 	w := httptest.NewRecorder()
 	req := newRequest("POST", "/api/automations?workspace_id="+testWorkspaceID, map[string]any{
 		"title":          originalTitle,
-		"assignee_id":    agentID,
+		"executor_id":    agentID,
 		"execution_mode": "create_issue",
 		"subscribers": []map[string]any{
 			{"user_type": "member", "user_id": testUserID},
@@ -486,7 +486,7 @@ func TestUpdateAutomationPreservesSubscribersWhenOmitted(t *testing.T) {
 	w := httptest.NewRecorder()
 	req := newRequest("POST", "/api/automations?workspace_id="+testWorkspaceID, map[string]any{
 		"title":          "Preserve subscribers automation",
-		"assignee_id":    agentID,
+		"executor_id":    agentID,
 		"execution_mode": "create_issue",
 		"subscribers": []map[string]any{
 			{"user_type": "member", "user_id": testUserID},
@@ -541,7 +541,7 @@ func TestAutomationDepartedSubscriberReadRepair(t *testing.T) {
 
 	createReq := newRequest("POST", "/api/automations?workspace_id="+testWorkspaceID, map[string]any{
 		"title":          "Departed subscriber read repair",
-		"assignee_id":    agentID,
+		"executor_id":    agentID,
 		"execution_mode": "create_issue",
 		"subscribers": []map[string]any{
 			{"user_type": "member", "user_id": departedUserID},
@@ -612,7 +612,7 @@ func TestAutomationDispatchFansOutSubscribersToIssue(t *testing.T) {
 	w := httptest.NewRecorder()
 	req := newRequest("POST", "/api/automations?workspace_id="+testWorkspaceID, map[string]any{
 		"title":                "Subscriber fanout automation",
-		"assignee_id":          agentID,
+		"executor_id":          agentID,
 		"execution_mode":       "create_issue",
 		"issue_title_template": title,
 		"subscribers": []map[string]any{
@@ -685,7 +685,7 @@ func TestAutomationDispatchNotifiesSubscribersOnCreate(t *testing.T) {
 	w := httptest.NewRecorder()
 	req := newRequest("POST", "/api/automations?workspace_id="+testWorkspaceID, map[string]any{
 		"title":                "Subscriber inbox automation",
-		"assignee_id":          agentID,
+		"executor_id":          agentID,
 		"execution_mode":       "create_issue",
 		"issue_title_template": title,
 		"subscribers": []map[string]any{
@@ -770,7 +770,7 @@ func TestAutomationDispatchSkipsInboxWhenNoSubscribers(t *testing.T) {
 	w := httptest.NewRecorder()
 	req := newRequest("POST", "/api/automations?workspace_id="+testWorkspaceID, map[string]any{
 		"title":                "No-subscriber automation",
-		"assignee_id":          agentID,
+		"executor_id":          agentID,
 		"execution_mode":       "create_issue",
 		"issue_title_template": title,
 	})
@@ -840,7 +840,7 @@ func TestDeleteAutomationArchivesAndPreservesHistory(t *testing.T) {
 	w := httptest.NewRecorder()
 	req := newRequest("POST", "/api/automations?workspace_id="+testWorkspaceID, map[string]any{
 		"title":          "Delete-with-subscribers automation",
-		"assignee_id":    agentID,
+		"executor_id":    agentID,
 		"execution_mode": "create_issue",
 		"subscribers": []map[string]any{
 			{"user_type": "member", "user_id": testUserID},

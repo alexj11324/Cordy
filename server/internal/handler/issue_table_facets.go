@@ -92,7 +92,7 @@ func issueTableBaseFacetExpression(query issueTableQuerySpec, facet issueTableFa
 	case "priority":
 		return "i.priority", len(query.Filters.Priorities) == 0
 	case "assignee":
-		return "CASE WHEN i.assignee_type IS NULL OR i.assignee_id IS NULL THEN '__none__' ELSE i.assignee_type || ':' || i.assignee_id::text END", len(query.Filters.Assignees) == 0 && !query.Filters.IncludeNoAssignee
+		return "CASE WHEN " + effectiveAssigneeTypeSQL + " IS NULL OR " + effectiveAssigneeIDSQL + " IS NULL THEN '__none__' ELSE " + effectiveAssigneeTypeSQL + " || ':' || " + effectiveAssigneeIDSQL + "::text END", len(query.Filters.Assignees) == 0 && !query.Filters.IncludeNoAssignee
 	case "creator":
 		return "i.creator_type || ':' || i.creator_id::text", len(query.Filters.Creators) == 0
 	case "project":
@@ -196,7 +196,7 @@ func (h *Handler) issueTableFacetQuery(w http.ResponseWriter, r *http.Request, r
 	case "priority":
 		query = fmt.Sprintf(`SELECT i.priority, COUNT(*)::bigint FROM issue i WHERE %s GROUP BY i.priority`, compiled.where)
 	case "assignee":
-		query = fmt.Sprintf(`SELECT CASE WHEN i.assignee_type IS NULL OR i.assignee_id IS NULL THEN '__none__' ELSE i.assignee_type || ':' || i.assignee_id::text END, COUNT(*)::bigint FROM issue i WHERE %s GROUP BY 1`, compiled.where)
+		query = fmt.Sprintf(`SELECT CASE WHEN %s IS NULL OR %s IS NULL THEN '__none__' ELSE %s || ':' || %s::text END, COUNT(*)::bigint FROM issue i WHERE %s GROUP BY 1`, effectiveAssigneeTypeSQL, effectiveAssigneeIDSQL, effectiveAssigneeTypeSQL, effectiveAssigneeIDSQL, compiled.where)
 	case "creator":
 		query = fmt.Sprintf(`SELECT i.creator_type || ':' || i.creator_id::text, COUNT(*)::bigint FROM issue i WHERE %s GROUP BY 1`, compiled.where)
 	case "project":

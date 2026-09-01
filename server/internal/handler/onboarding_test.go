@@ -293,7 +293,7 @@ func TestBootstrapOnboardingRuntimeCreatesSingleGuideIssue(t *testing.T) {
 		issuePriority string
 	)
 	if err := testPool.QueryRow(ctx, `
-		SELECT title, assignee_type, assignee_id, status, priority
+		SELECT title, executor_type, executor_id, status, priority
 		  FROM issue
 		 WHERE id = $1
 	`, resp.IssueID).Scan(&issueTitle, &assigneeType, &assigneeID, &issueStatus, &issuePriority); err != nil {
@@ -536,7 +536,7 @@ func TestBootstrapOnboardingNoRuntimeCreatesSingleGuideIssue(t *testing.T) {
 		description   string
 	)
 	if err := testPool.QueryRow(ctx, `
-		SELECT title, assignee_type, assignee_id, status, priority, description
+		SELECT title, owner_type, owner_id, status, priority, description
 		  FROM issue
 		 WHERE id = $1
 	`, resp.IssueID).Scan(&issueTitle, &assigneeType, &assigneeID, &issueStatus, &issuePriority, &description); err != nil {
@@ -546,7 +546,7 @@ func TestBootstrapOnboardingNoRuntimeCreatesSingleGuideIssue(t *testing.T) {
 		t.Fatalf("issue title = %q, want %q", issueTitle, noRuntimeIssueTitle)
 	}
 	if assigneeType != "member" || assigneeID != testUserID {
-		t.Fatalf("issue assignee = %s/%s, want member/%s", assigneeType, assigneeID, testUserID)
+		t.Fatalf("issue owner = %s/%s, want member/%s", assigneeType, assigneeID, testUserID)
 	}
 	if issueStatus != "todo" || issuePriority != "high" {
 		t.Fatalf("issue status/priority = %s/%s, want todo/high", issueStatus, issuePriority)

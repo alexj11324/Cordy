@@ -120,7 +120,7 @@ function AssigneePickerImpl({
   const freqMap = useMemo(() => {
     const map = new Map<string, number>();
     for (const entry of frequency) {
-      map.set(`${entry.assignee_type}:${entry.assignee_id}`, entry.frequency);
+      map.set(`${entry.executor_type}:${entry.executor_id}`, entry.frequency);
     }
     return map;
   }, [frequency]);
@@ -182,7 +182,12 @@ function AssigneePickerImpl({
         emptyValue
         selected={!mixed && !assigneeType && !assigneeId}
         onClick={() => {
-          onUpdate({ assignee_type: null, assignee_id: null });
+          onUpdate({
+            owner_type: null,
+            owner_id: null,
+            executor_type: null,
+            executor_id: null,
+          });
           setOpen(false);
         }}
       >
@@ -199,8 +204,10 @@ function AssigneePickerImpl({
               selected={isSelected("member", m.user_id)}
               onClick={() => {
                 onUpdate({
-                  assignee_type: "member",
-                  assignee_id: m.user_id,
+                  owner_type: "member",
+                  owner_id: m.user_id,
+                  executor_type: null,
+                  executor_id: null,
                 });
                 setOpen(false);
               }}
@@ -242,8 +249,8 @@ function AssigneePickerImpl({
                 onClick={() => {
                   if (!allowed) return;
                   onUpdate({
-                    assignee_type: "agent",
-                    assignee_id: a.id,
+                    executor_type: "agent",
+                    executor_id: a.id,
                   });
                   setOpen(false);
                 }}
@@ -278,8 +285,8 @@ function AssigneePickerImpl({
                 onClick={() => {
                   if (!runtimeBound) return;
                   onUpdate({
-                    assignee_type: "team",
-                    assignee_id: s.id,
+                    executor_type: "team",
+                    executor_id: s.id,
                   });
                   setOpen(false);
                 }}

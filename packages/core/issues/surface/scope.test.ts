@@ -41,7 +41,7 @@ describe("issue surface scope", () => {
       buildIssueSurfaceQueryPlan({ type: "workspace", actorKind: "agents" }),
     ).toEqual({
       scopeKey: "workspace:agents",
-      queryFilter: { assignee_types: ["agent", "team"] },
+      queryFilter: { executor_types: ["agent", "team"] },
       createDefaults: {},
     });
     expect(
@@ -52,7 +52,7 @@ describe("issue surface scope", () => {
       }),
     ).toEqual({
       scopeKey: "project:p1:members",
-      queryFilter: { project_id: "p1", assignee_types: ["member"] },
+      queryFilter: { project_id: "p1", executor_types: ["member"] },
       createDefaults: { project_id: "p1" },
     });
     expect(
@@ -63,8 +63,8 @@ describe("issue surface scope", () => {
       }),
     ).toEqual({
       scopeKey: "my:u1:assigned",
-      queryFilter: { assignee_id: "u1" },
-      createDefaults: { assignee_type: "member", assignee_id: "u1" },
+      queryFilter: { owner_id: "u1" },
+      createDefaults: { owner_type: "member", owner_id: "u1" },
     });
     expect(
       buildIssueSurfaceQueryPlan({
@@ -75,8 +75,8 @@ describe("issue surface scope", () => {
       }),
     ).toEqual({
       scopeKey: "actor:agent:a1:assigned",
-      queryFilter: { assignee_id: "a1" },
-      createDefaults: { assignee_type: "agent", assignee_id: "a1" },
+      queryFilter: { executor_id: "a1" },
+      createDefaults: { executor_type: "agent", executor_id: "a1" },
     });
   });
 

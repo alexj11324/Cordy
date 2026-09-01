@@ -88,8 +88,10 @@ type Issue = {
   status: string;
   priority: string;
   description?: string | null;
-  assignee_type?: string | null;
-  assignee_id?: string | null;
+  owner_type?: string | null;
+  owner_id?: string | null;
+  executor_type?: string | null;
+  executor_id?: string | null;
 };
 
 const BASE_ISSUE: Issue = {
@@ -241,7 +243,7 @@ describe("IssueHoverCard", () => {
   });
 
   it("shows the assignee avatar and name, without nesting another hover card", async () => {
-    mockIssue({ ...BASE_ISSUE, assignee_type: "member", assignee_id: "user-9" });
+    mockIssue({ ...BASE_ISSUE, owner_type: "member", owner_id: "user-9" });
 
     await openCard();
 
@@ -255,7 +257,7 @@ describe("IssueHoverCard", () => {
   });
 
   it("omits the assignee when the issue is unassigned", async () => {
-    mockIssue({ ...BASE_ISSUE, assignee_type: null, assignee_id: null });
+    mockIssue({ ...BASE_ISSUE, executor_type: null, executor_id: null });
 
     await openCard();
 

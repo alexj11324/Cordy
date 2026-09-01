@@ -46,7 +46,7 @@ func createAutomationRunOnlyTask(t *testing.T, agentID string) string {
 	automationID := dbfx.Insert(t, "automation", testutil.Cols{
 		"workspace_id":    workspaceID,
 		"title":           "cancel-runonly-ap",
-		"assignee_id":     agentID,
+		"executor_id":     agentID,
 		"execution_mode":  "run_only",
 		"created_by_type": "member",
 		"created_by_id":   testUserID,

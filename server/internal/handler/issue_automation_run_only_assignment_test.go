@@ -57,7 +57,7 @@ func newRunOnlyAutomationFixture(t *testing.T, targetAgentID, accountableUserID 
 	automationID := dbfx.Insert(t, "automation", testutil.Cols{
 		"workspace_id":    testWorkspaceID,
 		"title":           "MUL-6691 run_only",
-		"assignee_id":     targetAgentID,
+		"executor_id":     targetAgentID,
 		"execution_mode":  "run_only",
 		"created_by_type": "member",
 		"created_by_id":   accountableUserID,
@@ -100,8 +100,8 @@ func topLevelIssueRequest(t *testing.T, assigneeType, assigneeID, status, actorA
 		"title":           "MUL-6691 top-level " + t.Name(),
 		"status":          status,
 		"priority":        "low",
-		"assignee_type":   assigneeType,
-		"assignee_id":     assigneeID,
+		"executor_type":   assigneeType,
+		"executor_id":     assigneeID,
 		"allow_duplicate": true,
 	})
 	if actorAgentID != "" {
@@ -369,8 +369,8 @@ func TestUpdateIssue_AutomationLeaderAssignsPrivateWorker(t *testing.T) {
 
 		testutil.Call(t, testHandler.UpdateIssue, testutil.WithURLParams(
 			asRun(newRequest(http.MethodPatch, "/api/issues/"+issueID, map[string]any{
-				"assignee_type": "team",
-				"assignee_id":   teamID,
+				"executor_type": "team",
+				"executor_id":   teamID,
 			}), fx.LeaderAgentID, fx.LeaderTaskID),
 			"id", issueID,
 		)).Want(http.StatusOK)
@@ -498,8 +498,8 @@ func TestUpdateIssue_AutomationLeaderAssignsPrivateWorker(t *testing.T) {
 
 		testutil.Call(t, testHandler.UpdateIssue, testutil.WithURLParams(
 			newRequestAs(plainMemberID, http.MethodPatch, "/api/issues/"+issueID, map[string]any{
-				"assignee_type": "agent",
-				"assignee_id":   workerID,
+				"executor_type": "agent",
+				"executor_id":   workerID,
 			}),
 			"id", issueID,
 		)).Want(http.StatusForbidden)
@@ -520,8 +520,8 @@ func batchAssignAsRun(t *testing.T, headerUserID, agentID, taskID, targetAgentID
 	req := newRequestAs(headerUserID, http.MethodPost, "/api/issues/batch?workspace_id="+testWorkspaceID, map[string]any{
 		"issue_ids": issueIDs,
 		"updates": map[string]any{
-			"assignee_type": "agent",
-			"assignee_id":   targetAgentID,
+			"executor_type": "agent",
+			"executor_id":   targetAgentID,
 		},
 	})
 	req.Header.Set("X-Agent-ID", agentID)
@@ -533,7 +533,7 @@ func batchAssignAsRun(t *testing.T, headerUserID, agentID, taskID, targetAgentID
 func assigneeOf(t *testing.T, issueID string) string {
 	t.Helper()
 	var assignee *string
-	dbfx.QueryRow(t, `SELECT assignee_id::text FROM issue WHERE id = $1`, issueID).Scan(&assignee)
+	dbfx.QueryRow(t, `SELECT executor_id::text FROM issue WHERE id = $1`, issueID).Scan(&assignee)
 	if assignee == nil {
 		return ""
 	}

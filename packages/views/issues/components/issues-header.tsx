@@ -251,10 +251,12 @@ function useIssueCounts(
       status.set(issue.status, (status.get(issue.status) ?? 0) + 1);
       priority.set(issue.priority, (priority.get(issue.priority) ?? 0) + 1);
 
-      if (!issue.assignee_id) {
+      const assigneeType = issue.executor_type ?? issue.owner_type;
+      const assigneeId = issue.executor_id ?? issue.owner_id;
+      if (!assigneeId) {
         noAssignee++;
       } else {
-        const aKey = `${issue.assignee_type}:${issue.assignee_id}`;
+        const aKey = `${assigneeType}:${assigneeId}`;
         assignee.set(aKey, (assignee.get(aKey) ?? 0) + 1);
       }
 

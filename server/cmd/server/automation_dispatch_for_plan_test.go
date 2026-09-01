@@ -45,8 +45,8 @@ func TestDispatchAutomationForPlanIsIdempotent(t *testing.T) {
 		WorkspaceID:        parseUUID(testWorkspaceID),
 		Title:              "Dispatch for plan idempotency",
 		Description:        pgtype.Text{String: "Dispatch for plan test", Valid: true},
-		AssigneeType:       "agent",
-		AssigneeID:         parseUUID(agentID),
+		ExecutorType:       "agent",
+		ExecutorID:         parseUUID(agentID),
 		Status:             "active",
 		ExecutionMode:      "run_only",
 		IssueTitleTemplate: pgtype.Text{},
@@ -169,8 +169,8 @@ func TestDispatchAutomationSuppressesRecentDuplicateIssue(t *testing.T) {
 		WorkspaceID:        parseUUID(testWorkspaceID),
 		Title:              "Recent duplicate issue guard",
 		Description:        pgtype.Text{String: "Recent duplicate issue guard test", Valid: true},
-		AssigneeType:       "agent",
-		AssigneeID:         parseUUID(agentID),
+		ExecutorType:       "agent",
+		ExecutorID:         parseUUID(agentID),
 		Status:             "active",
 		ExecutionMode:      "create_issue",
 		IssueTitleTemplate: pgtype.Text{String: title, Valid: true},
@@ -232,8 +232,8 @@ func TestDispatchAutomationForPlanRejectsZeroArgs(t *testing.T) {
 		ID:            parseUUID(testWorkspaceID), // placeholder; will not be loaded since validation fails first
 		WorkspaceID:   parseUUID(testWorkspaceID),
 		ExecutionMode: "run_only",
-		AssigneeType:  "agent",
-		AssigneeID:    parseUUID(testWorkspaceID), // arbitrary; we never get past the input guard
+		ExecutorType:  "agent",
+		ExecutorID:    parseUUID(testWorkspaceID), // arbitrary; we never get past the input guard
 		Status:        "active",
 	}
 
@@ -292,8 +292,8 @@ func TestDispatchAutomationForPlanRecoversPartialRun(t *testing.T) {
 				WorkspaceID:        parseUUID(testWorkspaceID),
 				Title:              "Partial recovery " + mode,
 				Description:        pgtype.Text{String: "partial run recovery test", Valid: true},
-				AssigneeType:       "agent",
-				AssigneeID:         parseUUID(agentID),
+				ExecutorType:       "agent",
+				ExecutorID:         parseUUID(agentID),
 				Status:             "active",
 				ExecutionMode:      mode,
 				IssueTitleTemplate: pgtype.Text{String: "Partial recovery", Valid: true},

@@ -112,8 +112,8 @@ func registerActivityListeners(bus *events.Bus, queries *db.Queries) {
 		}
 
 		if assigneeChanged {
-			prevAssigneeType, _ := payload["prev_assignee_type"].(*string)
-			prevAssigneeID, _ := payload["prev_assignee_id"].(*string)
+			prevAssigneeType, prevAssigneeID := payloadPrevEffectiveAssignee(payload)
+			newAssigneeType, newAssigneeID := issue.EffectiveAssignee()
 
 			detailsMap := map[string]string{}
 			if prevAssigneeType != nil {
@@ -122,11 +122,11 @@ func registerActivityListeners(bus *events.Bus, queries *db.Queries) {
 			if prevAssigneeID != nil {
 				detailsMap["from_id"] = *prevAssigneeID
 			}
-			if issue.AssigneeType != nil {
-				detailsMap["to_type"] = *issue.AssigneeType
+			if newAssigneeType != nil {
+				detailsMap["to_type"] = *newAssigneeType
 			}
-			if issue.AssigneeID != nil {
-				detailsMap["to_id"] = *issue.AssigneeID
+			if newAssigneeID != nil {
+				detailsMap["to_id"] = *newAssigneeID
 			}
 
 			details, _ := json.Marshal(detailsMap)

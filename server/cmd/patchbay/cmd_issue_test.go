@@ -434,6 +434,12 @@ func newIssueCreateTestCmd() *cobra.Command {
 	cmd.Flags().String("priority", "", "")
 	cmd.Flags().String("assignee", "", "")
 	cmd.Flags().String("assignee-id", "", "")
+	cmd.Flags().String("owner", "", "")
+	cmd.Flags().String("owner-id", "", "")
+	cmd.Flags().String("executor", "", "")
+	cmd.Flags().String("executor-id", "", "")
+	cmd.Flags().String("reviewer", "", "")
+	cmd.Flags().String("reviewer-id", "", "")
 	cmd.Flags().String("parent", "", "")
 	cmd.Flags().String("project", "", "")
 	cmd.Flags().String("due-date", "", "")
@@ -479,6 +485,52 @@ func TestRunIssueCreateSendsAllowDuplicate(t *testing.T) {
 	}
 	if got := body["allow_duplicate"]; got != true {
 		t.Fatalf("allow_duplicate = %#v, want true in request body", got)
+	}
+}
+
+func TestRunIssueCreateMapsMemberAssigneeToOwner(t *testing.T) {
+	var body map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/workspaces/ws-1/members":
+			json.NewEncoder(w).Encode([]map[string]any{
+				{"user_id": "aaaaaaaa-1111-1111-1111-111111111111", "name": "Alice"},
+			})
+		case "/api/agents":
+			json.NewEncoder(w).Encode([]map[string]any{})
+		case "/api/teams":
+			json.NewEncoder(w).Encode([]map[string]any{})
+		case "/api/issues":
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("decode body: %v", err)
+			}
+			json.NewEncoder(w).Encode(map[string]any{
+				"id":         "issue-1",
+				"identifier": "MUL-1",
+				"title":      "Owned",
+				"status":     "todo",
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
+	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
+	t.Setenv("PATCHBAY_TOKEN", "test-token")
+
+	cmd := newIssueCreateTestCmd()
+	_ = cmd.Flags().Set("title", "Owned")
+	_ = cmd.Flags().Set("assignee-id", "aaaaaaaa-1111-1111-1111-111111111111")
+	if err := runIssueCreate(cmd, nil); err != nil {
+		t.Fatalf("runIssueCreate: %v", err)
+	}
+	if body["owner_type"] != "member" || body["owner_id"] != "aaaaaaaa-1111-1111-1111-111111111111" {
+		t.Fatalf("member assignee should map to owner, got %#v", body)
+	}
+	if _, ok := body["executor_type"]; ok {
+		t.Fatalf("member assignee must not set executor_type: %#v", body)
 	}
 }
 
@@ -745,10 +797,10 @@ func TestFormatAssignee(t *testing.T) {
 		state: &actorDisplayLookupState{
 			members:       map[string]string{"abcdefgh-1234": "Alice"},
 			agents:        map[string]string{"xyz": "CodeBot"},
-			teams:        map[string]string{"sq-1": "Super Human"},
+			teams:         map[string]string{"sq-1": "Super Human"},
 			membersLoaded: true,
 			agentsLoaded:  true,
-			teamsLoaded:  true,
+			teamsLoaded:   true,
 		},
 	}
 	tests := []struct {
@@ -757,12 +809,12 @@ func TestFormatAssignee(t *testing.T) {
 		want  string
 	}{
 		{"empty", map[string]any{}, ""},
-		{"no type", map[string]any{"assignee_id": "abc"}, ""},
-		{"no id", map[string]any{"assignee_type": "member"}, ""},
-		{"member", map[string]any{"assignee_type": "member", "assignee_id": "abcdefgh-1234"}, "member:Alice"},
-		{"agent", map[string]any{"assignee_type": "agent", "assignee_id": "xyz"}, "agent:CodeBot"},
-		{"team", map[string]any{"assignee_type": "team", "assignee_id": "sq-1"}, "team:Super Human"},
-		{"unknown fallback", map[string]any{"assignee_type": "agent", "assignee_id": "missing"}, "agent:missing"},
+		{"no type", map[string]any{"executor_id": "abc"}, ""},
+		{"no id", map[string]any{"executor_type": "member"}, ""},
+		{"member owner", map[string]any{"owner_type": "member", "owner_id": "abcdefgh-1234"}, "member:Alice"},
+		{"agent", map[string]any{"executor_type": "agent", "executor_id": "xyz"}, "agent:CodeBot"},
+		{"team", map[string]any{"executor_type": "team", "executor_id": "sq-1"}, "team:Super Human"},
+		{"unknown fallback", map[string]any{"executor_type": "agent", "executor_id": "missing"}, "agent:missing"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1060,12 +1112,12 @@ func TestFetchAutomationCandidatesPaginates(t *testing.T) {
 		case "":
 			json.NewEncoder(w).Encode(map[string]any{
 				"automations": page1,
-				"total":      resolverListPageLimit + 1,
+				"total":       resolverListPageLimit + 1,
 			})
 		case strconv.Itoa(resolverListPageLimit):
 			json.NewEncoder(w).Encode(map[string]any{
 				"automations": page2,
-				"total":      resolverListPageLimit + 1,
+				"total":       resolverListPageLimit + 1,
 			})
 		default:
 			t.Fatalf("unexpected offset %q", offset)

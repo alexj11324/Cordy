@@ -435,7 +435,7 @@ export function useIssueSurfaceController({
         const assigneeTypes = assigneeTypesForActorKind(scope.actorKind);
         queryScope = {
           kind: "workspace",
-          ...(assigneeTypes ? { assignee_types: assigneeTypes } : {}),
+          ...(assigneeTypes ? { executor_types: assigneeTypes } : {}),
         };
         break;
       }
@@ -444,7 +444,7 @@ export function useIssueSurfaceController({
         queryScope = {
           kind: "project",
           project_id: scope.projectId,
-          ...(assigneeTypes ? { assignee_types: assigneeTypes } : {}),
+          ...(assigneeTypes ? { executor_types: assigneeTypes } : {}),
         };
         break;
       }

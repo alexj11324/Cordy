@@ -16,8 +16,12 @@ function makeIssue(overrides: Partial<Issue> = {}): Issue {
     description: null,
     status: "todo",
     priority: "none",
-    assignee_type: "member",
-    assignee_id: "me",
+    owner_type: "member",
+    owner_id: "me",
+    executor_type: null,
+    executor_id: null,
+    reviewer_type: null,
+    reviewer_id: null,
     creator_type: "member",
     creator_id: "me",
     parent_issue_id: null,
@@ -38,13 +42,13 @@ function makeIssue(overrides: Partial<Issue> = {}): Issue {
 describe("issueMatchesListFilter", () => {
   it("judges assignee_id filters definitively", () => {
     const issue = makeIssue();
-    expect(issueMatchesListFilter(issue, "assigned", { assignee_id: "me" })).toBe(true);
-    expect(issueMatchesListFilter(issue, "assigned", { assignee_id: "bob" })).toBe(false);
+    expect(issueMatchesListFilter(issue, "assigned", { owner_id: "me" })).toBe(true);
+    expect(issueMatchesListFilter(issue, "assigned", { owner_id: "bob" })).toBe(false);
   });
 
   it("degrades to unknown when the entity is missing the filtered field", () => {
     expect(
-      issueMatchesListFilter({ title: "partial" }, "assigned", { assignee_id: "me" }),
+      issueMatchesListFilter({ title: "partial" }, "assigned", { owner_id: "me" }),
     ).toBe("unknown");
   });
 
@@ -55,13 +59,13 @@ describe("issueMatchesListFilter", () => {
       }),
     ).toBe(true);
     expect(
-      issueMatchesListFilter(makeIssue({ assignee_type: "agent" }), "workspace:members", {
+      issueMatchesListFilter(makeIssue({ executor_type: "agent" }), "workspace:members", {
         assignee_types: ["member"],
       }),
     ).toBe(false);
     expect(
       issueMatchesListFilter(
-        makeIssue({ assignee_type: null, assignee_id: null }),
+        makeIssue({ executor_type: null, executor_id: null }),
         "workspace:agents",
         { assignee_types: ["agent", "team"] },
       ),
@@ -107,7 +111,7 @@ describe("issueMatchesListFilter", () => {
 
 describe("issueChangedDims", () => {
   it("treats written membership fields as changed when no base is known", () => {
-    expect(issueChangedDims({ assignee_id: "bob", assignee_type: "member" })).toEqual({
+    expect(issueChangedDims({ executor_id: "bob", owner_type: "member" })).toEqual({
       assignee: true,
       project: false,
       status: false,
@@ -121,7 +125,7 @@ describe("issueChangedDims", () => {
 
   it("sharpens against a base entity — writing the same value changes nothing", () => {
     const base = makeIssue();
-    expect(issueChangedDims({ assignee_id: "me", assignee_type: "member" }, base)).toEqual({
+    expect(issueChangedDims({ owner_id: "me", owner_type: "member" }, base)).toEqual({
       assignee: false,
       project: false,
       status: false,
@@ -150,7 +154,7 @@ describe("listFilterDependsOn", () => {
 
   it("assignee-keyed filters react to assignee changes", () => {
     expect(
-      listFilterDependsOn("assigned", { assignee_id: "me" }, { ...none, assignee: true }),
+      listFilterDependsOn("assigned", { executor_id: "me" }, { ...none, assignee: true }),
     ).toBe(true);
     expect(
       listFilterDependsOn(
@@ -163,7 +167,7 @@ describe("listFilterDependsOn", () => {
       listFilterDependsOn("agents", { involves_user_id: "me" }, { ...none, assignee: true }),
     ).toBe(true);
     expect(
-      listFilterDependsOn("assigned", { assignee_id: "me" }, { ...none, project: true }),
+      listFilterDependsOn("assigned", { executor_id: "me" }, { ...none, project: true }),
     ).toBe(false);
   });
 

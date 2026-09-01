@@ -68,7 +68,7 @@ type issueTableActorRef struct {
 
 type issueTableScope struct {
 	Kind          string              `json:"kind"`
-	AssigneeTypes []string            `json:"assignee_types,omitempty"`
+	ExecutorTypes []string            `json:"executor_types,omitempty"`
 	ProjectID     string              `json:"project_id,omitempty"`
 	Actor         *issueTableActorRef `json:"actor,omitempty"`
 	Relation      string              `json:"relation,omitempty"`
@@ -252,7 +252,7 @@ func canonicalIssueTableFingerprint(workspaceID string, spec issueTableQuerySpec
 		spec.Filters.WorkingIssueIDs != nil && len(spec.Filters.WorkingIssueIDs) == 0
 	normalized := spec
 	normalized.Search = strings.TrimSpace(normalized.Search)
-	normalized.Scope.AssigneeTypes = sortedUniqueStrings(normalized.Scope.AssigneeTypes)
+	normalized.Scope.ExecutorTypes = sortedUniqueStrings(normalized.Scope.ExecutorTypes)
 	normalized.Filters.Statuses = sortedUniqueStrings(normalized.Filters.Statuses)
 	normalized.Filters.Priorities = sortedUniqueStrings(normalized.Filters.Priorities)
 	normalized.Filters.ProjectIDs = sortedUniqueStrings(normalized.Filters.ProjectIDs)
@@ -390,12 +390,12 @@ func parseIssueTableActor(w http.ResponseWriter, actor issueTableActorRef, field
 func appendIssueTableInvolvedPredicate(where []string, addArg func(any) string, userID pgtype.UUID) []string {
 	ref := addArg(userID)
 	return append(where, fmt.Sprintf(`(
-    (i.assignee_type = 'agent' AND i.assignee_id IN (
+    (i.executor_type = 'agent' AND i.executor_id IN (
        SELECT a.id FROM agent a
         WHERE a.workspace_id = $1
           AND a.owner_id     = %[1]s::uuid
     ))
-    OR (i.assignee_type = 'team' AND i.assignee_id IN (
+    OR (i.executor_type = 'team' AND i.executor_id IN (
        SELECT sm.team_id
          FROM team_member sm
          JOIN team s ON s.id = sm.team_id
@@ -469,14 +469,14 @@ func (h *Handler) compileIssueTableQuery(w http.ResponseWriter, r *http.Request,
 	// Workspace and project scopes share the optional assignee-type
 	// narrowing (the Members/Agents tabs above both surfaces).
 	appendAssigneeTypes := func() bool {
-		for _, actorType := range spec.Scope.AssigneeTypes {
+		for _, actorType := range spec.Scope.ExecutorTypes {
 			if !isIssueActorType(actorType) {
-				writeError(w, http.StatusBadRequest, "invalid scope.assignee_types")
+				writeError(w, http.StatusBadRequest, "invalid scope.executor_types")
 				return false
 			}
 		}
-		if len(spec.Scope.AssigneeTypes) > 0 {
-			where = append(where, fmt.Sprintf("i.assignee_type = ANY(%s::text[])", addArg(sortedUniqueStrings(spec.Scope.AssigneeTypes))))
+		if len(spec.Scope.ExecutorTypes) > 0 {
+			where = append(where, fmt.Sprintf("%s = ANY(%s::text[])", effectiveAssigneeTypeSQL, addArg(sortedUniqueStrings(spec.Scope.ExecutorTypes))))
 		}
 		return true
 	}
@@ -504,7 +504,7 @@ func (h *Handler) compileIssueTableQuery(w http.ResponseWriter, r *http.Request,
 		if !ok {
 			return issueTableSQL{}, false
 		}
-		where = append(where, fmt.Sprintf("i.assignee_type = %s::text AND i.assignee_id = %s::uuid", addArg(actor.actorType), addArg(actor.actorID)))
+		where = append(where, fmt.Sprintf("%s = %s::text AND %s = %s::uuid", effectiveAssigneeTypeSQL, addArg(actor.actorType), effectiveAssigneeIDSQL, addArg(actor.actorID)))
 	case "creator":
 		if spec.Scope.Actor == nil {
 			writeError(w, http.StatusBadRequest, "scope.actor is required")
@@ -531,7 +531,7 @@ func (h *Handler) compileIssueTableQuery(w http.ResponseWriter, r *http.Request,
 		}
 		switch relation {
 		case "assigned":
-			where = append(where, fmt.Sprintf("i.assignee_type = 'member' AND i.assignee_id = %s::uuid", addArg(userUUID)))
+			where = append(where, fmt.Sprintf("i.owner_type = 'member' AND i.owner_id = %s::uuid", addArg(userUUID)))
 		case "created":
 			where = append(where, fmt.Sprintf("i.creator_type = 'member' AND i.creator_id = %s::uuid", addArg(userUUID)))
 		case "involved":
@@ -540,7 +540,7 @@ func (h *Handler) compileIssueTableQuery(w http.ResponseWriter, r *http.Request,
 			assignedRef := addArg(userUUID)
 			createdRef := addArg(userUUID)
 			involved := appendIssueTableInvolvedPredicate(nil, addArg, userUUID)[0]
-			where = append(where, fmt.Sprintf("((i.assignee_type = 'member' AND i.assignee_id = %s::uuid) OR (i.creator_type = 'member' AND i.creator_id = %s::uuid) OR %s)", assignedRef, createdRef, involved))
+			where = append(where, fmt.Sprintf("((i.owner_type = 'member' AND i.owner_id = %s::uuid) OR (i.creator_type = 'member' AND i.creator_id = %s::uuid) OR %s)", assignedRef, createdRef, involved))
 		default:
 			writeError(w, http.StatusBadRequest, "invalid scope.relation")
 			return issueTableSQL{}, false
@@ -557,10 +557,10 @@ func (h *Handler) compileIssueTableQuery(w http.ResponseWriter, r *http.Request,
 			if !ok {
 				return issueTableSQL{}, false
 			}
-			ors = append(ors, fmt.Sprintf("(i.assignee_type = %s::text AND i.assignee_id = %s::uuid)", addArg(actor.actorType), addArg(actor.actorID)))
+			ors = append(ors, fmt.Sprintf("(%s = %s::text AND %s = %s::uuid)", effectiveAssigneeTypeSQL, addArg(actor.actorType), effectiveAssigneeIDSQL, addArg(actor.actorID)))
 		}
 		if spec.Filters.IncludeNoAssignee {
-			ors = append(ors, "(i.assignee_type IS NULL AND i.assignee_id IS NULL)")
+			ors = append(ors, "("+effectiveAssigneeTypeSQL+" IS NULL AND "+effectiveAssigneeIDSQL+" IS NULL)")
 		}
 		if len(ors) == 0 {
 			// Omitted assignees means "no assignee filter"; an explicitly

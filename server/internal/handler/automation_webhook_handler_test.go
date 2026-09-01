@@ -46,7 +46,7 @@ func createWebhookTestAutomation(t *testing.T, agentID, status, mode string) str
 	var apID string
 	if err := testPool.QueryRow(context.Background(), `
 		INSERT INTO automation (
-			workspace_id, title, assignee_id, status, execution_mode,
+			workspace_id, title, executor_id, status, execution_mode,
 			created_by_type, created_by_id
 		) VALUES ($1, $2, $3, $4, $5, 'member', $6)
 		RETURNING id

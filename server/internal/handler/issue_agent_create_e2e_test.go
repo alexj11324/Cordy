@@ -92,8 +92,8 @@ func TestAgentCreateOriginator_E2E_CreateAssignTeam_PrivateWorkerTriggered(t *te
 	w := httptest.NewRecorder()
 	r := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
 		"title":         "MUL-4305 E2E agent-created + team-assigned",
-		"assignee_type": "team",
-		"assignee_id":   teamID,
+		"executor_type": "team",
+		"executor_id":   teamID,
 	})
 	r.Header.Set("X-Agent-ID", creatorAID)
 	r.Header.Set("X-Task-ID", creatorTaskID)
@@ -233,8 +233,8 @@ func TestAgentCreateOriginator_E2E_UpdateAssignTeam_HandlerGateAdmitsPrivateLead
 	// Agent A assigns the issue to the private-leader team via UpdateIssue.
 	w = httptest.NewRecorder()
 	r = newRequest("PATCH", "/api/issues/"+created.ID, map[string]any{
-		"assignee_type": "team",
-		"assignee_id":   teamID,
+		"executor_type": "team",
+		"executor_id":   teamID,
 	})
 	r.Header.Set("X-Agent-ID", creatorAID)
 	r.Header.Set("X-Task-ID", creatorTaskID)

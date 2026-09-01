@@ -21,7 +21,7 @@ const WS_ID = "ws-1";
 const sort: IssueSortParam = { sort_by: "position", sort_direction: undefined };
 
 const wsKey = issueKeys.listSorted(WS_ID, sort);
-const myAssignedKey = issueKeys.myListSorted(WS_ID, "assigned", { assignee_id: "me" }, sort);
+const myAssignedKey = issueKeys.myListSorted(WS_ID, "assigned", { owner_id: "me" }, sort);
 const myAllKey = issueKeys.myListSorted(WS_ID, "all", {}, sort);
 const involvedKey = issueKeys.myListSorted(WS_ID, "agents", { involves_user_id: "me" }, sort);
 const projectP1Key = issueKeys.myListSorted(WS_ID, "project:p1", { project_id: "p1" }, sort);
@@ -29,7 +29,7 @@ const projectP2Key = issueKeys.myListSorted(WS_ID, "project:p2", { project_id: "
 const membersKey = issueKeys.myListSorted(
   WS_ID,
   "workspace:members",
-  { assignee_types: ["member"] },
+  { executor_types: ["member"] },
   sort,
 );
 const inboxKey = inboxKeys.list(WS_ID);
@@ -139,8 +139,12 @@ function makeIssue(idx: number, overrides: Partial<Issue> = {}): Issue {
     description: null,
     status: "todo",
     priority: "none",
-    assignee_type: "member",
-    assignee_id: "me",
+    owner_type: "member",
+    owner_id: "me",
+    executor_type: null,
+    executor_id: null,
+    reviewer_type: null,
+    reviewer_id: null,
     creator_type: "member",
     creator_id: "me",
     parent_issue_id: null,
@@ -501,7 +505,7 @@ describe("applyIssueChange", () => {
     // means the list's todo total counted it and must lose one.
     qc.setQueryData<ListIssuesCache>(myAssignedKey, bucketed([], 2));
 
-    const patch = { assignee_id: "bob", assignee_type: "member" as const };
+    const patch = { owner_id: "bob", owner_type: "member" as const };
     const result = applyIssueChange(qc, WS_ID, "issue-1", patch, {
       changed: issueChangedDims(patch, issue()),
       baseIssue: issue(),
@@ -516,7 +520,7 @@ describe("applyIssueChange", () => {
     // — nothing about this list can have drifted, so not even a stale key.
     qc.setQueryData<ListIssuesCache>(membersKey, bucketed([], 5));
 
-    const patch = { assignee_id: "bob", assignee_type: "member" as const };
+    const patch = { owner_id: "bob", owner_type: "member" as const };
     const result = applyIssueChange(qc, WS_ID, "issue-1", patch, {
       changed: issueChangedDims(patch, issue()),
       baseIssue: issue(),
@@ -548,7 +552,7 @@ describe("applyIssueChange", () => {
     qc.setQueryData<ListIssuesCache>(involvedKey, bucketed([issue()]));
     qc.setQueryData<ListIssuesCache>(membersKey, bucketed([issue()]));
 
-    const patch = { assignee_id: "bob", assignee_type: "member" as const };
+    const patch = { owner_id: "bob", owner_type: "member" as const };
     const result = applyIssueChange(qc, WS_ID, "issue-1", patch, {
       changed: issueChangedDims(patch, issue()),
       baseIssue: issue(),
@@ -564,7 +568,7 @@ describe("applyIssueChange", () => {
     expect(ids(qc, membersKey, "todo")).toEqual(["issue-1"]);
     expect(
       qc.getQueryData<ListIssuesCache>(membersKey)?.byStatus.todo?.issues[0]
-        ?.assignee_id,
+        ?.owner_id,
     ).toBe("bob");
 
     // Union (my:all) and involves membership are server knowledge — patched
@@ -580,13 +584,13 @@ describe("applyIssueChange", () => {
     const agentsKey = issueKeys.myListSorted(
       WS_ID,
       "workspace:agents",
-      { assignee_types: ["agent", "team"] },
+      { executor_types: ["agent", "team"] },
       sort,
     );
     qc.setQueryData<ListIssuesCache>(membersKey, bucketed([issue()]));
     qc.setQueryData<ListIssuesCache>(agentsKey, bucketed([]));
 
-    const patch = { assignee_id: "agent-1", assignee_type: "agent" as const };
+    const patch = { executor_id: "agent-1", executor_type: "agent" as const };
     const result = applyIssueChange(qc, WS_ID, "issue-1", patch, {
       changed: issueChangedDims(patch, issue()),
       baseIssue: issue(),
@@ -629,7 +633,7 @@ describe("applyIssueChange", () => {
     // a member (and left), so the list must refetch.
     qc.setQueryData<ListIssuesCache>(myAssignedKey, bucketed([], 2));
 
-    const patch = { assignee_id: "bob", assignee_type: "member" as const };
+    const patch = { executor_id: "bob", owner_type: "member" as const };
     const result = applyIssueChange(qc, WS_ID, "issue-99", patch, {
       changed: issueChangedDims(patch),
     });
@@ -642,7 +646,7 @@ describe("applyIssueChange", () => {
     // another project — nothing about this list can have drifted.
     qc.setQueryData<ListIssuesCache>(projectP2Key, bucketed([]));
 
-    const patch = { assignee_id: "bob", assignee_type: "member" as const };
+    const patch = { executor_id: "bob", owner_type: "member" as const };
     const result = applyIssueChange(qc, WS_ID, "issue-1", patch, {
       changed: issueChangedDims(patch, issue()),
       baseIssue: issue(),
@@ -657,7 +661,7 @@ describe("applyIssueChange", () => {
     qc.setQueryData<Issue>(issueKeys.detail(WS_ID, "issue-1"), issue());
     qc.setQueryData<InboxItem[]>(inboxKey, []);
 
-    const patch = { assignee_id: "bob", assignee_type: "member" as const, status: "in_progress" as const };
+    const patch = { executor_id: "bob", owner_type: "member" as const, status: "in_progress" as const };
     const result = applyIssueChange(qc, WS_ID, "issue-1", patch, {
       changed: issueChangedDims(patch, issue()),
       baseIssue: issue(),

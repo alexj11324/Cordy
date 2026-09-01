@@ -260,14 +260,14 @@ export function ManualCreatePanel({
     (data?.priority as IssuePriority | undefined) ?? draft.shared.priority,
   );
   const [assigneeType, setAssigneeType] = useState<IssueAssigneeType | undefined>(() => {
-    if (data && "assignee_type" in data) {
-      return (data.assignee_type as IssueAssigneeType | null) ?? undefined;
+    if (data && "executor_type" in data) {
+      return (data.executor_type as IssueAssigneeType | null) ?? undefined;
     }
     return draft.manual.assigneeType;
   });
   const [assigneeId, setAssigneeId] = useState<string | undefined>(() => {
-    if (data && "assignee_id" in data) {
-      return (data.assignee_id as string | null) ?? undefined;
+    if (data && "executor_id" in data) {
+      return (data.executor_id as string | null) ?? undefined;
     }
     return draft.manual.assigneeId;
   });
@@ -497,8 +497,9 @@ export function ManualCreatePanel({
               description,
               status,
               priority,
-              assignee_type: assigneeType,
-              assignee_id: assigneeId,
+              ...(assigneeType === "member"
+                ? { owner_type: "member" as const, owner_id: assigneeId }
+                : { executor_type: assigneeType, executor_id: assigneeId }),
               start_date: startDate || undefined,
               due_date: dueDate || undefined,
               attachment_ids: activeAttachmentIds.length > 0 ? activeAttachmentIds : undefined,
@@ -514,8 +515,9 @@ export function ManualCreatePanel({
           description,
           status,
           priority,
-          assignee_type: assigneeType,
-          assignee_id: assigneeId,
+          ...(assigneeType === "member"
+            ? { owner_type: "member" as const, owner_id: assigneeId }
+            : { executor_type: assigneeType, executor_id: assigneeId }),
           start_date: startDate || undefined,
           due_date: dueDate || undefined,
           attachment_ids: activeAttachmentIds.length > 0 ? activeAttachmentIds : undefined,
@@ -1008,8 +1010,8 @@ export function ManualCreatePanel({
                   assigneeType={assigneeType ?? null}
                   assigneeId={assigneeId ?? null}
                   onUpdate={(u) => updateAssignee(
-                    u.assignee_type ?? undefined,
-                    u.assignee_id ?? undefined,
+                    u.executor_type ?? undefined,
+                    u.executor_id ?? undefined,
                   )}
                   triggerRender={<PillButton />}
                   align="start"

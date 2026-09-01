@@ -140,8 +140,8 @@ function renderEditDialog(mode: AutomationExecutionMode, projectId: string | nul
           title: "Push fleet repo to GitHub",
           description: "",
           project_id: projectId,
-          assignee_type: "agent",
-          assignee_id: "agent-1",
+          executor_type: "agent",
+          executor_id: "agent-1",
           execution_mode: mode,
           subscriber_user_ids: [],
         }}
@@ -162,8 +162,8 @@ function renderCreateDialog() {
         open
         onOpenChange={vi.fn()}
         initial={{
-          assignee_type: "agent",
-          assignee_id: "agent-1",
+          executor_type: "agent",
+          executor_id: "agent-1",
           execution_mode: "run_only",
         }}
       />

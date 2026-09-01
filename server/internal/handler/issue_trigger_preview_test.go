@@ -41,7 +41,7 @@ func previewIssueTrigger(t *testing.T, body map[string]any) IssueTriggerPreviewR
 func createIssueForTest(t *testing.T, body map[string]any) IssueResponse {
 	t.Helper()
 	w := httptest.NewRecorder()
-	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, body)
+	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, withIssueRoleDefaults(t, body))
 	testHandler.CreateIssue(w, req)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("CreateIssue: expected 201, got %d: %s", w.Code, w.Body.String())
@@ -76,8 +76,8 @@ func TestPreviewIssueTrigger_CreateAgentVsBacklog(t *testing.T) {
 
 	active := previewIssueTrigger(t, map[string]any{
 		"is_create":     true,
-		"assignee_type": "agent",
-		"assignee_id":   agentID,
+		"executor_type": "agent",
+		"executor_id":   agentID,
 		"status":        "todo",
 	})
 	if active.TotalCount != 1 || len(active.Triggers) != 1 {
@@ -89,8 +89,8 @@ func TestPreviewIssueTrigger_CreateAgentVsBacklog(t *testing.T) {
 
 	backlog := previewIssueTrigger(t, map[string]any{
 		"is_create":     true,
-		"assignee_type": "agent",
-		"assignee_id":   agentID,
+		"executor_type": "agent",
+		"executor_id":   agentID,
 		"status":        "backlog",
 	})
 	if backlog.TotalCount != 0 {
@@ -103,8 +103,8 @@ func TestPreviewIssueTrigger_CreateAgentVsBacklog(t *testing.T) {
 func TestPreviewIssueTrigger_MemberNoTrigger(t *testing.T) {
 	resp := previewIssueTrigger(t, map[string]any{
 		"is_create":     true,
-		"assignee_type": "member",
-		"assignee_id":   testUserID,
+		"owner_type": "member",
+		"owner_id":   testUserID,
 		"status":        "todo",
 	})
 	if resp.TotalCount != 0 {
@@ -116,8 +116,8 @@ func TestPreviewIssueTrigger_MemberNoTrigger(t *testing.T) {
 // agent-assigned issues moving out of backlog preview two distinct runs.
 func TestPreviewIssueTrigger_BatchAggregates(t *testing.T) {
 	agentID := seededReadyAgentID(t)
-	i1 := createIssueForTest(t, map[string]any{"title": "batch preview 1", "status": "backlog", "assignee_type": "agent", "assignee_id": agentID})
-	i2 := createIssueForTest(t, map[string]any{"title": "batch preview 2", "status": "backlog", "assignee_type": "agent", "assignee_id": agentID})
+	i1 := createIssueForTest(t, map[string]any{"title": "batch preview 1", "status": "backlog", "executor_type": "agent", "executor_id": agentID})
+	i2 := createIssueForTest(t, map[string]any{"title": "batch preview 2", "status": "backlog", "executor_type": "agent", "executor_id": agentID})
 
 	resp := previewIssueTrigger(t, map[string]any{
 		"issue_ids": []string{i1.ID, i2.ID},
@@ -148,14 +148,14 @@ func TestPreviewIssueTrigger_MatchesWritePath(t *testing.T) {
 	issue := createIssueForTest(t, map[string]any{"title": "match write 1", "status": "todo"})
 	pv := previewIssueTrigger(t, map[string]any{
 		"issue_ids":     []string{issue.ID},
-		"assignee_type": "agent",
-		"assignee_id":   agentID,
+		"executor_type": "agent",
+		"executor_id":   agentID,
 	})
 	if pv.TotalCount != 1 {
 		t.Fatalf("preview assign: expected 1, got %+v", pv)
 	}
 	w := httptest.NewRecorder()
-	req := withURLParam(newRequest("PUT", "/api/issues/"+issue.ID, map[string]any{"assignee_type": "agent", "assignee_id": agentID}), "id", issue.ID)
+	req := withURLParam(newRequest("PUT", "/api/issues/"+issue.ID, map[string]any{"executor_type": "agent", "executor_id": agentID}), "id", issue.ID)
 	testHandler.UpdateIssue(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("UpdateIssue assign: %d %s", w.Code, w.Body.String())
@@ -168,15 +168,15 @@ func TestPreviewIssueTrigger_MatchesWritePath(t *testing.T) {
 	issue2 := createIssueForTest(t, map[string]any{"title": "match write 2", "status": "backlog"})
 	pv2 := previewIssueTrigger(t, map[string]any{
 		"issue_ids":     []string{issue2.ID},
-		"assignee_type": "agent",
-		"assignee_id":   agentID,
+		"executor_type": "agent",
+		"executor_id":   agentID,
 		"status":        "backlog",
 	})
 	if pv2.TotalCount != 0 {
 		t.Fatalf("preview backlog assign: expected 0, got %+v", pv2)
 	}
 	w2 := httptest.NewRecorder()
-	req2 := withURLParam(newRequest("PUT", "/api/issues/"+issue2.ID, map[string]any{"assignee_type": "agent", "assignee_id": agentID}), "id", issue2.ID)
+	req2 := withURLParam(newRequest("PUT", "/api/issues/"+issue2.ID, map[string]any{"executor_type": "agent", "executor_id": agentID}), "id", issue2.ID)
 	testHandler.UpdateIssue(w2, req2)
 	if w2.Code != http.StatusOK {
 		t.Fatalf("UpdateIssue backlog assign: %d %s", w2.Code, w2.Body.String())
@@ -195,7 +195,7 @@ func TestUpdateIssueSuppressRunSkipsEnqueue(t *testing.T) {
 	suppressed := createIssueForTest(t, map[string]any{"title": "suppress on", "status": "todo"})
 	w := httptest.NewRecorder()
 	req := withURLParam(newRequest("PUT", "/api/issues/"+suppressed.ID, map[string]any{
-		"assignee_type": "agent", "assignee_id": agentID, "suppress_run": true,
+		"executor_type": "agent", "executor_id": agentID, "suppress_run": true,
 	}), "id", suppressed.ID)
 	testHandler.UpdateIssue(w, req)
 	if w.Code != http.StatusOK {
@@ -209,7 +209,7 @@ func TestUpdateIssueSuppressRunSkipsEnqueue(t *testing.T) {
 	control := createIssueForTest(t, map[string]any{"title": "suppress off", "status": "todo"})
 	w2 := httptest.NewRecorder()
 	req2 := withURLParam(newRequest("PUT", "/api/issues/"+control.ID, map[string]any{
-		"assignee_type": "agent", "assignee_id": agentID,
+		"executor_type": "agent", "executor_id": agentID,
 	}), "id", control.ID)
 	testHandler.UpdateIssue(w2, req2)
 	if w2.Code != http.StatusOK {
@@ -230,7 +230,7 @@ func TestUpdateIssueHandoffNotePersistsOnTask(t *testing.T) {
 	issue := createIssueForTest(t, map[string]any{"title": "handoff persist", "status": "todo"})
 	w := httptest.NewRecorder()
 	req := withURLParam(newRequest("PUT", "/api/issues/"+issue.ID, map[string]any{
-		"assignee_type": "agent", "assignee_id": agentID, "handoff_note": note,
+		"executor_type": "agent", "executor_id": agentID, "handoff_note": note,
 	}), "id", issue.ID)
 	testHandler.UpdateIssue(w, req)
 	if w.Code != http.StatusOK {
@@ -252,7 +252,7 @@ func TestUpdateIssueHandoffNotePersistsOnTask(t *testing.T) {
 	suppressed := createIssueForTest(t, map[string]any{"title": "handoff suppressed", "status": "todo"})
 	w2 := httptest.NewRecorder()
 	req2 := withURLParam(newRequest("PUT", "/api/issues/"+suppressed.ID, map[string]any{
-		"assignee_type": "agent", "assignee_id": agentID, "handoff_note": note, "suppress_run": true,
+		"executor_type": "agent", "executor_id": agentID, "handoff_note": note, "suppress_run": true,
 	}), "id", suppressed.ID)
 	testHandler.UpdateIssue(w2, req2)
 	if w2.Code != http.StatusOK {

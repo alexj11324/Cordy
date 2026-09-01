@@ -27,12 +27,12 @@ func TestRerunIssueBlockedBeforeMutationWhenInvokeDenied(t *testing.T) {
 
 	issueStruct := db.Issue{
 		ID:           util.MustParseUUID(issueID),
-		AssigneeID:   util.MustParseUUID(agentID),
+		ExecutorID:   util.MustParseUUID(agentID),
 		Priority:     "medium",
 		CreatorType:  "member",
 		CreatorID:    util.MustParseUUID(creatorID),
 		WorkspaceID:  util.MustParseUUID(workspaceID),
-		AssigneeType: pgtype.Text{String: "agent", Valid: true},
+		ExecutorType: pgtype.Text{String: "agent", Valid: true},
 	}
 	svc := &TaskService{Queries: q, TxStarter: pool, Bus: events.New()}
 	orig, err := svc.EnqueueTaskForIssue(ctx, issueStruct)
@@ -118,8 +118,8 @@ func TestAutomationDispatchAdmitsClickerNotCreator(t *testing.T) {
 
 	ap := db.Automation{
 		WorkspaceID:   util.MustParseUUID(workspaceID),
-		AssigneeID:    util.MustParseUUID(agentID),
-		AssigneeType:  "agent",
+		ExecutorID:    util.MustParseUUID(agentID),
+		ExecutorType:  "agent",
 		ExecutionMode: "run_only",
 		Status:        "active",
 		CreatedByType: "member",

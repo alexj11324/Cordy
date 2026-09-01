@@ -1180,8 +1180,8 @@ function IssueTableBodyCell({
       return (
         <div onClick={stopRowNavigation} onAuxClick={stopRowNavigation}>
           <AssigneePicker
-            assigneeType={issue.assignee_type}
-            assigneeId={issue.assignee_id}
+            assigneeType={issue.executor_type}
+            assigneeId={issue.executor_id}
             onUpdate={onUpdate}
             align="start"
             open={editorOpen}
@@ -2352,8 +2352,8 @@ export function TableView({
             case "priority":
               return t(($) => $.priority[issue.priority]);
             case "assignee":
-              return issue.assignee_type && issue.assignee_id
-                ? exportActorName(issue.assignee_type, issue.assignee_id)
+              return issue.executor_type && issue.executor_id
+                ? exportActorName(issue.executor_type, issue.executor_id)
                 : "";
             case "labels":
               return issue.labels?.map((label) => label.name).join(", ") ?? "";

@@ -100,11 +100,11 @@ export default function IssuesPage() {
   // status/priority filtering so chip filters operate on the visible slice.
   const scopedIssues = useMemo(() => {
     if (scope === "members") {
-      return allIssues.filter((i) => i.assignee_type === "member");
+      return allIssues.filter((i) => (i.executor_type ?? i.owner_type) === "member");
     }
     if (scope === "agents") {
       return allIssues.filter(
-        (i) => i.assignee_type === "agent" || i.assignee_type === "team",
+        (i) => (i.executor_type ?? i.owner_type) === "agent" || (i.executor_type ?? i.owner_type) === "team",
       );
     }
     return allIssues;

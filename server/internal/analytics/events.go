@@ -366,8 +366,8 @@ func ChatMessageSent(userID, workspaceID, chatSessionID, taskID, agentID, runtim
 // automation apart from a team one without joining back to the automation row.
 type AutomationAssignee struct {
 	AgentID      string // executing agent — leader for team automations
-	AssigneeType string // "agent" or "team"
-	TeamID      string // empty when AssigneeType != "team"
+	ExecutorType string // "agent" or "team"
+	TeamID      string // empty when ExecutorType != "team"
 }
 
 func AutomationRunStarted(actorID, workspaceID, automationID, runID, cadence string, assignee AutomationAssignee, triggerSource string) Event {
@@ -736,8 +736,8 @@ func automationRunEvent(name, actorID, workspaceID, automationID, runID, cadence
 		Source:         SourceAutomation,
 	})
 	props["automation_id"] = automationID
-	if assignee.AssigneeType != "" {
-		props["assignee_type"] = assignee.AssigneeType
+	if assignee.ExecutorType != "" {
+		props["executor_type"] = assignee.ExecutorType
 	}
 	if assignee.TeamID != "" {
 		props["team_id"] = assignee.TeamID

@@ -329,7 +329,7 @@ func automationEventPayload(a db.Automation) map[string]any {
 		"workspace_id":         util.UUIDToString(a.WorkspaceID),
 		"title":                a.Title,
 		"description":          util.TextToPtr(a.Description),
-		"assignee_id":          util.UUIDToString(a.AssigneeID),
+		"executor_id":          util.UUIDToString(a.ExecutorID),
 		"status":               a.Status,
 		"execution_mode":       a.ExecutionMode,
 		"issue_title_template": util.TextToPtr(a.IssueTitleTemplate),

@@ -70,8 +70,8 @@ func TestCompleteTask_ReconcilesMemberCommentPostedDuringRun(t *testing.T) {
 	issueID := dbfx.Issue(t, "reconcile-e2e fixture", testutil.Cols{
 		"status":        "in_progress",
 		"number":        999001,
-		"assignee_type": "agent",
-		"assignee_id":   agentID,
+		"executor_type": "agent",
+		"executor_id":   agentID,
 	})
 
 	// Trigger comment created BEFORE the run starts.
@@ -121,8 +121,8 @@ func TestCompleteTask_NoReconcileWhenNoNewMemberComment(t *testing.T) {
 	issueID := dbfx.Issue(t, "reconcile-negative fixture", testutil.Cols{
 		"status":        "in_progress",
 		"number":        999002,
-		"assignee_type": "agent",
-		"assignee_id":   agentID,
+		"executor_type": "agent",
+		"executor_id":   agentID,
 	})
 
 	triggerCommentID := dbfx.Comment(t, issueID, "the only request", testutil.Cols{
@@ -172,8 +172,8 @@ func TestCompleteTask_DoesNotReTriggerOtherAgentMentionedDuringRun(t *testing.T)
 	issueID := dbfx.Issue(t, "reconcile-other-agent fixture", testutil.Cols{
 		"status":        "in_progress",
 		"number":        999003,
-		"assignee_type": "agent",
-		"assignee_id":   agentA,
+		"executor_type": "agent",
+		"executor_id":   agentA,
 	})
 
 	// A's trigger comment, created before the run starts.
@@ -251,8 +251,8 @@ func TestCompleteTask_ReconcilesAgentAuthoredMentionToCompletedAgent(t *testing.
 	issueID := dbfx.Issue(t, "reconcile-a2a-mention fixture", testutil.Cols{
 		"status":        "in_progress",
 		"number":        999007,
-		"assignee_type": "agent",
-		"assignee_id":   agentB,
+		"executor_type": "agent",
+		"executor_id":   agentB,
 	})
 	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM comment WHERE issue_id = $1`, issueID) })
 
@@ -336,8 +336,8 @@ func TestCompleteTask_DoesNotReconcilePlainAgentReply(t *testing.T) {
 	issueID := dbfx.Issue(t, "reconcile-plain-agent-reply fixture", testutil.Cols{
 		"status":        "in_progress",
 		"number":        999008,
-		"assignee_type": "agent",
-		"assignee_id":   agentB,
+		"executor_type": "agent",
+		"executor_id":   agentB,
 	})
 
 	triggerCommentID := dbfx.Comment(t, issueID, "initial request", testutil.Cols{
@@ -465,8 +465,8 @@ func TestConsecutiveCommentsDifferentOriginatorsFullEnqueuePath(t *testing.T) {
 	issueID := dbfx.Issue(t, "diff-originator fixture", testutil.Cols{
 		"status":        "in_progress",
 		"number":        999004,
-		"assignee_type": "agent",
-		"assignee_id":   agentID,
+		"executor_type": "agent",
+		"executor_id":   agentID,
 	})
 	t.Cleanup(func() {
 		testPool.Exec(ctx, `DELETE FROM agent_task_queue WHERE issue_id = $1`, issueID)
@@ -539,8 +539,8 @@ func TestCompleteTask_ReconcilesDispatchedWindowComment(t *testing.T) {
 	issueID := dbfx.Issue(t, "dispatched-window fixture", testutil.Cols{
 		"status":        "in_progress",
 		"number":        999005,
-		"assignee_type": "agent",
-		"assignee_id":   agentID,
+		"executor_type": "agent",
+		"executor_id":   agentID,
 	})
 
 	triggerCommentID := dbfx.Comment(t, issueID, "initial request", testutil.Cols{
@@ -622,8 +622,8 @@ func TestCompleteTask_ReconcilesPreDispatchMergeRaceComment(t *testing.T) {
 	issueID := dbfx.Issue(t, "pre-dispatch race fixture", testutil.Cols{
 		"status":        "in_progress",
 		"number":        999006,
-		"assignee_type": "agent",
-		"assignee_id":   agentID,
+		"executor_type": "agent",
+		"executor_id":   agentID,
 	})
 
 	// Timeline: task created 10m ago; the run's trigger 10m ago; a delivered
@@ -698,7 +698,7 @@ func TestCompleteTask_ReconcilesPlannedButUndeliveredComments(t *testing.T) {
 			agentID, issueID := createClaimReclaimAgentAndIssue(t, ctx, runtimeID, "Planned undelivered agent "+tc.name)
 			dbfx.Exec(t, `
 				UPDATE issue
-				SET assignee_type = 'agent', assignee_id = $2
+				SET executor_type = 'agent', executor_id = $2
 				WHERE id = $1
 			`, issueID, agentID)
 

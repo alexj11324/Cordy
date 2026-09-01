@@ -120,8 +120,12 @@ const mockIssue: Issue = {
   description: null,
   status: "todo",
   priority: "medium",
-  assignee_type: null,
-  assignee_id: null,
+  owner_type: null,
+  owner_id: null,
+  executor_type: null,
+  executor_id: null,
+  reviewer_type: null,
+  reviewer_id: null,
   creator_type: "member",
   creator_id: "user-1",
   parent_issue_id: null,
@@ -173,8 +177,8 @@ describe("useIssueActions", () => {
 
     act(() => {
       result.current.updateField({
-        assignee_type: "agent",
-        assignee_id: "agent-1",
+        executor_type: "agent",
+        executor_id: "agent-1",
       });
     });
 
@@ -193,13 +197,13 @@ describe("useIssueActions", () => {
 
     act(() => {
       result.current.updateField({
-        assignee_type: "agent",
-        assignee_id: "agent-1",
+        executor_type: "agent",
+        executor_id: "agent-1",
       });
     });
 
     expect(mockUpdateMutate).toHaveBeenCalledWith(
-      { id: "issue-1", assignee_type: "agent", assignee_id: "agent-1" },
+      { id: "issue-1", executor_type: "agent", executor_id: "agent-1" },
       expect.any(Object),
     );
     expect(mockOpenModal).not.toHaveBeenCalled();
@@ -212,8 +216,8 @@ describe("useIssueActions", () => {
     const parked = {
       ...mockIssue,
       status: "backlog",
-      assignee_type: "agent",
-      assignee_id: "agent-1",
+      executor_type: "agent",
+      executor_id: "agent-1",
     } as Issue;
     const { result } = renderHook(() => useIssueActions(parked), { wrapper });
 
@@ -250,13 +254,15 @@ describe("useIssueActions", () => {
 
     act(() => {
       result.current.updateField({
-        assignee_type: "member",
-        assignee_id: "user-1",
+        owner_type: "member",
+        owner_id: "user-1",
+        executor_type: null,
+        executor_id: null,
       });
     });
 
     expect(mockUpdateMutate).toHaveBeenCalledWith(
-      { id: "issue-1", assignee_type: "member", assignee_id: "user-1" },
+      { id: "issue-1", owner_type: "member", owner_id: "user-1", executor_type: null, executor_id: null },
       expect.any(Object),
     );
     expect(mockOpenModal).not.toHaveBeenCalled();
@@ -328,8 +334,8 @@ describe("useIssueActions", () => {
     const parentIssue = {
       ...mockIssue,
       project_id: "project-1",
-      assignee_type: "agent",
-      assignee_id: "agent-1",
+      executor_type: "agent",
+      executor_id: "agent-1",
     } as Issue;
     const { result } = renderHook(() => useIssueActions(parentIssue), { wrapper });
 
@@ -341,8 +347,8 @@ describe("useIssueActions", () => {
       parent_issue_id: "issue-1",
       parent_issue_identifier: "TES-1",
       project_id: "project-1",
-      assignee_type: "agent",
-      assignee_id: "agent-1",
+      executor_type: "agent",
+      executor_id: "agent-1",
     });
   });
 
@@ -350,8 +356,8 @@ describe("useIssueActions", () => {
     const parentIssue = {
       ...mockIssue,
       project_id: "project-1",
-      assignee_type: null,
-      assignee_id: null,
+      executor_type: null,
+      executor_id: null,
     } as Issue;
     const { result } = renderHook(() => useIssueActions(parentIssue), { wrapper });
 

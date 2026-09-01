@@ -643,13 +643,13 @@ func (h *Handler) createManualCommentSubIssue(w http.ResponseWriter, r *http.Req
 	}
 	var assigneeType pgtype.Text
 	var assigneeID pgtype.UUID
-	if input.AssigneeType != nil && strings.TrimSpace(*input.AssigneeType) != "" {
-		assigneeType = pgtype.Text{String: strings.TrimSpace(*input.AssigneeType), Valid: true}
+	if input.ExecutorType != nil && strings.TrimSpace(*input.ExecutorType) != "" {
+		assigneeType = pgtype.Text{String: strings.TrimSpace(*input.ExecutorType), Valid: true}
 	}
-	if input.AssigneeID != nil && strings.TrimSpace(*input.AssigneeID) != "" {
-		parsed, err := util.ParseUUID(strings.TrimSpace(*input.AssigneeID))
+	if input.ExecutorID != nil && strings.TrimSpace(*input.ExecutorID) != "" {
+		parsed, err := util.ParseUUID(strings.TrimSpace(*input.ExecutorID))
 		if err != nil {
-			return sourceContextBadRequest("invalid assignee_id")
+			return sourceContextBadRequest("invalid executor_id")
 		}
 		assigneeID = parsed
 	}
@@ -701,7 +701,7 @@ func (h *Handler) createManualCommentSubIssue(w http.ResponseWriter, r *http.Req
 	prefix := h.getIssuePrefix(r.Context(), workspaceID)
 	result, err := h.IssueService.Create(r.Context(), service.IssueCreateParams{
 		WorkspaceID: workspaceID, Title: title, Description: ptrToText(input.Description), Status: status, Priority: priority,
-		AssigneeType: assigneeType, AssigneeID: assigneeID, CreatorType: "member", CreatorID: userID,
+		ExecutorType: assigneeType, ExecutorID: assigneeID, CreatorType: "member", CreatorID: userID,
 		ParentIssueID: capture.SourceIssueID, ProjectID: projectID, StartDate: startDate, DueDate: dueDate,
 		AttachmentIDs: attachmentIDs, LabelIDs: labelIDs, Stage: stage,
 		AllowDuplicate: input.AllowDuplicate, SourceContext: &capture,

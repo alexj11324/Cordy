@@ -15,7 +15,7 @@ func TestUpdateComment_RequeuesDelegatedFailureRecoverySurvivor(t *testing.T) {
 	runtimeID := createClaimReclaimRuntime(t, ctx, "delegated recovery cancellation runtime")
 	coordinatorID, sourceIssueID := createClaimReclaimAgentAndIssue(t, ctx, runtimeID, "delegated recovery coordinator")
 	if _, err := testPool.Exec(ctx, `
-		UPDATE issue SET assignee_type = 'agent', assignee_id = $2 WHERE id = $1`, sourceIssueID, coordinatorID); err != nil {
+		UPDATE issue SET executor_type = 'agent', executor_id = $2 WHERE id = $1`, sourceIssueID, coordinatorID); err != nil {
 		t.Fatalf("assign source issue: %v", err)
 	}
 

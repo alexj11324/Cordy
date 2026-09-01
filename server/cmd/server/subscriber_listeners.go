@@ -46,10 +46,10 @@ func registerSubscriberListeners(bus *events.Bus, pool *pgxpool.Pool) {
 		addSubscriber(bus, queries, e.WorkspaceID, issue.ID, issue.CreatorType, issue.CreatorID, "creator")
 
 		// Subscribe the assignee if it is a direct recipient and differs from the creator.
-		if issue.AssigneeType != nil && issue.AssigneeID != nil &&
-			isAssignmentRecipientType(*issue.AssigneeType) &&
-			!(*issue.AssigneeType == issue.CreatorType && *issue.AssigneeID == issue.CreatorID) {
-			addSubscriber(bus, queries, e.WorkspaceID, issue.ID, *issue.AssigneeType, *issue.AssigneeID, "assignee")
+		if issue.ExecutorType != nil && issue.ExecutorID != nil &&
+			isAssignmentRecipientType(*issue.ExecutorType) &&
+			!(*issue.ExecutorType == issue.CreatorType && *issue.ExecutorID == issue.CreatorID) {
+			addSubscriber(bus, queries, e.WorkspaceID, issue.ID, *issue.ExecutorType, *issue.ExecutorID, "assignee")
 		}
 
 		// Subscribe @mentioned users in description
@@ -80,8 +80,8 @@ func registerSubscriberListeners(bus *events.Bus, pool *pgxpool.Pool) {
 
 		// Subscribe new assignee if assignee changed
 		if assigneeChanged, _ := payload["assignee_changed"].(bool); assigneeChanged {
-			if issue.AssigneeType != nil && issue.AssigneeID != nil && isAssignmentRecipientType(*issue.AssigneeType) {
-				addSubscriber(bus, queries, e.WorkspaceID, issue.ID, *issue.AssigneeType, *issue.AssigneeID, "assignee")
+			if newType, newID := issue.EffectiveAssignee(); newType != nil && newID != nil && isAssignmentRecipientType(*newType) {
+				addSubscriber(bus, queries, e.WorkspaceID, issue.ID, *newType, *newID, "assignee")
 			}
 		}
 
@@ -264,8 +264,10 @@ func extractIssueFields(v any) (handler.IssueResponse, bool) {
 	issue.WorkspaceID, _ = m["workspace_id"].(string)
 	issue.CreatorType, _ = m["creator_type"].(string)
 	issue.CreatorID, _ = m["creator_id"].(string)
-	issue.AssigneeType, _ = m["assignee_type"].(*string)
-	issue.AssigneeID, _ = m["assignee_id"].(*string)
+	issue.ExecutorType, _ = m["executor_type"].(*string)
+	issue.ExecutorID, _ = m["executor_id"].(*string)
+	issue.OwnerType, _ = m["owner_type"].(*string)
+	issue.OwnerID, _ = m["owner_id"].(*string)
 	issue.Description, _ = m["description"].(*string)
 	if issue.ID == "" || issue.CreatorID == "" {
 		return handler.IssueResponse{}, false

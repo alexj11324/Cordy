@@ -112,9 +112,10 @@ function issueMatchesDescriptor(
   switch (owner.kind) {
     case "assignee":
       return owner.actor
-        ? issue.assignee_type === owner.actor.type &&
-            issue.assignee_id === owner.actor.id
-        : issue.assignee_type === null && issue.assignee_id === null;
+        ? (issue.executor_type ?? issue.owner_type) === owner.actor.type &&
+            (issue.executor_id ?? issue.owner_id) === owner.actor.id
+        : (issue.executor_type ?? issue.owner_type) === null &&
+            (issue.executor_id ?? issue.owner_id) === null;
     case "project":
       return issue.project_id === owner.project_id;
     case "parent":

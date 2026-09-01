@@ -201,7 +201,7 @@ func TestDeleteAgentRuntime_ActiveTeamWithArchivedLeaderNoLongerConflicts(t *tes
 	var automationID string
 	if err := testPool.QueryRow(context.Background(), `
 		INSERT INTO automation (
-			workspace_id, title, assignee_type, assignee_id,
+			workspace_id, title, executor_type, executor_id,
 			created_by_type, created_by_id, status, execution_mode
 		)
 		VALUES ($1, 'team runtime pause', 'team', $2, 'member', $3, 'active', 'run_only')
@@ -293,7 +293,7 @@ func TestUpdateTeam_UnboundLeaderPausesOnlyTeamAutomations(t *testing.T) {
 	var teamAutomationID, directAutomationID string
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO automation (
-			workspace_id, title, assignee_type, assignee_id,
+			workspace_id, title, executor_type, executor_id,
 			created_by_type, created_by_id, status, execution_mode
 		)
 		VALUES ($1, 'team leader rotation pause', 'team', $2,
@@ -304,7 +304,7 @@ func TestUpdateTeam_UnboundLeaderPausesOnlyTeamAutomations(t *testing.T) {
 	}
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO automation (
-			workspace_id, title, assignee_type, assignee_id,
+			workspace_id, title, executor_type, executor_id,
 			created_by_type, created_by_id, status, execution_mode
 		)
 		VALUES ($1, 'unrelated direct automation', 'agent', $2,

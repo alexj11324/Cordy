@@ -33,10 +33,10 @@ function buildMyRelationPlan(
     case "assigned":
       return {
         scopeKey,
-        queryFilter: { assignee_id: scope.userId },
+        queryFilter: { owner_id: scope.userId },
         createDefaults: {
-          assignee_type: "member",
-          assignee_id: scope.userId,
+          owner_type: "member",
+          owner_id: scope.userId,
         },
       };
     case "created":
@@ -66,7 +66,7 @@ export function buildIssueSurfaceQueryPlan(
       const assigneeTypes = assigneeTypesForActorKind(scope.actorKind);
       return {
         scopeKey,
-        queryFilter: assigneeTypes ? { assignee_types: assigneeTypes } : {},
+        queryFilter: assigneeTypes ? { executor_types: assigneeTypes } : {},
         createDefaults: {},
       };
     }
@@ -75,7 +75,7 @@ export function buildIssueSurfaceQueryPlan(
       return {
         scopeKey,
         queryFilter: assigneeTypes
-          ? { project_id: scope.projectId, assignee_types: assigneeTypes }
+          ? { project_id: scope.projectId, executor_types: assigneeTypes }
           : { project_id: scope.projectId },
         createDefaults: { project_id: scope.projectId },
       };
@@ -87,14 +87,15 @@ export function buildIssueSurfaceQueryPlan(
         scopeKey,
         queryFilter:
           scope.relation === "assigned"
-            ? { assignee_id: scope.actorId }
+            ? scope.actorType === "member"
+              ? { owner_id: scope.actorId }
+              : { executor_id: scope.actorId }
             : { creator_id: scope.actorId },
         createDefaults:
           scope.relation === "assigned"
-            ? {
-                assignee_type: scope.actorType,
-                assignee_id: scope.actorId,
-              }
+            ? scope.actorType === "member"
+              ? { owner_type: "member", owner_id: scope.actorId }
+              : { executor_type: scope.actorType, executor_id: scope.actorId }
             : {},
       };
     case "team":

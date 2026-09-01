@@ -75,8 +75,8 @@ func TestTeamAssigneeListenersSkipUnsupportedRecipientWrites(t *testing.T) {
 		Priority:     "medium",
 		CreatorType:  "member",
 		CreatorID:    testUserID,
-		AssigneeType: &assigneeType,
-		AssigneeID:   &teamID,
+		ExecutorType: &assigneeType,
+		ExecutorID:   &teamID,
 	}
 
 	bus.Publish(events.Event{

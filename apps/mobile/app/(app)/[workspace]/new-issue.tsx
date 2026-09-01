@@ -70,7 +70,9 @@ export default function NewIssueModal() {
         status,
         priority,
         ...(assignee
-          ? { assignee_type: assignee.type, assignee_id: assignee.id }
+          ? assignee.type === "member"
+            ? { owner_type: "member" as const, owner_id: assignee.id }
+            : { executor_type: assignee.type, executor_id: assignee.id }
           : {}),
         ...(dueDate ? { due_date: dueDate } : {}),
         ...(project ? { project_id: project.id } : {}),

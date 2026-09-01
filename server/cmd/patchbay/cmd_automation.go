@@ -228,7 +228,7 @@ func runAutomationList(cmd *cobra.Command, _ []string) error {
 			strVal(a, "title"),
 			strVal(a, "status"),
 			strVal(a, "execution_mode"),
-			actors.agent(strVal(a, "assignee_id")),
+			actors.agent(strVal(a, "executor_id")),
 			relativeTimestamp(strVal(a, "next_run_at")),
 			relativeTimestamp(strVal(a, "last_run_at")),
 		})
@@ -280,7 +280,7 @@ func runAutomationGet(cmd *cobra.Command, args []string) error {
 		strVal(ap, "title"),
 		strVal(ap, "status"),
 		strVal(ap, "execution_mode"),
-		actors.agent(strVal(ap, "assignee_id")),
+		actors.agent(strVal(ap, "executor_id")),
 		strVal(ap, "last_run_at"),
 	}}
 	cli.PrintTable(os.Stdout, headers, rows)
@@ -410,7 +410,7 @@ func runAutomationCreate(cmd *cobra.Command, _ []string) error {
 
 	body := map[string]any{
 		"title":          title,
-		"assignee_id":    agentID,
+		"executor_id":    agentID,
 		"execution_mode": mode,
 	}
 	if v, _ := cmd.Flags().GetString("description"); v != "" {
@@ -476,8 +476,8 @@ func runAutomationUpdate(cmd *cobra.Command, args []string) error {
 		if resolveErr != nil {
 			return fmt.Errorf("resolve agent: %w", resolveErr)
 		}
-		body["assignee_type"] = "agent"
-		body["assignee_id"] = agentID
+		body["executor_type"] = "agent"
+		body["executor_id"] = agentID
 	}
 	if cmd.Flags().Changed("project") {
 		v, _ := cmd.Flags().GetString("project")

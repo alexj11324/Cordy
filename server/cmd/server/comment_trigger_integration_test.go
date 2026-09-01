@@ -176,8 +176,8 @@ func createSecondAgent(t *testing.T) string {
 func createIssueAssignedToAgent(t *testing.T, title, agentID string) string {
 	t.Helper()
 	resp := authRequest(t, "PUT", fmt.Sprintf("/api/issues/%s", createIssue(t, title)), map[string]any{
-		"assignee_type": "agent",
-		"assignee_id":   agentID,
+		"executor_type": "agent",
+		"executor_id":   agentID,
 	})
 	var issue map[string]any
 	readJSON(t, resp, &issue)
@@ -449,8 +449,8 @@ func TestCommentTriggerOnAssignNoStatusGate(t *testing.T) {
 
 	// Assign the agent — should trigger despite non-todo status.
 	resp = authRequest(t, "PUT", "/api/issues/"+issueID, map[string]any{
-		"assignee_type": "agent",
-		"assignee_id":   agentID,
+		"executor_type": "agent",
+		"executor_id":   agentID,
 	})
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)

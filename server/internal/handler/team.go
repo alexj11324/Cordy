@@ -503,21 +503,21 @@ func (h *Handler) DeleteTeam(w http.ResponseWriter, r *http.Request) {
 
 	// Transfer issues assigned to this team to the leader agent.
 	if err := h.Queries.TransferTeamAssignees(r.Context(), db.TransferTeamAssigneesParams{
-		AssigneeID:   team.ID,
-		AssigneeID_2: team.LeaderID,
+		ExecutorID:   team.ID,
+		ExecutorID_2: team.LeaderID,
 	}); err != nil {
 		slog.Warn("transfer team assignees failed", "team_id", uuidToString(team.ID), "error", err)
 	}
 
 	// Mirror the issue-assignee transfer for automations that target this
-	// team. Without this, automation.assignee_id would still point at the
+	// team. Without this, automation.executor_id would still point at the
 	// archived team row and every subsequent dispatch would skip with
 	// "assignee team is archived" — visible to ops but useless to the
 	// owner. Rewriting to the leader keeps the automation semantics
 	// unchanged (Path A from MUL-2429 is leader-only execution anyway).
 	if err := h.Queries.TransferTeamAutomationsToLeader(r.Context(), db.TransferTeamAutomationsToLeaderParams{
-		AssigneeID:   team.ID,
-		AssigneeID_2: team.LeaderID,
+		ExecutorID:   team.ID,
+		ExecutorID_2: team.LeaderID,
 	}); err != nil {
 		slog.Warn("transfer team automations failed", "team_id", uuidToString(team.ID), "error", err)
 	}
@@ -983,7 +983,7 @@ func (h *Handler) RecordTeamLeaderEvaluation(w http.ResponseWriter, r *http.Requ
 	// are stamped at enqueue time and are exactly what the claim path keys the
 	// team briefing and the mandatory-`team activity` instruction off
 	// (handler/daemon.go, daemon/prompt.go taskIsTeamLeader). Gating this
-	// endpoint on issue.assignee_type == "team" instead made the recording
+	// endpoint on issue.executor_type == "team" instead made the recording
 	// call unsatisfiable on the paths where a leader legitimately runs on a
 	// non-team-assigned issue — a `@team` mention on an issue owned by a
 	// plain agent, or a leader task bound to a child issue — and because the
@@ -1174,7 +1174,7 @@ func commentMentionsAnyone(content string) bool {
 // (so the caller can record a handoff trace only on a real run start).
 func (h *Handler) enqueueTeamLeaderTask(ctx context.Context, issue db.Issue, triggerCommentID pgtype.UUID, authorType, authorID, handoffNote string) bool {
 	team, err := h.Queries.GetTeamInWorkspace(ctx, db.GetTeamInWorkspaceParams{
-		ID:          issue.AssigneeID,
+		ID:          issue.ExecutorID,
 		WorkspaceID: issue.WorkspaceID,
 	})
 	if err != nil {

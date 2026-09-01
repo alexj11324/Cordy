@@ -29,8 +29,12 @@ type IssueContentPatch struct {
 func (s *IssueService) UpdateContent(ctx context.Context, issue db.Issue, patch IssueContentPatch) (db.Issue, error) {
 	params := db.UpdateIssueParams{
 		ID:            issue.ID,
-		AssigneeType:  issue.AssigneeType,
-		AssigneeID:    issue.AssigneeID,
+		OwnerType:     issue.OwnerType,
+		OwnerID:       issue.OwnerID,
+		ExecutorType:  issue.ExecutorType,
+		ExecutorID:    issue.ExecutorID,
+		ReviewerType:  issue.ReviewerType,
+		ReviewerID:    issue.ReviewerID,
 		StartDate:     issue.StartDate,
 		DueDate:       issue.DueDate,
 		ParentIssueID: issue.ParentIssueID,

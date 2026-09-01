@@ -28,8 +28,8 @@ func newTeamEvalFixture(t *testing.T) teamEvalFixture {
 	otherID := createHandlerTestAgent(t, "Team Eval Other", nil)
 	teamID := dbfx.Team(t, "Team Eval", leaderID)
 	issueID := dbfx.Issue(t, "team eval owner issue", testutil.Cols{
-		"assignee_type": "team",
-		"assignee_id":   teamID,
+		"executor_type": "team",
+		"executor_id":   teamID,
 	})
 
 	return teamEvalFixture{
@@ -107,8 +107,8 @@ func loadEvaluations(t *testing.T, issueID string) []recordedEvaluation {
 func TestRecordTeamLeaderEvaluation_AcceptedOnNonTeamAssignedIssue(t *testing.T) {
 	fx := newTeamEvalFixture(t)
 	issueID := dbfx.Issue(t, "agent-owned issue", testutil.Cols{
-		"assignee_type": "agent",
-		"assignee_id":   fx.OtherID,
+		"executor_type": "agent",
+		"executor_id":   fx.OtherID,
 	})
 	taskID := leaderTask(t, fx.LeaderID, issueID, true, fx.TeamID)
 
@@ -137,8 +137,8 @@ func TestRecordTeamLeaderEvaluation_AcceptedOnNonTeamAssignedIssue(t *testing.T)
 func TestRecordTeamLeaderEvaluation_AcceptedOnChildIssueBoundTask(t *testing.T) {
 	fx := newTeamEvalFixture(t)
 	childID := dbfx.Issue(t, "team child issue", testutil.Cols{
-		"assignee_type":   "agent",
-		"assignee_id":     fx.OtherID,
+		"executor_type":   "agent",
+		"executor_id":     fx.OtherID,
 		"parent_issue_id": fx.TeamIssueID,
 	})
 	taskID := leaderTask(t, fx.LeaderID, childID, true, fx.TeamID)
@@ -185,8 +185,8 @@ func TestRecordTeamLeaderEvaluation_RejectsLeaderTaskWithoutTeamID(t *testing.T)
 func TestRecordTeamLeaderEvaluation_RejectsCrossIssueTaskAndNamesTaskIssue(t *testing.T) {
 	fx := newTeamEvalFixture(t)
 	childID := dbfx.Issue(t, "stage barrier child", testutil.Cols{
-		"assignee_type": "agent",
-		"assignee_id":   fx.OtherID,
+		"executor_type": "agent",
+		"executor_id":   fx.OtherID,
 	})
 	taskID := leaderTask(t, fx.LeaderID, fx.TeamIssueID, true, fx.TeamID)
 
@@ -206,8 +206,8 @@ func TestRecordTeamLeaderEvaluation_RejectsCrossIssueTaskAndNamesTaskIssue(t *te
 func TestRecordTeamLeaderEvaluation_RejectsForeignAgentWithoutLeakingTaskIssue(t *testing.T) {
 	fx := newTeamEvalFixture(t)
 	leaderOnly := dbfx.Issue(t, "leader-only issue", testutil.Cols{
-		"assignee_type": "team",
-		"assignee_id":   fx.TeamID,
+		"executor_type": "team",
+		"executor_id":   fx.TeamID,
 	})
 	taskID := leaderTask(t, fx.LeaderID, leaderOnly, true, fx.TeamID)
 
@@ -247,8 +247,8 @@ func TestRecordTeamLeaderEvaluation_RejectsForeignWorkspaceTaskWithoutLeakingIts
 	foreignIssue := dbfx.Issue(t, "foreign workspace issue", testutil.Cols{
 		"workspace_id":  foreignWorkspace,
 		"creator_id":    foreignUser,
-		"assignee_type": "team",
-		"assignee_id":   foreignTeam,
+		"executor_type": "team",
+		"executor_id":   foreignTeam,
 	})
 	foreignTask := dbfx.Task(t, foreignAgent, testutil.Cols{
 		"runtime_id":     foreignRuntime,

@@ -186,7 +186,7 @@ func (h *Handler) resolveIssueTableGroup(w http.ResponseWriter, r *http.Request,
 	case "assignee":
 		return resolvedIssueTableGroup{
 			kind:      "assignee",
-			groupExpr: "CASE WHEN i.assignee_type IS NULL OR i.assignee_id IS NULL THEN '__unassigned__' ELSE i.assignee_type || ':' || i.assignee_id::text END",
+			groupExpr: "CASE WHEN " + effectiveAssigneeTypeSQL + " IS NULL OR " + effectiveAssigneeIDSQL + " IS NULL THEN '__unassigned__' ELSE " + effectiveAssigneeTypeSQL + " || ':' || " + effectiveAssigneeIDSQL + "::text END",
 			// groupSortExpr runs after issues have been reduced to one row per
 			// actor. Resolving display names before GROUP BY executes one lookup
 			// per issue and turns large assignee groups into an N+1 query plan.
@@ -628,7 +628,7 @@ func (group resolvedIssueTableGroup) predicate(w http.ResponseWriter, key string
 		}
 		raw := strings.TrimPrefix(key, prefix)
 		if raw == "unassigned" {
-			return "i.assignee_type IS NULL AND i.assignee_id IS NULL", true
+			return effectiveAssigneeTypeSQL + " IS NULL AND " + effectiveAssigneeIDSQL + " IS NULL", true
 		}
 		parts := strings.SplitN(raw, ":", 2)
 		if len(parts) != 2 || !isIssueActorType(parts[0]) {
@@ -640,7 +640,7 @@ func (group resolvedIssueTableGroup) predicate(w http.ResponseWriter, key string
 			writeError(w, http.StatusBadRequest, "invalid group_key")
 			return "", false
 		}
-		return fmt.Sprintf("i.assignee_type = %s::text AND i.assignee_id = %s::uuid", addArg(parts[0]), addArg(id)), true
+		return fmt.Sprintf("%s = %s::text AND %s = %s::uuid", effectiveAssigneeTypeSQL, addArg(parts[0]), effectiveAssigneeIDSQL, addArg(id)), true
 	case "project":
 		const prefix = "project:"
 		if !strings.HasPrefix(key, prefix) {

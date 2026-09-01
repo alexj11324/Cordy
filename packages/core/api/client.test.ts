@@ -107,8 +107,12 @@ describe("ApiClient edit guards", () => {
       description: null,
       status: "todo",
       priority: "none",
-      assignee_type: null,
-      assignee_id: null,
+      owner_type: null,
+      owner_id: null,
+      executor_type: null,
+      executor_id: null,
+      reviewer_type: null,
+      reviewer_id: null,
       creator_type: "member",
       creator_id: "user-1",
       parent_issue_id: null,
@@ -1088,7 +1092,7 @@ describe("ApiClient", () => {
     await client.createAutomation({
       title: "Daily triage",
       project_id: "project-1",
-      assignee_id: "agent-1",
+      executor_id: "agent-1",
       execution_mode: "create_issue",
     });
     await client.updateAutomation("ap-1", { status: "paused", project_id: null });
@@ -1121,7 +1125,7 @@ describe("ApiClient", () => {
         body: JSON.stringify({
           title: "Daily triage",
           project_id: "project-1",
-          assignee_id: "agent-1",
+          executor_id: "agent-1",
           execution_mode: "create_issue",
         }),
       },

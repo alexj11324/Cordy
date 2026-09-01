@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/patchbay-ai/patchbay/server/internal/analytics"
 	"github.com/patchbay-ai/patchbay/server/internal/events"
+	"github.com/patchbay-ai/patchbay/server/internal/issuestatus"
 	"github.com/patchbay-ai/patchbay/server/internal/realtime"
 	"github.com/patchbay-ai/patchbay/server/internal/service"
 	"github.com/patchbay-ai/patchbay/server/internal/testutil"
@@ -186,7 +187,95 @@ func cleanupHandlerTestFixture(ctx context.Context, pool *pgxpool.Pool) error {
 	return nil
 }
 
+func handlerSeededAgentID(t *testing.T) string {
+	t.Helper()
+	var id string
+	if err := testPool.QueryRow(context.Background(),
+		`SELECT id FROM agent WHERE workspace_id = $1 AND name = $2`,
+		testWorkspaceID, "Handler Test Agent").Scan(&id); err != nil {
+		t.Fatalf("locate seeded agent: %v", err)
+	}
+	return id
+}
+
+func withIssueRoleDefaults(t *testing.T, body map[string]any) map[string]any {
+	t.Helper()
+	if typ, ok := body["executor_type"].(string); ok && typ == "member" {
+		body["owner_type"] = "member"
+		if id, exists := body["executor_id"]; exists {
+			body["owner_id"] = id
+		}
+		delete(body, "executor_type")
+		delete(body, "executor_id")
+	}
+	status, _ := body["status"].(string)
+	if statusRequiresTestExecutor(status) {
+		if _, ok := body["executor_type"]; !ok {
+			body["executor_type"] = "agent"
+			body["executor_id"] = handlerSeededAgentID(t)
+		}
+	}
+	if testStatusCategory(status) == issuestatus.InReview {
+		if _, ok := body["reviewer_type"]; !ok {
+			body["reviewer_type"] = "member"
+			body["reviewer_id"] = testUserID
+		}
+	}
+	return body
+}
+
+var disableIssueRoleDefaults bool
+
+func testStatusCategory(status string) string {
+	key := strings.TrimSpace(strings.ToLower(status))
+	if issuestatus.IsBuiltIn(key) {
+		return key
+	}
+	if key == "" || testHandler == nil || testWorkspaceID == "" {
+		return key
+	}
+	return issuestatus.Effective(context.Background(), testHandler.Queries, parseUUID(testWorkspaceID), key)
+}
+
+func statusRequiresTestExecutor(status string) bool {
+	return issuestatus.RequiresExecutor(testStatusCategory(status))
+}
+
+func applyTestIssueRoleDefaults(body map[string]any) {
+	if disableIssueRoleDefaults || testPool == nil {
+		return
+	}
+	if updates, ok := body["updates"].(map[string]any); ok {
+		applyTestIssueRoleDefaults(updates)
+	}
+	status, _ := body["status"].(string)
+	if statusRequiresTestExecutor(status) {
+		if _, hasType := body["executor_type"]; !hasType {
+			if _, hasID := body["executor_id"]; !hasID {
+				var id string
+				if err := testPool.QueryRow(context.Background(),
+					`SELECT id FROM agent WHERE workspace_id = $1 AND name = $2`,
+					testWorkspaceID, "Handler Test Agent").Scan(&id); err == nil && id != "" {
+					body["executor_type"] = "agent"
+					body["executor_id"] = id
+				}
+			}
+		}
+	}
+	if testStatusCategory(status) == issuestatus.InReview {
+		if _, hasType := body["reviewer_type"]; !hasType {
+			if _, hasID := body["reviewer_id"]; !hasID {
+				body["reviewer_type"] = "member"
+				body["reviewer_id"] = testUserID
+			}
+		}
+	}
+}
+
 func newRequest(method, path string, body any) *http.Request {
+	if m, ok := body.(map[string]any); ok {
+		applyTestIssueRoleDefaults(m)
+	}
 	var buf bytes.Buffer
 	if body != nil {
 		json.NewEncoder(&buf).Encode(body)
@@ -970,7 +1059,7 @@ func TestTriggerAutomationAllowsActiveDuplicateIssue(t *testing.T) {
 
 	req = newRequest("POST", "/api/automations?workspace_id="+testWorkspaceID, map[string]any{
 		"title":                "Duplicate title automation",
-		"assignee_id":          agentID,
+		"executor_id":          agentID,
 		"execution_mode":       "create_issue",
 		"issue_title_template": title,
 	})
@@ -1028,7 +1117,7 @@ func TestScheduledAutomationAllowsActiveDuplicateIssue(t *testing.T) {
 
 	req = newRequest("POST", "/api/automations?workspace_id="+testWorkspaceID, map[string]any{
 		"title":                "Scheduled duplicate title automation",
-		"assignee_id":          agentID,
+		"executor_id":          agentID,
 		"execution_mode":       "create_issue",
 		"issue_title_template": title,
 	})
@@ -1090,7 +1179,7 @@ func TestAutomationCreatedIssueCreatorIsAssigneeAgent(t *testing.T) {
 
 	req := newRequest("POST", "/api/automations?workspace_id="+testWorkspaceID, map[string]any{
 		"title":                "Creator attribution automation",
-		"assignee_id":          agentID,
+		"executor_id":          agentID,
 		"execution_mode":       "create_issue",
 		"issue_title_template": title,
 	})
@@ -1178,7 +1267,7 @@ func TestAutomationCreateIssueAssociatesConfiguredProject(t *testing.T) {
 
 	req := newRequest("POST", "/api/automations?workspace_id="+testWorkspaceID, map[string]any{
 		"title":                "Project-linked automation",
-		"assignee_id":          agentID,
+		"executor_id":          agentID,
 		"execution_mode":       "create_issue",
 		"issue_title_template": title,
 		"project_id":           projectID,
@@ -1251,7 +1340,7 @@ func TestAutomationDispatchUsesCurrentProjectBinding(t *testing.T) {
 
 	req := newRequest("POST", "/api/automations?workspace_id="+testWorkspaceID, map[string]any{
 		"title":                "Stale-project automation",
-		"assignee_id":          agentID,
+		"executor_id":          agentID,
 		"execution_mode":       "create_issue",
 		"issue_title_template": title,
 		"project_id":           projectAID,
@@ -1316,7 +1405,7 @@ func TestUpdateAutomationCanSetAndClearProject(t *testing.T) {
 
 	req := newRequest("POST", "/api/automations?workspace_id="+testWorkspaceID, map[string]any{
 		"title":          "Project update automation",
-		"assignee_id":    agentID,
+		"executor_id":    agentID,
 		"execution_mode": "create_issue",
 	})
 	w := testutil.Call(t, testHandler.CreateAutomation, req).Want(http.StatusCreated)
@@ -1351,13 +1440,13 @@ func TestUpdateAutomationCanSetAndClearProject(t *testing.T) {
 }
 
 // TestCreateIssueRejectsNonexistentMemberAssignee covers the bug where any
-// well-formed UUID was accepted as assignee_id without checking workspace
+// well-formed UUID was accepted as executor_id without checking workspace
 // membership.
 func TestCreateIssueRejectsNonexistentMemberAssignee(t *testing.T) {
 	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
-		"title":         "Ghost member assignee",
-		"assignee_type": "member",
-		"assignee_id":   "00000000-0000-0000-0000-000000000000",
+		"title":      "Ghost member assignee",
+		"owner_type": "member",
+		"owner_id":   "00000000-0000-0000-0000-000000000000",
 	})
 	testutil.Call(t, testHandler.CreateIssue, req).Want(http.StatusBadRequest)
 }
@@ -1368,8 +1457,8 @@ func TestCreateIssueRejectsNonexistentMemberAssignee(t *testing.T) {
 func TestCreateIssueRejectsNonexistentAgentAssignee(t *testing.T) {
 	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
 		"title":         "Ghost agent assignee",
-		"assignee_type": "agent",
-		"assignee_id":   "00000000-0000-0000-0000-000000000000",
+		"executor_type": "agent",
+		"executor_id":   "00000000-0000-0000-0000-000000000000",
 	})
 	testutil.Call(t, testHandler.CreateIssue, req).Want(http.StatusBadRequest)
 }
@@ -1379,8 +1468,8 @@ func TestCreateIssueRejectsNonexistentAgentAssignee(t *testing.T) {
 // with an inconsistent state.
 func TestCreateIssueRejectsAssigneeTypeWithoutID(t *testing.T) {
 	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
-		"title":         "Lone assignee_type",
-		"assignee_type": "member",
+		"title":      "Lone owner_type",
+		"owner_type": "member",
 	})
 	testutil.Call(t, testHandler.CreateIssue, req).Want(http.StatusBadRequest)
 }
@@ -1388,19 +1477,19 @@ func TestCreateIssueRejectsAssigneeTypeWithoutID(t *testing.T) {
 // TestCreateIssueRejectsAssigneeIDWithoutType is the symmetric case.
 func TestCreateIssueRejectsAssigneeIDWithoutType(t *testing.T) {
 	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
-		"title":       "Lone assignee_id",
-		"assignee_id": testUserID,
+		"title":       "Lone executor_id",
+		"executor_id": testUserID,
 	})
 	testutil.Call(t, testHandler.CreateIssue, req).Want(http.StatusBadRequest)
 }
 
-// TestCreateIssueRejectsUnknownAssigneeType guards against typos like
+// TestCreateIssueRejectsUnknownExecutorType guards against typos like
 // "members" or "user" that previously sneaked through.
 func TestCreateIssueRejectsUnknownAssigneeType(t *testing.T) {
 	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
-		"title":         "Bogus assignee_type",
-		"assignee_type": "user",
-		"assignee_id":   testUserID,
+		"title":         "Bogus executor_type",
+		"executor_type": "user",
+		"executor_id":   testUserID,
 	})
 	testutil.Call(t, testHandler.CreateIssue, req).Want(http.StatusBadRequest)
 }
@@ -1409,9 +1498,9 @@ func TestCreateIssueRejectsUnknownAssigneeType(t *testing.T) {
 // validator must not block legitimate workspace members.
 func TestCreateIssueAcceptsValidMemberAssignee(t *testing.T) {
 	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
-		"title":         "Valid member assignee",
-		"assignee_type": "member",
-		"assignee_id":   testUserID,
+		"title":      "Valid member assignee",
+		"owner_type": "member",
+		"owner_id":   testUserID,
 	})
 	w := testutil.Call(t, testHandler.CreateIssue, req).Want(http.StatusCreated)
 
@@ -1422,13 +1511,13 @@ func TestCreateIssueAcceptsValidMemberAssignee(t *testing.T) {
 	testHandler.DeleteIssue(httptest.NewRecorder(), cleanupReq)
 }
 
-// TestCreateIssueRejectsMalformedAssigneeID covers the case where parseUUID
+// TestCreateIssueRejectsMalformedExecutorID covers the case where parseUUID
 // silently produces an invalid pgtype.UUID and the validator would otherwise
 // treat (no type + unparseable id) as "no assignee" and accept the request.
 func TestCreateIssueRejectsMalformedAssigneeID(t *testing.T) {
 	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
-		"title":       "Malformed assignee_id only",
-		"assignee_id": "not-a-uuid",
+		"title":       "Malformed executor_id only",
+		"executor_id": "not-a-uuid",
 	})
 	testutil.Call(t, testHandler.CreateIssue, req).Want(http.StatusBadRequest)
 }
@@ -1450,7 +1539,7 @@ func TestCreateIssueRejectsMalformedAttachmentIDBeforeWrite(t *testing.T) {
 	}
 }
 
-// TestUpdateIssueRejectsMalformedAssigneeID is the equivalent for the update
+// TestUpdateIssueRejectsMalformedExecutorID is the equivalent for the update
 // path, where the same parseUUID-shaped gap existed on a previously-unassigned
 // issue.
 func TestUpdateIssueRejectsMalformedAssigneeID(t *testing.T) {
@@ -1467,7 +1556,7 @@ func TestUpdateIssueRejectsMalformedAssigneeID(t *testing.T) {
 	}()
 
 	req = newRequest("PUT", "/api/issues/"+created.ID, map[string]any{
-		"assignee_id": "not-a-uuid",
+		"executor_id": "not-a-uuid",
 	})
 	req = withURLParam(req, "id", created.ID)
 	w = testutil.Call(t, testHandler.UpdateIssue, req).Want(http.StatusBadRequest)
@@ -1489,8 +1578,8 @@ func TestUpdateIssueRejectsNonexistentMemberAssignee(t *testing.T) {
 	}()
 
 	req = newRequest("PUT", "/api/issues/"+created.ID, map[string]any{
-		"assignee_type": "member",
-		"assignee_id":   "00000000-0000-0000-0000-000000000000",
+		"owner_type": "member",
+		"owner_id":   "00000000-0000-0000-0000-000000000000",
 	})
 	req = withURLParam(req, "id", created.ID)
 	w = testutil.Call(t, testHandler.UpdateIssue, req).Want(http.StatusBadRequest)
@@ -1501,9 +1590,9 @@ func TestUpdateIssueRejectsNonexistentMemberAssignee(t *testing.T) {
 // must not be misclassified as a mismatched pair.
 func TestUpdateIssueAllowsExplicitUnassign(t *testing.T) {
 	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
-		"title":         "Issue to unassign",
-		"assignee_type": "member",
-		"assignee_id":   testUserID,
+		"title":      "Issue to unassign",
+		"owner_type": "member",
+		"owner_id":   testUserID,
 	})
 	w := testutil.Call(t, testHandler.CreateIssue, req).Want(http.StatusCreated)
 	var created IssueResponse
@@ -1515,15 +1604,17 @@ func TestUpdateIssueAllowsExplicitUnassign(t *testing.T) {
 	}()
 
 	req = newRequest("PUT", "/api/issues/"+created.ID, map[string]any{
-		"assignee_type": nil,
-		"assignee_id":   nil,
+		"owner_type":    nil,
+		"owner_id":      nil,
+		"executor_type": nil,
+		"executor_id":   nil,
 	})
 	req = withURLParam(req, "id", created.ID)
 	w = testutil.Call(t, testHandler.UpdateIssue, req).Want(http.StatusOK)
 	var updated IssueResponse
 	json.NewDecoder(w.Body).Decode(&updated)
-	if updated.AssigneeType != nil || updated.AssigneeID != nil {
-		t.Fatalf("UpdateIssue: expected assignee cleared, got type=%v id=%v", updated.AssigneeType, updated.AssigneeID)
+	if updated.ExecutorType != nil || updated.ExecutorID != nil {
+		t.Fatalf("UpdateIssue: expected assignee cleared, got type=%v id=%v", updated.ExecutorType, updated.ExecutorID)
 	}
 }
 
@@ -1651,7 +1742,7 @@ func TestGetChatSessionRejectsMalformedSessionID(t *testing.T) {
 func TestCreateAutomationRejectsMalformedAssigneeID(t *testing.T) {
 	req := newRequest("POST", "/api/automations", map[string]any{
 		"title":          "Malformed assignee automation",
-		"assignee_id":    "not-a-uuid",
+		"executor_id":    "not-a-uuid",
 		"execution_mode": "run_only",
 	})
 	testutil.Call(t, testHandler.CreateAutomation, req).Want(http.StatusBadRequest)
@@ -2601,8 +2692,8 @@ func TestBacklogNoTriggerOnCreate(t *testing.T) {
 	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
 		"title":         "Backlog no-trigger test",
 		"status":        "backlog",
-		"assignee_type": "agent",
-		"assignee_id":   agentID,
+		"executor_type": "agent",
+		"executor_id":   agentID,
 	})
 	w := testutil.Call(t, testHandler.CreateIssue, req).Want(http.StatusCreated)
 
@@ -2646,8 +2737,8 @@ func TestBacklogToTodoTriggersAgent(t *testing.T) {
 	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
 		"title":         "Backlog trigger test",
 		"status":        "backlog",
-		"assignee_type": "agent",
-		"assignee_id":   agentID,
+		"executor_type": "agent",
+		"executor_id":   agentID,
 	})
 	w := testutil.Call(t, testHandler.CreateIssue, req).Want(http.StatusCreated)
 
@@ -2703,8 +2794,8 @@ func TestBacklogToTodoByAgentTriggersDifferentAssignee(t *testing.T) {
 	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
 		"title":         "Serial sub-task Step 2",
 		"status":        "backlog",
-		"assignee_type": "agent",
-		"assignee_id":   childAgent,
+		"executor_type": "agent",
+		"executor_id":   childAgent,
 	})
 	w := testutil.Call(t, testHandler.CreateIssue, req).Want(http.StatusCreated)
 	var created IssueResponse
@@ -2754,8 +2845,8 @@ func TestBacklogToTodoByAgentSameIssueDoesNotSelfTrigger(t *testing.T) {
 	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
 		"title":         "Self-promoted backlog",
 		"status":        "backlog",
-		"assignee_type": "agent",
-		"assignee_id":   selfAgent,
+		"executor_type": "agent",
+		"executor_id":   selfAgent,
 	})
 	w := testutil.Call(t, testHandler.CreateIssue, req).Want(http.StatusCreated)
 	var created IssueResponse
@@ -2802,8 +2893,8 @@ func TestBacklogToTodoByAgentSameAgentDifferentIssue(t *testing.T) {
 	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
 		"title":         "Step 1 (running)",
 		"status":        "in_progress",
-		"assignee_type": "agent",
-		"assignee_id":   agentID,
+		"executor_type": "agent",
+		"executor_id":   agentID,
 	})
 	w := testutil.Call(t, testHandler.CreateIssue, req).Want(http.StatusCreated)
 	var step1 IssueResponse
@@ -2817,8 +2908,8 @@ func TestBacklogToTodoByAgentSameAgentDifferentIssue(t *testing.T) {
 	req = newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
 		"title":         "Step 2 (backlog)",
 		"status":        "backlog",
-		"assignee_type": "agent",
-		"assignee_id":   agentID,
+		"executor_type": "agent",
+		"executor_id":   agentID,
 	})
 	w = testutil.Call(t, testHandler.CreateIssue, req).Want(http.StatusCreated)
 	var step2 IssueResponse
@@ -2862,8 +2953,8 @@ func TestAssignIssueToSelfWithActiveTargetRunDoesNotDuplicate(t *testing.T) {
 
 	previewReq := newRequest("POST", "/api/issues/preview-trigger?workspace_id="+testWorkspaceID, map[string]any{
 		"issue_ids":     []string{issue.ID},
-		"assignee_type": "agent",
-		"assignee_id":   agentID,
+		"executor_type": "agent",
+		"executor_id":   agentID,
 	})
 	previewReq.Header.Set("X-Agent-ID", agentID)
 	previewReq.Header.Set("X-Task-ID", runningTask)
@@ -2875,8 +2966,8 @@ func TestAssignIssueToSelfWithActiveTargetRunDoesNotDuplicate(t *testing.T) {
 	}
 
 	req := withURLParam(newRequest("PUT", "/api/issues/"+issue.ID, map[string]any{
-		"assignee_type": "agent",
-		"assignee_id":   agentID,
+		"executor_type": "agent",
+		"executor_id":   agentID,
 	}), "id", issue.ID)
 	req.Header.Set("X-Agent-ID", agentID)
 	req.Header.Set("X-Task-ID", runningTask)
@@ -2922,8 +3013,8 @@ func TestAssignDifferentIssueToSelfStillEnqueues(t *testing.T) {
 	sourceTask := createHandlerTestTaskForAgentOnIssue(t, agentID, source.ID)
 
 	req := withURLParam(newRequest("PUT", "/api/issues/"+target.ID, map[string]any{
-		"assignee_type": "agent",
-		"assignee_id":   agentID,
+		"executor_type": "agent",
+		"executor_id":   agentID,
 	}), "id", target.ID)
 	req.Header.Set("X-Agent-ID", agentID)
 	req.Header.Set("X-Task-ID", sourceTask)
@@ -2949,8 +3040,8 @@ func TestBatchAssignFreshIssuesToSelfEnqueuesEach(t *testing.T) {
 	req := newRequest("PATCH", "/api/issues/batch?workspace_id="+testWorkspaceID, map[string]any{
 		"issue_ids": []string{target1.ID, target2.ID},
 		"updates": map[string]any{
-			"assignee_type": "agent",
-			"assignee_id":   agentID,
+			"executor_type": "agent",
+			"executor_id":   agentID,
 		},
 	})
 	req.Header.Set("X-Agent-ID", agentID)
@@ -2976,8 +3067,8 @@ func TestAssignActiveIssueToDifferentAgentStillEnqueues(t *testing.T) {
 	actorTask := createHandlerTestTaskForAgentOnIssue(t, actorAgent, issue.ID)
 
 	req := withURLParam(newRequest("PUT", "/api/issues/"+issue.ID, map[string]any{
-		"assignee_type": "agent",
-		"assignee_id":   targetAgent,
+		"executor_type": "agent",
+		"executor_id":   targetAgent,
 	}), "id", issue.ID)
 	req.Header.Set("X-Agent-ID", actorAgent)
 	req.Header.Set("X-Task-ID", actorTask)
@@ -3008,8 +3099,8 @@ func TestBatchBacklogToTodoByAgentTriggersAssignee(t *testing.T) {
 	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
 		"title":         "Batch backlog child",
 		"status":        "backlog",
-		"assignee_type": "agent",
-		"assignee_id":   childAgent,
+		"executor_type": "agent",
+		"executor_id":   childAgent,
 	})
 	w := testutil.Call(t, testHandler.CreateIssue, req).Want(http.StatusCreated)
 	var created IssueResponse
@@ -3059,8 +3150,8 @@ func TestBacklogToTodoByAgentTriggersTeamLeader(t *testing.T) {
 	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
 		"title":         "Team backlog issue",
 		"status":        "backlog",
-		"assignee_type": "team",
-		"assignee_id":   teamID,
+		"executor_type": "team",
+		"executor_id":   teamID,
 	})
 	w := testutil.Call(t, testHandler.CreateIssue, req).Want(http.StatusCreated)
 	var created IssueResponse
@@ -3329,8 +3420,8 @@ func TestNestedMemberReplyUsesDirectParentForMentionInheritance(t *testing.T) {
 		"creator_type":  "member",
 		"creator_id":    testUserID,
 		"title":         "nested mention inheritance regression",
-		"assignee_type": "agent",
-		"assignee_id":   assigneeAgent,
+		"executor_type": "agent",
+		"executor_id":   assigneeAgent,
 		"number":        number,
 	})
 	t.Cleanup(func() {
@@ -3410,8 +3501,8 @@ func TestNestedMemberReplyUnderMemberSkipsAssigneeFallback(t *testing.T) {
 		"creator_type":  "member",
 		"creator_id":    testUserID,
 		"title":         "nested participation regression",
-		"assignee_type": "agent",
-		"assignee_id":   assigneeAgent,
+		"executor_type": "agent",
+		"executor_id":   assigneeAgent,
 		"number":        number,
 	})
 	t.Cleanup(func() {

@@ -9,7 +9,7 @@ import (
 )
 
 // TestCreateIssueAssignedToTeamEnqueuesLeader verifies that creating an
-// issue with assignee_type=team immediately enqueues a task for the team
+// issue with executor_type=team immediately enqueues a task for the team
 // leader (mirrors the agent-assignee parking-lot rule: skip backlog only).
 func TestCreateIssueAssignedToTeamEnqueuesLeader(t *testing.T) {
 	ctx := context.Background()
@@ -37,8 +37,8 @@ func TestCreateIssueAssignedToTeamEnqueuesLeader(t *testing.T) {
 	w := httptest.NewRecorder()
 	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
 		"title":         "Team-assigned at creation",
-		"assignee_type": "team",
-		"assignee_id":   teamID,
+		"executor_type": "team",
+		"executor_id":   teamID,
 	})
 	testHandler.CreateIssue(w, req)
 	if w.Code != http.StatusCreated {

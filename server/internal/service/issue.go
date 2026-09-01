@@ -65,8 +65,12 @@ type IssueCreateParams struct {
 	Description   pgtype.Text
 	Status        string
 	Priority      string
-	AssigneeType  pgtype.Text
-	AssigneeID    pgtype.UUID
+	ExecutorType  pgtype.Text
+	ExecutorID    pgtype.UUID
+	OwnerType     pgtype.Text
+	OwnerID       pgtype.UUID
+	ReviewerType  pgtype.Text
+	ReviewerID    pgtype.UUID
 	CreatorType   string // "agent" or "member"
 	CreatorID     pgtype.UUID
 	ParentIssueID pgtype.UUID
@@ -344,8 +348,12 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 			Description:   p.Description,
 			Status:        p.Status,
 			Priority:      p.Priority,
-			AssigneeType:  p.AssigneeType,
-			AssigneeID:    p.AssigneeID,
+			ExecutorType:  p.ExecutorType,
+			ExecutorID:    p.ExecutorID,
+			OwnerType:     p.OwnerType,
+			OwnerID:       p.OwnerID,
+			ReviewerType:  p.ReviewerType,
+			ReviewerID:    p.ReviewerID,
 			CreatorType:   p.CreatorType,
 			CreatorID:     p.CreatorID,
 			ParentIssueID: p.ParentIssueID,
@@ -366,8 +374,12 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 			Description:   p.Description,
 			Status:        p.Status,
 			Priority:      p.Priority,
-			AssigneeType:  p.AssigneeType,
-			AssigneeID:    p.AssigneeID,
+			ExecutorType:  p.ExecutorType,
+			ExecutorID:    p.ExecutorID,
+			OwnerType:     p.OwnerType,
+			OwnerID:       p.OwnerID,
+			ReviewerType:  p.ReviewerType,
+			ReviewerID:    p.ReviewerID,
 			CreatorType:   p.CreatorType,
 			CreatorID:     p.CreatorID,
 			ParentIssueID: p.ParentIssueID,
@@ -722,7 +734,7 @@ func classifyOrigin(issue db.Issue, opts IssueCreateOpts) (source, taskID, autom
 }
 
 func (s *IssueService) maybeEnqueueOnAssign(ctx context.Context, issue db.Issue, creatorType, actorID string, agentRunFireAt time.Time) pgtype.UUID {
-	if !issue.AssigneeType.Valid || !issue.AssigneeID.Valid {
+	if !issue.ExecutorType.Valid || !issue.ExecutorID.Valid {
 		return pgtype.UUID{}
 	}
 	// Backlog is the parking lot: nothing runs from it, so nothing here needs
@@ -792,10 +804,10 @@ func isAgentAssigneeReadyWithQueries(ctx context.Context, lookup RuntimeLookup, 
 // Only a BLOCKED verdict stops the enqueue. A merely offline machine still
 // queues: that work runs when the laptop comes back, and people rely on it.
 func agentAssigneeVerdict(ctx context.Context, lookup RuntimeLookup, issue db.Issue) (AgentVerdict, bool) {
-	if !issue.AssigneeType.Valid || issue.AssigneeType.String != "agent" || !issue.AssigneeID.Valid {
+	if !issue.ExecutorType.Valid || issue.ExecutorType.String != "agent" || !issue.ExecutorID.Valid {
 		return AgentVerdict{}, false
 	}
-	agent, err := lookup.Queries.GetAgent(ctx, issue.AssigneeID)
+	agent, err := lookup.Queries.GetAgent(ctx, issue.ExecutorID)
 	if err != nil {
 		return AgentVerdict{}, false
 	}
@@ -814,11 +826,11 @@ func (s *IssueService) shouldEnqueueTeamLeaderOnAssign(ctx context.Context, issu
 }
 
 func (s *IssueService) isTeamLeaderReady(ctx context.Context, issue db.Issue) bool {
-	if !issue.AssigneeType.Valid || issue.AssigneeType.String != "team" || !issue.AssigneeID.Valid {
+	if !issue.ExecutorType.Valid || issue.ExecutorType.String != "team" || !issue.ExecutorID.Valid {
 		return false
 	}
 	team, err := s.Queries.GetTeamInWorkspace(ctx, db.GetTeamInWorkspaceParams{
-		ID:          issue.AssigneeID,
+		ID:          issue.ExecutorID,
 		WorkspaceID: issue.WorkspaceID,
 	})
 	if err != nil {
@@ -837,7 +849,7 @@ func (s *IssueService) isTeamLeaderReady(ctx context.Context, issue db.Issue) bo
 
 func (s *IssueService) enqueueTeamLeaderTask(ctx context.Context, issue db.Issue, triggerCommentID pgtype.UUID, authorType, authorID string) {
 	team, err := s.Queries.GetTeamInWorkspace(ctx, db.GetTeamInWorkspaceParams{
-		ID:          issue.AssigneeID,
+		ID:          issue.ExecutorID,
 		WorkspaceID: issue.WorkspaceID,
 	})
 	if err != nil {

@@ -232,7 +232,7 @@ VALUES ($1, 'head-a', 0, 'backend', 'completed', 'success', false)
 	automationID := dbfx.Insert(t, "automation", testutil.Cols{
 		"workspace_id":    wsID,
 		"title":           "Workspace delete automation",
-		"assignee_id":     agentID,
+		"executor_id":     agentID,
 		"created_by_type": "member",
 		"created_by_id":   testUserID,
 	})
@@ -1029,8 +1029,8 @@ func TestDeleteMember_PrunesAutomationSubscribers(t *testing.T) {
 	automationID := dbfx.Insert(t, "automation", testutil.Cols{
 		"workspace_id":    fx.WorkspaceID,
 		"title":           "Revocation automation subscriber",
-		"assignee_type":   "agent",
-		"assignee_id":     fx.AgentID,
+		"executor_type":   "agent",
+		"executor_id":     fx.AgentID,
 		"status":          "active",
 		"execution_mode":  "run_only",
 		"created_by_type": "member",
@@ -1070,8 +1070,8 @@ VALUES ($1, 'member', $2), ($1, 'member', $3)
 	otherAutomationID := dbfx.Insert(t, "automation", testutil.Cols{
 		"workspace_id":    otherWorkspaceID,
 		"title":           "Other workspace automation subscriber",
-		"assignee_type":   "agent",
-		"assignee_id":     otherAgentID,
+		"executor_type":   "agent",
+		"executor_id":     otherAgentID,
 		"status":          "active",
 		"execution_mode":  "run_only",
 		"created_by_type": "member",

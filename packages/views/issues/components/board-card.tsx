@@ -85,7 +85,12 @@ export const BoardCardContent = memo(function BoardCardContent({
   const showPriority = storeProperties.priority;
   const showDescription = storeProperties.description && issue.description;
   const showAssigneeSection = storeProperties.assignee;
-  const hasAssignee = !!issue.assignee_type && !!issue.assignee_id;
+  const assignee = issue.executor_type && issue.executor_id
+    ? { type: issue.executor_type, id: issue.executor_id }
+    : issue.owner_type && issue.owner_id
+      ? { type: issue.owner_type, id: issue.owner_id }
+      : null;
+  const hasAssignee = assignee !== null;
   const showStartDate = storeProperties.startDate && issue.start_date;
   const showDueDate = storeProperties.dueDate && issue.due_date;
   const showProject = storeProperties.project && project;
@@ -99,8 +104,8 @@ export const BoardCardContent = memo(function BoardCardContent({
   const showUpdatedHint = showAssigneeName && !showChildProgress;
   const { getActorName } = useActorName();
   const assigneeName =
-    showAssigneeName && issue.assignee_type && issue.assignee_id
-      ? getActorName(issue.assignee_type, issue.assignee_id)
+    showAssigneeName && assignee
+      ? getActorName(assignee.type, assignee.id)
       : null;
 
   const priorityLabel = t(($) => $.priority[issue.priority]);
@@ -140,8 +145,8 @@ export const BoardCardContent = memo(function BoardCardContent({
   const assigneeInner = hasAssignee ? (
     <span className="flex min-w-0 max-w-full items-center gap-1.5">
       <ActorAvatar
-        actorType={issue.assignee_type!}
-        actorId={issue.assignee_id!}
+        actorType={assignee.type}
+        actorId={assignee.id}
         size="sm"
         enableHoverCard
         profileLink={false}
@@ -159,8 +164,8 @@ export const BoardCardContent = memo(function BoardCardContent({
     canEdit ? (
       <PickerWrapper className={assigneeContainerClass}>
         <AssigneePicker
-          assigneeType={issue.assignee_type}
-          assigneeId={issue.assignee_id}
+          assigneeType={assignee?.type ?? null}
+          assigneeId={assignee?.id ?? null}
           onUpdate={handleUpdate}
           trigger={assigneeInner}
         />

@@ -32,7 +32,11 @@ export type IssueStatus = IssueStatusCategory | (string & {});
 
 export type IssuePriority = "urgent" | "high" | "medium" | "low" | "none";
 
-export type IssueAssigneeType = "member" | "agent" | "team";
+export type IssueOwnerType = "member";
+export type IssueExecutorType = "agent" | "team";
+export type IssueActorType = IssueOwnerType | IssueExecutorType;
+export type IssueReviewerType = IssueActorType;
+export type IssueAssigneeType = IssueActorType;
 
 export interface IssueReaction {
   id: string;
@@ -182,9 +186,13 @@ export interface Issue {
    */
   status_name?: string;
   priority: IssuePriority;
-  assignee_type: IssueAssigneeType | null;
-  assignee_id: string | null;
-  creator_type: IssueAssigneeType;
+  owner_type: IssueOwnerType | null;
+  owner_id: string | null;
+  executor_type: IssueExecutorType | null;
+  executor_id: string | null;
+  reviewer_type: IssueReviewerType | null;
+  reviewer_id: string | null;
+  creator_type: IssueActorType;
   creator_id: string;
   parent_issue_id: string | null;
   project_id: string | null;

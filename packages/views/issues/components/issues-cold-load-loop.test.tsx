@@ -190,8 +190,12 @@ function makeIssue(overrides: Partial<Issue> & { id: string }): Issue {
     description: null,
     status: "todo",
     priority: "none",
-    assignee_type: null,
-    assignee_id: null,
+    owner_type: null,
+    owner_id: null,
+    executor_type: null,
+    executor_id: null,
+    reviewer_type: null,
+    reviewer_id: null,
     creator_type: "member",
     creator_id: "user-1",
     parent_issue_id: null,
@@ -266,9 +270,9 @@ describe("Issues cold-load render loop (MUL-4985)", () => {
   it("Swimlane grouped by assignee paints during cold load (real Virtuoso mounts, no update-depth loop)", async () => {
     mockViewState.swimlaneGrouping = "assignee";
     const issues = [
-      makeIssue({ id: "s1", title: "Swim Card 1", assignee_type: "member", assignee_id: "user-1", status: "todo" }),
-      makeIssue({ id: "s2", title: "Swim Card 2", assignee_type: "agent", assignee_id: "agent-1", status: "in_progress" }),
-      makeIssue({ id: "s3", title: "Swim Card 3", assignee_type: null, assignee_id: null, status: "todo" }),
+      makeIssue({ id: "s1", title: "Swim Card 1", owner_type: "member", owner_id: "user-1", status: "todo" }),
+      makeIssue({ id: "s2", title: "Swim Card 2", executor_type: "agent", executor_id: "agent-1", status: "in_progress" }),
+      makeIssue({ id: "s3", title: "Swim Card 3", executor_type: null, executor_id: null, status: "todo" }),
     ];
 
     renderWithProviders(

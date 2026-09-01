@@ -38,8 +38,8 @@ func enqueueIssueTaskWithTrigger(t *testing.T, ctx context.Context, agentID, iss
 	task, err := testHandler.TaskService.EnqueueTaskForIssue(ctx, db.Issue{
 		ID:           parseUUID(issueID),
 		WorkspaceID:  parseUUID(testWorkspaceID),
-		AssigneeType: pgtype.Text{String: "agent", Valid: true},
-		AssigneeID:   parseUUID(agentID),
+		ExecutorType: pgtype.Text{String: "agent", Valid: true},
+		ExecutorID:   parseUUID(agentID),
 		CreatorType:  "member",
 		CreatorID:    parseUUID(testUserID),
 		Priority:     "none",

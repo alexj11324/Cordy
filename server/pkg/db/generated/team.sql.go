@@ -654,32 +654,32 @@ func (q *Queries) RemoveTeamMember(ctx context.Context, arg RemoveTeamMemberPara
 }
 
 const transferTeamAssignees = `-- name: TransferTeamAssignees :exec
-UPDATE issue SET assignee_type = 'agent', assignee_id = $2, revision = revision + 1, updated_at = now()
-WHERE assignee_type = 'team' AND assignee_id = $1
+UPDATE issue SET executor_type = 'agent', executor_id = $2, revision = revision + 1, updated_at = now()
+WHERE executor_type = 'team' AND executor_id = $1
 `
 
 type TransferTeamAssigneesParams struct {
-	AssigneeID   pgtype.UUID `json:"assignee_id"`
-	AssigneeID_2 pgtype.UUID `json:"assignee_id_2"`
+	ExecutorID   pgtype.UUID `json:"executor_id"`
+	ExecutorID_2 pgtype.UUID `json:"executor_id_2"`
 }
 
 // Transfer all issues assigned to a team to the team's leader agent.
 func (q *Queries) TransferTeamAssignees(ctx context.Context, arg TransferTeamAssigneesParams) error {
-	_, err := q.db.Exec(ctx, transferTeamAssignees, arg.AssigneeID, arg.AssigneeID_2)
+	_, err := q.db.Exec(ctx, transferTeamAssignees, arg.ExecutorID, arg.ExecutorID_2)
 	return err
 }
 
 const transferTeamAutomationsToLeader = `-- name: TransferTeamAutomationsToLeader :exec
 UPDATE automation
-SET assignee_type = 'agent',
-    assignee_id = $2,
+SET executor_type = 'agent',
+    executor_id = $2,
     updated_at = now()
-WHERE assignee_type = 'team' AND assignee_id = $1
+WHERE executor_type = 'team' AND executor_id = $1
 `
 
 type TransferTeamAutomationsToLeaderParams struct {
-	AssigneeID   pgtype.UUID `json:"assignee_id"`
-	AssigneeID_2 pgtype.UUID `json:"assignee_id_2"`
+	ExecutorID   pgtype.UUID `json:"executor_id"`
+	ExecutorID_2 pgtype.UUID `json:"executor_id_2"`
 }
 
 // Mirrors TransferTeamAssignees for automation rows: when a team is archived,
@@ -689,7 +689,7 @@ type TransferTeamAutomationsToLeaderParams struct {
 // the automation keeps firing under the same leader-only execution semantics
 // it had a moment before the archive (Path A from PB-2429).
 func (q *Queries) TransferTeamAutomationsToLeader(ctx context.Context, arg TransferTeamAutomationsToLeaderParams) error {
-	_, err := q.db.Exec(ctx, transferTeamAutomationsToLeader, arg.AssigneeID, arg.AssigneeID_2)
+	_, err := q.db.Exec(ctx, transferTeamAutomationsToLeader, arg.ExecutorID, arg.ExecutorID_2)
 	return err
 }
 

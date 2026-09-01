@@ -72,7 +72,7 @@ func newSelfMentionFixture(t *testing.T) selfMentionFixture {
 		}
 		var id string
 		if err := testPool.QueryRow(ctx, `
-			INSERT INTO issue (workspace_id, creator_type, creator_id, title, assignee_type, assignee_id, number)
+			INSERT INTO issue (workspace_id, creator_type, creator_id, title, executor_type, executor_id, number)
 			VALUES ($1, 'member', $2, $3, 'agent', $4, $5)
 			RETURNING id
 		`, testWorkspaceID, testUserID, title, jID, number).Scan(&id); err != nil {

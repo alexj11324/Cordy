@@ -1,4 +1,4 @@
-import type { Issue, IssueMetadata, IssueStatus, IssueStatusCategory, IssuePriority, IssueAssigneeType } from "./issue";
+import type { Issue, IssueMetadata, IssueStatus, IssueStatusCategory, IssuePriority, IssueAssigneeType, IssueOwnerType, IssueExecutorType, IssueReviewerType } from "./issue";
 import type { PropertyFilterValue } from "./property";
 import type { MemberRole } from "./workspace";
 import type { Project } from "./project";
@@ -9,8 +9,12 @@ export interface CreateIssueRequest {
   description?: string;
   status?: IssueStatus;
   priority?: IssuePriority;
-  assignee_type?: IssueAssigneeType;
-  assignee_id?: string;
+  owner_type?: IssueOwnerType;
+  owner_id?: string;
+  executor_type?: IssueExecutorType;
+  executor_id?: string;
+  reviewer_type?: IssueReviewerType;
+  reviewer_id?: string;
   parent_issue_id?: string;
   project_id?: string;
   /** Ordered stage (>= 1) grouping this sub-issue under its parent. */
@@ -60,8 +64,12 @@ export interface UpdateIssueRequest {
   description_base?: string;
   status?: IssueStatus;
   priority?: IssuePriority;
-  assignee_type?: IssueAssigneeType | null;
-  assignee_id?: string | null;
+  owner_type?: IssueOwnerType | null;
+  owner_id?: string | null;
+  executor_type?: IssueExecutorType | null;
+  executor_id?: string | null;
+  reviewer_type?: IssueReviewerType | null;
+  reviewer_id?: string | null;
   position?: number;
   start_date?: string | null;
   due_date?: string | null;
@@ -92,8 +100,12 @@ export interface MoveIssueRequest
   extends Pick<
     UpdateIssueRequest,
     | "status"
-    | "assignee_type"
-    | "assignee_id"
+    | "owner_type"
+    | "owner_id"
+    | "executor_type"
+    | "executor_id"
+    | "reviewer_type"
+    | "reviewer_id"
     | "parent_issue_id"
     | "project_id"
   > {
@@ -148,6 +160,10 @@ export interface ListIssuesParams {
   priority?: IssuePriority;
   /** Multi-value table facet. OR within the field. */
   priorities?: IssuePriority[];
+  owner_id?: string;
+  executor_id?: string;
+  executor_ids?: string[];
+  executor_types?: IssueAssigneeType[];
   assignee_id?: string;
   assignee_ids?: string[];
   /**
@@ -227,8 +243,12 @@ export interface ListGroupedIssuesParams {
   statuses?: IssueStatus[];
   priorities?: IssuePriority[];
   assignee_types?: IssueAssigneeType[];
+  executor_types?: IssueAssigneeType[];
+  owner_id?: string;
+  executor_id?: string;
   assignee_id?: string;
   assignee_ids?: string[];
+  executor_ids?: string[];
   creator_id?: string;
   project_id?: string;
   /** See `ListIssuesParams.involves_user_id` — same semantics. */
@@ -247,6 +267,8 @@ export interface ListGroupedIssuesParams {
   label_ids?: string[];
   group_assignee_type?: IssueAssigneeType | "none";
   group_assignee_id?: string;
+  group_executor_type?: IssueAssigneeType | "none";
+  group_executor_id?: string;
   date_field?: "created_at" | "updated_at";
   date_start?: string;
   date_end?: string;
@@ -272,8 +294,10 @@ export interface ListIssuesResponse {
 
 export interface IssueAssigneeGroup {
   id: string;
-  assignee_type: IssueAssigneeType | null;
-  assignee_id: string | null;
+  owner_type?: IssueOwnerType | null;
+  owner_id?: string | null;
+  executor_type: IssueExecutorType | null;
+  executor_id: string | null;
   issues: Issue[];
   total: number;
 }

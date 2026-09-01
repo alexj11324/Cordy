@@ -165,7 +165,7 @@ patchbay runtime activity <runtime-id>
 | `issue` | 태스크 생성, 업데이트, 할당, 검색. 댓글, 구독, 라벨, 속성, 실행 기록 관리 |
 | `project` | 프로젝트와 프로젝트 리소스 관리 |
 | `label`, `property` | 워크스페이스 라벨과 사용자 지정 속성 관리 |
-| `agent`, `skill`, `team` | 에이전트, 스킬, 스쿼드 관리 |
+| `agent`, `skill`, `team` | 에이전트, 스킬, 팀 관리 |
 | `automation` | 자동화, 트리거, 실행 기록 관리 |
 | `workspace` | 워크스페이스 생성, 확인, 전환 및 멤버 초대 |
 | `repo` | 워크스페이스 저장소 관리 및 로컬 checkout |
@@ -228,7 +228,7 @@ CLI 설정 파일에는 사용자를 대신해 Patchbay에 접근할 수 있는 
 | | `get <id>` | 태스크 하나 확인 | |
 | | `create` | 태스크 생성 | `--title`(필수), `--description` / `--description-stdin` / `--description-file`, `--status`, `--priority`, `--assignee`, `--parent`, `--stage`, `--project`, `--start-date`, `--due-date`, `--attachment`(반복 가능) |
 | | `update <id>` | 태스크 필드 업데이트 | `create`와 같은 종류의 필드에 `--position`, `--no-start` 추가 |
-| | `assign <id>` | 할당 또는 할당 해제 | `--to`(이름으로 멤버, 에이전트, 스쿼드 fuzzy match), `--to-id`, `--unassign`, `--no-start` |
+| | `assign <id>` | 할당 또는 할당 해제 | `--to`(이름으로 멤버, 에이전트, 팀 fuzzy match), `--to-id`, `--unassign`, `--no-start` |
 | | `status <id> <status>` | 상태 변경 | `--no-start` |
 | | `reorder <id>` | 열 안에서 이동 | |
 | | `search <query>` | 태스크 검색 | `--limit`, `--include-closed` |
@@ -268,8 +268,8 @@ CLI 설정 파일에는 사용자를 대신해 Patchbay에 접근할 수 있는 
 | | `import` | URL 또는 로컬 파일에서 스킬 가져오기 | `--url` / `--file`, `--on-conflict`(`fail`, `overwrite`, `rename`, `skip`, 기본 `fail`) |
 | | `search <query>` | 스킬 검색 | |
 | | `files list/upsert/delete <skill-id>` | 스킬 내부 파일 관리 | |
-| `team` | `list/get/create/update/delete` | 스쿼드 관리(`delete`는 보관) | |
-| | `member list/add/set-role/remove` | 스쿼드 멤버 관리 | |
+| `team` | `list/get/create/update/delete` | 팀 관리(`delete`는 보관) | |
+| | `member list/add/set-role/remove` | 팀 멤버 관리 | |
 | | `activity <issue-id> <outcome>` | 리더 평가 기록 | |
 | `chat` | `history`, `thread [id]` | 에이전트가 현재 처리 중인 외부 채팅 대화 읽기 | `--limit`, `--before` |
 

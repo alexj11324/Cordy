@@ -163,8 +163,9 @@ export function RunConfirmModal({
     const base: UpdateIssueRequest = isPromote
       ? { status: d.status }
       : {
-          assignee_type: d.assigneeType ?? null,
-          assignee_id: d.assigneeId ?? null,
+          ...(d.assigneeType === "member"
+            ? { owner_type: "member" as const, owner_id: d.assigneeId ?? null }
+            : { executor_type: d.assigneeType ?? null, executor_id: d.assigneeId ?? null }),
         };
     return { ...base, ...extra };
   };

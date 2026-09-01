@@ -467,10 +467,14 @@ export function onIssueUpdated(
     assignee:
       meta.assigneeChanged ??
       (cachedIssue !== undefined &&
-        ((issue.assignee_id !== undefined &&
-          issue.assignee_id !== cachedIssue.assignee_id) ||
-          (issue.assignee_type !== undefined &&
-            issue.assignee_type !== cachedIssue.assignee_type))),
+        ((issue.executor_id !== undefined &&
+          issue.executor_id !== cachedIssue.executor_id) ||
+          (issue.executor_type !== undefined &&
+            issue.executor_type !== cachedIssue.executor_type) ||
+          (issue.owner_id !== undefined &&
+            issue.owner_id !== cachedIssue.owner_id) ||
+          (issue.owner_type !== undefined &&
+            issue.owner_type !== cachedIssue.owner_type))),
     project:
       meta.projectChanged ??
       (issue.project_id !== undefined && (issue.project_id ?? null) !== oldProjectId),

@@ -81,8 +81,8 @@ export interface AutomationInitial {
   title: string;
   description: string;
   project_id: string | null;
-  assignee_type: AutomationAssigneeType;
-  assignee_id: string;
+  executor_type: AutomationAssigneeType;
+  executor_id: string;
   execution_mode: AutomationExecutionMode;
   subscriber_user_ids?: string[];
 }
@@ -154,9 +154,9 @@ export function AutomationDialog(props: AutomationDialogProps) {
   const [description, setDescription] = useState(initial.description ?? "");
   const [projectId, setProjectId] = useState<string | null>(initial.project_id ?? null);
   const [assigneeType, setAssigneeType] = useState<AutomationAssigneeType>(
-    initial.assignee_type ?? "agent",
+    initial.executor_type ?? "agent",
   );
-  const [assigneeId, setAssigneeId] = useState<string>(initial.assignee_id ?? "");
+  const [assigneeId, setAssigneeId] = useState<string>(initial.executor_id ?? "");
   const [executionMode, setExecutionMode] = useState<AutomationExecutionMode>(
     initial.execution_mode ?? "create_issue",
   );
@@ -316,8 +316,8 @@ export function AutomationDialog(props: AutomationDialogProps) {
           title: title.trim(),
           description: description.trim() || undefined,
           project_id: projectId,
-          assignee_type: assigneeType,
-          assignee_id: assigneeId,
+          executor_type: assigneeType,
+          executor_id: assigneeId,
           execution_mode: executionMode,
           subscribers: subscriberUserIds.map((user_id) => ({
             user_type: "member" as const,
@@ -369,8 +369,8 @@ export function AutomationDialog(props: AutomationDialogProps) {
           title: title.trim(),
           description: description.trim() || null,
           project_id: projectId,
-          assignee_type: assigneeType,
-          assignee_id: assigneeId,
+          executor_type: assigneeType,
+          executor_id: assigneeId,
           execution_mode: executionMode,
           subscribers: subscriberUserIds.map((user_id) => ({
             user_type: "member" as const,

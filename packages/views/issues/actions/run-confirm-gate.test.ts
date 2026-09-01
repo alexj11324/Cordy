@@ -37,8 +37,8 @@ function issue(overrides: Partial<GateIssue> = {}): GateIssue {
   return {
     id: "issue-1",
     status: "backlog",
-    assignee_type: "agent",
-    assignee_id: "agent-1",
+    executor_type: "agent",
+    executor_id: "agent-1",
     ...overrides,
   };
 }
@@ -68,7 +68,7 @@ describe("resolveStatusCategory", () => {
 describe("runConfirmIntent — assign", () => {
   it("confirms when the issue is not parked", () => {
     expect(
-      runConfirmIntent(issue({ status: "todo" }), { assignee_type: "agent", assignee_id: "a-2" }, CATALOG),
+      runConfirmIntent(issue({ status: "todo" }), { executor_type: "agent", executor_id: "a-2" }, CATALOG),
     ).toEqual({ issueIds: ["issue-1"], mode: "assign", assigneeType: "agent", assigneeId: "a-2" });
   });
 
@@ -80,7 +80,7 @@ describe("runConfirmIntent — assign", () => {
     expect(
       runConfirmIntent(
         issue({ status, status_category: carried }),
-        { assignee_type: "agent", assignee_id: "a-2" },
+        { executor_type: "agent", executor_id: "a-2" },
         CATALOG,
       ),
     ).toBeNull();
@@ -90,13 +90,13 @@ describe("runConfirmIntent — assign", () => {
     // Fails toward the dialog: a dismissed dialog costs a click, a silent
     // start costs an agent run.
     expect(
-      runConfirmIntent(issue({ status: "later" }), { assignee_type: "agent", assignee_id: "a-2" }, COLD),
+      runConfirmIntent(issue({ status: "later" }), { executor_type: "agent", executor_id: "a-2" }, COLD),
     ).not.toBeNull();
   });
 
   it("applies directly for a member assignee", () => {
     expect(
-      runConfirmIntent(issue({ status: "todo" }), { assignee_type: "member", assignee_id: "u-1" }, CATALOG),
+      runConfirmIntent(issue({ status: "todo" }), { owner_type: "member", owner_id: "u-1" }, CATALOG),
     ).toBeNull();
   });
 });
@@ -126,8 +126,8 @@ describe("runConfirmIntent — promote", () => {
   });
 
   it.each([
-    ["no owner", { status: "backlog", assignee_type: null, assignee_id: null }, "todo"],
-    ["member owner", { status: "backlog", assignee_type: "member" as const, assignee_id: "u-1" }, "todo"],
+    ["no owner", { status: "backlog", executor_type: null, executor_id: null }, "todo"],
+    ["member owner", { status: "backlog", executor_type: null, executor_id: null }, "todo"],
     ["already active", { status: "todo" }, "in_progress"],
     ["closing the issue", { status: "backlog" }, "done"],
     ["cancelling the issue", { status: "backlog" }, "cancelled"],

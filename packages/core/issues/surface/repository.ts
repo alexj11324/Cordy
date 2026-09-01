@@ -16,6 +16,6 @@ export function issueSurfaceGanttOptions(
   return projectGanttIssuesOptions(
     wsId,
     projectId,
-    plan.queryFilter.assignee_types,
+    plan.queryFilter.executor_types ?? plan.queryFilter.assignee_types,
   );
 }

@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// Backs the workspace Members/Agents tabs: assignee_types on ListIssues must
+// Backs the workspace Members/Agents tabs: executor_types on ListIssues must
 // filter server-side (same semantics as the ListGroupedIssues param) so the
 // client no longer post-filters loaded pages, and `total` must agree with the
 // filter so per-status pagination counts stay correct.
@@ -41,7 +41,7 @@ func TestListIssues_AssigneeTypesFilter(t *testing.T) {
 	}
 	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM agent WHERE id = $1`, agentID) })
 
-	insertIssue := func(title string, assigneeType, assigneeID *string) string {
+	insertIssue := func(title string, ownerType, ownerID, executorType, executorID *string) string {
 		var number int
 		if err := testPool.QueryRow(ctx, `
 			UPDATE workspace
@@ -52,9 +52,9 @@ func TestListIssues_AssigneeTypesFilter(t *testing.T) {
 		}
 		var id string
 		if err := testPool.QueryRow(ctx, `
-			INSERT INTO issue (workspace_id, title, status, priority, assignee_type, assignee_id, creator_type, creator_id, position, number, project_id)
-			VALUES ($1, $2, 'todo', 'none', $3, $4, 'member', $5, 0, $6, $7) RETURNING id
-		`, testWorkspaceID, title, assigneeType, assigneeID, testUserID, number, projectID).Scan(&id); err != nil {
+			INSERT INTO issue (workspace_id, title, status, priority, owner_type, owner_id, executor_type, executor_id, creator_type, creator_id, position, number, project_id)
+			VALUES ($1, $2, 'todo', 'none', $3, $4, $5, $6, 'member', $7, 0, $8, $9) RETURNING id
+		`, testWorkspaceID, title, ownerType, ownerID, executorType, executorID, testUserID, number, projectID).Scan(&id); err != nil {
 			t.Fatalf("create issue %q: %v", title, err)
 		}
 		t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM issue WHERE id = $1`, id) })
@@ -62,9 +62,9 @@ func TestListIssues_AssigneeTypesFilter(t *testing.T) {
 	}
 
 	memberType, agentType := "member", "agent"
-	memberIssue := insertIssue(fmt.Sprintf("at-member-%d", suffix), &memberType, &testUserID)
-	agentIssue := insertIssue(fmt.Sprintf("at-agent-%d", suffix), &agentType, &agentID)
-	unassignedIssue := insertIssue(fmt.Sprintf("at-none-%d", suffix), nil, nil)
+	memberIssue := insertIssue(fmt.Sprintf("at-member-%d", suffix), &memberType, &testUserID, nil, nil)
+	agentIssue := insertIssue(fmt.Sprintf("at-agent-%d", suffix), nil, nil, &agentType, &agentID)
+	unassignedIssue := insertIssue(fmt.Sprintf("at-none-%d", suffix), nil, nil, nil, nil)
 
 	list := func(query string) (ids []string, total int64) {
 		path := fmt.Sprintf("/api/issues?workspace_id=%s&project_id=%s&limit=500%s",
@@ -99,7 +99,7 @@ func TestListIssues_AssigneeTypesFilter(t *testing.T) {
 	}
 
 	// Members tab: only member-assigned issues, and total agrees.
-	memberIDs, memberTotal := list("&assignee_types=member")
+	memberIDs, memberTotal := list("&executor_types=member")
 	if !containsIssueID(memberIDs, memberIssue) {
 		t.Fatalf("member filter missing %s — got %v", memberIssue, memberIDs)
 	}
@@ -112,7 +112,7 @@ func TestListIssues_AssigneeTypesFilter(t *testing.T) {
 
 	// Agents tab: agent+team kinds — team has no rows here, param must
 	// still parse and return the agent-assigned issue only.
-	agentIDs, agentTotal := list("&assignee_types=agent,team")
+	agentIDs, agentTotal := list("&executor_types=agent,team")
 	if !containsIssueID(agentIDs, agentIssue) {
 		t.Fatalf("agent filter missing %s — got %v", agentIssue, agentIDs)
 	}
@@ -126,8 +126,8 @@ func TestListIssues_AssigneeTypesFilter(t *testing.T) {
 	// Unknown actor kinds are a client bug — reject, don't coerce.
 	bad := httptest.NewRecorder()
 	testHandler.ListIssues(bad, newRequest("GET", fmt.Sprintf(
-		"/api/issues?workspace_id=%s&assignee_types=bogus", testWorkspaceID), nil))
+		"/api/issues?workspace_id=%s&executor_types=bogus", testWorkspaceID), nil))
 	if bad.Code != http.StatusBadRequest {
-		t.Fatalf("invalid assignee_types: expected 400, got %d: %s", bad.Code, bad.Body.String())
+		t.Fatalf("invalid executor_types: expected 400, got %d: %s", bad.Code, bad.Body.String())
 	}
 }

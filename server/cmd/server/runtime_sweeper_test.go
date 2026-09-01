@@ -94,7 +94,7 @@ func setupSweeperTestFixture(t *testing.T, taskStatus string) (string, string, s
 	// Create an issue assigned to the agent
 	var issueID string
 	err = testPool.QueryRow(ctx, `
-		INSERT INTO issue (workspace_id, title, status, priority, creator_type, creator_id, assignee_type, assignee_id)
+		INSERT INTO issue (workspace_id, title, status, priority, creator_type, creator_id, executor_type, executor_id)
 		SELECT $1, 'Sweeper test issue', 'todo', 'none', 'member', m.user_id, 'agent', $2
 		FROM member m WHERE m.workspace_id = $1 LIMIT 1
 		RETURNING id
@@ -892,7 +892,7 @@ func TestSweepResetsInProgressIssueToTodo(t *testing.T) {
 	// Create an issue already in in_progress (simulates a daemon crash mid-run).
 	var issueID string
 	err = testPool.QueryRow(ctx, `
-		INSERT INTO issue (workspace_id, title, status, priority, creator_type, creator_id, assignee_type, assignee_id)
+		INSERT INTO issue (workspace_id, title, status, priority, creator_type, creator_id, executor_type, executor_id)
 		SELECT $1, 'Stuck in_progress issue', 'in_progress', 'none', 'member', m.user_id, 'agent', $2
 		FROM member m WHERE m.workspace_id = $1 LIMIT 1
 		RETURNING id
@@ -983,7 +983,7 @@ func TestSweepDoesNotResetIssueAlreadyInReview(t *testing.T) {
 	// Issue already advanced to in_review by the agent before the task timed out.
 	var issueID string
 	err = testPool.QueryRow(ctx, `
-		INSERT INTO issue (workspace_id, title, status, priority, creator_type, creator_id, assignee_type, assignee_id)
+		INSERT INTO issue (workspace_id, title, status, priority, creator_type, creator_id, executor_type, executor_id)
 		SELECT $1, 'Already in_review issue', 'in_review', 'none', 'member', m.user_id, 'agent', $2
 		FROM member m WHERE m.workspace_id = $1 LIMIT 1
 		RETURNING id
@@ -1073,7 +1073,7 @@ func TestExpireStaleQueuedTasks(t *testing.T) {
 				UPDATE workspace SET issue_counter = issue_counter + 1
 				WHERE id = $1 RETURNING issue_counter
 			)
-			INSERT INTO issue (workspace_id, title, status, priority, creator_type, creator_id, assignee_type, assignee_id, number)
+			INSERT INTO issue (workspace_id, title, status, priority, creator_type, creator_id, executor_type, executor_id, number)
 			SELECT $1, $3, 'todo', 'none', 'member', m.user_id, 'agent', $2, (SELECT issue_counter FROM bumped)
 			FROM member m WHERE m.workspace_id = $1 LIMIT 1
 			RETURNING id
@@ -1298,7 +1298,7 @@ func TestExpireStaleQueuedTasksRespectsBatchLimit(t *testing.T) {
 				UPDATE workspace SET issue_counter = issue_counter + 1
 				WHERE id = $1 RETURNING issue_counter
 			)
-			INSERT INTO issue (workspace_id, title, status, priority, creator_type, creator_id, assignee_type, assignee_id, number)
+			INSERT INTO issue (workspace_id, title, status, priority, creator_type, creator_id, executor_type, executor_id, number)
 			SELECT $1, 'Queued TTL batch test', 'todo', 'none', 'member', m.user_id, 'agent', $2, (SELECT issue_counter FROM bumped)
 			FROM member m WHERE m.workspace_id = $1 LIMIT 1
 			RETURNING id

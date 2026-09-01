@@ -53,7 +53,7 @@ func seedDelegatedFailureFixture(t *testing.T) (*delegatedFailureFixture, *TaskS
 	var workerIssueID string
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO issue (
-			workspace_id, title, creator_type, creator_id, assignee_type, assignee_id,
+			workspace_id, title, creator_type, creator_id, executor_type, executor_id,
 			priority, parent_issue_id, number
 		)
 		VALUES ($1, 'delegated worker issue', 'member', $2, 'agent', $3, 'medium', $4, 2)

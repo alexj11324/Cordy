@@ -20,9 +20,11 @@ export default function IssueAssigneePickerRoute() {
   const query = useNativeSearchBar("Search people", { autoFocus: true });
 
   const value =
-    issue?.assignee_type && issue?.assignee_id
-      ? { type: issue.assignee_type, id: issue.assignee_id }
-      : null;
+    issue?.executor_type && issue?.executor_id
+      ? { type: issue.executor_type, id: issue.executor_id }
+      : issue?.owner_type && issue?.owner_id
+        ? { type: issue.owner_type, id: issue.owner_id }
+        : null;
 
   return (
     <AssigneePickerBody
@@ -30,11 +32,23 @@ export default function IssueAssigneePickerRoute() {
       query={query}
       onChange={(next) => {
         if (next === null) {
-          updateIssue.mutate({ assignee_type: null, assignee_id: null });
+          updateIssue.mutate({
+            owner_type: null,
+            owner_id: null,
+            executor_type: null,
+            executor_id: null,
+          });
+        } else if (next.type === "member") {
+          updateIssue.mutate({
+            owner_type: "member",
+            owner_id: next.id,
+            executor_type: null,
+            executor_id: null,
+          });
         } else {
           updateIssue.mutate({
-            assignee_type: next.type,
-            assignee_id: next.id,
+            executor_type: next.type,
+            executor_id: next.id,
           });
         }
         router.back();

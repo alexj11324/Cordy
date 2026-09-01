@@ -16,8 +16,12 @@ import (
 
 var issueMoveFields = map[string]struct{}{
 	"status":            {},
-	"assignee_type":     {},
-	"assignee_id":       {},
+	"owner_type":        {},
+	"owner_id":          {},
+	"executor_type":     {},
+	"executor_id":       {},
+	"reviewer_type":     {},
+	"reviewer_id":       {},
 	"parent_issue_id":   {},
 	"project_id":        {},
 	"before_id":         {},

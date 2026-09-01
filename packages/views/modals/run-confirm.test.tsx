@@ -200,8 +200,8 @@ describe("RunConfirmModal", () => {
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
     expect(mockUpdate).toHaveBeenCalledWith({
       id: "issue-1",
-      assignee_type: "agent",
-      assignee_id: "agent-1",
+      executor_type: "agent",
+      executor_id: "agent-1",
       handoff_note: "only login",
     });
     expect(mockBatch).not.toHaveBeenCalled();
@@ -306,7 +306,7 @@ describe("RunConfirmModal", () => {
     await waitFor(() => expect(mockBatch).toHaveBeenCalledTimes(1));
     expect(mockBatch).toHaveBeenCalledWith({
       ids: ["i1", "i2"],
-      updates: { assignee_type: "agent", assignee_id: "agent-1" },
+      updates: { executor_type: "agent", executor_id: "agent-1" },
     });
     expect(mockUpdate).not.toHaveBeenCalled();
     expect(mockToast.success).not.toHaveBeenCalled();
@@ -324,8 +324,8 @@ describe("RunConfirmModal", () => {
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
     expect(mockUpdate).toHaveBeenCalledWith({
       id: "issue-1",
-      assignee_type: "agent",
-      assignee_id: "agent-1",
+      executor_type: "agent",
+      executor_id: "agent-1",
       handoff_note: "only login",
     });
     await waitFor(() => expect(onClose).toHaveBeenCalled());

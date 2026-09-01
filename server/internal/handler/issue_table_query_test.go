@@ -84,7 +84,7 @@ func (tx *issueTableEnrichmentFailTx) QueryRow(ctx context.Context, sql string, 
 
 func TestCanonicalIssueTableFingerprintNormalizesSetLikeArrays(t *testing.T) {
 	left := issueTableQuerySpec{
-		Scope: issueTableScope{Kind: "workspace", AssigneeTypes: []string{"agent", "member", "agent"}},
+		Scope: issueTableScope{Kind: "workspace", ExecutorTypes: []string{"agent", "member", "agent"}},
 		Filters: issueTableFiltersRequest{
 			Statuses:   []string{"todo", "backlog", "todo"},
 			ProjectIDs: []string{"b", "a"},
@@ -92,7 +92,7 @@ func TestCanonicalIssueTableFingerprintNormalizesSetLikeArrays(t *testing.T) {
 		Sort: issueTableSortRequest{Field: "title", Direction: "asc"},
 	}
 	right := issueTableQuerySpec{
-		Scope: issueTableScope{Kind: "workspace", AssigneeTypes: []string{"member", "agent"}},
+		Scope: issueTableScope{Kind: "workspace", ExecutorTypes: []string{"member", "agent"}},
 		Filters: issueTableFiltersRequest{
 			Statuses:   []string{"backlog", "todo"},
 			ProjectIDs: []string{"a", "b"},
@@ -177,7 +177,7 @@ func TestIssueTableProjectScopeAssigneeTypes(t *testing.T) {
 		Scope: issueTableScope{
 			Kind:          "project",
 			ProjectID:     "00000000-0000-0000-0000-000000000001",
-			AssigneeTypes: []string{"agent", "team"},
+			ExecutorTypes: []string{"agent", "team"},
 		},
 		Sort: issueTableSortRequest{Field: "position", Direction: "asc"},
 	}
@@ -194,19 +194,19 @@ func TestIssueTableProjectScopeAssigneeTypes(t *testing.T) {
 	if !strings.Contains(compiled.where, "i.project_id") {
 		t.Fatalf("project predicate missing: %q", compiled.where)
 	}
-	if !strings.Contains(compiled.where, "i.assignee_type = ANY") {
+	if !strings.Contains(compiled.where, "COALESCE(i.executor_type, i.owner_type) = ANY") {
 		t.Fatalf("assignee-type narrowing missing on project scope: %q", compiled.where)
 	}
 
 	bad := spec
-	bad.Scope.AssigneeTypes = []string{"martian"}
+	bad.Scope.ExecutorTypes = []string{"martian"}
 	w = httptest.NewRecorder()
 	if _, ok := testHandler.compileIssueTableQuery(
 		w,
 		newRequest(http.MethodPost, "/api/issues/table/rows", nil),
 		bad,
 	); ok {
-		t.Fatal("invalid assignee_types must be rejected on project scope")
+		t.Fatal("invalid executor_types must be rejected on project scope")
 	}
 }
 
@@ -263,7 +263,7 @@ func TestIssueTableWorkingIssueIDsAreExplicitAndAssigneeIndependent(t *testing.T
 	if !strings.Contains(compiled.where, "i.id = ANY(") {
 		t.Errorf("working-issue predicate = %q, want issue-id membership", compiled.where)
 	}
-	if strings.Contains(compiled.where, "i.assignee_id") {
+	if strings.Contains(compiled.where, "i.executor_id") {
 		t.Fatalf("working-issue predicate must not filter issue assignees: %q", compiled.where)
 	}
 }
@@ -293,19 +293,28 @@ func TestIssueTableWorkingIssueProjectionMatchesTaskIssuesNotAssignees(t *testin
 	insertIssue := func(title string, number int, assigneeType string, assigneeID any) string {
 		t.Helper()
 		var issueID string
+		var ownerType, executorType any
+		var ownerID, executorID any
+		if assigneeType == "member" {
+			ownerType, ownerID = assigneeType, assigneeID
+		} else {
+			executorType, executorID = assigneeType, assigneeID
+		}
 		if err := testPool.QueryRow(ctx, `
 			INSERT INTO issue (
 				workspace_id, title, status, priority, creator_type, creator_id,
-				assignee_type, assignee_id, position, number
+				owner_type, owner_id, executor_type, executor_id, position, number
 			)
-			VALUES ($1, $2, 'todo', 'none', 'member', $3, $4, $5, $6, $7)
+			VALUES ($1, $2, 'todo', 'none', 'member', $3, $4, $5, $6, $7, $8, $9)
 			RETURNING id
 		`,
 			testWorkspaceID,
 			title,
 			testUserID,
-			assigneeType,
-			assigneeID,
+			ownerType,
+			ownerID,
+			executorType,
+			executorID,
 			number,
 			number,
 		).Scan(&issueID); err != nil {
@@ -1033,12 +1042,12 @@ func TestIssueTableAssigneeNamesResolveAfterGrouping(t *testing.T) {
 	}
 	if _, err := testPool.Exec(ctx, `
 		INSERT INTO issue (
-			workspace_id, title, status, priority, assignee_type, assignee_id,
+			workspace_id, title, status, priority, owner_type, owner_id, executor_type, executor_id,
 			creator_type, creator_id, position, number, project_id
 		)
 		VALUES
-			($1, 'Assigned row', 'todo', 'none', 'member', $2, 'member', $2, 1, $3, $4),
-			($1, 'Unassigned row', 'todo', 'none', NULL, NULL, 'member', $2, 2, $3 + 1, $4)
+			($1, 'Assigned row', 'todo', 'none', 'member', $2, NULL, NULL, 'member', $2, 1, $3, $4),
+			($1, 'Unassigned row', 'todo', 'none', NULL, NULL, NULL, NULL, 'member', $2, 2, $3 + 1, $4)
 	`, testWorkspaceID, testUserID, finalNumber-1, projectID); err != nil {
 		t.Fatalf("seed issues: %v", err)
 	}

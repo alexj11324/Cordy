@@ -29,7 +29,7 @@ func insertAgentAssignedIssue(t *testing.T, agentID string, number int, title st
 	t.Helper()
 	var issueID string
 	if err := testPool.QueryRow(context.Background(), `
-		INSERT INTO issue (workspace_id, title, status, priority, creator_id, creator_type, number, position, assignee_type, assignee_id)
+		INSERT INTO issue (workspace_id, title, status, priority, creator_id, creator_type, number, position, executor_type, executor_id)
 		VALUES ($1, $2, 'todo', 'medium', $3, 'member', $4, 0, 'agent', $5)
 		RETURNING id
 	`, testWorkspaceID, title, testUserID, number, agentID).Scan(&issueID); err != nil {
@@ -59,8 +59,8 @@ func TestUpdateIssueReassignDoesNotCancelActiveTasks(t *testing.T) {
 	// does not itself enqueue a new agent run.
 	w := httptest.NewRecorder()
 	req := newRequest("PUT", "/api/issues/"+issueID, map[string]any{
-		"assignee_type": "member",
-		"assignee_id":   testUserID,
+		"owner_type": "member",
+		"owner_id":   testUserID,
 	})
 	req = withURLParam(req, "id", issueID)
 	testHandler.UpdateIssue(w, req)
@@ -95,8 +95,8 @@ func TestBatchUpdateIssueReassignDoesNotCancelActiveTasks(t *testing.T) {
 	req := newRequest("POST", "/api/issues/batch-update", map[string]any{
 		"issue_ids": []string{issueID},
 		"updates": map[string]any{
-			"assignee_type": "member",
-			"assignee_id":   testUserID,
+			"owner_type": "member",
+			"owner_id":   testUserID,
 		},
 	})
 	testHandler.BatchUpdateIssues(w, req)
@@ -144,8 +144,8 @@ func TestUpdateIssueReassignToAgentKeepsOldTaskAndEnqueuesNew(t *testing.T) {
 	// Reassign from ownerAgent to newAgent — an agent→agent ownership handoff.
 	w := httptest.NewRecorder()
 	req := newRequest("PUT", "/api/issues/"+issueID, map[string]any{
-		"assignee_type": "agent",
-		"assignee_id":   newAgent,
+		"executor_type": "agent",
+		"executor_id":   newAgent,
 	})
 	req = withURLParam(req, "id", issueID)
 	testHandler.UpdateIssue(w, req)

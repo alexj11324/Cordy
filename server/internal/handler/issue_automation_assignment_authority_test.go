@@ -15,8 +15,8 @@ func automationChildIssueRequest(t *testing.T, assigneeType, assigneeID, parentI
 		"title":           "automation private-assignee child " + t.Name(),
 		"status":          status,
 		"priority":        "low",
-		"assignee_type":   assigneeType,
-		"assignee_id":     assigneeID,
+		"executor_type":   assigneeType,
+		"executor_id":     assigneeID,
 		"parent_issue_id": parentIssueID,
 		"allow_duplicate": true,
 	})
@@ -53,8 +53,8 @@ func TestCreateIssue_AutomationLeaderAssignsPrivateWorker(t *testing.T) {
 		if created.ParentIssueID == nil || *created.ParentIssueID != parentIssueID {
 			t.Fatalf("created child parent_issue_id = %v, want %q", created.ParentIssueID, parentIssueID)
 		}
-		if created.AssigneeType == nil || *created.AssigneeType != "agent" || created.AssigneeID == nil || *created.AssigneeID != workerID {
-			t.Fatalf("created child assignee = (%v, %v), want (agent, %s)", created.AssigneeType, created.AssigneeID, workerID)
+		if created.ExecutorType == nil || *created.ExecutorType != "agent" || created.ExecutorID == nil || *created.ExecutorID != workerID {
+			t.Fatalf("created child assignee = (%v, %v), want (agent, %s)", created.ExecutorType, created.ExecutorID, workerID)
 		}
 
 		var queued int
@@ -101,8 +101,8 @@ func TestCreateIssue_AutomationLeaderAssignsPrivateWorker(t *testing.T) {
 			automationChildIssueRequest(t, "team", teamID, uuidToString(fx.Issue.ID), "todo", fx.LeaderAgentID, fx.LeaderTaskID),
 		).Want(http.StatusCreated).JSON(&created)
 		cleanupAutomationChildIssue(t, created.ID)
-		if created.AssigneeType == nil || *created.AssigneeType != "team" || created.AssigneeID == nil || *created.AssigneeID != teamID {
-			t.Fatalf("created child assignee = (%v, %v), want (team, %s)", created.AssigneeType, created.AssigneeID, teamID)
+		if created.ExecutorType == nil || *created.ExecutorType != "team" || created.ExecutorID == nil || *created.ExecutorID != teamID {
+			t.Fatalf("created child assignee = (%v, %v), want (team, %s)", created.ExecutorType, created.ExecutorID, teamID)
 		}
 
 		var taskCount int

@@ -56,8 +56,8 @@ export function IssueActionsDropdown({
           /frequency queries on mount, multiplying memory + render cost. */}
       {assigneeOpen && (
         <AssigneePicker
-          assigneeType={issue.assignee_type}
-          assigneeId={issue.assignee_id}
+          assigneeType={issue.executor_type ?? issue.owner_type}
+          assigneeId={issue.executor_id ?? issue.owner_id}
           onUpdate={actions.updateField}
           open={assigneeOpen}
           onOpenChange={setAssigneeOpen}

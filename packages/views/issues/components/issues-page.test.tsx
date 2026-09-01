@@ -86,9 +86,11 @@ const mockListIssueTableGroups = vi.hoisted(() =>
         value: {
           kind: "assignee" as const,
           actor:
-            group.assignee_type && group.assignee_id
-              ? { type: group.assignee_type, id: group.assignee_id }
-              : null,
+            group.executor_type && group.executor_id
+              ? { type: group.executor_type, id: group.executor_id }
+              : group.owner_type && group.owner_id
+                ? { type: group.owner_type, id: group.owner_id }
+                : null,
         },
         count: group.total,
       })),
@@ -124,8 +126,8 @@ const mockListIssueTableRows = vi.hoisted(() =>
       status,
       limit: 50,
       offset: 0,
-      ...(request.query.scope.assignee_types
-        ? { assignee_types: request.query.scope.assignee_types }
+      ...(request.query.scope.executor_types
+        ? { executor_types: request.query.scope.executor_types }
         : {}),
     });
     return {
@@ -167,8 +169,8 @@ const mockListIssueTableFacets = vi.hoisted(() =>
               status,
               limit: 50,
               offset: 0,
-              ...(request.query.scope.assignee_types
-                ? { assignee_types: request.query.scope.assignee_types }
+              ...(request.query.scope.executor_types
+                ? { executor_types: request.query.scope.executor_types }
                 : {}),
             }),
           })),
@@ -514,6 +516,12 @@ vi.mock("react-virtuoso", () => ({
 // ---------------------------------------------------------------------------
 
 const issueDefaults = {
+  owner_type: null,
+  owner_id: null,
+  executor_type: null,
+  executor_id: null,
+  reviewer_type: null,
+  reviewer_id: null,
   parent_issue_id: null,
   project_id: null,
   position: 0,
@@ -533,8 +541,8 @@ const mockIssues: Issue[] = [
     description: "Add JWT authentication",
     status: "todo",
     priority: "high",
-    assignee_type: "member",
-    assignee_id: "user-1",
+    owner_type: "member",
+    owner_id: "user-1",
     creator_type: "member",
     creator_id: "user-1",
     start_date: null,
@@ -552,8 +560,8 @@ const mockIssues: Issue[] = [
     description: null,
     status: "in_progress",
     priority: "medium",
-    assignee_type: "agent",
-    assignee_id: "agent-1",
+    executor_type: "agent",
+    executor_id: "agent-1",
     creator_type: "member",
     creator_id: "user-1",
     start_date: null,
@@ -571,8 +579,12 @@ const mockIssues: Issue[] = [
     description: null,
     status: "backlog",
     priority: "low",
-    assignee_type: null,
-    assignee_id: null,
+    owner_type: null,
+    owner_id: null,
+    executor_type: null,
+    executor_id: null,
+    reviewer_type: null,
+    reviewer_id: null,
     creator_type: "member",
     creator_id: "user-1",
     start_date: null,
@@ -590,8 +602,8 @@ const mockIssues: Issue[] = [
     description: null,
     status: "todo",
     priority: "medium",
-    assignee_type: "team",
-    assignee_id: "team-1",
+    executor_type: "team",
+    executor_id: "team-1",
     creator_type: "member",
     creator_id: "user-1",
     start_date: null,
@@ -602,16 +614,24 @@ const mockIssues: Issue[] = [
 ];
 
 function mockAssigneeGroups(issues: Issue[]) {
-  const groups = new Map<string, { assignee_type: Issue["assignee_type"]; assignee_id: string | null; issues: Issue[] }>();
+  const groups = new Map<string, {
+    owner_type: Issue["owner_type"];
+    owner_id: string | null;
+    executor_type: Issue["executor_type"];
+    executor_id: string | null;
+    issues: Issue[];
+  }>();
   for (const issue of issues) {
+    const type = issue.executor_type ?? issue.owner_type;
+    const idValue = issue.executor_id ?? issue.owner_id;
     const id =
-      issue.assignee_type && issue.assignee_id
-        ? `assignee:${issue.assignee_type}:${issue.assignee_id}`
-        : "assignee:unassigned";
+      type && idValue ? `assignee:${type}:${idValue}` : "assignee:unassigned";
     if (!groups.has(id)) {
       groups.set(id, {
-        assignee_type: issue.assignee_type,
-        assignee_id: issue.assignee_id,
+        owner_type: type === "member" ? "member" : null,
+        owner_id: type === "member" ? idValue : null,
+        executor_type: type === "member" ? null : type,
+        executor_id: type === "member" ? null : idValue,
         issues: [],
       });
     }
@@ -620,8 +640,10 @@ function mockAssigneeGroups(issues: Issue[]) {
   return {
     groups: [...groups.entries()].map(([id, group]) => ({
       id,
-      assignee_type: group.assignee_type,
-      assignee_id: group.assignee_id,
+      owner_type: group.owner_type,
+      owner_id: group.owner_id,
+      executor_type: group.executor_type,
+      executor_id: group.executor_id,
       issues: group.issues,
       total: group.issues.length,
     })),
@@ -800,18 +822,19 @@ describe("IssuesPage (shared)", () => {
     expect(screen.getByText("Agents")).toBeInTheDocument();
   });
 
-  // The Members/Agents tabs filter server-side via assignee_types (the same
+  // The Members/Agents tabs filter server-side via executor_types (the same
   // param the grouped endpoint takes), so the mock mirrors the server's
   // WHERE clause instead of a client-side post-filter.
   function mockListIssuesHonoringAssigneeTypes() {
     mockListIssues.mockImplementation((params: any) => {
-      const matches = mockIssues.filter(
-        (i) =>
+      const matches = mockIssues.filter((i) => {
+        const effectiveType = i.executor_type ?? i.owner_type;
+        return (
           i.status === params?.status &&
-          (!params?.assignee_types ||
-            (i.assignee_type !== null &&
-              params.assignee_types.includes(i.assignee_type))),
-      );
+          (!params?.executor_types ||
+            (effectiveType !== null && params.executor_types.includes(effectiveType)))
+        );
+      });
       return Promise.resolve({ issues: matches, total: matches.length });
     });
   }
@@ -828,7 +851,7 @@ describe("IssuesPage (shared)", () => {
     // Member task should NOT be visible
     expect(screen.queryByText("Implement auth")).not.toBeInTheDocument();
     expect(mockListIssues).toHaveBeenCalledWith(
-      expect.objectContaining({ assignee_types: ["agent", "team"] }),
+      expect.objectContaining({ executor_types: ["agent", "team"] }),
     );
   });
 
@@ -842,7 +865,7 @@ describe("IssuesPage (shared)", () => {
     expect(screen.queryByText("Team task")).not.toBeInTheDocument();
     expect(screen.queryByText("Design landing page")).not.toBeInTheDocument();
     expect(mockListIssues).toHaveBeenCalledWith(
-      expect.objectContaining({ assignee_types: ["member"] }),
+      expect.objectContaining({ executor_types: ["member"] }),
     );
   });
 });

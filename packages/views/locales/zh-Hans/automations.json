@@ -284,7 +284,7 @@
     "section_agent": "智能体",
     "section_assignee": "执行方",
     "select_agent": "选择智能体",
-    "select_assignee": "选择智能体或小队",
+    "select_assignee": "选择智能体或团队",
     "section_project": "关联项目",
     "project_hint": "同时决定运行时的执行环境 —— 该项目的仓库或本地目录",
     "no_project": "不关联项目",
@@ -318,7 +318,7 @@
     "schedule_empty": "还没有时间表——这个自动化只在手动触发时运行。",
     "schedule_add": "添加时间表",
     "error_title_required": "请填写自动化名称。",
-    "error_assignee_required": "请选择运行该自动化的智能体或小队。",
+    "error_assignee_required": "请选择运行该自动化的智能体或团队。",
     "output_modes": {
       "create_issue": {
         "label": "创建任务",
@@ -417,13 +417,13 @@
     }
   },
   "agent_picker": {
-    "filter_placeholder": "筛选智能体或小队...",
+    "filter_placeholder": "筛选智能体或团队...",
     "select_agent": "选择智能体",
-    "select_assignee": "选择智能体或小队",
+    "select_assignee": "选择智能体或团队",
     "agents_group": "智能体",
-    "teams_group": "小队",
+    "teams_group": "团队",
     "agent_runtime_required": "请先为该智能体绑定运行时",
-    "team_runtime_required": "请先为该小队的负责人绑定运行时"
+    "team_runtime_required": "请先为该团队的负责人绑定运行时"
   },
   "timezone_picker": {
     "search_placeholder": "搜索时区..."

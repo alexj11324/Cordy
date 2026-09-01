@@ -20,15 +20,15 @@ type involvesFixture struct {
 	userID  string // the "me" user the filter is keyed on (== testUserID)
 	otherID string // a different user in the same workspace
 
-	ownedAgentID    string // agent.owner_id = userID — branch (1) seed
-	otherAgentID    string // agent.owner_id = otherID — must NOT match
+	ownedAgentID   string // agent.owner_id = userID — branch (1) seed
+	otherAgentID   string // agent.owner_id = otherID — must NOT match
 	teamMemberID   string // team with userID as human member — branch (2)
 	teamLeaderID   string // team whose leader_id is an agent owned by userID — branch (3)
 	teamAgentMemID string // team with an owned-agent as team_member row — branch (4)
 
 	// Other workspace, mirror objects — used by ExcludesOtherWorkspace* tests
-	otherWsID            string
-	otherWsAgent         string // owned by userID but in other workspace
+	otherWsID           string
+	otherWsAgent        string // owned by userID but in other workspace
 	otherWsTeamMember   string // team with userID as human member, in other ws
 	otherWsTeamLeader   string // team whose leader is userID's agent (in other ws)
 	otherWsTeamAgentMem string // team with userID's agent as member (in other ws)
@@ -208,15 +208,22 @@ func insertIssueTo(t *testing.T, ctx context.Context, workspaceID, title, assign
 		t.Fatalf("next issue number: %v", err)
 	}
 	var id string
+	var ownerType, executorType any
+	var ownerID, executorID any
+	if assigneeType == "member" {
+		ownerType, ownerID = assigneeType, assigneeID
+	} else {
+		executorType, executorID = assigneeType, assigneeID
+	}
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO issue (
 			workspace_id, title, description, status, priority,
-			assignee_type, assignee_id, creator_type, creator_id,
+			owner_type, owner_id, executor_type, executor_id, creator_type, creator_id,
 			position, number
 		)
-		VALUES ($1, $2, NULL, 'todo', 'none', $3, $4, 'member', $5, 0, $6)
+		VALUES ($1, $2, NULL, 'todo', 'none', $3, $4, $5, $6, 'member', $7, 0, $8)
 		RETURNING id
-	`, workspaceID, title, assigneeType, assigneeID, testUserID, number).Scan(&id); err != nil {
+	`, workspaceID, title, ownerType, ownerID, executorType, executorID, testUserID, number).Scan(&id); err != nil {
 		t.Fatalf("create issue %q: %v", title, err)
 	}
 	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM issue WHERE id = $1`, id) })
@@ -329,9 +336,9 @@ func TestListIssues_InvolvesUserID_MatchesTeamAgentMember(t *testing.T) {
 
 // Nails the semantics: `involves_user_id` MUST NOT surface issues whose
 // assignee is the user themself (member type). Direct member assignment is
-// the meaning of `assignee_id` (tab 1 "Assigned to me"); the two tabs must
+// the meaning of `executor_id` (tab 1 "Assigned to me"); the two tabs must
 // produce disjoint result sets. If anyone adds a fifth UNION branch
-// `(assignee_type='member' AND assignee_id=involves_user_id)` back in, this
+// `(executor_type='member' AND executor_id=involves_user_id)` back in, this
 // test fails.
 func TestListIssues_InvolvesUserID_ExcludesDirectMemberAssignee(t *testing.T) {
 	ctx := context.Background()

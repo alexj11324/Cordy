@@ -203,7 +203,7 @@ type Automation struct {
 	WorkspaceID        pgtype.UUID        `json:"workspace_id"`
 	Title              string             `json:"title"`
 	Description        pgtype.Text        `json:"description"`
-	AssigneeID         pgtype.UUID        `json:"assignee_id"`
+	ExecutorID         pgtype.UUID        `json:"executor_id"`
 	Status             string             `json:"status"`
 	ExecutionMode      string             `json:"execution_mode"`
 	IssueTitleTemplate pgtype.Text        `json:"issue_title_template"`
@@ -212,7 +212,7 @@ type Automation struct {
 	LastRunAt          pgtype.Timestamptz `json:"last_run_at"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
-	AssigneeType       string             `json:"assignee_type"`
+	ExecutorType       string             `json:"executor_type"`
 	ProjectID          pgtype.UUID        `json:"project_id"`
 	PauseReason        pgtype.Text        `json:"pause_reason"`
 }
@@ -755,8 +755,8 @@ type Issue struct {
 	Description        pgtype.Text        `json:"description"`
 	Status             string             `json:"status"`
 	Priority           string             `json:"priority"`
-	AssigneeType       pgtype.Text        `json:"assignee_type"`
-	AssigneeID         pgtype.UUID        `json:"assignee_id"`
+	ExecutorType       pgtype.Text        `json:"executor_type"`
+	ExecutorID         pgtype.UUID        `json:"executor_id"`
 	CreatorType        string             `json:"creator_type"`
 	CreatorID          pgtype.UUID        `json:"creator_id"`
 	ParentIssueID      pgtype.UUID        `json:"parent_issue_id"`
@@ -777,6 +777,10 @@ type Issue struct {
 	Properties         []byte             `json:"properties"`
 	Revision           int64              `json:"revision"`
 	LastActivityAt     pgtype.Timestamptz `json:"last_activity_at"`
+	OwnerType          pgtype.Text        `json:"owner_type"`
+	OwnerID            pgtype.UUID        `json:"owner_id"`
+	ReviewerType       pgtype.Text        `json:"reviewer_type"`
+	ReviewerID         pgtype.UUID        `json:"reviewer_id"`
 }
 
 type IssueDependency struct {
@@ -1179,8 +1183,8 @@ type QuickAction struct {
 	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
 	Name          string             `json:"name"`
 	Description   string             `json:"description"`
-	AssigneeType  string             `json:"assignee_type"`
-	AssigneeID    pgtype.UUID        `json:"assignee_id"`
+	ExecutorType  string             `json:"executor_type"`
+	ExecutorID    pgtype.UUID        `json:"executor_id"`
 	Prompt        string             `json:"prompt"`
 	Visibility    string             `json:"visibility"`
 	Status        string             `json:"status"`

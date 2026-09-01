@@ -114,8 +114,8 @@ func TestNotification_IssueCreated_AssigneeNotified(t *testing.T) {
 				Priority:     "medium",
 				CreatorType:  "member",
 				CreatorID:    testUserID,
-				AssigneeType: &assigneeType,
-				AssigneeID:   &assigneeID,
+				ExecutorType: &assigneeType,
+				ExecutorID:   &assigneeID,
 			},
 		},
 	})
@@ -177,8 +177,8 @@ func TestNotification_IssueCreated_SelfAssign(t *testing.T) {
 				Priority:     "medium",
 				CreatorType:  "member",
 				CreatorID:    testUserID,
-				AssigneeType: &assigneeType,
-				AssigneeID:   &assigneeID,
+				ExecutorType: &assigneeType,
+				ExecutorID:   &assigneeID,
 			},
 		},
 	})
@@ -556,11 +556,11 @@ func TestNotification_AssigneeChanged(t *testing.T) {
 	bus := newNotificationBus(t, queries)
 
 	oldAssigneeEmail := "notif-old-assignee@patchbay.ai"
-	oldAssigneeID := createTestUser(t, oldAssigneeEmail)
+	oldOwnerID := createTestUser(t, oldAssigneeEmail)
 	t.Cleanup(func() { cleanupTestUser(t, oldAssigneeEmail) })
 
 	newAssigneeEmail := "notif-new-assignee@patchbay.ai"
-	newAssigneeID := createTestUser(t, newAssigneeEmail)
+	newOwnerID := createTestUser(t, newAssigneeEmail)
 	t.Cleanup(func() { cleanupTestUser(t, newAssigneeEmail) })
 
 	bystanderEmail := "notif-bystander@patchbay.ai"
@@ -575,11 +575,11 @@ func TestNotification_AssigneeChanged(t *testing.T) {
 
 	// Pre-add subscribers: creator, old assignee, bystander
 	addTestSubscriber(t, issueID, "member", testUserID, "creator")
-	addTestSubscriber(t, issueID, "member", oldAssigneeID, "assignee")
+	addTestSubscriber(t, issueID, "member", oldOwnerID, "assignee")
 	addTestSubscriber(t, issueID, "member", bystanderID, "commenter")
 
-	newAssigneeType := "member"
-	oldAssigneeType := "member"
+	newOwnerType := "member"
+	oldOwnerType := "member"
 	bus.Publish(events.Event{
 		Type:        protocol.EventIssueUpdated,
 		WorkspaceID: testWorkspaceID,
@@ -587,25 +587,25 @@ func TestNotification_AssigneeChanged(t *testing.T) {
 		ActorID:     testUserID, // actor is the creator
 		Payload: map[string]any{
 			"issue": handler.IssueResponse{
-				ID:           issueID,
-				WorkspaceID:  testWorkspaceID,
-				Title:        "assignee change issue",
-				Status:       "todo",
-				Priority:     "medium",
-				CreatorType:  "member",
-				CreatorID:    testUserID,
-				AssigneeType: &newAssigneeType,
-				AssigneeID:   &newAssigneeID,
+				ID:          issueID,
+				WorkspaceID: testWorkspaceID,
+				Title:       "assignee change issue",
+				Status:      "todo",
+				Priority:    "medium",
+				CreatorType: "member",
+				CreatorID:   testUserID,
+				OwnerType:   &newOwnerType,
+				OwnerID:     &newOwnerID,
 			},
-			"assignee_changed":   true,
-			"status_changed":     false,
-			"prev_assignee_type": &oldAssigneeType,
-			"prev_assignee_id":   &oldAssigneeID,
+			"assignee_changed": true,
+			"status_changed":   false,
+			"prev_owner_type":  &oldOwnerType,
+			"prev_owner_id":    &oldOwnerID,
 		},
 	})
 
 	// New assignee should get "issue_assigned"
-	newItems := inboxItemsForRecipient(t, queries, newAssigneeID)
+	newItems := inboxItemsForRecipient(t, queries, newOwnerID)
 	if len(newItems) != 1 {
 		t.Fatalf("expected 1 inbox item for new assignee, got %d", len(newItems))
 	}
@@ -617,7 +617,7 @@ func TestNotification_AssigneeChanged(t *testing.T) {
 	}
 
 	// Old assignee should get "unassigned"
-	oldItems := inboxItemsForRecipient(t, queries, oldAssigneeID)
+	oldItems := inboxItemsForRecipient(t, queries, oldOwnerID)
 	if len(oldItems) != 1 {
 		t.Fatalf("expected 1 inbox item for old assignee, got %d", len(oldItems))
 	}

@@ -188,8 +188,8 @@ func TestCanInvokeAgent_PublicToMemberWhitelist(t *testing.T) {
 		testHandler.CreateIssue(rec, newRequestAs(actorID, "POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
 			"title":         "assign to member-scoped agent",
 			"status":        "todo",
-			"assignee_type": "agent",
-			"assignee_id":   agent.ID,
+			"executor_type": "agent",
+			"executor_id":   agent.ID,
 		}))
 		t.Cleanup(func() {
 			testPool.Exec(context.Background(), `DELETE FROM agent_task_queue WHERE agent_id = $1`, agent.ID)

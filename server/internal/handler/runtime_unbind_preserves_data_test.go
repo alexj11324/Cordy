@@ -261,7 +261,7 @@ func TestUnbindAgentsAndDeleteRuntime_KeepsAutomationConfig(t *testing.T) {
 	var automationID string
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO automation (
-			workspace_id, title, description, assignee_type, assignee_id,
+			workspace_id, title, description, executor_type, executor_id,
 			created_by_type, created_by_id, status, execution_mode
 		)
 		VALUES ($1, 'unbind automation', 'do the thing', 'agent', $2, 'member', $3, 'active', 'run_only')
@@ -288,7 +288,7 @@ func TestUnbindAgentsAndDeleteRuntime_KeepsAutomationConfig(t *testing.T) {
 		t.Fatalf("automation pause_reason = %q, want agent_runtime_required", pauseReason)
 	}
 	if err := testPool.QueryRow(ctx,
-		`SELECT count(*) FROM automation WHERE id = $1 AND assignee_id = $2`,
+		`SELECT count(*) FROM automation WHERE id = $1 AND executor_id = $2`,
 		automationID, agentID).Scan(&assigneeRows); err != nil {
 		t.Fatalf("read automation assignee: %v", err)
 	}

@@ -54,6 +54,18 @@ const (
 // Note the order is NOT grouped by lifecycle: in_review and done sit between
 // in_progress and blocked. That is the shipped order, and reordering it to look
 // tidier would visibly rearrange every existing user's board.
+// RequiresExecutor reports whether a status category may only be occupied
+// when the issue has an executor (agent or team). Matches the Cordy
+// workflow gate: in_progress, in_review, and blocked.
+func RequiresExecutor(category string) bool {
+	switch category {
+	case InProgress, InReview, Blocked:
+		return true
+	default:
+		return false
+	}
+}
+
 var canonicalOrder = []string{
 	Backlog,
 	Todo,

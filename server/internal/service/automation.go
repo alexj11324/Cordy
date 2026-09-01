@@ -63,8 +63,8 @@ func NewAutomationService(q *db.Queries, tx TxStarter, bus *events.Bus, taskSvc 
 // rule (recording the editing member + timestamp), the summary just carries the
 // automation row's core config.
 type automationRuleConfigSummary struct {
-	AssigneeType  string `json:"assignee_type"`
-	AssigneeID    string `json:"assignee_id"`
+	ExecutorType  string `json:"executor_type"`
+	ExecutorID    string `json:"executor_id"`
 	Status        string `json:"status"`
 	ExecutionMode string `json:"execution_mode"`
 }
@@ -78,8 +78,8 @@ type automationRuleConfigSummary struct {
 // auto-pause monitor).
 func RecordAutomationRuleVersion(ctx context.Context, q *db.Queries, ap db.Automation, publishedByType string, publishedByID pgtype.UUID) error {
 	summary, err := json.Marshal(automationRuleConfigSummary{
-		AssigneeType:  ap.AssigneeType,
-		AssigneeID:    util.UUIDToString(ap.AssigneeID),
+		ExecutorType:  ap.ExecutorType,
+		ExecutorID:    util.UUIDToString(ap.ExecutorID),
 		Status:        ap.Status,
 		ExecutionMode: ap.ExecutionMode,
 	})
@@ -113,7 +113,7 @@ func RecordAutomationRuleVersion(ctx context.Context, q *db.Queries, ap db.Autom
 // dispatch still creates the issue and issue task so the work is visible and
 // can be claimed when the runtime returns.
 //
-// When assignee_type='team' the gate runs against the team leader (Path A
+// When executor_type='team' the gate runs against the team leader (Path A
 // from MUL-2429: Automation-on-team ≈ Automation-on-leader), with the same
 // create_issue audit-trail exception for a merely offline leader runtime.
 func (s *AutomationService) DispatchAutomation(
@@ -321,12 +321,12 @@ func (s *AutomationService) ensureWebhookCreateIssueTask(ctx context.Context, au
 	if effective := issuestatus.Effective(ctx, s.Queries, issue.WorkspaceID, issue.Status); effective != "todo" && effective != "in_progress" {
 		return nil
 	}
-	if automation.AssigneeType == "team" {
+	if automation.ExecutorType == "team" {
 		leader, _, err := s.resolveAutomationLeader(ctx, automation)
 		if err != nil {
 			return fmt.Errorf("dispatch for webhook delivery: resolve team leader: %w", err)
 		}
-		if _, err := s.TaskSvc.EnqueueTaskForTeamLeader(ctx, issue, leader.ID, automation.AssigneeID, pgtype.UUID{}); err != nil {
+		if _, err := s.TaskSvc.EnqueueTaskForTeamLeader(ctx, issue, leader.ID, automation.ExecutorID, pgtype.UUID{}); err != nil {
 			return fmt.Errorf("dispatch for webhook delivery: repair team task: %w", err)
 		}
 		return nil
@@ -630,7 +630,7 @@ func dispatchFailReasonCode(err error) dispatch.ReasonCode {
 // dispatchCreateIssue creates an issue and enqueues a task for the agent.
 //
 // When the automation is assigned to a team (Path A from MUL-2429), the
-// created issue inherits assignee_type='team' + assignee_id=team. The
+// created issue inherits executor_type='team' + executor_id=team. The
 // existing issue listener chain (shouldEnqueueTeamLeaderOnAssign →
 // enqueueTeamLeaderTask) then routes the work to the team leader, exactly
 // as a human manually assigning the issue to that team would.
@@ -699,8 +699,8 @@ func (s *AutomationService) dispatchCreateIssue(ctx context.Context, ap db.Autom
 		Description:  description,
 		Status:       "todo",
 		Priority:     "none",
-		AssigneeType: pgtype.Text{String: ap.AssigneeType, Valid: true},
-		AssigneeID:   ap.AssigneeID,
+		ExecutorType: pgtype.Text{String: ap.ExecutorType, Valid: true},
+		ExecutorID:   ap.ExecutorID,
 		// The agent that the automation dispatches to is the issue's creator,
 		// not the human who originally configured the automation. The latter
 		// is captured separately via origin_type=automation + origin_id. For
@@ -797,7 +797,7 @@ func (s *AutomationService) dispatchCreateIssue(ctx context.Context, ap db.Autom
 	// webhook dispatch has no actor and takes the plain entry points, where the
 	// automation-origin issue resolves to rule_owner. The *WithHandoff variants are
 	// the existing actor-carrying enqueue methods; the handoff note is empty here.
-	if ap.AssigneeType == "team" {
+	if ap.ExecutorType == "team" {
 		// Fail-closed invocation gate: verify the admission principal (manual
 		// clicker, else creator — see automationAdmitInvoke) may still invoke the
 		// leader. Catches configs that predate the save-time gate, and configs
@@ -806,10 +806,10 @@ func (s *AutomationService) dispatchCreateIssue(ctx context.Context, ap db.Autom
 			return fmt.Errorf("not allowed to invoke private team leader")
 		}
 		if actorUserID.Valid {
-			if _, err := s.TaskSvc.EnqueueTaskForTeamLeaderWithHandoff(ctx, issue, leader.ID, ap.AssigneeID, "", actorUserID); err != nil {
+			if _, err := s.TaskSvc.EnqueueTaskForTeamLeaderWithHandoff(ctx, issue, leader.ID, ap.ExecutorID, "", actorUserID); err != nil {
 				return fmt.Errorf("enqueue team leader task: %w", err)
 			}
-		} else if _, err := s.TaskSvc.EnqueueTaskForTeamLeader(ctx, issue, leader.ID, ap.AssigneeID, pgtype.UUID{}); err != nil {
+		} else if _, err := s.TaskSvc.EnqueueTaskForTeamLeader(ctx, issue, leader.ID, ap.ExecutorID, pgtype.UUID{}); err != nil {
 			return fmt.Errorf("enqueue team leader task: %w", err)
 		}
 	} else if actorUserID.Valid {
@@ -822,7 +822,7 @@ func (s *AutomationService) dispatchCreateIssue(ctx context.Context, ap db.Autom
 
 	slog.Info("automation dispatched (create_issue)",
 		"automation_id", util.UUIDToString(ap.ID),
-		"assignee_type", ap.AssigneeType,
+		"executor_type", ap.ExecutorType,
 		"issue_id", util.UUIDToString(issue.ID),
 		"leader_id", util.UUIDToString(leader.ID),
 		"run_id", util.UUIDToString(run.ID),
@@ -959,7 +959,7 @@ func (s *AutomationService) dispatchRunOnly(ctx context.Context, ap db.Automatio
 
 	// Fail-closed invocation gate for team automations (admission principal =
 	// manual clicker, else creator — see automationAdmitInvoke).
-	if ap.AssigneeType == "team" && !s.automationAdmitInvoke(ctx, ap, agent, actorUserID) {
+	if ap.ExecutorType == "team" && !s.automationAdmitInvoke(ctx, ap, agent, actorUserID) {
 		return &errDispatchSkipped{reason: formatAdmissionReason(ap, "not allowed to invoke private team leader"), code: dispatch.ReasonInvocationNotAllowed}
 	}
 
@@ -1276,7 +1276,7 @@ func (s *AutomationService) failRun(ctx context.Context, runID pgtype.UUID, reas
 //     agent assignee being missing is now a real condition the gate must
 //     handle (previously cascade-deleted).
 func (s *AutomationService) shouldSkipDispatch(ctx context.Context, ap db.Automation, actorUserID pgtype.UUID) (string, dispatch.ReasonCode, bool) {
-	if !ap.AssigneeID.Valid {
+	if !ap.ExecutorID.Valid {
 		return "automation has no assignee", dispatch.ReasonTargetUnavailable, true
 	}
 	agent, teamResolved, err := s.resolveAutomationLeader(ctx, ap)
@@ -1288,8 +1288,8 @@ func (s *AutomationService) shouldSkipDispatch(ctx context.Context, ap db.Automa
 		archived := errors.Is(err, errTeamArchived)
 		slog.Warn("automation admission: failed to resolve leader",
 			"automation_id", util.UUIDToString(ap.ID),
-			"assignee_type", ap.AssigneeType,
-			"assignee_id", util.UUIDToString(ap.AssigneeID),
+			"executor_type", ap.ExecutorType,
+			"executor_id", util.UUIDToString(ap.ExecutorID),
 			"missing", missing,
 			"archived", archived,
 			"error", err,
@@ -1365,7 +1365,7 @@ func (s *AutomationService) shouldSkipDispatch(ctx context.Context, ap db.Automa
 // joining back to automation_run.team_id.
 func formatAdmissionReason(ap db.Automation, raw string) string {
 	prefix := "assignee "
-	if ap.AssigneeType == "team" {
+	if ap.ExecutorType == "team" {
 		prefix = "team leader "
 	}
 	switch raw {
@@ -1389,29 +1389,29 @@ func formatAdmissionReason(ap db.Automation, raw string) string {
 var errTeamArchived = errors.New("team is archived")
 
 // resolveAutomationLeader returns the agent that will actually execute the
-// automation's work. For assignee_type='agent' the agent is the assignee
-// itself; for assignee_type='team' it is the team's leader_id. The second
+// automation's work. For executor_type='agent' the agent is the assignee
+// itself; for executor_type='team' it is the team's leader_id. The second
 // return is true when the resolver took the team branch — callers use this
 // to distinguish "failed loading an agent" from "failed loading a team", so
 // the admission gate can choose between fail-open (transient DB error on a
 // known-good agent) and fail-closed (team row gone, no point retrying).
 //
 // Archived teams are rejected here too: TransferTeamAutomationsToLeader
-// flips surviving automations to assignee_type='agent' on DeleteTeam, but
+// flips surviving automations to executor_type='agent' on DeleteTeam, but
 // the gate still has to fail closed for any row that slips through that
 // transfer (e.g. team archived through a code path that bypasses the
 // handler) so an archived team never produces work.
 //
-// Unknown assignee_type values return an error. assignee_type is gated by a
+// Unknown executor_type values return an error. executor_type is gated by a
 // CHECK constraint at the DB layer, so this only fires if a future code path
 // inserts a row that bypasses the check.
 func (s *AutomationService) resolveAutomationLeader(ctx context.Context, ap db.Automation) (agent db.Agent, teamResolved bool, err error) {
-	switch ap.AssigneeType {
+	switch ap.ExecutorType {
 	case "", "agent":
-		agent, err = s.Queries.GetAgent(ctx, ap.AssigneeID)
+		agent, err = s.Queries.GetAgent(ctx, ap.ExecutorID)
 		return agent, false, err
 	case "team":
-		team, err := s.Queries.GetTeam(ctx, ap.AssigneeID)
+		team, err := s.Queries.GetTeam(ctx, ap.ExecutorID)
 		if err != nil {
 			return db.Agent{}, true, fmt.Errorf("load team: %w", err)
 		}
@@ -1424,17 +1424,17 @@ func (s *AutomationService) resolveAutomationLeader(ctx context.Context, ap db.A
 		}
 		return agent, true, nil
 	default:
-		return db.Agent{}, false, fmt.Errorf("unknown assignee_type %q", ap.AssigneeType)
+		return db.Agent{}, false, fmt.Errorf("unknown executor_type %q", ap.ExecutorType)
 	}
 }
 
 // automationTeamAttribution returns the team_id attribution hook for an
-// automation_run row. Only populated when assignee_type='team'. First-version
+// automation_run row. Only populated when executor_type='team'. First-version
 // reports do not consume this; it exists so a future team-cost view does not
 // need to backfill — see RFC §4.e (MUL-2429).
 func automationTeamAttribution(ap db.Automation) pgtype.UUID {
-	if ap.AssigneeType == "team" && ap.AssigneeID.Valid {
-		return ap.AssigneeID
+	if ap.ExecutorType == "team" && ap.ExecutorID.Valid {
+		return ap.ExecutorID
 	}
 	return pgtype.UUID{}
 }
@@ -1589,21 +1589,21 @@ func (s *AutomationService) captureAutomationRunFailed(ap db.Automation, run db.
 // automationAssigneeAnalytics builds the PostHog assignee descriptor for an
 // automation. For team automations agent_id is best-effort the resolved
 // leader (so per-agent funnels stay consistent); a resolve error degrades
-// to the raw assignee_id rather than dropping the event — incomplete data
+// to the raw executor_id rather than dropping the event — incomplete data
 // in the dashboard is preferable to silent attribution gaps.
 func (s *AutomationService) automationAssigneeAnalytics(ap db.Automation) analytics.AutomationAssignee {
 	assignee := analytics.AutomationAssignee{
-		AssigneeType: ap.AssigneeType,
+		ExecutorType: ap.ExecutorType,
 	}
-	if ap.AssigneeType == "team" {
-		assignee.TeamID = util.UUIDToString(ap.AssigneeID)
+	if ap.ExecutorType == "team" {
+		assignee.TeamID = util.UUIDToString(ap.ExecutorID)
 		if leader, _, err := s.resolveAutomationLeader(context.Background(), ap); err == nil {
 			assignee.AgentID = util.UUIDToString(leader.ID)
 		} else {
-			assignee.AgentID = util.UUIDToString(ap.AssigneeID)
+			assignee.AgentID = util.UUIDToString(ap.ExecutorID)
 		}
 	} else {
-		assignee.AgentID = util.UUIDToString(ap.AssigneeID)
+		assignee.AgentID = util.UUIDToString(ap.ExecutorID)
 	}
 	return assignee
 }

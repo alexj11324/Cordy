@@ -224,10 +224,10 @@ func TestListChildrenByParents_IgnoresForeignWorkspaceParents(t *testing.T) {
 func createChildIssue(t *testing.T, title, status, parentID string) IssueResponse {
 	t.Helper()
 	w := httptest.NewRecorder()
-	body := map[string]any{
+	body := withIssueRoleDefaults(t, map[string]any{
 		"title":  title + " " + time.Now().Format(time.RFC3339Nano),
 		"status": status,
-	}
+	})
 	if parentID != "" {
 		body["parent_issue_id"] = parentID
 	}

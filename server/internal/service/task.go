@@ -595,7 +595,7 @@ func ruleOwnerAttribution(ctx context.Context, q *db.Queries, workspaceID, autom
 		return attribution.RuleOwner(pgtype.UUID{}, pgtype.UUID{}, evidenceKind, evidenceRefID)
 	}
 	ver, err := q.GetActiveAutomationRuleVersion(ctx, db.GetActiveAutomationRuleVersionParams{
-		WorkspaceID: workspaceID,
+		WorkspaceID:  workspaceID,
 		AutomationID: automationID,
 	})
 	if err != nil {
@@ -1155,12 +1155,12 @@ func (s *TaskService) enqueueIssueTask(ctx context.Context, issue db.Issue, trig
 }
 
 func (s *TaskService) enqueueIssueTaskWithCommentPlan(ctx context.Context, issue db.Issue, triggerCommentID pgtype.UUID, coalescedCommentIDs []pgtype.UUID, forceFreshSession bool, handoffNote string, actorUserID pgtype.UUID, rerunOfTaskID pgtype.UUID, fireAt pgtype.Timestamptz) (db.AgentTaskQueue, error) {
-	if !issue.AssigneeID.Valid {
+	if !issue.ExecutorID.Valid {
 		slog.Error("task enqueue failed", "issue_id", util.UUIDToString(issue.ID), "error", "issue has no assignee")
 		return db.AgentTaskQueue{}, fmt.Errorf("issue has no assignee")
 	}
 
-	agent, err := s.Queries.GetAgent(ctx, issue.AssigneeID)
+	agent, err := s.Queries.GetAgent(ctx, issue.ExecutorID)
 	if err != nil {
 		slog.Error("task enqueue failed", "issue_id", util.UUIDToString(issue.ID), "error", err)
 		return db.AgentTaskQueue{}, fmt.Errorf("load agent: %w", err)
@@ -1184,7 +1184,7 @@ func (s *TaskService) enqueueIssueTaskWithCommentPlan(ctx context.Context, issue
 	// refuse the enqueue if the workspace is fail-closed (MUL-4302 §3.5).
 	attr, err = s.applyAttributionFallback(ctx, attr, agent)
 	if err != nil {
-		slog.Warn("task enqueue refused: attribution fail-closed", "issue_id", util.UUIDToString(issue.ID), "agent_id", util.UUIDToString(issue.AssigneeID))
+		slog.Warn("task enqueue refused: attribution fail-closed", "issue_id", util.UUIDToString(issue.ID), "agent_id", util.UUIDToString(issue.ExecutorID))
 		return db.AgentTaskQueue{}, err
 	}
 	originatorUserID := attr.UserID
@@ -1192,7 +1192,7 @@ func (s *TaskService) enqueueIssueTaskWithCommentPlan(ctx context.Context, issue
 	attrSource, attrDelegatedFrom, attrEvidenceKind, attrEvidenceRef := attributionCreateParams(attr)
 	createParams := db.CreateAgentTaskParams{
 		ID:                   dbid.NewV7(),
-		AgentID:              issue.AssigneeID,
+		AgentID:              issue.ExecutorID,
 		RuntimeID:            agent.RuntimeID,
 		IssueID:              issue.ID,
 		Priority:             priorityToInt(issue.Priority),
@@ -1229,7 +1229,7 @@ func (s *TaskService) enqueueIssueTaskWithCommentPlan(ctx context.Context, issue
 			ForceFreshSession:    createParams.ForceFreshSession,
 			IsLeaderTask:         createParams.IsLeaderTask,
 			HandoffNote:          createParams.HandoffNote,
-			TeamID:              createParams.TeamID,
+			TeamID:               createParams.TeamID,
 			HeadSha:              createParams.HeadSha,
 			OriginatorUserID:     createParams.OriginatorUserID,
 			AccountableUserID:    createParams.AccountableUserID,
@@ -1254,7 +1254,7 @@ func (s *TaskService) enqueueIssueTaskWithCommentPlan(ctx context.Context, issue
 	slog.Info("task enqueued",
 		"task_id", util.UUIDToString(task.ID),
 		"issue_id", util.UUIDToString(issue.ID),
-		"agent_id", util.UUIDToString(issue.AssigneeID),
+		"agent_id", util.UUIDToString(issue.ExecutorID),
 		"force_fresh_session", forceFreshSession,
 	)
 	if fireAt.Valid {
@@ -1354,7 +1354,7 @@ func (s *TaskService) enqueueMentionTaskWithCommentPlan(ctx context.Context, iss
 		IsLeaderTask:         pgtype.Bool{Bool: isLeader, Valid: isLeader},
 		ForceFreshSession:    pgtype.Bool{Bool: forceFreshSession, Valid: forceFreshSession},
 		HandoffNote:          pgtype.Text{String: handoffNote, Valid: handoffNote != ""},
-		TeamID:              teamID,
+		TeamID:               teamID,
 		OriginatorUserID:     originatorUserID,
 		AccountableUserID:    attr.AccountableUserID,
 		RuleVersionID:        attr.RuleVersionID,
@@ -1433,7 +1433,7 @@ func (s *TaskService) EnqueueDeferredAssigneeFallback(ctx context.Context, issue
 		TriggerCommentID:     triggerCommentID,
 		TriggerSummary:       s.buildCommentTriggerSummary(ctx, issue.WorkspaceID, triggerCommentID),
 		IsLeaderTask:         pgtype.Bool{Bool: isLeader, Valid: isLeader},
-		TeamID:              teamID,
+		TeamID:               teamID,
 		EscalationForTaskID:  escalationForTaskID,
 		FireAt:               pgtype.Timestamptz{Time: fireAt, Valid: true},
 		OriginatorUserID:     attr.UserID,
@@ -1481,7 +1481,7 @@ type QuickCreateContext struct {
 	Priority      string   `json:"priority,omitempty"`
 	DueDate       string   `json:"due_date,omitempty"`
 	ProjectID     string   `json:"project_id,omitempty"`
-	TeamID       string   `json:"team_id,omitempty"`
+	TeamID        string   `json:"team_id,omitempty"`
 	AttachmentIDs []string `json:"attachment_ids,omitempty"`
 	// ParentIssueID is the optional UUID of the parent issue the new issue
 	// should be filed under. Set when the user opens the modal from "Add
@@ -5449,7 +5449,7 @@ func (s *TaskService) RerunIssue(ctx context.Context, issueID pgtype.UUID, sourc
 	var (
 		agentID             pgtype.UUID
 		isLeader            bool
-		teamID             pgtype.UUID
+		teamID              pgtype.UUID
 		coalescedCommentIDs []pgtype.UUID
 	)
 	if sourceTaskID.Valid {
@@ -5485,16 +5485,16 @@ func (s *TaskService) RerunIssue(ctx context.Context, issueID pgtype.UUID, sourc
 		}
 	} else {
 		switch {
-		case issue.AssigneeType.String == "agent" && issue.AssigneeID.Valid:
-			agentID = issue.AssigneeID
-		case issue.AssigneeType.String == "team" && issue.AssigneeID.Valid:
-			team, err := s.Queries.GetTeam(ctx, issue.AssigneeID)
+		case issue.ExecutorType.String == "agent" && issue.ExecutorID.Valid:
+			agentID = issue.ExecutorID
+		case issue.ExecutorType.String == "team" && issue.ExecutorID.Valid:
+			team, err := s.Queries.GetTeam(ctx, issue.ExecutorID)
 			if err != nil {
 				return nil, fmt.Errorf("issue is assigned to a team but team not found")
 			}
 			agentID = team.LeaderID
 			isLeader = true
-			teamID = issue.AssigneeID
+			teamID = issue.ExecutorID
 		default:
 			return nil, fmt.Errorf("issue is not assigned to an agent or team")
 		}
@@ -5663,8 +5663,8 @@ func (s *TaskService) promoteNewestSurvivingComment(ctx context.Context, ids []p
 // (rerun_of_task_id) to reuse its workdir and, when the failure did not poison
 // the conversation, resume its session (MUL-4869).
 func (s *TaskService) enqueueRerunTask(ctx context.Context, issue db.Issue, agentID pgtype.UUID, triggerCommentID pgtype.UUID, coalescedCommentIDs []pgtype.UUID, isLeader bool, teamID pgtype.UUID, actorUserID pgtype.UUID, rerunOfTaskID pgtype.UUID) (db.AgentTaskQueue, error) {
-	if issue.AssigneeType.String == "agent" && issue.AssigneeID.Valid &&
-		util.UUIDToString(issue.AssigneeID) == util.UUIDToString(agentID) {
+	if issue.ExecutorType.String == "agent" && issue.ExecutorID.Valid &&
+		util.UUIDToString(issue.ExecutorID) == util.UUIDToString(agentID) {
 		return s.enqueueIssueTaskWithCommentPlan(ctx, issue, triggerCommentID, coalescedCommentIDs, true, "", actorUserID, rerunOfTaskID, pgtype.Timestamptz{})
 	}
 	return s.enqueueMentionTaskWithCommentPlan(ctx, issue, agentID, triggerCommentID, coalescedCommentIDs, isLeader, teamID, true, "", actorUserID, rerunOfTaskID)
@@ -6323,7 +6323,7 @@ func (s *TaskService) dispatchDelegatedFailureRecovery(ctx context.Context, targ
 			TriggerCommentID:     target.comment.ID,
 			TriggerSummary:       s.buildCommentTriggerSummary(ctx, target.issue.WorkspaceID, target.comment.ID),
 			IsLeaderTask:         pgtype.Bool{Bool: target.source.IsLeaderTask, Valid: target.source.IsLeaderTask},
-			TeamID:              target.source.TeamID,
+			TeamID:               target.source.TeamID,
 			OriginatorUserID:     originator,
 			AccountableUserID:    accountable,
 			RuntimeMcpOverlay:    overlay.Overlay,
@@ -7270,8 +7270,12 @@ func IssueToMap(issue db.Issue, issuePrefix string) map[string]any {
 		// so this rendering cannot lose a key the HTTP one carries. (MUL-6749)
 		"status_name":      "",
 		"priority":         issue.Priority,
-		"assignee_type":    util.TextToPtr(issue.AssigneeType),
-		"assignee_id":      util.UUIDToPtr(issue.AssigneeID),
+		"owner_type":       util.TextToPtr(issue.OwnerType),
+		"owner_id":         util.UUIDToPtr(issue.OwnerID),
+		"executor_type":    util.TextToPtr(issue.ExecutorType),
+		"executor_id":      util.UUIDToPtr(issue.ExecutorID),
+		"reviewer_type":    util.TextToPtr(issue.ReviewerType),
+		"reviewer_id":      util.UUIDToPtr(issue.ReviewerID),
 		"creator_type":     issue.CreatorType,
 		"creator_id":       util.UUIDToString(issue.CreatorID),
 		"parent_issue_id":  util.UUIDToPtr(issue.ParentIssueID),

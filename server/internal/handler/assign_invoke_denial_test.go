@@ -52,8 +52,8 @@ func TestAssignAgent_DenialReasonNamesPermissionNotMode(t *testing.T) {
 			"title":         "invoke-denial body test",
 			"status":        "todo",
 			"priority":      "medium",
-			"assignee_type": "agent",
-			"assignee_id":   agentID,
+			"executor_type": "agent",
+			"executor_id":   agentID,
 		}
 	}
 
@@ -121,8 +121,8 @@ func TestAssignAgent_DenialReasonNamesPermissionNotMode(t *testing.T) {
 		resp := testutil.Call(t, testHandler.CreateIssue,
 			newRequestAs(plainMemberID, "POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
 				"title":         "invoke-denial team body test",
-				"assignee_type": "team",
-				"assignee_id":   teamID,
+				"executor_type": "team",
+				"executor_id":   teamID,
 			}),
 		).Want(http.StatusForbidden)
 		assertDenialReason(t, resp, "you do not have permission to assign work to this team")

@@ -136,13 +136,13 @@ export function AutomationListToolbar({
   const modeCounts = new Map<string, number>();
   const triggerKindCounts = new Map<string, number>();
   for (const row of allRows) {
-    const aKey = actorFilterValue(row.assignee_type, row.assignee_id);
+    const aKey = actorFilterValue(row.executor_type, row.executor_id);
     const a = assigneeOptions.get(aKey);
     if (a) a.count += 1;
     else
       assigneeOptions.set(aKey, {
-        type: row.assignee_type,
-        id: row.assignee_id,
+        type: row.executor_type,
+        id: row.executor_id,
         count: 1,
       });
     const cKey = actorFilterValue(row.created_by_type, row.created_by_id);

@@ -68,8 +68,8 @@ export function useIssueActions(issue: Issue | null): UseIssueActionsResult {
   const issueId = issue?.id ?? null;
   const issueIdentifier = issue?.identifier ?? null;
   const issueProjectId = issue?.project_id ?? null;
-  const issueAssigneeType = issue?.assignee_type ?? null;
-  const issueAssigneeId = issue?.assignee_id ?? null;
+  const issueAssigneeType = issue?.executor_type ?? issue?.owner_type ?? null;
+  const issueAssigneeId = issue?.executor_id ?? issue?.owner_id ?? null;
   const { entryOf } = useIssueStatuses(wsId);
   const updateField = useCallback(
     (
@@ -180,9 +180,11 @@ export function useIssueActions(issue: Issue | null): UseIssueActionsResult {
       // present, not their value, so a seed overrides the sticky last-used
       // assignee it would otherwise fall back to, while omitting both for
       // an unassigned parent leaves that fallback intact. Seed the two
-      // together — assignee_type is meaningless without assignee_id.
+      // together — executor_type is meaningless without executor_id.
       ...(issueAssigneeType && issueAssigneeId
-        ? { assignee_type: issueAssigneeType, assignee_id: issueAssigneeId }
+        ? issueAssigneeType === "member"
+          ? { owner_type: "member" as const, owner_id: issueAssigneeId }
+          : { executor_type: issueAssigneeType, executor_id: issueAssigneeId }
         : {}),
     });
   }, [

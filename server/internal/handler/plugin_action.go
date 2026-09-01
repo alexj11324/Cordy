@@ -460,8 +460,12 @@ func (h *Handler) pluginIssuePayload(r *http.Request, caller service.PluginActio
 		Status:         app.Status,
 		StatusCategory: app.StatusCategory,
 		Priority:       app.Priority,
-		AssigneeType:   app.AssigneeType,
-		AssigneeID:     app.AssigneeID,
+		OwnerType:      app.OwnerType,
+		OwnerID:        app.OwnerID,
+		ExecutorType:   app.ExecutorType,
+		ExecutorID:     app.ExecutorID,
+		ReviewerType:   app.ReviewerType,
+		ReviewerID:     app.ReviewerID,
 		CreatorType:    app.CreatorType,
 		CreatorID:      app.CreatorID,
 		ParentIssueID:  app.ParentIssueID,
@@ -606,8 +610,8 @@ func (h *Handler) CreatePluginComment(w http.ResponseWriter, r *http.Request) {
 	h.publish(protocol.EventCommentCreated, uuidToString(caller.WorkspaceID), authorType, uuidToString(authorID), map[string]any{
 		"comment":             commentToResponse(comment, nil, nil),
 		"issue_title":         issue.Title,
-		"issue_assignee_type": textToPtr(issue.AssigneeType),
-		"issue_assignee_id":   uuidToPtr(issue.AssigneeID),
+		"issue_executor_type": textToPtr(issue.ExecutorType),
+		"issue_executor_id":   uuidToPtr(issue.ExecutorID),
 		"issue_status":        issue.Status,
 	})
 	if rootComment != nil {

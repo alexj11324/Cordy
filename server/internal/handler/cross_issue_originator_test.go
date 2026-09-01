@@ -134,8 +134,8 @@ func agentAssigns(t *testing.T, agentID, taskID, issueID, targetAgentID string) 
 	t.Helper()
 	return testutil.Call(t, testHandler.UpdateIssue, testutil.WithURLParams(
 		asRun(newRequest(http.MethodPatch, "/api/issues/"+issueID, map[string]any{
-			"assignee_type": "agent",
-			"assignee_id":   targetAgentID,
+			"executor_type": "agent",
+			"executor_id":   targetAgentID,
 		}), agentID, taskID),
 		"id", issueID,
 	))
@@ -152,8 +152,8 @@ func agentCreatesSubIssue(t *testing.T, agentID, taskID, parentIssueID, targetAg
 			"title":           "MUL-6490 delegated sub-issue for " + targetAgentID,
 			"status":          "todo",
 			"priority":        "medium",
-			"assignee_type":   "agent",
-			"assignee_id":     targetAgentID,
+			"executor_type":   "agent",
+			"executor_id":     targetAgentID,
 			"parent_issue_id": parentIssueID,
 		}), agentID, taskID))
 	if resp.Code == http.StatusCreated {

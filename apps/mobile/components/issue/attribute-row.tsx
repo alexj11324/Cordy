@@ -93,9 +93,11 @@ export function AttributeRow({ issue }: { issue: Issue }) {
   const labels = issue.labels ?? [];
 
   const assigneeValue =
-    issue.assignee_type && issue.assignee_id
-      ? { type: issue.assignee_type, id: issue.assignee_id }
-      : null;
+    issue.executor_type && issue.executor_id
+      ? { type: issue.executor_type, id: issue.executor_id }
+      : issue.owner_type && issue.owner_id
+        ? { type: issue.owner_type, id: issue.owner_id }
+        : null;
 
   const assigneeName = assigneeValue
     ? getName(assigneeValue.type, assigneeValue.id)

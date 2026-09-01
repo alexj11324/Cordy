@@ -186,8 +186,8 @@ describe("AutomationDialog required-field feedback", () => {
     await waitFor(() => expect(mockCreateAutomation).toHaveBeenCalledTimes(1));
     expect(mockCreateAutomation.mock.calls[0]?.[0]).toMatchObject({
       title: "Daily digest",
-      assignee_type: "agent",
-      assignee_id: "agent-1",
+      executor_type: "agent",
+      executor_id: "agent-1",
     });
   });
 });

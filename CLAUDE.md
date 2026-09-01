@@ -256,4 +256,4 @@ Do not claim verification passed unless you ran it. If you skip checks because t
 ## Domain Reminders
 
 - All queries filter by `workspace_id`; membership gates access; `X-Workspace-ID` selects the workspace.
-- Issue assignees are polymorphic: `assignee_type` plus `assignee_id` can reference a member or an agent.
+- Issue roles are `owner` (member), `executor` (agent or team), and `reviewer` (member, agent, or team). There is no `assignee_*` JSON field.

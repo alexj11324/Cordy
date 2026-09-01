@@ -570,14 +570,14 @@ func TestRunAutomationUpdateAgentSwitchesAssigneeType(t *testing.T) {
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				t.Errorf("decode body: %v", err)
 			}
-			if body["assignee_type"] != "agent" {
+			if body["executor_type"] != "agent" {
 				http.Error(w, "team not found", http.StatusBadRequest)
 				return
 			}
 			json.NewEncoder(w).Encode(map[string]any{
 				"id":            automationID,
-				"assignee_type": body["assignee_type"],
-				"assignee_id":   body["assignee_id"],
+				"executor_type": body["executor_type"],
+				"executor_id":   body["executor_id"],
 			})
 		default:
 			http.NotFound(w, r)
@@ -594,11 +594,11 @@ func TestRunAutomationUpdateAgentSwitchesAssigneeType(t *testing.T) {
 	if err := runAutomationUpdate(cmd, []string{automationID}); err != nil {
 		t.Fatalf("runAutomationUpdate: %v", err)
 	}
-	if got := body["assignee_id"]; got != agentID {
-		t.Fatalf("assignee_id = %#v, want %q", got, agentID)
+	if got := body["executor_id"]; got != agentID {
+		t.Fatalf("executor_id = %#v, want %q", got, agentID)
 	}
-	if got := body["assignee_type"]; got != "agent" {
-		t.Fatalf("assignee_type = %#v, want agent", got)
+	if got := body["executor_type"]; got != "agent" {
+		t.Fatalf("executor_type = %#v, want agent", got)
 	}
 }
 

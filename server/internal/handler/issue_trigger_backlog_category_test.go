@@ -40,8 +40,8 @@ func TestBacklogToCustomBacklogStatusDoesNotTrigger(t *testing.T) {
 	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
 		"title":         "Parked issue",
 		"status":        "backlog",
-		"assignee_type": "agent",
-		"assignee_id":   agentID,
+		"executor_type": "agent",
+		"executor_id":   agentID,
 	})
 	w := testutil.Call(t, testHandler.CreateIssue, req).Want(http.StatusCreated)
 	var created IssueResponse

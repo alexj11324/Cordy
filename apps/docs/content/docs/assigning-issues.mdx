@@ -20,7 +20,7 @@ When you only need the agent to handle one specific request without changing own
 
 The handoff note applies to this run only — use it for scope, ordering, or what to focus on this time. Requirements that should hold long term belong in the issue, the project description, or the agent instructions.
 
-When you assign to a team, the team becomes the issue's assignee and the team leader starts first. It decides whether to hand work to other members, following how the team operates.
+When you assign to a team, the team becomes the issue's executor and the team leader starts first. It decides whether to hand work to other members, following how the team operates. Members set as owner are accountable humans and do not start a run.
 
 ## Execution after assignment
 
@@ -63,7 +63,7 @@ Workspace owners and admins can manage agents, but being able to see one doesn't
 
 ## Change or remove the assignee
 
-Switching the assignee to another agent starts a new run for the new assignee; picking a member only changes the assignee and doesn't invoke any AI coding tool. Removing the assignee doesn't create a task either.
+Switching the executor to another agent starts a new run for the new executor; picking a member sets the owner and doesn't invoke any AI coding tool. Removing the executor doesn't create a task either.
 
 <Callout type="warning">
 Changing the assignee, unassigning, or changing the issue status doesn't stop a run that has already started. To interrupt it, stop the corresponding task in the execution log.

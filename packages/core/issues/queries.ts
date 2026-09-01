@@ -195,6 +195,10 @@ export function sourceContextPreviewOptions(
 
 export type MyIssuesFilter = Pick<
   ListIssuesParams,
+  | "owner_id"
+  | "executor_id"
+  | "executor_ids"
+  | "executor_types"
   | "assignee_id"
   | "assignee_ids"
   | "assignee_types"
@@ -385,7 +389,7 @@ async function fetchProjectGanttIssues(
     const res = await api.listIssues({
       project_id: projectId,
       scheduled: true,
-      ...(assigneeTypes?.length ? { assignee_types: assigneeTypes } : {}),
+      ...(assigneeTypes?.length ? { executor_types: assigneeTypes } : {}),
       limit: PROJECT_GANTT_PAGE_LIMIT,
       offset,
     });

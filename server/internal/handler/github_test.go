@@ -2032,7 +2032,7 @@ func TestWebhook_MergedPR_ChildWithParent_NotifiesParent(t *testing.T) {
 	// Create parent (open) + child (in_progress) pair.
 	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
 		"title":  "PR-merge parent " + time.Now().Format(time.RFC3339Nano),
-		"status": "in_progress",
+		"status": "todo",
 	})
 	w := testutil.Call(t, testHandler.CreateIssue, req).Want(http.StatusCreated)
 	var parent IssueResponse

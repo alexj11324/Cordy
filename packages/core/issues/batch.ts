@@ -4,6 +4,7 @@ import type {
   IssuePriority,
   IssueAssigneeType,
 } from "../types";
+import { issueAssigneeRef } from "./issue-roles";
 
 /**
  * Shared assignee across a selection. `{ type: null, id: null }` means every
@@ -61,11 +62,15 @@ export function commonIssueFields(issues: readonly Issue[]): CommonIssueFields {
   const priority = sharedValue(issues.map((i) => i.priority));
 
   const sharedAssigneeKey = sharedValue(
-    issues.map((i) => assigneeKey(i.assignee_type, i.assignee_id)),
+    issues.map((i) => {
+      const ref = issueAssigneeRef(i);
+      return assigneeKey(ref?.type ?? null, ref?.id ?? null);
+    }),
   );
+  const firstRef = issues.length > 0 ? issueAssigneeRef(issues[0]!) : null;
   const assignee =
     sharedAssigneeKey !== null && issues.length > 0
-      ? { type: issues[0]!.assignee_type, id: issues[0]!.assignee_id }
+      ? { type: firstRef?.type ?? null, id: firstRef?.id ?? null }
       : null;
 
   return { status, priority, assignee };

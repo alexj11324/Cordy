@@ -57,8 +57,8 @@ func failTaskSuccessorCase(t *testing.T, failureReason string) {
 	runtimeID := dbfx.Runtime(t, "fail-successor-runtime-"+failureReason)
 	agentID := dbfx.Agent(t, "fail-successor-agent-"+failureReason, runtimeID)
 	issueID := dbfx.Issue(t, "manual rerun races auto-retry", testutil.Cols{
-		"assignee_type": "agent",
-		"assignee_id":   agentID,
+		"executor_type": "agent",
+		"executor_id":   agentID,
 	})
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(), `DELETE FROM agent_task_queue WHERE issue_id = $1`, issueID)
@@ -141,8 +141,8 @@ func TestCreateRetryTask_YieldsPendingSlotInsteadOfRaising(t *testing.T) {
 	runtimeID := dbfx.Runtime(t, "retry-yield-runtime")
 	agentID := dbfx.Agent(t, "retry-yield-agent", runtimeID)
 	issueID := dbfx.Issue(t, "retry yields the pending slot", testutil.Cols{
-		"assignee_type": "agent",
-		"assignee_id":   agentID,
+		"executor_type": "agent",
+		"executor_id":   agentID,
 	})
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(), `DELETE FROM agent_task_queue WHERE issue_id = $1`, issueID)
@@ -189,8 +189,8 @@ func TestFailTaskAndRerunConcurrently_NeverStrandsRunningTask(t *testing.T) {
 	runtimeID := dbfx.Runtime(t, "rerun-race-runtime")
 	agentID := dbfx.Agent(t, "rerun-race-agent", runtimeID)
 	issueID := dbfx.Issue(t, "rerun races auto-retry", testutil.Cols{
-		"assignee_type": "agent",
-		"assignee_id":   agentID,
+		"executor_type": "agent",
+		"executor_id":   agentID,
 	})
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(), `DELETE FROM agent_task_queue WHERE issue_id = $1`, issueID)
@@ -276,8 +276,8 @@ func TestPromoteDueDeferred_CancelsSupersededRetry(t *testing.T) {
 	runtimeID := dbfx.Runtime(t, "promote-supersede-runtime")
 	agentID := dbfx.Agent(t, "promote-supersede-agent", runtimeID)
 	issueID := dbfx.Issue(t, "deferred retry superseded by rerun", testutil.Cols{
-		"assignee_type": "agent",
-		"assignee_id":   agentID,
+		"executor_type": "agent",
+		"executor_id":   agentID,
 	})
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(), `DELETE FROM agent_task_queue WHERE issue_id = $1`, issueID)
@@ -339,8 +339,8 @@ func TestPromoteDueDeferred_LeavesNonRetryDeferredRowsAlone(t *testing.T) {
 	runtimeID := dbfx.Runtime(t, "promote-escalation-runtime")
 	agentID := dbfx.Agent(t, "promote-escalation-agent", runtimeID)
 	issueID := dbfx.Issue(t, "escalation survives an active primary", testutil.Cols{
-		"assignee_type": "agent",
-		"assignee_id":   agentID,
+		"executor_type": "agent",
+		"executor_id":   agentID,
 	})
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(), `DELETE FROM agent_task_queue WHERE issue_id = $1`, issueID)
@@ -398,8 +398,8 @@ func TestFailTaskAndRerunConcurrently_NonAssigneeTarget(t *testing.T) {
 	assigneeID := dbfx.Agent(t, "non-assignee-race-current", runtimeID)
 	displacedID := dbfx.Agent(t, "non-assignee-race-displaced", runtimeID)
 	issueID := dbfx.Issue(t, "rerun a displaced agent while it fails", testutil.Cols{
-		"assignee_type": "agent",
-		"assignee_id":   assigneeID,
+		"executor_type": "agent",
+		"executor_id":   assigneeID,
 	})
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(), `DELETE FROM agent_task_queue WHERE issue_id = $1`, issueID)
@@ -485,8 +485,8 @@ func TestPromoteDueDeferred_ToleratesConcurrentUncommittedEnqueue(t *testing.T) 
 	runtimeID := dbfx.Runtime(t, "promote-uncommitted-runtime")
 	agentID := dbfx.Agent(t, "promote-uncommitted-agent", runtimeID)
 	issueID := dbfx.Issue(t, "promotion meets an uncommitted enqueue", testutil.Cols{
-		"assignee_type": "agent",
-		"assignee_id":   agentID,
+		"executor_type": "agent",
+		"executor_id":   agentID,
 	})
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(), `DELETE FROM agent_task_queue WHERE issue_id = $1`, issueID)

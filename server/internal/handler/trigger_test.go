@@ -21,7 +21,7 @@ func testText(s string) pgtype.Text {
 }
 
 const (
-	agentAssigneeID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+	agentExecutorID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 	otherAgentID    = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
 	memberID        = "cccccccc-cccc-cccc-cccc-cccccccccccc"
 	otherMemberID   = "dddddddd-dddd-dddd-dddd-dddddddddddd"
@@ -29,8 +29,8 @@ const (
 
 func issueWithAgentAssignee() db.Issue {
 	return db.Issue{
-		AssigneeType: testText("agent"),
-		AssigneeID:   testUUID(agentAssigneeID),
+		ExecutorType: testText("agent"),
+		ExecutorID:   testUUID(agentExecutorID),
 	}
 }
 
@@ -45,7 +45,7 @@ func TestHasAgentOrTeamMention(t *testing.T) {
 		want    bool
 	}{
 		{"plain", "just a plain comment", false},
-		{"agent", fmt.Sprintf("[@Agent](mention://agent/%s) please fix", agentAssigneeID), true},
+		{"agent", fmt.Sprintf("[@Agent](mention://agent/%s) please fix", agentExecutorID), true},
 		{"team", "[@Team](mention://team/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa) please coordinate", true},
 		{"member only", fmt.Sprintf("[@Bob](mention://member/%s) take a look", memberID), false},
 		{"issue only", "[PAN-1](mention://issue/44c266e7-f6dd-4be3-9140-5ac40233f79c) is related", false},

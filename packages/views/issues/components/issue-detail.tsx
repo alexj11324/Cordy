@@ -854,15 +854,15 @@ function SubIssueRow({
         )}
         {rowProps.assignee && (
           <AssigneePicker
-            assigneeType={child.assignee_type}
-            assigneeId={child.assignee_id}
+            assigneeType={child.executor_type}
+            assigneeId={child.executor_id}
             onUpdate={handleUpdate}
             align="end"
             trigger={
-              child.assignee_type && child.assignee_id ? (
+              child.executor_type && child.executor_id ? (
                 <ActorAvatar
-                  actorType={child.assignee_type}
-                  actorId={child.assignee_id}
+                  actorType={child.executor_type}
+                  actorId={child.executor_id}
                   size="sm"
                   className="shrink-0"
                 />
@@ -1363,9 +1363,11 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
       parent_issue_id: issue.id,
       parent_issue_identifier: issue.identifier,
       ...(issue.project_id ? { project_id: issue.project_id } : {}),
-      ...(issue.assignee_type && issue.assignee_id
-        ? { assignee_type: issue.assignee_type, assignee_id: issue.assignee_id }
-        : {}),
+      ...(issue.executor_type && issue.executor_id
+        ? { executor_type: issue.executor_type, executor_id: issue.executor_id }
+        : issue.owner_type && issue.owner_id
+          ? { owner_type: issue.owner_type, owner_id: issue.owner_id }
+          : {}),
     });
   }, [issue, openModal]);
 
@@ -2329,7 +2331,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
             <StatusPicker status={issue.status} onUpdate={handleUpdateField} align="start" />
           </PropRow>
           <PropRow label={t(($) => $.detail.prop_assignee)}>
-            <AssigneePicker assigneeType={issue.assignee_type} assigneeId={issue.assignee_id} onUpdate={handleUpdateField} align="start" />
+            <AssigneePicker assigneeType={issue.executor_type ?? issue.owner_type} assigneeId={issue.executor_id ?? issue.owner_id} onUpdate={handleUpdateField} align="start" />
           </PropRow>
           <PropRow label={t(($) => $.detail.prop_project)}>
             <ProjectPicker

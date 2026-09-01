@@ -54,7 +54,7 @@ FOR UPDATE;
 
 -- name: CreateAutomation :one
 INSERT INTO automation (
-    workspace_id, title, description, assignee_type, assignee_id,
+    workspace_id, title, description, executor_type, executor_id,
     status, execution_mode, issue_title_template, project_id,
     created_by_type, created_by_id
 ) VALUES (
@@ -67,8 +67,8 @@ INSERT INTO automation (
 UPDATE automation SET
     title = COALESCE(sqlc.narg('title'), title),
     description = COALESCE(sqlc.narg('description'), description),
-    assignee_type = COALESCE(sqlc.narg('assignee_type'), assignee_type),
-    assignee_id = COALESCE(sqlc.narg('assignee_id')::uuid, assignee_id),
+    executor_type = COALESCE(sqlc.narg('executor_type'), executor_type),
+    executor_id = COALESCE(sqlc.narg('executor_id')::uuid, executor_id),
     status = COALESCE(sqlc.narg('status'), status),
     pause_reason = CASE
       WHEN sqlc.narg('status')::text IS NOT NULL THEN NULL
@@ -97,13 +97,13 @@ SET status = 'paused',
     updated_at = now()
 WHERE a.status = 'active'
   AND (
-    (a.assignee_type = 'agent' AND a.assignee_id = ANY(@agent_ids::uuid[]))
+    (a.executor_type = 'agent' AND a.executor_id = ANY(@agent_ids::uuid[]))
     OR (
-      a.assignee_type = 'team'
+      a.executor_type = 'team'
       AND EXISTS (
         SELECT 1
         FROM team s
-        WHERE s.id = a.assignee_id
+        WHERE s.id = a.executor_id
           AND s.leader_id = ANY(@agent_ids::uuid[])
       )
     )
@@ -119,8 +119,8 @@ SET status = 'paused',
     pause_reason = 'agent_runtime_required',
     updated_at = now()
 WHERE status = 'active'
-  AND assignee_type = 'team'
-  AND assignee_id = @team_id
+  AND executor_type = 'team'
+  AND executor_id = @team_id
 RETURNING *;
 
 -- name: UpdateAutomationLastRunAt :exec
@@ -285,7 +285,7 @@ RETURNING *;
 
 -- name: CreateAutomationRun :one
 -- team_id is an attribution hook: set to the assignee team when the
--- parent automation has assignee_type='team', NULL otherwise. The executing
+-- parent automation has executor_type='team', NULL otherwise. The executing
 -- agent_id on agent_task_queue still records who actually ran the work
 -- (the team leader); team_id lets reports group by team without a join.
 --
@@ -672,7 +672,7 @@ WITH stats AS (
     WHERE created_at >= sqlc.arg('since')::timestamptz
     GROUP BY automation_id
 )
-SELECT a.id, a.workspace_id, a.title, a.assignee_id,
+SELECT a.id, a.workspace_id, a.title, a.executor_id,
        a.created_by_type, a.created_by_id,
        s.total::bigint  AS total_runs,
        s.failed::bigint AS failed_runs

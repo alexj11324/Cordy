@@ -108,6 +108,23 @@ function projectColumn(
   };
 }
 
+function createDataForAssignee(
+  actor: { type: IssueAssigneeType; id: string } | null,
+): IssueCreateDefaults {
+  if (!actor) {
+    return {
+      owner_type: null,
+      owner_id: null,
+      executor_type: null,
+      executor_id: null,
+    };
+  }
+  if (actor.type === "member") {
+    return { owner_type: "member", owner_id: actor.id };
+  }
+  return { executor_type: actor.type, executor_id: actor.id };
+}
+
 /**
  * Keep the "No project" column present as a drop target — clearing a card's
  * project by dragging has to stay possible even in a workspace where every
@@ -195,19 +212,18 @@ function buildGroups(
 
   const groups = new Map<string, BoardColumnGroup>();
   for (const issue of issues) {
-    const id = assigneeGroupId(issue.assignee_type, issue.assignee_id);
+    const assigneeType = issue.executor_type ?? issue.owner_type;
+    const assigneeId = issue.executor_id ?? issue.owner_id;
+    const id = assigneeGroupId(assigneeType, assigneeId);
     if (groups.has(id)) continue;
 
-    if (issue.assignee_type && issue.assignee_id) {
+    if (assigneeType && assigneeId) {
       groups.set(id, {
         id,
-        title: getActorName(issue.assignee_type, issue.assignee_id),
-        assigneeType: issue.assignee_type,
-        assigneeId: issue.assignee_id,
-        createData: {
-          assignee_type: issue.assignee_type,
-          assignee_id: issue.assignee_id,
-        },
+        title: getActorName(assigneeType, assigneeId),
+        assigneeType,
+        assigneeId,
+        createData: createDataForAssignee({ type: assigneeType, id: assigneeId }),
       });
       continue;
     }
@@ -217,10 +233,7 @@ function buildGroups(
       title: noAssigneeLabel,
       assigneeType: null,
       assigneeId: null,
-      createData: {
-        assignee_type: null,
-        assignee_id: null,
-      },
+      createData: createDataForAssignee(null),
     });
   }
 
@@ -353,10 +366,7 @@ function BoardViewImpl({
           assigneeType: actor?.type ?? null,
           assigneeId: actor?.id ?? null,
           totalCount: descriptor.count,
-          createData: {
-            assignee_type: actor?.type ?? null,
-            assignee_id: actor?.id ?? null,
-          },
+          createData: createDataForAssignee(actor),
         }];
       });
     }

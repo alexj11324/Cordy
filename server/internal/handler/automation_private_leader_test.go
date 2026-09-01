@@ -34,8 +34,8 @@ func TestCreateAutomation_TeamPrivateLeader_PlainMemberBlocked(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := newRequestAs(memberID, "POST", "/api/automations?workspace_id="+testWorkspaceID, map[string]any{
 		"title":          "should be blocked",
-		"assignee_type":  "team",
-		"assignee_id":    teamID,
+		"executor_type":  "team",
+		"executor_id":    teamID,
 		"execution_mode": "create_issue",
 	})
 	testHandler.CreateAutomation(w, r)
@@ -73,7 +73,7 @@ func TestUpdateAutomation_TeamPrivateLeader_PlainMemberBlocked(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := newRequest("POST", "/api/automations?workspace_id="+testWorkspaceID, map[string]any{
 		"title":          "update target ap",
-		"assignee_id":    publicAgentID,
+		"executor_id":    publicAgentID,
 		"execution_mode": "create_issue",
 	})
 	testHandler.CreateAutomation(w, r)
@@ -92,8 +92,8 @@ func TestUpdateAutomation_TeamPrivateLeader_PlainMemberBlocked(t *testing.T) {
 	teamType := "team"
 	w = httptest.NewRecorder()
 	r = newRequestAs(memberID, "PATCH", "/api/automations/"+ap.ID+"?workspace_id="+testWorkspaceID, map[string]any{
-		"assignee_type": teamType,
-		"assignee_id":   teamID,
+		"executor_type": teamType,
+		"executor_id":   teamID,
 	})
 	r = withURLParam(r, "id", ap.ID)
 	testHandler.UpdateAutomation(w, r)
@@ -129,8 +129,8 @@ func TestCreateAutomation_TeamPrivateLeader_OwnerAllowed(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := newRequestAs(ownerID, "POST", "/api/automations?workspace_id="+testWorkspaceID, map[string]any{
 		"title":          "owner creates private-leader team ap",
-		"assignee_type":  "team",
-		"assignee_id":    teamID,
+		"executor_type":  "team",
+		"executor_id":    teamID,
 		"execution_mode": "create_issue",
 	})
 	testHandler.CreateAutomation(w, r)
@@ -174,8 +174,8 @@ func TestTriggerAutomation_TeamPrivateLeader_OwnerCanDispatch(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := newRequestAs(ownerID, "POST", "/api/automations?workspace_id="+testWorkspaceID, map[string]any{
 		"title":          "dispatch test private leader team",
-		"assignee_type":  "team",
-		"assignee_id":    teamID,
+		"executor_type":  "team",
+		"executor_id":    teamID,
 		"execution_mode": "create_issue",
 	})
 	testHandler.CreateAutomation(w, r)
@@ -245,8 +245,8 @@ func TestTriggerAutomation_TeamPrivateLeader_NonOwnerClicker_Blocked(t *testing.
 	w := httptest.NewRecorder()
 	r := newRequestAs(ownerID, "POST", "/api/automations?workspace_id="+testWorkspaceID, map[string]any{
 		"title":          "clicker fork private leader team",
-		"assignee_type":  "team",
-		"assignee_id":    teamID,
+		"executor_type":  "team",
+		"executor_id":    teamID,
 		"execution_mode": "create_issue",
 	})
 	testHandler.CreateAutomation(w, r)
@@ -316,7 +316,7 @@ func TestTriggerAutomation_TeamPrivateLeader_PlainMemberCreator_Blocked(t *testi
 	// (simulating legacy data before the save-time gate).
 	var apID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO automation (workspace_id, title, assignee_type, assignee_id,
+		INSERT INTO automation (workspace_id, title, executor_type, executor_id,
 		                       execution_mode, created_by_type, created_by_id, status)
 		VALUES ($1, 'legacy illegal ap', 'team', $2, 'create_issue', 'member', $3, 'active')
 		RETURNING id
@@ -376,7 +376,7 @@ func TestTriggerAutomation_RunOnly_TeamPrivateLeader_PlainMemberCreator_Blocked(
 	// Legacy automation: run_only mode, plain member creator, private-leader team.
 	var apID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO automation (workspace_id, title, assignee_type, assignee_id,
+		INSERT INTO automation (workspace_id, title, executor_type, executor_id,
 		                       execution_mode, created_by_type, created_by_id, status)
 		VALUES ($1, 'legacy run_only illegal ap', 'team', $2, 'run_only', 'member', $3, 'active')
 		RETURNING id

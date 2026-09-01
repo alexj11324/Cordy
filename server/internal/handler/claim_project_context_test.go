@@ -306,7 +306,7 @@ func TestClaimTask_AutomationRunOnlyForeignWorkspace_CancelsTask(t *testing.T) {
 		"workspace_id":    foreignWorkspaceID,
 		"project_id":      foreignProjectID,
 		"title":           foreignAutomationTitle,
-		"assignee_id":     localAgentID,
+		"executor_id":     localAgentID,
 		"execution_mode":  "run_only",
 		"created_by_type": "member",
 		"created_by_id":   testUserID,

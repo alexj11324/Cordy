@@ -480,7 +480,7 @@ func TestEnqueueTaskForIssueStoresRuntimeMCPOverlayInQueuedRow(t *testing.T) {
 	}
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO issue (
-			workspace_id, title, creator_type, creator_id, assignee_type, assignee_id, priority
+			workspace_id, title, creator_type, creator_id, executor_type, executor_id, priority
 		)
 		VALUES ($1, 'runtime overlay issue', 'member', $2, 'agent', $3, 'medium')
 		RETURNING id
@@ -502,12 +502,12 @@ func TestEnqueueTaskForIssueStoresRuntimeMCPOverlayInQueuedRow(t *testing.T) {
 	userID := util.MustParseUUID(userIDStr)
 	task, err := svc.EnqueueTaskForIssue(ctx, db.Issue{
 		ID:           util.MustParseUUID(issueIDStr),
-		AssigneeID:   util.MustParseUUID(agentIDStr),
+		ExecutorID:   util.MustParseUUID(agentIDStr),
 		Priority:     "medium",
 		CreatorType:  "member",
 		CreatorID:    userID,
 		WorkspaceID:  util.MustParseUUID(workspaceIDStr),
-		AssigneeType: pgtype.Text{String: "agent", Valid: true},
+		ExecutorType: pgtype.Text{String: "agent", Valid: true},
 	})
 	if err != nil {
 		t.Fatalf("EnqueueTaskForIssue: %v", err)

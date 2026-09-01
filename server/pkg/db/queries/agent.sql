@@ -2556,8 +2556,8 @@ WHERE a.workspace_id = $1
         AND (
           (
             @mine_relation::text IN ('assigned', 'any')
-            AND i.assignee_type = 'member'
-            AND i.assignee_id = @member_id::uuid
+            AND i.owner_type = 'member'
+            AND i.owner_id = @member_id::uuid
           )
           OR (
             @mine_relation::text IN ('created', 'any')
@@ -2568,21 +2568,21 @@ WHERE a.workspace_id = $1
             @mine_relation::text IN ('involved', 'any')
             AND (
               (
-                i.assignee_type = 'agent'
+                i.executor_type = 'agent'
                 AND EXISTS (
                   SELECT 1
                   FROM agent owned_agent
-                  WHERE owned_agent.id = i.assignee_id
+                  WHERE owned_agent.id = i.executor_id
                     AND owned_agent.workspace_id = a.workspace_id
                     AND owned_agent.owner_id = @member_id::uuid
                 )
               )
               OR (
-                i.assignee_type = 'team'
+                i.executor_type = 'team'
                 AND EXISTS (
                   SELECT 1
                   FROM team s
-                  WHERE s.id = i.assignee_id
+                  WHERE s.id = i.executor_id
                     AND s.workspace_id = a.workspace_id
                     AND (
                       EXISTS (

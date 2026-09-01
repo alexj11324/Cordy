@@ -40,8 +40,10 @@ export function issueChangedDims(
   const p = patch as Partial<Issue>;
   return {
     assignee:
-      (has("assignee_id") && (!base || base.assignee_id !== p.assignee_id)) ||
-      (has("assignee_type") && (!base || base.assignee_type !== p.assignee_type)),
+      (has("executor_id") && (!base || base.executor_id !== p.executor_id)) ||
+      (has("executor_type") && (!base || base.executor_type !== p.executor_type)) ||
+      (has("owner_id") && (!base || base.owner_id !== p.owner_id)) ||
+      (has("owner_type") && (!base || base.owner_type !== p.owner_type)),
     project: has("project_id") && (!base || base.project_id !== p.project_id),
     status: has("status") && p.status !== undefined && (!base || base.status !== p.status),
   };
@@ -67,6 +69,9 @@ export function listFilterDependsOn(
     (filter.assignee_id !== undefined ||
       filter.assignee_ids !== undefined ||
       filter.assignee_types !== undefined ||
+      filter.executor_types !== undefined ||
+      filter.owner_id !== undefined ||
+      filter.executor_id !== undefined ||
       filter.involves_user_id !== undefined)
   ) {
     return true;
@@ -94,26 +99,31 @@ export function issueMatchesListFilter(
   let unknown = false;
 
   if (filter.assignee_id !== undefined) {
-    if (issue.assignee_id === undefined) unknown = true;
-    else if (issue.assignee_id !== filter.assignee_id) return false;
+    if (issue.executor_id === undefined && issue.owner_id === undefined) unknown = true;
+    else if (issue.executor_id !== filter.assignee_id && issue.owner_id !== filter.assignee_id) return false;
   }
   if (filter.assignee_ids !== undefined) {
-    if (issue.assignee_id === undefined) unknown = true;
-    else if (
-      issue.assignee_id === null ||
-      !filter.assignee_ids.includes(issue.assignee_id)
-    ) {
+    const id = issue.executor_id ?? issue.owner_id;
+    if (id === undefined) unknown = true;
+    else if (id === null || !filter.assignee_ids.includes(id)) {
       return false;
     }
   }
-  if (filter.assignee_types !== undefined) {
-    if (issue.assignee_type === undefined) unknown = true;
-    else if (
-      issue.assignee_type === null ||
-      !filter.assignee_types.includes(issue.assignee_type)
-    ) {
+  const typeFilter = filter.executor_types ?? filter.assignee_types;
+  if (typeFilter !== undefined) {
+    const type = issue.executor_type ?? issue.owner_type;
+    if (type === undefined) unknown = true;
+    else if (type === null || !typeFilter.includes(type)) {
       return false;
     }
+  }
+  if (filter.owner_id !== undefined) {
+    if (issue.owner_id === undefined) unknown = true;
+    else if (issue.owner_id !== filter.owner_id) return false;
+  }
+  if (filter.executor_id !== undefined) {
+    if (issue.executor_id === undefined) unknown = true;
+    else if (issue.executor_id !== filter.executor_id) return false;
   }
   if (filter.creator_id !== undefined) {
     if (issue.creator_id === undefined) unknown = true;

@@ -22,8 +22,12 @@ function mk(id: string, position: number): Issue {
     description: null,
     status: "todo",
     priority: "none",
-    assignee_type: null,
-    assignee_id: null,
+    owner_type: null,
+    owner_id: null,
+    executor_type: null,
+    executor_id: null,
+    reviewer_type: null,
+    reviewer_id: null,
     creator_type: "member",
     creator_id: "user-1",
     parent_issue_id: null,
@@ -243,7 +247,7 @@ describe("project grouping", () => {
     // projectId/assigneeId are both optional on BoardColumnGroup, so an
     // unguarded project column would read as "no assignee" and unassign the
     // card on every drop.
-    expect(getMoveUpdates(projectColumn, 5)).not.toHaveProperty("assignee_type");
+    expect(getMoveUpdates(projectColumn, 5)).not.toHaveProperty("executor_type");
   });
 
   it("buildColumns places cards into their project column", () => {

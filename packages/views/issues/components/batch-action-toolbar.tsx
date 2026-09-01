@@ -126,7 +126,7 @@ export function BatchActionToolbar({
   };
 
   const handleBatchAssignee = (updates: Partial<UpdateIssueRequest>) => {
-    if ((updates.assignee_type === "agent" || updates.assignee_type === "team") && updates.assignee_id) {
+    if ((updates.executor_type === "agent" || updates.executor_type === "team") && updates.executor_id) {
       // Backlog never starts a run on assign (parking lot), so if every selected
       // issue is in backlog the confirm modal would only render an empty "won't
       // start" box — apply directly, matching handleBatchStatus's backlog short-
@@ -139,8 +139,8 @@ export function BatchActionToolbar({
         openModal("issue-run-confirm", {
           issueIds: ids,
           mode: "assign",
-          assigneeType: updates.assignee_type,
-          assigneeId: updates.assignee_id,
+          assigneeType: updates.executor_type,
+          assigneeId: updates.executor_id,
         });
         return;
       }

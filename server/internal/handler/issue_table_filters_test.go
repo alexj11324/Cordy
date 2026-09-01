@@ -65,22 +65,21 @@ func TestListIssues_TableFacetsAreServerSide(t *testing.T) {
 	}
 
 	insertIssue := func(title, status, priority string, assigned bool, projectID, parentID *string) string {
-		var assigneeType *string
-		var assigneeID *string
+		var ownerType, ownerID, executorType, executorID *string
 		if assigned {
 			member := "member"
-			assigneeType = &member
-			assigneeID = &testUserID
+			ownerType = &member
+			ownerID = &testUserID
 		}
 		var id string
 		if err := testPool.QueryRow(ctx, `
 			INSERT INTO issue (
-				workspace_id, title, status, priority, assignee_type, assignee_id,
+				workspace_id, title, status, priority, owner_type, owner_id, executor_type, executor_id,
 				creator_type, creator_id, parent_issue_id, position, number,
 				project_id, metadata
-			) VALUES ($1, $2, $3, $4, $5, $6, 'member', $7, $8, 0, $9, $10, $11::jsonb)
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'member', $9, $10, 0, $11, $12, $13::jsonb)
 			RETURNING id
-		`, testWorkspaceID, title, status, priority, assigneeType, assigneeID,
+		`, testWorkspaceID, title, status, priority, ownerType, ownerID, executorType, executorID,
 			testUserID, parentID, nextNumber(), projectID, metadata).Scan(&id); err != nil {
 			t.Fatalf("create issue %q: %v", title, err)
 		}

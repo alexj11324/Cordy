@@ -34,8 +34,8 @@ func TestCreateIssue_TeamPrivateLeader_PlainMemberBlocked(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := newRequestAs(memberID, "POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
 		"title":         "Should be blocked",
-		"assignee_type": "team",
-		"assignee_id":   teamID,
+		"executor_type": "team",
+		"executor_id":   teamID,
 	})
 	testHandler.CreateIssue(w, r)
 	if w.Code != http.StatusForbidden {
@@ -80,8 +80,8 @@ func TestUpdateIssue_TeamPrivateLeader_PlainMemberBlocked(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	r := newRequestAs(memberID, "PATCH", "/api/issues/"+issueID, map[string]any{
-		"assignee_type": "team",
-		"assignee_id":   teamID,
+		"executor_type": "team",
+		"executor_id":   teamID,
 	})
 	r = withURLParam(r, "id", issueID)
 	testHandler.UpdateIssue(w, r)
@@ -120,8 +120,8 @@ func TestCreateIssue_TeamPrivateLeader_OwnerAllowed(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := newRequestAs(ownerID, "POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
 		"title":         "Owner assigns private-leader team",
-		"assignee_type": "team",
-		"assignee_id":   teamID,
+		"executor_type": "team",
+		"executor_id":   teamID,
 	})
 	testHandler.CreateIssue(w, r)
 	if w.Code != http.StatusCreated {
@@ -164,7 +164,7 @@ func TestComment_TeamPrivateLeader_PlainMemberNoEnqueue(t *testing.T) {
 	// Create issue assigned to the team as workspace owner.
 	var issueID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO issue (workspace_id, creator_type, creator_id, title, assignee_type, assignee_id)
+		INSERT INTO issue (workspace_id, creator_type, creator_id, title, executor_type, executor_id)
 		VALUES ($1, 'member', $2, 'private leader comment test', 'team', $3)
 		RETURNING id
 	`, testWorkspaceID, testUserID, teamID).Scan(&issueID); err != nil {
@@ -233,8 +233,8 @@ func TestChildDone_TeamPrivateLeader_PlainMemberWakesLeader(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := newRequestAs(ownerID, "POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
 		"title":         "parent with private-leader team",
-		"assignee_type": "team",
-		"assignee_id":   teamID,
+		"executor_type": "team",
+		"executor_id":   teamID,
 	})
 	testHandler.CreateIssue(w, r)
 	if w.Code != http.StatusCreated {
@@ -259,9 +259,9 @@ func TestChildDone_TeamPrivateLeader_PlainMemberWakesLeader(t *testing.T) {
 	r = newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
 		"title":           "child task",
 		"parent_issue_id": parent.ID,
-		"assignee_type":   "member",
-		"assignee_id":     memberID,
-		"status":          "in_progress",
+		"owner_type":      "member",
+		"owner_id":        memberID,
+		"status":          "todo",
 	})
 	testHandler.CreateIssue(w, r)
 	if w.Code != http.StatusCreated {
@@ -332,8 +332,8 @@ func TestChildDone_TeamPrivateLeader_AgentActorWakesLeader(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := newRequestAs(ownerID, "POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
 		"title":         "parent with private-leader team (agent child-done)",
-		"assignee_type": "team",
-		"assignee_id":   teamID,
+		"executor_type": "team",
+		"executor_id":   teamID,
 	})
 	testHandler.CreateIssue(w, r)
 	if w.Code != http.StatusCreated {
@@ -359,8 +359,8 @@ func TestChildDone_TeamPrivateLeader_AgentActorWakesLeader(t *testing.T) {
 	r = newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
 		"title":           "child task worked by an agent",
 		"parent_issue_id": parent.ID,
-		"assignee_type":   "agent",
-		"assignee_id":     workerAgentID,
+		"executor_type":   "agent",
+		"executor_id":     workerAgentID,
 		"status":          "in_progress",
 	})
 	testHandler.CreateIssue(w, r)
@@ -443,7 +443,7 @@ func TestComment_TeamPrivateLeader_AgentActorAllowed(t *testing.T) {
 	// Create issue assigned to the team.
 	var issueID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO issue (workspace_id, creator_type, creator_id, title, assignee_type, assignee_id)
+		INSERT INTO issue (workspace_id, creator_type, creator_id, title, executor_type, executor_id)
 		VALUES ($1, 'member', $2, 'private leader agent actor test', 'team', $3)
 		RETURNING id
 	`, testWorkspaceID, testUserID, teamID).Scan(&issueID); err != nil {

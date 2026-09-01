@@ -167,8 +167,12 @@ function makeIssue(id: string, title: string, status: Issue["status"]): Issue {
     description: null,
     status,
     priority: "none",
-    assignee_type: null,
-    assignee_id: null,
+    owner_type: null,
+    owner_id: null,
+    executor_type: null,
+    executor_id: null,
+    reviewer_type: null,
+    reviewer_id: null,
     creator_type: "member",
     creator_id: "member-1",
     parent_issue_id: null,
@@ -244,8 +248,8 @@ describe("TableView cell editors under data refresh", () => {
     serverIssues = [
       {
         ...makeIssue("c", "Parked task", "backlog"),
-        assignee_type: "agent",
-        assignee_id: "agent-1",
+        executor_type: "agent",
+        executor_id: "agent-1",
       },
     ];
     useModalStore.getState().close();

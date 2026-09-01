@@ -83,7 +83,7 @@ func (h *Handler) shouldSuppressActiveSelfAssignment(ctx context.Context, actorT
 // context. The team path still flows through enqueueTeamLeaderTask so the
 // leader access gate and pending dedup stay in one place.
 func (h *Handler) dispatchIssueRun(ctx context.Context, issue db.Issue, trigger service.IssueRunTrigger, actorType, actorID, handoffNote string) {
-	switch trigger.AssigneeType {
+	switch trigger.ExecutorType {
 	case "agent":
 		// The member who performed this assign/promote is the accountable human
 		// for the run (MUL-4302 §4). An agent actor is not a human, so only a
@@ -118,8 +118,8 @@ type IssueTriggerPreviewRequest struct {
 	IssueIDs []string `json:"issue_ids"`
 	// IsCreate previews a not-yet-persisted issue from AssigneeType/ID/Status.
 	IsCreate     bool    `json:"is_create"`
-	AssigneeType *string `json:"assignee_type"`
-	AssigneeID   *string `json:"assignee_id"`
+	ExecutorType *string `json:"executor_type"`
+	ExecutorID   *string `json:"executor_id"`
 	Status       *string `json:"status"`
 }
 
@@ -172,17 +172,17 @@ func (h *Handler) PreviewIssueTrigger(w http.ResponseWriter, r *http.Request) {
 	// Resolve the prospective assignee once — a malformed id is a deterministic
 	// 400, never a silent miscount.
 	var (
-		newAssigneeType pgtype.Text
-		newAssigneeID   pgtype.UUID
+		newExecutorType pgtype.Text
+		newExecutorID   pgtype.UUID
 		hasNewAssignee  bool
 	)
-	if req.AssigneeType != nil && *req.AssigneeType != "" && req.AssigneeID != nil && *req.AssigneeID != "" {
-		id, parseOK := parseUUIDOrBadRequest(w, *req.AssigneeID, "assignee_id")
+	if req.ExecutorType != nil && *req.ExecutorType != "" && req.ExecutorID != nil && *req.ExecutorID != "" {
+		id, parseOK := parseUUIDOrBadRequest(w, *req.ExecutorID, "executor_id")
 		if !parseOK {
 			return
 		}
-		newAssigneeType = pgtype.Text{String: *req.AssigneeType, Valid: true}
-		newAssigneeID = id
+		newExecutorType = pgtype.Text{String: *req.ExecutorType, Valid: true}
+		newExecutorID = id
 		hasNewAssignee = true
 	}
 
@@ -214,8 +214,8 @@ func (h *Handler) PreviewIssueTrigger(w http.ResponseWriter, r *http.Request) {
 		candidate := db.Issue{
 			WorkspaceID:  wsUUID,
 			Status:       status,
-			AssigneeType: newAssigneeType,
-			AssigneeID:   newAssigneeID,
+			ExecutorType: newExecutorType,
+			ExecutorID:   newExecutorID,
 		}
 		appendTrigger(candidate, service.IssueTriggerInput{Issue: candidate, IsCreate: true})
 		resp.TotalCount = len(resp.Triggers)
@@ -239,10 +239,10 @@ func (h *Handler) PreviewIssueTrigger(w http.ResponseWriter, r *http.Request) {
 		post := loaded
 		in := service.IssueTriggerInput{PrevStatus: loaded.Status}
 		if hasNewAssignee {
-			post.AssigneeType = newAssigneeType
-			post.AssigneeID = newAssigneeID
-			in.AssigneeChanged = loaded.AssigneeType.String != newAssigneeType.String ||
-				uuidToString(loaded.AssigneeID) != uuidToString(newAssigneeID)
+			post.ExecutorType = newExecutorType
+			post.ExecutorID = newExecutorID
+			in.AssigneeChanged = loaded.ExecutorType.String != newExecutorType.String ||
+				uuidToString(loaded.ExecutorID) != uuidToString(newExecutorID)
 		}
 		if req.Status != nil && *req.Status != "" {
 			post.Status = *req.Status

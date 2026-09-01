@@ -31,8 +31,12 @@ function makeIssue(overrides: Partial<Issue> = {}): Issue {
     description: null,
     status: "todo",
     priority: "medium",
-    assignee_type: null,
-    assignee_id: null,
+    owner_type: null,
+    owner_id: null,
+    executor_type: null,
+    executor_id: null,
+    reviewer_type: null,
+    reviewer_id: null,
     creator_type: "member",
     creator_id: "u-1",
     parent_issue_id: null,
@@ -50,10 +54,10 @@ function makeIssue(overrides: Partial<Issue> = {}): Issue {
 }
 
 const issues: Issue[] = [
-  makeIssue({ id: "1", status: "todo", priority: "high", assignee_type: "member", assignee_id: "u-1", creator_type: "member", creator_id: "u-1", project_id: "p-1" }),
-  makeIssue({ id: "2", status: "in_progress", priority: "medium", assignee_type: "agent", assignee_id: "a-1", creator_type: "agent", creator_id: "a-1", project_id: "p-2" }),
-  makeIssue({ id: "3", status: "done", priority: "low", assignee_type: null, assignee_id: null, creator_type: "member", creator_id: "u-2", project_id: null }),
-  makeIssue({ id: "4", status: "todo", priority: "urgent", assignee_type: "member", assignee_id: "u-2", creator_type: "member", creator_id: "u-1", project_id: "p-1" }),
+  makeIssue({ id: "1", status: "todo", priority: "high", owner_type: "member", owner_id: "u-1", creator_type: "member", creator_id: "u-1", project_id: "p-1" }),
+  makeIssue({ id: "2", status: "in_progress", priority: "medium", executor_type: "agent", executor_id: "a-1", creator_type: "agent", creator_id: "a-1", project_id: "p-2" }),
+  makeIssue({ id: "3", status: "done", priority: "low", executor_type: null, executor_id: null, creator_type: "member", creator_id: "u-2", project_id: null }),
+  makeIssue({ id: "4", status: "todo", priority: "urgent", owner_type: "member", owner_id: "u-2", creator_type: "member", creator_id: "u-1", project_id: "p-1" }),
 ];
 
 describe("filterIssues", () => {
@@ -106,7 +110,7 @@ describe("filterIssues", () => {
 
   it("hides assigned issues when only 'No assignee' is selected", () => {
     const result = filterIssues(issues, { ...NO_FILTER, includeNoAssignee: true });
-    expect(result.every((i) => !i.assignee_id)).toBe(true);
+    expect(result.every((i) => !i.executor_id)).toBe(true);
   });
 
   // --- Creator ---
@@ -328,8 +332,10 @@ describe("filterIssues", () => {
 describe("filterAssigneeGroups", () => {
   const group = (id: string, groupIssues: Issue[]): IssueAssigneeGroup => ({
     id,
-    assignee_type: id === "none" ? null : "agent",
-    assignee_id: id === "none" ? null : id,
+    owner_type: null,
+    owner_id: null,
+    executor_type: id === "none" ? null : "agent",
+    executor_id: id === "none" ? null : id,
     issues: groupIssues,
     total: groupIssues.length,
   });
@@ -538,7 +544,7 @@ describe("property filters", () => {
 
   it("filterAssigneeGroups applies property filters per group", () => {
     const groups: IssueAssigneeGroup[] = [
-      { id: "assignee:member:u-1", assignee_type: "member", assignee_id: "u-1", issues: [critical, minor], total: 2 },
+      { id: "assignee:member:u-1", owner_type: "member", owner_id: "u-1", executor_type: null, executor_id: null, issues: [critical, minor], total: 2 },
     ];
     const result = filterAssigneeGroups(groups, {
       propertyFilters: { [sevId]: ["opt-critical"] },

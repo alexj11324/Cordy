@@ -25,7 +25,7 @@ func (q *Queries) CountActiveQuickActions(ctx context.Context, workspaceID pgtyp
 
 const createQuickAction = `-- name: CreateQuickAction :one
 INSERT INTO quick_action (
-    workspace_id, name, description, assignee_type, assignee_id, prompt,
+    workspace_id, name, description, executor_type, executor_id, prompt,
     visibility, created_by_type, created_by_id
 ) VALUES (
     $1::uuid,
@@ -38,15 +38,15 @@ INSERT INTO quick_action (
     $8::text,
     $9::uuid
 )
-RETURNING id, workspace_id, name, description, assignee_type, assignee_id, prompt, visibility, status, last_used_at, use_count, created_by_type, created_by_id, created_at, updated_at
+RETURNING id, workspace_id, name, description, executor_type, executor_id, prompt, visibility, status, last_used_at, use_count, created_by_type, created_by_id, created_at, updated_at
 `
 
 type CreateQuickActionParams struct {
 	WorkspaceID   pgtype.UUID `json:"workspace_id"`
 	Name          string      `json:"name"`
 	Description   string      `json:"description"`
-	AssigneeType  string      `json:"assignee_type"`
-	AssigneeID    pgtype.UUID `json:"assignee_id"`
+	ExecutorType  string      `json:"executor_type"`
+	ExecutorID    pgtype.UUID `json:"executor_id"`
 	Prompt        string      `json:"prompt"`
 	Visibility    string      `json:"visibility"`
 	CreatedByType string      `json:"created_by_type"`
@@ -58,8 +58,8 @@ func (q *Queries) CreateQuickAction(ctx context.Context, arg CreateQuickActionPa
 		arg.WorkspaceID,
 		arg.Name,
 		arg.Description,
-		arg.AssigneeType,
-		arg.AssigneeID,
+		arg.ExecutorType,
+		arg.ExecutorID,
 		arg.Prompt,
 		arg.Visibility,
 		arg.CreatedByType,
@@ -71,8 +71,8 @@ func (q *Queries) CreateQuickAction(ctx context.Context, arg CreateQuickActionPa
 		&i.WorkspaceID,
 		&i.Name,
 		&i.Description,
-		&i.AssigneeType,
-		&i.AssigneeID,
+		&i.ExecutorType,
+		&i.ExecutorID,
 		&i.Prompt,
 		&i.Visibility,
 		&i.Status,
@@ -122,7 +122,7 @@ func (q *Queries) DeleteQuickAction(ctx context.Context, arg DeleteQuickActionPa
 }
 
 const getQuickAction = `-- name: GetQuickAction :one
-SELECT id, workspace_id, name, description, assignee_type, assignee_id, prompt, visibility, status, last_used_at, use_count, created_by_type, created_by_id, created_at, updated_at FROM quick_action
+SELECT id, workspace_id, name, description, executor_type, executor_id, prompt, visibility, status, last_used_at, use_count, created_by_type, created_by_id, created_at, updated_at FROM quick_action
 WHERE id = $1 AND workspace_id = $2
 `
 
@@ -139,8 +139,8 @@ func (q *Queries) GetQuickAction(ctx context.Context, arg GetQuickActionParams) 
 		&i.WorkspaceID,
 		&i.Name,
 		&i.Description,
-		&i.AssigneeType,
-		&i.AssigneeID,
+		&i.ExecutorType,
+		&i.ExecutorID,
 		&i.Prompt,
 		&i.Visibility,
 		&i.Status,
@@ -155,7 +155,7 @@ func (q *Queries) GetQuickAction(ctx context.Context, arg GetQuickActionParams) 
 }
 
 const listQuickActions = `-- name: ListQuickActions :many
-SELECT id, workspace_id, name, description, assignee_type, assignee_id, prompt, visibility, status, last_used_at, use_count, created_by_type, created_by_id, created_at, updated_at FROM quick_action
+SELECT id, workspace_id, name, description, executor_type, executor_id, prompt, visibility, status, last_used_at, use_count, created_by_type, created_by_id, created_at, updated_at FROM quick_action
 WHERE workspace_id = $1::uuid
   AND ($2::bool OR status = 'active')
   AND (visibility = 'public' OR created_by_id = $3::uuid)
@@ -190,8 +190,8 @@ func (q *Queries) ListQuickActions(ctx context.Context, arg ListQuickActionsPara
 			&i.WorkspaceID,
 			&i.Name,
 			&i.Description,
-			&i.AssigneeType,
-			&i.AssigneeID,
+			&i.ExecutorType,
+			&i.ExecutorID,
 			&i.Prompt,
 			&i.Visibility,
 			&i.Status,
@@ -236,14 +236,14 @@ const updateQuickAction = `-- name: UpdateQuickAction :one
 UPDATE quick_action SET
     name = COALESCE($3, name),
     description = COALESCE($4, description),
-    assignee_type = COALESCE($5, assignee_type),
-    assignee_id = COALESCE($6, assignee_id),
+    executor_type = COALESCE($5, executor_type),
+    executor_id = COALESCE($6, executor_id),
     prompt = COALESCE($7, prompt),
     visibility = COALESCE($8, visibility),
     status = COALESCE($9, status),
     updated_at = now()
 WHERE id = $1 AND workspace_id = $2
-RETURNING id, workspace_id, name, description, assignee_type, assignee_id, prompt, visibility, status, last_used_at, use_count, created_by_type, created_by_id, created_at, updated_at
+RETURNING id, workspace_id, name, description, executor_type, executor_id, prompt, visibility, status, last_used_at, use_count, created_by_type, created_by_id, created_at, updated_at
 `
 
 type UpdateQuickActionParams struct {
@@ -251,15 +251,15 @@ type UpdateQuickActionParams struct {
 	WorkspaceID  pgtype.UUID `json:"workspace_id"`
 	Name         pgtype.Text `json:"name"`
 	Description  pgtype.Text `json:"description"`
-	AssigneeType pgtype.Text `json:"assignee_type"`
-	AssigneeID   pgtype.UUID `json:"assignee_id"`
+	ExecutorType pgtype.Text `json:"executor_type"`
+	ExecutorID   pgtype.UUID `json:"executor_id"`
 	Prompt       pgtype.Text `json:"prompt"`
 	Visibility   pgtype.Text `json:"visibility"`
 	Status       pgtype.Text `json:"status"`
 }
 
 // COALESCE-on-narg partial update: an omitted field keeps its stored value.
-// assignee_type and assignee_id move together (the handler requires both), so
+// executor_type and executor_id move together (the handler requires both), so
 // a type swap can never land with a mismatched id.
 func (q *Queries) UpdateQuickAction(ctx context.Context, arg UpdateQuickActionParams) (QuickAction, error) {
 	row := q.db.QueryRow(ctx, updateQuickAction,
@@ -267,8 +267,8 @@ func (q *Queries) UpdateQuickAction(ctx context.Context, arg UpdateQuickActionPa
 		arg.WorkspaceID,
 		arg.Name,
 		arg.Description,
-		arg.AssigneeType,
-		arg.AssigneeID,
+		arg.ExecutorType,
+		arg.ExecutorID,
 		arg.Prompt,
 		arg.Visibility,
 		arg.Status,
@@ -279,8 +279,8 @@ func (q *Queries) UpdateQuickAction(ctx context.Context, arg UpdateQuickActionPa
 		&i.WorkspaceID,
 		&i.Name,
 		&i.Description,
-		&i.AssigneeType,
-		&i.AssigneeID,
+		&i.ExecutorType,
+		&i.ExecutorID,
 		&i.Prompt,
 		&i.Visibility,
 		&i.Status,

@@ -117,8 +117,8 @@ ORDER BY s.created_at ASC;
 
 -- name: TransferTeamAssignees :exec
 -- Transfer all issues assigned to a team to the team's leader agent.
-UPDATE issue SET assignee_type = 'agent', assignee_id = $2, revision = revision + 1, updated_at = now()
-WHERE assignee_type = 'team' AND assignee_id = $1;
+UPDATE issue SET executor_type = 'agent', executor_id = $2, revision = revision + 1, updated_at = now()
+WHERE executor_type = 'team' AND executor_id = $1;
 
 -- name: TransferTeamAutomationsToLeader :exec
 -- Mirrors TransferTeamAssignees for automation rows: when a team is archived,
@@ -128,10 +128,10 @@ WHERE assignee_type = 'team' AND assignee_id = $1;
 -- the automation keeps firing under the same leader-only execution semantics
 -- it had a moment before the archive (Path A from PB-2429).
 UPDATE automation
-SET assignee_type = 'agent',
-    assignee_id = $2,
+SET executor_type = 'agent',
+    executor_id = $2,
     updated_at = now()
-WHERE assignee_type = 'team' AND assignee_id = $1;
+WHERE executor_type = 'team' AND executor_id = $1;
 
 -- name: ListTeamMemberStatusRows :many
 -- Per-row join used to build the team-members status view. One row per

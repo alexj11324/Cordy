@@ -40,7 +40,7 @@ func seedPrivateQuickActionOwnedByOther(t *testing.T) string {
 	var actionID string
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO quick_action (
-			workspace_id, name, description, assignee_type, assignee_id, prompt,
+			workspace_id, name, description, executor_type, executor_id, prompt,
 			visibility, created_by_type, created_by_id
 		) VALUES ($1, 'Other Private', '', 'agent', $2, 'secret prompt', 'private', 'member', $3)
 		RETURNING id

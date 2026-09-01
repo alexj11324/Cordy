@@ -23,14 +23,14 @@ WHERE workspace_id = $1 AND status = 'active';
 
 -- name: CreateQuickAction :one
 INSERT INTO quick_action (
-    workspace_id, name, description, assignee_type, assignee_id, prompt,
+    workspace_id, name, description, executor_type, executor_id, prompt,
     visibility, created_by_type, created_by_id
 ) VALUES (
     sqlc.arg('workspace_id')::uuid,
     sqlc.arg('name')::text,
     sqlc.arg('description')::text,
-    sqlc.arg('assignee_type')::text,
-    sqlc.arg('assignee_id')::uuid,
+    sqlc.arg('executor_type')::text,
+    sqlc.arg('executor_id')::uuid,
     sqlc.arg('prompt')::text,
     sqlc.arg('visibility')::text,
     sqlc.arg('created_by_type')::text,
@@ -40,13 +40,13 @@ RETURNING *;
 
 -- name: UpdateQuickAction :one
 -- COALESCE-on-narg partial update: an omitted field keeps its stored value.
--- assignee_type and assignee_id move together (the handler requires both), so
+-- executor_type and executor_id move together (the handler requires both), so
 -- a type swap can never land with a mismatched id.
 UPDATE quick_action SET
     name = COALESCE(sqlc.narg('name'), name),
     description = COALESCE(sqlc.narg('description'), description),
-    assignee_type = COALESCE(sqlc.narg('assignee_type'), assignee_type),
-    assignee_id = COALESCE(sqlc.narg('assignee_id'), assignee_id),
+    executor_type = COALESCE(sqlc.narg('executor_type'), executor_type),
+    executor_id = COALESCE(sqlc.narg('executor_id'), executor_id),
     prompt = COALESCE(sqlc.narg('prompt'), prompt),
     visibility = COALESCE(sqlc.narg('visibility'), visibility),
     status = COALESCE(sqlc.narg('status'), status),

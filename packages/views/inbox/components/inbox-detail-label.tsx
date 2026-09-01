@@ -84,16 +84,16 @@ export function InboxDetailLabel({ item }: { item: InboxItem }) {
       );
     }
     case "issue_assigned": {
-      if (details.new_assignee_id) {
-        return <span>{t(($) => $.labels.assigned_to, { name: getActorName(details.new_assignee_type ?? "member", details.new_assignee_id) })}</span>;
+      if (details.new_executor_id) {
+        return <span>{t(($) => $.labels.assigned_to, { name: getActorName(details.new_executor_type ?? "member", details.new_executor_id) })}</span>;
       }
       return <span>{typeLabels[item.type]}</span>;
     }
     case "unassigned":
       return <span>{t(($) => $.labels.removed_assignee)}</span>;
     case "assignee_changed": {
-      if (details.new_assignee_id) {
-        return <span>{t(($) => $.labels.assigned_to, { name: getActorName(details.new_assignee_type ?? "member", details.new_assignee_id) })}</span>;
+      if (details.new_executor_id) {
+        return <span>{t(($) => $.labels.assigned_to, { name: getActorName(details.new_executor_type ?? "member", details.new_executor_id) })}</span>;
       }
       return <span>{typeLabels[item.type]}</span>;
     }

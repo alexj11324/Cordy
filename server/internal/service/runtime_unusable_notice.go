@@ -24,7 +24,7 @@ import (
 // failure here is logged rather than returned.
 func (s *IssueService) noteRuntimeUnusable(ctx context.Context, issue db.Issue, verdict AgentVerdict) {
 	name := ""
-	if agent, err := s.Queries.GetAgent(ctx, issue.AssigneeID); err == nil {
+	if agent, err := s.Queries.GetAgent(ctx, issue.ExecutorID); err == nil {
 		name = agent.Name
 	}
 	// author_type='system', author_id=zero UUID. The zero UUID is a valid 16

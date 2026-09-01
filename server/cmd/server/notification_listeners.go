@@ -648,10 +648,10 @@ func registerNotificationListeners(bus *events.Bus, queries *db.Queries) {
 		skip := map[string]bool{e.ActorID: true}
 
 		// Direct notification to assignees that own an inbox.
-		if issue.AssigneeType != nil && issue.AssigneeID != nil && isAssignmentRecipientType(*issue.AssigneeType) {
-			skip[*issue.AssigneeID] = true
+		if issue.ExecutorType != nil && issue.ExecutorID != nil && isAssignmentRecipientType(*issue.ExecutorType) {
+			skip[*issue.ExecutorID] = true
 			notifyDirect(ctx, queries, bus,
-				*issue.AssigneeType, *issue.AssigneeID,
+				*issue.ExecutorType, *issue.ExecutorID,
 				issue.WorkspaceID, e, issue.ID, issue.Status,
 				"issue_assigned", "action_required",
 				issue.Title,
@@ -681,8 +681,8 @@ func registerNotificationListeners(bus *events.Bus, queries *db.Queries) {
 		assigneeChanged, _ := payload["assignee_changed"].(bool)
 		statusChanged, _ := payload["status_changed"].(bool)
 		descriptionChanged, _ := payload["description_changed"].(bool)
-		prevAssigneeType, _ := payload["prev_assignee_type"].(*string)
-		prevAssigneeID, _ := payload["prev_assignee_id"].(*string)
+		prevAssigneeType, prevAssigneeID := payloadPrevEffectiveAssignee(payload)
+		newAssigneeType, newAssigneeID := issue.EffectiveAssignee()
 		prevDescription, _ := payload["prev_description"].(*string)
 
 		if assigneeChanged {
@@ -697,23 +697,23 @@ func registerNotificationListeners(bus *events.Bus, queries *db.Queries) {
 			// not already string-typed.
 			detailsMap := map[string]string{}
 			if prevAssigneeType != nil {
-				detailsMap["prev_assignee_type"] = *prevAssigneeType
+				detailsMap["prev_executor_type"] = *prevAssigneeType
 			}
 			if prevAssigneeID != nil {
-				detailsMap["prev_assignee_id"] = *prevAssigneeID
+				detailsMap["prev_executor_id"] = *prevAssigneeID
 			}
-			if issue.AssigneeType != nil {
-				detailsMap["new_assignee_type"] = *issue.AssigneeType
+			if newAssigneeType != nil {
+				detailsMap["new_executor_type"] = *newAssigneeType
 			}
-			if issue.AssigneeID != nil {
-				detailsMap["new_assignee_id"] = *issue.AssigneeID
+			if newAssigneeID != nil {
+				detailsMap["new_executor_id"] = *newAssigneeID
 			}
 			assigneeDetails, _ := json.Marshal(detailsMap)
 
 			// Direct: notify new assignee about assignment when it owns an inbox.
-			if issue.AssigneeType != nil && issue.AssigneeID != nil && isAssignmentRecipientType(*issue.AssigneeType) {
+			if newAssigneeType != nil && newAssigneeID != nil && isAssignmentRecipientType(*newAssigneeType) {
 				notifyDirect(ctx, queries, bus,
-					*issue.AssigneeType, *issue.AssigneeID,
+					*newAssigneeType, *newAssigneeID,
 					e.WorkspaceID, e, issue.ID, issue.Status,
 					"issue_assigned", "action_required",
 					issue.Title,
@@ -742,8 +742,8 @@ func registerNotificationListeners(bus *events.Bus, queries *db.Queries) {
 			if prevAssigneeID != nil {
 				exclude[*prevAssigneeID] = true
 			}
-			if issue.AssigneeID != nil {
-				exclude[*issue.AssigneeID] = true
+			if newAssigneeID != nil {
+				exclude[*newAssigneeID] = true
 			}
 			notifySubscribers(ctx, queries, bus, issue.ID, issue.Status, e.WorkspaceID, e,
 				exclude, "assignee_changed", "info",
@@ -1041,4 +1041,15 @@ func inboxItemToResponse(item db.InboxItem) map[string]any {
 		"actor_id":       util.UUIDToPtr(item.ActorID),
 		"details":        json.RawMessage(item.Details),
 	}
+}
+
+func payloadPrevEffectiveAssignee(payload map[string]any) (typ *string, id *string) {
+	prevExecType, _ := payload["prev_executor_type"].(*string)
+	prevExecID, _ := payload["prev_executor_id"].(*string)
+	if prevExecType != nil && prevExecID != nil {
+		return prevExecType, prevExecID
+	}
+	prevOwnerType, _ := payload["prev_owner_type"].(*string)
+	prevOwnerID, _ := payload["prev_owner_id"].(*string)
+	return prevOwnerType, prevOwnerID
 }

@@ -61,8 +61,8 @@ function legacyParamsForStatus(
     ...(scope.kind === "project" ? { project_id: scope.project_id } : {}),
     ...(scope.kind === "assignee" && scope.actor
       ? {
-          assignee_type: scope.actor.type,
-          assignee_id: scope.actor.id,
+          executor_type: scope.actor.type,
+          executor_id: scope.actor.id,
         }
       : {}),
     ...(scope.kind === "creator" && scope.actor
@@ -145,9 +145,11 @@ function primaryDescriptor(
 ): Omit<IssueTableGroupDescriptor, "count" | "secondary_groups"> {
   if (primary === "assignee") {
     const actor =
-      issue.assignee_type && issue.assignee_id
-        ? { type: issue.assignee_type, id: issue.assignee_id }
-        : null;
+      issue.executor_type && issue.executor_id
+        ? { type: issue.executor_type, id: issue.executor_id }
+        : issue.owner_type && issue.owner_id
+          ? { type: issue.owner_type, id: issue.owner_id }
+          : null;
     return {
       key: actor
         ? `assignee:${actor.type}:${actor.id}`

@@ -1,6 +1,6 @@
 "use client";
 
-import { issueStatusCategory } from "@patchbay/core/issues";
+import { issueAssigneeRef, issueStatusCategory } from "@patchbay/core/issues";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
@@ -96,7 +96,7 @@ const PAGE_KEYWORDS: Record<WorkspacePageKey, string[]> = {
   projects: ["projects", "kanban", "项目"],
   automations: ["automation", "automations", "automation", "schedule", "cron", "webhook", "自动化", "定时"],
   agents: ["agents", "bots", "ai", "智能体"],
-  teams: ["teams", "teams", "小队", "团队"],
+  teams: ["teams", "team", "团队", "チーム", "팀"],
   usage: ["usage", "analytics", "stats", "metrics", "统计", "分析", "用量"],
   runtimes: ["runtimes", "environments", "machines", "运行时"],
   skills: ["skills", "library", "技能"],
@@ -250,8 +250,8 @@ function IssueResultRow({
           <HighlightText text={issue.title} query={query} />
         </span>
         <IssueAssigneeAvatar
-          assigneeType={issue.assignee_type}
-          assigneeId={issue.assignee_id}
+          assigneeType={issueAssigneeRef(issue)?.type ?? null}
+          assigneeId={issueAssigneeRef(issue)?.id ?? null}
         />
       </div>
       {issue.matched_description_snippet && (
@@ -954,8 +954,8 @@ export function SearchCommand() {
                     </span>
                     <span className="min-w-0 flex-1 truncate">{item.title}</span>
                     <IssueAssigneeAvatar
-                      assigneeType={item.assignee_type}
-                      assigneeId={item.assignee_id}
+                      assigneeType={issueAssigneeRef(item)?.type ?? null}
+                      assigneeId={issueAssigneeRef(item)?.id ?? null}
                     />
                   </CommandPrimitive.Item>
                 ))}

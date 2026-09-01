@@ -106,7 +106,7 @@ func TestClaimTaskByRuntime_RerunSourceRolloutMissingDisclosesGap(t *testing.T) 
 
 	var issueID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO issue (workspace_id, title, status, priority, creator_type, creator_id, assignee_type, assignee_id, number)
+		INSERT INTO issue (workspace_id, title, status, priority, creator_type, creator_id, executor_type, executor_id, number)
 		VALUES ($1, 'rerun gap issue', 'todo', 'none', 'member', $2, 'agent', $3,
 		        (SELECT COALESCE(MAX(number), 0) + 1 FROM issue WHERE workspace_id = $1))
 		RETURNING id

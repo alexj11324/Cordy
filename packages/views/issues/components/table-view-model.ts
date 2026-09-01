@@ -104,7 +104,7 @@ function columnValue(
     case "priority":
       return issue.priority;
     case "assignee":
-      return issue.assignee_id;
+      return issue.executor_id;
     case "labels":
       return issue.labels?.map((label) => label.name).join(", ");
     case "project":

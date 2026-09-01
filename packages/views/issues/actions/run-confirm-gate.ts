@@ -5,7 +5,7 @@ import { isIssueStatusCategory, type IssueStatusCatalog } from "@patchbay/core/i
 /** The issue fields the gate reads. */
 export type GateIssue = Pick<
   Issue,
-  "id" | "status" | "status_category" | "assignee_type" | "assignee_id"
+  "id" | "status" | "status_category" | "executor_type" | "executor_id"
 >;
 
 /** Payload for the `issue-run-confirm` modal, or null when nothing to confirm. */
@@ -79,26 +79,26 @@ export function runConfirmIntent(
   const parked = issueCategory === "backlog";
 
   if (
-    (updates.assignee_type === "agent" || updates.assignee_type === "team") &&
-    updates.assignee_id &&
+    (updates.executor_type === "agent" || updates.executor_type === "team") &&
+    updates.executor_id &&
     !parked
   ) {
     return {
       issueIds: [issue.id],
       mode: "assign",
-      assigneeType: updates.assignee_type,
-      assigneeId: updates.assignee_id,
+      assigneeType: updates.executor_type,
+      assigneeId: updates.executor_id,
     };
   }
 
-  const owner = issue.assignee_type;
+  const owner = issue.executor_type;
   if (
     updates.status &&
     updates.status !== issue.status &&
     // Unknown counts as possibly-parked: the write may promote, so confirm.
     (parked || issueCategory === null) &&
     (owner === "agent" || owner === "team") &&
-    issue.assignee_id
+    issue.executor_id
   ) {
     const target = resolveStatusCategory(updates.status, undefined, catalog);
     // An unresolvable TARGET is possibly-active for the same reason.
@@ -108,7 +108,7 @@ export function runConfirmIntent(
         mode: "promote",
         status: updates.status,
         assigneeType: owner,
-        assigneeId: issue.assignee_id,
+        assigneeId: issue.executor_id,
       };
     }
   }

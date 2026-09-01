@@ -883,9 +883,13 @@ export class ApiClient {
     if (params?.statuses?.length) search.set("statuses", params.statuses.join(","));
     if (params?.priority) search.set("priority", params.priority);
     if (params?.priorities?.length) search.set("priorities", params.priorities.join(","));
-    if (params?.assignee_id) search.set("assignee_id", params.assignee_id);
-    if (params?.assignee_ids?.length) search.set("assignee_ids", params.assignee_ids.join(","));
-    if (params?.assignee_types?.length) search.set("assignee_types", params.assignee_types.join(","));
+    if (params?.owner_id) search.set("owner_id", params.owner_id);
+    else if (params?.assignee_id) search.set("owner_id", params.assignee_id);
+    if (params?.executor_id) search.set("executor_id", params.executor_id);
+    if (params?.executor_ids?.length) search.set("executor_ids", params.executor_ids.join(","));
+    else if (params?.assignee_ids?.length) search.set("executor_ids", params.assignee_ids.join(","));
+    if (params?.executor_types?.length) search.set("executor_types", params.executor_types.join(","));
+    else if (params?.assignee_types?.length) search.set("executor_types", params.assignee_types.join(","));
     if (params?.creator_id) search.set("creator_id", params.creator_id);
     if (params?.project_id) search.set("project_id", params.project_id);
     if (params?.assignee_filters?.length) {
@@ -944,9 +948,13 @@ export class ApiClient {
     if (params.workspace_id) search.set("workspace_id", params.workspace_id);
     if (params.statuses?.length) search.set("statuses", params.statuses.join(","));
     if (params.priorities?.length) search.set("priorities", params.priorities.join(","));
-    if (params.assignee_types?.length) search.set("assignee_types", params.assignee_types.join(","));
-    if (params.assignee_id) search.set("assignee_id", params.assignee_id);
-    if (params.assignee_ids?.length) search.set("assignee_ids", params.assignee_ids.join(","));
+    if (params.executor_types?.length) search.set("executor_types", params.executor_types.join(","));
+    else if (params.assignee_types?.length) search.set("executor_types", params.assignee_types.join(","));
+    if (params.owner_id) search.set("owner_id", params.owner_id);
+    if (params.executor_id) search.set("executor_id", params.executor_id);
+    else if (params.assignee_id) search.set("executor_id", params.assignee_id);
+    if (params.executor_ids?.length) search.set("executor_ids", params.executor_ids.join(","));
+    else if (params.assignee_ids?.length) search.set("executor_ids", params.assignee_ids.join(","));
     if (params.creator_id) search.set("creator_id", params.creator_id);
     if (params.project_id) search.set("project_id", params.project_id);
     if (params.involves_user_id) search.set("involves_user_id", params.involves_user_id);
@@ -966,8 +974,10 @@ export class ApiClient {
     if (params.project_ids?.length) search.set("project_ids", params.project_ids.join(","));
     if (params.include_no_project) search.set("include_no_project", "true");
     if (params.label_ids?.length) search.set("label_ids", params.label_ids.join(","));
-    if (params.group_assignee_type) search.set("group_assignee_type", params.group_assignee_type);
-    if (params.group_assignee_id) search.set("group_assignee_id", params.group_assignee_id);
+    if (params.group_executor_type) search.set("group_executor_type", params.group_executor_type);
+    else if (params.group_assignee_type) search.set("group_executor_type", params.group_assignee_type);
+    if (params.group_executor_id) search.set("group_executor_id", params.group_executor_id);
+    else if (params.group_assignee_id) search.set("group_executor_id", params.group_assignee_id);
     if (params.date_field) search.set("date_field", params.date_field);
     if (params.date_start) search.set("date_start", params.date_start);
     if (params.date_end) search.set("date_end", params.date_end);
@@ -1325,7 +1335,7 @@ export class ApiClient {
         ...(params.issueIds?.length ? { issue_ids: params.issueIds } : {}),
         ...(params.isCreate ? { is_create: true } : {}),
         ...(params.assigneeType ? { assignee_type: params.assigneeType } : {}),
-        ...(params.assigneeId ? { assignee_id: params.assigneeId } : {}),
+        ...(params.assigneeId ? { executor_id: params.assigneeId } : {}),
         ...(params.status ? { status: params.status } : {}),
       }),
     });

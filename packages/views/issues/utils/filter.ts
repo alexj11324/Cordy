@@ -210,13 +210,15 @@ export function applyIssueFilters(
       return false;
 
     if (hasAssigneeFilter) {
-      if (!issue.assignee_id) {
+      const assigneeType = issue.executor_type ?? issue.owner_type;
+      const assigneeId = issue.executor_id ?? issue.owner_id;
+      if (!assigneeId) {
         // Unassigned issue — show only if "No assignee" is checked
         if (!includeNoAssignee) return false;
       } else if (assigneeFilters.length > 0) {
         // Assigned issue — show only if assignee is in the filter list
         if (!assigneeFilters.some(
-          (f) => f.type === issue.assignee_type && f.id === issue.assignee_id,
+          (f) => f.type === assigneeType && f.id === assigneeId,
         )) return false;
       } else {
         // Only "No assignee" is checked, no specific assignees → hide assigned issues

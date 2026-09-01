@@ -232,8 +232,8 @@
         "description": "에이전트 목록을 엽니다."
       },
       "goTeams": {
-        "label": "스쿼드로 이동",
-        "description": "스쿼드 목록을 엽니다."
+        "label": "팀으로 이동",
+        "description": "팀 목록을 엽니다."
       },
       "goUsage": {
         "label": "사용량으로 이동",

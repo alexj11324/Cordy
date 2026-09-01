@@ -63,16 +63,23 @@ func TestListGroupedIssuesAssigneePaginatesPerGroup(t *testing.T) {
 			t.Fatalf("next issue number: %v", err)
 		}
 
+		var ownerType, executorType any
+		var ownerID, executorID any
+		if assigneeType == "member" {
+			ownerType, ownerID = assigneeType, assigneeID
+		} else {
+			executorType, executorID = assigneeType, assigneeID
+		}
 		var id string
 		if err := testPool.QueryRow(ctx, `
 			INSERT INTO issue (
 				workspace_id, title, description, status, priority,
-				assignee_type, assignee_id, creator_type, creator_id,
+				owner_type, owner_id, executor_type, executor_id, creator_type, creator_id,
 				position, number, start_date, stage
 			)
-			VALUES ($1, $2, NULL, 'todo', 'none', $3, $4, 'member', $5, $6, $7, $8, $9)
+			VALUES ($1, $2, NULL, 'todo', 'none', $3, $4, $5, $6, 'member', $7, $8, $9, $10, $11)
 			RETURNING id
-		`, testWorkspaceID, title, assigneeType, assigneeID, testUserID, position, number, startDate, stage).Scan(&id); err != nil {
+		`, testWorkspaceID, title, ownerType, ownerID, executorType, executorID, testUserID, position, number, startDate, stage).Scan(&id); err != nil {
 			t.Fatalf("create issue %q: %v", title, err)
 		}
 		t.Cleanup(func() {
@@ -138,7 +145,7 @@ func TestListGroupedIssuesAssigneePaginatesPerGroup(t *testing.T) {
 	}
 
 	nextPath := fmt.Sprintf(
-		"/api/issues/grouped?workspace_id=%s&group_by=assignee&statuses=todo&limit=2&offset=2&group_assignee_type=member&group_assignee_id=%s",
+		"/api/issues/grouped?workspace_id=%s&group_by=assignee&statuses=todo&limit=2&offset=2&group_executor_type=member&group_executor_id=%s",
 		testWorkspaceID,
 		assigneeID,
 	)
