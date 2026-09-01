@@ -27,6 +27,7 @@ export type LinearConnectionResponse = {
   configured: boolean;
   connected: boolean;
   pull_import_enabled: boolean;
+  push_enabled: boolean;
   connection: LinearConnection | null;
 };
 
@@ -74,6 +75,57 @@ export type LinearCatalogResponse = {
   states: LinearCatalogState[];
   users: LinearCatalogUser[];
   labels: LinearCatalogLabel[];
+};
+
+export type LinearMemberBinding = {
+  id: string;
+  workspace_id: string;
+  connection_id: string;
+  patchbay_user_id: string;
+  linear_user_id: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ListLinearMemberBindingsResponse = {
+  bindings: LinearMemberBinding[];
+};
+
+export type SaveLinearMemberBindingRequest = {
+  connection_id: string;
+  patchbay_user_id: string;
+  linear_user_id: string;
+};
+
+export type LinearSyncConflict = {
+  id: string;
+  workspace_id: string;
+  binding_id: string;
+  link_id: string;
+  patchbay_issue_id: string;
+  linear_issue_id: string;
+  linear_identifier: string | null;
+  field: string;
+  base_value: unknown;
+  local_value: unknown;
+  remote_value: unknown;
+  source_event_id: string;
+  source_event_at_ms: number | null;
+  status: string;
+  resolution: string | null;
+  resolved_value: unknown | null;
+  resolved_by_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ListLinearSyncConflictsResponse = {
+  conflicts: LinearSyncConflict[];
+};
+
+export type ResolveLinearSyncConflictRequest = {
+  resolution: "local" | "remote" | "manual";
+  manual_value?: unknown;
 };
 
 export type LinearDryRunResponse = {

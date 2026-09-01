@@ -184,8 +184,14 @@ import type {
   LinearCatalogResponse,
   LinearDryRunResponse,
   LinearInitialImportResponse,
+  LinearMemberBinding,
+  LinearSyncConflict,
   LinearProjectBinding,
   ListLinearBindingsResponse,
+  ListLinearMemberBindingsResponse,
+  ListLinearSyncConflictsResponse,
+  ResolveLinearSyncConflictRequest,
+  SaveLinearMemberBindingRequest,
   SaveLinearProjectBindingRequest,
   ListVCSConnectionsResponse,
   ConnectVCSRequest,
@@ -451,6 +457,10 @@ import {
   LinearCatalogResponseSchema,
   LinearDryRunResponseSchema,
   LinearInitialImportResponseSchema,
+  LinearMemberBindingSchema,
+  LinearSyncConflictSchema,
+  ListLinearSyncConflictsResponseSchema,
+  ListLinearMemberBindingsResponseSchema,
   ListLinearBindingsResponseSchema,
   LinearProjectBindingSchema,
   EMPTY_LINEAR_CONNECT_RESPONSE,
@@ -458,6 +468,9 @@ import {
   EMPTY_LINEAR_CATALOG_RESPONSE,
   EMPTY_LINEAR_DRY_RUN_RESPONSE,
   EMPTY_LINEAR_INITIAL_IMPORT_RESPONSE,
+  EMPTY_LINEAR_MEMBER_BINDING,
+  EMPTY_LIST_LINEAR_MEMBER_BINDINGS_RESPONSE,
+  EMPTY_LIST_LINEAR_SYNC_CONFLICTS_RESPONSE,
   EMPTY_LIST_LINEAR_BINDINGS_RESPONSE,
   EMPTY_LINEAR_PROJECT_BINDING,
   RuntimeModelListRequestSchema,
@@ -4395,6 +4408,99 @@ export class ApiClient {
       LinearCatalogResponseSchema,
       EMPTY_LINEAR_CATALOG_RESPONSE,
       { endpoint: "GET /api/workspaces/:id/linear/catalog" },
+    );
+  }
+
+  async listLinearMemberBindings(
+    workspaceId: string,
+  ): Promise<ListLinearMemberBindingsResponse> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/linear/members`,
+    );
+    return parseWithFallback(
+      raw,
+      ListLinearMemberBindingsResponseSchema,
+      EMPTY_LIST_LINEAR_MEMBER_BINDINGS_RESPONSE,
+      { endpoint: "GET /api/workspaces/:id/linear/members" },
+    );
+  }
+
+  async saveLinearMemberBinding(
+    workspaceId: string,
+    body: SaveLinearMemberBindingRequest,
+  ): Promise<LinearMemberBinding> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/linear/members`,
+      { method: "PUT", body: JSON.stringify(body) },
+    );
+    return parseWithFallback(
+      raw,
+      LinearMemberBindingSchema,
+      EMPTY_LINEAR_MEMBER_BINDING,
+      { endpoint: "PUT /api/workspaces/:id/linear/members" },
+    );
+  }
+
+  async deleteLinearMemberBinding(
+    workspaceId: string,
+    patchbayUserId: string,
+  ): Promise<void> {
+    await this.fetch(
+      `/api/workspaces/${workspaceId}/linear/members/${patchbayUserId}`,
+      { method: "DELETE" },
+    );
+  }
+
+  async listLinearSyncConflicts(
+    workspaceId: string,
+    status: "open" | "resolved" | "dismissed" | undefined = "open",
+  ): Promise<ListLinearSyncConflictsResponse> {
+    const query = status ? `?status=${encodeURIComponent(status)}` : "";
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/linear/conflicts${query}`,
+    );
+    return parseWithFallback(
+      raw,
+      ListLinearSyncConflictsResponseSchema,
+      EMPTY_LIST_LINEAR_SYNC_CONFLICTS_RESPONSE,
+      { endpoint: "GET /api/workspaces/:id/linear/conflicts" },
+    );
+  }
+
+  async resolveLinearSyncConflict(
+    workspaceId: string,
+    conflictId: string,
+    body: ResolveLinearSyncConflictRequest,
+  ): Promise<LinearSyncConflict> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/linear/conflicts/${conflictId}`,
+      { method: "PATCH", body: JSON.stringify(body) },
+    );
+    return parseWithFallback(
+      raw,
+      LinearSyncConflictSchema,
+      {
+        id: "",
+        workspace_id: "",
+        binding_id: "",
+        link_id: "",
+        patchbay_issue_id: "",
+        linear_issue_id: "",
+        linear_identifier: null,
+        field: "",
+        base_value: null,
+        local_value: null,
+        remote_value: null,
+        source_event_id: "",
+        source_event_at_ms: null,
+        status: "",
+        resolution: null,
+        resolved_value: null,
+        resolved_by_id: null,
+        created_at: "",
+        updated_at: "",
+      },
+      { endpoint: "PATCH /api/workspaces/:id/linear/conflicts/:conflictId" },
     );
   }
 

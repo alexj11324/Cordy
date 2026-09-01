@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, Utc};
 use patchbay_db::dbid::new_v7;
 use patchbay_db::models::{ActivityLog, AgentTaskQueue, Issue};
-use patchbay_db::queries::{activity, agent, team};
+use patchbay_db::queries::{activity, agent, linear as linear_q, team};
 use patchbay_events::{Bus, Event};
 use serde_json::{json, Value};
 use sqlx::Row;
@@ -1208,6 +1208,19 @@ RETURNING *"#,
                 .bind(candidate.id)
                 .fetch_one(&mut *tx)
                 .await?;
+                if issue.status != updated.status {
+                    let event_key = format!("issue:{}:revision:{}", updated.id, updated.revision);
+                    linear_q::enqueue_issue_outbox(
+                        &mut *tx,
+                        updated.workspace_id,
+                        updated.project_id,
+                        updated.id,
+                        &event_key,
+                        "issue_updated",
+                        &crate::issue_service::linear_issue_sync_payload(&updated),
+                    )
+                    .await?;
+                }
                 let publication_key = issue_update_publication_key(
                     "review_handoff",
                     &updated,

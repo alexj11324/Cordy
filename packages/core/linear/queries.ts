@@ -9,6 +9,10 @@ export const linearKeys = {
     [...linearKeys.all(workspaceId), "catalog"] as const,
   bindings: (workspaceId: string) =>
     [...linearKeys.all(workspaceId), "bindings"] as const,
+  memberBindings: (workspaceId: string) =>
+    [...linearKeys.all(workspaceId), "member-bindings"] as const,
+  conflicts: (workspaceId: string) =>
+    [...linearKeys.all(workspaceId), "conflicts"] as const,
 };
 
 export const linearConnectionOptions = (workspaceId: string) =>
@@ -30,4 +34,19 @@ export const linearBindingsOptions = (workspaceId: string) =>
     queryKey: linearKeys.bindings(workspaceId),
     queryFn: () => api.listLinearBindings(workspaceId),
     enabled: !!workspaceId,
+  });
+
+export const linearMemberBindingsOptions = (workspaceId: string) =>
+  queryOptions({
+    queryKey: linearKeys.memberBindings(workspaceId),
+    queryFn: () => api.listLinearMemberBindings(workspaceId),
+    enabled: !!workspaceId,
+  });
+
+export const linearConflictsOptions = (workspaceId: string) =>
+  queryOptions({
+    queryKey: linearKeys.conflicts(workspaceId),
+    queryFn: () => api.listLinearSyncConflicts(workspaceId),
+    enabled: !!workspaceId,
+    refetchInterval: 10_000,
   });

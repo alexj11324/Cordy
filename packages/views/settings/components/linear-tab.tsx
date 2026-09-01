@@ -3,20 +3,26 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { CheckCircle2, CircleAlert, Loader2, Settings2, Trash2 } from "lucide-react";
+import { CheckCircle2, CircleAlert, GitMerge, Loader2, Settings2, Trash2 } from "lucide-react";
 import { ApiError, api } from "@patchbay/core/api";
 import {
   linearBindingsOptions,
   linearCatalogOptions,
+  linearConflictsOptions,
   linearConnectionOptions,
+  linearMemberBindingsOptions,
   linearKeys,
 } from "@patchbay/core/linear";
 import { projectListOptions } from "@patchbay/core/projects";
+import { memberListOptions } from "@patchbay/core/workspace/queries";
 import type {
   LinearCatalogResponse,
   LinearDryRunResponse,
+  LinearMemberBinding,
   LinearProjectBinding,
+  LinearSyncConflict,
   LinearSyncMode,
+  MemberWithUser,
   SaveLinearProjectBindingRequest,
 } from "@patchbay/core/types";
 import { Badge } from "@patchbay/ui/components/ui/badge";
@@ -110,6 +116,179 @@ function SyncModeLabel({ mode }: { mode: LinearSyncMode }) {
   }
 }
 
+function formatConflictValue(value: unknown) {
+  if (value === null || value === undefined) return "—";
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function ConflictCenter({
+  canManage,
+  conflicts,
+  onClose,
+  workspaceId,
+}: {
+  canManage: boolean;
+  conflicts: LinearSyncConflict[];
+  onClose: () => void;
+  workspaceId: string;
+}) {
+  const { t } = useT("settings");
+  const qc = useQueryClient();
+  const [manualValues, setManualValues] = useState<Record<string, string>>({});
+  const [pendingId, setPendingId] = useState<string | null>(null);
+
+  async function resolve(
+    conflict: LinearSyncConflict,
+    resolution: "local" | "remote" | "manual",
+  ) {
+    setPendingId(conflict.id);
+    try {
+      await api.resolveLinearSyncConflict(workspaceId, conflict.id, {
+        resolution,
+        ...(resolution === "manual"
+          ? {
+              manual_value: (manualValues[conflict.id] ?? "").trim() || null,
+            }
+          : {}),
+      });
+      await qc.invalidateQueries({ queryKey: linearKeys.conflicts(workspaceId) });
+      toast.success(t(($) => $.page.linear.conflict_resolved));
+    } catch {
+      toast.error(t(($) => $.page.linear.conflict_resolve_failed));
+    } finally {
+      setPendingId(null);
+    }
+  }
+
+  function fieldLabel(field: string) {
+    switch (field) {
+      case "title":
+        return t(($) => $.page.linear.conflict_field_title);
+      case "description":
+        return t(($) => $.page.linear.conflict_field_description);
+      case "priority":
+        return t(($) => $.page.linear.conflict_field_priority);
+      case "status":
+        return t(($) => $.page.linear.conflict_field_status);
+      case "due_date":
+        return t(($) => $.page.linear.conflict_field_due_date);
+      case "owner_id":
+        return t(($) => $.page.linear.conflict_field_owner);
+      default:
+        return field;
+    }
+  }
+
+  function statusLabel(status: string) {
+    switch (status) {
+      case "open":
+        return t(($) => $.page.linear.conflict_status_open);
+      case "resolved":
+        return t(($) => $.page.linear.conflict_status_resolved);
+      case "dismissed":
+        return t(($) => $.page.linear.conflict_status_dismissed);
+      default:
+        return status;
+    }
+  }
+
+  return (
+    <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+      <DialogHeader>
+        <DialogTitle>{t(($) => $.page.linear.conflict_center)}</DialogTitle>
+        <DialogDescription>{t(($) => $.page.linear.conflict_center_description)}</DialogDescription>
+      </DialogHeader>
+      {conflicts.length === 0 ? (
+        <p className="text-body text-muted-foreground">{t(($) => $.page.linear.no_conflicts)}</p>
+      ) : (
+        <div className="space-y-3">
+          {conflicts.map((conflict) => (
+            <div className="space-y-3 rounded-lg border p-3" key={conflict.id}>
+              <div className="text-micro text-muted-foreground">
+                {conflict.linear_identifier ?? conflict.linear_issue_id}
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium">{fieldLabel(conflict.field)}</span>
+                <Badge variant="destructive">{statusLabel(conflict.status)}</Badge>
+              </div>
+              <div className="grid gap-2 text-micro sm:grid-cols-3">
+                <div>
+                  <div className="text-muted-foreground">{t(($) => $.page.linear.conflict_base)}</div>
+                  <div className="break-words">{formatConflictValue(conflict.base_value)}</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">{t(($) => $.page.linear.conflict_local)}</div>
+                  <div className="break-words">{formatConflictValue(conflict.local_value)}</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">{t(($) => $.page.linear.conflict_remote)}</div>
+                  <div className="break-words">{formatConflictValue(conflict.remote_value)}</div>
+                </div>
+              </div>
+              {canManage ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    disabled={pendingId === conflict.id}
+                    onClick={() => void resolve(conflict, "local")}
+                    size="sm"
+                    variant="outline"
+                  >
+                    {t(($) => $.page.linear.conflict_use_local)}
+                  </Button>
+                  <Button
+                    disabled={pendingId === conflict.id}
+                    onClick={() => void resolve(conflict, "remote")}
+                    size="sm"
+                    variant="outline"
+                  >
+                    {t(($) => $.page.linear.conflict_use_remote)}
+                  </Button>
+                  <input
+                    aria-label={t(($) => $.page.linear.conflict_manual)}
+                    className="h-9 min-w-48 flex-1 rounded-md border border-input bg-background px-3 text-body"
+                    onChange={(event) =>
+                      setManualValues((current) => ({
+                        ...current,
+                        [conflict.id]: event.target.value,
+                      }))
+                    }
+                    placeholder={t(($) => $.page.linear.conflict_manual_placeholder)}
+                    value={manualValues[conflict.id] ?? ""}
+                  />
+                  <Button
+                    disabled={
+                      pendingId === conflict.id ||
+                      (!(manualValues[conflict.id] ?? "").trim() &&
+                        !["description", "due_date", "owner_id"].includes(conflict.field))
+                    }
+                    onClick={() => void resolve(conflict, "manual")}
+                    size="sm"
+                    variant="outline"
+                  >
+                    {t(($) => $.page.linear.conflict_use_manual)}
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-micro text-muted-foreground">
+                  {t(($) => $.page.linear.conflict_read_only)}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      <DialogFooter>
+        <Button onClick={onClose} variant="outline">{t(($) => $.page.linear.conflict_close)}</Button>
+      </DialogFooter>
+    </DialogContent>
+  );
+}
+
 function WizardProgress({ step }: { step: WizardStep }) {
   const { t } = useT("settings");
   const labels = [
@@ -150,6 +329,8 @@ function BindingWizard({
   bindings,
   catalog,
   connectionId,
+  memberBindings,
+  members,
   pullImportEnabled,
   onClose,
   onSaved,
@@ -159,6 +340,8 @@ function BindingWizard({
   bindings: LinearProjectBinding[];
   catalog: LinearCatalogResponse;
   connectionId: string;
+  memberBindings: LinearMemberBinding[];
+  members: MemberWithUser[];
   pullImportEnabled: boolean;
   onClose: () => void;
   onSaved: () => void;
@@ -172,6 +355,11 @@ function BindingWizard({
   const [dryRun, setDryRun] = useState<LinearDryRunResponse | null>(null);
   const [dryRunLoading, setDryRunLoading] = useState(false);
   const [dryRunError, setDryRunError] = useState(false);
+  const [memberMappings, setMemberMappings] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      memberBindings.map((binding) => [binding.patchbay_user_id, binding.linear_user_id]),
+    ),
+  );
   const [importRetryBindingId, setImportRetryBindingId] = useState<string | null>(null);
   const [retryingImport, setRetryingImport] = useState(false);
   const qc = useQueryClient();
@@ -338,8 +526,26 @@ function BindingWizard({
           return;
         }
       }
+      await Promise.all(
+        members.map(async (member) => {
+          const linearUserId = memberMappings[member.user_id]?.trim() ?? "";
+          const existing = memberBindings.some(
+            (binding) => binding.patchbay_user_id === member.user_id,
+          );
+          if (linearUserId) {
+            await api.saveLinearMemberBinding(workspaceId, {
+              connection_id: body.connection_id,
+              patchbay_user_id: member.user_id,
+              linear_user_id: linearUserId,
+            });
+          } else if (existing) {
+            await api.deleteLinearMemberBinding(workspaceId, member.user_id);
+          }
+        }),
+      );
       setImportRetryBindingId(null);
       await qc.invalidateQueries({ queryKey: linearKeys.bindings(workspaceId) });
+      await qc.invalidateQueries({ queryKey: linearKeys.memberBindings(workspaceId) });
       toast.success(t(($) => $.page.linear.saved));
       onSaved();
       onClose();
@@ -543,6 +749,43 @@ function BindingWizard({
               ))}
             </div>
           )}
+          <div className="space-y-2 border-t pt-4">
+            <h4 className="font-medium">{t(($) => $.page.linear.member_mapping_title)}</h4>
+            <p className="text-body text-muted-foreground">
+              {t(($) => $.page.linear.member_mapping_description)}
+            </p>
+            {members.length === 0 ? (
+              <p className="text-body text-muted-foreground">
+                {t(($) => $.page.linear.no_members)}
+              </p>
+            ) : (
+              members.map((member) => (
+                <label
+                  className="grid items-center gap-2 text-body sm:grid-cols-[1fr_1fr]"
+                  key={member.user_id}
+                >
+                  <span>{member.name || member.email}</span>
+                  <select
+                    className={selectClassName()}
+                    value={memberMappings[member.user_id] ?? ""}
+                    onChange={(event) =>
+                      setMemberMappings((current) => ({
+                        ...current,
+                        [member.user_id]: event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">{t(($) => $.page.linear.member_not_mapped)}</option>
+                    {catalog.users.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.name}{user.email ? ` · ${user.email}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ))
+            )}
+          </div>
         </div>
       ) : null}
 
@@ -668,8 +911,10 @@ export function LinearIntegrationCard({
   const qc = useQueryClient();
   const [wizardOpen, setWizardOpen] = useState(false);
   const [disconnectOpen, setDisconnectOpen] = useState(false);
+  const [conflictOpen, setConflictOpen] = useState(false);
   const connectionQuery = useQuery(linearConnectionOptions(workspaceId));
   const bindingsQuery = useQuery(linearBindingsOptions(workspaceId));
+  const membersQuery = useQuery(memberListOptions(workspaceId));
   const catalogQuery = useQuery(
     linearCatalogOptions(workspaceId, wizardOpen && Boolean(connectionQuery.data?.connection)),
   );
@@ -679,6 +924,15 @@ export function LinearIntegrationCard({
   });
   const connection = connectionQuery.data?.connection;
   const isConnected = connection?.status === "active";
+  const memberBindingsQuery = useQuery({
+    ...linearMemberBindingsOptions(workspaceId),
+    enabled: Boolean(isConnected),
+  });
+  const conflictsQuery = useQuery({
+    ...linearConflictsOptions(workspaceId),
+    enabled: Boolean(isConnected),
+  });
+  const openConflicts = conflictsQuery.data?.conflicts ?? [];
   const isReauthorizationRequired = connection?.status === "reauthorization_required";
   const hasUnknownStatus = Boolean(
     connection && !["active", "reauthorization_required", "revoked"].includes(connection.status),
@@ -753,7 +1007,16 @@ export function LinearIntegrationCard({
   return (
     <>
       <IntegrationCard
-        action={action}
+        action={
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {openConflicts.length > 0 ? (
+              <Button onClick={() => setConflictOpen(true)} size="sm" variant="outline">
+                <GitMerge />{t(($) => $.page.linear.conflict_center)}
+              </Button>
+            ) : null}
+            {action}
+          </div>
+        }
         channel="linear"
         description={t(($) => $.page.linear.description)}
         iconClassName="bg-[#5E6AD2]/10"
@@ -767,6 +1030,9 @@ export function LinearIntegrationCard({
                 {lastSync
                   ? t(($) => $.page.linear.last_sync, { time: lastSync })
                   : t(($) => $.page.linear.last_sync_never)}
+                {openConflicts.length > 0
+                  ? ` · ${t(($) => $.page.linear.conflicts_count, { count: openConflicts.length })}`
+                  : ""}
               </span>
             ) : null}
           </div>
@@ -779,6 +1045,8 @@ export function LinearIntegrationCard({
             bindings={bindings}
             catalog={catalogQuery.data}
             connectionId={connection?.id ?? ""}
+            memberBindings={memberBindingsQuery.data?.bindings ?? []}
+            members={membersQuery.data ?? []}
             pullImportEnabled={connectionQuery.data?.pull_import_enabled ?? false}
             onClose={() => setWizardOpen(false)}
             onSaved={() => void qc.invalidateQueries({ queryKey: linearKeys.connection(workspaceId) })}
@@ -796,6 +1064,16 @@ export function LinearIntegrationCard({
             {catalogQuery.isLoading ? <Loader2 className="mx-auto animate-spin" /> : null}
           </DialogContent>
         )}
+      </Dialog>
+      <Dialog open={conflictOpen} onOpenChange={setConflictOpen}>
+        {conflictOpen ? (
+          <ConflictCenter
+            canManage={canManage}
+            conflicts={openConflicts}
+            onClose={() => setConflictOpen(false)}
+            workspaceId={workspaceId}
+          />
+        ) : null}
       </Dialog>
       <AlertDialog open={disconnectOpen} onOpenChange={setDisconnectOpen}>
         <AlertDialogContent>

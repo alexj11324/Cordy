@@ -357,7 +357,7 @@ pub async fn delete_issue(
 ) -> anyhow::Result<u64> {
     let r = sqlx::query(
         r#"WITH target AS (
-    SELECT issue.id FROM issue WHERE issue.id = $1 AND issue.workspace_id = $2
+    SELECT issue.id FROM issue WHERE issue.id = $1 AND issue.workspace_id = $2 FOR UPDATE
 ),
 cleared_work_product_relations AS (
     DELETE FROM work_product_relation
@@ -370,6 +370,11 @@ cleared_coordination_assignments AS (
 cleared_coordination_outbox AS (
     DELETE FROM agent_coordination_outbox
     WHERE issue_id IN (SELECT target.id FROM target)
+),
+cleared_linear_sync_conflicts AS (
+    DELETE FROM linear_sync_conflict
+    WHERE workspace_id = $2
+      AND patchbay_issue_id IN (SELECT target.id FROM target)
 ),
 affected_dependency_graph_plans AS (
     SELECT plan.id
@@ -415,6 +420,28 @@ DELETE FROM issue WHERE issue.id IN (SELECT target.id FROM target)"#,
     .execute(executor)
     .await?;
     Ok(r.rows_affected())
+}
+
+pub async fn clear_workspace_member_issue_owners(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    workspace_id: Uuid,
+    user_id: Uuid,
+) -> anyhow::Result<Vec<Issue>> {
+    Ok(sqlx::query_as::<_, Issue>(
+        r#"UPDATE issue
+           SET owner_type = NULL,
+               owner_id = NULL,
+               revision = revision + 1,
+               updated_at = now()
+           WHERE workspace_id = $1
+             AND owner_type = 'member'
+             AND owner_id = $2
+           RETURNING *"#,
+    )
+    .bind(workspace_id)
+    .bind(user_id)
+    .fetch_all(executor)
+    .await?)
 }
 
 pub async fn delete_issue_metadata_key(
@@ -865,6 +892,23 @@ pub async fn list_issues_in_workspace_by_ids(
     )
     .bind(workspace_id)
     .bind(issue_ids)
+    .fetch_all(executor)
+    .await?)
+}
+
+/// Loads every Issue currently owned by a local Project. Binding activation
+/// uses this snapshot to seed the outbound queue for work that existed before
+/// the Linear binding was created.
+pub async fn list_issues_in_project(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    workspace_id: Uuid,
+    project_id: Uuid,
+) -> anyhow::Result<Vec<Issue>> {
+    Ok(sqlx::query_as::<_, Issue>(
+        "SELECT id, workspace_id, title, description, status, priority, executor_type, executor_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, reviewer_type, reviewer_id, owner_type, owner_id FROM issue WHERE workspace_id = $1 AND project_id = $2 ORDER BY id",
+    )
+    .bind(workspace_id)
+    .bind(project_id)
     .fetch_all(executor)
     .await?)
 }

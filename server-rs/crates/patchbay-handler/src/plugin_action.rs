@@ -13,7 +13,9 @@ use axum::routing::get;
 use axum::{Json, Router};
 use chrono::SecondsFormat;
 use patchbay_db::models::{Comment, Issue, Member};
-use patchbay_db::queries::{comment, issue as issue_q, member, user, workspace};
+use patchbay_db::queries::{
+    comment, issue as issue_q, linear as linear_q, member, user, workspace,
+};
 use patchbay_plugincontract::{
     SCOPE_COMMENTS_READ, SCOPE_COMMENTS_WRITE, SCOPE_ISSUES_READ, SCOPE_ISSUES_WRITE,
     SCOPE_STORAGE_USER, SCOPE_STORAGE_WORKSPACE, TRIGGER_MANUAL, TRIGGER_UI,
@@ -430,6 +432,16 @@ async fn patch_issue(
     if request.title.as_ref().is_some_and(String::is_empty) {
         return error_response(StatusCode::BAD_REQUEST, "title must not be empty");
     }
+    let mut tx = match state.pool.begin().await {
+        Ok(tx) => tx,
+        Err(error) => {
+            tracing::warn!(%error, "failed to begin plugin issue update");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to update the issue",
+            );
+        }
+    };
     let updated = sqlx::query(
         r#"UPDATE issue SET
 title=COALESCE($2,title),
@@ -443,7 +455,7 @@ WHERE id=$1 AND workspace_id=$4"#,
     .bind(request.title.as_deref())
     .bind(request.description.as_deref())
     .bind(caller.workspace_id)
-    .execute(&state.pool)
+    .execute(&mut *tx)
     .await;
     if let Err(error) = updated {
         tracing::warn!(%error, "failed to update plugin issue");
@@ -452,8 +464,35 @@ WHERE id=$1 AND workspace_id=$4"#,
             "failed to update the issue",
         );
     }
-    match issue_q::get_issue_in_workspace(&state.pool, issue.id, caller.workspace_id).await {
+    match issue_q::get_issue_in_workspace(&mut *tx, issue.id, caller.workspace_id).await {
         Ok(Some(updated)) => {
+            if updated.title != issue.title || updated.description != issue.description {
+                let event_key = format!("issue:{}:revision:{}", updated.id, updated.revision);
+                if let Err(error) = linear_q::enqueue_issue_outbox(
+                    &mut *tx,
+                    updated.workspace_id,
+                    updated.project_id,
+                    updated.id,
+                    &event_key,
+                    "issue_updated",
+                    &patchbay_service::issue_service::linear_issue_sync_payload(&updated),
+                )
+                .await
+                {
+                    tracing::warn!(%error, issue_id = %updated.id, "failed to enqueue plugin Linear Issue update");
+                    return error_response(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to persist Linear synchronization event",
+                    );
+                }
+            }
+            if let Err(error) = tx.commit().await {
+                tracing::warn!(%error, issue_id = %updated.id, "failed to commit plugin issue update");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to update the issue",
+                );
+            }
             crate::issue::publish_issue_updated(
                 &state,
                 &issue,

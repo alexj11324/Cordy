@@ -671,6 +671,42 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_UP: &[(&str, &str)] = &[
         "idx_linear_sync_inbox_claim",
     ),
     ("487_linear_issue_origin_index", "uq_issue_linear_origin"),
+    (
+        "489_linear_sync_outbox_event_index",
+        "uq_linear_sync_outbox_event",
+    ),
+    (
+        "490_linear_sync_outbox_claim_index",
+        "idx_linear_sync_outbox_claim",
+    ),
+    (
+        "492_linear_member_binding_user_index",
+        "uq_linear_member_binding_user",
+    ),
+    (
+        "493_linear_member_binding_linear_index",
+        "uq_linear_member_binding_linear",
+    ),
+    (
+        "494_linear_sync_outbox_id_index",
+        "uq_linear_sync_outbox_id",
+    ),
+    (
+        "495_linear_member_binding_id_index",
+        "uq_linear_member_binding_id",
+    ),
+    (
+        "497_linear_sync_conflict_open_index",
+        "uq_linear_sync_conflict_open",
+    ),
+    (
+        "498_linear_sync_conflict_list_index",
+        "idx_linear_sync_conflict_list",
+    ),
+    (
+        "499_linear_sync_conflict_id_index",
+        "uq_linear_sync_conflict_id",
+    ),
 ];
 
 pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[
@@ -888,4 +924,40 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[
         "idx_linear_sync_inbox_claim",
     ),
     ("487_linear_issue_origin_index", "uq_issue_linear_origin"),
+    (
+        "489_linear_sync_outbox_event_index",
+        "uq_linear_sync_outbox_event",
+    ),
+    (
+        "490_linear_sync_outbox_claim_index",
+        "idx_linear_sync_outbox_claim",
+    ),
+    (
+        "492_linear_member_binding_user_index",
+        "uq_linear_member_binding_user",
+    ),
+    (
+        "493_linear_member_binding_linear_index",
+        "uq_linear_member_binding_linear",
+    ),
+    (
+        "494_linear_sync_outbox_id_index",
+        "uq_linear_sync_outbox_id",
+    ),
+    (
+        "495_linear_member_binding_id_index",
+        "uq_linear_member_binding_id",
+    ),
+    (
+        "497_linear_sync_conflict_open_index",
+        "uq_linear_sync_conflict_open",
+    ),
+    (
+        "498_linear_sync_conflict_list_index",
+        "idx_linear_sync_conflict_list",
+    ),
+    (
+        "499_linear_sync_conflict_id_index",
+        "uq_linear_sync_conflict_id",
+    ),
 ];

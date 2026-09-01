@@ -1096,6 +1096,51 @@ impl HandlerState {
         )
     }
 
+    /// Returns whether Linear outbound Issue publication may mutate this
+    /// workspace. Push has an independent allowlist and flag so enabling
+    /// inbound import never implicitly enables provider writes.
+    pub fn linear_push_enabled(&self, workspace_id: uuid::Uuid) -> bool {
+        if !self.linear_push_enabled_for_any_workspace() {
+            return false;
+        }
+        let allowlist = std::env::var("PATCHBAY_LINEAR_PUSH_WORKSPACES").unwrap_or_default();
+        allowlist
+            .split(',')
+            .map(str::trim)
+            .any(|entry| entry == "*" || entry.eq_ignore_ascii_case(&workspace_id.to_string()))
+    }
+
+    pub fn linear_push_enabled_for_any_workspace(&self) -> bool {
+        self.linear_integration_enabled
+            && self.feature_flags.as_deref().is_some_and(|flags| {
+                flags.is_enabled(patchbay_service::feature_flags::LINEAR_PUSH, false)
+            })
+            && std::env::var("PATCHBAY_LINEAR_PUSH_WORKSPACES")
+                .map(|value| value.split(',').any(|entry| !entry.trim().is_empty()))
+                .unwrap_or(false)
+    }
+
+    /// Returns the rollout scope used by the Linear push worker when it
+    /// claims durable Outbox rows. `None` means the explicit `*` allowlist is
+    /// active; `Some(empty)` deliberately claims nothing for an invalid or
+    /// empty workspace allowlist.
+    pub fn linear_push_workspace_filter(&self) -> Option<Vec<uuid::Uuid>> {
+        let allowlist = std::env::var("PATCHBAY_LINEAR_PUSH_WORKSPACES").unwrap_or_default();
+        if allowlist
+            .split(',')
+            .map(str::trim)
+            .any(|entry| entry == "*")
+        {
+            return None;
+        }
+        Some(
+            allowlist
+                .split(',')
+                .filter_map(|entry| uuid::Uuid::parse_str(entry.trim()).ok())
+                .collect(),
+        )
+    }
+
     /// Prepares the Linear pull/import worker without spawning it. Production
     /// owns the returned runtime and calls this only after final wiring.
     pub fn prepare_linear_sync_worker(

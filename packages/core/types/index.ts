@@ -306,10 +306,16 @@ export type {
   LinearConnectionStatus,
   LinearDryRunResponse,
   LinearInitialImportResponse,
+  LinearMemberBinding,
+  LinearSyncConflict,
   LinearInitialSource,
   LinearProjectBinding,
   LinearSyncMode,
   ListLinearBindingsResponse,
+  ListLinearMemberBindingsResponse,
+  ListLinearSyncConflictsResponse,
+  ResolveLinearSyncConflictRequest,
+  SaveLinearMemberBindingRequest,
   SaveLinearProjectBindingRequest,
 } from "./linear";
 export type {

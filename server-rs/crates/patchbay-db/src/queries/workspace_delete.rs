@@ -261,6 +261,50 @@ pub async fn delete_workspace_linear_data(
     executor: &mut sqlx::PgConnection,
     workspace_id: Uuid,
 ) -> anyhow::Result<()> {
+    sqlx::query_scalar::<_, Uuid>(
+        r#"SELECT id
+           FROM linear_connection
+           WHERE workspace_id = $1
+           FOR UPDATE"#,
+    )
+    .bind(workspace_id)
+    .fetch_all(&mut *executor)
+    .await?;
+    sqlx::query_scalar::<_, Uuid>(
+        r#"SELECT id
+           FROM linear_project_binding
+           WHERE workspace_id = $1
+           ORDER BY id
+           FOR UPDATE"#,
+    )
+    .bind(workspace_id)
+    .fetch_all(&mut *executor)
+    .await?;
+    sqlx::query(r#"DELETE FROM linear_sync_conflict WHERE workspace_id = $1"#)
+        .bind(workspace_id)
+        .execute(&mut *executor)
+        .await?;
+
+    sqlx::query(
+        r#"DELETE FROM linear_sync_outbox
+           WHERE binding_id IN (
+               SELECT id FROM linear_project_binding WHERE workspace_id = $1
+           )"#,
+    )
+    .bind(workspace_id)
+    .execute(&mut *executor)
+    .await?;
+
+    sqlx::query(r#"DELETE FROM linear_issue_link WHERE workspace_id = $1"#)
+        .bind(workspace_id)
+        .execute(&mut *executor)
+        .await?;
+
+    sqlx::query(r#"DELETE FROM linear_member_binding WHERE workspace_id = $1"#)
+        .bind(workspace_id)
+        .execute(&mut *executor)
+        .await?;
+
     sqlx::query(r#"DELETE FROM linear_project_binding WHERE workspace_id = $1"#)
         .bind(workspace_id)
         .execute(&mut *executor)
