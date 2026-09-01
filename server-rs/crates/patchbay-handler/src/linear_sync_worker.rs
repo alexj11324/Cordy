@@ -1237,8 +1237,16 @@ impl LinearSyncWorker {
         let remote_owner_id = self
             .remote_owner_id(&connection, remote.assignee.as_ref())
             .await?;
-        let snapshot =
+        let mut snapshot =
             remote_sync_snapshot(&remote, &remote_status, &remote_priority, remote_owner_id);
+        if preserve_unmapped_remote_assignee {
+            if let Some(base_snapshot) = existing_link
+                .as_ref()
+                .map(|link| &link.last_common_snapshot)
+            {
+                preserve_owner_base(&mut snapshot, base_snapshot);
+            }
+        }
 
         // The provider mutation is followed by one local transaction. If the
         // commit fails, the Outbox row remains pending and the next attempt
@@ -2539,13 +2547,25 @@ impl LinearSyncWorker {
                 if destination_can_receive {
                     (destination, true)
                 } else {
-                    let _ = linear_q::mark_linear_issue_link_deleted(
-                        &self.state.pool,
-                        link.id,
+                    let mut transaction =
+                        self.state.pool.begin().await.map_err(SyncError::retry)?;
+                    let locked_link = linear_q::get_linear_issue_link_for_update(
+                        &mut *transaction,
                         connection.workspace_id,
+                        link.id,
                     )
                     .await
                     .map_err(SyncError::retry)?;
+                    if locked_link.is_some() {
+                        let _ = linear_q::mark_linear_issue_link_deleted(
+                            &mut *transaction,
+                            link.id,
+                            connection.workspace_id,
+                        )
+                        .await
+                        .map_err(SyncError::retry)?;
+                    }
+                    transaction.commit().await.map_err(SyncError::retry)?;
                     return Ok(());
                 }
             }
@@ -3479,6 +3499,18 @@ fn should_preserve_unmapped_remote_assignee(
     !remote_owner_mapped && local_snapshot.get("owner_id") == base_snapshot.get("owner_id")
 }
 
+fn preserve_owner_base(snapshot: &mut Value, base_snapshot: &Value) {
+    let snapshot = snapshot.as_object_mut().expect("snapshot is an object");
+    match base_snapshot.get("owner_id") {
+        Some(owner_id) => {
+            snapshot.insert("owner_id".to_string(), owner_id.clone());
+        }
+        None => {
+            snapshot.remove("owner_id");
+        }
+    }
+}
+
 fn local_sync_snapshot(issue: &patchbay_db::models::Issue) -> Value {
     json!({
         "title": issue.title,
@@ -4161,6 +4193,14 @@ mod tests {
             &json!({"owner_id": Uuid::now_v7().to_string()}),
             &json!({"owner_id": null})
         ));
+
+        let owner_id = Uuid::now_v7().to_string();
+        let mut post_mutation = json!({"title": "synced"});
+        preserve_owner_base(
+            &mut post_mutation,
+            &json!({"owner_id": owner_id.clone()}),
+        );
+        assert_eq!(post_mutation["owner_id"], owner_id);
     }
 
     #[test]
