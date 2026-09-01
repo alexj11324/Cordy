@@ -108,12 +108,93 @@ function observeApplicationFailures(page) {
     }
   });
   page.on("console", (message) => {
+    const text = message.text();
+    if (
+      message.type() === "warning" &&
+      text.includes("API response failed schema validation")
+    ) {
+      failures.push(`schema validation warning: ${text}`);
+      return;
+    }
     if (message.type() !== "error") return;
     const source = message.location().url;
     if (!source || isFirstPartyUrl(source))
-      failures.push(`console error: ${message.text()}`);
+      failures.push(`console error: ${text}`);
   });
   return failures;
+}
+
+async function visibleReactQueryErrors(page) {
+  return page.locator('[role="alert"]').evaluateAll((alerts) => {
+    const summaries = [];
+    const describeError = (error) => {
+      if (error == null) return "null";
+      if (typeof error === "string") return error;
+      return `${error.name ?? error.constructor?.name ?? "Object"}: ${
+        error.message ?? String(error)
+      }`;
+    };
+    for (const alert of alerts) {
+      const fiberKey = Object.keys(alert).find((key) =>
+        key.startsWith("__reactFiber$"),
+      );
+      let fiber = fiberKey ? alert[fiberKey] : null;
+      for (let fiberDepth = 0; fiber && fiberDepth < 100; fiberDepth += 1) {
+        for (const branch of [fiber, fiber.alternate]) {
+          const client = branch?.memoizedProps?.client;
+          if (typeof client?.getQueryCache !== "function") continue;
+          for (const cachedQuery of client.getQueryCache().getAll()) {
+            if (!JSON.stringify(cachedQuery.queryKey).includes("dependency-graphs")) {
+              continue;
+            }
+            const state = cachedQuery.state;
+            summaries.push(
+              `cache ${JSON.stringify(cachedQuery.queryKey)} status=${String(
+                state.status,
+              )} fetchStatus=${String(
+                state.fetchStatus,
+              )} error=${describeError(
+                state.error,
+              )} fetchFailureCount=${String(
+                state.fetchFailureCount,
+              )} fetchFailureReason=${describeError(state.fetchFailureReason)}`,
+            );
+          }
+        }
+        const component =
+          fiber.elementType?.name ?? fiber.type?.name ?? `tag-${fiber.tag}`;
+        for (const [branchName, branch] of [
+          ["fiber", fiber],
+          ["alternate", fiber.alternate],
+        ]) {
+          let hook = branch?.memoizedState;
+          for (let hookDepth = 0; hook && hookDepth < 60; hookDepth += 1) {
+            const value = hook.memoizedState;
+            if (
+              value &&
+              typeof value === "object" &&
+              Object.prototype.hasOwnProperty.call(value, "isError")
+            ) {
+              summaries.push(
+                `${component}.${branchName}[${hookDepth}] status=${String(
+                  value.status,
+                )} fetchStatus=${String(value.fetchStatus)} isError=${String(
+                  value.isError,
+                )} error=${describeError(
+                  value.error,
+                )} failureCount=${String(
+                  value.failureCount,
+                )} failureReason=${describeError(value.failureReason)}`,
+              );
+            }
+            hook = hook.next;
+          }
+        }
+        fiber = fiber.return;
+      }
+    }
+    return summaries;
+  });
 }
 
 async function verifyProtectedRoute(
@@ -141,9 +222,31 @@ async function verifyProtectedRoute(
     timeout: 30_000,
   });
   if (landmark) {
-    await expect(page.getByLabel(landmark, { exact: true })).toBeVisible({
-      timeout: 30_000,
-    });
+    try {
+      await expect(page.getByLabel(landmark, { exact: true })).toBeVisible({
+        timeout: 30_000,
+      });
+    } catch (error) {
+      const routeFailures = failures.slice(failureStart);
+      const alerts = await page
+        .getByRole("alert")
+        .allTextContents()
+        .catch(() => []);
+      const queryErrors = await visibleReactQueryErrors(page).catch(() => []);
+      const details = [
+        ...routeFailures,
+        ...queryErrors.map((message) => `query error: ${message}`),
+        ...alerts
+          .map((alert) => alert.trim())
+          .filter(Boolean)
+          .map((alert) => `visible alert: ${alert}`),
+      ];
+      if (details.length === 0) throw error;
+      throw new Error(
+        `${path} did not render ${landmark}:\n${details.join("\n")}`,
+        { cause: error },
+      );
+    }
   }
   if (verifyContent) await verifyContent();
   const routeFailures = failures.slice(failureStart);
