@@ -20,7 +20,6 @@ import {
   profileArgs,
   profileConfigPath,
   profileLogPath,
-  profileUserIdPath,
 } from "./daemon-profile";
 import { hardenExistingDesktopProfiles } from "./private-profile-storage";
 import {
@@ -832,10 +831,6 @@ async function clearToken(): Promise<void> {
       throw error;
     }
   });
-}
-
-async function clearProfileCredentials(profile: string): Promise<void> {
-  return serializeProfileMutation(() => clearProfileCredentialsUnlocked(profile));
 }
 
 async function clearProfileCredentialsUnlocked(profile: string): Promise<void> {
