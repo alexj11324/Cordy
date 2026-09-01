@@ -212,7 +212,7 @@ impl OutboundReplier {
             .platform
             .downcast_ref::<patchbay_db::models::ChannelInstallation>()
             .ok_or_else(|| anyhow::anyhow!("telegram: installation platform row unavailable"))?;
-        let installed_at = installation.installed_at.clone();
+        let installed_at = installation.installed_at;
         let api = installation_api(inst, self.decrypt.as_deref(), &self.api_base)?;
         let chat_id = msg
             .source

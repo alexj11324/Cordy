@@ -4,7 +4,10 @@ import { useCurrentWorkspace, paths } from "@patchbay/core/paths";
 import { setCurrentWorkspace } from "@patchbay/core/platform";
 import type { AgentRuntime, AgentTask, Workspace } from "@patchbay/core/types";
 import { useNavigation } from "@patchbay/views/navigation";
-import { findActiveHubInstallation } from "./dev-acceptance-provider";
+import {
+  findActiveHubInstallation,
+  type DevAcceptanceInstallation,
+} from "./dev-acceptance-provider";
 
 const ACCEPTANCE_ENABLED =
   import.meta.env.DEV &&
@@ -220,7 +223,11 @@ async function verifyProvider(
         : "Set PATCHBAY_WEIXIN_SECRET_KEY through the existing development secret mechanism, restart `pnpm dev`, and finish the iLink QR flow in Settings → Integrations.",
     );
   }
-  const installation = findActiveHubInstallation(response.installations);
+  const installations: readonly (DevAcceptanceInstallation & {
+    id: string;
+    installed_at: string;
+  })[] = response.installations;
+  const installation = findActiveHubInstallation(installations);
   if (!installation) {
     throw new AcceptanceFailure(
       `${provider}_installation_missing`,

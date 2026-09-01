@@ -1149,7 +1149,7 @@ impl Outbound {
         }
         Ok(Some(RuntimeTarget {
             installation_id: installation.id,
-            installed_at: installation.installed_at.clone(),
+            installed_at: installation.installed_at,
             stream_key: task_id.to_string(),
             bot_key: installation.id.to_string(),
             api: BotApi::new(&self.api_base, &credentials.bot_token),

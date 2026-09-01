@@ -22,6 +22,7 @@ import { useWindowOverlayStore } from "./stores/window-overlay-store";
 import { useOpenSettingsShortcut } from "./hooks/use-open-settings-shortcut";
 import { useDaemonIPCBridge } from "./platform/daemon-ipc-bridge";
 import { syncDaemonOnLogin } from "./platform/daemon-login-sync";
+import { reauthenticateDaemon } from "./platform/daemon-reauth";
 import { createDesktopLocaleAdapter } from "./platform/i18n-adapter";
 import { captureEvent } from "@patchbay/core/analytics";
 import { RESOURCES } from "@patchbay/views/locales";
@@ -120,6 +121,7 @@ export function AppContent() {
   // first render.
   const [bootstrapping, setBootstrapping] = useState(false);
   const [daemonSyncRetry, setDaemonSyncRetry] = useState(0);
+  const [daemonRecoveryPending, setDaemonRecoveryPending] = useState(false);
   const [daemonSyncState, setDaemonSyncState] = useState<
     "idle" | "pending" | "ready" | "error"
   >(isElectronRenderer ? "pending" : "ready");
@@ -423,8 +425,27 @@ export function AppContent() {
   if (user && daemonFailedForCurrentIdentity) {
     return (
       <DesktopAuthRecoveryPage
-        onRetry={() => setDaemonSyncRetry((attempt) => attempt + 1)}
-        isRetrying={false}
+        onRetry={() => {
+          if (daemonRecoveryPending) return;
+          setDaemonRecoveryPending(true);
+          void (async () => {
+            try {
+              if (daemonSyncError === "cli_not_found") {
+                await window.daemonAPI.retryInstall();
+              } else if (daemonSyncError === "auto_start_disabled") {
+                await window.daemonAPI.setPrefs({ autoStart: true });
+              } else if (daemonSyncError === "auth_expired") {
+                await reauthenticateDaemon();
+              }
+              setDaemonSyncRetry((attempt) => attempt + 1);
+            } catch (error) {
+              console.error("Failed to repair daemon startup", error);
+            } finally {
+              setDaemonRecoveryPending(false);
+            }
+          })();
+        }}
+        isRetrying={daemonRecoveryPending}
         errorReason={daemonSyncError ?? undefined}
       />
     );
@@ -468,19 +489,22 @@ function BlockingRuntimeConfigError({ message }: { message: string }) {
 async function handleDaemonLogout() {
   // The main-process clear-token operation owns one queue transaction: it
   // stops the current Desktop daemon, then removes its credentials. Keeping
-  // this await before publishing `user=null` prevents a new login from
-  // interleaving between stop and clear; failures leave the authenticated
-  // session visible and retryable instead of silently abandoning the daemon.
-  await window.daemonAPI.clearToken();
-
-  // Report only after cleanup succeeds so issue windows never lose the session
-  // while the old daemon is still running.
-  window.desktopAPI.reportAuthSession?.(null);
-  useTabStore.getState().reset();
-  useWindowOverlayStore.getState().close();
-  // Drop any post-onboarding welcome signal so user B logging in next
-  // doesn't inherit user A's pending modal state.
-  useWelcomeStore.getState().reset();
+  // this await before the callback completes prevents a new login from
+  // interleaving between stop and clear. The shared store has already removed
+  // auth, so renderer session publication and local resets belong in finally.
+  try {
+    await window.daemonAPI.clearToken();
+  } finally {
+    // Auth has already been cleared by the shared store. Always publish that
+    // state and clear client-owned data, while preserving the cleanup error so
+    // the caller can surface that the old daemon still needs attention.
+    window.desktopAPI.reportAuthSession?.(null);
+    useTabStore.getState().reset();
+    useWindowOverlayStore.getState().close();
+    // Drop any post-onboarding welcome signal so user B logging in next
+    // doesn't inherit user A's pending modal state.
+    useWelcomeStore.getState().reset();
+  }
 }
 
 export default function App() {

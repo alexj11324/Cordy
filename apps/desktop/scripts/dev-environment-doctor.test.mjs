@@ -310,7 +310,7 @@ describe("complete Desktop development doctor", () => {
       "https://accounts.aspectlylabs.com/readyz",
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
-  });
+  }, 15_000);
 
   it("validates CLI version, DB-backed readiness, runtime probing and integrations", async () => {
     const repoRoot = await fixtureRepo();

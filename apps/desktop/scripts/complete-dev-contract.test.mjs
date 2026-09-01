@@ -170,7 +170,10 @@ describe("complete development launcher contract", () => {
   });
 
   it("keeps Make development targets isolated unless an env file is explicit", () => {
-    expect(makefile).toContain("ENV_FILE ?= $(WORKTREE_ENV_FILE)");
+    expect(makefile).toContain(
+      "DEFAULT_ENV_FILE := $(if $(filter $(SELFHOST_GOALS),$(MAKECMDGOALS)),$(SELFHOST_ENV_FILE),$(WORKTREE_ENV_FILE))",
+    );
+    expect(makefile).toContain("ENV_FILE ?= $(DEFAULT_ENV_FILE)");
     expect(makefile).not.toContain("MAIN_ENV_FILE");
     expect(makefile).toContain("pass ENV_FILE=.env explicitly");
   });

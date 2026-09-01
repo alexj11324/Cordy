@@ -3,8 +3,14 @@
 import { execFile as execFileCallback } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { chmod, copyFile, mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import {
+  chmod,
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+} from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -324,7 +330,11 @@ export async function inspectDevEnvironment({
         throw new Error("binary Rust toolchain does not match this checkout");
       }
     }
-    cliProbeRoot = await mkdtemp(join(tmpdir(), "patchbay-dev-cli-probe-"));
+    // Some development hosts mount the system temp directory with `noexec`.
+    // The verified copy must live on the same executable cache filesystem as
+    // the source-matched runtime or an otherwise valid CLI fails its probe.
+    await mkdir(cacheRoot, { recursive: true, mode: 0o700 });
+    cliProbeRoot = await mkdtemp(join(cacheRoot, "cli-probe-"));
     const copiedBinaryPath = join(cliProbeRoot, binaryName);
     await copyFile(binaryPath, copiedBinaryPath);
     if (platform !== "win32") await chmod(copiedBinaryPath, 0o755);
