@@ -1897,6 +1897,15 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Put("/properties/{propertyId}", h.SetIssueProperty)
 					r.Delete("/properties/{propertyId}", h.DeleteIssueProperty)
 					r.Get("/pull-requests", h.ListPullRequestsForIssue)
+					r.Get("/dependency-graph", h.GetIssueDependencyGraph)
+					r.Post("/dependency-graph/apply", h.ApplyIssueDependencyGraph)
+				})
+			})
+			r.Route("/api/dependency-graphs", func(r chi.Router) {
+				r.Get("/", h.ListDependencyGraphs)
+				r.Route("/{id}", func(r chi.Router) {
+					r.Get("/", h.GetDependencyGraphByID)
+					r.Post("/retire", h.RetireDependencyGraph)
 				})
 			})
 
