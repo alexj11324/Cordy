@@ -7,7 +7,7 @@
 -- (trigger_id, dedupe_key) raises 23505 and the handler treats it as
 -- "duplicate" rather than an error.
 INSERT INTO webhook_delivery (
-    workspace_id, autopilot_id, trigger_id, provider, event,
+    workspace_id, automation_id, trigger_id, provider, event,
     dedupe_key, dedupe_source, signature_status, status,
     selected_headers, content_type, raw_body,
     replayed_from_delivery_id, replay_idempotency_key, reason_code, id
@@ -35,7 +35,7 @@ WHERE id = $1 AND workspace_id = $2;
 
 -- name: GetWebhookDeliveryByTriggerAndDedupe :one
 -- Looks up the existing delivery for a (trigger, dedupe_key) pair so that
--- duplicate requests return the original delivery_id / autopilot_run_id.
+-- duplicate requests return the original delivery_id / automation_run_id.
 -- The partial unique index excludes terminal-but-not-successful statuses
 -- (`rejected`, `failed`), so multiple such rows can coexist for the same
 -- key. Prefer non-terminal rows in the lookup: without the ORDER BY we
@@ -72,7 +72,7 @@ RETURNING *;
 -- Claims one due delivery. SKIP LOCKED spreads work across replicas; the
 -- expiring token makes a crashed claim visible to a later sweeper pass.
 -- The lease is a scheduling optimization, not the exactly-once guard: if a
--- slow dispatch outlives it, uq_autopilot_run_webhook_delivery remains the
+-- slow dispatch outlives it, uq_automation_run_webhook_delivery remains the
 -- final protection against duplicate downstream runs.
 WITH candidate AS (
     SELECT id
@@ -122,7 +122,7 @@ RETURNING *;
 -- name: CompleteClaimedWebhookDelivery :one
 UPDATE webhook_delivery
 SET status = $3,
-    autopilot_run_id = sqlc.narg('autopilot_run_id'),
+    automation_run_id = sqlc.narg('automation_run_id'),
     dispatch_attempts = dispatch_attempts + 1,
     error = sqlc.narg('error'),
     reason_code = sqlc.narg('reason_code'),
@@ -136,11 +136,11 @@ RETURNING *;
 
 -- name: UpdateWebhookDeliveryDispatched :one
 -- Finalises a delivery that successfully created (or skipped to) an
--- autopilot_run. response_status is the HTTP status we returned, recorded
+-- automation_run. response_status is the HTTP status we returned, recorded
 -- alongside so the operator can correlate logs.
 UPDATE webhook_delivery
 SET status = $2,
-    autopilot_run_id = sqlc.narg('autopilot_run_id'),
+    automation_run_id = sqlc.narg('automation_run_id'),
     response_status = sqlc.narg('response_status'),
     response_body = sqlc.narg('response_body'),
     last_attempt_at = now()
@@ -148,7 +148,7 @@ WHERE id = $1
 RETURNING *;
 
 -- name: UpdateWebhookDeliveryTerminal :one
--- Finalises a delivery without an autopilot_run link — rejected, ignored,
+-- Finalises a delivery without an automation_run link — rejected, ignored,
 -- failed. Separate query so callers can't accidentally drop the run_id when
 -- they only meant to set status/error.
 UPDATE webhook_delivery
@@ -161,7 +161,7 @@ SET status = $2,
 WHERE id = $1
 RETURNING *;
 
--- name: ListWebhookDeliveriesByAutopilot :many
+-- name: ListWebhookDeliveriesByAutomation :many
 -- Workspace-scoped via the join so a runId from another workspace cannot
 -- leak. Newest first, paged by limit/offset.
 --
@@ -171,15 +171,15 @@ RETURNING *;
 -- encoder — Deliveries tab would hit that on every reload. Detail views
 -- fetch the full row via GetWebhookDelivery / GetWebhookDeliveryInWorkspace.
 SELECT
-    d.id, d.workspace_id, d.autopilot_id, d.trigger_id, d.provider, d.event,
+    d.id, d.workspace_id, d.automation_id, d.trigger_id, d.provider, d.event,
     d.dedupe_key, d.dedupe_source, d.signature_status, d.status,
     d.attempt_count, d.content_type, d.response_status,
-    d.autopilot_run_id, d.replayed_from_delivery_id, d.error,
+    d.automation_run_id, d.replayed_from_delivery_id, d.error,
     d.received_at, d.last_attempt_at, d.created_at,
     d.available_at, d.dispatch_attempts, d.reason_code, d.replay_idempotency_key
 FROM webhook_delivery d
-JOIN autopilot a ON a.id = d.autopilot_id
-WHERE d.autopilot_id = $1
+JOIN automation a ON a.id = d.automation_id
+WHERE d.automation_id = $1
   AND a.workspace_id = $2
 ORDER BY d.created_at DESC
 LIMIT $3 OFFSET $4;

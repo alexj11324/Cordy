@@ -40,7 +40,7 @@ interface TranscriptButtonProps {
   onOpenChange?: (open: boolean) => void;
   /**
    * Optional content rendered above the transcript event list. Used to
-   * surface autopilot webhook payloads inline with the run history.
+   * surface automation webhook payloads inline with the run history.
    */
   headerSlot?: React.ReactNode;
 }

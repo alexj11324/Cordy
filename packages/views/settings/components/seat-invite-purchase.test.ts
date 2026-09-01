@@ -32,7 +32,7 @@ function summary(purchased: number, available: number): WorkspaceSubscriptionSum
       seats: purchased,
       limits: {
         issueCount: { mode: "unlimited", limit: null },
-        autopilotRuns: { mode: "unlimited", limit: null },
+        automationRuns: { mode: "unlimited", limit: null },
       },
       currentPeriodEnd: null,
       snapshotExpiresAt: null,

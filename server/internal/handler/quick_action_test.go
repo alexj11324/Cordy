@@ -9,7 +9,7 @@ import (
 // OUTLIVED the templating feature (MUL-5465).
 //
 // Variables were removed because every one of them named something the agent
-// already had. But someone carrying the habit over from autopilot's title
+// already had. But someone carrying the habit over from automation's title
 // template would otherwise get `{{issue.title}}` rendered literally into an
 // agent's instructions and never notice — the exact silent-typo failure the
 // whitelist existed to prevent. So the rejection stays even though the feature

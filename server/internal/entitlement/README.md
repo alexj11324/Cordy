@@ -7,7 +7,7 @@ switches.
 
 Production wiring has one boundary: setting `PATCHBAY_CLOUD_URL` connects this
 consumer as well as the other managed Cloud clients. An empty URL performs no
-HTTP request, issue creation does not count rows, and the autopilot consumer
+HTTP request, issue creation does not count rows, and the automation consumer
 does not access its quota tables. Self-hosted deployments therefore retain the
 unlimited paths. Request timeout and stale grace use bounded code defaults
 instead of deployment configuration.
@@ -73,7 +73,7 @@ a valid `enforce` instruction enters the transaction, ordinary database errors
 still abort that transaction rather than creating a partially persisted issue.
 
 The client itself has no background goroutine and introduces no startup
-dependency; the autopilot consumer owns its policy-neutral accounting and
+dependency; the automation consumer owns its policy-neutral accounting and
 recovery lifecycle separately. Cloud remains the only place that determines
 the effective policy from subscription facts and authoritative limits.
 

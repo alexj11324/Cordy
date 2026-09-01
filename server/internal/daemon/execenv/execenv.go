@@ -188,19 +188,19 @@ type TaskContextForEnv struct {
 	// of the brief.
 	ChatChannelDeliversFiles bool
 
-	AutopilotRunID          string // non-empty for autopilot run_only tasks
-	AutopilotID             string
-	AutopilotTitle          string
-	AutopilotDescription    string
-	AutopilotSource         string
-	AutopilotTriggerPayload string
+	AutomationRunID          string // non-empty for automation run_only tasks
+	AutomationID             string
+	AutomationTitle          string
+	AutomationDescription    string
+	AutomationSource         string
+	AutomationTriggerPayload string
 	QuickCreatePrompt       string // non-empty for quick-create tasks
 	HandoffNote             string // assignment handoff instruction; rendered into issue_context.md (MUL-3375)
 	IsTeamLeader           bool   // true when THIS TASK runs the agent in the team-leader role (may exit silently on no_action); derived from the claim's is_leader_task / team_id, never sniffed from instructions text (MUL-5811)
 	// WorkspaceContext is the workspace-level system prompt (workspace.context
 	// in the DB). Rendered into the brief as `## Workspace Context` when
 	// non-empty so every agent in the workspace sees the same shared context,
-	// regardless of issue / chat / autopilot / quick-create.
+	// regardless of issue / chat / automation / quick-create.
 	WorkspaceContext string
 	// IssueStatuses is the workspace's active CUSTOM status catalog from the
 	// claim payload (MUL-6460), in catalog order. Rendered into the brief's
@@ -230,7 +230,7 @@ type TaskContextForEnv struct {
 	// Initiator* identify the actor who triggered THIS task (the real
 	// requester) as distinct from the runtime owner. Rendered into the brief
 	// as `## Task Initiator` when a name is present; InitiatorEmail is shown
-	// only for member initiators. Empty for on-assign / autopilot /
+	// only for member initiators. Empty for on-assign / automation /
 	// quick-create tasks, which have no attributable human initiator. See
 	// MUL-2645.
 	InitiatorType  string
@@ -1066,14 +1066,14 @@ func hydrateCodexSkills(codexHome string, workspaceSkills []SkillContextForEnv, 
 }
 
 // GCMetaKind identifies which kind of parent record a task workdir belongs to.
-// The GC loop dispatches its decision tree on this value so chat / autopilot /
+// The GC loop dispatches its decision tree on this value so chat / automation /
 // quick-create tasks are no longer forced through the issue-centric path.
 type GCMetaKind string
 
 const (
 	GCKindIssue        GCMetaKind = "issue"
 	GCKindChat         GCMetaKind = "chat"
-	GCKindAutopilotRun GCMetaKind = "autopilot_run"
+	GCKindAutomationRun GCMetaKind = "automation_run"
 	GCKindQuickCreate  GCMetaKind = "quick_create"
 )
 
@@ -1091,7 +1091,7 @@ type GCMeta struct {
 	Kind           GCMetaKind `json:"kind,omitempty"`
 	IssueID        string     `json:"issue_id,omitempty"`
 	ChatSessionID  string     `json:"chat_session_id,omitempty"`
-	AutopilotRunID string     `json:"autopilot_run_id,omitempty"`
+	AutomationRunID string     `json:"automation_run_id,omitempty"`
 	TaskID         string     `json:"task_id,omitempty"`
 	WorkspaceID    string     `json:"workspace_id"`
 	CompletedAt    time.Time  `json:"completed_at"`

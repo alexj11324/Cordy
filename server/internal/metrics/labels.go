@@ -76,7 +76,7 @@ var businessMetricLabels = map[string][]string{
 	"patchbay_chat_message_sent_total":                  {labelPlatform},
 	"patchbay_agent_created_total":                      {labelRuntimeMode, labelSource},
 	"patchbay_team_created_total":                      {},
-	"patchbay_autopilot_created_total":                  {labelCadence},
+	"patchbay_automation_created_total":                  {labelCadence},
 	"patchbay_issue_executed_total":                     {labelSource},
 	"patchbay_runtime_registered_total":                 {labelRuntimeMode, labelProvider},
 	"patchbay_runtime_ready_total":                      {labelRuntimeMode, labelProvider},
@@ -85,9 +85,9 @@ var businessMetricLabels = map[string][]string{
 	"patchbay_runtime_offline_total":                    {labelRuntimeMode, labelProvider},
 	"patchbay_runtime_gc_skipped_total":                 {labelReason},
 	"patchbay_daemon_ws_message_received_total":         {labelKind},
-	"patchbay_autopilot_run_started_total":              {labelCadence, labelTriggerKind},
-	"patchbay_autopilot_run_terminal_total":             {labelCadence, labelTriggerKind, labelTerminalStatus},
-	"patchbay_autopilot_run_skipped_total":              {labelCadence, labelReason},
+	"patchbay_automation_run_started_total":              {labelCadence, labelTriggerKind},
+	"patchbay_automation_run_terminal_total":             {labelCadence, labelTriggerKind, labelTerminalStatus},
+	"patchbay_automation_run_skipped_total":              {labelCadence, labelReason},
 	"patchbay_webhook_delivery_total":                   {labelProvider, labelStatus},
 	"patchbay_webhook_rate_limited_total":               {labelGate},
 	"patchbay_email_rate_limited_total":                 {labelAction, labelGate},
@@ -103,7 +103,7 @@ var businessMetricLabels = map[string][]string{
 	"patchbay_entitlement_refresh_duration_seconds":     {labelOutcome},
 	"patchbay_entitlement_decision_total":               {labelGate, labelAction, labelReason},
 	"patchbay_entitlement_version_regression_total":     {},
-	"patchbay_autopilot_quota_decision_total":           {labelAction, labelSource, labelResult},
+	"patchbay_automation_quota_decision_total":           {labelAction, labelSource, labelResult},
 }
 
 var forbiddenMetricLabels = map[string]struct{}{
@@ -127,8 +127,8 @@ var (
 	knownSources = map[string]string{
 		"issue":           "issue",
 		"chat":            "chat",
-		"autopilot":       "autopilot",
-		"autopilot_issue": "autopilot_issue",
+		"automation":       "automation",
+		"automation_issue": "automation_issue",
 		"quick_create":    "quick_create",
 		"manual":          "manual",
 		"api":             "api",
@@ -261,8 +261,8 @@ const (
 	RuntimeLookupSourceComment = "comment"
 	// RuntimeLookupSourceChat covers the pre-send readiness check on chat.
 	RuntimeLookupSourceChat = "chat"
-	// RuntimeLookupSourceAutopilot covers autopilot admission and dispatch.
-	RuntimeLookupSourceAutopilot = "autopilot"
+	// RuntimeLookupSourceAutomation covers automation admission and dispatch.
+	RuntimeLookupSourceAutomation = "automation"
 	// RuntimeLookupSourceSourceContext covers the source-context quick-create
 	// capability gates, including the deliberate post-copy recheck.
 	RuntimeLookupSourceSourceContext = "source_context"
@@ -299,7 +299,7 @@ func AllRuntimeLookupSources() []string {
 		RuntimeLookupSourceIssue,
 		RuntimeLookupSourceComment,
 		RuntimeLookupSourceChat,
-		RuntimeLookupSourceAutopilot,
+		RuntimeLookupSourceAutomation,
 		RuntimeLookupSourceSourceContext,
 		RuntimeLookupSourceTask,
 		RuntimeLookupSourceOther,

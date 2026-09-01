@@ -44,14 +44,14 @@ func webhookTriggerIDFromContext(ctx context.Context) string {
 // webhookIngressPathPrefix is the public webhook ingress path. The path
 // segment after this prefix IS a bearer credential, so the logger must
 // redact it — see redactWebhookPath.
-const webhookIngressPathPrefix = "/api/webhooks/autopilots/"
+const webhookIngressPathPrefix = "/api/webhooks/automations/"
 
 // redactWebhookPath returns a logger-safe version of a request path. For
-// the autopilot webhook ingress path the trailing token segment is replaced
+// the automation webhook ingress path the trailing token segment is replaced
 // with "[redacted]"; every other path passes through untouched.
 //
 // Why this exists: r.URL.Path for a successful webhook delivery is
-// "/api/webhooks/autopilots/awt_<32-byte-base64>", and the token is the
+// "/api/webhooks/automations/awt_<32-byte-base64>", and the token is the
 // only credential gating the route. Without redaction, every successful
 // delivery prints a replayable URL into the structured log stream.
 func redactWebhookPath(path string) string {

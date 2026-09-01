@@ -106,7 +106,7 @@ var delegatedStatusNotify = map[string]bool{
 
 // deliverToSubscriber reports whether a subscriber row should receive this
 // notification type. Direct subscriptions (creator / assignee / commenter /
-// mentioned / manual / autopilot) are unchanged — they opted in to this issue,
+// mentioned / manual / automation) are unchanged — they opted in to this issue,
 // explicitly or by acting on it. Only the delegated tier is narrowed, and only
 // to drop churn.
 //

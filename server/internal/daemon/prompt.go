@@ -176,7 +176,7 @@ func buildWorktreeReplayConflictBlock(files []string) string {
 
 func buildActiveSiblingRunsBlock(currentIssueID string, runs []ActiveSiblingRunData) string {
 	// Sibling issue work is useful context only for another issue task. Chat,
-	// autopilot, and quick-create tasks have no current target issue whose claim
+	// automation, and quick-create tasks have no current target issue whose claim
 	// history they could inspect, so rendering this block there creates an
 	// unactionable warning.
 	if currentIssueID == "" || len(runs) == 0 {
@@ -240,8 +240,8 @@ func buildPromptBody(task Task, provider string) string {
 	if task.TriggerCommentID != "" {
 		return buildCommentPrompt(task, provider)
 	}
-	if task.AutopilotRunID != "" {
-		return buildAutopilotPrompt(task)
+	if task.AutomationRunID != "" {
+		return buildAutomationPrompt(task)
 	}
 	if task.QuickCreatePrompt != "" {
 		return buildQuickCreatePrompt(task)
@@ -726,40 +726,40 @@ func channelDisplayName(channelType string) string {
 	return execenv.ChannelDisplayName(channelType)
 }
 
-// buildAutopilotPrompt constructs a prompt for run_only autopilot tasks.
-func buildAutopilotPrompt(task Task) string {
+// buildAutomationPrompt constructs a prompt for run_only automation tasks.
+func buildAutomationPrompt(task Task) string {
 	var b strings.Builder
 	b.WriteString("You are running as a local coding agent for a Patchbay workspace.\n\n")
-	b.WriteString("This task was triggered by an Autopilot in run-only mode. There is no assigned Patchbay issue for this run.\n\n")
-	fmt.Fprintf(&b, "Autopilot run ID: %s\n", task.AutopilotRunID)
-	if task.AutopilotID != "" {
-		fmt.Fprintf(&b, "Autopilot ID: %s\n", task.AutopilotID)
+	b.WriteString("This task was triggered by an Automation in run-only mode. There is no assigned Patchbay issue for this run.\n\n")
+	fmt.Fprintf(&b, "Automation run ID: %s\n", task.AutomationRunID)
+	if task.AutomationID != "" {
+		fmt.Fprintf(&b, "Automation ID: %s\n", task.AutomationID)
 	}
-	if task.AutopilotTitle != "" {
-		fmt.Fprintf(&b, "Autopilot title: %s\n", task.AutopilotTitle)
+	if task.AutomationTitle != "" {
+		fmt.Fprintf(&b, "Automation title: %s\n", task.AutomationTitle)
 	}
-	if task.AutopilotSource != "" {
-		fmt.Fprintf(&b, "Trigger source: %s\n", task.AutopilotSource)
+	if task.AutomationSource != "" {
+		fmt.Fprintf(&b, "Trigger source: %s\n", task.AutomationSource)
 	}
-	if strings.TrimSpace(string(task.AutopilotTriggerPayload)) != "" {
-		fmt.Fprintf(&b, "Trigger payload:\n%s\n", strings.TrimSpace(string(task.AutopilotTriggerPayload)))
+	if strings.TrimSpace(string(task.AutomationTriggerPayload)) != "" {
+		fmt.Fprintf(&b, "Trigger payload:\n%s\n", strings.TrimSpace(string(task.AutomationTriggerPayload)))
 	}
-	b.WriteString("\nAutopilot instructions:\n")
-	if strings.TrimSpace(task.AutopilotDescription) != "" {
-		b.WriteString(task.AutopilotDescription)
+	b.WriteString("\nAutomation instructions:\n")
+	if strings.TrimSpace(task.AutomationDescription) != "" {
+		b.WriteString(task.AutomationDescription)
 		b.WriteString("\n\n")
-	} else if task.AutopilotTitle != "" {
-		fmt.Fprintf(&b, "%s\n\n", task.AutopilotTitle)
+	} else if task.AutomationTitle != "" {
+		fmt.Fprintf(&b, "%s\n\n", task.AutomationTitle)
 	} else {
-		b.WriteString("No additional autopilot instructions were provided. Inspect the autopilot configuration before proceeding.\n\n")
+		b.WriteString("No additional automation instructions were provided. Inspect the automation configuration before proceeding.\n\n")
 	}
-	if task.AutopilotID != "" {
-		fmt.Fprintf(&b, "Start by running `patchbay autopilot get %s --output json` if you need the full autopilot configuration, then complete the instructions above.\n", task.AutopilotID)
+	if task.AutomationID != "" {
+		fmt.Fprintf(&b, "Start by running `patchbay automation get %s --output json` if you need the full automation configuration, then complete the instructions above.\n", task.AutomationID)
 	} else {
 		b.WriteString("Complete the instructions above.\n")
 	}
-	// The issue-command boundary (execenv.AutopilotIssueCommandsGuard) is NOT
-	// restated here: the brief's autopilot workflow section is its single
+	// The issue-command boundary (execenv.AutomationIssueCommandsGuard) is NOT
+	// restated here: the brief's automation workflow section is its single
 	// emission point, and a second hand-maintained per-turn copy is exactly
 	// how the two surfaces drifted into conflict before (MUL-5696).
 	return b.String()

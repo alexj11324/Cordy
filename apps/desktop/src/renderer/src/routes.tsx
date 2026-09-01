@@ -3,7 +3,7 @@ import { createMemoryRouter, Outlet, useMatches } from "react-router-dom";
 import type { RouteObject } from "react-router-dom";
 import { IssueDetailPage } from "./pages/issue-detail-page";
 import { ProjectDetailPage } from "./pages/project-detail-page";
-import { AutopilotDetailPage } from "./pages/autopilot-detail-page";
+import { AutomationDetailPage } from "./pages/automation-detail-page";
 import { SkillDetailPage } from "./pages/skill-detail-page";
 import { AgentDetailPage } from "./pages/agent-detail-page";
 import { AiBuilderSessionPage } from "./pages/ai-builder-session-page";
@@ -16,7 +16,7 @@ import { AttachmentPreviewRoute } from "./pages/attachment-preview-page";
 import { IssuesPage } from "@patchbay/views/issues/components";
 import { ProjectsPage } from "@patchbay/views/projects/components";
 import { DashboardPage } from "@patchbay/views/dashboard";
-import { AutopilotsPage } from "@patchbay/views/autopilots/components";
+import { AutomationsPage } from "@patchbay/views/automations/components";
 import { MyIssuesPage } from "@patchbay/views/my-issues";
 import { SkillsPage } from "@patchbay/views/skills";
 import { DesktopRuntimesPage } from "./components/desktop-runtimes-page";
@@ -148,14 +148,14 @@ export const appRoutes: RouteObject[] = [
             handle: { title: "Project" },
           },
           {
-            path: "autopilots",
-            element: <AutopilotsPage />,
-            handle: { title: "Autopilot" },
+            path: "automations",
+            element: <AutomationsPage />,
+            handle: { title: "Automation" },
           },
           {
-            path: "autopilots/:id",
-            element: <AutopilotDetailPage />,
-            handle: { title: "Autopilot" },
+            path: "automations/:id",
+            element: <AutomationDetailPage />,
+            handle: { title: "Automation" },
           },
           {
             path: "my-issues",

@@ -258,7 +258,7 @@ func (m *TypingIndicatorManager) Register(bus *events.Bus) {
 func (m *TypingIndicatorManager) handleEvent(e events.Event) {
 	sessionID, ok := chatSessionIDFromEvent(e)
 	if !ok {
-		// Issue / autopilot tasks carry no chat_session — nothing to clear.
+		// Issue / automation tasks carry no chat_session — nothing to clear.
 		return
 	}
 	// Bus delivery is synchronous; bound the reaction calls so a stuck Slack

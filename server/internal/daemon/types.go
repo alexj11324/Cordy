@@ -140,12 +140,12 @@ type Task struct {
 	ChatMessageAttachments        []ChatAttachmentMeta   `json:"chat_message_attachments,omitempty"`         // attachments linked to the chat message; agent uses these to `patchbay attachment download <id>`
 	ChatIntro                     bool                   `json:"chat_intro,omitempty"`                       // legacy compatibility for historical is_agent_intro sessions; new agent creation no longer creates these chats
 	RegenerateQuickActionsFor     string                 `json:"regenerate_quick_actions_for,omitempty"`     // set only by servers predating server-side quick-actions generation (MUL-5573). Read as a REFUSAL marker, never executed: see the guard in runTask
-	AutopilotRunID                string                 `json:"autopilot_run_id,omitempty"`                 // non-empty for autopilot run_only tasks
-	AutopilotID                   string                 `json:"autopilot_id,omitempty"`                     // autopilot that spawned this run
-	AutopilotTitle                string                 `json:"autopilot_title,omitempty"`                  // autopilot title used as task context
-	AutopilotDescription          string                 `json:"autopilot_description,omitempty"`            // autopilot description used as task prompt
-	AutopilotSource               string                 `json:"autopilot_source,omitempty"`                 // manual, schedule, webhook, or api
-	AutopilotTriggerPayload       json.RawMessage        `json:"autopilot_trigger_payload,omitempty"`        // optional trigger payload for webhook/api runs
+	AutomationRunID                string                 `json:"automation_run_id,omitempty"`                 // non-empty for automation run_only tasks
+	AutomationID                   string                 `json:"automation_id,omitempty"`                     // automation that spawned this run
+	AutomationTitle                string                 `json:"automation_title,omitempty"`                  // automation title used as task context
+	AutomationDescription          string                 `json:"automation_description,omitempty"`            // automation description used as task prompt
+	AutomationSource               string                 `json:"automation_source,omitempty"`                 // manual, schedule, webhook, or api
+	AutomationTriggerPayload       json.RawMessage        `json:"automation_trigger_payload,omitempty"`        // optional trigger payload for webhook/api runs
 	QuickCreatePrompt             string                 `json:"quick_create_prompt,omitempty"`              // user's natural-language input for quick-create tasks
 	QuickCreatePriority           string                 `json:"quick_create_priority,omitempty"`            // explicit priority selected in quick-create
 	QuickCreateDueDate            string                 `json:"quick_create_due_date,omitempty"`            // explicit calendar due date selected in quick-create
@@ -170,7 +170,7 @@ type Task struct {
 	// distinct from the runtime owner whose credentials the agent runs with.
 	// Comment-triggered tasks resolve to the triggering comment's author;
 	// chat tasks resolve to the chat session creator. Empty for task kinds
-	// with no attributable human initiator (on-assign, autopilot,
+	// with no attributable human initiator (on-assign, automation,
 	// quick-create). InitiatorEmail is set only for member initiators. The
 	// daemon emits these into the brief under `## Task Initiator` so a
 	// workspace-visible agent can attribute the request per person. The

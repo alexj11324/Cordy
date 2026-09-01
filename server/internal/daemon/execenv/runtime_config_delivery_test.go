@@ -38,7 +38,7 @@ func deliveryInvariantFixtures() map[string]TaskContextForEnv {
 	return map[string]TaskContextForEnv{
 		"comment":     {IssueID: "i-1", TriggerCommentID: "tc-1", AgentName: "Eve", AgentID: "eve-1"},
 		"assignment":  {IssueID: "i-1", AgentName: "Eve", AgentID: "eve-1"},
-		"autopilot":   {AutopilotRunID: "r-1", AgentName: "Eve", AgentID: "eve-1"},
+		"automation":   {AutomationRunID: "r-1", AgentName: "Eve", AgentID: "eve-1"},
 		"quickcreate": {QuickCreatePrompt: "p", AgentName: "Eve", AgentID: "eve-1"},
 		"chat_direct": {ChatSessionID: "c-1", AgentName: "Eve", AgentID: "eve-1"},
 		"chat_slack":  {ChatSessionID: "c-1", ChatChannelType: ChannelTypeSlack, AgentName: "Eve", AgentID: "eve-1"},
@@ -186,7 +186,7 @@ func TestBriefSurfaceDeliveryPolicy(t *testing.T) {
 				"does NOT apply",
 			},
 		},
-		"autopilot": {
+		"automation": {
 			mustHave: []string{"this surface is text-only"},
 			mustNot:  []string{"patchbay attachment upload"},
 		},

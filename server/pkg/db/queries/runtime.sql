@@ -355,7 +355,7 @@ WHERE runtime_id = $1 AND completed_at IS NOT NULL;
 -- name: UnbindUserAgentsFromRuntime :many
 -- MUL-5559: the runtime-delete replacement for archive-then-hard-delete. Every
 -- user agent bound to this runtime becomes unbound (runtime_id IS NULL) and
--- keeps its row, chats, labels, channel installations and autopilot config.
+-- keeps its row, chats, labels, channel installations and automation config.
 --
 -- Deliberately NOT filtered on archived_at: an agent archived earlier is just
 -- as much the user's data as an active one, and hard-deleting it was the same

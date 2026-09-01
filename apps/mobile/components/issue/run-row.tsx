@@ -118,8 +118,8 @@ function fallbackSummary(task: AgentTask): string {
   switch (task.kind) {
     case "comment":
       return "Comment task";
-    case "autopilot":
-      return "Autopilot run";
+    case "automation":
+      return "Automation run";
     case "chat":
       return "Chat task";
     case "quick_create":

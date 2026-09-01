@@ -13,7 +13,7 @@ import (
 // handler injects from the dispatch outcome; a run read back from the DB (list /
 // history) carries the human failure_reason but no guessed code.
 func TestRunToResponseDoesNotReverseEngineerReasonCode(t *testing.T) {
-	run := db.AutopilotRun{
+	run := db.AutomationRun{
 		Status: "skipped",
 		FailureReason: pgtype.Text{
 			String: "assignee agent lacks access to private assignee agent",

@@ -11,7 +11,7 @@ import (
 // TestJobSpecValidatePlansForScopeRelaxesCadence covers the relaxed
 // JobSpec.validate() rule: when PlansForScope is set, Cadence is
 // optional because the hook owns plan_time selection (used by the
-// Autopilot schedule job, where each trigger's cron expression is
+// Automation schedule job, where each trigger's cron expression is
 // arbitrary and does not fit a single Cadence grid).
 func TestJobSpecValidatePlansForScopeRelaxesCadence(t *testing.T) {
 	base := JobSpec{
@@ -134,7 +134,7 @@ func TestManagerPlansForScopeHookDrivesPlans(t *testing.T) {
 		}
 		// Realistic hook contract: return only plan_times strictly
 		// after the most recent stored one. This is exactly what the
-		// Autopilot scheduler will do — compute cron occurrences in
+		// Automation scheduler will do — compute cron occurrences in
 		// (latest.PlanTime, now]. We always *could* return everything
 		// and rely on tryClaim's conflict-no-op for idempotency, but
 		// returning fewer plans is cheaper and exercises the

@@ -18,7 +18,7 @@ import type search from "../locales/en/search.json";
 import type inbox from "../locales/en/inbox.json";
 import type workspace from "../locales/en/workspace.json";
 import type projects from "../locales/en/projects.json";
-import type autopilots from "../locales/en/autopilots.json";
+import type automations from "../locales/en/automations.json";
 import type skills from "../locales/en/skills.json";
 import type chat from "../locales/en/chat.json";
 import type modals from "../locales/en/modals.json";
@@ -59,7 +59,7 @@ declare global {
     inbox: typeof inbox;
     workspace: typeof workspace;
     projects: typeof projects;
-    autopilots: typeof autopilots;
+    automations: typeof automations;
     skills: typeof skills;
     chat: typeof chat;
     modals: typeof modals;

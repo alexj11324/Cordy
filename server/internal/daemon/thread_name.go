@@ -7,7 +7,7 @@ const codexThreadNameMaxRunes = 120
 func deriveTaskThreadName(task Task) string {
 	candidates := []string{
 		task.ThreadName,
-		task.AutopilotTitle,
+		task.AutomationTitle,
 		task.QuickCreatePrompt,
 		task.ChatMessage,
 		task.TriggerCommentContent,

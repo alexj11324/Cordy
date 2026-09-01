@@ -19,10 +19,10 @@ var cronParser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month 
 // time (e.g. `SELECT now()`) rather than `time.Now()` so that two
 // app instances with skewed clocks still produce the same answer.
 //
-// This is the building block the new scheduler.AutopilotScheduleDispatchJob
+// This is the building block the new scheduler.AutomationScheduleDispatchJob
 // uses to compute plan_times; the handler / UI write paths use it via
 // ComputeNextRunFromUTC to fill in the display-only
-// autopilot_trigger.next_run_at column.
+// automation_trigger.next_run_at column.
 func NextOccurrenceAfterUTC(cronExpr, timezone string, after time.Time) (time.Time, error) {
 	sched, loc, err := parseCronSchedule(cronExpr, timezone)
 	if err != nil {
@@ -60,7 +60,7 @@ func NextOccurrencesAfterUTC(cronExpr, timezone string, after time.Time, count i
 
 // NextOccurrencesUTC parses cronExpr in `timezone` and returns every
 // activation in the half-open interval `(after, until]`, in canonical
-// UTC order (ascending). Used by the Autopilot schedule dispatch job to
+// UTC order (ascending). Used by the Automation schedule dispatch job to
 // enumerate every plan_time that became due between the last stored
 // occurrence and DB now().
 //
@@ -89,7 +89,7 @@ func NextOccurrencesUTC(cronExpr, timezone string, after, until time.Time) ([]ti
 }
 
 // ComputeNextRun evaluates the cron at the app's local now() and backs
-// the display-only autopilot_trigger.next_run_at column for the trigger
+// the display-only automation_trigger.next_run_at column for the trigger
 // create/update handlers and the failure monitor. Using the local clock
 // for this display value is deliberate: app/DB clock skew under NTP is far
 // below the column's minute-level granularity, so threading DB time
@@ -99,7 +99,7 @@ func NextOccurrencesUTC(cronExpr, timezone string, after, until time.Time) ([]ti
 // local clock but calls NextOccurrenceAfterUTC anchored at
 // max(now, plan_time) rather than this helper, so a lagging app clock can
 // never re-point the column at the slot that just fired (see
-// scheduler.advancedNextRun / autopilotHandler, MUL-3749).
+// scheduler.advancedNextRun / automationHandler, MUL-3749).
 //
 // Scheduling decisions are a separate concern and MUST go through
 // NextOccurrencesUTC / NextOccurrenceAfterUTC against DB time instead:

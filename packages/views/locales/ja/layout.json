@@ -5,7 +5,7 @@
     "my_issues": "マイタスク",
     "issues": "タスク",
     "projects": "プロジェクト",
-    "autopilots": "オートパイロット",
+    "automations": "オートパイロット",
     "agents": "エージェント",
     "teams": "スクワッド",
     "usage": "分析",
@@ -16,7 +16,7 @@
   "tab": {
     "issue": "タスク",
     "project": "プロジェクト",
-    "autopilot": "オートパイロット",
+    "automation": "オートパイロット",
     "agent": "エージェント",
     "member": "メンバー",
     "team": "スクワッド",

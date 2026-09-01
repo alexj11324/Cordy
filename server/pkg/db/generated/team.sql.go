@@ -565,23 +565,23 @@ func (q *Queries) ListTeamsByMember(ctx context.Context, arg ListTeamsByMemberPa
 	return items, nil
 }
 
-const lockTeamForAutopilotAssignment = `-- name: LockTeamForAutopilotAssignment :one
+const lockTeamForAutomationAssignment = `-- name: LockTeamForAutomationAssignment :one
 SELECT id, workspace_id, name, description, leader_id, creator_id, created_at, updated_at, archived_at, archived_by, avatar_url, instructions FROM team
 WHERE id = $1 AND workspace_id = $2
 FOR SHARE
 `
 
-type LockTeamForAutopilotAssignmentParams struct {
+type LockTeamForAutomationAssignmentParams struct {
 	ID          pgtype.UUID `json:"id"`
 	WorkspaceID pgtype.UUID `json:"workspace_id"`
 }
 
-// Stabilizes the team-to-leader resolution while an active Autopilot is
+// Stabilizes the team-to-leader resolution while an active Automation is
 // created, retargeted, or resumed. FOR SHARE conflicts with an ordinary
 // leader_id update, so the caller subsequently locks the same leader Agent
 // whose row Runtime teardown serializes against.
-func (q *Queries) LockTeamForAutopilotAssignment(ctx context.Context, arg LockTeamForAutopilotAssignmentParams) (Team, error) {
-	row := q.db.QueryRow(ctx, lockTeamForAutopilotAssignment, arg.ID, arg.WorkspaceID)
+func (q *Queries) LockTeamForAutomationAssignment(ctx context.Context, arg LockTeamForAutomationAssignmentParams) (Team, error) {
+	row := q.db.QueryRow(ctx, lockTeamForAutomationAssignment, arg.ID, arg.WorkspaceID)
 	var i Team
 	err := row.Scan(
 		&i.ID,
@@ -612,8 +612,8 @@ type LockTeamForUpdateParams struct {
 }
 
 // Team leader changes take the exclusive side of the same lock used by
-// Autopilot assignment. The handler then locks the proposed leader Agent and
-// pauses active team Autopilots when that Agent is unbound.
+// Automation assignment. The handler then locks the proposed leader Agent and
+// pauses active team Automations when that Agent is unbound.
 func (q *Queries) LockTeamForUpdate(ctx context.Context, arg LockTeamForUpdateParams) (Team, error) {
 	row := q.db.QueryRow(ctx, lockTeamForUpdate, arg.ID, arg.WorkspaceID)
 	var i Team
@@ -669,27 +669,27 @@ func (q *Queries) TransferTeamAssignees(ctx context.Context, arg TransferTeamAss
 	return err
 }
 
-const transferTeamAutopilotsToLeader = `-- name: TransferTeamAutopilotsToLeader :exec
-UPDATE autopilot
+const transferTeamAutomationsToLeader = `-- name: TransferTeamAutomationsToLeader :exec
+UPDATE automation
 SET assignee_type = 'agent',
     assignee_id = $2,
     updated_at = now()
 WHERE assignee_type = 'team' AND assignee_id = $1
 `
 
-type TransferTeamAutopilotsToLeaderParams struct {
+type TransferTeamAutomationsToLeaderParams struct {
 	AssigneeID   pgtype.UUID `json:"assignee_id"`
 	AssigneeID_2 pgtype.UUID `json:"assignee_id_2"`
 }
 
-// Mirrors TransferTeamAssignees for autopilot rows: when a team is archived,
-// any autopilot still pointing at the team would otherwise dangle and the
+// Mirrors TransferTeamAssignees for automation rows: when a team is archived,
+// any automation still pointing at the team would otherwise dangle and the
 // admission gate would skip every subsequent dispatch with "assignee team
 // cannot be resolved". Rewrite the assignee in place to the leader agent so
-// the autopilot keeps firing under the same leader-only execution semantics
+// the automation keeps firing under the same leader-only execution semantics
 // it had a moment before the archive (Path A from PB-2429).
-func (q *Queries) TransferTeamAutopilotsToLeader(ctx context.Context, arg TransferTeamAutopilotsToLeaderParams) error {
-	_, err := q.db.Exec(ctx, transferTeamAutopilotsToLeader, arg.AssigneeID, arg.AssigneeID_2)
+func (q *Queries) TransferTeamAutomationsToLeader(ctx context.Context, arg TransferTeamAutomationsToLeaderParams) error {
+	_, err := q.db.Exec(ctx, transferTeamAutomationsToLeader, arg.AssigneeID, arg.AssigneeID_2)
 	return err
 }
 

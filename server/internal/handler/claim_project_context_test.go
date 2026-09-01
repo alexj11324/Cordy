@@ -283,12 +283,12 @@ func TestClaimTask_ProjectResourceFromForeignWorkspace_IsFilteredOut(t *testing.
 	}
 }
 
-// A run_only autopilot owns its task's workspace. taskToResponse seeds
+// A run_only automation owns its task's workspace. taskToResponse seeds
 // resp.WorkspaceID with the RUNTIME's workspace, and the branch used to widen it
 // only `if resp.WorkspaceID == ""` — a condition that never held, so the
 // isolation check compared the runtime workspace against itself and a
-// cross-workspace autopilot_run_id was dispatched instead of rejected.
-func TestClaimTask_AutopilotRunOnlyForeignWorkspace_CancelsTask(t *testing.T) {
+// cross-workspace automation_run_id was dispatched instead of rejected.
+func TestClaimTask_AutomationRunOnlyForeignWorkspace_CancelsTask(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
 	}
@@ -299,45 +299,45 @@ func TestClaimTask_AutopilotRunOnlyForeignWorkspace_CancelsTask(t *testing.T) {
 		testWorkspaceID,
 	).Scan(&localAgentID, &localRuntimeID)
 
-	foreignWorkspaceID, foreignProjectID := foreignWorkspaceWithProject(t, "foreign-autopilot-ws", "FAW")
+	foreignWorkspaceID, foreignProjectID := foreignWorkspaceWithProject(t, "foreign-automation-ws", "FAW")
 
-	const foreignAutopilotTitle = "Foreign autopilot must not leak"
-	foreignAutopilotID := dbfx.Insert(t, "autopilot", testutil.Cols{
+	const foreignAutomationTitle = "Foreign automation must not leak"
+	foreignAutomationID := dbfx.Insert(t, "automation", testutil.Cols{
 		"workspace_id":    foreignWorkspaceID,
 		"project_id":      foreignProjectID,
-		"title":           foreignAutopilotTitle,
+		"title":           foreignAutomationTitle,
 		"assignee_id":     localAgentID,
 		"execution_mode":  "run_only",
 		"created_by_type": "member",
 		"created_by_id":   testUserID,
 	})
-	foreignRunID := dbfx.Insert(t, "autopilot_run", testutil.Cols{
-		"autopilot_id": foreignAutopilotID,
+	foreignRunID := dbfx.Insert(t, "automation_run", testutil.Cols{
+		"automation_id": foreignAutomationID,
 		"source":       "manual",
 		"status":       "running",
 	})
 	taskID := dbfx.Task(t, localAgentID, testutil.Cols{
 		"runtime_id":       localRuntimeID,
 		"issue_id":         nil,
-		"autopilot_run_id": foreignRunID,
+		"automation_run_id": foreignRunID,
 	})
 
 	req := newDaemonTokenRequest("POST", "/api/daemon/runtimes/"+localRuntimeID+"/claim", nil,
-		testWorkspaceID, "test-claim-foreign-autopilot")
+		testWorkspaceID, "test-claim-foreign-automation")
 	req = withURLParam(req, "runtimeId", localRuntimeID)
 	w := testutil.Call(t, testHandler.ClaimTaskByRuntime, req).Want(http.StatusInternalServerError)
 	if !strings.Contains(w.Text(), "task workspace isolation check failed") {
 		t.Fatalf("claim error = %q, want the workspace isolation failure", w.Text())
 	}
 	assertNoForeignContext(t, w.Text(), foreignProjectID)
-	if strings.Contains(w.Text(), foreignAutopilotTitle) {
-		t.Errorf("claim error leaked the foreign autopilot title: %s", w.Text())
+	if strings.Contains(w.Text(), foreignAutomationTitle) {
+		t.Errorf("claim error leaked the foreign automation title: %s", w.Text())
 	}
 
 	var status string
 	dbfx.QueryRow(t, `SELECT status FROM agent_task_queue WHERE id = $1`, taskID).Scan(&status)
 	if status != "cancelled" {
-		t.Fatalf("cross-workspace autopilot task status = %q, want cancelled", status)
+		t.Fatalf("cross-workspace automation task status = %q, want cancelled", status)
 	}
 }
 
@@ -371,13 +371,13 @@ func (f failQueryDBTX) Query(ctx context.Context, sql string, args ...any) (pgx.
 	return f.DBTX.Query(ctx, sql, args...)
 }
 
-// A claim resolves its SOURCE row — issue, chat session, autopilot_run,
-// autopilot — before anything else. Those reads used to be written as
+// A claim resolves its SOURCE row — issue, chat session, automation_run,
+// automation — before anything else. Those reads used to be written as
 // `if x, err := ...; err == nil {`, with no else: a failed read silently
 // skipped the whole branch. taskToResponse has already seeded resp.WorkspaceID
 // with the RUNTIME's workspace by then, so the skipped claim sailed through the
 // builder's backstop isolation check (which compared that seed against itself)
-// and dispatched an agent with no issue, no chat input, or no autopilot
+// and dispatched an agent with no issue, no chat input, or no automation
 // instructions at all.
 //
 // A transient read failure must instead produce NO claim payload and preserve

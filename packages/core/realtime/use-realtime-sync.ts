@@ -12,7 +12,7 @@ import { getCurrentWsId, getCurrentSlug } from "../platform/workspace-storage";
 import { issueKeys } from "../issues/queries";
 import { projectKeys } from "../projects/queries";
 import { pinKeys } from "../pins/queries";
-import { autopilotKeys } from "../autopilots/queries";
+import { automationKeys } from "../automations/queries";
 import { runtimeKeys } from "../runtimes/queries";
 import { labelKeys } from "../labels/queries";
 import { propertyKeys } from "../properties/queries";
@@ -651,7 +651,7 @@ function invalidateWorkspaceScopedQueries(qc: QueryClient): void {
     qc.invalidateQueries({ queryKey: workspaceKeys.invitations(wsId) });
     qc.invalidateQueries({ queryKey: projectKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: runtimeKeys.all(wsId) });
-    qc.invalidateQueries({ queryKey: autopilotKeys.all(wsId) });
+    qc.invalidateQueries({ queryKey: automationKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: agentTaskSnapshotKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: workspaceWorkingAgentsKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: agentActivityKeys.all(wsId) });
@@ -844,9 +844,9 @@ export function useRealtimeSync(
           invalidateTeamMemberStatusQueries(qc, wsId);
         }
       },
-      autopilot: () => {
+      automation: () => {
         const wsId = getCurrentWsId();
-        if (wsId) qc.invalidateQueries({ queryKey: autopilotKeys.all(wsId) });
+        if (wsId) qc.invalidateQueries({ queryKey: automationKeys.all(wsId) });
       },
       github_installation: () => {
         const wsId = getCurrentWsId();

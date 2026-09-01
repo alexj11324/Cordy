@@ -1528,7 +1528,7 @@ describe("useIssueSurfaceController", () => {
     await waitFor(() => expect(result.current.workingAgents).toEqual([]));
   });
 
-  it("requests issue working agents so chat/autopilot work stays out of scope", async () => {
+  it("requests issue working agents so chat/automation work stays out of scope", async () => {
     mockListByStatus({
       todo: [makeIssue({ id: "todo-1", status: "todo" })],
     });

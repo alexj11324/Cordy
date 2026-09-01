@@ -1542,21 +1542,21 @@ type commentTriggerComputeOptions struct {
 	// own originator so this may be empty for member-authored triggers.
 	OriginatorUserID string
 
-	// AutopilotDelegationAuthorityUserID is the lineage-verified autopilot creator
-	// whose invoke rights an UNATTRIBUTED autopilot dispatch borrows for the A2A
-	// gate when it delegates mid-chain on the issue that autopilot created
+	// AutomationDelegationAuthorityUserID is the lineage-verified automation creator
+	// whose invoke rights an UNATTRIBUTED automation dispatch borrows for the A2A
+	// gate when it delegates mid-chain on the issue that automation created
 	// (MUL-4857). It is resolved SEPARATELY from OriginatorUserID, at the trusted
 	// request/comment boundary, from the server-trusted speaking task (see
-	// autopilotDelegationAuthority); it is empty whenever that lineage cannot be
+	// automationDelegationAuthority); it is empty whenever that lineage cannot be
 	// verified, which keeps the gate fail-closed. effectiveInvoker consults it ONLY
 	// when OriginatorUserID is empty. Authorization input only — attribution/audit
 	// read OriginatorUserID, never this, so the enqueued run stays unattributed.
-	AutopilotDelegationAuthorityUserID string
+	AutomationDelegationAuthorityUserID string
 }
 
 // effectiveInvoker is the human principal the A2A invoke gate (canInvokeAgent)
 // keys on for this comment: the resolved top-of-chain human originator, or — only
-// when the run carried no human originator — the lineage-verified autopilot
+// when the run carried no human originator — the lineage-verified automation
 // delegation authority (MUL-4857). OriginatorUserID is left untouched so
 // attribution stays accurate; the authority is a gate-only fallback. For member
 // actors both are the member (or the fallback is unset), and canInvokeAgent
@@ -1565,7 +1565,7 @@ func (o commentTriggerComputeOptions) effectiveInvoker() string {
 	if o.OriginatorUserID != "" {
 		return o.OriginatorUserID
 	}
-	return o.AutopilotDelegationAuthorityUserID
+	return o.AutomationDelegationAuthorityUserID
 }
 
 func commentAgentTriggerReason(trigger commentAgentTrigger) string {
@@ -1671,7 +1671,7 @@ func (h *Handler) PreviewCommentTriggers(w http.ResponseWriter, r *http.Request)
 
 	actorType, actorID := h.resolveActor(r, userID, uuidToString(issue.WorkspaceID))
 	opts.OriginatorUserID = h.invokeOriginatorFromRequest(r, actorType, actorID)
-	opts.AutopilotDelegationAuthorityUserID = h.autopilotDelegationAuthorityFromRequest(r, issue, actorType, actorID)
+	opts.AutomationDelegationAuthorityUserID = h.automationDelegationAuthorityFromRequest(r, issue, actorType, actorID)
 	triggers, targets := h.computeCommentAgentTriggers(r.Context(), issue, content, parentComment, actorType, actorID, opts)
 	resp := CommentTriggerPreviewResponse{
 		Agents:  make([]CommentTriggerAgentResponse, 0, len(triggers)),
@@ -1814,7 +1814,7 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 	//
 	// Consumers that genuinely need "the authoring run is working on THIS issue"
 	// keep that check next to their own rule instead: the reply-parent /
-	// no_action guards below, and autopilotDelegationAuthority's lineage
+	// no_action guards below, and automationDelegationAuthority's lineage
 	// verification (MUL-4857).
 	var sourceTaskID pgtype.UUID
 	if authorType == "agent" {
@@ -1932,11 +1932,11 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	originatorUserID := h.invokeOriginatorFromRequest(r, authorType, authorID)
-	// MUL-4857: resolve the autopilot delegation authority from the SAME
+	// MUL-4857: resolve the automation delegation authority from the SAME
 	// server-trusted X-Task-ID header the originator resolution uses, so an
-	// unattributed autopilot dispatch delegating mid-chain is keyed on its
-	// autopilot creator only when the speaking task's lineage checks out.
-	delegationAuthority := h.autopilotDelegationAuthorityFromRequest(r, issue, authorType, authorID)
+	// unattributed automation dispatch delegating mid-chain is keyed on its
+	// automation creator only when the speaking task's lineage checks out.
+	delegationAuthority := h.automationDelegationAuthorityFromRequest(r, issue, authorType, authorID)
 	// The comment is already saved; a blocked mention must not fail the whole
 	// request. Surface the per-target outcomes so the client can show partial
 	// success instead of a silent no-op (MUL-4525 §2).
@@ -1988,7 +1988,7 @@ func (h *Handler) triggerTasksForComment(ctx context.Context, issue db.Issue, co
 	triggers, targets := h.computeCommentAgentTriggers(ctx, issue, comment.Content, parentComment, actorType, actorID, commentTriggerComputeOptions{
 		ExcludeTriggerCommentID:            comment.ID,
 		OriginatorUserID:                   originatorUserID,
-		AutopilotDelegationAuthorityUserID: delegationAuthorityUserID,
+		AutomationDelegationAuthorityUserID: delegationAuthorityUserID,
 	})
 	triggers = filterSuppressedCommentAgentTriggers(triggers, suppressAgentIDs)
 	h.noteBlockedRuntimeTargets(ctx, issue, targets)
@@ -2656,13 +2656,13 @@ func (h *Handler) computeCommentAgentTriggers(ctx context.Context, issue db.Issu
 		return nil, nil
 	}
 
-	// Autopilot delegation authority (MUL-4857) is applied by the gate via
+	// Automation delegation authority (MUL-4857) is applied by the gate via
 	// opts.effectiveInvoker(): when a run carried no human originator, the gate
-	// falls back to opts.AutopilotDelegationAuthorityUserID, which the caller has
+	// falls back to opts.AutomationDelegationAuthorityUserID, which the caller has
 	// already resolved from a server-trusted, lineage-verified speaking task (see
-	// autopilotDelegationAuthority). Nothing is re-derived from issue provenance
-	// here, so an unrelated unattributed run cannot borrow a stranger autopilot
-	// creator's authority by commenting on that autopilot's issue.
+	// automationDelegationAuthority). Nothing is re-derived from issue provenance
+	// here, so an unrelated unattributed run cannot borrow a stranger automation
+	// creator's authority by commenting on that automation's issue.
 
 	mentions := util.ParseMentions(content)
 
@@ -3324,7 +3324,7 @@ func (h *Handler) UpdateComment(w http.ResponseWriter, r *http.Request) {
 		// authority from this one action. Any OTHER editor — a workspace owner/admin
 		// editing an AGENT's comment, or a member editing their own — CLEARS the
 		// lineage so the deferred reconcile fails closed instead of resurrecting the
-		// original autopilot run's creator authority. An admin holds manage rights
+		// original automation run's creator authority. An admin holds manage rights
 		// over the comment, not invoke rights over the author's private agents (Elon
 		// must-fix, round 3).
 		if actorType == "agent" && isAuthor {
@@ -3453,9 +3453,9 @@ func (h *Handler) UpdateComment(w http.ResponseWriter, r *http.Request) {
 		// editing action — identical to what the edit preview computed from the same
 		// request, and to what the completion-reconcile will restore. A non-author
 		// edit left it NULL, and a cross-issue editing task is rejected inside
-		// autopilotDelegationAuthority, so neither can borrow the old authoring run's
+		// automationDelegationAuthority, so neither can borrow the old authoring run's
 		// authority.
-		delegationAuthority := h.autopilotDelegationAuthorityFromComment(r.Context(), issue, comment)
+		delegationAuthority := h.automationDelegationAuthorityFromComment(r.Context(), issue, comment)
 		return h.triggerTasksForComment(r.Context(), issue, comment, parentComment, actorType, actorID, h.invokeOriginatorFromRequest(r, actorType, actorID), delegationAuthority, suppressAgentIDs)
 	}
 
@@ -3663,14 +3663,14 @@ func (h *Handler) retriggerCancelledTaskSurvivors(ctx context.Context, issue db.
 		var delegationAuthority string
 		if actorType != "member" {
 			originatorUserID = uuidToString(h.TaskService.ResolveOriginatorFromTriggerComment(ctx, issue.WorkspaceID, comment.ID))
-			// MUL-4857: reconcile works from persisted comments, so the autopilot
+			// MUL-4857: reconcile works from persisted comments, so the automation
 			// delegation authority is resolved from the stored comment.source_task_id.
-			delegationAuthority = h.autopilotDelegationAuthorityFromComment(ctx, issue, comment)
+			delegationAuthority = h.automationDelegationAuthorityFromComment(ctx, issue, comment)
 		}
 		triggers, _ := h.computeCommentAgentTriggers(ctx, issue, comment.Content, parentComment, actorType, actorID, commentTriggerComputeOptions{
 			ExcludeTriggerCommentID:            comment.ID,
 			OriginatorUserID:                   originatorUserID,
-			AutopilotDelegationAuthorityUserID: delegationAuthority,
+			AutomationDelegationAuthorityUserID: delegationAuthority,
 		})
 		targets := targetsByComment[uuidToString(comment.ID)]
 		scoped := make([]commentAgentTrigger, 0, len(targets))

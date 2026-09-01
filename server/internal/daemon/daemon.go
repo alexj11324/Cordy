@@ -5345,7 +5345,7 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 		"agent_id", task.AgentID,
 		"repos", len(task.Repos),
 		"project_id", task.ProjectID,
-		"autopilot_run_id", task.AutopilotRunID,
+		"automation_run_id", task.AutomationRunID,
 		"trigger_comment_id", task.TriggerCommentID,
 		"resume_session", task.PriorSessionID != "",
 		"reuse_workdir", task.PriorWorkDir != "",
@@ -5509,7 +5509,7 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 	d.reportTaskResult(ctx, task.ID, result, taskLog)
 
 	// Write GC metadata after the task finishes so the periodic GC loop
-	// can look up the parent record (issue / chat session / autopilot run /
+	// can look up the parent record (issue / chat session / automation run /
 	// task itself for quick-create) later. Written last so that a mid-task
 	// crash leaves the directory as an orphan (cleaned up by GCOrphanTTL).
 	if result.EnvRoot != "" {
@@ -5918,9 +5918,9 @@ func gcMetaForTask(task Task) (execenv.GCMeta, bool) {
 	case task.ChatSessionID != "":
 		meta.Kind = execenv.GCKindChat
 		meta.ChatSessionID = task.ChatSessionID
-	case task.AutopilotRunID != "":
-		meta.Kind = execenv.GCKindAutopilotRun
-		meta.AutopilotRunID = task.AutopilotRunID
+	case task.AutomationRunID != "":
+		meta.Kind = execenv.GCKindAutomationRun
+		meta.AutomationRunID = task.AutomationRunID
 	case task.IssueID != "":
 		meta.Kind = execenv.GCKindIssue
 		meta.IssueID = task.IssueID
@@ -7137,12 +7137,12 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		ChatSessionID:                    task.ChatSessionID,
 		ChatChannelType:                  task.ChatChannelType,
 		ChatChannelDeliversFiles:         task.ChatChannelDeliversFiles,
-		AutopilotRunID:                   task.AutopilotRunID,
-		AutopilotID:                      task.AutopilotID,
-		AutopilotTitle:                   task.AutopilotTitle,
-		AutopilotDescription:             task.AutopilotDescription,
-		AutopilotSource:                  task.AutopilotSource,
-		AutopilotTriggerPayload:          strings.TrimSpace(string(task.AutopilotTriggerPayload)),
+		AutomationRunID:                   task.AutomationRunID,
+		AutomationID:                      task.AutomationID,
+		AutomationTitle:                   task.AutomationTitle,
+		AutomationDescription:             task.AutomationDescription,
+		AutomationSource:                  task.AutomationSource,
+		AutomationTriggerPayload:          strings.TrimSpace(string(task.AutomationTriggerPayload)),
 		QuickCreatePrompt:                task.QuickCreatePrompt,
 		HandoffNote:                      task.HandoffNote,
 		IsTeamLeader:                    taskIsTeamLeader(task),
@@ -7793,11 +7793,11 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	if checkoutMode := repoCheckoutModeFor(provider, runtime.GOOS); checkoutMode != "" {
 		agentEnv[repoCheckoutModeEnv] = checkoutMode
 	}
-	if task.AutopilotRunID != "" {
-		agentEnv["PATCHBAY_AUTOPILOT_RUN_ID"] = task.AutopilotRunID
+	if task.AutomationRunID != "" {
+		agentEnv["PATCHBAY_AUTOMATION_RUN_ID"] = task.AutomationRunID
 	}
-	if task.AutopilotID != "" {
-		agentEnv["PATCHBAY_AUTOPILOT_ID"] = task.AutopilotID
+	if task.AutomationID != "" {
+		agentEnv["PATCHBAY_AUTOMATION_ID"] = task.AutomationID
 	}
 	// Quick-create marker — when set, the patchbay CLI's `issue create`
 	// command stamps the new issue with origin_type=quick_create +

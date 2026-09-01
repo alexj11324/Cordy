@@ -394,9 +394,9 @@ func (h *Handler) UpdateTeam(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback(r.Context())
 	qtx := h.Queries.WithTx(tx)
 
-	// Autopilot assignment takes FOR SHARE on the team before locking its
+	// Automation assignment takes FOR SHARE on the team before locking its
 	// leader Agent. Take the exclusive side in the same order so leader
-	// rotation and active Autopilot saves cannot leave an automation pointing
+	// rotation and active Automation saves cannot leave an automation pointing
 	// at an unbound effective Agent.
 	if _, err := qtx.LockTeamForUpdate(r.Context(), db.LockTeamForUpdateParams{
 		ID:          team.ID,
@@ -413,9 +413,9 @@ func (h *Handler) UpdateTeam(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// Stabilize runtime_id through commit. Runtime teardown takes FOR UPDATE
-		// on this row and follows the same Agent→Autopilot lock order, so
+		// on this row and follows the same Agent→Automation lock order, so
 		// whichever operation starts first produces a complete result.
-		newLeader, err := qtx.LockAgentForAutopilotAssignment(r.Context(), db.LockAgentForAutopilotAssignmentParams{
+		newLeader, err := qtx.LockAgentForAutomationAssignment(r.Context(), db.LockAgentForAutomationAssignmentParams{
 			ID:          lid,
 			WorkspaceID: wsUUID,
 		})
@@ -453,9 +453,9 @@ func (h *Handler) UpdateTeam(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to update team")
 		return
 	}
-	var pausedAutopilots []db.Autopilot
+	var pausedAutomations []db.Automation
 	if req.LeaderID != nil && !newLeaderRuntimeBound {
-		pausedAutopilots, err = qtx.PauseAutopilotsByUnrunnableTeam(r.Context(), team.ID)
+		pausedAutomations, err = qtx.PauseAutomationsByUnrunnableTeam(r.Context(), team.ID)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to update team")
 			return
@@ -472,9 +472,9 @@ func (h *Handler) UpdateTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.publish(protocol.EventTeamUpdated, workspaceID, "member", requestUserID(r), map[string]any{"team": resp})
-	for _, autopilot := range pausedAutopilots {
-		h.publish(protocol.EventAutopilotUpdated, workspaceID, "member", requestUserID(r), map[string]any{
-			"autopilot": autopilotToResponse(autopilot, nil),
+	for _, automation := range pausedAutomations {
+		h.publish(protocol.EventAutomationUpdated, workspaceID, "member", requestUserID(r), map[string]any{
+			"automation": automationToResponse(automation, nil),
 		})
 	}
 	writeJSON(w, http.StatusOK, resp)
@@ -509,17 +509,17 @@ func (h *Handler) DeleteTeam(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("transfer team assignees failed", "team_id", uuidToString(team.ID), "error", err)
 	}
 
-	// Mirror the issue-assignee transfer for autopilots that target this
-	// team. Without this, autopilot.assignee_id would still point at the
+	// Mirror the issue-assignee transfer for automations that target this
+	// team. Without this, automation.assignee_id would still point at the
 	// archived team row and every subsequent dispatch would skip with
 	// "assignee team is archived" — visible to ops but useless to the
-	// owner. Rewriting to the leader keeps the autopilot semantics
+	// owner. Rewriting to the leader keeps the automation semantics
 	// unchanged (Path A from MUL-2429 is leader-only execution anyway).
-	if err := h.Queries.TransferTeamAutopilotsToLeader(r.Context(), db.TransferTeamAutopilotsToLeaderParams{
+	if err := h.Queries.TransferTeamAutomationsToLeader(r.Context(), db.TransferTeamAutomationsToLeaderParams{
 		AssigneeID:   team.ID,
 		AssigneeID_2: team.LeaderID,
 	}); err != nil {
-		slog.Warn("transfer team autopilots failed", "team_id", uuidToString(team.ID), "error", err)
+		slog.Warn("transfer team automations failed", "team_id", uuidToString(team.ID), "error", err)
 	}
 
 	userID := requestUserID(r)

@@ -229,16 +229,16 @@ VALUES ($1, 'head-a', 0, 'backend', 'completed', 'success', false)
 		"creator_id":   testUserID,
 	})
 
-	autopilotID := dbfx.Insert(t, "autopilot", testutil.Cols{
+	automationID := dbfx.Insert(t, "automation", testutil.Cols{
 		"workspace_id":    wsID,
-		"title":           "Workspace delete autopilot",
+		"title":           "Workspace delete automation",
 		"assignee_id":     agentID,
 		"created_by_type": "member",
 		"created_by_id":   testUserID,
 	})
 
-	autopilotRunID := dbfx.Insert(t, "autopilot_run", testutil.Cols{
-		"autopilot_id": autopilotID,
+	automationRunID := dbfx.Insert(t, "automation_run", testutil.Cols{
+		"automation_id": automationID,
 		"source":       "manual",
 		"status":       "completed",
 		"issue_id":     issueID,
@@ -248,11 +248,11 @@ VALUES ($1, 'head-a', 0, 'backend', 'completed', 'success', false)
 		"runtime_id":       runtimeID,
 		"issue_id":         issueID,
 		"status":           "completed",
-		"autopilot_run_id": autopilotRunID,
+		"automation_run_id": automationRunID,
 	})
 	dbfx.Exec(t, `
-UPDATE autopilot_run SET task_id = $2 WHERE id = $1
-`, autopilotRunID, taskID)
+UPDATE automation_run SET task_id = $2 WHERE id = $1
+`, automationRunID, taskID)
 	dbfx.Exec(t, `
 INSERT INTO task_usage (task_id, provider, model, input_tokens, output_tokens)
 VALUES ($1, 'delete-test', 'workspace-delete', 10, 5)
@@ -282,8 +282,8 @@ VALUES (date_trunc('hour', now()), $1, $2, $3, 'delete-test', 'workspace-rollup'
 		"created_by":      testUserID,
 	})
 
-	ruleVersionID := dbfx.Insert(t, "autopilot_rule_version", testutil.Cols{
-		"autopilot_id":      testutil.Raw("gen_random_uuid()"),
+	ruleVersionID := dbfx.Insert(t, "automation_rule_version", testutil.Cols{
+		"automation_id":      testutil.Raw("gen_random_uuid()"),
 		"workspace_id":      wsID,
 		"published_by_type": "member",
 		"published_by_id":   testUserID,
@@ -308,7 +308,7 @@ VALUES ($1, $2, gen_random_uuid(), gen_random_uuid(), 's3://workspace-delete/sou
 		_, _ = testPool.Exec(context.Background(), `DELETE FROM task_usage_hourly_dirty WHERE workspace_id = $1`, wsID)
 		_, _ = testPool.Exec(context.Background(), `DELETE FROM task_usage_hourly WHERE workspace_id = $1`, wsID)
 		_, _ = testPool.Exec(context.Background(), `DELETE FROM runtime_profile WHERE id = $1`, runtimeProfileID)
-		_, _ = testPool.Exec(context.Background(), `DELETE FROM autopilot_rule_version WHERE id = $1`, ruleVersionID)
+		_, _ = testPool.Exec(context.Background(), `DELETE FROM automation_rule_version WHERE id = $1`, ruleVersionID)
 		_, _ = testPool.Exec(context.Background(), `DELETE FROM channel_media_pending_object WHERE storage_key = $1`, pendingObjectKey)
 		_, _ = testPool.Exec(context.Background(), `DELETE FROM issue_source_context_object_intent WHERE storage_key = $1`, sourceContextObjectKey)
 	})
@@ -345,7 +345,7 @@ VALUES ($1, $2, gen_random_uuid(), gen_random_uuid(), 's3://workspace-delete/sou
 		"task_usage_hourly_dirty",
 		"task_usage_hourly",
 		"runtime_profile",
-		"autopilot_rule_version",
+		"automation_rule_version",
 	} {
 		var count int
 		dbfx.QueryRow(t, `SELECT COUNT(*) FROM `+table+` WHERE workspace_id = $1`, wsID).Scan(&count)
@@ -1019,16 +1019,16 @@ VALUES ($1, $2, $3, 'feishu', $4)
 	}
 }
 
-// TestDeleteMember_PrunesAutopilotSubscribers verifies the application-layer
-// cleanup for the FK-free autopilot_subscriber table. DeleteMember and
+// TestDeleteMember_PrunesAutomationSubscribers verifies the application-layer
+// cleanup for the FK-free automation_subscriber table. DeleteMember and
 // LeaveWorkspace both use revokeAndRemoveMember, so this pins their shared
 // transaction while also proving the delete is scoped to the departed user.
-func TestDeleteMember_PrunesAutopilotSubscribers(t *testing.T) {
-	fx := setupRevocationFixture(t, "handler-tests-revoke-autopilot-subscriber", "daemon-revoke-autopilot-subscriber")
+func TestDeleteMember_PrunesAutomationSubscribers(t *testing.T) {
+	fx := setupRevocationFixture(t, "handler-tests-revoke-automation-subscriber", "daemon-revoke-automation-subscriber")
 
-	autopilotID := dbfx.Insert(t, "autopilot", testutil.Cols{
+	automationID := dbfx.Insert(t, "automation", testutil.Cols{
 		"workspace_id":    fx.WorkspaceID,
-		"title":           "Revocation autopilot subscriber",
+		"title":           "Revocation automation subscriber",
 		"assignee_type":   "agent",
 		"assignee_id":     fx.AgentID,
 		"status":          "active",
@@ -1037,15 +1037,15 @@ func TestDeleteMember_PrunesAutopilotSubscribers(t *testing.T) {
 		"created_by_id":   testUserID,
 	})
 	dbfx.Exec(t, `
-INSERT INTO autopilot_subscriber (autopilot_id, user_type, user_id)
+INSERT INTO automation_subscriber (automation_id, user_type, user_id)
 VALUES ($1, 'member', $2), ($1, 'member', $3)
-`, autopilotID, fx.TargetUserID, testUserID)
+`, automationID, fx.TargetUserID, testUserID)
 
 	// The same person belongs to another workspace and subscribes there too.
 	// Removing them from fx.WorkspaceID must not cross this tenant boundary.
 	otherWorkspaceID := dbfx.Insert(t, "workspace", testutil.Cols{
 		"name":         "Revocation subscriber other workspace",
-		"slug":         fmt.Sprintf("handler-tests-revoke-autopilot-subscriber-other-%d", time.Now().UnixNano()),
+		"slug":         fmt.Sprintf("handler-tests-revoke-automation-subscriber-other-%d", time.Now().UnixNano()),
 		"description":  "tenant-scope regression fixture",
 		"issue_prefix": "RAO",
 	})
@@ -1056,7 +1056,7 @@ VALUES ($1, 'member', $2), ($1, 'member', $3)
 	})
 	otherRuntimeID := dbfx.Runtime(t, "Other workspace runtime", testutil.Cols{
 		"workspace_id": otherWorkspaceID,
-		"daemon_id":    "daemon-revoke-autopilot-subscriber-other",
+		"daemon_id":    "daemon-revoke-automation-subscriber-other",
 		"runtime_mode": "local",
 		"provider":     "patchbay_daemon",
 		"owner_id":     fx.TargetUserID,
@@ -1067,9 +1067,9 @@ VALUES ($1, 'member', $2), ($1, 'member', $3)
 		"visibility":   "workspace",
 		"owner_id":     fx.TargetUserID,
 	})
-	otherAutopilotID := dbfx.Insert(t, "autopilot", testutil.Cols{
+	otherAutomationID := dbfx.Insert(t, "automation", testutil.Cols{
 		"workspace_id":    otherWorkspaceID,
-		"title":           "Other workspace autopilot subscriber",
+		"title":           "Other workspace automation subscriber",
 		"assignee_type":   "agent",
 		"assignee_id":     otherAgentID,
 		"status":          "active",
@@ -1078,9 +1078,9 @@ VALUES ($1, 'member', $2), ($1, 'member', $3)
 		"created_by_id":   fx.TargetUserID,
 	})
 	dbfx.Exec(t, `
-INSERT INTO autopilot_subscriber (autopilot_id, user_type, user_id)
+INSERT INTO automation_subscriber (automation_id, user_type, user_id)
 VALUES ($1, 'member', $2)
-`, otherAutopilotID, fx.TargetUserID)
+`, otherAutomationID, fx.TargetUserID)
 
 	req := newRequest("DELETE", "/api/workspaces/"+fx.WorkspaceID+"/members/"+fx.MemberID, nil)
 	req.Header.Set("X-Workspace-ID", fx.WorkspaceID)
@@ -1089,29 +1089,29 @@ VALUES ($1, 'member', $2)
 
 	var removedCount int
 	dbfx.QueryRow(t, `
-SELECT count(*) FROM autopilot_subscriber
-WHERE autopilot_id = $1 AND user_id = $2
-`, autopilotID, fx.TargetUserID).Scan(&removedCount)
+SELECT count(*) FROM automation_subscriber
+WHERE automation_id = $1 AND user_id = $2
+`, automationID, fx.TargetUserID).Scan(&removedCount)
 	if removedCount != 0 {
-		t.Fatalf("departed member autopilot subscribers = %d, want 0", removedCount)
+		t.Fatalf("departed member automation subscribers = %d, want 0", removedCount)
 	}
 
 	var remainingCount int
 	dbfx.QueryRow(t, `
-SELECT count(*) FROM autopilot_subscriber
-WHERE autopilot_id = $1 AND user_id = $2
-`, autopilotID, testUserID).Scan(&remainingCount)
+SELECT count(*) FROM automation_subscriber
+WHERE automation_id = $1 AND user_id = $2
+`, automationID, testUserID).Scan(&remainingCount)
 	if remainingCount != 1 {
-		t.Fatalf("remaining member autopilot subscribers = %d, want 1", remainingCount)
+		t.Fatalf("remaining member automation subscribers = %d, want 1", remainingCount)
 	}
 
 	var otherWorkspaceCount int
 	dbfx.QueryRow(t, `
-SELECT count(*) FROM autopilot_subscriber
-WHERE autopilot_id = $1 AND user_id = $2
-`, otherAutopilotID, fx.TargetUserID).Scan(&otherWorkspaceCount)
+SELECT count(*) FROM automation_subscriber
+WHERE automation_id = $1 AND user_id = $2
+`, otherAutomationID, fx.TargetUserID).Scan(&otherWorkspaceCount)
 	if otherWorkspaceCount != 1 {
-		t.Fatalf("other workspace autopilot subscribers = %d, want 1", otherWorkspaceCount)
+		t.Fatalf("other workspace automation subscribers = %d, want 1", otherWorkspaceCount)
 	}
 }
 

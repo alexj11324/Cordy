@@ -379,7 +379,7 @@ export function createKoDict(allowSignup: boolean): LandingDict {
           ],
           fixes: [
             "MiniMax Code가 시작 시 간헐적으로 실패하지 않습니다.",
-            "워크스페이스를 떠난 멤버는 해당 Autopilot 알림을 받지 않습니다.",
+            "워크스페이스를 떠난 멤버는 해당 Automation 알림을 받지 않습니다.",
             "실패한 태스크의 자동 복구 답글이 원래 댓글 스레드에 달립니다.",
             "댓글 시간이 잘못된 시간대로 표시되지 않습니다.",
             "에이전트가 전체 ID로 Issue를 더 빠르고 안정적으로 찾습니다.",
@@ -437,7 +437,7 @@ export function createKoDict(allowSignup: boolean): LandingDict {
             "동시에 실행되는 작업이 서로의 작업 공간을 덮어쓰지 않습니다.",
             "OpenClaw, Pi, OpenCode에서 구성한 사용자 지정 공급자를 사용할 수 있습니다.",
             "워크스페이스를 전환해도 실시간 업데이트와 멘션이 끊기지 않습니다.",
-            "일반 CLI 출력에 Autopilot Webhook 자격 증명이 표시되지 않습니다.",
+            "일반 CLI 출력에 Automation Webhook 자격 증명이 표시되지 않습니다.",
             "관련 없는 코딩 작업이 끝날 때까지 기다리지 않고 에이전트와 채팅할 수 있습니다.",
           ],
         },
@@ -1469,7 +1469,7 @@ export function createKoDict(allowSignup: boolean): LandingDict {
             "새 커밋이 푸시되면 PR 리뷰 에이전트가 다시 실행되며, 이전 커밋의 결과를 그대로 재사용하지 않습니다.",
             "서버 파드 재시작 사이에 발행된 실시간 이벤트가 조용히 유실되지 않도록, 5분 경계 리플레이 윈도우로 보완합니다.",
             "Kiro ACP 런타임 작업 사용량이 사용량 로그에 다시 정확히 기록됩니다.",
-            "런타임이 오프라인이어도, Autopilot의 '태스크 생성' 실행이 실행 목록에 계속 표시됩니다.",
+            "런타임이 오프라인이어도, Automation의 '태스크 생성' 실행이 실행 목록에 계속 표시됩니다.",
             "본문이 첨부·블록·rich_text에만 있는 Slack 알림 카드(Grafana, Incoming Webhook 등)를 폴백 문구 대신 첨부 본문에서 읽습니다.",
             "Codex 에이전트 작업이 작업 홈에서 데몬의 Codex 모델 카탈로그를 다시 볼 수 있습니다. (커뮤니티 보고)",
             "레거시 `/teams/…`, `/usage` 웹 경로가 404 대신 현재 대응 페이지로 리다이렉트됩니다.",
@@ -1523,7 +1523,7 @@ export function createKoDict(allowSignup: boolean): LandingDict {
             "각 작업 실행에서 프롬프트 캐시 히트율이 사용량 로그에 기록됩니다.",
           ],
           improvements: [
-            "Autopilot의 «액세스 관리» 진입점이 별도 버튼이 아니라 편집 대화상자 안의 가벼운 팝오버로 바뀌었습니다.",
+            "Automation의 «액세스 관리» 진입점이 별도 버튼이 아니라 편집 대화상자 안의 가벼운 팝오버로 바뀌었습니다.",
             "태스크와 댓글 에디터가 Tiptap 3.27.1로 업그레이드되어 인라인 `code` 단축 입력 시 앞 글자가 사라지는 문제가 해결되었습니다.",
           ],
           fixes: [
@@ -1539,10 +1539,10 @@ export function createKoDict(allowSignup: boolean): LandingDict {
         {
           version: "0.3.33",
           date: "2026-06-30",
-          title: "Autopilot 액세스 관리, Slack 히스토리 백필, 스킬 번들 아카이브 가져오기",
+          title: "Automation 액세스 관리, Slack 히스토리 백필, 스킬 번들 아카이브 가져오기",
           changes: [],
           features: [
-            "Autopilot에 명확한 쓰기 권한 계층이 도입되었고, 상세 페이지의 '액세스 관리'를 통해 특정 멤버에게 단일 Autopilot의 쓰기 권한만 위임할 수 있습니다.",
+            "Automation에 명확한 쓰기 권한 계층이 도입되었고, 상세 페이지의 '액세스 관리'를 통해 특정 멤버에게 단일 Automation의 쓰기 권한만 위임할 수 있습니다.",
             "Slack 채널의 과거 대화를 Patchbay로 백필할 수 있어, 에이전트가 채널에 합류한 순간부터 이전 맥락을 알 수 있습니다.",
             "Slack에서 에이전트가 응답을 준비하는 동안 사용자 메시지에 👀 반응이 표시되고, 종료 시 안정적으로 제거됩니다.",
             "스킬 번들을 로컬 .skill / .zip 아카이브에서 가져올 수 있습니다.",

@@ -1133,14 +1133,14 @@ describe("mergePersistedTabs (rehydration, MUL-4370)", () => {
     ).byWorkspace.acme.tabs[0];
   }
 
-  // A user who opened /acme/autopilots on an older build has "ListTodo"
+  // A user who opened /acme/automations on an older build has "ListTodo"
   // persisted for it. Carrying that value forward is what kept the tab bar
   // showing the wrong icon after upgrade, while the sidebar showed the new
   // one. The session must not hold an icon at all.
   it("does not carry a stale persisted icon into the session", () => {
-    const tab = rehydrate(persistedTab("/acme/autopilots", { icon: "ListTodo" }));
+    const tab = rehydrate(persistedTab("/acme/automations", { icon: "ListTodo" }));
     expect(tab).not.toHaveProperty("icon");
-    expect(tab.url).toBe("/acme/autopilots");
+    expect(tab.url).toBe("/acme/automations");
   });
 
   it("ignores an unknown or corrupted persisted icon", () => {

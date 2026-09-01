@@ -113,10 +113,10 @@ func TestCreateIssuePositionBelowExplicitMinimum(t *testing.T) {
 	}
 }
 
-func TestAutopilotCreateIssuePositionBelowCurrentMinimum(t *testing.T) {
+func TestAutomationCreateIssuePositionBelowCurrentMinimum(t *testing.T) {
 	ctx := context.Background()
-	seedTitle := fmt.Sprintf("position-autopilot seed %d", time.Now().UnixNano())
-	autopilotIssueTitle := fmt.Sprintf("position-autopilot issue %d", time.Now().UnixNano())
+	seedTitle := fmt.Sprintf("position-automation seed %d", time.Now().UnixNano())
+	automationIssueTitle := fmt.Sprintf("position-automation issue %d", time.Now().UnixNano())
 
 	var agentID string
 	if err := testPool.QueryRow(ctx, `SELECT id FROM agent WHERE workspace_id = $1 LIMIT 1`, testWorkspaceID).Scan(&agentID); err != nil {
@@ -154,30 +154,30 @@ func TestAutopilotCreateIssuePositionBelowCurrentMinimum(t *testing.T) {
 	}
 
 	w = httptest.NewRecorder()
-	req = newRequest("POST", "/api/autopilots?workspace_id="+testWorkspaceID, map[string]any{
-		"title":                "Position autopilot",
+	req = newRequest("POST", "/api/automations?workspace_id="+testWorkspaceID, map[string]any{
+		"title":                "Position automation",
 		"assignee_id":          agentID,
 		"execution_mode":       "create_issue",
-		"issue_title_template": autopilotIssueTitle,
+		"issue_title_template": automationIssueTitle,
 	})
-	testHandler.CreateAutopilot(w, req)
+	testHandler.CreateAutomation(w, req)
 	if w.Code != http.StatusCreated {
-		t.Fatalf("CreateAutopilot: expected 201, got %d: %s", w.Code, w.Body.String())
+		t.Fatalf("CreateAutomation: expected 201, got %d: %s", w.Code, w.Body.String())
 	}
-	var autopilot AutopilotResponse
-	if err := json.NewDecoder(w.Body).Decode(&autopilot); err != nil {
-		t.Fatalf("decode autopilot: %v", err)
+	var automation AutomationResponse
+	if err := json.NewDecoder(w.Body).Decode(&automation); err != nil {
+		t.Fatalf("decode automation: %v", err)
 	}
-	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM autopilot WHERE id = $1`, autopilot.ID) })
+	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM automation WHERE id = $1`, automation.ID) })
 
 	queries := db.New(testPool)
-	ap, err := queries.GetAutopilot(ctx, parseUUID(autopilot.ID))
+	ap, err := queries.GetAutomation(ctx, parseUUID(automation.ID))
 	if err != nil {
-		t.Fatalf("GetAutopilot: %v", err)
+		t.Fatalf("GetAutomation: %v", err)
 	}
-	run, err := testHandler.AutopilotService.DispatchAutopilot(ctx, ap, pgtype.UUID{}, "manual", nil)
+	run, err := testHandler.AutomationService.DispatchAutomation(ctx, ap, pgtype.UUID{}, "manual", nil)
 	if err != nil {
-		t.Fatalf("DispatchAutopilot: %v", err)
+		t.Fatalf("DispatchAutomation: %v", err)
 	}
 	if run == nil || !run.IssueID.Valid {
 		t.Fatalf("dispatch run = %+v, want linked issue", run)
@@ -187,10 +187,10 @@ func TestAutopilotCreateIssuePositionBelowCurrentMinimum(t *testing.T) {
 
 	var createdPos float64
 	if err := testPool.QueryRow(ctx, `SELECT position FROM issue WHERE id = $1`, issueID).Scan(&createdPos); err != nil {
-		t.Fatalf("load autopilot-created issue position: %v", err)
+		t.Fatalf("load automation-created issue position: %v", err)
 	}
 	if createdPos >= minBefore {
-		t.Errorf("autopilot-created issue position (%v) should be less than current min (%v); fixed position 0 would sort in the middle",
+		t.Errorf("automation-created issue position (%v) should be less than current min (%v); fixed position 0 would sort in the middle",
 			createdPos, minBefore)
 	}
 }

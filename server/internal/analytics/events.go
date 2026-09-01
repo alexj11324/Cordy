@@ -14,9 +14,9 @@ const (
 	EventIssueExecuted                 = "issue_executed"
 	EventIssueCreated                  = "issue_created"
 	EventChatMessageSent               = "chat_message_sent"
-	EventAutopilotRunStarted           = "autopilot_run_started"
-	EventAutopilotRunCompleted         = "autopilot_run_completed"
-	EventAutopilotRunFailed            = "autopilot_run_failed"
+	EventAutomationRunStarted           = "automation_run_started"
+	EventAutomationRunCompleted         = "automation_run_completed"
+	EventAutomationRunFailed            = "automation_run_failed"
 	EventTeamInviteSent                = "team_invite_sent"
 	EventTeamInviteAccepted            = "team_invite_accepted"
 	EventOnboardingStarted             = "onboarding_started"
@@ -28,7 +28,7 @@ const (
 	EventFeedbackSubmitted             = "feedback_submitted"
 	EventContactSalesSubmitted         = "contact_sales_submitted"
 	EventTeamCreated                  = "team_created"
-	EventAutopilotCreated              = "autopilot_created"
+	EventAutomationCreated              = "automation_created"
 )
 
 const EventSchemaVersion = 2
@@ -43,7 +43,7 @@ const EventSchemaVersion = 2
 // operational database and from these Grafana counters, so the redundant
 // PostHog copy of every product event was retired. That makes ALL server-side
 // events metrics-only — both the product-behaviour group and the original
-// high-volume runtime/autopilot telemetry are Prometheus-only. PostHog now only
+// high-volume runtime/automation telemetry are Prometheus-only. PostHog now only
 // receives frontend error/crash telemetry ($exception, client_crash,
 // client_unresponsive); see packages/core/analytics.
 //
@@ -70,16 +70,16 @@ var metricsOnlyEvents = map[string]struct{}{
 	EventFeedbackSubmitted:             {},
 	EventContactSalesSubmitted:         {},
 	EventTeamCreated:                  {},
-	EventAutopilotCreated:              {},
-	// High-volume runtime / autopilot execution-lifecycle telemetry — always
+	EventAutomationCreated:              {},
+	// High-volume runtime / automation execution-lifecycle telemetry — always
 	// Prometheus-only (Grafana already carries the equivalent counters).
 	EventRuntimeRegistered:     {},
 	EventRuntimeReady:          {},
 	EventRuntimeFailed:         {},
 	EventRuntimeOffline:        {},
-	EventAutopilotRunStarted:   {},
-	EventAutopilotRunCompleted: {},
-	EventAutopilotRunFailed:    {},
+	EventAutomationRunStarted:   {},
+	EventAutomationRunCompleted: {},
+	EventAutomationRunFailed:    {},
 }
 
 // IsMetricsOnly reports whether an event name is recorded to Prometheus but must
@@ -94,7 +94,7 @@ const (
 	SourceOnboarding = "onboarding"
 	SourceManual     = "manual"
 	SourceChat       = "chat"
-	SourceAutopilot  = "autopilot"
+	SourceAutomation  = "automation"
 	SourceAPI        = "api"
 )
 
@@ -109,7 +109,7 @@ type CoreProperties struct {
 	TaskID         string
 	IssueID        string
 	ChatSessionID  string
-	AutopilotRunID string
+	AutomationRunID string
 	Source         string
 	RuntimeMode    string
 	Provider       string
@@ -316,7 +316,7 @@ func IssueExecuted(actorID, workspaceID, issueID, taskID, agentID, source, runti
 	}
 }
 
-func IssueCreated(actorID, workspaceID, issueID, agentID, taskID, autopilotRunID, source, platform string) Event {
+func IssueCreated(actorID, workspaceID, issueID, agentID, taskID, automationRunID, source, platform string) Event {
 	props := map[string]any{}
 	if platform != "" {
 		props["platform"] = platform
@@ -331,7 +331,7 @@ func IssueCreated(actorID, workspaceID, issueID, agentID, taskID, autopilotRunID
 			AgentID:        agentID,
 			TaskID:         taskID,
 			IssueID:        issueID,
-			AutopilotRunID: autopilotRunID,
+			AutomationRunID: automationRunID,
 			Source:         source,
 		}),
 	}
@@ -359,29 +359,29 @@ func ChatMessageSent(userID, workspaceID, chatSessionID, taskID, agentID, runtim
 	}
 }
 
-// AutopilotAssignee describes the autopilot's configured target. agent_id is
+// AutomationAssignee describes the automation's configured target. agent_id is
 // always the agent that will actually execute the work (the team leader for
-// team autopilots) so funnels grouping by agent stay consistent. assignee_*
+// team automations) so funnels grouping by agent stay consistent. assignee_*
 // fields record the original configuration so reports can tell a solo-agent
-// autopilot apart from a team one without joining back to the autopilot row.
-type AutopilotAssignee struct {
-	AgentID      string // executing agent — leader for team autopilots
+// automation apart from a team one without joining back to the automation row.
+type AutomationAssignee struct {
+	AgentID      string // executing agent — leader for team automations
 	AssigneeType string // "agent" or "team"
 	TeamID      string // empty when AssigneeType != "team"
 }
 
-func AutopilotRunStarted(actorID, workspaceID, autopilotID, runID, cadence string, assignee AutopilotAssignee, triggerSource string) Event {
-	return autopilotRunEvent(EventAutopilotRunStarted, actorID, workspaceID, autopilotID, runID, cadence, assignee, triggerSource, nil)
+func AutomationRunStarted(actorID, workspaceID, automationID, runID, cadence string, assignee AutomationAssignee, triggerSource string) Event {
+	return automationRunEvent(EventAutomationRunStarted, actorID, workspaceID, automationID, runID, cadence, assignee, triggerSource, nil)
 }
 
-func AutopilotRunCompleted(actorID, workspaceID, autopilotID, runID, cadence string, assignee AutopilotAssignee, triggerSource string, durationMS int64) Event {
-	return autopilotRunEvent(EventAutopilotRunCompleted, actorID, workspaceID, autopilotID, runID, cadence, assignee, triggerSource, map[string]any{
+func AutomationRunCompleted(actorID, workspaceID, automationID, runID, cadence string, assignee AutomationAssignee, triggerSource string, durationMS int64) Event {
+	return automationRunEvent(EventAutomationRunCompleted, actorID, workspaceID, automationID, runID, cadence, assignee, triggerSource, map[string]any{
 		"duration_ms": durationMS,
 	})
 }
 
-func AutopilotRunFailed(actorID, workspaceID, autopilotID, runID, cadence string, assignee AutopilotAssignee, triggerSource, failureReason, errorType string, willRetry bool, durationMS int64) Event {
-	return autopilotRunEvent(EventAutopilotRunFailed, actorID, workspaceID, autopilotID, runID, cadence, assignee, triggerSource, map[string]any{
+func AutomationRunFailed(actorID, workspaceID, automationID, runID, cadence string, assignee AutomationAssignee, triggerSource, failureReason, errorType string, willRetry bool, durationMS int64) Event {
+	return automationRunEvent(EventAutomationRunFailed, actorID, workspaceID, automationID, runID, cadence, assignee, triggerSource, map[string]any{
 		"duration_ms":    durationMS,
 		"failure_reason": failureReason,
 		"error_type":     errorType,
@@ -697,18 +697,18 @@ func TeamCreated(actorID, workspaceID, teamID string, memberCount int) Event {
 	}
 }
 
-// AutopilotCreated fires when a workspace member creates a new autopilot.
-// `cadence` matches the autopilot.cadence enum (hourly/daily/weekly/...
+// AutomationCreated fires when a workspace member creates a new automation.
+// `cadence` matches the automation.cadence enum (hourly/daily/weekly/...
 // /webhook). triggerKind is the initial trigger type (schedule / webhook /
 // manual) — when both schedule and webhook triggers are seeded, we report
 // the dominant one (schedule wins).
-func AutopilotCreated(actorID, workspaceID, autopilotID, cadence, triggerKind string) Event {
+func AutomationCreated(actorID, workspaceID, automationID, cadence, triggerKind string) Event {
 	return Event{
-		Name:        EventAutopilotCreated,
+		Name:        EventAutomationCreated,
 		DistinctID:  actorID,
 		WorkspaceID: workspaceID,
 		Properties: withCoreProperties(map[string]any{
-			"autopilot_id": autopilotID,
+			"automation_id": automationID,
 			"cadence":      cadence,
 			"trigger_kind": triggerKind,
 		}, CoreProperties{
@@ -719,7 +719,7 @@ func AutopilotCreated(actorID, workspaceID, autopilotID, cadence, triggerKind st
 	}
 }
 
-func autopilotRunEvent(name, actorID, workspaceID, autopilotID, runID, cadence string, assignee AutopilotAssignee, triggerSource string, extra map[string]any) Event {
+func automationRunEvent(name, actorID, workspaceID, automationID, runID, cadence string, assignee AutomationAssignee, triggerSource string, extra map[string]any) Event {
 	if extra == nil {
 		extra = map[string]any{}
 	}
@@ -732,10 +732,10 @@ func autopilotRunEvent(name, actorID, workspaceID, autopilotID, runID, cadence s
 		UserID:         nonAgentUserID(actorID),
 		WorkspaceID:    workspaceID,
 		AgentID:        assignee.AgentID,
-		AutopilotRunID: runID,
-		Source:         SourceAutopilot,
+		AutomationRunID: runID,
+		Source:         SourceAutomation,
 	})
-	props["autopilot_id"] = autopilotID
+	props["automation_id"] = automationID
 	if assignee.AssigneeType != "" {
 		props["assignee_type"] = assignee.AssigneeType
 	}
@@ -769,8 +769,8 @@ func withCoreProperties(props map[string]any, core CoreProperties) map[string]an
 	if core.ChatSessionID != "" {
 		props["chat_session_id"] = core.ChatSessionID
 	}
-	if core.AutopilotRunID != "" {
-		props["autopilot_run_id"] = core.AutopilotRunID
+	if core.AutomationRunID != "" {
+		props["automation_run_id"] = core.AutomationRunID
 	}
 	if core.Source != "" {
 		props["source"] = core.Source

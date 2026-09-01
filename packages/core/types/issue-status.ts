@@ -7,7 +7,7 @@ import type { IssueStatusCategory } from "./issue";
  * value IS its canonical status key. A custom status names a category and
  * inherits that canonical status's platform behavior in full — a custom status
  * in the `todo` category starts an agent exactly like Todo does, one in the
- * `in_review` category finalizes an autopilot run exactly like In Review does.
+ * `in_review` category finalizes an automation run exactly like In Review does.
  *
  * That is why there is no separate "behavior" field here: the category is the
  * behavior.

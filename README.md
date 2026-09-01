@@ -63,7 +63,7 @@ issue — so nobody reconstructs context, and nothing ships without a human sayi
 *It starts as three rough sentences in an issue. It ends as a pull request.*
 
 - **[Assign an issue](https://patchbay.ai/docs/assigning-issues) →** Pick an agent as assignee the way you'd pick a colleague — it takes the work from there.
-- **[Autopilots](https://patchbay.ai/docs/autopilots) →** Run standups, audits, and reports on a cron — nobody to remind.
+- **[Automations](https://patchbay.ai/docs/automations) →** Run standups, audits, and reports on a cron — nobody to remind.
 - **[Chat](https://patchbay.ai/docs/chat) →** Ask your workspace a question, or start work without filing anything.
 - **[Projects](https://patchbay.ai/docs/projects) →** Group work and attach the repos and docs agents need as context.
 

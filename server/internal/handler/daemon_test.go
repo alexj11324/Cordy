@@ -1908,10 +1908,10 @@ func TestDaemonRegister_LegacyIDNoMatchIsNoop(t *testing.T) {
 	}
 }
 
-// Regression test for #1224: tasks linked only via AutopilotRunID (run_only
-// autopilots) must resolve to the autopilot's workspace. Before the fix,
+// Regression test for #1224: tasks linked only via AutomationRunID (run_only
+// automations) must resolve to the automation's workspace. Before the fix,
 // resolveTaskWorkspaceID fell through and every StartTask call returned 404.
-func TestStartTask_AutopilotRunOnlyTask_ResolvesWorkspace(t *testing.T) {
+func TestStartTask_AutomationRunOnlyTask_ResolvesWorkspace(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
 	}
@@ -1923,7 +1923,7 @@ func TestStartTask_AutopilotRunOnlyTask_ResolvesWorkspace(t *testing.T) {
 		SELECT a.id, a.runtime_id FROM agent a WHERE a.workspace_id = $1 LIMIT 1
 	`, testWorkspaceID).Scan(&agentID, &runtimeID)
 
-	autopilotID := dbfx.Insert(t, "autopilot", testutil.Cols{
+	automationID := dbfx.Insert(t, "automation", testutil.Cols{
 		"workspace_id":    testWorkspaceID,
 		"title":           "run_only fixture",
 		"assignee_id":     agentID,
@@ -1931,10 +1931,10 @@ func TestStartTask_AutopilotRunOnlyTask_ResolvesWorkspace(t *testing.T) {
 		"created_by_type": "member",
 		"created_by_id":   testUserID,
 	})
-	defer testPool.Exec(ctx, `DELETE FROM autopilot WHERE id = $1`, autopilotID)
+	defer testPool.Exec(ctx, `DELETE FROM automation WHERE id = $1`, automationID)
 
-	runID := dbfx.Insert(t, "autopilot_run", testutil.Cols{
-		"autopilot_id": autopilotID,
+	runID := dbfx.Insert(t, "automation_run", testutil.Cols{
+		"automation_id": automationID,
 		"source":       "manual",
 		"status":       "running",
 	})
@@ -1944,7 +1944,7 @@ func TestStartTask_AutopilotRunOnlyTask_ResolvesWorkspace(t *testing.T) {
 		"runtime_id":       runtimeID,
 		"issue_id":         nil,
 		"status":           "dispatched",
-		"autopilot_run_id": runID,
+		"automation_run_id": runID,
 	})
 	defer testPool.Exec(ctx, `DELETE FROM agent_task_queue WHERE id = $1`, taskID)
 
@@ -1969,7 +1969,7 @@ func TestStartTask_AutopilotRunOnlyTask_ResolvesWorkspace(t *testing.T) {
 
 	testHandler.StartTask(w, req)
 	if w.Code != http.StatusOK {
-		t.Fatalf("StartTask for run_only autopilot task: expected 200, got %d: %s", w.Code, w.Body.String())
+		t.Fatalf("StartTask for run_only automation task: expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 
 	var status string
@@ -2198,10 +2198,10 @@ func TestClaimTask_ProjectWithoutRepos_FallsBackToWorkspaceRepos(t *testing.T) {
 }
 
 // Regression test for #1276: ClaimTaskByRuntime must populate both
-// workspace and project context for run_only autopilot tasks. Project context
+// workspace and project context for run_only automation tasks. Project context
 // is what lets the daemon select a bound local_directory and materialize the
 // managed .patchbay/project/resources.json source manifest before launch.
-func TestClaimTask_AutopilotRunOnly_PopulatesWorkspaceAndProjectContext(t *testing.T) {
+func TestClaimTask_AutomationRunOnly_PopulatesWorkspaceAndProjectContext(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
 	}
@@ -2214,7 +2214,7 @@ func TestClaimTask_AutopilotRunOnly_PopulatesWorkspaceAndProjectContext(t *testi
 	`, testWorkspaceID).Scan(&agentID, &runtimeID)
 
 	const projectDescription = "Use only the bound project resources."
-	projectID := dbfx.Project(t, "Run-only autopilot project", testutil.Cols{
+	projectID := dbfx.Project(t, "Run-only automation project", testutil.Cols{
 		"description": projectDescription,
 	})
 	const projectRepoURL = "https://github.com/example/run-only-project"
@@ -2233,7 +2233,7 @@ func TestClaimTask_AutopilotRunOnly_PopulatesWorkspaceAndProjectContext(t *testi
 		"position":      1,
 	})
 
-	autopilotID := dbfx.Insert(t, "autopilot", testutil.Cols{
+	automationID := dbfx.Insert(t, "automation", testutil.Cols{
 		"workspace_id":    testWorkspaceID,
 		"project_id":      projectID,
 		"title":           "claim workspace fixture",
@@ -2242,19 +2242,19 @@ func TestClaimTask_AutopilotRunOnly_PopulatesWorkspaceAndProjectContext(t *testi
 		"created_by_type": "member",
 		"created_by_id":   testUserID,
 	})
-	defer testPool.Exec(ctx, `DELETE FROM autopilot WHERE id = $1`, autopilotID)
+	defer testPool.Exec(ctx, `DELETE FROM automation WHERE id = $1`, automationID)
 
-	runID := dbfx.Insert(t, "autopilot_run", testutil.Cols{
-		"autopilot_id": autopilotID,
+	runID := dbfx.Insert(t, "automation_run", testutil.Cols{
+		"automation_id": automationID,
 		"source":       "manual",
 		"status":       "running",
 	})
 
-	// Create a queued task with only AutopilotRunID (no IssueID, no ChatSessionID).
+	// Create a queued task with only AutomationRunID (no IssueID, no ChatSessionID).
 	taskID := dbfx.Task(t, agentID, testutil.Cols{
 		"runtime_id":       runtimeID,
 		"issue_id":         nil,
-		"autopilot_run_id": runID,
+		"automation_run_id": runID,
 	})
 	defer testPool.Exec(ctx, `DELETE FROM agent_task_queue WHERE id = $1`, taskID)
 
@@ -2288,18 +2288,18 @@ func TestClaimTask_AutopilotRunOnly_PopulatesWorkspaceAndProjectContext(t *testi
 		t.Fatal("expected a task in response, got nil")
 	}
 	if resp.Task.WorkspaceID == "" {
-		t.Fatal("ClaimTaskByRuntime for run_only autopilot: workspace_id is empty in response")
+		t.Fatal("ClaimTaskByRuntime for run_only automation: workspace_id is empty in response")
 	}
 	if resp.Task.WorkspaceID != testWorkspaceID {
 		t.Fatalf("expected workspace_id %q, got %q", testWorkspaceID, resp.Task.WorkspaceID)
 	}
 	if resp.Task.ThreadName != "claim workspace fixture" {
-		t.Fatalf("autopilot task thread_name = %q, want autopilot title", resp.Task.ThreadName)
+		t.Fatalf("automation task thread_name = %q, want automation title", resp.Task.ThreadName)
 	}
 	if resp.Task.ProjectID != projectID {
 		t.Errorf("project_id = %q, want %q", resp.Task.ProjectID, projectID)
 	}
-	if resp.Task.ProjectTitle != "Run-only autopilot project" {
+	if resp.Task.ProjectTitle != "Run-only automation project" {
 		t.Errorf("project_title = %q, want run-only project title", resp.Task.ProjectTitle)
 	}
 	if resp.Task.ProjectDescription != projectDescription {
@@ -3645,9 +3645,9 @@ func TestGetChatSessionGCCheck(t *testing.T) {
 	w = testutil.Call(t, testHandler.GetChatSessionGCCheck, req).Want(http.StatusNotFound)
 }
 
-// TestGetAutopilotRunGCCheck verifies the autopilot-run gc-check endpoint:
+// TestGetAutomationRunGCCheck verifies the automation-run gc-check endpoint:
 // 200 with status+completed_at on success, 404 on cross-workspace probe.
-func TestGetAutopilotRunGCCheck(t *testing.T) {
+func TestGetAutomationRunGCCheck(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
 	}
@@ -3657,34 +3657,34 @@ func TestGetAutopilotRunGCCheck(t *testing.T) {
 	var agentID string
 	dbfx.QueryRow(t, `SELECT id FROM agent WHERE workspace_id = $1 LIMIT 1`, testWorkspaceID).Scan(&agentID)
 
-	autopilotID := dbfx.Insert(t, "autopilot", testutil.Cols{
+	automationID := dbfx.Insert(t, "automation", testutil.Cols{
 		"workspace_id":    testWorkspaceID,
-		"title":           "gc-check autopilot",
+		"title":           "gc-check automation",
 		"assignee_id":     agentID,
 		"execution_mode":  "run_only",
 		"created_by_type": "member",
 		"created_by_id":   testUserID,
 	})
-	defer testPool.Exec(ctx, `DELETE FROM autopilot WHERE id = $1`, autopilotID)
+	defer testPool.Exec(ctx, `DELETE FROM automation WHERE id = $1`, automationID)
 
-	runID := dbfx.Insert(t, "autopilot_run", testutil.Cols{
-		"autopilot_id": autopilotID,
+	runID := dbfx.Insert(t, "automation_run", testutil.Cols{
+		"automation_id": automationID,
 		"source":       "manual",
 		"status":       "completed",
 		"completed_at": testutil.Raw("NOW() - INTERVAL '6 days'"),
 	})
 
 	// Cross-workspace probe.
-	req := newDaemonTokenRequest("GET", "/api/daemon/autopilot-runs/"+runID+"/gc-check", nil,
+	req := newDaemonTokenRequest("GET", "/api/daemon/automation-runs/"+runID+"/gc-check", nil,
 		"00000000-0000-0000-0000-000000000000", "attacker-daemon")
 	req = withURLParam(req, "runId", runID)
-	w := testutil.Call(t, testHandler.GetAutopilotRunGCCheck, req).Want(http.StatusNotFound)
+	w := testutil.Call(t, testHandler.GetAutomationRunGCCheck, req).Want(http.StatusNotFound)
 
 	// Same-workspace probe.
-	req = newDaemonTokenRequest("GET", "/api/daemon/autopilot-runs/"+runID+"/gc-check", nil,
+	req = newDaemonTokenRequest("GET", "/api/daemon/automation-runs/"+runID+"/gc-check", nil,
 		testWorkspaceID, "legit-daemon")
 	req = withURLParam(req, "runId", runID)
-	w = testutil.Call(t, testHandler.GetAutopilotRunGCCheck, req).Want(http.StatusOK)
+	w = testutil.Call(t, testHandler.GetAutomationRunGCCheck, req).Want(http.StatusOK)
 	var resp struct {
 		Status      string `json:"status"`
 		CompletedAt string `json:"completed_at"`

@@ -4,7 +4,7 @@ import type {
   AgentBuilderSession,
   AgentBuilderSessionSummary,
   Attachment,
-  AutopilotRun,
+  AutomationRun,
   BillingBalance,
   BillingBatchesPage,
   BillingCheckoutSessionStatus,
@@ -1692,7 +1692,7 @@ export const RuntimeUsageByHourListSchema = z.array(RuntimeUsageByHourSchema);
 
 // Human attribution (MUL-4302 §9): who an agent run is accountable to, and how
 // that human was resolved. Every field is defensive so a departed member, an
-// autopilot run (no originator), or an older backend degrades to a partial
+// automation run (no originator), or an older backend degrades to a partial
 // object instead of a parse failure.
 const AttributionUserSchema = z.object({
   id: z.string().default(""),
@@ -1755,7 +1755,7 @@ export const AgentTaskSchema = z.object({
   failure_reason: z.string().optional(),
   created_at: z.string().default(""),
   chat_session_id: z.string().optional(),
-  autopilot_run_id: z.string().optional(),
+  automation_run_id: z.string().optional(),
   parent_task_id: z.string().optional(),
   attempt: z.number().optional(),
   trigger_comment_id: z.string().optional(),
@@ -2147,7 +2147,7 @@ export interface DuplicateIssueErrorBody {
 }
 
 // ---------------------------------------------------------------------------
-// Webhook delivery schemas — backing the Autopilot Deliveries section. Enums
+// Webhook delivery schemas — backing the Automation Deliveries section. Enums
 // (`status`, `signature_status`, `provider`) are kept as `z.string()` so a
 // future server-side value (e.g. a Stripe provider, a new dedupe state)
 // degrades to a generic UI fallback rather than collapsing the list into
@@ -2158,7 +2158,7 @@ export interface DuplicateIssueErrorBody {
 const WebhookDeliverySchema = z.object({
   id: z.string(),
   workspace_id: z.string(),
-  autopilot_id: z.string(),
+  automation_id: z.string(),
   trigger_id: z.string(),
   provider: z.string(),
   event: z.string(),
@@ -2173,7 +2173,7 @@ const WebhookDeliverySchema = z.object({
   available_at: z.string().default(""),
   content_type: z.string().nullable(),
   response_status: z.number().nullable(),
-  autopilot_run_id: z.string().nullable(),
+  automation_run_id: z.string().nullable(),
   replayed_from_delivery_id: z.string().nullable(),
   error: z.string().nullable(),
   reason_code: z.string().nullable().default(null),
@@ -2201,14 +2201,14 @@ export const EMPTY_LIST_WEBHOOK_DELIVERIES_RESPONSE: ListWebhookDeliveriesRespon
 };
 
 // ---------------------------------------------------------------------------
-// Autopilot list schema. Enums (`status`, `execution_mode`, `trigger_kinds`,
+// Automation list schema. Enums (`status`, `execution_mode`, `trigger_kinds`,
 // `last_run_status`) stay `z.string()` so future server-side values degrade
 // to a generic UI fallback. The three derived fields (trigger_kinds /
 // next_run_at / last_run_status) are list-endpoint-only and absent on older
 // servers — optional by contract, the list renders "—" without them.
 // ---------------------------------------------------------------------------
 
-const AutopilotListItemSchema = z.object({
+const AutomationListItemSchema = z.object({
   id: z.string(),
   workspace_id: z.string(),
   title: z.string(),
@@ -2235,25 +2235,25 @@ const AutopilotListItemSchema = z.object({
   can_manage_access: z.boolean().optional(),
 }).loose();
 
-export const ListAutopilotsResponseSchema = z.object({
-  autopilots: z.array(AutopilotListItemSchema).default([]),
+export const ListAutomationsResponseSchema = z.object({
+  automations: z.array(AutomationListItemSchema).default([]),
   total: z.number().default(0),
 }).loose();
 
-export const EMPTY_LIST_AUTOPILOTS_RESPONSE = {
-  autopilots: [],
+export const EMPTY_LIST_AUTOMATIONS_RESPONSE = {
+  automations: [],
   total: 0,
 };
 
-// Autopilot run (POST /trigger, GET /runs). Consumed by the "run now" flow,
+// Automation run (POST /trigger, GET /runs). Consumed by the "run now" flow,
 // which branches on `status` to avoid a false-success toast (MUL-4525), so the
 // response must be schema-parsed. `reason_code` is an additive, stable
 // classification of a non-success run the UI localizes; older servers omit it.
 // Defaults are conservative: an unreadable run degrades to a non-success status
 // so the UI never shows success it cannot confirm. .loose() tolerates new fields.
-export const AutopilotRunSchema = z.object({
+export const AutomationRunSchema = z.object({
   id: z.string().default(""),
-  autopilot_id: z.string().default(""),
+  automation_id: z.string().default(""),
   trigger_id: z.string().nullable().default(null),
   source: z.string().default("manual"),
   status: z.string().default("failed"),
@@ -2268,7 +2268,7 @@ export const AutopilotRunSchema = z.object({
   created_at: z.string().default(""),
 }).loose();
 
-export const AutopilotQuotaUsageSchema = z.object({
+export const AutomationQuotaUsageSchema = z.object({
   action: z.enum(["off", "observe", "enforce"]).default("off"),
   used: z.number().nullable().default(null),
   reserved: z.number().nullable().default(null),
@@ -2281,9 +2281,9 @@ export const AutopilotQuotaUsageSchema = z.object({
   blocked_counts: z.record(z.string(), z.number().int().nonnegative()).nullable().catch(null).default(null),
 }).loose();
 
-export const FALLBACK_AUTOPILOT_RUN: AutopilotRun = {
+export const FALLBACK_AUTOMATION_RUN: AutomationRun = {
   id: "",
-  autopilot_id: "",
+  automation_id: "",
   trigger_id: null,
   source: "manual",
   status: "failed",
@@ -2312,7 +2312,7 @@ export const UNREADABLE_CRON_PREVIEW_RESPONSE: CronPreviewResponse = {
 export const EMPTY_WEBHOOK_DELIVERY: WebhookDelivery = {
   id: "",
   workspace_id: "",
-  autopilot_id: "",
+  automation_id: "",
   trigger_id: "",
   provider: "",
   event: "",
@@ -2325,7 +2325,7 @@ export const EMPTY_WEBHOOK_DELIVERY: WebhookDelivery = {
   available_at: "",
   content_type: null,
   response_status: null,
-  autopilot_run_id: null,
+  automation_run_id: null,
   replayed_from_delivery_id: null,
   error: null,
   reason_code: null,
@@ -2654,7 +2654,7 @@ export const WorkspaceSubscriptionEntitlementsSchema = z
     limits: z
       .object({
         issue_count: WorkspaceEntitlementLimitSchema,
-        autopilot_runs: WorkspaceEntitlementLimitSchema,
+        automation_runs: WorkspaceEntitlementLimitSchema,
       })
       .loose(),
     current_period_end: z.string().nullable().optional(),
@@ -2670,7 +2670,7 @@ export const WorkspaceSubscriptionEntitlementsSchema = z
       seats: value.seats,
       limits: {
         issueCount: value.limits.issue_count,
-        autopilotRuns: value.limits.autopilot_runs,
+        automationRuns: value.limits.automation_runs,
       },
       currentPeriodEnd: value.current_period_end ?? null,
       snapshotExpiresAt: value.snapshot_expires_at ?? null,

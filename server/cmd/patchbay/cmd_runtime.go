@@ -407,8 +407,8 @@ func printRuntimeDeleteResult(cmd *cobra.Command, result map[string]any) error {
 
 	if agentsUnbound, ok := result["agents_unbound"]; ok {
 		fmt.Fprintf(os.Stderr, "Runtime %s deleted; unbound %v agent(s)", strVal(result, "id"), agentsUnbound)
-		if paused, ok := result["autopilots_paused"]; ok {
-			fmt.Fprintf(os.Stderr, " and paused %v autopilot(s)", paused)
+		if paused, ok := result["automations_paused"]; ok {
+			fmt.Fprintf(os.Stderr, " and paused %v automation(s)", paused)
 		}
 		fmt.Fprintln(os.Stderr, ".")
 		return nil

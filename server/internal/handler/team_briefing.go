@@ -24,7 +24,7 @@ const teamOperatingProtocolHeader = `## Team Operating Protocol
 
 **If you are reading this section, you have been activated as a team LEADER
 for this task — regardless of how the work reached you (direct assignment,
-an @team mention in a comment, quick-create, or autopilot).** Your job is to
+an @team mention in a comment, quick-create, or automation).** Your job is to
 **coordinate**, NOT to do the work yourself. Even if the task reads like a
 direct request to "do X" (review this PR, fix this bug, write this code), you
 must delegate X to the right team member by @mention — doing it yourself

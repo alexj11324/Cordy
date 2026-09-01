@@ -61,9 +61,9 @@ const (
 	// already processed.)
 	ReasonSelfTriggerSuppressed ReasonCode = "self_trigger_suppressed"
 	// ReasonQuotaExceeded is a policy-neutral refusal for an exhausted
-	// Cloud-provided autopilot interval.
+	// Cloud-provided automation interval.
 	ReasonQuotaExceeded ReasonCode = "quota_exceeded"
-	// ReasonIssueLimitReached means a create_issue Autopilot was admitted for a
+	// ReasonIssueLimitReached means a create_issue Automation was admitted for a
 	// run, but Cloud's effective workspace issue-count limit blocked the issue.
 	ReasonIssueLimitReached ReasonCode = "issue_limit_reached"
 	// ReasonInternalError: an unexpected server error prevented a clean decision.

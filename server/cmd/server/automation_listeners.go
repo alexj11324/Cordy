@@ -1,0 +1,86 @@
+package main
+
+import (
+	"context"
+	"log/slog"
+
+	"github.com/patchbay-ai/patchbay/server/internal/events"
+	"github.com/patchbay-ai/patchbay/server/internal/handler"
+	"github.com/patchbay-ai/patchbay/server/internal/issuestatus"
+	"github.com/patchbay-ai/patchbay/server/internal/service"
+	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+)
+
+// registerAutomationListeners hooks into issue and task events to keep
+// automation runs in sync with their linked issues and tasks.
+func registerAutomationListeners(bus *events.Bus, svc *service.AutomationService) {
+	ctx := context.Background()
+
+	// When an issue with origin_type='automation' reaches a terminal status,
+	// update the corresponding automation run.
+	bus.Subscribe(protocol.EventIssueUpdated, func(e events.Event) {
+		payload, ok := e.Payload.(map[string]any)
+		if !ok {
+			return
+		}
+		statusChanged, _ := payload["status_changed"].(bool)
+		if !statusChanged {
+			return
+		}
+		issue, ok := payload["issue"].(handler.IssueResponse)
+		if !ok {
+			return
+		}
+		// Only handle statuses that finalize an automation run. This gate exists
+		// to skip the issue load for routine forward progress, so it stays a
+		// literal comparison for built-in keys. A custom status carries the
+		// behavior of the canonical status it inherits, but resolving that
+		// needs a catalog read — so let non-built-in keys through and let
+		// SyncRunFromIssue normalize once it has the issue. (MUL-6243)
+		if issuestatus.IsBuiltIn(issue.Status) &&
+			issue.Status != "done" && issue.Status != "in_review" &&
+			issue.Status != "cancelled" && issue.Status != "blocked" {
+			return
+		}
+		// Load the full issue from DB to check origin_type.
+		dbIssue, err := svc.Queries.GetIssue(ctx, parseUUID(issue.ID))
+		if err != nil {
+			slog.Debug("automation listener: failed to load issue", "issue_id", issue.ID, "error", err)
+			return
+		}
+		svc.SyncRunFromIssue(ctx, dbIssue)
+	})
+
+	// When a task completes or fails, check if it's an automation run_only task.
+	bus.Subscribe(protocol.EventTaskCompleted, func(e events.Event) {
+		syncRunFromTaskEvent(ctx, svc, e)
+	})
+	bus.Subscribe(protocol.EventTaskFailed, func(e events.Event) {
+		syncRunFromTaskEvent(ctx, svc, e)
+	})
+	bus.Subscribe(protocol.EventTaskCancelled, func(e events.Event) {
+		syncRunFromTaskEvent(ctx, svc, e)
+	})
+}
+
+func syncRunFromTaskEvent(ctx context.Context, svc *service.AutomationService, e events.Event) {
+	payload, ok := e.Payload.(map[string]any)
+	if !ok {
+		return
+	}
+	taskID, ok := payload["task_id"].(string)
+	if !ok || taskID == "" {
+		return
+	}
+	task, err := svc.Queries.GetAgentTask(ctx, parseUUID(taskID))
+	if err != nil {
+		return
+	}
+	if task.AutomationRunID.Valid {
+		svc.SyncRunFromTask(ctx, task)
+		return
+	}
+	if e.Type == protocol.EventTaskFailed {
+		svc.SyncRunFromLinkedIssueTask(ctx, task)
+	}
+}

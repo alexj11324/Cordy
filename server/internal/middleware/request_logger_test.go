@@ -143,9 +143,9 @@ func TestRedactWebhookPath(t *testing.T) {
 	cases := []struct {
 		in, want string
 	}{
-		{"/api/webhooks/autopilots/awt_secret", "/api/webhooks/autopilots/[redacted]"},
-		{"/api/webhooks/autopilots/awt_secret/", "/api/webhooks/autopilots/[redacted]/"},
-		{"/api/webhooks/autopilots/", "/api/webhooks/autopilots/"},
+		{"/api/webhooks/automations/awt_secret", "/api/webhooks/automations/[redacted]"},
+		{"/api/webhooks/automations/awt_secret/", "/api/webhooks/automations/[redacted]/"},
+		{"/api/webhooks/automations/", "/api/webhooks/automations/"},
 		{"/api/webhooks/github", "/api/webhooks/github"},
 		{"/api/runtimes/abc", "/api/runtimes/abc"},
 		{"/", "/"},
@@ -162,7 +162,7 @@ func TestRequestLogger_RedactsWebhookTokenInPath(t *testing.T) {
 	handler := RequestLogger(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
-	req := httptest.NewRequest(http.MethodPost, "/api/webhooks/autopilots/awt_supersecret", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/webhooks/automations/awt_supersecret", nil)
 	handler.ServeHTTP(httptest.NewRecorder(), req)
 	out := logs.String()
 	if strings.Contains(out, "awt_supersecret") {
@@ -186,7 +186,7 @@ func TestRequestLogger_IncludesWebhookTriggerIDFromContext(t *testing.T) {
 		SetWebhookTriggerID(r, "trigger-abc")
 		w.WriteHeader(http.StatusOK)
 	}))
-	req := httptest.NewRequest(http.MethodPost, "/api/webhooks/autopilots/awt_supersecret", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/webhooks/automations/awt_supersecret", nil)
 	handler.ServeHTTP(httptest.NewRecorder(), req)
 	out := logs.String()
 	if !strings.Contains(out, "webhook_trigger_id=trigger-abc") {

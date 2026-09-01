@@ -19,7 +19,7 @@ func TestShutdownSequence_RunsInTheDocumentedOrder(t *testing.T) {
 		return func() { ran = append(ran, name) }
 	}
 	shutdownSequence{
-		StopAutopilot:         record("autopilot"),
+		StopAutomation:         record("automation"),
 		DrainHTTP:             record("http"),
 		StopOutboundRelay:     record("relay"),
 		CancelWorkers:         record("cancel"),
@@ -33,7 +33,7 @@ func TestShutdownSequence_RunsInTheDocumentedOrder(t *testing.T) {
 	}.run()
 
 	want := []string{
-		"autopilot", "http", "relay", "cancel", "heartbeats",
+		"automation", "http", "relay", "cancel", "heartbeats",
 		"webhooks", "telegram", "supervisor", "router", "metrics", "pprof",
 	}
 	if !slices.Equal(ran, want) {

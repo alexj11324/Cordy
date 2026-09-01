@@ -196,12 +196,12 @@ describe("TabBar hover action buttons", () => {
   // tab-presentation tests; here we only assert the strip wires it in.)
   it("renders the resource leading visual for every tab", () => {
     state.byWorkspace.acme.tabs = [
-      { id: "tA", url: "/acme/autopilots", title: "Autopilots", pinned: false },
+      { id: "tA", url: "/acme/automations", title: "Automations", pinned: false },
       { id: "tB", url: "/acme/projects/proj-1", title: "Project", pinned: false },
     ];
     const { getByLabelText } = render(<TabBar />);
     expect(
-      getByLabelText("Autopilots").querySelector('[data-testid="tab-leading"]'),
+      getByLabelText("Automations").querySelector('[data-testid="tab-leading"]'),
     ).toBeTruthy();
     expect(
       getByLabelText("Project").querySelector('[data-testid="tab-leading"]'),

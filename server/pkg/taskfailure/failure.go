@@ -64,7 +64,7 @@ const (
 	// IsAgentError returns false for all of these.
 
 	// ReasonQueuedExpired: task sat in 'queued' past the TTL without
-	// being claimed (typically autopilot backlog while the assignee's
+	// being claimed (typically automation backlog while the assignee's
 	// runtime is offline). Written by ExpireStaleQueuedTasks.
 	ReasonQueuedExpired Reason = "queued_expired"
 

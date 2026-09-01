@@ -72,8 +72,8 @@ describe("resolveTabPresentation — direct resources", () => {
     });
   });
 
-  it("autopilot / skill / machine / runtime use a type icon + name", () => {
-    expect(present("/acme/autopilots/a1", { autopilot: { title: "Nightly" } })).toEqual({
+  it("automation / skill / machine / runtime use a type icon + name", () => {
+    expect(present("/acme/automations/a1", { automation: { title: "Nightly" } })).toEqual({
       visual: { kind: "icon", icon: "Zap" },
       title: { kind: "text", text: "Nightly" },
     });

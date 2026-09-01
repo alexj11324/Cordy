@@ -16,13 +16,13 @@ func TestClassifyTask(t *testing.T) {
 	}{
 		{"chat", TaskContextForEnv{ChatSessionID: "c"}, kindChat},
 		{"quick-create", TaskContextForEnv{QuickCreatePrompt: "p"}, kindQuickCreate},
-		{"autopilot", TaskContextForEnv{AutopilotRunID: "r"}, kindAutopilotRunOnly},
+		{"automation", TaskContextForEnv{AutomationRunID: "r"}, kindAutomationRunOnly},
 		{"issue-comment-triggered", TaskContextForEnv{IssueID: "i", TriggerCommentID: "c"}, kindIssue},
 		{"issue-assignment-triggered", TaskContextForEnv{IssueID: "i"}, kindIssue},
 		{"issue-bare", TaskContextForEnv{}, kindIssue},
 		{"tiebreak-chat-vs-quick", TaskContextForEnv{ChatSessionID: "c", QuickCreatePrompt: "p"}, kindChat},
-		{"tiebreak-quick-vs-autopilot", TaskContextForEnv{QuickCreatePrompt: "p", AutopilotRunID: "r"}, kindQuickCreate},
-		{"tiebreak-autopilot-vs-comment", TaskContextForEnv{AutopilotRunID: "r", IssueID: "i", TriggerCommentID: "c"}, kindAutopilotRunOnly},
+		{"tiebreak-quick-vs-automation", TaskContextForEnv{QuickCreatePrompt: "p", AutomationRunID: "r"}, kindQuickCreate},
+		{"tiebreak-automation-vs-comment", TaskContextForEnv{AutomationRunID: "r", IssueID: "i", TriggerCommentID: "c"}, kindAutomationRunOnly},
 	}
 	for _, tc := range cases {
 		tc := tc
@@ -44,7 +44,7 @@ func TestTaskKindHasIssueContext(t *testing.T) {
 		want bool
 	}{
 		{kindIssue, true},
-		{kindAutopilotRunOnly, false},
+		{kindAutomationRunOnly, false},
 		{kindQuickCreate, false},
 		{kindChat, false},
 	}
@@ -83,7 +83,7 @@ func TestBuildMetaSkillContentIssueBodyFormatting(t *testing.T) {
 
 	fixtures := map[string]TaskContextForEnv{
 		"issue":        {IssueID: "i-1"},
-		"autopilot":    {AutopilotRunID: "r-1"},
+		"automation":    {AutomationRunID: "r-1"},
 		"quick-create": {QuickCreatePrompt: "create an issue"},
 		"chat":         {ChatSessionID: "c-1"},
 	}
@@ -126,7 +126,7 @@ func TestBuildMetaSkillContentSlimKindMatrix(t *testing.T) {
 		mustHave map[taskKind]bool
 	}
 	allKinds := map[taskKind]bool{
-		kindIssue: true, kindAutopilotRunOnly: true,
+		kindIssue: true, kindAutomationRunOnly: true,
 		kindQuickCreate: true, kindChat: true,
 	}
 	issueKinds := map[taskKind]bool{kindIssue: true}
@@ -141,7 +141,7 @@ func TestBuildMetaSkillContentSlimKindMatrix(t *testing.T) {
 		{"## Output", allKinds},
 		{"## Comment Formatting", issueKinds},
 		{"## Repositories", map[taskKind]bool{
-			kindIssue: true, kindAutopilotRunOnly: true, kindChat: true,
+			kindIssue: true, kindAutomationRunOnly: true, kindChat: true,
 		}},
 		{"## Issue Metadata", issueKinds},
 		{"## Instruction Precedence", issueKinds},
@@ -158,7 +158,7 @@ func TestBuildMetaSkillContentSlimKindMatrix(t *testing.T) {
 			Repos: baseRepo, AgentSkills: baseSkill},
 		kindQuickCreate: {QuickCreatePrompt: "p", AgentName: "Eve", AgentID: "eve-1",
 			Repos: baseRepo, AgentSkills: baseSkill},
-		kindAutopilotRunOnly: {AutopilotRunID: "r-1", AgentName: "Eve", AgentID: "eve-1",
+		kindAutomationRunOnly: {AutomationRunID: "r-1", AgentName: "Eve", AgentID: "eve-1",
 			Repos: baseRepo, AgentSkills: baseSkill},
 		kindIssue: {IssueID: "i-1", AgentName: "Eve", AgentID: "eve-1",
 			Repos: baseRepo, AgentSkills: baseSkill},
@@ -202,14 +202,14 @@ func TestBriefDueDateTeachesCalendarDayFormat(t *testing.T) {
 	}
 }
 
-// TestBriefOwnsAutopilotIssueCommandsGuard pins the guard's single emission
-// point: the autopilot brief carries AutopilotIssueCommandsGuard, and the
-// per-turn prompt defers to it (daemon.TestBuildPromptAutopilotRunOnly pins
+// TestBriefOwnsAutomationIssueCommandsGuard pins the guard's single emission
+// point: the automation brief carries AutomationIssueCommandsGuard, and the
+// per-turn prompt defers to it (daemon.TestBuildPromptAutomationRunOnly pins
 // the deferral side). MUL-5696.
-func TestBriefOwnsAutopilotIssueCommandsGuard(t *testing.T) {
-	out := buildMetaSkillContent("claude", TaskContextForEnv{AutopilotRunID: "run-1"})
-	if !strings.Contains(out, AutopilotIssueCommandsGuard) {
-		t.Errorf("autopilot brief missing AutopilotIssueCommandsGuard — the per-turn prompt defers to this single emission point")
+func TestBriefOwnsAutomationIssueCommandsGuard(t *testing.T) {
+	out := buildMetaSkillContent("claude", TaskContextForEnv{AutomationRunID: "run-1"})
+	if !strings.Contains(out, AutomationIssueCommandsGuard) {
+		t.Errorf("automation brief missing AutomationIssueCommandsGuard — the per-turn prompt defers to this single emission point")
 	}
 }
 

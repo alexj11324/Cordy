@@ -24,7 +24,7 @@ import (
 //
 // The brief applies two orthogonal optimisations:
 //
-//  1. Section gating per task kind — quick-create / chat / autopilot
+//  1. Section gating per task kind — quick-create / chat / automation
 //     skip sections they have no use for (Mentions, Comment Formatting,
 //     Issue Metadata, Sub-issue, ...).
 //  2. Per-section prose compression — Available Commands, Issue
@@ -370,7 +370,7 @@ func writeAvailableCommandsQuickCreate(b *strings.Builder) {
 
 // writeIssueBodyFormatting emits the default Markdown hierarchy for issue
 // descriptions. It is shared by every task kind because issue creation and
-// updates can be requested from issue, chat, autopilot, and quick-create
+// updates can be requested from issue, chat, automation, and quick-create
 // surfaces.
 func writeIssueBodyFormatting(b *strings.Builder) {
 	b.WriteString("## Issue Body Formatting\n\n")
@@ -555,39 +555,39 @@ func writeWorkflowQuickCreate(b *strings.Builder) {
 	b.WriteString("- If the CLI returns an error, exit with that error as the only output. Do not retry.\n\n")
 }
 
-// AutopilotIssueCommandsGuard is the run-only autopilot issue-command boundary,
-// shared verbatim by the runtime brief (writeWorkflowAutopilot) and the
-// per-turn prompt (daemon.buildAutopilotPrompt). Both land in the same context
+// AutomationIssueCommandsGuard is the run-only automation issue-command boundary,
+// shared verbatim by the runtime brief (writeWorkflowAutomation) and the
+// per-turn prompt (daemon.buildAutomationPrompt). Both land in the same context
 // window; MUL-5696 found the two hand-maintained copies had drifted into an
 // unconditional ban on one surface and a conditional one on the other.
-const AutopilotIssueCommandsGuard = "Do not run `patchbay issue get`, `patchbay issue comment add`, or `patchbay issue status` for this run unless the autopilot instructions explicitly tell you to create or update an issue"
+const AutomationIssueCommandsGuard = "Do not run `patchbay issue get`, `patchbay issue comment add`, or `patchbay issue status` for this run unless the automation instructions explicitly tell you to create or update an issue"
 
-// writeWorkflowAutopilot emits the autopilot run-only workflow.
-func writeWorkflowAutopilot(b *strings.Builder, ctx TaskContextForEnv) {
-	b.WriteString("**This task was triggered by an Autopilot in run-only mode.** There is no assigned Patchbay issue for this run.\n\n")
-	fmt.Fprintf(b, "- Autopilot run ID: `%s`\n", ctx.AutopilotRunID)
-	if ctx.AutopilotID != "" {
-		fmt.Fprintf(b, "- Autopilot ID: `%s`\n", ctx.AutopilotID)
+// writeWorkflowAutomation emits the automation run-only workflow.
+func writeWorkflowAutomation(b *strings.Builder, ctx TaskContextForEnv) {
+	b.WriteString("**This task was triggered by an Automation in run-only mode.** There is no assigned Patchbay issue for this run.\n\n")
+	fmt.Fprintf(b, "- Automation run ID: `%s`\n", ctx.AutomationRunID)
+	if ctx.AutomationID != "" {
+		fmt.Fprintf(b, "- Automation ID: `%s`\n", ctx.AutomationID)
 	}
-	if ctx.AutopilotTitle != "" {
-		fmt.Fprintf(b, "- Autopilot title: %s\n", ctx.AutopilotTitle)
+	if ctx.AutomationTitle != "" {
+		fmt.Fprintf(b, "- Automation title: %s\n", ctx.AutomationTitle)
 	}
-	if ctx.AutopilotSource != "" {
-		fmt.Fprintf(b, "- Trigger source: %s\n", ctx.AutopilotSource)
+	if ctx.AutomationSource != "" {
+		fmt.Fprintf(b, "- Trigger source: %s\n", ctx.AutomationSource)
 	}
-	if ctx.AutopilotTriggerPayload != "" {
-		fmt.Fprintf(b, "- Trigger payload:\n\n```json\n%s\n```\n", ctx.AutopilotTriggerPayload)
+	if ctx.AutomationTriggerPayload != "" {
+		fmt.Fprintf(b, "- Trigger payload:\n\n```json\n%s\n```\n", ctx.AutomationTriggerPayload)
 	}
-	if strings.TrimSpace(ctx.AutopilotDescription) != "" {
-		b.WriteString("\nAutopilot instructions:\n\n")
-		b.WriteString(ctx.AutopilotDescription)
+	if strings.TrimSpace(ctx.AutomationDescription) != "" {
+		b.WriteString("\nAutomation instructions:\n\n")
+		b.WriteString(ctx.AutomationDescription)
 		b.WriteString("\n\n")
 	}
-	if ctx.AutopilotID != "" {
-		fmt.Fprintf(b, "- Run `patchbay autopilot get %s --output json` if you need the full autopilot configuration\n", ctx.AutopilotID)
+	if ctx.AutomationID != "" {
+		fmt.Fprintf(b, "- Run `patchbay automation get %s --output json` if you need the full automation configuration\n", ctx.AutomationID)
 	}
-	b.WriteString("- Complete the autopilot instructions directly\n")
-	b.WriteString("- " + AutopilotIssueCommandsGuard + "\n\n")
+	b.WriteString("- Complete the automation instructions directly\n")
+	b.WriteString("- " + AutomationIssueCommandsGuard + "\n\n")
 }
 
 // writeWorkflowIssue emits the single issue workflow used by every
@@ -831,8 +831,8 @@ func writeDeliveryInvariant(b *strings.Builder) {
 func writeOutput(b *strings.Builder, kind taskKind, ctx TaskContextForEnv) {
 	b.WriteString("## Output\n\n")
 	switch kind {
-	case kindAutopilotRunOnly:
-		b.WriteString("This is a run-only autopilot task, so there may be no issue comment to post. Your final assistant output is captured automatically as the autopilot run result. Keep it concise and state the outcome.\n\n")
+	case kindAutomationRunOnly:
+		b.WriteString("This is a run-only automation task, so there may be no issue comment to post. Your final assistant output is captured automatically as the automation run result. Keep it concise and state the outcome.\n\n")
 		b.WriteString("**Delivering files here:** this surface is text-only — the run result carries no attachments. Describe what you produced; do not link its path.\n")
 	case kindQuickCreate:
 		b.WriteString("This is a quick-create task. There is NO existing issue to comment on. Your final stdout is captured automatically and the platform writes the user's success/failure inbox notification based on whether `patchbay issue create` succeeded.\n\n")
@@ -888,7 +888,7 @@ func writeOutput(b *strings.Builder, kind taskKind, ctx TaskContextForEnv) {
 // The Section × Kind matrix encoded below (skip = elide section, keep
 // = always emit, △ = data-driven inside the helper):
 //
-//	Section               | comment | assign | autopilot | quick_create | chat
+//	Section               | comment | assign | automation | quick_create | chat
 //	----------------------+---------+--------+-----------+--------------+------
 //	Available Commands    |   full  |  full  |   full    |   minimal    | full
 //	Issue Body Formatting |    ✓    |   ✓    |     ✓     |      ✓       |  ✓
@@ -952,8 +952,8 @@ func buildMetaSkillContentSlim(provider string, ctx TaskContextForEnv) string {
 		writeWorkflowChat(&b)
 	case kindQuickCreate:
 		writeWorkflowQuickCreate(&b)
-	case kindAutopilotRunOnly:
-		writeWorkflowAutopilot(&b, ctx)
+	case kindAutomationRunOnly:
+		writeWorkflowAutomation(&b, ctx)
 	case kindIssue:
 		writeWorkflowIssue(&b, ctx)
 	}

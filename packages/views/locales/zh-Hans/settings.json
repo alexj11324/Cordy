@@ -223,7 +223,7 @@
         "label": "前往项目",
         "description": "打开项目列表。"
       },
-      "goAutopilots": {
+      "goAutomations": {
         "label": "前往自动化",
         "description": "打开工作区自动化。"
       },

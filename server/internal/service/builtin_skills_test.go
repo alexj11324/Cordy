@@ -470,8 +470,8 @@ func TestTeamsSkillCoversLeaderRoutingContract(t *testing.T) {
 	}
 }
 
-func TestAutopilotsSkillCoversDispatchAndSideEffects(t *testing.T) {
-	skill, ok := findSkill(t, "patchbay-autopilots")
+func TestAutomationsSkillCoversDispatchAndSideEffects(t *testing.T) {
+	skill, ok := findSkill(t, "patchbay-automations")
 	if !ok {
 		return
 	}
@@ -485,24 +485,24 @@ func TestAutopilotsSkillCoversDispatchAndSideEffects(t *testing.T) {
 	}
 
 	mustContain := []string{
-		"An autopilot is not an agent",
+		"An automation is not an agent",
 		"create_issue",
 		"run_only",
-		"patchbay autopilot trigger-add <autopilot-id> --kind schedule",
-		"patchbay autopilot trigger <autopilot-id> --output json",
+		"patchbay automation trigger-add <automation-id> --kind schedule",
+		"patchbay automation trigger <automation-id> --output json",
 		"Do not run `trigger`",
 		"webhook tokens",
 		"{{date}}",
 		"team's leader agent",
-		"references/autopilots-source-map.md",
+		"references/automations-source-map.md",
 	}
 	for _, want := range mustContain {
 		if !strings.Contains(body, want) {
-			t.Errorf("autopilots skill missing %q", want)
+			t.Errorf("automations skill missing %q", want)
 		}
 	}
-	if !skillHasFile(skill, "references/autopilots-source-map.md") {
-		t.Errorf("autopilots skill missing supporting file references/autopilots-source-map.md")
+	if !skillHasFile(skill, "references/automations-source-map.md") {
+		t.Errorf("automations skill missing supporting file references/automations-source-map.md")
 	}
 }
 

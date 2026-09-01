@@ -15,12 +15,12 @@ func TestRuntimeReadyOmitsUnmeasuredDuration(t *testing.T) {
 }
 
 func TestFailedEventsUseWillRetry(t *testing.T) {
-	runEv := AutopilotRunFailed("user-1", "workspace-1", "autopilot-1", "run-1", "manual", AutopilotAssignee{AgentID: "agent-1", AssigneeType: "agent"}, "manual", "task failed", "task_error", false, 10)
+	runEv := AutomationRunFailed("user-1", "workspace-1", "automation-1", "run-1", "manual", AutomationAssignee{AgentID: "agent-1", AssigneeType: "agent"}, "manual", "task failed", "task_error", false, 10)
 	if got := runEv.Properties["will_retry"]; got != false {
-		t.Fatalf("autopilot will_retry = %v, want false", got)
+		t.Fatalf("automation will_retry = %v, want false", got)
 	}
 	if _, ok := runEv.Properties["recoverable"]; ok {
-		t.Fatalf("autopilot failure should not emit recoverable")
+		t.Fatalf("automation failure should not emit recoverable")
 	}
 }
 
@@ -28,16 +28,16 @@ func TestIsMetricsOnly(t *testing.T) {
 	// As of MUL-4127, PostHog is retired for server-side product analytics:
 	// every server-side event is Prometheus-only and must not ship to PostHog.
 	for _, name := range []string{
-		// runtime / autopilot execution-lifecycle telemetry
+		// runtime / automation execution-lifecycle telemetry
 		EventRuntimeRegistered, EventRuntimeReady, EventRuntimeFailed, EventRuntimeOffline,
-		EventAutopilotRunStarted, EventAutopilotRunCompleted, EventAutopilotRunFailed,
+		EventAutomationRunStarted, EventAutomationRunCompleted, EventAutomationRunFailed,
 		// product-behaviour events (now DB + Grafana only)
 		EventSignup, EventWorkspaceCreated, EventIssueCreated, EventIssueExecuted,
 		EventChatMessageSent, EventTeamInviteSent, EventTeamInviteAccepted,
 		EventOnboardingStarted, EventOnboardingQuestionnaireSubmit, EventOnboardingSourceSubmit,
 		EventAgentCreated,
 		EventOnboardingCompleted, EventCloudWaitlistJoined, EventFeedbackSubmitted,
-		EventContactSalesSubmitted, EventTeamCreated, EventAutopilotCreated,
+		EventContactSalesSubmitted, EventTeamCreated, EventAutomationCreated,
 	} {
 		if !IsMetricsOnly(name) {
 			t.Errorf("IsMetricsOnly(%q) = false, want true (server events stay out of PostHog since MUL-4127)", name)

@@ -544,7 +544,7 @@ func TestInstructionPrecedenceOnlyAppliesToIssueWorkflow(t *testing.T) {
 	}{
 		{"chat", TaskContextForEnv{ChatSessionID: "chat-1"}},
 		{"quick-create", TaskContextForEnv{QuickCreatePrompt: "create me an issue"}},
-		{"autopilot run-only", TaskContextForEnv{AutopilotRunID: "run-1"}},
+		{"automation run-only", TaskContextForEnv{AutomationRunID: "run-1"}},
 	}
 	for _, tc := range cases {
 		tc := tc
@@ -597,7 +597,7 @@ func TestChatOutputDoesNotRequireIssueComment(t *testing.T) {
 // pre-existing "Final results MUST be delivered … invisible without it"
 // and "state the outcome, not the process" lines already carry the
 // mandatory-comment and no-process-dump halves.) Chat / quick-create /
-// autopilot kinds keep their own delivery channels and must NOT inherit
+// automation kinds keep their own delivery channels and must NOT inherit
 // this rule. Runs both the legacy and slim paths.
 func TestOutputForbidsMidRunProgressComments(t *testing.T) {
 	wantPhrases := []string{
@@ -705,9 +705,9 @@ func TestWorkspaceContextRenderedAcrossTaskKinds(t *testing.T) {
 			},
 		},
 		{
-			name: "autopilot run-only",
+			name: "automation run-only",
 			ctx: TaskContextForEnv{
-				AutopilotRunID:   "run-1",
+				AutomationRunID:   "run-1",
 				WorkspaceContext: wsContext,
 			},
 		},
@@ -826,8 +826,8 @@ func TestSubIssueCreationSectionSkippedForNonIssueModes(t *testing.T) {
 			ctx:  TaskContextForEnv{QuickCreatePrompt: "create me an issue"},
 		},
 		{
-			name: "autopilot run-only",
-			ctx:  TaskContextForEnv{AutopilotRunID: "run-1"},
+			name: "automation run-only",
+			ctx:  TaskContextForEnv{AutomationRunID: "run-1"},
 		},
 	}
 	for _, tc := range cases {
@@ -1922,7 +1922,7 @@ func firstBriefDiff(want, got string) string {
 // PriorSessionID from the chat_session row, with the same PriorWorkDir and
 // PriorSessionResumeUnavailable plumbing as an issue task. So a chat brief that
 // varied per turn would lose the prompt cache exactly the same way, and a long
-// chat is precisely where that hurts most. Autopilot and quick-create are
+// chat is precisely where that hurts most. Automation and quick-create are
 // single-shot today, but the invariant is free to hold for them too and stops a
 // future resume path from silently reintroducing the bug.
 func TestBriefByteIdenticalAcrossRunsForEveryKind(t *testing.T) {
@@ -1931,7 +1931,7 @@ func TestBriefByteIdenticalAcrossRunsForEveryKind(t *testing.T) {
 	kinds := map[string]TaskContextForEnv{
 		"chat":         {ChatSessionID: "chat-1", ChatChannelType: ChannelTypeSlack, AgentID: "a-1", AgentName: "Eve"},
 		"quick-create": {QuickCreatePrompt: "make an issue", AgentID: "a-1", AgentName: "Eve"},
-		"autopilot":    {AutopilotRunID: "run-1", AutopilotID: "ap-1", AgentID: "a-1", AgentName: "Eve"},
+		"automation":    {AutomationRunID: "run-1", AutomationID: "ap-1", AgentID: "a-1", AgentName: "Eve"},
 		// WeCom is the channel a real deployment flips the file-delivery
 		// verdict on. The Slack row above catches the same leak today, but only
 		// because the brief's copy is channel-agnostic; scope that copy to

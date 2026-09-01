@@ -43,7 +43,7 @@ type crossIssueChain struct {
 
 // newCrossIssueChain seeds a coordinator agent owned by ownerUserID with a running
 // task on IssueX whose originator is originatorUserID (pass nil for an
-// unattributed run, e.g. a schedule/webhook autopilot dispatch).
+// unattributed run, e.g. a schedule/webhook automation dispatch).
 func newCrossIssueChain(t *testing.T, ownerUserID string, originatorUserID any) crossIssueChain {
 	t.Helper()
 	coordinator := seedAllowListedAgent(t, "MUL-6490 coordinator", ownerUserID, "private")

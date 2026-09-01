@@ -85,20 +85,20 @@ func LockAndFindActiveDuplicate(
 	return duplicate, true, nil
 }
 
-func LockAndFindRecentAutopilotDuplicate(
+func LockAndFindRecentAutomationDuplicate(
 	ctx context.Context,
 	q *db.Queries,
 	workspaceID pgtype.UUID,
-	autopilotID pgtype.UUID,
+	automationID pgtype.UUID,
 	projectID pgtype.UUID,
 	title string,
 	window time.Duration,
 ) (db.Issue, bool, error) {
 	normalizedTitle := NormalizeTitle(title)
-	if normalizedTitle == "" || !autopilotID.Valid || window <= 0 {
+	if normalizedTitle == "" || !automationID.Valid || window <= 0 {
 		return db.Issue{}, false, nil
 	}
-	if err := q.LockIssueDuplicateKey(ctx, recentAutopilotLockKey(workspaceID, autopilotID, projectID, normalizedTitle)); err != nil {
+	if err := q.LockIssueDuplicateKey(ctx, recentAutomationLockKey(workspaceID, automationID, projectID, normalizedTitle)); err != nil {
 		return db.Issue{}, false, err
 	}
 	terminalStatusKeys, err := issuestatus.ExpandCategories(ctx, q, workspaceID, []string{
@@ -109,10 +109,10 @@ func LockAndFindRecentAutopilotDuplicate(
 		return db.Issue{}, false, err
 	}
 
-	duplicate, err := q.FindRecentAutopilotDuplicateIssue(ctx, db.FindRecentAutopilotDuplicateIssueParams{
+	duplicate, err := q.FindRecentAutomationDuplicateIssue(ctx, db.FindRecentAutomationDuplicateIssueParams{
 		WorkspaceID:        workspaceID,
 		TerminalStatusKeys: terminalStatusKeys,
-		OriginID:           autopilotID,
+		OriginID:           automationID,
 		ProjectID:          projectID,
 		NormalizedTitle:    normalizedTitle,
 		CreatedAfter:       pgtype.Timestamptz{Time: time.Now().UTC().Add(-window), Valid: true},
@@ -136,11 +136,11 @@ func lockKey(workspaceID, projectID, parentIssueID pgtype.UUID, normalizedTitle 
 	}, "|")
 }
 
-func recentAutopilotLockKey(workspaceID, autopilotID, projectID pgtype.UUID, normalizedTitle string) string {
+func recentAutomationLockKey(workspaceID, automationID, projectID pgtype.UUID, normalizedTitle string) string {
 	return strings.Join([]string{
-		"autopilot-recent-duplicate",
+		"automation-recent-duplicate",
 		util.UUIDToString(workspaceID),
-		util.UUIDToString(autopilotID),
+		util.UUIDToString(automationID),
 		util.UUIDToString(projectID),
 		normalizedTitle,
 	}, "|")

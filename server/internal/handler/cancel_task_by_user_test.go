@@ -15,7 +15,7 @@ import (
 
 // CancelTaskByUser (POST /api/tasks/{taskId}/cancel) used to key cancellation
 // off issue_id / chat_session_id alone, which 404'd every task whose only
-// source link was autopilot_run_id or quick_create context (MUL-2827). These
+// source link was automation_run_id or quick_create context (MUL-2827). These
 // tests pin the new behavior: tenancy flows through the task's owning agent,
 // with chat-creator privacy and the private-agent visibility gate layered on.
 
@@ -30,12 +30,12 @@ func taskStatus(t *testing.T, taskID string) string {
 	return status
 }
 
-// createAutopilotRunOnlyTask seeds the autopilot -> autopilot_run -> task chain
-// that AutopilotService.dispatchRunOnly produces: a queued task with issue_id
-// and chat_session_id NULL, linked only by autopilot_run_id. The autopilot is
+// createAutomationRunOnlyTask seeds the automation -> automation_run -> task chain
+// that AutomationService.dispatchRunOnly produces: a queued task with issue_id
+// and chat_session_id NULL, linked only by automation_run_id. The automation is
 // created in the agent's own workspace so the fixture works for foreign agents
 // too.
-func createAutopilotRunOnlyTask(t *testing.T, agentID string) string {
+func createAutomationRunOnlyTask(t *testing.T, agentID string) string {
 	t.Helper()
 
 	var workspaceID, runtimeID string
@@ -43,7 +43,7 @@ func createAutopilotRunOnlyTask(t *testing.T, agentID string) string {
 		`SELECT workspace_id, runtime_id FROM agent WHERE id = $1`, agentID,
 	).Scan(&workspaceID, &runtimeID)
 
-	autopilotID := dbfx.Insert(t, "autopilot", testutil.Cols{
+	automationID := dbfx.Insert(t, "automation", testutil.Cols{
 		"workspace_id":    workspaceID,
 		"title":           "cancel-runonly-ap",
 		"assignee_id":     agentID,
@@ -52,15 +52,15 @@ func createAutopilotRunOnlyTask(t *testing.T, agentID string) string {
 		"created_by_id":   testUserID,
 	})
 
-	runID := dbfx.Insert(t, "autopilot_run", testutil.Cols{
-		"autopilot_id": autopilotID,
+	runID := dbfx.Insert(t, "automation_run", testutil.Cols{
+		"automation_id": automationID,
 		"source":       "manual",
 		"status":       "running",
 	})
 
 	taskID := dbfx.Task(t, agentID, testutil.Cols{
 		"runtime_id":       runtimeID,
-		"autopilot_run_id": runID,
+		"automation_run_id": runID,
 	})
 	return taskID
 }
@@ -437,16 +437,16 @@ func TestCancelTaskByUser_StartedEmptyChat_LegacyClient_StillGetsSynchronousRest
 	}
 }
 
-// TestCancelTaskByUser_RunOnlyAutopilot_Succeeds is the core MUL-2827 fix: a
-// run_only autopilot task (issue_id + chat_session_id NULL, only
-// autopilot_run_id set) is cancellable by a member of its agent's workspace.
-func TestCancelTaskByUser_RunOnlyAutopilot_Succeeds(t *testing.T) {
+// TestCancelTaskByUser_RunOnlyAutomation_Succeeds is the core MUL-2827 fix: a
+// run_only automation task (issue_id + chat_session_id NULL, only
+// automation_run_id set) is cancellable by a member of its agent's workspace.
+func TestCancelTaskByUser_RunOnlyAutomation_Succeeds(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
 	}
 
 	agentID := createHandlerTestAgent(t, "CancelRunOnlyAgent", []byte("[]"))
-	taskID := createAutopilotRunOnlyTask(t, agentID)
+	taskID := createAutomationRunOnlyTask(t, agentID)
 
 	w := httptest.NewRecorder()
 	testHandler.CancelTaskByUser(w, cancelTaskByUserRequest(t, testUserID, taskID))
@@ -458,16 +458,16 @@ func TestCancelTaskByUser_RunOnlyAutopilot_Succeeds(t *testing.T) {
 	}
 }
 
-// TestCancelTaskByUser_RunOnlyAutopilot_CrossWorkspace_Returns404 verifies the
+// TestCancelTaskByUser_RunOnlyAutomation_CrossWorkspace_Returns404 verifies the
 // tenant guard: a member of workspace A cannot cancel a run_only task whose
 // agent lives in workspace B, and the task is not mutated before the check.
-func TestCancelTaskByUser_RunOnlyAutopilot_CrossWorkspace_Returns404(t *testing.T) {
+func TestCancelTaskByUser_RunOnlyAutomation_CrossWorkspace_Returns404(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
 	}
 
 	foreignAgentID := createForeignWorkspaceAgent(t)
-	taskID := createAutopilotRunOnlyTask(t, foreignAgentID)
+	taskID := createAutomationRunOnlyTask(t, foreignAgentID)
 
 	w := httptest.NewRecorder()
 	testHandler.CancelTaskByUser(w, cancelTaskByUserRequest(t, testUserID, taskID))
@@ -508,21 +508,21 @@ func TestCancelTaskByUser_QuickCreate_Succeeds(t *testing.T) {
 	}
 }
 
-// TestCancelTaskByUser_RetryClone_Autopilot_Succeeds verifies a retry clone of
-// an autopilot task — which copies parent_task_id + autopilot_run_id verbatim,
+// TestCancelTaskByUser_RetryClone_Automation_Succeeds verifies a retry clone of
+// an automation task — which copies parent_task_id + automation_run_id verbatim,
 // inheriting the NULL issue/chat links — is still cancellable.
-func TestCancelTaskByUser_RetryClone_Autopilot_Succeeds(t *testing.T) {
+func TestCancelTaskByUser_RetryClone_Automation_Succeeds(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
 	}
 
 	agentID := createHandlerTestAgent(t, "CancelRetryCloneAgent", []byte("[]"))
-	parentID := createAutopilotRunOnlyTask(t, agentID)
+	parentID := createAutomationRunOnlyTask(t, agentID)
 
 	var cloneID string
 	dbfx.QueryRow(t, `
-		INSERT INTO agent_task_queue (agent_id, runtime_id, status, priority, autopilot_run_id, parent_task_id, attempt)
-		SELECT agent_id, runtime_id, 'queued', priority, autopilot_run_id, id, 1
+		INSERT INTO agent_task_queue (agent_id, runtime_id, status, priority, automation_run_id, parent_task_id, attempt)
+		SELECT agent_id, runtime_id, 'queued', priority, automation_run_id, id, 1
 		FROM agent_task_queue WHERE id = $1
 		RETURNING id
 	`, parentID).Scan(&cloneID)
@@ -997,7 +997,7 @@ func TestCancelTaskByUser_PrivateAgent_PlainMember_Returns403(t *testing.T) {
 	}
 
 	agentID, _, memberID := privateAgentTestFixture(t)
-	taskID := createAutopilotRunOnlyTask(t, agentID)
+	taskID := createAutomationRunOnlyTask(t, agentID)
 
 	w := httptest.NewRecorder()
 	testHandler.CancelTaskByUser(w, cancelTaskByUserRequest(t, memberID, taskID))

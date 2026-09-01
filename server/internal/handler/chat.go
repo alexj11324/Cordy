@@ -1764,8 +1764,8 @@ func (h *Handler) ClearQueuedChatTasks(w http.ResponseWriter, r *http.Request) {
 // agent_task_queue row carries a NOT NULL agent_id (ON DELETE CASCADE, so the
 // agent always exists), and agents are workspace-scoped. GetAgentTaskInWorkspace
 // is therefore the single tenant guard that works regardless of which optional
-// source FK (issue / chat_session / autopilot_run) is set — which is what makes
-// run_only autopilot tasks and quick_create tasks (whose issue does not exist
+// source FK (issue / chat_session / automation_run) is set — which is what makes
+// run_only automation tasks and quick_create tasks (whose issue does not exist
 // yet) cancellable at all. Keying cancellation off issue_id / chat_session_id
 // alone is exactly what 404'd these tasks before (MUL-2827).
 //
@@ -1846,7 +1846,7 @@ func (h *Handler) CancelTaskByUser(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
-		// Issue / autopilot / quick_create tasks are all visible on the
+		// Issue / automation / quick_create tasks are all visible on the
 		// agent Activity tab + workspace snapshot, which gate private
 		// agents. Mirror that gate here.
 		agent, err := h.Queries.GetAgentInWorkspace(r.Context(), db.GetAgentInWorkspaceParams{

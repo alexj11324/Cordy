@@ -12,7 +12,7 @@ import (
 )
 
 // An issue reaches clients rendered two different ways: the HTTP handler
-// marshals IssueResponse, while events published outside it (autopilot and the
+// marshals IssueResponse, while events published outside it (automation and the
 // channel engine's /issue command on issue:created, the background stuck-issue
 // status reset on issue:updated) marshal service.IssueToMap.
 // Clients type both as a complete Issue and insert the

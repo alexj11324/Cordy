@@ -433,12 +433,12 @@ export const AgentTaskSchema: z.ZodType<AgentTask> = z.object({
     .transform((v) => (v === "" ? undefined : v)),
   created_at: z.string().default(""),
   chat_session_id: z.string().optional(),
-  autopilot_run_id: z.string().optional(),
+  automation_run_id: z.string().optional(),
   parent_task_id: z.string().optional(),
   attempt: z.number().optional(),
   trigger_comment_id: z.string().optional(),
   trigger_summary: z.string().optional(),
-  kind: z.enum(["comment", "autopilot", "chat", "quick_create", "direct"]).optional().catch("direct"),
+  kind: z.enum(["comment", "automation", "chat", "quick_create", "direct"]).optional().catch("direct"),
   work_dir: z.string().optional(),
 }).loose();
 

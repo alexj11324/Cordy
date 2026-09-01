@@ -2,13 +2,13 @@
 
 import { describe, expect, it } from "vitest";
 import type {
-  AutopilotQuotaUsage,
+  AutomationQuotaUsage,
   WorkspaceSubscriptionEntitlements,
   WorkspaceSubscriptionSummary,
 } from "@patchbay/core/types";
 import {
   hasActiveWorkspaceSeatCapacity,
-  resolveAutopilotUsage,
+  resolveAutomationUsage,
 } from "./billing-state";
 
 const freeEntitlements: WorkspaceSubscriptionEntitlements = {
@@ -18,14 +18,14 @@ const freeEntitlements: WorkspaceSubscriptionEntitlements = {
   seats: 3,
   limits: {
     issueCount: { mode: "limited", limit: 17 },
-    autopilotRuns: { mode: "limited", limit: 7 },
+    automationRuns: { mode: "limited", limit: 7 },
   },
   currentPeriodEnd: null,
   snapshotExpiresAt: null,
   version: 1,
 };
 
-const quotaUsage: AutopilotQuotaUsage = {
+const quotaUsage: AutomationQuotaUsage = {
   action: "enforce",
   used: 3,
   reserved: 2,
@@ -38,10 +38,10 @@ const quotaUsage: AutopilotQuotaUsage = {
   blocked_counts: {},
 };
 
-describe("resolveAutopilotUsage", () => {
+describe("resolveAutomationUsage", () => {
   it("counts reserved runs toward progress and the reached decision", () => {
     expect(
-      resolveAutopilotUsage(freeEntitlements, quotaUsage, false),
+      resolveAutomationUsage(freeEntitlements, quotaUsage, false),
     ).toEqual({
       kind: "metered",
       used: 3,
@@ -54,7 +54,7 @@ describe("resolveAutopilotUsage", () => {
     });
 
     expect(
-      resolveAutopilotUsage(
+      resolveAutomationUsage(
         freeEntitlements,
         { ...quotaUsage, used: 5, total: 7, reached: true },
         false,
@@ -64,12 +64,12 @@ describe("resolveAutopilotUsage", () => {
 
   it("renders the server's explicit unlimited mode", () => {
     expect(
-      resolveAutopilotUsage(
+      resolveAutomationUsage(
         {
           ...freeEntitlements,
           limits: {
             ...freeEntitlements.limits,
-            autopilotRuns: { mode: "unlimited", limit: null },
+            automationRuns: { mode: "unlimited", limit: null },
           },
         },
         undefined,
@@ -80,10 +80,10 @@ describe("resolveAutopilotUsage", () => {
 
   it("does not turn missing or disabled limited usage into zero or unlimited", () => {
     expect(
-      resolveAutopilotUsage(freeEntitlements, undefined, true),
+      resolveAutomationUsage(freeEntitlements, undefined, true),
     ).toEqual({ kind: "unavailable" });
     expect(
-      resolveAutopilotUsage(
+      resolveAutomationUsage(
         freeEntitlements,
         {
           ...quotaUsage,
@@ -99,7 +99,7 @@ describe("resolveAutopilotUsage", () => {
       ),
     ).toEqual({ kind: "unavailable" });
     expect(
-      resolveAutopilotUsage(
+      resolveAutomationUsage(
         freeEntitlements,
         {
           ...quotaUsage,
@@ -114,7 +114,7 @@ describe("resolveAutopilotUsage", () => {
 
   it("uses the explicit limited mode even when plan and status say Pro", () => {
     expect(
-      resolveAutopilotUsage(
+      resolveAutomationUsage(
         {
           ...freeEntitlements,
           plan: "pro",

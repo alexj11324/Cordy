@@ -137,16 +137,16 @@ func (w *WebhookDeliveryWorker) ProcessNext(ctx context.Context) (bool, error) {
 		}
 	}
 
-	trigger, err := w.h.Queries.GetAutopilotTrigger(ctx, delivery.TriggerID)
+	trigger, err := w.h.Queries.GetAutomationTrigger(ctx, delivery.TriggerID)
 	if err != nil {
 		return true, w.retryOrFail(ctx, delivery, fmt.Errorf("load trigger: %w", err))
 	}
-	autopilot, err := w.h.Queries.GetAutopilot(ctx, delivery.AutopilotID)
+	automation, err := w.h.Queries.GetAutomation(ctx, delivery.AutomationID)
 	if err != nil {
-		return true, w.retryOrFail(ctx, delivery, fmt.Errorf("load autopilot: %w", err))
+		return true, w.retryOrFail(ctx, delivery, fmt.Errorf("load automation: %w", err))
 	}
-	if uuidToString(trigger.AutopilotID) != uuidToString(delivery.AutopilotID) ||
-		uuidToString(autopilot.WorkspaceID) != uuidToString(delivery.WorkspaceID) {
+	if uuidToString(trigger.AutomationID) != uuidToString(delivery.AutomationID) ||
+		uuidToString(automation.WorkspaceID) != uuidToString(delivery.WorkspaceID) {
 		return true, w.complete(ctx, delivery, deliveryStatusFailed, pgtype.UUID{}, "delivery ownership mismatch")
 	}
 
@@ -167,10 +167,10 @@ func (w *WebhookDeliveryWorker) ProcessNext(ctx context.Context) (bool, error) {
 	}
 
 	// Once ingress has synchronously admitted a run and returned accepted or
-	// skipped, that decision is durable. Re-check mutable trigger/autopilot
+	// skipped, that decision is durable. Re-check mutable trigger/automation
 	// state only for deliveries recovered from the pre-admission crash window;
 	// otherwise a pause immediately after the response could strand the run.
-	_, admissionErr := w.h.Queries.GetAutopilotRunByWebhookDelivery(ctx, delivery.ID)
+	_, admissionErr := w.h.Queries.GetAutomationRunByWebhookDelivery(ctx, delivery.ID)
 	hasAdmittedRun := admissionErr == nil
 	if admissionErr != nil && !errors.Is(admissionErr, pgx.ErrNoRows) {
 		return true, w.retryOrFail(ctx, delivery, fmt.Errorf("load admitted run: %w", admissionErr))
@@ -179,24 +179,24 @@ func (w *WebhookDeliveryWorker) ProcessNext(ctx context.Context) (bool, error) {
 		switch {
 		case !trigger.Enabled:
 			return true, w.complete(ctx, delivery, deliveryStatusIgnored, pgtype.UUID{}, "trigger_disabled")
-		case autopilot.Status == "archived":
-			return true, w.complete(ctx, delivery, deliveryStatusIgnored, pgtype.UUID{}, "autopilot_archived")
-		case autopilot.Status != "active":
-			return true, w.complete(ctx, delivery, deliveryStatusIgnored, pgtype.UUID{}, "autopilot_paused")
+		case automation.Status == "archived":
+			return true, w.complete(ctx, delivery, deliveryStatusIgnored, pgtype.UUID{}, "automation_archived")
+		case automation.Status != "active":
+			return true, w.complete(ctx, delivery, deliveryStatusIgnored, pgtype.UUID{}, "automation_paused")
 		case !webhookEventAllowedByTriggerScope(trigger.EventFilters, envelope):
 			return true, w.complete(ctx, delivery, deliveryStatusIgnored, pgtype.UUID{}, "event_filtered")
 		}
 	}
 
-	run, dispatchErr := w.h.AutopilotService.DispatchAutopilotForWebhookDelivery(
+	run, dispatchErr := w.h.AutomationService.DispatchAutomationForWebhookDelivery(
 		ctx,
-		autopilot,
+		automation,
 		trigger.ID,
 		payload,
 		delivery.ID,
 	)
 	if dispatchErr != nil {
-		var quotaErr *service.AutopilotQuotaExceededError
+		var quotaErr *service.AutomationQuotaExceededError
 		if errors.As(dispatchErr, &quotaErr) {
 			return true, w.complete(ctx, delivery, deliveryStatusIgnored, pgtype.UUID{}, quotaErr.Error(), "quota_exceeded")
 		}
@@ -206,14 +206,14 @@ func (w *WebhookDeliveryWorker) ProcessNext(ctx context.Context) (bool, error) {
 		return true, w.retryOrFail(ctx, delivery, dispatchErr)
 	}
 	if run.Status == "failed" {
-		reason := "autopilot run failed"
+		reason := "automation run failed"
 		if run.FailureReason.Valid {
 			reason = run.FailureReason.String
 		}
 		return true, w.complete(ctx, delivery, deliveryStatusFailed, run.ID, reason)
 	}
 
-	if err := w.h.Queries.TouchAutopilotTriggerFiredAt(ctx, trigger.ID); err != nil {
+	if err := w.h.Queries.TouchAutomationTriggerFiredAt(ctx, trigger.ID); err != nil {
 		slog.Warn("webhook worker: touch last_fired_at",
 			"delivery_id", uuidToString(delivery.ID),
 			"trigger_id", uuidToString(trigger.ID),
@@ -235,7 +235,7 @@ func (w *WebhookDeliveryWorker) complete(
 		ID:             delivery.ID,
 		LeaseToken:     delivery.LeaseToken,
 		Status:         status,
-		AutopilotRunID: runID,
+		AutomationRunID: runID,
 	}
 	if reason != "" {
 		params.Error = pgtype.Text{String: reason, Valid: true}

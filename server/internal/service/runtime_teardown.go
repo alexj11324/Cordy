@@ -31,7 +31,7 @@ type RuntimeTeardownOptions struct {
 type RuntimeTeardownResult struct {
 	UnboundAgents    []db.Agent
 	CancelledTasks   []db.AgentTaskQueue
-	PausedAutopilots []db.Autopilot
+	PausedAutomations []db.Automation
 }
 
 // ValidateRuntimeAgentWorkspaces refuses to mutate cross-workspace bindings.
@@ -111,11 +111,11 @@ func TeardownRuntime(ctx context.Context, qtx *db.Queries, runtimeID pgtype.UUID
 	for i, agent := range unbound {
 		unboundIDs[i] = agent.ID
 	}
-	paused, err := qtx.PauseAutopilotsByUnboundAgents(ctx, unboundIDs)
+	paused, err := qtx.PauseAutomationsByUnboundAgents(ctx, unboundIDs)
 	if err != nil {
-		return out, fmt.Errorf("pause autopilots: %w", err)
+		return out, fmt.Errorf("pause automations: %w", err)
 	}
-	out.PausedAutopilots = paused
+	out.PausedAutomations = paused
 
 	if _, err := qtx.UnbindTasksFromRuntime(ctx, runtimeID); err != nil {
 		return out, fmt.Errorf("unbind task history: %w", err)

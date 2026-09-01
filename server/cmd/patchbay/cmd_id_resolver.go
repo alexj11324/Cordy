@@ -140,7 +140,7 @@ func ambiguousIDPrefixError(kind, input string, matches []idCandidate) error {
 // client-side to disambiguate, causing 14–35s timeouts (GH #4701). Since
 // `MUL-123` already covers every human use case for an issue reference, the
 // short-prefix path is removed instead of being moved server-side. Other
-// resources without a human-readable key (autopilots, projects, labels,
+// resources without a human-readable key (automations, projects, labels,
 // task runs, workspaces, ...) continue to accept short UUID prefixes; see
 // resolveIDByPrefix.
 func resolveIssueRef(ctx context.Context, client *cli.APIClient, input string) (resolvedID, error) {
@@ -220,13 +220,13 @@ func parsePositiveInt(input string) (int, bool) {
 	return n, true
 }
 
-func resolveAutopilotID(ctx context.Context, client *cli.APIClient, input string) (resolvedID, error) {
-	return resolveIDByPrefix(ctx, client, "autopilot", input, fetchAutopilotCandidates)
+func resolveAutomationID(ctx context.Context, client *cli.APIClient, input string) (resolvedID, error) {
+	return resolveIDByPrefix(ctx, client, "automation", input, fetchAutomationCandidates)
 }
 
-func fetchAutopilotCandidates(ctx context.Context, client *cli.APIClient) ([]idCandidate, error) {
+func fetchAutomationCandidates(ctx context.Context, client *cli.APIClient) ([]idCandidate, error) {
 	if client.WorkspaceID == "" {
-		return nil, fmt.Errorf("workspace_id is required to resolve autopilot id prefixes")
+		return nil, fmt.Errorf("workspace_id is required to resolve automation id prefixes")
 	}
 	const limit = resolverListPageLimit
 	candidates := []idCandidate{}
@@ -239,15 +239,15 @@ func fetchAutopilotCandidates(ctx context.Context, client *cli.APIClient) ([]idC
 			params.Set("offset", strconv.Itoa(offset))
 		}
 		var resp struct {
-			Autopilots []map[string]any `json:"autopilots"`
+			Automations []map[string]any `json:"automations"`
 			Total      int              `json:"total"`
 			HasMore    bool             `json:"has_more"`
 		}
-		if err := client.GetJSON(ctx, "/api/autopilots?"+params.Encode(), &resp); err != nil {
+		if err := client.GetJSON(ctx, "/api/automations?"+params.Encode(), &resp); err != nil {
 			return nil, err
 		}
 		added := 0
-		for _, a := range resp.Autopilots {
+		for _, a := range resp.Automations {
 			id := strVal(a, "id")
 			if id == "" {
 				continue
@@ -263,7 +263,7 @@ func fetchAutopilotCandidates(ctx context.Context, client *cli.APIClient) ([]idC
 				Detail:  strVal(a, "status"),
 			})
 		}
-		pageLen := len(resp.Autopilots)
+		pageLen := len(resp.Automations)
 		offset += pageLen
 		if pageLen == 0 || added == 0 {
 			break
@@ -317,14 +317,14 @@ func fetchTaskRunCandidatesForIssue(ctx context.Context, client *cli.APIClient, 
 	return candidates, nil
 }
 
-func resolveAutopilotTriggerID(ctx context.Context, client *cli.APIClient, autopilotID, input string) (resolvedID, error) {
+func resolveAutomationTriggerID(ctx context.Context, client *cli.APIClient, automationID, input string) (resolvedID, error) {
 	trimmed := strings.TrimSpace(input)
 	if uuidRegexp.MatchString(trimmed) {
 		return resolvedID{ID: trimmed, Display: trimmed}, nil
 	}
 	fetch := func(ctx context.Context, client *cli.APIClient) ([]idCandidate, error) {
 		var resp map[string]any
-		if err := client.GetJSON(ctx, "/api/autopilots/"+url.PathEscape(autopilotID), &resp); err != nil {
+		if err := client.GetJSON(ctx, "/api/automations/"+url.PathEscape(automationID), &resp); err != nil {
 			return nil, err
 		}
 		triggersRaw, _ := resp["triggers"].([]any)
@@ -346,7 +346,7 @@ func resolveAutopilotTriggerID(ctx context.Context, client *cli.APIClient, autop
 		}
 		return candidates, nil
 	}
-	return resolveIDByPrefix(ctx, client, "autopilot trigger", input, fetch)
+	return resolveIDByPrefix(ctx, client, "automation trigger", input, fetch)
 }
 
 func resolveProjectID(ctx context.Context, client *cli.APIClient, input string) (resolvedID, error) {

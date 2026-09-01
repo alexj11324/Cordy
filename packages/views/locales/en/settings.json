@@ -43,7 +43,7 @@
       "backlog": "Parked. Assigning an issue here never starts an agent run.",
       "todo": "Queued. Moving an issue here starts the assigned agent.",
       "in_progress": "Actively being worked on.",
-      "in_review": "Delivered, waiting on human review. Finalizes the autopilot run.",
+      "in_review": "Delivered, waiting on human review. Finalizes the automation run.",
       "done": "Completed.",
       "blocked": "Stalled on an external dependency.",
       "cancelled": "Decided not to do."
@@ -223,8 +223,8 @@
         "label": "Go to Projects",
         "description": "Open the project list."
       },
-      "goAutopilots": {
-        "label": "Go to Autopilot",
+      "goAutomations": {
+        "label": "Go to Automation",
         "description": "Open workspace automations."
       },
       "goAgents": {

@@ -247,27 +247,27 @@ func TestRuntimeDeleteLockBlocksConcurrentAgentBinding(t *testing.T) {
 	}
 }
 
-func TestAutopilotAssignmentLockBlocksRuntimeTeardown(t *testing.T) {
+func TestAutomationAssignmentLockBlocksRuntimeTeardown(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
 	}
 	ctx := context.Background()
-	runtimeID := createCascadeFixtureRuntime(t, ctx, "Autopilot Assignment Lock")
-	agentID := createCascadeFixtureAgent(t, ctx, runtimeID, "Autopilot Assignment Agent")
+	runtimeID := createCascadeFixtureRuntime(t, ctx, "Automation Assignment Lock")
+	agentID := createCascadeFixtureAgent(t, ctx, runtimeID, "Automation Assignment Agent")
 
 	assignmentTx, err := testPool.Begin(ctx)
 	if err != nil {
 		t.Fatalf("begin assignment transaction: %v", err)
 	}
 	defer assignmentTx.Rollback(ctx)
-	if _, err := testHandler.Queries.WithTx(assignmentTx).LockAgentForAutopilotAssignment(
+	if _, err := testHandler.Queries.WithTx(assignmentTx).LockAgentForAutomationAssignment(
 		ctx,
-		db.LockAgentForAutopilotAssignmentParams{
+		db.LockAgentForAutomationAssignmentParams{
 			ID:          parseUUID(agentID),
 			WorkspaceID: parseUUID(testWorkspaceID),
 		},
 	); err != nil {
-		t.Fatalf("lock Agent for Autopilot assignment: %v", err)
+		t.Fatalf("lock Agent for Automation assignment: %v", err)
 	}
 
 	deleteTx, err := testPool.Begin(ctx)
@@ -282,7 +282,7 @@ func TestAutopilotAssignmentLockBlocksRuntimeTeardown(t *testing.T) {
 		ctx,
 		parseUUID(runtimeID),
 	); err == nil {
-		t.Fatal("runtime teardown unexpectedly bypassed the Autopilot assignment lock")
+		t.Fatal("runtime teardown unexpectedly bypassed the Automation assignment lock")
 	}
 }
 

@@ -1027,24 +1027,24 @@ func TestResolveIssueRef(t *testing.T) {
 
 }
 
-func TestFetchAutopilotCandidatesPaginates(t *testing.T) {
+func TestFetchAutomationCandidatesPaginates(t *testing.T) {
 	page1 := make([]map[string]any, 0, resolverListPageLimit)
 	for i := 0; i < resolverListPageLimit; i++ {
 		page1 = append(page1, map[string]any{
 			"id":     fmt.Sprintf("aaaaaaaa-0000-0000-0000-%012x", i),
-			"title":  fmt.Sprintf("autopilot-%d", i),
+			"title":  fmt.Sprintf("automation-%d", i),
 			"status": "active",
 		})
 	}
 	page2 := []map[string]any{{
 		"id":     "bbbbbbbb-0000-0000-0000-000000000000",
-		"title":  "final autopilot",
+		"title":  "final automation",
 		"status": "paused",
 	}}
 
 	var offsets []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/autopilots" {
+		if r.URL.Path != "/api/automations" {
 			http.NotFound(w, r)
 			return
 		}
@@ -1059,12 +1059,12 @@ func TestFetchAutopilotCandidatesPaginates(t *testing.T) {
 		switch offset {
 		case "":
 			json.NewEncoder(w).Encode(map[string]any{
-				"autopilots": page1,
+				"automations": page1,
 				"total":      resolverListPageLimit + 1,
 			})
 		case strconv.Itoa(resolverListPageLimit):
 			json.NewEncoder(w).Encode(map[string]any{
-				"autopilots": page2,
+				"automations": page2,
 				"total":      resolverListPageLimit + 1,
 			})
 		default:
@@ -1074,7 +1074,7 @@ func TestFetchAutopilotCandidatesPaginates(t *testing.T) {
 	defer srv.Close()
 
 	client := cli.NewAPIClient(srv.URL, "ws-1", "test-token")
-	got, err := fetchAutopilotCandidates(context.Background(), client)
+	got, err := fetchAutomationCandidates(context.Background(), client)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1280,7 +1280,7 @@ func TestResolveAssignee(t *testing.T) {
 		}
 	})
 
-	// MUL-2165: team names must resolve to (team, <id>) so the autopilot
+	// MUL-2165: team names must resolve to (team, <id>) so the automation
 	// quick-create prompt can route work to a team (e.g. "Super Human")
 	// instead of falling through to "Unrecognized assignee".
 	t.Run("match team by exact name", func(t *testing.T) {

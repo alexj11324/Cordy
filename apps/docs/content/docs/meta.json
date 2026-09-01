@@ -33,7 +33,7 @@
     "install-agent-runtime",
     "providers",
     "---Automation---",
-    "autopilots",
+    "automations",
     "---Integrations---",
     "channels",
     "lark-bot-integration",

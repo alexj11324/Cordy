@@ -24,9 +24,9 @@ const (
 	// message (daemon.BuildPrompt), which is appended after the cached
 	// prefix. See runtime_config_sections.go:writeWorkflowIssue.
 	kindIssue taskKind = iota
-	// kindAutopilotRunOnly: an autopilot fired in run-only mode (no
+	// kindAutomationRunOnly: an automation fired in run-only mode (no
 	// issue created or attached).
-	kindAutopilotRunOnly
+	kindAutomationRunOnly
 	// kindQuickCreate: one-shot "create an issue from a natural-language
 	// prompt" task.
 	kindQuickCreate
@@ -37,7 +37,7 @@ const (
 // classifyTask maps a TaskContextForEnv to the single taskKind the slim
 // brief should be assembled for. Precedence (documented for the tiebreak
 // case, although the daemon never sets two specific-kind flags at once):
-// chat → quick-create → autopilot run-only → issue.
+// chat → quick-create → automation run-only → issue.
 //
 // Deliberately does not read ctx.TriggerCommentID: the classification must
 // not vary across runs of the same resumed session, or the brief's bytes
@@ -48,8 +48,8 @@ func classifyTask(ctx TaskContextForEnv) taskKind {
 		return kindChat
 	case ctx.QuickCreatePrompt != "":
 		return kindQuickCreate
-	case ctx.AutopilotRunID != "":
-		return kindAutopilotRunOnly
+	case ctx.AutomationRunID != "":
+		return kindAutomationRunOnly
 	default:
 		return kindIssue
 	}
@@ -63,7 +63,7 @@ func classifyTask(ctx TaskContextForEnv) taskKind {
 //   - Sub-issue Creation
 //
 // Both are meaningless on the issue-less kinds (chat / quick-create /
-// autopilot run-only) and would either render an empty body or steer the
+// automation run-only) and would either render an empty body or steer the
 // agent into a guaranteed-failed CLI call. Note this is a kind-based
 // predicate, not a check on ctx.IssueID — kindIssue always carries an issue
 // id by construction (the daemon refuses to dispatch it otherwise), and the

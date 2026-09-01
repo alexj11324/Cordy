@@ -179,14 +179,14 @@ FOR UPDATE;
 -- Break inbound references to a task batch before deleting it, in the
 -- application layer rather than through the FKs' ON DELETE SET NULL. Both
 -- referencing columns are indexed (idx_agent_task_queue_parent from migration
--- 055, idx_autopilot_run_task_id from migration 277) so this stays a per-batch
+-- 055, idx_automation_run_task_id from migration 277) so this stays a per-batch
 -- index scan instead of the per-row full scan the FK action would do.
 --
 -- Kept separate from DeleteTaskBatch: a task can be both a member of the batch
 -- and the parent of another member, and updating plus deleting the same row
 -- inside one statement is not well defined.
 WITH detached_runs AS (
-    UPDATE autopilot_run
+    UPDATE automation_run
     SET task_id = NULL
     WHERE task_id = ANY(@task_ids::uuid[])
 )
@@ -283,8 +283,8 @@ ws_teams AS MATERIALIZED (
 ws_sessions AS MATERIALIZED (
     SELECT id FROM chat_session WHERE workspace_id = $1
 ),
-ws_autopilots AS MATERIALIZED (
-    SELECT id FROM autopilot WHERE workspace_id = $1
+ws_automations AS MATERIALIZED (
+    SELECT id FROM automation WHERE workspace_id = $1
 ),
 ws_github_prs AS MATERIALIZED (
     SELECT id FROM github_pull_request WHERE workspace_id = $1
@@ -408,13 +408,13 @@ deleted_team_members AS (
 deleted_project_resources AS (
     DELETE FROM project_resource WHERE workspace_id = $1
 ),
-deleted_autopilot_collaborators AS (
-    DELETE FROM autopilot_collaborator
-    WHERE autopilot_id IN (SELECT id FROM ws_autopilots)
+deleted_automation_collaborators AS (
+    DELETE FROM automation_collaborator
+    WHERE automation_id IN (SELECT id FROM ws_automations)
 ),
-deleted_autopilot_subscribers AS (
-    DELETE FROM autopilot_subscriber
-    WHERE autopilot_id IN (SELECT id FROM ws_autopilots)
+deleted_automation_subscribers AS (
+    DELETE FROM automation_subscriber
+    WHERE automation_id IN (SELECT id FROM ws_automations)
 ),
 deleted_webhook_deliveries AS (
     DELETE FROM webhook_delivery WHERE workspace_id = $1
@@ -548,33 +548,33 @@ deleted_issue_view_preferences AS (
 )
 DELETE FROM quick_action WHERE quick_action.workspace_id = $1;
 
--- name: DeleteWorkspaceAutopilotRuns :exec
-DELETE FROM autopilot_run
-WHERE autopilot_id IN (
-    SELECT id FROM autopilot WHERE autopilot.workspace_id = $1
+-- name: DeleteWorkspaceAutomationRuns :exec
+DELETE FROM automation_run
+WHERE automation_id IN (
+    SELECT id FROM automation WHERE automation.workspace_id = $1
 );
 
--- name: DeleteWorkspaceAutopilotQuotaReservations :exec
-DELETE FROM autopilot_quota_reservation
-WHERE autopilot_quota_reservation.workspace_id = $1;
+-- name: DeleteWorkspaceAutomationQuotaReservations :exec
+DELETE FROM automation_quota_reservation
+WHERE automation_quota_reservation.workspace_id = $1;
 
--- name: DeleteWorkspaceAutopilotQuotaPeriods :exec
-DELETE FROM autopilot_quota_period
-WHERE autopilot_quota_period.workspace_id = $1;
+-- name: DeleteWorkspaceAutomationQuotaPeriods :exec
+DELETE FROM automation_quota_period
+WHERE automation_quota_period.workspace_id = $1;
 
--- name: DeleteWorkspaceAutopilotChildren :exec
+-- name: DeleteWorkspaceAutomationChildren :exec
 WITH
 deleted_triggers AS (
-    DELETE FROM autopilot_trigger
-    WHERE autopilot_id IN (
-        SELECT id FROM autopilot WHERE autopilot.workspace_id = $1
+    DELETE FROM automation_trigger
+    WHERE automation_id IN (
+        SELECT id FROM automation WHERE automation.workspace_id = $1
     )
 )
-DELETE FROM autopilot_rule_version
-WHERE autopilot_rule_version.workspace_id = $1;
+DELETE FROM automation_rule_version
+WHERE automation_rule_version.workspace_id = $1;
 
--- name: DeleteWorkspaceAutopilots :exec
-DELETE FROM autopilot WHERE autopilot.workspace_id = $1;
+-- name: DeleteWorkspaceAutomations :exec
+DELETE FROM automation WHERE automation.workspace_id = $1;
 
 -- name: DeleteWorkspacePullRequests :exec
 WITH deleted_github_prs AS (

@@ -41,7 +41,7 @@ func (h *Handler) RecoverOrphanedTasks(w http.ResponseWriter, r *http.Request) {
 	// task:failed events, agent reconcile, issue rollback, and auto-retry
 	// behaviour as the runtime sweeper. This was previously a fast-path
 	// that bypassed those side effects, leaving the UI stale when no retry
-	// was created (max_attempts exhausted, autopilot, non-retryable reason).
+	// was created (max_attempts exhausted, automation, non-retryable reason).
 	retried := h.TaskService.HandleFailedTasks(r.Context(), rows)
 
 	if len(rows) > 0 {

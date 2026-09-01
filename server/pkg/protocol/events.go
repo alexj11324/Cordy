@@ -130,12 +130,12 @@ const (
 	EventInvitationDeclined = "invitation:declined"
 	EventInvitationRevoked  = "invitation:revoked"
 
-	// Autopilot events
-	EventAutopilotCreated  = "autopilot:created"
-	EventAutopilotUpdated  = "autopilot:updated"
-	EventAutopilotDeleted  = "autopilot:deleted"
-	EventAutopilotRunStart = "autopilot:run_start"
-	EventAutopilotRunDone  = "autopilot:run_done"
+	// Automation events
+	EventAutomationCreated  = "automation:created"
+	EventAutomationUpdated  = "automation:updated"
+	EventAutomationDeleted  = "automation:deleted"
+	EventAutomationRunStart = "automation:run_start"
+	EventAutomationRunDone  = "automation:run_done"
 
 	// Team events
 	EventTeamCreated = "team:created"

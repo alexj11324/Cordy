@@ -97,9 +97,9 @@
     "./quick-actions": "./quick-actions/index.ts",
     "./quick-actions/queries": "./quick-actions/queries.ts",
     "./quick-actions/mutations": "./quick-actions/mutations.ts",
-    "./autopilots": "./autopilots/index.ts",
-    "./autopilots/queries": "./autopilots/queries.ts",
-    "./autopilots/mutations": "./autopilots/mutations.ts",
+    "./automations": "./automations/index.ts",
+    "./automations/queries": "./automations/queries.ts",
+    "./automations/mutations": "./automations/mutations.ts",
     "./pins": "./pins/index.ts",
     "./pins/queries": "./pins/queries.ts",
     "./pins/mutations": "./pins/mutations.ts",
@@ -158,7 +158,7 @@
     "./skills/frontmatter": "./skills/frontmatter.ts",
     "./skills/pack-archive": "./skills/pack-archive.ts",
     "./skills/stores": "./skills/stores/index.ts",
-    "./autopilots/stores": "./autopilots/stores/index.ts"
+    "./automations/stores": "./automations/stores/index.ts"
   },
   "dependencies": {
     "@formatjs/intl-localematcher": "catalog:",

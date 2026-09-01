@@ -893,7 +893,7 @@ func (c claimProjectContext) applyTo(resp *AgentTaskResponse) {
 
 // resolveClaimProjectContext loads the project context for one daemon claim.
 //
-// Every claim path (issue, chat, autopilot, quick-create) resolves the same
+// Every claim path (issue, chat, automation, quick-create) resolves the same
 // thing from a soft project reference, so the tenant and failure rules live
 // here once rather than in a copy per path:
 //

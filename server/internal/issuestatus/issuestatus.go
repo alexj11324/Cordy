@@ -8,7 +8,7 @@
 // as a BEHAVIOR EQUIVALENCE CLASS — two statuses share a category only when the
 // platform treats them identically — and by that definition the 7 built-ins are
 // 7 distinct classes: in_progress, in_review and blocked differ on whether they
-// finalize an autopilot run, whether they notify a delegated subscriber,
+// finalize an automation run, whether they notify a delegated subscriber,
 // whether they dismiss stale task_failed inbox rows, and whether the stuck-issue
 // sweeper resets them. Collapsing them into one "started" category (the Linear
 // model) is what would force a second per-status "behaves_as" concept to
@@ -279,7 +279,7 @@ func Ensure(ctx context.Context, q Querier, workspaceID pgtype.UUID) error {
 // On an unresolvable key it returns the key unchanged. That is the fail-safe
 // direction: an unrecognized status matches none of the canonical comparisons,
 // so the issue is left alone rather than being swept, auto-triggered, or having
-// its autopilot run finalized on a guess.
+// its automation run finalized on a guess.
 func Effective(ctx context.Context, q Querier, workspaceID pgtype.UUID, status string) string {
 	if IsBuiltIn(status) {
 		return status

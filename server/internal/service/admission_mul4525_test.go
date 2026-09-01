@@ -92,18 +92,18 @@ func TestRerunIssueBlockedBeforeMutationWhenInvokeDenied(t *testing.T) {
 	}
 }
 
-// TestAutopilotDispatchAdmitsClickerNotCreator is the acceptance test for
+// TestAutomationDispatchAdmitsClickerNotCreator is the acceptance test for
 // MUL-4525 §3: a MANUAL "run now" admits on the CURRENT clicker's invoke
-// permission (not the autopilot creator's), while automation (no human actor)
+// permission (not the automation creator's), while automation (no human actor)
 // still falls back to the creator gate. The two must not fork.
-func TestAutopilotDispatchAdmitsClickerNotCreator(t *testing.T) {
+func TestAutomationDispatchAdmitsClickerNotCreator(t *testing.T) {
 	pool := newResolveOriginatorPool(t)
 	ctx := context.Background()
 	q := db.New(pool)
 	// Fixture agent is private and owned by ownerID.
 	workspaceID, ownerID, agentID, _ := seedAttributionFixture(t, pool)
 
-	// A different member owns the autopilot; they neither own the private agent
+	// A different member owns the automation; they neither own the private agent
 	// nor sit on its allow-list, so the creator gate denies them.
 	var apCreatorID string
 	if err := pool.QueryRow(ctx, `INSERT INTO "user" (name, email) VALUES ('AP Creator', $1) RETURNING id`,
@@ -116,7 +116,7 @@ func TestAutopilotDispatchAdmitsClickerNotCreator(t *testing.T) {
 		t.Fatalf("seed ap creator member: %v", err)
 	}
 
-	ap := db.Autopilot{
+	ap := db.Automation{
 		WorkspaceID:   util.MustParseUUID(workspaceID),
 		AssigneeID:    util.MustParseUUID(agentID),
 		AssigneeType:  "agent",
@@ -125,7 +125,7 @@ func TestAutopilotDispatchAdmitsClickerNotCreator(t *testing.T) {
 		CreatedByType: "member",
 		CreatedByID:   util.MustParseUUID(apCreatorID),
 	}
-	svc := &AutopilotService{Queries: q}
+	svc := &AutomationService{Queries: q}
 
 	// Manual dispatch by the agent owner (the clicker) is admitted.
 	if reason, _, skip := svc.shouldSkipDispatch(ctx, ap, util.MustParseUUID(ownerID)); skip {

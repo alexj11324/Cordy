@@ -380,7 +380,7 @@ export function createJaDict(allowSignup: boolean): LandingDict {
           ],
           fixes: [
             "MiniMax Code が起動時に失敗しなくなりました。",
-            "ワークスペースを離れたメンバーに、その Autopilot 通知が届かなくなりました。",
+            "ワークスペースを離れたメンバーに、その Automation 通知が届かなくなりました。",
             "タスク失敗後の自動復旧の返信が、元のコメントスレッドに戻ります。",
             "コメントの時刻が誤ったタイムゾーンで表示されなくなりました。",
             "エージェントが完全な ID で Issue をより速く確実に特定します。",
@@ -438,7 +438,7 @@ export function createJaDict(allowSignup: boolean): LandingDict {
             "同時実行のタスクが、互いの作業スペースを上書きしません。",
             "OpenClaw、Pi、OpenCode で設定済みのカスタムプロバイダーを使えます。",
             "ワークスペースを切り替えても、リアルタイム更新とメンションが途切れません。",
-            "通常の CLI 出力に、Autopilot の Webhook 認証情報が表示されません。",
+            "通常の CLI 出力に、Automation の Webhook 認証情報が表示されません。",
             "無関係なコーディング作業の完了を待たず、エージェントとチャットできます。",
           ],
         },
@@ -616,7 +616,7 @@ export function createJaDict(allowSignup: boolean): LandingDict {
             "ボードカードのアバターをクリックすると、担当者を変更できます。",
             "ランタイムの活動とガントの日付が、画面の言語で表示されます。",
             "ダークモードで、タブとページの境界線の色が変わりません。",
-            "組み込みの Bug トリアージ Autopilot が動くようになりました。",
+            "組み込みの Bug トリアージ Automation が動くようになりました。",
           ],
         },
         {
@@ -1474,7 +1474,7 @@ export function createJaDict(allowSignup: boolean): LandingDict {
             "PR レビュー エージェントは新しいコミットが push されると再度実行され、以前のコミットの評価をそのまま使い回さなくなりました。",
             "サーバー Pod の再起動中に発行されたリアルタイム イベントが黙って失われないよう、5 分の有界リプレイ ウィンドウで補うようになりました。",
             "Kiro ACP ランタイムの作業使用量が使用量ログに正しく記録されるようになりました。",
-            "ランタイムがオフラインでも、Autopilot の「タスクを作成」実行がラン リストに残るようになりました。",
+            "ランタイムがオフラインでも、Automation の「タスクを作成」実行がラン リストに残るようになりました。",
             "本文が Attachment / Block Kit / rich_text にしか無い Slack アラート カード（Grafana、Incoming Webhook 等）を、フォールバック文ではなく Attachment 本体から読み込みます。",
             "Codex エージェントの作業ホームからデーモンの Codex モデル カタログが再び見えるようになりました。（コミュニティ報告）",
             "レガシーの `/teams/…` と `/usage` の Web ルートが 404 ではなく現行ページへリダイレクトされます。",
@@ -1528,7 +1528,7 @@ export function createJaDict(allowSignup: boolean): LandingDict {
             "作業の各実行で prompt cache のヒット率が使用量ログに記録されるようになりました。",
           ],
           improvements: [
-            "Autopilot の「アクセス管理」入口が独立ボタンではなく、編集ダイアログ内の軽量なポップオーバーに変わりました。",
+            "Automation の「アクセス管理」入口が独立ボタンではなく、編集ダイアログ内の軽量なポップオーバーに変わりました。",
             "タスクとコメントのエディターが Tiptap 3.27.1 に更新され、インライン `code` ショートカットの入力時に直前の文字が消えるまれな不具合が修正されました。",
           ],
           fixes: [
@@ -1544,10 +1544,10 @@ export function createJaDict(allowSignup: boolean): LandingDict {
         {
           version: "0.3.33",
           date: "2026-06-30",
-          title: "Autopilot のアクセス管理、Slack の履歴バックフィル、スキル パッケージのアーカイブ取り込み",
+          title: "Automation のアクセス管理、Slack の履歴バックフィル、スキル パッケージのアーカイブ取り込み",
           changes: [],
           features: [
-            "Autopilot に明確な書き込み権限レイヤーが入り、詳細ページの「アクセス管理」から特定メンバーに 1 つの Autopilot の書き込み権限だけを委譲できます。",
+            "Automation に明確な書き込み権限レイヤーが入り、詳細ページの「アクセス管理」から特定メンバーに 1 つの Automation の書き込み権限だけを委譲できます。",
             "Slack チャンネルの過去のやり取りを Patchbay にバックフィルでき、エージェントが加わった時点で会話の流れをそのまま把握できます。",
             "Slack でエージェントが返信を準備している間、ユーザーのメッセージに 👀 のリアクションが付き、終了時に確実に外れます。",
             "スキル パッケージをローカルの .skill / .zip アーカイブから取り込めるようになりました。",

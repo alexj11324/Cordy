@@ -49,17 +49,17 @@ func TestDelegatedSubscriber_QuickCreateIsDirectIntent(t *testing.T) {
 	}
 }
 
-// TestDelegatedSubscriber_AutopilotExcluded: an autopilot has an explicitly
+// TestDelegatedSubscriber_AutomationExcluded: an automation has an explicitly
 // configured subscriber template, and THAT list is the intended audience for
 // its issues. Subscribing whoever armed the trigger to every issue the rule
 // ever spawns would be a different product decision, made silently.
-func TestDelegatedSubscriber_AutopilotExcluded(t *testing.T) {
+func TestDelegatedSubscriber_AutomationExcluded(t *testing.T) {
 	if _, _, ok := DelegatedSubscriber(SubscriptionFacts{
 		CreatorType:      "agent",
-		OriginType:       "autopilot",
+		OriginType:       "automation",
 		OriginOriginator: human,
 	}); ok {
-		t.Fatal("autopilot issues must not take a delegated subscription")
+		t.Fatal("automation issues must not take a delegated subscription")
 	}
 }
 

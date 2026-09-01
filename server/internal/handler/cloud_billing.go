@@ -503,7 +503,7 @@ func (h *Handler) CreateCloudBillingPortalSession(w http.ResponseWriter, r *http
 //
 // Two pre-checks happen BEFORE we read the body:
 //
-//   - Per-IP rate limit (mirrors HandleAutopilotWebhook). The
+//   - Per-IP rate limit (mirrors HandleAutomationWebhook). The
 //     endpoint is public; without rate limiting an attacker spraying
 //     bogus payloads forces an upstream round-trip per request and
 //     burns the cloud's webhook handling budget. A spray of bad
@@ -524,7 +524,7 @@ func (h *Handler) HandleCloudBillingStripeWebhook(w http.ResponseWriter, r *http
 	}
 
 	// Per-IP rate limit BEFORE reading the body or hitting upstream.
-	// We deliberately reuse the same limiter as the autopilot
+	// We deliberately reuse the same limiter as the automation
 	// webhook: both are public unauthenticated ingress with the same
 	// abuse profile, and budgeting them together gives a single knob
 	// to tune.

@@ -121,7 +121,7 @@ func TestEffectiveMapsCustomStatusToItsCategory(t *testing.T) {
 
 // An unresolvable key must resolve to itself, not to a guess. Returning a
 // canonical key here would let an unknown status trigger an agent, finalize an
-// autopilot run, or be swept back to todo.
+// automation run, or be swept back to todo.
 func TestEffectiveFailsSafeOnUnknownAndBrokenCatalog(t *testing.T) {
 	t.Run("absent from catalog", func(t *testing.T) {
 		q := newFakeQuerier()

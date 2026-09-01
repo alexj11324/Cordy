@@ -197,7 +197,7 @@ func (m *Manager) plansForTick(
 	scope Scope,
 	now time.Time,
 ) ([]time.Time, error) {
-	// Hook-driven jobs (e.g. Autopilot schedule triggers, which derive
+	// Hook-driven jobs (e.g. Automation schedule triggers, which derive
 	// plan_times from per-trigger cron expressions instead of a
 	// uniform Cadence grid) bypass the Cadence planner entirely. We
 	// still read the latest stored plan so the hook can decide whether

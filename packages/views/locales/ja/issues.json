@@ -587,7 +587,7 @@
     "trigger_retry_attempt": "再試行 #{{attempt}}",
     "trigger_retry_attempt_prefix": "再試行 #{{attempt}} · ",
     "trigger_retry_prefix": "再試行 · ",
-    "trigger_autopilot": "オートパイロット実行",
+    "trigger_automation": "オートパイロット実行",
     "trigger_comment": "コメントトリガー",
     "trigger_initial": "初回実行",
     "trigger_handoff_prefix": "引き継ぎ：",

@@ -46,15 +46,15 @@ func TestLockAndFindActiveDuplicatePropagatesStatusCatalogFailure(t *testing.T) 
 	}
 }
 
-func TestLockAndFindRecentAutopilotDuplicatePropagatesStatusCatalogFailure(t *testing.T) {
+func TestLockAndFindRecentAutomationDuplicatePropagatesStatusCatalogFailure(t *testing.T) {
 	catalogErr := errors.New("status catalog unavailable")
 	q := db.New(catalogFailureDB{err: catalogErr})
 
-	_, found, err := LockAndFindRecentAutopilotDuplicate(
+	_, found, err := LockAndFindRecentAutomationDuplicate(
 		context.Background(), q, testUUID(1), testUUID(2), pgtype.UUID{}, "duplicate title", time.Hour,
 	)
 	if !errors.Is(err, catalogErr) || found {
-		t.Fatalf("LockAndFindRecentAutopilotDuplicate = found %v, err %v; want false, catalog error", found, err)
+		t.Fatalf("LockAndFindRecentAutomationDuplicate = found %v, err %v; want false, catalog error", found, err)
 	}
 }
 

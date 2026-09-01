@@ -198,7 +198,7 @@ func (c PatcherConfig) withDefaults() PatcherConfig {
 // Scope:
 //
 //   - Only tasks whose chat_session has a lark_chat_session_binding
-//     produce outbound. Tasks born from the web UI or autopilot pass
+//     produce outbound. Tasks born from the web UI or automation pass
 //     through unchanged.
 //
 //   - Each EventChatDone yields one Lark text message; there is no
@@ -310,7 +310,7 @@ func (p *Patcher) processEvent(ctx context.Context, e events.Event) error {
 		return nil
 	}
 	if !chatSessionID.Valid {
-		// Issue / autopilot tasks have no chat_session.
+		// Issue / automation tasks have no chat_session.
 		return nil
 	}
 	// A cancelled run has no reply to place, so the only thing owed to the user

@@ -1024,7 +1024,7 @@ func TestBuildChatPromptSlashSkills(t *testing.T) {
 }
 
 // TestBuildPromptDefaultScansRootsFirst pins that the catch-all fallback
-// prompt (no trigger comment, no chat, no autopilot, no quick-create)
+// prompt (no trigger comment, no chat, no automation, no quick-create)
 // starts assignment-triggered comment catch-up with a bounded roots scan and
 // only then offers the full-thread read, while still keeping older history
 // available through pagination.
@@ -1716,7 +1716,7 @@ func TestTurnModeMarkersRetired(t *testing.T) {
 		{"assignment-triggered with handoff note", Task{IssueID: "issue-1", HandoffNote: "start with the API"}},
 		{"chat", Task{ChatSessionID: "chat-1"}},
 		{"quick-create", Task{QuickCreatePrompt: "make an issue"}},
-		{"autopilot", Task{AutopilotRunID: "run-1"}},
+		{"automation", Task{AutomationRunID: "run-1"}},
 	} {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {

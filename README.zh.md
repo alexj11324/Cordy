@@ -60,7 +60,7 @@ diff，全都挂在同一个任务下——没人需要重新捋一遍上下文�
 *一开始只是任务里潦草的三句话，最后变成一个 pull request。*
 
 - **[分配任务](https://patchbay.ai/docs/assigning-issues) →** 像挑同事一样挑个智能体当负责人，剩下的它自己来。
-- **[自动化](https://patchbay.ai/docs/autopilots) →** 日报、巡检、周报按 cron 自己跑，不用有人催。
+- **[自动化](https://patchbay.ai/docs/automations) →** 日报、巡检、周报按 cron 自己跑，不用有人催。
 - **[Chat](https://patchbay.ai/docs/chat) →** 直接问工作区，或者不建任务就把活派出去。
 - **[项目](https://patchbay.ai/docs/projects) →** 把工作归类，顺手挂上智能体要用的仓库和文档。
 

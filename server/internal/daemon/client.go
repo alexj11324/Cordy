@@ -849,20 +849,20 @@ func (c *Client) GetChatSessionGCCheck(ctx context.Context, sessionID string) (*
 	return &resp, nil
 }
 
-// AutopilotRunGCStatus carries the status of an autopilot run. CompletedAt
+// AutomationRunGCStatus carries the status of an automation run. CompletedAt
 // is the run's terminal timestamp (zero for non-terminal runs). The GC loop
 // reclaims a terminal run's never-reused workdir as soon as it sees the
 // terminal status, so it no longer gates on CompletedAt; the field is kept for
 // the API response contract and diagnostics.
-type AutopilotRunGCStatus struct {
+type AutomationRunGCStatus struct {
 	Status      string    `json:"status"`
 	CompletedAt time.Time `json:"completed_at"`
 }
 
-// GetAutopilotRunGCCheck returns the status of an autopilot run for GC decisions.
-func (c *Client) GetAutopilotRunGCCheck(ctx context.Context, runID string) (*AutopilotRunGCStatus, error) {
-	var resp AutopilotRunGCStatus
-	if err := c.getJSON(ctx, fmt.Sprintf("/api/daemon/autopilot-runs/%s/gc-check", runID), &resp); err != nil {
+// GetAutomationRunGCCheck returns the status of an automation run for GC decisions.
+func (c *Client) GetAutomationRunGCCheck(ctx context.Context, runID string) (*AutomationRunGCStatus, error) {
+	var resp AutomationRunGCStatus
+	if err := c.getJSON(ctx, fmt.Sprintf("/api/daemon/automation-runs/%s/gc-check", runID), &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil

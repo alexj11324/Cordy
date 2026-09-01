@@ -124,7 +124,7 @@ type AgentTaskQueue struct {
 	WorkDir               pgtype.Text        `json:"work_dir"`
 	TriggerCommentID      pgtype.UUID        `json:"trigger_comment_id"`
 	ChatSessionID         pgtype.UUID        `json:"chat_session_id"`
-	AutopilotRunID        pgtype.UUID        `json:"autopilot_run_id"`
+	AutomationRunID       pgtype.UUID        `json:"automation_run_id"`
 	Attempt               int32              `json:"attempt"`
 	MaxAttempts           int32              `json:"max_attempts"`
 	ParentTaskID          pgtype.UUID        `json:"parent_task_id"`
@@ -198,7 +198,7 @@ type Attachment struct {
 	SourceContextID pgtype.UUID        `json:"source_context_id"`
 }
 
-type Autopilot struct {
+type Automation struct {
 	ID                 pgtype.UUID        `json:"id"`
 	WorkspaceID        pgtype.UUID        `json:"workspace_id"`
 	Title              string             `json:"title"`
@@ -217,15 +217,15 @@ type Autopilot struct {
 	PauseReason        pgtype.Text        `json:"pause_reason"`
 }
 
-type AutopilotCollaborator struct {
-	AutopilotID pgtype.UUID        `json:"autopilot_id"`
-	UserType    string             `json:"user_type"`
-	UserID      pgtype.UUID        `json:"user_id"`
-	GrantedBy   pgtype.UUID        `json:"granted_by"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+type AutomationCollaborator struct {
+	AutomationID pgtype.UUID        `json:"automation_id"`
+	UserType     string             `json:"user_type"`
+	UserID       pgtype.UUID        `json:"user_id"`
+	GrantedBy    pgtype.UUID        `json:"granted_by"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }
 
-type AutopilotQuotaPeriod struct {
+type AutomationQuotaPeriod struct {
 	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
 	PeriodStart   pgtype.Timestamptz `json:"period_start"`
 	PeriodEnd     pgtype.Timestamptz `json:"period_end"`
@@ -236,7 +236,7 @@ type AutopilotQuotaPeriod struct {
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
-type AutopilotQuotaReservation struct {
+type AutomationQuotaReservation struct {
 	ID                  pgtype.UUID        `json:"id"`
 	WorkspaceID         pgtype.UUID        `json:"workspace_id"`
 	PeriodStart         pgtype.Timestamptz `json:"period_start"`
@@ -251,9 +251,9 @@ type AutopilotQuotaReservation struct {
 }
 
 // Append-only snapshot of autopilot rule publishes (MUL-4302 §3.4). One row per substantive publish (create / enable / resume / trigger-condition / target / instructions change), recording the publisher + effective-config summary. Dispatch resolves the latest row for an autopilot as the run's rule_owner accountable human. No FK, no cascade.
-type AutopilotRuleVersion struct {
+type AutomationRuleVersion struct {
 	ID              pgtype.UUID        `json:"id"`
-	AutopilotID     pgtype.UUID        `json:"autopilot_id"`
+	AutomationID    pgtype.UUID        `json:"automation_id"`
 	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
 	PublishedByType string             `json:"published_by_type"`
 	PublishedByID   pgtype.UUID        `json:"published_by_id"`
@@ -261,9 +261,9 @@ type AutopilotRuleVersion struct {
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 }
 
-type AutopilotRun struct {
+type AutomationRun struct {
 	ID                 pgtype.UUID        `json:"id"`
-	AutopilotID        pgtype.UUID        `json:"autopilot_id"`
+	AutomationID       pgtype.UUID        `json:"automation_id"`
 	TriggerID          pgtype.UUID        `json:"trigger_id"`
 	Source             string             `json:"source"`
 	Status             string             `json:"status"`
@@ -282,16 +282,16 @@ type AutopilotRun struct {
 	ReasonCode         pgtype.Text        `json:"reason_code"`
 }
 
-type AutopilotSubscriber struct {
-	AutopilotID pgtype.UUID        `json:"autopilot_id"`
-	UserType    string             `json:"user_type"`
-	UserID      pgtype.UUID        `json:"user_id"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+type AutomationSubscriber struct {
+	AutomationID pgtype.UUID        `json:"automation_id"`
+	UserType     string             `json:"user_type"`
+	UserID       pgtype.UUID        `json:"user_id"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }
 
-type AutopilotTrigger struct {
+type AutomationTrigger struct {
 	ID             pgtype.UUID        `json:"id"`
-	AutopilotID    pgtype.UUID        `json:"autopilot_id"`
+	AutomationID   pgtype.UUID        `json:"automation_id"`
 	Kind           string             `json:"kind"`
 	Enabled        bool               `json:"enabled"`
 	CronExpression pgtype.Text        `json:"cron_expression"`
@@ -1480,7 +1480,7 @@ type VerificationCode struct {
 type WebhookDelivery struct {
 	ID                     pgtype.UUID        `json:"id"`
 	WorkspaceID            pgtype.UUID        `json:"workspace_id"`
-	AutopilotID            pgtype.UUID        `json:"autopilot_id"`
+	AutomationID           pgtype.UUID        `json:"automation_id"`
 	TriggerID              pgtype.UUID        `json:"trigger_id"`
 	Provider               string             `json:"provider"`
 	Event                  string             `json:"event"`
@@ -1494,7 +1494,7 @@ type WebhookDelivery struct {
 	RawBody                []byte             `json:"raw_body"`
 	ResponseStatus         pgtype.Int4        `json:"response_status"`
 	ResponseBody           pgtype.Text        `json:"response_body"`
-	AutopilotRunID         pgtype.UUID        `json:"autopilot_run_id"`
+	AutomationRunID        pgtype.UUID        `json:"automation_run_id"`
 	ReplayedFromDeliveryID pgtype.UUID        `json:"replayed_from_delivery_id"`
 	Error                  pgtype.Text        `json:"error"`
 	ReceivedAt             pgtype.Timestamptz `json:"received_at"`

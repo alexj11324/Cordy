@@ -420,7 +420,7 @@ VALUES
     ($1::uuid, 'backlog', 'Backlog', 'Parked. Assigning an issue here never starts an agent run.', 'backlog', '#6b7280', TRUE, 0),
     ($1::uuid, 'todo', 'Todo', 'Queued for work. Moving an issue here starts the assigned agent.', 'todo', '#6b7280', TRUE, 0),
     ($1::uuid, 'in_progress', 'In Progress', 'Actively being worked on.', 'in_progress', '#f59e0b', TRUE, 0),
-    ($1::uuid, 'in_review', 'In Review', 'Work delivered, waiting on human review. Finalizes the autopilot run.', 'in_review', '#22c55e', TRUE, 0),
+    ($1::uuid, 'in_review', 'In Review', 'Work delivered, waiting on human review. Finalizes the automation run.', 'in_review', '#22c55e', TRUE, 0),
     ($1::uuid, 'done', 'Done', 'Completed.', 'done', '#3b82f6', TRUE, 0),
     ($1::uuid, 'blocked', 'Blocked', 'Stalled on an external dependency.', 'blocked', '#ef4444', TRUE, 0),
     ($1::uuid, 'cancelled', 'Cancelled', 'Decided not to do.', 'cancelled', '#6b7280', TRUE, 0)

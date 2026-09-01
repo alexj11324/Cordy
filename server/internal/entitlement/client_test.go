@@ -19,7 +19,7 @@ import (
 
 const (
 	testIssueLimit     = 137
-	testAutopilotLimit = 23
+	testAutomationLimit = 23
 )
 
 func TestDefaultConfigIsDisabledAndPerformsNoIO(t *testing.T) {
@@ -101,12 +101,12 @@ func TestGateCachesByWorkspaceAndClonesResults(t *testing.T) {
 	first := client.Gate(context.Background(), workspaceID, GateIssueCount)
 	*first.Gate.Limit = 999
 	second := client.Gate(context.Background(), workspaceID, GateIssueCount)
-	autopilot := client.Gate(context.Background(), workspaceID, GateAutopilotRuns)
+	automation := client.Gate(context.Background(), workspaceID, GateAutomationRuns)
 	if second.Reason != ReasonCacheFresh || second.Gate.Limit == nil || *second.Gate.Limit != testIssueLimit {
 		t.Fatalf("cached decision = %+v", second)
 	}
-	if autopilot.Gate.Action != ActionEnforce || calls.Load() != 1 {
-		t.Fatalf("autopilot = %+v, calls = %d", autopilot, calls.Load())
+	if automation.Gate.Action != ActionEnforce || calls.Load() != 1 {
+		t.Fatalf("automation = %+v, calls = %d", automation, calls.Load())
 	}
 }
 
@@ -252,17 +252,17 @@ func TestColdFailuresFailOpen(t *testing.T) {
 			gate.Action = string(ActionObserve)
 			p.Gates[string(GateIssueCount)] = gate
 		}), ReasonInvalidPolicy},
-		{"missing gate", policyHandler(func(p *wirePolicy) { delete(p.Gates, string(GateAutopilotRuns)) }), ReasonInvalidPolicy},
+		{"missing gate", policyHandler(func(p *wirePolicy) { delete(p.Gates, string(GateAutomationRuns)) }), ReasonInvalidPolicy},
 		{"excessive TTL", policyHandler(func(p *wirePolicy) { p.ValidForSeconds = 301 }), ReasonInvalidPolicy},
-		{"missing autopilot period", policyHandler(func(p *wirePolicy) {
-			limit := testAutopilotLimit
-			p.Gates[string(GateAutopilotRuns)] = wireGate{Action: string(ActionEnforce), Limit: &limit}
+		{"missing automation period", policyHandler(func(p *wirePolicy) {
+			limit := testAutomationLimit
+			p.Gates[string(GateAutomationRuns)] = wireGate{Action: string(ActionEnforce), Limit: &limit}
 		}), ReasonInvalidPolicy},
-		{"autopilot reset is not after period start", policyHandler(func(p *wirePolicy) {
-			gate := p.Gates[string(GateAutopilotRuns)]
+		{"automation reset is not after period start", policyHandler(func(p *wirePolicy) {
+			gate := p.Gates[string(GateAutomationRuns)]
 			resetAt := *gate.PeriodStart
 			gate.ResetAt = &resetAt
-			p.Gates[string(GateAutopilotRuns)] = gate
+			p.Gates[string(GateAutomationRuns)] = gate
 		}), ReasonInvalidPolicy},
 	}
 	for _, tt := range tests {
@@ -278,12 +278,12 @@ func TestColdFailuresFailOpen(t *testing.T) {
 	}
 }
 
-func TestAutopilotResetMayFollowPeriodEnd(t *testing.T) {
+func TestAutomationResetMayFollowPeriodEnd(t *testing.T) {
 	policy := samplePolicy(1, 0, 60, ActionEnforce)
-	gate := policy.Gates[string(GateAutopilotRuns)]
+	gate := policy.Gates[string(GateAutomationRuns)]
 	resetAt := gate.PeriodEnd.Add(time.Hour)
 	gate.ResetAt = &resetAt
-	policy.Gates[string(GateAutopilotRuns)] = gate
+	policy.Gates[string(GateAutomationRuns)] = gate
 
 	if _, err := normalizePolicy(policy); err != nil {
 		t.Fatalf("normalizePolicy: %v", err)
@@ -568,7 +568,7 @@ func newTestClient(t *testing.T, baseURL string, mutate func(*Config)) *Client {
 
 func samplePolicy(policyRevision, subscriptionVersion, validForSeconds int64, issueAction Action) wirePolicy {
 	issueLimit := testIssueLimit
-	autopilotLimit := testAutopilotLimit
+	automationLimit := testAutomationLimit
 	periodStart := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
 	periodEnd := periodStart.AddDate(0, 1, 0)
 	issueGate := wireGate{Action: string(issueAction)}
@@ -583,8 +583,8 @@ func samplePolicy(policyRevision, subscriptionVersion, validForSeconds int64, is
 		ValidForSeconds:     validForSeconds,
 		Gates: map[string]wireGate{
 			string(GateIssueCount): issueGate,
-			string(GateAutopilotRuns): {
-				Action: string(ActionEnforce), Limit: &autopilotLimit,
+			string(GateAutomationRuns): {
+				Action: string(ActionEnforce), Limit: &automationLimit,
 				PeriodStart: &periodStart, PeriodEnd: &periodEnd, ResetAt: &periodEnd,
 			},
 		},

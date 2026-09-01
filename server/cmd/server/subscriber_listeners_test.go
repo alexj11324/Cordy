@@ -359,9 +359,9 @@ func TestSubscriberAddedEventPublished(t *testing.T) {
 	}
 }
 
-// Autopilot publishes EventIssueCreated with a map[string]any payload (not handler.IssueResponse).
+// Automation publishes EventIssueCreated with a map[string]any payload (not handler.IssueResponse).
 // The listener must still subscribe the creator.
-func TestSubscriberIssueCreated_AutopilotMapPayload(t *testing.T) {
+func TestSubscriberIssueCreated_AutomationMapPayload(t *testing.T) {
 	queries := db.New(testPool)
 	bus := events.New()
 	registerSubscriberListeners(bus, testPool)
@@ -378,7 +378,7 @@ func TestSubscriberIssueCreated_AutopilotMapPayload(t *testing.T) {
 			"issue": map[string]any{
 				"id":           issueID,
 				"workspace_id": testWorkspaceID,
-				"title":        "autopilot test issue",
+				"title":        "automation test issue",
 				"status":       "todo",
 				"priority":     "medium",
 				"creator_type": "member",
@@ -388,7 +388,7 @@ func TestSubscriberIssueCreated_AutopilotMapPayload(t *testing.T) {
 	})
 
 	if !isSubscribed(t, queries, issueID, "member", testUserID) {
-		t.Fatal("expected creator to be subscribed when autopilot publishes map payload")
+		t.Fatal("expected creator to be subscribed when automation publishes map payload")
 	}
 }
 

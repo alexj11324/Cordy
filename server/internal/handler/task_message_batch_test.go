@@ -17,7 +17,7 @@ import (
 
 // seedBatchTask builds the running, issue-backed task the /messages endpoint
 // needs: requireDaemonTaskAccess resolves the workspace through the issue, and a
-// task with no issue / chat / autopilot link 404s before the body is read.
+// task with no issue / chat / automation link 404s before the body is read.
 func seedBatchTask(t *testing.T, label string) string {
 	t.Helper()
 	agentID := dbfx.Agent(t, label+" agent", handlerTestRuntimeID(t), testutil.Cols{

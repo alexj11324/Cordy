@@ -57,7 +57,7 @@ type ExecuteToolResponse struct {
 // (SCREAMING_SNAKE_CASE, e.g. GITHUB_CREATE_ISSUE).
 //
 // This is the deterministic backend path — it skips MCP/session orchestration
-// and is the right call for fixed flows like autopilots or built-in skills.
+// and is the right call for fixed flows like automations or built-in skills.
 func (c *Client) ExecuteTool(ctx context.Context, toolSlug string, req ExecuteToolRequest) (*ExecuteToolResponse, error) {
 	if toolSlug == "" {
 		return nil, errors.New("composio: ExecuteTool: toolSlug is required")

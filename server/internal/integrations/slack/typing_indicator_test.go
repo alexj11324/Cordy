@@ -131,7 +131,7 @@ func TestTypingIndicator_ClearsOnTaskFailed(t *testing.T) {
 func TestTypingIndicator_IgnoresNonChatEvent(t *testing.T) {
 	fr := &fakeReactor{}
 	m := newTestTyping(&fakeOutboundQueries{}, fr)
-	// An issue/autopilot event with no chat session must not even reach a binding
+	// An issue/automation event with no chat session must not even reach a binding
 	// lookup, let alone a reaction removal.
 	m.handleEvent(events.Event{Type: protocol.EventTaskFailed, Payload: map[string]any{"task_id": "t1"}})
 	if len(fr.removed) != 0 {

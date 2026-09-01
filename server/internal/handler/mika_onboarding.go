@@ -237,7 +237,7 @@ var mikaOnboardingUseCaseLabels = map[string]string{
 //   - The workspace name and the two "other" answers are member-typed, so they
 //     are fenced off as data rather than left to read as further instructions.
 //   - The member's IANA timezone travels with the profile because the digest
-//     starter play schedules a recurring autopilot. Without it the skill would
+//     starter play schedules a recurring automation. Without it the skill would
 //     be proposing "every morning at 09:00" while the CLI defaults the trigger
 //     to UTC, so anyone outside UTC could confirm a morning digest and receive
 //     an afternoon one (MUL-5765).

@@ -11,7 +11,7 @@ import { stripMentionMarkdown } from "../utils/strip-mention-markdown";
  * Human label for what caused this run.
  *
  * Primary source: the canonical snapshot taken at task creation time
- * (comment text / autopilot title). Survives source edits/deletes and is
+ * (comment text / automation title). Survives source edits/deletes and is
  * information-dense — far better than a structural label.
  *
  * Retry tasks inherit the parent's trigger_summary on the DB side (so the
@@ -40,7 +40,7 @@ export function useTriggerText(task: AgentTask): string {
       ? t(($) => $.execution_log.trigger_retry_attempt, { attempt: task.attempt })
       : t(($) => $.execution_log.trigger_retry);
   }
-  if (task.autopilot_run_id) return t(($) => $.execution_log.trigger_autopilot);
+  if (task.automation_run_id) return t(($) => $.execution_log.trigger_automation);
   if (task.trigger_comment_id) return t(($) => $.execution_log.trigger_comment);
   // Assignment-triggered run that carried a handoff note: show the note inline
   // (truncated by the caller) the way comment triggers show their text, so the

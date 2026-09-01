@@ -253,8 +253,8 @@ func envBool(name string, def bool) bool {
 	return v
 }
 
-func backgroundServices(h *handler.Handler) (*service.TaskService, *service.AutopilotService) {
-	return h.TaskService, h.AutopilotService
+func backgroundServices(h *handler.Handler) (*service.TaskService, *service.AutomationService) {
+	return h.TaskService, h.AutomationService
 }
 
 // jwtSecretBootError returns a non-nil error when the combination of
@@ -616,14 +616,14 @@ func main() {
 
 	// Start background workers.
 	sweepCtx, sweepCancel := context.WithCancel(context.Background())
-	autopilotCtx, autopilotCancel := context.WithCancel(context.Background())
+	automationCtx, automationCancel := context.WithCancel(context.Background())
 	// Reuse the router's services here. In particular, the router wires the
 	// EmptyClaim cache into TaskService; constructing a second TaskService for
-	// scheduled Autopilot dispatch would send the daemon wakeup without bumping
+	// scheduled Automation dispatch would send the daemon wakeup without bumping
 	// that cache's version, so an idle runtime could keep returning an empty
 	// claim until the cache TTL expires.
-	taskSvc, autopilotSvc := backgroundServices(h)
-	registerAutopilotListeners(bus, autopilotSvc)
+	taskSvc, automationSvc := backgroundServices(h)
+	registerAutomationListeners(bus, automationSvc)
 
 	// Construct a LivenessStore that mirrors the one wired into the HTTP
 	// handler. Both the heartbeat write path (handler) and the sweeper read
@@ -655,9 +655,9 @@ func main() {
 	// instead of a slot in the runtime sweep tick.
 	go runSourceContextSweeper(sweepCtx, taskSvc)
 	go heartbeatScheduler.Run(sweepCtx)
-	go runAutopilotFailureMonitor(autopilotCtx, queries, bus, envFailureMonitorConfig())
-	if autopilotSvc.QuotaEnabled() {
-		go runAutopilotQuotaReconciler(autopilotCtx, autopilotSvc)
+	go runAutomationFailureMonitor(automationCtx, queries, bus, envFailureMonitorConfig())
+	if automationSvc.QuotaEnabled() {
+		go runAutomationQuotaReconciler(automationCtx, automationSvc)
 	}
 	go runDBStatsLogger(sweepCtx, pool)
 	if h.WebhookDeliveryWorker != nil {
@@ -710,14 +710,14 @@ func main() {
 	if err := schedulerMgr.Register(scheduler.TaskUsageHourlyJob(pool)); err != nil {
 		slog.Warn("scheduler: failed to register task_usage_hourly rollup job", "error", err)
 	}
-	// MUL-3551: scheduled-Autopilot dispatch runs on the same DB-backed
+	// MUL-3551: scheduled-Automation dispatch runs on the same DB-backed
 	// scheduler. The job owns its plan_times via PlansForScope (each
 	// trigger has its own cron expression, so the Cadence planner does
 	// not fit). Crash recovery, occurrence-level idempotency, lease
 	// theft, and retry are all reused from the manager + sys_cron_executions
-	// — there is no separate goroutine for scheduled Autopilot anymore.
-	if err := schedulerMgr.Register(scheduler.AutopilotScheduleDispatchJob(pool, queries, autopilotSvc)); err != nil {
-		slog.Warn("scheduler: failed to register autopilot_schedule_dispatch job", "error", err)
+	// — there is no separate goroutine for scheduled Automation anymore.
+	if err := schedulerMgr.Register(scheduler.AutomationScheduleDispatchJob(pool, queries, automationSvc)); err != nil {
+		slog.Warn("scheduler: failed to register automation_schedule_dispatch job", "error", err)
 	}
 	// Manifest-declared Plugin schedules share the same durable lease and retry
 	// machinery. The job is inert while plugins_v1 is disabled.
@@ -769,7 +769,7 @@ func main() {
 	// supervised connection clear its sender, and a drain past that point
 	// finds no socket to deliver over.
 	shutdownSequence{
-		StopAutopilot: autopilotCancel,
+		StopAutomation: automationCancel,
 		DrainHTTP: func() {
 			apiShutdownCtx, apiShutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 			if err := srv.Shutdown(apiShutdownCtx); err != nil {

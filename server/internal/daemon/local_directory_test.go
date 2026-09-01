@@ -982,7 +982,7 @@ func TestLocalDirectoryLockExempt(t *testing.T) {
 		{"chat task dispatched in the leader role", Task{ChatSessionID: "sess-1", IsLeaderTask: true}, true},
 		{"issue task", Task{IssueID: "issue-1"}, false},
 		{"issue task in the leader role", Task{IssueID: "issue-1", IsLeaderTask: true}, false},
-		{"autopilot task", Task{AutopilotRunID: "run-1"}, false},
+		{"automation task", Task{AutomationRunID: "run-1"}, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

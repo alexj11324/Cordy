@@ -20,7 +20,7 @@ const VIEWS_ROOT = join(__dirname, "..");
 
 // Product surfaces that render user/agent-authored content. Any of these
 // reaching for a generic Markdown renderer is the regression.
-const PRODUCT_SURFACES = ["chat", "issues", "skills", "autopilots", "inbox"];
+const PRODUCT_SURFACES = ["chat", "issues", "skills", "automations", "inbox"];
 
 function walk(dir: string, out: string[] = []): string[] {
   let entries: string[];

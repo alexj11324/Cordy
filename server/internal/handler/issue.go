@@ -2876,10 +2876,10 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// An agent/team assignee on a PARENTLESS create has no issue to bind an
-	// autopilot authority to, so the scope names the create itself: only a
-	// verified, still-running run_only autopilot task may borrow there
+	// automation authority to, so the scope names the create itself: only a
+	// verified, still-running run_only automation task may borrow there
 	// (MUL-6691 — the reported flow, where the leader creates DRA-109/DRA-110
-	// from scratch rather than under an autopilot-created issue).
+	// from scratch rather than under an automation-created issue).
 	assignScope := scopeChildOf(parentIssue)
 	if req.ParentIssueID == nil {
 		assignScope = scopeNewTopLevelIssue()
@@ -2899,7 +2899,7 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 	}
 	// Project existence and the final parent boundary check are enforced inside
 	// IssueService.Create atomically with the create. The handler preloads a
-	// supplied parent only because the assignee gate must bind any autopilot
+	// supplied parent only because the assignee gate must bind any automation
 	// authority fallback to that server-verified issue before admission.
 
 	attachmentIDs, ok := parseUUIDSliceOrBadRequest(w, req.AttachmentIDs, "attachment_ids")
@@ -2935,7 +2935,7 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 	// Determine creator identity: agent (via X-Agent-ID header) or member.
 	creatorType, actualCreatorID := h.resolveActor(r, creatorID, workspaceID)
 
-	// Optional origin stamping (quick-create / autopilot). Only the
+	// Optional origin stamping (quick-create / automation). Only the
 	// allowed origin types are accepted; anything else is rejected so a
 	// rogue caller can't mint arbitrary origin labels. Both fields must
 	// be provided together.
@@ -3527,7 +3527,7 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	// touches either field. Existing data on the issue is left alone if the
 	// caller is not changing it.
 	//
-	// The scope is THIS issue: an unattributed autopilot run that verifiably owns
+	// The scope is THIS issue: an unattributed automation run that verifiably owns
 	// the work on it may point it at a private agent, exactly as it may when
 	// creating a child under it. Before MUL-6691 this passed nil, so the reported
 	// flow — create DRA-109 unassigned, then assign it — was refused even though
@@ -3689,10 +3689,10 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 // That means owner-only for a private agent, with NO workspace-admin bypass
 // and NO unconditional agent-to-agent bypass — an agent caller (X-Agent-ID) is
 // judged by the top-of-chain human originator like everywhere else.
-// scope names the work the assignment belongs to. An unattributed autopilot
-// run may borrow an autopilot authority only within it — the parent issue for
+// scope names the work the assignment belongs to. An unattributed automation
+// run may borrow an automation authority only within it — the parent issue for
 // child creation, the issue itself for an update, or the run's own verified
-// autopilot when creating a parentless issue (MUL-4857, MUL-6691). It never
+// automation when creating a parentless issue (MUL-4857, MUL-6691). It never
 // changes the new issue's or task's attribution.
 //
 // Returns (statusCode, errorMessage). statusCode == 0 means the pair is valid;
@@ -3894,8 +3894,8 @@ func (h *Handler) DeleteIssue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.TaskService.CancelTasksForIssue(r.Context(), issue.ID)
-	// Fail any linked autopilot runs before delete (ON DELETE SET NULL clears issue_id).
-	_ = h.AutopilotService.FailAutopilotRunsByIssue(r.Context(), issue.ID)
+	// Fail any linked automation runs before delete (ON DELETE SET NULL clears issue_id).
+	_ = h.AutomationService.FailAutomationRunsByIssue(r.Context(), issue.ID)
 
 	deleteResult, err := h.deleteIssueAndCollectAttachmentURLs(r.Context(), issue, nil)
 	if err != nil {
@@ -4441,7 +4441,7 @@ func (h *Handler) BatchDeleteIssues(w http.ResponseWriter, r *http.Request) {
 		issues = append(issues, issue)
 		excludedIDs = append(excludedIDs, issue.ID)
 		h.TaskService.CancelTasksForIssue(r.Context(), issue.ID)
-		_ = h.AutopilotService.FailAutopilotRunsByIssue(r.Context(), issue.ID)
+		_ = h.AutomationService.FailAutomationRunsByIssue(r.Context(), issue.ID)
 	}
 	deleteResult, err := h.deleteIssuesAndCollectAttachmentURLs(r.Context(), issues, excludedIDs)
 	if err != nil {

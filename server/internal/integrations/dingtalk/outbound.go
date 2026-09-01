@@ -73,7 +73,7 @@ func (o *Outbound) handleEvent(e events.Event) {
 func (o *Outbound) processEvent(ctx context.Context, e events.Event) error {
 	taskID, sessionID, ok := taskAndSessionFromEvent(e)
 	if !ok || !sessionID.Valid {
-		// Issue / autopilot tasks carry no chat_session.
+		// Issue / automation tasks carry no chat_session.
 		return nil
 	}
 	content := eventContent(e)

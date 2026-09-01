@@ -226,7 +226,7 @@ type ListAgentRuntimeIDsByProfileParams struct {
 
 // Enumerates the runtime instance rows registered against a profile. The
 // profile-delete cascade walks these so it can run the same archived-agent /
-// archived-team / autopilot teardown the runtime-delete path uses before
+// archived-team / automation teardown the runtime-delete path uses before
 // removing each runtime row — agent.runtime_id is ON DELETE RESTRICT, so a
 // bare delete would 500 whenever an archived agent still references the row.
 func (q *Queries) ListAgentRuntimeIDsByProfile(ctx context.Context, arg ListAgentRuntimeIDsByProfileParams) ([]pgtype.UUID, error) {

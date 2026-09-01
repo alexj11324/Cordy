@@ -2687,7 +2687,7 @@ func resolveAssignee(ctx context.Context, client *cli.APIClient, name string, ki
 	// Search teams. The platform allows issues to be assigned to a team
 	// (the leader agent then coordinates delegation), so team names must
 	// resolve here too for issue-assignee callers — otherwise a user saying
-	// "assign to <TeamName>" silently falls through and the autopilot
+	// "assign to <TeamName>" silently falls through and the automation
 	// prompt emits "Unrecognized assignee: <TeamName>" (MUL-2165). Callers
 	// whose target schema is member-or-agent only (project lead, subscriber)
 	// must opt out via `kinds.team = false`.

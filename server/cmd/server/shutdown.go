@@ -20,8 +20,8 @@ package main
 // is skipped, which is what lets a deployment without a metrics server or
 // without channels use the same sequence.
 type shutdownSequence struct {
-	// StopAutopilot first: it schedules work the rest of the system performs.
-	StopAutopilot func()
+	// StopAutomation first: it schedules work the rest of the system performs.
+	StopAutomation func()
 
 	// DrainHTTP before anything that serves it. In-flight handlers finish
 	// calling Schedule() before the scheduler stops, and no new task
@@ -60,7 +60,7 @@ type shutdownSequence struct {
 // run performs the sequence. The order here IS the contract.
 func (s shutdownSequence) run() {
 	for _, step := range []func(){
-		s.StopAutopilot,
+		s.StopAutomation,
 		s.DrainHTTP,
 		s.StopOutboundRelay,
 		s.CancelWorkers,

@@ -333,8 +333,8 @@ describe("ApiClient schema fallback", () => {
     });
   });
 
-  describe("listAutopilots", () => {
-    const baseAutopilot = {
+  describe("listAutomations", () => {
+    const baseAutomation = {
       id: "ap-1",
       workspace_id: "ws-1",
       title: "Daily triage",
@@ -351,30 +351,30 @@ describe("ApiClient schema fallback", () => {
     };
 
     it("falls back to an empty list when the response is malformed", async () => {
-      stubFetchJson({ autopilots: "not-an-array", total: 1 });
+      stubFetchJson({ automations: "not-an-array", total: 1 });
       const client = new ApiClient("https://api.example.test");
-      const res = await client.listAutopilots();
-      expect(res).toEqual({ autopilots: [], total: 0 });
+      const res = await client.listAutomations();
+      expect(res).toEqual({ automations: [], total: 0 });
     });
 
     it("accepts an old-server row without assignee_type or derived fields", async () => {
       // Pre-MUL-2429 servers omit assignee_type; servers older than the
       // list-derived-fields change omit trigger_kinds/next_run_at/
       // last_run_status. Both must parse, not fall back.
-      stubFetchJson({ autopilots: [baseAutopilot], total: 1 });
+      stubFetchJson({ automations: [baseAutomation], total: 1 });
       const client = new ApiClient("https://api.example.test");
-      const res = await client.listAutopilots();
-      expect(res.autopilots).toHaveLength(1);
-      expect(res.autopilots[0]?.assignee_type).toBe("agent");
-      expect(res.autopilots[0]?.trigger_kinds).toBeUndefined();
-      expect(res.autopilots[0]?.last_run_status).toBeUndefined();
+      const res = await client.listAutomations();
+      expect(res.automations).toHaveLength(1);
+      expect(res.automations[0]?.assignee_type).toBe("agent");
+      expect(res.automations[0]?.trigger_kinds).toBeUndefined();
+      expect(res.automations[0]?.last_run_status).toBeUndefined();
     });
 
     it("passes derived fields through and tolerates enum drift", async () => {
       stubFetchJson({
-        autopilots: [
+        automations: [
           {
-            ...baseAutopilot,
+            ...baseAutomation,
             assignee_type: "team",
             trigger_kinds: ["schedule", "some_future_kind"],
             next_run_at: "2026-06-13T09:00:00Z",
@@ -384,13 +384,13 @@ describe("ApiClient schema fallback", () => {
         total: 1,
       });
       const client = new ApiClient("https://api.example.test");
-      const res = await client.listAutopilots();
-      expect(res.autopilots[0]?.trigger_kinds).toEqual([
+      const res = await client.listAutomations();
+      expect(res.automations[0]?.trigger_kinds).toEqual([
         "schedule",
         "some_future_kind",
       ]);
-      expect(res.autopilots[0]?.next_run_at).toBe("2026-06-13T09:00:00Z");
-      expect(res.autopilots[0]?.last_run_status).toBe("some_future_status");
+      expect(res.automations[0]?.next_run_at).toBe("2026-06-13T09:00:00Z");
+      expect(res.automations[0]?.last_run_status).toBe("some_future_status");
     });
   });
 
@@ -723,18 +723,18 @@ describe("ApiClient schema fallback", () => {
     });
   });
 
-  describe("listAutopilotDeliveries", () => {
+  describe("listAutomationDeliveries", () => {
     it("falls back to an empty list when the body is null", async () => {
       stubFetchJson(null);
       const client = new ApiClient("https://api.example.test");
-      const res = await client.listAutopilotDeliveries("ap-1");
+      const res = await client.listAutomationDeliveries("ap-1");
       expect(res).toEqual({ deliveries: [], total: 0 });
     });
 
     it("falls back to an empty list when `deliveries` is not an array", async () => {
       stubFetchJson({ deliveries: "not-an-array", total: 0 });
       const client = new ApiClient("https://api.example.test");
-      const res = await client.listAutopilotDeliveries("ap-1");
+      const res = await client.listAutomationDeliveries("ap-1");
       expect(res).toEqual({ deliveries: [], total: 0 });
     });
 
@@ -747,7 +747,7 @@ describe("ApiClient schema fallback", () => {
           {
             id: "d-1",
             workspace_id: "ws-1",
-            autopilot_id: "ap-1",
+            automation_id: "ap-1",
             trigger_id: "t-1",
             provider: "github",
             event: "pull_request.opened",
@@ -758,7 +758,7 @@ describe("ApiClient schema fallback", () => {
             attempt_count: 1,
             content_type: "application/json",
             response_status: 200,
-            autopilot_run_id: null,
+            automation_run_id: null,
             replayed_from_delivery_id: null,
             error: null,
             received_at: "2026-01-01T00:00:00Z",
@@ -769,7 +769,7 @@ describe("ApiClient schema fallback", () => {
         total: 1,
       });
       const client = new ApiClient("https://api.example.test");
-      const res = await client.listAutopilotDeliveries("ap-1");
+      const res = await client.listAutomationDeliveries("ap-1");
       expect(res.deliveries).toHaveLength(1);
       expect(res.deliveries[0]?.status).toBe("quarantined");
       expect(res.deliveries[0]?.dispatch_attempts).toBe(0);
@@ -777,13 +777,13 @@ describe("ApiClient schema fallback", () => {
     });
   });
 
-  describe("getAutopilotDelivery", () => {
+  describe("getAutomationDelivery", () => {
     it("falls back to a placeholder carrying the requested id", async () => {
       stubFetchJson({ wrong: "shape" });
       const client = new ApiClient("https://api.example.test");
-      const detail = await client.getAutopilotDelivery("ap-1", "d-1");
+      const detail = await client.getAutomationDelivery("ap-1", "d-1");
       expect(detail.id).toBe("d-1");
-      expect(detail.autopilot_id).toBe("ap-1");
+      expect(detail.automation_id).toBe("ap-1");
     });
   });
 
@@ -836,7 +836,7 @@ describe("ApiClient schema fallback", () => {
       const client = new ApiClient("https://api.example.test");
       await client.cronPreview({ expr: "0 9-21/2 * * 2-4", tz: "Asia/Shanghai" });
       const url = String(vi.mocked(fetch).mock.calls[0]?.[0]);
-      expect(url).toContain("/api/autopilots/cron-preview?");
+      expect(url).toContain("/api/automations/cron-preview?");
       expect(url).toContain("expr=0+9-21%2F2+*+*+2-4");
       expect(url).toContain("tz=Asia%2FShanghai");
     });
@@ -1072,7 +1072,7 @@ describe("workspace subscription contract", () => {
     seats: 3,
     limits: {
       issue_count: { mode: "unlimited" },
-      autopilot_runs: { mode: "unlimited" },
+      automation_runs: { mode: "unlimited" },
     },
     current_period_end: "2026-09-01T00:00:00Z",
     snapshot_expires_at: null,

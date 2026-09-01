@@ -182,13 +182,13 @@ func TestManagedArtifact_NeverDowngradesStrongerActions(t *testing.T) {
 // The same hole existed for the other non-issue kinds. These reach a terminal
 // state quickly in practice, so they are bounded either way — but a run that
 // sits non-terminal should not pin the cache.
-func TestManagedArtifact_NonTerminalAutopilotAndQuickCreate(t *testing.T) {
+func TestManagedArtifact_NonTerminalAutomationAndQuickCreate(t *testing.T) {
 	t.Parallel()
 	runID := "bbbbbbbb-0000-0000-0000-000000000001"
 	taskID := "bbbbbbbb-0000-0000-0000-000000000002"
 
 	mux := http.NewServeMux()
-	mux.HandleFunc(fmt.Sprintf("/api/daemon/autopilot-runs/%s/gc-check", runID), func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc(fmt.Sprintf("/api/daemon/automation-runs/%s/gc-check", runID), func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"status": "running"})
 	})
 	mux.HandleFunc(fmt.Sprintf("/api/daemon/tasks/%s/gc-check", taskID), func(w http.ResponseWriter, r *http.Request) {
@@ -200,7 +200,7 @@ func TestManagedArtifact_NonTerminalAutopilotAndQuickCreate(t *testing.T) {
 		name string
 		meta *execenv.GCMeta
 	}{
-		{"autopilot-run", &execenv.GCMeta{Kind: execenv.GCKindAutopilotRun, AutopilotRunID: runID, WorkspaceID: "ws"}},
+		{"automation-run", &execenv.GCMeta{Kind: execenv.GCKindAutomationRun, AutomationRunID: runID, WorkspaceID: "ws"}},
 		{"quick_create", &execenv.GCMeta{Kind: execenv.GCKindQuickCreate, TaskID: taskID, WorkspaceID: "ws"}},
 	}
 	for _, tc := range cases {

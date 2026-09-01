@@ -3,7 +3,7 @@
 // agent_task_queue must be traceable to exactly one accountable human, and the
 // attribution must be EXPLAINABLE: it records not just who, but at which
 // waterfall level the human was resolved (a direct member action, a delegation
-// copy across an agent hop, the comment-source chain, an autopilot rule owner,
+// copy across an agent hop, the comment-source chain, an automation rule owner,
 // or a degraded owner fallback).
 //
 // This package owns the vocabulary (Source, EvidenceKind, TriggerKind) and the
@@ -42,7 +42,7 @@ const (
 	// agent/system-authored comment; the human is resolved through
 	// comment.source_task_id (a special case of delegation, MUL-4302 §3.3).
 	SourceCommentSource Source = "comment_source"
-	// SourceTriggerOwner — an autopilot schedule/webhook trigger enqueued the run;
+	// SourceTriggerOwner — an automation schedule/webhook trigger enqueued the run;
 	// the accountable human is the member who CREATED that specific trigger (set up
 	// the schedule / registered the webhook). Preferred over rule_owner: a run is
 	// accountable to whoever armed the trigger that fired it, not to whoever last
@@ -50,7 +50,7 @@ const (
 	// autonomous fire carries no human authorization — so this is the same authz-safe
 	// audit-only divergence as rule_owner.
 	SourceTriggerOwner Source = "trigger_owner"
-	// SourceRuleOwner — an autopilot trigger enqueued the run but its creator is not
+	// SourceRuleOwner — an automation trigger enqueued the run but its creator is not
 	// recoverable (a trigger created before per-trigger creators were recorded); the
 	// accountable human degrades to the publisher of the rule's active version
 	// (MUL-4302 §3.4). Precise, but coarser than trigger_owner.
@@ -96,14 +96,14 @@ type EvidenceKind string
 const (
 	EvidenceComment         EvidenceKind = "comment"
 	EvidenceIssueAssignment EvidenceKind = "issue_assignment"
-	EvidenceAutopilotRun    EvidenceKind = "autopilot_run"
+	EvidenceAutomationRun    EvidenceKind = "automation_run"
 	EvidenceRuleVersion     EvidenceKind = "rule_version"
 	EvidenceRerun           EvidenceKind = "rerun"
 	// EvidenceDelegatedFailure points at the terminal worker task that handed
 	// control back to its source coordinator.
 	EvidenceDelegatedFailure EvidenceKind = "delegated_failure"
 	// EvidenceChat points the uniform evidence pair at the chat session that
-	// triggered the run — the chat analogue of autopilot_run/issue_assignment.
+	// triggered the run — the chat analogue of automation_run/issue_assignment.
 	// The dedicated chat_session_id column still exists for its own consumers;
 	// this makes the attribution UI's jump-to-evidence path uniform (MUL-4302 §2).
 	EvidenceChat EvidenceKind = "chat"
@@ -125,9 +125,9 @@ const (
 	KindStageWakeup       TriggerKind = "stage_wakeup"
 	KindQuickCreate       TriggerKind = "quick_create"
 	KindChat              TriggerKind = "chat"
-	KindAutopilotSchedule TriggerKind = "autopilot_schedule"
-	KindAutopilotWebhook  TriggerKind = "autopilot_webhook"
-	KindAutopilotManual   TriggerKind = "autopilot_manual"
+	KindAutomationSchedule TriggerKind = "automation_schedule"
+	KindAutomationWebhook  TriggerKind = "automation_webhook"
+	KindAutomationManual   TriggerKind = "automation_manual"
 	KindRetry             TriggerKind = "retry"
 	KindRerun             TriggerKind = "rerun"
 	KindDeferredFallback  TriggerKind = "deferred_fallback"
@@ -192,7 +192,7 @@ type CommentFacts struct {
 	ParentOriginator pgtype.UUID
 
 	// ParentAccountable is the source task's accountable_user_id (MUL-4302 §3.2).
-	// It lets an autopilot-rooted chain — where the parent has NO authorizing human
+	// It lets an automation-rooted chain — where the parent has NO authorizing human
 	// (ParentOriginator NULL) but IS accountable to someone (trigger creator / rule
 	// publisher) — copy that responsible human down the delegation, instead of
 	// dropping the chain root to unattributed. Loaded by the caller alongside
@@ -227,7 +227,7 @@ func ClassifyComment(f CommentFacts, agentAuthoredSource Source) Result {
 			r.UserID = f.ParentOriginator
 			r.Source = agentAuthoredSource
 		} else if f.ParentAccountable.Valid {
-			// The parent had no authorizing human (autopilot-rooted chain:
+			// The parent had no authorizing human (automation-rooted chain:
 			// originator NULL, accountable = trigger creator / rule publisher) but
 			// IS accountable to someone. Copy that accountable down so the
 			// responsibility chain root stays stable at any depth (MUL-4302 §3.2);
@@ -257,7 +257,7 @@ type DirectFacts struct {
 	// When valid it is the accountable human per MUL-4302 §4 ("执行 assign /
 	// promote 的成员") and takes precedence over the issue creator: the person who
 	// acted, not whoever happened to file the issue, is on the hook. Left invalid
-	// by non-actor paths (comment chain, rerun, autopilot) which resolve the human
+	// by non-actor paths (comment chain, rerun, automation) which resolve the human
 	// elsewhere and fall back to the creator. Because a direct action is the human
 	// lending authority, the actor becomes BOTH originator (authorization) and
 	// accountable — finalizeAttribution keeps them equal, honoring the invariant.
@@ -272,7 +272,7 @@ type DirectFacts struct {
 
 	// OriginAccountable is the origin task's accountable_user_id — the DirectFacts
 	// analogue of CommentFacts.ParentAccountable (MUL-4302 §3.2). An agent-created
-	// sub-issue whose origin task is autopilot-rooted (OriginOriginator NULL,
+	// sub-issue whose origin task is automation-rooted (OriginOriginator NULL,
 	// accountable set) inherits that accountable via delegation instead of dropping
 	// to unattributed.
 	OriginAccountable pgtype.UUID
@@ -310,7 +310,7 @@ func ClassifyDirect(f DirectFacts) Result {
 			r.UserID = f.OriginOriginator
 			r.Source = SourceDelegation
 		} else if f.OriginAccountable.Valid {
-			// Autopilot-rooted origin task: no authorizing human, but accountable
+			// Automation-rooted origin task: no authorizing human, but accountable
 			// to the trigger creator / rule publisher. Copy accountable down so the
 			// chain root stays stable; originator stays NULL (MUL-4302 §3.2).
 			r.AccountableUserID = f.OriginAccountable
@@ -343,7 +343,7 @@ func DirectHumanRun(userID pgtype.UUID, evidenceKind EvidenceKind, evidenceRefID
 }
 
 // Unattributed builds an explicit "no human resolved" result for an enqueue path
-// that currently carries no accountable human — today only the autopilot run_only
+// that currently carries no accountable human — today only the automation run_only
 // dispatch, whose precise rule_owner attribution (accountable = the active rule
 // version's publisher) lands with the rule-version snapshot table in a later
 // Phase 1 increment. Stamping SourceUnattributed with real evidence keeps the row
@@ -354,13 +354,13 @@ func Unattributed(evidenceKind EvidenceKind, evidenceRefID pgtype.UUID) Result {
 	return finalizeAttribution(Result{Source: SourceUnattributed, EvidenceKind: evidenceKind, EvidenceRefID: evidenceRefID})
 }
 
-// RuleOwner builds attribution for an autopilot-triggered run (MUL-4302 §3.4).
+// RuleOwner builds attribution for an automation-triggered run (MUL-4302 §3.4).
 // No human authorized it, so UserID (originator, the authorization value) stays
 // NULL and canInvokeAgent / the Composio overlay keep seeing "no human"; the
 // AUDIT-accountable human is publisherUserID — the member who published the active
 // rule version — which is THE divergence the two-column split exists for
 // (accountable set, originator NULL). ruleVersionID records which snapshot
-// resolved it; evidence points the caller supplies (autopilot_run for run_only,
+// resolved it; evidence points the caller supplies (automation_run for run_only,
 // the issue for create_issue). A missing publisher (system-published rule, or no
 // version resolved yet) degrades to unattributed so we never fabricate a human.
 func RuleOwner(publisherUserID, ruleVersionID pgtype.UUID, evidenceKind EvidenceKind, evidenceRefID pgtype.UUID) Result {
@@ -378,11 +378,11 @@ func RuleOwner(publisherUserID, ruleVersionID pgtype.UUID, evidenceKind Evidence
 	return finalizeAttribution(r)
 }
 
-// TriggerOwner builds attribution for an autopilot schedule/webhook run keyed to
+// TriggerOwner builds attribution for an automation schedule/webhook run keyed to
 // the human who created the firing trigger (MUL-4302; Bohan's refinement). Like
 // RuleOwner, no human authorized the run, so UserID (originator) stays NULL and
 // only the audit-accountable side is set — to creatorUserID, the trigger's member
-// creator. Evidence is caller-supplied (autopilot_run for run_only, the issue for
+// creator. Evidence is caller-supplied (automation_run for run_only, the issue for
 // create_issue). An invalid creator degrades to unattributed so callers that lost
 // the creator fall back to rule_owner rather than fabricating a human.
 func TriggerOwner(creatorUserID pgtype.UUID, evidenceKind EvidenceKind, evidenceRefID pgtype.UUID) Result {
@@ -434,9 +434,9 @@ type SubscriptionFacts struct {
 //     keeps full notifications; an agent_create child is the agent's own decision
 //     made under a broader mandate, so it takes the reduced delegated tier.
 //
-//   - Anything else → no subscription. Notably origin_type='autopilot' is
-//     excluded: an autopilot already has an explicitly configured
-//     autopilot_subscriber template, and that list — not the member who happened
+//   - Anything else → no subscription. Notably origin_type='automation' is
+//     excluded: an automation already has an explicitly configured
+//     automation_subscriber template, and that list — not the member who happened
 //     to arm the trigger — is the intended audience for its issues. Degraded
 //     attribution (owner_fallback / unattributed) is excluded for the same
 //     reason it is degraded: we do not fabricate a human to notify.

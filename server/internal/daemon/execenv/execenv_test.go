@@ -894,16 +894,16 @@ func TestWriteContextFilesOmitsSkillsWhenEmpty(t *testing.T) {
 	}
 }
 
-func TestWriteContextFilesAutopilotRunOnly(t *testing.T) {
+func TestWriteContextFilesAutomationRunOnly(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 
 	ctx := TaskContextForEnv{
-		AutopilotRunID:       "run-1",
-		AutopilotID:          "autopilot-1",
-		AutopilotTitle:       "Daily dependency check",
-		AutopilotDescription: "Check dependencies and report outdated packages.",
-		AutopilotSource:      "manual",
+		AutomationRunID:       "run-1",
+		AutomationID:          "automation-1",
+		AutomationTitle:       "Daily dependency check",
+		AutomationDescription: "Check dependencies and report outdated packages.",
+		AutomationSource:      "manual",
 	}
 
 	if err := writeContextFiles(dir, "", ctx, nil); err != nil {
@@ -917,19 +917,19 @@ func TestWriteContextFilesAutopilotRunOnly(t *testing.T) {
 
 	s := string(content)
 	for _, want := range []string{
-		"# Autopilot Run",
+		"# Automation Run",
 		"run-1",
-		"autopilot-1",
+		"automation-1",
 		"Check dependencies and report outdated packages.",
-		"patchbay autopilot get autopilot-1 --output json",
+		"patchbay automation get automation-1 --output json",
 		"no assigned issue",
 	} {
 		if !strings.Contains(s, want) {
-			t.Errorf("autopilot context missing %q\n---\n%s", want, s)
+			t.Errorf("automation context missing %q\n---\n%s", want, s)
 		}
 	}
 	if strings.Contains(s, "Run `patchbay issue get") {
-		t.Errorf("autopilot context should not contain issue get workflow\n---\n%s", s)
+		t.Errorf("automation context should not contain issue get workflow\n---\n%s", s)
 	}
 }
 
@@ -1516,11 +1516,11 @@ func TestInjectRuntimeConfigAvailableCommandsCoreOnly(t *testing.T) {
 		"patchbay issue runs",
 		"patchbay issue run-messages",
 		"patchbay attachment download",
-		"patchbay autopilot list",
-		"patchbay autopilot create",
-		"patchbay autopilot update",
-		"patchbay autopilot trigger",
-		"patchbay autopilot delete",
+		"patchbay automation list",
+		"patchbay automation create",
+		"patchbay automation update",
+		"patchbay automation trigger",
+		"patchbay automation delete",
 		"patchbay project get",
 		"patchbay project resource list",
 		"patchbay issue label add",
@@ -2596,16 +2596,16 @@ func TestInjectRuntimeConfigQuickCreateOutputPrefixAgnostic(t *testing.T) {
 	}
 }
 
-func TestInjectRuntimeConfigAutopilotRunOnlyNoIssueWorkflow(t *testing.T) {
+func TestInjectRuntimeConfigAutomationRunOnlyNoIssueWorkflow(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 
 	ctx := TaskContextForEnv{
-		AutopilotRunID:       "run-1",
-		AutopilotID:          "autopilot-1",
-		AutopilotTitle:       "Daily dependency check",
-		AutopilotDescription: "Check dependencies and report outdated packages.",
-		AutopilotSource:      "manual",
+		AutomationRunID:       "run-1",
+		AutomationID:          "automation-1",
+		AutomationTitle:       "Daily dependency check",
+		AutomationDescription: "Check dependencies and report outdated packages.",
+		AutomationSource:      "manual",
 	}
 
 	if _, err := InjectRuntimeConfig(dir, "codex", ctx); err != nil {
@@ -2618,14 +2618,14 @@ func TestInjectRuntimeConfigAutopilotRunOnlyNoIssueWorkflow(t *testing.T) {
 	s := string(data)
 
 	for _, want := range []string{
-		"Autopilot in run-only mode",
-		"Autopilot run ID: `run-1`",
+		"Automation in run-only mode",
+		"Automation run ID: `run-1`",
 		"Check dependencies and report outdated packages.",
-		"patchbay autopilot get autopilot-1 --output json",
-		"Your final assistant output is captured automatically as the autopilot run result",
+		"patchbay automation get automation-1 --output json",
+		"Your final assistant output is captured automatically as the automation run result",
 	} {
 		if !strings.Contains(s, want) {
-			t.Errorf("autopilot runtime config missing %q\n---\n%s", want, s)
+			t.Errorf("automation runtime config missing %q\n---\n%s", want, s)
 		}
 	}
 
@@ -2634,7 +2634,7 @@ func TestInjectRuntimeConfigAutopilotRunOnlyNoIssueWorkflow(t *testing.T) {
 		"Final results MUST be delivered via `patchbay issue comment add`",
 	} {
 		if strings.Contains(s, absent) {
-			t.Errorf("autopilot runtime config should not contain %q\n---\n%s", absent, s)
+			t.Errorf("automation runtime config should not contain %q\n---\n%s", absent, s)
 		}
 	}
 }
@@ -5340,7 +5340,7 @@ func TestReadGCMeta_LegacyFileDefaultsToIssueKind(t *testing.T) {
 	}
 }
 
-// New v2 meta files for chat / autopilot / quick-create round-trip without
+// New v2 meta files for chat / automation / quick-create round-trip without
 // being misclassified as the issue kind.
 func TestWriteReadGCMeta_KindRoundTrip(t *testing.T) {
 	t.Parallel()
@@ -5350,7 +5350,7 @@ func TestWriteReadGCMeta_KindRoundTrip(t *testing.T) {
 		want GCMetaKind
 	}{
 		{"chat", GCMeta{Kind: GCKindChat, ChatSessionID: "cs-1", WorkspaceID: "ws"}, GCKindChat},
-		{"autopilot_run", GCMeta{Kind: GCKindAutopilotRun, AutopilotRunID: "ar-1", WorkspaceID: "ws"}, GCKindAutopilotRun},
+		{"automation_run", GCMeta{Kind: GCKindAutomationRun, AutomationRunID: "ar-1", WorkspaceID: "ws"}, GCKindAutomationRun},
 		{"quick_create", GCMeta{Kind: GCKindQuickCreate, TaskID: "t-1", WorkspaceID: "ws"}, GCKindQuickCreate},
 	}
 	for _, tc := range cases {
@@ -5812,7 +5812,7 @@ func TestTaskInitiatorBlockAgent(t *testing.T) {
 }
 
 // TestBuildMetaSkillContentOmitsTaskInitiatorWhenNoName ensures tasks with no
-// attributable human initiator (on-assign / autopilot / quick-create, where
+// attributable human initiator (on-assign / automation / quick-create, where
 // the fields stay empty) skip the heading entirely — a bare heading would be
 // noise.
 func TestBuildMetaSkillContentOmitsTaskInitiatorWhenNoName(t *testing.T) {
@@ -6103,7 +6103,7 @@ func TestInjectRuntimeConfigCatchUpScansRootsFirst(t *testing.T) {
 // the `## Issue Metadata` section (semantic guide + recommended keys +
 // pin/clear rules) and the metadata-read guidance on the issue-get step
 // are emitted only when the task carries a real issue id (comment-triggered
-// or assignment-triggered). Chat / quick-create / run-only autopilot don't
+// or assignment-triggered). Chat / quick-create / run-only automation don't
 // have an issue, so injecting the section there would just guarantee a
 // failed CLI call on every entry. The discovery line in Available
 // Commands → Core is global and must appear everywhere so that the agent
@@ -6245,10 +6245,10 @@ func TestInjectRuntimeConfigIssueMetadataSectionScope(t *testing.T) {
 			want:     withoutSection,
 		},
 		{
-			name: "run_only_autopilot_no_metadata_section",
+			name: "run_only_automation_no_metadata_section",
 			ctx: TaskContextForEnv{
-				AutopilotRunID: "run-md-1",
-				AutopilotID:    "autopilot-md-1",
+				AutomationRunID: "run-md-1",
+				AutomationID:    "automation-md-1",
 			},
 			provider: "codex",
 			filename: "AGENTS.md",

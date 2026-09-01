@@ -206,7 +206,7 @@ func (h *Handler) issueTableFacetQuery(w http.ResponseWriter, r *http.Request, r
 	case "working_agents":
 		// One row per agent currently running issue work inside THIS surface,
 		// with its running-task count. Same predicate as
-		// ListWorkspaceWorkingAgents with type=issue (chat > autopilot > issue
+		// ListWorkspaceWorkingAgents with type=issue (chat > automation > issue
 		// precedence, user-authored non-archived agents only), but the issue set
 		// comes from the surface's own compiled scope + filters instead of a
 		// second, independent workspace-wide definition. That is what keeps the
@@ -220,7 +220,7 @@ WHERE %s
   AND a.archived_at IS NULL
   AND atq.status = 'running'
   AND atq.chat_session_id IS NULL
-  AND atq.autopilot_run_id IS NULL
+  AND atq.automation_run_id IS NULL
 GROUP BY a.id`, compiled.where)
 	case "property":
 		propertyID, err := util.ParseUUID(facet.PropertyID)

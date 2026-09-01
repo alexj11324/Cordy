@@ -587,7 +587,7 @@
     "trigger_retry_attempt": "{{attempt}}번째 다시 시도",
     "trigger_retry_attempt_prefix": "{{attempt}}번째 다시 시도 · ",
     "trigger_retry_prefix": "다시 시도 · ",
-    "trigger_autopilot": "오토파일럿 실행",
+    "trigger_automation": "오토파일럿 실행",
     "trigger_comment": "댓글 트리거",
     "trigger_initial": "초기 실행",
     "trigger_handoff_prefix": "인계: ",

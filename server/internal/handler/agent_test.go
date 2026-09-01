@@ -358,18 +358,18 @@ func TestListWorkspaceWorkingAgents(t *testing.T) {
 		}
 	})
 	chatSessionID := createHandlerTestChatSession(t, workingAgentID)
-	autopilotID := insertListTestAutopilot(t, workingAgentID, "working-agent-source-filter")
-	var autopilotRunID string
+	automationID := insertListTestAutomation(t, workingAgentID, "working-agent-source-filter")
+	var automationRunID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO autopilot_run (autopilot_id, source, status)
+		INSERT INTO automation_run (automation_id, source, status)
 		VALUES ($1, 'manual', 'running')
 		RETURNING id
-	`, autopilotID).Scan(&autopilotRunID); err != nil {
-		t.Fatalf("insert autopilot run: %v", err)
+	`, automationID).Scan(&automationRunID); err != nil {
+		t.Fatalf("insert automation run: %v", err)
 	}
 
-	// Nine running tasks on one agent: six issue relations, chat, autopilot,
-	// and quick-create (no source FK). The autopilot task also carries issue_id
+	// Nine running tasks on one agent: six issue relations, chat, automation,
+	// and quick-create (no source FK). The automation task also carries issue_id
 	// to prove source precedence keeps it out of type=issue.
 	insertedTaskIDs := make([]string, 0, 10)
 	for _, fixture := range []struct {
@@ -377,7 +377,7 @@ func TestListWorkspaceWorkingAgents(t *testing.T) {
 		status         string
 		issueID        any
 		chatSessionID  any
-		autopilotRunID any
+		automationRunID any
 	}{
 		{workingAgentID, "running", assignedIssueID, nil, nil},
 		{workingAgentID, "running", ownedAgentIssueID, nil, nil},
@@ -386,7 +386,7 @@ func TestListWorkspaceWorkingAgents(t *testing.T) {
 		{workingAgentID, "running", ownedLeaderTeamIssueID, nil, nil},
 		{workingAgentID, "running", ownedMemberTeamIssueID, nil, nil},
 		{workingAgentID, "running", nil, chatSessionID, nil},
-		{workingAgentID, "running", assignedIssueID, nil, autopilotRunID},
+		{workingAgentID, "running", assignedIssueID, nil, automationRunID},
 		{workingAgentID, "running", nil, nil, nil},
 		{queuedAgentID, "queued", nil, nil, nil},
 	} {
@@ -394,7 +394,7 @@ func TestListWorkspaceWorkingAgents(t *testing.T) {
 		if err := testPool.QueryRow(ctx, `
 			INSERT INTO agent_task_queue (
 				agent_id, runtime_id, status, priority, issue_id,
-				chat_session_id, autopilot_run_id, started_at
+				chat_session_id, automation_run_id, started_at
 			)
 			VALUES ($1, $2, $3, 0, $4, $5, $6, now())
 			RETURNING id
@@ -404,7 +404,7 @@ func TestListWorkspaceWorkingAgents(t *testing.T) {
 			fixture.status,
 			fixture.issueID,
 			fixture.chatSessionID,
-			fixture.autopilotRunID,
+			fixture.automationRunID,
 		).Scan(&taskID); err != nil {
 			t.Fatalf("insert %s task: %v", fixture.status, err)
 		}
@@ -448,8 +448,8 @@ func TestListWorkspaceWorkingAgents(t *testing.T) {
 			},
 		},
 		{
-			name:         "autopilot",
-			query:        "?type=autopilot",
+			name:         "automation",
+			query:        "?type=automation",
 			wantCount:    1,
 			wantIssueIDs: []string{assignedIssueID},
 		},

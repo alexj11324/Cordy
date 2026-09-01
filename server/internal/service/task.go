@@ -488,7 +488,7 @@ func (s *TaskService) attributionFromComment(ctx context.Context, comment db.Com
 // (daemon quick-create flow) or agent_create (an agent's ordinary `issue
 // create`, MUL-4305) — inherit that origin task's originator, since origin_id
 // points at the agent_task_queue row that created the issue. Other
-// agent/system origins, including autopilot, deliberately remain unattributed.
+// agent/system origins, including automation, deliberately remain unattributed.
 func (s *TaskService) resolveOriginatorForIssueTask(ctx context.Context, issue db.Issue, triggerCommentID pgtype.UUID) pgtype.UUID {
 	return s.attributionForIssueTask(ctx, issue, triggerCommentID, attribution.SourceCommentSource, pgtype.UUID{}).UserID
 }
@@ -504,7 +504,7 @@ func (s *TaskService) resolveOriginatorForIssueTask(ctx context.Context, issue d
 func (s *TaskService) attributionForIssueTask(ctx context.Context, issue db.Issue, triggerCommentID pgtype.UUID, agentAuthoredSource attribution.Source, actorUserID pgtype.UUID) attribution.Result {
 	// A direct member action is the accountable human AND originator, ahead of any
 	// trigger comment, origin, or rule (MUL-4302 §4/§5). This covers assign/promote,
-	// a manual autopilot trigger, and a manual rerun — the last of which may INHERIT
+	// a manual automation trigger, and a manual rerun — the last of which may INHERIT
 	// a triggerCommentID for the daemon's prompt context, but must still attribute to
 	// the member who clicked rerun, not the original comment's human. So the actor is
 	// checked before the trigger-comment / origin branches.
@@ -533,26 +533,26 @@ func (s *TaskService) attributionForIssueTask(ctx context.Context, issue db.Issu
 		// accountable to whoever caused the PARENT issue to exist. So for a system
 		// comment we skip the comment branch and fall through to the parent issue's
 		// own provenance below — the same creator / agent_create-origin /
-		// autopilot-origin chain a direct enqueue resolves — reaching owner_fallback
+		// automation-origin chain a direct enqueue resolves — reaching owner_fallback
 		// only if that provenance itself has no human (MUL-4302; raised by Bohan on
 		// the stage-cascade fallback).
 		if comment.AuthorType != "system" {
 			return s.attributionFromComment(ctx, comment, agentAuthoredSource)
 		}
 	}
-	// Autopilot-origin issues (origin_id is the autopilot id) from a schedule /
+	// Automation-origin issues (origin_id is the automation id) from a schedule /
 	// webhook trigger: no human authorized the run, so originator stays NULL, but it
 	// is accountable to the human currently RESPONSIBLE for the firing trigger's
 	// effective config (creator, then last substantive editor) — trigger_owner
 	// (MUL-4302; Elon must-fix), degrading to the rule publisher when no such member
 	// is recoverable. Resolved the same way run_only dispatch resolves
-	// it, so both autopilot execution modes attribute identically. (A manual trigger
+	// it, so both automation execution modes attribute identically. (A manual trigger
 	// carries an actor and is already handled above.) The issue only stores the
-	// autopilot id, so bridge issue → active run → trigger_id to find the trigger.
+	// automation id, so bridge issue → active run → trigger_id to find the trigger.
 	if s != nil && s.Queries != nil && issue.OriginType.Valid &&
-		issue.OriginType.String == "autopilot" && issue.OriginID.Valid {
+		issue.OriginType.String == "automation" && issue.OriginID.Valid {
 		var triggerID pgtype.UUID
-		if run, err := s.Queries.GetAutopilotRunByIssue(ctx, issue.ID); err == nil {
+		if run, err := s.Queries.GetAutomationRunByIssue(ctx, issue.ID); err == nil {
 			triggerID = run.TriggerID
 		}
 		return triggerOwnerAttribution(ctx, s.Queries, triggerID, issue.WorkspaceID, issue.OriginID, attribution.EvidenceIssueAssignment, issue.ID)
@@ -581,22 +581,22 @@ func (s *TaskService) attributionForIssueTask(ctx context.Context, issue db.Issu
 	return attribution.ClassifyDirect(facts)
 }
 
-// ruleOwnerAttribution resolves the rule_owner attribution for an autopilot run
+// ruleOwnerAttribution resolves the rule_owner attribution for an automation run
 // from its active (latest) rule version snapshot (MUL-4302 §3.4). Shared by both
-// autopilot execution modes — run_only dispatch and the create_issue enqueue path —
-// so they attribute identically. originator stays NULL (an autopilot carries no
+// automation execution modes — run_only dispatch and the create_issue enqueue path —
+// so they attribute identically. originator stays NULL (an automation carries no
 // human's authority); only the audit-accountable side is set, to the version's
-// member publisher. A missing version (autopilot published before this feature, or
+// member publisher. A missing version (automation published before this feature, or
 // none yet) or a non-member/absent publisher degrades to unattributed rather than
 // fabricating a human. Never returns an error: attribution must not fail an
 // enqueue, and a degraded label is the honest fallback.
-func ruleOwnerAttribution(ctx context.Context, q *db.Queries, workspaceID, autopilotID pgtype.UUID, evidenceKind attribution.EvidenceKind, evidenceRefID pgtype.UUID) attribution.Result {
-	if q == nil || !autopilotID.Valid {
+func ruleOwnerAttribution(ctx context.Context, q *db.Queries, workspaceID, automationID pgtype.UUID, evidenceKind attribution.EvidenceKind, evidenceRefID pgtype.UUID) attribution.Result {
+	if q == nil || !automationID.Valid {
 		return attribution.RuleOwner(pgtype.UUID{}, pgtype.UUID{}, evidenceKind, evidenceRefID)
 	}
-	ver, err := q.GetActiveAutopilotRuleVersion(ctx, db.GetActiveAutopilotRuleVersionParams{
+	ver, err := q.GetActiveAutomationRuleVersion(ctx, db.GetActiveAutomationRuleVersionParams{
 		WorkspaceID: workspaceID,
-		AutopilotID: autopilotID,
+		AutomationID: automationID,
 	})
 	if err != nil {
 		return attribution.RuleOwner(pgtype.UUID{}, pgtype.UUID{}, evidenceKind, evidenceRefID)
@@ -608,29 +608,29 @@ func ruleOwnerAttribution(ctx context.Context, q *db.Queries, workspaceID, autop
 	return attribution.RuleOwner(publisher, ver.ID, evidenceKind, evidenceRefID)
 }
 
-// triggerOwnerAttribution resolves an autopilot schedule/webhook run to the human
+// triggerOwnerAttribution resolves an automation schedule/webhook run to the human
 // currently RESPONSIBLE for the firing trigger's effective config (MUL-4302; Bohan +
-// Elon must-fix). triggerID is the autopilot_run's trigger_id. The trigger row's
+// Elon must-fix). triggerID is the automation_run's trigger_id. The trigger row's
 // published_by starts at the creator and transfers to whoever later substantively
 // edits it, so the run attributes to whoever last shaped what fires it — not the
 // original creator. A trigger with no recorded publisher (predating this migration)
 // or an agent publisher degrades to ruleOwnerAttribution (rule publisher, then
-// owner_fallback) — the same coarser behavior autopilots had before, so nothing
+// owner_fallback) — the same coarser behavior automations had before, so nothing
 // regresses. Never errors: attribution must not fail an enqueue.
-func triggerOwnerAttribution(ctx context.Context, q *db.Queries, triggerID, workspaceID, autopilotID pgtype.UUID, evidenceKind attribution.EvidenceKind, evidenceRefID pgtype.UUID) attribution.Result {
+func triggerOwnerAttribution(ctx context.Context, q *db.Queries, triggerID, workspaceID, automationID pgtype.UUID, evidenceKind attribution.EvidenceKind, evidenceRefID pgtype.UUID) attribution.Result {
 	if q != nil && triggerID.Valid {
 		// published_by is the member CURRENTLY responsible for this trigger's
 		// effective config: the creator until someone substantively edits it (that
-		// trigger's cron/filter/webhook, or an autopilot-level change that bumps all
+		// trigger's cron/filter/webhook, or an automation-level change that bumps all
 		// its triggers), then the editor. So a run attributes to whoever last shaped
 		// what fires it, not the original creator — and editing another trigger never
 		// moves this one (MUL-4302; Elon must-fix).
-		if trig, err := q.GetAutopilotTrigger(ctx, triggerID); err == nil &&
+		if trig, err := q.GetAutomationTrigger(ctx, triggerID); err == nil &&
 			trig.PublishedByType.Valid && trig.PublishedByType.String == "member" && trig.PublishedByID.Valid {
 			return attribution.TriggerOwner(trig.PublishedByID, evidenceKind, evidenceRefID)
 		}
 	}
-	return ruleOwnerAttribution(ctx, q, workspaceID, autopilotID, evidenceKind, evidenceRefID)
+	return ruleOwnerAttribution(ctx, q, workspaceID, automationID, evidenceKind, evidenceRefID)
 }
 
 // ErrAttributionFailClosed signals that a run resolved to no precise accountable
@@ -875,7 +875,7 @@ func taskAnalyticsContextKey(task db.AgentTaskQueue) string {
 		util.UUIDToString(task.RuntimeID),
 		util.UUIDToString(task.IssueID),
 		util.UUIDToString(task.ChatSessionID),
-		util.UUIDToString(task.AutopilotRunID),
+		util.UUIDToString(task.AutomationRunID),
 	}, "|")
 }
 
@@ -886,13 +886,13 @@ func (s *TaskService) taskMetricsContext(ctx context.Context, task db.AgentTaskQ
 	case task.ChatSessionID.Valid:
 		source = "chat"
 	case task.IssueID.Valid:
-		if tc.Source == analytics.SourceAutopilot {
-			source = "autopilot_issue"
+		if tc.Source == analytics.SourceAutomation {
+			source = "automation_issue"
 		} else {
 			source = "issue"
 		}
-	case task.AutopilotRunID.Valid:
-		source = "autopilot"
+	case task.AutomationRunID.Valid:
+		source = "automation"
 	default:
 		if _, ok := s.parseQuickCreateContext(task); ok {
 			source = "quick_create"
@@ -919,9 +919,9 @@ func (s *TaskService) taskAnalyticsContext(ctx context.Context, task db.AgentTas
 		tc.ChatSessionID = util.UUIDToString(task.ChatSessionID)
 		tc.Source = analytics.SourceChat
 	}
-	if task.AutopilotRunID.Valid {
-		tc.AutopilotRunID = util.UUIDToString(task.AutopilotRunID)
-		tc.Source = analytics.SourceAutopilot
+	if task.AutomationRunID.Valid {
+		tc.AutomationRunID = util.UUIDToString(task.AutomationRunID)
+		tc.Source = analytics.SourceAutomation
 	}
 
 	if task.RuntimeID.Valid {
@@ -950,9 +950,9 @@ func (s *TaskService) taskAnalyticsContext(ctx context.Context, task db.AgentTas
 			}
 			if issue.OriginType.Valid {
 				switch issue.OriginType.String {
-				case "autopilot":
-					tc.Source = analytics.SourceAutopilot
-					if ap, err := s.Queries.GetAutopilot(ctx, issue.OriginID); err == nil {
+				case "automation":
+					tc.Source = analytics.SourceAutomation
+					if ap, err := s.Queries.GetAutomation(ctx, issue.OriginID); err == nil {
 						if ap.CreatedByType == "member" {
 							tc.UserID = util.UUIDToString(ap.CreatedByID)
 						}
@@ -969,9 +969,9 @@ func (s *TaskService) taskAnalyticsContext(ctx context.Context, task db.AgentTas
 			tc.UserID = util.UUIDToString(cs.CreatorID)
 		}
 	}
-	if task.AutopilotRunID.Valid {
-		if run, err := s.Queries.GetAutopilotRun(ctx, task.AutopilotRunID); err == nil {
-			if ap, err := s.Queries.GetAutopilot(ctx, run.AutopilotID); err == nil {
+	if task.AutomationRunID.Valid {
+		if run, err := s.Queries.GetAutomationRun(ctx, task.AutomationRunID); err == nil {
+			if ap, err := s.Queries.GetAutomation(ctx, run.AutomationID); err == nil {
 				tc.WorkspaceID = util.UUIDToString(ap.WorkspaceID)
 				if ap.CreatedByType == "member" {
 					tc.UserID = util.UUIDToString(ap.CreatedByID)
@@ -1293,7 +1293,7 @@ func (s *TaskService) EnqueueTaskForThreadParent(ctx context.Context, issue db.I
 //
 // teamID is stamped onto the task's team_id column so the daemon claim
 // handler can locate the team and inject its briefing regardless of how the
-// leader task was triggered (comment @team, issue assign, autopilot,
+// leader task was triggered (comment @team, issue assign, automation,
 // sub-issue done callback). See migration 127.
 func (s *TaskService) EnqueueTaskForTeamLeader(ctx context.Context, issue db.Issue, leaderID pgtype.UUID, teamID pgtype.UUID, triggerCommentID pgtype.UUID) (db.AgentTaskQueue, error) {
 	return s.enqueueMentionTask(ctx, issue, leaderID, triggerCommentID, true, teamID, false, "", pgtype.UUID{}, pgtype.UUID{})
@@ -1499,7 +1499,7 @@ type QuickCreateContext struct {
 const QuickCreateContextType = "quick_create"
 
 // EnqueueQuickCreateTask creates a queued task that has no issue / chat /
-// autopilot link — the user's natural-language prompt is stored in the
+// automation link — the user's natural-language prompt is stored in the
 // task's context JSONB and the agent is expected to translate it into a
 // `patchbay issue create` call. Pre-validates that the agent is reachable
 // (not archived, has a runtime) so the API can reject up-front rather than
@@ -3508,7 +3508,7 @@ func (s *TaskService) claimTask(ctx context.Context, agentID, runtimeID pgtype.U
 	updateStatusMs = time.Since(t0).Milliseconds()
 
 	// Broadcast task:dispatch. ResolveTaskWorkspaceID inside this path can
-	// re-query issue/chat_session/autopilot_run, so it can also be a real
+	// re-query issue/chat_session/automation_run, so it can also be a real
 	// contributor to claim latency.
 	t0 = time.Now()
 	s.broadcastTaskDispatch(ctx, *claimed)
@@ -5171,18 +5171,18 @@ func ResumeUnsafeFailure(failureReason, errorText string) bool {
 
 // retryEligible reports whether a failed task qualifies for an automatic retry
 // attempt: an infrastructure-shaped failure_reason, remaining attempt budget,
-// not an autopilot run, and linked to an issue or chat session. Shared by
+// not an automation run, and linked to an issue or chat session. Shared by
 // FailTask's in-transaction retry and the orphan sweeper's MaybeRetryFailedTask
 // so both agree on which failures re-run.
 func retryEligible(failureReason string, t db.AgentTaskQueue) bool {
 	return retryableReasons[failureReason] &&
 		t.Attempt < retryAttemptCeiling(failureReason, t.MaxAttempts) &&
-		!t.AutopilotRunID.Valid &&
+		!t.AutomationRunID.Valid &&
 		(t.IssueID.Valid || t.ChatSessionID.Valid || isSourceContextQuickCreateTask(t))
 }
 
 func isSourceContextQuickCreateTask(task db.AgentTaskQueue) bool {
-	if len(task.Context) == 0 || task.IssueID.Valid || task.ChatSessionID.Valid || task.AutopilotRunID.Valid {
+	if len(task.Context) == 0 || task.IssueID.Valid || task.ChatSessionID.Valid || task.AutomationRunID.Valid {
 		return false
 	}
 	var quickCreate QuickCreateContext
@@ -5224,7 +5224,7 @@ func hasRunnableSuccessor(ctx context.Context, q *db.Queries, task db.AgentTaskQ
 // the agent can resume the conversation when the backend supports it. Returns
 // the new task, or nil when no retry was created.
 //
-// Autopilot tasks are NOT auto-retried here; the autopilot scheduler owns
+// Automation tasks are NOT auto-retried here; the automation scheduler owns
 // its own re-run cadence and we don't want to double-fire it.
 func (s *TaskService) MaybeRetryFailedTask(ctx context.Context, parent db.AgentTaskQueue) (*db.AgentTaskQueue, error) {
 	if parent.Status != "failed" {
@@ -5251,7 +5251,7 @@ func (s *TaskService) MaybeRetryFailedTask(ctx context.Context, parent db.AgentT
 		)
 		return nil, nil
 	}
-	// Autopilot has its own retry semantics (don't double-trigger) and a task
+	// Automation has its own retry semantics (don't double-trigger) and a task
 	// with no issue/chat link has nowhere to report its retry — retryEligible
 	// covers both, keeping this sweeper path in sync with FailTask's in-tx retry.
 	if !retryEligible(reason, parent) {
@@ -5958,11 +5958,11 @@ func delegatedFailureRecoveryContent(failed, source db.AgentTaskQueue) string {
 
 // loadDelegatedFailureRecoveryTarget resolves and validates the backward edge
 // from a failed delegated task to its source coordinator. Returning nil is an
-// intentional no-op: non-terminal rows, retry-pending rows, autopilot work,
+// intentional no-op: non-terminal rows, retry-pending rows, automation work,
 // recovery tasks themselves, terminal/backlog source issues, unavailable
 // source agents, and self-delegation must never start a recovery loop.
 func loadDelegatedFailureRecoveryTarget(ctx context.Context, q *db.Queries, failed db.AgentTaskQueue) (*delegatedFailureRecoveryTarget, error) {
-	if failed.Status != "failed" || !failed.DelegatedFromTaskID.Valid || failed.AutopilotRunID.Valid ||
+	if failed.Status != "failed" || !failed.DelegatedFromTaskID.Valid || failed.AutomationRunID.Valid ||
 		(failed.TriggerEvidenceKind.Valid && failed.TriggerEvidenceKind.String == string(attribution.EvidenceDelegatedFailure)) {
 		return nil, nil
 	}
@@ -5980,7 +5980,7 @@ func loadDelegatedFailureRecoveryTarget(ctx context.Context, q *db.Queries, fail
 		}
 		return nil, fmt.Errorf("load source task: %w", err)
 	}
-	if source.AutopilotRunID.Valid || !source.IssueID.Valid || source.AgentID == failed.AgentID {
+	if source.AutomationRunID.Valid || !source.IssueID.Valid || source.AgentID == failed.AgentID {
 		return nil, nil
 	}
 	issue, err := q.GetIssue(ctx, source.IssueID)
@@ -6815,7 +6815,7 @@ func priorityToInt(p string) int32 {
 }
 
 // NotifyTaskEnqueued is the cross-package shim for callers outside
-// TaskService (e.g. AutopilotService.dispatchRunOnly) that insert a
+// TaskService (e.g. AutomationService.dispatchRunOnly) that insert a
 // row into agent_task_queue directly. Invalidates the empty-claim
 // cache and kicks the daemon WS so the new task is claimed without
 // waiting for the next poll.
@@ -6987,7 +6987,7 @@ func (s *TaskService) broadcastTaskFailedEvent(ctx context.Context, task db.Agen
 
 // ResolveTaskWorkspaceID determines the workspace ID for a task.
 // For issue tasks, it comes from the issue. For chat tasks, from the chat session.
-// For autopilot tasks, from the autopilot via its run.
+// For automation tasks, from the automation via its run.
 // Returns "" when none of the links resolve — callers treat that as "not found".
 func (s *TaskService) ResolveTaskWorkspaceID(ctx context.Context, task db.AgentTaskQueue) string {
 	if task.IssueID.Valid {
@@ -7000,14 +7000,14 @@ func (s *TaskService) ResolveTaskWorkspaceID(ctx context.Context, task db.AgentT
 			return util.UUIDToString(cs.WorkspaceID)
 		}
 	}
-	if task.AutopilotRunID.Valid {
-		if run, err := s.Queries.GetAutopilotRun(ctx, task.AutopilotRunID); err == nil {
-			if ap, err := s.Queries.GetAutopilot(ctx, run.AutopilotID); err == nil {
+	if task.AutomationRunID.Valid {
+		if run, err := s.Queries.GetAutomationRun(ctx, task.AutomationRunID); err == nil {
+			if ap, err := s.Queries.GetAutomation(ctx, run.AutomationID); err == nil {
 				return util.UUIDToString(ap.WorkspaceID)
 			}
 		}
 	}
-	// Quick-create tasks have no issue / chat / autopilot link — workspace
+	// Quick-create tasks have no issue / chat / automation link — workspace
 	// lives in the context JSONB. Returning "" here is what blocked
 	// requireDaemonTaskAccess (404 on /start, /progress, /complete, /fail
 	// for the daemon) and silently dropped task:dispatch / task:completed
@@ -7214,7 +7214,7 @@ func (s *TaskService) AutoUnresolveThreadOnReply(ctx context.Context, parent *db
 // IssueToMap renders an issue row as the map shape the issue:created /
 // issue:updated broadcast payloads carry under their "issue" key. It is the
 // single source of truth for that shape wherever the event is published from
-// outside the HTTP handler — autopilot and the channel engine's /issue command
+// outside the HTTP handler — automation and the channel engine's /issue command
 // on issue:created, the background stuck-issue status reset on issue:updated.
 // The workspace WS fanout marshals it as-is for the UI, and cmd/server's
 // extractIssueFields reads id / creator_id / workspace_id off it to decide who
@@ -7304,10 +7304,10 @@ func IssueIdentifier(issuePrefix string, number int32) string {
 // parseQuickCreateContext returns the quick-create payload if the task's
 // context JSONB contains type == "quick_create"; otherwise the bool is
 // false so callers can short-circuit. Tasks linked to an issue / chat /
-// autopilot are never quick-create even if they happen to carry a
+// automation are never quick-create even if they happen to carry a
 // context blob, so those are filtered up front.
 func (s *TaskService) parseQuickCreateContext(task db.AgentTaskQueue) (QuickCreateContext, bool) {
-	if task.IssueID.Valid || task.ChatSessionID.Valid || task.AutopilotRunID.Valid {
+	if task.IssueID.Valid || task.ChatSessionID.Valid || task.AutomationRunID.Valid {
 		return QuickCreateContext{}, false
 	}
 	if len(task.Context) == 0 {
@@ -7461,7 +7461,7 @@ func (s *TaskService) notifyQuickCreateCompleted(ctx context.Context, task db.Ag
 	// originator_user_id — the same origin waterfall attribution uses.
 	//
 	// This was one of three separate hand-rolled fixes for "an agent created
-	// this issue and no human is subscribed" (quick-create here, the autopilot
+	// this issue and no human is subscribed" (quick-create here, the automation
 	// subscriber template, and — missing entirely until MUL-5483 — ordinary
 	// agent-created sub-issues). Keeping a second write here would leave the
 	// same decision encoded in two places that can drift.

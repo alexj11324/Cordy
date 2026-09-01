@@ -91,7 +91,7 @@ func TestRenderedSkillListsHideDisableModelInvocationSkills(t *testing.T) {
 	ctx := TaskContextForEnv{
 		IssueID:           "issue-1",
 		QuickCreatePrompt: "create something",
-		AutopilotRunID:    "run-1",
+		AutomationRunID:    "run-1",
 		AgentName:         "Eve",
 		AgentID:           "eve-1",
 		AgentSkills: []SkillContextForEnv{
@@ -121,7 +121,7 @@ Hidden body.`,
 	for _, kind := range []TaskContextForEnv{
 		{IssueID: ctx.IssueID, AgentName: ctx.AgentName, AgentID: ctx.AgentID, AgentSkills: ctx.AgentSkills},
 		{QuickCreatePrompt: ctx.QuickCreatePrompt, AgentName: ctx.AgentName, AgentID: ctx.AgentID, AgentSkills: ctx.AgentSkills},
-		{AutopilotRunID: ctx.AutopilotRunID, AgentName: ctx.AgentName, AgentID: ctx.AgentID, AgentSkills: ctx.AgentSkills},
+		{AutomationRunID: ctx.AutomationRunID, AgentName: ctx.AgentName, AgentID: ctx.AgentID, AgentSkills: ctx.AgentSkills},
 		{ChatSessionID: "c-1", AgentName: ctx.AgentName, AgentID: ctx.AgentID, AgentSkills: ctx.AgentSkills},
 	} {
 		out := buildMetaSkillContent("codex", kind)
@@ -137,12 +137,12 @@ Hidden body.`,
 		}
 	}
 
-	// issue_context.md and its quick-create / autopilot variants no longer
+	// issue_context.md and its quick-create / automation variants no longer
 	// carry a skill list at all; nothing read that copy.
 	for name, out := range map[string]string{
 		"issue context": renderIssueContext("codex", TaskContextForEnv{IssueID: ctx.IssueID, AgentSkills: ctx.AgentSkills}),
 		"quick create":  renderQuickCreateContext(TaskContextForEnv{QuickCreatePrompt: ctx.QuickCreatePrompt, AgentSkills: ctx.AgentSkills}),
-		"autopilot":     renderAutopilotContext(TaskContextForEnv{AutopilotRunID: ctx.AutopilotRunID, AgentSkills: ctx.AgentSkills}),
+		"automation":     renderAutomationContext(TaskContextForEnv{AutomationRunID: ctx.AutomationRunID, AgentSkills: ctx.AgentSkills}),
 	} {
 		if strings.Contains(out, "## Agent Skills") || strings.Contains(out, "visible-skill") {
 			t.Errorf("%s still renders a skill list:\n%s", name, out)

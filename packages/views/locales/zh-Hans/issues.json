@@ -587,7 +587,7 @@
     "trigger_retry_attempt": "重试 #{{attempt}}",
     "trigger_retry_attempt_prefix": "重试 #{{attempt}} · ",
     "trigger_retry_prefix": "重试 · ",
-    "trigger_autopilot": "自动化运行",
+    "trigger_automation": "自动化运行",
     "trigger_comment": "评论触发",
     "trigger_initial": "首次运行",
     "trigger_handoff_prefix": "交接：",

@@ -556,8 +556,8 @@ function TaskRow({
         : t(($) => $.tab_body.activity.source_creating_issue)
       : task.chat_session_id
         ? t(($) => $.tab_body.activity.source_chat_session)
-        : task.autopilot_run_id
-          ? t(($) => $.tab_body.activity.source_autopilot_run)
+        : task.automation_run_id
+          ? t(($) => $.tab_body.activity.source_automation_run)
           : t(($) => $.tab_body.activity.source_untracked)
     : null;
 
@@ -565,15 +565,15 @@ function TaskRow({
     ? Hash
     : task.chat_session_id
       ? MessageSquare
-      : task.autopilot_run_id
+      : task.automation_run_id
         ? Workflow
         : CircleHelp;
   const sourceLabel = hasIssue
     ? t(($) => $.tab_body.activity.source_issue)
     : task.chat_session_id
       ? t(($) => $.tab_body.activity.source_chat)
-      : task.autopilot_run_id
-        ? t(($) => $.tab_body.activity.source_autopilot)
+      : task.automation_run_id
+        ? t(($) => $.tab_body.activity.source_automation)
         : t(($) => $.tab_body.activity.source_untracked);
 
   const timeText =

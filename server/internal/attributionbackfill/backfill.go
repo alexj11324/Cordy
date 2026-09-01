@@ -33,7 +33,7 @@
 // was NULL, which is precisely and only what is required to make VALIDATE
 // pass with zero manual operator steps.
 //
-// Rows with originator_user_id IS NULL (autopilot rule_owner / owner_fallback,
+// Rows with originator_user_id IS NULL (automation rule_owner / owner_fallback,
 // or fully unattributed history) already satisfy the strict constraint and
 // are left untouched — enriching their accountable_user_id from the trigger
 // chat/agent-owner waterfall is audit-completeness work that does not block

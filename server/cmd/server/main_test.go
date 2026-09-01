@@ -182,14 +182,14 @@ func TestNewNamedRedisClient_DisableClientName_InvalidValue(t *testing.T) {
 const mainSourceFile = "main.go"
 
 // backgroundServiceConstructors must never be called from main(): they build a
-// TaskService / AutopilotService that the router has not finished wiring.
+// TaskService / AutomationService that the router has not finished wiring.
 var backgroundServiceConstructors = []string{
 	"service.NewTaskService",
-	"service.NewAutopilotService",
+	"service.NewAutomationService",
 }
 
 // TestMainUsesRouterOwnedBackgroundServices guards the process wiring behind
-// scheduled Autopilot dispatch and the runtime sweeper: both must take the
+// scheduled Automation dispatch and the runtime sweeper: both must take the
 // router's fully wired services off *handler.Handler instead of constructing
 // their own.
 //
@@ -262,7 +262,7 @@ func TestMainUsesRouterOwnedBackgroundServices(t *testing.T) {
 				}
 			}
 			badReuse = append(badReuse, fmt.Sprintf("%s at %s", exprText(fset, call), fset.Position(call.Pos())))
-		case callee == "scheduler.AutopilotScheduleDispatchJob":
+		case callee == "scheduler.AutomationScheduleDispatchJob":
 			registersScheduler = true
 		}
 		return true
@@ -272,7 +272,7 @@ func TestMainUsesRouterOwnedBackgroundServices(t *testing.T) {
 	// unwired-service hazard reachable. If it moves out of main(), this test
 	// no longer covers the path it claims to and must fail rather than pass.
 	if !registersScheduler {
-		t.Fatalf("scheduler.AutopilotScheduleDispatchJob is no longer registered in main() — re-point this guard at wherever the schedule job is now wired")
+		t.Fatalf("scheduler.AutomationScheduleDispatchJob is no longer registered in main() — re-point this guard at wherever the schedule job is now wired")
 	}
 	if len(offenders) > 0 {
 		t.Errorf("main() constructs its own background services (%s); take them from the router via backgroundServices(%s) so EmptyClaim and the rest of the router wiring come along", strings.Join(offenders, ", "), routerHandlerVar)
@@ -281,7 +281,7 @@ func TestMainUsesRouterOwnedBackgroundServices(t *testing.T) {
 		t.Errorf("main() calls backgroundServices with something other than the router handler %q (%s); background workers must reuse the services the router finished wiring", routerHandlerVar, strings.Join(badReuse, ", "))
 	}
 	if !reusesRouter {
-		t.Errorf("main() no longer calls backgroundServices(%s); background workers must reuse the router-owned TaskService/AutopilotService", routerHandlerVar)
+		t.Errorf("main() no longer calls backgroundServices(%s); background workers must reuse the router-owned TaskService/AutomationService", routerHandlerVar)
 	}
 }
 

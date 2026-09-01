@@ -95,84 +95,84 @@ func TestChatSend_UnboundAgentReturnsStructuredConflict(t *testing.T) {
 	}
 }
 
-func TestCreateAutopilot_UnboundAgentRejected(t *testing.T) {
+func TestCreateAutomation_UnboundAgentRejected(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
 	}
 	ctx := context.Background()
 
-	runtimeID := createCascadeFixtureRuntime(t, ctx, "Autopilot Create Unbound Runtime")
-	agentID := createCascadeFixtureAgent(t, ctx, runtimeID, "Autopilot Create Unbound Agent")
+	runtimeID := createCascadeFixtureRuntime(t, ctx, "Automation Create Unbound Runtime")
+	agentID := createCascadeFixtureAgent(t, ctx, runtimeID, "Automation Create Unbound Agent")
 	unbindRuntime(t, ctx, runtimeID, agentID)
 
 	w := httptest.NewRecorder()
-	req := newRequest("POST", "/api/autopilots?workspace_id="+testWorkspaceID, map[string]any{
+	req := newRequest("POST", "/api/automations?workspace_id="+testWorkspaceID, map[string]any{
 		"title":          "must not start unbound",
 		"assignee_id":    agentID,
 		"execution_mode": "run_only",
 	})
-	testHandler.CreateAutopilot(w, req)
+	testHandler.CreateAutomation(w, req)
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("expected 422, got %d: %s", w.Code, w.Body.String())
 	}
 
 	var rows int
 	if err := testPool.QueryRow(ctx,
-		`SELECT count(*) FROM autopilot WHERE title = 'must not start unbound' AND assignee_id = $1`,
+		`SELECT count(*) FROM automation WHERE title = 'must not start unbound' AND assignee_id = $1`,
 		agentID,
 	).Scan(&rows); err != nil {
-		t.Fatalf("count autopilots: %v", err)
+		t.Fatalf("count automations: %v", err)
 	}
 	if rows != 0 {
-		t.Fatalf("unbound Agent received %d active Autopilots, want 0", rows)
+		t.Fatalf("unbound Agent received %d active Automations, want 0", rows)
 	}
 }
 
-func TestUpdateAutopilot_UnboundAgentCannotResume(t *testing.T) {
+func TestUpdateAutomation_UnboundAgentCannotResume(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
 	}
 	ctx := context.Background()
 
-	runtimeID := createCascadeFixtureRuntime(t, ctx, "Autopilot Resume Unbound Runtime")
-	agentID := createCascadeFixtureAgent(t, ctx, runtimeID, "Autopilot Resume Unbound Agent")
+	runtimeID := createCascadeFixtureRuntime(t, ctx, "Automation Resume Unbound Runtime")
+	agentID := createCascadeFixtureAgent(t, ctx, runtimeID, "Automation Resume Unbound Agent")
 
-	var autopilotID string
+	var automationID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO autopilot (
+		INSERT INTO automation (
 			workspace_id, title, assignee_type, assignee_id, status,
 			execution_mode, created_by_type, created_by_id
 		)
 		VALUES ($1, 'cannot resume unbound', 'agent', $2, 'active',
 			'run_only', 'member', $3)
 		RETURNING id
-	`, testWorkspaceID, agentID, testUserID).Scan(&autopilotID); err != nil {
-		t.Fatalf("insert paused autopilot: %v", err)
+	`, testWorkspaceID, agentID, testUserID).Scan(&automationID); err != nil {
+		t.Fatalf("insert paused automation: %v", err)
 	}
 	t.Cleanup(func() {
-		testPool.Exec(context.Background(), `DELETE FROM autopilot WHERE id = $1`, autopilotID)
+		testPool.Exec(context.Background(), `DELETE FROM automation WHERE id = $1`, automationID)
 	})
 
 	unbindRuntime(t, ctx, runtimeID, agentID)
 
 	w := httptest.NewRecorder()
-	req := newRequest("PATCH", "/api/autopilots/"+autopilotID+"?workspace_id="+testWorkspaceID,
+	req := newRequest("PATCH", "/api/automations/"+automationID+"?workspace_id="+testWorkspaceID,
 		map[string]any{"status": "active"})
-	req = withURLParam(req, "id", autopilotID)
-	testHandler.UpdateAutopilot(w, req)
+	req = withURLParam(req, "id", automationID)
+	testHandler.UpdateAutomation(w, req)
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("expected 422, got %d: %s", w.Code, w.Body.String())
 	}
 
 	var status, pauseReason string
 	if err := testPool.QueryRow(ctx,
-		`SELECT status, pause_reason FROM autopilot WHERE id = $1`,
-		autopilotID,
+		`SELECT status, pause_reason FROM automation WHERE id = $1`,
+		automationID,
 	).Scan(&status, &pauseReason); err != nil {
-		t.Fatalf("read autopilot: %v", err)
+		t.Fatalf("read automation: %v", err)
 	}
 	if status != "paused" || pauseReason != string(ReasonAgentRuntimeRequired) {
-		t.Fatalf("autopilot = (%q, %q), want (paused, agent_runtime_required)", status, pauseReason)
+		t.Fatalf("automation = (%q, %q), want (paused, agent_runtime_required)", status, pauseReason)
 	}
 }
 

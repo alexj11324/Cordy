@@ -73,7 +73,7 @@ var (
 		"unknown":         "unknown",
 	}
 
-	knownAutopilotCadences = map[string]string{
+	knownAutomationCadences = map[string]string{
 		"hourly":  "hourly",
 		"daily":   "daily",
 		"weekly":  "weekly",
@@ -83,14 +83,14 @@ var (
 		"unknown": "unknown",
 	}
 
-	knownAutopilotTriggers = map[string]string{
+	knownAutomationTriggers = map[string]string{
 		"schedule": "schedule",
 		"webhook":  "webhook",
 		"manual":   "manual",
 		"unknown":  "unknown",
 	}
 
-	knownAutopilotSkipReasons = map[string]string{
+	knownAutomationSkipReasons = map[string]string{
 		"already_running":   "already_running",
 		"recent_run":        "recent_run",
 		"runtime_offline":   "runtime_offline",
@@ -335,16 +335,16 @@ func NormalizeOnboardingPath(value string) string {
 	return normalizeFromAllowList(value, knownOnboardingPaths, "unknown")
 }
 
-func NormalizeAutopilotCadence(value string) string {
-	return normalizeFromAllowList(value, knownAutopilotCadences, "unknown")
+func NormalizeAutomationCadence(value string) string {
+	return normalizeFromAllowList(value, knownAutomationCadences, "unknown")
 }
 
-func NormalizeAutopilotTrigger(value string) string {
-	return normalizeFromAllowList(value, knownAutopilotTriggers, "unknown")
+func NormalizeAutomationTrigger(value string) string {
+	return normalizeFromAllowList(value, knownAutomationTriggers, "unknown")
 }
 
-func NormalizeAutopilotSkipReason(value string) string {
-	return normalizeFromAllowList(value, knownAutopilotSkipReasons, "other")
+func NormalizeAutomationSkipReason(value string) string {
+	return normalizeFromAllowList(value, knownAutomationSkipReasons, "other")
 }
 
 func NormalizeWebhookProvider(value string) string {

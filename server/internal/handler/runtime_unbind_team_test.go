@@ -198,19 +198,19 @@ func TestDeleteAgentRuntime_ActiveTeamWithArchivedLeaderNoLongerConflicts(t *tes
 	runtimeID := seedIsolatedRuntime(t, "Runtime With Active Team And Archived Leader")
 	archivedLeader := seedAgentOnRuntime(t, runtimeID, "Archived Leader Formerly Blocking Delete", true)
 	activeTeam := seedTeam(t, archivedLeader, "Active Team Formerly Blocking Delete", false)
-	var autopilotID string
+	var automationID string
 	if err := testPool.QueryRow(context.Background(), `
-		INSERT INTO autopilot (
+		INSERT INTO automation (
 			workspace_id, title, assignee_type, assignee_id,
 			created_by_type, created_by_id, status, execution_mode
 		)
 		VALUES ($1, 'team runtime pause', 'team', $2, 'member', $3, 'active', 'run_only')
 		RETURNING id
-	`, testWorkspaceID, activeTeam, testUserID).Scan(&autopilotID); err != nil {
-		t.Fatalf("seed team autopilot: %v", err)
+	`, testWorkspaceID, activeTeam, testUserID).Scan(&automationID); err != nil {
+		t.Fatalf("seed team automation: %v", err)
 	}
 	t.Cleanup(func() {
-		testPool.Exec(context.Background(), `DELETE FROM autopilot WHERE id = $1`, autopilotID)
+		testPool.Exec(context.Background(), `DELETE FROM automation WHERE id = $1`, automationID)
 	})
 
 	w := httptest.NewRecorder()
@@ -232,12 +232,12 @@ func TestDeleteAgentRuntime_ActiveTeamWithArchivedLeaderNoLongerConflicts(t *tes
 	}
 	var status, pauseReason string
 	if err := testPool.QueryRow(context.Background(),
-		`SELECT status, pause_reason FROM autopilot WHERE id = $1`, autopilotID,
+		`SELECT status, pause_reason FROM automation WHERE id = $1`, automationID,
 	).Scan(&status, &pauseReason); err != nil {
-		t.Fatalf("read team autopilot: %v", err)
+		t.Fatalf("read team automation: %v", err)
 	}
 	if status != "paused" || pauseReason != string(ReasonAgentRuntimeRequired) {
-		t.Fatalf("team autopilot = (%q, %q), want (paused, agent_runtime_required)", status, pauseReason)
+		t.Fatalf("team automation = (%q, %q), want (paused, agent_runtime_required)", status, pauseReason)
 	}
 }
 
@@ -271,7 +271,7 @@ func TestDeleteAgentRuntime_NoTeamsRegression(t *testing.T) {
 	}
 }
 
-func TestUpdateTeam_UnboundLeaderPausesOnlyTeamAutopilots(t *testing.T) {
+func TestUpdateTeam_UnboundLeaderPausesOnlyTeamAutomations(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
 	}
@@ -290,33 +290,33 @@ func TestUpdateTeam_UnboundLeaderPausesOnlyTeamAutopilots(t *testing.T) {
 		t.Fatalf("unbind proposed leader: %v", err)
 	}
 
-	var teamAutopilotID, directAutopilotID string
+	var teamAutomationID, directAutomationID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO autopilot (
+		INSERT INTO automation (
 			workspace_id, title, assignee_type, assignee_id,
 			created_by_type, created_by_id, status, execution_mode
 		)
 		VALUES ($1, 'team leader rotation pause', 'team', $2,
 			'member', $3, 'active', 'run_only')
 		RETURNING id
-	`, testWorkspaceID, teamID, testUserID).Scan(&teamAutopilotID); err != nil {
-		t.Fatalf("seed team autopilot: %v", err)
+	`, testWorkspaceID, teamID, testUserID).Scan(&teamAutomationID); err != nil {
+		t.Fatalf("seed team automation: %v", err)
 	}
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO autopilot (
+		INSERT INTO automation (
 			workspace_id, title, assignee_type, assignee_id,
 			created_by_type, created_by_id, status, execution_mode
 		)
-		VALUES ($1, 'unrelated direct autopilot', 'agent', $2,
+		VALUES ($1, 'unrelated direct automation', 'agent', $2,
 			'member', $3, 'active', 'run_only')
 		RETURNING id
-	`, testWorkspaceID, unboundLeaderID, testUserID).Scan(&directAutopilotID); err != nil {
-		t.Fatalf("seed direct autopilot: %v", err)
+	`, testWorkspaceID, unboundLeaderID, testUserID).Scan(&directAutomationID); err != nil {
+		t.Fatalf("seed direct automation: %v", err)
 	}
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(),
-			`DELETE FROM autopilot WHERE id = ANY($1::uuid[])`,
-			[]string{teamAutopilotID, directAutopilotID},
+			`DELETE FROM automation WHERE id = ANY($1::uuid[])`,
+			[]string{teamAutomationID, directAutomationID},
 		)
 	})
 
@@ -334,22 +334,22 @@ func TestUpdateTeam_UnboundLeaderPausesOnlyTeamAutopilots(t *testing.T) {
 
 	var teamStatus, pauseReason, directStatus string
 	if err := testPool.QueryRow(ctx,
-		`SELECT status, pause_reason FROM autopilot WHERE id = $1`,
-		teamAutopilotID,
+		`SELECT status, pause_reason FROM automation WHERE id = $1`,
+		teamAutomationID,
 	).Scan(&teamStatus, &pauseReason); err != nil {
-		t.Fatalf("read team autopilot: %v", err)
+		t.Fatalf("read team automation: %v", err)
 	}
 	if err := testPool.QueryRow(ctx,
-		`SELECT status FROM autopilot WHERE id = $1`,
-		directAutopilotID,
+		`SELECT status FROM automation WHERE id = $1`,
+		directAutomationID,
 	).Scan(&directStatus); err != nil {
-		t.Fatalf("read direct autopilot: %v", err)
+		t.Fatalf("read direct automation: %v", err)
 	}
 	if teamStatus != "paused" || pauseReason != string(ReasonAgentRuntimeRequired) {
-		t.Fatalf("team autopilot = (%q, %q), want (paused, agent_runtime_required)", teamStatus, pauseReason)
+		t.Fatalf("team automation = (%q, %q), want (paused, agent_runtime_required)", teamStatus, pauseReason)
 	}
 	if directStatus != "active" {
-		t.Fatalf("unrelated direct autopilot status = %q, want active", directStatus)
+		t.Fatalf("unrelated direct automation status = %q, want active", directStatus)
 	}
 }
 

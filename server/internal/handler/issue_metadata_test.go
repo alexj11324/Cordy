@@ -171,7 +171,7 @@ func TestIssueMetadataKeyCountCap(t *testing.T) {
 }
 
 // ListIssues with `metadata` query param does JSONB containment filtering and
-// returns only matching issues — the killer use case for autopilot.
+// returns only matching issues — the killer use case for automation.
 func TestListIssuesMetadataFilter(t *testing.T) {
 	waitingID := createMetadataTestIssue(t, "Waiting issue")
 	doneID := createMetadataTestIssue(t, "Done issue")

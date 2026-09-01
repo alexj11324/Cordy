@@ -33,7 +33,7 @@ func seedNULTask(t *testing.T, label string) (agentID, taskID string) {
 	})
 
 	// The task needs an issue: requireDaemonTaskAccess resolves the workspace
-	// through it, and a task with no issue / chat / autopilot link 404s before
+	// through it, and a task with no issue / chat / automation link 404s before
 	// the handler ever reads the body.
 	var issueID string
 	if err := testPool.QueryRow(ctx, `

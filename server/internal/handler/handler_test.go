@@ -946,13 +946,13 @@ func TestCreateIssueAllowsDuplicateAfterDone(t *testing.T) {
 	}
 }
 
-func TestTriggerAutopilotAllowsActiveDuplicateIssue(t *testing.T) {
+func TestTriggerAutomationAllowsActiveDuplicateIssue(t *testing.T) {
 	ctx := context.Background()
-	title := fmt.Sprintf("Autopilot duplicate issue %d", time.Now().UnixNano())
-	var autopilotID string
+	title := fmt.Sprintf("Automation duplicate issue %d", time.Now().UnixNano())
+	var automationID string
 	defer func() {
-		if autopilotID != "" {
-			testPool.Exec(ctx, `DELETE FROM autopilot WHERE id = $1`, autopilotID)
+		if automationID != "" {
+			testPool.Exec(ctx, `DELETE FROM automation WHERE id = $1`, automationID)
 		}
 		testPool.Exec(ctx, `DELETE FROM issue WHERE workspace_id = $1 AND title = $2`, testWorkspaceID, title)
 	}()
@@ -968,21 +968,21 @@ func TestTriggerAutopilotAllowsActiveDuplicateIssue(t *testing.T) {
 	var existing IssueResponse
 	w.JSON(&existing)
 
-	req = newRequest("POST", "/api/autopilots?workspace_id="+testWorkspaceID, map[string]any{
-		"title":                "Duplicate title autopilot",
+	req = newRequest("POST", "/api/automations?workspace_id="+testWorkspaceID, map[string]any{
+		"title":                "Duplicate title automation",
 		"assignee_id":          agentID,
 		"execution_mode":       "create_issue",
 		"issue_title_template": title,
 	})
-	w = testutil.Call(t, testHandler.CreateAutopilot, req).Want(http.StatusCreated)
-	var autopilot AutopilotResponse
-	w.JSON(&autopilot)
-	autopilotID = autopilot.ID
+	w = testutil.Call(t, testHandler.CreateAutomation, req).Want(http.StatusCreated)
+	var automation AutomationResponse
+	w.JSON(&automation)
+	automationID = automation.ID
 
-	req = newRequest("POST", "/api/autopilots/"+autopilotID+"/trigger?workspace_id="+testWorkspaceID, nil)
-	req = withURLParam(req, "id", autopilotID)
-	w = testutil.Call(t, testHandler.TriggerAutopilot, req).Want(http.StatusOK)
-	var run AutopilotRunResponse
+	req = newRequest("POST", "/api/automations/"+automationID+"/trigger?workspace_id="+testWorkspaceID, nil)
+	req = withURLParam(req, "id", automationID)
+	w = testutil.Call(t, testHandler.TriggerAutomation, req).Want(http.StatusOK)
+	var run AutomationRunResponse
 	w.JSON(&run)
 	if run.Status != "issue_created" {
 		t.Fatalf("run status = %q, want issue_created", run.Status)
@@ -1000,17 +1000,17 @@ func TestTriggerAutopilotAllowsActiveDuplicateIssue(t *testing.T) {
 	var count int
 	dbfx.QueryRow(t, `SELECT count(*) FROM issue WHERE workspace_id = $1 AND title = $2`, testWorkspaceID, title).Scan(&count)
 	if count != 2 {
-		t.Fatalf("autopilot should create a new same-title issue, got %d matching issues", count)
+		t.Fatalf("automation should create a new same-title issue, got %d matching issues", count)
 	}
 }
 
-func TestScheduledAutopilotAllowsActiveDuplicateIssue(t *testing.T) {
+func TestScheduledAutomationAllowsActiveDuplicateIssue(t *testing.T) {
 	ctx := context.Background()
-	title := fmt.Sprintf("Scheduled autopilot duplicate issue %d", time.Now().UnixNano())
-	var autopilotID string
+	title := fmt.Sprintf("Scheduled automation duplicate issue %d", time.Now().UnixNano())
+	var automationID string
 	defer func() {
-		if autopilotID != "" {
-			testPool.Exec(ctx, `DELETE FROM autopilot WHERE id = $1`, autopilotID)
+		if automationID != "" {
+			testPool.Exec(ctx, `DELETE FROM automation WHERE id = $1`, automationID)
 		}
 		testPool.Exec(ctx, `DELETE FROM issue WHERE workspace_id = $1 AND title = $2`, testWorkspaceID, title)
 	}()
@@ -1026,25 +1026,25 @@ func TestScheduledAutopilotAllowsActiveDuplicateIssue(t *testing.T) {
 	var existing IssueResponse
 	w.JSON(&existing)
 
-	req = newRequest("POST", "/api/autopilots?workspace_id="+testWorkspaceID, map[string]any{
-		"title":                "Scheduled duplicate title autopilot",
+	req = newRequest("POST", "/api/automations?workspace_id="+testWorkspaceID, map[string]any{
+		"title":                "Scheduled duplicate title automation",
 		"assignee_id":          agentID,
 		"execution_mode":       "create_issue",
 		"issue_title_template": title,
 	})
-	w = testutil.Call(t, testHandler.CreateAutopilot, req).Want(http.StatusCreated)
-	var autopilot AutopilotResponse
-	w.JSON(&autopilot)
-	autopilotID = autopilot.ID
+	w = testutil.Call(t, testHandler.CreateAutomation, req).Want(http.StatusCreated)
+	var automation AutomationResponse
+	w.JSON(&automation)
+	automationID = automation.ID
 
 	queries := db.New(testPool)
-	ap, err := queries.GetAutopilot(ctx, parseUUID(autopilotID))
+	ap, err := queries.GetAutomation(ctx, parseUUID(automationID))
 	if err != nil {
-		t.Fatalf("GetAutopilot: %v", err)
+		t.Fatalf("GetAutomation: %v", err)
 	}
-	run, err := testHandler.AutopilotService.DispatchAutopilot(ctx, ap, pgtype.UUID{}, "schedule", nil)
+	run, err := testHandler.AutomationService.DispatchAutomation(ctx, ap, pgtype.UUID{}, "schedule", nil)
 	if err != nil {
-		t.Fatalf("DispatchAutopilot schedule duplicate: %v", err)
+		t.Fatalf("DispatchAutomation schedule duplicate: %v", err)
 	}
 	if run == nil || run.Status != "issue_created" {
 		t.Fatalf("dispatch result = %+v, want status issue_created", run)
@@ -1063,43 +1063,43 @@ func TestScheduledAutopilotAllowsActiveDuplicateIssue(t *testing.T) {
 	var count int
 	dbfx.QueryRow(t, `SELECT count(*) FROM issue WHERE workspace_id = $1 AND title = $2`, testWorkspaceID, title).Scan(&count)
 	if count != 2 {
-		t.Fatalf("autopilot should create a new same-title issue, got %d matching issues", count)
+		t.Fatalf("automation should create a new same-title issue, got %d matching issues", count)
 	}
 }
 
-// TestAutopilotCreatedIssueCreatorIsAssigneeAgent locks in that an issue spawned
-// by an autopilot reports the assignee agent — not the human who configured the
-// autopilot — as its creator. The matching issue:created event must carry the
+// TestAutomationCreatedIssueCreatorIsAssigneeAgent locks in that an issue spawned
+// by an automation reports the assignee agent — not the human who configured the
+// automation — as its creator. The matching issue:created event must carry the
 // same actor identity so downstream activity / notification listeners stay in
 // sync with the issue row.
-func TestAutopilotCreatedIssueCreatorIsAssigneeAgent(t *testing.T) {
+func TestAutomationCreatedIssueCreatorIsAssigneeAgent(t *testing.T) {
 	ctx := context.Background()
-	title := fmt.Sprintf("Autopilot creator attribution %d", time.Now().UnixNano())
-	var autopilotID, issueID string
+	title := fmt.Sprintf("Automation creator attribution %d", time.Now().UnixNano())
+	var automationID, issueID string
 	defer func() {
 		if issueID != "" {
 			testPool.Exec(ctx, `DELETE FROM issue WHERE id = $1`, issueID)
 		}
-		if autopilotID != "" {
-			testPool.Exec(ctx, `DELETE FROM autopilot WHERE id = $1`, autopilotID)
+		if automationID != "" {
+			testPool.Exec(ctx, `DELETE FROM automation WHERE id = $1`, automationID)
 		}
 	}()
 
 	var agentID string
 	dbfx.QueryRow(t, `SELECT id FROM agent WHERE workspace_id = $1 LIMIT 1`, testWorkspaceID).Scan(&agentID)
 
-	req := newRequest("POST", "/api/autopilots?workspace_id="+testWorkspaceID, map[string]any{
-		"title":                "Creator attribution autopilot",
+	req := newRequest("POST", "/api/automations?workspace_id="+testWorkspaceID, map[string]any{
+		"title":                "Creator attribution automation",
 		"assignee_id":          agentID,
 		"execution_mode":       "create_issue",
 		"issue_title_template": title,
 	})
-	w := testutil.Call(t, testHandler.CreateAutopilot, req).Want(http.StatusCreated)
-	var autopilot AutopilotResponse
-	w.JSON(&autopilot)
-	autopilotID = autopilot.ID
-	if autopilot.CreatedByType != "member" || autopilot.CreatedByID != testUserID {
-		t.Fatalf("autopilot created_by = %s/%s, want member/%s", autopilot.CreatedByType, autopilot.CreatedByID, testUserID)
+	w := testutil.Call(t, testHandler.CreateAutomation, req).Want(http.StatusCreated)
+	var automation AutomationResponse
+	w.JSON(&automation)
+	automationID = automation.ID
+	if automation.CreatedByType != "member" || automation.CreatedByID != testUserID {
+		t.Fatalf("automation created_by = %s/%s, want member/%s", automation.CreatedByType, automation.CreatedByID, testUserID)
 	}
 
 	gotEvent := make(chan events.Event, 1)
@@ -1111,13 +1111,13 @@ func TestAutopilotCreatedIssueCreatorIsAssigneeAgent(t *testing.T) {
 	})
 
 	queries := db.New(testPool)
-	ap, err := queries.GetAutopilot(ctx, parseUUID(autopilotID))
+	ap, err := queries.GetAutomation(ctx, parseUUID(automationID))
 	if err != nil {
-		t.Fatalf("GetAutopilot: %v", err)
+		t.Fatalf("GetAutomation: %v", err)
 	}
-	run, err := testHandler.AutopilotService.DispatchAutopilot(ctx, ap, pgtype.UUID{}, "manual", nil)
+	run, err := testHandler.AutomationService.DispatchAutomation(ctx, ap, pgtype.UUID{}, "manual", nil)
 	if err != nil {
-		t.Fatalf("DispatchAutopilot: %v", err)
+		t.Fatalf("DispatchAutomation: %v", err)
 	}
 	if run == nil || run.Status != "issue_created" {
 		t.Fatalf("dispatch result = %+v, want status issue_created", run)
@@ -1151,16 +1151,16 @@ func TestAutopilotCreatedIssueCreatorIsAssigneeAgent(t *testing.T) {
 	}
 }
 
-func TestAutopilotCreateIssueAssociatesConfiguredProject(t *testing.T) {
+func TestAutomationCreateIssueAssociatesConfiguredProject(t *testing.T) {
 	ctx := context.Background()
-	title := fmt.Sprintf("Autopilot project issue %d", time.Now().UnixNano())
-	var autopilotID, issueID, projectID string
+	title := fmt.Sprintf("Automation project issue %d", time.Now().UnixNano())
+	var automationID, issueID, projectID string
 	defer func() {
 		if issueID != "" {
 			testPool.Exec(ctx, `DELETE FROM issue WHERE id = $1`, issueID)
 		}
-		if autopilotID != "" {
-			testPool.Exec(ctx, `DELETE FROM autopilot WHERE id = $1`, autopilotID)
+		if automationID != "" {
+			testPool.Exec(ctx, `DELETE FROM automation WHERE id = $1`, automationID)
 		}
 		if projectID != "" {
 			testPool.Exec(ctx, `DELETE FROM project WHERE id = $1`, projectID)
@@ -1171,34 +1171,34 @@ func TestAutopilotCreateIssueAssociatesConfiguredProject(t *testing.T) {
 		INSERT INTO project (workspace_id, title)
 		VALUES ($1, $2)
 		RETURNING id::text
-	`, testWorkspaceID, "Autopilot project target").Scan(&projectID)
+	`, testWorkspaceID, "Automation project target").Scan(&projectID)
 
 	var agentID string
 	dbfx.QueryRow(t, `SELECT id FROM agent WHERE workspace_id = $1 LIMIT 1`, testWorkspaceID).Scan(&agentID)
 
-	req := newRequest("POST", "/api/autopilots?workspace_id="+testWorkspaceID, map[string]any{
-		"title":                "Project-linked autopilot",
+	req := newRequest("POST", "/api/automations?workspace_id="+testWorkspaceID, map[string]any{
+		"title":                "Project-linked automation",
 		"assignee_id":          agentID,
 		"execution_mode":       "create_issue",
 		"issue_title_template": title,
 		"project_id":           projectID,
 	})
-	w := testutil.Call(t, testHandler.CreateAutopilot, req).Want(http.StatusCreated)
-	var autopilot AutopilotResponse
-	w.JSON(&autopilot)
-	autopilotID = autopilot.ID
-	if autopilot.ProjectID == nil || *autopilot.ProjectID != projectID {
-		t.Fatalf("autopilot project_id = %v, want %q", autopilot.ProjectID, projectID)
+	w := testutil.Call(t, testHandler.CreateAutomation, req).Want(http.StatusCreated)
+	var automation AutomationResponse
+	w.JSON(&automation)
+	automationID = automation.ID
+	if automation.ProjectID == nil || *automation.ProjectID != projectID {
+		t.Fatalf("automation project_id = %v, want %q", automation.ProjectID, projectID)
 	}
 
 	queries := db.New(testPool)
-	ap, err := queries.GetAutopilot(ctx, parseUUID(autopilotID))
+	ap, err := queries.GetAutomation(ctx, parseUUID(automationID))
 	if err != nil {
-		t.Fatalf("GetAutopilot: %v", err)
+		t.Fatalf("GetAutomation: %v", err)
 	}
-	run, err := testHandler.AutopilotService.DispatchAutopilot(ctx, ap, pgtype.UUID{}, "manual", nil)
+	run, err := testHandler.AutomationService.DispatchAutomation(ctx, ap, pgtype.UUID{}, "manual", nil)
 	if err != nil {
-		t.Fatalf("DispatchAutopilot: %v", err)
+		t.Fatalf("DispatchAutomation: %v", err)
 	}
 	if run == nil || !run.IssueID.Valid {
 		t.Fatalf("dispatch run = %+v, want linked issue", run)
@@ -1216,16 +1216,16 @@ func TestAutopilotCreateIssueAssociatesConfiguredProject(t *testing.T) {
 	}
 }
 
-func TestAutopilotDispatchUsesCurrentProjectBinding(t *testing.T) {
+func TestAutomationDispatchUsesCurrentProjectBinding(t *testing.T) {
 	ctx := context.Background()
-	title := fmt.Sprintf("Autopilot stale project issue %d", time.Now().UnixNano())
-	var autopilotID, issueID, projectAID, projectBID string
+	title := fmt.Sprintf("Automation stale project issue %d", time.Now().UnixNano())
+	var automationID, issueID, projectAID, projectBID string
 	defer func() {
 		if issueID != "" {
 			testPool.Exec(ctx, `DELETE FROM issue WHERE id = $1`, issueID)
 		}
-		if autopilotID != "" {
-			testPool.Exec(ctx, `DELETE FROM autopilot WHERE id = $1`, autopilotID)
+		if automationID != "" {
+			testPool.Exec(ctx, `DELETE FROM automation WHERE id = $1`, automationID)
 		}
 		if projectAID != "" {
 			testPool.Exec(ctx, `DELETE FROM project WHERE id = $1`, projectAID)
@@ -1239,43 +1239,43 @@ func TestAutopilotDispatchUsesCurrentProjectBinding(t *testing.T) {
 		INSERT INTO project (workspace_id, title)
 		VALUES ($1, $2)
 		RETURNING id::text
-	`, testWorkspaceID, "Autopilot stale project A").Scan(&projectAID)
+	`, testWorkspaceID, "Automation stale project A").Scan(&projectAID)
 	dbfx.QueryRow(t, `
 		INSERT INTO project (workspace_id, title)
 		VALUES ($1, $2)
 		RETURNING id::text
-	`, testWorkspaceID, "Autopilot stale project B").Scan(&projectBID)
+	`, testWorkspaceID, "Automation stale project B").Scan(&projectBID)
 
 	var agentID string
 	dbfx.QueryRow(t, `SELECT id FROM agent WHERE workspace_id = $1 LIMIT 1`, testWorkspaceID).Scan(&agentID)
 
-	req := newRequest("POST", "/api/autopilots?workspace_id="+testWorkspaceID, map[string]any{
-		"title":                "Stale-project autopilot",
+	req := newRequest("POST", "/api/automations?workspace_id="+testWorkspaceID, map[string]any{
+		"title":                "Stale-project automation",
 		"assignee_id":          agentID,
 		"execution_mode":       "create_issue",
 		"issue_title_template": title,
 		"project_id":           projectAID,
 	})
-	w := testutil.Call(t, testHandler.CreateAutopilot, req).Want(http.StatusCreated)
-	var created AutopilotResponse
+	w := testutil.Call(t, testHandler.CreateAutomation, req).Want(http.StatusCreated)
+	var created AutomationResponse
 	w.JSON(&created)
-	autopilotID = created.ID
+	automationID = created.ID
 
 	queries := db.New(testPool)
-	ap, err := queries.GetAutopilot(ctx, parseUUID(autopilotID))
+	ap, err := queries.GetAutomation(ctx, parseUUID(automationID))
 	if err != nil {
-		t.Fatalf("GetAutopilot: %v", err)
+		t.Fatalf("GetAutomation: %v", err)
 	}
 
-	req = newRequest("PATCH", "/api/autopilots/"+autopilotID+"?workspace_id="+testWorkspaceID, map[string]any{
+	req = newRequest("PATCH", "/api/automations/"+automationID+"?workspace_id="+testWorkspaceID, map[string]any{
 		"project_id": projectBID,
 	})
-	req = withURLParam(req, "id", autopilotID)
-	w = testutil.Call(t, testHandler.UpdateAutopilot, req).Want(http.StatusOK)
+	req = withURLParam(req, "id", automationID)
+	w = testutil.Call(t, testHandler.UpdateAutomation, req).Want(http.StatusOK)
 
-	run, err := testHandler.AutopilotService.DispatchAutopilot(ctx, ap, pgtype.UUID{}, "manual", nil)
+	run, err := testHandler.AutomationService.DispatchAutomation(ctx, ap, pgtype.UUID{}, "manual", nil)
 	if err != nil {
-		t.Fatalf("DispatchAutopilot: %v", err)
+		t.Fatalf("DispatchAutomation: %v", err)
 	}
 	if run == nil || !run.IssueID.Valid {
 		t.Fatalf("dispatch run = %+v, want linked issue", run)
@@ -1293,12 +1293,12 @@ func TestAutopilotDispatchUsesCurrentProjectBinding(t *testing.T) {
 	}
 }
 
-func TestUpdateAutopilotCanSetAndClearProject(t *testing.T) {
+func TestUpdateAutomationCanSetAndClearProject(t *testing.T) {
 	ctx := context.Background()
-	var autopilotID, projectID string
+	var automationID, projectID string
 	defer func() {
-		if autopilotID != "" {
-			testPool.Exec(ctx, `DELETE FROM autopilot WHERE id = $1`, autopilotID)
+		if automationID != "" {
+			testPool.Exec(ctx, `DELETE FROM automation WHERE id = $1`, automationID)
 		}
 		if projectID != "" {
 			testPool.Exec(ctx, `DELETE FROM project WHERE id = $1`, projectID)
@@ -1309,41 +1309,41 @@ func TestUpdateAutopilotCanSetAndClearProject(t *testing.T) {
 		INSERT INTO project (workspace_id, title)
 		VALUES ($1, $2)
 		RETURNING id::text
-	`, testWorkspaceID, "Autopilot update project target").Scan(&projectID)
+	`, testWorkspaceID, "Automation update project target").Scan(&projectID)
 
 	var agentID string
 	dbfx.QueryRow(t, `SELECT id FROM agent WHERE workspace_id = $1 LIMIT 1`, testWorkspaceID).Scan(&agentID)
 
-	req := newRequest("POST", "/api/autopilots?workspace_id="+testWorkspaceID, map[string]any{
-		"title":          "Project update autopilot",
+	req := newRequest("POST", "/api/automations?workspace_id="+testWorkspaceID, map[string]any{
+		"title":          "Project update automation",
 		"assignee_id":    agentID,
 		"execution_mode": "create_issue",
 	})
-	w := testutil.Call(t, testHandler.CreateAutopilot, req).Want(http.StatusCreated)
-	var created AutopilotResponse
+	w := testutil.Call(t, testHandler.CreateAutomation, req).Want(http.StatusCreated)
+	var created AutomationResponse
 	w.JSON(&created)
-	autopilotID = created.ID
+	automationID = created.ID
 	if created.ProjectID != nil {
-		t.Fatalf("new autopilot project_id = %v, want nil", created.ProjectID)
+		t.Fatalf("new automation project_id = %v, want nil", created.ProjectID)
 	}
 
-	req = newRequest("PATCH", "/api/autopilots/"+autopilotID+"?workspace_id="+testWorkspaceID, map[string]any{
+	req = newRequest("PATCH", "/api/automations/"+automationID+"?workspace_id="+testWorkspaceID, map[string]any{
 		"project_id": projectID,
 	})
-	req = withURLParam(req, "id", autopilotID)
-	w = testutil.Call(t, testHandler.UpdateAutopilot, req).Want(http.StatusOK)
-	var updated AutopilotResponse
+	req = withURLParam(req, "id", automationID)
+	w = testutil.Call(t, testHandler.UpdateAutomation, req).Want(http.StatusOK)
+	var updated AutomationResponse
 	w.JSON(&updated)
 	if updated.ProjectID == nil || *updated.ProjectID != projectID {
 		t.Fatalf("updated project_id = %v, want %q", updated.ProjectID, projectID)
 	}
 
-	req = newRequest("PATCH", "/api/autopilots/"+autopilotID+"?workspace_id="+testWorkspaceID, map[string]any{
+	req = newRequest("PATCH", "/api/automations/"+automationID+"?workspace_id="+testWorkspaceID, map[string]any{
 		"project_id": nil,
 	})
-	req = withURLParam(req, "id", autopilotID)
-	w = testutil.Call(t, testHandler.UpdateAutopilot, req).Want(http.StatusOK)
-	var cleared AutopilotResponse
+	req = withURLParam(req, "id", automationID)
+	w = testutil.Call(t, testHandler.UpdateAutomation, req).Want(http.StatusOK)
+	var cleared AutomationResponse
 	w.JSON(&cleared)
 	if cleared.ProjectID != nil {
 		t.Fatalf("cleared project_id = %v, want nil", cleared.ProjectID)
@@ -1648,21 +1648,21 @@ func TestGetChatSessionRejectsMalformedSessionID(t *testing.T) {
 	testutil.Call(t, testHandler.GetChatSession, req).Want(http.StatusBadRequest)
 }
 
-func TestCreateAutopilotRejectsMalformedAssigneeID(t *testing.T) {
-	req := newRequest("POST", "/api/autopilots", map[string]any{
-		"title":          "Malformed assignee autopilot",
+func TestCreateAutomationRejectsMalformedAssigneeID(t *testing.T) {
+	req := newRequest("POST", "/api/automations", map[string]any{
+		"title":          "Malformed assignee automation",
 		"assignee_id":    "not-a-uuid",
 		"execution_mode": "run_only",
 	})
-	testutil.Call(t, testHandler.CreateAutopilot, req).Want(http.StatusBadRequest)
+	testutil.Call(t, testHandler.CreateAutomation, req).Want(http.StatusBadRequest)
 }
 
-func TestUpdateAutopilotRejectsMalformedID(t *testing.T) {
-	req := newRequest("PUT", "/api/autopilots/not-a-uuid", map[string]any{
-		"title": "Malformed autopilot id",
+func TestUpdateAutomationRejectsMalformedID(t *testing.T) {
+	req := newRequest("PUT", "/api/automations/not-a-uuid", map[string]any{
+		"title": "Malformed automation id",
 	})
 	req = withURLParam(req, "id", "not-a-uuid")
-	testutil.Call(t, testHandler.UpdateAutopilot, req).Want(http.StatusBadRequest)
+	testutil.Call(t, testHandler.UpdateAutomation, req).Want(http.StatusBadRequest)
 }
 
 func TestUpdateAgentRejectsMalformedAgentID(t *testing.T) {
@@ -2933,7 +2933,7 @@ func TestAssignDifferentIssueToSelfStillEnqueues(t *testing.T) {
 	}
 }
 
-// TestBatchAssignFreshIssuesToSelfEnqueuesEach protects triage/autopilot
+// TestBatchAssignFreshIssuesToSelfEnqueuesEach protects triage/automation
 // batches: being busy on a source issue is not a global self-assignment ban.
 // Every fresh target keeps the existing enqueue behavior.
 func TestBatchAssignFreshIssuesToSelfEnqueuesEach(t *testing.T) {

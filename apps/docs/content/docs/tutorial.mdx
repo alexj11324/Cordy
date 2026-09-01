@@ -301,28 +301,28 @@ The review comes back with zero findings and Lead delivers: it mentions you for 
 
 From organizing the requirement, to settling the approach, development, review, and the delivery report, no step of this issue needed you to connect it. Sign-off works the same as on MUL-1 — you can also have it start a local server and look in the browser, not repeated here. Done is still yours: reply to merge, or change the status by hand. Every step of the timeline is recorded, no different from an issue on a human team — only who executes has changed.
 
-## Automation: Autopilot
+## Automation: Automation
 
-Every trigger so far started with you — assignment, mention, chat. **Autopilot** is a fourth kind of trigger: starting work automatically on a schedule.
+Every trigger so far started with you — assignment, mention, chat. **Automation** is a fourth kind of trigger: starting work automatically on a schedule.
 
 Configuring it takes one sentence: tell Patchbay helper that at nine every Monday morning, Reviewer should run a full check over the site's repository — redundancy and dead code, questionable structure, places that could follow conventions better — writing findings into issue comments and changing no code:
 
-![The helper creating an autopilot](/images/docs/tutorial-autopilot-create.webp)
+![The helper creating an automation](/images/docs/tutorial-automation-create.webp)
 
-Open the **Autopilot** page: the executor, the prompt, and the schedule (cron plus timezone) are all configured. There are two run modes:
+Open the **Automation** page: the executor, the prompt, and the schedule (cron plus timezone) are all configured. There are two run modes:
 
 - **Create Issue** (default): every trigger creates an issue first, so the work lands on the board with history and comments identical to any other issue;
-- **Run only**: executes without creating an issue, leaving a record only in the autopilot's run history — if a run finds nothing, it leaves nothing behind.
+- **Run only**: executes without creating an issue, leaving a record only in the automation's run history — if a run finds nothing, it leaves nothing behind.
 
 A periodic check uses Create Issue mode. Rather than waiting until Monday, click **Run now** to trigger once immediately:
 
-![Autopilot detail: the schedule and Run now](/images/docs/tutorial-autopilot-detail.webp)
+![Automation detail: the schedule and Run now](/images/docs/tutorial-automation-detail.webp)
 
 The issue is created and Reviewer starts checking. From then on, at the same time every Monday, the same check creates a new issue automatically, with nobody needing to trigger it:
 
-![An issue created automatically by Autopilot](/images/docs/tutorial-autopilot-issue.webp)
+![An issue created automatically by Automation](/images/docs/tutorial-automation-issue.webp)
 
-Triggers support webhooks in addition to schedules, and the executor can also point at a team — see [Autopilots](/autopilots).
+Triggers support webhooks in addition to schedules, and the executor can also point at a team — see [Automations](/automations).
 
 ## Working with other people
 
@@ -334,7 +334,7 @@ So far you have been the only human member of the workspace. Under **Settings �
 
 Once issues pile up, there are tools for organizing them: a **Project** groups related issues and tracks them as one unit (see [Projects](/projects)). More ways to organize are being added, and **Space** is close to ready.
 
-Looking back at the path: starting from an empty workspace, connecting one computer, building four agents, running two issues through their full life cycle, then handing coordination to a leader and periodic checks to Autopilot. Your involvement steps back one level at a time, until two things are left: describing the requirement, and signing off on the result.
+Looking back at the path: starting from an empty workspace, connecting one computer, building four agents, running two issues through their full life cycle, then handing coordination to a leader and periodic checks to Automation. Your involvement steps back one level at a time, until two things are left: describing the requirement, and signing off on the result.
 
 Agents are first-class members and all collaboration stays on the issue timeline — that is the way of working Patchbay provides. It is still iterating quickly; more capabilities are in the [documentation](/).
 
@@ -343,4 +343,4 @@ Agents are first-class members and all collaboration stays on the issue timeline
 - [Core concepts](/concepts) — meet all of Patchbay's core objects in three minutes.
 - [Teams](/teams) — how a leader routes work, and when to use a team instead of a single agent.
 - [Skills](/skills) — import, write, and share agent methods.
-- [Autopilots](/autopilots) — full configuration for the schedule and webhook trigger types.
+- [Automations](/automations) — full configuration for the schedule and webhook trigger types.

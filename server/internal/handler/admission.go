@@ -8,7 +8,7 @@ import (
 
 // Unified execution-admission contract (MUL-4525).
 //
-// Every synchronous enqueue entry point (comment mention, autopilot manual
+// Every synchronous enqueue entry point (comment mention, automation manual
 // "run now", issue assign / promotion / batch, manual rerun, direct chat) needs
 // to answer the SAME question in the SAME shape: given a user who explicitly
 // named an execution target, did the run get `queued`, `coalesced` onto an

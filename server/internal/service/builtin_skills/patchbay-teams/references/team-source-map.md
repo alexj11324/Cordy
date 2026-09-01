@@ -72,7 +72,7 @@ Contracts:
   filter, so an archived agent can be set as leader here. Archived-leader fails
   closed later, at routing/dispatch — see the readiness gate (team.go:945,
   isTeamLeaderReady → service.AgentReadiness at team.go:1017), assignment
-  validation (issue.go:2625-2627), and autopilot admission (autopilot.go:885-891);
+  validation (issue.go:2625-2627), and automation admission (automation.go:885-891);
 - leader is auto-added as member with role `leader` (team.go:258-263);
 - updating `leader_id` auto-adds new leader as member if missing (team.go:340-347).
 
@@ -225,27 +225,27 @@ Contracts:
   guards (comment.go:1173-1176, lastTaskWasLeader at team.go:915) and member
   explicit-mention skip (comment.go:1177-1179).
 
-## Autopilot
+## Automation
 
 Source:
 
 ```text
-server/internal/service/autopilot.go              # resolveAutopilotLeader ~617-655, dispatch ~88-111
-server/internal/handler/autopilot.go              # save-time validateAutopilotAssignee ~845-893
+server/internal/service/automation.go              # resolveAutomationLeader ~617-655, dispatch ~88-111
+server/internal/handler/automation.go              # save-time validateAutomationAssignee ~845-893
 ```
 
 Contracts:
 
-- team autopilot resolves executable agent from `team.leader_id` —
-  `resolveAutopilotLeader` team branch (autopilot.go:639-651);
+- team automation resolves executable agent from `team.leader_id` —
+  `resolveAutomationLeader` team branch (automation.go:639-651);
 - readiness/admission checks target the leader: save-time validation rejects an
-  archived team/leader (handler/autopilot.go:881-891), and dispatch re-runs
-  `resolveAutopilotLeader` + `AgentReadiness`;
+  archived team/leader (handler/automation.go:881-891), and dispatch re-runs
+  `resolveAutomationLeader` + `AgentReadiness`;
 - archived team fails closed / skips dispatch — `errTeamArchived`
-  (autopilot.go:644-645);
-- `create_issue` keeps the issue assigned to the team (autopilot.go:88-97);
-- `run_only` creates task directly for leader (autopilot.go:99-106, dispatch via
-  `resolveAutopilotLeader` at autopilot.go:284).
+  (automation.go:644-645);
+- `create_issue` keeps the issue assigned to the team (automation.go:88-97);
+- `run_only` creates task directly for leader (automation.go:99-106, dispatch via
+  `resolveAutomationLeader` at automation.go:284).
 
 ## Child-done Parent Trigger
 
@@ -324,12 +324,12 @@ server/internal/handler/team_assign_trigger_test.go
 server/internal/handler/team_comment_trigger_test.go
 server/internal/handler/team_briefing_test.go
 server/internal/handler/team_private_leader_test.go
-server/internal/handler/autopilot_private_leader_test.go
+server/internal/handler/automation_private_leader_test.go
 server/internal/handler/team_no_action_test.go
 ```
 
 Verification command:
 
 ```bash
-go test ./internal/handler -run 'Test.*Team|Test.*team|Test.*Autopilot.*Team|Test.*ChildDone.*Team'
+go test ./internal/handler -run 'Test.*Team|Test.*team|Test.*Automation.*Team|Test.*ChildDone.*Team'
 ```

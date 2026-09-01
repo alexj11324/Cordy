@@ -47,7 +47,7 @@ func TestTaskAttributionBase(t *testing.T) {
 	t.Run("rule_owner: accountable set, originator NULL, rule_version present", func(t *testing.T) {
 		got := taskAttributionBase(db.AgentTaskQueue{
 			OriginatorSource:  pgtype.Text{String: "rule_owner", Valid: true},
-			AccountableUserID: member, // originator left invalid (autopilot)
+			AccountableUserID: member, // originator left invalid (automation)
 			RuleVersionID:     ruleVer,
 		})
 		if got.Source != "rule_owner" || !got.Precise {

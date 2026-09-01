@@ -65,7 +65,7 @@ func makeAgent(owner pgtype.UUID, allowlist ...string) db.Agent {
 // --- Overlay follows the agent owner, not the run originator (MUL-3963) ---
 
 // TestBuildTaskOverlay_FollowsOwnerRegardlessOfOriginator: with no human
-// originator (autopilot / system run) the overlay is STILL built from the
+// originator (automation / system run) the overlay is STILL built from the
 // agent owner's connected apps, because the invocation-permission gate that
 // decides who may run the agent lives upstream (canInvokeAgent /
 // canCreatorInvokeAgent). BuildTaskOverlay no longer gates on the originator.

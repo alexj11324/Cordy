@@ -1084,38 +1084,38 @@ func TestBuildPromptNoIssueDetails(t *testing.T) {
 	}
 }
 
-func TestBuildPromptAutopilotRunOnly(t *testing.T) {
+func TestBuildPromptAutomationRunOnly(t *testing.T) {
 	t.Parallel()
 
 	prompt := BuildPrompt(Task{
-		AutopilotRunID:       "run-1",
-		AutopilotID:          "autopilot-1",
-		AutopilotTitle:       "Daily dependency check",
-		AutopilotDescription: "Check dependencies and report outdated packages.",
-		AutopilotSource:      "manual",
+		AutomationRunID:       "run-1",
+		AutomationID:          "automation-1",
+		AutomationTitle:       "Daily dependency check",
+		AutomationDescription: "Check dependencies and report outdated packages.",
+		AutomationSource:      "manual",
 	}, "claude")
 
 	for _, want := range []string{
 		"run-only mode",
-		"Autopilot run ID: run-1",
+		"Automation run ID: run-1",
 		"Daily dependency check",
 		"Check dependencies and report outdated packages.",
-		"patchbay autopilot get autopilot-1 --output json",
+		"patchbay automation get automation-1 --output json",
 	} {
 		if !strings.Contains(prompt, want) {
-			t.Fatalf("autopilot prompt missing %q\n---\n%s", want, prompt)
+			t.Fatalf("automation prompt missing %q\n---\n%s", want, prompt)
 		}
 	}
 
-	// The issue-command boundary is emitted ONCE, by the brief's autopilot
-	// workflow section (execenv.AutopilotIssueCommandsGuard). MUL-5696 found
+	// The issue-command boundary is emitted ONCE, by the brief's automation
+	// workflow section (execenv.AutomationIssueCommandsGuard). MUL-5696 found
 	// that a second hand-maintained per-turn copy drifts, so the per-turn
 	// prompt must not restate it in any form.
 	if strings.Contains(prompt, "Do not run `patchbay issue get`") {
-		t.Fatalf("autopilot prompt restates the issue-command boundary the brief owns (MUL-5696)\n---\n%s", prompt)
+		t.Fatalf("automation prompt restates the issue-command boundary the brief owns (MUL-5696)\n---\n%s", prompt)
 	}
 	if strings.Contains(prompt, "Your assigned issue ID is:") {
-		t.Fatalf("autopilot prompt should not use issue assignment template\n---\n%s", prompt)
+		t.Fatalf("automation prompt should not use issue assignment template\n---\n%s", prompt)
 	}
 }
 

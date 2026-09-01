@@ -68,7 +68,7 @@ type BusinessMetrics struct {
 	entitlementRefreshDuration     *prometheus.HistogramVec
 	entitlementDecision            *prometheus.CounterVec
 	entitlementVersionRegression   prometheus.Counter
-	autopilotQuotaDecision         *prometheus.CounterVec
+	automationQuotaDecision         *prometheus.CounterVec
 
 	// agentRuntimeLookup counts single-row agent_runtime reads by product
 	// source. Every source shares one SQL fingerprint, so this is the only
@@ -267,10 +267,10 @@ func NewBusinessMetrics() *BusinessMetrics {
 			Namespace: "patchbay", Subsystem: "entitlement", Name: "version_regression_total",
 			Help: "Total rejected entitlement subscription-version regressions.",
 		}),
-		autopilotQuotaDecision: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "patchbay", Subsystem: "autopilot_quota", Name: "decision_total",
-			Help: "Total autopilot quota admission outcomes.",
-		}, metricLabels("patchbay_autopilot_quota_decision_total")),
+		automationQuotaDecision: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "patchbay", Subsystem: "automation_quota", Name: "decision_total",
+			Help: "Total automation quota admission outcomes.",
+		}, metricLabels("patchbay_automation_quota_decision_total")),
 		agentRuntimeLookup: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "patchbay", Subsystem: "agent_runtime", Name: "lookup_total",
 			Help: "Total single-row agent_runtime reads by product source and outcome.",
@@ -327,7 +327,7 @@ func (m *BusinessMetrics) Collectors() []prometheus.Collector {
 		m.entitlementRefreshDuration,
 		m.entitlementDecision,
 		m.entitlementVersionRegression,
-		m.autopilotQuotaDecision,
+		m.automationQuotaDecision,
 		m.agentRuntimeLookup,
 	}, m.events.collectors()...)
 }
@@ -380,7 +380,7 @@ func (m *BusinessMetrics) RecordEntitlementVersionRegression() {
 	}
 }
 
-func (m *BusinessMetrics) RecordAutopilotQuotaDecision(action, source, result string) {
+func (m *BusinessMetrics) RecordAutomationQuotaDecision(action, source, result string) {
 	if m == nil {
 		return
 	}
@@ -389,7 +389,7 @@ func (m *BusinessMetrics) RecordAutopilotQuotaDecision(action, source, result st
 	default:
 		source = "other"
 	}
-	m.autopilotQuotaDecision.WithLabelValues(action, source, result).Inc()
+	m.automationQuotaDecision.WithLabelValues(action, source, result).Inc()
 }
 
 func (m *BusinessMetrics) RecordRuntimeGCDeleted() {
@@ -700,7 +700,7 @@ func (m *BusinessMetrics) clearTaskInProgress(taskID string) {
 }
 
 func (m *BusinessMetrics) prewarmFailureReasons() {
-	for _, source := range []string{"issue", "chat", "autopilot", "autopilot_issue", "quick_create", "other"} {
+	for _, source := range []string{"issue", "chat", "automation", "automation_issue", "quick_create", "other"} {
 		for _, runtimeMode := range []string{"local", "cloud", "unknown"} {
 			for _, reason := range taskfailure.AllReasons() {
 				m.taskFailed.WithLabelValues(source, runtimeMode, reason.String()).Add(0)

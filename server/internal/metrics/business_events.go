@@ -43,7 +43,7 @@ type businessEventMetrics struct {
 	chatMessageSent                 *prometheus.CounterVec
 	agentCreated                    *prometheus.CounterVec
 	teamCreated                    *prometheus.CounterVec
-	autopilotCreated                *prometheus.CounterVec
+	automationCreated                *prometheus.CounterVec
 	issueExecuted                   *prometheus.CounterVec
 	runtimeRegistered               *prometheus.CounterVec
 	runtimeReady                    *prometheus.CounterVec
@@ -51,9 +51,9 @@ type businessEventMetrics struct {
 	runtimeFailed                   *prometheus.CounterVec
 	runtimeOffline                  *prometheus.CounterVec
 	daemonWSMessageReceived         *prometheus.CounterVec
-	autopilotRunStarted             *prometheus.CounterVec
-	autopilotRunTerminal            *prometheus.CounterVec
-	autopilotRunSkipped             *prometheus.CounterVec
+	automationRunStarted             *prometheus.CounterVec
+	automationRunTerminal            *prometheus.CounterVec
+	automationRunSkipped             *prometheus.CounterVec
 	webhookDelivery                 *prometheus.CounterVec
 	webhookRateLimited              *prometheus.CounterVec
 	emailRateLimited                *prometheus.CounterVec
@@ -121,10 +121,10 @@ func newBusinessEventMetrics() *businessEventMetrics {
 			Name: "patchbay_team_created_total",
 			Help: "Total teams created.",
 		}, metricLabels("patchbay_team_created_total")),
-		autopilotCreated: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "patchbay_autopilot_created_total",
-			Help: "Total autopilots created.",
-		}, metricLabels("patchbay_autopilot_created_total")),
+		automationCreated: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "patchbay_automation_created_total",
+			Help: "Total automations created.",
+		}, metricLabels("patchbay_automation_created_total")),
 		issueExecuted: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "patchbay_issue_executed_total",
 			Help: "First task completion per issue (per-issue exactly-once activation keystone).",
@@ -154,18 +154,18 @@ func newBusinessEventMetrics() *businessEventMetrics {
 			Name: "patchbay_daemon_ws_message_received_total",
 			Help: "Total daemon WebSocket inbound messages by handler kind.",
 		}, metricLabels("patchbay_daemon_ws_message_received_total")),
-		autopilotRunStarted: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "patchbay_autopilot_run_started_total",
-			Help: "Total autopilot runs started.",
-		}, metricLabels("patchbay_autopilot_run_started_total")),
-		autopilotRunTerminal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "patchbay_autopilot_run_terminal_total",
-			Help: "Total autopilot runs that reached a terminal status.",
-		}, metricLabels("patchbay_autopilot_run_terminal_total")),
-		autopilotRunSkipped: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "patchbay_autopilot_run_skipped_total",
-			Help: "Total autopilot runs that admission-skipped (concurrency / cooldown / other).",
-		}, metricLabels("patchbay_autopilot_run_skipped_total")),
+		automationRunStarted: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "patchbay_automation_run_started_total",
+			Help: "Total automation runs started.",
+		}, metricLabels("patchbay_automation_run_started_total")),
+		automationRunTerminal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "patchbay_automation_run_terminal_total",
+			Help: "Total automation runs that reached a terminal status.",
+		}, metricLabels("patchbay_automation_run_terminal_total")),
+		automationRunSkipped: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "patchbay_automation_run_skipped_total",
+			Help: "Total automation runs that admission-skipped (concurrency / cooldown / other).",
+		}, metricLabels("patchbay_automation_run_skipped_total")),
 		webhookDelivery: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "patchbay_webhook_delivery_total",
 			Help: "Total inbound webhook deliveries by provider and outcome.",
@@ -233,7 +233,7 @@ func (e *businessEventMetrics) collectors() []prometheus.Collector {
 		e.chatMessageSent,
 		e.agentCreated,
 		e.teamCreated,
-		e.autopilotCreated,
+		e.automationCreated,
 		e.issueExecuted,
 		e.runtimeRegistered,
 		e.runtimeReady,
@@ -241,9 +241,9 @@ func (e *businessEventMetrics) collectors() []prometheus.Collector {
 		e.runtimeFailed,
 		e.runtimeOffline,
 		e.daemonWSMessageReceived,
-		e.autopilotRunStarted,
-		e.autopilotRunTerminal,
-		e.autopilotRunSkipped,
+		e.automationRunStarted,
+		e.automationRunTerminal,
+		e.automationRunSkipped,
 		e.webhookDelivery,
 		e.webhookRateLimited,
 		e.emailRateLimited,
@@ -264,7 +264,7 @@ func (e *businessEventMetrics) collectors() []prometheus.Collector {
 // safely; both sides are best-effort and never block the request path.
 //
 // As of MUL-4127 every server-side event is flagged by analytics.IsMetricsOnly
-// (all product events plus the runtime_* / autopilot_run_* lifecycle), so the
+// (all product events plus the runtime_* / automation_run_* lifecycle), so the
 // client.Capture below is skipped for all of them — server analytics is served
 // from the DB and Grafana, not PostHog. The Capture path is retained only so a
 // future non-metrics-only event name would still ship.
@@ -322,8 +322,8 @@ func (m *BusinessMetrics) IncForEvent(ev analytics.Event) {
 		).Inc()
 	case analytics.EventTeamCreated:
 		m.events.teamCreated.WithLabelValues().Inc()
-	case analytics.EventAutopilotCreated:
-		m.events.autopilotCreated.WithLabelValues(NormalizeAutopilotCadence(stringProp(ev.Properties, "cadence"))).Inc()
+	case analytics.EventAutomationCreated:
+		m.events.automationCreated.WithLabelValues(NormalizeAutomationCadence(stringProp(ev.Properties, "cadence"))).Inc()
 	case analytics.EventIssueExecuted:
 		m.events.issueExecuted.WithLabelValues(NormalizeTaskSource(stringProp(ev.Properties, "source"))).Inc()
 	case analytics.EventRuntimeRegistered:
@@ -350,21 +350,21 @@ func (m *BusinessMetrics) IncForEvent(ev analytics.Event) {
 			NormalizeRuntimeMode(stringProp(ev.Properties, "runtime_mode")),
 			NormalizeRuntimeProvider(stringProp(ev.Properties, "provider")),
 		).Inc()
-	case analytics.EventAutopilotRunStarted:
-		m.events.autopilotRunStarted.WithLabelValues(
-			NormalizeAutopilotCadence(stringProp(ev.Properties, "cadence")),
-			NormalizeAutopilotTrigger(stringProp(ev.Properties, "trigger_kind")),
+	case analytics.EventAutomationRunStarted:
+		m.events.automationRunStarted.WithLabelValues(
+			NormalizeAutomationCadence(stringProp(ev.Properties, "cadence")),
+			NormalizeAutomationTrigger(stringProp(ev.Properties, "trigger_kind")),
 		).Inc()
-	case analytics.EventAutopilotRunCompleted:
-		m.events.autopilotRunTerminal.WithLabelValues(
-			NormalizeAutopilotCadence(stringProp(ev.Properties, "cadence")),
-			NormalizeAutopilotTrigger(stringProp(ev.Properties, "trigger_kind")),
+	case analytics.EventAutomationRunCompleted:
+		m.events.automationRunTerminal.WithLabelValues(
+			NormalizeAutomationCadence(stringProp(ev.Properties, "cadence")),
+			NormalizeAutomationTrigger(stringProp(ev.Properties, "trigger_kind")),
 			"completed",
 		).Inc()
-	case analytics.EventAutopilotRunFailed:
-		m.events.autopilotRunTerminal.WithLabelValues(
-			NormalizeAutopilotCadence(stringProp(ev.Properties, "cadence")),
-			NormalizeAutopilotTrigger(stringProp(ev.Properties, "trigger_kind")),
+	case analytics.EventAutomationRunFailed:
+		m.events.automationRunTerminal.WithLabelValues(
+			NormalizeAutomationCadence(stringProp(ev.Properties, "cadence")),
+			NormalizeAutomationTrigger(stringProp(ev.Properties, "trigger_kind")),
 			"failed",
 		).Inc()
 	case analytics.EventFeedbackSubmitted:
@@ -385,14 +385,14 @@ func (m *BusinessMetrics) IncForEvent(ev analytics.Event) {
 
 // ---- non-PostHog Record* helpers (typed; no analytics.Event source) -------
 
-// RecordAutopilotRunSkipped counts an autopilot admission-skip with reason.
-func (m *BusinessMetrics) RecordAutopilotRunSkipped(cadence, reason string) {
+// RecordAutomationRunSkipped counts an automation admission-skip with reason.
+func (m *BusinessMetrics) RecordAutomationRunSkipped(cadence, reason string) {
 	if m == nil || m.events == nil {
 		return
 	}
-	m.events.autopilotRunSkipped.WithLabelValues(
-		NormalizeAutopilotCadence(cadence),
-		NormalizeAutopilotSkipReason(reason),
+	m.events.automationRunSkipped.WithLabelValues(
+		NormalizeAutomationCadence(cadence),
+		NormalizeAutomationSkipReason(reason),
 	).Inc()
 }
 

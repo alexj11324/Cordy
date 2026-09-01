@@ -1789,14 +1789,14 @@ type claimBuildFailure struct {
 }
 
 // rejectClaimSourceLoad settles a claim whose SOURCE row — the issue, chat
-// session, autopilot_run or autopilot the task hangs off — could not be read.
+// session, automation_run or automation the task hangs off — could not be read.
 //
 // Every one of these branches used to swallow the error and fall through on
 // `err == nil`. That is a fail-open: taskToResponse has already seeded
 // resp.WorkspaceID with the RUNTIME's workspace, so a swallowed read ran on to
 // the builder's backstop isolation check, which compared that seeded value
 // against itself and passed. The agent was then dispatched with no issue, no
-// chat input, or no autopilot instructions at all — and, for chat, past the
+// chat input, or no automation instructions at all — and, for chat, past the
 // empty-input guard that lives inside the success branch.
 //
 // The two failures settle differently:
@@ -1810,8 +1810,8 @@ type claimBuildFailure struct {
 //     currently keep every one of these states from arising —
 //     agent_task_queue.issue_id ON DELETE CASCADE,
 //     agent_task_queue.chat_session_id ON DELETE SET NULL, and
-//     autopilot_run.autopilot_id ON DELETE CASCADE feeding
-//     agent_task_queue.autopilot_run_id ON DELETE SET NULL — so this branch is
+//     automation_run.automation_id ON DELETE CASCADE feeding
+//     agent_task_queue.automation_run_id ON DELETE SET NULL — so this branch is
 //     defensive. It is what protects the claim path when those FKs are dropped
 //     for the repo's no-FK rule.
 func (h *Handler) rejectClaimSourceLoad(ctx context.Context, task *db.AgentTaskQueue, err error, source, sourceID string) *claimBuildFailure {
@@ -1860,7 +1860,7 @@ func (h *Handler) rejectClaimSkillLoad(task *db.AgentTaskQueue, err error) *clai
 }
 
 // rejectClaimOnWorkspaceMismatch enforces the claim's tenant boundary against
-// the workspace that OWNS the task's context (issue / chat session / autopilot
+// the workspace that OWNS the task's context (issue / chat session / automation
 // / quick-create), which is the only authority for PATCHBAY_WORKSPACE_ID in the
 // agent env. An empty value would make the CLI silently fall back to the
 // user-global config and talk to whatever workspace the user happened to last
@@ -1884,7 +1884,7 @@ func (h *Handler) rejectClaimOnWorkspaceMismatch(ctx context.Context, task *db.A
 		"resolved_workspace", resolvedWorkspaceID,
 		"has_issue", task.IssueID.Valid,
 		"has_chat", task.ChatSessionID.Valid,
-		"has_autopilot_run", task.AutopilotRunID.Valid,
+		"has_automation_run", task.AutomationRunID.Valid,
 		"has_quick_create", hasQuickCreate,
 	)
 	if _, cerr := h.TaskService.CancelTask(ctx, task.ID); cerr != nil {
@@ -2277,7 +2277,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		// work to a team leader: direct assign-to-team, comment
 		// @team-mention (even when the issue itself is assigned to a
 		// plain agent — the MUL-3724 case), sub-issue done callback,
-		// autopilot team-assignee, and retry-clone inheritance. The old
+		// automation team-assignee, and retry-clone inheritance. The old
 		// issue.AssigneeType=="team" gate missed the comment-mention
 		// path, so the leader booted with zero team context and
 		// degraded into doing the work itself instead of orchestrating.
@@ -2823,53 +2823,53 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		}
 	}
 
-	// Autopilot run_only task: resolve workspace from autopilot_run →
-	// autopilot, and include the autopilot instructions because there is no
+	// Automation run_only task: resolve workspace from automation_run →
+	// automation, and include the automation instructions because there is no
 	// issue for the agent to fetch.
-	if task.AutopilotRunID.Valid {
-		run, runErr := h.Queries.GetAutopilotRun(r.Context(), task.AutopilotRunID)
+	if task.AutomationRunID.Valid {
+		run, runErr := h.Queries.GetAutomationRun(r.Context(), task.AutomationRunID)
 		if runErr != nil {
 			return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount,
-				h.rejectClaimSourceLoad(r.Context(), task, runErr, "autopilot run", uuidToString(task.AutopilotRunID))
+				h.rejectClaimSourceLoad(r.Context(), task, runErr, "automation run", uuidToString(task.AutomationRunID))
 		}
-		ap, apErr := h.Queries.GetAutopilot(r.Context(), run.AutopilotID)
+		ap, apErr := h.Queries.GetAutomation(r.Context(), run.AutomationID)
 		if apErr != nil {
 			return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount,
-				h.rejectClaimSourceLoad(r.Context(), task, apErr, "autopilot", uuidToString(run.AutopilotID))
+				h.rejectClaimSourceLoad(r.Context(), task, apErr, "automation", uuidToString(run.AutomationID))
 		}
 
-		// The autopilot owns this task's workspace. taskToResponse seeded
+		// The automation owns this task's workspace. taskToResponse seeded
 		// resp.WorkspaceID with the RUNTIME's workspace, so the old
 		// `if resp.WorkspaceID == ""` guard never fired and left the isolation
 		// check comparing the runtime workspace against itself. Assign
 		// authoritatively, then prove ownership before exposing any
-		// autopilot-owned context.
+		// automation-owned context.
 		resp.WorkspaceID = uuidToString(ap.WorkspaceID)
 		if failure := h.rejectClaimOnWorkspaceMismatch(r.Context(), task, resp.WorkspaceID, runtimeID, runtimeWorkspaceID, false); failure != nil {
 			return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, failure
 		}
 
-		resp.AutopilotID = uuidToString(run.AutopilotID)
-		resp.AutopilotSource = run.Source
+		resp.AutomationID = uuidToString(run.AutomationID)
+		resp.AutomationSource = run.Source
 		if run.TriggerPayload != nil {
-			resp.AutopilotTriggerPayload = json.RawMessage(run.TriggerPayload)
+			resp.AutomationTriggerPayload = json.RawMessage(run.TriggerPayload)
 		}
-		resp.AutopilotTitle = ap.Title
+		resp.AutomationTitle = ap.Title
 		resp.ThreadName = ap.Title
 		if ap.Description.Valid {
-			resp.AutopilotDescription = ap.Description.String
+			resp.AutomationDescription = ap.Description.String
 		}
 
-		// A run_only autopilot has no issue from which to inherit project
+		// A run_only automation has no issue from which to inherit project
 		// context, so its configured project is hydrated here. That gives the
 		// daemon the same resource contract as issue-bound and quick-create
 		// tasks: project repositories scope the checkout, while local_directory
 		// lets the daemon select the bound path and write its managed manifest.
 		projectCtx, projectErr := h.resolveClaimProjectContext(r.Context(), ap.ProjectID, ap.WorkspaceID)
 		if projectErr != nil {
-			slog.Error("autopilot claim: load project context failed; preserving task for redelivery",
+			slog.Error("automation claim: load project context failed; preserving task for redelivery",
 				"task_id", uuidToString(task.ID),
-				"autopilot_id", uuidToString(run.AutopilotID),
+				"automation_id", uuidToString(run.AutomationID),
 				"error", projectErr)
 			return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, &claimBuildFailure{
 				outcome: "error_project_context",
@@ -2884,11 +2884,11 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 	// resp came from above), so the daemon's prompt + issue_context.md render the
 	// assignment-handoff branch. Empty for all other task kinds.
 
-	// Quick-create task: no issue / chat / autopilot link — workspace and
+	// Quick-create task: no issue / chat / automation link — workspace and
 	// prompt come from the task's context JSONB. Resolve workspace from
 	// there so the isolation check below has something to compare.
 	hasQuickCreate := false
-	if task.Context != nil && !task.IssueID.Valid && !task.ChatSessionID.Valid && !task.AutopilotRunID.Valid {
+	if task.Context != nil && !task.IssueID.Valid && !task.ChatSessionID.Valid && !task.AutomationRunID.Valid {
 		var qc service.QuickCreateContext
 		if json.Unmarshal(task.Context, &qc) == nil && qc.Type == service.QuickCreateContextType {
 			hasQuickCreate = true
@@ -3075,7 +3075,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 
 	// Workspace-level Context (workspace.context DB column) — the per-workspace
 	// system prompt that workspace owners set in Settings → General. Inject it
-	// into the brief regardless of task kind (issue / chat / autopilot /
+	// into the brief regardless of task kind (issue / chat / automation /
 	// quick-create) so every agent running in the workspace sees the same
 	// shared context. Empty string when the owner hasn't set one; the daemon
 	// skips rendering the heading in that case.
@@ -4010,15 +4010,15 @@ func (h *Handler) reconcileCommentsOnCompletion(ctx context.Context, task *db.Ag
 			// MUL-4857: this is the deferred replay of an already-accepted delegation
 			// (e.g. the mentioned target was busy at create time). Restore the SAME
 			// verified authorization context from the comment's stored source_task_id,
-			// so an unattributed autopilot delegation's follow-up still fires once the
+			// so an unattributed automation delegation's follow-up still fires once the
 			// busy target frees up. The source_task_id is re-stamped on edit, so this
 			// tracks the current content's authoring action, not a stale one.
-			delegationAuthority = h.autopilotDelegationAuthorityFromComment(ctx, issue, c)
+			delegationAuthority = h.automationDelegationAuthorityFromComment(ctx, issue, c)
 		}
 		triggers, _ := h.computeCommentAgentTriggers(ctx, issue, c.Content, parentComment, actorType, actorID, commentTriggerComputeOptions{
 			ExcludeTriggerCommentID:            c.ID,
 			OriginatorUserID:                   originatorUserID,
-			AutopilotDelegationAuthorityUserID: delegationAuthority,
+			AutomationDelegationAuthorityUserID: delegationAuthority,
 		})
 		// For an AGENT author, compensate ONLY explicit @agent/@team mentions.
 		// computeCommentAgentTriggers can also return the assigned-team-leader
@@ -4550,7 +4550,7 @@ func (h *Handler) ReportTaskMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Broadcast reach is deliberately unchanged: only issue- and chat-backed
-	// tasks streamed live messages before, and widening that to autopilot /
+	// tasks streamed live messages before, and widening that to automation /
 	// quick-create tasks is a product decision, not part of this optimization.
 	workspaceID := ""
 	if task.IssueID.Valid || task.ChatSessionID.Valid {
@@ -5185,32 +5185,32 @@ func (h *Handler) GetChatSessionGCCheck(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-// GetAutopilotRunGCCheck returns the status and completed_at of an autopilot
+// GetAutomationRunGCCheck returns the status and completed_at of an automation
 // run for the daemon GC loop. The daemon decides purely on terminal status:
-// an autopilot run's workdir is never reused, so a terminal run is reclaimed on
+// an automation run's workdir is never reused, so a terminal run is reclaimed on
 // sight while non-terminal status is a skip signal — completed_at is returned
 // for the API contract and diagnostics, not as a TTL anchor.
 //
-// Workspace ownership is resolved via the parent autopilot row.
-func (h *Handler) GetAutopilotRunGCCheck(w http.ResponseWriter, r *http.Request) {
+// Workspace ownership is resolved via the parent automation row.
+func (h *Handler) GetAutomationRunGCCheck(w http.ResponseWriter, r *http.Request) {
 	runID := chi.URLParam(r, "runId")
 	runUUID, ok := parseUUIDOrBadRequest(w, runID, "run_id")
 	if !ok {
 		return
 	}
-	run, err := h.Queries.GetAutopilotRun(r.Context(), runUUID)
+	run, err := h.Queries.GetAutomationRun(r.Context(), runUUID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "autopilot run not found")
+		writeError(w, http.StatusNotFound, "automation run not found")
 		return
 	}
-	autopilot, err := h.Queries.GetAutopilot(r.Context(), run.AutopilotID)
+	automation, err := h.Queries.GetAutomation(r.Context(), run.AutomationID)
 	if err != nil {
-		// Parent autopilot is gone — treat as not found rather than 500
+		// Parent automation is gone — treat as not found rather than 500
 		// so the daemon can fall through to its orphan-by-mtime path.
-		writeError(w, http.StatusNotFound, "autopilot run not found")
+		writeError(w, http.StatusNotFound, "automation run not found")
 		return
 	}
-	if !h.requireDaemonWorkspaceAccess(w, r, uuidToString(autopilot.WorkspaceID)) {
+	if !h.requireDaemonWorkspaceAccess(w, r, uuidToString(automation.WorkspaceID)) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -5221,7 +5221,7 @@ func (h *Handler) GetAutopilotRunGCCheck(w http.ResponseWriter, r *http.Request)
 
 // GetTaskGCCheck returns the agent_task_queue status for quick-create cleanup.
 // Quick-create tasks have no parent record (no issue_id at WriteGCMeta time,
-// no chat session, no autopilot run) so the daemon keys GC directly on the
+// no chat session, no automation run) so the daemon keys GC directly on the
 // task row itself.
 func (h *Handler) GetTaskGCCheck(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "taskId")

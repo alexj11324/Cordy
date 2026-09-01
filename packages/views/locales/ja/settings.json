@@ -223,7 +223,7 @@
         "label": "プロジェクトへ移動",
         "description": "プロジェクト一覧を開きます。"
       },
-      "goAutopilots": {
+      "goAutomations": {
         "label": "自動化へ移動",
         "description": "ワークスペースの自動化を開きます。"
       },

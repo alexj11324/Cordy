@@ -399,7 +399,7 @@ const (
 )
 
 // shouldCleanTaskDir decides whether a task directory should be removed.
-// Dispatches on meta.Kind so chat / autopilot / quick-create tasks each
+// Dispatches on meta.Kind so chat / automation / quick-create tasks each
 // follow the parent record that actually governs their lifecycle.
 func (d *Daemon) shouldCleanTaskDir(ctx context.Context, taskDir string) gcAction {
 	// A task currently running on this env root must never be reclaimed —
@@ -516,8 +516,8 @@ func (d *Daemon) shouldCleanTaskDirForKind(ctx context.Context, taskDir string, 
 		return d.gcDecisionIssue(ctx, taskDir, meta)
 	case execenv.GCKindChat:
 		return d.gcDecisionChat(ctx, taskDir, meta)
-	case execenv.GCKindAutopilotRun:
-		return d.gcDecisionAutopilotRun(ctx, taskDir, meta)
+	case execenv.GCKindAutomationRun:
+		return d.gcDecisionAutomationRun(ctx, taskDir, meta)
 	case execenv.GCKindQuickCreate:
 		return d.gcDecisionQuickCreate(ctx, taskDir, meta)
 	default:
@@ -738,28 +738,28 @@ func (d *Daemon) gcDecisionChat(ctx context.Context, taskDir string, meta *exece
 	return gcActionSkip
 }
 
-func (d *Daemon) gcDecisionAutopilotRun(ctx context.Context, taskDir string, meta *execenv.GCMeta) gcAction {
-	if strings.TrimSpace(meta.AutopilotRunID) == "" {
-		return d.orphanByMTime(taskDir, "empty autopilot run id")
+func (d *Daemon) gcDecisionAutomationRun(ctx context.Context, taskDir string, meta *execenv.GCMeta) gcAction {
+	if strings.TrimSpace(meta.AutomationRunID) == "" {
+		return d.orphanByMTime(taskDir, "empty automation run id")
 	}
 
-	status, err := d.client.GetAutopilotRunGCCheck(ctx, meta.AutopilotRunID)
+	status, err := d.client.GetAutomationRunGCCheck(ctx, meta.AutomationRunID)
 	if err != nil {
 		if isAccessNotFound(err) {
-			return d.orphanByMTime(taskDir, "autopilot run not accessible")
+			return d.orphanByMTime(taskDir, "automation run not accessible")
 		}
 		return gcActionSkip
 	}
 
-	// Terminal states per the autopilot_run CHECK constraint:
+	// Terminal states per the automation_run CHECK constraint:
 	//   completed, failed, skipped — the run finished its own work.
 	//   issue_created            — the run produced an issue task that owns
 	//                              its own workdir; this run's workdir is
 	//                              dead weight from here on.
 	// Non-terminal: pending, running. Skip until they reach a terminal state
-	// rather than trying to bound them by mtime — long autopilots are real.
+	// rather than trying to bound them by mtime — long automations are real.
 	//
-	// An autopilot run's workdir is never reused: unlike issue/chat tasks there
+	// An automation run's workdir is never reused: unlike issue/chat tasks there
 	// is no PriorWorkDir path that hands a later run the same directory, so every
 	// run gets a fresh one. Whatever the run produced already lives server-side
 	// (and an issue_created run handed its work to an issue task that owns its own
@@ -768,11 +768,11 @@ func (d *Daemon) gcDecisionAutopilotRun(ctx context.Context, taskDir string, met
 	// same reasoning gcDecisionQuickCreate applies to quick-create dirs. The
 	// active-env-root short-circuit in shouldCleanTaskDir still protects a run
 	// that is mid-flight, so this can't pull the rug from under live work.
-	if isAutopilotRunTerminal(status.Status) {
+	if isAutomationRunTerminal(status.Status) {
 		d.logger.Info("gc: eligible for cleanup",
 			"dir", filepath.Base(taskDir),
-			"kind", "autopilot_run",
-			"autopilot_run", meta.AutopilotRunID,
+			"kind", "automation_run",
+			"automation_run", meta.AutomationRunID,
 			"status", status.Status,
 		)
 		return gcActionClean
@@ -780,11 +780,11 @@ func (d *Daemon) gcDecisionAutopilotRun(ctx context.Context, taskDir string, met
 	return gcActionSkip
 }
 
-// isAutopilotRunTerminal mirrors the run.status CHECK in
-// migrations/042_autopilot.up.sql. Non-terminal states are pending/running;
+// isAutomationRunTerminal mirrors the run.status CHECK in
+// migrations/042_automation.up.sql. Non-terminal states are pending/running;
 // every other value the schema allows is a final resting state from the
 // daemon's POV (the run is no longer producing work in this workdir).
-func isAutopilotRunTerminal(status string) bool {
+func isAutomationRunTerminal(status string) bool {
 	switch status {
 	case "completed", "failed", "skipped", "issue_created":
 		return true

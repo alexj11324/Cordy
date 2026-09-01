@@ -30,7 +30,7 @@ func firstFixtureAgent(t *testing.T) (agentID, runtimeID string) {
 
 // createAgentTaskWithOriginator inserts a queued task attributed to the given
 // human, standing in for the run an agent is executing when it files an issue.
-// An invalid originator models an unattributed / autopilot-rooted chain.
+// An invalid originator models an unattributed / automation-rooted chain.
 func createAgentTaskWithOriginator(t *testing.T, agentID, runtimeID string, originator pgtype.UUID) pgtype.UUID {
 	t.Helper()
 	ctx := context.Background()

@@ -122,7 +122,7 @@ type IssueCreateOpts struct {
 
 	// Platform tags the IssueCreated analytics + business-metrics event
 	// with the client surface the request came in on (web / desktop /
-	// daemon / lark / autopilot). Derived from middleware's client
+	// daemon / lark / automation). Derived from middleware's client
 	// metadata at the handler layer.
 	Platform string
 
@@ -677,7 +677,7 @@ func (s *IssueService) captureCreatedAnalytics(issue db.Issue, creatorType, acto
 	if s.Analytics == nil {
 		return
 	}
-	source, taskID, autopilotRunID := classifyOrigin(issue, opts)
+	source, taskID, automationRunID := classifyOrigin(issue, opts)
 	analyticsActorID := actorID
 	if creatorType == "agent" {
 		analyticsActorID = "agent:" + actorID
@@ -688,7 +688,7 @@ func (s *IssueService) captureCreatedAnalytics(issue db.Issue, creatorType, acto
 		util.UUIDToString(issue.ID),
 		opts.AnalyticsAgentID,
 		taskID,
-		autopilotRunID,
+		automationRunID,
 		source,
 		opts.Platform,
 	))
@@ -698,7 +698,7 @@ func (s *IssueService) captureCreatedAnalytics(issue db.Issue, creatorType, acto
 // analytics source labels. Unknown origin_type falls back to SourceManual
 // with the warning logged — analytics drift is preferable to dropping the
 // event entirely.
-func classifyOrigin(issue db.Issue, opts IssueCreateOpts) (source, taskID, autopilotRunID string) {
+func classifyOrigin(issue db.Issue, opts IssueCreateOpts) (source, taskID, automationRunID string) {
 	source = analytics.SourceManual
 	if !issue.OriginType.Valid {
 		return source, "", ""
@@ -710,8 +710,8 @@ func classifyOrigin(issue db.Issue, opts IssueCreateOpts) (source, taskID, autop
 		// (agent_create is the ordinary agent `issue create` path, MUL-4305);
 		// surface that task id and keep the manual source label.
 		return analytics.SourceManual, originID, ""
-	case "autopilot":
-		return analytics.SourceAutopilot, "", originID
+	case "automation":
+		return analytics.SourceAutomation, "", originID
 	default:
 		slog.Warn("analytics: unknown issue origin type",
 			"origin_type", issue.OriginType.String,

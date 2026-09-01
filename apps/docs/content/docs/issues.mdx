@@ -72,12 +72,12 @@ A workspace owner or admin can add statuses of their own under **Settings → Is
 | `backlog` | Parked: assigning an agent never starts a run. Moving the issue out of this category is what starts one, unless the target is `done` or `cancelled`. |
 | `todo` | Queued to start. Unlike `backlog`, assigning an agent to an issue here starts a run right away. |
 | `in_progress` | Counts as actively worked on: a run that fails with nothing else in flight rolls the issue back to `todo`. |
-| `in_review` | Counts as delivered and waiting on review: it finalizes an [autopilot](/autopilots) run, and past run-failure notifications are archived automatically. |
+| `in_review` | Counts as delivered and waiting on review: it finalizes an [automation](/automations) run, and past run-failure notifications are archived automatically. |
 | `done` | Counts as finished: it closes out a sub-issue stage and counts toward the parent's progress. |
 | `blocked` | Stalled on something external; nothing resumes on its own. |
 | `cancelled` | No longer pursued, record kept; also terminal for a sub-issue stage. |
 
-So a `Code Review` status in the `in_review` category ends an autopilot run exactly like `in_review` does, and moving an issue out of `backlog` into a `Rework` status in the `todo` category starts the assigned agent exactly like moving it to `todo` would.
+So a `Code Review` status in the `in_review` category ends an automation run exactly like `in_review` does, and moving an issue out of `backlog` into a `Rework` status in the `todo` category starts the assigned agent exactly like moving it to `todo` would.
 
 The name is what your team reads; the category is what the platform acts on. Wherever the rest of this documentation says a status triggers something, that rule belongs to the category, so a custom status inside it is covered too. It does not work in reverse: when the platform sets a status itself — the rollback to `todo` or the `done` on a merged PR above — it writes the built-in status, never a custom one from that category.
 

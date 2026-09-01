@@ -211,7 +211,7 @@ export interface WorkspaceSubscriptionEntitlements {
   seats: number;
   limits: {
     issueCount: WorkspaceEntitlementLimit;
-    autopilotRuns: WorkspaceEntitlementLimit;
+    automationRuns: WorkspaceEntitlementLimit;
   };
   currentPeriodEnd: string | null;
   snapshotExpiresAt: string | null;

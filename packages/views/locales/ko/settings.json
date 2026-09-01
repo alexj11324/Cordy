@@ -223,7 +223,7 @@
         "label": "프로젝트로 이동",
         "description": "프로젝트 목록을 엽니다."
       },
-      "goAutopilots": {
+      "goAutomations": {
         "label": "자동화로 이동",
         "description": "워크스페이스 자동화를 엽니다."
       },

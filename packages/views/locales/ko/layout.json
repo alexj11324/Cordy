@@ -5,7 +5,7 @@
     "my_issues": "내 태스크",
     "issues": "태스크",
     "projects": "프로젝트",
-    "autopilots": "오토파일럿",
+    "automations": "오토파일럿",
     "agents": "에이전트",
     "teams": "스쿼드",
     "usage": "분석",
@@ -16,7 +16,7 @@
   "tab": {
     "issue": "태스크",
     "project": "프로젝트",
-    "autopilot": "오토파일럿",
+    "automation": "오토파일럿",
     "agent": "에이전트",
     "member": "멤버",
     "team": "스쿼드",

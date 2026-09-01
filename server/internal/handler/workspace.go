@@ -1204,16 +1204,16 @@ func (h *Handler) DeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 			run:  func() error { return qtx.DeleteWorkspaceLeafData(ctx, requester.WorkspaceID) },
 		},
 		{
-			name: "delete autopilot runs",
-			run:  func() error { return qtx.DeleteWorkspaceAutopilotRuns(ctx, requester.WorkspaceID) },
+			name: "delete automation runs",
+			run:  func() error { return qtx.DeleteWorkspaceAutomationRuns(ctx, requester.WorkspaceID) },
 		},
 		{
-			name: "delete autopilot quota reservations",
-			run:  func() error { return qtx.DeleteWorkspaceAutopilotQuotaReservations(ctx, requester.WorkspaceID) },
+			name: "delete automation quota reservations",
+			run:  func() error { return qtx.DeleteWorkspaceAutomationQuotaReservations(ctx, requester.WorkspaceID) },
 		},
 		{
-			name: "delete autopilot quota periods",
-			run:  func() error { return qtx.DeleteWorkspaceAutopilotQuotaPeriods(ctx, requester.WorkspaceID) },
+			name: "delete automation quota periods",
+			run:  func() error { return qtx.DeleteWorkspaceAutomationQuotaPeriods(ctx, requester.WorkspaceID) },
 		},
 		{
 			name: "delete chat messages",
@@ -1259,12 +1259,12 @@ func (h *Handler) DeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 			},
 		},
 		{
-			name: "delete autopilot children",
-			run:  func() error { return qtx.DeleteWorkspaceAutopilotChildren(ctx, requester.WorkspaceID) },
+			name: "delete automation children",
+			run:  func() error { return qtx.DeleteWorkspaceAutomationChildren(ctx, requester.WorkspaceID) },
 		},
 		{
-			name: "delete autopilots",
-			run:  func() error { return qtx.DeleteWorkspaceAutopilots(ctx, requester.WorkspaceID) },
+			name: "delete automations",
+			run:  func() error { return qtx.DeleteWorkspaceAutomations(ctx, requester.WorkspaceID) },
 		},
 		{
 			name: "delete pull requests",

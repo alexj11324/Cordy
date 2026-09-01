@@ -113,7 +113,7 @@ func TestBuildMikaOnboardingKickoffProfileVariants(t *testing.T) {
 	})
 }
 
-// The digest starter play schedules a recurring autopilot, and the trigger API
+// The digest starter play schedules a recurring automation, and the trigger API
 // defaults an absent timezone to UTC. The member's zone therefore has to reach
 // the model, and its absence has to be visible rather than silent — otherwise
 // the skill proposes "every morning at 09:00" and the member outside UTC gets

@@ -72,7 +72,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 | `backlog` | 停着不动：分配给智能体不会启动执行。把任务移出这个分类才会启动，除非目标是 `done` 或 `cancelled`。 |
 | `todo` | 排队等待开始。和 `backlog` 不同，处于这个分类的任务一分配智能体就立即启动执行。 |
 | `in_progress` | 算作正在处理：执行失败且没有其他执行在进行时，任务回到 `todo`。 |
-| `in_review` | 算作已交付、等待检查：会结束[自动化](/autopilots)的运行，之前的"执行失败"通知也会自动归档。 |
+| `in_review` | 算作已交付、等待检查：会结束[自动化](/automations)的运行，之前的"执行失败"通知也会自动归档。 |
 | `done` | 算作已完成：会结束子任务的一个阶段，并计入父任务的进度。 |
 | `blocked` | 卡在外部依赖上，不会自行恢复。 |
 | `cancelled` | 不再继续但保留记录；同样是子任务阶段的终态。 |

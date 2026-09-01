@@ -35,8 +35,8 @@ func registerSubscriberListeners(bus *events.Bus, pool *pgxpool.Pool) {
 		if !ok {
 			return
 		}
-		// Issues created via handler use IssueResponse; autopilot-created issues
-		// use map[string]any (see service/autopilot.go → IssueToMap).
+		// Issues created via handler use IssueResponse; automation-created issues
+		// use map[string]any (see service/automation.go → IssueToMap).
 		issue, ok := extractIssueFields(payload["issue"])
 		if !ok {
 			return
@@ -250,7 +250,7 @@ func subscribeDelegatedHuman(bus *events.Bus, pool *pgxpool.Pool, queries *db.Qu
 
 // extractIssueFields normalizes an issue payload that may be either a
 // handler.IssueResponse struct (HTTP handler path) or a map[string]any
-// (autopilot service path) into a common shape.
+// (automation service path) into a common shape.
 func extractIssueFields(v any) (handler.IssueResponse, bool) {
 	if issue, ok := v.(handler.IssueResponse); ok {
 		return issue, true

@@ -100,7 +100,7 @@ type AddIssueSubscriberParams struct {
 	Reason   string      `json:"reason"`
 }
 
-// Auto-subscribe path (creator / assignee / commenter / mentioned / autopilot /
+// Auto-subscribe path (creator / assignee / commenter / mentioned / automation /
 // delegated).
 //
 // Two behaviors are load-bearing here:

@@ -299,21 +299,21 @@ WHERE workspace_id = $1
 ORDER BY created_at ASC
 LIMIT 1;
 
--- name: FindRecentAutopilotDuplicateIssue :one
+-- name: FindRecentAutomationDuplicateIssue :one
 SELECT i.* FROM issue i
 WHERE i.workspace_id = $1
   -- Negate only known terminal keys so an unknown legacy key remains active.
   AND NOT (i.status = ANY(sqlc.arg('terminal_status_keys')::text[]))
-  AND i.origin_type = 'autopilot'
+  AND i.origin_type = 'automation'
   AND i.origin_id = $2
   AND i.project_id IS NOT DISTINCT FROM sqlc.arg('project_id')::uuid
   AND lower(btrim(regexp_replace(i.title, '[[:space:]]+', ' ', 'g'))) = sqlc.arg('normalized_title')
   AND i.created_at >= sqlc.arg('created_after')::timestamptz
   AND EXISTS (
     SELECT 1
-    FROM autopilot_run r
+    FROM automation_run r
     WHERE r.issue_id = i.id
-      AND r.autopilot_id = i.origin_id
+      AND r.automation_id = i.origin_id
       AND r.status IN ('issue_created', 'running', 'completed')
   )
 ORDER BY i.created_at ASC

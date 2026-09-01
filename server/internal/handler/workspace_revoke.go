@@ -199,12 +199,12 @@ func (h *Handler) revokeAndRemoveMember(ctx context.Context, workspaceID, userID
 		return empty, err
 	}
 
-	// autopilot_subscriber is another FK-free subscription template. Leaving
+	// automation_subscriber is another FK-free subscription template. Leaving
 	// stale rows here made the detail API return a user the member picker could
 	// no longer render; the next full-replace PATCH then failed membership
-	// validation, blocking every edit to that autopilot. Prune only templates in
+	// validation, blocking every edit to that automation. Prune only templates in
 	// this workspace so the same user's subscriptions elsewhere survive.
-	if err := qtx.DeleteAutopilotSubscribersByMember(ctx, db.DeleteAutopilotSubscribersByMemberParams{
+	if err := qtx.DeleteAutomationSubscribersByMember(ctx, db.DeleteAutomationSubscribersByMemberParams{
 		WorkspaceID: workspaceID,
 		UserID:      userID,
 	}); err != nil {

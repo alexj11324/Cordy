@@ -307,7 +307,7 @@ Skill 是给智能体的知识包：一个 `SKILL.md` 加上可选的支持文�
 
 配置是一句话的事：告诉 Patchbay helper，每周一早上九点，让 Reviewer 对网站代码库做一次全面检查——冗余和死代码、不合理的结构、可以更规范的地方，发现写进任务评论，不改代码：
 
-![helper 创建自动化](/images/docs/tutorial-autopilot-create.webp)
+![helper 创建自动化](/images/docs/tutorial-automation-create.webp)
 
 打开**自动化**页面，执行者、提示词和调度（cron + 时区）都已配置好。执行模式有两种：
 
@@ -316,13 +316,13 @@ Skill 是给智能体的知识包：一个 `SKILL.md` 加上可选的支持文�
 
 定期检查用「创建任务」模式。不想等到周一，点**立即运行**触发一次：
 
-![自动化详情页：调度和立即运行](/images/docs/tutorial-autopilot-detail.webp)
+![自动化详情页：调度和立即运行](/images/docs/tutorial-automation-detail.webp)
 
 任务随即建出来，Reviewer 开始检查。之后每周一到点，同样的检查会自动创建新的任务，不再需要任何人触发：
 
-![自动化创建的任务](/images/docs/tutorial-autopilot-issue.webp)
+![自动化创建的任务](/images/docs/tutorial-automation-issue.webp)
 
-触发器除了定时还支持 webhook，执行者也可以指向小队，见[自动化文档](/autopilots)。
+触发器除了定时还支持 webhook，执行者也可以指向小队，见[自动化文档](/automations)。
 
 ## 多人协作
 
@@ -343,4 +343,4 @@ Skill 是给智能体的知识包：一个 `SKILL.md` 加上可选的支持文�
 - [核心概念](/concepts) — 三分钟认识 Patchbay 的全部核心对象。
 - [小队](/teams) — 队长如何路由工作、什么时候用小队而不是单个智能体。
 - [Skills](/skills) — 导入、编写和共享智能体的方法。
-- [自动化](/autopilots) — 定时和 webhook 两类触发器的完整配置。
+- [自动化](/automations) — 定时和 webhook 两类触发器的完整配置。

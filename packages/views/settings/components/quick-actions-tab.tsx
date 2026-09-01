@@ -60,7 +60,7 @@ import {
   DropdownMenuTrigger,
 } from "@patchbay/ui/components/ui/dropdown-menu";
 import { cn } from "@patchbay/ui/lib/utils";
-import { AgentPicker } from "../../autopilots/components/pickers/agent-picker";
+import { AgentPicker } from "../../automations/components/pickers/agent-picker";
 import { useLocale, useT } from "../../i18n";
 import { SettingsTab } from "./settings-layout";
 

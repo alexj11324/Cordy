@@ -26,7 +26,7 @@ import (
 type WebhookDeliveryResponse struct {
 	ID                     string  `json:"id"`
 	WorkspaceID            string  `json:"workspace_id"`
-	AutopilotID            string  `json:"autopilot_id"`
+	AutomationID            string  `json:"automation_id"`
 	TriggerID              string  `json:"trigger_id"`
 	Provider               string  `json:"provider"`
 	Event                  string  `json:"event"`
@@ -39,7 +39,7 @@ type WebhookDeliveryResponse struct {
 	AvailableAt            string  `json:"available_at"`
 	ContentType            *string `json:"content_type"`
 	ResponseStatus         *int32  `json:"response_status"`
-	AutopilotRunID         *string `json:"autopilot_run_id"`
+	AutomationRunID         *string `json:"automation_run_id"`
 	ReplayedFromDeliveryID *string `json:"replayed_from_delivery_id"`
 	Error                  *string `json:"error"`
 	ReasonCode             *string `json:"reason_code"`
@@ -58,11 +58,11 @@ type WebhookDeliveryResponse struct {
 
 // slimDeliveryToResponse maps the projected list row (no raw_body /
 // selected_headers / response_body) into the wire response shape.
-func slimDeliveryToResponse(d db.ListWebhookDeliveriesByAutopilotRow) WebhookDeliveryResponse {
+func slimDeliveryToResponse(d db.ListWebhookDeliveriesByAutomationRow) WebhookDeliveryResponse {
 	resp := WebhookDeliveryResponse{
 		ID:                   uuidToString(d.ID),
 		WorkspaceID:          uuidToString(d.WorkspaceID),
-		AutopilotID:          uuidToString(d.AutopilotID),
+		AutomationID:          uuidToString(d.AutomationID),
 		TriggerID:            uuidToString(d.TriggerID),
 		Provider:             d.Provider,
 		Event:                d.Event,
@@ -84,9 +84,9 @@ func slimDeliveryToResponse(d db.ListWebhookDeliveriesByAutopilotRow) WebhookDel
 		v := d.ResponseStatus.Int32
 		resp.ResponseStatus = &v
 	}
-	if d.AutopilotRunID.Valid {
-		v := uuidToString(d.AutopilotRunID)
-		resp.AutopilotRunID = &v
+	if d.AutomationRunID.Valid {
+		v := uuidToString(d.AutomationRunID)
+		resp.AutomationRunID = &v
 	}
 	if d.ReplayedFromDeliveryID.Valid {
 		v := uuidToString(d.ReplayedFromDeliveryID)
@@ -103,7 +103,7 @@ func deliveryToResponse(d db.WebhookDelivery, detail bool) WebhookDeliveryRespon
 	resp := WebhookDeliveryResponse{
 		ID:                   uuidToString(d.ID),
 		WorkspaceID:          uuidToString(d.WorkspaceID),
-		AutopilotID:          uuidToString(d.AutopilotID),
+		AutomationID:          uuidToString(d.AutomationID),
 		TriggerID:            uuidToString(d.TriggerID),
 		Provider:             d.Provider,
 		Event:                d.Event,
@@ -125,9 +125,9 @@ func deliveryToResponse(d db.WebhookDelivery, detail bool) WebhookDeliveryRespon
 		v := d.ResponseStatus.Int32
 		resp.ResponseStatus = &v
 	}
-	if d.AutopilotRunID.Valid {
-		v := uuidToString(d.AutopilotRunID)
-		resp.AutopilotRunID = &v
+	if d.AutomationRunID.Valid {
+		v := uuidToString(d.AutomationRunID)
+		resp.AutomationRunID = &v
 	}
 	if d.ReplayedFromDeliveryID.Valid {
 		v := uuidToString(d.ReplayedFromDeliveryID)
@@ -155,14 +155,14 @@ func deliveryToResponse(d db.WebhookDelivery, detail bool) WebhookDeliveryRespon
 
 // ── Handlers ────────────────────────────────────────────────────────────────
 
-// ListAutopilotDeliveries returns recent deliveries for an autopilot. Slim
+// ListAutomationDeliveries returns recent deliveries for an automation. Slim
 // projection — selected_headers / raw_body / response_body are omitted to
-// keep list responses small. Use GetAutopilotDelivery for the full payload.
-func (h *Handler) ListAutopilotDeliveries(w http.ResponseWriter, r *http.Request) {
-	autopilotID := chi.URLParam(r, "id")
+// keep list responses small. Use GetAutomationDelivery for the full payload.
+func (h *Handler) ListAutomationDeliveries(w http.ResponseWriter, r *http.Request) {
+	automationID := chi.URLParam(r, "id")
 	workspaceID := h.resolveWorkspaceID(r)
 
-	autopilot, ok := h.loadAutopilotInWorkspace(w, r, autopilotID, workspaceID)
+	automation, ok := h.loadAutomationInWorkspace(w, r, automationID, workspaceID)
 	if !ok {
 		return
 	}
@@ -183,14 +183,14 @@ func (h *Handler) ListAutopilotDeliveries(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	rows, err := h.Queries.ListWebhookDeliveriesByAutopilot(r.Context(), db.ListWebhookDeliveriesByAutopilotParams{
-		AutopilotID: autopilot.ID,
-		WorkspaceID: autopilot.WorkspaceID,
+	rows, err := h.Queries.ListWebhookDeliveriesByAutomation(r.Context(), db.ListWebhookDeliveriesByAutomationParams{
+		AutomationID: automation.ID,
+		WorkspaceID: automation.WorkspaceID,
 		Limit:       limit,
 		Offset:      offset,
 	})
 	if err != nil {
-		slog.Error("list deliveries failed", "error", err, "autopilot_id", autopilotID)
+		slog.Error("list deliveries failed", "error", err, "automation_id", automationID)
 		writeError(w, http.StatusInternalServerError, "failed to list deliveries")
 		return
 	}
@@ -202,31 +202,31 @@ func (h *Handler) ListAutopilotDeliveries(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]any{"deliveries": resp, "total": len(resp)})
 }
 
-// GetAutopilotDelivery returns one delivery in full, including the raw body
-// and headers subset. Workspace-scoped via the autopilot lookup; the
-// delivery is then re-checked to belong to that autopilot so a guessed
+// GetAutomationDelivery returns one delivery in full, including the raw body
+// and headers subset. Workspace-scoped via the automation lookup; the
+// delivery is then re-checked to belong to that automation so a guessed
 // delivery id from another workspace cannot leak data.
-func (h *Handler) GetAutopilotDelivery(w http.ResponseWriter, r *http.Request) {
-	autopilotID := chi.URLParam(r, "id")
+func (h *Handler) GetAutomationDelivery(w http.ResponseWriter, r *http.Request) {
+	automationID := chi.URLParam(r, "id")
 	deliveryID := chi.URLParam(r, "deliveryId")
 	workspaceID := h.resolveWorkspaceID(r)
 
-	autopilot, ok := h.loadAutopilotInWorkspace(w, r, autopilotID, workspaceID)
+	automation, ok := h.loadAutomationInWorkspace(w, r, automationID, workspaceID)
 	if !ok {
 		return
 	}
-	delivery, ok := h.loadDeliveryForAutopilot(w, r, autopilot, deliveryID)
+	delivery, ok := h.loadDeliveryForAutomation(w, r, automation, deliveryID)
 	if !ok {
 		return
 	}
 	writeJSON(w, http.StatusOK, deliveryToResponse(delivery, true))
 }
 
-// ReplayAutopilotDelivery creates a NEW queued delivery row from a prior one;
+// ReplayAutomationDelivery creates a NEW queued delivery row from a prior one;
 // the existing durable worker owns dispatch. The new row carries
 // `replayed_from_delivery_id` so the operator can correlate. Replay is
 // rejected for deliveries that originally failed signature verification —
-// re-running an attack payload against the autopilot would defeat the
+// re-running an attack payload against the automation would defeat the
 // rejection in the first place.
 //
 // Replays bypass provider dedupe by inserting with a NULL dedupe_key:
@@ -234,19 +234,19 @@ func (h *Handler) GetAutopilotDelivery(w http.ResponseWriter, r *http.Request) {
 // delivery (the partial unique index would fire). This is the intended
 // behaviour — a replay is explicitly "run this again". API retries are
 // independently deduplicated by (original delivery, Idempotency-Key).
-func (h *Handler) ReplayAutopilotDelivery(w http.ResponseWriter, r *http.Request) {
-	autopilotID := chi.URLParam(r, "id")
+func (h *Handler) ReplayAutomationDelivery(w http.ResponseWriter, r *http.Request) {
+	automationID := chi.URLParam(r, "id")
 	deliveryID := chi.URLParam(r, "deliveryId")
 	workspaceID := h.resolveWorkspaceID(r)
 
-	autopilot, ok := h.loadAutopilotInWorkspace(w, r, autopilotID, workspaceID)
+	automation, ok := h.loadAutomationInWorkspace(w, r, automationID, workspaceID)
 	if !ok {
 		return
 	}
-	if !h.requireAutopilotWrite(w, r, autopilot, workspaceID) {
+	if !h.requireAutomationWrite(w, r, automation, workspaceID) {
 		return
 	}
-	original, ok := h.loadDeliveryForAutopilot(w, r, autopilot, deliveryID)
+	original, ok := h.loadDeliveryForAutomation(w, r, automation, deliveryID)
 	if !ok {
 		return
 	}
@@ -259,12 +259,12 @@ func (h *Handler) ReplayAutopilotDelivery(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if autopilot.Status != "active" {
-		writeError(w, http.StatusBadRequest, "autopilot is not active")
+	if automation.Status != "active" {
+		writeError(w, http.StatusBadRequest, "automation is not active")
 		return
 	}
 
-	trigRow, err := h.Queries.GetAutopilotTrigger(r.Context(), original.TriggerID)
+	trigRow, err := h.Queries.GetAutomationTrigger(r.Context(), original.TriggerID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "trigger not found")
 		return
@@ -310,8 +310,8 @@ func (h *Handler) ReplayAutopilotDelivery(w http.ResponseWriter, r *http.Request
 	}
 	replay, err := h.Queries.CreateWebhookDelivery(r.Context(), db.CreateWebhookDeliveryParams{
 		ID:                     dbid.NewV7(),
-		WorkspaceID:            autopilot.WorkspaceID,
-		AutopilotID:            autopilot.ID,
+		WorkspaceID:            automation.WorkspaceID,
+		AutomationID:            automation.ID,
 		TriggerID:              original.TriggerID,
 		Provider:               original.Provider,
 		Event:                  envelope.Event,
@@ -347,18 +347,18 @@ func (h *Handler) ReplayAutopilotDelivery(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusAccepted, deliveryToResponse(replay, true))
 }
 
-// loadDeliveryForAutopilot returns the delivery row when it exists in the
-// same workspace AND belongs to the given autopilot. Cross-autopilot or
+// loadDeliveryForAutomation returns the delivery row when it exists in the
+// same workspace AND belongs to the given automation. Cross-automation or
 // cross-workspace IDs are returned as 404 — defense in depth against ID
 // guessing.
-func (h *Handler) loadDeliveryForAutopilot(w http.ResponseWriter, r *http.Request, autopilot db.Autopilot, deliveryID string) (db.WebhookDelivery, bool) {
+func (h *Handler) loadDeliveryForAutomation(w http.ResponseWriter, r *http.Request, automation db.Automation, deliveryID string) (db.WebhookDelivery, bool) {
 	deliveryUUID, ok := parseUUIDOrBadRequest(w, deliveryID, "delivery id")
 	if !ok {
 		return db.WebhookDelivery{}, false
 	}
 	delivery, err := h.Queries.GetWebhookDeliveryInWorkspace(r.Context(), db.GetWebhookDeliveryInWorkspaceParams{
 		ID:          deliveryUUID,
-		WorkspaceID: autopilot.WorkspaceID,
+		WorkspaceID: automation.WorkspaceID,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -368,7 +368,7 @@ func (h *Handler) loadDeliveryForAutopilot(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, "failed to load delivery")
 		return db.WebhookDelivery{}, false
 	}
-	if uuidToString(delivery.AutopilotID) != uuidToString(autopilot.ID) {
+	if uuidToString(delivery.AutomationID) != uuidToString(automation.ID) {
 		writeError(w, http.StatusNotFound, "delivery not found")
 		return db.WebhookDelivery{}, false
 	}

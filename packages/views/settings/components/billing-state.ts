@@ -1,10 +1,10 @@
 import type {
-  AutopilotQuotaUsage,
+  AutomationQuotaUsage,
   WorkspaceSubscriptionEntitlements,
   WorkspaceSubscriptionSummary,
 } from "@patchbay/core/types";
 
-export type AutopilotUsageView =
+export type AutomationUsageView =
   | { kind: "unlimited" }
   | { kind: "unavailable" }
   | {
@@ -24,12 +24,12 @@ export type AutopilotUsageView =
  * limited workspace. Limit mode and the reached decision are server facts;
  * this helper only prepares presentation values.
  */
-export function resolveAutopilotUsage(
+export function resolveAutomationUsage(
   entitlements: WorkspaceSubscriptionEntitlements,
-  usage: AutopilotQuotaUsage | undefined,
+  usage: AutomationQuotaUsage | undefined,
   failed: boolean,
-): AutopilotUsageView {
-  if (entitlements.limits.autopilotRuns.mode === "unlimited") {
+): AutomationUsageView {
+  if (entitlements.limits.automationRuns.mode === "unlimited") {
     return { kind: "unlimited" };
   }
 

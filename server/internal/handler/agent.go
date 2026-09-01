@@ -374,7 +374,7 @@ type AgentTaskResponse struct {
 	// WorkspaceContext is the workspace-level system prompt set in workspace
 	// settings (`workspace.context` DB column). Injected into the agent brief
 	// as `## Workspace Context` so every agent running in this workspace —
-	// regardless of issue / chat / autopilot / quick-create — sees the same
+	// regardless of issue / chat / automation / quick-create — sees the same
 	// shared context. Empty when the workspace owner hasn't set it.
 	WorkspaceContext string `json:"workspace_context,omitempty"`
 	// IssueStatuses is the workspace's ACTIVE CUSTOM status catalog (MUL-6460),
@@ -452,7 +452,7 @@ type AgentTaskResponse struct {
 	DeliveredCommentIDs      []string               `json:"delivered_comment_ids"`                 // always present: [] is an authoritative empty receipt, while field absence identifies responses from legacy servers
 	TriggerThreadID          string                 `json:"trigger_thread_id,omitempty"`           // root comment ID for the triggering thread
 	TriggerCommentContent    string                 `json:"trigger_comment_content,omitempty"`     // content of the triggering comment
-	TriggerSummary           *string                `json:"trigger_summary,omitempty"`             // canonical short description snapshot — comment text / autopilot title — taken at task creation; survives source edits/deletes
+	TriggerSummary           *string                `json:"trigger_summary,omitempty"`             // canonical short description snapshot — comment text / automation title — taken at task creation; survives source edits/deletes
 	TriggerAuthorType        string                 `json:"trigger_author_type,omitempty"`         // "agent" or "member" — author kind of the triggering comment
 	TriggerAuthorName        string                 `json:"trigger_author_name,omitempty"`         // display name of the triggering comment author
 	NewCommentCount          int                    `json:"new_comment_count,omitempty"`           // trigger-thread comments since last run; excludes injected trigger + own comments; omitempty so old daemons ignore it
@@ -465,12 +465,12 @@ type AgentTaskResponse struct {
 	ChatMessage              string                 `json:"chat_message,omitempty"`                // user message for chat tasks
 	ChatMessageAttachments   []ChatAttachmentMeta   `json:"chat_message_attachments,omitempty"`    // attachments on the user message — agent calls `patchbay attachment download <id>` per entry
 	ChatIntro                bool                   `json:"chat_intro,omitempty"`                  // legacy compatibility for historical is_agent_intro sessions; new agent creation no longer creates these chats
-	AutopilotRunID           string                 `json:"autopilot_run_id,omitempty"`            // non-empty for autopilot-spawned tasks
-	AutopilotID              string                 `json:"autopilot_id,omitempty"`                // autopilot that spawned this task
-	AutopilotTitle           string                 `json:"autopilot_title,omitempty"`             // autopilot title used as task context
-	AutopilotDescription     string                 `json:"autopilot_description,omitempty"`       // autopilot description used as task prompt
-	AutopilotSource          string                 `json:"autopilot_source,omitempty"`            // manual, schedule, webhook, or api
-	AutopilotTriggerPayload  json.RawMessage        `json:"autopilot_trigger_payload,omitempty"`   // optional trigger payload for webhook/api runs
+	AutomationRunID           string                 `json:"automation_run_id,omitempty"`            // non-empty for automation-spawned tasks
+	AutomationID              string                 `json:"automation_id,omitempty"`                // automation that spawned this task
+	AutomationTitle           string                 `json:"automation_title,omitempty"`             // automation title used as task context
+	AutomationDescription     string                 `json:"automation_description,omitempty"`       // automation description used as task prompt
+	AutomationSource          string                 `json:"automation_source,omitempty"`            // manual, schedule, webhook, or api
+	AutomationTriggerPayload  json.RawMessage        `json:"automation_trigger_payload,omitempty"`   // optional trigger payload for webhook/api runs
 	QuickCreatePrompt        string                 `json:"quick_create_prompt,omitempty"`         // user's natural-language input for quick-create tasks
 	QuickCreatePriority      string                 `json:"quick_create_priority,omitempty"`       // explicit priority selected in quick-create
 	QuickCreateDueDate       string                 `json:"quick_create_due_date,omitempty"`       // explicit calendar due date selected in quick-create
@@ -494,7 +494,7 @@ type AgentTaskResponse struct {
 	// distinct from the runtime owner whose credentials the agent runs with.
 	// Resolved at claim time: comment-triggered tasks use the triggering
 	// comment's author; chat tasks use the chat session creator. Empty for
-	// task kinds with no attributable human initiator (on-assign, autopilot,
+	// task kinds with no attributable human initiator (on-assign, automation,
 	// quick-create). InitiatorEmail is set only for member initiators
 	// ("member"); agent initiators ("agent") carry a name but no email. The
 	// daemon emits these into the brief under `## Task Initiator` so a
@@ -506,7 +506,7 @@ type AgentTaskResponse struct {
 	InitiatorID    string `json:"initiator_id,omitempty"`    // user UUID (member) or agent UUID
 	InitiatorName  string `json:"initiator_name,omitempty"`  // display name of the initiator
 	InitiatorEmail string `json:"initiator_email,omitempty"` // member email; empty for agent initiators
-	Kind           string `json:"kind"`                      // discriminator: "comment" | "autopilot" | "chat" | "quick_create" | "direct" — used by the activity row to label tasks that have no linked issue
+	Kind           string `json:"kind"`                      // discriminator: "comment" | "automation" | "chat" | "quick_create" | "direct" — used by the activity row to label tasks that have no linked issue
 	// Attribution is the resolved accountable-human provenance for this run
 	// (MUL-4302 §9): the source label + precise flag, the initiator (accountable)
 	// and originator refs, the evidence pointer, and lineage. Always present (the
@@ -549,7 +549,7 @@ type TaskAttribution struct {
 	Precise bool `json:"precise"`
 	// Initiator is the accountable human (accountable_user_id). Nil when unattributed.
 	Initiator *AttributionUser `json:"initiator,omitempty"`
-	// Originator is the authorization human (originator_user_id); nil for autopilot
+	// Originator is the authorization human (originator_user_id); nil for automation
 	// (rule_owner / owner_fallback), where no human authorized the run.
 	Originator *AttributionUser `json:"originator,omitempty"`
 	// Evidence points at the direct cause of the run so the UI can jump to it.
@@ -570,7 +570,7 @@ type AttributionUser struct {
 }
 
 // TaskEvidence is the kind-tagged handle to a run's direct cause (a comment,
-// autopilot run, rule version, source task, ...).
+// automation run, rule version, source task, ...).
 type TaskEvidence struct {
 	Kind  string `json:"kind"`
 	RefID string `json:"ref_id"`
@@ -806,10 +806,10 @@ func taskToResponse(t db.AgentTaskQueue, workspaceID string) AgentTaskResponse {
 		DurableWorkDir:         durableWorkDir,
 		RelativeDurableWorkDir: relativeWorkDir(durableWorkDir, "", ""),
 		// Surface task source so the UI can distinguish issue-linked tasks
-		// from chat-spawned or autopilot-spawned ones; all three may arrive
+		// from chat-spawned or automation-spawned ones; all three may arrive
 		// with issue_id = "" once a task has no linked issue.
 		ChatSessionID:  uuidToString(t.ChatSessionID),
-		AutopilotRunID: uuidToString(t.AutopilotRunID),
+		AutomationRunID: uuidToString(t.AutomationRunID),
 		Kind:           computeTaskKind(t),
 		// Attribution labels + evidence + lineage + raw user ids (pure). Names are
 		// hydrated separately on user-facing surfaces (MUL-4302 §9).
@@ -956,7 +956,7 @@ func basename(p string) string {
 
 // computeTaskKind picks the source-discriminator string the activity UI uses
 // to choose how to render a task row. Computed from the existing FK shape so
-// no extra DB lookup is needed: chat / autopilot / comment-on-issue (any
+// no extra DB lookup is needed: chat / automation / comment-on-issue (any
 // triggered task with both an issue_id and trigger_comment_id) / quick_create
 // (no linked source — the agent is creating the issue itself) / direct
 // (assignee-driven task on an existing issue).
@@ -964,8 +964,8 @@ func computeTaskKind(t db.AgentTaskQueue) string {
 	if uuidToString(t.ChatSessionID) != "" {
 		return "chat"
 	}
-	if uuidToString(t.AutopilotRunID) != "" {
-		return "autopilot"
+	if uuidToString(t.AutomationRunID) != "" {
+		return "automation"
 	}
 	if uuidToString(t.IssueID) == "" {
 		return "quick_create"
@@ -2512,7 +2512,7 @@ type WorkspaceWorkingAgent struct {
 
 // ListWorkspaceWorkingAgents returns currently working user-authored agents in
 // the workspace, independent of issue filters or Table pagination. The
-// optional type query selects issue, autopilot, or chat work; omitting it keeps
+// optional type query selects issue, automation, or chat work; omitting it keeps
 // the all-sources projection. scope=mine narrows issue work to the authenticated
 // member's selected My Issues relation. Access filtering mirrors the other
 // workspace-wide agent aggregations so a private/non-allow-listed agent is
@@ -2526,9 +2526,9 @@ func (h *Handler) ListWorkspaceWorkingAgents(w http.ResponseWriter, r *http.Requ
 
 	workType := strings.TrimSpace(r.URL.Query().Get("type"))
 	switch workType {
-	case "", "issue", "autopilot", "chat":
+	case "", "issue", "automation", "chat":
 	default:
-		writeError(w, http.StatusBadRequest, "invalid type: must be issue, autopilot, or chat")
+		writeError(w, http.StatusBadRequest, "invalid type: must be issue, automation, or chat")
 		return
 	}
 

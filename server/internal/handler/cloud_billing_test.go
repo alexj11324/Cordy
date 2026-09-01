@@ -870,7 +870,7 @@ func TestStripeWebhookDisabledReturnsUnavailable(t *testing.T) {
 
 // TestStripeWebhookRateLimited pins the per-IP rate-limit fast
 // path. With a denying limiter installed the handler must 429
-// BEFORE consulting upstream. Mirrors HandleAutopilotWebhook's
+// BEFORE consulting upstream. Mirrors HandleAutomationWebhook's
 // behaviour: the public webhook ingress sits behind the same
 // WebhookIPRateLimiter so a flood of bogus requests doesn't burn
 // cloud-side budget.
@@ -900,7 +900,7 @@ func TestStripeWebhookRateLimited(t *testing.T) {
 // denyingWebhookIPRateLimiter is the smallest possible limiter that
 // always says "no". It exists to drive the 429 branch without
 // requiring a Redis test instance — the limiter interface is the
-// same one HandleAutopilotWebhook uses.
+// same one HandleAutomationWebhook uses.
 type denyingWebhookIPRateLimiter struct{}
 
 func (denyingWebhookIPRateLimiter) Allow(_ context.Context, _ string) bool { return false }

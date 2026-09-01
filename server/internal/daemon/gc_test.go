@@ -2094,39 +2094,39 @@ func TestShouldCleanTaskDir_KindDispatch(t *testing.T) {
 			want: gcActionClean,
 		},
 
-		// ---- autopilot run -----------------------------------------------
+		// ---- automation run -----------------------------------------------
 		{
-			name: "autopilot completed over TTL — clean",
-			meta: &execenv.GCMeta{Kind: execenv.GCKindAutopilotRun, AutopilotRunID: runID, WorkspaceID: "ws"},
+			name: "automation completed over TTL — clean",
+			meta: &execenv.GCMeta{Kind: execenv.GCKindAutomationRun, AutomationRunID: runID, WorkspaceID: "ws"},
 			servers: []serverResp{{
-				path: "/api/daemon/autopilot-runs/" + runID + "/gc-check",
+				path: "/api/daemon/automation-runs/" + runID + "/gc-check",
 				body: map[string]any{"status": "completed", "completed_at": overTTL},
 			}},
 			want: gcActionClean,
 		},
 		{
-			name: "autopilot issue_created counts as terminal",
-			meta: &execenv.GCMeta{Kind: execenv.GCKindAutopilotRun, AutopilotRunID: runID, WorkspaceID: "ws"},
+			name: "automation issue_created counts as terminal",
+			meta: &execenv.GCMeta{Kind: execenv.GCKindAutomationRun, AutomationRunID: runID, WorkspaceID: "ws"},
 			servers: []serverResp{{
-				path: "/api/daemon/autopilot-runs/" + runID + "/gc-check",
+				path: "/api/daemon/automation-runs/" + runID + "/gc-check",
 				body: map[string]any{"status": "issue_created", "completed_at": overTTL},
 			}},
 			want: gcActionClean,
 		},
 		{
-			name: "autopilot running — skip",
-			meta: &execenv.GCMeta{Kind: execenv.GCKindAutopilotRun, AutopilotRunID: runID, WorkspaceID: "ws"},
+			name: "automation running — skip",
+			meta: &execenv.GCMeta{Kind: execenv.GCKindAutomationRun, AutomationRunID: runID, WorkspaceID: "ws"},
 			servers: []serverResp{{
-				path: "/api/daemon/autopilot-runs/" + runID + "/gc-check",
+				path: "/api/daemon/automation-runs/" + runID + "/gc-check",
 				body: map[string]any{"status": "running"},
 			}},
 			want: gcActionSkip,
 		},
 		{
-			name: "autopilot pending — skip",
-			meta: &execenv.GCMeta{Kind: execenv.GCKindAutopilotRun, AutopilotRunID: runID, WorkspaceID: "ws"},
+			name: "automation pending — skip",
+			meta: &execenv.GCMeta{Kind: execenv.GCKindAutomationRun, AutomationRunID: runID, WorkspaceID: "ws"},
 			servers: []serverResp{{
-				path: "/api/daemon/autopilot-runs/" + runID + "/gc-check",
+				path: "/api/daemon/automation-runs/" + runID + "/gc-check",
 				body: map[string]any{"status": "pending"},
 			}},
 			want: gcActionSkip,
@@ -2134,10 +2134,10 @@ func TestShouldCleanTaskDir_KindDispatch(t *testing.T) {
 		{
 			// The directory is never reused, so a terminal run is reclaimed on
 			// sight — the recent completed_at no longer buys it a 24h reprieve.
-			name: "autopilot completed within TTL — clean immediately (no 24h gate)",
-			meta: &execenv.GCMeta{Kind: execenv.GCKindAutopilotRun, AutopilotRunID: runID, WorkspaceID: "ws"},
+			name: "automation completed within TTL — clean immediately (no 24h gate)",
+			meta: &execenv.GCMeta{Kind: execenv.GCKindAutomationRun, AutomationRunID: runID, WorkspaceID: "ws"},
 			servers: []serverResp{{
-				path: "/api/daemon/autopilot-runs/" + runID + "/gc-check",
+				path: "/api/daemon/automation-runs/" + runID + "/gc-check",
 				body: map[string]any{"status": "completed", "completed_at": withinTTL},
 			}},
 			want: gcActionClean,
@@ -2145,19 +2145,19 @@ func TestShouldCleanTaskDir_KindDispatch(t *testing.T) {
 		{
 			// Terminal status with no completed_at stamp at all still cleans —
 			// GC keys purely on the terminal status, not on any timestamp.
-			name: "autopilot skipped with no completed_at — clean",
-			meta: &execenv.GCMeta{Kind: execenv.GCKindAutopilotRun, AutopilotRunID: runID, WorkspaceID: "ws"},
+			name: "automation skipped with no completed_at — clean",
+			meta: &execenv.GCMeta{Kind: execenv.GCKindAutomationRun, AutomationRunID: runID, WorkspaceID: "ws"},
 			servers: []serverResp{{
-				path: "/api/daemon/autopilot-runs/" + runID + "/gc-check",
+				path: "/api/daemon/automation-runs/" + runID + "/gc-check",
 				body: map[string]any{"status": "skipped"},
 			}},
 			want: gcActionClean,
 		},
 		{
-			name: "autopilot failed — clean",
-			meta: &execenv.GCMeta{Kind: execenv.GCKindAutopilotRun, AutopilotRunID: runID, WorkspaceID: "ws"},
+			name: "automation failed — clean",
+			meta: &execenv.GCMeta{Kind: execenv.GCKindAutomationRun, AutomationRunID: runID, WorkspaceID: "ws"},
 			servers: []serverResp{{
-				path: "/api/daemon/autopilot-runs/" + runID + "/gc-check",
+				path: "/api/daemon/automation-runs/" + runID + "/gc-check",
 				body: map[string]any{"status": "failed"},
 			}},
 			want: gcActionClean,
@@ -2253,8 +2253,8 @@ func TestShouldCleanTaskDir_EmptyParentIDFallsBackToOrphanMTime(t *testing.T) {
 			meta: &execenv.GCMeta{Kind: execenv.GCKindChat, WorkspaceID: "ws"},
 		},
 		{
-			name: "autopilot run meta",
-			meta: &execenv.GCMeta{Kind: execenv.GCKindAutopilotRun, WorkspaceID: "ws"},
+			name: "automation run meta",
+			meta: &execenv.GCMeta{Kind: execenv.GCKindAutomationRun, WorkspaceID: "ws"},
 		},
 		{
 			name: "quick create meta",
@@ -2445,10 +2445,10 @@ func TestGCMetaForTask(t *testing.T) {
 			idOK: func(m execenv.GCMeta) bool { return m.ChatSessionID == "c1" },
 		},
 		{
-			name: "autopilot run task",
-			task: Task{ID: "t2", WorkspaceID: "ws", AutopilotRunID: "r1"},
-			want: execenv.GCKindAutopilotRun,
-			idOK: func(m execenv.GCMeta) bool { return m.AutopilotRunID == "r1" },
+			name: "automation run task",
+			task: Task{ID: "t2", WorkspaceID: "ws", AutomationRunID: "r1"},
+			want: execenv.GCKindAutomationRun,
+			idOK: func(m execenv.GCMeta) bool { return m.AutomationRunID == "r1" },
 		},
 		{
 			name: "issue task",

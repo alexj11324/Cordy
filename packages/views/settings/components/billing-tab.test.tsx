@@ -5,7 +5,7 @@ import { ApiError } from "@patchbay/core/api";
 import { configStore } from "@patchbay/core/config";
 import { BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG } from "@patchbay/core/feature-flags";
 import type {
-  AutopilotQuotaUsage,
+  AutomationQuotaUsage,
   IssueLimitUsage,
   WorkspaceSubscriptionEntitlements,
   WorkspaceSubscriptionSummary,
@@ -59,7 +59,7 @@ const mocks = vi.hoisted(() => ({
     seats: 3,
     limits: {
       issueCount: { mode: "limited", limit: 17 },
-      autopilotRuns: { mode: "limited", limit: 7 },
+      automationRuns: { mode: "limited", limit: 7 },
     },
     currentPeriodEnd: null as string | null,
     snapshotExpiresAt: null as string | null,
@@ -107,7 +107,7 @@ const mocks = vi.hoisted(() => ({
     period_end: "2030-02-01T00:00:00Z" as string | null,
     reset_at: "2030-02-01T00:00:00Z" as string | null,
     blocked_counts: {} as Record<string, number> | null,
-  } as AutopilotQuotaUsage,
+  } as AutomationQuotaUsage,
 }));
 
 vi.mock("@tanstack/react-query", () => ({
@@ -142,9 +142,9 @@ vi.mock("@patchbay/core/billing", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/autopilots", () => ({
-  autopilotQuotaUsageOptions: (wsId: string) => ({
-    queryKey: ["autopilots", wsId, "usage"],
+vi.mock("@patchbay/core/automations", () => ({
+  automationQuotaUsageOptions: (wsId: string) => ({
+    queryKey: ["automations", wsId, "usage"],
   }),
 }));
 
@@ -251,7 +251,7 @@ describe("BillingTab", () => {
       seats: 3,
       limits: {
         issueCount: { mode: "limited", limit: 17 },
-        autopilotRuns: { mode: "limited", limit: 7 },
+        automationRuns: { mode: "limited", limit: 7 },
       },
       currentPeriodEnd: null,
       snapshotExpiresAt: null,
@@ -496,7 +496,7 @@ describe("BillingTab", () => {
     );
     expect(mocks.useQuery).toHaveBeenCalledWith(
       expect.objectContaining({
-        queryKey: ["autopilots", "workspace-2", "usage"],
+        queryKey: ["automations", "workspace-2", "usage"],
       }),
     );
   });
@@ -695,7 +695,7 @@ describe("BillingTab", () => {
       status: "active",
       limits: {
         issueCount: { mode: "unlimited", limit: null },
-        autopilotRuns: { mode: "unlimited", limit: null },
+        automationRuns: { mode: "unlimited", limit: null },
       },
     });
     mocks.summary.availableActions.checkout = false;
@@ -1340,7 +1340,7 @@ describe("BillingTab", () => {
       status: "active",
       limits: {
         issueCount: { mode: "unlimited", limit: null },
-        autopilotRuns: { mode: "unlimited", limit: null },
+        automationRuns: { mode: "unlimited", limit: null },
       },
       currentPeriodEnd: "2026-09-13T00:00:00Z",
       version: 3,

@@ -38,16 +38,16 @@ FOR UPDATE;
 SELECT * FROM agent
 WHERE id = $1 AND workspace_id = $2 AND kind = 'user';
 
--- name: LockAgentForAutopilotAssignment :one
--- Serializes creating, retargeting, or resuming an active Autopilot with
+-- name: LockAgentForAutomationAssignment :one
+-- Serializes creating, retargeting, or resuming an active Automation with
 -- Runtime teardown. Teardown takes FOR UPDATE on this same Agent row before it
--- clears runtime_id and pauses matching Autopilots. FOR SHARE also stabilizes
+-- clears runtime_id and pauses matching Automations. FOR SHARE also stabilizes
 -- runtime_id and archived_at against concurrent ordinary Agent updates. The
 -- shared lock makes the
 -- two outcomes exhaustive:
 --   * assignment commits first, then teardown sees and pauses it; or
 --   * teardown commits first, then assignment re-reads runtime_id=NULL and
---     rejects the active Autopilot.
+--     rejects the active Automation.
 SELECT * FROM agent
 WHERE id = $1 AND workspace_id = $2 AND kind = 'user'
 FOR SHARE;
@@ -431,7 +431,7 @@ WHERE id = @id
 -- locks the owners' workspace rows in the writer's own transaction and returns
 -- false once they are gone, so this statement writes no row instead of stranding
 -- a task in a workspace that has just been deleted (MUL-5999).
--- Quick-create tasks have no issue / chat / autopilot link; the entire job
+-- Quick-create tasks have no issue / chat / automation link; the entire job
 -- description (prompt, requester, workspace) lives in context JSONB. The
 -- daemon detects this variant via context.type == "quick_create".
 -- The requester who opened the quick-create modal is a direct_human originator
@@ -583,7 +583,7 @@ WHERE id = $1 AND issue_id IS NULL
 -- task API (MUL-4910). The Go retryAttemptCeiling already refuses to raise a
 -- disabled (max_attempts<=1) task, so this only ever widens, never revives.
 INSERT INTO agent_task_queue (
-    agent_id, runtime_id, issue_id, chat_session_id, autopilot_run_id,
+    agent_id, runtime_id, issue_id, chat_session_id, automation_run_id,
     status, priority, trigger_comment_id, coalesced_comment_ids, trigger_summary, context,
     session_id, work_dir,
     attempt, max_attempts, parent_task_id, force_fresh_session, is_leader_task,
@@ -594,7 +594,7 @@ INSERT INTO agent_task_queue (
     channel_context_revision, id
 )
 SELECT
-    p.agent_id, p.runtime_id, p.issue_id, p.chat_session_id, p.autopilot_run_id,
+    p.agent_id, p.runtime_id, p.issue_id, p.chat_session_id, p.automation_run_id,
     CASE WHEN sqlc.narg(fire_at)::timestamptz IS NOT NULL THEN 'deferred' ELSE 'queued' END,
     CASE WHEN p.chat_session_id IS NOT NULL THEN GREATEST(p.priority, 3) ELSE p.priority END,
     p.trigger_comment_id, p.coalesced_comment_ids, p.trigger_summary, p.context,
@@ -650,7 +650,7 @@ WHERE p.id = sqlc.arg(source_task_id)
   AND p.status = 'failed'
   AND p.issue_id IS NULL
   AND p.chat_session_id IS NULL
-  AND p.autopilot_run_id IS NULL
+  AND p.automation_run_id IS NULL
   AND lock_task_owner_rows(p.agent_id, p.issue_id, p.runtime_id)
 RETURNING *;
 
@@ -665,7 +665,7 @@ WHERE id = sqlc.arg(task_id)
   AND status IN ('queued', 'deferred')
   AND issue_id IS NULL
   AND chat_session_id IS NULL
-  AND autopilot_run_id IS NULL;
+  AND automation_run_id IS NULL;
 
 -- name: CancelAgentTasksByIssue :many
 -- Cancels every active task on the issue and returns the affected rows so the
@@ -759,8 +759,8 @@ WHERE parent_task_id = $1
 -- agent_id is NOT NULL on every task row (and ON DELETE CASCADE, so the agent
 -- always exists), which makes this the universal tenant guard for
 -- user-initiated cancellation — independent of which optional source FK
--- (issue / chat_session / autopilot_run) happens to be set. It is what lets
--- run_only autopilot tasks and quick_create tasks (whose issue does not exist
+-- (issue / chat_session / automation_run) happens to be set. It is what lets
+-- run_only automation tasks and quick_create tasks (whose issue does not exist
 -- yet) be cancelled at all, instead of 404-ing on a missing source FK.
 SELECT atq.* FROM agent_task_queue atq
 JOIN agent a ON a.id = atq.agent_id
@@ -773,7 +773,7 @@ WHERE atq.id = $1 AND a.workspace_id = $2;
 -- already dispatched or running. This allows different agents to work on the same
 -- issue in parallel while preventing a single agent from running duplicate tasks.
 -- Chat tasks (issue_id IS NULL) use chat_session_id for serialization instead.
--- Quick-create tasks have no issue / chat / autopilot link, so they serialize on
+-- Quick-create tasks have no issue / chat / automation link, so they serialize on
 -- "any other quick-create-shaped task" (all four FKs NULL) for the same agent —
 -- otherwise a user mashing the create button could fire concurrent quick-creates
 -- whose completion lookup would race over "most recent issue by this agent".
@@ -823,10 +823,10 @@ WHERE id = (
               OR (
                 atq.issue_id IS NULL
                 AND atq.chat_session_id IS NULL
-                AND atq.autopilot_run_id IS NULL
+                AND atq.automation_run_id IS NULL
                 AND active.issue_id IS NULL
                 AND active.chat_session_id IS NULL
-                AND active.autopilot_run_id IS NULL
+                AND active.automation_run_id IS NULL
               )
             )
       )
@@ -1612,9 +1612,9 @@ SET status = 'cancelled',
                   AND recovery.source_task_id IS NOT NULL
                   AND failed.status = 'failed'
                   AND failed.delegated_from_task_id IS NOT NULL
-                  AND failed.autopilot_run_id IS NULL
+                  AND failed.automation_run_id IS NULL
                   AND failed.trigger_evidence_kind IS DISTINCT FROM 'delegated_failure'
-                  AND source.autopilot_run_id IS NULL
+                  AND source.automation_run_id IS NULL
                   AND source.issue_id = task.issue_id
                   AND source.agent_id = task.agent_id
                   AND recovery.issue_id = source.issue_id
@@ -2116,9 +2116,9 @@ WHERE recovery.author_type = 'system'
   AND recovery.workspace_id = source_issue.workspace_id
   AND failed.status = 'failed'
   AND failed.delegated_from_task_id IS NOT NULL
-  AND failed.autopilot_run_id IS NULL
+  AND failed.automation_run_id IS NULL
   AND failed.trigger_evidence_kind IS DISTINCT FROM 'delegated_failure'
-  AND source.autopilot_run_id IS NULL
+  AND source.automation_run_id IS NULL
   AND source.issue_id IS NOT NULL
   AND source.agent_id <> failed.agent_id
   AND COALESCE(source_status.category, source_issue.status) NOT IN ('done', 'cancelled', 'backlog')
@@ -2507,7 +2507,7 @@ WHERE a.workspace_id = $1;
 -- One row per visible, user-authored agent with at least one task that has
 -- actually started running. work_type is optional (empty = every source);
 -- source-specific reads use the same precedence as computeTaskKind:
--- chat > autopilot > issue. "issue" intentionally groups direct and
+-- chat > automation > issue. "issue" intentionally groups direct and
 -- comment-triggered issue work. Quick-create work is present only in the
 -- unfiltered projection because it has no source FK yet. mine_relation is
 -- optional (empty = workspace); when set it narrows issue work to the
@@ -2535,14 +2535,14 @@ WHERE a.workspace_id = $1
     @work_type::text = ''
     OR (@work_type::text = 'chat' AND atq.chat_session_id IS NOT NULL)
     OR (
-      @work_type::text = 'autopilot'
+      @work_type::text = 'automation'
       AND atq.chat_session_id IS NULL
-      AND atq.autopilot_run_id IS NOT NULL
+      AND atq.automation_run_id IS NOT NULL
     )
     OR (
       @work_type::text = 'issue'
       AND atq.chat_session_id IS NULL
-      AND atq.autopilot_run_id IS NULL
+      AND atq.automation_run_id IS NULL
       AND atq.issue_id IS NOT NULL
     )
   )

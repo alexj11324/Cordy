@@ -9,8 +9,8 @@ SELECT * FROM team WHERE id = $1;
 -- name: GetTeamInWorkspace :one
 SELECT * FROM team WHERE id = $1 AND workspace_id = $2;
 
--- name: LockTeamForAutopilotAssignment :one
--- Stabilizes the team-to-leader resolution while an active Autopilot is
+-- name: LockTeamForAutomationAssignment :one
+-- Stabilizes the team-to-leader resolution while an active Automation is
 -- created, retargeted, or resumed. FOR SHARE conflicts with an ordinary
 -- leader_id update, so the caller subsequently locks the same leader Agent
 -- whose row Runtime teardown serializes against.
@@ -20,8 +20,8 @@ FOR SHARE;
 
 -- name: LockTeamForUpdate :one
 -- Team leader changes take the exclusive side of the same lock used by
--- Autopilot assignment. The handler then locks the proposed leader Agent and
--- pauses active team Autopilots when that Agent is unbound.
+-- Automation assignment. The handler then locks the proposed leader Agent and
+-- pauses active team Automations when that Agent is unbound.
 SELECT * FROM team
 WHERE id = $1 AND workspace_id = $2
 FOR UPDATE;
@@ -120,14 +120,14 @@ ORDER BY s.created_at ASC;
 UPDATE issue SET assignee_type = 'agent', assignee_id = $2, revision = revision + 1, updated_at = now()
 WHERE assignee_type = 'team' AND assignee_id = $1;
 
--- name: TransferTeamAutopilotsToLeader :exec
--- Mirrors TransferTeamAssignees for autopilot rows: when a team is archived,
--- any autopilot still pointing at the team would otherwise dangle and the
+-- name: TransferTeamAutomationsToLeader :exec
+-- Mirrors TransferTeamAssignees for automation rows: when a team is archived,
+-- any automation still pointing at the team would otherwise dangle and the
 -- admission gate would skip every subsequent dispatch with "assignee team
 -- cannot be resolved". Rewrite the assignee in place to the leader agent so
--- the autopilot keeps firing under the same leader-only execution semantics
+-- the automation keeps firing under the same leader-only execution semantics
 -- it had a moment before the archive (Path A from PB-2429).
-UPDATE autopilot
+UPDATE automation
 SET assignee_type = 'agent',
     assignee_id = $2,
     updated_at = now()

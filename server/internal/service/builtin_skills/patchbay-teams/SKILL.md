@@ -44,7 +44,7 @@ Important consequences:
 
 - assigning an issue to a team routes to the leader;
 - mentioning a team routes to the leader;
-- team-assigned autopilot resolves to the leader;
+- team-assigned automation resolves to the leader;
 - team members are not automatically fanned out;
 - team `instructions` are leader briefing content, not member prompts.
 
@@ -120,7 +120,7 @@ Prefer `--output json` for reads. Use `--help` before writes.
   team-routed work.
 - `creator_id` — creator of the team.
 - `archived_at` / `archived_by` — archive metadata. Archived teams are rejected
-  by assignment/autopilot routing paths.
+  by assignment/automation routing paths.
 - `member_count` — list response count of team members.
 - `member_preview` — list response preview of team members.
 
@@ -141,7 +141,7 @@ write it as if every member automatically receives it.
 Creating a team requires `leader_id`. The leader must be a workspace agent.
 Create/update does not reject an archived leader: the lookup only checks the
 agent exists in the workspace. An archived leader fails closed later, at
-routing/dispatch — assignment, autopilot admission, and the comment/mention
+routing/dispatch — assignment, automation admission, and the comment/mention
 readiness gate all reject an archived leader before any task is enqueued.
 
 On create, the backend attempts to add the leader as a team member with role
@@ -217,18 +217,18 @@ Current behavior: resolve the team, read `leader_id`, enqueue a leader task,
 and use the current comment as the trigger comment. It does not enqueue every
 team member.
 
-## Autopilot behavior
+## Automation behavior
 
-Autopilots can be assigned to teams. For `assignee_type = "team"`:
+Automations can be assigned to teams. For `assignee_type = "team"`:
 
 - executable agent resolves from `team.leader_id`;
 - admission/readiness checks run against the leader;
 - archived teams fail closed / skip dispatch;
 - run attribution records team id where applicable.
 
-For `create_issue` autopilots, the created issue keeps `assignee_type = "team"`
+For `create_issue` automations, the created issue keeps `assignee_type = "team"`
 and `assignee_id = <team-id>`, while the actual executing agent is the resolved
-leader. For `run_only` autopilots, no issue is created; the task is created
+leader. For `run_only` automations, no issue is created; the task is created
 directly for the resolved leader agent.
 
 ## Handling complaints or product gaps
@@ -245,7 +245,7 @@ it exists. Classify first:
 Explain the current source-backed behavior. If the behavior is technically
 correct but product-wise bad, say so and propose a scoped product/code change.
 
-Do not silently change team routing, member fan-out, leader briefing, autopilot
+Do not silently change team routing, member fan-out, leader briefing, automation
 behavior, or comment-trigger behavior without confirmation. These are product
 contract changes with side effects.
 
@@ -262,7 +262,7 @@ These actions can trigger agent work or mutate durable state:
 - moving a team-assigned issue out of backlog;
 - commenting on a team-assigned issue;
 - mentioning a team;
-- creating or triggering team-assigned autopilots;
+- creating or triggering team-assigned automations;
 - recording team activity with `patchbay team activity`;
 - deleting/archive team.
 
@@ -275,7 +275,7 @@ authorizes them.
 - Team work routes to `leader_id`, not every member.
 - Team mention routes to the leader, not every member.
 - Team assignment routes to the leader, not every member.
-- Team autopilot resolves to the leader as executable agent.
+- Team automation resolves to the leader as executable agent.
 - `instructions` are leader briefing content, not automatic member prompts.
 - `description` is not proven runtime prompt content.
 - `role` is roster context, not automatic scheduling.

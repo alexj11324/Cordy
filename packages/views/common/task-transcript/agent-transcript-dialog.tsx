@@ -118,7 +118,7 @@ interface AgentTranscriptDialogProps {
   isLive?: boolean;
   /**
    * Optional content rendered between the header chips and the event list.
-   * Used by autopilot run rows to surface the inbound webhook trigger
+   * Used by automation run rows to surface the inbound webhook trigger
    * payload so it's visible regardless of whether the agent echoes it.
    * The dialog stays generic — slot content is the caller's concern.
    */
@@ -795,8 +795,8 @@ export function AgentTranscriptDialog({
     ? t(($) => $.transcript.trigger_retry)
     : task.kind === "comment" || task.trigger_comment_id
       ? t(($) => $.transcript.trigger_comment)
-      : task.kind === "autopilot" || task.autopilot_run_id
-        ? t(($) => $.transcript.trigger_autopilot)
+      : task.kind === "automation" || task.automation_run_id
+        ? t(($) => $.transcript.trigger_automation)
         : task.kind === "chat" || task.chat_session_id
           ? t(($) => $.transcript.trigger_chat)
           : task.kind === "quick_create"

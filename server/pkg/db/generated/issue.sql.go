@@ -600,28 +600,28 @@ func (q *Queries) FindActiveDuplicateIssue(ctx context.Context, arg FindActiveDu
 	return i, err
 }
 
-const findRecentAutopilotDuplicateIssue = `-- name: FindRecentAutopilotDuplicateIssue :one
+const findRecentAutomationDuplicateIssue = `-- name: FindRecentAutomationDuplicateIssue :one
 SELECT i.id, i.workspace_id, i.title, i.description, i.status, i.priority, i.assignee_type, i.assignee_id, i.creator_type, i.creator_id, i.parent_issue_id, i.acceptance_criteria, i.context_refs, i.position, i.due_date, i.created_at, i.updated_at, i.number, i.project_id, i.origin_type, i.origin_id, i.first_executed_at, i.start_date, i.metadata, i.stage, i.properties, i.revision, i.last_activity_at FROM issue i
 WHERE i.workspace_id = $1
   -- Negate only known terminal keys so an unknown legacy key remains active.
   AND NOT (i.status = ANY($3::text[]))
-  AND i.origin_type = 'autopilot'
+  AND i.origin_type = 'automation'
   AND i.origin_id = $2
   AND i.project_id IS NOT DISTINCT FROM $4::uuid
   AND lower(btrim(regexp_replace(i.title, '[[:space:]]+', ' ', 'g'))) = $5
   AND i.created_at >= $6::timestamptz
   AND EXISTS (
     SELECT 1
-    FROM autopilot_run r
+    FROM automation_run r
     WHERE r.issue_id = i.id
-      AND r.autopilot_id = i.origin_id
+      AND r.automation_id = i.origin_id
       AND r.status IN ('issue_created', 'running', 'completed')
   )
 ORDER BY i.created_at ASC
 LIMIT 1
 `
 
-type FindRecentAutopilotDuplicateIssueParams struct {
+type FindRecentAutomationDuplicateIssueParams struct {
 	WorkspaceID        pgtype.UUID        `json:"workspace_id"`
 	OriginID           pgtype.UUID        `json:"origin_id"`
 	TerminalStatusKeys []string           `json:"terminal_status_keys"`
@@ -630,8 +630,8 @@ type FindRecentAutopilotDuplicateIssueParams struct {
 	CreatedAfter       pgtype.Timestamptz `json:"created_after"`
 }
 
-func (q *Queries) FindRecentAutopilotDuplicateIssue(ctx context.Context, arg FindRecentAutopilotDuplicateIssueParams) (Issue, error) {
-	row := q.db.QueryRow(ctx, findRecentAutopilotDuplicateIssue,
+func (q *Queries) FindRecentAutomationDuplicateIssue(ctx context.Context, arg FindRecentAutomationDuplicateIssueParams) (Issue, error) {
+	row := q.db.QueryRow(ctx, findRecentAutomationDuplicateIssue,
 		arg.WorkspaceID,
 		arg.OriginID,
 		arg.TerminalStatusKeys,

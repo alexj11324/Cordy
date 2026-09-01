@@ -1009,8 +1009,8 @@ func writeSkillFiles(skillsDir string, skills []SkillContextForEnv, manifest *si
 
 // renderIssueContext builds the markdown content for issue_context.md.
 func renderIssueContext(provider string, ctx TaskContextForEnv) string {
-	if ctx.AutopilotRunID != "" {
-		return renderAutopilotContext(ctx)
+	if ctx.AutomationRunID != "" {
+		return renderAutomationContext(ctx)
 	}
 	if ctx.QuickCreatePrompt != "" {
 		return renderQuickCreateContext(ctx)
@@ -1058,32 +1058,32 @@ func renderQuickCreateContext(ctx TaskContextForEnv) string {
 	return b.String()
 }
 
-func renderAutopilotContext(ctx TaskContextForEnv) string {
+func renderAutomationContext(ctx TaskContextForEnv) string {
 	var b strings.Builder
 
-	b.WriteString("# Autopilot Run\n\n")
-	fmt.Fprintf(&b, "**Autopilot run ID:** %s\n\n", ctx.AutopilotRunID)
-	if ctx.AutopilotID != "" {
-		fmt.Fprintf(&b, "**Autopilot ID:** %s\n\n", ctx.AutopilotID)
+	b.WriteString("# Automation Run\n\n")
+	fmt.Fprintf(&b, "**Automation run ID:** %s\n\n", ctx.AutomationRunID)
+	if ctx.AutomationID != "" {
+		fmt.Fprintf(&b, "**Automation ID:** %s\n\n", ctx.AutomationID)
 	}
-	if ctx.AutopilotTitle != "" {
-		fmt.Fprintf(&b, "**Title:** %s\n\n", ctx.AutopilotTitle)
+	if ctx.AutomationTitle != "" {
+		fmt.Fprintf(&b, "**Title:** %s\n\n", ctx.AutomationTitle)
 	}
-	if ctx.AutopilotSource != "" {
-		fmt.Fprintf(&b, "**Trigger source:** %s\n\n", ctx.AutopilotSource)
+	if ctx.AutomationSource != "" {
+		fmt.Fprintf(&b, "**Trigger source:** %s\n\n", ctx.AutomationSource)
 	}
-	if ctx.AutopilotTriggerPayload != "" {
-		fmt.Fprintf(&b, "## Trigger Payload\n\n```json\n%s\n```\n\n", ctx.AutopilotTriggerPayload)
+	if ctx.AutomationTriggerPayload != "" {
+		fmt.Fprintf(&b, "## Trigger Payload\n\n```json\n%s\n```\n\n", ctx.AutomationTriggerPayload)
 	}
 
 	b.WriteString("## Quick Start\n\n")
-	b.WriteString("This is a run-only autopilot task with no assigned issue. Do not run `patchbay issue get` unless the autopilot instructions explicitly ask you to create or update an issue.\n\n")
-	if ctx.AutopilotID != "" {
-		fmt.Fprintf(&b, "Run `patchbay autopilot get %s --output json` if you need the full autopilot configuration.\n\n", ctx.AutopilotID)
+	b.WriteString("This is a run-only automation task with no assigned issue. Do not run `patchbay issue get` unless the automation instructions explicitly ask you to create or update an issue.\n\n")
+	if ctx.AutomationID != "" {
+		fmt.Fprintf(&b, "Run `patchbay automation get %s --output json` if you need the full automation configuration.\n\n", ctx.AutomationID)
 	}
-	if strings.TrimSpace(ctx.AutopilotDescription) != "" {
-		b.WriteString("## Autopilot Instructions\n\n")
-		b.WriteString(ctx.AutopilotDescription)
+	if strings.TrimSpace(ctx.AutomationDescription) != "" {
+		b.WriteString("## Automation Instructions\n\n")
+		b.WriteString(ctx.AutomationDescription)
 		b.WriteString("\n\n")
 	}
 

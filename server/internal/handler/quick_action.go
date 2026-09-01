@@ -57,7 +57,7 @@ const (
 // quickActionTemplateTokenRe catches any `{{...}}` in a prompt.
 //
 // Templating is deliberately unsupported, but silence is not the same as
-// safety: someone carrying the habit over from autopilot's issue-title
+// safety: someone carrying the habit over from automation's issue-title
 // template would otherwise have `{{issue.title}}` rendered literally into an
 // agent's instructions and never notice. Rejecting at write time is a fraction
 // of the cost of the interpolation engine it replaces, and it keeps the door
@@ -655,7 +655,7 @@ func (h *Handler) UpdateQuickAction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// assignee_type and assignee_id move together so a type swap can never
-	// land with a mismatched id (the same rule autopilot enforces). The
+	// land with a mismatched id (the same rule automation enforces). The
 	// binding is re-validated against the RESULTING visibility, so flipping an
 	// action to public with a private agent still bound is caught here.
 	newType := existing.AssigneeType
@@ -918,7 +918,7 @@ func (h *Handler) RunQuickAction(w http.ResponseWriter, r *http.Request) {
 		"issue_revision":      created.IssueRevision,
 	})
 
-	delegationAuthority := h.autopilotDelegationAuthorityFromRequest(r, issue, actorType, actorID)
+	delegationAuthority := h.automationDelegationAuthorityFromRequest(r, issue, actorType, actorID)
 	resp.TriggerOutcomes = h.triggerTasksForComment(r.Context(), issue, comment, nil, actorType, actorID, originatorUserID, delegationAuthority, nil)
 
 	// Usage telemetry is best-effort and deliberately outside the run's

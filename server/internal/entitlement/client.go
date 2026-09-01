@@ -276,7 +276,7 @@ func normalizePolicy(wire wirePolicy) (fetchedPolicy, error) {
 		return fetchedPolicy{}, ErrInvalidPolicy
 	}
 	gates := make(map[GateName]Gate, 2)
-	for _, name := range []GateName{GateIssueCount, GateAutopilotRuns} {
+	for _, name := range []GateName{GateIssueCount, GateAutomationRuns} {
 		wireGate, ok := wire.Gates[string(name)]
 		if !ok {
 			return fetchedPolicy{}, ErrInvalidPolicy
@@ -319,7 +319,7 @@ func normalizeGate(name GateName, wire wireGate) (Gate, error) {
 	if periodFields != 0 && periodFields != 3 {
 		return Gate{}, ErrInvalidPolicy
 	}
-	if name == GateAutopilotRuns && periodFields != 3 {
+	if name == GateAutomationRuns && periodFields != 3 {
 		return Gate{}, ErrInvalidPolicy
 	}
 	if periodFields == 3 && (!wire.PeriodStart.Before(*wire.PeriodEnd) || !wire.PeriodStart.Before(*wire.ResetAt)) {

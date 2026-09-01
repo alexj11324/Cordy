@@ -7,7 +7,7 @@
  * Issue descriptions and Comments all share ONE implementation of Markdown
  * parsing, sanitize, fenced-code dispatch, mentions, links and attachments.
  * This file stays only so existing document-density callers (comment cards,
- * issue detail, autopilot detail, Markdown attachment preview) keep their
+ * issue detail, automation detail, Markdown attachment preview) keep their
  * import path and props.
  *
  * Do not reintroduce rendering logic here. New behaviour belongs in

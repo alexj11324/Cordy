@@ -38,10 +38,10 @@ describe("PageHeader title alignment", () => {
     const header = renderHeader(
       <CollectionPageHeader
         icon={Zap}
-        title="Autopilot"
+        title="Automation"
         count={2}
         actions={
-          <CollectionPageHeaderAction icon={Plus} label="New autopilot" />
+          <CollectionPageHeaderAction icon={Plus} label="New automation" />
         }
       />,
     );
@@ -49,7 +49,7 @@ describe("PageHeader title alignment", () => {
     expectTitleLeftOfFreeSpace(header);
 
     const heading = within(header).getByRole("heading");
-    expect(heading.textContent).toBe("Autopilot");
+    expect(heading.textContent).toBe("Automation");
     expect(heading.parentElement).toHaveClass("flex-1");
   });
 
@@ -129,7 +129,7 @@ describe("PageHeader base chrome", () => {
   // spacing; both must resolve to the base gap and gutter.
   it("resolves the same gutter and gap for collection and issues headers", () => {
     const collection = renderHeader(
-      <CollectionPageHeader icon={Zap} title="Autopilot" count={2} />,
+      <CollectionPageHeader icon={Zap} title="Automation" count={2} />,
     );
     const issues = renderHeader(
       <PageHeader>

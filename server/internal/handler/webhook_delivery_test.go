@@ -24,11 +24,11 @@ const testSigningSecret = "this-is-a-test-secret-32-chars-x"
 func setSigningSecretViaHandler(t *testing.T, apID, triggerID, secret string) {
 	t.Helper()
 	w := httptest.NewRecorder()
-	req := newRequest("PUT", fmt.Sprintf("/api/autopilots/%s/triggers/%s/signing-secret", apID, triggerID), map[string]any{
+	req := newRequest("PUT", fmt.Sprintf("/api/automations/%s/triggers/%s/signing-secret", apID, triggerID), map[string]any{
 		"signing_secret": secret,
 	})
 	req = withURLParams(req, "id", apID, "triggerId", triggerID)
-	testHandler.SetAutopilotTriggerSigningSecret(w, req)
+	testHandler.SetAutomationTriggerSigningSecret(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("set signing secret: %d body=%s", w.Code, w.Body.String())
 	}
@@ -37,7 +37,7 @@ func setSigningSecretViaHandler(t *testing.T, apID, triggerID, secret string) {
 func setTriggerProvider(t *testing.T, triggerID, provider string) {
 	t.Helper()
 	if _, err := testPool.Exec(context.Background(),
-		`UPDATE autopilot_trigger SET provider = $1 WHERE id = $2`, provider, triggerID); err != nil {
+		`UPDATE automation_trigger SET provider = $1 WHERE id = $2`, provider, triggerID); err != nil {
 		t.Fatalf("set provider: %v", err)
 	}
 }
@@ -80,13 +80,13 @@ FOR EACH ROW EXECUTE FUNCTION %s();
 	}
 }
 
-// listDeliveries calls ListAutopilotDeliveries and decodes the body.
+// listDeliveries calls ListAutomationDeliveries and decodes the body.
 func listDeliveries(t *testing.T, apID string) []map[string]any {
 	t.Helper()
 	w := httptest.NewRecorder()
-	req := newRequest("GET", "/api/autopilots/"+apID+"/deliveries", nil)
+	req := newRequest("GET", "/api/automations/"+apID+"/deliveries", nil)
 	req = withURLParam(req, "id", apID)
-	testHandler.ListAutopilotDeliveries(w, req)
+	testHandler.ListAutomationDeliveries(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("list deliveries: %d body=%s", w.Code, w.Body.String())
 	}
@@ -103,7 +103,7 @@ func listDeliveries(t *testing.T, apID string) []map[string]any {
 
 func TestWebhookHandler_PersistsDeliveryOnAccept(t *testing.T) {
 	agentID := createWebhookTestAgent(t, "DeliveryPersist Agent")
-	apID := createWebhookTestAutopilot(t, agentID, "active", "run_only")
+	apID := createWebhookTestAutomation(t, agentID, "active", "run_only")
 	trig := createWebhookTriggerViaHandler(t, apID)
 
 	w := postWebhook(t, *trig.WebhookToken, map[string]any{"hello": "world"}, nil)
@@ -117,7 +117,7 @@ func TestWebhookHandler_PersistsDeliveryOnAccept(t *testing.T) {
 	if d["status"] != "dispatched" {
 		t.Fatalf("delivery status: %v", d["status"])
 	}
-	if d["autopilot_run_id"] == nil {
+	if d["automation_run_id"] == nil {
 		t.Fatal("delivery should link to run")
 	}
 	if got := int(d["response_status"].(float64)); got != http.StatusOK {
@@ -133,7 +133,7 @@ func TestWebhookHandler_PersistsDeliveryOnAccept(t *testing.T) {
 
 func TestWebhookHandler_AcknowledgementMetadataFailureStillReturns200(t *testing.T) {
 	agentID := createWebhookTestAgent(t, "AckMetadataFailure Agent")
-	apID := createWebhookTestAutopilot(t, agentID, "active", "run_only")
+	apID := createWebhookTestAutomation(t, agentID, "active", "run_only")
 	trig := createWebhookTriggerViaHandler(t, apID)
 	installWebhookAcknowledgementFailure(t)
 
@@ -150,14 +150,14 @@ func TestWebhookHandler_AcknowledgementMetadataFailureStillReturns200(t *testing
 	}
 
 	completed := processQueuedWebhookDelivery(t, deliveryID)
-	if completed.Status != deliveryStatusDispatched || !completed.AutopilotRunID.Valid {
-		t.Fatalf("durable delivery did not dispatch after metadata failure: status=%s run=%v", completed.Status, completed.AutopilotRunID.Valid)
+	if completed.Status != deliveryStatusDispatched || !completed.AutomationRunID.Valid {
+		t.Fatalf("durable delivery did not dispatch after metadata failure: status=%s run=%v", completed.Status, completed.AutomationRunID.Valid)
 	}
 }
 
 func TestWebhookHandler_DedupeViaIdempotencyKey(t *testing.T) {
 	agentID := createWebhookTestAgent(t, "DeliveryIdem Agent")
-	apID := createWebhookTestAutopilot(t, agentID, "active", "run_only")
+	apID := createWebhookTestAutomation(t, agentID, "active", "run_only")
 	trig := createWebhookTriggerViaHandler(t, apID)
 
 	body := map[string]any{"event": "demo.x", "eventPayload": map[string]any{"k": "v"}}
@@ -192,7 +192,7 @@ func TestWebhookHandler_DedupeViaIdempotencyKey(t *testing.T) {
 		t.Fatalf("duplicate run_id mismatch: %v != %v", r2["run_id"], firstRunID)
 	}
 	firstDelivery := processQueuedWebhookDelivery(t, firstDeliveryID)
-	if got := uuidToString(firstDelivery.AutopilotRunID); got != firstRunID {
+	if got := uuidToString(firstDelivery.AutomationRunID); got != firstRunID {
 		t.Fatalf("processed delivery run_id mismatch: %v != %v", got, firstRunID)
 	}
 
@@ -208,7 +208,7 @@ func TestWebhookHandler_DedupeViaIdempotencyKey(t *testing.T) {
 
 func TestWebhookHandler_DedupeViaGitHubDelivery(t *testing.T) {
 	agentID := createWebhookTestAgent(t, "DeliveryGH Agent")
-	apID := createWebhookTestAutopilot(t, agentID, "active", "run_only")
+	apID := createWebhookTestAutomation(t, agentID, "active", "run_only")
 	trig := createWebhookTriggerViaHandler(t, apID)
 	setTriggerProvider(t, trig.ID, "github")
 
@@ -239,7 +239,7 @@ func TestWebhookHandler_DedupeViaGitHubDelivery(t *testing.T) {
 
 func TestWebhookHandler_InvalidSignatureReturns401AndPersistsRejected(t *testing.T) {
 	agentID := createWebhookTestAgent(t, "SigInvalid Agent")
-	apID := createWebhookTestAutopilot(t, agentID, "active", "run_only")
+	apID := createWebhookTestAutomation(t, agentID, "active", "run_only")
 	trig := createWebhookTriggerViaHandler(t, apID)
 	setSigningSecretViaHandler(t, apID, trig.ID, testSigningSecret)
 
@@ -269,14 +269,14 @@ func TestWebhookHandler_InvalidSignatureReturns401AndPersistsRejected(t *testing
 	if deliveries[0]["signature_status"] != "invalid" {
 		t.Fatalf("expected signature_status=invalid, got %v", deliveries[0]["signature_status"])
 	}
-	if deliveries[0]["autopilot_run_id"] != nil {
+	if deliveries[0]["automation_run_id"] != nil {
 		t.Fatal("rejected delivery must not link to a run")
 	}
 }
 
 func TestWebhookHandler_MissingSignatureReturns401WhenSecretSet(t *testing.T) {
 	agentID := createWebhookTestAgent(t, "SigMissing Agent")
-	apID := createWebhookTestAutopilot(t, agentID, "active", "run_only")
+	apID := createWebhookTestAutomation(t, agentID, "active", "run_only")
 	trig := createWebhookTriggerViaHandler(t, apID)
 	setSigningSecretViaHandler(t, apID, trig.ID, testSigningSecret)
 
@@ -297,7 +297,7 @@ func TestWebhookHandler_MissingSignatureReturns401WhenSecretSet(t *testing.T) {
 
 func TestWebhookHandler_ValidSignatureDispatches(t *testing.T) {
 	agentID := createWebhookTestAgent(t, "SigValid Agent")
-	apID := createWebhookTestAutopilot(t, agentID, "active", "run_only")
+	apID := createWebhookTestAutomation(t, agentID, "active", "run_only")
 	trig := createWebhookTriggerViaHandler(t, apID)
 	setSigningSecretViaHandler(t, apID, trig.ID, testSigningSecret)
 
@@ -319,17 +319,17 @@ func TestWebhookHandler_ValidSignatureDispatches(t *testing.T) {
 
 func TestSigningSecretNotEchoedInTriggerResponse(t *testing.T) {
 	agentID := createWebhookTestAgent(t, "SigEcho Agent")
-	apID := createWebhookTestAutopilot(t, agentID, "active", "run_only")
+	apID := createWebhookTestAutomation(t, agentID, "active", "run_only")
 	trig := createWebhookTriggerViaHandler(t, apID)
 	setSigningSecretViaHandler(t, apID, trig.ID, testSigningSecret)
 
-	// GET the autopilot — trigger response embedded.
+	// GET the automation — trigger response embedded.
 	w := httptest.NewRecorder()
-	req := newRequest("GET", "/api/autopilots/"+apID, nil)
+	req := newRequest("GET", "/api/automations/"+apID, nil)
 	req = withURLParam(req, "id", apID)
-	testHandler.GetAutopilot(w, req)
+	testHandler.GetAutomation(w, req)
 	if w.Code != http.StatusOK {
-		t.Fatalf("get autopilot: %d", w.Code)
+		t.Fatalf("get automation: %d", w.Code)
 	}
 	if bytes.Contains(w.Body.Bytes(), []byte(testSigningSecret)) {
 		t.Fatalf("signing secret leaked in trigger response: %s", w.Body.String())
@@ -344,15 +344,15 @@ func TestSigningSecretNotEchoedInTriggerResponse(t *testing.T) {
 
 func TestSigningSecret_MinLengthEnforced(t *testing.T) {
 	agentID := createWebhookTestAgent(t, "SigMinLen Agent")
-	apID := createWebhookTestAutopilot(t, agentID, "active", "run_only")
+	apID := createWebhookTestAutomation(t, agentID, "active", "run_only")
 	trig := createWebhookTriggerViaHandler(t, apID)
 
 	w := httptest.NewRecorder()
-	req := newRequest("PUT", "/api/autopilots/"+apID+"/triggers/"+trig.ID+"/signing-secret", map[string]any{
+	req := newRequest("PUT", "/api/automations/"+apID+"/triggers/"+trig.ID+"/signing-secret", map[string]any{
 		"signing_secret": "short",
 	})
 	req = withURLParams(req, "id", apID, "triggerId", trig.ID)
-	testHandler.SetAutopilotTriggerSigningSecret(w, req)
+	testHandler.SetAutomationTriggerSigningSecret(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for short secret, got %d body=%s", w.Code, w.Body.String())
 	}
@@ -360,17 +360,17 @@ func TestSigningSecret_MinLengthEnforced(t *testing.T) {
 
 func TestSigningSecret_EmptyClearsSecret(t *testing.T) {
 	agentID := createWebhookTestAgent(t, "SigClear Agent")
-	apID := createWebhookTestAutopilot(t, agentID, "active", "run_only")
+	apID := createWebhookTestAutomation(t, agentID, "active", "run_only")
 	trig := createWebhookTriggerViaHandler(t, apID)
 	setSigningSecretViaHandler(t, apID, trig.ID, testSigningSecret)
 
 	// Now clear with empty string.
 	w := httptest.NewRecorder()
-	req := newRequest("PUT", "/api/autopilots/"+apID+"/triggers/"+trig.ID+"/signing-secret", map[string]any{
+	req := newRequest("PUT", "/api/automations/"+apID+"/triggers/"+trig.ID+"/signing-secret", map[string]any{
 		"signing_secret": "",
 	})
 	req = withURLParams(req, "id", apID, "triggerId", trig.ID)
-	testHandler.SetAutopilotTriggerSigningSecret(w, req)
+	testHandler.SetAutomationTriggerSigningSecret(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("clear secret: %d body=%s", w.Code, w.Body.String())
 	}
@@ -381,7 +381,7 @@ func TestSigningSecret_EmptyClearsSecret(t *testing.T) {
 
 func TestReplay_QueuesIdempotentDeliveryForDurableWorker(t *testing.T) {
 	agentID := createWebhookTestAgent(t, "Replay Agent")
-	apID := createWebhookTestAutopilot(t, agentID, "active", "run_only")
+	apID := createWebhookTestAutomation(t, agentID, "active", "run_only")
 	trig := createWebhookTriggerViaHandler(t, apID)
 
 	// Original delivery (with dedupe key) → accepted + dispatched.
@@ -390,14 +390,14 @@ func TestReplay_QueuesIdempotentDeliveryForDurableWorker(t *testing.T) {
 	})
 	originalID := requireAcceptedWebhookResponse(t, w)
 	originalDelivery := processQueuedWebhookDelivery(t, originalID)
-	originalRunID := uuidToString(originalDelivery.AutopilotRunID)
+	originalRunID := uuidToString(originalDelivery.AutomationRunID)
 
 	// Replay the original.
 	wr := httptest.NewRecorder()
-	req := newRequest("POST", fmt.Sprintf("/api/autopilots/%s/deliveries/%s/replay", apID, originalID), nil)
+	req := newRequest("POST", fmt.Sprintf("/api/automations/%s/deliveries/%s/replay", apID, originalID), nil)
 	req.Header.Set("Idempotency-Key", "replay-request")
 	req = withURLParams(req, "id", apID, "deliveryId", originalID)
-	testHandler.ReplayAutopilotDelivery(wr, req)
+	testHandler.ReplayAutomationDelivery(wr, req)
 	if wr.Code != http.StatusAccepted {
 		t.Fatalf("replay: %d body=%s", wr.Code, wr.Body.String())
 	}
@@ -409,25 +409,25 @@ func TestReplay_QueuesIdempotentDeliveryForDurableWorker(t *testing.T) {
 	if replay["replayed_from_delivery_id"] != originalID {
 		t.Fatalf("replayed_from_delivery_id: %v", replay["replayed_from_delivery_id"])
 	}
-	if replay["status"] != deliveryStatusQueued || replay["autopilot_run_id"] != nil {
+	if replay["status"] != deliveryStatusQueued || replay["automation_run_id"] != nil {
 		t.Fatalf("replay should be durably queued before worker dispatch: %#v", replay)
 	}
 	replayID := replay["id"].(string)
 	replayedDelivery := processQueuedWebhookDelivery(t, replayID)
-	if !replayedDelivery.AutopilotRunID.Valid {
+	if !replayedDelivery.AutomationRunID.Valid {
 		t.Fatal("worker should link the replay run")
 	}
-	if uuidToString(replayedDelivery.AutopilotRunID) == originalRunID {
+	if uuidToString(replayedDelivery.AutomationRunID) == originalRunID {
 		t.Fatal("replay should produce a NEW run, not reuse the original")
 	}
 
 	// Retrying the replay request with the same key returns the same delivery
 	// and cannot enqueue or reserve a second run.
 	retryRecorder := httptest.NewRecorder()
-	retryReq := newRequest("POST", fmt.Sprintf("/api/autopilots/%s/deliveries/%s/replay", apID, originalID), nil)
+	retryReq := newRequest("POST", fmt.Sprintf("/api/automations/%s/deliveries/%s/replay", apID, originalID), nil)
 	retryReq.Header.Set("Idempotency-Key", "replay-request")
 	retryReq = withURLParams(retryReq, "id", apID, "deliveryId", originalID)
-	testHandler.ReplayAutopilotDelivery(retryRecorder, retryReq)
+	testHandler.ReplayAutomationDelivery(retryRecorder, retryReq)
 	if retryRecorder.Code != http.StatusAccepted {
 		t.Fatalf("replay retry: %d body=%s", retryRecorder.Code, retryRecorder.Body.String())
 	}
@@ -445,7 +445,7 @@ func TestReplay_QueuesIdempotentDeliveryForDurableWorker(t *testing.T) {
 
 func TestReplay_RejectsInvalidSignatureDelivery(t *testing.T) {
 	agentID := createWebhookTestAgent(t, "ReplayReject Agent")
-	apID := createWebhookTestAutopilot(t, agentID, "active", "run_only")
+	apID := createWebhookTestAutomation(t, agentID, "active", "run_only")
 	trig := createWebhookTriggerViaHandler(t, apID)
 	setSigningSecretViaHandler(t, apID, trig.ID, testSigningSecret)
 
@@ -462,9 +462,9 @@ func TestReplay_RejectsInvalidSignatureDelivery(t *testing.T) {
 
 	// Replay the rejected delivery → 400.
 	wr := httptest.NewRecorder()
-	req := newRequest("POST", fmt.Sprintf("/api/autopilots/%s/deliveries/%s/replay", apID, rejectedID), nil)
+	req := newRequest("POST", fmt.Sprintf("/api/automations/%s/deliveries/%s/replay", apID, rejectedID), nil)
 	req = withURLParams(req, "id", apID, "deliveryId", rejectedID)
-	testHandler.ReplayAutopilotDelivery(wr, req)
+	testHandler.ReplayAutomationDelivery(wr, req)
 	if wr.Code != http.StatusBadRequest {
 		t.Fatalf("replay of rejected: expected 400, got %d body=%s", wr.Code, wr.Body.String())
 	}
@@ -472,7 +472,7 @@ func TestReplay_RejectsInvalidSignatureDelivery(t *testing.T) {
 
 func TestGetDelivery_ReturnsFullPayload(t *testing.T) {
 	agentID := createWebhookTestAgent(t, "DeliveryDetail Agent")
-	apID := createWebhookTestAutopilot(t, agentID, "active", "run_only")
+	apID := createWebhookTestAutomation(t, agentID, "active", "run_only")
 	trig := createWebhookTriggerViaHandler(t, apID)
 
 	w := postWebhook(t, *trig.WebhookToken, map[string]any{"event": "demo", "eventPayload": map[string]any{"answer": 42}}, nil)
@@ -480,18 +480,18 @@ func TestGetDelivery_ReturnsFullPayload(t *testing.T) {
 
 	// List response should NOT include raw_body / selected_headers.
 	wList := httptest.NewRecorder()
-	reqList := newRequest("GET", "/api/autopilots/"+apID+"/deliveries", nil)
+	reqList := newRequest("GET", "/api/automations/"+apID+"/deliveries", nil)
 	reqList = withURLParam(reqList, "id", apID)
-	testHandler.ListAutopilotDeliveries(wList, reqList)
+	testHandler.ListAutomationDeliveries(wList, reqList)
 	if bytes.Contains(wList.Body.Bytes(), []byte(`"raw_body"`)) {
 		t.Fatalf("list response should not include raw_body, body=%s", wList.Body.String())
 	}
 
 	// Detail response SHOULD include raw_body and selected_headers.
 	wDetail := httptest.NewRecorder()
-	reqDetail := newRequest("GET", "/api/autopilots/"+apID+"/deliveries/"+deliveryID, nil)
+	reqDetail := newRequest("GET", "/api/automations/"+apID+"/deliveries/"+deliveryID, nil)
 	reqDetail = withURLParams(reqDetail, "id", apID, "deliveryId", deliveryID)
-	testHandler.GetAutopilotDelivery(wDetail, reqDetail)
+	testHandler.GetAutomationDelivery(wDetail, reqDetail)
 	if wDetail.Code != http.StatusOK {
 		t.Fatalf("detail: %d body=%s", wDetail.Code, wDetail.Body.String())
 	}
@@ -518,13 +518,13 @@ func TestGetDelivery_ReturnsFullPayload(t *testing.T) {
 	}
 }
 
-func TestGetDelivery_CrossAutopilotReturns404(t *testing.T) {
-	// A delivery_id from one autopilot must not be readable via another
-	// autopilot's URL — defense in depth even though both rows are in the
+func TestGetDelivery_CrossAutomationReturns404(t *testing.T) {
+	// A delivery_id from one automation must not be readable via another
+	// automation's URL — defense in depth even though both rows are in the
 	// same workspace.
 	agentID := createWebhookTestAgent(t, "CrossAP Agent")
-	apA := createWebhookTestAutopilot(t, agentID, "active", "run_only")
-	apB := createWebhookTestAutopilot(t, agentID, "active", "run_only")
+	apA := createWebhookTestAutomation(t, agentID, "active", "run_only")
+	apB := createWebhookTestAutomation(t, agentID, "active", "run_only")
 	trig := createWebhookTriggerViaHandler(t, apA)
 
 	w := postWebhook(t, *trig.WebhookToken, map[string]any{"x": 1}, nil)
@@ -532,60 +532,60 @@ func TestGetDelivery_CrossAutopilotReturns404(t *testing.T) {
 	json.Unmarshal(w.Body.Bytes(), &seed)
 	deliveryID := seed["delivery_id"].(string)
 
-	// Try reading via the OTHER autopilot's URL.
+	// Try reading via the OTHER automation's URL.
 	wDetail := httptest.NewRecorder()
-	reqDetail := newRequest("GET", "/api/autopilots/"+apB+"/deliveries/"+deliveryID, nil)
+	reqDetail := newRequest("GET", "/api/automations/"+apB+"/deliveries/"+deliveryID, nil)
 	reqDetail = withURLParams(reqDetail, "id", apB, "deliveryId", deliveryID)
-	testHandler.GetAutopilotDelivery(wDetail, reqDetail)
+	testHandler.GetAutomationDelivery(wDetail, reqDetail)
 	if wDetail.Code != http.StatusNotFound {
-		t.Fatalf("cross-autopilot GET: expected 404, got %d", wDetail.Code)
+		t.Fatalf("cross-automation GET: expected 404, got %d", wDetail.Code)
 	}
 }
 
-func TestCreateAutopilotTrigger_RejectsUnknownProvider(t *testing.T) {
+func TestCreateAutomationTrigger_RejectsUnknownProvider(t *testing.T) {
 	agentID := createWebhookTestAgent(t, "ProviderInvalid Agent")
-	apID := createWebhookTestAutopilot(t, agentID, "active", "run_only")
+	apID := createWebhookTestAutomation(t, agentID, "active", "run_only")
 
 	w := httptest.NewRecorder()
-	req := newRequest("POST", "/api/autopilots/"+apID+"/triggers", map[string]any{
+	req := newRequest("POST", "/api/automations/"+apID+"/triggers", map[string]any{
 		"kind":     "webhook",
 		"provider": "stripe",
 	})
 	req = withURLParam(req, "id", apID)
-	testHandler.CreateAutopilotTrigger(w, req)
+	testHandler.CreateAutomationTrigger(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for unknown provider, got %d body=%s", w.Code, w.Body.String())
 	}
 }
 
-func TestCreateAutopilotTrigger_AcceptsGitHubProvider(t *testing.T) {
+func TestCreateAutomationTrigger_AcceptsGitHubProvider(t *testing.T) {
 	agentID := createWebhookTestAgent(t, "ProviderGH Agent")
-	apID := createWebhookTestAutopilot(t, agentID, "active", "run_only")
+	apID := createWebhookTestAutomation(t, agentID, "active", "run_only")
 
 	w := httptest.NewRecorder()
-	req := newRequest("POST", "/api/autopilots/"+apID+"/triggers", map[string]any{
+	req := newRequest("POST", "/api/automations/"+apID+"/triggers", map[string]any{
 		"kind":     "webhook",
 		"provider": "github",
 	})
 	req = withURLParam(req, "id", apID)
-	testHandler.CreateAutopilotTrigger(w, req)
+	testHandler.CreateAutomationTrigger(w, req)
 	if w.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d body=%s", w.Code, w.Body.String())
 	}
-	var resp AutopilotTriggerResponse
+	var resp AutomationTriggerResponse
 	json.Unmarshal(w.Body.Bytes(), &resp)
 	if resp.Provider == nil || *resp.Provider != "github" {
 		t.Fatalf("provider: %v", resp.Provider)
 	}
 }
 
-// run_only autopilots have no issue-title duplicate guard, so dedupe via
+// run_only automations have no issue-title duplicate guard, so dedupe via
 // the delivery layer is the only thing keeping a retried provider event
 // from re-running the agent. This regression test pins that path
 // explicitly — it's the largest concrete win over the v1 ingress flow.
 func TestWebhookHandler_RunOnlyDedupeOnGitHubDelivery(t *testing.T) {
 	agentID := createWebhookTestAgent(t, "RunOnlyDedupe Agent")
-	apID := createWebhookTestAutopilot(t, agentID, "active", "run_only")
+	apID := createWebhookTestAutomation(t, agentID, "active", "run_only")
 	trig := createWebhookTriggerViaHandler(t, apID)
 	setTriggerProvider(t, trig.ID, "github")
 
@@ -600,9 +600,9 @@ func TestWebhookHandler_RunOnlyDedupeOnGitHubDelivery(t *testing.T) {
 	postWebhook(t, *trig.WebhookToken, body, headers)
 	processQueuedWebhookDelivery(t, requireAcceptedWebhookResponse(t, first))
 
-	// Count autopilot_run rows linked to this trigger.
-	rows, err := testHandler.Queries.ListAutopilotRuns(context.Background(), db.ListAutopilotRunsParams{
-		AutopilotID: parseUUID(apID),
+	// Count automation_run rows linked to this trigger.
+	rows, err := testHandler.Queries.ListAutomationRuns(context.Background(), db.ListAutomationRunsParams{
+		AutomationID: parseUUID(apID),
 		Limit:       50,
 		Offset:      0,
 	})
@@ -629,7 +629,7 @@ func TestWebhookHandler_RunOnlyDedupeOnGitHubDelivery(t *testing.T) {
 
 func TestWebhookDeliveryWorker_PerTriggerLimitDefersWithoutDropping(t *testing.T) {
 	agentID := createWebhookTestAgent(t, "WorkerPacing Agent")
-	apID := createWebhookTestAutopilot(t, agentID, "active", "run_only")
+	apID := createWebhookTestAutomation(t, agentID, "active", "run_only")
 	trig := createWebhookTriggerViaHandler(t, apID)
 
 	prev := testHandler.WebhookRateLimiter
@@ -682,7 +682,7 @@ func TestWebhookDeliveryWorker_PerTriggerLimitDefersWithoutDropping(t *testing.T
 	var runCount, dispatchedRunCount int
 	if err := testPool.QueryRow(context.Background(), `
 		SELECT count(*), count(task_id)
-		FROM autopilot_run
+		FROM automation_run
 		WHERE webhook_delivery_id IN ($1, $2)
 	`, firstID, secondID).Scan(&runCount, &dispatchedRunCount); err != nil {
 		t.Fatalf("count paced runs: %v", err)
@@ -694,20 +694,20 @@ func TestWebhookDeliveryWorker_PerTriggerLimitDefersWithoutDropping(t *testing.T
 
 func TestWebhookDeliveryWorker_DispatchesRunAdmittedBeforePause(t *testing.T) {
 	agentID := createWebhookTestAgent(t, "WorkerAdmittedBeforePause Agent")
-	apID := createWebhookTestAutopilot(t, agentID, "active", "run_only")
+	apID := createWebhookTestAutomation(t, agentID, "active", "run_only")
 	trig := createWebhookTriggerViaHandler(t, apID)
 
 	post := postWebhook(t, *trig.WebhookToken, map[string]any{"event": "accepted.before_pause"}, nil)
 	deliveryID := requireAcceptedWebhookResponse(t, post)
-	if _, err := testPool.Exec(context.Background(), `UPDATE autopilot SET status = 'paused' WHERE id = $1`, apID); err != nil {
-		t.Fatalf("pause admitted autopilot: %v", err)
+	if _, err := testPool.Exec(context.Background(), `UPDATE automation SET status = 'paused' WHERE id = $1`, apID); err != nil {
+		t.Fatalf("pause admitted automation: %v", err)
 	}
 
 	delivery := processQueuedWebhookDelivery(t, deliveryID)
-	if delivery.Status != deliveryStatusDispatched || !delivery.AutopilotRunID.Valid {
-		t.Fatalf("accepted delivery was stranded after pause: status=%s run=%v", delivery.Status, delivery.AutopilotRunID.Valid)
+	if delivery.Status != deliveryStatusDispatched || !delivery.AutomationRunID.Valid {
+		t.Fatalf("accepted delivery was stranded after pause: status=%s run=%v", delivery.Status, delivery.AutomationRunID.Valid)
 	}
-	run, err := testHandler.Queries.GetAutopilotRun(context.Background(), delivery.AutopilotRunID)
+	run, err := testHandler.Queries.GetAutomationRun(context.Background(), delivery.AutomationRunID)
 	if err != nil {
 		t.Fatalf("load admitted run: %v", err)
 	}
@@ -718,7 +718,7 @@ func TestWebhookDeliveryWorker_DispatchesRunAdmittedBeforePause(t *testing.T) {
 
 func TestWebhookDeliveryWorker_RecoversExpiredLeaseAndReusesRun(t *testing.T) {
 	agentID := createWebhookTestAgent(t, "WorkerRecovery Agent")
-	apID := createWebhookTestAutopilot(t, agentID, "active", "run_only")
+	apID := createWebhookTestAutomation(t, agentID, "active", "run_only")
 	trig := createWebhookTriggerViaHandler(t, apID)
 
 	post := postWebhook(t, *trig.WebhookToken, map[string]any{"event": "recovery"}, map[string]string{
@@ -734,35 +734,35 @@ func TestWebhookDeliveryWorker_RecoversExpiredLeaseAndReusesRun(t *testing.T) {
 	}
 
 	first := processQueuedWebhookDelivery(t, deliveryID)
-	if first.Status != deliveryStatusDispatched || !first.AutopilotRunID.Valid {
-		t.Fatalf("expired lease was not recovered: status=%s run=%v", first.Status, first.AutopilotRunID.Valid)
+	if first.Status != deliveryStatusDispatched || !first.AutomationRunID.Valid {
+		t.Fatalf("expired lease was not recovered: status=%s run=%v", first.Status, first.AutomationRunID.Valid)
 	}
-	firstRunID := uuidToString(first.AutopilotRunID)
+	firstRunID := uuidToString(first.AutomationRunID)
 
 	// Simulate a crash after the run/task side effect committed but before a
 	// delivery terminal update was durable. Requeueing must reuse the run's
 	// webhook_delivery_id anchor and must not create a second task.
 	if _, err := testPool.Exec(context.Background(), `
 		UPDATE webhook_delivery
-		SET status = 'queued', autopilot_run_id = NULL, available_at = now(),
+		SET status = 'queued', automation_run_id = NULL, available_at = now(),
 		    lease_token = NULL, lease_expires_at = NULL
 		WHERE id = $1
 	`, deliveryID); err != nil {
 		t.Fatalf("requeue delivery: %v", err)
 	}
 	second := processQueuedWebhookDelivery(t, deliveryID)
-	if got := uuidToString(second.AutopilotRunID); got != firstRunID {
+	if got := uuidToString(second.AutomationRunID); got != firstRunID {
 		t.Fatalf("worker did not reuse idempotent run: got %s want %s", got, firstRunID)
 	}
 
 	var runCount, taskCount int
 	if err := testPool.QueryRow(context.Background(), `
-		SELECT count(*) FROM autopilot_run WHERE webhook_delivery_id = $1
+		SELECT count(*) FROM automation_run WHERE webhook_delivery_id = $1
 	`, deliveryID).Scan(&runCount); err != nil {
 		t.Fatalf("count runs: %v", err)
 	}
 	if err := testPool.QueryRow(context.Background(), `
-		SELECT count(*) FROM agent_task_queue WHERE autopilot_run_id = $1
+		SELECT count(*) FROM agent_task_queue WHERE automation_run_id = $1
 	`, firstRunID).Scan(&taskCount); err != nil {
 		t.Fatalf("count tasks: %v", err)
 	}
@@ -773,7 +773,7 @@ func TestWebhookDeliveryWorker_RecoversExpiredLeaseAndReusesRun(t *testing.T) {
 
 func TestWebhookDeliveryWorker_LeaseOwnershipChangeIsBenign(t *testing.T) {
 	agentID := createWebhookTestAgent(t, "WorkerLeaseChange Agent")
-	apID := createWebhookTestAutopilot(t, agentID, "active", "run_only")
+	apID := createWebhookTestAutomation(t, agentID, "active", "run_only")
 	trig := createWebhookTriggerViaHandler(t, apID)
 
 	post := postWebhook(t, *trig.WebhookToken, map[string]any{"event": "lease-change"}, map[string]string{
@@ -825,7 +825,7 @@ func TestWebhookDeliveryWorker_RunStopsBoundedPool(t *testing.T) {
 
 func TestWebhookDeliveryWorker_RepairsCreateIssueTaskCrashWindow(t *testing.T) {
 	agentID := createWebhookTestAgent(t, "WorkerIssueRecovery Agent")
-	apID := createWebhookTestAutopilot(t, agentID, "active", "create_issue")
+	apID := createWebhookTestAutomation(t, agentID, "active", "create_issue")
 	trig := createWebhookTriggerViaHandler(t, apID)
 
 	post := postWebhook(t, *trig.WebhookToken, map[string]any{"event": "issue-recovery"}, map[string]string{
@@ -833,7 +833,7 @@ func TestWebhookDeliveryWorker_RepairsCreateIssueTaskCrashWindow(t *testing.T) {
 	})
 	deliveryID := requireAcceptedWebhookResponse(t, post)
 	first := processQueuedWebhookDelivery(t, deliveryID)
-	run, err := testHandler.Queries.GetAutopilotRun(context.Background(), first.AutopilotRunID)
+	run, err := testHandler.Queries.GetAutomationRun(context.Background(), first.AutomationRunID)
 	if err != nil || !run.IssueID.Valid {
 		t.Fatalf("load create_issue run: run=%#v err=%v", run, err)
 	}
@@ -850,15 +850,15 @@ func TestWebhookDeliveryWorker_RepairsCreateIssueTaskCrashWindow(t *testing.T) {
 	}
 	if _, err := testPool.Exec(context.Background(), `
 		UPDATE webhook_delivery
-		SET status = 'queued', autopilot_run_id = NULL, available_at = now(),
+		SET status = 'queued', automation_run_id = NULL, available_at = now(),
 		    lease_token = NULL, lease_expires_at = NULL
 		WHERE id = $1
 	`, deliveryID); err != nil {
 		t.Fatalf("requeue delivery: %v", err)
 	}
 	second := processQueuedWebhookDelivery(t, deliveryID)
-	if got := uuidToString(second.AutopilotRunID); got != uuidToString(first.AutopilotRunID) {
-		t.Fatalf("repair should reuse run: got %s want %s", got, uuidToString(first.AutopilotRunID))
+	if got := uuidToString(second.AutomationRunID); got != uuidToString(first.AutomationRunID) {
+		t.Fatalf("repair should reuse run: got %s want %s", got, uuidToString(first.AutomationRunID))
 	}
 	var taskCount int
 	if err := testPool.QueryRow(context.Background(), `SELECT count(*) FROM agent_task_queue WHERE issue_id = $1`, issueID).Scan(&taskCount); err != nil {
@@ -873,7 +873,7 @@ func TestWebhookHandler_InvalidSignatureCountsAgainstRateLimit(t *testing.T) {
 	// Only requests classified as bad credentials consume the shared-IP debt
 	// budget; valid traffic behind the same NAT does not.
 	agentID := createWebhookTestAgent(t, "SigRateLimit Agent")
-	apID := createWebhookTestAutopilot(t, agentID, "active", "run_only")
+	apID := createWebhookTestAutomation(t, agentID, "active", "run_only")
 	trig := createWebhookTriggerViaHandler(t, apID)
 	setSigningSecretViaHandler(t, apID, trig.ID, testSigningSecret)
 
@@ -898,10 +898,10 @@ func TestWebhookHandler_InvalidSignatureCountsAgainstRateLimit(t *testing.T) {
 }
 
 func TestWebhookHandler_IgnoredPathStillPersistsDelivery(t *testing.T) {
-	// An ignored delivery (paused autopilot) must still leave a row so the
+	// An ignored delivery (paused automation) must still leave a row so the
 	// operator can see "yes the request arrived, here's why we did nothing".
 	agentID := createWebhookTestAgent(t, "IgnoredPersist Agent")
-	apID := createWebhookTestAutopilot(t, agentID, "paused", "run_only")
+	apID := createWebhookTestAutomation(t, agentID, "paused", "run_only")
 	trig := createWebhookTriggerViaHandler(t, apID)
 
 	w := postWebhook(t, *trig.WebhookToken, map[string]any{"x": 1}, nil)
@@ -910,7 +910,7 @@ func TestWebhookHandler_IgnoredPathStillPersistsDelivery(t *testing.T) {
 	}
 	deliveries := listDeliveries(t, apID)
 	if len(deliveries) != 1 {
-		t.Fatalf("expected 1 delivery on paused autopilot, got %d", len(deliveries))
+		t.Fatalf("expected 1 delivery on paused automation, got %d", len(deliveries))
 	}
 	if deliveries[0]["status"] != "ignored" {
 		t.Fatalf("status: %v", deliveries[0]["status"])
@@ -932,12 +932,12 @@ func TestWebhookHandler_IgnoredPathStillPersistsDelivery(t *testing.T) {
 func TestWebhookDelivery_FailedRowDoesNotBlockDedupe(t *testing.T) {
 	ctx := context.Background()
 	agentID := createWebhookTestAgent(t, "FailedRetry Agent")
-	apID := createWebhookTestAutopilot(t, agentID, "active", "run_only")
+	apID := createWebhookTestAutomation(t, agentID, "active", "run_only")
 	trig := createWebhookTriggerViaHandler(t, apID)
 
 	first, err := testHandler.Queries.CreateWebhookDelivery(ctx, db.CreateWebhookDeliveryParams{
 		WorkspaceID:     parseUUID(testWorkspaceID),
-		AutopilotID:     parseUUID(apID),
+		AutomationID:     parseUUID(apID),
 		TriggerID:       parseUUID(trig.ID),
 		Provider:        "github",
 		Event:           "github.pull_request",
@@ -956,7 +956,7 @@ func TestWebhookDelivery_FailedRowDoesNotBlockDedupe(t *testing.T) {
 	// row does not consume the slot.
 	second, err := testHandler.Queries.CreateWebhookDelivery(ctx, db.CreateWebhookDeliveryParams{
 		WorkspaceID:     parseUUID(testWorkspaceID),
-		AutopilotID:     parseUUID(apID),
+		AutomationID:     parseUUID(apID),
 		TriggerID:       parseUUID(trig.ID),
 		Provider:        "github",
 		Event:           "github.pull_request",
@@ -994,11 +994,11 @@ func TestWebhookDelivery_FailedRowDoesNotBlockDedupe(t *testing.T) {
 // must allow nullable NULL to clear the column, not just non-NULL strings.
 func TestSetSigningSecretParams_NullableWrite(t *testing.T) {
 	agentID := createWebhookTestAgent(t, "SigSqlcNull Agent")
-	apID := createWebhookTestAutopilot(t, agentID, "active", "run_only")
+	apID := createWebhookTestAutomation(t, agentID, "active", "run_only")
 	trig := createWebhookTriggerViaHandler(t, apID)
 
-	if _, err := testHandler.Queries.SetAutopilotTriggerSigningSecret(context.Background(),
-		db.SetAutopilotTriggerSigningSecretParams{
+	if _, err := testHandler.Queries.SetAutomationTriggerSigningSecret(context.Background(),
+		db.SetAutomationTriggerSigningSecretParams{
 			ID:            parseUUID(trig.ID),
 			SigningSecret: pgtype.Text{}, // explicit NULL
 		}); err != nil {
