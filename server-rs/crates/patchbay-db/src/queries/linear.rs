@@ -1414,6 +1414,9 @@ pub async fn create_linear_sync_conflict(
           source_event_at_ms)\
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)\
          ON CONFLICT (link_id, field) WHERE status = 'open' DO UPDATE SET\
+             binding_id = EXCLUDED.binding_id,\
+             patchbay_issue_id = EXCLUDED.patchbay_issue_id,\
+             linear_issue_id = EXCLUDED.linear_issue_id,\
              base_value = EXCLUDED.base_value,\
              local_value = EXCLUDED.local_value,\
              remote_value = EXCLUDED.remote_value,\
@@ -1441,6 +1444,28 @@ pub async fn create_linear_sync_conflict(
         .bind(input.source_event_at_ms)
         .fetch_optional(executor)
         .await?)
+}
+
+pub async fn dismiss_stale_linear_sync_conflicts(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    link_id: Uuid,
+    active_fields: &[String],
+) -> anyhow::Result<u64> {
+    let result = sqlx::query(
+        r#"UPDATE linear_sync_conflict
+           SET status = 'dismissed', updated_at = now()
+           WHERE workspace_id = $1
+             AND link_id = $2
+             AND status = 'open'
+             AND NOT (field = ANY($3::text[]))"#,
+    )
+    .bind(workspace_id)
+    .bind(link_id)
+    .bind(active_fields)
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected())
 }
 
 pub async fn resolve_linear_sync_conflict(
