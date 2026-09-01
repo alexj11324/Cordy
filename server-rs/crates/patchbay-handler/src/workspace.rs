@@ -913,6 +913,12 @@ async fn revoke_and_remove_member(
     archived_by: Uuid,
 ) -> anyhow::Result<MemberRevocation> {
     let mut transaction = state.pool.begin().await?;
+    patchbay_db::queries::subscriber::lock_subscriber_writes(
+        &mut *transaction,
+        workspace_id,
+        user_id,
+    )
+    .await?;
     let locked_member =
         member::lock_member_by_user_and_workspace(&mut *transaction, user_id, workspace_id)
             .await?
@@ -921,12 +927,6 @@ async fn revoke_and_remove_member(
         locked_member.id == member_id,
         "workspace member identity changed during revocation"
     );
-    patchbay_db::queries::subscriber::lock_subscriber_writes(
-        &mut *transaction,
-        workspace_id,
-        user_id,
-    )
-    .await?;
     let runtimes = patchbay_db::queries::runtime::list_agent_runtimes_by_owner(
         &mut *transaction,
         workspace_id,
