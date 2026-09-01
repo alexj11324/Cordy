@@ -1066,10 +1066,10 @@ async fn resolve_conflict(
     if request.resolution != "remote" {
         if let Some(owner_id) = patch.owner_id.flatten() {
             match linear_q::get_linear_member_binding(
-            &mut *transaction,
-            workspace_id,
-            binding.connection_id,
-            owner_id,
+                &mut *transaction,
+                workspace_id,
+                binding.connection_id,
+                owner_id,
             )
             .await
             {
