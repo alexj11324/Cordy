@@ -1765,6 +1765,11 @@ pub async fn tombstone_project_binding(
                    updated_at = now()
                WHERE id IN (SELECT id FROM target_binding) AND status <> 'tombstone'
                RETURNING id
+           ), deleted_conflicts AS (
+               DELETE FROM linear_sync_conflict
+               WHERE workspace_id = $1
+                 AND binding_id IN (SELECT id FROM target_binding)
+               RETURNING id
            ), deleted_links AS (
                UPDATE linear_issue_link
                SET sync_status = 'deleted', updated_at = now()
