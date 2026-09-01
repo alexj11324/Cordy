@@ -623,7 +623,7 @@ pub async fn delete_linear_member_bindings_for_workspace_member(
 /// Issue ownership. This prevents a sync worker holding binding/link locks
 /// from deadlocking with owner cleanup when it reaches the Issue row.
 pub async fn lock_linear_rows_for_workspace_member_issue_owners(
-    executor: &mut PgConnection,
+    executor: &mut sqlx::PgConnection,
     workspace_id: Uuid,
     user_id: Uuid,
 ) -> anyhow::Result<()> {
