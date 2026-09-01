@@ -839,6 +839,16 @@ type GithubPullRequestCheckSuite struct {
 	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
 }
 
+type GuestSession struct {
+	ID        pgtype.UUID        `json:"id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	TokenHash string             `json:"token_hash"`
+	Status    string             `json:"status"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	ClaimedAt pgtype.Timestamptz `json:"claimed_at"`
+	ClaimedBy pgtype.UUID        `json:"claimed_by"`
+}
+
 type InboxItem struct {
 	ID            pgtype.UUID        `json:"id"`
 	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
@@ -1527,6 +1537,7 @@ type User struct {
 	ProfileDescription      string             `json:"profile_description"`
 	// User-preferred IANA timezone for report rendering (Viewing tz). NULL means "use the browser-detected tz at render time". Affects dashboards, charts, and any "today" label shown to this user. Does not affect data materialisation — all rollups remain in UTC.
 	Timezone pgtype.Text `json:"timezone"`
+	IsGuest  bool        `json:"is_guest"`
 }
 
 type UserComposioConnection struct {
