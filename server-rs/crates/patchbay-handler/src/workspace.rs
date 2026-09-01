@@ -1006,9 +1006,27 @@ async fn revoke_and_remove_member(
         user_id,
     )
     .await?;
+    linear_q::lock_linear_rows_for_workspace_member_issue_owners(
+        &mut transaction,
+        workspace_id,
+        user_id,
+    )
+    .await?;
     result.cleared_issue_owners =
         issue_q::clear_workspace_member_issue_owners(&mut *transaction, workspace_id, user_id)
             .await?;
+    let cleared_issue_ids = result
+        .cleared_issue_owners
+        .iter()
+        .map(|issue| issue.id)
+        .collect::<Vec<_>>();
+    linear_q::clear_import_link_owner_snapshots(
+        &mut transaction,
+        workspace_id,
+        &cleared_issue_ids,
+        user_id,
+    )
+    .await?;
     for issue in &result.cleared_issue_owners {
         linear_q::enqueue_issue_outbox(
             &mut *transaction,

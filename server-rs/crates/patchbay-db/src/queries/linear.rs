@@ -120,23 +120,29 @@ pub async fn upsert_connection(
     connection: &LinearConnectionInput<'_>,
 ) -> anyhow::Result<LinearConnection> {
     Ok(sqlx::query_as::<_, LinearConnection>(
-        r#"WITH deleted_conflicts AS (
+        r#"WITH workspace_connection AS MATERIALIZED (
+               SELECT id, organization_id
+               FROM linear_connection
+               WHERE workspace_id = $2
+               FOR UPDATE
+           ), old_bindings AS MATERIALIZED (
+               SELECT binding.id
+               FROM linear_project_binding AS binding
+               JOIN workspace_connection AS connection ON connection.id = binding.connection_id
+               WHERE connection.organization_id <> $3
+               ORDER BY binding.id
+               FOR UPDATE OF binding
+           ), deleted_conflicts AS (
                DELETE FROM linear_sync_conflict
                WHERE workspace_id = $2
-                 AND binding_id IN (
-                     SELECT binding.id
-                     FROM linear_project_binding AS binding
-                     JOIN linear_connection AS connection ON connection.id = binding.connection_id
-                     WHERE connection.workspace_id = $2
-                       AND connection.organization_id <> $3
-                 )
+                 AND binding_id IN (SELECT id FROM old_bindings)
            ), deleted_member_bindings AS (
                DELETE FROM linear_member_binding
                WHERE workspace_id = $2
                  AND connection_id IN (
                      SELECT id
-                     FROM linear_connection
-                     WHERE workspace_id = $2 AND organization_id <> $3
+                     FROM workspace_connection
+                     WHERE organization_id <> $3
                  )
            ), changed_bindings AS (
                UPDATE linear_project_binding
@@ -144,12 +150,8 @@ pub async fn upsert_connection(
                    paused_at = COALESCE(paused_at, now()),
                    updated_at = now()
                WHERE workspace_id = $2
+                 AND id IN (SELECT id FROM old_bindings)
                  AND status <> 'tombstone'
-                 AND EXISTS (
-                     SELECT 1
-                     FROM linear_connection
-                     WHERE workspace_id = $2 AND organization_id <> $3
-                 )
            )
            INSERT INTO linear_connection
            (id, workspace_id, organization_id, organization_name, actor_id,
@@ -543,6 +545,89 @@ pub async fn delete_linear_member_bindings_for_workspace_member(
     )
     .bind(workspace_id)
     .bind(patchbay_user_id)
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected())
+}
+
+/// Follows the Linear mutation lock order before member revocation changes
+/// Issue ownership. This prevents a sync worker holding binding/link locks
+/// from deadlocking with owner cleanup when it reaches the Issue row.
+pub async fn lock_linear_rows_for_workspace_member_issue_owners(
+    executor: &mut PgConnection,
+    workspace_id: Uuid,
+    user_id: Uuid,
+) -> anyhow::Result<()> {
+    sqlx::query_scalar::<_, Uuid>(
+        r#"SELECT binding.id
+           FROM linear_project_binding binding
+           WHERE binding.workspace_id = $1
+             AND EXISTS (
+                 SELECT 1
+                 FROM linear_issue_link link
+                 JOIN issue ON issue.id = link.patchbay_issue_id
+                 WHERE link.binding_id = binding.id
+                   AND issue.workspace_id = $1
+                   AND issue.owner_type = 'member'
+                   AND issue.owner_id = $2
+             )
+           ORDER BY binding.id
+           FOR UPDATE"#,
+    )
+    .bind(workspace_id)
+    .bind(user_id)
+    .fetch_all(&mut *executor)
+    .await?;
+    sqlx::query_scalar::<_, Uuid>(
+        r#"SELECT link.id
+           FROM linear_issue_link link
+           JOIN issue ON issue.id = link.patchbay_issue_id
+           WHERE link.workspace_id = $1
+             AND issue.workspace_id = $1
+             AND issue.owner_type = 'member'
+             AND issue.owner_id = $2
+           ORDER BY link.id
+           FOR UPDATE OF link"#,
+    )
+    .bind(workspace_id)
+    .bind(user_id)
+    .fetch_all(&mut *executor)
+    .await?;
+    Ok(())
+}
+
+/// Import bindings have no outbound owner-clear mutation. Advance only their
+/// merge base to the cleared owner after the Issue rows are updated; publish
+/// and two-way bindings retain the old base so their outbox emits unassignment.
+pub async fn clear_import_link_owner_snapshots(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    issue_ids: &[Uuid],
+    user_id: Uuid,
+) -> anyhow::Result<u64> {
+    if issue_ids.is_empty() {
+        return Ok(0);
+    }
+    let result = sqlx::query(
+        r#"UPDATE linear_issue_link link
+           SET last_common_snapshot = jsonb_set(
+                   link.last_common_snapshot,
+                   '{owner_id}',
+                   'null'::jsonb,
+                   true
+               ),
+               updated_at = now()
+           FROM linear_project_binding binding
+           WHERE link.binding_id = binding.id
+             AND link.workspace_id = $1
+             AND link.patchbay_issue_id = ANY($2::uuid[])
+             AND binding.workspace_id = $1
+             AND binding.sync_mode = 'import'
+             AND link.last_common_snapshot->>'owner_id' = $3"#,
+    )
+    .bind(workspace_id)
+    .bind(issue_ids)
+    .bind(user_id.to_string())
     .execute(executor)
     .await?;
     Ok(result.rows_affected())

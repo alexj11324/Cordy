@@ -809,8 +809,57 @@ impl LinearSyncWorker {
         // commit fails, the Outbox row remains pending and the next attempt
         // searches the stable marker before issuing another mutation.
         let mut transaction = self.state.pool.begin().await.map_err(SyncError::retry)?;
-        let link = if let Some(link) = existing_link {
-            link
+        let locked_connection =
+            linear_q::get_connection_for_update(&mut transaction, connection.id)
+                .await
+                .map_err(SyncError::retry)?;
+        if locked_connection.as_ref().is_none_or(|current| {
+            current.workspace_id != row.workspace_id || current.status != "active"
+        }) {
+            return Err(SyncError::retry(anyhow::anyhow!(
+                "Linear connection changed while finalizing push"
+            )));
+        }
+        let locked_binding = linear_q::get_project_binding_for_update(
+            &mut transaction,
+            row.workspace_id,
+            binding.id,
+        )
+        .await
+        .map_err(SyncError::retry)?;
+        if locked_binding.as_ref().is_none_or(|current| {
+            current.status != "active"
+                || !matches!(current.sync_mode.as_str(), "publish" | "two_way")
+                || current.connection_id != connection.id
+        }) {
+            return Err(SyncError::retry(anyhow::anyhow!(
+                "Linear binding changed while finalizing push"
+            )));
+        }
+        let link = if let Some(prepared_link) = existing_link.as_ref() {
+            let locked_link = linear_q::get_linear_issue_link_for_update(
+                &mut transaction,
+                row.workspace_id,
+                prepared_link.id,
+            )
+            .await
+            .map_err(SyncError::retry)?
+            .ok_or_else(|| {
+                SyncError::retry(anyhow::anyhow!(
+                    "Linear Issue Link disappeared while finalizing push"
+                ))
+            })?;
+            if locked_link.binding_id != binding.id
+                || locked_link.sync_status != prepared_link.sync_status
+                || locked_link.last_common_snapshot != prepared_link.last_common_snapshot
+                || locked_link.last_remote_event_at_ms != prepared_link.last_remote_event_at_ms
+                || locked_link.last_remote_event_id != prepared_link.last_remote_event_id
+            {
+                return Err(SyncError::retry(anyhow::anyhow!(
+                    "Linear Issue Link advanced while finalizing push"
+                )));
+            }
+            locked_link
         } else {
             let created = linear_q::create_linear_issue_link(
                 &mut *transaction,
@@ -832,34 +881,22 @@ impl LinearSyncWorker {
             if let Some(created) = created {
                 created
             } else {
-                linear_q::get_linear_issue_link_by_patchbay_issue(
-                    &mut *transaction,
-                    row.workspace_id,
-                    issue.id,
-                )
-                .await
-                .map_err(SyncError::retry)?
-                .filter(|link| link.binding_id == binding.id)
-                .ok_or_else(|| {
-                    SyncError::retry(anyhow::anyhow!(
-                        "Linear Issue Link insert raced without a visible binding"
-                    ))
-                })?
+                return Err(SyncError::retry(anyhow::anyhow!(
+                    "Linear Issue Link insert raced with another delivery"
+                )));
             }
         };
         let last_event_at_ms = link.last_remote_event_at_ms;
         let last_event_id = link.last_remote_event_id.as_deref();
-        let updated = linear_q::update_linear_issue_link(
+        let updated = linear_q::set_linear_issue_link_state(
             &mut *transaction,
-            &linear_q::LinearIssueLinkUpdate {
-                link_id: link.id,
-                workspace_id: row.workspace_id,
-                last_common_snapshot: &snapshot,
-                remote_updated_at: Some(remote_updated_at),
-                last_remote_event_at_ms: last_event_at_ms,
-                last_remote_event_id: last_event_id,
-                sync_status: "active",
-            },
+            link.id,
+            row.workspace_id,
+            &snapshot,
+            Some(remote_updated_at),
+            last_event_at_ms,
+            last_event_id,
+            "active",
         )
         .await
         .map_err(SyncError::retry)?;

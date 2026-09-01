@@ -908,6 +908,25 @@ async fn resolve_conflict(
     if conflict_snapshot.status != "open" {
         return error_response(StatusCode::CONFLICT, "Linear conflict is already resolved");
     }
+    let Some(connection) =
+        (match linear_q::get_connection_for_workspace_for_update(&mut transaction, workspace_id)
+            .await
+        {
+            Ok(connection) => connection,
+            Err(error) => {
+                tracing::warn!(%error, "Linear conflict connection lookup failed");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to load Linear connection",
+                );
+            }
+        })
+    else {
+        return error_response(
+            StatusCode::CONFLICT,
+            "Linear connection is no longer available",
+        );
+    };
     let Some(binding) = (match linear_q::get_project_binding_for_update(
         &mut *transaction,
         workspace_id,
@@ -926,6 +945,15 @@ async fn resolve_conflict(
     }) else {
         return error_response(StatusCode::CONFLICT, "Linear binding is no longer syncable");
     };
+    if binding.connection_id != connection.id
+        || (matches!(binding.sync_mode.as_str(), "publish" | "two_way")
+            && connection.status != "active")
+    {
+        return error_response(
+            StatusCode::CONFLICT,
+            "Linear connection is no longer active for this resolution",
+        );
+    }
     let Some(link) = (match linear_q::get_linear_issue_link_for_update(
         &mut *transaction,
         workspace_id,
