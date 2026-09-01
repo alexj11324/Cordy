@@ -1177,6 +1177,9 @@
     "status_need_verify_code": "確認コードが必要です",
     "status_already_connected": "このアカウントは別の場所で接続済みです",
     "status_expired": "QR コードの期限が切れました",
+    "status_verification_blocked": "確認が拒否されました — QR コードを更新してください",
+    "status_interrupted": "接続が中断されました — 再試行しています",
+    "refresh_qr": "QR コードを更新",
     "status_error": "接続に失敗しました"
   },
   "repositories": {

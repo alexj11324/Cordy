@@ -56,7 +56,7 @@ vi.mock("sonner", () => ({
 
 vi.mock("react-qr-code", () => ({
   QRCode: ({ value }: { value: string }) => (
-    <span data-testid="weixin-qr-code" data-value={value} />
+    <span data-testid="mock-qr-code" data-value={value} />
   ),
 }));
 
@@ -79,6 +79,7 @@ describe("WeixinAgentBindButton", () => {
     mockBeginInstall.mockResolvedValue({
       session_id: "session-1",
       qr_code_url: "https://ilink.weixin.qq.com/qr/session-1",
+      expires_in_seconds: 300,
       poll_interval_seconds: 60,
     });
   });
@@ -95,26 +96,43 @@ describe("WeixinAgentBindButton", () => {
     await waitFor(() =>
       expect(mockBeginInstall).toHaveBeenCalledWith("workspace-1", undefined),
     );
-    expect(await screen.findByTestId("weixin-qr-code")).toHaveAttribute(
+    const qrCode = await screen.findByTestId("weixin-qr-code");
+    expect(qrCode).toHaveAttribute(
       "data-value",
       "https://ilink.weixin.qq.com/qr/session-1",
     );
+    // iLink returns a URL to encode, not an image URL to load directly.
+    expect(qrCode.tagName).toBe("SPAN");
     expect(screen.getByText("Scan with WeChat")).toBeInTheDocument();
   });
 
-  it("keeps the provider error visible when authorization cannot start", async () => {
-    mockBeginInstall.mockRejectedValueOnce(
-      new Error("WeChat service unavailable (HTTP 503)"),
-    );
+  it("keeps provider errors visible and can request a fresh QR code", async () => {
+    mockBeginInstall
+      .mockRejectedValueOnce(new Error("WeChat service unavailable (HTTP 503)"))
+      .mockResolvedValueOnce({
+        session_id: "session-2",
+        qr_code_url: "https://liteapp.weixin.qq.com/qr/session-2",
+        expires_in_seconds: 300,
+        poll_interval_seconds: 60,
+      });
     renderUI(<WeixinAgentBindButton />);
 
     await userEvent.click(
       screen.getByRole("button", { name: "Connect WeChat" }),
     );
-
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent(
       "WeChat connection failed: WeChat service unavailable (HTTP 503)",
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Refresh QR code" }),
+    );
+
+    await waitFor(() => expect(mockBeginInstall).toHaveBeenCalledTimes(2));
+    expect(await screen.findByTestId("weixin-qr-code")).toHaveAttribute(
+      "data-value",
+      "https://liteapp.weixin.qq.com/qr/session-2",
     );
   });
 });

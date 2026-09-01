@@ -1177,6 +1177,9 @@
     "status_need_verify_code": "需要验证码",
     "status_already_connected": "该账号已在其他位置连接",
     "status_expired": "二维码已过期",
+    "status_verification_blocked": "验证未通过，请刷新二维码",
+    "status_interrupted": "连接中断，正在重试",
+    "refresh_qr": "刷新二维码",
     "status_error": "连接失败"
   },
   "repositories": {

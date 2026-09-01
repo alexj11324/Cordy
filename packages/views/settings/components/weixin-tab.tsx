@@ -23,13 +23,14 @@ import { weixinInstallationsOptions, weixinKeys } from "@patchbay/core/weixin";
 import { WeixinMark } from "./weixin-mark";
 import { useT } from "../../i18n";
 
-function qrImageSource(value: string): string | null {
+function qrImageDataSource(value: string): string | null {
   const trimmed = value.trim();
-  if (/^data:image\//i.test(trimmed) || /^https:\/\//i.test(trimmed)) {
+  if (/^data:image\//i.test(trimmed)) {
     return trimmed;
   }
-  // Some iLink deployments return raw base64 PNG content. Keep the fallback
-  // explicit so an opaque polling token can never be mistaken for an image.
+  // Some iLink-compatible deployments return raw base64 PNG content. Tencent
+  // iLink itself returns a URL that must be encoded into a QR image, so an
+  // ordinary HTTPS value deliberately does not take this image branch.
   if (/^[A-Za-z0-9+/]+=*$/.test(trimmed) && trimmed.length > 128) {
     return `data:image/png;base64,${trimmed}`;
   }
@@ -48,7 +49,9 @@ function providerErrorDetail(error: unknown): string | null {
     .slice(0, 240);
 }
 
-export function WeixinTab({ installationId }: { installationId?: string } = {}) {
+export function WeixinTab({
+  installationId,
+}: { installationId?: string } = {}) {
   const { t } = useT("settings");
   const wsId = useWorkspaceId();
   const qc = useQueryClient();
@@ -154,10 +157,12 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
     id: string;
     qr: string;
     interval: number;
+    expiresAt: number;
   } | null>(null);
   const [status, setStatus] = useState("pending");
   const [verifyCode, setVerifyCode] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [requestVersion, setRequestVersion] = useState(0);
   const existing = data?.installations.find(
     (item) =>
       (agentId ? item.agent_id === agentId : item.agent_id === null) &&
@@ -176,6 +181,7 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
             id: value.session_id,
             qr: value.qr_code_content ?? value.qr_code_url,
             interval: value.poll_interval_seconds,
+            expiresAt: Date.now() + value.expires_in_seconds * 1000,
           });
         }
       })
@@ -193,19 +199,29 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
     return () => {
       cancelled = true;
     };
-  }, [agentId, open, session, t, wsId]);
+  }, [agentId, open, requestVersion, session, t, wsId]);
 
   useEffect(() => {
     if (
       !open ||
       !session ||
-      ["success", "expired", "error", "already_connected"].includes(status)
+      [
+        "success",
+        "expired",
+        "error",
+        "already_connected",
+        "verification_blocked",
+      ].includes(status)
     ) {
       return;
     }
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const poll = async () => {
+      if (Date.now() >= session.expiresAt) {
+        setStatus("expired");
+        return;
+      }
       try {
         const result = await api.getWeixinInstallStatus(
           wsId,
@@ -215,7 +231,9 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
         if (cancelled) return;
         setStatus(result.status);
         if (result.status === "success") {
-          await qc.invalidateQueries({ queryKey: weixinKeys.installations(wsId) });
+          await qc.invalidateQueries({
+            queryKey: weixinKeys.installations(wsId),
+          });
           toast.success(t(($) => $.weixin.connected));
           setOpen(false);
           return;
@@ -223,13 +241,15 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
       } catch (error: unknown) {
         if (!cancelled) {
           const detail = providerErrorDetail(error);
-          setStatus("error");
-          setErrorMessage(
-            detail
-              ? t(($) => $.weixin.connect_failed_detail, { details: detail })
-              : t(($) => $.weixin.connect_failed),
-          );
-          return;
+          const message = detail
+            ? t(($) => $.weixin.connect_failed_detail, { details: detail })
+            : t(($) => $.weixin.connect_failed);
+          // A transient browser/API interruption does not destroy the
+          // server-side scan session. Surface it and keep polling so recovery
+          // does not require closing the dialog.
+          setStatus("interrupted");
+          setErrorMessage(message);
+          toast.error(message);
         }
       }
       if (!cancelled) {
@@ -253,7 +273,13 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
     const healthy = isMessagingInstallationHealthy(existing);
     return (
       <div className="flex items-center gap-2">
-        <span className={healthy ? "text-caption text-emerald-600" : "text-caption text-amber-600"}>
+        <span
+          className={
+            healthy
+              ? "text-caption text-emerald-600"
+              : "text-caption text-amber-600"
+          }
+        >
           {healthy
             ? t(($) => $.weixin.connected)
             : t(($) => $.page.integrations_status)}
@@ -290,37 +316,59 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
     need_verify_code: t(($) => $.weixin.status_need_verify_code),
     already_connected: t(($) => $.weixin.status_already_connected),
     expired: t(($) => $.weixin.status_expired),
+    verification_blocked: t(($) => $.weixin.status_verification_blocked),
+    interrupted: t(($) => $.weixin.status_interrupted),
     error: t(($) => $.weixin.status_error),
   };
   const statusLabel = statusLabels[status] ?? status;
+  const canRefresh = [
+    "expired",
+    "verification_blocked",
+    "already_connected",
+    "error",
+  ].includes(status);
+
+  function restartAuthorization() {
+    setSession(null);
+    setStatus("pending");
+    setVerifyCode("");
+    setRequestVersion((value) => value + 1);
+  }
   return (
     <>
       <Button
         variant="outline"
         size="sm"
         onClick={() => {
-          setSession(null);
-          setStatus("pending");
-          setVerifyCode("");
-          setErrorMessage(null);
+          restartAuthorization();
           setOpen(true);
         }}
       >
         <WeixinMark className="h-4 w-4" />
         {t(($) => $.weixin.connect)}
       </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog
+        open={open}
+        onOpenChange={(nextOpen) => {
+          setOpen(nextOpen);
+          if (!nextOpen) {
+            setSession(null);
+            setStatus("pending");
+            setVerifyCode("");
+          }
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t(($) => $.weixin.scan_title)}</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col items-center gap-4 py-4">
             {session ? (
-              qrImageSource(session.qr) ? (
+              qrImageDataSource(session.qr) ? (
                 <img
                   data-testid="weixin-qr-code"
                   data-value={session.qr}
-                  src={qrImageSource(session.qr) ?? undefined}
+                  src={qrImageDataSource(session.qr) ?? undefined}
                   alt={t(($) => $.weixin.scan_title)}
                   className="size-48 rounded-md bg-white p-2"
                 />
@@ -349,6 +397,16 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
                 placeholder={t(($) => $.weixin.verify_code)}
                 className="max-w-48"
               />
+            ) : null}
+            {canRefresh ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={restartAuthorization}
+              >
+                {t(($) => $.weixin.refresh_qr)}
+              </Button>
             ) : null}
           </div>
         </DialogContent>

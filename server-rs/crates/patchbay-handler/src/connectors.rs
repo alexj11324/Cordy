@@ -1003,9 +1003,10 @@ async fn weixin_install_status(
         "wait" => return Json(json!({"status": "pending"})).into_response(),
         "scaned" | "scanned" => return Json(json!({"status": "scanned"})).into_response(),
         "need_verifycode" => return Json(json!({"status": "need_verify_code"})).into_response(),
-        "verify_code_blocked" | "expired" => {
-            return Json(json!({"status": "expired"})).into_response()
+        "verify_code_blocked" => {
+            return Json(json!({"status": "verification_blocked"})).into_response()
         }
+        "expired" => return Json(json!({"status": "expired"})).into_response(),
         "scaned_but_redirect" | "scanned_but_redirect" => {
             let allowed = validate_weixin_redirect(&status.redirect_host);
             if let Some(base_url) = allowed {

@@ -1178,6 +1178,9 @@
     "status_need_verify_code": "Verification required",
     "status_already_connected": "This account is already connected elsewhere",
     "status_expired": "QR code expired",
+    "status_verification_blocked": "Verification was rejected — refresh the QR code",
+    "status_interrupted": "Connection interrupted — retrying",
+    "refresh_qr": "Refresh QR code",
     "status_error": "Connection failed"
   },
   "repositories": {

@@ -886,6 +886,9 @@
     "status_need_verify_code": "인증 코드가 필요합니다",
     "status_already_connected": "이 계정은 다른 곳에 연결되어 있습니다",
     "status_expired": "QR 코드가 만료되었습니다",
+    "status_verification_blocked": "인증이 거부되었습니다 — QR 코드를 새로고침하세요",
+    "status_interrupted": "연결이 중단되었습니다 — 다시 시도 중",
+    "refresh_qr": "QR 코드 새로고침",
     "status_error": "연결 실패"
   },
   "repositories": {
