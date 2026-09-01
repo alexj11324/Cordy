@@ -31,6 +31,11 @@ const SLACK_HTTP_TIMEOUT: Duration = Duration::from_secs(15);
 const SLACK_INGRESS_ACCEPT_TIMEOUT: Duration = Duration::from_millis(2500);
 const SLACK_SIGNATURE_MAX_AGE_SECS: i64 = 5 * 60;
 const MANAGED_SLACK_OBSERVER_TOKEN: &str = "managed:slack:webhook:v1";
+const SLACK_CREDENTIAL_ERROR_CODES: &[&str] = &[
+    "authentication_failed",
+    "credential_decryption_failed",
+    "credential_missing",
+];
 const SLACK_BOT_SCOPES: &str = "app_mentions:read,channels:history,chat:write,commands,files:read,groups:history,im:history,mpim:history,reactions:write,users:read";
 
 #[derive(Debug, Deserialize)]
@@ -573,15 +578,17 @@ async fn events_api(
             );
         }
     };
-    if let Err(error) = patchbay_db::queries::channel::upsert_channel_runtime_observation(
-        &state.pool,
-        installation.id,
-        MANAGED_SLACK_OBSERVER_TOKEN,
-        "healthy",
-        None,
-        None,
-    )
-    .await
+    if let Err(error) =
+        patchbay_db::queries::channel::upsert_channel_runtime_observation_unless_error_codes(
+            &state.pool,
+            installation.id,
+            MANAGED_SLACK_OBSERVER_TOKEN,
+            "healthy",
+            None,
+            None,
+            SLACK_CREDENTIAL_ERROR_CODES,
+        )
+        .await
     {
         tracing::warn!(%error, installation_id = %installation.id, "failed to record managed Slack webhook health");
     }

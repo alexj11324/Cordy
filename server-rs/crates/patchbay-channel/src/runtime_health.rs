@@ -2,7 +2,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-pub type RuntimeHealthFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
+pub type RuntimeHealthFuture = Pin<Box<dyn Future<Output = bool> + Send>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuntimeHealthState {
@@ -51,11 +51,15 @@ impl RuntimeHealthReporter {
         }
     }
 
-    pub async fn observe(&self, observation: RuntimeHealthObservation) {
-        (self.callback)(observation).await;
+    /// Returns whether the observation was durably accepted by the current
+    /// token-fenced observer. Adapters may ignore the result when health is
+    /// reported repeatedly, but one-shot reporters must use it to retry a
+    /// transient persistence failure.
+    pub async fn observe(&self, observation: RuntimeHealthObservation) -> bool {
+        (self.callback)(observation).await
     }
 
-    pub async fn healthy(&self) {
+    pub async fn healthy(&self) -> bool {
         self.observe(RuntimeHealthObservation {
             state: RuntimeHealthState::Healthy,
             error_code: None,
@@ -84,9 +88,10 @@ mod tests {
             let output = Arc::clone(&output);
             async move {
                 output.lock().unwrap().push(observation);
+                true
             }
         });
-        reporter.healthy().await;
+        assert!(reporter.healthy().await);
         assert_eq!(
             seen.lock().unwrap().as_slice(),
             &[RuntimeHealthObservation {

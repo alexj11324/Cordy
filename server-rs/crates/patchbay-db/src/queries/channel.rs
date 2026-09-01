@@ -17,7 +17,9 @@ pub async fn claim_channel_runtime_observer(
     sqlx::query(
         r#"INSERT INTO channel_installation_runtime_observation (
     installation_id, state, observed_at, error_code, error_summary, observer_token
-) VALUES ($1, 'starting', now(), NULL, NULL, $2)
+) SELECT $1, 'starting', now(), NULL, NULL, $2
+FROM channel_installation
+WHERE id = $1
 ON CONFLICT (installation_id) DO UPDATE SET
     state = 'starting',
     observed_at = now(),
@@ -45,26 +47,61 @@ pub async fn upsert_channel_runtime_observation(
     error_code: Option<&str>,
     error_summary: Option<&str>,
 ) -> anyhow::Result<()> {
-    sqlx::query(
+    upsert_channel_runtime_observation_unless_error_codes(
+        executor,
+        installation_id,
+        observer_token,
+        state,
+        error_code,
+        error_summary,
+        &[],
+    )
+    .await?;
+    Ok(())
+}
+
+/// Writes an authoritative observation only while the installation still
+/// exists. `preserved_error_codes` prevents a weaker signal (for example,
+/// webhook ingress) from erasing a stronger credential failure recorded by a
+/// provider probe. Returns whether the insert/update was applied.
+pub async fn upsert_channel_runtime_observation_unless_error_codes(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    installation_id: Uuid,
+    observer_token: &str,
+    state: &str,
+    error_code: Option<&str>,
+    error_summary: Option<&str>,
+    preserved_error_codes: &[&str],
+) -> anyhow::Result<bool> {
+    let preserved_error_codes = preserved_error_codes
+        .iter()
+        .map(|value| (*value).to_string())
+        .collect::<Vec<_>>();
+    let result = sqlx::query(
         r#"INSERT INTO channel_installation_runtime_observation (
     installation_id, state, observed_at, error_code, error_summary, observer_token
-) VALUES ($1, $3, now(), $4, $5, $2)
+) SELECT $1, $3, now(), $4, $5, $2
+FROM channel_installation
+WHERE id = $1
 ON CONFLICT (installation_id) DO UPDATE SET
     state = EXCLUDED.state,
     observed_at = EXCLUDED.observed_at,
     error_code = EXCLUDED.error_code,
     error_summary = EXCLUDED.error_summary,
     observer_token = EXCLUDED.observer_token,
-    updated_at = now()"#,
+    updated_at = now()
+WHERE channel_installation_runtime_observation.error_code IS NULL
+   OR NOT (channel_installation_runtime_observation.error_code = ANY($6::text[]))"#,
     )
     .bind(installation_id)
     .bind(observer_token)
     .bind(state)
     .bind(error_code)
     .bind(error_summary)
+    .bind(preserved_error_codes)
     .execute(executor)
     .await?;
-    Ok(())
+    Ok(result.rows_affected() == 1)
 }
 
 pub async fn observe_channel_runtime(

@@ -86,9 +86,10 @@ impl TelegramChannel {
                 Ok(updates) => {
                     if !health_reported {
                         if let Some(reporter) = &self.runtime_health {
-                            reporter.healthy().await;
+                            health_reported = reporter.healthy().await;
+                        } else {
+                            health_reported = true;
                         }
-                        health_reported = true;
                     }
                     updates
                 }

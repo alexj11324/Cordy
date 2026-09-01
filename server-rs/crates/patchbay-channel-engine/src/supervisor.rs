@@ -1110,16 +1110,22 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
                     .observe_runtime(installation_id, &observer_token, observation)
                     .await
                 {
-                    Ok(true) => {}
-                    Ok(false) => tracing::debug!(
-                        %installation_id,
-                        "channel engine: stale runtime observation ignored"
-                    ),
-                    Err(error) => tracing::warn!(
-                        %installation_id,
-                        %error,
-                        "channel engine: failed to persist runtime observation"
-                    ),
+                    Ok(true) => true,
+                    Ok(false) => {
+                        tracing::debug!(
+                            %installation_id,
+                            "channel engine: stale runtime observation ignored"
+                        );
+                        false
+                    }
+                    Err(error) => {
+                        tracing::warn!(
+                            %installation_id,
+                            %error,
+                            "channel engine: failed to persist runtime observation"
+                        );
+                        false
+                    }
                 }
             }
         });

@@ -323,7 +323,9 @@ impl SlackChannel {
             EnvelopeKind::Hello => {
                 if let Some(reporter) = &self.runtime_health {
                     let reporter = reporter.clone();
-                    if !tasks.spawn(async move { reporter.healthy().await }) {
+                    if !tasks.spawn(async move {
+                        reporter.healthy().await;
+                    }) {
                         tracing::warn!(
                             "slack: runtime health task group closed before hello was persisted"
                         );
@@ -516,6 +518,7 @@ mod tests {
                     async move {
                         started.notify_one();
                         release.notified().await;
+                        true
                     }
                 },
             )),

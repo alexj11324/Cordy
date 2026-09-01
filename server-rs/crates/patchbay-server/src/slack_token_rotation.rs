@@ -11,7 +11,11 @@ use tokio_util::sync::CancellationToken;
 const REFRESH_AHEAD: chrono::Duration = chrono::Duration::minutes(30);
 const REFRESH_INTERVAL: Duration = Duration::from_secs(5 * 60);
 const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
-const HEALTH_PROBE_CONCURRENCY: usize = 8;
+const MIN_HEALTH_PROBE_CONCURRENCY: usize = 8;
+const INSTALLATION_SWEEP_TIMEOUT: Duration = Duration::from_secs(40);
+const HEALTH_SWEEP_BUDGET: Duration = Duration::from_secs(10 * 60);
+#[cfg(test)]
+const HEALTH_OBSERVATION_STALE_AFTER: Duration = Duration::from_secs(15 * 60);
 
 #[derive(Debug, Deserialize)]
 struct RefreshResponse {
@@ -53,7 +57,10 @@ pub fn start(
         .ok()?;
     Some(tokio::spawn(async move {
         let mut interval = tokio::time::interval(REFRESH_INTERVAL);
-        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        // If a large sweep consumes an interval, start the next pass
+        // immediately. Skipping overdue ticks would add another full interval
+        // and let early observations age past the public stale threshold.
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Burst);
         loop {
             tokio::select! {
                 _ = cancel.cancelled() => break,
@@ -92,12 +99,33 @@ async fn refresh_due_installations(
         patchbay_slack::TYPE_SLACK,
     )
     .await?;
+    let concurrency = health_probe_concurrency(rows.len());
     stream::iter(rows)
-        .for_each_concurrent(HEALTH_PROBE_CONCURRENCY, |row| async move {
-            refresh_installation(pool, client, secret_box, client_id, client_secret, row).await;
+        .for_each_concurrent(concurrency, |row| async move {
+            let installation_id = row.id;
+            if tokio::time::timeout(
+                INSTALLATION_SWEEP_TIMEOUT,
+                refresh_installation(pool, client, secret_box, client_id, client_secret, row),
+            )
+            .await
+            .is_err()
+            {
+                tracing::warn!(%installation_id, "managed Slack installation sweep timed out");
+            }
         })
         .await;
     Ok(())
+}
+
+fn health_probe_concurrency(installation_count: usize) -> usize {
+    if installation_count == 0 {
+        return MIN_HEALTH_PROBE_CONCURRENCY;
+    }
+    let per_installation_ms = INSTALLATION_SWEEP_TIMEOUT.as_millis();
+    let budget_ms = HEALTH_SWEEP_BUDGET.as_millis();
+    let required = ((installation_count as u128 * per_installation_ms).div_ceil(budget_ms))
+        .min(usize::MAX as u128) as usize;
+    required.max(MIN_HEALTH_PROBE_CONCURRENCY)
 }
 
 async fn refresh_installation(
@@ -345,5 +373,16 @@ mod tests {
             now,
         ));
         assert!(!needs_rotation(None, now));
+    }
+
+    #[test]
+    fn health_probe_concurrency_keeps_large_sweeps_inside_freshness_budget() {
+        assert!(HEALTH_SWEEP_BUDGET < HEALTH_OBSERVATION_STALE_AFTER);
+        assert_eq!(health_probe_concurrency(0), MIN_HEALTH_PROBE_CONCURRENCY);
+        assert_eq!(health_probe_concurrency(100), MIN_HEALTH_PROBE_CONCURRENCY);
+        let count = 10_000;
+        let concurrency = health_probe_concurrency(count);
+        let batches = count.div_ceil(concurrency);
+        assert!(INSTALLATION_SWEEP_TIMEOUT * batches as u32 <= HEALTH_SWEEP_BUDGET);
     }
 }

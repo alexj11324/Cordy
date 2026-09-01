@@ -158,8 +158,12 @@ impl WsConnector {
             Ok(Ok((stream, _resp))) => stream,
             Ok(Err(_)) => anyhow::bail!("dingtalk stream: dial failed"),
         };
+        let health_tasks = patchbay_channel::RuntimeTasks::new();
         if let Some(reporter) = &self.runtime_health {
-            reporter.healthy().await;
+            let reporter = reporter.clone();
+            health_tasks.spawn(async move {
+                reporter.healthy().await;
+            });
         }
         let (sink, mut stream_rx) = stream.split();
         let sink = Arc::new(tokio::sync::Mutex::new(sink));
@@ -178,6 +182,9 @@ impl WsConnector {
 
         ping_ctx.cancel();
         let _ = ping_task.await;
+        if !health_tasks.shutdown(self.write_timeout).await {
+            tracing::warn!("dingtalk stream: runtime health persistence timed out");
+        }
         result
     }
 
