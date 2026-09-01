@@ -2258,13 +2258,9 @@ impl LinearSyncWorker {
         }
 
         let mut transaction = self.state.pool.begin().await.map_err(SyncError::retry)?;
-        if !linear_q::lock_claimed_sync_inbox_for_update(
-            &mut *transaction,
-            row.id,
-            worker_id,
-        )
-        .await
-        .map_err(SyncError::retry)?
+        if !linear_q::lock_claimed_sync_inbox_for_update(&mut *transaction, row.id, worker_id)
+            .await
+            .map_err(SyncError::retry)?
         {
             return Ok(());
         }
@@ -3023,8 +3019,7 @@ impl LinearSyncWorker {
             let cache = self.agent_label_catalog_validity.lock().await;
             if !force_refresh {
                 if let Some((cached_key, checked_at, valid)) = cache.get(&binding.id) {
-                    if cached_key == &mapping_key
-                        && checked_at.elapsed() < Duration::from_secs(300)
+                    if cached_key == &mapping_key && checked_at.elapsed() < Duration::from_secs(300)
                     {
                         return Ok(*valid);
                     }
