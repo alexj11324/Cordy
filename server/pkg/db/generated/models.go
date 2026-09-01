@@ -62,6 +62,45 @@ type AgentBuilderDraft struct {
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
+type AgentCoordinationAssignment struct {
+	ID               pgtype.UUID        `json:"id"`
+	EventID          pgtype.UUID        `json:"event_id"`
+	WorkspaceID      pgtype.UUID        `json:"workspace_id"`
+	IssueID          pgtype.UUID        `json:"issue_id"`
+	SourceTaskID     pgtype.UUID        `json:"source_task_id"`
+	Role             string             `json:"role"`
+	Status           string             `json:"status"`
+	OwnerType        pgtype.Text        `json:"owner_type"`
+	OwnerID          pgtype.UUID        `json:"owner_id"`
+	DispatchedTaskID pgtype.UUID        `json:"dispatched_task_id"`
+	Decision         []byte             `json:"decision"`
+	Attempt          int32              `json:"attempt"`
+	AssignedAt       pgtype.Timestamptz `json:"assigned_at"`
+	DispatchedAt     pgtype.Timestamptz `json:"dispatched_at"`
+	LastError        pgtype.Text        `json:"last_error"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+}
+
+type AgentCoordinationOutbox struct {
+	ID             pgtype.UUID        `json:"id"`
+	EventKey       string             `json:"event_key"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	IssueID        pgtype.UUID        `json:"issue_id"`
+	SourceTaskID   pgtype.UUID        `json:"source_task_id"`
+	EventType      string             `json:"event_type"`
+	Payload        []byte             `json:"payload"`
+	Status         string             `json:"status"`
+	Attempt        int32              `json:"attempt"`
+	LeaseOwner     pgtype.Text        `json:"lease_owner"`
+	LeaseExpiresAt pgtype.Timestamptz `json:"lease_expires_at"`
+	AvailableAt    pgtype.Timestamptz `json:"available_at"`
+	ProcessedAt    pgtype.Timestamptz `json:"processed_at"`
+	LastError      pgtype.Text        `json:"last_error"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
 // Allow-list of who may invoke a public_to agent (MUL-3963). One row per (agent, target_type, target); targets stack and canInvokeAgent OR-matches. workspace rows store the agent workspace_id in target_id; member rows store the user id; team rows are reserved and inert in V1. Rows only matter when agent.permission_mode = public_to. No DB foreign keys: agent_id / created_by / member target_id relationships are maintained in the application layer (see migration comment).
 type AgentInvocationTarget struct {
 	ID         pgtype.UUID        `json:"id"`
@@ -193,6 +232,9 @@ type AgentTaskQueue struct {
 	DurableWorkDir            pgtype.Text `json:"durable_work_dir"`
 	ChannelContextRevision    pgtype.Int8 `json:"channel_context_revision"`
 	ExecutionLaneKey          string      `json:"execution_lane_key"`
+	ModelID                   pgtype.Text `json:"model_id"`
+	PolicyRevision            int64       `json:"policy_revision"`
+	FailoverReason            pgtype.Text `json:"failover_reason"`
 }
 
 type AgentToLabel struct {
@@ -672,6 +714,20 @@ type DependencyGraphEdge struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
+type DependencyGraphIssueCreatedOutbox struct {
+	PlanID         pgtype.UUID        `json:"plan_id"`
+	NodeID         pgtype.UUID        `json:"node_id"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	IssueID        pgtype.UUID        `json:"issue_id"`
+	Status         string             `json:"status"`
+	Attempt        int32              `json:"attempt"`
+	LeaseOwner     pgtype.Text        `json:"lease_owner"`
+	LeaseExpiresAt pgtype.Timestamptz `json:"lease_expires_at"`
+	PublishedAt    pgtype.Timestamptz `json:"published_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
 type DependencyGraphNode struct {
 	ID                 pgtype.UUID        `json:"id"`
 	PlanID             pgtype.UUID        `json:"plan_id"`
@@ -683,12 +739,18 @@ type DependencyGraphNode struct {
 	AcceptanceCriteria []byte             `json:"acceptance_criteria"`
 	Context            []byte             `json:"context"`
 	Outputs            []byte             `json:"outputs"`
-	AssigneeType       pgtype.Text        `json:"assignee_type"`
-	AssigneeID         pgtype.UUID        `json:"assignee_id"`
-	CandidateAssignees []byte             `json:"candidate_assignees"`
+	ExecutorType       pgtype.Text        `json:"executor_type"`
+	ExecutorID         pgtype.UUID        `json:"executor_id"`
+	CandidateExecutors []byte             `json:"candidate_executors"`
 	Wave               int32              `json:"wave"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	OwnerType          pgtype.Text        `json:"owner_type"`
+	OwnerID            pgtype.UUID        `json:"owner_id"`
+	ReviewerType       pgtype.Text        `json:"reviewer_type"`
+	ReviewerID         pgtype.UUID        `json:"reviewer_id"`
+	RuntimeID          pgtype.UUID        `json:"runtime_id"`
+	ModelID            pgtype.Text        `json:"model_id"`
 }
 
 type DependencyGraphPlan struct {
@@ -900,6 +962,7 @@ type Issue struct {
 	OwnerID            pgtype.UUID        `json:"owner_id"`
 	ReviewerType       pgtype.Text        `json:"reviewer_type"`
 	ReviewerID         pgtype.UUID        `json:"reviewer_id"`
+	AssigneeGeneration int64              `json:"assignee_generation"`
 }
 
 type IssueDependency struct {
@@ -1730,6 +1793,15 @@ type WorkspaceInvitation struct {
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 	ExpiresAt     pgtype.Timestamptz `json:"expires_at"`
+}
+
+type WorkspaceIssueCategoryPolicy struct {
+	WorkspaceID             pgtype.UUID        `json:"workspace_id"`
+	Category                string             `json:"category"`
+	DefaultExecutionAgentID pgtype.UUID        `json:"default_execution_agent_id"`
+	DefaultReviewerAgentID  pgtype.UUID        `json:"default_reviewer_agent_id"`
+	CreatedAt               pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt               pgtype.Timestamptz `json:"updated_at"`
 }
 
 type WorkspaceMcpServer struct {
