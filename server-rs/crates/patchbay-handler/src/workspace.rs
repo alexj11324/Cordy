@@ -926,8 +926,10 @@ async fn revoke_and_remove_member(
     )
     .await?;
     let runtime_ids: Vec<Uuid> = runtimes.iter().map(|runtime| runtime.id).collect();
-    let mut result = MemberRevocation::default();
-    result.revoked_user_id = Some(user_id);
+    let mut result = MemberRevocation {
+        revoked_user_id: Some(user_id),
+        ..Default::default()
+    };
     if !runtime_ids.is_empty() {
         result.archived_agents = patchbay_db::queries::agent::archive_agents_by_runtime(
             &mut *transaction,
