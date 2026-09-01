@@ -6588,6 +6588,7 @@ impl TaskService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::automation::EntitlementGateDecision;
     use patchbay_db::models::ExecutionLaneKey;
 
     #[derive(Clone)]
@@ -7062,10 +7063,10 @@ mod tests {
         service.set_channel_quota_mode(ChannelQuotaMode::Limited(100));
         let period_start = chrono::DateTime::parse_from_rfc3339("2026-08-01T00:00:00Z")
             .expect("valid timestamp")
-            .with_timezone(&Utc);
+            .with_timezone(&chrono::Utc);
         let period_end = chrono::DateTime::parse_from_rfc3339("2026-09-01T00:00:00Z")
             .expect("valid timestamp")
-            .with_timezone(&Utc);
+            .with_timezone(&chrono::Utc);
         service.set_im_entitlements(Some(Arc::new(FixedImEntitlement(
             EntitlementGateDecision {
                 gate_action: EntitlementAction::Enforce,
