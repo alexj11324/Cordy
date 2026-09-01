@@ -227,7 +227,11 @@ fn decrypt_stored_token(
     secret_box: &patchbay_util::secretbox::SecretBox,
     encrypted: &str,
 ) -> anyhow::Result<String> {
-    let decrypt = |sealed: &[u8]| secret_box.open(sealed).map_err(anyhow::Error::from);
+    // `Decrypter` is a process-safe trait object and therefore `'static`.
+    // SecretBox is intentionally cheap to clone, so give the closure owned
+    // key material instead of letting a borrowed function argument escape.
+    let secret_box = secret_box.clone();
+    let decrypt = move |sealed: &[u8]| secret_box.open(sealed).map_err(anyhow::Error::from);
     patchbay_slack::config::decrypt_token(encrypted, Some(&decrypt))
 }
 
