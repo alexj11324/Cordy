@@ -53,8 +53,32 @@ for target in build rust-build; do
 done
 
 dev_output="$(make -n dev)"
-grep -Fq -- 'ENV_FILE="" pnpm dev' <<<"$dev_output" ||
-  fail "dev: expected Make to clear its default ENV_FILE before the launcher, got:\n$dev_output"
+[[ "$dev_output" == "pnpm dev" ]] ||
+  fail "dev: expected the single complete launcher entrypoint, got:\n$dev_output"
+if grep -Fq -- 'ENV_FILE=' <<<"$dev_output"; then
+  fail "dev: legacy Make-level ENV_FILE manipulation remains:\n$dev_output"
+fi
+
+# Make parses and exports its env file before recipes run. Source-development
+# targets must therefore select the checkout-isolated file at parse time, while
+# the Docker self-host family intentionally retains the operator-facing .env.
+probe_makefile="$(mktemp)"
+trap 'rm -f "$probe_makefile"' EXIT
+{
+  echo 'include Makefile'
+  echo 'dev:'
+  printf '\t%s\n' '@echo $(ENV_FILE)'
+  echo 'selfhost:'
+  printf '\t%s\n' '@echo $(ENV_FILE)'
+} >"$probe_makefile"
+
+dev_env_file="$(make --no-print-directory -s -f "$probe_makefile" dev 2>/dev/null)"
+[[ "$dev_env_file" == ".env.worktree" ]] ||
+  fail "dev: expected .env.worktree at Make parse time, got: $dev_env_file"
+
+selfhost_env_file="$(make --no-print-directory -s -f "$probe_makefile" selfhost 2>/dev/null)"
+[[ "$selfhost_env_file" == ".env" ]] ||
+  fail "selfhost: expected .env at Make parse time, got: $selfhost_env_file"
 
 for removed in setup start setup-main start-main setup-worktree start-worktree check-main check-worktree; do
   if make -n "$removed" >/dev/null 2>&1; then

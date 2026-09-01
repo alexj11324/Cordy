@@ -1833,6 +1833,46 @@ WHERE id = $1"#,
     Ok(r.rows_affected())
 }
 
+/// Records that a real inbound channel message received a successful outbound
+/// response. The verification marker lives in the installation's JSON config
+/// so this change does not expose provider credentials or require a second
+/// schema table. The update is an idempotent compare-and-set: it only applies
+/// to an active installation whose `installed_at` still matches the generation
+/// that sent the response. The returned workspace id is present only when the
+/// marker transitioned from unverified to passed.
+pub async fn mark_channel_installation_round_trip(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    id: Uuid,
+    channel_type: &str,
+    installed_at: chrono::DateTime<chrono::Utc>,
+) -> anyhow::Result<Option<Uuid>> {
+    let row = sqlx::query(
+        r#"UPDATE channel_installation
+SET config = COALESCE(config, '{}'::jsonb) || jsonb_build_object(
+        'verification',
+        COALESCE(config -> 'verification', '{}'::jsonb) || jsonb_build_object(
+            'round_trip_status', 'passed',
+            'verified_at', to_jsonb(now())
+        )
+    ),
+    updated_at = now()
+WHERE id = $1
+  AND channel_type = $2
+  AND status = 'active'
+  AND installed_at = $3
+  AND COALESCE(config -> 'verification' ->> 'round_trip_status', '') <> 'passed'
+RETURNING workspace_id"#,
+    )
+    .bind(id)
+    .bind(channel_type)
+    .bind(installed_at)
+    .fetch_optional(executor)
+    .await?;
+    row.map(|row| row.try_get(0))
+        .transpose()
+        .map_err(Into::into)
+}
+
 /// Atomically stamps bot_union_id only while it is still absent. Unlike the
 /// legacy read/modify/write helper this cannot overwrite a concurrent secret
 /// rotation or reinstall, and a concurrent backfill winner returns false.

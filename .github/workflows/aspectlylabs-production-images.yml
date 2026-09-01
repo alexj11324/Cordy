@@ -98,28 +98,11 @@ jobs:
         id: buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
-      # BuildKit's regular layer export does not preserve cache mounts. Keep
-      # the Cargo registry/git/target mounts incremental while still executing
-      # the complete production Dockerfile for every main commit.
-      - name: Restore incremental Cargo image cache
-        if: ${{ matrix.name == 'backend' }}
-        id: backend-cargo-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: .buildkit-cache/backend
-          key: production-backend-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('server-rs/Cargo.lock') }}-${{ needs.resolve-source.outputs.sha }}
-          restore-keys: |
-            production-backend-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('server-rs/Cargo.lock') }}-
-            production-backend-${{ runner.os }}-${{ runner.arch }}-
-
-      - name: Mount incremental Cargo cache in BuildKit
-        if: ${{ matrix.name == 'backend' }}
-        uses: reproducible-containers/buildkit-cache-dance@5422eac04292c961a382e0f584ea0f03ad9da723 # v3
-        with:
-          builder: ${{ steps.buildx.outputs.name }}
-          cache-dir: .buildkit-cache/backend
-          dockerfile: Dockerfile
-          skip-extraction: ${{ steps.backend-cargo-cache.outputs.cache-hit }}
+      # The Dockerfile may use short-lived BuildKit cache mounts for Cargo
+      # downloads and compilation, but this workflow deliberately does not
+      # export a complete server-rs/target tree through actions/cache. The
+      # bounded Cargo/sccache caches in the Rust jobs and exact release
+      # artifacts are the durable CI inputs.
 
       - name: Build and publish backend
         if: ${{ matrix.name == 'backend' }}

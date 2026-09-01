@@ -22,6 +22,7 @@ import {
 import { AUTH_SESSION_STATE_CHANNEL } from "../shared/auth-session";
 import type {
   DaemonStatus,
+  DaemonAutoStartResult,
   LocalRuntimeProbe,
 } from "../shared/daemon-types";
 import {
@@ -329,7 +330,7 @@ const daemonAPI = {
     ipcRenderer.invoke("daemon:get-prefs"),
   setPrefs: (prefs: Partial<{ autoStart: boolean; autoStop: boolean }>): Promise<{ autoStart: boolean; autoStop: boolean }> =>
     ipcRenderer.invoke("daemon:set-prefs", prefs),
-  autoStart: (): Promise<void> =>
+  autoStart: (): Promise<DaemonAutoStartResult> =>
     ipcRenderer.invoke("daemon:auto-start"),
   retryInstall: (): Promise<void> =>
     ipcRenderer.invoke("daemon:retry-install"),
@@ -339,6 +340,11 @@ const daemonAPI = {
     const handler = (_: unknown, line: string) => callback(line);
     ipcRenderer.on("daemon:log-line", handler);
     return () => ipcRenderer.removeListener("daemon:log-line", handler);
+  },
+  onLogReset: (callback: () => void) => {
+    const handler = () => callback();
+    ipcRenderer.on("daemon:log-reset", handler);
+    return () => ipcRenderer.removeListener("daemon:log-reset", handler);
   },
   openLogFile: (): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke("daemon:open-log-file"),

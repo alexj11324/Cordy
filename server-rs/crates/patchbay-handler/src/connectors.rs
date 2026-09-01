@@ -896,7 +896,11 @@ async fn weixin_install_status(
         Ok(value) => value,
         Err(error) => {
             tracing::warn!(%error, "failed to poll WeChat QR status");
-            return Json(json!({"status": "pending"})).into_response();
+            return error_code_response(
+                StatusCode::BAD_GATEWAY,
+                "weixin_provider_unreachable",
+                "could not reach WeChat while checking authorization; retry or check the server network",
+            );
         }
     };
     match status.status.as_str() {

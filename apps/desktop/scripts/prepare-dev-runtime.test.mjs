@@ -5,6 +5,8 @@ import {
   devRuntimeBuildArguments,
   devRuntimeBuildEnvironment,
   devRuntimeComponents,
+  isCompleteDevRuntimeCacheHit,
+  selectCompleteDevRuntimeCacheIdentity,
 } from "./prepare-dev-runtime.mjs";
 
 describe("complete development runtime artifacts", () => {
@@ -82,5 +84,60 @@ describe("complete development runtime artifacts", () => {
       PATH: expect.stringMatching(/^\/home\/dev\/\.cargo\/bin:/),
       RUSTC_WRAPPER: "sccache",
     });
+  });
+
+  it("requires one complete cache identity before rustc-less staging", () => {
+    const expected = {
+      sourceFingerprint: "source-a",
+      rustTarget: "aarch64-apple-darwin",
+      buildVariables: { version: "dev-source-a" },
+    };
+
+    expect(
+      selectCompleteDevRuntimeCacheIdentity(
+        {
+          completeFingerprints: [
+            {
+              ...expected,
+              identityKey: "complete-rustc-one",
+              newestMtimeMs: 1,
+            },
+            {
+              ...expected,
+              sourceFingerprint: "different-source",
+              identityKey: "newer-different-source",
+              newestMtimeMs: 2,
+            },
+            {
+              ...expected,
+              identityKey: "newest-complete",
+              newestMtimeMs: 3,
+            },
+          ],
+        },
+        expected,
+      ),
+    ).toBe("newest-complete");
+    expect(
+      selectCompleteDevRuntimeCacheIdentity(
+        { completeFingerprints: [] },
+        expected,
+      ),
+    ).toBeNull();
+  });
+
+  it("does not treat an empty rustc-less cache probe as a hit", () => {
+    expect(
+      isCompleteDevRuntimeCacheHit([], {
+        canUseCache: false,
+        componentCount: 3,
+      }),
+    ).toBe(false);
+    expect(
+      isCompleteDevRuntimeCacheHit([{}, {}, {}], {
+        canUseCache: true,
+        componentCount: 3,
+      }),
+    ).toBe(true);
   });
 });

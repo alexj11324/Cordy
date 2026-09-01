@@ -201,10 +201,12 @@ pub const EVENT_WECOM_INSTALLATION_REVOKED: &str = "wecom_installation:revoked";
 
 // Telegram installation lifecycle. Same contract as the Slack pair.
 pub const EVENT_TELEGRAM_INSTALLATION_CREATED: &str = "telegram_installation:created";
+pub const EVENT_TELEGRAM_INSTALLATION_VERIFIED: &str = "telegram_installation:verified";
 pub const EVENT_TELEGRAM_INSTALLATION_REVOKED: &str = "telegram_installation:revoked";
 
 // Personal WeChat iLink installation lifecycle (distinct from WeCom).
 pub const EVENT_WEIXIN_INSTALLATION_CREATED: &str = "weixin_installation:created";
+pub const EVENT_WEIXIN_INSTALLATION_VERIFIED: &str = "weixin_installation:verified";
 pub const EVENT_WEIXIN_INSTALLATION_REVOKED: &str = "weixin_installation:revoked";
 
 #[cfg(test)]
@@ -232,6 +234,14 @@ mod tests {
         assert_eq!(
             EVENT_DINGTALK_ACCOUNT_BINDING_UPDATED,
             "dingtalk_installation:binding_updated"
+        );
+        assert_eq!(
+            EVENT_TELEGRAM_INSTALLATION_VERIFIED,
+            "telegram_installation:verified"
+        );
+        assert_eq!(
+            EVENT_WEIXIN_INSTALLATION_VERIFIED,
+            "weixin_installation:verified"
         );
     }
 }
