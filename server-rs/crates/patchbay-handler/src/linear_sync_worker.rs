@@ -3022,12 +3022,14 @@ impl LinearSyncWorker {
         let mapping_key = binding.agent_label_mapping.to_string();
         {
             let cache = self.agent_label_catalog_validity.lock().await;
-            if !force_refresh
-                && let Some((cached_key, checked_at, valid)) = cache.get(&binding.id)
-                && cached_key == &mapping_key
-                && checked_at.elapsed() < Duration::from_secs(300)
-            {
-                return Ok(*valid);
+            if !force_refresh {
+                if let Some((cached_key, checked_at, valid)) = cache.get(&binding.id) {
+                    if cached_key == &mapping_key
+                        && checked_at.elapsed() < Duration::from_secs(300)
+                    {
+                        return Ok(*valid);
+                    }
+                }
             }
         }
         let manager = LinearTokenManager::from_state(&self.state)
