@@ -45,6 +45,7 @@ use crate::error::error_response;
 use crate::state::HandlerState;
 
 const PRIORITIES: &[&str] = &["urgent", "high", "medium", "low", "none"];
+const LIKE_ESCAPE_CLAUSE: &str = " ESCAPE E'\\\\'";
 
 pub fn router() -> Router<HandlerState> {
     Router::new()
@@ -204,7 +205,21 @@ fn push_search_membership(
             if index > 0 {
                 query.push(" AND ");
             }
-            query.push("(LOWER(i.title) LIKE ").push_bind(pattern.clone()).push(" ESCAPE '\\\\' OR LOWER(COALESCE(i.description,'')) LIKE ").push_bind(pattern.clone()).push(" ESCAPE '\\\\' OR EXISTS(SELECT 1 FROM comment c WHERE c.issue_id=i.id AND c.workspace_id=").push_bind(workspace_id).push(" AND LOWER(c.content) LIKE ").push_bind(pattern.clone()).push(" ESCAPE '\\\\'))");
+            query
+                .push("(LOWER(i.title) LIKE ")
+                .push_bind(pattern.clone())
+                .push(LIKE_ESCAPE_CLAUSE)
+                .push(" OR LOWER(COALESCE(i.description,'')) LIKE ")
+                .push_bind(pattern.clone())
+                .push(LIKE_ESCAPE_CLAUSE)
+                .push(
+                    " OR EXISTS(SELECT 1 FROM comment c WHERE c.issue_id=i.id AND c.workspace_id=",
+                )
+                .push_bind(workspace_id)
+                .push(" AND LOWER(c.content) LIKE ")
+                .push_bind(pattern.clone())
+                .push(LIKE_ESCAPE_CLAUSE)
+                .push("))");
         }
         query.push(")");
     }
@@ -301,7 +316,19 @@ async fn search_issues(
             .push_bind(number)
             .push(" THEN 0 ");
     }
-    statement.push("WHEN LOWER(i.title) = ").push_bind(query.to_lowercase()).push(" THEN 1 WHEN LOWER(i.title) LIKE ").push_bind(phrase.clone()).push(" ESCAPE '\\\\' THEN 2 WHEN LOWER(COALESCE(i.description,'')) LIKE ").push_bind(phrase.clone()).push(" ESCAPE '\\\\' THEN 3 ELSE 4 END, CASE i.status WHEN 'in_progress' THEN 0 WHEN 'in_review' THEN 1 WHEN 'todo' THEN 2 ELSE 3 END, i.updated_at DESC, i.id DESC LIMIT ").push_bind(limit).push(" OFFSET ").push_bind(offset);
+    statement
+        .push("WHEN LOWER(i.title) = ")
+        .push_bind(query.to_lowercase())
+        .push(" THEN 1 WHEN LOWER(i.title) LIKE ")
+        .push_bind(phrase.clone())
+        .push(LIKE_ESCAPE_CLAUSE)
+        .push(" THEN 2 WHEN LOWER(COALESCE(i.description,'')) LIKE ")
+        .push_bind(phrase.clone())
+        .push(LIKE_ESCAPE_CLAUSE)
+        .push(" THEN 3 ELSE 4 END, CASE i.status WHEN 'in_progress' THEN 0 WHEN 'in_review' THEN 1 WHEN 'todo' THEN 2 ELSE 3 END, i.updated_at DESC, i.id DESC LIMIT ")
+        .push_bind(limit)
+        .push(" OFFSET ")
+        .push_bind(offset);
     let issues = match statement
         .build_query_as::<Issue>()
         .fetch_all(&state.pool)
@@ -365,7 +392,7 @@ async fn search_issues(
                 comment
                     .push("LOWER(c.content) LIKE ")
                     .push_bind(pattern.clone())
-                    .push(" ESCAPE '\\\\'");
+                    .push(LIKE_ESCAPE_CLAUSE);
             }
             comment.push(") ORDER BY c.created_at DESC LIMIT 1");
             comment
@@ -1201,7 +1228,21 @@ fn push_table_filters(
             if index > 0 {
                 builder.push(" AND ");
             }
-            builder.push("(LOWER(i.title) LIKE ").push_bind(pattern.clone()).push(" ESCAPE '\\\\' OR LOWER(COALESCE(i.description,'')) LIKE ").push_bind(pattern.clone()).push(" ESCAPE '\\\\' OR EXISTS(SELECT 1 FROM comment c WHERE c.issue_id=i.id AND c.workspace_id=").push_bind(workspace_id).push(" AND LOWER(c.content) LIKE ").push_bind(pattern.clone()).push(" ESCAPE '\\\\'))");
+            builder
+                .push("(LOWER(i.title) LIKE ")
+                .push_bind(pattern.clone())
+                .push(LIKE_ESCAPE_CLAUSE)
+                .push(" OR LOWER(COALESCE(i.description,'')) LIKE ")
+                .push_bind(pattern.clone())
+                .push(LIKE_ESCAPE_CLAUSE)
+                .push(
+                    " OR EXISTS(SELECT 1 FROM comment c WHERE c.issue_id=i.id AND c.workspace_id=",
+                )
+                .push_bind(workspace_id)
+                .push(" AND LOWER(c.content) LIKE ")
+                .push_bind(pattern.clone())
+                .push(LIKE_ESCAPE_CLAUSE)
+                .push("))");
         }
         builder.push(")");
     }
@@ -4747,9 +4788,11 @@ fn push_issue_filters(query: &mut QueryBuilder<'_, Postgres>, filters: &IssueFil
     }
     if !filters.owner_filters.is_empty() || filters.include_no_owner {
         query.push(" AND (");
-        let mut separated = query.separated(" OR ");
-        for actor in &filters.owner_filters {
-            separated
+        for (index, actor) in filters.owner_filters.iter().enumerate() {
+            if index > 0 {
+                query.push(" OR ");
+            }
+            query
                 .push("(i.owner_type = ")
                 .push_bind(actor.actor_type.clone())
                 .push(" AND i.owner_id = ")
@@ -4757,15 +4800,20 @@ fn push_issue_filters(query: &mut QueryBuilder<'_, Postgres>, filters: &IssueFil
                 .push(")");
         }
         if filters.include_no_owner {
-            separated.push("(i.owner_type IS NULL AND i.owner_id IS NULL)");
+            if !filters.owner_filters.is_empty() {
+                query.push(" OR ");
+            }
+            query.push("(i.owner_type IS NULL AND i.owner_id IS NULL)");
         }
-        separated.push_unseparated(")");
+        query.push(")");
     }
     if !filters.executor_filters.is_empty() || filters.include_no_executor {
         query.push(" AND (");
-        let mut separated = query.separated(" OR ");
-        for actor in &filters.executor_filters {
-            separated
+        for (index, actor) in filters.executor_filters.iter().enumerate() {
+            if index > 0 {
+                query.push(" OR ");
+            }
+            query
                 .push("(i.executor_type = ")
                 .push_bind(actor.actor_type.clone())
                 .push(" AND i.executor_id = ")
@@ -4773,22 +4821,27 @@ fn push_issue_filters(query: &mut QueryBuilder<'_, Postgres>, filters: &IssueFil
                 .push(")");
         }
         if filters.include_no_executor {
-            separated.push("(i.executor_type IS NULL AND i.executor_id IS NULL)");
+            if !filters.executor_filters.is_empty() {
+                query.push(" OR ");
+            }
+            query.push("(i.executor_type IS NULL AND i.executor_id IS NULL)");
         }
-        separated.push_unseparated(")");
+        query.push(")");
     }
     if !filters.creator_filters.is_empty() {
         query.push(" AND (");
-        let mut separated = query.separated(" OR ");
-        for actor in &filters.creator_filters {
-            separated
+        for (index, actor) in filters.creator_filters.iter().enumerate() {
+            if index > 0 {
+                query.push(" OR ");
+            }
+            query
                 .push("(i.creator_type = ")
                 .push_bind(actor.actor_type.clone())
                 .push(" AND i.creator_id = ")
                 .push_bind(actor.actor_id)
                 .push(")");
         }
-        separated.push_unseparated(")");
+        query.push(")");
     }
     if !filters.label_ids.is_empty() {
         query.push(" AND EXISTS (SELECT 1 FROM issue_to_label itl WHERE itl.issue_id = i.id AND itl.label_id = ANY(")
@@ -4812,21 +4865,23 @@ fn push_issue_filters(query: &mut QueryBuilder<'_, Postgres>, filters: &IssueFil
     }
     for alternatives in &filters.properties {
         query.push(" AND (");
-        let mut separated = query.separated(" OR ");
-        for alternative in alternatives {
+        for (index, alternative) in alternatives.iter().enumerate() {
+            if index > 0 {
+                query.push(" OR ");
+            }
             match alternative {
                 PropertyAlternative::Missing(definition_id) => {
-                    separated
+                    query
                         .push("NOT (i.properties ? ")
                         .push_bind(definition_id.clone())
                         .push(")");
                 }
                 PropertyAlternative::Contains(value) => {
-                    separated.push("i.properties @> ").push_bind(value.clone());
+                    query.push("i.properties @> ").push_bind(value.clone());
                 }
             }
         }
-        separated.push_unseparated(")");
+        query.push(")");
     }
     if let Some(date) = &filters.date_filter {
         query
@@ -4843,14 +4898,16 @@ fn push_issue_filters(query: &mut QueryBuilder<'_, Postgres>, filters: &IssueFil
         query.push(" AND (");
         if !filters.search_terms.is_empty() {
             query.push("(");
-            let mut separated = query.separated(" AND ");
-            for pattern in &filters.search_terms {
-                separated
+            for (index, pattern) in filters.search_terms.iter().enumerate() {
+                if index > 0 {
+                    query.push(" AND ");
+                }
+                query
                     .push("LOWER(i.title) LIKE ")
                     .push_bind(pattern.clone())
-                    .push(" ESCAPE '\\\\'");
+                    .push(LIKE_ESCAPE_CLAUSE);
             }
-            separated.push_unseparated(")");
+            query.push(")");
             if filters.search_number.is_some() {
                 query.push(" OR ");
             }
@@ -9112,6 +9169,77 @@ mod tests {
         assert_eq!(search_filter(Some("CORD-42")).1, Some(42));
         assert_eq!(search_filter(Some("42")).1, Some(42));
         assert_eq!(search_filter(Some("CORD-extra-42")).1, None);
+    }
+
+    #[test]
+    fn issue_filter_sql_keeps_each_dynamic_predicate_intact() {
+        let workspace_id = Uuid::parse_str("018f03a0-c4d2-7a37-ae4d-5aa45de12f10").unwrap();
+        let actor_id = Uuid::parse_str("018f03a0-c4d2-7a37-ae4d-5aa45de12f11").unwrap();
+        let (search_terms, search_number) = search_filter(Some("Production smoke"));
+        let filters = IssueFilters {
+            workspace_id,
+            statuses: Vec::new(),
+            category_statuses: None,
+            closed_statuses: vec!["done".into(), "cancelled".into()],
+            priorities: Vec::new(),
+            owner_id: None,
+            owner_ids: Vec::new(),
+            owner_types: Vec::new(),
+            executor_id: None,
+            executor_ids: Vec::new(),
+            executor_types: Vec::new(),
+            creator_id: None,
+            project_id: None,
+            project_ids: Vec::new(),
+            ids: None,
+            owner_filters: vec![ActorFilter {
+                actor_type: "member".into(),
+                actor_id,
+            }],
+            executor_filters: vec![ActorFilter {
+                actor_type: "agent".into(),
+                actor_id,
+            }],
+            creator_filters: vec![ActorFilter {
+                actor_type: "member".into(),
+                actor_id,
+            }],
+            include_no_executor: true,
+            include_no_owner: true,
+            include_no_project: false,
+            label_ids: Vec::new(),
+            involves_user_id: None,
+            metadata: None,
+            properties: vec![vec![
+                PropertyAlternative::Missing("definition".into()),
+                PropertyAlternative::Contains(json!({"definition": "value"})),
+            ]],
+            date_filter: None,
+            search_terms,
+            search_number,
+            top_level_only: true,
+            scheduled: false,
+        };
+        let mut query = QueryBuilder::<Postgres>::new("SELECT COUNT(*) FROM issue i WHERE ");
+
+        push_issue_filters(&mut query, &filters);
+
+        assert_eq!(
+            query.sql(),
+            concat!(
+                "SELECT COUNT(*) FROM issue i WHERE i.workspace_id = $1",
+                " AND NOT (i.status = ANY($2))",
+                " AND ((i.owner_type = $3 AND i.owner_id = $4)",
+                " OR (i.owner_type IS NULL AND i.owner_id IS NULL))",
+                " AND ((i.executor_type = $5 AND i.executor_id = $6)",
+                " OR (i.executor_type IS NULL AND i.executor_id IS NULL))",
+                " AND ((i.creator_type = $7 AND i.creator_id = $8))",
+                " AND (NOT (i.properties ? $9) OR i.properties @> $10)",
+                " AND ((LOWER(i.title) LIKE $11 ESCAPE E'\\\\'",
+                " AND LOWER(i.title) LIKE $12 ESCAPE E'\\\\'))",
+                " AND i.parent_issue_id IS NULL",
+            )
+        );
     }
 
     #[test]
