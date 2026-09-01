@@ -2992,7 +2992,7 @@ impl LinearSyncWorker {
         let Some(locked_link) = locked_link else {
             return Ok(());
         };
-        if locked_link.binding_id != binding.id || locked_link.sync_status == "deleted" {
+        if locked_link.binding_id != link.binding_id || locked_link.sync_status == "deleted" {
             return Ok(());
         }
         if locked_link.last_common_snapshot != link.last_common_snapshot
