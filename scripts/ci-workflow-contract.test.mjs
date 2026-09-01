@@ -51,6 +51,18 @@ test("merge queue runs the same path-aware CI gate", () => {
   assert.match(ci, /cancel-in-progress: true/u);
 });
 
+test("workflow-only changes keep the four required aggregates green without heavy jobs", () => {
+  assert.doesNotMatch(ci, /- '\.github\/workflows\/ci\.yml'/u);
+  for (const message of [
+    "Frontend validation intentionally skipped: no relevant paths changed.",
+    "Rust validation intentionally skipped: no relevant paths changed.",
+    "Mobile validation intentionally skipped: no relevant paths changed.",
+    "Installer validation intentionally skipped: no relevant paths changed.",
+  ]) {
+    assert.match(ci, new RegExp(message.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
+  }
+});
+
 test("Rust uses one workspace test invocation and PR compiler caches are read-only", () => {
   assert.match(ci, /cargo test --workspace --all-targets --locked/u);
   assert.doesNotMatch(ci, /cargo metadata --locked --no-deps/u);

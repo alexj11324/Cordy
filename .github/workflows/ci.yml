@@ -134,7 +134,6 @@ jobs:
               - 'Dockerfile.auth-broker'
               - 'contracts/auth-broker/**'
               - '.dockerignore'
-              - '.github/workflows/ci.yml'
               - '.github/workflows/aspectlylabs-production-images.yml'
               - '.github/workflows/release.yml'
               - 'scripts/generate-reserved-slugs.mjs'
@@ -193,7 +192,6 @@ jobs:
               - 'scripts/macos-release-contract.test.sh'
               - 'scripts/verify-release-tag.sh'
               - 'scripts/verify-release-tag.test.sh'
-              - '.github/workflows/ci.yml'
               - '.github/workflows/release.yml'
               - '.github/workflows/macos-release.yml'
             mobile:
@@ -204,7 +202,6 @@ jobs:
               - 'pnpm-workspace.yaml'
               - 'turbo.json'
               - '.npmrc'
-              - '.github/workflows/ci.yml'
             installer:
               - 'scripts/install.sh'
               - 'scripts/install.ps1'
@@ -219,7 +216,6 @@ jobs:
               - 'docker/entrypoint.sh'
               - 'docker-compose.selfhost.yml'
               - '.env.example'
-              - '.github/workflows/ci.yml'
             # Gates the image-budget job so the full-history checkout it
             # needs is only paid for on PRs that actually touch a bitmap.
             images:
