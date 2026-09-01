@@ -14,7 +14,6 @@ use patchbay_service::plugin::PluginService;
 use patchbay_service::plugin_event_dispatch::PluginEventDispatcher;
 use patchbay_service::plugin_token::CallbackTokens;
 use patchbay_service::task_service::TaskService;
-use uuid::Uuid;
 
 /// One replaceable client shared by handler assists and TaskService quick
 /// actions. Builder-time configuration happens after domain services already
