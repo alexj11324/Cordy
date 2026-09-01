@@ -252,6 +252,60 @@ pub(crate) async fn build_claimed_task_response(
     let obj = payload
         .as_object_mut()
         .expect("task_to_map returns an object");
+
+    let execution_target =
+        match agent_q::get_agent_task_execution_target(&state.pool, task.id).await {
+            Ok(Some(target)) => target,
+            Ok(None) => {
+                return Err(fail_claimed_task_before_launch(
+                    state,
+                    task,
+                    "Task execution target is missing.",
+                    patchbay_task_failure::Reason::INVALID_TASK_IDENTITY,
+                    "error_missing_execution_target",
+                    StatusCode::CONFLICT,
+                    "task execution target is missing",
+                )
+                .await);
+            }
+            Err(error) => {
+                tracing::error!(
+                    %error,
+                    task_id = %task.id,
+                    "daemon claim: load immutable execution target failed; requeueing claim"
+                );
+                let _ = state.tasks.requeue_task_after_claim_failure(task).await;
+                return Err(ClaimBuildFailure::new(
+                    "error_load_execution_target",
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to load task execution target",
+                ));
+            }
+        };
+    if execution_target.runtime_id != Some(runtime.id) {
+        return Err(fail_claimed_task_before_launch(
+            state,
+            task,
+            "Task execution target no longer matches the claiming runtime.",
+            patchbay_task_failure::Reason::INVALID_TASK_IDENTITY,
+            "error_execution_target_mismatch",
+            StatusCode::CONFLICT,
+            "task execution target runtime mismatch",
+        )
+        .await);
+    }
+    // A blank model is an intentional runtime-default selection. Older agents
+    // and existing queue rows rely on the provider adapter resolving that
+    // default at launch time, so it is not an invalid task identity.
+    obj.insert(
+        "execution_target".into(),
+        json!({
+            "runtime_id": runtime.id.to_string(),
+            "model_id": execution_target.model_id.clone(),
+            "policy_revision": execution_target.policy_revision,
+            "failover_reason": execution_target.failover_reason.clone(),
+        }),
+    );
     if let Some(context) = task.context.as_ref().and_then(Value::as_object) {
         for key in [
             "side_chat_parent_task_id",
@@ -354,7 +408,7 @@ pub(crate) async fn build_claimed_task_response(
     set_if_not_empty(
         &mut agent_obj,
         "model",
-        agent.model.as_deref().unwrap_or(""),
+        execution_target.model_id.as_deref().unwrap_or(""),
     );
     set_if_not_empty(
         &mut agent_obj,
@@ -376,8 +430,8 @@ pub(crate) async fn build_claimed_task_response(
     // System agents carry a product-owned instruction layer shipped with the
     // binary (hot-updatable); workspace notes stay in the row.
     let mut instructions = agent.instructions.clone();
-    if agent.system_key.as_deref() == Some(patchbay_service::builtin_agents::MIKA_SYSTEM_KEY) {
-        instructions = patchbay_service::builtin_agents::compose_mika_instructions(
+    if agent.system_key.as_deref() == Some(patchbay_service::builtin_agents::PATRICK_SYSTEM_KEY) {
+        instructions = patchbay_service::builtin_agents::compose_patrick_instructions(
             &agent.name,
             &agent.instructions,
         );
@@ -492,7 +546,7 @@ pub(crate) async fn build_claimed_task_response(
             obj.insert("thread_name".into(), Value::String(issue.title.clone()));
 
             // Team-leader briefing injection keyed off is_leader_task +
-            // team_id, NOT off the issue assignee (PB-3724 covers the
+            // team_id, NOT off the issue executor (PB-3724 covers the
             // mention path).
             if task.is_leader_task {
                 let mut injected = false;
@@ -502,8 +556,8 @@ pub(crate) async fn build_claimed_task_response(
                             .await
                     {
                         if team.leader_id.to_string() == response_agent_id {
-                            let owns_issue_status = issue.assignee_type.as_deref() == Some("team")
-                                && issue.assignee_id == Some(team.id);
+                            let owns_issue_status = issue.executor_type.as_deref() == Some("team")
+                                && issue.executor_id == Some(team.id);
                             let briefing =
                                 build_team_leader_briefing(&state.pool, &team, owns_issue_status)
                                     .await;

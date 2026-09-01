@@ -19,7 +19,7 @@ import type {
   ChatPendingTask,
   PrioritizeQueuedChatTaskResponse,
   SendChatMessageResponse,
-  StartMikaOnboardingResponse,
+  StartPatrickOnboardingResponse,
   Comment,
   CreateBillingCheckoutSessionResponse,
   CreateBillingPortalSessionResponse,
@@ -655,8 +655,8 @@ export const QuickActionSchema = z.object({
   workspace_id: z.string(),
   name: z.string(),
   description: z.string().optional().default(""),
-  assignee_type: z.string(),
-  assignee_id: z.string(),
+  executor_type: z.string(),
+  executor_id: z.string(),
   prompt: z.string().optional().default(""),
   visibility: z.string().optional().default("public"),
   status: z.string().optional().default("active"),
@@ -678,8 +678,8 @@ export const EMPTY_QUICK_ACTION: QuickAction = {
   workspace_id: "",
   name: "",
   description: "",
-  assignee_type: "agent",
-  assignee_id: "",
+  executor_type: "agent",
+  executor_id: "",
   prompt: "",
   visibility: "public",
   status: "active",
@@ -1176,8 +1176,13 @@ export const IssueSchema = z.object({
   // (PB-6243)
   status_category: z.string().optional(),
   priority: z.string(),
-  assignee_type: z.string().nullable(),
-  assignee_id: z.string().nullable(),
+  owner_type: z.string().nullable(),
+  owner_id: z.string().nullable(),
+  executor_type: z.string().nullable(),
+  executor_id: z.string().nullable(),
+  // Older/self-hosted backends omit unset reviewer keys entirely; treat that
+  // wire shape the same as explicit null so one unreviewed issue cannot make
+  // a whole list response fail schema validation.
   reviewer_type: z.string().nullable().optional().default(null),
   reviewer_id: z.string().nullable().optional().default(null),
   creator_type: z.string(),
@@ -1209,7 +1214,7 @@ export const ListIssuesResponseSchema = z.object({
   total: z.number().default(0),
 }).loose();
 
-const DependencyGraphAssigneeSchema = z.object({
+const DependencyGraphExecutorSchema = z.object({
   type: z.string(),
   id: z.string(),
 }).loose();
@@ -1256,9 +1261,15 @@ const DependencyGraphNodeSchema = z.object({
   acceptance_criteria: z.array(z.string()).default([]),
   context: z.record(z.string(), z.unknown()).default({}),
   outputs: z.array(z.string()).default([]),
-  assignee_type: z.string().nullable().default(null),
-  assignee_id: z.string().nullable().default(null),
-  candidate_assignees: z.array(DependencyGraphAssigneeSchema).default([]),
+  owner_type: z.literal("member").nullable().default(null),
+  owner_id: z.string().nullable().default(null),
+  executor_type: z.string().nullable().default(null),
+  executor_id: z.string().nullable().default(null),
+  candidate_executors: z.array(DependencyGraphExecutorSchema).default([]),
+  reviewer_type: z.string().nullable().default(null),
+  reviewer_id: z.string().nullable().default(null),
+  runtime_id: z.string().nullable().default(null),
+  model_id: z.string().nullable().default(null),
   wave: z.number().int(),
   status: z.string(),
   readiness: DependencyGraphNodeReadinessSchema,
@@ -1379,16 +1390,16 @@ export const EMPTY_SEARCH_PROJECTS_RESPONSE: SearchProjectsResponse = {
   total: 0,
 };
 
-const IssueAssigneeGroupSchema = z.object({
+const IssueExecutorGroupSchema = z.object({
   id: z.string(),
-  assignee_type: z.string().nullable(),
-  assignee_id: z.string().nullable(),
+  executor_type: z.string().nullable(),
+  executor_id: z.string().nullable(),
   issues: z.array(IssueSchema).default([]),
   total: z.number().default(0),
 }).loose();
 
 export const GroupedIssuesResponseSchema = z.object({
-  groups: z.array(IssueAssigneeGroupSchema).default([]),
+  groups: z.array(IssueExecutorGroupSchema).default([]),
 }).loose();
 
 export const EMPTY_GROUPED_ISSUES_RESPONSE: GroupedIssuesResponse = {
@@ -1416,7 +1427,7 @@ const IssueTableGroupValueSchema = z.discriminatedUnion("kind", [
     status: z.string(),
   }).loose(),
   z.object({
-    kind: z.literal("assignee"),
+    kind: z.literal("executor"),
     actor: IssueTableActorRefSchema.nullable(),
   }).loose(),
   z.object({
@@ -1489,7 +1500,7 @@ const IssueTableFacetValueSchema = z.object({
 }).loose();
 
 const IssueTableFacetSchema = z.object({
-  kind: z.enum(["status", "priority", "assignee", "creator", "project", "label", "property", "working_agents"]),
+  kind: z.enum(["status", "priority", "executor", "creator", "project", "label", "property", "working_agents"]),
   property_id: z.string().optional(),
   values: z.array(IssueTableFacetValueSchema).default([]),
 }).loose();
@@ -1944,7 +1955,7 @@ export const SendChatMessageResponseSchema: z.ZodType<SendChatMessageResponse> =
 // `started` is the only field the flow branches on, and a malformed response
 // must not be read as "the opening landed" — parseWithFallback's fallback says
 // it did not, which leaves the flow's own retry as the recovery path.
-export const StartMikaOnboardingResponseSchema: z.ZodType<StartMikaOnboardingResponse> = z.object({
+export const StartPatrickOnboardingResponseSchema: z.ZodType<StartPatrickOnboardingResponse> = z.object({
   started: z.boolean(),
   message_id: z.string().nullish().transform((id) => id ?? undefined),
   created_at: z.string().nullish().transform((at) => at ?? undefined),
@@ -2236,10 +2247,10 @@ const AutomationListItemSchema = z.object({
   title: z.string(),
   description: z.string().nullable().optional(),
   project_id: z.string().nullable().optional(),
-  // Older servers (pre-PB-2429) omit assignee_type; "agent" is the
+  // Older servers (pre-PB-2429) omit executor_type; "agent" is the
   // documented default.
-  assignee_type: z.string().default("agent"),
-  assignee_id: z.string(),
+  executor_type: z.string().default("agent"),
+  executor_id: z.string(),
   status: z.string(),
   execution_mode: z.string(),
   issue_title_template: z.string().nullable().optional(),

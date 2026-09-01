@@ -7,8 +7,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   defaultDevCliCacheDir,
   devCliCacheKey,
+  DEV_RUNTIME_CACHE_LOCK_FILE,
   findCachedDevCli,
   fingerprintRustFiles,
+  inspectDevRuntimeCache,
+  pruneDevRuntimeCache,
   rustBuildEnvironmentFingerprint,
   rustToolchainIdentity,
   stageCachedDevCli,
@@ -180,6 +183,45 @@ describe("development CLI artifact cache", () => {
     expect(manifest.toolchainIdentity).toBe("rustc 1");
   });
 
+  it("waits for an active cache operation before staging an artifact", async () => {
+    const root = await createSandbox();
+    const cacheRoot = join(root, "cache");
+    const sourceBinary = join(root, "patchbay-built");
+    const destinationBinary = join(root, "worktree", "patchbay");
+    await writeFile(sourceBinary, "fixture CLI");
+    await storeDevCli({
+      cacheRoot,
+      sourceBinary,
+      binaryName: "patchbay",
+      sourceFingerprint: "source-a",
+      rustTarget: "aarch64-apple-darwin",
+      profile: "dev",
+      toolchainIdentity: "rustc 1",
+      buildVariables: {},
+    });
+
+    const lockPath = join(cacheRoot, DEV_RUNTIME_CACHE_LOCK_FILE);
+    await writeFile(lockPath, "test-lock\n", { flag: "wx" });
+    let finished = false;
+    const staging = stageCachedDevCli({
+      cacheRoot,
+      sourceFingerprint: "source-a",
+      rustTarget: "aarch64-apple-darwin",
+      profile: "dev",
+      toolchainIdentity: "rustc 1",
+      buildVariables: {},
+      destinationBinary,
+    }).finally(() => {
+      finished = true;
+    });
+
+    await new Promise((resolveWait) => setTimeout(resolveWait, 75));
+    expect(finished).toBe(false);
+    await rm(lockPath, { force: true });
+    await expect(staging).resolves.not.toBeNull();
+    expect(await readFile(destinationBinary, "utf8")).toBe("fixture CLI");
+  });
+
   it("rejects a corrupted artifact and a mismatched toolchain", async () => {
     const root = await createSandbox();
     const cacheRoot = join(root, "cache");
@@ -226,5 +268,76 @@ describe("development CLI artifact cache", () => {
       toolchainIdentity: null,
     });
     expect(cached?.manifest.toolchainIdentity).toBe("rustc 1");
+  });
+
+  it("keeps at least ten complete runtime fingerprints while pruning older entries", async () => {
+    const root = await createSandbox();
+    const cacheRoot = join(root, "cache");
+    const sourceBinary = join(root, "runtime");
+    await writeFile(sourceBinary, "fixture runtime");
+    for (let index = 0; index < 11; index += 1) {
+      for (const profile of ["dev", "dev-server", "dev-migrate"]) {
+        await storeDevCli({
+          cacheRoot,
+          sourceBinary,
+          binaryName: `runtime-${profile}`,
+          sourceFingerprint: `source-${index}`,
+          rustTarget: "aarch64-apple-darwin",
+          profile,
+          toolchainIdentity: "rustc fixture",
+          buildVariables: { index },
+        });
+      }
+    }
+
+    const result = await pruneDevRuntimeCache({
+      cacheRoot,
+      maxBytes: 0,
+      maxAgeMs: 0,
+      minFingerprints: 10,
+      nowMs: Date.now() + 1_000,
+    });
+    const after = await inspectDevRuntimeCache({ cacheRoot });
+
+    expect(result.protectedFingerprintCount).toBe(10);
+    expect(after.completeFingerprintCount).toBe(10);
+    expect(after.entryCount).toBe(30);
+  });
+
+  it("does not protect toolchain variants as one runtime fingerprint", async () => {
+    const root = await createSandbox();
+    const cacheRoot = join(root, "cache");
+    const sourceBinary = join(root, "runtime");
+    await writeFile(sourceBinary, "fixture runtime");
+    for (const toolchainIdentity of ["rustc one", "rustc two"]) {
+      for (const profile of ["dev", "dev-server", "dev-migrate"]) {
+        await storeDevCli({
+          cacheRoot,
+          sourceBinary,
+          binaryName: `runtime-${profile}`,
+          sourceFingerprint: "same-source",
+          rustTarget: "aarch64-apple-darwin",
+          profile,
+          toolchainIdentity,
+          buildVariables: {},
+        });
+      }
+    }
+
+    const before = await inspectDevRuntimeCache({ cacheRoot });
+    expect(before.completeFingerprintCount).toBe(2);
+
+    const result = await pruneDevRuntimeCache({
+      cacheRoot,
+      maxBytes: 0,
+      maxAgeMs: 0,
+      minFingerprints: 1,
+      nowMs: Date.now() + 1_000,
+    });
+    const after = await inspectDevRuntimeCache({ cacheRoot });
+
+    expect(result.protectedFingerprintCount).toBe(1);
+    expect(after.entryCount).toBe(3);
+    expect(after.completeFingerprintCount).toBe(1);
   });
 });

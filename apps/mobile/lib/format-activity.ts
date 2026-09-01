@@ -67,18 +67,26 @@ export function formatActivity(
       return `changed status: ${statusName(details.from, resolveStatusLabel)} → ${statusName(details.to, resolveStatusLabel)}`;
     case "priority_changed":
       return `changed priority: ${priorityName(details.from)} → ${priorityName(details.to)}`;
-    case "assignee_changed": {
+    case "executor_changed": {
       const isSelf =
         details.to_type === entry.actor_type &&
         details.to_id === entry.actor_id;
       if (isSelf) return "self-assigned";
-      if (details.from_id && !details.to_id) return "removed assignee";
+      if (details.from_id && !details.to_id) return "removed executor";
       const toName =
         details.to_id && details.to_type
           ? resolveActorName(details.to_type, details.to_id)
           : null;
       if (toName) return `assigned to ${toName}`;
-      return "changed assignee";
+      return "changed executor";
+    }
+    case "owner_changed": {
+      if (details.from_id && !details.to_id) return "removed owner";
+      const toName =
+        details.to_id && details.to_type
+          ? resolveActorName(details.to_type, details.to_id)
+          : null;
+      return toName ? `assigned to ${toName}` : "changed owner";
     }
     case "start_date_changed": {
       if (!details.to) return "removed start date";

@@ -36,7 +36,11 @@ fn random_agent_avatar() -> String {
 pub fn router() -> Router<HandlerState> {
     Router::new()
         .route("/api/agents", get(list_agents).post(create_agent))
-        .route("/api/agents/mika", post(create_mika))
+        .route("/api/agents/patrick", post(create_patrick))
+        // Temporary version-skew adapter for clients shipped before the Patrick
+        // rename. Owner: API team. Remove when all supported clients use the
+        // canonical route and migration 452 is present in every deployment.
+        .route("/api/agents/mika", post(create_legacy_mika))
         .route("/api/agents/{id}", get(get_agent).put(update_agent))
         .route("/api/agents/{id}/archive", post(archive_agent))
         .route("/api/agents/{id}/restore", post(restore_agent))
@@ -386,8 +390,8 @@ fn composio_enabled(state: &HandlerState) -> bool {
 }
 
 fn system_instructions_for(system_key: Option<&str>, display_name: &str) -> String {
-    if system_key == Some(patchbay_service::builtin_agents::MIKA_SYSTEM_KEY) {
-        patchbay_service::builtin_agents::mika_system_instructions(display_name)
+    if system_key == Some(patchbay_service::builtin_agents::PATRICK_SYSTEM_KEY) {
+        patchbay_service::builtin_agents::patrick_system_instructions(display_name)
     } else {
         String::new()
     }
@@ -1485,7 +1489,7 @@ async fn update_agent(
 }
 
 #[derive(Default, Deserialize)]
-struct MikaRequest {
+struct PatrickRequest {
     runtime_id: String,
     language: String,
     model: Option<String>,
@@ -1493,7 +1497,7 @@ struct MikaRequest {
     session_title: String,
 }
 
-async fn get_or_create_mika_session(
+async fn get_or_create_patrick_session(
     state: &HandlerState,
     workspace_id: Uuid,
     user_id: Uuid,
@@ -1502,7 +1506,7 @@ async fn get_or_create_mika_session(
 ) -> anyhow::Result<patchbay_db::models::ChatSession> {
     let mut tx = state.pool.begin().await?;
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
-        .bind(format!("mika-session:{workspace_id}:{user_id}"))
+        .bind(format!("patrick-session:{workspace_id}:{user_id}"))
         .execute(&mut *tx)
         .await?;
     workspace::lock_workspace_for_chat_session_create(&mut *tx, workspace_id).await?;
@@ -1533,37 +1537,37 @@ async fn get_or_create_mika_session(
     Ok(created)
 }
 
-async fn create_mika(
+async fn create_patrick(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    let request: MikaRequest = match serde_json::from_slice(&body) {
+    let request: PatrickRequest = match serde_json::from_slice(&body) {
         Ok(v) => v,
         Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid request body"),
     };
     let description = match request.language.as_str() {
-        "en" => "Your workspace Chief of Staff. Mika turns goals into issues, coordinates agents, and helps build reusable workflows.",
-        "zh" => "你的工作区 Chief of Staff。Mika 会把目标转化为任务、协调智能体，并帮你建立可复用的工作流。",
-        "ko" => "워크스페이스의 Chief of Staff입니다. Mika가 목표를 태스크로 구체화하고 에이전트를 조율하며 재사용 가능한 워크플로 구성을 돕습니다.",
-        "ja" => "ワークスペースの Chief of Staff。Mika は目標をタスクに落とし込み、エージェントを調整し、再利用できるワークフローづくりを支援します。",
+        "en" => "Your workspace Chief of Staff. Patrick turns goals into issues, coordinates agents, and helps build reusable workflows.",
+        "zh" => "你的工作区 Chief of Staff。Patrick 会把目标转化为任务、协调智能体，并帮你建立可复用的工作流。",
+        "ko" => "워크스페이스의 Chief of Staff입니다. Patrick이 목표를 태스크로 구체화하고 에이전트를 조율하며 재사용 가능한 워크플로 구성을 돕습니다.",
+        "ja" => "ワークスペースの Chief of Staff。Patrick は目標をタスクに落とし込み、エージェントを調整し、再利用できるワークフローづくりを支援します。",
         _ => return error_response(StatusCode::BAD_REQUEST, "language must be en, zh, ko, or ja"),
     };
     let ws = match workspace_id(&context) {
         Ok(v) => v,
         Err(r) => return r,
     };
-    let existing_target = match agent::get_agent_by_system_key(&state.pool, ws, Some("mika")).await
-    {
-        Ok(target) => target,
-        Err(_) => {
-            return error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to look up the workspace agent",
-            )
-        }
-    };
+    let existing_target =
+        match agent::get_agent_by_system_key(&state.pool, ws, Some("patrick")).await {
+            Ok(target) => target,
+            Err(_) => {
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to look up the workspace agent",
+                )
+            }
+        };
     let (runtime_id, runtime) = if existing_target.is_some() {
         (None, None)
     } else {
@@ -1605,7 +1609,7 @@ async fn create_mika(
                 }
             };
             if sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
-                .bind(format!("mika:{ws}"))
+                .bind(format!("patrick:{ws}"))
                 .execute(&mut *tx)
                 .await
                 .is_err()
@@ -1615,18 +1619,18 @@ async fn create_mika(
                     "failed to lock the workspace agent",
                 );
             }
-            let target = match agent::get_agent_by_system_key(&mut *tx, ws, Some("mika")).await {
+            let target = match agent::get_agent_by_system_key(&mut *tx, ws, Some("patrick")).await {
                 Ok(Some(existing)) => existing,
                 Ok(None) => {
                     let runtime = runtime
                         .as_ref()
-                        .expect("Mika runtime is required when provisioning the agent");
+                        .expect("Patrick runtime is required when provisioning the agent");
                     let runtime_id = runtime_id
-                        .expect("Mika runtime id is required when provisioning the agent");
+                        .expect("Patrick runtime id is required when provisioning the agent");
                     let created = match agent::create_system_user_agent(
                         &mut *tx,
                         ws,
-                        "Mika",
+                        "Patrick",
                         description,
                         Some("emoji:🦄"),
                         &runtime.runtime_mode,
@@ -1639,7 +1643,7 @@ async fn create_mika(
                         "public_to",
                         3,
                         context.member.user_id,
-                        Some("mika"),
+                        Some("patrick"),
                     )
                     .await
                     {
@@ -1697,7 +1701,7 @@ async fn create_mika(
     if created_now {
         publish(&state, "agent:created", &target, context.member.user_id);
     }
-    let session = match get_or_create_mika_session(
+    let session = match get_or_create_patrick_session(
         &state,
         ws,
         context.member.user_id,
@@ -1708,10 +1712,10 @@ async fn create_mika(
     {
         Ok(session) => session,
         Err(error) => {
-            tracing::warn!(%error, agent_id = %target.id, "failed to open Mika conversation");
+            tracing::warn!(%error, agent_id = %target.id, "failed to open Patrick conversation");
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to open the Mika conversation",
+                "failed to open the Patrick conversation",
             );
         }
     };
@@ -1729,6 +1733,22 @@ async fn create_mika(
         Json(response),
     )
         .into_response()
+}
+
+/// Compatibility adapter for an older frontend bundle during a non-atomic
+/// frontend/backend rollout. It deliberately delegates to the canonical
+/// Patrick handler, so it cannot create a second system identity.
+async fn create_legacy_mika(
+    state: State<HandlerState>,
+    context: Extension<WorkspaceContext>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    tracing::warn!(
+        route = "/api/agents/mika",
+        "legacy Patrick bootstrap route used"
+    );
+    create_patrick(state, context, headers, body).await
 }
 
 async fn archive_agent(
@@ -2580,9 +2600,9 @@ mod tests {
     }
 
     #[test]
-    fn mika_response_carries_product_instructions() {
-        let instructions = system_instructions_for(Some("mika"), "Mika");
-        assert!(instructions.contains("You are Mika"));
+    fn patrick_response_carries_product_instructions() {
+        let instructions = system_instructions_for(Some("patrick"), "Patrick");
+        assert!(instructions.contains("You are Patrick"));
         assert!(system_instructions_for(None, "Ordinary agent").is_empty());
     }
 

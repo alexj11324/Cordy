@@ -29,7 +29,7 @@ import {
  * One-shot welcome experience for users who explicitly skipped runtime
  * setup during onboarding.
  *
- * Runtime-connected onboarding creates Mika before entering the workspace
+ * Runtime-connected onboarding creates Patrick before entering the workspace
  * and therefore never writes this no-runtime signal.
  */
 export function WelcomeAfterOnboarding() {
@@ -95,7 +95,7 @@ interface SkipWelcomeProps {
 
 /**
  * Provision one focused runtime guide before showing the completion modal.
- * Once a runtime appears, the Runtimes page offers "Start with Mika" and
+ * Once a runtime appears, the Runtimes page offers "Start with Patrick" and
  * runs the same real bootstrap used by connected onboarding.
  */
 function SkipWelcome({ workspaceId, onDismiss }: SkipWelcomeProps) {
@@ -121,8 +121,8 @@ function SkipWelcome({ workspaceId, onDismiss }: SkipWelcomeProps) {
             description: INSTALL_RUNTIME_ISSUE_BODY[lang],
             status: "in_progress",
             priority: "high",
-            assignee_type: "member",
-            assignee_id: me.id,
+            owner_type: "member",
+            owner_id: me.id,
           },
         );
         void queryClient.invalidateQueries({

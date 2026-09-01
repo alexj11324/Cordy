@@ -70,7 +70,7 @@ function ListRowContent({
 
   const showProject = storeProperties.project && project;
   const showChildProgress = storeProperties.childProgress && childProgress;
-  const showAssignee = storeProperties.assignee && issue.assignee_type && issue.assignee_id;
+  const showExecutor = storeProperties.executor && issue.executor_type && issue.executor_id;
   const showStartDate = storeProperties.startDate && issue.start_date;
   const showDueDate = storeProperties.dueDate && issue.due_date;
   const showLabels = storeProperties.labels && labels.length > 0;
@@ -170,10 +170,10 @@ function ListRowContent({
               {formatDate(issue.due_date!)}
             </span>
           )}
-          {showAssignee && (
+          {showExecutor && (
             <ActorAvatar
-              actorType={issue.assignee_type!}
-              actorId={issue.assignee_id!}
+              actorType={issue.executor_type!}
+              actorId={issue.executor_id!}
               size="sm"
               enableHoverCard
             />

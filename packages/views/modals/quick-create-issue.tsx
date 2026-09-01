@@ -60,7 +60,7 @@ import { ActorAvatar } from "../common/actor-avatar";
 import { ClearablePillButton, PillButton } from "../common/pill-button";
 import { ProjectPicker } from "../projects/components/project-picker";
 import { DueDatePicker, PriorityIcon, PriorityPicker } from "../issues/components";
-import { canAssignAgent } from "../issues/components/pickers/assignee-picker";
+import { canAssignAgent } from "../issues/components/pickers/executor-picker";
 import { isAgentRuntimeBound } from "@patchbay/core/agents";
 import {
   PropertyPicker,
@@ -504,7 +504,7 @@ export function AgentCreatePanel({
   // restores it verbatim. Project / priority / due date already live in the
   // shared slot and carry across for free. Two one-time assist-inits run only
   // when the manual slot is still empty: seed the description from the prompt
-  // and the assignee from the picked actor. The parent-issue context is not
+  // and the executor from the picked actor. The parent-issue context is not
   // persisted (a per-invocation intent) so it rides the carry channel.
   const switchToManual = () => {
     // The prompt is copied into the manual description on assist-init; mid-upload
@@ -518,8 +518,8 @@ export function AgentCreatePanel({
       const md = editorRef.current?.getMarkdown() ?? "";
       if (md) setManual({ description: md });
     }
-    if (!draft.manual.assigneeId && actor) {
-      setManual({ assigneeType: actor.type, assigneeId: actor.id });
+    if (!draft.manual.executorId && actor) {
+      setManual({ executorType: actor.type, executorId: actor.id });
     }
     setLastMode("manual");
     setActiveMode("manual");

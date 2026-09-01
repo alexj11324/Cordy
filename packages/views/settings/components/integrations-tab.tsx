@@ -56,6 +56,7 @@ import { TelegramAgentBindButton } from "./telegram-tab";
 import { TelegramTab } from "./telegram-tab";
 import { WeixinAgentBindButton } from "./weixin-tab";
 import { WeixinTab } from "./weixin-tab";
+import { IntegrationSetupGuide } from "./integration-setup-guide";
 
 type InstallationSummary = {
   id: string;
@@ -86,7 +87,6 @@ type IntegrationCardProps = {
 
 type HubActionProps = {
   canManage: boolean;
-  children: ReactNode;
   isGuest: boolean;
   query: IntegrationQuery;
   installationId?: string;
@@ -166,7 +166,6 @@ function ConnectionStatus({ query }: { query: IntegrationQuery }) {
 
 function HubAction({
   canManage,
-  children,
   installationId,
   isGuest,
   onDisconnect,
@@ -177,6 +176,7 @@ function HubAction({
 }: HubActionProps) {
   const { t } = useT("settings");
   const hubConnected = hasActiveHub(query.data);
+  const installationConnected = hasActiveInstallation(query.data);
 
   // A guest may own its temporary workspace, but external platform
   // authorization is still a formal-account-only operation. Keep this gate
@@ -212,6 +212,14 @@ function HubAction({
       <span className="text-caption text-muted-foreground">
         {t(($) => $.page.integrations_unavailable)}
       </span>
+    );
+  }
+  if (installationConnected && !hubConnected) {
+    return (
+      <Button variant="outline" size="sm" onClick={onManage}>
+        <Settings2 />
+        {t(($) => $.page.integrations_manage)}
+      </Button>
     );
   }
   if (!query.data.configured) {
@@ -260,7 +268,11 @@ function HubAction({
       </div>
     );
   }
-  return children;
+  return (
+    <Button variant="outline" size="sm" onClick={onManage}>
+      {t(($) => $.page.integrations_start_setup)}
+    </Button>
+  );
 }
 
 function IntegrationCard({
@@ -371,9 +383,7 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
   const listings = { lark, slack, dingtalk, wecom, telegram, weixin };
   const managedListing = managedChannel ? listings[managedChannel].data : undefined;
   const managedChannelNeedsSetup = Boolean(
-    managedChannel &&
-      !hasActiveHub(managedListing) &&
-      (!managedListing?.configured || !managedListing.install_supported),
+    managedChannel && !hasActiveInstallation(managedListing),
   );
 
   async function removeInstallation(channel: IntegrationChannel, installationId: string) {
@@ -420,6 +430,35 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
       telegram: <TelegramTab installationId={managedInstallationId ?? undefined} />,
       weixin: <WeixinTab installationId={managedInstallationId ?? undefined} />,
     }[channel];
+  }
+
+  function renderSetupAction(channel: IntegrationChannel) {
+    return {
+      lark: <LarkAgentBindButton workspaceScoped />,
+      slack: <SlackAgentBindButton />,
+      dingtalk: <DingTalkAgentBindButton />,
+      wecom: <WecomAgentBindButton />,
+      telegram: <TelegramAgentBindButton />,
+      weixin: <WeixinAgentBindButton />,
+    }[channel];
+  }
+
+  function renderManagedContent(channel: IntegrationChannel) {
+    const listing = listings[channel].data;
+    if (hasActiveInstallation(listing)) return renderManagedTab(channel);
+
+    return (
+      <div className="space-y-5">
+        <IntegrationSetupGuide channel={channel} />
+        {listing?.configured && listing.install_supported ? (
+          <div className="flex justify-end">{renderSetupAction(channel)}</div>
+        ) : (
+          <p className="text-caption text-destructive" role="alert">
+            {t(($) => $.page.integrations_setup_unavailable)}
+          </p>
+        )}
+      </div>
+    );
   }
 
   const content = (
@@ -477,14 +516,7 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
                     }}
                     onReconnect={() => hub && setPendingAction({ channel, installationId: hub.id, reconnect: true })}
                     onDisconnect={() => hub && setPendingAction({ channel, installationId: hub.id, reconnect: false })}
-                  >
-                    {channel === "lark" ? <LarkAgentBindButton workspaceScoped /> : null}
-                    {channel === "slack" ? <SlackAgentBindButton /> : null}
-                    {channel === "dingtalk" ? <DingTalkAgentBindButton /> : null}
-                    {channel === "wecom" ? <WecomAgentBindButton /> : null}
-                    {channel === "telegram" ? <TelegramAgentBindButton /> : null}
-                    {channel === "weixin" ? <WeixinAgentBindButton /> : null}
-                  </HubAction>
+                  />
                 }
               />
             );
@@ -544,7 +576,7 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
                 : t(($) => $.page.integrations_manage)}
             </DialogTitle>
           </DialogHeader>
-          {managedChannel ? renderManagedTab(managedChannel) : null}
+          {managedChannel ? renderManagedContent(managedChannel) : null}
         </DialogContent>
       </Dialog>
       <AlertDialog open={pendingAction !== null} onOpenChange={(open) => !open && !mutating && setPendingAction(null)}>

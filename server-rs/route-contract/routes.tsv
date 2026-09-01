@@ -63,7 +63,7 @@ GET	/api/agents/{}/labels
 GET	/api/agents/{}/mcp-servers
 GET	/api/agents/{}/skills
 GET	/api/agents/{}/tasks
-GET	/api/assignee-frequency
+GET	/api/executor-frequency
 GET	/api/attachments/{}
 GET	/api/attachments/{}/content
 GET	/api/attachments/{}/download
@@ -137,6 +137,7 @@ GET	/api/integrations/composio/connections
 GET	/api/integrations/composio/toolkits
 GET	/api/invitations
 GET	/api/invitations/{}
+GET	/api/issue-category-policies
 GET	/api/issue-statuses
 GET	/api/issue-view-preferences
 GET	/api/issue-views
@@ -256,6 +257,7 @@ PATCH	/api/workspaces/{}/runtime-profiles/{}
 POST	/api/agent-builder/sessions
 POST	/api/agents
 POST	/api/agents/mika
+POST	/api/agents/patrick
 POST	/api/agents/{}/archive
 POST	/api/agents/{}/cancel-tasks
 POST	/api/agents/{}/labels
@@ -437,6 +439,7 @@ PUT	/api/agents/{}/skills/{}/enabled
 PUT	/api/automations/{}/triggers/{}/signing-secret
 PUT	/api/comments/{}
 PUT	/api/issue-view-preferences
+PUT	/api/issue-category-policies/{}
 PUT	/api/issues/{}
 PUT	/api/issues/{}/metadata/{}
 PUT	/api/issues/{}/properties/{}

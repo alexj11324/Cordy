@@ -78,6 +78,7 @@
         "usage",
         "runtimes",
         "skills",
+        "task-graph",
         "settings",
         "workspaces",
         "integrations"

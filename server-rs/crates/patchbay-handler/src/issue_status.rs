@@ -5,12 +5,13 @@ use std::collections::HashSet;
 use axum::extract::{Extension, Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, patch};
+use axum::routing::{get, patch, put};
 use axum::{Json, Router};
-use patchbay_db::models::IssueStatus;
+use patchbay_db::models::{IssueStatus, WorkspaceIssueCategoryPolicy};
 use patchbay_db::queries::issue_status as status_q;
+use patchbay_db::queries::workspace_issue_category_policy as category_policy_q;
 use patchbay_middleware::workspace::WorkspaceContext;
-use patchbay_service::issue_status;
+use patchbay_service::{category_policy, issue_status};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use uuid::Uuid;
@@ -70,6 +71,11 @@ pub fn router() -> Router<HandlerState> {
         .route("/api/issue-statuses/reorder", patch(reorder))
         .route("/api/issue-statuses/{id}", patch(update).delete(archive))
         .route("/api/issue-statuses/{id}/", patch(update).delete(archive))
+        .route("/api/issue-category-policies", get(list_policies))
+        .route(
+            "/api/issue-category-policies/{category}",
+            put(upsert_policy),
+        )
 }
 
 fn workspace_id(context: &WorkspaceContext) -> Result<Uuid, Response> {
@@ -98,6 +104,139 @@ fn unique_violation(error: &anyhow::Error) -> bool {
         .and_then(|e| e.as_database_error())
         .and_then(|e| e.code())
         .is_some_and(|code| code == "23505")
+}
+
+#[derive(Debug, Deserialize)]
+struct CategoryPolicyRequest {
+    default_execution_agent_id: Option<String>,
+    default_reviewer_agent_id: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct CategoryPolicyResponse {
+    workspace_id: Uuid,
+    category: String,
+    default_execution_agent_id: Option<Uuid>,
+    default_reviewer_agent_id: Option<Uuid>,
+    created_at: String,
+    updated_at: String,
+}
+
+impl From<WorkspaceIssueCategoryPolicy> for CategoryPolicyResponse {
+    fn from(policy: WorkspaceIssueCategoryPolicy) -> Self {
+        Self {
+            workspace_id: policy.workspace_id,
+            category: policy.category,
+            default_execution_agent_id: policy.default_execution_agent_id,
+            default_reviewer_agent_id: policy.default_reviewer_agent_id,
+            created_at: crate::timefmt::rfc3339(policy.created_at),
+            updated_at: crate::timefmt::rfc3339(policy.updated_at),
+        }
+    }
+}
+
+async fn list_policies(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+) -> Response {
+    let workspace_id = match workspace_id(&context) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+    match category_policy_q::list_workspace_issue_category_policies(&state.pool, workspace_id).await
+    {
+        Ok(policies) => Json(json!({
+            "policies": policies.into_iter().map(CategoryPolicyResponse::from).collect::<Vec<_>>(),
+        }))
+        .into_response(),
+        Err(error) => db_error(error, "failed to list issue category policies"),
+    }
+}
+
+async fn upsert_policy(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(category): Path<String>,
+    Json(request): Json<CategoryPolicyRequest>,
+) -> Response {
+    if let Err(response) = require_admin(&context) {
+        return response;
+    }
+    if !matches!(
+        category.as_str(),
+        category_policy::EXECUTION_CATEGORY | category_policy::REVIEW_CATEGORY
+    ) {
+        return error_response(StatusCode::BAD_REQUEST, "unsupported issue category policy");
+    }
+    let workspace_id = match workspace_id(&context) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+    let parse = |raw: Option<String>, field: &str| -> Result<Option<Uuid>, Response> {
+        raw.filter(|value| !value.trim().is_empty())
+            .map(|value| {
+                Uuid::parse_str(value.trim()).map_err(|_| {
+                    error_response(StatusCode::BAD_REQUEST, &format!("invalid {field}"))
+                })
+            })
+            .transpose()
+    };
+    let execution = match parse(
+        request.default_execution_agent_id,
+        "default_execution_agent_id",
+    ) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let reviewer = match parse(
+        request.default_reviewer_agent_id,
+        "default_reviewer_agent_id",
+    ) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    if execution.is_none() {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "default_execution_agent_id is required",
+        );
+    }
+    if category == category_policy::REVIEW_CATEGORY && reviewer.is_none() {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "default_reviewer_agent_id is required for in_review",
+        );
+    }
+    let mut tx = match state.pool.begin().await {
+        Ok(tx) => tx,
+        Err(error) => return db_error(error.into(), "failed to update issue category policy"),
+    };
+    let policy = match category_policy::upsert(
+        &mut tx,
+        workspace_id,
+        &category,
+        execution,
+        reviewer,
+    )
+    .await
+    {
+        Ok(policy) => policy,
+        Err(error) => {
+            return error_response(StatusCode::BAD_REQUEST, &error.to_string());
+        }
+    };
+    if let Err(error) = tx.commit().await {
+        return db_error(error.into(), "failed to update issue category policy");
+    }
+    state.bus.publish(&patchbay_events::Event {
+        event_type: "issue_category_policy:changed".into(),
+        workspace_id: workspace_id.to_string(),
+        actor_type: "member".into(),
+        actor_id: context.member.user_id.to_string(),
+        payload: json!({"category": category}),
+        ..Default::default()
+    });
+    Json(CategoryPolicyResponse::from(policy)).into_response()
 }
 
 fn normalize_color(raw: &str) -> Result<String, Response> {
@@ -1034,8 +1173,10 @@ mod tests {
             title: title.into(),
             status: status.into(),
             priority: "none".into(),
-            assignee_type: Some("member".into()),
-            assignee_id: Some(creator_id),
+            owner_type: Some("member".into()),
+            owner_id: Some(creator_id),
+            executor_type: Some("agent".into()),
+            executor_id: Some(creator_id),
             creator_type: "member".into(),
             creator_id,
             allow_duplicate: true,

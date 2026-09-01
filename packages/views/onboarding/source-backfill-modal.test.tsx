@@ -213,7 +213,7 @@ describe("SourceBackfillModal", () => {
       expect(mockListIssues).toHaveBeenCalledWith({
         workspace_id: "ws-1",
         statuses: ["done"],
-        assignee_types: ["agent", "team"],
+        executor_types: ["agent", "team"],
         limit: 1,
       });
     });

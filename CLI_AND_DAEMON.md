@@ -481,15 +481,16 @@ patchbay workspace member list <workspace-id>
 ```bash
 patchbay issue list
 patchbay issue list --status in_progress
-patchbay issue list --priority urgent --assignee "Agent Name"
-patchbay issue list --assignee-id 5fb87ac7-23b5-4a7a-81fa-ed295a54545d
+patchbay issue list --priority urgent --executor "Agent Name"
+patchbay issue list --executor-id 5fb87ac7-23b5-4a7a-81fa-ed295a54545d
+patchbay issue list --owner "Human Owner"
 patchbay issue list --full-id
 patchbay issue list --limit 20 --output json
 patchbay issue list --status todo --sort position       # board order (the default)
 patchbay issue list --sort created_at --direction desc  # newest first
 ```
 
-Table output shows a routable issue `KEY` such as `PB-123`; copy that key into follow-up commands like `issue get`, `issue comment list`, `issue status`, or `--parent`. Add `--full-id` when you need canonical UUIDs. Available filters: `--status`, `--priority`, `--assignee` / `--assignee-id`, `--project`, `--metadata`, `--limit`. Use `--assignee-id <uuid>` for unambiguous filtering when names overlap.
+Table output shows a routable issue `KEY` such as `PB-123`; copy that key into follow-up commands like `issue get`, `issue comment list`, `issue status`, or `--parent`. Add `--full-id` when you need canonical UUIDs. Available filters include `--status`, `--priority`, `--executor` / `--executor-id`, `--owner` / `--owner-id`, `--project`, `--metadata`, and `--limit`. Use the UUID forms for unambiguous filtering when names overlap.
 
 Results come back in board order (`position`, ascending) by default. Pass `--sort` to change the column (`position`, `title`, `created_at`, `start_date`, `due_date`, `priority`) and `--direction asc|desc` to flip the order. `position` is always ascending (it is the manual drag order), so `--direction` is rejected when `--sort` is `position` or omitted — use it only with `title`, `created_at`, `start_date`, `due_date`, or `priority`.
 
@@ -510,17 +511,20 @@ patchbay issue get <id> --output json
 ### Create Issue
 
 ```bash
-patchbay issue create --title "Fix login bug" --description "..." --priority high --assignee "Lambda"
-patchbay issue create --title "Fix login bug" --assignee-id 5fb87ac7-23b5-4a7a-81fa-ed295a54545d
+patchbay issue create --title "Fix login bug" --description "..." --priority high --executor "Lambda"
+patchbay issue create --title "Fix login bug" --owner-id 5fb87ac7-23b5-4a7a-81fa-ed295a54545d
 ```
 
-Flags: `--title` (required), `--description`, `--status`, `--priority`, `--assignee` / `--assignee-id`, `--parent`, `--project`, `--due-date`. Pass `--assignee-id <uuid>` (mutually exclusive with `--assignee`) when scripting against the IDs returned by `patchbay workspace member list --output json` / `patchbay agent list --output json`.
+Flags: `--title` (required), `--description`, `--status`, `--priority`, `--executor` / `--executor-id`, `--owner` / `--owner-id`, `--reviewer` / `--reviewer-id`, `--parent`, `--project`, `--due-date`. The name and UUID forms are mutually exclusive; use UUIDs when scripting against the IDs returned by `patchbay workspace member list --output json` / `patchbay agent list --output json`.
 
 ### Update Issue
 
 ```bash
 patchbay issue update <id> --title "New title" --priority urgent
 patchbay issue update <id> --position 4.5
+patchbay issue update <id> --executor-id <agent-or-team-uuid> --no-start
+patchbay issue update <id> --owner-id <member-uuid> --no-start
+patchbay issue update <id> --reviewer-id <actor-uuid> --no-start
 ```
 
 `--position` sets the raw ordering value within the board column (lower sorts first). For relative moves, `issue reorder` is easier because it works out the value for you.
@@ -538,15 +542,15 @@ patchbay issue reorder <id> --after  <other>   # directly below another issue in
 
 Pick exactly one of `--top`, `--bottom`, `--before`, or `--after`. Reorder stays inside the issue's current column, so `--before` / `--after` must name an issue in that same column. To move an issue to a different column, change its status first with `issue status`, then reorder within the new column.
 
-### Assign Issue
+### Set Issue Roles
 
 ```bash
-patchbay issue assign <id> --to "Lambda"
-patchbay issue assign <id> --to-id 5fb87ac7-23b5-4a7a-81fa-ed295a54545d
-patchbay issue assign <id> --unassign
+patchbay issue update <id> --executor "Lambda"
+patchbay issue update <id> --owner "Human Owner"
+patchbay issue update <id> --reviewer "Reviewer Name"
 ```
 
-Pass `--to-id <uuid>` to assign by canonical UUID (mutually exclusive with `--to`); useful when names overlap across members and agents.
+Use `--executor-id`, `--owner-id`, or `--reviewer-id` to target a canonical UUID. Executors are agents or teams, owners are workspace members, and reviewers may be any supported actor.
 
 ### Change Status
 

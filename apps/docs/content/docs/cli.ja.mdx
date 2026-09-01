@@ -87,7 +87,7 @@ patchbay issue search "ログイン失敗"
 # 作成と更新
 patchbay issue create --title "ログイン失敗を修正"
 patchbay issue status PB-123 in_progress
-patchbay issue assign PB-123 --to "Backend Agent"
+patchbay issue update PB-123 --executor "Backend Agent" --no-start
 
 # コメントと実行履歴
 patchbay issue comment list PB-123
@@ -218,11 +218,11 @@ CLI の設定ファイルには、あなたとして Patchbay にアクセスで
 
 | コマンド | サブコマンド | 用途 | 主なフラグ |
 | --- | --- | --- | --- |
-| `issue` | `list` | イシューを一覧 | `--status`、`--priority`、`--assignee`、`--project`、`--metadata`（繰り返し可）、`--limit`、`--offset`、`--sort`、`--full-id` |
+| `issue` | `list` | イシューを一覧 | `--status`、`--priority`、`--executor` / `--executor-id`、`--owner` / `--owner-id`、`--project`、`--metadata`（繰り返し可）、`--limit`、`--offset`、`--sort`、`--full-id` |
 | | `get <id>` | 単一のイシューを表示 | |
-| | `create` | イシューを作成 | `--title`（必須）、`--description` / `--description-stdin` / `--description-file`、`--status`、`--priority`、`--assignee`、`--parent`、`--stage`、`--project`、`--start-date`、`--due-date`、`--attachment`（繰り返し可） |
+| | `create` | イシューを作成 | `--title`（必須）、`--description` / `--description-stdin` / `--description-file`、`--status`、`--priority`、`--executor` / `--executor-id`、`--owner` / `--owner-id`、`--reviewer` / `--reviewer-id`、`--parent`、`--stage`、`--project`、`--start-date`、`--due-date`、`--attachment`（繰り返し可） |
 | | `update <id>` | イシューのフィールドを更新 | `create` と同系のフィールドに加え `--position`、`--no-start` |
-| | `assign <id>` | 割り当てまたは割り当て解除 | `--to`（メンバー、エージェント、チームを名前であいまいマッチ）、`--to-id`、`--unassign`、`--no-start` |
+| | `assign <id>` | 互換用の一括ロール設定/解除 | `--to`、`--to-id`、`--unassign`、`--no-start` |
 | | `status <id> <status>` | ステータスを変更 | `--no-start` |
 | | `reorder <id>` | カラム内で移動 | |
 | | `search <query>` | イシューを検索 | `--limit`、`--include-closed` |

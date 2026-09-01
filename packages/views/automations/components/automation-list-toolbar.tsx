@@ -52,7 +52,7 @@ export function actorFilterValue(type: string, id: string): string {
 }
 
 const COLUMN_KEYS: AutomationColumnKey[] = [
-  "assignee",
+  "executor",
   "trigger",
   "lastRun",
   "nextRun",
@@ -75,7 +75,7 @@ export function countActiveFilterDimensions(
   filters: AutomationListFilters,
 ): number {
   let count = 0;
-  if (filters.assignees.length > 0) count++;
+  if (filters.executors.length > 0) count++;
   if (filters.modes.length > 0) count++;
   if (filters.triggerKinds.length > 0) count++;
   if (filters.creators.length > 0) count++;
@@ -125,7 +125,7 @@ export function AutomationListToolbar({
 
   // Option lists with counts, derived from the scope's unfiltered rows so
   // toggling one dimension doesn't make the others' options vanish.
-  const assigneeOptions = new Map<
+  const executorOptions = new Map<
     string,
     { type: string; id: string; count: number }
   >();
@@ -136,13 +136,13 @@ export function AutomationListToolbar({
   const modeCounts = new Map<string, number>();
   const triggerKindCounts = new Map<string, number>();
   for (const row of allRows) {
-    const aKey = actorFilterValue(row.assignee_type, row.assignee_id);
-    const a = assigneeOptions.get(aKey);
+    const aKey = actorFilterValue(row.executor_type, row.executor_id);
+    const a = executorOptions.get(aKey);
     if (a) a.count += 1;
     else
-      assigneeOptions.set(aKey, {
-        type: row.assignee_type,
-        id: row.assignee_id,
+      executorOptions.set(aKey, {
+        type: row.executor_type,
+        id: row.executor_id,
         count: 1,
       });
     const cKey = actorFilterValue(row.created_by_type, row.created_by_id);
@@ -177,7 +177,7 @@ export function AutomationListToolbar({
   };
 
   const COLUMN_LABELS: Record<AutomationColumnKey, string> = {
-    assignee: t(($) => $.page.table.assignee),
+    executor: t(($) => $.page.table.executor),
     trigger: t(($) => $.page.table.trigger),
     lastRun: t(($) => $.page.table.last_run),
     nextRun: t(($) => $.page.table.next_run),
@@ -314,31 +314,31 @@ export function AutomationListToolbar({
             }
           />
           <DropdownMenuContent align="end" className="w-auto">
-            {/* Assignee */}
+            {/* Executor */}
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
                 <span className="flex-1">
-                  {t(($) => $.toolbar.section_assignee)}
+                  {t(($) => $.toolbar.section_executor)}
                 </span>
-                {filters.assignees.length > 0 && (
+                {filters.executors.length > 0 && (
                   <span className="text-caption font-medium text-primary">
-                    {filters.assignees.length}
+                    {filters.executors.length}
                   </span>
                 )}
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent className="max-h-72 w-auto min-w-48 overflow-y-auto">
-                {[...assigneeOptions.entries()].map(
+                {[...executorOptions.entries()].map(
                   ([value, { type, id, count }]) => (
                     <DropdownMenuCheckboxItem
                       key={value}
-                      checked={filters.assignees.includes(value)}
+                      checked={filters.executors.includes(value)}
                       onCheckedChange={() =>
-                        onToggleFilter("assignees", value)
+                        onToggleFilter("executors", value)
                       }
                       className={FILTER_ITEM_CLASS}
                     >
                       <HoverCheck
-                        checked={filters.assignees.includes(value)}
+                        checked={filters.executors.includes(value)}
                       />
                       <ActorAvatar actorType={type} actorId={id} size="sm" />
                       <span className="min-w-0 truncate">

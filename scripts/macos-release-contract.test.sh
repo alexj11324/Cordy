@@ -50,9 +50,9 @@ require_literal 'matrix: ${{ fromJSON(needs.prepare.outputs.package_matrix) }}'
 require_count 3 'EXPECTED_COMMIT: ${{ needs.prepare.outputs.commit_sha }}'
 require_count 2 'repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG_NAME'
 require_count 2 'if [ "$tag_type" != "commit" ] || [ "$tag_sha" != "$EXPECTED_COMMIT" ]; then'
-require_literal 'uses: actions/upload-artifact@v4'
+require_literal 'uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4'
 require_literal 'name: macos-release-${{ matrix.arch }}'
-require_literal 'uses: actions/download-artifact@v4'
+require_literal 'uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4'
 require_literal 'pattern: macos-release-*'
 if [ "$(grep -Fc -- 'gh release upload "$TAG_NAME"' "$workflow" || true)" -ne 1 ]; then
   echo "verified macOS assets must reach GitHub Release in one post-matrix upload" >&2
@@ -69,12 +69,12 @@ if grep -Fq -- 'BUILD_TARGET' "$workflow"; then
   exit 1
 fi
 if ! grep -Fq -- 'run_rust:' "$ci_workflow" ||
-  ! grep -Fq -- "RUN_RUST: \${{ (github.event_name == 'workflow_dispatch' && inputs.run_rust == true) || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) }}" "$ci_workflow"; then
-  echo "CI must run Rust validation for release tags and support explicit manual runs" >&2
+  ! grep -Fq -- "RUST_CHANGED: \${{ steps.filter.outputs.rust }}" "$ci_workflow"; then
+  echo "CI must expose manual release authorization and automatic Rust path classification" >&2
   exit 1
 fi
 if [ "$(grep -Fc -- "needs.changes.outputs.rust == 'true'" "$ci_workflow" || true)" -lt 5 ]; then
-  echo "every Rust worker must use the manual Rust validation gate" >&2
+  echo "every Rust worker must use the classified Rust validation gate" >&2
   exit 1
 fi
 

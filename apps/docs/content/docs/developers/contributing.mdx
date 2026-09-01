@@ -48,20 +48,19 @@ The repository supports running the primary checkout and multiple worktrees at t
 ```bash
 git worktree add ../patchbay-feature -b feat/my-change main
 cd ../patchbay-feature
-make setup-worktree
-make start-worktree
+pnpm dev
 ```
 
-`make setup-worktree` generates `.env.worktree`; the database name and ports are derived from the path. To start it again:
+`pnpm dev` generates `.env.worktree` when needed, allocates available isolated ports, prepares the source-matched runtime, and starts the complete stack. To start it again, use the same command:
 
 ```bash
-make start-worktree
+pnpm dev
 ```
 
 To stop Desktop/Electron, Web, and API for the current worktree:
 
 ```bash
-make stop-worktree
+make stop
 ```
 
 You may also run `make dev` directly. The script detects a worktree through its `.git` file and selects `.env.worktree`.
@@ -78,7 +77,6 @@ You may also run `make dev` directly. The script detects a worktree through its 
 
 ```bash
 make dev              # Complete Electron + dev CLI + backend + Web origin + isolated DB
-make start            # Same complete stack using the existing environment
 make stop             # Stop the tracked Electron/backend/Web process tree for this checkout
 make check            # Run the complete local verification workflow
 make build            # Build the server, CLI, and migrate binaries
@@ -203,7 +201,7 @@ When you need clean data, reset the database named by the **current checkout's e
 ```bash
 make stop
 make db-reset
-make start
+pnpm dev
 ```
 
 `make db-reset` drops and recreates the current `POSTGRES_DB` and refuses to connect to a remote database. Before running it, check `.env` or `.env.worktree` and confirm the target database.

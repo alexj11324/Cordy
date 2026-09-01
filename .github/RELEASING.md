@@ -47,9 +47,35 @@ workflow, including the Rust gate. Only after that CI run succeeds does
 `macos-release.yml` build the Apple Silicon (`arm64`) desktop release.
 Pull-request CI and ordinary `main` pushes never create a Release.
 
-The automatic path publishes no Rust CLI archive, Intel macOS package, Linux or
-Windows installer, container image, or Helm chart. Those assets are all
-manual-only release paths.
+The version-tag path publishes no Rust CLI archive, Intel macOS package, Linux
+or Windows installer, versioned multi-architecture container image, or Helm
+chart. Those release assets remain manual-only. Production commit images are a
+separate continuous-delivery lane described below.
+
+## Automatic Aspectlylabs production delivery
+
+Every successful `CI` run for a push to `main` triggers **Aspectlylabs
+production**. The workflow always builds the complete native `linux/arm64`
+production set from the same full Git SHA: Backend, Web, Docs, and Auth Broker.
+There are no path filters or per-image choices. BuildKit, Cargo, and pnpm cache
+hits reduce work without changing that full-set contract.
+
+Each image is published under `sha-<full-git-sha>` and recorded by immutable
+digest. Deployment starts only after all four records have been assembled into
+one manifest and each digest is pullable. The `production` GitHub Environment
+holds the restricted SSH identity; repository and PR jobs cannot access it.
+The environment accepts only `main`, and the workflow concurrency group allows
+only one production deployment at a time.
+
+The server-side SSH key is forced to the audited
+`deploy/origin/production_deploy.py` gateway. The gateway accepts no shell
+command: it validates the current `origin/main` SHA, the four allow-listed GHCR
+repositories, and sha256 digests; updates the existing Compose projects; and
+keeps the prior manifest for rollback. Local runtime probes and public probes
+must confirm the exact Backend/Web/Auth build plus Login, Issues, Task Graph,
+Docs, and Google OAuth entry routes. Any failed probe restores the prior image
+set. See `docs/operations/production-deployment.md` for bootstrap, recovery,
+and acceptance details.
 
 ### Required macOS release secrets
 
@@ -113,11 +139,13 @@ until the independent auth broker passes the staged and canonical browser gates
 in `docs/operations/auth-broker-migration.md` and an operator explicitly
 approves the traffic change.
 
-The ordinary **Release** workflow intentionally excludes the auth broker. Build
-or publish that image only through **Auth Broker Release (manual)**; that
-workflow never deploys the image or changes public traffic. Its publishable
-Clerk key and API/accounts origins are injected at runtime, so they are not
-embedded in the image. The broker chart is separately versioned under
+The versioned **Release** workflow intentionally excludes the auth broker. The
+continuous production workflow nevertheless builds and deploys a
+commit-addressed Auth Broker image as one member of the complete production
+set. Its publishable Clerk key and API/accounts origins are injected at
+runtime, so they are not embedded in the image. Building/deploying the broker
+container still does not change Cloudflare traffic or transfer its Rust API
+authority. The broker chart is separately versioned under
 `deploy/helm/patchbay-auth-broker` and renders no workload unless explicitly
 enabled with an immutable image digest. See
 `docs/architecture/auth-release-boundary.md` for the versioned protocol and the

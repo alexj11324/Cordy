@@ -19,7 +19,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
   defaultDevCliCacheDir,
-  pruneDevCliCache,
+  pruneDevRuntimeCache,
   rustBuildEnvironmentFingerprint,
   rustSourceFingerprint,
   rustToolchainIdentity,
@@ -229,7 +229,11 @@ export function resolveCargoCommand(
   ].filter(Boolean);
   for (const candidate of [...new Set(candidates)]) {
     try {
-      execFileSync(candidate, ["--version"], { env, stdio: "pipe" });
+      execFileSync(candidate, ["--version"], {
+        env,
+        stdio: "pipe",
+        timeout: 2_000,
+      });
       return candidate;
     } catch {
       // Try the next deterministic Cargo location.
@@ -416,7 +420,7 @@ async function main() {
   }
 
   if (devCache) {
-    const cached = await storeDevCli({
+    await storeDevCli({
       ...devCache,
       sourceBinary: destBinary,
       binaryName: binName,
@@ -432,13 +436,7 @@ async function main() {
       profile,
       destinationBinary: destBinary,
     });
-    await pruneDevCliCache({
-      cacheRoot: devCache.cacheRoot,
-      rustTarget,
-      profile,
-      keep: 5,
-      preserveEntryDir: cached?.entryDir,
-    });
+    await pruneDevRuntimeCache({ cacheRoot: devCache.cacheRoot });
     console.log(
       `[bundle-cli] cached source CLI ${devCache.sourceFingerprint.slice(0, 12)} in ${devCache.cacheRoot}`,
     );

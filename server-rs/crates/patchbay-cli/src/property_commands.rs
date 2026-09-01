@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use super::{
     display_id, format_metadata_value, format_table, is_canonical_uuid, load_issue_actor_names,
-    new_api_client, normalize_assignee_input, resolve_current_workspace_id, resolve_issue_ref,
+    new_api_client, normalize_executor_input, resolve_current_workspace_id, resolve_issue_ref,
     retry_actor_get, value_string, ApiClient, Cli, Environment, IssueActorNames,
     IssuePropertyListArgs, IssuePropertyMutationArgs, IssuePropertyUnsetArgs, OutputFormat,
     RunOutput,
@@ -350,7 +350,7 @@ async fn resolve_property_member(
 ) -> Result<String> {
     if workspace_id.is_empty() {
         bail!(
-            "workspace ID is required to resolve assignees; use --workspace-id or set PATCHBAY_WORKSPACE_ID"
+            "workspace ID is required to resolve executors; use --workspace-id or set PATCHBAY_WORKSPACE_ID"
         );
     }
     let token = raw.trim();
@@ -361,7 +361,7 @@ async fn resolve_property_member(
         }
         return Ok(format!("member:{id}"));
     }
-    let input = normalize_assignee_input(token);
+    let input = normalize_executor_input(token);
     if input.is_empty() {
         bail!("actor value cannot be empty");
     }
@@ -398,7 +398,7 @@ async fn resolve_property_member(
                     .map(|(id, name)| format!("  member {name:?} ({})", display_id(id, false)))
                     .collect::<Vec<_>>()
                     .join("\n");
-                bail!("ambiguous assignee {input:?}; matches:\n{matches}");
+                bail!("ambiguous executor {input:?}; matches:\n{matches}");
             }
         }
     }
@@ -504,7 +504,7 @@ fn actor_property_inputs(
             let Some((actor_type, actor_id)) = reference.split_once(':') else {
                 continue;
             };
-            inputs.push(serde_json::json!({"assignee_type":actor_type,"assignee_id":actor_id}));
+            inputs.push(serde_json::json!({"executor_type":actor_type,"executor_id":actor_id}));
         }
     }
     inputs

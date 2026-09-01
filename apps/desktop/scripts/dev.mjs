@@ -16,16 +16,22 @@ import { fileURLToPath } from "node:url";
 import { envWithLocalBins } from "./package.mjs";
 import { planDevCommands } from "./dev-plan.mjs";
 import {
+  applyDevRuntimeAppIdentity,
+  parseDevRuntimeArgs,
+} from "../../../scripts/dev-runtime-profile.mjs";
+import {
   applyWorktreeDevEnv,
   repoRootFromScriptDir,
 } from "./worktree-dev-env.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
+const { electronArgs } = parseDevRuntimeArgs(process.argv.slice(2));
 
 applyWorktreeDevEnv(process.env, {
   root: repoRootFromScriptDir(here),
   log: true,
 });
+applyDevRuntimeAppIdentity(process.env);
 
 function run(command, args, { shell = false, env = process.env } = {}) {
   const result = spawnSync(command, args, {
@@ -46,7 +52,7 @@ const isWin = process.platform === "win32";
 // electron-vite's bin lands in apps/desktop/node_modules/.bin under the
 // isolated linker but only in the repo-root .bin under the hoisted linker
 // (.npmrc node-linker=hoisted); envWithLocalBins puts both on PATH.
-for (const step of planDevCommands(process.argv.slice(2), {
+for (const step of planDevCommands(electronArgs, {
   nodePath: process.execPath,
   scriptsDir: here,
 })) {

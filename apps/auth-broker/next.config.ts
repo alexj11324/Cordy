@@ -19,6 +19,10 @@ const nextConfig: NextConfig = {
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "X-Frame-Options", value: "DENY" },
           {
+            key: "X-Patchbay-Build",
+            value: process.env.NEXT_PUBLIC_APP_VERSION || "dev",
+          },
+          {
             key: "Permissions-Policy",
             value: "camera=(), microphone=(), geolocation=()",
           },

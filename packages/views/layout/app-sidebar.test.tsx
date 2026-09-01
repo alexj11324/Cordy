@@ -7,11 +7,19 @@ const { appForeground, chatSessions, chatStore, detail, deletePin, inboxItems, n
   appForeground: { current: true },
   sidebarState: {
     current: "expanded" as "expanded" | "collapsed",
+    isCompact: false,
     setHoverRevealSuspended: vi.fn(),
     setOpenMobile: vi.fn(),
   },
   chatSessions: { current: [] as { id?: string; unread_count?: number }[] },
-  chatStore: { current: { activeSessionId: null as string | null, isOpen: false } },
+  chatStore: {
+    current: {
+      activeSessionId: null as string | null,
+      isOpen: false,
+      supersedeAgentIntent: vi.fn(),
+      requestTopicsView: vi.fn(),
+    },
+  },
   detail: { current: { isPending: false, isError: false, data: null as unknown, error: null as unknown } },
   deletePin: vi.fn(),
   inboxItems: { current: [] as { id: string; read: boolean }[] },
@@ -80,6 +88,7 @@ vi.mock("@patchbay/ui/components/ui/sidebar", () => ({
   SidebarMenuItem: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   SidebarRail: () => null,
   useSidebar: () => ({
+    isCompact: sidebarState.isCompact,
     state: sidebarState.current,
     setHoverRevealSuspended: sidebarState.setHoverRevealSuspended,
     setOpenMobile: sidebarState.setOpenMobile,
@@ -110,6 +119,9 @@ vi.mock("../common/use-app-foreground", () => ({
 vi.mock("./help-launcher", () => ({
   HelpLauncher: () => <button type="button">Help</button>,
 }));
+vi.mock("../chat/components/chat-thread-list", () => ({
+  ChatThreadList: () => null,
+}));
 vi.mock("../auth", () => ({ useLogout: () => vi.fn() }));
 vi.mock("../issues/components/status-icon", () => ({ StatusIcon: () => <span /> }));
 vi.mock("../navigation", () => ({
@@ -127,10 +139,18 @@ vi.mock("@patchbay/core/auth", () => ({
 // Callable-store shape (selectorFn + getState) per the repo testing rules.
 vi.mock("@patchbay/core/chat", () => ({
   useChatStore: Object.assign(
-    (selector: (state: { activeSessionId: string | null; isOpen: boolean }) => unknown) =>
+    (selector: (state: {
+      activeSessionId: string | null;
+      isOpen: boolean;
+      supersedeAgentIntent: () => void;
+      requestTopicsView: () => void;
+    }) => unknown) =>
       selector(chatStore.current),
     { getState: () => chatStore.current },
   ),
+}));
+vi.mock("@patchbay/core/chat/mutations", () => ({
+  useSetChatSessionArchived: () => ({ mutate: vi.fn() }),
 }));
 vi.mock("@patchbay/core/paths", async (importOriginal) => ({
   // Spread the real module so pure helpers (resolveRouteIconName, used by the
@@ -145,6 +165,7 @@ vi.mock("@patchbay/core/paths", async (importOriginal) => ({
     channels: () => "/acme/channels",
     myIssues: () => "/acme/my-issues",
     issues: () => "/acme/issues",
+    taskGraph: () => "/acme/task-graph",
     projects: () => "/acme/projects",
     automations: () => "/acme/automations",
     agents: () => "/acme/agents",
@@ -190,6 +211,8 @@ vi.mock("@patchbay/core/pins/mutations", () => ({ useDeletePin: () => ({ mutate:
 vi.mock("@patchbay/core/pins/queries", () => ({ pinListOptions: () => ({ queryKey: ["pins"] }) }));
 vi.mock("@patchbay/core/projects/queries", () => ({ projectDetailOptions: () => ({ queryKey: ["project"] }) }));
 vi.mock("@patchbay/core/workspace/queries", () => ({
+  agentListOptions: () => ({ queryKey: ["agents"] }),
+  memberListOptions: () => ({ queryKey: ["members"] }),
   myInvitationListOptions: () => ({ queryKey: ["invitations"] }),
   workspaceKeys: { myInvitations: () => ["invitations"] },
   workspaceListOptions: () => ({ queryKey: ["workspaces"] }),
@@ -291,6 +314,26 @@ describe("mobile sheet dismissal", () => {
   });
 });
 
+describe("workspace nav — task graph", () => {
+  beforeEach(() => {
+    navigation.current = { pathname: "/acme/issues" };
+  });
+
+  it("renders Task Graph beside Issues and marks it active on its route", () => {
+    const { container, rerender } = render(<AppSidebar />);
+    const taskGraphNav = () => container.querySelector('button[data-href="/acme/task-graph"]');
+
+    expect(taskGraphNav()).not.toBeNull();
+    expect(taskGraphNav()).not.toHaveAttribute("data-active");
+
+    navigation.current = { pathname: "/acme/task-graph" };
+    rerender(<AppSidebar />);
+
+    expect(taskGraphNav()).toHaveAttribute("data-active", "true");
+    expect(container.querySelector('button[data-href="/acme/issues"]')).not.toHaveAttribute("data-active");
+  });
+});
+
 describe("collapsed footer", () => {
   beforeEach(() => {
     sidebarState.current = "expanded";
@@ -380,7 +423,11 @@ describe("personal nav — Chat", () => {
     chatSessions.current = [];
     inboxItems.current = [];
     navigation.current = { pathname: "/acme/issues" };
-    chatStore.current = { activeSessionId: null, isOpen: false };
+    chatStore.current = {
+      ...chatStore.current,
+      activeSessionId: null,
+      isOpen: false,
+    };
     appForeground.current = true;
   });
 
@@ -427,7 +474,7 @@ describe("personal nav — Chat", () => {
     // count with no matching row.
     chatSessions.current = [{ id: "a", unread_count: 2 }, { id: "b", unread_count: 3 }];
     navigation.current = { pathname: "/acme/chat" };
-    chatStore.current = { activeSessionId: "a", isOpen: false };
+    chatStore.current = { ...chatStore.current, activeSessionId: "a", isOpen: false };
     const { container } = render(<AppSidebar />);
     expect(chatBadge(container)).toHaveAttribute("aria-label", "3");
   });
@@ -435,7 +482,7 @@ describe("personal nav — Chat", () => {
   it("excludes the viewed session when the floating chat window is open off-route", () => {
     chatSessions.current = [{ id: "a", unread_count: 2 }, { id: "b", unread_count: 3 }];
     navigation.current = { pathname: "/acme/issues" };
-    chatStore.current = { activeSessionId: "a", isOpen: true };
+    chatStore.current = { ...chatStore.current, activeSessionId: "a", isOpen: true };
     const { container } = render(<AppSidebar />);
     expect(chatBadge(container)).toHaveAttribute("aria-label", "3");
   });
@@ -445,7 +492,7 @@ describe("personal nav — Chat", () => {
     // surfaces closed nothing will auto mark-read, so the badge must count.
     chatSessions.current = [{ id: "a", unread_count: 2 }, { id: "b", unread_count: 3 }];
     navigation.current = { pathname: "/acme/issues" };
-    chatStore.current = { activeSessionId: "a", isOpen: false };
+    chatStore.current = { ...chatStore.current, activeSessionId: "a", isOpen: false };
     const { container } = render(<AppSidebar />);
     expect(chatBadge(container)).toHaveAttribute("aria-label", "5");
   });
@@ -456,7 +503,7 @@ describe("personal nav — Chat", () => {
     // notification is silently eaten while the user is away.
     chatSessions.current = [{ id: "a", unread_count: 2 }, { id: "b", unread_count: 3 }];
     navigation.current = { pathname: "/acme/issues" };
-    chatStore.current = { activeSessionId: "a", isOpen: true };
+    chatStore.current = { ...chatStore.current, activeSessionId: "a", isOpen: true };
     appForeground.current = false;
     const { container } = render(<AppSidebar />);
     expect(chatBadge(container)).toHaveAttribute("aria-label", "5");
@@ -465,7 +512,7 @@ describe("personal nav — Chat", () => {
   it("counts the active session on the chat route while the app is backgrounded", () => {
     chatSessions.current = [{ id: "a", unread_count: 2 }, { id: "b", unread_count: 3 }];
     navigation.current = { pathname: "/acme/chat" };
-    chatStore.current = { activeSessionId: "a", isOpen: false };
+    chatStore.current = { ...chatStore.current, activeSessionId: "a", isOpen: false };
     appForeground.current = false;
     const { container } = render(<AppSidebar />);
     expect(chatBadge(container)).toHaveAttribute("aria-label", "5");

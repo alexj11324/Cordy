@@ -11,10 +11,48 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path (Split-Path $PSCommandPath -Parent) -Parent
 Set-Location $RepoRoot
 
+$ClerkEnvironmentKeys = @(
+    "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
+    "CLERK_PUBLISHABLE_KEY",
+    "CLERK_SECRET_KEY",
+    "CLERK_JWT_KEY",
+    "CLERK_ISSUER",
+    "CLERK_AUTHORIZED_PARTIES",
+    "PATCHBAY_DEV_AUTH_READY"
+)
+$InjectedClerkEnvironment = @{}
+foreach ($key in $ClerkEnvironmentKeys) {
+    $value = [Environment]::GetEnvironmentVariable($key, "Process")
+    if ($null -ne $value) {
+        $InjectedClerkEnvironment[$key] = $value
+    }
+    Remove-Item "Env:$key" -ErrorAction SilentlyContinue
+}
+
+function Enable-InjectedClerkEnvironment {
+    foreach ($entry in $InjectedClerkEnvironment.GetEnumerator()) {
+        Set-Item -Path "Env:$($entry.Key)" -Value $entry.Value
+    }
+}
+
+function Disable-InjectedClerkEnvironment {
+    foreach ($key in $ClerkEnvironmentKeys) {
+        Remove-Item "Env:$key" -ErrorAction SilentlyContinue
+    }
+}
+
 foreach ($command in @("node", "pnpm")) {
     if (-not (Get-Command $command -ErrorAction SilentlyContinue)) {
         throw "Missing prerequisite: $command. Install Node.js 22 and pnpm 10.28.2."
     }
+}
+$NodeMajor = (& node -p 'process.versions.node.split(".")[0]').Trim()
+$PnpmVersion = (& pnpm --version).Trim()
+if ($NodeMajor -ne "22") {
+    throw "Patchbay development requires Node.js 22 (found $(& node --version)). Run through pnpm's pinned dev runtime or activate .nvmrc."
+}
+if ($PnpmVersion -ne "10.28.2") {
+    throw "Patchbay development requires pnpm 10.28.2 (found $PnpmVersion). Run: corepack prepare pnpm@10.28.2 --activate"
 }
 if (-not $env:ENV_FILE) {
     throw "The complete Node launcher did not provide ENV_FILE. Run 'pnpm dev' instead of invoking scripts/dev.ps1 directly."
@@ -22,17 +60,51 @@ if (-not $env:ENV_FILE) {
 
 $env:SCCACHE_CACHE_SIZE = if ($env:SCCACHE_CACHE_SIZE) { $env:SCCACHE_CACHE_SIZE } else { "10G" }
 
-if (-not (Test-Path (Join-Path $RepoRoot "node_modules"))) {
-    Write-Host "==> Installing dependencies..."
-    & pnpm install
-    if ($LASTEXITCODE -ne 0) { throw "pnpm install failed with exit code $LASTEXITCODE" }
-}
+Write-Host "==> Verifying dependencies..."
+& pnpm install
+if ($LASTEXITCODE -ne 0) { throw "pnpm install failed with exit code $LASTEXITCODE" }
 
 & node apps/desktop/scripts/prepare-dev-runtime.mjs
 if ($LASTEXITCODE -ne 0) { throw "Development runtime preparation failed with exit code $LASTEXITCODE" }
 
 $DevBackend = Join-Path $RepoRoot ".patchbay-dev/bin/patchbay-server.exe"
 $DevMigrate = Join-Path $RepoRoot ".patchbay-dev/bin/patchbay-migrate.exe"
+
+$DevMode = if ($env:PATCHBAY_DEV_MODE) { $env:PATCHBAY_DEV_MODE } else { "local" }
+if ($ElectronArgs -contains "--hosted") { $DevMode = "hosted" }
+if ($DevMode -notin @("local", "hosted")) {
+    throw "Unsupported development runtime mode: $DevMode"
+}
+$env:PATCHBAY_DEV_MODE = $DevMode
+
+if ($DevMode -eq "hosted") {
+    # Keep the hosted OAuth/API tuple immutable. This mode deliberately skips
+    # the local database, Rust server, and Next login origin.
+    $env:PATCHBAY_DEV_API_URL = "https://api.aspectlylabs.com"
+    $env:PATCHBAY_DEV_WS_URL = "wss://api.aspectlylabs.com/ws"
+    $env:PATCHBAY_DEV_APP_URL = "https://patchbay.aspectlylabs.com"
+    $env:PATCHBAY_DEV_ACCOUNTS_URL = "https://accounts.aspectlylabs.com"
+    $env:PATCHBAY_PUBLIC_URL = $env:PATCHBAY_DEV_API_URL
+    $env:PATCHBAY_SERVER_URL = $env:PATCHBAY_DEV_WS_URL
+    $env:PATCHBAY_APP_URL = $env:PATCHBAY_DEV_APP_URL
+    $env:VITE_API_URL = $env:PATCHBAY_DEV_API_URL
+    $env:VITE_WS_URL = $env:PATCHBAY_DEV_WS_URL
+    $env:VITE_APP_URL = $env:PATCHBAY_DEV_APP_URL
+    $env:VITE_ACCOUNTS_URL = $env:PATCHBAY_DEV_ACCOUNTS_URL
+    $env:NEXT_PUBLIC_API_URL = $env:VITE_API_URL
+    $env:NEXT_PUBLIC_WS_URL = $env:VITE_WS_URL
+    $env:PATCHBAY_REQUIRE_SOURCE_CLI = "1"
+    $env:PATCHBAY_DEV_ENV_FILE = $env:ENV_FILE
+    Write-Host ""
+    Write-Host "✓ Hosted Desktop development environment"
+    Write-Host "  OAuth:    $($env:PATCHBAY_DEV_ACCOUNTS_URL)"
+    Write-Host "  API:      $($env:PATCHBAY_DEV_API_URL)"
+    Write-Host "  Renderer: local Electron/Vite hot reload"
+    Write-Host ""
+    & node apps/desktop/scripts/dev.mjs @ElectronArgs
+    if ($LASTEXITCODE -ne 0) { throw "Electron development process exited with code $LASTEXITCODE" }
+    exit 0
+}
 
 function Get-PostgresCommand {
     param([string]$Name)
@@ -43,9 +115,28 @@ function Get-PostgresCommand {
     return $null
 }
 
-function Get-MissingEnvironmentKeys {
-    param([string[]]$Names)
-    @($Names | Where-Object { -not [Environment]::GetEnvironmentVariable($_) })
+function Get-PositiveTimeoutSeconds {
+    param([string]$Name, [int]$Default = 120)
+    $value = [Environment]::GetEnvironmentVariable($Name)
+    if (-not $value) { return $Default }
+    $parsed = 0
+    if (-not [int]::TryParse($value, [ref]$parsed) -or $parsed -le 0) {
+        throw "$Name must be a positive number of seconds."
+    }
+    return $parsed
+}
+
+function Test-TcpPort {
+    param([string]$HostName, [int]$Port)
+    $client = [System.Net.Sockets.TcpClient]::new()
+    try {
+        $task = $client.ConnectAsync($HostName, $Port)
+        return $task.Wait(500) -and $client.Connected
+    } catch {
+        return $false
+    } finally {
+        $client.Dispose()
+    }
 }
 
 function Test-DockerPostgresAvailable {
@@ -54,6 +145,23 @@ function Test-DockerPostgresAvailable {
     if ($LASTEXITCODE -ne 0) { return $false }
     & docker info *> $null
     return $LASTEXITCODE -eq 0
+}
+
+function Stop-TrackedProcessTree {
+    param([object]$Process)
+    if (-not $Process -or $Process.HasExited) { return }
+    & taskkill.exe /PID $Process.Id /T /F *> $null
+    $Process.WaitForExit()
+}
+
+function ConvertTo-WindowsCommandLineArgument {
+    param([AllowEmptyString()][string]$Argument)
+    if ($Argument.Length -gt 0 -and $Argument -notmatch '[\s"]') {
+        return $Argument
+    }
+    $escaped = [regex]::Replace($Argument, '(\\*)"', '$1$1\"')
+    $escaped = [regex]::Replace($escaped, '(\\+)$', '$1$1')
+    return '"' + $escaped + '"'
 }
 
 $DatabaseUri = [Uri]$env:DATABASE_URL
@@ -83,6 +191,8 @@ if ($RuntimeMode -eq "docker" -and -not $DockerAvailable) {
     throw "PATCHBAY_POSTGRES_RUNTIME=docker but Docker Compose or its daemon is unavailable."
 }
 $UseDocker = $IsLocal -and (($RuntimeMode -eq "docker") -or ($RuntimeMode -eq "auto" -and $ComposeEndpoint -and $DockerAvailable))
+$DatabaseTimeoutSeconds = Get-PositiveTimeoutSeconds "PATCHBAY_DEV_DB_TIMEOUT_SECONDS"
+$DatabaseDeadline = [DateTime]::UtcNow.AddSeconds($DatabaseTimeoutSeconds)
 
 if ($UseDocker) {
     Write-Host "==> Ensuring shared PostgreSQL container is running on localhost:5432..."
@@ -90,6 +200,10 @@ if ($UseDocker) {
     if ($LASTEXITCODE -ne 0) { throw "docker compose up failed with exit code $LASTEXITCODE" }
     do {
         & docker compose exec -T postgres pg_isready -U $PostgresUser -d postgres *> $null
+        if ([DateTime]::UtcNow -ge $DatabaseDeadline) {
+            & docker compose ps postgres
+            throw "PostgreSQL did not become ready within $DatabaseTimeoutSeconds seconds. Inspect: docker compose logs postgres"
+        }
         if ($LASTEXITCODE -ne 0) { Start-Sleep -Seconds 1 }
     } while ($LASTEXITCODE -ne 0)
     $exists = & docker compose exec -T postgres psql -U $PostgresUser -d postgres -Atqc "SELECT 1 FROM pg_database WHERE datname = '$DatabaseName'"
@@ -106,6 +220,9 @@ if ($UseDocker) {
     }
     do {
         & $PgIsReady -h $DatabaseHost -p $DatabasePort -U $PostgresUser -d postgres *> $null
+        if ([DateTime]::UtcNow -ge $DatabaseDeadline) {
+            throw "PostgreSQL did not become ready at $DatabaseHost`:$DatabasePort within $DatabaseTimeoutSeconds seconds. Verify the native service and DATABASE_URL."
+        }
         if ($LASTEXITCODE -ne 0) { Start-Sleep -Seconds 1 }
     } while ($LASTEXITCODE -ne 0)
     $exists = & $Psql -h $DatabaseHost -p $DatabasePort -U $PostgresUser -d postgres -Atqc "SELECT 1 FROM pg_database WHERE datname = '$DatabaseName'"
@@ -118,6 +235,9 @@ if ($UseDocker) {
     if ($PgIsReady) {
         do {
             & $PgIsReady -d $env:DATABASE_URL *> $null
+            if ([DateTime]::UtcNow -ge $DatabaseDeadline) {
+                throw "PostgreSQL did not become ready at $DatabaseHost`:$DatabasePort within $DatabaseTimeoutSeconds seconds. Verify DATABASE_URL and network access."
+            }
             if ($LASTEXITCODE -ne 0) { Start-Sleep -Seconds 1 }
         } while ($LASTEXITCODE -ne 0)
     }
@@ -134,13 +254,8 @@ try {
 
 $BackendPort = if ($env:PORT) { $env:PORT } else { "8080" }
 $BackendReadyUrl = "http://127.0.0.1:$BackendPort/healthz"
-$PortOccupied = $false
-try {
-    $existing = Invoke-RestMethod -Uri $BackendReadyUrl -TimeoutSec 1
-    if ($existing.status) { $PortOccupied = $true }
-} catch { }
-if ($PortOccupied) {
-    throw "Backend port $BackendPort is already serving another Patchbay instance. Stop it or use this checkout's isolated PORT."
+if (Test-TcpPort "127.0.0.1" ([int]$BackendPort)) {
+    throw "Backend port $BackendPort is occupied. Stop its listener or regenerate this checkout's isolated environment with FORCE=1 make worktree-env."
 }
 
 $FrontendPort = if ($env:FRONTEND_PORT) { $env:FRONTEND_PORT } else { "3000" }
@@ -150,12 +265,30 @@ $env:PATCHBAY_APP_URL = $FrontendOrigin
 
 $BackendProcess = $null
 $WebProcess = $null
+$LogDir = Join-Path $RepoRoot ".patchbay-dev/logs"
+New-Item -ItemType Directory -Force -Path $LogDir *> $null
+$BackendStdoutLog = Join-Path $LogDir "backend.stdout.log"
+$BackendStderrLog = Join-Path $LogDir "backend.stderr.log"
+$FrontendStdoutLog = Join-Path $LogDir "frontend.stdout.log"
+$FrontendStderrLog = Join-Path $LogDir "frontend.stderr.log"
 try {
-    $BackendProcess = Start-Process -FilePath $DevBackend -WorkingDirectory (Join-Path $RepoRoot "server-rs") -NoNewWindow -PassThru
-    $Deadline = [DateTime]::UtcNow.AddMinutes(30)
+    $BackendArguments = @(
+        (ConvertTo-WindowsCommandLineArgument "../scripts/dev-auth-command.mjs"),
+        (ConvertTo-WindowsCommandLineArgument "backend"),
+        (ConvertTo-WindowsCommandLineArgument $DevBackend)
+    )
+    Enable-InjectedClerkEnvironment
+    try {
+        $BackendProcess = Start-Process -FilePath "node" -ArgumentList $BackendArguments -WorkingDirectory (Join-Path $RepoRoot "server-rs") -PassThru -RedirectStandardOutput $BackendStdoutLog -RedirectStandardError $BackendStderrLog
+    } finally {
+        Disable-InjectedClerkEnvironment
+    }
+    $BackendTimeoutSeconds = Get-PositiveTimeoutSeconds "PATCHBAY_DEV_BACKEND_TIMEOUT_SECONDS"
+    $Deadline = [DateTime]::UtcNow.AddSeconds($BackendTimeoutSeconds)
     while ($true) {
         $BackendProcess.Refresh()
         if ($BackendProcess.HasExited) {
+            Get-Content -Tail 80 -ErrorAction SilentlyContinue $BackendStdoutLog, $BackendStderrLog | Write-Error
             throw "Backend exited before its database readiness check passed (exit $($BackendProcess.ExitCode))."
         }
         $Ready = $false
@@ -169,39 +302,47 @@ try {
         } catch { }
         if ($Ready) { break }
         if ([DateTime]::UtcNow -ge $Deadline) {
-            throw "Backend did not become ready within 30 minutes: $BackendReadyUrl"
+            Get-Content -Tail 80 -ErrorAction SilentlyContinue $BackendStdoutLog, $BackendStderrLog | Write-Error
+            throw "Backend did not become ready within $BackendTimeoutSeconds seconds: $BackendReadyUrl"
         }
         Start-Sleep -Seconds 1
     }
 
-    $env:VITE_API_URL = "http://127.0.0.1:$BackendPort"
-    $env:VITE_WS_URL = "ws://127.0.0.1:$BackendPort/ws"
-    $env:VITE_APP_URL = $FrontendOrigin
-    $env:VITE_ACCOUNTS_URL = $FrontendOrigin
+    $env:PATCHBAY_DEV_API_URL = "http://127.0.0.1:$BackendPort"
+    $env:PATCHBAY_DEV_WS_URL = "ws://127.0.0.1:$BackendPort/ws"
+    $env:PATCHBAY_DEV_APP_URL = $FrontendOrigin
+    $env:PATCHBAY_DEV_ACCOUNTS_URL = $FrontendOrigin
+    $env:VITE_API_URL = $env:PATCHBAY_DEV_API_URL
+    $env:VITE_WS_URL = $env:PATCHBAY_DEV_WS_URL
+    $env:VITE_APP_URL = $env:PATCHBAY_DEV_APP_URL
+    $env:VITE_ACCOUNTS_URL = $env:PATCHBAY_DEV_ACCOUNTS_URL
     $env:NEXT_PUBLIC_API_URL = $env:VITE_API_URL
     $env:NEXT_PUBLIC_WS_URL = $env:VITE_WS_URL
 
     $FrontendReadyUrl = "$FrontendOrigin/"
-    $FrontendOccupied = $false
-    try {
-        $existingFrontend = Invoke-WebRequest -Uri $FrontendReadyUrl -TimeoutSec 1 -UseBasicParsing
-        if ($existingFrontend.StatusCode -ge 200 -and $existingFrontend.StatusCode -lt 400) { $FrontendOccupied = $true }
-    } catch { }
-    if ($FrontendOccupied) {
-        throw "Frontend port $FrontendPort is already serving another Patchbay instance. Stop it or use this checkout's isolated FRONTEND_PORT."
+    if (Test-TcpPort "127.0.0.1" ([int]$FrontendPort)) {
+        throw "Frontend port $FrontendPort is occupied. Stop its listener or regenerate this checkout's isolated environment with FORCE=1 make worktree-env."
     }
 
     Write-Host "==> Starting the browser/share/login origin at $FrontendOrigin..."
-    $WebProcess = Start-Process `
-        -FilePath "node" `
-        -ArgumentList @("node_modules/next/dist/bin/next", "dev", "--webpack", "--port", $FrontendPort) `
-        -WorkingDirectory (Join-Path $RepoRoot "apps/web") `
-        -NoNewWindow `
-        -PassThru
-    $FrontendDeadline = [DateTime]::UtcNow.AddMinutes(2)
+    Enable-InjectedClerkEnvironment
+    try {
+        $WebProcess = Start-Process `
+            -FilePath "node" `
+            -ArgumentList @("../../scripts/dev-auth-command.mjs", "web", "node", "node_modules/next/dist/bin/next", "dev", "--webpack", "--port", $FrontendPort) `
+            -WorkingDirectory (Join-Path $RepoRoot "apps/web") `
+            -RedirectStandardOutput $FrontendStdoutLog `
+            -RedirectStandardError $FrontendStderrLog `
+            -PassThru
+    } finally {
+        Disable-InjectedClerkEnvironment
+    }
+    $FrontendTimeoutSeconds = Get-PositiveTimeoutSeconds "PATCHBAY_DEV_FRONTEND_TIMEOUT_SECONDS"
+    $FrontendDeadline = [DateTime]::UtcNow.AddSeconds($FrontendTimeoutSeconds)
     while ($true) {
         $WebProcess.Refresh()
         if ($WebProcess.HasExited) {
+            Get-Content -Tail 80 -ErrorAction SilentlyContinue $FrontendStdoutLog, $FrontendStderrLog | Write-Error
             throw "Frontend exited before its browser-link health check passed (exit $($WebProcess.ExitCode))."
         }
         $FrontendReady = $false
@@ -211,20 +352,10 @@ try {
         } catch { }
         if ($FrontendReady) { break }
         if ([DateTime]::UtcNow -ge $FrontendDeadline) {
-            throw "Frontend did not become reachable within 2 minutes: $FrontendReadyUrl"
+            Get-Content -Tail 80 -ErrorAction SilentlyContinue $FrontendStdoutLog, $FrontendStderrLog | Write-Error
+            throw "Frontend did not become reachable within $FrontendTimeoutSeconds seconds: $FrontendReadyUrl"
         }
         Start-Sleep -Seconds 1
-    }
-
-    $MissingGoogleKeys = @(Get-MissingEnvironmentKeys -Names @(
-            "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
-            "CLERK_SECRET_KEY",
-            "CLERK_JWT_KEY",
-            "CLERK_ISSUER",
-            "CLERK_AUTHORIZED_PARTIES"
-        ))
-    if ($MissingGoogleKeys.Count -gt 0) {
-        Write-Host "! Google sign-in is unavailable; add these values to $($env:ENV_FILE): $($MissingGoogleKeys -join ', ')"
     }
 
     $env:PATCHBAY_REQUIRE_SOURCE_CLI = "1"
@@ -232,12 +363,6 @@ try {
     & node apps/desktop/scripts/dev.mjs @ElectronArgs
     if ($LASTEXITCODE -ne 0) { throw "Electron development process exited with code $LASTEXITCODE" }
 } finally {
-    if ($WebProcess -and -not $WebProcess.HasExited) {
-        & taskkill.exe /PID $WebProcess.Id /T /F *> $null
-        $WebProcess.WaitForExit()
-    }
-    if ($BackendProcess -and -not $BackendProcess.HasExited) {
-        Stop-Process -Id $BackendProcess.Id -ErrorAction SilentlyContinue
-        $BackendProcess.WaitForExit()
-    }
+    Stop-TrackedProcessTree $WebProcess
+    Stop-TrackedProcessTree $BackendProcess
 }

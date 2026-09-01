@@ -37,6 +37,7 @@ import type { SlackInstallation } from "@patchbay/core/types";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { openExternal } from "../../platform";
 import { useT } from "../../i18n";
+import { slackDocsUrl } from "./slack-docs-url";
 
 // SlackTab is the workspace settings panel for Slack bot installations.
 // Listing is member-visible; the disconnect action is admin-only (the backend
@@ -244,21 +245,6 @@ function InstallationRow({
 // connect dialog. Leave "" to hide the link; set it once the walkthrough that
 // shows how to create the Slack app + copy its two tokens is recorded.
 const SLACK_BYO_VIDEO_URL = "";
-
-// slackDocsUrl points at the Slack integration guide on the docs site,
-// localized to the viewer's language. The docs site uses /<lang>/ path
-// prefixes (English has none), matching the convention used elsewhere in the
-// app for doc links (e.g. the automations webhook docs link).
-function slackDocsUrl(lang: string | undefined): string {
-  const prefix = lang?.startsWith("zh")
-    ? "/zh"
-    : lang?.startsWith("ja")
-      ? "/ja"
-      : lang?.startsWith("ko")
-        ? "/ko"
-        : "";
-  return `https://patchbay.ai/docs${prefix}/slack-bot-integration`;
-}
 
 // SlackAgentBindButton is the per-agent CTA exposed from the agent detail page.
 // Slack uses the bring-your-own-app model: the button opens a dialog where the

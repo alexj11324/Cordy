@@ -68,8 +68,8 @@ import { formatDateOnly, isPastDateOnly } from "@patchbay/core/issues/date";
 import { useUpdateIssue } from "@patchbay/core/issues/mutations";
 import { toast } from "sonner";
 import { errorCode } from "@patchbay/core/api";
-import { StatusIcon, PriorityIcon, StatusPicker, PriorityPicker, StagePicker, StartDatePicker, DueDatePicker, AssigneePicker, LabelPicker } from ".";
-import { AssigneeHandoffRow } from "./assignee-handoff-row";
+import { StatusIcon, PriorityIcon, StatusPicker, PriorityPicker, StagePicker, StartDatePicker, DueDatePicker, ExecutorPicker, OwnerPicker, ReviewerPicker, LabelPicker } from ".";
+import { ExecutorHandoffRow } from "./executor-handoff-row";
 import { maxSiblingStage } from "./pickers/stage-picker";
 import { CustomPropertyValueEditor, CustomPropertyValueDisplay } from "./pickers/custom-property-picker";
 import { Switch } from "@patchbay/ui/components/ui/switch";
@@ -311,15 +311,23 @@ function formatActivity(
         from: priorityLabel(details.from ?? "?", t),
         to: priorityLabel(details.to ?? "?", t),
       });
-    case "assignee_changed": {
+    case "executor_changed": {
       const isSelfAssign = details.to_type === entry.actor_type && details.to_id === entry.actor_id;
       if (isSelfAssign) return t(($) => $.activity.self_assigned);
       const toName = details.to_id && details.to_type && resolveActorName
         ? resolveActorName(details.to_type, details.to_id)
         : null;
       if (toName) return t(($) => $.activity.assigned_to, { name: toName });
-      if (details.from_id && !details.to_id) return t(($) => $.activity.removed_assignee);
-      return t(($) => $.activity.changed_assignee);
+      if (details.from_id && !details.to_id) return t(($) => $.activity.removed_executor);
+      return t(($) => $.activity.changed_executor);
+    }
+    case "owner_changed": {
+      const toName = details.to_id && details.to_type && resolveActorName
+        ? resolveActorName(details.to_type, details.to_id)
+        : null;
+      if (toName) return t(($) => $.activity.assigned_to, { name: toName });
+      if (details.from_id && !details.to_id) return t(($) => $.activity.removed_owner);
+      return t(($) => $.activity.changed_owner);
     }
     case "review_handoff": {
       const fromName = details.from_id && details.from_type && resolveActorName
@@ -397,7 +405,7 @@ const EMPTY_REPLIES: TimelineEntry[] = [];
 // ---------------------------------------------------------------------------
 //
 // Properties shown in the sidebar split into two groups:
-//   - core: always rendered (status / assignee / project)
+//   - core: always rendered (status / executor / project)
 //   - optional: rendered only when the issue has a value for that field OR
 //     the user explicitly added it via "+ Add property" in this session
 //     (priority / due_date / labels)
@@ -538,7 +546,7 @@ const LAST_ACTIVITY_BLOCK_VISIBLE_LIMIT = 8;
 
 // Collapsible wrapper for an activity block. Older blocks default to a single
 // "N activities" summary line so the timeline isn't dominated by status /
-// priority / assignee churn; the trailing block stays expanded because it
+// priority / executor churn; the trailing block stays expanded because it
 // usually answers "what just happened?". Expansion state is owned by the
 // parent so it survives Virtuoso's mount/unmount on scroll.
 function ActivityBlock({
@@ -701,7 +709,7 @@ function ActivityBlock({
 }
 
 // ---------------------------------------------------------------------------
-// SubIssueRow — sub-issue list item with inline status & assignee editing
+// SubIssueRow — sub-issue list item with inline status & executor editing
 // ---------------------------------------------------------------------------
 
 function SubIssueRow({
@@ -884,17 +892,17 @@ function SubIssueRow({
             }
           />
         )}
-        {rowProps.assignee && (
-          <AssigneePicker
-            assigneeType={child.assignee_type}
-            assigneeId={child.assignee_id}
+        {rowProps.executor && (
+          <ExecutorPicker
+            executorType={child.executor_type}
+            executorId={child.executor_id}
             onUpdate={handleUpdate}
             align="end"
             trigger={
-              child.assignee_type && child.assignee_id ? (
+              child.executor_type && child.executor_id ? (
                 <ActorAvatar
-                  actorType={child.assignee_type}
-                  actorId={child.assignee_id}
+                  actorType={child.executor_type}
+                  actorId={child.executor_id}
                   size="sm"
                   className="shrink-0"
                 />
@@ -920,13 +928,13 @@ function SubIssueRow({
 // identical, so the sub-issues control needs no locale keys of its own.
 const SUB_ISSUE_ROW_PROPERTY_LABEL_KEY: Record<
   SubIssueRowPropertyKey,
-  "card_priority" | "card_labels" | "card_child_progress" | "card_due_date" | "card_assignee"
+  "card_priority" | "card_labels" | "card_child_progress" | "card_due_date" | "card_executor"
 > = {
   priority: "card_priority",
   labels: "card_labels",
   childProgress: "card_child_progress",
   dueDate: "card_due_date",
-  assignee: "card_assignee",
+  executor: "card_executor",
 };
 
 function SubIssueDisplayPopover({
@@ -2336,25 +2344,27 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
           <PropRow label={t(($) => $.detail.prop_status)}>
             <StatusPicker status={issue.status} onUpdate={handleUpdateField} align="start" />
           </PropRow>
-          <PropRow label={t(($) => $.detail.prop_assignee)}>
-            <AssigneeHandoffRow
+          <PropRow label={t(($) => $.detail.prop_executor)}>
+            <ExecutorHandoffRow
               issue={issue}
               timeline={timeline}
               onUpdate={handleUpdateField}
             />
           </PropRow>
+          <PropRow label={t(($) => $.detail.prop_owner)}>
+            <OwnerPicker
+              ownerType={issue.owner_type}
+              ownerId={issue.owner_id}
+              onUpdate={handleUpdateField}
+              align="start"
+            />
+          </PropRow>
           <PropRow label={t(($) => $.detail.prop_reviewer)}>
-            <AssigneePicker
-              assigneeType={issue.reviewer_type ?? null}
-              assigneeId={issue.reviewer_id ?? null}
+            <ReviewerPicker
+              reviewerType={issue.reviewer_type ?? null}
+              reviewerId={issue.reviewer_id ?? null}
               allowUnassigned={!issue.reviewer_type || !issue.reviewer_id}
-              onUpdate={(updates) => {
-                if (!updates.assignee_type || !updates.assignee_id) return;
-                handleUpdateField({
-                  reviewer_type: updates.assignee_type,
-                  reviewer_id: updates.assignee_id,
-                });
-              }}
+              onUpdate={handleUpdateField}
               align="start"
             />
           </PropRow>

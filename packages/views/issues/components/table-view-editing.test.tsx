@@ -69,7 +69,7 @@ vi.mock("@patchbay/core/workspace/hooks", () => ({
   buildActorNameResolver: () => () => "Someone",
 }));
 
-// The assignee cell's avatar only renders for a row that HAS an assignee (the
+// The executor cell's avatar only renders for a row that HAS an executor (the
 // run-confirm case below) and pulls in presence, images and the rest of the
 // workspace-hooks surface. None of that is under test here.
 vi.mock("../../common/actor-avatar", () => ({
@@ -167,8 +167,12 @@ function makeIssue(id: string, title: string, status: Issue["status"]): Issue {
     description: null,
     status,
     priority: "none",
-    assignee_type: null,
-    assignee_id: null,
+    owner_type: null,
+    owner_id: null,
+    executor_type: null,
+    executor_id: null,
+    reviewer_type: null,
+    reviewer_id: null,
     creator_type: "member",
     creator_id: "member-1",
     parent_issue_id: null,
@@ -236,7 +240,7 @@ function Harness({
 describe("TableView cell editors under data refresh", () => {
   // The table's inline pickers are single-issue writes like the issue detail's,
   // so they route on the same run-confirm gate: promoting an agent-owned issue
-  // out of backlog starts a run and must confirm first (PB-6463). The gate's
+  // into In Progress starts a run and must confirm first (PB-6463). The gate's
   // own matrix lives in ../actions/run-confirm-gate.test.ts; this only proves
   // the table asks it instead of writing straight through.
   it("confirms a status change that would start an agent run instead of applying it", async () => {
@@ -244,8 +248,8 @@ describe("TableView cell editors under data refresh", () => {
     serverIssues = [
       {
         ...makeIssue("c", "Parked task", "backlog"),
-        assignee_type: "agent",
-        assignee_id: "agent-1",
+        executor_type: "agent",
+        executor_id: "agent-1",
       },
     ];
     useModalStore.getState().close();
@@ -262,15 +266,15 @@ describe("TableView cell editors under data refresh", () => {
     await screen.findByText("PB-c");
     const row = screen.getByText("PB-c").closest("tr")!;
     await user.click(within(row).getByRole("button", { name: /Backlog/ }));
-    await user.click(screen.getByRole("button", { name: /^Todo$/ }));
+    await user.click(screen.getByRole("button", { name: /^In Progress$/ }));
 
     const { modal, data } = useModalStore.getState();
     expect(modal).toBe("issue-run-confirm");
     expect(data).toMatchObject({
       mode: "promote",
-      status: "todo",
-      assigneeType: "agent",
-      assigneeId: "agent-1",
+      status: "in_progress",
+      executorType: "agent",
+      executorId: "agent-1",
     });
     useModalStore.getState().close();
   });
@@ -295,7 +299,7 @@ describe("TableView cell editors under data refresh", () => {
       listMembers: async () => [],
       listAgents: async () => [],
       listTeams: async () => [],
-      getAssigneeFrequency: async () => [],
+      getExecutorFrequency: async () => [],
       listIssueStatuses: async () => ({ statuses: [] }),
       listIssueTableRows: async () => ({
         query_fingerprint: "test",

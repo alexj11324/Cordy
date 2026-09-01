@@ -1,13 +1,34 @@
 // @vitest-environment jsdom
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { getActiveTab, useTabStore } from "@/stores/tab-store";
 
+const settingsPageProps = vi.hoisted(() => vi.fn());
+
 vi.mock("@patchbay/views/settings", () => ({
-  SettingsPage: ({ navigationHeader }: { navigationHeader?: ReactNode }) => (
-    <>{navigationHeader}</>
-  ),
+  SettingsPage: (props: {
+    navigationHeader?: ReactNode;
+    variant?: "embedded" | "standalone";
+    extraAccountTabs?: Array<{
+      value: string;
+      label: string;
+      content: ReactNode;
+    }>;
+  }) => {
+    settingsPageProps(props);
+    return (
+      <div data-testid="settings-page-mock">
+        {props.navigationHeader}
+        {props.extraAccountTabs?.map((tab) => (
+          <div key={tab.value} data-testid={`settings-extra-${tab.value}`}>
+            {tab.label}
+            {tab.content}
+          </div>
+        ))}
+      </div>
+    );
+  },
 }));
 
 type SettingsDictionary = {
@@ -25,12 +46,17 @@ vi.mock("@patchbay/views/i18n", () => ({
   }),
 }));
 
-vi.mock("./daemon-settings-tab", () => ({ DaemonSettingsTab: () => null }));
-vi.mock("./updates-settings-tab", () => ({ UpdatesSettingsTab: () => null }));
+vi.mock("./daemon-settings-tab", () => ({
+  DaemonSettingsTab: () => <div>Daemon settings panel</div>,
+}));
+vi.mock("./updates-settings-tab", () => ({
+  UpdatesSettingsTab: () => <div>Updates settings panel</div>,
+}));
 
 import { DesktopSettingsPage } from "./desktop-settings-page";
 
 beforeEach(() => {
+  settingsPageProps.mockClear();
   useTabStore.getState().reset();
   useTabStore.getState().switchWorkspace("acme");
   const active = getActiveTab(useTabStore.getState());
@@ -54,5 +80,30 @@ describe("DesktopSettingsPage window title", () => {
     view.unmount();
 
     expect(document.title).toBe("Updated issue");
+  });
+
+  it("injects the desktop-owned tabs and panels into standalone settings", () => {
+    render(<DesktopSettingsPage onBack={() => {}} />);
+
+    const props = settingsPageProps.mock.calls.at(-1)?.[0] as {
+      variant?: string;
+      extraAccountTabs?: Array<{
+        value: string;
+        label: string;
+      }>;
+    };
+    expect(props.variant).toBe("standalone");
+    expect(
+      props.extraAccountTabs?.map(({ value, label }) => [value, label]),
+    ).toEqual([
+      ["daemon", "Daemon"],
+      ["updates", "Updates"],
+    ]);
+    expect(screen.getByTestId("settings-extra-daemon")).toHaveTextContent(
+      "Daemon settings panel",
+    );
+    expect(screen.getByTestId("settings-extra-updates")).toHaveTextContent(
+      "Updates settings panel",
+    );
   });
 });

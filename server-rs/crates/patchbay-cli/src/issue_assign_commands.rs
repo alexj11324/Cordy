@@ -2,8 +2,8 @@ use anyhow::{bail, Context, Result};
 use serde_json::Value;
 
 use super::{
-    new_api_client, resolve_current_workspace_id, resolve_issue_assignee_id,
-    resolve_issue_assignee_name, resolve_issue_ref, value_string, Cli, Environment,
+    new_api_client, resolve_current_workspace_id, resolve_issue_executor_id,
+    resolve_issue_executor_name, resolve_issue_ref, value_string, Cli, Environment,
     IssueAssignArgs, OutputFormat, RunOutput,
 };
 
@@ -31,33 +31,42 @@ pub(super) async fn run_issue_assign(
         .context("resolve issue")?;
     let mut body = serde_json::Map::new();
     let display_target = if args.unassign {
-        body.insert("assignee_type".into(), Value::Null);
-        body.insert("assignee_id".into(), Value::Null);
+        body.insert("owner_type".into(), Value::Null);
+        body.insert("owner_id".into(), Value::Null);
+        body.insert("executor_type".into(), Value::Null);
+        body.insert("executor_id".into(), Value::Null);
         None
     } else {
         let workspace_id = resolve_current_workspace_id(cli, environment);
-        let assignee = if let Some(id) = &args.to_id {
-            resolve_issue_assignee_id(&client, &workspace_id, id)
+        let executor = if let Some(id) = &args.to_id {
+            resolve_issue_executor_id(&client, &workspace_id, id)
                 .await
-                .context("resolve assignee")?
+                .context("resolve executor")?
         } else {
-            resolve_issue_assignee_name(
+            resolve_issue_executor_name(
                 &client,
                 &workspace_id,
                 args.to.as_deref().unwrap_or_default(),
             )
             .await
-            .context("resolve assignee")?
+            .context("resolve executor")?
         };
         let display = args.to.clone().unwrap_or_else(|| {
-            if assignee.name.is_empty() {
-                format!("{}:{}", assignee.actor_type, assignee.id)
+            if executor.name.is_empty() {
+                format!("{}:{}", executor.actor_type, executor.id)
             } else {
-                format!("{}:{}", assignee.actor_type, assignee.name)
+                format!("{}:{}", executor.actor_type, executor.name)
             }
         });
-        body.insert("assignee_type".into(), Value::String(assignee.actor_type));
-        body.insert("assignee_id".into(), Value::String(assignee.id));
+        let actor_type = executor.actor_type;
+        let actor_id = executor.id;
+        if actor_type == "member" {
+            body.insert("owner_type".into(), Value::String(actor_type));
+            body.insert("owner_id".into(), Value::String(actor_id));
+        } else {
+            body.insert("executor_type".into(), Value::String(actor_type));
+            body.insert("executor_id".into(), Value::String(actor_id));
+        }
         if args.no_start {
             body.insert("suppress_run".into(), Value::Bool(true));
         }

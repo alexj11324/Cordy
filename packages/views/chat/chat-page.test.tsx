@@ -18,8 +18,8 @@ const TEST_RESOURCES = { en: { common: enCommon, chat: enChat } };
 // These tests target the page-level URL wiring (`?agent=` / `?session=`), so
 // the conversation internals are stubbed and the controller is replaced with
 // a ref-driven fake the tests can steer. The thread-list stub stays
-// interactive: selecting a thread is the user action that must supersede a
-// pending `?agent=` intent.
+// interactive for the compact list view; desktop history now lives in the
+// global Agent sidebar.
 vi.mock("./components/chat-message-list", () => ({
   ChatMessageList: () => <div>chat-message-list</div>,
   ChatMessageSkeleton: () => <div>chat-message-skeleton</div>,
@@ -59,21 +59,8 @@ vi.mock("./components/no-agent-banner", () => ({
 vi.mock("./components/archived-agent-banner", () => ({
   ArchivedAgentBanner: () => null,
 }));
-vi.mock("react-resizable-panels", () => ({
-  useDefaultLayout: () => ({ defaultLayout: undefined, onLayoutChanged: vi.fn() }),
-}));
-vi.mock("@patchbay/ui/components/ui/resizable", () => ({
-  ResizablePanelGroup: ({ children }: { children: React.ReactNode }) => (
-    <div>{children}</div>
-  ),
-  ResizablePanel: ({ children }: { children: React.ReactNode }) => (
-    <div>{children}</div>
-  ),
-  ResizableHandle: () => null,
-}));
-// Same width-driven layout mock the inbox page tests use: the deep-link tests
-// all want the desktop two-pane layout, the breakpoint tests at the bottom set
-// their own width.
+// Same width-driven layout mock the inbox page tests use. Deep-link tests use
+// the desktop canvas by default; the breakpoint tests set their own width.
 const FOLD_INNER = 851;
 const TABLET = 1024;
 const DESKTOP = 1440;
@@ -93,7 +80,11 @@ vi.mock("@patchbay/core/paths", () => ({
 // DOM frozen on the first commit — which silently hides exactly the class of
 // bug the StrictMode regression below exists to catch.
 const storeRef = vi.hoisted(() => ({
-  current: { activeSessionId: null as string | null },
+  current: {
+    activeSessionId: null as string | null,
+    agentIntentRevision: 0,
+    topicsViewRequest: 0,
+  },
 }));
 const storeListeners = vi.hoisted(() => new Set<() => void>());
 const availableAgentsRef = vi.hoisted(() => ({ current: [] as Agent[] }));
@@ -103,6 +94,15 @@ const mockToastError = vi.hoisted(() => vi.fn());
 const mockSetActiveSession = vi.hoisted(() =>
   vi.fn((id: string | null) => {
     storeRef.current = { ...storeRef.current, activeSessionId: id };
+    storeListeners.forEach((l) => l());
+  }),
+);
+const mockSupersedeAgentIntent = vi.hoisted(() =>
+  vi.fn(() => {
+    storeRef.current = {
+      ...storeRef.current,
+      agentIntentRevision: storeRef.current.agentIntentRevision + 1,
+    };
     storeListeners.forEach((l) => l());
   }),
 );
@@ -117,9 +117,19 @@ vi.mock("sonner", () => ({
 
 vi.mock("@patchbay/core/chat", () => ({
   useChatStore: Object.assign(
-    (selector?: (s: { activeSessionId: string | null }) => unknown) =>
+    (selector?: (s: {
+      activeSessionId: string | null;
+      agentIntentRevision: number;
+      topicsViewRequest: number;
+    }) => unknown) =>
       selector ? selector(storeRef.current) : storeRef.current,
-    { getState: () => storeRef.current },
+    {
+      getState: () => ({
+        ...storeRef.current,
+        setActiveSession: mockSetActiveSession,
+        supersedeAgentIntent: mockSupersedeAgentIntent,
+      }),
+    },
   ),
 }));
 
@@ -233,7 +243,11 @@ function renderPage(search: string, { strict = false } = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  storeRef.current = { activeSessionId: null };
+  storeRef.current = {
+    activeSessionId: null,
+    agentIntentRevision: 0,
+    topicsViewRequest: 0,
+  };
   storeListeners.clear();
   availableAgentsRef.current = [agent];
   agentsSettledRef.current = true;
@@ -290,15 +304,21 @@ describe("ChatPage ?agent= deep link", () => {
     expect(mockStartNewChat).not.toHaveBeenCalled();
     expect(mockToastError).toHaveBeenCalledWith(NO_ACCESS_MSG);
     expect(replace).toHaveBeenCalledWith("/acme/chat");
-    expect(screen.queryByText("chat-input")).not.toBeInTheDocument();
+    // The Lobe-style desktop canvas keeps the composer mounted even when a
+    // deep link is rejected; the controller still marks it unavailable in the
+    // real runtime, while the URL intent is consumed exactly once.
+    expect(screen.getByText("chat-input")).toBeInTheDocument();
     rerender();
     expect(mockToastError).toHaveBeenCalledTimes(1);
   });
 
   it("lets an explicit thread selection supersede a still-pending intent", () => {
-    // Deferred-intent race (review P1): the user picks a thread while the
-    // agent/member queries are still loading; when they settle, the stale
-    // deep link must NOT fire and clobber that selection.
+    // Deferred-intent race (review P1): the user picks a thread from the
+    // compact list while the agent/member queries are still loading; when
+    // they settle, the stale deep link must NOT fire and clobber that
+    // selection. Desktop history uses the same handler from the global
+    // Agent sidebar.
+    layout.width = FOLD_INNER;
     availableAgentsRef.current = [];
     agentsSettledRef.current = false;
     const { replace, rerender } = renderPage("agent=agent-1");
@@ -309,6 +329,7 @@ describe("ChatPage ?agent= deep link", () => {
     expect(mockStartNewChat).not.toHaveBeenCalled();
     expect(mockToastError).not.toHaveBeenCalled();
     expect(replace).not.toHaveBeenCalled();
+    expect(mockSupersedeAgentIntent).toHaveBeenCalledTimes(1);
   });
 
   it("opens the compose pane under StrictMode with a persisted previous session", () => {
@@ -316,7 +337,11 @@ describe("ChatPage ?agent= deep link", () => {
     // P2): the composingNew reset must read the LIVE store value, or the
     // stale persisted session re-closes the pane the intent just opened —
     // while the consumed-intent guard rightly refuses to fire again.
-    storeRef.current = { activeSessionId: "old-session" };
+    storeRef.current = {
+      activeSessionId: "old-session",
+      agentIntentRevision: 0,
+      topicsViewRequest: 0,
+    };
     const { replace } = renderPage("agent=agent-1", { strict: true });
     expect(mockStartNewChat).toHaveBeenCalledTimes(1);
     expect(replace).toHaveBeenCalledWith("/acme/chat");
@@ -346,7 +371,11 @@ describe("ChatPage responsive layout", () => {
     layout.width = FOLD_INNER;
     // The page reconciles the store against `?session=`, so the open thread has
     // to be in the URL too — otherwise the sync effect closes it.
-    storeRef.current = { activeSessionId: "session-1" };
+    storeRef.current = {
+      activeSessionId: "session-1",
+      agentIntentRevision: 0,
+      topicsViewRequest: 0,
+    };
     renderPage("session=session-1");
 
     expect(
@@ -356,17 +385,37 @@ describe("ChatPage responsive layout", () => {
     expect(screen.getByRole("button", { name: "Chat" })).toBeInTheDocument();
   });
 
-  it("keeps both panes at the compact breakpoint", () => {
-    // 1024px is the first width that keeps two panes. The nav auto-collapses
-    // there instead (see the sidebar), so the thread list stays on screen next
-    // to an open conversation.
+  it("returns compact new-chat compose to the topic list when the sidebar requests it", () => {
+    layout.width = FOLD_INNER;
+    const view = renderPage("agent=agent-1");
+    expect(screen.getByText("chat-input")).toBeInTheDocument();
+
+    storeRef.current = {
+      ...storeRef.current,
+      activeSessionId: null,
+      topicsViewRequest: storeRef.current.topicsViewRequest + 1,
+    };
+    view.rerender();
+
+    expect(screen.getByRole("button", { name: "select-thread" })).toBeInTheDocument();
+    expect(screen.queryByText("chat-input")).not.toBeInTheDocument();
+  });
+
+  it("keeps a single conversation canvas at the 1024px desktop breakpoint", () => {
+    // 1024px is the first width treated as desktop by useIsCompact. The app
+    // sidebar may collapse there, but the Agent sidebar owns topic history, so
+    // ChatPage still renders one conversation canvas.
     layout.width = TABLET;
-    storeRef.current = { activeSessionId: "session-1" };
+    storeRef.current = {
+      activeSessionId: "session-1",
+      agentIntentRevision: 0,
+      topicsViewRequest: 0,
+    };
     renderPage("session=session-1");
 
     expect(
-      screen.getByRole("button", { name: "select-thread" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: "select-thread" }),
+    ).not.toBeInTheDocument();
     expect(screen.getByText("chat-input")).toBeInTheDocument();
   });
 });

@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import {
   createReadStream,
@@ -30,6 +30,17 @@ import {
 } from "node:path";
 
 export const DEV_CLI_CACHE_SCHEMA_VERSION = 1;
+export const DEV_RUNTIME_CACHE_MAX_BYTES = 5 * 1024 * 1024 * 1024;
+export const DEV_RUNTIME_CACHE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+export const DEV_RUNTIME_CACHE_MIN_FINGERPRINTS = 10;
+export const DEV_RUNTIME_CACHE_LOCK_FILE = ".cache-operation.lock";
+const DEV_RUNTIME_CACHE_LOCK_WAIT_MS = 60_000;
+const DEV_RUNTIME_CACHE_LOCK_STALE_MS = 5 * 60 * 1000;
+const COMPLETE_RUNTIME_PROFILES = new Set([
+  "dev",
+  "dev-server",
+  "dev-migrate",
+]);
 
 function hashText(value) {
   return createHash("sha256").update(value).digest("hex");
@@ -226,6 +237,7 @@ export function rustToolchainIdentity(
       cwd,
       env: toolchainEnv,
       stdio: ["ignore", "pipe", "ignore"],
+      timeout: 3_000,
     }).trim();
   } catch {
     return null;
@@ -239,6 +251,7 @@ export function rustToolchainIdentity(
         cwd,
         env: toolchainEnv,
         stdio: ["ignore", "pipe", "ignore"],
+        timeout: 3_000,
       }).trim();
       return `cargo:\n${cargoIdentity}\nrustc:\n${rustcIdentity}`;
     } catch {
@@ -274,6 +287,58 @@ function cacheProfileDir(cacheRoot, rustTarget, profile) {
     rustTarget,
     profile,
   );
+}
+
+function waitForCacheLock() {
+  return new Promise((resolveWait) => setTimeout(resolveWait, 50));
+}
+
+async function acquireRuntimeCacheLock(cacheRoot) {
+  await mkdir(cacheRoot, { recursive: true });
+  const lockPath = join(cacheRoot, DEV_RUNTIME_CACHE_LOCK_FILE);
+  const token = `${randomUUID()}\n`;
+  const deadline = Date.now() + DEV_RUNTIME_CACHE_LOCK_WAIT_MS;
+
+  while (true) {
+    try {
+      await writeFile(lockPath, token, {
+        encoding: "utf8",
+        flag: "wx",
+        mode: 0o600,
+      });
+      return { lockPath, token };
+    } catch (error) {
+      if (error?.code !== "EEXIST") throw error;
+      try {
+        const lockStat = await stat(lockPath);
+        if (Date.now() - lockStat.mtimeMs > DEV_RUNTIME_CACHE_LOCK_STALE_MS) {
+          await rm(lockPath, { force: true });
+          continue;
+        }
+      } catch (statError) {
+        if (statError?.code !== "ENOENT") throw statError;
+        continue;
+      }
+      if (Date.now() >= deadline) {
+        throw new Error(
+          `timed out waiting for the development runtime cache lock: ${lockPath}`,
+        );
+      }
+      await waitForCacheLock();
+    }
+  }
+}
+
+async function withRuntimeCacheLock(cacheRoot, operation) {
+  const lock = await acquireRuntimeCacheLock(cacheRoot);
+  try {
+    return await operation();
+  } finally {
+    const current = await readFile(lock.lockPath, "utf8").catch(() => null);
+    if (current === lock.token) {
+      await rm(lock.lockPath, { force: true });
+    }
+  }
 }
 
 async function readValidEntry(entryDir, expected) {
@@ -346,7 +411,7 @@ export async function findCachedDevCli({
   return matches[0] ?? null;
 }
 
-export async function stageCachedDevCli(options) {
+async function stageCachedDevCliUnlocked(options) {
   const cached = await findCachedDevCli(options);
   if (!cached) return null;
 
@@ -366,7 +431,13 @@ export async function stageCachedDevCli(options) {
   return cached;
 }
 
-export async function storeDevCli({
+export async function stageCachedDevCli(options) {
+  return withRuntimeCacheLock(options.cacheRoot, () =>
+    stageCachedDevCliUnlocked(options),
+  );
+}
+
+async function storeDevCliUnlocked({
   cacheRoot,
   sourceBinary,
   binaryName = basename(sourceBinary),
@@ -433,6 +504,12 @@ export async function storeDevCli({
   return readValidEntry(entryDir, identity);
 }
 
+export async function storeDevCli(options) {
+  return withRuntimeCacheLock(options.cacheRoot, () =>
+    storeDevCliUnlocked(options),
+  );
+}
+
 export async function pruneDevCliCache({
   cacheRoot,
   rustTarget,
@@ -468,5 +545,198 @@ export async function pruneDevCliCache({
     entries
       .filter(({ entryDir }) => !retained.has(entryDir))
       .map(({ entryDir }) => rm(entryDir, { recursive: true, force: true })),
+  );
+}
+
+async function directorySize(path) {
+  let total = 0;
+  const names = await readdir(path, { withFileTypes: true });
+  for (const name of names) {
+    const child = join(path, name.name);
+    if (name.isDirectory()) total += await directorySize(child);
+    else total += (await stat(child)).size;
+  }
+  return total;
+}
+
+function runtimeIdentityKey({
+  sourceFingerprint,
+  rustTarget,
+  toolchainIdentity,
+  buildVariables,
+}) {
+  return JSON.stringify({
+    sourceFingerprint,
+    rustTarget,
+    toolchainIdentity: toolchainIdentity || "unavailable",
+    buildVariables: buildVariables || {},
+  });
+}
+
+async function listRuntimeCacheEntries(cacheRoot) {
+  const schemaRoot = join(
+    cacheRoot,
+    `v${DEV_CLI_CACHE_SCHEMA_VERSION}`,
+  );
+  const entries = [];
+  let targets;
+  try {
+    targets = await readdir(schemaRoot, { withFileTypes: true });
+  } catch (error) {
+    if (error?.code === "ENOENT") return entries;
+    throw error;
+  }
+  for (const target of targets) {
+    if (!target.isDirectory()) continue;
+    const targetDir = join(schemaRoot, target.name);
+    const profiles = await readdir(targetDir, { withFileTypes: true });
+    for (const profile of profiles) {
+      if (!profile.isDirectory()) continue;
+      const profileDir = join(targetDir, profile.name);
+      const names = await readdir(profileDir, { withFileTypes: true });
+      for (const name of names) {
+        if (!name.isDirectory() || name.name.startsWith(".")) continue;
+        const entryDir = join(profileDir, name.name);
+        try {
+          const entryStat = await stat(entryDir);
+          const manifest = JSON.parse(
+            await readFile(join(entryDir, "manifest.json"), "utf8"),
+          );
+          const binaryPath = join(entryDir, manifest.binaryName);
+          await stat(binaryPath);
+          const toolchainIdentity = manifest.toolchainIdentity || "unavailable";
+          const buildVariables = manifest.buildVariables || {};
+          entries.push({
+            entryDir,
+            profile: profile.name,
+            rustTarget: target.name,
+            sourceFingerprint: manifest.sourceFingerprint,
+            toolchainIdentity,
+            buildVariables,
+            identityKey: runtimeIdentityKey({
+              sourceFingerprint: manifest.sourceFingerprint,
+              rustTarget: target.name,
+              toolchainIdentity,
+              buildVariables,
+            }),
+            mtimeMs: entryStat.mtimeMs,
+            sizeBytes: await directorySize(entryDir),
+          });
+        } catch {
+          entries.push({
+            entryDir,
+            profile: profile.name,
+            rustTarget: target.name,
+            sourceFingerprint: null,
+            toolchainIdentity: null,
+            buildVariables: null,
+            identityKey: null,
+            mtimeMs: 0,
+            sizeBytes: await directorySize(entryDir).catch(() => 0),
+            invalid: true,
+          });
+        }
+      }
+    }
+  }
+  return entries;
+}
+
+export async function inspectDevRuntimeCache({ cacheRoot }) {
+  const entries = await listRuntimeCacheEntries(cacheRoot);
+  const fingerprints = new Map();
+  for (const entry of entries) {
+    if (!entry.sourceFingerprint || !entry.identityKey) continue;
+    const key = entry.identityKey;
+    const group = fingerprints.get(key) || {
+      identityKey: key,
+      sourceFingerprint: entry.sourceFingerprint,
+      rustTarget: entry.rustTarget,
+      toolchainIdentity: entry.toolchainIdentity,
+      buildVariables: entry.buildVariables,
+      profiles: new Set(),
+      newestMtimeMs: 0,
+      sizeBytes: 0,
+    };
+    group.profiles.add(entry.profile);
+    group.newestMtimeMs = Math.max(group.newestMtimeMs, entry.mtimeMs);
+    group.sizeBytes += entry.sizeBytes;
+    fingerprints.set(key, group);
+  }
+  const completeFingerprints = [...fingerprints.values()].filter((group) =>
+    [...COMPLETE_RUNTIME_PROFILES].every((profile) =>
+      group.profiles.has(profile),
+    ),
+  );
+  return {
+    entries,
+    entryCount: entries.length,
+    totalBytes: entries.reduce((total, entry) => total + entry.sizeBytes, 0),
+    completeFingerprintCount: completeFingerprints.length,
+    completeFingerprints,
+  };
+}
+
+async function pruneDevRuntimeCacheUnlocked({
+  cacheRoot,
+  maxBytes = DEV_RUNTIME_CACHE_MAX_BYTES,
+  maxAgeMs = DEV_RUNTIME_CACHE_MAX_AGE_MS,
+  minFingerprints = DEV_RUNTIME_CACHE_MIN_FINGERPRINTS,
+  nowMs = Date.now(),
+  dryRun = false,
+} = {}) {
+  const report = await inspectDevRuntimeCache({ cacheRoot });
+  const protectedGroups = [...report.completeFingerprints]
+    .sort((left, right) => right.newestMtimeMs - left.newestMtimeMs)
+    .slice(0, minFingerprints);
+  const protectedEntries = new Set();
+  for (const group of protectedGroups) {
+    for (const entry of report.entries) {
+      if (entry.identityKey === group.identityKey) {
+        protectedEntries.add(entry.entryDir);
+      }
+    }
+  }
+
+  const removable = report.entries
+    .filter((entry) => !protectedEntries.has(entry.entryDir))
+    .sort((left, right) => left.mtimeMs - right.mtimeMs);
+  const selected = new Set(
+    removable
+      .filter(
+        (entry) => entry.invalid || nowMs - entry.mtimeMs > maxAgeMs,
+      )
+      .map((entry) => entry.entryDir),
+  );
+  let remainingBytes = report.totalBytes;
+  for (const entry of removable) {
+    if (selected.has(entry.entryDir)) remainingBytes -= entry.sizeBytes;
+  }
+  for (const entry of removable) {
+    if (remainingBytes <= maxBytes) break;
+    if (selected.has(entry.entryDir)) continue;
+    selected.add(entry.entryDir);
+    remainingBytes -= entry.sizeBytes;
+  }
+  if (!dryRun) {
+    await Promise.all(
+      [...selected].map((entryDir) =>
+        rm(entryDir, { recursive: true, force: true }),
+      ),
+    );
+  }
+  return {
+    ...report,
+    removedCount: selected.size,
+    removedBytes: report.totalBytes - remainingBytes,
+    remainingBytes,
+    protectedFingerprintCount: protectedGroups.length,
+    dryRun,
+  };
+}
+
+export async function pruneDevRuntimeCache(options = {}) {
+  return withRuntimeCacheLock(options.cacheRoot, () =>
+    pruneDevRuntimeCacheUnlocked(options),
   );
 }

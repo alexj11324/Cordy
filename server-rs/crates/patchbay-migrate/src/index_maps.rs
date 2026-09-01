@@ -595,6 +595,22 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_UP: &[(&str, &str)] = &[
         "450_agent_task_execution_provenance_discovery_queue_index",
         "agent_task_execution_provenance_discovery_queue_idx",
     ),
+    (
+        "453_patrick_workspace_unique_index",
+        "uq_agent_workspace_patrick",
+    ),
+    (
+        "457_issue_workspace_executor_index",
+        "idx_issue_workspace_executor",
+    ),
+    (
+        "458_issue_workspace_owner_index",
+        "idx_issue_workspace_owner",
+    ),
+    (
+        "462_issue_category_policy_workspace_category_index",
+        "uq_workspace_issue_category_policy_workspace_category",
+    ),
 ];
 
 pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[
@@ -730,5 +746,26 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[
     (
         "450_agent_task_execution_provenance_discovery_queue_index",
         "agent_task_execution_provenance_discovery_queue_idx",
+    ),
+    (
+        "453_patrick_workspace_unique_index",
+        "uq_agent_workspace_patrick",
+    ),
+    ("455_drop_issue_assignee_index", "idx_issue_assignee"),
+    (
+        "456_drop_issue_workspace_assignee_index",
+        "idx_issue_workspace_assignee",
+    ),
+    (
+        "457_issue_workspace_executor_index",
+        "idx_issue_workspace_executor",
+    ),
+    (
+        "458_issue_workspace_owner_index",
+        "idx_issue_workspace_owner",
+    ),
+    (
+        "462_issue_category_policy_workspace_category_index",
+        "uq_workspace_issue_category_policy_workspace_category",
     ),
 ];

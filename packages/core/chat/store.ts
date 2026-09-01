@@ -306,6 +306,10 @@ export interface ChatState {
   floatingChatEnabled: boolean;
   activeSessionId: string | null;
   selectedAgentId: string | null;
+  /** Monotonic signal for sibling chat surfaces to supersede a pending URL intent. */
+  agentIntentRevision: number;
+  /** Monotonic signal for the sidebar to return compact chat to the topic list. */
+  topicsViewRequest: number;
   /** Project context for the next session. Existing sessions remain bound to
    *  their server-persisted project_id. */
   selectedProjectId: string | null;
@@ -327,6 +331,8 @@ export interface ChatState {
   setFloatingChatEnabled: (enabled: boolean) => void;
   setActiveSession: (id: string | null) => void;
   setSelectedAgentId: (id: string) => void;
+  supersedeAgentIntent: () => void;
+  requestTopicsView: () => void;
   setSelectedProjectId: (id: string | null) => void;
   /** sessionId accepts a real session UUID or DRAFT_NEW_SESSION. */
   setInputDraft: (sessionId: string, draft: string) => void;
@@ -393,6 +399,8 @@ export function createChatStore(options: ChatStoreOptions) {
     floatingChatEnabled: initialFloatingEnabled,
     activeSessionId: storage.getItem(wsKey(SESSION_STORAGE_KEY)),
     selectedAgentId: initialAgentId,
+    agentIntentRevision: 0,
+    topicsViewRequest: 0,
     selectedProjectId: storage.getItem(wsKey(PROJECT_STORAGE_KEY)),
     inputDrafts: initialDraftSlots.inputDrafts,
     inputDraftAttachments: initialDraftSlots.inputDraftAttachments,
@@ -433,6 +441,12 @@ export function createChatStore(options: ChatStoreOptions) {
       logger.info("setSelectedAgentId", { from: get().selectedAgentId, to: id });
       storage.setItem(wsKey(AGENT_STORAGE_KEY), id);
       set({ selectedAgentId: id });
+    },
+    supersedeAgentIntent: () => {
+      set((state) => ({ agentIntentRevision: state.agentIntentRevision + 1 }));
+    },
+    requestTopicsView: () => {
+      set((state) => ({ topicsViewRequest: state.topicsViewRequest + 1 }));
     },
     setSelectedProjectId: (id) => {
       logger.info("setSelectedProjectId", { from: get().selectedProjectId, to: id });

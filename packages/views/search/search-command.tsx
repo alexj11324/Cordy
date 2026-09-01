@@ -93,6 +93,7 @@ const PAGE_KEYWORDS: Record<WorkspacePageKey, string[]> = {
   channels: ["channels", "channel", "rooms", "频道", "群聊"],
   myIssues: ["my", "issues", "assigned", "mine", "我的", "任务"],
   issues: ["issues", "tasks", "bugs", "任务"],
+  taskGraph: ["task graph", "dependency graph", "graph", "任务图", "依赖图"],
   projects: ["projects", "kanban", "项目"],
   automations: ["automation", "automations", "automation", "schedule", "cron", "webhook", "自动化", "定时"],
   agents: ["agents", "bots", "ai", "智能体"],
@@ -153,18 +154,27 @@ function matchesMember(member: MemberWithUser, query: string) {
   );
 }
 
-function IssueAssigneeAvatar({
-  assigneeType,
-  assigneeId,
+function IssueExecutorAvatar({
+  executorType,
+  executorId,
+  ownerType,
+  ownerId,
 }: {
-  assigneeType?: string | null;
-  assigneeId?: string | null;
+  executorType?: string | null;
+  executorId?: string | null;
+  ownerType?: string | null;
+  ownerId?: string | null;
 }) {
-  if (!assigneeType || !assigneeId) return null;
+  // Search has one compact actor slot. Prefer the runnable executor when one
+  // exists, then fall back to the human owner so owner-only issues remain
+  // visible in the compact result row.
+  const actorType = executorType ?? ownerType;
+  const actorId = executorId ?? ownerId;
+  if (!actorType || !actorId) return null;
   return (
     <ActorAvatar
-      actorType={assigneeType}
-      actorId={assigneeId}
+      actorType={actorType}
+      actorId={actorId}
       size="sm"
       profileLink={false}
       className="shrink-0"
@@ -247,9 +257,11 @@ function IssueResultRow({
         <span className="min-w-0 flex-1 truncate">
           <HighlightText text={issue.title} query={query} />
         </span>
-        <IssueAssigneeAvatar
-          assigneeType={issue.assignee_type}
-          assigneeId={issue.assignee_id}
+        <IssueExecutorAvatar
+          executorType={issue.executor_type}
+          executorId={issue.executor_id}
+          ownerType={issue.owner_type}
+          ownerId={issue.owner_id}
         />
       </div>
       {issue.matched_description_snippet && (
@@ -951,9 +963,9 @@ export function SearchCommand() {
                       {item.identifier}
                     </span>
                     <span className="min-w-0 flex-1 truncate">{item.title}</span>
-                    <IssueAssigneeAvatar
-                      assigneeType={item.assignee_type}
-                      assigneeId={item.assignee_id}
+                    <IssueExecutorAvatar
+                      executorType={item.executor_type}
+                      executorId={item.executor_id}
                     />
                   </CommandPrimitive.Item>
                 ))}

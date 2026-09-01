@@ -1,5 +1,5 @@
 /**
- * Skip path: "Connect a device to start with Mika".
+ * Skip path: "Connect a device to start with Patrick".
  *
  * Written to a new issue (assigned to the user themselves) by the welcome
  * hook when the user took the Skip exit on Step 3. Content is the
@@ -13,7 +13,7 @@
 
 /**
  * Localized so users see the title in their current supported locale on the
- * board. The Devices page owns the follow-up Mika bootstrap once a device
+ * board. The Devices page owns the follow-up Patrick bootstrap once a device
  * appears, so this guide does not ask the member to copy an agent prompt.
  *
  * Note: the server's deprecated-title compatibility shim
@@ -22,10 +22,10 @@
  * the v3 frontend population, so the two title-spaces drifting is fine.
  */
 export const INSTALL_RUNTIME_ISSUE_TITLE = {
-  en: "Connect a device to start with Mika",
-  zh: "连接设备，和 Mika 开始",
-  ko: "기기를 연결하고 Mika와 시작하기",
-  ja: "デバイスを接続して Mika と始める",
+  en: "Connect a device to start with Patrick",
+  zh: "连接设备，和 Patrick 开始",
+  ko: "기기를 연결하고 Patrick과 시작하기",
+  ja: "デバイスを接続して Patrick と始める",
 } as const;
 
 const en = `Welcome to Patchbay.
@@ -64,11 +64,11 @@ For English users, the fastest first path is Codex:
    In the desktop app, open any local device and click Restart. Quitting and
    reopening the app is NOT enough — the daemon keeps running in the background.
 6. Return to Devices and refresh. You should see Codex online.
-7. Open Devices. The page will offer **Start with Mika**; use it to create Mika and open the guided first chat.
+7. Open Devices. The page will offer **Start with Patrick**; use it to create Patrick and open the guided first chat.
 
 Codex reference: https://developers.openai.com/codex/cli
 
-Mika will turn one real goal into an issue, start it with the right agent, and suggest reusable specialists when your workflow needs them.`;
+Patrick will turn one real goal into an issue, start it with the right agent, and suggest reusable specialists when your workflow needs them.`;
 
 const zh = `欢迎来到 Patchbay。
 
@@ -105,11 +105,11 @@ const zh = `欢迎来到 Patchbay。
    patchbay daemon restart
    桌面端请打开任意一台本机设备并点 Restart。退出再打开 app 是不够的 —— 守护进程会继续在后台运行。
 6. 回到「设备」页面刷新。你应该能看到一台在线的 Kimi。
-7. 打开"设备"页面。页面会显示 **和 Mika 开始**；点击后会创建 Mika，并进入引导式的首次对话。
+7. 打开"设备"页面。页面会显示 **和 Patrick 开始**；点击后会创建 Patrick，并进入引导式的首次对话。
 
 Kimi CLI 官方文档:https://moonshotai.github.io/kimi-cli/zh/guides/getting-started.html
 
-Mika 会把一个真实目标转化为任务，交给合适的智能体启动执行，并在工作流需要时建议添加可复用的 specialist。`;
+Patrick 会把一个真实目标转化为任务，交给合适的智能体启动执行，并在工作流需要时建议添加可复用的 specialist。`;
 
 const ko = `Patchbay에 오신 것을 환영합니다.
 
@@ -147,11 +147,11 @@ agent가 작업을 실행하려면 먼저 기기가 필요합니다. 기기를 �
    데스크톱 앱에서는 아무 로컬 기기를 열고 Restart를 누르세요. 앱을 종료하고 다시 여는
    것만으로는 충분하지 않습니다 — daemon은 백그라운드에서 계속 실행됩니다.
 6. 「기기」로 돌아가 새로고침합니다. Codex가 online으로 보여야 합니다.
-7. 「기기」를 엽니다. **Mika와 시작**을 눌러 Mika를 만들고 안내되는 첫 채팅을 시작합니다.
+7. 「기기」를 엽니다. **Patrick과 시작**을 눌러 Patrick을 만들고 안내되는 첫 채팅을 시작합니다.
 
 Codex 참고 문서: https://developers.openai.com/codex/cli
 
-Mika가 실제 목표 하나를 태스크로 만들고 적합한 에이전트와 실행을 시작하며, 워크플로에 필요할 때 재사용 가능한 specialist를 제안합니다.`;
+Patrick이 실제 목표 하나를 태스크로 만들고 적합한 에이전트와 실행을 시작하며, 워크플로에 필요할 때 재사용 가능한 specialist를 제안합니다.`;
 
 const ja = `Patchbay へようこそ。
 
@@ -189,10 +189,10 @@ agent が作業を実行するには、まずデバイスが必要です。デ�
    デスクトップアプリではローカルデバイスを開いて Restart を押してください。アプリを終了して
    開き直すだけでは不十分です — daemon はバックグラウンドで動き続けます。
 6. 「デバイス」に戻って再読み込みします。Codex が online と表示されるはずです。
-7. 「デバイス」を開き、**Mika と始める**を選びます。Mika が作成され、案内付きの最初のチャットが開きます。
+7. 「デバイス」を開き、**Patrick と始める**を選びます。Patrick が作成され、案内付きの最初のチャットが開きます。
 
 Codex のリファレンス: https://developers.openai.com/codex/cli
 
-Mika は実際の目標を 1 つのタスクにし、適切なエージェントで実行を開始し、ワークフローに必要なときは再利用可能な specialist を提案します。`;
+Patrick は実際の目標を 1 つのタスクにし、適切なエージェントで実行を開始し、ワークフローに必要なときは再利用可能な specialist を提案します。`;
 
 export const INSTALL_RUNTIME_ISSUE_BODY = { en, zh, ko, ja } as const;

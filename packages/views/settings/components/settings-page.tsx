@@ -54,7 +54,6 @@ import { BillingTab } from "./billing-tab";
 import { CollapsedNavTrigger } from "../../layout/page-header";
 import { useT } from "../../i18n";
 import { cn } from "@patchbay/ui/lib/utils";
-import { SettingsText } from "@patchbay/ui/components/common/lobe-settings";
 import { LobeSettingsProvider } from "@patchbay/ui/components/common/lobe-settings-provider";
 import { LobeSettingsTabs } from "@patchbay/ui/components/common/lobe-settings-tabs";
 
@@ -285,18 +284,11 @@ export function SettingsPage({
   const standaloneHeader = (
     <>
       {navigationHeader ? <div>{navigationHeader}</div> : null}
-      <div className="flex items-center md:mb-4">
-        {navigationHeader ? null : <CollapsedNavTrigger />}
-        <SettingsText
-          as="h1"
-          className={cn(
-            "sr-only font-semibold md:not-sr-only md:px-2",
-            isStandalone ? "text-title" : "text-body",
-          )}
-        >
-          {t(($) => $.page.title)}
-        </SettingsText>
-      </div>
+      {!navigationHeader ? (
+        <div className="flex items-center md:mb-4">
+          <CollapsedNavTrigger />
+        </div>
+      ) : null}
     </>
   );
 
@@ -311,7 +303,7 @@ export function SettingsPage({
           header={standaloneHeader}
           dataSettingsVariant="standalone"
           className="flex min-h-0 flex-1 flex-col gap-0 overflow-y-auto bg-page-canvas text-foreground md:flex-row md:overflow-hidden"
-          listClassName="flex w-max min-w-full flex-row items-center gap-1 overflow-x-auto border-b !border-sidebar-border !bg-sidebar p-2 !shadow-none md:w-80 md:min-w-0 md:flex-col md:items-stretch md:overflow-y-auto md:border-b-0 md:border-r md:p-4"
+          listClassName="flex w-max min-w-full flex-row items-center gap-1 overflow-x-auto border-b border-sidebar-border bg-sidebar p-2 md:w-64 md:min-w-0 md:flex-col md:items-stretch md:overflow-y-auto md:border-b-0 md:border-r md:p-4"
           contentClassName={cn(
             "mx-auto w-full p-4 sm:p-6 md:px-8",
             "md:pb-8 md:pt-20",

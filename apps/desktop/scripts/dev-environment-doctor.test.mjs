@@ -7,11 +7,15 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  accountsUrlFromEnv,
   backendUrlFromEnv,
   inspectDevEnvironment,
   integrationKeyStatus,
+  loadDoctorEnvironment,
+  shouldBootstrapDevClerkAuth,
 } from "./dev-environment-doctor.mjs";
 import { rustSourceFingerprint } from "./dev-cli-cache.mjs";
+import { INTEGRATION_SECRET_KEYS } from "../../../scripts/ensure-dev-integration-secrets.mjs";
 
 let sandbox;
 
@@ -59,20 +63,159 @@ async function fixtureRepo() {
 
 describe("complete Desktop development doctor", () => {
   it("never treats an empty or malformed integration key as configured", () => {
+    const env = Object.fromEntries(
+      INTEGRATION_SECRET_KEYS.map((key, index) => [key, secretKey(index + 1)]),
+    );
+    env.PATCHBAY_TELEGRAM_SECRET_KEY = "";
+    env.PATCHBAY_WEIXIN_SECRET_KEY = "not-base64";
     expect(
-      integrationKeyStatus({
-        PATCHBAY_TELEGRAM_SECRET_KEY: "",
-        PATCHBAY_WEIXIN_SECRET_KEY: "not-base64",
-      }),
-    ).toEqual({
-      PATCHBAY_TELEGRAM_SECRET_KEY: false,
-      PATCHBAY_WEIXIN_SECRET_KEY: false,
-    });
+      integrationKeyStatus(env),
+    ).toEqual(
+      Object.fromEntries(
+        INTEGRATION_SECRET_KEYS.map((key) => [
+          key,
+          key !== "PATCHBAY_TELEGRAM_SECRET_KEY" &&
+            key !== "PATCHBAY_WEIXIN_SECRET_KEY",
+        ]),
+      ),
+    );
   });
 
   it("uses the worktree backend endpoint provided by the complete launcher", () => {
     expect(backendUrlFromEnv({ VITE_API_URL: "http://127.0.0.1:18123/" })).toBe(
       "http://127.0.0.1:18123",
+    );
+  });
+
+  it("resolves the hosted accounts broker separately from the API", () => {
+    expect(
+      accountsUrlFromEnv({
+        VITE_ACCOUNTS_URL: "https://accounts.aspectlylabs.com/",
+      }),
+    ).toBe("https://accounts.aspectlylabs.com");
+  });
+
+  it("reuses the authenticated launcher's readiness marker", () => {
+    expect(
+      shouldBootstrapDevClerkAuth({ PATCHBAY_DEV_MODE: "local" }),
+    ).toBe(true);
+    expect(
+      shouldBootstrapDevClerkAuth({
+        PATCHBAY_DEV_MODE: "local",
+        PATCHBAY_DEV_AUTH_READY: "1",
+      }),
+    ).toBe(false);
+    expect(shouldBootstrapDevClerkAuth({ PATCHBAY_DEV_MODE: "hosted" })).toBe(
+      false,
+    );
+  });
+
+  it("preserves a launcher's hosted profile when the checkout env is reloaded", async () => {
+    const repoRoot = await fixtureRepo();
+    const envFile = join(repoRoot, ".env");
+    await writeFile(
+      envFile,
+      "PORT=18123\nVITE_API_URL=http://127.0.0.1:18123\nVITE_ACCOUNTS_URL=http://localhost:13123\n",
+    );
+
+    const env = loadDoctorEnvironment({
+      repoRoot,
+      processEnv: {
+        PATCHBAY_DEV_MODE: "hosted",
+        PATCHBAY_APP_URL: "https://patchbay.aspectlylabs.com",
+        VITE_API_URL: "https://api.aspectlylabs.com",
+        VITE_WS_URL: "wss://api.aspectlylabs.com/ws",
+        VITE_APP_URL: "https://patchbay.aspectlylabs.com",
+        VITE_ACCOUNTS_URL: "https://accounts.aspectlylabs.com",
+      },
+    });
+
+    expect(env).toMatchObject({
+      PATCHBAY_DEV_MODE: "hosted",
+      PATCHBAY_APP_URL: "https://patchbay.aspectlylabs.com",
+      VITE_API_URL: "https://api.aspectlylabs.com",
+      VITE_WS_URL: "wss://api.aspectlylabs.com/ws",
+      VITE_APP_URL: "https://patchbay.aspectlylabs.com",
+      VITE_ACCOUNTS_URL: "https://accounts.aspectlylabs.com",
+    });
+  });
+
+  it("can explicitly inspect the hosted profile from a standalone doctor", async () => {
+    const repoRoot = await fixtureRepo();
+    const envFile = join(repoRoot, ".env");
+    await writeFile(
+      envFile,
+      "PORT=18123\nVITE_API_URL=http://127.0.0.1:18123\nVITE_ACCOUNTS_URL=http://localhost:13123\n",
+    );
+
+    const env = loadDoctorEnvironment({
+      repoRoot,
+      mode: "hosted",
+      processEnv: {},
+    });
+
+    expect(env).toMatchObject({
+      PATCHBAY_DEV_MODE: "hosted",
+      VITE_API_URL: "https://api.aspectlylabs.com",
+      VITE_WS_URL: "wss://api.aspectlylabs.com/ws",
+      VITE_APP_URL: "https://patchbay.aspectlylabs.com",
+      VITE_ACCOUNTS_URL: "https://accounts.aspectlylabs.com",
+    });
+  });
+
+  it("checks the hosted accounts broker before opening Electron", async () => {
+    const repoRoot = await fixtureRepo();
+    const execImpl = vi.fn(async (_binary, args) =>
+      args[0] === "version"
+        ? { stdout: JSON.stringify({ version: "dev-fixture" }) }
+        : {
+            stdout: JSON.stringify({
+              probe_result: "success",
+              runtime_count: 0,
+              provider_summary: {},
+            }),
+          },
+    );
+    const fetchImpl = vi.fn(async (url) => ({
+      ok: true,
+      status: 200,
+      json: async () =>
+        url.includes("accounts")
+          ? { status: "ready" }
+          : { status: "ready" },
+    }));
+
+    const report = await inspectDevEnvironment({
+      repoRoot,
+      env: {
+        PATCHBAY_DEV_MODE: "hosted",
+        VITE_API_URL: "https://api.aspectlylabs.com",
+        VITE_ACCOUNTS_URL: "https://accounts.aspectlylabs.com",
+        ...Object.fromEntries(
+          INTEGRATION_SECRET_KEYS.map((key, index) => [
+            key,
+            secretKey(index + 1),
+          ]),
+        ),
+      },
+      platform: "darwin",
+      arch: "arm64",
+      execImpl,
+      fetchImpl,
+    });
+
+    expect(report.ok).toBe(true);
+    expect(report.checks.map(({ id, ok }) => [id, ok])).toEqual([
+      ["cache", true],
+      ["cli", true],
+      ["backend", true],
+      ["accounts", true],
+      ["agents", true],
+      ["integrations", true],
+    ]);
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://accounts.aspectlylabs.com/readyz",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
   });
 
@@ -96,8 +239,12 @@ describe("complete Desktop development doctor", () => {
     }));
     const env = {
       VITE_API_URL: "http://127.0.0.1:18123",
-      PATCHBAY_TELEGRAM_SECRET_KEY: secretKey(1),
-      PATCHBAY_WEIXIN_SECRET_KEY: secretKey(2),
+      ...Object.fromEntries(
+        INTEGRATION_SECRET_KEYS.map((key, index) => [
+          key,
+          secretKey(index + 1),
+        ]),
+      ),
     };
 
     const report = await inspectDevEnvironment({
@@ -107,10 +254,12 @@ describe("complete Desktop development doctor", () => {
       arch: "arm64",
       execImpl,
       fetchImpl,
+      cacheRoot: join(repoRoot, "cache"),
     });
 
     expect(report.ok).toBe(true);
     expect(report.checks.map(({ id, ok }) => [id, ok])).toEqual([
+      ["cache", true],
       ["cli", true],
       ["backend", true],
       ["agents", true],
@@ -140,12 +289,17 @@ describe("complete Desktop development doctor", () => {
       repoRoot,
       env: {
         VITE_API_URL: "http://127.0.0.1:18123",
-        PATCHBAY_TELEGRAM_SECRET_KEY: secretKey(1),
-        PATCHBAY_WEIXIN_SECRET_KEY: secretKey(2),
+        ...Object.fromEntries(
+          INTEGRATION_SECRET_KEYS.map((key, index) => [
+            key,
+            secretKey(index + 1),
+          ]),
+        ),
       },
       platform: "darwin",
       arch: "arm64",
       execImpl,
+      cacheRoot: join(repoRoot, "cache"),
       fetchImpl: async () => ({
         ok: true,
         status: 200,
@@ -183,6 +337,7 @@ describe("complete Desktop development doctor", () => {
       platform: "darwin",
       arch: "arm64",
       execImpl,
+      cacheRoot: join(repoRoot, "cache"),
       fetchImpl: async () => ({ ok: false, status: 503 }),
     });
 

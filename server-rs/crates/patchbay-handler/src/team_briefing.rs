@@ -69,7 +69,7 @@ const TEAM_PARENT_STATUS_OWNED: &str = r#"6. **Own the parent issue status.** Th
    dispatch is not completion. On later turns, do not flip status for
    routine progress updates. When you confirm the overall goal is met, choose
    a reviewer different from the current team and run
-   `patchbay issue update <issue-id> --status in_review --assignee-id <reviewer-id>` — this responsibility is
+   `patchbay issue update <issue-id> --status in_review --executor-id <reviewer-id>` — this responsibility is
    itself the standing instruction that authorizes that change, so do it even
    when no comment asked you to. Leave `done` to a human reviewer or
    existing integrations (for example a PR with close intent that merges)."#;
@@ -80,7 +80,7 @@ const TEAM_PARENT_STATUS_OWNED: &str = r#"6. **Own the parent issue status.** Th
 const TEAM_PARENT_STATUS_NOT_OWNED: &str = r#"6. **Do NOT change this issue's status.** This issue is not assigned to your
    team — you were pulled in by an @mention (or this is a quick-create turn,
    where the issue does not exist yet). Its status belongs to its own
-   assignee. Answer, delegate, or escalate as usual, but never run
+   executor. Answer, delegate, or escalate as usual, but never run
    `patchbay issue status` on it, no matter how complete the work looks
    to you."#;
 
@@ -91,7 +91,7 @@ const TEAM_OPERATING_PROTOCOL_HARD_RULES: &str = r#"Hard rules:
   if you skip the mention link, the task is never delivered and the
   issue stalls. This is non-negotiable: no mention link = no delegation.
 - Do NOT restate the issue body or prior comments in your delegation —
-  the assignee already has them. Repeating context is noise that
+  the executor already has them. Repeating context is noise that
   buries the actual instruction.
 - Do NOT do the implementation work yourself unless the team has no
   other suitable members. The team exists so work is split — bypassing
@@ -105,7 +105,7 @@ const TEAM_OPERATING_PROTOCOL_HARD_RULES: &str = r#"Hard rules:
   rather than silently doing the work.
 - ALWAYS call `patchbay team activity` before ending your turn —
   even when the outcome is no_action.
-- A child issue you create with `--status todo` and an agent assignee
+- A child issue you create with `--status todo` and an agent executor
   already fires that agent automatically — the assignment IS the trigger.
   If you also @mention the same agent on this parent issue for the same
   work, the agent runs twice in parallel (once from the mention, once
@@ -343,30 +343,30 @@ mod tests {
         assert!(owned.contains("**Own the parent issue status.**"));
         assert!(owned.contains("reviewer different from the current team"));
         assert!(owned.contains(
-            "patchbay issue update <issue-id> --status in_review --assignee-id <reviewer-id>"
+            "patchbay issue update <issue-id> --status in_review --executor-id <reviewer-id>"
         ));
         assert!(owned.ends_with("Never both for the same work."));
 
         let guest = team_operating_protocol_for(false);
         assert!(guest.contains("**Do NOT change this issue's status.**"));
         assert!(!guest.contains("**Own the parent issue status.**"));
-        assert!(!guest.contains("--status in_review --assignee-id"));
+        assert!(!guest.contains("--status in_review --executor-id"));
     }
 
     #[test]
     fn mention_markdown_round_trips_shape() {
         assert_eq!(
-            format_mention("Mika", "agent", "abc"),
-            "[@Mika](mention://agent/abc)"
+            format_mention("Patrick", "agent", "abc"),
+            "[@Patrick](mention://agent/abc)"
         );
     }
 
     #[test]
     fn roster_row_formats_role_and_skills() {
-        let row = format_roster_row("Mika", "agent", "lead", "skills: go, rust", "@x");
+        let row = format_roster_row("Patrick", "agent", "lead", "skills: go, rust", "@x");
         assert_eq!(
             row,
-            "- Mika — agent, role: \"lead\" — skills: go, rust — `@x`\n"
+            "- Patrick — agent, role: \"lead\" — skills: go, rust — `@x`\n"
         );
         let bare = format_roster_row("Ann", "member (human)", "", "", "@y");
         assert_eq!(bare, "- Ann — member (human) — `@y`\n");

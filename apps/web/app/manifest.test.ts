@@ -23,9 +23,6 @@ vi.mock("@clerk/nextjs/server", async (importOriginal) => {
           request,
           undefined as never,
         ),
-    getAuth: async (request: NextRequest) => ({
-      userId: request.cookies.has("patchbay_logged_in") ? "user-1" : null,
-    }),
   };
 });
 

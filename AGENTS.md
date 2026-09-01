@@ -132,6 +132,22 @@ make check            # Product-wide local helper; not an agent/default migratio
 
 ### Worktrees and Local Services
 
+- The primary `main` checkout is a synchronization-only baseline. Agents must
+  never edit files, create commits, or run implementation work there. Before
+  any change, fetch `origin/main` and create a dedicated branch plus worktree
+  from that exact remote tip. If the primary checkout already contains user
+  changes, leave them untouched; never stash, reset, clean, or relocate them to
+  make room for agent work.
+- After an agent merges a PR, it must fetch `origin/main` and fast-forward the
+  primary `main` checkout only when that checkout is clean, on `main`, and has
+  not diverged. A dirty or divergent checkout is a reported synchronization
+  blocker, not authorization to overwrite it. Never rebase, reset, or otherwise
+  rewrite an active task worktree as part of post-merge synchronization.
+- After the merge and safe baseline sync, notify every running task/thread for
+  this repository that `main` advanced. Include the PR number, merge commit,
+  previous `main` SHA, and new `main` SHA. The notification is informational:
+  active tasks keep their frozen checkout and decide at a safe checkpoint
+  whether to rebase or restart; newly created tasks must use the new baseline.
 - Worktrees share PostgreSQL infrastructure but use isolated databases and
   ports through `.env.worktree`; never point one worktree at another's database.
 - Do not delete or overwrite another worktree's files, build outputs, or running

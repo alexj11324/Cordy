@@ -9,17 +9,33 @@ import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { binaryNameForPlatform, devRustTargetFor } from "./bundle-cli.mjs";
+import {
+  binaryNameForPlatform,
+  devBuildVariables,
+  devRustTargetFor,
+  resolveCargoCommand,
+} from "./bundle-cli.mjs";
 import { loadDevCheckoutEnv } from "./dev-checkout-env.mjs";
-import { rustSourceFingerprint } from "./dev-cli-cache.mjs";
+import {
+  defaultDevCliCacheDir,
+  inspectDevRuntimeCache,
+  rustBuildEnvironmentFingerprint,
+  rustSourceFingerprint,
+  rustToolchainIdentity,
+} from "./dev-cli-cache.mjs";
+import { INTEGRATION_SECRET_KEYS } from "../../../scripts/ensure-dev-integration-secrets.mjs";
+import {
+  applyDevRuntimeProfile,
+  resolveDevRuntimeProfile,
+} from "../../../scripts/dev-runtime-profile.mjs";
+import {
+  bootstrapDevClerkAuth,
+  withoutDevClerkEnvironment,
+} from "../../../scripts/dev-clerk-auth.mjs";
 
 const execFile = promisify(execFileCallback);
 const here = dirname(fileURLToPath(import.meta.url));
 const defaultRepoRoot = resolve(here, "..", "..", "..");
-const REQUIRED_INTEGRATION_KEYS = [
-  "PATCHBAY_TELEGRAM_SECRET_KEY",
-  "PATCHBAY_WEIXIN_SECRET_KEY",
-];
 
 async function sha256File(path) {
   const hash = createHash("sha256");
@@ -41,7 +57,7 @@ export function isValidSecretBoxKey(value) {
 
 export function integrationKeyStatus(env) {
   return Object.fromEntries(
-    REQUIRED_INTEGRATION_KEYS.map((key) => [
+    INTEGRATION_SECRET_KEYS.map((key) => [
       key,
       isValidSecretBoxKey(env[key]),
     ]),
@@ -55,6 +71,54 @@ export function backendUrlFromEnv(env) {
     env.PATCHBAY_PUBLIC_URL ||
     `http://127.0.0.1:${env.PORT || 8080}`;
   return configured.replace(/\/+$/, "");
+}
+
+export function accountsUrlFromEnv(env) {
+  const configured =
+    env.VITE_ACCOUNTS_URL ||
+    env.PATCHBAY_DEV_ACCOUNTS_URL ||
+    env.FRONTEND_ORIGIN ||
+    `http://localhost:${env.FRONTEND_PORT || 3000}`;
+  return configured.replace(/\/+$/, "");
+}
+
+/**
+ * Load the doctor env without letting the checkout file erase a launcher's
+ * explicitly selected runtime profile. The doctor runs as a child of both
+ * local and hosted launchers, and its env must be the same env Electron gets.
+ */
+export function loadDoctorEnvironment({
+  repoRoot = defaultRepoRoot,
+  processEnv = process.env,
+  mode,
+} = {}) {
+  const launcherEnv = { ...processEnv };
+  const env = { ...processEnv };
+  const launcherMode = mode ?? processEnv.PATCHBAY_DEV_MODE;
+  loadDevCheckoutEnv({ repoRoot, env });
+  if (launcherMode) {
+    Object.assign(env, launcherEnv);
+    applyDevRuntimeProfile(
+      env,
+      resolveDevRuntimeProfile(launcherMode, env),
+    );
+  }
+  return env;
+}
+
+export function shouldBootstrapDevClerkAuth(env) {
+  return (
+    env.PATCHBAY_DEV_MODE !== "hosted" &&
+    env.PATCHBAY_DEV_AUTH_READY !== "1"
+  );
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KiB`;
+  if (bytes < 1024 * 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+  }
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GiB`;
 }
 
 async function probeCliVersion(binaryPath, execImpl) {
@@ -118,6 +182,26 @@ async function probeBackend(apiUrl, fetchImpl) {
   }
 }
 
+async function probeHostedAccounts(accountsUrl, fetchImpl) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 3_000);
+  try {
+    const response = await fetchImpl(`${accountsUrl}/readyz`, {
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const payload = await response.json();
+    if (payload.status !== "ready" && payload.status !== "ok") {
+      throw new Error(`unexpected status ${payload.status || "unknown"}`);
+    }
+    return payload;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function inspectDevEnvironment({
   repoRoot = defaultRepoRoot,
   env = process.env,
@@ -125,6 +209,7 @@ export async function inspectDevEnvironment({
   arch = process.arch,
   fetchImpl = fetch,
   execImpl = execFile,
+  cacheRoot = defaultDevCliCacheDir({ env, platform }),
 } = {}) {
   const binaryName = binaryNameForPlatform(platform);
   const binaryPath = join(
@@ -139,7 +224,38 @@ export async function inspectDevEnvironment({
   const sourceFingerprint = rustSourceFingerprint(repoRoot);
   const rustTarget = devRustTargetFor(platform, arch);
   const apiUrl = backendUrlFromEnv(env);
+  const hosted = env.PATCHBAY_DEV_MODE === "hosted";
+  const accountsUrl = accountsUrlFromEnv(env);
   const checks = [];
+
+  const cache = await inspectDevRuntimeCache({ cacheRoot });
+  const cargoCommand = resolveCargoCommand(env, platform);
+  const toolchainIdentity = rustToolchainIdentity(env, cargoCommand, {
+    platform,
+    cwd: join(repoRoot, "server-rs"),
+  });
+  const buildVariables = devBuildVariables(
+    sourceFingerprint,
+    rustBuildEnvironmentFingerprint(env, rustTarget, "dev"),
+  );
+  const currentCached = cache.completeFingerprints.some(
+    (entry) =>
+      entry.rustTarget === rustTarget &&
+      entry.sourceFingerprint === sourceFingerprint &&
+      entry.toolchainIdentity === (toolchainIdentity || "unavailable") &&
+      JSON.stringify(entry.buildVariables || {}) ===
+        JSON.stringify(buildVariables),
+  );
+  checks.push({
+    id: "cache",
+    ok: true,
+    message: currentCached
+      ? `dev runtime cache has current source; ${cache.completeFingerprintCount} complete fingerprints, ${formatBytes(cache.totalBytes)}`
+      : `dev runtime cache does not contain the current source; ${cache.completeFingerprintCount} complete fingerprints, ${formatBytes(cache.totalBytes)}`,
+    ...(!currentCached && {
+      fix: "Run `pnpm dev`; a cache miss performs one worktree-local incremental Rust build. Use `pnpm dev:cache:prune` to remove stale entries.",
+    }),
+  });
 
   let manifest;
   let cliProbeRoot;
@@ -188,15 +304,39 @@ export async function inspectDevEnvironment({
     checks.push({
       id: "backend",
       ok: true,
-      message: `backend and database ready at ${apiUrl}`,
+      message: hosted
+        ? `hosted API ready at ${apiUrl}`
+        : `backend and database ready at ${apiUrl}`,
     });
   } catch (error) {
     checks.push({
       id: "backend",
       ok: false,
-      message: `backend/database not ready at ${apiUrl}: ${error.message}`,
-      fix: "Use the complete `pnpm dev` entry; inspect the preceding migration/backend logs.",
+      message: hosted
+        ? `hosted API not ready at ${apiUrl}: ${error.message}`
+        : `backend/database not ready at ${apiUrl}: ${error.message}`,
+      fix: hosted
+        ? "Check https://api.aspectlylabs.com/healthz and retry `pnpm dev:hosted`."
+        : "Use the complete `pnpm dev` entry; inspect the preceding migration/backend logs.",
     });
+  }
+
+  if (hosted) {
+    try {
+      await probeHostedAccounts(accountsUrl, fetchImpl);
+      checks.push({
+        id: "accounts",
+        ok: true,
+        message: `hosted accounts broker ready at ${accountsUrl}`,
+      });
+    } catch (error) {
+      checks.push({
+        id: "accounts",
+        ok: false,
+        message: `hosted accounts broker not ready at ${accountsUrl}: ${error.message}`,
+        fix: "Check https://accounts.aspectlylabs.com/readyz and retry `pnpm dev:hosted`.",
+      });
+    }
   }
 
   if (!cliVerified || !verifiedBinaryPath) {
@@ -247,7 +387,7 @@ export async function inspectDevEnvironment({
           id: "integrations",
           ok: true,
           message:
-            "Telegram and Weixin credential encryption are enabled; account credentials remain UI-supplied",
+            "all six messaging integrations have local credential encryption; account credentials remain UI-supplied",
         }
       : {
           id: "integrations",
@@ -270,8 +410,21 @@ export function printDevEnvironmentReport(report, log = console) {
 
 async function main() {
   const warnOnly = process.argv.includes("--warn-only");
-  const { env } = loadDevCheckoutEnv({ repoRoot: defaultRepoRoot });
-  const report = await inspectDevEnvironment({ env });
+  const env = loadDoctorEnvironment({
+    mode: process.argv.includes("--hosted") ? "hosted" : undefined,
+  });
+  let inspectionEnv = env;
+  if (shouldBootstrapDevClerkAuth(env)) {
+    const auth = await bootstrapDevClerkAuth({ env });
+    console.log(
+      `✓ Clerk development authentication ready for ${auth.authorizedParties} (${auth.source})`,
+    );
+    inspectionEnv = withoutDevClerkEnvironment({
+      ...env,
+      ...auth.authEnv,
+    });
+  }
+  const report = await inspectDevEnvironment({ env: inspectionEnv });
   printDevEnvironmentReport(report);
   if (!report.ok && !warnOnly) process.exitCode = 1;
 }

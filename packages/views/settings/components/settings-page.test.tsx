@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SidebarProvider, useSidebar } from "@patchbay/ui/components/ui/sidebar";
@@ -27,9 +27,11 @@ vi.mock("./integrations-tab", stub("IntegrationsTab"));
 vi.mock("./labs-tab", stub("LabsTab"));
 vi.mock("./notifications-tab", stub("NotificationsTab"));
 vi.mock("./labels-tab", stub("LabelsTab"));
+vi.mock("./issue-statuses-tab", stub("IssueStatusesTab"));
 vi.mock("./properties-tab", stub("PropertiesTab"));
 vi.mock("./quick-actions-tab", stub("QuickActionsTab"));
 vi.mock("./keyboard-shortcuts-tab", stub("KeyboardShortcutsTab"));
+vi.mock("./mcp-tab", stub("McpTab"));
 vi.mock("./plugins-tab", stub("PluginsTab"));
 vi.mock("./billing-tab", stub("BillingTab"));
 
@@ -146,7 +148,9 @@ describe("SettingsPage nav trigger", () => {
     );
     expect(settings).toHaveClass("bg-page-canvas");
     expect(container.querySelector('[data-settings-ui="lobe"]')).toBeInTheDocument();
-    expect(navigation).toHaveClass("md:w-80");
+    expect(navigation).toHaveAttribute("data-settings-sidebar-glass", "true");
+    expect(navigation).toHaveClass("md:w-64");
+    expect(navigation).not.toHaveClass("md:w-80");
     expect(navigation).not.toHaveClass("md:w-56");
     expect(container.querySelector("[data-settings-content]")).toHaveClass(
       "max-w-[57rem]",
@@ -155,6 +159,145 @@ describe("SettingsPage nav trigger", () => {
       "data-active:!bg-sidebar-item-active",
     );
   });
+
+  it("does not repeat the settings title in the standalone navigation", async () => {
+    const { container } = renderWithI18n(<SettingsPage variant="standalone" />);
+
+    await waitFor(() => {
+      expect(
+        container.querySelector('[data-settings-ui="lobe-runtime"]'),
+      ).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByRole("heading", { name: "Settings" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps every existing settings destination visible in the standalone nav", async () => {
+    configStore.getState().setFeatureFlags({
+      [BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG]: true,
+      [PLUGINS_V1_FLAG]: true,
+    });
+
+    renderWithI18n(
+      <SettingsPage
+        variant="standalone"
+        extraAccountTabs={[
+          { value: "daemon", label: "Daemon", icon: () => null, content: null },
+          { value: "updates", label: "Updates", icon: () => null, content: null },
+        ]}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByRole("tab").map((tab) => tab.textContent?.trim()),
+      ).toEqual([
+        "Profile",
+        "Preferences",
+        "Shortcuts",
+        "Issue",
+        "Chat",
+        "Notifications",
+        "API Tokens",
+        "Daemon",
+        "Updates",
+        "General",
+        "Repositories",
+        "GitHub",
+        "Integrations",
+        "Labs",
+        "Members",
+        "Billing",
+        "Labels",
+        "Issue Statuses",
+        "Properties",
+        "Quick Actions",
+        "MCP",
+        "Plugins",
+      ]);
+    });
+  });
+
+  it("keeps every standalone destination wired to its existing panel", async () => {
+    configStore.getState().setFeatureFlags({
+      [BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG]: true,
+      [PLUGINS_V1_FLAG]: true,
+    });
+
+    const tabs = [
+      ["Profile", "profile", "AccountTab"],
+      ["Preferences", "preferences", "PreferencesTab"],
+      ["Shortcuts", "shortcuts", "KeyboardShortcutsTab"],
+      ["Issue", "issue", "IssueTab"],
+      ["Chat", "chat", "ChatTab"],
+      ["Notifications", "notifications", "NotificationsTab"],
+      ["API Tokens", "tokens", "TokensTab"],
+      ["Daemon", "daemon", "DaemonPanel"],
+      ["Updates", "updates", "UpdatesPanel"],
+      ["General", "workspace", "WorkspaceTab"],
+      ["Repositories", "repositories", "RepositoriesTab"],
+      ["GitHub", "github", "GitHubTab"],
+      ["Integrations", "integrations", "IntegrationsTab"],
+      ["Labs", "labs", "LabsTab"],
+      ["Members", "members", "MembersTab"],
+      ["Billing", "billing", "BillingTab"],
+      ["Labels", "labels", "LabelsTab"],
+      ["Issue Statuses", "issue-statuses", "IssueStatusesTab"],
+      ["Properties", "properties", "PropertiesTab"],
+      ["Quick Actions", "quick-actions", "QuickActionsTab"],
+      ["MCP", "mcp", "McpTab"],
+      ["Plugins", "plugins", "PluginsTab"],
+    ] as const;
+
+    const extraAccountTabs = [
+      {
+        value: "daemon",
+        label: "Daemon",
+        icon: () => null,
+        content: <div>DaemonPanel</div>,
+      },
+      {
+        value: "updates",
+        label: "Updates",
+        icon: () => null,
+        content: <div>UpdatesPanel</div>,
+      },
+    ];
+    const renderSettings = () => (
+      <SettingsPage
+        variant="standalone"
+        extraAccountTabs={extraAccountTabs}
+      />
+    );
+    const view = renderWithI18n(renderSettings());
+
+    await waitFor(() => {
+      expect(screen.getAllByRole("tab")).toHaveLength(tabs.length);
+    });
+
+    for (const [label, value, panel] of tabs) {
+      const previousReplaceCount = replace.mock.calls.length;
+      fireEvent.click(screen.getByRole("tab", { name: label }));
+
+      const destination = replace.mock.calls.at(-1)?.[0] as string | undefined;
+      if (replace.mock.calls.length === previousReplaceCount || !destination) {
+        navigationState.search = `tab=${value}`;
+      } else {
+        navigationState.search = new URL(
+          destination,
+          "https://example.invalid",
+        ).searchParams.toString();
+      }
+      view.rerender(renderSettings());
+
+      await waitFor(() => {
+        expect(
+          within(screen.getByRole("tabpanel")).getByText(panel),
+        ).toBeInTheDocument();
+      });
+    }
+  }, 30_000);
 
   it("preserves the embedded settings navigation width", () => {
     const { container } = renderWithI18n(<SettingsPage />);

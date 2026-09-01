@@ -9,6 +9,32 @@ export type GoogleSsoParams = {
 
 export type GoogleSsoResult = { error: unknown };
 
+export const GOOGLE_OAUTH_START_TIMEOUT_MS = 10_000;
+
+export class GoogleOAuthStartTimeoutError extends Error {
+  constructor() {
+    super("Google OAuth did not start within the configured deadline");
+    this.name = "GoogleOAuthStartTimeoutError";
+  }
+}
+
+/** Bound only the pre-redirect work; Google user interaction is not timed out. */
+export function withGoogleOAuthStartTimeout<T>(
+  operation: Promise<T>,
+  timeoutMs = GOOGLE_OAUTH_START_TIMEOUT_MS,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new GoogleOAuthStartTimeoutError()),
+      timeoutMs,
+    );
+  });
+  return Promise.race([operation, timeout]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer);
+  });
+}
+
 type GoogleOAuthAttempt = {
   status?: string | null;
   isTransferable?: boolean;

@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use url::form_urlencoded;
 
 use super::{
-    compact_uuid, display_id, is_canonical_uuid, normalize_assignee_input, normalize_uuid_prefix,
+    compact_uuid, display_id, is_canonical_uuid, normalize_executor_input, normalize_uuid_prefix,
     retry_actor_get, value_string, ApiClient,
 };
 
@@ -128,14 +128,14 @@ pub(super) async fn resolve_automation_subscribers(
     let path = format!("/api/workspaces/{workspace_id}/members");
     let members: Vec<Value> = retry_actor_get(client, &path).await.map_err(|error| {
         anyhow::anyhow!(
-            "resolve subscriber {:?}: failed to resolve assignee: fetch members: {error:#}",
+            "resolve subscriber {:?}: failed to resolve executor: fetch members: {error:#}",
             refs.first().map(String::as_str).unwrap_or_default()
         )
     })?;
     let mut seen = HashSet::new();
     let mut subscribers = Vec::new();
     for raw in refs {
-        let input = normalize_assignee_input(raw);
+        let input = normalize_executor_input(raw);
         let input_lower = input.to_ascii_lowercase();
         let mut buckets = [Vec::new(), Vec::new(), Vec::new()];
         for member in &members {
@@ -176,7 +176,7 @@ pub(super) async fn resolve_automation_subscribers(
                 })
                 .collect::<Vec<_>>()
                 .join("\n");
-            bail!("resolve subscriber {raw:?}: ambiguous assignee {input:?}; matches:\n{details}");
+            bail!("resolve subscriber {raw:?}: ambiguous executor {input:?}; matches:\n{details}");
         }
         let user_id = value_string(member[0], "user_id");
         if seen.insert(user_id.clone()) {
@@ -283,7 +283,7 @@ pub(super) async fn load_automation_agent_names(
     if workspace_id.is_empty()
         || !automations
             .iter()
-            .any(|automation| !value_string(automation, "assignee_id").is_empty())
+            .any(|automation| !value_string(automation, "executor_id").is_empty())
     {
         return HashMap::new();
     }

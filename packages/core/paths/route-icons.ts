@@ -24,6 +24,7 @@ export type RouteIconName =
   | "Hash"
   | "CircleUser"
   | "ListTodo"
+  | "Network"
   | "FolderKanban"
   | "AlarmClockCheck"
   | "Bot"
@@ -50,6 +51,7 @@ export type NavLabelKey =
   | "channels"
   | "my_issues"
   | "issues"
+  | "task_graph"
   | "projects"
   | "automations"
   | "agents"
@@ -67,6 +69,7 @@ export type WorkspacePageKey =
   | "channels"
   | "myIssues"
   | "issues"
+  | "taskGraph"
   | "projects"
   | "automations"
   | "agents"
@@ -96,6 +99,7 @@ export const WORKSPACE_PAGES: Record<WorkspacePageKey, WorkspacePage> = {
   channels: { segment: "channels", icon: "Hash", navKey: "channels" },
   myIssues: { segment: "my-issues", icon: "CircleUser", navKey: "my_issues" },
   issues: { segment: "issues", icon: "ListTodo", navKey: "issues" },
+  taskGraph: { segment: "task-graph", icon: "Network", navKey: "task_graph" },
   projects: { segment: "projects", icon: "FolderKanban", navKey: "projects" },
   automations: { segment: "automations", icon: "AlarmClockCheck", navKey: "automations" },
   agents: { segment: "agents", icon: "Bot", navKey: "agents" },

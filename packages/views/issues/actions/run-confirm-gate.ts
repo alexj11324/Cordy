@@ -1,6 +1,7 @@
 import type {
   Issue,
-  IssueAssigneeType,
+  IssueExecutorType,
+  IssueReviewerType,
   IssueStatusCategory,
   UpdateIssueRequest,
 } from "@patchbay/core/types";
@@ -14,8 +15,8 @@ export type GateIssue = Pick<
   | "revision"
   | "status"
   | "status_category"
-  | "assignee_type"
-  | "assignee_id"
+  | "executor_type"
+  | "executor_id"
   | "reviewer_type"
   | "reviewer_id"
 >;
@@ -25,32 +26,32 @@ export type RunConfirmIntent =
   | {
       issueIds: [string];
       mode: "assign";
-      assigneeType: "agent" | "team";
-      assigneeId: string;
+      executorType: "agent" | "team";
+      executorId: string;
     }
   | {
       issueIds: [string];
       mode: "promote";
       status: string;
-      assigneeType: "agent" | "team";
-      assigneeId: string;
+      executorType: "agent" | "team";
+      executorId: string;
     }
   | {
       issueIds: [string];
       mode: "review";
       status: string;
-      fromAssigneeType: IssueAssigneeType | null;
-      fromAssigneeId: string | null;
-      assigneeType: IssueAssigneeType | null;
-      assigneeId: string | null;
+      fromExecutorType: IssueExecutorType | null;
+      fromExecutorId: string | null;
+      executorType: IssueReviewerType | null;
+      executorId: string | null;
       issueRevision?: number;
     }
   | {
       issueIds: [string];
       mode: "review-return";
       status: string;
-      assigneeType: "agent" | "team";
-      assigneeId: string;
+      executorType: "agent" | "team";
+      executorId: string;
       issueRevision?: number;
     };
 
@@ -78,8 +79,18 @@ export function resolveStatusCategory(
   return category && isIssueStatusCategory(category) ? category : null;
 }
 
-/** Categories a promotion can land in without starting a run. */
-const NEVER_STARTS = ["backlog", "done", "cancelled"];
+/** Categories whose admission path can start an executor run. Keep this in
+ * sync with the backend `issue_status::runs_executor` contract. */
+const RUNS_EXECUTOR_CATEGORIES: readonly IssueStatusCategory[] = [
+  "todo",
+  "in_progress",
+  "in_review",
+  "blocked",
+];
+
+function runsExecutor(category: IssueStatusCategory | null): boolean {
+  return category !== null && RUNS_EXECUTOR_CATEGORIES.includes(category);
+}
 
 /**
  * Which confirmation, if any, an issue write needs before it is applied.
@@ -88,14 +99,11 @@ const NEVER_STARTS = ["backlog", "done", "cancelled"];
  * directly. Pure so every entry point — issue detail, context menu, table row —
  * routes on one answer instead of re-deriving it (PB-6463).
  *
- * - **assign**: giving the issue an agent/team owner. Skipped only when the
- *   issue is KNOWN to be parked, because assigning into the backlog category
- *   never starts a run (the Rust issue-trigger service) and the
- *   dialog would promise something that cannot happen.
- * - **promote**: moving an already-owned issue out of the backlog category.
- *   That status change alone starts the run (`RunSourceStatus`), so it earns
- *   the same dialog — for built-in `todo` and every custom Todo-category
- *   status alike.
+ * - **assign**: changing the executor while the issue is in an executable
+ *   category (Todo, In Progress, In Review, or Blocked).
+ * - **promote**: admitting an already-executable issue into In Progress.
+ *   Any transition from a non-executable category into an executable category
+ *   can start an agent directly.
  * - **review**: entering the Review category. The dialog requires a reviewer
  *   different from the current owner and sends status + reviewer atomically.
  *   If a reviewer is already on the issue (or supplied in the same write),
@@ -103,7 +111,7 @@ const NEVER_STARTS = ["backlog", "done", "cancelled"];
  * - **review-return**: returning from Review to In Progress. The existing
  *   implementation owner is restored by the durable coordinator, so the
  *   dialog preserves the handoff-note and suppress-run choices before the
- *   status write is applied. Redundant assignee fields from grouped surfaces
+ *   status write is applied. Redundant executor fields from grouped surfaces
  *   do not turn this into a different assignment.
  *
  * Unresolvable categories fail toward confirming: a dialog the user dismisses
@@ -115,30 +123,29 @@ export function runConfirmIntent(
   catalog: Pick<IssueStatusCatalog, "entryOf">,
 ): RunConfirmIntent | null {
   const issueCategory = resolveStatusCategory(issue.status, issue.status_category, catalog);
-  const parked = issueCategory === "backlog";
 
   if (updates.status && updates.status !== issue.status) {
     const target = resolveStatusCategory(updates.status, undefined, catalog);
-    const nextOwnerType = Object.prototype.hasOwnProperty.call(updates, "assignee_type")
-      ? updates.assignee_type ?? null
-      : issue.assignee_type;
-    const nextOwnerId = Object.prototype.hasOwnProperty.call(updates, "assignee_id")
-      ? updates.assignee_id ?? null
-      : issue.assignee_id;
+    const nextExecutorType = Object.prototype.hasOwnProperty.call(updates, "executor_type")
+      ? updates.executor_type ?? null
+      : issue.executor_type;
+    const nextExecutorId = Object.prototype.hasOwnProperty.call(updates, "executor_id")
+      ? updates.executor_id ?? null
+      : issue.executor_id;
     if (
       issueCategory === "in_review" &&
       target === "in_progress" &&
-      (issue.assignee_type === "agent" || issue.assignee_type === "team") &&
-      !!issue.assignee_id &&
-      nextOwnerType === issue.assignee_type &&
-      nextOwnerId === issue.assignee_id
+      (issue.executor_type === "agent" || issue.executor_type === "team") &&
+      !!issue.executor_id &&
+      nextExecutorType === issue.executor_type &&
+      nextExecutorId === issue.executor_id
     ) {
       return {
         issueIds: [issue.id],
         mode: "review-return",
         status: updates.status,
-        assigneeType: issue.assignee_type,
-        assigneeId: issue.assignee_id,
+        executorType: issue.executor_type,
+        executorId: issue.executor_id,
         issueRevision: issue.revision,
       };
     }
@@ -153,59 +160,51 @@ export function runConfirmIntent(
         ? updates.reviewer_id ?? null
         : issue.reviewer_id ?? null;
       const hasReviewer = !!(nextReviewerType && nextReviewerId);
-      const sameAsOwner =
+      const sameAsExecutor =
         hasReviewer &&
-        nextReviewerType === nextOwnerType &&
-        nextReviewerId === nextOwnerId;
-      if (hasReviewer && !sameAsOwner) {
+        nextReviewerType === nextExecutorType &&
+        nextReviewerId === nextExecutorId;
+      if (hasReviewer && !sameAsExecutor) {
         return null;
       }
       return {
         issueIds: [issue.id],
         mode: "review",
         status: updates.status,
-        fromAssigneeType: issue.assignee_type,
-        fromAssigneeId: issue.assignee_id,
-        assigneeType: nextReviewerType,
-        assigneeId: nextReviewerId,
+        fromExecutorType: issue.executor_type,
+        fromExecutorId: issue.executor_id,
+        executorType: nextReviewerType,
+        executorId: nextReviewerId,
         issueRevision: issue.revision,
       };
     }
-  }
-
-  if (
-    (updates.assignee_type === "agent" || updates.assignee_type === "team") &&
-    updates.assignee_id &&
-    !parked
-  ) {
-    return {
-      issueIds: [issue.id],
-      mode: "assign",
-      assigneeType: updates.assignee_type,
-      assigneeId: updates.assignee_id,
-    };
-  }
-
-  const owner = issue.assignee_type;
-  if (
-    updates.status &&
-    updates.status !== issue.status &&
-    // Unknown counts as possibly-parked: the write may promote, so confirm.
-    (parked || issueCategory === null) &&
-    (owner === "agent" || owner === "team") &&
-    issue.assignee_id
-  ) {
-    const target = resolveStatusCategory(updates.status, undefined, catalog);
-    // An unresolvable TARGET is possibly-active for the same reason.
-    if (target === null || !NEVER_STARTS.includes(target)) {
+    if (
+      (target === null || runsExecutor(target)) &&
+      !runsExecutor(issueCategory) &&
+      (nextExecutorType === "agent" || nextExecutorType === "team") &&
+      nextExecutorId
+    ) {
       return {
         issueIds: [issue.id],
         mode: "promote",
         status: updates.status,
-        assigneeType: owner,
-        assigneeId: issue.assignee_id,
+        executorType: nextExecutorType,
+        executorId: nextExecutorId,
       };
     }
+  }
+
+  if (
+    (updates.executor_type === "agent" || updates.executor_type === "team") &&
+    updates.executor_id &&
+    (runsExecutor(issueCategory) || issueCategory === null)
+  ) {
+    return {
+      issueIds: [issue.id],
+      mode: "assign",
+      executorType: updates.executor_type,
+      executorId: updates.executor_id,
+    };
   }
 
   return null;

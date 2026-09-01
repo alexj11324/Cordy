@@ -122,7 +122,7 @@ FORCE=1 make worktree-env
 From any checkout (main or worktree):
 
 ```bash
-make dev
+pnpm dev
 ```
 
 This single command:
@@ -136,49 +136,11 @@ This single command:
 - runs all migrations
 - starts the backend, browser login/share origin, and complete Electron client with renderer hot reload
 
-### Explicit Setup (advanced)
-
-If you prefer separate control over setup and startup:
-
-#### Main Checkout
-
-```bash
-cp .env.example .env
-make setup-main
-make start-main
-```
-
-Stop:
-
-```bash
-make stop-main
-```
-
-#### Worktree
-
-```bash
-make worktree-env
-make setup-worktree
-make start-worktree
-```
-
-Stop:
-
-```bash
-make stop-worktree
-```
+`make dev` is a POSIX convenience alias for the same complete launcher. There
+is intentionally no separate setup/start path: runtime, database, auth, and
+capability checks must stay on one observable path.
 
 ## Recommended Daily Workflow
-
-### Main Checkout
-
-Use the main checkout when you want a stable local environment for `main`.
-
-```bash
-make start-main
-make stop-main
-make check-main
-```
 
 ### Feature Worktree
 
@@ -193,9 +155,9 @@ make dev
 After that, day-to-day commands are:
 
 ```bash
-make dev              # start (re-runs setup if needed, idempotent)
-make stop-worktree    # stop
-make check-worktree   # verify
+pnpm dev              # complete Desktop stack; setup is idempotent
+make stop             # stop this checkout's tracked process tree
+make check            # explicit full local verification
 ```
 
 ### Removing a Worktree
@@ -262,33 +224,12 @@ Important:
 
 ### App Lifecycle
 
-Main checkout:
+Commands always target the current checkout:
 
 ```bash
-make setup-main
-make start-main
-make stop-main
-make check-main
-```
-
-Worktree:
-
-```bash
-make worktree-env
-make setup-worktree
-make start-worktree
-make stop-worktree
-make check-worktree
-```
-
-Generic targets for the current checkout:
-
-```bash
-make setup
-make start
+pnpm dev
 make stop
 make check
-make dev
 make test
 make migrate-up
 make migrate-down
@@ -300,11 +241,9 @@ These generic targets require a valid env file in the current directory.
 
 Database creation is automatic.
 
-The following commands all ensure the target database exists before they continue:
+The following commands ensure the target database exists before they continue:
 
-- `make setup`
-- `make start`
-- `make dev`
+- `pnpm dev` / `make dev`
 - `make test`
 - `make migrate-up`
 - `make migrate-down`
@@ -314,16 +253,10 @@ That logic lives in `scripts/ensure-postgres.sh`.
 
 ## Testing
 
-Run all local checks:
+Run the explicit full local verification pipeline:
 
 ```bash
-make check-main
-```
-
-Or from a worktree:
-
-```bash
-make check-worktree
+make check
 ```
 
 This runs:
@@ -487,9 +420,8 @@ PROFILE="dev-$(printf '%s' "$(basename "$PWD")" | tr '[:upper:]' '[:lower:]' | s
 # 1. Stop daemon
 make cli ARGS="daemon stop --profile $PROFILE"
 
-# 2. Stop backend + frontend
-make stop            # main checkout
-make stop-worktree   # worktree checkout
+# 2. Stop this checkout's tracked backend + frontend
+make stop
 
 # 3. (Optional) Stop shared PostgreSQL
 make db-down
@@ -508,6 +440,20 @@ Run the complete Electron development environment with one command:
 ```bash
 pnpm dev
 ```
+
+For Desktop UI development against the hosted Google login and API, use the
+explicit hosted profile:
+
+```bash
+pnpm dev:hosted
+```
+
+The hosted profile keeps the Electron/Vite renderer local for hot reload, but
+opens OAuth at `https://accounts.aspectlylabs.com` and sends API/WebSocket
+traffic to `https://api.aspectlylabs.com`. It does not start a local database,
+Rust server, or Next.js login origin. This profile is intentionally opt-in
+because it can read and change shared hosted data. The launcher rejects
+conflicting inherited `VITE_*` values before starting.
 
 The command does not open Electron until it has:
 
@@ -531,12 +477,15 @@ The command does not open Electron until it has:
 
 There is deliberately no UI-only or released/PATH-CLI development fallback. A
 missing capability fails before the window opens and prints an executable fix.
-Use `pnpm dev:doctor` to repeat the same diagnostics while the stack is running.
+Use `pnpm dev:doctor` to repeat the local diagnostics while the stack is running,
+or `pnpm dev:doctor --hosted` from a separate terminal to probe the hosted API
+and accounts broker explicitly.
 
 | Situation                                                                      | Command                                   | Expected work                                                                          |
 | ------------------------------------------------------------------------------ | ----------------------------------------- | -------------------------------------------------------------------------------------- |
 | Normal local product development                                               | `pnpm dev` or `make dev`                  | Complete Electron + dev CLI + backend + Web origin + isolated DB, with Vite hot reload |
-| Re-run capability diagnostics                                                  | `pnpm dev:doctor`                         | CLI/version/source, backend/DB, agent detection, Telegram/Weixin configuration         |
+| Desktop development against hosted OAuth/API                                  | `pnpm dev:hosted`                         | Local Electron/Vite hot reload with the production accounts/API tuple; no local API    |
+| Re-run capability diagnostics                                                  | `pnpm dev:doctor [--hosted]`              | CLI/version/source, selected API/accounts endpoints, agent detection, Telegram/Weixin configuration |
 | Compile-check frontend/Electron output                                         | `pnpm --filter @patchbay/desktop build`   | Electron/Vite production bundles; no Rust                                              |
 | Validate an installer, signing/notarization, updater, embedded CLI, or release | `pnpm --filter @patchbay/desktop package` | Release Rust CLI and installer packaging; may take tens of minutes                     |
 
@@ -671,20 +620,16 @@ It should not.
 The safe worktree setup is:
 
 ```bash
-make worktree-env
-make setup-worktree
-make start-worktree
+rm -f .env
+pnpm dev
 ```
 
 ### App Stops but PostgreSQL Keeps Running
 
 That is expected.
 
-- `make stop`
-- `make stop-main`
-- `make stop-worktree`
-
-only stop the tracked Electron/backend/Web process tree.
+`make stop` only stops the current checkout's tracked Electron/backend/Web
+process tree.
 
 To stop the shared PostgreSQL container:
 
@@ -706,7 +651,7 @@ database named in `POSTGRES_DB`, recreates it, and runs all migrations):
 ```bash
 make stop        # stop the tracked development process tree first
 make db-reset
-make start
+pnpm dev
 ```
 
 - only affects the current env's database; other worktree databases are untouched
@@ -736,7 +681,7 @@ Warning:
 
 - this deletes the shared Docker volume
 - this deletes the main database and every worktree database in that volume
-- after that you must run `make setup-main` or `make setup-worktree` again
+- after that run `pnpm dev` again
 
 ## Typical Flows
 
@@ -758,19 +703,11 @@ make dev
 
 ```bash
 cd ../patchbay-feature
-make start-worktree
+pnpm dev
 ```
 
 ### Validate Before Pushing
 
-Main checkout:
-
 ```bash
-make check-main
-```
-
-Worktree:
-
-```bash
-make check-worktree
+make check
 ```

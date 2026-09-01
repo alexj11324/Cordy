@@ -30,6 +30,7 @@ const PAST_STATUS_ORDER: Record<string, number> = {
   queued: 99,
   dispatched: 99,
   waiting_local_directory: 99,
+  waiting_capacity: 99,
   running: 99,
 };
 

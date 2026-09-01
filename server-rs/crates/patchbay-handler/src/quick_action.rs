@@ -38,8 +38,8 @@ struct QuickActionResponse {
     workspace_id: Uuid,
     name: String,
     description: String,
-    assignee_type: String,
-    assignee_id: Uuid,
+    executor_type: String,
+    executor_id: Uuid,
     prompt: String,
     visibility: String,
     status: String,
@@ -172,32 +172,32 @@ fn visibility(raw: Option<&str>) -> Result<String, Response> {
 pub(crate) async fn target(
     state: &HandlerState,
     workspace_id: Uuid,
-    assignee_type: &str,
-    assignee_id: Uuid,
+    executor_type: &str,
+    executor_id: Uuid,
 ) -> Result<(String, Agent, bool), Response> {
-    let (name, agent) = match assignee_type {
+    let (name, agent) = match executor_type {
         "agent" => {
-            let agent = agent::get_agent_in_workspace(&state.pool, assignee_id, workspace_id)
+            let agent = agent::get_agent_in_workspace(&state.pool, executor_id, workspace_id)
                 .await
                 .map_err(|error| db_error(error, "failed to resolve quick action target"))?
                 .filter(|agent| agent.archived_at.is_none())
                 .ok_or_else(|| {
                     error_response(
                         StatusCode::BAD_REQUEST,
-                        "assignee not found in this workspace",
+                        "executor not found in this workspace",
                     )
                 })?;
             (agent.name.clone(), agent)
         }
         "team" => {
-            let team = team::get_team_in_workspace(&state.pool, assignee_id, workspace_id)
+            let team = team::get_team_in_workspace(&state.pool, executor_id, workspace_id)
                 .await
                 .map_err(|error| db_error(error, "failed to resolve quick action target"))?
                 .filter(|team| team.archived_at.is_none())
                 .ok_or_else(|| {
                     error_response(
                         StatusCode::BAD_REQUEST,
-                        "assignee not found in this workspace",
+                        "executor not found in this workspace",
                     )
                 })?;
             let leader = agent::get_agent_in_workspace(&state.pool, team.leader_id, workspace_id)
@@ -207,7 +207,7 @@ pub(crate) async fn target(
                 .ok_or_else(|| {
                     error_response(
                         StatusCode::BAD_REQUEST,
-                        "assignee not found in this workspace",
+                        "executor not found in this workspace",
                     )
                 })?;
             (team.name, leader)
@@ -215,7 +215,7 @@ pub(crate) async fn target(
         _ => {
             return Err(error_response(
                 StatusCode::BAD_REQUEST,
-                "assignee_type must be \"agent\" or \"team\"",
+                "executor_type must be \"agent\" or \"team\"",
             ));
         }
     };
@@ -238,8 +238,8 @@ async fn response_for(state: &HandlerState, action: QuickAction) -> QuickActionR
     let target = target(
         state,
         action.workspace_id,
-        &action.assignee_type,
-        action.assignee_id,
+        &action.executor_type,
+        action.executor_id,
     )
     .await;
     let (target_name, target_public, target_missing) = match target {
@@ -260,8 +260,8 @@ fn response_with_target(
         workspace_id: action.workspace_id,
         name: action.name,
         description: action.description,
-        assignee_type: action.assignee_type,
-        assignee_id: action.assignee_id,
+        executor_type: action.executor_type,
+        executor_id: action.executor_id,
         prompt: action.prompt,
         visibility: action.visibility,
         status: action.status,
@@ -315,15 +315,15 @@ impl QuickActionCatalog {
     }
 
     fn response(&self, action: QuickAction) -> QuickActionResponse {
-        let target = if action.assignee_type == "team" {
-            self.teams.get(&action.assignee_id).and_then(|team| {
+        let target = if action.executor_type == "team" {
+            self.teams.get(&action.executor_id).and_then(|team| {
                 self.agents
                     .get(&team.leader_id)
                     .map(|agent| (team.name.clone(), agent))
             })
         } else {
             self.agents
-                .get(&action.assignee_id)
+                .get(&action.executor_id)
                 .map(|agent| (agent.name.clone(), agent))
         };
         match target {
@@ -372,8 +372,8 @@ struct CreateRequest {
     name: String,
     #[serde(default)]
     description: String,
-    assignee_type: String,
-    assignee_id: String,
+    executor_type: String,
+    executor_id: String,
     prompt: String,
     #[serde(default)]
     visibility: String,
@@ -413,11 +413,11 @@ async fn create(
         Ok(value) => value,
         Err(response) => return response,
     };
-    let Ok(assignee_id) = Uuid::parse_str(&request.assignee_id) else {
-        return error_response(StatusCode::BAD_REQUEST, "invalid assignee_id");
+    let Ok(executor_id) = Uuid::parse_str(&request.executor_id) else {
+        return error_response(StatusCode::BAD_REQUEST, "invalid executor_id");
     };
     let (_, _, target_public) =
-        match target(&state, workspace_id, &request.assignee_type, assignee_id).await {
+        match target(&state, workspace_id, &request.executor_type, executor_id).await {
             Ok(target) => target,
             Err(response) => return response,
         };
@@ -441,8 +441,8 @@ async fn create(
         workspace_id,
         &name,
         &description,
-        &request.assignee_type,
-        assignee_id,
+        &request.executor_type,
+        executor_id,
         &prompt,
         &visibility,
         "member",
@@ -467,8 +467,8 @@ async fn create(
 struct UpdateRequest {
     name: Option<String>,
     description: Option<String>,
-    assignee_type: Option<String>,
-    assignee_id: Option<String>,
+    executor_type: Option<String>,
+    executor_id: Option<String>,
     prompt: Option<String>,
     visibility: Option<String>,
     status: Option<String>,
@@ -550,15 +550,15 @@ async fn update(
         );
     }
     let resulting_type = request
-        .assignee_type
+        .executor_type
         .as_deref()
-        .unwrap_or(&existing.assignee_type);
-    let resulting_id = match request.assignee_id.as_deref() {
+        .unwrap_or(&existing.executor_type);
+    let resulting_id = match request.executor_id.as_deref() {
         Some(value) => match Uuid::parse_str(value) {
             Ok(value) => value,
-            Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid assignee_id"),
+            Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid executor_id"),
         },
-        None => existing.assignee_id,
+        None => existing.executor_id,
     };
     let (_, _, target_public) =
         match target(&state, workspace_id, resulting_type, resulting_id).await {
@@ -577,7 +577,7 @@ async fn update(
         workspace_id,
         name.as_deref(),
         description.as_deref(),
-        request.assignee_type.as_deref(),
+        request.executor_type.as_deref(),
         resulting_id,
         prompt.as_deref(),
         request

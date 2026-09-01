@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
+import { parseDevRuntimeArgs } from "../../../scripts/dev-runtime-profile.mjs";
 import { planDevCommands } from "./dev-plan.mjs";
 
 const scriptsDir = dirname(fileURLToPath(import.meta.url));
@@ -59,6 +60,34 @@ describe("Desktop development build plan", () => {
     ]);
   });
 
+  it("never forwards the hosted launcher flag to electron-vite", () => {
+    const { electronArgs } = parseDevRuntimeArgs(["--hosted", "--inspect"]);
+    expect(
+      planDevCommands(electronArgs, {
+        nodePath: "/usr/bin/node",
+        scriptsDir,
+      }),
+    ).toEqual([
+      {
+        command: "/usr/bin/node",
+        args: [join(scriptsDir, "dev-environment-doctor.mjs")],
+      },
+      {
+        command: "/usr/bin/node",
+        args: [join(scriptsDir, "brand-dev-electron.mjs")],
+      },
+      { command: "electron-vite", args: ["dev", "--inspect"] },
+    ]);
+  });
+
+  it("applies the hosted storage identity after worktree isolation", () => {
+    expect(devLauncher).toContain("applyWorktreeDevEnv(process.env");
+    expect(devLauncher).toContain("applyDevRuntimeAppIdentity(process.env)");
+    expect(devLauncher.lastIndexOf("applyDevRuntimeAppIdentity")).toBeGreaterThan(
+      devLauncher.indexOf("applyWorktreeDevEnv(process.env"),
+    );
+  });
+
   it.each(["--bundle-cli", "--source-cli"])(
     "rejects the removed Rust-free/source toggle %s",
     (flag) => {
@@ -84,6 +113,13 @@ describe("Desktop development build plan", () => {
       "node scripts/dev-launcher.mjs",
     );
     expect(rootPackage.scripts.dev).toBe("node scripts/dev-launcher.mjs");
+    expect(rootPackage.engines.node).toBe(">=22 <23");
+    expect(rootPackage.packageManager).toBe("pnpm@10.28.2");
+    expect(rootPackage.devEngines.runtime).toMatchObject({
+      name: "node",
+      version: "^22.0.0",
+      onFail: "download",
+    });
     expect(rootPackage.scripts["dev:desktop:rust"]).toBeUndefined();
     expect(rootPackage.scripts["dev:desktop:web"]).toBeUndefined();
     expect(rootPackage.scripts.build).toBe(

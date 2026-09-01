@@ -1736,7 +1736,7 @@ async fn start_onboarding(
             );
         }
     };
-    if target.system_key.as_deref() != Some("mika") {
+    if target.system_key.as_deref() != Some("patrick") {
         return error_response(
             StatusCode::BAD_REQUEST,
             "onboarding can only be started with the workspace's built-in agent",
@@ -1781,7 +1781,7 @@ async fn start_onboarding(
     };
     let workspace_name = current_workspace.name.trim();
     let agent_name = if target.name.trim().is_empty() {
-        "Mika"
+        "Patrick"
     } else {
         target.name.trim()
     };
@@ -1804,7 +1804,7 @@ async fn start_onboarding(
     );
     match state
         .tasks
-        .open_mika_onboarding_chat(&session, &kickoff, &opening)
+        .open_patrick_onboarding_chat(&session, &kickoff, &opening)
         .await
     {
         Ok(opened) => {
@@ -1829,7 +1829,7 @@ async fn start_onboarding(
             tracing::error!(%e, "onboarding open failed");
             error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to start Mika onboarding",
+                "failed to start Patrick onboarding",
             )
         }
     }

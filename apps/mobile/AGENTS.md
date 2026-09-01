@@ -153,8 +153,7 @@ Never copy the visual shape of an existing hand-written `components/ui/` compone
 
 ## Build & release
 
-- **Main CI** (`.github/workflows/ci.yml`) excludes mobile via `--filter='!@patchbay/mobile'`. Mobile failures do NOT block web/desktop PRs.
-- **Mobile verify** (`.github/workflows/mobile-verify.yml`): manually dispatched by a maintainer for an upstream branch — runs typecheck/lint/test only, no IPA build. Mobile changes are not validated automatically; a fork commit must first be pushed to a maintainer-controlled upstream branch.
+- **Main CI** (`.github/workflows/ci.yml`) keeps Mobile out of the web/desktop Turbo workers, then automatically runs Mobile typecheck, lint, and tests when `apps/mobile/**`, `packages/core/**`, or shared dependency/tooling inputs change. The stable `mobile` aggregate is the merge gate; unrelated changes report an explicit intentional skip.
 - **Mobile release** (`.github/workflows/mobile-release.yml`): triggered by `mobile-v*.*.*` tag → `eas build` + `eas submit`.
 - **OTA** — EAS Update for JS-only fixes that don't change the runtime version. Manual / on-demand push to preview/production channels.
 
@@ -525,9 +524,9 @@ The mobile codebase started with ~15 Modal sheets. They almost all copied the sa
 The table above says "< 7 fixed picker options → centered card". That rule
 applies in isolation, but **breaks down when multiple pickers coexist in
 the same chip row** (issue-detail AttributeRow is the canonical case:
-status / priority / assignee / label / project / due-date all sit next
+status / priority / executor / owner / reviewer / label / project / due-date all sit next
 to each other). Mixing centered cards (for status/priority, short
-fixed lists) with formSheet routes (for assignee/label/project, long
+fixed lists) with formSheet routes (for executor/owner/reviewer/label/project, long
 lists) means the user gets two different gestures depending on which
 chip they tap — there's no muscle-memory carry-over.
 

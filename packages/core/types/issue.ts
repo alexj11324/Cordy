@@ -32,7 +32,10 @@ export type IssueStatus = IssueStatusCategory | (string & {});
 
 export type IssuePriority = "urgent" | "high" | "medium" | "low" | "none";
 
-export type IssueAssigneeType = "member" | "agent" | "team";
+export type IssueOwnerType = "member";
+export type IssueExecutorType = "agent" | "team";
+export type IssueActorType = IssueOwnerType | IssueExecutorType;
+export type IssueReviewerType = IssueActorType;
 
 export interface IssueReaction {
   id: string;
@@ -69,22 +72,20 @@ export interface Issue {
    */
   status_category?: IssueStatusCategory;
   priority: IssuePriority;
-  assignee_type: IssueAssigneeType | null;
-  assignee_id: string | null;
-  /**
-   * Persistent reviewer, independent of the current assignee. Optional so
-   * older backends that do not emit the columns still parse. Once set, the
-   * reviewer can be replaced but not cleared.
-   */
-  reviewer_type?: IssueAssigneeType | null;
-  reviewer_id?: string | null;
-  creator_type: IssueAssigneeType;
+  owner_type: IssueOwnerType | null;
+  owner_id: string | null;
+  executor_type: IssueExecutorType | null;
+  executor_id: string | null;
+  /** Persistent reviewer, independent of the current executor. */
+  reviewer_type: IssueReviewerType | null;
+  reviewer_id: string | null;
+  creator_type: IssueActorType;
   creator_id: string;
   parent_issue_id: string | null;
   project_id: string | null;
   position: number;
   // Ordered barrier group among sibling sub-issues (null = unstaged). The
-  // parent assignee is notified/woken only when every sub-issue in a stage
+  // parent executor is notified/woken only when every sub-issue in a stage
   // finishes; see the Rust issue child-completion flow.
   stage: number | null;
   // Calendar days as date-only "YYYY-MM-DD" (no time, no timezone). Use the

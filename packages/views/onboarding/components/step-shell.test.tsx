@@ -118,7 +118,7 @@ describe("onboarding step shell", () => {
 
     const compact = container.querySelector("main .md\\:hidden")!;
     expect(compact).not.toBeNull();
-    expect(compact.textContent).toContain("Meet Mika");
+    expect(compact.textContent).toContain("Meet Patrick");
     expect(compact.querySelector("button")).not.toBeNull();
   });
 
@@ -153,7 +153,7 @@ describe("onboarding progress rail", () => {
     // so an unscoped query matches it twice.
     const rail = within(container.querySelector("aside")!);
     expect(rail.getByText("Workspace")).toBeInTheDocument();
-    expect(rail.getByText("Meet Mika")).toBeInTheDocument();
+    expect(rail.getByText("Meet Patrick")).toBeInTheDocument();
   });
 
   it("marks the current step for assistive tech", () => {
@@ -174,14 +174,14 @@ describe("onboarding progress rail", () => {
     await userEvent.click(back);
     expect(onStepChange).toHaveBeenCalledWith("workspace");
 
-    expect(screen.queryByRole("button", { name: /meet mika/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /meet patrick/i })).toBeNull();
   });
 
   it("is display-only when the flow supplies no step handler", () => {
     renderShell({ currentStep: "runtime" });
 
     expect(screen.queryByRole("button", { name: /^workspace/i })).toBeNull();
-    expect(screen.queryByRole("button", { name: /meet mika/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /meet patrick/i })).toBeNull();
   });
 
   // Back is disabled precisely while a step has a request in flight; letting

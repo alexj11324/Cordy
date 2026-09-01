@@ -37,6 +37,10 @@ function avoidRestrictedPort(port) {
   return index === -1 ? port : RENDERER_PORT_BASE + OFFSET_MODULO + index;
 }
 
+export function rendererPortForOffset(offset) {
+  return avoidRestrictedPort(RENDERER_PORT_BASE + offset);
+}
+
 // POSIX cksum (CRC-32), kept byte-compatible with `cksum(1)` so the offset
 // matches scripts/init-worktree-env.sh — a worktree's backend (18080+offset),
 // frontend (13000+offset) and desktop renderer (5174+offset) ports all share
@@ -75,7 +79,7 @@ export function offsetForPath(path) {
 }
 
 export function rendererPortForPath(path) {
-  return avoidRestrictedPort(RENDERER_PORT_BASE + offsetForPath(path));
+  return rendererPortForOffset(offsetForPath(path));
 }
 
 // Worktree → a readable, unique, filesystem-safe suffix "<folder>-<offset>".
@@ -92,6 +96,15 @@ export function appSuffixForPath(path) {
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "") || "worktree";
   return `${slug}-${offsetForPath(path)}`;
+}
+
+export function appSuffixForOffset(path, offset) {
+  const slug =
+    basename(path)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "worktree";
+  return `${slug}-${offset}`;
 }
 
 // A linked git worktree has a `.git` FILE (a "gitdir:" pointer); the primary

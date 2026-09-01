@@ -22,12 +22,12 @@ test("ordinary product updates do not require an auth broker release or full OAu
   }
 });
 
-test("broker packaging changes remain in the independent release lane", () => {
+test("broker packaging changes remain in the broker image validation lane", () => {
   for (const path of [
     "Dockerfile.auth-broker",
     ".dockerignore",
     "deploy/helm/patchbay-auth-broker/Chart.yaml",
-    ".github/workflows/auth-broker-release.yml",
+    ".github/workflows/aspectlylabs-production-images.yml",
     "apps/auth-broker/app/globals.css",
   ]) {
     assert.deepEqual(classifyAuthChange([path]), {
@@ -56,7 +56,11 @@ test("protocol, provider callback, session exchange, and desktop boundaries requ
 
 test("deduplicates and ignores empty path records", () => {
   assert.deepEqual(
-    classifyAuthChange(["", "apps/auth-broker/app/globals.css", "apps/auth-broker/app/globals.css"]),
+    classifyAuthChange([
+      "",
+      "apps/auth-broker/app/globals.css",
+      "apps/auth-broker/app/globals.css",
+    ]),
     { authBrokerRelease: true, fullGoogleOAuthE2E: false },
   );
 });
@@ -65,7 +69,7 @@ test("broker-only image builds check out their source context", () => {
   assert.ok(
     ciWorkflow.includes(`      - name: Checkout
         if: \${{ needs.changes.outputs.frontend == 'true' || needs.changes.outputs.auth_broker_release == 'true' }}
-        uses: actions/checkout@v6`),
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7`),
   );
 });
 

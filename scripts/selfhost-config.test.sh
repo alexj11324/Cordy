@@ -83,7 +83,7 @@ done
 # Hosted images use a repository variable so the callback stays disabled until
 # the approved HTTPS app origin is actually deployed. Never bake a speculative
 # production hostname into a public image.
-for workflow_file in .github/workflows/container-images.yml .github/workflows/release.yml; do
+for workflow_file in .github/workflows/aspectlylabs-production-images.yml .github/workflows/release.yml; do
   if ! grep -Fq \
     'NEXT_PUBLIC_DESKTOP_APP_ORIGIN=${{ vars.NEXT_PUBLIC_DESKTOP_APP_ORIGIN }}' \
     "$workflow_file"; then
@@ -99,7 +99,7 @@ frontend_filter="$(
   sed -n "/^            frontend:/,/^            backend:/p" \
     .github/workflows/ci.yml
 )"
-for workflow_file in .github/workflows/container-images.yml .github/workflows/release.yml; do
+for workflow_file in .github/workflows/aspectlylabs-production-images.yml .github/workflows/release.yml; do
   if ! grep -Fq -- "- '${workflow_file}'" <<<"$frontend_filter"; then
     echo "$workflow_file must trigger the frontend deployment contract tests"
     exit 1

@@ -10,27 +10,27 @@ use sqlx::Row;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, serde::Serialize)]
-pub struct CountAssigneeChangesByActorRow {
-    pub assignee_type: serde_json::Value,
-    pub assignee_id: serde_json::Value,
+pub struct CountExecutorChangesByActorRow {
+    pub executor_type: serde_json::Value,
+    pub executor_id: serde_json::Value,
     pub frequency: i64,
 }
 
-pub async fn count_assignee_changes_by_actor(
+pub async fn count_executor_changes_by_actor(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     workspace_id: Uuid,
     actor_id: Uuid,
-) -> anyhow::Result<Vec<CountAssigneeChangesByActorRow>> {
+) -> anyhow::Result<Vec<CountExecutorChangesByActorRow>> {
     let rows = sqlx::query(
         r#"SELECT
-  details->>'to_type' as assignee_type,
-  details->>'to_id' as assignee_id,
+  details->>'to_type' as executor_type,
+  details->>'to_id' as executor_id,
   COUNT(*)::bigint as frequency
 FROM activity_log
 WHERE workspace_id = $1
   AND actor_id = $2
   AND actor_type = 'member'
-  AND action = 'assignee_changed'
+  AND action = 'executor_changed'
   AND details->>'to_type' IS NOT NULL
   AND details->>'to_id' IS NOT NULL
 GROUP BY details->>'to_type', details->>'to_id'"#,
@@ -41,9 +41,9 @@ GROUP BY details->>'to_type', details->>'to_id'"#,
     .await?;
     let mut out = Vec::with_capacity(rows.len());
     for row in &rows {
-        out.push(CountAssigneeChangesByActorRow {
-            assignee_type: row.try_get(0)?,
-            assignee_id: row.try_get(1)?,
+        out.push(CountExecutorChangesByActorRow {
+            executor_type: row.try_get(0)?,
+            executor_id: row.try_get(1)?,
             frequency: row.try_get(2)?,
         });
     }
