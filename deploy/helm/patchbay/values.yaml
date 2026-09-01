@@ -133,7 +133,7 @@ backend:
     frontendOrigin: http://patchbay.dev.lan
     corsAllowedOrigins: ""
     cookieDomain: ""
-    resendFromEmail: noreply@patchbay.ai
+    resendFromEmail: noreply@example.com
     allowSignup: true
     allowedEmails: ""
     allowedEmailDomains: ""

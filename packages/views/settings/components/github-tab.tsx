@@ -279,7 +279,9 @@ export function GitHubTab() {
                 <p className="text-body text-muted-foreground">
                   {t(($) => $.github.feature_co_author_description_prefix)}{" "}
                   <code className="rounded bg-muted px-1 py-0.5 text-caption">
-                    {"Co-authored-by: patchbay-agent <github@patchbay.ai>"}
+                    {
+                      "Co-authored-by: patchbay-agent <patchbay-agent@users.noreply.github.com>"
+                    }
                   </code>{" "}
                   {t(($) => $.github.feature_co_author_description_suffix)}
                 </p>

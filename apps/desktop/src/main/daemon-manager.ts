@@ -17,11 +17,10 @@ import { decideVersionAction } from "./version-decision";
 import {
   deriveProfileName,
   healthPortForProfile,
-  legacyDesktopProfileForTarget,
   profileArgs,
   profileConfigPath,
   profileLogPath,
-  type LegacyDesktopProfile,
+  profileUserIdPath,
 } from "./daemon-profile";
 import { hardenExistingDesktopProfiles } from "./private-profile-storage";
 import {
@@ -83,8 +82,6 @@ let cachedCliBinaryVersion: string | null | undefined = undefined;
 let pendingVersionRestart = false;
 let targetApiBaseUrl: string | null = null;
 let activeProfile: ActiveProfile | null = null;
-let pendingLegacyProfileStop: LegacyDesktopProfile | null = null;
-let legacyProfileStopInFlight = false;
 let profileHardeningPromise: Promise<void> | null = null;
 // Runtime data must not cross an account/target transition until the new
 // credentials have been persisted and the daemon has loaded them. A blocked
@@ -267,56 +264,6 @@ async function ensureActiveProfile(): Promise<ActiveProfile | null> {
 
 function invalidateActiveProfile(): void {
   activeProfile = null;
-}
-
-/**
- * Stop and deauthorize the obsolete packaged profile once it has no active
- * work. Its health payload must still identify the expected legacy server so
- * a rare health-port collision can never stop an unrelated profile.
- */
-async function retirePendingLegacyProfile(
-  clearCredentials: (profile: string) => Promise<void> =
-    clearProfileCredentials,
-): Promise<void> {
-  const legacy = pendingLegacyProfileStop;
-  if (!legacy || legacyProfileStopInFlight) return;
-  legacyProfileStopInFlight = true;
-  try {
-    const health = await fetchHealthAtPort(healthPortForProfile(legacy.name));
-    if (!daemonStatusAlive(health?.status)) {
-      pendingLegacyProfileStop = null;
-      return;
-    }
-    if (!health?.server_url) return;
-    if (!urlsMatch(health.server_url, legacy.serverUrl)) {
-      pendingLegacyProfileStop = null;
-      return;
-    }
-    if ((health.active_task_count ?? 0) > 0) return;
-    if (
-      isDaemonExternallyManaged(health.os, normalizeHostOS(process.platform))
-    ) {
-      return;
-    }
-
-    const bin = await resolveCliBinary();
-    if (!bin) return;
-    await new Promise<void>((resolve, reject) => {
-      execFile(
-        bin,
-        ["daemon", "stop", ...profileArgs(legacy.name)],
-        { timeout: 15_000, env: desktopSpawnEnv() },
-        (error) => (error ? reject(error) : resolve()),
-      );
-    });
-    await clearCredentials(legacy.name);
-    pendingLegacyProfileStop = null;
-    console.log(`[daemon] retired legacy Desktop profile "${legacy.name}"`);
-  } catch (error) {
-    console.warn("[daemon] legacy Desktop profile retirement deferred:", error);
-  } finally {
-    legacyProfileStopInFlight = false;
-  }
 }
 
 async function fetchHealth(): Promise<DaemonStatus> {
@@ -1334,7 +1281,6 @@ async function pollOnce(): Promise<void> {
   if (pendingVersionRestart && status.state === "running") {
     void ensureRunningDaemonVersionMatches();
   }
-  if (pendingLegacyProfileStop) void retirePendingLegacyProfile();
 }
 
 function startPolling(): void {
@@ -1537,13 +1483,6 @@ export function setupDaemonManager(
         blockCredentialSync("credentials are not synchronized");
         targetApiBaseUrl = normalized;
         invalidateActiveProfile();
-        pendingLegacyProfileStop = normalized
-          ? legacyDesktopProfileForTarget(normalized)
-          : null;
-        // This handler already owns the profile-mutation queue. Use the
-        // unlocked cleanup path so legacy retirement cannot enqueue work
-        // behind itself and deadlock the target switch.
-        await retirePendingLegacyProfile(clearProfileCredentialsUnlocked);
         await pollOnce();
       }
     });

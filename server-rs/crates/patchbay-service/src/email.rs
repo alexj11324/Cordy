@@ -112,7 +112,7 @@ fn resolve_from_email(smtp_host: &str) -> String {
         if !resend_from.is_empty() {
             return resend_from;
         }
-        return "noreply@patchbay.ai".to_string();
+        return "noreply@example.com".to_string();
     }
     let smtp_from = std::env::var("SMTP_FROM_EMAIL")
         .unwrap_or_default()
@@ -1175,7 +1175,7 @@ mod tests {
     #[test]
     fn invitation_params_escapes_html_but_not_subject() {
         let req = build_invitation_params(
-            "noreply@patchbay.ai",
+            "noreply@example.com",
             "bob@example.com",
             "Eve <script>",
             "Acme & Co \"inc\"",
