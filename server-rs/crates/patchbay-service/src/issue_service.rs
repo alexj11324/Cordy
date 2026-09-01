@@ -350,6 +350,8 @@ impl IssueService {
                 "prev_priority": previous.priority,
                 "prev_due_date": previous.due_date.map(|date| date.format("%Y-%m-%d").to_string()),
                 "prev_project_id": previous.project_id.map(|id| id.to_string()),
+                "prev_owner_type": previous.owner_type,
+                "prev_owner_id": previous.owner_id.map(|id| id.to_string()),
             }),
             task_id: String::new(),
             chat_session_id: String::new(),

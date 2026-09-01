@@ -1407,6 +1407,22 @@ pub async fn list_linear_sync_conflicts(
         .await?)
 }
 
+pub async fn list_linear_issue_identifiers_for_links(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    link_ids: &[Uuid],
+) -> anyhow::Result<Vec<(Uuid, String)>> {
+    Ok(sqlx::query_as(
+        r#"SELECT id, linear_identifier
+           FROM linear_issue_link
+           WHERE workspace_id = $1 AND id = ANY($2::uuid[])"#,
+    )
+    .bind(workspace_id)
+    .bind(link_ids)
+    .fetch_all(executor)
+    .await?)
+}
+
 pub async fn get_linear_sync_conflict(
     executor: impl Executor<'_, Database = Postgres>,
     workspace_id: Uuid,

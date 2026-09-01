@@ -647,14 +647,22 @@ async fn list_conflicts(
     }
     match linear_q::list_linear_sync_conflicts(&state.pool, workspace_id, status).await {
         Ok(conflicts) => {
+            let link_ids = conflicts
+                .iter()
+                .map(|conflict| conflict.link_id)
+                .collect::<Vec<_>>();
+            let identifiers = linear_q::list_linear_issue_identifiers_for_links(
+                &state.pool,
+                workspace_id,
+                &link_ids,
+            )
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .collect::<std::collections::HashMap<_, _>>();
             let mut enriched = Vec::with_capacity(conflicts.len());
             for conflict in conflicts {
-                let identifier =
-                    linear_q::get_linear_issue_link(&state.pool, workspace_id, conflict.link_id)
-                        .await
-                        .ok()
-                        .flatten()
-                        .map(|link| link.linear_identifier);
+                let identifier = identifiers.get(&conflict.link_id).cloned();
                 let mut value = serde_json::to_value(conflict).unwrap_or_else(|_| json!({}));
                 if let Some(object) = value.as_object_mut() {
                     object.insert("linear_identifier".to_string(), json!(identifier));
@@ -1076,10 +1084,10 @@ async fn resolve_conflict(
     if open_conflicts == 0 {
         let updated_issue = applied.updated.as_ref().unwrap_or(&applied.previous);
         if issue_differs_from_common_snapshot(updated_issue, &common_snapshot) {
-            if let Err(error) = linear_q::enqueue_issue_outbox(
+            if let Err(error) = linear_q::enqueue_issue_outbox_for_binding(
                 &mut *transaction,
                 workspace_id,
-                updated_issue.project_id,
+                link.binding_id,
                 updated_issue.id,
                 &format!("conflict:{}:{}", conflict.id, request.resolution),
                 "issue_updated",

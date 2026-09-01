@@ -2741,12 +2741,15 @@ impl LinearSyncWorker {
             .normalized_base_snapshot(connection, &link.last_common_snapshot, &binding)
             .await?;
         let local_snapshot = local_sync_snapshot(&issue);
-        let merge = merge_sync_snapshots_with_updated_from(
+        let mut merge = merge_sync_snapshots_with_updated_from(
             &base_snapshot,
             &local_snapshot,
             &remote_snapshot,
             updated_from,
         );
+        if binding.sync_mode == "import" {
+            merge = remote_authoritative_merge(&base_snapshot, &local_snapshot, &remote_snapshot);
+        }
         let last_event_at_ms = event_timestamp_ms.or(link.last_remote_event_at_ms);
         let last_event_id = event_timestamp_ms
             .map(|_| source_event_id)
@@ -3024,8 +3027,9 @@ impl LinearSyncWorker {
         let event_id = event_timestamp_ms
             .map(|_| source_event_id)
             .or(link.last_remote_event_id.as_deref());
+        let mut transaction = self.state.pool.begin().await.map_err(SyncError::retry)?;
         let updated = linear_q::update_linear_issue_link(
-            &self.state.pool,
+            &mut *transaction,
             &linear_q::LinearIssueLinkUpdate {
                 link_id: link.id,
                 workspace_id: connection.workspace_id,
@@ -3054,8 +3058,16 @@ impl LinearSyncWorker {
                 "Linear deletion link update lost its row"
             )));
         }
+        linear_q::dismiss_stale_linear_sync_conflicts(
+            &mut *transaction,
+            connection.workspace_id,
+            link.id,
+            &[],
+        )
+        .await
+        .map_err(SyncError::retry)?;
         activity::create_activity(
-            &self.state.pool,
+            &mut *transaction,
             connection.workspace_id,
             link.patchbay_issue_id,
             Some("system"),
@@ -3078,6 +3090,7 @@ impl LinearSyncWorker {
         )
         .await
         .map_err(SyncError::retry)?;
+        transaction.commit().await.map_err(SyncError::retry)?;
         Ok(())
     }
 }
@@ -3244,11 +3257,29 @@ fn merge_sync_snapshots(base: &Value, local: &Value, remote: &Value) -> SyncMerg
     merge_sync_snapshots_with_updated_from(base, local, remote, None)
 }
 
+fn remote_authoritative_merge(base: &Value, local: &Value, remote: &Value) -> SyncMergePlan {
+    let mut authoritative = base.clone();
+    let object = authoritative
+        .as_object_mut()
+        .expect("canonical sync snapshot is an object");
+    for field in SHARED_SYNC_FIELDS {
+        if let Some(value) = remote.get(field) {
+            object.insert(field.to_string(), value.clone());
+        }
+    }
+    SyncMergePlan {
+        common: authoritative.clone(),
+        conflicts: Vec::new(),
+        remote_changed: &authoritative != local,
+        merged: authoritative,
+    }
+}
+
 fn merge_sync_snapshots_with_updated_from(
     base: &Value,
     local: &Value,
     remote: &Value,
-    updated_from: Option<&Value>,
+    _updated_from: Option<&Value>,
 ) -> SyncMergePlan {
     let mut common = serde_json::Map::new();
     let mut merged = serde_json::Map::new();
@@ -3261,12 +3292,10 @@ fn merge_sync_snapshots_with_updated_from(
             .get(field)
             .cloned()
             .unwrap_or_else(|| base_value.clone());
-        // Linear's updatedFrom contains the previous values of the properties
-        // changed by this event. The full Issue fetch remains authoritative for
-        // the current values, while updatedFrom prevents a mapped/no-op value
-        // from being mistaken for an unchanged remote field.
-        let remote_field_changed =
-            remote_value != base_value || updated_from_changed_field(updated_from, field);
+        // The fetched full Issue is authoritative. `updatedFrom` can describe
+        // an older queued delivery after the common snapshot has already
+        // advanced, so equality with the base must remain unchanged.
+        let remote_field_changed = remote_value != base_value;
         if local_value == remote_value {
             common.insert(field.to_string(), local_value.clone());
             merged.insert(field.to_string(), local_value);
@@ -3440,24 +3469,6 @@ fn extract_updated_from(payload: &Value) -> Option<&Value> {
     payload
         .get("updatedFrom")
         .filter(|value| value.as_object().is_some())
-}
-
-fn updated_from_changed_field(updated_from: Option<&Value>, field: &str) -> bool {
-    let Some(updated_from) = updated_from.and_then(Value::as_object) else {
-        return false;
-    };
-    let aliases: &[&str] = match field {
-        "title" => &["title"],
-        "description" => &["description"],
-        "priority" => &["priority"],
-        "status" => &["state", "status"],
-        "due_date" => &["dueDate", "due_date"],
-        "owner_id" => &["assignee", "assigneeId", "owner_id", "ownerId"],
-        _ => &[],
-    };
-    aliases
-        .iter()
-        .any(|alias| updated_from.contains_key(*alias))
 }
 
 fn is_out_of_order(link: Option<&LinearIssueLink>, event_timestamp_ms: Option<i64>) -> bool {
@@ -4162,7 +4173,7 @@ mod tests {
     }
 
     #[test]
-    fn updated_from_marks_a_remote_change_even_when_normalization_matches_base() {
+    fn stale_updated_from_does_not_override_an_advanced_common_snapshot() {
         let base = json!({
             "title": "Base",
             "description": null,
@@ -4194,7 +4205,7 @@ mod tests {
             &remote,
             Some(&json!({"title": "Base"})),
         );
-        assert_eq!(plan.conflicts.len(), 1);
-        assert_eq!(plan.conflicts[0].field, "title");
+        assert!(plan.conflicts.is_empty());
+        assert_eq!(plan.merged["title"], "Local");
     }
 }
