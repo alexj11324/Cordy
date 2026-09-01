@@ -11,7 +11,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, patch, post, put};
 use axum::{Json, Router};
 use patchbay_db::models::{Agent, AgentTaskQueue, Member, User, Workspace};
-use patchbay_db::queries::{member, share_link, user, workspace};
+use patchbay_db::queries::{linear as linear_q, member, share_link, user, workspace};
 use patchbay_middleware::workspace::WorkspaceContext;
 use rand::RngCore;
 use regex::Regex;
@@ -998,6 +998,12 @@ async fn revoke_and_remove_member(
     )
     .await?;
     patchbay_db::queries::subscriber::delete_subscriptions_by_member(
+        &mut *transaction,
+        workspace_id,
+        user_id,
+    )
+    .await?;
+    linear_q::delete_linear_member_bindings_for_workspace_member(
         &mut *transaction,
         workspace_id,
         user_id,

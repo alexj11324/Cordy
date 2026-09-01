@@ -601,6 +601,22 @@ pub async fn delete_linear_member_binding(
     Ok(result.rows_affected() == 1)
 }
 
+pub async fn delete_linear_member_bindings_for_workspace_member(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    patchbay_user_id: Uuid,
+) -> anyhow::Result<u64> {
+    let result = sqlx::query(
+        r#"DELETE FROM linear_member_binding
+           WHERE workspace_id = $1 AND patchbay_user_id = $2"#,
+    )
+    .bind(workspace_id)
+    .bind(patchbay_user_id)
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected())
+}
+
 pub async fn insert_sync_inbox(
     executor: &mut sqlx::PgConnection,
     id: Uuid,

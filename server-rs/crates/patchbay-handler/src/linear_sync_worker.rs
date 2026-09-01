@@ -921,6 +921,21 @@ impl LinearSyncWorker {
             if !merge.conflicts.is_empty() {
                 let source_event_id = format!("linear-outbox:{}", row.id);
                 let mut transaction = self.state.pool.begin().await.map_err(SyncError::retry)?;
+                let locked_binding = linear_q::get_project_binding_for_update(
+                    &mut *transaction,
+                    row.workspace_id,
+                    binding.id,
+                )
+                .await
+                .map_err(SyncError::retry)?;
+                if locked_binding
+                    .as_ref()
+                    .is_none_or(|current| current.status != "active")
+                {
+                    return Err(SyncError::permanent(anyhow::anyhow!(
+                        "Linear binding is no longer active"
+                    )));
+                }
                 let locked_link = linear_q::get_linear_issue_link_for_update(
                     &mut *transaction,
                     row.workspace_id,
@@ -933,6 +948,11 @@ impl LinearSyncWorker {
                         "Linear Issue Link disappeared before push conflict lock"
                     ))
                 })?;
+                if locked_link.binding_id != binding.id || locked_link.sync_status == "deleted" {
+                    return Err(SyncError::permanent(anyhow::anyhow!(
+                        "Linear Issue Link is no longer syncable"
+                    )));
+                }
                 if locked_link.last_common_snapshot != link.last_common_snapshot
                     || locked_link.last_remote_event_at_ms != link.last_remote_event_at_ms
                     || locked_link.last_remote_event_id != link.last_remote_event_id
@@ -1058,28 +1078,32 @@ impl LinearSyncWorker {
         let due_date = issue
             .due_date
             .map(|date| date.format("%Y-%m-%d").to_string());
-        let linear_owner_id = match (issue.owner_type.as_deref(), issue.owner_id) {
-            (None, None) => None,
-            (Some("member"), Some(owner_id)) => Some(
-                linear_q::get_linear_member_binding(
-                    &self.state.pool,
-                    row.workspace_id,
-                    connection.id,
-                    owner_id,
-                )
-                .await
-                .map_err(SyncError::retry)?
-                .ok_or_else(|| {
-                    SyncError::permanent(anyhow::anyhow!(
-                        "Patchbay human owner has no Linear member mapping"
-                    ))
-                })?
-                .linear_user_id,
-            ),
-            _ => {
-                return Err(SyncError::permanent(anyhow::anyhow!(
-                    "Patchbay Issue owner is not a supported human member"
-                )))
+        let linear_owner_id = if preserve_unmapped_remote_assignee {
+            None
+        } else {
+            match (issue.owner_type.as_deref(), issue.owner_id) {
+                (None, None) => None,
+                (Some("member"), Some(owner_id)) => Some(
+                    linear_q::get_linear_member_binding(
+                        &self.state.pool,
+                        row.workspace_id,
+                        connection.id,
+                        owner_id,
+                    )
+                    .await
+                    .map_err(SyncError::retry)?
+                    .ok_or_else(|| {
+                        SyncError::permanent(anyhow::anyhow!(
+                            "Patchbay human owner has no Linear member mapping"
+                        ))
+                    })?
+                    .linear_user_id,
+                ),
+                _ => {
+                    return Err(SyncError::permanent(anyhow::anyhow!(
+                        "Patchbay Issue owner is not a supported human member"
+                    )))
+                }
             }
         };
         let update_assignee = linear_assignee_update(
