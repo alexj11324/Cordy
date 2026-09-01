@@ -982,7 +982,29 @@ impl TaskService {
         // Clear only not-yet-executing rows; running/waiting_local_directory
         // are deliberately left alone — interrupting an in-flight run is what
         // CancelTask is for.
-        match cancel_pending_tasks_by_issue_and_agent(&self.pool, issue.id, agent_id).await {
+        let cancellation = async {
+            let mut tx = self.pool.begin().await?;
+            let cancelled =
+                cancel_pending_tasks_by_issue_and_agent(&mut *tx, issue.id, agent_id).await?;
+            for task in &cancelled {
+                linear_agent_q::enqueue_linear_agent_terminal_event(
+                    &mut tx,
+                    task.id,
+                    &format!("linear-agent-terminal:{}:cancelled", task.id),
+                    &serde_json::json!({
+                        "action": "terminal",
+                        "linearAgentSessionTerminal": true,
+                        "status": "cancelled",
+                        "taskId": task.id,
+                    }),
+                )
+                .await?;
+            }
+            tx.commit().await?;
+            Ok::<_, anyhow::Error>(cancelled)
+        }
+        .await;
+        match cancellation {
             Ok(cancelled) => {
                 *cancelled_count += cancelled.len();
                 for t in &cancelled {

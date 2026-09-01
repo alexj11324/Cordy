@@ -122,6 +122,7 @@ pub async fn linear_agent_continuation_authorized(
     connection_id: Uuid,
     linear_session_id: &str,
     task_id: Uuid,
+    requester_user_id: Uuid,
 ) -> anyhow::Result<bool> {
     Ok(sqlx::query_scalar::<_, bool>(
         r#"SELECT EXISTS (
@@ -144,6 +145,14 @@ pub async fn linear_agent_continuation_authorized(
                  ON task.id = session.task_id
                 AND task.agent_id = session.agent_id
                 AND task.issue_id = session.patchbay_issue_id
+               JOIN member requester
+                 ON requester.workspace_id = session.workspace_id
+                AND requester.user_id = $4
+               JOIN linear_member_binding requester_binding
+                 ON requester_binding.workspace_id = session.workspace_id
+                AND requester_binding.connection_id = session.connection_id
+                AND requester_binding.patchbay_user_id = requester.user_id
+                AND requester_binding.linear_user_id = session.requester_linear_user_id
                WHERE session.connection_id = $1
                  AND session.linear_session_id = $2
                  AND session.task_id = $3
@@ -159,6 +168,7 @@ pub async fn linear_agent_continuation_authorized(
     .bind(connection_id)
     .bind(linear_session_id)
     .bind(task_id)
+    .bind(requester_user_id)
     .fetch_one(executor)
     .await?)
 }

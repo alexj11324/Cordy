@@ -3300,6 +3300,7 @@ impl TaskService {
                     connection_id,
                     session_id,
                     snapshot_parent.id,
+                    requester_user_id,
                 )
                 .await
                 .map_err(downcast_sqlx)?
@@ -3459,6 +3460,7 @@ impl TaskService {
                     connection_id,
                     session_id,
                     parent.id,
+                    requester_user_id,
                 )
                 .await
                 .map_err(downcast_sqlx)?
@@ -3476,9 +3478,7 @@ impl TaskService {
         // direct callers and for permission changes racing the continuation
         // request. Locking the member row makes a concurrent role revocation
         // serialize with this final authorization decision.
-        let requester_member = if integration_authorized {
-            None
-        } else {
+        let requester_member =
             match lock_member_by_user_and_workspace(&mut *tx, requester_user_id, agent.workspace_id)
                 .await
             {
@@ -3492,8 +3492,10 @@ impl TaskService {
                     );
                     None
                 }
-            }
-        };
+            };
+        if integration_authorized && requester_member.is_none() {
+            return Err(TaskServiceError::AgentThreadInvokeForbidden);
+        }
         let is_workspace_member = requester_member.is_some();
 
         // Continuation children intentionally clear `automation_run_id`; use
