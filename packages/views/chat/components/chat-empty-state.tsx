@@ -12,11 +12,11 @@ import { CHAT_COLUMN, CHAT_GUTTER } from "./chat-column";
 const STARTER_KEYS = ["list_open", "summarize_today", "plan_next"] as const;
 
 /**
- * Agent-page welcome, mapped from LobeHub `src/features/AgentHome`
- * (https://github.com/lobehub/lobehub): a flex spacer pins AgentInfo +
- * OpeningQuestions above the composer. Chips call `fillInputMessage` rather
- * than sending. Avatars stay circular (`ActorAvatar`); LobeHub's square
- * welcome avatar is not copied.
+ * Agent-page welcome, mapped from official https://github.com/lobehub/lobehub
+ * `src/features/AgentHome` (`lobehub/lobe-chat` 301s to that same repository).
+ * A flex spacer pins AgentInfo + OpeningQuestions above the composer. Chips
+ * call `fillInputMessage` rather than sending. Avatars stay circular
+ * (`ActorAvatar`); LobeHub's square welcome avatar is not copied.
  */
 export function EmptyState({ agent }: { agent: Agent | null }) {
   const { t } = useT("chat");
@@ -37,7 +37,7 @@ export function EmptyState({ agent }: { agent: Agent | null }) {
                   size="2xl"
                   className="ring-1 ring-inset ring-border"
                 />
-                <h3 className="text-[24px] font-bold leading-tight">{agent.name}</h3>
+                <h3 className="text-display-sm font-bold leading-tight">{agent.name}</h3>
                 {description ? (
                   <p className="max-w-[640px] text-body text-muted-foreground">{description}</p>
                 ) : null}
@@ -49,7 +49,7 @@ export function EmptyState({ agent }: { agent: Agent | null }) {
             </>
           ) : (
             <Flexbox gap={12}>
-              <h3 className="text-[24px] font-bold leading-tight">
+              <h3 className="text-display-sm font-bold leading-tight">
                 {t(($) => $.empty_state.first_time_title)}
               </h3>
               <p className="max-w-[640px] text-body text-muted-foreground">
@@ -100,7 +100,7 @@ function OpeningQuestions({
             key={question}
             type="button"
             onClick={() => onPick(question)}
-            className="rounded-[48px] bg-muted px-4 py-2 text-left text-body text-foreground transition-colors hover:bg-accent"
+            className="rounded-full bg-muted px-4 py-2 text-left text-body text-foreground transition-colors hover:bg-accent"
           >
             {question}
           </button>

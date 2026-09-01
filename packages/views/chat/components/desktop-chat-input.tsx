@@ -6,8 +6,10 @@ import { cn } from "@patchbay/ui/lib/utils";
 import { CHAT_COLUMN, CHAT_GUTTER } from "./chat-column";
 
 /**
- * Desktop composer chrome mapped from LobeHub Agent input:
- * `src/features/ChatInput/Desktop/index.tsx` in https://github.com/lobehub/lobehub
+ * Desktop composer chrome mapped from the official LobeHub product repo
+ * https://github.com/lobehub/lobehub (`lobehub/lobe-chat` 301s here; same
+ * repository, not a fork):
+ * `src/features/ChatInput/Desktop/index.tsx`
  * (ChatInput + ChatInputActionBar shell around an editor).
  *
  * LobeHub's npm `@lobehub/editor` ChatInput is a resizable Lexical host. This
