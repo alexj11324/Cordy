@@ -636,6 +636,10 @@ struct LinearIssueEnqueueAuthority {
     connection_id: Uuid,
     patchbay_user_id: Uuid,
     linear_user_id: String,
+    linear_session_id: String,
+    linear_issue_id: String,
+    last_event_id: String,
+    claim_owner: String,
 }
 
 #[derive(Default)]
@@ -2358,6 +2362,7 @@ impl TaskService {
             .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn enqueue_task_for_issue_with_handoff_from_linear(
         &self,
         issue: &Issue,
@@ -2365,6 +2370,10 @@ impl TaskService {
         patchbay_user_id: Uuid,
         connection_id: Uuid,
         linear_user_id: &str,
+        linear_session_id: &str,
+        linear_issue_id: &str,
+        last_event_id: &str,
+        claim_owner: &str,
     ) -> Result<AgentTaskQueue, TaskServiceError> {
         self.enqueue_issue_task_with_comment_plan_internal(
             issue,
@@ -2380,6 +2389,10 @@ impl TaskService {
                 connection_id,
                 patchbay_user_id,
                 linear_user_id: linear_user_id.to_string(),
+                linear_session_id: linear_session_id.to_string(),
+                linear_issue_id: linear_issue_id.to_string(),
+                last_event_id: last_event_id.to_string(),
+                claim_owner: claim_owner.to_string(),
             }),
         )
         .await
@@ -2589,15 +2602,29 @@ impl TaskService {
             .prepare_issue_enqueue(issue, trigger_comment_id, actor_user_id, true)
             .await?;
         let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
-        if let Some(authority) = linear_authority {
-            if lock_member_by_user_and_workspace(
-                &mut *tx,
-                authority.patchbay_user_id,
+        if let Some(authority) = linear_authority.as_ref() {
+            if !linear_agent_q::lock_linear_agent_initial_dispatch_authority(
+                &mut tx,
                 issue.workspace_id,
+                authority.connection_id,
+                &authority.linear_session_id,
+                &authority.linear_issue_id,
+                issue.id,
+                prep.executor_id,
+                &authority.linear_user_id,
+                &authority.last_event_id,
+                &authority.claim_owner,
             )
             .await
             .map_err(downcast_sqlx)?
-            .is_none()
+                || lock_member_by_user_and_workspace(
+                    &mut *tx,
+                    authority.patchbay_user_id,
+                    issue.workspace_id,
+                )
+                .await
+                .map_err(downcast_sqlx)?
+                .is_none()
                 || !linear_q::lock_linear_member_binding(
                     &mut *tx,
                     issue.workspace_id,
@@ -2725,6 +2752,22 @@ impl TaskService {
                 return Err(TaskServiceError::Sql(downcast_sqlx(e)));
             }
         };
+        if let Some(authority) = linear_authority.as_ref() {
+            if !linear_agent_q::correlate_linear_agent_session_dispatch(
+                &mut *tx,
+                issue.workspace_id,
+                authority.connection_id,
+                &authority.linear_session_id,
+                &authority.last_event_id,
+                task.id,
+                &authority.claim_owner,
+            )
+            .await
+            .map_err(downcast_sqlx)?
+            {
+                return Err(TaskServiceError::AgentThreadInvokeForbidden);
+            }
+        }
         tx.commit().await.map_err(TaskServiceError::Sql)?;
 
         tracing::info!(

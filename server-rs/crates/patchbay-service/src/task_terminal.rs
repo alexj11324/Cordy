@@ -1201,7 +1201,7 @@ impl TaskService {
                     tracing::warn!(
                         task_id = %t.id,
                         %error,
-                        "handle failed tasks: enqueue Linear Agent terminal event failed"
+                        "handle failed tasks: enqueue Linear Agent terminal event failed; durable recovery sweep will retry"
                     );
                 }
             }

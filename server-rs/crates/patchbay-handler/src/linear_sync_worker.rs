@@ -1379,14 +1379,14 @@ impl LinearSyncWorker {
             .then_some(issue.executor_id)
             .flatten()
         {
-            let sessions = linear_agent_q::list_waiting_linear_agent_sessions(
+            let selection_sessions = linear_agent_q::list_waiting_linear_agent_sessions(
                 &mut *transaction,
                 connection.workspace_id,
                 issue.id,
             )
             .await
             .map_err(SyncError::retry)?;
-            for session in sessions {
+            for session in selection_sessions {
                 let delivery_id = format!(
                     "linear-agent-selection-retry:{}:{}:linear-outbox:{}",
                     session.linear_session_id, agent_id, row.id
@@ -1401,19 +1401,35 @@ impl LinearSyncWorker {
                 .await
                 .map_err(SyncError::retry)?;
             }
-        }
-        let completed =
-            linear_q::complete_claimed_sync_outbox(&mut *transaction, row.id, worker_id)
+            let link_sessions = linear_agent_q::list_linear_agent_sessions_awaiting_issue_link(
+                &mut *transaction,
+                connection.workspace_id,
+                connection.id,
+                &remote.id,
+            )
+            .await
+            .map_err(SyncError::retry)?;
+            for session in link_sessions {
+                let delivery_id = format!(
+                    "linear-agent-link-retry:{}:{}:linear-outbox:{}",
+                    session.linear_session_id, agent_id, row.id
+                );
+                selection_retries_enqueued |= linear_agent_q::enqueue_linear_agent_session_retry(
+                    &mut transaction,
+                    connection.id,
+                    &delivery_id,
+                    &session,
+                    Some(agent_id),
+                )
                 .await
                 .map_err(SyncError::retry)?;
-        if !completed {
-            return Err(SyncError::retry(anyhow::anyhow!(
-                "Linear Outbox completion lost its lease"
-            )));
+            }
         }
+        // The core Issue/link state and durable Agent-session retries commit
+        // before the optional provider attachment. The Outbox row remains the
+        // retry source until that idempotent provider operation succeeds.
         transaction.commit().await.map_err(SyncError::retry)?;
         if self.state.linear_agent_bridge_enabled(row.workspace_id) {
-            let mut attachment_failed = false;
             match self.patchbay_issue_url(&issue).await {
                 Ok(Some(url)) => {
                     if let Err(error) = manager
@@ -1430,67 +1446,33 @@ impl LinearSyncWorker {
                         )
                         .await
                     {
-                        attachment_failed = true;
-                        tracing::warn!(
-                            %error,
-                            issue_id = %issue.id,
-                            linear_issue_id = %remote.id,
-                            "failed to publish optional Linear Agent attachment"
-                        );
+                        return Err(SyncError::retry(anyhow::anyhow!(
+                            "publish optional Linear Agent attachment: {error}"
+                        )));
                     }
                 }
                 Ok(None) => {}
                 Err(error) => {
-                    attachment_failed = true;
-                    tracing::warn!(
-                        error = %error.message(),
-                        issue_id = %issue.id,
-                        linear_issue_id = %remote.id,
-                        "failed to resolve optional Linear Agent attachment URL"
-                    );
-                }
-            }
-            if attachment_failed {
-                if let Err(error) = activity::create_activity(
-                    &self.state.pool,
-                    row.workspace_id,
-                    issue.id,
-                    Some("system"),
-                    None,
-                    "linear_agent_attachment_failed",
-                    &json!({
-                        "source": "linear",
-                        "connection_id": connection.id,
-                        "linear_issue_id": remote.id.clone(),
-                        "linear_identifier": remote.identifier.clone(),
-                        "outbox_id": row.id,
-                    }),
-                    linear_sync_activity_id(
-                        connection.id,
-                        issue.id,
-                        &row.id.to_string(),
-                        "agent_attachment_failed",
-                    ),
-                )
-                .await
-                {
-                    tracing::warn!(
-                        %error,
-                        issue_id = %issue.id,
-                        "failed to record optional Linear Agent attachment failure"
-                    );
+                    return Err(SyncError::retry(anyhow::anyhow!(
+                        "resolve optional Linear Agent attachment URL: {}",
+                        error.message()
+                    )));
                 }
             }
         }
+        let mut completion = self.state.pool.begin().await.map_err(SyncError::retry)?;
+        let completed = linear_q::complete_claimed_sync_outbox(&mut *completion, row.id, worker_id)
+            .await
+            .map_err(SyncError::retry)?;
+        if !completed {
+            return Err(SyncError::retry(anyhow::anyhow!(
+                "Linear Outbox completion lost its lease"
+            )));
+        }
+        completion.commit().await.map_err(SyncError::retry)?;
         if selection_retries_enqueued {
             self.notify.notify_waiters();
         }
-        self.resume_agent_sessions_awaiting_issue_link(
-            &connection,
-            &remote.id,
-            &format!("linear-outbox:{}", row.id),
-        )
-        .await?;
         Ok(())
     }
 
@@ -1502,6 +1484,14 @@ impl LinearSyncWorker {
                 .ok_or_else(|| {
                     SyncError::permanent(anyhow::anyhow!("Linear connection not found"))
                 })?;
+        let agent_terminal = is_agent_session_event(row)
+            && (row.event_type == "linear.agentSession.terminal"
+                || row.payload.get("linearAgentSessionTerminal").is_some());
+        if connection.status == "reauthorization_required" && agent_terminal {
+            return Err(SyncError::retry(anyhow::anyhow!(
+                "Linear Agent terminal is waiting for connection reauthorization"
+            )));
+        }
         if connection.status != "active" {
             return Err(SyncError::permanent(anyhow::anyhow!(
                 "Linear connection is not active"
@@ -1514,9 +1504,7 @@ impl LinearSyncWorker {
             {
                 return Ok(());
             }
-            if row.event_type == "linear.agentSession.terminal"
-                || row.payload.get("linearAgentSessionTerminal").is_some()
-            {
+            if agent_terminal {
                 return self
                     .process_agent_session_terminal(row, &connection, worker_id)
                     .await;
@@ -1750,6 +1738,24 @@ impl LinearSyncWorker {
         }
 
         let Some(link) = link else {
+            let remote_project_id = remote_project_id.as_deref().ok_or_else(|| {
+                SyncError::permanent(anyhow::anyhow!(
+                    "Linear Agent Issue has no authorized project binding"
+                ))
+            })?;
+            let binding = linear_q::get_binding_for_remote_project(
+                &self.state.pool,
+                connection.workspace_id,
+                connection.id,
+                remote_project_id,
+            )
+            .await
+            .map_err(SyncError::retry)?;
+            if !binding.as_ref().is_some_and(inbound_enabled) {
+                return Err(SyncError::permanent(anyhow::anyhow!(
+                    "Linear Agent Issue is outside an active inbound project binding"
+                )));
+            }
             linear_agent_q::upsert_linear_agent_session(
                 &self.state.pool,
                 Uuid::now_v7(),
@@ -1780,13 +1786,36 @@ impl LinearSyncWorker {
         )
         .await
         .map_err(SyncError::retry)?;
-        if matches!(
-            link.sync_status.as_str(),
-            "deleted" | "agent_selection_required"
-        ) || !binding.as_ref().is_some_and(|binding| {
-            binding.status == "active"
+        let binding_authorized = binding.as_ref().is_some_and(|binding| {
+            inbound_enabled(binding)
                 && remote_project_id.as_deref() == Some(binding.linear_project_id.as_str())
-        }) {
+        });
+        if !binding_authorized || link.sync_status == "deleted" {
+            return Err(SyncError::permanent(anyhow::anyhow!(
+                "Linear Agent Issue is outside an active inbound project binding"
+            )));
+        }
+        if link.sync_status == "agent_selection_required" {
+            linear_agent_q::upsert_linear_agent_session(
+                &self.state.pool,
+                Uuid::now_v7(),
+                connection.workspace_id,
+                connection.id,
+                &event.session_id,
+                &event.linear_issue_id,
+                Some(link.patchbay_issue_id),
+                None,
+                None,
+                &event.action,
+                "agent_selection_required",
+                event.prompt_context.as_deref(),
+                event.prompt_body.as_deref(),
+                event.requester_user_id.as_deref(),
+                &row.delivery_id,
+                event_timestamp_ms,
+            )
+            .await
+            .map_err(SyncError::retry)?;
             return Ok(());
         }
 
@@ -2103,6 +2132,10 @@ impl LinearSyncWorker {
                     requester_user_id,
                     connection.id,
                     requester_linear_user_id,
+                    &event.session_id,
+                    &event.linear_issue_id,
+                    &row.delivery_id,
+                    &claim_owner,
                 )
                 .await;
             task = match enqueue_result {

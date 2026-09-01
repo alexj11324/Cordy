@@ -113,6 +113,55 @@ pub async fn get_linear_agent_session(
         .await?)
 }
 
+#[allow(clippy::too_many_arguments)]
+pub async fn lock_linear_agent_initial_dispatch_authority(
+    executor: &mut PgConnection,
+    workspace_id: Uuid,
+    connection_id: Uuid,
+    linear_session_id: &str,
+    linear_issue_id: &str,
+    patchbay_issue_id: Uuid,
+    agent_id: Uuid,
+    requester_linear_user_id: &str,
+    last_event_id: &str,
+    claim_owner: &str,
+) -> anyhow::Result<bool> {
+    let connection = sqlx::query_scalar::<_, Uuid>(
+        r#"SELECT id FROM linear_connection
+           WHERE workspace_id = $1 AND id = $2
+             AND status = 'active' AND actor_id <> ''
+           FOR SHARE"#,
+    )
+    .bind(workspace_id)
+    .bind(connection_id)
+    .fetch_optional(&mut *executor)
+    .await?;
+    if connection.is_none() {
+        return Ok(false);
+    }
+    Ok(sqlx::query_scalar::<_, Uuid>(
+        r#"SELECT id FROM linear_agent_session
+           WHERE workspace_id = $1 AND connection_id = $2
+             AND linear_session_id = $3 AND linear_issue_id = $4
+             AND patchbay_issue_id = $5 AND agent_id = $6
+             AND requester_linear_user_id = $7 AND last_event_id = $8
+             AND status = $9
+           FOR UPDATE"#,
+    )
+    .bind(workspace_id)
+    .bind(connection_id)
+    .bind(linear_session_id)
+    .bind(linear_issue_id)
+    .bind(patchbay_issue_id)
+    .bind(agent_id)
+    .bind(requester_linear_user_id)
+    .bind(last_event_id)
+    .bind(format!("dispatching:{claim_owner}"))
+    .fetch_optional(&mut *executor)
+    .await?
+    .is_some())
+}
+
 /// Revalidates the complete durable authority chain for a Linear-originated
 /// continuation. A handler-level route decision is not sufficient on its
 /// own: the installation, binding, link, Issue executor, claimed session, and
@@ -489,6 +538,103 @@ pub async fn enqueue_linear_agent_terminal_event(
     .fetch_all(&mut *executor)
     .await?;
     Ok(!row.is_empty())
+}
+
+/// Reconstructs a missing failed-task terminal delivery from the durable task
+/// tree. Runtime sweep transitions are committed before their side effects;
+/// this repair runs every sweep tick so a transient enqueue failure cannot
+/// strand the provider session permanently.
+pub async fn recover_missing_failed_terminal_events(
+    executor: &mut PgConnection,
+    limit: i64,
+) -> anyhow::Result<u64> {
+    let result = sqlx::query(
+        r#"WITH RECURSIVE task_tree AS (
+               SELECT session.id AS session_id,
+                      session.connection_id,
+                      session.linear_session_id,
+                      session.linear_issue_id,
+                      task.id AS task_id,
+                      task.status,
+                      task.result,
+                      task.error,
+                      task.failure_reason,
+                      task.created_at,
+                      task.parent_task_id
+               FROM linear_agent_session AS session
+               JOIN agent_task_queue AS task ON task.id = session.task_id
+               WHERE session.status NOT IN ('completed', 'failed', 'cancelled')
+               UNION ALL
+               SELECT tree.session_id,
+                      tree.connection_id,
+                      tree.linear_session_id,
+                      tree.linear_issue_id,
+                      child.id,
+                      child.status,
+                      child.result,
+                      child.error,
+                      child.failure_reason,
+                      child.created_at,
+                      child.parent_task_id
+               FROM task_tree AS tree
+               JOIN agent_task_queue AS child ON child.parent_task_id = tree.task_id
+           ), leaves AS (
+               SELECT tree.*
+               FROM task_tree AS tree
+               WHERE NOT EXISTS (
+                   SELECT 1 FROM task_tree AS child
+                   WHERE child.session_id = tree.session_id
+                     AND child.parent_task_id = tree.task_id
+               )
+           ), latest_leaf AS (
+               SELECT DISTINCT ON (leaf.session_id) leaf.*
+               FROM leaves AS leaf
+               ORDER BY leaf.session_id, leaf.created_at DESC, leaf.task_id DESC
+           ), candidates AS (
+               SELECT latest.*
+               FROM latest_leaf AS latest
+               WHERE latest.status = 'failed'
+                 AND NOT EXISTS (
+                     SELECT 1 FROM leaves AS active
+                     WHERE active.session_id = latest.session_id
+                       AND active.status IN ('queued', 'deferred', 'dispatched', 'running',
+                                             'waiting_local_directory', 'waiting_capacity')
+                 )
+                 AND NOT EXISTS (
+                     SELECT 1 FROM linear_sync_inbox AS pending
+                     WHERE pending.connection_id = latest.connection_id
+                       AND pending.event_type = 'linear.agentSession.terminal'
+                       AND pending.payload->'agentSession'->>'id' = latest.linear_session_id
+                       AND pending.processed_at IS NULL
+                 )
+               ORDER BY latest.created_at, latest.task_id
+               LIMIT $1
+           )
+           INSERT INTO linear_sync_inbox
+               (id, connection_id, delivery_id, event_type, payload)
+           SELECT gen_random_uuid(),
+                  candidate.connection_id,
+                  'linear-agent-terminal-recovery:' || candidate.task_id::text || ':' || candidate.linear_session_id,
+                  'linear.agentSession.terminal',
+                  jsonb_build_object(
+                      'action', 'terminal',
+                      'linearAgentSessionTerminal', true,
+                      'status', 'failed',
+                      'error', candidate.error,
+                      'failureReason', candidate.failure_reason,
+                      'taskId', candidate.task_id,
+                      'agentSession', jsonb_build_object(
+                          'id', candidate.linear_session_id,
+                          'issue', jsonb_build_object('id', candidate.linear_issue_id)
+                      )
+                  )
+           FROM candidates AS candidate
+           ON CONFLICT (connection_id, delivery_id) DO NOTHING"#,
+    )
+    .bind(limit)
+    .execute(&mut *executor)
+    .await?;
+    Ok(result.rows_affected())
 }
 
 /// Settles terminal deliveries that were created for a session before its

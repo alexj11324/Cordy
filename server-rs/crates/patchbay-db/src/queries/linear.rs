@@ -428,12 +428,17 @@ pub async fn mark_revoked(
     workspace_id: Uuid,
     connection_id: Uuid,
 ) -> anyhow::Result<bool> {
-    let result = sqlx::query(
-        r#"WITH RECURSIVE session_roots AS (
+    let revoked = sqlx::query_scalar::<_, bool>(
+        r#"WITH RECURSIVE revoked_connection AS (
+               UPDATE linear_connection
+               SET status = 'revoked', last_error = NULL, updated_at = now()
+               WHERE workspace_id = $1 AND id = $2 AND status <> 'revoked'
+               RETURNING id
+           ), session_roots AS (
                SELECT task_id
                FROM linear_agent_session
                WHERE workspace_id = $1
-                 AND connection_id = $2
+                 AND connection_id IN (SELECT id FROM revoked_connection)
                  AND task_id IS NOT NULL
            ), task_tree AS (
                SELECT queue.id
@@ -454,19 +459,17 @@ pub async fn mark_revoked(
                UPDATE linear_agent_session
                SET status = 'cancelled', updated_at = now()
                WHERE workspace_id = $1
-                 AND connection_id = $2
+                 AND connection_id IN (SELECT id FROM revoked_connection)
                  AND status NOT IN ('completed', 'failed', 'cancelled')
                RETURNING id
            )
-           UPDATE linear_connection
-           SET status = 'revoked', last_error = NULL, updated_at = now()
-           WHERE workspace_id = $1 AND id = $2 AND status <> 'revoked'"#,
+           SELECT EXISTS (SELECT 1 FROM revoked_connection)"#,
     )
     .bind(workspace_id)
     .bind(connection_id)
-    .execute(executor)
+    .fetch_one(executor)
     .await?;
-    Ok(result.rows_affected() == 1)
+    Ok(revoked)
 }
 
 pub async fn update_tokens(
