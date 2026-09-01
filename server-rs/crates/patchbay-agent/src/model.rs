@@ -52,6 +52,170 @@ pub struct Catalog {
     /// True when models are a static stand-in after discovery failed. Such a
     /// catalog must not be cached or used to qualify a persisted selector.
     pub fallback: bool,
+    /// Protocol-advertised session modes. The Agent composer picker always
+    /// synthesizes full access (empty persisted value) and only lists rows
+    /// whose `kind` is `auto_review` or whose `value` is `auto`.
+    pub session_modes: Vec<SessionMode>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionMode {
+    pub value: String,
+    pub label: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub kind: String,
+}
+
+pub fn is_auto_session_mode_value(value: &str) -> bool {
+    value.trim().eq_ignore_ascii_case("auto")
+}
+
+pub fn is_picker_session_mode(mode: &SessionMode) -> bool {
+    let value = mode.value.trim().to_ascii_lowercase();
+    let kind = mode.kind.trim().to_ascii_lowercase();
+    if value.is_empty() || is_excluded_session_mode(&value, &kind) {
+        return false;
+    }
+    kind == "auto_review" || value == "auto"
+}
+
+fn is_excluded_session_mode(value: &str, kind: &str) -> bool {
+    if value == "auto" || kind == "auto_review" {
+        return false;
+    }
+    matches!(kind, "ask" | "read_only" | "readonly" | "plan")
+        || matches!(
+            value,
+            "ask"
+                | "read-only"
+                | "read_only"
+                | "plan"
+                | "default"
+                | "acceptedits"
+                | "dontask"
+                | "bypasspermissions"
+                | "yolo"
+        )
+}
+
+pub fn picker_session_modes(advertised: &[SessionMode]) -> Vec<SessionMode> {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut modes = Vec::new();
+    for mode in advertised {
+        if !is_picker_session_mode(mode) {
+            continue;
+        }
+        let key = mode.value.trim();
+        if key.is_empty() || !seen.insert(key.to_string()) {
+            continue;
+        }
+        modes.push(SessionMode {
+            value: mode.value.clone(),
+            label: if mode.label.trim().is_empty() {
+                mode.value.clone()
+            } else {
+                mode.label.clone()
+            },
+            kind: mode.kind.clone(),
+        });
+    }
+    modes
+}
+
+fn is_session_mode_option(id: &str, category: &str) -> bool {
+    let id = id.trim().to_ascii_lowercase();
+    let category = category.trim().to_ascii_lowercase();
+    matches!(id.as_str(), "mode" | "permission_mode" | "permission-mode")
+        || matches!(
+            category.as_str(),
+            "mode" | "permission_mode" | "permission-mode"
+        )
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SessionModeOption {
+    pub config_id: String,
+    pub choices: Vec<SessionMode>,
+}
+
+/// Collects picker session modes from ACP `configOptions` without inventing
+/// values the protocol did not advertise.
+pub fn parse_acp_session_modes(result: &Value) -> Vec<SessionMode> {
+    parse_acp_session_mode_option(result)
+        .map(|option| picker_session_modes(&option.choices))
+        .unwrap_or_default()
+}
+
+pub fn parse_acp_session_mode_option(result: &Value) -> Option<SessionModeOption> {
+    let options = result
+        .get("configOptions")
+        .or_else(|| result.get("config_options"))
+        .and_then(Value::as_array)?;
+    for option in options {
+        let config_id = option
+            .get("id")
+            .or_else(|| option.get("configId"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .trim();
+        let category = option
+            .get("category")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if config_id.is_empty() || !is_session_mode_option(config_id, category) {
+            continue;
+        }
+        let mut choices = Vec::new();
+        let mut seen = std::collections::BTreeSet::new();
+        for choice in option
+            .get("options")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            let value = choice
+                .get("value")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .trim();
+            if value.is_empty() || !seen.insert(value.to_string()) {
+                continue;
+            }
+            let label = choice
+                .get("name")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|label| !label.is_empty())
+                .unwrap_or(value);
+            let kind = choice
+                .get("kind")
+                .or_else(|| choice.get("type"))
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .trim();
+            choices.push(SessionMode {
+                value: value.to_string(),
+                label: label.to_string(),
+                kind: kind.to_string(),
+            });
+        }
+        return Some(SessionModeOption {
+            config_id: config_id.to_string(),
+            choices,
+        });
+    }
+    None
+}
+
+pub fn apply_auto_permission_mode(args: &mut [String], session_mode: &str) {
+    if !is_auto_session_mode_value(session_mode) {
+        return;
+    }
+    if let Some(index) = args.iter().position(|arg| arg == "--permission-mode") {
+        if let Some(value) = args.get_mut(index + 1) {
+            *value = session_mode.trim().to_string();
+        }
+    }
 }
 
 /// Parses the standard ACP `session/new.models` catalog without inventing a
@@ -321,6 +485,7 @@ mod tests {
     fn qualification_requires_one_authoritative_owner() {
         let catalog = Catalog {
             models: vec![model("openai/o3", "openai")],
+            session_modes: Vec::new(),
             fallback: false,
         };
         assert_eq!(
@@ -332,6 +497,7 @@ mod tests {
             ("openai/o3".to_string(), false)
         );
         let fallback = Catalog {
+            session_modes: Vec::new(),
             fallback: true,
             ..catalog
         };
@@ -383,6 +549,7 @@ mod tests {
             fallback_key,
             Catalog {
                 models: vec![model("o3", "")],
+                session_modes: Vec::new(),
                 fallback: true,
             }
         ));
@@ -391,6 +558,7 @@ mod tests {
             real_key.clone(),
             Catalog {
                 models: vec![model("o3", "")],
+                session_modes: Vec::new(),
                 fallback: false,
             }
         ));
@@ -408,6 +576,7 @@ mod tests {
             real_key.clone(),
             Catalog {
                 models: vec![model("o3", "")],
+                session_modes: Vec::new(),
                 fallback: false,
             }
         ));
@@ -520,5 +689,83 @@ mod tests {
         assert!(!validate_service_tier(
             &catalog, "codex", "gpt-5", "priority"
         ));
+    }
+
+    #[test]
+    fn parse_acp_session_modes_keeps_auto_and_ignores_thought_level() {
+        let modes = parse_acp_session_modes(&serde_json::json!({
+            "configOptions": [
+                {
+                    "id": "thought_level",
+                    "category": "thought_level",
+                    "options": [{"value": "auto", "name": "Auto thinking"}]
+                },
+                {
+                    "id": "mode",
+                    "options": [
+                        {"value": "auto", "name": "Auto"},
+                        {"value": "ask", "name": "Ask"},
+                        {"value": "plan", "name": "Plan"},
+                        {"value": "bypassPermissions", "name": "Yolo"}
+                    ]
+                }
+            ]
+        }));
+        assert_eq!(
+            modes,
+            vec![SessionMode {
+                value: "auto".to_string(),
+                label: "Auto".to_string(),
+                kind: String::new(),
+            }]
+        );
+        assert!(
+            parse_acp_session_modes(&serde_json::json!({
+                "configOptions": [{
+                    "id": "thought_level",
+                    "options": [{"value": "auto"}]
+                }]
+            }))
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn picker_session_modes_require_auto_or_auto_review_kind() {
+        let advertised = [
+            SessionMode {
+                value: "auto".to_string(),
+                label: "Approve for me".to_string(),
+                kind: "auto_review".to_string(),
+            },
+            SessionMode {
+                value: "supervised".to_string(),
+                label: "Approve for me".to_string(),
+                kind: "auto_review".to_string(),
+            },
+            SessionMode {
+                value: "ask".to_string(),
+                label: "Ask".to_string(),
+                kind: String::new(),
+            },
+        ];
+        let modes = picker_session_modes(&advertised);
+        assert_eq!(modes.len(), 2);
+        assert_eq!(modes[0].value, "auto");
+        assert_eq!(modes[1].value, "supervised");
+    }
+
+    #[test]
+    fn apply_auto_permission_mode_replaces_only_auto() {
+        let mut args = vec![
+            "--permission-mode".to_string(),
+            "bypassPermissions".to_string(),
+        ];
+        apply_auto_permission_mode(&mut args, "plan");
+        assert_eq!(args[1], "bypassPermissions");
+        apply_auto_permission_mode(&mut args, "");
+        assert_eq!(args[1], "bypassPermissions");
+        apply_auto_permission_mode(&mut args, "auto");
+        assert_eq!(args[1], "auto");
     }
 }

@@ -94,6 +94,7 @@ impl DshBackend {
                 |_| Catalog::default(),
                 |models| Catalog {
                     models,
+                    session_modes: Vec::new(),
                     fallback: false,
                 },
             );

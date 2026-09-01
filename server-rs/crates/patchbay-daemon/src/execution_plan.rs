@@ -198,6 +198,7 @@ struct ExecOptionsSeed {
     custom_args: Vec<String>,
     mcp_config: Option<Value>,
     thinking_level: String,
+    session_mode: String,
     service_tier: String,
     openclaw_mode: String,
 }
@@ -430,6 +431,7 @@ impl ProviderExecutionPlan {
                 custom_args: agent.custom_args.clone(),
                 mcp_config,
                 thinking_level: agent.thinking_level.clone(),
+                session_mode: agent.session_mode.clone(),
                 service_tier: agent.service_tier.clone(),
                 openclaw_mode,
             },
@@ -610,6 +612,7 @@ impl ProviderExecutionPlan {
                 qwenpaw_workspace: environment.qwenpaw_workspace.clone(),
                 mcp_config: self.options.mcp_config.clone(),
                 thinking_level: self.options.thinking_level.clone(),
+                session_mode: self.options.session_mode.clone(),
                 service_tier: self.options.service_tier.clone(),
                 openclaw_mode: self.options.openclaw_mode.clone(),
                 claude_settings_path: environment.claude_settings_path.clone(),
@@ -949,6 +952,7 @@ mod tests {
                 instructions: "Ship carefully".to_string(),
                 model: "gpt-5".to_string(),
                 thinking_level: "high".to_string(),
+                session_mode: "auto".to_string(),
                 service_tier: "priority".to_string(),
                 custom_args: vec!["--agent-flag".to_string(), "secret-arg".to_string()],
                 custom_env: Some(std::collections::HashMap::from([
@@ -1103,6 +1107,7 @@ mod tests {
             vec!["--agent-flag", "secret-arg"]
         );
         assert_eq!(bound.options.thinking_level, "high");
+        assert_eq!(bound.options.session_mode, "auto");
         assert_eq!(bound.options.service_tier, "priority");
         assert_eq!(bound.options.resume_session_id, "session-1");
         assert!(bound.options.resume_expected);

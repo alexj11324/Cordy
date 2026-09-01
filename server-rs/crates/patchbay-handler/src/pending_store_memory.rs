@@ -12,7 +12,7 @@ use serde_json::Value;
 use super::{
     apply_model_list_timeout, apply_update_timeout, cacheable_model_catalog, random_id,
     skill_timed_out, LocalSkillImportConflict, LocalSkillRequestStatus, ModelCatalogSnapshot,
-    ModelEntry, ModelListRequest, ModelListStatus, ModelListStore,
+    ModelEntry, ModelListRequest, ModelListStatus, ModelListStore, SessionModeEntry,
     ModelListStore as RedisModelList, RuntimeLocalMcpServerSummary, RuntimeLocalSkillImportRequest,
     RuntimeLocalSkillListRequest, RuntimeLocalSkillSummary, UpdateRequest, UpdateStatus,
     UpdateStore, LOCAL_SKILL_STORE_RETENTION_SECS, MODEL_CATALOG_SERVE_WINDOW_SECS,
@@ -45,6 +45,7 @@ pub trait ModelListStoreBackend: Send + Sync {
         id: &str,
         models: &[ModelEntry],
         supported: bool,
+        session_modes: &[SessionModeEntry],
     ) -> anyhow::Result<()>;
     async fn fail(&self, id: &str, err_msg: &str) -> anyhow::Result<()>;
 }
@@ -57,6 +58,7 @@ pub trait ModelCatalogCacheBackend: Send + Sync {
         runtime_id: &str,
         models: &[ModelEntry],
         supported: bool,
+        session_modes: &[SessionModeEntry],
     ) -> anyhow::Result<()>;
     async fn invalidate(&self, runtime_id: &str) -> anyhow::Result<()>;
 }
@@ -415,11 +417,13 @@ impl ModelListStoreBackend for InMemoryModelListStore {
         id: &str,
         models: &[ModelEntry],
         supported: bool,
+        session_modes: &[SessionModeEntry],
     ) -> anyhow::Result<()> {
         if let Some(request) = lock_map(&self.requests, "model list")?.get_mut(id) {
             request.status = ModelListStatus::Completed;
             request.models = models.to_vec();
             request.supported = supported;
+            request.session_modes = session_modes.to_vec();
             request.updated_at = Utc::now();
         }
         Ok(())
@@ -458,8 +462,9 @@ impl ModelListStoreBackend for RedisModelList {
         id: &str,
         models: &[ModelEntry],
         supported: bool,
+        session_modes: &[SessionModeEntry],
     ) -> anyhow::Result<()> {
-        ModelListStore::complete(self, id, models, supported).await
+        ModelListStore::complete(self, id, models, supported, session_modes).await
     }
 
     async fn fail(&self, id: &str, err_msg: &str) -> anyhow::Result<()> {
@@ -504,6 +509,7 @@ impl ModelCatalogCacheBackend for InMemoryModelCatalogCache {
         runtime_id: &str,
         models: &[ModelEntry],
         supported: bool,
+        session_modes: &[SessionModeEntry],
     ) -> anyhow::Result<()> {
         if runtime_id.is_empty() || !cacheable_model_catalog(models, supported) {
             return Ok(());
@@ -523,6 +529,7 @@ impl ModelCatalogCacheBackend for InMemoryModelCatalogCache {
                 models: models.to_vec(),
                 supported,
                 stored_at: now,
+                session_modes: session_modes.to_vec(),
             },
         );
         Ok(())
@@ -548,8 +555,9 @@ impl ModelCatalogCacheBackend for super::ModelCatalogCache {
         runtime_id: &str,
         models: &[ModelEntry],
         supported: bool,
+        session_modes: &[SessionModeEntry],
     ) -> anyhow::Result<()> {
-        super::ModelCatalogCache::put(self, runtime_id, models, supported).await
+        super::ModelCatalogCache::put(self, runtime_id, models, supported, session_modes).await
     }
 
     async fn invalidate(&self, runtime_id: &str) -> anyhow::Result<()> {

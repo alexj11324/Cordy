@@ -28,7 +28,8 @@ use crate::contract::{
 use crate::env::configure_child_env;
 use crate::kimi_usage::{scan_kimi_session_usage, KimiUsageScan};
 use crate::model::{
-    parse_acp_session_models, Catalog, CatalogCache, Model, ModelDiscoveryCacheKey,
+    parse_acp_session_mode_option, parse_acp_session_models, parse_acp_session_modes, Catalog,
+    CatalogCache, Model, ModelDiscoveryCacheKey,
 };
 use crate::process::OwnedProcessTree;
 use crate::stderr::{with_stderr, SharedDiagnosticBuffer, DEFAULT_TAIL_BYTES};
@@ -1006,6 +1007,7 @@ async fn discover_models_with_scope(
         }
         Catalog {
             models,
+            session_modes: parse_acp_session_modes(&session),
             fallback: false,
         }
     });
@@ -1629,6 +1631,16 @@ async fn run_protocol(
             &session_id,
             &options.thinking_level,
             options.model.is_empty(),
+        )
+        .await;
+    }
+    if !options.session_mode.is_empty() {
+        apply_acp_session_mode(
+            &mut client,
+            &provider,
+            &session_result,
+            &session_id,
+            &options.session_mode,
         )
         .await;
     }
@@ -3126,6 +3138,87 @@ async fn apply_acp_effort<R, W>(
             },
             error = %error,
             "runtime rejected the reasoning effort request; sending the prompt anyway"
+        ),
+    }
+}
+
+async fn apply_acp_session_mode<R, W>(
+    client: &mut AcpClient<R, W>,
+    provider: &str,
+    session_result: &Value,
+    session_id: &str,
+    requested: &str,
+) where
+    R: tokio::io::AsyncBufRead + Unpin,
+    W: tokio::io::AsyncWrite + Unpin,
+{
+    let Some(option) = parse_acp_session_mode_option(session_result)
+        .filter(|option| !option.choices.is_empty())
+    else {
+        tracing::warn!(
+            provider,
+            requested_mode = requested,
+            "session advertises no session-mode option; sending the prompt without it"
+        );
+        return;
+    };
+    if !option
+        .choices
+        .iter()
+        .any(|choice| choice.value == requested)
+    {
+        let advertised = option
+            .choices
+            .iter()
+            .map(|choice| choice.value.as_str())
+            .collect::<Vec<_>>()
+            .join(",");
+        tracing::warn!(
+            provider,
+            config_id = option.config_id,
+            requested_mode = requested,
+            advertised_modes = %advertised,
+            "session does not advertise the requested session mode; sending the prompt without it"
+        );
+        return;
+    }
+    let result = client
+        .request(
+            "session/set_config_option",
+            serde_json::json!({
+                "sessionId":session_id,
+                "configId":&option.config_id,
+                "value":requested,
+            }),
+            |_| {},
+        )
+        .await;
+    match result {
+        Ok(result)
+            if extract_config_value(&result, &option.config_id).as_deref() == Some(requested) =>
+        {
+            tracing::debug!(
+                provider,
+                config_id = option.config_id,
+                mode = requested,
+                "session mode confirmed"
+            );
+        }
+        Ok(result) => tracing::warn!(
+            provider,
+            config_id = option.config_id,
+            requested_mode = requested,
+            effective_mode = extract_config_value(&result, &option.config_id)
+                .as_deref()
+                .unwrap_or("unknown"),
+            "runtime did not confirm the requested session mode; sending the prompt anyway"
+        ),
+        Err(error) => tracing::warn!(
+            provider,
+            config_id = option.config_id,
+            requested_mode = requested,
+            error = %error,
+            "runtime rejected the session mode request; sending the prompt anyway"
         ),
     }
 }
@@ -4934,6 +5027,7 @@ done
                 .map(|thinking| thinking.supported_levels.len()),
             Some(2)
         );
+        assert!(catalog.session_modes.is_empty());
         let session = backend
             .execute(
                 "prompt",
@@ -5182,6 +5276,60 @@ done
         assert_eq!(result.usage["qoder-auto"].input_tokens, 11);
         assert!(types.contains(&MessageType::ToolUse));
         assert!(types.contains(&MessageType::ToolResult));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn advertised_mode_option_applies_session_mode_without_thought_level_auto() {
+        let (_directory, backend) = fake_backend(
+            r#"#!/bin/sh
+REQUESTS="$(dirname "$0")/requests.jsonl"
+while IFS= read -r line; do
+  printf '%s\n' "$line" >> "$REQUESTS"
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"qoder-mode","models":{"currentModelId":"qoder-auto","availableModels":[{"modelId":"qoder-auto","name":"Qoder Auto"}]},"configOptions":[{"id":"thought_level","options":[{"value":"auto","name":"Auto thinking"}]},{"id":"mode","options":[{"value":"auto","name":"Auto"},{"value":"ask","name":"Ask"}]}]}}\n' "$id" ;;
+    *'"method":"session/set_config_option"'*)
+      case "$line" in
+        *'"configId":"mode"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"configOptions":[{"id":"mode","currentValue":"auto"}]}}\n' "$id" ;;
+        *) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+      esac
+      ;;
+    *'"method":"session/prompt"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$id" ;;
+  esac
+done
+"#,
+        );
+        let catalog = backend
+            .discover_models(
+                &CatalogCache::default(),
+                CancellationToken::new(),
+                Duration::from_secs(5),
+            )
+            .await;
+        assert_eq!(catalog.session_modes.len(), 1);
+        assert_eq!(catalog.session_modes[0].value, "auto");
+        assert_eq!(catalog.session_modes[0].label, "Auto");
+        let session = backend
+            .execute(
+                "prompt",
+                ExecOptions {
+                    session_mode: "auto".to_string(),
+                    ..ExecOptions::default()
+                },
+            )
+            .await
+            .unwrap_or_else(|error| panic!("execute Qoder: {error}"));
+        let result = session
+            .result
+            .await
+            .unwrap_or_else(|error| panic!("Qoder result: {error}"));
+        assert_eq!(result.status, "completed");
+        let requests = std::fs::read_to_string(_directory.path().join("requests.jsonl"))
+            .unwrap_or_else(|error| panic!("read Qoder requests: {error}"));
+        assert!(requests_contain_config(&requests, "mode", "auto"));
+        assert!(!requests_contain_config(&requests, "thought_level", "auto"));
     }
 
     #[cfg(unix)]

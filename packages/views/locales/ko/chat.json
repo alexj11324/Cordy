@@ -17,6 +17,8 @@
     "placeholder_access_revoked": "이 에이전트를 실행할 권한이 없습니다",
     "placeholder_named": "{{name}}에게 메시지 보내기…",
     "placeholder_default": "메시지 입력…",
+    "placeholder_task_named": "{{name}}에게 작업 할당…",
+    "placeholder_task_default": "작업 할당…",
     "send_tooltip": "보내기",
     "queue_send_tooltip": "대기열에 추가",
     "stop_tooltip": "중지",
@@ -233,7 +235,13 @@
     "archived_title": "보관됨",
     "row_actions_aria": "채팅 작업"
   },
+  "control_bar": {
+    "unknown_device": "알 수 없는 기기",
+    "session_mode_full_access": "전체 액세스",
+    "session_mode_tooltip": "세션 모드 · {{value}}"
+  },
   "header": {
+    "new_topic": "새 주제",
     "view_profile": "Agent 프로필 보기",
     "rename": "이름 변경",
     "delete": "채팅 삭제",

@@ -21,6 +21,7 @@ use crate::contract::{
 };
 use crate::env::configure_child_env;
 use crate::mcp::{managed_object, write_managed_temp};
+use crate::model::apply_auto_permission_mode;
 use crate::process::OwnedProcessTree;
 use crate::stderr::{with_stderr, SharedDiagnosticBuffer, DEFAULT_TAIL_BYTES};
 use crate::stream::{
@@ -107,6 +108,7 @@ pub fn build_codebuddy_args(options: &ExecOptions) -> Vec<String> {
     }
     args.extend(filter_custom_args(&options.extra_args, &BLOCKED_ARGS).args);
     args.extend(filter_custom_args(&options.custom_args, &BLOCKED_ARGS).args);
+    apply_auto_permission_mode(&mut args, &options.session_mode);
     args
 }
 
@@ -819,6 +821,23 @@ mod tests {
             .iter()
             .any(|arg| arg == "text" || arg == "--effort=max"));
         assert!(!args.iter().any(|arg| arg == "--strict-mcp-config"));
+    }
+
+    #[test]
+    fn auto_session_mode_replaces_bypass_permissions() {
+        let args = build_codebuddy_args(&ExecOptions {
+            session_mode: "auto".to_string(),
+            ..ExecOptions::default()
+        });
+        assert!(args
+            .windows(2)
+            .any(|pair| pair == ["--permission-mode", "auto"]));
+        assert!(!args.iter().any(|arg| arg == "bypassPermissions"));
+
+        let args = build_codebuddy_args(&ExecOptions::default());
+        assert!(args
+            .windows(2)
+            .any(|pair| pair == ["--permission-mode", "bypassPermissions"]));
     }
 
     #[test]

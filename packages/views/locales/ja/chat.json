@@ -17,6 +17,8 @@
     "placeholder_access_revoked": "このエージェントを実行する権限がありません",
     "placeholder_named": "{{name}} にメッセージ…",
     "placeholder_default": "メッセージを入力…",
+    "placeholder_task_named": "{{name}} にタスクを割り当て…",
+    "placeholder_task_default": "タスクを割り当て…",
     "send_tooltip": "送信",
     "queue_send_tooltip": "キューに追加",
     "stop_tooltip": "停止",
@@ -233,7 +235,13 @@
     "archived_title": "アーカイブ済み",
     "row_actions_aria": "チャットの操作"
   },
+  "control_bar": {
+    "unknown_device": "不明なデバイス",
+    "session_mode_full_access": "フルアクセス",
+    "session_mode_tooltip": "セッションモード · {{value}}"
+  },
   "header": {
+    "new_topic": "新しいトピック",
     "view_profile": "Agent のプロフィール",
     "rename": "名前を変更",
     "delete": "チャットを削除",

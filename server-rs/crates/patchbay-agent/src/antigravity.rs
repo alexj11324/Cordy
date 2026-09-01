@@ -118,6 +118,7 @@ impl AntigravityBackend {
             .unwrap_or_default();
         let catalog = Catalog {
             models,
+            session_modes: Vec::new(),
             fallback: false,
         };
         let _ = self.config.catalog_cache.insert(key, catalog.clone());

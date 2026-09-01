@@ -131,6 +131,7 @@ impl OpencodeBackend {
         }
         let catalog = Catalog {
             models,
+            session_modes: Vec::new(),
             fallback: false,
         };
         if !catalog.models.is_empty() {

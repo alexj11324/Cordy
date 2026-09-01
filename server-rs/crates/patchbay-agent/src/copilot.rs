@@ -1018,6 +1018,7 @@ fn static_catalog() -> Catalog {
             model("claude-sonnet-4.5", "Claude Sonnet 4.5", "anthropic"),
             model("claude-haiku-4.5", "Claude Haiku 4.5", "anthropic"),
         ],
+        session_modes: Vec::new(),
         fallback: true,
     }
 }

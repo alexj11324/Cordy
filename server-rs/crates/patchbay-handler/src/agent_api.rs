@@ -313,6 +313,10 @@ fn known_service_tier(provider: &str, value: &str) -> bool {
     value.is_empty() || provider == "codex" && valid_catalog_token(value)
 }
 
+fn known_session_mode(value: &str) -> bool {
+    value.is_empty() || valid_catalog_token(value)
+}
+
 fn runtime_specific_model(model: &str) -> bool {
     model.contains('/')
         || model.starts_with("claude-")
@@ -453,6 +457,7 @@ fn agent_response(
         "max_concurrent_tasks": target.max_concurrent_tasks,
         "model": target.model.unwrap_or_default(),
         "thinking_level": target.thinking_level.unwrap_or_default(),
+        "session_mode": target.session_mode.unwrap_or_default(),
         "service_tier": target.service_tier.unwrap_or_default(),
         "composio_toolkit_allowlist": composio_toolkit_allowlist,
         "composio_toolkit_allowlist_redacted": composio_toolkit_allowlist_redacted,
@@ -673,6 +678,7 @@ struct AgentWrite {
     max_concurrent_tasks: Option<i32>,
     model: Option<String>,
     thinking_level: Option<String>,
+    session_mode: Option<String>,
     service_tier: Option<String>,
     composio_toolkit_allowlist: Option<Vec<String>>,
     #[serde(default)]
@@ -925,6 +931,16 @@ async fn create_agent(
         );
     }
     if request
+        .session_mode
+        .as_deref()
+        .is_some_and(|value| !known_session_mode(value))
+    {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "session_mode is not recognised",
+        );
+    }
+    if request
         .service_tier
         .as_deref()
         .is_some_and(|value| !known_service_tier(&rt.provider, value))
@@ -1007,6 +1023,7 @@ async fn create_agent(
         request.model.as_deref(),
         request.thinking_level.as_deref(),
         request.service_tier.as_deref(),
+        request.session_mode.as_deref(),
         &composio_toolkit_allowlist,
         Some(&permission_mode),
     )
@@ -1283,6 +1300,13 @@ async fn update_agent(
             );
         }
         if request
+            .session_mode
+            .as_deref()
+            .is_some_and(|value| !known_session_mode(value))
+        {
+            return error_response(StatusCode::BAD_REQUEST, "session_mode is not recognised");
+        }
+        if request
             .service_tier
             .as_deref()
             .is_some_and(|value| !known_service_tier(&target_runtime.provider, value))
@@ -1318,6 +1342,7 @@ async fn update_agent(
         }
     } else if request.model.is_some()
         || request.thinking_level.is_some()
+        || request.session_mode.is_some()
         || request.service_tier.is_some()
         || request.runtime_id.is_some()
     {
@@ -1413,6 +1438,10 @@ async fn update_agent(
             .service_tier
             .as_deref()
             .filter(|value| !value.is_empty()),
+        request
+            .session_mode
+            .as_deref()
+            .filter(|value| !value.is_empty()),
         composio_toolkit_allowlist.as_deref(),
     )
     .await;
@@ -1471,6 +1500,17 @@ async fn update_agent(
                 return error_response(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "failed to clear service_tier",
+                )
+            }
+        };
+    }
+    if request.session_mode.as_deref() == Some("") {
+        updated = match agent::clear_agent_session_mode(&mut *tx, updated.id).await {
+            Ok(Some(updated)) => updated,
+            _ => {
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to clear session_mode",
                 )
             }
         };
@@ -2519,6 +2559,7 @@ mod tests {
             system_key: None,
             disabled_runtime_skills: json!([]),
             service_tier: None,
+            session_mode: None,
         }
     }
 
@@ -2683,5 +2724,8 @@ mod tests {
         assert!(!known_thinking_value("grok", "xhigh"));
         assert!(known_service_tier("codex", "priority"));
         assert!(!known_service_tier("claude", "priority"));
+        assert!(known_session_mode(""));
+        assert!(known_session_mode("auto"));
+        assert!(!known_session_mode("not a token"));
     }
 }

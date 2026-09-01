@@ -1627,4 +1627,10 @@ describe("ChatInput revoked-access placeholder", () => {
 
     expect(editorProps.last?.placeholder).toBe("Message Patchbay…");
   });
+
+  it("uses the Agent-page task placeholder when placeholderVariant is task", () => {
+    renderInput({ agentName: "Lambda", placeholderVariant: "task" });
+
+    expect(editorProps.last?.placeholder).toBe("Assign a task to Lambda…");
+  });
 });

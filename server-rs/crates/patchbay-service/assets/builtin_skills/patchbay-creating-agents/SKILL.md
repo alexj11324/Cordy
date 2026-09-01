@@ -31,7 +31,7 @@ stays editable, but no trigger path will run it — they all refuse with
 it again. Unbound is orthogonal to archived.
 
 `agent get` returns the persisted agent including `runtime_id`, `model`,
-`thinking_level`, `service_tier`, `custom_args`, `has_custom_env`,
+`thinking_level`, `session_mode`, `service_tier`, `custom_args`, `has_custom_env`,
 `custom_env_key_count`, and `skills`. It never returns plaintext `custom_env`.
 
 ## Core model
@@ -65,14 +65,14 @@ patchbay agent create --name <name> --runtime-id <runtime-id> \
 `runAgentCreate` builds a JSON body and posts it to `/api/agents`. It only
 adds a key when its flag was provided — `description`/`instructions` on a
 non-empty value, the rest (`runtime-config`, `custom-args`, `model`,
-`thinking-level`, `service-tier`, `visibility`, …) on the flag being `Changed`
+`thinking-level`, `session-mode`, `service-tier`, `visibility`, …) on the flag being `Changed`
 — so omitted flags fall through to server defaults rather than sending empty
 strings. `--max-concurrent-tasks` is validated as 1–50 before the request is
 sent.
 
 The HTTP body (`CreateAgentRequest`) accepts: `name`, `description`,
 `instructions`, `avatar_url`, `runtime_id`, `runtime_config`, `custom_env`,
-`custom_args`, `model`, `thinking_level`, `service_tier`, `visibility`,
+`custom_args`, `model`, `thinking_level`, `session_mode`, `service_tier`, `visibility`,
 `max_concurrent_tasks`, `mcp_config`, `skill_ids`.
 
 ## Copying an agent
@@ -98,7 +98,7 @@ patchbay agent copy <source-agent-id> --runtime-id <target> --model <model>  # c
   within 1–50. Historical out-of-range values are omitted so the new agent
   receives the server default (`6`); an explicit out-of-range
   `--max-concurrent-tasks` override is rejected before any API request.
-- Runtime-specific fields (`model`, `thinking_level`, `service_tier`) are copied
+- Runtime-specific fields (`model`, `thinking_level`, `session_mode`, `service_tier`) are copied
   ONLY when the target runtime is unchanged. `--runtime-id` selecting a
   different runtime drops them and REQUIRES `--model` (pass `--model ""` to
   accept the target runtime default), mirroring the web Duplicate clearing model
@@ -120,6 +120,7 @@ patchbay agent copy <source-agent-id> --runtime-id <target> --model <model>  # c
 | `runtime_id` | `agent.runtime_id` (nullable) | required at create (400) + must resolve to a runtime in this workspace | selects runtime/provider; `NULL` means unbound — see below |
 | `model` | `agent.model` (nullable) | none beyond runtime support | daemon reads; empty = runtime default |
 | `thinking_level` | `agent.thinking_level` (nullable) | provider-level enum/safe-token gate; unknown literal → 400. Pi accepts only `off|minimal|low|medium|high|xhigh|max`, then the daemon checks the selected model's RPC-discovered subset. ACP runtimes that advertise an effort selector in `session/new` (currently `reasonix` and `hermes`) take the safe-token path and are checked against the discovered catalog by the daemon; that catalog covers only the model the discovery session was on, so other models show no picker until per-model probing exists. `hermes` covers two binaries — jcode advertises and applies an effort, Hermes Agent advertises none and gets no picker — so the answer there comes from the runtime's discovered catalog, not the provider name. Because that catalog is only written once a client requests a model list, a `hermes` runtime that has never been discovered is refused with a distinct "has not reported a model catalog yet" 400 rather than being assumed capable; `reasonix`, whose provider name does determine the binary, is allowed in that state. A runtime with no reasoning control at all (e.g. `copilot`, which executes outside ACP) rejects EVERY non-empty value and says so — that 400 is a capability answer, not a bad token | daemon; empty = runtime default |
+| `session_mode` | `agent.session_mode` (nullable) | opaque catalog token (empty is allowed). Distinct from `permission_mode`, which gates who may invoke the agent. Empty/NULL means full access: keep the daemon's current yolo / bypass default. The composer picker only lists advertised `auto` / `auto_review` rows | daemon → ACP `session/set_config_option`, Claude/CodeBuddy `--permission-mode`, Codex `approvals_reviewer`; empty = no override |
 | `service_tier` | `agent.service_tier` (nullable) | Codex-only safe token; other providers reject; exact model/tier pair checked by daemon | daemon → Codex app-server; empty = local Codex config |
 | `custom_args` | `agent.custom_args` (JSON array) | JSON shape checked CLI-side; server stores as-is | daemon (extra CLI switches); defaults to `[]` |
 | `runtime_config` | `agent.runtime_config` (JSON) | JSON shape checked CLI-side; server stores as-is | runtime-specific config; defaults to `{}` |
@@ -161,6 +162,17 @@ runtime's model catalog). It forwards the token, the server applies the
 provider's fixed-enum or safe-token gate, and the daemon performs the exact
 model/level check. A runtime whose provider has no thinking concept rejects any
 non-empty value with a 400.
+
+`session_mode` is the matching first-class protocol session-mode control. It is
+NOT `permission_mode` (who may invoke the agent). Empty/NULL means full access
+and leaves the daemon's current yolo / bypass default in place. A non-empty
+value is an opaque catalog token; the composer picker only offers advertised
+`auto` / `auto_review` rows (Claude Code `auto`, Codex `auto` labelled
+"Approve for me"). Set it with `--session-mode auto` on create/update; use
+`--session-mode ""` on update to restore full access. Discovery never invents
+options from a provider name: ACP reads `configOptions` whose id/category is
+`mode` / `permission_mode` / `permission-mode`, Claude parses
+`--permission-mode` from `--help`, and Codex always advertises `auto`.
 
 `service_tier` is the matching first-class Codex speed control. Set it with
 `--service-tier <catalog-id>` on create/update; use `--service-tier ""` on

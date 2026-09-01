@@ -59,6 +59,7 @@ pub struct ExecOptions {
     /// managed empty set. See `mcp::has_managed_config`.
     pub mcp_config: Option<serde_json::Value>,
     pub thinking_level: String,
+    pub session_mode: String,
     pub service_tier: String,
     pub openclaw_mode: String,
     pub claude_settings_path: String,
@@ -94,6 +95,7 @@ impl std::fmt::Debug for ExecOptions {
             .field("custom_arg_count", &self.custom_args.len())
             .field("has_mcp_config", &self.mcp_config.is_some())
             .field("thinking_level", &self.thinking_level)
+            .field("session_mode", &self.session_mode)
             .field("service_tier", &self.service_tier)
             .field("openclaw_mode", &self.openclaw_mode)
             .field("has_system_prompt", &!self.system_prompt.is_empty())

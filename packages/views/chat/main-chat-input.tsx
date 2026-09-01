@@ -19,6 +19,6 @@ import { ChatInput } from "./components/chat-input";
  * into LobeHub's Lexical editor (`@lobehub/editor`, the same stack as
  * `src/features/ChatInput/InputEditor`).
  */
-export function MainChatInput(props: Omit<ComponentProps<typeof ChatInput>, "editorEngine">) {
-  return <ChatInput {...props} editorEngine="lexical" />;
+export function MainChatInput(props: Omit<ComponentProps<typeof ChatInput>, "editorEngine" | "placeholderVariant">) {
+  return <ChatInput {...props} editorEngine="lexical" placeholderVariant="task" />;
 }

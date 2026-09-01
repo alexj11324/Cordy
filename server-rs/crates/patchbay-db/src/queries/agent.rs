@@ -110,7 +110,7 @@ pub async fn archive_agent(
     let row = sqlx::query(
         r#"UPDATE agent SET archived_at = now(), archived_by = $2, updated_at = now()
 WHERE id = $1 AND archived_at IS NULL
-RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier"#
+RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, session_mode"#
     )
         .bind(id)
         .bind(archived_by)
@@ -146,6 +146,7 @@ RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visi
         system_key: row.try_get(25)?,
         disabled_runtime_skills: row.try_get(26)?,
         service_tier: row.try_get(27)?,
+        session_mode: row.try_get(28)?,
     }))
 }
 
@@ -158,7 +159,7 @@ pub async fn archive_agents_by_i_ds(
         r#"UPDATE agent
 SET archived_at = now(), archived_by = $1, updated_at = now()
 WHERE id = ANY($2::uuid[]) AND archived_at IS NULL
-RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier"#
+RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, session_mode"#
     )
         .bind(archived_by)
         .bind(agent_ids)
@@ -195,6 +196,7 @@ RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visi
             system_key: row.try_get(25)?,
             disabled_runtime_skills: row.try_get(26)?,
             service_tier: row.try_get(27)?,
+            session_mode: row.try_get(28)?,
         });
     }
     Ok(out)
@@ -210,7 +212,7 @@ pub async fn archive_agents_by_runtime(
 SET archived_at = now(), archived_by = $1, updated_at = now()
 WHERE runtime_id = ANY($2::uuid[]) AND archived_at IS NULL
   AND (system_key IS NULL OR system_key = '')
-RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier"#
+RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, session_mode"#
     )
         .bind(archived_by)
         .bind(runtime_ids)
@@ -247,6 +249,7 @@ RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visi
             system_key: row.try_get(25)?,
             disabled_runtime_skills: row.try_get(26)?,
             service_tier: row.try_get(27)?,
+            session_mode: row.try_get(28)?,
         });
     }
     Ok(out)
@@ -1567,7 +1570,7 @@ pub async fn clear_agent_composio_toolkit_allowlist(
     let row = sqlx::query(
         r#"UPDATE agent SET composio_toolkit_allowlist = NULL, updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier"#
+RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, session_mode"#
     )
         .bind(id)
         .fetch_optional(executor)
@@ -1602,6 +1605,7 @@ RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visi
         system_key: row.try_get(25)?,
         disabled_runtime_skills: row.try_get(26)?,
         service_tier: row.try_get(27)?,
+        session_mode: row.try_get(28)?,
     }))
 }
 
@@ -1612,7 +1616,7 @@ pub async fn clear_agent_mcp_config(
     let row = sqlx::query(
         r#"UPDATE agent SET mcp_config = NULL, updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier"#
+RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, session_mode"#
     )
         .bind(id)
         .fetch_optional(executor)
@@ -1647,6 +1651,7 @@ RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visi
         system_key: row.try_get(25)?,
         disabled_runtime_skills: row.try_get(26)?,
         service_tier: row.try_get(27)?,
+        session_mode: row.try_get(28)?,
     }))
 }
 
@@ -1657,7 +1662,7 @@ pub async fn clear_agent_service_tier(
     let row = sqlx::query(
         r#"UPDATE agent SET service_tier = NULL, updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier"#
+RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, session_mode"#
     )
         .bind(id)
         .fetch_optional(executor)
@@ -1692,6 +1697,7 @@ RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visi
         system_key: row.try_get(25)?,
         disabled_runtime_skills: row.try_get(26)?,
         service_tier: row.try_get(27)?,
+        session_mode: row.try_get(28)?,
     }))
 }
 
@@ -1702,7 +1708,7 @@ pub async fn clear_agent_thinking_level(
     let row = sqlx::query(
         r#"UPDATE agent SET thinking_level = NULL, updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier"#
+RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, session_mode"#
     )
         .bind(id)
         .fetch_optional(executor)
@@ -1737,6 +1743,53 @@ RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visi
         system_key: row.try_get(25)?,
         disabled_runtime_skills: row.try_get(26)?,
         service_tier: row.try_get(27)?,
+        session_mode: row.try_get(28)?,
+    }))
+}
+
+pub async fn clear_agent_session_mode(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    id: Uuid,
+) -> anyhow::Result<Option<Agent>> {
+    let row = sqlx::query(
+        r#"UPDATE agent SET session_mode = NULL, updated_at = now()
+WHERE id = $1
+RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, session_mode"#
+    )
+        .bind(id)
+        .fetch_optional(executor)
+        .await?;
+    let Some(row) = row else { return Ok(None) };
+    Ok(Some(Agent {
+        id: row.try_get(0)?,
+        workspace_id: row.try_get(1)?,
+        name: row.try_get(2)?,
+        avatar_url: row.try_get(3)?,
+        runtime_mode: row.try_get(4)?,
+        runtime_config: row.try_get(5)?,
+        visibility: row.try_get(6)?,
+        status: row.try_get(7)?,
+        max_concurrent_tasks: row.try_get(8)?,
+        owner_id: row.try_get(9)?,
+        created_at: row.try_get(10)?,
+        updated_at: row.try_get(11)?,
+        description: row.try_get(12)?,
+        runtime_id: row.try_get(13)?,
+        instructions: row.try_get(14)?,
+        archived_at: row.try_get(15)?,
+        archived_by: row.try_get(16)?,
+        custom_env: row.try_get(17)?,
+        custom_args: row.try_get(18)?,
+        mcp_config: row.try_get(19)?,
+        model: row.try_get(20)?,
+        thinking_level: row.try_get(21)?,
+        composio_toolkit_allowlist: row.try_get(22)?,
+        permission_mode: row.try_get(23)?,
+        kind: row.try_get(24)?,
+        system_key: row.try_get(25)?,
+        disabled_runtime_skills: row.try_get(26)?,
+        service_tier: row.try_get(27)?,
+        session_mode: row.try_get(28)?,
     }))
 }
 
@@ -1884,6 +1937,7 @@ pub async fn create_agent(
     model: Option<&str>,
     thinking_level: Option<&str>,
     service_tier: Option<&str>,
+    session_mode: Option<&str>,
     composio_toolkit_allowlist: &[String],
     permission_mode: Option<&str>,
 ) -> anyhow::Result<Option<Agent>> {
@@ -1892,17 +1946,17 @@ pub async fn create_agent(
     workspace_id, name, description, avatar_url, runtime_mode,
     runtime_config, runtime_id, visibility, max_concurrent_tasks, owner_id,
     instructions, custom_env, custom_args, mcp_config, model, thinking_level,
-    service_tier,
+    service_tier, session_mode,
     composio_toolkit_allowlist, permission_mode
 ) VALUES (
     $1, $2, $3, $4, $5,
     $6, $7, $8, $9, $10,
     $11, $12, $13, $14, $15, $16,
-    $17,
-    $18::text[],
-    COALESCE($19::text, 'private')
+    $17, $18,
+    $19::text[],
+    COALESCE($20::text, 'private')
 )
-RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier"#
+RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, session_mode"#
     )
         .bind(workspace_id)
         .bind(name)
@@ -1921,6 +1975,7 @@ RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visi
         .bind(model)
         .bind(thinking_level)
         .bind(service_tier)
+        .bind(session_mode)
         .bind(composio_toolkit_allowlist)
         .bind(permission_mode)
         .fetch_optional(executor)
@@ -1955,6 +2010,7 @@ RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visi
         system_key: row.try_get(25)?,
         disabled_runtime_skills: row.try_get(26)?,
         service_tier: row.try_get(27)?,
+        session_mode: row.try_get(28)?,
     }))
 }
 
@@ -1979,7 +2035,7 @@ pub async fn create_agent_builder(
     'private', 'private', 1, $5, $6,
     '{}'::jsonb, '[]'::jsonb, $7, 'system', $8
 )
-RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier"#
+RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, session_mode"#
     )
         .bind(workspace_id)
         .bind(name)
@@ -2021,6 +2077,7 @@ RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visi
         system_key: row.try_get(25)?,
         disabled_runtime_skills: row.try_get(26)?,
         service_tier: row.try_get(27)?,
+        session_mode: row.try_get(28)?,
     }))
 }
 
@@ -2746,7 +2803,7 @@ pub async fn create_system_user_agent(
     $6, $7, $8, $9, $10,
     $11, '', '{}'::jsonb, '[]'::jsonb, 'user', $12
 )
-RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier"#
+RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, session_mode"#
     )
         .bind(workspace_id)
         .bind(name)
@@ -2792,6 +2849,7 @@ RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visi
         system_key: row.try_get(25)?,
         disabled_runtime_skills: row.try_get(26)?,
         service_tier: row.try_get(27)?,
+        session_mode: row.try_get(28)?,
     }))
 }
 
@@ -3340,7 +3398,7 @@ pub async fn get_agent(
     id: Uuid,
 ) -> anyhow::Result<Option<Agent>> {
     let row = sqlx::query(
-        r#"SELECT id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier FROM agent
+        r#"SELECT id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, session_mode FROM agent
 WHERE id = $1"#
     )
         .bind(id)
@@ -3376,6 +3434,7 @@ WHERE id = $1"#
         system_key: row.try_get(25)?,
         disabled_runtime_skills: row.try_get(26)?,
         service_tier: row.try_get(27)?,
+        session_mode: row.try_get(28)?,
     }))
 }
 
@@ -3385,7 +3444,7 @@ pub async fn get_agent_by_system_key(
     system_key: Option<&str>,
 ) -> anyhow::Result<Option<Agent>> {
     let row = sqlx::query(
-        r#"SELECT id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier FROM agent
+        r#"SELECT id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, session_mode FROM agent
 WHERE workspace_id = $1 AND system_key = $2 AND archived_at IS NULL
 ORDER BY created_at ASC, id ASC
 LIMIT 1"#
@@ -3424,6 +3483,7 @@ LIMIT 1"#
         system_key: row.try_get(25)?,
         disabled_runtime_skills: row.try_get(26)?,
         service_tier: row.try_get(27)?,
+        session_mode: row.try_get(28)?,
     }))
 }
 
@@ -3432,7 +3492,7 @@ pub async fn get_agent_for_claim_update(
     id: Uuid,
 ) -> anyhow::Result<Option<Agent>> {
     let row = sqlx::query(
-        r#"SELECT id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier FROM agent
+        r#"SELECT id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, session_mode FROM agent
 WHERE id = $1
 FOR UPDATE"#
     )
@@ -3469,6 +3529,7 @@ FOR UPDATE"#
         system_key: row.try_get(25)?,
         disabled_runtime_skills: row.try_get(26)?,
         service_tier: row.try_get(27)?,
+        session_mode: row.try_get(28)?,
     }))
 }
 
@@ -3477,7 +3538,7 @@ pub async fn get_agent_for_update(
     id: Uuid,
 ) -> anyhow::Result<Option<Agent>> {
     let row = sqlx::query(
-        r#"SELECT id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier FROM agent
+        r#"SELECT id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, session_mode FROM agent
 WHERE id = $1
 FOR UPDATE"#
     )
@@ -3514,6 +3575,7 @@ FOR UPDATE"#
         system_key: row.try_get(25)?,
         disabled_runtime_skills: row.try_get(26)?,
         service_tier: row.try_get(27)?,
+        session_mode: row.try_get(28)?,
     }))
 }
 
@@ -3523,7 +3585,7 @@ pub async fn get_agent_in_workspace(
     workspace_id: Uuid,
 ) -> anyhow::Result<Option<Agent>> {
     let row = sqlx::query(
-        r#"SELECT id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier FROM agent
+        r#"SELECT id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, session_mode FROM agent
 WHERE id = $1 AND workspace_id = $2 AND kind = 'user'"#
     )
         .bind(id)
@@ -3560,6 +3622,7 @@ WHERE id = $1 AND workspace_id = $2 AND kind = 'user'"#
         system_key: row.try_get(25)?,
         disabled_runtime_skills: row.try_get(26)?,
         service_tier: row.try_get(27)?,
+        session_mode: row.try_get(28)?,
     }))
 }
 
@@ -4287,7 +4350,7 @@ pub async fn list_active_agents_by_runtime(
     runtime_id: Uuid,
 ) -> anyhow::Result<Vec<Agent>> {
     let rows = sqlx::query(
-        r#"SELECT id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier FROM agent
+        r#"SELECT id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, session_mode FROM agent
 WHERE runtime_id = $1 AND archived_at IS NULL AND kind = 'user'
 ORDER BY name ASC"#
     )
@@ -4325,6 +4388,7 @@ ORDER BY name ASC"#
             system_key: row.try_get(25)?,
             disabled_runtime_skills: row.try_get(26)?,
             service_tier: row.try_get(27)?,
+            session_mode: row.try_get(28)?,
         });
     }
     Ok(out)
@@ -4335,7 +4399,7 @@ pub async fn list_active_agents_by_runtime_for_update(
     runtime_id: Uuid,
 ) -> anyhow::Result<Vec<Agent>> {
     let rows = sqlx::query(
-        r#"SELECT id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier FROM agent
+        r#"SELECT id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, session_mode FROM agent
 WHERE runtime_id = $1 AND archived_at IS NULL AND kind = 'user'
 ORDER BY name ASC
 FOR UPDATE"#
@@ -4374,6 +4438,7 @@ FOR UPDATE"#
             system_key: row.try_get(25)?,
             disabled_runtime_skills: row.try_get(26)?,
             service_tier: row.try_get(27)?,
+            session_mode: row.try_get(28)?,
         });
     }
     Ok(out)
@@ -4597,7 +4662,7 @@ pub async fn list_agents(
     workspace_id: Uuid,
 ) -> anyhow::Result<Vec<Agent>> {
     let rows = sqlx::query(
-        r#"SELECT id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier FROM agent
+        r#"SELECT id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, session_mode FROM agent
 WHERE workspace_id = $1 AND archived_at IS NULL AND kind = 'user'
 ORDER BY created_at ASC"#
     )
@@ -4635,6 +4700,7 @@ ORDER BY created_at ASC"#
             system_key: row.try_get(25)?,
             disabled_runtime_skills: row.try_get(26)?,
             service_tier: row.try_get(27)?,
+            session_mode: row.try_get(28)?,
         });
     }
     Ok(out)
@@ -4645,7 +4711,7 @@ pub async fn list_all_agents(
     workspace_id: Uuid,
 ) -> anyhow::Result<Vec<Agent>> {
     let rows = sqlx::query(
-        r#"SELECT id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier FROM agent
+        r#"SELECT id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, session_mode FROM agent
 WHERE workspace_id = $1 AND kind = 'user'
 ORDER BY created_at ASC"#
     )
@@ -4683,6 +4749,7 @@ ORDER BY created_at ASC"#
             system_key: row.try_get(25)?,
             disabled_runtime_skills: row.try_get(26)?,
             service_tier: row.try_get(27)?,
+            session_mode: row.try_get(28)?,
         });
     }
     Ok(out)
@@ -4693,7 +4760,7 @@ pub async fn list_all_agents_any_kind(
     workspace_id: Uuid,
 ) -> anyhow::Result<Vec<Agent>> {
     let rows = sqlx::query(
-        r#"SELECT id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier FROM agent
+        r#"SELECT id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, session_mode FROM agent
 WHERE workspace_id = $1
 ORDER BY created_at ASC"#
     )
@@ -4731,6 +4798,7 @@ ORDER BY created_at ASC"#
             system_key: row.try_get(25)?,
             disabled_runtime_skills: row.try_get(26)?,
             service_tier: row.try_get(27)?,
+            session_mode: row.try_get(28)?,
         });
     }
     Ok(out)
@@ -5217,7 +5285,7 @@ pub async fn list_user_agents_by_runtime_for_update(
     runtime_id: Uuid,
 ) -> anyhow::Result<Vec<Agent>> {
     let rows = sqlx::query(
-        r#"SELECT id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier FROM agent
+        r#"SELECT id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, session_mode FROM agent
 WHERE runtime_id = $1 AND kind = 'user'
 ORDER BY id
 FOR UPDATE"#
@@ -5256,6 +5324,7 @@ FOR UPDATE"#
             system_key: row.try_get(25)?,
             disabled_runtime_skills: row.try_get(26)?,
             service_tier: row.try_get(27)?,
+            session_mode: row.try_get(28)?,
         });
     }
     Ok(out)
@@ -5507,7 +5576,7 @@ pub async fn lock_agent_for_automation_assignment(
     workspace_id: Uuid,
 ) -> anyhow::Result<Option<Agent>> {
     let row = sqlx::query(
-        r#"SELECT id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier FROM agent
+        r#"SELECT id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, session_mode FROM agent
 WHERE id = $1 AND workspace_id = $2 AND kind = 'user'
 FOR SHARE"#
     )
@@ -5545,6 +5614,7 @@ FOR SHARE"#
         system_key: row.try_get(25)?,
         disabled_runtime_skills: row.try_get(26)?,
         service_tier: row.try_get(27)?,
+        session_mode: row.try_get(28)?,
     }))
 }
 
@@ -6290,7 +6360,7 @@ SET runtime_id = $1,
     model = $3,
     updated_at = now()
 WHERE id = $4 AND kind = 'system' AND system_key LIKE 'agent_builder:%'
-RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier"#
+RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, session_mode"#
     )
         .bind(runtime_id)
         .bind(runtime_mode)
@@ -6328,6 +6398,7 @@ RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visi
         system_key: row.try_get(25)?,
         disabled_runtime_skills: row.try_get(26)?,
         service_tier: row.try_get(27)?,
+        session_mode: row.try_get(28)?,
     }))
 }
 
@@ -6642,7 +6713,7 @@ SET status = desired.status,
     updated_at = now()
 FROM desired
 WHERE a.id = $1 AND a.status IS DISTINCT FROM desired.status
-RETURNING a.id, a.workspace_id, a.name, a.avatar_url, a.runtime_mode, a.runtime_config, a.visibility, a.status, a.max_concurrent_tasks, a.owner_id, a.created_at, a.updated_at, a.description, a.runtime_id, a.instructions, a.archived_at, a.archived_by, a.custom_env, a.custom_args, a.mcp_config, a.model, a.thinking_level, a.composio_toolkit_allowlist, a.permission_mode, a.kind, a.system_key, a.disabled_runtime_skills, a.service_tier"#
+RETURNING a.id, a.workspace_id, a.name, a.avatar_url, a.runtime_mode, a.runtime_config, a.visibility, a.status, a.max_concurrent_tasks, a.owner_id, a.created_at, a.updated_at, a.description, a.runtime_id, a.instructions, a.archived_at, a.archived_by, a.custom_env, a.custom_args, a.mcp_config, a.model, a.thinking_level, a.composio_toolkit_allowlist, a.permission_mode, a.kind, a.system_key, a.disabled_runtime_skills, a.service_tier, a.session_mode"#
     )
         .bind(id)
         .fetch_optional(executor)
@@ -6677,6 +6748,7 @@ RETURNING a.id, a.workspace_id, a.name, a.avatar_url, a.runtime_mode, a.runtime_
         system_key: row.try_get(25)?,
         disabled_runtime_skills: row.try_get(26)?,
         service_tier: row.try_get(27)?,
+        session_mode: row.try_get(28)?,
     }))
 }
 
@@ -7041,7 +7113,7 @@ pub async fn restore_agent(
     let row = sqlx::query(
         r#"UPDATE agent SET archived_at = NULL, archived_by = NULL, updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier"#
+RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, session_mode"#
     )
         .bind(id)
         .fetch_optional(executor)
@@ -7076,6 +7148,7 @@ RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visi
         system_key: row.try_get(25)?,
         disabled_runtime_skills: row.try_get(26)?,
         service_tier: row.try_get(27)?,
+        session_mode: row.try_get(28)?,
     }))
 }
 
@@ -7312,6 +7385,7 @@ pub async fn update_agent(
     model: Option<&str>,
     thinking_level: Option<&str>,
     service_tier: Option<&str>,
+    session_mode: Option<&str>,
     composio_toolkit_allowlist: Option<&[String]>,
 ) -> anyhow::Result<Option<Agent>> {
     let row = sqlx::query(
@@ -7333,10 +7407,11 @@ pub async fn update_agent(
     model = COALESCE($16, model),
     thinking_level = COALESCE($17, thinking_level),
     service_tier = COALESCE($18, service_tier),
-    composio_toolkit_allowlist = COALESCE($19::text[], composio_toolkit_allowlist),
+    session_mode = COALESCE($19, session_mode),
+    composio_toolkit_allowlist = COALESCE($20::text[], composio_toolkit_allowlist),
     updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier"#
+RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, session_mode"#
     )
         .bind(id)
         .bind(name)
@@ -7356,6 +7431,7 @@ RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visi
         .bind(model)
         .bind(thinking_level)
         .bind(service_tier)
+        .bind(session_mode)
         .bind(composio_toolkit_allowlist)
         .fetch_optional(executor)
         .await?;
@@ -7389,6 +7465,7 @@ RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visi
         system_key: row.try_get(25)?,
         disabled_runtime_skills: row.try_get(26)?,
         service_tier: row.try_get(27)?,
+        session_mode: row.try_get(28)?,
     }))
 }
 
@@ -7401,7 +7478,7 @@ pub async fn update_agent_custom_env(
         r#"UPDATE agent
 SET custom_env = $2, updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier"#
+RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, session_mode"#
     )
         .bind(id)
         .bind(custom_env)
@@ -7437,6 +7514,7 @@ RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visi
         system_key: row.try_get(25)?,
         disabled_runtime_skills: row.try_get(26)?,
         service_tier: row.try_get(27)?,
+        session_mode: row.try_get(28)?,
     }))
 }
 
@@ -7449,7 +7527,7 @@ pub async fn update_agent_disabled_runtime_skills(
         r#"UPDATE agent
 SET disabled_runtime_skills = $2, updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier"#
+RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, session_mode"#
     )
         .bind(id)
         .bind(disabled_runtime_skills)
@@ -7485,6 +7563,7 @@ RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visi
         system_key: row.try_get(25)?,
         disabled_runtime_skills: row.try_get(26)?,
         service_tier: row.try_get(27)?,
+        session_mode: row.try_get(28)?,
     }))
 }
 
@@ -7496,7 +7575,7 @@ pub async fn update_agent_status(
     let row = sqlx::query(
         r#"UPDATE agent SET status = $2, updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier"#
+RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, session_mode"#
     )
         .bind(id)
         .bind(status)
@@ -7532,6 +7611,7 @@ RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visi
         system_key: row.try_get(25)?,
         disabled_runtime_skills: row.try_get(26)?,
         service_tier: row.try_get(27)?,
+        session_mode: row.try_get(28)?,
     }))
 }
 

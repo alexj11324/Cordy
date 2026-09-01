@@ -19,10 +19,12 @@ import { useQuickActionsPendingTimeout } from "@patchbay/core/chat/use-quick-act
 import { useQuickActionsFailureToast } from "./components/use-quick-actions-failure-toast";
 import { useQuery } from "@tanstack/react-query";
 import type { Agent, ChatSession } from "@patchbay/core/types";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { runtimeListOptions } from "@patchbay/core/runtimes";
+import { useAgentPermissions } from "@patchbay/core/permissions";
 import { PageHeader } from "../layout/page-header";
 import { useNavigation } from "../navigation";
 import { useT } from "../i18n";
-import { ActorAvatar } from "../common/actor-avatar";
 import { ChatMessageList, ChatMessageSkeleton } from "./components/chat-message-list";
 import { MainChatInput } from "./main-chat-input";
 import { ChatQueue } from "./components/chat-queue";
@@ -30,6 +32,8 @@ import { ChatThreadList } from "./components/chat-thread-list";
 import { ChatSessionHeader } from "./components/chat-session-header";
 import { EmptyState } from "./components/chat-empty-state";
 import { NewChatButton } from "./components/new-chat-button";
+import { AgentComposerSendPrefix } from "./components/agent-composer-send-prefix";
+import { AgentComposerControlBar } from "./components/agent-composer-control-bar";
 import { useChatController } from "./components/use-chat-controller";
 import { OfflineBanner } from "./components/offline-banner";
 import { NoAgentBanner } from "./components/no-agent-banner";
@@ -63,6 +67,11 @@ export function ChatPage() {
   const isCompact = useIsCompact();
 
   const c = useChatController({ isActive: true });
+  const wsId = useWorkspaceId();
+  const { data: runtimes = [] } = useQuery(runtimeListOptions(wsId));
+  const runtime =
+    runtimes.find((row) => row.id === c.activeAgent?.runtime_id) ?? null;
+  const { canEdit } = useAgentPermissions(c.activeAgent, wsId);
   const { data: quickActionsPending = null } = useQuery(
     chatQuickActionsPendingOptions(c.activeSessionId ?? ""),
   );
@@ -263,19 +272,19 @@ export function ChatPage() {
   // The conversation pane: message list / skeleton / empty above a persistent
   // banner + input. Identical composition to the floating window's body, so a
   // brand-new chat (no active session) shows the agent-aware empty state + input.
-  // The composer shows the bound agent's avatar; switching agents still starts
-  // from ⊕. `@container`: the conversation column's gutter (CHAT_GUTTER) widens
+  // Switching agents still starts from ⊕. `@container`: the conversation
+  // column's gutter (CHAT_GUTTER) widens
   // with THIS pane, which the user resizes independently of the browser window.
   const queuedTasks = c.pendingTask?.queued_tasks ?? [];
   const conversation = (
     <div className="flex flex-1 flex-col min-h-0 @container">
-      {c.currentSession && (
+      {c.currentSession || composingNew ? (
         <ChatSessionHeader
-          session={c.currentSession}
+          session={c.currentSession ?? null}
           agent={c.activeAgent}
           onArchive={handleArchive}
         />
-      )}
+      ) : null}
       {c.showSkeleton ? (
         <ChatMessageSkeleton />
       ) : c.hasMessages ? (
@@ -360,16 +369,21 @@ export function ChatPage() {
         agentAccessRevoked={c.isAgentAccessRevoked}
         agentRuntimeRequired={!c.isAgentRuntimeBound}
         agentName={c.activeAgent?.name}
-        leftAdornment={
+        sendPrefix={
           c.activeAgent ? (
-            <ActorAvatar
-              actorType="agent"
-              actorId={c.activeAgent.id}
-              size="lg"
-              profileLink={false}
-              showStatusDot
+            <AgentComposerSendPrefix
+              agent={c.activeAgent}
+              runtime={runtime}
+              canEdit={canEdit.allowed}
             />
           ) : null
+        }
+        controlBar={
+          <AgentComposerControlBar
+            agent={c.activeAgent}
+            runtime={runtime}
+            canEdit={canEdit.allowed}
+          />
         }
         projects={c.projects}
         projectId={c.activeProjectId}

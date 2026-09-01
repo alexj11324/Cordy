@@ -138,6 +138,7 @@ pub(super) async fn run_agent_create<R: Read>(
     for (key, value) in [
         ("model", &args.model),
         ("thinking_level", &args.thinking_level),
+        ("session_mode", &args.session_mode),
         ("service_tier", &args.service_tier),
         ("visibility", &args.visibility),
     ] {
@@ -193,6 +194,7 @@ pub(super) async fn run_agent_update<R: Read>(
         ("runtime_id", &args.runtime_id),
         ("model", &args.model),
         ("thinking_level", &args.thinking_level),
+        ("session_mode", &args.session_mode),
         ("service_tier", &args.service_tier),
         ("visibility", &args.visibility),
         ("status", &args.status),
@@ -233,7 +235,7 @@ pub(super) async fn run_agent_update<R: Read>(
         body.insert("max_concurrent_tasks".into(), Value::from(value));
     }
     if body.is_empty() {
-        bail!("no fields to update; use --name, --description, --instructions, --runtime-id, --runtime-config, --model, --thinking-level, --service-tier, --custom-args, --mcp-config, --visibility, --status, or --max-concurrent-tasks (env vars now live behind `patchbay agent env set <id>`)");
+        bail!("no fields to update; use --name, --description, --instructions, --runtime-id, --runtime-config, --model, --thinking-level, --session-mode, --service-tier, --custom-args, --mcp-config, --visibility, --status, or --max-concurrent-tasks (env vars now live behind `patchbay agent env set <id>`)");
     }
     let agent: Value = client
         .put_json(&format!("/api/agents/{}", args.id), &body)
@@ -698,7 +700,7 @@ pub(super) async fn run_agent_copy<R: Read>(
     }
 
     if same_runtime {
-        for key in ["model", "thinking_level", "service_tier"] {
+        for key in ["model", "thinking_level", "session_mode", "service_tier"] {
             let value = value_string(&source, key);
             if !value.is_empty() {
                 body.insert(key.into(), Value::String(value));
@@ -710,6 +712,7 @@ pub(super) async fn run_agent_copy<R: Read>(
     for (key, value) in [
         ("model", &args.model),
         ("thinking_level", &args.thinking_level),
+        ("session_mode", &args.session_mode),
         ("service_tier", &args.service_tier),
     ] {
         if let Some(value) = value {
@@ -888,6 +891,11 @@ pub(super) struct AgentCopyArgs {
     pub(super) model: Option<String>,
     #[arg(long, help = "Override thinking level")]
     pub(super) thinking_level: Option<String>,
+    #[arg(
+        long,
+        help = "Override protocol session mode; empty restores full access"
+    )]
+    pub(super) session_mode: Option<String>,
     #[arg(long, help = "Override Codex service tier")]
     pub(super) service_tier: Option<String>,
     #[arg(long, help = "Override custom CLI arguments as a JSON array")]
@@ -1044,6 +1052,11 @@ pub(super) struct AgentCreateArgs {
     pub(super) model: Option<String>,
     #[arg(long, help = "Reasoning/effort level for the agent runtime")]
     pub(super) thinking_level: Option<String>,
+    #[arg(
+        long,
+        help = "Protocol session mode (for example auto); omit for full access"
+    )]
+    pub(super) session_mode: Option<String>,
     #[arg(long, help = "Codex execution service tier")]
     pub(super) service_tier: Option<String>,
     #[arg(long, help = "Custom CLI arguments as a JSON array")]
@@ -1106,6 +1119,11 @@ pub(super) struct AgentUpdateArgs {
         help = "New reasoning/effort level; empty clears to the runtime default"
     )]
     pub(super) thinking_level: Option<String>,
+    #[arg(
+        long,
+        help = "New protocol session mode; empty restores full access (daemon yolo)"
+    )]
+    pub(super) session_mode: Option<String>,
     #[arg(
         long,
         help = "New Codex execution service tier; empty inherits local config"

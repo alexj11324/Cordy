@@ -105,6 +105,7 @@ impl CursorBackend {
             if !models.is_empty() {
                 let catalog = Catalog {
                     models,
+                    session_modes: Vec::new(),
                     fallback: false,
                 };
                 let _ = cache.insert(key, catalog.clone());
@@ -1149,6 +1150,7 @@ fn static_catalog() -> Catalog {
             default: true,
             ..Model::default()
         }],
+        session_modes: Vec::new(),
         fallback: true,
     }
 }

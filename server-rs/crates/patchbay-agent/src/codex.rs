@@ -31,8 +31,8 @@ use crate::contract::{
 };
 use crate::env::configure_child_env;
 use crate::model::{
-    Catalog, CatalogCache, Model, ModelDiscoveryCacheKey, ModelServiceTier, ModelThinking,
-    ThinkingLevel,
+    is_auto_session_mode_value, Catalog, CatalogCache, Model, ModelDiscoveryCacheKey,
+    ModelServiceTier, ModelThinking, SessionMode, ThinkingLevel,
 };
 use crate::process::OwnedProcessTree;
 use crate::stderr::{sanitize_diagnostic, with_stderr, SharedDiagnosticBuffer, DEFAULT_TAIL_BYTES};
@@ -136,6 +136,7 @@ impl CodexBackend {
 
         let catalog = Catalog {
             models,
+            session_modes: advertised_session_modes(),
             fallback: false,
         };
         let _ = cache.insert(key, catalog.clone());
@@ -1810,6 +1811,7 @@ where
     }
     apply_reasoning_effort(&mut params, &options.thinking_level, false);
     apply_service_tier(&mut params, &options.service_tier);
+    apply_session_mode(&mut params, &options.session_mode);
     let value = client
         .request("thread/start", params, handshake_timeout)
         .await?;
@@ -1856,6 +1858,26 @@ fn apply_service_tier(params: &mut Value, tier: &str) {
     if !tier.is_empty() {
         params["serviceTier"] = Value::String(tier.to_string());
     }
+}
+
+fn apply_session_mode(params: &mut Value, session_mode: &str) {
+    if !is_auto_session_mode_value(session_mode) {
+        return;
+    }
+    if !params["config"].is_object() {
+        params["config"] = Value::Object(Map::new());
+    }
+    if let Some(config) = params["config"].as_object_mut() {
+        config.insert("approvals_reviewer".to_string(), Value::Bool(true));
+    }
+}
+
+fn advertised_session_modes() -> Vec<SessionMode> {
+    vec![SessionMode {
+        value: "auto".to_string(),
+        label: "Approve for me".to_string(),
+        kind: "auto_review".to_string(),
+    }]
 }
 
 fn codex_turn_input(
@@ -3687,6 +3709,39 @@ exit 1
             Some("gpt-5.6-sol")
         );
         assert_eq!(catalog.models.len(), 8);
+    }
+
+    #[test]
+    fn advertised_session_modes_are_auto_review_approve_for_me() {
+        let modes = advertised_session_modes();
+        assert_eq!(modes.len(), 1);
+        assert_eq!(modes[0].value, "auto");
+        assert_eq!(modes[0].label, "Approve for me");
+        assert_eq!(modes[0].kind, "auto_review");
+    }
+
+    #[test]
+    fn auto_session_mode_sets_approvals_reviewer_on_thread_start_only() {
+        let mut params = serde_json::json!({"config": Value::Null});
+        apply_session_mode(&mut params, "auto");
+        assert_eq!(params["config"]["approvals_reviewer"], true);
+
+        let mut params = serde_json::json!({"approvalPolicy": Value::Null});
+        apply_session_mode(&mut params, "");
+        assert!(params.get("config").is_none());
+        apply_session_mode(&mut params, "plan");
+        assert!(params.get("config").is_none());
+
+        let resume = codex_resume_params(
+            &ExecOptions {
+                session_mode: "auto".to_string(),
+                resume_session_id: "thread-1".to_string(),
+                ..ExecOptions::default()
+            },
+            "/tmp",
+        );
+        assert!(resume.get("config").is_none());
+        assert_eq!(resume["threadId"], "thread-1");
     }
 
     #[test]

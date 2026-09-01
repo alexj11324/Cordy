@@ -418,6 +418,7 @@ mod tests {
             system_key: None,
             disabled_runtime_skills: serde_json::json!([]),
             service_tier: None,
+            session_mode: None,
         }
     }
 

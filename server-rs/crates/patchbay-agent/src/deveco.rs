@@ -99,6 +99,7 @@ impl DevecoBackend {
         }
         let catalog = Catalog {
             models,
+            session_modes: Vec::new(),
             fallback: false,
         };
         // Match Go's cachedDiscovery: empty discovery is not cached so a

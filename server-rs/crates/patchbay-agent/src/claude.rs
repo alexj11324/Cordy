@@ -29,7 +29,8 @@ use crate::contract::{
 use crate::env::configure_child_env;
 use crate::mcp::managed_object;
 use crate::model::{
-    Catalog, CatalogCache, Model, ModelDiscoveryCacheKey, ModelThinking, ThinkingLevel,
+    apply_auto_permission_mode, picker_session_modes, Catalog, CatalogCache, Model,
+    ModelDiscoveryCacheKey, ModelThinking, SessionMode, ThinkingLevel,
 };
 use crate::process::OwnedProcessTree;
 use crate::stderr::{with_stderr, SharedDiagnosticBuffer, DEFAULT_TAIL_BYTES};
@@ -47,6 +48,11 @@ type SharedStdin = Arc<Mutex<Option<ChildStdin>>>;
 static EFFORT_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"--effort\s*(?:<[^>]+>)?\s*(?:Effort level[^(]*)?\(([^)]+)\)")
         .unwrap_or_else(|error| panic!("invalid Claude effort regex: {error}"))
+});
+
+static PERMISSION_MODE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"--permission-mode\b[^(]*\((?:choices:\s*)?([^)]+)\)")
+        .unwrap_or_else(|error| panic!("invalid Claude permission-mode regex: {error}"))
 });
 
 pub(crate) static BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> =
@@ -276,6 +282,7 @@ fn build_claude_args_with_blocked(
             options.claude_settings_path.clone(),
         ]);
     }
+    apply_auto_permission_mode(&mut args, &options.session_mode);
     args
 }
 
@@ -1162,6 +1169,9 @@ fn static_catalog(help: Option<&str>) -> Catalog {
         .collect();
     Catalog {
         models,
+        session_modes: help
+            .map(claude_session_modes_from_help)
+            .unwrap_or_default(),
         fallback: false,
     }
 }
@@ -1235,6 +1245,34 @@ fn effort_allow(model: &str) -> Option<&'static [&'static str]> {
         "claude-haiku-4-5-20251001" => Some(&["low", "medium", "high"]),
         _ => None,
     }
+}
+
+fn claude_session_modes_from_help(help: &str) -> Vec<SessionMode> {
+    let Some(captures) = PERMISSION_MODE_RE.captures(help) else {
+        return Vec::new();
+    };
+    let mut advertised = Vec::new();
+    let raw = captures.get(1).map(|capture| capture.as_str()).unwrap_or("");
+    for token in raw.split(',') {
+        let value = token
+            .trim()
+            .trim_matches('"')
+            .trim_matches('\'')
+            .trim();
+        if value.is_empty() {
+            continue;
+        }
+        advertised.push(SessionMode {
+            value: value.to_string(),
+            label: value.to_string(),
+            kind: if value.eq_ignore_ascii_case("auto") {
+                "auto_review".to_string()
+            } else {
+                String::new()
+            },
+        });
+    }
+    picker_session_modes(&advertised)
 }
 
 fn claude_effort_levels_from_help(help: &str) -> Vec<&str> {
@@ -1420,6 +1458,40 @@ mod tests {
         assert!(!args
             .iter()
             .any(|arg| arg == "text" || arg == "--effort=max" || arg == "/user-settings.json"));
+    }
+
+    #[test]
+    fn auto_session_mode_replaces_bypass_permissions() {
+        let args = build_claude_args(&ExecOptions {
+            session_mode: "auto".to_string(),
+            ..ExecOptions::default()
+        });
+        assert!(args
+            .windows(2)
+            .any(|pair| pair == ["--permission-mode", "auto"]));
+        assert!(!args.iter().any(|arg| arg == "bypassPermissions"));
+
+        let args = build_claude_args(&ExecOptions {
+            session_mode: "plan".to_string(),
+            ..ExecOptions::default()
+        });
+        assert!(args
+            .windows(2)
+            .any(|pair| pair == ["--permission-mode", "bypassPermissions"]));
+    }
+
+    #[test]
+    fn session_modes_from_help_keep_only_auto() {
+        let modes = claude_session_modes_from_help(
+            r#"--permission-mode <mode> Permission mode (choices: "default", "acceptEdits", "bypassPermissions", "plan", "auto")"#,
+        );
+        assert_eq!(modes.len(), 1);
+        assert_eq!(modes[0].value, "auto");
+        assert_eq!(modes[0].kind, "auto_review");
+        assert!(
+            claude_session_modes_from_help("--effort <level> Effort level (low, medium, high)")
+                .is_empty()
+        );
     }
 
     #[test]

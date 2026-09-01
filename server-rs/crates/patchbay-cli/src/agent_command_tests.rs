@@ -194,6 +194,8 @@ async fn agent_create_preserves_go_request_and_secret_input_semantics() {
         "model-1",
         "--thinking-level",
         "high",
+        "--session-mode",
+        "auto",
         "--service-tier",
         "priority",
         "--visibility",
@@ -228,6 +230,7 @@ async fn agent_create_preserves_go_request_and_secret_input_semantics() {
     );
     assert_eq!(body["model"], "model-1");
     assert_eq!(body["thinking_level"], "high");
+    assert_eq!(body["session_mode"], "auto");
     assert_eq!(body["service_tier"], "priority");
     assert_eq!(body["visibility"], "workspace");
     assert_eq!(body["permission_mode"], "public_to");
@@ -378,6 +381,8 @@ async fn agent_update_puts_only_changed_fields_and_supports_mcp_clear() {
         "Builder v2",
         "--thinking-level",
         "",
+        "--session-mode",
+        "",
         "--mcp-config",
         "null",
         "--permission-mode",
@@ -399,6 +404,7 @@ async fn agent_update_puts_only_changed_fields_and_supports_mcp_clear() {
         serde_json::json!({
             "name":"Builder v2",
             "thinking_level":"",
+            "session_mode":"",
             "mcp_config":null,
             "permission_mode":"private",
             "invocation_targets":[]
@@ -897,7 +903,7 @@ async fn agent_copy_copies_only_portable_same_runtime_fields() {
         "description":"description","instructions":"instructions",
         "avatar_url":"https://cdn.example/avatar.png",
         "custom_args":["--foo"],"max_concurrent_tasks":9,
-        "model":"model-1","thinking_level":"high","service_tier":"priority",
+        "model":"model-1","thinking_level":"high","session_mode":"auto","service_tier":"priority",
         "permission_mode":"public_to",
         "invocation_targets":[{"target_type":"workspace"}],
         "skills":[{"id":"skill-1"},{"id":"skill-2"}],
@@ -955,6 +961,7 @@ async fn agent_copy_copies_only_portable_same_runtime_fields() {
     assert_eq!(body["max_concurrent_tasks"], 9);
     assert_eq!(body["model"], "model-1");
     assert_eq!(body["thinking_level"], "high");
+    assert_eq!(body["session_mode"], "auto");
     assert_eq!(body["service_tier"], "priority");
     assert_eq!(body["permission_mode"], "public_to");
     assert_eq!(body["skill_ids"], serde_json::json!(["skill-1", "skill-2"]));
@@ -977,7 +984,7 @@ async fn agent_copy_cross_runtime_requires_model_and_drops_runtime_fields() {
     let posts_handler = Arc::clone(&posts);
     let source = serde_json::json!({
         "id":"agent-source","name":"Source","runtime_id":"runtime-1",
-        "model":"old-model","thinking_level":"high","service_tier":"priority",
+        "model":"old-model","thinking_level":"high","session_mode":"auto","service_tier":"priority",
         "max_concurrent_tasks":0
     });
     let app = Router::new()
@@ -1045,6 +1052,7 @@ async fn agent_copy_cross_runtime_requires_model_and_drops_runtime_fields() {
     assert_eq!(body["runtime_id"], "runtime-2");
     assert_eq!(body["model"], "");
     assert!(body.get("thinking_level").is_none());
+    assert!(body.get("session_mode").is_none());
     assert!(body.get("service_tier").is_none());
     assert!(body.get("max_concurrent_tasks").is_none());
     assert!(body.get("skill_ids").is_none());

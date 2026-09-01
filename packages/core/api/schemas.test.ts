@@ -1357,6 +1357,33 @@ describe("RuntimeModelListRequestSchema", () => {
     expect(parsed.cached).toBeUndefined();
   });
 
+  it("keeps advertised session modes without requiring them", () => {
+    const parsed = parseWithFallback(
+      {
+        ...completed,
+        session_modes: [
+          { value: "auto", label: "Approve for me", kind: "auto_review" },
+          { value: "ask", label: "Ask" },
+        ],
+      },
+      RuntimeModelListRequestSchema,
+      MALFORMED_RUNTIME_MODEL_LIST_REQUEST,
+      { endpoint: "test" },
+    );
+    expect(parsed.session_modes).toEqual([
+      { value: "auto", label: "Approve for me", kind: "auto_review" },
+      { value: "ask", label: "Ask" },
+    ]);
+    expect(
+      parseWithFallback(
+        completed,
+        RuntimeModelListRequestSchema,
+        MALFORMED_RUNTIME_MODEL_LIST_REQUEST,
+        { endpoint: "test" },
+      ).session_modes,
+    ).toBeUndefined();
+  });
+
   it("keeps the additive cache markers when the server serves a snapshot", () => {
     const parsed = parseWithFallback(
       { ...completed, cached: true, cached_at: "2026-07-29T00:00:00Z" },

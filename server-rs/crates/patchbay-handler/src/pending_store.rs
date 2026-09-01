@@ -629,6 +629,20 @@ where
     Option::<T>::deserialize(deserializer).map(Option::unwrap_or_default)
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SessionModeEntry {
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    pub value: String,
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    pub label: String,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_null_default",
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub kind: String,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ModelListRequest {
     pub id: String,
@@ -651,6 +665,8 @@ pub struct ModelListRequest {
     pub cached: bool,
     #[serde(default, rename = "cached_at", skip_serializing_if = "Option::is_none")]
     pub cached_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub session_modes: Vec<SessionModeEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -661,6 +677,8 @@ pub struct ModelCatalogSnapshot {
     pub supported: bool,
     #[serde(rename = "stored_at")]
     pub stored_at: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub session_modes: Vec<SessionModeEntry>,
 }
 
 pub(crate) fn cacheable_model_catalog(models: &[ModelEntry], supported: bool) -> bool {
@@ -754,6 +772,7 @@ impl ModelCatalogCache {
         runtime_id: &str,
         models: &[ModelEntry],
         supported: bool,
+        session_modes: &[SessionModeEntry],
     ) -> anyhow::Result<()> {
         if runtime_id.is_empty() || !cacheable_model_catalog(models, supported) {
             return Ok(());
@@ -763,6 +782,7 @@ impl ModelCatalogCache {
             models: models.to_vec(),
             supported,
             stored_at: Utc::now(),
+            session_modes: session_modes.to_vec(),
         };
         let data = serde_json::to_string(&snapshot)
             .map_err(|error| anyhow::anyhow!("marshal model catalog: {error}"))?;
@@ -981,6 +1001,7 @@ impl ModelListStore {
         id: &str,
         models: &[ModelEntry],
         supported: bool,
+        session_modes: &[SessionModeEntry],
     ) -> anyhow::Result<()> {
         let Some(mut req) = self.load_request(id).await? else {
             return Ok(());
@@ -988,6 +1009,7 @@ impl ModelListStore {
         req.status = ModelListStatus::Completed;
         req.models = models.to_vec();
         req.supported = supported;
+        req.session_modes = session_modes.to_vec();
         req.updated_at = Utc::now();
         self.persist_request(&req).await
     }
@@ -1710,15 +1732,29 @@ mod tests {
             ..Default::default()
         }];
         models
-            .complete(&model_request.id, &entries, true)
+            .complete(&model_request.id, &entries, true, &[])
             .await
             .unwrap();
         let model_request = models.get(&model_request.id).await.unwrap().unwrap();
         assert_eq!(model_request.status, ModelListStatus::Completed);
         assert_eq!(model_request.models.len(), 1);
+        assert!(model_request.session_modes.is_empty());
+
+        let session_modes = vec![SessionModeEntry {
+            value: "auto".into(),
+            label: "Approve for me".into(),
+            kind: "auto_review".into(),
+        }];
+        models
+            .complete(&model_request.id, &entries, true, &session_modes)
+            .await
+            .unwrap();
+        let model_request = models.get(&model_request.id).await.unwrap().unwrap();
+        assert_eq!(model_request.session_modes.len(), 1);
+        assert_eq!(model_request.session_modes[0].value, "auto");
 
         let catalog = InMemoryModelCatalogCache::new();
-        catalog.put("runtime-1", &entries, true).await.unwrap();
+        catalog.put("runtime-1", &entries, true, &[]).await.unwrap();
         assert_eq!(
             catalog
                 .get("runtime-1")

@@ -1290,6 +1290,7 @@ fn is_openclaw_identifier(value: &str) -> bool {
 fn cache_catalog(cache: &CatalogCache, key: ModelDiscoveryCacheKey, models: Vec<Model>) -> Catalog {
     let catalog = Catalog {
         models,
+        session_modes: Vec::new(),
         fallback: false,
     };
     if !catalog.models.is_empty() {

@@ -417,6 +417,11 @@ pub(crate) async fn build_claimed_task_response(
     );
     set_if_not_empty(
         &mut agent_obj,
+        "session_mode",
+        agent.session_mode.as_deref().unwrap_or(""),
+    );
+    set_if_not_empty(
+        &mut agent_obj,
         "service_tier",
         agent.service_tier.as_deref().unwrap_or(""),
     );

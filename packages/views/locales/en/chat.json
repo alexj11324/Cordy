@@ -18,6 +18,8 @@
     "placeholder_access_revoked": "You no longer have permission to run this agent",
     "placeholder_named": "Message {{name}}…",
     "placeholder_default": "Start a message…",
+    "placeholder_task_named": "Assign a task to {{name}}…",
+    "placeholder_task_default": "Assign a task…",
     "send_tooltip": "Send",
     "queue_send_tooltip": "Queue message",
     "stop_tooltip": "Stop",
@@ -237,7 +239,13 @@
     "archived_title": "Archived",
     "row_actions_aria": "Chat actions"
   },
+  "control_bar": {
+    "unknown_device": "Unknown device",
+    "session_mode_full_access": "Full access",
+    "session_mode_tooltip": "Session mode · {{value}}"
+  },
   "header": {
+    "new_topic": "New topic",
     "view_profile": "View agent profile",
     "rename": "Rename chat",
     "archive": "Archive chat",

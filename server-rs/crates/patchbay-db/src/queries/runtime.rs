@@ -986,7 +986,7 @@ pub async fn unbind_user_agents_from_runtime(
         r#"UPDATE agent
 SET runtime_id = NULL, updated_at = now()
 WHERE runtime_id = $1 AND kind = 'user'
-RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier"#
+RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier, session_mode"#
     )
         .bind(runtime_id)
         .fetch_all(executor)
@@ -1022,6 +1022,7 @@ RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visi
             system_key: row.try_get(25)?,
             disabled_runtime_skills: row.try_get(26)?,
             service_tier: row.try_get(27)?,
+            session_mode: row.try_get(28)?,
         });
     }
     Ok(out)

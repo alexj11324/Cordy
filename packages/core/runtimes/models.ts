@@ -61,6 +61,7 @@ export async function resolveRuntimeModels(
   return {
     models: current.models ?? [],
     supported: current.supported !== false,
+    session_modes: current.session_modes ?? [],
     cached: current.cached === true,
     cachedAt: current.cached_at,
   };

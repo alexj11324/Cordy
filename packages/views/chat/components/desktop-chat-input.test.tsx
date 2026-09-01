@@ -70,4 +70,22 @@ describe("DesktopChatInput", () => {
     expect(actions).toBeInTheDocument();
     expect(actions).toHaveTextContent("leftright");
   });
+
+  it("renders the control bar below the composer card, not inside it", () => {
+    const { container } = render(
+      <DesktopChatInput
+        composerRef={{ current: null }}
+        leftActions={<span>left</span>}
+        rightActions={<span>right</span>}
+        controlBar={<div data-testid="control-bar">device</div>}
+      >
+        <textarea data-testid="editor" />
+      </DesktopChatInput>,
+    );
+    const surface = container.querySelector("[data-slot='chat-input-surface']");
+    const bar = container.querySelector("[data-testid='control-bar']");
+    expect(bar).not.toBeNull();
+    expect(surface?.contains(bar)).toBe(false);
+    expect(bar?.textContent).toBe("device");
+  });
 });

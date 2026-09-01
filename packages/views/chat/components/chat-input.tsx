@@ -153,6 +153,21 @@ interface ChatInputProps {
   draftKeyOverride?: string;
   editorKeyOverride?: string;
   /**
+   * Rendered immediately before the send button — Agent page puts the model
+   * (and thinking) chips here. FAB / builder omit it.
+   */
+  sendPrefix?: ReactNode;
+  /**
+   * 28px row below the composer card. Agent page puts device / repo / session
+   * mode here. FAB / builder omit it.
+   */
+  controlBar?: ReactNode;
+  /**
+   * `task` is the Agent-page HeterogeneousChatInput placeholder. Shared
+   * composers keep `message`.
+   */
+  placeholderVariant?: "message" | "task";
+  /**
    * Agent-page composer uses LobeHub's Lexical editor. FAB / builder /
    * agent-thread keep the shared Tiptap ContentEditor.
    */
@@ -177,6 +192,9 @@ export function ChatInput({
   agentRuntimeRequired,
   agentName,
   leftAdornment,
+  sendPrefix,
+  controlBar,
+  placeholderVariant = "message",
   contextItems,
   projects = [],
   projectId,
@@ -585,9 +603,13 @@ export function ChatInput({
         : agentRuntimeRequired
           ? t(($) => $.input.placeholder_runtime_required)
         : t(($) => $.input.placeholder_archived)
-      : agentName
-        ? t(($) => $.input.placeholder_named, { name: agentName })
-        : t(($) => $.input.placeholder_default);
+      : placeholderVariant === "task"
+        ? agentName
+          ? t(($) => $.input.placeholder_task_named, { name: agentName })
+          : t(($) => $.input.placeholder_task_default)
+        : agentName
+          ? t(($) => $.input.placeholder_named, { name: agentName })
+          : t(($) => $.input.placeholder_default);
 
   const uploadEnabled = !!uploadAllowed && !disabled && !noAgent;
   // Lock only while the send request itself is creating/resolving the target
@@ -707,7 +729,8 @@ export function ChatInput({
         </div>
       }
       rightActions={
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex min-w-0 shrink-0 items-center gap-1">
+          {sendPrefix}
           {showStop && (
             <SubmitButton
               onClick={() => {}}
@@ -739,8 +762,9 @@ export function ChatInput({
           )}
         </div>
       }
-      overlay={uploadEnabled && isDragOver ? <FileDropOverlay /> : null}
-    >
+          overlay={uploadEnabled && isDragOver ? <FileDropOverlay /> : null}
+          controlBar={controlBar}
+        >
       {editorEngine === "lexical" ? (
         <Suspense fallback={<div className="min-h-9" />}>
           <LexicalComposerEditor

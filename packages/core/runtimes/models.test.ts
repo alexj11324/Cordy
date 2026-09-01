@@ -68,10 +68,29 @@ describe("resolveRuntimeModels", () => {
     expect(result).toEqual({
       models: catalog,
       supported: true,
+      session_modes: [],
       cached: true,
       cachedAt: "2026-07-29T00:00:00Z",
     });
     expect(getListModelsResult).not.toHaveBeenCalled();
+  });
+
+  it("forwards advertised session modes from discovery", async () => {
+    initiateListModels.mockResolvedValue(
+      request({
+        status: "completed",
+        models: catalog,
+        session_modes: [
+          { value: "auto", label: "Approve for me", kind: "auto_review" },
+        ],
+      }),
+    );
+
+    await expect(resolveRuntimeModels("rt-1")).resolves.toMatchObject({
+      session_modes: [
+        { value: "auto", label: "Approve for me", kind: "auto_review" },
+      ],
+    });
   });
 
   it("marks a live discovery as not cached", async () => {

@@ -1742,6 +1742,7 @@ async fn handle_model_list(
                             "models": catalog.models,
                             "supported": patchbay_agent::registry::model_selection_supported(&target.provider),
                             "fallback": catalog.fallback,
+                            "session_modes": catalog.session_modes,
                         }),
                         Err(error) => json!({
                             "status": "failed",

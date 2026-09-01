@@ -3163,6 +3163,12 @@ const RuntimeModelSchema = z.object({
   service_tiers: z.array(RuntimeModelServiceTierSchema).optional(),
 }).loose();
 
+const RuntimeSessionModeSchema = z.object({
+  value: z.string(),
+  label: z.string().default(""),
+  kind: z.string().optional(),
+}).loose();
+
 export const RuntimeModelListRequestSchema = z.object({
   id: z.string().default(""),
   runtime_id: z.string().default(""),
@@ -3174,6 +3180,7 @@ export const RuntimeModelListRequestSchema = z.object({
   updated_at: z.string().default(""),
   cached: z.boolean().optional(),
   cached_at: z.string().optional(),
+  session_modes: z.array(RuntimeSessionModeSchema).optional(),
 }).loose();
 
 // Fallback for an unparseable model-discovery response. `failed` is the only

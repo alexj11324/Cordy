@@ -595,6 +595,14 @@ export interface Agent {
    */
   thinking_level?: string;
   /**
+   * Runtime-advertised session mode token (for example Claude Code `auto`,
+   * Codex `auto` labelled "Approve for me"). Empty string means full access:
+   * keep the daemon's current yolo / bypass default. Older backends omit this
+   * field; treat undefined as "". Distinct from `permission_mode`, which
+   * gates who may invoke the agent.
+   */
+  session_mode?: string;
+  /**
    * Runtime-native Codex service tier (for example `priority`, displayed as
    * Fast). Empty/undefined means no override: local Codex configuration and
    * account defaults remain authoritative.
@@ -667,6 +675,8 @@ export interface CreateAgentRequest {
   model?: string;
   /** Optional runtime-native reasoning/effort token. See `Agent.thinking_level`. */
   thinking_level?: string;
+  /** Optional protocol-advertised session mode. See `Agent.session_mode`. */
+  session_mode?: string;
   /** Optional Codex service-tier catalog ID. See `Agent.service_tier`. */
   service_tier?: string;
   /** Optional creation-source attribution. Surfaced as the `template`
@@ -799,6 +809,12 @@ export interface UpdateAgentRequest {
    *     runtime's provider enum, rejected with 400 if not recognised
    */
   thinking_level?: string;
+  /**
+   * Protocol-advertised session mode. Omitted preserves the saved value, `""`
+   * clears it back to daemon full access, and a non-empty value stores the
+   * runtime-native token (validated as an opaque catalog token).
+   */
+  session_mode?: string;
   /**
    * Codex service-tier override. Omitted preserves the saved value, `""`
    * clears it, and a non-empty value stores a runtime-catalog ID.
@@ -1156,14 +1172,32 @@ export interface RuntimeModelListRequest {
    */
   cached?: boolean;
   cached_at?: string;
+  /**
+   * Session modes the runtime advertised during the same discovery pass as
+   * models. The Agent composer picker always synthesizes full access (empty
+   * value) and only adds rows whose `kind` is `auto_review` or whose `value`
+   * is `auto`. Ask / read-only choices are not listed.
+   */
+  session_modes?: RuntimeSessionMode[];
 }
 
 // Result shape returned by resolveRuntimeModels — includes the
 // "supported" bit so the UI can distinguish "no models discovered"
 // from "provider does not honour per-agent model selection".
+export interface RuntimeSessionMode {
+  /** Runtime-native token persisted on `Agent.session_mode`. */
+  value: string;
+  /** Protocol-owned display name (`Auto`, `Approve for me`, …). */
+  label: string;
+  /** Protocol-owned kind when advertised (`auto_review`). */
+  kind?: string;
+}
+
 export interface RuntimeModelsResult {
   models: RuntimeModel[];
   supported: boolean;
+  /** Advertised session modes. Older servers omit this; treat as []. */
+  session_modes?: RuntimeSessionMode[];
   /**
    * True when the server answered from its catalog cache rather than a live
    * daemon round trip (PB-5444). Drives the query's freshness policy: a

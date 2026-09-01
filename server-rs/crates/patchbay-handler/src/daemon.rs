@@ -4433,7 +4433,11 @@ async fn report_model_list_result(
             let supported = body.supported.unwrap_or(true);
             let fallback = body.fallback.unwrap_or(false);
             let models = body.models;
-            if let Err(e) = store.complete(request_id.trim(), &models, supported).await {
+            let session_modes = body.session_modes;
+            if let Err(e) = store
+                .complete(request_id.trim(), &models, supported, &session_modes)
+                .await
+            {
                 tracing::error!(error = %e, request_id = %request_id, "ModelListStore Complete failed");
                 return error_response(
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -4444,7 +4448,9 @@ async fn report_model_list_result(
                 use crate::pending_store::{model_catalog_cache_action, ModelCatalogCacheAction};
                 let result = match model_catalog_cache_action(&models, supported, fallback) {
                     ModelCatalogCacheAction::Store => {
-                        cache.put(runtime_id.trim(), &models, supported).await
+                        cache
+                            .put(runtime_id.trim(), &models, supported, &session_modes)
+                            .await
                     }
                     ModelCatalogCacheAction::Drop => cache.invalidate(runtime_id.trim()).await,
                     ModelCatalogCacheAction::Keep => Ok(()),
@@ -4480,6 +4486,8 @@ struct ModelListReportBody {
     error: String,
     #[serde(default)]
     fallback: Option<bool>,
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    session_modes: Vec<crate::pending_store::SessionModeEntry>,
 }
 
 fn decode_model_list_report(body: Value) -> Result<ModelListReportBody, serde_json::Error> {

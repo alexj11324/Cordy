@@ -106,6 +106,7 @@ impl PiBackend {
         };
         let catalog = Catalog {
             models,
+            session_modes: Vec::new(),
             fallback: false,
         };
         if cancellation.is_cancelled() {

@@ -164,6 +164,7 @@ pub struct Agent {
     pub runtime_id: Option<Uuid>,
     pub runtime_mode: String,
     pub service_tier: Option<String>,
+    pub session_mode: Option<String>,
     pub status: String,
     pub system_key: Option<String>,
     pub thinking_level: Option<String>,

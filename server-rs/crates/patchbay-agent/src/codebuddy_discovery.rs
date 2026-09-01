@@ -15,7 +15,8 @@ use crate::codebuddy::CodebuddyBackend;
 use crate::command::filter_launch_prefix;
 use crate::env::configure_child_env;
 use crate::model::{
-    Catalog, CatalogCache, Model, ModelDiscoveryCacheKey, ModelThinking, ThinkingLevel,
+    parse_acp_session_modes, Catalog, CatalogCache, Model, ModelDiscoveryCacheKey, ModelThinking,
+    ThinkingLevel,
 };
 use crate::process::OwnedProcessTree;
 use crate::stderr::sanitize_diagnostic;
@@ -179,6 +180,7 @@ async fn run_handshake(
     annotate_thinking(&mut models, &result);
     Ok(Catalog {
         models,
+        session_modes: parse_acp_session_modes(&result),
         fallback: false,
     })
 }
@@ -494,6 +496,7 @@ fn fallback_catalog() -> Catalog {
     .collect();
     Catalog {
         models,
+        session_modes: Vec::new(),
         fallback: true,
     }
 }
@@ -560,6 +563,7 @@ mod tests {
             .supported_levels
             .iter()
             .any(|level| level.value == "enabled"));
+        assert!(parse_acp_session_modes(&result).is_empty());
     }
 
     #[test]

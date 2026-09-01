@@ -180,3 +180,32 @@ describe("ChatSessionHeader rename keyboard behavior", () => {
     expect(screen.getByText("Original title")).toBeInTheDocument();
   });
 });
+
+describe("ChatSessionHeader compose vs session", () => {
+  it("shows New topic without a session menu, avatar, or description", () => {
+    render(
+      <I18nProvider locale="en" resources={TEST_RESOURCES}>
+        <ChatSessionHeader session={null} agent={null} />
+      </I18nProvider>,
+    );
+    expect(screen.getByRole("heading", { name: enChat.header.new_topic })).toBeInTheDocument();
+    expect(screen.queryByTitle(RENAME_LABEL)).not.toBeInTheDocument();
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+  });
+
+  it("shows a 14px-semibold session title without an agent avatar or description", () => {
+    render(
+      <I18nProvider locale="en" resources={TEST_RESOURCES}>
+        <ChatSessionHeader
+          session={session}
+          agent={{ id: "agent-1", name: "Lambda", description: "Not in the header" } as never}
+        />
+      </I18nProvider>,
+    );
+    const title = screen.getByTitle(RENAME_LABEL);
+    expect(title).toHaveTextContent("Original title");
+    expect(title).toHaveClass("font-semibold");
+    expect(screen.queryByText("Not in the header")).not.toBeInTheDocument();
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+  });
+});

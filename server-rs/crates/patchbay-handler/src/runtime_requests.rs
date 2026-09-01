@@ -281,6 +281,7 @@ async fn initiate_model_list(
                     updated_at: stored_at,
                     cached: true,
                     cached_at: Some(stored_at),
+                    session_modes: snapshot.session_modes,
                     ..Default::default()
                 })
                 .into_response();

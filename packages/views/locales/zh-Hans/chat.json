@@ -17,6 +17,8 @@
     "placeholder_access_revoked": "你已没有运行该智能体的权限",
     "placeholder_named": "给 {{name}} 发消息…",
     "placeholder_default": "输入消息…",
+    "placeholder_task_named": "给 {{name}} 分配任务…",
+    "placeholder_task_default": "分配一个任务…",
     "send_tooltip": "发送",
     "queue_send_tooltip": "排队发送",
     "stop_tooltip": "停止",
@@ -233,7 +235,13 @@
     "archived_title": "已归档",
     "row_actions_aria": "聊天操作"
   },
+  "control_bar": {
+    "unknown_device": "未知设备",
+    "session_mode_full_access": "完全访问",
+    "session_mode_tooltip": "会话模式 · {{value}}"
+  },
   "header": {
+    "new_topic": "新话题",
     "view_profile": "查看 Agent 资料",
     "rename": "重命名会话",
     "delete": "删除会话",

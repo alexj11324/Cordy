@@ -33,6 +33,7 @@ export type DesktopChatInputProps = {
   overlay?: ReactNode;
   children: ReactNode;
   actionBarStyle?: CSSProperties;
+  controlBar?: ReactNode;
 };
 
 export function DesktopChatInput({
@@ -46,6 +47,7 @@ export function DesktopChatInput({
   overlay,
   children,
   actionBarStyle,
+  controlBar,
 }: DesktopChatInputProps) {
   return (
     <div
@@ -95,6 +97,7 @@ export function DesktopChatInput({
           </Flexbox>
           {overlay}
         </div>
+        {controlBar}
       </Flexbox>
     </div>
   );

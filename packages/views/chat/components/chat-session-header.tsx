@@ -29,22 +29,21 @@ import {
 import { useChatStore } from "@patchbay/core/chat";
 import type { Agent, ChatSession } from "@patchbay/core/types";
 import { isImeComposing } from "@patchbay/core/utils";
-import { ActorAvatar } from "../../common/actor-avatar";
 import { AppLink } from "../../navigation";
 import { useT } from "../../i18n";
 
 /**
- * Per-session header for the conversation pane: agent avatar + editable chat
- * title + agent subtitle, with a ⋯ menu (rename / view agent profile / delete).
- * The avatar's hover card is the lightweight "view profile" affordance; the
- * menu item navigates to the full agent page.
+ * Conversation-pane header mapped from LobeHub HeterogeneousChatInput's
+ * session title: compose shows "New topic"; an existing session shows a 14px
+ * semibold title. The circular agent avatar and description subtitle live in
+ * the empty-state AgentInfo, not here.
  */
 export function ChatSessionHeader({
   session,
   agent,
   onArchive,
 }: {
-  session: ChatSession;
+  session: ChatSession | null;
   agent: Agent | null;
   // Archiving the open conversation must move the pane off it (advance to the
   // next chat on desktop, back to the list on mobile), so the parent owns it —
@@ -58,11 +57,11 @@ export function ChatSessionHeader({
   const setArchived = useSetChatSessionArchived();
   const setActiveSession = useChatStore((s) => s.setActiveSession);
 
-  const isArchived = session.status === "archived";
+  const isArchived = session?.status === "archived";
 
   const [editing, setEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [draft, setDraft] = useState(session.title ?? "");
+  const [draft, setDraft] = useState(session?.title ?? "");
   const inputRef = useRef<HTMLInputElement>(null);
   const isComposingRef = useRef(false);
   // A browser can blur the input before it emits compositionend. Remember
@@ -70,7 +69,9 @@ export function ChatSessionHeader({
   const commitAfterCompositionRef = useRef(false);
   const blurCommitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const title = session.title?.trim() || t(($) => $.window.untitled);
+  const title = session
+    ? session.title?.trim() || t(($) => $.window.untitled)
+    : t(($) => $.header.new_topic);
 
   useEffect(() => {
     if (editing) {
@@ -95,6 +96,7 @@ export function ChatSessionHeader({
   };
 
   const startRename = () => {
+    if (!session) return;
     clearPendingBlurCommit();
     isComposingRef.current = false;
     commitAfterCompositionRef.current = false;
@@ -108,32 +110,32 @@ export function ChatSessionHeader({
     commitAfterCompositionRef.current = false;
     setEditing(false);
     const trimmed = raw.trim();
-    if (!trimmed || trimmed === session.title) return;
+    if (!session || !trimmed || trimmed === session.title) return;
     updateSession.mutate({ sessionId: session.id, title: trimmed });
   };
 
   const doDelete = () => {
     setConfirmDelete(false);
+    if (!session) return;
     setActiveSession(null);
     deleteSession.mutate(session.id);
   };
 
-  const doArchive = () =>
+  const doArchive = () => {
+    if (!session) return;
     onArchive
       ? onArchive(session)
       : setArchived.mutate({ sessionId: session.id, archived: true });
-  const doUnarchive = () => setArchived.mutate({ sessionId: session.id, archived: false });
+  };
+  const doUnarchive = () => {
+    if (!session) return;
+    setArchived.mutate({ sessionId: session.id, archived: false });
+  };
 
   return (
     <div className="flex h-12 shrink-0 items-center gap-3 border-b px-4">
-      {agent ? (
-        <ActorAvatar actorType="agent" actorId={agent.id} size="lg" enableHoverCard showStatusDot />
-      ) : (
-        <span className="size-[30px] shrink-0" />
-      )}
-
       <div className="min-w-0 flex-1">
-        {editing ? (
+        {session && editing ? (
           <input
             ref={inputRef}
             value={draft}
@@ -189,7 +191,7 @@ export function ChatSessionHeader({
             }}
             className="w-full rounded-sm bg-background px-1 py-0.5 text-body font-semibold outline-none ring-1 ring-border focus-visible:ring-brand"
           />
-        ) : (
+        ) : session ? (
           <button
             type="button"
             onClick={startRename}
@@ -198,15 +200,14 @@ export function ChatSessionHeader({
           >
             {title}
           </button>
-        )}
-        {agent && (
-          <div className="truncate text-caption text-muted-foreground">
-            {agent.name}
-            {agent.description ? ` · ${agent.description}` : ""}
-          </div>
+        ) : (
+          <h2 className="truncate text-body font-semibold text-foreground">
+            {title}
+          </h2>
         )}
       </div>
 
+      {session ? (
       <DropdownMenu>
         <DropdownMenuTrigger
           render={<Button variant="ghost" size="icon-sm" className="text-muted-foreground" />}
@@ -247,6 +248,7 @@ export function ChatSessionHeader({
           )}
         </DropdownMenuContent>
       </DropdownMenu>
+      ) : null}
 
       <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
         <AlertDialogContent>

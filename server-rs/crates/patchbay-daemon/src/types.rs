@@ -684,6 +684,8 @@ pub struct AgentData {
     pub model: String,
     #[serde(rename = "thinking_level", skip_serializing_if = "String::is_empty")]
     pub thinking_level: String,
+    #[serde(rename = "session_mode", skip_serializing_if = "String::is_empty")]
+    pub session_mode: String,
     #[serde(rename = "service_tier", skip_serializing_if = "String::is_empty")]
     pub service_tier: String,
     #[serde(
@@ -718,6 +720,7 @@ impl std::fmt::Debug for AgentData {
             .field("has_mcp_config", &self.mcp_config.is_some())
             .field("model", &self.model)
             .field("thinking_level", &self.thinking_level)
+            .field("session_mode", &self.session_mode)
             .field("service_tier", &self.service_tier)
             .field("has_runtime_config", &self.runtime_config.is_some())
             .finish_non_exhaustive()

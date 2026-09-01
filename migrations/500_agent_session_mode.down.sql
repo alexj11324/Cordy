@@ -1,0 +1,1 @@
+ALTER TABLE agent DROP COLUMN IF EXISTS session_mode;
