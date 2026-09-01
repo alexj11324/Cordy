@@ -53,8 +53,11 @@ for target in build rust-build; do
 done
 
 dev_output="$(make -n dev)"
-grep -Fq -- 'ENV_FILE="" pnpm dev' <<<"$dev_output" ||
-  fail "dev: expected Make to clear its default ENV_FILE before the launcher, got:\n$dev_output"
+[[ "$dev_output" == "pnpm dev" ]] ||
+  fail "dev: expected the single complete launcher entrypoint, got:\n$dev_output"
+if grep -Fq -- 'ENV_FILE=' <<<"$dev_output"; then
+  fail "dev: legacy Make-level ENV_FILE manipulation remains:\n$dev_output"
+fi
 
 for removed in setup start setup-main start-main setup-worktree start-worktree check-main check-worktree; do
   if make -n "$removed" >/dev/null 2>&1; then
