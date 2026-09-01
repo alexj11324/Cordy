@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getAuth, createRouteMatcher } from "@clerk/nextjs/server";
+import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { LOCALE_COOKIE } from "@patchbay/core/i18n";
 import {
   PATCHBAY_LOCALE_HEADER,
@@ -66,7 +66,9 @@ function nextWithLocale(req: NextRequest): NextResponse {
 // NextResponse / cookies / matcher) is identical; the only behavioral
 // change is the runtime — proxy is forced to nodejs and cannot opt into
 // edge.
-export async function proxy(req: NextRequest) {
+type ResolveUserId = () => Promise<string | null>;
+
+async function handleProxy(req: NextRequest, resolveUserId: ResolveUserId) {
   const { pathname } = req.nextUrl;
 
   const runtimeDestination = runtimeRewriteDestination(pathname, process.env);
@@ -77,7 +79,7 @@ export async function proxy(req: NextRequest) {
   }
 
   if (!clerkPublicRoutes(req)) {
-    const { userId } = await getAuth(req);
+    const userId = await resolveUserId();
     if (!userId) {
       const loginUrl = req.nextUrl.clone();
       loginUrl.pathname = "/login";
@@ -144,6 +146,18 @@ export async function proxy(req: NextRequest) {
   // Covers logged-out root path, /login, /:slug/*, and everything else.
   return nextWithLocale(req);
 }
+
+// `getAuth(req)` is only valid after Clerk has initialized its request
+// context. The previous proxy called it directly, which made browser-facing
+// binding pages fail with Clerk's "can't detect usage of clerkMiddleware"
+// error. Keep the existing named export for Next.js 16's `proxy.ts` convention
+// and wrap the actual handler in Clerk's middleware so every protected request
+// receives a valid `auth()` resolver.
+export const proxy = clerkMiddleware(async (auth, req) =>
+  handleProxy(req, async () => (await auth()).userId),
+);
+
+export default proxy;
 
 export const config = {
   // i18n header must land on every page request, so we use the standard

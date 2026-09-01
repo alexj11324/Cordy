@@ -60,6 +60,8 @@ describe("complete development launcher contract", () => {
     expect(launcher).toContain(
       'export FRONTEND_ORIGIN="http://localhost:${FRONTEND_PORT:-3000}"',
     );
+    expect(launcher).toContain('configured_app_url="${PATCHBAY_APP_URL:-}"');
+    expect(launcher).toContain('export PATCHBAY_APP_URL="$configured_app_url"');
     expect(launcher).toContain('export VITE_APP_URL="$FRONTEND_ORIGIN"');
     expect(launcher).toContain("export VITE_ACCOUNTS_URL=");
     expect(launcher).toContain("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY");

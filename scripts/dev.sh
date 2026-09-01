@@ -40,10 +40,19 @@ set +a
 # shellcheck disable=SC1091
 . scripts/local-env.sh
 
-# Complete dev owns a real Next.js listener for every browser-facing URL. Do
-# not inherit a stale/custom FRONTEND_ORIGIN that this launcher does not serve.
+# Complete dev owns a real Next.js listener for every browser-facing URL. Keep
+# the listener origin local, but preserve an explicitly configured app URL:
+# message platforms use PATCHBAY_APP_URL for account-binding links, and that
+# value may intentionally point at a tunnel (ngrok/cloudflared) which forwards
+# to this local listener. The previous unconditional assignment silently
+# replaced that reachable origin with localhost.
+configured_app_url="${PATCHBAY_APP_URL:-}"
 export FRONTEND_ORIGIN="http://localhost:${FRONTEND_PORT:-3000}"
-export PATCHBAY_APP_URL="$FRONTEND_ORIGIN"
+if [ -n "$configured_app_url" ]; then
+  export PATCHBAY_APP_URL="$configured_app_url"
+else
+  export PATCHBAY_APP_URL="$FRONTEND_ORIGIN"
+fi
 
 # Preserve the upload location used by the established run-rust.sh launcher.
 # The backend itself runs from server-rs, so a relative value would otherwise

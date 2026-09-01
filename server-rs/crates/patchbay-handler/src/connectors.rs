@@ -591,6 +591,18 @@ async fn begin_weixin_install(
     };
     let session_id = Uuid::new_v4().to_string();
     let qrcode = qr.qrcode;
+    // iLink returns two different QR values: `qrcode` is only the opaque
+    // polling token for get_qrcode_status, while `qrcode_img_content` is the
+    // URL/content that must be rendered for the WeChat scanner. Returning the
+    // polling token here produces a QR that scans as a raw hex string.
+    let qr_code_url = qr.qrcode_img_content;
+    if qr_code_url.trim().is_empty() {
+        tracing::warn!("WeChat QR response did not include qrcode_img_content");
+        return error_response(
+            StatusCode::BAD_GATEWAY,
+            "WeChat authorization QR response was incomplete",
+        );
+    }
     let expires_at = Utc::now() + chrono::Duration::seconds(WEIXIN_SESSION_TTL.as_secs() as i64);
     let session = WeixinInstallSession {
         workspace_id,
@@ -611,7 +623,7 @@ async fn begin_weixin_install(
     }
     Json(json!({
         "session_id": session_id,
-        "qr_code_url": qrcode,
+        "qr_code_url": qr_code_url,
         "expires_in_seconds": WEIXIN_SESSION_TTL.as_secs(),
         "poll_interval_seconds": 2,
     }))
