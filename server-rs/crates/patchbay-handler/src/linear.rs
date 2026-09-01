@@ -2629,10 +2629,6 @@ impl LinearTokenManager {
         if status == StatusCode::TOO_MANY_REQUESTS {
             return Err(LinearTokenError::RateLimited);
         }
-        if status.is_server_error() {
-            tracing::warn!(%status, operation, "Linear Agent mutation returned a server error");
-            return Err(LinearTokenError::Provider);
-        }
         let payload = response
             .json::<GraphQlResponse<IdentityData>>()
             .await
