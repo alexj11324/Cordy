@@ -229,11 +229,7 @@ export function resolveCargoCommand(
   ].filter(Boolean);
   for (const candidate of [...new Set(candidates)]) {
     try {
-      execFileSync(candidate, ["--version"], {
-        env,
-        stdio: "pipe",
-        timeout: 2_000,
-      });
+      execFileSync(candidate, ["--version"], { env, stdio: "pipe" });
       return candidate;
     } catch {
       // Try the next deterministic Cargo location.
@@ -391,14 +387,6 @@ async function main() {
     sourceBinaryExists,
     `${srcBinary} was not produced`,
   );
-  if (!sourceBinaryExists) {
-    console.warn(
-      `[bundle-cli] ${srcBinary} not present — Desktop will fall back to ` +
-        `auto-installing the latest release at runtime.`,
-    );
-    await rm(destDir, { recursive: true, force: true });
-    return;
-  }
 
   await rm(destDir, { recursive: true, force: true });
   await mkdir(destDir, { recursive: true });

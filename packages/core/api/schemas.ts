@@ -19,7 +19,7 @@ import type {
   ChatPendingTask,
   PrioritizeQueuedChatTaskResponse,
   SendChatMessageResponse,
-  StartPatrickOnboardingResponse,
+  StartMikaOnboardingResponse,
   Comment,
   CreateBillingCheckoutSessionResponse,
   CreateBillingPortalSessionResponse,
@@ -1955,7 +1955,7 @@ export const SendChatMessageResponseSchema: z.ZodType<SendChatMessageResponse> =
 // `started` is the only field the flow branches on, and a malformed response
 // must not be read as "the opening landed" — parseWithFallback's fallback says
 // it did not, which leaves the flow's own retry as the recovery path.
-export const StartPatrickOnboardingResponseSchema: z.ZodType<StartPatrickOnboardingResponse> = z.object({
+export const StartMikaOnboardingResponseSchema: z.ZodType<StartMikaOnboardingResponse> = z.object({
   started: z.boolean(),
   message_id: z.string().nullish().transform((id) => id ?? undefined),
   created_at: z.string().nullish().transform((at) => at ?? undefined),
@@ -3008,6 +3008,14 @@ export const TelegramInstallationSchema = z.object({
   installed_at: z.string().default(""),
   created_at: z.string().default(""),
   updated_at: z.string().default(""),
+  // An active row proves that the credential was accepted at install time;
+  // it must not be treated as a verified message channel until a server-owned
+  // round-trip check passes. Older servers omit these fields, so the defaults
+  // intentionally fail closed.
+  credential_status: z.string().default("unknown"),
+  runtime_status: z.string().default("unknown"),
+  round_trip_status: z.string().default("not_run"),
+  required_action: z.string().optional(),
 }).loose();
 
 export const EMPTY_TELEGRAM_INSTALLATION: TelegramInstallation = {
@@ -3021,6 +3029,9 @@ export const EMPTY_TELEGRAM_INSTALLATION: TelegramInstallation = {
   installed_at: "",
   created_at: "",
   updated_at: "",
+  credential_status: "unknown",
+  runtime_status: "unknown",
+  round_trip_status: "not_run",
 };
 
 export const ListTelegramInstallationsResponseSchema = z.object({
@@ -3057,6 +3068,12 @@ export const WeixinInstallationSchema = z.object({
   installed_at: z.string().default(""),
   created_at: z.string().default(""),
   updated_at: z.string().default(""),
+  // Keep provider authorization, runtime health, and message acceptance
+  // separate. Missing fields from an older backend remain unverified.
+  credential_status: z.string().default("unknown"),
+  runtime_status: z.string().default("unknown"),
+  round_trip_status: z.string().default("not_run"),
+  required_action: z.string().optional(),
 }).loose();
 export const EMPTY_WEIXIN_INSTALLATION: WeixinInstallation = {
   id: "",
@@ -3069,6 +3086,9 @@ export const EMPTY_WEIXIN_INSTALLATION: WeixinInstallation = {
   installed_at: "",
   created_at: "",
   updated_at: "",
+  credential_status: "unknown",
+  runtime_status: "unknown",
+  round_trip_status: "not_run",
 };
 export const ListWeixinInstallationsResponseSchema = z.object({
   installations: z.array(WeixinInstallationSchema).default([]),

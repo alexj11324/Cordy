@@ -15,7 +15,7 @@
 //! the event-bus wiring lands with the S8 handler slice.
 
 use std::collections::{BTreeMap, HashMap};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, SystemTime};
 
 use sqlx::PgPool;
@@ -650,6 +650,8 @@ pub fn task_failure_retry_pending(payload: &serde_json::Value) -> bool {
 const OUTBOUND_DELIVERY_CAPACITY: usize = 64;
 
 struct RuntimeTarget {
+    installation_id: Uuid,
+    installed_at: chrono::DateTime<chrono::Utc>,
     stream_key: String,
     bot_key: String,
     api: BotApi,
@@ -668,6 +670,7 @@ struct LiveStream {
 /// of truth; this type owns their database lookup and network execution.
 pub struct Outbound {
     pool: PgPool,
+    bus: Weak<patchbay_events::Bus>,
     decrypt: Option<Arc<DecrypterFn>>,
     api_base: String,
     cancel: CancellationToken,
@@ -679,12 +682,14 @@ pub struct Outbound {
 impl Outbound {
     pub fn new(
         pool: PgPool,
+        bus: Arc<patchbay_events::Bus>,
         decrypt: Option<Arc<DecrypterFn>>,
         api_base: String,
         cancel: CancellationToken,
     ) -> Self {
         Self {
             pool,
+            bus: Arc::downgrade(&bus),
             decrypt,
             api_base,
             cancel,
@@ -813,7 +818,7 @@ impl Outbound {
                 }
             }
         };
-        match result {
+        let delivered = match result {
             Ok(message_id) => {
                 if message_id != 0 {
                     stream.message_id = message_id;
@@ -822,11 +827,16 @@ impl Outbound {
                     .with_schedule(&target.bot_key, target.chat_id, |schedule| {
                         schedule.last_edit = Some(now);
                     });
+                true
             }
             Err(error) => {
                 self.record_rate_limit(&target, &error, now);
                 return Err(error);
             }
+        };
+        drop(streams);
+        if delivered {
+            self.mark_round_trip(&target).await;
         }
         Ok(())
     }
@@ -926,6 +936,7 @@ impl Outbound {
                         match result {
                             Ok(()) => {
                                 self.record_edit(target, now);
+                                self.mark_round_trip(target).await;
                                 match terminal_placeholder_edited(reply, now) {
                                     TerminalStep::Done => return Ok(()),
                                     TerminalStep::RetryAt(at) => {
@@ -955,6 +966,7 @@ impl Outbound {
                         match result {
                             Ok(_) => {
                                 self.record_edit(target, now);
+                                self.mark_round_trip(target).await;
                                 match terminal_chunk_sent(reply, now) {
                                     TerminalStep::Done => return Ok(()),
                                     TerminalStep::RetryAt(at) => {
@@ -992,6 +1004,7 @@ impl Outbound {
             return Ok(());
         }
         let mut edited = false;
+        let mut delivered = false;
         if let Some(params) = stream
             .as_ref()
             .and_then(|stream| failure_edit(&stream.state))
@@ -1007,10 +1020,12 @@ impl Outbound {
                     Ok(()) => {
                         self.record_edit(&target, now);
                         edited = true;
+                        delivered = true;
                         break;
                     }
                     Err(error) if is_not_modified(&error) => {
                         edited = true;
+                        delivered = true;
                         break;
                     }
                     Err(error) if crate::api::retry_after(&error).is_some() => {
@@ -1034,6 +1049,7 @@ impl Outbound {
                 match result {
                     Ok(_) => {
                         self.record_edit(&target, now);
+                        delivered = true;
                         break Ok(());
                     }
                     Err(error) if crate::api::retry_after(&error).is_some() => {
@@ -1043,6 +1059,9 @@ impl Outbound {
                 }
             }
         };
+        if delivered {
+            self.mark_round_trip(&target).await;
+        }
         self.schedules
             .release(&target.bot_key, target.chat_id, SystemTime::now());
         result
@@ -1129,6 +1148,8 @@ impl Outbound {
             return Ok(None);
         }
         Ok(Some(RuntimeTarget {
+            installation_id: installation.id,
+            installed_at: installation.installed_at.clone(),
             stream_key: task_id.to_string(),
             bot_key: installation.id.to_string(),
             api: BotApi::new(&self.api_base, &credentials.bot_token),
@@ -1152,6 +1173,16 @@ impl Outbound {
                     schedule.backoff_till = Some(now + wait);
                 });
         }
+    }
+
+    async fn mark_round_trip(&self, target: &RuntimeTarget) {
+        crate::verification::record_round_trip(
+            &self.pool,
+            &self.bus,
+            target.installation_id,
+            target.installed_at,
+        )
+        .await;
     }
 
     async fn release_stream(&self, stream_key: &str, now: SystemTime) {

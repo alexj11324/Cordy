@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use base64::Engine as _;
@@ -20,11 +20,20 @@ const DELIVERY_TIMEOUT: Duration = Duration::from_secs(30);
 pub struct Outbound {
     pool: sqlx::PgPool,
     decrypt: Option<Arc<DecrypterFn>>,
+    bus: Weak<patchbay_events::Bus>,
 }
 
 impl Outbound {
-    pub fn new(pool: sqlx::PgPool, decrypt: Option<Arc<DecrypterFn>>) -> Self {
-        Self { pool, decrypt }
+    pub fn new(
+        pool: sqlx::PgPool,
+        decrypt: Option<Arc<DecrypterFn>>,
+        bus: Arc<patchbay_events::Bus>,
+    ) -> Self {
+        Self {
+            pool,
+            decrypt,
+            bus: Arc::downgrade(&bus),
+        }
     }
 
     pub fn register(self: &Arc<Self>, bus: &patchbay_events::Bus, tasks: Arc<RuntimeTasks>) {
@@ -94,6 +103,7 @@ impl Outbound {
                 .await?
                 .filter(|row| row.status == "active")
                 .ok_or_else(|| anyhow::anyhow!("weixin installation is inactive or missing"))?;
+        let installed_at = installation.installed_at.clone();
         let credentials = decode_credentials(&installation.config, self.decrypt.as_deref())?;
         let target: WeixinBindingConfig = serde_json::from_value(binding.config)?;
         let ciphertext =
@@ -105,7 +115,19 @@ impl Outbound {
         let context_token = String::from_utf8(plaintext)?;
         Client::new(&credentials.base_url, &credentials.bot_token)?
             .send_text(&target.user_id, &context_token, text)
-            .await
+            .await?;
+        // This path is reached only after an inbound WeChat message was
+        // resolved to a chat session. A successful provider send therefore
+        // proves the first real inbound -> outbound round trip for this
+        // installation. Keep the marker server-owned and credential-free.
+        crate::verification::record_round_trip(
+            &self.pool,
+            &self.bus,
+            installation.id,
+            installed_at,
+        )
+        .await;
+        Ok(())
     }
 }
 

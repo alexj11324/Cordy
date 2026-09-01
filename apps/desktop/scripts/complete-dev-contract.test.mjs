@@ -5,6 +5,14 @@ import { describe, expect, it } from "vitest";
 
 const repoRoot = resolve(import.meta.dirname, "..", "..", "..");
 const launcher = readFileSync(resolve(repoRoot, "scripts", "dev.sh"), "utf8");
+const windowsLauncher = readFileSync(
+  resolve(repoRoot, "scripts", "dev.ps1"),
+  "utf8",
+);
+const electronLauncher = readFileSync(
+  resolve(import.meta.dirname, "dev.mjs"),
+  "utf8",
+);
 const platformLauncher = readFileSync(
   resolve(repoRoot, "scripts", "dev-launcher.mjs"),
   "utf8",
@@ -14,6 +22,10 @@ const stopLauncher = readFileSync(
   "utf8",
 );
 const makefile = readFileSync(resolve(repoRoot, "Makefile"), "utf8");
+const acceptanceRunner = readFileSync(
+  resolve(repoRoot, "scripts", "dev-acceptance.mjs"),
+  "utf8",
+);
 const runtimePreparer = readFileSync(
   resolve(import.meta.dirname, "prepare-dev-runtime.mjs"),
   "utf8",
@@ -55,6 +67,21 @@ describe("complete development launcher contract", () => {
     expect(launcher).not.toContain("pnpm dev:web");
     expect(launcher).not.toContain("run-rust.sh run");
     expect(launcher).toContain('dev.mjs "$@"');
+  });
+
+  it("hands explicit Clerk input only to the doctor, never to Electron", () => {
+    expect(launcher).toContain(
+      'run_with_injected_clerk_env node apps/desktop/scripts/dev.mjs "$@"',
+    );
+    expect(windowsLauncher).toContain("Enable-InjectedClerkEnvironment");
+    expect(windowsLauncher).toContain(
+      "& node apps/desktop/scripts/dev.mjs @ElectronArgs",
+    );
+    expect(electronLauncher).toContain(
+      "const sanitizedChildEnv = withoutDevClerkEnvironment(process.env)",
+    );
+    expect(electronLauncher).toContain("env: isDoctor");
+    expect(electronLauncher).toContain("clearDevClerkEnvironment()");
   });
 
   it("provides an explicit hosted mode without a local backend fallback", () => {
@@ -120,6 +147,32 @@ describe("complete development launcher contract", () => {
     expect(stopLauncher).toContain("signalDevProcessTree(state");
     expect(makefile).toContain("@node scripts/stop-dev.mjs");
     expect(makefile).not.toContain("lsof -ti:$(PORT)");
+  });
+
+  it("provides an explicit credentialed acceptance path without changing normal dev", () => {
+    expect(rootPackage.scripts["dev:acceptance"]).toBe(
+      "node scripts/dev-acceptance.mjs",
+    );
+    expect(makefile).toContain("dev-acceptance:");
+    expect(acceptanceRunner).toContain("VITE_PATCHBAY_DEV_ACCEPTANCE");
+    expect(acceptanceRunner).toContain("connectOverCDP");
+    expect(acceptanceRunner).toContain("stopCompleteDev");
+    expect(electronLauncher).toContain("release-dev-acceptance-port.mjs");
+    expect(electronLauncher).toContain(
+      "delete process.env.PATCHBAY_DEV_ACCEPTANCE_RELEASE_PORT",
+    );
+    expect(
+      electronLauncher.indexOf("run(process.execPath, [acceptanceReleaseScript]"),
+    ).toBeGreaterThan(-1);
+    expect(
+      electronLauncher.indexOf("run(process.execPath, [acceptanceReleaseScript]"),
+    ).toBeLessThan(electronLauncher.indexOf('run(step.command, step.args'));
+  });
+
+  it("keeps Make development targets isolated unless an env file is explicit", () => {
+    expect(makefile).toContain("ENV_FILE ?= $(WORKTREE_ENV_FILE)");
+    expect(makefile).not.toContain("MAIN_ENV_FILE");
+    expect(makefile).toContain("pass ENV_FILE=.env explicitly");
   });
 
   it("derives the cache toolchain from the same Cargo used for a miss", () => {

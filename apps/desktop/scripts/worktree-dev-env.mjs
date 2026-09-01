@@ -13,8 +13,9 @@
 // exactly as documented. This module only adds the two knobs needed for two
 // Electron processes to coexist.
 
+import { createHash } from "node:crypto";
 import { statSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, join, resolve } from "node:path";
 
 // Worktree renderer ports start at 5174 so they never reuse 5173 — the primary
 // checkout's default — even when a worktree's offset is 0 (e.g. POSIX cksum of
@@ -78,24 +79,30 @@ export function offsetForPath(path) {
   return cksum(Buffer.from(path)) % OFFSET_MODULO;
 }
 
+/** Stable checkout identity used in names that must not collide across clones. */
+export function checkoutIdentity(path) {
+  return createHash("sha256")
+    .update(resolve(path))
+    .digest("hex")
+    .slice(0, 16);
+}
+
 export function rendererPortForPath(path) {
   return rendererPortForOffset(offsetForPath(path));
 }
 
-// Worktree → a readable, unique, filesystem-safe suffix "<folder>-<offset>".
-// The dev app then shows e.g. "Patchbay Canary pb-3724-194" in Cmd+Tab and gets
-// its own userData / single-instance lock under that name. The offset is what
-// makes the lock unique: the folder name alone collides for worktrees that share
-// a basename at different paths (e.g. /a/patchbay vs /b/patchbay) or whose names
-// slug to the same fallback — those would share one lock and the second Electron
-// would still be blocked.
+// Worktree → a readable, filesystem-safe suffix containing the full checkout
+// identity prefix and the port offset. The identity is required because two
+// independent clones can have the same basename and the same 0–999 offset.
+// The dev app then gets its own userData / single-instance lock under a name
+// such as "Patchbay Canary patchbay-a1b2c3d4-194".
 export function appSuffixForPath(path) {
   const slug =
     basename(path)
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "") || "worktree";
-  return `${slug}-${offsetForPath(path)}`;
+  return `${slug}-${checkoutIdentity(path).slice(0, 8)}-${offsetForPath(path)}`;
 }
 
 export function appSuffixForOffset(path, offset) {
@@ -104,7 +111,7 @@ export function appSuffixForOffset(path, offset) {
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "") || "worktree";
-  return `${slug}-${offset}`;
+  return `${slug}-${checkoutIdentity(path).slice(0, 8)}-${offset}`;
 }
 
 // A linked git worktree has a `.git` FILE (a "gitdir:" pointer); the primary

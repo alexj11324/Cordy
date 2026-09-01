@@ -20,6 +20,7 @@
     "brand-dev-electron": "node scripts/brand-dev-electron.mjs",
     "dev": "node ../../scripts/dev-launcher.mjs",
     "dev:doctor": "node scripts/dev-environment-doctor.mjs",
+    "dev:acceptance": "node ../../scripts/dev-acceptance.mjs",
     "build": "electron-vite build",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",

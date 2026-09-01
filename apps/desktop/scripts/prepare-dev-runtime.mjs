@@ -16,6 +16,7 @@ import {
 } from "./bundle-cli.mjs";
 import {
   defaultDevCliCacheDir,
+  inspectDevRuntimeCache,
   pruneDevRuntimeCache,
   rustBuildEnvironmentFingerprint,
   rustSourceFingerprint,
@@ -126,6 +127,43 @@ export function devRuntimeBuildEnvironment(env, cargoCommand) {
   return buildEnv;
 }
 
+/**
+ * Select one complete cache group before staging any runtime component. A
+ * source checkout without an available rustc cannot prove the active
+ * toolchain, so independently selecting the newest CLI/backend/migration
+ * entry could combine binaries produced by different toolchains. Returning
+ * null deliberately forces one local incremental build when no complete
+ * source/target/build-variable group is available.
+ */
+export function selectCompleteDevRuntimeCacheIdentity(
+  cacheReport,
+  { sourceFingerprint, rustTarget, buildVariables },
+) {
+  return (
+    cacheReport.completeFingerprints
+      .filter(
+        (entry) =>
+          entry.sourceFingerprint === sourceFingerprint &&
+          entry.rustTarget === rustTarget &&
+          JSON.stringify(entry.buildVariables || {}) ===
+            JSON.stringify(buildVariables),
+      )
+      .sort((left, right) => right.newestMtimeMs - left.newestMtimeMs)[0]
+      ?.identityKey || null
+  );
+}
+
+export function isCompleteDevRuntimeCacheHit(
+  cached,
+  { canUseCache, componentCount },
+) {
+  return (
+    canUseCache &&
+    cached.length === componentCount &&
+    cached.every(Boolean)
+  );
+}
+
 async function exists(path) {
   try {
     await access(path, constants.F_OK);
@@ -177,20 +215,47 @@ export async function prepareDevRuntime({
     cargoTargetDir,
   });
 
-  const cached = await Promise.all(
-    components.map((component) =>
-      stageCachedDevCli({
-        cacheRoot,
-        sourceFingerprint,
-        rustTarget,
-        profile: component.profile,
-        toolchainIdentity,
-        buildVariables,
-        destinationBinary: component.destinationBinary,
-      }),
-    ),
-  );
-  if (cached.every(Boolean)) {
+  // If rustc is unavailable, an exact toolchain key cannot be computed. Pick
+  // one complete source/target/build-variable identity first so the three
+  // staged binaries cannot accidentally come from different historical
+  // toolchains. A cache hit remains Rust-free; only a complete miss reaches
+  // the incremental Cargo build below.
+  let cacheIdentityKey;
+  if (!toolchainIdentity) {
+    const cacheReport = await inspectDevRuntimeCache({ cacheRoot });
+    cacheIdentityKey = selectCompleteDevRuntimeCacheIdentity(cacheReport, {
+      sourceFingerprint,
+      rustTarget,
+      buildVariables,
+    });
+  }
+
+  // Without a toolchain identity, only a complete group selected above is
+  // safe to stage. If no such group exists, skip all historical entries so
+  // separate CLI/backend/migration profiles cannot be mixed accidentally.
+  const canUseCache = Boolean(toolchainIdentity || cacheIdentityKey);
+  const cached = canUseCache
+    ? await Promise.all(
+        components.map((component) =>
+          stageCachedDevCli({
+            cacheRoot,
+            sourceFingerprint,
+            rustTarget,
+            profile: component.profile,
+            toolchainIdentity,
+            cacheIdentityKey,
+            buildVariables,
+            destinationBinary: component.destinationBinary,
+          }),
+        ),
+      )
+    : [];
+  if (
+    isCompleteDevRuntimeCacheHit(cached, {
+      canUseCache,
+      componentCount: components.length,
+    })
+  ) {
     for (const component of components) {
       await stageAdditionalDestinations(component, platform);
     }

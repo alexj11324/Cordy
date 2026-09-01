@@ -57,11 +57,32 @@ export function isValidSecretBoxKey(value) {
 
 export function integrationKeyStatus(env) {
   return Object.fromEntries(
-    INTEGRATION_SECRET_KEYS.map((key) => [
-      key,
-      isValidSecretBoxKey(env[key]),
-    ]),
+    INTEGRATION_SECRET_KEYS.map((key) => [key, isValidSecretBoxKey(env[key])]),
   );
+}
+
+export function summarizeDevEnvironmentChecks(checks) {
+  const ok = checks.every((check) => check.ok);
+  return {
+    ok,
+    acceptanceOk: ok && checks.every((check) => check.status !== "pending"),
+  };
+}
+
+export function nodeRuntimeCheck(version = process.versions.node) {
+  const major = String(version).split(".")[0];
+  return major === "22"
+    ? {
+        id: "node",
+        ok: true,
+        message: `Node.js ${version} (required major 22)`,
+      }
+    : {
+        id: "node",
+        ok: false,
+        message: `Node.js ${version} is unsupported (required major 22)`,
+        fix: "Activate Node.js 22 from .nvmrc, then rerun `pnpm dev:doctor`.",
+      };
 }
 
 export function backendUrlFromEnv(env) {
@@ -98,19 +119,9 @@ export function loadDoctorEnvironment({
   loadDevCheckoutEnv({ repoRoot, env });
   if (launcherMode) {
     Object.assign(env, launcherEnv);
-    applyDevRuntimeProfile(
-      env,
-      resolveDevRuntimeProfile(launcherMode, env),
-    );
+    applyDevRuntimeProfile(env, resolveDevRuntimeProfile(launcherMode, env));
   }
   return env;
-}
-
-export function shouldBootstrapDevClerkAuth(env) {
-  return (
-    env.PATCHBAY_DEV_MODE !== "hosted" &&
-    env.PATCHBAY_DEV_AUTH_READY !== "1"
-  );
 }
 
 function formatBytes(bytes) {
@@ -137,29 +148,43 @@ async function probeCliVersion(binaryPath, execImpl) {
 }
 
 async function probeRuntimeDetection(binaryPath, env, execImpl) {
-  const configRoot = await mkdtemp(join(tmpdir(), "patchbay-dev-doctor-"));
-  try {
-    const { stdout } = await execImpl(
-      binaryPath,
-      ["daemon", "probe-runtimes", "--profile", "desktop-dev-doctor"],
-      {
-        timeout: 15_000,
-        env: {
-          ...env,
-          PATCHBAY_TASK_CONFIG_ROOT: configRoot,
-        },
-      },
+  // `daemon probe-runtimes` is a host-local, read-only command. Do not set
+  // PATCHBAY_TASK_CONFIG_ROOT here: the CLI reserves that marker for an
+  // actual daemon-managed task and correctly rejects human-local commands in
+  // that context. The explicit doctor profile has no write path, while using
+  // the caller's normal HOME preserves login-shell and app-bundle discovery.
+  const { stdout } = await execImpl(
+    binaryPath,
+    ["daemon", "probe-runtimes", "--profile", "desktop-dev-doctor"],
+    {
+      timeout: 15_000,
+      env,
+    },
+  );
+  const parsed = JSON.parse(stdout);
+  if (parsed.probe_result !== "success") {
+    throw new Error(
+      `runtime probe returned ${parsed.probe_result || "unknown"}`,
     );
-    const parsed = JSON.parse(stdout);
-    if (parsed.probe_result !== "success") {
-      throw new Error(
-        `runtime probe returned ${parsed.probe_result || "unknown"}`,
-      );
-    }
-    return parsed;
-  } finally {
-    await rm(configRoot, { recursive: true, force: true });
   }
+  if (
+    !Number.isSafeInteger(parsed.runtime_count) ||
+    parsed.runtime_count < 0 ||
+    !parsed.provider_summary ||
+    typeof parsed.provider_summary !== "object" ||
+    Array.isArray(parsed.provider_summary)
+  ) {
+    throw new Error("runtime probe returned a malformed discovery summary");
+  }
+  const providerCounts = Object.values(parsed.provider_summary);
+  if (
+    providerCounts.some((count) => !Number.isSafeInteger(count) || count < 0) ||
+    providerCounts.reduce((sum, count) => sum + count, 0) !==
+      parsed.runtime_count
+  ) {
+    throw new Error("runtime probe provider counts do not match runtime_count");
+  }
+  return parsed;
 }
 
 async function probeBackend(apiUrl, fetchImpl) {
@@ -227,6 +252,8 @@ export async function inspectDevEnvironment({
   const hosted = env.PATCHBAY_DEV_MODE === "hosted";
   const accountsUrl = accountsUrlFromEnv(env);
   const checks = [];
+  let backendReady = false;
+  let localAgentAvailable = false;
 
   const cache = await inspectDevRuntimeCache({ cacheRoot });
   const cargoCommand = resolveCargoCommand(env, platform);
@@ -261,6 +288,7 @@ export async function inspectDevEnvironment({
   let cliProbeRoot;
   let verifiedBinaryPath;
   let cliVerified = false;
+  let cliIdentityPending = false;
   try {
     manifest = JSON.parse(await readFile(manifestPath, "utf8"));
     if (
@@ -271,6 +299,30 @@ export async function inspectDevEnvironment({
       throw new Error(
         "manifest does not match current Rust source/target/profile",
       );
+    }
+    const expectedBuildEnvironment =
+      manifest.buildVariables?.environmentFingerprint;
+    if (
+      expectedBuildEnvironment &&
+      expectedBuildEnvironment !==
+        rustBuildEnvironmentFingerprint(env, rustTarget, "dev")
+    ) {
+      throw new Error("binary build environment does not match this checkout");
+    }
+    const manifestToolchain = manifest.toolchainIdentity;
+    if (!manifestToolchain || manifestToolchain === "unavailable") {
+      cliIdentityPending = true;
+    } else {
+      const cargoCommand = resolveCargoCommand(env, platform);
+      const currentToolchain = rustToolchainIdentity(env, cargoCommand, {
+        platform,
+        cwd: join(repoRoot, "server-rs"),
+      });
+      if (!currentToolchain) {
+        cliIdentityPending = true;
+      } else if (currentToolchain !== manifestToolchain) {
+        throw new Error("binary Rust toolchain does not match this checkout");
+      }
     }
     cliProbeRoot = await mkdtemp(join(tmpdir(), "patchbay-dev-cli-probe-"));
     const copiedBinaryPath = join(cliProbeRoot, binaryName);
@@ -288,19 +340,27 @@ export async function inspectDevEnvironment({
     checks.push({
       id: "cli",
       ok: true,
-      message: `source-matched dev CLI ${version} (${sourceFingerprint.slice(0, 12)})`,
+      ...(cliIdentityPending && { status: "pending" }),
+      message: cliIdentityPending
+        ? `source-matched dev CLI ${version} (${sourceFingerprint.slice(0, 12)}); Rust toolchain identity is not available, so cache compatibility is pending`
+        : `source-matched dev CLI ${version} (${sourceFingerprint.slice(0, 12)})`,
+      ...(cliIdentityPending && {
+        fix: "Install/activate the Rust toolchain used by this checkout, or rebuild the source-matched CLI with `pnpm dev`.",
+      }),
     });
   } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
     checks.push({
       id: "cli",
       ok: false,
-      message: `source-matched dev CLI unavailable: ${error.message}`,
+      message: `source-matched dev CLI unavailable: ${detail}`,
       fix: "Run `pnpm dev`; a cache miss will perform one incremental Rust dev build.",
     });
   }
 
   try {
     await probeBackend(apiUrl, fetchImpl);
+    backendReady = true;
     checks.push({
       id: "backend",
       ok: true,
@@ -309,12 +369,13 @@ export async function inspectDevEnvironment({
         : `backend and database ready at ${apiUrl}`,
     });
   } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
     checks.push({
       id: "backend",
       ok: false,
       message: hosted
-        ? `hosted API not ready at ${apiUrl}: ${error.message}`
-        : `backend/database not ready at ${apiUrl}: ${error.message}`,
+        ? `hosted API not ready at ${apiUrl}: ${detail}`
+        : `backend/database not ready at ${apiUrl}: ${detail}`,
       fix: hosted
         ? "Check https://api.aspectlylabs.com/healthz and retry `pnpm dev:hosted`."
         : "Use the complete `pnpm dev` entry; inspect the preceding migration/backend logs.",
@@ -330,10 +391,11 @@ export async function inspectDevEnvironment({
         message: `hosted accounts broker ready at ${accountsUrl}`,
       });
     } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
       checks.push({
         id: "accounts",
         ok: false,
-        message: `hosted accounts broker not ready at ${accountsUrl}: ${error.message}`,
+        message: `hosted accounts broker not ready at ${accountsUrl}: ${detail}`,
         fix: "Check https://accounts.aspectlylabs.com/readyz and retry `pnpm dev:hosted`.",
       });
     }
@@ -355,6 +417,7 @@ export async function inspectDevEnvironment({
         execImpl,
       );
       const providers = Object.keys(report.provider_summary || {});
+      localAgentAvailable = report.runtime_count > 0;
       checks.push({
         id: "agents",
         ok: true,
@@ -364,14 +427,31 @@ export async function inspectDevEnvironment({
             : "agent detection available; no supported local agent CLI was found",
       });
     } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
       checks.push({
         id: "agents",
         ok: false,
-        message: `agent detection probe failed: ${error.message}`,
+        message: `agent detection probe failed: ${detail}`,
         fix: "Rebuild the source-matched CLI with `pnpm dev`, then rerun `pnpm dev:doctor`.",
       });
     }
   }
+
+  const runtimePreflightReady = backendReady && localAgentAvailable;
+  checks.push({
+    id: "agent-roundtrip",
+    ok: true,
+    status: "pending",
+    preflightReady: runtimePreflightReady,
+    localAgentAvailable,
+    electronToManagedDaemonVerified: false,
+    managedDaemonToBackendVerified: false,
+    agentExecutionVerified: false,
+    message: runtimePreflightReady
+      ? "backend readiness and local agent discovery are ready; Electron → managed daemon → backend → agent execution round-trip is not verified by this pre-launch doctor"
+      : "Electron → managed daemon → backend → agent execution round-trip is not verified; one or more separately reported prerequisites are unavailable",
+    fix: "After Electron login, run `pnpm dev:acceptance` to create a disposable issue through the real Electron → daemon → backend → agent path and confirm the reply in the same window.",
+  });
 
   if (cliProbeRoot) {
     await rm(cliProbeRoot, { recursive: true, force: true });
@@ -381,30 +461,62 @@ export async function inspectDevEnvironment({
   const missingKeys = Object.entries(keyStatus)
     .filter(([, configured]) => !configured)
     .map(([key]) => key);
+  const providerStatus = {
+    telegram: {
+      encryptionKeyConfigured: keyStatus.PATCHBAY_TELEGRAM_SECRET_KEY,
+      credentialKind: "BotFather token",
+      providerCredentialStatus: "not_verified",
+      messageRoundTripStatus: "not_verified",
+    },
+    weixin: {
+      encryptionKeyConfigured: keyStatus.PATCHBAY_WEIXIN_SECRET_KEY,
+      credentialKind: "iLink QR authorization",
+      providerCredentialStatus: "not_verified",
+      messageRoundTripStatus: "not_verified",
+    },
+  };
   checks.push(
     missingKeys.length === 0
       ? {
           id: "integrations",
           ok: true,
+          status: "pending",
+          providerAccountsVerified: false,
+          messageRoundTripsVerified: false,
+          providers: providerStatus,
           message:
-            "all six messaging integrations have local credential encryption; account credentials remain UI-supplied",
+            "credential encryption is ready; Telegram BotFather and WeChat iLink credentials are not verified, and neither message round-trip has been run",
+          fix: "After Electron login, run `pnpm dev:acceptance -- --provider telegram` or `pnpm dev:acceptance -- --provider weixin`; each command requires the corresponding Settings connection and a real passed test message.",
         }
       : {
           id: "integrations",
           ok: false,
+          providers: providerStatus,
           message: `integration encryption configuration missing/invalid: ${missingKeys.join(", ")}`,
           fix: "Run `pnpm dev`; it generates local-only keys in the checkout env file without logging them.",
         },
   );
 
-  return { apiUrl, binaryPath, checks, ok: checks.every((check) => check.ok) };
+  return {
+    apiUrl,
+    binaryPath,
+    checks,
+    ...summarizeDevEnvironmentChecks(checks),
+  };
 }
 
 export function printDevEnvironmentReport(report, log = console) {
   for (const check of report.checks) {
-    const method = check.ok ? "log" : "error";
-    log[method](`${check.ok ? "✓" : "✗"} ${check.message}`);
+    const pending = check.ok && check.status === "pending";
+    const method = check.ok ? (pending ? "warn" : "log") : "error";
+    const symbol = check.ok ? (pending ? "!" : "✓") : "✗";
+    log[method](`${symbol} ${check.message}`);
     if (check.fix) log[method](`  Fix: ${check.fix}`);
+  }
+  if (report.ok && report.acceptanceOk === false) {
+    log.warn(
+      "! Development runtime prerequisites are ready, but one or more acceptance checks remain pending.",
+    );
   }
 }
 
@@ -413,18 +525,38 @@ async function main() {
   const env = loadDoctorEnvironment({
     mode: process.argv.includes("--hosted") ? "hosted" : undefined,
   });
-  let inspectionEnv = env;
-  if (shouldBootstrapDevClerkAuth(env)) {
-    const auth = await bootstrapDevClerkAuth({ env });
-    console.log(
-      `✓ Clerk development authentication ready for ${auth.authorizedParties} (${auth.source})`,
-    );
-    inspectionEnv = withoutDevClerkEnvironment({
-      ...env,
-      ...auth.authEnv,
+  const preflightChecks = [nodeRuntimeCheck()];
+  if (env.PATCHBAY_DEV_MODE !== "hosted") {
+    try {
+      const auth = await bootstrapDevClerkAuth({ env });
+      preflightChecks.push({
+        id: "clerk",
+        ok: true,
+        message: `Clerk development authentication ready for ${auth.authorizedParties} (${auth.source})`,
+      });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      preflightChecks.push({
+        id: "clerk",
+        ok: false,
+        message: `Clerk development authentication unavailable: ${detail}`,
+        fix: "Authenticate gcloud for Secret Manager access, or provide the complete Clerk development variables in the process environment; never write them to .env files.",
+      });
+    }
+  } else {
+    preflightChecks.push({
+      id: "clerk",
+      ok: true,
+      status: "pending",
+      message:
+        "Hosted mode delegates authentication to the hosted account origin",
     });
   }
-  const report = await inspectDevEnvironment({ env: inspectionEnv });
+  const report = await inspectDevEnvironment({
+    env: withoutDevClerkEnvironment(env),
+  });
+  report.checks.unshift(...preflightChecks);
+  Object.assign(report, summarizeDevEnvironmentChecks(report.checks));
   printDevEnvironmentReport(report);
   if (!report.ok && !warnOnly) process.exitCode = 1;
 }
@@ -434,7 +566,8 @@ if (
   import.meta.url === pathToFileURL(process.argv[1]).href
 ) {
   main().catch((error) => {
-    console.error(`✗ Desktop development doctor failed: ${error.message}`);
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error(`✗ Desktop development doctor failed: ${detail}`);
     process.exitCode = 1;
   });
 }

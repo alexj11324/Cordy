@@ -22,6 +22,18 @@ import { weixinInstallationsOptions, weixinKeys } from "@patchbay/core/weixin";
 import { WeixinMark } from "./weixin-mark";
 import { useT } from "../../i18n";
 
+function providerErrorDetail(error: unknown): string | null {
+  const detail = error instanceof Error ? error.message.trim() : "";
+  if (!detail) return null;
+  return detail
+    .replace(
+      /(token|secret|authorization)\s*[:=]\s*(?:bearer\s+)?[^\s,;]+/gi,
+      "$1=[redacted]",
+    )
+    .replace(/\bbearer\s+[^\s,;]+/gi, "bearer [redacted]")
+    .slice(0, 240);
+}
+
 export function WeixinTab({ installationId }: { installationId?: string } = {}) {
   const { t } = useT("settings");
   const wsId = useWorkspaceId();
@@ -39,8 +51,11 @@ export function WeixinTab({ installationId }: { installationId?: string } = {}) 
       await qc.invalidateQueries({ queryKey: weixinKeys.installations(wsId) });
       toast.success(t(($) => $.weixin.disconnected));
     } catch (error) {
+      const detail = providerErrorDetail(error);
       toast.error(
-        error instanceof Error ? error.message : t(($) => $.weixin.connect_failed),
+        detail
+          ? t(($) => $.weixin.connect_failed_detail, { details: detail })
+          : t(($) => $.weixin.connect_failed),
       );
     }
   }
@@ -128,6 +143,7 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
   } | null>(null);
   const [status, setStatus] = useState("pending");
   const [verifyCode, setVerifyCode] = useState("");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const existing = data?.installations.find(
     (item) =>
       (agentId ? item.agent_id === agentId : item.agent_id === null) &&
@@ -141,6 +157,7 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
       .beginWeixinInstall(wsId, agentId)
       .then((value) => {
         if (!cancelled) {
+          setErrorMessage(null);
           setSession({
             id: value.session_id,
             qr: value.qr_code_url,
@@ -150,10 +167,13 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
       })
       .catch((error: unknown) => {
         if (!cancelled) {
+          const detail = providerErrorDetail(error);
+          const message = detail
+            ? t(($) => $.weixin.connect_failed_detail, { details: detail })
+            : t(($) => $.weixin.connect_failed);
           setStatus("error");
-          toast.error(
-            error instanceof Error ? error.message : t(($) => $.weixin.connect_failed),
-          );
+          setErrorMessage(message);
+          toast.error(message);
         }
       });
     return () => {
@@ -182,13 +202,19 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
         setStatus(result.status);
         if (result.status === "success") {
           await qc.invalidateQueries({ queryKey: weixinKeys.installations(wsId) });
-          toast.success(t(($) => $.weixin.connected));
+          toast.success(t(($) => $.page.integrations_pending_verification));
           setOpen(false);
           return;
         }
-      } catch {
+      } catch (error: unknown) {
         if (!cancelled) {
+          const detail = providerErrorDetail(error);
           setStatus("error");
+          setErrorMessage(
+            detail
+              ? t(($) => $.weixin.connect_failed_detail, { details: detail })
+              : t(($) => $.weixin.connect_failed),
+          );
           return;
         }
       }
@@ -211,10 +237,19 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
 
   if (!data?.install_supported) return null;
   if (existing) {
+    const verified = existing.round_trip_status === "passed";
     return (
       <div className="flex items-center gap-2">
-        <span className="text-caption text-emerald-600">
-          {t(($) => $.weixin.connected)}
+        <span
+          className={
+            verified
+              ? "text-caption text-emerald-600"
+              : "text-caption text-amber-600"
+          }
+        >
+          {verified
+            ? t(($) => $.weixin.connected)
+            : t(($) => $.page.integrations_pending_verification)}
         </span>
         <Button
           variant="outline"
@@ -227,9 +262,10 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
               });
               toast.success(t(($) => $.weixin.disconnected));
             } catch (error) {
+              const detail = providerErrorDetail(error);
               toast.error(
-                error instanceof Error
-                  ? error.message
+                detail
+                  ? t(($) => $.weixin.connect_failed_detail, { details: detail })
                   : t(($) => $.weixin.connect_failed),
               );
             }
@@ -258,6 +294,7 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
           setSession(null);
           setStatus("pending");
           setVerifyCode("");
+          setErrorMessage(null);
           setOpen(true);
         }}
       >
@@ -280,6 +317,11 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
             <p className="text-caption text-muted-foreground">
               {t(($) => $.weixin.status, { status: statusLabel })}
             </p>
+            {errorMessage ? (
+              <p className="text-caption text-destructive" role="alert">
+                {errorMessage}
+              </p>
+            ) : null}
             {status === "need_verify_code" ? (
               <Input
                 value={verifyCode}

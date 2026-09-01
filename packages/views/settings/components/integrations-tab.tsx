@@ -62,6 +62,9 @@ type InstallationSummary = {
   id: string;
   agent_id: string | null;
   status: string;
+  /** The backend only marks a provider as verified after a real message
+   * round-trip. Older responses omit this field and therefore remain pending. */
+  round_trip_status?: string;
 };
 
 type InstallationListing = {
@@ -90,6 +93,7 @@ type HubActionProps = {
   isGuest: boolean;
   query: IntegrationQuery;
   installationId?: string;
+  requiresRoundTrip?: boolean;
   reconnectSupported?: boolean;
   onDisconnect: () => void;
   onManage: () => void;
@@ -109,7 +113,24 @@ function hasActiveInstallation(listing: InstallationListing | undefined) {
   return listing?.installations.some((installation) => installation.status === "active") ?? false;
 }
 
-function ConnectionStatus({ query }: { query: IntegrationQuery }) {
+function hasVerifiedHub(listing: InstallationListing | undefined) {
+  return (
+    listing?.installations.some(
+      (installation) =>
+        installation.agent_id === null &&
+        installation.status === "active" &&
+        installation.round_trip_status === "passed",
+    ) ?? false
+  );
+}
+
+function ConnectionStatus({
+  query,
+  requiresRoundTrip,
+}: {
+  query: IntegrationQuery;
+  requiresRoundTrip: boolean;
+}) {
   const { t } = useT("settings");
   if (query.isLoading) {
     return (
@@ -134,11 +155,26 @@ function ConnectionStatus({ query }: { query: IntegrationQuery }) {
       </div>
     );
   }
-  if (hasActiveHub(query.data)) {
+  if (!requiresRoundTrip && hasActiveHub(query.data)) {
     return (
       <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">
         <CheckCircle2 />
         {t(($) => $.page.integrations_connected)}
+      </Badge>
+    );
+  }
+  if (requiresRoundTrip && hasVerifiedHub(query.data)) {
+    return (
+      <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">
+        <CheckCircle2 />
+        {t(($) => $.page.integrations_connected)}
+      </Badge>
+    );
+  }
+  if (requiresRoundTrip && hasActiveHub(query.data)) {
+    return (
+      <Badge variant="outline">
+        {t(($) => $.page.integrations_pending_verification)}
       </Badge>
     );
   }
@@ -172,10 +208,12 @@ function HubAction({
   onManage,
   onReconnect,
   query,
+  requiresRoundTrip = false,
   reconnectSupported = true,
 }: HubActionProps) {
   const { t } = useT("settings");
   const hubConnected = hasActiveHub(query.data);
+  const hubVerified = hasVerifiedHub(query.data);
   const installationConnected = hasActiveInstallation(query.data);
 
   // A guest may own its temporary workspace, but external platform
@@ -191,11 +229,13 @@ function HubAction({
   }
 
   if (!canManage) {
+    const hubStatus =
+      requiresRoundTrip && hubConnected && !hubVerified
+        ? t(($) => $.page.integrations_pending_verification)
+        : t(($) => $.page.integrations_connected);
     return (
       <span className="text-caption text-muted-foreground">
-        {hubConnected
-          ? t(($) => $.page.integrations_connected)
-          : t(($) => $.page.integrations_admin_only)}
+        {hubConnected ? hubStatus : t(($) => $.page.integrations_admin_only)}
       </span>
     );
   }
@@ -502,13 +542,23 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
                 title={title}
                 description={description}
                 iconClassName={iconClassName}
-                status={<ConnectionStatus query={query} />}
+                status={
+                  <ConnectionStatus
+                    query={query}
+                    requiresRoundTrip={
+                      channel === "telegram" || channel === "weixin"
+                    }
+                  />
+                }
                 action={
                   <HubAction
                     canManage={canManage}
                     isGuest={isGuest}
                     query={query}
                     installationId={hub?.id}
+                    requiresRoundTrip={
+                      channel === "telegram" || channel === "weixin"
+                    }
                     reconnectSupported={channel !== "lark" || larkHubRegion !== "lark"}
                     onManage={() => {
                       setManagedChannel(channel);

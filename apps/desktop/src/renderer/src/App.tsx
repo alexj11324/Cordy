@@ -30,6 +30,7 @@ import { DiagnosticRouteReporter } from "./platform/diagnostic-route-reporter";
 import { flushFreezeBreadcrumb } from "./freeze-flush";
 import { DesktopAuthSessionBridge } from "./platform/auth-session-bridge";
 import { completeDesktopHandoff } from "./pages/login-handoff";
+import type { DaemonRecoveryReason } from "../../shared/daemon-types";
 
 // BCP-47 region tags for the <html lang> attribute, mirroring
 // apps/web/app/layout.tsx HTML_LANG. index.html ships a static lang="en";
@@ -103,11 +104,12 @@ function IssueWindowContent() {
   return user ? <IssueWindow context={context} /> : <DesktopLoginPage />;
 }
 
-function AppContent() {
+export function AppContent() {
   const user = useAuthStore((s) => s.user);
   const isLoading = useAuthStore((s) => s.isLoading);
   const authStatus = useAuthStore((s) => s.status);
   const qc = useQueryClient();
+  const isElectronRenderer = window.desktopAPI.host === "electron";
 
   // Deep-link login runs loginWithToken → syncToken → listWorkspaces →
   // setQueryData sequentially. loginWithToken sets user+isLoading=false
@@ -117,10 +119,24 @@ function AppContent() {
   // finishes, so IndexRedirect gets a definitive workspace state on
   // first render.
   const [bootstrapping, setBootstrapping] = useState(false);
+  const [daemonSyncRetry, setDaemonSyncRetry] = useState(0);
+  const [daemonSyncState, setDaemonSyncState] = useState<
+    "idle" | "pending" | "ready" | "error"
+  >(isElectronRenderer ? "pending" : "ready");
+  const [daemonSyncError, setDaemonSyncError] =
+    useState<DaemonRecoveryReason | null>(null);
+  // A ready state is only valid for the exact authenticated identity and
+  // backend target that produced it. Keeping the key beside the state closes
+  // the render/effect gap during account or target switches: the previous
+  // account's ready state cannot mount DesktopShell for even one frame.
+  const [daemonSyncedKey, setDaemonSyncedKey] = useState<string | null>(null);
+  const daemonSyncGeneration = useRef(0);
 
   const runtimeConfig = window.desktopAPI.runtimeConfig.ok
     ? window.desktopAPI.runtimeConfig.config
     : null;
+  const daemonIdentityKey =
+    user && runtimeConfig ? `${user.id}\u0000${runtimeConfig.apiUrl}` : null;
 
   // Tell the main process which backend URL we talk to, so daemon-manager
   // can pick the matching CLI profile (server_url from ~/.patchbay config).
@@ -178,10 +194,33 @@ function AppContent() {
   // Sync token and start the daemon whenever the user logs in. The ordering
   // inside syncDaemonOnLogin is load-bearing — see that module.
   useEffect(() => {
-    if (!user || !runtimeConfig) return;
+    const generation = ++daemonSyncGeneration.current;
+    if (!user) {
+      setDaemonSyncState("idle");
+      setDaemonSyncError(null);
+      setDaemonSyncedKey(null);
+      return;
+    }
+    if (!isElectronRenderer || !runtimeConfig) {
+      setDaemonSyncState("ready");
+      setDaemonSyncError(null);
+      setDaemonSyncedKey(daemonIdentityKey);
+      return;
+    }
     const token = localStorage.getItem("patchbay_token");
-    if (!token) return;
+    if (!token) {
+      // Token-mode Desktop sessions must have a renderer session token so the
+      // main process can mint the Desktop-owned daemon PAT. Do not mount the
+      // shell with a daemon that still belongs to another account.
+      setDaemonSyncState("error");
+      setDaemonSyncError("session_token_missing");
+      setDaemonSyncedKey(daemonIdentityKey);
+      return;
+    }
     const userId = user.id;
+    setDaemonSyncState("pending");
+    setDaemonSyncError(null);
+    setDaemonSyncedKey(null);
     (async () => {
       try {
         await syncDaemonOnLogin(
@@ -190,11 +229,36 @@ function AppContent() {
           token,
           userId,
         );
+        if (generation === daemonSyncGeneration.current) {
+          setDaemonSyncState("ready");
+          setDaemonSyncedKey(daemonIdentityKey);
+        }
       } catch (err) {
         console.error("Failed to sync daemon on login", err);
+        if (generation === daemonSyncGeneration.current) {
+          setDaemonSyncState("error");
+          const reason = (err as { reason?: unknown })?.reason;
+          setDaemonSyncError(
+            reason === "auto_start_disabled" ||
+              reason === "cli_not_found" ||
+              reason === "auth_expired" ||
+              reason === "start_failed" ||
+              reason === "not_ready"
+              ? reason
+              : "start_failed",
+          );
+          setDaemonSyncedKey(daemonIdentityKey);
+        }
       }
     })();
-  }, [user, runtimeConfig]);
+    return () => undefined;
+  }, [
+    user,
+    runtimeConfig,
+    daemonIdentityKey,
+    isElectronRenderer,
+    daemonSyncRetry,
+  ]);
 
   // When a user who started the session with zero workspaces creates their
   // first one, restart the daemon so it picks up the new workspace
@@ -332,11 +396,37 @@ function AppContent() {
   if (authStatus === "recovering") {
     return <DesktopAuthRecoveryPage />;
   }
-  if (isLoading || bootstrapping) {
+  const daemonReadyForCurrentIdentity =
+    !isElectronRenderer ||
+    !user ||
+    !runtimeConfig ||
+    (daemonSyncState === "ready" && daemonSyncedKey === daemonIdentityKey);
+  const daemonFailedForCurrentIdentity =
+    !!user &&
+    isElectronRenderer &&
+    !!runtimeConfig &&
+    daemonSyncState === "error" &&
+    daemonSyncedKey === daemonIdentityKey;
+
+  if (
+    isLoading ||
+    bootstrapping ||
+    (user && !daemonReadyForCurrentIdentity && !daemonFailedForCurrentIdentity)
+  ) {
     return (
       <div className="flex h-screen items-center justify-center">
         <PatchbayIcon className="size-6 animate-pulse" />
       </div>
+    );
+  }
+
+  if (user && daemonFailedForCurrentIdentity) {
+    return (
+      <DesktopAuthRecoveryPage
+        onRetry={() => setDaemonSyncRetry((attempt) => attempt + 1)}
+        isRetrying={false}
+        errorReason={daemonSyncError ?? undefined}
+      />
     );
   }
 
@@ -376,24 +466,21 @@ function BlockingRuntimeConfigError({ message }: { message: string }) {
 // useLogout clears the storage key, but the live stores stay populated until
 // we explicitly reset them here.
 async function handleDaemonLogout() {
-  // Report synchronously before async daemon cleanup so a rapidly closed main
-  // window cannot leave authenticated issue renderers behind.
+  // The main-process clear-token operation owns one queue transaction: it
+  // stops the current Desktop daemon, then removes its credentials. Keeping
+  // this await before publishing `user=null` prevents a new login from
+  // interleaving between stop and clear; failures leave the authenticated
+  // session visible and retryable instead of silently abandoning the daemon.
+  await window.daemonAPI.clearToken();
+
+  // Report only after cleanup succeeds so issue windows never lose the session
+  // while the old daemon is still running.
   window.desktopAPI.reportAuthSession?.(null);
   useTabStore.getState().reset();
   useWindowOverlayStore.getState().close();
   // Drop any post-onboarding welcome signal so user B logging in next
   // doesn't inherit user A's pending modal state.
   useWelcomeStore.getState().reset();
-  try {
-    await window.daemonAPI.clearToken();
-  } catch {
-    // Best-effort — clearing is followed by stop which also hardens state.
-  }
-  try {
-    await window.daemonAPI.stop();
-  } catch {
-    // Daemon may already be stopped.
-  }
 }
 
 export default function App() {

@@ -14,6 +14,7 @@ import type {
 import type {
   DaemonStatus,
   DaemonPrefs,
+  DaemonAutoStartResult,
   LocalRuntimeProbe,
 } from "../shared/daemon-types";
 
@@ -160,11 +161,12 @@ interface DaemonAPI {
   isCliInstalled: () => Promise<boolean>;
   getPrefs: () => Promise<DaemonPrefs>;
   setPrefs: (prefs: Partial<DaemonPrefs>) => Promise<DaemonPrefs>;
-  autoStart: () => Promise<void>;
+  autoStart: () => Promise<DaemonAutoStartResult>;
   retryInstall: () => Promise<void>;
   startLogStream: () => void;
   stopLogStream: () => void;
   onLogLine: (callback: (line: string) => void) => () => void;
+  onLogReset: (callback: () => void) => () => void;
   openLogFile: () => Promise<{ success: boolean; error?: string }>;
 }
 

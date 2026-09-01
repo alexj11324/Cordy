@@ -258,6 +258,12 @@ fn public_config(provider: Provider, config: &Value) -> Value {
 }
 
 fn installation_response(provider: Provider, row: ChannelInstallation) -> Value {
+    // `status: active` only means that the provider credential/authorization
+    // was accepted during installation. It does not prove that the channel
+    // runtime is receiving messages or that an Agent reply made a round trip.
+    // Keep those facts explicit so clients cannot render a green "Connected"
+    // badge from an installation row alone.
+    let verification = matches!(provider, Provider::Telegram | Provider::Weixin);
     let mut value = json!({
         "id": row.id,
         "workspace_id": row.workspace_id,
@@ -268,6 +274,29 @@ fn installation_response(provider: Provider, row: ChannelInstallation) -> Value 
         "created_at": crate::timefmt::rfc3339(row.created_at),
         "updated_at": crate::timefmt::rfc3339(row.updated_at),
     });
+    if verification {
+        let active = row.status == "active";
+        let round_trip_passed = active && round_trip_passed(&row.config);
+        value["credential_status"] = json!(if active { "verified" } else { "not_verified" });
+        // A successful provider round trip is a historical verification fact;
+        // it is not a live daemon heartbeat or provider probe. Keep runtime
+        // health fail-closed until a current runtime signal is available.
+        value["runtime_status"] = json!("unknown");
+        value["round_trip_status"] = json!(if round_trip_passed {
+            "passed"
+        } else if active {
+            "not_run"
+        } else {
+            "not_applicable"
+        });
+        value["required_action"] = json!(if round_trip_passed {
+            "none"
+        } else if active {
+            "send_test_message"
+        } else {
+            "reconnect"
+        });
+    }
     if let (Some(target), Some(fields)) = (
         value.as_object_mut(),
         public_config(provider, &row.config).as_object(),
@@ -275,6 +304,15 @@ fn installation_response(provider: Provider, row: ChannelInstallation) -> Value 
         target.extend(fields.clone());
     }
     value
+}
+
+fn round_trip_passed(config: &Value) -> bool {
+    config
+        .get("verification")
+        .and_then(Value::as_object)
+        .and_then(|verification| verification.get("round_trip_status"))
+        .and_then(Value::as_str)
+        == Some("passed")
 }
 
 async fn list(state: HandlerState, context: WorkspaceContext, provider: Provider) -> Response {
@@ -669,7 +707,11 @@ async fn weixin_install_status(
         Ok(value) => value,
         Err(error) => {
             tracing::warn!(%error, "failed to poll WeChat QR status");
-            return Json(json!({"status": "pending"})).into_response();
+            return error_code_response(
+                StatusCode::BAD_GATEWAY,
+                "weixin_provider_unreachable",
+                "could not reach WeChat while checking authorization; retry or check the server network",
+            );
         }
     };
     match status.status.as_str() {
@@ -2509,6 +2551,90 @@ mod tests {
             assert!(!encoded.contains("encrypted"));
             assert!(!encoded.contains("cipher"));
         }
+    }
+
+    #[test]
+    fn provider_installation_response_keeps_message_verification_explicit() {
+        let now = Utc::now();
+        let row = ChannelInstallation {
+            agent_id: None,
+            channel_type: Provider::Telegram.channel_type().into(),
+            config: json!({}),
+            created_at: now,
+            id: Uuid::new_v4(),
+            installed_at: now,
+            installer_user_id: Uuid::new_v4(),
+            status: "active".into(),
+            updated_at: now,
+            workspace_id: Uuid::new_v4(),
+            ws_lease_expires_at: None,
+            ws_lease_token: None,
+        };
+
+        let value = installation_response(Provider::Telegram, row);
+        assert_eq!(value["credential_status"], "verified");
+        assert_eq!(value["runtime_status"], "unknown");
+        assert_eq!(value["round_trip_status"], "not_run");
+        assert_eq!(value["required_action"], "send_test_message");
+    }
+
+    #[test]
+    fn provider_installation_response_reports_a_recorded_round_trip() {
+        let now = Utc::now();
+        let row = ChannelInstallation {
+            agent_id: None,
+            channel_type: Provider::Weixin.channel_type().into(),
+            config: json!({
+                "verification": {
+                    "round_trip_status": "passed",
+                    "verified_at": now,
+                }
+            }),
+            created_at: now,
+            id: Uuid::new_v4(),
+            installed_at: now,
+            installer_user_id: Uuid::new_v4(),
+            status: "active".into(),
+            updated_at: now,
+            workspace_id: Uuid::new_v4(),
+            ws_lease_expires_at: None,
+            ws_lease_token: None,
+        };
+
+        let value = installation_response(Provider::Weixin, row);
+        assert_eq!(value["credential_status"], "verified");
+        assert_eq!(value["runtime_status"], "unknown");
+        assert_eq!(value["round_trip_status"], "passed");
+        assert_eq!(value["required_action"], "none");
+    }
+
+    #[test]
+    fn revoked_installation_never_reports_a_healthy_round_trip() {
+        let now = Utc::now();
+        let row = ChannelInstallation {
+            agent_id: None,
+            channel_type: Provider::Telegram.channel_type().into(),
+            config: json!({
+                "verification": {
+                    "round_trip_status": "passed",
+                    "verified_at": now,
+                }
+            }),
+            created_at: now,
+            id: Uuid::new_v4(),
+            installed_at: now,
+            installer_user_id: Uuid::new_v4(),
+            status: "revoked".into(),
+            updated_at: now,
+            workspace_id: Uuid::new_v4(),
+            ws_lease_expires_at: None,
+            ws_lease_token: None,
+        };
+
+        let value = installation_response(Provider::Telegram, row);
+        assert_eq!(value["runtime_status"], "unknown");
+        assert_eq!(value["round_trip_status"], "not_applicable");
+        assert_eq!(value["required_action"], "reconnect");
     }
 
     #[test]

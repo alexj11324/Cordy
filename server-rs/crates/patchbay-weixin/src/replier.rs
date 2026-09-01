@@ -24,14 +24,21 @@ const ISSUE_USAGE: &str =
 pub struct OutboundReplier {
     pool: sqlx::PgPool,
     decrypt: Option<Arc<DecrypterFn>>,
+    bus: std::sync::Weak<patchbay_events::Bus>,
     app_url: String,
 }
 
 impl OutboundReplier {
-    pub fn new(pool: sqlx::PgPool, decrypt: Option<Arc<DecrypterFn>>, app_url: String) -> Self {
+    pub fn new(
+        pool: sqlx::PgPool,
+        decrypt: Option<Arc<DecrypterFn>>,
+        bus: Arc<patchbay_events::Bus>,
+        app_url: String,
+    ) -> Self {
         Self {
             pool,
             decrypt,
+            bus: Arc::downgrade(&bus),
             app_url: app_url.trim_end_matches('/').to_string(),
         }
     }
@@ -48,12 +55,23 @@ impl OutboundReplier {
             .platform
             .downcast_ref::<patchbay_db::models::ChannelInstallation>()
             .ok_or_else(|| anyhow::anyhow!("weixin installation row unavailable"))?;
+        let installed_at = row.installed_at.clone();
         let credentials = decode_credentials(&row.config, self.decrypt.as_deref())?;
         let client = Client::new(&credentials.base_url, &credentials.bot_token)?;
-        tokio::select! {
-            _ = ctx.cancelled() => Ok(()),
+        let result = tokio::select! {
+            _ = ctx.cancelled() => return Ok(()),
             result = client.send_text(&message.source.sender_id, &raw.context_token, text) => result,
+        };
+        if result.is_ok() {
+            crate::verification::record_round_trip(
+                &self.pool,
+                &self.bus,
+                installation.id,
+                installed_at,
+            )
+            .await;
         }
+        result
     }
 
     async fn binding_prompt(

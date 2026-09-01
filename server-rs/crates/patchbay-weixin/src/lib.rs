@@ -12,5 +12,6 @@ pub mod install;
 pub mod outbound;
 pub mod replier;
 pub mod resolvers;
+mod verification;
 
 pub const TYPE_WEIXIN: &str = "weixin";

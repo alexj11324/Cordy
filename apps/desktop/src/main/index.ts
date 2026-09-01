@@ -64,6 +64,7 @@ import {
   NotificationGate,
   parseNativeNotificationPayload,
 } from "./notification-gate";
+import { resolveDevAcceptanceCdpPort } from "./dev-acceptance-cdp";
 
 // Guards against registering the will-download handler more than once on the
 // same session. window.webContents.session is shared, and createWindow() can
@@ -119,6 +120,31 @@ if (process.platform !== "win32") {
     join(homedir(), ".local/bin"),
   ];
   process.env.PATH = `${fallbackPaths.join(":")}:${process.env.PATH ?? ""}`;
+}
+
+// The complete development acceptance runner needs a narrow control plane so
+// it can drive the *real* Electron renderer after a normal user login. Keep
+// this opt-in and loopback-only: ordinary `pnpm dev`, packaged builds, and
+// release builds never expose Chromium's remote debugging endpoint. Chromium's
+// CDP listener has no application-level authentication, so the acceptance
+// command is only safe on a trusted local machine and must never be forwarded.
+const devAcceptanceCdpPort = resolveDevAcceptanceCdpPort({
+  isDev: is.dev,
+  isPackaged: app.isPackaged,
+  enabled: process.env.VITE_PATCHBAY_DEV_ACCEPTANCE,
+  port:
+    process.env.VITE_PATCHBAY_DEV_ACCEPTANCE_CDP_PORT ??
+    process.env.PATCHBAY_DEV_ACCEPTANCE_CDP_PORT,
+});
+if (devAcceptanceCdpPort !== null) {
+  app.commandLine.appendSwitch("remote-debugging-address", "127.0.0.1");
+  app.commandLine.appendSwitch(
+    "remote-debugging-port",
+    String(devAcceptanceCdpPort),
+  );
+  console.info(
+    `[dev:acceptance] Electron CDP enabled on 127.0.0.1:${devAcceptanceCdpPort}`,
+  );
 }
 
 const PROTOCOL = "patchbay";

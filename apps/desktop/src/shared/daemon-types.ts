@@ -39,6 +39,39 @@ export interface DaemonPrefs {
   autoStop: boolean;
 }
 
+/** Stable reasons for a blocked complete Desktop startup. */
+export type DaemonAutoStartFailureReason =
+  | "auto_start_disabled"
+  | "cli_not_found"
+  | "auth_expired"
+  | "start_failed"
+  | "not_ready";
+
+export type DaemonRecoveryReason =
+  | DaemonAutoStartFailureReason
+  | "session_token_missing";
+
+/**
+ * Result of the login-time daemon bootstrap.  A resolved IPC call is not
+ * evidence that the daemon started: the CLI may be missing, auto-start may be
+ * disabled, or the supervisor may have failed before /health became ready.
+ * Keeping the state and actionable error on the boundary prevents the
+ * renderer from mounting a seemingly complete UI with no executable runtime.
+ */
+export type DaemonAutoStartResult =
+  | {
+      success: true;
+      state: "running" | "starting";
+      profile?: string;
+    }
+  | {
+      success: false;
+      state: DaemonState;
+      reason: DaemonAutoStartFailureReason;
+      error: string;
+      profile?: string;
+    };
+
 export type LocalRuntimeProbe =
   | {
       probeResult: "success";

@@ -31,9 +31,16 @@ export async function runDevRuntimeCommand({
   listComponents = devRuntimeComponents,
   spawnImpl = spawn,
 } = {}) {
-  loadCheckoutEnv({ repoRoot, env });
-  const authInput = { ...env };
-  const runtimeEnv = withoutDevClerkEnvironment(env);
+  // Make passes ENV_FILE for its individual runtime targets. Convert that
+  // explicit choice into the complete-dev loader's single override name while
+  // keeping the launcher itself strict about ignoring generic ENV_FILE.
+  const runtimeInputEnv = { ...env };
+  if (!runtimeInputEnv.PATCHBAY_DEV_ENV_FILE && runtimeInputEnv.ENV_FILE) {
+    runtimeInputEnv.PATCHBAY_DEV_ENV_FILE = runtimeInputEnv.ENV_FILE;
+  }
+  loadCheckoutEnv({ repoRoot, env: runtimeInputEnv });
+  const authInput = { ...runtimeInputEnv };
+  const runtimeEnv = withoutDevClerkEnvironment(runtimeInputEnv);
   await prepareRuntime({ repoRoot, env: runtimeEnv, platform, arch });
   const auth =
     componentId === "backend"

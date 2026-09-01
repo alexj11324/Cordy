@@ -261,8 +261,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: macos-release-cargo-${{ runner.os }}-${{ runner.arch }}-${{ matrix.rust_target }}-${{ hashFiles('server-rs/Cargo.lock') }}
-          restore-keys: macos-release-cargo-${{ runner.os }}-${{ runner.arch }}-${{ matrix.rust_target }}-
+          key: macos-release-cargo-${{ runner.os }}-${{ runner.arch }}-${{ matrix.rust_target }}-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('server-rs/Cargo.lock') }}
+          restore-keys: macos-release-cargo-${{ runner.os }}-${{ runner.arch }}-${{ matrix.rust_target }}-${{ hashFiles('rust-toolchain.toml') }}-
 
       - name: Enable target-scoped compiler cache
         uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11

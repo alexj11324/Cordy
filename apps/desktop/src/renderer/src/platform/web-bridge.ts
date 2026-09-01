@@ -1,5 +1,10 @@
 import { runtimeConfigFromDevEnv } from "../../../shared/runtime-config";
-import type { DaemonPrefs, DaemonStatus, LocalRuntimeProbe } from "../../../shared/daemon-types";
+import type {
+  DaemonAutoStartResult,
+  DaemonPrefs,
+  DaemonStatus,
+  LocalRuntimeProbe,
+} from "../../../shared/daemon-types";
 import type { NavigationGesture } from "../../../shared/navigation-gestures";
 import type { IssueWindowRequest } from "../../../shared/issue-window";
 
@@ -188,11 +193,17 @@ export function installWebDesktopBridge(): boolean {
       ...BROWSER_DAEMON_PREFS,
       ...prefs,
     }),
-    autoStart: async () => undefined,
+    autoStart: async (): Promise<DaemonAutoStartResult> => ({
+      success: false,
+      state: "stopped",
+      reason: "start_failed",
+      error: BROWSER_RENDERER_ERROR,
+    }),
     retryInstall: async () => undefined,
     startLogStream: () => undefined,
     stopLogStream: () => undefined,
     onLogLine: (_callback: (line: string) => void) => noopUnsubscribe(),
+    onLogReset: (_callback: () => void) => noopUnsubscribe(),
     openLogFile: async () => ({
       success: false,
       error: BROWSER_RENDERER_ERROR,

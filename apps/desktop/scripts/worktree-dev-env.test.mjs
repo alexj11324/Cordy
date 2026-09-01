@@ -7,6 +7,7 @@ import {
   appSuffixForPath,
   applyWorktreeDevEnv,
   cksum,
+  checkoutIdentity,
   offsetForPath,
   rendererPortForPath,
 } from "./worktree-dev-env.mjs";
@@ -71,15 +72,17 @@ describe("worktree-dev-env", () => {
     expect(ports.has(5173)).toBe(false);
   });
 
-  it("suffix is '<folder>-<offset>' so it stays recognizable and unique", () => {
+  it("suffix includes the checkout identity so it stays recognizable and unique", () => {
     expect(appSuffixForPath("/work/PB-3724_Desktop")).toBe(
-      `pb-3724-desktop-${offsetForPath("/work/PB-3724_Desktop")}`,
+      `pb-3724-desktop-${checkoutIdentity("/work/PB-3724_Desktop").slice(0, 8)}-${offsetForPath("/work/PB-3724_Desktop")}`,
     );
     expect(appSuffixForPath("/work/feat/some thing")).toBe(
-      `some-thing-${offsetForPath("/work/feat/some thing")}`,
+      `some-thing-${checkoutIdentity("/work/feat/some thing").slice(0, 8)}-${offsetForPath("/work/feat/some thing")}`,
     );
-    // empty/non-ascii slug falls back to "worktree", still disambiguated by offset
-    expect(appSuffixForPath("/work/___")).toBe(`worktree-${offsetForPath("/work/___")}`);
+    // empty/non-ascii slug falls back to "worktree", still disambiguated by identity
+    expect(appSuffixForPath("/work/___")).toBe(
+      `worktree-${checkoutIdentity("/work/___").slice(0, 8)}-${offsetForPath("/work/___")}`,
+    );
   });
 
   it("disambiguates worktrees that share a folder name at different paths", () => {
