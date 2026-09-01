@@ -621,10 +621,24 @@ struct WireGate {
     action: String,
     /// `None` means the field was omitted; `Some(None)` is an explicit JSON
     /// null and is the only representation of an unlimited IM gate.
+    #[serde(default, deserialize_with = "deserialize_double_option_i64")]
     limit: Option<Option<i64>>,
     period_start: Option<DateTime<Utc>>,
     period_end: Option<DateTime<Utc>>,
     reset_at: Option<DateTime<Utc>>,
+}
+
+/// Preserve the distinction between an omitted JSON field and an explicit
+/// `null`. Serde's default nested `Option` implementation maps both forms to
+/// `None`, but entitlement policy uses the distinction to make unlimited IM
+/// capacity an explicit, auditable decision rather than an accidental default.
+fn deserialize_double_option_i64<'de, D>(
+    deserializer: D,
+) -> Result<Option<Option<i64>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Some(Option::<i64>::deserialize(deserializer)?))
 }
 
 struct FetchedPolicy {
