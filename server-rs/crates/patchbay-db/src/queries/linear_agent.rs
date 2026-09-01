@@ -55,7 +55,11 @@ pub async fn upsert_linear_agent_session(
            last_event_id = EXCLUDED.last_event_id,\
            last_event_at_ms = EXCLUDED.last_event_at_ms,\
            updated_at = now() \
-         WHERE linear_agent_session.status NOT IN ('completed', 'failed', 'cancelled') \
+         WHERE (linear_agent_session.status NOT IN ('completed', 'failed', 'cancelled') \
+                OR (EXCLUDED.action = 'prompted' \
+                    AND EXCLUDED.last_event_at_ms IS NOT NULL \
+                    AND (linear_agent_session.last_event_at_ms IS NULL \
+                         OR EXCLUDED.last_event_at_ms > linear_agent_session.last_event_at_ms))) \
            AND (EXCLUDED.last_event_at_ms IS NULL \
             OR linear_agent_session.last_event_at_ms IS NULL \
             OR EXCLUDED.last_event_at_ms > linear_agent_session.last_event_at_ms \
@@ -250,9 +254,10 @@ pub async fn claim_linear_agent_session_terminal(
              AND connection_id = $2
              AND linear_session_id = $3
              AND status NOT IN ('completed', 'failed', 'cancelled')
-             AND status <> 'dispatching'
-             AND status NOT LIKE 'dispatching:%'
-             AND (status NOT LIKE 'terminal_dispatching:%' OR status = $6 OR updated_at <= now() - interval '60 seconds')
+             AND ((status <> 'dispatching' AND status NOT LIKE 'dispatching:%')
+                  OR updated_at <= now() - interval '60 seconds')
+             AND ((status <> 'terminal_dispatching' AND status NOT LIKE 'terminal_dispatching:%')
+                  OR status = $6 OR updated_at <= now() - interval '60 seconds')
              AND ($5 IS NULL OR last_event_at_ms IS NULL OR $5 > last_event_at_ms OR last_event_id = $4)"#,
     )
     .bind(workspace_id)

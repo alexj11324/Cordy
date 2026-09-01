@@ -31,8 +31,9 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::linear::{
-    strip_patchbay_issue_marker, LinearIssueCreateInput, LinearIssueUpdateInput, LinearRemoteIssue,
-    LinearRemoteLabel, LinearRemoteUser, LinearTokenError, LinearTokenManager,
+    agent_label_mapping_matches_catalog, strip_patchbay_issue_marker, LinearIssueCreateInput,
+    LinearIssueUpdateInput, LinearRemoteIssue, LinearRemoteLabel, LinearRemoteUser,
+    LinearTokenError, LinearTokenManager,
 };
 use crate::state::HandlerState;
 
@@ -275,7 +276,7 @@ fn agent_label_decision(
             agent_id: None,
         });
     };
-    let Some(_group_id) = mapping
+    let Some(group_id) = mapping
         .get("group_id")
         .and_then(Value::as_str)
         .map(str::trim)
@@ -309,7 +310,10 @@ fn agent_label_decision(
                     "Linear Agent label mapping target is not a UUID"
                 ))
             })?;
-        if labels.iter().any(|label| label.id == *label_id) {
+        if labels.iter().any(|label| {
+            label.id == *label_id
+                && label.parent.as_ref().map(|parent| parent.id.as_str()) == Some(group_id)
+        }) {
             mapped_agents.push((label_id.as_str(), agent_id));
         }
     }
@@ -1409,8 +1413,12 @@ impl LinearSyncWorker {
         if selection_retries_enqueued {
             self.notify.notify_waiters();
         }
-        self.resume_agent_sessions_awaiting_issue_link(&connection, &remote.id)
-            .await?;
+        self.resume_agent_sessions_awaiting_issue_link(
+            &connection,
+            &remote.id,
+            &format!("linear-outbox:{}", row.id),
+        )
+        .await?;
         Ok(())
     }
 
@@ -1522,8 +1530,12 @@ impl LinearSyncWorker {
             updated_from,
         )
         .await?;
-        self.resume_agent_sessions_awaiting_issue_link(&connection, &linear_issue_id)
-            .await
+        self.resume_agent_sessions_awaiting_issue_link(
+            &connection,
+            &linear_issue_id,
+            &source_event_id,
+        )
+        .await
     }
 
     async fn process_agent_session_event(
@@ -1958,7 +1970,7 @@ impl LinearSyncWorker {
         );
         let should_continue_existing =
             event.action == "prompted" || (event.action == "created" && event_context.is_some());
-        if should_continue_existing && !same_delivery_with_task {
+        if should_continue_existing {
             if let Some(parent_task) = task.as_ref() {
                 let handoff = event_context
                     .as_deref()
@@ -2205,11 +2217,6 @@ impl LinearSyncWorker {
         if existing.status == event.status && existing.last_event_id == row.delivery_id {
             return Ok(());
         }
-        if existing.status.starts_with("dispatching") {
-            return Err(SyncError::retry(anyhow::anyhow!(
-                "Linear Agent Session dispatch is still being correlated"
-            )));
-        }
         let event_timestamp_ms = extract_event_timestamp_ms(&row.payload);
         if existing.last_event_id != row.delivery_id
             && matches!(
@@ -2357,6 +2364,7 @@ impl LinearSyncWorker {
         &self,
         connection: &LinearConnection,
         linear_issue_id: &str,
+        resume_source_id: &str,
     ) -> Result<(), SyncError> {
         if linear_q::find_linear_issue_link(
             &self.state.pool,
@@ -2385,8 +2393,8 @@ impl LinearSyncWorker {
         let mut transaction = self.state.pool.begin().await.map_err(SyncError::retry)?;
         for session in sessions {
             let delivery_id = format!(
-                "linear-agent-issue-link-retry:{}",
-                session.linear_session_id
+                "linear-agent-issue-link-retry:{}:{}",
+                session.linear_session_id, resume_source_id
             );
             linear_agent_q::enqueue_linear_agent_session_retry(
                 &mut transaction,
@@ -2926,6 +2934,34 @@ impl LinearSyncWorker {
                 configured: false,
                 agent_id: None,
             });
+        }
+        let group_configured = binding
+            .agent_label_mapping
+            .get("group_id")
+            .and_then(Value::as_str)
+            .is_some_and(|group_id| !group_id.trim().is_empty());
+        if group_configured {
+            let manager = LinearTokenManager::from_state(&self.state)
+                .map_err(|error| classify_token_error(error, "create Linear token manager"))?;
+            let catalog = manager.catalog(connection.id).await.map_err(|error| {
+                classify_token_error(error, "revalidate Linear Agent label mapping")
+            })?;
+            if !agent_label_mapping_matches_catalog(
+                &binding.agent_label_mapping,
+                binding.linear_team_id.as_deref(),
+                &catalog,
+            ) {
+                tracing::warn!(
+                    workspace_id = %connection.workspace_id,
+                    connection_id = %connection.id,
+                    binding_id = %binding.id,
+                    "Linear Agent label mapping no longer matches the live catalog; parking route"
+                );
+                return Ok(AgentLabelDecision {
+                    configured: true,
+                    agent_id: None,
+                });
+            }
         }
         let decision = agent_label_decision(binding, &remote.labels.nodes)?;
         if let Some(agent_id) = decision.agent_id {
@@ -4287,6 +4323,27 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.message().contains("more than one selected"));
+    }
+
+    #[test]
+    fn agent_label_mapping_ignores_reparented_values() {
+        let agent_id = Uuid::now_v7();
+        let mut binding = binding(json!({}));
+        binding.agent_label_mapping = json!({
+            "group_id": "agent-group",
+            "labels": {"agent-backend": agent_id.to_string()}
+        });
+        assert_eq!(
+            agent_label_decision(
+                &binding,
+                &[remote_label("agent-backend", Some("different-group"))]
+            )
+            .unwrap(),
+            super::AgentLabelDecision {
+                configured: true,
+                agent_id: None,
+            }
+        );
     }
 
     #[test]

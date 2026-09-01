@@ -1420,7 +1420,7 @@ async fn validate_remote_binding(
     }
 }
 
-fn agent_label_mapping_matches_catalog(
+pub(crate) fn agent_label_mapping_matches_catalog(
     mapping: &Value,
     linear_team_id: Option<&str>,
     catalog: &LinearCatalogResponse,
