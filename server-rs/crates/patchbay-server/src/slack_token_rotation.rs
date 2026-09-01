@@ -4,12 +4,14 @@ use std::time::Duration;
 
 use base64::Engine as _;
 use chrono::{DateTime, Utc};
+use futures_util::{stream, StreamExt};
 use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 
 const REFRESH_AHEAD: chrono::Duration = chrono::Duration::minutes(30);
 const REFRESH_INTERVAL: Duration = Duration::from_secs(5 * 60);
 const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
+const HEALTH_PROBE_CONCURRENCY: usize = 8;
 
 #[derive(Debug, Deserialize)]
 struct RefreshResponse {
@@ -90,74 +92,94 @@ async fn refresh_due_installations(
         patchbay_slack::TYPE_SLACK,
     )
     .await?;
-    for row in rows {
-        let cfg: patchbay_slack::config::InstallConfig = match serde_json::from_value(
-            row.config.clone(),
-        ) {
-            Ok(value) => value,
-            Err(error) => {
-                tracing::warn!(%error, installation_id = %row.id, "invalid Slack installation config during token rotation");
-                continue;
-            }
-        };
-        if cfg.transport != "webhook" {
-            continue;
-        }
-        let rotated_access_token = if !cfg.refresh_token_encrypted.is_empty()
-            && needs_rotation(cfg.token_expires_at, Utc::now())
-        {
-            match rotate_access_token(
+    stream::iter(rows)
+        .for_each_concurrent(HEALTH_PROBE_CONCURRENCY, |row| async move {
+            refresh_installation(
                 pool,
                 client,
                 secret_box,
                 client_id,
                 client_secret,
-                row.id,
-                &cfg,
+                row,
             )
-            .await
-            {
-                Ok(value) => value,
-                Err(error) => {
-                    tracing::warn!(%error, installation_id = %row.id, "Slack token rotation failed");
-                    None
-                }
-            }
-        } else {
-            None
-        };
-        let access_token = match rotated_access_token {
-            Some(value) => value,
-            None => match decrypt_stored_token(secret_box, &cfg.bot_token_encrypted) {
-                Ok(value) if !value.is_empty() => value,
-                Ok(_) => {
-                    record_health(
-                        pool,
-                        row.id,
-                        "error",
-                        Some("credential_missing"),
-                        Some("The managed Slack access token is missing."),
-                    )
-                    .await;
-                    continue;
-                }
-                Err(error) => {
-                    tracing::error!(%error, installation_id = %row.id, "failed to decrypt Slack access token");
-                    record_health(
-                        pool,
-                        row.id,
-                        "error",
-                        Some("credential_decryption_failed"),
-                        Some("The managed Slack credential could not be read."),
-                    )
-                    .await;
-                    continue;
-                }
-            },
-        };
-        probe_health(pool, client, row.id, &access_token).await;
-    }
+            .await;
+        })
+        .await;
     Ok(())
+}
+
+async fn refresh_installation(
+    pool: &sqlx::PgPool,
+    client: &reqwest::Client,
+    secret_box: &patchbay_util::secretbox::SecretBox,
+    client_id: &str,
+    client_secret: &str,
+    row: patchbay_db::models::ChannelInstallation,
+) {
+    let cfg: patchbay_slack::config::InstallConfig =
+        match serde_json::from_value(row.config.clone()) {
+            Ok(value) => value,
+            Err(error) => {
+                tracing::warn!(%error, installation_id = %row.id, "invalid Slack installation config during token rotation");
+                return;
+            }
+        };
+    if cfg.transport != "webhook" {
+        return;
+    }
+    let rotated_access_token = if !cfg.refresh_token_encrypted.is_empty()
+        && needs_rotation(cfg.token_expires_at, Utc::now())
+    {
+        match rotate_access_token(
+            pool,
+            client,
+            secret_box,
+            client_id,
+            client_secret,
+            row.id,
+            &cfg,
+        )
+        .await
+        {
+            Ok(value) => value,
+            Err(error) => {
+                tracing::warn!(%error, installation_id = %row.id, "Slack token rotation failed");
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let access_token = match rotated_access_token {
+        Some(value) => value,
+        None => match decrypt_stored_token(secret_box, &cfg.bot_token_encrypted) {
+            Ok(value) if !value.is_empty() => value,
+            Ok(_) => {
+                record_health(
+                    pool,
+                    row.id,
+                    "error",
+                    Some("credential_missing"),
+                    Some("The managed Slack access token is missing."),
+                )
+                .await;
+                return;
+            }
+            Err(error) => {
+                tracing::error!(%error, installation_id = %row.id, "failed to decrypt Slack access token");
+                record_health(
+                    pool,
+                    row.id,
+                    "error",
+                    Some("credential_decryption_failed"),
+                    Some("The managed Slack credential could not be read."),
+                )
+                .await;
+                return;
+            }
+        },
+    };
+    probe_health(pool, client, row.id, &access_token).await;
 }
 
 async fn rotate_access_token(

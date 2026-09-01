@@ -322,7 +322,12 @@ impl SlackChannel {
         match envelope.kind {
             EnvelopeKind::Hello => {
                 if let Some(reporter) = &self.runtime_health {
-                    reporter.healthy().await;
+                    let reporter = reporter.clone();
+                    if !tasks.spawn(async move { reporter.healthy().await }) {
+                        tracing::warn!(
+                            "slack: runtime health task group closed before hello was persisted"
+                        );
+                    }
                 }
                 Ok(())
             }
@@ -489,6 +494,62 @@ fn _app_id_of(c: &SlackChannel) -> &str {
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicBool, Ordering};
+
+    #[tokio::test]
+    async fn hello_health_persistence_does_not_block_the_receive_loop() {
+        let started = Arc::new(tokio::sync::Notify::new());
+        let release = Arc::new(tokio::sync::Notify::new());
+        let callback_started = Arc::clone(&started);
+        let callback_release = Arc::clone(&release);
+        let channel = SlackChannel {
+            app_id: "A1".into(),
+            bot_user_id: "U_BOT".into(),
+            socket_mode: true,
+            app_token: "xapp-".into(),
+            bot_api: SlackClient::new("xoxb-"),
+            handler: None,
+            slash: None,
+            runtime_health: Some(patchbay_channel::RuntimeHealthReporter::new(
+                move |_observation| {
+                    let started = Arc::clone(&callback_started);
+                    let release = Arc::clone(&callback_release);
+                    async move {
+                        started.notify_one();
+                        release.notified().await;
+                    }
+                },
+            )),
+        };
+        let tasks = patchbay_channel::RuntimeTasks::new();
+
+        tokio::time::timeout(
+            std::time::Duration::from_millis(50),
+            channel.handle_envelope(
+                crate::socket_mode::Envelope {
+                    kind: crate::socket_mode::EnvelopeKind::Hello,
+                    envelope_id: String::new(),
+                    payload: serde_json::Value::Null,
+                    disconnect_reason: None,
+                    needs_ack: false,
+                },
+                &None,
+                &CancellationToken::new(),
+                &tasks,
+            ),
+        )
+        .await
+        .expect("hello handler must not await health persistence")
+        .unwrap();
+        tokio::time::timeout(std::time::Duration::from_millis(50), started.notified())
+            .await
+            .expect("health persistence task should start");
+        release.notify_waiters();
+        assert!(
+            tasks
+                .shutdown(std::time::Duration::from_millis(50))
+                .await
+        );
+    }
 
     #[test]
     fn chunking_splits_on_rune_boundaries_and_keeps_short_text_whole() {
