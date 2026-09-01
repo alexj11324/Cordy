@@ -713,7 +713,10 @@ impl TaskService {
         };
         let decision = provider.gate_im_agent_turns(workspace_id).await;
         match decision.gate_action {
-            EntitlementAction::Off => HostedChannelAdmission::Unavailable,
+            // `Off` is also the provider's emergency-disable signal. A
+            // deliberate emergency bypass must keep hosted sends flowing;
+            // an absent provider is the separate `Unavailable` state above.
+            EntitlementAction::Off => HostedChannelAdmission::Bypass,
             EntitlementAction::Observe => HostedChannelAdmission::Bypass,
             EntitlementAction::Enforce => match decision.gate_limit {
                 None => HostedChannelAdmission::Bypass,
@@ -7054,6 +7057,28 @@ mod tests {
         assert_eq!(
             service.hosted_channel_quota(workspace_id).await,
             HostedChannelQuota::Unlimited
+        );
+    }
+
+    #[tokio::test]
+    async fn emergency_disabled_entitlement_bypasses_admission() {
+        let service = quota_service();
+        service.set_channel_quota_mode(ChannelQuotaMode::Limited(100));
+        service.set_im_entitlements(Some(Arc::new(FixedImEntitlement(
+            EntitlementGateDecision {
+                gate_action: EntitlementAction::Off,
+                gate_limit: None,
+                gate_period_start: None,
+                gate_period_end: None,
+                gate_reset_at: None,
+                policy_revision: 0,
+                subscription_version: 0,
+            },
+        ))));
+
+        assert_eq!(
+            service.hosted_channel_admission(Uuid::now_v7()).await,
+            HostedChannelAdmission::Bypass
         );
     }
 

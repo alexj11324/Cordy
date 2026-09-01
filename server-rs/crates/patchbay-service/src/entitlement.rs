@@ -592,7 +592,9 @@ struct WirePolicy {
 #[derive(Debug, Clone, Deserialize)]
 struct WireGate {
     action: String,
-    limit: Option<i64>,
+    /// `None` means the field was omitted; `Some(None)` is an explicit JSON
+    /// null and is the only representation of an unlimited IM gate.
+    limit: Option<Option<i64>>,
     period_start: Option<DateTime<Utc>>,
     period_end: Option<DateTime<Utc>>,
     reset_at: Option<DateTime<Utc>>,
@@ -677,8 +679,11 @@ fn normalize_gate(
         _ => return Err(()),
     };
     let limit = match gate.limit {
-        Some(limit) if limit >= 0 => Some(limit),
-        None if allow_unlimited => None,
+        Some(Some(limit)) if limit >= 0 => Some(limit),
+        Some(None) if allow_unlimited => None,
+        // An omitted limit is malformed, even for a gate that allows an
+        // explicit unlimited value. Keeping omission distinct from null
+        // prevents an invalid policy from silently becoming unlimited.
         _ => return Err(()),
     };
     let supplied = [gate.period_start, gate.period_end, gate.reset_at]
@@ -814,6 +819,30 @@ mod tests {
         let policy = normalize_policy(wire).unwrap();
         assert_eq!(policy.im_decision.gate_action, EntitlementAction::Enforce);
         assert_eq!(policy.im_decision.gate_limit, None);
+    }
+
+    #[test]
+    fn im_policy_rejects_an_omitted_limit() {
+        let wire: WirePolicy = serde_json::from_value(json!({
+            "schema_version": 1,
+            "policy_revision": 1,
+            "subscription_version": 1,
+            "valid_until": "2030-01-01T00:00:00Z",
+            "valid_for_seconds": 60,
+            "gates": {
+                "issue_window": {"action":"off"},
+                "automation_runs": {
+                    "action":"enforce",
+                    "limit":1,
+                    "period_start":"2029-01-01T00:00:00Z",
+                    "period_end":"2029-02-01T00:00:00Z",
+                    "reset_at":"2029-02-01T00:00:00Z"
+                },
+                "im_agent_turns": {"action":"enforce"}
+            }
+        }))
+        .unwrap();
+        assert!(normalize_policy(wire).is_err());
     }
 
     #[test]
