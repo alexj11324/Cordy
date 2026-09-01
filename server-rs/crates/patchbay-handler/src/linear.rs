@@ -1067,7 +1067,9 @@ async fn resolve_conflict(
             }
         }
     }
-    if let Some(owner_id) = patch.owner_id.flatten() {
+    if request.resolution != "remote"
+        && let Some(owner_id) = patch.owner_id.flatten()
+    {
         match linear_q::get_linear_member_binding(
             &mut *transaction,
             workspace_id,

@@ -702,6 +702,40 @@ pub async fn clear_import_link_owner_snapshots(
     Ok(result.rows_affected())
 }
 
+pub async fn canonicalize_legacy_link_owner_snapshots(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    issue_ids: &[Uuid],
+    user_id: Uuid,
+) -> anyhow::Result<u64> {
+    if issue_ids.is_empty() {
+        return Ok(0);
+    }
+    let result = sqlx::query(
+        r#"UPDATE linear_issue_link link
+           SET last_common_snapshot = jsonb_set(
+                   link.last_common_snapshot, '{owner_id}', to_jsonb($3::text), true
+               ), updated_at = now()
+           FROM linear_project_binding binding, linear_member_binding member
+           WHERE link.binding_id = binding.id
+             AND member.connection_id = binding.connection_id
+             AND member.workspace_id = $1
+             AND member.patchbay_user_id = $3
+             AND link.workspace_id = $1
+             AND link.patchbay_issue_id = ANY($2::uuid[])
+             AND binding.workspace_id = $1
+             AND binding.sync_mode IN ('publish', 'two_way')
+             AND NOT (link.last_common_snapshot ? 'owner_id')
+             AND link.last_common_snapshot->'assignee'->>'id' = member.linear_user_id"#,
+    )
+    .bind(workspace_id)
+    .bind(issue_ids)
+    .bind(user_id)
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected())
+}
+
 pub async fn insert_sync_inbox(
     executor: &mut sqlx::PgConnection,
     id: Uuid,

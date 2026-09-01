@@ -1022,6 +1022,13 @@ async fn revoke_and_remove_member(
         .iter()
         .map(|issue| issue.id)
         .collect::<Vec<_>>();
+    linear_q::canonicalize_legacy_link_owner_snapshots(
+        &mut *transaction,
+        workspace_id,
+        &cleared_issue_ids,
+        user_id,
+    )
+    .await?;
     linear_q::clear_import_link_owner_snapshots(
         &mut *transaction,
         workspace_id,
