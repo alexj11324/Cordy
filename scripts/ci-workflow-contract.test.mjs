@@ -53,6 +53,18 @@ test("merge queue runs the same path-aware CI gate", () => {
 
 test("workflow-only changes keep the four required aggregates green without heavy jobs", () => {
   assert.doesNotMatch(ci, /- '\.github\/workflows\/ci\.yml'/u);
+  assert.match(
+    ci,
+    /frontend-build:\n\s+needs: changes\n\s+if: \$\{\{ needs\.changes\.outputs\.frontend == 'true' \|\| needs\.changes\.outputs\.auth_broker_release == 'true' \}\}/u,
+  );
+  assert.match(
+    ci,
+    /frontend-test:\n\s+needs: changes\n\s+if: \$\{\{ needs\.changes\.outputs\.frontend == 'true' \}\}/u,
+  );
+  assert.match(
+    ci,
+    /frontend-views-test:\n\s+name: frontend-views-test \(\$\{\{ matrix\.index \}\}\/\$\{\{ matrix\.total \}\}\)\n\s+needs: changes\n\s+if: \$\{\{ needs\.changes\.outputs\.frontend == 'true' \}\}/u,
+  );
   for (const message of [
     "Frontend validation intentionally skipped: no relevant paths changed.",
     "Rust validation intentionally skipped: no relevant paths changed.",

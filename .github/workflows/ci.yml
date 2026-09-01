@@ -310,6 +310,7 @@ jobs:
   # increases total runner-minutes but reduces wall-clock feedback time.
   frontend-build:
     needs: changes
+    if: ${{ needs.changes.outputs.frontend == 'true' || needs.changes.outputs.auth_broker_release == 'true' }}
     runs-on: ubuntu-latest
     env:
       # Pin turbo's filesystem cache somewhere actions/cache can address.
@@ -478,6 +479,7 @@ jobs:
 
   frontend-test:
     needs: changes
+    if: ${{ needs.changes.outputs.frontend == 'true' }}
     runs-on: ubuntu-latest
     env:
       TURBO_CACHE_DIR: .turbo/cache
@@ -545,6 +547,7 @@ jobs:
   frontend-views-test:
     name: frontend-views-test (${{ matrix.index }}/${{ matrix.total }})
     needs: changes
+    if: ${{ needs.changes.outputs.frontend == 'true' }}
     strategy:
       fail-fast: false
       matrix:
