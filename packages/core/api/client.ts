@@ -4486,6 +4486,7 @@ export class ApiClient {
         link_id: "",
         patchbay_issue_id: "",
         linear_issue_id: "",
+        linear_identifier: null,
         field: "",
         base_value: null,
         local_value: null,
