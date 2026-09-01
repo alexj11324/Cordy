@@ -2437,7 +2437,10 @@ impl LinearTokenManager {
         variables.insert("title".to_string(), json!(input.title));
         variables.insert(
             "description".to_string(),
-            json!(description_with_patchbay_marker(input.description, input.issue_id)),
+            json!(description_with_patchbay_marker(
+                input.description,
+                input.issue_id
+            )),
         );
         variables.insert("priority".to_string(), json!(input.priority));
         if let Some(state_id) = input.state_id {
