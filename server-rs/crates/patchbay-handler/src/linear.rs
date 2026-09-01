@@ -773,6 +773,26 @@ fn current_issue_conflict_value(
     }
 }
 
+fn issue_differs_from_common_snapshot(
+    issue: &patchbay_db::models::Issue,
+    common_snapshot: &Value,
+) -> bool {
+    [
+        "title",
+        "description",
+        "priority",
+        "status",
+        "due_date",
+        "owner_id",
+    ]
+    .into_iter()
+    .any(|field| {
+        current_issue_conflict_value(issue, field)
+            .map(|value| common_snapshot.get(field) != Some(&value))
+            .unwrap_or(false)
+    })
+}
+
 fn external_conflict_error_status(error: &ExternalIssueError) -> StatusCode {
     match error {
         ExternalIssueError::RevisionConflict { .. } => StatusCode::CONFLICT,
@@ -1033,24 +1053,26 @@ async fn resolve_conflict(
             "Linear Issue Link disappeared during resolution",
         );
     }
-    if open_conflicts == 0 && matches!(request.resolution.as_str(), "local" | "manual") {
+    if open_conflicts == 0 {
         let updated_issue = applied.updated.as_ref().unwrap_or(&applied.previous);
-        if let Err(error) = linear_q::enqueue_issue_outbox(
-            &mut *transaction,
-            workspace_id,
-            updated_issue.project_id,
-            updated_issue.id,
-            &format!("conflict:{}:{}", conflict.id, request.resolution),
-            "issue_updated",
-            &patchbay_service::issue_service::linear_issue_sync_payload(updated_issue),
-        )
-        .await
-        {
-            tracing::warn!(%error, conflict_id = %conflict.id, "Linear conflict outbound resolution enqueue failed");
-            return error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to queue Linear conflict resolution",
-            );
+        if issue_differs_from_common_snapshot(updated_issue, &common_snapshot) {
+            if let Err(error) = linear_q::enqueue_issue_outbox(
+                &mut *transaction,
+                workspace_id,
+                updated_issue.project_id,
+                updated_issue.id,
+                &format!("conflict:{}:{}", conflict.id, request.resolution),
+                "issue_updated",
+                &patchbay_service::issue_service::linear_issue_sync_payload(updated_issue),
+            )
+            .await
+            {
+                tracing::warn!(%error, conflict_id = %conflict.id, "Linear conflict outbound resolution enqueue failed");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to queue Linear conflict resolution",
+                );
+            }
         }
     }
     if let Err(error) = transaction.commit().await {
