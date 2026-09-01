@@ -505,7 +505,7 @@ export interface IssueTableFacetValue {
 
 export interface IssueTableFacet {
   kind: IssueTableFacetSpec["kind"];
-  property_id?: string;
+  property_id?: string | null;
   values: IssueTableFacetValue[];
 }
 
