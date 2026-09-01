@@ -98,15 +98,14 @@ impl Outbound {
         if text.is_empty() {
             return Ok(());
         }
-        let installation =
-            get_channel_installation_for_runtime(
-                &self.pool,
-                binding.installation_id,
-                crate::TYPE_WEIXIN,
-            )
-                .await?
-                .filter(|row| row.status == "active")
-                .ok_or_else(|| anyhow::anyhow!("weixin installation is inactive or missing"))?;
+        let installation = get_channel_installation_for_runtime(
+            &self.pool,
+            binding.installation_id,
+            crate::TYPE_WEIXIN,
+        )
+        .await?
+        .filter(|row| row.status == "active")
+        .ok_or_else(|| anyhow::anyhow!("weixin installation is inactive or missing"))?;
         let installed_at = installation.installed_at;
         let credentials = decode_credentials(&installation.config, self.decrypt.as_deref())?;
         let target: WeixinBindingConfig = serde_json::from_value(binding.config)?;

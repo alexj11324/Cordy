@@ -1124,13 +1124,12 @@ impl Outbound {
         else {
             return Ok(None);
         };
-        let Some(installation) =
-            get_channel_installation_for_runtime(
-                &self.pool,
-                binding.installation_id,
-                crate::TYPE_TELEGRAM,
-            )
-                .await?
+        let Some(installation) = get_channel_installation_for_runtime(
+            &self.pool,
+            binding.installation_id,
+            crate::TYPE_TELEGRAM,
+        )
+        .await?
         else {
             return Ok(None);
         };

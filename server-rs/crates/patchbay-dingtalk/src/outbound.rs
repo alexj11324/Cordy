@@ -115,8 +115,8 @@ impl Outbound {
             binding.installation_id,
             TYPE_DINGTALK,
         )
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("load dingtalk installation: no row"))?;
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("load dingtalk installation: no row"))?;
         if inst.status != "active" {
             // Revoked between trigger and reply.
             return Ok(());

@@ -104,13 +104,10 @@ impl Outbound {
         if !deliver {
             return Ok(());
         }
-        let inst = get_channel_installation_for_runtime(
-            &self.pool,
-            binding.installation_id,
-            TYPE_SLACK,
-        )
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("load slack installation: row missing"))?;
+        let inst =
+            get_channel_installation_for_runtime(&self.pool, binding.installation_id, TYPE_SLACK)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("load slack installation: row missing"))?;
         if inst.status != "active" {
             return Ok(()); // revoked between trigger and reply
         }

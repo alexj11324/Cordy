@@ -957,7 +957,8 @@ async fn update_member(
             return error_response(StatusCode::SERVICE_UNAVAILABLE, "member update unavailable");
         }
     };
-    let target_user = match user::get_user_for_update(&mut *transaction, target_hint.user_id).await {
+    let target_user = match user::get_user_for_update(&mut *transaction, target_hint.user_id).await
+    {
         Ok(Some(user)) => user,
         Ok(None) => return error_response(StatusCode::NOT_FOUND, "member not found"),
         Err(error) => {
@@ -995,7 +996,10 @@ async fn update_member(
             Ok(count) => count,
             Err(error) => {
                 tracing::warn!(%error, workspace_id = %target.workspace_id, "failed to count workspace owners");
-                return error_response(StatusCode::SERVICE_UNAVAILABLE, "member update unavailable");
+                return error_response(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "member update unavailable",
+                );
             }
         };
         if owner_count <= 1 {
@@ -1045,7 +1049,11 @@ async fn update_member(
                     );
                 }
             };
-            match state.tasks.hosted_workspace_capacity(policy_workspace_id).await {
+            match state
+                .tasks
+                .hosted_workspace_capacity(policy_workspace_id)
+                .await
+            {
                 HostedCapacityPolicy::Bypass | HostedCapacityPolicy::Unlimited => {}
                 HostedCapacityPolicy::Limited(limit) if owned_count < limit => {}
                 HostedCapacityPolicy::Limited(_) => {

@@ -60,13 +60,10 @@ impl History {
             get_channel_chat_session_binding_by_session(&self.pool, chat_session_id, TYPE_SLACK)
                 .await?
                 .ok_or(ErrNoSlackSession)?;
-        let inst = get_channel_installation_for_runtime(
-            &self.pool,
-            binding.installation_id,
-            TYPE_SLACK,
-        )
-            .await?
-            .ok_or(ErrNoSlackSession)?;
+        let inst =
+            get_channel_installation_for_runtime(&self.pool, binding.installation_id, TYPE_SLACK)
+                .await?
+                .ok_or(ErrNoSlackSession)?;
         if inst.status != "active" {
             return Err(ErrNoSlackSession.into()); // revoked install: nothing to read
         }

@@ -296,13 +296,12 @@ impl Outbound {
         {
             return Ok(());
         }
-        let Some(inst) =
-            get_channel_installation_for_runtime(
-                &self.pool,
-                binding.installation_id,
-                crate::TYPE_WECOM,
-            )
-                .await?
+        let Some(inst) = get_channel_installation_for_runtime(
+            &self.pool,
+            binding.installation_id,
+            crate::TYPE_WECOM,
+        )
+        .await?
         else {
             anyhow::bail!("load wecom installation: no row");
         };
