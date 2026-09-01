@@ -1247,6 +1247,43 @@ WHERE id = $1 AND channel_type = $2"#
     }))
 }
 
+/// Loads an installation for a live transport operation. Management callers
+/// intentionally use [`get_channel_installation`] so quota-paused rows remain
+/// visible, while credential and outbound paths must fail closed as soon as a
+/// hosted capacity reconciler marks the row paused.
+pub async fn get_channel_installation_for_runtime(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    id: Uuid,
+    channel_type: &str,
+) -> anyhow::Result<Option<ChannelInstallation>> {
+    let row = sqlx::query(
+        r#"SELECT id, workspace_id, agent_id, channel_type, config, status, ws_lease_token, ws_lease_expires_at, installer_user_id, installed_at, created_at, updated_at FROM channel_installation
+WHERE id = $1
+  AND channel_type = $2
+  AND status = 'active'
+  AND hosted_paused_at IS NULL"#,
+    )
+    .bind(id)
+    .bind(channel_type)
+    .fetch_optional(executor)
+    .await?;
+    let Some(row) = row else { return Ok(None) };
+    Ok(Some(ChannelInstallation {
+        id: row.try_get(0)?,
+        workspace_id: row.try_get(1)?,
+        agent_id: row.try_get(2)?,
+        channel_type: row.try_get(3)?,
+        config: row.try_get(4)?,
+        status: row.try_get(5)?,
+        ws_lease_token: row.try_get(6)?,
+        ws_lease_expires_at: row.try_get(7)?,
+        installer_user_id: row.try_get(8)?,
+        installed_at: row.try_get(9)?,
+        created_at: row.try_get(10)?,
+        updated_at: row.try_get(11)?,
+    }))
+}
+
 pub async fn get_channel_installation_by_app_id(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     channel_type: &str,
@@ -2339,6 +2376,7 @@ ON CONFLICT (workspace_id, agent_id, channel_type) DO UPDATE SET
     config            = EXCLUDED.config,
     installer_user_id = EXCLUDED.installer_user_id,
     status            = 'active',
+    hosted_paused_at  = NULL,
     installed_at      = now(),
     updated_at        = now()
 RETURNING id, workspace_id, agent_id, channel_type, config, status, ws_lease_token, ws_lease_expires_at, installer_user_id, installed_at, created_at, updated_at"#
@@ -2386,6 +2424,7 @@ ON CONFLICT (workspace_id, channel_type) WHERE agent_id IS NULL DO UPDATE SET
     config            = EXCLUDED.config,
     installer_user_id = EXCLUDED.installer_user_id,
     status            = 'active',
+    hosted_paused_at  = NULL,
     installed_at      = now(),
     updated_at        = now()
 RETURNING id, workspace_id, agent_id, channel_type, config, status, ws_lease_token, ws_lease_expires_at, installer_user_id, installed_at, created_at, updated_at"#,
@@ -2432,6 +2471,7 @@ ON CONFLICT (channel_type, (config ->> 'app_id')) DO UPDATE SET
     config            = EXCLUDED.config,
     installer_user_id = EXCLUDED.installer_user_id,
     status            = 'active',
+    hosted_paused_at  = NULL,
     installed_at      = now(),
     updated_at        = now()
 WHERE channel_installation.workspace_id = EXCLUDED.workspace_id

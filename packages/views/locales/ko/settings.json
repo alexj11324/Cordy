@@ -339,6 +339,7 @@
     "integrations_runtime_offline": "런타임 오프라인",
     "integrations_runtime_error": "연결 오류",
     "integrations_runtime_configuration_error": "구성 오류",
+    "integrations_runtime_quota_paused": "호스팅 한도로 일시 중지됨 — 요금제를 업그레이드하거나 다른 연결을 해제하세요",
     "integrations_experimental": "실험적",
     "integrations_revoked": "연결이 취소됨",
     "integrations_route_note": "Hub를 연결할 때 에이전트를 먼저 선택하지 않아도 됩니다. 첫 메시지 전에 Patchbay가 이 멤버에게 사용 가능한 첫 번째 에이전트를 사용하며, 대화에서 /agents로 경로를 바꿀 수 있습니다.",

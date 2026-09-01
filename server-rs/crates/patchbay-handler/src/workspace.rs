@@ -930,7 +930,7 @@ async fn update_member(
     let Ok(member_id) = Uuid::parse_str(&path.member_id) else {
         return error_response(StatusCode::BAD_REQUEST, "invalid member id");
     };
-    let target = match member::get_member(&state.pool, member_id).await {
+    let target_hint = match member::get_member(&state.pool, member_id).await {
         Ok(Some(target)) if target.workspace_id == context.member.workspace_id => target,
         _ => return error_response(StatusCode::NOT_FOUND, "member not found"),
     };
@@ -944,27 +944,134 @@ async fn update_member(
     let Some(role) = normalized_member_role(&request.role, false) else {
         return error_response(StatusCode::BAD_REQUEST, "invalid member role");
     };
+    if (target_hint.role == "owner" || role == "owner") && context.member.role != "owner" {
+        return error_response(StatusCode::FORBIDDEN, "insufficient permissions");
+    }
+    // Ownership changes and the account-level hosted workspace cap must share
+    // one target-user lock and one transaction. Otherwise two concurrent
+    // promotions can both observe the same owner count and exceed the cap.
+    let mut transaction = match state.pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(error) => {
+            tracing::warn!(%error, member_id = %member_id, "failed to begin member update");
+            return error_response(StatusCode::SERVICE_UNAVAILABLE, "member update unavailable");
+        }
+    };
+    let target_user = match user::get_user_for_update(&mut *transaction, target_hint.user_id).await {
+        Ok(Some(user)) => user,
+        Ok(None) => return error_response(StatusCode::NOT_FOUND, "member not found"),
+        Err(error) => {
+            tracing::warn!(%error, member_id = %member_id, "failed to lock member owner account");
+            return error_response(StatusCode::SERVICE_UNAVAILABLE, "member update unavailable");
+        }
+    };
+    let target = match member::lock_member_by_user_and_workspace(
+        &mut *transaction,
+        target_hint.user_id,
+        context.member.workspace_id,
+    )
+    .await
+    {
+        Ok(Some(target)) if target.id == member_id => target,
+        Ok(_) => return error_response(StatusCode::NOT_FOUND, "member not found"),
+        Err(error) => {
+            tracing::warn!(%error, member_id = %member_id, "failed to lock member row");
+            return error_response(StatusCode::SERVICE_UNAVAILABLE, "member update unavailable");
+        }
+    };
+    // Re-check role-dependent authorization against the locked row; the
+    // initial read was only a workspace-scoped existence check.
     if (target.role == "owner" || role == "owner") && context.member.role != "owner" {
         return error_response(StatusCode::FORBIDDEN, "insufficient permissions");
     }
     if target.role == "owner" && role != "owner" {
-        match member::list_members(&state.pool, target.workspace_id).await {
-            Ok(rows) if rows.iter().filter(|member| member.role == "owner").count() <= 1 => {
-                return error_response(
-                    StatusCode::BAD_REQUEST,
-                    "workspace must have at least one owner",
-                )
+        let owner_count = match sqlx::query_scalar::<_, i64>(
+            "SELECT count(*)::bigint FROM member WHERE workspace_id = $1 AND role = 'owner'",
+        )
+        .bind(target.workspace_id)
+        .fetch_one(&mut *transaction)
+        .await
+        {
+            Ok(count) => count,
+            Err(error) => {
+                tracing::warn!(%error, workspace_id = %target.workspace_id, "failed to count workspace owners");
+                return error_response(StatusCode::SERVICE_UNAVAILABLE, "member update unavailable");
             }
-            Err(_) => {
-                return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update member")
-            }
-            _ => {}
+        };
+        if owner_count <= 1 {
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                "workspace must have at least one owner",
+            );
         }
     }
-    let updated = match member::update_member_role(&state.pool, target.id, role).await {
+    if target.role != "owner" && role == "owner" && state.public_config.official_cloud {
+        if target_user.is_guest {
+            return error_response(StatusCode::FORBIDDEN, "formal login required");
+        }
+        let owned_count = match sqlx::query_scalar::<_, i64>(
+            "SELECT count(*)::bigint FROM member WHERE user_id = $1 AND role = 'owner'",
+        )
+        .bind(target.user_id)
+        .fetch_one(&mut *transaction)
+        .await
+        {
+            Ok(count) => count,
+            Err(error) => {
+                tracing::warn!(%error, user_id = %target.user_id, "failed to count hosted workspaces for owner promotion");
+                return error_code_response(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "hosted_workspace_quota_unavailable",
+                    "hosted workspace quota is temporarily unavailable",
+                );
+            }
+        };
+        if owned_count >= 2 {
+            let policy_workspace_id = match sqlx::query_scalar::<_, Uuid>(
+                "SELECT workspace_id FROM member WHERE user_id = $1 AND role = 'owner' ORDER BY workspace_id LIMIT 1",
+            )
+            .bind(target.user_id)
+            .fetch_optional(&mut *transaction)
+            .await
+            {
+                Ok(Some(workspace_id)) => workspace_id,
+                Ok(None) => target.workspace_id,
+                Err(error) => {
+                    tracing::warn!(%error, user_id = %target.user_id, "failed to resolve hosted workspace policy source");
+                    return error_code_response(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "hosted_workspace_quota_unavailable",
+                        "hosted workspace quota is temporarily unavailable",
+                    );
+                }
+            };
+            match state.tasks.hosted_workspace_capacity(policy_workspace_id).await {
+                HostedCapacityPolicy::Bypass | HostedCapacityPolicy::Unlimited => {}
+                HostedCapacityPolicy::Limited(limit) if owned_count < limit => {}
+                HostedCapacityPolicy::Limited(_) => {
+                    return error_code_response(
+                        StatusCode::FORBIDDEN,
+                        "hosted_workspace_limit_reached",
+                        "this account has reached its hosted workspace limit",
+                    )
+                }
+                HostedCapacityPolicy::Disabled | HostedCapacityPolicy::Unavailable => {
+                    return error_code_response(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "hosted_workspace_quota_unavailable",
+                        "hosted workspace quota is temporarily unavailable",
+                    )
+                }
+            }
+        }
+    }
+    let updated = match member::update_member_role(&mut *transaction, target.id, role).await {
         Ok(Some(updated)) => updated,
         _ => return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update member"),
     };
+    if transaction.commit().await.is_err() {
+        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update member");
+    }
     state
         .membership_cache
         .invalidate(

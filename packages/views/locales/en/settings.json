@@ -339,6 +339,7 @@
     "integrations_runtime_offline": "Runtime offline",
     "integrations_runtime_error": "Connection error",
     "integrations_runtime_configuration_error": "Configuration error",
+    "integrations_runtime_quota_paused": "Hosted quota paused — upgrade or disconnect another installation",
     "integrations_experimental": "Experimental",
     "integrations_revoked": "Connection revoked",
     "integrations_route_note": "No Agent is preselected when you connect a Hub. Before the first message, Patchbay uses the first Agent available to this member; /agents changes the route for that conversation.",

@@ -293,6 +293,7 @@ FOR UPDATE"#,
     let row = sqlx::query_as::<_, ChannelInstallation>(
         r#"UPDATE channel_installation
 SET status = 'active',
+    hosted_paused_at = NULL,
     installer_user_id = $5,
     installed_at = now(),
     updated_at = now(),

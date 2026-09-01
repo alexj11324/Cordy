@@ -1396,10 +1396,10 @@ impl LarkSessionStore {
 struct LarkRegistrationRuntime {
     pool: sqlx::PgPool,
     bus: Arc<patchbay_events::Bus>,
+    tasks: Arc<patchbay_service::task_service::TaskService>,
     http_base_url: String,
     cancel: CancellationToken,
     sessions: LarkSessionStore,
-    installation_limit: Option<i64>,
 }
 
 fn can_manage_lark_agent(role: &str, owner_id: Option<Uuid>, actor: Uuid) -> bool {
@@ -1493,10 +1493,12 @@ async fn begin_lark_install(
             format!("{} - Patchbay", target.name.trim())
         }
     };
-    let installation_limit = match hosted_installation_limit(&state, workspace_id).await {
-        Ok(value) => value,
-        Err(response) => return response,
-    };
+    // Reconcile once at session start so stale quota-paused rows are visible
+    // to the operator immediately. The finalization path refreshes the policy
+    // again immediately before it opens its persistence transaction.
+    if let Err(response) = hosted_installation_limit(&state, workspace_id).await {
+        return response;
+    }
     let client = Arc::new(patchbay_lark::registration::RegistrationClient::new(
         patchbay_lark::registration::RegistrationConfig {
             domain: state
@@ -1550,6 +1552,7 @@ async fn begin_lark_install(
     let runtime = LarkRegistrationRuntime {
         pool: state.pool.clone(),
         bus: state.bus.clone(),
+        tasks: state.tasks.clone(),
         http_base_url: state
             .integrations
             .lark_http_base_url
@@ -1557,7 +1560,6 @@ async fn begin_lark_install(
             .unwrap_or_default(),
         cancel: state.channel_cancel.clone(),
         sessions: sessions.clone(),
-        installation_limit,
     };
     if !state.channel_tasks.spawn(run_lark_registration(
         runtime,
@@ -1724,6 +1726,24 @@ async fn run_lark_registration(
                 return;
             }
         };
+        // A QR/device flow can remain open for minutes. Resolve the trusted
+        // capacity policy again at the last possible moment so a downgrade or
+        // entitlement outage cannot be bypassed by the initial snapshot.
+        let installation_limit = match lark_installation_limit(&runtime, workspace_id).await {
+            Ok(value) => value,
+            Err(error) => {
+                runtime
+                    .sessions
+                    .finish(
+                        &session_id,
+                        None,
+                        Some("installation_limit_unavailable"),
+                        Some(&error.to_string()),
+                    )
+                    .await;
+                return;
+            }
+        };
         let mut tx = match runtime.pool.begin().await {
             Ok(value) => value,
             Err(error) => {
@@ -1769,7 +1789,7 @@ async fn run_lark_registration(
                 .await;
             return;
         }
-        if let Some(limit) = runtime.installation_limit {
+        if let Some(limit) = installation_limit {
             let allowed = match channel::channel_installation_limit_allows(
                 &mut tx,
                 workspace_id,
@@ -2331,6 +2351,30 @@ pub(crate) async fn hosted_installation_limit(
         tracing::warn!(%error, %workspace_id, "failed to reconcile hosted installation quota");
         return Err(installation_quota_unavailable());
     }
+    Ok(limit)
+}
+
+/// Re-resolves hosted capacity for a long-running Lark registration and
+/// reconciles the durable pause markers before the final upsert transaction.
+/// This deliberately does not reuse the value captured when the QR code was
+/// issued.
+async fn lark_installation_limit(
+    runtime: &LarkRegistrationRuntime,
+    workspace_id: Uuid,
+) -> anyhow::Result<Option<i64>> {
+    let policy = runtime
+        .tasks
+        .hosted_im_installation_capacity(workspace_id)
+        .await;
+    let limit = match policy {
+        HostedCapacityPolicy::Disabled => None,
+        HostedCapacityPolicy::Bypass | HostedCapacityPolicy::Unlimited => None,
+        HostedCapacityPolicy::Limited(limit) => Some(limit),
+        HostedCapacityPolicy::Unavailable => {
+            anyhow::bail!("hosted messaging installation quota is temporarily unavailable")
+        }
+    };
+    channel::reconcile_hosted_installation_capacity(&runtime.pool, workspace_id, limit).await?;
     Ok(limit)
 }
 

@@ -339,6 +339,7 @@
     "integrations_runtime_offline": "ランタイムはオフラインです",
     "integrations_runtime_error": "接続エラー",
     "integrations_runtime_configuration_error": "設定エラー",
+    "integrations_runtime_quota_paused": "ホスト型の上限により一時停止中 — プランをアップグレードするか別の接続を解除してください",
     "integrations_experimental": "実験的",
     "integrations_revoked": "接続が取り消されました",
     "integrations_route_note": "Hub の接続時にエージェントを先に選ぶ必要はありません。最初のメッセージの前に、Patchbay がこのメンバーに利用可能な最初のエージェントを使います。会話中の /agents でルートを変更できます。",

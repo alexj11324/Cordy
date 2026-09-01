@@ -183,6 +183,19 @@ function ConnectionStatus({ query }: { query: IntegrationQuery }) {
   if (
     query.data.installations.some(
       (installation) =>
+        installation.status === "active" &&
+        installation.runtime?.errorCode === "hosted_quota_paused",
+    )
+  ) {
+    return (
+      <Badge variant="outline">
+        {t(($) => $.page.integrations_runtime_quota_paused)}
+      </Badge>
+    );
+  }
+  if (
+    query.data.installations.some(
+      (installation) =>
         installation.status === "active" && installation.setup?.experimental === true,
     )
   ) {
