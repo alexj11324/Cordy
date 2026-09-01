@@ -1599,6 +1599,7 @@ fn binding_needs_outbox_seed(
         || (next.sync_mode == "two_way"
             && next.initial_source_of_truth.as_deref() == Some("patchbay")
             && previous.initial_source_of_truth.as_deref() != Some("patchbay"))
+        || next.agent_label_mapping != previous.agent_label_mapping
 }
 
 async fn seed_binding_outbox(

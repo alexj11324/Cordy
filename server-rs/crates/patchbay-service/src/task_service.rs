@@ -4423,13 +4423,18 @@ impl TaskService {
                     "Linear revocation cancellation lease was lost".to_string(),
                 ));
             }
-            linear_agent_q::complete_revocation_cancellation(
+            let completed = linear_agent_q::complete_revocation_cancellation(
                 &self.pool,
                 connection_id,
                 &claim_owner,
             )
             .await
             .map_err(|error| TaskServiceError::Sql(downcast_sqlx(error)))?;
+            if completed == 0 {
+                return Err(TaskServiceError::Internal(
+                    "Linear revocation cancellation claim was lost before completion".to_string(),
+                ));
+            }
             Ok::<_, TaskServiceError>(cancelled.len())
         }
         .await;
@@ -4463,9 +4468,17 @@ impl TaskService {
                 .map_err(|error| TaskServiceError::Sql(downcast_sqlx(error)))?;
         let mut recovered = 0usize;
         for connection_id in connection_ids {
-            recovered += self
+            match self
                 .replay_linear_revocation_cancellation(connection_id)
-                .await?;
+                .await
+            {
+                Ok(count) => recovered += count,
+                Err(error) => tracing::warn!(
+                    %error,
+                    %connection_id,
+                    "replay Linear revocation cancellation failed; continuing recovery sweep"
+                ),
+            }
         }
         Ok(recovered)
     }

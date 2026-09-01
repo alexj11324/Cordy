@@ -254,9 +254,11 @@ pub async fn linear_agent_continuation_authorized(
                  AND connection.status = 'active'
                  AND connection.actor_id <> ''
                  AND binding.status = 'active'
+                 AND binding.sync_mode IN ('import', 'two_way')
                  AND link.sync_status NOT IN ('deleted', 'agent_selection_required')
                  AND issue.executor_type = 'agent'
                  AND issue.executor_id = session.agent_id
+               FOR UPDATE OF connection, binding, link, issue, session, task
            )"#,
     )
     .bind(connection_id)
@@ -829,6 +831,7 @@ pub async fn complete_revocation_cancellation(
            ), deleted_progress AS (
                DELETE FROM linear_revocation_cancellation_progress
                WHERE connection_id = $1
+                 AND EXISTS (SELECT 1 FROM cancelled)
                RETURNING task_id
            )
            SELECT COUNT(*)::bigint FROM cancelled"#,
@@ -857,10 +860,9 @@ pub async fn release_revocation_cancellation(
     Ok(result.rows_affected())
 }
 
-/// Settles terminal deliveries that were created for a session before its
-/// Issue is deleted. The deletion transaction can then enqueue one explicit
-/// cancellation per current task without an older result racing it after the
-/// session correlation is removed.
+/// Preserves terminal deliveries that were created for a session before its
+/// Issue is deleted. The deletion transaction marks the payload so the worker
+/// can publish the result after the session correlation is removed.
 pub async fn settle_pending_terminal_events_for_issue(
     executor: impl Executor<'_, Database = Postgres>,
     workspace_id: Uuid,
@@ -868,10 +870,10 @@ pub async fn settle_pending_terminal_events_for_issue(
 ) -> anyhow::Result<u64> {
     let result = sqlx::query(
         r#"UPDATE linear_sync_inbox AS inbox
-           SET processed_at = now(),
+           SET payload = inbox.payload || '{"linearAgentSessionDeletion": true}'::jsonb,
                locked_by = NULL,
                locked_until = NULL,
-               last_error = 'superseded by Patchbay Issue deletion'
+               last_error = NULL
            FROM linear_agent_session AS session
            WHERE session.workspace_id = $1
              AND session.patchbay_issue_id = $2

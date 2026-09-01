@@ -727,6 +727,10 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_UP: &[(&str, &str)] = &[
         "506_linear_agent_session_awaiting_link_index",
         "idx_linear_agent_session_awaiting_link",
     ),
+    (
+        "508_linear_revocation_progress_index",
+        "uq_linear_revocation_progress_task",
+    ),
 ];
 
 pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[
@@ -999,5 +1003,9 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[
     (
         "506_linear_agent_session_awaiting_link_index",
         "idx_linear_agent_session_awaiting_link",
+    ),
+    (
+        "508_linear_revocation_progress_index",
+        "uq_linear_revocation_progress_task",
     ),
 ];
