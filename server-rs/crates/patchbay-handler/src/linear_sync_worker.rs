@@ -821,7 +821,7 @@ impl LinearSyncWorker {
             )));
         }
         let locked_binding = linear_q::get_project_binding_for_update(
-            &mut transaction,
+            &mut *transaction,
             row.workspace_id,
             binding.id,
         )
@@ -838,7 +838,7 @@ impl LinearSyncWorker {
         }
         let link = if let Some(prepared_link) = existing_link.as_ref() {
             let locked_link = linear_q::get_linear_issue_link_for_update(
-                &mut transaction,
+                &mut *transaction,
                 row.workspace_id,
                 prepared_link.id,
             )
