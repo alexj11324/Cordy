@@ -26,8 +26,8 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::linear::{
-    strip_patchbay_issue_marker, LinearRemoteIssue, LinearRemoteUser, LinearTokenError,
-    LinearTokenManager,
+    strip_patchbay_issue_marker, LinearIssueCreateInput, LinearIssueUpdateInput, LinearRemoteIssue,
+    LinearRemoteUser, LinearTokenError, LinearTokenManager,
 };
 use crate::state::HandlerState;
 
@@ -619,17 +619,17 @@ impl LinearSyncWorker {
         let update_assignee = Some(linear_owner_id.as_deref());
         let remote = if let Some(remote) = current_remote {
             manager
-                .update_issue(
-                    connection.id,
-                    &remote.id,
-                    issue.id,
-                    &issue.title,
-                    issue.description.as_deref(),
+                .update_issue(&LinearIssueUpdateInput {
+                    connection_id: connection.id,
+                    linear_issue_id: &remote.id,
+                    patchbay_issue_id: issue.id,
+                    title: &issue.title,
+                    description: issue.description.as_deref(),
                     priority,
-                    state_id.as_deref(),
-                    due_date.as_deref(),
-                    update_assignee,
-                )
+                    state_id: state_id.as_deref(),
+                    due_date: due_date.as_deref(),
+                    assignee_id: update_assignee,
+                })
                 .await
                 .map_err(|error| classify_token_error(error, "update Linear Issue"))?
         } else if row.attempts > 1 {
@@ -646,18 +646,18 @@ impl LinearSyncWorker {
                     ))
                 })?;
                 manager
-                    .create_issue(
-                        connection.id,
+                    .create_issue(&LinearIssueCreateInput {
+                        connection_id: connection.id,
                         team_id,
-                        &binding.linear_project_id,
-                        issue.id,
-                        &issue.title,
-                        issue.description.as_deref(),
+                        project_id: &binding.linear_project_id,
+                        issue_id: issue.id,
+                        title: &issue.title,
+                        description: issue.description.as_deref(),
                         priority,
-                        state_id.as_deref(),
-                        due_date.as_deref(),
-                        linear_owner_id.as_deref(),
-                    )
+                        state_id: state_id.as_deref(),
+                        due_date: due_date.as_deref(),
+                        assignee_id: linear_owner_id.as_deref(),
+                    })
                     .await
                     .map_err(|error| classify_token_error(error, "create Linear Issue"))?
             }
@@ -668,18 +668,18 @@ impl LinearSyncWorker {
                 ))
             })?;
             manager
-                .create_issue(
-                    connection.id,
+                .create_issue(&LinearIssueCreateInput {
+                    connection_id: connection.id,
                     team_id,
-                    &binding.linear_project_id,
-                    issue.id,
-                    &issue.title,
-                    issue.description.as_deref(),
+                    project_id: &binding.linear_project_id,
+                    issue_id: issue.id,
+                    title: &issue.title,
+                    description: issue.description.as_deref(),
                     priority,
-                    state_id.as_deref(),
-                    due_date.as_deref(),
-                    linear_owner_id.as_deref(),
-                )
+                    state_id: state_id.as_deref(),
+                    due_date: due_date.as_deref(),
+                    assignee_id: linear_owner_id.as_deref(),
+                })
                 .await
                 .map_err(|error| classify_token_error(error, "create Linear Issue"))?
         };
