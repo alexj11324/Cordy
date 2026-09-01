@@ -34,6 +34,7 @@ use patchbay_db::queries::automation_quota::{
     increment_automation_quota_reserved, list_recoverable_automation_quota_reservations,
     release_automation_quota_reservation,
 };
+use patchbay_db::queries::linear as linear_q;
 use patchbay_db::queries::member::get_member_by_user_and_workspace;
 
 use crate::dispatch_reason::ReasonCode;
@@ -2143,6 +2144,22 @@ impl AutomationService {
         .await
         .map_err(|e| de("create issue", e))?
         .ok_or_else(|| de_msg("create issue: no row"))?;
+
+        // Automation-created Issues are ordinary local Issues for Linear's
+        // purposes. Persist the outbound event in the same transaction as the
+        // Issue so a successful automation run cannot lose its initial
+        // publish between the insert and the worker wakeup.
+        linear_q::enqueue_issue_outbox(
+            &mut *tx,
+            issue.workspace_id,
+            issue.project_id,
+            issue.id,
+            &format!("issue:{}:created", issue.id),
+            "issue_created",
+            &crate::issue_service::linear_issue_sync_payload(&issue),
+        )
+        .await
+        .map_err(|e| de("enqueue Linear Issue create", e))?;
 
         // Fan out the default subscriber template inside the same tx as the
         // issue insert, BEFORE issue:created fires — notification listeners

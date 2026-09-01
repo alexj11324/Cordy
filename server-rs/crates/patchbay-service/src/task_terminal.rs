@@ -28,6 +28,7 @@ use patchbay_db::queries::chat::{
 };
 use patchbay_db::queries::comment::get_comment;
 use patchbay_db::queries::issue::{get_issue, update_issue_status};
+use patchbay_db::queries::linear as linear_q;
 use patchbay_db::queries::workspace_channel as workspace_channel_q;
 
 use crate::chat_quick_actions::{split_chat_quick_actions, ChatQuickActionsOrigin};
@@ -1137,14 +1138,38 @@ impl TaskService {
                         .await
                         {
                             Ok(Some(false)) => {
-                                match update_issue_status(
-                                    &self.pool,
-                                    issue_id,
-                                    "todo",
-                                    issue.workspace_id,
-                                )
-                                .await
-                                {
+                                let reset_result = async {
+                                    let mut tx = self.pool.begin().await?;
+                                    let updated_issue = update_issue_status(
+                                        &mut *tx,
+                                        issue_id,
+                                        "todo",
+                                        issue.workspace_id,
+                                    )
+                                    .await?;
+                                    if let Some(updated_issue) = &updated_issue {
+                                        let event_key = format!(
+                                            "issue:{}:revision:{}",
+                                            updated_issue.id, updated_issue.revision
+                                        );
+                                        linear_q::enqueue_issue_outbox(
+                                            &mut *tx,
+                                            updated_issue.workspace_id,
+                                            updated_issue.project_id,
+                                            updated_issue.id,
+                                            &event_key,
+                                            "issue_updated",
+                                            &crate::issue_service::linear_issue_sync_payload(
+                                                updated_issue,
+                                            ),
+                                        )
+                                        .await?;
+                                    }
+                                    tx.commit().await?;
+                                    Ok::<_, anyhow::Error>(updated_issue)
+                                }
+                                .await;
+                                match reset_result {
                                     Ok(Some(updated_issue)) => {
                                         // Direct reset bypasses the HTTP handler that
                                         // normally emits issue:updated (#4648 / PB-3782).

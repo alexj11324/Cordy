@@ -7,7 +7,7 @@ import { useT } from "../../i18n";
 import type { IntegrationChannel } from "./integration-channel-icon";
 import { slackDocsUrl } from "./slack-docs-url";
 
-const providerConsoleUrls: Partial<Record<IntegrationChannel, string>> = {
+const providerConsoleUrls: Partial<Record<Exclude<IntegrationChannel, "linear">, string>> = {
   slack: "https://api.slack.com/apps",
   dingtalk: "https://open-dev.dingtalk.com",
   wecom: "https://work.weixin.qq.com/wework_admin/frame#apps",
@@ -18,7 +18,7 @@ export function IntegrationSetupGuide({
   channel,
   managed = false,
 }: {
-  channel: IntegrationChannel;
+  channel: Exclude<IntegrationChannel, "linear">;
   managed?: boolean;
 }) {
   const { t, i18n } = useT("settings");

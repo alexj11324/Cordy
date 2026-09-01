@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { CheckCircle2, CircleAlert, Loader2, Settings2, Trash2 } from "lucide-react";
-import { Card, CardContent } from "@patchbay/ui/components/ui/card";
 import { Badge } from "@patchbay/ui/components/ui/badge";
 import { Button } from "@patchbay/ui/components/ui/button";
 import {
@@ -26,7 +25,10 @@ import {
 import { ApiError } from "@patchbay/core/api";
 import { api } from "@patchbay/core/api";
 import { useConfigStore, useFeatureEnabled } from "@patchbay/core/config";
-import { COMPOSIO_MCP_APPS_FLAG } from "@patchbay/core/feature-flags";
+import {
+  COMPOSIO_MCP_APPS_FLAG,
+  LINEAR_INSTALLATION_FOUNDATION_FLAG,
+} from "@patchbay/core/feature-flags";
 import { useAuthStore } from "@patchbay/core/auth";
 import { useWorkspaceId } from "@patchbay/core/hooks";
 import { isMessagingInstallationHealthy } from "@patchbay/core/types";
@@ -41,10 +43,7 @@ import { composioToolkitsOptions } from "@patchbay/core/composio";
 import { useT } from "../../i18n";
 import { useNavigation } from "../../navigation";
 import { SettingsSection, SettingsTab } from "./settings-layout";
-import {
-  IntegrationChannelIcon,
-  type IntegrationChannel,
-} from "./integration-channel-icon";
+import type { IntegrationChannel } from "./integration-channel-icon";
 import { ComposioTab } from "./composio-tab";
 import { VCSTab } from "./vcs-tab";
 import { LarkAgentBindButton } from "./lark-tab";
@@ -59,6 +58,10 @@ import { TelegramTab } from "./telegram-tab";
 import { WeixinAgentBindButton } from "./weixin-tab";
 import { WeixinTab } from "./weixin-tab";
 import { IntegrationSetupGuide } from "./integration-setup-guide";
+import { IntegrationCard } from "./integration-card";
+import { LinearIntegrationCard } from "./linear-tab";
+
+type HubIntegrationChannel = Exclude<IntegrationChannel, "linear">;
 
 type InstallationSummary = {
   id: string;
@@ -84,15 +87,6 @@ type IntegrationQuery = {
   data?: InstallationListing;
   isError: boolean;
   isLoading: boolean;
-};
-
-type IntegrationCardProps = {
-  action: ReactNode;
-  channel: IntegrationChannel;
-  description: string;
-  iconClassName: string;
-  status: ReactNode;
-  title: string;
 };
 
 type HubActionProps = {
@@ -338,42 +332,6 @@ function HubAction({
   );
 }
 
-function IntegrationCard({
-  action,
-  channel,
-  description,
-  iconClassName,
-  status,
-  title,
-}: IntegrationCardProps) {
-  return (
-    <Card
-      className="h-full border-surface-border/80 shadow-none transition-colors hover:border-surface-border"
-      data-testid={`integration-channel-card-${channel}`}
-    >
-      <CardContent className="flex min-h-52 flex-col gap-5 p-5">
-        <div className="flex items-start gap-4">
-          <IntegrationChannelIcon
-            channel={channel}
-            size="lg"
-            className={iconClassName}
-          />
-          <div className="min-w-0 flex-1">
-            <h3 className="text-body font-semibold">{title}</h3>
-            <p className="mt-1.5 text-caption leading-5 text-muted-foreground">
-              {description}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">{status}</div>
-        <div className="mt-auto flex min-h-9 items-center justify-end">
-          {action}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
 // Integrations is the workspace-level connection surface. IM providers are
 // connected once as workspace Hubs; the active Agent is selected from the
 // conversation with `/agents`. Agent-specific installation controls remain
@@ -383,10 +341,10 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
   const navigation = useNavigation();
   const wsId = useWorkspaceId();
   const qc = useQueryClient();
-  const [managedChannel, setManagedChannel] = useState<IntegrationChannel | null>(null);
+  const [managedChannel, setManagedChannel] = useState<HubIntegrationChannel | null>(null);
   const [managedInstallationId, setManagedInstallationId] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<{
-    channel: IntegrationChannel;
+    channel: HubIntegrationChannel;
     installationId: string;
     reconnect: boolean;
   } | null>(null);
@@ -436,6 +394,7 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
     ) ?? false;
 
   const composioEnabled = useFeatureEnabled(COMPOSIO_MCP_APPS_FLAG, false);
+  const linearEnabled = useFeatureEnabled(LINEAR_INSTALLATION_FOUNDATION_FLAG, false);
   const composioToolkits = useQuery({
     ...composioToolkitsOptions(),
     enabled: composioEnabled,
@@ -502,7 +461,7 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
     managedChannel && !hasActiveInstallation(managedListing),
   );
 
-  async function removeInstallation(channel: IntegrationChannel, installationId: string) {
+  async function removeInstallation(channel: HubIntegrationChannel, installationId: string) {
     if (mutating) return;
     setMutating(true);
     try {
@@ -537,7 +496,7 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
     }
   }
 
-  function renderManagedTab(channel: IntegrationChannel) {
+  function renderManagedTab(channel: HubIntegrationChannel) {
     return {
       lark: <LarkTab installationId={managedInstallationId ?? undefined} />,
       slack: <SlackTab installationId={managedInstallationId ?? undefined} />,
@@ -548,7 +507,7 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
     }[channel];
   }
 
-  function renderSetupAction(channel: IntegrationChannel) {
+  function renderSetupAction(channel: HubIntegrationChannel) {
     return {
       lark: <LarkAgentBindButton workspaceScoped />,
       slack: <SlackAgentBindButton />,
@@ -559,7 +518,7 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
     }[channel];
   }
 
-  function renderManagedContent(channel: IntegrationChannel) {
+  function renderManagedContent(channel: HubIntegrationChannel) {
     const listing = listings[channel].data;
     if (hasActiveInstallation(listing)) return renderManagedTab(channel);
 
@@ -670,6 +629,13 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
               />
             );
           })}
+          {linearEnabled ? (
+            <LinearIntegrationCard
+              canManage={canManage}
+              isGuest={isGuest}
+              workspaceId={wsId}
+            />
+          ) : null}
         </div>
       </section>
 

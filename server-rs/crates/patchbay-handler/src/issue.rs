@@ -29,7 +29,8 @@ use patchbay_db::queries::issue_reaction::AddIssueReactionRow;
 use patchbay_db::queries::{
     activity, agent, agent_invocation_target, attachment, automation, comment as comment_q,
     dependency_graph as dependency_graph_q, issue as issue_q, issue_label, issue_property,
-    issue_reaction, member, quick_action, runtime, subscriber, task_usage, team, user, workspace,
+    issue_reaction, linear as linear_q, member, quick_action, runtime, subscriber, task_usage,
+    team, user, workspace,
 };
 use patchbay_middleware::workspace::{WorkspaceContext, WorkspaceGuardState};
 use patchbay_service::issue_service::{
@@ -6489,6 +6490,30 @@ RETURNING *"#,
             )
         })?;
     }
+    // Inbound Linear writes use IssueService::apply_external_patch with an
+    // explicit outbox-suppression boundary. The Issue's durable origin is not
+    // a lifetime-wide publishing veto: users must be able to edit an imported
+    // Issue after it has been linked by a two-way binding.
+    if did_change {
+        let event_key = format!("issue:{}:revision:{}", updated.id, updated.revision);
+        linear_q::enqueue_issue_outbox(
+            &mut *tx,
+            updated.workspace_id,
+            updated.project_id,
+            updated.id,
+            &event_key,
+            "issue_updated",
+            &patchbay_service::issue_service::linear_issue_sync_payload(&updated),
+        )
+        .await
+        .map_err(|error| {
+            tracing::warn!(%error, issue_id = %updated.id, "failed to enqueue Linear Issue update");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to persist Linear synchronization event",
+            )
+        })?;
+    }
     tx.commit().await.map_err(|error| {
         tracing::warn!(%error, issue_id = %previous.id, "failed to commit issue update");
         error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update issue")
@@ -6970,8 +6995,15 @@ pub(crate) async fn advance_issue_to_done_from_pr(
     if terminal_category(&current_category) {
         return None;
     }
+    let mut tx = match state.pool.begin().await {
+        Ok(tx) => tx,
+        Err(error) => {
+            tracing::warn!(%error, issue_id = %previous.id, "failed to begin issue completion transaction");
+            return None;
+        }
+    };
     let updated = match issue_q::update_issue_status(
-        &state.pool,
+        &mut *tx,
         previous.id,
         "done",
         previous.workspace_id,
@@ -6985,6 +7017,27 @@ pub(crate) async fn advance_issue_to_done_from_pr(
             return None;
         }
     };
+    if previous.status != updated.status {
+        let event_key = format!("issue:{}:revision:{}", updated.id, updated.revision);
+        if let Err(error) = linear_q::enqueue_issue_outbox(
+            &mut *tx,
+            updated.workspace_id,
+            updated.project_id,
+            updated.id,
+            &event_key,
+            "issue_updated",
+            &patchbay_service::issue_service::linear_issue_sync_payload(&updated),
+        )
+        .await
+        {
+            tracing::warn!(%error, issue_id = %updated.id, "failed to enqueue PR completion Linear update");
+            return None;
+        }
+    }
+    if let Err(error) = tx.commit().await {
+        tracing::warn!(%error, issue_id = %updated.id, "failed to commit issue completion transaction");
+        return None;
+    }
     notify_parent_of_child_done(state, previous, &updated).await;
     let prefix = issue_prefix(state, updated.workspace_id).await;
     let mut response = IssueResponse::from_issue(&updated, &prefix);

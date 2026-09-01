@@ -1,27 +1,29 @@
 //! Linear installation foundation.
 //!
-//! This module deliberately stops at installation and durable Webhook
-//! receipt. It does not mutate Issues. Later sync workers consume the Inbox
-//! through an explicit domain boundary.
+//! This module owns Linear installation, catalog/binding administration, and
+//! the verified Webhook receipt. Issue mutations still go through the
+//! IssueService domain boundary and durable sync queues.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::body::Bytes;
-use axum::extract::{DefaultBodyLimit, Extension, Query, State};
+use axum::extract::{DefaultBodyLimit, Extension, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, patch, post, put};
 use axum::{Json, Router};
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use base64::Engine as _;
-use chrono::{Duration, Utc};
+use chrono::{Duration, NaiveDate, Utc};
 use hmac::{Hmac, Mac};
-use patchbay_db::models::LinearConnection;
+use patchbay_db::models::{LinearConnection, LinearProjectBinding};
+use patchbay_db::queries::issue as issue_q;
 use patchbay_db::queries::linear as linear_q;
+use patchbay_db::queries::member as member_q;
 use patchbay_middleware::workspace::WorkspaceContext;
 use rand::rngs::OsRng;
 use rand::RngCore;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
@@ -30,6 +32,9 @@ use uuid::Uuid;
 
 use crate::error::error_response;
 use crate::state::HandlerState;
+use patchbay_service::issue_service::{
+    ExternalIssueError, ExternalIssuePatch, ExternalSource, IssueCommand,
+};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -45,13 +50,43 @@ const LINEAR_HTTP_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::fr
 const LINEAR_HTTP_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
 pub fn member_router() -> Router<HandlerState> {
-    Router::new().route("/api/workspaces/{id}/linear", get(get_connection))
+    Router::new()
+        .route("/api/workspaces/{id}/linear", get(get_connection))
+        .route("/api/workspaces/{id}/linear/catalog", get(get_catalog))
+        .route("/api/workspaces/{id}/linear/bindings", get(list_bindings))
+        .route(
+            "/api/workspaces/{id}/linear/members",
+            get(list_member_bindings),
+        )
+        .route("/api/workspaces/{id}/linear/conflicts", get(list_conflicts))
 }
 
 pub fn admin_router() -> Router<HandlerState> {
     Router::new()
         .route("/api/workspaces/{id}/linear/connect", post(start_oauth))
         .route("/api/workspaces/{id}/linear", delete(disconnect))
+        .route("/api/workspaces/{id}/linear/bindings", post(create_binding))
+        .route(
+            "/api/workspaces/{id}/linear/members",
+            put(save_member_binding),
+        )
+        .route(
+            "/api/workspaces/{id}/linear/members/{user_id}",
+            delete(delete_member_binding),
+        )
+        .route(
+            "/api/workspaces/{id}/linear/conflicts/{conflict_id}",
+            patch(resolve_conflict),
+        )
+        .route("/api/workspaces/{id}/linear/dry-run", post(dry_run_binding))
+        .route(
+            "/api/workspaces/{id}/linear/bindings/{binding_id}/import",
+            post(enqueue_initial_import),
+        )
+        .route(
+            "/api/workspaces/{id}/linear/bindings/{binding_id}",
+            patch(update_binding).delete(delete_binding),
+        )
 }
 
 pub fn public_router() -> Router<HandlerState> {
@@ -177,12 +212,16 @@ async fn get_connection(
         Ok(Some(connection)) => Json(json!({
             "configured": true,
             "connected": connection.status == "active",
+            "pull_import_enabled": state.linear_pull_import_enabled(workspace_id),
+            "push_enabled": state.linear_push_enabled(workspace_id),
             "connection": connection_json(connection),
         }))
         .into_response(),
         Ok(None) => Json(json!({
             "configured": true,
             "connected": false,
+            "pull_import_enabled": state.linear_pull_import_enabled(workspace_id),
+            "push_enabled": state.linear_push_enabled(workspace_id),
             "connection": Value::Null,
         }))
         .into_response(),
@@ -194,6 +233,1607 @@ async fn get_connection(
             )
         }
     }
+}
+
+fn linear_token_error_response(error: LinearTokenError) -> Response {
+    match error {
+        LinearTokenError::InvalidGrant | LinearTokenError::ReauthorizationRequired => {
+            error_response(
+                StatusCode::CONFLICT,
+                "Linear authorization requires reauthorization",
+            )
+        }
+        LinearTokenError::NotConfigured => error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Linear OAuth is not configured",
+        ),
+        LinearTokenError::Provider => {
+            error_response(StatusCode::BAD_GATEWAY, "Linear provider request failed")
+        }
+        LinearTokenError::InvalidResponse => error_response(
+            StatusCode::BAD_GATEWAY,
+            "Linear provider returned an invalid response",
+        ),
+        LinearTokenError::MutationRejected(message) => {
+            tracing::warn!(%message, "Linear mutation was rejected");
+            error_response(
+                StatusCode::BAD_REQUEST,
+                "Linear rejected the requested mutation",
+            )
+        }
+        LinearTokenError::RateLimited => error_response(
+            StatusCode::TOO_MANY_REQUESTS,
+            "Linear rate limit reached; retry later",
+        ),
+        LinearTokenError::Storage(error) => {
+            tracing::warn!(%error, "Linear storage operation failed");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Linear integration storage failed",
+            )
+        }
+        LinearTokenError::Secret(error) => {
+            tracing::warn!(%error, "Linear secret storage operation failed");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Linear integration secret storage failed",
+            )
+        }
+    }
+}
+
+async fn get_catalog(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+) -> Response {
+    if let Some(response) = integration_disabled(&state) {
+        return response;
+    }
+    let workspace_id = match workspace_id(&context) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+    let connection = match linear_q::get_connection_for_workspace(&state.pool, workspace_id).await {
+        Ok(Some(connection)) => connection,
+        Ok(None) => return error_response(StatusCode::NOT_FOUND, "Linear is not connected"),
+        Err(error) => {
+            tracing::warn!(%error, "Linear catalog connection lookup failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to load Linear connection",
+            );
+        }
+    };
+    if connection.status == "reauthorization_required" {
+        return error_response(
+            StatusCode::CONFLICT,
+            "Linear authorization requires reauthorization",
+        );
+    }
+    if connection.status == "revoked" {
+        return error_response(StatusCode::NOT_FOUND, "Linear is not connected");
+    }
+    let manager = match LinearTokenManager::from_state(&state) {
+        Ok(manager) => manager,
+        Err(error) => return linear_token_error_response(error),
+    };
+    match manager.catalog(connection.id).await {
+        Ok(catalog) => Json(catalog).into_response(),
+        Err(error) => linear_token_error_response(error),
+    }
+}
+
+async fn dry_run_binding(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Json(request): Json<SaveLinearProjectBindingRequest>,
+) -> Response {
+    if let Some(response) = integration_disabled(&state) {
+        return response;
+    }
+    let workspace_id = match workspace_id(&context) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+    let request = match validate_binding_request(request) {
+        Ok(request) => request,
+        Err(response) => return response,
+    };
+    let connection = match connection_for_binding(&state, workspace_id, request.connection_id).await
+    {
+        Ok(connection) => connection,
+        Err(response) => return response,
+    };
+    if let Err(response) = validate_remote_binding(&state, &connection, &request).await {
+        return response;
+    }
+    match linear_q::project_belongs_to_workspace(
+        &state.pool,
+        workspace_id,
+        request.patchbay_project_id,
+    )
+    .await
+    {
+        Ok(true) => {}
+        Ok(false) => return error_response(StatusCode::NOT_FOUND, "Patchbay project not found"),
+        Err(error) => {
+            tracing::warn!(%error, "Patchbay project lookup for Linear dry run failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to load Patchbay project",
+            );
+        }
+    }
+    let local_issue_count = match linear_q::count_issues_in_project(
+        &state.pool,
+        workspace_id,
+        request.patchbay_project_id,
+    )
+    .await
+    {
+        Ok(count) => count,
+        Err(error) => {
+            tracing::warn!(%error, "Patchbay issue count for Linear dry run failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to count Patchbay issues",
+            );
+        }
+    };
+
+    let remote_counts = if request.sync_mode == "not_synced" {
+        RemoteDryRunCounts {
+            issue_count: 0,
+            unmapped_status_count: 0,
+            truncated: false,
+        }
+    } else {
+        let manager = match LinearTokenManager::from_state(&state) {
+            Ok(manager) => manager,
+            Err(error) => return linear_token_error_response(error),
+        };
+        match manager
+            .dry_run_counts(
+                request.connection_id,
+                request.linear_project_id.trim(),
+                &request.status_mapping,
+            )
+            .await
+        {
+            Ok(counts) => counts,
+            Err(error) => return linear_token_error_response(error),
+        }
+    };
+
+    let candidate_import_count = if request.sync_mode == "import"
+        || (request.sync_mode == "two_way"
+            && request.initial_source_of_truth.as_deref() == Some("linear"))
+    {
+        remote_counts.issue_count
+    } else {
+        0
+    };
+    let candidate_publish_count = if request.sync_mode == "publish"
+        || (request.sync_mode == "two_way"
+            && request.initial_source_of_truth.as_deref() == Some("patchbay"))
+    {
+        local_issue_count
+    } else {
+        0
+    };
+    Json(LinearDryRunResponse {
+        patchbay_project_id: request.patchbay_project_id,
+        linear_project_id: request.linear_project_id.trim().to_string(),
+        sync_mode: request.sync_mode,
+        initial_source_of_truth: request.initial_source_of_truth,
+        local_issue_count,
+        remote_issue_count: remote_counts.issue_count,
+        remote_issue_count_truncated: remote_counts.truncated,
+        candidate_import_count,
+        candidate_publish_count,
+        unmapped_remote_status_count: remote_counts.unmapped_status_count,
+        exact_link_counts_available: false,
+    })
+    .into_response()
+}
+
+async fn list_bindings(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+) -> Response {
+    if let Some(response) = integration_disabled(&state) {
+        return response;
+    }
+    let workspace_id = match workspace_id(&context) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+    match linear_q::list_project_bindings(&state.pool, workspace_id).await {
+        Ok(bindings) => Json(json!({ "bindings": bindings })).into_response(),
+        Err(error) => {
+            tracing::warn!(%error, "Linear project binding lookup failed");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to load Linear project bindings",
+            )
+        }
+    }
+}
+
+async fn list_member_bindings(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+) -> Response {
+    if let Some(response) = integration_disabled(&state) {
+        return response;
+    }
+    let workspace_id = match workspace_id(&context) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+    let Some(connection) =
+        (match linear_q::get_connection_for_workspace(&state.pool, workspace_id).await {
+            Ok(connection) => connection,
+            Err(error) => {
+                tracing::warn!(%error, "Linear member binding connection lookup failed");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to load Linear connection",
+                );
+            }
+        })
+    else {
+        return error_response(StatusCode::NOT_FOUND, "Linear is not connected");
+    };
+    match linear_q::list_linear_member_bindings(&state.pool, workspace_id, connection.id).await {
+        Ok(bindings) => Json(json!({ "bindings": bindings })).into_response(),
+        Err(error) => {
+            tracing::warn!(%error, "Linear member binding lookup failed");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to load Linear member mappings",
+            )
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct SaveLinearMemberBindingRequest {
+    connection_id: Uuid,
+    patchbay_user_id: Uuid,
+    linear_user_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearMemberBindingPath {
+    id: Uuid,
+    user_id: Uuid,
+}
+
+async fn save_member_binding(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Json(request): Json<SaveLinearMemberBindingRequest>,
+) -> Response {
+    if let Some(response) = integration_disabled(&state) {
+        return response;
+    }
+    let workspace_id = match workspace_id(&context) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+    let linear_user_id = request.linear_user_id.trim();
+    if request.patchbay_user_id.is_nil() || linear_user_id.is_empty() {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "Patchbay and Linear member ids are required",
+        );
+    }
+    if let Err(response) = connection_for_binding(&state, workspace_id, request.connection_id).await
+    {
+        return response;
+    }
+    if member_q::get_member_by_user_and_workspace(
+        &state.pool,
+        request.patchbay_user_id,
+        workspace_id,
+    )
+    .await
+    .ok()
+    .flatten()
+    .is_none()
+    {
+        return error_response(StatusCode::NOT_FOUND, "Patchbay member not found");
+    }
+    match linear_q::upsert_linear_member_binding(
+        &state.pool,
+        Uuid::now_v7(),
+        workspace_id,
+        request.connection_id,
+        request.patchbay_user_id,
+        linear_user_id,
+    )
+    .await
+    {
+        Ok(binding) => (StatusCode::OK, Json(binding)).into_response(),
+        Err(error) => {
+            tracing::warn!(%error, "Linear member binding save failed");
+            error_response(
+                StatusCode::CONFLICT,
+                "Linear member is already mapped to another Patchbay member",
+            )
+        }
+    }
+}
+
+async fn delete_member_binding(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(path): Path<LinearMemberBindingPath>,
+) -> Response {
+    if let Some(response) = integration_disabled(&state) {
+        return response;
+    }
+    let workspace_id = match workspace_id(&context) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+    if path.id != workspace_id || path.user_id.is_nil() {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid Linear member mapping path",
+        );
+    }
+    let Some(connection) =
+        (match linear_q::get_connection_for_workspace(&state.pool, workspace_id).await {
+            Ok(connection) => connection,
+            Err(error) => {
+                tracing::warn!(%error, "Linear member binding connection lookup failed");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to load Linear connection",
+                );
+            }
+        })
+    else {
+        return error_response(StatusCode::NOT_FOUND, "Linear is not connected");
+    };
+    match linear_q::delete_linear_member_binding(
+        &state.pool,
+        workspace_id,
+        connection.id,
+        path.user_id,
+    )
+    .await
+    {
+        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(false) => error_response(StatusCode::NOT_FOUND, "Linear member mapping not found"),
+        Err(error) => {
+            tracing::warn!(%error, "Linear member binding delete failed");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to delete Linear member mapping",
+            )
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearConflictQuery {
+    status: Option<String>,
+}
+
+async fn list_conflicts(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Query(query): Query<LinearConflictQuery>,
+) -> Response {
+    if let Some(response) = integration_disabled(&state) {
+        return response;
+    }
+    let workspace_id = match workspace_id(&context) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+    let status = query
+        .status
+        .as_deref()
+        .filter(|value| matches!(*value, "open" | "resolved" | "dismissed"));
+    if query.status.is_some() && status.is_none() {
+        return error_response(StatusCode::BAD_REQUEST, "invalid Linear conflict status");
+    }
+    match linear_q::list_linear_sync_conflicts(&state.pool, workspace_id, status).await {
+        Ok(conflicts) => {
+            let link_ids = conflicts
+                .iter()
+                .map(|conflict| conflict.link_id)
+                .collect::<Vec<_>>();
+            let identifiers = linear_q::list_linear_issue_identifiers_for_links(
+                &state.pool,
+                workspace_id,
+                &link_ids,
+            )
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .collect::<std::collections::HashMap<_, _>>();
+            let mut enriched = Vec::with_capacity(conflicts.len());
+            for conflict in conflicts {
+                let identifier = identifiers.get(&conflict.link_id).cloned();
+                let mut value = serde_json::to_value(conflict).unwrap_or_else(|_| json!({}));
+                if let Some(object) = value.as_object_mut() {
+                    object.insert("linear_identifier".to_string(), json!(identifier));
+                }
+                enriched.push(value);
+            }
+            Json(json!({ "conflicts": enriched })).into_response()
+        }
+        Err(error) => {
+            tracing::warn!(%error, "Linear conflict lookup failed");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to load Linear conflicts",
+            )
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct ResolveLinearConflictRequest {
+    resolution: String,
+    /// `None` means the property was omitted; `Some(None)` is an explicit
+    /// JSON null and is valid for nullable fields such as description.
+    #[serde(default, deserialize_with = "deserialize_optional_nullable_value")]
+    manual_value: Option<Option<Value>>,
+}
+
+fn deserialize_optional_nullable_value<'de, D>(
+    deserializer: D,
+) -> Result<Option<Option<Value>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Some(Option::<Value>::deserialize(deserializer)?))
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearConflictPath {
+    id: Uuid,
+    conflict_id: Uuid,
+}
+
+fn conflict_patch(field: &str, value: &Value) -> Result<ExternalIssuePatch, &'static str> {
+    match field {
+        "title" => Ok(ExternalIssuePatch {
+            title: Some(
+                value
+                    .as_str()
+                    .filter(|value| !value.trim().is_empty())
+                    .ok_or("title resolution must be a non-empty string")?
+                    .to_string(),
+            ),
+            ..ExternalIssuePatch::default()
+        }),
+        "description" => {
+            let description = match value {
+                Value::String(value) => Some(Some(value.clone())),
+                Value::Null => Some(None),
+                _ => return Err("description resolution must be a string or null"),
+            };
+            Ok(ExternalIssuePatch {
+                description,
+                ..ExternalIssuePatch::default()
+            })
+        }
+        "priority" => Ok(ExternalIssuePatch {
+            priority: Some(
+                value
+                    .as_str()
+                    .filter(|value| matches!(*value, "none" | "urgent" | "high" | "medium" | "low"))
+                    .ok_or("priority resolution is invalid")?
+                    .to_string(),
+            ),
+            ..ExternalIssuePatch::default()
+        }),
+        "status" => Ok(ExternalIssuePatch {
+            status: Some(
+                value
+                    .as_str()
+                    .filter(|value| !value.trim().is_empty())
+                    .ok_or("status resolution must be a non-empty string")?
+                    .to_string(),
+            ),
+            ..ExternalIssuePatch::default()
+        }),
+        "due_date" => Ok(ExternalIssuePatch {
+            due_date: Some(
+                value
+                    .as_str()
+                    .filter(|value| !value.trim().is_empty())
+                    .map(|value| {
+                        NaiveDate::parse_from_str(value, "%Y-%m-%d")
+                            .map_err(|_| "due date resolution is invalid")
+                    })
+                    .transpose()?,
+            ),
+            ..ExternalIssuePatch::default()
+        }),
+        "owner_id" => {
+            let owner_id = value
+                .as_str()
+                .filter(|value| !value.trim().is_empty())
+                .map(|value| {
+                    value
+                        .parse::<Uuid>()
+                        .map_err(|_| "owner resolution is invalid")
+                })
+                .transpose()?;
+            Ok(ExternalIssuePatch {
+                owner_type: Some(owner_id.map(|_| "member".to_string())),
+                owner_id: Some(owner_id),
+                ..ExternalIssuePatch::default()
+            })
+        }
+        _ => Err("this Linear field cannot be resolved here"),
+    }
+}
+
+fn status_resolution_is_publishable(status_mapping: &Value, status: &str) -> bool {
+    status_mapping.as_object().is_some_and(|mapping| {
+        mapping
+            .values()
+            .any(|mapped_status| mapped_status.as_str() == Some(status))
+    })
+}
+
+fn current_issue_conflict_value(
+    issue: &patchbay_db::models::Issue,
+    field: &str,
+) -> Result<Value, &'static str> {
+    match field {
+        "title" => Ok(Value::String(issue.title.clone())),
+        "description" => Ok(issue
+            .description
+            .clone()
+            .map(Value::String)
+            .unwrap_or(Value::Null)),
+        "priority" => Ok(Value::String(issue.priority.clone())),
+        "status" => Ok(Value::String(issue.status.clone())),
+        "due_date" => Ok(issue
+            .due_date
+            .map(|date| Value::String(date.format("%Y-%m-%d").to_string()))
+            .unwrap_or(Value::Null)),
+        "owner_id" => Ok(if issue.owner_type.as_deref() == Some("member") {
+            issue
+                .owner_id
+                .map(|id| Value::String(id.to_string()))
+                .unwrap_or(Value::Null)
+        } else {
+            Value::Null
+        }),
+        _ => Err("this Linear field cannot be resolved here"),
+    }
+}
+
+fn issue_differs_from_common_snapshot(
+    issue: &patchbay_db::models::Issue,
+    common_snapshot: &Value,
+) -> bool {
+    [
+        "title",
+        "description",
+        "priority",
+        "status",
+        "due_date",
+        "owner_id",
+    ]
+    .into_iter()
+    .any(|field| {
+        current_issue_conflict_value(issue, field)
+            .map(|value| common_snapshot.get(field) != Some(&value))
+            .unwrap_or(false)
+    })
+}
+
+fn external_conflict_error_status(error: &ExternalIssueError) -> StatusCode {
+    match error {
+        ExternalIssueError::RevisionConflict { .. } => StatusCode::CONFLICT,
+        ExternalIssueError::NotFound => StatusCode::NOT_FOUND,
+        ExternalIssueError::InvalidStatus
+        | ExternalIssueError::InvalidPriority
+        | ExternalIssueError::InvalidOwner
+        | ExternalIssueError::ActiveExecutorRequired
+        | ExternalIssueError::ReviewReviewerRequired
+        | ExternalIssueError::ProjectNotFound
+        | ExternalIssueError::Internal(_)
+        | ExternalIssueError::MissingSourceEvent
+        | ExternalIssueError::ExternalOutboxNotSuppressed => StatusCode::BAD_REQUEST,
+        ExternalIssueError::Sql(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    }
+}
+
+async fn resolve_conflict(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(path): Path<LinearConflictPath>,
+    Json(request): Json<ResolveLinearConflictRequest>,
+) -> Response {
+    if let Some(response) = integration_disabled(&state) {
+        return response;
+    }
+    let workspace_id = match workspace_id(&context) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+    if path.id != workspace_id {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "workspace id does not match context",
+        );
+    }
+    if !matches!(request.resolution.as_str(), "local" | "remote" | "manual") {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "resolution must be local, remote, or manual",
+        );
+    }
+    let mut transaction = match state.pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(error) => {
+            tracing::warn!(%error, "Linear conflict transaction failed to start");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to resolve Linear conflict",
+            );
+        }
+    };
+    let Some(conflict_snapshot) = (match linear_q::get_linear_sync_conflict(
+        &mut *transaction,
+        workspace_id,
+        path.conflict_id,
+    )
+    .await
+    {
+        Ok(conflict) => conflict,
+        Err(error) => {
+            tracing::warn!(%error, "Linear conflict lookup failed before resolution");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to load Linear conflict",
+            );
+        }
+    }) else {
+        return error_response(StatusCode::NOT_FOUND, "Linear conflict not found");
+    };
+    if conflict_snapshot.status != "open" {
+        return error_response(StatusCode::CONFLICT, "Linear conflict is already resolved");
+    }
+    let Some(connection) =
+        (match linear_q::get_connection_for_workspace_for_update(&mut transaction, workspace_id)
+            .await
+        {
+            Ok(connection) => connection,
+            Err(error) => {
+                tracing::warn!(%error, "Linear conflict connection lookup failed");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to load Linear connection",
+                );
+            }
+        })
+    else {
+        return error_response(
+            StatusCode::CONFLICT,
+            "Linear connection is no longer available",
+        );
+    };
+    let Some(binding) = (match linear_q::get_project_binding_for_update(
+        &mut *transaction,
+        workspace_id,
+        conflict_snapshot.binding_id,
+    )
+    .await
+    {
+        Ok(binding) => binding,
+        Err(error) => {
+            tracing::warn!(%error, "Linear conflict binding lookup failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to load Linear binding",
+            );
+        }
+    }) else {
+        return error_response(StatusCode::CONFLICT, "Linear binding is no longer syncable");
+    };
+    if binding.connection_id != connection.id
+        || (matches!(binding.sync_mode.as_str(), "publish" | "two_way")
+            && connection.status != "active")
+    {
+        return error_response(
+            StatusCode::CONFLICT,
+            "Linear connection is no longer active for this resolution",
+        );
+    }
+    let Some(link) = (match linear_q::get_linear_issue_link_for_update(
+        &mut *transaction,
+        workspace_id,
+        conflict_snapshot.link_id,
+    )
+    .await
+    {
+        Ok(link) => link,
+        Err(error) => {
+            tracing::warn!(%error, "Linear conflict link lookup failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to load Linear link",
+            );
+        }
+    }) else {
+        return error_response(StatusCode::NOT_FOUND, "Linear Issue Link not found");
+    };
+    if link.patchbay_issue_id != conflict_snapshot.patchbay_issue_id
+        || link.binding_id != conflict_snapshot.binding_id
+        || link.sync_status == "deleted"
+    {
+        return error_response(
+            StatusCode::CONFLICT,
+            "Linear Issue Link is no longer syncable",
+        );
+    }
+    let Some(issue) = (match sqlx::query_as::<_, patchbay_db::models::Issue>(
+        "SELECT * FROM issue WHERE id = $1 AND workspace_id = $2 FOR UPDATE",
+    )
+    .bind(conflict_snapshot.patchbay_issue_id)
+    .bind(workspace_id)
+    .fetch_optional(&mut *transaction)
+    .await
+    {
+        Ok(issue) => issue,
+        Err(error) => {
+            tracing::warn!(%error, "Linear conflict Issue lookup failed");
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to load Issue");
+        }
+    }) else {
+        return error_response(StatusCode::NOT_FOUND, "Patchbay Issue not found");
+    };
+    let Some(conflict) = (match linear_q::get_linear_sync_conflict_for_update(
+        &mut *transaction,
+        workspace_id,
+        path.conflict_id,
+    )
+    .await
+    {
+        Ok(conflict) => conflict,
+        Err(error) => {
+            tracing::warn!(%error, "Linear conflict lock failed before resolution");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to lock Linear conflict",
+            );
+        }
+    }) else {
+        return error_response(StatusCode::NOT_FOUND, "Linear conflict not found");
+    };
+    if conflict.status != "open"
+        || conflict.binding_id != binding.id
+        || conflict.link_id != link.id
+        || conflict.patchbay_issue_id != issue.id
+    {
+        return error_response(
+            StatusCode::CONFLICT,
+            "Linear conflict is no longer resolvable",
+        );
+    }
+    if binding.status != "active"
+        || !(matches!(binding.sync_mode.as_str(), "publish" | "two_way")
+            || (binding.sync_mode == "import" && request.resolution == "remote"))
+        || binding
+            .linear_team_id
+            .as_deref()
+            .map(|team| team.trim().is_empty())
+            .unwrap_or(true)
+    {
+        return error_response(StatusCode::CONFLICT, "Linear binding is no longer syncable");
+    }
+    let selected_value = match request.resolution.as_str() {
+        "local" => match current_issue_conflict_value(&issue, &conflict.field) {
+            Ok(value) => value,
+            Err(message) => return error_response(StatusCode::BAD_REQUEST, message),
+        },
+        "remote" => conflict.remote_value.clone(),
+        "manual" => match request.manual_value {
+            Some(Some(value)) => value,
+            Some(None) => Value::Null,
+            None => return error_response(StatusCode::BAD_REQUEST, "manual_value is required"),
+        },
+        _ => unreachable!(),
+    };
+    let patch = match conflict_patch(&conflict.field, &selected_value) {
+        Ok(patch) => patch,
+        Err(message) => return error_response(StatusCode::BAD_REQUEST, message),
+    };
+    if request.resolution != "remote" {
+        if let Some(status) = patch.status.as_deref() {
+            if !status_resolution_is_publishable(&binding.status_mapping, status) {
+                return error_response(
+                    StatusCode::BAD_REQUEST,
+                    "status resolution has no Linear state mapping",
+                );
+            }
+        }
+    }
+    if request.resolution != "remote" {
+        if let Some(owner_id) = patch.owner_id.flatten() {
+            match linear_q::get_linear_member_binding(
+                &mut *transaction,
+                workspace_id,
+                binding.connection_id,
+                owner_id,
+            )
+            .await
+            {
+                Ok(Some(_)) => {}
+                Ok(None) => {
+                    return error_response(
+                        StatusCode::BAD_REQUEST,
+                        "owner resolution has no Linear member mapping",
+                    );
+                }
+                Err(error) => {
+                    tracing::warn!(%error, "Linear conflict owner mapping lookup failed");
+                    return error_response(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to validate owner resolution",
+                    );
+                }
+            }
+        }
+    }
+    let applied = match state
+        .issues
+        .apply_external_patch_in_transaction(
+            &mut transaction,
+            workspace_id,
+            issue.id,
+            IssueCommand::ApplyExternalPatch {
+                source: ExternalSource::Linear,
+                source_event_id: format!("linear-conflict:{}", conflict.id),
+                expected_revision: Some(issue.revision),
+                suppress_external_outbox: true,
+                patch,
+            },
+        )
+        .await
+    {
+        Ok(applied) => applied,
+        Err(error) => {
+            tracing::warn!(%error, conflict_id = %conflict.id, "Linear conflict Issue resolution failed");
+            return error_response(external_conflict_error_status(&error), &error.to_string());
+        }
+    };
+    let resolved = match linear_q::resolve_linear_sync_conflict(
+        &mut *transaction,
+        workspace_id,
+        conflict.id,
+        &request.resolution,
+        &selected_value,
+        context.member.user_id,
+    )
+    .await
+    {
+        Ok(Some(conflict)) => conflict,
+        Ok(None) => {
+            return error_response(StatusCode::CONFLICT, "Linear conflict is already resolved")
+        }
+        Err(error) => {
+            tracing::warn!(%error, "Linear conflict resolution persistence failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to save Linear conflict resolution",
+            );
+        }
+    };
+    let open_conflicts = match linear_q::count_open_linear_sync_conflicts_for_link(
+        &mut *transaction,
+        workspace_id,
+        link.id,
+    )
+    .await
+    {
+        Ok(count) => count,
+        Err(error) => {
+            tracing::warn!(%error, "Linear conflict count failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to update Linear conflict",
+            );
+        }
+    };
+    // The remote value is the latest common evidence. Keeping it as the
+    // merge base means a local/manual choice remains an intentional local
+    // delta for the subsequent outbound push.
+    let mut common_snapshot = link.last_common_snapshot.clone();
+    if let Some(object) = common_snapshot.as_object_mut() {
+        object.insert(conflict.field.clone(), conflict.remote_value.clone());
+    }
+    let link_status = if open_conflicts == 0 {
+        "active"
+    } else {
+        "conflict"
+    };
+    let link_updated = match linear_q::set_linear_issue_link_state(
+        &mut *transaction,
+        link.id,
+        workspace_id,
+        &common_snapshot,
+        link.remote_updated_at,
+        link.last_remote_event_at_ms,
+        link.last_remote_event_id.as_deref(),
+        link_status,
+    )
+    .await
+    {
+        Ok(updated) => updated,
+        Err(error) => {
+            tracing::warn!(%error, conflict_id = %resolved.id, "Linear conflict link update failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to update Linear link",
+            );
+        }
+    };
+    if !link_updated {
+        return error_response(
+            StatusCode::CONFLICT,
+            "Linear Issue Link disappeared during resolution",
+        );
+    }
+    if open_conflicts == 0 {
+        let updated_issue = applied.updated.as_ref().unwrap_or(&applied.previous);
+        if issue_differs_from_common_snapshot(updated_issue, &common_snapshot) {
+            if let Err(error) = linear_q::enqueue_issue_outbox_for_binding(
+                &mut *transaction,
+                workspace_id,
+                link.binding_id,
+                updated_issue.id,
+                &format!("conflict:{}:{}", conflict.id, request.resolution),
+                "issue_updated",
+                &patchbay_service::issue_service::linear_issue_sync_payload(updated_issue),
+            )
+            .await
+            {
+                tracing::warn!(%error, conflict_id = %conflict.id, "Linear conflict outbound resolution enqueue failed");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to queue Linear conflict resolution",
+                );
+            }
+        }
+    }
+    if let Err(error) = transaction.commit().await {
+        tracing::warn!(%error, conflict_id = %conflict.id, "Linear conflict transaction commit failed");
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to commit Linear conflict resolution",
+        );
+    }
+    state.issues.publish_external_issue_apply(&applied).await;
+    state.notify_linear_sync();
+    Json(resolved).into_response()
+}
+
+#[derive(Debug, Deserialize)]
+struct SaveLinearProjectBindingRequest {
+    connection_id: Uuid,
+    patchbay_project_id: Uuid,
+    linear_project_id: String,
+    linear_team_id: Option<String>,
+    status: Option<String>,
+    sync_mode: String,
+    initial_source_of_truth: Option<String>,
+    #[serde(default = "empty_json_object")]
+    status_mapping: Value,
+    #[serde(default = "empty_json_object")]
+    agent_label_mapping: Value,
+}
+
+fn empty_json_object() -> Value {
+    json!({})
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearBindingPath {
+    id: Uuid,
+    binding_id: Uuid,
+}
+
+fn binding_status(status: Option<&str>) -> Result<&str, Response> {
+    let status = status.unwrap_or("draft");
+    if matches!(status, "draft" | "active" | "paused" | "tombstone") {
+        Ok(status)
+    } else {
+        Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid Linear binding status",
+        ))
+    }
+}
+
+fn binding_sync_mode(mode: &str) -> Result<&str, Response> {
+    if matches!(mode, "import" | "publish" | "two_way" | "not_synced") {
+        Ok(mode)
+    } else {
+        Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid Linear sync mode",
+        ))
+    }
+}
+
+fn binding_mapping(value: Value, message: &'static str) -> Result<Value, Response> {
+    if value.is_object() {
+        Ok(value)
+    } else {
+        Err(error_response(StatusCode::BAD_REQUEST, message))
+    }
+}
+
+fn validate_binding_request(
+    request: SaveLinearProjectBindingRequest,
+) -> Result<SaveLinearProjectBindingRequest, Response> {
+    let status = binding_status(request.status.as_deref())?;
+    let sync_mode = binding_sync_mode(&request.sync_mode)?;
+    if request.linear_project_id.trim().is_empty() {
+        return Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "Linear project id is required",
+        ));
+    }
+    let linear_team_id = request
+        .linear_team_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    if matches!(status, "active" | "paused") && linear_team_id.is_none() {
+        return Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "Linear team id is required before activation",
+        ));
+    }
+    if status == "active" && sync_mode == "not_synced" {
+        return Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "a not-synced binding cannot be active",
+        ));
+    }
+    if sync_mode == "import" && request.initial_source_of_truth.as_deref() != Some("linear") {
+        return Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "import bindings require Linear as the initial source",
+        ));
+    }
+    if sync_mode == "publish" && request.initial_source_of_truth.as_deref() != Some("patchbay") {
+        return Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "publish bindings require Patchbay as the initial source",
+        ));
+    }
+    if sync_mode == "two_way"
+        && !matches!(
+            request.initial_source_of_truth.as_deref(),
+            Some("linear") | Some("patchbay")
+        )
+    {
+        return Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "two-way bindings require an initial source",
+        ));
+    }
+    if !matches!(sync_mode, "two_way" | "import" | "publish")
+        && request.initial_source_of_truth.is_some()
+    {
+        return Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "not-synced bindings cannot select an initial source",
+        ));
+    }
+    let status_mapping =
+        binding_mapping(request.status_mapping, "status mapping must be an object")?;
+    let agent_label_mapping = binding_mapping(
+        request.agent_label_mapping,
+        "agent label mapping must be an object",
+    )?;
+    Ok(SaveLinearProjectBindingRequest {
+        linear_team_id: linear_team_id.map(str::to_string),
+        status: Some(status.to_string()),
+        sync_mode: sync_mode.to_string(),
+        status_mapping,
+        agent_label_mapping,
+        ..request
+    })
+}
+
+async fn connection_for_binding(
+    state: &HandlerState,
+    workspace_id: Uuid,
+    connection_id: Uuid,
+) -> Result<LinearConnection, Response> {
+    match linear_q::get_connection_by_id(&state.pool, workspace_id, connection_id).await {
+        Ok(Some(connection)) if connection.status == "active" => Ok(connection),
+        Ok(Some(connection)) if connection.status == "reauthorization_required" => {
+            Err(error_response(
+                StatusCode::CONFLICT,
+                "Linear authorization requires reauthorization",
+            ))
+        }
+        Ok(Some(_)) => Err(error_response(
+            StatusCode::NOT_FOUND,
+            "Linear is not connected",
+        )),
+        Ok(None) => Err(error_response(
+            StatusCode::NOT_FOUND,
+            "Linear connection not found",
+        )),
+        Err(error) => {
+            tracing::warn!(%error, "Linear binding connection lookup failed");
+            Err(error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to load Linear connection",
+            ))
+        }
+    }
+}
+
+async fn validate_remote_binding(
+    state: &HandlerState,
+    connection: &LinearConnection,
+    request: &SaveLinearProjectBindingRequest,
+) -> Result<(), Response> {
+    if request.status.as_deref() != Some("active") {
+        return Ok(());
+    }
+    let Some(linear_team_id) = request.linear_team_id.as_deref() else {
+        return Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "Linear team id is required before activation",
+        ));
+    };
+    let manager = LinearTokenManager::from_state(state).map_err(linear_token_error_response)?;
+    match manager
+        .remote_binding_is_valid(
+            connection.id,
+            &connection.organization_id,
+            request.linear_project_id.trim(),
+            linear_team_id,
+        )
+        .await
+    {
+        Ok(true) => Ok(()),
+        Ok(false) => Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "Linear project and team do not belong to the connected organization",
+        )),
+        Err(error) => Err(linear_token_error_response(error)),
+    }
+}
+
+fn is_linear_binding_unique_conflict(error: &anyhow::Error) -> bool {
+    error.downcast_ref::<sqlx::Error>().is_some_and(|error| {
+        matches!(
+            error,
+            sqlx::Error::Database(database)
+                if database.code().as_deref() == Some("23505")
+                    && matches!(
+                        database.constraint(),
+                        Some("uq_linear_project_binding_remote" | "uq_linear_project_binding_local")
+                    )
+        )
+    })
+}
+
+fn binding_is_publishable(binding: &LinearProjectBinding) -> bool {
+    binding.status == "active"
+        && binding.linear_team_id.is_some()
+        && (binding.sync_mode == "publish"
+            || (binding.sync_mode == "two_way"
+                && binding.initial_source_of_truth.as_deref() == Some("patchbay")))
+}
+
+fn binding_needs_outbox_seed(
+    previous: Option<&LinearProjectBinding>,
+    next: &LinearProjectBinding,
+) -> bool {
+    if !binding_is_publishable(next) {
+        return false;
+    }
+    let Some(previous) = previous else {
+        return true;
+    };
+    !binding_is_publishable(previous)
+        || (next.sync_mode == "two_way"
+            && next.initial_source_of_truth.as_deref() == Some("patchbay")
+            && previous.initial_source_of_truth.as_deref() != Some("patchbay"))
+}
+
+async fn seed_binding_outbox(
+    executor: &mut sqlx::PgConnection,
+    binding: &LinearProjectBinding,
+) -> anyhow::Result<u64> {
+    if !binding_is_publishable(binding) {
+        return Ok(0);
+    }
+    let issues = issue_q::list_issues_in_project(
+        &mut *executor,
+        binding.workspace_id,
+        binding.patchbay_project_id,
+    )
+    .await?;
+    let mut inserted = 0;
+    for issue in issues {
+        let event_key = format!("issue:{}:revision:{}", issue.id, issue.revision);
+        if linear_q::enqueue_issue_outbox_for_binding(
+            &mut *executor,
+            binding.workspace_id,
+            binding.id,
+            issue.id,
+            &event_key,
+            "issue_updated",
+            &patchbay_service::issue_service::linear_issue_sync_payload(&issue),
+        )
+        .await?
+        .is_some()
+        {
+            inserted += 1;
+        }
+    }
+    Ok(inserted)
+}
+
+async fn create_binding(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Json(request): Json<SaveLinearProjectBindingRequest>,
+) -> Response {
+    if let Some(response) = integration_disabled(&state) {
+        return response;
+    }
+    let workspace_id = match workspace_id(&context) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+    let request = match validate_binding_request(request) {
+        Ok(request) => request,
+        Err(response) => return response,
+    };
+    let connection = match connection_for_binding(&state, workspace_id, request.connection_id).await
+    {
+        Ok(connection) => connection,
+        Err(response) => return response,
+    };
+    if let Err(response) = validate_remote_binding(&state, &connection, &request).await {
+        return response;
+    }
+    match linear_q::project_belongs_to_workspace(
+        &state.pool,
+        workspace_id,
+        request.patchbay_project_id,
+    )
+    .await
+    {
+        Ok(true) => {}
+        Ok(false) => return error_response(StatusCode::NOT_FOUND, "Patchbay project not found"),
+        Err(error) => {
+            tracing::warn!(%error, "Patchbay project lookup for Linear binding failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to load Patchbay project",
+            );
+        }
+    }
+    let input = linear_q::LinearProjectBindingInput {
+        id: Uuid::now_v7(),
+        workspace_id,
+        connection_id: request.connection_id,
+        patchbay_project_id: request.patchbay_project_id,
+        linear_project_id: request.linear_project_id.trim(),
+        linear_team_id: request.linear_team_id.as_deref(),
+        status: request.status.as_deref().unwrap_or("draft"),
+        sync_mode: &request.sync_mode,
+        initial_source_of_truth: request.initial_source_of_truth.as_deref(),
+        status_mapping: &request.status_mapping,
+        agent_label_mapping: &request.agent_label_mapping,
+        created_by_id: context.member.user_id,
+    };
+    let mut transaction = match state.pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(error) => {
+            tracing::warn!(%error, "Linear project binding transaction failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to create Linear project binding",
+            );
+        }
+    };
+    match linear_q::create_project_binding(&mut *transaction, &input).await {
+        Ok(binding) => {
+            if binding_needs_outbox_seed(None, &binding) {
+                if let Err(error) = seed_binding_outbox(&mut transaction, &binding).await {
+                    tracing::warn!(%error, binding_id = %binding.id, "Linear binding Outbox seed failed");
+                    return error_response(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to seed Linear publication events",
+                    );
+                }
+            }
+            if let Err(error) = transaction.commit().await {
+                tracing::warn!(%error, binding_id = %binding.id, "Linear project binding commit failed");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to create Linear project binding",
+                );
+            }
+            (StatusCode::CREATED, Json(binding)).into_response()
+        }
+        Err(error) => {
+            tracing::warn!(%error, "Linear project binding creation failed");
+            if is_linear_binding_unique_conflict(&error) {
+                error_response(
+                    StatusCode::CONFLICT,
+                    "Linear project binding already exists",
+                )
+            } else {
+                error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to create Linear project binding",
+                )
+            }
+        }
+    }
+}
+
+async fn update_binding(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(path): Path<LinearBindingPath>,
+    Json(request): Json<SaveLinearProjectBindingRequest>,
+) -> Response {
+    if let Some(response) = integration_disabled(&state) {
+        return response;
+    }
+    let workspace_id = match workspace_id(&context) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+    if path.id != workspace_id {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "workspace id does not match context",
+        );
+    }
+    let request = match validate_binding_request(request) {
+        Ok(request) => request,
+        Err(response) => return response,
+    };
+    let Some(existing) =
+        (match linear_q::get_project_binding(&state.pool, workspace_id, path.binding_id).await {
+            Ok(binding) => binding,
+            Err(error) => {
+                tracing::warn!(%error, "Linear project binding lookup failed");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to load Linear project binding",
+                );
+            }
+        })
+    else {
+        return error_response(StatusCode::NOT_FOUND, "Linear project binding not found");
+    };
+    if request.connection_id != existing.connection_id
+        || request.patchbay_project_id != existing.patchbay_project_id
+        || request.linear_project_id.trim() != existing.linear_project_id
+    {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "Linear binding connection, Patchbay project, and Linear project are immutable",
+        );
+    }
+    let connection = match connection_for_binding(&state, workspace_id, request.connection_id).await
+    {
+        Ok(connection) => connection,
+        Err(response) => return response,
+    };
+    if let Err(response) = validate_remote_binding(&state, &connection, &request).await {
+        return response;
+    }
+    let input = linear_q::LinearProjectBindingInput {
+        id: path.binding_id,
+        workspace_id,
+        connection_id: request.connection_id,
+        patchbay_project_id: request.patchbay_project_id,
+        linear_project_id: request.linear_project_id.trim(),
+        linear_team_id: request.linear_team_id.as_deref(),
+        status: request.status.as_deref().unwrap_or("draft"),
+        sync_mode: &request.sync_mode,
+        initial_source_of_truth: request.initial_source_of_truth.as_deref(),
+        status_mapping: &request.status_mapping,
+        agent_label_mapping: &request.agent_label_mapping,
+        created_by_id: existing.created_by_id,
+    };
+    let mut transaction = match state.pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(error) => {
+            tracing::warn!(%error, "Linear project binding transaction failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to update Linear project binding",
+            );
+        }
+    };
+    match linear_q::update_project_binding(&mut *transaction, &input).await {
+        Ok(Some(binding)) => {
+            if binding_needs_outbox_seed(Some(&existing), &binding) {
+                if let Err(error) = seed_binding_outbox(&mut transaction, &binding).await {
+                    tracing::warn!(%error, binding_id = %binding.id, "Linear binding Outbox seed failed");
+                    return error_response(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to seed Linear publication events",
+                    );
+                }
+            }
+            if let Err(error) = transaction.commit().await {
+                tracing::warn!(%error, binding_id = %binding.id, "Linear project binding commit failed");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to update Linear project binding",
+                );
+            }
+            Json(binding).into_response()
+        }
+        Ok(None) => error_response(StatusCode::NOT_FOUND, "Linear project binding not found"),
+        Err(error) => {
+            tracing::warn!(%error, "Linear project binding update failed");
+            if is_linear_binding_unique_conflict(&error) {
+                error_response(
+                    StatusCode::CONFLICT,
+                    "Linear project binding already exists",
+                )
+            } else {
+                error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to update Linear project binding",
+                )
+            }
+        }
+    }
+}
+
+async fn delete_binding(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(path): Path<LinearBindingPath>,
+) -> Response {
+    if let Some(response) = integration_disabled(&state) {
+        return response;
+    }
+    let workspace_id = match workspace_id(&context) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+    if path.id != workspace_id {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "workspace id does not match context",
+        );
+    }
+    match linear_q::tombstone_project_binding(&state.pool, workspace_id, path.binding_id).await {
+        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(false) => error_response(StatusCode::NOT_FOUND, "Linear project binding not found"),
+        Err(error) => {
+            tracing::warn!(%error, "Linear project binding tombstone failed");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to remove Linear project binding",
+            )
+        }
+    }
+}
+
+async fn enqueue_initial_import(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(path): Path<LinearBindingPath>,
+) -> Response {
+    if let Some(response) = integration_disabled(&state) {
+        return response;
+    }
+    let workspace_id = match workspace_id(&context) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+    if path.id != workspace_id {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "workspace id does not match context",
+        );
+    }
+    if !state.linear_pull_import_enabled(workspace_id) {
+        return error_response(StatusCode::NOT_FOUND, "Linear pull/import is not enabled");
+    }
+    let Some(binding) =
+        (match linear_q::get_project_binding(&state.pool, workspace_id, path.binding_id).await {
+            Ok(binding) => binding,
+            Err(error) => {
+                tracing::warn!(%error, "Linear initial import binding lookup failed");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to load Linear project binding",
+                );
+            }
+        })
+    else {
+        return error_response(StatusCode::NOT_FOUND, "Linear project binding not found");
+    };
+    if binding.status != "active" || !matches!(binding.sync_mode.as_str(), "import" | "two_way") {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "Linear binding is not configured for import",
+        );
+    }
+    if let Err(response) = connection_for_binding(&state, workspace_id, binding.connection_id).await
+    {
+        return response;
+    }
+    let job_id = Uuid::now_v7();
+    let delivery_id = format!("linear-initial-import-{job_id}");
+    let source_event_id = format!("linear-import:{job_id}");
+    let payload = json!({
+        "kind": "initial_import",
+        "binding_id": binding.id,
+        "source_event_id": source_event_id,
+    });
+    let mut transaction = match state.pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(error) => {
+            tracing::warn!(%error, "Linear initial import transaction failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Linear import queue is unavailable",
+            );
+        }
+    };
+    let inserted = match linear_q::insert_sync_inbox(
+        &mut transaction,
+        job_id,
+        binding.connection_id,
+        &delivery_id,
+        "linear.initial_import",
+        &payload,
+    )
+    .await
+    {
+        Ok(inserted) => inserted,
+        Err(error) => {
+            tracing::warn!(%error, "Linear initial import enqueue failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Linear import queue is unavailable",
+            );
+        }
+    };
+    if let Err(error) = transaction.commit().await {
+        tracing::warn!(%error, "Linear initial import commit failed");
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Linear import queue is unavailable",
+        );
+    }
+    state.notify_linear_sync();
+    (
+        StatusCode::ACCEPTED,
+        Json(json!({ "queued": inserted, "inbox_id": job_id })),
+    )
+        .into_response()
 }
 
 async fn start_oauth(
@@ -372,11 +2012,405 @@ struct IdentityOrganization {
     name: String,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(crate) struct LinearCatalogPage<T> {
+    pub(crate) nodes: Vec<T>,
+    #[serde(rename = "pageInfo")]
+    page_info: LinearCatalogPageInfo,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(crate) struct LinearCatalogPageInfo {
+    #[serde(rename = "hasNextPage")]
+    has_next_page: bool,
+    #[serde(rename = "endCursor")]
+    end_cursor: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearCatalogData {
+    teams: LinearCatalogPage<LinearCatalogTeam>,
+    projects: LinearCatalogPage<LinearCatalogProject>,
+    #[serde(rename = "workflowStates")]
+    workflow_states: LinearCatalogPage<LinearCatalogState>,
+    users: LinearCatalogPage<LinearCatalogUser>,
+    #[serde(rename = "issueLabels")]
+    issue_labels: LinearCatalogPage<LinearCatalogLabel>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearCatalogPageResponse {
+    teams: Option<LinearCatalogPage<LinearCatalogTeam>>,
+    projects: Option<LinearCatalogPage<LinearCatalogProject>>,
+    #[serde(rename = "workflowStates")]
+    workflow_states: Option<LinearCatalogPage<LinearCatalogState>>,
+    users: Option<LinearCatalogPage<LinearCatalogUser>>,
+    #[serde(rename = "issueLabels")]
+    issue_labels: Option<LinearCatalogPage<LinearCatalogLabel>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearBindingValidationData {
+    project: Option<LinearBindingValidationProject>,
+    team: Option<LinearBindingValidationTeam>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearBindingValidationProject {
+    id: String,
+    teams: LinearBindingValidationTeamPage,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearBindingValidationTeamPage {
+    nodes: Vec<LinearBindingValidationTeamId>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearBindingValidationTeamId {
+    id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearBindingValidationTeam {
+    id: String,
+    organization: LinearBindingValidationOrganization,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearBindingValidationOrganization {
+    id: String,
+}
+
+#[derive(Debug, Default)]
+struct CatalogCursor {
+    after: Option<String>,
+    done: bool,
+}
+
+#[derive(Debug, Default)]
+struct CatalogCursors {
+    teams: CatalogCursor,
+    projects: CatalogCursor,
+    workflow_states: CatalogCursor,
+    users: CatalogCursor,
+    issue_labels: CatalogCursor,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct LinearCatalogTeam {
+    id: String,
+    key: String,
+    name: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct LinearCatalogProject {
+    id: String,
+    name: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct LinearCatalogState {
+    id: String,
+    name: String,
+    #[serde(rename = "type")]
+    state_type: String,
+    color: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct LinearCatalogUser {
+    id: String,
+    name: String,
+    email: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearCatalogLabel {
+    id: String,
+    name: String,
+    color: String,
+    #[serde(rename = "isGroup")]
+    is_group: bool,
+    parent: Option<LinearCatalogLabelParent>,
+    team: Option<LinearCatalogLabelTeam>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearCatalogLabelParent {
+    id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearCatalogLabelTeam {
+    id: String,
+}
+
+#[derive(Debug, Serialize)]
+struct LinearCatalogLabelResponse {
+    id: String,
+    name: String,
+    color: String,
+    is_group: bool,
+    parent_id: Option<String>,
+    team_id: Option<String>,
+}
+
+impl From<LinearCatalogLabel> for LinearCatalogLabelResponse {
+    fn from(label: LinearCatalogLabel) -> Self {
+        Self {
+            id: label.id,
+            name: label.name,
+            color: label.color,
+            is_group: label.is_group,
+            parent_id: label.parent.map(|parent| parent.id),
+            team_id: label.team.map(|team| team.id),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct LinearCatalogResponse {
+    teams: Vec<LinearCatalogTeam>,
+    projects: Vec<LinearCatalogProject>,
+    states: Vec<LinearCatalogState>,
+    users: Vec<LinearCatalogUser>,
+    labels: Vec<LinearCatalogLabelResponse>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearIssuePreviewPage {
+    nodes: Vec<LinearIssuePreview>,
+    #[serde(rename = "pageInfo")]
+    page_info: LinearIssuePreviewPageInfo,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearIssuePreview {
+    state: Option<LinearIssuePreviewState>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearIssuePreviewState {
+    id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearIssuePreviewPageInfo {
+    #[serde(rename = "hasNextPage")]
+    has_next_page: bool,
+    #[serde(rename = "endCursor")]
+    end_cursor: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearIssuePreviewData {
+    issues: LinearIssuePreviewPage,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(crate) struct LinearRemoteIssue {
+    pub id: String,
+    pub identifier: String,
+    pub title: String,
+    pub description: Option<String>,
+    pub priority: i64,
+    pub state: Option<LinearRemoteState>,
+    #[serde(rename = "dueDate")]
+    pub due_date: Option<String>,
+    pub project: Option<LinearRemoteProject>,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: String,
+    pub team: Option<LinearRemoteTeam>,
+    pub assignee: Option<LinearRemoteUser>,
+    pub labels: LinearCatalogPage<LinearRemoteLabel>,
+}
+
+pub(crate) struct LinearIssueCreateInput<'a> {
+    pub connection_id: Uuid,
+    pub team_id: &'a str,
+    pub project_id: &'a str,
+    pub issue_id: Uuid,
+    pub title: &'a str,
+    pub description: Option<&'a str>,
+    pub priority: i64,
+    pub state_id: Option<&'a str>,
+    pub due_date: Option<&'a str>,
+    pub assignee_id: Option<&'a str>,
+}
+
+pub(crate) struct LinearIssueUpdateInput<'a> {
+    pub connection_id: Uuid,
+    pub linear_issue_id: &'a str,
+    pub patchbay_issue_id: Uuid,
+    pub title: &'a str,
+    pub description: Option<&'a str>,
+    pub priority: i64,
+    pub state_id: Option<&'a str>,
+    pub due_date: Option<&'a str>,
+    pub assignee_id: Option<Option<&'a str>>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(crate) struct LinearRemoteState {
+    pub id: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub state_type: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(crate) struct LinearRemoteProject {
+    pub id: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(crate) struct LinearRemoteTeam {
+    pub id: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(crate) struct LinearRemoteUser {
+    pub id: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(crate) struct LinearRemoteLabel {
+    pub id: String,
+}
+
+const PATCHBAY_ISSUE_MARKER_PREFIX: &str = "<!-- patchbay:issue:";
+
+/// Stable, hidden marker used to reconcile a successful Linear create when
+/// the local transaction crashes before the link is committed. It is not a
+/// title search and is never exposed as a user-facing field.
+pub(crate) fn patchbay_issue_marker(issue_id: Uuid) -> String {
+    format!("{PATCHBAY_ISSUE_MARKER_PREFIX}{issue_id} -->")
+}
+
+pub(crate) fn description_with_patchbay_marker(
+    description: Option<&str>,
+    issue_id: Uuid,
+) -> String {
+    let marker = patchbay_issue_marker(issue_id);
+    let human = description.unwrap_or_default().trim();
+    if human.is_empty() {
+        marker
+    } else {
+        format!("{human}\n\n{marker}")
+    }
+}
+
+/// Removes Patchbay's reconciliation marker before a remote description enters
+/// the local human-authored field.
+pub(crate) fn strip_patchbay_issue_marker(description: Option<&str>) -> Option<String> {
+    let description = description?;
+    let Some(start) = description.find(PATCHBAY_ISSUE_MARKER_PREFIX) else {
+        return Some(description.to_string());
+    };
+    let end = description[start..].find("-->")? + start + 3;
+    let mut human = String::new();
+    let before = description[..start].trim();
+    let after = description[end..].trim();
+    if !before.is_empty() {
+        human.push_str(before);
+    }
+    if !after.is_empty() {
+        if !human.is_empty() {
+            human.push_str("\n\n");
+        }
+        human.push_str(after);
+    }
+    Some(human).filter(|value| !value.is_empty())
+}
+
+pub(crate) fn patchbay_issue_id_from_description(description: Option<&str>) -> Option<Uuid> {
+    let description = description?;
+    let start =
+        description.find(PATCHBAY_ISSUE_MARKER_PREFIX)? + PATCHBAY_ISSUE_MARKER_PREFIX.len();
+    let end = description[start..].find("-->")? + start;
+    Uuid::parse_str(description[start..end].trim()).ok()
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearRemoteIssueData {
+    issue: Option<LinearRemoteIssue>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearRemoteIssuePage {
+    nodes: Vec<LinearRemoteIssue>,
+    #[serde(rename = "pageInfo")]
+    page_info: LinearIssuePreviewPageInfo,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearRemoteIssueListData {
+    issues: LinearRemoteIssuePage,
+}
+
+#[derive(Debug, Serialize)]
+struct LinearDryRunResponse {
+    patchbay_project_id: Uuid,
+    linear_project_id: String,
+    sync_mode: String,
+    initial_source_of_truth: Option<String>,
+    local_issue_count: i64,
+    remote_issue_count: i64,
+    remote_issue_count_truncated: bool,
+    candidate_import_count: i64,
+    candidate_publish_count: i64,
+    unmapped_remote_status_count: i64,
+    exact_link_counts_available: bool,
+}
+
+#[derive(Debug)]
+struct RemoteDryRunCounts {
+    issue_count: i64,
+    unmapped_status_count: i64,
+    truncated: bool,
+}
+
 #[derive(Debug)]
 struct LinearIdentity {
     actor_id: String,
     organization_id: String,
     organization_name: String,
+}
+
+fn advance_catalog_page<T>(
+    cursor: CatalogCursor,
+    page: Option<LinearCatalogPage<T>>,
+) -> Result<(Vec<T>, CatalogCursor), LinearTokenError> {
+    if cursor.done {
+        return Ok((Vec::new(), cursor));
+    }
+    let Some(page) = page else {
+        return Err(LinearTokenError::InvalidResponse);
+    };
+    if !page.page_info.has_next_page {
+        return Ok((
+            page.nodes,
+            CatalogCursor {
+                after: None,
+                done: true,
+            },
+        ));
+    }
+    let Some(next) = page.page_info.end_cursor else {
+        return Err(LinearTokenError::InvalidResponse);
+    };
+    if cursor.after.as_deref() == Some(next.as_str()) {
+        return Err(LinearTokenError::InvalidResponse);
+    }
+    Ok((
+        page.nodes,
+        CatalogCursor {
+            after: Some(next),
+            done: false,
+        },
+    ))
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -389,6 +2423,10 @@ pub enum LinearTokenError {
     InvalidResponse,
     #[error("Linear provider request failed")]
     Provider,
+    #[error("Linear mutation was rejected: {0}")]
+    MutationRejected(String),
+    #[error("Linear provider rate limit reached")]
+    RateLimited,
     #[error("Linear integration is not configured")]
     NotConfigured,
     #[error("Linear storage operation failed: {0}")]
@@ -588,6 +2626,659 @@ impl LinearTokenManager {
             organization_id: organization.id,
             organization_name: organization.name,
         })
+    }
+
+    async fn query_catalog_page(
+        &self,
+        access_token: &str,
+        cursors: &CatalogCursors,
+    ) -> Result<LinearCatalogPageResponse, LinearTokenError> {
+        let response = self
+            .client
+            .post(&self.graphql_url)
+            .bearer_auth(access_token)
+            .json(&json!({
+                "query": "query LinearCatalog($teamsAfter: String, $teamsDone: Boolean!, $projectsAfter: String, $projectsDone: Boolean!, $statesAfter: String, $statesDone: Boolean!, $usersAfter: String, $usersDone: Boolean!, $labelsAfter: String, $labelsDone: Boolean!) { teams(first: 250, after: $teamsAfter) @skip(if: $teamsDone) { nodes { id name key } pageInfo { hasNextPage endCursor } } projects(first: 250, after: $projectsAfter) @skip(if: $projectsDone) { nodes { id name } pageInfo { hasNextPage endCursor } } workflowStates(first: 250, after: $statesAfter) @skip(if: $statesDone) { nodes { id name type color } pageInfo { hasNextPage endCursor } } users(first: 250, after: $usersAfter) @skip(if: $usersDone) { nodes { id name email } pageInfo { hasNextPage endCursor } } issueLabels(first: 250, after: $labelsAfter) @skip(if: $labelsDone) { nodes { id name color isGroup parent { id } team { id } } pageInfo { hasNextPage endCursor } } }",
+                "variables": {
+                    "teamsAfter": cursors.teams.after,
+                    "teamsDone": cursors.teams.done,
+                    "projectsAfter": cursors.projects.after,
+                    "projectsDone": cursors.projects.done,
+                    "statesAfter": cursors.workflow_states.after,
+                    "statesDone": cursors.workflow_states.done,
+                    "usersAfter": cursors.users.after,
+                    "usersDone": cursors.users.done,
+                    "labelsAfter": cursors.issue_labels.after,
+                    "labelsDone": cursors.issue_labels.done,
+                },
+            }))
+            .send()
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, "Linear catalog request failed");
+                LinearTokenError::Provider
+            })?;
+        let status = response.status();
+        let payload = response
+            .json::<GraphQlResponse<LinearCatalogPageResponse>>()
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, "Linear catalog response is invalid JSON");
+                LinearTokenError::InvalidResponse
+            })?;
+        if !status.is_success() {
+            tracing::warn!(%status, "Linear catalog request returned an error");
+            return Err(LinearTokenError::Provider);
+        }
+        if let Some(errors) = payload.errors.as_ref().filter(|errors| !errors.is_empty()) {
+            let message = errors
+                .first()
+                .and_then(|error| error.message.as_deref())
+                .unwrap_or("unknown GraphQL error");
+            tracing::warn!(message, "Linear catalog GraphQL request failed");
+            return Err(LinearTokenError::Provider);
+        }
+        payload.data.ok_or(LinearTokenError::InvalidResponse)
+    }
+
+    async fn query_catalog(
+        &self,
+        access_token: &str,
+    ) -> Result<LinearCatalogData, LinearTokenError> {
+        let mut cursors = CatalogCursors::default();
+        let mut data = LinearCatalogData {
+            teams: LinearCatalogPage {
+                nodes: Vec::new(),
+                page_info: LinearCatalogPageInfo {
+                    has_next_page: false,
+                    end_cursor: None,
+                },
+            },
+            projects: LinearCatalogPage {
+                nodes: Vec::new(),
+                page_info: LinearCatalogPageInfo {
+                    has_next_page: false,
+                    end_cursor: None,
+                },
+            },
+            workflow_states: LinearCatalogPage {
+                nodes: Vec::new(),
+                page_info: LinearCatalogPageInfo {
+                    has_next_page: false,
+                    end_cursor: None,
+                },
+            },
+            users: LinearCatalogPage {
+                nodes: Vec::new(),
+                page_info: LinearCatalogPageInfo {
+                    has_next_page: false,
+                    end_cursor: None,
+                },
+            },
+            issue_labels: LinearCatalogPage {
+                nodes: Vec::new(),
+                page_info: LinearCatalogPageInfo {
+                    has_next_page: false,
+                    end_cursor: None,
+                },
+            },
+        };
+
+        loop {
+            let page = self.query_catalog_page(access_token, &cursors).await?;
+            let (teams, teams_cursor) = advance_catalog_page(cursors.teams, page.teams)?;
+            let (projects, projects_cursor) =
+                advance_catalog_page(cursors.projects, page.projects)?;
+            let (workflow_states, workflow_states_cursor) =
+                advance_catalog_page(cursors.workflow_states, page.workflow_states)?;
+            let (users, users_cursor) = advance_catalog_page(cursors.users, page.users)?;
+            let (issue_labels, issue_labels_cursor) =
+                advance_catalog_page(cursors.issue_labels, page.issue_labels)?;
+
+            data.teams.nodes.extend(teams);
+            data.projects.nodes.extend(projects);
+            data.workflow_states.nodes.extend(workflow_states);
+            data.users.nodes.extend(users);
+            data.issue_labels.nodes.extend(issue_labels);
+            cursors = CatalogCursors {
+                teams: teams_cursor,
+                projects: projects_cursor,
+                workflow_states: workflow_states_cursor,
+                users: users_cursor,
+                issue_labels: issue_labels_cursor,
+            };
+            if cursors.teams.done
+                && cursors.projects.done
+                && cursors.workflow_states.done
+                && cursors.users.done
+                && cursors.issue_labels.done
+            {
+                break;
+            }
+        }
+        Ok(data)
+    }
+
+    async fn remote_binding_is_valid(
+        &self,
+        connection_id: Uuid,
+        organization_id: &str,
+        linear_project_id: &str,
+        linear_team_id: &str,
+    ) -> Result<bool, LinearTokenError> {
+        let access_token = self.access_token(connection_id).await?;
+        let response = self
+            .client
+            .post(&self.graphql_url)
+            .bearer_auth(access_token)
+            .json(&json!({
+                "query": "query LinearBindingValidation($projectId: ID!, $teamId: ID!) { project(id: $projectId) { id teams(first: 1, filter: { id: { eq: $teamId } }) { nodes { id } } } team(id: $teamId) { id organization { id } } }",
+                "variables": {
+                    "projectId": linear_project_id,
+                    "teamId": linear_team_id,
+                },
+            }))
+            .send()
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, "Linear binding validation request failed");
+                LinearTokenError::Provider
+            })?;
+        let status = response.status();
+        let payload = response
+            .json::<GraphQlResponse<LinearBindingValidationData>>()
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, "Linear binding validation response is invalid JSON");
+                LinearTokenError::InvalidResponse
+            })?;
+        if !status.is_success() {
+            tracing::warn!(%status, "Linear binding validation request returned an error");
+            return Err(LinearTokenError::Provider);
+        }
+        if let Some(errors) = payload.errors.as_ref().filter(|errors| !errors.is_empty()) {
+            let message = errors
+                .first()
+                .and_then(|error| error.message.as_deref())
+                .unwrap_or("unknown GraphQL error");
+            tracing::warn!(message, "Linear binding validation GraphQL request failed");
+            return Err(LinearTokenError::Provider);
+        }
+        let Some(data) = payload.data else {
+            return Err(LinearTokenError::InvalidResponse);
+        };
+        Ok(data.project.is_some_and(|project| {
+            project.id == linear_project_id
+                && project
+                    .teams
+                    .nodes
+                    .iter()
+                    .any(|team| team.id == linear_team_id)
+        }) && data.team.is_some_and(|team| {
+            team.id == linear_team_id && team.organization.id == organization_id
+        }))
+    }
+
+    async fn query_issue_preview_page(
+        &self,
+        access_token: &str,
+        linear_project_id: &str,
+        after: Option<String>,
+    ) -> Result<LinearIssuePreviewData, LinearTokenError> {
+        let response = self
+            .client
+            .post(&self.graphql_url)
+            .bearer_auth(access_token)
+            .json(&json!({
+                "query": "query LinearProjectIssuePreview($projectId: ID!, $after: String) { issues(first: 250, after: $after, filter: { project: { id: { eq: $projectId } } }) { nodes { state { id } } pageInfo { hasNextPage endCursor } } }",
+                "variables": {
+                    "projectId": linear_project_id,
+                    "after": after,
+                },
+            }))
+            .send()
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, "Linear issue preview request failed");
+                LinearTokenError::Provider
+            })?;
+        let status = response.status();
+        let payload = response
+            .json::<GraphQlResponse<LinearIssuePreviewData>>()
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, "Linear issue preview response is invalid JSON");
+                LinearTokenError::InvalidResponse
+            })?;
+        if !status.is_success() {
+            tracing::warn!(%status, "Linear issue preview request returned an error");
+            return Err(LinearTokenError::Provider);
+        }
+        if let Some(errors) = payload.errors.as_ref().filter(|errors| !errors.is_empty()) {
+            let message = errors
+                .first()
+                .and_then(|error| error.message.as_deref())
+                .unwrap_or("unknown GraphQL error");
+            tracing::warn!(message, "Linear issue preview GraphQL request failed");
+            return Err(LinearTokenError::Provider);
+        }
+        payload.data.ok_or(LinearTokenError::InvalidResponse)
+    }
+
+    async fn query_remote_issue(
+        &self,
+        access_token: &str,
+        linear_issue_id: &str,
+    ) -> Result<Option<LinearRemoteIssue>, LinearTokenError> {
+        let response = self
+            .client
+            .post(&self.graphql_url)
+            .bearer_auth(access_token)
+            .json(&json!({
+                "query": "query LinearIssue($issueId: ID!) { issue(id: $issueId) { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } assignee { id } labels { nodes { id } } } }",
+                "variables": { "issueId": linear_issue_id },
+            }))
+            .send()
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, "Linear issue request failed");
+                LinearTokenError::Provider
+            })?;
+        let status = response.status();
+        let payload = response
+            .json::<GraphQlResponse<LinearRemoteIssueData>>()
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, "Linear issue response is invalid JSON");
+                LinearTokenError::InvalidResponse
+            })?;
+        if !status.is_success() {
+            tracing::warn!(%status, "Linear issue request returned an error");
+            return Err(LinearTokenError::Provider);
+        }
+        if let Some(errors) = payload.errors.as_ref().filter(|errors| !errors.is_empty()) {
+            let message = errors
+                .first()
+                .and_then(|error| error.message.as_deref())
+                .unwrap_or("unknown GraphQL error");
+            tracing::warn!(message, "Linear issue GraphQL request failed");
+            return Err(LinearTokenError::Provider);
+        }
+        Ok(payload.data.ok_or(LinearTokenError::InvalidResponse)?.issue)
+    }
+
+    async fn query_remote_issue_page(
+        &self,
+        access_token: &str,
+        linear_project_id: &str,
+        after: Option<&str>,
+    ) -> Result<LinearRemoteIssuePage, LinearTokenError> {
+        let response = self
+            .client
+            .post(&self.graphql_url)
+            .bearer_auth(access_token)
+            .json(&json!({
+                "query": "query LinearProjectIssues($projectId: ID!, $after: String) { issues(first: 100, after: $after, filter: { project: { id: { eq: $projectId } } }) { nodes { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } assignee { id } labels { nodes { id } } } pageInfo { hasNextPage endCursor } } }",
+                "variables": {
+                    "projectId": linear_project_id,
+                    "after": after,
+                },
+            }))
+            .send()
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, "Linear project issue request failed");
+                LinearTokenError::Provider
+            })?;
+        let status = response.status();
+        let payload = response
+            .json::<GraphQlResponse<LinearRemoteIssueListData>>()
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, "Linear project issue response is invalid JSON");
+                LinearTokenError::InvalidResponse
+            })?;
+        if !status.is_success() {
+            tracing::warn!(%status, "Linear project issue request returned an error");
+            return Err(LinearTokenError::Provider);
+        }
+        if let Some(errors) = payload.errors.as_ref().filter(|errors| !errors.is_empty()) {
+            let message = errors
+                .first()
+                .and_then(|error| error.message.as_deref())
+                .unwrap_or("unknown GraphQL error");
+            tracing::warn!(message, "Linear project issue GraphQL request failed");
+            return Err(LinearTokenError::Provider);
+        }
+        Ok(payload
+            .data
+            .ok_or(LinearTokenError::InvalidResponse)?
+            .issues)
+    }
+
+    async fn mutate_issue(
+        &self,
+        access_token: &str,
+        operation: &str,
+        query: &str,
+        variables: Value,
+    ) -> Result<LinearRemoteIssue, LinearTokenError> {
+        let response = self
+            .client
+            .post(&self.graphql_url)
+            .bearer_auth(access_token)
+            .json(&json!({ "query": query, "variables": variables }))
+            .send()
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, "Linear issue mutation request failed");
+                LinearTokenError::Provider
+            })?;
+        let status = response.status();
+        if status.as_u16() == 429 {
+            tracing::warn!(%status, "Linear issue mutation was rate limited");
+            return Err(LinearTokenError::RateLimited);
+        }
+        let payload = response
+            .json::<GraphQlResponse<Value>>()
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, "Linear issue mutation response is invalid JSON");
+                LinearTokenError::InvalidResponse
+            })?;
+        if !status.is_success() {
+            if status.is_client_error() {
+                return Err(LinearTokenError::MutationRejected(format!(
+                    "Linear issue mutation returned HTTP {status}"
+                )));
+            }
+            return Err(LinearTokenError::Provider);
+        }
+        if let Some(errors) = payload.errors.as_ref().filter(|errors| !errors.is_empty()) {
+            let message = errors
+                .iter()
+                .filter_map(|error| error.message.as_deref())
+                .collect::<Vec<_>>()
+                .join("; ");
+            return Err(LinearTokenError::MutationRejected(if message.is_empty() {
+                "GraphQL mutation failed".to_string()
+            } else {
+                message
+            }));
+        }
+        let result = payload
+            .data
+            .as_ref()
+            .and_then(|data| data.get(operation))
+            .ok_or(LinearTokenError::InvalidResponse)?;
+        let success = result
+            .get("success")
+            .and_then(Value::as_bool)
+            .ok_or(LinearTokenError::InvalidResponse)?;
+        if !success {
+            let message = result
+                .get("userErrors")
+                .and_then(Value::as_array)
+                .map(|errors| {
+                    errors
+                        .iter()
+                        .filter_map(|error| error.get("message").and_then(Value::as_str))
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                })
+                .filter(|message| !message.is_empty())
+                .unwrap_or_else(|| "Linear rejected the issue mutation".to_string());
+            return Err(LinearTokenError::MutationRejected(message));
+        }
+        let issue_value = result
+            .get("issue")
+            .cloned()
+            .ok_or(LinearTokenError::InvalidResponse)?;
+        let issue = serde_json::from_value::<LinearRemoteIssue>(issue_value)
+            .map_err(|_| LinearTokenError::InvalidResponse)?;
+        if issue.id.trim().is_empty()
+            || issue.identifier.trim().is_empty()
+            || issue.updated_at.trim().is_empty()
+        {
+            return Err(LinearTokenError::InvalidResponse);
+        }
+        Ok(issue)
+    }
+
+    pub(crate) async fn create_issue(
+        &self,
+        input: &LinearIssueCreateInput<'_>,
+    ) -> Result<LinearRemoteIssue, LinearTokenError> {
+        let access_token = self.access_token(input.connection_id).await?;
+        let mut variables = serde_json::Map::new();
+        variables.insert("teamId".to_string(), json!(input.team_id));
+        variables.insert("projectId".to_string(), json!(input.project_id));
+        variables.insert("title".to_string(), json!(input.title));
+        variables.insert(
+            "description".to_string(),
+            json!(description_with_patchbay_marker(
+                input.description,
+                input.issue_id
+            )),
+        );
+        variables.insert("priority".to_string(), json!(input.priority));
+        if let Some(state_id) = input.state_id {
+            variables.insert("stateId".to_string(), json!(state_id));
+        }
+        if let Some(due_date) = input.due_date {
+            variables.insert("dueDate".to_string(), json!(due_date));
+        }
+        if let Some(assignee_id) = input.assignee_id {
+            variables.insert("assigneeId".to_string(), json!(assignee_id));
+        }
+        self.mutate_issue(
+            &access_token,
+            "issueCreate",
+            "mutation LinearIssueCreate($input: IssueCreateInput!) { issueCreate(input: $input) { success issue { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } assignee { id } labels { nodes { id } } } userErrors { message } } }",
+            json!({ "input": Value::Object(variables) }),
+        )
+        .await
+    }
+
+    pub(crate) async fn update_issue(
+        &self,
+        input: &LinearIssueUpdateInput<'_>,
+    ) -> Result<LinearRemoteIssue, LinearTokenError> {
+        let access_token = self.access_token(input.connection_id).await?;
+        let mut variables = serde_json::Map::new();
+        variables.insert("title".to_string(), json!(input.title));
+        variables.insert(
+            "description".to_string(),
+            json!(description_with_patchbay_marker(
+                input.description,
+                input.patchbay_issue_id
+            )),
+        );
+        variables.insert("priority".to_string(), json!(input.priority));
+        variables.insert("dueDate".to_string(), json!(input.due_date));
+        if let Some(state_id) = input.state_id {
+            variables.insert("stateId".to_string(), json!(state_id));
+        }
+        if let Some(assignee_id) = input.assignee_id {
+            variables.insert("assigneeId".to_string(), json!(assignee_id));
+        }
+        self.mutate_issue(
+            &access_token,
+            "issueUpdate",
+            "mutation LinearIssueUpdate($issueId: ID!, $input: IssueUpdateInput!) { issueUpdate(id: $issueId, input: $input) { success issue { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } assignee { id } labels { nodes { id } } } userErrors { message } } }",
+            json!({ "issueId": input.linear_issue_id, "input": Value::Object(variables) }),
+        )
+        .await
+    }
+
+    /// Lists the bound project and searches the hidden marker used by a
+    /// previous create attempt. This is bounded by the same import cap as the
+    /// initial importer and is the only crash-reconciliation lookup.
+    pub(crate) async fn find_issue_by_marker(
+        &self,
+        connection_id: Uuid,
+        project_id: &str,
+        patchbay_issue_id: Uuid,
+    ) -> Result<Option<LinearRemoteIssue>, LinearTokenError> {
+        let issues = self.list_project_issues(connection_id, project_id).await?;
+        Ok(issues.into_iter().find(|issue| {
+            patchbay_issue_id_from_description(issue.description.as_deref())
+                == Some(patchbay_issue_id)
+        }))
+    }
+
+    async fn dry_run_counts(
+        &self,
+        connection_id: Uuid,
+        linear_project_id: &str,
+        status_mapping: &Value,
+    ) -> Result<RemoteDryRunCounts, LinearTokenError> {
+        const MAX_PREVIEW_ISSUES: i64 = 10_000;
+
+        let access_token = self.access_token(connection_id).await?;
+        let mut after = None;
+        let mut issue_count = 0;
+        let mut unmapped_status_count = 0;
+        let mut truncated = false;
+        loop {
+            let page = self
+                .query_issue_preview_page(&access_token, linear_project_id, after.clone())
+                .await?;
+            for issue in page.issues.nodes {
+                if issue_count >= MAX_PREVIEW_ISSUES {
+                    truncated = true;
+                    break;
+                }
+                issue_count += 1;
+                let is_mapped = issue.state.as_ref().is_some_and(|state| {
+                    if state.id.trim().is_empty() {
+                        return false;
+                    }
+                    status_mapping
+                        .as_object()
+                        .and_then(|mapping| mapping.get(&state.id))
+                        .is_some_and(|value| match value {
+                            Value::String(value) => !value.trim().is_empty(),
+                            Value::Null => false,
+                            _ => true,
+                        })
+                });
+                if !is_mapped {
+                    unmapped_status_count += 1;
+                }
+            }
+            if truncated || !page.issues.page_info.has_next_page {
+                break;
+            }
+            let Some(next_cursor) = page.issues.page_info.end_cursor else {
+                return Err(LinearTokenError::InvalidResponse);
+            };
+            if after.as_deref() == Some(next_cursor.as_str()) {
+                return Err(LinearTokenError::InvalidResponse);
+            }
+            after = Some(next_cursor);
+        }
+        Ok(RemoteDryRunCounts {
+            issue_count,
+            unmapped_status_count,
+            truncated,
+        })
+    }
+
+    pub(crate) async fn catalog(
+        &self,
+        connection_id: Uuid,
+    ) -> Result<LinearCatalogResponse, LinearTokenError> {
+        let access_token = self.access_token(connection_id).await?;
+        let catalog = self.query_catalog(&access_token).await?;
+        if catalog.teams.nodes.iter().any(|team| {
+            team.id.trim().is_empty() || team.name.trim().is_empty() || team.key.trim().is_empty()
+        }) || catalog
+            .projects
+            .nodes
+            .iter()
+            .any(|project| project.id.trim().is_empty() || project.name.trim().is_empty())
+            || catalog.workflow_states.nodes.iter().any(|state| {
+                state.id.trim().is_empty()
+                    || state.name.trim().is_empty()
+                    || state.state_type.trim().is_empty()
+                    || state.color.trim().is_empty()
+            })
+            || catalog.users.nodes.iter().any(|user| {
+                user.id.trim().is_empty()
+                    || user.name.trim().is_empty()
+                    || user
+                        .email
+                        .as_deref()
+                        .is_some_and(|email| email.trim().is_empty())
+            })
+            || catalog.issue_labels.nodes.iter().any(|label| {
+                label.id.trim().is_empty()
+                    || label.name.trim().is_empty()
+                    || label.color.trim().is_empty()
+            })
+        {
+            return Err(LinearTokenError::InvalidResponse);
+        }
+        Ok(LinearCatalogResponse {
+            teams: catalog.teams.nodes,
+            projects: catalog.projects.nodes,
+            states: catalog.workflow_states.nodes,
+            users: catalog.users.nodes,
+            labels: catalog
+                .issue_labels
+                .nodes
+                .into_iter()
+                .map(LinearCatalogLabelResponse::from)
+                .collect(),
+        })
+    }
+
+    /// Fetches a complete Issue after a Webhook notification. Webhook data is
+    /// intentionally not treated as a durable snapshot because nested fields
+    /// may be omitted by Linear.
+    pub(crate) async fn fetch_issue(
+        &self,
+        connection_id: Uuid,
+        linear_issue_id: &str,
+    ) -> Result<Option<LinearRemoteIssue>, LinearTokenError> {
+        let access_token = self.access_token(connection_id).await?;
+        self.query_remote_issue(&access_token, linear_issue_id)
+            .await
+    }
+
+    /// Enumerates every Issue in a bound Linear Project for initial import.
+    /// A hard cap protects the worker from an unexpectedly large project; the
+    /// worker treats crossing it as a retryable provider response rather than
+    /// silently importing a partial project.
+    pub(crate) async fn list_project_issues(
+        &self,
+        connection_id: Uuid,
+        linear_project_id: &str,
+    ) -> Result<Vec<LinearRemoteIssue>, LinearTokenError> {
+        const MAX_IMPORT_ISSUES: usize = 50_000;
+        let access_token = self.access_token(connection_id).await?;
+        let mut after = None;
+        let mut issues = Vec::new();
+        loop {
+            let page = self
+                .query_remote_issue_page(&access_token, linear_project_id, after.as_deref())
+                .await?;
+            issues.extend(page.nodes);
+            if issues.len() > MAX_IMPORT_ISSUES {
+                return Err(LinearTokenError::InvalidResponse);
+            }
+            if !page.page_info.has_next_page {
+                return Ok(issues);
+            }
+            let Some(next_cursor) = page.page_info.end_cursor else {
+                return Err(LinearTokenError::InvalidResponse);
+            };
+            if after.as_deref() == Some(next_cursor.as_str()) {
+                return Err(LinearTokenError::InvalidResponse);
+            }
+            after = Some(next_cursor);
+        }
     }
 
     /// Returns an access token and refreshes it while holding the connection
@@ -1217,6 +3908,9 @@ async fn linear_webhook(
             "Linear Webhook persistence unavailable",
         );
     }
+    if inserted {
+        state.notify_linear_sync();
+    }
     (
         StatusCode::OK,
         Json(json!({ "accepted": true, "duplicate": !inserted })),
@@ -1398,6 +4092,31 @@ mod tests {
     }
 
     #[test]
+    fn patchbay_issue_marker_round_trips_without_polluting_human_description() {
+        let issue_id = Uuid::now_v7();
+        let description = description_with_patchbay_marker(Some("Human text"), issue_id);
+        assert_eq!(
+            patchbay_issue_id_from_description(Some(&description)),
+            Some(issue_id)
+        );
+        assert_eq!(
+            strip_patchbay_issue_marker(Some(&description)).as_deref(),
+            Some("Human text")
+        );
+
+        let marker_only = description_with_patchbay_marker(None, issue_id);
+        assert_eq!(
+            patchbay_issue_id_from_description(Some(&marker_only)),
+            Some(issue_id)
+        );
+        assert_eq!(strip_patchbay_issue_marker(Some(&marker_only)), None);
+        assert_eq!(
+            strip_patchbay_issue_marker(Some("Unmanaged text")),
+            Some("Unmanaged text".to_string())
+        );
+    }
+
+    #[test]
     fn webhook_freshness_uses_milliseconds_and_requires_the_sixty_second_window() {
         assert!(timestamp_is_fresh(
             1_700_000_000_000,
@@ -1449,18 +4168,6 @@ mod tests {
     }
 
     #[test]
-    fn webhook_timestamp_header_must_match_the_signed_body() {
-        let secret = "webhook-secret";
-        let timestamp = 1_700_000_000_000;
-        let body = br#"{"organizationId":"org-1","webhookId":"webhook-1","webhookTimestamp":1700000000000}"#;
-        let headers = signed_headers(secret, body, Some(timestamp + 1));
-        assert_eq!(
-            validate_webhook(Some(secret), &headers, body, timestamp),
-            Err(WebhookValidationError::TimestampMismatch)
-        );
-    }
-
-    #[test]
     fn webhook_without_timestamp_is_rejected_even_with_a_valid_signature() {
         let secret = "webhook-secret";
         let body = br#"{"organizationId":"org-1","webhookId":"webhook-1"}"#;
@@ -1491,5 +4198,69 @@ mod tests {
             validate_webhook(Some(secret), &headers, body, timestamp + 60_001),
             Err(WebhookValidationError::ExpiredTimestamp)
         );
+    }
+
+    #[test]
+    fn webhook_timestamp_header_must_match_the_signed_body() {
+        let secret = "webhook-secret";
+        let timestamp = 1_700_000_000_000;
+        let body = br#"{"organizationId":"org-1","webhookId":"webhook-1","webhookTimestamp":1700000000000}"#;
+        let headers = signed_headers(secret, body, Some(timestamp + 1));
+        assert_eq!(
+            validate_webhook(Some(secret), &headers, body, timestamp),
+            Err(WebhookValidationError::TimestampMismatch)
+        );
+    }
+
+    #[test]
+    fn conflict_manual_value_distinguishes_omitted_null_and_value() {
+        let omitted: ResolveLinearConflictRequest = serde_json::from_value(json!({
+            "resolution": "manual"
+        }))
+        .unwrap();
+        let cleared: ResolveLinearConflictRequest = serde_json::from_value(json!({
+            "resolution": "manual",
+            "manual_value": null
+        }))
+        .unwrap();
+        let supplied: ResolveLinearConflictRequest = serde_json::from_value(json!({
+            "resolution": "manual",
+            "manual_value": "kept"
+        }))
+        .unwrap();
+
+        assert_eq!(omitted.manual_value, None);
+        assert_eq!(cleared.manual_value, Some(None));
+        assert_eq!(supplied.manual_value, Some(Some(json!("kept"))));
+    }
+
+    #[test]
+    fn conflict_status_resolution_requires_reverse_mapping() {
+        let mapping = json!({
+            "linear-started": "in_progress",
+            "linear-done": "done"
+        });
+        assert!(status_resolution_is_publishable(&mapping, "done"));
+        assert!(!status_resolution_is_publishable(&mapping, "todo"));
+    }
+
+    #[test]
+    fn catalog_label_mapping_preserves_group_and_team_identity() {
+        let response = LinearCatalogLabelResponse::from(LinearCatalogLabel {
+            id: "agent-a".to_string(),
+            name: "Agent A".to_string(),
+            color: "#6E56CF".to_string(),
+            is_group: false,
+            parent: Some(LinearCatalogLabelParent {
+                id: "patchbay-agent-group".to_string(),
+            }),
+            team: Some(LinearCatalogLabelTeam {
+                id: "team-1".to_string(),
+            }),
+        });
+
+        assert_eq!(response.parent_id.as_deref(), Some("patchbay-agent-group"));
+        assert_eq!(response.team_id.as_deref(), Some("team-1"));
+        assert!(!response.is_group);
     }
 }

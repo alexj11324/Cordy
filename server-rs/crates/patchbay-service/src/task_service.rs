@@ -63,7 +63,10 @@ use patchbay_db::queries::comment::get_comment_in_workspace;
 use patchbay_db::queries::daemon_token::{create_daemon_token, delete_expired_daemon_tokens};
 use patchbay_db::queries::dependency_graph as dependency_graph_q;
 use patchbay_db::queries::github::get_issue_review_head_sha;
-use patchbay_db::queries::issue::get_issue;
+use patchbay_db::queries::issue::{
+    get_issue, get_issue_in_workspace, list_issues_in_workspace_by_ids,
+};
+use patchbay_db::queries::linear as linear_q;
 use patchbay_db::queries::member::{
     get_member_by_user_and_workspace, lock_member_by_user_and_workspace,
 };
@@ -422,6 +425,24 @@ async fn require_execution_status(pool: &PgPool, issue: &Issue) -> Result<(), Ta
             "issue is not admitted to the execution lane".to_string(),
         ))
     }
+}
+
+async fn enqueue_linear_issue_update_tx(
+    tx: &mut sqlx::PgConnection,
+    issue: &Issue,
+) -> anyhow::Result<()> {
+    let event_key = format!("issue:{}:revision:{}", issue.id, issue.revision);
+    linear_q::enqueue_issue_outbox(
+        &mut *tx,
+        issue.workspace_id,
+        issue.project_id,
+        issue.id,
+        &event_key,
+        "issue_updated",
+        &crate::issue_service::linear_issue_sync_payload(issue),
+    )
+    .await?;
+    Ok(())
 }
 
 /// Seam for building the per-task Composio MCP overlay at enqueue time.
@@ -1765,10 +1786,9 @@ impl TaskService {
     }
 
     /// Applies the ready transition and admits every currently ready agent
-    /// node for one plan. Promotion and queue insertion are intentionally
-    /// separate commits: the graph remains the source of truth, while the
-    /// queue's unique pending slot and the DB admission trigger make retries
-    /// safe if the process stops between them.
+    /// node for one plan. The graph promotion and Linear Outbox append share
+    /// one transaction; agent-task admission remains a post-commit operation
+    /// with the graph as its recovery source.
     pub async fn wake_dependency_graph_ready_tasks(
         &self,
         workspace_id: Uuid,
@@ -1781,6 +1801,23 @@ impl TaskService {
                 .map_err(|error| {
                     TaskServiceError::Internal(format!("promote graph tasks: {error}"))
                 })?;
+        if !promoted.is_empty() {
+            let promoted_issues =
+                list_issues_in_workspace_by_ids(&mut *tx, workspace_id, promoted.clone())
+                    .await
+                    .map_err(|error| {
+                        TaskServiceError::Internal(format!("load promoted graph tasks: {error}"))
+                    })?;
+            for issue in &promoted_issues {
+                enqueue_linear_issue_update_tx(&mut tx, issue)
+                    .await
+                    .map_err(|error| {
+                        TaskServiceError::Internal(format!(
+                            "enqueue promoted graph task for Linear: {error}"
+                        ))
+                    })?;
+            }
+        }
         tx.commit().await.map_err(TaskServiceError::Sql)?;
 
         if !promoted.is_empty() {
@@ -1814,6 +1851,25 @@ impl TaskService {
         .map_err(|error| {
             TaskServiceError::Internal(format!("promote graph dependents: {error}"))
         })?;
+        if !promoted.is_empty() {
+            let promoted_issues =
+                list_issues_in_workspace_by_ids(&mut *tx, workspace_id, promoted.clone())
+                    .await
+                    .map_err(|error| {
+                        TaskServiceError::Internal(format!(
+                            "load promoted graph dependents: {error}"
+                        ))
+                    })?;
+            for issue in &promoted_issues {
+                enqueue_linear_issue_update_tx(&mut tx, issue)
+                    .await
+                    .map_err(|error| {
+                        TaskServiceError::Internal(format!(
+                            "enqueue promoted graph dependent for Linear: {error}"
+                        ))
+                    })?;
+            }
+        }
         tx.commit().await.map_err(TaskServiceError::Sql)?;
 
         if !promoted.is_empty() {
@@ -1905,14 +1961,47 @@ impl TaskService {
             .map_err(|error| {
                 TaskServiceError::Internal(format!("promote runtime graph tasks: {error}"))
             })?;
+        let workspace_id = if promoted.is_empty() {
+            None
+        } else {
+            Some(
+                get_agent_runtime(&mut *tx, runtime_id)
+                    .await
+                    .map_err(|error| {
+                        TaskServiceError::Internal(format!(
+                            "load runtime for promoted graph tasks: {error}"
+                        ))
+                    })?
+                    .ok_or_else(|| {
+                        TaskServiceError::Internal(
+                            "runtime disappeared for promoted graph tasks".to_string(),
+                        )
+                    })?
+                    .workspace_id,
+            )
+        };
+        if let Some(workspace_id) = workspace_id {
+            let promoted_issues =
+                list_issues_in_workspace_by_ids(&mut *tx, workspace_id, promoted.clone())
+                    .await
+                    .map_err(|error| {
+                        TaskServiceError::Internal(format!(
+                            "load promoted runtime graph tasks: {error}"
+                        ))
+                    })?;
+            for issue in &promoted_issues {
+                enqueue_linear_issue_update_tx(&mut tx, issue)
+                    .await
+                    .map_err(|error| {
+                        TaskServiceError::Internal(format!(
+                            "enqueue promoted runtime graph task for Linear: {error}"
+                        ))
+                    })?;
+            }
+        }
         tx.commit().await.map_err(TaskServiceError::Sql)?;
 
         if !promoted.is_empty() {
-            let workspace_id = get_issue(&self.pool, promoted[0])
-                .await
-                .ok()
-                .flatten()
-                .map(|issue| issue.workspace_id);
             if let Some(workspace_id) = workspace_id {
                 self.publish_dependency_graph_wakeup(workspace_id, None, &promoted);
             }
@@ -1929,7 +2018,18 @@ impl TaskService {
 
     async fn enqueue_ready_dependency_issue_ids(&self, issue_ids: Vec<Uuid>) {
         for issue_id in issue_ids {
-            let issue = match get_issue(&self.pool, issue_id).await {
+            let mut tx = match self.pool.begin().await {
+                Ok(tx) => tx,
+                Err(error) => {
+                    tracing::warn!(
+                        %issue_id,
+                        %error,
+                        "failed to begin dependency admission transaction"
+                    );
+                    continue;
+                }
+            };
+            let issue = match get_issue(&mut *tx, issue_id).await {
                 Ok(Some(issue)) => issue,
                 Ok(None) => {
                     tracing::warn!(%issue_id, "ready dependency task disappeared before enqueue");
@@ -1947,7 +2047,7 @@ impl TaskService {
             // A replay loses the race (or observes a human status change) and
             // simply leaves the issue to the owning workflow.
             let admitted = match dependency_graph_q::admit_ready_issue_for_execution(
-                &self.pool,
+                &mut *tx,
                 issue.workspace_id,
                 issue.id,
             )
@@ -1966,8 +2066,34 @@ impl TaskService {
             if !admitted {
                 continue;
             }
+            let issue = match get_issue_in_workspace(&mut *tx, issue_id, issue.workspace_id).await {
+                Ok(Some(issue)) => issue,
+                Ok(None) => {
+                    tracing::warn!(
+                        %issue_id,
+                        "admitted dependency task disappeared before enqueue"
+                    );
+                    continue;
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        %issue_id,
+                        %error,
+                        "failed to reload admitted dependency task in transaction"
+                    );
+                    continue;
+                }
+            };
+            if let Err(error) = enqueue_linear_issue_update_tx(&mut tx, &issue).await {
+                tracing::warn!(
+                    issue_id = %issue.id,
+                    %error,
+                    "failed to enqueue admitted dependency task for Linear"
+                );
+                continue;
+            }
             if let Err(error) = activity::create_activity(
-                &self.pool,
+                &mut *tx,
                 issue.workspace_id,
                 issue.id,
                 Some("system"),
@@ -1988,14 +2114,14 @@ impl TaskService {
                     "failed to record dependency admission activity"
                 );
             }
-            let issue = match get_issue(&self.pool, issue_id).await {
-                Ok(Some(issue)) => issue,
-                Ok(None) => continue,
-                Err(error) => {
-                    tracing::warn!(%issue_id, %error, "failed to reload admitted dependency task");
-                    continue;
-                }
-            };
+            if let Err(error) = tx.commit().await {
+                tracing::warn!(
+                    %issue_id,
+                    %error,
+                    "failed to commit dependency task admission"
+                );
+                continue;
+            }
             let result = if issue.executor_type.as_deref() == Some("team") {
                 match issue.executor_id {
                     Some(team_id) => {

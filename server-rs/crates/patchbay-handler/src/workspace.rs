@@ -10,8 +10,10 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, patch, post, put};
 use axum::{Json, Router};
-use patchbay_db::models::{Agent, AgentTaskQueue, Member, User, Workspace};
-use patchbay_db::queries::{member, share_link, user, workspace};
+use patchbay_db::models::{Agent, AgentTaskQueue, Issue, Member, User, Workspace};
+use patchbay_db::queries::{
+    issue as issue_q, linear as linear_q, member, share_link, user, workspace,
+};
 use patchbay_middleware::workspace::WorkspaceContext;
 use rand::RngCore;
 use regex::Regex;
@@ -975,6 +977,14 @@ async fn revoke_and_remove_member(
         user_id,
     )
     .await?;
+    let locked_member =
+        member::lock_member_by_user_and_workspace(&mut *transaction, user_id, workspace_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("member is no longer in the workspace"))?;
+    anyhow::ensure!(
+        locked_member.id == member_id,
+        "workspace member identity changed during revocation"
+    );
     let runtimes = patchbay_db::queries::runtime::list_agent_runtimes_by_owner(
         &mut *transaction,
         workspace_id,
@@ -982,7 +992,10 @@ async fn revoke_and_remove_member(
     )
     .await?;
     let runtime_ids: Vec<Uuid> = runtimes.iter().map(|runtime| runtime.id).collect();
-    let mut result = MemberRevocation::default();
+    let mut result = MemberRevocation {
+        revoked_user_id: Some(user_id),
+        ..Default::default()
+    };
     if !runtime_ids.is_empty() {
         result.archived_agents = patchbay_db::queries::agent::archive_agents_by_runtime(
             &mut *transaction,
@@ -1061,6 +1074,52 @@ async fn revoke_and_remove_member(
         user_id,
     )
     .await?;
+    linear_q::lock_linear_rows_for_workspace_member_issue_owners(
+        &mut transaction,
+        workspace_id,
+        user_id,
+    )
+    .await?;
+    result.cleared_issue_owners =
+        issue_q::clear_workspace_member_issue_owners(&mut *transaction, workspace_id, user_id)
+            .await?;
+    let cleared_issue_ids = result
+        .cleared_issue_owners
+        .iter()
+        .map(|issue| issue.id)
+        .collect::<Vec<_>>();
+    linear_q::canonicalize_legacy_link_owner_snapshots(
+        &mut *transaction,
+        workspace_id,
+        &cleared_issue_ids,
+        user_id,
+    )
+    .await?;
+    linear_q::clear_import_link_owner_snapshots(
+        &mut *transaction,
+        workspace_id,
+        &cleared_issue_ids,
+        user_id,
+    )
+    .await?;
+    for issue in &result.cleared_issue_owners {
+        linear_q::enqueue_issue_outbox(
+            &mut *transaction,
+            workspace_id,
+            issue.project_id,
+            issue.id,
+            &format!("issue:{}:revision:{}", issue.id, issue.revision),
+            "issue_updated",
+            &patchbay_service::issue_service::linear_issue_sync_payload(issue),
+        )
+        .await?;
+    }
+    linear_q::delete_linear_member_bindings_for_workspace_member(
+        &mut *transaction,
+        workspace_id,
+        user_id,
+    )
+    .await?;
     member::delete_member(&mut *transaction, member_id).await?;
     transaction.commit().await?;
     Ok(result)
@@ -1068,10 +1127,12 @@ async fn revoke_and_remove_member(
 
 #[derive(Default)]
 struct MemberRevocation {
+    revoked_user_id: Option<Uuid>,
     archived_agents: Vec<Agent>,
     cancelled_tasks: Vec<AgentTaskQueue>,
     offline_runtime_ids: Vec<Uuid>,
     revoked_token_hashes: Vec<String>,
+    cleared_issue_owners: Vec<Issue>,
 }
 
 async fn publish_member_revocation(
@@ -1080,6 +1141,14 @@ async fn publish_member_revocation(
     actor_id: Uuid,
     result: &MemberRevocation,
 ) {
+    for issue in &result.cleared_issue_owners {
+        let mut previous = issue.clone();
+        previous.owner_type = Some("member".to_string());
+        previous.owner_id = result.revoked_user_id;
+        previous.revision = previous.revision.saturating_sub(1);
+        crate::issue::publish_issue_updated(state, &previous, issue, "member", actor_id, None)
+            .await;
+    }
     for hash in &result.revoked_token_hashes {
         state.daemon_token_cache.invalidate(hash).await;
     }

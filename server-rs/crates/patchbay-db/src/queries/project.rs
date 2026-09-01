@@ -80,11 +80,32 @@ pub async fn delete_project(
     id: Uuid,
     workspace_id: Uuid,
 ) -> anyhow::Result<u64> {
-    let r = sqlx::query(r#"DELETE FROM project WHERE id = $1 AND workspace_id = $2"#)
-        .bind(id)
-        .bind(workspace_id)
-        .execute(executor)
-        .await?;
+    let r = sqlx::query(
+        r#"WITH target_linear_bindings AS MATERIALIZED (
+               SELECT id
+               FROM linear_project_binding
+               WHERE patchbay_project_id = $1 AND workspace_id = $2
+               ORDER BY id
+               FOR UPDATE
+           ), deleted_linear_outbox AS (
+               DELETE FROM linear_sync_outbox
+               WHERE binding_id IN (SELECT id FROM target_linear_bindings)
+           ), deleted_linear_conflicts AS (
+               DELETE FROM linear_sync_conflict
+               WHERE binding_id IN (SELECT id FROM target_linear_bindings)
+           ), deleted_linear_links AS (
+               DELETE FROM linear_issue_link
+               WHERE binding_id IN (SELECT id FROM target_linear_bindings)
+           ), deleted_linear_bindings AS (
+               DELETE FROM linear_project_binding
+               WHERE id IN (SELECT id FROM target_linear_bindings)
+           )
+           DELETE FROM project WHERE id = $1 AND workspace_id = $2"#,
+    )
+    .bind(id)
+    .bind(workspace_id)
+    .execute(executor)
+    .await?;
     Ok(r.rows_affected())
 }
 

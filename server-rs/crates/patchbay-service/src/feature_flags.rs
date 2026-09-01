@@ -161,6 +161,12 @@ pub const CUSTOM_ISSUE_STATUSES: &str = "custom_issue_statuses";
 /// Gates Linear installation foundation routes. It intentionally defaults to
 /// false until the OAuth/Webhook canary has been completed.
 pub const LINEAR_INSTALLATION_FOUNDATION: &str = "linear_installation_foundation";
+/// Gates Linear pull/import workers. It remains separate from installation
+/// so receiving OAuth/Webhook receipts cannot accidentally mutate Issues.
+pub const LINEAR_PULL_IMPORT: &str = "linear_pull_import";
+/// Gates outbound Issue publication. It stays separate from pull/import so a
+/// workspace can safely prove inbound behavior before enabling mutations.
+pub const LINEAR_PUSH: &str = "linear_push";
 
 // No longer release flags — kept publishing as permanently enabled so older
 // desktop clients that still gate on these config decisions fail open:
