@@ -17,9 +17,23 @@ verdicts as a pull request.
 - Rust pull-request compiler caches are read-only. This prevents untrusted
   pull-request code from writing to a shared compiler cache. Merge-queue refs
   use the same read-only mode because they execute pull-request code too.
+- Rust validation is Stack-aware. For a same-repository PR, `changes` queries
+  GitHub for an open child whose `base.ref` is the current PR head. A matching
+  child marks this layer as intermediate; a narrow workspace-member source
+  diff then runs formatting, a `cargo check` closure containing its reverse
+  dependents, and tests for the changed crates. Workspace manifests,
+  lockfiles, migrations, toolchain, deployment, and other broad boundaries
+  fall back to the full Rust jobs. Top-level PRs, merge-group refs, `main`,
+  tags, and releases always use the full workspace suite.
 - The required contexts remain `frontend`, `backend`, `mobile`, and
   `installer`. Do not mark a check successful from a script, remove a required
   context, or use a bypass to compensate for a missing run.
+
+The Rust classifier fails closed: if the GitHub child lookup, `cargo metadata`,
+diff, or package mapping cannot be completed, `changes` fails and the required
+`backend` check cannot pass. The lightweight job is accepted by `backend` only
+when the classifier explicitly returns `lightweight`; a skipped lightweight
+job can never make a full-scope PR green.
 
 ## Stack workflow
 
@@ -58,3 +72,8 @@ parallel and are not cross-PR deduplicated. Once it is enabled,
 GitHub controls queue grouping and may process the layers in more than one
 group. The queue does not make real provider credentials, callbacks, or
 macOS acceptance evidence appear, so those runtime gates must remain explicit.
+
+The Stack-aware Rust optimization is intentionally source-controlled and does
+not change branch protection. It reduces repeated workspace compilation for
+intermediate source-only layers; it does not replace the complete Rust suite
+on the top layer or after landing on `main`/release.

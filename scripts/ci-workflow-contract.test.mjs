@@ -40,13 +40,32 @@ test("Rust and Mobile validation are automatic path-classified merge gates", () 
   assert.match(ci, /- 'scripts\/verify-release-tag\.sh'/u);
 });
 
+test("Stack Rust layers select a tested lightweight scope without weakening the backend gate", () => {
+  assert.match(ci, /Detect open Stack child PR/u);
+  assert.match(ci, /gh api --method GET --paginate --slurp/u);
+  assert.match(ci, /-f base="\$HEAD_REF"/u);
+  assert.match(ci, /cargo metadata/u);
+  assert.match(ci, /scripts\/classify-rust-scope\.mjs/u);
+  assert.match(ci, /rust-lightweight:/u);
+  assert.match(
+    ci,
+    /rust-lightweight:\n\s+needs: changes\n\s+if: \$\{\{ needs\.changes\.outputs\.rust == 'true' && needs\.changes\.outputs\.rust_scope == 'lightweight' \}\}/u,
+  );
+  assert.match(ci, /cargo fmt --all --check/u);
+  assert.match(ci, /cargo check --all-targets --locked/u);
+  assert.match(ci, /cargo test --all-targets --locked/u);
+  assert.match(ci, /unknown Rust validation scope/u);
+  assert.match(ci, /Lightweight Rust validation passed/u);
+  assert.match(ci, /rust_scope_reason/u);
+});
+
 test("merge queue runs the same path-aware CI gate", () => {
   assert.match(ci, /^  merge_group:\n/mu);
   assert.match(ci, /^    types: \[checks_requested\]\n/mu);
   assert.match(ci, /\$EVENT_NAME" = "merge_group"/u);
   assert.equal(
     [...ci.matchAll(/github\.event_name == 'pull_request' \|\| github\.event_name == 'merge_group'/gu)].length,
-    3,
+    4,
   );
   assert.match(ci, /cancel-in-progress: true/u);
 });
@@ -77,10 +96,9 @@ test("workflow-only changes keep the four required aggregates green without heav
 
 test("Rust uses one workspace test invocation and PR compiler caches are read-only", () => {
   assert.match(ci, /cargo test --workspace --all-targets --locked/u);
-  assert.doesNotMatch(ci, /cargo metadata --locked --no-deps/u);
   assert.equal(
     [...ci.matchAll(/SCCACHE_GHA_RW_MODE: \$\{\{ \(github\.event_name == 'pull_request' \|\| github\.event_name == 'merge_group'\) && 'READ_ONLY' \|\| 'READ_WRITE' \}\}/gu)].length,
-    3,
+    4,
   );
 });
 

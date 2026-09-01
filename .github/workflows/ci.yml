@@ -51,6 +51,10 @@ jobs:
     outputs:
       frontend: ${{ steps.decide.outputs.frontend }}
       rust: ${{ steps.decide.outputs.rust }}
+      rust_scope: ${{ steps.rust-scope.outputs.rust_scope }}
+      rust_packages: ${{ steps.rust-scope.outputs.rust_packages }}
+      rust_test_packages: ${{ steps.rust-scope.outputs.rust_test_packages }}
+      stack_intermediate: ${{ steps.stack.outputs.stack_intermediate }}
       mobile: ${{ steps.decide.outputs.mobile }}
       installer: ${{ steps.decide.outputs.installer }}
       images: ${{ steps.filter.outputs.images }}
@@ -80,6 +84,7 @@ jobs:
           node --test
           scripts/assemble-production-manifest.test.mjs
           scripts/ci-workflow-contract.test.mjs
+          scripts/classify-rust-scope.test.mjs
           scripts/cleanup-actions-caches.test.mjs
           scripts/github-actions-pinning-contract.test.mjs
           scripts/dev-clerk-auth.test.mjs
@@ -229,6 +234,104 @@ jobs:
               - '**/*.webp'
               - '**/*.avif'
               - 'scripts/check-image-budget.mjs'
+
+      - name: Detect open Stack child PR
+        id: stack
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          stack_intermediate=false
+          if [[ "$EVENT_NAME" = "pull_request" && "$HEAD_REPOSITORY" = "$GITHUB_REPOSITORY" ]]; then
+            if ! child_prs="$(gh api --method GET --paginate --slurp \
+              "repos/$GITHUB_REPOSITORY/pulls" \
+              -f state=open \
+              -f base="$HEAD_REF" \
+              -f per_page=100)"; then
+              echo "::error::unable to classify Stack children from the GitHub API"
+              exit 1
+            fi
+            if jq -e --arg ref "$HEAD_REF" 'any(.[][]; .base.ref == $ref)' <<<"$child_prs" >/dev/null; then
+              stack_intermediate=true
+            fi
+          fi
+          echo "stack_intermediate=$stack_intermediate" >> "$GITHUB_OUTPUT"
+
+      - name: Classify Rust validation scope
+        id: rust-scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REF_TYPE: ${{ github.ref_type }}
+          RUN_RUST: ${{ github.event_name == 'workflow_dispatch' && inputs.run_rust == true }}
+          RUST_CHANGED: ${{ steps.filter.outputs.rust }}
+          STACK_INTERMEDIATE: ${{ steps.stack.outputs.stack_intermediate }}
+        run: |
+          if [[ "$RUN_RUST" = "true" || "$REF_TYPE" = "tag" ]]; then
+            {
+              echo "rust_scope=full"
+              echo "rust_packages="
+              echo "rust_test_packages="
+              echo "rust_scope_reason=manual or tag validation requires the full Rust suite"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ "$RUST_CHANGED" != "true" ]]; then
+            {
+              echo "rust_scope=none"
+              echo "rust_packages="
+              echo "rust_test_packages="
+              echo "rust_scope_reason=no Rust paths changed"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ "$STACK_INTERMEDIATE" != "true" ]]; then
+            {
+              echo "rust_scope=full"
+              echo "rust_packages="
+              echo "rust_test_packages="
+              echo "rust_scope_reason=top-level or non-Stack PR requires full Rust validation"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          changed_files="$RUNNER_TEMP/rust-changed-files"
+          metadata="$RUNNER_TEMP/rust-metadata.json"
+          if [[ "$EVENT_NAME" != "pull_request" ]]; then
+            echo "::error::an intermediate Rust scope requires a pull_request event"
+            exit 1
+          fi
+          git diff --name-only "$PR_BASE_SHA" "$PR_HEAD_SHA" > "$changed_files"
+          cargo metadata \
+            --manifest-path server-rs/Cargo.toml \
+            --format-version=1 \
+            --no-deps \
+            --locked > "$metadata"
+          node scripts/classify-rust-scope.mjs \
+            --changed-files "$changed_files" \
+            --metadata "$metadata" \
+            --repo-root "$GITHUB_WORKSPACE" \
+            --stack-intermediate true >> "$GITHUB_OUTPUT"
+
+      - name: Summarize Stack and Rust validation scope
+        env:
+          RUST_SCOPE: ${{ steps.rust-scope.outputs.rust_scope }}
+          RUST_SCOPE_REASON: ${{ steps.rust-scope.outputs.rust_scope_reason }}
+          RUST_PACKAGES: ${{ steps.rust-scope.outputs.rust_packages }}
+          RUST_TEST_PACKAGES: ${{ steps.rust-scope.outputs.rust_test_packages }}
+          STACK_INTERMEDIATE: ${{ steps.stack.outputs.stack_intermediate }}
+        run: |
+          {
+            echo "### Stack and Rust validation scope"
+            echo "- Open child PR detected: \`$STACK_INTERMEDIATE\`"
+            echo "- Rust scope: \`$RUST_SCOPE\`"
+            echo "- Rust scope reason: $RUST_SCOPE_REASON"
+            echo "- Check packages (including reverse dependencies): \`${RUST_PACKAGES:-none}\`"
+            echo "- Targeted test packages: \`${RUST_TEST_PACKAGES:-none}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Classify authentication release impact
         id: auth-impact
@@ -704,9 +807,121 @@ jobs:
             exit 1
           fi
 
+  # An intermediate Stack layer with only member source changes can use a
+  # bounded Rust gate. The classifier has already expanded the check set to
+  # include every reverse workspace dependent; broad files and top-level PRs
+  # select the complete jobs below instead.
+  rust-lightweight:
+    needs: changes
+    if: ${{ needs.changes.outputs.rust == 'true' && needs.changes.outputs.rust_scope == 'lightweight' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB: patchbay
+          POSTGRES_USER: patchbay
+          POSTGRES_PASSWORD: patchbay
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U patchbay -d patchbay"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable
+      SQLX_OFFLINE: "false"
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_GHA_RW_MODE: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'READ_ONLY' || 'READ_WRITE' }}
+      RUST_PACKAGES: ${{ needs.changes.outputs.rust_packages }}
+      RUST_TEST_PACKAGES: ${{ needs.changes.outputs.rust_test_packages }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal --component rustfmt
+
+      - name: Use stable Rust
+        run: rustup default stable
+
+      - name: Restore Cargo registry and git downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('server-rs/Cargo.lock') }}
+          restore-keys: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-
+
+      - name: Enable bounded shared compiler cache
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+
+      - name: Report selected Rust packages
+        run: |
+          {
+            echo "### Lightweight Rust validation"
+            echo "- Check closure: \`${RUST_PACKAGES}\`"
+            echo "- Targeted tests: \`${RUST_TEST_PACKAGES}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check workspace formatting
+        working-directory: server-rs
+        run: cargo fmt --all --check
+
+      - name: Apply database migrations with the Rust runner
+        working-directory: server-rs
+        run: cargo run --locked -p patchbay-migrate --bin patchbay-migrate -- up
+
+      - name: Check affected crates and reverse dependents
+        working-directory: server-rs
+        shell: bash
+        run: |
+          if [[ -z "${RUST_PACKAGES// }" ]]; then
+            echo "::error::lightweight Rust scope did not provide check packages"
+            exit 1
+          fi
+          read -r -a packages <<< "$RUST_PACKAGES"
+          cargo_args=()
+          for package in "${packages[@]}"; do
+            cargo_args+=(--package "$package")
+          done
+          cargo check --all-targets --locked "${cargo_args[@]}"
+
+      - name: Run targeted tests for changed crates
+        working-directory: server-rs
+        shell: bash
+        run: |
+          if [[ -z "${RUST_TEST_PACKAGES// }" ]]; then
+            echo "::error::lightweight Rust scope did not provide test packages"
+            exit 1
+          fi
+          read -r -a packages <<< "$RUST_TEST_PACKAGES"
+          cargo_args=()
+          for package in "${packages[@]}"; do
+            cargo_args+=(--package "$package")
+          done
+          cargo test --all-targets --locked "${cargo_args[@]}"
+
+      - name: Report compiler cache effectiveness
+        if: always()
+        shell: bash
+        run: |
+          stats="$(${SCCACHE_PATH} --show-stats 2>&1)"
+          printf '%s\n' "$stats"
+          {
+            echo "### sccache: rust-lightweight"
+            echo '```text'
+            printf '%s\n' "$stats"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
   rust-deployment-contracts:
     needs: changes
-    if: ${{ needs.changes.outputs.rust == 'true' }}
+    if: ${{ needs.changes.outputs.rust == 'true' && needs.changes.outputs.rust_scope == 'full' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -725,7 +940,7 @@ jobs:
 
   rust-quality:
     needs: changes
-    if: ${{ needs.changes.outputs.rust == 'true' }}
+    if: ${{ needs.changes.outputs.rust == 'true' && needs.changes.outputs.rust_scope == 'full' }}
     runs-on: ubuntu-latest
     env:
       RUSTC_WRAPPER: sccache
@@ -793,7 +1008,7 @@ jobs:
 
   rust-tests:
     needs: changes
-    if: ${{ needs.changes.outputs.rust == 'true' }}
+    if: ${{ needs.changes.outputs.rust == 'true' && needs.changes.outputs.rust_scope == 'full' }}
     runs-on: ubuntu-latest
     # The workspace suite normally completes in about ten minutes. Keep a
     # bounded upper limit so a single hung test cannot hold the merge gate
@@ -867,7 +1082,7 @@ jobs:
 
   rust-audit:
     needs: changes
-    if: ${{ needs.changes.outputs.rust == 'true' }}
+    if: ${{ needs.changes.outputs.rust == 'true' && needs.changes.outputs.rust_scope == 'full' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -892,6 +1107,7 @@ jobs:
     needs:
       [
         changes,
+        rust-lightweight,
         rust-deployment-contracts,
         rust-quality,
         rust-tests,
@@ -905,6 +1121,8 @@ jobs:
         env:
           CHANGES_RESULT: ${{ needs.changes.result }}
           RUN_RUST: ${{ needs.changes.outputs.rust }}
+          RUST_SCOPE: ${{ needs.changes.outputs.rust_scope }}
+          LIGHTWEIGHT_RESULT: ${{ needs.rust-lightweight.result }}
           DEPLOYMENT_RESULT: ${{ needs.rust-deployment-contracts.result }}
           QUALITY_RESULT: ${{ needs.rust-quality.result }}
           TEST_RESULT: ${{ needs.rust-tests.result }}
@@ -913,6 +1131,8 @@ jobs:
         run: |
           echo "changes:       $CHANGES_RESULT"
           echo "run Rust:      $RUN_RUST"
+          echo "rust scope:    $RUST_SCOPE"
+          echo "rust-lightweight: $LIGHTWEIGHT_RESULT"
           echo "rust-deploy:   $DEPLOYMENT_RESULT"
           echo "rust-quality:  $QUALITY_RESULT"
           echo "rust-tests:    $TEST_RESULT"
@@ -926,6 +1146,18 @@ jobs:
             echo "Rust validation intentionally skipped: no relevant paths changed."
             exit 0
           fi
+          if [ "$RUST_SCOPE" = "lightweight" ]; then
+            if [ "$LIGHTWEIGHT_RESULT" != "success" ]; then
+              echo "::error::lightweight Rust validation failed"
+              exit 1
+            fi
+            echo "Lightweight Rust validation passed for this intermediate Stack layer."
+            exit 0
+          fi
+          if [ "$RUST_SCOPE" != "full" ]; then
+            echo "::error::unknown Rust validation scope: $RUST_SCOPE"
+            exit 1
+          fi
           if [ "$DEPLOYMENT_RESULT" != "success" ] || [ "$QUALITY_RESULT" != "success" ] || [ "$TEST_RESULT" != "success" ] || [ "$PLATFORM_RESULT" != "success" ] || [ "$AUDIT_RESULT" != "success" ]; then
             echo "::error::backend validation failed"
             exit 1
@@ -934,7 +1166,7 @@ jobs:
   rust-platform:
     name: rust-platform (${{ matrix.os }})
     needs: changes
-    if: ${{ needs.changes.outputs.rust == 'true' }}
+    if: ${{ needs.changes.outputs.rust == 'true' && needs.changes.outputs.rust_scope == 'full' }}
     strategy:
       fail-fast: false
       matrix:
