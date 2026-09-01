@@ -38,6 +38,12 @@ const mockInvalidate = vi.hoisted(() => vi.fn());
 const mockToastSuccess = vi.hoisted(() => vi.fn());
 const mockToastError = vi.hoisted(() => vi.fn());
 
+const healthyRuntime = {
+  state: "healthy",
+  observedAt: null,
+  errorCode: null,
+} as const;
+
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (opts: { queryKey: unknown[]; enabled?: boolean }) => {
     if (opts.enabled === false) return { data: undefined, isLoading: false };
@@ -155,7 +161,7 @@ function resetFixtures() {
 
 function setConnectedGroupRoute() {
   installationsRef.current = {
-    installations: [{ id: "i1", agent_id: "agent-1", status: "active" }],
+    installations: [{ id: "i1", agent_id: "agent-1", status: "active", runtime: healthyRuntime }],
     configured: true,
     install_supported: true,
     group_routing_supported: true,
@@ -181,7 +187,12 @@ describe("DingTalkAgentBindButton", () => {
   });
 
   it("opens the BYO dialog and submits the pasted AppKey + AppSecret", async () => {
-    mockRegisterBYO.mockResolvedValue({ id: "i1", agent_id: "agent-1", status: "active" });
+    mockRegisterBYO.mockResolvedValue({
+      id: "i1",
+      agent_id: "agent-1",
+      status: "active",
+      runtime: healthyRuntime,
+    });
     renderUI(<DingTalkAgentBindButton agentId="agent-1" agentName="Bot" />);
     await userEvent.click(screen.getByTestId("dingtalk-agent-connect"));
     const idInput = await screen.findByTestId("dingtalk-byo-client-id");
@@ -208,7 +219,7 @@ describe("DingTalkAgentBindButton", () => {
 
   it("shows the connected badge (not the CTA) when the agent already has an active install", () => {
     installationsRef.current = {
-      installations: [{ id: "i1", agent_id: "agent-1", status: "active" }],
+      installations: [{ id: "i1", agent_id: "agent-1", status: "active", runtime: healthyRuntime }],
       configured: true,
       install_supported: true,
       group_routing_supported: true,
@@ -262,6 +273,7 @@ describe("DingTalkTab", () => {
         id: "i1",
         agent_id: "agent-7",
         status: "active",
+        runtime: healthyRuntime,
         bound_dingtalk_user_ids: ["staff-1001", "staff-1002"],
       }],
       configured: true,
@@ -278,7 +290,7 @@ describe("DingTalkTab", () => {
 
   it("does not render a linked identity when this member has no DingTalk binding", () => {
     installationsRef.current = {
-      installations: [{ id: "i1", agent_id: "agent-7", status: "active" }],
+      installations: [{ id: "i1", agent_id: "agent-7", status: "active", runtime: healthyRuntime }],
       configured: true,
       install_supported: true,
       group_routing_supported: true,
@@ -294,6 +306,7 @@ describe("DingTalkTab", () => {
         id: "i1",
         agent_id: "agent-7",
         status: "active",
+        runtime: healthyRuntime,
         bound_dingtalk_user_ids: ["staff-must-stay-private"],
       }],
       configured: true,
@@ -309,8 +322,8 @@ describe("DingTalkTab", () => {
   it("shows a placeholder instead of 'Invalid Date' when installed_at is missing or malformed", () => {
     installationsRef.current = {
       installations: [
-        { id: "i1", agent_id: "agent-7", status: "active", installed_at: "" },
-        { id: "i2", agent_id: "agent-8", status: "active", installed_at: "not-a-date" },
+        { id: "i1", agent_id: "agent-7", status: "active", runtime: healthyRuntime, installed_at: "" },
+        { id: "i2", agent_id: "agent-8", status: "active", runtime: healthyRuntime, installed_at: "not-a-date" },
       ],
       configured: true,
       install_supported: true,

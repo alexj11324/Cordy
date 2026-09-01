@@ -986,7 +986,7 @@ impl EmailService {
             .trim()
             .to_string();
         if app_url.is_empty() {
-            app_url = "https://patchbay.ai".to_string();
+            app_url = "https://patchbay.aspectlylabs.com".to_string();
         }
         let invite_url = format!("{app_url}/invite/{invitation_id}");
 
@@ -1179,12 +1179,14 @@ mod tests {
             "bob@example.com",
             "Eve <script>",
             "Acme & Co \"inc\"",
-            "https://patchbay.ai/invite/x",
+            "https://patchbay.aspectlylabs.com/invite/x",
         );
         // Body escapes everything dangerous.
         assert!(req.html.contains("Eve &lt;script&gt;"));
         assert!(req.html.contains("Acme &amp; Co &#34;inc&#34;"));
-        assert!(req.html.contains(r#"href="https://patchbay.ai/invite/x""#));
+        assert!(req
+            .html
+            .contains(r#"href="https://patchbay.aspectlylabs.com/invite/x""#));
         // Subject is sanitized (control chars stripped, length capped), not
         // HTML-escaped.
         assert_eq!(

@@ -6,6 +6,7 @@ use axum::{Json, Router};
 use patchbay_service::feature_flags::{self, FlagSource};
 use serde::Serialize;
 use std::collections::HashMap;
+use std::net::IpAddr;
 use url::Url;
 
 use crate::state::HandlerState;
@@ -19,6 +20,37 @@ pub struct PublicConfigSettings {
     pub daemon_server_url: String,
     pub daemon_app_url: String,
     pub official_cloud: bool,
+    /// Account-facing URL used by hosted channel binding flows.  This is
+    /// intentionally separate from the local daemon URL: loopback and LAN
+    /// origins are never safe to put in an IM message or QR payload.
+    pub messaging_bind_url: String,
+    pub messaging: MessagingCapabilities,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct MessagingCapabilities {
+    pub mode: String,
+    #[serde(rename = "setupWritable")]
+    pub setup_writable: bool,
+    pub platforms: Vec<MessagingPlatformCapability>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct MessagingPlatformCapability {
+    #[serde(rename = "type")]
+    pub channel_type: String,
+    pub enabled: bool,
+    pub experimental: bool,
+}
+
+impl Default for MessagingCapabilities {
+    fn default() -> Self {
+        Self {
+            mode: "disabled".into(),
+            setup_writable: false,
+            platforms: messaging_platforms(false),
+        }
+    }
 }
 
 impl Default for PublicConfigSettings {
@@ -31,6 +63,8 @@ impl Default for PublicConfigSettings {
             daemon_server_url: String::new(),
             daemon_app_url: String::new(),
             official_cloud: false,
+            messaging_bind_url: String::new(),
+            messaging: MessagingCapabilities::default(),
         }
     }
 }
@@ -44,6 +78,9 @@ impl PublicConfigSettings {
     ) -> Self {
         let app_url = resolve_frontend_app_url_from_config(config);
         let official_cloud = is_official_cloud_daemon_config(&app_url);
+        let messaging_bind_url = public_bind_url_from_config(config, official_cloud);
+        let messaging =
+            messaging_capabilities(config, official_cloud, !messaging_bind_url.is_empty());
         let (daemon_server_url, daemon_app_url) = if app_url.is_empty() || official_cloud {
             (String::new(), String::new())
         } else {
@@ -64,6 +101,8 @@ impl PublicConfigSettings {
             daemon_server_url,
             daemon_app_url,
             official_cloud,
+            messaging_bind_url,
+            messaging,
         }
     }
 }
@@ -89,6 +128,7 @@ struct AppConfig {
     local_worktree_supported: bool,
     #[serde(skip_serializing_if = "String::is_empty")]
     server_version: String,
+    messaging: MessagingCapabilities,
 }
 
 struct DisabledFlags;
@@ -155,13 +195,162 @@ async fn get_config(State(state): State<HandlerState>) -> Json<AppConfig> {
         } else {
             state.public_config.server_version.clone()
         },
+        messaging: state.public_config.messaging.clone(),
     })
+}
+
+/// Returns the URL that may safely be placed in a cross-device IM message.
+/// A local or private origin is deliberately treated as unavailable; callers
+/// must show an operator-actionable state instead of manufacturing a
+/// localhost link that another device cannot open.
+pub fn public_bind_url_from_config(
+    config: &patchbay_config::Config,
+    official_cloud: bool,
+) -> String {
+    let app_url = resolve_frontend_app_url_from_config(config);
+    if official_cloud {
+        // The official managed surface is fixed to the public product host;
+        // do not let a development FRONTEND_ORIGIN leak into a hosted bot.
+        return "https://patchbay.aspectlylabs.com".into();
+    }
+    if is_public_https_url(&app_url) {
+        app_url
+    } else {
+        String::new()
+    }
+}
+
+/// Convenience wrapper for runtime components that only have the loaded
+/// deployment config.  It applies the same official-host detection as the
+/// anonymous `/api/config` response.
+pub fn public_bind_url(config: &patchbay_config::Config) -> String {
+    let app_url = resolve_frontend_app_url_from_config(config);
+    public_bind_url_from_config(config, is_official_cloud_daemon_config(&app_url))
+}
+
+/// Resolves the authoritative messaging deployment mode used by both the
+/// anonymous capability response and server runtime components.
+pub fn resolved_messaging_mode(config: &patchbay_config::Config) -> String {
+    let app_url = resolve_frontend_app_url_from_config(config);
+    let official_cloud = is_official_cloud_daemon_config(&app_url);
+    let public_bind_available = !public_bind_url_from_config(config, official_cloud).is_empty();
+    messaging_capabilities(config, official_cloud, public_bind_available).mode
+}
+
+fn messaging_capabilities(
+    config: &patchbay_config::Config,
+    official_cloud: bool,
+    public_bind_available: bool,
+) -> MessagingCapabilities {
+    let requested = config
+        .integrations
+        .messaging_mode
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let configured = messaging_platforms(true)
+        .iter()
+        .any(|platform| platform.enabled);
+    let mode = match requested {
+        Some("managed") => "managed",
+        Some("server_configured") => "server_configured",
+        Some("disabled") => "disabled",
+        _ if official_cloud => "managed",
+        _ if configured => "server_configured",
+        _ => "disabled",
+    };
+    // A local-only deployment cannot complete account-level binding from a
+    // phone or third-party platform. Advertise the capability as disabled so
+    // both UI and backend agree that no cross-device IM setup is available.
+    let mode = if public_bind_available || mode == "disabled" {
+        mode
+    } else {
+        "disabled"
+    };
+    let enabled = mode != "disabled";
+    MessagingCapabilities {
+        mode: mode.into(),
+        // Self-hosted installations are provisioned by the server operator.
+        // The app remains read-only and every write route is rejected by the
+        // same capability gate in `connectors.rs`.
+        setup_writable: mode == "managed",
+        platforms: messaging_platforms(enabled),
+    }
+}
+
+fn messaging_platforms(enabled: bool) -> Vec<MessagingPlatformCapability> {
+    [
+        ("lark", "PATCHBAY_LARK_SECRET_KEY"),
+        ("slack", "PATCHBAY_SLACK_SECRET_KEY"),
+        ("dingtalk", "PATCHBAY_DINGTALK_SECRET_KEY"),
+        ("wecom", "PATCHBAY_WECOM_SECRET_KEY"),
+        ("telegram", "PATCHBAY_TELEGRAM_SECRET_KEY"),
+        ("weixin", "PATCHBAY_WEIXIN_SECRET_KEY"),
+    ]
+    .into_iter()
+    .map(|(channel_type, key)| MessagingPlatformCapability {
+        channel_type: channel_type.into(),
+        enabled: enabled && patchbay_util::secretbox::load_key(key).is_ok(),
+        // No provider is promoted to a verified hosted transport by the
+        // capability endpoint alone.  Keep the flag true until the provider
+        // has passed the real install -> bind -> message -> reply exercise;
+        // a configured secret must never be enough to claim production
+        // readiness.
+        experimental: true,
+    })
+    .collect()
+}
+
+fn is_public_https_url(raw: &str) -> bool {
+    let Ok(url) = Url::parse(raw) else {
+        return false;
+    };
+    if url.scheme() != "https"
+        || url.host_str().is_none()
+        || url.username() != ""
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return false;
+    }
+    // `url::Url::host_str` keeps the brackets around an IPv6 literal.  Strip
+    // them before parsing so link-local/private IPv6 origins cannot bypass
+    // the public-origin guard and end up in a cross-device binding link.
+    let host = url
+        .host_str()
+        .unwrap_or_default()
+        .trim_end_matches('.')
+        .trim_matches(['[', ']']);
+    if host.eq_ignore_ascii_case("localhost") || host.ends_with(".local") {
+        return false;
+    }
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        return match ip {
+            IpAddr::V4(ip) => {
+                !(ip.is_unspecified() || ip.is_loopback() || ip.is_private() || ip.is_link_local())
+            }
+            IpAddr::V6(ip) => {
+                !(ip.is_loopback()
+                    || ip.is_unspecified()
+                    || ip.is_unique_local()
+                    || ip.is_unicast_link_local())
+            }
+        };
+    }
+    true
 }
 
 fn resolve_frontend_app_url_from_config(config: &patchbay_config::Config) -> String {
     let app_url = normalize_public_url(config.urls.app_url.as_deref().unwrap_or_default());
     if app_url.is_empty() {
-        normalize_public_url(config.urls.frontend_origin.as_deref().unwrap_or_default())
+        let frontend_origin =
+            normalize_public_url(config.urls.frontend_origin.as_deref().unwrap_or_default());
+        if !frontend_origin.is_empty() {
+            frontend_origin
+        } else {
+            normalize_public_url(config.urls.public_url.as_deref().unwrap_or_default())
+        }
     } else {
         app_url
     }
@@ -214,7 +403,7 @@ mod tests {
             assert!(is_official_cloud_daemon_config(raw), "{raw}");
         }
         for raw in [
-            "https://patchbay.ai",
+            "https://www.example.invalid",
             "https://www.aspectlylabs.com",
             "http://localhost:3000",
             "https://evil.example",
@@ -274,6 +463,7 @@ mod tests {
             feature_flags: feature_flags::evaluate_frontend_public_flags(&DisabledFlags),
             local_worktree_supported: true,
             server_version: String::new(),
+            messaging: MessagingCapabilities::default(),
         })
         .unwrap();
         assert_eq!(value["cdn_domain"], "");
@@ -284,6 +474,8 @@ mod tests {
         assert!(value.get("server_version").is_none());
         assert_eq!(value["feature_flags"]["agents_skill_toggles"], true);
         assert_eq!(value["feature_flags"]["plugins_v1"], false);
+        assert_eq!(value["messaging"]["mode"], "disabled");
+        assert_eq!(value["messaging"]["setupWritable"], false);
     }
 
     #[tokio::test]
@@ -334,5 +526,97 @@ mod tests {
         assert_eq!(value["daemon_server_url"], "https://api.example");
         assert_eq!(value["daemon_app_url"], "https://app.example");
         assert_eq!(value["server_version"], "v-test");
+    }
+
+    #[test]
+    fn cross_device_bind_url_rejects_loopback_and_private_origins() {
+        let mut config = patchbay_config::Config::default();
+        for raw in [
+            "http://localhost:3000",
+            "https://localhost:3000",
+            "https://127.0.0.1:3000",
+            "https://0.0.0.0:3000",
+            "https://192.168.1.10",
+            "https://patchbay.local",
+            "https://user:password@app.example",
+            "https://app.example/path?token=secret",
+        ] {
+            config.urls.app_url = Some(raw.into());
+            assert!(
+                public_bind_url_from_config(&config, false).is_empty(),
+                "{raw}"
+            );
+        }
+        config.urls.app_url = Some("https://app.example".into());
+        assert_eq!(
+            public_bind_url_from_config(&config, false),
+            "https://app.example"
+        );
+        assert_eq!(
+            public_bind_url_from_config(&config, true),
+            "https://patchbay.aspectlylabs.com"
+        );
+    }
+
+    #[test]
+    fn explicit_messaging_mode_controls_setup_ownership() {
+        let mut config = patchbay_config::Config::default();
+        config.integrations.messaging_mode = Some("server_configured".into());
+        config.urls.app_url = Some("https://app.example".into());
+        let capabilities = messaging_capabilities(&config, false, true);
+        assert_eq!(capabilities.mode, "server_configured");
+        assert!(!capabilities.setup_writable);
+
+        config.integrations.messaging_mode = Some("disabled".into());
+        let capabilities = messaging_capabilities(&config, false, true);
+        assert_eq!(capabilities.mode, "disabled");
+        assert!(capabilities
+            .platforms
+            .iter()
+            .all(|platform| !platform.enabled));
+    }
+
+    #[test]
+    fn local_only_messaging_is_disabled_even_when_keys_are_present() {
+        let mut config = patchbay_config::Config::default();
+        config.integrations.messaging_mode = Some("server_configured".into());
+        config.urls.app_url = Some("http://localhost:3000".into());
+        let capabilities = messaging_capabilities(&config, false, false);
+        assert_eq!(capabilities.mode, "disabled");
+        assert!(capabilities
+            .platforms
+            .iter()
+            .all(|platform| !platform.enabled));
+    }
+
+    #[test]
+    fn runtime_mode_matches_public_capabilities() {
+        let mut config = patchbay_config::Config::default();
+        config.urls.app_url = Some("https://patchbay.aspectlylabs.com".into());
+        assert_eq!(resolved_messaging_mode(&config), "managed");
+
+        config.integrations.messaging_mode = Some(" managed ".into());
+        assert_eq!(resolved_messaging_mode(&config), "managed");
+
+        config.urls.app_url = Some("http://localhost:3000".into());
+        assert_eq!(resolved_messaging_mode(&config), "disabled");
+    }
+
+    #[test]
+    fn frontend_origin_wins_over_api_fallback() {
+        let mut config = patchbay_config::Config::default();
+        config.urls.frontend_origin = Some("https://app.example/".into());
+        config.urls.public_url = Some("https://api.example/".into());
+        assert_eq!(
+            resolve_frontend_app_url_from_config(&config),
+            "https://app.example"
+        );
+    }
+
+    #[test]
+    fn ipv6_link_local_binding_origins_are_rejected() {
+        let mut config = patchbay_config::Config::default();
+        config.urls.app_url = Some("https://[fe80::1]".into());
+        assert!(public_bind_url_from_config(&config, false).is_empty());
     }
 }

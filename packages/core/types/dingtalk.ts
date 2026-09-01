@@ -1,3 +1,8 @@
+import type {
+  MessagingInstallationRuntime,
+  MessagingInstallationSetup,
+} from "./messaging";
+
 /** A DingTalk robot installation, optionally with a default Patchbay agent.
  * Workspace Hub installations let each conversation select an Agent with
  * `/agents`; group routes may target other agents without duplicating the
@@ -17,6 +22,8 @@ export interface DingTalkInstallation {
   installed_at: string;
   created_at: string;
   updated_at: string;
+  runtime?: MessagingInstallationRuntime;
+  setup?: MessagingInstallationSetup;
   /** DingTalk staff ids linked by the currently authenticated Patchbay user for
    * this bot. Member-scoped so the member-visible installation endpoint does
    * not disclose other members' DingTalk identities. */

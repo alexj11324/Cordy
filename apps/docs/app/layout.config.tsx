@@ -63,13 +63,13 @@ export const baseOptions: BaseLayoutProps = {
     {
       icon: <GitHubMark />,
       text: externalLinkText("GitHub"),
-      url: "https://github.com/patchbay-ai/patchbay",
+      url: "https://github.com/alexj11324/Cordy",
       external: true,
     },
     {
       icon: <PatchbayMark />,
       text: externalLinkText("Patchbay"),
-      url: "https://patchbay.ai",
+      url: "https://patchbay.aspectlylabs.com",
       external: true,
     },
   ],

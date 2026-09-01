@@ -6,7 +6,7 @@
 
 use crate::models::*;
 use chrono::{DateTime, Utc};
-use sqlx::Row;
+use sqlx::{PgConnection, Row};
 use uuid::Uuid;
 
 pub async fn acquire_channel_ws_lease(
@@ -1768,6 +1768,54 @@ WHERE id = $1
     Ok(r.rows_affected())
 }
 
+/// Mirrors an externally-held channel lease into the installation row so the
+/// public health projection remains useful when the runtime lease backend is
+/// Redis. Redis is still the fencing authority in that mode; this write is a
+/// token-bearing observation only and is deliberately not a second CAS.
+pub async fn mirror_channel_ws_lease(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    id: Uuid,
+    token: &str,
+    expires_at: DateTime<Utc>,
+) -> anyhow::Result<u64> {
+    let result = sqlx::query(
+        r#"UPDATE channel_installation
+SET ws_lease_token = $2,
+    ws_lease_expires_at = $3,
+    updated_at = now()
+WHERE id = $1
+  AND status = 'active'"#,
+    )
+    .bind(id)
+    .bind(token)
+    .bind(expires_at)
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected())
+}
+
+/// Clears the Redis lease observation without allowing a stale owner to erase
+/// a successor's newer observation.
+pub async fn clear_mirrored_channel_ws_lease(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    id: Uuid,
+    token: &str,
+) -> anyhow::Result<u64> {
+    let result = sqlx::query(
+        r#"UPDATE channel_installation
+SET ws_lease_token = NULL,
+    ws_lease_expires_at = NULL,
+    updated_at = now()
+WHERE id = $1
+  AND ws_lease_token = $2"#,
+    )
+    .bind(id)
+    .bind(token)
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected())
+}
+
 pub async fn set_channel_installation_config(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     id: Uuid,
@@ -1900,6 +1948,47 @@ WHERE id = $1"#,
     .execute(executor)
     .await?;
     Ok(r.rows_affected())
+}
+
+/// Checks a hosted installation cap while holding the workspace row lock.
+/// Callers must invoke this at the start of the same transaction that performs
+/// the installation upsert; the lock then serializes the count and write so
+/// concurrent OAuth/QR completions cannot both consume the final slot.
+pub async fn channel_installation_limit_allows(
+    executor: &mut PgConnection,
+    workspace_id: Uuid,
+    channel_type: &str,
+    agent_id: Option<Uuid>,
+    limit: i64,
+) -> anyhow::Result<bool> {
+    let workspace_exists =
+        sqlx::query_scalar::<_, Uuid>("SELECT id FROM workspace WHERE id = $1 FOR UPDATE")
+            .bind(workspace_id)
+            .fetch_optional(&mut *executor)
+            .await?;
+    if workspace_exists.is_none() {
+        return Ok(false);
+    }
+    let (active_count, same_slot) = sqlx::query_as::<_, (i64, bool)>(
+        r#"SELECT count(*)::bigint,
+                  EXISTS (
+                      SELECT 1
+                      FROM channel_installation AS same
+                      WHERE same.workspace_id = $1
+                        AND same.status = 'active'
+                        AND same.channel_type = $2
+                        AND same.agent_id IS NOT DISTINCT FROM $3
+                  )
+FROM channel_installation
+WHERE workspace_id = $1
+  AND status = 'active'"#,
+    )
+    .bind(workspace_id)
+    .bind(channel_type)
+    .bind(agent_id)
+    .fetch_one(&mut *executor)
+    .await?;
+    Ok(active_count < limit || same_slot)
 }
 
 pub async fn upsert_channel_installation(

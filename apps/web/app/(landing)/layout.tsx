@@ -20,8 +20,8 @@ const jsonLd = {
     {
       "@type": "Organization",
       name: "Patchbay",
-      url: "https://www.patchbay.ai",
-      sameAs: ["https://github.com/patchbay-ai/patchbay"],
+      url: "https://patchbay.aspectlylabs.com",
+      sameAs: ["https://github.com/alexj11324/Cordy"],
     },
     {
       "@type": "SoftwareApplication",

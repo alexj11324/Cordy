@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAuthStore } from "@patchbay/core/auth";
+import { api } from "@patchbay/core/api";
 import { Alert, AlertDescription } from "@patchbay/ui/components/ui/alert";
 import { Button } from "@patchbay/ui/components/ui/button";
 import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
@@ -65,6 +66,10 @@ function GuestSessionEntry() {
 export function DesktopLoginPage() {
   const accountsUrl = requireRuntimeAccountsUrl();
   const { t } = useT("auth");
+  const user = useAuthStore((state) => state.user);
+  const createGuestSessionForHandoff = useAuthStore(
+    (state) => state.createGuestSessionForHandoff,
+  );
   const [openingGoogle, setOpeningGoogle] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -72,10 +77,33 @@ export function DesktopLoginPage() {
     if (openingGoogle) return;
     setOpeningGoogle(true);
     setError(null);
+    let bootstrapGuestStarted = false;
     try {
-      const url = await createDesktopGoogleLoginUrl(accountsUrl);
+      // The server accepts a non-production callback protocol only from an
+      // authenticated desktop initiation. A first-run client establishes an
+      // in-memory guest bearer before opening the browser, without publishing
+      // that bootstrap identity to AppContent. The server claims it when the
+      // fresh Google session completes.
+      if (!user) {
+        await createGuestSessionForHandoff();
+        bootstrapGuestStarted = true;
+      }
+      const url = await createDesktopGoogleLoginUrl(
+        accountsUrl,
+        window.desktopAPI.appInfo.authCallbackProtocol,
+        (state, codeChallenge, callbackProtocol) =>
+          api.initiateDesktopGoogleAttempt(
+            state,
+            codeChallenge,
+            callbackProtocol,
+          ),
+      );
       await window.desktopAPI.openExternal(url);
     } catch {
+      if (bootstrapGuestStarted) {
+        await api.logout().catch(() => undefined);
+        api.setToken(null);
+      }
       setError(t(($) => $.desktop.entry.login_error));
     } finally {
       setOpeningGoogle(false);

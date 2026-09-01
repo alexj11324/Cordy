@@ -1,5 +1,6 @@
 import { createStore } from "zustand/vanilla";
 import { useStore } from "zustand";
+import type { MessagingCapabilities } from "../api/schemas";
 
 interface ConfigState {
   cdnDomain: string;
@@ -31,6 +32,8 @@ interface ConfigState {
   // predate this signal are caught by the same net — indistinguishable from
   // here, and only one of the two answers is safe to guess.
   localWorktreeSupported: boolean;
+  /** Null means an older server did not advertise the capability contract. */
+  messaging: MessagingCapabilities | null;
   setCdnConfig: (config: { cdnDomain: string; cdnSigned?: boolean }) => void;
   setAuthConfig: (config: {
     allowSignup: boolean;
@@ -44,6 +47,7 @@ interface ConfigState {
   setFeatureFlags: (flags?: Record<string, boolean>) => void;
   setServerVersion: (version?: string) => void;
   setLocalWorktreeSupported: (supported?: boolean) => void;
+  setMessagingConfig: (config?: MessagingCapabilities) => void;
 }
 
 export const configStore = createStore<ConfigState>((set) => ({
@@ -57,6 +61,7 @@ export const configStore = createStore<ConfigState>((set) => ({
   featureFlags: {},
   serverVersion: "",
   localWorktreeSupported: false,
+  messaging: null,
   setCdnConfig: ({ cdnDomain, cdnSigned = false }) => set({ cdnDomain, cdnSigned }),
   setAuthConfig: ({
     allowSignup,
@@ -69,6 +74,7 @@ export const configStore = createStore<ConfigState>((set) => ({
   setServerVersion: (version = "") => set({ serverVersion: version }),
   setLocalWorktreeSupported: (supported = false) =>
     set({ localWorktreeSupported: supported === true }),
+  setMessagingConfig: (messaging) => set({ messaging: messaging ?? null }),
 }));
 
 export function useConfigStore(): ConfigState;

@@ -7,13 +7,13 @@ The `patchbay` CLI connects your local machine to Patchbay. It handles authentic
 ### Install script (macOS/Linux)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash
 ```
 
 ### Build from Source
 
 ```bash
-git clone https://github.com/patchbay-ai/patchbay.git
+git clone https://github.com/alexj11324/Cordy.git
 cd patchbay
 make build
 cp bin/patchbay /usr/local/bin/patchbay

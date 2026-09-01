@@ -54,7 +54,8 @@ function LoginContent() {
   const desktopCodeChallenge = searchParams.get("code_challenge") ?? "";
   const desktopState = searchParams.get("state") ?? "";
   const requestedRedirectUrl = searchParams.get("redirect_url");
-  const validCliCallback = cliCallback !== "" && validateCliCallback(cliCallback);
+  const validCliCallback =
+    cliCallback !== "" && validateCliCallback(cliCallback);
   const returnUrl = useMemo(() => {
     if (desktopHandoff) {
       return `/login?${desktopHandoffQuery(
@@ -81,9 +82,7 @@ function LoginContent() {
   if (cliCallback && !validCliCallback) {
     return (
       <ClerkAuthShell>
-        <p role="alert">
-          {t(($) => $.web.cli_authorization.invalid_callback)}
-        </p>
+        <p role="alert">{t(($) => $.web.cli_authorization.invalid_callback)}</p>
       </ClerkAuthShell>
     );
   }
@@ -181,13 +180,14 @@ function DesktopHandoff({
       }
       const sessionToken = await getToken();
       if (!sessionToken) throw new Error("Clerk session token unavailable");
-      const { code } = await api.completeDesktopGoogleAttempt(
-        sessionToken,
-        state,
-        codeChallenge,
-      );
+      const { callback_protocol: callbackProtocol, code } =
+        await api.completeDesktopGoogleAttempt(
+          sessionToken,
+          state,
+          codeChallenge,
+        );
       if (!code) throw new Error("Patchbay desktop handoff code unavailable");
-      redirectToDesktopApp(code, state);
+      redirectToDesktopApp(code, state, callbackProtocol);
       setLoading(false);
     } catch (error) {
       if (

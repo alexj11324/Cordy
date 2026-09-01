@@ -36,6 +36,7 @@
     "automations",
     "---連携---",
     "channels",
+    "self-host-messaging",
     "weixin-integration",
     "lark-bot-integration",
     "slack-bot-integration",

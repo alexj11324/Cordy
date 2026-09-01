@@ -1721,7 +1721,7 @@ mod tests {
             project_id: Uuid::nil(),
             workspace_id: Uuid::nil(),
             resource_type: "github_repo".into(),
-            resource_ref: json!({"url": "git@github.com:patchbay-ai/patchbay.git"}),
+            resource_ref: json!({"url": "git@github.com:alexj11324/Cordy.git"}),
             label: None,
             position: 2,
             created_at: now,
@@ -1730,7 +1730,7 @@ mod tests {
         let value = serde_json::to_value(response).unwrap();
         assert_eq!(
             value["resource_ref"]["url"],
-            "git@github.com:patchbay-ai/patchbay.git"
+            "git@github.com:alexj11324/Cordy.git"
         );
         assert_eq!(value["created_by"], Value::Null);
         assert_eq!(value["position"], 2);
@@ -1739,11 +1739,11 @@ mod tests {
     #[test]
     fn resource_create_decoder_and_validation_match_go_presence_rules() {
         let request = decode_first::<CreateResourceRequest>(
-            br#"{"resource_type":" github_repo ","resource_ref":{"url":" git@github.com:patchbay-ai/patchbay.git ","default_branch_hint":" main "},"future":true} trailing"#,
+            br#"{"resource_type":" github_repo ","resource_ref":{"url":" git@github.com:alexj11324/Cordy.git ","default_branch_hint":" main "},"future":true} trailing"#,
         )
         .unwrap();
         let normalized = normalize_resource_ref("github_repo", &request.resource_ref).unwrap();
-        assert_eq!(normalized["url"], "git@github.com:patchbay-ai/patchbay.git");
+        assert_eq!(normalized["url"], "git@github.com:alexj11324/Cordy.git");
         assert_eq!(normalized["default_branch_hint"], "main");
 
         let missing =

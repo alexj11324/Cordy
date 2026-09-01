@@ -1,3 +1,8 @@
+import type {
+  MessagingInstallationRuntime,
+  MessagingInstallationSetup,
+} from "./messaging";
+
 export type WeixinInstallation = {
   id: string;
   workspace_id: string;
@@ -10,6 +15,8 @@ export type WeixinInstallation = {
   installed_at: string;
   created_at: string;
   updated_at: string;
+  runtime?: MessagingInstallationRuntime;
+  setup?: MessagingInstallationSetup;
 };
 
 export type ListWeixinInstallationsResponse = {
@@ -20,6 +27,10 @@ export type ListWeixinInstallationsResponse = {
 
 export type BeginWeixinInstallResponse = {
   session_id: string;
+  /** Display payload returned by iLink (`qrcode_img_content`). */
+  qr_code_content?: string;
+  /** Kept for older clients; the server now puts the display payload here,
+   * never the polling `qrcode` token. */
   qr_code_url: string;
   expires_in_seconds: number;
   poll_interval_seconds: number;

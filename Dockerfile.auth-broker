@@ -30,6 +30,10 @@ COPY contracts/ contracts/
 COPY packages/eslint-config/ packages/eslint-config/
 
 RUN pnpm install --filter @patchbay/auth-broker... --frozen-lockfile --offline
+# The filtered install can leave pnpm's workspace `node` shim pointing at a
+# pruned runtime package.  The builder already has the image's system Node;
+# remove the broken shim so build scripts resolve that binary normally.
+RUN rm -f node_modules/.bin/node
 ARG NEXT_PUBLIC_APP_VERSION=dev
 ENV NEXT_PUBLIC_APP_VERSION=$NEXT_PUBLIC_APP_VERSION
 ENV STANDALONE=true

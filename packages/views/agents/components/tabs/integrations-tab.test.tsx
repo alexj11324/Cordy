@@ -27,6 +27,12 @@ const installationsRef = vi.hoisted(() => ({
   },
 }));
 
+const healthyRuntime = {
+  state: "healthy",
+  observedAt: null,
+  errorCode: null,
+} as const;
+
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (opts: { queryKey: unknown[]; enabled?: boolean }) => {
     if (opts.enabled === false) return { data: undefined };
@@ -90,6 +96,11 @@ vi.mock("@patchbay/core/auth", () => {
   );
   return { useAuthStore };
 });
+
+vi.mock("@patchbay/core/config", () => ({
+  useConfigStore: (selector: (state: { messaging: { setupWritable: boolean } }) => unknown) =>
+    selector({ messaging: { setupWritable: true } }),
+}));
 
 vi.mock("../../../settings/components/lark-tab", () => ({
   LarkAgentBindButton: ({
@@ -271,7 +282,7 @@ describe("IntegrationsTab", () => {
     // must still surface its connected state instead of "coming soon"
     // (regression for the must-fix on PB-2988).
     installationsRef.current = {
-      installations: [{ agent_id: "agent-1", status: "active" }],
+      installations: [{ agent_id: "agent-1", status: "active", runtime: healthyRuntime }],
       configured: true,
       install_supported: false,
     };

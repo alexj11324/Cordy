@@ -87,6 +87,7 @@ export function AuthInitializer({
         configStore
           .getState()
           .setLocalWorktreeSupported(cfg.local_worktree_supported === true);
+        configStore.getState().setMessagingConfig(cfg.messaging);
         if (cfg.posthog_key) {
           initAnalytics({
             key: cfg.posthog_key,

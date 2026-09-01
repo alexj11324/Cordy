@@ -34,6 +34,7 @@ concurrency:
 jobs:
   prepare:
     if: >-
+      github.repository == 'alexj11324/Cordy' &&
       github.event.repository.id == 1341050282 &&
       (
         github.event_name == 'workflow_dispatch' ||
@@ -432,6 +433,12 @@ jobs:
     needs: [prepare, package-macos]
     if: needs.prepare.outputs.should_publish == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      # The environment REST endpoint is readable with Actions: read. Keep
+      # this explicit at the publish boundary so repository-level defaults
+      # cannot silently remove the fail-closed protection check.
+      actions: read
+      contents: write
     # The package-macos job has already produced and verified the exact
     # signed/notarized assets. Keep this gate before the upload/publish steps
     # so a maintainer can install those same assets on a real Mac and approve
@@ -439,6 +446,24 @@ jobs:
     environment:
       name: macos-production
     steps:
+      - name: Require protected macos-production environment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          environment_json="$(gh api "repos/$GITHUB_REPOSITORY/environments/macos-production")"
+          reviewer_count="$(jq '[.protection_rules[]? | select(.type == "required_reviewers") | .reviewers[]?] | length' <<< "$environment_json")"
+          admins_can_bypass="$(jq -r 'if has("can_admins_bypass") then .can_admins_bypass else "true" end' <<< "$environment_json")"
+          if [ "$reviewer_count" -lt 1 ]; then
+            echo "::error::macos-production must have at least one required reviewer; refusing to publish without the approval gate."
+            exit 1
+          fi
+          if [ "$admins_can_bypass" != "false" ]; then
+            echo "::error::macos-production must disable administrator bypass; refusing to publish without an enforceable approval gate."
+            exit 1
+          fi
+
       - name: Checkout prepared release commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:

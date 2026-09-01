@@ -42,10 +42,10 @@ describe("preprocessLinks — CJK punctuation boundary", () => {
 
   it("handles the original bug report (PR link then 。 then more text)", () => {
     const out = preprocessLinks(
-      "已合并 PR #1623：https://github.com/patchbay-ai/patchbay/pull/1623。merge commit",
+      "已合并 PR #1623：https://github.com/alexj11324/Cordy/pull/1623。merge commit",
     );
     expect(out).toBe(
-      "已合并 PR #1623：[https://github.com/patchbay-ai/patchbay/pull/1623](https://github.com/patchbay-ai/patchbay/pull/1623)。merge commit",
+      "已合并 PR #1623：[https://github.com/alexj11324/Cordy/pull/1623](https://github.com/alexj11324/Cordy/pull/1623)。merge commit",
     );
   });
 

@@ -33,7 +33,10 @@ import { memberListOptions } from "@patchbay/core/workspace/queries";
 import { useActorName } from "@patchbay/core/workspace/hooks";
 import { telegramInstallationsOptions, telegramKeys } from "@patchbay/core/telegram";
 import { api } from "@patchbay/core/api";
-import type { TelegramInstallation } from "@patchbay/core/types";
+import {
+  isMessagingInstallationHealthy,
+  type TelegramInstallation,
+} from "@patchbay/core/types";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { openExternal } from "../../platform";
 import { useT } from "../../i18n";
@@ -189,6 +192,7 @@ function InstallationRow({
   const { t } = useT("settings");
   const { getAgentName } = useActorName();
   const isActive = installation.status === "active";
+  const isHealthy = isMessagingInstallationHealthy(installation);
   const agentName = installation.agent_id
     ? getAgentName(installation.agent_id)
     : t(($) => $.page.integrations_workspace_hub);
@@ -216,11 +220,15 @@ function InstallationRow({
                 @{installation.bot_username}
               </span>
             ) : null}
-            {!isActive && (
+            {!isActive ? (
               <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
                 {t(($) => $.telegram.revoked_badge)}
               </span>
-            )}
+            ) : !isHealthy ? (
+              <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
+                {t(($) => $.page.integrations_status)}
+              </span>
+            ) : null}
           </p>
           <p className="text-micro text-muted-foreground">
             {t(($) => $.telegram.installed_at_label, {
@@ -249,7 +257,7 @@ function telegramDocsUrl(lang: string | undefined): string {
       : lang?.startsWith("ko")
         ? "/ko"
         : "";
-  return `https://patchbay.ai/docs${prefix}/telegram-bot-integration`;
+  return `https://patchbay.aspectlylabs.com/docs${prefix}/telegram-bot-integration`;
 }
 
 // TelegramAgentBindButton is the per-agent CTA on the agent detail page.
@@ -301,13 +309,19 @@ export function TelegramAgentBindButton({
       inst.status === "active",
   );
   if (existing) {
+    const healthy = isMessagingInstallationHealthy(existing);
     return onShowConnectedDetails ? (
       <TelegramAgentBotStatusRow
         onClick={onShowConnectedDetails}
+        healthy={healthy}
         className={className}
       />
     ) : (
-      <TelegramAgentBotConnectedBadge installation={existing} className={className} />
+      <TelegramAgentBotConnectedBadge
+        installation={existing}
+        healthy={healthy}
+        className={className}
+      />
     );
   }
 
@@ -325,7 +339,7 @@ export function TelegramAgentBindButton({
     setSubmitting(true);
     try {
       const installation = await api.registerTelegramBot(wsId, agentId, { bot_token });
-      if (!installation.id || installation.status !== "active") {
+      if (!installation.id || !isMessagingInstallationHealthy(installation)) {
         throw new Error("Telegram connection returned an invalid installation");
       }
       // The telegram_installation realtime event also refreshes this list, but
@@ -435,9 +449,11 @@ export function TelegramAgentBindButton({
 // agent inspector renders; it deep-links into the Integrations tab.
 function TelegramAgentBotStatusRow({
   onClick,
+  healthy,
   className,
 }: {
   onClick: () => void;
+  healthy: boolean;
   className?: string;
 }) {
   const { t } = useT("settings");
@@ -451,8 +467,17 @@ function TelegramAgentBotStatusRow({
       )}
       data-testid="telegram-agent-bot-status"
     >
-      <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
-      <span className="truncate">{t(($) => $.telegram.agent_bot_connected_label)}</span>
+      <span
+        className={cn(
+          "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
+          healthy ? "bg-emerald-500" : "bg-amber-500",
+        )}
+      />
+      <span className="truncate">
+        {healthy
+          ? t(($) => $.telegram.agent_bot_connected_label)
+          : t(($) => $.page.integrations_status)}
+      </span>
       <ChevronRight className="ml-auto h-3.5 w-3.5 shrink-0" />
     </button>
   );
@@ -462,9 +487,11 @@ function TelegramAgentBotStatusRow({
 // status + Disconnect, then an "Open in Telegram" deep link to the bot.
 function TelegramAgentBotConnectedBadge({
   installation,
+  healthy,
   className,
 }: {
   installation: TelegramInstallation;
+  healthy: boolean;
   className?: string;
 }) {
   const { t } = useT("settings");
@@ -498,9 +525,16 @@ function TelegramAgentBotConnectedBadge({
     >
       <div className="flex items-center justify-between gap-3">
         <span className="inline-flex min-w-0 items-center gap-2 text-caption text-muted-foreground">
-          <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+          <span
+            className={cn(
+              "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
+              healthy ? "bg-emerald-500" : "bg-amber-500",
+            )}
+          />
           <span className="truncate">
-            {t(($) => $.telegram.agent_bot_connected_label)}
+            {healthy
+              ? t(($) => $.telegram.agent_bot_connected_label)
+              : t(($) => $.page.integrations_status)}
             {installation.bot_username ? ` · @${installation.bot_username}` : ""}
           </span>
         </span>

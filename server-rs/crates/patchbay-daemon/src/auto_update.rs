@@ -155,7 +155,7 @@ fn github_release_client() -> anyhow::Result<reqwest::Client> {
 
 fn github_release_request(client: &reqwest::Client) -> reqwest::RequestBuilder {
     client
-        .get("https://api.github.com/repos/patchbay-ai/patchbay/releases/latest")
+        .get("https://api.github.com/repos/alexj11324/Cordy/releases/latest")
         .header(reqwest::header::USER_AGENT, GITHUB_USER_AGENT)
 }
 

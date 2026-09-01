@@ -10,7 +10,7 @@ Patchbay isn't on the App Store yet — until that changes, anyone who wants it 
 pnpm ios:mobile:device:prod:release
 ```
 
-This connects to the same backend as `patchbay.ai`, so your existing account just works.
+This connects to the same backend as `patchbay.aspectlylabs.com`, so your existing account just works.
 
 **Prerequisites**: Mac with Xcode, a free Apple ID added under Xcode → Settings → Accounts, iPhone connected via USB with [Developer Mode enabled](https://docs.expo.dev/guides/ios-developer-mode/). Walk through Expo's [Set up your environment](https://docs.expo.dev/get-started/set-up-your-environment/) (pick **Development build → iOS Device**) if any of that is missing.
 
