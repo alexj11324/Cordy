@@ -104,6 +104,7 @@ export type LinearSyncConflict = {
   link_id: string;
   patchbay_issue_id: string;
   linear_issue_id: string;
+  linear_identifier: string | null;
   field: string;
   base_value: unknown;
   local_value: unknown;
