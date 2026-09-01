@@ -389,6 +389,7 @@ describe("ApiClient server Table query", () => {
             facets: [
               {
                 kind: "status",
+                property_id: null,
                 values: [
                   { key: "todo", count: 501 },
                   { key: "done", count: 500 },
@@ -432,7 +433,7 @@ describe("ApiClient server Table query", () => {
       }),
     ).resolves.toMatchObject({
       total: 1001,
-      facets: [{ values: [{ key: "todo", count: 501 }, { key: "done", count: 500 }] }],
+      facets: [{ property_id: null, values: [{ key: "todo", count: 501 }, { key: "done", count: 500 }] }],
     });
 
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([

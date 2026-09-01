@@ -63,6 +63,7 @@
     }
   },
   "devDependencies": {
+    "@clerk/testing": "2.2.31",
     "@playwright/test": "^1.58.2",
     "@types/node": "catalog:",
     "@types/pg": "^8.20.0",

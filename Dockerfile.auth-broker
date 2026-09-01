@@ -34,6 +34,8 @@ RUN pnpm install --filter @patchbay/auth-broker... --frozen-lockfile --offline
 # pruned runtime package.  The builder already has the image's system Node;
 # remove the broken shim so build scripts resolve that binary normally.
 RUN rm -f node_modules/.bin/node
+ARG NEXT_PUBLIC_APP_VERSION=dev
+ENV NEXT_PUBLIC_APP_VERSION=$NEXT_PUBLIC_APP_VERSION
 ENV STANDALONE=true
 RUN pnpm --filter @patchbay/auth-broker build
 
