@@ -13,6 +13,7 @@ use axum::{Json, Router};
 use patchbay_db::models::{Agent, AgentTaskQueue, Member, User, Workspace};
 use patchbay_db::queries::{member, share_link, user, workspace};
 use patchbay_middleware::workspace::WorkspaceContext;
+use patchbay_service::task_service::HostedCapacityPolicy;
 use rand::RngCore;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -474,22 +475,6 @@ fn reserved_slug(slug: &str) -> bool {
         .any(|group| group.slugs.iter().any(|item| item == slug))
 }
 
-/// Hosted Free accounts may create two workspaces they own. Cloud can raise
-/// this through deployment policy (or use `unlimited` for paid accounts);
-/// memberships in another person's workspace are deliberately not counted.
-fn hosted_workspace_limit() -> Option<i64> {
-    match std::env::var("PATCHBAY_HOSTED_WORKSPACE_LIMIT") {
-        Ok(value) if value.trim().eq_ignore_ascii_case("unlimited") => None,
-        Ok(value) => value
-            .trim()
-            .parse::<i64>()
-            .ok()
-            .filter(|limit| *limit >= 0)
-            .or(Some(2)),
-        Err(_) => Some(2),
-    }
-}
-
 async fn create_workspace(
     State(state): State<HandlerState>,
     headers: axum::http::HeaderMap,
@@ -531,6 +516,42 @@ async fn create_workspace(
         },
         None => default_issue_prefix(&request.slug),
     };
+    let is_guest = headers
+        .get("x-guest-user")
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value == "true");
+    // The account-level capacity is carried by any workspace that the account
+    // owns. Resolve it before taking the user-row lock so a Cloud request never
+    // holds an open database transaction. The first two hosted workspaces are
+    // the fixed Free allowance and therefore do not require a synthetic local
+    // policy when the account does not own a workspace yet.
+    let hosted_capacity = if state.public_config.official_cloud && !is_guest {
+        match sqlx::query_scalar::<_, Uuid>(
+            r#"SELECT workspace_id
+FROM member
+WHERE user_id = $1 AND role = 'owner'
+ORDER BY workspace_id
+LIMIT 1"#,
+        )
+        .bind(user_id)
+        .fetch_optional(&state.pool)
+        .await
+        {
+            Ok(Some(policy_workspace_id)) => Some(
+                state
+                    .tasks
+                    .hosted_workspace_capacity(policy_workspace_id)
+                    .await,
+            ),
+            Ok(None) => None,
+            Err(error) => {
+                tracing::warn!(%error, %user_id, "failed to resolve hosted workspace policy source");
+                Some(HostedCapacityPolicy::Unavailable)
+            }
+        }
+    } else {
+        None
+    };
     let mut transaction = match state.pool.begin().await {
         Ok(transaction) => transaction,
         Err(_) => {
@@ -543,10 +564,6 @@ async fn create_workspace(
     // Guest sessions get one workspace. Locking their user row for the
     // duration of this transaction makes the quota atomic across concurrent
     // create requests, while formal users retain the existing behavior.
-    let is_guest = headers
-        .get("x-guest-user")
-        .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| value == "true");
     if is_guest {
         match user::get_user_for_update(&mut *transaction, user_id).await {
             Ok(Some(guest_user)) if guest_user.is_guest => {}
@@ -576,9 +593,7 @@ async fn create_workspace(
                 );
             }
         }
-    } else if state.public_config.official_cloud
-        || std::env::var_os("PATCHBAY_HOSTED_WORKSPACE_LIMIT").is_some()
-    {
+    } else if state.public_config.official_cloud {
         let user_row = match user::get_user_for_update(&mut *transaction, user_id).await {
             Ok(Some(value)) => value,
             Ok(None) => return error_response(StatusCode::UNAUTHORIZED, "user not found"),
@@ -593,29 +608,41 @@ async fn create_workspace(
         if user_row.is_guest {
             return error_response(StatusCode::FORBIDDEN, "formal login required");
         }
-        if let Some(limit) = hosted_workspace_limit() {
-            let owned_count = match sqlx::query_scalar::<_, i64>(
-                "SELECT count(*)::bigint FROM member WHERE user_id = $1 AND role = 'owner'",
-            )
-            .bind(user_id)
-            .fetch_one(&mut *transaction)
-            .await
-            {
-                Ok(value) => value,
-                Err(error) => {
-                    tracing::warn!(%error, %user_id, "failed to count hosted workspaces");
-                    return error_response(
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        "hosted workspace quota unavailable",
-                    );
-                }
-            };
-            if owned_count >= limit {
+        let owned_count = match sqlx::query_scalar::<_, i64>(
+            "SELECT count(*)::bigint FROM member WHERE user_id = $1 AND role = 'owner'",
+        )
+        .bind(user_id)
+        .fetch_one(&mut *transaction)
+        .await
+        {
+            Ok(value) => value,
+            Err(error) => {
+                tracing::warn!(%error, %user_id, "failed to count hosted workspaces");
                 return error_code_response(
-                    StatusCode::FORBIDDEN,
-                    "hosted_workspace_limit_reached",
-                    "this account has reached its hosted workspace limit",
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "hosted_workspace_quota_unavailable",
+                    "hosted workspace quota is temporarily unavailable",
                 );
+            }
+        };
+        if owned_count >= 2 {
+            match hosted_capacity.unwrap_or(HostedCapacityPolicy::Unavailable) {
+                HostedCapacityPolicy::Bypass | HostedCapacityPolicy::Unlimited => {}
+                HostedCapacityPolicy::Limited(limit) if owned_count < limit => {}
+                HostedCapacityPolicy::Limited(_) => {
+                    return error_code_response(
+                        StatusCode::FORBIDDEN,
+                        "hosted_workspace_limit_reached",
+                        "this account has reached its hosted workspace limit",
+                    )
+                }
+                HostedCapacityPolicy::Disabled | HostedCapacityPolicy::Unavailable => {
+                    return error_code_response(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "hosted_workspace_quota_unavailable",
+                        "hosted workspace quota is temporarily unavailable",
+                    )
+                }
             }
         }
     }

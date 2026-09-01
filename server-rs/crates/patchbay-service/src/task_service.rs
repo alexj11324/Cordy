@@ -585,6 +585,18 @@ pub enum HostedChannelQuota {
     Limited(ChannelQuotaWindow),
 }
 
+/// Trusted capacity policy used by hosted workspace creation and IM setup.
+/// `Bypass` is an explicit Cloud observe decision; it is not rendered as a
+/// paid unlimited entitlement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostedCapacityPolicy {
+    Disabled,
+    Unavailable,
+    Bypass,
+    Unlimited,
+    Limited(i64),
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum HostedChannelAdmission {
     Bypass,
@@ -765,6 +777,48 @@ impl TaskService {
                 }
             }
         }
+    }
+
+    fn hosted_capacity_policy(decision: EntitlementGateDecision) -> HostedCapacityPolicy {
+        match decision.gate_action {
+            EntitlementAction::Off => HostedCapacityPolicy::Unavailable,
+            EntitlementAction::Observe => HostedCapacityPolicy::Bypass,
+            EntitlementAction::Enforce => match decision.gate_limit {
+                None => HostedCapacityPolicy::Unlimited,
+                Some(limit) if limit >= 0 => HostedCapacityPolicy::Limited(limit),
+                Some(_) => HostedCapacityPolicy::Unavailable,
+            },
+        }
+    }
+
+    pub async fn hosted_im_installation_capacity(
+        &self,
+        workspace_id: Uuid,
+    ) -> HostedCapacityPolicy {
+        if !matches!(self.channel_quota_mode(), ChannelQuotaMode::Limited(_)) {
+            return HostedCapacityPolicy::Disabled;
+        }
+        let Some(provider) = self.im_entitlements() else {
+            return HostedCapacityPolicy::Unavailable;
+        };
+        Self::hosted_capacity_policy(provider.gate_im_installation_limit(workspace_id).await)
+    }
+
+    /// Resolves the account workspace cap from one existing owned workspace.
+    /// Callers only use this after the guaranteed two-workspace Free allowance
+    /// has been consumed, so a first workspace never needs a synthetic policy.
+    pub async fn hosted_workspace_capacity(
+        &self,
+        policy_workspace_id: Uuid,
+    ) -> HostedCapacityPolicy {
+        let Some(provider) = self.im_entitlements() else {
+            return HostedCapacityPolicy::Unavailable;
+        };
+        Self::hosted_capacity_policy(
+            provider
+                .gate_hosted_workspace_limit(policy_workspace_id)
+                .await,
+        )
     }
 
     /// Replaces the Composio overlay builder after the service has already
@@ -6597,6 +6651,12 @@ mod tests {
     #[derive(Clone)]
     struct FixedImEntitlement(EntitlementGateDecision);
 
+    #[derive(Clone)]
+    struct FixedCapacityEntitlement {
+        workspace: EntitlementGateDecision,
+        installation: EntitlementGateDecision,
+    }
+
     #[async_trait::async_trait]
     impl EntitlementProvider for FixedImEntitlement {
         async fn gate_automation_runs(&self, _workspace_id: Uuid) -> EntitlementGateDecision {
@@ -6605,6 +6665,24 @@ mod tests {
 
         async fn gate_im_agent_turns(&self, _workspace_id: Uuid) -> EntitlementGateDecision {
             self.0.clone()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl EntitlementProvider for FixedCapacityEntitlement {
+        async fn gate_automation_runs(&self, _workspace_id: Uuid) -> EntitlementGateDecision {
+            EntitlementGateDecision::off()
+        }
+
+        async fn gate_hosted_workspace_limit(
+            &self,
+            _workspace_id: Uuid,
+        ) -> EntitlementGateDecision {
+            self.workspace.clone()
+        }
+
+        async fn gate_im_installation_limit(&self, _workspace_id: Uuid) -> EntitlementGateDecision {
+            self.installation.clone()
         }
     }
 
@@ -7118,6 +7196,46 @@ mod tests {
         assert_eq!(
             service.hosted_channel_quota(workspace_id).await,
             HostedChannelQuota::Limited(expected)
+        );
+    }
+
+    #[tokio::test]
+    async fn hosted_capacity_uses_independent_cloud_limits() {
+        let service = quota_service();
+        service.set_channel_quota_mode(ChannelQuotaMode::Limited(100));
+        let limited = |limit| EntitlementGateDecision {
+            gate_action: EntitlementAction::Enforce,
+            gate_limit: Some(limit),
+            gate_period_start: None,
+            gate_period_end: None,
+            gate_reset_at: None,
+            policy_revision: 9,
+            subscription_version: 4,
+        };
+        service.set_im_entitlements(Some(Arc::new(FixedCapacityEntitlement {
+            workspace: limited(2),
+            installation: limited(1),
+        })));
+        let workspace_id = Uuid::now_v7();
+
+        assert_eq!(
+            service.hosted_workspace_capacity(workspace_id).await,
+            HostedCapacityPolicy::Limited(2)
+        );
+        assert_eq!(
+            service.hosted_im_installation_capacity(workspace_id).await,
+            HostedCapacityPolicy::Limited(1)
+        );
+    }
+
+    #[tokio::test]
+    async fn self_hosted_installations_do_not_consume_hosted_capacity() {
+        let service = quota_service();
+        assert_eq!(
+            service
+                .hosted_im_installation_capacity(Uuid::now_v7())
+                .await,
+            HostedCapacityPolicy::Disabled
         );
     }
 

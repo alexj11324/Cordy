@@ -64,6 +64,8 @@ pub enum EntitlementClientError {
 struct CacheEntry {
     decision: EntitlementGateDecision,
     im_decision: EntitlementGateDecision,
+    hosted_workspace_decision: EntitlementGateDecision,
+    im_installation_decision: EntitlementGateDecision,
     fresh_until: DateTime<Utc>,
     stale_until: DateTime<Utc>,
     retry_after: Option<DateTime<Utc>>,
@@ -127,6 +129,8 @@ enum PolicyRegression {
 enum GateKind {
     AutomationRuns,
     ImAgentTurns,
+    HostedWorkspaceLimit,
+    ImInstallationLimit,
 }
 
 impl GateKind {
@@ -134,6 +138,8 @@ impl GateKind {
         match self {
             Self::AutomationRuns => "automation_runs",
             Self::ImAgentTurns => "im_agent_turns",
+            Self::HostedWorkspaceLimit => "hosted_workspace_limit",
+            Self::ImInstallationLimit => "im_installation_limit",
         }
     }
 }
@@ -255,7 +261,7 @@ impl HttpEntitlementProvider {
     }
 
     fn stale(mut decision: EntitlementGateDecision, kind: GateKind) -> EntitlementGateDecision {
-        if matches!(kind, GateKind::ImAgentTurns) {
+        if !matches!(kind, GateKind::AutomationRuns) {
             return Self::off();
         }
         if decision.gate_action == EntitlementAction::Enforce {
@@ -282,6 +288,8 @@ impl HttpEntitlementProvider {
         let decision = match kind {
             GateKind::AutomationRuns => &entry.decision,
             GateKind::ImAgentTurns => &entry.im_decision,
+            GateKind::HostedWorkspaceLimit => &entry.hosted_workspace_decision,
+            GateKind::ImInstallationLimit => &entry.im_installation_decision,
         };
         if now < entry.fresh_until {
             if record_outcome {
@@ -328,6 +336,8 @@ impl HttpEntitlementProvider {
             .or_insert_with(|| CacheEntry {
                 decision: Self::off(),
                 im_decision: Self::off(),
+                hosted_workspace_decision: Self::off(),
+                im_installation_decision: Self::off(),
                 fresh_until: now,
                 stale_until: now,
                 retry_after: None,
@@ -356,6 +366,8 @@ impl HttpEntitlementProvider {
                 let decision = match kind {
                     GateKind::AutomationRuns => &entry.decision,
                     GateKind::ImAgentTurns => &entry.im_decision,
+                    GateKind::HostedWorkspaceLimit => &entry.hosted_workspace_decision,
+                    GateKind::ImInstallationLimit => &entry.im_installation_decision,
                 };
                 Self::stale(decision.clone(), kind)
             })
@@ -390,11 +402,15 @@ impl HttpEntitlementProvider {
         let last_access_sequence = cache.next_access_sequence();
         let decision = fetched.decision;
         let im_decision = fetched.im_decision;
+        let hosted_workspace_decision = fetched.hosted_workspace_decision;
+        let im_installation_decision = fetched.im_installation_decision;
         cache.entries.insert(
             workspace_id,
             CacheEntry {
                 decision: decision.clone(),
                 im_decision,
+                hosted_workspace_decision,
+                im_installation_decision,
                 fresh_until: now + ttl,
                 stale_until: now + ttl + stale_grace,
                 retry_after: None,
@@ -497,6 +513,15 @@ impl EntitlementProvider for HttpEntitlementProvider {
     async fn gate_im_agent_turns(&self, workspace_id: Uuid) -> EntitlementGateDecision {
         self.gate(workspace_id, GateKind::ImAgentTurns).await
     }
+
+    async fn gate_hosted_workspace_limit(&self, workspace_id: Uuid) -> EntitlementGateDecision {
+        self.gate(workspace_id, GateKind::HostedWorkspaceLimit)
+            .await
+    }
+
+    async fn gate_im_installation_limit(&self, workspace_id: Uuid) -> EntitlementGateDecision {
+        self.gate(workspace_id, GateKind::ImInstallationLimit).await
+    }
 }
 
 impl HttpEntitlementProvider {
@@ -530,6 +555,8 @@ impl HttpEntitlementProvider {
                 let decision = match kind {
                     GateKind::AutomationRuns => policy.decision.clone(),
                     GateKind::ImAgentTurns => policy.im_decision.clone(),
+                    GateKind::HostedWorkspaceLimit => policy.hosted_workspace_decision.clone(),
+                    GateKind::ImInstallationLimit => policy.im_installation_decision.clone(),
                 };
                 match self.store_policy(workspace_id, policy).await {
                     Ok(_) => {
@@ -603,6 +630,8 @@ struct WireGate {
 struct FetchedPolicy {
     decision: EntitlementGateDecision,
     im_decision: EntitlementGateDecision,
+    hosted_workspace_decision: EntitlementGateDecision,
+    im_installation_decision: EntitlementGateDecision,
     valid_for_seconds: i64,
 }
 
@@ -637,6 +666,22 @@ fn normalize_policy(wire: WirePolicy) -> Result<FetchedPolicy, ()> {
         })
         .transpose()?
         .unwrap_or_else(EntitlementGateDecision::off);
+    let hosted_workspace_decision = wire
+        .gates
+        .get("hosted_workspace_limit")
+        .map(|gate| {
+            normalize_capacity_decision(gate, wire.policy_revision, wire.subscription_version)
+        })
+        .transpose()?
+        .unwrap_or_else(EntitlementGateDecision::off);
+    let im_installation_decision = wire
+        .gates
+        .get("im_installation_limit")
+        .map(|gate| {
+            normalize_capacity_decision(gate, wire.policy_revision, wire.subscription_version)
+        })
+        .transpose()?
+        .unwrap_or_else(EntitlementGateDecision::off);
     Ok(FetchedPolicy {
         decision: EntitlementGateDecision {
             gate_action: action,
@@ -648,7 +693,29 @@ fn normalize_policy(wire: WirePolicy) -> Result<FetchedPolicy, ()> {
             subscription_version: wire.subscription_version,
         },
         im_decision,
+        hosted_workspace_decision,
+        im_installation_decision,
         valid_for_seconds: wire.valid_for_seconds,
+    })
+}
+
+fn normalize_capacity_decision(
+    gate: &WireGate,
+    policy_revision: i64,
+    subscription_version: i64,
+) -> Result<EntitlementGateDecision, ()> {
+    if gate.period_start.is_some() || gate.period_end.is_some() || gate.reset_at.is_some() {
+        return Err(());
+    }
+    let (gate_action, gate_limit, _, _, _) = normalize_gate(gate, false, true)?;
+    Ok(EntitlementGateDecision {
+        gate_action,
+        gate_limit,
+        gate_period_start: None,
+        gate_period_end: None,
+        gate_reset_at: None,
+        policy_revision,
+        subscription_version,
     })
 }
 
@@ -812,13 +879,56 @@ mod tests {
                     "period_end":"2029-02-01T00:00:00Z",
                     "reset_at":"2029-02-01T00:00:00Z"
                 },
-                "im_agent_turns": {"action":"enforce","limit":null}
+                "im_agent_turns": {"action":"enforce","limit":null},
+                "hosted_workspace_limit": {"action":"enforce","limit":null},
+                "im_installation_limit": {"action":"enforce","limit":null}
             }
         }))
         .unwrap();
         let policy = normalize_policy(wire).unwrap();
         assert_eq!(policy.im_decision.gate_action, EntitlementAction::Enforce);
         assert_eq!(policy.im_decision.gate_limit, None);
+        assert_eq!(
+            policy.hosted_workspace_decision.gate_action,
+            EntitlementAction::Enforce
+        );
+        assert_eq!(policy.hosted_workspace_decision.gate_limit, None);
+        assert_eq!(policy.im_installation_decision.gate_limit, None);
+    }
+
+    #[test]
+    fn capacity_gates_accept_limits_but_reject_period_windows() {
+        let wire: WirePolicy = serde_json::from_value(json!({
+            "schema_version": 1,
+            "policy_revision": 2,
+            "subscription_version": 3,
+            "valid_until": "2030-01-01T00:00:00Z",
+            "valid_for_seconds": 60,
+            "gates": {
+                "issue_window": {"action":"off"},
+                "automation_runs": {
+                    "action":"enforce",
+                    "limit":1,
+                    "period_start":"2029-01-01T00:00:00Z",
+                    "period_end":"2029-02-01T00:00:00Z",
+                    "reset_at":"2029-02-01T00:00:00Z"
+                },
+                "hosted_workspace_limit": {"action":"enforce","limit":2},
+                "im_installation_limit": {"action":"enforce","limit":1}
+            }
+        }))
+        .unwrap();
+        let policy = normalize_policy(wire).expect("valid capacity gates");
+        assert_eq!(policy.hosted_workspace_decision.gate_limit, Some(2));
+        assert_eq!(policy.im_installation_decision.gate_limit, Some(1));
+
+        let gate: WireGate = serde_json::from_value(json!({
+            "action":"enforce",
+            "limit":2,
+            "period_start":"2029-01-01T00:00:00Z"
+        }))
+        .unwrap();
+        assert!(normalize_capacity_decision(&gate, 1, 1).is_err());
     }
 
     #[test]
@@ -869,6 +979,8 @@ mod tests {
         let entry = |last_access_sequence| CacheEntry {
             decision: HttpEntitlementProvider::off(),
             im_decision: HttpEntitlementProvider::off(),
+            hosted_workspace_decision: HttpEntitlementProvider::off(),
+            im_installation_decision: HttpEntitlementProvider::off(),
             fresh_until: now,
             stale_until: now,
             retry_after: None,

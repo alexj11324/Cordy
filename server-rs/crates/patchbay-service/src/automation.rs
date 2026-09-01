@@ -184,6 +184,18 @@ pub trait EntitlementProvider: Send + Sync {
     async fn gate_im_agent_turns(&self, _workspace_id: Uuid) -> EntitlementGateDecision {
         EntitlementGateDecision::off()
     }
+
+    /// Account-owned hosted workspaces are governed by a policy embedded in
+    /// an existing owned workspace's Cloud snapshot. Older providers return
+    /// `Off`, so creation beyond the guaranteed Free allowance fails closed.
+    async fn gate_hosted_workspace_limit(&self, _workspace_id: Uuid) -> EntitlementGateDecision {
+        EntitlementGateDecision::off()
+    }
+
+    /// Hosted IM installation capacity is independent from turn usage.
+    async fn gate_im_installation_limit(&self, _workspace_id: Uuid) -> EntitlementGateDecision {
+        EntitlementGateDecision::off()
+    }
 }
 
 // --- Pure predicates --------------------------------------------------------

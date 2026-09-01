@@ -250,6 +250,7 @@ SET config = config || jsonb_build_object(
     updated_at = now()
 WHERE id = $1
   AND status = 'active'
+  AND hosted_paused_at IS NULL
   AND config ->> 'refresh_token_encrypted' = $5::text"#,
     )
     .bind(installation_id)

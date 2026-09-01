@@ -6,8 +6,126 @@
 
 use crate::models::*;
 use chrono::{DateTime, Utc};
-use sqlx::{PgConnection, Row};
+use sqlx::{PgConnection, PgPool, Row};
 use uuid::Uuid;
+
+const HOSTED_ENTITLEMENT_OBSERVER_TOKEN: &str = "managed:entitlement:v1";
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct HostedInstallationReconcileResult {
+    pub paused: Vec<Uuid>,
+    pub resumed: Vec<Uuid>,
+}
+
+pub async fn list_hosted_installation_workspaces(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+) -> anyhow::Result<Vec<Uuid>> {
+    Ok(sqlx::query_scalar::<_, Uuid>(
+        r#"SELECT DISTINCT workspace_id
+FROM channel_installation
+WHERE status = 'active'
+ORDER BY workspace_id"#,
+    )
+    .fetch_all(executor)
+    .await?)
+}
+
+/// Reconciles Cordy-hosted installation capacity while holding the same
+/// workspace-row lock used by installation admission. Desired installation
+/// state remains `active`; hosted pause is an orthogonal, reversible runtime
+/// condition so subscription changes never delete credentials or bindings.
+pub async fn reconcile_hosted_installation_capacity(
+    pool: &PgPool,
+    workspace_id: Uuid,
+    limit: Option<i64>,
+) -> anyhow::Result<HostedInstallationReconcileResult> {
+    let mut tx = pool.begin().await?;
+    let workspace_exists =
+        sqlx::query_scalar::<_, Uuid>("SELECT id FROM workspace WHERE id = $1 FOR UPDATE")
+            .bind(workspace_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    if workspace_exists.is_none() {
+        tx.rollback().await?;
+        return Ok(HostedInstallationReconcileResult::default());
+    }
+    let installations = sqlx::query_as::<_, (Uuid, Option<DateTime<Utc>>)>(
+        r#"SELECT id, hosted_paused_at
+FROM channel_installation
+WHERE workspace_id = $1
+  AND status = 'active'
+ORDER BY created_at ASC, id ASC
+FOR UPDATE"#,
+    )
+    .bind(workspace_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    let keep = limit
+        .map(|value| usize::try_from(value.max(0)).unwrap_or(usize::MAX))
+        .unwrap_or(usize::MAX);
+    let mut result = HostedInstallationReconcileResult::default();
+    for (index, (installation_id, paused_at)) in installations.iter().enumerate() {
+        if index < keep {
+            if paused_at.is_some() {
+                result.resumed.push(*installation_id);
+            }
+        } else if paused_at.is_none() {
+            result.paused.push(*installation_id);
+        }
+    }
+    if !result.paused.is_empty() {
+        sqlx::query(
+            r#"UPDATE channel_installation
+SET hosted_paused_at = now(),
+    ws_lease_token = NULL,
+    ws_lease_expires_at = NULL,
+    updated_at = now()
+WHERE id = ANY($1::uuid[])"#,
+        )
+        .bind(&result.paused)
+        .execute(&mut *tx)
+        .await?;
+    }
+    if !result.resumed.is_empty() {
+        sqlx::query(
+            r#"UPDATE channel_installation
+SET hosted_paused_at = NULL,
+    updated_at = now()
+WHERE id = ANY($1::uuid[])"#,
+        )
+        .bind(&result.resumed)
+        .execute(&mut *tx)
+        .await?;
+    }
+    for installation_id in installations
+        .iter()
+        .skip(keep)
+        .map(|(installation_id, _)| *installation_id)
+    {
+        upsert_channel_runtime_observation(
+            &mut *tx,
+            installation_id,
+            HOSTED_ENTITLEMENT_OBSERVER_TOKEN,
+            "offline",
+            Some("hosted_quota_paused"),
+            Some("This installation is paused by the hosted messaging quota."),
+        )
+        .await?;
+    }
+    for installation_id in &result.resumed {
+        upsert_channel_runtime_observation(
+            &mut *tx,
+            *installation_id,
+            HOSTED_ENTITLEMENT_OBSERVER_TOKEN,
+            "starting",
+            None,
+            None,
+        )
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(result)
+}
 
 pub async fn claim_channel_runtime_observer(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
@@ -174,6 +292,7 @@ SET ws_lease_token       = $1,
     updated_at           = now()
 WHERE id = $3
   AND status = 'active'
+  AND hosted_paused_at IS NULL
   AND (
         ws_lease_token IS NULL
         OR ws_lease_expires_at < now()
@@ -1136,7 +1255,9 @@ pub async fn get_channel_installation_by_app_id(
     let row = sqlx::query(
         r#"SELECT id, workspace_id, agent_id, channel_type, config, status, ws_lease_token, ws_lease_expires_at, installer_user_id, installed_at, created_at, updated_at FROM channel_installation
 WHERE channel_type = $1
-  AND config ->> 'app_id' = $2::text"#
+  AND config ->> 'app_id' = $2::text
+  AND status = 'active'
+  AND hosted_paused_at IS NULL"#
     )
         .bind(channel_type)
         .bind(app_id)
@@ -1330,6 +1451,7 @@ pub async fn list_active_channel_installations(
 JOIN workspace w ON w.id = ci.workspace_id
 LEFT JOIN agent a ON a.id = ci.agent_id
 WHERE ci.status = 'active'
+  AND ci.hosted_paused_at IS NULL
   AND ci.channel_type = $1
   AND (ci.agent_id IS NULL OR a.id IS NOT NULL)
 ORDER BY ci.created_at ASC"#
@@ -1373,6 +1495,7 @@ FROM channel_installation ci
 JOIN workspace w ON w.id = ci.workspace_id
 LEFT JOIN agent a ON a.id = ci.agent_id
 WHERE ci.status = 'active'
+  AND ci.hosted_paused_at IS NULL
   AND ci.channel_type = $1
   AND (ci.agent_id IS NULL OR a.id IS NOT NULL)
   AND COALESCE(ci.config ->> 'bot_union_id', '') = ''
@@ -1414,6 +1537,7 @@ pub async fn list_all_active_channel_installations(
 JOIN workspace w ON w.id = ci.workspace_id
 LEFT JOIN agent a ON a.id = ci.agent_id
 WHERE ci.status = 'active'
+  AND ci.hosted_paused_at IS NULL
   AND (ci.agent_id IS NULL OR a.id IS NOT NULL)
 ORDER BY ci.created_at ASC"#
     )
@@ -1948,7 +2072,8 @@ SET ws_lease_token = $2,
     ws_lease_expires_at = $3,
     updated_at = now()
 WHERE id = $1
-  AND status = 'active'"#,
+  AND status = 'active'
+  AND hosted_paused_at IS NULL"#,
     )
     .bind(id)
     .bind(token)

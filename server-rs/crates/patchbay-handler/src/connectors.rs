@@ -2,7 +2,6 @@
 //! gated on a valid per-provider secretbox key and never return stored config.
 
 use std::collections::HashMap;
-use std::env;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
@@ -17,6 +16,7 @@ use patchbay_db::models::{ChannelInstallation, ChannelInstallationRuntimeObserva
 use patchbay_db::queries::{agent, channel, dingtalk};
 use patchbay_lark::client::ApiClient as _;
 use patchbay_middleware::workspace::WorkspaceContext;
+use patchbay_service::task_service::HostedCapacityPolicy;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio_util::sync::CancellationToken;
@@ -1054,6 +1054,10 @@ async fn weixin_install_status(
                     "the existing WeChat connection changed; refresh and try again",
                 );
             };
+            let installation_limit = match hosted_installation_limit(&state, workspace_id).await {
+                Ok(value) => value,
+                Err(response) => return response,
+            };
             let row = match patchbay_weixin::install::reactivate_with_limit(
                 &state.pool,
                 existing_installation_id,
@@ -1061,7 +1065,7 @@ async fn weixin_install_status(
                 session.agent_id,
                 existing_bot_id,
                 actor,
-                hosted_installation_limit(&state),
+                installation_limit,
             )
             .await
             {
@@ -1134,6 +1138,10 @@ async fn weixin_install_status(
         "base_url": base_url,
         "bot_token_encrypted": base64::engine::general_purpose::STANDARD.encode(sealed),
     });
+    let installation_limit = match hosted_installation_limit(&state, workspace_id).await {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
     let row = match patchbay_weixin::install::finalize_with_limit(
         &state.pool,
         &patchbay_weixin::install::InstallParams {
@@ -1144,7 +1152,7 @@ async fn weixin_install_status(
             ilink_user_id: status.ilink_user_id.clone(),
             config,
         },
-        hosted_installation_limit(&state),
+        installation_limit,
     )
     .await
     {
@@ -1485,6 +1493,10 @@ async fn begin_lark_install(
             format!("{} - Patchbay", target.name.trim())
         }
     };
+    let installation_limit = match hosted_installation_limit(&state, workspace_id).await {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
     let client = Arc::new(patchbay_lark::registration::RegistrationClient::new(
         patchbay_lark::registration::RegistrationConfig {
             domain: state
@@ -1545,7 +1557,7 @@ async fn begin_lark_install(
             .unwrap_or_default(),
         cancel: state.channel_cancel.clone(),
         sessions: sessions.clone(),
-        installation_limit: hosted_installation_limit(&state),
+        installation_limit,
     };
     if !state.channel_tasks.spawn(run_lark_registration(
         runtime,
@@ -2296,27 +2308,38 @@ async fn install_context(
     Ok((workspace_id, agent_id, actor))
 }
 
-/// Hosted Free workspaces default to one active IM installation. Cloud can
-/// provision another value (or `unlimited`) through the deployment policy;
-/// self-hosted mode bypasses this check because it does not consume hosted
-/// entitlements. Reconnects for the same provider/Agent slot remain allowed.
-fn managed_installation_limit() -> Option<i64> {
-    match env::var("PATCHBAY_IM_INSTALLATION_LIMIT") {
-        Ok(value) if value.trim().eq_ignore_ascii_case("unlimited") => None,
-        Ok(value) => value
-            .trim()
-            .parse::<i64>()
-            .ok()
-            .filter(|limit| *limit >= 0)
-            .or(Some(1)),
-        Err(_) => Some(1),
+/// Resolves hosted installation capacity from the trusted Cloud policy. A
+/// missing or stale policy fails closed in managed mode; self-hosted setup is
+/// disabled here because it does not consume Cordy-hosted capacity.
+pub(crate) async fn hosted_installation_limit(
+    state: &HandlerState,
+    workspace_id: Uuid,
+) -> Result<Option<i64>, Response> {
+    let policy = state
+        .tasks
+        .hosted_im_installation_capacity(workspace_id)
+        .await;
+    let limit = match policy {
+        HostedCapacityPolicy::Disabled => return Ok(None),
+        HostedCapacityPolicy::Bypass | HostedCapacityPolicy::Unlimited => None,
+        HostedCapacityPolicy::Limited(limit) => Some(limit),
+        HostedCapacityPolicy::Unavailable => return Err(installation_quota_unavailable()),
+    };
+    if let Err(error) =
+        channel::reconcile_hosted_installation_capacity(&state.pool, workspace_id, limit).await
+    {
+        tracing::warn!(%error, %workspace_id, "failed to reconcile hosted installation quota");
+        return Err(installation_quota_unavailable());
     }
+    Ok(limit)
 }
 
-pub(crate) fn hosted_installation_limit(state: &HandlerState) -> Option<i64> {
-    (state.public_config.messaging.mode == "managed")
-        .then(managed_installation_limit)
-        .flatten()
+fn installation_quota_unavailable() -> Response {
+    error_code_response(
+        StatusCode::SERVICE_UNAVAILABLE,
+        "im_installation_quota_unavailable",
+        "hosted messaging installation quota is temporarily unavailable",
+    )
 }
 
 fn hosted_installation_limit_response(error: &anyhow::Error) -> Option<Response> {
@@ -2427,6 +2450,10 @@ async fn install_dingtalk(
         Ok(value) => value,
         Err(response) => return response,
     };
+    let installation_limit = match hosted_installation_limit(&state, workspace_id).await {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
     let service = patchbay_dingtalk::byo_install::ByoInstallService::new(
         state.pool.clone(),
         Arc::new(box_),
@@ -2442,7 +2469,7 @@ async fn install_dingtalk(
                 app_key: input.client_id,
                 app_secret: input.client_secret,
             },
-            hosted_installation_limit(&state),
+            installation_limit,
         )
         .await
     {
@@ -2500,6 +2527,10 @@ async fn install_wecom(
         Ok(value) => value,
         Err(response) => return response,
     };
+    let installation_limit = match hosted_installation_limit(&state, workspace_id).await {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
     let service = patchbay_wecom::installation::InstallationService::new(state.pool.clone(), box_);
     let cancel = CancellationToken::new();
     match service
@@ -2513,7 +2544,7 @@ async fn install_wecom(
                 secret: input.secret.trim().into(),
                 bot_display_name: input.bot_name.trim().into(),
             },
-            hosted_installation_limit(&state),
+            installation_limit,
         )
         .await
     {
@@ -2673,6 +2704,10 @@ async fn install_telegram(
         Ok(value) => value,
         Err(response) => return response,
     };
+    let installation_limit = match hosted_installation_limit(&state, workspace_id).await {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
     let token = input.bot_token.trim();
     let bot_id = match patchbay_telegram::parse_bot_id(token) {
         Ok(value) => value,
@@ -2743,7 +2778,7 @@ async fn install_telegram(
         }
     };
     match patchbay_telegram::install::InstallService::new(state.pool.clone())
-        .persist_install_with_limit(&persist, hosted_installation_limit(&state))
+        .persist_install_with_limit(&persist, installation_limit)
         .await
     {
         Ok(row) => {
@@ -3010,8 +3045,12 @@ async fn install_slack(
             );
         }
     };
+    let installation_limit = match hosted_installation_limit(&state, workspace_id).await {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
     match patchbay_slack::install::InstallService::new(state.pool.clone())
-        .persist_install_with_limit(&persist, hosted_installation_limit(&state))
+        .persist_install_with_limit(&persist, installation_limit)
         .await
     {
         Ok(row) => {

@@ -450,8 +450,19 @@ async fn oauth_callback(
             return redirect_slack_error(&claimed.redirect_url, "slack_persist_failed");
         }
     };
+    let installation_limit =
+        match connectors::hosted_installation_limit(&state, claimed.workspace_id).await {
+            Ok(value) => value,
+            Err(_) => {
+                return redirect_result(
+                    &claimed.redirect_url,
+                    "error",
+                    "im_installation_quota_unavailable",
+                )
+            }
+        };
     let installation = patchbay_slack::install::InstallService::new(state.pool.clone())
-        .persist_install_with_limit(&persist, connectors::hosted_installation_limit(&state))
+        .persist_install_with_limit(&persist, installation_limit)
         .await;
     let row = match installation {
         Ok(value) => value,
