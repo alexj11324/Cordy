@@ -1757,7 +1757,7 @@ impl LinearSyncWorker {
                 session.linear_session_id, agent_id, source_event_id
             );
             linear_agent_q::enqueue_linear_agent_session_retry(
-                &mut *transaction,
+                &mut transaction,
                 connection.id,
                 &delivery_id,
                 &session,
