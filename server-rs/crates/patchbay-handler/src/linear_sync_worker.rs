@@ -715,12 +715,8 @@ impl LinearSyncWorker {
         let remote_owner_id = self
             .remote_owner_id(&connection, remote.assignee.as_ref())
             .await?;
-        let snapshot = remote_sync_snapshot(
-            &remote,
-            &remote_status,
-            &remote_priority,
-            remote_owner_id,
-        );
+        let snapshot =
+            remote_sync_snapshot(&remote, &remote_status, &remote_priority, remote_owner_id);
 
         // The provider mutation is followed by one local transaction. If the
         // commit fails, the Outbox row remains pending and the next attempt
@@ -2289,12 +2285,8 @@ mod tests {
         .expect("remote issue fixture should deserialize");
         let patchbay_owner_id = Uuid::now_v7();
 
-        let snapshot = remote_sync_snapshot(
-            &remote,
-            "in_progress",
-            "high",
-            Some(patchbay_owner_id),
-        );
+        let snapshot =
+            remote_sync_snapshot(&remote, "in_progress", "high", Some(patchbay_owner_id));
 
         assert_eq!(snapshot["status"], "in_progress");
         assert_eq!(snapshot["priority"], "high");
