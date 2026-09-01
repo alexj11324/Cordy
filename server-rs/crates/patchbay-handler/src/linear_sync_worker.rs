@@ -3275,10 +3275,11 @@ mod tests {
     #[test]
     fn agent_label_mapping_collects_all_labels_and_ignores_unrelated_order() {
         let agent_id = Uuid::now_v7();
-        let mut binding = binding(json!({
+        let mut binding = binding(json!({}));
+        binding.agent_label_mapping = json!({
             "group_id": "agent-group",
             "labels": {"agent-backend": agent_id.to_string()}
-        }));
+        });
         let labels = vec![
             LinearRemoteLabel {
                 id: "bug".to_string(),
@@ -3295,10 +3296,6 @@ mod tests {
             }
         );
 
-        binding.agent_label_mapping = json!({
-            "group_id": "agent-group",
-            "labels": {"agent-backend": agent_id.to_string()}
-        });
         assert_eq!(
             agent_label_decision(
                 &binding,
@@ -3318,13 +3315,14 @@ mod tests {
     fn agent_label_mapping_rejects_multiple_selected_values() {
         let first = Uuid::now_v7();
         let second = Uuid::now_v7();
-        let binding = binding(json!({
+        let mut binding = binding(json!({}));
+        binding.agent_label_mapping = json!({
             "group_id": "agent-group",
             "labels": {
                 "agent-backend": first.to_string(),
                 "agent-frontend": second.to_string()
             }
-        }));
+        });
         let error = agent_label_decision(
             &binding,
             &[
@@ -3343,10 +3341,11 @@ mod tests {
     #[test]
     fn outbound_agent_labels_preserve_unrelated_labels_and_clear_stale_value() {
         let agent_id = Uuid::now_v7();
-        let mut binding = binding(json!({
+        let mut binding = binding(json!({}));
+        binding.agent_label_mapping = json!({
             "group_id": "agent-group",
             "labels": {"agent-backend": agent_id.to_string()}
-        }));
+        });
         let existing = vec![
             LinearRemoteLabel {
                 id: "bug".to_string(),
