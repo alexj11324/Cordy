@@ -30,8 +30,16 @@ describe("desktop handoff contract", () => {
   });
 
   it.each([
-    new URLSearchParams({ platform: "web", code_challenge: codeChallenge, state }),
-    new URLSearchParams({ platform: "desktop", code_challenge: "short", state }),
+    new URLSearchParams({
+      platform: "web",
+      code_challenge: codeChallenge,
+      state,
+    }),
+    new URLSearchParams({
+      platform: "desktop",
+      code_challenge: "short",
+      state,
+    }),
     new URLSearchParams({
       platform: "desktop",
       code_challenge: codeChallenge,
@@ -43,10 +51,12 @@ describe("desktop handoff contract", () => {
   });
 
   it("returns only the one-time code and state to the desktop protocol", () => {
-    const callback = new URL(buildDesktopCallbackUrl(code, state));
+    const callback = new URL(
+      buildDesktopCallbackUrl(code, state, "patchbay-canary-login-fix-123"),
+    );
 
     expect(`${callback.protocol}//${callback.host}${callback.pathname}`).toBe(
-      "patchbay://auth/callback",
+      "patchbay-canary-login-fix-123://auth/callback",
     );
     expect([...callback.searchParams.keys()].sort()).toEqual(["code", "state"]);
     expect(callback.searchParams.get("code")).toBe(code);
@@ -54,8 +64,11 @@ describe("desktop handoff contract", () => {
   });
 
   it("rejects bearer tokens and malformed grants in the custom URL", () => {
-    expect(() => buildDesktopCallbackUrl("eyJhbGciOiJIUzI1NiJ9.token", state)).toThrow(
-      "invalid desktop callback",
-    );
+    expect(() =>
+      buildDesktopCallbackUrl("eyJhbGciOiJIUzI1NiJ9.token", state, "patchbay"),
+    ).toThrow("invalid desktop callback");
+    expect(() =>
+      buildDesktopCallbackUrl(code, state, "patchbay-canary-attacker!"),
+    ).toThrow("invalid desktop callback");
   });
 });

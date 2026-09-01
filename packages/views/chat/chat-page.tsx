@@ -18,7 +18,7 @@ import { useNavigation } from "../navigation";
 import { useT } from "../i18n";
 import { ActorAvatar } from "../common/actor-avatar";
 import { ChatMessageList, ChatMessageSkeleton } from "./components/chat-message-list";
-import { ChatInput } from "./components/chat-input";
+import { MainChatInput } from "./main-chat-input";
 import { ChatQueue } from "./components/chat-queue";
 import { ChatThreadList } from "./components/chat-thread-list";
 import { ChatSessionHeader } from "./components/chat-session-header";
@@ -328,7 +328,7 @@ export function ChatPage() {
         <OfflineBanner agentName={c.activeAgent?.name} availability={c.availability} />
       )}
 
-      <ChatInput
+      <MainChatInput
         onSend={c.handleSend}
         restoreDraftRequest={c.restoreDraftRequest}
         onRestoreDraftApplied={c.handleRestoreDraftApplied}

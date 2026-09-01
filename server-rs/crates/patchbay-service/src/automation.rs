@@ -155,12 +155,36 @@ pub struct EntitlementGateDecision {
     pub subscription_version: i64,
 }
 
+impl EntitlementGateDecision {
+    /// A missing provider or an older policy that does not know a gate must
+    /// never be interpreted as a Free entitlement.  Callers can use this
+    /// value for an explicit, forward-compatible "not enforced" decision.
+    pub fn off() -> Self {
+        Self {
+            gate_action: EntitlementAction::Off,
+            gate_limit: None,
+            gate_period_start: None,
+            gate_period_end: None,
+            gate_reset_at: None,
+            policy_revision: 0,
+            subscription_version: 0,
+        }
+    }
+}
+
 /// Seam standing in for Go's `entitlement.Provider`. Cloud remains the sole
 /// authority over interval construction; implementations must not consult
 /// local quota tables.
 #[async_trait::async_trait]
 pub trait EntitlementProvider: Send + Sync {
     async fn gate_automation_runs(&self, workspace_id: Uuid) -> EntitlementGateDecision;
+
+    /// Hosted IM turns use an independent Cloud gate.  The default keeps
+    /// third-party/older providers source-compatible and fail-open until
+    /// they explicitly implement the new gate.
+    async fn gate_im_agent_turns(&self, _workspace_id: Uuid) -> EntitlementGateDecision {
+        EntitlementGateDecision::off()
+    }
 }
 
 // --- Pure predicates --------------------------------------------------------

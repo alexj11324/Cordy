@@ -5,7 +5,11 @@ import {
   RUST_COMPLETE_PATH,
   authContractResponseHeaders,
 } from "./contract";
-import { isDesktopCode, isDesktopHandoffInput } from "./desktop-handoff";
+import {
+  isDesktopCallbackProtocol,
+  isDesktopCode,
+  isDesktopHandoffInput,
+} from "./desktop-handoff";
 
 const MAX_REQUEST_BYTES = 4096;
 const MAX_SESSION_TOKEN_BYTES = 8192;
@@ -100,7 +104,8 @@ export async function proxyRustDesktopGoogleRequest(
   }
 
   if (!upstream.ok) {
-    const status = upstream.status >= 400 && upstream.status < 500 ? upstream.status : 502;
+    const status =
+      upstream.status >= 400 && upstream.status < 500 ? upstream.status : 502;
     return jsonError(status, "authorization_rejected");
   }
   const upstreamLengthHeader = upstream.headers.get("content-length");
@@ -138,8 +143,22 @@ export async function proxyRustDesktopGoogleRequest(
     );
   }
   if (operation === "complete" && isDesktopCode(record.code)) {
+    // During a bounded rolling deploy the previous Rust API returns only the
+    // one-time code. Its historical contract always targeted the packaged
+    // `patchbay` scheme, so supply that value only when the field is absent;
+    // explicit malformed protocols still fail closed.
+    const callbackProtocol =
+      record.callback_protocol === undefined
+        ? "patchbay"
+        : record.callback_protocol;
+    if (!isDesktopCallbackProtocol(callbackProtocol)) {
+      return jsonError(502, "invalid_rust_api_response");
+    }
     return Response.json(
-      { code: record.code },
+      {
+        callback_protocol: callbackProtocol,
+        code: record.code,
+      },
       { headers: authContractResponseHeaders() },
     );
   }

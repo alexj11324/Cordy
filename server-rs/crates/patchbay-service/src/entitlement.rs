@@ -63,6 +63,7 @@ pub enum EntitlementClientError {
 #[derive(Debug, Clone)]
 struct CacheEntry {
     decision: EntitlementGateDecision,
+    im_decision: EntitlementGateDecision,
     fresh_until: DateTime<Utc>,
     stale_until: DateTime<Utc>,
     retry_after: Option<DateTime<Utc>>,
@@ -120,6 +121,21 @@ pub struct HttpEntitlementProvider {
 enum PolicyRegression {
     Policy,
     Subscription,
+}
+
+#[derive(Clone, Copy)]
+enum GateKind {
+    AutomationRuns,
+    ImAgentTurns,
+}
+
+impl GateKind {
+    fn metric_name(self) -> &'static str {
+        match self {
+            Self::AutomationRuns => "automation_runs",
+            Self::ImAgentTurns => "im_agent_turns",
+        }
+    }
 }
 
 enum StorePolicyError {
@@ -250,6 +266,7 @@ impl HttpEntitlementProvider {
         workspace_id: Uuid,
         now: DateTime<Utc>,
         record_outcome: bool,
+        kind: GateKind,
     ) -> Option<(EntitlementGateDecision, &'static str)> {
         let mut cache = self.cache.lock().await;
         cache.touch(workspace_id);
@@ -259,11 +276,15 @@ impl HttpEntitlementProvider {
             }
             return None;
         };
+        let decision = match kind {
+            GateKind::AutomationRuns => &entry.decision,
+            GateKind::ImAgentTurns => &entry.im_decision,
+        };
         if now < entry.fresh_until {
             if record_outcome {
                 self.record_cache("hit");
             }
-            return Some((entry.decision.clone(), "cache_fresh"));
+            return Some((decision.clone(), "cache_fresh"));
         }
         if entry
             .retry_after
@@ -273,7 +294,7 @@ impl HttpEntitlementProvider {
                 self.record_cache("retry_suppressed");
             }
             return Some(if now < entry.stale_until {
-                (Self::stale(entry.decision.clone()), "stale")
+                (Self::stale(decision.clone()), "stale")
             } else {
                 (Self::off(), "unavailable")
             });
@@ -303,6 +324,7 @@ impl HttpEntitlementProvider {
             .entry(workspace_id)
             .or_insert_with(|| CacheEntry {
                 decision: Self::off(),
+                im_decision: Self::off(),
                 fresh_until: now,
                 stale_until: now,
                 retry_after: None,
@@ -315,7 +337,11 @@ impl HttpEntitlementProvider {
         entry.last_access_sequence = access_sequence;
     }
 
-    async fn failure_decision(&self, workspace_id: Uuid) -> (EntitlementGateDecision, bool) {
+    async fn failure_decision(
+        &self,
+        workspace_id: Uuid,
+        kind: GateKind,
+    ) -> (EntitlementGateDecision, bool) {
         let now = Utc::now();
         let mut cache = self.cache.lock().await;
         cache.touch(workspace_id);
@@ -323,7 +349,13 @@ impl HttpEntitlementProvider {
             .entries
             .get(&workspace_id)
             .filter(|entry| now < entry.stale_until)
-            .map(|entry| Self::stale(entry.decision.clone()))
+            .map(|entry| {
+                let decision = match kind {
+                    GateKind::AutomationRuns => &entry.decision,
+                    GateKind::ImAgentTurns => &entry.im_decision,
+                };
+                Self::stale(decision.clone())
+            })
         {
             (decision, true)
         } else {
@@ -354,10 +386,12 @@ impl HttpEntitlementProvider {
         cache.evict_lru_if_full(workspace_id, MAX_CACHE_ENTRIES);
         let last_access_sequence = cache.next_access_sequence();
         let decision = fetched.decision;
+        let im_decision = fetched.im_decision;
         cache.entries.insert(
             workspace_id,
             CacheEntry {
                 decision: decision.clone(),
+                im_decision,
                 fresh_until: now + ttl,
                 stale_until: now + ttl + stale_grace,
                 retry_after: None,
@@ -383,10 +417,11 @@ impl HttpEntitlementProvider {
         &self,
         decision: EntitlementGateDecision,
         reason: &'static str,
+        kind: GateKind,
     ) -> EntitlementGateDecision {
         if let Some(metrics) = self.metrics.as_deref() {
             metrics.record_entitlement_decision(
-                "automation_runs",
+                kind.metric_name(),
                 decision.gate_action.as_str(),
                 reason,
             );
@@ -453,66 +488,89 @@ impl HttpEntitlementProvider {
 #[async_trait]
 impl EntitlementProvider for HttpEntitlementProvider {
     async fn gate_automation_runs(&self, workspace_id: Uuid) -> EntitlementGateDecision {
+        self.gate(workspace_id, GateKind::AutomationRuns).await
+    }
+
+    async fn gate_im_agent_turns(&self, workspace_id: Uuid) -> EntitlementGateDecision {
+        self.gate(workspace_id, GateKind::ImAgentTurns).await
+    }
+}
+
+impl HttpEntitlementProvider {
+    async fn gate(&self, workspace_id: Uuid, kind: GateKind) -> EntitlementGateDecision {
         if self.emergency_disabled.load(Ordering::Acquire) {
-            return self.record_decision(Self::off(), "emergency_disabled");
+            return self.record_decision(Self::off(), "emergency_disabled", kind);
         }
         if workspace_id.is_nil() {
-            return self.record_decision(Self::off(), "invalid_workspace");
+            return self.record_decision(Self::off(), "invalid_workspace", kind);
         }
         let now = Utc::now();
-        if let Some((decision, reason)) = self.cached_decision(workspace_id, now, true).await {
-            return self.record_decision(decision, reason);
+        if let Some((decision, reason)) = self.cached_decision(workspace_id, now, true, kind).await
+        {
+            return self.record_decision(decision, reason, kind);
         }
 
         let refresh_lock = self.refresh_lock(workspace_id).await;
         let _guard = refresh_lock.lock().await;
-        if let Some((decision, reason)) =
-            self.cached_decision(workspace_id, Utc::now(), false).await
+        if let Some((decision, reason)) = self
+            .cached_decision(workspace_id, Utc::now(), false, kind)
+            .await
         {
             if self.emergency_disabled.load(Ordering::Acquire) {
-                return self.record_decision(Self::off(), "emergency_disabled");
+                return self.record_decision(Self::off(), "emergency_disabled", kind);
             }
-            return self.record_decision(decision, reason);
+            return self.record_decision(decision, reason, kind);
         }
         let started = Instant::now();
         match self.fetch(workspace_id).await {
-            Ok(policy) => match self.store_policy(workspace_id, policy).await {
-                Ok(decision) => {
-                    self.record_refresh("ok", started);
-                    if self.emergency_disabled.load(Ordering::Acquire) {
-                        self.record_decision(Self::off(), "emergency_disabled")
-                    } else {
-                        self.record_decision(decision, "refreshed")
-                    }
-                }
-                Err(error) => {
-                    let (outcome, failure_reason) =
-                        if let StorePolicyError::Version(regression) = error {
-                            if let Some(metrics) = self.metrics.as_deref() {
-                                metrics.record_entitlement_version_regression(regression.source());
-                            }
-                            ("version_regression", "version_regression")
+            Ok(policy) => {
+                let decision = match kind {
+                    GateKind::AutomationRuns => policy.decision.clone(),
+                    GateKind::ImAgentTurns => policy.im_decision.clone(),
+                };
+                match self.store_policy(workspace_id, policy).await {
+                    Ok(_) => {
+                        self.record_refresh("ok", started);
+                        if self.emergency_disabled.load(Ordering::Acquire) {
+                            self.record_decision(Self::off(), "emergency_disabled", kind)
                         } else {
-                            ("error", "unavailable")
-                        };
-                    self.record_refresh(outcome, started);
-                    self.mark_failure(workspace_id).await;
-                    if self.emergency_disabled.load(Ordering::Acquire) {
-                        return self.record_decision(Self::off(), "emergency_disabled");
+                            self.record_decision(decision, "refreshed", kind)
+                        }
                     }
-                    let (decision, stale) = self.failure_decision(workspace_id).await;
-                    self.record_decision(decision, if stale { "stale" } else { failure_reason })
+                    Err(error) => {
+                        let (outcome, failure_reason) =
+                            if let StorePolicyError::Version(regression) = error {
+                                if let Some(metrics) = self.metrics.as_deref() {
+                                    metrics
+                                        .record_entitlement_version_regression(regression.source());
+                                }
+                                ("version_regression", "version_regression")
+                            } else {
+                                ("error", "unavailable")
+                            };
+                        self.record_refresh(outcome, started);
+                        self.mark_failure(workspace_id).await;
+                        if self.emergency_disabled.load(Ordering::Acquire) {
+                            return self.record_decision(Self::off(), "emergency_disabled", kind);
+                        }
+                        let (decision, stale) = self.failure_decision(workspace_id, kind).await;
+                        self.record_decision(
+                            decision,
+                            if stale { "stale" } else { failure_reason },
+                            kind,
+                        )
+                    }
                 }
-            },
+            }
             Err(error) => {
                 self.record_refresh(error.refresh_outcome(), started);
                 self.mark_failure(workspace_id).await;
                 if self.emergency_disabled.load(Ordering::Acquire) {
-                    return self.record_decision(Self::off(), "emergency_disabled");
+                    return self.record_decision(Self::off(), "emergency_disabled", kind);
                 }
-                let (decision, stale) = self.failure_decision(workspace_id).await;
+                let (decision, stale) = self.failure_decision(workspace_id, kind).await;
                 let failure_reason = error.decision_reason();
-                self.record_decision(decision, if stale { "stale" } else { failure_reason })
+                self.record_decision(decision, if stale { "stale" } else { failure_reason }, kind)
             }
         }
     }
@@ -539,6 +597,7 @@ struct WireGate {
 
 struct FetchedPolicy {
     decision: EntitlementGateDecision,
+    im_decision: EntitlementGateDecision,
     valid_for_seconds: i64,
 }
 
@@ -555,6 +614,23 @@ fn normalize_policy(wire: WirePolicy) -> Result<FetchedPolicy, ()> {
     normalize_gate(issue_window, false)?;
     let gate = wire.gates.get("automation_runs").ok_or(())?;
     let (action, limit, period_start, period_end, reset_at) = normalize_gate(gate, true)?;
+    let im_decision = wire
+        .gates
+        .get("im_agent_turns")
+        .map(|gate| {
+            let (action, limit, period_start, period_end, reset_at) = normalize_gate(gate, true)?;
+            Ok::<EntitlementGateDecision, ()>(EntitlementGateDecision {
+                gate_action: action,
+                gate_limit: limit,
+                gate_period_start: period_start,
+                gate_period_end: period_end,
+                gate_reset_at: reset_at,
+                policy_revision: wire.policy_revision,
+                subscription_version: wire.subscription_version,
+            })
+        })
+        .transpose()?
+        .unwrap_or_else(EntitlementGateDecision::off);
     Ok(FetchedPolicy {
         decision: EntitlementGateDecision {
             gate_action: action,
@@ -565,6 +641,7 @@ fn normalize_policy(wire: WirePolicy) -> Result<FetchedPolicy, ()> {
             policy_revision: wire.policy_revision,
             subscription_version: wire.subscription_version,
         },
+        im_decision,
         valid_for_seconds: wire.valid_for_seconds,
     })
 }
@@ -704,6 +781,7 @@ mod tests {
         let now = Utc::now();
         let entry = |last_access_sequence| CacheEntry {
             decision: HttpEntitlementProvider::off(),
+            im_decision: HttpEntitlementProvider::off(),
             fresh_until: now,
             stale_until: now,
             retry_after: None,

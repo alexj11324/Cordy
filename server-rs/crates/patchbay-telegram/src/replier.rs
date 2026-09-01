@@ -139,6 +139,15 @@ impl OutboundReplier {
             Some(outcome) if *outcome == Outcome::agent_archived() => {
                 self.post(ctx, inst, msg, AGENT_ARCHIVED_TEXT).await
             }
+            Some(outcome) if *outcome == Outcome::quota_exceeded() => {
+                self.post(
+                    ctx,
+                    inst,
+                    msg,
+                    patchbay_channel::quota_exceeded_notice_for_message(msg),
+                )
+                .await
+            }
             Some(outcome) if *outcome == Outcome::fresh_pending() => {
                 self.post(ctx, inst, msg, FRESH_PENDING_TEXT).await
             }

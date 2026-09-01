@@ -1,0 +1,54 @@
+# Official Patchbay Cloud Slack app. This is intentionally separate from the
+# self-hosted Socket Mode manifest: one hosted app uses OAuth + signed Events
+# API callbacks and routes each event by app_id + team_id.
+display_information:
+  name: Patchbay
+features:
+  app_home:
+    home_tab_enabled: false
+    messages_tab_enabled: true
+    messages_tab_read_only_enabled: false
+  bot_user:
+    display_name: Patchbay
+    always_online: true
+  slash_commands:
+    - command: /agents
+      url: https://api.aspectlylabs.com/api/integrations/slack/commands
+      description: Choose the Agent for this conversation
+      usage_hint: "[number or name]"
+      should_escape: false
+    - command: /issue
+      url: https://api.aspectlylabs.com/api/integrations/slack/commands
+      description: Create a Patchbay issue with an Agent
+      usage_hint: "what should be filed"
+      should_escape: false
+oauth_config:
+  redirect_urls:
+    - https://api.aspectlylabs.com/api/integrations/slack/oauth/callback
+  scopes:
+    bot:
+      - app_mentions:read
+      - channels:history
+      - chat:write
+      - commands
+      - files:read
+      - groups:history
+      - im:history
+      - mpim:history
+      - reactions:write
+      - users:read
+settings:
+  event_subscriptions:
+    request_url: https://api.aspectlylabs.com/api/integrations/slack/events
+    bot_events:
+      - app_uninstalled
+      - app_mention
+      - message.channels
+      - message.groups
+      - message.im
+      - message.mpim
+  interactivity:
+    is_enabled: false
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: true

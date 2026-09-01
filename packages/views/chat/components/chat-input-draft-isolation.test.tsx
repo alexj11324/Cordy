@@ -14,6 +14,36 @@ vi.mock("@patchbay/core/api", () => ({
   api: { uploadFile: mockApiUploadFile },
 }));
 
+vi.mock("@lobehub/ui/es/Flex/index", () => ({
+  Flexbox: ({
+    children,
+    className,
+    style,
+    ...rest
+  }: React.PropsWithChildren<{
+    className?: string;
+    style?: React.CSSProperties;
+    [key: string]: unknown;
+  }>) => {
+    const dom: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(rest)) {
+      if (
+        key.startsWith("data-") ||
+        key.startsWith("aria-") ||
+        key === "id" ||
+        key === "role"
+      ) {
+        dom[key] = value;
+      }
+    }
+    return (
+      <div className={className} style={style} {...dom}>
+        {children}
+      </div>
+    );
+  },
+}));
+
 /**
  * Draft isolation across a composer switch, driven through the REAL
  * ContentEditor — its real 100ms `onUpdate` debounce, its real dirty guard,

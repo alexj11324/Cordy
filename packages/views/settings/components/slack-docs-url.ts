@@ -6,5 +6,5 @@ export function slackDocsUrl(lang: string | undefined): string {
       : lang?.startsWith("ko")
         ? "/ko"
         : "";
-  return `https://patchbay.ai/docs${prefix}/slack-bot-integration`;
+  return `https://patchbay.aspectlylabs.com/docs${prefix}/slack-bot-integration`;
 }

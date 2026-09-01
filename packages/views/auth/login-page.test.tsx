@@ -75,7 +75,11 @@ vi.mock("@patchbay/core/types", () => ({}));
 // Import after mocks
 // ---------------------------------------------------------------------------
 
-import { LoginPage, validateCliCallback } from "./login-page";
+import {
+  LoginPage,
+  redirectToDesktopApp,
+  validateCliCallback,
+} from "./login-page";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -108,6 +112,18 @@ describe("LoginPage", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it("returns a handoff to the callback protocol selected by the initiating app", () => {
+    redirectToDesktopApp(
+      "desktop-code",
+      "opaque-state",
+      "patchbay-canary-login-fix-123",
+    );
+
+    expect(window.location.href).toBe(
+      "patchbay-canary-login-fix-123://auth/callback?code=desktop-code&state=opaque-state",
+    );
   });
 
   // -------------------------------------------------------------------------

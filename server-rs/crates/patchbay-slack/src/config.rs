@@ -5,12 +5,11 @@
 //! columns stay flat; everything Slack-specific lives in this opaque blob (the
 //! documented config boundary).
 //!
-//! `app_id` holds the REAL Slack app id (parsed from the xapp- token). It is
-//! the per-installation routing key: the generic GetChannelInstallationByAppID
-//! query (`config->>'app_id'`) and the (channel_type, app_id) unique index map
-//! an inbound event's api_app_id to its installation, so several apps — several
-//! agents — in one Slack workspace stay distinct. team_id is kept for display
-//! only.
+//! `app_id` is the database routing identity: BYO Socket Mode installations
+//! keep using the real Slack app id, while the managed multi-tenant app stores
+//! `{api_app_id}:{team_id}` so one official app can be installed into many
+//! Slack workspaces without changing the existing routing index. `api_app_id`
+//! preserves the real Slack app id for display and provider API calls.
 //!
 //! bot_token_encrypted (xoxb-, outbound Web API: chat.postMessage) and
 //! app_token_encrypted (xapp-, this installation's own Socket Mode connection)
@@ -23,6 +22,8 @@ use serde::Deserialize;
 pub struct InstallConfig {
     #[serde(rename = "app_id", default)]
     pub app_id: String,
+    #[serde(rename = "api_app_id", default)]
+    pub api_app_id: String,
     #[serde(rename = "team_id", default)]
     pub team_id: String,
     #[serde(rename = "bot_user_id", default)]
@@ -31,6 +32,16 @@ pub struct InstallConfig {
     pub bot_token_encrypted: String,
     #[serde(rename = "app_token_encrypted", default)]
     pub app_token_encrypted: String,
+    #[serde(default)]
+    pub transport: String,
+    #[serde(rename = "refresh_token_encrypted", default)]
+    pub refresh_token_encrypted: String,
+    #[serde(rename = "token_expires_at", default)]
+    pub token_expires_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+pub fn managed_routing_key(app_id: &str, team_id: &str) -> String {
+    format!("{app_id}:{team_id}")
 }
 
 /// Decoded, decrypted form the outbound sender runs on. The installation
@@ -102,7 +113,11 @@ pub fn decode_public_config(raw: &serde_json::Value) -> PublicConfig {
         cfg.team_id
     };
     PublicConfig {
-        app_id: cfg.app_id,
+        app_id: if cfg.api_app_id.is_empty() {
+            cfg.app_id
+        } else {
+            cfg.api_app_id
+        },
         team_id,
         bot_user_id: cfg.bot_user_id,
     }
@@ -166,6 +181,17 @@ mod tests {
         let cfg = decode_public_config(&serde_json::json!("not an object"));
         assert_eq!(cfg.app_id, "");
         assert_eq!(cfg.team_id, "");
+    }
+
+    #[test]
+    fn decode_public_config_exposes_real_managed_app_id() {
+        let cfg = decode_public_config(&serde_json::json!({
+            "app_id": "A123:T456",
+            "api_app_id": "A123",
+            "team_id": "T456"
+        }));
+        assert_eq!(cfg.app_id, "A123");
+        assert_eq!(cfg.team_id, "T456");
     }
 
     #[test]

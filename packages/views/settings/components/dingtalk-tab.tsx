@@ -43,7 +43,11 @@ import {
   dingtalkKeys,
 } from "@patchbay/core/dingtalk";
 import { api } from "@patchbay/core/api";
-import type { DingTalkGroupRoute, DingTalkInstallation } from "@patchbay/core/types";
+import {
+  isMessagingInstallationHealthy,
+  type DingTalkGroupRoute,
+  type DingTalkInstallation,
+} from "@patchbay/core/types";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { openExternal } from "../../platform";
 import { useT } from "../../i18n";
@@ -92,6 +96,10 @@ export function DingTalkTab({ installationId }: { installationId?: string } = {}
   );
   const configured = data?.configured === true;
   const groupRoutingSupported = data?.group_routing_supported === true;
+  // Group-route management is still useful when transport health needs
+  // attention (for example while a self-hosted worker is restarting). Keep
+  // the durable installation visible; the installation row is responsible for
+  // showing the observed healthy/degraded state.
   const hasActiveInstallation = installations.some(
     (installation) => installation.status === "active",
   );
@@ -415,6 +423,7 @@ function InstallationRow({
   const { t } = useT("settings");
   const { getAgentName } = useActorName();
   const isActive = installation.status === "active";
+  const isHealthy = isMessagingInstallationHealthy(installation);
   const agentName = installation.agent_id
     ? getAgentName(installation.agent_id)
     : t(($) => $.page.integrations_workspace_hub);
@@ -440,11 +449,15 @@ function InstallationRow({
         <div className="min-w-0 space-y-1">
           <p className="text-body font-medium">
             {agentName}
-            {!isActive && (
+            {!isActive ? (
               <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
                 {t(($) => $.dingtalk.revoked_badge)}
               </span>
-            )}
+            ) : !isHealthy ? (
+              <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
+                {t(($) => $.page.integrations_status)}
+              </span>
+            ) : null}
           </p>
           <p
             className="max-w-full truncate text-micro text-muted-foreground"
@@ -486,7 +499,7 @@ function dingtalkDocsUrl(lang: string | undefined): string {
       : lang?.startsWith("ko")
         ? "/ko"
         : "";
-  return `https://patchbay.ai/docs${prefix}/dingtalk-bot-integration`;
+  return `https://patchbay.aspectlylabs.com/docs${prefix}/dingtalk-bot-integration`;
 }
 
 // DingTalkAgentBindButton is the per-agent CTA exposed from the agent detail
@@ -545,13 +558,19 @@ export function DingTalkAgentBindButton({
       inst.status === "active",
   );
   if (existing) {
+    const healthy = isMessagingInstallationHealthy(existing);
     return onShowConnectedDetails ? (
       <DingTalkAgentBotStatusRow
         onClick={onShowConnectedDetails}
+        healthy={healthy}
         className={className}
       />
     ) : (
-      <DingTalkAgentBotConnectedBadge installation={existing} className={className} />
+      <DingTalkAgentBotConnectedBadge
+        installation={existing}
+        healthy={healthy}
+        className={className}
+      />
     );
   }
 
@@ -702,9 +721,11 @@ export function DingTalkAgentBindButton({
 // Integrations tab where Manage / Disconnect live.
 function DingTalkAgentBotStatusRow({
   onClick,
+  healthy,
   className,
 }: {
   onClick: () => void;
+  healthy: boolean;
   className?: string;
 }) {
   const { t } = useT("settings");
@@ -718,8 +739,17 @@ function DingTalkAgentBotStatusRow({
       )}
       data-testid="dingtalk-agent-bot-status"
     >
-      <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
-      <span className="truncate">{t(($) => $.dingtalk.agent_bot_connected_label)}</span>
+      <span
+        className={cn(
+          "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
+          healthy ? "bg-emerald-500" : "bg-amber-500",
+        )}
+      />
+      <span className="truncate">
+        {healthy
+          ? t(($) => $.dingtalk.agent_bot_connected_label)
+          : t(($) => $.page.integrations_status)}
+      </span>
       <ChevronRight className="ml-auto h-3.5 w-3.5 shrink-0" />
     </button>
   );
@@ -730,9 +760,11 @@ function DingTalkAgentBotStatusRow({
 // soft-destructive Disconnect. Only owners/admins ever reach this component.
 function DingTalkAgentBotConnectedBadge({
   installation,
+  healthy,
   className,
 }: {
   installation: DingTalkInstallation;
+  healthy: boolean;
   className?: string;
 }) {
   const { t } = useT("settings");
@@ -766,8 +798,17 @@ function DingTalkAgentBotConnectedBadge({
     >
       <div className="flex items-center justify-between gap-3">
         <span className="inline-flex min-w-0 items-center gap-2 text-caption text-muted-foreground">
-          <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
-          <span className="truncate">{t(($) => $.dingtalk.agent_bot_connected_label)}</span>
+          <span
+            className={cn(
+              "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
+              healthy ? "bg-emerald-500" : "bg-amber-500",
+            )}
+          />
+          <span className="truncate">
+            {healthy
+              ? t(($) => $.dingtalk.agent_bot_connected_label)
+              : t(($) => $.page.integrations_status)}
+          </span>
         </span>
         <Button
           variant="destructive"

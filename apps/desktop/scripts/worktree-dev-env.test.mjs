@@ -5,8 +5,11 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   appSuffixForPath,
+  authCallbackProtocolForSuffix,
+  applyMacOSDevElectronEnv,
   applyWorktreeDevEnv,
   cksum,
+  devElectronDistPath,
   offsetForPath,
   rendererPortForPath,
 } from "./worktree-dev-env.mjs";
@@ -19,7 +22,8 @@ afterEach(() => {
 function tmpRoot(kind /* "file" | "dir" | "none" */) {
   const root = mkdtempSync(join(tmpdir(), "wt-"));
   cleanups.push(() => rmSync(root, { recursive: true, force: true }));
-  if (kind === "file") writeFileSync(join(root, ".git"), "gitdir: /elsewhere\n");
+  if (kind === "file")
+    writeFileSync(join(root, ".git"), "gitdir: /elsewhere\n");
   else if (kind === "dir") mkdirSync(join(root, ".git"));
   return root;
 }
@@ -79,13 +83,82 @@ describe("worktree-dev-env", () => {
       `some-thing-${offsetForPath("/work/feat/some thing")}`,
     );
     // empty/non-ascii slug falls back to "worktree", still disambiguated by offset
-    expect(appSuffixForPath("/work/___")).toBe(`worktree-${offsetForPath("/work/___")}`);
+    expect(appSuffixForPath("/work/___")).toBe(
+      `worktree-${offsetForPath("/work/___")}`,
+    );
+  });
+
+  it("derives an isolated callback protocol without losing the path offset", () => {
+    expect(authCallbackProtocolForSuffix("login-fix-123")).toBe(
+      "patchbay-canary-login-fix-123",
+    );
+    expect(authCallbackProtocolForSuffix()).toBe("patchbay-canary");
+    expect(
+      authCallbackProtocolForSuffix(
+        `${"very-long-worktree-name-".repeat(4)}987`,
+      ),
+    ).toMatch(/^patchbay-canary-[a-z0-9-]+-987$/);
+  });
+
+  it("stages macOS Electron in a visible per-protocol Applications path", () => {
+    expect(
+      devElectronDistPath({
+        home: "/Users/tester",
+        authCallbackProtocol: "patchbay-canary-login-fix-123",
+        electronVersion: "39.8.7",
+        arch: "arm64",
+      }),
+    ).toBe(
+      "/Users/tester/Applications/Patchbay Development/patchbay-canary-login-fix-123/39.8.7-arm64",
+    );
+
+    const env = {
+      DESKTOP_AUTH_CALLBACK_PROTOCOL: "patchbay-canary-login-fix-123",
+    };
+    applyMacOSDevElectronEnv(env, {
+      home: "/Users/tester",
+      electronVersion: "39.8.7",
+      arch: "arm64",
+      platform: "darwin",
+    });
+    expect(env.PATCHBAY_DEV_ELECTRON_DIST_PATH).toBe(
+      "/Users/tester/Applications/Patchbay Development/patchbay-canary-login-fix-123/39.8.7-arm64",
+    );
+  });
+
+  it("leaves non-macOS alone and keeps an explicit Electron override as the source", () => {
+    const linuxEnv = {
+      DESKTOP_AUTH_CALLBACK_PROTOCOL: "patchbay-canary-linux-123",
+    };
+    applyMacOSDevElectronEnv(linuxEnv, {
+      home: "/home/tester",
+      electronVersion: "39.8.7",
+      platform: "linux",
+    });
+    expect(linuxEnv.PATCHBAY_DEV_ELECTRON_DIST_PATH).toBeUndefined();
+
+    const explicitEnv = {
+      DESKTOP_AUTH_CALLBACK_PROTOCOL: "patchbay-canary-login-fix-123",
+      ELECTRON_OVERRIDE_DIST_PATH: "/custom/electron",
+    };
+    applyMacOSDevElectronEnv(explicitEnv, {
+      home: "/Users/tester",
+      electronVersion: "39.8.7",
+      arch: "arm64",
+      platform: "darwin",
+    });
+    expect(explicitEnv.ELECTRON_OVERRIDE_DIST_PATH).toBe("/custom/electron");
+    expect(explicitEnv.PATCHBAY_DEV_ELECTRON_DIST_PATH).toBe(
+      "/Users/tester/Applications/Patchbay Development/patchbay-canary-login-fix-123/39.8.7-arm64",
+    );
   });
 
   it("disambiguates worktrees that share a folder name at different paths", () => {
     // Same basename "patchbay", different parent dirs → different offsets/suffixes,
     // so each gets its own single-instance lock.
-    expect(offsetForPath("/tmp/a/patchbay")).not.toBe(offsetForPath("/tmp/b/patchbay"));
+    expect(offsetForPath("/tmp/a/patchbay")).not.toBe(
+      offsetForPath("/tmp/b/patchbay"),
+    );
     expect(appSuffixForPath("/tmp/a/patchbay")).not.toBe(
       appSuffixForPath("/tmp/b/patchbay"),
     );
@@ -97,6 +170,9 @@ describe("worktree-dev-env", () => {
     applyWorktreeDevEnv(env, { root });
     expect(env.DESKTOP_RENDERER_PORT).toBe(String(rendererPortForPath(root)));
     expect(env.DESKTOP_APP_SUFFIX).toBe(appSuffixForPath(root));
+    expect(env.DESKTOP_AUTH_CALLBACK_PROTOCOL).toBe(
+      authCallbackProtocolForSuffix(appSuffixForPath(root)),
+    );
   });
 
   it("leaves the primary checkout untouched (.git is a dir)", () => {
@@ -105,6 +181,7 @@ describe("worktree-dev-env", () => {
     applyWorktreeDevEnv(env, { root });
     expect(env.DESKTOP_RENDERER_PORT).toBeUndefined();
     expect(env.DESKTOP_APP_SUFFIX).toBeUndefined();
+    expect(env.DESKTOP_AUTH_CALLBACK_PROTOCOL).toBe("patchbay-canary");
   });
 
   it("respects explicit env overrides", () => {
@@ -113,6 +190,18 @@ describe("worktree-dev-env", () => {
     applyWorktreeDevEnv(env, { root });
     expect(env.DESKTOP_RENDERER_PORT).toBe("9999");
     expect(env.DESKTOP_APP_SUFFIX).toBe("manual");
+    expect(env.DESKTOP_AUTH_CALLBACK_PROTOCOL).toBe("patchbay-canary-manual");
+  });
+
+  it("does not replace an explicit callback protocol", () => {
+    const root = tmpRoot("file");
+    const env = {
+      DESKTOP_AUTH_CALLBACK_PROTOCOL: "patchbay-canary-explicit-777",
+    };
+    applyWorktreeDevEnv(env, { root });
+    expect(env.DESKTOP_AUTH_CALLBACK_PROTOCOL).toBe(
+      "patchbay-canary-explicit-777",
+    );
   });
 
   it("fills only the missing knob when one is set explicitly", () => {

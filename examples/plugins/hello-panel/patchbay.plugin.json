@@ -4,7 +4,7 @@
   "name": "Hello Panel",
   "description": "The reference surface: reads the current issue, posts a comment, and stores a per-member note.",
   "version": "1.0.0",
-  "author": { "name": "patchbay", "url": "https://patchbay.ai" },
+  "author": { "name": "patchbay", "url": "https://patchbay.aspectlylabs.com" },
   "scopes": ["issues:read", "comments:write", "storage:user"],
   "contributes": {
     "surfaces": [

@@ -1,3 +1,8 @@
+import type {
+  MessagingInstallationRuntime,
+  MessagingInstallationSetup,
+} from "./messaging";
+
 /** A Lark Bot installation, optionally bound to a Patchbay agent.
  *
  * Wire shape mirrors `LarkInstallationResponse` in
@@ -23,6 +28,8 @@ export interface LarkInstallation {
   installed_at: string;
   created_at: string;
   updated_at: string;
+  runtime?: MessagingInstallationRuntime;
+  setup?: MessagingInstallationSetup;
 }
 
 export interface ListLarkInstallationsResponse {
