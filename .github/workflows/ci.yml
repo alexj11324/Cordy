@@ -717,6 +717,12 @@ jobs:
       RUSTC_WRAPPER: sccache
       SCCACHE_GHA_ENABLED: "true"
       SCCACHE_GHA_RW_MODE: ${{ github.event_name == 'pull_request' && 'READ_ONLY' || 'READ_WRITE' }}
+      # Ephemeral runners have no persisted target/. Cargo incremental cannot
+      # survive across jobs, and it poisons sccache keys inside a job.
+      # line-tables-only keeps panic backtraces without full DWARF codegen.
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "line-tables-only"
+      CARGO_PROFILE_TEST_DEBUG: "line-tables-only"
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -743,17 +749,13 @@ jobs:
         working-directory: server-rs
         run: cargo fmt --all --check
 
-      - name: Check every workspace target
-        working-directory: server-rs
-        run: cargo check --workspace --all-targets --locked
-
+      # Clippy typechecks every target. A preceding cargo check repeats rustc
+      # work without codegen, and a following cargo build repeats codegen that
+      # rust-tests already performs with --all-targets (libs, bins, tests,
+      # examples, and benches). Keep this job to fmt + clippy.
       - name: Run Clippy
         working-directory: server-rs
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
-
-      - name: Build workspace binaries
-        working-directory: server-rs
-        run: cargo build --workspace --locked
 
       - name: Report compiler cache effectiveness
         if: always()
@@ -796,6 +798,9 @@ jobs:
       RUSTC_WRAPPER: sccache
       SCCACHE_GHA_ENABLED: "true"
       SCCACHE_GHA_RW_MODE: ${{ github.event_name == 'pull_request' && 'READ_ONLY' || 'READ_WRITE' }}
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "line-tables-only"
+      CARGO_PROFILE_TEST_DEBUG: "line-tables-only"
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -918,6 +923,9 @@ jobs:
       RUSTC_WRAPPER: sccache
       SCCACHE_GHA_ENABLED: "true"
       SCCACHE_GHA_RW_MODE: ${{ github.event_name == 'pull_request' && 'READ_ONLY' || 'READ_WRITE' }}
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "line-tables-only"
+      CARGO_PROFILE_TEST_DEBUG: "line-tables-only"
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
