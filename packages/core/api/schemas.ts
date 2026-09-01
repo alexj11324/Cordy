@@ -1501,7 +1501,8 @@ const IssueTableFacetValueSchema = z.object({
 
 const IssueTableFacetSchema = z.object({
   kind: z.enum(["status", "priority", "executor", "creator", "project", "label", "property", "working_agents"]),
-  property_id: z.string().optional(),
+  // The backend includes this key as null for non-property facets.
+  property_id: z.string().nullable().optional(),
   values: z.array(IssueTableFacetValueSchema).default([]),
 }).loose();
 
