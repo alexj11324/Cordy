@@ -2645,10 +2645,7 @@ mod tests {
 
         let owner_id = Uuid::now_v7().to_string();
         let mut post_mutation = json!({"title": "synced"});
-        preserve_owner_base(
-            &mut post_mutation,
-            &json!({"owner_id": owner_id.clone()}),
-        );
+        preserve_owner_base(&mut post_mutation, &json!({"owner_id": owner_id.clone()}));
         assert_eq!(post_mutation["owner_id"], owner_id);
     }
 
