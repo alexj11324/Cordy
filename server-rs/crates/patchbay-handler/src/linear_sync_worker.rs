@@ -4072,8 +4072,9 @@ mod tests {
         map_local_priority, map_local_status, map_remote_priority, map_remote_status,
         merge_sync_snapshots, merge_sync_snapshots_with_updated_from,
         normalize_base_snapshot_fields, parse_agent_session_event,
-        parse_agent_session_terminal_event, parse_remote_timestamp, remote_sync_snapshot,
-        retry_delay, should_preserve_unmapped_remote_assignee, RemoteOwnerMapping,
+        parse_agent_session_terminal_event, parse_remote_timestamp, preserve_owner_base,
+        remote_sync_snapshot, retry_delay, should_preserve_unmapped_remote_assignee,
+        RemoteOwnerMapping,
     };
     use crate::linear::{
         LinearRemoteIssue, LinearRemoteLabel, LinearRemoteLabelParent, LinearRemoteState,
