@@ -745,8 +745,20 @@ struct WeixinInstallSession {
     base_url: String,
     status: String,
     installation_id: Option<Uuid>,
+    #[serde(default)]
+    existing_installation_id: Option<Uuid>,
+    #[serde(default)]
+    existing_bot_id: Option<String>,
     error_message: Option<String>,
     expires_at: DateTime<Utc>,
+}
+
+fn weixin_installation_matches_slot(row: &ChannelInstallation, agent_id: Uuid) -> bool {
+    if agent_id.is_nil() {
+        row.agent_id.is_none()
+    } else {
+        row.agent_id == Some(agent_id)
+    }
 }
 
 #[derive(Clone)]
@@ -875,16 +887,17 @@ async fn begin_weixin_install(
             );
         }
     };
-    let decrypt = move |sealed: &[u8]| box_.open(sealed).map_err(anyhow::Error::from);
-    let local_tokens = installations
+    let existing_installation = installations
         .into_iter()
-        .filter(|row| agent_id.is_nil() || row.agent_id == Some(agent_id))
-        .filter_map(|row| {
-            patchbay_weixin::config::decode_credentials(&row.config, Some(&decrypt))
-                .ok()
-                .map(|credentials| credentials.bot_token)
-        })
-        .collect::<Vec<_>>();
+        .find(|row| weixin_installation_matches_slot(row, agent_id));
+    let decrypt = move |sealed: &[u8]| box_.open(sealed).map_err(anyhow::Error::from);
+    let existing_credentials = existing_installation.as_ref().and_then(|row| {
+        patchbay_weixin::config::decode_credentials(&row.config, Some(&decrypt)).ok()
+    });
+    let local_tokens = existing_credentials
+        .as_ref()
+        .map(|credentials| vec![credentials.bot_token.clone()])
+        .unwrap_or_default();
     let qr = match patchbay_weixin::api::Client::request_qr_code(&local_tokens).await {
         Ok(value) => value,
         Err(error) => {
@@ -917,6 +930,10 @@ async fn begin_weixin_install(
         base_url: patchbay_weixin::api::DEFAULT_BASE_URL.to_string(),
         status: "pending".into(),
         installation_id: None,
+        existing_installation_id: existing_credentials
+            .as_ref()
+            .and(existing_installation.as_ref().map(|row| row.id)),
+        existing_bot_id: existing_credentials.map(|credentials| credentials.bot_id),
         error_message: None,
         expires_at,
     };
@@ -1019,7 +1036,65 @@ async fn weixin_install_status(
                 "WeChat returned an unsafe redirect host",
             );
         }
-        "binded_redirect" => return Json(json!({"status": "already_connected"})).into_response(),
+        "binded_redirect" => {
+            let Some(existing_installation_id) = session.existing_installation_id else {
+                tracing::warn!(
+                    workspace_id = %workspace_id,
+                    agent_id = %session.agent_id,
+                    "WeChat reported an existing binding without a matching local installation"
+                );
+                return error_response(
+                    StatusCode::CONFLICT,
+                    "WeChat reported an existing connection that does not match this target",
+                );
+            };
+            let Some(existing_bot_id) = session.existing_bot_id.as_deref() else {
+                return error_response(
+                    StatusCode::CONFLICT,
+                    "the existing WeChat connection changed; refresh and try again",
+                );
+            };
+            let row = match patchbay_weixin::install::reactivate_with_limit(
+                &state.pool,
+                existing_installation_id,
+                workspace_id,
+                session.agent_id,
+                existing_bot_id,
+                actor,
+                hosted_installation_limit(&state),
+            )
+            .await
+            {
+                Ok(value) => value,
+                Err(error) => {
+                    tracing::warn!(%error, "failed to reactivate WeChat installation");
+                    if let Some(response) = hosted_installation_limit_response(&error) {
+                        return response;
+                    }
+                    if error.to_string().contains("authorization changed") {
+                        return error_response(
+                            StatusCode::FORBIDDEN,
+                            "authorization changed during install",
+                        );
+                    }
+                    if error.to_string().contains("installation no longer matches") {
+                        return error_response(
+                            StatusCode::CONFLICT,
+                            "the existing WeChat connection changed; refresh and try again",
+                        );
+                    }
+                    return error_response(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to restore WeChat connection",
+                    );
+                }
+            };
+            publish_created(&state, Provider::Weixin, &row, actor);
+            session.status = "success".into();
+            session.installation_id = Some(row.id);
+            let _ = store.put(&session_id, &session).await;
+            return Json(json!({"status": "success", "installation_id": row.id})).into_response();
+        }
         "confirmed" => {}
         _ => return Json(json!({"status": "pending"})).into_response(),
     }
@@ -3038,6 +3113,38 @@ mod tests {
             observer_token: observer_token.into(),
             updated_at: now,
         }
+    }
+
+    #[test]
+    fn weixin_reconnect_uses_only_the_exact_target_slot() {
+        let now = Utc::now();
+        let workspace_id = Uuid::now_v7();
+        let installer_user_id = Uuid::now_v7();
+        let agent_id = Uuid::now_v7();
+        let hub = ChannelInstallation {
+            agent_id: None,
+            channel_type: patchbay_weixin::TYPE_WEIXIN.into(),
+            config: json!({}),
+            created_at: now,
+            id: Uuid::now_v7(),
+            installed_at: now,
+            installer_user_id,
+            status: "revoked".into(),
+            updated_at: now,
+            workspace_id,
+            ws_lease_expires_at: None,
+            ws_lease_token: None,
+        };
+        let agent = ChannelInstallation {
+            agent_id: Some(agent_id),
+            id: Uuid::now_v7(),
+            ..hub.clone()
+        };
+
+        assert!(weixin_installation_matches_slot(&hub, Uuid::nil()));
+        assert!(!weixin_installation_matches_slot(&agent, Uuid::nil()));
+        assert!(weixin_installation_matches_slot(&agent, agent_id));
+        assert!(!weixin_installation_matches_slot(&hub, agent_id));
     }
 
     #[test]
