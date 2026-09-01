@@ -204,6 +204,18 @@ test("ignores expected Chromium navigation cancellations only", () => {
   );
 });
 
+test("reports captured route failures when a protected landmark never renders", () => {
+  assert.match(
+    browserVerifierSource,
+    /did not render \$\{landmark\}:\\n\$\{details\.join\("\\n"\)\}/u,
+  );
+  assert.match(browserVerifierSource, /visible alert: \$\{alert\}/u);
+  assert.match(
+    browserVerifierSource,
+    /message\.type\(\) === "warning"[\s\S]*API response failed schema validation/u,
+  );
+});
+
 test("builds the production three-task, two-edge dependency fixture", () => {
   const parentIssueId = "11111111-1111-4111-8111-111111111111";
   const plan = buildProductionSmokeDependencyPlan(parentIssueId);

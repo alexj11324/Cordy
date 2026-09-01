@@ -24,7 +24,7 @@ export function dependencyGraphsOptions(wsId: string, projectId?: string) {
         });
         graphs.push(...page.graphs);
         const nextCursor = page.next_cursor ?? undefined;
-        if (nextCursor === cursor) {
+        if (nextCursor !== undefined && nextCursor === cursor) {
           throw new Error("dependency graph pagination cursor did not advance");
         }
         cursor = nextCursor;
