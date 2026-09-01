@@ -3649,15 +3649,13 @@ impl LinearSyncWorker {
             .or(locked_link.last_remote_event_id.as_deref());
         let updated = linear_q::set_linear_issue_link_state(
             &mut *transaction,
-            &linear_q::LinearIssueLinkUpdate {
-                link_id: locked_link.id,
-                workspace_id: connection.workspace_id,
-                last_common_snapshot: &snapshot,
-                remote_updated_at: locked_link.remote_updated_at,
-                last_remote_event_at_ms: event_at,
-                last_remote_event_id: event_id,
-                sync_status: "deleted",
-            },
+            locked_link.id,
+            connection.workspace_id,
+            &snapshot,
+            locked_link.remote_updated_at,
+            event_at,
+            event_id,
+            "deleted",
         )
         .await
         .map_err(SyncError::retry)?;
