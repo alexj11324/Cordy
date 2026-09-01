@@ -619,6 +619,36 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_UP: &[(&str, &str)] = &[
         "466_slack_oauth_state_hash_index",
         "slack_oauth_state_hash_uidx",
     ),
+    ("466_linear_connection_id_index", "uq_linear_connection_id"),
+    (
+        "467_linear_connection_workspace_index",
+        "uq_linear_connection_workspace",
+    ),
+    (
+        "468_linear_connection_identity_index",
+        "uq_linear_connection_identity",
+    ),
+    (
+        "469_linear_oauth_state_id_index",
+        "uq_linear_oauth_state_id",
+    ),
+    (
+        "470_linear_oauth_state_hash_index",
+        "uq_linear_oauth_state_hash",
+    ),
+    (
+        "471_linear_oauth_state_expiry_index",
+        "idx_linear_oauth_state_expiry",
+    ),
+    ("472_linear_sync_inbox_id_index", "uq_linear_sync_inbox_id"),
+    (
+        "473_linear_sync_inbox_delivery_index",
+        "uq_linear_sync_inbox_delivery",
+    ),
+    (
+        "474_linear_sync_inbox_pending_index",
+        "idx_linear_sync_inbox_pending",
+    ),
 ];
 
 pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[
@@ -775,5 +805,35 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[
     (
         "462_issue_category_policy_workspace_category_index",
         "uq_workspace_issue_category_policy_workspace_category",
+    ),
+    ("466_linear_connection_id_index", "uq_linear_connection_id"),
+    (
+        "467_linear_connection_workspace_index",
+        "uq_linear_connection_workspace",
+    ),
+    (
+        "468_linear_connection_identity_index",
+        "uq_linear_connection_identity",
+    ),
+    (
+        "469_linear_oauth_state_id_index",
+        "uq_linear_oauth_state_id",
+    ),
+    (
+        "470_linear_oauth_state_hash_index",
+        "uq_linear_oauth_state_hash",
+    ),
+    (
+        "471_linear_oauth_state_expiry_index",
+        "idx_linear_oauth_state_expiry",
+    ),
+    ("472_linear_sync_inbox_id_index", "uq_linear_sync_inbox_id"),
+    (
+        "473_linear_sync_inbox_delivery_index",
+        "uq_linear_sync_inbox_delivery",
+    ),
+    (
+        "474_linear_sync_inbox_pending_index",
+        "idx_linear_sync_inbox_pending",
     ),
 ];

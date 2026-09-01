@@ -253,6 +253,36 @@ DELETE FROM vcs_connection WHERE vcs_connection.workspace_id = $1"#,
     Ok(r.rows_affected())
 }
 
+/// Deletes Linear's workspace-owned installation data in dependency order.
+/// Keep this explicit because the Linear tables intentionally have no foreign
+/// keys or cascading actions; all workspace teardown paths call this helper
+/// inside their existing transaction.
+pub async fn delete_workspace_linear_data(
+    executor: &mut sqlx::PgConnection,
+    workspace_id: Uuid,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"DELETE FROM linear_sync_inbox
+           WHERE connection_id IN (
+               SELECT id FROM linear_connection WHERE workspace_id = $1
+           )"#,
+    )
+    .bind(workspace_id)
+    .execute(&mut *executor)
+    .await?;
+
+    sqlx::query(r#"DELETE FROM linear_oauth_state WHERE workspace_id = $1"#)
+        .bind(workspace_id)
+        .execute(&mut *executor)
+        .await?;
+
+    sqlx::query(r#"DELETE FROM linear_connection WHERE workspace_id = $1"#)
+        .bind(workspace_id)
+        .execute(&mut *executor)
+        .await?;
+    Ok(())
+}
+
 pub async fn delete_workspace_issue_roots(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     workspace_id: Uuid,

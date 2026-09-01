@@ -67,6 +67,11 @@ struct VcsWebhookConfig {
     secret_box: Option<patchbay_util::secretbox::SecretBox>,
 }
 
+struct LinearInstallationConfig {
+    enabled: bool,
+    secret_box: Option<patchbay_util::secretbox::SecretBox>,
+}
+
 struct MetricsRuntime {
     shutdown: tokio_util::sync::CancellationToken,
     task: tokio::task::JoinHandle<()>,
@@ -132,6 +137,28 @@ impl VcsWebhookConfig {
         Self {
             enabled: false,
             secret_box: None,
+        }
+    }
+}
+
+impl LinearInstallationConfig {
+    fn from_config(
+        cfg: &patchbay_config::Config,
+        flags: &dyn patchbay_service::feature_flags::FlagSource,
+    ) -> Self {
+        let enabled = cfg.integrations.linear_integration_enabled.as_deref() == Some("true")
+            && patchbay_service::feature_flags::linear_installation_foundation_enabled(flags);
+        let secret_box = patchbay_util::secretbox::load_key("PATCHBAY_LINEAR_SECRET_KEY")
+            .ok()
+            .and_then(|key| patchbay_util::secretbox::SecretBox::new(&key).ok());
+        if enabled && secret_box.is_none() {
+            tracing::warn!(
+                "Linear installation foundation enabled without PATCHBAY_LINEAR_SECRET_KEY"
+            );
+        }
+        Self {
+            enabled,
+            secret_box,
         }
     }
 }
@@ -342,6 +369,7 @@ async fn build_production_router(
     vcs: VcsWebhookConfig,
 ) -> anyhow::Result<ProductionApp> {
     let feature_flags = Arc::new(patchbay_service::feature_flags::ConfiguredFlags::from_env()?);
+    let linear = LinearInstallationConfig::from_config(cfg, feature_flags.as_ref());
     let entitlements = automation_entitlements(cfg);
     let attachment_download =
         patchbay_handler::state::AttachmentDownloadSettings::from_config(cfg).await?;
@@ -385,6 +413,7 @@ async fn build_production_router(
     .with_slack_history_from_env()
     .with_llm_from_config(&cfg.llm)?
     .with_composio_from_config(cfg)
+    .with_linear_integration(linear.enabled, linear.secret_box)
     .with_public_config(patchbay_handler::config::PublicConfigSettings::from_config(
         cfg,
         cfg.storage.cloudfront_domain.clone().unwrap_or_default(),

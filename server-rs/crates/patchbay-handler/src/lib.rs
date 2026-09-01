@@ -59,6 +59,7 @@ pub mod issue_status;
 pub mod issue_view;
 pub mod issue_view_preference;
 pub mod label;
+pub mod linear;
 pub mod mcp_merge;
 pub mod me;
 pub mod notification;
@@ -363,6 +364,22 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
             ),
         )))
         .merge(formal_guard(vcs::admin_router().route_layer(
+            middleware::from_fn_with_state(
+                WorkspaceGuardState::from_url_with_roles(
+                    state.pool.clone(),
+                    "id",
+                    vec!["owner".into(), "admin".into()],
+                ),
+                patchbay_middleware::workspace::require_workspace,
+            ),
+        )))
+        .merge(formal_guard(linear::member_router().route_layer(
+            middleware::from_fn_with_state(
+                WorkspaceGuardState::from_url(state.pool.clone(), "id"),
+                patchbay_middleware::workspace::require_workspace,
+            ),
+        )))
+        .merge(formal_guard(linear::admin_router().route_layer(
             middleware::from_fn_with_state(
                 WorkspaceGuardState::from_url_with_roles(
                     state.pool.clone(),
@@ -697,6 +714,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         .merge(contact_sales)
         .merge(stripe_webhooks)
         .merge(vcs_webhook::router())
+        .merge(linear::public_router())
         .merge(composio::public_router().with_state::<HandlerState>(composio_state))
         .merge(plugin_action)
         .merge(authenticated)

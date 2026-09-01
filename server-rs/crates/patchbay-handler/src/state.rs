@@ -500,6 +500,10 @@ pub struct HandlerState {
     /// usable key, matching Go's deployment boundary.
     pub vcs_integration_enabled: bool,
     pub vcs_secret_box: Option<patchbay_util::secretbox::SecretBox>,
+    /// Linear installation foundation gate and the master key used to
+    /// encrypt OAuth access/refresh tokens at rest.
+    pub linear_integration_enabled: bool,
+    pub linear_secret_box: Option<patchbay_util::secretbox::SecretBox>,
     /// Daemon WebSocket hub (patchbay-daemon). `None` only in tests — the WS
     /// endpoint reports 503 and daemons fall back to HTTP polling.
     pub daemon_hub: Option<Arc<patchbay_daemon::hub::DaemonHub>>,
@@ -694,6 +698,8 @@ impl HandlerState {
             rate_limit_client: None,
             vcs_integration_enabled: false,
             vcs_secret_box: None,
+            linear_integration_enabled: false,
+            linear_secret_box: None,
             daemon_hub: Some(daemon_hub),
             daemon_notifier,
             attachment_storage: None,
@@ -1280,6 +1286,16 @@ impl HandlerState {
     ) -> Self {
         self.vcs_integration_enabled = enabled;
         self.vcs_secret_box = secret_box;
+        self
+    }
+
+    pub fn with_linear_integration(
+        mut self,
+        enabled: bool,
+        secret_box: Option<patchbay_util::secretbox::SecretBox>,
+    ) -> Self {
+        self.linear_integration_enabled = enabled;
+        self.linear_secret_box = secret_box;
         self
     }
 }

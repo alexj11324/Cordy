@@ -1762,6 +1762,57 @@ pub struct WorkProductRelation {
     pub workspace_id: Uuid,
 }
 
+/// OAuth installation row for one Patchbay workspace. Token columns contain
+/// secretbox ciphertext and are intentionally not serializable.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct LinearConnection {
+    pub access_token_encrypted: String,
+    pub actor_id: String,
+    pub created_at: DateTime<Utc>,
+    pub created_by_id: Uuid,
+    pub id: Uuid,
+    pub last_error: Option<String>,
+    pub last_success_at: Option<DateTime<Utc>>,
+    pub organization_id: String,
+    pub organization_name: String,
+    pub refresh_token_encrypted: String,
+    pub scopes: serde_json::Value,
+    pub status: String,
+    pub token_expires_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub webhook_id: Option<String>,
+    pub workspace_id: Uuid,
+}
+
+/// One-time PKCE state. The verifier is encrypted before it reaches the DB.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct LinearOAuthState {
+    pub code_verifier_encrypted: String,
+    pub consumed_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+    pub id: Uuid,
+    pub redirect_uri: String,
+    pub state_hash: String,
+    pub user_id: Uuid,
+    pub workspace_id: Uuid,
+}
+
+/// Durable Webhook receipt. Issue processing is deliberately not part of the
+/// installation foundation, but a receipt must survive the HTTP request.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct LinearSyncInbox {
+    pub attempts: i32,
+    pub connection_id: Uuid,
+    pub delivery_id: String,
+    pub event_type: String,
+    pub id: Uuid,
+    pub last_error: Option<String>,
+    pub payload: serde_json::Value,
+    pub processed_at: Option<DateTime<Utc>>,
+    pub received_at: DateTime<Utc>,
+}
+
 /// Server-persisted execution provenance used by the post-run branch
 /// discovery path. One task may have multiple rows, one per exact repository
 /// checkout/workspace key. The task id is the ownership boundary: callers can

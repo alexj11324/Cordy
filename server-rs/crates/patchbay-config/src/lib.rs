@@ -197,6 +197,17 @@ pub struct IntegrationsConfig {
     pub wecom_trace: Option<String>,
     /// `PATCHBAY_VCS_INTEGRATION_ENABLED`.
     pub vcs_integration_enabled: Option<String>,
+    /// Linear OAuth installation foundation. The runtime additionally
+    /// requires the `linear_installation_foundation` feature flag.
+    pub linear_integration_enabled: Option<String>,
+    pub linear_client_id: Option<String>,
+    pub linear_client_secret: Option<String>,
+    pub linear_auth_url: Option<String>,
+    pub linear_token_url: Option<String>,
+    pub linear_revoke_url: Option<String>,
+    pub linear_graphql_url: Option<String>,
+    pub linear_redirect_uri: Option<String>,
+    pub linear_webhook_secret: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
@@ -433,6 +444,42 @@ impl Config {
             &mut self.integrations.vcs_integration_enabled,
             "PATCHBAY_VCS_INTEGRATION_ENABLED",
         );
+        env_str(
+            &mut self.integrations.linear_integration_enabled,
+            "PATCHBAY_LINEAR_INTEGRATION_ENABLED",
+        );
+        env_str(
+            &mut self.integrations.linear_client_id,
+            "PATCHBAY_LINEAR_CLIENT_ID",
+        );
+        env_str(
+            &mut self.integrations.linear_client_secret,
+            "PATCHBAY_LINEAR_CLIENT_SECRET",
+        );
+        env_str(
+            &mut self.integrations.linear_auth_url,
+            "PATCHBAY_LINEAR_AUTH_URL",
+        );
+        env_str(
+            &mut self.integrations.linear_token_url,
+            "PATCHBAY_LINEAR_TOKEN_URL",
+        );
+        env_str(
+            &mut self.integrations.linear_revoke_url,
+            "PATCHBAY_LINEAR_REVOKE_URL",
+        );
+        env_str(
+            &mut self.integrations.linear_graphql_url,
+            "PATCHBAY_LINEAR_GRAPHQL_URL",
+        );
+        env_str(
+            &mut self.integrations.linear_redirect_uri,
+            "PATCHBAY_LINEAR_REDIRECT_URI",
+        );
+        env_str(
+            &mut self.integrations.linear_webhook_secret,
+            "PATCHBAY_LINEAR_WEBHOOK_SECRET",
+        );
 
         // entitlement / fleet
         env_str(
@@ -501,6 +548,15 @@ mod tests {
             "CLERK_AUTHORIZED_PARTIES",
             "PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN",
             "PATCHBAY_LLM_MAX_RETRIES",
+            "PATCHBAY_LINEAR_INTEGRATION_ENABLED",
+            "PATCHBAY_LINEAR_CLIENT_ID",
+            "PATCHBAY_LINEAR_CLIENT_SECRET",
+            "PATCHBAY_LINEAR_AUTH_URL",
+            "PATCHBAY_LINEAR_TOKEN_URL",
+            "PATCHBAY_LINEAR_REVOKE_URL",
+            "PATCHBAY_LINEAR_GRAPHQL_URL",
+            "PATCHBAY_LINEAR_REDIRECT_URI",
+            "PATCHBAY_LINEAR_WEBHOOK_SECRET",
         ] {
             std::env::remove_var(var);
         }
@@ -515,7 +571,26 @@ mod tests {
         assert_eq!(cfg.database.min_connections, 5);
         assert_eq!(cfg.database.max_connections, 25);
         assert!(cfg.database.url.is_none());
+        assert!(cfg.integrations.linear_client_id.is_none());
         assert!(!cfg.is_production());
+    }
+
+    #[test]
+    fn linear_integration_env_is_loaded_without_defaulting_to_enabled() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        clear_ambient_env();
+        std::env::set_var("PATCHBAY_LINEAR_CLIENT_ID", "client-id");
+        std::env::set_var("PATCHBAY_LINEAR_INTEGRATION_ENABLED", "true");
+        let cfg = Config::load(None).unwrap();
+        assert_eq!(
+            cfg.integrations.linear_client_id.as_deref(),
+            Some("client-id")
+        );
+        assert_eq!(
+            cfg.integrations.linear_integration_enabled.as_deref(),
+            Some("true")
+        );
+        clear_ambient_env();
     }
 
     #[test]

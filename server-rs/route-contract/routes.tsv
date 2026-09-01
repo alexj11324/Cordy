@@ -41,6 +41,7 @@ DELETE	/api/workspaces/{}/dingtalk/installations/{}
 DELETE	/api/workspaces/{}/github/installations/{}
 DELETE	/api/workspaces/{}/invitations/{}
 DELETE	/api/workspaces/{}/lark/installations/{}
+DELETE	/api/workspaces/{}/linear
 DELETE	/api/workspaces/{}/mcp-servers/{}
 DELETE	/api/workspaces/{}/members/{}
 DELETE	/api/workspaces/{}/plugins/{}
@@ -164,6 +165,7 @@ GET	/api/issues/{}/usage
 GET	/api/issues/{}/work-products
 GET	/api/labels
 GET	/api/labels/{}
+GET	/api/linear/oauth/callback
 GET	/api/me
 GET	/api/notification-preferences
 GET	/api/pins
@@ -213,6 +215,7 @@ GET	/api/workspaces/{}/github/installations/{}/repositories
 GET	/api/workspaces/{}/invitations
 GET	/api/workspaces/{}/lark/install/{}/status
 GET	/api/workspaces/{}/lark/installations
+GET	/api/workspaces/{}/linear
 GET	/api/workspaces/{}/mcp-servers
 GET	/api/workspaces/{}/messaging/usage
 GET	/api/workspaces/{}/members
@@ -404,6 +407,7 @@ POST	/api/v1/plugin/hooks/{}
 POST	/api/v1/plugin/issues/{}/comments
 POST	/api/webhooks/automations/{}
 POST	/api/webhooks/github
+POST	/api/webhooks/linear
 POST	/api/webhooks/stripe
 POST	/api/webhooks/vcs/{}
 POST	/api/wecom/binding/redeem
@@ -411,6 +415,7 @@ POST	/api/weixin/binding/redeem
 POST	/api/workspaces
 POST	/api/workspaces/{}/dingtalk/install/byo
 POST	/api/workspaces/{}/lark/install/begin
+POST	/api/workspaces/{}/linear/connect
 POST	/api/workspaces/{}/leave
 POST	/api/workspaces/{}/mcp-servers
 POST	/api/workspaces/{}/members

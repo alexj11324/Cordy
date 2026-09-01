@@ -15,6 +15,7 @@ use crate::state::HandlerState;
 pub struct PublicConfigSettings {
     pub cdn_domain: String,
     pub cdn_signed: bool,
+    pub public_url: String,
     pub server_version: String,
     pub allow_signup: bool,
     pub daemon_server_url: String,
@@ -58,6 +59,7 @@ impl Default for PublicConfigSettings {
         Self {
             cdn_domain: String::new(),
             cdn_signed: false,
+            public_url: String::new(),
             server_version: String::new(),
             allow_signup: true,
             daemon_server_url: String::new(),
@@ -96,6 +98,7 @@ impl PublicConfigSettings {
         Self {
             cdn_domain,
             cdn_signed,
+            public_url: normalize_public_url(config.urls.public_url.as_deref().unwrap_or_default()),
             server_version,
             allow_signup: config.auth.allow_signup.as_deref().map(str::trim) != Some("false"),
             daemon_server_url,
