@@ -4531,7 +4531,7 @@ mod tests {
             "taskId": task_id,
         }))
         .unwrap();
-        assert_eq!(failed.body, "Patchbay Agent failed: provider unavailable");
+        assert_eq!(failed.body, "provider unavailable");
     }
 
     #[test]
