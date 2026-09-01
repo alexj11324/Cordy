@@ -106,6 +106,26 @@ type AgentSkill struct {
 	Enabled   bool               `json:"enabled"`
 }
 
+type AgentTaskExecutionProvenance struct {
+	TaskID                 pgtype.UUID        `json:"task_id"`
+	WorkspaceID            pgtype.UUID        `json:"workspace_id"`
+	RunID                  pgtype.UUID        `json:"run_id"`
+	RepoIdentity           string             `json:"repo_identity"`
+	ExecutionWorkspace     string             `json:"execution_workspace"`
+	HeadBranch             pgtype.Text        `json:"head_branch"`
+	HeadSha                pgtype.Text        `json:"head_sha"`
+	HeadState              string             `json:"head_state"`
+	StartedAt              pgtype.Timestamptz `json:"started_at"`
+	FinishedAt             pgtype.Timestamptz `json:"finished_at"`
+	DiscoveryStatus        string             `json:"discovery_status"`
+	DiscoveryLeaseID       pgtype.UUID        `json:"discovery_lease_id"`
+	DiscoveryMatchCount    int32              `json:"discovery_match_count"`
+	DiscoveryReason        pgtype.Text        `json:"discovery_reason"`
+	DiscoveryWorkProductID pgtype.UUID        `json:"discovery_work_product_id"`
+	DiscoveryAt            pgtype.Timestamptz `json:"discovery_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+}
+
 type AgentTaskQueue struct {
 	ID                    pgtype.UUID        `json:"id"`
 	AgentID               pgtype.UUID        `json:"agent_id"`
@@ -1611,6 +1631,39 @@ type WebhookDelivery struct {
 	DispatchAttempts       int32              `json:"dispatch_attempts"`
 	ReasonCode             pgtype.Text        `json:"reason_code"`
 	ReplayIdempotencyKey   pgtype.Text        `json:"replay_idempotency_key"`
+}
+
+type WorkProduct struct {
+	ID                 pgtype.UUID        `json:"id"`
+	WorkspaceID        pgtype.UUID        `json:"workspace_id"`
+	Kind               string             `json:"kind"`
+	Provider           string             `json:"provider"`
+	ExternalIdentity   string             `json:"external_identity"`
+	ExternalUrl        pgtype.Text        `json:"external_url"`
+	ProviderRecordType pgtype.Text        `json:"provider_record_type"`
+	ProviderRecordID   pgtype.UUID        `json:"provider_record_id"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
+type WorkProductRelation struct {
+	ID             pgtype.UUID        `json:"id"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	WorkProductID  pgtype.UUID        `json:"work_product_id"`
+	IssueID        pgtype.UUID        `json:"issue_id"`
+	TaskID         pgtype.UUID        `json:"task_id"`
+	RunID          pgtype.UUID        `json:"run_id"`
+	RelationKey    string             `json:"relation_key"`
+	RelationSource string             `json:"relation_source"`
+	AttachedByType string             `json:"attached_by_type"`
+	AttachedByID   pgtype.UUID        `json:"attached_by_id"`
+	AttachedAt     pgtype.Timestamptz `json:"attached_at"`
+	CloseIntent    bool               `json:"close_intent"`
+	DetachedAt     pgtype.Timestamptz `json:"detached_at"`
+	DetachedByType pgtype.Text        `json:"detached_by_type"`
+	DetachedByID   pgtype.UUID        `json:"detached_by_id"`
+	DetachedTaskID pgtype.UUID        `json:"detached_task_id"`
+	DetachedRunID  pgtype.UUID        `json:"detached_run_id"`
 }
 
 type Workspace struct {
