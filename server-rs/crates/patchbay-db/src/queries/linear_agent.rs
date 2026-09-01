@@ -245,6 +245,7 @@ pub async fn correlate_linear_agent_session_dispatch(
     Ok(result.rows_affected() == 1)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn release_linear_agent_session_dispatch(
     executor: impl Executor<'_, Database = Postgres>,
     workspace_id: Uuid,
@@ -444,6 +445,7 @@ pub async fn linear_agent_terminal_task_matches(
     .await?)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn mark_linear_agent_session_terminal(
     executor: impl Executor<'_, Database = Postgres>,
     workspace_id: Uuid,
