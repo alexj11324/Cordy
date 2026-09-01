@@ -30,7 +30,7 @@ const OAUTH_STATE_TTL: chrono::Duration = chrono::Duration::minutes(10);
 const SLACK_HTTP_TIMEOUT: Duration = Duration::from_secs(15);
 const SLACK_INGRESS_ACCEPT_TIMEOUT: Duration = Duration::from_millis(2500);
 const SLACK_SIGNATURE_MAX_AGE_SECS: i64 = 5 * 60;
-const SLACK_BOT_SCOPES: &str = "app_mentions:read,channels:history,chat:write,files:read,groups:history,im:history,mpim:history,reactions:write,users:read";
+const SLACK_BOT_SCOPES: &str = "app_mentions:read,channels:history,chat:write,commands,files:read,groups:history,im:history,mpim:history,reactions:write,users:read";
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct BeginInstallInput {
@@ -999,5 +999,10 @@ mod tests {
         assert!(can_manage("admin"));
         assert!(!can_manage("member"));
         assert!(!can_manage("guest"));
+    }
+
+    #[test]
+    fn managed_oauth_requests_slash_command_scope() {
+        assert!(SLACK_BOT_SCOPES.split(',').any(|scope| scope == "commands"));
     }
 }
