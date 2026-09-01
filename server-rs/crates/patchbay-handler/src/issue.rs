@@ -212,7 +212,9 @@ fn push_search_membership(
                 .push(" OR LOWER(COALESCE(i.description,'')) LIKE ")
                 .push_bind(pattern.clone())
                 .push(LIKE_ESCAPE_CLAUSE)
-                .push(" OR EXISTS(SELECT 1 FROM comment c WHERE c.issue_id=i.id AND c.workspace_id=")
+                .push(
+                    " OR EXISTS(SELECT 1 FROM comment c WHERE c.issue_id=i.id AND c.workspace_id=",
+                )
                 .push_bind(workspace_id)
                 .push(" AND LOWER(c.content) LIKE ")
                 .push_bind(pattern.clone())
@@ -1233,7 +1235,9 @@ fn push_table_filters(
                 .push(" OR LOWER(COALESCE(i.description,'')) LIKE ")
                 .push_bind(pattern.clone())
                 .push(LIKE_ESCAPE_CLAUSE)
-                .push(" OR EXISTS(SELECT 1 FROM comment c WHERE c.issue_id=i.id AND c.workspace_id=")
+                .push(
+                    " OR EXISTS(SELECT 1 FROM comment c WHERE c.issue_id=i.id AND c.workspace_id=",
+                )
                 .push_bind(workspace_id)
                 .push(" AND LOWER(c.content) LIKE ")
                 .push_bind(pattern.clone())
@@ -9216,8 +9220,7 @@ mod tests {
             top_level_only: true,
             scheduled: false,
         };
-        let mut query =
-            QueryBuilder::<Postgres>::new("SELECT COUNT(*) FROM issue i WHERE ");
+        let mut query = QueryBuilder::<Postgres>::new("SELECT COUNT(*) FROM issue i WHERE ");
 
         push_issue_filters(&mut query, &filters);
 
