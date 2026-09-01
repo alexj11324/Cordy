@@ -67,7 +67,7 @@ impl IssueService {
     ) -> Result<Issue, ExternalIssueError> {
         let mut tx = self.pool.begin().await?;
         let applied = self
-            .apply_external_patch_in_transaction(&mut *tx, workspace_id, issue_id, command)
+            .apply_external_patch_in_transaction(&mut tx, workspace_id, issue_id, command)
             .await?;
         tx.commit().await?;
         self.publish_external_issue_apply(&applied).await;
@@ -330,7 +330,7 @@ impl IssueService {
             actor_type: "system".to_string(),
             actor_id: String::new(),
             payload: json!({
-                "issue": issue_to_map_with_category(&updated, &prefix, &category),
+                "issue": issue_to_map_with_category(updated, &prefix, &category),
                 "external_source": source.as_str(),
                 "source_event_id": source_event_id,
                 "owner_changed": previous.owner_type != updated.owner_type
@@ -378,7 +378,7 @@ impl IssueService {
             let enqueue = if trigger.executor_type == "team" {
                 self.task_svc
                     .enqueue_task_for_team_leader_with_handoff(
-                        &updated,
+                        updated,
                         trigger.agent_id,
                         updated.executor_id.unwrap_or_default(),
                         "",
@@ -387,7 +387,7 @@ impl IssueService {
                     .await
             } else {
                 self.task_svc
-                    .enqueue_task_for_issue_with_handoff(&updated, "", None)
+                    .enqueue_task_for_issue_with_handoff(updated, "", None)
                     .await
             };
             if let Err(error) = enqueue {
