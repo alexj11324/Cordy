@@ -129,11 +129,34 @@ impl InstallService {
     /// new agent; a LIVE owner trips the unique index and is refused with an
     /// accurate conflict sentinel.
     pub async fn persist_install(&self, p: &InstallPersist) -> anyhow::Result<ChannelInstallation> {
+        self.persist_install_with_limit(p, None).await
+    }
+
+    /// Persists an installation while optionally enforcing the hosted
+    /// workspace cap in the same transaction as the upsert.
+    pub async fn persist_install_with_limit(
+        &self,
+        p: &InstallPersist,
+        installation_limit: Option<i64>,
+    ) -> anyhow::Result<ChannelInstallation> {
         let mut tx = self
             .pool
             .begin()
             .await
             .map_err(|e| anyhow::anyhow!("begin install tx: {e:#}"))?;
+        if let Some(limit) = installation_limit {
+            let allowed = patchbay_db::queries::channel::channel_installation_limit_allows(
+                &mut tx,
+                p.ws_id,
+                TYPE_DINGTALK,
+                (!p.agent_id.is_nil()).then_some(p.agent_id),
+                limit,
+            )
+            .await?;
+            if !allowed {
+                anyhow::bail!("hosted messaging installation limit reached");
+            }
+        }
 
         // A replacement deletes and recreates the unique (workspace, agent,
         // channel) row. Serialize the logical slot across that gap so

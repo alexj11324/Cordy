@@ -36,6 +36,7 @@ pub mod channel;
 pub mod generation;
 pub mod handler;
 pub mod history;
+pub mod localization;
 pub mod member_text;
 pub mod message;
 pub mod registry;
@@ -46,6 +47,10 @@ pub use channel::{BuiltChannel, Channel, Config, Factory, FactoryFuture, Type};
 pub use generation::{GenerationExpired, GenerationHandle, GenerationRegistry, LeaseGeneration};
 pub use handler::{HandlerFuture, InboundHandler};
 pub use history::{HistoryMessage, HistoryOptions, HistoryPage, HistoryRole};
+pub use localization::{
+    locale_from_raw, quota_exceeded_notice, quota_exceeded_notice_for_message,
+    quota_exceeded_notice_for_text,
+};
 pub use member_text::break_markdown_link_adjacency;
 pub use message::{
     ChatType, InboundMessage, MediaRef, MsgType, OutboundMessage, ReplyCtx, SendResult, Source,

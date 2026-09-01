@@ -9,6 +9,7 @@
 use patchbay_channel::{ChatType, InboundMessage, MsgType, ReplyCtx, Source};
 
 use crate::raw::{is_fetchable_slack_file_url, SlackRawEvent, SlackRawFile};
+use crate::slash_command::SlashCommand;
 use crate::TYPE_SLACK;
 
 /// One Slack file object as it appears inside an events payload. Only the
@@ -211,6 +212,62 @@ fn build_inbound(
     }
 }
 
+/// Converts a verified managed `/agents` slash command into the same
+/// provider-neutral envelope as a Socket Mode message. Slack intercepts slash
+/// commands before Events API delivery, so the signed command endpoint must
+/// explicitly re-enter the shared router for conversation-level Agent routing.
+pub fn inbound_from_agents_command(cmd: &SlashCommand) -> Option<InboundMessage> {
+    if !cmd.command.trim().eq_ignore_ascii_case("/agents")
+        || cmd.trigger_id.trim().is_empty()
+        || cmd.team_id.trim().is_empty()
+        || cmd.api_app_id.trim().is_empty()
+        || cmd.channel_id.trim().is_empty()
+        || cmd.user_id.trim().is_empty()
+    {
+        return None;
+    }
+    let text = if cmd.text.trim().is_empty() {
+        "/agents".to_string()
+    } else {
+        format!("/agents {}", cmd.text.trim())
+    };
+    let chat_type = if cmd.channel_id.starts_with('D') {
+        ChatType::p2p()
+    } else {
+        ChatType::group()
+    };
+    let raw = serde_json::to_value(SlackRawEvent {
+        team_id: cmd.team_id.clone(),
+        api_app_id: cmd.api_app_id.clone(),
+        event_type: "slash_command".to_string(),
+        subtype: String::new(),
+        channel_type: chat_type.0.clone(),
+        files: Vec::new(),
+    })
+    .unwrap_or(serde_json::Value::Null);
+    Some(InboundMessage {
+        event_id: cmd.trigger_id.clone(),
+        message_id: cmd.trigger_id.clone(),
+        r#type: MsgType::text(),
+        text: text.clone(),
+        command_text: text,
+        media_refs: Vec::new(),
+        reply_to: None,
+        addressed_to_bot: true,
+        source: Source {
+            channel_type: patchbay_channel::Type(TYPE_SLACK.to_string()),
+            chat_id: cmd.channel_id.clone(),
+            chat_type,
+            sender_id: cmd.user_id.clone(),
+            sender_stable_id: String::new(),
+            thread_id: String::new(),
+        },
+        force_fresh: false,
+        skip_agent_run: false,
+        raw,
+    })
+}
+
 /// Normalizes a Slack message event. Returns None for events that must not
 /// reach the core: the bot's own messages and other bots' messages (loop
 /// guard), and edits/deletes/joins and similar subtyped system messages (only
@@ -373,6 +430,35 @@ mod tests {
         assert_eq!(slack_chat_type("C123", "channel"), ChatType::group());
         assert_eq!(slack_chat_type("G123", "mpim"), ChatType::group());
         assert_eq!(slack_chat_type("C123", ""), ChatType::group());
+    }
+
+    #[test]
+    fn agents_slash_command_reenters_the_shared_router() {
+        let command = SlashCommand {
+            command: "/agents".into(),
+            text: "2".into(),
+            user_id: "U1".into(),
+            team_id: "T1".into(),
+            api_app_id: "A1".into(),
+            channel_id: "C1".into(),
+            trigger_id: "trigger-1".into(),
+            response_url: String::new(),
+        };
+        let inbound = inbound_from_agents_command(&command).expect("valid command");
+        assert_eq!(inbound.event_id, "trigger-1");
+        assert_eq!(inbound.command_text, "/agents 2");
+        assert_eq!(inbound.source.chat_id, "C1");
+        assert_eq!(inbound.source.chat_type, ChatType::group());
+        let raw = crate::raw::decode_slack_raw(&inbound).expect("slack raw");
+        assert_eq!(raw.team_id, "T1");
+        assert_eq!(raw.api_app_id, "A1");
+        assert_eq!(raw.event_type, "slash_command");
+
+        let invalid = SlashCommand {
+            trigger_id: String::new(),
+            ..command
+        };
+        assert!(inbound_from_agents_command(&invalid).is_none());
     }
 
     #[test]

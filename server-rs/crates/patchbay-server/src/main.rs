@@ -20,10 +20,12 @@ static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 #[export_name = "malloc_conf"]
 pub static malloc_conf: &[u8] = b"prof:true,prof_active:true,lg_prof_sample:19\0";
 
+mod channel_bootstrap;
 mod channel_runtime;
 mod http_serve;
 mod profiling;
 mod realtime_runtime;
+mod slack_token_rotation;
 
 const HTTP_DRAIN_TIMEOUT: Duration = Duration::from_secs(30);
 const LEGACY_CONFIG_FILENAME: &str = "cordy.toml"; // legacy-brand-compat
@@ -55,6 +57,7 @@ struct ProductionApp {
         Option<patchbay_handler::ordered_event_side_effects::OrderedEventSideEffectsRuntime>,
     automation_event_listeners:
         Option<patchbay_handler::automation_listeners::AutomationEventListenersRuntime>,
+    slack_token_rotation: Option<tokio::task::JoinHandle<()>>,
     task_side_effects: Option<patchbay_service::task_service::TaskSideEffectRuntime>,
     analytics: Arc<dyn patchbay_analytics::AnalyticsClient>,
 }
@@ -495,6 +498,11 @@ async fn build_production_router(
         lark_backfill_metrics,
     )
     .await?;
+    let slack_token_rotation =
+        slack_token_rotation::start(state.pool.clone(), cfg, state.channel_cancel.clone());
+    let state = state
+        .with_channel_inbound_handler(channel_runtime.inbound_handler())
+        .with_slack_slash_processor(channel_runtime.slack_slash_processor());
     let scheduler =
         patchbay_scheduler::production_manager(state.pool.clone(), state.automations.clone())?;
     let scheduler = scheduler.start(root_cancel.child_token())?;
@@ -515,6 +523,7 @@ async fn build_production_router(
         github_snapshots,
         ordered_event_side_effects,
         automation_event_listeners,
+        slack_token_rotation,
         task_side_effects,
         analytics,
     })
@@ -736,6 +745,7 @@ async fn main() -> anyhow::Result<()> {
         github_snapshots,
         ordered_event_side_effects,
         automation_event_listeners,
+        slack_token_rotation,
         task_side_effects,
         analytics,
     } = app;
@@ -769,6 +779,16 @@ async fn main() -> anyhow::Result<()> {
     // stopping maintenance workers. Channel adapters are producers and must
     // drain while realtime fanout is still accepting their final events.
     channel_runtime.shutdown().await;
+    if let Some(mut task) = slack_token_rotation {
+        if tokio::time::timeout(Duration::from_secs(3), &mut task)
+            .await
+            .is_err()
+        {
+            task.abort();
+            let _ = task.await;
+            tracing::warn!("managed Slack token rotation did not stop before deadline");
+        }
+    }
     // In particular, a heartbeat must not queue an ID after the batched
     // scheduler has performed its final flush.
     root_cancel.cancel();

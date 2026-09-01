@@ -84,6 +84,7 @@ pub mod runtime_usage;
 pub mod session;
 pub mod skill;
 mod skill_import;
+pub mod slack_managed;
 pub mod state;
 mod subscriber_activity_listeners;
 pub mod task;
@@ -691,6 +692,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         .merge(avatar::router())
         .merge(automation_webhook::router())
         .merge(github::public_router())
+        .merge(slack_managed::public_router())
         .merge(config::router())
         .merge(contact_sales)
         .merge(stripe_webhooks)
@@ -981,7 +983,7 @@ mod tests {
             Request::post("/api/issues/CORD-14/pull-requests")
                 .header("content-type", "application/json")
                 .body(Body::from(
-                    r#"{"url":"https://github.com/patchbay-ai/patchbay/pull/24"}"#,
+                    r#"{"url":"https://github.com/alexj11324/Cordy/pull/24"}"#,
                 ))
                 .unwrap(),
             Request::post("/api/properties")
@@ -1006,7 +1008,7 @@ mod tests {
             Request::post("/api/projects/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/resources")
                 .header("content-type", "application/json")
                 .body(Body::from(
-                    r#"{"resource_type":"github_repo","resource_ref":{"url":"https://github.com/patchbay-ai/patchbay"}}"#,
+                    r#"{"resource_type":"github_repo","resource_ref":{"url":"https://github.com/alexj11324/Cordy"}}"#,
                 ))
                 .unwrap(),
             Request::put("/api/projects/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/resources/018f03a0-c4d2-7a37-ae4d-5aa45de12f12")

@@ -270,7 +270,7 @@ impl UpdateExecutor {
     }
 
     async fn fetch_latest_release_tag(&self) -> Result<String> {
-        let endpoint = "https://api.github.com/repos/patchbay-ai/patchbay/releases/latest";
+        let endpoint = "https://api.github.com/repos/alexj11324/Cordy/releases/latest";
         let response = self
             .metadata_client
             .get(endpoint)
@@ -301,8 +301,7 @@ impl UpdateExecutor {
         download_timeout: Duration,
     ) -> Result<String> {
         let tag = normalize_release_tag(target_version);
-        let endpoint =
-            format!("https://api.github.com/repos/patchbay-ai/patchbay/releases/tags/{tag}");
+        let endpoint = format!("https://api.github.com/repos/alexj11324/Cordy/releases/tags/{tag}");
         let response = self
             .metadata_client
             .get(endpoint)

@@ -191,6 +191,8 @@ import type {
   ComposioConnectInitResponse,
   SlackInstallation,
   ListSlackInstallationsResponse,
+  BeginSlackOAuthRequest,
+  BeginSlackOAuthResponse,
   RegisterSlackBYORequest,
   RedeemSlackBindingTokenResponse,
   DingTalkGroupRoute,
@@ -212,6 +214,7 @@ import type {
   BeginWeixinInstallResponse,
   WeixinInstallStatusResponse,
   RedeemWeixinBindingTokenResponse,
+  MessagingQuotaUsage,
   Team,
   TeamMember,
   TeamMemberStatusListResponse,
@@ -379,6 +382,8 @@ import {
   BeginWeixinInstallResponseSchema,
   WeixinInstallStatusResponseSchema,
   RedeemWeixinBindingTokenResponseSchema,
+  MessagingQuotaUsageSchema,
+  EMPTY_MESSAGING_QUOTA_USAGE,
   EMPTY_LIST_WEIXIN_INSTALLATIONS_RESPONSE,
   EMPTY_BEGIN_WEIXIN_INSTALL_RESPONSE,
   EMPTY_WEIXIN_INSTALL_STATUS_RESPONSE,
@@ -4466,6 +4471,19 @@ export class ApiClient {
   }
 
   // Lark integration
+  /** Returns the server-authoritative hosted IM usage for this workspace. */
+  async getMessagingQuotaUsage(workspaceId: string): Promise<MessagingQuotaUsage> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/messaging/usage`,
+    );
+    return parseWithFallback(
+      raw,
+      MessagingQuotaUsageSchema,
+      EMPTY_MESSAGING_QUOTA_USAGE,
+      { endpoint: "GET /api/workspaces/:id/messaging/usage" },
+    );
+  }
+
   async listLarkInstallations(workspaceId: string): Promise<ListLarkInstallationsResponse> {
     return this.fetch(`/api/workspaces/${workspaceId}/lark/installations`);
   }
@@ -4542,6 +4560,16 @@ export class ApiClient {
   // Slack integration (PB-3666)
   async listSlackInstallations(workspaceId: string): Promise<ListSlackInstallationsResponse> {
     return this.fetch(`/api/workspaces/${workspaceId}/slack/installations`);
+  }
+
+  async beginSlackOAuth(
+    workspaceId: string,
+    body: BeginSlackOAuthRequest,
+  ): Promise<BeginSlackOAuthResponse> {
+    return this.fetch(`/api/workspaces/${workspaceId}/slack/install/begin`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
   }
 
   // registerSlackBYO performs a bring-your-own-app install: the admin pastes the

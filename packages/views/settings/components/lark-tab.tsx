@@ -40,7 +40,11 @@ import { memberListOptions } from "@patchbay/core/workspace/queries";
 import { useActorName } from "@patchbay/core/workspace/hooks";
 import { larkInstallationsOptions, larkKeys } from "@patchbay/core/lark";
 import { api, ApiError } from "@patchbay/core/api";
-import type { LarkInstallation, LarkInstallStatusResponse } from "@patchbay/core/types";
+import {
+  isMessagingInstallationHealthy,
+  type LarkInstallation,
+  type LarkInstallStatusResponse,
+} from "@patchbay/core/types";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { useT } from "../../i18n";
 
@@ -219,6 +223,7 @@ function InstallationRow({
   // platform mark instead of being sent through the Agent avatar lookup.
   const { getAgentName } = useActorName();
   const isActive = installation.status === "active";
+  const isHealthy = isMessagingInstallationHealthy(installation);
   const agentName = installation.agent_id
     ? getAgentName(installation.agent_id)
     : t(($) => $.page.integrations_workspace_hub);
@@ -246,11 +251,15 @@ function InstallationRow({
                 ? t(($) => $.lark.region_lark)
                 : t(($) => $.lark.region_feishu)}
             </span>
-            {!isActive && (
+            {!isActive ? (
               <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
                 {t(($) => $.lark.revoked_badge)}
               </span>
-            )}
+            ) : !isHealthy ? (
+              <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
+                {t(($) => $.page.integrations_status)}
+              </span>
+            ) : null}
           </p>
           <p className="text-micro text-muted-foreground">
             {t(($) => $.lark.installed_at_label, {
@@ -281,7 +290,7 @@ function InstallationRow({
 //      the gate here mirrors that. `agentOwnerId` is what lets a
 //      non-admin owner through; when it is omitted the button stays
 //      workspace owner/admin-only.
-//   2. If this agent ALREADY has an active installation, they see
+//   2. If this agent ALREADY has a healthy installation, they see
 //      the "Connected + Manage in Lark" badge — regardless of
 //      install_supported. install_supported governs only whether NEW
 //      scan-installs can complete; already-installed bots stay manageable
@@ -370,14 +379,20 @@ export function LarkAgentBindButton({
       inst.status === "active",
   );
   if (existing) {
+    const healthy = isMessagingInstallationHealthy(existing);
     return onShowConnectedDetails ? (
       <LarkAgentBotStatusRow
         installation={existing}
         onClick={onShowConnectedDetails}
+        healthy={healthy}
         className={className}
       />
     ) : (
-      <LarkAgentBotConnectedBadge installation={existing} className={className} />
+      <LarkAgentBotConnectedBadge
+        installation={existing}
+        healthy={healthy}
+        className={className}
+      />
     );
   }
 
@@ -460,10 +475,12 @@ export function LarkAgentBindButton({
 function LarkAgentBotStatusRow({
   installation,
   onClick,
+  healthy,
   className,
 }: {
   installation: LarkInstallation;
   onClick: () => void;
+  healthy: boolean;
   className?: string;
 }) {
   const { t } = useT("settings");
@@ -477,13 +494,22 @@ function LarkAgentBotStatusRow({
       )}
       data-testid="lark-agent-bot-status"
     >
-      <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+      <span
+        className={cn(
+          "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
+          healthy ? "bg-emerald-500" : "bg-amber-500",
+        )}
+      />
       <span className="rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
         {installation.region === "lark"
           ? t(($) => $.lark.region_lark)
           : t(($) => $.lark.region_feishu)}
       </span>
-      <span className="truncate">{t(($) => $.lark.agent_bot_connected_label)}</span>
+      <span className="truncate">
+        {healthy
+          ? t(($) => $.lark.agent_bot_connected_label)
+          : t(($) => $.page.integrations_status)}
+      </span>
       <ChevronRight className="ml-auto h-3.5 w-3.5 shrink-0" />
     </button>
   );
@@ -518,9 +544,11 @@ function larkDevConsoleHost(region?: string): string {
 
 function LarkAgentBotConnectedBadge({
   installation,
+  healthy,
   className,
 }: {
   installation: LarkInstallation;
+  healthy: boolean;
   className?: string;
 }) {
   const { t } = useT("settings");
@@ -568,13 +596,22 @@ function LarkAgentBotConnectedBadge({
           and stops message delivery. */}
       <div className="flex items-center justify-between gap-3">
         <span className="inline-flex min-w-0 items-center gap-2 text-caption text-muted-foreground">
-          <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+          <span
+            className={cn(
+              "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
+              healthy ? "bg-emerald-500" : "bg-amber-500",
+            )}
+          />
           <span className="rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
             {installation.region === "lark"
               ? t(($) => $.lark.region_lark)
               : t(($) => $.lark.region_feishu)}
           </span>
-          <span className="truncate">{t(($) => $.lark.agent_bot_connected_label)}</span>
+          <span className="truncate">
+            {healthy
+              ? t(($) => $.lark.agent_bot_connected_label)
+              : t(($) => $.page.integrations_status)}
+          </span>
         </span>
         <Button
           variant="destructive"

@@ -1,0 +1,45 @@
+# Paste this file into Slack API Apps -> Create New App -> From a manifest.
+#
+# This is the self-hosted/BYO Socket Mode manifest. It does not contain a
+# callback URL: Slack opens the outbound Socket Mode connection to the server,
+# so a public Request URL or an OAuth redirect is not part of this flow.
+display_information:
+  name: Patchbay
+features:
+  app_home:
+    home_tab_enabled: false
+    messages_tab_enabled: true
+    messages_tab_read_only_enabled: false
+  bot_user:
+    display_name: Patchbay
+    always_online: true
+  slash_commands:
+    - command: /issue
+      description: Create a Patchbay issue
+      usage_hint: "[description]"
+oauth_config:
+  scopes:
+    bot:
+      - app_mentions:read
+      - channels:history
+      - files:read
+      - groups:history
+      - im:history
+      - mpim:history
+      - chat:write
+      - reactions:write
+      - users:read
+      - commands
+settings:
+  event_subscriptions:
+    bot_events:
+      - app_mention
+      - message.im
+      - message.channels
+      - message.groups
+      - message.mpim
+  interactivity:
+    is_enabled: false
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+  token_rotation_enabled: false

@@ -1,3 +1,8 @@
+import type {
+  MessagingInstallationRuntime,
+  MessagingInstallationSetup,
+} from "./messaging";
+
 /**
  * A WeCom smart-bot ("智能机器人" / aibot) installation, optionally bound to
  * a Patchbay agent. Wire shape mirrors `WecomInstallationResponse` in
@@ -14,6 +19,11 @@ export interface WecomInstallation {
   bot_id: string;
   installer_user_id: string;
   status: "active" | "revoked" | string;
+  installed_at?: string;
+  created_at?: string;
+  updated_at?: string;
+  runtime?: MessagingInstallationRuntime;
+  setup?: MessagingInstallationSetup;
 }
 
 export interface ListWecomInstallationsResponse {

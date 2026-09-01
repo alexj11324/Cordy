@@ -159,14 +159,17 @@ impl patchbay_channel_engine::resolvers::InstallationResolver for InstallationRe
         msg: &InboundMessage,
     ) -> anyhow::Result<ResolvedInstallation> {
         let raw = decode_slack_raw(msg)?;
-        // Route by the event's api_app_id: each BYO installation stores its
-        // real Slack app id in the routing-key slot (config->>'app_id'), and
-        // the per-installation Socket Mode connection only ever delivers
-        // events for its own app, so api_app_id uniquely identifies the
-        // installation.
-        let inst = get_channel_installation_by_app_id(&self.pool, TYPE_SLACK, &raw.api_app_id)
-            .await?
-            .ok_or(ResolverError::InstallationNotFound)?;
+        // Managed Slack installs one official app into many Slack workspaces,
+        // so route webhook events by app + team. Existing BYO Socket Mode rows
+        // continue to resolve by their real app id.
+        let managed_key = crate::config::managed_routing_key(&raw.api_app_id, &raw.team_id);
+        let inst =
+            match get_channel_installation_by_app_id(&self.pool, TYPE_SLACK, &managed_key).await? {
+                Some(inst) => inst,
+                None => get_channel_installation_by_app_id(&self.pool, TYPE_SLACK, &raw.api_app_id)
+                    .await?
+                    .ok_or(ResolverError::InstallationNotFound)?,
+            };
         if !installation_serves_team(&inst.config, &raw.team_id) {
             return Err(ResolverError::InstallationNotFound.into());
         }
