@@ -45,6 +45,10 @@ use crate::error::error_response;
 use crate::state::HandlerState;
 
 const PRIORITIES: &[&str] = &["urgent", "high", "medium", "low", "none"];
+// PostgreSQL's ESCAPE operand must evaluate to exactly one character. The
+// escaped string literal keeps that contract independent of
+// standard_conforming_strings.
+const LIKE_ESCAPE_CLAUSE: &str = r" ESCAPE E'\\'";
 
 pub fn router() -> Router<HandlerState> {
     Router::new()
@@ -204,7 +208,21 @@ fn push_search_membership(
             if index > 0 {
                 query.push(" AND ");
             }
-            query.push("(LOWER(i.title) LIKE ").push_bind(pattern.clone()).push(" ESCAPE '\\\\' OR LOWER(COALESCE(i.description,'')) LIKE ").push_bind(pattern.clone()).push(" ESCAPE '\\\\' OR EXISTS(SELECT 1 FROM comment c WHERE c.issue_id=i.id AND c.workspace_id=").push_bind(workspace_id).push(" AND LOWER(c.content) LIKE ").push_bind(pattern.clone()).push(" ESCAPE '\\\\'))");
+            query
+                .push("(LOWER(i.title) LIKE ")
+                .push_bind(pattern.clone())
+                .push(LIKE_ESCAPE_CLAUSE)
+                .push(" OR LOWER(COALESCE(i.description,'')) LIKE ")
+                .push_bind(pattern.clone())
+                .push(LIKE_ESCAPE_CLAUSE)
+                .push(
+                    " OR EXISTS(SELECT 1 FROM comment c WHERE c.issue_id=i.id AND c.workspace_id=",
+                )
+                .push_bind(workspace_id)
+                .push(" AND LOWER(c.content) LIKE ")
+                .push_bind(pattern.clone())
+                .push(LIKE_ESCAPE_CLAUSE)
+                .push("))");
         }
         query.push(")");
     }
@@ -301,7 +319,7 @@ async fn search_issues(
             .push_bind(number)
             .push(" THEN 0 ");
     }
-    statement.push("WHEN LOWER(i.title) = ").push_bind(query.to_lowercase()).push(" THEN 1 WHEN LOWER(i.title) LIKE ").push_bind(phrase.clone()).push(" ESCAPE '\\\\' THEN 2 WHEN LOWER(COALESCE(i.description,'')) LIKE ").push_bind(phrase.clone()).push(" ESCAPE '\\\\' THEN 3 ELSE 4 END, CASE i.status WHEN 'in_progress' THEN 0 WHEN 'in_review' THEN 1 WHEN 'todo' THEN 2 ELSE 3 END, i.updated_at DESC, i.id DESC LIMIT ").push_bind(limit).push(" OFFSET ").push_bind(offset);
+    statement.push("WHEN LOWER(i.title) = ").push_bind(query.to_lowercase()).push(" THEN 1 WHEN LOWER(i.title) LIKE ").push_bind(phrase.clone()).push(LIKE_ESCAPE_CLAUSE).push(" THEN 2 WHEN LOWER(COALESCE(i.description,'')) LIKE ").push_bind(phrase.clone()).push(LIKE_ESCAPE_CLAUSE).push(" THEN 3 ELSE 4 END, CASE i.status WHEN 'in_progress' THEN 0 WHEN 'in_review' THEN 1 WHEN 'todo' THEN 2 ELSE 3 END, i.updated_at DESC, i.id DESC LIMIT ").push_bind(limit).push(" OFFSET ").push_bind(offset);
     let issues = match statement
         .build_query_as::<Issue>()
         .fetch_all(&state.pool)
@@ -365,7 +383,7 @@ async fn search_issues(
                 comment
                     .push("LOWER(c.content) LIKE ")
                     .push_bind(pattern.clone())
-                    .push(" ESCAPE '\\\\'");
+                    .push(LIKE_ESCAPE_CLAUSE);
             }
             comment.push(") ORDER BY c.created_at DESC LIMIT 1");
             comment
@@ -1201,7 +1219,21 @@ fn push_table_filters(
             if index > 0 {
                 builder.push(" AND ");
             }
-            builder.push("(LOWER(i.title) LIKE ").push_bind(pattern.clone()).push(" ESCAPE '\\\\' OR LOWER(COALESCE(i.description,'')) LIKE ").push_bind(pattern.clone()).push(" ESCAPE '\\\\' OR EXISTS(SELECT 1 FROM comment c WHERE c.issue_id=i.id AND c.workspace_id=").push_bind(workspace_id).push(" AND LOWER(c.content) LIKE ").push_bind(pattern.clone()).push(" ESCAPE '\\\\'))");
+            builder
+                .push("(LOWER(i.title) LIKE ")
+                .push_bind(pattern.clone())
+                .push(LIKE_ESCAPE_CLAUSE)
+                .push(" OR LOWER(COALESCE(i.description,'')) LIKE ")
+                .push_bind(pattern.clone())
+                .push(LIKE_ESCAPE_CLAUSE)
+                .push(
+                    " OR EXISTS(SELECT 1 FROM comment c WHERE c.issue_id=i.id AND c.workspace_id=",
+                )
+                .push_bind(workspace_id)
+                .push(" AND LOWER(c.content) LIKE ")
+                .push_bind(pattern.clone())
+                .push(LIKE_ESCAPE_CLAUSE)
+                .push("))");
         }
         builder.push(")");
     }
@@ -4848,7 +4880,7 @@ fn push_issue_filters(query: &mut QueryBuilder<'_, Postgres>, filters: &IssueFil
                 separated
                     .push("LOWER(i.title) LIKE ")
                     .push_bind(pattern.clone())
-                    .push(" ESCAPE '\\\\'");
+                    .push(LIKE_ESCAPE_CLAUSE);
             }
             separated.push_unseparated(")");
             if filters.search_number.is_some() {
@@ -9629,6 +9661,41 @@ mod tests {
             search_patterns(r"100% _done"),
             vec![r"%100\%%", r"%\_done%"]
         );
+    }
+
+    #[test]
+    fn like_escape_clause_uses_one_character_postgres_escape_literal() {
+        assert_eq!(LIKE_ESCAPE_CLAUSE, r" ESCAPE E'\\'");
+    }
+
+    #[tokio::test]
+    async fn like_escape_clause_executes_as_single_backslash_in_postgres() {
+        let url = std::env::var("DATABASE_URL")
+            .expect("DATABASE_URL is required for LIKE escape contract");
+        let pool = PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&url)
+            .await
+            .expect("connect contract PostgreSQL");
+        let pattern = search_patterns(r"100%_safe\path")
+            .into_iter()
+            .next()
+            .expect("search pattern");
+
+        let mut query = QueryBuilder::<Postgres>::new("SELECT ");
+        query
+            .push_bind(r"prefix 100%_safe\path suffix")
+            .push("::text LIKE ")
+            .push_bind(pattern)
+            .push("::text")
+            .push(LIKE_ESCAPE_CLAUSE);
+        let matched = query
+            .build_query_scalar::<bool>()
+            .fetch_one(&pool)
+            .await
+            .expect("execute LIKE escape contract");
+
+        assert!(matched);
     }
 
     #[test]
