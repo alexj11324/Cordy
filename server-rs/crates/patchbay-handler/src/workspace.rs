@@ -959,7 +959,7 @@ async fn revoke_and_remove_member(
             .await?;
         for task in &result.cancelled_tasks {
             patchbay_db::queries::linear_agent::enqueue_linear_agent_terminal_event(
-                &mut *transaction,
+                &mut transaction,
                 task.id,
                 &format!("linear-agent-terminal:{}:cancelled", task.id),
                 &serde_json::json!({

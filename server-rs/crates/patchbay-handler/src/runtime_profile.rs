@@ -434,7 +434,7 @@ pub(crate) async fn teardown_runtime(
     .await?;
     for task in &cancelled_tasks {
         patchbay_db::queries::linear_agent::enqueue_linear_agent_terminal_event(
-            &mut **transaction,
+            transaction,
             task.id,
             &format!("linear-agent-terminal:{}:cancelled", task.id),
             &json!({

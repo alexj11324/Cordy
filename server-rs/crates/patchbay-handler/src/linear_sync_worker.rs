@@ -2954,22 +2954,21 @@ impl LinearSyncWorker {
             .get("group_id")
             .and_then(Value::as_str)
             .is_some_and(|group_id| !group_id.trim().is_empty());
-        if group_configured {
-            if !self
+        if group_configured
+            && !self
                 .agent_label_mapping_is_live(connection, binding, false)
                 .await?
-            {
-                tracing::warn!(
-                    workspace_id = %connection.workspace_id,
-                    connection_id = %connection.id,
-                    binding_id = %binding.id,
-                    "Linear Agent label mapping no longer matches the live catalog; parking route"
-                );
-                return Ok(AgentLabelDecision {
-                    configured: true,
-                    agent_id: None,
-                });
-            }
+        {
+            tracing::warn!(
+                workspace_id = %connection.workspace_id,
+                connection_id = %connection.id,
+                binding_id = %binding.id,
+                "Linear Agent label mapping no longer matches the live catalog; parking route"
+            );
+            return Ok(AgentLabelDecision {
+                configured: true,
+                agent_id: None,
+            });
         }
         let decision = agent_label_decision(binding, &remote.labels.nodes)?;
         if let Some(agent_id) = decision.agent_id {
