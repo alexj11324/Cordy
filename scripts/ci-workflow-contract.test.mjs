@@ -40,12 +40,83 @@ test("Rust and Mobile validation are automatic path-classified merge gates", () 
   assert.match(ci, /- 'scripts\/verify-release-tag\.sh'/u);
 });
 
+test("Stack Rust layers select a tested lightweight scope without weakening the backend gate", () => {
+  assert.match(ci, /Detect open Stack child PR/u);
+  assert.match(ci, /gh api --method GET --paginate --slurp/u);
+  assert.match(ci, /-f base="\$HEAD_REF"/u);
+  assert.match(ci, /cargo metadata/u);
+  assert.match(ci, /scripts\/classify-rust-scope\.mjs/u);
+  assert.match(ci, /rust-lightweight:/u);
+  assert.match(
+    ci,
+    /rust-lightweight:\n\s+needs: changes\n\s+if: \$\{\{ needs\.changes\.outputs\.rust == 'true' && needs\.changes\.outputs\.rust_scope == 'lightweight' \}\}/u,
+  );
+  assert.match(ci, /cargo fmt --all --check/u);
+  assert.match(ci, /cargo check --all-targets --locked/u);
+  assert.match(ci, /cargo test --all-targets --locked/u);
+  assert.match(ci, /unknown Rust validation scope/u);
+  assert.match(ci, /Lightweight Rust validation passed/u);
+  assert.match(ci, /rust_scope_reason/u);
+});
+
+test("merge-group metadata preserves auth classification and image exemptions", () => {
+  assert.match(ci, /MERGE_GROUP_BASE_SHA: \$\{\{ github\.event\.merge_group\.base_sha \}\}/u);
+  assert.match(ci, /MERGE_GROUP_HEAD_SHA: \$\{\{ github\.event\.merge_group\.head_sha \}\}/u);
+  assert.match(ci, /base_sha="\$MERGE_GROUP_BASE_SHA"/u);
+  assert.match(ci, /head_sha="\$MERGE_GROUP_HEAD_SHA"/u);
+  assert.match(
+    ci,
+    /MERGE_GROUP_PULL_REQUESTS: \$\{\{ toJSON\(github\.event\.merge_group\.pull_requests\) \}\}/u,
+  );
+  assert.match(ci, /gh api "repos\/\$GITHUB_REPOSITORY\/pulls\/\$number" --jq/u);
+  assert.match(ci, /scripts\/classify-image-budget-exemption\.mjs/u);
+  assert.match(ci, /merge_group event is missing constituent pull-request metadata/u);
+  assert.match(
+    ci,
+    /IMAGE_BUDGET_EXEMPT: \$\{\{ needs\.changes\.outputs\.image_budget_exempt \}\}/u,
+  );
+});
+
+test("merge queue runs the same path-aware CI gate", () => {
+  assert.match(ci, /^  merge_group:\n/mu);
+  assert.match(ci, /^    types: \[checks_requested\]\n/mu);
+  assert.match(ci, /\$EVENT_NAME" = "merge_group"/u);
+  assert.equal(
+    [...ci.matchAll(/github\.event_name == 'pull_request' \|\| github\.event_name == 'merge_group'/gu)].length,
+    4,
+  );
+  assert.match(ci, /cancel-in-progress: true/u);
+});
+
+test("workflow-only changes keep the four required aggregates green without heavy jobs", () => {
+  assert.doesNotMatch(ci, /- '\.github\/workflows\/ci\.yml'/u);
+  assert.match(
+    ci,
+    /frontend-build:\n\s+needs: changes\n\s+if: \$\{\{ needs\.changes\.outputs\.frontend == 'true' \|\| needs\.changes\.outputs\.auth_broker_release == 'true' \}\}/u,
+  );
+  assert.match(
+    ci,
+    /frontend-test:\n\s+needs: changes\n\s+if: \$\{\{ needs\.changes\.outputs\.frontend == 'true' \}\}/u,
+  );
+  assert.match(
+    ci,
+    /frontend-views-test:\n\s+name: frontend-views-test \(\$\{\{ matrix\.index \}\}\/\$\{\{ matrix\.total \}\}\)\n\s+needs: changes\n\s+if: \$\{\{ needs\.changes\.outputs\.frontend == 'true' \}\}/u,
+  );
+  for (const message of [
+    "Frontend validation intentionally skipped: no relevant paths changed.",
+    "Rust validation intentionally skipped: no relevant paths changed.",
+    "Mobile validation intentionally skipped: no relevant paths changed.",
+    "Installer validation intentionally skipped: no relevant paths changed.",
+  ]) {
+    assert.match(ci, new RegExp(message.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
+  }
+});
+
 test("Rust uses one workspace test invocation and PR compiler caches are read-only", () => {
   assert.match(ci, /cargo test --workspace --all-targets --locked/u);
-  assert.doesNotMatch(ci, /cargo metadata --locked --no-deps/u);
   assert.equal(
-    [...ci.matchAll(/SCCACHE_GHA_RW_MODE: \$\{\{ github\.event_name == 'pull_request' && 'READ_ONLY' \|\| 'READ_WRITE' \}\}/gu)].length,
-    3,
+    [...ci.matchAll(/SCCACHE_GHA_RW_MODE: \$\{\{ \(github\.event_name == 'pull_request' \|\| github\.event_name == 'merge_group'\) && 'READ_ONLY' \|\| 'READ_WRITE' \}\}/gu)].length,
+    4,
   );
 });
 
@@ -111,6 +182,7 @@ test("Turbo cache lifecycle is bounded for active, closed, and main refs", async
 
 test("CI runs cache cleanup tests and classifies new development scripts", () => {
   assert.match(ci, /scripts\/cleanup-actions-caches\.test\.mjs/u);
+  assert.match(ci, /scripts\/classify-image-budget-exemption\.test\.mjs/u);
   assert.equal([...ci.matchAll(/- 'scripts\/dev-\*\.mjs'/gu)].length, 2);
 });
 
@@ -126,4 +198,13 @@ test("secure development auth bootstrap runs outside path-filtered jobs", () => 
 test("the obsolete fixed-commit Desktop artifact workflow is gone", async () => {
   const names = await readdir(workflowDirectory);
   assert.ok(!names.includes("aspectlylabs-desktop-artifact.yml"));
+});
+
+test("the Stack CI runbook keeps queue setup outside source-controlled gates", async () => {
+  const runbook = await readFile(new URL("../.github/STACK_CI.md", import.meta.url), "utf8");
+  assert.match(runbook, /gh stack merge .*--yes/u);
+  assert.match(runbook, /merge_group/u);
+  assert.match(runbook, /frontend.*backend.*mobile.*installer/su);
+  assert.match(runbook, /required checks/u);
+  assert.match(runbook, /cannot be enabled by a workflow commit/u);
 });
