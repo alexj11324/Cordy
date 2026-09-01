@@ -5,8 +5,8 @@
 //! accidentally accept an unverified provider payload.
 
 use crate::models::{
-    Issue, LinearConnection, LinearIssueLink, LinearMemberBinding, LinearOAuthState,
-    LinearProjectBinding, LinearSyncConflict, LinearSyncInbox, LinearSyncOutbox,
+    AgentTaskQueue, Issue, LinearConnection, LinearIssueLink, LinearMemberBinding,
+    LinearOAuthState, LinearProjectBinding, LinearSyncConflict, LinearSyncInbox, LinearSyncOutbox,
 };
 use chrono::{DateTime, Utc};
 use serde_json::Value;
@@ -427,8 +427,8 @@ pub async fn mark_revoked(
     executor: impl Executor<'_, Database = Postgres>,
     workspace_id: Uuid,
     connection_id: Uuid,
-) -> anyhow::Result<bool> {
-    let revoked = sqlx::query_scalar::<_, bool>(
+) -> anyhow::Result<Vec<AgentTaskQueue>> {
+    let cancelled = sqlx::query_as::<_, AgentTaskQueue>(
         r#"WITH RECURSIVE revoked_connection AS (
                UPDATE linear_connection
                SET status = 'revoked', last_error = NULL, updated_at = now()
@@ -449,12 +449,12 @@ pub async fn mark_revoked(
                FROM agent_task_queue AS child
                JOIN task_tree AS parent ON child.parent_task_id = parent.id
            ), cancelled_tasks AS (
-               UPDATE agent_task_queue
+               UPDATE agent_task_queue AS queue
                SET status = 'cancelled', completed_at = now(), prepare_lease_expires_at = NULL
-               WHERE id IN (SELECT id FROM task_tree)
-                 AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory',
-                                'waiting_capacity', 'deferred')
-               RETURNING id
+               WHERE queue.id IN (SELECT id FROM task_tree)
+                 AND queue.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory',
+                                      'waiting_capacity', 'deferred')
+               RETURNING queue.*
            ), settled_sessions AS (
                UPDATE linear_agent_session
                SET status = 'cancelled', updated_at = now()
@@ -463,13 +463,13 @@ pub async fn mark_revoked(
                  AND status NOT IN ('completed', 'failed', 'cancelled')
                RETURNING id
            )
-           SELECT EXISTS (SELECT 1 FROM revoked_connection)"#,
+           SELECT * FROM cancelled_tasks"#,
     )
     .bind(workspace_id)
     .bind(connection_id)
-    .fetch_one(executor)
+    .fetch_all(executor)
     .await?;
-    Ok(revoked)
+    Ok(cancelled)
 }
 
 pub async fn update_tokens(

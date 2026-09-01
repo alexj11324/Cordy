@@ -1375,10 +1375,10 @@ impl LinearSyncWorker {
             )));
         }
         let mut selection_retries_enqueued = false;
-        if let Some(agent_id) = (issue.executor_type.as_deref() == Some("agent"))
+        let selected_agent_id = (issue.executor_type.as_deref() == Some("agent"))
             .then_some(issue.executor_id)
-            .flatten()
-        {
+            .flatten();
+        if let Some(agent_id) = selected_agent_id {
             let selection_sessions = linear_agent_q::list_waiting_linear_agent_sessions(
                 &mut *transaction,
                 connection.workspace_id,
@@ -1401,29 +1401,29 @@ impl LinearSyncWorker {
                 .await
                 .map_err(SyncError::retry)?;
             }
-            let link_sessions = linear_agent_q::list_linear_agent_sessions_awaiting_issue_link(
-                &mut *transaction,
-                connection.workspace_id,
+        }
+        let link_sessions = linear_agent_q::list_linear_agent_sessions_awaiting_issue_link(
+            &mut *transaction,
+            connection.workspace_id,
+            connection.id,
+            &remote.id,
+        )
+        .await
+        .map_err(SyncError::retry)?;
+        for session in link_sessions {
+            let delivery_id = format!(
+                "linear-agent-link-retry:{}:linear-outbox:{}",
+                session.linear_session_id, row.id
+            );
+            selection_retries_enqueued |= linear_agent_q::enqueue_linear_agent_session_retry(
+                &mut transaction,
                 connection.id,
-                &remote.id,
+                &delivery_id,
+                &session,
+                selected_agent_id,
             )
             .await
             .map_err(SyncError::retry)?;
-            for session in link_sessions {
-                let delivery_id = format!(
-                    "linear-agent-link-retry:{}:{}:linear-outbox:{}",
-                    session.linear_session_id, agent_id, row.id
-                );
-                selection_retries_enqueued |= linear_agent_q::enqueue_linear_agent_session_retry(
-                    &mut transaction,
-                    connection.id,
-                    &delivery_id,
-                    &session,
-                    Some(agent_id),
-                )
-                .await
-                .map_err(SyncError::retry)?;
-            }
         }
         // The core Issue/link state and durable Agent-session retries commit
         // before the optional provider attachment. The Outbox row remains the

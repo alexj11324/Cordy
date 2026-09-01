@@ -398,6 +398,11 @@ function BindingWizard({
     !Array.isArray(draft.agentLabelMapping.labels)
       ? (draft.agentLabelMapping.labels as Record<string, unknown>)
       : {};
+  const assignedAgentLabelIds = new Set(
+    Object.values(agentLabelAssignments).filter(
+      (value): value is string => typeof value === "string" && value.length > 0,
+    ),
+  );
 
   const suggestedLinearProject = useMemo(() => {
     const title = selectedPatchbayProject?.title.trim().toLocaleLowerCase();
@@ -855,7 +860,14 @@ function BindingWizard({
                   >
                     <option value="">{t(($) => $.page.linear.agent_not_mapped)}</option>
                     {activeAgents.map((agent) => (
-                      <option key={agent.id} value={agent.id}>
+                      <option
+                        disabled={
+                          assignedAgentLabelIds.has(agent.id) &&
+                          agentLabelAssignments[label.id] !== agent.id
+                        }
+                        key={agent.id}
+                        value={agent.id}
+                      >
                         {agent.name}
                       </option>
                     ))}

@@ -3689,9 +3689,9 @@ impl LinearTokenManager {
         &self,
         workspace_id: Uuid,
         connection: &LinearConnection,
-    ) -> Result<(), LinearTokenError> {
+    ) -> Result<Vec<patchbay_db::models::AgentTaskQueue>, LinearTokenError> {
         match connection.status.as_str() {
-            "revoked" => return Ok(()),
+            "revoked" => return Ok(vec![]),
             "reauthorization_required" => return Err(LinearTokenError::ReauthorizationRequired),
             _ => {}
         }
@@ -3714,13 +3714,10 @@ impl LinearTokenManager {
             tracing::warn!(status = %response.status(), "Linear revoke request rejected");
             return Err(LinearTokenError::Provider);
         }
-        let marked = linear_q::mark_revoked(&self.pool, workspace_id, connection.id)
+        let cancelled = linear_q::mark_revoked(&self.pool, workspace_id, connection.id)
             .await
             .map_err(storage_error)?;
-        if !marked {
-            return Err(LinearTokenError::InvalidResponse);
-        }
-        Ok(())
+        Ok(cancelled)
     }
 }
 
@@ -3980,10 +3977,22 @@ async fn disconnect(
         }
     };
     match manager.revoke_connection(workspace_id, &connection).await {
-        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Ok(cancelled) => {
+            state
+                .tasks
+                .publish_transactional_cancellations(&cancelled)
+                .await;
+            StatusCode::NO_CONTENT.into_response()
+        }
         Err(LinearTokenError::InvalidGrant | LinearTokenError::ReauthorizationRequired) => {
             match linear_q::mark_revoked(&state.pool, workspace_id, connection.id).await {
-                Ok(_) => StatusCode::NO_CONTENT.into_response(),
+                Ok(cancelled) => {
+                    state
+                        .tasks
+                        .publish_transactional_cancellations(&cancelled)
+                        .await;
+                    StatusCode::NO_CONTENT.into_response()
+                }
                 Err(error) => {
                     tracing::warn!(%error, "Linear local disconnect fallback failed");
                     error_response(
