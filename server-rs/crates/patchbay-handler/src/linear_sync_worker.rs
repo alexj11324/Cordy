@@ -2412,13 +2412,15 @@ impl LinearSyncWorker {
                 Err(ExternalIssueError::ActiveExecutorRequired) => {
                     let updated = linear_q::update_linear_issue_link(
                         &self.state.pool,
-                        link.id,
-                        connection.workspace_id,
-                        &merge.common,
-                        Some(remote_updated_at),
-                        last_event_at_ms,
-                        last_event_id,
-                        "agent_selection_required",
+                        &linear_q::LinearIssueLinkUpdate {
+                            link_id: link.id,
+                            workspace_id: connection.workspace_id,
+                            last_common_snapshot: &merge.common,
+                            remote_updated_at: Some(remote_updated_at),
+                            last_remote_event_at_ms: last_event_at_ms,
+                            last_remote_event_id: last_event_id,
+                            sync_status: "agent_selection_required",
+                        },
                     )
                     .await
                     .map_err(SyncError::retry)?;
