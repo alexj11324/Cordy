@@ -371,7 +371,10 @@ function BindingWizard({
   const selectedLinearProject = catalog.projects.find(
     (project) => project.id === draft.linearProjectId,
   );
-  const agentLabelGroups = catalog.labels.filter((label) => label.is_group);
+  const agentLabelGroups = catalog.labels.filter(
+    (label) =>
+      label.is_group && (label.team_id === null || label.team_id === draft.linearTeamId),
+  );
   const selectedAgentLabelGroupId =
     typeof draft.agentLabelMapping.group_id === "string"
       ? draft.agentLabelMapping.group_id
@@ -416,6 +419,7 @@ function BindingWizard({
       }));
       return;
     }
+    setDraft((current) => ({ ...current, agentLabelMapping: {} }));
     if (suggestedLinearProject && !draft.linearProjectId) {
       setDraft((current) => ({
         ...current,

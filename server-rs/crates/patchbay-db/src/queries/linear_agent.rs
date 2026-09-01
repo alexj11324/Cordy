@@ -102,6 +102,132 @@ pub async fn get_linear_agent_session(
         .await?)
 }
 
+/// Claims a non-terminal Agent Session delivery before any task or provider
+/// side effects run. A terminal Inbox worker treats `dispatching` as a short
+/// lived mutex; an idempotent retry of the same delivery may reclaim its own
+/// abandoned claim.
+#[allow(clippy::too_many_arguments)]
+pub async fn claim_linear_agent_session_dispatch(
+    executor: impl Executor<'_, Database = Postgres>,
+    id: Uuid,
+    workspace_id: Uuid,
+    connection_id: Uuid,
+    linear_session_id: &str,
+    linear_issue_id: &str,
+    patchbay_issue_id: Uuid,
+    agent_id: Uuid,
+    action: &str,
+    prompt_context: Option<&str>,
+    prompt_body: Option<&str>,
+    requester_linear_user_id: Option<&str>,
+    last_event_id: &str,
+    last_event_at_ms: Option<i64>,
+) -> anyhow::Result<Option<LinearAgentSession>> {
+    let query = format!(
+        "INSERT INTO linear_agent_session \
+         (id, workspace_id, connection_id, linear_session_id, linear_issue_id,\
+          patchbay_issue_id, agent_id, action, status, prompt_context, prompt_body,\
+          requester_linear_user_id, last_event_id, last_event_at_ms) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'dispatching', $9, $10, $11, $12, $13) \
+         ON CONFLICT (connection_id, linear_session_id) DO UPDATE SET \
+           workspace_id = EXCLUDED.workspace_id,\
+           linear_issue_id = EXCLUDED.linear_issue_id,\
+           patchbay_issue_id = EXCLUDED.patchbay_issue_id,\
+           agent_id = EXCLUDED.agent_id,\
+           action = EXCLUDED.action,\
+           status = 'dispatching',\
+           prompt_context = COALESCE(EXCLUDED.prompt_context, linear_agent_session.prompt_context),\
+           prompt_body = COALESCE(EXCLUDED.prompt_body, linear_agent_session.prompt_body),\
+           requester_linear_user_id = COALESCE(EXCLUDED.requester_linear_user_id, linear_agent_session.requester_linear_user_id),\
+           last_event_id = EXCLUDED.last_event_id,\
+           last_event_at_ms = EXCLUDED.last_event_at_ms,\
+           updated_at = now() \
+         WHERE linear_agent_session.status NOT IN ('completed', 'failed', 'cancelled') \
+           AND (linear_agent_session.status NOT IN ('dispatching', 'terminal_dispatching') \
+             OR linear_agent_session.last_event_id = EXCLUDED.last_event_id) \
+           AND (EXCLUDED.last_event_at_ms IS NULL \
+            OR linear_agent_session.last_event_at_ms IS NULL \
+            OR EXCLUDED.last_event_at_ms > linear_agent_session.last_event_at_ms \
+            OR EXCLUDED.last_event_id = linear_agent_session.last_event_id) \
+         RETURNING {columns}",
+        columns = columns(),
+    );
+    Ok(sqlx::query_as::<_, LinearAgentSession>(&query)
+        .bind(id)
+        .bind(workspace_id)
+        .bind(connection_id)
+        .bind(linear_session_id)
+        .bind(linear_issue_id)
+        .bind(patchbay_issue_id)
+        .bind(agent_id)
+        .bind(action)
+        .bind(prompt_context)
+        .bind(prompt_body)
+        .bind(requester_linear_user_id)
+        .bind(last_event_id)
+        .bind(last_event_at_ms)
+        .fetch_optional(executor)
+        .await?)
+}
+
+pub async fn claim_linear_agent_session_terminal(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    connection_id: Uuid,
+    linear_session_id: &str,
+    last_event_id: &str,
+    last_event_at_ms: Option<i64>,
+) -> anyhow::Result<bool> {
+    let result = sqlx::query(
+        r#"UPDATE linear_agent_session
+           SET status = 'terminal_dispatching',
+               last_event_id = $4,
+               last_event_at_ms = $5,
+               updated_at = now()
+           WHERE workspace_id = $1
+             AND connection_id = $2
+             AND linear_session_id = $3
+             AND status NOT IN ('completed', 'failed', 'cancelled', 'dispatching')
+             AND (status <> 'terminal_dispatching' OR last_event_id = $4)
+             AND ($5 IS NULL OR last_event_at_ms IS NULL OR $5 > last_event_at_ms OR last_event_id = $4)"#,
+    )
+    .bind(workspace_id)
+    .bind(connection_id)
+    .bind(linear_session_id)
+    .bind(last_event_id)
+    .bind(last_event_at_ms)
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected() == 1)
+}
+
+pub async fn correlate_linear_agent_session_dispatch(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    connection_id: Uuid,
+    linear_session_id: &str,
+    last_event_id: &str,
+    task_id: Uuid,
+) -> anyhow::Result<bool> {
+    let result = sqlx::query(
+        r#"UPDATE linear_agent_session
+           SET task_id = $5, updated_at = now()
+           WHERE workspace_id = $1
+             AND connection_id = $2
+             AND linear_session_id = $3
+             AND last_event_id = $4
+             AND status = 'dispatching'"#,
+    )
+    .bind(workspace_id)
+    .bind(connection_id)
+    .bind(linear_session_id)
+    .bind(last_event_id)
+    .bind(task_id)
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected() == 1)
+}
+
 pub async fn set_linear_agent_session_task(
     executor: impl Executor<'_, Database = Postgres>,
     workspace_id: Uuid,
@@ -264,7 +390,7 @@ pub async fn mark_linear_agent_session_terminal(
            WHERE workspace_id = $1
              AND connection_id = $2
              AND linear_session_id = $3
-             AND ($6 IS NULL OR last_event_at_ms IS NULL OR $6 > last_event_at_ms)"#,
+             AND ($6 IS NULL OR last_event_at_ms IS NULL OR $6 > last_event_at_ms OR last_event_id = $5)"#,
     )
     .bind(workspace_id)
     .bind(connection_id)

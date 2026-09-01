@@ -1285,6 +1285,74 @@ async fn validate_remote_binding(
     }
 }
 
+fn agent_label_mapping_matches_catalog(
+    mapping: &Value,
+    linear_team_id: Option<&str>,
+    catalog: &LinearCatalogResponse,
+) -> bool {
+    let Some(group_id) = mapping
+        .get("group_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return true;
+    };
+    let group_is_valid = catalog.labels.iter().any(|label| {
+        label.id == group_id
+            && label.is_group
+            && (label.team_id.is_none() || label.team_id.as_deref() == linear_team_id)
+    });
+    if !group_is_valid {
+        return false;
+    }
+    let Some(labels) = mapping.get("labels").and_then(Value::as_object) else {
+        return false;
+    };
+    labels.keys().all(|label_id| {
+        catalog.labels.iter().any(|label| {
+            label.id == *label_id
+                && !label.is_group
+                && label.parent_id.as_deref() == Some(group_id)
+                && (label.team_id.is_none() || label.team_id.as_deref() == linear_team_id)
+        })
+    })
+}
+
+async fn validate_agent_label_mapping(
+    state: &HandlerState,
+    connection: &LinearConnection,
+    request: &SaveLinearProjectBindingRequest,
+) -> Result<(), Response> {
+    if request
+        .agent_label_mapping
+        .get("group_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .is_none()
+    {
+        return Ok(());
+    }
+    let manager = LinearTokenManager::from_state(state).map_err(linear_token_error_response)?;
+    let catalog = manager
+        .catalog(connection.id)
+        .await
+        .map_err(linear_token_error_response)?;
+    if agent_label_mapping_matches_catalog(
+        &request.agent_label_mapping,
+        request.linear_team_id.as_deref(),
+        &catalog,
+    ) {
+        Ok(())
+    } else {
+        Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "Linear Agent label group must belong to the binding team",
+        ))
+    }
+}
+
 fn is_linear_binding_unique_conflict(error: &anyhow::Error) -> bool {
     error.downcast_ref::<sqlx::Error>().is_some_and(|error| {
         matches!(
@@ -1378,6 +1446,9 @@ async fn create_binding(
         Ok(connection) => connection,
         Err(response) => return response,
     };
+    if let Err(response) = validate_agent_label_mapping(&state, &connection, &request).await {
+        return response;
+    }
     if let Err(response) = validate_remote_binding(&state, &connection, &request).await {
         return response;
     }
@@ -1510,6 +1581,9 @@ async fn update_binding(
         Ok(connection) => connection,
         Err(response) => return response,
     };
+    if let Err(response) = validate_agent_label_mapping(&state, &connection, &request).await {
+        return response;
+    }
     if let Err(response) = validate_remote_binding(&state, &connection, &request).await {
         return response;
     }
@@ -4273,5 +4347,63 @@ mod tests {
         assert_eq!(response.parent_id.as_deref(), Some("patchbay-agent-group"));
         assert_eq!(response.team_id.as_deref(), Some("team-1"));
         assert!(!response.is_group);
+    }
+
+    #[test]
+    fn agent_label_mapping_rejects_groups_and_values_from_another_team() {
+        let catalog = LinearCatalogResponse {
+            teams: vec![],
+            projects: vec![],
+            states: vec![],
+            users: vec![],
+            labels: vec![
+                LinearCatalogLabelResponse {
+                    id: "workspace-group".to_string(),
+                    name: "Workspace agents".to_string(),
+                    color: "#000000".to_string(),
+                    is_group: true,
+                    parent_id: None,
+                    team_id: None,
+                },
+                LinearCatalogLabelResponse {
+                    id: "workspace-agent".to_string(),
+                    name: "Agent".to_string(),
+                    color: "#000000".to_string(),
+                    is_group: false,
+                    parent_id: Some("workspace-group".to_string()),
+                    team_id: None,
+                },
+                LinearCatalogLabelResponse {
+                    id: "other-team-group".to_string(),
+                    name: "Other team".to_string(),
+                    color: "#000000".to_string(),
+                    is_group: true,
+                    parent_id: None,
+                    team_id: Some("team-2".to_string()),
+                },
+            ],
+        };
+
+        assert!(agent_label_mapping_matches_catalog(
+            &json!({
+                "group_id": "workspace-group",
+                "labels": {"workspace-agent": Uuid::nil().to_string()},
+            }),
+            Some("team-1"),
+            &catalog,
+        ));
+        assert!(!agent_label_mapping_matches_catalog(
+            &json!({"group_id": "other-team-group", "labels": {}}),
+            Some("team-1"),
+            &catalog,
+        ));
+        assert!(!agent_label_mapping_matches_catalog(
+            &json!({
+                "group_id": "workspace-group",
+                "labels": {"other-team-group": Uuid::nil().to_string()},
+            }),
+            Some("team-1"),
+            &catalog,
+        ));
     }
 }

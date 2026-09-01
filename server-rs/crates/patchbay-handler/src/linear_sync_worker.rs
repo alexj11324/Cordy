@@ -22,6 +22,7 @@ use patchbay_service::issue_service::{
     ExternalIssueError, ExternalIssuePatch, ExternalSource, IssueCommand, IssueCreateError,
     IssueCreateOpts, IssueCreateParams,
 };
+use patchbay_service::task_helpers::has_runnable_successor;
 use patchbay_service::task_service::pending_slot_taken_err;
 use serde_json::{json, Value};
 use tokio::sync::Notify;
@@ -1169,6 +1170,26 @@ impl LinearSyncWorker {
                 "Linear Issue Link disappeared during push"
             )));
         }
+        if self.state.linear_agent_bridge_enabled(row.workspace_id) {
+            if let Some(url) = self.patchbay_issue_url(&issue).await? {
+                manager
+                    .create_or_update_attachment(
+                        connection.id,
+                        &remote.id,
+                        "Open in Patchbay",
+                        &format!("Agent · {}", issue.status),
+                        &url,
+                        json!({
+                            "patchbay_issue_id": issue.id.to_string(),
+                            "status": issue.status,
+                        }),
+                    )
+                    .await
+                    .map_err(|error| {
+                        classify_token_error(error, "publish Linear Agent attachment")
+                    })?;
+            }
+        }
         let completed =
             linear_q::complete_claimed_sync_outbox(&mut *transaction, row.id, worker_id)
                 .await
@@ -1179,39 +1200,6 @@ impl LinearSyncWorker {
             )));
         }
         transaction.commit().await.map_err(SyncError::retry)?;
-        if self.state.linear_agent_bridge_enabled(row.workspace_id) {
-            match self.patchbay_issue_url(&issue).await {
-                Ok(Some(url)) => {
-                    if let Err(error) = manager
-                        .create_or_update_attachment(
-                            connection.id,
-                            &remote.id,
-                            "Open in Patchbay",
-                            &format!("Agent · {}", issue.status),
-                            &url,
-                            json!({
-                                "patchbay_issue_id": issue.id.to_string(),
-                                "status": issue.status,
-                            }),
-                        )
-                        .await
-                    {
-                        tracing::warn!(
-                            %error,
-                            issue_id = %issue.id,
-                            linear_issue_id = %remote.id,
-                            "Linear Agent attachment update failed after Issue sync"
-                        );
-                    }
-                }
-                Ok(None) => {}
-                Err(error) => tracing::warn!(
-                    error = %error.message(),
-                    issue_id = %issue.id,
-                    "could not build Patchbay URL for Linear Agent attachment"
-                ),
-            }
-        }
         self.resume_agent_sessions_awaiting_issue_link(&connection, &remote.id)
             .await?;
         Ok(())
@@ -1495,10 +1483,51 @@ impl LinearSyncWorker {
             session.last_event_id == row.delivery_id && session.task_id.is_some()
         });
 
-        let mut task = if let Some(task_id) = existing_session
-            .as_ref()
-            .and_then(|session| session.task_id)
-        {
+        // Atomically reserve this non-terminal delivery before creating or
+        // continuing a task. Terminal Inbox work observes `dispatching` and
+        // retries, so it cannot publish a final response between this guard
+        // and the durable task correlation below.
+        let Some(claimed_session) = linear_agent_q::claim_linear_agent_session_dispatch(
+            &self.state.pool,
+            Uuid::now_v7(),
+            connection.workspace_id,
+            connection.id,
+            &event.session_id,
+            &event.linear_issue_id,
+            issue.id,
+            agent_id,
+            &event.action,
+            event.prompt_context.as_deref(),
+            event.prompt_body.as_deref(),
+            event.requester_user_id.as_deref(),
+            &row.delivery_id,
+            event_timestamp_ms,
+        )
+        .await
+        .map_err(SyncError::retry)?
+        else {
+            let current = linear_agent_q::get_linear_agent_session(
+                &self.state.pool,
+                connection.workspace_id,
+                connection.id,
+                &event.session_id,
+            )
+            .await
+            .map_err(SyncError::retry)?;
+            if current.as_ref().is_some_and(|session| {
+                matches!(
+                    session.status.as_str(),
+                    "completed" | "failed" | "cancelled"
+                )
+            }) {
+                return Ok(());
+            }
+            return Err(SyncError::retry(anyhow::anyhow!(
+                "Linear Agent Session has another dispatch in progress"
+            )));
+        };
+
+        let mut task = if let Some(task_id) = claimed_session.task_id {
             agent_q::get_agent_task_in_workspace(&self.state.pool, task_id, connection.workspace_id)
                 .await
                 .map_err(SyncError::retry)?
@@ -1636,26 +1665,21 @@ impl LinearSyncWorker {
         } else {
             "queued"
         };
-        linear_agent_q::upsert_linear_agent_session(
+        let correlated = linear_agent_q::correlate_linear_agent_session_dispatch(
             &self.state.pool,
-            Uuid::now_v7(),
             connection.workspace_id,
             connection.id,
             &event.session_id,
-            &event.linear_issue_id,
-            Some(issue.id),
-            Some(agent_id),
-            Some(task_id),
-            &event.action,
-            session_status,
-            event.prompt_context.as_deref(),
-            event.prompt_body.as_deref(),
-            event.requester_user_id.as_deref(),
             &row.delivery_id,
-            event_timestamp_ms,
+            task_id,
         )
         .await
         .map_err(SyncError::retry)?;
+        if !correlated {
+            return Err(SyncError::retry(anyhow::anyhow!(
+                "Linear Agent Session dispatch lost its reservation"
+            )));
+        }
 
         // A very fast task can reach a terminal state before the session row
         // becomes visible to the task terminal hook. Recover that race after
@@ -1666,28 +1690,34 @@ impl LinearSyncWorker {
                 .map_err(SyncError::retry)?
                 .filter(|task| matches!(task.status.as_str(), "completed" | "failed" | "cancelled"))
         {
-            let mut transaction = self.state.pool.begin().await.map_err(SyncError::retry)?;
-            linear_agent_q::enqueue_linear_agent_terminal_event(
-                &mut transaction,
-                terminal_task.id,
-                &format!(
-                    "linear-agent-terminal:{}:{}",
-                    terminal_task.id, terminal_task.status
-                ),
-                &json!({
-                    "action": "terminal",
-                    "linearAgentSessionTerminal": true,
-                    "status": terminal_task.status,
-                    "result": terminal_task.result,
-                    "error": terminal_task.error,
-                    "failureReason": terminal_task.failure_reason,
-                    "taskId": terminal_task.id,
-                }),
-            )
-            .await
-            .map_err(SyncError::retry)?;
-            transaction.commit().await.map_err(SyncError::retry)?;
-            self.notify.notify_waiters();
+            let retry_pending = terminal_task.status == "failed"
+                && has_runnable_successor(&self.state.pool, &terminal_task)
+                    .await
+                    .map_err(SyncError::retry)?;
+            if !retry_pending {
+                let mut transaction = self.state.pool.begin().await.map_err(SyncError::retry)?;
+                linear_agent_q::enqueue_linear_agent_terminal_event(
+                    &mut transaction,
+                    terminal_task.id,
+                    &format!(
+                        "linear-agent-terminal:{}:{}",
+                        terminal_task.id, terminal_task.status
+                    ),
+                    &json!({
+                        "action": "terminal",
+                        "linearAgentSessionTerminal": true,
+                        "status": terminal_task.status,
+                        "result": terminal_task.result,
+                        "error": terminal_task.error,
+                        "failureReason": terminal_task.failure_reason,
+                        "taskId": terminal_task.id,
+                    }),
+                )
+                .await
+                .map_err(SyncError::retry)?;
+                transaction.commit().await.map_err(SyncError::retry)?;
+                self.notify.notify_waiters();
+            }
         }
 
         let manager = LinearTokenManager::from_state(&self.state)
@@ -1711,6 +1741,31 @@ impl LinearSyncWorker {
             )
             .await
             .map_err(|error| classify_token_error(error, "acknowledge Linear Agent Session"))?;
+        let released = linear_agent_q::upsert_linear_agent_session(
+            &self.state.pool,
+            Uuid::now_v7(),
+            connection.workspace_id,
+            connection.id,
+            &event.session_id,
+            &event.linear_issue_id,
+            Some(issue.id),
+            Some(agent_id),
+            Some(task_id),
+            &event.action,
+            session_status,
+            event.prompt_context.as_deref(),
+            event.prompt_body.as_deref(),
+            event.requester_user_id.as_deref(),
+            &row.delivery_id,
+            event_timestamp_ms,
+        )
+        .await
+        .map_err(SyncError::retry)?;
+        if released.is_none() {
+            return Err(SyncError::retry(anyhow::anyhow!(
+                "Linear Agent Session dispatch could not release its reservation"
+            )));
+        }
         Ok(())
     }
 
@@ -1736,12 +1791,51 @@ impl LinearSyncWorker {
         if existing.status == event.status && existing.last_event_id == row.delivery_id {
             return Ok(());
         }
+        if existing.status == "dispatching" {
+            return Err(SyncError::retry(anyhow::anyhow!(
+                "Linear Agent Session dispatch is still being correlated"
+            )));
+        }
         let event_timestamp_ms = extract_event_timestamp_ms(&row.payload);
-        if matches!(
-            (event_timestamp_ms, existing.last_event_at_ms),
-            (Some(incoming), Some(previous)) if incoming <= previous
-        ) {
+        if existing.last_event_id != row.delivery_id
+            && matches!(
+                (event_timestamp_ms, existing.last_event_at_ms),
+                (Some(incoming), Some(previous)) if incoming <= previous
+            )
+        {
             return Ok(());
+        }
+
+        let claimed = linear_agent_q::claim_linear_agent_session_terminal(
+            &self.state.pool,
+            connection.workspace_id,
+            connection.id,
+            &event.session_id,
+            &row.delivery_id,
+            event_timestamp_ms,
+        )
+        .await
+        .map_err(SyncError::retry)?;
+        if !claimed {
+            let current = linear_agent_q::get_linear_agent_session(
+                &self.state.pool,
+                connection.workspace_id,
+                connection.id,
+                &event.session_id,
+            )
+            .await
+            .map_err(SyncError::retry)?;
+            if current.as_ref().is_some_and(|session| {
+                matches!(
+                    session.status.as_str(),
+                    "completed" | "failed" | "cancelled"
+                )
+            }) {
+                return Ok(());
+            }
+            return Err(SyncError::retry(anyhow::anyhow!(
+                "Linear Agent Session has another dispatch in progress"
+            )));
         }
 
         let manager = LinearTokenManager::from_state(&self.state)
