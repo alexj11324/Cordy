@@ -4160,9 +4160,9 @@ mod tests {
     use super::{
         agent_label_decision, agent_label_ids_for_issue, combined_agent_prompt,
         extract_event_timestamp_ms, extract_issue_id, extract_updated_from,
-        import_status_is_inadmissible, inbound_enabled, is_out_of_order, linear_assignee_update,
-        map_local_priority, map_local_status, map_remote_priority, map_remote_status,
-        merge_sync_snapshots, merge_sync_snapshots_with_updated_from,
+        import_status_is_inadmissible, inbound_enabled, is_out_of_order, linear_agent_activity_id,
+        linear_assignee_update, map_local_priority, map_local_status, map_remote_priority,
+        map_remote_status, merge_sync_snapshots, merge_sync_snapshots_with_updated_from,
         normalize_base_snapshot_fields, parse_agent_session_event,
         parse_agent_session_terminal_event, parse_remote_timestamp, preserve_owner_base,
         remote_sync_snapshot, retry_delay, should_preserve_unmapped_remote_assignee,
