@@ -890,7 +890,7 @@ async fn enqueue_initial_import(
         }
     };
     let inserted = match linear_q::insert_sync_inbox(
-        &mut *transaction,
+        &mut transaction,
         job_id,
         binding.connection_id,
         &delivery_id,
