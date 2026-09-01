@@ -696,6 +696,7 @@ mod tests {
                 id: None,
                 handler: None,
                 generation: None,
+                runtime_health: None,
             })
             .await
             .unwrap();
