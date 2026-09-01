@@ -45,9 +45,7 @@ import { cn } from "@patchbay/ui/lib/utils";
 import type { UploadResult } from "@patchbay/core/hooks/use-file-upload";
 import { useWorkspaceSlug } from "@patchbay/core/paths";
 import { useQueryClient } from "@tanstack/react-query";
-import { issueIdentifierOptions } from "@patchbay/core/issues/queries";
-import { workspaceListOptions } from "@patchbay/core/workspace/queries";
-import { isIssueIdentifier } from "@patchbay/ui/markdown";
+import { resolveWorkspaceIssueIdentifier } from "./utils/resolve-issue-identifier";
 import type { Attachment } from "@patchbay/core/types";
 import {
   parseMarkdownChunked,
@@ -520,25 +518,8 @@ const ContentEditor = forwardRef<ContentEditorRef, ContentEditorProps>(
     const resolveIssueIdentifierRef = useRef<IssueIdentifierResolver | undefined>(
       undefined,
     );
-    resolveIssueIdentifierRef.current = async (identifier) => {
-      if (!isIssueIdentifier(identifier)) return null;
-      const slug = workspaceSlugRef.current;
-      if (!slug) return null;
-      const workspaces = await queryClient.fetchQuery(workspaceListOptions());
-      const ws = workspaces.find((w) => w.slug === slug);
-      if (!ws) return null;
-      const prefix = ws.issue_prefix;
-      if (
-        prefix &&
-        !identifier.toUpperCase().startsWith(`${prefix.toUpperCase()}-`)
-      ) {
-        return null;
-      }
-      const issue = await queryClient.fetchQuery(
-        issueIdentifierOptions(ws.id, identifier),
-      );
-      return issue ? { id: issue.id, identifier: issue.identifier } : null;
-    };
+    resolveIssueIdentifierRef.current = (identifier) =>
+      resolveWorkspaceIssueIdentifier(queryClient, identifier, workspaceSlugRef.current);
 
     const initialMarkdown = value ?? defaultValue ?? "";
     const initialContent = initialMarkdown

@@ -719,15 +719,13 @@ mod tests {
                 kind: String::new(),
             }]
         );
-        assert!(
-            parse_acp_session_modes(&serde_json::json!({
-                "configOptions": [{
-                    "id": "thought_level",
-                    "options": [{"value": "auto"}]
-                }]
-            }))
-            .is_empty()
-        );
+        assert!(parse_acp_session_modes(&serde_json::json!({
+            "configOptions": [{
+                "id": "thought_level",
+                "options": [{"value": "auto"}]
+            }]
+        }))
+        .is_empty());
     }
 
     #[test]

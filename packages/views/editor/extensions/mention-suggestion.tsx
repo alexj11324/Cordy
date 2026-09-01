@@ -300,37 +300,12 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>(
       const timer = setTimeout(() => {
         void (async () => {
           try {
-            if (includeProjectSearch) {
-              const [issues, projects] = await Promise.all([
-                api.searchIssues({
-                  q,
-                  limit: SERVER_CONTEXT_SEARCH_LIMIT,
-                  include_closed: true,
-                  signal: controller.signal,
-                }),
-                api.searchProjects({
-                  q,
-                  limit: SERVER_CONTEXT_SEARCH_LIMIT,
-                  include_closed: true,
-                  signal: controller.signal,
-                }),
-              ]);
-              if (!cancelled && !controller.signal.aborted) {
-                setServerItems([
-                  ...issues.issues.map((issue) => ({ ...issueToMention(issue), group: "search" as const })),
-                  ...projects.projects.map((project) => ({ ...projectToMention(project), group: "search" as const })),
-                ]);
-              }
-            } else {
-              const res = await api.searchIssues({
-                q,
-                limit: SERVER_ISSUE_SEARCH_LIMIT,
-                include_closed: true,
-                signal: controller.signal,
-              });
-              if (!cancelled && !controller.signal.aborted) {
-                setServerItems(res.issues.map(issueToMention));
-              }
+            const next = await fetchMentionSearchItems(q, {
+              includeProjectSearch,
+              signal: controller.signal,
+            });
+            if (!cancelled && !controller.signal.aborted) {
+              setServerItems(next);
             }
           } catch {
             // Aborted or network error: keep the synchronous cache results.
@@ -676,6 +651,46 @@ function projectToMention(p: { id: string; title: string; description?: string |
   };
 }
 
+export async function fetchMentionSearchItems(
+  query: string,
+  options: { includeProjectSearch?: boolean; signal?: AbortSignal } = {},
+): Promise<MentionItem[]> {
+  const q = query.trim();
+  if (!q) return [];
+  const wsId = getCurrentWsId();
+  if (!wsId) return [];
+
+  const { includeProjectSearch = false, signal } = options;
+  if (includeProjectSearch) {
+    const [issues, projects] = await Promise.all([
+      api.searchIssues({
+        q,
+        limit: SERVER_CONTEXT_SEARCH_LIMIT,
+        include_closed: true,
+        signal,
+      }),
+      api.searchProjects({
+        q,
+        limit: SERVER_CONTEXT_SEARCH_LIMIT,
+        include_closed: true,
+        signal,
+      }),
+    ]);
+    return [
+      ...issues.issues.map((issue) => ({ ...issueToMention(issue), group: "search" as const })),
+      ...projects.projects.map((project) => ({ ...projectToMention(project), group: "search" as const })),
+    ];
+  }
+
+  const res = await api.searchIssues({
+    q,
+    limit: SERVER_ISSUE_SEARCH_LIMIT,
+    include_closed: true,
+    signal,
+  });
+  return res.issues.map(issueToMention);
+}
+
 function matchesMentionQuery(item: MentionItem, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
@@ -804,6 +819,26 @@ export function listMentionSuggestionItems(
     return mergeMentionItems(contextItems, buildSyncMentionItems(qc, query));
   }
   return buildSyncMentionItems(qc, query);
+}
+
+/**
+ * Cache rows plus the same server search Tiptap's `MentionList` runs, so the
+ * Lexical composer can surface unloaded / closed / cancelled issues.
+ */
+export async function listMentionSuggestionItemsAsync(
+  qc: QueryClient,
+  query: string,
+  options: MentionSuggestionOptions & { signal?: AbortSignal } = {},
+): Promise<MentionItem[]> {
+  const cached = listMentionSuggestionItems(qc, query, options);
+  const searched = await fetchMentionSearchItems(query, {
+    includeProjectSearch: options.mode === "context",
+    signal: options.signal,
+  });
+  return demoteCancelledItems(
+    mergeMentionItems(cached, searched),
+    query.trim(),
+  ).slice(0, MAX_ITEMS);
 }
 
 export function createMentionSuggestion(

@@ -567,6 +567,12 @@ describe("ChatInput Lexical engine", () => {
     expect(editorProps.last?.editorEngine).toBe("lexical");
     expect(editorProps.last?.enableSlashCommands).toBe(true);
   });
+
+  it("forwards focusRequest to the lazy Lexical composer", async () => {
+    renderInput({ editorEngine: "lexical", focusRequest: 4 });
+    expect(await screen.findByTestId("lexical-composer-editor")).toBeInTheDocument();
+    expect(editorProps.last?.focusRequest).toBe(4);
+  });
 });
 
 describe("ChatInput project context", () => {

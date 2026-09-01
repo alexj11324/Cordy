@@ -1169,9 +1169,7 @@ fn static_catalog(help: Option<&str>) -> Catalog {
         .collect();
     Catalog {
         models,
-        session_modes: help
-            .map(claude_session_modes_from_help)
-            .unwrap_or_default(),
+        session_modes: help.map(claude_session_modes_from_help).unwrap_or_default(),
         fallback: false,
     }
 }
@@ -1252,13 +1250,12 @@ fn claude_session_modes_from_help(help: &str) -> Vec<SessionMode> {
         return Vec::new();
     };
     let mut advertised = Vec::new();
-    let raw = captures.get(1).map(|capture| capture.as_str()).unwrap_or("");
+    let raw = captures
+        .get(1)
+        .map(|capture| capture.as_str())
+        .unwrap_or("");
     for token in raw.split(',') {
-        let value = token
-            .trim()
-            .trim_matches('"')
-            .trim_matches('\'')
-            .trim();
+        let value = token.trim().trim_matches('"').trim_matches('\'').trim();
         if value.is_empty() {
             continue;
         }
@@ -1488,10 +1485,10 @@ mod tests {
         assert_eq!(modes.len(), 1);
         assert_eq!(modes[0].value, "auto");
         assert_eq!(modes[0].kind, "auto_review");
-        assert!(
-            claude_session_modes_from_help("--effort <level> Effort level (low, medium, high)")
-                .is_empty()
-        );
+        assert!(claude_session_modes_from_help(
+            "--effort <level> Effort level (low, medium, high)"
+        )
+        .is_empty());
     }
 
     #[test]

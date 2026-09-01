@@ -26,6 +26,27 @@ vi.mock("./components/chat-message-list", () => ({
 vi.mock("./components/chat-input", () => ({
   ChatInput: () => <div>chat-input</div>,
 }));
+vi.mock("./main-chat-input", () => ({
+  MainChatInput: () => <div>chat-input</div>,
+}));
+vi.mock("./components/agent-composer-send-prefix", () => ({
+  AgentComposerSendPrefix: () => null,
+}));
+vi.mock("./components/agent-composer-control-bar", () => ({
+  AgentComposerControlBar: () => null,
+}));
+vi.mock("@patchbay/core/hooks", () => ({
+  useWorkspaceId: () => "ws-1",
+}));
+vi.mock("@patchbay/core/permissions", () => ({
+  useAgentPermissions: () => ({ canEdit: true }),
+}));
+vi.mock("@patchbay/core/runtimes", () => ({
+  runtimeListOptions: () => ({
+    queryKey: ["runtimes", "ws-1"],
+    queryFn: async () => [],
+  }),
+}));
 vi.mock("./components/chat-thread-list", () => ({
   ChatThreadList: ({
     onSelectSession,

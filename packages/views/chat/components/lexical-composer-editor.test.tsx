@@ -26,8 +26,10 @@ const editorApi = vi.hoisted(() => {
   };
   return {
     instance,
+    inited: false,
     reset() {
       markdown = "";
+      this.inited = false;
       instance.blur.mockClear();
       instance.cleanDocument.mockClear();
       instance.dispatchCommand.mockClear();
@@ -50,6 +52,24 @@ const editorProps = vi.hoisted(() => ({
   last: null as null | Record<string, unknown>,
 }));
 
+const searchIssuesMock = vi.hoisted(() => vi.fn());
+
+vi.mock("@patchbay/core/platform", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@patchbay/core/platform")>();
+  return { ...actual, getCurrentWsId: () => "ws-1" };
+});
+
+vi.mock("@patchbay/core/auth", () => ({
+  useAuthStore: { getState: () => ({ user: { id: "u1" } }) },
+}));
+
+vi.mock("@patchbay/core/api", () => ({
+  api: {
+    searchIssues: (...args: unknown[]) => searchIssuesMock(...args),
+    searchProjects: vi.fn().mockResolvedValue({ projects: [], total: 0 }),
+  },
+}));
+
 vi.mock("@lobehub/editor", () => ({
   INSERT_MENTION_COMMAND: { type: "INSERT_MENTION_COMMAND" },
   ReactImagePlugin: () => null,
@@ -60,7 +80,10 @@ vi.mock("@lobehub/editor/react", () => ({
   useEditor: () => editorApi.instance,
   Editor: (props: Record<string, unknown>) => {
     editorProps.last = props;
-    (props.onInit as ((editor: unknown) => void) | undefined)?.(editorApi.instance);
+    if (!editorApi.inited) {
+      editorApi.inited = true;
+      (props.onInit as ((editor: unknown) => void) | undefined)?.(editorApi.instance);
+    }
     return <div data-testid="lobe-editor" />;
   },
 }));
@@ -87,6 +110,8 @@ describe("LexicalComposerEditor", () => {
   beforeEach(() => {
     editorApi.reset();
     editorProps.last = null;
+    searchIssuesMock.mockReset();
+    searchIssuesMock.mockResolvedValue({ issues: [], total: 0 });
     useShortcutStore.getState().resetAll();
     configureShortcutPlatform("windows");
   });
@@ -164,5 +189,73 @@ describe("LexicalComposerEditor", () => {
     expect(onUploadFile).toHaveBeenCalledTimes(1);
     expect(onUploadFile.mock.calls[0]?.[0]).toBeInstanceOf(File);
     expect((onUploadFile.mock.calls[0]?.[0] as File).name).toBe("pasted-text.txt");
+  });
+
+  it("does not replace the Lexical document when value echoes the live markdown", () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    function Harness({ value }: { value: string }) {
+      return (
+        <QueryClientProvider client={queryClient}>
+          <I18nProvider locale="en" resources={TEST_RESOURCES}>
+            <LexicalComposerEditor placeholder="Message" value={value} />
+          </I18nProvider>
+        </QueryClientProvider>
+      );
+    }
+
+    const { rerender } = render(<Harness value="" />);
+    editorApi.setMarkdown("hello from caret");
+    editorApi.instance.setDocument.mockClear();
+    rerender(<Harness value="hello from caret" />);
+    expect(editorApi.instance.setDocument).not.toHaveBeenCalled();
+  });
+
+  it("does not emit onUpdate synchronously from insertMarkdownAtEnd", () => {
+    const onUpdate = vi.fn();
+    const ref = createRef<ContentEditorRef>();
+    renderEditor({ onUpdate, debounceMs: 10_000 }, ref as MutableRefObject<ContentEditorRef | null>);
+    editorApi.setMarkdown("body");
+    act(() => {
+      expect(ref.current?.insertMarkdownAtEnd("![shot.png](/api/attachments/a/download)")).toBe(
+        true,
+      );
+    });
+    expect(onUpdate).not.toHaveBeenCalled();
+  });
+
+  it("focuses on init when a non-zero focusRequest is already pending", () => {
+    renderEditor({ focusRequest: 1 });
+    expect(editorApi.instance.focus).toHaveBeenCalled();
+  });
+
+  it("does not steal focus on init when focusRequest is inert", () => {
+    renderEditor({ focusRequest: 0 });
+    expect(editorApi.instance.focus).not.toHaveBeenCalled();
+  });
+
+  it("asks the server for mention matches that are not in the query cache", async () => {
+    searchIssuesMock.mockResolvedValue({
+      issues: [
+        {
+          id: "i-1007",
+          identifier: "PB-1007",
+          title: "Closed issue",
+          status: "done",
+        },
+      ],
+      total: 1,
+    });
+    renderEditor();
+    const mentionOption = editorProps.last?.mentionOption as {
+      items: (search: { matchingString: string } | null) => Promise<Array<{ key: string }>>;
+    };
+
+    const items = await mentionOption.items({ matchingString: "协作" });
+    expect(searchIssuesMock).toHaveBeenCalledWith(
+      expect.objectContaining({ q: "协作", include_closed: true }),
+    );
+    expect(items.some((item) => item.key === "issue:i-1007")).toBe(true);
   });
 });

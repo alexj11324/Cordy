@@ -786,6 +786,7 @@ export function ChatInput({
             mentionMode={contextItems ? "context" : "default"}
             mentionContextItems={contextItems}
             enableSlashCommands
+            focusRequest={focusRequest}
           />
         </Suspense>
       ) : (

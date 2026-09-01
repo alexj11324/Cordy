@@ -935,10 +935,7 @@ async fn create_agent(
         .as_deref()
         .is_some_and(|value| !known_session_mode(value))
     {
-        return error_response(
-            StatusCode::BAD_REQUEST,
-            "session_mode is not recognised",
-        );
+        return error_response(StatusCode::BAD_REQUEST, "session_mode is not recognised");
     }
     if request
         .service_tier

@@ -24,13 +24,14 @@ import { configStore } from "@patchbay/core/config";
 import { getShortcut } from "@patchbay/core/shortcuts";
 import { createSafeId, isImeComposing } from "@patchbay/core/utils";
 import { getCurrentWsId } from "@patchbay/core/platform";
+import { useWorkspaceSlug } from "@patchbay/core/paths";
 import { cn } from "@patchbay/ui/lib/utils";
 import type { ContentEditorRef } from "../../editor/content-editor";
 import type { MentionItem } from "../../editor/extensions/mention-suggestion";
-import {
-  listMentionSuggestionItems,
-} from "../../editor/extensions/mention-suggestion";
+import { listMentionSuggestionItemsAsync } from "../../editor/extensions/mention-suggestion";
 import { recordMentionUsage } from "../../editor/extensions/mention-recency";
+import { resolveBareIssueIdentifiersInMarkdown } from "../../editor/utils/bare-issue-identifiers";
+import { resolveWorkspaceIssueIdentifier } from "../../editor/utils/resolve-issue-identifier";
 import {
   buildChatSkillItems,
 } from "../../editor/extensions/slash-command-suggestion";
@@ -66,6 +67,12 @@ type LexicalComposerEditorProps = {
   mentionMode?: "default" | "context";
   mentionContextItems?: MentionItem[];
   enableSlashCommands?: boolean;
+  /**
+   * Non-zero nonce from ChatInput. The Lexical module is lazy-loaded, so the
+   * parent's focus effect can run while this ref is still null; replaying the
+   * nonce here focuses once the editor actually exists.
+   */
+  focusRequest?: number;
 };
 
 function normalizeMarkdown(md: string): string {
@@ -137,11 +144,13 @@ const LexicalComposerEditor = forwardRef<
     mentionMode = "default",
     mentionContextItems,
     enableSlashCommands = true,
+    focusRequest = 0,
   },
   ref,
 ) {
   const { t } = useT("editor");
   const queryClient = useQueryClient();
+  const workspaceSlug = useWorkspaceSlug();
   const editor = useEditor();
   const [pendingUploads, setPendingUploads] = useState<PendingUpload[]>([]);
   const pendingRef = useRef<PendingUpload[]>([]);
@@ -160,6 +169,10 @@ const LexicalComposerEditor = forwardRef<
   const pasteAsFileThresholdRef = useRef(pasteAsFileThreshold);
   const mentionContextItemsRef = useRef(mentionContextItems ?? []);
   const valueRef = useRef(value);
+  const workspaceSlugRef = useRef(workspaceSlug);
+  const focusRequestRef = useRef(focusRequest);
+  const persistGenRef = useRef(0);
+  const programmaticWriteRef = useRef(false);
 
   onUpdateRef.current = onUpdate;
   onSubmitRef.current = onSubmit;
@@ -168,6 +181,8 @@ const LexicalComposerEditor = forwardRef<
   pasteAsFileThresholdRef.current = pasteAsFileThreshold;
   mentionContextItemsRef.current = mentionContextItems ?? [];
   valueRef.current = value;
+  workspaceSlugRef.current = workspaceSlug;
+  focusRequestRef.current = focusRequest;
 
   const syncUploading = useCallback((next: PendingUpload[]) => {
     pendingRef.current = next;
@@ -191,19 +206,49 @@ const LexicalComposerEditor = forwardRef<
       if (normalized === lastEmittedRef.current) return;
       const base = documentBaseRef.current;
       lastEmittedRef.current = normalized;
+      lastSyncedValueRef.current = markdown;
       documentBaseRef.current = normalized;
       onUpdateRef.current?.(markdown, base);
     },
     [],
   );
 
+  const persistUserMarkdown = useCallback(
+    async (markdown: string) => {
+      const gen = ++persistGenRef.current;
+      let next = markdown;
+      try {
+        next = await resolveBareIssueIdentifiersInMarkdown(
+          markdown,
+          (identifier) =>
+            resolveWorkspaceIssueIdentifier(
+              queryClient,
+              identifier,
+              workspaceSlugRef.current,
+            ),
+        );
+      } catch {
+        next = markdown;
+      }
+      if (gen !== persistGenRef.current) return;
+      if (next !== markdown && editorReadyRef.current) {
+        programmaticWriteRef.current = true;
+        writeEditorMarkdown(editor, next, true);
+        programmaticWriteRef.current = false;
+      }
+      emitMarkdown(next);
+    },
+    [editor, emitMarkdown, queryClient],
+  );
+
   const scheduleUpdate = useCallback(() => {
+    if (programmaticWriteRef.current) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       debounceRef.current = undefined;
-      emitMarkdown(readEditorMarkdown(editor));
+      void persistUserMarkdown(readEditorMarkdown(editor));
     }, debounceMs);
-  }, [debounceMs, editor, emitMarkdown]);
+  }, [debounceMs, editor, persistUserMarkdown]);
 
   const mentionMarkdownWriter = useCallback(
     (mention: { label: string; metadata?: Record<string, unknown> }) =>
@@ -220,7 +265,7 @@ const LexicalComposerEditor = forwardRef<
       } | null,
     ): Promise<ISlashOption[]> => {
       const query = search?.matchingString ?? "";
-      const items = listMentionSuggestionItems(queryClient, query, {
+      const items = await listMentionSuggestionItemsAsync(queryClient, query, {
         mode: mentionMode,
         getContextItems: () => mentionContextItemsRef.current,
       });
@@ -333,10 +378,12 @@ const LexicalComposerEditor = forwardRef<
       if (!editorReadyRef.current) return false;
       const md = attachmentMarkdownFromResult(result);
       const landed = appendEditorMarkdown(editor, md);
-      if (landed) emitMarkdown(readEditorMarkdown(editor));
+      // Debounced persist only — a synchronous emit races coordinator
+      // `appendToBody` and doubles the fragment in the draft.
+      if (landed) scheduleUpdate();
       return landed;
     },
-    [editor, emitMarkdown, setPending],
+    [editor, scheduleUpdate, setPending],
   );
 
   const runUpload = useCallback(
@@ -414,7 +461,7 @@ const LexicalComposerEditor = forwardRef<
       }
       lastEmittedRef.current = normalizeMarkdown(readEditorMarkdown(instance));
       lastSyncedValueRef.current = incoming;
-      if (focusOnReadyRef.current) {
+      if (focusOnReadyRef.current || focusRequestRef.current) {
         focusOnReadyRef.current = false;
         instance.focus();
       }
@@ -428,14 +475,23 @@ const LexicalComposerEditor = forwardRef<
     lastSyncedValueRef.current = value;
     if (pendingRef.current.length > 0) return;
     const current = readEditorMarkdown(editor);
+    if (normalizeMarkdown(current) === normalizeMarkdown(value)) return;
     const isDirty =
       lastEmittedRef.current !== null &&
       normalizeMarkdown(current) !== lastEmittedRef.current;
     if (isDirty) return;
+    programmaticWriteRef.current = true;
     writeEditorMarkdown(editor, value, false);
+    programmaticWriteRef.current = false;
     lastEmittedRef.current = normalizeMarkdown(readEditorMarkdown(editor));
     documentBaseRef.current = normalizeMarkdown(value);
   }, [editor, value]);
+
+  useEffect(() => {
+    if (!focusRequest) return;
+    if (editorReadyRef.current) editor.focus();
+    else focusOnReadyRef.current = true;
+  }, [editor, focusRequest]);
 
   useEffect(() => {
     return () => {
@@ -475,16 +531,20 @@ const LexicalComposerEditor = forwardRef<
     insertMarkdownAtEnd: (markdown: string) => {
       if (!editorReadyRef.current) return false;
       const landed = appendEditorMarkdown(editor, markdown);
-      if (landed) emitMarkdown(readEditorMarkdown(editor));
+      // Coordinator write-back also calls appendToBody. Persist through the
+      // debounced path so the fragment is not written twice.
+      if (landed) scheduleUpdate();
       return landed;
     },
     flushPendingUpdate: () => {
       if (!debounceRef.current) return null;
       clearTimeout(debounceRef.current);
       debounceRef.current = undefined;
+      persistGenRef.current += 1;
       const md = normalizeMarkdown(readEditorMarkdown(editor));
       if (md === lastEmittedRef.current) return null;
       lastEmittedRef.current = md;
+      lastSyncedValueRef.current = md;
       documentBaseRef.current = md;
       return md;
     },

@@ -3152,8 +3152,8 @@ async fn apply_acp_session_mode<R, W>(
     R: tokio::io::AsyncBufRead + Unpin,
     W: tokio::io::AsyncWrite + Unpin,
 {
-    let Some(option) = parse_acp_session_mode_option(session_result)
-        .filter(|option| !option.choices.is_empty())
+    let Some(option) =
+        parse_acp_session_mode_option(session_result).filter(|option| !option.choices.is_empty())
     else {
         tracing::warn!(
             provider,

@@ -64,6 +64,7 @@ vi.mock("../../common/actor-avatar", () => ({
 
 import {
   createMentionSuggestion,
+  listMentionSuggestionItemsAsync,
   MentionList,
   type MentionListRef,
   type MentionItem,
@@ -324,6 +325,30 @@ describe("createMentionSuggestion", () => {
 
     expect(searchIssuesMock).not.toHaveBeenCalled();
     expect(searchProjectsMock).not.toHaveBeenCalled();
+  });
+
+  it("merges server issue search into the async mention list used by Lexical", async () => {
+    searchIssuesMock.mockResolvedValue({
+      issues: [
+        {
+          id: "i-1007",
+          identifier: "PB-1007",
+          title: "多 Agent 协作探索",
+          status: "done",
+        },
+      ],
+      total: 1,
+    });
+
+    const qc = fakeQc({ issues: [] });
+    const items = await listMentionSuggestionItemsAsync(qc, "协作");
+
+    expect(items.some((item) => item.id === "i-1007" && item.label === "PB-1007")).toBe(
+      true,
+    );
+    expect(searchIssuesMock).toHaveBeenCalledWith(
+      expect.objectContaining({ q: "协作", limit: 20, include_closed: true }),
+    );
   });
 
   it("captures Enter while the popup has no selectable items", () => {
