@@ -259,6 +259,7 @@ describe("complete Desktop development doctor", () => {
       arch: "arm64",
       execImpl,
       fetchImpl,
+      cacheRoot: join(repoRoot, "cache"),
     });
 
     expect(report.ok).toBe(true);
