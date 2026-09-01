@@ -260,6 +260,7 @@ describe("complete Desktop development doctor", () => {
       execImpl,
       fetchImpl,
       cacheRoot: join(repoRoot, "cache"),
+      toolchainIdentityImpl: () => null,
     });
 
     expect(report.ok).toBe(true);
@@ -349,6 +350,7 @@ describe("complete Desktop development doctor", () => {
       execImpl,
       fetchImpl,
       cacheRoot: join(repoRoot, "cache"),
+      toolchainIdentityImpl: () => null,
     });
 
     expect(report.ok).toBe(true);
@@ -406,6 +408,7 @@ describe("complete Desktop development doctor", () => {
         json: async () => ({ status: "ready" }),
       }),
       cacheRoot: join(repoRoot, "cache"),
+      toolchainIdentityImpl: () => null,
     });
 
     expect(report.checks.find(({ id }) => id === "agents")).toMatchObject({
@@ -445,6 +448,7 @@ describe("complete Desktop development doctor", () => {
       arch: "arm64",
       execImpl,
       cacheRoot: join(repoRoot, "cache"),
+      toolchainIdentityImpl: () => null,
       fetchImpl: async () => ({
         ok: true,
         status: 200,
@@ -495,6 +499,7 @@ describe("complete Desktop development doctor", () => {
       arch: "arm64",
       execImpl,
       cacheRoot: join(repoRoot, "cache"),
+      toolchainIdentityImpl: () => null,
       fetchImpl: async () => ({
         ok: true,
         status: 200,
@@ -533,6 +538,7 @@ describe("complete Desktop development doctor", () => {
       arch: "arm64",
       execImpl,
       cacheRoot: join(repoRoot, "cache"),
+      toolchainIdentityImpl: () => null,
       fetchImpl: async () => ({ ok: false, status: 503 }),
     });
 

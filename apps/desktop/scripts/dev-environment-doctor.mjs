@@ -130,6 +130,11 @@ export function loadDoctorEnvironment({
   return env;
 }
 
+function resolveCurrentToolchainIdentity({ env, platform, cwd }) {
+  const cargoCommand = resolveCargoCommand(env, platform);
+  return rustToolchainIdentity(env, cargoCommand, { platform, cwd });
+}
+
 function formatBytes(bytes) {
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KiB`;
   if (bytes < 1024 * 1024 * 1024) {
@@ -241,6 +246,7 @@ export async function inspectDevEnvironment({
   fetchImpl = fetch,
   execImpl = execFile,
   cacheRoot = defaultDevCliCacheDir({ env, platform }),
+  toolchainIdentityImpl = resolveCurrentToolchainIdentity,
 } = {}) {
   const binaryName = binaryNameForPlatform(platform);
   const binaryPath = join(
@@ -262,8 +268,8 @@ export async function inspectDevEnvironment({
   let localAgentAvailable = false;
 
   const cache = await inspectDevRuntimeCache({ cacheRoot });
-  const cargoCommand = resolveCargoCommand(env, platform);
-  const toolchainIdentity = rustToolchainIdentity(env, cargoCommand, {
+  const toolchainIdentity = toolchainIdentityImpl({
+    env,
     platform,
     cwd: join(repoRoot, "server-rs"),
   });
@@ -319,8 +325,8 @@ export async function inspectDevEnvironment({
     if (!manifestToolchain || manifestToolchain === "unavailable") {
       cliIdentityPending = true;
     } else {
-      const cargoCommand = resolveCargoCommand(env, platform);
-      const currentToolchain = rustToolchainIdentity(env, cargoCommand, {
+      const currentToolchain = toolchainIdentityImpl({
+        env,
         platform,
         cwd: join(repoRoot, "server-rs"),
       });
