@@ -371,6 +371,11 @@ cleared_coordination_outbox AS (
     DELETE FROM agent_coordination_outbox
     WHERE issue_id IN (SELECT target.id FROM target)
 ),
+cleared_linear_sync_conflicts AS (
+    DELETE FROM linear_sync_conflict
+    WHERE workspace_id = $2
+      AND patchbay_issue_id IN (SELECT target.id FROM target)
+),
 affected_dependency_graph_plans AS (
     SELECT plan.id
     FROM dependency_graph_plan plan

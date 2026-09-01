@@ -1592,7 +1592,7 @@ impl LinearSyncWorker {
                 binding.id,
                 issue.id,
                 &event_key,
-                "issue.updated",
+                "issue_updated",
                 &json!({"reason": "linear_project_rebind"}),
             )
             .await
