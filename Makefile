@@ -1,11 +1,10 @@
 .PHONY: help makehelp dev dev-acceptance web-next-dev api-dev server rust-server daemon cli patchbay rust-cli build-rust-cli build rust-build test rust-test migrate-up migrate-down rust-migrate-up rust-migrate-down seed clean stop check worktree-env remove-worktree db-up db-down db-drop db-reset selfhost selfhost-build selfhost-stop
 
 WORKTREE_ENV_FILE ?= .env.worktree
-# Source-development Make targets must use the generated isolated checkout
-# environment by default. An explicit `ENV_FILE=.env` remains available for
-# self-host or other non-development operations, but a present root `.env`
-# must never silently collapse separate checkouts onto one database/port set.
-ENV_FILE ?= $(WORKTREE_ENV_FILE)
+SELFHOST_ENV_FILE ?= .env
+SELFHOST_GOALS := selfhost selfhost-build selfhost-stop
+DEFAULT_ENV_FILE := $(if $(filter $(SELFHOST_GOALS),$(MAKECMDGOALS)),$(SELFHOST_ENV_FILE),$(WORKTREE_ENV_FILE))
+ENV_FILE ?= $(DEFAULT_ENV_FILE)
 
 ifneq ($(wildcard $(ENV_FILE)),)
 include $(ENV_FILE)
@@ -77,7 +76,7 @@ endef
 ##@ Help
 
 help: ## Show available make targets and common local workflows
-	@awk 'BEGIN {FS = ":.*## "; printf "\nUsage:\n  make \033[36m<target>\033[0m\n\nQuick start:\n  \033[36mmake dev\033[0m          Bootstrap the current checkout and start everything\n  \033[36mmake check\033[0m        Run the full local verification pipeline\n\nCheckout modes:\n  Every source-development checkout uses \033[36m.env.worktree\033[0m (generate with \033[36mmake worktree-env\033[0m)\n  \033[36m.env\033[0m is selected only when passed explicitly for non-development use\n\n"} \
+	@awk 'BEGIN {FS = ":.*## "; printf "\nUsage:\n  make \033[36m<target>\033[0m\n\nQuick start:\n  \033[36mmake dev\033[0m          Bootstrap the current checkout and start everything\n  \033[36mmake check\033[0m        Run the full local verification pipeline\n\nCheckout modes:\n  Every source-development checkout uses \033[36m.env.worktree\033[0m (generate with \033[36mmake worktree-env\033[0m)\n  Self-host targets use \033[36m.env\033[0m unless ENV_FILE is passed explicitly\n\n"} \
 		/^##@/ {printf "\n\033[1m%s\033[0m\n", substr($$0, 5); next} \
 		/^[a-zA-Z0-9_.-]+:.*## / {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
