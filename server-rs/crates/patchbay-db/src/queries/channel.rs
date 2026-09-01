@@ -30,7 +30,7 @@ ORDER BY workspace_id"#,
     .await?)
 }
 
-/// Reconciles Cordy-hosted installation capacity while holding the same
+/// Reconciles Patchbay-hosted installation capacity while holding the same
 /// workspace-row lock used by installation admission. Desired installation
 /// state remains `active`; hosted pause is an orthogonal, reversible runtime
 /// condition so subscription changes never delete credentials or bindings.

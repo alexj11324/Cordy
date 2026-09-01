@@ -2310,7 +2310,7 @@ async fn install_context(
 
 /// Resolves hosted installation capacity from the trusted Cloud policy. A
 /// missing or stale policy fails closed in managed mode; self-hosted setup is
-/// disabled here because it does not consume Cordy-hosted capacity.
+/// disabled here because it does not consume Patchbay-hosted capacity.
 pub(crate) async fn hosted_installation_limit(
     state: &HandlerState,
     workspace_id: Uuid,
