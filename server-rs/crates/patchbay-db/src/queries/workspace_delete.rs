@@ -224,6 +224,12 @@ pub async fn delete_workspace_communication_roots(
 deleted_sessions AS (
     DELETE FROM chat_session WHERE chat_session.workspace_id = $1
 ),
+deleted_channel_runtime_observations AS (
+    DELETE FROM channel_installation_runtime_observation
+    WHERE installation_id IN (
+        SELECT id FROM channel_installation WHERE workspace_id = $1
+    )
+),
 deleted_channel_installations AS (
     DELETE FROM channel_installation
     WHERE channel_installation.workspace_id = $1

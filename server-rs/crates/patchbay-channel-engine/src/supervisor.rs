@@ -30,6 +30,7 @@ use crate::ids::new_node_id;
 use crate::lease::{AcquireLeaseParams, LeaseError, LeaseStore, ReleaseLeaseParams};
 
 type SharedAbortHandle = Arc<Mutex<Option<tokio::task::AbortHandle>>>;
+type SharedRuntimeObservation = Arc<Mutex<Option<RuntimeHealthObservation>>>;
 
 /// One active installation row the supervisor may lease and drive.
 /// Mirrors Go `engine.Installation`.
@@ -704,8 +705,20 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
                             %error,
                             "channel engine: failed to claim runtime observation"
                         );
+                        // A generation that cannot claim the token-fenced
+                        // observation row must not start the transport. Doing
+                        // so would leave the previous generation's health
+                        // visible while every report from this one is rejected.
+                        self.release_lease(&inst.id, &lease_tok).await;
+                        active_owner.finish();
+                        if sleep(&ctx, jitter(backoff)).await {
+                            return;
+                        }
+                        backoff = next_backoff(backoff, self.cfg.max_backoff);
+                        continue;
                     }
-                    let runtime_health = self.runtime_health_reporter(inst.id, lease_tok.clone());
+                    let (runtime_health, last_runtime_observation) =
+                        self.runtime_health_reporter(inst.id, lease_tok.clone());
 
                     // Build the platform channel via the registry, run it
                     // under a child token, and renew the lease in parallel.
@@ -754,6 +767,7 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
                     let renew_inst_id = inst.id;
                     let renew_token = lease_tok.clone();
                     let renew_health = runtime_health.clone();
+                    let renew_last_observation = Arc::clone(&last_runtime_observation);
                     let renewed = tokio::spawn(async move {
                         // renew_lease_until cancels run_ctx itself on lease
                         // loss so the channel exits even if its wire I/O is
@@ -766,6 +780,7 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
                                 &renew_inst_id,
                                 &renew_token,
                                 &renew_health,
+                                &renew_last_observation,
                             )
                             .await;
                     });
@@ -884,6 +899,7 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
         inst_id: &uuid::Uuid,
         token: &str,
         runtime_health: &RuntimeHealthReporter,
+        last_runtime_observation: &SharedRuntimeObservation,
     ) {
         let confirmed_until = match self.acquire_lease(inst_id, token).await {
             // Re-acquire is a renewal when we still own it (same token).
@@ -914,6 +930,7 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
         };
         let mut confirmed_until = confirmed_until;
         let mut next_delay = renewal_jitter(self.cfg.lease_renew_interval);
+        let mut restore_healthy_after_renewal = false;
         loop {
             let remaining = (confirmed_until - self.cfg.now())
                 .to_std()
@@ -970,6 +987,14 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
                     return;
                 }
                 Ok(Err(err)) => {
+                    let was_healthy = last_runtime_observation
+                        .lock()
+                        .unwrap_or_else(|error| error.into_inner())
+                        .as_ref()
+                        .is_some_and(|observation| {
+                            observation.state == RuntimeHealthState::Healthy
+                        });
+                    restore_healthy_after_renewal |= was_healthy;
                     self.set_renewal_error(&inst_id.to_string(), true);
                     self.record_lease_operation("renew", "error");
                     tracing::warn!(
@@ -988,7 +1013,22 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
                     next_delay = self.cfg.lease_error_retry_interval;
                     continue;
                 }
-                Ok(Ok(())) => {}
+                Ok(Ok(())) => {
+                    if restore_healthy_after_renewal {
+                        let renewal_is_still_the_latest_observation = last_runtime_observation
+                            .lock()
+                            .unwrap_or_else(|error| error.into_inner())
+                            .as_ref()
+                            .is_some_and(|observation| {
+                                observation.state == RuntimeHealthState::Degraded
+                                    && observation.error_code == Some("lease_renewal_failed")
+                            });
+                        if renewal_is_still_the_latest_observation {
+                            runtime_health.healthy().await;
+                        }
+                        restore_healthy_after_renewal = false;
+                    }
+                }
             }
             confirmed_until = started + ttl
                 - chrono::Duration::from_std(self.cfg.lease_expiry_safety_margin).unwrap();
@@ -1054,12 +1094,18 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
         &self,
         installation_id: uuid::Uuid,
         observer_token: String,
-    ) -> RuntimeHealthReporter {
+    ) -> (RuntimeHealthReporter, SharedRuntimeObservation) {
         let store = Arc::clone(&self.store);
-        RuntimeHealthReporter::new(move |observation| {
+        let last_observation = Arc::new(Mutex::new(None));
+        let callback_observation = Arc::clone(&last_observation);
+        let reporter = RuntimeHealthReporter::new(move |observation| {
             let store = Arc::clone(&store);
             let observer_token = observer_token.clone();
+            let callback_observation = Arc::clone(&callback_observation);
             async move {
+                *callback_observation
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner()) = Some(observation.clone());
                 match store
                     .observe_runtime(installation_id, &observer_token, observation)
                     .await
@@ -1076,7 +1122,8 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
                     ),
                 }
             }
-        })
+        });
+        (reporter, last_observation)
     }
 
     fn adjust_active_owners(&self, delta: i64) {
@@ -1329,6 +1376,41 @@ mod tests {
         abort_waits(&[abort]);
 
         assert!(task.await.unwrap_err().is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn runtime_reporter_tracks_the_latest_generation_observation() {
+        let supervisor = test_supervisor();
+        let (reporter, latest) =
+            supervisor.runtime_health_reporter(uuid::Uuid::now_v7(), "lease-g1".into());
+
+        reporter.healthy().await;
+        assert_eq!(
+            latest
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .as_ref()
+                .map(|observation| observation.state),
+            Some(RuntimeHealthState::Healthy)
+        );
+
+        reporter
+            .observe(RuntimeHealthObservation {
+                state: RuntimeHealthState::Degraded,
+                error_code: Some("lease_renewal_failed"),
+                error_summary: None,
+            })
+            .await;
+        let latest = latest
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone();
+        assert_eq!(
+            latest
+                .as_ref()
+                .and_then(|observation| observation.error_code),
+            Some("lease_renewal_failed")
+        );
     }
 
     #[test]

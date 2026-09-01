@@ -188,13 +188,24 @@ function ConnectionStatus({ query }: { query: IntegrationQuery }) {
   ) {
     return <Badge variant="outline">{t(($) => $.page.integrations_experimental)}</Badge>;
   }
-  if (
-    query.data.installations.some(
-      (installation) =>
-        installation.status === "active" && !isHealthy(installation),
-    )
-  ) {
-    return <Badge variant="outline">{t(($) => $.page.integrations_status)}</Badge>;
+  const activeUnhealthy = query.data.installations.find(
+    (installation) => installation.status === "active" && !isHealthy(installation),
+  );
+  if (activeUnhealthy) {
+    const runtime = activeUnhealthy.runtime;
+    let label = t(($) => $.page.integrations_status);
+    if (runtime?.state === "starting") {
+      label = t(($) => $.page.integrations_runtime_starting);
+    } else if (runtime?.errorCode === "configuration_invalid") {
+      label = t(($) => $.page.integrations_runtime_configuration_error);
+    } else if (runtime?.state === "offline") {
+      label = t(($) => $.page.integrations_runtime_offline);
+    } else if (runtime?.state === "degraded") {
+      label = t(($) => $.page.integrations_runtime_degraded);
+    } else if (runtime?.state === "error") {
+      label = t(($) => $.page.integrations_runtime_error);
+    }
+    return <Badge variant="outline">{label}</Badge>;
   }
   const nonActive = query.data.installations.find((installation) => installation.status !== "active");
   if (nonActive) {

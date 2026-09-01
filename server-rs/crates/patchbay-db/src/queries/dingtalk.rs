@@ -49,6 +49,10 @@ cleared_inbound_dedup AS (
     DELETE FROM channel_inbound_message_dedup
     WHERE installation_id IN (SELECT id FROM retired)
 ),
+cleared_runtime_observations AS (
+    DELETE FROM channel_installation_runtime_observation
+    WHERE installation_id IN (SELECT id FROM retired)
+),
 detached_audit AS (
     UPDATE channel_inbound_audit SET installation_id = NULL
     WHERE installation_id IN (SELECT id FROM retired)

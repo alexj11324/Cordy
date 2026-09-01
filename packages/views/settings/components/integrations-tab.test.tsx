@@ -258,6 +258,30 @@ describe("Settings IntegrationsTab", () => {
     expect(screen.getByRole("button", { name: "Disconnect" })).toBeInTheDocument();
   });
 
+  it("localizes runtime health from the stable error code and state", () => {
+    authUserRef.current = { id: "admin-user" };
+    membersRef.current = [{ user_id: "admin-user", role: "owner" }];
+    channelInstallationsRef.current.dingtalk = {
+      configured: true,
+      install_supported: true,
+      installations: [{
+        id: "offline-hub",
+        agent_id: null,
+        status: "active",
+        runtime: {
+          state: "offline",
+          observedAt: "2026-09-01T00:00:00Z",
+          errorCode: "lease_expired",
+        },
+      }],
+    };
+
+    renderTab();
+
+    expect(screen.getByText("Runtime offline")).toBeInTheDocument();
+    expect(screen.queryByText("The runtime that owned this connection is no longer active.")).toBeNull();
+  });
+
   it("opens an actionable setup detail instead of exposing a deployment variable", () => {
     authUserRef.current = { id: "admin-user" };
     membersRef.current = [{ user_id: "admin-user", role: "owner" }];

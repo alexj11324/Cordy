@@ -382,7 +382,7 @@ fn runtime_observation(
             "state": if starting { "starting" } else { "offline" },
             "observedAt": Value::Null,
             "errorCode": if starting { Value::Null } else { json!("runtime_unobserved") },
-            "errorSummary": if starting { Value::Null } else { json!("No platform handshake has been observed.") },
+            "errorSummary": Value::Null,
         });
     };
     let supervisor_observation = !observation.observer_token.starts_with("managed:")
@@ -394,27 +394,40 @@ fn runtime_observation(
             "state": "offline",
             "observedAt": crate::timefmt::rfc3339(observation.observed_at),
             "errorCode": "health_observation_stale",
-            "errorSummary": "The hosted gateway has not refreshed this connection recently.",
+            "errorSummary": Value::Null,
         });
     }
+    let lease_is_current = row
+        .ws_lease_expires_at
+        .is_some_and(|expires_at| expires_at > Utc::now())
+        && row.ws_lease_token.as_deref() == Some(observation.observer_token.as_str());
     if supervisor_observation
         && matches!(observation.state.as_str(), "starting" | "healthy")
-        && row
-            .ws_lease_expires_at
-            .is_none_or(|expires_at| expires_at <= Utc::now())
+        && !lease_is_current
     {
+        let error_code = if row
+            .ws_lease_expires_at
+            .is_some_and(|expires_at| expires_at > Utc::now())
+        {
+            "lease_generation_mismatch"
+        } else {
+            "lease_expired"
+        };
         return json!({
             "state": "offline",
             "observedAt": crate::timefmt::rfc3339(observation.observed_at),
-            "errorCode": "lease_expired",
-            "errorSummary": "The runtime that owned this connection is no longer active.",
+            "errorCode": error_code,
+            "errorSummary": Value::Null,
         });
     }
     json!({
         "state": observation.state,
         "observedAt": crate::timefmt::rfc3339(observation.observed_at),
         "errorCode": observation.error_code,
-        "errorSummary": observation.error_summary,
+        // Public clients localize the stable error code. Provider and
+        // Supervisor summaries remain server-side diagnostics so one locale
+        // is never serialized as user-facing product copy.
+        "errorSummary": Value::Null,
     })
 }
 
@@ -3058,8 +3071,9 @@ mod tests {
     #[test]
     fn runtime_supervisor_observation_with_a_current_lease_is_preserved() {
         let now = Utc::now();
-        let installation =
+        let mut installation =
             runtime_test_installation("active", now, Some(now + Duration::minutes(1)));
+        installation.ws_lease_token = Some("lease-token".into());
         let observation = runtime_test_observation(installation.id, "lease-token", "healthy");
 
         let runtime = runtime_observation(&installation, Some(&observation));
@@ -3069,16 +3083,32 @@ mod tests {
     }
 
     #[test]
+    fn runtime_rejects_health_from_a_previous_lease_generation() {
+        let now = Utc::now();
+        let mut installation =
+            runtime_test_installation("active", now, Some(now + Duration::minutes(1)));
+        installation.ws_lease_token = Some("current-token".into());
+        let observation = runtime_test_observation(installation.id, "previous-token", "healthy");
+
+        let runtime = runtime_observation(&installation, Some(&observation));
+
+        assert_eq!(runtime["state"], "offline");
+        assert_eq!(runtime["errorCode"], "lease_generation_mismatch");
+    }
+
+    #[test]
     fn runtime_supervisor_degradation_is_preserved_between_retries() {
         let now = Utc::now();
         let installation = runtime_test_installation("active", now - Duration::minutes(5), None);
         let mut observation = runtime_test_observation(installation.id, "lease-token", "degraded");
         observation.error_code = Some("transport_error".into());
+        observation.error_summary = Some("server-side diagnostic".into());
 
         let runtime = runtime_observation(&installation, Some(&observation));
 
         assert_eq!(runtime["state"], "degraded");
         assert_eq!(runtime["errorCode"], "transport_error");
+        assert!(runtime["errorSummary"].is_null());
     }
 
     #[test]
