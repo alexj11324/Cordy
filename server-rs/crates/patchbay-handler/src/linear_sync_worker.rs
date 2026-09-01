@@ -72,6 +72,18 @@ impl SyncError {
     }
 }
 
+struct ExistingRemoteIssueInput<'a> {
+    connection: &'a LinearConnection,
+    binding: LinearProjectBinding,
+    link: LinearIssueLink,
+    remote: LinearRemoteIssue,
+    remote_snapshot: Value,
+    source_event_id: &'a str,
+    event_timestamp_ms: Option<i64>,
+    remote_updated_at: DateTime<Utc>,
+    updated_from: Option<&'a Value>,
+}
+
 /// A supervisor-owned Linear Inbox worker. `HandlerState` is cloned into the
 /// worker so the domain service, event bus, feature gates, and token manager
 /// all remain the same instances used by HTTP routes.
@@ -1066,17 +1078,17 @@ impl LinearSyncWorker {
                 link.binding_id = binding.id;
             }
             return self
-                .apply_existing_remote_issue(
+                .apply_existing_remote_issue(ExistingRemoteIssueInput {
                     connection,
                     binding,
                     link,
                     remote,
-                    snapshot,
+                    remote_snapshot: snapshot,
                     source_event_id,
                     event_timestamp_ms,
                     remote_updated_at,
                     updated_from,
-                )
+                })
                 .await;
         }
         let mapped_category = patchbay_service::issue_status::effective(
@@ -1333,16 +1345,19 @@ impl LinearSyncWorker {
 
     async fn apply_existing_remote_issue(
         &self,
-        connection: &LinearConnection,
-        binding: LinearProjectBinding,
-        link: LinearIssueLink,
-        remote: LinearRemoteIssue,
-        remote_snapshot: Value,
-        source_event_id: &str,
-        event_timestamp_ms: Option<i64>,
-        remote_updated_at: DateTime<Utc>,
-        updated_from: Option<&Value>,
+        input: ExistingRemoteIssueInput<'_>,
     ) -> Result<(), SyncError> {
+        let ExistingRemoteIssueInput {
+            connection,
+            binding,
+            link,
+            remote,
+            remote_snapshot,
+            source_event_id,
+            event_timestamp_ms,
+            remote_updated_at,
+            updated_from,
+        } = input;
         if event_timestamp_ms.is_none()
             && link
                 .remote_updated_at

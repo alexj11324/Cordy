@@ -937,7 +937,7 @@ async fn resolve_conflict(
     let applied = match state
         .issues
         .apply_external_patch_in_transaction(
-            &mut *transaction,
+            &mut transaction,
             workspace_id,
             issue.id,
             IssueCommand::ApplyExternalPatch {
