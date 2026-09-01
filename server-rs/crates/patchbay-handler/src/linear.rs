@@ -1063,30 +1063,30 @@ async fn resolve_conflict(
             }
         }
     }
-    if request.resolution != "remote"
-        && let Some(owner_id) = patch.owner_id.flatten()
-    {
-        match linear_q::get_linear_member_binding(
+    if request.resolution != "remote" {
+        if let Some(owner_id) = patch.owner_id.flatten() {
+            match linear_q::get_linear_member_binding(
             &mut *transaction,
             workspace_id,
             binding.connection_id,
             owner_id,
-        )
-        .await
-        {
-            Ok(Some(_)) => {}
-            Ok(None) => {
-                return error_response(
-                    StatusCode::BAD_REQUEST,
-                    "owner resolution has no Linear member mapping",
-                );
-            }
-            Err(error) => {
-                tracing::warn!(%error, "Linear conflict owner mapping lookup failed");
-                return error_response(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "failed to validate owner resolution",
-                );
+            )
+            .await
+            {
+                Ok(Some(_)) => {}
+                Ok(None) => {
+                    return error_response(
+                        StatusCode::BAD_REQUEST,
+                        "owner resolution has no Linear member mapping",
+                    );
+                }
+                Err(error) => {
+                    tracing::warn!(%error, "Linear conflict owner mapping lookup failed");
+                    return error_response(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to validate owner resolution",
+                    );
+                }
             }
         }
     }
