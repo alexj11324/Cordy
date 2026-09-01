@@ -34,14 +34,16 @@ W9    :  492 guest session + 493 clerk/oauth/google + 494 auth-broker handoff（
 
 ## 3. W5 依赖图（预置）
 
-- Rust 对照：418 domain, 419-427 图索引, 428 execution_gate, 429 attention, 448–449 issue_created_outbox, 459 target, 460 executor_fields, 463 roles_target 等。
-- Go 预置：`465_dependency_graph_domain` 建主表 + `466–473` 单索引 + `474_execution_gate` + `475_attention`，后续增量出 480+ 槽位。
+- Rust 对照：**418 domain**（`dependency_graph_plan/node/edge` 三表，无 FK），**419–427 单索引**（plan_id / node_id / edge_id / idempotency_key / active_parent / node_temp / edge_direction/from/to），**428 execution_gate**（`dependency_graph_issue_gate_open` + `trg_dependency_graph_task_admission` 绑 `agent_task_queue` 入队/状态变更），**429 attention**（`attention_required/reason`），**448–449** `dependency_graph_issue_created_outbox`，**459** `agent_task_execution_target`，**460** `dependency_graph_executor_fields`，**463** `dependency_graph_roles_target`。
+- Go 预置：`465_dependency_graph_domain` 建主表 + `466–473` 单索引 + `474_execution_gate` + `475_attention`，后续增量出 480+ 槽位（outbox/executor/roles 等按需追加）。
+- 约束要点：无 FK/cascade；重跑幂等（`IF NOT EXISTS`）；执行门闸与 W4 `execution_lane_key` 共存——lane 负责并发互斥，图负责前置依赖闭合；变更均由触发器在 DB 侧强制，handler 不得旁路。
 - 前端：`packages/core/dependency-graphs` + `packages/views/task-graph` + 三端路由 + 四语（含 task-graph 菜单项）。
 
 ## 4. W6 Work products & Provenance
 
-- Rust 对照：430–445（product/relation/provenance/分支/清理 446–447）、450 discovery queue 等。
-- Go 预置：`476_work_product_and_provenance` 主表簇 + `477–483` 索引/关联键 + `484–489` 发现/分支增量，按需拆分；API 与 UI 同时可见。
+- Rust 对照：**430 work_product**（`id/workspace_id/kind/provider/external_identity/url/provider_record`），**431–434** 索引（pk/external_identity/provider_record），**435 relation**（`work_product_relation` 含 `issue/task/run/relation_key/relation_source/attached_by/close_intent/detached_*` 多重 CHECK），**436–441** relation 索引（pk/relation_key/issue/product/task），**442 provenance**（`agent_task_execution_provenance` 含 `repo_identity/execution_workspace/head_branch/sha/state/discovery_*`），**443–445** provenance 索引，**446–447** 旧 `pull_request` 清理，**450** discovery queue 索引。
+- Go 预置：`476_work_product_and_provenance` 主表簇（work_product + relation + provenance）+ `477–483` 索引/关联键 + `484–489` 发现/分支增量，按需拆分；API 与 UI 同时可见；同样无 FK。
+- 约束要点：`work_product_relation` 的多重 CHECK（至少一锚点、source/attached_by 绑定、run→task、detached 完整性）需原样落地；`provenance` 的 `repo_identity/head_state` 等 CHECK 保留；W4 的 `task_token` 能力链与 provenance 发现流程解耦。
 
 ## 5. W7 Agent Thread（不再使用 LobeHub sidebar）
 
@@ -49,11 +51,11 @@ W9    :  492 guest session + 493 clerk/oauth/google + 494 auth-broker handoff（
 
 ## 6. W8 Channels + Weixin
 
-- 对照：Rust 386–393 workspace_channel 栈及 Weixin/WeCom 增量；Go 侧复用现有 channel/wecom 抽象，补产品面与微信绑定面。
+- 对照：Rust **386** `workspace_channel`（`id/workspace_id/slug/name/status`）、**387–389** channel 索引（hub_unique/slug/pk），**390–393** `workspace_channel_message` 栈及 Weixin/WeCom 增量；Go 侧复用现有 `channel`/`wecom` 抽象，补产品面与微信绑定面。
 
 ## 7. W9 Auth（收口）
 
-- 新增：`492_guest_session`（397–400）、`493_clerk_oauth_google`（Clerk + /oauth/google + guest 主路径）、`494_desktop_auth_broker`（apps/auth-broker + patchbay:// 回调）。
+- 新增：`492_guest_session`（Rust **397** `user.is_guest` + **398–400** `guest_session` 表/索引，token 仅存 SHA-256 hash）、`493_clerk_oauth_google`（Clerk + `/oauth/google` + guest 主路径）、`494_desktop_auth_broker`（`apps/auth-broker` + `patchbay://auth/callback`）。
 - 移除：`POST /auth/google` 不再为 Web 主路径（保留 server 侧兼容或删除，以路由审计为准；mobile 保留 send-code）。
 - 合并：待 GH 必过全绿后按仓库 required merge 方式合入 main；若遇 branch protection/审批/密钥/回调阻塞，以 `blocking: "unverifiable"` 停止，不伪造验证。
 
