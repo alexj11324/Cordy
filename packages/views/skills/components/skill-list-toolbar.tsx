@@ -38,6 +38,7 @@ import {
   TooltipTrigger,
 } from "@patchbay/ui/components/ui/tooltip";
 import { ActorAvatar } from "@patchbay/ui/components/common/actor-avatar";
+import { AgentAcpAvatar } from "../../runtimes/components/acp-avatar";
 import { FILTER_ITEM_CLASS, HoverCheck } from "../../common/hover-check";
 import {
   type SkillColumnKey,
@@ -333,13 +334,7 @@ export function SkillListToolbar({
                     className={FILTER_ITEM_CLASS}
                   >
                     <HoverCheck checked={filters.agents.includes(agent.id)} />
-                    <ActorAvatar
-                      name={agent.name}
-                      initials={agent.name.slice(0, 2).toUpperCase()}
-                      avatarUrl={resolvePublicFileUrl(agent.avatar_url)}
-                      isAgent
-                      size="sm"
-                    />
+                    <AgentAcpAvatar agentId={agent.id} size="sm" name={agent.name} />
                     <span className="min-w-0 truncate">{agent.name}</span>
                     {countBadge(count)}
                   </DropdownMenuCheckboxItem>

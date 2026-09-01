@@ -10,12 +10,11 @@ import {
   type RuntimeHealth,
 } from "@patchbay/core/runtimes";
 import { agentListOptions, memberListOptions } from "@patchbay/core/workspace/queries";
-import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
 import { runtimeListOptions } from "@patchbay/core/runtimes/queries";
 import { useWorkspacePaths } from "@patchbay/core/paths";
-import { ActorAvatar as ActorAvatarBase } from "@patchbay/ui/components/common/actor-avatar";
 import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
 import { AppLink } from "../../navigation";
+import { AgentAcpAvatar } from "../../runtimes/components/acp-avatar";
 import { HealthIcon } from "../../runtimes/components/shared";
 import { availabilityConfig } from "../presence";
 import { VisibilityBadge } from "./visibility-badge";
@@ -58,12 +57,6 @@ export function AgentProfileCard({ agentId }: AgentProfileCardProps) {
     : null;
   const runtime = runtimes.find((r) => r.id === agent.runtime_id) ?? null;
   const isArchived = !!agent.archived_at;
-  const initials = agent.name
-    .split(" ")
-    .map((w) => w[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
 
   return (
     // `group` enables the hover-only Detail link on the top-right —
@@ -78,13 +71,7 @@ export function AgentProfileCard({ agentId }: AgentProfileCardProps) {
         {/* Base avatar rather than the ActorAvatar wrapper: this card IS a
             hover-card payload, so it must not nest another hover card or
             profile link inside itself. */}
-        <ActorAvatarBase
-          name={agent.name}
-          initials={initials}
-          avatarUrl={resolvePublicFileUrl(agent.avatar_url)}
-          isAgent
-          size="xl"
-        />
+        <AgentAcpAvatar agentId={agent.id} size="xl" name={agent.name} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             <p className="truncate text-body font-semibold">{agent.name}</p>

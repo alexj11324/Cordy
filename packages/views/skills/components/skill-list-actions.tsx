@@ -19,7 +19,6 @@ import type { Agent, SkillSummary } from "@patchbay/core/types";
 import { api } from "@patchbay/core/api";
 import { workspaceKeys } from "@patchbay/core/workspace/queries";
 import { useWorkspacePaths } from "@patchbay/core/paths";
-import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
 import { Button } from "@patchbay/ui/components/ui/button";
 import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
 import { Input } from "@patchbay/ui/components/ui/input";
@@ -48,9 +47,9 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@patchbay/ui/components/ui/tooltip";
-import { ActorAvatar } from "@patchbay/ui/components/common/actor-avatar";
 import { cn } from "@patchbay/ui/lib/utils";
 import { useT } from "../../i18n";
+import { AgentAcpAvatar } from "../../runtimes/components/acp-avatar";
 import { useIntentNavigate } from "../../navigation";
 import { isRefreshableOrigin, readOrigin } from "../lib/origin";
 import { RefreshSkillDialog } from "./refresh-skill-dialog";
@@ -126,13 +125,7 @@ function AgentPickerRow({
         tabIndex={-1}
         className="pointer-events-none"
       />
-      <ActorAvatar
-        name={agent.name}
-        initials={agent.name.slice(0, 2).toUpperCase()}
-        avatarUrl={resolvePublicFileUrl(agent.avatar_url)}
-        isAgent
-        size="md"
-      />
+      <AgentAcpAvatar agentId={agent.id} size="md" name={agent.name} />
       <span className="min-w-0 flex-1 truncate text-body">{agent.name}</span>
       {hasAll ? (
         <Check className="size-3.5 shrink-0 text-muted-foreground" />

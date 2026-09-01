@@ -50,6 +50,7 @@ import {
   TooltipTrigger,
 } from "@patchbay/ui/components/ui/tooltip";
 import { ActorAvatar } from "@patchbay/ui/components/common/actor-avatar";
+import { AgentAcpAvatar } from "../../runtimes/components/acp-avatar";
 import {
   rowLinkInteractiveProps,
   useNavigation,
@@ -274,13 +275,7 @@ function UsedByCell({ agents }: { agents: Agent[] }) {
     const agent = soleAgent;
     return (
       <ListGridCell className="gap-1.5">
-        <ActorAvatar
-          name={agent.name}
-          initials={agent.name.slice(0, 2).toUpperCase()}
-          avatarUrl={resolvePublicFileUrl(agent.avatar_url)}
-          isAgent
-          size="md"
-        />
+        <AgentAcpAvatar agentId={agent.id} size="md" name={agent.name} />
         <span className="min-w-0 truncate text-caption text-muted-foreground">
           {agent.name}
         </span>
@@ -297,13 +292,7 @@ function UsedByCell({ agents }: { agents: Agent[] }) {
             <TooltipTrigger
               render={
                 <span className="inline-flex rounded-full ring-2 ring-background">
-                  <ActorAvatar
-                    name={a.name}
-                    initials={a.name.slice(0, 2).toUpperCase()}
-                    avatarUrl={resolvePublicFileUrl(a.avatar_url)}
-                    isAgent
-                    size="md"
-                  />
+                  <AgentAcpAvatar agentId={a.id} size="md" name={a.name} />
                 </span>
               }
             />

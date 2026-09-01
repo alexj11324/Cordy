@@ -157,7 +157,8 @@
     "returning_title_named": "Hi, I'm {{name}}",
     "returning_title_default": "Welcome to Patchbay",
     "returning_subtitle": "Try asking",
-    "chat_with_named": "Chat with {{name}}"
+    "chat_with_named": "Chat with {{name}}",
+    "greeting": "Hi, I'm {{name}}. Start with one sentence — you're in charge."
   },
   "starter_prompts": {
     "list_open": "List my open tasks by priority",

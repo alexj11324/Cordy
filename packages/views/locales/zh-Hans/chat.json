@@ -153,7 +153,8 @@
     "returning_title_named": "你好，我是 {{name}}",
     "returning_title_default": "欢迎使用 Patchbay",
     "returning_subtitle": "试试问",
-    "chat_with_named": "与 {{name}} 对话"
+    "chat_with_named": "与 {{name}} 对话",
+    "greeting": "你好，我是 {{name}}。从一句话开始就行——决定权在你。"
   },
   "starter_prompts": {
     "list_open": "按优先级列出我未完成的任务",

@@ -1,9 +1,8 @@
 "use client";
 
-import { ActorAvatar as ActorAvatarBase } from "@patchbay/ui/components/common/actor-avatar";
 import { AVATAR_SIZE_PX, type AvatarSize } from "@patchbay/ui/lib/avatar-size";
-import { useActorName } from "@patchbay/core/workspace/hooks";
 import { cn } from "@patchbay/ui/lib/utils";
+import { AgentAcpAvatar } from "../../runtimes/components/acp-avatar";
 
 interface AgentAvatarStackProps {
   // Agent ids to render, in display order. The component does NOT dedupe —
@@ -24,8 +23,8 @@ interface AgentAvatarStackProps {
 }
 
 /**
- * Overlapping avatar group for agents. Pure presentational — no data
- * fetching, no hover handling. Wrap it in a HoverCardTrigger upstream
+ * Overlapping avatar group for agents. Faces are the bound runtime logos
+ * (`AgentAcpAvatar`). Wrap it in a HoverCardTrigger upstream
  * (IssueAgentActivityIndicator / WorkspaceAgentWorkingChip) to surface
  * per-agent detail.
  *
@@ -40,7 +39,6 @@ export function AgentAvatarStack({
   opacity = "full",
   className,
 }: AgentAvatarStackProps) {
-  const { getActorName, getActorInitials, getActorAvatarUrl } = useActorName();
   if (agentIds.length === 0) return null;
 
   const visible = agentIds.slice(0, max);
@@ -66,13 +64,7 @@ export function AgentAvatarStack({
           style={{ marginLeft: i === 0 ? 0 : -overlap }}
           className="ring-2 ring-background rounded-full inline-flex"
         >
-          <ActorAvatarBase
-            name={getActorName("agent", id)}
-            initials={getActorInitials("agent", id)}
-            avatarUrl={getActorAvatarUrl("agent", id)}
-            isAgent
-            size={size}
-          />
+          <AgentAcpAvatar agentId={id} size={size} />
         </span>
       ))}
       {overflow > 0 && (

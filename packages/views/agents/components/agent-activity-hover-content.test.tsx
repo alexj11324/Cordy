@@ -46,6 +46,12 @@ vi.mock("@patchbay/ui/components/common/actor-avatar", () => ({
   ),
 }));
 
+vi.mock("../../runtimes/components/acp-avatar", () => ({
+  AgentAcpAvatar: ({ agentId }: { agentId: string }) => (
+    <span data-testid="actor-avatar">{agentId}</span>
+  ),
+}));
+
 vi.mock("@tanstack/react-query", async () => {
   const actual =
     await vi.importActual<typeof import("@tanstack/react-query")>(

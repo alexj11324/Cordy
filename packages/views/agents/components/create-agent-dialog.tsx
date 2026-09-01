@@ -8,7 +8,6 @@ import { RuntimePicker } from "./runtime-picker";
 import { isRuntimeUsableForUser } from "@patchbay/core/runtimes";
 import { InstructionsEditor } from "./instructions-editor";
 import { SkillMultiSelect } from "./skill-multi-select";
-import { AvatarUploadControl } from "../../common/avatar-upload-control";
 import { api } from "@patchbay/core/api";
 import { useWorkspaceId } from "@patchbay/core/hooks";
 import { useFeatureEnabled } from "@patchbay/core/config";
@@ -42,6 +41,7 @@ import {
   VISIBILITY_LABEL,
 } from "@patchbay/core/agents";
 import { ActorAvatar } from "../../common/actor-avatar";
+import { AcpAvatar } from "../../runtimes/components/acp-avatar";
 import { CharCounter } from "./char-counter";
 import { useT } from "../../i18n";
 
@@ -142,7 +142,6 @@ export function CreateAgentDialog({
 
   const [model, setModel] = useState(template?.model ?? "");
   const [instructions, setInstructions] = useState(template?.instructions ?? "");
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(template?.avatar_url ?? null);
   const [selectedSkillIds, setSelectedSkillIds] = useState<Set<string>>(
     () => new Set(template?.skills.map((s) => s.id) ?? []),
   );
@@ -227,7 +226,6 @@ export function CreateAgentDialog({
         runtime_id: selectedRuntime.id,
         model: model.trim() || undefined,
         instructions: trimmedInstructions || undefined,
-        avatar_url: avatarUrl ?? undefined,
         skill_ids: [...selectedSkillIds],
       };
       if (accessPickerEnabled) {
@@ -319,14 +317,10 @@ export function CreateAgentDialog({
                 same shape as detail-page header so the affordance is
                 instantly familiar. */}
             <div className="flex items-start gap-4">
-              <AvatarUploadControl
-                variant="agent"
-                value={avatarUrl}
-                name={name}
+              <AcpAvatar
+                provider={selectedRuntime?.provider}
                 size={64}
-                onUploaded={setAvatarUrl}
-                onEmojiSelected={setAvatarUrl}
-                onClear={() => setAvatarUrl(null)}
+                name={name}
               />
               <div className="flex-1 min-w-0 space-y-3">
                 <div>

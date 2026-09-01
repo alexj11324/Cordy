@@ -38,6 +38,11 @@ vi.mock("../../runtimes/components/provider-logo", () => ({
   ProviderLogo: () => null,
 }));
 
+vi.mock("../../runtimes/components/acp-avatar", () => ({
+  AcpAvatar: () => <div data-testid="acp-avatar" />,
+  AgentAcpAvatar: () => null,
+}));
+
 // Avatars hit the api for member metadata.
 vi.mock("../../common/actor-avatar", () => ({
   ActorAvatar: () => null,

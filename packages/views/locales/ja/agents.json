@@ -170,7 +170,7 @@
     "prop_updated": "更新日",
     "no_description_placeholder": "説明なし",
     "avatar_label": "アバター",
-    "avatar_hint": "割り当て、アクティビティ、チャットに表示されます。",
+    "avatar_hint": "このエージェントのデバイス runtime のロゴを常に使います。",
     "name_label": "名前",
     "description_label": "説明",
     "change_avatar_aria": "アバターを変更",
@@ -739,7 +739,7 @@
     },
     "sections": {
       "identity": "基本情報",
-      "identity_hint": "識別しやすい名前と簡潔な目的を設定します。",
+      "identity_hint": "識別しやすい名前と簡潔な目的を設定します。顔は常にデバイス runtime のロゴです。",
       "behavior": "動作と機能",
       "behavior_hint": "動作方法を定義し、利用できるワークスペースのスキルを追加します。",
       "execution": "実行設定",

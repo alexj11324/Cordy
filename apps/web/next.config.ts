@@ -47,6 +47,7 @@ const nextConfig: NextConfig = {
     "@patchbay/ui",
     "@patchbay/views",
     "@lobehub/editor",
+    "@lobehub/icons",
   ],
   ...(allowedDevOrigins && allowedDevOrigins.length > 0
     ? { allowedDevOrigins }

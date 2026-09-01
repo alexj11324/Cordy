@@ -1,4 +1,44 @@
 import "@testing-library/jest-dom/vitest";
+import { createElement } from "react";
+import { vi } from "vitest";
+
+vi.mock("@lobehub/icons", () => {
+  const make = (name: string) => {
+    const Avatar = (props: {
+      size?: number;
+      shape?: string;
+      className?: string;
+    }) =>
+      createElement("div", {
+        "data-lobehub-icon": name,
+        "data-size": props.size,
+        "data-shape": props.shape ?? "circle",
+        className: props.className,
+      });
+    return Object.assign(() => createElement("span"), { Avatar });
+  };
+  return {
+    Antigravity: make("Antigravity"),
+    ClaudeCode: make("ClaudeCode"),
+    CodeBuddy: make("CodeBuddy"),
+    Codex: make("Codex"),
+    Copilot: make("Copilot"),
+    Cursor: make("Cursor"),
+    DeepSeek: make("DeepSeek"),
+    Grok: make("Grok"),
+    HermesAgent: make("HermesAgent"),
+    Huawei: make("Huawei"),
+    Kimi: make("Kimi"),
+    Kiro: make("Kiro"),
+    Minimax: make("Minimax"),
+    OpenClaw: make("OpenClaw"),
+    OpenCode: make("OpenCode"),
+    Pi: make("Pi"),
+    Qoder: make("Qoder"),
+    Qwen: make("Qwen"),
+    Trae: make("Trae"),
+  };
+});
 
 function createMemoryStorage(): Storage {
   const values = new Map<string, string>();

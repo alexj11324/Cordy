@@ -186,7 +186,7 @@
     "prop_updated": "Updated",
     "no_description_placeholder": "No description",
     "avatar_label": "Avatar",
-    "avatar_hint": "Shown in assignments, activity, and chat.",
+    "avatar_hint": "Always uses this agent's device runtime logo.",
     "name_label": "Name",
     "description_label": "Description",
     "change_avatar_aria": "Change avatar",
@@ -305,7 +305,7 @@
     },
     "sections": {
       "identity": "Identity",
-      "identity_hint": "Give the agent a recognizable name and a concise purpose.",
+      "identity_hint": "Give the agent a recognizable name and a concise purpose. The face is always the device runtime logo.",
       "behavior": "Behavior & capabilities",
       "behavior_hint": "Define how it should work and attach workspace skills it can rely on.",
       "execution": "Execution",

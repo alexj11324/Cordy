@@ -16,7 +16,7 @@ import { runtimeModelsOptions } from "@patchbay/core/runtimes";
 import { isImeComposing } from "@patchbay/core/utils";
 import { Input } from "@patchbay/ui/components/ui/input";
 import { Textarea } from "@patchbay/ui/components/ui/textarea";
-import { AvatarUploadControl } from "../../common/avatar-upload-control";
+import { AcpAvatar } from "../../runtimes/components/acp-avatar";
 import {
   SettingsCard,
   SettingsRow,
@@ -167,14 +167,10 @@ export function AgentDetailInspector({
             size="none"
           >
             <div className="flex justify-start sm:justify-end">
-              <AvatarUploadControl
-                variant="agent"
-                value={agent.avatar_url ?? null}
-                name={agent.name}
+              <AcpAvatar
+                provider={runtime?.provider}
                 size={56}
-                disabled={!canEdit}
-                onUploaded={(url) => update({ avatar_url: url })}
-                onEmojiSelected={(value) => update({ avatar_url: value })}
+                name={agent.name}
               />
             </div>
           </SettingsRow>

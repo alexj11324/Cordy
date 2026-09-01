@@ -16,8 +16,9 @@ vi.mock("../../labels/resource-label-picker", () => ({
   ResourceLabelPicker: () => <div data-testid="resource-label-picker" />,
 }));
 
-vi.mock("../../common/avatar-upload-control", () => ({
-  AvatarUploadControl: () => <div data-testid="avatar-upload" />,
+vi.mock("../../runtimes/components/acp-avatar", () => ({
+  AcpAvatar: () => <div data-testid="acp-avatar" />,
+  AgentAcpAvatar: () => <div data-testid="acp-avatar" />,
 }));
 
 vi.mock("./inspector/model-picker", () => ({
@@ -68,5 +69,7 @@ describe("AgentDetailInspector labels", () => {
 
     expect(screen.queryByTestId("resource-label-picker")).toBeNull();
     expect(screen.queryByText("Labels")).toBeNull();
+    expect(screen.queryByTestId("avatar-upload")).toBeNull();
+    expect(screen.getByTestId("acp-avatar")).toBeInTheDocument();
   });
 });

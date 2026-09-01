@@ -159,4 +159,16 @@ describe("useActorName", () => {
     expect(result.current.getActorName("agent", "agent-1")).toBe("Walt");
     expect(result.current.getActorName("team", "team-1")).toBe("Core");
   });
+
+  it("does not expose an uploaded agent photo as the actor avatar", () => {
+    const members = [{ user_id: "user-1", name: "Ada", avatar_url: "https://cdn.example/ada.png" }];
+    const agents = [{ id: "agent-1", name: "Walt", avatar_url: "https://cdn.example/walt.png" }];
+    const teams = [{ id: "team-1", name: "Core", avatar_url: "https://cdn.example/core.png" }];
+    setApiInstance({
+      listMembers: () => Promise.resolve(members),
+      listAgents: () => Promise.resolve(agents),
+      listTeams: () => Promise.resolve(teams),
+      getBaseUrl: () => "http://127.0.0.1:8080",
+    } as unknown as ApiClient);
+  });
 });

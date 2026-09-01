@@ -15,6 +15,7 @@ import { AgentProfileCard } from "../agents/components/agent-profile-card";
 import { AgentLivePeekCard } from "../agents/components/agent-live-peek-card";
 import { MemberProfileCard } from "../members/member-profile-card";
 import { TeamProfileCard } from "../teams/components/team-profile-card";
+import { AgentAcpAvatar } from "../runtimes/components/acp-avatar";
 import { availabilityConfig } from "../agents/presence";
 import {
   resolveClickIntent,
@@ -85,18 +86,25 @@ export function ActorAvatar({
 }: ActorAvatarProps) {
   const { getActorName, getActorInitials, getActorAvatarUrl } = useActorName();
   const paths = useWorkspacePaths();
-  const avatar = (
-    <ActorAvatarBase
-      name={getActorName(actorType, actorId)}
-      initials={getActorInitials(actorType, actorId)}
-      avatarUrl={getActorAvatarUrl(actorType, actorId)}
-      isAgent={actorType === "agent"}
-      isSystem={actorType === "system"}
-      isTeam={actorType === "team"}
-      size={size}
-      className={className}
-    />
-  );
+  const avatar =
+    actorType === "agent" ? (
+      <AgentAcpAvatar
+        agentId={actorId}
+        size={size}
+        className={className}
+        name={getActorName(actorType, actorId)}
+      />
+    ) : (
+      <ActorAvatarBase
+        name={getActorName(actorType, actorId)}
+        initials={getActorInitials(actorType, actorId)}
+        avatarUrl={getActorAvatarUrl(actorType, actorId)}
+        isSystem={actorType === "system"}
+        isTeam={actorType === "team"}
+        size={size}
+        className={className}
+      />
+    );
 
   // Optional presence overlay. Only meaningful for agents — members have no
   // presence backbone. Wrapping unconditionally with relative inline-flex

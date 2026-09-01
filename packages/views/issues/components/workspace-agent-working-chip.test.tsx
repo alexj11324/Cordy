@@ -17,6 +17,12 @@ vi.mock("@patchbay/core/workspace/hooks", () => ({
   }),
 }));
 
+vi.mock("../../runtimes/components/acp-avatar", () => ({
+  AgentAcpAvatar: ({ agentId }: { agentId: string }) => (
+    <span data-testid="actor-avatar">{agentId}</span>
+  ),
+}));
+
 // The real hover card renders its body only while open. Render it inline so the
 // chip's own wiring to the hover body is observable: the PB-5525 follow-up bug
 // was in that wiring (`agents ?? []`), not in the body's rendering.

@@ -14,7 +14,7 @@ import { Input } from "@patchbay/ui/components/ui/input";
 import { Textarea } from "@patchbay/ui/components/ui/textarea";
 import { cn } from "@patchbay/ui/lib/utils";
 import { ActorAvatar } from "../../common/actor-avatar";
-import { AvatarUploadControl } from "../../common/avatar-upload-control";
+import { AcpAvatar } from "../../runtimes/components/acp-avatar";
 import { useT } from "../../i18n";
 import {
   SettingsCard,
@@ -95,17 +95,13 @@ export function AgentConfigurationPanel({
         <SettingsCard>
           <DraftFieldRow
             compact={compact}
-            label={t(($) => $.create_dialog.avatar.change_aria)}
+            label={t(($) => $.inspector.avatar_label)}
           >
             <div className={cn(!compact && "sm:flex sm:justify-end")}>
-              <AvatarUploadControl
-                variant="agent"
-                value={draft.avatarUrl}
-                name={draft.name}
+              <AcpAvatar
+                provider={selectedRuntime?.provider}
                 size={compact ? 52 : 56}
-                onUploaded={(url) => set("avatarUrl", url)}
-                onEmojiSelected={(value) => set("avatarUrl", value)}
-                onClear={() => set("avatarUrl", null)}
+                name={draft.name}
               />
             </div>
           </DraftFieldRow>

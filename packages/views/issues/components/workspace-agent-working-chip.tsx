@@ -1,6 +1,5 @@
 "use client";
 
-import { ActorAvatar } from "@patchbay/ui/components/common/actor-avatar";
 import { Button } from "@patchbay/ui/components/ui/button";
 import {
   HoverCard,
@@ -10,6 +9,7 @@ import {
 import { useActorName } from "@patchbay/core/workspace/hooks";
 import type { WorkingAgentSummary } from "@patchbay/core/types";
 import { useT } from "../../i18n";
+import { AgentAcpAvatar } from "../../runtimes/components/acp-avatar";
 import { Bot } from "lucide-react";
 
 interface WorkspaceAgentWorkingChipProps {
@@ -74,7 +74,7 @@ export function WorkingAgentsHoverContent({
   agents: readonly WorkingAgentSummary[] | undefined;
 }) {
   const { t } = useT("issues");
-  const { getActorName, getActorInitials, getActorAvatarUrl } = useActorName();
+  const { getActorName } = useActorName();
 
   if (agents === undefined) {
     return (
@@ -100,13 +100,7 @@ export function WorkingAgentsHoverContent({
       <div className="flex flex-col gap-1.5">
         {agents.map((agent) => (
           <div key={agent.id} className="flex items-center gap-2 text-caption">
-            <ActorAvatar
-              name={getActorName("agent", agent.id)}
-              initials={getActorInitials("agent", agent.id)}
-              avatarUrl={getActorAvatarUrl("agent", agent.id) ?? undefined}
-              isAgent
-              size="sm"
-            />
+            <AgentAcpAvatar agentId={agent.id} size="sm" />
             <span className="min-w-0 flex-1 truncate font-medium">
               {getActorName("agent", agent.id)}
             </span>

@@ -178,7 +178,7 @@
     "prop_updated": "更新时间",
     "no_description_placeholder": "暂无描述",
     "avatar_label": "头像",
-    "avatar_hint": "显示在任务分配、动态和聊天中。",
+    "avatar_hint": "始终使用该智能体设备 runtime 的 logo。",
     "name_label": "名称",
     "description_label": "描述",
     "change_avatar_aria": "更换头像",
@@ -296,7 +296,7 @@
     },
     "sections": {
       "identity": "身份",
-      "identity_hint": "为智能体设置容易识别的名称和简洁的用途。",
+      "identity_hint": "为智能体设置容易识别的名称和简洁的用途。头像始终是设备 runtime 的 logo。",
       "behavior": "行为与能力",
       "behavior_hint": "定义它的工作方式，并添加可使用的工作区 skill。",
       "execution": "执行配置",

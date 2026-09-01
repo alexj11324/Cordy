@@ -153,7 +153,8 @@
     "returning_title_named": "こんにちは、{{name}} です",
     "returning_title_default": "Patchbay へようこそ",
     "returning_subtitle": "こう聞いてみましょう",
-    "chat_with_named": "{{name}} とチャット"
+    "chat_with_named": "{{name}} とチャット",
+    "greeting": "こんにちは、{{name}} です。まずは一文から — 決めるのはあなたです。"
   },
   "starter_prompts": {
     "list_open": "オープンなタスクを優先度順にまとめて",

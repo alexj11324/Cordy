@@ -1,34 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { I18nProvider } from "@patchbay/core/i18n/react";
 import type { Agent } from "@patchbay/core/types";
 import enChat from "../../locales/en/chat.json";
 import { CHAT_COLUMN, CHAT_GUTTER } from "./chat-column";
 
-const setInputDraft = vi.hoisted(() => vi.fn());
-const storeState = vi.hoisted(() => ({
-  activeSessionId: null as string | null,
-  setInputDraft,
-}));
-
-vi.mock("@patchbay/core/chat", () => ({
-  DRAFT_NEW_SESSION: "__new__",
-  useChatStore: Object.assign(
-    (selector?: (s: typeof storeState) => unknown) =>
-      selector ? selector(storeState) : storeState,
-    { getState: () => storeState },
-  ),
-}));
-
-vi.mock("../../common/actor-avatar", () => ({
-  ActorAvatar: ({
-    actorId,
-    className,
+vi.mock("../../runtimes/components/acp-avatar", () => ({
+  AgentAcpAvatar: ({
+    agentId,
+    shape,
+    size,
   }: {
-    actorId: string;
-    className?: string;
+    agentId: string;
+    shape?: string;
+    size?: number;
   }) => (
-    <div data-testid="agent-avatar" data-actor-id={actorId} className={className} />
+    <div
+      data-testid="agent-avatar"
+      data-actor-id={agentId}
+      data-shape={shape}
+      data-size={size}
+    />
   ),
 }));
 
@@ -80,11 +72,8 @@ function renderEmpty(ui: React.ReactElement) {
   );
 }
 
-describe("Agent empty state (LobeHub AgentHome mapping)", () => {
-  beforeEach(() => {
-    storeState.activeSessionId = null;
-    setInputDraft.mockClear();
-  });
+describe("Agent empty state (LobeHub AgentInfo mapping)", () => {
+  beforeEach(() => {});
 
   it("aligns on the shared gutter + column", () => {
     const { container } = renderEmpty(<EmptyState agent={null} />);
@@ -103,33 +92,26 @@ describe("Agent empty state (LobeHub AgentHome mapping)", () => {
     expect(screen.queryByRole("button", { name: enChat.starter_prompts.list_open })).not.toBeInTheDocument();
   });
 
-  it("shows the agent name, description, and opening-question chips", () => {
+  it("shows a square runtime logo, the agent name, and the description as the greeting", () => {
     renderEmpty(<EmptyState agent={agent} />);
 
-    expect(screen.getByTestId("agent-avatar")).toHaveAttribute("data-actor-id", "agent-1");
+    const avatar = screen.getByTestId("agent-avatar");
+    expect(avatar).toHaveAttribute("data-actor-id", "agent-1");
+    expect(avatar).toHaveAttribute("data-shape", "square");
+    expect(avatar).toHaveAttribute("data-size", "64");
     expect(screen.getByRole("heading", { name: "Lambda" })).toBeInTheDocument();
     expect(screen.getByText("Keeps the board moving.")).toBeInTheDocument();
-    expect(screen.getByText(enChat.empty_state.returning_subtitle)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: enChat.starter_prompts.list_open })).toBeInTheDocument();
+    expect(screen.queryByText(enChat.empty_state.returning_subtitle)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: enChat.starter_prompts.list_open })).not.toBeInTheDocument();
   });
 
-  it("fills the composer draft instead of sending", () => {
-    renderEmpty(<EmptyState agent={agent} />);
-
-    fireEvent.click(screen.getByRole("button", { name: enChat.starter_prompts.plan_next }));
-
-    expect(setInputDraft).toHaveBeenCalledWith("__new__", enChat.starter_prompts.plan_next);
-  });
-
-  it("writes chips into the open session draft when one is selected", () => {
-    storeState.activeSessionId = "session-9";
-    renderEmpty(<EmptyState agent={agent} />);
-
-    fireEvent.click(screen.getByRole("button", { name: enChat.starter_prompts.summarize_today }));
-
-    expect(setInputDraft).toHaveBeenCalledWith(
-      "session-9",
-      enChat.starter_prompts.summarize_today,
+  it("falls back to the default greeting when the agent has no description", () => {
+    renderEmpty(
+      <EmptyState agent={{ ...agent, description: "" } as Agent} />,
     );
+
+    expect(
+      screen.getByText(enChat.empty_state.greeting.replace("{{name}}", "Lambda")),
+    ).toBeInTheDocument();
   });
 });

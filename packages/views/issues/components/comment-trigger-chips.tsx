@@ -6,7 +6,6 @@ import type { CommentTriggerPreviewAgent, CommentTriggerOutcome } from "@patchba
 import { useAgentPresenceDetail } from "@patchbay/core/agents";
 import { mentionLabelsByTarget } from "@patchbay/core/issues/comment-trigger-outcomes";
 import { useCurrentWorkspace } from "@patchbay/core/paths";
-import { ActorAvatar as ActorAvatarBase } from "@patchbay/ui/components/common/actor-avatar";
 import { AVATAR_SIZE_PX } from "@patchbay/ui/lib/avatar-size";
 import {
   Popover,
@@ -16,6 +15,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@patchbay/ui/components/ui/tooltip";
 import { cn } from "@patchbay/ui/lib/utils";
 import { AgentStatusDot } from "../../common/actor-avatar";
+import { AgentAcpAvatar } from "../../runtimes/components/acp-avatar";
 import { useT } from "../../i18n";
 import { blockedReasonLabel, blockedShortReasonLabel } from "../blocked-trigger-copy";
 
@@ -427,13 +427,7 @@ function TriggerAgentAvatar({
         suppressed && "opacity-40 grayscale",
       )}
     >
-      <ActorAvatarBase
-        name={agent.name}
-        initials=""
-        avatarUrl={agent.avatar_url}
-        isAgent
-        size="xs"
-      />
+      <AgentAcpAvatar agentId={agent.id} size="xs" name={agent.name} />
       {showDot && !suppressed && <AgentStatusDot agentId={agent.id} size="xs" />}
     </span>
   );

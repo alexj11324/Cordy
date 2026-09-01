@@ -1,12 +1,10 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ActorAvatar as ActorAvatarBase } from "@patchbay/ui/components/common/actor-avatar";
 import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
 import { useWorkspaceId } from "@patchbay/core/hooks";
 import { useWorkspacePaths } from "@patchbay/core/paths";
 import { agentListOptions } from "@patchbay/core/workspace/queries";
-import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
 import {
   agentTaskSnapshotOptions,
   useAgentPresenceDetail,
@@ -15,6 +13,7 @@ import { issueDetailOptions } from "@patchbay/core/issues";
 import type { AgentTask } from "@patchbay/core/types";
 import { AlertTriangle } from "lucide-react";
 import { AppLink } from "../../navigation";
+import { AgentAcpAvatar } from "../../runtimes/components/acp-avatar";
 import { useT, useTimeAgo } from "../../i18n";
 import { availabilityConfig, workloadConfig } from "../presence";
 
@@ -66,13 +65,6 @@ export function AgentLivePeekCard({ agentId }: AgentLivePeekCardProps) {
   const currentIssueId = runningTask?.issue_id ?? null;
   const lastTerminal = pickLatestTerminal(agentTasks);
 
-  const initials = agent.name
-    .split(" ")
-    .map((w) => w[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
-
   // Archived wins over workload — a retired agent reads "Archived", never
   // "Idle"/"Working". availability is the unified signal (see
   // deriveAgentPresenceDetail); for archived it's set before any task scan.
@@ -86,13 +78,7 @@ export function AgentLivePeekCard({ agentId }: AgentLivePeekCardProps) {
     <div className="flex flex-col gap-3 text-left">
       {/* Header — avatar + name. */}
       <div className="flex items-start gap-3">
-        <ActorAvatarBase
-          name={agent.name}
-          initials={initials}
-          avatarUrl={resolvePublicFileUrl(agent.avatar_url)}
-          isAgent
-          size="xl"
-        />
+        <AgentAcpAvatar agentId={agent.id} size="xl" name={agent.name} />
         <div className="min-w-0 flex-1">
           <p className="truncate text-body font-semibold">{agent.name}</p>
           <div className="mt-0.5 inline-flex items-center gap-1.5">

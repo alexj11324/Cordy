@@ -136,10 +136,13 @@ export function useActorName() {
 
   const getActorAvatarUrl = useCallback((type: string, id: string): string | null => {
     if (type === "member") return resolvePublicFileUrl(members.find((m) => m.user_id === id)?.avatar_url);
-    if (type === "agent") return resolvePublicFileUrl(agents.find((a) => a.id === id)?.avatar_url);
+    // Agent faces are the bound runtime's ACP logo (`AgentAcpAvatar`), never a
+    // custom upload. Returning null here stops leftover `ActorAvatarBase`
+    // call sites from painting a stale photo.
+    if (type === "agent") return null;
     if (type === "team") return resolvePublicFileUrl(teams.find((s) => s.id === id)?.avatar_url);
     return null;
-  }, [agents, members, teams]);
+  }, [members, teams]);
 
   return useMemo(
     () => ({

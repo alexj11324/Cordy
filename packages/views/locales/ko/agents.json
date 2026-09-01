@@ -178,7 +178,7 @@
     "prop_updated": "수정일",
     "no_description_placeholder": "설명 없음",
     "avatar_label": "아바타",
-    "avatar_hint": "할당, 활동 및 채팅에 표시됩니다.",
+    "avatar_hint": "이 에이전트의 디바이스 runtime 로고를 항상 사용합니다.",
     "name_label": "이름",
     "description_label": "설명",
     "change_avatar_aria": "아바타 변경",
@@ -739,7 +739,7 @@
     },
     "sections": {
       "identity": "기본 정보",
-      "identity_hint": "알아보기 쉬운 이름과 간결한 목적을 지정하세요.",
+      "identity_hint": "알아보기 쉬운 이름과 간결한 목적을 지정하세요. 얼굴은 항상 디바이스 runtime 로고입니다.",
       "behavior": "동작 및 기능",
       "behavior_hint": "작업 방식을 정의하고 사용할 워크스페이스 스킬을 추가하세요.",
       "execution": "실행 설정",

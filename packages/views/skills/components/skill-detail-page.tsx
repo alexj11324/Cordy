@@ -41,12 +41,11 @@ import {
   skillDetailOptions,
   workspaceKeys,
 } from "@patchbay/core/workspace/queries";
-import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
 import {
   runtimeDisplayLabel,
   runtimeListOptions,
 } from "@patchbay/core/runtimes";
-import { ActorAvatar } from "@patchbay/ui/components/common/actor-avatar";
+import { AgentAcpAvatar } from "../../runtimes/components/acp-avatar";
 import { Button, buttonVariants } from "@patchbay/ui/components/ui/button";
 import {
   Dialog,
@@ -417,13 +416,7 @@ function UsedByList({ agents }: { agents: Agent[] }) {
     <ul className="divide-y overflow-hidden rounded-lg border bg-card">
       {agents.map((a) => (
         <li key={a.id} className="flex items-center gap-2.5 px-3 py-2.5">
-          <ActorAvatar
-            name={a.name}
-            initials={a.name.slice(0, 2).toUpperCase()}
-            avatarUrl={resolvePublicFileUrl(a.avatar_url)}
-            isAgent
-            size="md"
-          />
+          <AgentAcpAvatar agentId={a.id} size="md" name={a.name} />
           <div className="min-w-0 flex-1">
             <div className="truncate text-body font-medium">{a.name}</div>
             {a.description && (

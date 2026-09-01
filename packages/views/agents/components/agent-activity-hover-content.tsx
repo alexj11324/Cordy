@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ActorAvatar as ActorAvatarBase } from "@patchbay/ui/components/common/actor-avatar";
 import { useActorName } from "@patchbay/core/workspace/hooks";
 import { useWorkspaceId } from "@patchbay/core/hooks";
 import { runtimeListOptions } from "@patchbay/core/runtimes/queries";
@@ -11,6 +10,7 @@ import { deriveAgentAvailability } from "@patchbay/core/agents";
 import type { AgentTask, Issue } from "@patchbay/core/types";
 import { workloadConfig } from "../presence";
 import { useT } from "../../i18n";
+import { AgentAcpAvatar } from "../../runtimes/components/acp-avatar";
 
 interface AgentActivityHoverContentProps {
   // Active tasks (running / queued / dispatched) to render — caller filters
@@ -69,7 +69,7 @@ function AgentActivityTaskRow({
   now: number;
 } & ActivityLookups) {
   const { t } = useT("issues");
-  const { getActorName, getActorInitials, getActorAvatarUrl } = useActorName();
+  const { getActorName } = useActorName();
 
   const agent = agentById.get(task.agent_id);
   const runtime = runtimeFrom(agent?.runtime_id, runtimeById);
@@ -98,13 +98,7 @@ function AgentActivityTaskRow({
 
   return (
     <div className="flex items-center gap-2 text-caption">
-      <ActorAvatarBase
-        name={getActorName("agent", task.agent_id)}
-        initials={getActorInitials("agent", task.agent_id)}
-        avatarUrl={getActorAvatarUrl("agent", task.agent_id)}
-        isAgent
-        size="sm"
-      />
+      <AgentAcpAvatar agentId={task.agent_id} size="sm" />
       <span className="flex-1 truncate font-medium">
         {getActorName("agent", task.agent_id)}
       </span>

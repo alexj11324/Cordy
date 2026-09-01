@@ -16,6 +16,12 @@ vi.mock("../../common/actor-avatar", () => ({
   AgentStatusDot: () => <span data-testid="status-dot" />,
 }));
 
+vi.mock("../../runtimes/components/acp-avatar", () => ({
+  AgentAcpAvatar: ({ agentId }: { agentId: string }) => (
+    <div data-testid="acp-avatar" data-agent-id={agentId} />
+  ),
+}));
+
 const walt: CommentTriggerPreviewAgent = {
   id: "agent-1",
   name: "Walt",
