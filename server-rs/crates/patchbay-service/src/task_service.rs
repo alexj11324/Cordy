@@ -78,7 +78,7 @@ use crate::attribution::{
     rule_owner, trigger_owner, CommentFacts, DirectFacts, EvidenceKind,
     Result_ as AttributionResult,
 };
-use crate::automation::{EntitlementAction, EntitlementProvider};
+use crate::automation::{EntitlementAction, EntitlementGateDecision, EntitlementProvider};
 use crate::channel_quota::{self, ChannelQuotaMode, ChannelQuotaWindow};
 use crate::feature_flags::{composio_mcp_apps_enabled, FlagSource};
 use crate::issue_status;
