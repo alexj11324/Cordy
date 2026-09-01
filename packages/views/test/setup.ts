@@ -4,18 +4,22 @@ import { vi } from "vitest";
 
 vi.mock("@lobehub/icons", () => {
   const make = (name: string) => {
-    const Avatar = (props: {
+    function Avatar(props: {
       size?: number;
       shape?: string;
       className?: string;
-    }) =>
-      createElement("div", {
+    }) {
+      return createElement("div", {
         "data-lobehub-icon": name,
         "data-size": props.size,
         "data-shape": props.shape ?? "circle",
         className: props.className,
       });
-    return Object.assign(() => createElement("span"), { Avatar });
+    }
+    function Icon() {
+      return createElement("span");
+    }
+    return Object.assign(Icon, { Avatar });
   };
   return {
     Antigravity: make("Antigravity"),

@@ -8,19 +8,21 @@ vi.mock("@lobehub/icons", () => {
     function Icon() {
       return null;
     }
-    Icon.Avatar = ({
+    Icon.Avatar = function Avatar({
       size,
       shape,
     }: {
       size: number;
       shape?: string;
-    }) => (
-      <div
-        data-lobehub-icon={name}
-        data-size={size}
-        data-shape={shape ?? "circle"}
-      />
-    );
+    }) {
+      return (
+        <div
+          data-lobehub-icon={name}
+          data-size={size}
+          data-shape={shape ?? "circle"}
+        />
+      );
+    };
     return Icon;
   };
   return {

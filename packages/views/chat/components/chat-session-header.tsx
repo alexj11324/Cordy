@@ -123,9 +123,11 @@ export function ChatSessionHeader({
 
   const doArchive = () => {
     if (!session) return;
-    onArchive
-      ? onArchive(session)
-      : setArchived.mutate({ sessionId: session.id, archived: true });
+    if (onArchive) {
+      onArchive(session);
+      return;
+    }
+    setArchived.mutate({ sessionId: session.id, archived: true });
   };
   const doUnarchive = () => {
     if (!session) return;
