@@ -1,8 +1,8 @@
 //! Cloud entitlement-policy client used by quota-bearing services.
 //!
-//! The client is deliberately fail-open: unavailable or malformed Cloud
-//! policy disables enforcement. A bounded stale policy may still be observed,
-//! but an `enforce` action is always downgraded to `observe` after expiry.
+//! Automation retains its existing observe-on-stale rollout behavior. Hosted
+//! IM admission is fail-closed: unavailable, malformed, or stale Cloud policy
+//! returns `Off`, which the task service exposes as quota unavailable.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -254,7 +254,10 @@ impl HttpEntitlementProvider {
         }
     }
 
-    fn stale(mut decision: EntitlementGateDecision) -> EntitlementGateDecision {
+    fn stale(mut decision: EntitlementGateDecision, kind: GateKind) -> EntitlementGateDecision {
+        if matches!(kind, GateKind::ImAgentTurns) {
+            return Self::off();
+        }
         if decision.gate_action == EntitlementAction::Enforce {
             decision.gate_action = EntitlementAction::Observe;
         }
@@ -294,7 +297,7 @@ impl HttpEntitlementProvider {
                 self.record_cache("retry_suppressed");
             }
             return Some(if now < entry.stale_until {
-                (Self::stale(decision.clone()), "stale")
+                (Self::stale(decision.clone(), kind), "stale")
             } else {
                 (Self::off(), "unavailable")
             });
@@ -354,7 +357,7 @@ impl HttpEntitlementProvider {
                     GateKind::AutomationRuns => &entry.decision,
                     GateKind::ImAgentTurns => &entry.im_decision,
                 };
-                Self::stale(decision.clone())
+                Self::stale(decision.clone(), kind)
             })
         {
             (decision, true)
@@ -611,14 +614,15 @@ fn normalize_policy(wire: WirePolicy) -> Result<FetchedPolicy, ()> {
         return Err(());
     }
     let issue_window = wire.gates.get("issue_window").ok_or(())?;
-    normalize_gate(issue_window, false)?;
+    normalize_gate(issue_window, false, false)?;
     let gate = wire.gates.get("automation_runs").ok_or(())?;
-    let (action, limit, period_start, period_end, reset_at) = normalize_gate(gate, true)?;
+    let (action, limit, period_start, period_end, reset_at) = normalize_gate(gate, true, false)?;
     let im_decision = wire
         .gates
         .get("im_agent_turns")
         .map(|gate| {
-            let (action, limit, period_start, period_end, reset_at) = normalize_gate(gate, true)?;
+            let (action, limit, period_start, period_end, reset_at) =
+                normalize_gate(gate, true, true)?;
             Ok::<EntitlementGateDecision, ()>(EntitlementGateDecision {
                 gate_action: action,
                 gate_limit: limit,
@@ -661,19 +665,30 @@ type NormalizedGate = (
     Option<DateTime<Utc>>,
 );
 
-fn normalize_gate(gate: &WireGate, periods_required: bool) -> Result<NormalizedGate, ()> {
+fn normalize_gate(
+    gate: &WireGate,
+    periods_required: bool,
+    allow_unlimited: bool,
+) -> Result<NormalizedGate, ()> {
     let action = match gate.action.as_str() {
         "off" => return Ok((EntitlementAction::Off, None, None, None, None)),
         "observe" => EntitlementAction::Observe,
         "enforce" => EntitlementAction::Enforce,
         _ => return Err(()),
     };
-    let limit = gate.limit.filter(|limit| *limit >= 0).ok_or(())?;
+    let limit = match gate.limit {
+        Some(limit) if limit >= 0 => Some(limit),
+        None if allow_unlimited => None,
+        _ => return Err(()),
+    };
     let supplied = [gate.period_start, gate.period_end, gate.reset_at]
         .into_iter()
         .filter(Option::is_some)
         .count();
-    if supplied != 0 && supplied != 3 || periods_required && supplied != 3 {
+    if limit.is_none() && supplied != 0
+        || limit.is_some() && supplied != 0 && supplied != 3
+        || limit.is_some() && periods_required && supplied != 3
+    {
         return Err(());
     }
     if supplied == 3 {
@@ -686,7 +701,7 @@ fn normalize_gate(gate: &WireGate, periods_required: bool) -> Result<NormalizedG
     }
     Ok((
         action,
-        Some(limit),
+        limit,
         gate.period_start,
         gate.period_end,
         gate.reset_at,
@@ -753,9 +768,52 @@ mod tests {
             subscription_version: 1,
         };
         assert_eq!(
-            HttpEntitlementProvider::stale(decision).gate_action,
+            HttpEntitlementProvider::stale(decision, GateKind::AutomationRuns).gate_action,
             EntitlementAction::Observe
         );
+    }
+
+    #[test]
+    fn stale_im_policy_is_unavailable_instead_of_fail_open() {
+        let decision = EntitlementGateDecision {
+            gate_action: EntitlementAction::Enforce,
+            gate_limit: Some(100),
+            gate_period_start: None,
+            gate_period_end: None,
+            gate_reset_at: None,
+            policy_revision: 1,
+            subscription_version: 1,
+        };
+        assert_eq!(
+            HttpEntitlementProvider::stale(decision, GateKind::ImAgentTurns).gate_action,
+            EntitlementAction::Off
+        );
+    }
+
+    #[test]
+    fn im_policy_accepts_null_as_an_explicit_unlimited_entitlement() {
+        let wire: WirePolicy = serde_json::from_value(json!({
+            "schema_version": 1,
+            "policy_revision": 1,
+            "subscription_version": 1,
+            "valid_until": "2030-01-01T00:00:00Z",
+            "valid_for_seconds": 60,
+            "gates": {
+                "issue_window": {"action":"off"},
+                "automation_runs": {
+                    "action":"enforce",
+                    "limit":1,
+                    "period_start":"2029-01-01T00:00:00Z",
+                    "period_end":"2029-02-01T00:00:00Z",
+                    "reset_at":"2029-02-01T00:00:00Z"
+                },
+                "im_agent_turns": {"action":"enforce","limit":null}
+            }
+        }))
+        .unwrap();
+        let policy = normalize_policy(wire).unwrap();
+        assert_eq!(policy.im_decision.gate_action, EntitlementAction::Enforce);
+        assert_eq!(policy.im_decision.gate_limit, None);
     }
 
     #[test]

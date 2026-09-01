@@ -1560,6 +1560,8 @@ pub enum FlushError {
     AgentArchived,
     #[error("channel router: hosted IM quota exceeded")]
     QuotaExceeded,
+    #[error("channel router: hosted IM quota unavailable")]
+    QuotaUnavailable,
 }
 
 /// The debounced run-trigger body: reload session, enqueue exactly one
@@ -1616,6 +1618,10 @@ async fn flush_chat_run(job: FlushJob) {
                 }
                 Some(FlushError::QuotaExceeded) => {
                     emit_flush_reply(&set, &inst, &msg, session_id, Outcome::quota_exceeded())
+                        .await;
+                }
+                Some(FlushError::QuotaUnavailable) => {
+                    emit_flush_reply(&set, &inst, &msg, session_id, Outcome::quota_unavailable())
                         .await;
                 }
                 None => {

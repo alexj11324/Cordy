@@ -50,7 +50,8 @@ pub use handler::{HandlerFuture, InboundHandler};
 pub use history::{HistoryMessage, HistoryOptions, HistoryPage, HistoryRole};
 pub use localization::{
     locale_from_raw, quota_exceeded_notice, quota_exceeded_notice_for_message,
-    quota_exceeded_notice_for_text,
+    quota_exceeded_notice_for_text, quota_unavailable_notice, quota_unavailable_notice_for_message,
+    quota_unavailable_notice_for_text,
 };
 pub use member_text::break_markdown_link_adjacency;
 pub use message::{

@@ -321,6 +321,8 @@ pub enum TaskServiceError {
     ChatSessionArchived,
     #[error("chat task: hosted IM monthly quota exceeded ({used}/{limit})")]
     ChannelQuotaExceeded { used: i64, limit: i64 },
+    #[error("chat task: hosted IM quota is temporarily unavailable")]
+    ChannelQuotaUnavailable,
     #[error("chat session already has a user message")]
     ChatSessionAlreadyStarted,
     #[error("chat quick actions: no assistant turn to regenerate")]
@@ -583,6 +585,13 @@ pub enum HostedChannelQuota {
     Limited(ChannelQuotaWindow),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HostedChannelAdmission {
+    Bypass,
+    Unavailable,
+    Limited(ChannelQuotaWindow),
+}
+
 /// The task domain service. Field usage mirrors Go's TaskService; the dead
 /// Hub field from Go is omitted (task.go only ever publishes through Bus).
 pub struct TaskService {
@@ -695,33 +704,34 @@ impl TaskService {
     /// Resolves the server-authoritative hosted IM limit before opening the
     /// enqueue transaction.  The transaction still reserves the slot under a
     /// workspace row lock; this method only selects the policy to enforce.
-    async fn hosted_channel_limit(&self, workspace_id: Uuid) -> Option<ChannelQuotaWindow> {
-        let ChannelQuotaMode::Limited(fallback) = self.channel_quota_mode() else {
-            return None;
+    async fn hosted_channel_admission(&self, workspace_id: Uuid) -> HostedChannelAdmission {
+        let ChannelQuotaMode::Limited(_) = self.channel_quota_mode() else {
+            return HostedChannelAdmission::Bypass;
         };
-        if let Some(provider) = self.im_entitlements() {
-            let decision = provider.gate_im_agent_turns(workspace_id).await;
-            if decision.gate_action != EntitlementAction::Enforce {
-                return None;
-            }
-            return decision.gate_limit.and_then(|limit| {
-                ChannelQuotaWindow::from_entitlement(
+        let Some(provider) = self.im_entitlements() else {
+            return HostedChannelAdmission::Unavailable;
+        };
+        let decision = provider.gate_im_agent_turns(workspace_id).await;
+        match decision.gate_action {
+            EntitlementAction::Off => HostedChannelAdmission::Unavailable,
+            EntitlementAction::Observe => HostedChannelAdmission::Bypass,
+            EntitlementAction::Enforce => match decision.gate_limit {
+                None => HostedChannelAdmission::Bypass,
+                Some(limit) => ChannelQuotaWindow::from_entitlement(
                     limit,
                     decision.gate_period_start,
                     decision.gate_period_end,
                     decision.gate_reset_at,
                 )
-            });
+                .map(HostedChannelAdmission::Limited)
+                .unwrap_or(HostedChannelAdmission::Unavailable),
+            },
         }
-        Some(ChannelQuotaWindow::current_month(
-            fallback,
-            chrono::Utc::now(),
-        ))
     }
 
     /// Resolves the displayable hosted IM policy for the usage endpoint.
     ///
-    /// Unlike [`Self::hosted_channel_limit`], this preserves an unavailable
+    /// Unlike an admission-only boolean, this preserves an unavailable
     /// Cloud decision so the API can tell the UI not to invent a Free or Pro
     /// entitlement. `Observe` is a known policy state and is therefore safe to
     /// report; it simply does not block admission while Cloud is observing.
@@ -729,10 +739,9 @@ impl TaskService {
         match self.channel_quota_mode() {
             ChannelQuotaMode::Disabled => HostedChannelQuota::Disabled,
             ChannelQuotaMode::Unlimited => HostedChannelQuota::Unlimited,
-            ChannelQuotaMode::Limited(fallback) => {
-                let fallback = ChannelQuotaWindow::current_month(fallback, chrono::Utc::now());
+            ChannelQuotaMode::Limited(_) => {
                 let Some(provider) = self.im_entitlements() else {
-                    return HostedChannelQuota::Limited(fallback);
+                    return HostedChannelQuota::Unavailable;
                 };
                 let decision = provider.gate_im_agent_turns(workspace_id).await;
                 match decision.gate_action {
@@ -4113,7 +4122,7 @@ impl TaskService {
             None => RuntimeMcpOverlayData::default(),
         };
 
-        let hosted_channel_window = self.hosted_channel_limit(agent.workspace_id).await;
+        let hosted_channel_admission = self.hosted_channel_admission(agent.workspace_id).await;
         let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
 
         // Refuse to enqueue onto an archived session — the one enqueue path
@@ -4137,28 +4146,31 @@ impl TaskService {
         // checking before the session lock would let that message bypass the
         // atomic hosted-turn reservation. The workspace-scoped lock + count is
         // the reservation; any later failure rolls it back with this tx.
-        if let Some(window) = hosted_channel_window {
-            let channel_turn =
-                channel_quota::has_channel_ingested_message(&mut tx, chat_session.id)
-                    .await
-                    .map_err(|error| {
-                        TaskServiceError::Internal(format!(
-                            "check hosted IM message provenance: {error}"
-                        ))
-                    })?;
-            if channel_turn {
-                match channel_quota::admit_turn(&mut tx, agent.workspace_id, window).await {
-                    Ok(()) => {}
-                    Err(channel_quota::ChannelQuotaAdmissionError::Exceeded(error)) => {
-                        return Err(TaskServiceError::ChannelQuotaExceeded {
-                            used: error.used,
-                            limit: error.limit,
-                        });
-                    }
-                    Err(error) => {
-                        return Err(TaskServiceError::Internal(format!(
-                            "admit hosted IM turn: {error}"
-                        )));
+        let channel_turn = channel_quota::has_channel_ingested_message(&mut tx, chat_session.id)
+            .await
+            .map_err(|error| {
+                TaskServiceError::Internal(format!("check hosted IM message provenance: {error}"))
+            })?;
+        if channel_turn {
+            match hosted_channel_admission {
+                HostedChannelAdmission::Bypass => {}
+                HostedChannelAdmission::Unavailable => {
+                    return Err(TaskServiceError::ChannelQuotaUnavailable);
+                }
+                HostedChannelAdmission::Limited(window) => {
+                    match channel_quota::admit_turn(&mut tx, agent.workspace_id, window).await {
+                        Ok(()) => {}
+                        Err(channel_quota::ChannelQuotaAdmissionError::Exceeded(error)) => {
+                            return Err(TaskServiceError::ChannelQuotaExceeded {
+                                used: error.used,
+                                limit: error.limit,
+                            });
+                        }
+                        Err(error) => {
+                            return Err(TaskServiceError::Internal(format!(
+                                "admit hosted IM turn: {error}"
+                            )));
+                        }
                     }
                 }
             }
@@ -6578,6 +6590,26 @@ mod tests {
     use super::*;
     use patchbay_db::models::ExecutionLaneKey;
 
+    #[derive(Clone)]
+    struct FixedImEntitlement(EntitlementGateDecision);
+
+    #[async_trait::async_trait]
+    impl EntitlementProvider for FixedImEntitlement {
+        async fn gate_automation_runs(&self, _workspace_id: Uuid) -> EntitlementGateDecision {
+            EntitlementGateDecision::off()
+        }
+
+        async fn gate_im_agent_turns(&self, _workspace_id: Uuid) -> EntitlementGateDecision {
+            self.0.clone()
+        }
+    }
+
+    fn quota_service() -> TaskService {
+        let pool =
+            sqlx::PgPool::connect_lazy("postgres://invalid.invalid/nope").expect("lazy pool");
+        TaskService::new(pool, Arc::new(patchbay_events::Bus::new()))
+    }
+
     fn task_fixture() -> AgentTaskQueue {
         let id = Uuid::nil();
         AgentTaskQueue {
@@ -6979,6 +7011,88 @@ mod tests {
         assert_eq!(parts[0], id.to_string());
         assert_eq!(parts[1], id.to_string());
         assert_eq!(parts[2], "");
+    }
+
+    #[tokio::test]
+    async fn managed_quota_without_a_trusted_provider_is_unavailable() {
+        let service = quota_service();
+        service.set_channel_quota_mode(ChannelQuotaMode::Limited(100));
+        let workspace_id = Uuid::now_v7();
+
+        assert_eq!(
+            service.hosted_channel_admission(workspace_id).await,
+            HostedChannelAdmission::Unavailable
+        );
+        assert_eq!(
+            service.hosted_channel_quota(workspace_id).await,
+            HostedChannelQuota::Unavailable
+        );
+    }
+
+    #[tokio::test]
+    async fn explicit_cloud_null_is_the_only_managed_unlimited_decision() {
+        let service = quota_service();
+        service.set_channel_quota_mode(ChannelQuotaMode::Limited(100));
+        service.set_im_entitlements(Some(Arc::new(FixedImEntitlement(
+            EntitlementGateDecision {
+                gate_action: EntitlementAction::Enforce,
+                gate_limit: None,
+                gate_period_start: None,
+                gate_period_end: None,
+                gate_reset_at: None,
+                policy_revision: 7,
+                subscription_version: 3,
+            },
+        ))));
+        let workspace_id = Uuid::now_v7();
+
+        assert_eq!(
+            service.hosted_channel_admission(workspace_id).await,
+            HostedChannelAdmission::Bypass
+        );
+        assert_eq!(
+            service.hosted_channel_quota(workspace_id).await,
+            HostedChannelQuota::Unlimited
+        );
+    }
+
+    #[tokio::test]
+    async fn cloud_limit_and_window_drive_managed_admission() {
+        let service = quota_service();
+        service.set_channel_quota_mode(ChannelQuotaMode::Limited(100));
+        let period_start = chrono::DateTime::parse_from_rfc3339("2026-08-01T00:00:00Z")
+            .expect("valid timestamp")
+            .with_timezone(&Utc);
+        let period_end = chrono::DateTime::parse_from_rfc3339("2026-09-01T00:00:00Z")
+            .expect("valid timestamp")
+            .with_timezone(&Utc);
+        service.set_im_entitlements(Some(Arc::new(FixedImEntitlement(
+            EntitlementGateDecision {
+                gate_action: EntitlementAction::Enforce,
+                gate_limit: Some(100),
+                gate_period_start: Some(period_start),
+                gate_period_end: Some(period_end),
+                gate_reset_at: Some(period_end),
+                policy_revision: 7,
+                subscription_version: 3,
+            },
+        ))));
+        let expected = ChannelQuotaWindow {
+            limit: 100,
+            period_start,
+            period_end,
+            reset_at: period_end,
+        };
+        let workspace_id = Uuid::now_v7();
+
+        assert_eq!(
+            service.hosted_channel_admission(workspace_id).await,
+            HostedChannelAdmission::Limited(expected)
+        );
+        assert_eq!(
+            service.hosted_channel_quota(workspace_id).await,
+            HostedChannelQuota::Limited(expected)
+        );
     }
 
     #[tokio::test]

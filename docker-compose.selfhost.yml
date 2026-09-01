@@ -106,7 +106,6 @@ services:
       # IM installation ownership is server-side for self-hosted deployments;
       # the app receives only read-only capabilities from /api/config.
       PATCHBAY_MESSAGING_MODE: ${PATCHBAY_MESSAGING_MODE:-server_configured}
-      PATCHBAY_IM_AGENT_TURNS_LIMIT: ${PATCHBAY_IM_AGENT_TURNS_LIMIT:-}
       PATCHBAY_IM_INSTALLATION_LIMIT: ${PATCHBAY_IM_INSTALLATION_LIMIT:-}
       PATCHBAY_SHUTDOWN_HOLD_DURATION: ${PATCHBAY_SHUTDOWN_HOLD_DURATION:-}
       PATCHBAY_MIGRATION_LOCK_TIMEOUT_SECONDS: ${PATCHBAY_MIGRATION_LOCK_TIMEOUT_SECONDS:-300}

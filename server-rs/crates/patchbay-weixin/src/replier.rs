@@ -145,6 +145,14 @@ impl ReplierSeam for OutboundReplier {
                 patchbay_channel::quota_exceeded_notice_for_message(message),
             )
             .await
+        } else if *outcome == Outcome::quota_unavailable() {
+            self.post(
+                ctx,
+                installation,
+                message,
+                patchbay_channel::quota_unavailable_notice_for_message(message),
+            )
+            .await
         } else if *outcome == Outcome::fresh_pending() {
             self.post(ctx, installation, message, FRESH_PENDING).await
         } else if *outcome == Outcome::issue_usage() {

@@ -207,6 +207,15 @@ impl patchbay_channel_engine::resolvers::OutboundReplier for OutboundReplier {
                 )
                 .await
                 .map_err(|e| ("quota notice", e)),
+            o if *o == Outcome::quota_unavailable() => self
+                .post(
+                    ctx,
+                    inst,
+                    msg,
+                    patchbay_channel::quota_unavailable_notice_for_message(msg),
+                )
+                .await
+                .map_err(|e| ("quota unavailable notice", e)),
             o if *o == Outcome::fresh_pending() => self
                 .post(ctx, inst, msg, FRESH_PENDING_TEXT)
                 .await

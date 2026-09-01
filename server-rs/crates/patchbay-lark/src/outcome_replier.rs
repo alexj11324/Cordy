@@ -61,6 +61,7 @@ impl OutcomeReplier for NoopOutcomeReplier {
                 | "agent_offline"
                 | "agent_archived"
                 | "quota_exceeded"
+                | "quota_unavailable"
                 | "fresh_pending"
                 | "issue_usage"
                 | "hub_command"
@@ -207,6 +208,15 @@ impl OutcomeReplier for LarkOutcomeReplier {
                     inst,
                     msg,
                     patchbay_channel::quota_exceeded_notice_for_text(&msg.body),
+                )
+                .await
+            }
+            "quota_unavailable" => {
+                self.send_chat_notice(
+                    _ctx.clone(),
+                    inst,
+                    msg,
+                    patchbay_channel::quota_unavailable_notice_for_text(&msg.body),
                 )
                 .await
             }

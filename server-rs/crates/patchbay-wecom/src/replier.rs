@@ -168,6 +168,15 @@ impl OutboundReplier {
                 )
                 .await
             }
+            Some(outcome) if *outcome == Outcome::quota_unavailable() => {
+                self.post(
+                    &ctx,
+                    inst,
+                    msg,
+                    patchbay_channel::quota_unavailable_notice_for_message(msg),
+                )
+                .await
+            }
             Some(outcome) if *outcome == Outcome::fresh_pending() => {
                 self.post(&ctx, inst, msg, FRESH_PENDING_TEXT).await
             }
