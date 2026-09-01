@@ -101,7 +101,12 @@ if ($DevMode -eq "hosted") {
     Write-Host "  API:      $($env:PATCHBAY_DEV_API_URL)"
     Write-Host "  Renderer: local Electron/Vite hot reload"
     Write-Host ""
-    & node apps/desktop/scripts/dev.mjs @ElectronArgs
+    Enable-InjectedClerkEnvironment
+    try {
+        & node apps/desktop/scripts/dev.mjs @ElectronArgs
+    } finally {
+        Disable-InjectedClerkEnvironment
+    }
     if ($LASTEXITCODE -ne 0) { throw "Electron development process exited with code $LASTEXITCODE" }
     exit 0
 }
@@ -360,7 +365,12 @@ try {
 
     $env:PATCHBAY_REQUIRE_SOURCE_CLI = "1"
     $env:PATCHBAY_DEV_ENV_FILE = $env:ENV_FILE
-    & node apps/desktop/scripts/dev.mjs @ElectronArgs
+    Enable-InjectedClerkEnvironment
+    try {
+        & node apps/desktop/scripts/dev.mjs @ElectronArgs
+    } finally {
+        Disable-InjectedClerkEnvironment
+    }
     if ($LASTEXITCODE -ne 0) { throw "Electron development process exited with code $LASTEXITCODE" }
 } finally {
     Stop-TrackedProcessTree $WebProcess

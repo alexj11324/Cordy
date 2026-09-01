@@ -12,11 +12,15 @@
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { envWithLocalBins } from "./package.mjs";
 import { planDevCommands } from "./dev-plan.mjs";
+import {
+  clearDevClerkEnvironment,
+  withoutDevClerkEnvironment,
+} from "../../../scripts/dev-clerk-auth.mjs";
 import {
   applyDevRuntimeAppIdentity,
   parseDevRuntimeArgs,
@@ -28,6 +32,10 @@ import {
 } from "./worktree-dev-env.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
+const acceptanceReleaseScript = resolve(
+  here,
+  "../../../scripts/release-dev-acceptance-port.mjs",
+);
 const { electronArgs } = parseDevRuntimeArgs(process.argv.slice(2));
 
 applyWorktreeDevEnv(process.env, {
@@ -41,6 +49,7 @@ applyMacOSDevElectronEnv(process.env, {
   electronVersion,
 });
 applyDevRuntimeAppIdentity(process.env);
+const sanitizedChildEnv = withoutDevClerkEnvironment(process.env);
 
 function run(command, args, { shell = false, env = process.env } = {}) {
   const result = spawnSync(command, args, {
@@ -65,17 +74,43 @@ for (const step of planDevCommands(electronArgs, {
   nodePath: process.execPath,
   scriptsDir: here,
 })) {
+  const isDoctor =
+    step.args[0]?.endsWith("dev-environment-doctor.mjs") === true;
   const isElectronVite = step.command === "electron-vite";
-  const stepEnv =
+  if (
+    isElectronVite &&
+    (process.env.PATCHBAY_DEV_ACCEPTANCE_RELEASE_PORT ||
+      process.env.PATCHBAY_DEV_ACCEPTANCE_RELEASE_TOKEN)
+  ) {
+    // Credentialed acceptance keeps the loopback CDP port reserved while the
+    // doctor and branding phases run. Release it immediately before
+    // electron-vite can spawn Electron, then remove the handoff token from
+    // every child environment so it cannot be inherited by the app.
+    run(process.execPath, [acceptanceReleaseScript], { env: process.env });
+    delete process.env.PATCHBAY_DEV_ACCEPTANCE_RELEASE_PORT;
+    delete process.env.PATCHBAY_DEV_ACCEPTANCE_RELEASE_TOKEN;
+    delete sanitizedChildEnv.PATCHBAY_DEV_ACCEPTANCE_RELEASE_PORT;
+    delete sanitizedChildEnv.PATCHBAY_DEV_ACCEPTANCE_RELEASE_TOKEN;
+  }
+  const electronEnv =
     isElectronVite && process.env.PATCHBAY_DEV_ELECTRON_DIST_PATH
       ? {
-          ...process.env,
+          ...sanitizedChildEnv,
           ELECTRON_OVERRIDE_DIST_PATH:
             process.env.PATCHBAY_DEV_ELECTRON_DIST_PATH,
         }
-      : process.env;
+      : sanitizedChildEnv;
   run(step.command, step.args, {
     shell: isElectronVite && isWin,
-    env: isElectronVite ? envWithLocalBins(stepEnv) : stepEnv,
+    // Only the doctor may see explicit process-only Clerk credentials. The
+    // brander and Electron/Vite receive a copied environment with all auth
+    // secrets removed; Electron obtains its normal session through the UI and
+    // must never inherit server-side Clerk material.
+    env: isDoctor
+      ? process.env
+      : isElectronVite
+        ? envWithLocalBins(electronEnv)
+        : sanitizedChildEnv,
   });
+  if (isDoctor) clearDevClerkEnvironment();
 }

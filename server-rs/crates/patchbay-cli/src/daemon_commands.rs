@@ -5,6 +5,7 @@
 //! the same typed `DaemonStartAssembly` snapshot.
 
 use anyhow::{bail, Context, Result};
+use serde::Deserialize;
 use std::ffi::OsString;
 use std::fmt::Write as FmtWrite;
 use std::fs;
@@ -19,6 +20,64 @@ use super::{
     DaemonLogsArgs, DaemonRestartArgs, DaemonStartArgs, DaemonStatusArgs, OutputFormat, RunOutput,
     CLIENT_VERSION,
 };
+
+const DESKTOP_PROFILE_HELPER_ARG: &str = "--patchbay-private-desktop-profile";
+
+#[derive(Deserialize)]
+#[serde(tag = "action", rename_all = "snake_case")]
+enum DesktopProfileRequest {
+    Configure {
+        profile: String,
+        server_url: String,
+    },
+    SetCredentials {
+        profile: String,
+        server_url: String,
+        token: String,
+        user_id: String,
+    },
+    ClearCredentials {
+        profile: String,
+    },
+}
+
+fn apply_desktop_profile_request(
+    environment: &Environment,
+    request: DesktopProfileRequest,
+) -> Result<()> {
+    match request {
+        DesktopProfileRequest::Configure {
+            profile,
+            server_url,
+        } => {
+            let server_url = server_url.trim();
+            anyhow::ensure!(!server_url.is_empty(), "Desktop server URL cannot be empty");
+            environment.update_desktop_profile(&profile, Some(server_url), None, false)
+        }
+        DesktopProfileRequest::SetCredentials {
+            profile,
+            server_url,
+            token,
+            user_id,
+        } => {
+            let server_url = server_url.trim();
+            let token = token.trim();
+            let user_id = user_id.trim();
+            anyhow::ensure!(!server_url.is_empty(), "Desktop server URL cannot be empty");
+            anyhow::ensure!(!token.is_empty(), "Desktop token cannot be empty");
+            anyhow::ensure!(!user_id.is_empty(), "Desktop user id cannot be empty");
+            environment.update_desktop_profile(
+                &profile,
+                Some(server_url),
+                Some((token, user_id)),
+                false,
+            )
+        }
+        DesktopProfileRequest::ClearCredentials { profile } => {
+            environment.update_desktop_profile(&profile, None, None, true)
+        }
+    }
+}
 
 impl super::DaemonLaunchArgs {
     pub(super) fn to_launch_flags(&self, server_url: Option<String>) -> config::DaemonLaunchFlags {
@@ -772,9 +831,83 @@ where
     I: Read,
     O: IoWrite,
 {
-    if args.len() != 2 || args[1] != patchbay_daemon::execenv::isolation::PREPARATION_HELPER_ARG {
+    if args.len() != 2 {
         return Ok(false);
     }
-    patchbay_daemon::execenv::isolation::run_preparation_helper(input, output).await?;
+    if args[1] == patchbay_daemon::execenv::isolation::PREPARATION_HELPER_ARG {
+        patchbay_daemon::execenv::isolation::run_preparation_helper(input, output).await?;
+        return Ok(true);
+    }
+    if args[1] != DESKTOP_PROFILE_HELPER_ARG {
+        return Ok(false);
+    }
+
+    let request: DesktopProfileRequest =
+        serde_json::from_reader(input).context("parse private Desktop profile helper request")?;
+    let environment = Environment::from_process()?;
+    apply_desktop_profile_request(&environment, request)?;
     Ok(true)
+}
+
+#[cfg(test)]
+mod desktop_profile_helper_tests {
+    use super::*;
+
+    #[test]
+    fn private_desktop_profile_requests_update_credentials_atomically() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let profile = "desktop-api.example.test";
+
+        apply_desktop_profile_request(
+            &environment,
+            serde_json::from_value(serde_json::json!({
+                "action": "set_credentials",
+                "profile": profile,
+                "server_url": "https://api.example.test",
+                "token": "pby_secret",
+                "user_id": "user-1"
+            }))
+            .expect("request"),
+        )
+        .expect("set credentials");
+        let configured = environment
+            .load_profile_document(profile)
+            .expect("configured profile");
+        assert_eq!(configured["server_url"], "https://api.example.test");
+        assert_eq!(configured["token"], "pby_secret");
+        assert_eq!(configured["desktop_user_id"], "user-1");
+
+        apply_desktop_profile_request(
+            &environment,
+            serde_json::from_value(serde_json::json!({
+                "action": "clear_credentials",
+                "profile": profile
+            }))
+            .expect("request"),
+        )
+        .expect("clear credentials");
+        let cleared = environment
+            .load_profile_document(profile)
+            .expect("cleared profile");
+        assert_eq!(cleared["server_url"], "https://api.example.test");
+        assert!(cleared.get("token").is_none());
+        assert!(cleared.get("desktop_user_id").is_none());
+    }
+
+    #[test]
+    fn private_desktop_profile_request_rejects_non_desktop_profiles() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let error = apply_desktop_profile_request(
+            &environment,
+            DesktopProfileRequest::ClearCredentials {
+                profile: "default".into(),
+            },
+        )
+        .expect_err("must reject terminal-owned profile");
+        assert!(error.to_string().contains("Desktop-owned profile"));
+    }
 }

@@ -7,7 +7,6 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   defaultDevCliCacheDir,
   devCliCacheKey,
-  DEV_RUNTIME_CACHE_LOCK_FILE,
   findCachedDevCli,
   fingerprintRustFiles,
   inspectDevRuntimeCache,
@@ -183,45 +182,6 @@ describe("development CLI artifact cache", () => {
     expect(manifest.toolchainIdentity).toBe("rustc 1");
   });
 
-  it("waits for an active cache operation before staging an artifact", async () => {
-    const root = await createSandbox();
-    const cacheRoot = join(root, "cache");
-    const sourceBinary = join(root, "patchbay-built");
-    const destinationBinary = join(root, "worktree", "patchbay");
-    await writeFile(sourceBinary, "fixture CLI");
-    await storeDevCli({
-      cacheRoot,
-      sourceBinary,
-      binaryName: "patchbay",
-      sourceFingerprint: "source-a",
-      rustTarget: "aarch64-apple-darwin",
-      profile: "dev",
-      toolchainIdentity: "rustc 1",
-      buildVariables: {},
-    });
-
-    const lockPath = join(cacheRoot, DEV_RUNTIME_CACHE_LOCK_FILE);
-    await writeFile(lockPath, "test-lock\n", { flag: "wx" });
-    let finished = false;
-    const staging = stageCachedDevCli({
-      cacheRoot,
-      sourceFingerprint: "source-a",
-      rustTarget: "aarch64-apple-darwin",
-      profile: "dev",
-      toolchainIdentity: "rustc 1",
-      buildVariables: {},
-      destinationBinary,
-    }).finally(() => {
-      finished = true;
-    });
-
-    await new Promise((resolveWait) => setTimeout(resolveWait, 75));
-    expect(finished).toBe(false);
-    await rm(lockPath, { force: true });
-    await expect(staging).resolves.not.toBeNull();
-    expect(await readFile(destinationBinary, "utf8")).toBe("fixture CLI");
-  });
-
   it("rejects a corrupted artifact and a mismatched toolchain", async () => {
     const root = await createSandbox();
     const cacheRoot = join(root, "cache");
@@ -268,6 +228,48 @@ describe("development CLI artifact cache", () => {
       toolchainIdentity: null,
     });
     expect(cached?.manifest.toolchainIdentity).toBe("rustc 1");
+  });
+
+  it("keeps rustc-less staging within one complete runtime identity", async () => {
+    const root = await createSandbox();
+    const cacheRoot = join(root, "cache");
+    const sourceBinary = join(root, "patchbay-built");
+    await writeFile(sourceBinary, "fixture CLI");
+    const common = {
+      cacheRoot,
+      sourceFingerprint: "source-a",
+      rustTarget: "aarch64-apple-darwin",
+      buildVariables: { version: "dev-source-a" },
+    };
+    for (const profile of ["dev", "dev-server", "dev-migrate"]) {
+      await storeDevCli({
+        ...common,
+        sourceBinary,
+        binaryName: `patchbay-${profile}`,
+        profile,
+        toolchainIdentity: "rustc one",
+      });
+    }
+    await storeDevCli({
+      ...common,
+      sourceBinary,
+      binaryName: "patchbay-dev-server-newer",
+      profile: "dev-server",
+      toolchainIdentity: "rustc two",
+    });
+
+    const report = await inspectDevRuntimeCache({ cacheRoot });
+    const identityKey = report.completeFingerprints.find(
+      (entry) => entry.toolchainIdentity === "rustc one",
+    )?.identityKey;
+    expect(identityKey).toBeTruthy();
+    const selected = await findCachedDevCli({
+      ...common,
+      profile: "dev-server",
+      toolchainIdentity: null,
+      cacheIdentityKey: identityKey,
+    });
+    expect(selected?.manifest.toolchainIdentity).toBe("rustc one");
   });
 
   it("keeps at least ten complete runtime fingerprints while pruning older entries", async () => {

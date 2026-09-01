@@ -353,6 +353,13 @@ async function readValidEntry(entryDir, expected) {
       manifest.profile !== expected.profile ||
       (expected.toolchainIdentity &&
         manifest.toolchainIdentity !== expected.toolchainIdentity) ||
+      (expected.cacheIdentityKey &&
+        runtimeIdentityKey({
+          sourceFingerprint: manifest.sourceFingerprint,
+          rustTarget: manifest.rustTarget,
+          toolchainIdentity: manifest.toolchainIdentity,
+          buildVariables: manifest.buildVariables || {},
+        }) !== expected.cacheIdentityKey) ||
       JSON.stringify(manifest.buildVariables || {}) !==
         JSON.stringify(expected.buildVariables || {})
     ) {
@@ -373,6 +380,7 @@ export async function findCachedDevCli({
   rustTarget,
   profile = "dev",
   toolchainIdentity,
+  cacheIdentityKey,
   buildVariables = {},
 }) {
   const profileDir = cacheProfileDir(cacheRoot, rustTarget, profile);
@@ -381,6 +389,7 @@ export async function findCachedDevCli({
     rustTarget,
     profile,
     toolchainIdentity,
+    cacheIdentityKey,
     buildVariables,
   };
 

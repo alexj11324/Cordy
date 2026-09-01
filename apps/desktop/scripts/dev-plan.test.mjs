@@ -83,6 +83,10 @@ describe("Desktop development build plan", () => {
   it("applies the hosted storage identity after worktree isolation", () => {
     expect(devLauncher).toContain("applyWorktreeDevEnv(process.env");
     expect(devLauncher).toContain("applyDevRuntimeAppIdentity(process.env)");
+    expect(devLauncher).toContain("withoutDevClerkEnvironment(process.env)");
+    expect(devLauncher).toContain("const isDoctor");
+    expect(devLauncher).toContain("env: isDoctor");
+    expect(devLauncher).toContain("clearDevClerkEnvironment()");
     expect(devLauncher.lastIndexOf("applyDevRuntimeAppIdentity")).toBeGreaterThan(
       devLauncher.indexOf("applyWorktreeDevEnv(process.env"),
     );

@@ -133,8 +133,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: release-cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('server-rs/Cargo.lock') }}
-          restore-keys: release-cargo-downloads-${{ runner.os }}-${{ runner.arch }}-
+          key: release-cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('server-rs/Cargo.lock') }}
+          restore-keys: release-cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-
 
       - name: Enable bounded shared compiler cache
         uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
@@ -307,8 +307,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: release-cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-${{ hashFiles('server-rs/Cargo.lock') }}
-          restore-keys: release-cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-
+          key: release-cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('server-rs/Cargo.lock') }}
+          restore-keys: release-cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-${{ hashFiles('rust-toolchain.toml') }}-
 
       - name: Enable target-scoped compiler cache
         uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
