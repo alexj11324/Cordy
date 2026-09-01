@@ -10,6 +10,7 @@
     "dev:docs": "turbo dev --filter=@patchbay/docs",
     "dev:desktop": "node scripts/dev-launcher.mjs",
     "dev:doctor": "node apps/desktop/scripts/dev-environment-doctor.mjs",
+    "dev:acceptance": "node scripts/dev-acceptance.mjs",
     "dev:cache:prune": "node apps/desktop/scripts/prune-dev-runtime-cache.mjs",
     "dev:mobile": "pnpm -C apps/mobile dev",
     "dev:mobile:staging": "pnpm -C apps/mobile dev:staging",

@@ -67,7 +67,14 @@ export function assertResolvedProfile(profile: string): void {
 export function deriveProfileName(targetUrl: string): string {
   try {
     const url = new URL(targetUrl);
-    const host = url.host.replace(/:/g, "-").toLowerCase();
+    // URL.host wraps IPv6 literals in brackets. Strip both brackets and
+    // colons so the generated profile stays within the Rust validator's
+    // lowercase/digit/dot/hyphen grammar while remaining deterministic.
+    const host = url.host
+      .replaceAll("[", "-")
+      .replaceAll("]", "-")
+      .replaceAll(":", "-")
+      .toLowerCase();
     return `desktop-${host}`;
   } catch {
     return "desktop";
@@ -99,10 +106,10 @@ export function profileLogPath(profile: string): string {
   return join(profileDir(profile), "daemon.log");
 }
 
-// Sidecar file that records which Patchbay user the cached PAT in config.json
-// was minted for. The Go CLI/daemon never read or write this file, so it
-// survives Go-side config rewrites. Used to detect user switches and mint a
-// fresh PAT instead of reusing a token that belongs to a previous user.
+// Legacy sidecar retained only so the startup hardening pass can restrict files
+// written by older Desktop versions. Current credentials store the owner id in
+// the same atomic config.json replacement as the PAT; runtime code must not use
+// this path as an authority for token reuse.
 export function profileUserIdPath(profile: string): string {
   return join(profileDir(profile), ".desktop-user-id");
 }

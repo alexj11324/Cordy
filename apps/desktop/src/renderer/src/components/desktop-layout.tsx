@@ -43,6 +43,7 @@ import { useWindowOverlayStore } from "@/stores/window-overlay-store";
 import { TabBar } from "./tab-bar";
 import { TabContent } from "./tab-content";
 import { WindowOverlay } from "./window-overlay";
+import { DevAcceptanceBridge } from "@/platform/dev-acceptance-bridge";
 
 const TOP_BAR_HEIGHT_CLASS = "h-12";
 const WINDOW_TOOLBAR_CLEARANCE = 184;
@@ -293,6 +294,7 @@ export function DesktopShell() {
           style={{ display: "contents" }}
         >
           <DesktopInboxBridge />
+          {slug && <DevAcceptanceBridge />}
           <div
             className={cn(
               "flex h-screen",

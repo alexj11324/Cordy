@@ -183,6 +183,60 @@ impl Environment {
         Ok(true)
     }
 
+    /// Apply one Desktop-owned profile mutation under the CLI config lock.
+    ///
+    /// Desktop sends credentials over stdin to the private CLI helper. Keeping
+    /// the server URL, PAT, and owning user id in one locked JSON update avoids
+    /// races with terminal CLI writes and prevents a token from being paired
+    /// with the previous Desktop account.
+    pub(crate) fn update_desktop_profile(
+        &self,
+        profile: &str,
+        server_url: Option<&str>,
+        credentials: Option<(&str, &str)>,
+        clear_credentials: bool,
+    ) -> Result<()> {
+        anyhow::ensure!(
+            profile == "desktop" || profile.starts_with("desktop-"),
+            "private Desktop helper requires a Desktop-owned profile"
+        );
+        validate_task_local_profile(profile)?;
+
+        let path = self.config_path(profile)?;
+        if clear_credentials && server_url.is_none() && credentials.is_none() && !path.exists() {
+            return Ok(());
+        }
+        let directory = path.parent().context("resolve CLI config directory")?;
+        ensure_config_directory(directory, self.trimmed(TASK_CONFIG_ROOT_ENV))?;
+        let lock_path = directory.join(".config.lock");
+        let lock = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(&lock_path)
+            .context("open CLI config lock")?;
+        restrict_file_permissions(&lock_path)?;
+        lock.lock().context("lock CLI config")?;
+
+        let mut document = read_config_document(&path)?;
+        let object = document
+            .as_object_mut()
+            .context("parse CLI config: expected a JSON object")?;
+        if let Some(server_url) = server_url {
+            object.insert("server_url".into(), Value::String(server_url.into()));
+        }
+        if let Some((token, user_id)) = credentials {
+            object.insert("token".into(), Value::String(token.into()));
+            object.insert("desktop_user_id".into(), Value::String(user_id.into()));
+        }
+        if clear_credentials {
+            object.remove("token");
+            object.remove("desktop_user_id");
+        }
+        write_json_atomically(&path, &document)
+    }
+
     /// Persist an authenticated profile in one locked, atomic replacement.
     ///
     /// Authentication changes deployment credentials and workspace identity
