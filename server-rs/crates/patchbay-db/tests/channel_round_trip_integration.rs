@@ -86,7 +86,7 @@ async fn round_trip_marker_is_generation_scoped_and_idempotent() {
 
     // Metadata/config patches are not a new install generation. This protects
     // legitimate in-flight messages from being rejected by the CAS fence.
-    let before = current.installed_at.clone();
+    let before = current.installed_at;
     let mut patched_config = current.config.clone();
     patched_config["bot_union_id"] = json!("u1");
     set_channel_installation_config(&pool, id, &patched_config)

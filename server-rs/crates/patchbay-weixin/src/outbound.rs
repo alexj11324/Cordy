@@ -103,7 +103,7 @@ impl Outbound {
                 .await?
                 .filter(|row| row.status == "active")
                 .ok_or_else(|| anyhow::anyhow!("weixin installation is inactive or missing"))?;
-        let installed_at = installation.installed_at.clone();
+        let installed_at = installation.installed_at;
         let credentials = decode_credentials(&installation.config, self.decrypt.as_deref())?;
         let target: WeixinBindingConfig = serde_json::from_value(binding.config)?;
         let ciphertext =

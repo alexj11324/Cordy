@@ -55,7 +55,7 @@ impl OutboundReplier {
             .platform
             .downcast_ref::<patchbay_db::models::ChannelInstallation>()
             .ok_or_else(|| anyhow::anyhow!("weixin installation row unavailable"))?;
-        let installed_at = row.installed_at.clone();
+        let installed_at = row.installed_at;
         let credentials = decode_credentials(&row.config, self.decrypt.as_deref())?;
         let client = Client::new(&credentials.base_url, &credentials.bot_token)?;
         let result = tokio::select! {
