@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { CheckCircle2, CircleAlert, Loader2, Settings2, Trash2 } from "lucide-react";
@@ -29,6 +29,7 @@ import { useConfigStore, useFeatureEnabled } from "@patchbay/core/config";
 import { COMPOSIO_MCP_APPS_FLAG } from "@patchbay/core/feature-flags";
 import { useAuthStore } from "@patchbay/core/auth";
 import { useWorkspaceId } from "@patchbay/core/hooks";
+import { isMessagingInstallationHealthy } from "@patchbay/core/types";
 import { memberListOptions } from "@patchbay/core/workspace/queries";
 import { larkInstallationsOptions, larkKeys } from "@patchbay/core/lark";
 import { slackInstallationsOptions, slackKeys } from "@patchbay/core/slack";
@@ -38,6 +39,7 @@ import { telegramInstallationsOptions, telegramKeys } from "@patchbay/core/teleg
 import { weixinInstallationsOptions, weixinKeys } from "@patchbay/core/weixin";
 import { composioToolkitsOptions } from "@patchbay/core/composio";
 import { useT } from "../../i18n";
+import { useNavigation } from "../../navigation";
 import { SettingsSection, SettingsTab } from "./settings-layout";
 import {
   IntegrationChannelIcon,
@@ -62,9 +64,14 @@ type InstallationSummary = {
   id: string;
   agent_id: string | null;
   status: string;
-  /** The backend only marks a provider as verified after a real message
-   * round-trip. Older responses omit this field and therefore remain pending. */
-  round_trip_status?: string;
+  runtime?: {
+    state: string;
+    observedAt: string | null;
+    errorCode: string | null;
+  };
+  setup?: {
+    experimental?: boolean;
+  };
 };
 
 type InstallationListing = {
@@ -91,46 +98,53 @@ type IntegrationCardProps = {
 type HubActionProps = {
   canManage: boolean;
   isGuest: boolean;
+  setupWritable: boolean;
   query: IntegrationQuery;
   installationId?: string;
-  requiresRoundTrip?: boolean;
   reconnectSupported?: boolean;
   onDisconnect: () => void;
   onManage: () => void;
   onReconnect: () => void;
 };
 
+function formatQuotaResetAt(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 function hasActiveHub(listing: InstallationListing | undefined) {
   return (
     listing?.installations.some(
-      (installation) =>
-        installation.agent_id === null && installation.status === "active",
+      (installation) => installation.agent_id === null && installation.status === "active",
     ) ?? false
   );
+}
+
+function isHealthy(installation: InstallationSummary) {
+  return isMessagingInstallationHealthy(installation);
 }
 
 function hasActiveInstallation(listing: InstallationListing | undefined) {
+  // The durable installation must stay addressable for manage/reconnect/
+  // disconnect actions even when its observed transport is offline.
   return listing?.installations.some((installation) => installation.status === "active") ?? false;
 }
 
-function hasVerifiedHub(listing: InstallationListing | undefined) {
+function hasHealthyAgentInstallation(listing: InstallationListing | undefined) {
   return (
     listing?.installations.some(
-      (installation) =>
-        installation.agent_id === null &&
-        installation.status === "active" &&
-        installation.round_trip_status === "passed",
+      (installation) => installation.agent_id !== null && isHealthy(installation),
     ) ?? false
   );
 }
 
-function ConnectionStatus({
-  query,
-  requiresRoundTrip,
-}: {
-  query: IntegrationQuery;
-  requiresRoundTrip: boolean;
-}) {
+function ConnectionStatus({ query }: { query: IntegrationQuery }) {
   const { t } = useT("settings");
   if (query.isLoading) {
     return (
@@ -155,7 +169,7 @@ function ConnectionStatus({
       </div>
     );
   }
-  if (!requiresRoundTrip && hasActiveHub(query.data)) {
+  if (query.data.installations.some((installation) => installation.agent_id === null && isHealthy(installation))) {
     return (
       <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">
         <CheckCircle2 />
@@ -163,23 +177,24 @@ function ConnectionStatus({
       </Badge>
     );
   }
-  if (requiresRoundTrip && hasVerifiedHub(query.data)) {
-    return (
-      <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">
-        <CheckCircle2 />
-        {t(($) => $.page.integrations_connected)}
-      </Badge>
-    );
-  }
-  if (requiresRoundTrip && hasActiveHub(query.data)) {
-    return (
-      <Badge variant="outline">
-        {t(($) => $.page.integrations_pending_verification)}
-      </Badge>
-    );
-  }
-  if (hasActiveInstallation(query.data)) {
+  if (hasHealthyAgentInstallation(query.data)) {
     return <Badge variant="outline">{t(($) => $.page.integrations_existing_agent)}</Badge>;
+  }
+  if (
+    query.data.installations.some(
+      (installation) =>
+        installation.status === "active" && installation.setup?.experimental === true,
+    )
+  ) {
+    return <Badge variant="outline">{t(($) => $.page.integrations_experimental)}</Badge>;
+  }
+  if (
+    query.data.installations.some(
+      (installation) =>
+        installation.status === "active" && !isHealthy(installation),
+    )
+  ) {
+    return <Badge variant="outline">{t(($) => $.page.integrations_status)}</Badge>;
   }
   const nonActive = query.data.installations.find((installation) => installation.status !== "active");
   if (nonActive) {
@@ -204,16 +219,18 @@ function HubAction({
   canManage,
   installationId,
   isGuest,
+  setupWritable,
   onDisconnect,
   onManage,
   onReconnect,
   query,
-  requiresRoundTrip = false,
   reconnectSupported = true,
 }: HubActionProps) {
   const { t } = useT("settings");
+  // Keep an active installation addressable even when its transport is
+  // offline. This lets an admin reconnect or disconnect the durable server
+  // record instead of creating a duplicate installation.
   const hubConnected = hasActiveHub(query.data);
-  const hubVerified = hasVerifiedHub(query.data);
   const installationConnected = hasActiveInstallation(query.data);
 
   // A guest may own its temporary workspace, but external platform
@@ -228,14 +245,20 @@ function HubAction({
     );
   }
 
-  if (!canManage) {
-    const hubStatus =
-      requiresRoundTrip && hubConnected && !hubVerified
-        ? t(($) => $.page.integrations_pending_verification)
-        : t(($) => $.page.integrations_connected);
+  if (!setupWritable) {
     return (
       <span className="text-caption text-muted-foreground">
-        {hubConnected ? hubStatus : t(($) => $.page.integrations_admin_only)}
+        {t(($) => $.page.integrations_server_managed)}
+      </span>
+    );
+  }
+
+  if (!canManage) {
+    return (
+      <span className="text-caption text-muted-foreground">
+        {hubConnected
+          ? t(($) => $.page.integrations_connected)
+          : t(($) => $.page.integrations_admin_only)}
       </span>
     );
   }
@@ -357,6 +380,7 @@ function IntegrationCard({
 // available only from legacy deep links and Agent detail pages.
 export function IntegrationsTab({ standalone = false }: { standalone?: boolean } = {}) {
   const { t } = useT("settings");
+  const navigation = useNavigation();
   const wsId = useWorkspaceId();
   const qc = useQueryClient();
   const [managedChannel, setManagedChannel] = useState<IntegrationChannel | null>(null);
@@ -407,7 +431,8 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
   });
   const hasLegacyDingTalkInstallation =
     dingtalk.data?.installations.some(
-      (installation) => installation.agent_id !== null,
+      (installation) =>
+        installation.agent_id !== null && installation.status === "active",
     ) ?? false;
 
   const composioEnabled = useFeatureEnabled(COMPOSIO_MCP_APPS_FLAG, false);
@@ -419,6 +444,57 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
     composioToolkits.error instanceof ApiError &&
     composioToolkits.error.status === 503;
   const vcsAvailable = useConfigStore((state) => state.vcsIntegrationAvailable);
+  const messaging = useConfigStore((state) => state.messaging);
+  // A missing capability contract is intentionally read-only. The server's
+  // capability contract is the authority for whether this page may mutate an
+  // installation; a missing field must never silently re-enable writes.
+  const setupWritable = messaging?.setupWritable === true;
+  const slackConnected = navigation.searchParams.get("slack_connected");
+  const slackError = navigation.searchParams.get("slack_error");
+  const consumedSlackCallback = useRef<string | null>(null);
+  useEffect(() => {
+    const callbackKey = slackConnected
+      ? `connected:${slackConnected}`
+      : slackError
+        ? `error:${slackError}`
+        : null;
+    if (!callbackKey || consumedSlackCallback.current === callbackKey) return;
+    consumedSlackCallback.current = callbackKey;
+    if (slackConnected) {
+      toast.success(t(($) => $.slack.connect_success_toast));
+      void qc.invalidateQueries({ queryKey: slackKeys.installations(wsId) });
+    } else if (slackError === "slack_authorization_denied") {
+      toast.error(t(($) => $.slack.oauth_denied_toast));
+    } else if (slackError === "im_installation_limit_reached") {
+      toast.error(t(($) => $.slack.oauth_limit_toast));
+    } else if (
+      slackError === "slack_authorization_changed" ||
+      slackError === "slack_code_missing"
+    ) {
+      toast.error(t(($) => $.slack.oauth_expired_toast));
+    } else {
+      toast.error(t(($) => $.slack.oauth_failed_toast));
+    }
+    const params = new URLSearchParams(navigation.searchParams);
+    params.delete("slack_connected");
+    params.delete("slack_error");
+    const query = params.toString();
+    navigation.replace(query ? `${navigation.pathname}?${query}` : navigation.pathname);
+    // Callback parameters are one-shot provider state. The ref prevents the
+    // Strict Mode double effect before navigation commits the replacement.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slackConnected, slackError]);
+  const messagingQuota = useQuery({
+    queryKey: ["messaging-quota", wsId],
+    queryFn: () => api.getMessagingQuotaUsage(wsId),
+    enabled: !!wsId && messaging?.mode === "managed",
+    staleTime: 30_000,
+  });
+  const quotaResetAt = formatQuotaResetAt(messagingQuota.data?.reset_at);
+  const quotaConsumed =
+    messagingQuota.data?.used !== null && messagingQuota.data?.used !== undefined
+      ? messagingQuota.data.used + (messagingQuota.data.reserved ?? 0)
+      : null;
 
   const listings = { lark, slack, dingtalk, wecom, telegram, weixin };
   const managedListing = managedChannel ? listings[managedChannel].data : undefined;
@@ -489,7 +565,7 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
 
     return (
       <div className="space-y-5">
-        <IntegrationSetupGuide channel={channel} />
+        <IntegrationSetupGuide channel={channel} managed={messaging?.mode === "managed"} />
         {listing?.configured && listing.install_supported ? (
           <div className="flex justify-end">{renderSetupAction(channel)}</div>
         ) : (
@@ -514,6 +590,39 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
           <p className="mt-2 max-w-3xl text-caption leading-5 text-muted-foreground">
             {t(($) => $.page.integrations_route_note)}
           </p>
+          {messaging?.mode === "managed" ? (
+            <div
+              className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted-foreground"
+              data-testid="messaging-quota"
+            >
+              <span className="font-medium text-foreground">
+                {t(($) => $.page.integrations_quota_title)}
+              </span>
+              {messagingQuota.isLoading ? (
+                <span>{t(($) => $.page.integrations_quota_loading)}</span>
+              ) : messagingQuota.isError || !messagingQuota.data ? (
+                <span>{t(($) => $.page.integrations_quota_unavailable)}</span>
+              ) : messagingQuota.data.mode === "unavailable" ? (
+                <span>{t(($) => $.page.integrations_quota_unavailable)}</span>
+              ) : messagingQuota.data.mode === "unlimited" && messagingQuota.data.limit === null ? (
+                <span>{t(($) => $.page.integrations_quota_unlimited)}</span>
+              ) : messagingQuota.data.mode === "managed" &&
+                messagingQuota.data.limit !== null &&
+                quotaConsumed !== null ? (
+                <span>
+                  {t(($) => $.page.integrations_quota_used, {
+                    used: quotaConsumed,
+                    limit: messagingQuota.data.limit,
+                  })}
+                  {quotaResetAt
+                    ? ` · ${t(($) => $.page.integrations_quota_resets, { date: quotaResetAt })}`
+                    : null}
+                </span>
+              ) : (
+                <span>{t(($) => $.page.integrations_quota_unavailable)}</span>
+              )}
+            </div>
+          ) : null}
         </div>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {([
@@ -531,8 +640,7 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
             const larkHubRegion =
               channel === "lark"
                 ? lark.data?.installations.find(
-                    (installation) =>
-                      installation.agent_id === null && installation.status === "active",
+                    (installation) => installation.agent_id === null && installation.status === "active",
                   )?.region
                 : undefined;
             return (
@@ -542,23 +650,14 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
                 title={title}
                 description={description}
                 iconClassName={iconClassName}
-                status={
-                  <ConnectionStatus
-                    query={query}
-                    requiresRoundTrip={
-                      channel === "telegram" || channel === "weixin"
-                    }
-                  />
-                }
+                status={<ConnectionStatus query={query} />}
                 action={
                   <HubAction
                     canManage={canManage}
                     isGuest={isGuest}
+                    setupWritable={setupWritable}
                     query={query}
                     installationId={hub?.id}
-                    requiresRoundTrip={
-                      channel === "telegram" || channel === "weixin"
-                    }
                     reconnectSupported={channel !== "lark" || larkHubRegion !== "lark"}
                     onManage={() => {
                       setManagedChannel(channel);

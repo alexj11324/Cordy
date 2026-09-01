@@ -39,12 +39,27 @@ import {
 // can pass it into CoreProvider during the initial render — the alternative
 // (async ipc.invoke) would race the ApiClient construction in initCore and
 // the first few HTTP requests would go out without X-Client-Version/OS.
-function fetchAppInfo(): { version: string; os: "macos" | "windows" | "linux" | "unknown" } {
+function fetchAppInfo(): {
+  version: string;
+  os: "macos" | "windows" | "linux" | "unknown";
+  authCallbackProtocol: string;
+} {
   try {
     const info = ipcRenderer.sendSync("app:get-info") as
-      | { version: string; os: "macos" | "windows" | "linux" | "unknown" }
+      | {
+          version: string;
+          os: "macos" | "windows" | "linux" | "unknown";
+          authCallbackProtocol: string;
+        }
       | undefined;
-    if (info && typeof info.version === "string" && typeof info.os === "string") return info;
+    if (
+      info &&
+      typeof info.version === "string" &&
+      typeof info.os === "string" &&
+      typeof info.authCallbackProtocol === "string"
+    ) {
+      return info;
+    }
   } catch {
     // fall through
   }
@@ -52,7 +67,7 @@ function fetchAppInfo(): { version: string; os: "macos" | "windows" | "linux" | 
   const p = process.platform;
   const os: "macos" | "windows" | "linux" | "unknown" =
     p === "darwin" ? "macos" : p === "win32" ? "windows" : p === "linux" ? "linux" : "unknown";
-  return { version: "unknown", os };
+  return { version: "unknown", os, authCallbackProtocol: "patchbay" };
 }
 
 function fetchRuntimeConfig(): RuntimeConfigResult {

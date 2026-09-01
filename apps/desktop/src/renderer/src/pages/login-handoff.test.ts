@@ -5,14 +5,28 @@ import { ApiError } from "@patchbay/core/api";
 import {
   clearDesktopHandoffVerifier,
   completeDesktopHandoff,
-  createDesktopGoogleLoginUrl,
+  createDesktopGoogleLoginUrl as createDesktopGoogleLoginUrlWithInitiation,
   readDesktopHandoffVerifier,
 } from "./login-handoff";
+
+const initiateDesktopGoogleAttempt = vi.fn(async () => ({ registered: true }));
+
+function createDesktopGoogleLoginUrl(
+  accountsUrl: string,
+  callbackProtocol = "patchbay",
+) {
+  return createDesktopGoogleLoginUrlWithInitiation(
+    accountsUrl,
+    callbackProtocol,
+    initiateDesktopGoogleAttempt,
+  );
+}
 
 describe("desktop login handoff", () => {
   beforeEach(() => {
     sessionStorage.clear();
     localStorage.clear();
+    initiateDesktopGoogleAttempt.mockClear();
     vi.stubGlobal("crypto", {
       getRandomValues: (bytes: Uint8Array) => {
         bytes.fill(7);
@@ -24,20 +38,37 @@ describe("desktop login handoff", () => {
     });
   });
 
-  it("stores a renderer-bound verifier and carries only challenge/state to web login", async () => {
+  it("authenticates the callback destination before exposing the browser binding", async () => {
     const url = await createDesktopGoogleLoginUrl(
       "https://accounts.aspectlylabs.com",
+      "patchbay-canary-login-fix-123",
     );
     const parsed = new URL(url);
 
     expect(parsed.origin).toBe("https://accounts.aspectlylabs.com");
     expect(parsed.pathname).toBe("/oauth/google");
     expect(parsed.searchParams.get("platform")).toBe("desktop");
+    expect(parsed.searchParams.get("callback_protocol")).toBeNull();
     expect(parsed.searchParams.get("code_challenge")).toHaveLength(43);
     const state = parsed.searchParams.get("state");
     expect(state).toHaveLength(43);
     expect(parsed.searchParams.get("token")).toBeNull();
     expect(readDesktopHandoffVerifier(state ?? "")).toHaveLength(43);
+    expect(initiateDesktopGoogleAttempt).toHaveBeenCalledWith(
+      state,
+      parsed.searchParams.get("code_challenge"),
+      "patchbay-canary-login-fix-123",
+    );
+  });
+
+  it("does not retain a verifier when server-side initiation fails", async () => {
+    initiateDesktopGoogleAttempt.mockResolvedValueOnce({ registered: false });
+
+    await expect(
+      createDesktopGoogleLoginUrl("https://accounts.aspectlylabs.com"),
+    ).rejects.toThrow(/initiation was rejected/i);
+
+    expect(localStorage.getItem("patchbay_desktop_login_handoff")).toBeNull();
   });
 
   it("does not clear the pending verifier for an unsolicited state", async () => {
@@ -124,7 +155,9 @@ describe("desktop login handoff", () => {
     );
     const state = new URL(url).searchParams.get("state") ?? "";
     const redeem = vi.fn().mockResolvedValue({ token: "session-token" });
-    const login = vi.fn().mockRejectedValue(new TypeError("temporarily offline"));
+    const login = vi
+      .fn()
+      .mockRejectedValue(new TypeError("temporarily offline"));
     const recoverPersistedToken = vi.fn();
 
     await expect(
@@ -184,9 +217,11 @@ describe("desktop login handoff", () => {
 
     await expect(
       completeDesktopHandoff("invalid-code", state, {
-        redeem: vi.fn().mockRejectedValue(
-          new ApiError("invalid desktop handoff", 401, "Unauthorized"),
-        ),
+        redeem: vi
+          .fn()
+          .mockRejectedValue(
+            new ApiError("invalid desktop handoff", 401, "Unauthorized"),
+          ),
         login: vi.fn(),
         recoverPersistedToken: vi.fn(),
       }),

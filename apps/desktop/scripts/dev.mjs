@@ -10,6 +10,8 @@
 // there is no UI-only fallback.
 
 import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
+import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -24,6 +26,7 @@ import {
   parseDevRuntimeArgs,
 } from "../../../scripts/dev-runtime-profile.mjs";
 import {
+  applyMacOSDevElectronEnv,
   applyWorktreeDevEnv,
   repoRootFromScriptDir,
 } from "./worktree-dev-env.mjs";
@@ -38,6 +41,12 @@ const { electronArgs } = parseDevRuntimeArgs(process.argv.slice(2));
 applyWorktreeDevEnv(process.env, {
   root: repoRootFromScriptDir(here),
   log: true,
+});
+const require = createRequire(import.meta.url);
+const electronVersion = require("electron/package.json").version;
+applyMacOSDevElectronEnv(process.env, {
+  home: homedir(),
+  electronVersion,
 });
 applyDevRuntimeAppIdentity(process.env);
 const sanitizedChildEnv = withoutDevClerkEnvironment(process.env);
@@ -83,6 +92,14 @@ for (const step of planDevCommands(electronArgs, {
     delete sanitizedChildEnv.PATCHBAY_DEV_ACCEPTANCE_RELEASE_PORT;
     delete sanitizedChildEnv.PATCHBAY_DEV_ACCEPTANCE_RELEASE_TOKEN;
   }
+  const electronEnv =
+    isElectronVite && process.env.PATCHBAY_DEV_ELECTRON_DIST_PATH
+      ? {
+          ...sanitizedChildEnv,
+          ELECTRON_OVERRIDE_DIST_PATH:
+            process.env.PATCHBAY_DEV_ELECTRON_DIST_PATH,
+        }
+      : sanitizedChildEnv;
   run(step.command, step.args, {
     shell: isElectronVite && isWin,
     // Only the doctor may see explicit process-only Clerk credentials. The
@@ -92,7 +109,7 @@ for (const step of planDevCommands(electronArgs, {
     env: isDoctor
       ? process.env
       : isElectronVite
-        ? envWithLocalBins(sanitizedChildEnv)
+        ? envWithLocalBins(electronEnv)
         : sanitizedChildEnv,
   });
   if (isDoctor) clearDevClerkEnvironment();

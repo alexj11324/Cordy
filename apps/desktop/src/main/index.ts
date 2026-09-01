@@ -9,7 +9,14 @@ import { setupAutoUpdater } from "./updater";
 import { setupDaemonManager } from "./daemon-manager";
 import { setupLocalDirectory } from "./local-directory";
 import { openExternalSafely, downloadURLSafely } from "./external-url";
-import { installContextMenu } from "./context-menu";
+import {
+  LEGACY_PROTOCOL,
+  PROTOCOL,
+  findDesktopProtocolUrl,
+  readDesktopAppSuffix,
+  readDesktopCallbackProtocol,
+  registerDesktopProtocolClients,
+} from "./protocol-registration";
 import { handleAppShortcut } from "./keyboard-shortcuts";
 import { installNavigationGestures } from "./navigation-gestures";
 import { installNavigationGuard } from "./navigation-guard";
@@ -70,6 +77,15 @@ import { resolveDevAcceptanceCdpPort } from "./dev-acceptance-cdp";
 // same session. window.webContents.session is shared, and createWindow() can
 // be called again on macOS (app "activate" after all windows are closed).
 const downloadDialogSessions = new WeakSet<Electron.Session>();
+const authCallbackProtocol = process.defaultApp
+  ? (process.env.DESKTOP_AUTH_CALLBACK_PROTOCOL ??
+    readDesktopCallbackProtocol(process.argv) ??
+    "patchbay-canary")
+  : PROTOCOL;
+if (process.defaultApp && !process.env.DESKTOP_APP_SUFFIX) {
+  const recoveredSuffix = readDesktopAppSuffix(process.argv);
+  if (recoveredSuffix) process.env.DESKTOP_APP_SUFFIX = recoveredSuffix;
+}
 
 function installDownloadSaveDialogHandler(window: BrowserWindow): void {
   const { session } = window.webContents;
@@ -146,9 +162,6 @@ if (devAcceptanceCdpPort !== null) {
     `[dev:acceptance] Electron CDP enabled on 127.0.0.1:${devAcceptanceCdpPort}`,
   );
 }
-
-const PROTOCOL = "patchbay";
-const LEGACY_PROTOCOL = "cordy"; // legacy-brand-compat
 
 function migrateDataDirectory(source: string, destination: string): void {
   if (!existsSync(source) || existsSync(destination)) return;
@@ -229,7 +242,8 @@ function handleDeepLink(url: string): void {
     const parsed = new URL(url);
     if (
       parsed.protocol !== `${PROTOCOL}:` &&
-      parsed.protocol !== `${LEGACY_PROTOCOL}:`
+      parsed.protocol !== `${LEGACY_PROTOCOL}:` &&
+      parsed.protocol !== `${authCallbackProtocol}:`
     ) {
       return;
     }
@@ -635,15 +649,13 @@ migrateDataDirectory(
 
 // --- Protocol registration -----------------------------------------------
 
-if (process.defaultApp) {
-  // In dev, register with the path to the electron binary + app path
-  app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [
-    app.getAppPath(),
-  ]);
-} else {
-  app.setAsDefaultProtocolClient(PROTOCOL);
-}
-app.setAsDefaultProtocolClient(LEGACY_PROTOCOL);
+registerDesktopProtocolClients(app, {
+  isDefaultApp: Boolean(process.defaultApp),
+  platform: process.platform,
+  execPath: process.execPath,
+  authCallbackProtocol,
+  desktopAppSuffix: process.env.DESKTOP_APP_SUFFIX,
+});
 
 // --- Single instance lock ------------------------------------------------
 
@@ -666,21 +678,16 @@ if (!gotTheLock) {
     if (window) focusMainWindow(window);
 
     // On Windows the deep link URL is the last argv entry
-    const deepLinkUrl = argv.find(
-      (arg) =>
-        arg.startsWith(`${PROTOCOL}://`) ||
-        arg.startsWith(`${LEGACY_PROTOCOL}://`),
-    );
+    const deepLinkUrl = findDesktopProtocolUrl(argv, authCallbackProtocol);
     if (deepLinkUrl) handleDeepLink(deepLinkUrl);
   });
 
   // Windows/Linux cold-start deep links are safe to parse now. Delivery is
   // queued because desktopInitialized remains false until runtime config and
   // IPC handlers are ready.
-  const coldStartDeepLink = process.argv.find(
-    (arg) =>
-      arg.startsWith(`${PROTOCOL}://`) ||
-      arg.startsWith(`${LEGACY_PROTOCOL}://`),
+  const coldStartDeepLink = findDesktopProtocolUrl(
+    process.argv,
+    authCallbackProtocol,
   );
   if (coldStartDeepLink) handleDeepLink(coldStartDeepLink);
 
@@ -764,7 +771,11 @@ if (!gotTheLock) {
     ipcMain.on("app:get-info", (event) => {
       const p = process.platform;
       const os = p === "darwin" ? "macos" : p === "win32" ? "windows" : p === "linux" ? "linux" : "unknown";
-      event.returnValue = { version: getAppVersion(), os };
+      event.returnValue = {
+        version: getAppVersion(),
+        os,
+        authCallbackProtocol,
+      };
     });
 
     // Sync IPC: read + clear any freeze/crash breadcrumb left by a previous

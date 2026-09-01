@@ -60,6 +60,7 @@ impl OutcomeReplier for NoopOutcomeReplier {
             "needs_binding"
                 | "agent_offline"
                 | "agent_archived"
+                | "quota_exceeded"
                 | "fresh_pending"
                 | "issue_usage"
                 | "hub_command"
@@ -199,6 +200,15 @@ impl OutcomeReplier for LarkOutcomeReplier {
             "agent_archived" => {
                 self.send_chat_notice(_ctx.clone(), inst, msg, AGENT_ARCHIVED_COPY)
                     .await
+            }
+            "quota_exceeded" => {
+                self.send_chat_notice(
+                    _ctx.clone(),
+                    inst,
+                    msg,
+                    patchbay_channel::quota_exceeded_notice_for_text(&msg.body),
+                )
+                .await
             }
             "fresh_pending" => {
                 self.send_chat_notice(_ctx.clone(), inst, msg, FRESH_PENDING_COPY)

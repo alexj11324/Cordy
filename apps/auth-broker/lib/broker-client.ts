@@ -4,7 +4,7 @@ import {
   DESKTOP_ATTEMPT_PATH,
   DESKTOP_COMPLETE_PATH,
 } from "./contract";
-import { isDesktopCode } from "./desktop-handoff";
+import { isDesktopCallbackProtocol, isDesktopCode } from "./desktop-handoff";
 
 export class BrokerApiError extends Error {
   constructor(public readonly status: number) {
@@ -31,15 +31,21 @@ export async function registerDesktopGoogleAttempt(
 export async function completeDesktopGoogleAttempt(
   sessionToken: string,
   input: DesktopBindingInput,
-): Promise<string> {
+): Promise<{ callbackProtocol: string; code: string }> {
   const response = await post(DESKTOP_COMPLETE_PATH, input, sessionToken);
   const payload: unknown = await response.json();
   const code =
     payload && typeof payload === "object"
       ? (payload as Record<string, unknown>).code
       : null;
-  if (!isDesktopCode(code)) throw new BrokerApiError(502);
-  return code;
+  const callbackProtocol =
+    payload && typeof payload === "object"
+      ? (payload as Record<string, unknown>).callback_protocol
+      : null;
+  if (!isDesktopCode(code) || !isDesktopCallbackProtocol(callbackProtocol)) {
+    throw new BrokerApiError(502);
+  }
+  return { callbackProtocol, code };
 }
 
 async function post(

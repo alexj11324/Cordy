@@ -2,6 +2,7 @@
 //! gated on a valid per-provider secretbox key and never return stored config.
 
 use std::collections::HashMap;
+use std::env;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
@@ -29,7 +30,7 @@ use crate::{
 const BODY_LIMIT: usize = 16 * 1024;
 
 #[derive(Clone, Copy)]
-enum Provider {
+pub(crate) enum Provider {
     DingTalk,
     Lark,
     Slack,
@@ -58,6 +59,17 @@ impl Provider {
             Self::Telegram => "PATCHBAY_TELEGRAM_SECRET_KEY",
             Self::WeCom => "PATCHBAY_WECOM_SECRET_KEY",
             Self::Weixin => "PATCHBAY_WEIXIN_SECRET_KEY",
+        }
+    }
+
+    fn capability_type(self) -> &'static str {
+        match self {
+            Self::Lark => "lark",
+            Self::Slack => "slack",
+            Self::DingTalk => "dingtalk",
+            Self::WeCom => "wecom",
+            Self::Telegram => "telegram",
+            Self::Weixin => "weixin",
         }
     }
 
@@ -128,6 +140,7 @@ pub fn member_router() -> Router<HandlerState> {
             "/api/workspaces/{id}/weixin/installations",
             get(list_weixin),
         )
+        .route("/api/workspaces/{id}/messaging/usage", get(messaging_usage))
         .route(
             "/api/workspaces/{id}/weixin/install/{session_id}/status",
             get(weixin_install_status),
@@ -161,8 +174,12 @@ pub fn admin_router() -> Router<HandlerState> {
             post(install_slack),
         )
         .route(
+            "/api/workspaces/{id}/slack/install/begin",
+            post(crate::slack_managed::begin_install),
+        )
+        .route(
             "/api/workspaces/{id}/slack/installations/{installation_id}",
-            delete(revoke_slack),
+            delete(crate::slack_managed::revoke_install),
         )
         .route(
             "/api/workspaces/{id}/telegram/install",
@@ -187,7 +204,7 @@ fn secret_box(provider: Provider) -> Option<patchbay_util::secretbox::SecretBox>
     patchbay_util::secretbox::SecretBox::new(&key).ok()
 }
 
-fn user_id(headers: &HeaderMap) -> Result<Uuid, Response> {
+pub(crate) fn user_id(headers: &HeaderMap) -> Result<Uuid, Response> {
     headers
         .get("x-user-id")
         .and_then(|value| value.to_str().ok())
@@ -199,7 +216,7 @@ fn user_id(headers: &HeaderMap) -> Result<Uuid, Response> {
 /// auth middleware marks the authenticated request with this server-owned
 /// header; reject it at the backend boundary rather than relying on the
 /// integrations page to hide its button.
-fn require_formal_user(headers: &HeaderMap) -> Result<(), Response> {
+pub(crate) fn require_formal_user(headers: &HeaderMap) -> Result<(), Response> {
     if headers
         .get("x-guest-user")
         .and_then(|value| value.to_str().ok())
@@ -214,7 +231,30 @@ fn require_formal_user(headers: &HeaderMap) -> Result<(), Response> {
     Ok(())
 }
 
-fn workspace_id(context: &WorkspaceContext) -> Result<Uuid, Response> {
+pub(crate) fn require_setup_writable(state: &HandlerState) -> Result<(), Response> {
+    if state.public_config.messaging.setup_writable {
+        return Ok(());
+    }
+    Err(error_code_response(
+        StatusCode::FORBIDDEN,
+        "server_managed_integration",
+        "messaging integrations are configured by the server operator",
+    ))
+}
+
+fn provider_capability(
+    state: &HandlerState,
+    provider: Provider,
+) -> Option<&crate::config::MessagingPlatformCapability> {
+    state
+        .public_config
+        .messaging
+        .platforms
+        .iter()
+        .find(|platform| platform.channel_type == provider.capability_type())
+}
+
+pub(crate) fn workspace_id(context: &WorkspaceContext) -> Result<Uuid, Response> {
     Uuid::parse_str(&context.workspace_id)
         .map_err(|_| error_response(StatusCode::BAD_REQUEST, "invalid workspace id"))
 }
@@ -257,13 +297,12 @@ fn public_config(provider: Provider, config: &Value) -> Value {
     }
 }
 
-fn installation_response(provider: Provider, row: ChannelInstallation) -> Value {
-    // `status: active` only means that the provider credential/authorization
-    // was accepted during installation. It does not prove that the channel
-    // runtime is receiving messages or that an Agent reply made a round trip.
-    // Keep those facts explicit so clients cannot render a green "Connected"
-    // badge from an installation row alone.
-    let verification = matches!(provider, Provider::Telegram | Provider::Weixin);
+fn installation_response(
+    provider: Provider,
+    row: ChannelInstallation,
+    messaging: &crate::config::MessagingCapabilities,
+) -> Value {
+    let runtime = runtime_observation(&row);
     let mut value = json!({
         "id": row.id,
         "workspace_id": row.workspace_id,
@@ -273,29 +312,24 @@ fn installation_response(provider: Provider, row: ChannelInstallation) -> Value 
         "installed_at": crate::timefmt::rfc3339(row.installed_at),
         "created_at": crate::timefmt::rfc3339(row.created_at),
         "updated_at": crate::timefmt::rfc3339(row.updated_at),
+        // Keep the desired `status` separate from the supervisor's latest
+        // lease observation. A saved installation is not a live connection.
+        "runtime": runtime,
     });
-    if verification {
-        let active = row.status == "active";
-        let round_trip_passed = active && round_trip_passed(&row.config);
-        value["credential_status"] = json!(if active { "verified" } else { "not_verified" });
-        // A successful provider round trip is a historical verification fact;
-        // it is not a live daemon heartbeat or provider probe. Keep runtime
-        // health fail-closed until a current runtime signal is available.
-        value["runtime_status"] = json!("unknown");
-        value["round_trip_status"] = json!(if round_trip_passed {
-            "passed"
-        } else if active {
-            "not_run"
-        } else {
-            "not_applicable"
-        });
-        value["required_action"] = json!(if round_trip_passed {
-            "none"
-        } else if active {
-            "send_test_message"
-        } else {
-            "reconnect"
-        });
+    let capability = messaging
+        .platforms
+        .iter()
+        .find(|platform| platform.channel_type == provider.capability_type());
+    if let Some(target) = value.as_object_mut() {
+        let setup_mode = provider_setup_mode(provider, messaging);
+        target.insert(
+            "setup".into(),
+            json!({
+                "mode": setup_mode,
+                "writable": messaging.setup_writable,
+                "experimental": capability.map(|value| value.experimental).unwrap_or(true),
+            }),
+        );
     }
     if let (Some(target), Some(fields)) = (
         value.as_object_mut(),
@@ -306,17 +340,49 @@ fn installation_response(provider: Provider, row: ChannelInstallation) -> Value 
     value
 }
 
-fn round_trip_passed(config: &Value) -> bool {
-    config
-        .get("verification")
-        .and_then(Value::as_object)
-        .and_then(|verification| verification.get("round_trip_status"))
-        .and_then(Value::as_str)
-        == Some("passed")
+fn provider_setup_mode(
+    provider: Provider,
+    messaging: &crate::config::MessagingCapabilities,
+) -> &'static str {
+    match messaging.mode.as_str() {
+        "managed" if matches!(provider, Provider::Slack | Provider::Lark) => "managed_oauth",
+        "managed" => "managed_token",
+        "server_configured" => "server_configured",
+        _ => "managed_token",
+    }
+}
+
+/// Projects the supervisor's durable lease observation into the public
+/// runtime contract. A future lease means one supervisor currently owns the
+/// installation and is attempting its transport loop; an expired/missing
+/// lease is offline. The setup capability keeps unverified providers out of
+/// the production-healthy presentation until their real handshake is signed
+/// off.
+fn runtime_observation(row: &ChannelInstallation) -> Value {
+    let now = Utc::now();
+    let (state, error_code, observed_at) = if row.status != "active" {
+        ("offline", Some("installation_revoked"), None)
+    } else if let Some(expires_at) = row.ws_lease_expires_at {
+        if expires_at > now {
+            ("healthy", None, Some(row.updated_at))
+        } else {
+            ("offline", Some("lease_expired"), Some(row.updated_at))
+        }
+    } else if (0..60).contains(&now.signed_duration_since(row.updated_at).num_seconds()) {
+        ("starting", None, Some(row.updated_at))
+    } else {
+        ("offline", Some("lease_missing"), Some(row.updated_at))
+    };
+    json!({
+        "state": state,
+        "observedAt": observed_at.map(crate::timefmt::rfc3339),
+        "errorCode": error_code,
+    })
 }
 
 async fn list(state: HandlerState, context: WorkspaceContext, provider: Provider) -> Response {
-    if secret_box(provider).is_none() {
+    let capability = provider_capability(&state, provider);
+    if capability.is_none_or(|value| !value.enabled) {
         return Json(json!({"installations": [], "configured": false, "install_supported": false}))
             .into_response();
     }
@@ -332,9 +398,11 @@ async fn list(state: HandlerState, context: WorkspaceContext, provider: Provider
     .await
     {
         Ok(rows) => Json(json!({
-            "installations": rows.into_iter().map(|row| installation_response(provider, row)).collect::<Vec<_>>(),
+            "installations": rows.into_iter().map(|row| installation_response(provider, row, &state.public_config.messaging)).collect::<Vec<_>>(),
             "configured": true,
-            "install_supported": true,
+            "install_supported": state.public_config.messaging.setup_writable
+                && (!matches!(provider, Provider::Slack) || crate::slack_managed::configured(&state)),
+            "setup_mode": provider_setup_mode(provider, &state.public_config.messaging),
         }))
         .into_response(),
         Err(error) => {
@@ -363,11 +431,109 @@ list_handler!(list_telegram, Provider::Telegram);
 list_handler!(list_wecom, Provider::WeCom);
 list_handler!(list_weixin, Provider::Weixin);
 
+#[derive(Debug, Serialize)]
+struct MessagingQuotaUsageResponse {
+    mode: String,
+    used: Option<i64>,
+    reserved: Option<i64>,
+    limit: Option<i64>,
+    period_start: Option<String>,
+    period_end: Option<String>,
+    reset_at: Option<String>,
+}
+
+async fn messaging_usage(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+) -> Response {
+    let workspace_id = match workspace_id(&context) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let quota = state.tasks.hosted_channel_quota(workspace_id).await;
+    let mode = match quota {
+        patchbay_service::task_service::HostedChannelQuota::Disabled => "disabled",
+        patchbay_service::task_service::HostedChannelQuota::Unavailable => "unavailable",
+        patchbay_service::task_service::HostedChannelQuota::Unlimited => "unlimited",
+        patchbay_service::task_service::HostedChannelQuota::Limited(_) => "managed",
+    };
+    if matches!(
+        quota,
+        patchbay_service::task_service::HostedChannelQuota::Disabled
+            | patchbay_service::task_service::HostedChannelQuota::Unavailable
+    ) {
+        return Json(MessagingQuotaUsageResponse {
+            mode: mode.into(),
+            used: None,
+            reserved: None,
+            limit: None,
+            period_start: None,
+            period_end: None,
+            reset_at: None,
+        })
+        .into_response();
+    }
+
+    let window = match quota {
+        patchbay_service::task_service::HostedChannelQuota::Limited(window) => window,
+        patchbay_service::task_service::HostedChannelQuota::Unlimited => {
+            patchbay_service::channel_quota::ChannelQuotaWindow::current_month(0, Utc::now())
+        }
+        patchbay_service::task_service::HostedChannelQuota::Disabled
+        | patchbay_service::task_service::HostedChannelQuota::Unavailable => unreachable!(),
+    };
+    let mut connection = match state.pool.acquire().await {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::warn!(%error, %workspace_id, "acquire connection for messaging usage failed");
+            return error_code_response(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "quota_unavailable",
+                "hosted messaging usage is temporarily unavailable",
+            );
+        }
+    };
+    let usage = match patchbay_service::channel_quota::count_turns_in_window(
+        &mut connection,
+        workspace_id,
+        window,
+    )
+    .await
+    {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::warn!(%error, %workspace_id, "count messaging usage failed");
+            return error_code_response(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "quota_unavailable",
+                "hosted messaging usage is temporarily unavailable",
+            );
+        }
+    };
+    Json(MessagingQuotaUsageResponse {
+        mode: mode.into(),
+        used: Some(usage.used),
+        reserved: Some(usage.reserved),
+        limit: match quota {
+            patchbay_service::task_service::HostedChannelQuota::Limited(window) => {
+                Some(window.limit)
+            }
+            patchbay_service::task_service::HostedChannelQuota::Disabled
+            | patchbay_service::task_service::HostedChannelQuota::Unavailable
+            | patchbay_service::task_service::HostedChannelQuota::Unlimited => None,
+        },
+        period_start: Some(crate::timefmt::rfc3339(window.period_start)),
+        period_end: Some(crate::timefmt::rfc3339(window.period_end)),
+        reset_at: Some(crate::timefmt::rfc3339(window.reset_at)),
+    })
+    .into_response()
+}
+
 async fn list_dingtalk(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
 ) -> Response {
-    if secret_box(Provider::DingTalk).is_none() {
+    if provider_capability(&state, Provider::DingTalk).is_none_or(|value| !value.enabled) {
         return Json(json!({
             "installations": [],
             "configured": false,
@@ -429,12 +595,14 @@ async fn list_dingtalk(
     };
     let installations = rows
         .into_iter()
-        .map(|row| dingtalk_installation_response(row, bindings.as_ref()))
+        .map(|row| {
+            dingtalk_installation_response(row, bindings.as_ref(), &state.public_config.messaging)
+        })
         .collect::<Vec<_>>();
     Json(json!({
         "installations": installations,
         "configured": true,
-        "install_supported": true,
+        "install_supported": state.public_config.messaging.setup_writable,
         "group_routing_supported": true,
     }))
     .into_response()
@@ -443,10 +611,11 @@ async fn list_dingtalk(
 fn dingtalk_installation_response(
     row: ChannelInstallation,
     bindings: Option<&HashMap<Uuid, Vec<String>>>,
+    messaging: &crate::config::MessagingCapabilities,
 ) -> Value {
     let installation_id = row.id;
     dingtalk_installation_bindings(
-        installation_response(Provider::DingTalk, row),
+        installation_response(Provider::DingTalk, row, messaging),
         installation_id,
         bindings,
     )
@@ -565,6 +734,9 @@ async fn begin_weixin_install(
     headers: HeaderMap,
     Query(query): Query<AgentQuery>,
 ) -> Response {
+    if let Err(response) = require_setup_writable(&state) {
+        return response;
+    }
     let Some(box_) = secret_box(Provider::Weixin) else {
         return error_response(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -572,7 +744,7 @@ async fn begin_weixin_install(
         );
     };
     let (workspace_id, agent_id, actor) =
-        match install_context(&state, &context, &headers, &query).await {
+        match install_context(&state, &context, &headers, &query, Provider::Weixin).await {
             Ok(value) => value,
             Err(response) => return response,
         };
@@ -628,7 +800,18 @@ async fn begin_weixin_install(
         }
     };
     let session_id = Uuid::new_v4().to_string();
+    // iLink returns two different values: `qrcode` is the opaque polling
+    // token, while `qrcode_img_content` is the actual QR payload to render.
+    // Never expose the polling token as the image contents (a phone would
+    // decode it as a meaningless string, which was the previous bug).
     let qrcode = qr.qrcode;
+    let qr_code_content = qr.qrcode_img_content;
+    if qrcode.trim().is_empty() || qr_code_content.trim().is_empty() {
+        return error_response(
+            StatusCode::BAD_GATEWAY,
+            "WeChat returned an incomplete QR code; please refresh and try again",
+        );
+    }
     let expires_at = Utc::now() + chrono::Duration::seconds(WEIXIN_SESSION_TTL.as_secs() as i64);
     let session = WeixinInstallSession {
         workspace_id,
@@ -649,7 +832,10 @@ async fn begin_weixin_install(
     }
     Json(json!({
         "session_id": session_id,
-        "qr_code_url": qrcode,
+        "qr_code_content": qr_code_content,
+        // Keep the old key for clients that have not yet learned the clearer
+        // name; both keys carry the display payload, never the poll token.
+        "qr_code_url": qr_code_content.clone(),
         "expires_in_seconds": WEIXIN_SESSION_TTL.as_secs(),
         "poll_interval_seconds": 2,
     }))
@@ -669,6 +855,9 @@ async fn weixin_install_status(
     Path((_workspace, session_id)): Path<(String, String)>,
     Query(query): Query<WeixinStatusQuery>,
 ) -> Response {
+    if let Err(response) = require_setup_writable(&state) {
+        return response;
+    }
     if let Err(response) = require_formal_user(&headers) {
         return response;
     }
@@ -773,7 +962,7 @@ async fn weixin_install_status(
         "base_url": base_url,
         "bot_token_encrypted": base64::engine::general_purpose::STANDARD.encode(sealed),
     });
-    let row = match patchbay_weixin::install::finalize(
+    let row = match patchbay_weixin::install::finalize_with_limit(
         &state.pool,
         &patchbay_weixin::install::InstallParams {
             workspace_id,
@@ -783,12 +972,16 @@ async fn weixin_install_status(
             ilink_user_id: status.ilink_user_id.clone(),
             config,
         },
+        hosted_installation_limit(&state),
     )
     .await
     {
         Ok(value) => value,
         Err(error) => {
             tracing::warn!(%error, "failed to persist WeChat installation");
+            if let Some(response) = hosted_installation_limit_response(&error) {
+                return response;
+            }
             if error
                 .downcast_ref::<patchbay_weixin::install::InstallError>()
                 .is_some()
@@ -1026,6 +1219,7 @@ struct LarkRegistrationRuntime {
     http_base_url: String,
     cancel: CancellationToken,
     sessions: LarkSessionStore,
+    installation_limit: Option<i64>,
 }
 
 fn can_manage_lark_agent(role: &str, owner_id: Option<Uuid>, actor: Uuid) -> bool {
@@ -1074,6 +1268,9 @@ async fn begin_lark_install(
     headers: HeaderMap,
     Query(query): Query<AgentQuery>,
 ) -> Response {
+    if let Err(response) = require_setup_writable(&state) {
+        return response;
+    }
     if secret_box(Provider::Lark).is_none() {
         return error_response(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -1081,7 +1278,7 @@ async fn begin_lark_install(
         );
     }
     let (workspace_id, agent_id, actor) =
-        match install_context(&state, &context, &headers, &query).await {
+        match install_context(&state, &context, &headers, &query, Provider::Lark).await {
             Ok(value) => value,
             Err(response) => return response,
         };
@@ -1176,6 +1373,7 @@ async fn begin_lark_install(
             .unwrap_or_default(),
         cancel: state.channel_cancel.clone(),
         sessions: sessions.clone(),
+        installation_limit: hosted_installation_limit(&state),
     };
     if !state.channel_tasks.spawn(run_lark_registration(
         runtime,
@@ -1387,6 +1585,45 @@ async fn run_lark_registration(
                 .await;
             return;
         }
+        if let Some(limit) = runtime.installation_limit {
+            let allowed = match channel::channel_installation_limit_allows(
+                &mut tx,
+                workspace_id,
+                Provider::Lark.channel_type(),
+                (!agent_id.is_nil()).then_some(agent_id),
+                limit,
+            )
+            .await
+            {
+                Ok(value) => value,
+                Err(error) => {
+                    let _ = tx.rollback().await;
+                    runtime
+                        .sessions
+                        .finish(
+                            &session_id,
+                            None,
+                            Some("installation_limit_unavailable"),
+                            Some(&error.to_string()),
+                        )
+                        .await;
+                    return;
+                }
+            };
+            if !allowed {
+                let _ = tx.rollback().await;
+                runtime
+                    .sessions
+                    .finish(
+                        &session_id,
+                        None,
+                        Some("installation_limit_reached"),
+                        Some("this workspace has reached its hosted messaging installation limit"),
+                    )
+                    .await;
+                return;
+            }
+        }
         let app_id = result.client_id.clone();
         if let Err(error) = patchbay_lark::channel_store::reclaim_dead_installation_with(
             &mut *tx,
@@ -1590,7 +1827,7 @@ async fn list_dingtalk_group_routes(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
 ) -> Response {
-    if secret_box(Provider::DingTalk).is_none() {
+    if provider_capability(&state, Provider::DingTalk).is_none_or(|value| !value.enabled) {
         return Json(json!({"routes": []})).into_response();
     }
     let workspace_id = match workspace_id(&context) {
@@ -1624,10 +1861,13 @@ async fn update_dingtalk_group_route(
     Path((_workspace, raw_route)): Path<(String, String)>,
     bytes: axum::body::Bytes,
 ) -> Response {
+    if let Err(response) = require_setup_writable(&state) {
+        return response;
+    }
     if let Err(response) = require_formal_user(&headers) {
         return response;
     }
-    if secret_box(Provider::DingTalk).is_none() {
+    if provider_capability(&state, Provider::DingTalk).is_none_or(|value| !value.enabled) {
         return error_response(
             StatusCode::SERVICE_UNAVAILABLE,
             "dingtalk integration not configured",
@@ -1708,13 +1948,16 @@ async fn update_dingtalk_group_route(
     .into_response()
 }
 
-async fn revoke(
+pub(crate) async fn revoke(
     state: HandlerState,
     context: WorkspaceContext,
     headers: HeaderMap,
     raw_id: String,
     provider: Provider,
 ) -> Response {
+    if let Err(response) = require_setup_writable(&state) {
+        return response;
+    }
     if let Err(response) = require_formal_user(&headers) {
         return response;
     }
@@ -1801,7 +2044,6 @@ macro_rules! revoke_handler {
 }
 revoke_handler!(revoke_dingtalk, Provider::DingTalk);
 revoke_handler!(revoke_lark, Provider::Lark);
-revoke_handler!(revoke_slack, Provider::Slack);
 revoke_handler!(revoke_telegram, Provider::Telegram);
 revoke_handler!(revoke_wecom, Provider::WeCom);
 revoke_handler!(revoke_weixin, Provider::Weixin);
@@ -1817,7 +2059,9 @@ async fn install_context(
     context: &WorkspaceContext,
     headers: &HeaderMap,
     query: &AgentQuery,
+    _provider: Provider,
 ) -> Result<(Uuid, Uuid, Uuid), Response> {
+    require_setup_writable(state)?;
     require_formal_user(headers)?;
     let workspace_id = workspace_id(context)?;
     let actor = user_id(headers)?;
@@ -1849,6 +2093,42 @@ async fn install_context(
     Ok((workspace_id, agent_id, actor))
 }
 
+/// Hosted Free workspaces default to one active IM installation. Cloud can
+/// provision another value (or `unlimited`) through the deployment policy;
+/// self-hosted mode bypasses this check because it does not consume hosted
+/// entitlements. Reconnects for the same provider/Agent slot remain allowed.
+fn managed_installation_limit() -> Option<i64> {
+    match env::var("PATCHBAY_IM_INSTALLATION_LIMIT") {
+        Ok(value) if value.trim().eq_ignore_ascii_case("unlimited") => None,
+        Ok(value) => value
+            .trim()
+            .parse::<i64>()
+            .ok()
+            .filter(|limit| *limit >= 0)
+            .or(Some(1)),
+        Err(_) => Some(1),
+    }
+}
+
+pub(crate) fn hosted_installation_limit(state: &HandlerState) -> Option<i64> {
+    (state.public_config.messaging.mode == "managed")
+        .then(managed_installation_limit)
+        .flatten()
+}
+
+fn hosted_installation_limit_response(error: &anyhow::Error) -> Option<Response> {
+    error
+        .to_string()
+        .contains("hosted messaging installation limit reached")
+        .then(|| {
+            error_code_response(
+                StatusCode::FORBIDDEN,
+                "im_installation_limit_reached",
+                "this workspace has reached its hosted messaging installation limit",
+            )
+        })
+}
+
 fn decode_body<T: for<'de> Deserialize<'de>>(bytes: &[u8]) -> Result<T, Response> {
     if bytes.len() > BODY_LIMIT {
         return Err(error_response(
@@ -1860,7 +2140,7 @@ fn decode_body<T: for<'de> Deserialize<'de>>(bytes: &[u8]) -> Result<T, Response
         .map_err(|_| error_response(StatusCode::BAD_REQUEST, "invalid request body"))
 }
 
-fn publish_created(
+pub(crate) fn publish_created(
     state: &HandlerState,
     provider: Provider,
     row: &ChannelInstallation,
@@ -1926,6 +2206,9 @@ async fn install_dingtalk(
     Query(query): Query<AgentQuery>,
     bytes: axum::body::Bytes,
 ) -> Response {
+    if let Err(response) = require_setup_writable(&state) {
+        return response;
+    }
     let Some(box_) = secret_box(Provider::DingTalk) else {
         return error_response(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -1933,7 +2216,7 @@ async fn install_dingtalk(
         );
     };
     let (workspace_id, agent_id, actor) =
-        match install_context(&state, &context, &headers, &query).await {
+        match install_context(&state, &context, &headers, &query, Provider::DingTalk).await {
             Ok(value) => value,
             Err(response) => return response,
         };
@@ -1948,20 +2231,31 @@ async fn install_dingtalk(
         "",
     );
     match service
-        .register_byo(patchbay_dingtalk::byo_install::RegisterByoParams {
-            workspace_id,
-            agent_id,
-            initiator_id: actor,
-            app_key: input.client_id,
-            app_secret: input.client_secret,
-        })
+        .register_byo_with_limit(
+            patchbay_dingtalk::byo_install::RegisterByoParams {
+                workspace_id,
+                agent_id,
+                initiator_id: actor,
+                app_key: input.client_id,
+                app_secret: input.client_secret,
+            },
+            hosted_installation_limit(&state),
+        )
         .await
     {
         Ok(row) => {
             publish_created(&state, Provider::DingTalk, &row, actor);
-            Json(installation_response(Provider::DingTalk, row)).into_response()
+            Json(installation_response(
+                Provider::DingTalk,
+                row,
+                &state.public_config.messaging,
+            ))
+            .into_response()
         }
         Err(error) => {
+            if let Some(response) = hosted_installation_limit_response(&error) {
+                return response;
+            }
             tracing::warn!(error = %error, "DingTalk installation rejected");
             let (status, message) = dingtalk_install_error(&error);
             error_response(status, &message)
@@ -1984,6 +2278,9 @@ async fn install_wecom(
     Query(query): Query<AgentQuery>,
     bytes: axum::body::Bytes,
 ) -> Response {
+    if let Err(response) = require_setup_writable(&state) {
+        return response;
+    }
     let Some(box_) = secret_box(Provider::WeCom) else {
         return error_response(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -1991,7 +2288,7 @@ async fn install_wecom(
         );
     };
     let (workspace_id, agent_id, actor) =
-        match install_context(&state, &context, &headers, &query).await {
+        match install_context(&state, &context, &headers, &query, Provider::WeCom).await {
             Ok(value) => value,
             Err(response) => return response,
         };
@@ -2002,7 +2299,7 @@ async fn install_wecom(
     let service = patchbay_wecom::installation::InstallationService::new(state.pool.clone(), box_);
     let cancel = CancellationToken::new();
     match service
-        .upsert(
+        .upsert_with_limit(
             &cancel,
             &patchbay_wecom::installation::InstallationParams {
                 workspace_id,
@@ -2012,6 +2309,7 @@ async fn install_wecom(
                 secret: input.secret.trim().into(),
                 bot_display_name: input.bot_name.trim().into(),
             },
+            hosted_installation_limit(&state),
         )
         .await
     {
@@ -2033,9 +2331,17 @@ async fn install_wecom(
                 }
             };
             publish_created(&state, Provider::WeCom, &row, actor);
-            Json(installation_response(Provider::WeCom, row)).into_response()
+            Json(installation_response(
+                Provider::WeCom,
+                row,
+                &state.public_config.messaging,
+            ))
+            .into_response()
         }
         Err(error) => {
+            if let Some(response) = hosted_installation_limit_response(&error) {
+                return response;
+            }
             let failure = classify_wecom_install_error(&error);
             match failure.log {
                 WecomInstallLog::None => {}
@@ -2144,6 +2450,9 @@ async fn install_telegram(
     Query(query): Query<AgentQuery>,
     bytes: axum::body::Bytes,
 ) -> Response {
+    if let Err(response) = require_setup_writable(&state) {
+        return response;
+    }
     let Some(box_) = secret_box(Provider::Telegram) else {
         return error_response(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -2151,7 +2460,7 @@ async fn install_telegram(
         );
     };
     let (workspace_id, agent_id, actor) =
-        match install_context(&state, &context, &headers, &query).await {
+        match install_context(&state, &context, &headers, &query, Provider::Telegram).await {
             Ok(value) => value,
             Err(response) => return response,
         };
@@ -2229,14 +2538,22 @@ async fn install_telegram(
         }
     };
     match patchbay_telegram::install::InstallService::new(state.pool.clone())
-        .persist_install(&persist)
+        .persist_install_with_limit(&persist, hosted_installation_limit(&state))
         .await
     {
         Ok(row) => {
             publish_created(&state, Provider::Telegram, &row, actor);
-            Json(installation_response(Provider::Telegram, row)).into_response()
+            Json(installation_response(
+                Provider::Telegram,
+                row,
+                &state.public_config.messaging,
+            ))
+            .into_response()
         }
         Err(error) => {
+            if let Some(response) = hosted_installation_limit_response(&error) {
+                return response;
+            }
             let failure = classify_telegram_install_persist_error(&error);
             if failure.status == StatusCode::INTERNAL_SERVER_ERROR {
                 tracing::error!(%error, %workspace_id, %agent_id, "Telegram installation persist failed");
@@ -2354,6 +2671,16 @@ async fn install_slack(
     Query(query): Query<AgentQuery>,
     bytes: axum::body::Bytes,
 ) -> Response {
+    if state.public_config.messaging.mode == "managed" {
+        return error_code_response(
+            StatusCode::CONFLICT,
+            "managed_oauth_required",
+            "managed Slack installations must use OAuth",
+        );
+    }
+    if let Err(response) = require_setup_writable(&state) {
+        return response;
+    }
     let Some(box_) = secret_box(Provider::Slack) else {
         return error_response(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -2361,7 +2688,7 @@ async fn install_slack(
         );
     };
     let (workspace_id, agent_id, actor) =
-        match install_context(&state, &context, &headers, &query).await {
+        match install_context(&state, &context, &headers, &query, Provider::Slack).await {
             Ok(value) => value,
             Err(response) => return response,
         };
@@ -2478,14 +2805,22 @@ async fn install_slack(
         }
     };
     match patchbay_slack::install::InstallService::new(state.pool.clone())
-        .persist_install(&persist)
+        .persist_install_with_limit(&persist, hosted_installation_limit(&state))
         .await
     {
         Ok(row) => {
             publish_created(&state, Provider::Slack, &row, actor);
-            Json(installation_response(Provider::Slack, row)).into_response()
+            Json(installation_response(
+                Provider::Slack,
+                row,
+                &state.public_config.messaging,
+            ))
+            .into_response()
         }
         Err(error) => {
+            if let Some(response) = hosted_installation_limit_response(&error) {
+                return response;
+            }
             let failure = classify_slack_install_persist_error(&error);
             if failure.status == StatusCode::INTERNAL_SERVER_ERROR {
                 tracing::error!(%error, %workspace_id, %agent_id, "Slack installation persist failed");
@@ -2551,90 +2886,6 @@ mod tests {
             assert!(!encoded.contains("encrypted"));
             assert!(!encoded.contains("cipher"));
         }
-    }
-
-    #[test]
-    fn provider_installation_response_keeps_message_verification_explicit() {
-        let now = Utc::now();
-        let row = ChannelInstallation {
-            agent_id: None,
-            channel_type: Provider::Telegram.channel_type().into(),
-            config: json!({}),
-            created_at: now,
-            id: Uuid::new_v4(),
-            installed_at: now,
-            installer_user_id: Uuid::new_v4(),
-            status: "active".into(),
-            updated_at: now,
-            workspace_id: Uuid::new_v4(),
-            ws_lease_expires_at: None,
-            ws_lease_token: None,
-        };
-
-        let value = installation_response(Provider::Telegram, row);
-        assert_eq!(value["credential_status"], "verified");
-        assert_eq!(value["runtime_status"], "unknown");
-        assert_eq!(value["round_trip_status"], "not_run");
-        assert_eq!(value["required_action"], "send_test_message");
-    }
-
-    #[test]
-    fn provider_installation_response_reports_a_recorded_round_trip() {
-        let now = Utc::now();
-        let row = ChannelInstallation {
-            agent_id: None,
-            channel_type: Provider::Weixin.channel_type().into(),
-            config: json!({
-                "verification": {
-                    "round_trip_status": "passed",
-                    "verified_at": now,
-                }
-            }),
-            created_at: now,
-            id: Uuid::new_v4(),
-            installed_at: now,
-            installer_user_id: Uuid::new_v4(),
-            status: "active".into(),
-            updated_at: now,
-            workspace_id: Uuid::new_v4(),
-            ws_lease_expires_at: None,
-            ws_lease_token: None,
-        };
-
-        let value = installation_response(Provider::Weixin, row);
-        assert_eq!(value["credential_status"], "verified");
-        assert_eq!(value["runtime_status"], "unknown");
-        assert_eq!(value["round_trip_status"], "passed");
-        assert_eq!(value["required_action"], "none");
-    }
-
-    #[test]
-    fn revoked_installation_never_reports_a_healthy_round_trip() {
-        let now = Utc::now();
-        let row = ChannelInstallation {
-            agent_id: None,
-            channel_type: Provider::Telegram.channel_type().into(),
-            config: json!({
-                "verification": {
-                    "round_trip_status": "passed",
-                    "verified_at": now,
-                }
-            }),
-            created_at: now,
-            id: Uuid::new_v4(),
-            installed_at: now,
-            installer_user_id: Uuid::new_v4(),
-            status: "revoked".into(),
-            updated_at: now,
-            workspace_id: Uuid::new_v4(),
-            ws_lease_expires_at: None,
-            ws_lease_token: None,
-        };
-
-        let value = installation_response(Provider::Telegram, row);
-        assert_eq!(value["runtime_status"], "unknown");
-        assert_eq!(value["round_trip_status"], "not_applicable");
-        assert_eq!(value["required_action"], "reconnect");
     }
 
     #[test]

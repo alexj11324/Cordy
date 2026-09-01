@@ -23,7 +23,7 @@ STUB
   cat >"$stub_bin/curl" <<'STUB'
 #!/usr/bin/env bash
 if [[ "$*" == *"-sI"* ]]; then
-  printf 'HTTP/2 302\r\nlocation: https://github.com/patchbay-ai/patchbay/releases/tag/v0.3.2\r\n'
+  printf 'HTTP/2 302\r\nlocation: https://github.com/alexj11324/Cordy/releases/tag/v0.3.2\r\n'
   exit 0
 fi
 
@@ -183,7 +183,7 @@ STUB
     cat "$tmp/install.out" >&2 || true
     return 1
   fi
-  if ! grep -q "https://patchbay.ai/settings?tab=tokens" "$tmp/install.out"; then
+  if ! grep -q "https://patchbay.aspectlylabs.com/settings?tab=tokens" "$tmp/install.out"; then
     echo "expected direct API Tokens settings URL in installer output" >&2
     cat "$tmp/install.out" >&2 || true
     return 1
@@ -412,7 +412,7 @@ for arg in "$@"; do
   esac
 done
 if [ "$latest_request" = true ] && [ -n "${PATCHBAY_TEST_LATEST_TAG:-}" ]; then
-  printf 'HTTP/2 302\nlocation: https://github.com/patchbay-ai/patchbay/releases/tag/%s\n' "$PATCHBAY_TEST_LATEST_TAG"
+  printf 'HTTP/2 302\nlocation: https://github.com/alexj11324/Cordy/releases/tag/%s\n' "$PATCHBAY_TEST_LATEST_TAG"
 fi
 exit 0
 STUB
@@ -662,8 +662,8 @@ test_with_server_migrates_legacy_branding_without_overwriting_custom_repositorie
 
   _run_with_server "$tmp" PATCHBAY_SELFHOST_REF=v0.3.2 || return 1
 
-  grep -Fxq 'PATCHBAY_BACKEND_IMAGE=ghcr.io/patchbay-ai/patchbay-backend' "$tmp/server/.env" || return 1
-  grep -Fxq 'PATCHBAY_WEB_IMAGE=ghcr.io/patchbay-ai/patchbay-web' "$tmp/server/.env" || return 1
+  grep -Fxq 'PATCHBAY_BACKEND_IMAGE=ghcr.io/alexj11324/patchbay-backend' "$tmp/server/.env" || return 1
+  grep -Fxq 'PATCHBAY_WEB_IMAGE=ghcr.io/alexj11324/patchbay-web' "$tmp/server/.env" || return 1
 
   cp "$tmp/server/.env.example" "$tmp/server/.env"
   printf '\nCORDY_BACKEND_IMAGE=registry.example/custom-backend\nCORDY_WEB_IMAGE=registry.example/custom-web\n' >>"$tmp/server/.env" # legacy-brand-compat

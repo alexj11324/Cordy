@@ -7,6 +7,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react";
 import { ApiError } from "@patchbay/core/api";
@@ -40,11 +41,25 @@ const channelInstallationsRef = vi.hoisted(() => ({
           agent_id: string | null;
           status: string;
           region?: string;
-          round_trip_status?: string;
+          runtime?: { state: string; observedAt: string | null; errorCode: string | null };
+          setup?: { experimental?: boolean };
         }[];
       }
     >
   >,
+}));
+const navigationRef = vi.hoisted(() => ({
+  searchParams: new URLSearchParams("tab=integrations"),
+  replace: vi.fn(),
+}));
+const toastSuccess = vi.hoisted(() => vi.fn());
+const toastError = vi.hoisted(() => vi.fn());
+
+vi.mock("sonner", () => ({
+  toast: {
+    success: toastSuccess,
+    error: toastError,
+  },
 }));
 
 vi.mock("@tanstack/react-query", () => ({
@@ -79,6 +94,14 @@ vi.mock("@patchbay/core/composio", () => ({
 
 vi.mock("@patchbay/core/hooks", () => ({
   useWorkspaceId: () => "workspace-id",
+}));
+
+vi.mock("../../navigation", () => ({
+  useNavigation: () => ({
+    pathname: "/acme/settings",
+    searchParams: navigationRef.searchParams,
+    replace: navigationRef.replace,
+  }),
 }));
 
 vi.mock("@patchbay/core/auth", () => ({
@@ -143,10 +166,19 @@ describe("Settings IntegrationsTab", () => {
     authUserRef.current = null;
     membersRef.current = [];
     channelInstallationsRef.current = {};
+    navigationRef.searchParams = new URLSearchParams("tab=integrations");
+    navigationRef.replace.mockReset();
+    toastSuccess.mockReset();
+    toastError.mockReset();
     configStore.getState().setFeatureFlags({ [COMPOSIO_MCP_APPS_FLAG]: true });
     // Reset the self-host-only VCS gate to its default (hidden) so tests stay
     // isolated; individual tests opt in below.
     configStore.getState().setAuthConfig({ allowSignup: true, vcsIntegrationAvailable: false });
+    configStore.getState().setMessagingConfig({
+      mode: "managed",
+      setupWritable: true,
+      platforms: [],
+    });
   });
 
   it("hides Composio and disables the toolkits query when the feature flag is off", () => {
@@ -169,6 +201,22 @@ describe("Settings IntegrationsTab", () => {
       (query) => query.queryKey[0] === "composio",
     );
     expect(composioQuery?.enabled).toBe(true);
+  });
+
+  it("surfaces and consumes Slack OAuth callback failures without touching other params", async () => {
+    navigationRef.searchParams = new URLSearchParams(
+      "tab=integrations&slack_error=slack_authorization_denied",
+    );
+
+    renderTab();
+
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith("Slack authorization was canceled"),
+    );
+    expect(navigationRef.replace).toHaveBeenCalledWith(
+      "/acme/settings?tab=integrations",
+    );
+    expect(toastSuccess).not.toHaveBeenCalled();
   });
 
   it("shows each channel description below its icon and title", () => {
@@ -194,7 +242,12 @@ describe("Settings IntegrationsTab", () => {
     channelInstallationsRef.current.dingtalk = {
       configured: true,
       install_supported: true,
-      installations: [{ id: "hub-1", agent_id: null, status: "active" }],
+      installations: [{
+        id: "hub-1",
+        agent_id: null,
+        status: "active",
+        runtime: { state: "healthy", observedAt: null, errorCode: null },
+      }],
     };
 
     renderTab();
@@ -246,65 +299,6 @@ describe("Settings IntegrationsTab", () => {
     expect(screen.queryByTestId("integration-setup-guide-telegram")).toBeNull();
   });
 
-  it("does not call a Telegram Hub connected before a message round trip", () => {
-    authUserRef.current = { id: "admin-user" };
-    membersRef.current = [{ user_id: "admin-user", role: "owner" }];
-    channelInstallationsRef.current.telegram = {
-      configured: true,
-      install_supported: true,
-      installations: [{ id: "telegram-hub", agent_id: null, status: "active" }],
-    };
-
-    renderTab();
-
-    const card = screen.getByTestId("integration-channel-card-telegram");
-    expect(
-      within(card).getByText("Authorized · test message required"),
-    ).toBeInTheDocument();
-    expect(within(card).queryByText("Connected")).toBeNull();
-  });
-
-  it("shows a Telegram Hub as connected only after a message round trip", () => {
-    channelInstallationsRef.current.telegram = {
-      configured: true,
-      install_supported: true,
-      installations: [
-        {
-          id: "telegram-hub",
-          agent_id: null,
-          status: "active",
-          round_trip_status: "passed",
-        },
-      ],
-    };
-
-    renderTab();
-
-    expect(
-      within(
-        screen.getByTestId("integration-channel-card-telegram"),
-      ).getAllByText("Connected").length,
-    ).toBeGreaterThan(0);
-  });
-
-  it("does not show non-admins a green Telegram status before a message round trip", () => {
-    authUserRef.current = { id: "member-user" };
-    membersRef.current = [{ user_id: "member-user", role: "member" }];
-    channelInstallationsRef.current.telegram = {
-      configured: true,
-      install_supported: true,
-      installations: [{ id: "telegram-hub", agent_id: null, status: "active" }],
-    };
-
-    renderTab();
-
-    const card = screen.getByTestId("integration-channel-card-telegram");
-    expect(
-      within(card).getAllByText("Authorized · test message required"),
-    ).toHaveLength(2);
-    expect(within(card).queryByText("Connected")).toBeNull();
-  });
-
   it.each([
     ["lark", "Connect Lark"],
     ["slack", "Connect Slack"],
@@ -345,7 +339,13 @@ describe("Settings IntegrationsTab", () => {
     channelInstallationsRef.current.lark = {
       configured: true,
       install_supported: true,
-      installations: [{ id: "lark-hub", agent_id: null, status: "active", region: "lark" }],
+      installations: [{
+        id: "lark-hub",
+        agent_id: null,
+        status: "active",
+        region: "lark",
+        runtime: { state: "healthy", observedAt: null, errorCode: null },
+      }],
     };
 
     renderTab();
@@ -353,6 +353,27 @@ describe("Settings IntegrationsTab", () => {
     expect(screen.getByRole("button", { name: "Manage" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Disconnect" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Reconnect" })).toBeNull();
+  });
+
+  it("labels an active installation experimental until its provider path is verified", () => {
+    authUserRef.current = { id: "admin-user" };
+    membersRef.current = [{ user_id: "admin-user", role: "owner" }];
+    channelInstallationsRef.current.dingtalk = {
+      configured: true,
+      install_supported: true,
+      installations: [{
+        id: "experimental-hub",
+        agent_id: null,
+        status: "active",
+        runtime: { state: "healthy", observedAt: null, errorCode: null },
+        setup: { experimental: true },
+      }],
+    };
+
+    renderTab();
+
+    expect(screen.getByText("Experimental")).toBeInTheDocument();
+    expect(screen.queryByText("Connected")).toBeNull();
   });
 
   it("explains that Agent selection happens in the connected chat", () => {
@@ -394,7 +415,12 @@ describe("Settings IntegrationsTab", () => {
     channelInstallationsRef.current.dingtalk = {
       configured: true,
       install_supported: true,
-      installations: [{ id: "legacy-1", agent_id: "legacy-agent", status: "active" }],
+      installations: [{
+        id: "legacy-1",
+        agent_id: "legacy-agent",
+        status: "active",
+        runtime: { state: "healthy", observedAt: null, errorCode: null },
+      }],
     };
 
     renderTab();

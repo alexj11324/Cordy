@@ -203,6 +203,10 @@ export interface WorkspaceSubscriptionEntitlements {
   seats: number;
   issueWindow: number | null;
   automationRuns: number | null;
+  /** Hosted IM limits are optional while older Cloud snapshots roll forward. */
+  hostedWorkspaceLimit?: number | null;
+  imInstallationLimit?: number | null;
+  imAgentTurns?: number | null;
   currentPeriodEnd: string | null;
   snapshotExpiresAt: string | null;
   version: number;

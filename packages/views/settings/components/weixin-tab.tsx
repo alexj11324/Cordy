@@ -18,9 +18,23 @@ import { useWorkspaceId } from "@patchbay/core/hooks";
 import { useAuthStore } from "@patchbay/core/auth";
 import { memberListOptions } from "@patchbay/core/workspace/queries";
 import { api } from "@patchbay/core/api";
+import { isMessagingInstallationHealthy } from "@patchbay/core/types";
 import { weixinInstallationsOptions, weixinKeys } from "@patchbay/core/weixin";
 import { WeixinMark } from "./weixin-mark";
 import { useT } from "../../i18n";
+
+function qrImageSource(value: string): string | null {
+  const trimmed = value.trim();
+  if (/^data:image\//i.test(trimmed) || /^https:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+  // Some iLink deployments return raw base64 PNG content. Keep the fallback
+  // explicit so an opaque polling token can never be mistaken for an image.
+  if (/^[A-Za-z0-9+/]+=*$/.test(trimmed) && trimmed.length > 128) {
+    return `data:image/png;base64,${trimmed}`;
+  }
+  return null;
+}
 
 function providerErrorDetail(error: unknown): string | null {
   const detail = error instanceof Error ? error.message.trim() : "";
@@ -143,7 +157,6 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
   } | null>(null);
   const [status, setStatus] = useState("pending");
   const [verifyCode, setVerifyCode] = useState("");
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const existing = data?.installations.find(
     (item) =>
       (agentId ? item.agent_id === agentId : item.agent_id === null) &&
@@ -157,10 +170,9 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
       .beginWeixinInstall(wsId, agentId)
       .then((value) => {
         if (!cancelled) {
-          setErrorMessage(null);
           setSession({
             id: value.session_id,
-            qr: value.qr_code_url,
+            qr: value.qr_code_content ?? value.qr_code_url,
             interval: value.poll_interval_seconds,
           });
         }
@@ -168,12 +180,12 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
       .catch((error: unknown) => {
         if (!cancelled) {
           const detail = providerErrorDetail(error);
-          const message = detail
-            ? t(($) => $.weixin.connect_failed_detail, { details: detail })
-            : t(($) => $.weixin.connect_failed);
           setStatus("error");
-          setErrorMessage(message);
-          toast.error(message);
+          toast.error(
+            detail
+              ? t(($) => $.weixin.connect_failed_detail, { details: detail })
+              : t(($) => $.weixin.connect_failed),
+          );
         }
       });
     return () => {
@@ -202,7 +214,7 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
         setStatus(result.status);
         if (result.status === "success") {
           await qc.invalidateQueries({ queryKey: weixinKeys.installations(wsId) });
-          toast.success(t(($) => $.page.integrations_pending_verification));
+          toast.success(t(($) => $.weixin.connected));
           setOpen(false);
           return;
         }
@@ -210,7 +222,7 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
         if (!cancelled) {
           const detail = providerErrorDetail(error);
           setStatus("error");
-          setErrorMessage(
+          toast.error(
             detail
               ? t(($) => $.weixin.connect_failed_detail, { details: detail })
               : t(($) => $.weixin.connect_failed),
@@ -235,21 +247,14 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
     };
   }, [open, qc, session, status, t, verifyCode, wsId]);
 
-  if (!data?.install_supported) return null;
   if (existing) {
-    const verified = existing.round_trip_status === "passed";
+    const healthy = isMessagingInstallationHealthy(existing);
     return (
       <div className="flex items-center gap-2">
-        <span
-          className={
-            verified
-              ? "text-caption text-emerald-600"
-              : "text-caption text-amber-600"
-          }
-        >
-          {verified
+        <span className={healthy ? "text-caption text-emerald-600" : "text-caption text-amber-600"}>
+          {healthy
             ? t(($) => $.weixin.connected)
-            : t(($) => $.page.integrations_pending_verification)}
+            : t(($) => $.page.integrations_status)}
         </span>
         <Button
           variant="outline"
@@ -276,6 +281,7 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
       </div>
     );
   }
+  if (!data?.install_supported) return null;
   const statusLabels: Record<string, string> = {
     pending: t(($) => $.weixin.status_pending),
     scanned: t(($) => $.weixin.status_scanned),
@@ -294,7 +300,6 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
           setSession(null);
           setStatus("pending");
           setVerifyCode("");
-          setErrorMessage(null);
           setOpen(true);
         }}
       >
@@ -308,7 +313,19 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
           </DialogHeader>
           <div className="flex flex-col items-center gap-4 py-4">
             {session ? (
-              <QRCode value={session.qr} size={192} />
+              qrImageSource(session.qr) ? (
+                <img
+                  data-testid="weixin-qr-code"
+                  data-value={session.qr}
+                  src={qrImageSource(session.qr) ?? undefined}
+                  alt={t(($) => $.weixin.scan_title)}
+                  className="size-48 rounded-md bg-white p-2"
+                />
+              ) : (
+                <span data-testid="weixin-qr-code" data-value={session.qr}>
+                  <QRCode value={session.qr} size={192} />
+                </span>
+              )
             ) : (
               <p className="text-caption text-muted-foreground">
                 {t(($) => $.weixin.starting)}
@@ -317,11 +334,6 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
             <p className="text-caption text-muted-foreground">
               {t(($) => $.weixin.status, { status: statusLabel })}
             </p>
-            {errorMessage ? (
-              <p className="text-caption text-destructive" role="alert">
-                {errorMessage}
-              </p>
-            ) : null}
             {status === "need_verify_code" ? (
               <Input
                 value={verifyCode}

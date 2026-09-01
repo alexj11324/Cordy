@@ -1,3 +1,8 @@
+import type {
+  MessagingInstallationRuntime,
+  MessagingInstallationSetup,
+} from "./messaging";
+
 export type WeixinInstallation = {
   id: string;
   workspace_id: string;
@@ -10,14 +15,8 @@ export type WeixinInstallation = {
   installed_at: string;
   created_at: string;
   updated_at: string;
-  /** Provider authorization accepted during installation. */
-  credential_status?: string;
-  /** Current provider runtime health; older backends may omit it. */
-  runtime_status?: string;
-  /** Server-owned inbound -> outbound message verification state. */
-  round_trip_status?: string;
-  /** Action the UI should take when verification is incomplete. */
-  required_action?: string;
+  runtime?: MessagingInstallationRuntime;
+  setup?: MessagingInstallationSetup;
 };
 
 export type ListWeixinInstallationsResponse = {
@@ -28,6 +27,10 @@ export type ListWeixinInstallationsResponse = {
 
 export type BeginWeixinInstallResponse = {
   session_id: string;
+  /** Display payload returned by iLink (`qrcode_img_content`). */
+  qr_code_content?: string;
+  /** Kept for older clients; the server now puts the display payload here,
+   * never the polling `qrcode` token. */
   qr_code_url: string;
   expires_in_seconds: number;
   poll_interval_seconds: number;

@@ -32,6 +32,8 @@ pub struct ChannelRuntime {
     maintenance: Vec<tokio::task::JoinHandle<()>>,
     wecom_relay: Option<Arc<patchbay_wecom::outbound_relay::OutboundRelay>>,
     router: Arc<ChannelRouter>,
+    inbound_handler: patchbay_channel::InboundHandler,
+    slack_slash_processor: Option<Arc<patchbay_slack::slash_command::SlashCommandProcessor>>,
 }
 
 impl ChannelRuntime {
@@ -43,6 +45,11 @@ impl ChannelRuntime {
         wecom_metrics: Option<Arc<patchbay_metrics::WecomMetrics>>,
         lark_backfill_metrics: Option<Arc<patchbay_metrics::LarkBackfillMetrics>>,
     ) -> anyhow::Result<Self> {
+        // Self-hosted operators provision installation rows from the server
+        // deployment (the Multica-style boundary). This runs before registry
+        // discovery so the supervisor sees newly materialized credentials on
+        // its first poll; the app remains read-only in server_configured mode.
+        super::channel_bootstrap::provision_from_environment(&state.pool, cfg).await?;
         let services = Arc::new(ChannelServices {
             pool: state.pool.clone(),
             issues: state.issues.clone(),
@@ -63,7 +70,7 @@ impl ChannelRuntime {
         let cancel = state.channel_cancel.clone();
         let outbound_tasks = state.channel_tasks.clone();
 
-        configure_slack(
+        let slack_slash_processor = configure_slack(
             state,
             cfg,
             &services,
@@ -107,6 +114,7 @@ impl ChannelRuntime {
         }
 
         let channel_types = registry.types();
+        let inbound_handler = channel_inbound_handler(router.clone());
         let supervisor = if channel_types.is_empty() {
             tracing::info!(
                 "channel supervisor disabled: no adapter secret keys configured; maintenance ownership remains active"
@@ -123,21 +131,11 @@ impl ChannelRuntime {
             };
             match lease_store {
                 Some(lease_store) => {
-                    let inbound_router = router.clone();
-                    let handler = patchbay_channel::InboundHandler::new(move |ctx, message| {
-                        let router = inbound_router.clone();
-                        Box::pin(async move {
-                            tokio::select! {
-                                result = router.handle(message) => result,
-                                _ = ctx.cancelled() => Ok(()),
-                            }
-                        })
-                    });
                     match ChannelSupervisor::new(
                         store,
                         lease_store,
                         registry,
-                        handler,
+                        inbound_handler.clone(),
                         supervisor_config_from_env(),
                         lease_metrics.map(|metrics| {
                             Arc::new(RuntimeLeaseMetrics(metrics)) as Arc<dyn LeaseMetrics>
@@ -173,7 +171,19 @@ impl ChannelRuntime {
             maintenance,
             wecom_relay: wecom.relay,
             router,
+            inbound_handler,
+            slack_slash_processor,
         })
+    }
+
+    pub fn inbound_handler(&self) -> patchbay_channel::InboundHandler {
+        self.inbound_handler.clone()
+    }
+
+    pub fn slack_slash_processor(
+        &self,
+    ) -> Option<Arc<patchbay_slack::slash_command::SlashCommandProcessor>> {
+        self.slack_slash_processor.clone()
     }
 
     pub async fn shutdown(mut self) {
@@ -223,6 +233,18 @@ impl ChannelRuntime {
             ),
         }
     }
+}
+
+fn channel_inbound_handler(router: Arc<ChannelRouter>) -> patchbay_channel::InboundHandler {
+    patchbay_channel::InboundHandler::new(move |ctx, message| {
+        let router = router.clone();
+        Box::pin(async move {
+            tokio::select! {
+                result = router.handle(message) => result,
+                _ = ctx.cancelled() => Ok(()),
+            }
+        })
+    })
 }
 
 fn start_media_reconciler(
@@ -293,16 +315,16 @@ fn configure_slack(
     storage: Option<&Arc<ChannelStorage>>,
     registry: &Arc<patchbay_channel::Registry>,
     outbound_tasks: &Arc<patchbay_channel::RuntimeTasks>,
-) {
+) -> Option<Arc<patchbay_slack::slash_command::SlashCommandProcessor>> {
     let secret_box = match channel_secret_box("PATCHBAY_SLACK_SECRET_KEY") {
         Ok(Some(secret_box)) => secret_box,
         Ok(None) => {
             tracing::info!("slack channel runtime disabled: PATCHBAY_SLACK_SECRET_KEY not set");
-            return;
+            return None;
         }
         Err(error) => {
             tracing::error!(%error, "slack channel runtime disabled: invalid secret key");
-            return;
+            return None;
         }
     };
     let decrypt: Arc<patchbay_slack::config::Decrypter> =
@@ -359,13 +381,19 @@ fn configure_slack(
             respond: None,
         },
     ));
+    // Keep the per-installation factory enabled in managed cloud too. Existing
+    // BYO rows have `transport` unset and still require their Socket Mode
+    // connection after a cloud upgrade. Managed webhook rows are accepted by
+    // the same factory but remain passive; their inbound transport is the
+    // signed Events API route.
     patchbay_slack::channel::register_slack(
         registry,
         patchbay_slack::channel::ChannelDeps {
             decrypt: Some(decrypt),
-            slash: Some(slash),
+            slash: Some(slash.clone()),
         },
     );
+    Some(slash)
 }
 
 fn configure_dingtalk(
@@ -698,12 +726,10 @@ fn configure_wecom(
     let mut outbound = patchbay_wecom::outbound_media::Outbound::new(state.pool.clone())
         .with_senders(senders.clone())
         .with_runtime_tasks(outbound_tasks.clone())
-        .with_app_url(
-            std::env::var("WECOM_APP_URL")
-                .ok()
-                .filter(|value| !value.trim().is_empty())
-                .unwrap_or_else(|| app_url(cfg)),
-        );
+        // Media links are user-visible IM content too. Keep them on the same
+        // validated public origin as binding links; a legacy WECOM_APP_URL
+        // override could otherwise reintroduce localhost or a LAN address.
+        .with_app_url(app_url(cfg));
     if let Some(storage) = storage {
         outbound = outbound.with_attachments(storage.clone());
     }
@@ -992,15 +1018,7 @@ fn channel_secret_box(
 }
 
 fn app_url(cfg: &patchbay_config::Config) -> String {
-    cfg.urls
-        .app_url
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-        .or(cfg.urls.frontend_origin.as_deref())
-        .unwrap_or_default()
-        .trim()
-        .trim_end_matches('/')
-        .to_string()
+    patchbay_handler::config::public_bind_url(cfg)
 }
 
 fn supervisor_config_from_env() -> SupervisorConfig {
@@ -1032,7 +1050,10 @@ fn supervisor_config_from_env() -> SupervisorConfig {
 
 enum RuntimeLeaseStore {
     Postgres(Arc<PostgresChannelStore>),
-    Redis(Box<patchbay_channel_engine::redis_lease_store::RedisLeaseStore>),
+    Redis {
+        store: Box<patchbay_channel_engine::redis_lease_store::RedisLeaseStore>,
+        postgres: Arc<PostgresChannelStore>,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -1097,7 +1118,10 @@ impl RuntimeLeaseStore {
                 tokio::time::timeout(Duration::from_secs(5), store.ready())
                     .await
                     .map_err(|_| anyhow::anyhow!("Redis lease readiness timed out"))??;
-                Ok(Self::Redis(Box::new(store)))
+                Ok(Self::Redis {
+                    store: Box::new(store),
+                    postgres,
+                })
             }
         }
     }
@@ -1108,28 +1132,57 @@ impl LeaseStore for RuntimeLeaseStore {
     async fn list_held(&self, ids: &[Uuid]) -> Result<HashSet<String>, LeaseError> {
         match self {
             Self::Postgres(store) => store.list_held(ids).await,
-            Self::Redis(store) => store.list_held(ids).await,
+            Self::Redis { store, .. } => store.list_held(ids).await,
         }
     }
 
     async fn try_acquire(&self, arg: AcquireLeaseParams) -> Result<(), LeaseError> {
         match self {
             Self::Postgres(store) => store.try_acquire(arg).await,
-            Self::Redis(store) => store.try_acquire(arg).await,
+            Self::Redis { store, postgres } => {
+                let result = store.try_acquire(arg.clone()).await;
+                if result.is_ok() {
+                    // Redis remains the fencing authority; mirror only the
+                    // latest successful owner so /api health is observable.
+                    postgres
+                        .mirror_lease(arg.id, &arg.token, arg.expires_at)
+                        .await
+                        .map_err(LeaseError::Backend)?;
+                }
+                result
+            }
         }
     }
 
     async fn renew(&self, arg: AcquireLeaseParams) -> Result<(), LeaseError> {
         match self {
             Self::Postgres(store) => store.renew(arg).await,
-            Self::Redis(store) => store.renew(arg).await,
+            Self::Redis { store, postgres } => {
+                let result = store.renew(arg.clone()).await;
+                if result.is_ok() {
+                    postgres
+                        .mirror_lease(arg.id, &arg.token, arg.expires_at)
+                        .await
+                        .map_err(LeaseError::Backend)?;
+                }
+                result
+            }
         }
     }
 
     async fn release(&self, arg: ReleaseLeaseParams) -> Result<(), LeaseError> {
         match self {
             Self::Postgres(store) => store.release(arg).await,
-            Self::Redis(store) => store.release(arg).await,
+            Self::Redis { store, postgres } => {
+                let result = store.release(arg.clone()).await;
+                if result.is_ok() {
+                    postgres
+                        .clear_mirrored_lease(arg.id, &arg.token)
+                        .await
+                        .map_err(LeaseError::Backend)?;
+                }
+                result
+            }
         }
     }
 }
@@ -1366,7 +1419,20 @@ impl TaskEnqueuer for ChannelServices {
             .enqueue_chat_task(&session, Some(initiator_user_id), force_fresh_session)
             .await
             .map(|task| task.id)
-            .map_err(anyhow::Error::from)
+            .map_err(|error| match error {
+                patchbay_service::task_service::TaskServiceError::ChatAgentNoRuntime
+                | patchbay_service::task_service::TaskServiceError::AgentNoRuntime => {
+                    anyhow::Error::new(patchbay_channel_engine::router::FlushError::AgentNoRuntime)
+                }
+                patchbay_service::task_service::TaskServiceError::ChatAgentArchived
+                | patchbay_service::task_service::TaskServiceError::AgentArchived => {
+                    anyhow::Error::new(patchbay_channel_engine::router::FlushError::AgentArchived)
+                }
+                patchbay_service::task_service::TaskServiceError::ChannelQuotaExceeded {
+                    ..
+                } => anyhow::Error::new(patchbay_channel_engine::router::FlushError::QuotaExceeded),
+                other => anyhow::Error::new(other),
+            })
     }
 
     async fn promote_channel_chat_tasks_if_media_ready(

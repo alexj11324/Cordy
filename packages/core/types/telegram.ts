@@ -1,3 +1,8 @@
+import type {
+  MessagingInstallationRuntime,
+  MessagingInstallationSetup,
+} from "./messaging";
+
 /** A Telegram bot installation, optionally bound to a Patchbay agent.
  *
  * Wire shape mirrors `TelegramInstallationResponse` in
@@ -18,14 +23,8 @@ export interface TelegramInstallation {
   installed_at: string;
   created_at: string;
   updated_at: string;
-  /** Provider credential accepted during installation (not a message test). */
-  credential_status?: string;
-  /** Current provider runtime health; older backends may omit it. */
-  runtime_status?: string;
-  /** Server-owned inbound -> outbound message verification state. */
-  round_trip_status?: string;
-  /** Action the UI should take when verification is incomplete. */
-  required_action?: string;
+  runtime?: MessagingInstallationRuntime;
+  setup?: MessagingInstallationSetup;
 }
 
 export interface ListTelegramInstallationsResponse {
