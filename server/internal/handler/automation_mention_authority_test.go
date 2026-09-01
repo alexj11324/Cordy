@@ -152,8 +152,8 @@ func seedTaskOnIssue(t *testing.T, agentID, issueID, runtimeID string) string {
 	t.Helper()
 	var taskID string
 	if err := testPool.QueryRow(context.Background(), `
-		INSERT INTO agent_task_queue (agent_id, runtime_id, issue_id, status, priority)
-		VALUES ($1, $2, $3, 'running', 0) RETURNING id
+		INSERT INTO agent_task_queue (agent_id, runtime_id, issue_id, status, priority, context)
+		VALUES ($1, $2, $3, 'running', 0, jsonb_build_object('side_chat_parent_task_id', gen_random_uuid()::text)) RETURNING id
 	`, agentID, runtimeID, issueID).Scan(&taskID); err != nil {
 		t.Fatalf("seed task on issue: %v", err)
 	}

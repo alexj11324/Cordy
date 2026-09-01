@@ -12,32 +12,143 @@ import (
 )
 
 const createTaskToken = `-- name: CreateTaskToken :one
-INSERT INTO task_token (token_hash, task_id, agent_id, workspace_id, user_id, expires_at, id)
-VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::uuid, gen_random_uuid()))
-RETURNING id, token_hash, task_id, agent_id, workspace_id, user_id, expires_at, created_at
+WITH target_agent_guard AS (
+    SELECT agent.id, agent.workspace_id
+    FROM agent
+    WHERE agent.id = $1
+      AND agent.workspace_id = $2
+      AND agent.archived_at IS NULL
+    FOR SHARE
+), claim AS (
+    SELECT task.id, task.delegated_from_task_id, task.dispatched_at
+    FROM target_agent_guard agent_guard
+    JOIN agent_task_queue task ON task.agent_id = agent_guard.id
+    WHERE task.id = $3
+      AND task.status IN ('dispatched', 'running', 'waiting_local_directory', 'deferred')
+      AND task.dispatched_at IS NOT DISTINCT FROM $4::timestamptz
+      AND task.agent_id = $1
+      AND task.originator_user_id IS NOT DISTINCT FROM $5::uuid
+      AND task.runtime_id IS NOT DISTINCT FROM $6::uuid
+    FOR SHARE OF task
+), parent AS (
+    SELECT token.id, token.scope, token.delegation_depth, token.delegation_fence,
+           token.workspace_id, token.on_behalf_of_user_id, token.device_id
+    FROM task_token token
+    JOIN agent_task_queue task ON task.id = token.task_id
+    JOIN agent current_agent ON current_agent.id = task.agent_id
+    WHERE token.task_id = $7
+      AND token.revoked_at IS NULL
+      AND token.expires_at > now()
+      AND token.claim_dispatched_at = task.dispatched_at
+      AND token.agent_id = task.agent_id
+      AND token.device_id IS NOT DISTINCT FROM task.runtime_id
+      AND token.on_behalf_of_user_id IS NOT DISTINCT FROM task.originator_user_id
+      AND token.workspace_id = current_agent.workspace_id
+      AND current_agent.archived_at IS NULL
+      AND task.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
+    ORDER BY token.created_at DESC, token.id DESC
+    LIMIT 1
+    FOR SHARE OF token
+), lease AS (
+    SELECT
+        CASE WHEN $7::uuid IS NULL THEN $8::jsonb ELSE COALESCE((
+            SELECT jsonb_agg(requested.capability)
+            FROM jsonb_array_elements($8::jsonb) requested(capability)
+            WHERE EXISTS (
+                SELECT 1
+                FROM parent, jsonb_array_elements(parent.scope) bound(capability)
+                WHERE bound.capability->>'action' = requested.capability->>'action'
+                  AND bound.capability->>'resource_type' = requested.capability->>'resource_type'
+                  AND (
+                      bound.capability->>'resource_id' = '*'
+                      OR bound.capability->>'resource_id' = requested.capability->>'resource_id'
+                  )
+            )
+        ), '[]'::jsonb) END AS effective_scope,
+        parent.id AS parent_id,
+        parent.delegation_fence AS parent_fence,
+        COALESCE(parent.delegation_depth + 1, 0) AS depth
+    FROM claim
+    LEFT JOIN parent ON TRUE
+    WHERE $7::uuid IS NULL
+       OR (claim.delegated_from_task_id = $7
+           AND parent.id IS NOT NULL
+           AND parent.workspace_id = $2
+           AND parent.on_behalf_of_user_id IS NOT DISTINCT FROM $5
+           AND parent.device_id IS NOT DISTINCT FROM $6)
+), inserted AS (
+    INSERT INTO task_token (
+        token_hash, task_id, agent_id, workspace_id, user_id, expires_at, id,
+        scope, parent_token_id, parent_fence, delegation_depth,
+        delegation_fence, claim_dispatched_at, on_behalf_of_user_id, device_id
+    )
+    SELECT $9, $3, $1, $2, $10, $11, COALESCE($12::uuid, gen_random_uuid()),
+           lease.effective_scope, lease.parent_id, lease.parent_fence, lease.depth,
+           $13, $4, $5, $6
+    FROM lease
+    WHERE lease.depth <= 8
+    ON CONFLICT (task_id, claim_dispatched_at)
+        WHERE claim_dispatched_at IS NOT NULL
+        DO NOTHING
+    RETURNING id, token_hash, task_id, agent_id, workspace_id, user_id, expires_at, created_at, scope, parent_token_id, parent_fence, delegation_depth, delegation_fence, claim_dispatched_at, on_behalf_of_user_id, device_id, revoked_at, revoked_reason
+)
+SELECT id, token_hash, task_id, agent_id, workspace_id, user_id, expires_at, created_at, scope, parent_token_id, parent_fence, delegation_depth, delegation_fence, claim_dispatched_at, on_behalf_of_user_id, device_id, revoked_at, revoked_reason FROM inserted
 `
 
 type CreateTaskTokenParams struct {
-	TokenHash   string             `json:"token_hash"`
-	TaskID      pgtype.UUID        `json:"task_id"`
-	AgentID     pgtype.UUID        `json:"agent_id"`
-	WorkspaceID pgtype.UUID        `json:"workspace_id"`
-	UserID      pgtype.UUID        `json:"user_id"`
-	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
-	ID          pgtype.UUID        `json:"id"`
+	AgentID           pgtype.UUID        `json:"agent_id"`
+	WorkspaceID       pgtype.UUID        `json:"workspace_id"`
+	TaskID            pgtype.UUID        `json:"task_id"`
+	ClaimDispatchedAt pgtype.Timestamptz `json:"claim_dispatched_at"`
+	OnBehalfOfUserID  pgtype.UUID        `json:"on_behalf_of_user_id"`
+	DeviceID          pgtype.UUID        `json:"device_id"`
+	ParentTaskID      pgtype.UUID        `json:"parent_task_id"`
+	Scope             []byte             `json:"scope"`
+	TokenHash         string             `json:"token_hash"`
+	UserID            pgtype.UUID        `json:"user_id"`
+	ExpiresAt         pgtype.Timestamptz `json:"expires_at"`
+	ID                pgtype.UUID        `json:"id"`
+	DelegationFence   int64              `json:"delegation_fence"`
 }
 
-func (q *Queries) CreateTaskToken(ctx context.Context, arg CreateTaskTokenParams) (TaskToken, error) {
+type CreateTaskTokenRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	TokenHash         string             `json:"token_hash"`
+	TaskID            pgtype.UUID        `json:"task_id"`
+	AgentID           pgtype.UUID        `json:"agent_id"`
+	WorkspaceID       pgtype.UUID        `json:"workspace_id"`
+	UserID            pgtype.UUID        `json:"user_id"`
+	ExpiresAt         pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	Scope             []byte             `json:"scope"`
+	ParentTokenID     pgtype.UUID        `json:"parent_token_id"`
+	ParentFence       pgtype.Int8        `json:"parent_fence"`
+	DelegationDepth   int32              `json:"delegation_depth"`
+	DelegationFence   int64              `json:"delegation_fence"`
+	ClaimDispatchedAt pgtype.Timestamptz `json:"claim_dispatched_at"`
+	OnBehalfOfUserID  pgtype.UUID        `json:"on_behalf_of_user_id"`
+	DeviceID          pgtype.UUID        `json:"device_id"`
+	RevokedAt         pgtype.Timestamptz `json:"revoked_at"`
+	RevokedReason     pgtype.Text        `json:"revoked_reason"`
+}
+
+func (q *Queries) CreateTaskToken(ctx context.Context, arg CreateTaskTokenParams) (CreateTaskTokenRow, error) {
 	row := q.db.QueryRow(ctx, createTaskToken,
-		arg.TokenHash,
-		arg.TaskID,
 		arg.AgentID,
 		arg.WorkspaceID,
+		arg.TaskID,
+		arg.ClaimDispatchedAt,
+		arg.OnBehalfOfUserID,
+		arg.DeviceID,
+		arg.ParentTaskID,
+		arg.Scope,
+		arg.TokenHash,
 		arg.UserID,
 		arg.ExpiresAt,
 		arg.ID,
+		arg.DelegationFence,
 	)
-	var i TaskToken
+	var i CreateTaskTokenRow
 	err := row.Scan(
 		&i.ID,
 		&i.TokenHash,
@@ -47,6 +158,16 @@ func (q *Queries) CreateTaskToken(ctx context.Context, arg CreateTaskTokenParams
 		&i.UserID,
 		&i.ExpiresAt,
 		&i.CreatedAt,
+		&i.Scope,
+		&i.ParentTokenID,
+		&i.ParentFence,
+		&i.DelegationDepth,
+		&i.DelegationFence,
+		&i.ClaimDispatchedAt,
+		&i.OnBehalfOfUserID,
+		&i.DeviceID,
+		&i.RevokedAt,
+		&i.RevokedReason,
 	)
 	return i, err
 }
@@ -70,13 +191,118 @@ func (q *Queries) DeleteTaskTokensByTask(ctx context.Context, taskID pgtype.UUID
 }
 
 const getTaskTokenByHash = `-- name: GetTaskTokenByHash :one
-SELECT id, token_hash, task_id, agent_id, workspace_id, user_id, expires_at, created_at FROM task_token
-WHERE token_hash = $1 AND expires_at > now()
+WITH RECURSIVE lease_chain AS (
+    SELECT token.id, token.task_id, token.agent_id, token.workspace_id,
+           token.scope, token.parent_token_id, token.parent_fence,
+           token.delegation_depth, token.delegation_fence,
+           token.claim_dispatched_at, token.on_behalf_of_user_id,
+           token.device_id, token.revoked_at, token.revoked_reason,
+           token.expires_at, token.created_at, token.token_hash, token.user_id,
+           task.status AS task_status, task.dispatched_at AS current_dispatched_at,
+           task.agent_id AS current_agent_id, task.runtime_id AS current_device_id,
+           task.originator_user_id AS current_on_behalf_of_user_id,
+           current_agent.workspace_id AS current_workspace_id,
+           current_agent.archived_at AS current_agent_archived_at,
+           ARRAY[token.id] AS path
+    FROM task_token token
+    JOIN agent_task_queue task ON task.id = token.task_id
+    JOIN agent current_agent ON current_agent.id = task.agent_id
+    WHERE token.token_hash = $1
+  UNION ALL
+    SELECT parent.id, parent.task_id, parent.agent_id, parent.workspace_id,
+           parent.scope, parent.parent_token_id, parent.parent_fence,
+           parent.delegation_depth, parent.delegation_fence,
+           parent.claim_dispatched_at, parent.on_behalf_of_user_id,
+           parent.device_id, parent.revoked_at, parent.revoked_reason,
+           parent.expires_at, parent.created_at, parent.token_hash, parent.user_id,
+           task.status, task.dispatched_at,
+           task.agent_id, task.runtime_id, task.originator_user_id,
+           current_agent.workspace_id, current_agent.archived_at,
+           child.path || parent.id
+    FROM task_token parent
+    JOIN lease_chain child ON child.parent_token_id = parent.id
+    JOIN agent_task_queue task ON task.id = parent.task_id
+    JOIN agent current_agent ON current_agent.id = task.agent_id
+    WHERE NOT parent.id = ANY(child.path)
+      AND cardinality(child.path) <= 9
+), leaf AS (
+    SELECT id, task_id, agent_id, workspace_id, scope, parent_token_id, parent_fence, delegation_depth, delegation_fence, claim_dispatched_at, on_behalf_of_user_id, device_id, revoked_at, revoked_reason, expires_at, created_at, token_hash, user_id, task_status, current_dispatched_at, current_agent_id, current_device_id, current_on_behalf_of_user_id, current_workspace_id, current_agent_archived_at, path FROM lease_chain WHERE token_hash = $1
+), invalid AS (
+    SELECT 1
+    FROM lease_chain lease
+    LEFT JOIN lease_chain parent ON parent.id = lease.parent_token_id
+    WHERE lease.revoked_at IS NOT NULL
+       OR lease.expires_at <= now()
+       OR lease.task_status NOT IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
+       OR lease.claim_dispatched_at IS DISTINCT FROM lease.current_dispatched_at
+       OR lease.agent_id <> lease.current_agent_id
+       OR lease.device_id IS DISTINCT FROM lease.current_device_id
+       OR lease.on_behalf_of_user_id IS DISTINCT FROM lease.current_on_behalf_of_user_id
+       OR lease.workspace_id <> lease.current_workspace_id
+       OR lease.current_agent_archived_at IS NOT NULL
+       OR lease.delegation_depth > 8
+       OR (lease.parent_token_id IS NULL AND lease.delegation_depth <> 0)
+       OR (lease.parent_token_id IS NOT NULL AND (
+              parent.id IS NULL
+              OR lease.delegation_depth <> parent.delegation_depth + 1
+              OR lease.parent_fence IS DISTINCT FROM parent.delegation_fence
+              OR lease.workspace_id <> parent.workspace_id
+              OR lease.on_behalf_of_user_id IS DISTINCT FROM parent.on_behalf_of_user_id
+              OR lease.device_id IS DISTINCT FROM parent.device_id
+              OR EXISTS (
+                  SELECT 1
+                  FROM jsonb_array_elements(lease.scope) child_cap(capability)
+                  WHERE NOT EXISTS (
+                      SELECT 1
+                      FROM jsonb_array_elements(parent.scope) parent_cap(capability)
+                      WHERE parent_cap.capability->>'action' = child_cap.capability->>'action'
+                        AND parent_cap.capability->>'resource_type' = child_cap.capability->>'resource_type'
+                        AND (
+                            parent_cap.capability->>'resource_id' = '*'
+                            OR parent_cap.capability->>'resource_id' = child_cap.capability->>'resource_id'
+                        )
+                  )
+              )
+          ))
+    LIMIT 1
+)
+SELECT id, token_hash, task_id, agent_id, workspace_id, user_id,
+       expires_at, created_at, scope, parent_token_id, parent_fence,
+       delegation_depth, delegation_fence, claim_dispatched_at,
+       on_behalf_of_user_id, device_id, revoked_at, revoked_reason
+FROM leaf
+WHERE NOT EXISTS (SELECT 1 FROM invalid)
+  AND (SELECT count(*) FROM lease_chain) = delegation_depth + 1
+  AND EXISTS (
+      SELECT 1 FROM lease_chain root
+      WHERE root.parent_token_id IS NULL AND root.delegation_depth = 0
+  )
 `
 
-func (q *Queries) GetTaskTokenByHash(ctx context.Context, tokenHash string) (TaskToken, error) {
+type GetTaskTokenByHashRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	TokenHash         string             `json:"token_hash"`
+	TaskID            pgtype.UUID        `json:"task_id"`
+	AgentID           pgtype.UUID        `json:"agent_id"`
+	WorkspaceID       pgtype.UUID        `json:"workspace_id"`
+	UserID            pgtype.UUID        `json:"user_id"`
+	ExpiresAt         pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	Scope             []byte             `json:"scope"`
+	ParentTokenID     pgtype.UUID        `json:"parent_token_id"`
+	ParentFence       pgtype.Int8        `json:"parent_fence"`
+	DelegationDepth   int32              `json:"delegation_depth"`
+	DelegationFence   int64              `json:"delegation_fence"`
+	ClaimDispatchedAt pgtype.Timestamptz `json:"claim_dispatched_at"`
+	OnBehalfOfUserID  pgtype.UUID        `json:"on_behalf_of_user_id"`
+	DeviceID          pgtype.UUID        `json:"device_id"`
+	RevokedAt         pgtype.Timestamptz `json:"revoked_at"`
+	RevokedReason     pgtype.Text        `json:"revoked_reason"`
+}
+
+func (q *Queries) GetTaskTokenByHash(ctx context.Context, tokenHash string) (GetTaskTokenByHashRow, error) {
 	row := q.db.QueryRow(ctx, getTaskTokenByHash, tokenHash)
-	var i TaskToken
+	var i GetTaskTokenByHashRow
 	err := row.Scan(
 		&i.ID,
 		&i.TokenHash,
@@ -86,6 +312,76 @@ func (q *Queries) GetTaskTokenByHash(ctx context.Context, tokenHash string) (Tas
 		&i.UserID,
 		&i.ExpiresAt,
 		&i.CreatedAt,
+		&i.Scope,
+		&i.ParentTokenID,
+		&i.ParentFence,
+		&i.DelegationDepth,
+		&i.DelegationFence,
+		&i.ClaimDispatchedAt,
+		&i.OnBehalfOfUserID,
+		&i.DeviceID,
+		&i.RevokedAt,
+		&i.RevokedReason,
 	)
 	return i, err
+}
+
+const revokeTaskToken = `-- name: RevokeTaskToken :execrows
+UPDATE task_token
+SET revoked_at = now(), revoked_reason = $1
+WHERE id = $2 AND revoked_at IS NULL
+`
+
+type RevokeTaskTokenParams struct {
+	RevokedReason pgtype.Text `json:"revoked_reason"`
+	ID            pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) RevokeTaskToken(ctx context.Context, arg RevokeTaskTokenParams) (int64, error) {
+	result, err := q.db.Exec(ctx, revokeTaskToken, arg.RevokedReason, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const revokeTaskTokensByTask = `-- name: RevokeTaskTokensByTask :execrows
+UPDATE task_token
+SET revoked_at = COALESCE(revoked_at, now()),
+    revoked_reason = COALESCE(revoked_reason, $1)
+WHERE task_id = $2 AND revoked_at IS NULL
+`
+
+type RevokeTaskTokensByTaskParams struct {
+	RevokedReason pgtype.Text `json:"revoked_reason"`
+	TaskID        pgtype.UUID `json:"task_id"`
+}
+
+func (q *Queries) RevokeTaskTokensByTask(ctx context.Context, arg RevokeTaskTokensByTaskParams) (int64, error) {
+	result, err := q.db.Exec(ctx, revokeTaskTokensByTask, arg.RevokedReason, arg.TaskID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const taskTokenExistsForClaim = `-- name: TaskTokenExistsForClaim :one
+SELECT EXISTS (
+    SELECT 1
+    FROM task_token
+    WHERE task_id = $1
+      AND claim_dispatched_at IS NOT DISTINCT FROM $2::timestamptz
+)
+`
+
+type TaskTokenExistsForClaimParams struct {
+	TaskID            pgtype.UUID        `json:"task_id"`
+	ClaimDispatchedAt pgtype.Timestamptz `json:"claim_dispatched_at"`
+}
+
+func (q *Queries) TaskTokenExistsForClaim(ctx context.Context, arg TaskTokenExistsForClaimParams) (bool, error) {
+	row := q.db.QueryRow(ctx, taskTokenExistsForClaim, arg.TaskID, arg.ClaimDispatchedAt)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }

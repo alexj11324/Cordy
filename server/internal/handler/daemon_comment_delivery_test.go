@@ -971,12 +971,18 @@ func TestFinalizeTaskClaim_ReceiptCASFailureRollsBackInsertedToken(t *testing.T)
 	tokenHash := "rolled-back-token-" + fixture.taskID
 	daemonTokenHash := "rolled-back-daemon-token-" + fixture.taskID
 	_, err = testHandler.TaskService.FinalizeTaskClaim(ctx, *task, db.CreateTaskTokenParams{
-		TokenHash:   tokenHash,
-		TaskID:      task.ID,
-		AgentID:     task.AgentID,
-		WorkspaceID: parseUUID(testWorkspaceID),
-		UserID:      parseUUID(testUserID),
-		ExpiresAt:   pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+		TokenHash:         tokenHash,
+		TaskID:            task.ID,
+		AgentID:           task.AgentID,
+		WorkspaceID:       parseUUID(testWorkspaceID),
+		UserID:            parseUUID(testUserID),
+		ExpiresAt:         pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+		Scope:             []byte(`[{"action":"agent.invoke","resource_type":"agent_definition","resource_id":"*"}]`),
+		ClaimDispatchedAt: task.DispatchedAt,
+		OnBehalfOfUserID:  task.OriginatorUserID,
+		DeviceID:          task.RuntimeID,
+		ParentTaskID:      task.DelegatedFromTaskID,
+		DelegationFence:   0,
 	}, []pgtype.UUID{parseUUID("00000000-0000-0000-0000-000000000099")}, true, db.CreateDaemonTokenParams{
 		TokenHash:   daemonTokenHash,
 		WorkspaceID: parseUUID(testWorkspaceID),
@@ -1024,12 +1030,18 @@ func TestFinalizeTaskClaim_TriggerDeletedAfterClaimRejectsStaleProvenance(t *tes
 
 	tokenHash := "deleted-trigger-race-token-" + fixture.taskID
 	_, err = testHandler.TaskService.FinalizeTaskClaim(ctx, *task, db.CreateTaskTokenParams{
-		TokenHash:   tokenHash,
-		TaskID:      task.ID,
-		AgentID:     task.AgentID,
-		WorkspaceID: parseUUID(testWorkspaceID),
-		UserID:      parseUUID(testUserID),
-		ExpiresAt:   pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+		TokenHash:         tokenHash,
+		TaskID:            task.ID,
+		AgentID:           task.AgentID,
+		WorkspaceID:       parseUUID(testWorkspaceID),
+		UserID:            parseUUID(testUserID),
+		ExpiresAt:         pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+		Scope:             []byte(`[{"action":"agent.invoke","resource_type":"agent_definition","resource_id":"*"}]`),
+		ClaimDispatchedAt: task.DispatchedAt,
+		OnBehalfOfUserID:  task.OriginatorUserID,
+		DeviceID:          task.RuntimeID,
+		ParentTaskID:      task.DelegatedFromTaskID,
+		DelegationFence:   0,
 	}, []pgtype.UUID{parseUUID(fixture.commentID[0]), parseUUID(fixture.commentID[1])}, true)
 	if err == nil {
 		t.Fatalf("FinalizeTaskClaim accepted a receipt after persisted trigger changed")

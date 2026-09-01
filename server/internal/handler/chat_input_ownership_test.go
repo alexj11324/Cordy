@@ -792,7 +792,7 @@ func TestCompleteTask_SealedChannelRetryEmptyOutputWritesNoRow(t *testing.T) {
 	parentTask := insertSealedChannelChatTask(t, ctx, agentID, runtimeID, sessionID, "[Video]")
 	var retryTask string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO agent_task_queue (agent_id, runtime_id, chat_session_id, status, priority, started_at, dispatched_at, parent_task_id, retry_of_task_id, chat_input_task_id)
+		INSERT INTO agent_task_queue (agent_id, runtime_id, chat_session_id, status, priority, started_at, dispatched_at, parent_task_id, retry_of_task_id, chat_input_task_id, context)
 		VALUES ($1, $2, $3, 'running', 2, now(), now(), $4, $4, $4)
 		RETURNING id
 	`, agentID, runtimeID, sessionID, parentTask).Scan(&retryTask); err != nil {

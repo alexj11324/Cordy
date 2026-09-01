@@ -74,8 +74,25 @@ func TestListWorkspaceAgentTaskSnapshot(t *testing.T) {
 		{agentD, "failed", "timestamptz '2026-05-14 10:00:00+00'", "timestamptz '2026-05-14 09:00:00+00'", "D.tie_two"},
 	}
 
+	// Lane fix: default lane (agent:xxx:default) is unique per agent, so two actives for same
+	// agent would collide on idx_agent_task_queue_execution_lane_active_unique. Give actives
+	// distinct issue lanes via real issue rows so they remain per-agent but not per-lane.
+	var laneIssueIDs []string
+	for i := 0; i < 2; i++ {
+		var iid string
+		if err := testPool.QueryRow(ctx, `INSERT INTO issue (workspace_id, title, status, priority, creator_id, creator_type, number, position) VALUES ($1, 'lane-issue-'||gen_random_uuid()::text, 'open', 'none', $2, 'member', 900000 + $3, 0) RETURNING id`, testWorkspaceID, testUserID, i).Scan(&iid); err != nil {
+			t.Fatalf("create lane issue: %v", err)
+		}
+		laneIssueIDs = append(laneIssueIDs, iid)
+	}
+	t.Cleanup(func() {
+		for _, iid := range laneIssueIDs {
+			testPool.Exec(context.Background(), `DELETE FROM issue WHERE id = $1`, iid)
+		}
+	})
 	insertedIDs := make([]string, 0, len(fixtures))
 	idByLabel := make(map[string]string, len(fixtures))
+	laneIdx := 0
 	for _, f := range fixtures {
 		var id string
 		completedExpr := "NULL"
@@ -86,9 +103,19 @@ func TestListWorkspaceAgentTaskSnapshot(t *testing.T) {
 		if f.createdAt != "" {
 			createdExpr = f.createdAt
 		}
-		query := `INSERT INTO agent_task_queue (agent_id, runtime_id, status, priority, completed_at, created_at)
-		          VALUES ($1, $2, $3, 0, ` + completedExpr + `, ` + createdExpr + `) RETURNING id`
-		if err := testPool.QueryRow(ctx, query, f.agentID, testRuntimeID, f.status).Scan(&id); err != nil {
+		// Only actives need a distinct lane; outcomes (completed/failed/cancelled) are not in the unique index.
+		var issueID interface{} = nil
+		if f.status == "dispatched" || f.status == "running" || f.status == "waiting_local_directory" {
+			if laneIdx < len(laneIssueIDs) {
+				issueID = laneIssueIDs[laneIdx]
+				laneIdx++
+			} else {
+				issueID = laneIssueIDs[0]
+			}
+		}
+		query := `INSERT INTO agent_task_queue (agent_id, runtime_id, status, priority, completed_at, created_at, issue_id)
+		          VALUES ($1, $2, $3, 0, ` + completedExpr + `, ` + createdExpr + `, $4) RETURNING id`
+		if err := testPool.QueryRow(ctx, query, f.agentID, testRuntimeID, f.status, issueID).Scan(&id); err != nil {
 			t.Fatalf("insert %s: %v", f.label, err)
 		}
 		insertedIDs = append(insertedIDs, id)
@@ -402,9 +429,9 @@ func TestListWorkspaceWorkingAgents(t *testing.T) {
 		if err := testPool.QueryRow(ctx, `
 			INSERT INTO agent_task_queue (
 				agent_id, runtime_id, status, priority, issue_id,
-				chat_session_id, automation_run_id, started_at
+				chat_session_id, automation_run_id, started_at, context
 			)
-			VALUES ($1, $2, $3, 0, $4, $5, $6, now())
+			VALUES ($1, $2, $3, 0, $4, $5, $6, now(), CASE WHEN $4::uuid IS NOT NULL AND $3 IN ('dispatched','running','waiting_local_directory','waiting_capacity') THEN jsonb_build_object('side_chat_parent_task_id', gen_random_uuid()::text) ELSE '{}'::jsonb END)
 			RETURNING id
 		`,
 			fixture.agentID,
@@ -648,7 +675,7 @@ func TestListWorkspaceWorkingAgentsParentScope(t *testing.T) {
 			INSERT INTO agent_task_queue (
 				agent_id, runtime_id, status, priority, issue_id, started_at
 			)
-			VALUES ($1, $2, 'running', 0, $3, now())
+			VALUES ($1, $2, 'running', 0, COALESCE($3, gen_random_uuid()), now())
 			RETURNING id
 		`, fixture.agentID, testRuntimeID, fixture.issueID).Scan(&taskID); err != nil {
 			t.Fatalf("insert running task: %v", err)

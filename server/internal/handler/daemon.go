@@ -1746,13 +1746,19 @@ func (h *Handler) ClaimTasksByRuntime(w http.ResponseWriter, r *http.Request) {
 		// the exact claim is requeued and omitted from this batch.
 		commentBackedTask := task.TriggerCommentID.Valid || len(task.CoalescedCommentIds) > 0
 		receipt, ferr := h.TaskService.FinalizeTaskClaim(r.Context(), task, db.CreateTaskTokenParams{
-			ID:          dbid.NewV7(),
-			TokenHash:   auth.HashToken(tokenStr),
-			TaskID:      task.ID,
-			AgentID:     task.AgentID,
-			WorkspaceID: parseUUID(resp.WorkspaceID),
-			UserID:      rt.OwnerID,
-			ExpiresAt:   pgtype.Timestamptz{Time: time.Now().Add(24 * time.Hour), Valid: true},
+			ID:                dbid.NewV7(),
+			TokenHash:         auth.HashToken(tokenStr),
+			TaskID:            task.ID,
+			AgentID:           task.AgentID,
+			WorkspaceID:       parseUUID(resp.WorkspaceID),
+			UserID:            rt.OwnerID,
+			ExpiresAt:         pgtype.Timestamptz{Time: time.Now().Add(24 * time.Hour), Valid: true},
+			Scope:             []byte(`[{"action":"agent.invoke","resource_type":"agent_definition","resource_id":"*"}]`),
+			ClaimDispatchedAt: task.DispatchedAt,
+			OnBehalfOfUserID:  task.OriginatorUserID,
+			DeviceID:          task.RuntimeID,
+			ParentTaskID:      task.DelegatedFromTaskID,
+			DelegationFence:   0,
 		}, deliveredCommentIDs, commentBackedTask, daemonTokens...)
 		if ferr != nil {
 			slog.Error("batch claim: finalize task claim failed; requeueing claim",
@@ -3361,13 +3367,19 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	receipt, ferr := h.TaskService.FinalizeTaskClaim(r.Context(), *task, db.CreateTaskTokenParams{
-		ID:          dbid.NewV7(),
-		TokenHash:   auth.HashToken(tokenStr),
-		TaskID:      task.ID,
-		AgentID:     task.AgentID,
-		WorkspaceID: parseUUID(resp.WorkspaceID),
-		UserID:      runtime.OwnerID,
-		ExpiresAt:   pgtype.Timestamptz{Time: time.Now().Add(24 * time.Hour), Valid: true},
+		ID:                dbid.NewV7(),
+		TokenHash:         auth.HashToken(tokenStr),
+		TaskID:            task.ID,
+		AgentID:           task.AgentID,
+		WorkspaceID:       parseUUID(resp.WorkspaceID),
+		UserID:            runtime.OwnerID,
+		ExpiresAt:         pgtype.Timestamptz{Time: time.Now().Add(24 * time.Hour), Valid: true},
+		Scope:             []byte(`[{"action":"agent.invoke","resource_type":"agent_definition","resource_id":"*"}]`),
+		ClaimDispatchedAt: task.DispatchedAt,
+		OnBehalfOfUserID:  task.OriginatorUserID,
+		DeviceID:          task.RuntimeID,
+		ParentTaskID:      task.DelegatedFromTaskID,
+		DelegationFence:   0,
 	}, deliveredCommentIDs, commentBackedTask, daemonTokens...)
 	if ferr != nil {
 		outcome = "error_claim_finalize"

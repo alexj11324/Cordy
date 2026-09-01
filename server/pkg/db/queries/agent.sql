@@ -768,67 +768,35 @@ WHERE atq.id = $1 AND a.workspace_id = $2;
 
 -- name: ClaimAgentTask :one
 -- Claims the next queued task for an agent on one healthy runtime, enforcing
--- per-(issue, agent) serialization:
--- a task is only claimable when no other task for the same issue AND same agent is
--- already dispatched or running. This allows different agents to work on the same
--- issue in parallel while preventing a single agent from running duplicate tasks.
--- Chat tasks (issue_id IS NULL) use chat_session_id for serialization instead.
--- Quick-create tasks have no issue / chat / automation link, so they serialize on
--- "any other quick-create-shaped task" (all four FKs NULL) for the same agent —
--- otherwise a user mashing the create button could fire concurrent quick-creates
--- whose completion lookup would race over "most recent issue by this agent".
+-- per-lane serialization via execution_lane_key (W4). A lane captures
+-- (chat) / (issue, agent, side) / (agent, default) so side-chats of the same
+-- issue interleave while the main lane and daemon still serialize. The DB's
+-- partial unique index idx_agent_task_queue_execution_lane_active_unique is the
+-- fence; the in-query NOT EXISTS is now a soft pre-check so the daemon can
+-- observe an empty claim rather than catching a unique-violation on every
+-- contended lane.
 UPDATE agent_task_queue
 SET status = 'dispatched',
     dispatched_at = now(),
     prepare_lease_expires_at = now() + make_interval(secs => @prepare_lease_secs::double precision)
 WHERE id = (
     SELECT atq.id FROM agent_task_queue atq
+    JOIN agent task_agent ON task_agent.id = atq.agent_id
     WHERE atq.agent_id = @agent_id
       AND atq.runtime_id = @runtime_id
       AND atq.status = 'queued'
+      AND task_agent.archived_at IS NULL
       AND EXISTS (
-          SELECT 1
-          FROM agent a
-          JOIN agent_runtime r ON r.id = atq.runtime_id
-          WHERE a.id = atq.agent_id
-            -- A task's persisted runtime is not authority after an agent rebind.
-            AND a.runtime_id = atq.runtime_id
-            -- Private runtimes only execute their owner's agents. Ownerless
-            -- runtime/agent rows remain claimable only so the handler can
-            -- settle them explicitly before daemon delivery; filtering them
-            -- here would leave every task silently queued until the TTL.
-            -- Public runtimes remain shareable across agent owners.
-            AND (
-                r.visibility = 'public'
-                OR (
-                    r.visibility = 'private'
-                    AND (
-                        r.owner_id IS NULL
-                        OR a.owner_id IS NULL
-                        OR r.owner_id = a.owner_id
-                    )
-                )
-            )
+          SELECT 1 FROM agent_runtime r
+          WHERE r.id = atq.runtime_id
             AND r.status = 'online'
             AND COALESCE(r.last_seen_at, r.updated_at) >=
                 now() - make_interval(secs => @runtime_stale_secs::double precision)
       )
       AND NOT EXISTS (
           SELECT 1 FROM agent_task_queue active
-          WHERE active.agent_id = atq.agent_id
-            AND active.status IN ('dispatched', 'running', 'waiting_local_directory')
-            AND (
-              (atq.issue_id IS NOT NULL AND active.issue_id = atq.issue_id)
-              OR (atq.chat_session_id IS NOT NULL AND active.chat_session_id = atq.chat_session_id)
-              OR (
-                atq.issue_id IS NULL
-                AND atq.chat_session_id IS NULL
-                AND atq.automation_run_id IS NULL
-                AND active.issue_id IS NULL
-                AND active.chat_session_id IS NULL
-                AND active.automation_run_id IS NULL
-              )
-            )
+          WHERE active.execution_lane_key = atq.execution_lane_key
+            AND active.status IN ('dispatched', 'running', 'waiting_local_directory', 'waiting_capacity')
       )
     ORDER BY atq.priority DESC, atq.created_at ASC, atq.id ASC
     LIMIT 1

@@ -172,6 +172,7 @@ type AgentTaskQueue struct {
 	BranchName                pgtype.Text `json:"branch_name"`
 	DurableWorkDir            pgtype.Text `json:"durable_work_dir"`
 	ChannelContextRevision    pgtype.Int8 `json:"channel_context_revision"`
+	ExecutionLaneKey          string      `json:"execution_lane_key"`
 }
 
 type AgentToLabel struct {
@@ -196,6 +197,47 @@ type Attachment struct {
 	ChatMessageID   pgtype.UUID        `json:"chat_message_id"`
 	TaskID          pgtype.UUID        `json:"task_id"`
 	SourceContextID pgtype.UUID        `json:"source_context_id"`
+}
+
+// Append-only explain ledger: who/on_behalf_of/via/device/action/resource/decision/why plus matched grants, policy and obligations. Never stores bearer tokens or secrets.
+type AuthorizationAuditEvent struct {
+	ID               pgtype.UUID        `json:"id"`
+	WorkspaceID      pgtype.UUID        `json:"workspace_id"`
+	PrincipalType    string             `json:"principal_type"`
+	PrincipalID      pgtype.UUID        `json:"principal_id"`
+	OnBehalfOfUserID pgtype.UUID        `json:"on_behalf_of_user_id"`
+	ViaAgentID       pgtype.UUID        `json:"via_agent_id"`
+	DeviceID         pgtype.UUID        `json:"device_id"`
+	Action           string             `json:"action"`
+	ResourceType     string             `json:"resource_type"`
+	ResourceID       pgtype.UUID        `json:"resource_id"`
+	Decision         string             `json:"decision"`
+	Reason           string             `json:"reason"`
+	MatchedGrantIds  []pgtype.UUID      `json:"matched_grant_ids"`
+	PolicyVersion    string             `json:"policy_version"`
+	Obligations      []byte             `json:"obligations"`
+	DelegationChain  []byte             `json:"delegation_chain"`
+	Context          []byte             `json:"context"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
+// Permanent RBAC/ReBAC/ABAC grants. Explicit deny wins. A grant never widens a task_run beyond its task_token capability lease.
+type AuthorizationGrant struct {
+	ID            pgtype.UUID        `json:"id"`
+	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
+	PrincipalType string             `json:"principal_type"`
+	PrincipalID   pgtype.UUID        `json:"principal_id"`
+	Action        string             `json:"action"`
+	ResourceType  string             `json:"resource_type"`
+	ResourceID    pgtype.UUID        `json:"resource_id"`
+	Effect        string             `json:"effect"`
+	Conditions    []byte             `json:"conditions"`
+	ExpiresAt     pgtype.Timestamptz `json:"expires_at"`
+	RevokedAt     pgtype.Timestamptz `json:"revoked_at"`
+	RevokedBy     pgtype.UUID        `json:"revoked_by"`
+	CreatedBy     pgtype.UUID        `json:"created_by"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
 type Automation struct {
@@ -1296,15 +1338,27 @@ type TaskMessage struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+// Short-lived, revocable task capability leases. Raw mat_ bearer values are never stored. scope is server-computed; parent/depth/fences enforce monotonic delegation.
 type TaskToken struct {
-	ID          pgtype.UUID        `json:"id"`
-	TokenHash   string             `json:"token_hash"`
-	TaskID      pgtype.UUID        `json:"task_id"`
-	AgentID     pgtype.UUID        `json:"agent_id"`
-	WorkspaceID pgtype.UUID        `json:"workspace_id"`
-	UserID      pgtype.UUID        `json:"user_id"`
-	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	ID          pgtype.UUID `json:"id"`
+	TokenHash   string      `json:"token_hash"`
+	TaskID      pgtype.UUID `json:"task_id"`
+	AgentID     pgtype.UUID `json:"agent_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	// Compatibility workspace-guard projection of the initiating human. Active leases never project the Agent or Runtime owner through this field.
+	UserID            pgtype.UUID        `json:"user_id"`
+	ExpiresAt         pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	Scope             []byte             `json:"scope"`
+	ParentTokenID     pgtype.UUID        `json:"parent_token_id"`
+	ParentFence       pgtype.Int8        `json:"parent_fence"`
+	DelegationDepth   int32              `json:"delegation_depth"`
+	DelegationFence   int64              `json:"delegation_fence"`
+	ClaimDispatchedAt pgtype.Timestamptz `json:"claim_dispatched_at"`
+	OnBehalfOfUserID  pgtype.UUID        `json:"on_behalf_of_user_id"`
+	DeviceID          pgtype.UUID        `json:"device_id"`
+	RevokedAt         pgtype.Timestamptz `json:"revoked_at"`
+	RevokedReason     pgtype.Text        `json:"revoked_reason"`
 }
 
 type TaskUsage struct {

@@ -117,6 +117,8 @@ var workspaceDeletionManifest = map[string]workspaceDeleteAction{
 	"sys_cron_executions":                workspaceDeleteKeep,
 	"task_message":                       workspaceDelete,
 	"task_token":                         workspaceDelete,
+	"authorization_grant":                workspaceDelete,
+	"authorization_audit_event":          workspaceDelete,
 	"task_usage":                         workspaceDelete,
 	"task_usage_hourly":                  workspaceDelete,
 	"task_usage_hourly_dirty":            workspaceDelete,

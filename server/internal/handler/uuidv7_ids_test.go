@@ -140,14 +140,29 @@ func TestHotTableInsertsPersistUUIDv7(t *testing.T) {
 		cleanupRow(t, "agent_task_queue", task.ID)
 		assertV7(t, "agent_task_queue.id", task.ID)
 
+		// Make task claimable: lease fence requires dispatched + dispatched_at.
+		if _, err := testPool.Exec(ctx, `UPDATE agent_task_queue SET status='dispatched', dispatched_at=now() WHERE id=$1`, task.ID); err != nil {
+			t.Fatalf("dispatch task: %v", err)
+		}
+		task, err = q.GetAgentTask(ctx, task.ID)
+		if err != nil {
+			t.Fatalf("reload task: %v", err)
+		}
+
 		token, err := q.CreateTaskToken(ctx, db.CreateTaskTokenParams{
-			ID:          dbid.NewV7(),
-			TokenHash:   "uuidv7-test-token-hash",
-			TaskID:      task.ID,
-			AgentID:     parseUUID(agentID),
-			WorkspaceID: parseUUID(testWorkspaceID),
-			UserID:      parseUUID(testUserID),
-			ExpiresAt:   pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+			ID:                dbid.NewV7(),
+			TokenHash:         "uuidv7-test-token-hash",
+			TaskID:            task.ID,
+			AgentID:           parseUUID(agentID),
+			WorkspaceID:       parseUUID(testWorkspaceID),
+			UserID:            parseUUID(testUserID),
+			ExpiresAt:         pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+			Scope:             []byte(`[{"action":"agent.invoke","resource_type":"agent_definition","resource_id":"*"}]`),
+			ClaimDispatchedAt: task.DispatchedAt,
+			OnBehalfOfUserID:  task.OriginatorUserID,
+			DeviceID:          task.RuntimeID,
+			ParentTaskID:      task.DelegatedFromTaskID,
+			DelegationFence:   0,
 		})
 		if err != nil {
 			t.Fatalf("CreateTaskToken: %v", err)

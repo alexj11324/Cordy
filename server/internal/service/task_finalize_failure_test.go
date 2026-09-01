@@ -37,12 +37,18 @@ func TestFinalizeTaskClaimFailureRollsBackTokenThenRequeue(t *testing.T) {
 	// SetTaskDeliveredCommentIDs match zero rows → FinalizeTaskClaim errors.
 	bogus := util.MustParseUUID("11111111-1111-1111-1111-111111111111")
 	_, ferr := svc.FinalizeTaskClaim(ctx, task, db.CreateTaskTokenParams{
-		TokenHash:   fmt.Sprintf("finalize-fail-hash-%d", time.Now().UnixNano()),
-		TaskID:      task.ID,
-		AgentID:     task.AgentID,
-		WorkspaceID: util.MustParseUUID(workspaceID),
-		UserID:      util.MustParseUUID(userID),
-		ExpiresAt:   pgtype.Timestamptz{Time: time.Now().Add(24 * time.Hour), Valid: true},
+		TokenHash:         fmt.Sprintf("finalize-fail-hash-%d", time.Now().UnixNano()),
+		TaskID:            task.ID,
+		AgentID:           task.AgentID,
+		WorkspaceID:       util.MustParseUUID(workspaceID),
+		UserID:            util.MustParseUUID(userID),
+		ExpiresAt:         pgtype.Timestamptz{Time: time.Now().Add(24 * time.Hour), Valid: true},
+		Scope:             []byte(`[{"action":"agent.invoke","resource_type":"agent_definition","resource_id":"*"}]`),
+		ClaimDispatchedAt: task.DispatchedAt,
+		OnBehalfOfUserID:  task.OriginatorUserID,
+		DeviceID:          task.RuntimeID,
+		ParentTaskID:      task.DelegatedFromTaskID,
+		DelegationFence:   0,
 	}, []pgtype.UUID{bogus}, true)
 	if ferr == nil {
 		t.Fatal("expected FinalizeTaskClaim to fail for an out-of-plan delivery receipt")
