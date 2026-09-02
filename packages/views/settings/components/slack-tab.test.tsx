@@ -13,7 +13,12 @@ type MemberRole = "owner" | "admin" | "member" | "guest";
 const membersRef = vi.hoisted(() => ({
   current: [{ user_id: "user-1", role: "owner" as MemberRole }],
 }));
-const installationsRef = vi.hoisted(() => ({
+const installationsRef = vi.hoisted((): { current: {
+  installations: unknown[];
+  configured: boolean;
+  install_supported: boolean;
+  managed_supported?: boolean;
+} } => ({
   current: {
     installations: [] as unknown[],
     configured: true,
