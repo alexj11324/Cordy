@@ -184,11 +184,19 @@ beforeEach(async () => {
 
 afterEach(async () => {
   controller.cancel();
-  await Promise.all(
-    temporaryDirectories
-      .splice(0)
-      .map((directory) => rm(directory, { recursive: true, force: true })),
-  );
+  // The runner persists history fire-and-forget after reporting the terminal
+  // event, so a background mkdir/write/rename inside the temp directory can
+  // still be in flight when teardown runs. Retry once on ENOTEMPTY instead of
+  // failing the run on a decided outcome (CI flake: rmdir local-guest).
+  for (const directory of temporaryDirectories.splice(0)) {
+    try {
+      await rm(directory, { recursive: true, force: true });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException)?.code !== "ENOTEMPTY") throw err;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      await rm(directory, { recursive: true, force: true });
+    }
+  }
 });
 
 const GUEST_RUN_CHANNELS = [
@@ -431,6 +439,14 @@ describe("local Guest run cancellation and timeout", () => {
       };
       expect(last?.status).toBe("failed");
       expect(last?.error).toContain("exploded");
+    });
+    // The terminal event fires before the history write settles; teardown
+    // must wait for the write or its rm races the background persist
+    // (ENOTEMPTY flake on local-guest).
+    const historyPath = localGuestRunHistoryPath(ctx.userDataPath);
+    await vi.waitFor(async () => {
+      const loaded = await loadLocalGuestRunHistory(historyPath);
+      expect(loaded.ok && loaded.history.runs.length).toBe(1);
     });
   });
 });
