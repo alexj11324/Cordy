@@ -32,7 +32,6 @@ on:
         options:
           - arm64
           - x64
-          - both
 
 permissions:
   contents: read
@@ -40,17 +39,7 @@ permissions:
 
 jobs:
   preview-mac:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: arm64
-            os: macos-14
-          - arch: x64
-            os: macos-15-intel
-    # Skip the runner this arch selection did not ask for.
-    if: inputs.arch == 'both' || inputs.arch == matrix.arch
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ inputs.arch == 'x64' && 'macos-15-intel' || 'macos-14' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -61,7 +50,7 @@ jobs:
       - name: Record built ref
         shell: bash
         run: |
-          echo "Preview building $(git rev-parse HEAD) from ref '${{ inputs.ref != '' && inputs.ref || github.ref }}'"
+          echo "Preview building $(git rev-parse HEAD) from ref '${{ inputs.ref != '' && inputs.ref || github.ref }}' for arch '${{ inputs.arch }}'"
 
       - name: Require macOS signing and notarization credentials
         env:
@@ -102,7 +91,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Package Desktop installer (mac ${{ matrix.arch }})
+      - name: Package Desktop installer (mac ${{ inputs.arch }})
         working-directory: apps/desktop
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -114,7 +103,7 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           CSC_IDENTITY_AUTO_DISCOVERY: "true"
         shell: bash
-        run: node scripts/package.mjs --mac --${{ matrix.arch }} --publish never
+        run: node scripts/package.mjs --mac --${{ inputs.arch }} --publish never
 
       - name: Validate macOS signature and notarization
         working-directory: apps/desktop
@@ -122,11 +111,11 @@ jobs:
         run: |
           set -euo pipefail
           expected_runner_arch="x86_64"
-          if [ "${{ matrix.arch }}" = "arm64" ]; then
+          if [ "${{ inputs.arch }}" = "arm64" ]; then
             expected_runner_arch="arm64"
           fi
           test "$(uname -m)" = "$expected_runner_arch" || {
-            echo "::error::The macOS ${{ matrix.arch }} preview must run on a $expected_runner_arch runner."
+            echo "::error::The macOS ${{ inputs.arch }} preview must run on a $expected_runner_arch runner."
             exit 1
           }
           app_path="$(find dist -type d -name '*.app' -print -quit)"
@@ -146,8 +135,8 @@ jobs:
           spctl --assess --type execute --verbose=4 "$app_path"
           xcrun stapler validate "$app_path"
           for extension in dmg zip; do
-            test -n "$(find dist -type f -name "*-mac-${{ matrix.arch }}.${extension}" -print -quit)" || {
-              echo "::error::The signed macOS ${{ matrix.arch }} ${extension} is missing from the desktop output."
+            test -n "$(find dist -type f -name "*-mac-${{ inputs.arch }}.${extension}" -print -quit)" || {
+              echo "::error::The signed macOS ${{ inputs.arch }} ${extension} is missing from the desktop output."
               exit 1
             }
           done
@@ -155,8 +144,8 @@ jobs:
       - name: Upload preview installer
         uses: actions/upload-artifact@v4
         with:
-          name: patchbay-desktop-preview-mac-${{ matrix.arch }}-${{ github.sha }}
+          name: patchbay-desktop-preview-mac-${{ inputs.arch }}-${{ github.sha }}
           path: |
-            apps/desktop/dist/*-mac-${{ matrix.arch }}.dmg
-            apps/desktop/dist/*-mac-${{ matrix.arch }}.zip
+            apps/desktop/dist/*-mac-${{ inputs.arch }}.dmg
+            apps/desktop/dist/*-mac-${{ inputs.arch }}.zip
           retention-days: 14
