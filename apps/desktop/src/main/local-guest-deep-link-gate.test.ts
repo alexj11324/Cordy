@@ -70,7 +70,7 @@ describe("GuestDeepLinkGate", () => {
     const { gate, delivered, setMode, markRendererReady } = gateFixture;
 
     // Arrives while undecided, so it is held rather than delivered.
-    expect(gate.dispatch("auth:token", AUTH_TOKEN)).toBe(false);
+    expect(gate.dispatch("auth:handoff", AUTH_TOKEN)).toBe(false);
     expect(gate.hasDeferred()).toBe(true);
 
     // The user picks Guest. The held intent must not survive.
@@ -86,13 +86,13 @@ describe("GuestDeepLinkGate", () => {
     const { gate, delivered, setMode, markRendererReady } = gateFixture;
     markRendererReady();
 
-    gate.dispatch("auth:token", AUTH_TOKEN);
+    gate.dispatch("auth:handoff", AUTH_TOKEN);
     gate.dispatch("invite:open", "invitation-42");
     expect(delivered).toEqual([]);
 
     expect(setMode("cloud")).toBe(true);
     expect(delivered).toEqual([
-      { channel: "auth:token", payload: AUTH_TOKEN },
+      { channel: "auth:handoff", payload: AUTH_TOKEN },
       { channel: "invite:open", payload: "invitation-42" },
     ]);
     expect(gate.hasDeferred()).toBe(false);
@@ -114,7 +114,7 @@ describe("GuestDeepLinkGate", () => {
     const { gate, delivered, setMode, markRendererReady } = createGate("cloud");
 
     // Queued but not yet consumed by the renderer.
-    gate.dispatch("auth:token", AUTH_TOKEN);
+    gate.dispatch("auth:handoff", AUTH_TOKEN);
     gate.rejectCloudTraffic();
 
     markRendererReady();
@@ -144,9 +144,9 @@ describe("GuestDeepLinkGate", () => {
     const queue = new MainRendererMessageQueue();
     const gate = new GuestDeepLinkGate(queue, () => {}, getMode);
 
-    gate.dispatch("auth:token", AUTH_TOKEN);
+    gate.dispatch("auth:handoff", AUTH_TOKEN);
     getMode.mockReturnValue("guest");
-    expect(gate.dispatch("auth:token", AUTH_TOKEN)).toBe(false);
+    expect(gate.dispatch("auth:handoff", AUTH_TOKEN)).toBe(false);
     expect(getMode).toHaveBeenCalledTimes(2);
   });
 });

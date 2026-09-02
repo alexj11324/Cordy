@@ -19,8 +19,8 @@ export const MAIN_RENDERER_CHANNEL_SCOPES: Record<
   MainRendererMessageChannel,
   MainRendererChannelScope
 > = {
-  // patchbay://auth/callback?token=<jwt> — carries a cloud bearer token.
-  "auth:token": "cloud",
+  // The accounts-broker handoff — carries a cloud credential.
+  "auth:handoff": "cloud",
   // patchbay://invite/<invitationId> — joins a cloud workspace.
   "invite:open": "cloud",
   // Native notification click — navigates to a cloud issue in a workspace tab.

@@ -28,7 +28,7 @@ describe("main renderer channel classification", () => {
   it("treats the auth, invitation and issue deep links as cloud-scoped", () => {
     expect(CLOUD_MAIN_RENDERER_CHANNELS).toEqual(
       expect.arrayContaining([
-        "auth:token", // patchbay://auth/callback?token=…
+        "auth:handoff", // accounts-broker handoff — carries a cloud credential
         "invite:open", // patchbay://invite/<id>
         "inbox:open", // notification click → cloud issue
       ]),
