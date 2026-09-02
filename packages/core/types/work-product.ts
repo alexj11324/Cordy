@@ -8,6 +8,8 @@
  * be rendered without invalidating the whole response.
  */
 
+import type { GitHubPullRequest } from "./github";
+
 export type WorkProduct = {
   id: string;
   workspace_id: string;
@@ -96,4 +98,41 @@ export type CreateWorkProductRelationRequest = {
 export type WorkProductPageParams = {
   page?: number;
   per_page?: number;
+};
+
+/**
+ * One row of a Work Product surface: the product, the relation that attached
+ * it, and — when the product mirrors a provider pull request — the PR card the
+ * retired `/pull-requests` endpoint used to return on its own.
+ *
+ * `pull_request` is absent rather than null on products with no upstream
+ * record, so a caller branches on presence instead of on an empty card.
+ */
+export type WorkProductView = WorkProduct & {
+  relation: WorkProductRelationSummary;
+  pull_request?: GitHubPullRequest;
+};
+
+/**
+ * The relation as a surface presents it: why the product is attached and who
+ * attached it. The relation key and the detach columns are omitted — they are
+ * server-internal and always empty on a live row.
+ */
+export type WorkProductRelationSummary = {
+  id: string;
+  issue_id?: string | null;
+  task_id?: string | null;
+  run_id?: string | null;
+  relation_source: string;
+  attached_by_type: string;
+  attached_by_id: string | null;
+  attached_at: string;
+  close_intent: boolean;
+};
+
+export type WorkProductViewPage = {
+  work_products: WorkProductView[];
+  page: number;
+  per_page: number;
+  has_more: boolean;
 };

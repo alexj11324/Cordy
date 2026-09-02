@@ -36,7 +36,14 @@
     "cancel": "취소",
     "success": "작업 결과물을 연결했습니다.",
     "error": "작업 결과물을 연결할 수 없습니다.",
-    "loading": "작업 결과물을 불러오는 중…"
+    "loading": "작업 결과물을 불러오는 중…",
+    "detach": "작업 결과물 제거",
+    "detach_success": "작업 결과물을 제거했습니다.",
+    "detach_error": "작업 결과물을 제거할 수 없습니다.",
+    "source_manual": "멤버가 연결",
+    "source_task": "작업이 보고",
+    "source_branch": "실행 브랜치에서 발견",
+    "source_provider": "제공자가 발견"
   },
   "provenance": {
     "status": "발견 상태",

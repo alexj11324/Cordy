@@ -17,6 +17,13 @@ export const workProductKeys = {
     [...workProductKeys.all(wsId), "detail", id] as const,
   relationsRoot: (wsId: string | null, issueId: string) =>
     [...workProductKeys.all(wsId), "relations", issueId] as const,
+  // The issue's delivery list — products plus the relation that attached each
+  // one. Kept under a root of its own so a realtime PR update can invalidate
+  // every open issue's list without touching the workspace catalog.
+  issueProductsRoot: (issueId: string) =>
+    ["work-products", "issue", issueId] as const,
+  taskProductsRoot: (wsId: string | null, taskId: string) =>
+    [...workProductKeys.all(wsId), "task-products", taskId] as const,
   relations: (
     wsId: string | null,
     issueId: string,
@@ -142,6 +149,48 @@ export function taskProvenanceOptions(wsId: string | null, taskId: string) {
   return queryOptions({
     queryKey: workProductKeys.taskProvenance(wsId, taskId),
     queryFn: ({ signal }) => api.getTaskProvenance(taskId, { signal }),
+    enabled: !!wsId && !!taskId,
+  });
+}
+
+export function issueWorkProductsOptions(
+  wsId: string | null,
+  issueId: string,
+  params: WorkProductPageParams = {},
+) {
+  return queryOptions({
+    queryKey: [...workProductKeys.issueProductsRoot(issueId), params.page ?? 1, params.per_page ?? WORK_PRODUCT_PAGE_SIZE] as const,
+    queryFn: ({ signal }) =>
+      api.listIssueWorkProducts(issueId, pageParams(params), { signal }),
+    enabled: !!wsId && !!issueId,
+  });
+}
+
+export function issueWorkProductsInfiniteOptions(
+  wsId: string | null,
+  issueId: string,
+  perPage = WORK_PRODUCT_PAGE_SIZE,
+) {
+  return infiniteQueryOptions({
+    queryKey: [...workProductKeys.issueProductsRoot(issueId), "infinite", perPage] as const,
+    initialPageParam: 1,
+    queryFn: ({ pageParam, signal }) =>
+      api.listIssueWorkProducts(issueId, { page: pageParam, per_page: perPage }, { signal }),
+    getNextPageParam: (lastPage) =>
+      lastPage.has_more ? lastPage.page + 1 : undefined,
+    enabled: !!wsId && !!issueId,
+  });
+}
+
+export function taskWorkProductsOptions(
+  wsId: string | null,
+  taskId: string,
+  params: WorkProductPageParams = {},
+) {
+  return queryOptions({
+    queryKey: [...workProductKeys.taskProductsRoot(wsId, taskId), params.page ?? 1, params.per_page ?? WORK_PRODUCT_PAGE_SIZE] as const,
+    queryFn: ({ signal }) =>
+      api.listTaskWorkProducts(taskId, pageParams(params), { signal }),
     enabled: !!wsId && !!taskId,
   });
 }

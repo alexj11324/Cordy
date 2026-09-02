@@ -34,6 +34,33 @@ export function useCreateWorkProductRelation() {
       queryClient.invalidateQueries({
         queryKey: workProductKeys.provenanceRoot(wsId),
       });
+      queryClient.invalidateQueries({
+        queryKey: workProductKeys.issueProductsRoot(variables.issueId),
+      });
+    },
+  });
+}
+
+/**
+ * Detach retracts an attach. The server soft-closes the relation and keeps the
+ * row, so there is nothing useful to write into the cache optimistically — the
+ * lists are refetched instead, which also picks up the case where the server
+ * refused the detach because the caller did not own the relation.
+ */
+export function useDetachWorkProductRelation() {
+  const queryClient = useQueryClient();
+  const wsId = useWorkspaceId();
+
+  return useMutation({
+    mutationFn: ({ issueId, relationId }: { issueId: string; relationId: string }) =>
+      api.detachWorkProductRelation(issueId, relationId),
+    onSettled: (_data, _error, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: workProductKeys.issueProductsRoot(variables.issueId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: workProductKeys.relationsRoot(wsId, variables.issueId),
+      });
     },
   });
 }

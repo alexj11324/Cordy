@@ -50,7 +50,6 @@ import type {
   RedeemTelegramBindingTokenResponse,
   GroupedIssuesResponse,
   GitHubConnectResponse,
-  GitHubPullRequest,
   LinearCatalogResponse,
   LinearConnectResponse,
   LinearConnectionResponse,
@@ -112,6 +111,9 @@ import type {
   WorkProductPage,
   WorkProductRelation,
   WorkProductRelationPage,
+  WorkProductRelationSummary,
+  WorkProductView,
+  WorkProductViewPage,
 } from "../types";
 import type { CloudRuntimeNode } from "../runtimes/cloud-runtime";
 import type { CreateFeedbackResponse } from "../feedback/types";
@@ -711,14 +713,6 @@ export const GitHubPullRequestSchema = z.object({
   deletions: z.number().optional().default(0),
   changed_files: z.number().optional().default(0),
 }).loose();
-
-export const IssuePullRequestsResponseSchema = z.object({
-  pull_requests: z.array(GitHubPullRequestSchema).default([]),
-}).loose();
-
-export const EMPTY_ISSUE_PULL_REQUESTS_RESPONSE: { pull_requests: GitHubPullRequest[] } = {
-  pull_requests: [],
-};
 
 // Label responses are consumed by settings tables and resource pickers. Keep
 // the resource type lenient so newer server scopes do not break older clients,
@@ -1865,6 +1859,62 @@ export const EMPTY_WORK_PRODUCT_RELATION: WorkProductRelation = {
 
 export const EMPTY_WORK_PRODUCT_RELATION_PAGE: WorkProductRelationPage = {
   relations: [],
+  page: 1,
+  per_page: 64,
+  has_more: false,
+};
+
+// A Work Product surface row. `pull_request` is optional rather than nullable:
+// only a product that mirrors a provider pull request carries one, and the
+// server omits the key entirely for everything else.
+export const WorkProductRelationSummarySchema: z.ZodType<WorkProductRelationSummary> = z.object({
+  id: workProductString(),
+  issue_id: workProductNullableString().optional(),
+  task_id: workProductNullableString().optional(),
+  run_id: workProductNullableString().optional(),
+  relation_source: workProductString(),
+  attached_by_type: workProductString(),
+  attached_by_id: workProductNullableString(),
+  attached_at: workProductString(),
+  close_intent: z.boolean().default(false).catch(false),
+}).loose() as z.ZodType<WorkProductRelationSummary>;
+
+export const EMPTY_WORK_PRODUCT_RELATION_SUMMARY: WorkProductRelationSummary = {
+  id: "",
+  issue_id: null,
+  task_id: null,
+  run_id: null,
+  relation_source: "",
+  attached_by_type: "",
+  attached_by_id: null,
+  attached_at: "",
+  close_intent: false,
+};
+
+export const WorkProductViewSchema: z.ZodType<WorkProductView> = z.object({
+  id: workProductString(),
+  workspace_id: workProductString(),
+  kind: workProductString(),
+  provider: workProductString(),
+  external_identity: workProductString(),
+  external_url: workProductNullableString(),
+  provider_record_type: workProductNullableString(),
+  provider_record_id: workProductNullableString(),
+  created_at: workProductString(),
+  updated_at: workProductString(),
+  relation: WorkProductRelationSummarySchema.catch(EMPTY_WORK_PRODUCT_RELATION_SUMMARY),
+  pull_request: GitHubPullRequestSchema.optional(),
+}).loose() as z.ZodType<WorkProductView>;
+
+export const WorkProductViewPageSchema: z.ZodType<WorkProductViewPage> = z.object({
+  work_products: z.array(WorkProductViewSchema).default([]),
+  page: z.number().int().positive().default(1),
+  per_page: z.number().int().positive().default(64),
+  has_more: z.boolean().default(false),
+}).loose() as z.ZodType<WorkProductViewPage>;
+
+export const EMPTY_WORK_PRODUCT_VIEW_PAGE: WorkProductViewPage = {
+  work_products: [],
   page: 1,
   per_page: 64,
   has_more: false,

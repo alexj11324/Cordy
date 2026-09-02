@@ -885,9 +885,11 @@ export function useRealtimeSync(
         if (wsId) qc.invalidateQueries({ queryKey: telegramKeys.installations(wsId) });
       },
       pull_request: () => {
-        // PR list is keyed by issue id, not workspace, so we invalidate all
-        // PR queries — the open issue detail page will refetch its own list.
-        qc.invalidateQueries({ queryKey: ["github", "pull-requests"] });
+        // A PR is a Work Product now, and its card is embedded in the issue's
+        // product list. That list is keyed by issue id, not workspace, so
+        // every issue's list is invalidated — the open issue detail page is
+        // the only one that refetches.
+        qc.invalidateQueries({ queryKey: ["work-products", "issue"] });
       },
       // Powers the agent presence cache: any task lifecycle change
       // (dispatch / completed / failed / cancelled) refreshes the

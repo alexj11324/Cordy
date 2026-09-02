@@ -36,7 +36,14 @@
     "cancel": "Cancel",
     "success": "Work product linked.",
     "error": "The work product could not be linked.",
-    "loading": "Loading work products…"
+    "loading": "Loading work products…",
+    "detach": "Remove work product",
+    "detach_success": "Work product removed.",
+    "detach_error": "The work product could not be removed.",
+    "source_manual": "linked by a member",
+    "source_task": "reported by the task",
+    "source_branch": "found from the run branch",
+    "source_provider": "found by the provider"
   },
   "provenance": {
     "status": "Discovery",

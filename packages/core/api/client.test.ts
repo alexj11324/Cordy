@@ -146,7 +146,7 @@ describe("ApiClient edit guards", () => {
   });
 });
 
-describe("ApiClient pull-request response schema", () => {
+describe("ApiClient issue work-product response schema", () => {
   const validPR = {
     id: "pr-1",
     provider: "github",
@@ -169,44 +169,69 @@ describe("ApiClient pull-request response schema", () => {
     failed_check_names: ["backend"],
   };
 
-  it("parses and defaults a valid pull-request list", async () => {
+  const validProduct = {
+    id: "product-1",
+    workspace_id: "ws-1",
+    kind: "pull_request",
+    provider: "github",
+    external_identity: "acme/widget#7",
+    external_url: "https://github.example/acme/widget/pull/7",
+    provider_record_type: "github_pull_request",
+    provider_record_id: "pr-1",
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    relation: {
+      id: "relation-1",
+      issue_id: "issue-1",
+      relation_source: "provider_discovery",
+      attached_by_type: "system",
+      attached_by_id: null,
+      attached_at: "2026-01-01T00:00:00Z",
+      close_intent: true,
+    },
+    pull_request: validPR,
+  };
+
+  function stubResponse(body: unknown) {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ pull_requests: [validPR] }), {
+        new Response(JSON.stringify(body), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         }),
       ),
     );
+  }
 
-    const result = await new ApiClient("https://api.example.test").listIssuePullRequests("issue-1");
-    expect(result.pull_requests[0]).toMatchObject({
-      id: "pr-1",
-      failed_check_names: ["backend"],
-      checks_total: 0,
+  it("parses a product with its relation and pull-request card", async () => {
+    stubResponse({ work_products: [validProduct], page: 1, per_page: 64, has_more: false });
+
+    const result = await new ApiClient("https://api.example.test").listIssueWorkProducts("issue-1");
+    expect(result.work_products[0]).toMatchObject({
+      id: "product-1",
+      relation: { id: "relation-1", close_intent: true },
+      pull_request: { id: "pr-1", failed_check_names: ["backend"], checks_total: 0 },
     });
   });
 
-  it("falls back safely when failed_check_names is malformed", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            pull_requests: [{ ...validPR, failed_check_names: "backend" }],
-          }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          },
-        ),
-      ),
-    );
+  // A product with no upstream record must survive the parse without one. The
+  // old PR-only endpoint could assume every row had a card; this one cannot.
+  it("keeps a product that carries no pull-request card", async () => {
+    const { pull_request: _card, ...withoutCard } = validProduct;
+    stubResponse({ work_products: [withoutCard], page: 1, per_page: 64, has_more: false });
+
+    const result = await new ApiClient("https://api.example.test").listIssueWorkProducts("issue-1");
+    expect(result.work_products).toHaveLength(1);
+    expect(result.work_products[0]?.pull_request).toBeUndefined();
+  });
+
+  it("falls back to an empty page when the payload is malformed", async () => {
+    stubResponse({ work_products: "not-a-list" });
 
     await expect(
-      new ApiClient("https://api.example.test").listIssuePullRequests("issue-1"),
-    ).resolves.toEqual({ pull_requests: [] });
+      new ApiClient("https://api.example.test").listIssueWorkProducts("issue-1"),
+    ).resolves.toEqual({ work_products: [], page: 1, per_page: 64, has_more: false });
   });
 });
 

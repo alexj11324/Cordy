@@ -7,9 +7,15 @@ export type {
   WorkProductPageParams,
   WorkProductRelation,
   WorkProductRelationPage,
+  WorkProductRelationSummary,
+  WorkProductView,
+  WorkProductViewPage,
 } from "../types";
 export {
+  issueWorkProductsInfiniteOptions,
+  issueWorkProductsOptions,
   taskProvenanceOptions,
+  taskWorkProductsOptions,
   workProductDetailOptions,
   workProductKeys,
   workProductListInfiniteOptions,
@@ -20,4 +26,7 @@ export {
   workProductRelationsOptions,
   WORK_PRODUCT_PAGE_SIZE,
 } from "./queries";
-export { useCreateWorkProductRelation } from "./mutations";
+export {
+  useCreateWorkProductRelation,
+  useDetachWorkProductRelation,
+} from "./mutations";

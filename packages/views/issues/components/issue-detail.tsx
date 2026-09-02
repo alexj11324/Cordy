@@ -93,10 +93,8 @@ import { IssueAgentHeaderChip } from "./issue-agent-header-chip";
 import { ExecutionLogSection } from "./execution-log-section";
 import { QuickActionsSection } from "./quick-actions-section";
 import { PluginPanelSection } from "../../plugins";
-import { PullRequestList } from "./pull-request-list";
 import { DependencyPrerequisites } from "./dependency-prerequisites";
 import { WorkProductRelationsSection } from "../../work-products";
-import { useGitHubSettings } from "@patchbay/core/github";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@patchbay/core/auth";
 import { useWorkspacePaths } from "@patchbay/core/paths";
@@ -1185,9 +1183,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   const [propertiesOpen, setPropertiesOpen] = useState(true);
   const [detailsOpen, setDetailsOpen] = useState(true);
   const [parentIssueOpen, setParentIssueOpen] = useState(true);
-  const [pullRequestsOpen, setPullRequestsOpen] = useState(true);
   const [metadataOpen, setMetadataOpen] = useState(false);
-  const githubSettings = useGitHubSettings();
 
   // Per-issue, per-session set of optional properties currently visible in
   // the sidebar Properties section. Seeded on issue switch with whichever
@@ -2561,32 +2557,17 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
 
       <DependencyPrerequisites issueId={issue.id} />
 
-      {/* Pull requests — hidden when the workspace disables the PR sidebar
-          (or the GitHub master switch is off). Backend data is kept either
-          way so re-enabling restores the section instantly. */}
-      {githubSettings.prSidebar && (
-        <div>
-          <button
-            type="button"
-            className={`flex w-full items-center gap-1 rounded-md px-2 py-1 text-caption font-medium transition-colors mb-2 hover:bg-accent/70 ${pullRequestsOpen ? "" : "text-muted-foreground hover:text-foreground"}`}
-            onClick={() => setPullRequestsOpen(!pullRequestsOpen)}
-          >
-            {t(($) => $.detail.section_pull_requests)}
-            <ChevronRight className={`!size-3 shrink-0 stroke-[2.5] text-muted-foreground transition-transform ${pullRequestsOpen ? "rotate-90" : ""}`} />
-          </button>
-          {pullRequestsOpen && <div className="pl-2"><PullRequestList issueId={id} /></div>}
-        </div>
-      )}
-
       {/* Execution log — active runs + collapsed past runs, each carrying its
           own token spend, with the issue total on the section header.
           Self-contained; owns its own collapse state and WS subscriptions.
           Hides itself when there are no runs to show. */}
       <ExecutionLogSection issueId={id} identifier={issue.identifier} />
 
-      {/* Work Product links are the human-facing side of daemon execution
-          provenance. The section reads server-owned relations and sends only
-          the selected product + close intent when a member links one. */}
+      {/* The issue's delivery list: pull requests, plus everything else a run
+          produced. Reads server-owned relations and sends only the selected
+          product + close intent when a member links one. Not gated on the
+          GitHub PR-sidebar setting — that switch hid a GitHub-only section,
+          and this one is not GitHub-only. */}
       <WorkProductRelationsSection issueId={id} />
 
       {/* Details — creator and timestamps. Sits below the execution log

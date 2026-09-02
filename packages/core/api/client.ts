@@ -123,6 +123,7 @@ import type {
   WorkProductRelationPage,
   CreateWorkProductRelationRequest,
   WorkProductPageParams,
+  WorkProductViewPage,
   Label,
   IssueProperty,
   IssuePropertyValue,
@@ -182,7 +183,6 @@ import type {
   PluginPreviewRequest,
   PluginInstallRequest,
   PluginConfigRequest,
-  GitHubPullRequest,
   ListGitHubInstallationsResponse,
   ListGitHubRepositoriesResponse,
   GitHubConnectResponse,
@@ -261,6 +261,16 @@ import type {
   CreateCommentSubIssueRequest,
 } from "../types";
 import type { OnboardingCompletionPath } from "../onboarding/types";
+
+// Work Product surfaces all page the same way: explicit page/per_page because
+// the server caps per_page and reports has_more rather than a total.
+function workProductPageQuery(params: WorkProductPageParams): string {
+  const search = new URLSearchParams();
+  if (params.page != null) search.set("page", String(params.page));
+  if (params.per_page != null) search.set("per_page", String(params.per_page));
+  const query = search.toString();
+  return query ? `?${query}` : "";
+}
 import type {
   CreateFeedbackResponse,
   FeedbackContext,
@@ -361,7 +371,9 @@ import {
   RuntimeUsageListSchema,
   SearchIssuesResponseSchema,
   SearchProjectsResponseSchema,
+  EMPTY_WORK_PRODUCT_VIEW_PAGE,
   WorkProductPageSchema,
+  WorkProductViewPageSchema,
   WorkProductSchema,
   WorkProductRelationPageSchema,
   WorkProductRelationSchema,
@@ -459,8 +471,6 @@ import {
   EMPTY_ISSUE_PROPERTY,
   EMPTY_LIST_PROPERTIES_RESPONSE,
   EMPTY_ISSUE_PROPERTIES_RESPONSE,
-  EMPTY_ISSUE_PULL_REQUESTS_RESPONSE,
-  IssuePullRequestsResponseSchema,
   ResourceLabelsResponseSchema,
   EMPTY_LABEL,
   EMPTY_LIST_LABELS_RESPONSE,
@@ -3866,6 +3876,46 @@ export class ApiClient {
     return parsed;
   }
 
+  // The issue's delivery list. Pull requests arrive here as products carrying
+  // a `pull_request` card, which is why there is no separate PR endpoint: two
+  // lists meant two answers to "what closed this issue".
+  async listIssueWorkProducts(
+    issueId: string,
+    params: WorkProductPageParams = {},
+    opts?: { signal?: AbortSignal },
+  ): Promise<WorkProductViewPage> {
+    const raw = await this.fetch<unknown>(
+      `/api/issues/${encodeURIComponent(issueId)}/work-products${workProductPageQuery(params)}`,
+      { signal: opts?.signal },
+    );
+    return parseWithFallback(raw, WorkProductViewPageSchema, EMPTY_WORK_PRODUCT_VIEW_PAGE, {
+      endpoint: "GET /api/issues/:id/work-products",
+    });
+  }
+
+  async listTaskWorkProducts(
+    taskId: string,
+    params: WorkProductPageParams = {},
+    opts?: { signal?: AbortSignal },
+  ): Promise<WorkProductViewPage> {
+    const raw = await this.fetch<unknown>(
+      `/api/tasks/${encodeURIComponent(taskId)}/work-products${workProductPageQuery(params)}`,
+      { signal: opts?.signal },
+    );
+    return parseWithFallback(raw, WorkProductViewPageSchema, EMPTY_WORK_PRODUCT_VIEW_PAGE, {
+      endpoint: "GET /api/tasks/:taskId/work-products",
+    });
+  }
+
+  // Detach retracts an attach; the server soft-closes the relation and keeps
+  // the row, so the response is discarded and callers refetch the list.
+  async detachWorkProductRelation(issueId: string, relationId: string): Promise<void> {
+    await this.fetch(
+      `/api/issues/${encodeURIComponent(issueId)}/work-product-relations/${encodeURIComponent(relationId)}`,
+      { method: "DELETE" },
+    );
+  }
+
   async getTaskProvenance(
     taskId: string,
     opts?: { signal?: AbortSignal },
@@ -4951,16 +5001,6 @@ export class ApiClient {
     await this.fetch(`/api/workspaces/${workspaceId}/linear/bindings/${bindingId}`, {
       method: "DELETE",
     });
-  }
-
-  async listIssuePullRequests(issueId: string): Promise<{ pull_requests: GitHubPullRequest[] }> {
-    const raw = await this.fetch<unknown>(`/api/issues/${issueId}/pull-requests`);
-    return parseWithFallback(
-      raw,
-      IssuePullRequestsResponseSchema,
-      EMPTY_ISSUE_PULL_REQUESTS_RESPONSE,
-      { endpoint: "GET /api/issues/:id/pull-requests" },
-    );
   }
 
   // VCS integration (Forgejo / Gitea / GitLab)

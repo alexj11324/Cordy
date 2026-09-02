@@ -1,19 +1,16 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useInfiniteQuery, useQueries } from "@tanstack/react-query";
-import { ChevronRight, FileText, Plus } from "lucide-react";
+import { useInfiniteQuery } from "@tanstack/react-query";
+import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import {
+  issueWorkProductsInfiniteOptions,
   useCreateWorkProductRelation,
-  workProductDetailOptions,
+  useDetachWorkProductRelation,
   workProductListInfiniteOptions,
-  workProductRelationsInfiniteOptions,
 } from "@patchbay/core/work-products";
-import { useWorkspacePaths } from "@patchbay/core/paths";
 import { useWorkspaceId } from "@patchbay/core/hooks";
-import type { WorkProduct } from "@patchbay/core/types";
-import { Badge } from "@patchbay/ui/components/ui/badge";
 import { Button } from "@patchbay/ui/components/ui/button";
 import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
 import {
@@ -32,49 +29,31 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@patchbay/ui/components/ui/select";
-import { AppLink } from "../navigation";
+import { WorkProductRow } from "./work-product-row";
 import { useT } from "../i18n";
 
+/**
+ * The issue's delivery list — the only one. Pull requests used to have a
+ * section of their own above this, reading a different endpoint backed by
+ * different tables; a PR could appear in one and not the other and nothing in
+ * the UI explained why. Both now come from `/work-products`, so a product's
+ * presence here is the same fact the server's close gate reads.
+ */
 export function WorkProductRelationsSection({ issueId }: { issueId: string }) {
   const wsId = useWorkspaceId();
-  const paths = useWorkspacePaths();
   const { t } = useT("work-products");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedProductId, setSelectedProductId] = useState("");
   const [closeIntent, setCloseIntent] = useState(false);
-  const relationsQuery = useInfiniteQuery(
-    workProductRelationsInfiniteOptions(wsId, issueId),
-  );
-  const relatedIds = useMemo(
-    () => {
-      const seen = new Set<string>();
-      return (relationsQuery.data?.pages.flatMap((page) =>
-        page.relations.map((relation) => relation.work_product_id),
-      ) ?? []).filter((productId) => {
-        if (!productId || seen.has(productId)) return false;
-        seen.add(productId);
-        return true;
-      });
-    },
-    [relationsQuery.data],
-  );
-  const detailQueries = useQueries({
-    queries: relatedIds.map((productId) => workProductDetailOptions(wsId, productId)),
-  });
-  const productsById = useMemo(() => {
-    const result = new Map<string, WorkProduct>();
-    for (const query of detailQueries) {
-      if (query.data?.id) result.set(query.data.id, query.data);
-    }
-    return result;
-  }, [detailQueries]);
+  const productsQuery = useInfiniteQuery(issueWorkProductsInfiniteOptions(wsId, issueId));
   const availableProductsQuery = useInfiniteQuery(
     workProductListInfiniteOptions(wsId, undefined, dialogOpen),
   );
   const createRelation = useCreateWorkProductRelation();
-  const relations = useMemo(
-    () => relationsQuery.data?.pages.flatMap((page) => page.relations) ?? [],
-    [relationsQuery.data],
+  const detachRelation = useDetachWorkProductRelation();
+  const products = useMemo(
+    () => productsQuery.data?.pages.flatMap((page) => page.work_products) ?? [],
+    [productsQuery.data],
   );
   const availableProducts = useMemo(() => {
     const seen = new Set<string>();
@@ -115,13 +94,24 @@ export function WorkProductRelationsSection({ issueId }: { issueId: string }) {
     );
   }
 
+  function detach(relationId: string) {
+    if (detachRelation.isPending) return;
+    detachRelation.mutate(
+      { issueId, relationId },
+      {
+        onSuccess: () => toast.success(t(($) => $.relations.detach_success)),
+        onError: () => toast.error(t(($) => $.relations.detach_error)),
+      },
+    );
+  }
+
   return (
     <section className="space-y-2" aria-labelledby={`work-product-relations-${issueId}`}>
       <div className="flex items-center justify-between gap-2">
         <h3 id={`work-product-relations-${issueId}`} className="text-caption font-medium">
           {t(($) => $.relations.title)}
-          {relations.length > 0 ? (
-            <span className="ml-1 text-muted-foreground">· {relations.length}</span>
+          {products.length > 0 ? (
+            <span className="ml-1 text-muted-foreground">· {products.length}</span>
           ) : null}
         </h3>
         <Button
@@ -135,39 +125,29 @@ export function WorkProductRelationsSection({ issueId }: { issueId: string }) {
         </Button>
       </div>
 
-      {relationsQuery.isPending ? (
+      {productsQuery.isPending ? (
         <p className="px-2 text-caption text-muted-foreground">{t(($) => $.relations.loading)}</p>
-      ) : relations.length === 0 ? (
+      ) : products.length === 0 ? (
         <p className="px-2 text-caption text-muted-foreground">{t(($) => $.relations.empty)}</p>
       ) : (
         <div className="space-y-1">
-          {relations.map((relation) => {
-            const product = productsById.get(relation.work_product_id);
-            return (
-              <div key={relation.id} className="group flex min-w-0 items-center gap-1 rounded-md px-2 py-1.5 hover:bg-accent/50">
-                <FileText aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
-                <AppLink
-                  href={paths.workProductDetail(relation.work_product_id)}
-                  className="min-w-0 flex-1 truncate text-caption hover:text-foreground"
-                >
-                  {product?.external_identity || relation.work_product_id}
-                </AppLink>
-                {relation.close_intent ? (
-                  <Badge variant="secondary">{t(($) => $.relations.close_intent_short)}</Badge>
-                ) : null}
-                <ChevronRight aria-hidden="true" className="size-3 shrink-0 text-muted-foreground" />
-              </div>
-            );
-          })}
+          {products.map((product) => (
+            <WorkProductRow
+              key={product.relation.id || product.id}
+              product={product}
+              onDetach={detach}
+              detachPending={detachRelation.isPending}
+            />
+          ))}
         </div>
       )}
 
-      {relationsQuery.hasNextPage ? (
+      {productsQuery.hasNextPage ? (
         <Button
           size="sm"
           variant="ghost"
-          disabled={relationsQuery.isFetchingNextPage}
-          onClick={() => void relationsQuery.fetchNextPage()}
+          disabled={productsQuery.isFetchingNextPage}
+          onClick={() => void productsQuery.fetchNextPage()}
         >
           {t(($) => $.page.load_more)}
         </Button>

@@ -36,7 +36,14 @@
     "cancel": "キャンセル",
     "success": "成果物を関連付けました。",
     "error": "成果物を関連付けられませんでした。",
-    "loading": "成果物を読み込んでいます…"
+    "loading": "成果物を読み込んでいます…",
+    "detach": "成果物を外す",
+    "detach_success": "成果物を外しました。",
+    "detach_error": "成果物を外せませんでした。",
+    "source_manual": "メンバーが関連付け",
+    "source_task": "タスクが報告",
+    "source_branch": "実行ブランチから検出",
+    "source_provider": "プロバイダーが検出"
   },
   "provenance": {
     "status": "検出",

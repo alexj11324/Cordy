@@ -218,6 +218,9 @@ export type {
   WorkProductPageParams,
   WorkProductRelation,
   WorkProductRelationPage,
+  WorkProductRelationSummary,
+  WorkProductView,
+  WorkProductViewPage,
 } from "./work-product";
 export type { PinnedItem, PinnedItemType, CreatePinRequest, ReorderPinsRequest } from "./pin";
 export type {

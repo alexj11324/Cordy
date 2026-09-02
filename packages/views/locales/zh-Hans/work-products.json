@@ -36,7 +36,14 @@
     "cancel": "取消",
     "success": "工作成果已关联。",
     "error": "无法关联工作成果。",
-    "loading": "正在加载工作成果…"
+    "loading": "正在加载工作成果…",
+    "detach": "移除工作成果",
+    "detach_success": "工作成果已移除。",
+    "detach_error": "无法移除工作成果。",
+    "source_manual": "由成员关联",
+    "source_task": "由任务上报",
+    "source_branch": "从运行分支发现",
+    "source_provider": "由代码托管方发现"
   },
   "provenance": {
     "status": "发现状态",

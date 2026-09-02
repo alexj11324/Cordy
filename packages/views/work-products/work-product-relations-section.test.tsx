@@ -69,12 +69,45 @@ const productListState = {
   },
 };
 
+const issueProductsState = {
+  ...relationState,
+  data: {
+    pages: [
+      {
+        work_products: [
+          {
+            ...product,
+            relation: {
+              id: "relation-1",
+              issue_id: "issue-1",
+              task_id: null,
+              run_id: null,
+              relation_source: "manual_explicit",
+              attached_by_type: "user",
+              attached_by_id: "user-1",
+              attached_at: "2026-09-02T00:02:00Z",
+              close_intent: true,
+            },
+          },
+        ],
+        page: 1,
+        per_page: 64,
+        has_more: false,
+      },
+    ],
+  },
+};
+
 const { createRelation } = vi.hoisted(() => ({
   createRelation: vi.fn(),
 }));
 
 vi.mock("@patchbay/core/work-products", () => ({
   useCreateWorkProductRelation: () => ({ isPending: false, mutate: createRelation }),
+  useDetachWorkProductRelation: () => ({ isPending: false, mutate: vi.fn() }),
+  issueWorkProductsInfiniteOptions: (_wsId: string | null, issueId: string) => ({
+    queryKey: ["work-products", "issue", issueId, "infinite"],
+  }),
   workProductDetailOptions: (_wsId: string | null, id: string) => ({
     queryKey: ["work-product-detail", id],
   }),
@@ -85,7 +118,7 @@ vi.mock("@patchbay/core/work-products", () => ({
 vi.mock("@tanstack/react-query", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@tanstack/react-query")>()),
   useInfiniteQuery: ({ queryKey }: { queryKey: readonly unknown[] }) =>
-    queryKey[0] === "work-products" ? productListState : relationState,
+    queryKey[1] === "issue" ? issueProductsState : productListState,
   useQueries: ({ queries }: { queries: readonly unknown[] }) =>
     queries.map(() => ({ data: product })),
 }));

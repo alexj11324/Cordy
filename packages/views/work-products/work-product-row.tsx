@@ -1,37 +1,45 @@
 "use client";
 
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import {
   CheckCircle2,
   Circle,
   CircleDashed,
   CircleSlash,
+  FileText,
   GitMerge,
   GitPullRequest,
   GitPullRequestArrow,
   GitPullRequestClosed,
   GitPullRequestDraft,
   TriangleAlert,
+  X,
   XCircle,
 } from "lucide-react";
 import {
-  issuePullRequestsOptions,
   deriveChecksStatus,
   deriveMergeStatus,
   shouldShowPullRequestStats,
   type PullRequestChecksStatus,
   type PullRequestMergeStatus,
 } from "@patchbay/core/github";
-import type { GitHubPullRequest, GitHubPullRequestState } from "@patchbay/core/types";
+import type {
+  GitHubPullRequest,
+  GitHubPullRequestState,
+  WorkProductView,
+} from "@patchbay/core/types";
+import { useWorkspacePaths } from "@patchbay/core/paths";
+import { Badge } from "@patchbay/ui/components/ui/badge";
 import { cn } from "@patchbay/ui/lib/utils";
-import { useT, useTimeAgo } from "../../i18n";
+import { AppLink } from "../navigation";
+import { useT, useTimeAgo } from "../i18n";
 
 type IssuesT = ReturnType<typeof useT<"issues">>["t"];
+type WorkProductsT = ReturnType<typeof useT<"work-products">>["t"];
 
-// Keep the existing sidebar density: show the first 3 PR rows inline, then
-// collapse the rest once the section reaches 4 rows.
-const PR_LIMIT_BEFORE_COLLAPSE = 4;
+// The pull-request labels are already translated in the `issues` namespace,
+// where they lived when PRs had their own sidebar section. Keeping them there
+// rather than copying twenty strings into `work-products` avoids four bundles
+// of duplicate translations that would then have to drift in lockstep.
 
 const STATE_ICON: Record<
   GitHubPullRequestState,
@@ -43,90 +51,118 @@ const STATE_ICON: Record<
   closed: { icon: GitPullRequestClosed, className: "text-rose-600 dark:text-rose-400" },
 };
 
-export function PullRequestList({ issueId }: { issueId: string }) {
-  const { t } = useT("issues");
-  const [expanded, setExpanded] = useState(false);
-  const { data, isLoading } = useQuery(issuePullRequestsOptions(issueId));
-  const prs = data?.pull_requests ?? [];
-
-  if (isLoading) {
-    return <p className="text-caption text-muted-foreground px-2">{t(($) => $.detail.pull_requests_loading)}</p>;
-  }
-  if (prs.length === 0) {
-    return (
-      <p className="text-caption text-muted-foreground px-2">
-        {t(($) => $.detail.pull_requests_empty)}
-      </p>
-    );
-  }
-
-  // Render rule:
-  //   - <  PR_LIMIT_BEFORE_COLLAPSE: every PR row is visible.
-  //   - >= PR_LIMIT_BEFORE_COLLAPSE: first (LIMIT - 1) rows are visible and
-  //     the remainder sits behind a toggle.
-  const useCollapse = prs.length >= PR_LIMIT_BEFORE_COLLAPSE;
-  const expandedHead = useCollapse ? prs.slice(0, PR_LIMIT_BEFORE_COLLAPSE - 1) : prs;
-  const collapsedTail = useCollapse ? prs.slice(PR_LIMIT_BEFORE_COLLAPSE - 1) : [];
+/**
+ * One row of the issue's Work Product list.
+ *
+ * A product that mirrors a pull request renders the same card the PR-only
+ * sidebar used to: state icon, repo#number, CI and mergeability. Everything
+ * else renders as a plain product. Both go through this component so the two
+ * cannot drift into looking like different features again.
+ */
+export function WorkProductRow({
+  product,
+  onDetach,
+  detachPending,
+}: {
+  product: WorkProductView;
+  onDetach?: (relationId: string) => void;
+  detachPending?: boolean;
+}) {
+  const { t } = useT("work-products");
+  const paths = useWorkspacePaths();
+  const pullRequest = product.pull_request;
+  const cfg = pullRequest
+    ? (STATE_ICON[pullRequest.state] ?? { icon: GitPullRequest, className: "" })
+    : { icon: FileText, className: "text-muted-foreground" };
+  const LeadIcon = cfg.icon;
+  const isDraft = pullRequest?.state === "draft";
+  const title = pullRequest?.title || product.external_identity || product.id;
 
   return (
-    <div className="space-y-1">
-      {expandedHead.map((pr) => (
-        <PullRequestRow key={pr.id} pr={pr} />
-      ))}
-      {useCollapse ? (
-        <div className="space-y-1">
-          {expanded
-            ? collapsedTail.map((pr) => <PullRequestRow key={pr.id} pr={pr} />)
-            : null}
-          <button
-            type="button"
-            onClick={() => setExpanded((v) => !v)}
-            className="block w-[calc(100%+1rem)] -mx-2 rounded-md px-2 py-1.5 text-left text-micro text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
+    <div
+      data-testid="work-product-row"
+      className={cn(
+        "group flex items-start gap-2 rounded-md -mx-2 px-2 py-1.5 transition-colors hover:bg-accent/50",
+        isDraft ? "opacity-80" : null,
+      )}
+    >
+      <LeadIcon aria-hidden="true" className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", cfg.className)} />
+      <div className="min-w-0 flex-1">
+        {product.external_url ? (
+          <a
+            href={product.external_url}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="block truncate text-caption font-medium leading-snug hover:text-foreground"
           >
-            {expanded
-              ? t(($) => $.detail.pull_request_card_show_less)
-              : t(($) => $.detail.pull_request_card_show_more, { count: collapsedTail.length })}
-          </button>
-        </div>
+            {title}
+          </a>
+        ) : (
+          <AppLink
+            href={paths.workProductDetail(product.id)}
+            className="block truncate text-caption font-medium leading-snug hover:text-foreground"
+          >
+            {title}
+          </AppLink>
+        )}
+        <WorkProductSubtitle product={product} />
+        {pullRequest ? <PullRequestDetails pr={pullRequest} /> : null}
+      </div>
+      {product.relation.close_intent ? (
+        <Badge variant="secondary">{t(($) => $.relations.close_intent_short)}</Badge>
+      ) : null}
+      {onDetach ? (
+        <button
+          type="button"
+          disabled={detachPending}
+          aria-label={t(($) => $.relations.detach)}
+          title={t(($) => $.relations.detach)}
+          onClick={() => onDetach(product.relation.id)}
+          className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-50"
+        >
+          <X aria-hidden="true" className="h-3 w-3" />
+        </button>
       ) : null}
     </div>
   );
 }
 
-function PullRequestRow({ pr }: { pr: GitHubPullRequest }) {
-  const { t } = useT("issues");
-  const cfg = STATE_ICON[pr.state] ?? { icon: GitPullRequest, className: "" };
-  const StateIcon = cfg.icon;
-  const isDraft = pr.state === "draft";
-  const stateLabel = getStateLabel(pr.state, t);
-
+// The subtitle answers "what is this and why is it here". For a PR the first
+// half is the provider's own coordinates; for anything else it is the product
+// identity. The relation source is always shown, because a product attached by
+// a webhook and one a person picked deserve different trust.
+function WorkProductSubtitle({ product }: { product: WorkProductView }) {
+  const { t: tIssues } = useT("issues");
+  const { t } = useT("work-products");
+  const pr = product.pull_request;
+  const head = pr
+    ? `${pr.repo_owner}/${pr.repo_name}#${pr.number} · ${getStateLabel(pr.state, tIssues)}${
+        pr.author_login ? ` · @${pr.author_login}` : ""
+      }`
+    : `${product.provider} · ${product.kind}`;
   return (
-    <a
-      data-testid="pull-request-row"
-      href={pr.html_url}
-      target="_blank"
-      rel="noreferrer noopener"
-      className={cn(
-        "flex items-start gap-2 rounded-md px-2 py-1.5 -mx-2 hover:bg-accent/50 transition-colors group",
-        isDraft ? "opacity-80" : null,
-      )}
-    >
-      <StateIcon className={cn("h-3.5 w-3.5 mt-0.5 shrink-0", cfg.className)} />
-      <div className="min-w-0 flex-1">
-        <p className="text-caption font-medium leading-snug truncate group-hover:text-foreground">
-          {pr.title}
-        </p>
-        <p className="text-micro text-muted-foreground truncate">
-          {pr.repo_owner}/{pr.repo_name}#{pr.number} · {stateLabel}
-          {pr.author_login ? ` · @${pr.author_login}` : null}
-        </p>
-        <PullRequestRowDetails pr={pr} />
-      </div>
-    </a>
+    <p className="truncate text-micro text-muted-foreground">
+      {head} · {relationSourceLabel(product.relation.relation_source, t)}
+    </p>
   );
 }
 
-function PullRequestRowDetails({ pr }: { pr: GitHubPullRequest }) {
+function relationSourceLabel(source: string, t: WorkProductsT): string {
+  switch (source) {
+    case "manual_explicit":
+      return t(($) => $.relations.source_manual);
+    case "task_explicit":
+      return t(($) => $.relations.source_task);
+    case "execution_branch_discovery":
+      return t(($) => $.relations.source_branch);
+    case "provider_discovery":
+      return t(($) => $.relations.source_provider);
+    default:
+      return source;
+  }
+}
+
+function PullRequestDetails({ pr }: { pr: GitHubPullRequest }) {
   const { t } = useT("issues");
   const timeAgo = useTimeAgo();
 
