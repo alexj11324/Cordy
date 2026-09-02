@@ -49,6 +49,7 @@
     "security-model",
     "environment-variables",
     "auth-setup",
+    "self-host-messaging",
     "troubleshooting",
     "---Reference---",
     "cli",

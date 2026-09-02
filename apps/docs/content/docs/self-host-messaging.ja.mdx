@@ -1,0 +1,84 @@
+---
+title: セルフホストメッセージング
+description: セルフホスト環境で Slack メッセージングを運用する方法。BYO Socket Mode、マネージド OAuth の注意点、localhost の落とし穴、認証情報の扱いを説明します。
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+セルフホスト環境の Slack 接続は、bring-your-own-app（BYO）の Socket Mode で行います。エージェントごとに専用の Slack app を用意し、Patchbay は接続済み app ごとに Socket Mode 接続を開きます。Patchbay Cloud では追加設定は不要です。セルフホスト環境では、token 暗号化キーとメンバーが到達できる公開 URL を先に設定してください。
+
+このページは [Slack Bot 連携](/slack-bot-integration) と [チャット連携](/channels) のセルフホスト用補足です。コンテナの構築とアップグレードは [セルフホストクイックスタート](/self-host-quickstart)、変数の全体像は [環境変数](/environment-variables) を参照してください。
+
+## セルフホストの Slack の仕組み
+
+- 1 つの Slack app は 1 つの Patchbay エージェントに対応します。複数のエージェントを接続する場合は、エージェントごとに app を作成します。
+- Bot は Socket Mode で Slack に外向き接続するため、BYO インストールに公開 Request URL や OAuth Redirect URL は不要です。
+- 各インストールは専用の App-level Token（`xapp-`）を持ち、その token だけで認証する専用 Socket Mode 接続を使います。Bot token（`xoxb-`）は `chat.postMessage` などの外向き Web API 呼び出し専用です。
+- 受信イベントは実際の Slack app id（`config->>'app_id'` をイベントの `api_app_id` と照合）でルーティングされるため、複数の BYO app、つまり複数のエージェントが 1 つの Slack workspace に共存できます。
+
+管理 API は次の 4 つだけです。
+
+- `GET /api/workspaces/{id}/slack/installations` — インストール一覧（メンバーも閲覧可）。
+- `POST /api/workspaces/{id}/slack/install/byo?agent_id=…` — BYO app の接続（owner / admin）。ボディ: `{ "bot_token": "xoxb-…", "app_token": "xapp-…" }`。
+- `DELETE /api/workspaces/{id}/slack/installations/{installationId}` — 接続解除（owner / admin）。行は監査用に残り、再接続で active に戻ります。
+- `POST /api/slack/binding/redeem` —「アカウントを連携」リンクから、Slack user id をサインイン中の Patchbay ユーザーに紐付けます。
+
+ホスト専用（`PATCHBAY_SLACK_CLIENT_ID/_SECRET` なしでは動作しません）：
+
+- `POST /api/workspaces/{id}/slack/install/managed` — マネージド OAuth 認可を開始します（owner/admin）。Body: `{ "redirect_url": "…" }`。
+- `GET /api/integrations/slack/oauth/callback` — Slack リダイレクト用の公開エンドポイント。使い捨て state を消費して code を交換し、紐付け済み redirect URL へ 302 します。
+
+## 1. BYO Socket Mode のデプロイ
+
+1. `PATCHBAY_SLACK_SECRET_KEY` を設定し（[認証情報の扱い](#4-認証情報の扱い) を参照）、バックエンドを再起動します。これがないと Slack 連携全体が無効になります。
+2. [Slack Bot 連携](/slack-bot-integration) の manifest からエージェントごとに Slack app を作成し、Slack workspace にインストールして、`xoxb-` Bot token と `xapp-` App-level Token（`connections:write` scope）を取得します。
+3. Patchbay で対象エージェントの**連携**ページを開いて 2 つの token を貼り付けるか、`POST .../slack/install/byo?agent_id=…` を直接呼びます。
+4. Patchbay は保存前にペアを検証します。
+   - Bot token は `xoxb-` で始まり、ライブの `auth.test` に通ること（team id と Bot user id もここで取得します）。
+   - App-level Token は `xapp-` で始まり、app id をパースでき、ライブの `apps.connections.open` に通ること。イベントを永久に受信できない token は保存されません。
+   - 2 つの token が同じ Slack app のものであること（`auth.test` が返した bot id で `bots.info` を引き、突き合わせます）。不一致のペアは壊れたまま接続せず `400` で拒否されます。
+5. Bot はエージェントごとに 1 つです。インストール行は workspace + エージェントで管理され、同じエージェントの再接続はその行を上書きします。他のエージェントや workspace に接続済みの Slack app は `409` で拒否されます。元の接続を先に解除してください（所属エージェントがアーカイブ済みの場合は、復元するか、その Bot を解除します）。
+
+## 2. マネージド OAuth コールバックの注意点
+
+Go バックエンドには BYO とは別にホスト型（マネージド）OAuth サービスが同梱されています（`server/internal/integrations/slack/managed_oauth.go`）。使い捨て・10 分有効・ハッシュ保存のインストール state を発行し（DB に届くのは state ハッシュのみ）、コールバック code を `https://slack.com/api/oauth.v2.access` で交換します。インストーラーが開くのは `https://slack.com/oauth/v2/authorize` で、scope は `ManagedSlackBotScopes`（`app_mentions:read,channels:history,chat:write,commands,files:read,groups:history,im:history,mpim:history,reactions:write,users:read`）です。マネージドのクライアント認証情報がない場合、交換は中途半端に動かず明示的に失敗します。
+
+セルフホスト環境は BYO のまま使うため、OAuth コールバックの設定は不要です。Go サーバーのマネージド begin / callback ルートは、ホスト用クライアント認証情報（`PATCHBAY_SLACK_CLIENT_ID/_SECRET`）なしでは動作しません。BYO インストール自体に OAuth code 交換はありません。セルフホスト用インストールの app manifest に Slack redirect URL を追加しないでください。Socket Mode には不要です。
+
+## 3. localhost バインドの警告
+
+<Callout type="warning">
+Docker Compose はポート `3000` と `8080` を `127.0.0.1` にだけバインドします。公開のために `0.0.0.0` へ切り替えないでください。代わりに HTTPS 対応のリバースプロキシ（例: Caddy）を前面に置き、`127.0.0.1:3000` / `127.0.0.1:8080` へ転送します。[セルフホストクイックスタート](/self-host-quickstart#3-choose-how-to-access) を参照してください。
+</Callout>
+
+メッセージングのリンクが動くかは 2 つの URL 設定で決まります。
+
+- アカウント連携リンクは `PATCHBAY_APP_URL` を使い、未設定時は `FRONTEND_ORIGIN` にフォールバックします。`PATCHBAY_PUBLIC_URL`（バックエンド / API 用 URL）は使いません。全メンバーが到達できる Patchbay のアドレスを指定し、loopback アドレスは避けてください。
+- 自ホスト環境では `FRONTEND_ORIGIN` を公開 app オリジンに必ず設定します。招待リンク、cookie 属性、WebSocket オリジン判定はすべてここから導出されます。
+
+連携リンクや `/api/config` の `daemon_server_url` がまだ `localhost` の場合、`.env` にローカル初期値が残っています。`FRONTEND_ORIGIN` と `PATCHBAY_APP_URL` を公開 URL に明示設定し、`docker compose -f docker-compose.selfhost.yml up -d` でコンテナを作り直します（`restart` だけでは `.env` は再読込されません）。
+
+## 4. 認証情報の扱い
+
+- `PATCHBAY_SLACK_SECRET_KEY` は Slack 用の単一のデプロイ全体キーで、base64 エンコードされた 32 バイトです。
+
+  ```dotenv
+  PATCHBAY_SLACK_SECRET_KEY=<base64-encoded 32-byte key>
+  ```
+
+  ```bash
+  openssl rand -base64 32
+  ```
+
+  インストールサービスは非 null の暗号化 box を必須とし、開発環境でも平文保存を拒否します。このキーが連携全体の前提条件です。なければ Slack は一切動きません。
+- 2 つの token はこのキーで暗号化され、インストール設定に base64 暗号文として保存されます（`xoxb-` 外向き token は `bot_token_encrypted`、`xapp-` Socket Mode token は `app_token_encrypted`）。平文で保存されることはありません。暗号化済み Bot token は API レスポンスに意図的に含めず、表示用の安全な項目（`app_id`、`team_id`、`bot_user_id`）だけを返します。
+- 貼り付けた token は認証情報として扱います。タスク、コメント、リポジトリに書かないでください。サーバーは検証前に両方の値の前後空白を取り除きます。
+- キーは長期保管してください。変更や紛失があると保存済み token を復号できなくなり、すべての Bot を再接続する必要があります。
+- アカウント連携 token は使い捨てで 15 分後に期限切れです。引き換え時は token 内の身元ではなく、セッションの Patchbay ユーザーに Slack user id を紐付けます。引き換えできるのは workspace のメンバーのみです。Bot に再びメッセージを送ると新しいリンクが発行されます。
+
+## 次のステップ
+
+- [Slack Bot 連携](/slack-bot-integration) — Slack app の作成と token の貼り付け。
+- [チャット連携](/channels) — セッション分離とアカウント連携の仕組み。
+- [環境変数](/environment-variables) — サーバーの設定リファレンス全体。
+- [セルフホストクイックスタート](/self-host-quickstart) — コンテナ構築とリモートアクセス。
