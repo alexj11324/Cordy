@@ -863,6 +863,24 @@
     "visible_toggle": "ビューバーに表示",
     "more_label": "その他のビュー"
   },
+  "agent_thread": {
+    "task_title": "{{name}} Agent スレッド",
+    "task_description": "実行履歴とツールイベントは、この対話型 Agent スレッドに残ります。",
+    "task_initial_prompt": "このタスクに取り組んでください。",
+    "task_load_failed": "この Agent スレッドは利用できません。",
+    "task_continue_failed": "Agent スレッドを続行できませんでした",
+    "cancel_failed": "作業をキャンセルできませんでした",
+    "reason_provider_session_retired": "Provider セッションは削除または無効化されており、復元できません。",
+    "reason_provider_session_missing": "Provider セッションのデータがないため、この Agent スレッドを安全に続行できません。",
+    "reason_fresh_session_required": "この実行は新しい Provider セッションで開始されたため、以前のスレッドを続行できません。",
+    "reason_provider_session_not_established": "この実行の Provider セッションはまだ確立されていません。",
+    "reason_agent_archived": "この Agent はアーカイブされているため、スレッドを続行できません。",
+    "reason_agent_runtime_unbound": "この Agent はランタイムに接続されていないため、スレッドを続行できません。",
+    "reason_agent_runtime_rebound": "この Agent は別のランタイムに再接続されているため、安全に続行できません。",
+    "reason_agent_runtime_missing": "この Agent のランタイムは存在しないため、スレッドを続行できません。",
+    "reason_agent_thread_invoke_forbidden": "この Agent スレッドは読めますが、続行する権限がありません。",
+    "reason_agent_thread_depth_limit": "この Agent スレッドは続行回数の上限に達しました。"
+  },
   "plugins": {
     "panels": "Plugins",
     "surface_failed": "{{name}} のインターフェースを読み込めませんでした。",

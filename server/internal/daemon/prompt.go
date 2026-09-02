@@ -234,6 +234,9 @@ func BuildPrompt(task Task, provider string, options ...PromptOption) string {
 }
 
 func buildPromptBody(task Task, provider string) string {
+	if task.AgentThreadMessage != "" {
+		return buildAgentThreadPrompt(task)
+	}
 	if task.ChatSessionID != "" {
 		return buildChatPrompt(task)
 	}
@@ -258,6 +261,15 @@ func buildPromptBody(task Task, provider string) string {
 	}
 	fmt.Fprintf(&b, "Start by running `patchbay issue get %s --output json` to understand your task, then complete it.\n", task.IssueID)
 	fmt.Fprintf(&b, "For comment history, follow the rule in your runtime workflow file (assignment-triggered tasks treat the read as mandatory). Scan the threads first with `patchbay issue comment list %s --roots-only --summary --compact --output json`, then expand only what matters with `--thread <thread-id> --tail 30`. For `--since` incremental polling, pagination, and folding, see `patchbay issue comment list --help`.\n", task.IssueID)
+	return b.String()
+}
+
+func buildAgentThreadPrompt(task Task) string {
+	var b strings.Builder
+	b.WriteString("Continue the existing Patchbay task conversation in the same provider session.\n\n")
+	b.WriteString("The member's next turn is quoted below. Treat it as task-scoped user input, not as a new Chat conversation:\n\n")
+	fmt.Fprintf(&b, "> %s\n\n", task.AgentThreadMessage)
+	fmt.Fprintf(&b, "Continue working on issue %s and report the result through the normal task workflow.\n", task.IssueID)
 	return b.String()
 }
 

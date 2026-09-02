@@ -54,7 +54,9 @@ export function useTriggerText(task: AgentTask): string {
 export function useStatusLabel(status: AgentTask["status"]): string {
   const { t } = useT("issues");
   switch (status) {
-    case "queued": return t(($) => $.execution_log.status_queued);
+    case "queued":
+    case "deferred":
+      return t(($) => $.execution_log.status_queued);
     case "dispatched": return t(($) => $.execution_log.status_dispatched);
     case "waiting_local_directory":
       return t(($) => $.execution_log.status_waiting_local_directory);

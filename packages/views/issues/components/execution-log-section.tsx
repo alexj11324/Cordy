@@ -16,7 +16,7 @@ import {
 } from "@patchbay/ui/components/ui/tooltip";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { formatDuration } from "../../agents/components/agent-activity-hover-content";
-import { TranscriptButton } from "../../common/task-transcript";
+import { AgentThreadButton } from "../../agent-thread";
 import { cancelReasonLabel, failureReasonLabel } from "../../agents/components/tabs/task-failure";
 import { useT } from "../../i18n";
 import {
@@ -92,6 +92,7 @@ export function ExecutionLogSection({ issueId, identifier }: ExecutionLogSection
       tasks.filter(
         (t) =>
           t.status === "queued" ||
+          t.status === "deferred" ||
           t.status === "dispatched" ||
           // Daemon-parked task on a busy local_directory — still active
           // (waiting on a path lock), not terminal. Surfacing it here is
@@ -288,6 +289,7 @@ export function IssueUsageTotal({
 
 const STATUS_TONE: Record<AgentTask["status"], string> = {
   queued: "text-warning",
+  deferred: "text-warning",
   dispatched: "text-warning",
   // Same tone as queued/dispatched — visually "stopped" so users see the
   // task is parked, but distinguished by the status label.
@@ -339,7 +341,7 @@ export function ActiveTaskRow({
   // Transcript only meaningful once messages exist — pure-queued and
   // waiting_local_directory tasks haven't streamed any agent output yet.
   const showTranscript =
-    task.status !== "queued" && task.status !== "waiting_local_directory";
+    task.status !== "queued" && task.status !== "deferred" && task.status !== "waiting_local_directory";
 
   const handleCancel = async () => {
     if (cancelling) return;
@@ -380,10 +382,8 @@ export function ActiveTaskRow({
       </RowStatus>
       <RowActions>
         {showTranscript && (
-          <TranscriptButton
+          <AgentThreadButton
             task={task}
-            agentName=""
-            isLive={task.status === "running"}
             title={t(($) => $.execution_log.transcript_tooltip)}
             onOpenChange={onTranscriptOpenChange}
           />
@@ -519,7 +519,7 @@ function PastRow({ task, issueId }: { task: AgentTask; issueId: string }) {
         )}
       </RowStatus>
       <RowActions>
-        <TranscriptButton task={task} agentName="" title={t(($) => $.execution_log.transcript_tooltip)} />
+        <AgentThreadButton task={task} title={t(($) => $.execution_log.transcript_tooltip)} />
         {canRetry && (
           <Tooltip>
             <TooltipTrigger
@@ -589,6 +589,7 @@ function TriggerText({ text }: { text: string }) {
 function supportsCommentCoverage(status: AgentTask["status"]): boolean {
   switch (status) {
     case "queued":
+    case "deferred":
     case "dispatched":
     case "waiting_local_directory":
     case "running":

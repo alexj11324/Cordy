@@ -1,5 +1,11 @@
 export type { Issue, IssueStatus, IssuePriority, IssueAssigneeType, IssueMetadata, IssueMetadataValue, IssueReaction, SourceContextAttachment, SourceContextAuthor, SourceContextIssueSnapshot, SourceContextCommentSnapshot, SourceContextSnapshot, SourceContextLimitUsage, SourceContextPreview, SourceContextAuthorState, IssueSourceContext } from "./issue";
 export type {
+  AgentThreadAvailability,
+  AgentThreadResponse,
+  ContinueAgentThreadRequest,
+  ContinueAgentThreadResponse,
+} from "./agent-thread";
+export type {
   IssueStatusCategory,
   IssueStatusEntry,
   ListIssueStatusesResponse,

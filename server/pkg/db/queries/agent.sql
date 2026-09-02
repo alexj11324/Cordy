@@ -803,6 +803,107 @@ RETURNING *;
 SELECT * FROM agent_task_queue
 WHERE id = $1;
 
+-- name: LockAgentThreadTask :one
+-- Serializes continuations for one persisted provider thread. Owner rows are
+-- locked by lock_task_owner_rows before the task row to match claim ordering.
+SELECT * FROM agent_task_queue
+WHERE id = $1
+  AND lock_task_owner_rows(agent_id, issue_id, runtime_id)
+FOR UPDATE;
+
+-- name: ListAgentThreadTasks :many
+-- A task-level Agent conversation is a chain of normal task rows linked only
+-- through private context. Keep resource, Agent, runtime and provider session
+-- equal at every edge so a malformed child cannot cross a tenancy boundary.
+WITH RECURSIVE ancestors(id, depth) AS (
+    SELECT @task_id::uuid, 0
+    UNION ALL
+    SELECT parent.id, child.depth + 1
+    FROM ancestors child
+    JOIN agent_task_queue child_row ON child_row.id = child.id
+    JOIN agent_task_queue parent
+      ON parent.id::text = child_row.context->>'agent_thread_parent_task_id'
+    WHERE child.depth < 100
+      AND parent.agent_id = child_row.agent_id
+      AND parent.issue_id IS NOT DISTINCT FROM child_row.issue_id
+      AND parent.runtime_id = child_row.runtime_id
+      AND parent.session_id IS NOT DISTINCT FROM child_row.session_id
+), root AS (
+    SELECT id FROM ancestors ORDER BY depth DESC LIMIT 1
+), thread(id, depth) AS (
+    SELECT root.id, 0 FROM root
+    UNION ALL
+    SELECT child.id, thread.depth + 1
+    FROM agent_task_queue child
+    JOIN thread ON child.context->>'agent_thread_parent_task_id' = thread.id::text
+    JOIN agent_task_queue parent ON parent.id = thread.id
+    WHERE thread.depth < 100
+      AND child.agent_id = parent.agent_id
+      AND child.issue_id IS NOT DISTINCT FROM parent.issue_id
+      AND child.runtime_id = parent.runtime_id
+      AND child.session_id IS NOT DISTINCT FROM parent.session_id
+)
+SELECT task.*
+FROM agent_task_queue task
+JOIN thread ON thread.id = task.id
+ORDER BY task.created_at ASC, task.id ASC;
+
+-- name: GetAgentThreadContinuationByIdempotency :one
+SELECT candidate.*
+FROM agent_task_queue candidate
+JOIN agent_task_queue parent ON parent.id = @parent_task_id
+WHERE candidate.context->>'agent_thread_idempotency_key' = @idempotency_key::text
+  AND candidate.context->>'agent_thread_parent_task_id' IS NOT NULL
+  AND candidate.agent_id = parent.agent_id
+  AND candidate.issue_id IS NOT DISTINCT FROM parent.issue_id
+  AND candidate.runtime_id = parent.runtime_id
+  AND candidate.session_id IS NOT DISTINCT FROM parent.session_id
+ORDER BY candidate.created_at DESC
+LIMIT 1
+FOR UPDATE OF candidate;
+
+-- name: CreateAgentThreadContinuation :one
+-- This is deliberately not a Chat task. It remains an issue task in the same
+-- provider session and main execution lane; only the full user turn and
+-- idempotency receipt are added to private context.
+INSERT INTO agent_task_queue (
+    id, agent_id, runtime_id, issue_id, status, priority,
+    trigger_summary, context, session_id, work_dir,
+    attempt, max_attempts, force_fresh_session, is_leader_task, team_id,
+    originator_user_id, accountable_user_id, runtime_mcp_overlay,
+    runtime_connected_apps, originator_source, delegated_from_task_id,
+    rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, fire_at
+)
+SELECT
+    @id, parent.agent_id, parent.runtime_id, parent.issue_id, 'deferred', parent.priority,
+    LEFT(@content::text, 200),
+    (COALESCE(parent.context, '{}'::jsonb)
+        - 'agent_thread_parent_task_id'
+        - 'agent_thread_message'
+        - 'agent_thread_idempotency_key'
+        - 'side_chat_parent_task_id'
+        - 'side_chat_root_comment_id'
+        - 'channel_issue_media_pending') || jsonb_build_object(
+            'agent_thread_parent_task_id', parent.id::text,
+            'agent_thread_message', @content::text,
+            'agent_thread_idempotency_key', @idempotency_key::text
+        ),
+    parent.session_id, parent.work_dir,
+    1, parent.max_attempts, FALSE, parent.is_leader_task, parent.team_id,
+    @requester_user_id, @requester_user_id, @runtime_mcp_overlay,
+    @runtime_connected_apps, 'direct_human', parent.delegated_from_task_id,
+    parent.rule_version_id, 'agent_thread_continuation', parent.id, now()
+FROM agent_task_queue parent
+WHERE parent.id = @parent_task_id
+  AND parent.issue_id IS NOT NULL
+  AND parent.chat_session_id IS NULL
+  AND parent.automation_run_id IS NULL
+  AND parent.session_id IS NOT NULL
+  AND parent.execution_lane_key =
+      'issue:' || parent.issue_id::text || ':agent:' || parent.agent_id::text || ':main'
+  AND lock_task_owner_rows(parent.agent_id, parent.issue_id, parent.runtime_id)
+RETURNING *;
+
 -- name: GetAgentTaskForDelegatedFailureUpdate :one
 -- Serializes the idempotent delegated-failure recovery signal for one failed
 -- task. FailTask and the stale-task sweepers can converge on the same row; the

@@ -31,6 +31,9 @@ import type {
   AgentEnvResponse,
   UpdateAgentEnvRequest,
   AgentTask,
+  AgentThreadResponse,
+  ContinueAgentThreadRequest,
+  ContinueAgentThreadResponse,
   AgentActivityBucket,
   AgentRunCount,
   WorkspaceWorkingAgent,
@@ -260,6 +263,8 @@ import { getCurrentSlug } from "../platform/workspace-storage";
 import { parseWithFallback } from "./schema";
 import {
   AgentTaskListSchema,
+  AgentThreadResponseSchema,
+  ContinueAgentThreadResponseSchema,
   AttachmentResponseSchema,
   CancelTaskResponseSchema,
   ChatDraftRestoresResponseSchema,
@@ -2531,6 +2536,40 @@ export class ApiClient {
 
   async listTaskMessages(taskId: string): Promise<TaskMessagePayload[]> {
     return this.fetch(`/api/tasks/${taskId}/messages`);
+  }
+
+  async getAgentThread(taskId: string): Promise<AgentThreadResponse> {
+    const raw = await this.fetch<unknown>(`/api/tasks/${taskId}/agent-thread`);
+    const parsed = parseWithFallback<AgentThreadResponse | null>(
+      raw,
+      AgentThreadResponseSchema,
+      null,
+      { endpoint: "GET /api/tasks/:id/agent-thread" },
+    );
+    if (!parsed) throw new Error("Invalid Agent thread response");
+    return parsed;
+  }
+
+  async continueAgentThread(
+    taskId: string,
+    request: ContinueAgentThreadRequest,
+  ): Promise<ContinueAgentThreadResponse> {
+    const raw = await this.fetch<unknown>(
+      `/api/tasks/${taskId}/agent-thread/continue`,
+      {
+        method: "POST",
+        headers: { "Idempotency-Key": request.idempotency_key },
+        body: JSON.stringify({ content: request.content }),
+      },
+    );
+    const parsed = parseWithFallback<ContinueAgentThreadResponse | null>(
+      raw,
+      ContinueAgentThreadResponseSchema,
+      null,
+      { endpoint: "POST /api/tasks/:id/agent-thread/continue" },
+    );
+    if (!parsed) throw new Error("Invalid Agent thread continuation response");
+    return parsed;
   }
 
   async listTasksByIssue(issueId: string): Promise<AgentTask[]> {

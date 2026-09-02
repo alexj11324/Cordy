@@ -233,6 +233,42 @@ func (q *Queries) ListTaskMessages(ctx context.Context, taskID pgtype.UUID) ([]T
 	return items, nil
 }
 
+const listTaskMessagesForTasks = `-- name: ListTaskMessagesForTasks :many
+SELECT id, task_id, seq, type, tool, content, input, output, created_at FROM task_message
+WHERE task_id = ANY($1::uuid[])
+ORDER BY created_at ASC, task_id ASC, seq ASC
+`
+
+func (q *Queries) ListTaskMessagesForTasks(ctx context.Context, taskIds []pgtype.UUID) ([]TaskMessage, error) {
+	rows, err := q.db.Query(ctx, listTaskMessagesForTasks, taskIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TaskMessage{}
+	for rows.Next() {
+		var i TaskMessage
+		if err := rows.Scan(
+			&i.ID,
+			&i.TaskID,
+			&i.Seq,
+			&i.Type,
+			&i.Tool,
+			&i.Content,
+			&i.Input,
+			&i.Output,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTaskMessagesSince = `-- name: ListTaskMessagesSince :many
 SELECT id, task_id, seq, type, tool, content, input, output, created_at FROM task_message
 WHERE task_id = $1 AND seq > $2

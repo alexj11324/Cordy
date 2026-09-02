@@ -2505,6 +2505,133 @@ func (q *Queries) CreateAgentTask(ctx context.Context, arg CreateAgentTaskParams
 	return i, err
 }
 
+const createAgentThreadContinuation = `-- name: CreateAgentThreadContinuation :one
+INSERT INTO agent_task_queue (
+    id, agent_id, runtime_id, issue_id, status, priority,
+    trigger_summary, context, session_id, work_dir,
+    attempt, max_attempts, force_fresh_session, is_leader_task, team_id,
+    originator_user_id, accountable_user_id, runtime_mcp_overlay,
+    runtime_connected_apps, originator_source, delegated_from_task_id,
+    rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, fire_at
+)
+SELECT
+    $1, parent.agent_id, parent.runtime_id, parent.issue_id, 'deferred', parent.priority,
+    LEFT($2::text, 200),
+    (COALESCE(parent.context, '{}'::jsonb)
+        - 'agent_thread_parent_task_id'
+        - 'agent_thread_message'
+        - 'agent_thread_idempotency_key'
+        - 'side_chat_parent_task_id'
+        - 'side_chat_root_comment_id'
+        - 'channel_issue_media_pending') || jsonb_build_object(
+            'agent_thread_parent_task_id', parent.id::text,
+            'agent_thread_message', $2::text,
+            'agent_thread_idempotency_key', $3::text
+        ),
+    parent.session_id, parent.work_dir,
+    1, parent.max_attempts, FALSE, parent.is_leader_task, parent.team_id,
+    $4, $4, $5,
+    $6, 'direct_human', parent.delegated_from_task_id,
+    parent.rule_version_id, 'agent_thread_continuation', parent.id, now()
+FROM agent_task_queue parent
+WHERE parent.id = $7
+  AND parent.issue_id IS NOT NULL
+  AND parent.chat_session_id IS NULL
+  AND parent.automation_run_id IS NULL
+  AND parent.session_id IS NOT NULL
+  AND parent.execution_lane_key =
+      'issue:' || parent.issue_id::text || ':agent:' || parent.agent_id::text || ':main'
+  AND lock_task_owner_rows(parent.agent_id, parent.issue_id, parent.runtime_id)
+RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, automation_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, team_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir, channel_context_revision, execution_lane_key, model_id, policy_revision, failover_reason
+`
+
+type CreateAgentThreadContinuationParams struct {
+	ID                   pgtype.UUID `json:"id"`
+	Content              string      `json:"content"`
+	IdempotencyKey       string      `json:"idempotency_key"`
+	RequesterUserID      pgtype.UUID `json:"requester_user_id"`
+	RuntimeMcpOverlay    []byte      `json:"runtime_mcp_overlay"`
+	RuntimeConnectedApps []byte      `json:"runtime_connected_apps"`
+	ParentTaskID         pgtype.UUID `json:"parent_task_id"`
+}
+
+// This is deliberately not a Chat task. It remains an issue task in the same
+// provider session and main execution lane; only the full user turn and
+// idempotency receipt are added to private context.
+func (q *Queries) CreateAgentThreadContinuation(ctx context.Context, arg CreateAgentThreadContinuationParams) (AgentTaskQueue, error) {
+	row := q.db.QueryRow(ctx, createAgentThreadContinuation,
+		arg.ID,
+		arg.Content,
+		arg.IdempotencyKey,
+		arg.RequesterUserID,
+		arg.RuntimeMcpOverlay,
+		arg.RuntimeConnectedApps,
+		arg.ParentTaskID,
+	)
+	var i AgentTaskQueue
+	err := row.Scan(
+		&i.ID,
+		&i.AgentID,
+		&i.IssueID,
+		&i.Status,
+		&i.Priority,
+		&i.DispatchedAt,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.Result,
+		&i.Error,
+		&i.CreatedAt,
+		&i.Context,
+		&i.RuntimeID,
+		&i.SessionID,
+		&i.WorkDir,
+		&i.TriggerCommentID,
+		&i.ChatSessionID,
+		&i.AutomationRunID,
+		&i.Attempt,
+		&i.MaxAttempts,
+		&i.ParentTaskID,
+		&i.FailureReason,
+		&i.TriggerSummary,
+		&i.ForceFreshSession,
+		&i.IsLeaderTask,
+		&i.WaitReason,
+		&i.InitiatorUserID,
+		&i.HandoffNote,
+		&i.PrepareLeaseExpiresAt,
+		&i.TeamID,
+		&i.RuntimeMcpOverlay,
+		&i.EscalationForTaskID,
+		&i.FireAt,
+		&i.OriginatorUserID,
+		&i.RuntimeConnectedApps,
+		&i.CoalescedCommentIds,
+		&i.DeliveredCommentIds,
+		&i.ChatInputTaskID,
+		&i.ChatFinalizeDeferredAt,
+		&i.OriginatorSource,
+		&i.DelegatedFromTaskID,
+		&i.RetryOfTaskID,
+		&i.RerunOfTaskID,
+		&i.RuleVersionID,
+		&i.TriggerEvidenceKind,
+		&i.TriggerEvidenceRefID,
+		&i.AccountableUserID,
+		&i.SessionRolloutMissing,
+		&i.RetiredSessionID,
+		&i.QuickActionsDisabled,
+		&i.RegenerateQuickActionsFor,
+		&i.BranchName,
+		&i.DurableWorkDir,
+		&i.ChannelContextRevision,
+		&i.ExecutionLaneKey,
+		&i.ModelID,
+		&i.PolicyRevision,
+		&i.FailoverReason,
+	)
+	return i, err
+}
+
 const createCoordinationAgentTask = `-- name: CreateCoordinationAgentTask :one
 INSERT INTO agent_task_queue (
     agent_id, runtime_id, issue_id, status, priority, context, handoff_note,
@@ -4789,6 +4916,92 @@ func (q *Queries) GetAgentTaskInWorkspace(ctx context.Context, arg GetAgentTaskI
 	return i, err
 }
 
+const getAgentThreadContinuationByIdempotency = `-- name: GetAgentThreadContinuationByIdempotency :one
+SELECT candidate.id, candidate.agent_id, candidate.issue_id, candidate.status, candidate.priority, candidate.dispatched_at, candidate.started_at, candidate.completed_at, candidate.result, candidate.error, candidate.created_at, candidate.context, candidate.runtime_id, candidate.session_id, candidate.work_dir, candidate.trigger_comment_id, candidate.chat_session_id, candidate.automation_run_id, candidate.attempt, candidate.max_attempts, candidate.parent_task_id, candidate.failure_reason, candidate.trigger_summary, candidate.force_fresh_session, candidate.is_leader_task, candidate.wait_reason, candidate.initiator_user_id, candidate.handoff_note, candidate.prepare_lease_expires_at, candidate.team_id, candidate.runtime_mcp_overlay, candidate.escalation_for_task_id, candidate.fire_at, candidate.originator_user_id, candidate.runtime_connected_apps, candidate.coalesced_comment_ids, candidate.delivered_comment_ids, candidate.chat_input_task_id, candidate.chat_finalize_deferred_at, candidate.originator_source, candidate.delegated_from_task_id, candidate.retry_of_task_id, candidate.rerun_of_task_id, candidate.rule_version_id, candidate.trigger_evidence_kind, candidate.trigger_evidence_ref_id, candidate.accountable_user_id, candidate.session_rollout_missing, candidate.retired_session_id, candidate.quick_actions_disabled, candidate.regenerate_quick_actions_for, candidate.branch_name, candidate.durable_work_dir, candidate.channel_context_revision, candidate.execution_lane_key, candidate.model_id, candidate.policy_revision, candidate.failover_reason
+FROM agent_task_queue candidate
+JOIN agent_task_queue parent ON parent.id = $1
+WHERE candidate.context->>'agent_thread_idempotency_key' = $2::text
+  AND candidate.context->>'agent_thread_parent_task_id' IS NOT NULL
+  AND candidate.agent_id = parent.agent_id
+  AND candidate.issue_id IS NOT DISTINCT FROM parent.issue_id
+  AND candidate.runtime_id = parent.runtime_id
+  AND candidate.session_id IS NOT DISTINCT FROM parent.session_id
+ORDER BY candidate.created_at DESC
+LIMIT 1
+FOR UPDATE OF candidate
+`
+
+type GetAgentThreadContinuationByIdempotencyParams struct {
+	ParentTaskID   pgtype.UUID `json:"parent_task_id"`
+	IdempotencyKey string      `json:"idempotency_key"`
+}
+
+func (q *Queries) GetAgentThreadContinuationByIdempotency(ctx context.Context, arg GetAgentThreadContinuationByIdempotencyParams) (AgentTaskQueue, error) {
+	row := q.db.QueryRow(ctx, getAgentThreadContinuationByIdempotency, arg.ParentTaskID, arg.IdempotencyKey)
+	var i AgentTaskQueue
+	err := row.Scan(
+		&i.ID,
+		&i.AgentID,
+		&i.IssueID,
+		&i.Status,
+		&i.Priority,
+		&i.DispatchedAt,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.Result,
+		&i.Error,
+		&i.CreatedAt,
+		&i.Context,
+		&i.RuntimeID,
+		&i.SessionID,
+		&i.WorkDir,
+		&i.TriggerCommentID,
+		&i.ChatSessionID,
+		&i.AutomationRunID,
+		&i.Attempt,
+		&i.MaxAttempts,
+		&i.ParentTaskID,
+		&i.FailureReason,
+		&i.TriggerSummary,
+		&i.ForceFreshSession,
+		&i.IsLeaderTask,
+		&i.WaitReason,
+		&i.InitiatorUserID,
+		&i.HandoffNote,
+		&i.PrepareLeaseExpiresAt,
+		&i.TeamID,
+		&i.RuntimeMcpOverlay,
+		&i.EscalationForTaskID,
+		&i.FireAt,
+		&i.OriginatorUserID,
+		&i.RuntimeConnectedApps,
+		&i.CoalescedCommentIds,
+		&i.DeliveredCommentIds,
+		&i.ChatInputTaskID,
+		&i.ChatFinalizeDeferredAt,
+		&i.OriginatorSource,
+		&i.DelegatedFromTaskID,
+		&i.RetryOfTaskID,
+		&i.RerunOfTaskID,
+		&i.RuleVersionID,
+		&i.TriggerEvidenceKind,
+		&i.TriggerEvidenceRefID,
+		&i.AccountableUserID,
+		&i.SessionRolloutMissing,
+		&i.RetiredSessionID,
+		&i.QuickActionsDisabled,
+		&i.RegenerateQuickActionsFor,
+		&i.BranchName,
+		&i.DurableWorkDir,
+		&i.ChannelContextRevision,
+		&i.ExecutionLaneKey,
+		&i.ModelID,
+		&i.PolicyRevision,
+		&i.FailoverReason,
+	)
+	return i, err
+}
+
 const getLastTaskSession = `-- name: GetLastTaskSession :one
 WITH retired_sessions AS (
     SELECT DISTINCT r.retired_session_id AS session_id
@@ -5706,6 +5919,123 @@ ORDER BY created_at DESC
 
 func (q *Queries) ListAgentTasks(ctx context.Context, agentID pgtype.UUID) ([]AgentTaskQueue, error) {
 	rows, err := q.db.Query(ctx, listAgentTasks, agentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AgentTaskQueue{}
+	for rows.Next() {
+		var i AgentTaskQueue
+		if err := rows.Scan(
+			&i.ID,
+			&i.AgentID,
+			&i.IssueID,
+			&i.Status,
+			&i.Priority,
+			&i.DispatchedAt,
+			&i.StartedAt,
+			&i.CompletedAt,
+			&i.Result,
+			&i.Error,
+			&i.CreatedAt,
+			&i.Context,
+			&i.RuntimeID,
+			&i.SessionID,
+			&i.WorkDir,
+			&i.TriggerCommentID,
+			&i.ChatSessionID,
+			&i.AutomationRunID,
+			&i.Attempt,
+			&i.MaxAttempts,
+			&i.ParentTaskID,
+			&i.FailureReason,
+			&i.TriggerSummary,
+			&i.ForceFreshSession,
+			&i.IsLeaderTask,
+			&i.WaitReason,
+			&i.InitiatorUserID,
+			&i.HandoffNote,
+			&i.PrepareLeaseExpiresAt,
+			&i.TeamID,
+			&i.RuntimeMcpOverlay,
+			&i.EscalationForTaskID,
+			&i.FireAt,
+			&i.OriginatorUserID,
+			&i.RuntimeConnectedApps,
+			&i.CoalescedCommentIds,
+			&i.DeliveredCommentIds,
+			&i.ChatInputTaskID,
+			&i.ChatFinalizeDeferredAt,
+			&i.OriginatorSource,
+			&i.DelegatedFromTaskID,
+			&i.RetryOfTaskID,
+			&i.RerunOfTaskID,
+			&i.RuleVersionID,
+			&i.TriggerEvidenceKind,
+			&i.TriggerEvidenceRefID,
+			&i.AccountableUserID,
+			&i.SessionRolloutMissing,
+			&i.RetiredSessionID,
+			&i.QuickActionsDisabled,
+			&i.RegenerateQuickActionsFor,
+			&i.BranchName,
+			&i.DurableWorkDir,
+			&i.ChannelContextRevision,
+			&i.ExecutionLaneKey,
+			&i.ModelID,
+			&i.PolicyRevision,
+			&i.FailoverReason,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAgentThreadTasks = `-- name: ListAgentThreadTasks :many
+WITH RECURSIVE ancestors(id, depth) AS (
+    SELECT $1::uuid, 0
+    UNION ALL
+    SELECT parent.id, child.depth + 1
+    FROM ancestors child
+    JOIN agent_task_queue child_row ON child_row.id = child.id
+    JOIN agent_task_queue parent
+      ON parent.id::text = child_row.context->>'agent_thread_parent_task_id'
+    WHERE child.depth < 100
+      AND parent.agent_id = child_row.agent_id
+      AND parent.issue_id IS NOT DISTINCT FROM child_row.issue_id
+      AND parent.runtime_id = child_row.runtime_id
+      AND parent.session_id IS NOT DISTINCT FROM child_row.session_id
+), root AS (
+    SELECT id FROM ancestors ORDER BY depth DESC LIMIT 1
+), thread(id, depth) AS (
+    SELECT root.id, 0 FROM root
+    UNION ALL
+    SELECT child.id, thread.depth + 1
+    FROM agent_task_queue child
+    JOIN thread ON child.context->>'agent_thread_parent_task_id' = thread.id::text
+    JOIN agent_task_queue parent ON parent.id = thread.id
+    WHERE thread.depth < 100
+      AND child.agent_id = parent.agent_id
+      AND child.issue_id IS NOT DISTINCT FROM parent.issue_id
+      AND child.runtime_id = parent.runtime_id
+      AND child.session_id IS NOT DISTINCT FROM parent.session_id
+)
+SELECT task.id, task.agent_id, task.issue_id, task.status, task.priority, task.dispatched_at, task.started_at, task.completed_at, task.result, task.error, task.created_at, task.context, task.runtime_id, task.session_id, task.work_dir, task.trigger_comment_id, task.chat_session_id, task.automation_run_id, task.attempt, task.max_attempts, task.parent_task_id, task.failure_reason, task.trigger_summary, task.force_fresh_session, task.is_leader_task, task.wait_reason, task.initiator_user_id, task.handoff_note, task.prepare_lease_expires_at, task.team_id, task.runtime_mcp_overlay, task.escalation_for_task_id, task.fire_at, task.originator_user_id, task.runtime_connected_apps, task.coalesced_comment_ids, task.delivered_comment_ids, task.chat_input_task_id, task.chat_finalize_deferred_at, task.originator_source, task.delegated_from_task_id, task.retry_of_task_id, task.rerun_of_task_id, task.rule_version_id, task.trigger_evidence_kind, task.trigger_evidence_ref_id, task.accountable_user_id, task.session_rollout_missing, task.retired_session_id, task.quick_actions_disabled, task.regenerate_quick_actions_for, task.branch_name, task.durable_work_dir, task.channel_context_revision, task.execution_lane_key, task.model_id, task.policy_revision, task.failover_reason
+FROM agent_task_queue task
+JOIN thread ON thread.id = task.id
+ORDER BY task.created_at ASC, task.id ASC
+`
+
+// A task-level Agent conversation is a chain of normal task rows linked only
+// through private context. Keep resource, Agent, runtime and provider session
+// equal at every edge so a malformed child cannot cross a tenancy boundary.
+func (q *Queries) ListAgentThreadTasks(ctx context.Context, taskID pgtype.UUID) ([]AgentTaskQueue, error) {
+	rows, err := q.db.Query(ctx, listAgentThreadTasks, taskID)
 	if err != nil {
 		return nil, err
 	}
@@ -6981,6 +7311,81 @@ func (q *Queries) LockAgentForAutomationAssignment(ctx context.Context, arg Lock
 		&i.DisabledRuntimeSkills,
 		&i.ServiceTier,
 		&i.ConversationStarters,
+	)
+	return i, err
+}
+
+const lockAgentThreadTask = `-- name: LockAgentThreadTask :one
+SELECT id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, automation_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, team_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir, channel_context_revision, execution_lane_key, model_id, policy_revision, failover_reason FROM agent_task_queue
+WHERE id = $1
+  AND lock_task_owner_rows(agent_id, issue_id, runtime_id)
+FOR UPDATE
+`
+
+// Serializes continuations for one persisted provider thread. Owner rows are
+// locked by lock_task_owner_rows before the task row to match claim ordering.
+func (q *Queries) LockAgentThreadTask(ctx context.Context, id pgtype.UUID) (AgentTaskQueue, error) {
+	row := q.db.QueryRow(ctx, lockAgentThreadTask, id)
+	var i AgentTaskQueue
+	err := row.Scan(
+		&i.ID,
+		&i.AgentID,
+		&i.IssueID,
+		&i.Status,
+		&i.Priority,
+		&i.DispatchedAt,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.Result,
+		&i.Error,
+		&i.CreatedAt,
+		&i.Context,
+		&i.RuntimeID,
+		&i.SessionID,
+		&i.WorkDir,
+		&i.TriggerCommentID,
+		&i.ChatSessionID,
+		&i.AutomationRunID,
+		&i.Attempt,
+		&i.MaxAttempts,
+		&i.ParentTaskID,
+		&i.FailureReason,
+		&i.TriggerSummary,
+		&i.ForceFreshSession,
+		&i.IsLeaderTask,
+		&i.WaitReason,
+		&i.InitiatorUserID,
+		&i.HandoffNote,
+		&i.PrepareLeaseExpiresAt,
+		&i.TeamID,
+		&i.RuntimeMcpOverlay,
+		&i.EscalationForTaskID,
+		&i.FireAt,
+		&i.OriginatorUserID,
+		&i.RuntimeConnectedApps,
+		&i.CoalescedCommentIds,
+		&i.DeliveredCommentIds,
+		&i.ChatInputTaskID,
+		&i.ChatFinalizeDeferredAt,
+		&i.OriginatorSource,
+		&i.DelegatedFromTaskID,
+		&i.RetryOfTaskID,
+		&i.RerunOfTaskID,
+		&i.RuleVersionID,
+		&i.TriggerEvidenceKind,
+		&i.TriggerEvidenceRefID,
+		&i.AccountableUserID,
+		&i.SessionRolloutMissing,
+		&i.RetiredSessionID,
+		&i.QuickActionsDisabled,
+		&i.RegenerateQuickActionsFor,
+		&i.BranchName,
+		&i.DurableWorkDir,
+		&i.ChannelContextRevision,
+		&i.ExecutionLaneKey,
+		&i.ModelID,
+		&i.PolicyRevision,
+		&i.FailoverReason,
 	)
 	return i, err
 }

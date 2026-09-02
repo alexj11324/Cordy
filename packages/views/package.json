@@ -43,6 +43,7 @@
     "./auth": "./auth/index.ts",
     "./search": "./search/index.ts",
     "./chat": "./chat/index.ts",
+    "./agent-thread": "./agent-thread/index.ts",
     "./settings": "./settings/index.ts",
     "./settings/lark-tab": "./settings/components/lark-tab.tsx",
     "./lark": "./lark/index.ts",

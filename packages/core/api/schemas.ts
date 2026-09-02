@@ -172,6 +172,7 @@ export const PluginResourceSchema = z.object({
 
 export const PluginInstallationSchema = z.object({
   id: z.string(),
+	workspace_id: z.string().optional(),
   plugin_key: z.string().default(""),
   name: z.string().default(""),
   description: z.string().optional(),
@@ -2125,6 +2126,7 @@ export const AgentTaskSchema = z.object({
   coalesced_comment_ids: OptionalStringArraySchema,
   delivered_comment_ids: OptionalStringArraySchema,
   trigger_summary: z.string().optional(),
+	agent_thread_message: z.string().optional(),
   handoff_note: z.string().optional(),
   kind: z.string().optional(),
   work_dir: z.string().optional().catch(undefined),
@@ -2142,6 +2144,39 @@ export const AgentTaskSchema = z.object({
 }).loose();
 
 export const AgentTaskListSchema = z.array(AgentTaskSchema);
+
+export const AgentThreadResponseSchema = z.object({
+  task: AgentTaskSchema,
+  thread_tasks: z.array(AgentTaskSchema).default([]),
+  current_task_id: z.string(),
+  agent: z.object({
+    id: z.string(),
+    name: z.string().default(""),
+    avatar_url: z.string().nullable().default(null),
+  }).loose(),
+  events: z.array(z.object({
+    task_id: z.string(),
+    issue_id: z.string().optional(),
+    seq: z.number(),
+    type: z.string(),
+    tool: z.string().optional(),
+    content: z.string().optional(),
+    input: z.record(z.string(), z.unknown()).optional(),
+    output: z.string().optional(),
+    created_at: z.string().optional(),
+  }).loose()).default([]),
+  availability: z.object({
+    state: z.enum(["available", "unavailable"]).catch("unavailable"),
+    reason_code: z.string().optional(),
+    reason: z.string().optional(),
+  }).loose(),
+  can_continue: z.boolean().default(false),
+}).loose();
+
+export const ContinueAgentThreadResponseSchema = z.object({
+  continuation_task_id: z.string(),
+  status: z.enum(["queued", "coalesced"]).catch("queued"),
+}).loose();
 
 // Task cancellation (`POST /api/tasks/:id/cancel`) is consumed directly by
 // chat recovery. Its optional message payload must be well-formed before the

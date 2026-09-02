@@ -12,7 +12,7 @@ import { cn } from "@patchbay/ui/lib/utils";
 import { api } from "@patchbay/core/api";
 import { issueKeys } from "@patchbay/core/issues/queries";
 import type { AgentTask } from "@patchbay/core/types";
-import { TranscriptButton } from "../../common/task-transcript";
+import { AgentThreadButton } from "../../agent-thread";
 import { AgentAvatarStack } from "../../agents/components/agent-avatar-stack";
 import { ActiveTaskRow } from "./execution-log-section";
 import { useT } from "../../i18n";
@@ -65,6 +65,7 @@ export const IssueAgentHeaderChip = memo(function IssueAgentHeaderChip({
       if (task.status === "running") running.push(task);
       else if (
         task.status === "queued" ||
+        task.status === "deferred" ||
         task.status === "dispatched" ||
         // Daemon-parked on a busy local_directory — still active, just
         // waiting on a path lock. Belongs in the live chip, not dropped.
@@ -99,10 +100,8 @@ export const IssueAgentHeaderChip = memo(function IssueAgentHeaderChip({
         />
       ) : null}
       {openedTranscriptTask ? (
-        <TranscriptButton
+        <AgentThreadButton
           task={openedTranscriptTask}
-          agentName=""
-          isLive={openedTranscriptTask.status === "running"}
           title={t(($) => $.execution_log.transcript_tooltip)}
           renderButton={false}
           open

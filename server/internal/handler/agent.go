@@ -447,6 +447,7 @@ type AgentTaskResponse struct {
 	// partial work, and that is when the pointer matters most.
 	BranchName               string                 `json:"branch_name,omitempty"`
 	TriggerCommentID         *string                `json:"trigger_comment_id,omitempty"`          // comment that triggered this task
+	AgentThreadMessage       string                 `json:"agent_thread_message,omitempty"`        // public continuation turn extracted from private task context
 	CoalescedCommentIDs      []string               `json:"coalesced_comment_ids,omitempty"`       // MUL-4195: earlier comments folded into this run when it had not yet started, so a single run still covers every deliberate comment; trigger_comment_id is the newest. Surfaced so the UI can show which comments a run covered. omitempty so old clients ignore it
 	CoalescedComments        []CoalescedCommentData `json:"coalesced_comments,omitempty"`          // MUL-4195: full detail (thread_id/author/created_at/content) of the folded comments, so the daemon prompt can address each without assuming they share the triggering thread. omitempty so old clients ignore it
 	DeliveredCommentIDs      []string               `json:"delivered_comment_ids"`                 // always present: [] is an authoritative empty receipt, while field absence identifies responses from legacy servers
@@ -465,20 +466,20 @@ type AgentTaskResponse struct {
 	ChatMessage              string                 `json:"chat_message,omitempty"`                // user message for chat tasks
 	ChatMessageAttachments   []ChatAttachmentMeta   `json:"chat_message_attachments,omitempty"`    // attachments on the user message — agent calls `patchbay attachment download <id>` per entry
 	ChatIntro                bool                   `json:"chat_intro,omitempty"`                  // legacy compatibility for historical is_agent_intro sessions; new agent creation no longer creates these chats
-	AutomationRunID           string                 `json:"automation_run_id,omitempty"`            // non-empty for automation-spawned tasks
-	AutomationID              string                 `json:"automation_id,omitempty"`                // automation that spawned this task
-	AutomationTitle           string                 `json:"automation_title,omitempty"`             // automation title used as task context
-	AutomationDescription     string                 `json:"automation_description,omitempty"`       // automation description used as task prompt
-	AutomationSource          string                 `json:"automation_source,omitempty"`            // manual, schedule, webhook, or api
-	AutomationTriggerPayload  json.RawMessage        `json:"automation_trigger_payload,omitempty"`   // optional trigger payload for webhook/api runs
+	AutomationRunID          string                 `json:"automation_run_id,omitempty"`           // non-empty for automation-spawned tasks
+	AutomationID             string                 `json:"automation_id,omitempty"`               // automation that spawned this task
+	AutomationTitle          string                 `json:"automation_title,omitempty"`            // automation title used as task context
+	AutomationDescription    string                 `json:"automation_description,omitempty"`      // automation description used as task prompt
+	AutomationSource         string                 `json:"automation_source,omitempty"`           // manual, schedule, webhook, or api
+	AutomationTriggerPayload json.RawMessage        `json:"automation_trigger_payload,omitempty"`  // optional trigger payload for webhook/api runs
 	QuickCreatePrompt        string                 `json:"quick_create_prompt,omitempty"`         // user's natural-language input for quick-create tasks
 	QuickCreatePriority      string                 `json:"quick_create_priority,omitempty"`       // explicit priority selected in quick-create
 	QuickCreateDueDate       string                 `json:"quick_create_due_date,omitempty"`       // explicit calendar due date selected in quick-create
 	QuickCreateAttachmentIDs []string               `json:"quick_create_attachment_ids,omitempty"` // attachment ids uploaded in the quick-create prompt and bound on issue create
 	QuickCreateSourceContext json.RawMessage        `json:"quick_create_source_context,omitempty"` // immutable historical context for source-context quick-create
 	HandoffNote              string                 `json:"handoff_note,omitempty"`                // assignment handoff instruction; rendered into the run's opening prompt + issue_context.md (omitempty so old daemons ignore it)
-	TeamID                  string                 `json:"team_id,omitempty"`                    // for quick-create tasks where the picker was a team; Agent is still the resolved leader
-	TeamName                string                 `json:"team_name,omitempty"`                  // display name for the picker team
+	TeamID                   string                 `json:"team_id,omitempty"`                     // for quick-create tasks where the picker was a team; Agent is still the resolved leader
+	TeamName                 string                 `json:"team_name,omitempty"`                   // display name for the picker team
 	ParentIssueID            string                 `json:"parent_issue_id,omitempty"`             // for quick-create tasks opened from "Add sub issue" — UUID of the parent issue the new issue should be filed under
 	ParentIssueIdentifier    string                 `json:"parent_issue_identifier,omitempty"`     // human-readable identifier (e.g. MUL-123) of the quick-create parent issue, resolved on claim for prompt context
 	// RequestingUserName + RequestingUserProfileDescription mirror the user
@@ -797,6 +798,7 @@ func taskToResponse(t db.AgentTaskQueue, workspaceID string) AgentTaskResponse {
 		IsLeaderTask:           t.IsLeaderTask,
 		CreatedAt:              timestampToString(t.CreatedAt),
 		TriggerCommentID:       uuidToPtr(t.TriggerCommentID),
+		AgentThreadMessage:     service.AgentThreadMessage(t),
 		CoalescedCommentIDs:    uuidsToStrings(t.CoalescedCommentIds),
 		DeliveredCommentIDs:    uuidStringsOrEmpty(t.DeliveredCommentIds),
 		TriggerSummary:         textToPtr(t.TriggerSummary),
@@ -808,9 +810,9 @@ func taskToResponse(t db.AgentTaskQueue, workspaceID string) AgentTaskResponse {
 		// Surface task source so the UI can distinguish issue-linked tasks
 		// from chat-spawned or automation-spawned ones; all three may arrive
 		// with issue_id = "" once a task has no linked issue.
-		ChatSessionID:  uuidToString(t.ChatSessionID),
+		ChatSessionID:   uuidToString(t.ChatSessionID),
 		AutomationRunID: uuidToString(t.AutomationRunID),
-		Kind:           computeTaskKind(t),
+		Kind:            computeTaskKind(t),
 		// Attribution labels + evidence + lineage + raw user ids (pure). Names are
 		// hydrated separately on user-facing surfaces (MUL-4302 §9).
 		Attribution: taskAttributionBase(t),

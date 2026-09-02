@@ -83,6 +83,11 @@ SELECT * FROM task_message
 WHERE task_id = $1 AND seq > $2
 ORDER BY seq ASC;
 
+-- name: ListTaskMessagesForTasks :many
+SELECT * FROM task_message
+WHERE task_id = ANY(@task_ids::uuid[])
+ORDER BY created_at ASC, task_id ASC, seq ASC;
+
 -- name: DeleteTaskMessages :exec
 DELETE FROM task_message
 WHERE task_id = $1;

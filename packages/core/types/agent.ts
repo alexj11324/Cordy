@@ -277,6 +277,8 @@ export interface TaskAttribution {
 
 export interface AgentTask {
   id: string;
+	/** Present on every user-facing task response; optional for older servers. */
+	workspace_id?: string;
   agent_id: string;
   runtime_id: string;
   // Empty string ("") when the task has no linked issue — either chat- or
@@ -290,6 +292,7 @@ export interface AgentTask {
   // running by every consumer that buckets tasks into "active vs done".
   status:
     | "queued"
+    | "deferred"
     | "dispatched"
     | "waiting_local_directory"
     | "running"
@@ -347,6 +350,8 @@ export interface AgentTask {
    * or deleted.
    */
   trigger_summary?: string;
+	/** Full member-authored turn for a task-level provider-session continuation. */
+	agent_thread_message?: string;
   /**
    * Handoff instruction the assigner attached when starting this run (MUL-3375).
    * Present only on assignment-triggered runs that carried a note; the execution
