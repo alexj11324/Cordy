@@ -1211,6 +1211,140 @@ type LarkUserBinding struct {
 	BoundAt        pgtype.Timestamptz `json:"bound_at"`
 }
 
+type LinearConnection struct {
+	ID                    pgtype.UUID        `json:"id"`
+	WorkspaceID           pgtype.UUID        `json:"workspace_id"`
+	OrganizationID        string             `json:"organization_id"`
+	OrganizationName      string             `json:"organization_name"`
+	ActorID               string             `json:"actor_id"`
+	AccessTokenEncrypted  []byte             `json:"access_token_encrypted"`
+	RefreshTokenEncrypted []byte             `json:"refresh_token_encrypted"`
+	TokenExpiresAt        pgtype.Timestamptz `json:"token_expires_at"`
+	Scopes                []byte             `json:"scopes"`
+	WebhookID             pgtype.Text        `json:"webhook_id"`
+	Status                string             `json:"status"`
+	LastSuccessAt         pgtype.Timestamptz `json:"last_success_at"`
+	LastError             pgtype.Text        `json:"last_error"`
+	CreatedByID           pgtype.UUID        `json:"created_by_id"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+}
+
+type LinearIssueLink struct {
+	ID                  pgtype.UUID        `json:"id"`
+	WorkspaceID         pgtype.UUID        `json:"workspace_id"`
+	BindingID           pgtype.UUID        `json:"binding_id"`
+	PatchbayIssueID     pgtype.UUID        `json:"patchbay_issue_id"`
+	LinearIssueID       string             `json:"linear_issue_id"`
+	LinearIdentifier    string             `json:"linear_identifier"`
+	LastCommonSnapshot  []byte             `json:"last_common_snapshot"`
+	RemoteUpdatedAt     pgtype.Timestamptz `json:"remote_updated_at"`
+	LastRemoteEventAtMs pgtype.Int8        `json:"last_remote_event_at_ms"`
+	LastRemoteEventID   pgtype.Text        `json:"last_remote_event_id"`
+	SyncStatus          string             `json:"sync_status"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+}
+
+type LinearMemberBinding struct {
+	ID             pgtype.UUID        `json:"id"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	ConnectionID   pgtype.UUID        `json:"connection_id"`
+	PatchbayUserID pgtype.UUID        `json:"patchbay_user_id"`
+	LinearUserID   string             `json:"linear_user_id"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+type LinearOauthState struct {
+	ID                    pgtype.UUID        `json:"id"`
+	StateHash             string             `json:"state_hash"`
+	WorkspaceID           pgtype.UUID        `json:"workspace_id"`
+	UserID                pgtype.UUID        `json:"user_id"`
+	CodeVerifierEncrypted []byte             `json:"code_verifier_encrypted"`
+	RedirectUri           string             `json:"redirect_uri"`
+	ExpiresAt             pgtype.Timestamptz `json:"expires_at"`
+	ConsumedAt            pgtype.Timestamptz `json:"consumed_at"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+}
+
+type LinearProjectBinding struct {
+	ID                   pgtype.UUID        `json:"id"`
+	WorkspaceID          pgtype.UUID        `json:"workspace_id"`
+	ConnectionID         pgtype.UUID        `json:"connection_id"`
+	PatchbayProjectID    pgtype.UUID        `json:"patchbay_project_id"`
+	LinearProjectID      string             `json:"linear_project_id"`
+	LinearTeamID         pgtype.Text        `json:"linear_team_id"`
+	Status               string             `json:"status"`
+	SyncMode             string             `json:"sync_mode"`
+	InitialSourceOfTruth pgtype.Text        `json:"initial_source_of_truth"`
+	StatusMapping        []byte             `json:"status_mapping"`
+	AgentLabelMapping    []byte             `json:"agent_label_mapping"`
+	ActivatedAt          pgtype.Timestamptz `json:"activated_at"`
+	PausedAt             pgtype.Timestamptz `json:"paused_at"`
+	CreatedByID          pgtype.UUID        `json:"created_by_id"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+}
+
+type LinearSyncConflict struct {
+	ID              pgtype.UUID        `json:"id"`
+	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
+	BindingID       pgtype.UUID        `json:"binding_id"`
+	LinkID          pgtype.UUID        `json:"link_id"`
+	PatchbayIssueID pgtype.UUID        `json:"patchbay_issue_id"`
+	LinearIssueID   string             `json:"linear_issue_id"`
+	Field           string             `json:"field"`
+	BaseValue       []byte             `json:"base_value"`
+	LocalValue      []byte             `json:"local_value"`
+	RemoteValue     []byte             `json:"remote_value"`
+	SourceEventID   string             `json:"source_event_id"`
+	SourceEventAtMs pgtype.Int8        `json:"source_event_at_ms"`
+	Status          string             `json:"status"`
+	Resolution      pgtype.Text        `json:"resolution"`
+	ResolvedValue   []byte             `json:"resolved_value"`
+	ResolvedByID    pgtype.UUID        `json:"resolved_by_id"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+type LinearSyncInbox struct {
+	ID             pgtype.UUID        `json:"id"`
+	ConnectionID   pgtype.UUID        `json:"connection_id"`
+	DeliveryID     string             `json:"delivery_id"`
+	EventType      string             `json:"event_type"`
+	Payload        []byte             `json:"payload"`
+	ReceivedAt     pgtype.Timestamptz `json:"received_at"`
+	AvailableAt    pgtype.Timestamptz `json:"available_at"`
+	LockedBy       pgtype.Text        `json:"locked_by"`
+	LockedUntil    pgtype.Timestamptz `json:"locked_until"`
+	MaxAttempts    int32              `json:"max_attempts"`
+	Attempts       int32              `json:"attempts"`
+	LastError      pgtype.Text        `json:"last_error"`
+	ProcessedAt    pgtype.Timestamptz `json:"processed_at"`
+	DeadLetteredAt pgtype.Timestamptz `json:"dead_lettered_at"`
+}
+
+type LinearSyncOutbox struct {
+	ID             pgtype.UUID        `json:"id"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	BindingID      pgtype.UUID        `json:"binding_id"`
+	IssueID        pgtype.UUID        `json:"issue_id"`
+	EventKey       string             `json:"event_key"`
+	EventType      string             `json:"event_type"`
+	Payload        []byte             `json:"payload"`
+	AvailableAt    pgtype.Timestamptz `json:"available_at"`
+	LockedBy       pgtype.Text        `json:"locked_by"`
+	LockedUntil    pgtype.Timestamptz `json:"locked_until"`
+	MaxAttempts    int32              `json:"max_attempts"`
+	Attempts       int32              `json:"attempts"`
+	LastError      pgtype.Text        `json:"last_error"`
+	ProcessedAt    pgtype.Timestamptz `json:"processed_at"`
+	DeadLetteredAt pgtype.Timestamptz `json:"dead_lettered_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
 type Member struct {
 	ID          pgtype.UUID        `json:"id"`
 	WorkspaceID pgtype.UUID        `json:"workspace_id"`
