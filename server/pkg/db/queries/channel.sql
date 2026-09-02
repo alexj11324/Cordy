@@ -255,6 +255,12 @@ cleared_inbound_dedup AS (
     DELETE FROM channel_inbound_message_dedup
     WHERE installation_id IN (SELECT id FROM dead)
 ),
+cleared_runtime_observations AS (
+    -- A rebound installation starts unobserved: the dead owner's last verdict
+    -- (and its observer_token lease) must not carry over to the new owner.
+    DELETE FROM channel_installation_runtime_observation
+    WHERE installation_id IN (SELECT id FROM dead)
+),
 detached_audit AS (
     -- Reclaim keeps the DETACH semantics: the workspace still exists, so a
     -- NULL-installation audit row stays meaningful for operator triage. The hard-
@@ -326,6 +332,12 @@ cleared_user_bindings AS (
 ),
 cleared_inbound_dedup AS (
     DELETE FROM channel_inbound_message_dedup WHERE installation_id IN (SELECT id FROM doomed)
+),
+cleared_runtime_observations AS (
+    -- One row per installation with no FK: the observation must not outlive
+    -- the installation it describes, or a rebound bot would inherit a stale
+    -- verdict (including its observer_token lease).
+    DELETE FROM channel_installation_runtime_observation WHERE installation_id IN (SELECT id FROM doomed)
 ),
 cleared_audit AS (
     -- Hard delete: purge audit rows rather than detaching them into permanently

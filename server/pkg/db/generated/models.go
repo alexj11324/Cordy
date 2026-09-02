@@ -492,6 +492,16 @@ type ChannelInstallation struct {
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 }
 
+type ChannelInstallationRuntimeObservation struct {
+	InstallationID pgtype.UUID        `json:"installation_id"`
+	State          string             `json:"state"`
+	ObservedAt     pgtype.Timestamptz `json:"observed_at"`
+	ErrorCode      pgtype.Text        `json:"error_code"`
+	ErrorSummary   pgtype.Text        `json:"error_summary"`
+	ObserverToken  string             `json:"observer_token"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
 type ChannelMediaPendingObject struct {
 	StorageKey     string             `json:"storage_key"`
 	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
@@ -1571,6 +1581,15 @@ type SkillToLabel struct {
 	SkillID   pgtype.UUID        `json:"skill_id"`
 	LabelID   pgtype.UUID        `json:"label_id"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type SlackOauthState struct {
+	StateHash       []byte             `json:"state_hash"`
+	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
+	InstallerUserID pgtype.UUID        `json:"installer_user_id"`
+	RedirectUrl     string             `json:"redirect_url"`
+	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 }
 
 type SysCronExecution struct {

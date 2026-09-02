@@ -68,6 +68,9 @@ type slashQueries interface {
 	GetChannelInstallationByAppID(ctx context.Context, arg db.GetChannelInstallationByAppIDParams) (db.ChannelInstallation, error)
 	GetChannelUserBindingByUserID(ctx context.Context, arg db.GetChannelUserBindingByUserIDParams) (db.ChannelUserBinding, error)
 	GetMemberByUserAndWorkspace(ctx context.Context, arg db.GetMemberByUserAndWorkspaceParams) (db.Member, error)
+	ClaimChannelInboundDedup(ctx context.Context, arg db.ClaimChannelInboundDedupParams) (db.ChannelInboundMessageDedup, error)
+	MarkChannelInboundDedupProcessed(ctx context.Context, arg db.MarkChannelInboundDedupProcessedParams) (int64, error)
+	ReleaseChannelInboundDedup(ctx context.Context, arg db.ReleaseChannelInboundDedupParams) (int64, error)
 }
 
 // quickCreateEnqueuer is the narrow slice of *service.TaskService the slash
@@ -266,6 +269,34 @@ func (p *SlashCommandProcessor) process(ctx context.Context, cmd slack.SlashComm
 		}
 	}
 
+	// Replay guard: a signed request replayed inside the signature's
+	// five-minute window — or re-delivered by Slack — must not file the issue
+	// twice. The claim shares the inbound dedup table with message ingress,
+	// keyed by Slack's per-invocation trigger_id (prefix-kept out of the
+	// message-ts namespace). Everything above this point is a read;
+	// enqueueing is the one side effect, so the claim is taken here.
+	dedupKey := slashDedupKey(cmd.TriggerID)
+	var claimToken pgtype.UUID
+	claimed := false
+	if dedupKey != "" {
+		claim, err := p.q.ClaimChannelInboundDedup(ctx, db.ClaimChannelInboundDedupParams{
+			InstallationID: inst.ID,
+			MessageID:      dedupKey,
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				// A live claim or a processed row: this exact invocation was
+				// already accepted. Repeat the acknowledgement instead of
+				// filing a second issue.
+				return slashQueuedText
+			}
+			p.logger.WarnContext(ctx, "slack slash command: dedup claim failed",
+				"app_id", cmd.APIAppID, "error", err)
+			return slashInternalErrorText
+		}
+		claimToken, claimed = claim.ClaimToken, true
+	}
+
 	// Hand the raw natural-language prompt to the installation's agent as a
 	// quick-create task; the agent authors the well-formed issue in the
 	// background and attributes it to the bound member. No project / parent /
@@ -284,6 +315,18 @@ func (p *SlashCommandProcessor) process(ctx context.Context, cmd slack.SlashComm
 		pgtype.UUID{}, // no parent issue
 		nil,           // no attachments
 	); err != nil {
+		if claimed {
+			// A failed enqueue releases the claim so the invoker can retry
+			// the same command; only a success marks it consumed.
+			if _, rerr := p.q.ReleaseChannelInboundDedup(ctx, db.ReleaseChannelInboundDedupParams{
+				InstallationID: inst.ID,
+				MessageID:      dedupKey,
+				ClaimToken:     claimToken,
+			}); rerr != nil {
+				p.logger.WarnContext(ctx, "slack slash command: dedup release failed",
+					"app_id", cmd.APIAppID, "error", rerr)
+			}
+		}
 		var limitErr *service.IssueLimitReachedError
 		if errors.As(err, &limitErr) {
 			return slashIssueLimitText
@@ -292,7 +335,29 @@ func (p *SlashCommandProcessor) process(ctx context.Context, cmd slack.SlashComm
 			"app_id", cmd.APIAppID, "error", err)
 		return slashInternalErrorText
 	}
+	if claimed {
+		if _, merr := p.q.MarkChannelInboundDedupProcessed(ctx, db.MarkChannelInboundDedupProcessedParams{
+			InstallationID: inst.ID,
+			MessageID:      dedupKey,
+			ClaimToken:     claimToken,
+		}); merr != nil {
+			p.logger.WarnContext(ctx, "slack slash command: dedup mark failed",
+				"app_id", cmd.APIAppID, "error", merr)
+		}
+	}
 	return slashQueuedText
+}
+
+// slashDedupKey maps one slash-command invocation to its replay-claim key.
+// trigger_id is Slack's per-invocation id, so a replayed or re-delivered
+// request reuses the key while a fresh command gets its own. The prefix keeps
+// the key out of the message-ts namespace sharing the same table. An empty
+// trigger (older payloads) has no stable key — filing is better than refusing.
+func slashDedupKey(triggerID string) string {
+	if strings.TrimSpace(triggerID) == "" {
+		return ""
+	}
+	return "slash:" + strings.TrimSpace(triggerID)
 }
 
 // resolveInstallation maps the command's api_app_id (+ event team) to its

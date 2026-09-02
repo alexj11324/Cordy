@@ -26,6 +26,7 @@ type fakeSlashQueries struct {
 	bindErr   error
 	memberErr error
 	gotAppID  string
+	claims    map[string]bool
 }
 
 func (f *fakeSlashQueries) GetChannelInstallationByAppID(_ context.Context, arg db.GetChannelInstallationByAppIDParams) (db.ChannelInstallation, error) {
@@ -39,6 +40,26 @@ func (f *fakeSlashQueries) GetChannelUserBindingByUserID(_ context.Context, _ db
 
 func (f *fakeSlashQueries) GetMemberByUserAndWorkspace(_ context.Context, _ db.GetMemberByUserAndWorkspaceParams) (db.Member, error) {
 	return db.Member{}, f.memberErr
+}
+
+func (f *fakeSlashQueries) ClaimChannelInboundDedup(_ context.Context, arg db.ClaimChannelInboundDedupParams) (db.ChannelInboundMessageDedup, error) {
+	if f.claims == nil {
+		f.claims = map[string]bool{}
+	}
+	if f.claims[arg.MessageID] {
+		return db.ChannelInboundMessageDedup{}, pgx.ErrNoRows
+	}
+	f.claims[arg.MessageID] = true
+	return db.ChannelInboundMessageDedup{ClaimToken: slashTestUUID(9)}, nil
+}
+
+func (f *fakeSlashQueries) MarkChannelInboundDedupProcessed(_ context.Context, _ db.MarkChannelInboundDedupProcessedParams) (int64, error) {
+	return 1, nil
+}
+
+func (f *fakeSlashQueries) ReleaseChannelInboundDedup(_ context.Context, arg db.ReleaseChannelInboundDedupParams) (int64, error) {
+	delete(f.claims, arg.MessageID)
+	return 1, nil
 }
 
 // fakeQuickCreate records the last EnqueueQuickCreateTask call so tests can
@@ -402,5 +423,84 @@ func TestSlashHandle_ClearChannelGuidesToMentionWithoutGuessingThread(t *testing
 	}
 	if *captured != slashClearThreadGuideText {
 		t.Fatalf("reply=%q", *captured)
+	}
+}
+
+func TestSlashHandle_ReplayCollapsesOntoOneIssue(t *testing.T) {
+	q := &fakeSlashQueries{
+		inst:    activeSlashInstallation(),
+		binding: db.ChannelUserBinding{PatchbayUserID: slashTestUUID(9)},
+	}
+	tasks := &fakeQuickCreate{}
+	p, captured, count := newTestSlashProcessor(q, tasks, &fakeBindingMinter{})
+
+	cmd := issueSlashCmd()
+	cmd.TriggerID = "13345224609.738474920.8088930"
+	p.Handle(context.Background(), cmd)
+	// The replay carries the identical trigger_id: same ack, no second issue.
+	p.Handle(context.Background(), cmd)
+
+	if tasks.calls != 1 {
+		t.Fatalf("replay must not file a second issue, got %d enqueues", tasks.calls)
+	}
+	if *count != 2 || *captured != slashQueuedText {
+		t.Fatalf("replay must repeat the ack (replies=%d, last=%q)", *count, *captured)
+	}
+}
+
+func TestSlashHandle_FreshTriggerFilesAgain(t *testing.T) {
+	q := &fakeSlashQueries{
+		inst:    activeSlashInstallation(),
+		binding: db.ChannelUserBinding{PatchbayUserID: slashTestUUID(9)},
+	}
+	tasks := &fakeQuickCreate{}
+	p, _, _ := newTestSlashProcessor(q, tasks, &fakeBindingMinter{})
+
+	first := issueSlashCmd()
+	first.TriggerID = "13345224609.738474920.8088930"
+	second := issueSlashCmd()
+	second.TriggerID = "13345224609.738474920.9999999"
+	p.Handle(context.Background(), first)
+	p.Handle(context.Background(), second)
+
+	if tasks.calls != 2 {
+		t.Fatalf("distinct invocations must file distinct issues, got %d", tasks.calls)
+	}
+}
+
+func TestSlashHandle_FailedEnqueueReleasesForRetry(t *testing.T) {
+	q := &fakeSlashQueries{
+		inst:    activeSlashInstallation(),
+		binding: db.ChannelUserBinding{PatchbayUserID: slashTestUUID(9)},
+	}
+	tasks := &fakeQuickCreate{err: errors.New("queue down")}
+	p, captured, _ := newTestSlashProcessor(q, tasks, &fakeBindingMinter{})
+
+	cmd := issueSlashCmd()
+	cmd.TriggerID = "13345224609.738474920.8088930"
+	p.Handle(context.Background(), cmd)
+	if *captured != slashInternalErrorText {
+		t.Fatalf("failed enqueue reply = %q, want internal error", *captured)
+	}
+	// The failure releases the claim, so the invoker's retry files the issue.
+	tasks.err = nil
+	p.Handle(context.Background(), cmd)
+	if tasks.calls != 2 {
+		t.Fatalf("retry after failure must re-enqueue, got %d calls", tasks.calls)
+	}
+	if *captured != slashQueuedText {
+		t.Fatalf("retry reply = %q, want queued ack", *captured)
+	}
+}
+
+func TestSlashDedupKey(t *testing.T) {
+	if got := slashDedupKey("13345224609.738474920.8088930"); got != "slash:13345224609.738474920.8088930" {
+		t.Fatalf("key = %q", got)
+	}
+	if got := slashDedupKey(""); got != "" {
+		t.Fatalf("empty trigger must have no key, got %q", got)
+	}
+	if got := slashDedupKey("   "); got != "" {
+		t.Fatalf("blank trigger must have no key, got %q", got)
 	}
 }

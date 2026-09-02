@@ -238,6 +238,12 @@ deleted_linear_bindings AS (
 deleted_linear_oauth_states AS (
     DELETE FROM linear_oauth_state WHERE workspace_id = $1
 ),
+deleted_slack_oauth_states AS (
+    -- Managed Slack authorizations are workspace-scoped with no FK and are
+    -- otherwise purged only opportunistically by the next begin_install,
+    -- which this workspace will never run again.
+    DELETE FROM slack_oauth_state WHERE workspace_id = $1
+),
 deleted_linear_connections AS (
     DELETE FROM linear_connection WHERE workspace_id = $1
 ),
@@ -497,6 +503,13 @@ deleted_channel_inbound_dedup AS (
 ),
 deleted_channel_inbound_audit AS (
     DELETE FROM channel_inbound_audit
+    WHERE installation_id IN (SELECT id FROM ws_channel_installations)
+),
+deleted_runtime_observations AS (
+    -- One row per installation, keyed by installation_id with no FK: drop it
+    -- with the installation's other dependents before the installation rows
+    -- themselves go in DeleteWorkspaceCommunicationRoots.
+    DELETE FROM channel_installation_runtime_observation
     WHERE installation_id IN (SELECT id FROM ws_channel_installations)
 ),
 deleted_channel_user_bindings AS (

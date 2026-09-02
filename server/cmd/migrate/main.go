@@ -349,6 +349,9 @@ var concurrentIndexCleanups = map[string]string{
 	"557_idx_linear_sync_conflict_list":                         "idx_linear_sync_conflict_list",
 	"558_uq_linear_sync_conflict_id":                            "uq_linear_sync_conflict_id",
 	"560_idx_linear_sync_outbox_pending_issue":                  "idx_linear_sync_outbox_pending_issue",
+	"572_slack_oauth_state_hash_index":                          "slack_oauth_state_hash_uidx",
+	"574_channel_installation_runtime_observation_index":        "channel_installation_runtime_observation_uidx",
+	"575_idx_chat_message_channel_task":                         "idx_chat_message_channel_task",
 }
 
 // concurrentDownIndexCleanups covers every migration whose down direction
