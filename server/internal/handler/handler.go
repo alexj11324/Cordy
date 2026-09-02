@@ -312,6 +312,11 @@ type Handler struct {
 	// deployment without a hosted app fails loudly instead of half-working.
 	// Wired in cmd/server/router.go after handler.New.
 	ManagedSlack *slack.ManagedOAuthService
+	// ManagedSlackWebhook serves the deployment-wide managed Events API
+	// webhook (POST /api/integrations/slack/events). Nil unless
+	// PATCHBAY_SLACK_SECRET_KEY is set; the route 503s without a signing
+	// secret (PATCHBAY_SLACK_SIGNING_SECRET). Wired in cmd/server/router.go.
+	ManagedSlackWebhook *slack.ManagedWebhook
 	// DingTalkInstall owns the bring-your-own-app DingTalk lifecycle. It is nil
 	// unless PATCHBAY_DINGTALK_SECRET_KEY is configured.
 	DingTalkInstall *dingtalk.InstallService

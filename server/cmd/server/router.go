@@ -876,6 +876,21 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			} else {
 				h.ManagedSlack = managedOAuth
 			}
+			// Managed Events API ingress for hosted-OAuth installs (no Socket
+			// Mode link). The signing secret is optional at boot — without it
+			// the endpoint 503s instead of accepting unsigned deliveries.
+			// Registered on the public router below, next to the OAuth callback.
+			managedWebhook, werr := slack.NewManagedWebhook(slack.ManagedWebhookConfig{
+				Queries:       queries,
+				Handle:        channelRouter.Handle,
+				SigningSecret: strings.TrimSpace(os.Getenv("PATCHBAY_SLACK_SIGNING_SECRET")),
+				Logger:        slog.Default(),
+			})
+			if werr != nil {
+				slog.Error("slack: ManagedWebhook init failed; managed ingress disabled", "error", werr)
+			} else {
+				h.ManagedSlackWebhook = managedWebhook
+			}
 			slog.Info("slack integration enabled (BYO per-installation socket mode)")
 		}
 	} else {
@@ -1519,6 +1534,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// state, exchanges the code, upserts the team-keyed install, then 302s the
 	// browser to the redirect_url bound to the state.
 	r.Get("/api/integrations/slack/oauth/callback", h.ManagedSlackOAuthCallback)
+	// Slack managed Events API webhook (no Patchbay auth — authenticity is the
+	// HMAC-SHA256 request signature; tenant routing is the event's api_app_id
+	// + team_id). The handler nil-checks: without the Slack block above there
+	// is no webhook and this 503s instead of panicking.
+	r.Post("/api/integrations/slack/events", h.ManagedSlackEvents)
 	// VCS webhook for token-based providers (Forgejo / Gitea / GitLab). No Patchbay
 	// auth — authenticated per-connection by the provider's signature scheme;
 	// the connection id in the path selects the workspace, provider, and

@@ -105,6 +105,18 @@ func (h *Handler) BeginManagedSlackInstall(w http.ResponseWriter, r *http.Reques
 	})
 }
 
+// ManagedSlackEvents (POST /api/integrations/slack/events) is the thin public
+// wrapper over the deployment webhook. A nil webhook (Slack block disabled)
+// 503s; everything else — signature, challenge, dispatch — lives in the slack
+// package so it stays unit-testable without HTTP routing.
+func (h *Handler) ManagedSlackEvents(w http.ResponseWriter, r *http.Request) {
+	if h.ManagedSlackWebhook == nil {
+		writeError(w, http.StatusServiceUnavailable, "slack managed webhook is not configured")
+		return
+	}
+	h.ManagedSlackWebhook.HandleEvents(w, r)
+}
+
 // ManagedSlackOAuthCallback (GET /api/integrations/slack/oauth/callback) is
 // the public landing for Slack's browser redirect. Query contract:
 //   - error non-empty, or code/state empty: the installer denied (or Slack

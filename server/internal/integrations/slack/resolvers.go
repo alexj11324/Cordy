@@ -153,22 +153,18 @@ func (r *installationResolver) ResolveInstallation(ctx context.Context, msg chan
 	if err != nil {
 		return engine.ResolvedInstallation{}, err
 	}
-	inst, err := r.q.GetChannelInstallationByAppID(ctx, db.GetChannelInstallationByAppIDParams{
-		ChannelType: string(TypeSlack),
-		// Route by the event's api_app_id: each BYO installation stores its real
-		// Slack app id in the routing-key slot (config->>'app_id'), and the
-		// per-installation Socket Mode connection only ever delivers events for
-		// its own app, so api_app_id uniquely identifies the installation.
-		AppID: raw.APIAppID,
-	})
+	// Route by the event's api_app_id: each BYO installation stores its real
+	// Slack app id in the routing-key slot (config->>'app_id'), and the
+	// per-installation Socket Mode connection only ever delivers events for
+	// its own app, so api_app_id uniquely identifies the installation.
+	// Managed installs store the tenant composite instead; the lookup falls
+	// back to it on a miss (see lookupInstallation).
+	inst, err := lookupInstallation(ctx, r.q, raw.APIAppID, raw.TeamID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return engine.ResolvedInstallation{}, engine.ErrInstallationNotFound
 		}
 		return engine.ResolvedInstallation{}, err
-	}
-	if !installationServesTeam(inst.Config, raw.TeamID) {
-		return engine.ResolvedInstallation{}, engine.ErrInstallationNotFound
 	}
 	return engine.ResolvedInstallation{
 		ID:              inst.ID,

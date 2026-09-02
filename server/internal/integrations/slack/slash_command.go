@@ -362,19 +362,15 @@ func slashDedupKey(triggerID string) string {
 
 // resolveInstallation maps the command's api_app_id (+ event team) to its
 // installation, applying the same team-scoping guard as inbound routing.
+// Managed installs store the tenant composite in the routing slot, so the
+// lookup falls back to it on a miss (see lookupInstallation).
 func (p *SlashCommandProcessor) resolveInstallation(ctx context.Context, appID, teamID string) (engine.ResolvedInstallation, error) {
-	inst, err := p.q.GetChannelInstallationByAppID(ctx, db.GetChannelInstallationByAppIDParams{
-		ChannelType: string(TypeSlack),
-		AppID:       appID,
-	})
+	inst, err := lookupInstallation(ctx, p.q, appID, teamID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return engine.ResolvedInstallation{}, engine.ErrInstallationNotFound
 		}
 		return engine.ResolvedInstallation{}, err
-	}
-	if !installationServesTeam(inst.Config, teamID) {
-		return engine.ResolvedInstallation{}, engine.ErrInstallationNotFound
 	}
 	return engine.ResolvedInstallation{
 		ID:              inst.ID,

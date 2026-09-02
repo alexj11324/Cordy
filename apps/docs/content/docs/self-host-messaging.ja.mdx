@@ -27,6 +27,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 - `POST /api/workspaces/{id}/slack/install/managed` — マネージド OAuth 認可を開始します（owner/admin）。Body: `{ "redirect_url": "…" }`。
 - `GET /api/integrations/slack/oauth/callback` — Slack リダイレクト用の公開エンドポイント。使い捨て state を消費して code を交換し、紐付け済み redirect URL へ 302 します。
+- `POST /api/integrations/slack/events` — マネージド Events API 用の公開 webhook（HMAC 署名、app + team でテナントを特定）。マネージド環境に Socket Mode 接続はなく、これが唯一の受信経路です。Supervisor はダイヤルせずスロットを保持します。
 
 ## 1. BYO Socket Mode のデプロイ
 

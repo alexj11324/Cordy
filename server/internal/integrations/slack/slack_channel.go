@@ -244,6 +244,23 @@ func newSlackFactory(deps ChannelDeps) channel.Factory {
 		if err := json.Unmarshal(cfg.Raw, &ic); err != nil {
 			return nil, fmt.Errorf("slack: decode installation config: %w", err)
 		}
+		if ic.Transport == ManagedTransportWebhook {
+			// Managed installs arrive over the deployment webhook, not a
+			// per-installation Socket Mode connection, so there is no link to
+			// supervise. The dormant channel parks the Supervisor slot (one
+			// goroutine, no log churn, no lease flapping) while Send keeps
+			// working over the Web API — outbound delivery, binding prompts,
+			// and history all run on the bot token alone.
+			botToken, err := decryptToken(ic.BotTokenEncrypted, deps.Decrypt)
+			if err != nil {
+				return nil, fmt.Errorf("slack: decrypt bot token: %w", err)
+			}
+			return &webhookChannel{
+				botUserID: ic.BotUserID,
+				botAPI:    slack.New(botToken),
+				logger:    logger,
+			}, nil
+		}
 		appToken, err := decryptToken(ic.AppTokenEncrypted, deps.Decrypt)
 		if err != nil {
 			return nil, fmt.Errorf("slack: decrypt app token: %w", err)
