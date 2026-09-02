@@ -123,6 +123,7 @@ function SkipWelcome({ workspaceId, onDismiss }: SkipWelcomeProps) {
             priority: "high",
             owner_type: "member",
             owner_id: me.id,
+            executor_id: me.id,
           },
         );
         void queryClient.invalidateQueries({
