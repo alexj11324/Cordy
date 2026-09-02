@@ -65,6 +65,30 @@ func (q *Queries) CreateDesktopAuthHandoff(ctx context.Context, arg CreateDeskto
 	return err
 }
 
+const getDesktopGoogleAttempt = `-- name: GetDesktopGoogleAttempt :one
+SELECT created_at
+FROM desktop_auth_handoff
+WHERE state = $1
+  AND code_challenge = $2
+  AND callback_protocol = 'patchbay'
+  AND user_id IS NULL
+  AND code_hash IS NULL
+  AND completed_at IS NULL
+  AND expires_at > now()
+`
+
+type GetDesktopGoogleAttemptParams struct {
+	State         string `json:"state"`
+	CodeChallenge string `json:"code_challenge"`
+}
+
+func (q *Queries) GetDesktopGoogleAttempt(ctx context.Context, arg GetDesktopGoogleAttemptParams) (pgtype.Timestamptz, error) {
+	row := q.db.QueryRow(ctx, getDesktopGoogleAttempt, arg.State, arg.CodeChallenge)
+	var created_at pgtype.Timestamptz
+	err := row.Scan(&created_at)
+	return created_at, err
+}
+
 const redeemDesktopAuthHandoff = `-- name: RedeemDesktopAuthHandoff :one
 DELETE FROM desktop_auth_handoff
 WHERE code_hash = $1
@@ -85,4 +109,35 @@ func (q *Queries) RedeemDesktopAuthHandoff(ctx context.Context, arg RedeemDeskto
 	var user_id pgtype.UUID
 	err := row.Scan(&user_id)
 	return user_id, err
+}
+
+const registerDesktopGoogleAttempt = `-- name: RegisterDesktopGoogleAttempt :one
+INSERT INTO desktop_auth_handoff (
+    state,
+    code_challenge,
+    callback_protocol,
+    expires_at
+)
+VALUES ($1, $2, 'patchbay', now() + interval '5 minutes')
+ON CONFLICT (state) DO UPDATE
+SET state = EXCLUDED.state
+WHERE desktop_auth_handoff.code_challenge = EXCLUDED.code_challenge
+  AND desktop_auth_handoff.callback_protocol = 'patchbay'
+  AND desktop_auth_handoff.user_id IS NULL
+  AND desktop_auth_handoff.code_hash IS NULL
+  AND desktop_auth_handoff.completed_at IS NULL
+  AND desktop_auth_handoff.expires_at > now()
+RETURNING created_at
+`
+
+type RegisterDesktopGoogleAttemptParams struct {
+	State         string `json:"state"`
+	CodeChallenge string `json:"code_challenge"`
+}
+
+func (q *Queries) RegisterDesktopGoogleAttempt(ctx context.Context, arg RegisterDesktopGoogleAttemptParams) (pgtype.Timestamptz, error) {
+	row := q.db.QueryRow(ctx, registerDesktopGoogleAttempt, arg.State, arg.CodeChallenge)
+	var created_at pgtype.Timestamptz
+	err := row.Scan(&created_at)
+	return created_at, err
 }

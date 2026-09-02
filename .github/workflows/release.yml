@@ -391,8 +391,111 @@ jobs:
           docker buildx imagetools inspect \
             ghcr.io/${{ github.repository_owner }}/patchbay-web:${{ steps.meta.outputs.version }}
 
+  docker-auth-broker-build:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runs-on: ubuntu-latest
+          - platform: linux/arm64
+            runs-on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runs-on }}
+    steps:
+      - name: Prepare
+        run: |
+          platform=${{ matrix.platform }}
+          echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify.outputs.commit_sha }}
+      - name: Compute auth broker image labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/patchbay-auth-broker
+          labels: |
+            org.opencontainers.image.title=Patchbay Auth Broker
+            org.opencontainers.image.description=Patchbay accounts authentication broker
+            org.opencontainers.image.revision=${{ needs.verify.outputs.commit_sha }}
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.auth-broker
+          pull: true
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=release-auth-broker-${{ env.PLATFORM_PAIR }}
+          cache-to: type=gha,mode=max,scope=release-auth-broker-${{ env.PLATFORM_PAIR }}
+          build-args: NEXT_PUBLIC_APP_VERSION=${{ needs.verify.outputs.tag_name }}
+          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/patchbay-auth-broker,push-by-digest=true,name-canonical=true,push=true
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-auth-broker-${{ env.PLATFORM_PAIR }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  docker-auth-broker-merge:
+    needs: [verify, docker-auth-broker-build]
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-docker-auth-broker-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-auth-broker-*
+          merge-multiple: true
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Compute auth broker image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/patchbay-auth-broker
+          flavor: latest=false
+          tags: |
+            type=raw,value=latest,enable=${{ needs.verify.outputs.is_stable == 'true' }}
+            type=raw,value=${{ needs.verify.outputs.tag_name }}
+            type=sha,prefix=sha-
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create manifest list and push
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf 'ghcr.io/${{ github.repository_owner }}/patchbay-auth-broker@sha256:%s ' *)
+      - name: Inspect image
+        run: docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/patchbay-auth-broker:${{ steps.meta.outputs.version }}
+
   helm-chart:
-    needs: [verify, docker-backend-merge, docker-web-merge]
+    needs: [verify, docker-backend-merge, docker-web-merge, docker-auth-broker-merge]
     if: github.repository == 'alexj11324/Cordy'
     runs-on: ubuntu-latest
     concurrency:
@@ -670,7 +773,7 @@ jobs:
           retention-days: 1
 
   publish-release:
-    needs: [verify, prepare-release, docker-backend-merge, docker-web-merge, helm-chart, desktop]
+    needs: [verify, prepare-release, docker-backend-merge, docker-web-merge, docker-auth-broker-merge, helm-chart, desktop]
     if: >-
       always() &&
       github.repository == 'alexj11324/Cordy' &&
@@ -678,6 +781,7 @@ jobs:
       needs.prepare-release.result == 'success' &&
       needs.docker-backend-merge.result == 'success' &&
       needs.docker-web-merge.result == 'success' &&
+      needs.docker-auth-broker-merge.result == 'success' &&
       needs.helm-chart.result == 'success' &&
       needs.desktop.result == 'success'
     runs-on: ubuntu-latest

@@ -1,0 +1,1 @@
+{ "unavailable": "認証サービスを利用できません。", "starting": "Google ログインを開いています…", "startFailed": "Google ログインを開始できませんでした。もう一度お試しください。", "completing": "Google ログインを完了しています…", "completeFailed": "Google ログインを完了できませんでした。", "opening": "Patchbay を開いています…", "desktopFailed": "デスクトップへのログインを完了できませんでした。", "retry": "再試行", "open": "Patchbay を開く" }

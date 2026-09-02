@@ -65,9 +65,14 @@ type dbExecutor interface {
 }
 
 type Config struct {
-	AllowSignup         bool
-	AllowedEmails       []string
-	AllowedEmailDomains []string
+	AllowSignup            bool
+	AllowedEmails          []string
+	AllowedEmailDomains    []string
+	DesktopBrokerAuthToken string
+	ClerkSecretKey         string
+	ClerkJWTKey            string
+	ClerkIssuer            string
+	ClerkAuthorizedParties []string
 	// DisableWorkspaceCreation, when true, makes POST /api/workspaces return
 	// 403 for every caller. There is no role/owner exception because the repo
 	// has no platform-admin concept; operators bootstrap the workspace with
@@ -382,6 +387,7 @@ type Handler struct {
 	// so the feature degrades cleanly on deployments without a private key.
 	// Wired in cmd/server/router.go after New.
 	PRRefresh *ghsnapshot.Manager
+	ClerkAuth ClerkSessionVerifier
 	// WorkProductDiscovery consumes terminal execution provenance and links a
 	// completed branch head to its exact external work product.
 	WorkProductDiscovery *WorkProductDiscoveryRuntime
@@ -479,6 +485,12 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 		}),
 		LLM: llmClient,
 		cfg: cfg,
+	}
+	clerkAuth, err := newClerkAuthClient(cfg)
+	if err != nil {
+		slog.Error("Clerk auth configuration rejected", "error", err)
+	} else {
+		h.ClerkAuth = clerkAuth
 	}
 	h.WebhookDeliveryWorker = NewWebhookDeliveryWorker(h)
 

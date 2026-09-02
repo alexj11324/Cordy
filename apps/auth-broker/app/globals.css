@@ -1,0 +1,7 @@
+:root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, sans-serif; background: #0c0d10; color: #f4f4f5; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+section { width: min(420px, 100%); padding: 32px; border: 1px solid #2b2d34; border-radius: 18px; background: #15171c; text-align: center; }
+.mark { margin: 0 auto 24px; width: 44px; height: 44px; display: grid; place-items: center; border-radius: 12px; background: #f4f4f5; color: #111318; font-weight: 800; }
+button { margin-top: 16px; padding: 10px 16px; border: 0; border-radius: 9px; cursor: pointer; }

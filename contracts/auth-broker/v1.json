@@ -1,0 +1,10 @@
+{
+  "$schema": "./schema.json",
+  "name": "patchbay-auth-broker",
+  "version": 1,
+  "origins": { "broker": "https://accounts.aspectlylabs.com", "product": "https://patchbay.aspectlylabs.com", "api": "https://api.aspectlylabs.com" },
+  "broker": { "googleStartPath": "/oauth/google", "googleCallbackPath": "/oauth/google/callback", "desktopCompletionPath": "/login", "desktopAttemptPath": "/v1/desktop/google/attempt", "desktopCompletePath": "/v1/desktop/google/complete", "contractPath": "/v1/contract" },
+  "goApi": { "desktopAttemptPath": "/api/desktop-google/attempt", "desktopCompletePath": "/api/desktop-google/complete", "desktopRedeemPath": "/api/desktop-handoff/redeem" },
+  "desktop": { "callbackUrl": "patchbay://auth/callback", "queryParameters": ["code", "state"], "pkceMethod": "S256", "bearerAllowedInCallback": false },
+  "authority": { "identity": "clerk", "patchbaySession": "go-api", "oneTimeGrant": "go-api", "brokerPersistence": "none" }
+}

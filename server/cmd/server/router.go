@@ -56,7 +56,6 @@ var defaultOrigins = []string{
 	"http://localhost:5174", // electron-vite dev (fallback port)
 }
 
-
 // corsAllowedHeaders must list every header the browser clients send. A header
 // missing here fails the preflight, so the request never reaches the handler at
 // all — the failure looks nothing like "the server ignored my header".
@@ -420,6 +419,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		AllowSignup:              os.Getenv("ALLOW_SIGNUP") != "false",
 		AllowedEmails:            splitAndTrim(os.Getenv("ALLOWED_EMAILS")),
 		AllowedEmailDomains:      splitAndTrim(os.Getenv("ALLOWED_EMAIL_DOMAINS")),
+		DesktopBrokerAuthToken:   strings.TrimSpace(os.Getenv("PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN")),
+		ClerkSecretKey:           strings.TrimSpace(os.Getenv("CLERK_SECRET_KEY")),
+		ClerkJWTKey:              strings.TrimSpace(os.Getenv("CLERK_JWT_KEY")),
+		ClerkIssuer:              strings.TrimRight(strings.TrimSpace(os.Getenv("CLERK_ISSUER")), "/"),
+		ClerkAuthorizedParties:   splitAndTrim(os.Getenv("CLERK_AUTHORIZED_PARTIES")),
 		DisableWorkspaceCreation: os.Getenv("DISABLE_WORKSPACE_CREATION") == "true",
 		VCSIntegrationEnabled:    os.Getenv("PATCHBAY_VCS_INTEGRATION_ENABLED") == "true",
 		PublicURL:                strings.TrimRight(strings.TrimSpace(os.Getenv("PATCHBAY_PUBLIC_URL")), "/"),
@@ -1421,6 +1425,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	r.With(authRL).Post("/auth/guest", h.CreateGuestAuth)
 	r.With(desktopHandoffRL).Post("/api/desktop-handoff/initiate", h.InitiateDesktopAuthHandoff)
 	r.With(desktopHandoffRL).Post("/api/desktop-handoff/redeem", h.RedeemDesktopAuthHandoff)
+	r.With(handler.RequireDesktopBrokerAuth(signupConfig.DesktopBrokerAuthToken), desktopHandoffRL).Post("/api/desktop-google/attempt", h.RegisterDesktopGoogleAttempt)
+	r.With(handler.RequireDesktopBrokerAuth(signupConfig.DesktopBrokerAuthToken), desktopHandoffRL).Post("/api/desktop-google/complete", h.CompleteDesktopGoogleAttempt)
 	r.With(middleware.RevokeGuestOnLogout(queries)).Post("/auth/logout", h.Logout)
 
 	// Public API

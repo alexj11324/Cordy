@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://accounts.aspectlylabs.com/v1/contract/schema.json",
+  "title": "Patchbay auth broker contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "version", "origins", "broker", "goApi", "desktop", "authority"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "name": { "const": "patchbay-auth-broker" },
+    "version": { "const": 1 },
+    "origins": {
+      "type": "object", "additionalProperties": false,
+      "required": ["broker", "product", "api"],
+      "properties": {
+        "broker": { "const": "https://accounts.aspectlylabs.com" },
+        "product": { "const": "https://patchbay.aspectlylabs.com" },
+        "api": { "const": "https://api.aspectlylabs.com" }
+      }
+    },
+    "broker": {
+      "type": "object", "additionalProperties": false,
+      "required": ["googleStartPath", "googleCallbackPath", "desktopCompletionPath", "desktopAttemptPath", "desktopCompletePath", "contractPath"],
+      "properties": {
+        "googleStartPath": { "const": "/oauth/google" },
+        "googleCallbackPath": { "const": "/oauth/google/callback" },
+        "desktopCompletionPath": { "const": "/login" },
+        "desktopAttemptPath": { "const": "/v1/desktop/google/attempt" },
+        "desktopCompletePath": { "const": "/v1/desktop/google/complete" },
+        "contractPath": { "const": "/v1/contract" }
+      }
+    },
+    "goApi": {
+      "type": "object", "additionalProperties": false,
+      "required": ["desktopAttemptPath", "desktopCompletePath", "desktopRedeemPath"],
+      "properties": {
+        "desktopAttemptPath": { "const": "/api/desktop-google/attempt" },
+        "desktopCompletePath": { "const": "/api/desktop-google/complete" },
+        "desktopRedeemPath": { "const": "/api/desktop-handoff/redeem" }
+      }
+    },
+    "desktop": {
+      "type": "object", "additionalProperties": false,
+      "required": ["callbackUrl", "queryParameters", "pkceMethod", "bearerAllowedInCallback"],
+      "properties": {
+        "callbackUrl": { "const": "patchbay://auth/callback" },
+        "queryParameters": { "type": "array", "prefixItems": [{ "const": "code" }, { "const": "state" }], "items": false, "minItems": 2, "maxItems": 2 },
+        "pkceMethod": { "const": "S256" },
+        "bearerAllowedInCallback": { "const": false }
+      }
+    },
+    "authority": {
+      "type": "object", "additionalProperties": false,
+      "required": ["identity", "patchbaySession", "oneTimeGrant", "brokerPersistence"],
+      "properties": {
+        "identity": { "const": "clerk" },
+        "patchbaySession": { "const": "go-api" },
+        "oneTimeGrant": { "const": "go-api" },
+        "brokerPersistence": { "const": "none" }
+      }
+    }
+  }
+}

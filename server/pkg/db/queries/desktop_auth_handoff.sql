@@ -7,6 +7,35 @@ INSERT INTO desktop_auth_handoff (
 )
 VALUES ($1, $2, $3, now() + interval '10 minutes');
 
+-- name: RegisterDesktopGoogleAttempt :one
+INSERT INTO desktop_auth_handoff (
+    state,
+    code_challenge,
+    callback_protocol,
+    expires_at
+)
+VALUES ($1, $2, 'patchbay', now() + interval '5 minutes')
+ON CONFLICT (state) DO UPDATE
+SET state = EXCLUDED.state
+WHERE desktop_auth_handoff.code_challenge = EXCLUDED.code_challenge
+  AND desktop_auth_handoff.callback_protocol = 'patchbay'
+  AND desktop_auth_handoff.user_id IS NULL
+  AND desktop_auth_handoff.code_hash IS NULL
+  AND desktop_auth_handoff.completed_at IS NULL
+  AND desktop_auth_handoff.expires_at > now()
+RETURNING created_at;
+
+-- name: GetDesktopGoogleAttempt :one
+SELECT created_at
+FROM desktop_auth_handoff
+WHERE state = $1
+  AND code_challenge = $2
+  AND callback_protocol = 'patchbay'
+  AND user_id IS NULL
+  AND code_hash IS NULL
+  AND completed_at IS NULL
+  AND expires_at > now();
+
 -- name: CompleteDesktopAuthHandoff :one
 UPDATE desktop_auth_handoff
 SET user_id = $2,

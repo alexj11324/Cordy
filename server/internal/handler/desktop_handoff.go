@@ -3,23 +3,35 @@ package handler
 import (
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"regexp"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/patchbay-ai/patchbay/server/internal/analytics"
 	"github.com/patchbay-ai/patchbay/server/internal/auth"
+	obsmetrics "github.com/patchbay-ai/patchbay/server/internal/metrics"
 	"github.com/patchbay-ai/patchbay/server/internal/util"
 	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
 const desktopAuthCallbackProtocol = "patchbay"
 
+const (
+	desktopBrokerAuthHeader = "X-Patchbay-Desktop-Broker-Auth"
+	authContractHeader      = "X-Patchbay-Auth-Contract-Version"
+	authContractVersion     = "1"
+)
+
 var (
-	desktopHandoffOpaquePattern = regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`)
+	desktopHandoffOpaquePattern = regexp.MustCompile(`^[A-Za-z0-9._~-]{43,128}$`)
 	desktopHandoffCodePattern   = regexp.MustCompile(`^pbd_[A-Za-z0-9_-]{43}$`)
+	desktopBrokerSecretPattern  = regexp.MustCompile(`^[a-f0-9]{64}$`)
 )
 
 type desktopAuthHandoffRequest struct {
@@ -31,6 +43,141 @@ type desktopAuthHandoffRequest struct {
 type desktopAuthHandoffRedeemRequest struct {
 	Code         string `json:"code"`
 	CodeVerifier string `json:"code_verifier"`
+}
+
+type desktopGoogleAttemptRequest struct {
+	State         string `json:"state"`
+	CodeChallenge string `json:"code_challenge"`
+}
+
+func RequireDesktopBrokerAuth(expected string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			values := r.Header.Values(desktopBrokerAuthHeader)
+			r.Header.Del(desktopBrokerAuthHeader)
+			if !desktopBrokerSecretPattern.MatchString(expected) {
+				writeError(w, http.StatusServiceUnavailable, "auth broker credential is not configured")
+				return
+			}
+			if len(values) != 1 || len(values[0]) != len(expected) || subtle.ConstantTimeCompare([]byte(values[0]), []byte(expected)) != 1 {
+				writeError(w, http.StatusForbidden, "invalid auth broker credential")
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func requireAuthContract(w http.ResponseWriter, r *http.Request) bool {
+	w.Header().Set(authContractHeader, authContractVersion)
+	w.Header().Set("Cache-Control", "no-store")
+	versions := r.Header.Values(authContractHeader)
+	if len(versions) != 1 || versions[0] != authContractVersion {
+		writeError(w, http.StatusConflict, "auth contract version rejected")
+		return false
+	}
+	return true
+}
+
+func decodeDesktopGoogleAttempt(w http.ResponseWriter, r *http.Request, dst *desktopGoogleAttemptRequest) bool {
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(dst); err != nil {
+		return false
+	}
+	return errors.Is(decoder.Decode(&struct{}{}), io.EOF)
+}
+
+func validDesktopGoogleAttempt(req desktopGoogleAttemptRequest) bool {
+	return desktopHandoffOpaquePattern.MatchString(req.State) && desktopHandoffOpaquePattern.MatchString(req.CodeChallenge)
+}
+
+func (h *Handler) RegisterDesktopGoogleAttempt(w http.ResponseWriter, r *http.Request) {
+	if !requireAuthContract(w, r) {
+		return
+	}
+	var req desktopGoogleAttemptRequest
+	if !decodeDesktopGoogleAttempt(w, r, &req) || !validDesktopGoogleAttempt(req) {
+		writeError(w, http.StatusBadRequest, "invalid desktop Google OAuth binding")
+		return
+	}
+	if _, err := h.Queries.RegisterDesktopGoogleAttempt(r.Context(), db.RegisterDesktopGoogleAttemptParams{State: req.State, CodeChallenge: req.CodeChallenge}); err != nil {
+		if isNotFound(err) {
+			writeError(w, http.StatusConflict, "desktop Google OAuth binding is already in use")
+			return
+		}
+		writeError(w, http.StatusServiceUnavailable, "desktop Google OAuth is temporarily unavailable")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"registered": true})
+}
+
+func (h *Handler) CompleteDesktopGoogleAttempt(w http.ResponseWriter, r *http.Request) {
+	if !requireAuthContract(w, r) {
+		return
+	}
+	var req desktopGoogleAttemptRequest
+	if !decodeDesktopGoogleAttempt(w, r, &req) || !validDesktopGoogleAttempt(req) {
+		writeError(w, http.StatusBadRequest, "invalid desktop Google OAuth binding")
+		return
+	}
+	authorization := r.Header.Get("Authorization")
+	if !strings.HasPrefix(authorization, "Bearer ") || len(authorization) > 8192 || strings.ContainsAny(authorization, "\r\n") {
+		writeError(w, http.StatusUnauthorized, "Clerk session is required")
+		return
+	}
+	if h.ClerkAuth == nil {
+		writeError(w, http.StatusServiceUnavailable, "Clerk login is not configured")
+		return
+	}
+	startedAt, err := h.Queries.GetDesktopGoogleAttempt(r.Context(), db.GetDesktopGoogleAttemptParams{State: req.State, CodeChallenge: req.CodeChallenge})
+	if err != nil || !startedAt.Valid {
+		writeError(w, http.StatusConflict, "fresh authentication is required")
+		return
+	}
+	identity, err := h.ClerkAuth.VerifyFreshSession(r.Context(), strings.TrimSpace(strings.TrimPrefix(authorization, "Bearer ")), startedAt.Time)
+	if err != nil {
+		if errors.Is(err, errClerkUnavailable) {
+			writeError(w, http.StatusServiceUnavailable, "Clerk login is temporarily unavailable")
+		} else {
+			writeError(w, http.StatusConflict, "fresh authentication is required")
+		}
+		return
+	}
+	user, isNew, err := h.findOrCreateUser(r.Context(), identity.Email)
+	if err != nil {
+		writeError(w, http.StatusForbidden, "login rejected")
+		return
+	}
+	if isNew {
+		evt := analytics.Signup(uuidToString(user.ID), user.Email, "")
+		evt.Properties["auth_method"] = "clerk"
+		obsmetrics.RecordEvent(h.Analytics, h.Metrics, evt)
+	}
+	if (identity.Name != "" && user.Name == strings.Split(identity.Email, "@")[0]) || (identity.AvatarURL != "" && !user.AvatarUrl.Valid) {
+		name := user.Name
+		if identity.Name != "" && user.Name == strings.Split(identity.Email, "@")[0] {
+			name = identity.Name
+		}
+		avatar := user.AvatarUrl
+		if identity.AvatarURL != "" && !user.AvatarUrl.Valid {
+			avatar = pgtype.Text{String: identity.AvatarURL, Valid: true}
+		}
+		if updated, updateErr := h.Queries.UpdateUser(r.Context(), db.UpdateUserParams{ID: user.ID, Name: name, AvatarUrl: avatar}); updateErr == nil {
+			user = updated
+		}
+	}
+	code, err := generateDesktopHandoffCode()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create desktop auth handoff")
+		return
+	}
+	protocol, err := h.Queries.CompleteDesktopAuthHandoff(r.Context(), db.CompleteDesktopAuthHandoffParams{State: req.State, UserID: user.ID, CodeHash: pgtype.Text{String: auth.HashToken(code), Valid: true}, CodeChallenge: req.CodeChallenge})
+	if err != nil {
+		writeError(w, http.StatusConflict, "desktop Google OAuth attempt was already used")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"callback_protocol": protocol, "code": code})
 }
 
 // desktopHandoffCodeChallenge derives the S256 PKCE challenge used by the

@@ -1,0 +1,1 @@
+{ "unavailable": "认证服务暂不可用。", "starting": "正在打开 Google 登录…", "startFailed": "无法启动 Google 登录，请重试。", "completing": "正在完成 Google 登录…", "completeFailed": "无法完成 Google 登录。", "opening": "正在打开 Patchbay…", "desktopFailed": "无法完成桌面端登录。", "retry": "重试", "open": "打开 Patchbay" }

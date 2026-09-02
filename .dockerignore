@@ -35,10 +35,12 @@ coverage
 /docs/
 *.md
 
-# Only the web workspace is used by Dockerfile.web. Default-exclude future
-# app workspaces so they do not silently enter the build context.
+# Shipping frontend images use only web and auth-broker. Default-exclude future
+# app workspaces so they do not silently enter either build context.
 /apps/*
 !/apps/web/
+!/apps/auth-broker/
+!/contracts/
 
 # Repository-only tooling
 /.github/

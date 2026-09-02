@@ -1,0 +1,15 @@
+enabled: false
+replicas: 2
+image:
+  repository: ghcr.io/alexj11324/patchbay-auth-broker
+  digest: ""
+  pullPolicy: IfNotPresent
+config:
+  apiOrigin: https://api.aspectlylabs.com
+  brokerOrigin: https://accounts.aspectlylabs.com
+existingSecret: patchbay-auth-broker
+service:
+  port: 80
+ingress:
+  enabled: false
+  host: accounts.aspectlylabs.com

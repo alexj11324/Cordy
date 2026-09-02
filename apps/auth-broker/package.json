@@ -1,0 +1,6 @@
+{
+  "name": "@patchbay/auth-broker", "version": "0.0.0", "private": true, "type": "module",
+  "scripts": { "dev": "sh -c 'next dev --webpack --port \"${AUTH_BROKER_PORT:-3100}\"'", "build": "next build --webpack", "start": "next start", "typecheck": "next typegen && tsc --noEmit", "lint": "eslint .", "test": "vitest run" },
+  "dependencies": { "@clerk/nextjs": "^7.7.9", "next": "^16.2.5", "react": "catalog:", "react-dom": "catalog:" },
+  "devDependencies": { "@patchbay/eslint-config": "workspace:*", "@types/react": "catalog:", "@types/react-dom": "catalog:", "typescript": "catalog:", "vitest": "catalog:" }
+}
