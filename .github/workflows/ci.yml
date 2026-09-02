@@ -825,3 +825,36 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: ./scripts/install.ps1.test.ps1
+
+  production-delivery:
+    # The production pipeline's own surfaces -- the deploy workflow, the four
+    # Dockerfiles' build fingerprints, the origin nginx map, the restricted
+    # server gateway, and the two verifiers -- have no other test job. They are
+    # only exercised for real on a merge to main, by which point a mistake is
+    # already deploying, so assert their contracts here on every change.
+    #
+    # These suites deliberately depend on nothing outside the Node and Python
+    # standard libraries: no pnpm install, no Playwright browsers, no network.
+    # Anything that needs production credentials or a real host belongs in the
+    # deploy job, where it can fail loudly against the real thing.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Test the production delivery contract
+        run: |
+          node --test \
+            scripts/assemble-production-manifest.test.mjs \
+            scripts/production-deployment-contract.test.mjs \
+            scripts/verify-production-browser.test.mjs \
+            scripts/verify-production-deployment.test.mjs
+
+      - name: Test the restricted origin deployment gateway
+        working-directory: deploy/origin
+        run: python3 -m unittest production_deploy_test -v
