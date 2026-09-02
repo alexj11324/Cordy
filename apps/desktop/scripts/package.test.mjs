@@ -480,11 +480,11 @@ describe("electron-builder.yml packaging config", () => {
   it("pins the canonical release repository and hardened macOS signing", () => {
     expect(configPath, "electron-builder.yml not found").toBeTruthy();
     const raw = readFileSync(configPath, "utf-8");
-    expect(raw).toMatch(/\nmac:\n(?:.*\n)*?  hardenedRuntime: true\n/);
+    expect(raw).toMatch(/\nmac:\n(?:.*\n)*? {2}hardenedRuntime: true\n/);
     expect(raw).toContain("  entitlements: build/entitlements.mac.plist");
     expect(raw).toContain("  entitlementsInherit: build/entitlements.mac.plist");
-    expect(raw).toMatch(/\npublish:\n[\s\S]*\n  owner: alexj11324\n/);
-    expect(raw).toMatch(/\npublish:\n[\s\S]*\n  repo: Cordy\n/);
-    expect(raw).toMatch(/\npublish:\n[\s\S]*\n  releaseType: draft\n/);
+    expect(raw).toMatch(/\npublish:\n[\s\S]*\n {2}owner: alexj11324\n/);
+    expect(raw).toMatch(/\npublish:\n[\s\S]*\n {2}repo: Cordy\n/);
+    expect(raw).toMatch(/\npublish:\n[\s\S]*\n {2}releaseType: draft\n/);
   });
 });

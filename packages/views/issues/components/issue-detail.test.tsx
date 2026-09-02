@@ -768,8 +768,10 @@ describe("IssueDetail (shared)", () => {
     );
   });
 
-  it("refreshes dependency state from the real issue lifecycle events", () => {
+  it("refreshes dependency state from the real issue lifecycle events", async () => {
     renderIssueDetail();
+
+    await screen.findByText("No hard prerequisites. This issue can start immediately.");
 
     expect(mockUseWSEvent).toHaveBeenCalledWith("issue:created", expect.any(Function));
     expect(mockUseWSEvent).toHaveBeenCalledWith("issue:updated", expect.any(Function));
