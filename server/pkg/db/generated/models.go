@@ -962,7 +962,7 @@ type Issue struct {
 	OwnerID            pgtype.UUID        `json:"owner_id"`
 	ReviewerType       pgtype.Text        `json:"reviewer_type"`
 	ReviewerID         pgtype.UUID        `json:"reviewer_id"`
-	AssigneeGeneration int64              `json:"assignee_generation"`
+	ExecutorGeneration int64              `json:"executor_generation"`
 }
 
 type IssueDependency struct {
