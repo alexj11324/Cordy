@@ -1,0 +1,52 @@
+{
+  "page": {
+    "title": "Work Products",
+    "description": "Artifacts discovered from daemon execution provenance.",
+    "empty": "No work products yet",
+    "error": "Work products could not be loaded.",
+    "provenance_title": "Execution provenance",
+    "provenance_empty": "No execution provenance has been recorded.",
+    "load_more": "Load more",
+    "retry": "Retry"
+  },
+  "detail": {
+    "title": "Work Product",
+    "not_found": "This work product is unavailable.",
+    "external_identity": "External identity",
+    "provider": "Provider",
+    "kind": "Kind",
+    "created": "Created",
+    "updated": "Updated",
+    "open_external": "Open external resource",
+    "provenance": "Execution provenance",
+    "provenance_empty": "No execution provenance points to this work product.",
+    "back": "Back to Work Products"
+  },
+  "relations": {
+    "title": "Work products",
+    "empty": "No work products are linked to this issue.",
+    "attach": "Link work product",
+    "dialog_title": "Link a work product",
+    "select_label": "Work product",
+    "select_placeholder": "Select a work product",
+    "no_products": "No work products are available to link.",
+    "close_intent": "Suggest closing this issue after delivery",
+    "close_intent_short": "close",
+    "link": "Link",
+    "cancel": "Cancel",
+    "success": "Work product linked.",
+    "error": "The work product could not be linked.",
+    "loading": "Loading work products…"
+  },
+  "provenance": {
+    "status": "Discovery",
+    "head": "Head",
+    "branch": "Branch",
+    "sha": "Commit SHA",
+    "repo": "Repository",
+    "workspace": "Execution workspace",
+    "matches": "Matches",
+    "reason": "Reason",
+    "unknown": "Unknown"
+  }
+}

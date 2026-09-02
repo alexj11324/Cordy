@@ -195,6 +195,16 @@ export type {
   DependencyGraphResponse,
   ListDependencyGraphsResponse,
 } from "./dependency-graph";
+export type {
+  CreateWorkProductRelationRequest,
+  ExecutionProvenance,
+  ExecutionProvenancePage,
+  WorkProduct,
+  WorkProductPage,
+  WorkProductPageParams,
+  WorkProductRelation,
+  WorkProductRelationPage,
+} from "./work-product";
 export type { PinnedItem, PinnedItemType, CreatePinRequest, ReorderPinsRequest } from "./pin";
 export type {
   GitHubInstallation,

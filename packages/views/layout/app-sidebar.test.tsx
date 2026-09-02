@@ -127,6 +127,7 @@ vi.mock("@patchbay/core/paths", async (importOriginal) => ({
     myIssues: () => "/acme/my-issues",
     issues: () => "/acme/issues",
     projects: () => "/acme/projects",
+    workProducts: () => "/acme/work-products",
     automations: () => "/acme/automations",
     agents: () => "/acme/agents",
     teams: () => "/acme/teams",
@@ -428,5 +429,18 @@ describe("personal nav — Chat", () => {
     appForeground.current = false;
     const { container } = render(<AppSidebar />);
     expect(chatBadge(container)).toHaveAttribute("aria-label", "5");
+  });
+});
+
+describe("workspace nav — Work Products", () => {
+  beforeEach(() => {
+    navigation.current = { pathname: "/acme/issues" };
+  });
+
+  it("renders a Work Products nav link to the workspace route", () => {
+    const { container } = render(<AppSidebar />);
+    expect(
+      container.querySelector<HTMLElement>('button[data-href="/acme/work-products"]'),
+    ).not.toBeNull();
   });
 });

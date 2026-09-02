@@ -37,6 +37,9 @@ import type {
   ListProjectResourcesResponse,
   ListProjectsResponse,
   ListDependencyGraphsResponse,
+  WorkProduct,
+  WorkProductPage,
+  WorkProductPageParams,
   MemberWithUser,
   PinnedItem,
   PinnedItemType,
@@ -85,6 +88,10 @@ import {
   RedeemWecomBindingTokenResponseSchema,
   TimelineEntriesSchema,
   WecomInstallationSchema,
+  EMPTY_WORK_PRODUCT,
+  EMPTY_WORK_PRODUCT_PAGE,
+  WorkProductPageSchema,
+  WorkProductSchema,
 } from "@patchbay/core/api/schemas";
 import {
   ActiveTasksResponseSchema,
@@ -1270,6 +1277,38 @@ class ApiClient {
 
   async deleteProject(id: string): Promise<void> {
     await this.fetch<void>(`/api/projects/${id}`, { method: "DELETE" });
+  }
+
+  // Work Products are workspace-scoped through X-Workspace-Slug, matching
+  // the web/desktop core client. Mobile owns this thin API mirror so it keeps
+  // its independent auth/timeout behavior while sharing the normalized W6
+  // types and zod response contract.
+  async listWorkProducts(
+    params: WorkProductPageParams = {},
+    opts?: { signal?: AbortSignal },
+  ): Promise<WorkProductPage> {
+    const search = new URLSearchParams();
+    if (params.page != null) search.set("page", String(params.page));
+    if (params.per_page != null) search.set("per_page", String(params.per_page));
+    const query = search.toString();
+    return this.fetchValidated(
+      `/api/work-products${query ? `?${query}` : ""}`,
+      WorkProductPageSchema,
+      EMPTY_WORK_PRODUCT_PAGE,
+      { signal: opts?.signal, endpoint: "GET /api/work-products" },
+    );
+  }
+
+  async getWorkProduct(
+    id: string,
+    opts?: { signal?: AbortSignal },
+  ): Promise<WorkProduct> {
+    return this.fetchValidated(
+      `/api/work-products/${encodeURIComponent(id)}`,
+      WorkProductSchema,
+      EMPTY_WORK_PRODUCT,
+      { signal: opts?.signal, endpoint: "GET /api/work-products/:id" },
+    );
   }
 
   // --- Project resources ---

@@ -6,6 +6,7 @@
     "issues": "タスク",
     "task_graph": "依存関係グラフ",
     "projects": "プロジェクト",
+    "work_products": "成果物",
     "automations": "オートパイロット",
     "agents": "エージェント",
     "teams": "チーム",

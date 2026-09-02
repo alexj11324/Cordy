@@ -94,6 +94,7 @@ import { ExecutionLogSection } from "./execution-log-section";
 import { QuickActionsSection } from "./quick-actions-section";
 import { PluginPanelSection } from "../../plugins";
 import { PullRequestList } from "./pull-request-list";
+import { WorkProductRelationsSection } from "../../work-products";
 import { useGitHubSettings } from "@patchbay/core/github";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@patchbay/core/auth";
@@ -2579,6 +2580,11 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
           Self-contained; owns its own collapse state and WS subscriptions.
           Hides itself when there are no runs to show. */}
       <ExecutionLogSection issueId={id} identifier={issue.identifier} />
+
+      {/* Work Product links are the human-facing side of daemon execution
+          provenance. The section reads server-owned relations and sends only
+          the selected product + close intent when a member links one. */}
+      <WorkProductRelationsSection issueId={id} />
 
       {/* Details — creator and timestamps. Sits below the execution log
           because it is the least-read block in the sidebar: the values

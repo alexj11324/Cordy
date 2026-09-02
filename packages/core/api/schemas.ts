@@ -91,9 +91,40 @@ import type {
   WorkspaceChannelMessage,
   ListWorkspaceChannelsResponse,
   ListWorkspaceChannelMessagesResponse,
+  ExecutionProvenance,
+  ExecutionProvenancePage,
+  WorkProduct,
+  WorkProductPage,
+  WorkProductRelation,
+  WorkProductRelationPage,
 } from "../types";
 import type { CloudRuntimeNode } from "../runtimes/cloud-runtime";
 import type { CreateFeedbackResponse } from "../feedback/types";
+
+/**
+ * pgx's nullable values normally marshal as JSON strings/null, but older Go
+ * versions and test fixtures may expose the underlying `{String, Valid}` or
+ * `{Time, Valid}` shape. Normalize both at the API boundary so views never
+ * need to know which Go serializer produced the response.
+ */
+function unwrapPgValue(value: unknown): unknown {
+  if (value instanceof Date) return value.toISOString();
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const record = value as Record<string, unknown>;
+  if (record.Valid === false) return null;
+  if (typeof record.String === "string") return record.String;
+  if (record.Time instanceof Date) return record.Time.toISOString();
+  if (typeof record.Time === "string") return record.Time;
+  return value;
+}
+
+const workProductString = () =>
+  z.preprocess(unwrapPgValue, z.string().default("").catch(""));
+const workProductNullableString = () =>
+  z.preprocess(
+    unwrapPgValue,
+    z.string().nullable().default(null).catch(null),
+  );
 
 export const PluginConfigFieldSchema = z.object({
   key: z.string(),
@@ -1479,6 +1510,155 @@ const SearchProjectResultSchema = ProjectSchema.extend({
   match_source: z.string(),
   matched_snippet: z.string().optional(),
 }).loose();
+
+/** Work Product / execution provenance (Go mainline W6). */
+export const WorkProductSchema: z.ZodType<WorkProduct> = z.object({
+  id: workProductString(),
+  workspace_id: workProductString(),
+  kind: workProductString(),
+  provider: workProductString(),
+  external_identity: workProductString(),
+  external_url: workProductNullableString(),
+  provider_record_type: workProductNullableString(),
+  provider_record_id: workProductNullableString(),
+  created_at: workProductString(),
+  updated_at: workProductString(),
+}).loose() as z.ZodType<WorkProduct>;
+
+export const EMPTY_WORK_PRODUCT: WorkProduct = {
+  id: "",
+  workspace_id: "",
+  kind: "",
+  provider: "",
+  external_identity: "",
+  external_url: null,
+  provider_record_type: null,
+  provider_record_id: null,
+  created_at: "",
+  updated_at: "",
+};
+
+export const WorkProductPageSchema: z.ZodType<WorkProductPage> = z.object({
+  products: z.array(WorkProductSchema).default([]),
+  page: z.number().int().positive().default(1),
+  per_page: z.number().int().positive().default(64),
+  has_more: z.boolean().default(false),
+}).loose() as z.ZodType<WorkProductPage>;
+
+export const EMPTY_WORK_PRODUCT_PAGE: WorkProductPage = {
+  products: [],
+  page: 1,
+  per_page: 64,
+  has_more: false,
+};
+
+export const WorkProductRelationSchema: z.ZodType<WorkProductRelation> = z.object({
+  id: workProductString(),
+  workspace_id: workProductString(),
+  work_product_id: workProductString(),
+  issue_id: workProductString(),
+  task_id: workProductNullableString(),
+  run_id: workProductNullableString(),
+  relation_key: workProductString(),
+  relation_source: workProductString(),
+  attached_by_type: workProductString(),
+  attached_by_id: workProductString(),
+  attached_at: workProductString(),
+  close_intent: z.boolean().default(false).catch(false),
+  detached_at: workProductNullableString(),
+  detached_by_type: workProductNullableString(),
+  detached_by_id: workProductNullableString(),
+  detached_task_id: workProductNullableString(),
+  detached_run_id: workProductNullableString(),
+}).loose() as z.ZodType<WorkProductRelation>;
+
+export const WorkProductRelationPageSchema: z.ZodType<WorkProductRelationPage> = z.object({
+  relations: z.array(WorkProductRelationSchema).default([]),
+  page: z.number().int().positive().default(1),
+  per_page: z.number().int().positive().default(64),
+  has_more: z.boolean().default(false),
+}).loose() as z.ZodType<WorkProductRelationPage>;
+
+export const EMPTY_WORK_PRODUCT_RELATION: WorkProductRelation = {
+  id: "",
+  workspace_id: "",
+  work_product_id: "",
+  issue_id: "",
+  task_id: null,
+  run_id: null,
+  relation_key: "",
+  relation_source: "",
+  attached_by_type: "",
+  attached_by_id: "",
+  attached_at: "",
+  close_intent: false,
+  detached_at: null,
+  detached_by_type: null,
+  detached_by_id: null,
+  detached_task_id: null,
+  detached_run_id: null,
+};
+
+export const EMPTY_WORK_PRODUCT_RELATION_PAGE: WorkProductRelationPage = {
+  relations: [],
+  page: 1,
+  per_page: 64,
+  has_more: false,
+};
+
+export const ExecutionProvenanceSchema: z.ZodType<ExecutionProvenance> = z.object({
+  task_id: workProductString(),
+  workspace_id: workProductString(),
+  run_id: workProductNullableString(),
+  repo_identity: workProductString(),
+  execution_workspace: workProductString(),
+  head_branch: workProductNullableString(),
+  head_sha: workProductNullableString(),
+  head_state: workProductString(),
+  started_at: workProductString(),
+  finished_at: workProductNullableString(),
+  discovery_status: workProductString(),
+  discovery_lease_id: workProductNullableString(),
+  discovery_match_count: z.number().int().nonnegative().default(0).catch(0),
+  discovery_reason: workProductNullableString(),
+  discovery_work_product_id: workProductNullableString(),
+  discovery_at: workProductNullableString(),
+  updated_at: workProductString(),
+}).loose() as z.ZodType<ExecutionProvenance>;
+
+export const ExecutionProvenancePageSchema: z.ZodType<ExecutionProvenancePage> = z.object({
+  provenance: z.array(ExecutionProvenanceSchema).default([]),
+  page: z.number().int().positive().default(1),
+  per_page: z.number().int().positive().default(64),
+  has_more: z.boolean().default(false),
+}).loose() as z.ZodType<ExecutionProvenancePage>;
+
+export const EMPTY_EXECUTION_PROVENANCE_PAGE: ExecutionProvenancePage = {
+  provenance: [],
+  page: 1,
+  per_page: 64,
+  has_more: false,
+};
+
+export const EMPTY_EXECUTION_PROVENANCE: ExecutionProvenance = {
+  task_id: "",
+  workspace_id: "",
+  run_id: null,
+  repo_identity: "",
+  execution_workspace: "",
+  head_branch: null,
+  head_sha: null,
+  head_state: "unknown",
+  started_at: "",
+  finished_at: null,
+  discovery_status: "not_attempted",
+  discovery_lease_id: null,
+  discovery_match_count: 0,
+  discovery_reason: null,
+  discovery_work_product_id: null,
+  discovery_at: null,
+  updated_at: "",
+};
 
 export const SearchProjectsResponseSchema = z.object({
   projects: z.array(SearchProjectResultSchema).default([]),

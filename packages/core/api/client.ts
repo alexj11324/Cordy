@@ -112,6 +112,14 @@ import type {
   ListProjectResourcesResponse,
   DependencyGraphResponse,
   ListDependencyGraphsResponse,
+  ExecutionProvenance,
+  ExecutionProvenancePage,
+  WorkProduct,
+  WorkProductPage,
+  WorkProductRelation,
+  WorkProductRelationPage,
+  CreateWorkProductRelationRequest,
+  WorkProductPageParams,
   Label,
   IssueProperty,
   IssuePropertyValue,
@@ -330,6 +338,18 @@ import {
   RuntimeUsageListSchema,
   SearchIssuesResponseSchema,
   SearchProjectsResponseSchema,
+  WorkProductPageSchema,
+  WorkProductSchema,
+  WorkProductRelationPageSchema,
+  WorkProductRelationSchema,
+  ExecutionProvenancePageSchema,
+  ExecutionProvenanceSchema,
+  EMPTY_WORK_PRODUCT,
+  EMPTY_WORK_PRODUCT_PAGE,
+  EMPTY_WORK_PRODUCT_RELATION,
+  EMPTY_WORK_PRODUCT_RELATION_PAGE,
+  EMPTY_EXECUTION_PROVENANCE,
+  EMPTY_EXECUTION_PROVENANCE_PAGE,
   TeamSchema,
   TeamListSchema,
   TeamMemberStatusListResponseSchema,
@@ -3679,6 +3699,118 @@ export class ApiClient {
 
   async deleteProject(id: string): Promise<void> {
     await this.fetch(`/api/projects/${id}`, { method: "DELETE" });
+  }
+
+  // Work Products / execution provenance (Go mainline W6). Workspace scope is
+  // resolved by the authenticated workspace middleware, so callers must not
+  // put a workspace id in these URLs. Page parameters stay explicit because
+  // the server caps per_page and uses has_more for discovery-sized lists.
+  async listWorkProducts(
+    params: WorkProductPageParams = {},
+    opts?: { signal?: AbortSignal },
+  ): Promise<WorkProductPage> {
+    const search = new URLSearchParams();
+    if (params.page != null) search.set("page", String(params.page));
+    if (params.per_page != null) search.set("per_page", String(params.per_page));
+    const query = search.toString();
+    const raw = await this.fetch<unknown>(
+      `/api/work-products${query ? `?${query}` : ""}`,
+      { signal: opts?.signal },
+    );
+    return parseWithFallback(raw, WorkProductPageSchema, EMPTY_WORK_PRODUCT_PAGE, {
+      endpoint: "GET /api/work-products",
+    });
+  }
+
+  async getWorkProduct(
+    id: string,
+    opts?: { signal?: AbortSignal },
+  ): Promise<WorkProduct> {
+    const raw = await this.fetch<unknown>(
+      `/api/work-products/${encodeURIComponent(id)}`,
+      { signal: opts?.signal },
+    );
+    return parseWithFallback(raw, WorkProductSchema, EMPTY_WORK_PRODUCT, {
+      endpoint: "GET /api/work-products/:id",
+    });
+  }
+
+  async listWorkProductRelations(
+    issueId: string,
+    params: WorkProductPageParams = {},
+    opts?: { signal?: AbortSignal },
+  ): Promise<WorkProductRelationPage> {
+    const search = new URLSearchParams();
+    if (params.page != null) search.set("page", String(params.page));
+    if (params.per_page != null) search.set("per_page", String(params.per_page));
+    const query = search.toString();
+    const raw = await this.fetch<unknown>(
+      `/api/issues/${encodeURIComponent(issueId)}/work-product-relations${query ? `?${query}` : ""}`,
+      { signal: opts?.signal },
+    );
+    return parseWithFallback(
+      raw,
+      WorkProductRelationPageSchema,
+      EMPTY_WORK_PRODUCT_RELATION_PAGE,
+      { endpoint: "GET /api/issues/:id/work-product-relations" },
+    );
+  }
+
+  async createWorkProductRelation(
+    issueId: string,
+    data: CreateWorkProductRelationRequest,
+  ): Promise<WorkProductRelation> {
+    const raw = await this.fetch<unknown>(
+      `/api/issues/${encodeURIComponent(issueId)}/work-product-relations`,
+      { method: "POST", body: JSON.stringify(data) },
+    );
+    const parsed = parseWithFallback(
+      raw,
+      WorkProductRelationSchema,
+      EMPTY_WORK_PRODUCT_RELATION,
+      { endpoint: "POST /api/issues/:id/work-product-relations" },
+    );
+    if (
+      !parsed.id ||
+      !parsed.work_product_id ||
+      parsed.issue_id !== issueId
+    ) {
+      throw new Error("Invalid work product relation response");
+    }
+    return parsed;
+  }
+
+  async getTaskProvenance(
+    taskId: string,
+    opts?: { signal?: AbortSignal },
+  ): Promise<ExecutionProvenance> {
+    const raw = await this.fetch<unknown>(
+      `/api/tasks/${encodeURIComponent(taskId)}/provenance`,
+      { signal: opts?.signal },
+    );
+    return parseWithFallback(raw, ExecutionProvenanceSchema, EMPTY_EXECUTION_PROVENANCE, {
+      endpoint: "GET /api/tasks/:taskId/provenance",
+    });
+  }
+
+  async listWorkspaceProvenance(
+    params: WorkProductPageParams = {},
+    opts?: { signal?: AbortSignal },
+  ): Promise<ExecutionProvenancePage> {
+    const search = new URLSearchParams();
+    if (params.page != null) search.set("page", String(params.page));
+    if (params.per_page != null) search.set("per_page", String(params.per_page));
+    const query = search.toString();
+    const raw = await this.fetch<unknown>(
+      `/api/provenance${query ? `?${query}` : ""}`,
+      { signal: opts?.signal },
+    );
+    return parseWithFallback(
+      raw,
+      ExecutionProvenancePageSchema,
+      EMPTY_EXECUTION_PROVENANCE_PAGE,
+      { endpoint: "GET /api/provenance" },
+    );
   }
 
   // Project resources

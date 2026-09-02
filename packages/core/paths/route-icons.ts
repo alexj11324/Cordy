@@ -52,6 +52,7 @@ export type NavLabelKey =
   | "issues"
   | "task_graph"
   | "projects"
+  | "work_products"
   | "automations"
   | "agents"
   | "teams"
@@ -69,6 +70,7 @@ export type WorkspacePageKey =
   | "issues"
   | "taskGraph"
   | "projects"
+  | "workProducts"
   | "automations"
   | "agents"
   | "teams"
@@ -98,6 +100,7 @@ export const WORKSPACE_PAGES: Record<WorkspacePageKey, WorkspacePage> = {
   issues: { segment: "issues", icon: "ListTodo", navKey: "issues" },
   taskGraph: { segment: "task-graph", icon: "Network", navKey: "task_graph" },
   projects: { segment: "projects", icon: "FolderKanban", navKey: "projects" },
+  workProducts: { segment: "work-products", icon: "FileText", navKey: "work_products" },
   automations: { segment: "automations", icon: "Zap", navKey: "automations" },
   agents: { segment: "agents", icon: "Bot", navKey: "agents" },
   teams: { segment: "teams", icon: "Users", navKey: "teams" },

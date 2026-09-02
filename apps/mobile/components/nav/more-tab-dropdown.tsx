@@ -79,6 +79,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Issues", icon: "list.bullet", path: "/more/issues" },
   { label: "Projects", icon: "square.stack", path: "/more/projects" },
   { label: "Dependency Graph", icon: "arrow.triangle.branch", path: "/task-graph" },
+  { label: "Work Products", icon: "doc.on.doc", path: "/more/work-products" },
 ];
 
 export function MoreTabDropdownAnchor({

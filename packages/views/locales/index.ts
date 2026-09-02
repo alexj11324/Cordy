@@ -14,6 +14,7 @@ import enSearch from "./en/search.json";
 import enInbox from "./en/inbox.json";
 import enWorkspace from "./en/workspace.json";
 import enProjects from "./en/projects.json";
+import enWorkProducts from "./en/work-products.json";
 import enAutomations from "./en/automations.json";
 import enSkills from "./en/skills.json";
 import enChat from "./en/chat.json";
@@ -41,6 +42,7 @@ import zhHansSearch from "./zh-Hans/search.json";
 import zhHansInbox from "./zh-Hans/inbox.json";
 import zhHansWorkspace from "./zh-Hans/workspace.json";
 import zhHansProjects from "./zh-Hans/projects.json";
+import zhHansWorkProducts from "./zh-Hans/work-products.json";
 import zhHansAutomations from "./zh-Hans/automations.json";
 import zhHansSkills from "./zh-Hans/skills.json";
 import zhHansChat from "./zh-Hans/chat.json";
@@ -68,6 +70,7 @@ import koSearch from "./ko/search.json";
 import koInbox from "./ko/inbox.json";
 import koWorkspace from "./ko/workspace.json";
 import koProjects from "./ko/projects.json";
+import koWorkProducts from "./ko/work-products.json";
 import koAutomations from "./ko/automations.json";
 import koSkills from "./ko/skills.json";
 import koChat from "./ko/chat.json";
@@ -95,6 +98,7 @@ import jaSearch from "./ja/search.json";
 import jaInbox from "./ja/inbox.json";
 import jaWorkspace from "./ja/workspace.json";
 import jaProjects from "./ja/projects.json";
+import jaWorkProducts from "./ja/work-products.json";
 import jaAutomations from "./ja/automations.json";
 import jaSkills from "./ja/skills.json";
 import jaChat from "./ja/chat.json";
@@ -128,6 +132,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     inbox: enInbox,
     workspace: enWorkspace,
     projects: enProjects,
+    "work-products": enWorkProducts,
     automations: enAutomations,
     skills: enSkills,
     chat: enChat,
@@ -157,6 +162,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     inbox: zhHansInbox,
     workspace: zhHansWorkspace,
     projects: zhHansProjects,
+    "work-products": zhHansWorkProducts,
     automations: zhHansAutomations,
     skills: zhHansSkills,
     chat: zhHansChat,
@@ -186,6 +192,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     inbox: koInbox,
     workspace: koWorkspace,
     projects: koProjects,
+    "work-products": koWorkProducts,
     automations: koAutomations,
     skills: koSkills,
     chat: koChat,
@@ -215,6 +222,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     inbox: jaInbox,
     workspace: jaWorkspace,
     projects: jaProjects,
+    "work-products": jaWorkProducts,
     automations: jaAutomations,
     skills: jaSkills,
     chat: jaChat,

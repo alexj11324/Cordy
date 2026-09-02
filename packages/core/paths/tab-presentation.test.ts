@@ -23,6 +23,10 @@ describe("resolveTabPresentation — pages", () => {
       visual: { kind: "icon", icon: "FolderKanban" },
       title: { kind: "nav", navKey: "projects" },
     });
+    expect(present("/acme/work-products")).toEqual({
+      visual: { kind: "icon", icon: "FileText" },
+      title: { kind: "nav", navKey: "work_products" },
+    });
   });
 });
 

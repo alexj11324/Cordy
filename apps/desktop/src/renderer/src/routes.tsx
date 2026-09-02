@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { createMemoryRouter, Outlet, useMatches } from "react-router-dom";
+import { createMemoryRouter, Outlet, useMatches, useParams } from "react-router-dom";
 import type { RouteObject } from "react-router-dom";
 import { IssueDetailPage } from "./pages/issue-detail-page";
 import { ProjectDetailPage } from "./pages/project-detail-page";
@@ -16,6 +16,7 @@ import { AttachmentPreviewRoute } from "./pages/attachment-preview-page";
 import { IssuesPage } from "@patchbay/views/issues/components";
 import { TaskGraphPage } from "@patchbay/views/task-graph";
 import { ProjectsPage } from "@patchbay/views/projects/components";
+import { WorkProductDetailPage, WorkProductsPage } from "@patchbay/views/work-products";
 import { DashboardPage } from "@patchbay/views/dashboard";
 import { AutomationsPage } from "@patchbay/views/automations/components";
 import { MyIssuesPage } from "@patchbay/views/my-issues";
@@ -71,6 +72,11 @@ function DesktopChannelsRoute() {
   const { t } = useT("channels");
   useDocumentTitle(t(($) => $.page.title));
   return <ChannelsPage />;
+}
+
+function DesktopWorkProductDetailPage() {
+  const { id = "" } = useParams<{ id: string }>();
+  return <WorkProductDetailPage id={id} />;
 }
 
 /**
@@ -160,6 +166,16 @@ export const appRoutes: RouteObject[] = [
             path: "projects/:id",
             element: <ProjectDetailPage />,
             handle: { title: "Project" },
+          },
+          {
+            path: "work-products",
+            element: <WorkProductsPage />,
+            handle: { title: "Work Products" },
+          },
+          {
+            path: "work-products/:id",
+            element: <DesktopWorkProductDetailPage />,
+            handle: { title: "Work Product" },
           },
           {
             path: "automations",
