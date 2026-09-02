@@ -150,10 +150,10 @@ export default function WorkspaceLayout() {
             headerBackTitle: "Back",
           }}
         />
-        <Stack.Screen
-          name="task-graph"
-          options={{ title: "Dependency Graph", headerBackTitle: "Back" }}
-        />
+        {/* Title and back label come from the route itself so they follow
+            the account language; a static title here would win the first
+            frame and flash English. */}
+        <Stack.Screen name="task-graph" />
         <Stack.Screen
           name="project/[id]/edit"
           options={{

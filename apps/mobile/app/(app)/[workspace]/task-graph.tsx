@@ -16,7 +16,13 @@ import type {
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { dependencyGraphsOptions } from "@/data/queries/dependency-graphs";
+import { useAuthStore } from "@/data/auth-store";
 import { useWorkspaceStore } from "@/data/workspace-store";
+import {
+  getTaskGraphCopy,
+  getTaskGraphStateLabel,
+  type TaskGraphCopy,
+} from "@/lib/task-graph-copy";
 
 type GraphFilter = "all" | "ready" | "running" | "blocked";
 
@@ -64,23 +70,6 @@ function stateTone(state: string): string {
   }
 }
 
-function stateLabel(state: string): string {
-  switch (state) {
-    case "ready":
-      return "Ready";
-    case "running":
-      return "Running";
-    case "blocked":
-      return "Blocked";
-    case "done":
-      return "Done";
-    case "cancelled":
-      return "Cancelled";
-    default:
-      return state || "Todo";
-  }
-}
-
 function filterMatches(node: DependencyGraphNode, filter: GraphFilter): boolean {
   return filter === "all" || nodeState(node) === filter;
 }
@@ -110,6 +99,9 @@ function summary(graphs: DependencyGraphResponse[]) {
 export default function TaskGraphScreen() {
   const wsId = useWorkspaceStore((state) => state.currentWorkspaceId);
   const wsSlug = useWorkspaceStore((state) => state.currentWorkspaceSlug);
+  const language = useAuthStore((state) => state.user?.language);
+  const copy = getTaskGraphCopy(language);
+  const stateLabel = (state: string) => getTaskGraphStateLabel(copy, state);
   const {
     data: graphs = [],
     isLoading,
@@ -127,7 +119,9 @@ export default function TaskGraphScreen() {
 
   return (
     <View className="flex-1 bg-background">
-      <Stack.Screen options={{ title: "Dependency Graph", headerBackTitle: "Back" }} />
+      <Stack.Screen
+        options={{ title: copy.title, headerBackTitle: copy.back }}
+      />
       {isLoading ? (
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator />
@@ -135,17 +129,19 @@ export default function TaskGraphScreen() {
       ) : error ? (
         <View className="gap-3 px-4 pt-5">
           <Text className="text-sm text-destructive">
-            Failed to load dependency graphs: {error instanceof Error ? error.message : "unknown error"}
+            {copy.loadFailed(
+              error instanceof Error ? error.message : copy.unknownError,
+            )}
           </Text>
           <Button variant="outline" onPress={() => void refetch()}>
-            <Text>Retry</Text>
+            <Text>{copy.retry}</Text>
           </Button>
         </View>
       ) : graphs.length === 0 ? (
         <View className="flex-1 items-center justify-center gap-2 px-6">
-          <Text className="text-base font-medium">No dependency graphs yet</Text>
+          <Text className="text-base font-medium">{copy.emptyTitle}</Text>
           <Text className="text-center text-sm text-muted-foreground">
-            Apply a dependency graph to a parent task to see its execution plan here.
+            {copy.emptyBody}
           </Text>
         </View>
       ) : (
@@ -159,9 +155,11 @@ export default function TaskGraphScreen() {
           }
         >
           <View className="gap-1 rounded-xl border border-border bg-card p-4">
-            <Text className="text-base font-medium">{graphs.length} active plans</Text>
+            <Text className="text-base font-medium">
+              {copy.activePlans(graphs.length)}
+            </Text>
             <Text className="text-sm text-muted-foreground">
-              {totals.total} tasks · {totals.ready} ready · {totals.running} running · {totals.blocked} blocked
+              {copy.totals(totals)}
             </Text>
             <View className="mt-3 flex-row flex-wrap gap-2">
               {(["all", "ready", "running", "blocked"] as const).map((value) => (
@@ -171,7 +169,7 @@ export default function TaskGraphScreen() {
                   variant={filter === value ? "secondary" : "outline"}
                   onPress={() => setFilter(value)}
                 >
-                  <Text>{value[0].toUpperCase() + value.slice(1)}</Text>
+                  <Text>{filterLabel(copy, value)}</Text>
                 </Button>
               ))}
             </View>
@@ -187,21 +185,24 @@ export default function TaskGraphScreen() {
                 <View className="gap-1">
                   <View className="flex-row items-center justify-between gap-2">
                     <Text className="min-w-0 flex-1 text-base font-medium">
-                      Plan · {graph.plan.id.slice(0, 8)}
+                      {copy.planLabel(graph.plan.id.slice(0, 8))}
                     </Text>
                     <Text className={stateTone(graph.plan.status)}>
                       {stateLabel(graph.plan.status)}
                     </Text>
                   </View>
                   <Text className="text-sm text-muted-foreground">
-                    {graph.plan.goal || "Dependency graph execution plan"}
+                    {graph.plan.goal || copy.planFallbackGoal}
                   </Text>
                 </View>
 
                 {graph.plan.attention_required ? (
                   <View className="rounded-lg bg-amber-500/10 p-3">
                     <Text className="text-sm text-amber-800 dark:text-amber-200">
-                      Planner attention required: {graph.plan.attention_reason || "review the execution gate"}
+                      {copy.attentionRequired(
+                        graph.plan.attention_reason ||
+                          copy.attentionFallbackReason,
+                      )}
                     </Text>
                   </View>
                 ) : null}
@@ -209,7 +210,9 @@ export default function TaskGraphScreen() {
                 {waves.length > 0 ? (
                   waves.map((wave) => (
                     <View key={wave} className="gap-2">
-                      <Text className="text-sm font-medium text-muted-foreground">Wave {wave}</Text>
+                      <Text className="text-sm font-medium text-muted-foreground">
+                        {copy.wave(wave)}
+                      </Text>
                       {nodes
                         .filter((node) => node.wave === wave)
                         .map((node) => {
@@ -220,7 +223,7 @@ export default function TaskGraphScreen() {
                               key={node.id || node.temp_id}
                               className="gap-2 rounded-lg border border-border bg-background p-3 active:bg-accent"
                               accessibilityRole="button"
-                              accessibilityLabel={`Open ${identifier}`}
+                              accessibilityLabel={copy.openNode(identifier)}
                               onPress={() => {
                                 if (wsSlug) router.push(`/${wsSlug}/issue/${node.issue_id || node.temp_id}`);
                               }}
@@ -235,7 +238,14 @@ export default function TaskGraphScreen() {
                               </View>
                               <Text className="text-sm">{nodeTitle(node)}</Text>
                               <Text className="text-xs text-muted-foreground">
-                                {readiness.gate_open ? "Gate open" : "Gate blocked"} · {readiness.satisfied_prerequisites}/{readiness.total_prerequisites} prerequisites satisfied
+                                {readiness.gate_open
+                                  ? copy.gateOpen
+                                  : copy.gateBlocked}{" "}
+                                ·{" "}
+                                {copy.prerequisites(
+                                  readiness.satisfied_prerequisites,
+                                  readiness.total_prerequisites,
+                                )}
                               </Text>
                             </Pressable>
                           );
@@ -244,20 +254,22 @@ export default function TaskGraphScreen() {
                   ))
                 ) : (
                   <Text className="py-4 text-center text-sm text-muted-foreground">
-                    No tasks match this filter.
+                    {copy.noMatches}
                   </Text>
                 )}
 
                 {graph.edges.length > 0 ? (
                   <View className="gap-2 border-t border-border pt-3">
-                    <Text className="text-sm font-medium">Dependencies</Text>
+                    <Text className="text-sm font-medium">
+                      {copy.dependencies}
+                    </Text>
                     {graph.edges.map((edge) => (
                       <View key={edge.id} className="rounded-lg bg-muted/30 p-3">
                         <Text className="text-sm">
                           {edgeLabel(graph, edgeEndpoint(edge, "from"))} → {edgeLabel(graph, edgeEndpoint(edge, "to"))}
                         </Text>
                         <Text className={cnEdgeStatus(edge.satisfied)}>
-                          {edge.satisfied ? "Satisfied" : "Blocked"}
+                          {edge.satisfied ? copy.edgeSatisfied : copy.edgeBlocked}
                         </Text>
                       </View>
                     ))}
@@ -268,13 +280,26 @@ export default function TaskGraphScreen() {
           })}
           {visibleGraphs.length === 0 ? (
             <Text className="py-8 text-center text-sm text-muted-foreground">
-              No tasks match this filter.
+              {copy.noMatches}
             </Text>
           ) : null}
         </ScrollView>
       )}
     </View>
   );
+}
+
+function filterLabel(copy: TaskGraphCopy, filter: GraphFilter): string {
+  switch (filter) {
+    case "ready":
+      return copy.filterReady;
+    case "running":
+      return copy.filterRunning;
+    case "blocked":
+      return copy.filterBlocked;
+    default:
+      return copy.filterAll;
+  }
 }
 
 function cnEdgeStatus(satisfied: boolean): string {

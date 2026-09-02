@@ -1,4 +1,8 @@
-import type { W8Locale } from "./w8-copy";
+import {
+  normalizeProductLocale,
+  PRODUCT_LOCALES,
+  type ProductLocale,
+} from "./locale";
 
 export type IssueRoleCopy = {
   owner: string;
@@ -16,7 +20,7 @@ export type IssueRoleCopy = {
   noMatches: string;
 };
 
-const COPY: Record<W8Locale, IssueRoleCopy> = {
+const COPY: Record<ProductLocale, IssueRoleCopy> = {
   en: {
     owner: "Owner",
     executor: "Executor",
@@ -82,15 +86,7 @@ const COPY: Record<W8Locale, IssueRoleCopy> = {
 export function getIssueRoleCopy(
   language: string | null | undefined,
 ): IssueRoleCopy {
-  const normalized = language?.toLowerCase() ?? "";
-  const locale: W8Locale = normalized.startsWith("zh")
-    ? "zh-Hans"
-    : normalized.startsWith("ja")
-      ? "ja"
-      : normalized.startsWith("ko")
-        ? "ko"
-        : "en";
-  return COPY[locale];
+  return COPY[normalizeProductLocale(language)];
 }
 
-export const ISSUE_ROLE_COPY_LOCALES = Object.keys(COPY) as W8Locale[];
+export const ISSUE_ROLE_COPY_LOCALES = PRODUCT_LOCALES;
