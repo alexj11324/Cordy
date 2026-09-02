@@ -390,10 +390,27 @@ type TypingNotifier interface {
 	OnSettled(ctx context.Context, sessionID pgtype.UUID)
 }
 
+// GroupEngagementChecker reports whether the bot is already engaged in the
+// thread a group message belongs to, for buzz-style group continuation: once
+// the bot has joined a thread, follow-up messages in that thread are treated
+// as addressed to the bot without requiring a fresh @-mention each turn.
+// Engagement is thread state (a live session binding for the thread root), so
+// implementations must read it from the session-aware store, never from
+// per-connection adapter memory. A top-level message starts a new thread and
+// is therefore never a continuation. Optional; nil disables continuation and
+// every group message needs an explicit address, as before.
+type GroupEngagementChecker interface {
+	// EngagedInThread reports whether installation inst already owns a live
+	// (non-retired) session binding for msg's thread. Implementations return
+	// (false, nil) for messages that cannot be continuations (DMs, thread
+	// roots) or when no binding exists; any store error is returned.
+	EngagedInThread(ctx context.Context, inst ResolvedInstallation, msg channel.InboundMessage) (bool, error)
+}
+
 // ResolverSet is the per-platform bundle the Router runs the pipeline through.
-// Installation/Identity/Dedup/Session/Audit are required; Replier/Typing are
-// optional. OriginType is the issue.origin_type label written for /issue
-// commands from this channel (Feishu: "lark_chat").
+// Installation/Identity/Dedup/Session/Audit are required; Replier/Typing and
+// GroupEngagement are optional. OriginType is the issue.origin_type label
+// written for /issue commands from this channel (Feishu: "lark_chat").
 type ResolverSet struct {
 	Installation InstallationResolver
 	Identity     IdentityResolver
@@ -403,7 +420,11 @@ type ResolverSet struct {
 	Audit        Auditor
 	Replier      OutboundReplier
 	Typing       TypingNotifier
-	OriginType   string
+	// GroupEngagement enables buzz-style group continuation for platforms
+	// whose threads stay engaged after the first address. Nil keeps the
+	// explicit-address-only policy.
+	GroupEngagement GroupEngagementChecker
+	OriginType      string
 }
 
 // IssueCreator is the narrow subset of service.IssueService the Router needs

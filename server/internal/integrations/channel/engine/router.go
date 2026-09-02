@@ -333,7 +333,21 @@ const (
 // lark.Dispatcher.processClaimed; see its boundary contract per step.
 func (r *Router) processClaimed(ctx context.Context, set ResolverSet, msg channel.InboundMessage, inst ResolvedInstallation, claimToken pgtype.UUID, bareFresh, startChat bool) (Result, dedupFinalize, error) {
 	// 3. Group-mention filter (group chats only), before identity so an
-	//    unbound user's idle group chatter never spams a binding card.
+	//    unbound user's idle group chatter never spams a binding card. With a
+	//    GroupEngagement checker wired, a follow-up inside an already-engaged
+	//    thread counts as addressed (buzz-style group continuation): the first
+	//    address joined the thread, later turns only continue it.
+	if msg.Source.ChatType == channel.ChatTypeGroup && !msg.AddressedToBot {
+		if set.GroupEngagement != nil {
+			engaged, err := set.GroupEngagement.EngagedInThread(ctx, inst, msg)
+			if err != nil {
+				return Result{}, finalizeRelease, fmt.Errorf("group engagement check: %w", err)
+			}
+			if engaged {
+				msg.AddressedToBot = true
+			}
+		}
+	}
 	if msg.Source.ChatType == channel.ChatTypeGroup && !msg.AddressedToBot {
 		return r.drop(ctx, set, msg, inst.ID, DropReasonNotAddressedInGroup), finalizeMark, nil
 	}

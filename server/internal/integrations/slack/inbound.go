@@ -86,12 +86,14 @@ func compileMentionRe(botUserID string) *regexp.Regexp {
 // messages (loop guard), and edits/deletes/joins and similar subtyped system
 // messages (only brand-new user messages are ingested).
 //
-// Group addressing policy (v1, deliberate): a group message is addressed to the
-// bot only when it carries an explicit <@bot> mention. Mention-free follow-ups
-// inside a thread the bot is already engaged in are NOT auto-addressed here:
-// "reply to a bot message" is session state, so it belongs in the session-aware
-// shared service / resolver layer rather than in per-connection adapter memory.
-// Until that lands, channel/thread continuation requires re-mentioning the bot.
+// Group addressing policy (v2, buzz-style): a group message is addressed to
+// the bot on an explicit <@bot> mention, which joins the thread; follow-up
+// messages inside an already-engaged thread are auto-addressed by the
+// session-aware engagement check (group_engagement.go) in the engine pipeline,
+// so channel/thread continuation no longer requires re-mentioning the bot.
+// "Reply to a bot message" is thread engagement state — a live session binding
+// for the thread root — read from the shared store, never from per-connection
+// adapter memory. /new retires the binding and correctly ends continuation.
 // P2P (DM) ingests every message, unchanged.
 func inboundFromMessage(e slackevents.EventsAPIEvent, m *slackevents.MessageEvent, botUserID string, mentionRe *regexp.Regexp) (channel.InboundMessage, bool) {
 	if m.BotID != "" || m.SubType == "bot_message" {

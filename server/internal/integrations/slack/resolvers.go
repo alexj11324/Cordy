@@ -43,6 +43,10 @@ func NewSlackResolverSet(q *db.Queries, tx engine.TxStarter, replier engine.Outb
 		Media:      media,
 		Replier:    replier,
 		OriginType: originSlackChat,
+		// Buzz-style group continuation: follow-ups in an engaged thread stay
+		// addressed without re-mentioning. Reads the live session binding, so
+		// /new (which retires the binding) correctly ends continuation.
+		GroupEngagement: &engagementChecker{q: q},
 	}
 	// Assign the interface only for a concrete manager. A typed nil would make
 	// the interface compare non-nil and fail when the pipeline invokes it.

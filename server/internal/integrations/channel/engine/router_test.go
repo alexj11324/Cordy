@@ -300,6 +300,26 @@ func (f *fakeMedia) calls() int {
 	return f.count
 }
 
+type fakeEngagement struct {
+	mu      sync.Mutex
+	engaged bool
+	err     error
+	calls   int
+}
+
+func (f *fakeEngagement) EngagedInThread(_ context.Context, _ ResolvedInstallation, _ channel.InboundMessage) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls++
+	return f.engaged, f.err
+}
+
+func (f *fakeEngagement) callCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.calls
+}
+
 type fakeIssues struct {
 	called             bool
 	params             service.IssueCreateParams
@@ -482,6 +502,7 @@ type harness struct {
 	replier   *fakeReplier
 	typing    *fakeTyping
 	media     *fakeMedia
+	engage    *fakeEngagement
 	issues    *fakeIssues
 	tasks     *fakeTasks
 	reader    *fakeReader
@@ -507,6 +528,7 @@ func newHarness(t *testing.T) *harness {
 		replier:   &fakeReplier{},
 		typing:    &fakeTyping{},
 		media:     &fakeMedia{},
+		engage:    &fakeEngagement{},
 		issues:    &fakeIssues{},
 		tasks:     &fakeTasks{},
 		reader:    &fakeReader{ws: db.Workspace{IssuePrefix: "MUL"}},
@@ -522,7 +544,10 @@ func newHarness(t *testing.T) *harness {
 		Replier:      h.replier,
 		Typing:       h.typing,
 		Media:        h.media,
-		OriginType:   "lark_chat",
+		// Wired but disengaged by default: existing group-filter tests keep
+		// proving the explicit-address policy, engagement tests opt in.
+		GroupEngagement: h.engage,
+		OriginType:      "lark_chat",
 	})
 	return h
 }
@@ -594,6 +619,46 @@ func TestRouter_GroupNotAddressed_Drops(t *testing.T) {
 	}
 	if h.media.calls() != 0 {
 		t.Fatal("unaddressed group message must not resolve media")
+	}
+	if h.engage.callCount() != 1 {
+		t.Fatalf("group filter must consult engagement (1), got %d", h.engage.callCount())
+	}
+}
+
+// TestRouter_GroupEngagedThread_Proceeds pins buzz-style group continuation:
+// an unmentioned follow-up in an already-engaged thread counts as addressed
+// and flows past the group filter into identity + session instead of dropping.
+func TestRouter_GroupEngagedThread_Proceeds(t *testing.T) {
+	h := newHarness(t)
+	h.engage.engaged = true
+	msg := p2pMessage(t)
+	msg.Source.ChatType = channel.ChatTypeGroup
+	msg.AddressedToBot = false
+	if err := h.router.Handle(context.Background(), msg); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if r, ok := h.audit.last(); ok && r == DropReasonNotAddressedInGroup {
+		t.Fatal("engaged thread follow-up must not drop as not_addressed_in_group")
+	}
+	if !waitFor(time.Second, h.tasks.wasCalled) {
+		t.Fatal("engaged thread follow-up must flow into session + task enqueue")
+	}
+}
+
+// TestRouter_GroupEngagementError_Releases pins the fail-closed path: when the
+// engagement store is unavailable the message is neither ingested nor dropped
+// as chatter — the claim is released so a redelivery can retry the check.
+func TestRouter_GroupEngagementError_Releases(t *testing.T) {
+	h := newHarness(t)
+	h.engage.err = errors.New("db down")
+	msg := p2pMessage(t)
+	msg.Source.ChatType = channel.ChatTypeGroup
+	msg.AddressedToBot = false
+	if err := h.router.Handle(context.Background(), msg); err == nil {
+		t.Fatal("engagement store error must surface to the caller")
+	}
+	if h.dedup.releases() != 1 {
+		t.Fatalf("engagement error must Release the claim (1), got %d", h.dedup.releases())
 	}
 }
 
