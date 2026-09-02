@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 
@@ -133,31 +134,32 @@ func TestWorkspaceChannelCursorParsingBoundaries(t *testing.T) {
 }
 
 func TestWorkspaceChannelSQLContractHasStableFences(t *testing.T) {
+	source, err := os.ReadFile("../../pkg/db/queries/workspace_channel.sql")
+	if err != nil {
+		t.Fatalf("read workspace channel sql: %v", err)
+	}
+	querySQL := string(source)
 	checks := []struct {
 		name string
-		sql  string
 		want []string
 	}{
 		{
 			name: "channel list",
-			sql:  listWorkspaceChannelsStatement,
 			want: []string{"workspace_id = $1", "archived_at IS NULL", "ORDER BY created_at, id"},
 		},
 		{
 			name: "message list cursor",
-			sql:  listWorkspaceChannelMessagesStatement,
-			want: []string{"message.workspace_id = $1", "message.channel_id = $2", "channel.archived_at IS NULL", "(message.created_at, message.id) <", "ORDER BY message.created_at DESC, message.id DESC", "LIMIT $5"},
+			want: []string{"message.workspace_id = $1", "message.channel_id = $2", "channel.archived_at IS NULL", "(message.created_at, message.id) <", "ORDER BY message.created_at DESC, message.id DESC", "LIMIT sqlc.arg('limit')"},
 		},
 		{
 			name: "message parent and quote",
-			sql:  createWorkspaceChannelMessageStatement,
-			want: []string{"WHERE id = $6 AND workspace_id = $1 AND channel_id = $2", "WHERE id = $7 AND workspace_id = $1 AND channel_id = $2", "AND archived_at IS NULL"},
+			want: []string{"WHERE id = sqlc.narg('parent_id')::uuid", "WHERE id = sqlc.narg('quoted_message_id')::uuid", "AND archived_at IS NULL"},
 		},
 	}
 	for _, check := range checks {
 		t.Run(check.name, func(t *testing.T) {
 			for _, fragment := range check.want {
-				if !strings.Contains(check.sql, fragment) {
+				if !strings.Contains(querySQL, fragment) {
 					t.Fatalf("SQL missing %q", fragment)
 				}
 			}

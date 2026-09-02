@@ -29,135 +29,6 @@ const (
 	workspaceChannelMessageEvent = "channel:message"
 )
 
-// These statements mirror server/pkg/db/queries/workspace_channel.sql. The
-// generated wrapper is intentionally not edited in this phase; keeping the
-// handler on explicit schema-correct statements lets the branch compile until
-// the owner regenerates sqlc.
-const getWorkspaceChannelStatement = `
-SELECT id, workspace_id, name, slug, description, created_by, archived_at, created_at, updated_at
-FROM workspace_channel
-WHERE id = $1 AND workspace_id = $2 AND archived_at IS NULL
-`
-
-const listWorkspaceChannelsStatement = `
-SELECT id, workspace_id, name, slug, description, created_by, archived_at, created_at, updated_at
-FROM workspace_channel
-WHERE workspace_id = $1 AND archived_at IS NULL
-ORDER BY created_at, id
-`
-
-const listWorkspaceChannelMessagesStatement = `
-SELECT id, workspace_id, channel_id, author_type, author_id, content,
-       parent_id, quoted_message_id, created_at, updated_at
-FROM workspace_channel_message AS message
-WHERE message.workspace_id = $1
-  AND message.channel_id = $2
-  AND EXISTS (
-      SELECT 1
-      FROM workspace_channel AS channel
-      WHERE channel.id = message.channel_id
-        AND channel.workspace_id = message.workspace_id
-        AND channel.archived_at IS NULL
-  )
-  AND ($3::timestamptz IS NULL OR (message.created_at, message.id) < ($3::timestamptz, $4::uuid))
-ORDER BY message.created_at DESC, message.id DESC
-LIMIT $5
-`
-
-const getWorkspaceChannelMessageStatement = `
-SELECT id, workspace_id, channel_id, author_type, author_id, content,
-       parent_id, quoted_message_id, created_at, updated_at
-FROM workspace_channel_message AS message
-WHERE message.id = $1
-  AND message.workspace_id = $2
-  AND EXISTS (
-      SELECT 1
-      FROM workspace_channel AS channel
-      WHERE channel.id = message.channel_id
-        AND channel.workspace_id = message.workspace_id
-        AND channel.archived_at IS NULL
-  )
-`
-
-const createWorkspaceChannelStatement = `
-INSERT INTO workspace_channel (workspace_id, slug, name, description, created_by)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, workspace_id, name, slug, description, created_by, archived_at, created_at, updated_at
-`
-
-const createWorkspaceChannelMessageStatement = `
-WITH channel AS MATERIALIZED (
-	SELECT id
-	FROM workspace_channel
-	WHERE id = $2 AND workspace_id = $1 AND archived_at IS NULL
-), valid_author AS MATERIALIZED (
-	SELECT 1
-	WHERE (
-		($3 = 'member' AND EXISTS (
-			SELECT 1 FROM member WHERE workspace_id = $1 AND user_id = $4
-		))
-		OR ($3 = 'agent' AND EXISTS (
-			SELECT 1 FROM agent WHERE workspace_id = $1 AND id = $4
-		))
-	)
-), valid_parent AS MATERIALIZED (
-	SELECT 1
-	WHERE $6::uuid IS NULL OR EXISTS (
-		SELECT 1
-		FROM workspace_channel_message
-		WHERE id = $6 AND workspace_id = $1 AND channel_id = $2
-	)
-), valid_quote AS MATERIALIZED (
-	SELECT 1
-	WHERE $7::uuid IS NULL OR EXISTS (
-		SELECT 1
-		FROM workspace_channel_message
-		WHERE id = $7 AND workspace_id = $1 AND channel_id = $2
-	)
-)
-INSERT INTO workspace_channel_message (
-	workspace_id, channel_id, author_type, author_id, content,
-	parent_id, quoted_message_id
-)
-SELECT $1, $2, $3, $4, $5, $6, $7
-FROM channel, valid_author, valid_parent, valid_quote
-RETURNING id, workspace_id, channel_id, author_type, author_id, content,
-	parent_id, quoted_message_id, created_at, updated_at
-`
-
-func scanWorkspaceChannel(row pgx.Row) (db.WorkspaceChannel, error) {
-	var channel db.WorkspaceChannel
-	err := row.Scan(
-		&channel.ID,
-		&channel.WorkspaceID,
-		&channel.Name,
-		&channel.Slug,
-		&channel.Description,
-		&channel.CreatedBy,
-		&channel.ArchivedAt,
-		&channel.CreatedAt,
-		&channel.UpdatedAt,
-	)
-	return channel, err
-}
-
-func scanWorkspaceChannelMessage(row pgx.Row) (db.WorkspaceChannelMessage, error) {
-	var message db.WorkspaceChannelMessage
-	err := row.Scan(
-		&message.ID,
-		&message.WorkspaceID,
-		&message.ChannelID,
-		&message.AuthorType,
-		&message.AuthorID,
-		&message.Content,
-		&message.ParentID,
-		&message.QuotedMessageID,
-		&message.CreatedAt,
-		&message.UpdatedAt,
-	)
-	return message, err
-}
-
 type workspaceChannelMessagesResponse struct {
 	Messages   []db.WorkspaceChannelMessage `json:"messages"`
 	Limit      int                          `json:"limit"`
@@ -231,59 +102,6 @@ func normalizeWorkspaceChannelSlug(value string) (string, bool) {
 	return result, true
 }
 
-func scanWorkspaceChannels(rows pgx.Rows) ([]db.WorkspaceChannel, error) {
-	defer rows.Close()
-	channels := make([]db.WorkspaceChannel, 0)
-	for rows.Next() {
-		var channel db.WorkspaceChannel
-		if err := rows.Scan(
-			&channel.ID,
-			&channel.WorkspaceID,
-			&channel.Name,
-			&channel.Slug,
-			&channel.Description,
-			&channel.CreatedBy,
-			&channel.ArchivedAt,
-			&channel.CreatedAt,
-			&channel.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		channels = append(channels, channel)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return channels, nil
-}
-
-func scanWorkspaceChannelMessages(rows pgx.Rows) ([]db.WorkspaceChannelMessage, error) {
-	defer rows.Close()
-	messages := make([]db.WorkspaceChannelMessage, 0)
-	for rows.Next() {
-		var message db.WorkspaceChannelMessage
-		if err := rows.Scan(
-			&message.ID,
-			&message.WorkspaceID,
-			&message.ChannelID,
-			&message.AuthorType,
-			&message.AuthorID,
-			&message.Content,
-			&message.ParentID,
-			&message.QuotedMessageID,
-			&message.CreatedAt,
-			&message.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		messages = append(messages, message)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return messages, nil
-}
-
 func (h *Handler) workspaceChannelDependencies(w http.ResponseWriter) bool {
 	if h == nil || h.Queries == nil || h.DB == nil {
 		writeError(w, http.StatusServiceUnavailable, "database unavailable")
@@ -304,10 +122,13 @@ func (h *Handler) publishWorkspaceChannelEvent(eventType, workspaceID, actorType
 }
 
 func (h *Handler) workspaceChannelMessageByID(ctx context.Context, messageID, workspaceID pgtype.UUID) (db.WorkspaceChannelMessage, error) {
-	if h == nil || h.DB == nil {
+	if h == nil || h.Queries == nil {
 		return db.WorkspaceChannelMessage{}, errors.New("database unavailable")
 	}
-	return scanWorkspaceChannelMessage(h.DB.QueryRow(ctx, getWorkspaceChannelMessageStatement, messageID, workspaceID))
+	return h.Queries.GetWorkspaceChannelMessageByID(ctx, db.GetWorkspaceChannelMessageByIDParams{
+		ID:          messageID,
+		WorkspaceID: workspaceID,
+	})
 }
 
 // dispatchWorkspaceChannelMentions is deliberately best-effort. A channel
@@ -403,10 +224,13 @@ func (h *Handler) workspaceChannelScope(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *Handler) workspaceChannelByID(ctx context.Context, channelID, workspaceID pgtype.UUID) (db.WorkspaceChannel, error) {
-	if h == nil || h.DB == nil {
+	if h == nil || h.Queries == nil {
 		return db.WorkspaceChannel{}, errors.New("database unavailable")
 	}
-	return scanWorkspaceChannel(h.DB.QueryRow(ctx, getWorkspaceChannelStatement, channelID, workspaceID))
+	return h.Queries.GetWorkspaceChannelByID(ctx, db.GetWorkspaceChannelByIDParams{
+		ID:          channelID,
+		WorkspaceID: workspaceID,
+	})
 }
 
 func (h *Handler) ListWorkspaceChannels(w http.ResponseWriter, r *http.Request) {
@@ -414,12 +238,7 @@ func (h *Handler) ListWorkspaceChannels(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	rows, err := h.DB.Query(r.Context(), listWorkspaceChannelsStatement, workspaceUUID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error")
-		return
-	}
-	channels, err := scanWorkspaceChannels(rows)
+	channels, err := h.Queries.ListWorkspaceChannels(r.Context(), workspaceUUID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "database error")
 		return
@@ -489,15 +308,13 @@ func (h *Handler) CreateWorkspaceChannel(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	channel, err := scanWorkspaceChannel(h.DB.QueryRow(
-		r.Context(),
-		createWorkspaceChannelStatement,
-		workspaceUUID,
-		slug,
-		name,
-		description,
-		createdBy,
-	))
+	channel, err := h.Queries.CreateWorkspaceChannel(r.Context(), db.CreateWorkspaceChannelParams{
+		WorkspaceID: workspaceUUID,
+		Slug:        slug,
+		Name:        name,
+		Description: pgtype.Text{String: description, Valid: true},
+		CreatedBy:   createdBy,
+	})
 	if err != nil {
 		if isUniqueViolation(err) || isCheckViolation(err) {
 			writeErrorCode(w, http.StatusConflict, "channel_conflict", err.Error())
@@ -555,18 +372,13 @@ func (h *Handler) ListWorkspaceChannelMessages(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	rows, err := h.DB.Query(r.Context(), listWorkspaceChannelMessagesStatement,
-		workspaceUUID,
-		channelID,
-		beforeCreatedAt,
-		beforeID,
-		limit+1,
-	)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error")
-		return
-	}
-	messages, err := scanWorkspaceChannelMessages(rows)
+	messages, err := h.Queries.ListWorkspaceChannelMessages(r.Context(), db.ListWorkspaceChannelMessagesParams{
+		WorkspaceID:     workspaceUUID,
+		ChannelID:       channelID,
+		BeforeCreatedAt: beforeCreatedAt,
+		BeforeID:        beforeID,
+		Limit:           int32(limit + 1),
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "database error")
 		return
@@ -692,17 +504,15 @@ func (h *Handler) CreateWorkspaceChannelMessage(w http.ResponseWriter, r *http.R
 			return
 		}
 	}
-	message, err := scanWorkspaceChannelMessage(h.DB.QueryRow(
-		r.Context(),
-		createWorkspaceChannelMessageStatement,
-		workspaceUUID,
-		channelID,
-		authorType,
-		authorID,
-		content,
-		parentID,
-		quotedMessageID,
-	))
+	message, err := h.Queries.CreateWorkspaceChannelMessage(r.Context(), db.CreateWorkspaceChannelMessageParams{
+		WorkspaceID:     workspaceUUID,
+		ChannelID:       channelID,
+		AuthorType:      authorType,
+		AuthorID:        authorID,
+		Content:         content,
+		ParentID:        parentID,
+		QuotedMessageID: quotedMessageID,
+	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) || isCheckViolation(err) {
 			writeErrorCode(w, http.StatusUnprocessableEntity, "invalid_message", "channel message is not valid")
