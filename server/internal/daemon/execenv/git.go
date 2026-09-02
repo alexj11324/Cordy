@@ -31,6 +31,99 @@ func detectGitRepo(dir string) (string, bool) {
 	return "", false
 }
 
+// ExecutionProvenance is the daemon-side, credential-free description of the
+// checkout used for a task. The server validates these values before using
+// them for Work Product discovery.
+type ExecutionProvenance struct {
+	RepoIdentity       string `json:"execution_repo_identity,omitempty"`
+	ExecutionWorkspace string `json:"execution_workspace,omitempty"`
+	HeadBranch         string `json:"execution_head_branch,omitempty"`
+	HeadSHA            string `json:"execution_head_sha,omitempty"`
+	HeadState          string `json:"execution_head_state,omitempty"`
+}
+
+// ReadExecutionProvenance reads only local git metadata. It deliberately does
+// not fetch, inspect file contents, or include command output in errors: a
+// failed capture should degrade to an explicit server-side ineligible result,
+// never expose a repository path or secret through a daemon callback.
+func ReadExecutionProvenance(dir string) (ExecutionProvenance, error) {
+	dir = strings.TrimSpace(dir)
+	if dir == "" {
+		return ExecutionProvenance{}, fmt.Errorf("execution provenance: empty workspace")
+	}
+	root, err := resolveGitRoot(dir)
+	if err != nil {
+		return ExecutionProvenance{ExecutionWorkspace: filepath.Clean(dir), HeadState: "unknown"}, err
+	}
+
+	provenance := ExecutionProvenance{
+		ExecutionWorkspace: filepath.Clean(dir),
+		HeadState:          "unknown",
+	}
+	if remote, remoteErr := runGitTrimmed(root, "config", "--get", "remote.origin.url"); remoteErr == nil {
+		provenance.RepoIdentity = remote
+	}
+	if branch, branchErr := runGitTrimmed(dir, "symbolic-ref", "--quiet", "--short", "HEAD"); branchErr == nil {
+		provenance.HeadBranch = branch
+	}
+	if sha, shaErr := runGitTrimmed(dir, "rev-parse", "HEAD"); shaErr == nil {
+		provenance.HeadSHA = sha
+	}
+	if provenance.HeadBranch == "" {
+		if provenance.HeadSHA != "" {
+			provenance.HeadState = "detached"
+		}
+		return provenance, nil
+	}
+	defaultBranch := strings.TrimPrefix(getRemoteDefaultBranch(root), "origin/")
+	if defaultBranch != "" && defaultBranch != "HEAD" && provenance.HeadBranch == defaultBranch {
+		provenance.HeadState = "default"
+	} else {
+		provenance.HeadState = "attached"
+	}
+	return provenance, nil
+}
+
+// ReadFinalizedExecutionProvenance reads the branch ref after a disposable
+// worktree has been finalized. Finalize removes the worktree, so the repository
+// root and the task's former workspace path are separate inputs. The branch ref
+// is the authoritative head after Finalize's auto-commit; reading the removed
+// worktree before that commit would report the pre-commit SHA and could never
+// match the pull request that contains the delivered changes.
+func ReadFinalizedExecutionProvenance(gitRoot, executionWorkspace, branch string) (ExecutionProvenance, error) {
+	gitRoot = strings.TrimSpace(gitRoot)
+	executionWorkspace = strings.TrimSpace(executionWorkspace)
+	branch = strings.TrimSpace(branch)
+	if gitRoot == "" || executionWorkspace == "" || branch == "" {
+		return ExecutionProvenance{}, fmt.Errorf("execution provenance: finalized branch requires repository root, workspace, and branch")
+	}
+	root, err := resolveGitRoot(gitRoot)
+	if err != nil {
+		return ExecutionProvenance{}, err
+	}
+	remote, err := runGitTrimmed(root, "config", "--get", "remote.origin.url")
+	if err != nil || remote == "" {
+		return ExecutionProvenance{}, fmt.Errorf("execution provenance: repository has no origin remote")
+	}
+	ref := "refs/heads/" + branch
+	sha, err := runGitTrimmed(root, "rev-parse", "--verify", ref)
+	if err != nil || sha == "" {
+		return ExecutionProvenance{}, fmt.Errorf("execution provenance: finalized branch head unavailable")
+	}
+	provenance := ExecutionProvenance{
+		RepoIdentity:       remote,
+		ExecutionWorkspace: filepath.Clean(executionWorkspace),
+		HeadBranch:         branch,
+		HeadSHA:            sha,
+		HeadState:          "attached",
+	}
+	defaultBranch := strings.TrimPrefix(getRemoteDefaultBranch(root), "origin/")
+	if defaultBranch != "" && defaultBranch != "HEAD" && branch == defaultBranch {
+		provenance.HeadState = "default"
+	}
+	return provenance, nil
+}
+
 // fetchOrigin runs `git fetch origin` to ensure the local repo has the latest remote refs.
 func fetchOrigin(gitRoot string) error {
 	cmd := exec.Command("git", "-C", gitRoot, "fetch", "origin")

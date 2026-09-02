@@ -2,6 +2,7 @@ package ghsnapshot
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"math/rand"
 	"sync"
@@ -114,6 +115,17 @@ func NewManager(client *Client, queries *db.Queries, pool TxBeginner, onApplied 
 
 // Enabled reports whether the pipeline will actually do anything.
 func (m *Manager) Enabled() bool { return m != nil && m.client.Enabled() }
+
+// PullRequestsByHead exposes the authenticated exact-head lookup used by the
+// Work Product discovery worker. Keeping the call behind Manager means the
+// handler never reaches into the client or duplicates the disabled-feature
+// check; a self-host without a GitHub App simply gets a clear error.
+func (m *Manager) PullRequestsByHead(ctx context.Context, installationID int64, owner, repo, branch string) ([]PullRequestHeadMatch, error) {
+	if !m.Enabled() {
+		return nil, errors.New("ghsnapshot: client not configured")
+	}
+	return m.client.PullRequestsByHead(ctx, installationID, owner, repo, branch)
+}
 
 // Start launches the worker pool and the TTL sweeper under ctx. No-op (and
 // safe) when the manager is disabled.

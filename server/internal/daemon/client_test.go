@@ -579,3 +579,41 @@ func TestTerminalReportsCarryDurableWorkDir(t *testing.T) {
 		})
 	}
 }
+
+func TestCancelAckCarriesExecutionProvenance(t *testing.T) {
+	var body map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/daemon/tasks/task-1/cancel-ack" {
+			t.Errorf("unexpected path %q", r.URL.Path)
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	provenance := ExecutionProvenanceReport{
+		RepoIdentity:       "owner/repo",
+		ExecutionWorkspace: "/tmp/task-1",
+		HeadBranch:         "agent/task-1",
+		HeadSHA:            "0123456789abcdef",
+		HeadState:          "attached",
+	}
+	if err := NewClient(srv.URL).AckTaskCancelled(context.Background(), "task-1", TaskCancelAck{
+		ExecutionProvenance: provenance,
+	}); err != nil {
+		t.Fatalf("AckTaskCancelled: %v", err)
+	}
+
+	want := map[string]string{
+		"execution_repo_identity": "owner/repo",
+		"execution_workspace":     "/tmp/task-1",
+		"execution_head_branch":   "agent/task-1",
+		"execution_head_sha":      "0123456789abcdef",
+		"execution_head_state":    "attached",
+	}
+	for key, value := range want {
+		if got := body[key]; got != value {
+			t.Errorf("%s = %v, want %q (body: %v)", key, got, value, body)
+		}
+	}
+}

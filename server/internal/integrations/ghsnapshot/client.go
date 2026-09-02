@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -77,6 +78,37 @@ type Client struct {
 type cachedToken struct {
 	token  string
 	expiry time.Time
+}
+
+// PullRequestMetadata is the small, immutable REST representation needed when
+// associating a completed execution with the exact GitHub pull request that
+// owns its branch head. It intentionally contains no credentials and is kept
+// separate from PRSnapshot, whose purpose is CI/mergeability refreshes.
+type PullRequestMetadata struct {
+	Number           int32
+	Title            string
+	State            string
+	HTMLURL          string
+	Branch           string
+	HeadRepoIdentity string
+	HeadSHA          string
+	AuthorLogin      string
+	AuthorAvatarURL  string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	MergedAt         *time.Time
+	ClosedAt         *time.Time
+	Additions        int32
+	Deletions        int32
+	ChangedFiles     int32
+}
+
+// PullRequestHeadMatch is one pull request returned by GitHub's exact-head
+// query. The API can legally return more than one result for a branch/SHA
+// (for example after a force-push); callers must preserve that ambiguity.
+type PullRequestHeadMatch struct {
+	Number   int32
+	Metadata PullRequestMetadata
 }
 
 // NewClientFromEnv builds a Client from GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY.
@@ -207,6 +239,182 @@ func (c *Client) mintInstallationToken(ctx context.Context, installationID int64
 	c.tokens[installationID] = cachedToken{token: parsed.Token, expiry: expiry}
 	c.mu.Unlock()
 	return parsed.Token, nil
+}
+
+// PullRequestsByHead lists all pull requests GitHub associates with one exact
+// branch name in one repository. The endpoint's head filter is owner-qualified
+// and state=all deliberately includes closed/merged PRs: a task may finish
+// after a branch was merged, and the discovery policy must see that history.
+// The caller performs the final head-repository/SHA equality checks because
+// GitHub's REST filter is branch-oriented rather than an exact SHA predicate.
+func (c *Client) PullRequestsByHead(ctx context.Context, installationID int64, owner, repo, branch string) ([]PullRequestHeadMatch, error) {
+	if !c.Enabled() {
+		return nil, errors.New("ghsnapshot: client not configured")
+	}
+	owner = strings.TrimSpace(owner)
+	repo = strings.TrimSpace(repo)
+	branch = strings.TrimSpace(branch)
+	if owner == "" || repo == "" || branch == "" {
+		return nil, errors.New("ghsnapshot: pull request head query requires owner, repository, and branch")
+	}
+	token, err := c.installationToken(ctx, installationID)
+	if err != nil {
+		return nil, err
+	}
+	baseEndpoint := strings.TrimRight(c.apiBase, "/") + "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(repo) + "/pulls"
+	matches := make([]PullRequestHeadMatch, 0)
+	for page := 1; ; page++ {
+		query := url.Values{}
+		query.Set("state", "all")
+		query.Set("head", owner+":"+branch)
+		query.Set("per_page", "100")
+		query.Set("page", strconv.Itoa(page))
+		endpoint := baseEndpoint + "?" + query.Encode()
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Accept", "application/vnd.github+json")
+		req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
+		_ = resp.Body.Close()
+		if readErr != nil {
+			return nil, errors.New("github pull requests by head: failed to read response")
+		}
+		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests {
+			return nil, rateLimitFromResponse(resp, c.now())
+		}
+		if resp.StatusCode != http.StatusOK {
+			// Do not echo the response body: GitHub error payloads can contain
+			// repository metadata that is not needed for the durable decision.
+			return nil, fmt.Errorf("github pull requests by head: unexpected status %d", resp.StatusCode)
+		}
+		var payload []githubPullRequestREST
+		if err := json.Unmarshal(body, &payload); err != nil {
+			return nil, errors.New("github pull requests by head: malformed response")
+		}
+		for _, item := range payload {
+			metadata, ok := item.metadata()
+			if !ok || metadata.Number <= 0 {
+				continue
+			}
+			matches = append(matches, PullRequestHeadMatch{Number: metadata.Number, Metadata: metadata})
+		}
+		if !githubLinkHasNext(resp.Header.Get("Link")) {
+			return matches, nil
+		}
+	}
+}
+
+func githubLinkHasNext(header string) bool {
+	for _, link := range strings.Split(header, ",") {
+		for _, parameter := range strings.Split(link, ";")[1:] {
+			if strings.TrimSpace(parameter) == `rel="next"` {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+type githubPullRequestREST struct {
+	Number       int32  `json:"number"`
+	Title        string `json:"title"`
+	State        string `json:"state"`
+	HTMLURL      string `json:"html_url"`
+	Draft        bool   `json:"draft"`
+	CreatedAt    string `json:"created_at"`
+	UpdatedAt    string `json:"updated_at"`
+	MergedAt     string `json:"merged_at"`
+	ClosedAt     string `json:"closed_at"`
+	Additions    int32  `json:"additions"`
+	Deletions    int32  `json:"deletions"`
+	ChangedFiles int32  `json:"changed_files"`
+	User         struct {
+		Login  string `json:"login"`
+		Avatar string `json:"avatar_url"`
+	} `json:"user"`
+	Head struct {
+		Ref  string `json:"ref"`
+		SHA  string `json:"sha"`
+		Repo *struct {
+			FullName string `json:"full_name"`
+			CloneURL string `json:"clone_url"`
+			SSHURL   string `json:"ssh_url"`
+			HTMLURL  string `json:"html_url"`
+		} `json:"repo"`
+	} `json:"head"`
+}
+
+func (p githubPullRequestREST) metadata() (PullRequestMetadata, bool) {
+	created, createdOK := parseRESTTime(p.CreatedAt)
+	updated, updatedOK := parseRESTTime(p.UpdatedAt)
+	if !createdOK || !updatedOK || p.Head.Ref == "" || p.Head.SHA == "" {
+		return PullRequestMetadata{}, false
+	}
+	repoIdentity := ""
+	if p.Head.Repo != nil {
+		repoIdentity = p.Head.Repo.FullName
+		if repoIdentity == "" {
+			repoIdentity = p.Head.Repo.HTMLURL
+		}
+		if repoIdentity == "" {
+			repoIdentity = p.Head.Repo.CloneURL
+		}
+		if repoIdentity == "" {
+			repoIdentity = p.Head.Repo.SSHURL
+		}
+	}
+	metadata := PullRequestMetadata{
+		Number:           p.Number,
+		Title:            p.Title,
+		State:            deriveRESTPRState(p.State, p.Draft, p.MergedAt != ""),
+		HTMLURL:          p.HTMLURL,
+		Branch:           p.Head.Ref,
+		HeadRepoIdentity: repoIdentity,
+		HeadSHA:          p.Head.SHA,
+		AuthorLogin:      p.User.Login,
+		AuthorAvatarURL:  p.User.Avatar,
+		CreatedAt:        created,
+		UpdatedAt:        updated,
+		Additions:        p.Additions,
+		Deletions:        p.Deletions,
+		ChangedFiles:     p.ChangedFiles,
+	}
+	if p.MergedAt != "" {
+		if value, ok := parseRESTTime(p.MergedAt); ok {
+			metadata.MergedAt = &value
+		}
+	}
+	if p.ClosedAt != "" {
+		if value, ok := parseRESTTime(p.ClosedAt); ok {
+			metadata.ClosedAt = &value
+		}
+	}
+	return metadata, true
+}
+
+func parseRESTTime(value string) (time.Time, bool) {
+	parsed, err := time.Parse(time.RFC3339, value)
+	return parsed, err == nil
+}
+
+func deriveRESTPRState(state string, draft, merged bool) string {
+	if merged {
+		return "merged"
+	}
+	if strings.EqualFold(state, "closed") {
+		return "closed"
+	}
+	if draft {
+		return "draft"
+	}
+	return "open"
 }
 
 // graphQL runs a single GraphQL query as the given installation and returns the

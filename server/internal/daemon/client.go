@@ -409,6 +409,44 @@ func (c *Client) StartTask(ctx context.Context, taskID string) error {
 	return c.postJSON(ctx, fmt.Sprintf("/api/daemon/tasks/%s/start", taskID), map[string]any{}, nil)
 }
 
+// ExecutionProvenanceReport is the daemon's attested view of the checkout it
+// used for one task. It contains no credentials. The server treats it as
+// evidence, validates the task/workspace binding, and performs the durable
+// GitHub discovery asynchronously.
+type ExecutionProvenanceReport struct {
+	RepoIdentity       string
+	ExecutionWorkspace string
+	HeadBranch         string
+	HeadSHA            string
+	HeadState          string
+}
+
+func (c *Client) RecordExecutionProvenance(ctx context.Context, taskID string, provenance ExecutionProvenanceReport, finished bool) error {
+	body := executionProvenanceBody(provenance)
+	body["finished"] = finished
+	return c.postJSON(ctx, fmt.Sprintf("/api/daemon/tasks/%s/execution-provenance", taskID), body, nil)
+}
+
+func executionProvenanceBody(provenance ExecutionProvenanceReport) map[string]any {
+	body := map[string]any{}
+	if provenance.RepoIdentity != "" {
+		body["execution_repo_identity"] = provenance.RepoIdentity
+	}
+	if provenance.ExecutionWorkspace != "" {
+		body["execution_workspace"] = provenance.ExecutionWorkspace
+	}
+	if provenance.HeadBranch != "" {
+		body["execution_head_branch"] = provenance.HeadBranch
+	}
+	if provenance.HeadSHA != "" {
+		body["execution_head_sha"] = provenance.HeadSHA
+	}
+	if provenance.HeadState != "" {
+		body["execution_head_state"] = provenance.HeadState
+	}
+	return body
+}
+
 // MarkTaskWaitingLocalDirectory parks a freshly-dispatched task in the
 // waiting_local_directory state on the server. The daemon calls this after
 // it has claimed a task whose project carries a local_directory resource
@@ -441,6 +479,10 @@ type TaskCancelAck struct {
 	// swallow it entirely.
 	ErrorMessage  string
 	FailureReason string
+	// ExecutionProvenance carries the same finalized checkout facts as the
+	// complete/fail callbacks. Cancellation must not make a delivered branch
+	// invisible to Work Product discovery.
+	ExecutionProvenance ExecutionProvenanceReport
 }
 
 // AckTaskCancelled tells the server this daemon observed the task's
@@ -466,6 +508,9 @@ func (c *Client) AckTaskCancelled(ctx context.Context, taskID string, ack TaskCa
 	}
 	if ack.FailureReason != "" {
 		body["failure_reason"] = ack.FailureReason
+	}
+	for key, value := range executionProvenanceBody(ack.ExecutionProvenance) {
+		body[key] = value
 	}
 	return c.postJSONWithRetry(ctx, fmt.Sprintf("/api/daemon/tasks/%s/cancel-ack", taskID), body, nil, defaultTerminalRetrySchedule)
 }
@@ -495,6 +540,13 @@ func (c *Client) ReportTaskMessages(ctx context.Context, taskID string, messages
 }
 
 func (c *Client) CompleteTask(ctx context.Context, taskID, output, branchName, sessionID, workDir string, sessionRolloutMissing bool, retiredSessionID, durableWorkDir string) error {
+	return c.CompleteTaskWithProvenance(ctx, taskID, output, branchName, sessionID, workDir, sessionRolloutMissing, retiredSessionID, durableWorkDir, ExecutionProvenanceReport{})
+}
+
+// CompleteTaskWithProvenance is CompleteTask with the final checkout facts
+// captured before worktree cleanup. The original method remains as a
+// compatibility wrapper for older call sites and tests.
+func (c *Client) CompleteTaskWithProvenance(ctx context.Context, taskID, output, branchName, sessionID, workDir string, sessionRolloutMissing bool, retiredSessionID, durableWorkDir string, provenance ExecutionProvenanceReport) error {
 	body := map[string]any{"output": output}
 	if branchName != "" {
 		body["branch_name"] = branchName
@@ -514,6 +566,9 @@ func (c *Client) CompleteTask(ctx context.Context, taskID, output, branchName, s
 	if retiredSessionID != "" {
 		body["retired_session_id"] = retiredSessionID
 	}
+	for key, value := range executionProvenanceBody(provenance) {
+		body[key] = value
+	}
 	return c.postJSONWithRetry(ctx, fmt.Sprintf("/api/daemon/tasks/%s/complete", taskID), body, nil, defaultTerminalRetrySchedule)
 }
 
@@ -527,6 +582,13 @@ func (c *Client) ReportTaskUsage(ctx context.Context, taskID string, usage []Tas
 }
 
 func (c *Client) FailTask(ctx context.Context, taskID, errMsg, sessionID, workDir, branchName, failureReason string, sessionRolloutMissing bool, retiredSessionID, durableWorkDir string) error {
+	return c.FailTaskWithProvenance(ctx, taskID, errMsg, sessionID, workDir, branchName, failureReason, sessionRolloutMissing, retiredSessionID, durableWorkDir, ExecutionProvenanceReport{})
+}
+
+// FailTaskWithProvenance is the failure-path equivalent of
+// CompleteTaskWithProvenance. A failed run can still have a useful branch head
+// and must remain discoverable.
+func (c *Client) FailTaskWithProvenance(ctx context.Context, taskID, errMsg, sessionID, workDir, branchName, failureReason string, sessionRolloutMissing bool, retiredSessionID, durableWorkDir string, provenance ExecutionProvenanceReport) error {
 	body := map[string]any{"error": errMsg}
 	if sessionID != "" {
 		body["session_id"] = sessionID
@@ -551,6 +613,9 @@ func (c *Client) FailTask(ctx context.Context, taskID, errMsg, sessionID, workDi
 	}
 	if retiredSessionID != "" {
 		body["retired_session_id"] = retiredSessionID
+	}
+	for key, value := range executionProvenanceBody(provenance) {
+		body[key] = value
 	}
 	return c.postJSONWithRetry(ctx, fmt.Sprintf("/api/daemon/tasks/%s/fail", taskID), body, nil, defaultTerminalRetrySchedule)
 }

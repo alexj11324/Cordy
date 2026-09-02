@@ -3707,6 +3707,14 @@ type TaskCompleteRequest struct {
 	// to report" — this says "never hand this id to a later run". Older
 	// daemons omit it, which is exactly the pre-fix behaviour.
 	RetiredSessionID string `json:"retired_session_id,omitempty"`
+	// Execution provenance is captured before a disposable worktree is
+	// finalized. The server validates and normalizes these evidence fields
+	// before putting them on the durable discovery queue.
+	ExecutionRepoIdentity string `json:"execution_repo_identity,omitempty"`
+	ExecutionWorkspace    string `json:"execution_workspace,omitempty"`
+	ExecutionHeadBranch   string `json:"execution_head_branch,omitempty"`
+	ExecutionHeadSHA      string `json:"execution_head_sha,omitempty"`
+	ExecutionHeadState    string `json:"execution_head_state,omitempty"`
 }
 
 // sanitizeTaskCompleteRequest / sanitizeTaskFailRequest scrub every
@@ -3724,6 +3732,11 @@ func sanitizeTaskCompleteRequest(req *TaskCompleteRequest) {
 	req.DurableWorkDir = util.SanitizeTextForPostgres(req.DurableWorkDir)
 	req.BranchName = util.SanitizeTextForPostgres(req.BranchName)
 	req.RetiredSessionID = util.SanitizeTextForPostgres(req.RetiredSessionID)
+	req.ExecutionRepoIdentity = util.SanitizeTextForPostgres(req.ExecutionRepoIdentity)
+	req.ExecutionWorkspace = util.SanitizeTextForPostgres(req.ExecutionWorkspace)
+	req.ExecutionHeadBranch = util.SanitizeTextForPostgres(req.ExecutionHeadBranch)
+	req.ExecutionHeadSHA = util.SanitizeTextForPostgres(req.ExecutionHeadSHA)
+	req.ExecutionHeadState = util.SanitizeTextForPostgres(req.ExecutionHeadState)
 }
 
 func sanitizeTaskFailRequest(req *TaskFailRequest) {
@@ -3734,6 +3747,26 @@ func sanitizeTaskFailRequest(req *TaskFailRequest) {
 	req.FailureReason = util.SanitizeTextForPostgres(req.FailureReason)
 	req.BranchName = util.SanitizeTextForPostgres(req.BranchName)
 	req.RetiredSessionID = util.SanitizeTextForPostgres(req.RetiredSessionID)
+	req.ExecutionRepoIdentity = util.SanitizeTextForPostgres(req.ExecutionRepoIdentity)
+	req.ExecutionWorkspace = util.SanitizeTextForPostgres(req.ExecutionWorkspace)
+	req.ExecutionHeadBranch = util.SanitizeTextForPostgres(req.ExecutionHeadBranch)
+	req.ExecutionHeadSHA = util.SanitizeTextForPostgres(req.ExecutionHeadSHA)
+	req.ExecutionHeadState = util.SanitizeTextForPostgres(req.ExecutionHeadState)
+}
+
+func (h *Handler) workProductTerminalHook(workspaceID pgtype.UUID, facts workProductExecutionFacts) service.TerminalTaskTxHook {
+	if h.WorkProductDiscovery == nil {
+		return nil
+	}
+	return func(ctx context.Context, tx pgx.Tx, queries *db.Queries, task db.AgentTaskQueue) error {
+		return h.WorkProductDiscovery.prepareTerminalHandoff(ctx, tx, queries, task, workspaceID, facts)
+	}
+}
+
+func (h *Handler) kickWorkProductDiscovery(ctx context.Context, task db.AgentTaskQueue, workspaceID pgtype.UUID) {
+	if h.WorkProductDiscovery != nil {
+		h.WorkProductDiscovery.kick(ctx, task, workspaceID)
+	}
 }
 
 func (h *Handler) CompleteTask(w http.ResponseWriter, r *http.Request) {
@@ -3788,6 +3821,11 @@ func (h *Handler) CompleteTask(w http.ResponseWriter, r *http.Request) {
 			BranchName:            req.BranchName,
 			SessionRolloutMissing: req.SessionRolloutMissing,
 			RetiredSessionID:      req.RetiredSessionID,
+			ExecutionRepoIdentity: req.ExecutionRepoIdentity,
+			ExecutionWorkspace:    req.ExecutionWorkspace,
+			ExecutionHeadBranch:   req.ExecutionHeadBranch,
+			ExecutionHeadSHA:      req.ExecutionHeadSHA,
+			ExecutionHeadState:    req.ExecutionHeadState,
 		})
 		return
 	}
@@ -3797,7 +3835,13 @@ func (h *Handler) CompleteTask(w http.ResponseWriter, r *http.Request) {
 	// transaction (force session_id NULL + flag the row), so an auto-retry the
 	// same commit creates and wakes can never observe the withheld pointer or a
 	// missing continuity-gap flag.
-	task, err := h.TaskService.CompleteTask(r.Context(), parseUUID(taskID), result, req.SessionID, req.WorkDir, req.BranchName, req.SessionRolloutMissing, req.RetiredSessionID, req.DurableWorkDir)
+	workspaceUUID := parseUUID(workspaceID)
+	task, err := h.TaskService.CompleteTaskWithTerminalHook(
+		r.Context(), parseUUID(taskID), result, req.SessionID, req.WorkDir,
+		req.BranchName, req.SessionRolloutMissing, req.RetiredSessionID,
+		req.DurableWorkDir,
+		h.workProductTerminalHook(workspaceUUID, workProductExecutionFactsFromCompleteRequest(req)),
+	)
 	if err != nil {
 		// A CompleteTask error is an infrastructure failure (transaction /
 		// assistant-outcome write), not a bad request: an already-finalized
@@ -3822,6 +3866,7 @@ func (h *Handler) CompleteTask(w http.ResponseWriter, r *http.Request) {
 	// Wake the owning runtime now so queued work that was blocked by this
 	// task's agent capacity or serialization key is re-claimed immediately.
 	h.TaskService.NotifyTaskFinished(*task)
+	h.kickWorkProductDiscovery(r.Context(), *task, workspaceUUID)
 
 	// Best-effort revoke of any agent task token minted at claim time.
 	// The token would naturally expire at the 24h watermark and is also
@@ -4028,8 +4073,8 @@ func (h *Handler) reconcileCommentsOnCompletion(ctx context.Context, task *db.Ag
 			delegationAuthority = h.automationDelegationAuthorityFromComment(ctx, issue, c)
 		}
 		triggers, _ := h.computeCommentAgentTriggers(ctx, issue, c.Content, parentComment, actorType, actorID, commentTriggerComputeOptions{
-			ExcludeTriggerCommentID:            c.ID,
-			OriginatorUserID:                   originatorUserID,
+			ExcludeTriggerCommentID:             c.ID,
+			OriginatorUserID:                    originatorUserID,
 			AutomationDelegationAuthorityUserID: delegationAuthority,
 		})
 		// For an AGENT author, compensate ONLY explicit @agent/@team mentions.
@@ -4457,7 +4502,12 @@ type TaskFailRequest struct {
 	// (GH #6066). Distinct from an empty SessionID, which only means "nothing
 	// to report" — this says "never hand this id to a later run". Older
 	// daemons omit it, which is exactly the pre-fix behaviour.
-	RetiredSessionID string `json:"retired_session_id,omitempty"`
+	RetiredSessionID      string `json:"retired_session_id,omitempty"`
+	ExecutionRepoIdentity string `json:"execution_repo_identity,omitempty"`
+	ExecutionWorkspace    string `json:"execution_workspace,omitempty"`
+	ExecutionHeadBranch   string `json:"execution_head_branch,omitempty"`
+	ExecutionHeadSHA      string `json:"execution_head_sha,omitempty"`
+	ExecutionHeadState    string `json:"execution_head_state,omitempty"`
 }
 
 func (h *Handler) FailTask(w http.ResponseWriter, r *http.Request) {
@@ -4493,7 +4543,13 @@ func (h *Handler) failTask(w http.ResponseWriter, r *http.Request, taskID, works
 	// keep a stale mid-flight pin) and flagging the row in the same commit that
 	// creates and wakes the auto-retry, so the retry can never claim the withheld
 	// pointer or miss the continuity gap.
-	task, err := h.TaskService.FailTask(r.Context(), parseUUID(taskID), req.Error, req.SessionID, req.WorkDir, req.BranchName, req.FailureReason, req.SessionRolloutMissing, req.RetiredSessionID, req.DurableWorkDir)
+	workspaceUUID := parseUUID(workspaceID)
+	task, err := h.TaskService.FailTaskWithTerminalHook(
+		r.Context(), parseUUID(taskID), req.Error, req.SessionID, req.WorkDir,
+		req.BranchName, req.FailureReason, req.SessionRolloutMissing,
+		req.RetiredSessionID, req.DurableWorkDir,
+		h.workProductTerminalHook(workspaceUUID, workProductExecutionFactsFromFailRequest(req)),
+	)
 	if err != nil {
 		// A FailTask error is an infrastructure failure (the terminal
 		// transaction that also clears the withheld session, writes the
@@ -4507,6 +4563,7 @@ func (h *Handler) failTask(w http.ResponseWriter, r *http.Request, taskID, works
 		return
 	}
 	h.TaskService.NotifyTaskFinished(*task)
+	h.kickWorkProductDiscovery(r.Context(), *task, workspaceUUID)
 
 	// Best-effort revoke of the mat_ task token minted at claim. Same
 	// rationale as CompleteTask — eager deletion shrinks the post-
@@ -4688,11 +4745,20 @@ type TaskCancelAckRequest struct {
 	// preserved worktree is the only pointer left to the agent's work.
 	ErrorMessage  string `json:"error_message,omitempty"`
 	FailureReason string `json:"failure_reason,omitempty"`
+	// Execution provenance mirrors the complete/fail callbacks. Cancellation
+	// still finalizes the task worktree, so this acknowledgement is the last
+	// reliable chance to persist the checkout evidence used by Work Product
+	// discovery.
+	ExecutionRepoIdentity string `json:"execution_repo_identity,omitempty"`
+	ExecutionWorkspace    string `json:"execution_workspace,omitempty"`
+	ExecutionHeadBranch   string `json:"execution_head_branch,omitempty"`
+	ExecutionHeadSHA      string `json:"execution_head_sha,omitempty"`
+	ExecutionHeadState    string `json:"execution_head_state,omitempty"`
 }
 
 func (h *Handler) AckTaskCancelled(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "taskId")
-	task, ok := h.requireDaemonTaskAccess(w, r, taskID)
+	task, workspaceID, ok := h.requireDaemonTaskAccessWithWorkspace(w, r, taskID)
 	if !ok {
 		return
 	}
@@ -4708,6 +4774,11 @@ func (h *Handler) AckTaskCancelled(w http.ResponseWriter, r *http.Request) {
 	req.FailureReason = util.SanitizeTextForPostgres(req.FailureReason)
 	req.BranchName = util.SanitizeTextForPostgres(req.BranchName)
 	req.DurableWorkDir = util.SanitizeTextForPostgres(req.DurableWorkDir)
+	req.ExecutionRepoIdentity = util.SanitizeTextForPostgres(req.ExecutionRepoIdentity)
+	req.ExecutionWorkspace = util.SanitizeTextForPostgres(req.ExecutionWorkspace)
+	req.ExecutionHeadBranch = util.SanitizeTextForPostgres(req.ExecutionHeadBranch)
+	req.ExecutionHeadSHA = util.SanitizeTextForPostgres(req.ExecutionHeadSHA)
+	req.ExecutionHeadState = util.SanitizeTextForPostgres(req.ExecutionHeadState)
 
 	// Terminal deliveries first, failing LOUD on persistence errors: these
 	// fields are the only pointer to a cancelled task's work, and the daemon
@@ -4765,6 +4836,17 @@ func (h *Handler) AckTaskCancelled(w http.ResponseWriter, r *http.Request) {
 		// clients may already hold a refetched row without the branch/error
 		// and will not refetch again on their own.
 		h.TaskService.RebroadcastCancelledTask(r.Context(), task.ID)
+	}
+	if task.Status == "cancelled" {
+		if err := h.scheduleWorkProductDiscovery(
+			r.Context(),
+			task,
+			parseUUID(workspaceID),
+			workProductExecutionFactsFromCancelAckRequest(req),
+		); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to schedule work product discovery")
+			return
+		}
 	}
 	h.TaskService.FinalizeDeferredCancelledChat(r.Context(), task.ID)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})

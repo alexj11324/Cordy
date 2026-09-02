@@ -1935,15 +1935,15 @@ func TestStartTask_AutomationRunOnlyTask_ResolvesWorkspace(t *testing.T) {
 
 	runID := dbfx.Insert(t, "automation_run", testutil.Cols{
 		"automation_id": automationID,
-		"source":       "manual",
-		"status":       "running",
+		"source":        "manual",
+		"status":        "running",
 	})
 
 	// issue_id is explicitly NULL — the condition that used to trigger 404.
 	taskID := dbfx.Task(t, agentID, testutil.Cols{
-		"runtime_id":       runtimeID,
-		"issue_id":         nil,
-		"status":           "dispatched",
+		"runtime_id":        runtimeID,
+		"issue_id":          nil,
+		"status":            "dispatched",
 		"automation_run_id": runID,
 	})
 	defer testPool.Exec(ctx, `DELETE FROM agent_task_queue WHERE id = $1`, taskID)
@@ -2246,14 +2246,14 @@ func TestClaimTask_AutomationRunOnly_PopulatesWorkspaceAndProjectContext(t *test
 
 	runID := dbfx.Insert(t, "automation_run", testutil.Cols{
 		"automation_id": automationID,
-		"source":       "manual",
-		"status":       "running",
+		"source":        "manual",
+		"status":        "running",
 	})
 
 	// Create a queued task with only AutomationRunID (no IssueID, no ChatSessionID).
 	taskID := dbfx.Task(t, agentID, testutil.Cols{
-		"runtime_id":       runtimeID,
-		"issue_id":         nil,
+		"runtime_id":        runtimeID,
+		"issue_id":          nil,
 		"automation_run_id": runID,
 	})
 	defer testPool.Exec(ctx, `DELETE FROM agent_task_queue WHERE id = $1`, taskID)
@@ -3669,9 +3669,9 @@ func TestGetAutomationRunGCCheck(t *testing.T) {
 
 	runID := dbfx.Insert(t, "automation_run", testutil.Cols{
 		"automation_id": automationID,
-		"source":       "manual",
-		"status":       "completed",
-		"completed_at": testutil.Raw("NOW() - INTERVAL '6 days'"),
+		"source":        "manual",
+		"status":        "completed",
+		"completed_at":  testutil.Raw("NOW() - INTERVAL '6 days'"),
 	})
 
 	// Cross-workspace probe.
@@ -4201,12 +4201,14 @@ func TestAckTaskCancelled(t *testing.T) {
 		"runtime_id":                runtimeID,
 		"issue_id":                  nil,
 		"chat_session_id":           chatSessionID,
+		"work_dir":                  "/srv/executions/cancel-ack-test",
 		"status":                    "cancelled",
 		"started_at":                testutil.Raw("now()"),
 		"completed_at":              testutil.Raw("now()"),
 		"chat_finalize_deferred_at": testutil.Raw("now()"),
 	})
 	t.Cleanup(func() {
+		testPool.Exec(ctx, `DELETE FROM agent_task_execution_provenance WHERE task_id = $1`, taskID)
 		testPool.Exec(ctx, `DELETE FROM task_message WHERE task_id = $1`, taskID)
 		testPool.Exec(ctx, `DELETE FROM chat_message WHERE task_id = $1`, taskID)
 		testPool.Exec(ctx, `DELETE FROM agent_task_queue WHERE id = $1`, taskID)
@@ -4230,7 +4232,13 @@ func TestAckTaskCancelled(t *testing.T) {
 	}
 
 	// Same-workspace token settles the deferred finalize.
-	req = newDaemonTokenRequest("POST", "/api/daemon/tasks/"+taskID+"/cancel-ack", nil,
+	req = newDaemonTokenRequest("POST", "/api/daemon/tasks/"+taskID+"/cancel-ack", map[string]any{
+		"execution_repo_identity": "owner/repo",
+		"execution_workspace":     "/srv/executions/cancel-ack-test/worktree",
+		"execution_head_branch":   "agent/cancel-ack-test",
+		"execution_head_sha":      "0123456789abcdef",
+		"execution_head_state":    "attached",
+	},
 		testWorkspaceID, "legit-daemon")
 	req = withURLParam(req, "taskId", taskID)
 	testutil.Call(t, testHandler.AckTaskCancelled, req).Want(http.StatusOK)
@@ -4246,6 +4254,19 @@ func TestAckTaskCancelled(t *testing.T) {
 	`, taskID).Scan(&stopped)
 	if stopped != 1 {
 		t.Errorf("Stopped. rows = %d, want 1", stopped)
+	}
+	var repoIdentity, executionWorkspace, headBranch, headSHA, headState string
+	dbfx.QueryRow(t, `
+		SELECT repo_identity, execution_workspace, head_branch, head_sha, head_state
+		FROM agent_task_execution_provenance
+		WHERE workspace_id = $1 AND task_id = $2
+	`, testWorkspaceID, taskID).Scan(&repoIdentity, &executionWorkspace, &headBranch, &headSHA, &headState)
+	if repoIdentity != "owner/repo" ||
+		executionWorkspace != "/srv/executions/cancel-ack-test/worktree" ||
+		headBranch != "agent/cancel-ack-test" ||
+		headSHA != "0123456789abcdef" ||
+		headState != "attached" {
+		t.Fatalf("cancel provenance = %q %q %q %q %q", repoIdentity, executionWorkspace, headBranch, headSHA, headState)
 	}
 
 	// Idempotent: a second ack is a no-op (no duplicate Stopped.).

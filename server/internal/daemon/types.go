@@ -140,12 +140,12 @@ type Task struct {
 	ChatMessageAttachments        []ChatAttachmentMeta   `json:"chat_message_attachments,omitempty"`         // attachments linked to the chat message; agent uses these to `patchbay attachment download <id>`
 	ChatIntro                     bool                   `json:"chat_intro,omitempty"`                       // legacy compatibility for historical is_agent_intro sessions; new agent creation no longer creates these chats
 	RegenerateQuickActionsFor     string                 `json:"regenerate_quick_actions_for,omitempty"`     // set only by servers predating server-side quick-actions generation (MUL-5573). Read as a REFUSAL marker, never executed: see the guard in runTask
-	AutomationRunID                string                 `json:"automation_run_id,omitempty"`                 // non-empty for automation run_only tasks
-	AutomationID                   string                 `json:"automation_id,omitempty"`                     // automation that spawned this run
-	AutomationTitle                string                 `json:"automation_title,omitempty"`                  // automation title used as task context
-	AutomationDescription          string                 `json:"automation_description,omitempty"`            // automation description used as task prompt
-	AutomationSource               string                 `json:"automation_source,omitempty"`                 // manual, schedule, webhook, or api
-	AutomationTriggerPayload       json.RawMessage        `json:"automation_trigger_payload,omitempty"`        // optional trigger payload for webhook/api runs
+	AutomationRunID               string                 `json:"automation_run_id,omitempty"`                // non-empty for automation run_only tasks
+	AutomationID                  string                 `json:"automation_id,omitempty"`                    // automation that spawned this run
+	AutomationTitle               string                 `json:"automation_title,omitempty"`                 // automation title used as task context
+	AutomationDescription         string                 `json:"automation_description,omitempty"`           // automation description used as task prompt
+	AutomationSource              string                 `json:"automation_source,omitempty"`                // manual, schedule, webhook, or api
+	AutomationTriggerPayload      json.RawMessage        `json:"automation_trigger_payload,omitempty"`       // optional trigger payload for webhook/api runs
 	QuickCreatePrompt             string                 `json:"quick_create_prompt,omitempty"`              // user's natural-language input for quick-create tasks
 	QuickCreatePriority           string                 `json:"quick_create_priority,omitempty"`            // explicit priority selected in quick-create
 	QuickCreateDueDate            string                 `json:"quick_create_due_date,omitempty"`            // explicit calendar due date selected in quick-create
@@ -153,8 +153,8 @@ type Task struct {
 	QuickCreateSourceContext      json.RawMessage        `json:"quick_create_source_context,omitempty"`      // immutable historical context, separate from the new instruction
 	HandoffNote                   string                 `json:"handoff_note,omitempty"`                     // assignment handoff instruction; rendered into the opening prompt + issue_context.md
 
-	TeamID               string `json:"team_id,omitempty"`                // when the picker was a team, the team's UUID; Agent is still the resolved leader
-	TeamName             string `json:"team_name,omitempty"`              // display name for the picker team, used in prompt text
+	TeamID                string `json:"team_id,omitempty"`                 // when the picker was a team, the team's UUID; Agent is still the resolved leader
+	TeamName              string `json:"team_name,omitempty"`               // display name for the picker team, used in prompt text
 	ParentIssueID         string `json:"parent_issue_id,omitempty"`         // for quick-create tasks opened from "Add sub issue" — UUID of the parent issue the new issue should be filed under
 	ParentIssueIdentifier string `json:"parent_issue_identifier,omitempty"` // human-readable identifier (e.g. MUL-123) of the quick-create parent issue, used in prompt context
 	// RequestingUserName + RequestingUserProfileDescription describe the human
@@ -301,9 +301,16 @@ type TaskResult struct {
 	Status     string `json:"status"`
 	Comment    string `json:"comment"`
 	BranchName string `json:"branch_name,omitempty"`
-	EnvType    string `json:"env_type,omitempty"`
-	SessionID  string `json:"session_id,omitempty"` // Claude session ID for future resumption
-	WorkDir    string `json:"work_dir,omitempty"`   // working directory used during execution
+	// Execution provenance is forwarded only through the terminal callback;
+	// it is intentionally not part of the public task-result JSON contract.
+	ExecutionRepoIdentity string `json:"-"`
+	ExecutionWorkspace    string `json:"-"`
+	ExecutionHeadBranch   string `json:"-"`
+	ExecutionHeadSHA      string `json:"-"`
+	ExecutionHeadState    string `json:"-"`
+	EnvType               string `json:"env_type,omitempty"`
+	SessionID             string `json:"session_id,omitempty"` // Claude session ID for future resumption
+	WorkDir               string `json:"work_dir,omitempty"`   // working directory used during execution
 	// DurableWorkDir replaces WorkDir only after a disposable local worktree
 	// was finalized and its removal was confirmed. Empty keeps WorkDir authoritative.
 	DurableWorkDir string `json:"durable_work_dir,omitempty"`

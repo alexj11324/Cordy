@@ -163,8 +163,8 @@ func taskScopedAuthToken(task Task) (string, error) {
 func taskPatchbayEnvironment(task Task, agentName, token, configRoot, workspacesRoot, serverURL string, healthPort, slot int, tempDir string) map[string]string {
 	return map[string]string{
 		"PATCHBAY_TOKEN":        token,
-		cli.TaskConfigRootEnv:  configRoot,
-		TaskWorkspacesRootEnv:  workspacesRoot,
+		cli.TaskConfigRootEnv:   configRoot,
+		TaskWorkspacesRootEnv:   workspacesRoot,
 		"PATCHBAY_SERVER_URL":   serverURL,
 		"PATCHBAY_DAEMON_PORT":  strconv.Itoa(healthPort),
 		"PATCHBAY_WORKSPACE_ID": task.WorkspaceID,
@@ -172,9 +172,9 @@ func taskPatchbayEnvironment(task Task, agentName, token, configRoot, workspaces
 		"PATCHBAY_AGENT_ID":     task.AgentID,
 		"PATCHBAY_TASK_ID":      task.ID,
 		"PATCHBAY_TASK_SLOT":    strconv.Itoa(slot),
-		"TMPDIR":               tempDir,
-		"TMP":                  tempDir,
-		"TEMP":                 tempDir,
+		"TMPDIR":                tempDir,
+		"TMP":                   tempDir,
+		"TEMP":                  tempDir,
 	}
 }
 
@@ -229,7 +229,8 @@ type terminalTaskReport struct {
 	// abandoned as unresumable (GH #6066). The server records it so no later
 	// run on the issue or chat can select it again, however many clean rows
 	// still reference it.
-	retiredSessionID string
+	retiredSessionID    string
+	executionProvenance ExecutionProvenanceReport
 }
 
 type executionEnvironmentCommand func() ([]string, error)
@@ -5445,7 +5446,11 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 		// run errors stay discarded: on a cancelled run they are expected
 		// noise (context canceled, killed process), and persisting them would
 		// stamp a bogus reason on every ordinary mid-run cancel.
-		ack := TaskCancelAck{BranchName: result.BranchName, DurableWorkDir: result.DurableWorkDir}
+		ack := TaskCancelAck{
+			BranchName:          result.BranchName,
+			DurableWorkDir:      result.DurableWorkDir,
+			ExecutionProvenance: executionProvenanceFromTaskResult(result),
+		}
 		var preserved *worktreePreservedError
 		if errors.As(err, &preserved) {
 			ack.ErrorMessage = preserved.Error()
@@ -5468,13 +5473,14 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 		// shape of the failure (provider 5xx, network, process crash,
 		// …) rather than the coarse legacy "agent_error" bucket.
 		if failErr := d.reportTerminalTask(ctx, terminalTaskReport{
-			kind:           terminalTaskReportFail,
-			taskID:         task.ID,
-			errorMessage:   err.Error(),
-			branchName:     result.BranchName,
-			workDir:        result.WorkDir,
-			durableWorkDir: result.DurableWorkDir,
-			failureReason:  taskRunFailureReason(err),
+			kind:                terminalTaskReportFail,
+			taskID:              task.ID,
+			errorMessage:        err.Error(),
+			branchName:          result.BranchName,
+			workDir:             result.WorkDir,
+			durableWorkDir:      result.DurableWorkDir,
+			failureReason:       taskRunFailureReason(err),
+			executionProvenance: executionProvenanceFromTaskResult(result),
 		}); failErr != nil {
 			taskLog.Error("fail task callback failed", "error", failErr)
 		}
@@ -5500,7 +5506,11 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 		// completed/failed rows the complete/fail callback is the
 		// authoritative channel and a stale run's late ack must not touch
 		// them.
-		if ackErr := d.client.AckTaskCancelled(ctx, task.ID, TaskCancelAck{BranchName: result.BranchName, DurableWorkDir: result.DurableWorkDir}); ackErr != nil {
+		if ackErr := d.client.AckTaskCancelled(ctx, task.ID, TaskCancelAck{
+			BranchName:          result.BranchName,
+			DurableWorkDir:      result.DurableWorkDir,
+			ExecutionProvenance: executionProvenanceFromTaskResult(result),
+		}); ackErr != nil {
 			taskLog.Warn("cancel ack failed; server sweeper will finalize", "error", ackErr)
 		}
 		return
@@ -5798,6 +5808,7 @@ func (d *Daemon) reportTaskResult(ctx context.Context, taskID string, result Tas
 			durableWorkDir:        result.DurableWorkDir,
 			sessionRolloutMissing: result.SessionRolloutMissing,
 			retiredSessionID:      result.RetiredSessionID,
+			executionProvenance:   executionProvenanceFromTaskResult(result),
 		})
 		if err == nil {
 			return
@@ -5841,6 +5852,7 @@ func (d *Daemon) reportTaskResult(ctx context.Context, taskID string, result Tas
 			failureReason:         taskfailure.Classify(fallbackErrMsg).String(),
 			sessionRolloutMissing: result.SessionRolloutMissing,
 			retiredSessionID:      result.RetiredSessionID,
+			executionProvenance:   executionProvenanceFromTaskResult(result),
 		}); failErr != nil {
 			taskLog.Error("fail task fallback also failed", "error", failErr)
 		}
@@ -5879,9 +5891,20 @@ func (d *Daemon) reportTaskResult(ctx context.Context, taskID string, result Tas
 			failureReason:         failureReason,
 			sessionRolloutMissing: result.SessionRolloutMissing,
 			retiredSessionID:      result.RetiredSessionID,
+			executionProvenance:   executionProvenanceFromTaskResult(result),
 		}); err != nil {
 			taskLog.Error("report failed task failed", "error", err)
 		}
+	}
+}
+
+func executionProvenanceFromTaskResult(result TaskResult) ExecutionProvenanceReport {
+	return ExecutionProvenanceReport{
+		RepoIdentity:       result.ExecutionRepoIdentity,
+		ExecutionWorkspace: result.ExecutionWorkspace,
+		HeadBranch:         result.ExecutionHeadBranch,
+		HeadSHA:            result.ExecutionHeadSHA,
+		HeadState:          result.ExecutionHeadState,
 	}
 }
 
@@ -5896,9 +5919,9 @@ func (d *Daemon) reportTerminalTask(parentCtx context.Context, report terminalTa
 
 	switch report.kind {
 	case terminalTaskReportComplete:
-		return d.client.CompleteTask(ctx, report.taskID, report.output, report.branchName, report.sessionID, report.workDir, report.sessionRolloutMissing, report.retiredSessionID, report.durableWorkDir)
+		return d.client.CompleteTaskWithProvenance(ctx, report.taskID, report.output, report.branchName, report.sessionID, report.workDir, report.sessionRolloutMissing, report.retiredSessionID, report.durableWorkDir, report.executionProvenance)
 	case terminalTaskReportFail:
-		return d.client.FailTask(ctx, report.taskID, report.errorMessage, report.sessionID, report.workDir, report.branchName, report.failureReason, report.sessionRolloutMissing, report.retiredSessionID, report.durableWorkDir)
+		return d.client.FailTaskWithProvenance(ctx, report.taskID, report.errorMessage, report.sessionID, report.workDir, report.branchName, report.failureReason, report.sessionRolloutMissing, report.retiredSessionID, report.durableWorkDir, report.executionProvenance)
 	default:
 		return fmt.Errorf("unsupported terminal task report kind %d", report.kind)
 	}
@@ -7137,15 +7160,15 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		ChatSessionID:                    task.ChatSessionID,
 		ChatChannelType:                  task.ChatChannelType,
 		ChatChannelDeliversFiles:         task.ChatChannelDeliversFiles,
-		AutomationRunID:                   task.AutomationRunID,
-		AutomationID:                      task.AutomationID,
-		AutomationTitle:                   task.AutomationTitle,
-		AutomationDescription:             task.AutomationDescription,
-		AutomationSource:                  task.AutomationSource,
-		AutomationTriggerPayload:          strings.TrimSpace(string(task.AutomationTriggerPayload)),
+		AutomationRunID:                  task.AutomationRunID,
+		AutomationID:                     task.AutomationID,
+		AutomationTitle:                  task.AutomationTitle,
+		AutomationDescription:            task.AutomationDescription,
+		AutomationSource:                 task.AutomationSource,
+		AutomationTriggerPayload:         strings.TrimSpace(string(task.AutomationTriggerPayload)),
 		QuickCreatePrompt:                task.QuickCreatePrompt,
 		HandoffNote:                      task.HandoffNote,
-		IsTeamLeader:                    taskIsTeamLeader(task),
+		IsTeamLeader:                     taskIsTeamLeader(task),
 		RequestingUserName:               task.RequestingUserName,
 		RequestingUserProfileDescription: task.RequestingUserProfileDescription,
 		InitiatorType:                    task.InitiatorType,
@@ -7584,6 +7607,10 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		d.markActiveEnvRoot(env.RootDir)
 		defer d.unmarkActiveEnvRoot(env.RootDir)
 	}
+	executionWorkspace := env.WorkDir
+	if env.LocalWorktree != nil {
+		executionWorkspace = env.LocalWorktree.Path
+	}
 	// Finalize the worktree on EVERY exit path, success or failure: commit
 	// whatever the agent left uncommitted, then unregister the worktree from
 	// the user's repo. Deferred against the named return so a task that fails
@@ -7607,6 +7634,22 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 				taskResult.BranchName = outcome.Branch
 			}
 			if finalizeErr == nil {
+				// Finalize may auto-commit the agent's edits and then remove the
+				// worktree. Read the branch ref from the owning repository now so
+				// provenance points at the commit that was actually delivered.
+				if outcome.Branch != "" {
+					facts, captureErr := execenv.ReadFinalizedExecutionProvenance(
+						env.LocalWorktree.GitRoot, executionWorkspace, outcome.Branch)
+					if captureErr != nil {
+						taskLog.Debug("execution provenance capture after worktree finalization unavailable", "error", captureErr)
+					} else {
+						taskResult.ExecutionRepoIdentity = facts.RepoIdentity
+						taskResult.ExecutionWorkspace = facts.ExecutionWorkspace
+						taskResult.ExecutionHeadBranch = facts.HeadBranch
+						taskResult.ExecutionHeadSHA = facts.HeadSHA
+						taskResult.ExecutionHeadState = facts.HeadState
+					}
+				}
 				// The configured local_directory becomes authoritative only after
 				// Finalize confirms the disposable task worktree is actually gone.
 				if localAssignment != nil {
@@ -7703,6 +7746,23 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 			}
 		}()
 	}
+	// In-place workspaces survive terminal cleanup, so their checkout facts can
+	// be captured in a defer. Worktree mode captures after Finalize above; a
+	// pre-finalization HEAD would be stale whenever Finalize auto-commits.
+	if env.LocalWorktree == nil {
+		defer func() {
+			facts, captureErr := execenv.ReadExecutionProvenance(executionWorkspace)
+			if captureErr != nil {
+				taskLog.Debug("execution provenance capture unavailable", "error", captureErr)
+				return
+			}
+			taskResult.ExecutionRepoIdentity = facts.RepoIdentity
+			taskResult.ExecutionWorkspace = facts.ExecutionWorkspace
+			taskResult.ExecutionHeadBranch = facts.HeadBranch
+			taskResult.ExecutionHeadSHA = facts.HeadSHA
+			taskResult.ExecutionHeadState = facts.HeadState
+		}()
+	}
 	taskTempDir, taskTempLock, err := ensureTaskTempDir(env.RootDir, task.WorkspaceID, task.ID)
 	if err != nil {
 		return TaskResult{}, fmt.Errorf("prepare task temp dir: %w", err)
@@ -7742,6 +7802,23 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	stopPrepareLease()
 	prepareComplete = true
 	cancelPrepare()
+	// This early report lets the server retain the initial branch/workspace
+	// facts while the agent is running. The terminal callback carries a fresh
+	// snapshot as well, which is authoritative if the branch was force-pushed.
+	if facts, captureErr := execenv.ReadExecutionProvenance(executionWorkspace); captureErr == nil && facts.RepoIdentity != "" {
+		provenance := ExecutionProvenanceReport{
+			RepoIdentity:       facts.RepoIdentity,
+			ExecutionWorkspace: facts.ExecutionWorkspace,
+			HeadBranch:         facts.HeadBranch,
+			HeadSHA:            facts.HeadSHA,
+			HeadState:          facts.HeadState,
+		}
+		provenanceCtx, provenanceCancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		if reportErr := d.client.RecordExecutionProvenance(provenanceCtx, task.ID, provenance, false); reportErr != nil {
+			taskLog.Debug("initial execution provenance report failed", "error", reportErr)
+		}
+		provenanceCancel()
+	}
 	_ = d.client.ReportProgress(ctx, task.ID, fmt.Sprintf("Launching %s", provider), 1, 2)
 
 	resumeReachable := gateResumeToReachableSession(&task, &taskCtx, provider, env.WorkDir, sessionHomeReachable(provider, env, envReused), taskLog)

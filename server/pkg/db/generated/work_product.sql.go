@@ -14,6 +14,11 @@ import (
 const createWorkProduct = `-- name: CreateWorkProduct :one
 INSERT INTO work_product (workspace_id, kind, provider, external_identity, external_url, provider_record_type, provider_record_id, id)
 VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8::uuid, gen_random_uuid()))
+ON CONFLICT (workspace_id, provider, external_identity) DO UPDATE SET
+  external_url = COALESCE(EXCLUDED.external_url, work_product.external_url),
+  provider_record_type = COALESCE(EXCLUDED.provider_record_type, work_product.provider_record_type),
+  provider_record_id = COALESCE(EXCLUDED.provider_record_id, work_product.provider_record_id),
+  updated_at = now()
 RETURNING id, workspace_id, kind, provider, external_identity, external_url, provider_record_type, provider_record_id, created_at, updated_at
 `
 
@@ -56,8 +61,51 @@ func (q *Queries) CreateWorkProduct(ctx context.Context, arg CreateWorkProductPa
 }
 
 const createWorkProductRelation = `-- name: CreateWorkProductRelation :one
+WITH product_scope AS (
+    SELECT id FROM work_product WHERE id = $2 AND workspace_id = $1
+), issue_scope AS (
+    SELECT id FROM issue WHERE id = $7::uuid AND workspace_id = $1
+    UNION ALL
+    SELECT NULL::uuid WHERE $7::uuid IS NULL
+)
 INSERT INTO work_product_relation (workspace_id, work_product_id, issue_id, task_id, run_id, relation_key, relation_source, attached_by_type, attached_by_id, id)
-VALUES ($1, $2, $7, $8, $9, $3, $4, $5, $6, COALESCE($10::uuid, gen_random_uuid()))
+SELECT $1, $2, $7, $8, $9, $3, $4, $5, $6, COALESCE($10::uuid, gen_random_uuid())
+FROM product_scope, issue_scope
+WHERE ($8::uuid IS NULL OR EXISTS (
+    SELECT 1 FROM agent_task_queue task
+    JOIN agent ON agent.id = task.agent_id
+    WHERE task.id = $8::uuid
+      AND ($7::uuid IS NULL OR task.issue_id = $7::uuid)
+      AND agent.workspace_id = $1
+      AND ($5 <> 'agent' OR task.agent_id = $6)
+))
+  AND ($9::uuid IS NULL OR EXISTS (
+    SELECT 1 FROM agent_task_queue task
+    JOIN agent ON agent.id = task.agent_id
+    WHERE task.id = $8::uuid
+      AND task.automation_run_id = $9::uuid
+      AND agent.workspace_id = $1
+))
+ON CONFLICT (work_product_id, relation_key) WHERE detached_at IS NULL DO UPDATE SET
+  relation_source = CASE
+    WHEN work_product_relation.relation_source = 'execution_branch_discovery'
+     AND EXCLUDED.relation_source IN ('task_explicit', 'manual_explicit')
+    THEN EXCLUDED.relation_source
+    ELSE work_product_relation.relation_source
+  END,
+  attached_by_type = CASE
+    WHEN work_product_relation.relation_source = 'execution_branch_discovery'
+     AND EXCLUDED.relation_source IN ('task_explicit', 'manual_explicit')
+    THEN EXCLUDED.attached_by_type
+    ELSE work_product_relation.attached_by_type
+  END,
+  attached_by_id = CASE
+    WHEN work_product_relation.relation_source = 'execution_branch_discovery'
+     AND EXCLUDED.relation_source IN ('task_explicit', 'manual_explicit')
+    THEN EXCLUDED.attached_by_id
+    ELSE work_product_relation.attached_by_id
+  END,
+  close_intent = work_product_relation.close_intent OR EXCLUDED.close_intent
 RETURNING id, workspace_id, work_product_id, issue_id, task_id, run_id, relation_key, relation_source, attached_by_type, attached_by_id, attached_at, close_intent, detached_at, detached_by_type, detached_by_id, detached_task_id, detached_run_id
 `
 
@@ -158,7 +206,8 @@ func (q *Queries) DetachWorkProductRelation(ctx context.Context, arg DetachWorkP
 }
 
 const getIssueProvenanceForDiscovery = `-- name: GetIssueProvenanceForDiscovery :many
-SELECT task_id, workspace_id, run_id, repo_identity, execution_workspace, head_branch, head_sha, head_state, started_at, finished_at, discovery_status, discovery_lease_id, discovery_match_count, discovery_reason, discovery_work_product_id, discovery_at, updated_at FROM agent_task_execution_provenance WHERE workspace_id = $1 AND discovery_status IN ('pending','in_progress') ORDER BY updated_at LIMIT $2
+SELECT task_id, workspace_id, run_id, repo_identity, execution_workspace, head_branch, head_sha, head_state, started_at, finished_at, discovery_status, discovery_lease_id, discovery_match_count, discovery_reason, discovery_work_product_id, discovery_at, updated_at
+FROM agent_task_execution_provenance WHERE workspace_id = $1 AND discovery_status IN ('pending','in_progress') ORDER BY updated_at LIMIT $2
 `
 
 type GetIssueProvenanceForDiscoveryParams struct {
@@ -205,7 +254,8 @@ func (q *Queries) GetIssueProvenanceForDiscovery(ctx context.Context, arg GetIss
 }
 
 const getProvenanceByTask = `-- name: GetProvenanceByTask :one
-SELECT task_id, workspace_id, run_id, repo_identity, execution_workspace, head_branch, head_sha, head_state, started_at, finished_at, discovery_status, discovery_lease_id, discovery_match_count, discovery_reason, discovery_work_product_id, discovery_at, updated_at FROM agent_task_execution_provenance WHERE workspace_id = $1 AND task_id = $2 LIMIT 1
+SELECT task_id, workspace_id, run_id, repo_identity, execution_workspace, head_branch, head_sha, head_state, started_at, finished_at, discovery_status, discovery_lease_id, discovery_match_count, discovery_reason, discovery_work_product_id, discovery_at, updated_at
+FROM agent_task_execution_provenance WHERE workspace_id = $1 AND task_id = $2 ORDER BY updated_at DESC, repo_identity ASC, execution_workspace ASC LIMIT 1
 `
 
 type GetProvenanceByTaskParams struct {
@@ -239,7 +289,8 @@ func (q *Queries) GetProvenanceByTask(ctx context.Context, arg GetProvenanceByTa
 }
 
 const getWorkProductByExternalIdentity = `-- name: GetWorkProductByExternalIdentity :one
-SELECT id, workspace_id, kind, provider, external_identity, external_url, provider_record_type, provider_record_id, created_at, updated_at FROM work_product WHERE workspace_id = $1 AND provider = $2 AND external_identity = $3 LIMIT 1
+SELECT id, workspace_id, kind, provider, external_identity, external_url, provider_record_type, provider_record_id, created_at, updated_at
+FROM work_product WHERE workspace_id = $1 AND provider = $2 AND external_identity = $3 LIMIT 1
 `
 
 type GetWorkProductByExternalIdentityParams struct {
@@ -268,7 +319,8 @@ func (q *Queries) GetWorkProductByExternalIdentity(ctx context.Context, arg GetW
 
 const getWorkProductByID = `-- name: GetWorkProductByID :one
 
-SELECT id, workspace_id, kind, provider, external_identity, external_url, provider_record_type, provider_record_id, created_at, updated_at FROM work_product WHERE id = $1 AND workspace_id = $2
+SELECT id, workspace_id, kind, provider, external_identity, external_url, provider_record_type, provider_record_id, created_at, updated_at
+FROM work_product WHERE id = $1 AND workspace_id = $2
 `
 
 type GetWorkProductByIDParams struct {
@@ -296,7 +348,8 @@ func (q *Queries) GetWorkProductByID(ctx context.Context, arg GetWorkProductByID
 }
 
 const getWorkProductRelationByID = `-- name: GetWorkProductRelationByID :one
-SELECT id, workspace_id, work_product_id, issue_id, task_id, run_id, relation_key, relation_source, attached_by_type, attached_by_id, attached_at, close_intent, detached_at, detached_by_type, detached_by_id, detached_task_id, detached_run_id FROM work_product_relation WHERE id = $1 AND workspace_id = $2
+SELECT id, workspace_id, work_product_id, issue_id, task_id, run_id, relation_key, relation_source, attached_by_type, attached_by_id, attached_at, close_intent, detached_at, detached_by_type, detached_by_id, detached_task_id, detached_run_id
+FROM work_product_relation WHERE id = $1 AND workspace_id = $2
 `
 
 type GetWorkProductRelationByIDParams struct {
@@ -329,8 +382,93 @@ func (q *Queries) GetWorkProductRelationByID(ctx context.Context, arg GetWorkPro
 	return i, err
 }
 
+const listExecutionProvenanceByTask = `-- name: ListExecutionProvenanceByTask :many
+SELECT task_id, workspace_id, run_id, repo_identity, execution_workspace, head_branch, head_sha, head_state, started_at, finished_at, discovery_status, discovery_lease_id, discovery_match_count, discovery_reason, discovery_work_product_id, discovery_at, updated_at
+FROM agent_task_execution_provenance
+WHERE workspace_id = $1 AND task_id = $2
+ORDER BY updated_at DESC, repo_identity ASC, execution_workspace ASC
+`
+
+type ListExecutionProvenanceByTaskParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	TaskID      pgtype.UUID `json:"task_id"`
+}
+
+func (q *Queries) ListExecutionProvenanceByTask(ctx context.Context, arg ListExecutionProvenanceByTaskParams) ([]AgentTaskExecutionProvenance, error) {
+	rows, err := q.db.Query(ctx, listExecutionProvenanceByTask, arg.WorkspaceID, arg.TaskID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AgentTaskExecutionProvenance{}
+	for rows.Next() {
+		var i AgentTaskExecutionProvenance
+		if err := rows.Scan(
+			&i.TaskID,
+			&i.WorkspaceID,
+			&i.RunID,
+			&i.RepoIdentity,
+			&i.ExecutionWorkspace,
+			&i.HeadBranch,
+			&i.HeadSha,
+			&i.HeadState,
+			&i.StartedAt,
+			&i.FinishedAt,
+			&i.DiscoveryStatus,
+			&i.DiscoveryLeaseID,
+			&i.DiscoveryMatchCount,
+			&i.DiscoveryReason,
+			&i.DiscoveryWorkProductID,
+			&i.DiscoveryAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPendingExecutionDiscoveryTasks = `-- name: ListPendingExecutionDiscoveryTasks :many
+SELECT DISTINCT workspace_id, task_id
+FROM agent_task_execution_provenance
+WHERE discovery_status = 'pending'
+   OR (discovery_status = 'in_progress' AND updated_at < now() - interval '5 minutes')
+ORDER BY workspace_id, task_id
+LIMIT $1
+`
+
+type ListPendingExecutionDiscoveryTasksRow struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	TaskID      pgtype.UUID `json:"task_id"`
+}
+
+func (q *Queries) ListPendingExecutionDiscoveryTasks(ctx context.Context, limit int32) ([]ListPendingExecutionDiscoveryTasksRow, error) {
+	rows, err := q.db.Query(ctx, listPendingExecutionDiscoveryTasks, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPendingExecutionDiscoveryTasksRow{}
+	for rows.Next() {
+		var i ListPendingExecutionDiscoveryTasksRow
+		if err := rows.Scan(&i.WorkspaceID, &i.TaskID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listProvenanceByWorkspace = `-- name: ListProvenanceByWorkspace :many
-SELECT task_id, workspace_id, run_id, repo_identity, execution_workspace, head_branch, head_sha, head_state, started_at, finished_at, discovery_status, discovery_lease_id, discovery_match_count, discovery_reason, discovery_work_product_id, discovery_at, updated_at FROM agent_task_execution_provenance WHERE workspace_id = $1 ORDER BY updated_at DESC, task_id DESC LIMIT $2 OFFSET $3
+SELECT task_id, workspace_id, run_id, repo_identity, execution_workspace, head_branch, head_sha, head_state, started_at, finished_at, discovery_status, discovery_lease_id, discovery_match_count, discovery_reason, discovery_work_product_id, discovery_at, updated_at
+FROM agent_task_execution_provenance WHERE workspace_id = $1 ORDER BY updated_at DESC, task_id DESC, repo_identity ASC, execution_workspace ASC LIMIT $2 OFFSET $3
 `
 
 type ListProvenanceByWorkspaceParams struct {
@@ -378,16 +516,24 @@ func (q *Queries) ListProvenanceByWorkspace(ctx context.Context, arg ListProvena
 }
 
 const listWorkProductRelationsByIssue = `-- name: ListWorkProductRelationsByIssue :many
-SELECT id, workspace_id, work_product_id, issue_id, task_id, run_id, relation_key, relation_source, attached_by_type, attached_by_id, attached_at, close_intent, detached_at, detached_by_type, detached_by_id, detached_task_id, detached_run_id FROM work_product_relation WHERE workspace_id = $1 AND issue_id = $2 AND detached_at IS NULL ORDER BY attached_at DESC
+SELECT id, workspace_id, work_product_id, issue_id, task_id, run_id, relation_key, relation_source, attached_by_type, attached_by_id, attached_at, close_intent, detached_at, detached_by_type, detached_by_id, detached_task_id, detached_run_id
+FROM work_product_relation WHERE workspace_id = $1 AND issue_id = $2 AND detached_at IS NULL ORDER BY attached_at DESC, id DESC LIMIT $3 OFFSET $4
 `
 
 type ListWorkProductRelationsByIssueParams struct {
 	WorkspaceID pgtype.UUID `json:"workspace_id"`
 	IssueID     pgtype.UUID `json:"issue_id"`
+	Limit       int32       `json:"limit"`
+	Offset      int32       `json:"offset"`
 }
 
 func (q *Queries) ListWorkProductRelationsByIssue(ctx context.Context, arg ListWorkProductRelationsByIssueParams) ([]WorkProductRelation, error) {
-	rows, err := q.db.Query(ctx, listWorkProductRelationsByIssue, arg.WorkspaceID, arg.IssueID)
+	rows, err := q.db.Query(ctx, listWorkProductRelationsByIssue,
+		arg.WorkspaceID,
+		arg.IssueID,
+		arg.Limit,
+		arg.Offset,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -425,7 +571,8 @@ func (q *Queries) ListWorkProductRelationsByIssue(ctx context.Context, arg ListW
 }
 
 const listWorkProductRelationsByProduct = `-- name: ListWorkProductRelationsByProduct :many
-SELECT id, workspace_id, work_product_id, issue_id, task_id, run_id, relation_key, relation_source, attached_by_type, attached_by_id, attached_at, close_intent, detached_at, detached_by_type, detached_by_id, detached_task_id, detached_run_id FROM work_product_relation WHERE workspace_id = $1 AND work_product_id = $2 AND detached_at IS NULL ORDER BY attached_at DESC
+SELECT id, workspace_id, work_product_id, issue_id, task_id, run_id, relation_key, relation_source, attached_by_type, attached_by_id, attached_at, close_intent, detached_at, detached_by_type, detached_by_id, detached_task_id, detached_run_id
+FROM work_product_relation WHERE workspace_id = $1 AND work_product_id = $2 AND detached_at IS NULL ORDER BY attached_at DESC, id DESC
 `
 
 type ListWorkProductRelationsByProductParams struct {
@@ -472,7 +619,8 @@ func (q *Queries) ListWorkProductRelationsByProduct(ctx context.Context, arg Lis
 }
 
 const listWorkProductRelationsByTask = `-- name: ListWorkProductRelationsByTask :many
-SELECT id, workspace_id, work_product_id, issue_id, task_id, run_id, relation_key, relation_source, attached_by_type, attached_by_id, attached_at, close_intent, detached_at, detached_by_type, detached_by_id, detached_task_id, detached_run_id FROM work_product_relation WHERE workspace_id = $1 AND task_id = $2 AND detached_at IS NULL ORDER BY attached_at DESC
+SELECT id, workspace_id, work_product_id, issue_id, task_id, run_id, relation_key, relation_source, attached_by_type, attached_by_id, attached_at, close_intent, detached_at, detached_by_type, detached_by_id, detached_task_id, detached_run_id
+FROM work_product_relation WHERE workspace_id = $1 AND task_id = $2 AND detached_at IS NULL ORDER BY attached_at DESC, id DESC
 `
 
 type ListWorkProductRelationsByTaskParams struct {
@@ -519,7 +667,8 @@ func (q *Queries) ListWorkProductRelationsByTask(ctx context.Context, arg ListWo
 }
 
 const listWorkProductsByWorkspace = `-- name: ListWorkProductsByWorkspace :many
-SELECT id, workspace_id, kind, provider, external_identity, external_url, provider_record_type, provider_record_id, created_at, updated_at FROM work_product WHERE workspace_id = $1 ORDER BY updated_at DESC, id DESC LIMIT $2 OFFSET $3
+SELECT id, workspace_id, kind, provider, external_identity, external_url, provider_record_type, provider_record_id, created_at, updated_at
+FROM work_product WHERE workspace_id = $1 ORDER BY updated_at DESC, id DESC LIMIT $2 OFFSET $3
 `
 
 type ListWorkProductsByWorkspaceParams struct {
@@ -559,15 +708,37 @@ func (q *Queries) ListWorkProductsByWorkspace(ctx context.Context, arg ListWorkP
 	return items, nil
 }
 
+const markTaskDiscoveryPending = `-- name: MarkTaskDiscoveryPending :exec
+UPDATE agent_task_execution_provenance
+SET discovery_status = 'pending',
+    discovery_match_count = 0,
+    discovery_reason = NULL,
+    discovery_work_product_id = NULL,
+    discovery_at = NULL,
+    finished_at = COALESCE(finished_at, now()),
+    updated_at = now()
+WHERE workspace_id = $1 AND task_id = $2 AND discovery_status = 'not_attempted'
+`
+
+type MarkTaskDiscoveryPendingParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	TaskID      pgtype.UUID `json:"task_id"`
+}
+
+func (q *Queries) MarkTaskDiscoveryPending(ctx context.Context, arg MarkTaskDiscoveryPendingParams) error {
+	_, err := q.db.Exec(ctx, markTaskDiscoveryPending, arg.WorkspaceID, arg.TaskID)
+	return err
+}
+
 const upsertProvenance = `-- name: UpsertProvenance :one
 INSERT INTO agent_task_execution_provenance (workspace_id, task_id, run_id, repo_identity, execution_workspace, head_branch, head_sha, head_state, discovery_status, discovery_reason)
 VALUES ($1, $2, $3, COALESCE($4, ''), COALESCE($5, ''), $6, $7, COALESCE($8, 'unknown'), COALESCE($9, 'not_attempted'), $10)
 ON CONFLICT (workspace_id, task_id, repo_identity, execution_workspace) DO UPDATE SET
   run_id = COALESCE(EXCLUDED.run_id, agent_task_execution_provenance.run_id),
-  head_branch = COALESCE(EXCLUDED.head_branch, agent_task_execution_provenance.head_branch),
-  head_sha = COALESCE(EXCLUDED.head_sha, agent_task_execution_provenance.head_sha),
-  head_state = EXCLUDED.head_state,
-  discovery_status = EXCLUDED.discovery_status,
+  head_branch = CASE WHEN EXCLUDED.head_state <> 'unknown' THEN EXCLUDED.head_branch ELSE COALESCE(agent_task_execution_provenance.head_branch, EXCLUDED.head_branch) END,
+  head_sha = CASE WHEN EXCLUDED.head_state <> 'unknown' THEN EXCLUDED.head_sha ELSE COALESCE(agent_task_execution_provenance.head_sha, EXCLUDED.head_sha) END,
+  head_state = CASE WHEN EXCLUDED.head_state <> 'unknown' THEN EXCLUDED.head_state ELSE agent_task_execution_provenance.head_state END,
+  started_at = COALESCE(agent_task_execution_provenance.started_at, now()),
   updated_at = now()
 RETURNING task_id, workspace_id, run_id, repo_identity, execution_workspace, head_branch, head_sha, head_state, started_at, finished_at, discovery_status, discovery_lease_id, discovery_match_count, discovery_reason, discovery_work_product_id, discovery_at, updated_at
 `

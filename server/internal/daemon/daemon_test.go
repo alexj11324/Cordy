@@ -363,9 +363,9 @@ func TestConfigureCodexTaskShellEnvironment(t *testing.T) {
 			"PATCHBAY_LLM_API_KEY=daemon-secret",
 		}
 		agentEnv := map[string]string{
-			"CUSTOM_ACCESS_TOKEN":      "agent-secret",
-			"CUSTOM_FLAG":              "enabled",
-			"UNAUTHORIZED_TOKEN":       "daemon-secret",
+			"CUSTOM_ACCESS_TOKEN":       "agent-secret",
+			"CUSTOM_FLAG":               "enabled",
+			"UNAUTHORIZED_TOKEN":        "daemon-secret",
 			"PATCHBAY_TASK_CONFIG_ROOT": "/task/patchbay-config",
 			"PATCHBAY_SERVER_URL":       "https://task.example",
 			"PATCHBAY_TOKEN":            "mat_task",
@@ -426,7 +426,7 @@ func TestCodexTaskShellEnvInheritsRealHome(t *testing.T) {
 	// What runTask layers on top for a Codex task: task identity plus the
 	// task-scoped CODEX_HOME, and — since MUL-5578 — no HOME/XDG entry.
 	explicit := map[string]string{
-		"CODEX_HOME":               codexHome,
+		"CODEX_HOME":                codexHome,
 		"PATCHBAY_TASK_CONFIG_ROOT": "/task/patchbay-config",
 		"PATCHBAY_TOKEN":            "mat_task",
 		"PATCHBAY_SERVER_URL":       "https://task.example",
@@ -472,7 +472,7 @@ func TestCodexShellAuthorizedCustomEnvNamesUsesDaemonBlocklist(t *testing.T) {
 	got := codexShellAuthorizedCustomEnvNames(map[string]string{
 		"CUSTOM_ACCESS_TOKEN": "agent-secret",
 		"custom_secret":       "agent-secret",
-		"PATCHBAY_TOKEN":       "must-not-authorize",
+		"PATCHBAY_TOKEN":      "must-not-authorize",
 		"PATH":                "/must/not/override",
 		"HOME":                "/must/not/override",
 		"CODEX_HOME":          "/must/not/override",
@@ -560,9 +560,9 @@ func TestTaskPatchbayEnvironmentIncludesPrivateConfigRoot(t *testing.T) {
 		"PATCHBAY_AGENT_ID":             "agent-test",
 		"PATCHBAY_TASK_ID":              "task-test",
 		"PATCHBAY_TASK_SLOT":            "3",
-		"TMPDIR":                       "/task/tmp",
-		"TMP":                          "/task/tmp",
-		"TEMP":                         "/task/tmp",
+		"TMPDIR":                        "/task/tmp",
+		"TMP":                           "/task/tmp",
+		"TEMP":                          "/task/tmp",
 	}
 	if !maps.Equal(env, want) {
 		t.Fatalf("taskPatchbayEnvironment() = %#v, want %#v", env, want)
@@ -4177,6 +4177,22 @@ type reportTaskResultRecorder struct {
 	payload map[string]any
 }
 
+func assertExecutionProvenancePayload(t *testing.T, payload map[string]any) {
+	t.Helper()
+	want := map[string]string{
+		"execution_repo_identity": "owner/repo",
+		"execution_workspace":     "/srv/task-worktree",
+		"execution_head_branch":   "agent/provenance",
+		"execution_head_sha":      "0123456789abcdef",
+		"execution_head_state":    "attached",
+	}
+	for key, value := range want {
+		if got := payload[key]; got != value {
+			t.Errorf("%s = %v, want %q (payload: %v)", key, got, value, payload)
+		}
+	}
+}
+
 func TestTerminalTaskReportTimeoutCoversRetrySchedule(t *testing.T) {
 	client := NewClient("http://example.invalid")
 	worstCase := time.Duration(len(defaultTerminalRetrySchedule)+1) * client.client.Timeout
@@ -4223,11 +4239,16 @@ func TestReportTaskResult_CompletedHitsCompleteEndpoint(t *testing.T) {
 
 	d := &Daemon{client: NewClient(srv.URL), logger: slog.Default()}
 	d.reportTaskResult(context.Background(), "task-1", TaskResult{
-		Status:     "completed",
-		Comment:    "all good",
-		BranchName: "agent/foo",
-		SessionID:  "ses-1",
-		WorkDir:    "/tmp/foo",
+		Status:                "completed",
+		Comment:               "all good",
+		BranchName:            "agent/foo",
+		SessionID:             "ses-1",
+		WorkDir:               "/tmp/foo",
+		ExecutionRepoIdentity: "owner/repo",
+		ExecutionWorkspace:    "/srv/task-worktree",
+		ExecutionHeadBranch:   "agent/provenance",
+		ExecutionHeadSHA:      "0123456789abcdef",
+		ExecutionHeadState:    "attached",
 	}, slog.Default())
 
 	rec.mu.Lock()
@@ -4244,6 +4265,7 @@ func TestReportTaskResult_CompletedHitsCompleteEndpoint(t *testing.T) {
 	if rec.payload["session_id"] != "ses-1" {
 		t.Errorf("session_id: got %v", rec.payload["session_id"])
 	}
+	assertExecutionProvenancePayload(t, rec.payload)
 }
 
 func TestReportTaskResult_CancelledParentStillReportsTerminalState(t *testing.T) {
@@ -4549,11 +4571,15 @@ func TestHandleTask_BareErrorReportsFailureWithCancelledParent(t *testing.T) {
 	t.Parallel()
 
 	var failCalls atomic.Int32
+	var failBody atomic.Value
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if !strings.HasSuffix(req.URL.Path, "/fail") {
 			t.Errorf("unexpected daemon call: %s %s", req.Method, req.URL.Path)
 		}
 		failCalls.Add(1)
+		var body map[string]any
+		_ = json.NewDecoder(req.Body).Decode(&body)
+		failBody.Store(body)
 		w.WriteHeader(http.StatusOK)
 	}))
 	t.Cleanup(srv.Close)
@@ -4568,7 +4594,13 @@ func TestHandleTask_BareErrorReportsFailureWithCancelledParent(t *testing.T) {
 		if !errors.Is(runCtx.Err(), context.Canceled) {
 			t.Errorf("runner context error = %v, want context.Canceled", runCtx.Err())
 		}
-		return TaskResult{}, errors.New("runner exited during shutdown")
+		return TaskResult{
+			ExecutionRepoIdentity: "owner/repo",
+			ExecutionWorkspace:    "/srv/task-worktree",
+			ExecutionHeadBranch:   "agent/provenance",
+			ExecutionHeadSHA:      "0123456789abcdef",
+			ExecutionHeadState:    "attached",
+		}, errors.New("runner exited during shutdown")
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -4578,6 +4610,8 @@ func TestHandleTask_BareErrorReportsFailureWithCancelledParent(t *testing.T) {
 	if got := failCalls.Load(); got != 1 {
 		t.Fatalf("fail callback calls = %d, want 1", got)
 	}
+	body, _ := failBody.Load().(map[string]any)
+	assertExecutionProvenancePayload(t, body)
 }
 
 // TestHandleTask_UntrackedRuntimeFailsBackForRetry covers the window between a
@@ -5335,7 +5369,7 @@ func TestSanitizeAgentEnv(t *testing.T) {
 	in := map[string]string{
 		"HOME":        "/evil",
 		"PATH":        "/evil/bin",
-		"PATCHBAY_X":   "1",
+		"PATCHBAY_X":  "1",
 		"TEAM_SKILLS": "/srv/team",
 		"HERMES_HOME": "/some/home",
 	}
@@ -5406,11 +5440,15 @@ func TestHandleTask_AcksCancelAfterPollCancelled(t *testing.T) {
 	}
 
 	var statusCallCount atomic.Int64
+	var ackBody atomic.Value
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/cancel-ack"):
 			recordCall("cancel-ack")
+			var body map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			ackBody.Store(body)
 			w.WriteHeader(http.StatusOK)
 		case strings.HasSuffix(r.URL.Path, "/status"):
 			if statusCallCount.Add(1) == 1 {
@@ -5439,7 +5477,14 @@ func TestHandleTask_AcksCancelAfterPollCancelled(t *testing.T) {
 
 	d.runner = taskRunnerFunc(func(runCtx context.Context, _ Task, _ string, _ int, _ *slog.Logger) (TaskResult, error) {
 		<-runCtx.Done()
-		return TaskResult{Status: "aborted"}, nil
+		return TaskResult{
+			Status:                "aborted",
+			ExecutionRepoIdentity: "owner/repo",
+			ExecutionWorkspace:    "/srv/task-worktree",
+			ExecutionHeadBranch:   "agent/provenance",
+			ExecutionHeadSHA:      "0123456789abcdef",
+			ExecutionHeadState:    "attached",
+		}, nil
 	})
 
 	task := Task{
@@ -5474,6 +5519,8 @@ func TestHandleTask_AcksCancelAfterPollCancelled(t *testing.T) {
 	if ackIdx < pollStatusIdx {
 		t.Fatalf("cancel-ack before the poll observed the cancellation (order: %v)", order)
 	}
+	body, _ := ackBody.Load().(map[string]any)
+	assertExecutionProvenancePayload(t, body)
 }
 
 // TestHandleTask_AcksCancelOnPostRunStatusCheck verifies cancel-ack is also
@@ -5483,11 +5530,15 @@ func TestHandleTask_AcksCancelOnPostRunStatusCheck(t *testing.T) {
 	t.Parallel()
 
 	var ackCalls atomic.Int64
+	var ackBody atomic.Value
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/cancel-ack"):
 			ackCalls.Add(1)
+			var body map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			ackBody.Store(body)
 			w.WriteHeader(http.StatusOK)
 		case strings.HasSuffix(r.URL.Path, "/status"):
 			w.Header().Set("Content-Type", "application/json")
@@ -5508,7 +5559,14 @@ func TestHandleTask_AcksCancelOnPostRunStatusCheck(t *testing.T) {
 	}
 
 	d.runner = taskRunnerFunc(func(_ context.Context, _ Task, _ string, _ int, _ *slog.Logger) (TaskResult, error) {
-		return TaskResult{Status: "completed"}, nil
+		return TaskResult{
+			Status:                "completed",
+			ExecutionRepoIdentity: "owner/repo",
+			ExecutionWorkspace:    "/srv/task-worktree",
+			ExecutionHeadBranch:   "agent/provenance",
+			ExecutionHeadSHA:      "0123456789abcdef",
+			ExecutionHeadState:    "attached",
+		}, nil
 	})
 
 	task := Task{
@@ -5523,6 +5581,8 @@ func TestHandleTask_AcksCancelOnPostRunStatusCheck(t *testing.T) {
 	if got := ackCalls.Load(); got != 1 {
 		t.Fatalf("cancel-ack calls = %d, want 1", got)
 	}
+	body, _ := ackBody.Load().(map[string]any)
+	assertExecutionProvenancePayload(t, body)
 }
 
 func TestConvertDisabledRuntimeSkillsForEnvScopesToClaimedRuntime(t *testing.T) {

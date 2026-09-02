@@ -12,16 +12,24 @@ import (
 )
 
 const createWorkspaceChannel = `-- name: CreateWorkspaceChannel :one
-INSERT INTO workspace_channel (workspace_id, slug, name, status, id)
-VALUES ($1, $2, COALESCE($3, slug), COALESCE($4::text, 'active'), COALESCE($5::uuid, gen_random_uuid()))
+INSERT INTO workspace_channel (workspace_id, slug, name, description, created_by, id)
+VALUES (
+    $1,
+    $2,
+    $3,
+    COALESCE($4::text, ''),
+    $5,
+    COALESCE($6::uuid, gen_random_uuid())
+)
 RETURNING id, workspace_id, name, slug, description, created_by, archived_at, created_at, updated_at
 `
 
 type CreateWorkspaceChannelParams struct {
 	WorkspaceID pgtype.UUID `json:"workspace_id"`
 	Slug        string      `json:"slug"`
-	Column3     interface{} `json:"column_3"`
-	Status      pgtype.Text `json:"status"`
+	Name        string      `json:"name"`
+	Description pgtype.Text `json:"description"`
+	CreatedBy   pgtype.UUID `json:"created_by"`
 	ID          pgtype.UUID `json:"id"`
 }
 
@@ -29,8 +37,9 @@ func (q *Queries) CreateWorkspaceChannel(ctx context.Context, arg CreateWorkspac
 	row := q.db.QueryRow(ctx, createWorkspaceChannel,
 		arg.WorkspaceID,
 		arg.Slug,
-		arg.Column3,
-		arg.Status,
+		arg.Name,
+		arg.Description,
+		arg.CreatedBy,
 		arg.ID,
 	)
 	var i WorkspaceChannel
@@ -49,8 +58,63 @@ func (q *Queries) CreateWorkspaceChannel(ctx context.Context, arg CreateWorkspac
 }
 
 const createWorkspaceChannelMessage = `-- name: CreateWorkspaceChannelMessage :one
-INSERT INTO workspace_channel_message (workspace_id, channel_id, author_type, author_id, content, parent_id, quoted_message_id, id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8::uuid, gen_random_uuid()))
+WITH channel AS MATERIALIZED (
+    SELECT id
+    FROM workspace_channel
+    WHERE id = $2
+      AND workspace_id = $1
+      AND archived_at IS NULL
+), valid_author AS MATERIALIZED (
+    SELECT 1
+    WHERE (
+        ($3 = 'member' AND EXISTS (
+            SELECT 1
+            FROM member
+            WHERE workspace_id = $1
+              AND user_id = $4
+        ))
+        OR ($3 = 'agent' AND EXISTS (
+            SELECT 1
+            FROM agent
+            WHERE workspace_id = $1
+              AND id = $4
+        ))
+    )
+), valid_parent AS MATERIALIZED (
+    SELECT 1
+    WHERE $6::uuid IS NULL
+       OR EXISTS (
+           SELECT 1
+           FROM workspace_channel_message
+           WHERE id = $6::uuid
+             AND workspace_id = $1
+             AND channel_id = $2
+       )
+), valid_quote AS MATERIALIZED (
+    SELECT 1
+    WHERE $7::uuid IS NULL
+       OR EXISTS (
+           SELECT 1
+           FROM workspace_channel_message
+           WHERE id = $7::uuid
+             AND workspace_id = $1
+             AND channel_id = $2
+       )
+)
+INSERT INTO workspace_channel_message (
+    workspace_id, channel_id, author_type, author_id, content,
+    parent_id, quoted_message_id, id
+)
+SELECT
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7,
+    COALESCE($8::uuid, gen_random_uuid())
+FROM channel, valid_author, valid_parent, valid_quote
 RETURNING id, workspace_id, channel_id, author_type, author_id, content, parent_id, quoted_message_id, created_at, updated_at
 `
 
@@ -94,7 +158,9 @@ func (q *Queries) CreateWorkspaceChannelMessage(ctx context.Context, arg CreateW
 
 const getWorkspaceChannelByID = `-- name: GetWorkspaceChannelByID :one
 
-SELECT id, workspace_id, name, slug, description, created_by, archived_at, created_at, updated_at FROM workspace_channel WHERE id = $1 AND workspace_id = $2
+SELECT id, workspace_id, name, slug, description, created_by, archived_at, created_at, updated_at
+FROM workspace_channel
+WHERE id = $1 AND workspace_id = $2 AND archived_at IS NULL
 `
 
 type GetWorkspaceChannelByIDParams struct {
@@ -102,7 +168,9 @@ type GetWorkspaceChannelByIDParams struct {
 	WorkspaceID pgtype.UUID `json:"workspace_id"`
 }
 
-// Workspace channels and channel message surface for W8.
+// Workspace channels and channel message surface for W8.  These tables are
+// intentionally FK-free, so every workspace/entity boundary belongs in the
+// query as well as in the HTTP handler.
 func (q *Queries) GetWorkspaceChannelByID(ctx context.Context, arg GetWorkspaceChannelByIDParams) (WorkspaceChannel, error) {
 	row := q.db.QueryRow(ctx, getWorkspaceChannelByID, arg.ID, arg.WorkspaceID)
 	var i WorkspaceChannel
@@ -121,7 +189,10 @@ func (q *Queries) GetWorkspaceChannelByID(ctx context.Context, arg GetWorkspaceC
 }
 
 const getWorkspaceChannelBySlug = `-- name: GetWorkspaceChannelBySlug :one
-SELECT id, workspace_id, name, slug, description, created_by, archived_at, created_at, updated_at FROM workspace_channel WHERE workspace_id = $1 AND slug = $2 LIMIT 1
+SELECT id, workspace_id, name, slug, description, created_by, archived_at, created_at, updated_at
+FROM workspace_channel
+WHERE workspace_id = $1 AND slug = $2 AND archived_at IS NULL
+LIMIT 1
 `
 
 type GetWorkspaceChannelBySlugParams struct {
@@ -147,7 +218,17 @@ func (q *Queries) GetWorkspaceChannelBySlug(ctx context.Context, arg GetWorkspac
 }
 
 const getWorkspaceChannelMessageByID = `-- name: GetWorkspaceChannelMessageByID :one
-SELECT id, workspace_id, channel_id, author_type, author_id, content, parent_id, quoted_message_id, created_at, updated_at FROM workspace_channel_message WHERE id = $1 AND workspace_id = $2
+SELECT id, workspace_id, channel_id, author_type, author_id, content, parent_id, quoted_message_id, created_at, updated_at
+FROM workspace_channel_message AS message
+WHERE message.id = $1
+  AND message.workspace_id = $2
+  AND EXISTS (
+      SELECT 1
+      FROM workspace_channel AS channel
+      WHERE channel.id = message.channel_id
+        AND channel.workspace_id = message.workspace_id
+        AND channel.archived_at IS NULL
+  )
 `
 
 type GetWorkspaceChannelMessageByIDParams struct {
@@ -173,23 +254,98 @@ func (q *Queries) GetWorkspaceChannelMessageByID(ctx context.Context, arg GetWor
 	return i, err
 }
 
+const getWorkspaceChannelMessageTaskSource = `-- name: GetWorkspaceChannelMessageTaskSource :one
+SELECT message.id, message.workspace_id, message.channel_id,
+       message.author_type, message.author_id, message.content,
+       message.parent_id, message.quoted_message_id,
+       message.created_at, message.updated_at
+FROM workspace_channel_message AS message
+JOIN workspace_channel AS channel
+  ON channel.id = message.channel_id
+ AND channel.workspace_id = message.workspace_id
+WHERE message.id = $1
+  AND message.workspace_id = $2
+  AND message.channel_id = $3
+  AND message.author_type = $4
+  AND message.author_id = $5
+FOR KEY SHARE OF message, channel
+`
+
+type GetWorkspaceChannelMessageTaskSourceParams struct {
+	MessageID   pgtype.UUID `json:"message_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ChannelID   pgtype.UUID `json:"channel_id"`
+	ActorType   string      `json:"actor_type"`
+	ActorID     pgtype.UUID `json:"actor_id"`
+}
+
+// A channel mention task stores this message id in the existing
+// trigger_evidence_kind/trigger_evidence_ref_id pair. Resolve the complete
+// source under one workspace/channel/message/actor fence and hold the source
+// rows until the task and its input message commit. Channel archival does not
+// invalidate historical provenance: the message remains the durable source.
+func (q *Queries) GetWorkspaceChannelMessageTaskSource(ctx context.Context, arg GetWorkspaceChannelMessageTaskSourceParams) (WorkspaceChannelMessage, error) {
+	row := q.db.QueryRow(ctx, getWorkspaceChannelMessageTaskSource,
+		arg.MessageID,
+		arg.WorkspaceID,
+		arg.ChannelID,
+		arg.ActorType,
+		arg.ActorID,
+	)
+	var i WorkspaceChannelMessage
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ChannelID,
+		&i.AuthorType,
+		&i.AuthorID,
+		&i.Content,
+		&i.ParentID,
+		&i.QuotedMessageID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const listWorkspaceChannelMessages = `-- name: ListWorkspaceChannelMessages :many
-SELECT id, workspace_id, channel_id, author_type, author_id, content, parent_id, quoted_message_id, created_at, updated_at FROM workspace_channel_message WHERE workspace_id = $1 AND channel_id = $2 ORDER BY created_at, id LIMIT $3 OFFSET $4
+SELECT id, workspace_id, channel_id, author_type, author_id, content, parent_id, quoted_message_id, created_at, updated_at
+FROM workspace_channel_message AS message
+WHERE message.workspace_id = $1
+  AND message.channel_id = $2
+  AND EXISTS (
+      SELECT 1
+      FROM workspace_channel AS channel
+      WHERE channel.id = message.channel_id
+        AND channel.workspace_id = message.workspace_id
+        AND channel.archived_at IS NULL
+  )
+  AND (
+      $3::timestamptz IS NULL
+      OR (message.created_at, message.id) < (
+          $3::timestamptz,
+          $4::uuid
+      )
+  )
+ORDER BY message.created_at DESC, message.id DESC
+LIMIT $5
 `
 
 type ListWorkspaceChannelMessagesParams struct {
-	WorkspaceID pgtype.UUID `json:"workspace_id"`
-	ChannelID   pgtype.UUID `json:"channel_id"`
-	Limit       int32       `json:"limit"`
-	Offset      int32       `json:"offset"`
+	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
+	ChannelID       pgtype.UUID        `json:"channel_id"`
+	BeforeCreatedAt pgtype.Timestamptz `json:"before_created_at"`
+	BeforeID        pgtype.UUID        `json:"before_id"`
+	Limit           int32              `json:"limit"`
 }
 
 func (q *Queries) ListWorkspaceChannelMessages(ctx context.Context, arg ListWorkspaceChannelMessagesParams) ([]WorkspaceChannelMessage, error) {
 	rows, err := q.db.Query(ctx, listWorkspaceChannelMessages,
 		arg.WorkspaceID,
 		arg.ChannelID,
+		arg.BeforeCreatedAt,
+		arg.BeforeID,
 		arg.Limit,
-		arg.Offset,
 	)
 	if err != nil {
 		return nil, err
@@ -221,7 +377,10 @@ func (q *Queries) ListWorkspaceChannelMessages(ctx context.Context, arg ListWork
 }
 
 const listWorkspaceChannels = `-- name: ListWorkspaceChannels :many
-SELECT id, workspace_id, name, slug, description, created_by, archived_at, created_at, updated_at FROM workspace_channel WHERE workspace_id = $1 ORDER BY created_at, id
+SELECT id, workspace_id, name, slug, description, created_by, archived_at, created_at, updated_at
+FROM workspace_channel
+WHERE workspace_id = $1 AND archived_at IS NULL
+ORDER BY created_at, id
 `
 
 func (q *Queries) ListWorkspaceChannels(ctx context.Context, workspaceID pgtype.UUID) ([]WorkspaceChannel, error) {

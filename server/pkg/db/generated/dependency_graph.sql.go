@@ -12,9 +12,14 @@ import (
 )
 
 const createDependencyGraphEdge = `-- name: CreateDependencyGraphEdge :one
-INSERT INTO dependency_graph_edge (plan_id, workspace_id, from_issue_id, to_issue_id, type, reason, consumed_output, id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8::uuid, gen_random_uuid()))
-RETURNING id, plan_id, workspace_id, from_issue_id, to_issue_id, type, reason, consumed_output, created_at
+INSERT INTO dependency_graph_edge (
+    plan_id, workspace_id, from_issue_id, to_issue_id, type, reason,
+    consumed_output, id
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7,
+        COALESCE($8::uuid, gen_random_uuid()))
+RETURNING id, plan_id, workspace_id, from_issue_id, to_issue_id, type, reason,
+          consumed_output, created_at
 `
 
 type CreateDependencyGraphEdgeParams struct {
@@ -54,10 +59,48 @@ func (q *Queries) CreateDependencyGraphEdge(ctx context.Context, arg CreateDepen
 	return i, err
 }
 
+const createDependencyGraphIssueCreatedOutbox = `-- name: CreateDependencyGraphIssueCreatedOutbox :exec
+INSERT INTO dependency_graph_issue_created_outbox
+    (plan_id, node_id, workspace_id, issue_id, status, attempt)
+VALUES ($1, $2, $3, $4, 'pending', 0)
+ON CONFLICT (plan_id, node_id) DO NOTHING
+`
+
+type CreateDependencyGraphIssueCreatedOutboxParams struct {
+	PlanID      pgtype.UUID `json:"plan_id"`
+	NodeID      pgtype.UUID `json:"node_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	IssueID     pgtype.UUID `json:"issue_id"`
+}
+
+func (q *Queries) CreateDependencyGraphIssueCreatedOutbox(ctx context.Context, arg CreateDependencyGraphIssueCreatedOutboxParams) error {
+	_, err := q.db.Exec(ctx, createDependencyGraphIssueCreatedOutbox,
+		arg.PlanID,
+		arg.NodeID,
+		arg.WorkspaceID,
+		arg.IssueID,
+	)
+	return err
+}
+
 const createDependencyGraphNode = `-- name: CreateDependencyGraphNode :one
-INSERT INTO dependency_graph_node (plan_id, workspace_id, temp_id, issue_id, title, description, acceptance_criteria, context, outputs, executor_type, executor_id, candidate_executors, owner_type, owner_id, reviewer_type, reviewer_id, runtime_id, model_id, wave, id)
-VALUES ($1, $2, $3, $4, $5, COALESCE($6, ''), COALESCE($7::jsonb, '[]'), COALESCE($8::jsonb, '{}'), COALESCE($9::jsonb, '[]'), $12, $13, COALESCE($10::jsonb, '[]'), $14, $15, $16, $17, $18, $19, $11, COALESCE($20::uuid, gen_random_uuid()))
-RETURNING id, plan_id, workspace_id, temp_id, issue_id, title, description, acceptance_criteria, context, outputs, executor_type, executor_id, candidate_executors, wave, created_at, updated_at, owner_type, owner_id, reviewer_type, reviewer_id, runtime_id, model_id
+INSERT INTO dependency_graph_node (
+    plan_id, workspace_id, temp_id, issue_id, title, description,
+    acceptance_criteria, context, outputs, executor_type, executor_id,
+    candidate_executors, owner_type, owner_id, reviewer_type, reviewer_id,
+    runtime_id, model_id, wave, id
+)
+VALUES (
+    $1, $2, $3, $4, $5, COALESCE($6, ''),
+    COALESCE($7::jsonb, '[]'), COALESCE($8::jsonb, '{}'),
+    COALESCE($9::jsonb, '[]'), $12, $13, COALESCE($10::jsonb, '[]'),
+    $14, $15, $16, $17, $18, $19, $11,
+    COALESCE($20::uuid, gen_random_uuid())
+)
+RETURNING id, plan_id, workspace_id, temp_id, issue_id, title, description,
+          acceptance_criteria, context, outputs, executor_type, executor_id,
+          candidate_executors, wave, created_at, updated_at, owner_type, owner_id,
+          reviewer_type, reviewer_id, runtime_id, model_id
 `
 
 type CreateDependencyGraphNodeParams struct {
@@ -80,7 +123,7 @@ type CreateDependencyGraphNodeParams struct {
 	ReviewerID   pgtype.UUID `json:"reviewer_id"`
 	RuntimeID    pgtype.UUID `json:"runtime_id"`
 	ModelID      pgtype.Text `json:"model_id"`
-	ID           pgtype.UUID `json:"id"`
+	Column20     pgtype.UUID `json:"column_20"`
 }
 
 func (q *Queries) CreateDependencyGraphNode(ctx context.Context, arg CreateDependencyGraphNodeParams) (DependencyGraphNode, error) {
@@ -104,7 +147,7 @@ func (q *Queries) CreateDependencyGraphNode(ctx context.Context, arg CreateDepen
 		arg.ReviewerID,
 		arg.RuntimeID,
 		arg.ModelID,
-		arg.ID,
+		arg.Column20,
 	)
 	var i DependencyGraphNode
 	err := row.Scan(
@@ -135,9 +178,13 @@ func (q *Queries) CreateDependencyGraphNode(ctx context.Context, arg CreateDepen
 }
 
 const createDependencyGraphPlan = `-- name: CreateDependencyGraphPlan :one
-INSERT INTO dependency_graph_plan (workspace_id, parent_issue_id, idempotency_key, request_hash, goal, status, created_by_type, created_by_id, id)
-VALUES ($1, $2, $3, $4, $5, COALESCE($8::text, 'active'), $6, $7, COALESCE($9::uuid, gen_random_uuid()))
-RETURNING id, workspace_id, parent_issue_id, idempotency_key, request_hash, goal, status, created_by_type, created_by_id, created_at, updated_at, attention_required, attention_reason
+INSERT INTO dependency_graph_plan (workspace_id, parent_issue_id,
+    idempotency_key, request_hash, goal, status, created_by_type, created_by_id, id)
+VALUES ($1, $2, $3, $4, $5, COALESCE($8::text, 'active'),
+        $6, $7, COALESCE($9::uuid, gen_random_uuid()))
+RETURNING id, workspace_id, parent_issue_id, idempotency_key, request_hash,
+          goal, status, created_by_type, created_by_id, created_at, updated_at,
+          attention_required, attention_reason
 `
 
 type CreateDependencyGraphPlanParams struct {
@@ -184,19 +231,39 @@ func (q *Queries) CreateDependencyGraphPlan(ctx context.Context, arg CreateDepen
 }
 
 const getActiveDependencyGraphForIssue = `-- name: GetActiveDependencyGraphForIssue :one
-SELECT p.id, p.workspace_id, p.parent_issue_id, p.idempotency_key, p.request_hash, p.goal, p.status, p.created_by_type, p.created_by_id, p.created_at, p.updated_at, p.attention_required, p.attention_reason FROM dependency_graph_plan p
-JOIN dependency_graph_node n ON n.plan_id = p.id AND n.workspace_id = p.workspace_id
-WHERE p.workspace_id = $1 AND n.issue_id = $2 AND p.status = 'active'
+SELECT p.id, p.workspace_id, p.parent_issue_id, p.idempotency_key,
+       p.request_hash, p.goal, p.status, p.created_by_type, p.created_by_id,
+       p.created_at, p.updated_at, p.attention_required, p.attention_reason
+FROM dependency_graph_plan p
+WHERE p.workspace_id = $1
+  AND p.status = 'active'
+  AND (
+      p.parent_issue_id = $2
+      OR EXISTS (
+          SELECT 1
+          FROM dependency_graph_node n
+          WHERE n.plan_id = p.id
+            AND n.workspace_id = p.workspace_id
+            AND n.issue_id = $2
+      )
+  )
+ORDER BY CASE WHEN EXISTS (
+    SELECT 1
+    FROM dependency_graph_node n
+    WHERE n.plan_id = p.id
+      AND n.workspace_id = p.workspace_id
+      AND n.issue_id = $2
+) THEN 0 ELSE 1 END, p.updated_at DESC, p.id ASC
 LIMIT 1
 `
 
 type GetActiveDependencyGraphForIssueParams struct {
-	WorkspaceID pgtype.UUID `json:"workspace_id"`
-	IssueID     pgtype.UUID `json:"issue_id"`
+	WorkspaceID   pgtype.UUID `json:"workspace_id"`
+	ParentIssueID pgtype.UUID `json:"parent_issue_id"`
 }
 
 func (q *Queries) GetActiveDependencyGraphForIssue(ctx context.Context, arg GetActiveDependencyGraphForIssueParams) (DependencyGraphPlan, error) {
-	row := q.db.QueryRow(ctx, getActiveDependencyGraphForIssue, arg.WorkspaceID, arg.IssueID)
+	row := q.db.QueryRow(ctx, getActiveDependencyGraphForIssue, arg.WorkspaceID, arg.ParentIssueID)
 	var i DependencyGraphPlan
 	err := row.Scan(
 		&i.ID,
@@ -217,7 +284,12 @@ func (q *Queries) GetActiveDependencyGraphForIssue(ctx context.Context, arg GetA
 }
 
 const getActiveDependencyGraphPlanForParent = `-- name: GetActiveDependencyGraphPlanForParent :one
-SELECT id, workspace_id, parent_issue_id, idempotency_key, request_hash, goal, status, created_by_type, created_by_id, created_at, updated_at, attention_required, attention_reason FROM dependency_graph_plan WHERE workspace_id = $1 AND parent_issue_id = $2 AND status = 'active' LIMIT 1
+SELECT id, workspace_id, parent_issue_id, idempotency_key, request_hash,
+       goal, status, created_by_type, created_by_id, created_at, updated_at,
+       attention_required, attention_reason
+FROM dependency_graph_plan
+WHERE workspace_id = $1 AND parent_issue_id = $2 AND status = 'active'
+LIMIT 1
 `
 
 type GetActiveDependencyGraphPlanForParentParams struct {
@@ -247,7 +319,10 @@ func (q *Queries) GetActiveDependencyGraphPlanForParent(ctx context.Context, arg
 }
 
 const getDependencyGraphEdgeByID = `-- name: GetDependencyGraphEdgeByID :one
-SELECT id, plan_id, workspace_id, from_issue_id, to_issue_id, type, reason, consumed_output, created_at FROM dependency_graph_edge WHERE id = $1 AND workspace_id = $2
+SELECT id, plan_id, workspace_id, from_issue_id, to_issue_id, type, reason,
+       consumed_output, created_at
+FROM dependency_graph_edge
+WHERE id = $1 AND workspace_id = $2
 `
 
 type GetDependencyGraphEdgeByIDParams struct {
@@ -273,7 +348,12 @@ func (q *Queries) GetDependencyGraphEdgeByID(ctx context.Context, arg GetDepende
 }
 
 const getDependencyGraphNodeByID = `-- name: GetDependencyGraphNodeByID :one
-SELECT id, plan_id, workspace_id, temp_id, issue_id, title, description, acceptance_criteria, context, outputs, executor_type, executor_id, candidate_executors, wave, created_at, updated_at, owner_type, owner_id, reviewer_type, reviewer_id, runtime_id, model_id FROM dependency_graph_node WHERE id = $1 AND workspace_id = $2
+SELECT id, plan_id, workspace_id, temp_id, issue_id, title, description,
+       acceptance_criteria, context, outputs, executor_type, executor_id,
+       candidate_executors, wave, created_at, updated_at, owner_type, owner_id,
+       reviewer_type, reviewer_id, runtime_id, model_id
+FROM dependency_graph_node
+WHERE id = $1 AND workspace_id = $2
 `
 
 type GetDependencyGraphNodeByIDParams struct {
@@ -312,8 +392,11 @@ func (q *Queries) GetDependencyGraphNodeByID(ctx context.Context, arg GetDepende
 }
 
 const getDependencyGraphPlanByID = `-- name: GetDependencyGraphPlanByID :one
-
-SELECT id, workspace_id, parent_issue_id, idempotency_key, request_hash, goal, status, created_by_type, created_by_id, created_at, updated_at, attention_required, attention_reason FROM dependency_graph_plan WHERE id = $1 AND workspace_id = $2
+SELECT id, workspace_id, parent_issue_id, idempotency_key, request_hash,
+       goal, status, created_by_type, created_by_id, created_at, updated_at,
+       attention_required, attention_reason
+FROM dependency_graph_plan
+WHERE id = $1 AND workspace_id = $2
 `
 
 type GetDependencyGraphPlanByIDParams struct {
@@ -321,7 +404,6 @@ type GetDependencyGraphPlanByIDParams struct {
 	WorkspaceID pgtype.UUID `json:"workspace_id"`
 }
 
-// Dependency graph execution plans.
 func (q *Queries) GetDependencyGraphPlanByID(ctx context.Context, arg GetDependencyGraphPlanByIDParams) (DependencyGraphPlan, error) {
 	row := q.db.QueryRow(ctx, getDependencyGraphPlanByID, arg.ID, arg.WorkspaceID)
 	var i DependencyGraphPlan
@@ -344,7 +426,12 @@ func (q *Queries) GetDependencyGraphPlanByID(ctx context.Context, arg GetDepende
 }
 
 const getDependencyGraphPlanByIdempotency = `-- name: GetDependencyGraphPlanByIdempotency :one
-SELECT id, workspace_id, parent_issue_id, idempotency_key, request_hash, goal, status, created_by_type, created_by_id, created_at, updated_at, attention_required, attention_reason FROM dependency_graph_plan WHERE workspace_id = $1 AND idempotency_key = $2 LIMIT 1
+SELECT id, workspace_id, parent_issue_id, idempotency_key, request_hash,
+       goal, status, created_by_type, created_by_id, created_at, updated_at,
+       attention_required, attention_reason
+FROM dependency_graph_plan
+WHERE workspace_id = $1 AND idempotency_key = $2
+LIMIT 1
 `
 
 type GetDependencyGraphPlanByIdempotencyParams struct {
@@ -374,7 +461,12 @@ func (q *Queries) GetDependencyGraphPlanByIdempotency(ctx context.Context, arg G
 }
 
 const getDependencyGraphPlanForUpdate = `-- name: GetDependencyGraphPlanForUpdate :one
-SELECT id, workspace_id, parent_issue_id, idempotency_key, request_hash, goal, status, created_by_type, created_by_id, created_at, updated_at, attention_required, attention_reason FROM dependency_graph_plan WHERE id = $1 AND workspace_id = $2 FOR UPDATE
+SELECT id, workspace_id, parent_issue_id, idempotency_key, request_hash,
+       goal, status, created_by_type, created_by_id, created_at, updated_at,
+       attention_required, attention_reason
+FROM dependency_graph_plan
+WHERE id = $1 AND workspace_id = $2
+FOR UPDATE
 `
 
 type GetDependencyGraphPlanForUpdateParams struct {
@@ -404,7 +496,11 @@ func (q *Queries) GetDependencyGraphPlanForUpdate(ctx context.Context, arg GetDe
 }
 
 const listDependencyGraphEdgesByPlan = `-- name: ListDependencyGraphEdgesByPlan :many
-SELECT id, plan_id, workspace_id, from_issue_id, to_issue_id, type, reason, consumed_output, created_at FROM dependency_graph_edge WHERE plan_id = $1 AND workspace_id = $2 ORDER BY created_at
+SELECT id, plan_id, workspace_id, from_issue_id, to_issue_id, type, reason,
+       consumed_output, created_at
+FROM dependency_graph_edge
+WHERE plan_id = $1 AND workspace_id = $2
+ORDER BY from_issue_id, to_issue_id, id
 `
 
 type ListDependencyGraphEdgesByPlanParams struct {
@@ -443,7 +539,13 @@ func (q *Queries) ListDependencyGraphEdgesByPlan(ctx context.Context, arg ListDe
 }
 
 const listDependencyGraphNodesByPlan = `-- name: ListDependencyGraphNodesByPlan :many
-SELECT id, plan_id, workspace_id, temp_id, issue_id, title, description, acceptance_criteria, context, outputs, executor_type, executor_id, candidate_executors, wave, created_at, updated_at, owner_type, owner_id, reviewer_type, reviewer_id, runtime_id, model_id FROM dependency_graph_node WHERE plan_id = $1 AND workspace_id = $2 ORDER BY wave, created_at
+SELECT id, plan_id, workspace_id, temp_id, issue_id, title, description,
+       acceptance_criteria, context, outputs, executor_type, executor_id,
+       candidate_executors, wave, created_at, updated_at, owner_type, owner_id,
+       reviewer_type, reviewer_id, runtime_id, model_id
+FROM dependency_graph_node
+WHERE plan_id = $1 AND workspace_id = $2
+ORDER BY wave, temp_id, id
 `
 
 type ListDependencyGraphNodesByPlanParams struct {
@@ -495,10 +597,17 @@ func (q *Queries) ListDependencyGraphNodesByPlan(ctx context.Context, arg ListDe
 }
 
 const listDependencyGraphPlans = `-- name: ListDependencyGraphPlans :many
-SELECT id, workspace_id, parent_issue_id, idempotency_key, request_hash, goal, status, created_by_type, created_by_id, created_at, updated_at, attention_required, attention_reason FROM dependency_graph_plan
-WHERE workspace_id = $1
-  AND ($2::uuid IS NULL OR project_id = $2::uuid)
-ORDER BY updated_at DESC, id DESC
+SELECT p.id, p.workspace_id, p.parent_issue_id, p.idempotency_key,
+       p.request_hash, p.goal, p.status, p.created_by_type, p.created_by_id,
+       p.created_at, p.updated_at, p.attention_required, p.attention_reason
+FROM dependency_graph_plan p
+JOIN issue parent
+  ON parent.id = p.parent_issue_id
+ AND parent.workspace_id = p.workspace_id
+WHERE p.workspace_id = $1
+  AND p.status = 'active'
+  AND ($2::uuid IS NULL OR parent.project_id = $2::uuid)
+ORDER BY p.updated_at DESC, p.id ASC
 LIMIT $3 OFFSET $4
 `
 
@@ -548,10 +657,44 @@ func (q *Queries) ListDependencyGraphPlans(ctx context.Context, arg ListDependen
 	return items, nil
 }
 
-const updateDependencyGraphPlanStatus = `-- name: UpdateDependencyGraphPlanStatus :one
-UPDATE dependency_graph_plan SET status = $3, updated_at = now()
+const lockDependencyGraphParentIssue = `-- name: LockDependencyGraphParentIssue :one
+
+SELECT id, workspace_id, project_id
+FROM issue
 WHERE id = $1 AND workspace_id = $2
-RETURNING id, workspace_id, parent_issue_id, idempotency_key, request_hash, goal, status, created_by_type, created_by_id, created_at, updated_at, attention_required, attention_reason
+FOR UPDATE
+`
+
+type LockDependencyGraphParentIssueParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+type LockDependencyGraphParentIssueRow struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+}
+
+// Dependency graph execution plans.
+//
+// These queries intentionally carry workspace_id on every graph lookup. The
+// graph tables do not have foreign keys, so the workspace predicate is part
+// of the application-level tenant boundary rather than an optional filter.
+func (q *Queries) LockDependencyGraphParentIssue(ctx context.Context, arg LockDependencyGraphParentIssueParams) (LockDependencyGraphParentIssueRow, error) {
+	row := q.db.QueryRow(ctx, lockDependencyGraphParentIssue, arg.ID, arg.WorkspaceID)
+	var i LockDependencyGraphParentIssueRow
+	err := row.Scan(&i.ID, &i.WorkspaceID, &i.ProjectID)
+	return i, err
+}
+
+const updateDependencyGraphPlanStatus = `-- name: UpdateDependencyGraphPlanStatus :one
+UPDATE dependency_graph_plan
+SET status = $3, updated_at = now()
+WHERE id = $1 AND workspace_id = $2
+RETURNING id, workspace_id, parent_issue_id, idempotency_key, request_hash,
+          goal, status, created_by_type, created_by_id, created_at, updated_at,
+          attention_required, attention_reason
 `
 
 type UpdateDependencyGraphPlanStatusParams struct {

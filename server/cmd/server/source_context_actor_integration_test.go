@@ -33,8 +33,14 @@ func TestSourceContextRoutesRejectAuthoritativeTaskToken(t *testing.T) {
 	}
 	var tokenID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO task_token (token_hash, task_id, agent_id, workspace_id, user_id, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO task_token (
+			token_hash, task_id, agent_id, workspace_id, user_id, expires_at,
+			claim_dispatched_at, on_behalf_of_user_id, device_id
+		)
+		SELECT $1, $2, $3, $4, $5, $6,
+			task.dispatched_at, task.originator_user_id, task.runtime_id
+		FROM agent_task_queue task
+		WHERE task.id = $2
 		RETURNING id::text
 	`, auth.HashToken(token), taskID, agentID, testWorkspaceID, testUserID, time.Now().Add(time.Hour)).Scan(&tokenID); err != nil {
 		t.Fatalf("insert task token: %v", err)

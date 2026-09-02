@@ -44,6 +44,10 @@ type TaskService struct {
 	Analytics analytics.Client
 	Metrics   *obsmetrics.BusinessMetrics
 	Wakeup    TaskWakeupNotifier
+	// Coordination is the durable outbox producer/consumer. It is optional so
+	// focused task-service tests and deployments that have not generated the
+	// coordination queries yet retain the existing task lifecycle.
+	Coordination *AgentCoordinationService
 	// Entitlements supplies Cloud's workspace-scoped issue-count instruction.
 	// Nil keeps self-hosted and isolated test services unlimited.
 	Entitlements entitlement.Provider
@@ -89,6 +93,12 @@ type TaskService struct {
 	analyticsContextCache map[string]analytics.TaskContext
 	analyticsContextOrder []string
 }
+
+// TerminalTaskTxHook lets a caller persist terminal side effects in the exact
+// transaction that changes the task status. The hook runs after the task's
+// completion/failure work but before commit; returning an error rolls the whole
+// transition back so a retried terminal callback cannot observe a partial handoff.
+type TerminalTaskTxHook func(context.Context, pgx.Tx, *db.Queries, db.AgentTaskQueue) error
 
 type SourceContextObjectStore interface {
 	DeleteObject(ctx context.Context, key string) error
@@ -2232,6 +2242,60 @@ type DirectChatSendResult struct {
 
 var ErrChatSessionAlreadyStarted = errors.New("chat session already has a user message")
 
+// WorkspaceChannelMessageSource is the durable source context for a task
+// created by the workspace-channel mention bridge. The task queue already has
+// a uniform evidence-kind/evidence-ref pair; these fields identify the row
+// that the ref must resolve to, while the task's existing initiator and
+// originator columns retain the actor.
+type WorkspaceChannelMessageSource struct {
+	WorkspaceID pgtype.UUID
+	ChannelID   pgtype.UUID
+	MessageID   pgtype.UUID
+	ActorType   string
+	ActorID     pgtype.UUID
+}
+
+var ErrInvalidWorkspaceChannelMessageSource = errors.New("invalid workspace channel message source")
+
+const workspaceChannelMessageEvidenceKind = "workspace_channel_message"
+
+func uuidValuesEqual(left, right pgtype.UUID) bool {
+	return left.Valid && right.Valid && left.Bytes == right.Bytes
+}
+
+func validateWorkspaceChannelMessageSource(source WorkspaceChannelMessageSource, session db.ChatSession, initiatorUserID pgtype.UUID) error {
+	if !source.WorkspaceID.Valid || !source.ChannelID.Valid || !source.MessageID.Valid || !source.ActorID.Valid {
+		return fmt.Errorf("%w: source ids must be valid", ErrInvalidWorkspaceChannelMessageSource)
+	}
+	if source.ActorType != "member" {
+		return fmt.Errorf("%w: actor type %q is not supported", ErrInvalidWorkspaceChannelMessageSource, source.ActorType)
+	}
+	if !uuidValuesEqual(source.WorkspaceID, session.WorkspaceID) {
+		return fmt.Errorf("%w: source workspace does not match chat session", ErrInvalidWorkspaceChannelMessageSource)
+	}
+	if !uuidValuesEqual(source.ActorID, initiatorUserID) {
+		return fmt.Errorf("%w: source actor does not match task initiator", ErrInvalidWorkspaceChannelMessageSource)
+	}
+	return nil
+}
+
+// SendDirectChatMessageFromWorkspaceChannel is the mention bridge entry point.
+// Source validation and the task/input-message writes happen in the same
+// transaction, so a failed enqueue cannot leave a task with an unverified
+// channel source (or a source-less retryable task).
+func (s *TaskService) SendDirectChatMessageFromWorkspaceChannel(
+	ctx context.Context,
+	session db.ChatSession,
+	agent db.Agent,
+	source WorkspaceChannelMessageSource,
+	content string,
+) (*DirectChatSendResult, error) {
+	if err := validateWorkspaceChannelMessageSource(source, session, source.ActorID); err != nil {
+		return nil, err
+	}
+	return s.sendDirectChatMessage(ctx, session, agent, source.ActorID, content, nil, source.ActorType, source.ActorID, &source)
+}
+
 // SendDirectChatMessage atomically persists one web/mobile direct-chat turn:
 // the owning task (which claims its own input batch via chat_input_task_id), the
 // user message bound to that task, any attachment bindings, and the session
@@ -2253,6 +2317,25 @@ func (s *TaskService) SendDirectChatMessage(
 	uploaderType string,
 	uploaderID pgtype.UUID,
 ) (*DirectChatSendResult, error) {
+	return s.sendDirectChatMessage(ctx, session, agent, initiatorUserID, content, attachmentIDs, uploaderType, uploaderID, nil)
+}
+
+func (s *TaskService) sendDirectChatMessage(
+	ctx context.Context,
+	session db.ChatSession,
+	agent db.Agent,
+	initiatorUserID pgtype.UUID,
+	content string,
+	attachmentIDs []pgtype.UUID,
+	uploaderType string,
+	uploaderID pgtype.UUID,
+	source *WorkspaceChannelMessageSource,
+) (*DirectChatSendResult, error) {
+	if source != nil {
+		if err := validateWorkspaceChannelMessageSource(*source, session, initiatorUserID); err != nil {
+			return nil, err
+		}
+	}
 	// Build the per-task Composio overlay before the transaction — it can do
 	// network I/O and must not run with a DB transaction open.
 	overlay := s.buildRuntimeMCPOverlay(ctx, initiatorUserID, agent)
@@ -2262,7 +2345,13 @@ func (s *TaskService) SendDirectChatMessage(
 	// EnqueueChatTask writes. Without this the direct-chat path was a bypass: it set
 	// originator_user_id but left accountable_user_id / source / evidence NULL,
 	// violating the one-way invariant and dropping the audit source (MUL-4302 §2).
-	attr := attribution.DirectHumanRun(initiatorUserID, attribution.EvidenceChat, session.ID)
+	evidenceKind := attribution.EvidenceChat
+	evidenceRef := session.ID
+	if source != nil {
+		evidenceKind = attribution.EvidenceKind(workspaceChannelMessageEvidenceKind)
+		evidenceRef = source.MessageID
+	}
+	attr := attribution.DirectHumanRun(initiatorUserID, evidenceKind, evidenceRef)
 	attr, err := s.applyAttributionFallback(ctx, attr, agent)
 	if err != nil {
 		return nil, err
@@ -2288,6 +2377,20 @@ func (s *TaskService) SendDirectChatMessage(
 		}
 		if currentSession.Status != "active" {
 			return ErrChatSessionArchived
+		}
+		if source != nil {
+			if !uuidValuesEqual(currentSession.WorkspaceID, source.WorkspaceID) {
+				return fmt.Errorf("%w: chat session workspace changed", ErrInvalidWorkspaceChannelMessageSource)
+			}
+			if _, err := qtx.GetWorkspaceChannelMessageTaskSource(ctx, db.GetWorkspaceChannelMessageTaskSourceParams{
+				MessageID:   source.MessageID,
+				WorkspaceID: source.WorkspaceID,
+				ChannelID:   source.ChannelID,
+				ActorType:   source.ActorType,
+				ActorID:     source.ActorID,
+			}); err != nil {
+				return fmt.Errorf("validate workspace channel message provenance: %w", err)
+			}
 		}
 		carrier, err := qtx.GetAgentForClaimUpdate(ctx, session.AgentID)
 		if err != nil {
@@ -2607,7 +2710,17 @@ func (s *TaskService) CancelTasksForAgent(ctx context.Context, agentID pgtype.UU
 		if err != nil {
 			return err
 		}
-		return SettleDeliveredDelegatedFailureRecoveries(ctx, qtx, cancelled...)
+		if err := SettleDeliveredDelegatedFailureRecoveries(ctx, qtx, cancelled...); err != nil {
+			return err
+		}
+		if s.Coordination != nil {
+			for _, task := range cancelled {
+				if err := s.Coordination.RecordReviewerTaskCancelledTx(ctx, qtx, task); err != nil {
+					return fmt.Errorf("record coordination task cancellation: %w", err)
+				}
+			}
+		}
+		return nil
 	}); err != nil {
 		return nil, err
 	}
@@ -2620,6 +2733,9 @@ func (s *TaskService) CancelTasksForAgent(ctx context.Context, agentID pgtype.UU
 	// per row (the rows we just cancelled all belong to the same agent).
 	s.ReconcileAgentStatus(ctx, agentID)
 	s.notifyTasksFinished(cancelled)
+	if s.Coordination != nil && len(cancelled) > 0 {
+		s.Coordination.Wake()
+	}
 	return cancelled, nil
 }
 
@@ -2635,7 +2751,17 @@ func (s *TaskService) CancelTasksByTriggerComment(ctx context.Context, commentID
 		if err != nil {
 			return err
 		}
-		return SettleDeliveredDelegatedFailureRecoveries(ctx, qtx, cancelled...)
+		if err := SettleDeliveredDelegatedFailureRecoveries(ctx, qtx, cancelled...); err != nil {
+			return err
+		}
+		if s.Coordination != nil {
+			for _, task := range cancelled {
+				if err := s.Coordination.RecordReviewerTaskCancelledTx(ctx, qtx, task); err != nil {
+					return fmt.Errorf("record coordination task cancellation: %w", err)
+				}
+			}
+		}
+		return nil
 	}); err != nil {
 		return nil, err
 	}
@@ -2650,6 +2776,9 @@ func (s *TaskService) CancelTasksByTriggerComment(ctx context.Context, commentID
 		s.ReconcileAgentStatus(ctx, agentID)
 	}
 	s.notifyTasksFinished(cancelled)
+	if s.Coordination != nil && len(cancelled) > 0 {
+		s.Coordination.Wake()
+	}
 	return cancelled, nil
 }
 
@@ -2827,7 +2956,15 @@ func (s *TaskService) CancelTaskWithResult(ctx context.Context, taskID pgtype.UU
 				return fmt.Errorf("cancel queued task: %w", err)
 			}
 			cancelledChatMessage, err = s.settleQueuedChatInput(ctx, qtx, task, opts.QueueAction)
-			return err
+			if err != nil {
+				return err
+			}
+			if s.Coordination != nil {
+				if err := s.Coordination.RecordReviewerTaskCancelledTx(ctx, qtx, task); err != nil {
+					return fmt.Errorf("record coordination task cancellation: %w", err)
+				}
+			}
+			return nil
 		})
 	} else {
 		// The status flip and the chat resume-pointer advance commit together. Split
@@ -2863,9 +3000,22 @@ func (s *TaskService) CancelTaskWithResult(ctx context.Context, taskID pgtype.UU
 				return err
 			}
 			if !cancelled.ChatSessionID.Valid {
+				if s.Coordination != nil {
+					if err := s.Coordination.RecordReviewerTaskCancelledTx(ctx, qtx, cancelled); err != nil {
+						return fmt.Errorf("record coordination task cancellation: %w", err)
+					}
+				}
 				return nil
 			}
-			return qtx.AdvanceCancelledChatSessionPointer(ctx, cancelled.ID)
+			if err := qtx.AdvanceCancelledChatSessionPointer(ctx, cancelled.ID); err != nil {
+				return err
+			}
+			if s.Coordination != nil {
+				if err := s.Coordination.RecordReviewerTaskCancelledTx(ctx, qtx, cancelled); err != nil {
+					return fmt.Errorf("record coordination task cancellation: %w", err)
+				}
+			}
+			return nil
 		})
 	}
 	if errors.Is(err, ErrTaskNoLongerQueued) {
@@ -2894,6 +3044,9 @@ func (s *TaskService) CancelTaskWithResult(ctx context.Context, taskID pgtype.UU
 	// Broadcast cancellation as a task:failed event so frontends clear the live card
 	s.broadcastTaskEvent(ctx, protocol.EventTaskCancelled, task)
 	s.NotifyTaskFinished(task)
+	if s.Coordination != nil {
+		s.Coordination.Wake()
+	}
 
 	return &CancelTaskResult{
 		Task:                 task,
@@ -4224,12 +4377,23 @@ func startsWithAbsolutePath(s string) bool {
 // durableWorkDir is terminal delivery metadata, not a resume pointer: it is
 // populated only after the daemon confirms a disposable worktree is gone.
 func (s *TaskService) CompleteTask(ctx context.Context, taskID pgtype.UUID, result []byte, sessionID, workDir, branchName string, sessionRolloutMissing bool, retiredSessionID, durableWorkDir string) (*db.AgentTaskQueue, error) {
+	return s.completeTask(ctx, taskID, result, sessionID, workDir, branchName, sessionRolloutMissing, retiredSessionID, durableWorkDir, nil)
+}
+
+// CompleteTaskWithTerminalHook is CompleteTask plus an atomic terminal
+// side-effect. Production daemon callbacks use it to make the durable Work
+// Product discovery handoff inseparable from the completed status.
+func (s *TaskService) CompleteTaskWithTerminalHook(ctx context.Context, taskID pgtype.UUID, result []byte, sessionID, workDir, branchName string, sessionRolloutMissing bool, retiredSessionID, durableWorkDir string, hook TerminalTaskTxHook) (*db.AgentTaskQueue, error) {
+	return s.completeTask(ctx, taskID, result, sessionID, workDir, branchName, sessionRolloutMissing, retiredSessionID, durableWorkDir, hook)
+}
+
+func (s *TaskService) completeTask(ctx context.Context, taskID pgtype.UUID, result []byte, sessionID, workDir, branchName string, sessionRolloutMissing bool, retiredSessionID, durableWorkDir string, hook TerminalTaskTxHook) (*db.AgentTaskQueue, error) {
 	var task db.AgentTaskQueue
 	// chatAssistantMsg is the single assistant outcome row written for a chat
 	// task inside the completion transaction below. It is broadcast (chat:done)
 	// only after the transaction commits.
 	var chatAssistantMsg *db.ChatMessage
-	if err := s.runInTx(ctx, func(qtx *db.Queries) error {
+	if err := s.runTerminalTaskTx(ctx, &task, hook, func(qtx *db.Queries) error {
 		if err := lockChatSessionForTaskWrite(ctx, qtx, taskID); err != nil {
 			return err
 		}
@@ -4301,6 +4465,11 @@ func (s *TaskService) CompleteTask(ctx context.Context, taskID pgtype.UUID, resu
 				return fmt.Errorf("write chat assistant outcome: %w", err)
 			}
 			chatAssistantMsg = msg
+		}
+		if s.Coordination != nil {
+			if err := s.Coordination.RecordTaskCompletedTx(ctx, qtx, t); err != nil {
+				return fmt.Errorf("record coordination task completion: %w", err)
+			}
 		}
 		return nil
 	}); err != nil {
@@ -4425,6 +4594,9 @@ func (s *TaskService) CompleteTask(ctx context.Context, taskID pgtype.UUID, resu
 
 	// Broadcast
 	s.broadcastTaskEvent(ctx, protocol.EventTaskCompleted, task)
+	if s.Coordination != nil {
+		s.Coordination.Wake()
+	}
 
 	return &task, nil
 }
@@ -4639,6 +4811,16 @@ func (s *TaskService) observeChatOutputLocalPath(task db.AgentTaskQueue, body st
 // (via classifyPoisonedError, the timeout / runtime classifier, etc.)
 // will have their value preserved untouched.
 func (s *TaskService) FailTask(ctx context.Context, taskID pgtype.UUID, errMsg, sessionID, workDir, branchName, failureReason string, sessionRolloutMissing bool, retiredSessionID, durableWorkDir string) (*db.AgentTaskQueue, error) {
+	return s.failTask(ctx, taskID, errMsg, sessionID, workDir, branchName, failureReason, sessionRolloutMissing, retiredSessionID, durableWorkDir, nil)
+}
+
+// FailTaskWithTerminalHook is FailTask plus an atomic terminal side-effect.
+// It has the same rollback and retry contract as CompleteTaskWithTerminalHook.
+func (s *TaskService) FailTaskWithTerminalHook(ctx context.Context, taskID pgtype.UUID, errMsg, sessionID, workDir, branchName, failureReason string, sessionRolloutMissing bool, retiredSessionID, durableWorkDir string, hook TerminalTaskTxHook) (*db.AgentTaskQueue, error) {
+	return s.failTask(ctx, taskID, errMsg, sessionID, workDir, branchName, failureReason, sessionRolloutMissing, retiredSessionID, durableWorkDir, hook)
+}
+
+func (s *TaskService) failTask(ctx context.Context, taskID pgtype.UUID, errMsg, sessionID, workDir, branchName, failureReason string, sessionRolloutMissing bool, retiredSessionID, durableWorkDir string, hook TerminalTaskTxHook) (*db.AgentTaskQueue, error) {
 	// Strip bytes PostgreSQL cannot store before anything else reads errMsg, so
 	// the classifier, the transaction and every downstream consumer see the one
 	// text we will actually persist (GH #7098). Kept at the service boundary
@@ -4709,7 +4891,7 @@ func (s *TaskService) FailTask(ctx context.Context, taskID pgtype.UUID, errMsg, 
 
 	var task db.AgentTaskQueue
 	var retried *db.AgentTaskQueue
-	if err := s.runInTx(ctx, func(qtx *db.Queries) error {
+	if err := s.runTerminalTaskTx(ctx, &task, hook, func(qtx *db.Queries) error {
 		if err := lockChatSessionForTaskWrite(ctx, qtx, taskID); err != nil {
 			return err
 		}
@@ -6461,6 +6643,36 @@ func (s *TaskService) runInTx(ctx context.Context, fn func(*db.Queries) error) e
 	defer tx.Rollback(ctx)
 	if err := fn(s.Queries.WithTx(tx)); err != nil {
 		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// runTerminalTaskTx is the transaction boundary for a terminal status change
+// plus an optional caller-owned durable handoff. Existing service callers keep
+// the established runInTx behavior by passing a nil hook. A hook requires a
+// real transaction; running the status mutation without one would recreate the
+// crash window this API exists to close.
+func (s *TaskService) runTerminalTaskTx(ctx context.Context, task *db.AgentTaskQueue, hook TerminalTaskTxHook, fn func(*db.Queries) error) error {
+	if hook == nil {
+		return s.runInTx(ctx, fn)
+	}
+	if s.TxStarter == nil {
+		return errors.New("terminal task hook requires a transaction starter")
+	}
+	tx, err := s.TxStarter.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin terminal task tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	qtx := s.Queries.WithTx(tx)
+	if err := fn(qtx); err != nil {
+		return err
+	}
+	if task == nil || !task.ID.Valid {
+		return errors.New("terminal task hook missing transitioned task")
+	}
+	if err := hook(ctx, tx, qtx, *task); err != nil {
+		return fmt.Errorf("terminal task hook: %w", err)
 	}
 	return tx.Commit(ctx)
 }

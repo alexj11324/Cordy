@@ -34,6 +34,7 @@ import (
 	"github.com/patchbay-ai/patchbay/server/internal/integrations/slack"
 	"github.com/patchbay-ai/patchbay/server/internal/integrations/telegram"
 	"github.com/patchbay-ai/patchbay/server/internal/integrations/wecom"
+	"github.com/patchbay-ai/patchbay/server/internal/integrations/weixin"
 	obsmetrics "github.com/patchbay-ai/patchbay/server/internal/metrics"
 	"github.com/patchbay-ai/patchbay/server/internal/middleware"
 	"github.com/patchbay-ai/patchbay/server/internal/realtime"
@@ -437,6 +438,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		ServerVersion:            normalizeServerVersion(version),
 	}
 	h := handler.New(queries, pool, hub, bus, emailSvc, store, cfSigner, analyticsClient, signupConfig, daemonHub)
+	// Weixin QR install sessions use Redis when it is already configured for
+	// the server, with the adapter's bounded in-memory fallback otherwise.
+	weixin.ConfigureSessionStore(rdb)
 	invitationRateLimits := handler.DefaultInvitationRateLimits()
 	invitationRateLimits.Actor.Limit = envNonNegativeInt("RATE_LIMIT_INVITATION_ACTOR_10M", invitationRateLimits.Actor.Limit)
 	invitationRateLimits.Workspace.Limit = envNonNegativeInt("RATE_LIMIT_INVITATION_WORKSPACE_24H", invitationRateLimits.Workspace.Limit)
@@ -1110,6 +1114,35 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		slog.Info("telegram integration disabled (PATCHBAY_TELEGRAM_SECRET_KEY not set)")
 	}
 
+	// Native Weixin/iLink integration. This is the personal-WeChat QR + HTTP
+	// long-poll adapter from the Rust mainline contract, not the separate
+	// corporate WeCom WebSocket adapter. It reuses the generic channel tables,
+	// shared engine session/dedup pipeline, and the same installation lease.
+	// The at-rest key gates all provider wiring; handlers remain registered and
+	// return a clear 503 when an operator has not opted in.
+	if weixinKey, err := secretbox.LoadKey("PATCHBAY_WEIXIN_SECRET_KEY"); err == nil {
+		box, err := secretbox.New(weixinKey)
+		if err != nil {
+			slog.Error("weixin: secretbox.New failed; weixin integration disabled", "error", err)
+		} else {
+			weixinBinding := weixin.NewBindingTokenService(queries, pool)
+			weixinReplier := weixin.NewOutboundReplier(weixin.OutboundReplierConfig{
+				Binding: weixinBinding, Decrypt: box.Open, AppURL: appURLFromEnv(), Logger: slog.Default(),
+			})
+			channelRouter.Register(weixin.TypeWeixin, weixin.NewResolverSet(
+				queries, pool, pool, weixinReplier, box.Seal,
+			))
+			weixinOutbound := weixin.NewOutbound(queries, box.Open, slog.Default())
+			weixinOutbound.Register(bus)
+			weixin.RegisterWeixin(channelRegistry, weixin.ChannelDeps{
+				Decrypt: box.Open, Pool: pool, Logger: slog.Default(),
+			})
+			slog.Info("weixin integration enabled (iLink QR + HTTP long polling)")
+		}
+	} else {
+		slog.Info("weixin integration disabled (PATCHBAY_WEIXIN_SECRET_KEY not set)")
+	}
+
 	// Composio integration (MUL-3720). Gated by COMPOSIO_API_KEY plus the
 	// composio_mcp_apps feature flag. The env var is the project-scoped key the
 	// standalone SDK authenticates Composio with (sent as x-api-key; the project
@@ -1377,11 +1410,18 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	trustedProxies := middleware.ParseTrustedProxies(os.Getenv("RATE_LIMIT_TRUSTED_PROXIES"))
 	authRL := middleware.RateLimit(rdb, envPositiveInt("RATE_LIMIT_AUTH", 5), time.Minute, trustedProxies)
 	authVerifyRL := middleware.RateLimit(rdb, envPositiveInt("RATE_LIMIT_AUTH_VERIFY", 20), time.Minute, trustedProxies)
+	desktopHandoffRL := middleware.RateLimit(rdb, envPositiveInt("RATE_LIMIT_DESKTOP_HANDOFF", 20), time.Minute, trustedProxies)
 	contactSalesRL := middleware.RateLimit(rdb, envPositiveInt("RATE_LIMIT_CONTACT_SALES", 5), time.Hour, trustedProxies)
 	r.With(authRL).Post("/auth/send-code", h.SendCode)
 	r.With(authVerifyRL).Post("/auth/verify-code", h.VerifyCode)
+	// Google is retained only as the exchange leg for explicit Desktop/CLI
+	// broker flows; the Web login page uses email send-code and does not expose
+	// this endpoint as its primary sign-in path.
 	r.With(authRL).Post("/auth/google", h.GoogleLogin)
-	r.Post("/auth/logout", h.Logout)
+	r.With(authRL).Post("/auth/guest", h.CreateGuestAuth)
+	r.With(desktopHandoffRL).Post("/api/desktop-handoff/initiate", h.InitiateDesktopAuthHandoff)
+	r.With(desktopHandoffRL).Post("/api/desktop-handoff/redeem", h.RedeemDesktopAuthHandoff)
+	r.With(middleware.RevokeGuestOnLogout(queries)).Post("/auth/logout", h.Logout)
 
 	// Public API
 	r.Get("/api/config", h.GetConfig)
@@ -1461,6 +1501,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 
 		r.Get("/tasks/{taskId}/status", h.GetTaskStatus)
 		r.Post("/tasks/{taskId}/start", h.StartTask)
+		r.Post("/tasks/{taskId}/execution-provenance", h.RecordTaskExecutionProvenance)
 		r.Post("/tasks/{taskId}/wait-local-directory", h.MarkTaskWaitingLocalDirectory)
 		r.Post("/tasks/{taskId}/progress", h.ReportTaskProgress)
 		r.Post("/tasks/{taskId}/complete", h.CompleteTask)
@@ -1515,6 +1556,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Patch("/api/me/onboarding", h.PatchOnboarding)
 		r.Post("/api/me/onboarding/complete", h.CompleteOnboarding)
 		r.Post("/api/me/onboarding/cloud-waitlist", h.JoinCloudWaitlist)
+		r.With(handler.RequireHumanActor).Post("/api/desktop-handoff/complete", h.CompleteDesktopAuthHandoff)
 		// DEPRECATED — shim routes for desktop < v3 during the rollout
 		// window. v3 frontend creates the Helper agent + starter issue
 		// via generic CreateAgent / CreateIssue and only calls /complete
@@ -1527,6 +1569,20 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Post("/api/upload-file", h.UploadFile)
 		r.Post("/api/feedback", h.CreateFeedback)
 		r.With(handler.RequireHumanActor).Post("/api/client-usage", h.UpsertClientUsage)
+
+		// Guest sessions are account-scoped, not workspace-scoped. Keep the
+		// human gate here as a second boundary after Auth: pbg_ guest bearers
+		// may manage their own lifecycle, formal human users may claim, and
+		// machine credentials must not create/read/claim/revoke sessions.
+		r.Route("/api/guest-sessions", func(r chi.Router) {
+			r.Use(handler.RequireHumanActor)
+			r.Post("/", h.CreateGuestSession)
+			r.Route("/{id}", func(r chi.Router) {
+				r.Get("/", h.GetGuestSession)
+				r.Post("/claim", h.ClaimGuestSession)
+				r.Post("/revoke", h.RevokeGuestSession)
+			})
+		})
 
 		// Note (MUL-4309): the generic OpenAI-compatible passthrough endpoints
 		// (POST /api/llm/v1/chat/completions[/stream]) were intentionally
@@ -1723,6 +1779,17 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Delete("/telegram/installations/{installationId}", h.RevokeTelegramInstallation)
 					r.Post("/telegram/install", h.RegisterTelegramBot)
 				})
+				// Native Weixin QR installation. The router only requires
+				// membership; the handler checks agent-owner or workspace-admin
+				// authority because agent_id is a query parameter and status is
+				// bound to the initiating actor.
+				r.Group(func(r chi.Router) {
+					r.Use(middleware.RequireWorkspaceMemberFromURL(queries, "id"))
+					r.Get("/weixin/installations", h.ListWeixinInstallations)
+					r.Post("/weixin/install/begin", h.BeginWeixinInstall)
+					r.Get("/weixin/install/{sessionId}/status", h.GetWeixinInstallStatus)
+					r.Delete("/weixin/installations/{installationId}", h.RevokeWeixinInstallation)
+				})
 			})
 		})
 
@@ -1750,6 +1817,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// workspace-scoped, identity from the session, token proves only
 		// "this Telegram user id requested binding".
 		r.Post("/api/telegram/binding/redeem", h.RedeemTelegramBindingToken)
+		// Weixin binding redemption is user-scoped: the session identity is
+		// the Patchbay user, while the bearer token carries only the iLink id.
+		r.Post("/api/weixin/binding/redeem", h.RedeemWeixinBindingToken)
 
 		// Composio integration (MUL-3720). User-scoped (no workspace context):
 		// a connection belongs to a user. These four require a logged-in
@@ -2310,15 +2380,6 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Post("/{id}/unread", h.MarkInboxUnread)
 				r.Post("/{id}/archive", h.ArchiveInboxItem)
 				r.Post("/{id}/unarchive", h.UnarchiveInboxItem)
-			})
-
-			// Guest sessions
-			r.Route("/api/guest-sessions", func(r chi.Router) {
-				r.Post("/", h.CreateGuestSession)
-				r.Route("/{id}", func(r chi.Router) {
-					r.Get("/", h.GetGuestSession)
-					r.Post("/claim", h.ClaimGuestSession)
-				})
 			})
 
 			// Notification preferences

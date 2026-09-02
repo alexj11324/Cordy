@@ -623,6 +623,9 @@ func main() {
 	// that cache's version, so an idle runtime could keep returning an empty
 	// claim until the cache TTL expires.
 	taskSvc, automationSvc := backgroundServices(h)
+	coordinationSvc := service.NewAgentCoordinationService(queries, pool, taskSvc)
+	taskSvc.Coordination = coordinationSvc
+	coordinationSvc.Start(sweepCtx)
 	registerAutomationListeners(bus, automationSvc)
 
 	// Construct a LivenessStore that mirrors the one wired into the HTTP
@@ -672,6 +675,12 @@ func main() {
 	// GitHub PR-card API snapshot pipeline (MUL-5265): worker pool + TTL sweeper.
 	// No-op when unconfigured (no App private key).
 	h.PRRefresh.Start(sweepCtx)
+	// Consume the durable execution-provenance handoff and converge each row to
+	// an explicit discovery result. The worker itself also fails closed when the
+	// GitHub App is unavailable.
+	if h.WorkProductDiscovery != nil {
+		h.WorkProductDiscovery.Start(sweepCtx)
+	}
 
 	// Channel inbound supervisor (MUL-3620): holds the §4.4 WS lease per
 	// installation and drives each channel.Channel. It is channel-agnostic,
@@ -780,8 +789,13 @@ func main() {
 			apiShutdownCancel()
 		},
 		StopOutboundRelay: stopRelay,
-		CancelWorkers:     sweepCancel,
-		StopHeartbeats:    heartbeatScheduler.Stop,
+		CancelWorkers: func() {
+			sweepCancel()
+			if !coordinationSvc.WaitWithTimeout(5 * time.Second) {
+				slog.Warn("agent coordination worker did not exit within shutdown timeout")
+			}
+		},
+		StopHeartbeats: heartbeatScheduler.Stop,
 		JoinWebhookWorker: func() {
 			if h.WebhookDeliveryWorker != nil && !h.WebhookDeliveryWorker.WaitWithTimeout(5*time.Second) {
 				slog.Warn("webhook delivery worker did not exit within shutdown timeout")

@@ -1641,6 +1641,23 @@ WHERE id = (
       AND EXISTS (
           SELECT 1 FROM agent_runtime r
           WHERE r.id = atq.runtime_id
+            AND EXISTS (
+                SELECT 1
+                FROM agent a
+                WHERE a.id = atq.agent_id
+                  AND a.runtime_id = atq.runtime_id
+                  AND (
+                      r.visibility = 'public'
+                      OR (
+                          r.visibility = 'private'
+                          AND (
+                              r.owner_id IS NULL
+                              OR a.owner_id IS NULL
+                              OR r.owner_id = a.owner_id
+                          )
+                      )
+                  )
+            )
             AND r.status = 'online'
             AND COALESCE(r.last_seen_at, r.updated_at) >=
                 now() - make_interval(secs => $4::double precision)
@@ -2423,6 +2440,147 @@ func (q *Queries) CreateAgentTask(ctx context.Context, arg CreateAgentTaskParams
 		arg.TriggerEvidenceKind,
 		arg.TriggerEvidenceRefID,
 		arg.ID,
+	)
+	var i AgentTaskQueue
+	err := row.Scan(
+		&i.ID,
+		&i.AgentID,
+		&i.IssueID,
+		&i.Status,
+		&i.Priority,
+		&i.DispatchedAt,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.Result,
+		&i.Error,
+		&i.CreatedAt,
+		&i.Context,
+		&i.RuntimeID,
+		&i.SessionID,
+		&i.WorkDir,
+		&i.TriggerCommentID,
+		&i.ChatSessionID,
+		&i.AutomationRunID,
+		&i.Attempt,
+		&i.MaxAttempts,
+		&i.ParentTaskID,
+		&i.FailureReason,
+		&i.TriggerSummary,
+		&i.ForceFreshSession,
+		&i.IsLeaderTask,
+		&i.WaitReason,
+		&i.InitiatorUserID,
+		&i.HandoffNote,
+		&i.PrepareLeaseExpiresAt,
+		&i.TeamID,
+		&i.RuntimeMcpOverlay,
+		&i.EscalationForTaskID,
+		&i.FireAt,
+		&i.OriginatorUserID,
+		&i.RuntimeConnectedApps,
+		&i.CoalescedCommentIds,
+		&i.DeliveredCommentIds,
+		&i.ChatInputTaskID,
+		&i.ChatFinalizeDeferredAt,
+		&i.OriginatorSource,
+		&i.DelegatedFromTaskID,
+		&i.RetryOfTaskID,
+		&i.RerunOfTaskID,
+		&i.RuleVersionID,
+		&i.TriggerEvidenceKind,
+		&i.TriggerEvidenceRefID,
+		&i.AccountableUserID,
+		&i.SessionRolloutMissing,
+		&i.RetiredSessionID,
+		&i.QuickActionsDisabled,
+		&i.RegenerateQuickActionsFor,
+		&i.BranchName,
+		&i.DurableWorkDir,
+		&i.ChannelContextRevision,
+		&i.ExecutionLaneKey,
+		&i.ModelID,
+		&i.PolicyRevision,
+		&i.FailoverReason,
+	)
+	return i, err
+}
+
+const createCoordinationAgentTask = `-- name: CreateCoordinationAgentTask :one
+INSERT INTO agent_task_queue (
+    agent_id, runtime_id, issue_id, status, priority, context, handoff_note,
+    team_id, originator_user_id, accountable_user_id, originator_source,
+    trigger_evidence_kind, trigger_evidence_ref_id, id
+)
+SELECT
+    $1,
+    $2,
+    $3,
+    'queued',
+    $4,
+    $5::jsonb,
+    $6,
+    $7::uuid,
+    $8::uuid,
+    $9::uuid,
+    $10,
+    $11,
+    $12::uuid,
+    COALESCE($13::uuid, gen_random_uuid())
+FROM agent AS target_agent
+JOIN issue AS target_issue ON target_issue.id = $3
+JOIN agent_runtime AS target_runtime ON target_runtime.id = $2
+WHERE target_agent.id = $1
+  AND target_agent.archived_at IS NULL
+  AND target_agent.kind = 'user'
+  AND target_agent.runtime_id = target_runtime.id
+  AND target_agent.workspace_id = $14
+  AND target_issue.workspace_id = target_agent.workspace_id
+  AND target_runtime.workspace_id = target_agent.workspace_id
+  AND lock_task_owner_rows(
+      $1,
+      $3,
+      $2
+  )
+RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, automation_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, team_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir, channel_context_revision, execution_lane_key, model_id, policy_revision, failover_reason
+`
+
+type CreateCoordinationAgentTaskParams struct {
+	AgentID              pgtype.UUID `json:"agent_id"`
+	RuntimeID            pgtype.UUID `json:"runtime_id"`
+	IssueID              pgtype.UUID `json:"issue_id"`
+	Priority             int32       `json:"priority"`
+	Context              []byte      `json:"context"`
+	HandoffNote          pgtype.Text `json:"handoff_note"`
+	TeamID               pgtype.UUID `json:"team_id"`
+	OriginatorUserID     pgtype.UUID `json:"originator_user_id"`
+	AccountableUserID    pgtype.UUID `json:"accountable_user_id"`
+	OriginatorSource     pgtype.Text `json:"originator_source"`
+	TriggerEvidenceKind  pgtype.Text `json:"trigger_evidence_kind"`
+	TriggerEvidenceRefID pgtype.UUID `json:"trigger_evidence_ref_id"`
+	ID                   pgtype.UUID `json:"id"`
+	WorkspaceID          pgtype.UUID `json:"workspace_id"`
+}
+
+// Coordination handoffs must persist their provenance in the same INSERT as
+// the queued task. Keeping this as a separate query preserves the existing
+// CreateAgentTask contract for ordinary mention/assignment paths while giving
+// the durable worker an atomic context payload.
+func (q *Queries) CreateCoordinationAgentTask(ctx context.Context, arg CreateCoordinationAgentTaskParams) (AgentTaskQueue, error) {
+	row := q.db.QueryRow(ctx, createCoordinationAgentTask,
+		arg.AgentID,
+		arg.RuntimeID,
+		arg.IssueID,
+		arg.Priority,
+		arg.Context,
+		arg.HandoffNote,
+		arg.TeamID,
+		arg.OriginatorUserID,
+		arg.AccountableUserID,
+		arg.OriginatorSource,
+		arg.TriggerEvidenceKind,
+		arg.TriggerEvidenceRefID,
+		arg.ID,
+		arg.WorkspaceID,
 	)
 	var i AgentTaskQueue
 	err := row.Scan(
@@ -3324,13 +3482,22 @@ func (q *Queries) CreateSystemUserAgent(ctx context.Context, arg CreateSystemUse
 }
 
 const deleteSystemAgentByID = `-- name: DeleteSystemAgentByID :exec
-DELETE FROM agent
-WHERE id = $1 AND kind = 'system' AND system_key LIKE 'agent_builder:%'
+DELETE FROM agent AS target
+WHERE target.id = $1
+  AND target.kind = 'system'
+  AND target.system_key LIKE 'agent_builder:%'
+  AND NOT EXISTS (
+      SELECT 1
+      FROM chat_session session
+      WHERE session.agent_id = target.id
+  )
 `
 
 // Builder sessions own their hidden execution agent. Deleting the session
 // removes that carrier and its task rows; the kind guard prevents this cleanup
-// path from ever deleting a user-authored agent.
+// path from ever deleting a user-authored agent. Keep the agent when another
+// chat session still references it; otherwise the agent FK would cascade that
+// unexpected session and its attachments without a URL cleanup opportunity.
 func (q *Queries) DeleteSystemAgentByID(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deleteSystemAgentByID, id)
 	return err
@@ -4068,6 +4235,99 @@ func (q *Queries) FailStaleTasks(ctx context.Context, arg FailStaleTasksParams) 
 		return nil, err
 	}
 	return items, nil
+}
+
+const getActiveCoordinationTask = `-- name: GetActiveCoordinationTask :one
+SELECT agent_task_queue.id, agent_task_queue.agent_id, agent_task_queue.issue_id, agent_task_queue.status, agent_task_queue.priority, agent_task_queue.dispatched_at, agent_task_queue.started_at, agent_task_queue.completed_at, agent_task_queue.result, agent_task_queue.error, agent_task_queue.created_at, agent_task_queue.context, agent_task_queue.runtime_id, agent_task_queue.session_id, agent_task_queue.work_dir, agent_task_queue.trigger_comment_id, agent_task_queue.chat_session_id, agent_task_queue.automation_run_id, agent_task_queue.attempt, agent_task_queue.max_attempts, agent_task_queue.parent_task_id, agent_task_queue.failure_reason, agent_task_queue.trigger_summary, agent_task_queue.force_fresh_session, agent_task_queue.is_leader_task, agent_task_queue.wait_reason, agent_task_queue.initiator_user_id, agent_task_queue.handoff_note, agent_task_queue.prepare_lease_expires_at, agent_task_queue.team_id, agent_task_queue.runtime_mcp_overlay, agent_task_queue.escalation_for_task_id, agent_task_queue.fire_at, agent_task_queue.originator_user_id, agent_task_queue.runtime_connected_apps, agent_task_queue.coalesced_comment_ids, agent_task_queue.delivered_comment_ids, agent_task_queue.chat_input_task_id, agent_task_queue.chat_finalize_deferred_at, agent_task_queue.originator_source, agent_task_queue.delegated_from_task_id, agent_task_queue.retry_of_task_id, agent_task_queue.rerun_of_task_id, agent_task_queue.rule_version_id, agent_task_queue.trigger_evidence_kind, agent_task_queue.trigger_evidence_ref_id, agent_task_queue.accountable_user_id, agent_task_queue.session_rollout_missing, agent_task_queue.retired_session_id, agent_task_queue.quick_actions_disabled, agent_task_queue.regenerate_quick_actions_for, agent_task_queue.branch_name, agent_task_queue.durable_work_dir, agent_task_queue.channel_context_revision, agent_task_queue.execution_lane_key, agent_task_queue.model_id, agent_task_queue.policy_revision, agent_task_queue.failover_reason
+FROM agent_task_queue
+JOIN agent ON agent.id = agent_task_queue.agent_id
+JOIN issue ON issue.id = agent_task_queue.issue_id
+WHERE agent_task_queue.issue_id = $1
+  AND agent_task_queue.agent_id = $2
+  AND agent.workspace_id = $3
+  AND issue.workspace_id = agent.workspace_id
+  AND agent_task_queue.context->>'coordination_assignment_id' = $4::uuid::text
+  AND agent_task_queue.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity', 'deferred')
+ORDER BY agent_task_queue.created_at DESC, agent_task_queue.id DESC
+LIMIT 1
+`
+
+type GetActiveCoordinationTaskParams struct {
+	IssueID      pgtype.UUID `json:"issue_id"`
+	AgentID      pgtype.UUID `json:"agent_id"`
+	WorkspaceID  pgtype.UUID `json:"workspace_id"`
+	AssignmentID pgtype.UUID `json:"assignment_id"`
+}
+
+func (q *Queries) GetActiveCoordinationTask(ctx context.Context, arg GetActiveCoordinationTaskParams) (AgentTaskQueue, error) {
+	row := q.db.QueryRow(ctx, getActiveCoordinationTask,
+		arg.IssueID,
+		arg.AgentID,
+		arg.WorkspaceID,
+		arg.AssignmentID,
+	)
+	var i AgentTaskQueue
+	err := row.Scan(
+		&i.ID,
+		&i.AgentID,
+		&i.IssueID,
+		&i.Status,
+		&i.Priority,
+		&i.DispatchedAt,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.Result,
+		&i.Error,
+		&i.CreatedAt,
+		&i.Context,
+		&i.RuntimeID,
+		&i.SessionID,
+		&i.WorkDir,
+		&i.TriggerCommentID,
+		&i.ChatSessionID,
+		&i.AutomationRunID,
+		&i.Attempt,
+		&i.MaxAttempts,
+		&i.ParentTaskID,
+		&i.FailureReason,
+		&i.TriggerSummary,
+		&i.ForceFreshSession,
+		&i.IsLeaderTask,
+		&i.WaitReason,
+		&i.InitiatorUserID,
+		&i.HandoffNote,
+		&i.PrepareLeaseExpiresAt,
+		&i.TeamID,
+		&i.RuntimeMcpOverlay,
+		&i.EscalationForTaskID,
+		&i.FireAt,
+		&i.OriginatorUserID,
+		&i.RuntimeConnectedApps,
+		&i.CoalescedCommentIds,
+		&i.DeliveredCommentIds,
+		&i.ChatInputTaskID,
+		&i.ChatFinalizeDeferredAt,
+		&i.OriginatorSource,
+		&i.DelegatedFromTaskID,
+		&i.RetryOfTaskID,
+		&i.RerunOfTaskID,
+		&i.RuleVersionID,
+		&i.TriggerEvidenceKind,
+		&i.TriggerEvidenceRefID,
+		&i.AccountableUserID,
+		&i.SessionRolloutMissing,
+		&i.RetiredSessionID,
+		&i.QuickActionsDisabled,
+		&i.RegenerateQuickActionsFor,
+		&i.BranchName,
+		&i.DurableWorkDir,
+		&i.ChannelContextRevision,
+		&i.ExecutionLaneKey,
+		&i.ModelID,
+		&i.PolicyRevision,
+		&i.FailoverReason,
+	)
+	return i, err
 }
 
 const getAgent = `-- name: GetAgent :one

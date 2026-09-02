@@ -1,0 +1,201 @@
+package service
+
+import (
+	"encoding/json"
+	"testing"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/patchbay-ai/patchbay/server/internal/util"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+)
+
+func TestDecodeCoordinationTaskContext(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		present bool
+		wantID  string
+	}{
+		{name: "empty", input: ``, present: false},
+		{name: "ordinary task context", input: `{"head_sha":"abc"}`, present: false},
+		{name: "coordination context", input: `{"coordination_assignment_id":"00000000-0000-0000-0000-000000000001","coordination_assignment_role":"executor"}`, present: true, wantID: "00000000-0000-0000-0000-000000000001"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, present, err := decodeCoordinationTaskContext([]byte(tt.input))
+			if err != nil {
+				t.Fatalf("decode context: %v", err)
+			}
+			if present != tt.present {
+				t.Fatalf("present = %v, want %v", present, tt.present)
+			}
+			if got.AssignmentID != tt.wantID {
+				t.Fatalf("assignment id = %q, want %q", got.AssignmentID, tt.wantID)
+			}
+		})
+	}
+}
+
+func TestCoordinationTaskContextPreservesFences(t *testing.T) {
+	assignment := db.AgentCoordinationAssignment{
+		ID:        testCoordinationUUID("00000000-0000-0000-0000-000000000001"),
+		Role:      CoordinationAssignmentExecutor,
+		OwnerType: pgtype.Text{String: "agent", Valid: true},
+		OwnerID:   testCoordinationUUID("00000000-0000-0000-0000-000000000002"),
+	}
+	issue := db.Issue{
+		ID:                 testCoordinationUUID("00000000-0000-0000-0000-000000000003"),
+		WorkspaceID:        testCoordinationUUID("00000000-0000-0000-0000-000000000004"),
+		Revision:           17,
+		ExecutorType:       pgtype.Text{String: "agent", Valid: true},
+		ExecutorID:         assignment.OwnerID,
+		ExecutorGeneration: 9,
+	}
+	raw, err := marshalCoordinationTaskContext(assignment, issue)
+	if err != nil {
+		t.Fatalf("marshal context: %v", err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatalf("unmarshal context: %v", err)
+	}
+	if fields[coordinationAssignmentIDContextKey] != util.UUIDToString(assignment.ID) {
+		t.Fatalf("assignment fence missing: %#v", fields)
+	}
+	if fields[coordinationOwnerGenerationKey] != float64(9) {
+		t.Fatalf("owner generation = %#v, want 9", fields[coordinationOwnerGenerationKey])
+	}
+	if fields[coordinationIssueRevisionKey] != float64(17) {
+		t.Fatalf("issue revision = %#v, want 17", fields[coordinationIssueRevisionKey])
+	}
+}
+
+func TestCoordinationTaskEligibilityExcludesChatAndSideChat(t *testing.T) {
+	issueTask := db.AgentTaskQueue{IssueID: testCoordinationUUID("00000000-0000-0000-0000-000000000001")}
+	if !coordinationTaskEligible(issueTask) {
+		t.Fatal("plain issue task should be eligible")
+	}
+	issueTask.ChatSessionID = testCoordinationUUID("00000000-0000-0000-0000-000000000002")
+	if coordinationTaskEligible(issueTask) {
+		t.Fatal("chat-linked task should not be eligible")
+	}
+	issueTask.ChatSessionID = pgtype.UUID{}
+	issueTask.Context = []byte(`{"side_chat_parent_task_id":"00000000-0000-0000-0000-000000000003"}`)
+	if coordinationTaskEligible(issueTask) {
+		t.Fatal("side-chat task should not be eligible")
+	}
+	issueTask.Context = []byte(`{"side_chat_root_comment_id":"00000000-0000-0000-0000-000000000004"}`)
+	if coordinationTaskEligible(issueTask) {
+		t.Fatal("root-comment side-chat task should not be eligible")
+	}
+}
+
+func TestCoordinationCompletionRejectsSupersededGeneration(t *testing.T) {
+	agentID := testCoordinationUUID("00000000-0000-0000-0000-000000000002")
+	issue := db.Issue{
+		ExecutorType:       pgtype.Text{String: "agent", Valid: true},
+		ExecutorID:         agentID,
+		ExecutorGeneration: 4,
+	}
+	oldGeneration := int64(3)
+	context := coordinationTaskContext{OwnerID: util.UUIDToString(agentID), OwnerGeneration: &oldGeneration}
+	if coordinationCompletionStillOwnsIssue(issue, CoordinationAssignmentExecutor, context, agentID) {
+		t.Fatal("stale executor generation should be rejected")
+	}
+	context.OwnerGeneration = int64Ptr(4)
+	if !coordinationCompletionStillOwnsIssue(issue, CoordinationAssignmentExecutor, context, agentID) {
+		t.Fatal("current executor generation should be accepted")
+	}
+}
+
+func TestCoordinationTaskCompletionRequiresAssignmentIdentity(t *testing.T) {
+	assignmentID := testCoordinationUUID("00000000-0000-0000-0000-000000000001")
+	agentID := testCoordinationUUID("00000000-0000-0000-0000-000000000002")
+	taskID := testCoordinationUUID("00000000-0000-0000-0000-000000000003")
+	assignment := db.AgentCoordinationAssignment{
+		ID:               assignmentID,
+		Role:             CoordinationAssignmentReviewer,
+		Status:           "dispatched",
+		OwnerType:        pgtype.Text{String: "agent", Valid: true},
+		OwnerID:          agentID,
+		DispatchedTaskID: taskID,
+	}
+	task := db.AgentTaskQueue{ID: taskID, AgentID: agentID}
+	context := coordinationTaskContext{
+		AssignmentID:   util.UUIDToString(assignmentID),
+		AssignmentRole: CoordinationAssignmentReviewer,
+	}
+	if !coordinationAssignmentMatchesTask(assignment, task, context) {
+		t.Fatal("matching assignment identity should be accepted")
+	}
+	context.AssignmentID = "00000000-0000-0000-0000-000000000004"
+	if coordinationAssignmentMatchesTask(assignment, task, context) {
+		t.Fatal("different assignment identity should be rejected")
+	}
+}
+
+func TestCoordinationOwnerMatchesCurrentIssueAssignment(t *testing.T) {
+	ownerID := testCoordinationUUID("00000000-0000-0000-0000-000000000002")
+	issue := db.Issue{
+		ExecutorType:       pgtype.Text{String: "agent", Valid: true},
+		ExecutorID:         ownerID,
+		ExecutorGeneration: 4,
+	}
+	if !coordinationOwnerMatchesIssue(issue, CoordinationAssignmentExecutor, "agent", ownerID, nil) {
+		t.Fatal("current agent executor should be eligible")
+	}
+	if coordinationOwnerMatchesIssue(issue, CoordinationAssignmentExecutor, "member", ownerID, nil) {
+		t.Fatal("member owner must not be dispatched as an agent")
+	}
+	otherID := testCoordinationUUID("00000000-0000-0000-0000-000000000003")
+	if coordinationOwnerMatchesIssue(issue, CoordinationAssignmentExecutor, "agent", otherID, nil) {
+		t.Fatal("stale agent owner should not be dispatched")
+	}
+	oldGeneration := int64(3)
+	if coordinationOwnerMatchesIssue(issue, CoordinationAssignmentExecutor, "agent", ownerID, &oldGeneration) {
+		t.Fatal("stale executor generation should not be dispatched")
+	}
+	currentGeneration := int64(4)
+	if !coordinationOwnerMatchesIssue(issue, CoordinationAssignmentExecutor, "agent", ownerID, &currentGeneration) {
+		t.Fatal("current executor generation should be dispatched")
+	}
+}
+
+func TestCoordinationFollowUpUsesExplicitFalse(t *testing.T) {
+	if !coordinationFollowUp(coordinationEventPayload{}) {
+		t.Fatal("legacy/missing follow_up should remain retryable")
+	}
+	falseValue := false
+	if coordinationFollowUp(coordinationEventPayload{FollowUp: &falseValue}) {
+		t.Fatal("explicit follow_up=false should not dispatch a child")
+	}
+}
+
+func TestCoordinationDispatchOwnerRequiresExplicitAgentType(t *testing.T) {
+	ownerID := testCoordinationUUID("00000000-0000-0000-0000-000000000002")
+	event := db.AgentCoordinationOutbox{EventType: CoordinationEventTaskCompleted}
+	assignment := db.AgentCoordinationAssignment{OwnerID: ownerID}
+	ownerType, gotID, err := coordinationDispatchOwner(event, coordinationEventPayload{}, assignment, db.Issue{})
+	if err != nil {
+		t.Fatalf("resolve owner: %v", err)
+	}
+	if ownerType != "" || !sameCoordinationUUID(gotID, ownerID) {
+		t.Fatalf("owner = (%q, %v), want empty type with preserved id", ownerType, gotID)
+	}
+}
+
+func TestCoordinationEventTypesMatchSchemaContract(t *testing.T) {
+	if CoordinationEventTaskCompleted != "task_completed" {
+		t.Fatalf("task completion event changed: %q", CoordinationEventTaskCompleted)
+	}
+	if CoordinationEventReviewReturned != "review_returned" {
+		t.Fatalf("review return event changed: %q", CoordinationEventReviewReturned)
+	}
+	if CoordinationEventTaskCompleted == CoordinationEventReviewReturned {
+		t.Fatal("coordination event contracts must remain distinguishable")
+	}
+}
+
+func testCoordinationUUID(value string) pgtype.UUID {
+	return util.MustParseUUID(value)
+}

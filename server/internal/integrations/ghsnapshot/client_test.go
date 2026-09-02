@@ -138,6 +138,102 @@ func TestGraphQLRateLimited(t *testing.T) {
 	}
 }
 
+func TestPullRequestsByHeadUsesInstallationAuthAndPreservesMetadata(t *testing.T) {
+	var gotPath string
+	var gotQuery map[string]string
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/access_tokens") {
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"token":"ghs_secret","expires_at":"` +
+				time.Now().Add(time.Hour).UTC().Format(time.RFC3339) + `"}`))
+			return
+		}
+		gotPath = r.URL.Path
+		gotQuery = map[string]string{
+			"state":    r.URL.Query().Get("state"),
+			"head":     r.URL.Query().Get("head"),
+			"per_page": r.URL.Query().Get("per_page"),
+			"page":     r.URL.Query().Get("page"),
+		}
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{"number":17,"title":"Ship it","state":"closed","draft":false,"html_url":"https://github.com/acme/patchbay/pull/17","created_at":"2026-01-02T03:04:05Z","updated_at":"2026-01-03T04:05:06Z","merged_at":"2026-01-04T05:06:07Z","closed_at":"2026-01-04T05:06:07Z","additions":12,"deletions":3,"changed_files":2,"user":{"login":"alex","avatar_url":"https://avatars.example/alex"},"head":{"ref":"feat/ship","sha":"abc123","repo":{"full_name":"acme/patchbay"}}}]`))
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv.URL)
+	matches, err := c.PullRequestsByHead(context.Background(), 42, "acme", "patchbay", "feat/ship")
+	if err != nil {
+		t.Fatalf("PullRequestsByHead: %v", err)
+	}
+	if gotPath != "/repos/acme/patchbay/pulls" {
+		t.Fatalf("path = %q", gotPath)
+	}
+	if gotQuery["state"] != "all" || gotQuery["head"] != "acme:feat/ship" || gotQuery["per_page"] != "100" || gotQuery["page"] != "1" {
+		t.Fatalf("query = %#v", gotQuery)
+	}
+	if gotAuth != "Bearer ghs_secret" {
+		t.Fatalf("authorization = %q", gotAuth)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("matches = %d, want 1", len(matches))
+	}
+	match := matches[0]
+	if match.Number != 17 || match.Metadata.State != "merged" || match.Metadata.HeadRepoIdentity != "acme/patchbay" || match.Metadata.HeadSHA != "abc123" {
+		t.Fatalf("match = %#v", match)
+	}
+	if match.Metadata.MergedAt == nil || match.Metadata.ClosedAt == nil {
+		t.Fatalf("timestamps = merged %v closed %v", match.Metadata.MergedAt, match.Metadata.ClosedAt)
+	}
+}
+
+func TestPullRequestsByHeadFollowsPagination(t *testing.T) {
+	var pages int32
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/access_tokens") {
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"token":"ghs_secret","expires_at":"` +
+				time.Now().Add(time.Hour).UTC().Format(time.RFC3339) + `"}`))
+			return
+		}
+		atomic.AddInt32(&pages, 1)
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Query().Get("page") {
+		case "1":
+			w.Header().Set("Link", `<`+srv.URL+`/repos/acme/patchbay/pulls?page=2>; rel="next", <`+srv.URL+`/repos/acme/patchbay/pulls?page=2>; rel="last"`)
+			_, _ = w.Write([]byte(`[{
+				"number":17,"title":"First","state":"open","html_url":"https://github.com/acme/patchbay/pull/17",
+				"created_at":"2026-01-02T03:04:05Z","updated_at":"2026-01-03T04:05:06Z",
+				"head":{"ref":"feat/ship","sha":"sha-17","repo":{"full_name":"acme/patchbay"}}
+			}]`))
+		case "2":
+			_, _ = w.Write([]byte(`[{
+				"number":18,"title":"Second","state":"closed","html_url":"https://github.com/acme/patchbay/pull/18",
+				"created_at":"2026-02-02T03:04:05Z","updated_at":"2026-02-03T04:05:06Z",
+				"head":{"ref":"feat/ship","sha":"sha-18","repo":{"full_name":"acme/patchbay"}}
+			}]`))
+		default:
+			t.Errorf("unexpected page %q", r.URL.Query().Get("page"))
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv.URL)
+	matches, err := c.PullRequestsByHead(context.Background(), 42, "acme", "patchbay", "feat/ship")
+	if err != nil {
+		t.Fatalf("PullRequestsByHead: %v", err)
+	}
+	if got := atomic.LoadInt32(&pages); got != 2 {
+		t.Fatalf("pages = %d, want 2", got)
+	}
+	if len(matches) != 2 || matches[0].Number != 17 || matches[1].Number != 18 {
+		t.Fatalf("matches = %#v, want PRs 17 and 18", matches)
+	}
+}
+
 func TestRateLimitFromResponse(t *testing.T) {
 	now := time.Unix(1000, 0)
 	cases := []struct {

@@ -1,33 +1,1201 @@
 package handler
 
 import (
+	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
 	"net/http"
+	"sort"
+	"strconv"
 	"strings"
+	"time"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/internal/issueposition"
+	"github.com/patchbay-ai/patchbay/server/internal/issuestatus"
+	"github.com/patchbay-ai/patchbay/server/internal/service"
 	"github.com/patchbay-ai/patchbay/server/internal/util"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/pkg/dbid"
+	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
 )
 
-type dependencyGraphListQuery struct {
-	ProjectID *string `json:"project_id"`
-	Limit     *int    `json:"limit"`
-	Cursor    *string `json:"cursor"`
+const (
+	dependencyGraphHardType          = "hard"
+	dependencyGraphMaxTasks          = 128
+	dependencyGraphMaxEdges          = 512
+	dependencyGraphMaxGoal           = 8000
+	dependencyGraphMaxTempID         = 64
+	dependencyGraphMaxTitle          = 500
+	dependencyGraphMaxDescription    = 30000
+	dependencyGraphMaxTextItem       = 2000
+	dependencyGraphMaxEdgeReason     = 4000
+	dependencyGraphMaxPageSize       = 64
+	dependencyGraphDefaultPageSize   = 20
+	dependencyGraphMaxIdempotencyKey = 200
+)
+
+type dependencyGraphAssigneeInput struct {
+	Type string `json:"type"`
+	ID   string `json:"id"`
+}
+
+type dependencyGraphTaskInput struct {
+	TempID             string                         `json:"temp_id"`
+	Title              string                         `json:"title"`
+	Description        string                         `json:"description"`
+	AcceptanceCriteria []string                       `json:"acceptance_criteria"`
+	Context            json.RawMessage                `json:"context"`
+	Outputs            []string                       `json:"outputs"`
+	Assignee           *dependencyGraphAssigneeInput  `json:"assignee"`
+	CandidateAssignees []dependencyGraphAssigneeInput `json:"candidate_assignees"`
+}
+
+type dependencyGraphEdgeInput struct {
+	From           string `json:"from"`
+	To             string `json:"to"`
+	Type           string `json:"type"`
+	Reason         string `json:"reason"`
+	ConsumedOutput string `json:"consumed_output"`
+}
+
+type dependencyGraphApplyInput struct {
+	Goal          string                     `json:"goal"`
+	ParentIssueID string                     `json:"parent_issue_id"`
+	Tasks         []dependencyGraphTaskInput `json:"tasks"`
+	Edges         []dependencyGraphEdgeInput `json:"edges"`
+}
+
+type dependencyGraphError struct {
+	status int
+	code   string
+	msg    string
+	cause  error
+}
+
+func (e *dependencyGraphError) Error() string {
+	if e.cause == nil {
+		return e.msg
+	}
+	return fmt.Sprintf("%s: %v", e.msg, e.cause)
+}
+
+func invalidDependencyGraph(message string) error {
+	return &dependencyGraphError{status: http.StatusUnprocessableEntity, code: "invalid_plan", msg: message}
+}
+
+func dependencyGraphNotFound(message string) error {
+	return &dependencyGraphError{status: http.StatusNotFound, code: "not_found", msg: message}
+}
+
+func dependencyGraphConflict(code, message string) error {
+	return &dependencyGraphError{status: http.StatusConflict, code: code, msg: message}
+}
+
+func dependencyGraphAssigneeNotFound(message string) error {
+	return &dependencyGraphError{status: http.StatusUnprocessableEntity, code: "invalid_assignee", msg: message}
+}
+
+func dependencyGraphDatabase(message string, cause error) error {
+	return &dependencyGraphError{status: http.StatusInternalServerError, code: "database_error", msg: message, cause: cause}
+}
+
+func dependencyGraphIntegrity(message string) error {
+	return &dependencyGraphError{status: http.StatusInternalServerError, code: "graph_integrity", msg: message}
+}
+
+func writeDependencyGraphError(w http.ResponseWriter, err error) {
+	var graphErr *dependencyGraphError
+	if errors.As(err, &graphErr) {
+		if graphErr.status >= http.StatusInternalServerError {
+			slog.Error("dependency graph operation failed", "error", err)
+			writeErrorCode(w, graphErr.status, graphErr.code, "dependency graph operation failed")
+			return
+		}
+		writeErrorCode(w, graphErr.status, graphErr.code, graphErr.msg)
+		return
+	}
+	slog.Error("dependency graph operation failed", "error", err)
+	writeErrorCode(w, http.StatusInternalServerError, "database_error", "dependency graph operation failed")
+}
+
+func validateDependencyGraphText(value, field string, maxLength int, required bool) error {
+	if required && strings.TrimSpace(value) == "" {
+		return invalidDependencyGraph(field + " is required")
+	}
+	if utf8.RuneCountInString(value) > maxLength {
+		return invalidDependencyGraph(fmt.Sprintf("%s exceeds %d characters", field, maxLength))
+	}
+	if value != strings.TrimSpace(value) {
+		return invalidDependencyGraph(field + " must not have surrounding whitespace")
+	}
+	return nil
+}
+
+func canonicalDependencyGraphJSON(raw json.RawMessage, field string, requireObject bool) ([]byte, error) {
+	if len(raw) == 0 {
+		raw = json.RawMessage(`{}`)
+	}
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return nil, invalidDependencyGraph(field + " must be valid JSON")
+	}
+	if requireObject {
+		if _, ok := value.(map[string]any); !ok {
+			return nil, invalidDependencyGraph(field + " must be a JSON object")
+		}
+	}
+	canonical, err := json.Marshal(value)
+	if err != nil {
+		return nil, invalidDependencyGraph(field + " could not be normalized")
+	}
+	return canonical, nil
+}
+
+func validateDependencyGraphAssigneeShape(assignee *dependencyGraphAssigneeInput, field string) (pgtype.UUID, error) {
+	if assignee == nil {
+		return pgtype.UUID{}, nil
+	}
+	if assignee.Type != "member" && assignee.Type != "agent" && assignee.Type != "team" {
+		return pgtype.UUID{}, invalidDependencyGraph(field + ".type must be member, agent, or team")
+	}
+	u, err := util.ParseUUID(assignee.ID)
+	if err != nil || !u.Valid {
+		return pgtype.UUID{}, invalidDependencyGraph(field + ".id must be a non-nil UUID")
+	}
+	assignee.ID = uuidToString(u)
+	return u, nil
+}
+
+type dependencyGraphAdjacency struct {
+	to        int
+	edgeIndex int
+}
+
+func dependencyGraphHasPath(adjacency [][]dependencyGraphAdjacency, source, target, ignoredEdge int) bool {
+	queue := []int{source}
+	seen := make(map[int]struct{}, len(adjacency))
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		if current == target {
+			return true
+		}
+		if _, ok := seen[current]; ok {
+			continue
+		}
+		seen[current] = struct{}{}
+		for _, next := range adjacency[current] {
+			if next.edgeIndex != ignoredEdge {
+				queue = append(queue, next.to)
+			}
+		}
+	}
+	return false
+}
+
+func validateDependencyGraphPlan(input *dependencyGraphApplyInput) ([][]string, error) {
+	if err := validateDependencyGraphText(input.Goal, "goal", dependencyGraphMaxGoal, true); err != nil {
+		return nil, err
+	}
+	parentID, err := util.ParseUUID(input.ParentIssueID)
+	if err != nil || !parentID.Valid {
+		return nil, invalidDependencyGraph("parent_issue_id must be a non-nil UUID")
+	}
+	input.ParentIssueID = uuidToString(parentID)
+	if len(input.Tasks) == 0 {
+		return nil, invalidDependencyGraph("tasks must contain at least one task")
+	}
+	if len(input.Tasks) > dependencyGraphMaxTasks {
+		return nil, invalidDependencyGraph(fmt.Sprintf("tasks cannot exceed %d entries", dependencyGraphMaxTasks))
+	}
+	if len(input.Edges) > dependencyGraphMaxEdges {
+		return nil, invalidDependencyGraph(fmt.Sprintf("edges cannot exceed %d entries", dependencyGraphMaxEdges))
+	}
+	if input.Edges == nil {
+		input.Edges = []dependencyGraphEdgeInput{}
+	}
+
+	taskIndexes := make(map[string]int, len(input.Tasks))
+	for index := range input.Tasks {
+		task := &input.Tasks[index]
+		field := fmt.Sprintf("tasks[%d]", index)
+		if err := validateDependencyGraphText(task.TempID, field+".temp_id", dependencyGraphMaxTempID, true); err != nil {
+			return nil, err
+		}
+		if _, exists := taskIndexes[task.TempID]; exists {
+			return nil, invalidDependencyGraph(fmt.Sprintf("duplicate task temp_id %q", task.TempID))
+		}
+		taskIndexes[task.TempID] = index
+		if err := validateDependencyGraphText(task.Title, field+".title", dependencyGraphMaxTitle, true); err != nil {
+			return nil, err
+		}
+		if err := validateDependencyGraphText(task.Description, field+".description", dependencyGraphMaxDescription, false); err != nil {
+			return nil, err
+		}
+		if len(task.AcceptanceCriteria) == 0 {
+			return nil, invalidDependencyGraph(field + ".acceptance_criteria must contain at least one criterion")
+		}
+		if task.AcceptanceCriteria == nil {
+			task.AcceptanceCriteria = []string{}
+		}
+		for criterionIndex, criterion := range task.AcceptanceCriteria {
+			if err := validateDependencyGraphText(criterion, fmt.Sprintf("%s.acceptance_criteria[%d]", field, criterionIndex), dependencyGraphMaxTextItem, true); err != nil {
+				return nil, err
+			}
+		}
+		if len(task.Outputs) == 0 {
+			return nil, invalidDependencyGraph(field + ".outputs must contain at least one observable output")
+		}
+		if task.Outputs == nil {
+			task.Outputs = []string{}
+		}
+		outputs := make(map[string]struct{}, len(task.Outputs))
+		for outputIndex, output := range task.Outputs {
+			if err := validateDependencyGraphText(output, fmt.Sprintf("%s.outputs[%d]", field, outputIndex), dependencyGraphMaxTextItem, true); err != nil {
+				return nil, err
+			}
+			if _, exists := outputs[output]; exists {
+				return nil, invalidDependencyGraph(fmt.Sprintf("%s.outputs contains duplicate output %q", field, output))
+			}
+			outputs[output] = struct{}{}
+		}
+		contextJSON, err := canonicalDependencyGraphJSON(task.Context, field+".context", true)
+		if err != nil {
+			return nil, err
+		}
+		task.Context = contextJSON
+		if task.CandidateAssignees == nil {
+			task.CandidateAssignees = []dependencyGraphAssigneeInput{}
+		}
+		if _, err := validateDependencyGraphAssigneeShape(task.Assignee, field+".assignee"); err != nil {
+			return nil, err
+		}
+		for candidateIndex := range task.CandidateAssignees {
+			if _, err := validateDependencyGraphAssigneeShape(&task.CandidateAssignees[candidateIndex], fmt.Sprintf("%s.candidate_assignees[%d]", field, candidateIndex)); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	adjacency := make([][]dependencyGraphAdjacency, len(input.Tasks))
+	indegree := make([]int, len(input.Tasks))
+	edgePairs := make(map[[2]int]struct{}, len(input.Edges))
+	for edgeIndex := range input.Edges {
+		edge := &input.Edges[edgeIndex]
+		field := fmt.Sprintf("edges[%d]", edgeIndex)
+		if err := validateDependencyGraphText(edge.From, field+".from", dependencyGraphMaxTempID, true); err != nil {
+			return nil, err
+		}
+		if err := validateDependencyGraphText(edge.To, field+".to", dependencyGraphMaxTempID, true); err != nil {
+			return nil, err
+		}
+		if edge.Type != dependencyGraphHardType {
+			return nil, invalidDependencyGraph(field + ".type must be hard in V1")
+		}
+		if err := validateDependencyGraphText(edge.Reason, field+".reason", dependencyGraphMaxEdgeReason, true); err != nil {
+			return nil, err
+		}
+		if err := validateDependencyGraphText(edge.ConsumedOutput, field+".consumed_output", dependencyGraphMaxTextItem, true); err != nil {
+			return nil, err
+		}
+		from, fromOK := taskIndexes[edge.From]
+		to, toOK := taskIndexes[edge.To]
+		if !fromOK {
+			return nil, invalidDependencyGraph(fmt.Sprintf("%s.from references unknown task %q", field, edge.From))
+		}
+		if !toOK {
+			return nil, invalidDependencyGraph(fmt.Sprintf("%s.to references unknown task %q", field, edge.To))
+		}
+		if from == to {
+			return nil, invalidDependencyGraph(fmt.Sprintf("%s cannot be a self dependency", field))
+		}
+		pair := [2]int{from, to}
+		if _, exists := edgePairs[pair]; exists {
+			return nil, invalidDependencyGraph(fmt.Sprintf("duplicate dependency edge %s -> %s", edge.From, edge.To))
+		}
+		edgePairs[pair] = struct{}{}
+		foundOutput := false
+		for _, output := range input.Tasks[from].Outputs {
+			if output == edge.ConsumedOutput {
+				foundOutput = true
+				break
+			}
+		}
+		if !foundOutput {
+			return nil, invalidDependencyGraph(fmt.Sprintf("%s.consumed_output %q is not an output of %s", field, edge.ConsumedOutput, edge.From))
+		}
+		adjacency[from] = append(adjacency[from], dependencyGraphAdjacency{to: to, edgeIndex: edgeIndex})
+		indegree[to]++
+	}
+	for edgeIndex, edge := range input.Edges {
+		from := taskIndexes[edge.From]
+		to := taskIndexes[edge.To]
+		if dependencyGraphHasPath(adjacency, to, from, edgeIndex) {
+			return nil, invalidDependencyGraph("dependency graph contains a cycle")
+		}
+	}
+	for edgeIndex, edge := range input.Edges {
+		from := taskIndexes[edge.From]
+		to := taskIndexes[edge.To]
+		if dependencyGraphHasPath(adjacency, from, to, edgeIndex) {
+			return nil, invalidDependencyGraph(fmt.Sprintf("dependency edge %s -> %s is transitively redundant", edge.From, edge.To))
+		}
+	}
+
+	current := make([]int, 0, len(input.Tasks))
+	for index, degree := range indegree {
+		if degree == 0 {
+			current = append(current, index)
+		}
+	}
+	waves := make([][]string, 0, len(input.Tasks))
+	visited := 0
+	for len(current) > 0 {
+		wave := make([]string, 0, len(current))
+		next := make([]int, 0)
+		for _, index := range current {
+			visited++
+			wave = append(wave, input.Tasks[index].TempID)
+			for _, dependent := range adjacency[index] {
+				indegree[dependent.to]--
+				if indegree[dependent.to] == 0 {
+					next = append(next, dependent.to)
+				}
+			}
+		}
+		waves = append(waves, wave)
+		current = next
+	}
+	if visited != len(input.Tasks) {
+		return nil, invalidDependencyGraph("dependency graph contains a cycle")
+	}
+	return waves, nil
+}
+
+func dependencyGraphRequestHash(input *dependencyGraphApplyInput) (string, error) {
+	encoded, err := json.Marshal(input)
+	if err != nil {
+		return "", err
+	}
+	digest := sha256.Sum256(encoded)
+	return fmt.Sprintf("sha256:%x", digest[:]), nil
+}
+
+type dependencyGraphCursor struct {
+	Version   int       `json:"v"`
+	ProjectID *string   `json:"project_id"`
+	UpdatedAt time.Time `json:"updated_at"`
+	ID        string    `json:"id"`
+	Offset    int       `json:"offset"`
+}
+
+type dependencyGraphAfter struct {
+	updatedAt time.Time
+	id        pgtype.UUID
+	offset    int
+}
+
+func decodeDependencyGraphCursor(raw string, projectID *pgtype.UUID) (*dependencyGraphAfter, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	raw = strings.TrimSpace(raw)
+	decoded, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil {
+		decoded, err = base64.URLEncoding.DecodeString(raw)
+	}
+	if err != nil {
+		decoded, err = base64.RawStdEncoding.DecodeString(raw)
+	}
+	if err != nil {
+		decoded, err = base64.StdEncoding.DecodeString(raw)
+	}
+	if err != nil {
+		return nil, invalidDependencyGraph("invalid dependency graph cursor")
+	}
+	var cursor dependencyGraphCursor
+	if err := json.Unmarshal(decoded, &cursor); err != nil || cursor.Version != 1 || cursor.UpdatedAt.IsZero() || cursor.Offset < 0 || int64(cursor.Offset) > int64(1<<31-1) {
+		return nil, invalidDependencyGraph("invalid dependency graph cursor")
+	}
+	if cursor.ProjectID != nil {
+		parsed, parseErr := util.ParseUUID(*cursor.ProjectID)
+		if parseErr != nil || !parsed.Valid {
+			return nil, invalidDependencyGraph("invalid dependency graph cursor")
+		}
+		canonical := uuidToString(parsed)
+		if canonical != *cursor.ProjectID {
+			cursor.ProjectID = &canonical
+		}
+	}
+	requestedProject := ""
+	if projectID != nil {
+		requestedProject = uuidToString(*projectID)
+	}
+	cursorProject := ""
+	if cursor.ProjectID != nil {
+		cursorProject = *cursor.ProjectID
+	}
+	if requestedProject != cursorProject {
+		return nil, dependencyGraphConflict("cursor_project_mismatch", "dependency graph cursor does not belong to this project query")
+	}
+	id, err := util.ParseUUID(cursor.ID)
+	if err != nil || !id.Valid {
+		return nil, invalidDependencyGraph("invalid dependency graph cursor")
+	}
+	return &dependencyGraphAfter{updatedAt: cursor.UpdatedAt.UTC(), id: id, offset: cursor.Offset}, nil
+}
+
+func encodeDependencyGraphCursor(projectID *pgtype.UUID, plan db.DependencyGraphPlan) (string, error) {
+	return encodeDependencyGraphCursorAt(projectID, plan, 0)
+}
+
+func encodeDependencyGraphCursorAt(projectID *pgtype.UUID, plan db.DependencyGraphPlan, offset int) (string, error) {
+	if offset < 0 {
+		return "", invalidDependencyGraph("invalid dependency graph cursor offset")
+	}
+	var cursorProject *string
+	if projectID != nil {
+		value := uuidToString(*projectID)
+		cursorProject = &value
+	}
+	cursor := dependencyGraphCursor{
+		Version:   1,
+		ProjectID: cursorProject,
+		UpdatedAt: plan.UpdatedAt.Time.UTC(),
+		ID:        uuidToString(plan.ID),
+		Offset:    offset,
+	}
+	encoded, err := json.Marshal(cursor)
+	if err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(encoded), nil
+}
+
+type dependencyGraphPlanResponse struct {
+	ID                string  `json:"id"`
+	WorkspaceID       string  `json:"workspace_id"`
+	ParentIssueID     string  `json:"parent_issue_id"`
+	IdempotencyKey    string  `json:"idempotency_key"`
+	RequestHash       string  `json:"request_hash"`
+	Goal              string  `json:"goal"`
+	Status            string  `json:"status"`
+	CreatedByType     string  `json:"created_by_type"`
+	CreatedByID       string  `json:"created_by_id"`
+	CreatedAt         string  `json:"created_at"`
+	UpdatedAt         string  `json:"updated_at"`
+	AttentionRequired bool    `json:"attention_required"`
+	AttentionReason   *string `json:"attention_reason"`
+}
+
+type dependencyGraphNodeResponse struct {
+	ID                 string          `json:"id"`
+	PlanID             string          `json:"plan_id"`
+	WorkspaceID        string          `json:"workspace_id"`
+	TempID             string          `json:"temp_id"`
+	IssueID            string          `json:"issue_id"`
+	Title              string          `json:"title"`
+	Description        string          `json:"description"`
+	AcceptanceCriteria json.RawMessage `json:"acceptance_criteria"`
+	Context            json.RawMessage `json:"context"`
+	Outputs            json.RawMessage `json:"outputs"`
+	ExecutorType       *string         `json:"executor_type"`
+	ExecutorID         *string         `json:"executor_id"`
+	CandidateExecutors json.RawMessage `json:"candidate_executors"`
+	Wave               int32           `json:"wave"`
+	CreatedAt          string          `json:"created_at"`
+	UpdatedAt          string          `json:"updated_at"`
+	OwnerType          *string         `json:"owner_type"`
+	OwnerID            *string         `json:"owner_id"`
+	ReviewerType       *string         `json:"reviewer_type"`
+	ReviewerID         *string         `json:"reviewer_id"`
+	RuntimeID          *string         `json:"runtime_id"`
+	ModelID            *string         `json:"model_id"`
+	Status             string          `json:"status"`
+	StatusCategory     string          `json:"status_category"`
+	Ready              bool            `json:"ready"`
+	BlockedBy          []string        `json:"blocked_by"`
+}
+
+type dependencyGraphEdgeResponse struct {
+	ID             string `json:"id"`
+	PlanID         string `json:"plan_id"`
+	WorkspaceID    string `json:"workspace_id"`
+	FromIssueID    string `json:"from_issue_id"`
+	ToIssueID      string `json:"to_issue_id"`
+	Type           string `json:"type"`
+	Reason         string `json:"reason"`
+	ConsumedOutput string `json:"consumed_output"`
+	CreatedAt      string `json:"created_at"`
+}
+
+type dependencyGraphResponse struct {
+	Plan  dependencyGraphPlanResponse   `json:"plan"`
+	Nodes []dependencyGraphNodeResponse `json:"nodes"`
+	Edges []dependencyGraphEdgeResponse `json:"edges"`
+}
+
+func dependencyGraphPlanToResponse(plan db.DependencyGraphPlan) dependencyGraphPlanResponse {
+	return dependencyGraphPlanResponse{
+		ID:                uuidToString(plan.ID),
+		WorkspaceID:       uuidToString(plan.WorkspaceID),
+		ParentIssueID:     uuidToString(plan.ParentIssueID),
+		IdempotencyKey:    plan.IdempotencyKey,
+		RequestHash:       plan.RequestHash,
+		Goal:              plan.Goal,
+		Status:            plan.Status,
+		CreatedByType:     plan.CreatedByType,
+		CreatedByID:       uuidToString(plan.CreatedByID),
+		CreatedAt:         timestampToString(plan.CreatedAt),
+		UpdatedAt:         timestampToString(plan.UpdatedAt),
+		AttentionRequired: plan.AttentionRequired,
+		AttentionReason:   textToPtr(plan.AttentionReason),
+	}
+}
+
+func dependencyGraphResponseMap(response dependencyGraphResponse, includeReplay bool, replayed bool) map[string]any {
+	payload := map[string]any{
+		"plan":  response.Plan,
+		"nodes": response.Nodes,
+		"edges": response.Edges,
+	}
+	if includeReplay {
+		payload["replayed"] = replayed
+	}
+	return payload
+}
+
+func dependencyGraphJSONResponse(raw []byte, fallback string) (json.RawMessage, error) {
+	if len(raw) == 0 {
+		raw = []byte(fallback)
+	}
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return nil, dependencyGraphIntegrity("dependency graph contains invalid stored JSON")
+	}
+	canonical, err := json.Marshal(value)
+	if err != nil {
+		return nil, dependencyGraphIntegrity("dependency graph JSON could not be encoded")
+	}
+	return json.RawMessage(canonical), nil
+}
+
+type dependencyGraphActor struct {
+	Type        string
+	ID          pgtype.UUID
+	WorkspaceID pgtype.UUID
+	Member      db.Member
+}
+
+func (h *Handler) dependencyGraphActorForRequest(w http.ResponseWriter, r *http.Request, workspaceID string) (dependencyGraphActor, bool) {
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return dependencyGraphActor{}, false
+	}
+	wsUUID, err := util.ParseUUID(workspaceID)
+	if err != nil || !wsUUID.Valid {
+		writeError(w, http.StatusBadRequest, "invalid workspace id")
+		return dependencyGraphActor{}, false
+	}
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return dependencyGraphActor{}, false
+	}
+	userUUID, err := util.ParseUUID(userID)
+	if err != nil || !userUUID.Valid {
+		writeErrorCode(w, http.StatusUnauthorized, "invalid_actor", "user identity is invalid")
+		return dependencyGraphActor{}, false
+	}
+	if h.Queries == nil {
+		writeDependencyGraphError(w, dependencyGraphDatabase("dependency graph queries are unavailable", nil))
+		return dependencyGraphActor{}, false
+	}
+	member, ok := h.workspaceMember(w, r, workspaceID)
+	if !ok {
+		return dependencyGraphActor{}, false
+	}
+	if member.WorkspaceID != wsUUID || member.UserID != userUUID {
+		writeErrorCode(w, http.StatusForbidden, "invalid_actor", "actor is not a member of this workspace")
+		return dependencyGraphActor{}, false
+	}
+	actorType, actorID := h.resolveActor(r, userID, workspaceID)
+	if r.Header.Get("X-Agent-ID") != "" && actorType != "agent" {
+		writeErrorCode(w, http.StatusForbidden, "invalid_actor", "agent actor could not be validated")
+		return dependencyGraphActor{}, false
+	}
+	if r.Header.Get("X-Actor-Source") == "task_token" && actorType != "agent" {
+		writeErrorCode(w, http.StatusForbidden, "invalid_actor", "task actor could not be validated")
+		return dependencyGraphActor{}, false
+	}
+	if actorType == "member" {
+		return dependencyGraphActor{Type: "member", ID: userUUID, WorkspaceID: wsUUID, Member: member}, true
+	}
+	if actorType != "agent" {
+		writeErrorCode(w, http.StatusForbidden, "invalid_actor", "unsupported actor type")
+		return dependencyGraphActor{}, false
+	}
+	actorUUID, err := util.ParseUUID(actorID)
+	if err != nil || !actorUUID.Valid {
+		writeErrorCode(w, http.StatusForbidden, "invalid_actor", "agent actor id is invalid")
+		return dependencyGraphActor{}, false
+	}
+	agent, err := h.Queries.GetAgentInWorkspace(r.Context(), db.GetAgentInWorkspaceParams{ID: actorUUID, WorkspaceID: wsUUID})
+	if err != nil || agent.ArchivedAt.Valid {
+		writeErrorCode(w, http.StatusForbidden, "invalid_actor", "agent actor is not active in this workspace")
+		return dependencyGraphActor{}, false
+	}
+	return dependencyGraphActor{Type: "agent", ID: actorUUID, WorkspaceID: wsUUID, Member: member}, true
+}
+
+func (h *Handler) dependencyGraphResponseForPlan(ctx context.Context, plan db.DependencyGraphPlan) (dependencyGraphResponse, error) {
+	if h.Queries == nil {
+		return dependencyGraphResponse{}, dependencyGraphDatabase("dependency graph queries are unavailable", nil)
+	}
+	if !plan.ID.Valid || !plan.WorkspaceID.Valid || !plan.ParentIssueID.Valid {
+		return dependencyGraphResponse{}, dependencyGraphIntegrity("dependency graph plan contains an invalid identity")
+	}
+	if _, err := h.Queries.GetIssueInWorkspace(ctx, db.GetIssueInWorkspaceParams{ID: plan.ParentIssueID, WorkspaceID: plan.WorkspaceID}); err != nil {
+		if isNotFound(err) {
+			return dependencyGraphResponse{}, dependencyGraphIntegrity("dependency graph parent issue is missing")
+		}
+		return dependencyGraphResponse{}, dependencyGraphDatabase("load dependency graph parent issue", err)
+	}
+	nodes, err := h.Queries.ListDependencyGraphNodesByPlan(ctx, db.ListDependencyGraphNodesByPlanParams{PlanID: plan.ID, WorkspaceID: plan.WorkspaceID})
+	if err != nil {
+		return dependencyGraphResponse{}, dependencyGraphDatabase("load dependency graph nodes", err)
+	}
+	edges, err := h.Queries.ListDependencyGraphEdgesByPlan(ctx, db.ListDependencyGraphEdgesByPlanParams{PlanID: plan.ID, WorkspaceID: plan.WorkspaceID})
+	if err != nil {
+		return dependencyGraphResponse{}, dependencyGraphDatabase("load dependency graph edges", err)
+	}
+	issues := make(map[string]db.Issue, len(nodes))
+	for _, node := range nodes {
+		if node.PlanID != plan.ID || node.WorkspaceID != plan.WorkspaceID || !node.IssueID.Valid {
+			return dependencyGraphResponse{}, dependencyGraphIntegrity("dependency graph node crosses its plan workspace")
+		}
+		issue, err := h.Queries.GetIssueInWorkspace(ctx, db.GetIssueInWorkspaceParams{ID: node.IssueID, WorkspaceID: plan.WorkspaceID})
+		if err != nil {
+			if isNotFound(err) {
+				return dependencyGraphResponse{}, dependencyGraphIntegrity("dependency graph node issue is missing")
+			}
+			return dependencyGraphResponse{}, dependencyGraphDatabase("load dependency graph node issue", err)
+		}
+		key := uuidToString(node.IssueID)
+		if _, exists := issues[key]; exists {
+			return dependencyGraphResponse{}, dependencyGraphIntegrity("dependency graph contains duplicate node issues")
+		}
+		issues[key] = issue
+	}
+	incoming := make(map[string][]string, len(nodes))
+	for _, edge := range edges {
+		if edge.PlanID != plan.ID || edge.WorkspaceID != plan.WorkspaceID {
+			return dependencyGraphResponse{}, dependencyGraphIntegrity("dependency graph edge crosses its plan workspace")
+		}
+		from := uuidToString(edge.FromIssueID)
+		to := uuidToString(edge.ToIssueID)
+		if _, ok := issues[from]; !ok {
+			return dependencyGraphResponse{}, dependencyGraphIntegrity("dependency graph edge source is not a node")
+		}
+		if _, ok := issues[to]; !ok {
+			return dependencyGraphResponse{}, dependencyGraphIntegrity("dependency graph edge target is not a node")
+		}
+		incoming[to] = append(incoming[to], from)
+	}
+	statusQueries := h.IssueStatusCatalog
+	if statusQueries == nil {
+		statusQueries = h.Queries
+	}
+	resolver := issuestatus.NewResolver(plan.WorkspaceID)
+	response := dependencyGraphResponse{
+		Plan:  dependencyGraphPlanToResponse(plan),
+		Nodes: make([]dependencyGraphNodeResponse, 0, len(nodes)),
+		Edges: make([]dependencyGraphEdgeResponse, 0, len(edges)),
+	}
+	for _, node := range nodes {
+		issue := issues[uuidToString(node.IssueID)]
+		category := resolver.Effective(ctx, statusQueries, issue.Status)
+		blockedBy := append([]string(nil), incoming[uuidToString(node.IssueID)]...)
+		if plan.Status == "active" {
+			filtered := blockedBy[:0]
+			for _, prerequisiteID := range blockedBy {
+				prerequisite := issues[prerequisiteID]
+				if resolver.Effective(ctx, statusQueries, prerequisite.Status) != issuestatus.Done {
+					filtered = append(filtered, prerequisiteID)
+				}
+			}
+			blockedBy = filtered
+		} else {
+			blockedBy = []string{}
+		}
+		if len(blockedBy) == 0 {
+			blockedBy = []string{}
+		}
+		sort.Strings(blockedBy)
+		acceptance, err := dependencyGraphJSONResponse(node.AcceptanceCriteria, "[]")
+		if err != nil {
+			return dependencyGraphResponse{}, err
+		}
+		contextJSON, err := dependencyGraphJSONResponse(node.Context, "{}")
+		if err != nil {
+			return dependencyGraphResponse{}, err
+		}
+		outputs, err := dependencyGraphJSONResponse(node.Outputs, "[]")
+		if err != nil {
+			return dependencyGraphResponse{}, err
+		}
+		candidates, err := dependencyGraphJSONResponse(node.CandidateExecutors, "[]")
+		if err != nil {
+			return dependencyGraphResponse{}, err
+		}
+		response.Nodes = append(response.Nodes, dependencyGraphNodeResponse{
+			ID:                 uuidToString(node.ID),
+			PlanID:             uuidToString(node.PlanID),
+			WorkspaceID:        uuidToString(node.WorkspaceID),
+			TempID:             node.TempID,
+			IssueID:            uuidToString(node.IssueID),
+			Title:              node.Title,
+			Description:        node.Description,
+			AcceptanceCriteria: acceptance,
+			Context:            contextJSON,
+			Outputs:            outputs,
+			ExecutorType:       textToPtr(node.ExecutorType),
+			ExecutorID:         uuidToPtr(node.ExecutorID),
+			CandidateExecutors: candidates,
+			Wave:               node.Wave,
+			CreatedAt:          timestampToString(node.CreatedAt),
+			UpdatedAt:          timestampToString(node.UpdatedAt),
+			OwnerType:          textToPtr(node.OwnerType),
+			OwnerID:            uuidToPtr(node.OwnerID),
+			ReviewerType:       textToPtr(node.ReviewerType),
+			ReviewerID:         uuidToPtr(node.ReviewerID),
+			RuntimeID:          uuidToPtr(node.RuntimeID),
+			ModelID:            textToPtr(node.ModelID),
+			Status:             issue.Status,
+			StatusCategory:     category,
+			Ready:              plan.Status == "active" && len(blockedBy) == 0 && category != issuestatus.Done && category != issuestatus.Cancelled,
+			BlockedBy:          blockedBy,
+		})
+	}
+	for _, edge := range edges {
+		response.Edges = append(response.Edges, dependencyGraphEdgeResponse{
+			ID:             uuidToString(edge.ID),
+			PlanID:         uuidToString(edge.PlanID),
+			WorkspaceID:    uuidToString(edge.WorkspaceID),
+			FromIssueID:    uuidToString(edge.FromIssueID),
+			ToIssueID:      uuidToString(edge.ToIssueID),
+			Type:           edge.Type,
+			Reason:         edge.Reason,
+			ConsumedOutput: edge.ConsumedOutput,
+			CreatedAt:      timestampToString(edge.CreatedAt),
+		})
+	}
+	return response, nil
+}
+
+func dependencyGraphIdempotencyKey(r *http.Request) (string, error) {
+	primary := r.Header.Get("Idempotency-Key")
+	fallback := r.Header.Get("X-Idempotency-Key")
+	if primary != "" && fallback != "" && strings.TrimSpace(primary) != strings.TrimSpace(fallback) {
+		return "", dependencyGraphConflict("idempotency_key_conflict", "Idempotency-Key and X-Idempotency-Key do not match")
+	}
+	value := primary
+	if value == "" {
+		value = fallback
+	}
+	if strings.TrimSpace(value) == "" {
+		return "", &dependencyGraphError{status: http.StatusBadRequest, code: "idempotency_key_required", msg: "Idempotency-Key header is required"}
+	}
+	if value != strings.TrimSpace(value) {
+		return "", invalidDependencyGraph("idempotency key must not have surrounding whitespace")
+	}
+	if utf8.RuneCountInString(value) > dependencyGraphMaxIdempotencyKey {
+		return "", invalidDependencyGraph(fmt.Sprintf("idempotency key exceeds %d characters", dependencyGraphMaxIdempotencyKey))
+	}
+	for _, r := range value {
+		if r < 0x20 || r == 0x7f {
+			return "", invalidDependencyGraph("idempotency key contains a control character")
+		}
+	}
+	return value, nil
+}
+
+type dependencyGraphTaskAssignment struct {
+	executorType       pgtype.Text
+	executorID         pgtype.UUID
+	ownerType          pgtype.Text
+	ownerID            pgtype.UUID
+	candidateExecutors []byte
+}
+
+func (h *Handler) validateDependencyGraphCandidate(ctx context.Context, workspaceID pgtype.UUID, candidate dependencyGraphAssigneeInput) error {
+	id, err := util.ParseUUID(candidate.ID)
+	if err != nil || !id.Valid {
+		return dependencyGraphAssigneeNotFound("candidate assignee id is invalid")
+	}
+	switch candidate.Type {
+	case "member":
+		if _, err := h.Queries.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{UserID: id, WorkspaceID: workspaceID}); err != nil {
+			return dependencyGraphAssigneeNotFound("candidate member is not in this workspace")
+		}
+	case "agent":
+		agent, err := h.Queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{ID: id, WorkspaceID: workspaceID})
+		if err != nil {
+			return dependencyGraphAssigneeNotFound("candidate agent is not in this workspace")
+		}
+		if agent.ArchivedAt.Valid {
+			return dependencyGraphAssigneeNotFound("candidate agent is archived")
+		}
+	case "team":
+		team, err := h.Queries.GetTeamInWorkspace(ctx, db.GetTeamInWorkspaceParams{ID: id, WorkspaceID: workspaceID})
+		if err != nil {
+			return dependencyGraphAssigneeNotFound("candidate team is not in this workspace")
+		}
+		if team.ArchivedAt.Valid {
+			return dependencyGraphAssigneeNotFound("candidate team is archived")
+		}
+		leader, err := h.Queries.GetAgent(ctx, team.LeaderID)
+		if err != nil || leader.WorkspaceID != workspaceID || leader.ArchivedAt.Valid {
+			return dependencyGraphAssigneeNotFound("candidate team leader is not active")
+		}
+	default:
+		return dependencyGraphAssigneeNotFound("candidate assignee type is invalid")
+	}
+	return nil
+}
+
+func (h *Handler) validateDependencyGraphAssignments(ctx context.Context, r *http.Request, workspaceID pgtype.UUID, parent *db.Issue, input *dependencyGraphApplyInput) ([]dependencyGraphTaskAssignment, error) {
+	assignments := make([]dependencyGraphTaskAssignment, len(input.Tasks))
+	for index := range input.Tasks {
+		task := &input.Tasks[index]
+		assignment := dependencyGraphTaskAssignment{}
+		if task.Assignee != nil {
+			assigneeID, err := validateDependencyGraphAssigneeShape(task.Assignee, fmt.Sprintf("tasks[%d].assignee", index))
+			if err != nil {
+				return nil, err
+			}
+			if err := h.validateDependencyGraphCandidate(ctx, workspaceID, *task.Assignee); err != nil {
+				return nil, err
+			}
+			switch task.Assignee.Type {
+			case "member":
+				assignment.ownerType = pgtype.Text{String: "member", Valid: true}
+				assignment.ownerID = assigneeID
+			case "agent", "team":
+				executorType := pgtype.Text{String: task.Assignee.Type, Valid: true}
+				status, message := h.validateAssigneePair(ctx, r, uuidToString(workspaceID), executorType, assigneeID, scopeChildOf(parent))
+				if status != 0 {
+					return nil, &dependencyGraphError{status: status, code: "invalid_assignee", msg: message}
+				}
+				assignment.executorType = executorType
+				assignment.executorID = assigneeID
+			}
+		}
+		seenCandidates := make(map[string]struct{}, len(task.CandidateAssignees))
+		for candidateIndex := range task.CandidateAssignees {
+			candidate := &task.CandidateAssignees[candidateIndex]
+			if _, err := validateDependencyGraphAssigneeShape(candidate, fmt.Sprintf("tasks[%d].candidate_assignees[%d]", index, candidateIndex)); err != nil {
+				return nil, err
+			}
+			key := candidate.Type + "\x00" + candidate.ID
+			if _, exists := seenCandidates[key]; exists {
+				return nil, invalidDependencyGraph(fmt.Sprintf("tasks[%d].candidate_assignees contains duplicate assignee", index))
+			}
+			seenCandidates[key] = struct{}{}
+			if err := h.validateDependencyGraphCandidate(ctx, workspaceID, *candidate); err != nil {
+				return nil, err
+			}
+		}
+		candidateJSON, err := json.Marshal(task.CandidateAssignees)
+		if err != nil {
+			return nil, dependencyGraphDatabase("encode dependency graph candidates", err)
+		}
+		assignment.candidateExecutors = candidateJSON
+		assignments[index] = assignment
+	}
+	return assignments, nil
+}
+
+type dependencyGraphRootIssue struct {
+	issue      db.Issue
+	assignment dependencyGraphTaskAssignment
+}
+
+type dependencyGraphApplyResult struct {
+	plan   db.DependencyGraphPlan
+	issues []db.Issue
+	nodes  []db.DependencyGraphNode
+	roots  []dependencyGraphRootIssue
+}
+
+func (h *Handler) applyDependencyGraphTransaction(ctx context.Context, input *dependencyGraphApplyInput, waves [][]string, assignments []dependencyGraphTaskAssignment, parent db.Issue, actor dependencyGraphActor, policy service.IssueCountPolicy, idempotencyKey, requestHash string) (dependencyGraphApplyResult, error) {
+	if h.TxStarter == nil {
+		return dependencyGraphApplyResult{}, dependencyGraphDatabase("dependency graph transactions are unavailable", nil)
+	}
+	tx, err := h.TxStarter.Begin(ctx)
+	if err != nil {
+		return dependencyGraphApplyResult{}, dependencyGraphDatabase("begin dependency graph apply transaction", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var lockedID, lockedWorkspaceID, lockedProjectID pgtype.UUID
+	err = tx.QueryRow(ctx, `
+		SELECT id, workspace_id, project_id
+		FROM issue
+		WHERE id = $1 AND workspace_id = $2
+		FOR UPDATE`, parent.ID, actor.WorkspaceID).Scan(&lockedID, &lockedWorkspaceID, &lockedProjectID)
+	if err != nil {
+		if isNotFound(err) {
+			return dependencyGraphApplyResult{}, dependencyGraphNotFound("parent issue not found")
+		}
+		return dependencyGraphApplyResult{}, dependencyGraphDatabase("lock dependency graph parent issue", err)
+	}
+	if lockedID != parent.ID || lockedWorkspaceID != actor.WorkspaceID {
+		return dependencyGraphApplyResult{}, dependencyGraphIntegrity("locked dependency graph parent issue crossed workspace boundary")
+	}
+	qtx := h.Queries.WithTx(tx)
+	active, err := qtx.GetActiveDependencyGraphPlanForParent(ctx, db.GetActiveDependencyGraphPlanForParentParams{WorkspaceID: actor.WorkspaceID, ParentIssueID: lockedID})
+	if err == nil {
+		return dependencyGraphApplyResult{}, dependencyGraphConflict("active_plan_exists", fmt.Sprintf("an active dependency graph already exists for parent issue %s", uuidToString(active.ParentIssueID)))
+	}
+	if !isNotFound(err) {
+		return dependencyGraphApplyResult{}, dependencyGraphDatabase("check active dependency graph for parent", err)
+	}
+	plan, err := qtx.CreateDependencyGraphPlan(ctx, db.CreateDependencyGraphPlanParams{
+		WorkspaceID:    actor.WorkspaceID,
+		ParentIssueID:  lockedID,
+		IdempotencyKey: idempotencyKey,
+		RequestHash:    requestHash,
+		Goal:           input.Goal,
+		CreatedByType:  actor.Type,
+		CreatedByID:    actor.ID,
+		Status:         pgtype.Text{String: "active", Valid: true},
+		ID:             dbid.NewV7(),
+	})
+	if err != nil {
+		return dependencyGraphApplyResult{}, dependencyGraphDatabase("create dependency graph plan", err)
+	}
+	waveByTempID := make(map[string]int, len(input.Tasks))
+	for wave, tempIDs := range waves {
+		for _, tempID := range tempIDs {
+			waveByTempID[tempID] = wave
+		}
+	}
+	issues := make([]db.Issue, 0, len(input.Tasks))
+	nodes := make([]db.DependencyGraphNode, 0, len(input.Tasks))
+	issueByTempID := make(map[string]pgtype.UUID, len(input.Tasks))
+	for index, task := range input.Tasks {
+		number, err := service.AllocateIssueNumber(ctx, qtx, actor.WorkspaceID, policy)
+		if err != nil {
+			return dependencyGraphApplyResult{}, err
+		}
+		position, err := issueposition.NextTopPosition(ctx, tx, actor.WorkspaceID, issuestatus.Todo)
+		if err != nil {
+			return dependencyGraphApplyResult{}, dependencyGraphDatabase("allocate dependency graph issue position", err)
+		}
+		assignment := assignments[index]
+		issue, err := qtx.CreateIssue(ctx, db.CreateIssueParams{
+			ID:            dbid.NewV7(),
+			WorkspaceID:   actor.WorkspaceID,
+			Title:         task.Title,
+			Description:   strToText(task.Description),
+			Status:        issuestatus.Todo,
+			Priority:      "none",
+			ExecutorType:  assignment.executorType,
+			ExecutorID:    assignment.executorID,
+			CreatorType:   actor.Type,
+			CreatorID:     actor.ID,
+			ParentIssueID: lockedID,
+			Position:      position,
+			Number:        number,
+			ProjectID:     lockedProjectID,
+			OwnerType:     assignment.ownerType,
+			OwnerID:       assignment.ownerID,
+		})
+		if err != nil {
+			return dependencyGraphApplyResult{}, dependencyGraphDatabase("create dependency graph issue", err)
+		}
+		acceptanceJSON, err := json.Marshal(task.AcceptanceCriteria)
+		if err != nil {
+			return dependencyGraphApplyResult{}, dependencyGraphDatabase("encode dependency graph acceptance criteria", err)
+		}
+		outputsJSON, err := json.Marshal(task.Outputs)
+		if err != nil {
+			return dependencyGraphApplyResult{}, dependencyGraphDatabase("encode dependency graph outputs", err)
+		}
+		node, err := qtx.CreateDependencyGraphNode(ctx, db.CreateDependencyGraphNodeParams{
+			PlanID:       plan.ID,
+			WorkspaceID:  actor.WorkspaceID,
+			TempID:       task.TempID,
+			IssueID:      issue.ID,
+			Title:        task.Title,
+			Column6:      task.Description,
+			Column7:      acceptanceJSON,
+			Column8:      task.Context,
+			Column9:      outputsJSON,
+			Column10:     assignment.candidateExecutors,
+			Wave:         int32(waveByTempID[task.TempID]),
+			ExecutorType: assignment.executorType,
+			ExecutorID:   assignment.executorID,
+			OwnerType:    assignment.ownerType,
+			OwnerID:      assignment.ownerID,
+			ReviewerType: pgtype.Text{},
+			ReviewerID:   pgtype.UUID{},
+			RuntimeID:    pgtype.UUID{},
+			ModelID:      pgtype.Text{},
+			Column20:     dbid.NewV7(),
+		})
+		if err != nil {
+			return dependencyGraphApplyResult{}, dependencyGraphDatabase("create dependency graph node", err)
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO dependency_graph_issue_created_outbox
+			    (plan_id, node_id, workspace_id, issue_id, status, attempt)
+			VALUES ($1, $2, $3, $4, 'pending', 0)
+			ON CONFLICT (plan_id, node_id) DO NOTHING`, plan.ID, node.ID, actor.WorkspaceID, issue.ID); err != nil {
+			return dependencyGraphApplyResult{}, dependencyGraphDatabase("create dependency graph issue outbox row", err)
+		}
+		issues = append(issues, issue)
+		nodes = append(nodes, node)
+		issueByTempID[task.TempID] = issue.ID
+	}
+	for _, edge := range input.Edges {
+		fromIssueID := issueByTempID[edge.From]
+		toIssueID := issueByTempID[edge.To]
+		if !fromIssueID.Valid || !toIssueID.Valid {
+			return dependencyGraphApplyResult{}, dependencyGraphIntegrity("dependency graph edge references a missing created issue")
+		}
+		if _, err := qtx.CreateDependencyGraphEdge(ctx, db.CreateDependencyGraphEdgeParams{
+			PlanID:         plan.ID,
+			WorkspaceID:    actor.WorkspaceID,
+			FromIssueID:    fromIssueID,
+			ToIssueID:      toIssueID,
+			Type:           edge.Type,
+			Reason:         edge.Reason,
+			ConsumedOutput: edge.ConsumedOutput,
+			ID:             dbid.NewV7(),
+		}); err != nil {
+			return dependencyGraphApplyResult{}, dependencyGraphDatabase("create dependency graph edge", err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return dependencyGraphApplyResult{}, dependencyGraphDatabase("commit dependency graph apply", err)
+	}
+	result := dependencyGraphApplyResult{plan: plan, issues: issues, nodes: nodes, roots: make([]dependencyGraphRootIssue, 0, len(issues))}
+	for index, task := range input.Tasks {
+		if waveByTempID[task.TempID] == 0 {
+			result.roots = append(result.roots, dependencyGraphRootIssue{issue: issues[index], assignment: assignments[index]})
+		}
+	}
+	return result, nil
+}
+
+func dependencyGraphIsActivePlanConflict(err error) bool {
+	var graphErr *dependencyGraphError
+	return errors.As(err, &graphErr) && graphErr.code == "active_plan_exists"
+}
+
+func (h *Handler) writeDependencyGraphReplay(w http.ResponseWriter, r *http.Request, plan db.DependencyGraphPlan) {
+	response, err := h.dependencyGraphResponseForPlan(r.Context(), plan)
+	if err != nil {
+		writeDependencyGraphError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, dependencyGraphResponseMap(response, true, true))
+}
+
+func (h *Handler) resolveDependencyGraphApplyConflict(w http.ResponseWriter, r *http.Request, workspaceID, parentIssueID pgtype.UUID, idempotencyKey, requestHash string) bool {
+	plan, err := h.Queries.GetDependencyGraphPlanByIdempotency(r.Context(), db.GetDependencyGraphPlanByIdempotencyParams{WorkspaceID: workspaceID, IdempotencyKey: idempotencyKey})
+	if err == nil {
+		if plan.RequestHash != requestHash {
+			writeDependencyGraphError(w, dependencyGraphConflict("idempotency_conflict", "idempotency key was used for a different dependency graph"))
+		} else {
+			h.writeDependencyGraphReplay(w, r, plan)
+		}
+		return true
+	}
+	if !isNotFound(err) {
+		writeDependencyGraphError(w, dependencyGraphDatabase("resolve dependency graph idempotency conflict", err))
+		return true
+	}
+	active, err := h.Queries.GetActiveDependencyGraphPlanForParent(r.Context(), db.GetActiveDependencyGraphPlanForParentParams{WorkspaceID: workspaceID, ParentIssueID: parentIssueID})
+	if err == nil {
+		writeDependencyGraphError(w, dependencyGraphConflict("active_plan_exists", fmt.Sprintf("an active dependency graph already exists for parent issue %s", uuidToString(active.ParentIssueID))))
+		return true
+	}
+	if !isNotFound(err) {
+		writeDependencyGraphError(w, dependencyGraphDatabase("resolve active dependency graph conflict", err))
+		return true
+	}
+	return false
+}
+
+func (h *Handler) publishDependencyGraphIssues(ctx context.Context, result dependencyGraphApplyResult, actor dependencyGraphActor) {
+	if h.Bus == nil || len(result.issues) != len(result.nodes) {
+		return
+	}
+	prefix := h.getIssuePrefix(ctx, actor.WorkspaceID)
+	for index, issue := range result.issues {
+		response := issueToResponse(issue, prefix)
+		h.fillStatusCategory(ctx, issue.WorkspaceID, &response)
+		h.publish(protocol.EventIssueCreated, uuidToString(actor.WorkspaceID), actor.Type, uuidToString(actor.ID), map[string]any{
+			"issue":                    response,
+			"dependency_graph_plan_id": uuidToString(result.plan.ID),
+			"dependency_graph_node_id": uuidToString(result.nodes[index].ID),
+		})
+		if h.DB == nil {
+			continue
+		}
+		if _, err := h.DB.Exec(ctx, `
+			UPDATE dependency_graph_issue_created_outbox
+			SET status = 'published', published_at = now(), updated_at = now()
+			WHERE plan_id = $1 AND node_id = $2 AND workspace_id = $3 AND status = 'pending'`, result.plan.ID, result.nodes[index].ID, actor.WorkspaceID); err != nil {
+			slog.WarnContext(ctx, "dependency graph issue-created outbox update failed", "plan_id", uuidToString(result.plan.ID), "node_id", uuidToString(result.nodes[index].ID), "error", err)
+		}
+	}
+}
+
+func (h *Handler) enqueueDependencyGraphRoots(ctx context.Context, result dependencyGraphApplyResult) {
+	if h.TaskService == nil || h.Queries == nil {
+		return
+	}
+	for _, root := range result.roots {
+		if !root.assignment.executorType.Valid || !root.assignment.executorID.Valid {
+			continue
+		}
+		switch root.assignment.executorType.String {
+		case "agent":
+			if !h.shouldEnqueueAgentTask(ctx, root.issue) {
+				continue
+			}
+			if _, err := h.TaskService.EnqueueTaskForIssue(ctx, root.issue); err != nil {
+				slog.WarnContext(ctx, "dependency graph root task enqueue failed", "issue_id", uuidToString(root.issue.ID), "error", err)
+			}
+		case "team":
+			team, err := h.Queries.GetTeamInWorkspace(ctx, db.GetTeamInWorkspaceParams{ID: root.assignment.executorID, WorkspaceID: root.issue.WorkspaceID})
+			if err != nil || team.ArchivedAt.Valid {
+				continue
+			}
+			if _, err := h.TaskService.EnqueueTaskForTeamLeader(ctx, root.issue, team.LeaderID, team.ID, pgtype.UUID{}); err != nil {
+				slog.WarnContext(ctx, "dependency graph team root task enqueue failed", "issue_id", uuidToString(root.issue.ID), "team_id", uuidToString(team.ID), "error", err)
+			}
+		}
+	}
 }
 
 func (h *Handler) ListDependencyGraphs(w http.ResponseWriter, r *http.Request) {
 	wsID := h.resolveWorkspaceID(r)
-	if wsID == "" {
-		writeError(w, http.StatusBadRequest, "workspace_id is required")
-		return
-	}
-	wsUUID, ok := parseUUIDOrBadRequest(w, wsID, "workspace id")
+	actor, ok := h.dependencyGraphActorForRequest(w, r, wsID)
 	if !ok {
 		return
 	}
+	wsUUID := actor.WorkspaceID
 	q := r.URL.Query()
 	var projectID *pgtype.UUID
 	if v := strings.TrimSpace(q.Get("project_id")); v != "" {
@@ -37,103 +1205,66 @@ func (h *Handler) ListDependencyGraphs(w http.ResponseWriter, r *http.Request) {
 		}
 		projectID = &u
 	}
-	_ = int32(64)
+	limit := dependencyGraphDefaultPageSize
 	if v := strings.TrimSpace(q.Get("limit")); v != "" {
-		_ = v
-	}
-	cursor := strings.TrimSpace(q.Get("cursor"))
-	if cursor != "" {
-		if _, err := base64.URLEncoding.DecodeString(cursor); err != nil {
-			// use raw URL-safe without padding
-			if _, err2 := base64.RawURLEncoding.DecodeString(cursor); err2 != nil {
-				writeError(w, http.StatusBadRequest, "invalid cursor")
-				return
-			}
+		parsed, err := strconv.Atoi(v)
+		if err != nil || parsed <= 0 || parsed > dependencyGraphMaxPageSize {
+			writeDependencyGraphError(w, invalidDependencyGraph(fmt.Sprintf("limit must be between 1 and %d", dependencyGraphMaxPageSize)))
+			return
 		}
+		limit = parsed
 	}
-	_ = wsUUID
-	_ = projectID
-	_ = cursor
-	// Minimal stub: return empty page until service wiring lands.
-	writeJSON(w, http.StatusOK, map[string]any{"graphs": []any{}, "next_cursor": nil})
+	after, err := decodeDependencyGraphCursor(q.Get("cursor"), projectID)
+	if err != nil {
+		writeDependencyGraphError(w, err)
+		return
+	}
+	offset := 0
+	if after != nil {
+		offset = after.offset
+	}
+	if int64(offset) > int64(1<<31-1-limit-1) {
+		writeDependencyGraphError(w, invalidDependencyGraph("dependency graph cursor is too far ahead"))
+		return
+	}
+	filterProject := pgtype.UUID{}
+	if projectID != nil {
+		filterProject = *projectID
+	}
+	plans, err := h.Queries.ListDependencyGraphPlans(r.Context(), db.ListDependencyGraphPlansParams{
+		WorkspaceID: wsUUID,
+		Column2:     filterProject,
+		Limit:       int32(limit + 1),
+		Offset:      int32(offset),
+	})
+	if err != nil {
+		writeDependencyGraphError(w, dependencyGraphDatabase("list dependency graph plans", err))
+		return
+	}
+	hasMore := len(plans) > limit
+	if hasMore {
+		plans = plans[:limit]
+	}
+	graphs := make([]dependencyGraphPlanResponse, 0, len(plans))
+	for _, plan := range plans {
+		graphs = append(graphs, dependencyGraphPlanToResponse(plan))
+	}
+	var nextCursor *string
+	if hasMore && len(plans) > 0 {
+		encoded, err := encodeDependencyGraphCursorAt(projectID, plans[len(plans)-1], offset+limit)
+		if err != nil {
+			writeDependencyGraphError(w, dependencyGraphDatabase("encode dependency graph cursor", err))
+			return
+		}
+		nextCursor = &encoded
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"graphs": graphs, "next_cursor": nextCursor})
 }
 
 func (h *Handler) GetDependencyGraphByID(w http.ResponseWriter, r *http.Request) {
 	wsID := h.resolveWorkspaceID(r)
-	if wsID == "" {
-		writeError(w, http.StatusBadRequest, "workspace_id is required")
-		return
-	}
-	planID := chi.URLParam(r, "id")
-	if _, ok := parseUUIDOrBadRequest(w, planID, "dependency graph id"); !ok {
-		return
-	}
-	_ = wsID
-	writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found", "code": "not_found"})
-}
-
-func (h *Handler) GetIssueDependencyGraph(w http.ResponseWriter, r *http.Request) {
-	wsID := h.resolveWorkspaceID(r)
-	if wsID == "" {
-		writeError(w, http.StatusBadRequest, "workspace_id is required")
-		return
-	}
-	issueID := chi.URLParam(r, "id")
-	if _, ok := parseUUIDOrBadRequest(w, issueID, "issue id"); !ok {
-		return
-	}
-	wsUUID, _ := util.ParseUUID(wsID)
-	issueUUID, _ := util.ParseUUID(issueID)
-	plan, err := h.Queries.GetActiveDependencyGraphForIssue(r.Context(), db.GetActiveDependencyGraphForIssueParams{
-		WorkspaceID: wsUUID,
-		IssueID:     issueUUID,
-	})
-	if err != nil {
-		writeJSON(w, http.StatusOK, map[string]any{"plan": nil, "nodes": []any{}, "edges": []any{}})
-		return
-	}
-	// Best-effort: return plan only; nodes/edges follow in next iteration.
-	payload, _ := json.Marshal(plan)
-	var m map[string]any
-	_ = json.Unmarshal(payload, &m)
-	writeJSON(w, http.StatusOK, map[string]any{"plan": m, "nodes": []any{}, "edges": []any{}})
-}
-
-func (h *Handler) ApplyIssueDependencyGraph(w http.ResponseWriter, r *http.Request) {
-	wsID := h.resolveWorkspaceID(r)
-	if wsID == "" {
-		writeError(w, http.StatusBadRequest, "workspace_id is required")
-		return
-	}
-	parentIssueID := chi.URLParam(r, "id")
-	if _, ok := parseUUIDOrBadRequest(w, parentIssueID, "parent issue id"); !ok {
-		return
-	}
-	idem := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
-	if idem == "" {
-		idem = strings.TrimSpace(r.Header.Get("X-Idempotency-Key"))
-	}
-	if idem == "" {
-		writeErrorCode(w, http.StatusBadRequest, "idempotency_key_required", "Idempotency-Key header is required")
-		return
-	}
-	var input map[string]any
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
-		return
-	}
-	if v, ok := input["parent_issue_id"].(string); ok && v != parentIssueID {
-		writeErrorCode(w, http.StatusBadRequest, "parent_mismatch", "parent_issue_id must match the issue in the request path")
-		return
-	}
-	// Acknowledge receipt; full apply lands next iteration.
-	writeJSON(w, http.StatusOK, map[string]any{"parent_issue_id": parentIssueID, "idempotency_key": idem, "status": "accepted"})
-}
-
-func (h *Handler) RetireDependencyGraph(w http.ResponseWriter, r *http.Request) {
-	wsID := h.resolveWorkspaceID(r)
-	if wsID == "" {
-		writeError(w, http.StatusBadRequest, "workspace_id is required")
+	actor, ok := h.dependencyGraphActorForRequest(w, r, wsID)
+	if !ok {
 		return
 	}
 	planID := chi.URLParam(r, "id")
@@ -141,20 +1272,215 @@ func (h *Handler) RetireDependencyGraph(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	wsUUID, _ := util.ParseUUID(wsID)
-	plan, err := h.Queries.GetDependencyGraphPlanByID(r.Context(), db.GetDependencyGraphPlanByIDParams{ID: planUUID, WorkspaceID: wsUUID})
+	plan, err := h.Queries.GetDependencyGraphPlanByID(r.Context(), db.GetDependencyGraphPlanByIDParams{ID: planUUID, WorkspaceID: actor.WorkspaceID})
 	if err != nil {
-		writeErrorCode(w, http.StatusNotFound, "not_found", "not found")
+		if isNotFound(err) {
+			writeDependencyGraphError(w, dependencyGraphNotFound("dependency graph not found"))
+			return
+		}
+		writeDependencyGraphError(w, dependencyGraphDatabase("get dependency graph plan", err))
+		return
+	}
+	response, err := h.dependencyGraphResponseForPlan(r.Context(), plan)
+	if err != nil {
+		writeDependencyGraphError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, dependencyGraphResponseMap(response, false, false))
+}
+
+func (h *Handler) GetIssueDependencyGraph(w http.ResponseWriter, r *http.Request) {
+	wsID := h.resolveWorkspaceID(r)
+	actor, ok := h.dependencyGraphActorForRequest(w, r, wsID)
+	if !ok {
+		return
+	}
+	issueID := chi.URLParam(r, "id")
+	issueUUID, ok := parseUUIDOrBadRequest(w, issueID, "issue id")
+	if !ok {
+		return
+	}
+	if _, err := h.Queries.GetIssueInWorkspace(r.Context(), db.GetIssueInWorkspaceParams{ID: issueUUID, WorkspaceID: actor.WorkspaceID}); err != nil {
+		if isNotFound(err) {
+			writeDependencyGraphError(w, dependencyGraphNotFound("issue not found"))
+			return
+		}
+		writeDependencyGraphError(w, dependencyGraphDatabase("get issue for dependency graph", err))
+		return
+	}
+	plan, err := h.Queries.GetActiveDependencyGraphForIssue(r.Context(), db.GetActiveDependencyGraphForIssueParams{
+		WorkspaceID:   actor.WorkspaceID,
+		ParentIssueID: issueUUID,
+	})
+	if err != nil {
+		if isNotFound(err) {
+			writeJSON(w, http.StatusOK, map[string]any{"plan": nil, "nodes": []dependencyGraphNodeResponse{}, "edges": []dependencyGraphEdgeResponse{}})
+			return
+		}
+		writeDependencyGraphError(w, dependencyGraphDatabase("get active dependency graph", err))
+		return
+	}
+	response, err := h.dependencyGraphResponseForPlan(r.Context(), plan)
+	if err != nil {
+		writeDependencyGraphError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, dependencyGraphResponseMap(response, false, false))
+}
+
+func (h *Handler) ApplyIssueDependencyGraph(w http.ResponseWriter, r *http.Request) {
+	wsID := h.resolveWorkspaceID(r)
+	actor, ok := h.dependencyGraphActorForRequest(w, r, wsID)
+	if !ok {
+		return
+	}
+	parentIssueID := chi.URLParam(r, "id")
+	parentUUID, ok := parseUUIDOrBadRequest(w, parentIssueID, "parent issue id")
+	if !ok {
+		return
+	}
+	idempotencyKey, err := dependencyGraphIdempotencyKey(r)
+	if err != nil {
+		writeDependencyGraphError(w, err)
+		return
+	}
+	if r.Body == nil {
+		writeDependencyGraphError(w, invalidDependencyGraph("request body is required"))
+		return
+	}
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	var input dependencyGraphApplyInput
+	if err := decoder.Decode(&input); err != nil {
+		writeDependencyGraphError(w, invalidDependencyGraph("request body must be valid dependency graph JSON"))
+		return
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		writeDependencyGraphError(w, invalidDependencyGraph("request body must contain exactly one JSON value"))
+		return
+	}
+	if input.ParentIssueID != "" {
+		bodyParent, err := util.ParseUUID(input.ParentIssueID)
+		if err != nil || !bodyParent.Valid {
+			writeDependencyGraphError(w, invalidDependencyGraph("parent_issue_id must be a non-nil UUID"))
+			return
+		}
+		if bodyParent != parentUUID {
+			writeDependencyGraphError(w, dependencyGraphConflict("parent_mismatch", "parent_issue_id must match the issue in the request path"))
+			return
+		}
+	}
+	input.ParentIssueID = uuidToString(parentUUID)
+	waves, err := validateDependencyGraphPlan(&input)
+	if err != nil {
+		writeDependencyGraphError(w, err)
+		return
+	}
+	parent, err := h.Queries.GetIssueInWorkspace(r.Context(), db.GetIssueInWorkspaceParams{ID: parentUUID, WorkspaceID: actor.WorkspaceID})
+	if err != nil {
+		if isNotFound(err) {
+			writeDependencyGraphError(w, dependencyGraphNotFound("parent issue not found"))
+			return
+		}
+		writeDependencyGraphError(w, dependencyGraphDatabase("get dependency graph parent issue", err))
+		return
+	}
+	assignments, err := h.validateDependencyGraphAssignments(r.Context(), r, actor.WorkspaceID, &parent, &input)
+	if err != nil {
+		writeDependencyGraphError(w, err)
+		return
+	}
+	requestHash, err := dependencyGraphRequestHash(&input)
+	if err != nil {
+		writeDependencyGraphError(w, dependencyGraphDatabase("hash dependency graph request", err))
+		return
+	}
+	existing, err := h.Queries.GetDependencyGraphPlanByIdempotency(r.Context(), db.GetDependencyGraphPlanByIdempotencyParams{WorkspaceID: actor.WorkspaceID, IdempotencyKey: idempotencyKey})
+	if err == nil {
+		if existing.RequestHash != requestHash {
+			writeDependencyGraphError(w, dependencyGraphConflict("idempotency_conflict", "idempotency key was used for a different dependency graph"))
+			return
+		}
+		h.writeDependencyGraphReplay(w, r, existing)
+		return
+	}
+	if !isNotFound(err) {
+		writeDependencyGraphError(w, dependencyGraphDatabase("check dependency graph idempotency", err))
+		return
+	}
+	policy := service.ResolveIssueCountPolicy(r.Context(), h.Entitlements, actor.WorkspaceID)
+	result, err := h.applyDependencyGraphTransaction(r.Context(), &input, waves, assignments, parent, actor, policy, idempotencyKey, requestHash)
+	if err != nil {
+		if isUniqueViolation(err) || dependencyGraphIsActivePlanConflict(err) {
+			if h.resolveDependencyGraphApplyConflict(w, r, actor.WorkspaceID, parentUUID, idempotencyKey, requestHash) {
+				return
+			}
+		}
+		if writeIssueLimitReached(w, err) {
+			return
+		}
+		writeDependencyGraphError(w, err)
+		return
+	}
+	h.publishDependencyGraphIssues(r.Context(), result, actor)
+	h.enqueueDependencyGraphRoots(r.Context(), result)
+	response, err := h.dependencyGraphResponseForPlan(r.Context(), result.plan)
+	if err != nil {
+		writeDependencyGraphError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, dependencyGraphResponseMap(response, true, false))
+}
+
+func (h *Handler) RetireDependencyGraph(w http.ResponseWriter, r *http.Request) {
+	wsID := h.resolveWorkspaceID(r)
+	actor, ok := h.dependencyGraphActorForRequest(w, r, wsID)
+	if !ok {
+		return
+	}
+	planID := chi.URLParam(r, "id")
+	planUUID, ok := parseUUIDOrBadRequest(w, planID, "dependency graph id")
+	if !ok {
+		return
+	}
+	if h.TxStarter == nil {
+		writeDependencyGraphError(w, dependencyGraphDatabase("dependency graph transactions are unavailable", nil))
+		return
+	}
+	tx, err := h.TxStarter.Begin(r.Context())
+	if err != nil {
+		writeDependencyGraphError(w, dependencyGraphDatabase("begin dependency graph retire transaction", err))
+		return
+	}
+	defer func() { _ = tx.Rollback(r.Context()) }()
+	qtx := h.Queries.WithTx(tx)
+	plan, err := qtx.GetDependencyGraphPlanForUpdate(r.Context(), db.GetDependencyGraphPlanForUpdateParams{ID: planUUID, WorkspaceID: actor.WorkspaceID})
+	if err != nil {
+		if isNotFound(err) {
+			writeDependencyGraphError(w, dependencyGraphNotFound("dependency graph not found"))
+			return
+		}
+		writeDependencyGraphError(w, dependencyGraphDatabase("lock dependency graph plan", err))
 		return
 	}
 	if plan.Status != "active" {
-		writeErrorCode(w, http.StatusConflict, "plan_not_active", "dependency graph plan is not active")
+		writeDependencyGraphError(w, dependencyGraphConflict("plan_not_active", "dependency graph plan is not active"))
 		return
 	}
-	updated, err := h.Queries.UpdateDependencyGraphPlanStatus(r.Context(), db.UpdateDependencyGraphPlanStatusParams{ID: planUUID, WorkspaceID: wsUUID, Status: "superseded"})
+	updated, err := qtx.UpdateDependencyGraphPlanStatus(r.Context(), db.UpdateDependencyGraphPlanStatusParams{ID: planUUID, WorkspaceID: actor.WorkspaceID, Status: "cancelled"})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "database error")
+		writeDependencyGraphError(w, dependencyGraphDatabase("retire dependency graph plan", err))
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"plan_id": uuidToString(updated.ID), "parent_issue_id": uuidToString(updated.ParentIssueID), "status": updated.Status})
+	if err := tx.Commit(r.Context()); err != nil {
+		writeDependencyGraphError(w, dependencyGraphDatabase("commit dependency graph retire", err))
+		return
+	}
+	response, err := h.dependencyGraphResponseForPlan(r.Context(), updated)
+	if err != nil {
+		writeDependencyGraphError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, dependencyGraphResponseMap(response, false, false))
 }

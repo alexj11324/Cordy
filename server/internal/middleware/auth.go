@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -9,11 +10,27 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/patchbay-ai/patchbay/server/internal/auth"
 	"github.com/patchbay-ai/patchbay/server/internal/util"
 	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
+
+const (
+	guestTokenPrefix    = "pbg_"
+	guestTokenHexLength = 40
+	guestTokenLength    = len(guestTokenPrefix) + guestTokenHexLength
+	guestSessionActive  = "active"
+)
+
+func validGuestToken(raw string) bool {
+	if len(raw) != guestTokenLength || !strings.HasPrefix(raw, guestTokenPrefix) {
+		return false
+	}
+	_, err := hex.DecodeString(raw[len(guestTokenPrefix):])
+	return err == nil
+}
 
 func uuidToString(u pgtype.UUID) string { return util.UUIDToString(u) }
 
@@ -31,9 +48,10 @@ func rejectTemporarilyDisabledUser(w http.ResponseWriter, r *http.Request, userI
 	return true
 }
 
-// Auth middleware validates JWT tokens or Personal Access Tokens.
+// Auth middleware validates guest bearers, JWT tokens, or Personal Access
+// Tokens.
 // Token sources (in priority order):
-//  1. Authorization: Bearer <token> header (PAT or JWT)
+//  1. Authorization: Bearer <token> header (guest bearer, PAT, or JWT)
 //  2. patchbay_auth HttpOnly cookie (JWT) — requires valid CSRF token for state-changing requests
 //
 // Sets X-User-ID and X-User-Email headers on the request for downstream handlers.
@@ -59,6 +77,9 @@ func Auth(queries *db.Queries, patCache *auth.PATCache, cloudPAT *auth.CloudPATV
 			// to convince a downstream handler that its request came
 			// from a non-task-token path.
 			r.Header.Del("X-Actor-Source")
+			// Guest identity is also server-set. A caller cannot turn an ordinary
+			// credential into a guest request by supplying this header.
+			r.Header.Del("X-Guest-User")
 
 			tokenString, fromCookie := extractToken(r)
 			if tokenString == "" {
@@ -71,6 +92,66 @@ func Auth(queries *db.Queries, patCache *auth.PATCache, cloudPAT *auth.CloudPATV
 			if fromCookie && !auth.ValidateCSRF(r) {
 				slog.Debug("auth: CSRF validation failed", "path", r.URL.Path)
 				http.Error(w, `{"error":"CSRF validation failed"}`, http.StatusForbidden)
+				return
+			}
+
+			// Guest bearer: pbg_ tokens are opaque, database-backed credentials.
+			// Resolve the session on every request so a revoke/claim takes effect
+			// immediately; unlike PATs, this path deliberately has no cache.
+			if strings.HasPrefix(tokenString, guestTokenPrefix) {
+				if !validGuestToken(tokenString) {
+					http.Error(w, `{"error":"invalid token"}`, http.StatusUnauthorized)
+					return
+				}
+				if queries == nil {
+					http.Error(w, `{"error":"authentication temporarily unavailable"}`, http.StatusServiceUnavailable)
+					return
+				}
+
+				guestSession, err := queries.GetGuestSessionByTokenHash(r.Context(), auth.HashToken(tokenString))
+				if err != nil {
+					if errors.Is(err, pgx.ErrNoRows) {
+						http.Error(w, `{"error":"invalid token"}`, http.StatusUnauthorized)
+						return
+					}
+					slog.Warn("auth: guest session lookup unavailable", "path", r.URL.Path, "error", err)
+					http.Error(w, `{"error":"authentication temporarily unavailable"}`, http.StatusServiceUnavailable)
+					return
+				}
+				if guestSession.Status != guestSessionActive || !guestSession.ID.Valid || !guestSession.UserID.Valid {
+					http.Error(w, `{"error":"invalid token"}`, http.StatusUnauthorized)
+					return
+				}
+
+				guestUser, err := queries.GetUser(r.Context(), guestSession.UserID)
+				if err != nil {
+					if errors.Is(err, pgx.ErrNoRows) {
+						http.Error(w, `{"error":"invalid token"}`, http.StatusUnauthorized)
+						return
+					}
+					slog.Warn("auth: guest user lookup unavailable", "path", r.URL.Path, "error", err)
+					http.Error(w, `{"error":"authentication temporarily unavailable"}`, http.StatusServiceUnavailable)
+					return
+				}
+				if !guestUser.IsGuest || !guestUser.ID.Valid || guestUser.ID != guestSession.UserID {
+					http.Error(w, `{"error":"invalid token"}`, http.StatusUnauthorized)
+					return
+				}
+
+				userID := uuidToString(guestUser.ID)
+				if rejectTemporarilyDisabledUser(w, r, userID, guestUser.Email, "guest") {
+					return
+				}
+				// These identity headers are server-owned. Clear legacy agent and
+				// workspace context so a guest bearer cannot combine with a forged
+				// machine or tenant identity downstream.
+				r.Header.Del("X-Agent-ID")
+				r.Header.Del("X-Task-ID")
+				r.Header.Del("X-Workspace-ID")
+				r.Header.Set("X-User-ID", userID)
+				r.Header.Set("X-User-Email", guestUser.Email)
+				r.Header.Set("X-Guest-User", "true")
+				next.ServeHTTP(w, r)
 				return
 			}
 
@@ -261,6 +342,55 @@ func Auth(queries *db.Queries, patCache *auth.PATCache, cloudPAT *auth.CloudPATV
 				r.Header.Set("X-User-Email", email)
 			}
 
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// RevokeGuestOnLogout consumes a presented guest bearer on the public logout
+// endpoint. It is intentionally separate from Auth: logout is public and must
+// consume a valid pbg_ token before clearing cookies. Unknown or already-
+// consumed tokens remain idempotent logout requests; a database outage is
+// surfaced instead of claiming a revocation that was not persisted.
+func RevokeGuestOnLogout(queries *db.Queries) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			tokenString, fromCookie := extractToken(r)
+			if fromCookie || !validGuestToken(tokenString) {
+				next.ServeHTTP(w, r)
+				return
+			}
+			if queries == nil {
+				http.Error(w, `{"error":"guest session revocation unavailable"}`, http.StatusServiceUnavailable)
+				return
+			}
+
+			guestSession, err := queries.GetGuestSessionByTokenHash(r.Context(), auth.HashToken(tokenString))
+			if err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					next.ServeHTTP(w, r)
+					return
+				}
+				slog.Warn("auth: guest logout lookup unavailable", "path", r.URL.Path, "error", err)
+				http.Error(w, `{"error":"guest session revocation unavailable"}`, http.StatusServiceUnavailable)
+				return
+			}
+			if guestSession.Status != guestSessionActive || !guestSession.ID.Valid {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			if _, err := queries.RevokeGuestSession(r.Context(), guestSession.ID); err != nil {
+				// A concurrent claim/revoke already consumed the credential. Logout
+				// remains idempotent and the next request will fail Auth's status check.
+				if errors.Is(err, pgx.ErrNoRows) {
+					next.ServeHTTP(w, r)
+					return
+				}
+				slog.Warn("auth: guest logout revocation unavailable", "path", r.URL.Path, "error", err)
+				http.Error(w, `{"error":"guest session revocation unavailable"}`, http.StatusServiceUnavailable)
+				return
+			}
 			next.ServeHTTP(w, r)
 		})
 	}

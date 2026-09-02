@@ -432,7 +432,7 @@ func (h *Handler) DeleteRuntimeProfile(w http.ResponseWriter, r *http.Request) {
 	// rows below cannot destroy an agent, a conversation or a task record.
 	var teardowns []service.RuntimeTeardownResult
 	for _, rid := range runtimeIDs {
-		teardown, err := service.TeardownRuntime(r.Context(), qtx, rid, service.RuntimeTeardownOptions{CancelNonTerminalTasks: true})
+		teardown, err := service.TeardownRuntimeWithAttachmentURLs(r.Context(), qtx, tx, rid, service.RuntimeTeardownOptions{CancelNonTerminalTasks: true})
 		if err != nil {
 			if errors.Is(err, service.ErrRuntimeNotDrained) {
 				slog.Error("runtime profile delete aborted: tasks not drained",

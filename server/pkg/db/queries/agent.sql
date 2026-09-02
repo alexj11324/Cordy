@@ -88,9 +88,18 @@ RETURNING *;
 -- name: DeleteSystemAgentByID :exec
 -- Builder sessions own their hidden execution agent. Deleting the session
 -- removes that carrier and its task rows; the kind guard prevents this cleanup
--- path from ever deleting a user-authored agent.
-DELETE FROM agent
-WHERE id = $1 AND kind = 'system' AND system_key LIKE 'agent_builder:%';
+-- path from ever deleting a user-authored agent. Keep the agent when another
+-- chat session still references it; otherwise the agent FK would cascade that
+-- unexpected session and its attachments without a URL cleanup opportunity.
+DELETE FROM agent AS target
+WHERE target.id = $1
+  AND target.kind = 'system'
+  AND target.system_key LIKE 'agent_builder:%'
+  AND NOT EXISTS (
+      SELECT 1
+      FROM chat_session session
+      WHERE session.agent_id = target.id
+  );
 
 -- name: RebindAgentBuilderRuntime :one
 -- Re-points a builder carrier at another runtime mid-conversation. The carrier
@@ -361,6 +370,62 @@ SELECT
     COALESCE(sqlc.narg('id')::uuid, gen_random_uuid())
 WHERE lock_task_owner_rows($1, $3, $2)
 RETURNING *;
+
+-- name: CreateCoordinationAgentTask :one
+-- Coordination handoffs must persist their provenance in the same INSERT as
+-- the queued task. Keeping this as a separate query preserves the existing
+-- CreateAgentTask contract for ordinary mention/assignment paths while giving
+-- the durable worker an atomic context payload.
+INSERT INTO agent_task_queue (
+    agent_id, runtime_id, issue_id, status, priority, context, handoff_note,
+    team_id, originator_user_id, accountable_user_id, originator_source,
+    trigger_evidence_kind, trigger_evidence_ref_id, id
+)
+SELECT
+    sqlc.arg('agent_id'),
+    sqlc.arg('runtime_id'),
+    sqlc.arg('issue_id'),
+    'queued',
+    sqlc.arg('priority'),
+    sqlc.narg('context')::jsonb,
+    sqlc.narg('handoff_note'),
+    sqlc.narg('team_id')::uuid,
+    sqlc.narg('originator_user_id')::uuid,
+    sqlc.narg('accountable_user_id')::uuid,
+    sqlc.narg('originator_source'),
+    sqlc.narg('trigger_evidence_kind'),
+    sqlc.narg('trigger_evidence_ref_id')::uuid,
+    COALESCE(sqlc.narg('id')::uuid, gen_random_uuid())
+FROM agent AS target_agent
+JOIN issue AS target_issue ON target_issue.id = sqlc.arg('issue_id')
+JOIN agent_runtime AS target_runtime ON target_runtime.id = sqlc.arg('runtime_id')
+WHERE target_agent.id = sqlc.arg('agent_id')
+  AND target_agent.archived_at IS NULL
+  AND target_agent.kind = 'user'
+  AND target_agent.runtime_id = target_runtime.id
+  AND target_agent.workspace_id = sqlc.arg('workspace_id')
+  AND target_issue.workspace_id = target_agent.workspace_id
+  AND target_runtime.workspace_id = target_agent.workspace_id
+  AND lock_task_owner_rows(
+      sqlc.arg('agent_id'),
+      sqlc.arg('issue_id'),
+      sqlc.arg('runtime_id')
+  )
+RETURNING *;
+
+-- name: GetActiveCoordinationTask :one
+SELECT agent_task_queue.*
+FROM agent_task_queue
+JOIN agent ON agent.id = agent_task_queue.agent_id
+JOIN issue ON issue.id = agent_task_queue.issue_id
+WHERE agent_task_queue.issue_id = sqlc.arg('issue_id')
+  AND agent_task_queue.agent_id = sqlc.arg('agent_id')
+  AND agent.workspace_id = sqlc.arg('workspace_id')
+  AND issue.workspace_id = agent.workspace_id
+  AND agent_task_queue.context->>'coordination_assignment_id' = sqlc.arg('assignment_id')::uuid::text
+  AND agent_task_queue.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity', 'deferred')
+ORDER BY agent_task_queue.created_at DESC, agent_task_queue.id DESC
+LIMIT 1;
 
 -- name: CreateDeferredChannelIssueTask :one
 -- Fenced against workspace teardown: lock_task_owner_rows (migration 284)
@@ -789,6 +854,23 @@ WHERE id = (
       AND EXISTS (
           SELECT 1 FROM agent_runtime r
           WHERE r.id = atq.runtime_id
+            AND EXISTS (
+                SELECT 1
+                FROM agent a
+                WHERE a.id = atq.agent_id
+                  AND a.runtime_id = atq.runtime_id
+                  AND (
+                      r.visibility = 'public'
+                      OR (
+                          r.visibility = 'private'
+                          AND (
+                              r.owner_id IS NULL
+                              OR a.owner_id IS NULL
+                              OR r.owner_id = a.owner_id
+                          )
+                      )
+                  )
+            )
             AND r.status = 'online'
             AND COALESCE(r.last_seen_at, r.updated_at) >=
                 now() - make_interval(secs => @runtime_stale_secs::double precision)

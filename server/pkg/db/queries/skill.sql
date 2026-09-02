@@ -46,7 +46,28 @@ RETURNING *;
 
 -- name: DeleteSkill :exec
 -- Defense-in-depth: workspace_id is a SQL-layer tenant guard. See DeleteIssue.
-DELETE FROM skill WHERE id = $1 AND workspace_id = $2;
+WITH target AS (
+    SELECT s.id
+    FROM skill s
+    WHERE s.id = $1 AND s.workspace_id = $2
+), deleted_labels AS (
+    DELETE FROM skill_to_label
+    WHERE skill_id IN (SELECT target.id FROM target)
+    RETURNING skill_id
+), deleted_agent_skills AS (
+    DELETE FROM agent_skill
+    WHERE skill_id IN (SELECT target.id FROM target)
+      AND (SELECT count(*) FROM deleted_labels) >= 0
+    RETURNING skill_id
+), deleted_files AS (
+    DELETE FROM skill_file
+    WHERE skill_id IN (SELECT target.id FROM target)
+      AND (SELECT count(*) FROM deleted_agent_skills) >= 0
+    RETURNING id
+)
+DELETE FROM skill AS s
+WHERE s.id IN (SELECT target.id FROM target)
+  AND (SELECT count(*) FROM deleted_files) >= 0;
 
 -- Skill File CRUD
 

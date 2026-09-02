@@ -531,6 +531,13 @@ type ChannelOutboundMessage struct {
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 }
 
+type ChannelReceiveState struct {
+	InstallationID pgtype.UUID        `json:"installation_id"`
+	ChannelType    string             `json:"channel_type"`
+	Cursor         string             `json:"cursor"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
 type ChannelTaskDelivery struct {
 	TaskID           pgtype.UUID        `json:"task_id"`
 	BindingID        pgtype.UUID        `json:"binding_id"`
@@ -767,6 +774,17 @@ type DependencyGraphPlan struct {
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 	AttentionRequired bool               `json:"attention_required"`
 	AttentionReason   pgtype.Text        `json:"attention_reason"`
+}
+
+type DesktopAuthHandoff struct {
+	State            string             `json:"state"`
+	CodeChallenge    string             `json:"code_challenge"`
+	CallbackProtocol string             `json:"callback_protocol"`
+	UserID           pgtype.UUID        `json:"user_id"`
+	CodeHash         pgtype.Text        `json:"code_hash"`
+	ExpiresAt        pgtype.Timestamptz `json:"expires_at"`
+	CompletedAt      pgtype.Timestamptz `json:"completed_at"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 }
 
 type DingtalkBotIdentity struct {
