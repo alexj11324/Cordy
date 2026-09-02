@@ -33,7 +33,7 @@ import { THEME } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import { getW8Copy } from "@/lib/w8-copy";
 
-const THEME_OPTIONS: Array<{ value: ThemePreference; label: string }> = [
+const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
   { value: "light", label: "Light" },
   { value: "dark", label: "Dark" },
   { value: "system", label: "System" },

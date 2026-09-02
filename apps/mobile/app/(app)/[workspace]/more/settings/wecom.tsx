@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   ActionSheetIOS,
   ActivityIndicator,
@@ -49,7 +49,7 @@ export default function WecomSettingsPage() {
   // the final authorization boundary for both write endpoints.
   const canManage =
     currentMember?.role === "owner" || currentMember?.role === "admin";
-  const agents = agentsQuery.data ?? [];
+  const agents = useMemo(() => agentsQuery.data ?? [], [agentsQuery.data]);
   const selectedAgent = agents.find((agent) => agent.id === selectedAgentId);
   const installations = installationsQuery.data?.installations ?? [];
 
@@ -339,7 +339,7 @@ function LabeledField({
 }
 
 function agentName(
-  agents: Array<{ id: string; name: string }>,
+  agents: { id: string; name: string }[],
   id: string,
 ): string {
   return agents.find((agent) => agent.id === id)?.name ?? id;

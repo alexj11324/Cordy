@@ -11,8 +11,11 @@ import {
 } from "react-native";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Stack, router, useLocalSearchParams } from "expo-router";
-import type { WorkspaceChannel } from "@/data/channel-types";
-import type { WorkspaceChannelMessageCacheEntry } from "@/data/channel-types";
+import {
+  formatChannelTimestamp,
+  type WorkspaceChannel,
+  type WorkspaceChannelMessageCacheEntry,
+} from "@/data/channel-types";
 import { channelListOptions, channelMessagesOptions } from "@/data/queries/channels";
 import { useCreateWorkspaceChannelMessage } from "@/data/mutations/channels";
 import { useAuthStore } from "@/data/auth-store";
@@ -26,7 +29,6 @@ import { useActorLookup } from "@/data/use-actor-name";
 import {
   flattenChannelMessages,
 } from "@/data/realtime/channel-ws-updaters";
-import { formatChannelTimestamp } from "@/data/channel-types";
 import { getW8Copy, normalizeW8Locale } from "@/lib/w8-copy";
 
 export default function ChannelsPage() {
