@@ -306,6 +306,13 @@ var probeAgentCLIs = func() map[string]AgentEntry {
 	return agents
 }
 
+// ProbeLocalAgents exposes the read-only discovery pass for local clients that
+// must not load a Patchbay CLI profile. The regular daemon path still goes
+// through LoadConfig so its profile-backed overrides remain intact.
+func ProbeLocalAgents() map[string]AgentEntry {
+	return probeAgentCLIs()
+}
+
 func probeDshPatchbayProfile(executablePath string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

@@ -16,6 +16,12 @@ import type {
   DaemonPrefs,
   LocalRuntimeProbe,
 } from "../shared/daemon-types";
+import type {
+  GuestCloudModeResult,
+  GuestSessionClearResult,
+  GuestSessionMutationResult,
+  GuestSessionReadResult,
+} from "../shared/local-guest";
 
 interface DesktopAPI {
   /** App version + normalized OS, captured synchronously at preload time. */
@@ -29,6 +35,15 @@ interface DesktopAPI {
   onSystemLocaleChanged: (callback: (locale: string) => void) => () => void;
   /** Validated runtime endpoint config, or a blocking config error. */
   runtimeConfig: RuntimeConfigResult;
+  /** Main-process-owned local Guest session. */
+  getGuestSession: () => Promise<GuestSessionReadResult>;
+  createGuestSession: (
+    displayName: string,
+  ) => Promise<GuestSessionMutationResult>;
+  clearGuestSession: () => Promise<GuestSessionClearResult>;
+  enableCloudMode: () => Promise<GuestCloudModeResult>;
+  switchGuestToCloud: () => Promise<GuestCloudModeResult>;
+  probeLocalRuntimes: () => Promise<LocalRuntimeProbe>;
   /** Main tabbed window or a dedicated issue-only window. */
   windowContext: DesktopWindowContext;
   /** Read any freeze/crash breadcrumb from a previous session, so the renderer

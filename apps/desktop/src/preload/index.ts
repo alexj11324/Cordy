@@ -24,6 +24,12 @@ import type {
   DaemonStatus,
   LocalRuntimeProbe,
 } from "../shared/daemon-types";
+import type {
+  GuestCloudModeResult,
+  GuestSessionClearResult,
+  GuestSessionMutationResult,
+  GuestSessionReadResult,
+} from "../shared/local-guest";
 import {
   MAIN_RENDERER_CHANNEL_STATE_CHANNEL,
   type MainRendererMessageChannel,
@@ -121,6 +127,19 @@ const desktopAPI = {
   },
   /** Validated runtime endpoint config, or a blocking config error. */
   runtimeConfig,
+  /** Main-process-owned local Guest session. */
+  getGuestSession: (): Promise<GuestSessionReadResult> =>
+    ipcRenderer.invoke("guest-session:get"),
+  createGuestSession: (displayName: string): Promise<GuestSessionMutationResult> =>
+    ipcRenderer.invoke("guest-session:create", displayName),
+  clearGuestSession: (): Promise<GuestSessionClearResult> =>
+    ipcRenderer.invoke("guest-session:clear"),
+  enableCloudMode: (): Promise<GuestCloudModeResult> =>
+    ipcRenderer.invoke("guest-session:enable-cloud"),
+  switchGuestToCloud: (): Promise<GuestCloudModeResult> =>
+    ipcRenderer.invoke("guest-session:switch-to-cloud"),
+  probeLocalRuntimes: (): Promise<LocalRuntimeProbe> =>
+    ipcRenderer.invoke("guest-runtime:probe"),
   /** Identifies whether this renderer owns the main tabbed window or a
    *  dedicated issue window, parsed from validated launch arguments. */
   windowContext,

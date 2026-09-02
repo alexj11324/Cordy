@@ -7,6 +7,8 @@ import fixPath from "fix-path";
 import { setupAutoUpdater } from "./updater";
 import { setupDaemonManager } from "./daemon-manager";
 import { setupLocalDirectory } from "./local-directory";
+import { setupLocalGuestRuntime } from "./local-guest-runtime";
+import { setupLocalGuestSession } from "./local-guest-session";
 import { openExternalSafely, downloadURLSafely } from "./external-url";
 import { installContextMenu } from "./context-menu";
 import { handleAppShortcut } from "./keyboard-shortcuts";
@@ -140,6 +142,7 @@ const notificationGate = new NotificationGate();
 const mainRendererMessages = new MainRendererMessageQueue();
 let desktopInitialized = false;
 let authSessionGeneration = 0;
+let cloudServicesEnabled = false;
 const rendererRouteContexts = new WeakMap<
   Electron.WebContents,
   RendererRouteContext
@@ -149,6 +152,13 @@ let runtimeConfigResult: RuntimeConfigResult = {
   ok: false,
   error: { message: "Runtime config has not loaded yet" },
 };
+
+function enableCloudServices(): void {
+  if (cloudServicesEnabled) return;
+  cloudServicesEnabled = true;
+  setupAutoUpdater(() => mainWindow);
+  setupDaemonManager(() => mainWindow);
+}
 
 // --- Deep link helpers ---------------------------------------------------
 
@@ -380,7 +390,7 @@ function createWindow(): BrowserWindow {
   installDownloadSaveDialogHandler(window);
 
   window.webContents.setWindowOpenHandler((details) => {
-    openExternalSafely(details.url);
+    if (cloudServicesEnabled) void openExternalSafely(details.url);
     return { action: "deny" };
   });
 
@@ -497,7 +507,7 @@ function createIssueWindow(context: IssueWindowContext): void {
   installDownloadSaveDialogHandler(window);
 
   window.webContents.setWindowOpenHandler((details) => {
-    void openExternalSafely(details.url);
+    if (cloudServicesEnabled) void openExternalSafely(details.url);
     return { action: "deny" };
   });
   installWindowShortcutHandler(window);
@@ -658,7 +668,11 @@ if (!gotTheLock) {
     // is the single audit point for renderer-controlled URLs reaching the
     // OS shell under the app's intentional webSecurity: false configuration
     // (the renderer itself runs sandboxed).
-    ipcMain.handle("shell:openExternal", (_event, url: string) => {
+    ipcMain.handle("shell:openExternal", (event, url: unknown) => {
+      if (!cloudServicesEnabled || !BrowserWindow.fromWebContents(event.sender)) {
+        return;
+      }
+      if (typeof url !== "string") return;
       return openExternalSafely(url);
     });
 
@@ -669,7 +683,10 @@ if (!gotTheLock) {
     });
 
     ipcMain.handle("window:open-issue", (event, request: unknown) => {
-      if (!BrowserWindow.fromWebContents(event.sender)) {
+      if (
+        !cloudServicesEnabled ||
+        !BrowserWindow.fromWebContents(event.sender)
+      ) {
         return { ok: false, reason: "invalid_request" } as const;
       }
       const context = parseIssueWindowRequest(request);
@@ -680,10 +697,14 @@ if (!gotTheLock) {
       return { ok: true } as const;
     });
 
-    ipcMain.handle("file:download-url", (event, url: string) => {
+    ipcMain.handle("file:download-url", (event, url: unknown) => {
       const sourceWindow = BrowserWindow.fromWebContents(event.sender);
-      if (!sourceWindow) {
-        console.warn("[download] ignored file:download-url — source window torn down");
+      if (!cloudServicesEnabled || !sourceWindow || typeof url !== "string") {
+        if (!sourceWindow) {
+          console.warn(
+            "[download] ignored file:download-url — source window torn down",
+          );
+        }
         return;
       }
       downloadURLSafely(sourceWindow, url);
@@ -839,8 +860,8 @@ if (!gotTheLock) {
     desktopInitialized = true;
     createWindow();
 
-    setupAutoUpdater(() => mainWindow);
-    setupDaemonManager(() => mainWindow);
+    setupLocalGuestSession(() => mainWindow, enableCloudServices);
+    setupLocalGuestRuntime(() => mainWindow);
     setupLocalDirectory(() => mainWindow);
 
     app.on("activate", () => {

@@ -137,6 +137,7 @@ func init() {
 	df.String("output", "table", "Output format: table or json")
 	df.String("workspaces-root", "", "Override the workspaces root path (default: same as the daemon)")
 	df.Bool("all-profiles", false, "Scan every workspace root (default root + all ~/.patchbay/profiles/* roots, incl. the Desktop app's) and report a combined total")
+	daemonProbeRuntimesCmd.Flags().Bool("local", false, "Probe without reading a Patchbay CLI profile")
 
 	daemonCmd.AddCommand(daemonStartCmd)
 	daemonCmd.AddCommand(daemonStopCmd)
@@ -156,6 +157,14 @@ type daemonRuntimeProbe struct {
 func runDaemonProbeRuntimes(cmd *cobra.Command, _ []string) error {
 	if err := requireHumanLocalCommand("daemon probe-runtimes"); err != nil {
 		return err
+	}
+	localOnly, err := cmd.Flags().GetBool("local")
+	if err != nil {
+		localOnly = false
+	}
+	if localOnly {
+		probe := daemonRuntimeProbeFromAgents(daemon.ProbeLocalAgents())
+		return json.NewEncoder(cmd.OutOrStdout()).Encode(probe)
 	}
 	cfg, err := daemon.LoadConfig(daemon.Overrides{
 		Profile:       resolveProfile(cmd),

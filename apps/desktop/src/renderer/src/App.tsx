@@ -1,7 +1,21 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { CoreProvider } from "@patchbay/core/platform";
-import { pickLocale, type SupportedLocale } from "@patchbay/core/i18n";
+import type { ClientIdentity } from "@patchbay/core/platform";
+import {
+  pickLocale,
+  type LocaleAdapter,
+  type LocaleResources,
+  type SupportedLocale,
+} from "@patchbay/core/i18n";
+import { I18nProvider } from "@patchbay/core/i18n/react";
 import { useAuthStore } from "@patchbay/core/auth";
 import { useWelcomeStore } from "@patchbay/core/onboarding";
 import { workspaceKeys } from "@patchbay/core/workspace/queries";
@@ -15,6 +29,11 @@ import { Toaster } from "@patchbay/ui/components/ui/sonner";
 import { DesktopLoginPage } from "./pages/login";
 import { DesktopAuthRecoveryPage } from "./pages/auth-recovery";
 import { completeDesktopHandoff } from "./pages/login-handoff";
+import {
+  GuestSessionRecoveryPage,
+  LocalGuestShell,
+} from "./pages/local-guest";
+import { DesktopEntryPage } from "./pages/desktop-entry";
 import { DesktopShell } from "./components/desktop-layout";
 import { UpdateNotification } from "./components/update-notification";
 import { IssueWindow } from "./components/issue-window";
@@ -30,6 +49,9 @@ import { DesktopClientUsageReporter } from "./platform/client-usage-reporter";
 import { DiagnosticRouteReporter } from "./platform/diagnostic-route-reporter";
 import { flushFreezeBreadcrumb } from "./freeze-flush";
 import { DesktopAuthSessionBridge } from "./platform/auth-session-bridge";
+import type { DesktopWindowContext } from "../../../shared/issue-window";
+import type { RuntimeConfigResult } from "../../../shared/runtime-config";
+import type { LocalGuestSession } from "../../../shared/local-guest";
 
 // BCP-47 region tags for the <html lang> attribute, mirroring
 // apps/web/app/layout.tsx HTML_LANG. index.html ships a static lang="en";
@@ -386,37 +408,100 @@ async function handleDaemonLogout() {
   }
 }
 
+type BootState =
+  | { kind: "loading" }
+  | { kind: "entry" }
+  | { kind: "guest"; session: LocalGuestSession }
+  | { kind: "guest-error" }
+  | { kind: "cloud" };
+
+type DesktopCloudAppProps = {
+  identity: ClientIdentity;
+  locale: SupportedLocale;
+  resources: Record<string, LocaleResources>;
+  localeAdapter: LocaleAdapter;
+  runtimeConfigResult: RuntimeConfigResult;
+  windowContext: DesktopWindowContext;
+};
+
+function CloudApp({
+  identity,
+  locale,
+  resources,
+  localeAdapter,
+  runtimeConfigResult,
+  windowContext,
+}: DesktopCloudAppProps) {
+  useOpenSettingsShortcut();
+
+  // Cloud-only failure telemetry. Keeping the analytics import and breadcrumb
+  // flush below this branch means Local Guest boot has no analytics side
+  // effects or reporter subscriptions.
+  useEffect(() => {
+    let cancelled = false;
+    let cleanup: (() => void) | undefined;
+    void import("@patchbay/core/analytics").then(({ captureEvent }) => {
+      if (cancelled) return;
+      cleanup = flushFreezeBreadcrumb({
+        getLastFreeze: () => window.desktopAPI.getLastFreeze(),
+        ackFreeze: (ts) => window.desktopAPI.ackFreeze(ts),
+        capture: captureEvent,
+      });
+    });
+    return () => {
+      cancelled = true;
+      cleanup?.();
+    };
+  }, []);
+
+  if (!runtimeConfigResult.ok) {
+    return (
+      <BlockingRuntimeConfigError message={runtimeConfigResult.error.message} />
+    );
+  }
+  const runtimeConfig = runtimeConfigResult.config;
+
+  return (
+    <CoreProvider
+      apiBaseUrl={runtimeConfig.apiUrl}
+      wsUrl={runtimeConfig.wsUrl}
+      onLogout={windowContext.kind === "main" ? handleDaemonLogout : undefined}
+      identity={identity}
+      locale={locale}
+      resources={resources}
+      localeAdapter={localeAdapter}
+    >
+      <DesktopAuthSessionBridge />
+      {windowContext.kind === "main" && <DiagnosticRouteReporter />}
+      {windowContext.kind === "main" && (
+        <DesktopClientUsageReporter apiUrl={runtimeConfig.apiUrl} />
+      )}
+      {windowContext.kind === "issue" ? (
+        <IssueWindowContent />
+      ) : (
+        <AppContent />
+      )}
+    </CoreProvider>
+  );
+}
+
 export default function App() {
   const { version, os } = window.desktopAPI.appInfo;
   const systemLocale = window.desktopAPI.systemLocale;
   const runtimeConfigResult = window.desktopAPI.runtimeConfig;
   // The fallback keeps renderer HMR safe while a main/preload rebuild is
   // restarting Electron; packaged builds always expose windowContext.
-  const windowContext =
-    window.desktopAPI.windowContext ?? { kind: "main" as const };
-  useCmdWCloseTab();
-  // Mounted at the App root for the same reason as Cmd+W: the chord has to
-  // work in every renderer state, not only inside the tab shell.
-  useOpenSettingsShortcut();
-
-  // Flush a freeze/crash breadcrumb the main process parked from a previous
-  // session. A true hang or process death can't report itself when it happens
-  // (the renderer is blocked or gone), so the main process persists it and we
-  // emit it here on the next boot. The in-thread, recoverable freeze tier is
-  // handled separately by the shared watchdog in CoreProvider.
-  useEffect(
-    () =>
-      flushFreezeBreadcrumb({
-        getLastFreeze: () => window.desktopAPI.getLastFreeze(),
-        ackFreeze: (ts) => window.desktopAPI.ackFreeze(ts),
-        capture: captureEvent,
-      }),
-    [],
+  const windowContext: DesktopWindowContext =
+    window.desktopAPI.windowContext ?? { kind: "main" };
+  const [bootState, setBootState] = useState<BootState>(() =>
+    windowContext.kind === "issue" ? { kind: "cloud" } : { kind: "loading" },
   );
+
+  useCmdWCloseTab();
 
   // Stable identity reference so downstream effects (WS reconnect) don't
   // tear down on every parent render.
-  const identity = useMemo(
+  const identity = useMemo<ClientIdentity>(
     () => ({ platform: "desktop", version, os }),
     [version, os],
   );
@@ -427,7 +512,7 @@ export default function App() {
     [systemLocale],
   );
   const locale = useMemo(() => pickLocale(localeAdapter), [localeAdapter]);
-  const resources = useMemo(
+  const resources = useMemo<Record<string, LocaleResources>>(
     () => ({ [locale]: RESOURCES[locale] }),
     [locale],
   );
@@ -443,8 +528,8 @@ export default function App() {
 
   // React to OS-level language changes detected by main on focus regain.
   // Only act when the user is following the system signal (no explicit
-  // Settings choice) — otherwise their preference wins. Cross-device sync
-  // for the explicit-choice case is handled inside CoreProvider.
+  // Settings choice) — otherwise their preference wins. Cloud-only locale
+  // synchronization is handled by CoreProvider after this branch.
   useEffect(() => {
     return window.desktopAPI.onSystemLocaleChanged((nextSystemLocale) => {
       if (localeAdapter.getUserChoice()) return;
@@ -459,38 +544,109 @@ export default function App() {
     });
   }, [localeAdapter, locale]);
 
+  const enableCloudMode = useCallback(async () => {
+    const result = await window.desktopAPI.enableCloudMode();
+    if (!result.ok) {
+      throw new Error(`Unable to enable cloud mode: ${result.reason}`);
+    }
+    setBootState({ kind: "cloud" });
+  }, []);
+
+  const enterGuest = useCallback((session: LocalGuestSession) => {
+    setBootState({ kind: "guest", session });
+  }, []);
+
+  const exitGuest = useCallback(async () => {
+    const result = await window.desktopAPI.clearGuestSession();
+    if (!result.ok) {
+      throw new Error(`Unable to clear Guest session: ${result.reason}`);
+    }
+    setBootState({ kind: "entry" });
+  }, []);
+
+  const switchGuestToCloud = useCallback(async () => {
+    const result = await window.desktopAPI.switchGuestToCloud();
+    if (!result.ok) {
+      throw new Error(`Unable to switch to cloud mode: ${result.reason}`);
+    }
+    setBootState({ kind: "cloud" });
+  }, []);
+
+  // Guest discovery is the only pre-CoreProvider boot work. It reads only the
+  // main-owned local Guest file; token/profile state is deliberately untouched.
+  useEffect(() => {
+    if (windowContext.kind === "issue") return;
+    let active = true;
+    void window.desktopAPI
+      .getGuestSession()
+      .then((result) => {
+        if (!active) return;
+        if (!result.ok) {
+          setBootState({ kind: "guest-error" });
+        } else if (result.session) {
+          setBootState({ kind: "guest", session: result.session });
+        } else {
+          setBootState({ kind: "entry" });
+        }
+      })
+      .catch(() => {
+        if (active) setBootState({ kind: "guest-error" });
+      });
+    return () => {
+      active = false;
+    };
+  }, [windowContext.kind]);
+
+  const localContent = (() => {
+    switch (bootState.kind) {
+      case "loading":
+        return (
+          <div className="flex h-screen items-center justify-center">
+            <PatchbayIcon className="size-6 animate-pulse" />
+          </div>
+        );
+      case "entry":
+        return (
+          <DesktopEntryPage
+            onEnableCloudMode={enableCloudMode}
+            onGuestSession={enterGuest}
+          />
+        );
+      case "guest":
+        return (
+          <LocalGuestShell
+            session={bootState.session}
+            onSwitchToCloud={switchGuestToCloud}
+            onExit={exitGuest}
+          />
+        );
+      case "guest-error":
+        return <GuestSessionRecoveryPage onReset={exitGuest} />;
+      case "cloud":
+        return null;
+    }
+  })();
+
   return (
     <ThemeProvider>
-      {runtimeConfigResult.ok ? (
-        <CoreProvider
-          apiBaseUrl={runtimeConfigResult.config.apiUrl}
-          wsUrl={runtimeConfigResult.config.wsUrl}
-          onLogout={
-            windowContext.kind === "main" ? handleDaemonLogout : undefined
-          }
+      {bootState.kind === "cloud" ? (
+        <CloudApp
           identity={identity}
           locale={locale}
           resources={resources}
           localeAdapter={localeAdapter}
-        >
-          <DesktopAuthSessionBridge />
-          {windowContext.kind === "main" && <DiagnosticRouteReporter />}
-          {windowContext.kind === "main" && (
-            <DesktopClientUsageReporter
-              apiUrl={runtimeConfigResult.config.apiUrl}
-            />
-          )}
-          {windowContext.kind === "issue" ? (
-            <IssueWindowContent />
-          ) : (
-            <AppContent />
-          )}
-        </CoreProvider>
+          runtimeConfigResult={runtimeConfigResult}
+          windowContext={windowContext}
+        />
       ) : (
-        <BlockingRuntimeConfigError message={runtimeConfigResult.error.message} />
+        <I18nProvider locale={locale} resources={resources}>
+          {localContent}
+        </I18nProvider>
       )}
       <Toaster />
-      {windowContext.kind === "main" && <UpdateNotification />}
+      {bootState.kind === "cloud" && windowContext.kind === "main" && (
+        <UpdateNotification />
+      )}
     </ThemeProvider>
   );
 }

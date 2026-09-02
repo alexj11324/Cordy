@@ -70,6 +70,42 @@ func TestDaemonLocalCommandsFailClosedInTaskContext(t *testing.T) {
 	}
 }
 
+func TestDaemonProbeRuntimesLocalDoesNotLoadPatchbayProfile(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("PATH", t.TempDir())
+	t.Setenv("SHELL", "/bin/false")
+	for _, key := range []string{
+		"PATCHBAY_AGENT_ID",
+		"PATCHBAY_TASK_ID",
+		"PATCHBAY_TASK_CONFIG_ROOT",
+	} {
+		t.Setenv(key, "")
+	}
+
+	cmd := &cobra.Command{}
+	cmd.Flags().Bool("local", false, "")
+	var output bytes.Buffer
+	cmd.SetOut(&output)
+	if err := cmd.Flags().Set("local", "true"); err != nil {
+		t.Fatalf("set local flag: %v", err)
+	}
+
+	if err := runDaemonProbeRuntimes(cmd, nil); err != nil {
+		t.Fatalf("runDaemonProbeRuntimes(local) = %v", err)
+	}
+
+	var got daemonRuntimeProbe
+	if err := json.Unmarshal(output.Bytes(), &got); err != nil {
+		t.Fatalf("decode local probe: %v; output=%q", err, output.String())
+	}
+	if got.ProbeResult != "success" || got.RuntimeCount != 0 {
+		t.Fatalf("local probe = %+v, want successful empty probe", got)
+	}
+	if _, err := os.Stat(filepath.Join(os.Getenv("HOME"), ".patchbay")); !os.IsNotExist(err) {
+		t.Fatalf("local probe touched Patchbay home: stat error=%v", err)
+	}
+}
+
 func TestPrintDaemonStatusIncludesCLIVersion(t *testing.T) {
 	t.Parallel()
 
