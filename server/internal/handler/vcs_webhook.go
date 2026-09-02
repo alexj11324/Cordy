@@ -9,7 +9,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/patchbay-ai/patchbay/server/internal/integrations/vcs"
 	"github.com/patchbay-ai/patchbay/server/internal/issuestatus"
 	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
@@ -47,9 +46,7 @@ func vcsPullRequestToResponse(p db.VcsPullRequest) GitHubPullRequestResponse {
 	}
 }
 
-// vcsPullRequestRowToResponse maps an issue's PR-list row, which carries the
-// aggregated commit-status counts, onto the shared response shape.
-func vcsPullRequestRowToResponse(p db.ListVCSPullRequestsByIssueRow) GitHubPullRequestResponse {
+func vcsWorkProductPullRequestToResponse(p db.GetVCSPullRequestForWorkProductRow) GitHubPullRequestResponse {
 	return GitHubPullRequestResponse{
 		ID:               uuidToString(p.ID),
 		Provider:         p.Provider,
@@ -242,15 +239,14 @@ func (h *Handler) mirrorVCSPullRequest(ctx context.Context, conn db.VcsConnectio
 		_, declared := closingIdents[id]
 		closeIntent := declared && !preserveCloseIntent
 		_, qualifies := qualifyingIdents[id]
-		referenceOnly := !qualifies
+		// Authored as `system`, like the GitHub side: the webhook has no user
+		// or agent identity to borrow for the relation's actor columns.
 		if err := h.Queries.LinkIssueToVCSPullRequest(ctx, db.LinkIssueToVCSPullRequestParams{
 			IssueID:             issue.ID,
 			PullRequestID:       pr.ID,
 			CloseIntent:         closeIntent,
-			ReferenceOnly:       referenceOnly,
+			MentionOnly:         !qualifies,
 			PreserveCloseIntent: preserveCloseIntent,
-			LinkedByType:        strToText("system"),
-			LinkedByID:          pgtype.UUID{},
 		}); err != nil {
 			slog.Warn("vcs: link failed", "err", err)
 			continue

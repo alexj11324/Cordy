@@ -132,9 +132,33 @@ func createHeadShaDedupFixture(t *testing.T, ctx context.Context, pool *pgxpool.
 		`, workspaceID, 4000+int(suffix%1000), state, prHeadSha).Scan(&prID); err != nil {
 			t.Fatalf("create pull request: %v", err)
 		}
+		// The link is a Work Product relation now: a product mirroring the PR,
+		// plus one relation anchoring it to the issue. Both are written here
+		// because the review-SHA query reads the issue through them.
+		var productID string
+		if err := pool.QueryRow(ctx, `
+			INSERT INTO work_product (
+			    workspace_id, kind, provider, external_identity, external_url,
+			    provider_record_type, provider_record_id
+			)
+			SELECT pr.workspace_id, 'pull_request', 'github',
+			       pr.repo_owner || '/' || pr.repo_name || '#' || pr.pr_number::text,
+			       pr.html_url, 'github_pull_request', pr.id
+			FROM github_pull_request pr
+			WHERE pr.id = $1
+			RETURNING id
+		`, prID).Scan(&productID); err != nil {
+			t.Fatalf("create work product: %v", err)
+		}
 		if _, err := pool.Exec(ctx, `
-			INSERT INTO issue_pull_request (issue_id, pull_request_id) VALUES ($1, $2)
-		`, issueID, prID); err != nil {
+			INSERT INTO work_product_relation (
+			    workspace_id, work_product_id, issue_id, relation_key,
+			    relation_source, attached_by_type, attached_by_id
+			)
+			VALUES ($1::uuid, $2::uuid, $3::uuid,
+			        'provider:github_pull_request:' || $2::uuid::text,
+			        'provider_discovery', 'system', NULL)
+		`, workspaceID, productID, issueID); err != nil {
 			t.Fatalf("link pull request: %v", err)
 		}
 	}
@@ -142,7 +166,8 @@ func createHeadShaDedupFixture(t *testing.T, ctx context.Context, pool *pgxpool.
 	t.Cleanup(func() {
 		c := context.Background()
 		pool.Exec(c, `DELETE FROM agent_task_queue WHERE agent_id = $1`, agentID)
-		pool.Exec(c, `DELETE FROM issue_pull_request WHERE issue_id = $1`, issueID)
+		pool.Exec(c, `DELETE FROM work_product_relation WHERE issue_id = $1`, issueID)
+		pool.Exec(c, `DELETE FROM work_product WHERE workspace_id = $1`, workspaceID)
 		pool.Exec(c, `DELETE FROM github_pull_request WHERE workspace_id = $1`, workspaceID)
 		pool.Exec(c, `DELETE FROM issue WHERE id = $1`, issueID)
 		pool.Exec(c, `DELETE FROM agent WHERE id = $1`, agentID)

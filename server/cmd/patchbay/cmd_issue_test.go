@@ -617,13 +617,17 @@ func TestRunIssueCreateShowsDuplicateMessage(t *testing.T) {
 	}
 }
 
-func newIssuePullRequestsTestCmd() *cobra.Command {
-	cmd := &cobra.Command{Use: "pull-requests"}
+func newIssueWorkProductsTestCmd() *cobra.Command {
+	cmd := &cobra.Command{Use: "work-products"}
 	cmd.Flags().String("output", "table", "")
 	return cmd
 }
 
-func TestRunIssuePullRequestsListsLinkedPRsAsJSON(t *testing.T) {
+// TestRunIssueWorkProductsListsAttachedProductsAsJSON pins the CLI to the one
+// surface that survives: an issue's deliverables come from
+// /work-products, and a pull request arrives as a product carrying a
+// `pull_request` card rather than as its own list.
+func TestRunIssueWorkProductsListsAttachedProductsAsJSON(t *testing.T) {
 	var gotPaths []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPaths = append(gotPaths, r.URL.Path)
@@ -632,16 +636,27 @@ func TestRunIssuePullRequestsListsLinkedPRsAsJSON(t *testing.T) {
 			json.NewEncoder(w).Encode(map[string]any{
 				"id":         "issue-uuid",
 				"identifier": "MUL-2818",
-				"title":      "CLI PR lookup",
+				"title":      "CLI work product lookup",
 			})
-		case "/api/issues/issue-uuid/pull-requests":
+		case "/api/issues/issue-uuid/work-products":
 			json.NewEncoder(w).Encode(map[string]any{
-				"pull_requests": []map[string]any{
+				"work_products": []map[string]any{
 					{
-						"url":    "https://github.com/patchbay-ai/patchbay/pull/42",
-						"number": float64(42),
-						"state":  "open",
-						"title":  "MUL-2818 add issue PR CLI",
+						"id":                "product-uuid",
+						"kind":              "pull_request",
+						"provider":          "github",
+						"external_identity": "patchbay-ai/patchbay#42",
+						"external_url":      "https://github.com/patchbay-ai/patchbay/pull/42",
+						"relation": map[string]any{
+							"id":              "relation-uuid",
+							"relation_source": "provider_discovery",
+							"close_intent":    true,
+						},
+						"pull_request": map[string]any{
+							"number": float64(42),
+							"state":  "open",
+							"title":  "MUL-2818 add issue work product CLI",
+						},
 					},
 				},
 			})
@@ -655,33 +670,50 @@ func TestRunIssuePullRequestsListsLinkedPRsAsJSON(t *testing.T) {
 	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
 	t.Setenv("PATCHBAY_TOKEN", "test-token")
 
-	cmd := newIssuePullRequestsTestCmd()
+	cmd := newIssueWorkProductsTestCmd()
 	_ = cmd.Flags().Set("output", "json")
 	old := os.Stdout
 	r, w, _ := os.Pipe()
 	os.Stdout = w
-	err := runIssuePullRequests(cmd, []string{"MUL-2818"})
+	err := runIssueWorkProducts(cmd, []string{"MUL-2818"})
 	_ = w.Close()
 	os.Stdout = old
 	out, _ := io.ReadAll(r)
 	if err != nil {
-		t.Fatalf("runIssuePullRequests: %v", err)
+		t.Fatalf("runIssueWorkProducts: %v", err)
 	}
 
-	if want := []string{"/api/issues/MUL-2818", "/api/issues/issue-uuid/pull-requests"}; fmt.Sprint(gotPaths) != fmt.Sprint(want) {
+	if want := []string{"/api/issues/MUL-2818", "/api/issues/issue-uuid/work-products"}; fmt.Sprint(gotPaths) != fmt.Sprint(want) {
 		t.Fatalf("paths = %v, want %v", gotPaths, want)
 	}
 	var payload map[string]any
 	if err := json.Unmarshal(out, &payload); err != nil {
 		t.Fatalf("decode JSON output: %v\n%s", err, string(out))
 	}
-	prs, _ := payload["pull_requests"].([]any)
-	if len(prs) != 1 {
-		t.Fatalf("pull_requests length = %d, want 1", len(prs))
+	products, _ := payload["work_products"].([]any)
+	if len(products) != 1 {
+		t.Fatalf("work_products length = %d, want 1", len(products))
 	}
-	pr, _ := prs[0].(map[string]any)
-	if pr["url"] != "https://github.com/patchbay-ai/patchbay/pull/42" || pr["number"] != float64(42) || pr["state"] != "open" || pr["title"] != "MUL-2818 add issue PR CLI" {
-		t.Fatalf("unexpected PR payload: %#v", pr)
+	product, _ := products[0].(map[string]any)
+	if product["external_identity"] != "patchbay-ai/patchbay#42" || product["kind"] != "pull_request" {
+		t.Fatalf("unexpected product payload: %#v", product)
+	}
+	pullRequest, _ := product["pull_request"].(map[string]any)
+	if pullRequest["state"] != "open" || pullRequest["number"] != float64(42) {
+		t.Fatalf("unexpected pull request card: %#v", pullRequest)
+	}
+}
+
+// TestWorkProductStateOnlyReadsPullRequestCards keeps the STATE column honest:
+// a product with no upstream record has no state to show, and inventing one
+// (say, "open") would read as a live PR that does not exist.
+func TestWorkProductStateOnlyReadsPullRequestCards(t *testing.T) {
+	if got := workProductState(map[string]any{"kind": "document"}); got != "" {
+		t.Fatalf("state for a product with no PR card = %q, want empty", got)
+	}
+	withCard := map[string]any{"pull_request": map[string]any{"state": "merged"}}
+	if got := workProductState(withCard); got != "merged" {
+		t.Fatalf("state = %q, want merged", got)
 	}
 }
 
@@ -747,23 +779,28 @@ func TestRunIssueUsageReturnsTokenSummaryAsJSON(t *testing.T) {
 	}
 }
 
-func TestRunIssuePullRequestsTableIncludesCoreFields(t *testing.T) {
-	prs := []map[string]any{{
-		"url":    "https://github.com/patchbay-ai/patchbay/pull/42",
-		"number": float64(42),
-		"state":  "open",
-		"title":  "MUL-2818 add issue PR CLI",
+func TestRunIssueWorkProductsTableIncludesCoreFields(t *testing.T) {
+	products := []map[string]any{{
+		"external_identity": "patchbay-ai/patchbay#42",
+		"external_url":      "https://github.com/patchbay-ai/patchbay/pull/42",
+		"kind":              "pull_request",
+		"relation":          map[string]any{"relation_source": "provider_discovery"},
+		"pull_request":      map[string]any{"state": "open"},
 	}}
 
 	old := os.Stdout
 	r, w, _ := os.Pipe()
 	os.Stdout = w
-	printIssuePullRequestsTable(prs)
+	printIssueWorkProductsTable(products)
 	_ = w.Close()
 	os.Stdout = old
 	out, _ := io.ReadAll(r)
 	text := string(out)
-	for _, want := range []string{"NUMBER", "STATE", "TITLE", "URL", "42", "open", "MUL-2818 add issue PR CLI", "https://github.com/patchbay-ai/patchbay/pull/42"} {
+	for _, want := range []string{
+		"IDENTITY", "KIND", "STATE", "SOURCE", "URL",
+		"patchbay-ai/patchbay#42", "pull_request", "open", "provider_discovery",
+		"https://github.com/patchbay-ai/patchbay/pull/42",
+	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("table output missing %q:\n%s", want, text)
 		}

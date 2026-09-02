@@ -222,10 +222,13 @@ func TestCommentEnqueueRaceDifferentHeadNotCoalesced(t *testing.T) {
 		t.Fatalf("seed PR: %v", err)
 	}
 	t.Cleanup(func() {
-		testPool.Exec(context.Background(), `DELETE FROM issue_pull_request WHERE pull_request_id = $1`, prID)
+		cleanupWorkProductForPullRequest(context.Background(), prID)
 	})
 	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM github_pull_request WHERE id = $1`, prID) })
-	if _, err := testPool.Exec(ctx, `INSERT INTO issue_pull_request (issue_id, pull_request_id) VALUES ($1, $2)`, issueID, prID); err != nil {
+	if err := testHandler.Queries.LinkIssueToPullRequest(ctx, db.LinkIssueToPullRequestParams{
+		IssueID:       util.MustParseUUID(issueID),
+		PullRequestID: util.MustParseUUID(prID),
+	}); err != nil {
 		t.Fatalf("link PR: %v", err)
 	}
 
@@ -453,10 +456,13 @@ func TestCommentEnqueueRaceNewerDifferentHeadNotDeferred(t *testing.T) {
 		t.Fatalf("seed PR: %v", err)
 	}
 	t.Cleanup(func() {
-		testPool.Exec(context.Background(), `DELETE FROM issue_pull_request WHERE pull_request_id = $1`, prID)
+		cleanupWorkProductForPullRequest(context.Background(), prID)
 	})
 	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM github_pull_request WHERE id = $1`, prID) })
-	if _, err := testPool.Exec(ctx, `INSERT INTO issue_pull_request (issue_id, pull_request_id) VALUES ($1, $2)`, issueID, prID); err != nil {
+	if err := testHandler.Queries.LinkIssueToPullRequest(ctx, db.LinkIssueToPullRequestParams{
+		IssueID:       util.MustParseUUID(issueID),
+		PullRequestID: util.MustParseUUID(prID),
+	}); err != nil {
 		t.Fatalf("link PR: %v", err)
 	}
 
@@ -531,10 +537,13 @@ func TestCommentEnqueueRaceMixedCoveringAndNewerNotDeferred(t *testing.T) {
 		t.Fatalf("seed PR: %v", err)
 	}
 	t.Cleanup(func() {
-		testPool.Exec(context.Background(), `DELETE FROM issue_pull_request WHERE pull_request_id = $1`, prID)
+		cleanupWorkProductForPullRequest(context.Background(), prID)
 	})
 	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM github_pull_request WHERE id = $1`, prID) })
-	if _, err := testPool.Exec(ctx, `INSERT INTO issue_pull_request (issue_id, pull_request_id) VALUES ($1, $2)`, issueID, prID); err != nil {
+	if err := testHandler.Queries.LinkIssueToPullRequest(ctx, db.LinkIssueToPullRequestParams{
+		IssueID:       util.MustParseUUID(issueID),
+		PullRequestID: util.MustParseUUID(prID),
+	}); err != nil {
 		t.Fatalf("link PR: %v", err)
 	}
 
@@ -644,10 +653,13 @@ func seedDupRacePR(t *testing.T, issueID string, prNumber int) {
 		t.Fatalf("seed PR: %v", err)
 	}
 	t.Cleanup(func() {
-		testPool.Exec(context.Background(), `DELETE FROM issue_pull_request WHERE pull_request_id = $1`, prID)
+		cleanupWorkProductForPullRequest(context.Background(), prID)
 	})
 	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM github_pull_request WHERE id = $1`, prID) })
-	if _, err := testPool.Exec(ctx, `INSERT INTO issue_pull_request (issue_id, pull_request_id) VALUES ($1, $2)`, issueID, prID); err != nil {
+	if err := testHandler.Queries.LinkIssueToPullRequest(ctx, db.LinkIssueToPullRequestParams{
+		IssueID:       util.MustParseUUID(issueID),
+		PullRequestID: util.MustParseUUID(prID),
+	}); err != nil {
 		t.Fatalf("link PR: %v", err)
 	}
 }

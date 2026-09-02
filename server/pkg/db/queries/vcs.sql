@@ -39,12 +39,22 @@ RETURNING *;
 WITH target AS (
     SELECT vcs_connection.id FROM vcs_connection WHERE vcs_connection.id = $1 AND vcs_connection.workspace_id = $2
 ),
-cleared_links AS (
-    DELETE FROM issue_vcs_pull_request
-    WHERE pull_request_id IN (
-        SELECT vcs_pull_request.id FROM vcs_pull_request
-        WHERE vcs_pull_request.connection_id IN (SELECT target.id FROM target)
-    )
+target_prs AS (
+    SELECT vcs_pull_request.id FROM vcs_pull_request
+    WHERE vcs_pull_request.connection_id IN (SELECT target.id FROM target)
+),
+target_products AS (
+    SELECT work_product.id FROM work_product
+    WHERE work_product.provider_record_type = 'vcs_pull_request'
+      AND work_product.provider_record_id IN (SELECT target_prs.id FROM target_prs)
+),
+cleared_relations AS (
+    DELETE FROM work_product_relation
+    WHERE work_product_id IN (SELECT target_products.id FROM target_products)
+),
+cleared_products AS (
+    DELETE FROM work_product
+    WHERE id IN (SELECT target_products.id FROM target_products)
 ),
 cleared_statuses AS (
     DELETE FROM vcs_commit_status WHERE connection_id IN (SELECT target.id FROM target)
@@ -102,39 +112,31 @@ ON CONFLICT (connection_id, repo_owner, repo_name, pr_number) DO UPDATE SET
     updated_at        = now()
 RETURNING *;
 
--- name: ListVCSPullRequestsByIssue :many
--- Aggregates each PR's commit statuses for its CURRENT head sha into
--- passed/failed/pending counts. vcs_commit_status holds one row per
--- (connection, sha, context) with a normalized state, so a count by state is
--- correct. Statuses for an old head sha stay stored but are excluded by the
--- head_sha join, so a stale run can't pollute the bar.
+-- name: GetVCSPullRequestForWorkProduct :one
 WITH checks AS (
     SELECT
         pr.id AS pr_id,
         COUNT(*)::bigint AS total,
-        SUM(CASE WHEN cs.state = 'failed'  THEN 1 ELSE 0 END)::bigint AS failed,
-        SUM(CASE WHEN cs.state = 'passed'  THEN 1 ELSE 0 END)::bigint AS passed,
-        SUM(CASE WHEN cs.state = 'pending' THEN 1 ELSE 0 END)::bigint AS pending
+        SUM(CASE WHEN status.state = 'failed' THEN 1 ELSE 0 END)::bigint AS failed,
+        SUM(CASE WHEN status.state = 'passed' THEN 1 ELSE 0 END)::bigint AS passed,
+        SUM(CASE WHEN status.state = 'pending' THEN 1 ELSE 0 END)::bigint AS pending
     FROM vcs_pull_request pr
-    JOIN issue_vcs_pull_request ipr ON ipr.pull_request_id = pr.id
-    JOIN vcs_commit_status cs
-        ON cs.connection_id = pr.connection_id
-       AND cs.sha = pr.head_sha
-       AND pr.head_sha <> ''
-    WHERE ipr.issue_id = sqlc.arg('issue_id') AND NOT ipr.reference_only
+    JOIN vcs_commit_status status
+      ON status.connection_id = pr.connection_id
+     AND status.sha = pr.head_sha
+     AND pr.head_sha <> ''
+    WHERE pr.id = $1
     GROUP BY pr.id
 )
 SELECT
     pr.*,
-    COALESCE(c.total, 0)::bigint   AS checks_total,
-    COALESCE(c.passed, 0)::bigint  AS checks_passed,
-    COALESCE(c.failed, 0)::bigint  AS checks_failed,
-    COALESCE(c.pending, 0)::bigint AS checks_pending
+    COALESCE(checks.total, 0)::bigint AS checks_total,
+    COALESCE(checks.passed, 0)::bigint AS checks_passed,
+    COALESCE(checks.failed, 0)::bigint AS checks_failed,
+    COALESCE(checks.pending, 0)::bigint AS checks_pending
 FROM vcs_pull_request pr
-JOIN issue_vcs_pull_request ipr ON ipr.pull_request_id = pr.id
-LEFT JOIN checks c ON c.pr_id = pr.id
-WHERE ipr.issue_id = sqlc.arg('issue_id') AND NOT ipr.reference_only
-ORDER BY pr.pr_created_at DESC;
+LEFT JOIN checks ON checks.pr_id = pr.id
+WHERE pr.id = $1;
 
 -- name: GetIssueCombinedPullRequestCloseAggregate :one
 -- Cross-provider close gate. An issue can carry PRs from GitHub AND a
@@ -143,19 +145,29 @@ ORDER BY pr.pr_created_at DESC;
 -- merged close-intent PR/MR on one provider advance an issue that still has an
 -- open PR on the other — either webhook is blind to the other's in-flight work.
 -- Sum the in-flight (open/draft) and merged-with-close-intent counts across
--- github_pull_request+issue_pull_request and vcs_pull_request+
--- issue_vcs_pull_request. reference_only links are excluded on both sides, so a
--- bare body mention neither counts as in-flight nor gates advance.
+-- both provider mirrors, joined through the one Work Product relation table.
+-- provider_reference relations are excluded on both sides, so a bare body
+-- mention neither counts as in-flight nor gates advance.
 WITH combined AS (
-    SELECT pr.state AS state, ipr.close_intent AS close_intent
+    SELECT pr.state AS state, relation.close_intent AS close_intent
     FROM github_pull_request pr
-    JOIN issue_pull_request ipr ON ipr.pull_request_id = pr.id
-    WHERE ipr.issue_id = $1 AND NOT ipr.reference_only
+    JOIN work_product product
+      ON product.provider_record_type = 'github_pull_request'
+     AND product.provider_record_id = pr.id
+    JOIN work_product_relation relation ON relation.work_product_id = product.id
+    WHERE relation.issue_id = $1
+      AND relation.detached_at IS NULL
+      AND relation.relation_source <> 'provider_reference'
     UNION ALL
-    SELECT pr.state AS state, ipr.close_intent AS close_intent
+    SELECT pr.state AS state, relation.close_intent AS close_intent
     FROM vcs_pull_request pr
-    JOIN issue_vcs_pull_request ipr ON ipr.pull_request_id = pr.id
-    WHERE ipr.issue_id = $1 AND NOT ipr.reference_only
+    JOIN work_product product
+      ON product.provider_record_type = 'vcs_pull_request'
+     AND product.provider_record_id = pr.id
+    JOIN work_product_relation relation ON relation.work_product_id = product.id
+    WHERE relation.issue_id = $1
+      AND relation.detached_at IS NULL
+      AND relation.relation_source <> 'provider_reference'
 )
 SELECT
     COALESCE(SUM(CASE WHEN state IN ('open', 'draft') THEN 1 ELSE 0 END), 0)::bigint AS open_count,
@@ -185,31 +197,71 @@ WHERE EXCLUDED.updated_at >= vcs_commit_status.updated_at;
 -- name: ListIssueIDsForVCSPRHead :many
 -- Issues linked to any PR whose head sha matches the given status, so a
 -- commit-status event can fan out a PR-card refresh to the right issues.
-SELECT DISTINCT ipr.issue_id
+SELECT DISTINCT relation.issue_id
 FROM vcs_pull_request pr
-JOIN issue_vcs_pull_request ipr ON ipr.pull_request_id = pr.id
-WHERE pr.connection_id = $1 AND pr.head_sha = $2 AND pr.head_sha <> '';
+JOIN work_product product
+  ON product.provider_record_type = 'vcs_pull_request'
+ AND product.provider_record_id = pr.id
+JOIN work_product_relation relation ON relation.work_product_id = product.id
+WHERE pr.connection_id = $1 AND pr.head_sha = $2 AND pr.head_sha <> ''
+  AND relation.issue_id IS NOT NULL
+  AND relation.detached_at IS NULL
+  AND relation.relation_source <> 'provider_reference';
 
 -- =====================
 -- Issue ↔ VCS PR link
 -- =====================
 
 -- name: LinkIssueToVCSPullRequest :exec
--- reference_only marks a link justified ONLY by a bare body mention (no closing
--- keyword and no title/branch reference), mirroring the GitHub link upsert.
--- preserve_close_intent freezes both close_intent and reference_only once a
--- terminal merge/close event has been recorded.
-INSERT INTO issue_vcs_pull_request (
-    issue_id, pull_request_id, linked_by_type, linked_by_id, close_intent, reference_only
-) VALUES (
-    $1, $2, sqlc.narg('linked_by_type'), sqlc.narg('linked_by_id'), $3, sqlc.arg('reference_only')
+-- mention_only marks a link justified ONLY by a bare body mention (no closing
+-- keyword and no title/branch reference), mirroring the GitHub link upsert. It
+-- is stored as a `provider_reference` relation source rather than a flag.
+-- preserve_close_intent freezes both close_intent and the relation source once
+-- a terminal merge/close event has been recorded.
+WITH product AS (
+    INSERT INTO work_product (
+        workspace_id, kind, provider, external_identity, external_url,
+        provider_record_type, provider_record_id
+    )
+    SELECT
+        pr.workspace_id,
+        'pull_request',
+        pr.provider,
+        pr.connection_id::text || ':' || pr.repo_owner || '/' || pr.repo_name || '#' || pr.pr_number::text,
+        pr.html_url,
+        'vcs_pull_request',
+        pr.id
+    FROM vcs_pull_request pr
+    WHERE pr.id = sqlc.arg('pull_request_id')
+    ON CONFLICT (workspace_id, provider, external_identity) DO UPDATE SET
+        external_url = EXCLUDED.external_url,
+        provider_record_type = EXCLUDED.provider_record_type,
+        provider_record_id = EXCLUDED.provider_record_id,
+        updated_at = now()
+    RETURNING id, workspace_id
 )
-ON CONFLICT (issue_id, pull_request_id) DO UPDATE SET
+INSERT INTO work_product_relation (
+    workspace_id, work_product_id, issue_id, relation_key, relation_source,
+    attached_by_type, attached_by_id, close_intent
+)
+SELECT
+    product.workspace_id,
+    product.id,
+    sqlc.arg('issue_id'),
+    'provider:vcs_pull_request:' || sqlc.arg('pull_request_id')::uuid::text
+        || ':issue:' || sqlc.arg('issue_id')::uuid::text,
+    CASE WHEN sqlc.arg('mention_only')::boolean
+        THEN 'provider_reference' ELSE 'provider_discovery' END,
+    'system',
+    NULL,
+    sqlc.arg('close_intent')
+FROM product
+ON CONFLICT (work_product_id, relation_key) WHERE detached_at IS NULL DO UPDATE SET
     close_intent = CASE
-        WHEN sqlc.arg('preserve_close_intent') THEN issue_vcs_pull_request.close_intent
+        WHEN sqlc.arg('preserve_close_intent') THEN work_product_relation.close_intent
         ELSE EXCLUDED.close_intent
     END,
-    reference_only = CASE
-        WHEN sqlc.arg('preserve_close_intent') THEN issue_vcs_pull_request.reference_only
-        ELSE EXCLUDED.reference_only
+    relation_source = CASE
+        WHEN sqlc.arg('preserve_close_intent') THEN work_product_relation.relation_source
+        ELSE EXCLUDED.relation_source
     END;

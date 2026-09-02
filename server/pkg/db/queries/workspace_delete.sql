@@ -410,16 +410,6 @@ deleted_skill_labels AS (
     WHERE skill_id IN (SELECT id FROM ws_skills)
        OR label_id IN (SELECT id FROM ws_labels)
 ),
-deleted_issue_github_links AS (
-    DELETE FROM issue_pull_request
-    WHERE issue_id IN (SELECT id FROM ws_issues)
-       OR pull_request_id IN (SELECT id FROM ws_github_prs)
-),
-deleted_issue_vcs_links AS (
-    DELETE FROM issue_vcs_pull_request
-    WHERE issue_id IN (SELECT id FROM ws_issues)
-       OR pull_request_id IN (SELECT id FROM ws_vcs_prs)
-),
 deleted_agent_invocation_targets AS (
     DELETE FROM agent_invocation_target
     WHERE agent_id IN (SELECT id FROM ws_agents)

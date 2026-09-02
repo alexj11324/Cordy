@@ -2047,7 +2047,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Delete("/metadata/{key}", h.DeleteIssueMetadataKey)
 					r.Put("/properties/{propertyId}", h.SetIssueProperty)
 					r.Delete("/properties/{propertyId}", h.DeleteIssueProperty)
-					r.Get("/pull-requests", h.ListPullRequestsForIssue)
+					r.Get("/work-products", h.ListWorkProductsForIssue)
 					r.Get("/dependency-graph", h.GetIssueDependencyGraph)
 					r.Post("/dependency-graph/apply", h.ApplyIssueDependencyGraph)
 				})
@@ -2439,7 +2439,13 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			r.Route("/api/issues/{id}/work-product-relations", func(r chi.Router) {
 				r.Get("/", h.ListWorkProductRelationsByIssue)
 				r.Post("/", h.CreateWorkProductRelation)
+				// Detach is a soft close on the relation, so it is addressed
+				// by relation id rather than by product: the same product can
+				// be attached to one issue by a member and by a task, and only
+				// the relation says which claim is being retracted.
+				r.Delete("/{relationId}", h.DetachWorkProductRelation)
 			})
+			r.Get("/api/tasks/{taskId}/work-products", h.ListWorkProductsForTask)
 			r.Route("/api/tasks/{taskId}/provenance", func(r chi.Router) {
 				r.Get("/", h.GetProvenanceByTask)
 				r.Post("/", h.UpsertProvenance)

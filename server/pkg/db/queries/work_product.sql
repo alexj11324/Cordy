@@ -8,6 +8,54 @@ FROM work_product WHERE id = $1 AND workspace_id = $2;
 SELECT id, workspace_id, kind, provider, external_identity, external_url, provider_record_type, provider_record_id, created_at, updated_at
 FROM work_product WHERE workspace_id = $1 ORDER BY updated_at DESC, id DESC LIMIT $2 OFFSET $3;
 
+-- name: ListWorkProductsByIssue :many
+-- The issue's Work Product list. Each row carries the product and the live
+-- relation that put it there, so a caller never has to correlate two lists to
+-- learn why a product is attached or which relation to detach.
+--
+-- provider_reference relations are excluded: those record a bare mention in a
+-- PR body, which is evidence that somebody typed the identifier, not a claim
+-- that the PR does the issue's work. Surfacing them would let any passing
+-- mention masquerade as delivered work.
+SELECT product.id, product.workspace_id, product.kind, product.provider,
+       product.external_identity, product.external_url,
+       product.provider_record_type, product.provider_record_id,
+       product.created_at, product.updated_at,
+       relation.id AS relation_id, relation.issue_id AS relation_issue_id,
+       relation.task_id AS relation_task_id, relation.run_id AS relation_run_id,
+       relation.relation_source, relation.attached_by_type,
+       relation.attached_by_id, relation.attached_at, relation.close_intent
+FROM work_product product
+JOIN work_product_relation relation ON relation.work_product_id = product.id
+WHERE product.workspace_id = $1
+  AND relation.workspace_id = $1
+  AND relation.issue_id = $2
+  AND relation.detached_at IS NULL
+  AND relation.relation_source <> 'provider_reference'
+ORDER BY relation.attached_at DESC, product.id DESC
+LIMIT $3 OFFSET $4;
+
+-- name: ListWorkProductsByTask :many
+-- What one task produced. Unlike the issue list this keeps every relation
+-- source: a task's own discovery record is the point of the list, and a task
+-- cannot author a provider_reference relation in the first place.
+SELECT product.id, product.workspace_id, product.kind, product.provider,
+       product.external_identity, product.external_url,
+       product.provider_record_type, product.provider_record_id,
+       product.created_at, product.updated_at,
+       relation.id AS relation_id, relation.issue_id AS relation_issue_id,
+       relation.task_id AS relation_task_id, relation.run_id AS relation_run_id,
+       relation.relation_source, relation.attached_by_type,
+       relation.attached_by_id, relation.attached_at, relation.close_intent
+FROM work_product product
+JOIN work_product_relation relation ON relation.work_product_id = product.id
+WHERE product.workspace_id = $1
+  AND relation.workspace_id = $1
+  AND relation.task_id = $2
+  AND relation.detached_at IS NULL
+ORDER BY relation.attached_at DESC, product.id DESC
+LIMIT $3 OFFSET $4;
+
 -- name: GetWorkProductByExternalIdentity :one
 SELECT id, workspace_id, kind, provider, external_identity, external_url, provider_record_type, provider_record_id, created_at, updated_at
 FROM work_product WHERE workspace_id = $1 AND provider = $2 AND external_identity = $3 LIMIT 1;
@@ -28,7 +76,10 @@ FROM work_product_relation WHERE id = $1 AND workspace_id = $2;
 
 -- name: ListWorkProductRelationsByIssue :many
 SELECT id, workspace_id, work_product_id, issue_id, task_id, run_id, relation_key, relation_source, attached_by_type, attached_by_id, attached_at, close_intent, detached_at, detached_by_type, detached_by_id, detached_task_id, detached_run_id
-FROM work_product_relation WHERE workspace_id = $1 AND issue_id = $2 AND detached_at IS NULL ORDER BY attached_at DESC, id DESC LIMIT $3 OFFSET $4;
+FROM work_product_relation
+WHERE workspace_id = $1 AND issue_id = $2 AND detached_at IS NULL
+  AND relation_source <> 'provider_reference'
+ORDER BY attached_at DESC, id DESC LIMIT $3 OFFSET $4;
 
 -- name: ListWorkProductRelationsByProduct :many
 SELECT id, workspace_id, work_product_id, issue_id, task_id, run_id, relation_key, relation_source, attached_by_type, attached_by_id, attached_at, close_intent, detached_at, detached_by_type, detached_by_id, detached_task_id, detached_run_id
@@ -89,6 +140,35 @@ RETURNING id, workspace_id, work_product_id, issue_id, task_id, run_id, relation
 -- name: DetachWorkProductRelation :one
 UPDATE work_product_relation SET detached_at = now(), detached_by_type = $3, detached_by_id = $4, detached_task_id = sqlc.narg('detached_task_id'), detached_run_id = sqlc.narg('detached_run_id')
 WHERE id = $1 AND workspace_id = $2 AND detached_at IS NULL
+RETURNING id, workspace_id, work_product_id, issue_id, task_id, run_id, relation_key, relation_source, attached_by_type, attached_by_id, attached_at, close_intent, detached_at, detached_by_type, detached_by_id, detached_task_id, detached_run_id;
+
+-- name: GetWorkProductRelationForIssue :one
+SELECT id, workspace_id, work_product_id, issue_id, task_id, run_id, relation_key, relation_source, attached_by_type, attached_by_id, attached_at, close_intent, detached_at, detached_by_type, detached_by_id, detached_task_id, detached_run_id
+FROM work_product_relation
+WHERE id = $1 AND workspace_id = $2 AND issue_id = $3;
+
+-- name: DetachWorkProductRelationForIssue :one
+-- Detach is a soft close, never a delete: the row keeps who attached it and
+-- gains who took it off, so the trail survives the removal.
+--
+-- The actor gate is in the WHERE clause rather than in Go so it cannot be
+-- skipped by a future caller. A member ('user') may detach anything on the
+-- issue; an agent may only detach a relation its own task attached, which
+-- stops one task from erasing another's record of what it delivered.
+UPDATE work_product_relation
+SET detached_at = now(),
+    detached_by_type = sqlc.arg('detached_by_type'),
+    detached_by_id = sqlc.arg('detached_by_id'),
+    detached_task_id = sqlc.narg('detached_task_id'),
+    detached_run_id = sqlc.narg('detached_run_id')
+WHERE id = sqlc.arg('id')
+  AND workspace_id = sqlc.arg('workspace_id')
+  AND issue_id = sqlc.arg('issue_id')
+  AND detached_at IS NULL
+  AND (
+      sqlc.arg('detached_by_type')::text = 'user'
+      OR task_id = sqlc.narg('detached_task_id')::uuid
+  )
 RETURNING id, workspace_id, work_product_id, issue_id, task_id, run_id, relation_key, relation_source, attached_by_type, attached_by_id, attached_at, close_intent, detached_at, detached_by_type, detached_by_id, detached_task_id, detached_run_id;
 
 -- name: GetProvenanceByTask :one

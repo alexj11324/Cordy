@@ -129,24 +129,8 @@ RETURNING *;
 SELECT * FROM github_pull_request
 WHERE workspace_id = $1 AND repo_owner = $2 AND repo_name = $3 AND pr_number = $4;
 
--- name: ListPullRequestsByIssue :many
--- Returns the issue's linked PRs with the GitHub API snapshot (MUL-5265): the
--- mergeability verdict, the CI rollup, and per-check counts for the PR's
--- CURRENT snapshot head SHA. Checks are aggregated from
--- github_pull_request_check_run — the run-level snapshot written by the API
--- refresh pipeline — NOT the legacy suite-level webhook aggregation, which is
--- removed. The `issue_prs` CTE narrows to this issue's PR ids first so the
--- aggregation only touches check rows for those PRs. Rows for an OLD head are
--- excluded by the snapshot_head_sha filter. reference_only links (a PR that
--- merely mentions the issue identifier in its body, with no closing keyword and
--- no title/branch reference) are filtered out — they are not working PRs.
-WITH issue_prs AS (
-    SELECT pr.id, pr.snapshot_head_sha
-    FROM github_pull_request pr
-    JOIN issue_pull_request ipr ON ipr.pull_request_id = pr.id
-    WHERE ipr.issue_id = sqlc.arg('issue_id') AND NOT ipr.reference_only
-),
-checks AS (
+-- name: GetGitHubPullRequestForWorkProduct :one
+WITH checks AS (
     SELECT
         cr.pr_id,
         COUNT(*)::bigint AS total,
@@ -164,8 +148,10 @@ checks AS (
             '{}'
         )::text[] AS failed_names
     FROM github_pull_request_check_run cr
-    JOIN issue_prs ip ON ip.id = cr.pr_id
-    WHERE cr.head_sha = ip.snapshot_head_sha AND ip.snapshot_head_sha <> ''
+    JOIN github_pull_request pr ON pr.id = cr.pr_id
+    WHERE pr.id = $1
+      AND cr.head_sha = pr.snapshot_head_sha
+      AND pr.snapshot_head_sha <> ''
     GROUP BY cr.pr_id
 )
 SELECT
@@ -177,16 +163,14 @@ SELECT
     pr.api_mergeable, pr.api_merge_state_status, pr.checks_rollup_state,
     pr.snapshot_head_sha, pr.snapshot_fetched_at,
     pr.created_at, pr.updated_at,
-    COALESCE(c.total, 0)::bigint   AS checks_total,
-    COALESCE(c.passed, 0)::bigint  AS checks_passed,
-    COALESCE(c.failed, 0)::bigint  AS checks_failed,
+    COALESCE(c.total, 0)::bigint AS checks_total,
+    COALESCE(c.passed, 0)::bigint AS checks_passed,
+    COALESCE(c.failed, 0)::bigint AS checks_failed,
     COALESCE(c.running, 0)::bigint AS checks_running,
     COALESCE(c.failed_names, '{}')::text[] AS failed_check_names
 FROM github_pull_request pr
-JOIN issue_pull_request ipr ON ipr.pull_request_id = pr.id
 LEFT JOIN checks c ON c.pr_id = pr.id
-WHERE ipr.issue_id = sqlc.arg('issue_id') AND NOT ipr.reference_only
-ORDER BY pr.pr_created_at DESC;
+WHERE pr.id = $1;
 
 -- name: GetIssueReviewHeadSha :one
 -- Returns the head SHA of the commit currently "under review" for an issue:
@@ -202,27 +186,43 @@ ORDER BY pr.pr_created_at DESC;
 -- Spans both GitHub and self-hosted VCS PRs: a self-hosted PR pushing a new
 -- commit must move the dedup head SHA the same way a GitHub PR does, otherwise
 -- a fresh review round could be merged away against a stale key.
--- reference_only links are excluded on both arms, matching the PR-list and
--- close-aggregate queries: a body-only mention is hidden from the list and the
--- close gate, so it must not win this ORDER BY and become the review dedup head
--- SHA either, masking the real working PR's SHA.
+-- provider_reference relations are excluded on both arms, matching the
+-- Work Product list and close-aggregate queries: a body-only mention is hidden
+-- from the list and the close gate, so it must not win this ORDER BY and become
+-- the review dedup head SHA either, masking the real working PR's SHA.
 SELECT head_sha FROM (
     SELECT pr.head_sha AS head_sha, pr.state AS state, pr.pr_updated_at AS pr_updated_at
     FROM github_pull_request pr
-    JOIN issue_pull_request ipr ON ipr.pull_request_id = pr.id
-    WHERE ipr.issue_id = $1 AND pr.head_sha <> '' AND NOT ipr.reference_only
+    JOIN work_product product
+      ON product.provider_record_type = 'github_pull_request'
+     AND product.provider_record_id = pr.id
+    JOIN work_product_relation relation ON relation.work_product_id = product.id
+    WHERE relation.issue_id = $1 AND pr.head_sha <> ''
+      AND relation.detached_at IS NULL
+      AND relation.relation_source <> 'provider_reference'
     UNION ALL
     SELECT pr.head_sha AS head_sha, pr.state AS state, pr.pr_updated_at AS pr_updated_at
     FROM vcs_pull_request pr
-    JOIN issue_vcs_pull_request ipr ON ipr.pull_request_id = pr.id
-    WHERE ipr.issue_id = $1 AND pr.head_sha <> '' AND NOT ipr.reference_only
+    JOIN work_product product
+      ON product.provider_record_type = 'vcs_pull_request'
+     AND product.provider_record_id = pr.id
+    JOIN work_product_relation relation ON relation.work_product_id = product.id
+    WHERE relation.issue_id = $1 AND pr.head_sha <> ''
+      AND relation.detached_at IS NULL
+      AND relation.relation_source <> 'provider_reference'
 ) combined
 ORDER BY (state IN ('open', 'draft')) DESC, pr_updated_at DESC
 LIMIT 1;
 
 -- name: ListIssueIDsForPullRequest :many
-SELECT issue_id FROM issue_pull_request
-WHERE pull_request_id = $1;
+SELECT DISTINCT relation.issue_id
+FROM work_product product
+JOIN work_product_relation relation ON relation.work_product_id = product.id
+WHERE product.provider_record_type = 'github_pull_request'
+  AND product.provider_record_id = $1
+  AND relation.issue_id IS NOT NULL
+  AND relation.detached_at IS NULL
+  AND relation.relation_source <> 'provider_reference';
 
 -- name: GetIssuePullRequestCloseAggregate :one
 -- Aggregates the issue's linked PRs into the two counts that gate
@@ -234,18 +234,24 @@ WHERE pull_request_id = $1;
 -- is event-agnostic — a link-only sibling closing after a closing-keyword
 -- PR has already merged still resolves the issue.
 --
--- reference_only links (a PR that merely mentions the issue identifier in its
--- body) are excluded: they are hidden from the issue PR list, so they must not
--- silently gate auto-advance either. An open body-only mention would otherwise
--- keep open_count > 0 and block the issue from advancing while being invisible
--- in the UI. (reference_only rows never carry close_intent, so excluding them
--- does not change merged_with_close_intent_count.)
+-- provider_reference relations (a PR that merely mentions the issue identifier
+-- in its body) are excluded: they are hidden from the issue's Work Product
+-- list, so they must not silently gate auto-advance either. An open body-only
+-- mention would otherwise keep open_count > 0 and block the issue from
+-- advancing while being invisible in the UI. (These relations never carry
+-- close_intent, so excluding them does not change
+-- merged_with_close_intent_count.)
 SELECT
     COALESCE(SUM(CASE WHEN pr.state IN ('open', 'draft') THEN 1 ELSE 0 END), 0)::bigint AS open_count,
-    COALESCE(SUM(CASE WHEN pr.state = 'merged' AND ipr.close_intent THEN 1 ELSE 0 END), 0)::bigint AS merged_with_close_intent_count
+    COALESCE(SUM(CASE WHEN pr.state = 'merged' AND relation.close_intent THEN 1 ELSE 0 END), 0)::bigint AS merged_with_close_intent_count
 FROM github_pull_request pr
-JOIN issue_pull_request ipr ON ipr.pull_request_id = pr.id
-WHERE ipr.issue_id = $1 AND NOT ipr.reference_only;
+JOIN work_product product
+  ON product.provider_record_type = 'github_pull_request'
+ AND product.provider_record_id = pr.id
+JOIN work_product_relation relation ON relation.work_product_id = product.id
+WHERE relation.issue_id = $1
+  AND relation.detached_at IS NULL
+  AND relation.relation_source <> 'provider_reference';
 
 -- =====================
 -- Issue ↔ Pull Request link
@@ -258,25 +264,55 @@ WHERE ipr.issue_id = $1 AND NOT ipr.reference_only;
 -- before merge. Post-terminal edits can opt into preserving the stored value,
 -- keeping the merge-time decision stable.
 --
--- reference_only marks a link justified ONLY by a bare body mention (no closing
+-- mention_only marks a link justified ONLY by a bare body mention (no closing
 -- keyword, no title/branch reference). It follows the same preserve gate as
 -- close_intent so a post-terminal edit can't retroactively hide a PR that did
--- the work. The issue's PR list filters these out (see ListPullRequestsByIssue).
-INSERT INTO issue_pull_request (
-    issue_id, pull_request_id, linked_by_type, linked_by_id, close_intent, reference_only
-) VALUES (
-    $1, $2, sqlc.narg('linked_by_type'), sqlc.narg('linked_by_id'), $3, sqlc.arg('reference_only')
+-- the work. Such a link is stored as a `provider_reference` relation, which
+-- every issue-facing read filters out (see ListWorkProductsByIssue).
+WITH product AS (
+    INSERT INTO work_product (
+        workspace_id, kind, provider, external_identity, external_url,
+        provider_record_type, provider_record_id
+    )
+    SELECT
+        pr.workspace_id,
+        'pull_request',
+        'github',
+        pr.repo_owner || '/' || pr.repo_name || '#' || pr.pr_number::text,
+        pr.html_url,
+        'github_pull_request',
+        pr.id
+    FROM github_pull_request pr
+    WHERE pr.id = sqlc.arg('pull_request_id')
+    ON CONFLICT (workspace_id, provider, external_identity) DO UPDATE SET
+        external_url = EXCLUDED.external_url,
+        provider_record_type = EXCLUDED.provider_record_type,
+        provider_record_id = EXCLUDED.provider_record_id,
+        updated_at = now()
+    RETURNING id, workspace_id
 )
-ON CONFLICT (issue_id, pull_request_id) DO UPDATE SET
+INSERT INTO work_product_relation (
+    workspace_id, work_product_id, issue_id, relation_key, relation_source,
+    attached_by_type, attached_by_id, close_intent
+)
+SELECT
+    product.workspace_id,
+    product.id,
+    sqlc.arg('issue_id'),
+    'provider:github_pull_request:' || sqlc.arg('pull_request_id')::uuid::text
+        || ':issue:' || sqlc.arg('issue_id')::uuid::text,
+    CASE WHEN sqlc.arg('mention_only')::boolean
+        THEN 'provider_reference' ELSE 'provider_discovery' END,
+    'system',
+    NULL,
+    sqlc.arg('close_intent')
+FROM product
+ON CONFLICT (work_product_id, relation_key) WHERE detached_at IS NULL DO UPDATE SET
     close_intent = CASE
-        WHEN sqlc.arg('preserve_close_intent') THEN issue_pull_request.close_intent
+        WHEN sqlc.arg('preserve_close_intent') THEN work_product_relation.close_intent
         ELSE EXCLUDED.close_intent
     END,
-    reference_only = CASE
-        WHEN sqlc.arg('preserve_close_intent') THEN issue_pull_request.reference_only
-        ELSE EXCLUDED.reference_only
+    relation_source = CASE
+        WHEN sqlc.arg('preserve_close_intent') THEN work_product_relation.relation_source
+        ELSE EXCLUDED.relation_source
     END;
-
--- name: UnlinkIssueFromPullRequest :exec
-DELETE FROM issue_pull_request
-WHERE issue_id = $1 AND pull_request_id = $2;

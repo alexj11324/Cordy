@@ -208,20 +208,14 @@ cleared_github_pr_check_runs AS (
     DELETE FROM github_pull_request_check_run
     WHERE pr_id IN (SELECT id FROM ws_github_prs)
 ),
--- VCS tables (migration 213) carry no FK to workspace, so they are not cascaded
--- away by the DELETE below. Sweep the workspace's connections, mirrored PRs,
--- their issue links, and CI statuses here. issue_vcs_pull_request has no
--- workspace_id, so reach it through the workspace's PRs; vcs_commit_status has
--- none either, so reach it through the workspace's connections.
+-- VCS tables carry no FK to workspace, so they are not cascaded away by the
+-- DELETE below. Work Product relations/products were already removed by the
+-- workspace cleanup path; sweep provider mirrors and CI statuses here.
 ws_vcs_prs AS (
     SELECT id FROM vcs_pull_request WHERE workspace_id = $1
 ),
 ws_vcs_connections AS (
     SELECT id FROM vcs_connection WHERE workspace_id = $1
-),
-cleared_vcs_pr_links AS (
-    DELETE FROM issue_vcs_pull_request
-    WHERE pull_request_id IN (SELECT id FROM ws_vcs_prs)
 ),
 cleared_vcs_commit_statuses AS (
     DELETE FROM vcs_commit_status

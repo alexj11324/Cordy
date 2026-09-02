@@ -63,7 +63,7 @@ func seedVCSConnection(t *testing.T, ctx context.Context, box *secretbox.Box, pr
 }
 
 func cleanupVCS(ctx context.Context, issueID string) {
-	testPool.Exec(ctx, `DELETE FROM issue_vcs_pull_request WHERE issue_id = $1`, issueID)
+	testPool.Exec(ctx, `DELETE FROM work_product_relation WHERE issue_id = $1`, issueID)
 	testPool.Exec(ctx, `DELETE FROM vcs_commit_status cs USING vcs_connection c WHERE cs.connection_id = c.id AND c.workspace_id = $1`, testWorkspaceID)
 	testPool.Exec(ctx, `DELETE FROM vcs_pull_request WHERE workspace_id = $1`, testWorkspaceID)
 	testPool.Exec(ctx, `DELETE FROM vcs_connection WHERE workspace_id = $1`, testWorkspaceID)
@@ -132,9 +132,9 @@ func TestVCSWebhook_ForgejoMirrorsAndCloses(t *testing.T) {
 		t.Fatalf("expected 202, got %d (%s)", w.Code, w.Body.String())
 	}
 
-	rows, err := testHandler.Queries.ListVCSPullRequestsByIssue(ctx, parseUUID(issue.ID))
+	rows, err := listIssueVCSPullRequests(ctx, parseUUID(issue.ID))
 	if err != nil {
-		t.Fatalf("ListVCSPullRequestsByIssue: %v", err)
+		t.Fatalf("listIssueVCSPullRequests: %v", err)
 	}
 	if len(rows) != 1 || rows[0].State != "merged" || rows[0].Provider != "forgejo" {
 		t.Fatalf("unexpected rows: %+v", rows)
@@ -181,14 +181,14 @@ func TestVCSWebhook_ReferenceOnlyExcludedAndNonBlocking(t *testing.T) {
 	// The link exists but is reference_only, so it is hidden from the PR list.
 	var referenceOnly bool
 	if err := testPool.QueryRow(ctx,
-		`SELECT reference_only FROM issue_vcs_pull_request WHERE issue_id = $1`,
+		`SELECT relation_source = 'provider_reference' FROM work_product_relation WHERE issue_id = $1`,
 		issue.ID).Scan(&referenceOnly); err != nil {
 		t.Fatalf("select reference_only: %v", err)
 	}
 	if !referenceOnly {
 		t.Fatalf("body-only mention should be reference_only")
 	}
-	if rows, err := testHandler.Queries.ListVCSPullRequestsByIssue(ctx, parseUUID(issue.ID)); err != nil {
+	if rows, err := listIssueVCSPullRequests(ctx, parseUUID(issue.ID)); err != nil {
 		t.Fatalf("list: %v", err)
 	} else if len(rows) != 0 {
 		t.Fatalf("reference_only PR must be excluded from the list, got %d rows", len(rows))
@@ -233,7 +233,7 @@ func TestCombinedCloseAggregateSpansProviders(t *testing.T) {
 	issue := newVCSIssue(t, "Cross-provider close gate")
 	now := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
 	t.Cleanup(func() {
-		testPool.Exec(ctx, `DELETE FROM issue_pull_request WHERE issue_id = $1`, issue.ID)
+		testPool.Exec(ctx, `DELETE FROM work_product_relation WHERE issue_id = $1`, issue.ID)
 		testPool.Exec(ctx, `DELETE FROM github_pull_request WHERE workspace_id = $1`, testWorkspaceID)
 		cleanupVCS(ctx, issue.ID)
 	})
@@ -251,7 +251,7 @@ func TestCombinedCloseAggregateSpansProviders(t *testing.T) {
 	}
 	if err := testHandler.Queries.LinkIssueToPullRequest(ctx, db.LinkIssueToPullRequestParams{
 		IssueID: parseUUID(issue.ID), PullRequestID: ghPR.ID, CloseIntent: false,
-		ReferenceOnly: false, LinkedByType: strToText("system"),
+		MentionOnly: false,
 	}); err != nil {
 		t.Fatalf("LinkIssueToPullRequest: %v", err)
 	}
@@ -269,7 +269,7 @@ func TestCombinedCloseAggregateSpansProviders(t *testing.T) {
 	}
 	if err := testHandler.Queries.LinkIssueToVCSPullRequest(ctx, db.LinkIssueToVCSPullRequestParams{
 		IssueID: parseUUID(issue.ID), PullRequestID: vcsPR.ID, CloseIntent: true,
-		ReferenceOnly: false, LinkedByType: strToText("system"),
+		MentionOnly: false,
 	}); err != nil {
 		t.Fatalf("LinkIssueToVCSPullRequest: %v", err)
 	}
@@ -317,7 +317,7 @@ func TestDeleteIssue_VCSLinkCleanupIsWorkspaceScoped(t *testing.T) {
 
 	linkCount := func() int {
 		var n int
-		testPool.QueryRow(ctx, `SELECT count(*) FROM issue_vcs_pull_request WHERE issue_id = $1`, issue.ID).Scan(&n)
+		testPool.QueryRow(ctx, `SELECT count(*) FROM work_product_relation WHERE issue_id = $1`, issue.ID).Scan(&n)
 		return n
 	}
 	if linkCount() != 1 {
@@ -385,7 +385,7 @@ func TestVCSWebhook_StaleEventDoesNotRewriteLink(t *testing.T) {
 
 	var closeIntent, referenceOnly bool
 	if err := testPool.QueryRow(ctx,
-		`SELECT close_intent, reference_only FROM issue_vcs_pull_request WHERE issue_id = $1`,
+		`SELECT close_intent, relation_source = 'provider_reference' FROM work_product_relation WHERE issue_id = $1`,
 		issue.ID).Scan(&closeIntent, &referenceOnly); err != nil {
 		t.Fatalf("select link: %v", err)
 	}
@@ -393,7 +393,7 @@ func TestVCSWebhook_StaleEventDoesNotRewriteLink(t *testing.T) {
 		t.Errorf("stale event rewrote link: close_intent=%v reference_only=%v, want true/false", closeIntent, referenceOnly)
 	}
 	// The PR row also stayed at the newer merged state.
-	rows, _ := testHandler.Queries.ListVCSPullRequestsByIssue(ctx, parseUUID(issue.ID))
+	rows, _ := listIssueVCSPullRequests(ctx, parseUUID(issue.ID))
 	if len(rows) != 1 || rows[0].State != "merged" {
 		t.Errorf("PR row regressed: %+v", rows)
 	}
@@ -426,9 +426,9 @@ func TestVCSWebhook_GitlabMergeRequest(t *testing.T) {
 		t.Fatalf("expected 202, got %d (%s)", w.Code, w.Body.String())
 	}
 
-	rows, err := testHandler.Queries.ListVCSPullRequestsByIssue(ctx, parseUUID(issue.ID))
+	rows, err := listIssueVCSPullRequests(ctx, parseUUID(issue.ID))
 	if err != nil {
-		t.Fatalf("ListVCSPullRequestsByIssue: %v", err)
+		t.Fatalf("listIssueVCSPullRequests: %v", err)
 	}
 	if len(rows) != 1 || rows[0].Provider != "gitlab" || rows[0].RepoOwner != "acme" || rows[0].PrNumber != 42 {
 		t.Fatalf("unexpected rows: %+v", rows)
@@ -477,7 +477,7 @@ func TestVCSWebhook_CommitStatusMirrors(t *testing.T) {
 		t.Fatalf("status: expected 202, got %d", w.Code)
 	}
 
-	rows, _ := testHandler.Queries.ListVCSPullRequestsByIssue(ctx, parseUUID(issue.ID))
+	rows, _ := listIssueVCSPullRequests(ctx, parseUUID(issue.ID))
 	if len(rows) != 1 || rows[0].ChecksTotal != 1 || rows[0].ChecksPassed != 1 {
 		t.Fatalf("expected 1 passed check, got %+v", rows)
 	}

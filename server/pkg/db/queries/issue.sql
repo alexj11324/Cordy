@@ -344,10 +344,9 @@ LIMIT 1;
 -- but a future loader bypass or a new caller skipping the loader would be
 -- silently catastrophic without this guard. See incident #1661.
 --
--- issue_vcs_pull_request (migration 213) has no FK to issue, so the link rows
--- are not cascaded away. Sweep them here so they go atomically with the issue.
--- The mirrored PR rows themselves belong to the connection, not the issue, so
--- they persist (matching the GitHub link behaviour).
+-- Work Product relations carry no FK to issue. Sweep them here so relation
+-- cleanup commits atomically with the workspace-checked issue delete. The
+-- products themselves remain independently discoverable.
 --
 -- The sweep MUST route through the same workspace-checked target as the issue
 -- delete: deleting links by bare issue_id would drop another tenant's link rows
@@ -387,10 +386,11 @@ cleared_attachments AS (
       )
     RETURNING id
 ),
-cleared_vcs_pr_links AS (
-    DELETE FROM issue_vcs_pull_request
-    WHERE issue_id IN (SELECT target.id FROM target)
-    RETURNING issue_id
+cleared_work_product_relations AS (
+    DELETE FROM work_product_relation
+    WHERE workspace_id = $2
+      AND issue_id IN (SELECT target.id FROM target)
+    RETURNING id
 ),
 cleared_coordination_assignments AS (
     DELETE FROM agent_coordination_assignment
@@ -408,7 +408,7 @@ cleared_coordination_outbox AS (
 DELETE FROM issue
 WHERE issue.id IN (SELECT target.id FROM target)
   AND (SELECT count(*) FROM cleared_attachments) >= 0
-  AND (SELECT count(*) FROM cleared_vcs_pr_links) >= 0
+  AND (SELECT count(*) FROM cleared_work_product_relations) >= 0
   AND (SELECT count(*) FROM cleared_coordination_outbox) >= 0;
 
 -- name: ListOpenIssues :many

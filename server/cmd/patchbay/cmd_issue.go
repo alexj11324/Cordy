@@ -181,12 +181,12 @@ var issueGetCmd = &cobra.Command{
 	RunE:  runIssueGet,
 }
 
-var issuePullRequestsCmd = &cobra.Command{
-	Use:     "pull-requests <id>",
-	Aliases: []string{"prs"},
-	Short:   "List pull requests linked to an issue",
+var issueWorkProductsCmd = &cobra.Command{
+	Use:     "work-products <id>",
+	Aliases: []string{"products"},
+	Short:   "List the work products attached to an issue",
 	Args:    exactArgs(1),
-	RunE:    runIssuePullRequests,
+	RunE:    runIssueWorkProducts,
 }
 
 var issueChildrenCmd = &cobra.Command{
@@ -448,7 +448,7 @@ func validateIssueEnum(field, value string, allowed []string) error {
 func init() {
 	issueCmd.AddCommand(issueListCmd)
 	issueCmd.AddCommand(issueGetCmd)
-	issueCmd.AddCommand(issuePullRequestsCmd)
+	issueCmd.AddCommand(issueWorkProductsCmd)
 	issueCmd.AddCommand(issueChildrenCmd)
 	issueCmd.AddCommand(issueCreateCmd)
 	issueCmd.AddCommand(issueUpdateCmd)
@@ -491,8 +491,8 @@ func init() {
 	// issue get
 	issueGetCmd.Flags().String("output", "json", "Output format: table or json")
 
-	// issue pull-requests
-	issuePullRequestsCmd.Flags().String("output", "table", "Output format: table or json")
+	// issue work-products
+	issueWorkProductsCmd.Flags().String("output", "table", "Output format: table or json")
 
 	issueChildrenCmd.Flags().String("output", "table", "Output format: table or json")
 	issueChildrenCmd.Flags().Bool("full-id", false, "Show full UUIDs in table output")
@@ -783,7 +783,7 @@ func runIssueList(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-func runIssuePullRequests(cmd *cobra.Command, args []string) error {
+func runIssueWorkProducts(cmd *cobra.Command, args []string) error {
 	client, err := newAPIClient(cmd)
 	if err != nil {
 		return err
@@ -798,8 +798,8 @@ func runIssuePullRequests(cmd *cobra.Command, args []string) error {
 	}
 
 	var result map[string]any
-	if err := client.GetJSON(ctx, "/api/issues/"+url.PathEscape(issueRef.ID)+"/pull-requests", &result); err != nil {
-		return fmt.Errorf("list issue pull requests: %w", err)
+	if err := client.GetJSON(ctx, "/api/issues/"+url.PathEscape(issueRef.ID)+"/work-products", &result); err != nil {
+		return fmt.Errorf("list issue work products: %w", err)
 	}
 
 	output, _ := cmd.Flags().GetString("output")
@@ -807,42 +807,52 @@ func runIssuePullRequests(cmd *cobra.Command, args []string) error {
 		return cli.PrintJSON(os.Stdout, result)
 	}
 
-	prs, _ := result["pull_requests"].([]any)
-	printIssuePullRequestsTable(normalizePullRequestList(prs))
+	products, _ := result["work_products"].([]any)
+	printIssueWorkProductsTable(normalizeWorkProductList(products))
 	return nil
 }
 
-func normalizePullRequestList(raw []any) []map[string]any {
-	prs := make([]map[string]any, 0, len(raw))
+func normalizeWorkProductList(raw []any) []map[string]any {
+	products := make([]map[string]any, 0, len(raw))
 	for _, item := range raw {
-		pr, ok := item.(map[string]any)
+		product, ok := item.(map[string]any)
 		if !ok {
 			continue
 		}
-		prs = append(prs, pr)
+		products = append(products, product)
 	}
-	return prs
+	return products
 }
 
-func printIssuePullRequestsTable(prs []map[string]any) {
-	headers := []string{"NUMBER", "STATE", "TITLE", "URL"}
-	rows := make([][]string, 0, len(prs))
-	for _, pr := range prs {
+// printIssueWorkProductsTable shows every kind of product in one table. STATE
+// and SOURCE are the two columns that answer "can I stop working on this":
+// STATE is the provider's own verdict (empty for a product that has no
+// upstream state), SOURCE is why the product is attached at all.
+func printIssueWorkProductsTable(products []map[string]any) {
+	headers := []string{"IDENTITY", "KIND", "STATE", "SOURCE", "URL"}
+	rows := make([][]string, 0, len(products))
+	for _, product := range products {
+		relation, _ := product["relation"].(map[string]any)
 		rows = append(rows, []string{
-			strVal(pr, "number"),
-			strVal(pr, "state"),
-			strVal(pr, "title"),
-			pullRequestURL(pr),
+			strVal(product, "external_identity"),
+			strVal(product, "kind"),
+			workProductState(product),
+			strVal(relation, "relation_source"),
+			strVal(product, "external_url"),
 		})
 	}
 	cli.PrintTable(os.Stdout, headers, rows)
 }
 
-func pullRequestURL(pr map[string]any) string {
-	if url := strVal(pr, "url"); url != "" {
-		return url
+// workProductState reads the provider state off the pull-request card a
+// PR-backed product carries. Products with no upstream record leave the column
+// blank rather than inventing a state for them.
+func workProductState(product map[string]any) string {
+	pullRequest, ok := product["pull_request"].(map[string]any)
+	if !ok {
+		return ""
 	}
-	return strVal(pr, "html_url")
+	return strVal(pullRequest, "state")
 }
 
 func runIssueGet(cmd *cobra.Command, args []string) error {

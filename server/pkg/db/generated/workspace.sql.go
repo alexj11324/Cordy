@@ -171,10 +171,6 @@ ws_vcs_prs AS (
 ws_vcs_connections AS (
     SELECT id FROM vcs_connection WHERE workspace_id = $1
 ),
-cleared_vcs_pr_links AS (
-    DELETE FROM issue_vcs_pull_request
-    WHERE pull_request_id IN (SELECT id FROM ws_vcs_prs)
-),
 cleared_vcs_commit_statuses AS (
     DELETE FROM vcs_commit_status
     WHERE connection_id IN (SELECT id FROM ws_vcs_connections)
@@ -196,11 +192,9 @@ DELETE FROM workspace WHERE workspace.id = $1
 // tables the DELETE below sweeps — they are not cleaned up implicitly. Remove
 // their workspace-owned rows here so they commit or roll back atomically with
 // the workspace row.
-// VCS tables (migration 213) carry no FK to workspace, so they are not cascaded
-// away by the DELETE below. Sweep the workspace's connections, mirrored PRs,
-// their issue links, and CI statuses here. issue_vcs_pull_request has no
-// workspace_id, so reach it through the workspace's PRs; vcs_commit_status has
-// none either, so reach it through the workspace's connections.
+// VCS tables carry no FK to workspace, so they are not cascaded away by the
+// DELETE below. Work Product relations/products were already removed by the
+// workspace cleanup path; sweep provider mirrors and CI statuses here.
 func (q *Queries) DeleteWorkspace(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deleteWorkspace, id)
 	return err

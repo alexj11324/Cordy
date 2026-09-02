@@ -15,7 +15,6 @@ import (
 	"net/url"
 	"os"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -225,19 +224,17 @@ func githubPullRequestToResponse(p db.GithubPullRequest, snapshotEnabled bool) G
 // landing (GitHub outage, revoked key) and the shown data is last-known.
 const prSnapshotStaleThreshold = 30 * time.Minute
 
-func issuePullRequestRowToResponse(p db.ListPullRequestsByIssueRow, snapshotEnabled bool) GitHubPullRequestResponse {
+func githubWorkProductPullRequestToResponse(p db.GetGitHubPullRequestForWorkProductRow, snapshotEnabled bool) GitHubPullRequestResponse {
 	snapshotAvailable := currentGitHubSnapshotAvailable(
 		snapshotEnabled, p.HeadSha, p.SnapshotHeadSha, p.SnapshotFetchedAt,
 	)
-	stale := false
-	if snapshotAvailable && (p.State == "open" || p.State == "draft") {
-		stale = time.Since(p.SnapshotFetchedAt.Time) > prSnapshotStaleThreshold
-	}
+	stale := snapshotAvailable && (p.State == "open" || p.State == "draft") &&
+		time.Since(p.SnapshotFetchedAt.Time) > prSnapshotStaleThreshold
 	failedNames := p.FailedCheckNames
 	if failedNames == nil {
 		failedNames = []string{}
 	}
-	resp := GitHubPullRequestResponse{
+	response := GitHubPullRequestResponse{
 		ID:                uuidToString(p.ID),
 		Provider:          "github",
 		WorkspaceID:       uuidToString(p.WorkspaceID),
@@ -263,19 +260,19 @@ func issuePullRequestRowToResponse(p db.ListPullRequestsByIssueRow, snapshotEnab
 		ChangedFiles:      p.ChangedFiles,
 	}
 	if snapshotAvailable {
-		resp.Mergeable = lowerTextPtr(p.ApiMergeable)
-		resp.MergeStateStatus = lowerTextPtr(p.ApiMergeStateStatus)
-		resp.ChecksRollup = lowerTextPtr(p.ChecksRollupState)
-		resp.ChecksConclusion = rollupToConclusion(p.ChecksRollupState, p.ChecksFailed, p.ChecksRunning, p.ChecksPassed)
-		resp.ChecksTotal = p.ChecksTotal
-		resp.ChecksPassed = p.ChecksPassed
-		resp.ChecksFailed = p.ChecksFailed
-		resp.ChecksRunning = p.ChecksRunning
-		resp.ChecksPending = p.ChecksRunning
-		resp.FailedCheckNames = failedNames
-		resp.SnapshotFetchedAt = timestampToPtr(p.SnapshotFetchedAt)
+		response.Mergeable = lowerTextPtr(p.ApiMergeable)
+		response.MergeStateStatus = lowerTextPtr(p.ApiMergeStateStatus)
+		response.ChecksRollup = lowerTextPtr(p.ChecksRollupState)
+		response.ChecksConclusion = rollupToConclusion(p.ChecksRollupState, p.ChecksFailed, p.ChecksRunning, p.ChecksPassed)
+		response.ChecksTotal = p.ChecksTotal
+		response.ChecksPassed = p.ChecksPassed
+		response.ChecksFailed = p.ChecksFailed
+		response.ChecksRunning = p.ChecksRunning
+		response.ChecksPending = p.ChecksRunning
+		response.FailedCheckNames = failedNames
+		response.SnapshotFetchedAt = timestampToPtr(p.SnapshotFetchedAt)
 	}
-	return resp
+	return response
 }
 
 func currentGitHubSnapshotAvailable(
@@ -960,49 +957,6 @@ func (h *Handler) DeleteGitHubInstallation(w http.ResponseWriter, r *http.Reques
 
 // ── List PRs for an issue ───────────────────────────────────────────────────
 
-func (h *Handler) ListPullRequestsForIssue(w http.ResponseWriter, r *http.Request) {
-	issue, ok := h.loadIssueForUser(w, r, chi.URLParam(r, "id"))
-	if !ok {
-		return
-	}
-	rows, err := h.Queries.ListPullRequestsByIssue(r.Context(), issue.ID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to list pull requests")
-		return
-	}
-	out := make([]GitHubPullRequestResponse, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, issuePullRequestRowToResponse(row, h.PRRefresh.Enabled()))
-		// Page-visit trigger (MUL-5265): if this card's snapshot is missing or
-		// older than the view TTL, kick an async refresh. Non-blocking — the
-		// current (possibly stale) response is returned immediately and the
-		// fresh snapshot arrives via the pull_request:updated realtime event.
-		h.PRRefresh.MaybeEnqueueOnView(
-			row.InstallationID, row.RepoOwner, row.RepoName, row.PrNumber,
-			row.SnapshotFetchedAt.Time,
-			row.SnapshotFetchedAt.Valid &&
-				row.SnapshotHeadSha != "" &&
-				row.SnapshotHeadSha == row.HeadSha,
-		)
-	}
-	// PRs from token-based providers (Forgejo / Gitea / GitLab) share the same
-	// card list. They live in their own provider-tagged tables, so they merge
-	// in here mapped to the same response shape; the combined list is re-sorted
-	// newest-first.
-	vcsRows, err := h.Queries.ListVCSPullRequestsByIssue(r.Context(), issue.ID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to list pull requests")
-		return
-	}
-	for _, row := range vcsRows {
-		out = append(out, vcsPullRequestRowToResponse(row))
-	}
-	sort.SliceStable(out, func(i, j int) bool {
-		return out[i].PRCreatedAt > out[j].PRCreatedAt
-	})
-	writeJSON(w, http.StatusOK, map[string]any{"pull_requests": out})
-}
-
 // broadcastPRSnapshotApplied is the ghsnapshot pipeline's onApplied callback:
 // once an API snapshot is written to a PR row, re-broadcast the PR so every
 // open issue detail page re-queries its PR list and picks up the fresh CI /
@@ -1636,15 +1590,15 @@ func (h *Handler) mirrorPullRequestForWorkspace(ctx context.Context, wsID pgtype
 			}
 			closeIntent := declared && !preserveCloseIntent
 			_, qualifies := qualifyingIdents[id]
-			referenceOnly := !qualifies
+			// The webhook is the actor here, so the relation is authored as
+			// `system` with no user or agent behind it; the query derives that
+			// from the source, which is why no attribution is passed.
 			if err := h.Queries.LinkIssueToPullRequest(ctx, db.LinkIssueToPullRequestParams{
 				IssueID:             issue.ID,
 				PullRequestID:       pr.ID,
 				CloseIntent:         closeIntent,
-				ReferenceOnly:       referenceOnly,
+				MentionOnly:         !qualifies,
 				PreserveCloseIntent: preserveCloseIntent,
-				LinkedByType:        strToText("system"),
-				LinkedByID:          pgtype.UUID{},
 			}); err != nil {
 				slog.Warn("github: link failed", "err", err)
 				continue

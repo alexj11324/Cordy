@@ -1015,16 +1015,6 @@ type IssueProperty struct {
 	Icon        string             `json:"icon"`
 }
 
-type IssuePullRequest struct {
-	IssueID       pgtype.UUID        `json:"issue_id"`
-	PullRequestID pgtype.UUID        `json:"pull_request_id"`
-	LinkedByType  pgtype.Text        `json:"linked_by_type"`
-	LinkedByID    pgtype.UUID        `json:"linked_by_id"`
-	LinkedAt      pgtype.Timestamptz `json:"linked_at"`
-	CloseIntent   bool               `json:"close_intent"`
-	ReferenceOnly bool               `json:"reference_only"`
-}
-
 type IssueReaction struct {
 	ID          pgtype.UUID        `json:"id"`
 	IssueID     pgtype.UUID        `json:"issue_id"`
@@ -1093,16 +1083,6 @@ type IssueSubscriber struct {
 type IssueToLabel struct {
 	IssueID pgtype.UUID `json:"issue_id"`
 	LabelID pgtype.UUID `json:"label_id"`
-}
-
-type IssueVcsPullRequest struct {
-	IssueID       pgtype.UUID        `json:"issue_id"`
-	PullRequestID pgtype.UUID        `json:"pull_request_id"`
-	CloseIntent   bool               `json:"close_intent"`
-	ReferenceOnly bool               `json:"reference_only"`
-	LinkedByType  pgtype.Text        `json:"linked_by_type"`
-	LinkedByID    pgtype.UUID        `json:"linked_by_id"`
-	LinkedAt      pgtype.Timestamptz `json:"linked_at"`
 }
 
 type IssueView struct {

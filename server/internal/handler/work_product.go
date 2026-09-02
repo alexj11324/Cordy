@@ -506,7 +506,11 @@ func (h *Handler) ListWorkProductRelationsByIssue(w http.ResponseWriter, r *http
 		writeError(w, http.StatusInternalServerError, "database error")
 		return
 	}
-	rows, err := executor.Query(r.Context(), `SELECT `+workProductRelationColumns+` FROM work_product_relation WHERE workspace_id = $1 AND issue_id = $2 AND detached_at IS NULL ORDER BY attached_at DESC, id DESC LIMIT $3 OFFSET $4`, workspaceUUID, iid, limit+1, offset)
+	// provider_reference relations record a bare mention of the issue in a
+	// PR body. They are evidence somebody typed the identifier, not a claim
+	// that the PR does the work, so they stay out of the issue's list for the
+	// same reason they stay out of the close gate.
+	rows, err := executor.Query(r.Context(), `SELECT `+workProductRelationColumns+` FROM work_product_relation WHERE workspace_id = $1 AND issue_id = $2 AND detached_at IS NULL AND relation_source <> 'provider_reference' ORDER BY attached_at DESC, id DESC LIMIT $3 OFFSET $4`, workspaceUUID, iid, limit+1, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "database error")
 		return
@@ -746,6 +750,7 @@ RETURNING `+workProductRelationColumns,
 		writeError(w, http.StatusInternalServerError, "database error")
 		return
 	}
+	h.recordWorkProductRelationActivity(r, workProductAttachedActivity, actor, relation)
 	writeJSON(w, http.StatusOK, relation)
 }
 

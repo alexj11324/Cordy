@@ -205,6 +205,74 @@ func (q *Queries) DetachWorkProductRelation(ctx context.Context, arg DetachWorkP
 	return i, err
 }
 
+const detachWorkProductRelationForIssue = `-- name: DetachWorkProductRelationForIssue :one
+UPDATE work_product_relation
+SET detached_at = now(),
+    detached_by_type = $1,
+    detached_by_id = $2,
+    detached_task_id = $3,
+    detached_run_id = $4
+WHERE id = $5
+  AND workspace_id = $6
+  AND issue_id = $7
+  AND detached_at IS NULL
+  AND (
+      $1::text = 'user'
+      OR task_id = $3::uuid
+  )
+RETURNING id, workspace_id, work_product_id, issue_id, task_id, run_id, relation_key, relation_source, attached_by_type, attached_by_id, attached_at, close_intent, detached_at, detached_by_type, detached_by_id, detached_task_id, detached_run_id
+`
+
+type DetachWorkProductRelationForIssueParams struct {
+	DetachedByType pgtype.Text `json:"detached_by_type"`
+	DetachedByID   pgtype.UUID `json:"detached_by_id"`
+	DetachedTaskID pgtype.UUID `json:"detached_task_id"`
+	DetachedRunID  pgtype.UUID `json:"detached_run_id"`
+	ID             pgtype.UUID `json:"id"`
+	WorkspaceID    pgtype.UUID `json:"workspace_id"`
+	IssueID        pgtype.UUID `json:"issue_id"`
+}
+
+// Detach is a soft close, never a delete: the row keeps who attached it and
+// gains who took it off, so the trail survives the removal.
+//
+// The actor gate is in the WHERE clause rather than in Go so it cannot be
+// skipped by a future caller. A member ('user') may detach anything on the
+// issue; an agent may only detach a relation its own task attached, which
+// stops one task from erasing another's record of what it delivered.
+func (q *Queries) DetachWorkProductRelationForIssue(ctx context.Context, arg DetachWorkProductRelationForIssueParams) (WorkProductRelation, error) {
+	row := q.db.QueryRow(ctx, detachWorkProductRelationForIssue,
+		arg.DetachedByType,
+		arg.DetachedByID,
+		arg.DetachedTaskID,
+		arg.DetachedRunID,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.IssueID,
+	)
+	var i WorkProductRelation
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.WorkProductID,
+		&i.IssueID,
+		&i.TaskID,
+		&i.RunID,
+		&i.RelationKey,
+		&i.RelationSource,
+		&i.AttachedByType,
+		&i.AttachedByID,
+		&i.AttachedAt,
+		&i.CloseIntent,
+		&i.DetachedAt,
+		&i.DetachedByType,
+		&i.DetachedByID,
+		&i.DetachedTaskID,
+		&i.DetachedRunID,
+	)
+	return i, err
+}
+
 const getIssueProvenanceForDiscovery = `-- name: GetIssueProvenanceForDiscovery :many
 SELECT task_id, workspace_id, run_id, repo_identity, execution_workspace, head_branch, head_sha, head_state, started_at, finished_at, discovery_status, discovery_lease_id, discovery_match_count, discovery_reason, discovery_work_product_id, discovery_at, updated_at
 FROM agent_task_execution_provenance WHERE workspace_id = $1 AND discovery_status IN ('pending','in_progress') ORDER BY updated_at LIMIT $2
@@ -382,6 +450,43 @@ func (q *Queries) GetWorkProductRelationByID(ctx context.Context, arg GetWorkPro
 	return i, err
 }
 
+const getWorkProductRelationForIssue = `-- name: GetWorkProductRelationForIssue :one
+SELECT id, workspace_id, work_product_id, issue_id, task_id, run_id, relation_key, relation_source, attached_by_type, attached_by_id, attached_at, close_intent, detached_at, detached_by_type, detached_by_id, detached_task_id, detached_run_id
+FROM work_product_relation
+WHERE id = $1 AND workspace_id = $2 AND issue_id = $3
+`
+
+type GetWorkProductRelationForIssueParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	IssueID     pgtype.UUID `json:"issue_id"`
+}
+
+func (q *Queries) GetWorkProductRelationForIssue(ctx context.Context, arg GetWorkProductRelationForIssueParams) (WorkProductRelation, error) {
+	row := q.db.QueryRow(ctx, getWorkProductRelationForIssue, arg.ID, arg.WorkspaceID, arg.IssueID)
+	var i WorkProductRelation
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.WorkProductID,
+		&i.IssueID,
+		&i.TaskID,
+		&i.RunID,
+		&i.RelationKey,
+		&i.RelationSource,
+		&i.AttachedByType,
+		&i.AttachedByID,
+		&i.AttachedAt,
+		&i.CloseIntent,
+		&i.DetachedAt,
+		&i.DetachedByType,
+		&i.DetachedByID,
+		&i.DetachedTaskID,
+		&i.DetachedRunID,
+	)
+	return i, err
+}
+
 const listExecutionProvenanceByTask = `-- name: ListExecutionProvenanceByTask :many
 SELECT task_id, workspace_id, run_id, repo_identity, execution_workspace, head_branch, head_sha, head_state, started_at, finished_at, discovery_status, discovery_lease_id, discovery_match_count, discovery_reason, discovery_work_product_id, discovery_at, updated_at
 FROM agent_task_execution_provenance
@@ -517,7 +622,10 @@ func (q *Queries) ListProvenanceByWorkspace(ctx context.Context, arg ListProvena
 
 const listWorkProductRelationsByIssue = `-- name: ListWorkProductRelationsByIssue :many
 SELECT id, workspace_id, work_product_id, issue_id, task_id, run_id, relation_key, relation_source, attached_by_type, attached_by_id, attached_at, close_intent, detached_at, detached_by_type, detached_by_id, detached_task_id, detached_run_id
-FROM work_product_relation WHERE workspace_id = $1 AND issue_id = $2 AND detached_at IS NULL ORDER BY attached_at DESC, id DESC LIMIT $3 OFFSET $4
+FROM work_product_relation
+WHERE workspace_id = $1 AND issue_id = $2 AND detached_at IS NULL
+  AND relation_source <> 'provider_reference'
+ORDER BY attached_at DESC, id DESC LIMIT $3 OFFSET $4
 `
 
 type ListWorkProductRelationsByIssueParams struct {
@@ -655,6 +763,204 @@ func (q *Queries) ListWorkProductRelationsByTask(ctx context.Context, arg ListWo
 			&i.DetachedByID,
 			&i.DetachedTaskID,
 			&i.DetachedRunID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listWorkProductsByIssue = `-- name: ListWorkProductsByIssue :many
+SELECT product.id, product.workspace_id, product.kind, product.provider,
+       product.external_identity, product.external_url,
+       product.provider_record_type, product.provider_record_id,
+       product.created_at, product.updated_at,
+       relation.id AS relation_id, relation.issue_id AS relation_issue_id,
+       relation.task_id AS relation_task_id, relation.run_id AS relation_run_id,
+       relation.relation_source, relation.attached_by_type,
+       relation.attached_by_id, relation.attached_at, relation.close_intent
+FROM work_product product
+JOIN work_product_relation relation ON relation.work_product_id = product.id
+WHERE product.workspace_id = $1
+  AND relation.workspace_id = $1
+  AND relation.issue_id = $2
+  AND relation.detached_at IS NULL
+  AND relation.relation_source <> 'provider_reference'
+ORDER BY relation.attached_at DESC, product.id DESC
+LIMIT $3 OFFSET $4
+`
+
+type ListWorkProductsByIssueParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	IssueID     pgtype.UUID `json:"issue_id"`
+	Limit       int32       `json:"limit"`
+	Offset      int32       `json:"offset"`
+}
+
+type ListWorkProductsByIssueRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	WorkspaceID        pgtype.UUID        `json:"workspace_id"`
+	Kind               string             `json:"kind"`
+	Provider           string             `json:"provider"`
+	ExternalIdentity   string             `json:"external_identity"`
+	ExternalUrl        pgtype.Text        `json:"external_url"`
+	ProviderRecordType pgtype.Text        `json:"provider_record_type"`
+	ProviderRecordID   pgtype.UUID        `json:"provider_record_id"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	RelationID         pgtype.UUID        `json:"relation_id"`
+	RelationIssueID    pgtype.UUID        `json:"relation_issue_id"`
+	RelationTaskID     pgtype.UUID        `json:"relation_task_id"`
+	RelationRunID      pgtype.UUID        `json:"relation_run_id"`
+	RelationSource     string             `json:"relation_source"`
+	AttachedByType     string             `json:"attached_by_type"`
+	AttachedByID       pgtype.UUID        `json:"attached_by_id"`
+	AttachedAt         pgtype.Timestamptz `json:"attached_at"`
+	CloseIntent        bool               `json:"close_intent"`
+}
+
+// The issue's Work Product list. Each row carries the product and the live
+// relation that put it there, so a caller never has to correlate two lists to
+// learn why a product is attached or which relation to detach.
+//
+// provider_reference relations are excluded: those record a bare mention in a
+// PR body, which is evidence that somebody typed the identifier, not a claim
+// that the PR does the issue's work. Surfacing them would let any passing
+// mention masquerade as delivered work.
+func (q *Queries) ListWorkProductsByIssue(ctx context.Context, arg ListWorkProductsByIssueParams) ([]ListWorkProductsByIssueRow, error) {
+	rows, err := q.db.Query(ctx, listWorkProductsByIssue,
+		arg.WorkspaceID,
+		arg.IssueID,
+		arg.Limit,
+		arg.Offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListWorkProductsByIssueRow{}
+	for rows.Next() {
+		var i ListWorkProductsByIssueRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.Kind,
+			&i.Provider,
+			&i.ExternalIdentity,
+			&i.ExternalUrl,
+			&i.ProviderRecordType,
+			&i.ProviderRecordID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.RelationID,
+			&i.RelationIssueID,
+			&i.RelationTaskID,
+			&i.RelationRunID,
+			&i.RelationSource,
+			&i.AttachedByType,
+			&i.AttachedByID,
+			&i.AttachedAt,
+			&i.CloseIntent,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listWorkProductsByTask = `-- name: ListWorkProductsByTask :many
+SELECT product.id, product.workspace_id, product.kind, product.provider,
+       product.external_identity, product.external_url,
+       product.provider_record_type, product.provider_record_id,
+       product.created_at, product.updated_at,
+       relation.id AS relation_id, relation.issue_id AS relation_issue_id,
+       relation.task_id AS relation_task_id, relation.run_id AS relation_run_id,
+       relation.relation_source, relation.attached_by_type,
+       relation.attached_by_id, relation.attached_at, relation.close_intent
+FROM work_product product
+JOIN work_product_relation relation ON relation.work_product_id = product.id
+WHERE product.workspace_id = $1
+  AND relation.workspace_id = $1
+  AND relation.task_id = $2
+  AND relation.detached_at IS NULL
+ORDER BY relation.attached_at DESC, product.id DESC
+LIMIT $3 OFFSET $4
+`
+
+type ListWorkProductsByTaskParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	TaskID      pgtype.UUID `json:"task_id"`
+	Limit       int32       `json:"limit"`
+	Offset      int32       `json:"offset"`
+}
+
+type ListWorkProductsByTaskRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	WorkspaceID        pgtype.UUID        `json:"workspace_id"`
+	Kind               string             `json:"kind"`
+	Provider           string             `json:"provider"`
+	ExternalIdentity   string             `json:"external_identity"`
+	ExternalUrl        pgtype.Text        `json:"external_url"`
+	ProviderRecordType pgtype.Text        `json:"provider_record_type"`
+	ProviderRecordID   pgtype.UUID        `json:"provider_record_id"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	RelationID         pgtype.UUID        `json:"relation_id"`
+	RelationIssueID    pgtype.UUID        `json:"relation_issue_id"`
+	RelationTaskID     pgtype.UUID        `json:"relation_task_id"`
+	RelationRunID      pgtype.UUID        `json:"relation_run_id"`
+	RelationSource     string             `json:"relation_source"`
+	AttachedByType     string             `json:"attached_by_type"`
+	AttachedByID       pgtype.UUID        `json:"attached_by_id"`
+	AttachedAt         pgtype.Timestamptz `json:"attached_at"`
+	CloseIntent        bool               `json:"close_intent"`
+}
+
+// What one task produced. Unlike the issue list this keeps every relation
+// source: a task's own discovery record is the point of the list, and a task
+// cannot author a provider_reference relation in the first place.
+func (q *Queries) ListWorkProductsByTask(ctx context.Context, arg ListWorkProductsByTaskParams) ([]ListWorkProductsByTaskRow, error) {
+	rows, err := q.db.Query(ctx, listWorkProductsByTask,
+		arg.WorkspaceID,
+		arg.TaskID,
+		arg.Limit,
+		arg.Offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListWorkProductsByTaskRow{}
+	for rows.Next() {
+		var i ListWorkProductsByTaskRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.Kind,
+			&i.Provider,
+			&i.ExternalIdentity,
+			&i.ExternalUrl,
+			&i.ProviderRecordType,
+			&i.ProviderRecordID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.RelationID,
+			&i.RelationIssueID,
+			&i.RelationTaskID,
+			&i.RelationRunID,
+			&i.RelationSource,
+			&i.AttachedByType,
+			&i.AttachedByID,
+			&i.AttachedAt,
+			&i.CloseIntent,
 		); err != nil {
 			return nil, err
 		}
