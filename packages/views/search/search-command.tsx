@@ -97,6 +97,7 @@ const PAGE_KEYWORDS: Record<WorkspacePageKey, string[]> = {
   automations: ["automation", "automations", "automation", "schedule", "cron", "webhook", "自动化", "定时"],
   agents: ["agents", "bots", "ai", "智能体"],
   teams: ["teams", "team", "团队", "チーム", "팀"],
+  channels: ["channels", "channel", "conversation", "消息", "频道", "チャンネル", "채널"],
   usage: ["usage", "analytics", "stats", "metrics", "统计", "分析", "用量"],
   runtimes: ["runtimes", "environments", "machines", "运行时"],
   skills: ["skills", "library", "技能"],

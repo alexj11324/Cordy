@@ -86,6 +86,10 @@ import type {
   User,
   WebhookDelivery,
   WorkspaceMcpServer,
+  WorkspaceChannel,
+  WorkspaceChannelMessage,
+  ListWorkspaceChannelsResponse,
+  ListWorkspaceChannelMessagesResponse,
 } from "../types";
 import type { CloudRuntimeNode } from "../runtimes/cloud-runtime";
 import type { CreateFeedbackResponse } from "../feedback/types";
@@ -3250,6 +3254,113 @@ export const EMPTY_WORKSPACE_MCP_SERVER: WorkspaceMcpServer = {
   transport: "unknown",
   created_at: "",
   updated_at: "",
+};
+
+// Workspace channels and their message stream. These response schemas stay
+// loose so additive fields from the Go API remain forward-compatible.
+export const WorkspaceChannelSchema = z.object({
+  id: z.string().default(""),
+  workspace_id: z.string().default(""),
+  name: z.string().default(""),
+  slug: z.string().default(""),
+  description: z.string().default(""),
+  created_by: z.string().default(""),
+  archived_at: z.string().nullable().optional().default(null),
+  created_at: z.string().default(""),
+  updated_at: z.string().default(""),
+}).loose();
+
+export const WorkspaceChannelMessageSchema = z.object({
+  id: z.string().default(""),
+  workspace_id: z.string().default(""),
+  channel_id: z.string().default(""),
+  author_type: z.string().default("member"),
+  author_id: z.string().default(""),
+  content: z.string().default(""),
+  parent_id: z.string().nullable().optional().default(null),
+  quoted_message_id: z.string().nullable().optional().default(null),
+  created_at: z.string().default(""),
+  updated_at: z.string().default(""),
+}).loose();
+
+const WorkspaceChannelMessageCursorSchema = z.object({
+  created_at: z.string(),
+  id: z.string(),
+}).loose();
+
+// Metadata is additive and must not make an otherwise valid message page
+// unreadable when an older/newer server sends an unexpected value. The
+// channel normalizer performs the final safety check before query caching.
+const WorkspaceChannelMessageLimitSchema = z.preprocess(
+  (value) =>
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 1 &&
+    value <= 100
+      ? value
+      : undefined,
+  z.number().optional(),
+);
+
+const WorkspaceChannelMessageHasMoreSchema = z.preprocess(
+  (value) => (typeof value === "boolean" ? value : undefined),
+  z.boolean().optional(),
+);
+
+const WorkspaceChannelMessageNextCursorSchema = z.preprocess(
+  (value) => {
+    if (value === undefined || value === null) return value;
+    if (typeof value !== "object") return null;
+    const record = value as Record<string, unknown>;
+    return typeof record.created_at === "string" && typeof record.id === "string"
+      ? value
+      : null;
+  },
+  WorkspaceChannelMessageCursorSchema.nullable().optional(),
+);
+
+export const WorkspaceChannelListResponseSchema = z.object({
+  channels: z.array(WorkspaceChannelSchema).default([]),
+}).loose();
+
+export const WorkspaceChannelMessageListResponseSchema = z.object({
+  messages: z.array(WorkspaceChannelMessageSchema).default([]),
+  limit: WorkspaceChannelMessageLimitSchema,
+  has_more: WorkspaceChannelMessageHasMoreSchema,
+  next_cursor: WorkspaceChannelMessageNextCursorSchema,
+}).loose();
+
+export const EMPTY_WORKSPACE_CHANNEL: WorkspaceChannel = {
+  id: "",
+  workspace_id: "",
+  name: "",
+  slug: "",
+  description: "",
+  created_by: "",
+  archived_at: null,
+  created_at: "",
+  updated_at: "",
+};
+
+export const EMPTY_WORKSPACE_CHANNEL_MESSAGE: WorkspaceChannelMessage = {
+  id: "",
+  workspace_id: "",
+  channel_id: "",
+  author_type: "member",
+  author_id: "",
+  content: "",
+  parent_id: null,
+  quoted_message_id: null,
+  created_at: "",
+  updated_at: "",
+};
+
+export const EMPTY_WORKSPACE_CHANNEL_LIST_RESPONSE: ListWorkspaceChannelsResponse = {
+  channels: [],
+};
+
+export const EMPTY_WORKSPACE_CHANNEL_MESSAGE_LIST_RESPONSE: ListWorkspaceChannelMessagesResponse = {
+  messages: [],
 };
 
 // Share links. Introduced with the workspace share-link invite flow; schemas

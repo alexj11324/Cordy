@@ -7,7 +7,7 @@ export const MAIN_RENDERER_CHANNEL_STATE_CHANNEL =
   "main-renderer:channel-state";
 
 export const MAIN_RENDERER_MESSAGE_CHANNELS = [
-  "auth:token",
+  "auth:handoff",
   "invite:open",
   "inbox:open",
   "settings:open",

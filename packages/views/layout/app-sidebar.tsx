@@ -119,6 +119,7 @@ type NavKey =
   | "automations"
   | "agents"
   | "teams"
+  | "channels"
   | "usage"
   | "runtimes"
   | "skills"
@@ -135,6 +136,7 @@ type NavLabelKey =
   | "automations"
   | "agents"
   | "teams"
+  | "channels"
   | "usage"
   | "runtimes"
   | "skills"
@@ -155,6 +157,7 @@ const workspaceNav: { key: NavKey; labelKey: NavLabelKey }[] = [
   { key: "automations", labelKey: "automations" },
   { key: "agents", labelKey: "agents" },
   { key: "teams", labelKey: "teams" },
+  { key: "channels", labelKey: "channels" },
   { key: "usage", labelKey: "usage" },
 ];
 
@@ -243,9 +246,15 @@ function SortablePinItem({
         >{label}</span>
         <Tooltip>
           <TooltipTrigger
-            render={<span role="button" />}
+            render={<span role="button" tabIndex={0} aria-label={t(($) => $.sidebar.unpin_tooltip)} />}
             className="hidden size-2.5 shrink-0 items-center justify-center rounded-sm text-muted-foreground group-hover/pin:flex hover:text-foreground"
             onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onUnpin();
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" && event.key !== " ") return;
               event.preventDefault();
               event.stopPropagation();
               onUnpin();

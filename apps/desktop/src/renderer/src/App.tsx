@@ -14,6 +14,7 @@ import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
 import { Toaster } from "@patchbay/ui/components/ui/sonner";
 import { DesktopLoginPage } from "./pages/login";
 import { DesktopAuthRecoveryPage } from "./pages/auth-recovery";
+import { completeDesktopHandoff } from "./pages/login-handoff";
 import { DesktopShell } from "./components/desktop-layout";
 import { UpdateNotification } from "./components/update-notification";
 import { IssueWindow } from "./components/issue-window";
@@ -134,14 +135,22 @@ function AppContent() {
     });
   }, []);
 
-  // Listen for auth token delivered via deep link (patchbay://auth/callback?token=...).
-  // daemonAPI.syncToken is handled separately by the [user] effect below, which
-  // fires whenever a user logs in (deep link, session restore, account switch).
+  // Redeem the PKCE-bound one-time code delivered via the desktop deep link.
+  // daemonAPI.syncToken is handled separately by the [user] effect below.
   useEffect(() => {
-    return window.desktopAPI.onAuthToken(async (token) => {
+    return window.desktopAPI.onAuthHandoff(async ({ code, state }) => {
       setBootstrapping(true);
+      let acknowledged = false;
       try {
-        await useAuthStore.getState().loginWithToken(token);
+        const completion = await completeDesktopHandoff(code, state, {
+          redeem: (handoffCode, verifier) =>
+            api.redeemDesktopHandoff(handoffCode, verifier),
+          login: (token) => useAuthStore.getState().loginWithToken(token),
+          recoverPersistedToken: () =>
+            useAuthStore.getState().retryAuthentication(),
+        });
+        acknowledged = completion.acknowledged;
+        if (!completion.authenticated) return completion.acknowledged;
         // Seed React Query cache with the workspace list so the index-route
         // redirect (routes.tsx `IndexRedirect`) can resolve the initial
         // destination without a second fetch. Workspace side-effects
@@ -149,8 +158,10 @@ function AppContent() {
         // WorkspaceRouteLayout when the URL resolves.
         const wsList = await api.listWorkspaces();
         qc.setQueryData(workspaceKeys.list(), wsList);
+        return completion.acknowledged;
       } catch {
-        // Token invalid or expired — user stays on login page
+        // Keep transient handoff failures queued for the preload retry signal.
+        return acknowledged;
       } finally {
         setBootstrapping(false);
       }

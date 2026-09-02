@@ -1,6 +1,11 @@
+import { useState } from "react";
+import { api } from "@patchbay/core/api";
+import { Alert, AlertDescription } from "@patchbay/ui/components/ui/alert";
 import { LoginPage } from "@patchbay/views/auth";
+import { useT } from "@patchbay/views/i18n";
 import { DragStrip } from "@patchbay/views/platform";
 import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
+import { createDesktopGoogleLoginUrl } from "./login-handoff";
 
 function requireRuntimeAppUrl(): string {
   const runtimeConfig = window.desktopAPI.runtimeConfig;
@@ -14,24 +19,43 @@ function requireRuntimeAppUrl(): string {
 
 export function DesktopLoginPage() {
   const webUrl = requireRuntimeAppUrl();
-  const handleGoogleLogin = () => {
-    // Open web login page in the default browser with platform=desktop flag.
-    // The web callback will redirect back via patchbay:// deep link with the token.
-    window.desktopAPI.openExternal(
-      `${webUrl}/login?platform=desktop`,
-    );
+  const { t } = useT("auth");
+  const [openingGoogle, setOpeningGoogle] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleGoogleLogin = async () => {
+    if (openingGoogle) return;
+    setOpeningGoogle(true);
+    setError(null);
+    try {
+      const url = await createDesktopGoogleLoginUrl(
+        webUrl,
+        (state, codeChallenge) =>
+          api.initiateDesktopAuthHandoff(state, codeChallenge),
+      );
+      await window.desktopAPI.openExternal(url);
+    } catch {
+      setError(t(($) => $.web.desktop_handoff.prepare_failed));
+    } finally {
+      setOpeningGoogle(false);
+    }
   };
 
   return (
     <div className="flex h-screen flex-col">
       <DragStrip />
+      {error && (
+        <Alert variant="destructive" className="m-4">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
       <LoginPage
         logo={<PatchbayIcon bordered size="lg" />}
         onSuccess={() => {
           // Auth store update triggers AppContent re-render → shows DesktopShell.
           // Initial workspace navigation happens in routes.tsx via IndexRedirect.
         }}
-        onGoogleLogin={handleGoogleLogin}
+        onGoogleLogin={() => void handleGoogleLogin()}
       />
     </div>
   );

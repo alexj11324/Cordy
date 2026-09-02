@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { sanitizeNextUrl, useAuthStore } from "@patchbay/core/auth";
@@ -56,6 +56,13 @@ async function resolveLoggedInDestination(
   return resolvePostAuthDestination(workspaces, hasOnboarded);
 }
 
+function redirectToDesktopHandoff(code: string, state: string): void {
+  const url = new URL("patchbay://auth/callback");
+  url.searchParams.set("code", code);
+  url.searchParams.set("state", state);
+  window.location.href = url.href;
+}
+
 function LoginPageContent() {
   const router = useRouter();
   const qc = useQueryClient();
@@ -69,6 +76,14 @@ function LoginPageContent() {
   const cliState = searchParams.get("cli_state") || "";
   const platform = searchParams.get("platform");
   const isDesktopHandoff = platform === "desktop" && !cliCallbackRaw;
+  const validatedCliCallback =
+    cliCallbackRaw && validateCliCallback(cliCallbackRaw)
+      ? cliCallbackRaw
+      : null;
+  const isGoogleBrokerFlow =
+    isDesktopHandoff || validatedCliCallback !== null;
+  const desktopState = searchParams.get("state") || "";
+  const desktopCodeChallenge = searchParams.get("code_challenge") || "";
   // `next` carries a protected URL the user was originally headed to
   // (e.g. /invite/{id}). With URL-driven workspaces there is no legacy
   // "/issues" default — if `next` is absent we decide after login based on
@@ -76,7 +91,10 @@ function LoginPageContent() {
   // cannot bounce the user off-origin after a successful login.
   const nextUrl = sanitizeNextUrl(searchParams.get("next"));
 
-  const [desktopToken, setDesktopToken] = useState<string | null>(null);
+  const [desktopHandoff, setDesktopHandoff] = useState<{
+    code: string;
+    state: string;
+  } | null>(null);
   const [desktopError, setDesktopError] = useState("");
   const hasOnboarded = useHasOnboarded();
 
@@ -84,6 +102,28 @@ function LoginPageContent() {
   // Any `user` that appears afterwards came from the login form in this
   // session — not from an existing session found on arrival.
   const settledLoggedOutRef = useRef(false);
+  const desktopAttemptedRef = useRef(false);
+
+  const completeDesktopHandoff = useCallback(async () => {
+    if (!desktopState || !desktopCodeChallenge) {
+      setDesktopError(t(($) => $.web.desktop_handoff.prepare_failed));
+      return;
+    }
+    try {
+      const handoff = await api.completeDesktopAuthHandoff(
+        desktopState,
+        desktopCodeChallenge,
+      );
+      setDesktopHandoff({ code: handoff.code, state: handoff.state });
+      redirectToDesktopHandoff(handoff.code, handoff.state);
+    } catch (err) {
+      setDesktopError(
+        err instanceof Error
+          ? err.message
+          : t(($) => $.web.desktop_handoff.prepare_failed),
+      );
+    }
+  }, [desktopCodeChallenge, desktopState, t]);
 
   // Already authenticated ON ARRIVAL — honor ?next= or fall back to first
   // workspace (or /onboarding if the user has none). Skip this entire path
@@ -97,21 +137,11 @@ function LoginPageContent() {
     if (cliCallbackRaw) return;
     if (isDesktopHandoff) {
       // Desktop opened the browser for login but the web session is already
-      // authenticated — mint a bearer token from the cookie session and hand
-      // it off via deep link instead of silently redirecting to the workspace.
-      api
-        .issueCliToken()
-        .then(({ token }) => {
-          setDesktopToken(token);
-          window.location.href = `patchbay://auth/callback?token=${encodeURIComponent(token)}`;
-        })
-        .catch((err) => {
-          setDesktopError(
-            err instanceof Error
-              ? err.message
-              : t(($) => $.web.desktop_handoff.prepare_failed),
-          );
-        });
+      // authenticated. Complete the registered PKCE handoff; only the
+      // resulting one-time code crosses the custom protocol boundary.
+      if (desktopAttemptedRef.current) return;
+      desktopAttemptedRef.current = true;
+      void completeDesktopHandoff();
       return;
     }
     // Fresh form login (issue #5009): `user` was written by verifyCode while
@@ -134,9 +164,23 @@ function LoginPageContent() {
       .catch(() => [] as Workspace[])
       .then((list) => resolveLoggedInDestination(qc, hasOnboarded, list))
       .then((dest) => router.replace(dest));
-  }, [isLoading, user, router, nextUrl, cliCallbackRaw, isDesktopHandoff, hasOnboarded, qc]);
+  }, [
+    isLoading,
+    user,
+    router,
+    nextUrl,
+    cliCallbackRaw,
+    isDesktopHandoff,
+    hasOnboarded,
+    qc,
+    completeDesktopHandoff,
+  ]);
 
   const handleSuccess = async () => {
+    if (isDesktopHandoff) {
+      await completeDesktopHandoff();
+      return;
+    }
     // Read the latest user snapshot directly — the closure's `hasOnboarded`
     // was captured before login completed and would be stale here.
     const currentUser = useAuthStore.getState().user;
@@ -149,23 +193,30 @@ function LoginPageContent() {
     router.push(await resolveLoggedInDestination(qc, onboarded, list));
   };
 
-  // Build Google OAuth state: encode platform, next URL, and CLI callback
+  // Build Google OAuth state: encode platform, desktop PKCE binding, next URL,
+  // and CLI callback
   // params so the callback can redirect to the right place after login.
   // CLI callback/state must survive the Google OAuth round-trip so the
   // post-login callback page can redirect the JWT back to the CLI's local
   // HTTP listener (critical for headless / WSL2 environments).
   const googleState = [
     platform === "desktop" ? "platform:desktop" : "",
+    isDesktopHandoff && desktopState
+      ? `desktop_state:${encodeURIComponent(desktopState)}`
+      : "",
+    isDesktopHandoff && desktopCodeChallenge
+      ? `desktop_code_challenge:${encodeURIComponent(desktopCodeChallenge)}`
+      : "",
     nextUrl ? `next:${nextUrl}` : "",
-    cliCallbackRaw && validateCliCallback(cliCallbackRaw)
-      ? `cli_callback:${encodeURIComponent(cliCallbackRaw)}`
+    validatedCliCallback
+      ? `cli_callback:${encodeURIComponent(validatedCliCallback)}`
       : "",
     cliState ? `cli_state:${encodeURIComponent(cliState)}` : "",
   ]
     .filter(Boolean)
     .join(",") || undefined;
 
-  // While the desktop handoff is in progress (or has produced a token/error),
+  // While the desktop handoff is in progress (or has produced a code/error),
   // render a dedicated screen instead of flashing the login form or redirecting
   // away to a workspace page.
   if (isDesktopHandoff && user) {
@@ -191,17 +242,20 @@ function LoginPageContent() {
               {t(($) => $.web.desktop_handoff.opening_title)}
             </CardTitle>
             <CardDescription>
-              {desktopToken
+              {desktopHandoff
                 ? t(($) => $.web.desktop_handoff.opening_description)
                 : t(($) => $.web.desktop_handoff.preparing)}
             </CardDescription>
           </CardHeader>
           <CardContent className="flex justify-center">
-            {desktopToken ? (
+            {desktopHandoff ? (
               <Button
                 variant="outline"
                 onClick={() => {
-                  window.location.href = `patchbay://auth/callback?token=${encodeURIComponent(desktopToken)}`;
+                  redirectToDesktopHandoff(
+                    desktopHandoff.code,
+                    desktopHandoff.state,
+                  );
                 }}
               >
                 {t(($) => $.web.desktop_handoff.open_button)}
@@ -219,7 +273,7 @@ function LoginPageContent() {
     <LoginPage
       onSuccess={handleSuccess}
       google={
-        googleClientId
+        googleClientId && isGoogleBrokerFlow
           ? {
               clientId: googleClientId,
               redirectUri: `${window.location.origin}/auth/callback`,
@@ -228,8 +282,8 @@ function LoginPageContent() {
           : undefined
       }
       cliCallback={
-        cliCallbackRaw && validateCliCallback(cliCallbackRaw)
-          ? { url: cliCallbackRaw, state: cliState }
+        validatedCliCallback
+          ? { url: validatedCliCallback, state: cliState }
           : undefined
       }
       onTokenObtained={setLoggedInCookie}

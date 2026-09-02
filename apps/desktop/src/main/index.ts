@@ -186,10 +186,16 @@ function handleDeepLink(url: string): void {
     const parsed = new URL(url);
     if (parsed.protocol !== `${PROTOCOL}:`) return;
 
-    // patchbay://auth/callback?token=<jwt>
+    // patchbay://auth/callback?code=<one-time-code>&state=<request-state>
+    // Never accept a bearer token from a custom-protocol URL. The browser
+    // completes a registered PKCE handoff and the renderer redeems this
+    // single-use code over HTTPS.
     if (parsed.hostname === "auth" && parsed.pathname === "/callback") {
-      const token = parsed.searchParams.get("token");
-      if (token) dispatchToMainRenderer("auth:token", token);
+      const code = parsed.searchParams.get("code");
+      const state = parsed.searchParams.get("state");
+      if (code && state) {
+        dispatchToMainRenderer("auth:handoff", { code, state });
+      }
       return;
     }
 

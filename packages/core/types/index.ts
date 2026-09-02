@@ -247,6 +247,24 @@ export type {
   RedeemTelegramBindingTokenResponse,
 } from "./telegram";
 export type {
+  WorkspaceChannelAuthorType,
+  WorkspaceChannel,
+  WorkspaceChannelMessage,
+  WorkspaceChannelEventType,
+  WorkspaceChannelMessageCursor,
+  WorkspaceChannelMessageCacheEntry,
+  WorkspaceChannelMessagesCache,
+  WorkspaceChannelMessagesInfiniteData,
+  WorkspaceChannelMessagesData,
+  ListWorkspaceChannelsResponse,
+  ListWorkspaceChannelMessagesResponse,
+  ListWorkspaceChannelMessagesParams,
+  CreateWorkspaceChannelRequest,
+  CreateWorkspaceChannelMessageRequest,
+  WorkspaceChannelCreatedEventPayload,
+  WorkspaceChannelMessageEventPayload,
+} from "./channel";
+export type {
   Automation,
   AutomationStatus,
   AutomationExecutionMode,

@@ -120,6 +120,8 @@ function SidebarProvider({
   open: openProp,
   onOpenChange: setOpenProp,
   hasExternalTrigger = false,
+  /** Enable the translucent desktop treatment. Compact sheets stay opaque. */
+  glass = false,
   className,
   style,
   children,
@@ -137,6 +139,8 @@ function SidebarProvider({
    * forgets leaves a collapsed nav with no way back.
    */
   hasExternalTrigger?: boolean
+  /** Enable the translucent desktop treatment. Compact sheets stay opaque. */
+  glass?: boolean
 }) {
   const isCompact = useIsCompact()
   const [openMobile, setOpenMobile] = React.useState(false)
@@ -272,9 +276,12 @@ function SidebarProvider({
             // the consumer's (this component paints nothing then), so the
             // consumer declares that half of the variable next to its own
             // background class.
-            "has-data-[variant=inset]:bg-sidebar has-data-[variant=inset]:[--sidebar-wrapper-fill:var(--sidebar)]",
+            glass
+              ? "has-data-[variant=inset]:bg-transparent has-data-[variant=inset]:[--sidebar-wrapper-fill:var(--app-shell)]"
+              : "has-data-[variant=inset]:bg-sidebar has-data-[variant=inset]:[--sidebar-wrapper-fill:var(--sidebar)]",
             className
           )}
+          data-sidebar-glass={glass ? "true" : undefined}
           {...props}
         >
           {children}

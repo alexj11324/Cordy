@@ -213,6 +213,7 @@ vi.mock("@patchbay/core/paths", async (importOriginal) => ({
     automations: () => "/ws-test/automations",
     agents: () => "/ws-test/agents",
     teams: () => "/ws-test/teams",
+    channels: () => "/ws-test/channels",
     usage: () => "/ws-test/usage",
     runtimes: () => "/ws-test/runtimes",
     skills: () => "/ws-test/skills",

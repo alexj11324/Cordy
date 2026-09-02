@@ -28,6 +28,10 @@ import {
   MAIN_RENDERER_CHANNEL_STATE_CHANNEL,
   type MainRendererMessageChannel,
 } from "../shared/main-renderer-messages";
+import {
+  createAuthHandoffDelivery,
+  type AuthHandoffPayload,
+} from "./auth-handoff";
 
 // Synchronously fetch app metadata from main at preload time so the renderer
 // can pass it into CoreProvider during the initial render — the alternative
@@ -138,9 +142,34 @@ const desktopAPI = {
    *  dedicated issue windows that belong to an old account. */
   reportAuthSession: (userId: string | null) =>
     ipcRenderer.send(AUTH_SESSION_STATE_CHANNEL, userId),
-  /** Listen for auth token delivered via deep link */
-  onAuthToken: (callback: (token: string) => void) =>
-    subscribeToMainRendererChannel("auth:token", callback),
+  /** Listen for a PKCE-bound, one-time desktop login code delivered via deep link. */
+  onAuthHandoff: (
+    callback: (payload: AuthHandoffPayload) => boolean | Promise<boolean>,
+  ) => {
+    const delivery = createAuthHandoffDelivery(callback);
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      payload: AuthHandoffPayload,
+    ) => delivery.enqueue(payload);
+    const retry = () => delivery.retry();
+
+    ipcRenderer.on("auth:handoff", handler);
+    window.addEventListener("online", retry);
+    ipcRenderer.send(MAIN_RENDERER_CHANNEL_STATE_CHANNEL, {
+      channel: "auth:handoff",
+      ready: true,
+    });
+
+    return () => {
+      delivery.dispose();
+      ipcRenderer.removeListener("auth:handoff", handler);
+      window.removeEventListener("online", retry);
+      ipcRenderer.send(MAIN_RENDERER_CHANNEL_STATE_CHANNEL, {
+        channel: "auth:handoff",
+        ready: false,
+      });
+    };
+  },
   /** Listen for invitation IDs delivered via deep link */
   onInviteOpen: (callback: (invitationId: string) => void) =>
     subscribeToMainRendererChannel("invite:open", callback),

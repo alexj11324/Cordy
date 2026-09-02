@@ -24,6 +24,7 @@ import enUsage from "./en/usage.json";
 import enUi from "./en/ui.json";
 import enTeams from "./en/teams.json";
 import enBilling from "./en/billing.json";
+import enChannels from "./en/channels.json";
 import zhHansCommon from "./zh-Hans/common.json";
 import zhHansAuth from "./zh-Hans/auth.json";
 import zhHansSettings from "./zh-Hans/settings.json";
@@ -49,6 +50,7 @@ import zhHansUsage from "./zh-Hans/usage.json";
 import zhHansUi from "./zh-Hans/ui.json";
 import zhHansTeams from "./zh-Hans/teams.json";
 import zhHansBilling from "./zh-Hans/billing.json";
+import zhHansChannels from "./zh-Hans/channels.json";
 import koCommon from "./ko/common.json";
 import koAuth from "./ko/auth.json";
 import koSettings from "./ko/settings.json";
@@ -74,6 +76,7 @@ import koUsage from "./ko/usage.json";
 import koUi from "./ko/ui.json";
 import koTeams from "./ko/teams.json";
 import koBilling from "./ko/billing.json";
+import koChannels from "./ko/channels.json";
 import jaCommon from "./ja/common.json";
 import jaAuth from "./ja/auth.json";
 import jaSettings from "./ja/settings.json";
@@ -99,6 +102,7 @@ import jaUsage from "./ja/usage.json";
 import jaUi from "./ja/ui.json";
 import jaTeams from "./ja/teams.json";
 import jaBilling from "./ja/billing.json";
+import jaChannels from "./ja/channels.json";
 
 // Single source of truth for the resource bundle. Both apps (web layout +
 // desktop App.tsx) import from here so adding a locale or namespace happens
@@ -130,6 +134,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     ui: enUi,
     teams: enTeams,
     billing: enBilling,
+    channels: enChannels,
   },
   "zh-Hans": {
     common: zhHansCommon,
@@ -157,6 +162,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     ui: zhHansUi,
     teams: zhHansTeams,
     billing: zhHansBilling,
+    channels: zhHansChannels,
   },
   ko: {
     common: koCommon,
@@ -184,6 +190,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     ui: koUi,
     teams: koTeams,
     billing: koBilling,
+    channels: koChannels,
   },
   ja: {
     common: jaCommon,
@@ -211,5 +218,6 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     ui: jaUi,
     teams: jaTeams,
     billing: jaBilling,
+    channels: jaChannels,
   },
 };

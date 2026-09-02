@@ -28,6 +28,7 @@ export type RouteIconName =
   | "Zap"
   | "Bot"
   | "Users"
+  | "Hash"
   | "BarChart3"
   | "Monitor"
   | "Server"
@@ -52,6 +53,7 @@ export type NavLabelKey =
   | "automations"
   | "agents"
   | "teams"
+  | "channels"
   | "usage"
   | "runtimes"
   | "skills"
@@ -67,6 +69,7 @@ export type WorkspacePageKey =
   | "automations"
   | "agents"
   | "teams"
+  | "channels"
   | "usage"
   | "runtimes"
   | "skills"
@@ -94,6 +97,7 @@ export const WORKSPACE_PAGES: Record<WorkspacePageKey, WorkspacePage> = {
   automations: { segment: "automations", icon: "Zap", navKey: "automations" },
   agents: { segment: "agents", icon: "Bot", navKey: "agents" },
   teams: { segment: "teams", icon: "Users", navKey: "teams" },
+  channels: { segment: "channels", icon: "Hash", navKey: "channels" },
   usage: { segment: "usage", icon: "BarChart3", navKey: "usage" },
   runtimes: { segment: "runtimes", icon: "Monitor", navKey: "runtimes" },
   skills: { segment: "skills", icon: "BookOpenText", navKey: "skills" },

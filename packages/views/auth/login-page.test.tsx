@@ -742,6 +742,12 @@ describe("validateCliCallback", () => {
     expect(validateCliCallback("http://192.169.1.1:9876/callback")).toBe(false);
   });
 
+  it("rejects public DNS names that only look like private IPs", () => {
+    expect(validateCliCallback("http://10.attacker.example/callback")).toBe(false);
+    expect(validateCliCallback("http://172.16.attacker.example/callback")).toBe(false);
+    expect(validateCliCallback("http://192.168.attacker.example/callback")).toBe(false);
+  });
+
   it("rejects invalid URLs", () => {
     expect(validateCliCallback("not-a-url")).toBe(false);
   });

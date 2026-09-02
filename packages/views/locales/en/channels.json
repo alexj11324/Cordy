@@ -1,0 +1,39 @@
+{
+  "page": {
+    "title": "Channels",
+    "description": "Shared workspace conversations",
+    "new_button": "New channel",
+    "empty_title": "No channels yet",
+    "empty_description": "Create a channel to start a shared conversation",
+    "select_prompt": "Select a channel to view its messages",
+    "error_title": "Couldn’t load channels",
+    "error_description": "Try again",
+    "retry": "Retry"
+  },
+  "channel": {
+    "name": "Name",
+    "name_placeholder": "e.g. Product planning",
+    "slug": "Slug",
+    "slug_placeholder": "e.g. product-planning",
+    "description": "Description",
+    "description_placeholder": "What is this channel for?",
+    "create_title": "Create channel",
+    "create_description": "Add a name and a stable slug for this workspace channel.",
+    "cancel": "Cancel",
+    "create": "Create",
+    "creating": "Creating…",
+    "archived": "Archived",
+    "messages_empty": "No messages yet. Start the conversation.",
+    "load_earlier": "Load earlier messages",
+    "loading_earlier": "Loading earlier messages…",
+    "message_placeholder": "Message this channel…",
+    "send": "Send"
+  },
+  "toasts": {
+    "created": "Channel created",
+    "create_failed": "Couldn’t create channel",
+    "conflict": "A channel with that slug already exists",
+    "message_failed": "Couldn’t send message",
+    "required": "Name and slug are required."
+  }
+}

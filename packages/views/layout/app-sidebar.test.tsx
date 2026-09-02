@@ -130,6 +130,7 @@ vi.mock("@patchbay/core/paths", async (importOriginal) => ({
     automations: () => "/acme/automations",
     agents: () => "/acme/agents",
     teams: () => "/acme/teams",
+    channels: () => "/acme/channels",
     usage: () => "/acme/usage",
     runtimes: () => "/acme/runtimes",
     skills: () => "/acme/skills",

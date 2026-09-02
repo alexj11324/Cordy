@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { configStore } from "@patchbay/core/config";
 import { I18nProvider } from "@patchbay/core/i18n/react";
 import enCommon from "@patchbay/views/locales/en/common.json";
 import enAuth from "@patchbay/views/locales/en/auth.json";
@@ -21,7 +22,7 @@ function createWrapper() {
 }
 
 const {
-  mockIssueCliToken,
+  mockCompleteDesktopAuthHandoff,
   mockListWorkspaces,
   mockListMyInvitations,
   mockPush,
@@ -29,7 +30,7 @@ const {
   searchParamsState,
   authStateRef,
 } = vi.hoisted(() => ({
-  mockIssueCliToken: vi.fn(),
+  mockCompleteDesktopAuthHandoff: vi.fn(),
   mockListWorkspaces: vi.fn(),
   mockListMyInvitations: vi.fn(),
   mockPush: vi.fn(),
@@ -83,7 +84,7 @@ vi.mock("@patchbay/core/api", () => ({
     verifyCode: vi.fn(),
     setToken: vi.fn(),
     getMe: vi.fn(),
-    issueCliToken: mockIssueCliToken,
+    completeDesktopAuthHandoff: mockCompleteDesktopAuthHandoff,
   },
 }));
 
@@ -95,6 +96,10 @@ describe("LoginPage", () => {
     searchParamsState.params = new URLSearchParams();
     authStateRef.state.user = null;
     authStateRef.state.isLoading = false;
+    configStore.getState().setAuthConfig({
+      allowSignup: true,
+      googleClientId: "google-client-id",
+    });
     mockListWorkspaces.mockResolvedValue([]);
     mockListMyInvitations.mockResolvedValue([]);
   });
@@ -103,15 +108,46 @@ describe("LoginPage", () => {
   // packages/views/auth/login-page.test.tsx. This wrapper suite only owns web
   // platform handoff and redirect behavior.
 
-  // Regression: MUL-1080 — if the user is already authenticated on the web
-  // and the Desktop app redirects them to /login?platform=desktop, the web
-  // must exchange the cookie session for a bearer token and hand it off via
-  // the patchbay:// deep link, not silently redirect to the workspace page.
-  it("mints a token and deep-links to Desktop when already logged in with platform=desktop", async () => {
-    searchParamsState.params = new URLSearchParams({ platform: "desktop" });
+  it("keeps ordinary Web login on email send-code and hides the Google broker", () => {
+    render(<LoginPage />, { wrapper: createWrapper() });
+
+    expect(
+      screen.queryByRole("button", { name: /continue with google/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^Continue$/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps Google available for an explicit Desktop handoff", () => {
+    searchParamsState.params = new URLSearchParams({
+      platform: "desktop",
+      state: "state-a",
+      code_challenge: "challenge-a",
+    });
+
+    render(<LoginPage />, { wrapper: createWrapper() });
+
+    expect(
+      screen.getByRole("button", { name: /continue with google/i }),
+    ).toBeInTheDocument();
+  });
+
+  // Regression: the browser must complete the registered PKCE binding and
+  // hand only a one-time code to Desktop, never a bearer JWT in the URI.
+  it("completes a PKCE handoff and deep-links to Desktop when already logged in", async () => {
+    searchParamsState.params = new URLSearchParams({
+      platform: "desktop",
+      state: "state-a",
+      code_challenge: "challenge-a",
+    });
     authStateRef.state.user = { id: "u1", email: "test@patchbay.ai" };
-    mockIssueCliToken.mockImplementation(() =>
-      Promise.resolve({ token: "handoff-jwt" }),
+    mockCompleteDesktopAuthHandoff.mockImplementation(() =>
+      Promise.resolve({
+        callback_protocol: "patchbay",
+        code: "handoff-code",
+        state: "state-a",
+      }),
     );
 
     const hrefSetter = vi.fn();
@@ -125,16 +161,17 @@ describe("LoginPage", () => {
       render(<LoginPage />, { wrapper: createWrapper() });
 
       await waitFor(() => {
-        expect(mockIssueCliToken).toHaveBeenCalledTimes(1);
+        expect(mockCompleteDesktopAuthHandoff).toHaveBeenCalledWith(
+          "state-a",
+          "challenge-a",
+        );
       });
       await waitFor(() => {
         expect(hrefSetter).toHaveBeenCalledWith(
-          "patchbay://auth/callback?token=handoff-jwt",
+          "patchbay://auth/callback?code=handoff-code&state=state-a",
         );
       });
-      expect(
-        await screen.findByRole("button", { name: "Open Patchbay Desktop" }),
-      ).toBeInTheDocument();
+      expect(screen.getByText("Opening Patchbay")).toBeInTheDocument();
     } finally {
       Object.defineProperty(window, "location", {
         configurable: true,

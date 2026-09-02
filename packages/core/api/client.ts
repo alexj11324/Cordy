@@ -52,6 +52,13 @@ import type {
   Workspace,
   WorkspaceRepo,
   WorkspaceMcpServer,
+  WorkspaceChannel,
+  WorkspaceChannelMessage,
+  ListWorkspaceChannelsResponse,
+  ListWorkspaceChannelMessagesResponse,
+  ListWorkspaceChannelMessagesParams,
+  CreateWorkspaceChannelRequest,
+  CreateWorkspaceChannelMessageRequest,
   MemberWithUser,
   User,
   Skill,
@@ -439,6 +446,14 @@ import {
   PluginPreviewSchema,
   WorkspaceMcpServerListSchema,
   WorkspaceMcpServerSchema,
+  WorkspaceChannelSchema,
+  WorkspaceChannelMessageSchema,
+  WorkspaceChannelListResponseSchema,
+  WorkspaceChannelMessageListResponseSchema,
+  EMPTY_WORKSPACE_CHANNEL,
+  EMPTY_WORKSPACE_CHANNEL_MESSAGE,
+  EMPTY_WORKSPACE_CHANNEL_LIST_RESPONSE,
+  EMPTY_WORKSPACE_CHANNEL_MESSAGE_LIST_RESPONSE,
   ShareLinkSchema,
   ShareLinkListResponseSchema,
   ShareLinkInfoSchema,
@@ -815,6 +830,47 @@ export class ApiClient {
 
   async issueCliToken(): Promise<{ token: string }> {
     return this.fetch("/api/cli-token", { method: "POST" });
+  }
+
+  /** Register the renderer's PKCE binding before the browser leaves for login. */
+  async initiateDesktopAuthHandoff(
+    state: string,
+    codeChallenge: string,
+  ): Promise<{ registered: boolean }> {
+    return this.fetch("/api/desktop-handoff/initiate", {
+      method: "POST",
+      body: JSON.stringify({
+        state,
+        code_challenge: codeChallenge,
+        callback_protocol: "patchbay",
+      }),
+    });
+  }
+
+  /** Bind the authenticated browser session to the registered desktop attempt. */
+  async completeDesktopAuthHandoff(
+    state: string,
+    codeChallenge: string,
+  ): Promise<{ callback_protocol: string; code: string; state: string }> {
+    return this.fetch("/api/desktop-handoff/complete", {
+      method: "POST",
+      body: JSON.stringify({
+        state,
+        code_challenge: codeChallenge,
+        callback_protocol: "patchbay",
+      }),
+    });
+  }
+
+  /** Redeem a single-use PKCE-bound desktop handoff for a native JWT. */
+  async redeemDesktopHandoff(
+    code: string,
+    codeVerifier: string,
+  ): Promise<{ token: string }> {
+    return this.fetch("/api/desktop-handoff/redeem", {
+      method: "POST",
+      body: JSON.stringify({ code, code_verifier: codeVerifier }),
+    });
   }
 
   async getMe(): Promise<User> {
@@ -4080,6 +4136,75 @@ export class ApiClient {
 
   async updateTeamMemberRole(teamId: string, data: { member_type: string; member_id: string; role: string }): Promise<TeamMember> {
     return this.fetch(`/api/teams/${teamId}/members/role`, { method: "PATCH", body: JSON.stringify(data) });
+  }
+
+  // Workspace channels. The active workspace is selected by the
+  // X-Workspace-Slug header added by authHeaders().
+  async listWorkspaceChannels(): Promise<ListWorkspaceChannelsResponse> {
+    const raw = await this.fetch<unknown>("/api/workspace-channels");
+    return parseWithFallback(
+      raw,
+      WorkspaceChannelListResponseSchema,
+      EMPTY_WORKSPACE_CHANNEL_LIST_RESPONSE,
+      { endpoint: "GET /api/workspace-channels" },
+    );
+  }
+
+  async getWorkspaceChannel(id: string): Promise<WorkspaceChannel> {
+    const raw = await this.fetch<unknown>(`/api/workspace-channels/${encodeURIComponent(id)}`);
+    return parseWithFallback(raw, WorkspaceChannelSchema, EMPTY_WORKSPACE_CHANNEL, {
+      endpoint: "GET /api/workspace-channels/{id}",
+    });
+  }
+
+  async createWorkspaceChannel(data: CreateWorkspaceChannelRequest): Promise<WorkspaceChannel> {
+    const raw = await this.fetch<unknown>("/api/workspace-channels", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    return parseWithFallback(raw, WorkspaceChannelSchema, EMPTY_WORKSPACE_CHANNEL, {
+      endpoint: "POST /api/workspace-channels",
+    });
+  }
+
+  async listWorkspaceChannelMessages(
+    channelId: string,
+    params: ListWorkspaceChannelMessagesParams = {},
+  ): Promise<ListWorkspaceChannelMessagesResponse> {
+    const query = new URLSearchParams();
+    if (params.limit !== undefined) query.set("limit", String(params.limit));
+    if (params.before) {
+      query.set("before_created_at", params.before.created_at);
+      query.set("before_id", params.before.id);
+    }
+    const queryString = query.toString();
+    const raw = await this.fetch<unknown>(
+      `/api/workspace-channels/${encodeURIComponent(channelId)}/messages${
+        queryString ? `?${queryString}` : ""
+      }`,
+    );
+    return parseWithFallback(
+      raw,
+      WorkspaceChannelMessageListResponseSchema,
+      EMPTY_WORKSPACE_CHANNEL_MESSAGE_LIST_RESPONSE,
+      { endpoint: "GET /api/workspace-channels/{id}/messages" },
+    );
+  }
+
+  async createWorkspaceChannelMessage(
+    channelId: string,
+    data: CreateWorkspaceChannelMessageRequest,
+  ): Promise<WorkspaceChannelMessage> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspace-channels/${encodeURIComponent(channelId)}/messages`,
+      {
+        method: "POST",
+        body: JSON.stringify(data),
+      },
+    );
+    return parseWithFallback(raw, WorkspaceChannelMessageSchema, EMPTY_WORKSPACE_CHANNEL_MESSAGE, {
+      endpoint: "POST /api/workspace-channels/{id}/messages",
+    });
   }
 
   // Per-team members status snapshot: one row per member with derived

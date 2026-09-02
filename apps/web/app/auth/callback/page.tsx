@@ -1,11 +1,8 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
-import { sanitizeNextUrl, useAuthStore } from "@patchbay/core/auth";
-import { workspaceKeys } from "@patchbay/core/workspace/queries";
-import { paths, resolvePostAuthDestination } from "@patchbay/core/paths";
+import { useSearchParams } from "next/navigation";
+import { paths } from "@patchbay/core/paths";
 import { api } from "@patchbay/core/api";
 import { validateCliCallback, redirectToCliCallback } from "@patchbay/views/auth";
 import {
@@ -18,45 +15,68 @@ import {
 import { Button } from "@patchbay/ui/components/ui/button";
 import { Loader2 } from "lucide-react";
 
+function redirectToDesktopHandoff(code: string, state: string): void {
+  const url = new URL("patchbay://auth/callback");
+  url.searchParams.set("code", code);
+  url.searchParams.set("state", state);
+  window.location.href = url.href;
+}
+
+function decodeStateValue(value: string, prefix: string): string | null {
+  try {
+    return decodeURIComponent(value.slice(prefix.length));
+  } catch {
+    return null;
+  }
+}
+
 function CallbackContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
-  const qc = useQueryClient();
-  const loginWithGoogle = useAuthStore((s) => s.loginWithGoogle);
   const [error, setError] = useState("");
-  const [desktopToken, setDesktopToken] = useState<string | null>(null);
+  const [desktopHandoff, setDesktopHandoff] = useState<{
+    code: string;
+    state: string;
+  } | null>(null);
 
   useEffect(() => {
-    const code = searchParams.get("code");
-    if (!code) {
-      setError("Missing authorization code");
-      return;
-    }
-
     const errorParam = searchParams.get("error");
     if (errorParam) {
       setError(errorParam === "access_denied" ? "Access denied" : errorParam);
       return;
     }
 
+    const code = searchParams.get("code");
+    if (!code) {
+      setError("Missing authorization code");
+      return;
+    }
+
     const state = searchParams.get("state") || "";
     const stateParts = state.split(",");
     const isDesktop = stateParts.includes("platform:desktop");
-    const nextPart = stateParts.find((p) => p.startsWith("next:"));
-    // Strip "next:" prefix, then drop anything that isn't a safe relative path
-    // so an attacker-controlled `state=next:https://evil` cannot redirect here.
-    const nextUrl = sanitizeNextUrl(nextPart ? nextPart.slice(5) : null);
-
+    const desktopStatePart = stateParts.find((p) => p.startsWith("desktop_state:"));
+    const desktopCodeChallengePart = stateParts.find((p) =>
+      p.startsWith("desktop_code_challenge:"),
+    );
+    const desktopState = desktopStatePart
+      ? decodeStateValue(desktopStatePart, "desktop_state:")
+      : null;
+    const desktopCodeChallenge = desktopCodeChallengePart
+      ? decodeStateValue(
+          desktopCodeChallengePart,
+          "desktop_code_challenge:",
+        )
+      : null;
     // CLI callback params — carried across the Google OAuth round-trip so
     // headless/WSL2 `patchbay login` can receive the JWT after browser-based
     // Google auth completes.
     const cliCallbackPart = stateParts.find((p) => p.startsWith("cli_callback:"));
     const cliStatePart = stateParts.find((p) => p.startsWith("cli_state:"));
     const cliCallbackRaw = cliCallbackPart
-      ? decodeURIComponent(cliCallbackPart.slice("cli_callback:".length))
+      ? decodeStateValue(cliCallbackPart, "cli_callback:")
       : null;
     const cliState = cliStatePart
-      ? decodeURIComponent(cliStatePart.slice("cli_state:".length))
+      ? decodeStateValue(cliStatePart, "cli_state:") ?? ""
       : "";
 
     const redirectUri = `${window.location.origin}/auth/callback`;
@@ -80,70 +100,36 @@ function CallbackContent() {
           setError(err instanceof Error ? err.message : "Login failed");
         });
     } else if (isDesktop) {
-      // Desktop flow: exchange code for token, then redirect via deep link
+      // Desktop flow: the Google exchange sets the browser cookie, then the
+      // authenticated session completes the registered PKCE handoff. Only a
+      // short-lived one-time code crosses the custom protocol boundary.
+      if (!desktopState || !desktopCodeChallenge) {
+        setError("Invalid desktop auth handoff");
+        return;
+      }
       api
         .googleLogin(code, redirectUri)
-        .then(({ token }) => {
-          setDesktopToken(token);
-          window.location.href = `patchbay://auth/callback?token=${encodeURIComponent(token)}`;
+        .then(async () => {
+          const handoff = await api.completeDesktopAuthHandoff(
+            desktopState,
+            desktopCodeChallenge,
+          );
+          setDesktopHandoff({ code: handoff.code, state: handoff.state });
+          redirectToDesktopHandoff(handoff.code, handoff.state);
         })
         .catch((err) => {
           setError(err instanceof Error ? err.message : "Login failed");
         });
     } else {
-      // Normal web flow
-      loginWithGoogle(code, redirectUri)
-        .then(async (loggedInUser) => {
-          const wsList = await api.listWorkspaces();
-          qc.setQueryData(workspaceKeys.list(), wsList);
-          const onboarded = loggedInUser.onboarded_at != null;
-
-          // 1. nextUrl wins: a `next=/invite/<id>` always survives the OAuth
-          //    round-trip — the user clicked a specific link and we should
-          //    honor exactly that destination.
-          if (nextUrl) {
-            router.push(nextUrl);
-            return;
-          }
-
-          // 2. Un-onboarded users may have pending invitations on their
-          //    email even when no `next=` was carried (came from a fresh
-          //    login on patchbay.ai instead of clicking the email link,
-          //    or `state` was lost across the round-trip). Look them up by
-          //    email and route to the batch /invitations page if any.
-          //    Already-onboarded users skip this lookup — their new invites
-          //    surface in the sidebar dropdown, not as a forced wall.
-          if (!onboarded) {
-            try {
-              const invites = await api.listMyInvitations();
-              if (invites.length > 0) {
-                qc.setQueryData(workspaceKeys.myInvitations(), invites);
-                router.push(paths.invitations());
-                return;
-              }
-            } catch {
-              // Network blip on the invite lookup is non-fatal — fall through
-              // to the normal post-auth destination so the user isn't stuck
-              // on a blank callback screen. Worst case they land on
-              // /onboarding and the sidebar will surface invites later.
-            }
-          }
-
-          // 3. Default: hand off to the resolver (onboarding for first-timers,
-          //    first workspace for returning users, /workspaces/new for
-          //    onboarded users with zero workspaces). Source-attribution
-          //    backfill for onboarded users with no recorded source is
-          //    handled by `<SourceBackfillModal />` inside the dashboard
-          //    shell — not a route detour, so we route straight to dest.
-          router.push(resolvePostAuthDestination(wsList, onboarded));
-        })
-        .catch((err) => {
-          setError(err instanceof Error ? err.message : "Login failed");
-        });
+      // Google is a broker for Desktop and explicitly-authorized CLI flows.
+      // Ordinary Web login uses the email send-code flow; accepting a bare
+      // OAuth callback here would put the legacy /auth/google exchange back
+      // on the Web main path and would also accept forged state-less links.
+      setError("Unsupported login callback");
     }
-  }, [searchParams, loginWithGoogle, router, qc]);
+  }, [searchParams]);
 
-  if (desktopToken) {
+  if (desktopHandoff) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <Card className="w-full max-w-sm">
@@ -158,7 +144,10 @@ function CallbackContent() {
             <Button
               variant="outline"
               onClick={() => {
-                window.location.href = `patchbay://auth/callback?token=${encodeURIComponent(desktopToken)}`;
+                redirectToDesktopHandoff(
+                  desktopHandoff.code,
+                  desktopHandoff.state,
+                );
               }}
             >
               Open Patchbay Desktop

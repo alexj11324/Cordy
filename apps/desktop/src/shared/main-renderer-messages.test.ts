@@ -10,12 +10,15 @@ describe("MainRendererMessageQueue", () => {
     const queue = new MainRendererMessageQueue();
     const send = vi.fn();
 
-    queue.enqueue("auth:token", "token-a", send);
+    queue.enqueue("auth:handoff", { code: "code-a", state: "state-a" }, send);
     queue.setReady("invite:open", true, send);
     expect(send).not.toHaveBeenCalled();
 
-    queue.setReady("auth:token", true, send);
-    expect(send).toHaveBeenCalledWith("auth:token", "token-a");
+    queue.setReady("auth:handoff", true, send);
+    expect(send).toHaveBeenCalledWith("auth:handoff", {
+      code: "code-a",
+      state: "state-a",
+    });
   });
 
   it("delivers immediately while a channel is ready", () => {
@@ -56,13 +59,13 @@ describe("MainRendererMessageQueue", () => {
 describe("parseMainRendererChannelState", () => {
   it("accepts only allowlisted channels with an explicit boolean", () => {
     expect(
-      parseMainRendererChannelState({ channel: "auth:token", ready: true }),
-    ).toEqual({ channel: "auth:token", ready: true });
+      parseMainRendererChannelState({ channel: "auth:handoff", ready: true }),
+    ).toEqual({ channel: "auth:handoff", ready: true });
     expect(
       parseMainRendererChannelState({ channel: "shell:openExternal", ready: true }),
     ).toBeNull();
     expect(
-      parseMainRendererChannelState({ channel: "auth:token", ready: "yes" }),
+      parseMainRendererChannelState({ channel: "auth:handoff", ready: "yes" }),
     ).toBeNull();
   });
 });

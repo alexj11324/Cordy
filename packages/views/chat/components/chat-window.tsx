@@ -774,7 +774,7 @@ export function ChatWindow() {
   // viewport, so the chat body's gutter (CHAT_GUTTER) has to key off the
   // window's own width, not the page behind it.
   const containerClass = cn(
-    "absolute z-50 flex flex-col overflow-hidden bg-surface-raised @container",
+    "absolute z-50 flex flex-col overflow-hidden bg-surface-raised/80 backdrop-blur-xl supports-[backdrop-filter]:backdrop-saturate-150 @container",
     isMobile
       ? "inset-x-0"
       : "right-2 rounded-xl shadow-[var(--floating-shadow)] ring-1 ring-surface-border",
@@ -795,7 +795,7 @@ export function ChatWindow() {
   const keyboard = useVisualViewportKeyboard();
   const containerStyle: React.CSSProperties = {
     transformOrigin: "bottom right",
-    pointerEvents: isOpen ? "auto" : "none",
+    pointerEvents: isVisible ? "auto" : "none",
     ...(isMobile
       ? {
           // Full-screen panel anchored to the visible bottom edge;
@@ -833,6 +833,8 @@ export function ChatWindow() {
       ref={windowRef}
       className={containerClass}
       style={containerStyle}
+      aria-hidden={!isVisible}
+      inert={!isVisible ? true : undefined}
       initial={{ opacity: 0, scale: 0.95, ...motionSize }}
       animate={{
         opacity: isVisible ? 1 : 0,
@@ -857,6 +859,7 @@ export function ChatWindow() {
                   variant="ghost"
                   size="icon-sm"
                   className="rounded-full text-muted-foreground"
+                  aria-label={t(($) => $.window.new_chat_tooltip)}
                   onClick={handleNewChat}
                 />
               }
@@ -883,6 +886,11 @@ export function ChatWindow() {
                     variant="ghost"
                     size="icon-sm"
                     className="text-muted-foreground"
+                    aria-label={
+                      isExpanded || isAtMax
+                        ? t(($) => $.window.restore_tooltip)
+                        : t(($) => $.window.expand_tooltip)
+                    }
                     onClick={toggleExpand}
                   />
                 }
@@ -901,6 +909,7 @@ export function ChatWindow() {
                   variant="ghost"
                   size="icon-sm"
                   className="text-muted-foreground"
+                  aria-label={t(($) => $.window.minimize_tooltip)}
                   onClick={handleMinimize}
                 />
               }

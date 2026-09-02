@@ -1,0 +1,39 @@
+{
+  "page": {
+    "title": "チャンネル",
+    "description": "ワークスペースの共有会話",
+    "new_button": "新しいチャンネル",
+    "empty_title": "チャンネルはまだありません",
+    "empty_description": "チャンネルを作成して共有会話を始めましょう",
+    "select_prompt": "チャンネルを選択してメッセージを表示",
+    "error_title": "チャンネルを読み込めません",
+    "error_description": "もう一度お試しください",
+    "retry": "再試行"
+  },
+  "channel": {
+    "name": "名前",
+    "name_placeholder": "例：プロダクト計画",
+    "slug": "スラッグ",
+    "slug_placeholder": "例：product-planning",
+    "description": "説明",
+    "description_placeholder": "このチャンネルの用途は？",
+    "create_title": "チャンネルを作成",
+    "create_description": "ワークスペースチャンネルの名前と安定したスラッグを追加します。",
+    "cancel": "キャンセル",
+    "create": "作成",
+    "creating": "作成中…",
+    "archived": "アーカイブ済み",
+    "messages_empty": "メッセージはまだありません。会話を始めましょう。",
+    "load_earlier": "以前のメッセージを読み込む",
+    "loading_earlier": "以前のメッセージを読み込み中…",
+    "message_placeholder": "このチャンネルにメッセージ…",
+    "send": "送信"
+  },
+  "toasts": {
+    "created": "チャンネルを作成しました",
+    "create_failed": "チャンネルを作成できません",
+    "conflict": "そのスラッグのチャンネルはすでに存在します",
+    "message_failed": "メッセージを送信できません",
+    "required": "名前とスラッグは必須です。"
+  }
+}

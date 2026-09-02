@@ -1,75 +1,24 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, waitFor } from "@testing-library/react";
-import { paths } from "@patchbay/core/paths";
+import { render, screen, waitFor } from "@testing-library/react";
 
 const {
-  mockPush,
   mockSearchParams,
-  mockLoginWithGoogle,
-  mockListWorkspaces,
-  mockListMyInvitations,
-  mockSetQueryData,
+  mockGoogleLogin,
+  mockCompleteDesktopAuthHandoff,
 } = vi.hoisted(() => ({
-  mockPush: vi.fn(),
   mockSearchParams: new URLSearchParams(),
-  mockLoginWithGoogle: vi.fn(),
-  mockListWorkspaces: vi.fn(),
-  mockListMyInvitations: vi.fn(),
-  mockSetQueryData: vi.fn(),
+  mockGoogleLogin: vi.fn(),
+  mockCompleteDesktopAuthHandoff: vi.fn(),
 }));
-
-const makeUser = (
-  overrides: Partial<{
-    onboarded_at: string | null;
-    onboarding_questionnaire: Record<string, unknown>;
-  }> = {},
-) => ({
-  id: "user-1",
-  name: "Test",
-  email: "test@patchbay.ai",
-  avatar_url: null,
-  onboarded_at: null,
-  onboarding_questionnaire: { source: ["search"] },
-  created_at: "2026-01-01T00:00:00Z",
-  updated_at: "2026-01-01T00:00:00Z",
-  ...overrides,
-});
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: mockPush }),
   useSearchParams: () => mockSearchParams,
-}));
-
-vi.mock("@tanstack/react-query", () => ({
-  useQueryClient: () => ({ setQueryData: mockSetQueryData }),
-}));
-
-// Preserve the real sanitizeNextUrl so the "drop unsafe ?next=" behavior is
-// exercised rather than silently diverging from the source of truth.
-vi.mock("@patchbay/core/auth", async () => {
-  const actual =
-    await vi.importActual<typeof import("@patchbay/core/auth")>(
-      "@patchbay/core/auth",
-    );
-  return {
-    ...actual,
-    useAuthStore: (selector: (s: unknown) => unknown) =>
-      selector({ loginWithGoogle: mockLoginWithGoogle }),
-  };
-});
-
-vi.mock("@patchbay/core/workspace/queries", () => ({
-  workspaceKeys: {
-    list: () => ["workspaces"],
-    myInvitations: () => ["invitations", "mine"],
-  },
 }));
 
 vi.mock("@patchbay/core/api", () => ({
   api: {
-    listWorkspaces: mockListWorkspaces,
-    listMyInvitations: mockListMyInvitations,
-    googleLogin: vi.fn(),
+    googleLogin: mockGoogleLogin,
+    completeDesktopAuthHandoff: mockCompleteDesktopAuthHandoff,
   },
 }));
 
@@ -93,114 +42,36 @@ describe("CallbackPage", () => {
       mockSearchParams.delete(k),
     );
     mockSearchParams.set("code", "test-code");
-    mockLoginWithGoogle.mockResolvedValue(makeUser());
-    mockListWorkspaces.mockResolvedValue([]);
-    mockListMyInvitations.mockResolvedValue([]);
-  });
-
-  it("unonboarded user honors a safe next= (e.g. /invite/{id}) so invitees aren't trapped", async () => {
-    mockSearchParams.set("state", "next:/invite/abc123");
-    render(<CallbackPage />);
-    await waitFor(() => {
-      expect(mockPush).toHaveBeenCalledWith("/invite/abc123");
+    mockGoogleLogin.mockResolvedValue({ token: "unused-web-token" });
+    mockCompleteDesktopAuthHandoff.mockResolvedValue({
+      callback_protocol: "patchbay",
+      code: "desktop-code",
+      state: "desktop-state",
     });
-    expect(mockPush).not.toHaveBeenCalledWith(paths.onboarding());
-    // nextUrl is a fast path — listMyInvitations should not be queried.
-    expect(mockListMyInvitations).not.toHaveBeenCalled();
   });
 
-  it("unonboarded user with no next= and no pending invitations lands on /onboarding", async () => {
+  it("rejects a state-less callback without invoking the Web Google exchange", async () => {
     render(<CallbackPage />);
+
     await waitFor(() => {
-      expect(mockPush).toHaveBeenCalledWith(paths.onboarding());
+      expect(screen.getByText("Unsupported login callback")).toBeInTheDocument();
     });
-    expect(mockListMyInvitations).toHaveBeenCalled();
+    expect(mockGoogleLogin).not.toHaveBeenCalled();
   });
 
-  it("unonboarded user with pending invitations lands on /invitations", async () => {
-    mockListMyInvitations.mockResolvedValue([
-      {
-        id: "inv-1",
-        workspace_id: "ws-1",
-        workspace_name: "Acme",
-        role: "member",
-        status: "pending",
-      },
-    ]);
-    render(<CallbackPage />);
-    await waitFor(() => {
-      expect(mockPush).toHaveBeenCalledWith(paths.invitations());
-    });
-    expect(mockPush).not.toHaveBeenCalledWith(paths.onboarding());
-  });
-
-  it("onboarded user with workspace lands in that workspace", async () => {
-    mockLoginWithGoogle.mockResolvedValue(
-      makeUser({ onboarded_at: "2026-01-01T00:00:00Z" }),
-    );
-    mockListWorkspaces.mockResolvedValue([
-      {
-        id: "ws-1",
-        name: "Acme",
-        slug: "acme",
-        description: null,
-        context: null,
-        settings: {},
-        repos: [],
-        issue_prefix: "ACME",
-        avatar_url: null,
-        created_at: "",
-        updated_at: "",
-      },
-    ]);
-    render(<CallbackPage />);
-    await waitFor(() => {
-      expect(mockPush).toHaveBeenCalledWith(paths.workspace("acme").issues());
-    });
-    // Already-onboarded users skip the listMyInvitations check; new invites
-    // surface in the sidebar instead of the wall.
-    expect(mockListMyInvitations).not.toHaveBeenCalled();
-  });
-
-  it("onboarded user ignores unsafe next= targets and lands on the default destination", async () => {
-    mockLoginWithGoogle.mockResolvedValue(
-      makeUser({ onboarded_at: "2026-01-01T00:00:00Z" }),
-    );
-    mockSearchParams.set("state", "next:https://evil.example");
+  it("surfaces an OAuth error callback before checking for a code", async () => {
+    mockSearchParams.delete("code");
+    mockSearchParams.set("error", "access_denied");
 
     render(<CallbackPage />);
 
     await waitFor(() => {
-      expect(mockPush).toHaveBeenCalled();
+      expect(screen.getByText("Access denied")).toBeInTheDocument();
     });
-    expect(mockPush).not.toHaveBeenCalledWith("https://evil.example");
-  });
-
-  it("onboarded user honors a safe next= target (e.g. /invite/{id})", async () => {
-    mockLoginWithGoogle.mockResolvedValue(
-      makeUser({ onboarded_at: "2026-01-01T00:00:00Z" }),
-    );
-    mockSearchParams.set("state", "next:/invite/abc123");
-
-    render(<CallbackPage />);
-
-    await waitFor(() => {
-      expect(mockPush).toHaveBeenCalledWith("/invite/abc123");
-    });
-  });
-
-  it("falls through to /onboarding when listMyInvitations errors", async () => {
-    mockListMyInvitations.mockRejectedValue(new Error("network"));
-    render(<CallbackPage />);
-    await waitFor(() => {
-      expect(mockPush).toHaveBeenCalledWith(paths.onboarding());
-    });
+    expect(mockGoogleLogin).not.toHaveBeenCalled();
   });
 
   it("redirects to CLI callback with token when state contains valid cli_callback", async () => {
-    const { api: mockedApi } = await import("@patchbay/core/api");
-    const mockGoogleLogin = mockedApi.googleLogin as ReturnType<typeof vi.fn>;
-
     const hrefSetter = vi.fn();
     const originalLocation = window.location;
     Object.defineProperty(window, "location", {
@@ -238,29 +109,31 @@ describe("CallbackPage", () => {
     }
   });
 
-  it("falls through to normal web flow when state contains invalid cli_callback", async () => {
+  it("rejects an invalid cli_callback without falling back to Web Google login", async () => {
     mockSearchParams.set("state", "cli_callback:https://evil.com/callback");
-    mockLoginWithGoogle.mockResolvedValue(makeUser());
-    mockListWorkspaces.mockResolvedValue([]);
-    mockListMyInvitations.mockResolvedValue([]);
 
     render(<CallbackPage />);
 
     await waitFor(() => {
-      // Normal web flow: loginWithGoogle is called (not googleLogin)
-      expect(mockLoginWithGoogle).toHaveBeenCalled();
+      expect(screen.getByText("Unsupported login callback")).toBeInTheDocument();
     });
+    expect(mockGoogleLogin).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed encoded callback state without throwing or exchanging", async () => {
+    mockSearchParams.set("state", "cli_callback:%E0%A4%A");
+
+    render(<CallbackPage />);
+
     await waitFor(() => {
-      expect(mockPush).toHaveBeenCalledWith(paths.onboarding());
+      expect(screen.getByText("Unsupported login callback")).toBeInTheDocument();
     });
+    expect(mockGoogleLogin).not.toHaveBeenCalled();
   });
 
   it("redirects to CLI callback even when state also contains platform:desktop", async () => {
     // cli_callback takes precedence over platform:desktop — the CLI flow
     // is a specific user intent that should not be derailed by desktop flag.
-    const { api: mockedApi } = await import("@patchbay/core/api");
-    const mockGoogleLogin = mockedApi.googleLogin as ReturnType<typeof vi.fn>;
-
     const hrefSetter = vi.fn();
     const originalLocation = window.location;
     Object.defineProperty(window, "location", {
@@ -295,33 +168,52 @@ describe("CallbackPage", () => {
     }
   });
 
-  it("onboarded users with missing source land in the workspace; the source-backfill modal is mounted there", async () => {
-    // Source attribution backfill is now an in-workspace modal — see
-    // `<SourceBackfillModal />` mounted inside `DashboardLayout`. The
-    // callback page is intentionally agnostic about it.
-    mockLoginWithGoogle.mockResolvedValue(
-      makeUser({
-        onboarded_at: "2026-01-01T00:00:00Z",
-        onboarding_questionnaire: {},
-      }),
-    );
-    mockListWorkspaces.mockResolvedValue([
-      {
-        id: "ws-1",
-        name: "Acme",
-        slug: "acme",
-        description: null,
-        context: null,
-        settings: {},
-        repos: [],
-        issue_prefix: "ACME",
-        created_at: "",
-        updated_at: "",
+  it("completes a desktop handoff after the Google exchange without exposing a JWT", async () => {
+    const hrefSetter = vi.fn();
+    const originalLocation = window.location;
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      writable: true,
+      value: {
+        ...originalLocation,
+        set href(value: string) {
+          hrefSetter(value);
+        },
       },
-    ]);
-    render(<CallbackPage />);
-    await waitFor(() => {
-      expect(mockPush).toHaveBeenCalledWith(paths.workspace("acme").issues());
     });
+
+    try {
+      mockSearchParams.set(
+        "state",
+        "platform:desktop,desktop_state:desktop-state,desktop_code_challenge:desktop-challenge",
+      );
+      mockGoogleLogin.mockResolvedValue({ token: "must-not-be-in-uri" });
+      mockCompleteDesktopAuthHandoff.mockResolvedValue({
+        callback_protocol: "patchbay",
+        code: "one-time-code",
+        state: "desktop-state",
+      });
+
+      render(<CallbackPage />);
+
+      await waitFor(() => {
+        expect(mockCompleteDesktopAuthHandoff).toHaveBeenCalledWith(
+          "desktop-state",
+          "desktop-challenge",
+        );
+      });
+      await waitFor(() => {
+        expect(hrefSetter).toHaveBeenCalledWith(
+          "patchbay://auth/callback?code=one-time-code&state=desktop-state",
+        );
+      });
+      expect(hrefSetter.mock.calls[0]?.[0]).not.toContain("must-not-be-in-uri");
+    } finally {
+      Object.defineProperty(window, "location", {
+        configurable: true,
+        value: originalLocation,
+      });
+    }
   });
+
 });

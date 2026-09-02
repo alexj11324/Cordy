@@ -84,9 +84,23 @@ export function validateCliCallback(cliCallback: string): boolean {
     const h = cbUrl.hostname;
     if (h === "localhost" || h === "127.0.0.1") return true;
     // Allow RFC 1918 private IPs: 10.x.x.x, 172.16-31.x.x, 192.168.x.x
-    if (/^10\./.test(h)) return true;
-    if (/^172\.(1[6-9]|2\d|3[01])\./.test(h)) return true;
-    if (/^192\.168\./.test(h)) return true;
+    // Match the complete hostname first: a public DNS name such as
+    // `10.attacker.example` must not pass a prefix-only check.
+    if (!/^(?:\d{1,3}\.){3}\d{1,3}$/.test(h)) return false;
+    const octets = h.split(".").map(Number);
+    const [first, second] = octets;
+    if (
+      first === undefined ||
+      second === undefined ||
+      octets.some((octet) => octet > 255)
+    ) {
+      return false;
+    }
+    if (first === 10) return true;
+    if (first === 172 && second >= 16 && second <= 31) {
+      return true;
+    }
+    if (first === 192 && second === 168) return true;
     return false;
   } catch {
     return false;

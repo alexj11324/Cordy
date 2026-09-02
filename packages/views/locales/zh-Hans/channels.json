@@ -1,0 +1,39 @@
+{
+  "page": {
+    "title": "频道",
+    "description": "工作区共享对话",
+    "new_button": "新建频道",
+    "empty_title": "还没有频道",
+    "empty_description": "创建一个频道，开始共享对话",
+    "select_prompt": "选择一个频道查看消息",
+    "error_title": "无法加载频道",
+    "error_description": "请重试",
+    "retry": "重试"
+  },
+  "channel": {
+    "name": "名称",
+    "name_placeholder": "例如：产品规划",
+    "slug": "标识",
+    "slug_placeholder": "例如：product-planning",
+    "description": "描述",
+    "description_placeholder": "这个频道用于什么？",
+    "create_title": "创建频道",
+    "create_description": "为工作区频道添加名称和稳定的标识。",
+    "cancel": "取消",
+    "create": "创建",
+    "creating": "创建中…",
+    "archived": "已归档",
+    "messages_empty": "还没有消息。开始对话吧。",
+    "load_earlier": "加载更早的消息",
+    "loading_earlier": "正在加载更早的消息…",
+    "message_placeholder": "向这个频道发送消息…",
+    "send": "发送"
+  },
+  "toasts": {
+    "created": "频道已创建",
+    "create_failed": "无法创建频道",
+    "conflict": "具有该标识的频道已存在",
+    "message_failed": "无法发送消息",
+    "required": "名称和标识不能为空。"
+  }
+}
