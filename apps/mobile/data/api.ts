@@ -65,6 +65,12 @@ import type {
   Workspace,
 } from "@patchbay/core/types";
 import {
+  assertGuestToken,
+  guestSessionPath,
+  type GuestAuthResponse,
+  type GuestSession,
+} from "./guest-auth";
+import {
   EMPTY_LIST_ISSUE_STATUSES_RESPONSE,
   EMPTY_LIST_ISSUES_RESPONSE,
   EMPTY_LIST_DEPENDENCY_GRAPHS_RESPONSE,
@@ -110,6 +116,8 @@ import {
   EMPTY_TEAM_LIST,
   EMPTY_USER,
   EMPTY_WORKSPACE_LIST,
+  GuestAuthResponseSchema,
+  GuestSessionSchema,
   InboxListSchema,
   NotificationPreferenceResponseSchema,
   ListLabelsResponseSchema,
@@ -411,6 +419,61 @@ class ApiClient {
       method: "POST",
       body: JSON.stringify({ email, code }),
     });
+  }
+
+  async createGuestAuth(): Promise<GuestAuthResponse> {
+    const raw = await this.fetch<unknown>("/auth/guest", { method: "POST" });
+    const parsed = GuestAuthResponseSchema.safeParse(raw);
+    if (!parsed.success) {
+      throw new ApiError("Guest auth response invalid", 200, raw);
+    }
+    return parsed.data;
+  }
+
+  /** The public logout route revokes a guest bearer before clearing cookies. */
+  async logout(): Promise<void> {
+    await this.fetch<void>("/auth/logout", { method: "POST" });
+  }
+
+  async getGuestSession(
+    sessionId: string,
+    opts?: { signal?: AbortSignal },
+  ): Promise<GuestSession> {
+    return this.fetchGuestSession(guestSessionPath(sessionId), opts);
+  }
+
+  async claimGuestSession(
+    sessionId: string,
+    token: string,
+  ): Promise<GuestSession> {
+    assertGuestToken(token);
+    return this.fetchGuestSession(guestSessionPath(sessionId, "claim"), {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    });
+  }
+
+  async revokeGuestSession(
+    sessionId: string,
+    token: string,
+  ): Promise<GuestSession> {
+    assertGuestToken(token);
+    return this.fetchGuestSession(guestSessionPath(sessionId, "revoke"), {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    });
+  }
+
+  private async fetchGuestSession(
+    path: string,
+    init: RequestInit & { signal?: AbortSignal } = {},
+  ): Promise<GuestSession> {
+    const raw = await this.fetch<unknown>(path, init);
+    const parsed = GuestSessionSchema.safeParse(raw);
+    if (!parsed.success) {
+      throw new ApiError("Guest session response invalid", 200, raw);
+    }
+    return parsed.data;
   }
 
   async getMe(opts?: { signal?: AbortSignal }): Promise<User> {

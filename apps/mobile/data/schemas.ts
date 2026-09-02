@@ -39,6 +39,7 @@ import type {
   Workspace,
 } from "@patchbay/core/types";
 import { IssueSchema } from "@patchbay/core/api/schemas";
+import type { GuestAuthResponse, GuestSession } from "./guest-auth";
 
 /** Upload response. Only fields mobile actually consumes — `url` to put
  *  into the markdown link, `filename` for the `[📎 name](url)` form, `id`
@@ -501,6 +502,28 @@ export const EMPTY_USER: User = {
   created_at: "",
   updated_at: "",
 };
+
+const GuestSessionStatusSchema = z.enum(["active", "claimed", "revoked"]);
+
+export const GuestSessionSchema: z.ZodType<GuestSession> = z
+  .object({
+    id: z.string().uuid(),
+    user_id: z.string().uuid(),
+    // Unknown terminal states must not be treated as active on mobile.
+    status: GuestSessionStatusSchema.catch("revoked"),
+    created_at: z.string(),
+    claimed_at: z.string().nullable().default(null),
+    claimed_by: z.string().uuid().nullable().default(null),
+  })
+  .loose();
+
+export const GuestAuthResponseSchema: z.ZodType<GuestAuthResponse> = z
+  .object({
+    token: z.string().regex(/^pbg_[0-9a-fA-F]{40}$/),
+    user: UserSchema,
+    session_id: z.string().uuid().optional(),
+  })
+  .loose();
 
 export const WorkspaceSchema: z.ZodType<Workspace> = z.object({
   id: z.string(),

@@ -12,8 +12,10 @@ import { mapAuthError } from "@/lib/auth-error";
 
 export default function Login() {
   const sendCode = useAuthStore((s) => s.sendCode);
+  const continueAsGuest = useAuthStore((s) => s.continueAsGuest);
   const [email, setEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [guestSubmitting, setGuestSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const onSubmit = async () => {
@@ -30,6 +32,26 @@ export default function Login() {
       setError(mapAuthError(err, "Couldn't send the code. Try again."));
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const onContinueAsGuest = async () => {
+    if (guestSubmitting || submitting) return;
+    void Haptics.selectionAsync();
+    setGuestSubmitting(true);
+    setError(null);
+    try {
+      await continueAsGuest();
+      router.replace("/");
+    } catch (err) {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Couldn't start a guest session. Try again.",
+      );
+    } finally {
+      setGuestSubmitting(false);
     }
   };
 
@@ -78,6 +100,20 @@ export default function Login() {
           >
             <Text>{submitting ? "Sending..." : "Send code"}</Text>
           </Button>
+
+          <View className="items-center gap-3">
+            <Text className="text-xs text-muted-foreground">or</Text>
+            <Button
+              size="lg"
+              variant="outline"
+              disabled={submitting || guestSubmitting}
+              onPress={onContinueAsGuest}
+            >
+              <Text>
+                {guestSubmitting ? "Starting guest session..." : "Continue as guest"}
+              </Text>
+            </Button>
+          </View>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
