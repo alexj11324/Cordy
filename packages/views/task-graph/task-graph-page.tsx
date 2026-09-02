@@ -225,7 +225,7 @@ function PlanSection({
                           </AppLink>
                           <span
                             className={cn(
-                              "shrink-0 rounded-full border px-1.5 py-0.5 text-[11px]",
+                              "shrink-0 rounded-full border px-1.5 py-0.5 text-micro",
                               stateClass(nodeState(node)),
                             )}
                           >

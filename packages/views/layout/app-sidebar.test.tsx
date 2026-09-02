@@ -126,6 +126,7 @@ vi.mock("@patchbay/core/paths", async (importOriginal) => ({
     chat: () => "/acme/chat",
     myIssues: () => "/acme/my-issues",
     issues: () => "/acme/issues",
+    taskGraph: () => "/acme/task-graph",
     projects: () => "/acme/projects",
     workProducts: () => "/acme/work-products",
     automations: () => "/acme/automations",
