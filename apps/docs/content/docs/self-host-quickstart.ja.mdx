@@ -14,7 +14,7 @@ Patchbay のセルフホストは 2 つの部分に分かれます。
 
 両者は同じマシンでも、別々のマシンでも構いません。セルフホストで置き換えるのは Patchbay Cloud の部分だけです。
 
-このページでは Docker Compose を使います。Kubernetes でのデプロイは、リポジトリの [Self-hosting guide](https://github.com/patchbay-ai/patchbay/blob/main/SELF_HOSTING.md#kubernetes-deployment-alternative) を参照してください。
+このページでは Docker Compose を使います。Kubernetes でのデプロイは、リポジトリの [Self-hosting guide](https://github.com/alexj11324/Cordy/blob/main/SELF_HOSTING.md#kubernetes-deployment-alternative) を参照してください。
 
 ## 始める前に
 
@@ -40,8 +40,8 @@ Patchbay は Compose v2（`docker compose`）を使います。旧版の `docker
 サービスを実行するマシンで次を実行します。
 
 ```bash
-git clone --depth 1 https://github.com/patchbay-ai/patchbay.git
-cd patchbay
+git clone --depth 1 https://github.com/alexj11324/Cordy.git
+cd Cordy
 make selfhost
 ```
 
@@ -222,13 +222,13 @@ docker compose -f docker-compose.selfhost.yml logs backend \
 **macOS / Linux**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash
 ```
 
 **Windows PowerShell**
 
 ```powershell
-irm https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex
 ```
 
 Patchbay サービスがこのコンピュータでも動いている場合は、次を実行します。
@@ -295,13 +295,13 @@ curl -fsS http://localhost:8080/readyz
 Docker Compose 構成のアップグレード方法は2通りあります。既存の構成では**同じ結果**になります — `Makefile` の `selfhost` ターゲットは同じ `docker compose pull` + `up -d` を実行し、加えて `.env` が無ければ生成し、`/health` を待ってからステータスの要約を表示します。好きな方を使ってください。
 
 ```bash
-cd patchbay
+cd Cordy
 git pull
 make selfhost
 ```
 
 ```bash
-cd patchbay
+cd Cordy
 git pull
 docker compose -f docker-compose.selfhost.yml pull
 docker compose -f docker-compose.selfhost.yml up -d
@@ -314,7 +314,7 @@ docker compose -f docker-compose.selfhost.yml up -d
 実際に動くバージョンを決めるのは `docker compose pull` で、そのタグが今どのイメージを指しているかを GHCR に問い合わせます。したがって数か月更新していない checkout でも今日の `latest` イメージを取得できますし、逆に `git pull` だけではイメージを取得してコンテナを作り直すまで何も変わりません。
 
 <Callout type="warning">
-**`PATCHBAY_IMAGE_TAG` を固定している場合、どちらのコマンドでもアップグレードされません。** 両方のイメージが `${PATCHBAY_IMAGE_TAG:-latest}` として解決され（`docker-compose.selfhost.yml:42`、`:125`）、`.env.example` は `PATCHBAY_IMAGE_TAG=latest` を同梱しています。`.env` で特定のリリースに固定していると、`pull` は同じタグを取り直すだけで、古いバージョンのままです — エラーも警告も出ません。アップグレード前に確認してください。
+**`PATCHBAY_IMAGE_TAG` を固定している場合、どちらのコマンドでもアップグレードされません。** 両方のイメージが `${PATCHBAY_IMAGE_TAG:-latest}` として解決され（`docker-compose.selfhost.yml`）、`.env.example` は `PATCHBAY_IMAGE_TAG=latest` を同梱しています。`.env` で特定のリリースに固定していると、`pull` は同じタグを取り直すだけで、古いバージョンのままです — エラーも警告も出ません。アップグレード前に確認してください。
 
 ```bash
 grep PATCHBAY_IMAGE_TAG .env
@@ -353,7 +353,7 @@ migration は backend の起動時に自動で実行されます。過去デー�
 
 ### `/health` ではなく `/readyz` で検証する
 
-`/health` は **liveness** プローブで、プロセスが生きている限り `{"status":"ok"}` を返します — migration が失敗していても同じです。`/readyz`（`server/cmd/server/router.go:680`、`/healthz` はそのエイリアス）はデータベースと適用済み migration の集合をチェックするため、失敗したアップグレードを捕捉できるのはこちらです。
+`/health` は **liveness** プローブで、プロセスが生きている限り `{"status":"ok"}` を返します — migration が失敗していても同じです。`/readyz`（`/healthz` はそのエイリアス）はデータベースと適用済み migration の集合をチェックするため、失敗したアップグレードを捕捉できるのはこちらです。
 
 ```bash
 curl -s localhost:8080/readyz
@@ -366,7 +366,7 @@ HTTP 200 かつ両方のチェックが `ok` でない場合、新しいバー�
 
 Helm には独自のアップグレード経路があります。values ファイルで `images.backend.tag` / `images.frontend.tag` に目的のリリースを設定し、`helm upgrade` を実行してください。タグを変えると Pod スペックが変わるため、Kubernetes が新しいイメージを取得して Deployment をロールします — これが確実な経路です。
 
-`kubectl -n patchbay rollout restart` はそれ単体ではアップグレードになりません。チャートは `pullPolicy: IfNotPresent` を同梱しているため（`deploy/helm/patchbay/values.yaml`）、そのタグをすでにキャッシュしているノードでは古いイメージが再利用され、restart しても何も変わりません — `PATCHBAY_IMAGE_TAG` の固定と同種の落とし穴です。浮動タグでこの方法を使いたい場合は、先に `images.backend.pullPolicy` / `images.frontend.pullPolicy` を `Always` に設定してください。リポジトリの [Self-hosting guide](https://github.com/patchbay-ai/patchbay/blob/main/SELF_HOSTING.md#kubernetes-deployment-alternative) を参照してください。
+`kubectl -n patchbay rollout restart` はそれ単体ではアップグレードになりません。チャートは `pullPolicy: IfNotPresent` を同梱しているため（`deploy/helm/patchbay/values.yaml`）、そのタグをすでにキャッシュしているノードでは古いイメージが再利用され、restart しても何も変わりません — `PATCHBAY_IMAGE_TAG` の固定と同種の落とし穴です。浮動タグでこの方法を使いたい場合は、先に `images.backend.pullPolicy` / `images.frontend.pullPolicy` を `Always` に設定してください。リポジトリの [Self-hosting guide](https://github.com/alexj11324/Cordy/blob/main/SELF_HOSTING.md#kubernetes-deployment-alternative) を参照してください。
 
 <Callout type="warning">
 `docker compose down` は `pgdata` と `backend_uploads` を保持します。`-v` を付けると、データベースを含むこれらのボリュームが削除されます。インスタンスを消去するつもりがない限り、`docker compose down -v` を実行しないでください。
@@ -388,5 +388,5 @@ Helm には独自のアップグレード経路があります。values ファ�
 
 - [ログインとサインアップ設定](/auth-setup) — メール、Google ログイン、サインアップ範囲を設定する。
 - [環境変数](/environment-variables) — サーバー設定の完全なリファレンス。
-- [Self-hosting guide](https://github.com/patchbay-ai/patchbay/blob/main/SELF_HOSTING.md) — Kubernetes、アップグレード、手動デプロイ。
+- [Self-hosting guide](https://github.com/alexj11324/Cordy/blob/main/SELF_HOSTING.md) — Kubernetes、アップグレード、手動デプロイ。
 - [デスクトップアプリ](/desktop-app) — デスクトップアプリをセルフホストのサービスに接続する。

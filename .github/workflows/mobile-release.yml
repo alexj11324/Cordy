@@ -1,0 +1,189 @@
+name: Mobile Release
+
+on:
+  push:
+    tags:
+      - "mobile-v*.*.*"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Commit, branch, or tag to build"
+        required: true
+        default: "main"
+        type: string
+      submit:
+        description: "Submit the completed iOS build to App Store Connect"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      resolved_sha: ${{ steps.identity.outputs.resolved_sha }}
+      tag_name: ${{ steps.meta.outputs.tag_name }}
+    steps:
+      - name: Resolve release ref
+        id: meta
+        shell: bash
+        env:
+          DISPATCH_REF: ${{ inputs.ref }}
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+            ref="${GITHUB_SHA}"
+            tag_name="${GITHUB_REF_NAME}"
+            if [[ ! "$tag_name" =~ ^mobile-v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+              echo "::error::Mobile release tags must look like mobile-vX.Y.Z or mobile-vX.Y.Z-suffix."
+              exit 1
+            fi
+          else
+            ref="${DISPATCH_REF:-main}"
+            tag_name="manual-${GITHUB_RUN_ID}"
+          fi
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "tag_name=$tag_name" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout requested release ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.meta.outputs.ref }}
+          fetch-depth: 0
+
+      - name: Verify checkout identity
+        id: identity
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REQUESTED_REF: ${{ steps.meta.outputs.ref }}
+        run: |
+          set -euo pipefail
+          resolved_sha="$(git rev-parse HEAD)"
+          if [[ ! "$resolved_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::The mobile release ref did not resolve to a full commit SHA."
+            exit 1
+          fi
+          if [[ "$EVENT_NAME" == "push" && "$resolved_sha" != "$REQUESTED_REF" ]]; then
+            echo "::error::The mobile tag checkout does not match GITHUB_SHA."
+            exit 1
+          fi
+          echo "resolved_sha=$resolved_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Verify mobile tag is reachable from main
+        if: ${{ github.event_name == 'push' }}
+        env:
+          RELEASE_COMMIT: ${{ steps.identity.outputs.resolved_sha }}
+        run: |
+          set -euo pipefail
+          # The ancestry check must see the complete main history. A depth-1
+          # fetch makes an older, valid release commit look unrelated to the
+          # current tip and incorrectly rejects normal mobile tags.
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$RELEASE_COMMIT" FETCH_HEAD
+
+  build:
+    needs: validate
+    runs-on: ubuntu-latest
+    env:
+      APP_ENV: production
+      EAS_PROJECT_ID: ${{ secrets.EAS_PROJECT_ID }}
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+    steps:
+      - name: Checkout immutable ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.resolved_sha }}
+          fetch-depth: 1
+
+      - name: Verify immutable build checkout
+        env:
+          RELEASE_COMMIT: ${{ needs.validate.outputs.resolved_sha }}
+        run: test "$(git rev-parse HEAD)" = "$RELEASE_COMMIT"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate EAS credentials and project identity
+        run: |
+          test -n "$EXPO_TOKEN" || { echo "::error::EXPO_TOKEN is required"; exit 1; }
+          test -n "$EAS_PROJECT_ID" || { echo "::error::EAS_PROJECT_ID is required"; exit 1; }
+
+      - name: Validate mobile app config
+        working-directory: apps/mobile
+        env:
+          CONFIG_JSON: ${{ runner.temp }}/patchbay-mobile-config.json
+        run: |
+          set -euo pipefail
+          pnpm exec expo config --type public --json > "$CONFIG_JSON"
+          configured_project_id="$(jq -r '.extra.eas.projectId // empty' "$CONFIG_JSON")"
+          test "$configured_project_id" = "$EAS_PROJECT_ID" || {
+            echo "::error::Expo config EAS project identity does not match EAS_PROJECT_ID."
+            exit 1
+          }
+          test "$(jq -r '.extra.APP_ENV // empty' "$CONFIG_JSON")" = "production" || {
+            echo "::error::Expo config is not evaluating the production environment."
+            exit 1
+          }
+
+      - name: Typecheck, lint, and test mobile
+        run: pnpm exec turbo typecheck lint test --filter=@patchbay/mobile
+
+      - name: Install EAS CLI
+        run: pnpm dlx eas-cli@latest --version
+
+      - name: Build iOS production artifact
+        working-directory: apps/mobile
+        env:
+          BUILD_JSON: ${{ runner.temp }}/patchbay-ios-build.json
+        run: |
+          set -euo pipefail
+          pnpm dlx eas-cli@latest build \
+            --platform ios \
+            --profile production \
+            --non-interactive \
+            --wait \
+            --json \
+            --message "${{ needs.validate.outputs.tag_name }}" > "$BUILD_JSON"
+          build_status="$(jq -r 'if type == "array" then .[0].status else .status end // empty' "$BUILD_JSON")"
+          build_id="$(jq -r 'if type == "array" then .[0].id else .id end // empty' "$BUILD_JSON")"
+          test "$build_status" = "FINISHED" || {
+            echo "::error::EAS iOS build did not finish successfully (status: ${build_status:-unknown})."
+            exit 1
+          }
+          test -n "$build_id" || {
+            echo "::error::EAS did not return an iOS build ID."
+            exit 1
+          }
+          echo "EAS_BUILD_ID=$build_id" >> "$GITHUB_ENV"
+
+      - name: Submit iOS production artifact
+        if: ${{ inputs.submit == true || (github.event_name == 'push' && vars.MOBILE_RELEASE_SUBMIT == 'true') }}
+        working-directory: apps/mobile
+        run: |
+          set -euo pipefail
+          test -n "${EAS_BUILD_ID:-}" || {
+            echo "::error::EAS_BUILD_ID is required for an explicit submission."
+            exit 1
+          }
+          pnpm dlx eas-cli@latest submit \
+            --platform ios \
+            --profile production \
+            --id "$EAS_BUILD_ID" \
+            --wait \
+            --non-interactive

@@ -56,6 +56,34 @@ if ($parseErrors) {
 }
 
 $installerSource = Get-Content -Raw -Path $InstallerPath
+
+# The installer is a current release/self-host entry point. Keep its
+# repository, release API, download, and copy-paste hints on the canonical
+# Cordy target without policing historical asset names used by checksum
+# compatibility logic below.
+foreach ($required in @(
+        'https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1',
+        '$RepoUrl       = "https://github.com/alexj11324/Cordy.git"',
+        '$RepoWebUrl    = "https://github.com/alexj11324/Cordy"',
+        'https://api.github.com/repos/alexj11324/Cordy/releases/latest',
+        'https://github.com/alexj11324/Cordy/releases/download/'
+    )) {
+    if (-not $installerSource.Contains($required)) {
+        Fail-Test "install.ps1 is missing the canonical current release/self-host address: $required"
+    }
+}
+foreach ($retired in @(
+        'https://github.com/patchbay-ai/patchbay.git',
+        'https://github.com/patchbay-ai/patchbay/',
+        'https://github.com/patchbay-ai/patchbay"',
+        'https://raw.githubusercontent.com/patchbay-ai/patchbay/',
+        'https://api.github.com/repos/patchbay-ai/patchbay/'
+    )) {
+    if ($installerSource.Contains($retired)) {
+        Fail-Test "install.ps1 still contains a retired current address: $retired"
+    }
+}
+
 foreach ($banned in @("Get-SelfHostBackendPort", "Get-SelfHostFrontendPort", "Get-EnvFileValue")) {
     if ($installerSource -match [regex]::Escape($banned)) {
         Fail-Test "install.ps1 must not re-derive host ports from .env (found $banned)"

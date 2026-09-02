@@ -14,7 +14,7 @@ Self-hosting Patchbay has two parts:
 
 They can be the same machine or separate ones. Self-hosting replaces only the Patchbay Cloud part.
 
-This guide uses Docker Compose. For Kubernetes deployments, see the [Self-hosting guide](https://github.com/patchbay-ai/patchbay/blob/main/SELF_HOSTING.md#kubernetes-deployment-alternative) in the repository.
+This guide uses Docker Compose. For Kubernetes deployments, see the [Self-hosting guide](https://github.com/alexj11324/Cordy/blob/main/SELF_HOSTING.md#kubernetes-deployment-alternative) in the repository.
 
 ## Before you start
 
@@ -40,8 +40,8 @@ The computer also needs at least one [AI coding tool](/providers) installed and 
 On the machine that will run the service:
 
 ```bash
-git clone --depth 1 https://github.com/patchbay-ai/patchbay.git
-cd patchbay
+git clone --depth 1 https://github.com/alexj11324/Cordy.git
+cd Cordy
 make selfhost
 ```
 
@@ -223,13 +223,13 @@ Install the Patchbay CLI first:
 **macOS / Linux**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash
 ```
 
 **Windows PowerShell**
 
 ```powershell
-irm https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex
 ```
 
 If the Patchbay service runs on this same computer:
@@ -296,13 +296,13 @@ curl -fsS http://localhost:8080/readyz
 Two ways to upgrade a Docker Compose install. On an existing install they produce the **same result** — the `selfhost` target in the `Makefile` runs the same `docker compose pull` + `up -d`, and additionally creates `.env` when it is missing and waits on `/health` before printing a status summary. Pick whichever you prefer:
 
 ```bash
-cd patchbay
+cd Cordy
 git pull
 make selfhost
 ```
 
 ```bash
-cd patchbay
+cd Cordy
 git pull
 docker compose -f docker-compose.selfhost.yml pull
 docker compose -f docker-compose.selfhost.yml up -d
@@ -315,7 +315,7 @@ docker compose -f docker-compose.selfhost.yml up -d
 The version you end up running is resolved by `docker compose pull`, which asks GHCR what the tag points at right now. A checkout that is months out of date will still pull today's `latest` images; conversely, `git pull` alone changes nothing until you pull images and recreate the containers.
 
 <Callout type="warning">
-**If you pinned `PATCHBAY_IMAGE_TAG`, neither command upgrades anything.** Both images resolve as `${PATCHBAY_IMAGE_TAG:-latest}` (`docker-compose.selfhost.yml:42`, `:125`), and `.env.example` ships `PATCHBAY_IMAGE_TAG=latest`. If your `.env` pins an exact release, `pull` just re-fetches that same tag and you stay on the old version — no error, no warning. Check before you upgrade:
+**If you pinned `PATCHBAY_IMAGE_TAG`, neither command upgrades anything.** Both images resolve as `${PATCHBAY_IMAGE_TAG:-latest}` in `docker-compose.selfhost.yml`, and `.env.example` ships `PATCHBAY_IMAGE_TAG=latest`. If your `.env` pins an exact release, `pull` just re-fetches that same tag and you stay on the old version — no error, no warning. Check before you upgrade:
 
 ```bash
 grep PATCHBAY_IMAGE_TAG .env
@@ -354,7 +354,7 @@ Migrations run automatically when the backend starts; migrations that backfill h
 
 ### Verify with `/readyz`, not `/health`
 
-`/health` is a **liveness** probe — it returns `{"status":"ok"}` as long as the process is up, including when migrations failed. `/readyz` (`server/cmd/server/router.go:680`; `/healthz` is an alias) checks the database and the applied migration set, so it is the one that catches a bad upgrade:
+`/health` is a **liveness** probe — it returns `{"status":"ok"}` as long as the process is up, including when migrations failed. `/readyz` (`/healthz` is an alias) checks the database and the applied migration set, so it is the one that catches a bad upgrade:
 
 ```bash
 curl -s localhost:8080/readyz
@@ -367,7 +367,7 @@ Anything other than HTTP 200 with both checks `ok` means the new version did not
 
 Helm has its own upgrade path: set `images.backend.tag` / `images.frontend.tag` to the release you want in your values file, then `helm upgrade`. Changing the tag changes the pod spec, so Kubernetes pulls the new image and rolls the Deployments — this is the reliable route.
 
-`kubectl -n patchbay rollout restart` is **not** an upgrade on its own. The chart ships `pullPolicy: IfNotPresent` (`deploy/helm/patchbay/values.yaml`), so a node that already has that tag cached reuses the old image and the restart silently changes nothing — the same class of trap as a pinned `PATCHBAY_IMAGE_TAG`. If you want to track a floating tag that way, set `images.backend.pullPolicy` / `images.frontend.pullPolicy` to `Always` first. See the [Self-hosting guide](https://github.com/patchbay-ai/patchbay/blob/main/SELF_HOSTING.md#kubernetes-deployment-alternative).
+`kubectl -n patchbay rollout restart` is **not** an upgrade on its own. The chart ships `pullPolicy: IfNotPresent` (`deploy/helm/patchbay/values.yaml`), so a node that already has that tag cached reuses the old image and the restart silently changes nothing — the same class of trap as a pinned `PATCHBAY_IMAGE_TAG`. If you want to track a floating tag that way, set `images.backend.pullPolicy` / `images.frontend.pullPolicy` to `Always` first. See the [Self-hosting guide](https://github.com/alexj11324/Cordy/blob/main/SELF_HOSTING.md#kubernetes-deployment-alternative).
 
 <Callout type="warning">
 `docker compose down` keeps `pgdata` and `backend_uploads`. Adding `-v` deletes these volumes, including the database; do not run `docker compose down -v` unless you intend to wipe the instance.
@@ -389,5 +389,5 @@ For more scenarios, see [Troubleshooting](/troubleshooting).
 
 - [Auth setup](/auth-setup) — configure email, Google login, and signup scope.
 - [Environment variables](/environment-variables) — the full server configuration reference.
-- [Self-hosting guide](https://github.com/patchbay-ai/patchbay/blob/main/SELF_HOSTING.md) — Kubernetes, upgrades, and manual deployment.
+- [Self-hosting guide](https://github.com/alexj11324/Cordy/blob/main/SELF_HOSTING.md) — Kubernetes, upgrades, and manual deployment.
 - [Desktop app](/desktop-app) — connect Desktop to a self-hosted service.

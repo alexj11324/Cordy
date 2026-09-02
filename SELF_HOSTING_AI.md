@@ -12,7 +12,7 @@ This document is designed for AI agents to execute. Follow these steps exactly t
 
 ```bash
 # Install CLI + provision self-host server
-curl -fsSL https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.sh | bash -s -- --with-server
+curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash -s -- --with-server
 
 # Configure CLI for localhost, authenticate, and start daemon
 patchbay setup self-host
@@ -28,10 +28,10 @@ Wait for the server output `✓ Patchbay server is running and CLI is ready!` be
 ## Alternative: Manual Setup
 
 ```bash
-git clone https://github.com/patchbay-ai/patchbay.git
-cd patchbay
+git clone https://github.com/alexj11324/Cordy.git
+cd Cordy
 make selfhost
-brew install patchbay-ai/tap/patchbay
+brew install alexj11324/Cordy/patchbay
 patchbay setup self-host
 ```
 
@@ -56,7 +56,7 @@ Should show `running` with detected agents.
 patchbay daemon stop
 
 # Stop all Docker services
-cd patchbay
+cd Cordy
 make selfhost-stop
 ```
 

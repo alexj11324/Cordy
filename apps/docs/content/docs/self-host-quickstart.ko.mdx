@@ -14,7 +14,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 두 부분을 같은 컴퓨터에 둘 수도 있고 분리할 수도 있습니다. 자체 호스팅으로 대체하는 것은 Patchbay Cloud 부분뿐입니다.
 
-이 문서에서는 Docker Compose를 사용합니다. Kubernetes 배포는 저장소의 [Self-hosting guide](https://github.com/patchbay-ai/patchbay/blob/main/SELF_HOSTING.md#kubernetes-deployment-alternative)를 참고하세요.
+이 문서에서는 Docker Compose를 사용합니다. Kubernetes 배포는 저장소의 [Self-hosting guide](https://github.com/alexj11324/Cordy/blob/main/SELF_HOSTING.md#kubernetes-deployment-alternative)를 참고하세요.
 
 ## 시작하기 전에
 
@@ -40,8 +40,8 @@ Patchbay는 Compose v2인 `docker compose`를 사용합니다. 이전 `docker-co
 서비스를 실행할 컴퓨터에서 다음을 실행합니다.
 
 ```bash
-git clone --depth 1 https://github.com/patchbay-ai/patchbay.git
-cd patchbay
+git clone --depth 1 https://github.com/alexj11324/Cordy.git
+cd Cordy
 make selfhost
 ```
 
@@ -222,13 +222,13 @@ docker compose -f docker-compose.selfhost.yml logs backend \
 **macOS / Linux**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash
 ```
 
 **Windows PowerShell**
 
 ```powershell
-irm https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex
 ```
 
 Patchbay 서비스가 같은 컴퓨터에 있다면 다음을 실행합니다.
@@ -295,13 +295,13 @@ curl -fsS http://localhost:8080/readyz
 Docker Compose 설치를 업그레이드하는 방법은 두 가지이며, 기존 설치에서는 **결과가 같습니다** — `Makefile`의 `selfhost` 타깃이 동일한 `docker compose pull` + `up -d`를 실행하고, 여기에 더해 `.env`가 없으면 생성하고 `/health`를 기다린 뒤 상태 요약을 출력합니다. 편한 쪽을 쓰세요.
 
 ```bash
-cd patchbay
+cd Cordy
 git pull
 make selfhost
 ```
 
 ```bash
-cd patchbay
+cd Cordy
 git pull
 docker compose -f docker-compose.selfhost.yml pull
 docker compose -f docker-compose.selfhost.yml up -d
@@ -314,7 +314,7 @@ docker compose -f docker-compose.selfhost.yml up -d
 실제로 어떤 버전이 뜰지는 `docker compose pull`이 결정합니다. 이 명령이 GHCR에 해당 태그가 지금 어떤 이미지를 가리키는지 물어보기 때문입니다. 그래서 몇 달 묵은 checkout에서도 오늘자 `latest` 이미지를 받을 수 있고, 반대로 `git pull`만 해서는 이미지를 받아 컨테이너를 다시 만들기 전까지 아무것도 바뀌지 않습니다.
 
 <Callout type="warning">
-**`PATCHBAY_IMAGE_TAG`를 고정해 뒀다면 두 방법 모두 업그레이드되지 않습니다.** 두 이미지 모두 `${PATCHBAY_IMAGE_TAG:-latest}`로 해석되며(`docker-compose.selfhost.yml:42`, `:125`), `.env.example`에는 `PATCHBAY_IMAGE_TAG=latest`가 들어 있습니다. `.env`에서 특정 릴리스로 고정해 뒀다면 `pull`은 같은 태그를 다시 받아올 뿐이라 예전 버전에 그대로 머무릅니다 — 오류도, 경고도 없습니다. 업그레이드 전에 확인하세요.
+**`PATCHBAY_IMAGE_TAG`를 고정해 뒀다면 두 방법 모두 업그레이드되지 않습니다.** 두 이미지 모두 `${PATCHBAY_IMAGE_TAG:-latest}`로 해석되며(`docker-compose.selfhost.yml`), `.env.example`에는 `PATCHBAY_IMAGE_TAG=latest`가 들어 있습니다. `.env`에서 특정 릴리스로 고정해 뒀다면 `pull`은 같은 태그를 다시 받아올 뿐이라 예전 버전에 그대로 머무릅니다 — 오류도, 경고도 없습니다. 업그레이드 전에 확인하세요.
 
 ```bash
 grep PATCHBAY_IMAGE_TAG .env
@@ -353,7 +353,7 @@ Migration은 backend 시작 시 자동으로 실행됩니다. migration 103처�
 
 ### `/health` 말고 `/readyz`로 검증하세요
 
-`/health`는 **liveness** 프로브라서 프로세스가 살아 있기만 하면 `{"status":"ok"}`를 반환합니다 — migration이 실패했더라도 마찬가지입니다. `/readyz`(`server/cmd/server/router.go:680`, `/healthz`는 별칭)는 데이터베이스와 적용된 migration 집합을 확인하므로, 잘못된 업그레이드를 잡아내는 것은 이쪽입니다.
+`/health`는 **liveness** 프로브라서 프로세스가 살아 있기만 하면 `{"status":"ok"}`를 반환합니다 — migration이 실패했더라도 마찬가지입니다. `/readyz`(`/healthz`는 별칭)는 데이터베이스와 적용된 migration 집합을 확인하므로, 잘못된 업그레이드를 잡아내는 것은 이쪽입니다.
 
 ```bash
 curl -s localhost:8080/readyz
@@ -366,7 +366,7 @@ HTTP 200이면서 두 검사가 모두 `ok`가 아니라면 새 버전이 migrat
 
 Helm은 자체 업그레이드 경로가 있습니다. values 파일에서 `images.backend.tag` / `images.frontend.tag`를 원하는 릴리스로 설정한 뒤 `helm upgrade`를 실행하세요. 태그가 바뀌면 파드 스펙이 바뀌므로 Kubernetes가 새 이미지를 받아 Deployment를 롤아웃합니다 — 이것이 확실한 경로입니다.
 
-`kubectl -n patchbay rollout restart`는 그 자체로는 업그레이드가 **아닙니다**. 차트는 `pullPolicy: IfNotPresent`로 배포되므로(`deploy/helm/patchbay/values.yaml`), 해당 태그를 이미 캐시한 노드는 예전 이미지를 재사용하고 restart를 해도 아무것도 바뀌지 않습니다 — `PATCHBAY_IMAGE_TAG` 고정과 같은 부류의 함정입니다. 부동 태그로 이 방식을 쓰려면 먼저 `images.backend.pullPolicy` / `images.frontend.pullPolicy`를 `Always`로 설정하세요. 저장소의 [Self-hosting guide](https://github.com/patchbay-ai/patchbay/blob/main/SELF_HOSTING.md#kubernetes-deployment-alternative)를 참고하세요.
+`kubectl -n patchbay rollout restart`는 그 자체로는 업그레이드가 **아닙니다**. 차트는 `pullPolicy: IfNotPresent`로 배포되므로(`deploy/helm/patchbay/values.yaml`), 해당 태그를 이미 캐시한 노드는 예전 이미지를 재사용하고 restart를 해도 아무것도 바뀌지 않습니다 — `PATCHBAY_IMAGE_TAG` 고정과 같은 부류의 함정입니다. 부동 태그로 이 방식을 쓰려면 먼저 `images.backend.pullPolicy` / `images.frontend.pullPolicy`를 `Always`로 설정하세요. 저장소의 [Self-hosting guide](https://github.com/alexj11324/Cordy/blob/main/SELF_HOSTING.md#kubernetes-deployment-alternative)를 참고하세요.
 
 <Callout type="warning">
 `docker compose down`은 `pgdata`와 `backend_uploads`를 유지합니다. `-v`를 추가하면 데이터베이스를 포함한 이 data volume이 삭제됩니다. 인스턴스를 비우려는 것이 확실하지 않다면 `docker compose down -v`를 실행하지 마세요.
@@ -388,5 +388,5 @@ Helm은 자체 업그레이드 경로가 있습니다. values 파일에서 `imag
 
 - [로그인 및 가입 설정](/auth-setup) — 이메일, Google 로그인, 가입 범위를 설정합니다.
 - [환경 변수](/environment-variables) — 전체 서버 설정을 확인합니다.
-- [Self-hosting guide](https://github.com/patchbay-ai/patchbay/blob/main/SELF_HOSTING.md) — Kubernetes, 업그레이드, 수동 배포를 알아봅니다.
+- [Self-hosting guide](https://github.com/alexj11324/Cordy/blob/main/SELF_HOSTING.md) — Kubernetes, 업그레이드, 수동 배포를 알아봅니다.
 - [데스크톱 앱](/desktop-app) — Desktop을 자체 호스팅 서비스에 연결합니다.

@@ -7,14 +7,14 @@ The `patchbay` CLI connects your local machine to Patchbay. It handles authentic
 ### Homebrew (macOS/Linux)
 
 ```bash
-brew install patchbay-ai/tap/patchbay
+brew install alexj11324/Cordy/patchbay
 ```
 
 ### Build from Source
 
 ```bash
-git clone https://github.com/patchbay-ai/patchbay.git
-cd patchbay
+git clone https://github.com/alexj11324/Cordy.git
+cd Cordy
 make build
 cp server/bin/patchbay /usr/local/bin/patchbay
 ```
@@ -22,7 +22,7 @@ cp server/bin/patchbay /usr/local/bin/patchbay
 ### Update
 
 ```bash
-brew upgrade patchbay-ai/tap/patchbay
+brew upgrade alexj11324/Cordy/patchbay
 ```
 
 For install script or manual installs, use:

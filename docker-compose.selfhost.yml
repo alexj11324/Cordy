@@ -53,7 +53,7 @@ services:
       retries: 5
 
   backend:
-    image: ${PATCHBAY_BACKEND_IMAGE:-ghcr.io/patchbay-ai/patchbay-backend}:${PATCHBAY_IMAGE_TAG:-latest}
+    image: ${PATCHBAY_BACKEND_IMAGE:-ghcr.io/alexj11324/patchbay-backend}:${PATCHBAY_IMAGE_TAG:-latest}
     depends_on:
       postgres:
         condition: service_healthy
@@ -69,7 +69,10 @@ services:
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3000}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
-      RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-noreply@patchbay.ai}
+      # Never inherit the Patchbay cloud sender in a self-hosted install. Set
+      # RESEND_FROM_EMAIL to a sender verified in the operator's Resend account
+      # whenever RESEND_API_KEY is configured.
+      RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-noreply@invalid.invalid}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-25}
       SMTP_USERNAME: ${SMTP_USERNAME:-}
@@ -197,7 +200,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: ${PATCHBAY_WEB_IMAGE:-ghcr.io/patchbay-ai/patchbay-web}:${PATCHBAY_IMAGE_TAG:-latest}
+    image: ${PATCHBAY_WEB_IMAGE:-ghcr.io/alexj11324/patchbay-web}:${PATCHBAY_IMAGE_TAG:-latest}
     depends_on:
       - backend
     ports:

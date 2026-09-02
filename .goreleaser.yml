@@ -69,12 +69,12 @@ brews:
     ids:
       - versioned
     repository:
-      owner: patchbay-ai
-      name: homebrew-tap
+      owner: alexj11324
+      name: Cordy
       branch: main
-      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+      token: "{{ .Env.GITHUB_TOKEN }}"
     directory: Formula
-    homepage: "https://github.com/patchbay-ai/patchbay"
+    homepage: "https://github.com/alexj11324/Cordy"
     description: "Patchbay CLI — local agent runtime and management tool for the Patchbay platform"
     # No license stanza: Patchbay ships under the Patchbay License (Apache 2.0
     # terms with additional conditions, see LICENSE), which has no SPDX

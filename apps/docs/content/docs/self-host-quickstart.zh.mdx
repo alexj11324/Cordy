@@ -14,7 +14,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 它们可以是同一台机器，也可以分开。自托管替换的只是 Patchbay Cloud 部分。
 
-这篇文档使用 Docker Compose。Kubernetes 部署见仓库中的 [Self-hosting guide](https://github.com/patchbay-ai/patchbay/blob/main/SELF_HOSTING.md#kubernetes-deployment-alternative)。
+这篇文档使用 Docker Compose。Kubernetes 部署见仓库中的 [Self-hosting guide](https://github.com/alexj11324/Cordy/blob/main/SELF_HOSTING.md#kubernetes-deployment-alternative)。
 
 ## 开始前
 
@@ -40,8 +40,8 @@ Patchbay 使用 Compose v2，也就是 `docker compose`。旧版的 `docker-comp
 在准备运行服务的机器上执行：
 
 ```bash
-git clone --depth 1 https://github.com/patchbay-ai/patchbay.git
-cd patchbay
+git clone --depth 1 https://github.com/alexj11324/Cordy.git
+cd Cordy
 make selfhost
 ```
 
@@ -222,13 +222,13 @@ task 以运行守护进程的用户的全部权限执行——该用户能读写
 **macOS / Linux**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash
 ```
 
 **Windows PowerShell**
 
 ```powershell
-irm https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex
 ```
 
 如果 Patchbay 服务也在这台电脑上，运行：
@@ -295,13 +295,13 @@ curl -fsS http://localhost:8080/readyz
 Docker Compose 部署有两种升级写法。在已有部署上两者**结果相同**——`Makefile` 里的 `selfhost` target 跑的就是同一套 `docker compose pull` + `up -d`，只是额外多做了两件事：`.env` 缺失时生成一份，以及等 `/health` 就绪后打印一段状态汇总。用哪个都行：
 
 ```bash
-cd patchbay
+cd Cordy
 git pull
 make selfhost
 ```
 
 ```bash
-cd patchbay
+cd Cordy
 git pull
 docker compose -f docker-compose.selfhost.yml pull
 docker compose -f docker-compose.selfhost.yml up -d
@@ -314,7 +314,7 @@ docker compose -f docker-compose.selfhost.yml up -d
 真正决定你跑哪个版本的是 `docker compose pull`：它去 GHCR 查这个 tag 当前指向哪个镜像。所以一个几个月没更新的 checkout 照样能拉到今天的 `latest` 镜像；反过来，只跑 `git pull` 而不拉镜像、不重建容器，什么都不会变。
 
 <Callout type="warning">
-**如果你在 `.env` 里钉死了 `PATCHBAY_IMAGE_TAG`，两种写法都升不上去。** 两个镜像都写成 `${PATCHBAY_IMAGE_TAG:-latest}`（`docker-compose.selfhost.yml:42`、`:125`），而 `.env.example` 里默认是 `PATCHBAY_IMAGE_TAG=latest`。一旦你把它改成了具体版本，`pull` 只是把同一个 tag 重拉一遍，版本原地不动——不报错，也没有任何警告。升级前先确认：
+**如果你在 `.env` 里钉死了 `PATCHBAY_IMAGE_TAG`，两种写法都升不上去。** 两个镜像都写成 `${PATCHBAY_IMAGE_TAG:-latest}`（`docker-compose.selfhost.yml`），而 `.env.example` 里默认是 `PATCHBAY_IMAGE_TAG=latest`。一旦你把它改成了具体版本，`pull` 只是把同一个 tag 重拉一遍，版本原地不动——不报错，也没有任何警告。升级前先确认：
 
 ```bash
 grep PATCHBAY_IMAGE_TAG .env
@@ -353,7 +353,7 @@ Migration 在 backend 启动时自动运行；需要回填历史数据的 migrat
 
 ### 用 `/readyz` 验证，不要用 `/health`
 
-`/health` 是 **liveness** 探针，只要进程还活着就返回 `{"status":"ok"}`，migration 失败了它照样是 ok。`/readyz`（`server/cmd/server/router.go:680`，`/healthz` 是它的别名）会真正检查数据库和已应用的 migration 集合，升级出问题能被它拦下来：
+`/health` 是 **liveness** 探针，只要进程还活着就返回 `{"status":"ok"}`，migration 失败了它照样是 ok。`/readyz`（`/healthz` 是它的别名）会真正检查数据库和已应用的 migration 集合，升级出问题能被它拦下来：
 
 ```bash
 curl -s localhost:8080/readyz
@@ -366,7 +366,7 @@ curl -s localhost:8080/readyz
 
 Helm 有自己的升级路径：在 values 文件里把 `images.backend.tag` / `images.frontend.tag` 设成你要的版本，然后 `helm upgrade`。改 tag 就改了 pod spec，Kubernetes 会拉新镜像并滚动更新——这是可靠的路径。
 
-`kubectl -n patchbay rollout restart` 本身**不是**升级。chart 默认 `pullPolicy: IfNotPresent`（`deploy/helm/patchbay/values.yaml`），节点上已经缓存过这个 tag 的话，restart 只会用回旧镜像，什么都没变——和钉死 `PATCHBAY_IMAGE_TAG` 是同一类坑。真要靠浮动 tag 走这条路，得先把 `images.backend.pullPolicy` / `images.frontend.pullPolicy` 设成 `Always`。详见仓库的 [Self-hosting guide](https://github.com/patchbay-ai/patchbay/blob/main/SELF_HOSTING.md#kubernetes-deployment-alternative)。
+`kubectl -n patchbay rollout restart` 本身**不是**升级。chart 默认 `pullPolicy: IfNotPresent`（`deploy/helm/patchbay/values.yaml`），节点上已经缓存过这个 tag 的话，restart 只会用回旧镜像，什么都没变——和钉死 `PATCHBAY_IMAGE_TAG` 是同一类坑。真要靠浮动 tag 走这条路，得先把 `images.backend.pullPolicy` / `images.frontend.pullPolicy` 设成 `Always`。详见仓库的 [Self-hosting guide](https://github.com/alexj11324/Cordy/blob/main/SELF_HOSTING.md#kubernetes-deployment-alternative)。
 
 <Callout type="warning">
 `docker compose down` 会保留 `pgdata` 和 `backend_uploads`。加上 `-v` 会删除这些数据卷，包括数据库；除非确定要清空实例，否则不要运行 `docker compose down -v`。
@@ -388,5 +388,5 @@ Helm 有自己的升级路径：在 values 文件里把 `images.backend.tag` / `
 
 - [登录与注册配置](/auth-setup) — 配置邮件、Google 登录和注册范围。
 - [环境变量](/environment-variables) — 查看完整的服务端配置。
-- [Self-hosting guide](https://github.com/patchbay-ai/patchbay/blob/main/SELF_HOSTING.md) — Kubernetes、升级和手动部署。
+- [Self-hosting guide](https://github.com/alexj11324/Cordy/blob/main/SELF_HOSTING.md) — Kubernetes、升级和手动部署。
 - [桌面应用](/desktop-app) — 让 Desktop 连接自托管服务。

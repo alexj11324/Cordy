@@ -87,6 +87,14 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         },
       ],
     ],
-    extra: { APP_ENV: env },
+    extra: {
+      APP_ENV: env,
+      // EAS injects this at build time. Keeping it in dynamic config makes
+      // the project identity explicit and prevents builds from silently
+      // targeting a different EAS project.
+      eas: {
+        projectId: process.env.EAS_PROJECT_ID,
+      },
+    },
   };
 };
