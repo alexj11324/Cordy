@@ -525,7 +525,9 @@ const callbackSuccessHTML = `<!DOCTYPE html>
   .icon-wrap { width: 48px; height: 48px; margin: 0 auto 24px; background: var(--accent-bg); border-radius: 50%; display: flex; align-items: center; justify-content: center; }
   .icon-wrap svg { width: 24px; height: 24px; color: var(--accent); }
   .brand { display: flex; align-items: center; justify-content: center; gap: 6px; margin-bottom: 8px; }
-  .asterisk { display: inline-block; width: 14px; height: 14px; background: var(--fg); clip-path: polygon(45% 62.1%,45% 100%,55% 100%,55% 62.1%,81.8% 88.9%,88.9% 81.8%,62.1% 55%,100% 55%,100% 45%,62.1% 45%,88.9% 18.2%,81.8% 11.1%,55% 37.9%,55% 0%,45% 0%,45% 37.9%,18.2% 11.1%,11.1% 18.2%,37.9% 45%,0% 45%,0% 55%,37.9% 55%,11.1% 81.8%,18.2% 88.9%); }
+  .routing-mark { display: inline-block; width: 28px; height: 28px; }
+  .routing-mark .socket { fill: none; stroke: var(--fg); stroke-width: 8; }
+  .routing-mark .signal { fill: none; stroke: #B6F000; stroke-width: 8; stroke-linecap: round; stroke-linejoin: round; }
   h1 { font-size: 20px; font-weight: 600; margin-bottom: 8px; }
   p { font-size: 14px; color: var(--fg2); line-height: 1.5; }
   .hint { margin-top: 24px; font-size: 13px; color: var(--fg2); opacity: 0.7; }
@@ -536,7 +538,20 @@ const callbackSuccessHTML = `<!DOCTYPE html>
     <div class="icon-wrap">
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
     </div>
-    <div class="brand"><span class="asterisk"></span></div>
+    <div class="brand">
+      <svg class="routing-mark" viewBox="0 0 128 128" aria-label="Patchbay routing mark">
+        <g class="socket">
+          <circle cx="64" cy="28" r="10"/><circle cx="100" cy="28" r="10"/>
+          <circle cx="28" cy="64" r="10"/><circle cx="100" cy="64" r="10"/>
+          <circle cx="28" cy="100" r="10"/><circle cx="64" cy="100" r="10"/>
+        </g>
+        <g class="signal">
+          <circle cx="28" cy="28" r="10"/>
+          <path d="M28 38C28 46 34 50 42 50H50C60 50 64 54 64 64V72C64 82 68 86 78 86H82C92 86 96 90 96 100"/>
+          <circle cx="100" cy="100" r="10"/>
+        </g>
+      </svg>
+    </div>
     <h1>Authentication successful</h1>
     <p>You can close this tab and return to the terminal.</p>
     <p class="hint">Your CLI session is now authenticated.</p>

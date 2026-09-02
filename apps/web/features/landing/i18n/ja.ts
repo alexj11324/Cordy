@@ -2289,7 +2289,7 @@ export function createJaDict(allowSignup: boolean): LandingDict {
             "タイムラインのページサイズ、古い / 新しい項目の表示、task_usage の日次 rollup、デーモンの health check、ランタイム統計が改善されました。",
           ],
           fixes: [
-            "Linux デーモンの再起動、CLI の short ID ルーティング、Windows の入力ファイルフラグ、Electron アイコン、orphaned reply、タイムラインのページネーション予算を修正しました。",
+            "Linux デーモンの再起動、CLI の short ID ルーティング、Windows の入力ファイルフラグ、Patchbay のルーティングマーク、orphaned reply、タイムラインのページネーション予算を修正しました。",
           ],
         },
         {

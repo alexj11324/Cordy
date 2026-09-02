@@ -26,11 +26,37 @@ const borderedSizes = {
   lg: { wrapper: "p-2.5", icon: "size-5" },
 };
 
-/**
- * Pure CSS 8-pointed asterisk icon matching the Patchbay logo.
- * Uses currentColor so it adapts to light/dark themes automatically.
- * Clip-path polygon traced from the original SVG path coordinates.
- */
+function PatchbayMark() {
+  return (
+    <svg
+      viewBox="0 0 128 128"
+      className="block size-full"
+      fill="none"
+      aria-hidden="true"
+    >
+      <g stroke="currentColor" strokeWidth="8">
+        <circle cx="64" cy="28" r="10" />
+        <circle cx="100" cy="28" r="10" />
+        <circle cx="28" cy="64" r="10" />
+        <circle cx="100" cy="64" r="10" />
+        <circle cx="28" cy="100" r="10" />
+        <circle cx="64" cy="100" r="10" />
+      </g>
+      <g
+        stroke="#B6F000"
+        strokeWidth="8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <circle cx="28" cy="28" r="10" />
+        <path d="M28 38C28 46 34 50 42 50H50C60 50 64 54 64 64V72C64 82 68 86 78 86H82C92 86 96 90 96 100" />
+        <circle cx="100" cy="100" r="10" />
+      </g>
+    </svg>
+  );
+}
+
+/** Inline rendering of the approved Patchbay routing mark. */
 export function PatchbayIcon({
   className,
   animate = false,
@@ -46,15 +72,6 @@ export function PatchbayIcon({
     const timer = setTimeout(() => setEntranceDone(true), 600);
     return () => clearTimeout(timer);
   }, [animate]);
-
-  const clipPath = `polygon(
-    45% 62.1%, 45% 100%, 55% 100%, 55% 62.1%,
-    81.8% 88.9%, 88.9% 81.8%, 62.1% 55%, 100% 55%,
-    100% 45%, 62.1% 45%, 88.9% 18.2%, 81.8% 11.1%,
-    55% 37.9%, 55% 0%, 45% 0%, 45% 37.9%,
-    18.2% 11.1%, 11.1% 18.2%, 37.9% 45%, 0% 45%,
-    0% 55%, 37.9% 55%, 11.1% 81.8%, 18.2% 88.9%
-  )`;
 
   if (bordered) {
     const sizeConfig = borderedSizes[size];
@@ -76,10 +93,7 @@ export function PatchbayIcon({
             entranceDone && !noSpin && "hover:animate-spin"
           )}
         >
-          <span
-            className="block size-full bg-current"
-            style={{ clipPath }}
-          />
+          <PatchbayMark />
         </span>
       </span>
     );
@@ -96,10 +110,7 @@ export function PatchbayIcon({
       aria-hidden="true"
       {...props}
     >
-      <span
-        className="block size-full bg-current"
-        style={{ clipPath }}
-      />
+      <PatchbayMark />
     </span>
   );
 }

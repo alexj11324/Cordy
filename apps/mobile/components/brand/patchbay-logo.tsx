@@ -1,12 +1,12 @@
 /**
- * Patchbay wordmark / sigil. 1:1 vector copy of docs/assets/logo-light.svg —
- * keep this file and the SVG in sync.
+ * Patchbay routing mark. Keep this geometry in sync with
+ * docs/assets/brand/patchbay/mark-color.svg.
  *
  * react-native-svg does not resolve CSS `currentColor`, so callers must pass
  * `color` explicitly. For theme-aware usage, pair with `useColorScheme` +
  * `THEME` token from `@/lib/theme`.
  */
-import Svg, { Polygon } from "react-native-svg";
+import Svg, { Circle, G, Path } from "react-native-svg";
 import { THEME } from "@/lib/theme";
 import { useColorScheme } from "@/lib/use-color-scheme";
 
@@ -21,12 +21,26 @@ export function PatchbayLogo({ size = 48, color }: PatchbayLogoProps) {
     color ?? (isDarkColorScheme ? THEME.dark.foreground : THEME.light.foreground);
 
   return (
-    <Svg width={size} height={size} viewBox="0 0 80 80">
-      <Polygon
-        fill={resolvedColor}
-        points="35,51.1 35,80 45,80 45,51.1 71.8,77.9 78.9,70.8 52.1,44 90,44 90,34 52.1,34 78.9,7.2 71.8,0.1 45,26.9 45,-11 35,-11 35,26.9 8.2,0.1 1.1,7.2 27.9,34 -10,34 -10,44 27.9,44 1.1,70.8 8.2,77.9"
-        transform="translate(5, 5.5) scale(0.87)"
-      />
+    <Svg width={size} height={size} viewBox="0 0 128 128">
+      <G fill="none" stroke={resolvedColor} strokeWidth={8}>
+        <Circle cx={64} cy={28} r={10} />
+        <Circle cx={100} cy={28} r={10} />
+        <Circle cx={28} cy={64} r={10} />
+        <Circle cx={100} cy={64} r={10} />
+        <Circle cx={28} cy={100} r={10} />
+        <Circle cx={64} cy={100} r={10} />
+      </G>
+      <G
+        fill="none"
+        stroke="#B6F000"
+        strokeWidth={8}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <Circle cx={28} cy={28} r={10} />
+        <Path d="M28 38C28 46 34 50 42 50H50C60 50 64 54 64 64V72C64 82 68 86 78 86H82C92 86 96 90 96 100" />
+        <Circle cx={100} cy={100} r={10} />
+      </G>
     </Svg>
   );
 }

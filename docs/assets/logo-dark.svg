@@ -1,7 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" role="img" aria-label="Patchbay">
-  <polygon
-    fill="#f9fafb"
-    points="35,51.1 35,80 45,80 45,51.1 71.8,77.9 78.9,70.8 52.1,44 90,44 90,34 52.1,34 78.9,7.2 71.8,0.1 45,26.9 45,-11 35,-11 35,26.9 8.2,0.1 1.1,7.2 27.9,34 -10,34 -10,44 27.9,44 1.1,70.8 8.2,77.9"
-    transform="translate(5, 5.5) scale(0.87)"
-  />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title id="title">Patchbay routing mark for dark surfaces</title>
+  <g fill="none" stroke="#F7F5F0" stroke-width="8">
+    <circle cx="64" cy="28" r="10" />
+    <circle cx="100" cy="28" r="10" />
+    <circle cx="28" cy="64" r="10" />
+    <circle cx="100" cy="64" r="10" />
+    <circle cx="28" cy="100" r="10" />
+    <circle cx="64" cy="100" r="10" />
+  </g>
+  <g fill="none" stroke="#B6F000" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="28" cy="28" r="10" />
+    <path d="M28 38C28 46 34 50 42 50H50C60 50 64 54 64 64V72C64 82 68 86 78 86H82C92 86 96 90 96 100" />
+    <circle cx="100" cy="100" r="10" />
+  </g>
 </svg>

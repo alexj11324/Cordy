@@ -2310,7 +2310,7 @@ export function createKoDict(allowSignup: boolean): LandingDict {
             "타임라인 페이지 크기, 오래된/새로운 항목 보기, task_usage daily rollup, 데몬 health check, 런타임 통계가 개선되었습니다.",
           ],
           fixes: [
-            "Linux 데몬 재시작, CLI short ID 라우팅, Windows 입력 파일 플래그, Electron 아이콘, orphaned reply, 타임라인 페이지네이션 예산을 수정했습니다.",
+            "Linux 데몬 재시작, CLI short ID 라우팅, Windows 입력 파일 플래그, Patchbay 라우팅 마크, orphaned reply, 타임라인 페이지네이션 예산을 수정했습니다.",
           ],
         },
         {
