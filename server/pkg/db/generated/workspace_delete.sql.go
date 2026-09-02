@@ -214,7 +214,34 @@ func (q *Queries) DeleteWorkspaceCommunicationRoots(ctx context.Context, workspa
 }
 
 const deleteWorkspaceConnections = `-- name: DeleteWorkspaceConnections :exec
-WITH deleted_github_installations AS (
+WITH linear_connections AS MATERIALIZED (
+    SELECT id FROM linear_connection WHERE workspace_id = $1
+),
+deleted_linear_conflicts AS (
+    DELETE FROM linear_sync_conflict WHERE workspace_id = $1
+),
+deleted_linear_outbox AS (
+    DELETE FROM linear_sync_outbox WHERE workspace_id = $1
+),
+deleted_linear_links AS (
+    DELETE FROM linear_issue_link WHERE workspace_id = $1
+),
+deleted_linear_members AS (
+    DELETE FROM linear_member_binding WHERE workspace_id = $1
+),
+deleted_linear_inbox AS (
+    DELETE FROM linear_sync_inbox WHERE connection_id IN (SELECT id FROM linear_connections)
+),
+deleted_linear_bindings AS (
+    DELETE FROM linear_project_binding WHERE workspace_id = $1
+),
+deleted_linear_oauth_states AS (
+    DELETE FROM linear_oauth_state WHERE workspace_id = $1
+),
+deleted_linear_connections AS (
+    DELETE FROM linear_connection WHERE workspace_id = $1
+),
+deleted_github_installations AS (
     DELETE FROM github_installation
     WHERE github_installation.workspace_id = $1
 )
