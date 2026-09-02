@@ -96,8 +96,8 @@ export function WeixinTab() {
       await qc.invalidateQueries({ queryKey: weixinKeys.installations(wsId) });
       toast.success(t(($) => $.weixin.toast_disconnected));
       setDisconnectTarget(null);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : t(($) => $.weixin.toast_disconnect_failed));
+    } catch {
+      toast.error(t(($) => $.weixin.toast_disconnect_failed));
     } finally {
       setDisconnecting(false);
     }
@@ -312,6 +312,8 @@ function WeixinInstallDialog({
   const [verifyCode, setVerifyCode] = useState("");
   const [verifying, setVerifying] = useState(false);
   const closedRef = useRef(false);
+  const startedRef = useRef(false);
+  const startingRef = useRef(false);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   async function finishInstall() {
@@ -326,7 +328,8 @@ function WeixinInstallDialog({
   }
 
   async function beginSession() {
-    if (starting) return;
+    if (startingRef.current || closedRef.current) return;
+    startingRef.current = true;
     setStarting(true);
     setSession(null);
     setStatus("pending");
@@ -351,13 +354,20 @@ function WeixinInstallDialog({
         setErrorKind(errorReason(error));
       }
     } finally {
+      startingRef.current = false;
       if (!closedRef.current) setStarting(false);
     }
   }
 
   useEffect(() => {
     closedRef.current = false;
-    void beginSession();
+    // React StrictMode replays effects in development. Keep the one-shot
+    // authorization request idempotent while still allowing the explicit
+    // Retry action to call beginSession again.
+    if (!startedRef.current) {
+      startedRef.current = true;
+      void beginSession();
+    }
     return () => {
       closedRef.current = true;
       if (closeTimerRef.current) clearTimeout(closeTimerRef.current);

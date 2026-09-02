@@ -21,6 +21,7 @@ const mockViewport = vi.hoisted(() => ({ isMobile: false }));
 // Counts MockContentEditor mounts. This pins the description to exactly one
 // eager editor per issue and catches stale editor reuse across issue switches.
 const contentEditorMounts = vi.hoisted(() => ({ count: 0 }));
+const mockUseWSEvent = vi.hoisted(() => vi.fn());
 // Stable empty-attachments reference: the real store returns a shared constant
 // so the `useCommentDraftStore(s => s.getAttachments(key))` selector keeps a
 // stable identity. A fresh `[]` per call would loop useSyncExternalStore.
@@ -288,6 +289,7 @@ vi.mock("../../projects/components/project-picker", () => ({
 // Mock api
 const mockApiObj = vi.hoisted(() => ({
   getIssue: vi.fn(),
+  getDependencyGraph: vi.fn().mockResolvedValue(null),
   listTimeline: vi.fn().mockResolvedValue([]),
   listComments: vi.fn().mockResolvedValue([]),
   createComment: vi.fn(),
@@ -514,7 +516,7 @@ vi.mock("@patchbay/core/hooks/use-file-upload", () => ({
 
 // Mock realtime
 vi.mock("@patchbay/core/realtime", () => ({
-  useWSEvent: vi.fn(),
+  useWSEvent: mockUseWSEvent,
   useWSReconnect: vi.fn(),
   useWS: () => ({ subscribe: vi.fn(() => () => {}), onReconnect: vi.fn(() => () => {}) }),
   WSProvider: ({ children }: { children: React.ReactNode }) => children,
@@ -696,6 +698,7 @@ describe("IssueDetail (shared)", () => {
     mockViewport.isMobile = false;
     // Default: issue loads successfully
     mockApiObj.getIssue.mockResolvedValue(mockIssue);
+    mockApiObj.getDependencyGraph.mockResolvedValue(null);
     // /timeline returns the entries flat in chronological order (oldest first).
     mockApiObj.listTimeline.mockResolvedValue(mockTimeline);
     mockApiObj.listIssueReactions.mockResolvedValue([]);
@@ -716,6 +719,65 @@ describe("IssueDetail (shared)", () => {
     // Reset project mock — individual tests override per case. Default fixture
     // has project_id: null so getProject is not invoked.
     mockApiObj.getProject.mockReset();
+  });
+
+  it("loads and displays the issue dependency gate through React Query", async () => {
+    mockApiObj.getDependencyGraph.mockResolvedValue({
+      plan: {
+        id: "plan-1",
+        attention_required: false,
+        attention_reason: null,
+      },
+      nodes: [
+        {
+          issue_id: "source-1",
+          title: "Prepare release notes",
+          status: "in_progress",
+          status_category: "in_progress",
+          ready: true,
+          blocked_by: [],
+        },
+        {
+          issue_id: "issue-1",
+          title: "Ship release",
+          status: "blocked",
+          status_category: "blocked",
+          ready: false,
+          blocked_by: ["source-1"],
+        },
+      ],
+      edges: [{
+        id: "edge-1",
+        type: "hard",
+        from_issue_id: "source-1",
+        to_issue_id: "issue-1",
+        reason: "Release notes are required",
+      }],
+    });
+
+    renderIssueDetail();
+
+    expect(await screen.findByText("Blocked by 1 prerequisite(s) · 0/1 prerequisites satisfied")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open prerequisite Prepare release notes" })).toHaveAttribute(
+      "href",
+      "/test/issues/source-1",
+    );
+    expect(mockApiObj.getDependencyGraph).toHaveBeenCalledWith(
+      "issue-1",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
+
+  it("refreshes dependency state from the real issue lifecycle events", () => {
+    renderIssueDetail();
+
+    expect(mockUseWSEvent).toHaveBeenCalledWith("issue:created", expect.any(Function));
+    expect(mockUseWSEvent).toHaveBeenCalledWith("issue:updated", expect.any(Function));
+    expect(mockUseWSEvent).toHaveBeenCalledWith("issue:deleted", expect.any(Function));
+    expect(mockUseWSEvent).toHaveBeenCalledWith(
+      "dependency_graph:updated",
+      expect.any(Function),
+    );
   });
 
   it("opens source-context creation from both a root comment and a reply", async () => {

@@ -328,7 +328,7 @@ import {
   CronPreviewResponseSchema,
   UNREADABLE_CRON_PREVIEW_RESPONSE,
   ListIssuesResponseSchema,
-  DependencyGraphResponseSchema,
+  IssueDependencyGraphResponseSchema,
   ListDependencyGraphsResponseSchema,
   CreateIssueResponseSchema,
   IssueSchema,
@@ -1184,21 +1184,21 @@ export class ApiClient {
   async getDependencyGraph(
     parentIssueId: string,
     options?: { signal?: AbortSignal },
-  ): Promise<DependencyGraphResponse> {
+  ): Promise<DependencyGraphResponse | null> {
     const raw = await this.fetch<unknown>(
       `/api/issues/${encodeURIComponent(parentIssueId)}/dependency-graph`,
       options?.signal ? { signal: options.signal } : undefined,
     );
-    const graph = parseWithFallback<DependencyGraphResponse | null>(
+    const graph = parseWithFallback<DependencyGraphResponse | { plan: null } | undefined>(
       raw,
-      DependencyGraphResponseSchema,
-      null,
+      IssueDependencyGraphResponseSchema,
+      undefined,
       { endpoint: "GET /api/issues/:id/dependency-graph" },
     );
     if (!graph) {
       throw new Error("GET /api/issues/:id/dependency-graph returned a malformed graph");
     }
-    return graph;
+    return graph.plan === null ? null : graph;
   }
 
   async listDependencyGraphs(

@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Card, CardContent } from "@patchbay/ui/components/ui/card";
 import { Button } from "@patchbay/ui/components/ui/button";
-import { api } from "@patchbay/core/api";
+import { ApiError, api } from "@patchbay/core/api";
 import { useAuthStore } from "@patchbay/core/auth";
 import { AppLink } from "../navigation";
 import { useT } from "../i18n";
@@ -20,6 +20,7 @@ export function WeixinBindPage({ token }: { token: string | null }) {
   const user = useAuthStore((s) => s.user);
   const isAuthLoading = useAuthStore((s) => s.isLoading);
   const [state, setState] = useState<RedeemState>({ kind: "idle" });
+  const redeemedTokenRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!token) {
@@ -32,10 +33,15 @@ export function WeixinBindPage({ token }: { token: string | null }) {
       return;
     }
     if (state.kind !== "idle" && state.kind !== "needs-auth") return;
+    if (redeemedTokenRef.current === token) return;
+    redeemedTokenRef.current = token;
     setState({ kind: "redeeming" });
     void (async () => {
       try {
-        await api.redeemWeixinBindingToken(token);
+        const response = await api.redeemWeixinBindingToken(token);
+        if (!response.workspace_id || !response.installation_id || !response.weixin_user_id) {
+          throw new Error("Weixin binding returned a malformed response");
+        }
         setState({ kind: "done" });
       } catch (error) {
         setState({ kind: "error", reason: redemptionFailureReason(error) });
@@ -98,9 +104,9 @@ export function WeixinBindPage({ token }: { token: string | null }) {
 }
 
 function redemptionFailureReason(error: unknown): string {
-  const message = error instanceof Error ? error.message.toLowerCase() : "";
-  if (message.includes("invalid") || message.includes("expired") || message.includes("410")) return "expired";
-  if (message.includes("already bound") || message.includes("409")) return "already_bound";
-  if (message.includes("workspace member") || message.includes("403")) return "not_member";
+  if (!(error instanceof ApiError)) return "unknown";
+  if (error.status === 410) return "expired";
+  if (error.status === 409) return "already_bound";
+  if (error.status === 403) return "not_member";
   return "unknown";
 }

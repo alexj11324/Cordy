@@ -69,6 +69,11 @@ export type DependencyGraphNode = {
   model_id: string | null;
   wave: number;
   status: string;
+  status_category: string;
+  ready: boolean;
+  blocked_by: string[];
+  created_at: string;
+  updated_at: string;
   readiness: DependencyGraphNodeReadiness;
   /** Legacy aliases kept optional while older graph payloads drain out. */
   assignee_type?: string | null;

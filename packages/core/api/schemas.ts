@@ -1388,6 +1388,11 @@ const DependencyGraphNodeSchema = z.object({
   model_id: z.string().nullable().default(null),
   wave: z.number().int().default(0),
   status: z.string().default("todo"),
+  status_category: z.string().default("todo"),
+  ready: z.boolean().default(false),
+  blocked_by: z.array(z.string()).default([]),
+  created_at: z.string().default(""),
+  updated_at: z.string().default(""),
   readiness: DependencyGraphNodeReadinessSchema.default({
     state: "todo",
     gate_open: false,
@@ -1437,6 +1442,15 @@ const dependencyGraphResponseSchema = z.object({
 }).loose();
 
 export const DependencyGraphResponseSchema = dependencyGraphResponseSchema;
+
+export const IssueDependencyGraphResponseSchema = z.union([
+  dependencyGraphResponseSchema,
+  z.object({
+    plan: z.null(),
+    nodes: z.array(DependencyGraphNodeSchema).default([]),
+    edges: z.array(DependencyGraphEdgeSchema).default([]),
+  }).loose(),
+]);
 
 export const ListDependencyGraphsResponseSchema = z.object({
   graphs: z.array(dependencyGraphResponseSchema).default([]),

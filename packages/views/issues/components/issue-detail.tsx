@@ -94,6 +94,7 @@ import { ExecutionLogSection } from "./execution-log-section";
 import { QuickActionsSection } from "./quick-actions-section";
 import { PluginPanelSection } from "../../plugins";
 import { PullRequestList } from "./pull-request-list";
+import { DependencyPrerequisites } from "./dependency-prerequisites";
 import { WorkProductRelationsSection } from "../../work-products";
 import { useGitHubSettings } from "@patchbay/core/github";
 import { useQuery } from "@tanstack/react-query";
@@ -2557,6 +2558,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
           </div>}
         </div>
       )}
+
+      <DependencyPrerequisites issueId={issue.id} />
 
       {/* Pull requests — hidden when the workspace disables the PR sidebar
           (or the GitHub master switch is off). Backend data is kept either
