@@ -63,6 +63,13 @@ func TestPluginsV1DefaultsOff(t *testing.T) {
 	}
 }
 
+func TestLinearInstallationFoundationDefaultsOff(t *testing.T) {
+	flags := EvaluateFrontendPublicFlags(context.Background(), nil)
+	if flags[LinearInstallationFoundation] {
+		t.Fatal("linear_installation_foundation must stay disabled unless explicitly enabled")
+	}
+}
+
 func TestPluginSubFlagsAreNotPublished(t *testing.T) {
 	flags := EvaluateFrontendPublicFlags(context.Background(), nil)
 	for _, retired := range []string{"private_plugins_v1", "remote_mcp_plugins_v1"} {

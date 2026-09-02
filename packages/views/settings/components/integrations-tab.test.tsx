@@ -5,7 +5,10 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { ApiError } from "@patchbay/core/api";
 import { configStore } from "@patchbay/core/config";
-import { COMPOSIO_MCP_APPS_FLAG } from "@patchbay/core/feature-flags";
+import {
+  COMPOSIO_MCP_APPS_FLAG,
+  LINEAR_INSTALLATION_FOUNDATION_FLAG,
+} from "@patchbay/core/feature-flags";
 import { I18nProvider } from "@patchbay/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enSettings from "../../locales/en/settings.json";
@@ -31,6 +34,15 @@ vi.mock("@tanstack/react-query", () => ({
 
 vi.mock("@patchbay/core/composio", () => ({
   composioToolkitsOptions: () => ({ queryKey: ["composio", "toolkits"] }),
+}));
+
+vi.mock("@patchbay/core/paths", () => ({
+  useCurrentWorkspace: () => ({ id: "workspace-1", name: "Acme", slug: "acme" }),
+}));
+
+vi.mock("@patchbay/core/auth", () => ({
+  useAuthStore: (selector: (state: { user: { id: string } }) => unknown) =>
+    selector({ user: { id: "user-1" } }),
 }));
 
 vi.mock("./lark-tab", () => ({
@@ -65,6 +77,10 @@ vi.mock("./weixin-tab", () => ({
   WeixinTab: () => <div data-testid="weixin-tab" />,
 }));
 
+vi.mock("./linear-tab", () => ({
+  LinearIntegrationCard: () => <div data-testid="integration-channel-card-linear" />,
+}));
+
 import { IntegrationsTab } from "./integrations-tab";
 
 afterEach(cleanup);
@@ -81,7 +97,10 @@ describe("Settings IntegrationsTab", () => {
   beforeEach(() => {
     queryCallsRef.current = [];
     composioErrorRef.current = null;
-    configStore.getState().setFeatureFlags({ [COMPOSIO_MCP_APPS_FLAG]: true });
+    configStore.getState().setFeatureFlags({
+      [COMPOSIO_MCP_APPS_FLAG]: true,
+      [LINEAR_INSTALLATION_FOUNDATION_FLAG]: false,
+    });
     // Reset the self-host-only VCS gate to its default (hidden) so tests stay
     // isolated; individual tests opt in below.
     configStore.getState().setAuthConfig({ allowSignup: true, vcsIntegrationAvailable: false });
@@ -93,15 +112,33 @@ describe("Settings IntegrationsTab", () => {
     renderTab();
 
     expect(screen.queryByTestId("composio-tab")).toBeNull();
-    expect(queryCallsRef.current).toHaveLength(1);
-    expect(queryCallsRef.current[0]?.enabled).toBe(false);
+    const composioQuery = queryCallsRef.current.find(
+      (query) => query.queryKey[0] === "composio",
+    );
+    expect(composioQuery?.enabled).toBe(false);
   });
 
   it("shows Composio when the feature flag is on and the integration is configured", () => {
     renderTab();
 
     expect(screen.getByTestId("composio-tab")).toBeInTheDocument();
-    expect(queryCallsRef.current[0]?.enabled).toBe(true);
+    const composioQuery = queryCallsRef.current.find(
+      (query) => query.queryKey[0] === "composio",
+    );
+    expect(composioQuery?.enabled).toBe(true);
+  });
+
+  it("shows Linear only when its installation feature is enabled", () => {
+    renderTab();
+    expect(screen.queryByTestId("integration-channel-card-linear")).toBeNull();
+
+    cleanup();
+    configStore.getState().setFeatureFlags({
+      [COMPOSIO_MCP_APPS_FLAG]: true,
+      [LINEAR_INSTALLATION_FOUNDATION_FLAG]: true,
+    });
+    renderTab();
+    expect(screen.getByTestId("integration-channel-card-linear")).toBeInTheDocument();
   });
 
   it("shows each channel description below its icon and title", () => {

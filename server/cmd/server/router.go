@@ -1220,6 +1220,31 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		slog.Info("vcs integration disabled (PATCHBAY_VCS_SECRET_KEY not set)")
 	}
 
+	// Linear OAuth credentials and the at-rest key form one fail-closed unit.
+	// Feature-flag exposure is separate, allowing operators to provision and
+	// validate secrets before enabling the product surface.
+	if linearKey, err := secretbox.LoadKey("PATCHBAY_LINEAR_SECRET_KEY"); err == nil {
+		box, boxErr := secretbox.New(linearKey)
+		if boxErr != nil {
+			slog.Error("linear: secretbox.New failed; integration disabled", "error", boxErr)
+		} else {
+			h.LinearSecretBox = box
+			h.LinearClientID = strings.TrimSpace(os.Getenv("LINEAR_CLIENT_ID"))
+			h.LinearClientSecret = strings.TrimSpace(os.Getenv("LINEAR_CLIENT_SECRET"))
+			h.LinearWebhookSecret = strings.TrimSpace(os.Getenv("LINEAR_WEBHOOK_SECRET"))
+			h.LinearPullEnabled = envBool("PATCHBAY_LINEAR_PULL_IMPORT_ENABLED", true)
+			h.LinearPushEnabled = envBool("PATCHBAY_LINEAR_PUSH_ENABLED", false)
+			if h.LinearClientID == "" || h.LinearClientSecret == "" || h.LinearWebhookSecret == "" {
+				slog.Warn("linear integration credentials incomplete; integration disabled")
+				h.LinearSecretBox = nil
+			} else {
+				slog.Info("linear integration configured")
+			}
+		}
+	} else {
+		slog.Info("linear integration disabled (PATCHBAY_LINEAR_SECRET_KEY not set)")
+	}
+
 	// Plugin secrets use a dedicated deployment key. Keeping this separate from
 	// VCS and channel secrets gives operators an isolated rotation and blast
 	// radius; without it, saving a `secret` config field fails closed rather
@@ -1470,6 +1495,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// Auth group made a missing cookie a hard 401, breaking the flow for exactly
 	// the browsers above; the other four composio endpoints stay session-gated.
 	r.Get("/api/integrations/composio/callback", h.ComposioCallback)
+	// Linear redirects and webhooks carry their own short-lived state or HMAC
+	// credential and therefore cannot depend on a Patchbay browser session.
+	r.Get("/api/linear/oauth/callback", h.LinearOAuthCallback)
+	r.Post("/api/webhooks/linear", h.HandleLinearWebhook)
 
 	// Daemon API routes (require daemon token or valid user token)
 	r.Route("/api/daemon", func(r chi.Router) {
@@ -1754,11 +1783,26 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				// and is registered outside this workspace group.
 				r.Group(func(r chi.Router) {
 					r.Use(middleware.RequireWorkspaceMemberFromURL(queries, "id"))
+					r.Get("/linear", h.GetLinearConnection)
+					r.Get("/linear/catalog", h.GetLinearCatalog)
+					r.Get("/linear/bindings", h.ListLinearBindings)
+					r.Get("/linear/members", h.ListLinearMemberBindings)
+					r.Get("/linear/conflicts", h.ListLinearSyncConflicts)
 					r.Get("/slack/installations", h.ListSlackInstallations)
 					r.Get("/wecom/installations", h.ListWecomInstallations)
 				})
 				r.Group(func(r chi.Router) {
 					r.Use(middleware.RequireWorkspaceRoleFromURL(queries, "id", "owner", "admin"))
+					r.Post("/linear/connect", h.ConnectLinear)
+					r.Delete("/linear", h.DisconnectLinear)
+					r.Post("/linear/dry-run", h.DryRunLinearBinding)
+					r.Post("/linear/bindings", h.CreateLinearBinding)
+					r.Patch("/linear/bindings/{bindingId}", h.UpdateLinearBinding)
+					r.Delete("/linear/bindings/{bindingId}", h.DeleteLinearBinding)
+					r.Post("/linear/bindings/{bindingId}/import", h.QueueLinearInitialImport)
+					r.Put("/linear/members", h.UpsertLinearMemberBinding)
+					r.Delete("/linear/members/{userId}", h.DeleteLinearMemberBinding)
+					r.Patch("/linear/conflicts/{conflictId}", h.ResolveLinearSyncConflict)
 					r.Delete("/slack/installations/{installationId}", h.RevokeSlackInstallation)
 					r.Post("/slack/install/byo", h.RegisterSlackBYO)
 					r.Delete("/wecom/installations/{installationId}", h.RevokeWecomInstallation)

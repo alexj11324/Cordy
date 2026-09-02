@@ -186,6 +186,20 @@ import type {
   ListGitHubInstallationsResponse,
   ListGitHubRepositoriesResponse,
   GitHubConnectResponse,
+  LinearCatalogResponse,
+  LinearConnectResponse,
+  LinearConnectionResponse,
+  LinearDryRunResponse,
+  LinearInitialImportResponse,
+  LinearMemberBinding,
+  LinearProjectBinding,
+  LinearSyncConflict,
+  ListLinearBindingsResponse,
+  ListLinearMemberBindingsResponse,
+  ListLinearSyncConflictsResponse,
+  ResolveLinearSyncConflictRequest,
+  SaveLinearMemberBindingRequest,
+  SaveLinearProjectBindingRequest,
   ListVCSConnectionsResponse,
   ConnectVCSRequest,
   ConnectVCSResponse,
@@ -455,6 +469,27 @@ import {
   EMPTY_RESOURCE_LABELS_RESPONSE,
   GitHubConnectResponseSchema,
   ListGitHubInstallationsResponseSchema,
+  EMPTY_LINEAR_CATALOG_RESPONSE,
+  EMPTY_LINEAR_CONNECT_RESPONSE,
+  EMPTY_LINEAR_CONNECTION_RESPONSE,
+  EMPTY_LINEAR_DRY_RUN_RESPONSE,
+  EMPTY_LINEAR_INITIAL_IMPORT_RESPONSE,
+  EMPTY_LINEAR_MEMBER_BINDING,
+  EMPTY_LINEAR_PROJECT_BINDING,
+  EMPTY_LIST_LINEAR_BINDINGS_RESPONSE,
+  EMPTY_LIST_LINEAR_MEMBER_BINDINGS_RESPONSE,
+  EMPTY_LIST_LINEAR_SYNC_CONFLICTS_RESPONSE,
+  LinearCatalogResponseSchema,
+  LinearConnectResponseSchema,
+  LinearConnectionResponseSchema,
+  LinearDryRunResponseSchema,
+  LinearInitialImportResponseSchema,
+  LinearMemberBindingSchema,
+  LinearProjectBindingSchema,
+  LinearSyncConflictSchema,
+  ListLinearBindingsResponseSchema,
+  ListLinearMemberBindingsResponseSchema,
+  ListLinearSyncConflictsResponseSchema,
   ListGitHubRepositoriesResponseSchema,
   EMPTY_GITHUB_CONNECT_RESPONSE,
   EMPTY_LIST_GITHUB_INSTALLATIONS_RESPONSE,
@@ -4698,6 +4733,222 @@ export class ApiClient {
 
   async deleteGitHubInstallation(workspaceId: string, installationId: string): Promise<void> {
     await this.fetch(`/api/workspaces/${workspaceId}/github/installations/${installationId}`, {
+      method: "DELETE",
+    });
+  }
+
+  // Linear installation and project bindings
+  async getLinearConnection(workspaceId: string): Promise<LinearConnectionResponse> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/linear`);
+    return parseWithFallback(
+      raw,
+      LinearConnectionResponseSchema,
+      EMPTY_LINEAR_CONNECTION_RESPONSE,
+      { endpoint: "GET /api/workspaces/:id/linear" },
+    );
+  }
+
+  async connectLinear(workspaceId: string): Promise<LinearConnectResponse> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/linear/connect`,
+      { method: "POST" },
+    );
+    return parseWithFallback(
+      raw,
+      LinearConnectResponseSchema,
+      EMPTY_LINEAR_CONNECT_RESPONSE,
+      { endpoint: "POST /api/workspaces/:id/linear/connect" },
+    );
+  }
+
+  async disconnectLinear(workspaceId: string): Promise<void> {
+    await this.fetch(`/api/workspaces/${workspaceId}/linear`, { method: "DELETE" });
+  }
+
+  async getLinearCatalog(workspaceId: string): Promise<LinearCatalogResponse> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/linear/catalog`,
+    );
+    return parseWithFallback(
+      raw,
+      LinearCatalogResponseSchema,
+      EMPTY_LINEAR_CATALOG_RESPONSE,
+      { endpoint: "GET /api/workspaces/:id/linear/catalog" },
+    );
+  }
+
+  async listLinearMemberBindings(
+    workspaceId: string,
+  ): Promise<ListLinearMemberBindingsResponse> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/linear/members`,
+    );
+    return parseWithFallback(
+      raw,
+      ListLinearMemberBindingsResponseSchema,
+      EMPTY_LIST_LINEAR_MEMBER_BINDINGS_RESPONSE,
+      { endpoint: "GET /api/workspaces/:id/linear/members" },
+    );
+  }
+
+  async saveLinearMemberBinding(
+    workspaceId: string,
+    body: SaveLinearMemberBindingRequest,
+  ): Promise<LinearMemberBinding> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/linear/members`,
+      { method: "PUT", body: JSON.stringify(body) },
+    );
+    return parseWithFallback(
+      raw,
+      LinearMemberBindingSchema,
+      EMPTY_LINEAR_MEMBER_BINDING,
+      { endpoint: "PUT /api/workspaces/:id/linear/members" },
+    );
+  }
+
+  async deleteLinearMemberBinding(
+    workspaceId: string,
+    patchbayUserId: string,
+  ): Promise<void> {
+    await this.fetch(
+      `/api/workspaces/${workspaceId}/linear/members/${patchbayUserId}`,
+      { method: "DELETE" },
+    );
+  }
+
+  async listLinearSyncConflicts(
+    workspaceId: string,
+    status: "open" | "resolved" | "dismissed" | undefined = "open",
+  ): Promise<ListLinearSyncConflictsResponse> {
+    const query = status ? `?status=${encodeURIComponent(status)}` : "";
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/linear/conflicts${query}`,
+    );
+    return parseWithFallback(
+      raw,
+      ListLinearSyncConflictsResponseSchema,
+      EMPTY_LIST_LINEAR_SYNC_CONFLICTS_RESPONSE,
+      { endpoint: "GET /api/workspaces/:id/linear/conflicts" },
+    );
+  }
+
+  async resolveLinearSyncConflict(
+    workspaceId: string,
+    conflictId: string,
+    body: ResolveLinearSyncConflictRequest,
+  ): Promise<LinearSyncConflict> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/linear/conflicts/${conflictId}`,
+      { method: "PATCH", body: JSON.stringify(body) },
+    );
+    return parseWithFallback(
+      raw,
+      LinearSyncConflictSchema,
+      {
+        id: "",
+        workspace_id: "",
+        binding_id: "",
+        link_id: "",
+        patchbay_issue_id: "",
+        linear_issue_id: "",
+        linear_identifier: null,
+        field: "",
+        base_value: null,
+        local_value: null,
+        remote_value: null,
+        source_event_id: "",
+        source_event_at_ms: null,
+        status: "",
+        resolution: null,
+        resolved_value: null,
+        resolved_by_id: null,
+        created_at: "",
+        updated_at: "",
+      },
+      { endpoint: "PATCH /api/workspaces/:id/linear/conflicts/:conflictId" },
+    );
+  }
+
+  async dryRunLinearBinding(
+    workspaceId: string,
+    body: SaveLinearProjectBindingRequest,
+  ): Promise<LinearDryRunResponse> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/linear/dry-run`,
+      { method: "POST", body: JSON.stringify(body) },
+    );
+    return parseWithFallback(
+      raw,
+      LinearDryRunResponseSchema,
+      EMPTY_LINEAR_DRY_RUN_RESPONSE,
+      { endpoint: "POST /api/workspaces/:id/linear/dry-run" },
+    );
+  }
+
+  async enqueueLinearInitialImport(
+    workspaceId: string,
+    bindingId: string,
+  ): Promise<LinearInitialImportResponse> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/linear/bindings/${bindingId}/import`,
+      { method: "POST" },
+    );
+    return parseWithFallback(
+      raw,
+      LinearInitialImportResponseSchema,
+      EMPTY_LINEAR_INITIAL_IMPORT_RESPONSE,
+      { endpoint: "POST /api/workspaces/:id/linear/bindings/:bindingId/import" },
+    );
+  }
+
+  async listLinearBindings(workspaceId: string): Promise<ListLinearBindingsResponse> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/linear/bindings`,
+    );
+    return parseWithFallback(
+      raw,
+      ListLinearBindingsResponseSchema,
+      EMPTY_LIST_LINEAR_BINDINGS_RESPONSE,
+      { endpoint: "GET /api/workspaces/:id/linear/bindings" },
+    );
+  }
+
+  async createLinearBinding(
+    workspaceId: string,
+    body: SaveLinearProjectBindingRequest,
+  ): Promise<LinearProjectBinding> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/linear/bindings`,
+      { method: "POST", body: JSON.stringify(body) },
+    );
+    return parseWithFallback(
+      raw,
+      LinearProjectBindingSchema,
+      EMPTY_LINEAR_PROJECT_BINDING,
+      { endpoint: "POST /api/workspaces/:id/linear/bindings" },
+    );
+  }
+
+  async updateLinearBinding(
+    workspaceId: string,
+    bindingId: string,
+    body: SaveLinearProjectBindingRequest,
+  ): Promise<LinearProjectBinding> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/linear/bindings/${bindingId}`,
+      { method: "PATCH", body: JSON.stringify(body) },
+    );
+    return parseWithFallback(
+      raw,
+      LinearProjectBindingSchema,
+      EMPTY_LINEAR_PROJECT_BINDING,
+      { endpoint: "PATCH /api/workspaces/:id/linear/bindings/:bindingId" },
+    );
+  }
+
+  async deleteLinearBinding(workspaceId: string, bindingId: string): Promise<void> {
+    await this.fetch(`/api/workspaces/${workspaceId}/linear/bindings/${bindingId}`, {
       method: "DELETE",
     });
   }

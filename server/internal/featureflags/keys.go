@@ -23,6 +23,10 @@ const (
 	// gate pinned Task/Run execution: disabling discovery and management must not
 	// mutate an immutable execution manifest that is already in flight.
 	PluginsV1 = "plugins_v1"
+	// LinearInstallationFoundation gates the workspace Linear connection,
+	// project-binding, import, and conflict-resolution surfaces while operators
+	// provision OAuth and webhook credentials.
+	LinearInstallationFoundation = "linear_installation_foundation"
 	// agentBuilderCompat is no longer a release flag. Keep publishing the key
 	// as enabled so installed desktop clients that still gate the AI creation
 	// entry on this config decision receive the permanently enabled behavior.
@@ -44,6 +48,11 @@ var frontendPublicFlags = []string{
 	BillingWorkspaceSubscriptions,
 	ComposioMCPApps,
 	PluginsV1,
+	LinearInstallationFoundation,
+}
+
+func LinearInstallationFoundationEnabled(ctx context.Context, flags *featureflag.Service) bool {
+	return flags.IsEnabled(ctx, LinearInstallationFoundation, false)
 }
 
 func BillingWorkspaceSubscriptionsEnabled(ctx context.Context, flags *featureflag.Service) bool {

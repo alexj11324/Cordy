@@ -9,10 +9,17 @@ import { VCSTab } from "./vcs-tab";
 import { WecomTab } from "./wecom-tab";
 import { WeixinTab } from "./weixin-tab";
 import { TelegramTab } from "./telegram-tab";
+import { LinearIntegrationCard } from "./linear-tab";
 import { ApiError } from "@patchbay/core/api";
+import { useAuthStore } from "@patchbay/core/auth";
 import { composioToolkitsOptions } from "@patchbay/core/composio";
+import { useCurrentWorkspace } from "@patchbay/core/paths";
+import { memberListOptions } from "@patchbay/core/workspace/queries";
 import { useConfigStore, useFeatureEnabled } from "@patchbay/core/config";
-import { COMPOSIO_MCP_APPS_FLAG } from "@patchbay/core/feature-flags";
+import {
+  COMPOSIO_MCP_APPS_FLAG,
+  LINEAR_INSTALLATION_FOUNDATION_FLAG,
+} from "@patchbay/core/feature-flags";
 import { useT } from "../../i18n";
 import { SettingsSection, SettingsTab } from "./settings-layout";
 import { IntegrationChannelIcon } from "./integration-channel-icon";
@@ -26,7 +33,18 @@ import { IntegrationChannelIcon } from "./integration-channel-icon";
 // integration owns its own description and install flow.
 export function IntegrationsTab() {
   const { t } = useT("settings");
-
+  const linearEnabled = useFeatureEnabled(
+    LINEAR_INSTALLATION_FOUNDATION_FLAG,
+    false,
+  );
+  const wsId = useCurrentWorkspace()?.id ?? "";
+  const user = useAuthStore((state) => state.user);
+  const members = useQuery({
+    ...memberListOptions(wsId),
+    enabled: linearEnabled && !!wsId,
+  });
+  const currentMember = members.data?.find((member) => member.user_id === user?.id);
+  const canManage = currentMember?.role === "owner" || currentMember?.role === "admin";
   const composioEnabled = useFeatureEnabled(COMPOSIO_MCP_APPS_FLAG, false);
   const composioToolkits = useQuery({
     ...composioToolkitsOptions(),
@@ -83,6 +101,23 @@ export function IntegrationsTab() {
       {vcsAvailable && (
         <SettingsSection title={t(($) => $.vcs.section_title)}>
           <VCSTab />
+        </SettingsSection>
+      )}
+      {linearEnabled && (
+        <SettingsSection
+          title={
+            <span className="flex items-center gap-2">
+              <IntegrationChannelIcon channel="linear" />
+              {t(($) => $.page.linear.title)}
+            </span>
+          }
+          description={t(($) => $.page.linear.description)}
+        >
+          <LinearIntegrationCard
+            canManage={canManage}
+            isGuest={!user}
+            workspaceId={wsId}
+          />
         </SettingsSection>
       )}
       <SettingsSection

@@ -377,6 +377,15 @@ type Handler struct {
 	// error rather than silently storing plaintext. Wired in
 	// cmd/server/router.go after New.
 	VCSSecretBox *secretbox.Box
+	// LinearSecretBox encrypts OAuth tokens and PKCE verifiers at rest. The
+	// remaining fields are populated together at boot; handlers fail closed
+	// when any required deployment credential is absent.
+	LinearSecretBox     *secretbox.Box
+	LinearClientID      string
+	LinearClientSecret  string
+	LinearWebhookSecret string
+	LinearPullEnabled   bool
+	LinearPushEnabled   bool
 	// PluginSurfaceTokens seal short-lived launch claims. Nil disables surface
 	// launches; wired from a domain-separated PATCHBAY_PLUGIN_SECRET_KEY at boot.
 	PluginSurfaceTokens *secretbox.Box

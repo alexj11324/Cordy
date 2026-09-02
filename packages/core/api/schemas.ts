@@ -51,6 +51,16 @@ import type {
   GroupedIssuesResponse,
   GitHubConnectResponse,
   GitHubPullRequest,
+  LinearCatalogResponse,
+  LinearConnectResponse,
+  LinearConnectionResponse,
+  LinearDryRunResponse,
+  LinearInitialImportResponse,
+  LinearMemberBinding,
+  LinearProjectBinding,
+  ListLinearBindingsResponse,
+  ListLinearMemberBindingsResponse,
+  ListLinearSyncConflictsResponse,
   InboxItem,
   InboxWorkspaceUnread,
   Label,
@@ -407,6 +417,240 @@ export const GitHubConnectResponseSchema = z.object({
 
 export const EMPTY_GITHUB_CONNECT_RESPONSE: GitHubConnectResponse = {
   configured: false,
+};
+const LinearConnectionSchema = z.object({
+  id: z.string(),
+  workspace_id: z.string(),
+  organization_id: z.string(),
+  organization_name: z.string(),
+  actor_id: z.string(),
+  scopes: z.array(z.string()).default([]),
+  webhook_id: z.string().nullable(),
+  status: z.string(),
+  token_expires_at: z.string(),
+  last_success_at: z.string().nullable(),
+  last_error: z.string().nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+}).loose();
+
+export const LinearConnectionResponseSchema = z.object({
+  configured: z.boolean().default(false),
+  connected: z.boolean().default(false),
+  pull_import_enabled: z.boolean().default(false),
+  push_enabled: z.boolean().default(false),
+  connection: LinearConnectionSchema.nullable().default(null),
+}).loose();
+
+export const EMPTY_LINEAR_CONNECTION_RESPONSE: LinearConnectionResponse = {
+  configured: false,
+  connected: false,
+  pull_import_enabled: false,
+  push_enabled: false,
+  connection: null,
+};
+
+export const LinearConnectResponseSchema = z.object({
+  authorization_url: z.string().default(""),
+  state_expires_at: z.string().default(""),
+}).loose();
+
+export const EMPTY_LINEAR_CONNECT_RESPONSE: LinearConnectResponse = {
+  authorization_url: "",
+  state_expires_at: "",
+};
+
+const LinearCatalogTeamSchema = z.object({
+  id: z.string(),
+  key: z.string(),
+  name: z.string(),
+}).loose();
+
+const LinearCatalogProjectSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+}).loose();
+
+const LinearCatalogStateSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  // Keep this open: Linear may add workflow categories.
+  type: z.string(),
+  color: z.string(),
+}).loose();
+
+const LinearCatalogUserSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string().nullable(),
+}).loose();
+
+const LinearCatalogLabelSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  color: z.string(),
+  is_group: z.boolean(),
+  parent_id: z.string().nullable(),
+  team_id: z.string().nullable(),
+}).loose();
+
+export const LinearCatalogResponseSchema = z.object({
+  teams: z.array(LinearCatalogTeamSchema).default([]),
+  projects: z.array(LinearCatalogProjectSchema).default([]),
+  states: z.array(LinearCatalogStateSchema).default([]),
+  users: z.array(LinearCatalogUserSchema).default([]),
+  labels: z.array(LinearCatalogLabelSchema).default([]),
+}).loose();
+
+export const EMPTY_LINEAR_CATALOG_RESPONSE: LinearCatalogResponse = {
+  teams: [],
+  projects: [],
+  states: [],
+  users: [],
+  labels: [],
+};
+
+export const LinearMemberBindingSchema = z.object({
+  id: z.string(),
+  workspace_id: z.string(),
+  connection_id: z.string(),
+  patchbay_user_id: z.string(),
+  linear_user_id: z.string(),
+  created_at: z.string(),
+  updated_at: z.string(),
+}).loose();
+
+export const ListLinearMemberBindingsResponseSchema = z.object({
+  bindings: z.array(LinearMemberBindingSchema).default([]),
+}).loose();
+
+export const EMPTY_LINEAR_MEMBER_BINDING: LinearMemberBinding = {
+  id: "",
+  workspace_id: "",
+  connection_id: "",
+  patchbay_user_id: "",
+  linear_user_id: "",
+  created_at: "",
+  updated_at: "",
+};
+
+export const EMPTY_LIST_LINEAR_MEMBER_BINDINGS_RESPONSE: ListLinearMemberBindingsResponse = {
+  bindings: [],
+};
+
+export const LinearSyncConflictSchema = z.object({
+  id: z.string(),
+  workspace_id: z.string(),
+  binding_id: z.string(),
+  link_id: z.string(),
+  patchbay_issue_id: z.string(),
+  linear_issue_id: z.string(),
+  linear_identifier: z.string().nullable().default(null),
+  field: z.string(),
+  base_value: z.unknown(),
+  local_value: z.unknown(),
+  remote_value: z.unknown(),
+  source_event_id: z.string(),
+  source_event_at_ms: z.number().int().nullable(),
+  status: z.string(),
+  resolution: z.string().nullable(),
+  resolved_value: z.unknown().nullable(),
+  resolved_by_id: z.string().nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+}).loose();
+
+export const ListLinearSyncConflictsResponseSchema = z.object({
+  conflicts: z.array(LinearSyncConflictSchema).default([]),
+}).loose();
+
+export const EMPTY_LIST_LINEAR_SYNC_CONFLICTS_RESPONSE: ListLinearSyncConflictsResponse = {
+  conflicts: [],
+};
+
+export const LinearDryRunResponseSchema = z.object({
+  patchbay_project_id: z.string(),
+  linear_project_id: z.string(),
+  sync_mode: z.string(),
+  initial_source_of_truth: z.string().nullable(),
+  local_issue_count: z.number().int().nonnegative(),
+  remote_issue_count: z.number().int().nonnegative(),
+  remote_issue_count_truncated: z.boolean(),
+  candidate_import_count: z.number().int().nonnegative(),
+  candidate_publish_count: z.number().int().nonnegative(),
+  unmapped_remote_status_count: z.number().int().nonnegative(),
+  exact_link_counts_available: z.boolean(),
+}).loose();
+
+export const EMPTY_LINEAR_DRY_RUN_RESPONSE: LinearDryRunResponse = {
+  patchbay_project_id: "",
+  linear_project_id: "",
+  sync_mode: "not_synced",
+  initial_source_of_truth: null,
+  local_issue_count: 0,
+  remote_issue_count: 0,
+  remote_issue_count_truncated: false,
+  candidate_import_count: 0,
+  candidate_publish_count: 0,
+  unmapped_remote_status_count: 0,
+  exact_link_counts_available: false,
+};
+
+export const LinearInitialImportResponseSchema = z.object({
+  queued: z.boolean(),
+  inbox_id: z.string(),
+}).loose();
+
+export const EMPTY_LINEAR_INITIAL_IMPORT_RESPONSE: LinearInitialImportResponse = {
+  queued: false,
+  inbox_id: "",
+};
+
+export const LinearProjectBindingSchema = z.object({
+  id: z.string(),
+  workspace_id: z.string(),
+  connection_id: z.string(),
+  patchbay_project_id: z.string(),
+  linear_project_id: z.string(),
+  linear_team_id: z.string().nullable(),
+  // Keep provider state/mode forward-compatible at the response boundary.
+  status: z.string(),
+  sync_mode: z.string(),
+  initial_source_of_truth: z.string().nullable(),
+  status_mapping: z.record(z.string(), z.unknown()).default({}),
+  agent_label_mapping: z.record(z.string(), z.unknown()).default({}),
+  activated_at: z.string().nullable(),
+  paused_at: z.string().nullable(),
+  created_by_id: z.string(),
+  created_at: z.string(),
+  updated_at: z.string(),
+}).loose();
+
+export const EMPTY_LINEAR_PROJECT_BINDING: LinearProjectBinding = {
+  id: "",
+  workspace_id: "",
+  connection_id: "",
+  patchbay_project_id: "",
+  linear_project_id: "",
+  linear_team_id: null,
+  status: "draft",
+  sync_mode: "not_synced",
+  initial_source_of_truth: null,
+  status_mapping: {},
+  agent_label_mapping: {},
+  activated_at: null,
+  paused_at: null,
+  created_by_id: "",
+  created_at: "",
+  updated_at: "",
+};
+
+export const ListLinearBindingsResponseSchema = z.object({
+  bindings: z.array(LinearProjectBindingSchema).default([]),
+}).loose();
+
+export const EMPTY_LIST_LINEAR_BINDINGS_RESPONSE: ListLinearBindingsResponse = {
+  bindings: [],
 };
 
 export const GitHubRepositorySchema = z.object({
