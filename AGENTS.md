@@ -2,9 +2,9 @@
 
 This file provides guidance to AI agents when working with code in this repository.
 
-> **Single source of truth:** This file is a concise pointer document.
-> All authoritative architecture, coding rules, and conventions
-> live in **CLAUDE.md** at the project root. Read that file first.
+> **Single source of truth:** This file is the entry point for repository agent
+> rules. Read **CLAUDE.md** at the project root for the expanded architecture,
+> coding, testing, and release requirements referenced by this file.
 > Use `Makefile`, `package.json`, and `pnpm-workspace.yaml` as the
 > source of truth for the full command list.
 
@@ -54,4 +54,25 @@ make test             # Go tests
 make check            # Full verification pipeline
 ```
 
-See CLAUDE.md for the authoritative rules and common commands.
+See CLAUDE.md for the expanded rules and common commands incorporated by this
+entry point.
+
+### Agent Toolchains and Temporary Storage
+
+- Keep the system `/tmp` tmpfs at 1 GiB. Do not resize or remount it for builds.
+- Large or executable temporary build files must use a root-backed per-user
+  directory such as `${XDG_CACHE_HOME:-$HOME/.cache}/codex-tmp-10g`; export that
+  path as `TMPDIR` for the command. Provision it with roughly 10 GiB of free
+  root-disk capacity, but do not treat the name as a quota guarantee.
+- `/tmp` may be mounted `noexec`; never assume a compiler or test runner can
+  execute binaries emitted there.
+- Use the repository-required tool versions. Check existing per-user toolchain
+  caches before downloading or upgrading tools; this branch currently targets
+  Node 22 and the latest Go 1.26 patch selected by CI.
+- Put Go download/build caches and the pnpm store on root-backed per-user cache
+  paths. These immutable/content-addressed caches may be shared, while each
+  worktree must retain isolated `node_modules`, build outputs, databases, ports,
+  processes, and runtime state.
+- Do not hard-code a developer's absolute home directory in scripts or tracked
+  configuration. Resolve cache paths from `XDG_CACHE_HOME` or `HOME` and allow
+  explicit environment overrides.
