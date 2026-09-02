@@ -191,6 +191,10 @@ type Handler struct {
 	PluginService          *service.PluginService
 	IssueService           *service.IssueService
 	AutomationService      *service.AutomationService
+	// ProviderAuthorization decides who may spend a runtime's provider
+	// credential and records why. Never nil after New; the daemon
+	// pre-operation gate depends on it being present to fail closed.
+	ProviderAuthorization *service.ProviderAuthorizationService
 	// Entitlements supplies workspace-scoped commercial gates. A nil provider
 	// preserves self-hosted behavior without extra reads.
 	Entitlements entitlement.Provider
@@ -474,6 +478,7 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 		PluginService:                service.NewPluginService(queries, txStarter),
 		IssueService:                 service.NewIssueService(queries, txStarter, bus, analyticsClient, taskSvc),
 		AutomationService:            service.NewAutomationService(queries, txStarter, bus, taskSvc),
+		ProviderAuthorization:        service.NewProviderAuthorizationService(queries),
 		EmailService:                 emailService,
 		UpdateStore:                  NewInMemoryUpdateStore(),
 		ModelListStore:               NewInMemoryModelListStore(),

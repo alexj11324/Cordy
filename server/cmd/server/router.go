@@ -1533,6 +1533,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Post("/tasks/claim", h.ClaimTasksByRuntime)
 		r.Post("/claim", h.ClaimTasksByRuntime)
 		r.Post("/runtimes/{runtimeId}/tasks/{taskId}/prepare-lease", h.ExtendTaskPrepareLease)
+		// Pre-operation gate for anything that spends the runtime's provider
+		// credential. The daemon calls it with the capability lease it was
+		// handed at claim time; 200 is the only answer that authorizes the
+		// operation to run.
+		r.Post("/runtimes/{runtimeId}/tasks/{taskId}/provider-authorization", h.AuthorizeProviderOperation)
 		r.Post("/runtimes/{runtimeId}/tasks/{taskId}/skill-bundles/resolve", h.ResolveTaskSkillBundles)
 		r.Get("/runtimes/{runtimeId}/tasks/pending", h.ListPendingTasksByRuntime)
 		r.Post("/runtimes/{runtimeId}/update/{updateId}/result", h.ReportUpdateResult)
@@ -2325,6 +2330,19 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Post("/nodes/reboot", h.RebootCloudRuntimeNode)
 				r.Post("/nodes/status", h.GetCloudRuntimeNodeStatus)
 				r.Post("/nodes/exec", h.ExecCloudRuntimeNode)
+			})
+
+			// Provider authorization control plane. Human actors only: a
+			// task token must never be able to widen the authority of the
+			// task it belongs to, and these routes are exactly the surface
+			// that would let it.
+			r.Route("/api/provider-authorizations", func(r chi.Router) {
+				r.Use(handler.RequireHumanActor)
+				r.Get("/", h.ListProviderAuthorizationGrants)
+				r.Post("/", h.CreateProviderAuthorizationGrant)
+				r.Get("/decisions/{decisionId}", h.ExplainProviderAuthorizationDecision)
+				r.Delete("/leases/{leaseId}", h.RevokeProviderCapabilityLease)
+				r.Delete("/{grantId}", h.RevokeProviderAuthorizationGrant)
 			})
 
 			// Tasks (user-facing, with ownership check)
