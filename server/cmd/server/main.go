@@ -669,6 +669,9 @@ func main() {
 	if h.SeatCapacityWorker != nil {
 		go h.SeatCapacityWorker.Run(sweepCtx)
 	}
+	if h.LinearWorker != nil {
+		go h.LinearWorker.Run(sweepCtx)
+	}
 	if h.TelegramOutbound != nil {
 		h.TelegramOutbound.Start(sweepCtx)
 	}

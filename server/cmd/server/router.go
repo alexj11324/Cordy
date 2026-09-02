@@ -31,6 +31,7 @@ import (
 	composiointeg "github.com/patchbay-ai/patchbay/server/internal/integrations/composio"
 	"github.com/patchbay-ai/patchbay/server/internal/integrations/dingtalk"
 	"github.com/patchbay-ai/patchbay/server/internal/integrations/lark"
+	linearapi "github.com/patchbay-ai/patchbay/server/internal/integrations/linear"
 	"github.com/patchbay-ai/patchbay/server/internal/integrations/slack"
 	"github.com/patchbay-ai/patchbay/server/internal/integrations/telegram"
 	"github.com/patchbay-ai/patchbay/server/internal/integrations/wecom"
@@ -47,6 +48,7 @@ import (
 	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 	"github.com/patchbay-ai/patchbay/server/pkg/featureflag"
 	"github.com/patchbay-ai/patchbay/server/pkg/llm"
+	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
 	publicapiv1 "github.com/patchbay-ai/patchbay/server/pkg/publicapi/v1"
 )
 
@@ -1238,6 +1240,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				slog.Warn("linear integration credentials incomplete; integration disabled")
 				h.LinearSecretBox = nil
 			} else {
+				h.LinearWorker = handler.NewLinearWorker(pool, pool, box, linearapi.NewHTTPClient(nil), h.LinearClientID, h.LinearClientSecret, h.LinearPullEnabled, h.LinearPushEnabled)
+				bus.Subscribe(protocol.EventIssueCreated, func(events.Event) { h.LinearWorker.Wake() })
+				bus.Subscribe(protocol.EventIssueUpdated, func(events.Event) { h.LinearWorker.Wake() })
+				bus.Subscribe(protocol.EventIssueDeleted, func(events.Event) { h.LinearWorker.Wake() })
 				slog.Info("linear integration configured")
 			}
 		}

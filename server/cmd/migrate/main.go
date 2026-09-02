@@ -348,6 +348,7 @@ var concurrentIndexCleanups = map[string]string{
 	"556_uq_linear_sync_conflict_open":                          "uq_linear_sync_conflict_open",
 	"557_idx_linear_sync_conflict_list":                         "idx_linear_sync_conflict_list",
 	"558_uq_linear_sync_conflict_id":                            "uq_linear_sync_conflict_id",
+	"560_idx_linear_sync_outbox_pending_issue":                  "idx_linear_sync_outbox_pending_issue",
 }
 
 // concurrentDownIndexCleanups covers every migration whose down direction

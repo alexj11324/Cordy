@@ -386,6 +386,7 @@ type Handler struct {
 	LinearWebhookSecret string
 	LinearPullEnabled   bool
 	LinearPushEnabled   bool
+	LinearWorker        *LinearWorker
 	// PluginSurfaceTokens seal short-lived launch claims. Nil disables surface
 	// launches; wired from a domain-separated PATCHBAY_PLUGIN_SECRET_KEY at boot.
 	PluginSurfaceTokens *secretbox.Box

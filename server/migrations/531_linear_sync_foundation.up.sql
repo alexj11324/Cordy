@@ -1,7 +1,7 @@
 -- Linear OAuth, project mapping, and durable sync state. All relationships
 -- are validated and cleaned up by application transactions; no database FKs.
 CREATE TABLE linear_connection (
-    id UUID NOT NULL,
+    id UUID NOT NULL DEFAULT gen_random_uuid(),
     workspace_id UUID NOT NULL,
     organization_id TEXT NOT NULL,
     organization_name TEXT NOT NULL,
@@ -21,7 +21,7 @@ CREATE TABLE linear_connection (
 );
 
 CREATE TABLE linear_oauth_state (
-    id UUID NOT NULL,
+    id UUID NOT NULL DEFAULT gen_random_uuid(),
     state_hash TEXT NOT NULL,
     workspace_id UUID NOT NULL,
     user_id UUID NOT NULL,
@@ -33,7 +33,7 @@ CREATE TABLE linear_oauth_state (
 );
 
 CREATE TABLE linear_project_binding (
-    id UUID NOT NULL,
+    id UUID NOT NULL DEFAULT gen_random_uuid(),
     workspace_id UUID NOT NULL,
     connection_id UUID NOT NULL,
     patchbay_project_id UUID NOT NULL,
@@ -55,7 +55,7 @@ CREATE TABLE linear_project_binding (
 );
 
 CREATE TABLE linear_issue_link (
-    id UUID NOT NULL,
+    id UUID NOT NULL DEFAULT gen_random_uuid(),
     workspace_id UUID NOT NULL,
     binding_id UUID NOT NULL,
     patchbay_issue_id UUID NOT NULL,
@@ -72,7 +72,7 @@ CREATE TABLE linear_issue_link (
 );
 
 CREATE TABLE linear_sync_inbox (
-    id UUID NOT NULL,
+    id UUID NOT NULL DEFAULT gen_random_uuid(),
     connection_id UUID NOT NULL,
     delivery_id TEXT NOT NULL,
     event_type TEXT NOT NULL,
@@ -89,7 +89,7 @@ CREATE TABLE linear_sync_inbox (
 );
 
 CREATE TABLE linear_sync_outbox (
-    id UUID NOT NULL,
+    id UUID NOT NULL DEFAULT gen_random_uuid(),
     workspace_id UUID NOT NULL,
     binding_id UUID NOT NULL,
     issue_id UUID NOT NULL,
@@ -109,7 +109,7 @@ CREATE TABLE linear_sync_outbox (
 );
 
 CREATE TABLE linear_member_binding (
-    id UUID NOT NULL,
+    id UUID NOT NULL DEFAULT gen_random_uuid(),
     workspace_id UUID NOT NULL,
     connection_id UUID NOT NULL,
     patchbay_user_id UUID NOT NULL,
@@ -119,7 +119,7 @@ CREATE TABLE linear_member_binding (
 );
 
 CREATE TABLE linear_sync_conflict (
-    id UUID NOT NULL,
+    id UUID NOT NULL DEFAULT gen_random_uuid(),
     workspace_id UUID NOT NULL,
     binding_id UUID NOT NULL,
     link_id UUID NOT NULL,

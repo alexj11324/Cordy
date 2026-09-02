@@ -880,6 +880,9 @@ func (h *Handler) HandleLinearWebhook(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, "failed to persist Linear webhook")
 		return
 	}
+	if tag.RowsAffected() > 0 && h.LinearWorker != nil {
+		h.LinearWorker.Wake()
+	}
 	writeJSON(w, 202, map[string]any{"accepted": true, "duplicate": tag.RowsAffected() == 0})
 }
 
@@ -890,6 +893,23 @@ func (h *Handler) DisconnectLinear(w http.ResponseWriter, r *http.Request) {
 	ws, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "workspace id")
 	if !ok {
 		return
+	}
+	if h.LinearWorker != nil {
+		var sealed []byte
+		if queryErr := h.DB.QueryRow(r.Context(), `SELECT access_token_encrypted FROM linear_connection WHERE workspace_id=$1 AND status<>'revoked' ORDER BY created_at DESC LIMIT 1`, ws).Scan(&sealed); queryErr == nil {
+			token, openErr := h.LinearSecretBox.Open(sealed)
+			if openErr != nil {
+				writeError(w, 500, "failed to open Linear token for revocation")
+				return
+			}
+			if revokeErr := h.LinearWorker.api.RevokeToken(r.Context(), string(token), h.LinearClientID, h.LinearClientSecret); revokeErr != nil {
+				writeError(w, 502, "Linear token revocation failed")
+				return
+			}
+		} else if !errors.Is(queryErr, pgx.ErrNoRows) {
+			writeError(w, 500, "failed to load Linear connection")
+			return
+		}
 	}
 	tx, err := h.TxStarter.Begin(r.Context())
 	if err != nil {
