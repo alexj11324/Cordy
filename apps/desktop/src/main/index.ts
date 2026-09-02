@@ -4,11 +4,15 @@ import { join } from "path";
 import { pathToFileURL } from "url";
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
 import fixPath from "fix-path";
-import { setupAutoUpdater } from "./updater";
-import { setupDaemonManager } from "./daemon-manager";
 import { setupLocalDirectory } from "./local-directory";
 import { setupLocalGuestRuntime } from "./local-guest-runtime";
-import { setupLocalGuestSession } from "./local-guest-session";
+import {
+  setupLocalGuestSession,
+  type LocalGuestSessionController,
+} from "./local-guest-session";
+import { setupLocalGuestRunner } from "./local-guest-runner";
+import { GuestDeepLinkGate } from "./local-guest-deep-link-gate";
+import { LocalWorkspaceGrants } from "./local-guest-workspace";
 import { openExternalSafely, downloadURLSafely } from "./external-url";
 import { installContextMenu } from "./context-menu";
 import { handleAppShortcut } from "./keyboard-shortcuts";
@@ -58,6 +62,7 @@ import {
   parseMainRendererChannelState,
   type MainRendererMessageChannel,
 } from "../shared/main-renderer-messages";
+import type { LocalGuestMode } from "../shared/local-guest";
 import { AuthSessionCoordinator } from "./auth-session-coordinator";
 import {
   NotificationGate,
@@ -143,6 +148,18 @@ const mainRendererMessages = new MainRendererMessageQueue();
 let desktopInitialized = false;
 let authSessionGeneration = 0;
 let cloudServicesEnabled = false;
+let guestSessionController: LocalGuestSessionController | null = null;
+let localGuestRunnerController: ReturnType<typeof setupLocalGuestRunner> | null =
+  null;
+let cloudServicesTeardown: (() => Promise<void> | void) | null = null;
+// Reads the main-owned mode, never a renderer claim: the gate is the only
+// path from a deep link to renderer traffic.
+const guestDeepLinkGate = new GuestDeepLinkGate(
+  mainRendererMessages,
+  (channel, payload) => sendMainRendererMessage(channel, payload),
+  () => guestSessionController?.getMode() ?? "undecided",
+);
+const localWorkspaceGrants = new LocalWorkspaceGrants();
 const rendererRouteContexts = new WeakMap<
   Electron.WebContents,
   RendererRouteContext
@@ -153,11 +170,67 @@ let runtimeConfigResult: RuntimeConfigResult = {
   error: { message: "Runtime config has not loaded yet" },
 };
 
-function enableCloudServices(): void {
+async function enableCloudServices(): Promise<void> {
   if (cloudServicesEnabled) return;
   cloudServicesEnabled = true;
-  setupAutoUpdater(() => mainWindow);
-  setupDaemonManager(() => mainWindow);
+  try {
+    const [{ setupAutoUpdater }, { setupDaemonManager }] = await Promise.all([
+      import("./updater"),
+      import("./daemon-manager"),
+    ]);
+    // A cloud transition can only be requested by the main renderer. Keep the
+    // flag set until both lazy modules are registered so CloudApp never starts
+    // issuing IPC calls against an uninitialised daemon/updater boundary.
+    if (!cloudServicesEnabled) return;
+    const updaterTeardown = setupAutoUpdater(
+      () => mainWindow,
+      () => cloudServicesEnabled,
+    );
+    const daemonTeardown = setupDaemonManager(() => mainWindow);
+    cloudServicesTeardown = async () => {
+      await daemonTeardown();
+      updaterTeardown();
+    };
+  } catch (error) {
+    cloudServicesEnabled = false;
+    throw error;
+  }
+}
+
+async function disableCloudServices(): Promise<void> {
+  cloudServicesEnabled = false;
+  localGuestRunnerController?.cancel();
+  await cloudServicesTeardown?.();
+  cloudServicesTeardown = null;
+  guestDeepLinkGate.rejectCloudTraffic();
+  authSessionCoordinator.reportMain(null);
+}
+
+function isCloudMode(): boolean {
+  return cloudServicesEnabled && guestSessionController?.getMode() === "cloud";
+}
+
+function handleGuestModeChanged(mode: LocalGuestMode): void {
+  // The gate drops every deferred and queued cloud payload for a non-cloud
+  // mode, and only releases them once main itself has entered cloud mode.
+  const releasedDeepLinks = guestDeepLinkGate.applyMode(mode);
+  if (mode === "guest") {
+    authSessionCoordinator.reportMain(null);
+  } else {
+    // Leaving Guest ends the consent that Guest was given. Directory grants
+    // and the local run history are session-scoped local state, so neither the
+    // next Guest nor a cloud account inherits them.
+    localWorkspaceGrants.clear();
+    void localGuestRunnerController?.clear();
+  }
+  if (releasedDeepLinks) {
+    const window = ensureMainWindow();
+    if (window) focusMainWindow(window);
+  }
+  const window = mainWindow;
+  if (window && !window.isDestroyed()) {
+    window.webContents.send("guest-session:mode", mode);
+  }
 }
 
 // --- Deep link helpers ---------------------------------------------------
@@ -187,7 +260,10 @@ function dispatchToMainRenderer(
   channel: MainRendererMessageChannel,
   payload: unknown,
 ): void {
-  mainRendererMessages.enqueue(channel, payload, sendMainRendererMessage);
+  // Every main → renderer payload goes through the Guest gate, including the
+  // ones that do not look like deep links: a notification click is an issue
+  // deep link, and the settings chord targets a cloud-only tab.
+  if (!guestDeepLinkGate.dispatch(channel, payload)) return;
   const window = ensureMainWindow();
   if (window) focusMainWindow(window);
 }
@@ -669,7 +745,7 @@ if (!gotTheLock) {
     // OS shell under the app's intentional webSecurity: false configuration
     // (the renderer itself runs sandboxed).
     ipcMain.handle("shell:openExternal", (event, url: unknown) => {
-      if (!cloudServicesEnabled || !BrowserWindow.fromWebContents(event.sender)) {
+      if (!isCloudMode() || !BrowserWindow.fromWebContents(event.sender)) {
         return;
       }
       if (typeof url !== "string") return;
@@ -684,7 +760,7 @@ if (!gotTheLock) {
 
     ipcMain.handle("window:open-issue", (event, request: unknown) => {
       if (
-        !cloudServicesEnabled ||
+        !isCloudMode() ||
         !BrowserWindow.fromWebContents(event.sender)
       ) {
         return { ok: false, reason: "invalid_request" } as const;
@@ -699,7 +775,7 @@ if (!gotTheLock) {
 
     ipcMain.handle("file:download-url", (event, url: unknown) => {
       const sourceWindow = BrowserWindow.fromWebContents(event.sender);
-      if (!cloudServicesEnabled || !sourceWindow || typeof url !== "string") {
+      if (!isCloudMode() || !sourceWindow || typeof url !== "string") {
         if (!sourceWindow) {
           console.warn(
             "[download] ignored file:download-url — source window torn down",
@@ -857,12 +933,40 @@ if (!gotTheLock) {
       }
     });
 
+    // Load the main-owned Guest mode before creating any renderer. An issue
+    // window must never get a chance to boot CoreProvider while a persisted
+    // local Guest session is active.
+    guestSessionController = await setupLocalGuestSession(
+      () => mainWindow,
+      enableCloudServices,
+      disableCloudServices,
+      handleGuestModeChanged,
+    );
+    if (guestSessionController.getMode() === "guest") {
+      handleGuestModeChanged("guest");
+    }
+    if (
+      guestDeepLinkGate.hasDeferred() &&
+      guestSessionController.getMode() === "undecided"
+    ) {
+      // An auth/invite deep link is an explicit cloud intent. If no persisted
+      // Guest session won the startup race, promote the main-owned mode before
+      // the renderer is created and then deliver only the validated queue.
+      await guestSessionController.enterCloudFromMain();
+    }
     desktopInitialized = true;
     createWindow();
 
-    setupLocalGuestSession(() => mainWindow, enableCloudServices);
+    localGuestRunnerController = setupLocalGuestRunner(
+      () => mainWindow,
+      () => guestSessionController?.getMode() ?? "undecided",
+      localWorkspaceGrants,
+    );
     setupLocalGuestRuntime(() => mainWindow);
-    setupLocalDirectory(() => mainWindow);
+    // The OS directory picker is the only place the user expresses which
+    // directory a local run may touch, so it is also the only place a grant is
+    // created.
+    setupLocalDirectory(() => mainWindow, (path) => localWorkspaceGrants.grant(path));
 
     app.on("activate", () => {
       const window = ensureMainWindow();

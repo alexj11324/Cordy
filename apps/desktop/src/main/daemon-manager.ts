@@ -1371,11 +1371,12 @@ function stopLogTail(): void {
 
 export function setupDaemonManager(
   windowGetter: () => BrowserWindow | null,
-): void {
+): () => Promise<void> {
   getMainWindow = windowGetter;
   void ensureDesktopProfilePermissions().catch((error) => {
     console.error("[daemon] failed to harden Desktop profiles:", error);
   });
+  let active = true;
 
   ipcMain.handle("daemon:set-target-api-url", async (_e, url: string) => {
     return serializeProfileMutation(async () => {
@@ -1479,14 +1480,17 @@ export function setupDaemonManager(
     });
   });
 
-  ipcMain.on("daemon:start-log-stream", () => {
+  const onStartLogStream = () => {
+    if (!active) return;
     const win = getMainWindow();
     if (win) startLogTail(win);
-  });
+  };
+  ipcMain.on("daemon:start-log-stream", onStartLogStream);
 
-  ipcMain.on("daemon:stop-log-stream", () => {
+  const onStopLogStream = () => {
     stopLogTail();
-  });
+  };
+  ipcMain.on("daemon:stop-log-stream", onStopLogStream);
 
   // Reveal the daemon's log file in the user's default editor / Console
   // app. Acts as the escape hatch when the in-app log viewer isn't enough
@@ -1509,7 +1513,8 @@ export function setupDaemonManager(
   void lifecycleOperations.runBackground(() => bootstrapCli());
 
   let isQuitting = false;
-  app.on("before-quit", (event) => {
+  const onBeforeQuit = (event: Electron.Event) => {
+    if (!active) return;
     if (isQuitting) return;
     setDesiredDaemonRunning(false);
     stopPolling();
@@ -1529,5 +1534,44 @@ export function setupDaemonManager(
         app.quit();
       }
     });
-  });
+  };
+  app.on("before-quit", onBeforeQuit);
+
+  return async () => {
+    if (!active) return;
+    active = false;
+    setDesiredDaemonRunning(false, true);
+    stopPolling();
+    stopLogTail();
+    targetApiBaseUrl = null;
+    invalidateActiveProfile();
+    for (const channel of [
+      "daemon:set-target-api-url",
+      "daemon:start",
+      "daemon:stop",
+      "daemon:restart",
+      "daemon:get-status",
+      "daemon:probe-runtimes",
+      "daemon:get-host-name",
+      "daemon:sync-token",
+      "daemon:clear-token",
+      "daemon:reauthenticate",
+      "daemon:is-cli-installed",
+      "daemon:retry-install",
+      "daemon:get-prefs",
+      "daemon:set-prefs",
+      "daemon:auto-start",
+      "daemon:open-log-file",
+    ]) {
+      ipcMain.removeHandler(channel);
+    }
+    ipcMain.removeListener("daemon:start-log-stream", onStartLogStream);
+    ipcMain.removeListener("daemon:stop-log-stream", onStopLogStream);
+    app.removeListener("before-quit", onBeforeQuit);
+    try {
+      await lifecycleOperations.runForeground(() => stopDaemon());
+    } catch {
+      // Best-effort: the process may already be gone or externally managed.
+    }
+  };
 }

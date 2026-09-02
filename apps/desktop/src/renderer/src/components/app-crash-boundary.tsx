@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { ErrorBoundary } from "@patchbay/ui/components/common/error-boundary";
 import { Button } from "@patchbay/ui/components/ui/button";
-import { captureException } from "@patchbay/core/analytics";
 import { DragStrip } from "@patchbay/views/platform";
 
 /**
@@ -28,21 +27,39 @@ import { DragStrip } from "@patchbay/views/platform";
 export function AppCrashBoundary({ children }: { children: ReactNode }) {
   return (
     <ErrorBoundary
-      // captureException, not captureEvent: only `$exception` events pass
-      // through initAnalytics' before_send hook, which drops known-benign
-      // noise, runs redactExceptionProperties over the message and stack, and
-      // fuses repeats via shouldDropException. A plain event would ship a raw
-      // message and stack — which can carry emails, tokenised URLs or typed
-      // user input — straight to storage. Same entry point the web
-      // global-error route uses.
       onError={(error) => {
-        captureException(error, { source: "desktop-renderer-boundary" });
+        void reportCrash(error);
       }}
       fallback={({ error }) => <CrashFallback error={error} />}
     >
       {children}
     </ErrorBoundary>
   );
+}
+
+/**
+ * Cloud analytics is not merely silent in local Guest mode — it is never
+ * reached. The boundary wraps the whole renderer, Guest boot included, so a
+ * static analytics import here would pull posthog-js into the Guest bundle
+ * path and a direct capture would hand it a Guest user's error message and
+ * stack. The gate is main's answer, not a renderer guess, and the import is
+ * deferred behind it.
+ *
+ * captureException, not captureEvent: only `$exception` events pass through
+ * initAnalytics' before_send hook, which drops known-benign noise, runs
+ * redactExceptionProperties over the message and stack, and fuses repeats via
+ * shouldDropException. A plain event would ship a raw message and stack —
+ * which can carry emails, tokenised URLs or typed user input — straight to
+ * storage. Same entry point the web global-error route uses.
+ */
+async function reportCrash(error: Error): Promise<void> {
+  try {
+    if ((await window.desktopAPI.getGuestMode()) !== "cloud") return;
+    const { captureException } = await import("@patchbay/core/analytics");
+    captureException(error, { source: "desktop-renderer-boundary" });
+  } catch {
+    // Reporting a crash must never be the reason the fallback fails to render.
+  }
 }
 
 /**

@@ -34,6 +34,13 @@ vi.mock("electron-updater", () => {
       ctx.handlers.set(event, handlers);
       return autoUpdater;
     }),
+    removeListener: vi.fn((event: string, handler: Handler) => {
+      const handlers = (ctx.handlers.get(event) ?? []).filter(
+        (candidate) => candidate !== handler,
+      );
+      ctx.handlers.set(event, handlers);
+      return autoUpdater;
+    }),
     checkForUpdates: ctx.checkForUpdates,
     downloadUpdate: ctx.downloadUpdate,
     quitAndInstall: ctx.quitAndInstall,
@@ -49,6 +56,9 @@ vi.mock("electron", () => ({
   BrowserWindow: class BrowserWindow {},
   ipcMain: {
     handle: ctx.ipcHandle,
+    removeHandler: (channel: string) => {
+      ctx.ipcHandlers.delete(channel);
+    },
   },
 }));
 
@@ -278,5 +288,91 @@ describe("setupAutoUpdater", () => {
     expect(() => emitUpdater("download-progress", { percent: 42 })).toThrow(
       "boom",
     );
+  });
+});
+
+/**
+ * The updater is a cloud service: it talks to the release feed and writes a
+ * downloaded artifact to disk. In local Guest mode neither may happen — the
+ * requirement is "not started", not "started and quiet". `index.ts` keeps the
+ * module out of Guest boot entirely by importing it lazily; this gate is the
+ * second line, covering the window between a cloud logout and teardown.
+ */
+describe("setupAutoUpdater cloud gate", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    ctx.userDataPath = mkdtempSync(join(tmpdir(), "patchbay-updater-test-"));
+    ctx.handlers.clear();
+    ctx.ipcHandlers.clear();
+    ctx.ipcHandle.mockClear();
+    ctx.ipcHandle.mockImplementation((channel: string, handler: IpcHandler) => {
+      ctx.ipcHandlers.set(channel, handler);
+    });
+    ctx.checkForUpdates.mockClear();
+    ctx.downloadUpdate.mockClear();
+    ctx.quitAndInstall.mockClear();
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    rmSync(ctx.userDataPath, { recursive: true, force: true });
+  });
+
+  it("never contacts the release feed while cloud services are disabled", async () => {
+    setupAutoUpdater(() => null, () => false);
+
+    await vi.advanceTimersByTimeAsync(6 * 60 * 60 * 1000);
+
+    expect(ctx.checkForUpdates).not.toHaveBeenCalled();
+  });
+
+  it("refuses every updater IPC call while cloud services are disabled", async () => {
+    setupAutoUpdater(() => null, () => false);
+
+    await expect(invokeIpc("updater:download")).rejects.toThrow(
+      "Cloud services disabled",
+    );
+    await expect(invokeIpc("updater:install")).rejects.toThrow(
+      "Cloud services disabled",
+    );
+    await expect(invokeIpc("updater:get-preferences")).rejects.toThrow(
+      "Cloud services disabled",
+    );
+    await expect(
+      invokeIpc("updater:set-automatic-updates", true),
+    ).rejects.toThrow("Cloud services disabled");
+    await expect(invokeIpc("updater:check")).resolves.toEqual({
+      ok: false,
+      error: "Cloud services disabled",
+    });
+
+    expect(ctx.downloadUpdate).not.toHaveBeenCalled();
+    expect(ctx.quitAndInstall).not.toHaveBeenCalled();
+    expect(ctx.checkForUpdates).not.toHaveBeenCalled();
+  });
+
+  it("does not push update notifications at a Guest renderer", () => {
+    const { win, send } = makeWindow();
+    setupAutoUpdater(() => win, () => false);
+
+    emitUpdater("update-available", { version: "9.9.9" });
+    emitUpdater("download-progress", { percent: 42 });
+    emitUpdater("update-downloaded", { version: "9.9.9" });
+
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("stops checking and detaches every listener after teardown", async () => {
+    const { win, send } = makeWindow();
+    const teardown = setupAutoUpdater(() => win, () => true);
+
+    teardown();
+    await vi.advanceTimersByTimeAsync(6 * 60 * 60 * 1000);
+    emitUpdater("download-progress", { percent: 42 });
+
+    expect(ctx.checkForUpdates).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+    expect(ctx.ipcHandlers.has("updater:check")).toBe(false);
   });
 });
