@@ -53,7 +53,11 @@ const LABELS: Record<string, string> = {
   manual: "Cancelled by user",
 };
 
-export function failureReasonLabel(reason: string | null | undefined): string {
-  if (!reason) return "Failed";
-  return LABELS[reason] ?? "Failed";
+export function failureReasonLabel(
+  reason: string | null | undefined,
+  localizedLabels?: Readonly<Record<string, string>>,
+  fallback = "Failed",
+): string {
+  if (!reason) return fallback;
+  return localizedLabels?.[reason] ?? LABELS[reason] ?? fallback;
 }

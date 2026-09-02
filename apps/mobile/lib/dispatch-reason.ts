@@ -16,19 +16,35 @@ export function dispatchReasonCode(err: unknown): string | undefined {
   return undefined;
 }
 
+export type DispatchReasonCopy = {
+  invocationNotAllowed: string;
+  runtimeRequired: string;
+  fallback: string;
+};
+
+const DEFAULT_COPY: DispatchReasonCopy = {
+  invocationNotAllowed:
+    "You no longer have permission to run this agent, so the message was not sent.",
+  runtimeRequired: "Bind a runtime to this agent before sending a message.",
+  fallback: "Your message could not be sent. Please try again.",
+};
+
 /**
  * User-facing sentence for a refused send. `invocation_not_allowed` is the
  * revoked-permission case (MUL-4525): the session was created while the user
  * could run the agent and the server now refuses, so it must not read as a
  * transient failure the user should retry.
  */
-export function sendFailureMessage(err: unknown): string {
+export function sendFailureMessage(
+  err: unknown,
+  copy: DispatchReasonCopy = DEFAULT_COPY,
+): string {
   switch (dispatchReasonCode(err)) {
     case "invocation_not_allowed":
-      return "You no longer have permission to run this agent, so the message was not sent.";
+      return copy.invocationNotAllowed;
     case "agent_runtime_required":
-      return "Bind a runtime to this agent before sending a message.";
+      return copy.runtimeRequired;
     default:
-      return "Your message could not be sent. Please try again.";
+      return copy.fallback;
   }
 }

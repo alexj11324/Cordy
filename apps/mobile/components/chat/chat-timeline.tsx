@@ -29,6 +29,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { useChatCopy } from "@/lib/use-chat-copy";
 
 interface Props {
   items: TaskMessagePayload[];
@@ -38,6 +39,7 @@ interface Props {
 }
 
 export function ChatTimeline({ items, isStreaming = false }: Props) {
+  const copy = useChatCopy();
   const processSteps = items.filter((i) => i.type !== "text");
   if (processSteps.length === 0) return null;
 
@@ -46,15 +48,13 @@ export function ChatTimeline({ items, isStreaming = false }: Props) {
       <CollapsibleTrigger asChild>
         <View
           accessibilityRole="button"
-          accessibilityLabel={`${processSteps.length} step${processSteps.length === 1 ? "" : "s"}`}
+          accessibilityLabel={copy.processSteps(processSteps.length)}
           className="flex-row items-center gap-1 active:opacity-70"
         >
           <Ionicons name="chevron-forward" size={12} color="#71717a" />
           {isStreaming ? <StreamingDot /> : null}
           <Text className="text-xs text-muted-foreground">
-            {processSteps.length === 1
-              ? "1 step"
-              : `${processSteps.length} steps`}
+            {copy.processSteps(processSteps.length)}
           </Text>
         </View>
       </CollapsibleTrigger>
@@ -123,6 +123,7 @@ function ThinkingRow({ item }: { item: TaskMessagePayload }) {
 }
 
 function ToolCallRow({ item }: { item: TaskMessagePayload }) {
+  const copy = useChatCopy();
   const summary = getToolSummary(item);
   const hasInput = !!item.input && Object.keys(item.input).length > 0;
   // If the call has no expandable input, render a non-interactive row —
@@ -132,7 +133,7 @@ function ToolCallRow({ item }: { item: TaskMessagePayload }) {
       <View className="py-0.5 flex-row items-center gap-1.5">
         <View style={{ width: 12 }} />
         <Text className="text-xs font-medium text-foreground">
-          {item.tool ?? "tool"}
+          {item.tool ?? copy.toolFallback}
         </Text>
         {summary ? (
           <Text
@@ -151,7 +152,7 @@ function ToolCallRow({ item }: { item: TaskMessagePayload }) {
         <View className="py-0.5 flex-row items-center gap-1.5 active:opacity-70">
           <Ionicons name="chevron-forward" size={12} color="#71717a" />
           <Text className="text-xs font-medium text-foreground">
-            {item.tool ?? "tool"}
+            {item.tool ?? copy.toolFallback}
           </Text>
           {summary ? (
             <Text
@@ -175,10 +176,13 @@ function ToolCallRow({ item }: { item: TaskMessagePayload }) {
 }
 
 function ToolResultRow({ item }: { item: TaskMessagePayload }) {
+  const copy = useChatCopy();
   const output = item.output ?? "";
   if (!output) return null;
   const preview = output.length > 80 ? `${output.slice(0, 80)}…` : output;
-  const prefix = item.tool ? `${item.tool} result: ` : "result: ";
+  const prefix = item.tool
+    ? copy.toolResultNamed(item.tool)
+    : copy.toolResultUnnamed;
   return (
     <Collapsible>
       <CollapsibleTrigger asChild>
@@ -202,7 +206,7 @@ function ToolResultRow({ item }: { item: TaskMessagePayload }) {
         <View className="ml-4 mt-1 rounded bg-muted/40 px-2 py-1.5">
           <Text className="text-xs text-muted-foreground">
             {output.length > 4000
-              ? `${output.slice(0, 4000)}\n…(truncated)`
+              ? `${output.slice(0, 4000)}\n…${copy.truncated}`
               : output}
           </Text>
         </View>

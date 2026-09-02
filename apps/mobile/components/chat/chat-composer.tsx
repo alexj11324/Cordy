@@ -29,12 +29,12 @@
 import { useCallback } from "react";
 import { Pressable, View } from "react-native";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
-import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { MessageComposer } from "@/components/composer/message-composer";
 import { useWorkspaceStore } from "@/data/workspace-store";
 import { useColorScheme } from "@/lib/use-color-scheme";
 import { THEME } from "@/lib/theme";
+import { useChatCopy } from "@/lib/use-chat-copy";
 
 interface Props {
   /** Current draft text (controlled). Empty string = no draft. */
@@ -72,6 +72,7 @@ export function ChatComposer({
   disabledReason,
 }: Props) {
   const wsSlug = useWorkspaceStore((s) => s.currentWorkspaceSlug);
+  const copy = useChatCopy();
 
   const onSubmit = useCallback(
     async ({
@@ -104,13 +105,13 @@ export function ChatComposer({
         pathname: "/[workspace]/mention-picker",
         params: { workspace: wsSlug ?? "", mode: "chat" },
       }}
-      placeholder={sending ? "Agent is working…" : "Message…"}
+      placeholder={sending ? copy.inputWorking : copy.inputMessage}
       pillLabel={
         sending
-          ? "Agent is working…"
+          ? copy.inputWorking
           : disabled
-            ? (disabledReason ?? "Chat unavailable")
-            : "Message…"
+            ? (disabledReason ?? copy.inputUnavailable)
+            : copy.inputMessage
       }
       pillIcon="chatbubble-ellipses-outline"
       disabled={disabled}
@@ -125,6 +126,7 @@ export function ChatComposer({
 function StopButton({ onPress }: { onPress: () => void }) {
   const { colorScheme } = useColorScheme();
   const theme = THEME[colorScheme];
+  const copy = useChatCopy();
   return (
     <Animated.View
       key="stop"
@@ -136,7 +138,7 @@ function StopButton({ onPress }: { onPress: () => void }) {
         className="h-8 w-8 items-center justify-center rounded-full bg-foreground active:opacity-80"
         hitSlop={12}
         accessibilityRole="button"
-        accessibilityLabel="Stop agent"
+        accessibilityLabel={copy.stopAgent}
       >
         <View
           style={{

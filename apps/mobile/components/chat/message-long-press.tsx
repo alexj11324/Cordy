@@ -21,11 +21,13 @@ import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import type { ChatMessage } from "@patchbay/core/types";
 import { useChatSelectStore } from "@/data/chat-select-store";
+import { useChatCopy } from "@/lib/use-chat-copy";
 
 export function useChatMessageLongPress(
   message: ChatMessage,
 ): { onLongPress: () => void; isPressed: boolean } {
   const [isPressed, setIsPressed] = useState(false);
+  const copy = useChatCopy();
 
   const onLongPress = useCallback(() => {
     const hasContent = !!message.content;
@@ -46,10 +48,10 @@ export function useChatMessageLongPress(
     };
 
     if (hasContent) {
-      push("Copy", { kind: "copy" });
-      push("Select Text", { kind: "select" });
+      push(copy.longPress.copy, { kind: "copy" });
+      push(copy.longPress.selectText, { kind: "select" });
     }
-    push("Cancel", { kind: "cancel" });
+    push(copy.longPress.cancel, { kind: "cancel" });
 
     const cancelButtonIndex = options.length - 1;
 
@@ -75,7 +77,7 @@ export function useChatMessageLongPress(
         }
       },
     );
-  }, [message]);
+  }, [copy, message]);
 
   return { onLongPress, isPressed };
 }

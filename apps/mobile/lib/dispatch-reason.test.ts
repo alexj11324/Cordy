@@ -50,4 +50,17 @@ describe("sendFailureMessage", () => {
   it("falls back to a retryable message for anything else", () => {
     expect(sendFailureMessage(new Error("timeout"))).toMatch(/try again/i);
   });
+
+  it("accepts the active locale copy without changing the reason mapping", () => {
+    expect(
+      sendFailureMessage(
+        apiError({ reason_code: "agent_runtime_required" }),
+        {
+          invocationNotAllowed: "无权运行",
+          runtimeRequired: "请绑定运行时",
+          fallback: "请重试",
+        },
+      ),
+    ).toBe("请绑定运行时");
+  });
 });

@@ -13,4 +13,8 @@ describe("chatSessionDisplayTitle", () => {
       "Investigate deploy",
     );
   });
+
+  it("accepts a localized fallback for a blank session title", () => {
+    expect(chatSessionDisplayTitle(null, "新对话")).toBe("新对话");
+  });
 });

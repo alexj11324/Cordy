@@ -9,6 +9,7 @@ import type { Agent, ChatSession } from "@patchbay/core/types";
 import { Text } from "@/components/ui/text";
 import { ActorAvatar } from "@/components/ui/actor-avatar";
 import { chatSessionDisplayTitle } from "@/lib/chat-session-title";
+import { useChatCopy } from "@/lib/use-chat-copy";
 
 interface Props {
   currentSession: ChatSession | null;
@@ -21,8 +22,9 @@ export function ChatTitleButton({
   currentAgent,
   onPress,
 }: Props) {
-  const agentName = currentAgent?.name ?? "Chat";
-  const subtitle = chatSessionDisplayTitle(currentSession?.title);
+  const copy = useChatCopy();
+  const agentName = currentAgent?.name ?? copy.chat;
+  const subtitle = chatSessionDisplayTitle(currentSession?.title, copy.newChat);
 
   return (
     <Pressable
@@ -30,7 +32,7 @@ export function ChatTitleButton({
       hitSlop={4}
       className="flex-row items-center gap-2 px-2 py-1 rounded-lg active:bg-secondary"
       accessibilityRole="button"
-      accessibilityLabel="Sessions and agent picker"
+      accessibilityLabel={copy.sessionsAndAgentPicker}
     >
       <ActorAvatar
         type={currentAgent ? "agent" : null}

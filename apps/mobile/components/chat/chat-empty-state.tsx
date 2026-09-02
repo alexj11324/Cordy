@@ -9,32 +9,15 @@
  *   - returning (at least one prior session exists) → lead with starter
  *     starters. Tapping prefills the draft so the user can edit before sending.
  *
- * Copy mirrors the web `chat.json` namespace 1:1. Mobile doesn't have
- * i18n yet so the strings are inlined in English — when mobile adopts
- * i18n the lookup keys (`empty_state.first_time_title` etc.) are already
- * established on the web side, so the migration is a literal
- * key-by-key swap.
+ * Copy uses the mobile chat adapter, whose four locales mirror the web
+ * `chat.json` namespace for this surface. Agent-authored starters remain
+ * server-provided and are displayed verbatim.
  */
 import { View } from "react-native";
-import type { Agent, AgentConversationStarter } from "@patchbay/core/types";
+import type { Agent } from "@patchbay/core/types";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
-
-const FALLBACK_CONVERSATION_STARTERS: AgentConversationStarter[] = [
-  {
-    label: "What can you help with?",
-    prompt: "What are you best at helping with? Give me a concise overview.",
-  },
-  {
-    label: "Suggest a first task",
-    prompt: "Suggest three useful tasks I could delegate to you.",
-  },
-  {
-    label: "Recommend an action",
-    prompt:
-      "Review what you know about my workspace and recommend a useful first action.",
-  },
-];
+import { useChatCopy } from "@/lib/use-chat-copy";
 
 interface Props {
   hasSessions: boolean;
@@ -43,11 +26,12 @@ interface Props {
 }
 
 export function ChatEmptyState({ hasSessions, agent, onPickPrompt }: Props) {
-  const title = agent ? `Hi, I'm ${agent.name}` : "Chat with your agents";
+  const copy = useChatCopy();
+  const title = copy.emptyTitle(agent?.name ?? null);
   const configured = (agent?.conversation_starters ?? []).filter(
     (item) => item.label.trim() && item.prompt.trim(),
   );
-  const starters = configured.length > 0 ? configured : FALLBACK_CONVERSATION_STARTERS;
+  const starters = configured.length > 0 ? configured : copy.fallbackStarters;
   return (
     <View className="flex-1 items-center justify-center px-6 py-8 gap-5">
       <View className="items-center gap-1">
@@ -61,7 +45,7 @@ export function ChatEmptyState({ hasSessions, agent, onPickPrompt }: Props) {
         ) : null}
         {!hasSessions ? (
           <Text className="text-sm text-muted-foreground text-center">
-            Pick an example to start, then edit it before sending.
+            {copy.emptyFirstTimeHint}
           </Text>
         ) : null}
       </View>

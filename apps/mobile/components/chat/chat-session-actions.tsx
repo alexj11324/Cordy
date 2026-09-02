@@ -8,6 +8,7 @@
  * rest of the header toolbar.
  */
 import { IconButton } from "@/components/ui/icon-button";
+import { useChatCopy } from "@/lib/use-chat-copy";
 
 interface Props {
   showMore: boolean;
@@ -20,20 +21,21 @@ export function ChatSessionActions({
   onMorePress,
   onNewPress,
 }: Props) {
+  const copy = useChatCopy();
   return (
     <>
       {showMore ? (
         <IconButton
           name="ellipsis-horizontal"
           onPress={onMorePress}
-          accessibilityLabel="Session actions"
+          accessibilityLabel={copy.sessionActions}
         />
       ) : null}
       <IconButton
         name="add"
         iconSize={24}
         onPress={onNewPress}
-        accessibilityLabel="New chat"
+        accessibilityLabel={copy.newChat}
       />
     </>
   );
