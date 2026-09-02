@@ -2312,6 +2312,15 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Post("/{id}/unarchive", h.UnarchiveInboxItem)
 			})
 
+			// Guest sessions
+			r.Route("/api/guest-sessions", func(r chi.Router) {
+				r.Post("/", h.CreateGuestSession)
+				r.Route("/{id}", func(r chi.Router) {
+					r.Get("/", h.GetGuestSession)
+					r.Post("/claim", h.ClaimGuestSession)
+				})
+			})
+
 			// Notification preferences
 			r.Route("/api/notification-preferences", func(r chi.Router) {
 				r.Get("/", h.GetNotificationPreferences)
