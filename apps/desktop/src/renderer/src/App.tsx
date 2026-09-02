@@ -408,6 +408,11 @@ async function handleDaemonLogout() {
   } catch {
     // Daemon may already be stopped.
   }
+  try {
+    await window.desktopAPI.disableCloudMode();
+  } catch {
+    // Main keeps the cloud mode gate closed even when teardown is best effort.
+  }
 }
 
 type BootState =
@@ -495,9 +500,9 @@ export default function App() {
   // restarting Electron; packaged builds always expose windowContext.
   const windowContext: DesktopWindowContext =
     window.desktopAPI.windowContext ?? { kind: "main" };
-  const [bootState, setBootState] = useState<BootState>(() =>
-    windowContext.kind === "issue" ? { kind: "cloud" } : { kind: "loading" },
-  );
+  // Always "loading": even a dedicated issue window has to ask main which mode
+  // it is in before it may mount anything cloud-shaped.
+  const [bootState, setBootState] = useState<BootState>({ kind: "loading" });
 
   useCmdWCloseTab();
 
@@ -577,7 +582,28 @@ export default function App() {
   // Guest discovery is the only pre-CoreProvider boot work. It reads only the
   // main-owned local Guest file; token/profile state is deliberately untouched.
   useEffect(() => {
-    if (windowContext.kind === "issue") return;
+    if (windowContext.kind === "issue") {
+      let active = true;
+      void window.desktopAPI
+        .getGuestMode()
+        .then((mode) => {
+          if (!active) return;
+          if (mode === "cloud") {
+            setBootState({ kind: "cloud" });
+          } else {
+            // Dedicated issue renderers have no Guest surface. Closing from
+            // main is the fail-closed path; this branch is only a short-lived
+            // fallback while Chromium tears the window down.
+            window.desktopAPI.closeWindow();
+          }
+        })
+        .catch(() => {
+          if (active) window.desktopAPI.closeWindow();
+        });
+      return () => {
+        active = false;
+      };
+    }
     let active = true;
     void window.desktopAPI
       .getGuestSession()
@@ -610,6 +636,20 @@ export default function App() {
     return () => {
       active = false;
     };
+  }, [windowContext.kind]);
+
+  useEffect(() => {
+    return window.desktopAPI.onGuestModeChanged((mode) => {
+      if (windowContext.kind === "issue") {
+        if (mode !== "cloud") window.desktopAPI.closeWindow();
+        return;
+      }
+      if (mode === "cloud") {
+        setBootState({ kind: "cloud" });
+      } else if (mode === "undecided") {
+        setBootState({ kind: "entry" });
+      }
+    });
   }, [windowContext.kind]);
 
   const localContent = (() => {

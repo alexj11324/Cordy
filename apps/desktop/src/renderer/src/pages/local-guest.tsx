@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, Square } from "lucide-react";
 import { Button } from "@patchbay/ui/components/ui/button";
+import { Textarea } from "@patchbay/ui/components/ui/textarea";
 import {
   Card,
   CardContent,
@@ -12,7 +13,12 @@ import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
 import { useT } from "@patchbay/views/i18n";
 import { DragStrip } from "@patchbay/views/platform";
 import type { LocalRuntimeProbe } from "../../../shared/daemon-types";
-import type { LocalGuestSession } from "../../../shared/local-guest";
+import {
+  DEFAULT_LOCAL_GUEST_TIMEOUT_MS,
+  parseLocalGuestRunEvent,
+  type LocalGuestRunHistoryEntry,
+  type LocalGuestSession,
+} from "../../../shared/local-guest";
 
 type LocalGuestShellProps = {
   session: LocalGuestSession;
@@ -28,6 +34,13 @@ export function LocalGuestShell({
   const { t } = useT("auth");
   const [directory, setDirectory] = useState<string | null>(null);
   const [directoryError, setDirectoryError] = useState(false);
+  const [prompt, setPrompt] = useState("");
+  const [runId, setRunId] = useState<string | null>(null);
+  const [runStatus, setRunStatus] = useState<string | null>(null);
+  const [runOutput, setRunOutput] = useState("");
+  const [runError, setRunError] = useState(false);
+  const [history, setHistory] = useState<LocalGuestRunHistoryEntry[]>([]);
+  const [historyError, setHistoryError] = useState(false);
   const [probe, setProbe] = useState<LocalRuntimeProbe | null>(null);
   const [runtimeLoading, setRuntimeLoading] = useState(false);
   const [cloudLoading, setCloudLoading] = useState(false);
@@ -49,6 +62,49 @@ export function LocalGuestShell({
     void refreshRuntimeProbe();
   }, [refreshRuntimeProbe]);
 
+  useEffect(() => {
+    const getHistory = window.desktopAPI.getGuestRunHistory;
+    if (typeof getHistory !== "function") return;
+    void getHistory()
+      .then((result) => {
+        if (!result.ok) {
+          setHistoryError(true);
+          return;
+        }
+        setHistory(result.history.runs);
+        if (result.history.lastDirectory) {
+          setDirectory(result.history.lastDirectory);
+        }
+      })
+      .catch(() => setHistoryError(true));
+  }, []);
+
+  useEffect(() => {
+    const subscribe = window.desktopAPI.onGuestRunEvent;
+    if (typeof subscribe !== "function") return;
+    return subscribe((value) => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) return;
+      const envelope = value as { runId?: unknown };
+      if (!runId || envelope.runId !== runId) return;
+      const event = parseLocalGuestRunEvent(value);
+      if (!event) {
+        setRunError(true);
+        return;
+      }
+      if (event.text) {
+        setRunOutput((current) => `${current}${event.text}\n`.slice(-256_000));
+      }
+      if (event.error) {
+        setRunOutput((current) => `${current}${event.error}\n`.slice(-256_000));
+      }
+      if (event.event === "result") {
+        setRunStatus(event.status ?? "failed");
+        if (event.error) setRunError(true);
+        setRunId(null);
+      }
+    });
+  }, [runId]);
+
   const chooseDirectory = async () => {
     setDirectoryError(false);
     const picked = await window.desktopAPI.pickDirectory(directory ?? undefined);
@@ -60,6 +116,33 @@ export function LocalGuestShell({
       return;
     }
     setDirectory(picked.path);
+  };
+
+  const runLocalWorkspace = async () => {
+    if (runId || !directory || !prompt.trim()) {
+      setRunError(true);
+      return;
+    }
+    setRunError(false);
+    setRunStatus("running");
+    setRunOutput("");
+    const result = await window.desktopAPI.startGuestRun({
+      workingDirectory: directory,
+      prompt,
+      timeoutMs: DEFAULT_LOCAL_GUEST_TIMEOUT_MS,
+    });
+    if (!result.ok) {
+      setRunStatus(null);
+      setRunError(true);
+      return;
+    }
+    setRunId(result.runId);
+  };
+
+  const stopLocalWorkspace = async () => {
+    if (!runId) return;
+    const result = await window.desktopAPI.cancelGuestRun(runId);
+    if (!result.ok) setRunError(true);
   };
 
   const switchToCloud = async () => {
@@ -116,6 +199,106 @@ export function LocalGuestShell({
               <div className="rounded-lg border border-surface-border bg-surface-hover px-3 py-2 text-body">
                 {session.displayName}
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>{t(($) => $.guest.run_title)}</CardTitle>
+              <CardDescription>
+                {t(($) => $.guest.run_description)}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3">
+              <label htmlFor="local-guest-prompt" className="text-body font-medium">
+                {t(($) => $.guest.prompt_label)}
+              </label>
+              <Textarea
+                id="local-guest-prompt"
+                value={prompt}
+                placeholder={t(($) => $.guest.prompt_placeholder)}
+                onChange={(event) => setPrompt(event.target.value)}
+                disabled={Boolean(runId)}
+                rows={4}
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  disabled={Boolean(runId) || !directory || !prompt.trim()}
+                  onClick={() => void runLocalWorkspace()}
+                >
+                  {t(($) => $.guest.run_button)}
+                </Button>
+                {runId && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => void stopLocalWorkspace()}
+                  >
+                    <Square />
+                    {t(($) => $.guest.stop_button)}
+                  </Button>
+                )}
+              </div>
+              {runStatus && (
+                <p className="text-caption text-muted-foreground" aria-live="polite">
+                  {runStatus === "running"
+                    ? t(($) => $.guest.run_running)
+                    : t(($) => $.guest.run_status, { status: runStatus })}
+                </p>
+              )}
+              {!directory && (
+                <p className="text-caption text-muted-foreground">
+                  {t(($) => $.guest.run_choose_directory)}
+                </p>
+              )}
+              {runError && (
+                <p role="alert" className="text-caption text-destructive">
+                  {t(($) => $.guest.run_error)}
+                </p>
+              )}
+              {runOutput && (
+                <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-lg border border-surface-border bg-surface-hover p-3 text-caption">
+                  {runOutput}
+                </pre>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>{t(($) => $.guest.history_title)}</CardTitle>
+              <CardDescription>
+                {t(($) => $.guest.history_description)}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {historyError ? (
+                <p role="alert" className="text-body text-destructive">
+                  {t(($) => $.guest.history_error)}
+                </p>
+              ) : history.length === 0 ? (
+                <p className="text-body text-muted-foreground">
+                  {t(($) => $.guest.history_empty)}
+                </p>
+              ) : (
+                <ul className="space-y-2">
+                  {history.map((entry) => (
+                    <li
+                      key={entry.id}
+                      className="rounded-lg border border-surface-border px-3 py-2"
+                    >
+                      <div className="flex items-center justify-between gap-3 text-caption text-muted-foreground">
+                        <span>{entry.status}</span>
+                        <time dateTime={new Date(entry.startedAt).toISOString()}>
+                          {new Date(entry.startedAt).toLocaleString()}
+                        </time>
+                      </div>
+                      <p className="mt-1 line-clamp-2 text-body">{entry.prompt}</p>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </CardContent>
           </Card>
 

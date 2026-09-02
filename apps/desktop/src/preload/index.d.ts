@@ -18,6 +18,12 @@ import type {
 } from "../shared/daemon-types";
 import type {
   GuestCloudModeResult,
+  GuestCloudTeardownResult,
+  LocalGuestMode,
+  LocalGuestRunCancelResult,
+  LocalGuestRunHistoryResult,
+  LocalGuestRunRequest,
+  LocalGuestRunStartResult,
   GuestSessionClearResult,
   GuestSessionMutationResult,
   GuestSessionReadResult,
@@ -43,7 +49,17 @@ interface DesktopAPI {
   clearGuestSession: () => Promise<GuestSessionClearResult>;
   enableCloudMode: () => Promise<GuestCloudModeResult>;
   switchGuestToCloud: () => Promise<GuestCloudModeResult>;
+  disableCloudMode: () => Promise<GuestCloudTeardownResult>;
+  getGuestMode: () => Promise<LocalGuestMode>;
+  onGuestModeChanged: (callback: (mode: LocalGuestMode) => void) => () => void;
   probeLocalRuntimes: () => Promise<LocalRuntimeProbe>;
+  startGuestRun: (
+    request: LocalGuestRunRequest,
+  ) => Promise<LocalGuestRunStartResult>;
+  cancelGuestRun: (runId: string) => Promise<LocalGuestRunCancelResult>;
+  getGuestRunHistory: () => Promise<LocalGuestRunHistoryResult>;
+  clearGuestRunHistory: () => Promise<{ ok: boolean }>;
+  onGuestRunEvent: (callback: (value: unknown) => void) => () => void;
   /** Main tabbed window or a dedicated issue-only window. */
   windowContext: DesktopWindowContext;
   /** Read any freeze/crash breadcrumb from a previous session, so the renderer

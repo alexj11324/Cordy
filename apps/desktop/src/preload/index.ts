@@ -26,6 +26,11 @@ import type {
 } from "../shared/daemon-types";
 import type {
   GuestCloudModeResult,
+  GuestCloudTeardownResult,
+  LocalGuestMode,
+  LocalGuestRunCancelResult,
+  LocalGuestRunHistoryResult,
+  LocalGuestRunStartResult,
   GuestSessionClearResult,
   GuestSessionMutationResult,
   GuestSessionReadResult,
@@ -138,8 +143,32 @@ const desktopAPI = {
     ipcRenderer.invoke("guest-session:enable-cloud"),
   switchGuestToCloud: (): Promise<GuestCloudModeResult> =>
     ipcRenderer.invoke("guest-session:switch-to-cloud"),
+  disableCloudMode: (): Promise<GuestCloudTeardownResult> =>
+    ipcRenderer.invoke("guest-session:disable-cloud"),
+  getGuestMode: (): Promise<LocalGuestMode> =>
+    ipcRenderer.invoke("guest-session:mode"),
+  onGuestModeChanged: (callback: (mode: LocalGuestMode) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, mode: LocalGuestMode) =>
+      callback(mode);
+    ipcRenderer.on("guest-session:mode", handler);
+    return () => ipcRenderer.removeListener("guest-session:mode", handler);
+  },
   probeLocalRuntimes: (): Promise<LocalRuntimeProbe> =>
     ipcRenderer.invoke("guest-runtime:probe"),
+  startGuestRun: (request: unknown): Promise<LocalGuestRunStartResult> =>
+    ipcRenderer.invoke("guest-run:start", request),
+  cancelGuestRun: (runId: string): Promise<LocalGuestRunCancelResult> =>
+    ipcRenderer.invoke("guest-run:cancel", { runId }),
+  getGuestRunHistory: (): Promise<LocalGuestRunHistoryResult> =>
+    ipcRenderer.invoke("guest-run:history"),
+  clearGuestRunHistory: (): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke("guest-run:clear-history"),
+  onGuestRunEvent: (callback: (value: unknown) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, value: unknown) =>
+      callback(value);
+    ipcRenderer.on("guest-run:event", handler);
+    return () => ipcRenderer.removeListener("guest-run:event", handler);
+  },
   /** Identifies whether this renderer owns the main tabbed window or a
    *  dedicated issue window, parsed from validated launch arguments. */
   windowContext,
