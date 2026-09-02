@@ -123,7 +123,7 @@ export function GraphCanvas({
               key={column.wave}
               x={column.x}
               y={12}
-              className="fill-muted-foreground text-[10px]"
+              className="fill-muted-foreground text-micro"
             >
               {labels.waveColumn(column.wave)}
             </text>
@@ -226,21 +226,21 @@ export function GraphCanvas({
                 <text
                   x={laidOut.x + 10}
                   y={laidOut.y + 22}
-                  className="fill-primary text-[11px] font-medium"
+                  className="fill-primary text-caption font-medium"
                 >
                   {truncate(identifier, 20)}
                 </text>
                 <text
                   x={laidOut.x + 10}
                   y={laidOut.y + 40}
-                  className="fill-foreground text-[11px]"
+                  className="fill-foreground text-caption"
                 >
                   {truncate(title, 22)}
                 </text>
                 <text
                   x={laidOut.x + 10}
                   y={laidOut.y + 55}
-                  className="fill-muted-foreground text-[10px]"
+                  className="fill-muted-foreground text-micro"
                 >
                   {truncate(state, 22)}
                 </text>
