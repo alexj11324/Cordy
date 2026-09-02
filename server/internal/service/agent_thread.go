@@ -174,7 +174,7 @@ func (s *TaskService) ContinueAgentThread(ctx context.Context, parentTaskID pgty
 	if err != nil {
 		return AgentThreadContinuationReceipt{}, fmt.Errorf("load agent thread agent: %w", err)
 	}
-	runtime, runtimeErr := s.Queries.GetAgentRuntime(ctx, snapshot.RuntimeID)
+	runtime, runtimeErr := s.runtimeLookup(s.Queries).Get(ctx, snapshot.RuntimeID)
 	if err := AgentThreadBindingAvailability(snapshot, agent, runtimeErr == nil && runtime.WorkspaceID == agent.WorkspaceID); err != nil {
 		return AgentThreadContinuationReceipt{}, err
 	}
@@ -201,7 +201,7 @@ func (s *TaskService) ContinueAgentThread(ctx context.Context, parentTaskID pgty
 	if err != nil {
 		return AgentThreadContinuationReceipt{}, fmt.Errorf("reload agent thread agent: %w", err)
 	}
-	runtime, runtimeErr = qtx.GetAgentRuntime(ctx, parent.RuntimeID)
+	runtime, runtimeErr = s.runtimeLookup(qtx).Get(ctx, parent.RuntimeID)
 	if err := AgentThreadBindingAvailability(parent, lockedAgent, runtimeErr == nil && runtime.WorkspaceID == lockedAgent.WorkspaceID); err != nil {
 		return AgentThreadContinuationReceipt{}, err
 	}

@@ -63,10 +63,13 @@ func (s *IssueService) runtimeLookup(q *db.Queries) RuntimeLookup {
 	return RuntimeLookup{Queries: q, Metrics: s.Metrics, Source: obsmetrics.RuntimeLookupSourceIssue}
 }
 
-// runtimeLookup returns the task-sourced lookup for analytics context and the
-// usage provider backfill.
-func (s *TaskService) runtimeLookup() RuntimeLookup {
-	return RuntimeLookup{Queries: s.Queries, Metrics: s.Metrics, Source: obsmetrics.RuntimeLookupSourceTask}
+// runtimeLookup returns the task-sourced lookup, bound to the caller's
+// connection. Agent thread continuation reads the runtime once outside its
+// transaction and again inside it, and the second read has to see the locked
+// snapshot rather than the pool's, so the connection is a parameter here for
+// the same reason it is on IssueService.
+func (s *TaskService) runtimeLookup(q *db.Queries) RuntimeLookup {
+	return RuntimeLookup{Queries: q, Metrics: s.Metrics, Source: obsmetrics.RuntimeLookupSourceTask}
 }
 
 // runtimeLookup returns the automation-sourced lookup. AutomationService holds no

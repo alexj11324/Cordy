@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	obsmetrics "github.com/patchbay-ai/patchbay/server/internal/metrics"
 	"github.com/patchbay-ai/patchbay/server/internal/service"
 	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
@@ -122,7 +123,7 @@ func (h *Handler) GetAgentThread(w http.ResponseWriter, r *http.Request) {
 		availability.ReasonCode = "agent_thread_invoke_forbidden"
 		availability.Reason = "You can read this Agent thread, but you do not have permission to continue it."
 	} else {
-		runtime, runtimeErr := h.Queries.GetAgentRuntime(r.Context(), current.RuntimeID)
+		runtime, runtimeErr := h.runtimeLookup(obsmetrics.RuntimeLookupSourceTask).Get(r.Context(), current.RuntimeID)
 		err := service.AgentThreadBindingAvailability(current, access.agent, runtimeErr == nil && runtime.WorkspaceID == access.agent.WorkspaceID)
 		if err == nil {
 			err = service.AgentThreadAvailability(current)

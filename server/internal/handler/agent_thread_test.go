@@ -21,7 +21,8 @@ func TestAgentThreadContinuationIsTaskScopedAndIdempotent(t *testing.T) {
 	})
 
 	get := httptest.NewRecorder()
-	testHandler.GetAgentThread(get, withURLParam(newRequest("GET", "/api/tasks/"+parentID+"/agent-thread", nil), "taskId", parentID))
+	getRequest := withURLParam(newRequest("GET", "/api/tasks/"+parentID+"/agent-thread", nil), "taskId", parentID)
+	testHandler.GetAgentThread(get, withChatTestWorkspaceCtx(t, getRequest))
 	if get.Code != http.StatusOK {
 		t.Fatalf("GET Agent thread: status=%d body=%s", get.Code, get.Body.String())
 	}
@@ -36,7 +37,7 @@ func TestAgentThreadContinuationIsTaskScopedAndIdempotent(t *testing.T) {
 		w := httptest.NewRecorder()
 		req := withURLParam(newRequest("POST", "/api/tasks/"+parentID+"/agent-thread/continue", map[string]any{"content": content}), "taskId", parentID)
 		req.Header.Set("Idempotency-Key", "agent-thread-receipt-1")
-		testHandler.ContinueAgentThread(w, req)
+		testHandler.ContinueAgentThread(w, withChatTestWorkspaceCtx(t, req))
 		body := map[string]string{}
 		_ = json.NewDecoder(w.Body).Decode(&body)
 		return w.Code, body
@@ -78,7 +79,8 @@ func TestAgentThreadRejectsOrdinaryChatTask(t *testing.T) {
 		"completed_at":    testutil.Raw("now()"),
 	})
 	w := httptest.NewRecorder()
-	testHandler.GetAgentThread(w, withURLParam(newRequest("GET", "/api/tasks/"+taskID+"/agent-thread", nil), "taskId", taskID))
+	request := withURLParam(newRequest("GET", "/api/tasks/"+taskID+"/agent-thread", nil), "taskId", taskID)
+	testHandler.GetAgentThread(w, withChatTestWorkspaceCtx(t, request))
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("ordinary Chat task exposed as task conversation: status=%d body=%s", w.Code, w.Body.String())
 	}
