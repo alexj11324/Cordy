@@ -15,7 +15,7 @@ import { selectPlatformReleaseAssetName } from "./cli-release-asset";
 // userData on first launch when the bundled binary is missing or unusable.
 
 const GITHUB_LATEST_BASE =
-  "https://github.com/patchbay-ai/patchbay/releases/latest/download";
+  "https://github.com/alexj11324/Cordy/releases/latest/download";
 
 function binaryName(): string {
   return process.platform === "win32" ? "patchbay.exe" : "patchbay";

@@ -445,10 +445,16 @@ jobs:
         include:
           - os: ubuntu-latest
             target: linux
+            arch: all
           - os: windows-latest
             target: win
+            arch: all
+          - os: macos-15-intel
+            target: mac
+            arch: x64
           - os: macos-14
             target: mac
+            arch: arm64
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -506,7 +512,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Package Desktop installers (${{ matrix.target }})
+      - name: Package Desktop installers (${{ matrix.target }} ${{ matrix.arch }})
         working-directory: apps/desktop
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -520,19 +526,23 @@ jobs:
         shell: bash
         run: |
           if [ "${{ matrix.target }}" = "mac" ]; then
-            node scripts/package.mjs --mac --arm64 --publish never
+            node scripts/package.mjs --mac --${{ matrix.arch }} --publish never
           else
             node scripts/package.mjs --${{ matrix.target }} --x64 --arm64 --publish never
           fi
 
-      - name: Validate macOS arm64 signature and notarization
+      - name: Validate macOS signature, notarization, and update assets
         if: matrix.target == 'mac'
         working-directory: apps/desktop
         shell: bash
         run: |
           set -euo pipefail
-          test "$(uname -m)" = "arm64" || {
-            echo "::error::The macOS release must run on an arm64 runner."
+          expected_runner_arch="x86_64"
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            expected_runner_arch="arm64"
+          fi
+          test "$(uname -m)" = "$expected_runner_arch" || {
+            echo "::error::The macOS ${{ matrix.arch }} release must run on a $expected_runner_arch runner."
             exit 1
           }
           app_path="$(find dist -type d -name '*.app' -print -quit)"
@@ -547,8 +557,8 @@ jobs:
             exit 1
           }
           archs="$(lipo -archs "$executable_path")"
-          test "$archs" = "arm64" || {
-            echo "::error::Expected an arm64-only executable, found: $archs"
+          test "$archs" = "$expected_runner_arch" || {
+            echo "::error::Expected a $expected_runner_arch-only executable, found: $archs"
             exit 1
           }
           codesign --verify --deep --strict --verbose=2 "$app_path"
@@ -562,8 +572,18 @@ jobs:
           esac
           spctl --assess --type execute --verbose=4 "$app_path"
           xcrun stapler validate "$app_path"
-          test -n "$(find dist -type f -name '*-mac-arm64.dmg' -print -quit)" || {
-            echo "::error::The signed arm64 DMG is missing from the desktop output."
+          for extension in dmg zip; do
+            test -n "$(find dist -type f -name "*-mac-${{ matrix.arch }}.${extension}" -print -quit)" || {
+              echo "::error::The signed macOS ${{ matrix.arch }} ${extension} is missing from the desktop output."
+              exit 1
+            }
+          done
+          metadata="latest-mac.yml"
+          if [ "${{ matrix.arch }}" = "x64" ]; then
+            metadata="latest-x64-mac.yml"
+          fi
+          test -n "$(find dist -type f -name "$metadata" -print -quit)" || {
+            echo "::error::The macOS ${{ matrix.arch }} updater metadata $metadata is missing."
             exit 1
           }
 
@@ -572,6 +592,7 @@ jobs:
           VERIFIED_SHA: ${{ needs.verify.outputs.commit_sha }}
           TAG_NAME: ${{ needs.verify.outputs.tag_name }}
           TARGET: ${{ matrix.target }}
+          ARCH: ${{ matrix.arch }}
         working-directory: apps/desktop
         shell: bash
         run: |
@@ -590,9 +611,11 @@ jobs:
           import { basename, dirname, join, relative, resolve } from "node:path";
 
           const target = process.env.TARGET;
+          const arch = process.env.ARCH;
+          if (!target || !arch) throw new Error("Desktop target and arch are required");
           const dist = resolve("dist");
-          const stage = join(process.env.RUNNER_TEMP, `patchbay-desktop-${target}`);
-          const manifestName = `patchbay-desktop-${target}-manifest.json`;
+          const stage = join(process.env.RUNNER_TEMP, `patchbay-desktop-${target}-${arch}`);
+          const manifestName = `patchbay-desktop-${target}-${arch}-manifest.json`;
           const assetPattern = /(?:\.7z|\.AppImage|\.deb|\.dmg|\.exe|\.rpm|\.zip|\.blockmap|^latest.*\.ya?ml$)$/i;
 
           rmSync(stage, { recursive: true, force: true });
@@ -627,8 +650,9 @@ jobs:
 
           const manifest = {
             schemaVersion: 1,
-            artifact: `desktop-${target}`,
+            artifact: `desktop-${target}-${arch}`,
             target,
+            arch,
             tag: process.env.TAG_NAME,
             commit: process.env.VERIFIED_SHA,
             files,
@@ -640,8 +664,8 @@ jobs:
       - name: Upload Desktop artifacts for final publication
         uses: actions/upload-artifact@v4
         with:
-          name: desktop-${{ matrix.target }}
-          path: ${{ runner.temp }}/patchbay-desktop-${{ matrix.target }}
+          name: desktop-${{ matrix.target }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/patchbay-desktop-${{ matrix.target }}-${{ matrix.arch }}
           if-no-files-found: error
           retention-days: 1
 
@@ -699,7 +723,12 @@ jobs:
           import { basename, dirname, join, relative, resolve } from "node:path";
 
           const root = resolve("desktop-assets");
-          const expectedTargets = new Set(["linux", "win", "mac"]);
+          const expectedVariants = new Set([
+            "linux:all",
+            "win:all",
+            "mac:x64",
+            "mac:arm64",
+          ]);
 
           function walk(directory) {
             const entries = readdirSync(directory, { withFileTypes: true });
@@ -712,16 +741,20 @@ jobs:
             return files;
           }
 
-          const manifests = walk(root).filter((file) => /patchbay-desktop-(linux|win|mac)-manifest\.json$/.test(basename(file)));
-          if (manifests.length !== expectedTargets.size) {
-            throw new Error(`Expected ${expectedTargets.size} desktop manifests, found ${manifests.length}`);
+          const manifests = walk(root).filter((file) => /patchbay-desktop-(linux|win|mac)-(all|x64|arm64)-manifest\.json$/.test(basename(file)));
+          if (manifests.length !== expectedVariants.size) {
+            throw new Error(`Expected ${expectedVariants.size} desktop manifests, found ${manifests.length}`);
           }
-          const seenTargets = new Set();
+          const seenVariants = new Set();
           for (const manifestPath of manifests) {
             const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
             if (manifest.schemaVersion !== 1) throw new Error(`Unsupported manifest schema: ${manifestPath}`);
-            if (!expectedTargets.has(manifest.target) || seenTargets.has(manifest.target)) {
-              throw new Error(`Unexpected or duplicate desktop target in ${manifestPath}`);
+            const variant = `${manifest.target}:${manifest.arch}`;
+            if (!expectedVariants.has(variant) || seenVariants.has(variant)) {
+              throw new Error(`Unexpected or duplicate desktop variant in ${manifestPath}`);
+            }
+            if (manifest.artifact !== `desktop-${manifest.target}-${manifest.arch}`) {
+              throw new Error(`Desktop manifest artifact identity mismatch: ${manifestPath}`);
             }
             if (manifest.tag !== process.env.TAG_NAME || manifest.commit !== process.env.VERIFIED_SHA) {
               throw new Error(`Desktop manifest identity mismatch: ${manifestPath}`);
@@ -745,7 +778,12 @@ jobs:
                 throw new Error(`Artifact checksum/size mismatch: ${relative(root, artifactPath)}`);
               }
             }
-            seenTargets.add(manifest.target);
+            seenVariants.add(variant);
+          }
+          for (const expected of expectedVariants) {
+            if (!seenVariants.has(expected)) {
+              throw new Error(`Missing desktop artifact variant: ${expected}`);
+            }
           }
           console.log(`Validated ${manifests.length} desktop artifact manifests for ${process.env.TAG_NAME} at ${process.env.VERIFIED_SHA}`);
           NODE

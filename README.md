@@ -15,7 +15,7 @@ assign it to a teammate — they pick up the issue, report progress, raise block
 back for review. Self-hostable, works with 26 agent CLIs, no lock-in.
 
 [![CI](https://github.com/patchbay-ai/patchbay/actions/workflows/ci.yml/badge.svg)](https://github.com/patchbay-ai/patchbay/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/patchbay-ai/patchbay?style=flat)](https://github.com/patchbay-ai/patchbay/releases)
+[![Release](https://img.shields.io/github/v/release/alexj11324/Cordy?style=flat)](https://github.com/alexj11324/Cordy/releases)
 [![GitHub stars](https://img.shields.io/github/stars/patchbay-ai/patchbay?style=flat)](https://github.com/patchbay-ai/patchbay/stargazers)
 [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/W8gYBn226t)
 
@@ -108,12 +108,12 @@ friends. Patchbay drives them; it doesn't ship them.
 <br/>
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.sh | bash -s -- --with-server
+curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash -s -- --with-server
 patchbay setup self-host
 ```
 
 On Windows, set `$env:PATCHBAY_MODE="with-server"`, then run the PowerShell installer:
-`irm https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.ps1 | iex`.
+`irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex`.
 
 This pulls the official images from GHCR and requires Docker. See the
 [Self-Hosting Guide](SELF_HOSTING.md); if the selected GHCR tag has not been published yet,

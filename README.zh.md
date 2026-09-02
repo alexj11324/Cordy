@@ -14,7 +14,7 @@ Patchbay 是一个开源的团队工作区。你像给同事派活一样，把�
 汇报、卡住了主动说，做完交回来给你审。可自部署，支持 26 种智能体 CLI，不绑定任何厂商。
 
 [![CI](https://github.com/patchbay-ai/patchbay/actions/workflows/ci.yml/badge.svg)](https://github.com/patchbay-ai/patchbay/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/patchbay-ai/patchbay?style=flat)](https://github.com/patchbay-ai/patchbay/releases)
+[![Release](https://img.shields.io/github/v/release/alexj11324/Cordy?style=flat)](https://github.com/alexj11324/Cordy/releases)
 [![GitHub stars](https://img.shields.io/github/stars/patchbay-ai/patchbay?style=flat)](https://github.com/patchbay-ai/patchbay/stargazers)
 [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/W8gYBn226t)
 
@@ -104,12 +104,12 @@ Claude Code、Codex、Cursor 都行。Patchbay 负责驱动它们，但不替你
 <br/>
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.sh | bash -s -- --with-server
+curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash -s -- --with-server
 patchbay setup self-host
 ```
 
 Windows 上先设 `$env:PATCHBAY_MODE="with-server"`，再跑 PowerShell 安装脚本：
-`irm https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.ps1 | iex`。
+`irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex`。
 
 这会拉取 GHCR 上的官方镜像，需要 Docker。详见[自部署指南](SELF_HOSTING.md)。如果你选的 GHCR
 标签还没发布，可以在代码目录里跑 `make selfhost-build` 兜底。

@@ -10,15 +10,12 @@ import {
  * by the Next.js fetch cache for 5 minutes (Vercel ISR) so hitting
  * /download costs at most one GitHub API call per region per 5 minutes.
  *
- * Desktop assets don't all land at the same time: CI uploads Linux and
- * Windows within a minute of each other, but macOS is packaged manually
- * (notarization credentials aren't wired into CI yet) and lands tens of
- * minutes later. A packaging job can also fail outright and leave a
- * release permanently short of some platforms. Either way the newest
- * release is not always the newest *downloadable* one, so we pull a
- * short window of recent releases and show the newest whose desktop
- * asset set is complete — every button on the page then resolves to a
- * real file.
+ * Desktop assets don't all land at the same time: the release workflow runs
+ * Linux, Windows, and both macOS architecture jobs in parallel, and a
+ * packaging or notarization job can still fail outright. Either way the
+ * newest release is not always the newest *downloadable* one, so we pull a
+ * short window of recent releases and show the newest whose desktop asset set
+ * is complete — every button on the page then resolves to a real file.
  *
  * On any failure (network, rate limit, malformed payload) returns a
  * `null`-shaped result and logs — the page degrades to a "version
@@ -37,7 +34,7 @@ export interface LatestRelease {
 // ship roughly daily, so that is days of head room — while staying one
 // cheap request.
 const GITHUB_RELEASES_URL =
-  "https://api.github.com/repos/patchbay-ai/patchbay/releases?per_page=5";
+  "https://api.github.com/repos/alexj11324/Cordy/releases?per_page=5";
 
 const REVALIDATE_SECONDS = 300;
 

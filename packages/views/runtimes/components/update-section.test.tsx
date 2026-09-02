@@ -40,17 +40,21 @@ afterEach(() => {
 
 describe("UpdateSection read-only status", () => {
   it("shows Latest without a redundant read-only label or update action", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({ tag_name: "v0.4.0" }),
-      }),
-    );
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ tag_name: "v0.4.0" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
 
     renderSection({ runtimeId: null });
 
     expect(await screen.findByText("Latest")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.github.com/repos/alexj11324/Cordy/releases/latest",
+      expect.objectContaining({
+        headers: { Accept: "application/vnd.github+json" },
+      }),
+    );
     expect(screen.queryByText("Read-only")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Update" }),

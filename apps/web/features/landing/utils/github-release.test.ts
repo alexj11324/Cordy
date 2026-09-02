@@ -37,7 +37,7 @@ function releasePayload(overrides: {
   return {
     tag_name: overrides.tag,
     published_at: "2026-08-17T10:00:00Z",
-    html_url: `https://github.com/patchbay-ai/patchbay/releases/tag/${overrides.tag}`,
+    html_url: `https://github.com/alexj11324/Cordy/releases/tag/${overrides.tag}`,
     prerelease: overrides.prerelease ?? false,
     draft: overrides.draft ?? false,
     assets: overrides.assets ?? [],
@@ -61,6 +61,16 @@ afterEach(() => {
 });
 
 describe("fetchLatestRelease", () => {
+  it("queries the canonical GitHub release repository", async () => {
+    const fetchMock = mockFetchWithReleases([]);
+
+    await fetchLatestRelease();
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://api.github.com/repos/alexj11324/Cordy/releases?per_page=5",
+    );
+  });
+
   it("uses the latest release when its desktop assets are complete", async () => {
     mockFetchWithReleases([
       releasePayload({ tag: "v0.2.14", assets: completeAssets("0.2.14") }),
