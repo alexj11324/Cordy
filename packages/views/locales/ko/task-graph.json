@@ -45,5 +45,19 @@
   "select_hint": "작업이나 의존성을 선택하여 저장된 실행 상태를 확인하세요.",
   "inspector": "작업 세부 정보",
   "prerequisites": "선행 조건 {{satisfied}}/{{total}}개 충족",
-  "no_dependencies": "기록된 의존성 엣지가 없습니다."
+  "no_dependencies": "기록된 의존성 엣지가 없습니다.",
+  "view": {
+    "label": "보기",
+    "graph": "그래프",
+    "list": "목록"
+  },
+  "project": {
+    "label": "프로젝트",
+    "all": "모든 프로젝트"
+  },
+  "canvas": "{{plan}}의 의존성 그래프 캔버스",
+  "canvas_node": "{{identifier}}: {{title}}. 웨이브 {{wave}}, {{state}}.",
+  "canvas_edge": "{{from}}에서 {{to}}(으)로의 의존성, {{status}}.",
+  "list_fallback_hint": "목록 보기로 전환하면 같은 계획을 제목과 텍스트로 볼 수 있습니다.",
+  "canvas_undrawn": "연결된 작업이 현재 필터로 숨겨져 그려지지 않은 의존성: {{count}}"
 }

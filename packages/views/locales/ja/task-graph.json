@@ -45,5 +45,19 @@
   "select_hint": "タスクまたは依存関係を選択すると、保存済みの実行状態を確認できます。",
   "inspector": "タスクの詳細",
   "prerequisites": "前提条件 {{satisfied}}/{{total}} 件を充足",
-  "no_dependencies": "依存関係のエッジは記録されていません。"
+  "no_dependencies": "依存関係のエッジは記録されていません。",
+  "view": {
+    "label": "表示",
+    "graph": "グラフ",
+    "list": "リスト"
+  },
+  "project": {
+    "label": "プロジェクト",
+    "all": "すべてのプロジェクト"
+  },
+  "canvas": "{{plan}} の依存関係グラフキャンバス",
+  "canvas_node": "{{identifier}}: {{title}}。ウェーブ {{wave}}、{{state}}。",
+  "canvas_edge": "{{from}} から {{to}} への依存関係、{{status}}。",
+  "list_fallback_hint": "リスト表示に切り替えると、同じ計画を見出しとテキストで確認できます。",
+  "canvas_undrawn": "接続先のタスクが現在のフィルターで非表示のため描画されていない依存関係: {{count}}"
 }

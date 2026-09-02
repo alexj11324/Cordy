@@ -45,5 +45,19 @@
   "select_hint": "Select a task or dependency to inspect its persisted execution state.",
   "inspector": "Task details",
   "prerequisites": "{{satisfied}}/{{total}} prerequisites satisfied",
-  "no_dependencies": "No dependency edges recorded."
+  "no_dependencies": "No dependency edges recorded.",
+  "view": {
+    "label": "View",
+    "graph": "Graph",
+    "list": "List"
+  },
+  "project": {
+    "label": "Project",
+    "all": "All projects"
+  },
+  "canvas": "Dependency graph canvas for {{plan}}",
+  "canvas_node": "{{identifier}}: {{title}}. Wave {{wave}}, {{state}}.",
+  "canvas_edge": "Dependency from {{from}} to {{to}}, {{status}}.",
+  "list_fallback_hint": "Switch to List view for the same plan as headings and text.",
+  "canvas_undrawn": "Dependencies not drawn because a task they connect is hidden by the current filter: {{count}}"
 }

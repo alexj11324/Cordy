@@ -14,6 +14,7 @@ import {
   dependencyGraphsOptions,
 } from "@patchbay/core/dependency-graphs";
 import { useWorkspaceId } from "@patchbay/core/hooks";
+import { projectListOptions } from "@patchbay/core/projects";
 import { useWorkspacePaths } from "@patchbay/core/paths";
 import { useWSReconnect, useWSEvent } from "@patchbay/core/realtime";
 import type {
@@ -22,6 +23,13 @@ import type {
   DependencyGraphResponse,
 } from "@patchbay/core/types";
 import { Button } from "@patchbay/ui/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@patchbay/ui/components/ui/select";
 import { cn } from "@patchbay/ui/lib/utils";
 import {
   CollectionPageHeader,
@@ -36,8 +44,14 @@ import {
   summarizeGraphs,
   type GraphFilter,
 } from "./graph-utils";
+import { GraphCanvas } from "./graph-canvas";
 
 const EMPTY_GRAPHS: DependencyGraphResponse[] = [];
+
+/** Sentinel for "no project filter"; an empty Select value is not selectable. */
+const ALL_PROJECTS = "__all__";
+
+type ViewMode = "graph" | "list";
 
 type Selection =
   | { kind: "node"; planId: string; nodeId: string }
@@ -121,6 +135,7 @@ function statusLabel(
 function PlanSection({
   graph,
   filter,
+  view,
   selection,
   onSelect,
   t,
@@ -128,6 +143,7 @@ function PlanSection({
 }: {
   graph: DependencyGraphResponse;
   filter: GraphFilter;
+  view: ViewMode;
   selection: Selection;
   onSelect: (selection: Selection) => void;
   t: ReturnType<typeof useT<"task-graph">>["t"];
@@ -187,7 +203,29 @@ function PlanSection({
         </div>
       ) : null}
 
-      {waves.length > 0 ? (
+      {view === "graph" ? (
+        <GraphCanvas
+          graph={graph}
+          filter={filter}
+          selection={selection}
+          onSelect={onSelect}
+          labels={{
+            canvas: t(($) => $.canvas, { plan: graph.plan.id.slice(0, 8) }),
+            nodeHint: (args) => t(($) => $.canvas_node, args),
+            edgeHint: ({ from, to, satisfied }) =>
+              t(($) => $.canvas_edge, {
+                from,
+                to,
+                status: satisfied
+                  ? t(($) => $.satisfied)
+                  : t(($) => $.blocked),
+              }),
+            waveColumn: (wave) => t(($) => $.wave, { count: wave }),
+            empty: t(($) => $.no_matching_tasks),
+            undrawn: (count) => t(($) => $.canvas_undrawn, { count }),
+          }}
+        />
+      ) : waves.length > 0 ? (
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {waves.map((wave) => {
             const waveNodes = nodes
@@ -283,7 +321,10 @@ function PlanSection({
         </p>
       )}
 
-      <div className="mt-4 border-t border-border/60 pt-3">
+      {/* The canvas already draws every edge it can, so the textual list is
+          the list view's job. It stays the readable fallback for edges the
+          canvas leaves undrawn. */}
+      <div className={cn("mt-4 border-t border-border/60 pt-3", view === "graph" && "hidden")}>
         <div className="mb-2 flex items-center gap-2 text-label font-medium">
           <Network aria-hidden="true" className="size-3.5 text-muted-foreground" />
           {t(($) => $.dependency)}
@@ -346,8 +387,17 @@ export function TaskGraphPage() {
   const wsId = useWorkspaceId();
   const paths = useWorkspacePaths();
   const queryClient = useQueryClient();
+  const [projectId, setProjectId] = useState<string>(ALL_PROJECTS);
+  const [view, setView] = useState<ViewMode>("graph");
   const query = useQuery({
-    ...dependencyGraphsOptions(wsId),
+    ...dependencyGraphsOptions(
+      wsId,
+      projectId === ALL_PROJECTS ? undefined : projectId,
+    ),
+    enabled: wsId.length > 0,
+  });
+  const projects = useQuery({
+    ...projectListOptions(wsId),
     enabled: wsId.length > 0,
   });
   const [filter, setFilter] = useState<GraphFilter>("all");
@@ -358,6 +408,19 @@ export function TaskGraphPage() {
   }, [queryClient, wsId]);
   useWSEvent("dependency_graph:updated", invalidateGraphs);
   useWSReconnect(invalidateGraphs);
+
+  // Base UI's Select needs the option list up front for typeahead and
+  // keyboard navigation, separately from the rendered items.
+  const projectSelectItems = useMemo(
+    () => [
+      { value: ALL_PROJECTS, label: t(($) => $.project.all) },
+      ...(projects.data ?? []).map((project) => ({
+        value: project.id,
+        label: project.title,
+      })),
+    ],
+    [projects.data, t],
+  );
 
   const graphs = query.data ?? EMPTY_GRAPHS;
   const summary = useMemo(() => summarizeGraphs(graphs), [graphs]);
@@ -435,23 +498,72 @@ export function TaskGraphPage() {
                 {t(($) => $.task_summary, summary)}
               </div>
               <div
-                className="flex flex-wrap items-center gap-1"
+                className="flex flex-wrap items-center gap-2"
                 aria-label={t(($) => $.toolbar)}
               >
-                {(["all", "ready", "running", "blocked"] as const).map((value) => (
-                  <Button
-                    key={value}
-                    type="button"
-                    size="xs"
-                    variant={filter === value ? "brandSubtle" : "ghost"}
-                    aria-pressed={filter === value}
-                    onClick={() => setFilter(value)}
+                <Select
+                  items={projectSelectItems}
+                  value={projectId}
+                  onValueChange={(value) =>
+                    setProjectId(value ?? ALL_PROJECTS)
+                  }
+                >
+                  <SelectTrigger
+                    size="sm"
+                    className="w-[180px]"
+                    aria-label={t(($) => $.project.label)}
                   >
-                    {t(($) => $.filter[value])}
-                  </Button>
-                ))}
+                    <SelectValue placeholder={t(($) => $.project.all)} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ALL_PROJECTS}>
+                      {t(($) => $.project.all)}
+                    </SelectItem>
+                    {(projects.data ?? []).map((project) => (
+                      <SelectItem key={project.id} value={project.id}>
+                        {project.title}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <div className="flex items-center gap-1">
+                  {(["graph", "list"] as const).map((value) => (
+                    <Button
+                      key={value}
+                      type="button"
+                      size="xs"
+                      variant={view === value ? "brandSubtle" : "ghost"}
+                      aria-pressed={view === value}
+                      onClick={() => setView(value)}
+                    >
+                      {t(($) => $.view[value])}
+                    </Button>
+                  ))}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1">
+                  {(["all", "ready", "running", "blocked"] as const).map((value) => (
+                    <Button
+                      key={value}
+                      type="button"
+                      size="xs"
+                      variant={filter === value ? "brandSubtle" : "ghost"}
+                      aria-pressed={filter === value}
+                      onClick={() => setFilter(value)}
+                    >
+                      {t(($) => $.filter[value])}
+                    </Button>
+                  ))}
+                </div>
               </div>
             </div>
+
+            {view === "graph" ? (
+              <p className="text-caption text-muted-foreground">
+                {t(($) => $.list_fallback_hint)}
+              </p>
+            ) : null}
 
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
               <div className="space-y-4">
@@ -460,6 +572,7 @@ export function TaskGraphPage() {
                     key={graph.plan.id}
                     graph={graph}
                     filter={filter}
+                    view={view}
                     selection={selection}
                     onSelect={setSelection}
                     t={t}

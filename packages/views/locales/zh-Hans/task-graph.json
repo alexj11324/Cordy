@@ -45,5 +45,19 @@
   "select_hint": "选择任务或依赖，查看已持久化的执行状态。",
   "inspector": "任务详情",
   "prerequisites": "已满足 {{satisfied}}/{{total}} 个前置条件",
-  "no_dependencies": "未记录依赖边。"
+  "no_dependencies": "未记录依赖边。",
+  "view": {
+    "label": "视图",
+    "graph": "图形",
+    "list": "列表"
+  },
+  "project": {
+    "label": "项目",
+    "all": "全部项目"
+  },
+  "canvas": "{{plan}} 的依赖图画布",
+  "canvas_node": "{{identifier}}：{{title}}。波次 {{wave}}，{{state}}。",
+  "canvas_edge": "从 {{from}} 到 {{to}} 的依赖，{{status}}。",
+  "list_fallback_hint": "切换到列表视图，可以用标题和文字查看同一个计划。",
+  "canvas_undrawn": "因所连任务被当前筛选条件隐藏而未绘制的依赖：{{count}}"
 }
