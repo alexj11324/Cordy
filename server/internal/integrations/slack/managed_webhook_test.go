@@ -9,12 +9,14 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
 
 	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
@@ -222,5 +224,78 @@ func TestWebhookFactory_ParksManagedInstall(t *testing.T) {
 	}
 	if err := ch.Disconnect(context.Background()); err != nil {
 		t.Fatalf("disconnect must be a no-op nil, got: %v", err)
+	}
+}
+
+type stubSlashEnqueuer struct {
+	cmds []slashCmd
+}
+
+type slashCmd struct {
+	cmd        slack.SlashCommand
+	envelopeID string
+}
+
+func (s *stubSlashEnqueuer) HandleEnvelope(_ context.Context, cmd slack.SlashCommand, envelopeID string) {
+	s.cmds = append(s.cmds, slashCmd{cmd: cmd, envelopeID: envelopeID})
+}
+
+func TestManagedWebhook_SlashDispatchesDetached(t *testing.T) {
+	stub := &stubSlashEnqueuer{}
+	webhook, err := NewManagedWebhook(ManagedWebhookConfig{Queries: &fakeAppLookup{}, Slash: stub, SigningSecret: "s3cr3t"})
+	if err != nil {
+		t.Fatalf("new webhook: %v", err)
+	}
+	form := url.Values{}
+	form.Set("command", "/issue")
+	form.Set("text", "the login button does nothing")
+	form.Set("user_id", "U1")
+	form.Set("team_id", "T1")
+	form.Set("api_app_id", "A1")
+	form.Set("channel_id", "C1")
+	form.Set("trigger_id", "13345224609.738474920.8088930")
+	form.Set("response_url", "https://hooks.slack.test/response")
+	body := form.Encode()
+	header, _ := signSlackRequest("s3cr3t", body, time.Now())
+	req := httptest.NewRequest(http.MethodPost, ManagedSlashPath, strings.NewReader(body))
+	req.Header = header
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	webhook.HandleSlash(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("slash delivery: code=%d, want ACK", rec.Code)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && len(stub.cmds) == 0 {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if len(stub.cmds) != 1 {
+		t.Fatalf("slash must dispatch detached once, got %d", len(stub.cmds))
+	}
+	got := stub.cmds[0]
+	if got.cmd.Command != "/issue" || got.cmd.TriggerID != "13345224609.738474920.8088930" {
+		t.Fatalf("dispatched wrong command: %+v", got.cmd)
+	}
+	if got.envelopeID != "" {
+		t.Fatalf("webhook transport has no socket envelope, got %q", got.envelopeID)
+	}
+}
+
+func TestManagedWebhook_SlashForgedSignatureRefused(t *testing.T) {
+	stub := &stubSlashEnqueuer{}
+	webhook, err := NewManagedWebhook(ManagedWebhookConfig{Queries: &fakeAppLookup{}, Slash: stub, SigningSecret: "s3cr3t"})
+	if err != nil {
+		t.Fatalf("new webhook: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, ManagedSlashPath, strings.NewReader("command=%2Fissue"))
+	req.Header.Set("X-Slack-Request-Timestamp", strconv.FormatInt(time.Now().Unix(), 10))
+	req.Header.Set("X-Slack-Signature", "v0=deadbeef")
+	rec := httptest.NewRecorder()
+	webhook.HandleSlash(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("forged slash: code=%d, want 401", rec.Code)
+	}
+	if len(stub.cmds) != 0 {
+		t.Fatal("forged slash must never dispatch")
 	}
 }

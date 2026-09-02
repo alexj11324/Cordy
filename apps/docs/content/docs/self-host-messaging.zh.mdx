@@ -28,6 +28,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 - `POST /api/workspaces/{id}/slack/install/managed` —— 发起托管 OAuth 授权（owner/admin）。Body：`{ "redirect_url": "…" }`。
 - `GET /api/integrations/slack/oauth/callback` —— 公开的 Slack 跳转落点；消费一次性 state、交换 code，然后 302 到绑定的 redirect URL。
 - `POST /api/integrations/slack/events` —— 公开的托管 Events API webhook（HMAC 签名，按 app + team 路由租户）。托管安装没有 Socket Mode 连接：这是它唯一的入站，Supervisor 只驻留它的槽位而不拨号。
+- `POST /api/integrations/slack/commands` —— 公开的托管 slash-command webhook（签名机制相同；因为没有 Socket Mode envelope，防重放靠 `trigger_id` 声明）。
 
 ## 1. BYO Socket Mode 部署
 

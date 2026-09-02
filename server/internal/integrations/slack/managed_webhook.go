@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -31,6 +32,13 @@ import (
 // (no Patchbay auth): authenticity comes from the HMAC-SHA256 request
 // signature, and tenant routing comes from the event's api_app_id + team_id.
 const ManagedEventsPath = "/api/integrations/slack/events"
+
+// ManagedSlashPath is the public webhook Slack calls per slash-command
+// invocation (the Socket Mode connection that carries them for BYO installs
+// does not exist for managed installs). Same authenticity story as events;
+// replay protection comes from the trigger_id dedup claim the slash processor
+// takes before enqueueing, since there is no Socket Mode envelope id here.
+const ManagedSlashPath = "/api/integrations/slack/commands"
 
 // managedWebhookBodyLimit caps one Events API delivery. Slack event bodies are
 // kilobytes; anything larger is not a real delivery.
@@ -81,14 +89,22 @@ func lookupInstallation(ctx context.Context, q appIDLookupQueries, apiAppID, tea
 	return managed, nil
 }
 
+// slashEnqueuer is the narrow slice of SlashCommandProcessor the webhook
+// needs. The concrete processor satisfies it; tests supply a stub.
+type slashEnqueuer interface {
+	HandleEnvelope(ctx context.Context, cmd slack.SlashCommand, envelopeID string)
+}
+
 // ManagedWebhookConfig configures the Events API ingress. Queries routes the
 // tenant, Handle is the engine entry point (Router.Handle), and SigningSecret
 // is the Slack app's signing secret — empty disables the endpoint with 503 so
 // a deployment that never configured it fails loudly instead of accepting
-// unsigned deliveries.
+// unsigned deliveries. Slash wires /issue-/new-/clear-over-webhook; nil
+// leaves slash handling off (events still flow).
 type ManagedWebhookConfig struct {
 	Queries       *db.Queries
 	Handle        channel.InboundHandler
+	Slash         slashEnqueuer
 	SigningSecret string
 	Logger        *slog.Logger
 }
@@ -97,6 +113,7 @@ type ManagedWebhookConfig struct {
 type ManagedWebhook struct {
 	q      appIDLookupQueries
 	handle channel.InboundHandler
+	slash  slashEnqueuer
 	secret string
 	logger *slog.Logger
 }
@@ -111,38 +128,51 @@ func NewManagedWebhook(cfg ManagedWebhookConfig) (*ManagedWebhook, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &ManagedWebhook{q: cfg.Queries, handle: cfg.Handle, secret: cfg.SigningSecret, logger: logger}, nil
+	return &ManagedWebhook{q: cfg.Queries, handle: cfg.Handle, slash: cfg.Slash, secret: cfg.SigningSecret, logger: logger}, nil
 }
+
+// verifiedBody reads the bounded body and checks the HMAC-SHA256 request
+// signature shared by both webhook entry points. It returns the raw body for
+// downstream parsing.
+func (w *ManagedWebhook) verifiedBody(r *http.Request) ([]byte, error) {
+	if w.secret == "" {
+		return nil, errWebhookUnconfigured
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, managedWebhookBodyLimit+1))
+	if err != nil {
+		return nil, errBadBody
+	}
+	if int64(len(body)) > managedWebhookBodyLimit {
+		return nil, errBodyTooLarge
+	}
+	verifier, err := slack.NewSecretsVerifier(r.Header, w.secret)
+	if err != nil {
+		return nil, errBadSignature
+	}
+	if _, err := verifier.Write(body); err != nil {
+		return nil, errBadSignature
+	}
+	if err := verifier.Ensure(); err != nil {
+		return nil, errBadSignature
+	}
+	return body, nil
+}
+
+var (
+	errWebhookUnconfigured = errors.New("slack managed webhook is not configured")
+	errBadBody             = errors.New("cannot read body")
+	errBodyTooLarge        = errors.New("body too large")
+	errBadSignature        = errors.New("invalid signature")
+)
 
 // HandleEvents serves POST ManagedEventsPath: verify, ACK fast, dispatch
 // detached. Verification failures are 401; malformed bodies are 400; anything
 // addressed to no installation (or to a revoked one — the engine decides that)
 // is ACKed and dropped by the shared pipeline, never retried by Slack.
 func (w *ManagedWebhook) HandleEvents(rw http.ResponseWriter, r *http.Request) {
-	if w.secret == "" {
-		http.Error(rw, "slack managed webhook is not configured", http.StatusServiceUnavailable)
-		return
-	}
-	body, err := io.ReadAll(io.LimitReader(r.Body, managedWebhookBodyLimit+1))
+	body, err := w.verifiedBody(r)
 	if err != nil {
-		http.Error(rw, "cannot read body", http.StatusBadRequest)
-		return
-	}
-	if int64(len(body)) > managedWebhookBodyLimit {
-		http.Error(rw, "body too large", http.StatusRequestEntityTooLarge)
-		return
-	}
-	verifier, err := slack.NewSecretsVerifier(r.Header, w.secret)
-	if err != nil {
-		http.Error(rw, "invalid signature headers", http.StatusUnauthorized)
-		return
-	}
-	if _, err := verifier.Write(body); err != nil {
-		http.Error(rw, "invalid signature", http.StatusUnauthorized)
-		return
-	}
-	if err := verifier.Ensure(); err != nil {
-		http.Error(rw, "invalid signature", http.StatusUnauthorized)
+		writeWebhookError(rw, err)
 		return
 	}
 	event, err := slackevents.ParseEvent(body, slackevents.OptionNoVerifyToken())
@@ -172,6 +202,50 @@ func (w *ManagedWebhook) HandleEvents(rw http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// writeWebhookError maps webhook verification failures to status codes. The
+// unconfigured case is 503 (fix the deployment), bad bodies are 400, and
+// signature problems are 401 — never 200, so Slack keeps retrying nothing and
+// the operator sees the misconfiguration in the response.
+func writeWebhookError(rw http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, errWebhookUnconfigured):
+		http.Error(rw, err.Error(), http.StatusServiceUnavailable)
+	case errors.Is(err, errBodyTooLarge):
+		http.Error(rw, err.Error(), http.StatusRequestEntityTooLarge)
+	case errors.Is(err, errBadSignature):
+		http.Error(rw, err.Error(), http.StatusUnauthorized)
+	default:
+		http.Error(rw, err.Error(), http.StatusBadRequest)
+	}
+}
+
+// HandleSlash serves POST ManagedSlashPath: verify the signature, parse the
+// form-encoded command, ACK, and dispatch detached. There is no Socket Mode
+// envelope id on this transport, so replay protection is the trigger_id dedup
+// claim inside the processor. Unknown commands ACK-and-drop in the processor;
+// a nil processor (slash not wired) ACKs without dispatch.
+func (w *ManagedWebhook) HandleSlash(rw http.ResponseWriter, r *http.Request) {
+	body, err := w.verifiedBody(r)
+	if err != nil {
+		writeWebhookError(rw, err)
+		return
+	}
+	r.Body = io.NopCloser(strings.NewReader(string(body)))
+	cmd, err := slack.SlashCommandParse(r)
+	if err != nil {
+		http.Error(rw, "cannot parse command", http.StatusBadRequest)
+		return
+	}
+	rw.WriteHeader(http.StatusOK)
+	if w.slash == nil {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), managedWebhookTimeout)
+		defer cancel()
+		w.slash.HandleEnvelope(ctx, cmd, "")
+	}()
+}
 // dispatchDetached normalizes one event_callback off the ACK path, mirroring
 // slackChannel.dispatchEventsAPI. The bot identity comes from the resolved
 // installation's stored config (not from a per-connection fixed id, since one

@@ -28,6 +28,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 - `POST /api/workspaces/{id}/slack/install/managed` — 매니지드 OAuth 승인을 시작합니다(owner/admin). Body: `{ "redirect_url": "…" }`.
 - `GET /api/integrations/slack/oauth/callback` — Slack 리디렉션용 공개 엔드포인트. 일회용 state를 소비하고 code를 교환한 뒤 바인딩된 redirect URL로 302합니다.
 - `POST /api/integrations/slack/events` — 매니지드 Events API용 공개 webhook(HMAC 서명, app + team으로 테넌트 라우팅). 매니지드 설치에는 Socket Mode 연결이 없으며, 이것이 유일한 인바운드입니다. Supervisor는 다이얼 없이 슬롯을 유지합니다.
+- `POST /api/integrations/slack/commands` — 매니지드 slash command용 공개 webhook(서명 방식 동일. Socket Mode envelope이 없으므로 리플레이 방지는 `trigger_id` 클레임으로 수행).
 
 ## 1. BYO Socket Mode 배포
 

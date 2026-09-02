@@ -883,6 +883,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			managedWebhook, werr := slack.NewManagedWebhook(slack.ManagedWebhookConfig{
 				Queries:       queries,
 				Handle:        channelRouter.Handle,
+				Slash:         slackSlash,
 				SigningSecret: strings.TrimSpace(os.Getenv("PATCHBAY_SLACK_SIGNING_SECRET")),
 				Logger:        slog.Default(),
 			})
@@ -1539,6 +1540,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// + team_id). The handler nil-checks: without the Slack block above there
 	// is no webhook and this 503s instead of panicking.
 	r.Post("/api/integrations/slack/events", h.ManagedSlackEvents)
+	// Slash invocations for managed installs (same authenticity story as the
+	// events webhook; replay protection is the trigger_id claim). Nil-checks
+	// like the events route above.
+	r.Post("/api/integrations/slack/commands", h.ManagedSlackCommands)
 	// VCS webhook for token-based providers (Forgejo / Gitea / GitLab). No Patchbay
 	// auth — authenticated per-connection by the provider's signature scheme;
 	// the connection id in the path selects the workspace, provider, and

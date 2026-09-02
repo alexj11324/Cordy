@@ -28,6 +28,7 @@ Hosted-only (inert without `PATCHBAY_SLACK_CLIENT_ID/_SECRET`):
 - `POST /api/workspaces/{id}/slack/install/managed` — start a managed-OAuth authorization (owner/admin). Body: `{ "redirect_url": "…" }`.
 - `GET /api/integrations/slack/oauth/callback` — public Slack redirect landing; consumes the single-use state, exchanges the code, and 302s to the bound redirect URL.
 - `POST /api/integrations/slack/events` — public managed Events API webhook (HMAC-signed; tenant-routed by app + team). Managed installs have no Socket Mode link: this is their only inbound, and the Supervisor parks their slot instead of dialing.
+- `POST /api/integrations/slack/commands` — public managed slash-command webhook (same signature story; replay protection is the `trigger_id` claim, as there is no Socket Mode envelope).
 
 ## 1. BYO Socket Mode deployment
 
