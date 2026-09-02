@@ -12,7 +12,12 @@
 import { create } from "zustand";
 import type { User } from "@patchbay/core/types";
 import { api, ApiError } from "./api";
-import { clearToken, getToken, setToken } from "./secure-storage";
+import {
+  clearLegacyGuestCredentials,
+  clearToken,
+  getToken,
+  setToken,
+} from "./secure-storage";
 import { queryClient } from "./query-client";
 import { useWorkspaceStore } from "./workspace-store";
 
@@ -40,9 +45,25 @@ export const useAuthStore = create<AuthState>((set) => ({
 
     const token = await getToken();
     if (!token) {
-      await Promise.allSettled([useWorkspaceStore.getState().clear()]);
+      await Promise.allSettled([
+        clearLegacyGuestCredentials(),
+        useWorkspaceStore.getState().clear(),
+      ]);
       queryClient.clear();
       set({ isLoading: false });
+      return;
+    }
+    // Guest mode is Desktop-local-only. Never restore a bearer created by the
+    // removed mobile Guest experiment, even if an older build persisted one.
+    if (token.startsWith("pbg_")) {
+      api.setToken(null);
+      await Promise.allSettled([
+        clearToken(),
+        clearLegacyGuestCredentials(),
+        useWorkspaceStore.getState().clear(),
+      ]);
+      queryClient.clear();
+      set({ user: null, isLoading: false });
       return;
     }
     api.setToken(token);
@@ -80,8 +101,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     let token: string | null = null;
     try {
       token = await getToken();
-      // RevokeGuestOnLogout runs on this public endpoint. Clear local state in
-      // finally so a network failure cannot strand the user in the app.
+      // Clear local state in finally so a network failure cannot strand the
+      // user in the app.
       if (token) await api.logout();
     } catch {
       // Local sign-out remains safe even when the server is unreachable.
@@ -89,6 +110,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       api.setToken(null);
       await Promise.allSettled([
         clearToken(),
+        clearLegacyGuestCredentials(),
         useWorkspaceStore.getState().clear(),
       ]);
       queryClient.clear();
