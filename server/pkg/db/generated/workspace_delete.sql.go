@@ -42,8 +42,8 @@ DELETE FROM agent_task_queue WHERE id IN (SELECT id FROM batch)
 
 // Deletes one bounded batch of tasks together with everything that hangs off
 // them, every arm keyed by task_id against an existing index, then the task rows
-// by primary key. The legacy FK cascades stay a safety net only: this statement
-// is what actually removes the rows, so teardown keeps working when they go.
+// by primary key. This statement owns the child cleanup; it does not depend on
+// legacy FK cascades, so teardown remains correct after those constraints go.
 func (q *Queries) DeleteTaskBatch(ctx context.Context, taskIds []pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deleteTaskBatch, taskIds)
 	return err
@@ -290,6 +290,42 @@ ws_channel_installations AS MATERIALIZED (
 ws_lark_installations AS MATERIALIZED (
     SELECT id FROM lark_installation WHERE workspace_id = $1
 ),
+deleted_agent_coordination_assignments AS (
+    DELETE FROM agent_coordination_assignment WHERE workspace_id = $1
+),
+deleted_agent_coordination_outbox AS (
+    DELETE FROM agent_coordination_outbox WHERE workspace_id = $1
+),
+deleted_task_execution_provenance AS (
+    DELETE FROM agent_task_execution_provenance WHERE workspace_id = $1
+),
+deleted_dependency_graph_edges AS (
+    DELETE FROM dependency_graph_edge WHERE workspace_id = $1
+),
+deleted_dependency_graph_issue_created_outbox AS (
+    DELETE FROM dependency_graph_issue_created_outbox WHERE workspace_id = $1
+),
+deleted_dependency_graph_nodes AS (
+    DELETE FROM dependency_graph_node WHERE workspace_id = $1
+),
+deleted_dependency_graph_plans AS (
+    DELETE FROM dependency_graph_plan WHERE workspace_id = $1
+),
+deleted_work_product_relations AS (
+    DELETE FROM work_product_relation WHERE workspace_id = $1
+),
+deleted_work_products AS (
+    DELETE FROM work_product WHERE workspace_id = $1
+),
+deleted_workspace_channel_messages AS (
+    DELETE FROM workspace_channel_message WHERE workspace_id = $1
+),
+deleted_workspace_channels AS (
+    DELETE FROM workspace_channel WHERE workspace_id = $1
+),
+deleted_workspace_issue_category_policies AS (
+    DELETE FROM workspace_issue_category_policy WHERE workspace_id = $1
+),
 deleted_task_tokens AS (
     DELETE FROM task_token
     WHERE workspace_id = $1
@@ -416,6 +452,10 @@ deleted_channel_task_deliveries AS (
 ),
 deleted_channel_outbound_messages AS (
     DELETE FROM channel_outbound_message
+    WHERE installation_id IN (SELECT id FROM ws_channel_installations)
+),
+deleted_channel_receive_state AS (
+    DELETE FROM channel_receive_state
     WHERE installation_id IN (SELECT id FROM ws_channel_installations)
 ),
 deleted_channel_chat_contexts AS (

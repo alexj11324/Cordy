@@ -576,13 +576,74 @@ func (q *Queries) LinkAttachmentsToIssue(ctx context.Context, arg LinkAttachment
 	return i, err
 }
 
-const listAttachmentURLsByCommentID = `-- name: ListAttachmentURLsByCommentID :many
-SELECT url FROM attachment
-WHERE comment_id = $1
+const listAttachmentURLsByChatSession = `-- name: ListAttachmentURLsByChatSession :many
+WITH target AS MATERIALIZED (
+    SELECT cs.id
+    FROM chat_session cs
+    WHERE cs.id = $2
+      AND cs.workspace_id = $1
+    FOR UPDATE
+)
+SELECT a.url
+FROM attachment a
+WHERE a.workspace_id = $1
+  AND (
+      a.chat_session_id IN (SELECT id FROM target)
+      OR a.chat_message_id IN (
+          SELECT cm.id
+          FROM chat_message cm
+          WHERE cm.chat_session_id IN (SELECT id FROM target)
+      )
+  )
+ORDER BY a.id
 `
 
-func (q *Queries) ListAttachmentURLsByCommentID(ctx context.Context, commentID pgtype.UUID) ([]string, error) {
-	rows, err := q.db.Query(ctx, listAttachmentURLsByCommentID, commentID)
+type ListAttachmentURLsByChatSessionParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	SessionID   pgtype.UUID `json:"session_id"`
+}
+
+// Collect before DeleteChatSession removes rows through chat_session and
+// chat_message cascades. The session lock is the same application-owned fence
+// held by the deleter, so a normal upload cannot land after this snapshot.
+func (q *Queries) ListAttachmentURLsByChatSession(ctx context.Context, arg ListAttachmentURLsByChatSessionParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, listAttachmentURLsByChatSession, arg.WorkspaceID, arg.SessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var url string
+		if err := rows.Scan(&url); err != nil {
+			return nil, err
+		}
+		items = append(items, url)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAttachmentURLsByCommentID = `-- name: ListAttachmentURLsByCommentID :many
+WITH RECURSIVE comment_tree(id, path) AS (
+    SELECT c.id, ARRAY[c.id]::uuid[]
+    FROM comment c
+    WHERE c.id = $1
+    UNION ALL
+    SELECT child.id, parent.path || child.id
+    FROM comment child
+    JOIN comment_tree parent ON parent.id = child.parent_id
+    WHERE NOT child.id = ANY(parent.path)
+)
+SELECT a.url
+FROM attachment a
+WHERE a.comment_id IN (SELECT id FROM comment_tree)
+`
+
+func (q *Queries) ListAttachmentURLsByCommentID(ctx context.Context, id pgtype.UUID) ([]string, error) {
+	rows, err := q.db.Query(ctx, listAttachmentURLsByCommentID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -605,10 +666,42 @@ const listAttachmentURLsByIssueOrComments = `-- name: ListAttachmentURLsByIssueO
 SELECT a.url FROM attachment a
 WHERE a.issue_id = $1
    OR a.comment_id IN (SELECT c.id FROM comment c WHERE c.issue_id = $1)
+   OR a.task_id IN (SELECT t.id FROM agent_task_queue t WHERE t.issue_id = $1)
 `
 
 func (q *Queries) ListAttachmentURLsByIssueOrComments(ctx context.Context, issueID pgtype.UUID) ([]string, error) {
 	rows, err := q.db.Query(ctx, listAttachmentURLsByIssueOrComments, issueID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var url string
+		if err := rows.Scan(&url); err != nil {
+			return nil, err
+		}
+		items = append(items, url)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAttachmentURLsByWorkspace = `-- name: ListAttachmentURLsByWorkspace :many
+SELECT a.url
+FROM attachment AS a
+WHERE a.workspace_id = $1
+ORDER BY a.id
+`
+
+// DeleteWorkspace holds the workspace row FOR UPDATE before taking this
+// snapshot. Select by the non-null workspace owner instead of nullable
+// relation columns so every attachment object removed by workspace teardown
+// is eligible for post-commit storage cleanup.
+func (q *Queries) ListAttachmentURLsByWorkspace(ctx context.Context, workspaceID pgtype.UUID) ([]string, error) {
+	rows, err := q.db.Query(ctx, listAttachmentURLsByWorkspace, workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -1090,6 +1183,57 @@ func (q *Queries) ListSourceContextIssueAttachments(ctx context.Context, arg Lis
 	return items, nil
 }
 
+const listSystemRuntimeChatAttachmentURLs = `-- name: ListSystemRuntimeChatAttachmentURLs :many
+WITH runtime_scope AS MATERIALIZED (
+    SELECT ar.id, ar.workspace_id
+    FROM agent_runtime ar
+    WHERE ar.id = $1
+), target_sessions AS MATERIALIZED (
+    SELECT cs.id
+    FROM chat_session cs
+    JOIN agent system_agent ON system_agent.id = cs.agent_id
+    JOIN runtime_scope runtime ON runtime.id = system_agent.runtime_id
+    WHERE system_agent.kind = 'system'
+      AND system_agent.workspace_id = runtime.workspace_id
+      AND cs.workspace_id = runtime.workspace_id
+    ORDER BY cs.id
+)
+SELECT a.url
+FROM attachment a
+WHERE a.workspace_id = (SELECT workspace_id FROM runtime_scope)
+  AND (
+      a.chat_session_id IN (SELECT id FROM target_sessions)
+      OR a.chat_message_id IN (
+          SELECT cm.id
+          FROM chat_message cm
+          WHERE cm.chat_session_id IN (SELECT id FROM target_sessions)
+      )
+  )
+ORDER BY a.id
+`
+
+// Runtime teardown deletes only system agents; user-agent sessions and their
+// attachments survive after the task history is detached.
+func (q *Queries) ListSystemRuntimeChatAttachmentURLs(ctx context.Context, runtimeID pgtype.UUID) ([]string, error) {
+	rows, err := q.db.Query(ctx, listSystemRuntimeChatAttachmentURLs, runtimeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var url string
+		if err := rows.Scan(&url); err != nil {
+			return nil, err
+		}
+		items = append(items, url)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockAttachmentsForIssueLink = `-- name: LockAttachmentsForIssueLink :many
 SELECT id FROM attachment
 WHERE workspace_id = $1
@@ -1128,6 +1272,100 @@ func (q *Queries) LockAttachmentsForIssueLink(ctx context.Context, arg LockAttac
 	return items, nil
 }
 
+const lockSystemRuntimeAgents = `-- name: LockSystemRuntimeAgents :many
+SELECT system_agent.id,
+       system_agent.workspace_id AS agent_workspace_id,
+       runtime.workspace_id AS runtime_workspace_id
+FROM agent system_agent
+JOIN agent_runtime runtime ON runtime.id = system_agent.runtime_id
+WHERE runtime.id = $1
+  AND system_agent.kind = 'system'
+ORDER BY system_agent.id
+FOR UPDATE OF system_agent
+`
+
+type LockSystemRuntimeAgentsRow struct {
+	ID                 pgtype.UUID `json:"id"`
+	AgentWorkspaceID   pgtype.UUID `json:"agent_workspace_id"`
+	RuntimeWorkspaceID pgtype.UUID `json:"runtime_workspace_id"`
+}
+
+// Once existing sessions are fenced, lock their system-agent parents. This
+// blocks a new chat_session FK insert until the final URL snapshot has been
+// taken, while preserving the session -> agent lock order.
+func (q *Queries) LockSystemRuntimeAgents(ctx context.Context, runtimeID pgtype.UUID) ([]LockSystemRuntimeAgentsRow, error) {
+	rows, err := q.db.Query(ctx, lockSystemRuntimeAgents, runtimeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []LockSystemRuntimeAgentsRow{}
+	for rows.Next() {
+		var i LockSystemRuntimeAgentsRow
+		if err := rows.Scan(&i.ID, &i.AgentWorkspaceID, &i.RuntimeWorkspaceID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockSystemRuntimeChatSessions = `-- name: LockSystemRuntimeChatSessions :many
+WITH runtime_scope AS MATERIALIZED (
+    SELECT ar.id, ar.workspace_id
+    FROM agent_runtime ar
+    WHERE ar.id = $1
+)
+SELECT cs.id,
+       cs.workspace_id AS session_workspace_id,
+       system_agent.workspace_id AS agent_workspace_id,
+       runtime.workspace_id AS runtime_workspace_id
+FROM chat_session cs
+JOIN agent system_agent ON system_agent.id = cs.agent_id
+JOIN runtime_scope runtime ON runtime.id = system_agent.runtime_id
+WHERE system_agent.kind = 'system'
+ORDER BY cs.id
+FOR UPDATE OF cs
+`
+
+type LockSystemRuntimeChatSessionsRow struct {
+	ID                 pgtype.UUID `json:"id"`
+	SessionWorkspaceID pgtype.UUID `json:"session_workspace_id"`
+	AgentWorkspaceID   pgtype.UUID `json:"agent_workspace_id"`
+	RuntimeWorkspaceID pgtype.UUID `json:"runtime_workspace_id"`
+}
+
+// Lock sessions before locking their system-agent parents. The application
+// takes this first so DeleteChatSession and runtime teardown share the same
+// session -> agent order.
+func (q *Queries) LockSystemRuntimeChatSessions(ctx context.Context, runtimeID pgtype.UUID) ([]LockSystemRuntimeChatSessionsRow, error) {
+	rows, err := q.db.Query(ctx, lockSystemRuntimeChatSessions, runtimeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []LockSystemRuntimeChatSessionsRow{}
+	for rows.Next() {
+		var i LockSystemRuntimeChatSessionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.SessionWorkspaceID,
+			&i.AgentWorkspaceID,
+			&i.RuntimeWorkspaceID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const replaceCommentAttachments = `-- name: ReplaceCommentAttachments :execrows
 UPDATE attachment
 SET comment_id = CASE
@@ -1154,4 +1392,52 @@ func (q *Queries) ReplaceCommentAttachments(ctx context.Context, arg ReplaceComm
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const validateSystemRuntimeChatSessions = `-- name: ValidateSystemRuntimeChatSessions :many
+SELECT cs.id,
+       cs.workspace_id AS session_workspace_id,
+       system_agent.workspace_id AS agent_workspace_id,
+       runtime.workspace_id AS runtime_workspace_id
+FROM chat_session cs
+JOIN agent system_agent ON system_agent.id = cs.agent_id
+JOIN agent_runtime runtime ON runtime.id = system_agent.runtime_id
+WHERE runtime.id = $1
+  AND system_agent.kind = 'system'
+ORDER BY cs.id
+`
+
+type ValidateSystemRuntimeChatSessionsRow struct {
+	ID                 pgtype.UUID `json:"id"`
+	SessionWorkspaceID pgtype.UUID `json:"session_workspace_id"`
+	AgentWorkspaceID   pgtype.UUID `json:"agent_workspace_id"`
+	RuntimeWorkspaceID pgtype.UUID `json:"runtime_workspace_id"`
+}
+
+// Re-read after the system-agent lock. A session committed between the first
+// session scan and the parent-agent lock must still be checked before the
+// cascade; once the parent lock is held, no new FK-backed session can commit.
+func (q *Queries) ValidateSystemRuntimeChatSessions(ctx context.Context, runtimeID pgtype.UUID) ([]ValidateSystemRuntimeChatSessionsRow, error) {
+	rows, err := q.db.Query(ctx, validateSystemRuntimeChatSessions, runtimeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ValidateSystemRuntimeChatSessionsRow{}
+	for rows.Next() {
+		var i ValidateSystemRuntimeChatSessionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.SessionWorkspaceID,
+			&i.AgentWorkspaceID,
+			&i.RuntimeWorkspaceID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

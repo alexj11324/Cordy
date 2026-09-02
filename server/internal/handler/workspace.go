@@ -19,6 +19,7 @@ import (
 	"github.com/patchbay-ai/patchbay/server/internal/issuestatus"
 	"github.com/patchbay-ai/patchbay/server/internal/logger"
 	obsmetrics "github.com/patchbay-ai/patchbay/server/internal/metrics"
+	"github.com/patchbay-ai/patchbay/server/internal/service"
 	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
 )
@@ -1104,7 +1105,7 @@ func (h *Handler) DeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback(r.Context())
 	qtx := h.Queries.WithTx(tx)
-	var sourceContextAttachmentURLs []string
+	var attachmentURLs []string
 	var sourceContextIntentURLs []string
 
 	// SET LOCAL is transaction-scoped, so pgxpool hands this connection back
@@ -1121,13 +1122,20 @@ func (h *Handler) DeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 		failWorkspaceDelete(w, r, workspaceID, "lock workspace", err)
 		return
 	}
+	// Capture every attachment URL while the workspace delete lock is held and
+	// before any delete step can remove the attachment rows. This deliberately
+	// uses workspace ownership rather than nullable relation columns, so the
+	// snapshot includes unattached uploads, issue/comment uploads, chat
+	// session/message uploads, transient task-bound uploads, and source-context
+	// uploads alike. The workspace lock also fences new FK-backed attachment
+	// inserts until this transaction commits or rolls back.
+	if attachmentURLs, err = service.ListWorkspaceAttachmentURLs(r.Context(), tx, requester.WorkspaceID); err != nil {
+		failWorkspaceDelete(w, r, workspaceID, "list workspace attachment objects", err)
+		return
+	}
 
 	if _, err := qtx.LockChatSessionsByWorkspace(r.Context(), requester.WorkspaceID); err != nil {
 		failWorkspaceDelete(w, r, workspaceID, "lock chat sessions", err)
-		return
-	}
-	if sourceContextAttachmentURLs, err = qtx.ListSourceContextAttachmentURLsByWorkspace(r.Context(), requester.WorkspaceID); err != nil {
-		failWorkspaceDelete(w, r, workspaceID, "list source context attachment objects", err)
 		return
 	}
 	if sourceContextIntentURLs, err = qtx.ListSourceContextObjectIntentURLsByWorkspace(r.Context(), requester.WorkspaceID); err != nil {
@@ -1314,7 +1322,7 @@ func (h *Handler) DeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to delete workspace")
 		return
 	}
-	h.deleteS3Objects(r.Context(), append(sourceContextAttachmentURLs, sourceContextIntentURLs...))
+	h.deleteS3Objects(r.Context(), append(attachmentURLs, sourceContextIntentURLs...))
 
 	slog.Info("workspace deleted", append(logger.RequestAttrs(r), "workspace_id", workspaceID)...)
 	h.publish(protocol.EventWorkspaceDeleted, workspaceID, "member", requestUserID(r), map[string]any{

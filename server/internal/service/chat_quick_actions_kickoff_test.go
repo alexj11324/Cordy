@@ -475,7 +475,10 @@ func TestReleaseSkipsAnAlreadyStartedSuccessor(t *testing.T) {
 		return id
 	}
 
-	taskA := seedTask("running")
+	// Release runs only after A is terminal. Keeping A active while the
+	// successor is dispatched would violate the execution-lane uniqueness
+	// contract and cannot occur in production.
+	taskA := seedTask("completed")
 	if _, err := pool.Exec(ctx, `
 		INSERT INTO chat_message (chat_session_id, role, content, message_kind, task_id)
 		VALUES ($1, 'user', 'kickoff context', 'onboarding_kickoff', $2)`, chatSessionID, taskA); err != nil {

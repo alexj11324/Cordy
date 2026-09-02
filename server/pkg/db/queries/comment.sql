@@ -574,7 +574,7 @@ WHERE parent_id = @parent_id AND author_type = 'agent' AND author_id = @agent_id
 
 -- name: DeleteComment :one
 -- Defense-in-depth: workspace_id is a SQL-layer tenant guard. See DeleteIssue.
-WITH locked_issue AS MATERIALIZED (
+WITH RECURSIVE locked_issue AS MATERIALIZED (
     -- Lock the aggregate owner before its child so this cannot deadlock with
     -- issue teardown (which takes the same issue -> comment order).
     SELECT issue.id
@@ -588,11 +588,40 @@ WITH locked_issue AS MATERIALIZED (
     -- acquired before DELETE can lock the comment. MATERIALIZED only prevents
     -- folding/re-evaluation and is not, by itself, a lock-order guarantee.
     SELECT count(*) AS locked_count FROM locked_issue
+), comment_tree(id, issue_id, workspace_id, path) AS MATERIALIZED (
+    SELECT c.id, c.issue_id, c.workspace_id, ARRAY[c.id]::uuid[]
+    FROM comment c
+    JOIN locked_issue li ON li.id = c.issue_id
+    WHERE c.id = $1 AND c.workspace_id = $2
+    UNION ALL
+    SELECT child.id, child.issue_id, child.workspace_id, parent.path || child.id
+    FROM comment child
+    JOIN comment_tree parent
+      ON parent.id = child.parent_id
+     AND parent.workspace_id = child.workspace_id
+    WHERE NOT child.id = ANY(parent.path)
+), detached_comment_tasks AS (
+    UPDATE agent_task_queue task
+    SET trigger_comment_id = NULL
+    WHERE task.trigger_comment_id IN (SELECT id FROM comment_tree)
+      AND (SELECT locked_count FROM issue_fence) >= 0
+    RETURNING task.id
+), deleted_comment_reactions AS (
+    DELETE FROM comment_reaction
+    WHERE comment_id IN (SELECT id FROM comment_tree)
+      AND (SELECT locked_count FROM issue_fence) >= 0
+    RETURNING comment_id
+), deleted_comment_attachments AS (
+    DELETE FROM attachment
+    WHERE comment_id IN (SELECT id FROM comment_tree)
+      AND (SELECT count(*) FROM deleted_comment_reactions) >= 0
+    RETURNING id
 ), deleted_comment AS (
     DELETE FROM comment
-    USING issue_fence
-    WHERE comment.id = $1 AND comment.workspace_id = $2
-      AND issue_fence.locked_count >= 0
+    WHERE comment.id IN (SELECT id FROM comment_tree)
+      AND comment.workspace_id = $2
+      AND (SELECT count(*) FROM detached_comment_tasks) >= 0
+      AND (SELECT count(*) FROM deleted_comment_attachments) >= 0
     RETURNING issue_id, workspace_id
 ), touched_issue AS (
     UPDATE issue

@@ -354,13 +354,62 @@ LIMIT 1;
 -- when a caller passes a foreign issue_id with its own workspace_id (the issue
 -- itself is correctly untouched, but the links are already gone) — the exact
 -- cross-tenant leak the #1661 guard above exists to prevent.
+--
+-- Coordination outbox and assignment rows are operational state without
+-- foreign keys to issue. Remove only the rows for this workspace-scoped target
+-- in this same statement, before the issue becomes invisible. This preserves
+-- task history and leaves normal worker retry semantics unchanged when the
+-- surrounding delete transaction rolls back.
+--
+-- Attachments likewise have application-owned lifecycle. Delete all three
+-- issue-owned shapes before their issue, comment, or task owner disappears:
+-- direct issue attachments, comment attachments, and task-only attachments.
+-- The workspace predicate is a tenant fence for damaged or legacy rows.
 WITH target AS (
     SELECT issue.id FROM issue WHERE issue.id = $1 AND issue.workspace_id = $2
 ),
+cleared_attachments AS (
+    DELETE FROM attachment
+    WHERE workspace_id = $2
+      AND (
+        issue_id IN (SELECT target.id FROM target)
+        OR comment_id IN (
+            SELECT comment.id
+            FROM comment
+            WHERE comment.workspace_id = $2
+              AND comment.issue_id IN (SELECT target.id FROM target)
+        )
+        OR task_id IN (
+            SELECT agent_task_queue.id
+            FROM agent_task_queue
+            WHERE agent_task_queue.issue_id IN (SELECT target.id FROM target)
+        )
+      )
+    RETURNING id
+),
 cleared_vcs_pr_links AS (
-    DELETE FROM issue_vcs_pull_request WHERE issue_id IN (SELECT target.id FROM target)
+    DELETE FROM issue_vcs_pull_request
+    WHERE issue_id IN (SELECT target.id FROM target)
+    RETURNING issue_id
+),
+cleared_coordination_assignments AS (
+    DELETE FROM agent_coordination_assignment
+    WHERE workspace_id = $2
+      AND issue_id IN (SELECT target.id FROM target)
+    RETURNING id
+),
+cleared_coordination_outbox AS (
+    DELETE FROM agent_coordination_outbox
+    WHERE workspace_id = $2
+      AND issue_id IN (SELECT target.id FROM target)
+      AND (SELECT count(*) FROM cleared_coordination_assignments) >= 0
+    RETURNING id
 )
-DELETE FROM issue WHERE issue.id IN (SELECT target.id FROM target);
+DELETE FROM issue
+WHERE issue.id IN (SELECT target.id FROM target)
+  AND (SELECT count(*) FROM cleared_attachments) >= 0
+  AND (SELECT count(*) FROM cleared_vcs_pr_links) >= 0
+  AND (SELECT count(*) FROM cleared_coordination_outbox) >= 0;
 
 -- name: ListOpenIssues :many
 -- See ListIssues for the semantics of involves_user_id (mirrors the 4-branch

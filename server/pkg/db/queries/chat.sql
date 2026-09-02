@@ -458,15 +458,69 @@ WHERE id = $1
 FOR UPDATE;
 
 -- name: DeleteChatSession :exec
--- Hard delete. chat_message rows cascade via FK ON DELETE CASCADE; the
--- chat_session_id on agent_task_queue is set NULL by FK so completed/failed
--- task history survives the session being removed. Callers MUST run inside
--- the same transaction that holds LockChatSessionForDelete and that has
--- already cancelled any in-flight tasks (see CancelAgentTasksByChatSession)
--- so the daemon does not keep running work whose result has nowhere to
--- land. workspace_id in the WHERE clause is a SQL-layer tenant guard; see
--- DeleteIssue.
-DELETE FROM chat_session WHERE id = $1 AND workspace_id = $2;
+-- Hard delete. Callers MUST run inside the same transaction that holds
+-- LockChatSessionForDelete and has already cancelled any in-flight tasks (see
+-- CancelAgentTasksByChatSession), so the daemon does not keep running work
+-- whose result has nowhere to land. The child cleanup is explicit because the
+-- adopted migration contract does not rely on database cascades.
+WITH target AS (
+    SELECT cs.id
+    FROM chat_session cs
+    WHERE cs.id = $1 AND cs.workspace_id = $2
+), detached_tasks AS (
+    UPDATE agent_task_queue task
+    SET chat_session_id = NULL
+    WHERE task.chat_session_id IN (SELECT target.id FROM target)
+    RETURNING task.id
+), deleted_channel_bindings AS (
+    DELETE FROM channel_chat_session_binding binding
+    WHERE binding.chat_session_id IN (SELECT target.id FROM target)
+    RETURNING binding.id
+), deleted_lark_bindings AS (
+    DELETE FROM lark_chat_session_binding binding
+    WHERE binding.chat_session_id IN (SELECT target.id FROM target)
+    RETURNING binding.id
+), deleted_channel_cards AS (
+    DELETE FROM channel_outbound_card_message card
+    WHERE card.chat_session_id IN (SELECT target.id FROM target)
+    RETURNING card.id
+), deleted_lark_cards AS (
+    DELETE FROM lark_outbound_card_message card
+    WHERE card.chat_session_id IN (SELECT target.id FROM target)
+    RETURNING card.id
+), deleted_draft_restores AS (
+    DELETE FROM chat_draft_restore restore
+    WHERE restore.chat_session_id IN (SELECT target.id FROM target)
+    RETURNING restore.id
+), deleted_builder_drafts AS (
+    DELETE FROM agent_builder_draft draft
+    WHERE draft.chat_session_id IN (SELECT target.id FROM target)
+    RETURNING draft.chat_session_id
+), deleted_attachments AS (
+    DELETE FROM attachment
+    WHERE chat_session_id IN (SELECT target.id FROM target)
+       OR chat_message_id IN (
+           SELECT cm.id
+           FROM chat_message cm
+           WHERE cm.chat_session_id IN (SELECT target.id FROM target)
+       )
+    RETURNING id
+), deleted_messages AS (
+    DELETE FROM chat_message
+    WHERE chat_session_id IN (SELECT target.id FROM target)
+      AND (SELECT count(*) FROM deleted_attachments) >= 0
+    RETURNING id
+)
+DELETE FROM chat_session AS cs
+WHERE cs.id IN (SELECT target.id FROM target)
+  AND (SELECT count(*) FROM detached_tasks) >= 0
+  AND (SELECT count(*) FROM deleted_channel_bindings) >= 0
+  AND (SELECT count(*) FROM deleted_lark_bindings) >= 0
+  AND (SELECT count(*) FROM deleted_channel_cards) >= 0
+  AND (SELECT count(*) FROM deleted_lark_cards) >= 0
+  AND (SELECT count(*) FROM deleted_draft_restores) >= 0
+  AND (SELECT count(*) FROM deleted_builder_drafts) >= 0
+  AND (SELECT count(*) FROM deleted_messages) >= 0;
 
 -- name: TouchChatSession :exec
 UPDATE chat_session SET updated_at = now()

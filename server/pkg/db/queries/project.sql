@@ -48,7 +48,31 @@ RETURNING *;
 
 -- name: DeleteProject :exec
 -- Defense-in-depth: workspace_id is a SQL-layer tenant guard. See DeleteIssue.
-DELETE FROM project WHERE id = $1 AND workspace_id = $2;
+-- Keep project references application-owned instead of relying on the project's
+-- historical ON DELETE SET NULL constraints. These updates are deliberately
+-- scoped by both project and workspace and run in the same transaction as the
+-- project-resource cleanup and project deletion.
+WITH cleared_issue_projects AS (
+    UPDATE issue
+    SET project_id = NULL
+    WHERE project_id = $1 AND workspace_id = $2
+    RETURNING id
+), cleared_automation_projects AS (
+    UPDATE automation
+    SET project_id = NULL
+    WHERE project_id = $1 AND workspace_id = $2
+    RETURNING id
+), deleted_resources AS (
+    DELETE FROM project_resource
+    WHERE project_id = $1 AND workspace_id = $2
+    RETURNING id
+)
+DELETE FROM project AS p
+WHERE p.id = $1
+  AND p.workspace_id = $2
+  AND (SELECT count(*) FROM cleared_issue_projects) >= 0
+  AND (SELECT count(*) FROM cleared_automation_projects) >= 0
+  AND (SELECT count(*) FROM deleted_resources) >= 0;
 
 -- name: CountIssuesByProject :one
 SELECT count(*) FROM issue

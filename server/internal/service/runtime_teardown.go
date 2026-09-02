@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
@@ -29,9 +30,13 @@ type RuntimeTeardownOptions struct {
 // RuntimeTeardownResult reports committed business-object changes so callers
 // can publish events after their transaction commits.
 type RuntimeTeardownResult struct {
-	UnboundAgents    []db.Agent
-	CancelledTasks   []db.AgentTaskQueue
+	UnboundAgents     []db.Agent
+	CancelledTasks    []db.AgentTaskQueue
 	PausedAutomations []db.Automation
+	// AttachmentURLs are the URLs belonging to system-agent chat sessions
+	// removed by this teardown. Callers delete the objects only after their
+	// surrounding transaction commits; user-agent sessions are not included.
+	AttachmentURLs []string
 }
 
 // ValidateRuntimeAgentWorkspaces refuses to mutate cross-workspace bindings.
@@ -57,6 +62,18 @@ func ValidateRuntimeAgentWorkspaces(runtime db.AgentRuntime, agents []db.Agent) 
 // draft restores are deleted with them. Task history is detached before runtime
 // deletion so the legacy ON DELETE CASCADE cannot erase it.
 func TeardownRuntime(ctx context.Context, qtx *db.Queries, runtimeID pgtype.UUID, opts RuntimeTeardownOptions) (RuntimeTeardownResult, error) {
+	return teardownRuntime(ctx, qtx, nil, runtimeID, opts)
+}
+
+// TeardownRuntimeWithAttachmentURLs is the storage-aware variant used by
+// deletion callers that own the surrounding pgx transaction. It collects
+// system-agent chat attachment URLs before the agent cascade and returns them
+// so the caller can delete objects after commit.
+func TeardownRuntimeWithAttachmentURLs(ctx context.Context, qtx *db.Queries, tx pgx.Tx, runtimeID pgtype.UUID, opts RuntimeTeardownOptions) (RuntimeTeardownResult, error) {
+	return teardownRuntime(ctx, qtx, tx, runtimeID, opts)
+}
+
+func teardownRuntime(ctx context.Context, qtx *db.Queries, tx pgx.Tx, runtimeID pgtype.UUID, opts RuntimeTeardownOptions) (RuntimeTeardownResult, error) {
 	var out RuntimeTeardownResult
 
 	runtime, err := qtx.LockAgentRuntime(ctx, runtimeID)
@@ -144,6 +161,12 @@ func TeardownRuntime(ctx context.Context, qtx *db.Queries, runtimeID pgtype.UUID
 	}
 	if err := pruneRuntimeSystemAgentChatDraftRestores(ctx, qtx, runtimeID); err != nil {
 		return out, fmt.Errorf("clean up chat draft restores: %w", err)
+	}
+	if tx != nil {
+		out.AttachmentURLs, err = ListSystemRuntimeChatAttachmentURLs(ctx, tx, runtimeID)
+		if err != nil {
+			return out, fmt.Errorf("collect system-agent chat attachment URLs: %w", err)
+		}
 	}
 	if err := qtx.DeleteSystemAgentsByRuntime(ctx, runtimeID); err != nil {
 		return out, fmt.Errorf("clean up system agents: %w", err)

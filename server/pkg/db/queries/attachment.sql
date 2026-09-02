@@ -78,11 +78,136 @@ ORDER BY created_at ASC, id ASC;
 -- name: ListAttachmentURLsByIssueOrComments :many
 SELECT a.url FROM attachment a
 WHERE a.issue_id = $1
-   OR a.comment_id IN (SELECT c.id FROM comment c WHERE c.issue_id = $1);
+   OR a.comment_id IN (SELECT c.id FROM comment c WHERE c.issue_id = $1)
+   OR a.task_id IN (SELECT t.id FROM agent_task_queue t WHERE t.issue_id = $1);
+
+-- name: ListAttachmentURLsByWorkspace :many
+-- DeleteWorkspace holds the workspace row FOR UPDATE before taking this
+-- snapshot. Select by the non-null workspace owner instead of nullable
+-- relation columns so every attachment object removed by workspace teardown
+-- is eligible for post-commit storage cleanup.
+SELECT a.url
+FROM attachment AS a
+WHERE a.workspace_id = sqlc.arg(workspace_id)
+ORDER BY a.id;
+
+-- name: ListAttachmentURLsByChatSession :many
+-- Collect before DeleteChatSession removes rows through chat_session and
+-- chat_message cascades. The session lock is the same application-owned fence
+-- held by the deleter, so a normal upload cannot land after this snapshot.
+WITH target AS MATERIALIZED (
+    SELECT cs.id
+    FROM chat_session cs
+    WHERE cs.id = sqlc.arg(session_id)
+      AND cs.workspace_id = sqlc.arg(workspace_id)
+    FOR UPDATE
+)
+SELECT a.url
+FROM attachment a
+WHERE a.workspace_id = sqlc.arg(workspace_id)
+  AND (
+      a.chat_session_id IN (SELECT id FROM target)
+      OR a.chat_message_id IN (
+          SELECT cm.id
+          FROM chat_message cm
+          WHERE cm.chat_session_id IN (SELECT id FROM target)
+      )
+  )
+ORDER BY a.id;
+
+-- name: ListSystemRuntimeChatAttachmentURLs :many
+-- Runtime teardown deletes only system agents; user-agent sessions and their
+-- attachments survive after the task history is detached.
+WITH runtime_scope AS MATERIALIZED (
+    SELECT ar.id, ar.workspace_id
+    FROM agent_runtime ar
+    WHERE ar.id = sqlc.arg(runtime_id)
+), target_sessions AS MATERIALIZED (
+    SELECT cs.id
+    FROM chat_session cs
+    JOIN agent system_agent ON system_agent.id = cs.agent_id
+    JOIN runtime_scope runtime ON runtime.id = system_agent.runtime_id
+    WHERE system_agent.kind = 'system'
+      AND system_agent.workspace_id = runtime.workspace_id
+      AND cs.workspace_id = runtime.workspace_id
+    ORDER BY cs.id
+)
+SELECT a.url
+FROM attachment a
+WHERE a.workspace_id = (SELECT workspace_id FROM runtime_scope)
+  AND (
+      a.chat_session_id IN (SELECT id FROM target_sessions)
+      OR a.chat_message_id IN (
+          SELECT cm.id
+          FROM chat_message cm
+          WHERE cm.chat_session_id IN (SELECT id FROM target_sessions)
+      )
+  )
+ORDER BY a.id;
+
+-- name: LockSystemRuntimeChatSessions :many
+-- Lock sessions before locking their system-agent parents. The application
+-- takes this first so DeleteChatSession and runtime teardown share the same
+-- session -> agent order.
+WITH runtime_scope AS MATERIALIZED (
+    SELECT ar.id, ar.workspace_id
+    FROM agent_runtime ar
+    WHERE ar.id = sqlc.arg(runtime_id)
+)
+SELECT cs.id,
+       cs.workspace_id AS session_workspace_id,
+       system_agent.workspace_id AS agent_workspace_id,
+       runtime.workspace_id AS runtime_workspace_id
+FROM chat_session cs
+JOIN agent system_agent ON system_agent.id = cs.agent_id
+JOIN runtime_scope runtime ON runtime.id = system_agent.runtime_id
+WHERE system_agent.kind = 'system'
+ORDER BY cs.id
+FOR UPDATE OF cs;
+
+-- name: LockSystemRuntimeAgents :many
+-- Once existing sessions are fenced, lock their system-agent parents. This
+-- blocks a new chat_session FK insert until the final URL snapshot has been
+-- taken, while preserving the session -> agent lock order.
+SELECT system_agent.id,
+       system_agent.workspace_id AS agent_workspace_id,
+       runtime.workspace_id AS runtime_workspace_id
+FROM agent system_agent
+JOIN agent_runtime runtime ON runtime.id = system_agent.runtime_id
+WHERE runtime.id = sqlc.arg(runtime_id)
+  AND system_agent.kind = 'system'
+ORDER BY system_agent.id
+FOR UPDATE OF system_agent;
+
+-- name: ValidateSystemRuntimeChatSessions :many
+-- Re-read after the system-agent lock. A session committed between the first
+-- session scan and the parent-agent lock must still be checked before the
+-- cascade; once the parent lock is held, no new FK-backed session can commit.
+SELECT cs.id,
+       cs.workspace_id AS session_workspace_id,
+       system_agent.workspace_id AS agent_workspace_id,
+       runtime.workspace_id AS runtime_workspace_id
+FROM chat_session cs
+JOIN agent system_agent ON system_agent.id = cs.agent_id
+JOIN agent_runtime runtime ON runtime.id = system_agent.runtime_id
+WHERE runtime.id = sqlc.arg(runtime_id)
+  AND system_agent.kind = 'system'
+ORDER BY cs.id;
 
 -- name: ListAttachmentURLsByCommentID :many
-SELECT url FROM attachment
-WHERE comment_id = $1;
+WITH RECURSIVE comment_tree(id, path) AS (
+    SELECT c.id, ARRAY[c.id]::uuid[]
+    FROM comment c
+    WHERE c.id = $1
+    UNION ALL
+    SELECT child.id, parent.path || child.id
+    FROM comment child
+    JOIN comment_tree parent ON parent.id = child.parent_id
+    WHERE NOT child.id = ANY(parent.path)
+)
+SELECT a.url
+FROM attachment a
+WHERE a.comment_id IN (SELECT id FROM comment_tree);
 
 -- name: LinkAttachmentsToComment :exec
 UPDATE attachment

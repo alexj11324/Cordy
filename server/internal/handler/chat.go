@@ -670,10 +670,9 @@ func (h *Handler) SetChatSessionArchived(w http.ResponseWriter, r *http.Request)
 }
 
 // DeleteChatSession hard-deletes a chat session owned by the caller. The
-// row lock + cancel + delete run inside a single tx so a concurrent
-// SendChatMessage cannot enqueue a task that would later be orphaned by
-// the FK ON DELETE SET NULL on agent_task_queue.chat_session_id. Cancel
-// failure aborts the delete; events fire only after commit.
+// row lock + cancel + child cleanup + delete run inside a single tx so a
+// concurrent SendChatMessage cannot enqueue work after the session is fenced.
+// Cancel failure aborts the delete; events fire only after commit.
 func (h *Handler) DeleteChatSession(w http.ResponseWriter, r *http.Request) {
 	userID, ok := requireUserID(w, r)
 	if !ok {
@@ -695,10 +694,9 @@ func (h *Handler) DeleteChatSession(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback(r.Context())
 	qtx := h.Queries.WithTx(tx)
 
-	// FOR UPDATE on the chat_session row blocks any concurrent INSERT into
-	// agent_task_queue that references it (the FK validation needs a
-	// KEY SHARE lock). After we commit the delete, the blocked INSERT
-	// fails its FK check, so it can't land an orphaned task.
+	// FOR UPDATE on the chat_session row is the application-owned fence against
+	// a concurrent send. The sender takes the same lock before enqueuing, so it
+	// cannot commit a task after this deletion has passed its cancellation sweep.
 	if _, err := qtx.LockChatSessionForDelete(r.Context(), session.ID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// Already gone — treat as idempotent success.
@@ -714,6 +712,16 @@ func (h *Handler) DeleteChatSession(w http.ResponseWriter, r *http.Request) {
 	// otherwise a builder-agent delete can deadlock with a concurrent claim.
 	if _, err := qtx.GetAgentForClaimUpdate(r.Context(), session.AgentID); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to lock chat agent")
+		return
+	}
+
+	// Attachment rows are removed explicitly by DeleteChatSession, replacing
+	// the historical chat_session/chat_message cascades. Capture every URL
+	// while the session lock is held; storage deletion happens only after the
+	// database transaction commits below.
+	attachmentURLs, err := service.ListChatSessionAttachmentURLs(r.Context(), tx, session.ID, session.WorkspaceID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to collect chat attachment URLs")
 		return
 	}
 
@@ -770,7 +778,10 @@ func (h *Handler) DeleteChatSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to remove chat session agent label assignments")
 		return
 	}
-	if err := qtx.DeleteSystemAgentByID(r.Context(), session.AgentID); err != nil {
+	// A builder agent is normally one-to-one with this session. Keep it when an
+	// unexpected second session still references it, so agent deletion cannot
+	// cascade that session (and its attachments) outside this URL collection.
+	if _, err := service.DeleteSystemAgentIfOrphaned(r.Context(), tx, session.AgentID, session.WorkspaceID); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to clean up chat session agent")
 		return
 	}
@@ -780,6 +791,7 @@ func (h *Handler) DeleteChatSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to commit chat session delete")
 		return
 	}
+	h.deleteS3Objects(r.Context(), attachmentURLs)
 
 	// Post-commit broadcasts. Subscribers should never observe events for a
 	// tx that didn't actually persist.
