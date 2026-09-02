@@ -20,10 +20,12 @@ import { ProjectIcon } from "@/components/ui/project-icon";
 import { StatusIcon } from "@/components/ui/status-icon";
 import { formatDateOnly } from "@patchbay/core/issues/date";
 import { useActorLookup } from "@/data/use-actor-name";
+import { useAuthStore } from "@/data/auth-store";
 import { useNewIssueDraftStore } from "@/data/stores/new-issue-draft-store";
 import { useWorkspaceStore } from "@/data/workspace-store";
 import { PRIORITY_LABEL } from "@/lib/issue-status";
 import { useIssueStatuses } from "@/lib/use-issue-statuses";
+import { getIssueRoleCopy } from "@/lib/issue-role-copy";
 
 /**
  * Picker fields the new-issue draft form can open. Bound to a typed map
@@ -33,14 +35,18 @@ import { useIssueStatuses } from "@/lib/use-issue-statuses";
 type NewIssuePickerField =
   | "status"
   | "priority"
-  | "assignee"
+  | "owner"
+  | "executor"
+  | "reviewer"
   | "project"
   | "due-date";
 
 const NEW_ISSUE_PICKER_PATHNAMES = {
   status: "/[workspace]/new-issue-picker/status",
   priority: "/[workspace]/new-issue-picker/priority",
-  assignee: "/[workspace]/new-issue-picker/assignee",
+  owner: "/[workspace]/new-issue-picker/owner",
+  executor: "/[workspace]/new-issue-picker/executor",
+  reviewer: "/[workspace]/new-issue-picker/reviewer",
   project: "/[workspace]/new-issue-picker/project",
   "due-date": "/[workspace]/new-issue-picker/due-date",
 } as const satisfies Record<NewIssuePickerField, string>;
@@ -49,16 +55,26 @@ export function CreateFormAttributeRow() {
   const wsSlug = useWorkspaceStore((s) => s.currentWorkspaceSlug);
   const status = useNewIssueDraftStore((s) => s.status);
   const priority = useNewIssueDraftStore((s) => s.priority);
-  const assignee = useNewIssueDraftStore((s) => s.assignee);
+  const owner = useNewIssueDraftStore((s) => s.owner);
+  const executor = useNewIssueDraftStore((s) => s.executor);
+  const reviewer = useNewIssueDraftStore((s) => s.reviewer);
   const dueDate = useNewIssueDraftStore((s) => s.dueDate);
   const project = useNewIssueDraftStore((s) => s.project);
 
   const { getName } = useActorLookup();
+  const language = useAuthStore((s) => s.user?.language);
+  const roleCopy = getIssueRoleCopy(language);
   // The draft can hold a custom status the user picked in the sheet. (MUL-6243)
   const { categoryOf, colorOf, labelOf } = useIssueStatuses();
-  const assigneeLabel = assignee
-    ? getName(assignee.type, assignee.id)
-    : "Assignee";
+  const ownerLabel = owner
+    ? getName(owner.type, owner.id) ?? roleCopy.unknown
+    : roleCopy.owner;
+  const executorLabel = executor
+    ? getName(executor.type, executor.id) ?? roleCopy.unknown
+    : roleCopy.executor;
+  const reviewerLabel = reviewer
+    ? getName(reviewer.type, reviewer.id) ?? roleCopy.unknown
+    : roleCopy.reviewer;
   const priorityLabel =
     priority === "none" ? "Priority" : PRIORITY_LABEL[priority];
 
@@ -94,10 +110,22 @@ export function CreateFormAttributeRow() {
         />
         <AttributeChip
           icon={
-            assignee ? (
+            owner ? (
+              <ActorAvatar type="member" id={owner.id} size={16} />
+            ) : (
+              <Ionicons name="person-outline" size={16} color="#a1a1aa" />
+            )
+          }
+          label={ownerLabel}
+          variant={owner ? "filled" : "dimmed"}
+          onPress={() => open("owner")}
+        />
+        <AttributeChip
+          icon={
+            executor ? (
               <ActorAvatar
-                type={assignee.type}
-                id={assignee.id}
+                type={executor.type}
+                id={executor.id}
                 size={16}
                 showPresence
               />
@@ -109,9 +137,29 @@ export function CreateFormAttributeRow() {
               />
             )
           }
-          label={assigneeLabel}
-          variant={assignee ? "filled" : "dimmed"}
-          onPress={() => open("assignee")}
+          label={executorLabel}
+          variant={executor ? "filled" : "dimmed"}
+          onPress={() => open("executor")}
+        />
+        <AttributeChip
+          icon={
+            reviewer ? (
+              <ActorAvatar
+                type={reviewer.type}
+                id={reviewer.id}
+                size={16}
+              />
+            ) : (
+              <Ionicons
+                name="checkmark-circle-outline"
+                size={16}
+                color="#a1a1aa"
+              />
+            )
+          }
+          label={reviewerLabel}
+          variant={reviewer ? "filled" : "dimmed"}
+          onPress={() => open("reviewer")}
         />
         <AttributeChip
           icon={

@@ -10,7 +10,9 @@
  * numeric detents):
  *   status    →  issue/[id]/picker/status
  *   priority  →  issue/[id]/picker/priority
- *   assignee  →  issue/[id]/picker/assignee
+ *   owner     →  issue/[id]/picker/owner
+ *   executor  →  issue/[id]/picker/executor
+ *   reviewer  →  issue/[id]/picker/reviewer
  *   labels    →  issue/[id]/picker/label   (multi-select, stays open)
  *   project   →  issue/[id]/picker/project
  *   due_date  →  issue/[id]/picker/due-date
@@ -31,10 +33,12 @@ import { ActorAvatar } from "@/components/ui/actor-avatar";
 import { ProjectIcon } from "@/components/ui/project-icon";
 import { AttributeChip } from "./attribute-chip";
 import { useActorLookup } from "@/data/use-actor-name";
+import { useAuthStore } from "@/data/auth-store";
 import { findProject, projectListOptions } from "@/data/queries/projects";
 import { useWorkspaceStore } from "@/data/workspace-store";
 import { PRIORITY_LABEL as PRIORITY_FULL_LABEL } from "@/lib/issue-status";
 import { useIssueStatuses } from "@/lib/use-issue-statuses";
+import { getIssueRoleCopy } from "@/lib/issue-role-copy";
 
 // Chip placeholder shortens `none` from "No priority" → "Priority" so the
 // unset chip reads as a placeholder, not as a confusing assigned value.
@@ -52,7 +56,9 @@ const PRIORITY_CHIP_LABEL: Record<IssuePriority, string> = {
 type IssuePickerField =
   | "status"
   | "priority"
-  | "assignee"
+  | "owner"
+  | "executor"
+  | "reviewer"
   | "label"
   | "project"
   | "due-date";
@@ -60,7 +66,9 @@ type IssuePickerField =
 const ISSUE_PICKER_PATHNAMES = {
   status: "/[workspace]/issue/[id]/picker/status",
   priority: "/[workspace]/issue/[id]/picker/priority",
-  assignee: "/[workspace]/issue/[id]/picker/assignee",
+  owner: "/[workspace]/issue/[id]/picker/owner",
+  executor: "/[workspace]/issue/[id]/picker/executor",
+  reviewer: "/[workspace]/issue/[id]/picker/reviewer",
   label: "/[workspace]/issue/[id]/picker/label",
   project: "/[workspace]/issue/[id]/picker/project",
   "due-date": "/[workspace]/issue/[id]/picker/due-date",
@@ -76,6 +84,8 @@ function formatDueDate(iso: string | null): string | null {
 export function AttributeRow({ issue }: { issue: Issue }) {
   const wsId = useWorkspaceStore((s) => s.currentWorkspaceId);
   const wsSlug = useWorkspaceStore((s) => s.currentWorkspaceSlug);
+  const language = useAuthStore((s) => s.user?.language);
+  const roleCopy = getIssueRoleCopy(language);
   const { getName } = useActorLookup();
   // The chip shows the issue's own status, which may be a custom one — name
   // and colour come from the workspace catalog, the glyph from its category.
@@ -92,15 +102,27 @@ export function AttributeRow({ issue }: { issue: Issue }) {
 
   const labels = issue.labels ?? [];
 
-  const assigneeValue =
+  const ownerValue =
+    issue.owner_type === "member" && issue.owner_id
+      ? { type: "member" as const, id: issue.owner_id }
+      : null;
+  const executorValue =
     issue.executor_type && issue.executor_id
       ? { type: issue.executor_type, id: issue.executor_id }
-      : issue.owner_type && issue.owner_id
-        ? { type: issue.owner_type, id: issue.owner_id }
-        : null;
+      : null;
+  const reviewerValue =
+    issue.reviewer_type && issue.reviewer_id
+      ? { type: issue.reviewer_type, id: issue.reviewer_id }
+      : null;
 
-  const assigneeName = assigneeValue
-    ? getName(assigneeValue.type, assigneeValue.id)
+  const ownerName = ownerValue
+    ? getName(ownerValue.type, ownerValue.id)
+    : null;
+  const executorName = executorValue
+    ? getName(executorValue.type, executorValue.id)
+    : null;
+  const reviewerName = reviewerValue
+    ? getName(reviewerValue.type, reviewerValue.id)
     : null;
   const dueLabel = formatDueDate(issue.due_date);
 
@@ -137,31 +159,67 @@ export function AttributeRow({ issue }: { issue: Issue }) {
         onPress={() => openPicker("priority")}
       />
 
-      {/* Assignee */}
-      {assigneeValue ? (
+      {/* Owner — the human accountable for the issue. */}
+      <AttributeChip
+        icon={
+          ownerValue ? (
+            <ActorAvatar type="member" id={ownerValue.id} size={16} />
+          ) : (
+            <View className="size-4 rounded-full border border-dashed border-muted-foreground/40" />
+          )
+        }
+        label={ownerValue ? ownerName ?? roleCopy.unknown : roleCopy.owner}
+        variant={ownerValue ? "filled" : "dimmed"}
+        onPress={() => openPicker("owner")}
+      />
+
+      {/* Executor — agent or team that performs the work. */}
+      {executorValue ? (
         <AttributeChip
           icon={
             <ActorAvatar
-              type={assigneeValue.type}
-              id={assigneeValue.id}
+              type={executorValue.type}
+              id={executorValue.id}
               size={16}
               showPresence
             />
           }
-          label={assigneeName ?? "Unknown"}
+          label={executorName ?? roleCopy.unknown}
           variant="filled"
-          onPress={() => openPicker("assignee")}
+          onPress={() => openPicker("executor")}
         />
       ) : (
         <AttributeChip
           icon={
             <View className="size-4 rounded-full border border-dashed border-muted-foreground/40" />
           }
-          label="Assignee"
+          label={roleCopy.executor}
           variant="dimmed"
-          onPress={() => openPicker("assignee")}
+          onPress={() => openPicker("executor")}
         />
       )}
+
+      {/* Reviewer — independent from the executor. */}
+      <AttributeChip
+        icon={
+          reviewerValue ? (
+            <ActorAvatar
+              type={reviewerValue.type}
+              id={reviewerValue.id}
+              size={16}
+            />
+          ) : (
+            <View className="size-4 rounded-full border border-dashed border-muted-foreground/40" />
+          )
+        }
+        label={
+          reviewerValue
+            ? reviewerName ?? roleCopy.unknown
+            : roleCopy.reviewer
+        }
+        variant={reviewerValue ? "filled" : "dimmed"}
+        onPress={() => openPicker("reviewer")}
+      />
 
       {/* Each existing label renders as its own chip. Tap opens the
           label picker (multi-select toggle). No quick-detach gesture

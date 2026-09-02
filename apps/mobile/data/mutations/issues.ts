@@ -497,7 +497,8 @@ function statusCategoryPatch(status: IssueStatus | undefined): Partial<Issue> {
 }
 
 /**
- * Update an issue's editable fields (status / priority / assignee / due_date /
+ * Update an issue's editable fields (status / priority / owner / executor /
+ * reviewer / due_date /
  * project_id / etc). Predictable fields merge optimistically into the detail
  * cache; description stays authoritative because the server resolves it
  * against description_base and hidden channel-media markers. Settle invalidates
