@@ -1,0 +1,241 @@
+import assert from "node:assert/strict";
+import { randomBytes } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+
+import { chromium, expect } from "@playwright/test";
+import {
+  clerk,
+  clerkSetup,
+  setupClerkTestingToken,
+} from "@clerk/testing/playwright";
+
+import {
+  ACCOUNTS_ORIGIN,
+  API_ORIGIN,
+  buildGoogleOAuthProbeUrl,
+  buildPkceChallenge,
+  PRODUCT_ORIGIN,
+  requireBrowserReceipt,
+  requireBuildHeaders,
+  requireClerkPublishableKey,
+  requireDesktopCompletion,
+  requireGoogleOAuthNavigation,
+  requireRedeemedSession,
+} from "./verify-production-browser-contract.mjs";
+
+const SCREENSHOT_PATH = path.join(
+  process.env.RUNNER_TEMP ?? process.env.TMPDIR ?? ".",
+  "production-browser-failure.png",
+);
+
+async function verifyGoogleOAuthStart(browser) {
+  const context = await browser.newContext({ locale: "en-US" });
+  const page = await context.newPage();
+  const state = randomBytes(32).toString("base64url");
+  const codeChallenge = randomBytes(32).toString("base64url");
+  const entryUrl = buildGoogleOAuthProbeUrl({ codeChallenge, state });
+  const registration = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      url.origin === ACCOUNTS_ORIGIN &&
+      url.pathname === "/v1/desktop/google/attempt" &&
+      response.request().method() === "POST"
+    );
+  });
+  const google = page.waitForURL(
+    (url) => url.protocol === "https:" && url.hostname === "accounts.google.com",
+  );
+  try {
+    await page.goto(entryUrl, { waitUntil: "domcontentloaded" });
+    const response = await registration;
+    assert.equal(response.status(), 200, "desktop OAuth attempt registration");
+    await google;
+    requireGoogleOAuthNavigation(page.url());
+  } finally {
+    await context.close();
+  }
+}
+
+async function redeemSyntheticLogin(browser, credentials, publishableKey) {
+  const verifier = randomBytes(32).toString("base64url");
+  const state = randomBytes(32).toString("base64url");
+  const codeChallenge = buildPkceChallenge(verifier);
+  const query = new URLSearchParams({
+    platform: "desktop",
+    state,
+    code_challenge: codeChallenge,
+  }).toString();
+  const context = await browser.newContext({ locale: "en-US" });
+  // Publish the deployment-issued testing token first so clerkSetup adopts it
+  // instead of reaching for a Clerk secret key: the runner deliberately never
+  // holds one. clerkSetup's only remaining job here is resolving CLERK_FAPI
+  // from the publishable key, which setupClerkTestingToken requires.
+  process.env.CLERK_TESTING_TOKEN = credentials.testingToken;
+  await clerkSetup({ publishableKey, dotenv: false });
+  await setupClerkTestingToken({ context });
+  const page = await context.newPage();
+  try {
+    const registered = await context.request.post(
+      `${ACCOUNTS_ORIGIN}/v1/desktop/google/attempt`,
+      {
+        data: { state, code_challenge: codeChallenge },
+        headers: { "x-patchbay-auth-contract-version": "1" },
+      },
+    );
+    assert.equal(registered.status(), 200, "desktop login attempt registration");
+
+    await page.goto(`${ACCOUNTS_ORIGIN}/oauth/google/callback?${query}`, {
+      waitUntil: "domcontentloaded",
+    });
+    await clerk.loaded({ page });
+    const signedIn = await page.evaluate(async (ticket) => {
+      const attempt = await window.Clerk.client.signIn.create({
+        strategy: "ticket",
+        ticket,
+      });
+      if (attempt.status !== "complete" || !attempt.createdSessionId) {
+        return false;
+      }
+      await window.Clerk.setActive({ session: attempt.createdSessionId });
+      return true;
+    }, credentials.signInTicket);
+    assert.equal(signedIn, true, "synthetic Clerk ticket sign-in");
+
+    const completionPromise = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return (
+        url.origin === ACCOUNTS_ORIGIN &&
+        url.pathname === "/v1/desktop/google/complete" &&
+        response.request().method() === "POST"
+      );
+    });
+    await page.goto(`${ACCOUNTS_ORIGIN}/login?${query}`, {
+      waitUntil: "domcontentloaded",
+    });
+    const completion = await completionPromise;
+    assert.equal(completion.status(), 200, "desktop login completion");
+    const code = requireDesktopCompletion(await completion.json());
+
+    const redeemed = await fetch(`${API_ORIGIN}/api/desktop-handoff/redeem`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ code, code_verifier: verifier }),
+      redirect: "error",
+    });
+    assert.equal(redeemed.status, 200, "one-time desktop handoff redemption");
+    return requireRedeemedSession(await redeemed.json());
+  } finally {
+    await context.close();
+  }
+}
+
+async function verifyAuthenticatedProduct(browser, sourceSha, token) {
+  const workspacesResponse = await fetch(`${API_ORIGIN}/api/workspaces`, {
+    headers: { authorization: `Bearer ${token}` },
+    redirect: "error",
+  });
+  assert.equal(workspacesResponse.status, 200, "authenticated workspace list");
+  const workspaces = await workspacesResponse.json();
+  assert.ok(Array.isArray(workspaces), "workspace API must return an array");
+  const target =
+    typeof workspaces[0]?.slug === "string"
+      ? `/${workspaces[0].slug}/issues`
+      : "/workspaces/new";
+
+  const publicContext = await browser.newContext({ locale: "en-US" });
+  const publicPage = await publicContext.newPage();
+  try {
+    const login = await publicPage.goto(`${PRODUCT_ORIGIN}/login`, {
+      waitUntil: "domcontentloaded",
+    });
+    assert.ok(login, "login page must return a response");
+    assert.equal(login.status(), 200, "login page status");
+    requireBuildHeaders(login.headers(), sourceSha, "Web login");
+    await expect(
+      publicPage.getByRole("heading", {
+        name: "Sign in to Patchbay",
+        exact: true,
+      }),
+    ).toBeVisible();
+  } finally {
+    await publicContext.close();
+  }
+
+  const context = await browser.newContext({ locale: "en-US" });
+  await context.addInitScript((session) => {
+    window.localStorage.setItem("patchbay_token", session);
+  }, token);
+  await context.addCookies([
+    {
+      name: "patchbay-locale",
+      value: "en",
+      domain: "patchbay.aspectlylabs.com",
+      path: "/",
+      secure: true,
+      sameSite: "Lax",
+    },
+  ]);
+  const page = await context.newPage();
+  try {
+    const protectedResponse = await page.goto(`${PRODUCT_ORIGIN}${target}`, {
+      waitUntil: "domcontentloaded",
+    });
+    assert.ok(protectedResponse, "protected page must return a response");
+    assert.equal(protectedResponse.status(), 200, "protected page status");
+    requireBuildHeaders(
+      protectedResponse.headers(),
+      sourceSha,
+      "authenticated Web",
+    );
+    await page.waitForURL((url) => url.origin === PRODUCT_ORIGIN);
+    assert.notEqual(new URL(page.url()).pathname, "/login");
+    await expect(page.locator("main")).toBeVisible();
+  } catch (error) {
+    await page.screenshot({ path: SCREENSHOT_PATH, fullPage: true }).catch(() => {});
+    throw error;
+  } finally {
+    await context.close();
+  }
+}
+
+export async function verifyProductionBrowser(sourceSha, receipt) {
+  const credentials = requireBrowserReceipt(receipt, sourceSha);
+  const publishableKey = requireClerkPublishableKey(
+    process.env.CLERK_PUBLISHABLE_KEY,
+  );
+  const browser = await chromium.launch({ headless: true });
+  try {
+    await verifyGoogleOAuthStart(browser);
+    const token = await redeemSyntheticLogin(
+      browser,
+      credentials,
+      publishableKey,
+    );
+    await verifyAuthenticatedProduct(browser, sourceSha, token);
+  } finally {
+    await browser.close();
+  }
+}
+
+async function main() {
+  const [sourceSha, receiptPath] = process.argv.slice(2);
+  if (!sourceSha || !receiptPath) {
+    throw new Error(
+      "usage: verify-production-browser.mjs <source-sha> <deployment-receipt.json>",
+    );
+  }
+  const receipt = JSON.parse(await readFile(receiptPath, "utf8"));
+  await verifyProductionBrowser(sourceSha, receipt);
+  console.log(
+    "production Google OAuth start, one-time broker login, and authenticated Web acceptance passed",
+  );
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  });
+}
