@@ -74,13 +74,17 @@ import {
   EMPTY_LIST_ISSUE_STATUSES_RESPONSE,
   EMPTY_LIST_ISSUES_RESPONSE,
   EMPTY_LIST_DEPENDENCY_GRAPHS_RESPONSE,
+  EMPTY_LIST_WECOM_INSTALLATIONS_RESPONSE,
   EMPTY_TIMELINE_ENTRIES,
   DependencyGraphResponseSchema,
   IssueSchema,
+  ListWecomInstallationsResponseSchema,
   ListDependencyGraphsResponseSchema,
   ListIssuesResponseSchema,
   ListIssueStatusesResponseSchema,
+  RedeemWecomBindingTokenResponseSchema,
   TimelineEntriesSchema,
+  WecomInstallationSchema,
 } from "@patchbay/core/api/schemas";
 import {
   ActiveTasksResponseSchema,
@@ -154,13 +158,6 @@ import {
   WorkspaceChannelMessageSchema,
   WorkspaceChannelSchema,
 } from "./channel-types";
-import {
-  EMPTY_LIST_WECOM_INSTALLATIONS_RESPONSE,
-  EMPTY_REDEEM_WECOM_BINDING_TOKEN_RESPONSE,
-  ListWecomInstallationsResponseSchema,
-  RedeemWecomBindingTokenResponseSchema,
-  WecomInstallationSchema,
-} from "@patchbay/core/api/schemas";
 import type { ZodType } from "zod";
 import { getCurrentSlug } from "./workspace-store";
 import { parseWithFallback } from "@/lib/parse-response";
