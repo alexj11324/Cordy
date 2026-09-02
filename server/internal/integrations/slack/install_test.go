@@ -47,6 +47,15 @@ type fakeInstallQueries struct {
 	upsertCalled bool
 	rowID        pgtype.UUID
 
+	// byAppID* drive the UpsertChannelInstallationByAppID stub behind
+	// RegisterManaged: byAppIDNoRows models a team live-owned by another
+	// workspace (the conflict update touches no row), byAppIDTaken models the
+	// (workspace, nil-agent, slack) key already holding a different team.
+	byAppIDParams db.UpsertChannelInstallationByAppIDParams
+	byAppIDCalled bool
+	byAppIDNoRows bool
+	byAppIDTaken  bool
+
 	// reclaimedID, when set, is returned by ReclaimDeadChannelInstallationByAppID
 	// to model a dead prior owner having been cleared; otherwise it reports
 	// pgx.ErrNoRows (nothing was dead). reclaimCalled records that the install
@@ -93,6 +102,26 @@ func (f *fakeInstallQueries) UpsertChannelInstallation(_ context.Context, arg db
 	}
 	return db.ChannelInstallation{
 		ID:              id,
+		WorkspaceID:     arg.WorkspaceID,
+		AgentID:         arg.AgentID,
+		ChannelType:     arg.ChannelType,
+		Config:          arg.Config,
+		InstallerUserID: arg.InstallerUserID,
+		Status:          "active",
+	}, nil
+}
+
+func (f *fakeInstallQueries) UpsertChannelInstallationByAppID(_ context.Context, arg db.UpsertChannelInstallationByAppIDParams) (db.ChannelInstallation, error) {
+	f.byAppIDCalled = true
+	f.byAppIDParams = arg
+	if f.byAppIDNoRows {
+		return db.ChannelInstallation{}, pgx.ErrNoRows
+	}
+	if f.byAppIDTaken {
+		return db.ChannelInstallation{}, &pgconn.PgError{Code: "23505"}
+	}
+	return db.ChannelInstallation{
+		ID:              f.rowID,
 		WorkspaceID:     arg.WorkspaceID,
 		AgentID:         arg.AgentID,
 		ChannelType:     arg.ChannelType,

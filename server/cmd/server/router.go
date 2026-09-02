@@ -858,6 +858,24 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			} else {
 				h.SlackInstall = installSvc
 			}
+			// Managed (hosted) OAuth for the official Patchbay Slack app: state
+			// issuance + code exchange. The service stores only state hashes, so
+			// it needs no secretbox; persistence still goes through InstallService
+			// above, and the callback 503s without it. Client credentials are
+			// optional at boot — begin mints state regardless but refuses the
+			// authorize URL with 503 until PATCHBAY_SLACK_CLIENT_ID/_SECRET are
+			// set, so a deployment without a hosted app fails loudly.
+			managedOAuth, merr := slack.NewManagedOAuthService(slack.ManagedOAuthConfig{
+				Queries:      queries,
+				ClientID:     strings.TrimSpace(os.Getenv("PATCHBAY_SLACK_CLIENT_ID")),
+				ClientSecret: strings.TrimSpace(os.Getenv("PATCHBAY_SLACK_CLIENT_SECRET")),
+				Logger:       slog.Default(),
+			})
+			if merr != nil {
+				slog.Error("slack: ManagedOAuthService init failed; managed install disabled", "error", merr)
+			} else {
+				h.ManagedSlack = managedOAuth
+			}
 			slog.Info("slack integration enabled (BYO per-installation socket mode)")
 		}
 	} else {
@@ -1495,10 +1513,12 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// HMAC-SHA256 signature in the handler) and post-install setup callback.
 	r.Post("/api/webhooks/github", h.HandleGitHubWebhook)
 	r.Get("/api/github/setup", h.GitHubSetupCallback)
-	// Slack OAuth callback (no Patchbay auth in the path — it is hit by Slack's
-	// browser redirect; the workspace/agent/initiator are recovered from the
-	// sealed state). It exchanges the code, upserts the install, then bounces
-	// the browser back to Settings → Integrations.
+	// Slack managed-OAuth callback (no Patchbay auth in the path — it is hit by
+	// Slack's browser redirect, which carries no session; the workspace and
+	// installer are recovered from the single-use state token). It consumes the
+	// state, exchanges the code, upserts the team-keyed install, then 302s the
+	// browser to the redirect_url bound to the state.
+	r.Get("/api/integrations/slack/oauth/callback", h.ManagedSlackOAuthCallback)
 	// VCS webhook for token-based providers (Forgejo / Gitea / GitLab). No Patchbay
 	// auth — authenticated per-connection by the provider's signature scheme;
 	// the connection id in the path selects the workspace, provider, and
@@ -1807,16 +1827,18 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Get("/lark/install/{sessionId}/status", h.GetLarkInstallStatus)
 				})
 
-				// Slack integration (MUL-3666). Same admin/member split as
-				// Lark: listing is member-visible; OAuth begin + revoke are
-				// admin-only. The OAuth callback itself is a public route (it is
-				// hit by Slack's browser redirect with no workspace in the path)
+				// Slack integration (MUL-3666). Listing is member-visible;
+				// installs (BYO paste and managed-OAuth begin) + revoke are
+				// admin-only: all three connect or disconnect a workspace-level
+				// bot. The OAuth callback itself is a public route (it is hit
+				// by Slack's browser redirect with no workspace in the path)
 				// and is registered outside this workspace group.
 				r.Group(func(r chi.Router) {
 					r.Use(middleware.RequireWorkspaceMemberFromURL(queries, "id"))
 					r.Get("/linear", h.GetLinearConnection)
 					r.Get("/linear/catalog", h.GetLinearCatalog)
-					r.Get("/linear/bindings", h.ListLinearBindings)
+					r.Get("/linear/connection", h.GetLinearConnection)
+					r.Get("/linear/inbox", h.ListLinearSyncInbox)
 					r.Get("/linear/members", h.ListLinearMemberBindings)
 					r.Get("/linear/conflicts", h.ListLinearSyncConflicts)
 					r.Get("/slack/installations", h.ListSlackInstallations)
@@ -1836,6 +1858,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Patch("/linear/conflicts/{conflictId}", h.ResolveLinearSyncConflict)
 					r.Delete("/slack/installations/{installationId}", h.RevokeSlackInstallation)
 					r.Post("/slack/install/byo", h.RegisterSlackBYO)
+					r.Post("/slack/install/managed", h.BeginManagedSlackInstall)
 					r.Delete("/wecom/installations/{installationId}", h.RevokeWecomInstallation)
 					r.Post("/wecom/install/byo", h.RegisterWecomBYO)
 				})

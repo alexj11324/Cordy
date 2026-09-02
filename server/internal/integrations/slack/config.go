@@ -25,23 +25,32 @@ import (
 // Slack installation. The cross-platform columns stay flat; everything
 // Slack-specific lives in this opaque blob (the documented config boundary).
 //
-// app_id holds the REAL Slack app id (parsed from the xapp- token). It is the
-// per-installation routing key: the generic GetChannelInstallationByAppID query
-// (config->>'app_id') and the (channel_type, app_id) unique index map an inbound
-// event's api_app_id to its installation, so several apps — several agents — in
-// one Slack workspace stay distinct. team_id is kept for display only.
+// app_id is the database routing identity, NOT always the real Slack app id:
+//   - BYO Socket Mode installs store the real app id (parsed from the xapp-
+//     token). The generic GetChannelInstallationByAppID query
+//     (config->>'app_id') and the (channel_type, app_id) unique index map an
+//     inbound event's api_app_id to its installation, so several apps — several
+//     agents — in one Slack workspace stay distinct. team_id is kept for display
+//     only.
+//   - Managed (hosted-OAuth) installs store ManagedRoutingKey(api_app_id,
+//     team_id), so one official app installed into many Slack workspaces keeps
+//     one installation per team without changing the routing index. api_app_id
+//     preserves the real Slack app id for display and provider API calls.
 //
 // bot_token_encrypted (xoxb-, outbound Web API: chat.postMessage) and
 // app_token_encrypted (xapp-, this installation's own Socket Mode connection)
 // are both stored as base64-encoded secretbox ciphertext, never plaintext
-// (mirroring Feishu's app_secret_encrypted). Both are pasted by the admin at
-// BYO install time.
+// (mirroring Feishu's app_secret_encrypted). BYO installs paste both at install
+// time; managed installs arrive via OAuth, carry no app token, and set
+// transport to "webhook".
 type installConfig struct {
 	AppID             string `json:"app_id"`
+	ApiAppID          string `json:"api_app_id,omitempty"`
 	TeamID            string `json:"team_id,omitempty"`
 	BotUserID         string `json:"bot_user_id,omitempty"`
 	BotTokenEncrypted string `json:"bot_token_encrypted"`
 	AppTokenEncrypted string `json:"app_token_encrypted,omitempty"`
+	Transport         string `json:"transport,omitempty"`
 }
 
 // credentials is the decoded, decrypted form the outbound sender runs on. The
@@ -94,15 +103,21 @@ type PublicConfig struct {
 
 // DecodePublicConfig extracts the display-safe fields from a stored config blob.
 // A decode miss yields a zero-value PublicConfig rather than an error: the
-// management list should still render the row's identity columns.
+// management list should still render the row's identity columns. For a managed
+// install the routing-key slot holds the tenant composite, so the real app id
+// (api_app_id) is what the UI shows.
 func DecodePublicConfig(raw json.RawMessage) PublicConfig {
 	var cfg installConfig
 	_ = json.Unmarshal(raw, &cfg)
+	appID := cfg.AppID
+	if cfg.ApiAppID != "" {
+		appID = cfg.ApiAppID
+	}
 	teamID := cfg.TeamID
 	if teamID == "" {
 		teamID = cfg.AppID
 	}
-	return PublicConfig{AppID: cfg.AppID, TeamID: teamID, BotUserID: cfg.BotUserID}
+	return PublicConfig{AppID: appID, TeamID: teamID, BotUserID: cfg.BotUserID}
 }
 
 // decryptToken base64-decodes the stored ciphertext (tolerating the MIME

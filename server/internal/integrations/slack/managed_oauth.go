@@ -51,6 +51,11 @@ const DefaultSlackOAuthTokenURL = "https://slack.com/api/oauth.v2.access"
 // would let a stranger probe which states are live.
 var ErrInvalidOAuthState = errors.New("slack: invalid or expired OAuth state")
 
+// ErrInvalidRedirectURL surfaces a post-install redirect_url that is not a
+// usable absolute URL. The begin handler maps it to 400 so the installer can
+// fix the URL; every other BeginInstall failure is infrastructure (500).
+var ErrInvalidRedirectURL = errors.New("slack: invalid redirect_url")
+
 // managedOAuthQueries is the slice of generated queries the service needs.
 // *db.Queries satisfies it; tests supply an in-memory fake.
 type managedOAuthQueries interface {
@@ -118,7 +123,7 @@ func NewManagedOAuthService(cfg ManagedOAuthConfig) (*ManagedOAuthService, error
 // the raw value is never stored.
 func (s *ManagedOAuthService) BeginInstall(ctx context.Context, workspaceID, installerID pgtype.UUID, redirectURL string) (state string, expiresAt time.Time, err error) {
 	if _, err := url.ParseRequestURI(redirectURL); err != nil {
-		return "", time.Time{}, fmt.Errorf("slack: invalid redirect_url: %w", err)
+		return "", time.Time{}, fmt.Errorf("%w: %w", ErrInvalidRedirectURL, err)
 	}
 	now := s.now()
 	if err := s.q.PurgeExpiredSlackOAuthStates(ctx, pgtype.Timestamptz{Time: now, Valid: true}); err != nil {
@@ -141,6 +146,13 @@ func (s *ManagedOAuthService) BeginInstall(ctx context.Context, workspaceID, ins
 		return "", time.Time{}, fmt.Errorf("record slack oauth state: %w", err)
 	}
 	return encoded, expiresAt, nil
+}
+
+// ClientID reports the configured managed Slack client id ("" when the
+// deployment has none). The begin handler needs it to build the authorize URL
+// and fails loudly (503) when it is empty, while state issuance keeps working.
+func (s *ManagedOAuthService) ClientID() string {
+	return s.clientID
 }
 
 // ConsumeState claims the authorization bound to raw state exactly once. An

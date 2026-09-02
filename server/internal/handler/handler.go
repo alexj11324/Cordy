@@ -303,6 +303,15 @@ type Handler struct {
 	// "link your Slack account" prompt (MUL-3666). Nil unless Slack is
 	// configured (PATCHBAY_SLACK_SECRET_KEY set).
 	SlackBindingTokens *slack.BindingTokenService
+	// ManagedSlack owns the hosted Slack OAuth flow (begin/callback): minting
+	// single-use state tokens and exchanging callback codes for bot tokens.
+	// Nil unless PATCHBAY_SLACK_SECRET_KEY is set; the handlers return 503 in
+	// that case. The OAuth client credentials come from
+	// PATCHBAY_SLACK_CLIENT_ID/_SECRET — when those are empty the begin
+	// handler still mints state but refuses the authorize URL with 503, so a
+	// deployment without a hosted app fails loudly instead of half-working.
+	// Wired in cmd/server/router.go after handler.New.
+	ManagedSlack *slack.ManagedOAuthService
 	// DingTalkInstall owns the bring-your-own-app DingTalk lifecycle. It is nil
 	// unless PATCHBAY_DINGTALK_SECRET_KEY is configured.
 	DingTalkInstall *dingtalk.InstallService
