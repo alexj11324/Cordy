@@ -108,6 +108,14 @@ describe("LoginPage", () => {
   // packages/views/auth/login-page.test.tsx. This wrapper suite only owns web
   // platform handoff and redirect behavior.
 
+  it("renders the approved connected-dot Patchbay mark", () => {
+    const { container } = render(<LoginPage />, { wrapper: createWrapper() });
+
+    expect(
+      container.querySelector('svg[viewBox="0 0 128 128"]'),
+    ).toBeInTheDocument();
+  });
+
   it("keeps ordinary Web login on email send-code and hides the Google broker", () => {
     render(<LoginPage />, { wrapper: createWrapper() });
 

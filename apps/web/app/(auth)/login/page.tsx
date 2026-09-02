@@ -24,6 +24,7 @@ import {
   CardContent,
 } from "@patchbay/ui/components/ui/card";
 import { Button } from "@patchbay/ui/components/ui/button";
+import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
 import { Loader2 } from "lucide-react";
 import { setLoggedInCookie } from "@/features/auth/auth-cookie";
 import Link from "next/link";
@@ -271,6 +272,7 @@ function LoginPageContent() {
 
   return (
     <LoginPage
+      logo={<PatchbayIcon bordered size="lg" />}
       onSuccess={handleSuccess}
       google={
         googleClientId && isGoogleBrokerFlow
