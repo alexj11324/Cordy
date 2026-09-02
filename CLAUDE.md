@@ -252,6 +252,14 @@ Do not claim verification passed unless you ran it. If you skip checks because t
 - Commits should be atomic and use conventional prefixes: `feat(scope)`, `fix(scope)`, `refactor(scope)`, `docs`, `test(scope)`, `chore(scope)`.
 - A production deployment requires a CLI release tag on `main`: create `v0.x.x`, push it, and let `release.yml` publish binaries and the Homebrew tap.
 - Bump patch by default unless the user specifies a version.
+- Preview before merging (standard process): `release.yml` only ships tags
+  contained in `main` and must stay that way — never loosen its ancestor
+  check for previews. To test-drive an unmerged branch on real hardware, run
+  the `preview-desktop` workflow manually (Actions → "Preview desktop build"
+  → Run workflow → pick the branch/arch), then download the signed +
+  notarized DMG from that run's Artifacts. Previews upload artifacts only;
+  they never touch GitHub Releases, the Homebrew tap, registries, or update
+  metadata, so they cannot pollute a release.
 
 ## Domain Reminders
 

@@ -1,0 +1,162 @@
+# Preview desktop builds for unmerged branches.
+#
+# The release workflow only ships tags contained in main (deliberate
+# supply-chain guard — see release.yml `verify`). This workflow is the
+# sanctioned way to test-drive a branch on real hardware before merging: it
+# builds the SAME signed + notarized macOS installers from any ref and
+# uploads them as run artifacts. Nothing here touches GitHub Releases, the
+# Homebrew tap, container registries, or update metadata — a preview can
+# never be mistaken for (or pollute) a release.
+#
+# Standard process (also recorded in CLAUDE.md → Commits and Releases):
+#   1. Push the branch.
+#   2. Actions → "Preview desktop build" → Run workflow → pick the branch.
+#   3. Download the DMG from the run's Artifacts section and install it.
+#   4. Merge the PR and cut a real release tag only after the preview verifies.
+
+name: Preview desktop build
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch, tag, or SHA to build (default: the branch you run this from)"
+        required: false
+        default: ""
+        type: string
+      arch:
+        description: "macOS architecture to build"
+        required: false
+        default: "arm64"
+        type: choice
+        options:
+          - arm64
+          - x64
+          - both
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  preview-mac:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            os: macos-14
+          - arch: x64
+            os: macos-15-intel
+    # Skip the runner this arch selection did not ask for.
+    if: inputs.arch == 'both' || inputs.arch == matrix.arch
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
+          fetch-depth: 0
+
+      - name: Record built ref
+        shell: bash
+        run: |
+          echo "Preview building $(git rev-parse HEAD) from ref '${{ inputs.ref != '' && inputs.ref || github.ref }}'"
+
+      - name: Require macOS signing and notarization credentials
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        shell: bash
+        run: |
+          missing=()
+          for name in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!name:-}" ]; then
+              missing+=("$name")
+            fi
+          done
+          if [ "${#missing[@]}" -ne 0 ]; then
+            printf '::error::Missing required macOS release secret: %s\n' "${missing[@]}"
+            exit 1
+          fi
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+          check-latest: true
+          cache-dependency-path: server/go.sum
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Package Desktop installer (mac ${{ matrix.arch }})
+        working-directory: apps/desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "true"
+        shell: bash
+        run: node scripts/package.mjs --mac --${{ matrix.arch }} --publish never
+
+      - name: Validate macOS signature and notarization
+        working-directory: apps/desktop
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_runner_arch="x86_64"
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            expected_runner_arch="arm64"
+          fi
+          test "$(uname -m)" = "$expected_runner_arch" || {
+            echo "::error::The macOS ${{ matrix.arch }} preview must run on a $expected_runner_arch runner."
+            exit 1
+          }
+          app_path="$(find dist -type d -name '*.app' -print -quit)"
+          test -n "$app_path" || {
+            echo "::error::electron-builder did not produce a macOS .app bundle."
+            exit 1
+          }
+          codesign --verify --deep --strict --verbose=2 "$app_path"
+          identity="$(codesign -dv --verbose=4 "$app_path" 2>&1 | sed -n 's/^Authority=//p' | head -n 1)"
+          case "$identity" in
+            "Developer ID Application:"*) ;;
+            *)
+              echo "::error::macOS app is not signed with a Developer ID Application identity: ${identity:-unknown}"
+              exit 1
+              ;;
+          esac
+          spctl --assess --type execute --verbose=4 "$app_path"
+          xcrun stapler validate "$app_path"
+          for extension in dmg zip; do
+            test -n "$(find dist -type f -name "*-mac-${{ matrix.arch }}.${extension}" -print -quit)" || {
+              echo "::error::The signed macOS ${{ matrix.arch }} ${extension} is missing from the desktop output."
+              exit 1
+            }
+          done
+
+      - name: Upload preview installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: patchbay-desktop-preview-mac-${{ matrix.arch }}-${{ github.sha }}
+          path: |
+            apps/desktop/dist/*-mac-${{ matrix.arch }}.dmg
+            apps/desktop/dist/*-mac-${{ matrix.arch }}.zip
+          retention-days: 14
