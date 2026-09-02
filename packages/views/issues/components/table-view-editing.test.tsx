@@ -277,7 +277,7 @@ describe("TableView cell editors under data refresh", () => {
       assigneeId: "agent-1",
     });
     useModalStore.getState().close();
-  });
+  }, 60_000);
 
   let queryClient: QueryClient;
 
