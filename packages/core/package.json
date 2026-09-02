@@ -85,6 +85,8 @@
     "./projects/queries": "./projects/queries.ts",
     "./projects/mutations": "./projects/mutations.ts",
     "./projects/config": "./projects/config.ts",
+    "./dependency-graphs": "./dependency-graphs/index.ts",
+    "./dependency-graphs/queries": "./dependency-graphs/queries.ts",
     "./plugins": "./plugins/index.ts",
     "./plugins/queries": "./plugins/queries.ts",
     "./plugins/mutations": "./plugins/mutations.ts",

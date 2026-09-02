@@ -10,6 +10,7 @@ import { useIssuesRealtime } from "@/data/realtime/use-issues-realtime";
 import { useMyIssuesRealtime } from "@/data/realtime/use-my-issues-realtime";
 import { useChatSessionsRealtime } from "@/data/realtime/use-chat-sessions-realtime";
 import { useProjectsRealtime } from "@/data/realtime/use-projects-realtime";
+import { useDependencyGraphsRealtime } from "@/data/realtime/use-dependency-graphs-realtime";
 import { usePinsRealtime } from "@/data/realtime/use-pins-realtime";
 import { usePresenceRealtime } from "@/data/realtime/use-presence-realtime";
 import { useChannelsRealtime } from "@/data/realtime/use-channels-realtime";
@@ -79,6 +80,7 @@ function RealtimeSubscriptions() {
   useMyIssuesRealtime();
   useChatSessionsRealtime();
   useProjectsRealtime();
+  useDependencyGraphsRealtime();
   usePinsRealtime();
   // Presence: warm the three queries up front so avatars don't flash a
   // dotless first render, and listen for daemon/agent/task events to keep
@@ -147,6 +149,10 @@ export default function WorkspaceLayout() {
             title: "Project",
             headerBackTitle: "Back",
           }}
+        />
+        <Stack.Screen
+          name="task-graph"
+          options={{ title: "Dependency Graph", headerBackTitle: "Back" }}
         />
         <Stack.Screen
           name="project/[id]/edit"

@@ -17,7 +17,7 @@ describe("routeIconForPath", () => {
   // render two different icons.
   it("gives a route the same component wherever it is rendered", () => {
     const p = paths.workspace("acme");
-    for (const href of [p.projects(), p.automations(), p.chat(), p.teams(), p.usage()]) {
+    for (const href of [p.projects(), p.automations(), p.chat(), p.teams(), p.usage(), p.taskGraph()]) {
       // Sidebar passes the bare nav href; a tab passes its own url, which for
       // a sub-route carries extra segments.
       expect(routeIconForPath(`${href}/some-id`)).toBe(routeIconForPath(href));

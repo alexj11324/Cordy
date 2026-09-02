@@ -67,6 +67,7 @@ export type WSEventType =
   | "project:created"
   | "project:updated"
   | "project:deleted"
+  | "dependency_graph:updated"
   | "team:created"
   | "team:updated"
   | "team:deleted"
@@ -608,6 +609,7 @@ export interface WSEventPayloadMap {
   "project:created": ProjectCreatedPayload;
   "project:updated": ProjectUpdatedPayload;
   "project:deleted": ProjectDeletedPayload;
+  "dependency_graph:updated": unknown;
   "invitation:created": InvitationCreatedPayload;
   "invitation:accepted": InvitationAcceptedPayload;
   "invitation:declined": InvitationDeclinedPayload;

@@ -16,6 +16,7 @@
     "./issues/hooks": "./issues/hooks/index.ts",
     "./issues/utils/filter": "./issues/utils/filter.ts",
     "./issues/utils/sort": "./issues/utils/sort.ts",
+    "./task-graph": "./task-graph/index.ts",
     "./common/task-transcript": "./common/task-transcript/index.ts",
     "./projects/components": "./projects/components/index.ts",
     "./automations/components": "./automations/components/index.ts",

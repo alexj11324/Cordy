@@ -184,6 +184,17 @@ export type {
   UpdateProjectResourceRequest,
   ListProjectResourcesResponse,
 } from "./project";
+export type {
+  DependencyGraphReadinessState,
+  DependencyGraphActor,
+  DependencyGraphPlan,
+  DependencyGraphReadiness,
+  DependencyGraphNodeReadiness,
+  DependencyGraphNode,
+  DependencyGraphEdge,
+  DependencyGraphResponse,
+  ListDependencyGraphsResponse,
+} from "./dependency-graph";
 export type { PinnedItem, PinnedItemType, CreatePinRequest, ReorderPinsRequest } from "./pin";
 export type {
   GitHubInstallation,

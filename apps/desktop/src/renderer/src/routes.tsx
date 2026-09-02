@@ -14,6 +14,7 @@ import {
 } from "./pages/runtime-detail-page";
 import { AttachmentPreviewRoute } from "./pages/attachment-preview-page";
 import { IssuesPage } from "@patchbay/views/issues/components";
+import { TaskGraphPage } from "@patchbay/views/task-graph";
 import { ProjectsPage } from "@patchbay/views/projects/components";
 import { DashboardPage } from "@patchbay/views/dashboard";
 import { AutomationsPage } from "@patchbay/views/automations/components";
@@ -144,6 +145,11 @@ export const appRoutes: RouteObject[] = [
             path: "issues/:id",
             element: <IssueDetailPage />,
             handle: { title: "Issue" },
+          },
+          {
+            path: "task-graph",
+            element: <TaskGraphPage />,
+            handle: { title: "Dependency Graph" },
           },
           {
             path: "projects",

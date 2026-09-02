@@ -60,6 +60,7 @@ import type {
   IssueTableGroupsResponse,
   IssueTableRowsResponse,
   ListIssuesResponse,
+  ListDependencyGraphsResponse,
   ListGitHubInstallationsResponse,
   ListGitHubRepositoriesResponse,
   ListLabelsResponse,
@@ -1260,6 +1261,156 @@ export const ListIssuesResponseSchema = z.object({
   issues: z.array(IssueSchema).default([]),
   total: z.number().default(0),
 }).loose();
+
+const dependencyGraphStringArraySchema = z.preprocess(
+  (value) => {
+    if (Array.isArray(value)) {
+      return value.filter((item): item is string => typeof item === "string");
+    }
+    if (typeof value === "string" && value.trim()) {
+      try {
+        const decoded: unknown = JSON.parse(value);
+        if (Array.isArray(decoded)) {
+          return decoded.filter(
+            (item): item is string => typeof item === "string",
+          );
+        }
+      } catch {
+        // Go []byte fields may be base64 strings. They are not displayable
+        // criteria/output arrays until the backend exposes structured JSON.
+      }
+    }
+    return [];
+  },
+  z.array(z.string()).default([]),
+);
+
+const dependencyGraphRecordSchema = z.preprocess(
+  (value) =>
+    value && typeof value === "object" && !Array.isArray(value) ? value : {},
+  z.record(z.string(), z.unknown()).default({}),
+);
+
+const DependencyGraphActorSchema = z.object({
+  type: z.string().default(""),
+  id: z.string().default(""),
+}).loose();
+
+const DependencyGraphPlanSchema = z.object({
+  id: z.string().min(1),
+  workspace_id: z.string().default(""),
+  parent_issue_id: z.string().default(""),
+  idempotency_key: z.string().default(""),
+  request_hash: z.string().optional(),
+  goal: z.string().default(""),
+  status: z.string().default(""),
+  attention_required: z.boolean().default(false),
+  attention_reason: z.string().nullable().default(null),
+  created_by_type: z.string().default(""),
+  created_by_id: z.string().default(""),
+  created_at: z.string().default(""),
+  updated_at: z.string().default(""),
+}).loose();
+
+const DependencyGraphReadinessSchema = z.object({
+  total: z.number().default(0),
+  ready: z.number().default(0),
+  running: z.number().default(0),
+  blocked: z.number().default(0),
+  done: z.number().default(0),
+  cancelled: z.number().default(0),
+}).loose();
+
+const DependencyGraphNodeReadinessSchema = z.object({
+  state: z.string().default("todo"),
+  gate_open: z.boolean().default(false),
+  satisfied_prerequisites: z.number().default(0),
+  total_prerequisites: z.number().default(0),
+  unlock_condition: z.string().default(""),
+}).loose();
+
+const DependencyGraphNodeSchema = z.object({
+  id: z.string().default(""),
+  plan_id: z.string().default(""),
+  workspace_id: z.string().default(""),
+  temp_id: z.string().default(""),
+  issue_id: z.string().default(""),
+  issue: IssueSchema.optional().catch(undefined),
+  title: z.string().default(""),
+  description: z.string().default(""),
+  acceptance_criteria: dependencyGraphStringArraySchema,
+  context: dependencyGraphRecordSchema,
+  outputs: dependencyGraphStringArraySchema,
+  executor_type: z.string().nullable().default(null),
+  executor_id: z.string().nullable().default(null),
+  candidate_executors: z.array(DependencyGraphActorSchema).default([]),
+  owner_type: z.string().nullable().default(null),
+  owner_id: z.string().nullable().default(null),
+  reviewer_type: z.string().nullable().default(null),
+  reviewer_id: z.string().nullable().default(null),
+  runtime_id: z.string().nullable().default(null),
+  model_id: z.string().nullable().default(null),
+  wave: z.number().int().default(0),
+  status: z.string().default("todo"),
+  readiness: DependencyGraphNodeReadinessSchema.default({
+    state: "todo",
+    gate_open: false,
+    satisfied_prerequisites: 0,
+    total_prerequisites: 0,
+    unlock_condition: "",
+  }),
+  assignee_type: z.string().nullable().optional().catch(undefined),
+  assignee_id: z.string().nullable().optional().catch(undefined),
+  candidate_assignees: z.array(DependencyGraphActorSchema).optional().catch(undefined),
+}).loose();
+
+const DependencyGraphEdgeSchema = z.object({
+  id: z.string().default(""),
+  plan_id: z.string().default(""),
+  workspace_id: z.string().default(""),
+  from_issue_id: z.string().default(""),
+  to_issue_id: z.string().default(""),
+  from: z.string().default(""),
+  to: z.string().default(""),
+  type: z.string().default("hard"),
+  reason: z.string().default(""),
+  consumed_output: z.string().default(""),
+  created_at: z.string().default(""),
+  prerequisite_status: z.string().default(""),
+  satisfied: z.boolean().default(false),
+  satisfied_prerequisites: z.number().default(0),
+  total_prerequisites: z.number().default(0),
+  unlock_condition: z.string().default(""),
+}).loose();
+
+const dependencyGraphResponseSchema = z.object({
+  plan: DependencyGraphPlanSchema,
+  parent: IssueSchema.optional().catch(undefined),
+  children: z.array(IssueSchema).default([]),
+  nodes: z.array(DependencyGraphNodeSchema).default([]),
+  edges: z.array(DependencyGraphEdgeSchema).default([]),
+  waves: z.array(z.array(z.string())).default([]),
+  readiness: DependencyGraphReadinessSchema.default({
+    total: 0,
+    ready: 0,
+    running: 0,
+    blocked: 0,
+    done: 0,
+    cancelled: 0,
+  }),
+}).loose();
+
+export const DependencyGraphResponseSchema = dependencyGraphResponseSchema;
+
+export const ListDependencyGraphsResponseSchema = z.object({
+  graphs: z.array(dependencyGraphResponseSchema).default([]),
+  next_cursor: z.string().nullable().default(null),
+}).loose();
+
+export const EMPTY_LIST_DEPENDENCY_GRAPHS_RESPONSE: ListDependencyGraphsResponse = {
+  graphs: [],
+  next_cursor: null,
+};
 
 // Response schema for POST /api/issues. Two tightenings over IssueSchema:
 //

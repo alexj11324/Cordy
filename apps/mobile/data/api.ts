@@ -25,6 +25,7 @@ import type {
   CreateLabelRequest,
   CreateProjectRequest,
   CreateProjectResourceRequest,
+  DependencyGraphResponse,
   InboxItem,
   Issue,
   IssueLabelsResponse,
@@ -35,6 +36,7 @@ import type {
   ListLabelsResponse,
   ListProjectResourcesResponse,
   ListProjectsResponse,
+  ListDependencyGraphsResponse,
   MemberWithUser,
   PinnedItem,
   PinnedItemType,
@@ -65,8 +67,11 @@ import type {
 import {
   EMPTY_LIST_ISSUE_STATUSES_RESPONSE,
   EMPTY_LIST_ISSUES_RESPONSE,
+  EMPTY_LIST_DEPENDENCY_GRAPHS_RESPONSE,
   EMPTY_TIMELINE_ENTRIES,
+  DependencyGraphResponseSchema,
   IssueSchema,
+  ListDependencyGraphsResponseSchema,
   ListIssuesResponseSchema,
   ListIssueStatusesResponseSchema,
   TimelineEntriesSchema,
@@ -1101,6 +1106,47 @@ class ApiClient {
       EMPTY_LIST_PROJECTS_RESPONSE,
       { endpoint: "GET /api/projects" },
     );
+  }
+
+  async listDependencyGraphs(
+    params?: { projectId?: string; limit?: number; cursor?: string },
+    opts?: { signal?: AbortSignal },
+  ): Promise<ListDependencyGraphsResponse> {
+    const search = new URLSearchParams();
+    if (params?.projectId) search.set("project_id", params.projectId);
+    if (params?.limit !== undefined) search.set("limit", String(params.limit));
+    if (params?.cursor) search.set("cursor", params.cursor);
+    const query = search.toString();
+    const raw = await this.fetch<unknown>(
+      query ? `/api/dependency-graphs?${query}` : "/api/dependency-graphs",
+      { signal: opts?.signal },
+    );
+    return parseWithFallback(
+      raw,
+      ListDependencyGraphsResponseSchema,
+      EMPTY_LIST_DEPENDENCY_GRAPHS_RESPONSE,
+      { endpoint: "GET /api/dependency-graphs" },
+    );
+  }
+
+  async getDependencyGraph(
+    parentIssueId: string,
+    opts?: { signal?: AbortSignal },
+  ): Promise<DependencyGraphResponse> {
+    const raw = await this.fetch<unknown>(
+      `/api/issues/${encodeURIComponent(parentIssueId)}/dependency-graph`,
+      { signal: opts?.signal },
+    );
+    const graph = parseWithFallback<DependencyGraphResponse | null>(
+      raw,
+      DependencyGraphResponseSchema,
+      null,
+      { endpoint: "GET /api/issues/:id/dependency-graph" },
+    );
+    if (!graph) {
+      throw new Error("GET /api/issues/:id/dependency-graph returned a malformed graph");
+    }
+    return graph;
   }
 
   /** Workspace-wide project search. See `searchIssues` for the signal

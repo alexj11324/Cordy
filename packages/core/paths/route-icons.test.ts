@@ -62,6 +62,7 @@ describe("resolveRouteIconName", () => {
     expect(resolveRouteIconName("/acme/teams")).toBe("Users");
     expect(resolveRouteIconName("/acme/usage")).toBe("BarChart3");
     expect(resolveRouteIconName("/acme/my-issues")).toBe("CircleUser");
+    expect(resolveRouteIconName("/acme/task-graph")).toBe("Network");
   });
 
   it("gives sub-routes their parent page icon (sidebar semantics)", () => {

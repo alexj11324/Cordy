@@ -4,6 +4,7 @@
     "chat": "채팅",
     "my_issues": "내 태스크",
     "issues": "태스크",
+    "task_graph": "의존성 그래프",
     "projects": "프로젝트",
     "automations": "오토파일럿",
     "agents": "에이전트",

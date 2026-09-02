@@ -4,6 +4,7 @@
     "chat": "Chat",
     "my_issues": "My Issues",
     "issues": "Issues",
+    "task_graph": "Dependency Graph",
     "projects": "Projects",
     "automations": "Automation",
     "agents": "Agents",

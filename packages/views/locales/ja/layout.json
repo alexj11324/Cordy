@@ -4,6 +4,7 @@
     "chat": "チャット",
     "my_issues": "マイタスク",
     "issues": "タスク",
+    "task_graph": "依存関係グラフ",
     "projects": "プロジェクト",
     "automations": "オートパイロット",
     "agents": "エージェント",
