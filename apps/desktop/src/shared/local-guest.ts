@@ -2,11 +2,25 @@ import type { LocalRuntimeProbe } from "./daemon-types";
 
 export const MAX_GUEST_DISPLAY_NAME_LENGTH = 64;
 
-const GUEST_DISPLAY_NAME_CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u;
-
-export interface LocalGuestSession {
-  displayName: string;
+function containsGuestDisplayNameControlCharacter(value: string): boolean {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0);
+    if (
+      codePoint === undefined ||
+      codePoint <= 0x1f ||
+      (codePoint >= 0x7f && codePoint <= 0x9f) ||
+      codePoint === 0x2028 ||
+      codePoint === 0x2029
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
+
+export type LocalGuestSession = {
+  displayName: string;
+};
 
 export type GuestSessionReadResult =
   | { ok: true; session: LocalGuestSession | null }
@@ -41,13 +55,28 @@ export type GuestCloudModeResult =
       reason: "unauthorized" | "guest_active" | "no_guest" | "unavailable";
     };
 
+export type DesktopStartupMode =
+  | "entry"
+  | "guest"
+  | "guest-error"
+  | "cloud";
+
+export function resolveDesktopStartupMode(
+  guestResult: GuestSessionReadResult,
+  hasPersistedCloudToken: boolean,
+): DesktopStartupMode {
+  if (!guestResult.ok) return "guest-error";
+  if (guestResult.session) return "guest";
+  return hasPersistedCloudToken ? "cloud" : "entry";
+}
+
 /**
  * Normalizes renderer input. The main process calls this again and remains the
  * authority for what is persisted.
  */
 export function normalizeGuestDisplayName(value: unknown): string | null {
   if (typeof value !== "string") return null;
-  if (GUEST_DISPLAY_NAME_CONTROL_CHARACTERS.test(value)) return null;
+  if (containsGuestDisplayNameControlCharacter(value)) return null;
   const normalized = value.normalize("NFC").trim();
   if (!normalized || normalized.length > MAX_GUEST_DISPLAY_NAME_LENGTH) {
     return null;

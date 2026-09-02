@@ -43,7 +43,6 @@ import { useOpenSettingsShortcut } from "./hooks/use-open-settings-shortcut";
 import { useDaemonIPCBridge } from "./platform/daemon-ipc-bridge";
 import { syncDaemonOnLogin } from "./platform/daemon-login-sync";
 import { createDesktopLocaleAdapter } from "./platform/i18n-adapter";
-import { captureEvent } from "@patchbay/core/analytics";
 import { RESOURCES } from "@patchbay/views/locales";
 import { DesktopClientUsageReporter } from "./platform/client-usage-reporter";
 import { DiagnosticRouteReporter } from "./platform/diagnostic-route-reporter";
@@ -51,7 +50,10 @@ import { flushFreezeBreadcrumb } from "./freeze-flush";
 import { DesktopAuthSessionBridge } from "./platform/auth-session-bridge";
 import type { DesktopWindowContext } from "../../../shared/issue-window";
 import type { RuntimeConfigResult } from "../../../shared/runtime-config";
-import type { LocalGuestSession } from "../../../shared/local-guest";
+import {
+  resolveDesktopStartupMode,
+  type LocalGuestSession,
+} from "../../../shared/local-guest";
 
 // BCP-47 region tags for the <html lang> attribute, mirroring
 // apps/web/app/layout.tsx HTML_LANG. index.html ships a static lang="en";
@@ -579,12 +581,25 @@ export default function App() {
     let active = true;
     void window.desktopAPI
       .getGuestSession()
-      .then((result) => {
+      .then(async (result) => {
         if (!active) return;
-        if (!result.ok) {
+        const startupMode = resolveDesktopStartupMode(
+          result,
+          Boolean(localStorage.getItem("patchbay_token")),
+        );
+        if (startupMode === "guest-error") {
           setBootState({ kind: "guest-error" });
-        } else if (result.session) {
+        } else if (startupMode === "guest" && result.ok && result.session) {
           setBootState({ kind: "guest", session: result.session });
+        } else if (startupMode === "cloud") {
+          // Preserve the established Desktop behavior for an existing cloud
+          // session. Guest state wins above; only a machine without a Guest
+          // session may reactivate cloud services automatically.
+          const cloudResult = await window.desktopAPI.enableCloudMode();
+          if (!active) return;
+          setBootState(
+            cloudResult.ok ? { kind: "cloud" } : { kind: "entry" },
+          );
         } else {
           setBootState({ kind: "entry" });
         }

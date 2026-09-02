@@ -3,6 +3,7 @@ import {
   normalizeGuestDisplayName,
   parseLocalGuestSession,
   parseLocalRuntimeProbe,
+  resolveDesktopStartupMode,
 } from "./local-guest";
 
 describe("local Guest validation", () => {
@@ -27,6 +28,24 @@ describe("local Guest validation", () => {
       parseLocalGuestSession({ displayName: "Alice", token: "secret" }),
     ).toBeNull();
     expect(parseLocalGuestSession(null)).toBeNull();
+  });
+
+  it("gives a local Guest session priority over stale cloud credentials", () => {
+    expect(
+      resolveDesktopStartupMode(
+        { ok: true, session: { displayName: "Alice" } },
+        true,
+      ),
+    ).toBe("guest");
+    expect(
+      resolveDesktopStartupMode({ ok: true, session: null }, true),
+    ).toBe("cloud");
+    expect(
+      resolveDesktopStartupMode({ ok: true, session: null }, false),
+    ).toBe("entry");
+    expect(
+      resolveDesktopStartupMode({ ok: false, reason: "invalid" }, true),
+    ).toBe("guest-error");
   });
 
   it("accepts only a self-consistent local runtime inventory", () => {
