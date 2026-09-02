@@ -98,7 +98,11 @@ import { RuntimeRequiredBanner } from "@/components/chat/runtime-required-banner
 import { useChatSelectStore } from "@/data/chat-select-store";
 import { isAgentRuntimeBound } from "@/lib/is-agent-runtime-bound";
 import { chatSessionDisplayTitle } from "@/lib/chat-session-title";
-import { resolveActiveChatSessionId } from "@/lib/chat-session-state";
+import {
+  chatRouteParams,
+  firstChatRouteParam,
+  resolveActiveChatSessionId,
+} from "@/lib/chat-session-state";
 import { useChatCopy } from "@/lib/use-chat-copy";
 
 export default function ChatTab() {
@@ -144,10 +148,8 @@ export default function ChatTab() {
     memberListOptions(wsId),
   );
 
-  const routeSessionId =
-    typeof sessionParam === "string" ? sessionParam : sessionParam?.[0];
-  const routeAgentId =
-    typeof agentParam === "string" ? agentParam : agentParam?.[0];
+  const routeSessionId = firstChatRouteParam(sessionParam);
+  const routeAgentId = firstChatRouteParam(agentParam);
   const routeIntentKey = `${wsId ?? ""}:${routeSessionId ?? ""}:${routeAgentId ?? ""}`;
   const { data: messages = [], isLoading: messagesLoading } = useQuery(
     chatMessagesOptions(activeSessionId),
@@ -297,6 +299,29 @@ export default function ChatTab() {
     if (!wsId || !sessionsLoaded || restoredWsRef.current !== wsId) return;
     void saveChatActiveSession(wsId, activeSessionId);
   }, [activeSessionId, sessionsLoaded, wsId]);
+
+  // Keep the native tab deep-linkable after the user changes sessions or
+  // starts a new agent thread. The restore gate prevents the initial render
+  // from stripping a pending `?session=`/`?agent=` before SecureStore and the
+  // settled agent/session queries have reconciled it. `router.setParams`
+  // updates this tab in place, so the native sheet/back stack is untouched.
+  useEffect(() => {
+    if (!wsId || restoredWsRef.current !== wsId) return;
+    const nextParams = chatRouteParams(activeSessionId, selectedAgentId);
+    if (
+      routeSessionId === (nextParams.session ?? null) &&
+      routeAgentId === (nextParams.agent ?? null)
+    ) {
+      return;
+    }
+    router.setParams(nextParams);
+  }, [
+    activeSessionId,
+    routeAgentId,
+    routeSessionId,
+    selectedAgentId,
+    wsId,
+  ]);
 
   const activeSession = useMemo(
     () => sessions.find((s) => s.id === activeSessionId) ?? null,

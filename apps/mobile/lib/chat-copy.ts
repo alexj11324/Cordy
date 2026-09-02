@@ -11,6 +11,9 @@ export type ChatCopy = {
   sessionActions: string;
   chooseAgent: string;
   noAgentsAvailable: string;
+  agents: string;
+  back: string;
+  openChatWith: (name: string) => string;
   needsRuntime: string;
   archived: string;
   noChatsYet: string;
@@ -89,6 +92,7 @@ type ChatCopyData = Omit<
   | "offlineUnstable"
   | "offline"
   | "emptyTitle"
+  | "openChatWith"
   | "repliedIn"
   | "finishedIn"
   | "failedAfter"
@@ -101,6 +105,7 @@ type ChatCopyData = Omit<
   offlineTemplate: string;
   emptyTitleNamed: string;
   emptyTitleDefault: string;
+  openChatWithTemplate: string;
   repliedInTemplate: string;
   finishedInTemplate: string;
   failedAfterTemplate: string;
@@ -296,6 +301,9 @@ const COPY_DATA = {
     sessionActions: "Session actions",
     chooseAgent: "Choose an agent",
     noAgentsAvailable: "No agents available.",
+    agents: "Agents",
+    back: "Back",
+    openChatWithTemplate: "Open chat with {name}",
     needsRuntime: "Needs runtime",
     archived: "archived",
     noChatsYet: "No chats yet.",
@@ -380,6 +388,9 @@ const COPY_DATA = {
     sessionActions: "会话操作",
     chooseAgent: "选择智能体",
     noAgentsAvailable: "暂无可用智能体。",
+    agents: "智能体",
+    back: "返回",
+    openChatWithTemplate: "打开与 {name} 的聊天",
     needsRuntime: "需绑定运行时",
     archived: "已归档",
     noChatsYet: "还没有聊天。",
@@ -459,6 +470,9 @@ const COPY_DATA = {
     sessionActions: "セッション操作",
     chooseAgent: "エージェントを選択",
     noAgentsAvailable: "利用できるエージェントはありません。",
+    agents: "エージェント",
+    back: "戻る",
+    openChatWithTemplate: "{name} とのチャットを開く",
     needsRuntime: "ランタイム未設定",
     archived: "アーカイブ済み",
     noChatsYet: "チャットはまだありません。",
@@ -540,6 +554,9 @@ const COPY_DATA = {
     sessionActions: "세션 작업",
     chooseAgent: "에이전트 선택",
     noAgentsAvailable: "사용할 수 있는 에이전트가 없습니다.",
+    agents: "에이전트",
+    back: "뒤로",
+    openChatWithTemplate: "{name}와 채팅 열기",
     needsRuntime: "런타임 필요",
     archived: "보관됨",
     noChatsYet: "아직 채팅이 없습니다.",
@@ -636,6 +653,7 @@ function buildChatCopy(data: ChatCopyData): ChatCopy {
       agentName
         ? interpolate(data.emptyTitleNamed, { name: agentName })
         : data.emptyTitleDefault,
+    openChatWith: (name) => interpolate(data.openChatWithTemplate, { name }),
     repliedIn: (elapsed) => interpolate(data.repliedInTemplate, { elapsed }),
     finishedIn: (elapsed) => interpolate(data.finishedInTemplate, { elapsed }),
     failedAfter: (elapsed) => interpolate(data.failedAfterTemplate, { elapsed }),

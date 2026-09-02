@@ -31,6 +31,7 @@ describe("mobile chat copy", () => {
       expect(copy.processSteps(1)).toBeTruthy();
       expect(copy.processSteps(2)).toContain("2");
       expect(copy.deleteChatDescription("Example")).toContain("Example");
+      expect(copy.openChatWith("Example")).toContain("Example");
     }
   });
 });
