@@ -1057,7 +1057,13 @@
     "byo_submitting": "Connecting…",
     "byo_cancel": "Cancel",
     "byo_success_toast": "Slack bot connected",
-    "byo_failed_toast": "Could not connect the Slack bot"
+    "byo_failed_toast": "Could not connect the Slack bot",
+    "managed_connect_title": "Connect the official Slack app",
+    "managed_connect_description": "Connect one Slack workspace to this Patchbay workspace with the hosted app — no tokens to paste. Members can DM the bot, @mention it in a channel, and type /issue to spin up a new Patchbay issue.",
+    "managed_connect_button": "Connect Slack",
+    "managed_connecting": "Opening Slack…",
+    "managed_failed_toast": "Could not start the Slack install",
+    "managed_workspace_name": "Slack workspace {{team}}"
   },
   "dingtalk": {
     "section_title": "DingTalk",

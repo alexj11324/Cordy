@@ -30,6 +30,11 @@ export interface ListSlackInstallationsResponse {
    * OAuth credentials). Kept as a separate flag for forward/backward compat;
    * optional so an older desktop build that predates it treats it as off. */
   install_supported?: boolean;
+  /** Whether the hosted (managed) OAuth begin path is usable: the managed
+   * service is wired and its client credentials are set. The settings tab
+   * shows the workspace-level Connect button only on this flag. Optional for
+   * the same compat reason as install_supported. */
+  managed_supported?: boolean;
 }
 
 /** Request body for a bring-your-own-app (BYO) install: the two tokens the
@@ -39,6 +44,15 @@ export interface ListSlackInstallationsResponse {
 export interface RegisterSlackBYORequest {
   bot_token: string;
   app_token: string;
+}
+
+/** Response for a managed (hosted) OAuth begin: the Slack authorize URL the
+ * installer visits, plus the state and its expiry for display. The browser
+ * lands back on the redirect_url bound to the state after the callback. */
+export interface BeginManagedSlackInstallResponse {
+  authorize_url: string;
+  state: string;
+  expires_at: string;
 }
 
 /** Post-redemption echo: the Slack user id the token carried is now bound to

@@ -235,6 +235,54 @@ describe("ApiClient issue work-product response schema", () => {
   });
 });
 
+describe("ApiClient managed Slack install response schema", () => {
+  function stubResponse(body: unknown) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+  }
+
+  it("parses the authorize URL the installer visits", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          authorize_url: "https://slack.com/oauth/v2/authorize?state=abc",
+          state: "abc",
+          expires_at: "2026-09-02T00:10:00Z",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await new ApiClient("https://api.example.test").beginManagedSlackInstall(
+      "ws-1",
+      "https://app.example.test/settings",
+    );
+    expect(result.authorize_url).toContain("slack.com/oauth/v2/authorize");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.example.test/api/workspaces/ws-1/slack/install/managed",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  // Without an authorize_url the caller has nowhere to send the installer, so
+  // a malformed payload must degrade to empty rather than a blank redirect.
+  it("falls back to empty when the payload is malformed", async () => {
+    stubResponse({ authorize_url: 42 });
+
+    await expect(
+      new ApiClient("https://api.example.test").beginManagedSlackInstall("ws-1", "https://app.example.test/settings"),
+    ).resolves.toEqual({ authorize_url: "", state: "", expires_at: "" });
+  });
+});
+
 describe("ApiClient Plugin preview response schema", () => {
   it("degrades a malformed preview so a blank scope list is never shown as approval", async () => {
     vi.stubGlobal(

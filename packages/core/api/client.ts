@@ -213,6 +213,7 @@ import type {
   SlackInstallation,
   ListSlackInstallationsResponse,
   RegisterSlackBYORequest,
+  BeginManagedSlackInstallResponse,
   RedeemSlackBindingTokenResponse,
   DingTalkInstallation,
   ListDingTalkInstallationsResponse,
@@ -372,6 +373,8 @@ import {
   SearchIssuesResponseSchema,
   SearchProjectsResponseSchema,
   EMPTY_WORK_PRODUCT_VIEW_PAGE,
+  BeginManagedSlackInstallResponseSchema,
+  EMPTY_BEGIN_MANAGED_SLACK_INSTALL_RESPONSE,
   WorkProductPageSchema,
   WorkProductViewPageSchema,
   WorkProductSchema,
@@ -5131,6 +5134,26 @@ export class ApiClient {
     await this.fetch(`/api/workspaces/${workspaceId}/slack/installations/${installationId}`, {
       method: "DELETE",
     });
+  }
+
+  // beginManagedSlackInstall starts a hosted-OAuth authorization for the
+  // workspace-level (nil-agent) install and returns the Slack authorize URL
+  // the installer visits. A malformed payload falls back to empty and the
+  // caller must refuse to redirect without an authorize_url.
+  async beginManagedSlackInstall(
+    workspaceId: string,
+    redirectUrl: string,
+  ): Promise<BeginManagedSlackInstallResponse> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/slack/install/managed`, {
+      method: "POST",
+      body: JSON.stringify({ redirect_url: redirectUrl }),
+    });
+    return parseWithFallback(
+      raw,
+      BeginManagedSlackInstallResponseSchema,
+      EMPTY_BEGIN_MANAGED_SLACK_INSTALL_RESPONSE,
+      { endpoint: "POST /api/workspaces/:id/slack/install/managed" },
+    );
   }
 
   async redeemSlackBindingToken(token: string): Promise<RedeemSlackBindingTokenResponse> {

@@ -68,9 +68,36 @@ export function SlackTab() {
   // entry points and surface a "coming soon" notice. Already-installed bots
   // still appear below and remain manageable.
   const installSupported = data?.install_supported === true;
+  // managed_supported tracks the hosted-OAuth begin path specifically (service
+  // wired + client credentials set). The workspace-level Connect button below
+  // shows only on this flag; BYO installs keep their own per-agent dialog.
+  const managedSupported = data?.managed_supported === true;
+  const activeManagedInstall = installations.find(
+    (inst) => isWorkspaceInstall(inst.agent_id) && inst.status === "active",
+  );
 
   const [disconnectTarget, setDisconnectTarget] = useState<string | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [managedConnecting, setManagedConnecting] = useState(false);
+
+  async function handleManagedConnect() {
+    if (managedConnecting) return;
+    setManagedConnecting(true);
+    try {
+      // Land back on this settings tab after the callback 302s: the install
+      // list revalidates and the new bot appears.
+      const response = await api.beginManagedSlackInstall(wsId, window.location.href);
+      if (!response.authorize_url) {
+        throw new Error("Slack authorization URL was empty");
+      }
+      window.location.assign(response.authorize_url);
+    } catch (e) {
+      toast.error(
+        e instanceof Error ? e.message : t(($) => $.slack.managed_failed_toast),
+      );
+      setManagedConnecting(false);
+    }
+  }
 
   async function handleDisconnect() {
     if (!disconnectTarget || disconnecting) return;
@@ -115,7 +142,34 @@ export function SlackTab() {
           </CardContent>
         </Card>
       ) : (
-        <section className="space-y-3">
+        <>
+          {canManage && managedSupported && !activeManagedInstall ? (
+            <Card>
+              <CardContent className="flex flex-wrap items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <p className="text-body font-medium">
+                    {t(($) => $.slack.managed_connect_title)}
+                  </p>
+                  <p className="text-caption text-muted-foreground">
+                    {t(($) => $.slack.managed_connect_description)}
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleManagedConnect}
+                  disabled={managedConnecting}
+                  data-testid="slack-managed-connect"
+                >
+                  <SlackMark className="h-3 w-3" />
+                  {managedConnecting
+                    ? t(($) => $.slack.managed_connecting)
+                    : t(($) => $.slack.managed_connect_button)}
+                </Button>
+              </CardContent>
+            </Card>
+          ) : null}
+          <section className="space-y-3">
           <h2 className="text-body font-semibold">{t(($) => $.slack.connected_bots)}</h2>
           {isLoading ? (
             <Card>
@@ -148,7 +202,8 @@ export function SlackTab() {
               </CardContent>
             </Card>
           )}
-        </section>
+          </section>
+        </>
       )}
 
       <AlertDialog
@@ -195,20 +250,34 @@ function InstallationRow({
   const locale = useLocale();
   const { getAgentName } = useActorName();
   const isActive = installation.status === "active";
-  const agentName = getAgentName(installation.agent_id);
+  // Workspace-level (managed) installs belong to no agent: show the Slack
+  // workspace they connect instead of an agent name that does not exist.
+  const isManaged = isWorkspaceInstall(installation.agent_id);
+  const agentName = isManaged ? null : getAgentName(installation.agent_id);
+  const title = isManaged
+    ? t(($) => $.slack.managed_workspace_name, {
+        team: installation.team_id || installation.bot_user_id,
+      })
+    : agentName;
   return (
     <div className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
       <div className="flex items-start gap-3">
-        <ActorAvatar
-          actorType="agent"
-          actorId={installation.agent_id}
-          size="lg"
-          enableHoverCard
-          profileLink
-        />
+        {isManaged ? (
+          <span className="flex size-8 items-center justify-center rounded-md bg-muted">
+            <SlackMark className="h-4 w-4" />
+          </span>
+        ) : (
+          <ActorAvatar
+            actorType="agent"
+            actorId={installation.agent_id}
+            size="lg"
+            enableHoverCard
+            profileLink
+          />
+        )}
         <div className="space-y-1">
           <p className="text-body font-medium">
-            {agentName}
+            {title}
             {!isActive && (
               <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
                 {t(($) => $.slack.revoked_badge)}
@@ -230,6 +299,16 @@ function InstallationRow({
       )}
     </div>
   );
+}
+
+// NIL_AGENT_ID is the all-zero UUID the backend stores on workspace-level
+// (managed, team-keyed) installs, which belong to no single agent — unlike BYO
+// rows keyed by (workspace, agent). Rows carrying it render as the workspace's
+// Slack connection, not as an agent's bot.
+const NIL_AGENT_ID = "00000000-0000-0000-0000-000000000000";
+
+function isWorkspaceInstall(agentId: string | null | undefined): boolean {
+  return !agentId || agentId === NIL_AGENT_ID;
 }
 
 // SLACK_BYO_VIDEO_URL is the optional setup-tutorial video linked from the

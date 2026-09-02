@@ -1055,7 +1055,13 @@
     "byo_submitting": "连接中…",
     "byo_cancel": "取消",
     "byo_success_toast": "Slack 机器人已连接",
-    "byo_failed_toast": "无法连接 Slack 机器人"
+    "byo_failed_toast": "无法连接 Slack 机器人",
+    "managed_connect_title": "连接官方 Slack 应用",
+    "managed_connect_description": "用托管应用把一个 Slack 工作区连接到这个 Patchbay 工作区——无需粘贴 token。成员可私聊机器人、在频道 @ 它，或输入 /issue 直接创建 Patchbay 任务。",
+    "managed_connect_button": "连接 Slack",
+    "managed_connecting": "正在打开 Slack…",
+    "managed_failed_toast": "无法启动 Slack 安装",
+    "managed_workspace_name": "Slack 工作区 {{team}}"
   },
   "dingtalk": {
     "section_title": "钉钉",

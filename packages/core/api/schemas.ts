@@ -114,6 +114,7 @@ import type {
   WorkProductRelationSummary,
   WorkProductView,
   WorkProductViewPage,
+  BeginManagedSlackInstallResponse,
 } from "../types";
 import type { CloudRuntimeNode } from "../runtimes/cloud-runtime";
 import type { CreateFeedbackResponse } from "../feedback/types";
@@ -1918,6 +1919,21 @@ export const EMPTY_WORK_PRODUCT_VIEW_PAGE: WorkProductViewPage = {
   page: 1,
   per_page: 64,
   has_more: false,
+};
+
+// Managed Slack OAuth begin response. authorize_url is required downstream —
+// without it the installer has nowhere to go — so a malformed payload falls
+// back to empty and the caller refuses to redirect.
+export const BeginManagedSlackInstallResponseSchema: z.ZodType<BeginManagedSlackInstallResponse> = z.object({
+  authorize_url: z.string().default(""),
+  state: z.string().default(""),
+  expires_at: z.string().default(""),
+}).loose() as z.ZodType<BeginManagedSlackInstallResponse>;
+
+export const EMPTY_BEGIN_MANAGED_SLACK_INSTALL_RESPONSE: BeginManagedSlackInstallResponse = {
+  authorize_url: "",
+  state: "",
+  expires_at: "",
 };
 
 export const ExecutionProvenanceSchema: z.ZodType<ExecutionProvenance> = z.object({

@@ -53,12 +53,17 @@ func slackInstallationToResponse(row db.ChannelInstallation) SlackInstallationRe
 //   - configured: at-rest encryption key is set (SlackInstall != nil).
 //   - install_supported: kept for the management UI; true whenever configured,
 //     since a BYO install needs only the at-rest key (no hosted OAuth creds).
+//   - managed_supported: the hosted OAuth begin path is usable — the managed
+//     service is wired AND its client credentials are set. The settings tab
+//     shows the workspace-level "Connect Slack" button only on this flag;
+//     without it the preview notice stays.
 func (h *Handler) ListSlackInstallations(w http.ResponseWriter, r *http.Request) {
 	if h.SlackInstall == nil {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"installations":     []SlackInstallationResponse{},
 			"configured":        false,
 			"install_supported": false,
+			"managed_supported": false,
 		})
 		return
 	}
@@ -79,6 +84,7 @@ func (h *Handler) ListSlackInstallations(w http.ResponseWriter, r *http.Request)
 		"installations":     out,
 		"configured":        true,
 		"install_supported": true,
+		"managed_supported": h.ManagedSlack != nil && h.ManagedSlack.ClientID() != "",
 	})
 }
 

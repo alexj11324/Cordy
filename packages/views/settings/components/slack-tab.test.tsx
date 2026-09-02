@@ -21,6 +21,7 @@ const installationsRef = vi.hoisted(() => ({
   },
 }));
 const mockRegisterBYO = vi.hoisted(() => vi.fn());
+const mockBeginManaged = vi.hoisted(() => vi.fn());
 const mockDeleteInstallation = vi.hoisted(() => vi.fn());
 const mockOpenExternal = vi.hoisted(() => vi.fn());
 const mockInvalidate = vi.hoisted(() => vi.fn());
@@ -71,6 +72,7 @@ vi.mock("@patchbay/core/slack", () => ({
 vi.mock("@patchbay/core/api", () => ({
   api: {
     registerSlackBYO: mockRegisterBYO,
+    beginManagedSlackInstall: mockBeginManaged,
     deleteSlackInstallation: mockDeleteInstallation,
   },
 }));
@@ -177,5 +179,84 @@ describe("SlackTab", () => {
     renderUI(<SlackTab />);
     expect(screen.getByText("Agent agent-7")).toBeTruthy();
     expect(screen.getByText(/Disconnect/i)).toBeTruthy();
+  });
+
+  it("shows the managed connect button only when the hosted path is supported", () => {
+    installationsRef.current = {
+      installations: [],
+      configured: true,
+      install_supported: true,
+      managed_supported: true,
+    };
+    renderUI(<SlackTab />);
+    expect(screen.getByTestId("slack-managed-connect")).toBeTruthy();
+  });
+
+  it("hides the managed connect button without hosted credentials", () => {
+    installationsRef.current = {
+      installations: [],
+      configured: true,
+      install_supported: true,
+      managed_supported: false,
+    };
+    renderUI(<SlackTab />);
+    expect(screen.queryByTestId("slack-managed-connect")).toBeNull();
+  });
+
+  it("starts a managed install against the workspace and follows the authorize URL", async () => {
+    mockBeginManaged.mockResolvedValue({
+      authorize_url: "https://slack.com/oauth/v2/authorize?state=abc",
+      state: "abc",
+      expires_at: "2026-09-02T00:10:00Z",
+    });
+    installationsRef.current = {
+      installations: [],
+      configured: true,
+      install_supported: true,
+      managed_supported: true,
+    };
+    renderUI(<SlackTab />);
+    await userEvent.click(screen.getByTestId("slack-managed-connect"));
+    await waitFor(() => {
+      expect(mockBeginManaged).toHaveBeenCalledWith("workspace-1", expect.any(String));
+    });
+  });
+
+  it("toasts when the managed begin fails", async () => {
+    const { toast } = await import("sonner");
+    mockBeginManaged.mockRejectedValue(new Error("nope"));
+    installationsRef.current = {
+      installations: [],
+      configured: true,
+      install_supported: true,
+      managed_supported: true,
+    };
+    renderUI(<SlackTab />);
+    await userEvent.click(screen.getByTestId("slack-managed-connect"));
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalled();
+    });
+  });
+
+  it("renders a workspace-level install under its Slack team, not an agent", () => {
+    installationsRef.current = {
+      installations: [
+        {
+          id: "i9",
+          agent_id: "00000000-0000-0000-0000-000000000000",
+          status: "active",
+          team_id: "T1",
+          bot_user_id: "UBOT",
+        },
+      ],
+      configured: true,
+      install_supported: true,
+      managed_supported: true,
+    };
+    renderUI(<SlackTab />);
+    expect(screen.getByText("Slack workspace T1")).toBeTruthy();
+    expect(screen.queryByTestId("actor-avatar")).toBeNull();
+    // An active managed install replaces the connect button.
+    expect(screen.queryByTestId("slack-managed-connect")).toBeNull();
   });
 });

@@ -1055,7 +1055,13 @@
     "byo_submitting": "接続中…",
     "byo_cancel": "キャンセル",
     "byo_success_toast": "Slack ボットを接続しました",
-    "byo_failed_toast": "Slack ボットを接続できませんでした"
+    "byo_failed_toast": "Slack ボットを接続できませんでした",
+    "managed_connect_title": "公式 Slack アプリを接続",
+    "managed_connect_description": "ホストアプリで 1 つの Slack ワークスペースをこの Patchbay ワークスペースに接続します。トークンの貼り付けは不要です。メンバーはボットに DM したり、チャンネルで @メンションしたり、/issue と入力して新しい Patchbay タスクを作成できます。",
+    "managed_connect_button": "Slack を接続",
+    "managed_connecting": "Slack を開いています…",
+    "managed_failed_toast": "Slack インストールを開始できませんでした",
+    "managed_workspace_name": "Slack ワークスペース {{team}}"
   },
   "dingtalk": {
     "section_title": "DingTalk",

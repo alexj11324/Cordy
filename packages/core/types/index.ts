@@ -260,6 +260,7 @@ export type {
   SlackInstallation,
   ListSlackInstallationsResponse,
   RegisterSlackBYORequest,
+  BeginManagedSlackInstallResponse,
   RedeemSlackBindingTokenResponse,
 } from "./slack";
 export type {
