@@ -48,12 +48,12 @@ import { DesktopClientUsageReporter } from "./platform/client-usage-reporter";
 import { DiagnosticRouteReporter } from "./platform/diagnostic-route-reporter";
 import { flushFreezeBreadcrumb } from "./freeze-flush";
 import { DesktopAuthSessionBridge } from "./platform/auth-session-bridge";
-import type { DesktopWindowContext } from "../../../shared/issue-window";
-import type { RuntimeConfigResult } from "../../../shared/runtime-config";
+import type { DesktopWindowContext } from "../../shared/issue-window";
+import type { RuntimeConfigResult } from "../../shared/runtime-config";
 import {
   resolveDesktopStartupMode,
   type LocalGuestSession,
-} from "../../../shared/local-guest";
+} from "../../shared/local-guest";
 
 // BCP-47 region tags for the <html lang> attribute, mirroring
 // apps/web/app/layout.tsx HTML_LANG. index.html ships a static lang="en";
