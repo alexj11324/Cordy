@@ -114,15 +114,19 @@ func smtpAuthWithFallback(c smtpAuthClient, host, username, password string) (bo
 func resolveFromEmail(smtpHost string) string {
 	resendFrom := strings.TrimSpace(os.Getenv("RESEND_FROM_EMAIL"))
 	if smtpHost == "" {
-		if resendFrom != "" {
-			return resendFrom
-		}
-		return "noreply@patchbay.ai"
+		return resendFrom
 	}
 	if smtpFrom := strings.TrimSpace(os.Getenv("SMTP_FROM_EMAIL")); smtpFrom != "" {
 		return smtpFrom
 	}
 	return resendFrom
+}
+
+func requireResendSender(from string) error {
+	if strings.TrimSpace(from) == "" {
+		return fmt.Errorf("RESEND_FROM_EMAIL is required when RESEND_API_KEY is set")
+	}
+	return nil
 }
 
 func (s *EmailService) openSMTPClient() (*smtp.Client, error) {
@@ -353,6 +357,9 @@ func (s *EmailService) SendVerificationCode(to, code string) error {
 		fmt.Printf("[DEV] Verification code for %s: %s\n", to, code)
 		return nil
 	}
+	if err := requireResendSender(s.fromEmail); err != nil {
+		return err
+	}
 	params := &resend.SendEmailRequest{
 		From:    s.fromEmail,
 		To:      []string{to},
@@ -379,6 +386,9 @@ func (s *EmailService) SendInvitationEmail(to, inviterName, workspaceName, invit
 	if s.client == nil {
 		fmt.Printf("[DEV] Invitation email to %s: %s invited you to %s — %s\n", to, inviterName, workspaceName, inviteURL)
 		return nil
+	}
+	if err := requireResendSender(s.fromEmail); err != nil {
+		return err
 	}
 	params := buildInvitationParams(s.fromEmail, to, inviterName, workspaceName, inviteURL)
 	_, err := s.client.Emails.Send(params)

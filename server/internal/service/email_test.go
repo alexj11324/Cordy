@@ -230,7 +230,7 @@ func TestNewEmailService_FromEmailResolution(t *testing.T) {
 		},
 		{
 			name: "default",
-			want: "noreply@patchbay.ai",
+			want: "",
 		},
 	}
 
@@ -247,6 +247,15 @@ func TestNewEmailService_FromEmailResolution(t *testing.T) {
 				t.Fatalf("fromEmail = %q, want %q", s.fromEmail, tt.want)
 			}
 		})
+	}
+}
+
+func TestRequireResendSender(t *testing.T) {
+	if err := requireResendSender(" "); err == nil {
+		t.Fatal("expected an empty Resend sender to be rejected")
+	}
+	if err := requireResendSender("noreply@patchbay.aspectlylabs.com"); err != nil {
+		t.Fatalf("configured Resend sender rejected: %v", err)
 	}
 }
 
