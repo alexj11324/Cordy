@@ -97,11 +97,11 @@ type Config struct {
 	// StateSecret signs the connect-state HMAC. Required (non-empty).
 	StateSecret []byte
 	// CallbackBaseURL is the absolute, public base URL of THIS API, with no
-	// trailing slash (e.g. "https://patchbay.ai"). The Composio callback
+	// trailing slash (e.g. "https://patchbay.aspectlylabs.com"). The Composio callback
 	// URL is built as CallbackBaseURL + CallbackPath. Required.
 	CallbackBaseURL string
 	// FrontendBaseURL is the web app base used to build the post-callback
-	// browser redirect (e.g. "https://patchbay.ai"). May be empty, in which
+	// browser redirect (e.g. "https://patchbay.aspectlylabs.com"). May be empty, in which
 	// case CallbackRedirect returns a site-relative path.
 	FrontendBaseURL string
 	// StateTTL overrides the default connect-state lifetime. Zero uses

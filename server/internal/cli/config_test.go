@@ -23,8 +23,8 @@ func TestCLIConfig_BackwardCompat_OldFileLoadsWithNilBackends(t *testing.T) {
 		t.Fatal(err)
 	}
 	historical := `{
-  "server_url": "https://api.patchbay.ai",
-  "app_url": "https://patchbay.ai",
+  "server_url": "https://api.aspectlylabs.com",
+  "app_url": "https://patchbay.aspectlylabs.com",
   "workspace_id": "ws-123",
   "token": "pby_abcdef"
 }`
@@ -37,7 +37,7 @@ func TestCLIConfig_BackwardCompat_OldFileLoadsWithNilBackends(t *testing.T) {
 		t.Fatalf("LoadCLIConfig on historical file: %v", err)
 	}
 
-	if cfg.ServerURL != "https://api.patchbay.ai" {
+	if cfg.ServerURL != "https://api.aspectlylabs.com" {
 		t.Errorf("ServerURL: got %q, want historical value", cfg.ServerURL)
 	}
 	if cfg.Token != "pby_abcdef" {
@@ -58,7 +58,7 @@ func TestCLIConfig_BackwardCompat_NilBackendsOmittedFromJSON(t *testing.T) {
 	t.Setenv("HOME", tmp)
 
 	cfg := CLIConfig{
-		ServerURL: "https://api.patchbay.ai",
+		ServerURL: "https://api.aspectlylabs.com",
 		Token:     "pby_xyz",
 	}
 	if err := SaveCLIConfig(cfg); err != nil {
@@ -90,7 +90,7 @@ func TestCLIConfig_OpenClawOverride_RoundTrip(t *testing.T) {
 	t.Setenv("HOME", tmp)
 
 	original := CLIConfig{
-		ServerURL: "https://api.patchbay.ai",
+		ServerURL: "https://api.aspectlylabs.com",
 		Token:     "pby_xyz",
 		Backends: &BackendOverrides{
 			OpenClaw: &OpenClawOverride{
@@ -131,7 +131,7 @@ func TestCLIConfig_OpenClawOverride_PartialFieldsOmitted(t *testing.T) {
 	t.Setenv("HOME", tmp)
 
 	cfg := CLIConfig{
-		ServerURL: "https://api.patchbay.ai",
+		ServerURL: "https://api.aspectlylabs.com",
 		Token:     "pby_xyz",
 		Backends: &BackendOverrides{
 			OpenClaw: &OpenClawOverride{
@@ -176,8 +176,8 @@ func TestCLIConfig_ProfileCommandOverrides_RoundTrip(t *testing.T) {
 	t.Setenv("HOME", tmp)
 
 	original := CLIConfig{
-		ServerURL:   "https://api.patchbay.ai",
-		AppURL:      "https://patchbay.ai",
+		ServerURL:   "https://api.aspectlylabs.com",
+		AppURL:      "https://patchbay.aspectlylabs.com",
 		WorkspaceID: "ws-123",
 		Token:       "pby_xyz",
 		Backends: &BackendOverrides{
@@ -234,7 +234,7 @@ func TestCLIConfig_ProfileCommandOverrides_OmittedWhenEmpty(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 
-	cfg := CLIConfig{ServerURL: "https://api.patchbay.ai", Token: "pby_xyz"}
+	cfg := CLIConfig{ServerURL: "https://api.aspectlylabs.com", Token: "pby_xyz"}
 	if err := SaveCLIConfig(cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -272,7 +272,7 @@ func TestCLIConfig_UnknownFieldsArePreserved(t *testing.T) {
 		t.Fatal(err)
 	}
 	withFutureField := `{
-  "server_url": "https://api.patchbay.ai",
+  "server_url": "https://api.aspectlylabs.com",
   "token": "pby_xyz",
   "backends": {
     "openclaw": {"state_dir": "/x"},
@@ -444,7 +444,7 @@ func TestCLIConfig_OpenClawCLITimeout_RoundTrip(t *testing.T) {
 	t.Setenv("HOME", tmp)
 
 	original := CLIConfig{
-		ServerURL: "https://api.patchbay.ai",
+		ServerURL: "https://api.aspectlylabs.com",
 		Token:     "pby_xyz",
 		Backends: &BackendOverrides{
 			OpenClaw: &OpenClawOverride{CLITimeout: "45s"},

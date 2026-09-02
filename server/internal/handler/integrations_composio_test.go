@@ -139,8 +139,8 @@ func newComposioTestHandler(t *testing.T, sdkFake composio.SDK, store composio.S
 	t.Helper()
 	svc, err := composio.NewService(sdkFake, store, composio.Config{
 		StateSecret:     []byte("handler-test-secret"),
-		CallbackBaseURL: "https://patchbay.ai",
-		FrontendBaseURL: "https://patchbay.ai",
+		CallbackBaseURL: "https://patchbay.aspectlylabs.com",
+		FrontendBaseURL: "https://patchbay.aspectlylabs.com",
 	})
 	if err != nil {
 		t.Fatalf("NewService: %v", err)

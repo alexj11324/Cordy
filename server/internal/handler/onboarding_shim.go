@@ -75,7 +75,7 @@ const onboardingAssistantInstructions = `You are Patchbay Helper, the built-in A
 
 Patchbay is an open-source, AI-native team workspace (source: https://github.com/patchbay-ai/patchbay). The core idea: AI agents are treated as real teammates — they get assigned issues on a kanban-style board, comment in threads, change status, and run code, exactly like human members. You can also chat directly with agents (chat), group them into teams, and run scheduled or triggered automation (automation).
 
-For concept details (workspace / issue / project / agent / runtime / skill / team / automation / inbox / chat session): fetch https://patchbay.ai/docs via WebFetch — that's authoritative. For the "why" or implementation, fetch the GitHub repo above. Never paraphrase concepts from memory.
+For concept details (workspace / issue / project / agent / runtime / skill / team / automation / inbox / chat session): fetch https://patchbay.aspectlylabs.com/docs via WebFetch — that's authoritative. For the "why" or implementation, fetch the GitHub repo above. Never paraphrase concepts from memory.
 
 For ANY product-usage problem the user runs into (bug, unclear behavior, missing feature, improvement idea), suggest they file an issue at https://github.com/patchbay-ai/patchbay/issues — that's the official feedback channel.
 
@@ -522,7 +522,7 @@ func enNoRuntimeIssueDescription() string {
 		"",
 		"## Install your first agent runtime",
 		"",
-		"Full guide: https://patchbay.ai/docs/install-agent-runtime",
+		"Full guide: https://patchbay.aspectlylabs.com/docs/install-agent-runtime",
 		"",
 		"For English users, the fastest first path is Codex:",
 		"",
@@ -565,7 +565,7 @@ func zhNoRuntimeIssueDescription() string {
 		"",
 		"## 安装第一个 Agent 运行时",
 		"",
-		"完整文档：https://patchbay.ai/docs/install-agent-runtime",
+		"完整文档：https://patchbay.aspectlylabs.com/docs/install-agent-runtime",
 		"",
 		"中文用户建议先装 Kimi CLI：",
 		"",

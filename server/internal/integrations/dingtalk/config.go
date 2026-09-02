@@ -16,7 +16,7 @@
 //
 // Maintenance: this package is COMMUNITY-MAINTAINED. Its maintainers, the
 // support boundary and the retirement rule are published at
-// https://patchbay.ai/docs/community-maintained
+// https://patchbay.aspectlylabs.com/docs/community-maintained
 // (apps/docs/content/docs/community-maintained.mdx, four locales). That page
 // is the single source of truth — record ownership changes there, not here.
 // Changing the shared channel engine? Keep this adapter building, and loop in

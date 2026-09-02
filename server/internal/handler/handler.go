@@ -86,7 +86,7 @@ type Config struct {
 	// PATCHBAY_VCS_INTEGRATION_ENABLED; the self-host compose defaults it on.
 	VCSIntegrationEnabled bool
 	// PublicURL is the absolute base URL the API is reachable at from the
-	// public internet, with no trailing slash (e.g. "https://patchbay.ai").
+	// public internet, with no trailing slash (e.g. "https://patchbay.aspectlylabs.com").
 	// Used to build webhook_url responses and the fixed Remote MCP OAuth
 	// callback URI — never to decide request identity, routing, or workspace
 	// scope. Empty when unset; webhook clients can fall back to their own origin,

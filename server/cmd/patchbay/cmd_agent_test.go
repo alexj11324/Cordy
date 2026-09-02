@@ -471,7 +471,7 @@ func TestResolveToken_AgentContextSkipsConfig(t *testing.T) {
 		t.Setenv("PATCHBAY_TASK_ID", "")
 		t.Setenv("PATCHBAY_TOKEN", "")
 		t.Setenv("PATCHBAY_DAEMON_PORT", "")
-		t.Setenv("PATCHBAY_SERVER_URL", "https://api.patchbay.ai")
+		t.Setenv("PATCHBAY_SERVER_URL", "https://api.aspectlylabs.com")
 
 		if got := resolveToken(testCmd()); got != "pby_profile_token" {
 			t.Fatalf("resolveToken() = %q, want profile token (SERVER_URL is not a daemon identity signal)", got)

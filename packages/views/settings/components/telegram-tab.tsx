@@ -241,7 +241,7 @@ function telegramDocsUrl(lang: string | undefined): string {
       : lang?.startsWith("ko")
         ? "/ko"
         : "";
-  return `https://patchbay.ai/docs${prefix}/telegram-bot-integration`;
+  return `https://patchbay.aspectlylabs.com/docs${prefix}/telegram-bot-integration`;
 }
 
 // TelegramAgentBindButton is the per-agent CTA on the agent detail page.

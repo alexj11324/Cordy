@@ -96,7 +96,7 @@ func TestFormatErrorAllKinds(t *testing.T) {
 
 func TestFormatErrorNetwork(t *testing.T) {
 	withLang(t, "en_US.UTF-8")
-	raw := errors.New("Get \"https://api.patchbay.ai/api/issues/abc\": context deadline exceeded")
+	raw := errors.New("Get \"https://api.aspectlylabs.com/api/issues/abc\": context deadline exceeded")
 	netErr := &NetworkError{Kind: KindNetworkTimeout, Op: "GET /api/issues/abc", Err: raw}
 	wrapped := fmt.Errorf("resolve issue: %w", netErr)
 

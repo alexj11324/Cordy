@@ -812,7 +812,7 @@ function dingtalkDocsUrl(lang: string | undefined): string {
       : lang?.startsWith("ko")
         ? "/ko"
         : "";
-  return `https://patchbay.ai/docs${prefix}/dingtalk-bot-integration`;
+  return `https://patchbay.aspectlylabs.com/docs${prefix}/dingtalk-bot-integration`;
 }
 
 // DingTalkAgentBindButton is the per-agent CTA exposed from the agent detail

@@ -20,8 +20,8 @@ const DEFAULT_CLI_CONFIG = join(PATCHBAY_DIR, "config.json");
 
 describe("deriveProfileName", () => {
   it("names the profile after the target host", () => {
-    expect(deriveProfileName("https://api.patchbay.ai")).toBe(
-      "desktop-api.patchbay.ai",
+    expect(deriveProfileName("https://api.aspectlylabs.com")).toBe(
+      "desktop-api.aspectlylabs.com",
     );
   });
 
@@ -38,18 +38,18 @@ describe("deriveProfileName", () => {
 
 describe("profile paths", () => {
   it("always resolves under profiles/<name>", () => {
-    const dir = join(PATCHBAY_DIR, "profiles", "desktop-api.patchbay.ai");
-    expect(profileDir("desktop-api.patchbay.ai")).toBe(dir);
-    expect(profileConfigPath("desktop-api.patchbay.ai")).toBe(
+    const dir = join(PATCHBAY_DIR, "profiles", "desktop-api.aspectlylabs.com");
+    expect(profileDir("desktop-api.aspectlylabs.com")).toBe(dir);
+    expect(profileConfigPath("desktop-api.aspectlylabs.com")).toBe(
       join(dir, "config.json"),
     );
-    expect(profileLogPath("desktop-api.patchbay.ai")).toBe(
+    expect(profileLogPath("desktop-api.aspectlylabs.com")).toBe(
       join(dir, "daemon.log"),
     );
-    expect(profilePidPath("desktop-api.patchbay.ai")).toBe(
+    expect(profilePidPath("desktop-api.aspectlylabs.com")).toBe(
       join(dir, "daemon.pid"),
     );
-    expect(profileUserIdPath("desktop-api.patchbay.ai")).toBe(
+    expect(profileUserIdPath("desktop-api.aspectlylabs.com")).toBe(
       join(dir, ".desktop-user-id"),
     );
   });
@@ -65,7 +65,7 @@ describe("profile paths", () => {
   });
 
   it("never yields the default CLI config path for any input", () => {
-    for (const name of ["desktop-api.patchbay.ai", "desktop", "x"]) {
+    for (const name of ["desktop-api.aspectlylabs.com", "desktop", "x"]) {
       expect(profileConfigPath(name)).not.toBe(DEFAULT_CLI_CONFIG);
     }
     expect(() => profileConfigPath("")).toThrow();
@@ -74,9 +74,9 @@ describe("profile paths", () => {
 
 describe("profileArgs", () => {
   it("selects the Desktop-owned profile", () => {
-    expect(profileArgs("desktop-api.patchbay.ai")).toEqual([
+    expect(profileArgs("desktop-api.aspectlylabs.com")).toEqual([
       "--profile",
-      "desktop-api.patchbay.ai",
+      "desktop-api.aspectlylabs.com",
     ]);
   });
 
@@ -96,14 +96,14 @@ describe("healthPortForProfile", () => {
   });
 
   it("never derives the default profile's port", () => {
-    for (const name of ["desktop-api.patchbay.ai", "desktop", "x", "a".repeat(50)]) {
+    for (const name of ["desktop-api.aspectlylabs.com", "desktop", "x", "a".repeat(50)]) {
       expect(healthPortForProfile(name)).not.toBe(DEFAULT_HEALTH_PORT);
     }
   });
 
   it("derives a stable per-profile port above the default", () => {
-    const port = healthPortForProfile("desktop-api.patchbay.ai");
+    const port = healthPortForProfile("desktop-api.aspectlylabs.com");
     expect(port).toBeGreaterThan(DEFAULT_HEALTH_PORT);
-    expect(port).toBe(healthPortForProfile("desktop-api.patchbay.ai"));
+    expect(port).toBe(healthPortForProfile("desktop-api.aspectlylabs.com"));
   });
 });

@@ -7,7 +7,7 @@ body:
     id: deployment
     attributes:
       label: Deployment type
-      description: Are you using the Official App (patchbay.ai) or a self-hosted instance?
+      description: Are you using the Official App (patchbay.aspectlylabs.com) or a self-hosted instance?
       options:
         - Official App
         - self-host
@@ -21,7 +21,7 @@ body:
       description: >-
         Which part of Patchbay is this about? Areas marked community-maintained are
         looked after by volunteer maintainers — see
-        https://patchbay.ai/docs/community-maintained. Please do not @-mention a
+        https://patchbay.aspectlylabs.com/docs/community-maintained. Please do not @-mention a
         maintainer directly; we route reports from here.
       options:
         - Web app

@@ -338,7 +338,7 @@ func TestRunRuntimeProfileSetPathPreservesExistingConfig(t *testing.T) {
 	t.Setenv("HOME", home)
 
 	// Seed an existing config with unrelated fields.
-	seed := cli.CLIConfig{ServerURL: "https://api.patchbay.ai", WorkspaceID: "ws-123", Token: "pby_xyz"}
+	seed := cli.CLIConfig{ServerURL: "https://api.aspectlylabs.com", WorkspaceID: "ws-123", Token: "pby_xyz"}
 	if err := cli.SaveCLIConfig(seed); err != nil {
 		t.Fatal(err)
 	}
@@ -353,7 +353,7 @@ func TestRunRuntimeProfileSetPathPreservesExistingConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.ServerURL != "https://api.patchbay.ai" || cfg.WorkspaceID != "ws-123" || cfg.Token != "pby_xyz" {
+	if cfg.ServerURL != "https://api.aspectlylabs.com" || cfg.WorkspaceID != "ws-123" || cfg.Token != "pby_xyz" {
 		t.Errorf("set-path clobbered existing config: %#v", cfg)
 	}
 	if cfg.ProfileCommandOverrides["prof-1"] != "/opt/bin/company-codex" {

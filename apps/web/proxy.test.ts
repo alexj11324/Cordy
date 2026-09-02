@@ -100,7 +100,7 @@ describe("proxy legacy workspace route redirects", () => {
     ).toBe("https://app.patchbay.test/login");
   });
 
-  it.each(["patchbay.ai", "www.patchbay.ai"])(
+  it.each(["patchbay.aspectlylabs.com"])(
     "resolves a slugless session off the marketing host %s instead of stranding it",
     (host) => {
       expect(
@@ -119,7 +119,7 @@ describe("proxy legacy workspace route redirects", () => {
     );
   });
 
-  it.each(["patchbay.ai", "www.patchbay.ai"])(
+  it.each(["patchbay.aspectlylabs.com"])(
     "does not redirect public marketing root on %s",
     (host) => {
       expect(redirectLocation("/", sessionCookies, host)).toBeNull();
@@ -127,8 +127,8 @@ describe("proxy legacy workspace route redirects", () => {
   );
 
   it("still redirects explicit legacy app routes on the public marketing host", () => {
-    expect(redirectLocation("/issues/ABC-123", sessionCookies, "patchbay.ai")).toBe(
-      "https://patchbay.ai/acme/issues/ABC-123",
+    expect(redirectLocation("/issues/ABC-123", sessionCookies, "patchbay.aspectlylabs.com")).toBe(
+      "https://patchbay.aspectlylabs.com/acme/issues/ABC-123",
     );
   });
 });
