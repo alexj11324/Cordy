@@ -2262,6 +2262,35 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			r.Get("/api/chat/history", h.GetChatChannelHistory)
 			r.Get("/api/chat/thread", h.GetChatThread)
 
+			// Work products & provenance
+			r.Route("/api/work-products", func(r chi.Router) {
+				r.Get("/", h.ListWorkProducts)
+				r.Post("/", h.CreateWorkProduct)
+				r.Route("/{id}", func(r chi.Router) {
+					r.Get("/", h.GetWorkProduct)
+				})
+			})
+			r.Route("/api/issues/{id}/work-product-relations", func(r chi.Router) {
+				r.Get("/", h.ListWorkProductRelationsByIssue)
+				r.Post("/", h.CreateWorkProductRelation)
+			})
+			r.Route("/api/tasks/{taskId}/provenance", func(r chi.Router) {
+				r.Get("/", h.GetProvenanceByTask)
+				r.Post("/", h.UpsertProvenance)
+			})
+			r.Get("/api/provenance", h.ListProvenanceByWorkspace)
+
+			// Workspace channels
+			r.Route("/api/workspace-channels", func(r chi.Router) {
+				r.Get("/", h.ListWorkspaceChannels)
+				r.Post("/", h.CreateWorkspaceChannel)
+				r.Route("/{id}", func(r chi.Router) {
+					r.Get("/", h.GetWorkspaceChannel)
+					r.Get("/messages", h.ListWorkspaceChannelMessages)
+					r.Post("/messages", h.CreateWorkspaceChannelMessage)
+				})
+			})
+
 			// Inbox
 			r.Route("/api/inbox", func(r chi.Router) {
 				r.Get("/", h.ListInbox)
