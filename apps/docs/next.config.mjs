@@ -6,6 +6,23 @@ const withMDX = createMDX();
 const config = {
   reactStrictMode: true,
   basePath: "/docs",
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          {
+            key: "X-Patchbay-Build",
+            value: process.env.NEXT_PUBLIC_APP_VERSION || "dev",
+          },
+          {
+            key: "X-Patchbay-Commit",
+            value: process.env.NEXT_PUBLIC_COMMIT_SHA || "unknown",
+          },
+        ],
+      },
+    ];
+  },
   // Visiting http://host/ (outside basePath) would otherwise 404 — redirect
   // to the docs root. basePath: false makes the source and destination
   // literal (not re-prefixed with `/docs`), so the redirect runs before

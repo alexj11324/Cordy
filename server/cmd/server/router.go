@@ -201,6 +201,25 @@ func normalizeServerVersion(v string) string {
 	return v
 }
 
+func buildFingerprintMiddleware(buildVersion, buildCommit string) func(http.Handler) http.Handler {
+	buildVersion = normalizeServerVersion(strings.TrimSpace(buildVersion))
+	buildCommit = strings.TrimSpace(buildCommit)
+	if buildCommit == "unknown" {
+		buildCommit = ""
+	}
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if buildVersion != "" {
+				w.Header().Set("X-Patchbay-Build", buildVersion)
+			}
+			if buildCommit != "" {
+				w.Header().Set("X-Patchbay-Commit", buildCommit)
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // NewRouter creates the fully-configured Chi router with all middleware and routes.
 // rdb is optional: when non-nil the runtime local-skill request stores are
 // swapped for Redis-backed implementations so multiple API nodes share the
@@ -1351,6 +1370,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	if opts.HTTPMetrics != nil {
 		r.Use(opts.HTTPMetrics.Middleware)
 	}
+	r.Use(buildFingerprintMiddleware(version, commit))
 	r.Use(chimw.Recoverer)
 	r.Use(h.PluginSurfaceHostBoundary)
 	r.Use(middleware.ContentSecurityPolicy)
