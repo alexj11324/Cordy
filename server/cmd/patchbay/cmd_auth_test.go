@@ -77,8 +77,8 @@ func TestResolveCallbackBinding(t *testing.T) {
 	}{
 		{
 			name:         "public app URL stays on loopback",
-			appURL:       "https://patchbay.ai",
-			serverURL:    "https://api.patchbay.ai",
+			appURL:       "https://patchbay.aspectlylabs.com",
+			serverURL:    "https://api.aspectlylabs.com",
 			detect:       failing,
 			wantCallback: "localhost",
 			wantBind:     "127.0.0.1",
@@ -118,8 +118,8 @@ func TestResolveCallbackBinding(t *testing.T) {
 		{
 			name:         "--callback-host flag overrides everything",
 			flagHost:     "cli.internal.example",
-			appURL:       "https://patchbay.ai",
-			serverURL:    "https://api.patchbay.ai",
+			appURL:       "https://patchbay.aspectlylabs.com",
+			serverURL:    "https://api.aspectlylabs.com",
 			detect:       fixed("10.0.0.5"),
 			wantCallback: "cli.internal.example",
 			wantBind:     "0.0.0.0",
@@ -141,7 +141,7 @@ func TestResolveCallbackBinding(t *testing.T) {
 }
 
 func TestBrowserLoginInstructionsSSHRemoteHint(t *testing.T) {
-	const loginURL = "https://patchbay.ai/login?cli_callback=http%3A%2F%2Flocalhost%3A43689%2Fcallback"
+	const loginURL = "https://patchbay.aspectlylabs.com/login?cli_callback=http%3A%2F%2Flocalhost%3A43689%2Fcallback"
 
 	got := browserLoginInstructions(loginURL, "localhost", 43689, true)
 	if !strings.Contains(got, "ssh -L 43689:127.0.0.1:43689 <user>@<remote-host>") {

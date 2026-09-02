@@ -285,8 +285,8 @@ func newAPIClient(cmd *cobra.Command) (*cli.APIClient, error) {
 }
 
 const (
-	defaultCloudServerURL = "https://api.patchbay.ai"
-	defaultCloudAppURL    = "https://patchbay.ai"
+	defaultCloudServerURL = "https://api.aspectlylabs.com"
+	defaultCloudAppURL    = "https://patchbay.aspectlylabs.com"
 )
 
 func tryResolveServerURL(cmd *cobra.Command) string {

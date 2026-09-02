@@ -194,11 +194,11 @@ func TestDefaultGCCompletedTaskTTLOnlyBoundsOfficialCloudHost(t *testing.T) {
 		serverURL string
 		want      time.Duration
 	}{
-		{"official cloud", "https://api.patchbay.ai", DefaultGCCompletedTaskTTLCloud},
-		{"official cloud with port and path", "https://API.Patchbay.AI:443/api", DefaultGCCompletedTaskTTLCloud},
+		{"official cloud", "https://api.aspectlylabs.com", DefaultGCCompletedTaskTTLCloud},
+		{"official cloud with port and path", "https://API.AspectlyLabs.Com:443/api", DefaultGCCompletedTaskTTLCloud},
 		// Staging and previews inherit the self-host value for the same reason
 		// officialCloudHost excludes them from the auto-update default.
-		{"staging", "https://api-staging.patchbay.ai", DefaultGCCompletedTaskTTLSelfHost},
+		{"staging", "https://api-staging.aspectlylabs.com", DefaultGCCompletedTaskTTLSelfHost},
 		{"self-host", "https://patchbay.example.com", DefaultGCCompletedTaskTTLSelfHost},
 		{"localhost", "http://localhost:8080", DefaultGCCompletedTaskTTLSelfHost},
 		{"unparseable", "://nope", DefaultGCCompletedTaskTTLSelfHost},
@@ -393,19 +393,19 @@ func TestIsOfficialCloudServer(t *testing.T) {
 		url  string
 		want bool
 	}{
-		{"canonical cloud https", "https://api.patchbay.ai", true},
-		{"canonical cloud with trailing slash stripped", "https://api.patchbay.ai/", true},
-		{"canonical cloud case-insensitive", "https://API.Patchbay.AI", true},
-		{"cloud over plain http (unusual but match host)", "http://api.patchbay.ai", true},
+		{"canonical cloud https", "https://api.aspectlylabs.com", true},
+		{"canonical cloud with trailing slash stripped", "https://api.aspectlylabs.com/", true},
+		{"canonical cloud case-insensitive", "https://API.AspectlyLabs.Com", true},
+		{"cloud over plain http (unusual but match host)", "http://api.aspectlylabs.com", true},
 		{"localhost is self-host", "http://localhost:8080", false},
 		{"loopback ip is self-host", "http://127.0.0.1:8080", false},
 		{"lan ip is self-host", "http://192.168.0.28:8080", false},
 		{"third-party host is self-host", "https://patchbay.example.com", false},
 		// Staging / preview / future subdomains deliberately follow the
 		// safer self-host default until explicitly opted in.
-		{"patchbay.ai apex is not the api host", "https://patchbay.ai", false},
-		{"staging subdomain is self-host", "https://staging.patchbay.ai", false},
-		{"preview subdomain is self-host", "https://api-preview.patchbay.ai", false},
+		{"aspectlylabs.com apex is not the api host", "https://aspectlylabs.com", false},
+		{"staging subdomain is self-host", "https://staging.aspectlylabs.com", false},
+		{"preview subdomain is self-host", "https://api-preview.aspectlylabs.com", false},
 		// Malformed inputs must not falsely match.
 		{"empty string is self-host", "", false},
 		{"garbage string is self-host", "::not a url::", false},
@@ -971,7 +971,7 @@ func TestLoadConfig_OpenCodeIdleWatchdog(t *testing.T) {
 func TestLoadConfig_AutoUpdateDefault_CloudOn(t *testing.T) {
 	stageFakeAgent(t)
 	cfg, err := LoadConfig(Overrides{
-		ServerURL:      "wss://api.patchbay.ai/ws",
+		ServerURL:      "wss://api.aspectlylabs.com/ws",
 		WorkspacesRoot: t.TempDir(),
 	})
 	if err != nil {
@@ -1005,7 +1005,7 @@ func TestLoadConfig_AutoUpdateEnv_ForcesOffForCloud(t *testing.T) {
 	stageFakeAgent(t)
 	t.Setenv("PATCHBAY_DAEMON_AUTO_UPDATE", "false")
 	cfg, err := LoadConfig(Overrides{
-		ServerURL:      "https://api.patchbay.ai",
+		ServerURL:      "https://api.aspectlylabs.com",
 		WorkspacesRoot: t.TempDir(),
 	})
 	if err != nil {
@@ -1023,7 +1023,7 @@ func TestLoadConfig_AutoUpdate_NoFlagWinsOverCloudDefault(t *testing.T) {
 	stageFakeAgent(t)
 	t.Setenv("PATCHBAY_DAEMON_AUTO_UPDATE", "true")
 	cfg, err := LoadConfig(Overrides{
-		ServerURL:         "https://api.patchbay.ai",
+		ServerURL:         "https://api.aspectlylabs.com",
 		WorkspacesRoot:    t.TempDir(),
 		DisableAutoUpdate: true,
 	})
@@ -1068,7 +1068,7 @@ func TestLoadConfig_AutoReload_NotGatedOnAutoUpdateEnv(t *testing.T) {
 	t.Setenv("PATCHBAY_DAEMON_AUTO_UPDATE", "false")
 	t.Setenv("PATCHBAY_DAEMON_AUTO_RELOAD", "")
 	cfg, err := LoadConfig(Overrides{
-		ServerURL:      "https://api.patchbay.ai",
+		ServerURL:      "https://api.aspectlylabs.com",
 		WorkspacesRoot: t.TempDir(),
 	})
 	if err != nil {
@@ -1100,7 +1100,7 @@ func TestLoadConfig_AutoReload_OffSwitches(t *testing.T) {
 			stageFakeAgent(t)
 			t.Setenv("PATCHBAY_DAEMON_AUTO_RELOAD", tc.env)
 			overrides := tc.overrides
-			overrides.ServerURL = "https://api.patchbay.ai"
+			overrides.ServerURL = "https://api.aspectlylabs.com"
 			overrides.WorkspacesRoot = t.TempDir()
 			cfg, err := LoadConfig(overrides)
 			if err != nil {

@@ -208,9 +208,9 @@ func TestGetConfigUsesFrontendOriginForSameOriginDaemonSetup(t *testing.T) {
 }
 
 func TestGetConfigOmitsOfficialCloudDaemonSetup(t *testing.T) {
-	t.Setenv("PATCHBAY_PUBLIC_URL", "https://api.patchbay.ai")
+	t.Setenv("PATCHBAY_PUBLIC_URL", "https://api.aspectlylabs.com")
 	t.Setenv("PATCHBAY_APP_URL", "")
-	t.Setenv("FRONTEND_ORIGIN", "https://patchbay.ai")
+	t.Setenv("FRONTEND_ORIGIN", "https://patchbay.aspectlylabs.com")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
 	w := httptest.NewRecorder()
@@ -234,17 +234,17 @@ func TestGetConfigOmitsOfficialCloudDaemonSetup(t *testing.T) {
 
 // TestGetConfigOmitsCloudDaemonSetupWithoutPublicURL reproduces the production
 // regression behind the broken "Add a computer" command: the official cloud
-// frontend is patchbay.ai, but the deployment does not set PATCHBAY_PUBLIC_URL to
+// frontend is patchbay.aspectlylabs.com, but the deployment does not set PATCHBAY_PUBLIC_URL to
 // the api host. Previously this fell through to the same-origin branch and
-// emitted daemon_server_url=https://patchbay.ai, which the dialog turned into
-// `patchbay setup self-host --server-url https://patchbay.ai` — pointing the
+// emitted daemon_server_url=https://patchbay.aspectlylabs.com, which the dialog turned into
+// `patchbay setup self-host --server-url https://patchbay.aspectlylabs.com` — pointing the
 // daemon's backend at the frontend (no /health, no WebSocket proxy). The
 // official cloud must be recognised by its frontend host alone so the daemon
 // setup URLs are omitted and the dialog falls back to `patchbay setup`.
 func TestGetConfigOmitsCloudDaemonSetupWithoutPublicURL(t *testing.T) {
 	t.Setenv("PATCHBAY_PUBLIC_URL", "")
 	t.Setenv("PATCHBAY_APP_URL", "")
-	t.Setenv("FRONTEND_ORIGIN", "https://patchbay.ai")
+	t.Setenv("FRONTEND_ORIGIN", "https://patchbay.aspectlylabs.com")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
 	w := httptest.NewRecorder()
@@ -270,7 +270,7 @@ func TestGetConfigOmitsCloudDaemonSetupWithoutPublicURL(t *testing.T) {
 // cloud frontend when it is configured through PATCHBAY_APP_URL.
 func TestGetConfigOmitsCloudDaemonSetupForConfiguredAppURL(t *testing.T) {
 	t.Setenv("PATCHBAY_PUBLIC_URL", "")
-	t.Setenv("PATCHBAY_APP_URL", "https://patchbay.ai")
+	t.Setenv("PATCHBAY_APP_URL", "https://patchbay.aspectlylabs.com")
 	t.Setenv("FRONTEND_ORIGIN", "")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
@@ -299,17 +299,17 @@ func TestURLHostEqualsCanonicalizesCommonHostForms(t *testing.T) {
 		raw  string
 		want bool
 	}{
-		{name: "full URL", raw: "https://api.patchbay.ai", want: true},
-		{name: "bare host", raw: "api.patchbay.ai", want: true},
-		{name: "host port", raw: "api.patchbay.ai:8080", want: true},
-		{name: "trailing dot", raw: "https://api.patchbay.ai.", want: true},
+		{name: "full URL", raw: "https://api.aspectlylabs.com", want: true},
+		{name: "bare host", raw: "api.aspectlylabs.com", want: true},
+		{name: "host port", raw: "api.aspectlylabs.com:8080", want: true},
+		{name: "trailing dot", raw: "https://api.aspectlylabs.com.", want: true},
 		{name: "different host", raw: "https://evil.example", want: false},
 		{name: "empty", raw: "", want: false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := urlHostEquals(tt.raw, "api.patchbay.ai"); got != tt.want {
+			if got := urlHostEquals(tt.raw, "api.aspectlylabs.com"); got != tt.want {
 				t.Fatalf("urlHostEquals(%q): want %v, got %v", tt.raw, tt.want, got)
 			}
 		})
@@ -382,7 +382,7 @@ func TestGetConfigExposesServerVersion(t *testing.T) {
 }
 
 // TestGetConfigOmitsServerVersionOnOfficialCloud verifies the build version is
-// suppressed on the managed cloud (frontend host patchbay.ai) even when the
+// suppressed on the managed cloud (frontend host patchbay.aspectlylabs.com) even when the
 // binary is stamped, while a self-hosted frontend origin still reports it. The
 // managed cloud is continuously deployed, so its users don't need the row.
 func TestGetConfigOmitsServerVersionOnOfficialCloud(t *testing.T) {
@@ -392,8 +392,8 @@ func TestGetConfigOmitsServerVersionOnOfficialCloud(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
 
-	// Official cloud: frontend host patchbay.ai -> version omitted.
-	t.Setenv("PATCHBAY_APP_URL", "https://patchbay.ai")
+	// Official cloud: frontend host patchbay.aspectlylabs.com -> version omitted.
+	t.Setenv("PATCHBAY_APP_URL", "https://patchbay.aspectlylabs.com")
 	t.Setenv("FRONTEND_ORIGIN", "")
 	w := httptest.NewRecorder()
 	testHandler.GetConfig(w, req)

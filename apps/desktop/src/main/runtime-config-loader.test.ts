@@ -31,6 +31,7 @@ describe("loadRuntimeConfig", () => {
         apiUrl: "http://localhost:8080",
         wsUrl: "ws://localhost:8080/ws",
         appUrl: "http://localhost:3000",
+        accountsUrl: "http://localhost:3000",
       },
     });
   });
@@ -47,9 +48,10 @@ describe("loadRuntimeConfig", () => {
       ok: true,
       config: {
         schemaVersion: 1,
-        apiUrl: "https://api.patchbay.ai",
-        wsUrl: "wss://api.patchbay.ai/ws",
-        appUrl: "https://patchbay.ai",
+        apiUrl: "https://api.aspectlylabs.com",
+        wsUrl: "wss://api.aspectlylabs.com/ws",
+        appUrl: "https://patchbay.aspectlylabs.com",
+        accountsUrl: "https://accounts.aspectlylabs.com",
       },
     });
   });
@@ -71,6 +73,7 @@ describe("loadRuntimeConfig", () => {
         apiUrl: "https://api.example.com",
         wsUrl: "wss://api.example.com/ws",
         appUrl: "https://example.com",
+        accountsUrl: "https://example.com",
       },
     });
   });

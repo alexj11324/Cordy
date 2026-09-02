@@ -167,20 +167,23 @@ func normalizePublicURL(raw string) string {
 }
 
 // isOfficialCloudDaemonConfig reports whether this deployment is the official
-// Patchbay Cloud, identified by its frontend host alone (patchbay.ai). The
+// Patchbay Cloud, identified by its frontend host alone
+// (patchbay.aspectlylabs.com). The
 // daemon setup for the managed cloud is always
-// `patchbay setup` (which hardcodes api.patchbay.ai), so the per-deployment URLs
+// `patchbay setup` (which hardcodes api.aspectlylabs.com), so the per-deployment URLs
 // must be omitted from /api/config even when PATCHBAY_PUBLIC_URL is unset or
-// misconfigured. Previously this also required serverURL==api.patchbay.ai, so a
+// misconfigured. Previously this also required
+// serverURL==api.aspectlylabs.com, so a
 // cloud deployment that forgot PATCHBAY_PUBLIC_URL fell through and emitted a
-// `setup self-host --server-url https://patchbay.ai` command — pointing the
+// `setup self-host --server-url https://patchbay.aspectlylabs.com` command — pointing the
 // daemon's backend at the frontend (no /health, no WebSocket proxy).
 func isOfficialCloudDaemonConfig(appURL string) bool {
-	return urlHostEquals(appURL, "patchbay.ai")
+	return urlHostEquals(appURL, "patchbay.aspectlylabs.com")
 }
 
 // isOfficialCloudDeployment reports whether this server is the official Patchbay
-// Cloud, reusing the same frontend-host signal as the daemon setup (patchbay.ai).
+// Cloud, reusing the same frontend-host signal as the daemon setup
+// (patchbay.aspectlylabs.com).
 // Managed-cloud-only behavior — such as suppressing the Help popover's
 // server-version row, which only matters to self-hosted operators — is gated on
 // this.

@@ -553,7 +553,7 @@ func LoadConfig(overrides Overrides) (Config, error) {
 
 	// Auto-update config: default -> env override -> CLI override.
 	//
-	// Default is opt-in on Patchbay Cloud (api.patchbay.ai) and opt-out for
+	// Default is opt-in on Patchbay Cloud (api.aspectlylabs.com) and opt-out for
 	// self-hosted instances. Self-host operators frequently run a fork with
 	// their own patches, and silently upgrading their daemon to an upstream
 	// GitHub release would clobber that work; they also commonly stay on an
@@ -632,9 +632,9 @@ func LoadConfig(overrides Overrides) (Config, error) {
 
 // officialCloudHost is the hostname of Patchbay's hosted cloud. It's the only
 // origin we treat as "official" for the auto-update default — staging,
-// preview, and any future *.patchbay.ai subdomains are deliberately excluded
+// preview, and any future *.aspectlylabs.com subdomains are deliberately excluded
 // so they inherit the safer self-host default until explicitly opted in.
-const officialCloudHost = "api.patchbay.ai"
+const officialCloudHost = "api.aspectlylabs.com"
 
 // isOfficialCloudServer reports whether the resolved server base URL points
 // at Patchbay's hosted cloud. Used to pick defaults that are safe on

@@ -7,18 +7,18 @@ import { DragStrip } from "@patchbay/views/platform";
 import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
 import { createDesktopGoogleLoginUrl } from "./login-handoff";
 
-function requireRuntimeAppUrl(): string {
+function requireRuntimeAccountsUrl(): string {
   const runtimeConfig = window.desktopAPI.runtimeConfig;
   if (!runtimeConfig.ok) {
     throw new Error(
       "Invariant violated: DesktopLoginPage rendered before App accepted runtime config",
     );
   }
-  return runtimeConfig.config.appUrl;
+  return runtimeConfig.config.accountsUrl;
 }
 
 export function DesktopLoginPage() {
-  const webUrl = requireRuntimeAppUrl();
+  const accountsUrl = requireRuntimeAccountsUrl();
   const { t } = useT("auth");
   const [openingGoogle, setOpeningGoogle] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -29,7 +29,7 @@ export function DesktopLoginPage() {
     setError(null);
     try {
       const url = await createDesktopGoogleLoginUrl(
-        webUrl,
+        accountsUrl,
         (state, codeChallenge) =>
           api.initiateDesktopAuthHandoff(state, codeChallenge),
       );
