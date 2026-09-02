@@ -28,7 +28,11 @@ export function assertResolvedProfile(profile: string): void {
 export function deriveProfileName(targetUrl: string): string {
   try {
     const url = new URL(targetUrl);
-    const host = url.host.replace(/:/g, "-").toLowerCase();
+    const host = url.host
+      .replaceAll("[", "-")
+      .replaceAll("]", "-")
+      .replaceAll(":", "-")
+      .toLowerCase();
     return `desktop-${host}`;
   } catch {
     return "desktop";
@@ -64,10 +68,9 @@ export function profilePidPath(profile: string): string {
   return join(profileDir(profile), "daemon.pid");
 }
 
-// Sidecar file that records which Patchbay user the cached PAT in config.json
-// was minted for. The Go CLI/daemon never read or write this file, so it
-// survives Go-side config rewrites. Used to detect user switches and mint a
-// fresh PAT instead of reusing a token that belongs to a previous user.
+// Legacy sidecar retained only so the startup hardening pass can restrict
+// files written by older Desktop versions. Current credentials store the owner
+// id in the same locked, atomic config.json replacement as the PAT.
 export function profileUserIdPath(profile: string): string {
   return join(profileDir(profile), ".desktop-user-id");
 }

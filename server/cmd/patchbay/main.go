@@ -105,6 +105,13 @@ func main() {
 		}
 		return
 	}
+	if len(os.Args) == 2 && os.Args[1] == cli.DesktopProfileHelperArg {
+		if err := cli.RunDesktopProfileHelper(os.Stdin); err != nil {
+			fmt.Fprintln(os.Stderr, cli.FormatError(err, debugFlag))
+			os.Exit(1)
+		}
+		return
+	}
 	cli.CleanupStaleUpdateArtifacts()
 	if err := rootCmd.Execute(); err != nil {
 		if err != errSilent {

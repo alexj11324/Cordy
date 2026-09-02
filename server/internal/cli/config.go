@@ -156,6 +156,11 @@ type CLIConfig struct {
 	// intentionally local-only (it is never sent to the server) because the
 	// path is a property of this machine, not of the shared profile.
 	ProfileCommandOverrides map[string]string `json:"profile_command_overrides,omitempty"`
+
+	// baseline records the known JSON projection read from disk. Save uses it
+	// to apply only this caller's changes to the latest locked document, so a
+	// concurrent CLI or Desktop helper cannot lose unrelated fields.
+	baseline *configBaseline `json:"-"`
 }
 
 // BackendOverrides holds per-backend configuration overrides. Each field is
@@ -309,13 +314,20 @@ func LoadCLIConfigForProfile(profile string) (CLIConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return CLIConfig{}, nil
+			cfg := CLIConfig{}
+			if err := setConfigBaseline(&cfg, path); err != nil {
+				return CLIConfig{}, err
+			}
+			return cfg, nil
 		}
 		return CLIConfig{}, fmt.Errorf("read CLI config: %w", err)
 	}
 	var cfg CLIConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return CLIConfig{}, fmt.Errorf("parse CLI config: %w", err)
+	}
+	if err := setConfigBaseline(&cfg, path); err != nil {
+		return CLIConfig{}, err
 	}
 	return cfg, nil
 }
@@ -331,59 +343,8 @@ func SaveCLIConfigForProfile(cfg CLIConfig, profile string) error {
 	if err != nil {
 		return err
 	}
-	dir := filepath.Dir(path)
-	dirMode := os.FileMode(0o755)
-	if strings.TrimSpace(os.Getenv(TaskConfigRootEnv)) != "" {
-		dirMode = 0o700
+	if err := ensureCLIConfigDirectory(filepath.Dir(path)); err != nil {
+		return err
 	}
-	if err := os.MkdirAll(dir, dirMode); err != nil {
-		return fmt.Errorf("create CLI config directory: %w", err)
-	}
-	if dirMode == 0o700 {
-		root, _, err := patchbayConfigRoot()
-		if err != nil {
-			return fmt.Errorf("resolve task-local CLI config root: %w", err)
-		}
-		for current := dir; ; current = filepath.Dir(current) {
-			if err := os.Chmod(current, 0o700); err != nil {
-				return fmt.Errorf("restrict task-local CLI config directory: %w", err)
-			}
-			if current == root {
-				break
-			}
-			parent := filepath.Dir(current)
-			if parent == current {
-				return fmt.Errorf("task-local CLI config directory %q escapes root %q", dir, root)
-			}
-		}
-	}
-	data, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return fmt.Errorf("encode CLI config: %w", err)
-	}
-
-	// Write to a temp file in the same directory, then rename for atomicity.
-	tmp, err := os.CreateTemp(dir, ".config-*.json.tmp")
-	if err != nil {
-		return fmt.Errorf("create temp config file: %w", err)
-	}
-	tmpPath := tmp.Name()
-	if _, err := tmp.Write(append(data, '\n')); err != nil {
-		tmp.Close()
-		os.Remove(tmpPath)
-		return fmt.Errorf("write temp config file: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmpPath)
-		return fmt.Errorf("close temp config file: %w", err)
-	}
-	if err := os.Chmod(tmpPath, 0o600); err != nil {
-		os.Remove(tmpPath)
-		return fmt.Errorf("chmod temp config file: %w", err)
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		os.Remove(tmpPath)
-		return fmt.Errorf("rename config file: %w", err)
-	}
-	return nil
+	return saveCLIConfigLocked(path, cfg)
 }

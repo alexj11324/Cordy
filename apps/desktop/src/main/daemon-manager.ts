@@ -4,7 +4,6 @@ import {
   readFile,
   writeFile,
   mkdir,
-  rm,
   open,
   stat,
 } from "fs/promises";
@@ -29,11 +28,14 @@ import {
   healthPortForProfile,
   profileArgs,
   profileConfigPath,
-  profileDir,
   profileLogPath,
   profilePidPath,
-  profileUserIdPath,
 } from "./daemon-profile";
+import { hardenExistingDesktopProfiles } from "./private-profile-storage";
+import {
+  runDesktopProfileHelper,
+  type DesktopProfileRequest,
+} from "./desktop-profile-helper";
 import {
   DaemonOperationGate,
   DaemonRecoveryPolicy,
@@ -81,6 +83,7 @@ const DEFAULT_PREFS: DaemonPrefs = { autoStart: true, autoStop: false };
 interface ActiveProfile {
   name: string;
   port: number;
+  serverUrl: string;
 }
 
 let statusPollTimer: ReturnType<typeof setInterval> | null = null;
@@ -97,6 +100,7 @@ let cachedCliBinaryVersion: string | null | undefined = undefined;
 let pendingVersionRestart = false;
 let targetApiBaseUrl: string | null = null;
 let activeProfile: ActiveProfile | null = null;
+let profileHardeningPromise: Promise<void> | null = null;
 // Recovery is intentionally process-local: it keeps a daemon alive while the
 // Desktop main process is running, but is not an OS service/watchdog.
 let desiredDaemonRunning = false;
@@ -115,36 +119,35 @@ let startingSince: number | null = null;
 let authProbeDone = false;
 let authExpired = false;
 
-// Serialize all writes to any profile config file. Multiple paths
-// (syncToken, resolveActiveProfile, clearToken, watch/unwatch handlers)
-// may try to write concurrently; chaining them avoids interleaved writes
-// corrupting the JSON.
-let configWriteChain: Promise<void> = Promise.resolve();
+// Serialize Electron's complete read/decide/write flow. The Go helper also
+// takes the CLI's cross-process .config.lock around each actual mutation.
+let profileMutationChain: Promise<void> = Promise.resolve();
 
-async function readProfileUserId(profile: string): Promise<string | null> {
-  try {
-    const raw = await readFile(profileUserIdPath(profile), "utf-8");
-    const trimmed = raw.trim();
-    return trimmed || null;
-  } catch {
-    return null;
-  }
+function serializeProfileMutation<T>(operation: () => Promise<T>): Promise<T> {
+  const next = profileMutationChain.catch(() => {}).then(operation);
+  profileMutationChain = next.then(
+    () => undefined,
+    () => undefined,
+  );
+  return next;
 }
 
-async function writeProfileUserId(
-  profile: string,
-  userId: string,
-): Promise<void> {
-  await mkdir(profileDir(profile), { recursive: true });
-  await writeFile(profileUserIdPath(profile), userId, "utf-8");
-}
-
-async function removeProfileUserId(profile: string): Promise<void> {
-  try {
-    await rm(profileUserIdPath(profile));
-  } catch {
-    // Already gone — nothing to do.
+function ensureDesktopProfilePermissions(): Promise<void> {
+  if (!profileHardeningPromise) {
+    const profilesRoot = join(homedir(), ".patchbay", "profiles");
+    profileHardeningPromise = hardenExistingDesktopProfiles(profilesRoot).then(
+      (count) => {
+        if (count > 0) {
+          console.log(`[daemon] hardened ${count} Desktop profile(s)`);
+        }
+      },
+      (error) => {
+        profileHardeningPromise = null;
+        throw error;
+      },
+    );
   }
+  return profileHardeningPromise;
 }
 
 function normalizeUrl(u: string): string {
@@ -244,26 +247,9 @@ async function readProfileConfig(
   }
 }
 
-async function writeProfileConfig(
-  profile: string,
-  cfg: Record<string, unknown>,
-): Promise<void> {
-  const op = async () => {
-    await mkdir(profileDir(profile), { recursive: true });
-    await writeFile(
-      profileConfigPath(profile),
-      JSON.stringify(cfg, null, 2),
-      "utf-8",
-    );
-  };
-  const next = configWriteChain.catch(() => {}).then(op);
-  configWriteChain = next.catch(() => {});
-  return next;
-}
-
 /**
- * Returns the Desktop-owned profile for the current target API URL. Creates
- * the profile's config.json on demand with `server_url` pinned to the target.
+ * Returns the Desktop-owned profile for the current target API URL. The Go
+ * helper creates or updates config.json once a CLI-backed operation begins.
  *
  * Returns `null` until the renderer reports its `apiUrl`. There is no profile
  * to act on in that window, and callers must do nothing rather than reach for
@@ -275,15 +261,7 @@ async function resolveActiveProfile(): Promise<ActiveProfile | null> {
   if (!target) return null;
 
   const name = deriveProfileName(target);
-  const cfg = await readProfileConfig(name);
-
-  if (cfg.server_url !== target) {
-    cfg.server_url = target;
-    await writeProfileConfig(name, cfg);
-    console.log(`[daemon] initialized profile "${name}" → ${target}`);
-  }
-
-  return { name, port: healthPortForProfile(name) };
+  return { name, port: healthPortForProfile(name), serverUrl: target };
 }
 
 async function ensureActiveProfile(): Promise<ActiveProfile | null> {
@@ -703,11 +681,16 @@ async function syncToken(
     throw new Error("daemon profile is not resolved yet; token sync skipped");
   }
   const config = await readProfileConfig(active.name);
-  const previousUserId = await readProfileUserId(active.name);
+  const previousUserId =
+    typeof config.desktop_user_id === "string" &&
+    config.desktop_user_id.trim() !== ""
+      ? config.desktop_user_id.trim()
+      : null;
   const userChanged = Boolean(previousUserId) && previousUserId !== userId;
   const sameUserWithCachedPat =
     !userChanged &&
     previousUserId === userId &&
+    config.server_url === active.serverUrl &&
     typeof config.token === "string" &&
     config.token.startsWith("pby_");
 
@@ -728,10 +711,13 @@ async function syncToken(
     }
   }
 
-  config.token = finalToken;
-  if (targetApiBaseUrl) config.server_url = targetApiBaseUrl;
-  await writeProfileConfig(active.name, config);
-  await writeProfileUserId(active.name, userId);
+  await applyDesktopProfileRequest({
+    action: "set_credentials",
+    profile: active.name,
+    server_url: active.serverUrl,
+    token: finalToken,
+    user_id: userId,
+  });
 
   return { active, userChanged };
 }
@@ -783,14 +769,10 @@ async function clearToken(): Promise<void> {
   // Nothing of ours to clear yet, and the default CLI profile is not ours to
   // strip a token from.
   if (!active) return;
-  const config = await readProfileConfig(active.name);
-  if ("token" in config) {
-    delete config.token;
-    await writeProfileConfig(active.name, config);
-  }
-  // Always drop the sidecar so a subsequent syncToken from any user is
-  // treated as a fresh mint, not a reuse of a stale cached PAT.
-  await removeProfileUserId(active.name);
+  await applyDesktopProfileRequest({
+    action: "clear_credentials",
+    profile: active.name,
+  });
 }
 
 // Result of a user-initiated daemon re-authentication. The distinction matters:
@@ -932,7 +914,39 @@ async function probeLocalRuntimes(): Promise<LocalRuntimeProbe> {
 // applied by fix-path in main/index.ts — as a top-level const it would
 // snapshot process.env at import time, before that block runs.
 function desktopSpawnEnv(): NodeJS.ProcessEnv {
-  return { ...process.env, PATCHBAY_LAUNCHED_BY: "desktop" };
+  const env = { ...process.env };
+  // A Desktop launched from an agent task must still mutate the owner's
+  // Desktop profile, never the task-local config root inherited from that
+  // shell. Credentials continue to travel only over helper stdin.
+  delete env.PATCHBAY_TASK_CONFIG_ROOT;
+  delete env.PATCHBAY_TOKEN;
+  delete env.PATCHBAY_SERVER_URL;
+  delete env.PATCHBAY_WORKSPACE_ID;
+  return { ...env, PATCHBAY_LAUNCHED_BY: "desktop" };
+}
+
+async function applyDesktopProfileRequest(
+  request: DesktopProfileRequest,
+  resolvedBinary?: string,
+): Promise<void> {
+  await ensureDesktopProfilePermissions();
+  const binary = resolvedBinary ?? (await resolveCliBinary());
+  if (!binary) throw new Error("patchbay CLI is not installed");
+  await runDesktopProfileHelper(binary, request, desktopSpawnEnv());
+}
+
+async function configureDesktopProfile(
+  binary: string,
+  active: ActiveProfile,
+): Promise<void> {
+  await applyDesktopProfileRequest(
+    {
+      action: "configure",
+      profile: active.name,
+      server_url: active.serverUrl,
+    },
+    binary,
+  );
 }
 
 function scheduleStatusRefresh(): void {
@@ -959,6 +973,11 @@ async function startDaemon(
     })
   ) {
     return { success: false, error: "Daemon recovery was superseded" };
+  }
+  try {
+    await configureDesktopProfile(bin, active);
+  } catch (error) {
+    return { success: false, error: errorMessage(error) };
   }
   const existing = await fetchHealthAtPort(active.port);
   if (daemonStatusAlive(existing?.status)) {
@@ -1057,15 +1076,20 @@ async function stopDaemon(): Promise<{ success: boolean; error?: string }> {
   const args = ["daemon", "stop", ...profileArgs(active.name)];
 
   return new Promise((resolve) => {
-    execFile(bin, args, { timeout: 15_000 }, (err) => {
-      if (err) {
-        resolve({ success: false, error: err.message });
-      } else {
-        resolve({ success: true });
-      }
-      currentState = "stopped";
-      sendStatus({ state: "stopped" });
-    });
+    execFile(
+      bin,
+      args,
+      { timeout: 15_000, env: desktopSpawnEnv() },
+      (err) => {
+        if (err) {
+          resolve({ success: false, error: err.message });
+        } else {
+          resolve({ success: true });
+        }
+        currentState = "stopped";
+        sendStatus({ state: "stopped" });
+      },
+    );
   });
 }
 
@@ -1349,16 +1373,21 @@ export function setupDaemonManager(
   windowGetter: () => BrowserWindow | null,
 ): void {
   getMainWindow = windowGetter;
+  void ensureDesktopProfilePermissions().catch((error) => {
+    console.error("[daemon] failed to harden Desktop profiles:", error);
+  });
 
   ipcMain.handle("daemon:set-target-api-url", async (_e, url: string) => {
-    const normalized = url || null;
-    if (targetApiBaseUrl !== normalized) {
-      console.log(`[daemon] target API URL set to ${normalized ?? "(none)"}`);
-      setDesiredDaemonRunning(false);
-      targetApiBaseUrl = normalized;
-      invalidateActiveProfile();
-      await pollOnce();
-    }
+    return serializeProfileMutation(async () => {
+      const normalized = url || null;
+      if (targetApiBaseUrl !== normalized) {
+        console.log(`[daemon] target API URL set to ${normalized ?? "(none)"}`);
+        setDesiredDaemonRunning(false);
+        targetApiBaseUrl = normalized;
+        invalidateActiveProfile();
+        await pollOnce();
+      }
+    });
   });
   ipcMain.handle("daemon:start", () => {
     externalDaemonObserved = false;
@@ -1384,22 +1413,24 @@ export function setupDaemonManager(
   ipcMain.handle(
     "daemon:sync-token",
     async (_event, token: string, userId: string) => {
-      const result = await syncToken(token, userId);
-      if (result.userChanged) {
-        await restartDaemonAfterUserSwitch(result.active);
-      }
+      return serializeProfileMutation(async () => {
+        const result = await syncToken(token, userId);
+        if (result.userChanged) {
+          await restartDaemonAfterUserSwitch(result.active);
+        }
+      });
     },
   );
   ipcMain.handle("daemon:clear-token", () => {
     setDesiredDaemonRunning(false, true);
-    return clearToken();
+    return serializeProfileMutation(() => clearToken());
   });
   ipcMain.handle(
     "daemon:reauthenticate",
     async (_event, token: string, userId: string): Promise<ReauthResult> => {
       setDesiredDaemonRunning(true, true);
       return lifecycleOperations.runForeground(() =>
-        reauthenticate(token, userId),
+        serializeProfileMutation(() => reauthenticate(token, userId)),
       );
     },
   );

@@ -253,17 +253,9 @@ func TestCLIConfig_ProfileCommandOverrides_OmittedWhenEmpty(t *testing.T) {
 }
 
 // TestCLIConfig_UnknownFieldsArePreserved verifies forward-compat: a future
-// daemon that adds, say, a `backends.codex` key should not have its data
-// destroyed when an older daemon (without knowledge of that key) reads and
-// re-saves the file. Today Go's encoding/json silently DROPS unknown fields
-// on round-trip. This test documents the gap so future maintainers know.
-//
-// Skipped today (encoding/json does not preserve unknown fields), but the
-// test is written so a future change to a preserve-unknown encoder
-// (json.RawMessage, mapstructure, etc.) will pick it up.
+// daemon that adds, say, a `backends.codex` key must not have its data
+// destroyed when an older daemon reads and re-saves the file.
 func TestCLIConfig_UnknownFieldsArePreserved(t *testing.T) {
-	t.Skip("documenting known limitation: encoding/json drops unknown fields on round-trip; future PR can switch to a preserving encoder")
-
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 
@@ -275,7 +267,7 @@ func TestCLIConfig_UnknownFieldsArePreserved(t *testing.T) {
   "server_url": "https://api.aspectlylabs.com",
   "token": "pby_xyz",
   "backends": {
-    "openclaw": {"state_dir": "/x"},
+    "openclaw": {"state_dir": "/x", "future_setting": "keep me"},
     "future_backend_xyz": {"some_setting": "preserve me"}
   }
 }`
@@ -287,6 +279,7 @@ func TestCLIConfig_UnknownFieldsArePreserved(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	cfg.Backends.OpenClaw.StateDir = "/updated"
 	if err := SaveCLIConfig(cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -295,6 +288,85 @@ func TestCLIConfig_UnknownFieldsArePreserved(t *testing.T) {
 	data, _ := os.ReadFile(filepath.Join(cfgDir, "config.json"))
 	if !strings.Contains(string(data), "future_backend_xyz") {
 		t.Error("unknown field future_backend_xyz was dropped on round-trip")
+	}
+	if !strings.Contains(string(data), "future_setting") {
+		t.Error("unknown nested field future_setting was dropped on known-field update")
+	}
+	if !strings.Contains(string(data), `"state_dir": "/updated"`) {
+		t.Error("known nested field update was not saved")
+	}
+}
+
+func TestCLIConfig_StaleWritersMergeIndependentChanges(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := SaveCLIConfig(CLIConfig{
+		ServerURL:   "https://api.example.test",
+		WorkspaceID: "workspace-old",
+		Token:       "pby_old",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	first, err := LoadCLIConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := LoadCLIConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	first.Token = "pby_new"
+	second.WorkspaceID = "workspace-new"
+	if err := SaveCLIConfig(first); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveCLIConfig(second); err != nil {
+		t.Fatal(err)
+	}
+
+	merged, err := LoadCLIConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if merged.Token != "pby_new" {
+		t.Errorf("concurrent token change lost: %q", merged.Token)
+	}
+	if merged.WorkspaceID != "workspace-new" {
+		t.Errorf("workspace change missing: %q", merged.WorkspaceID)
+	}
+}
+
+func TestCLIConfig_StaleWriterPreservesConcurrentDesktopMetadata(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	profile := "desktop-api.example.test"
+	if err := SaveCLIConfigForProfile(CLIConfig{ServerURL: "https://api.example.test"}, profile); err != nil {
+		t.Fatal(err)
+	}
+	stale, err := LoadCLIConfigForProfile(profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := `{"action":"set_credentials","profile":"` + profile + `","server_url":"https://api.example.test","token":"pby_desktop","user_id":"user-1"}`
+	if err := RunDesktopProfileHelper(strings.NewReader(request)); err != nil {
+		t.Fatal(err)
+	}
+	stale.DeviceName = "workstation"
+	if err := SaveCLIConfigForProfile(stale, profile); err != nil {
+		t.Fatal(err)
+	}
+
+	path, err := CLIConfigPathForProfile(profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := readTestConfigDocument(t, path)
+	if document["token"] != "pby_desktop" || document["desktop_user_id"] != "user-1" {
+		t.Fatalf("Desktop credentials lost after stale CLI save: %#v", document)
+	}
+	if document["device_name"] != "workstation" {
+		t.Fatalf("CLI change missing after merge: %#v", document)
 	}
 }
 
