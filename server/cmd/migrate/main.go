@@ -374,6 +374,10 @@ var concurrentDownIndexCleanups = map[string]string{
 	"437_drop_agent_runtime_last_seen_at_index":             "idx_agent_runtime_last_seen_at",
 	"451_drop_issue_assignee_index":                         "idx_issue_assignee",
 	"452_drop_issue_workspace_assignee_index":               "idx_issue_workspace_assignee",
+	"564_issue_pull_request_unique_index":                   "issue_pull_request_restore_uidx",
+	"565_issue_pull_request_lookup_index":                   "idx_issue_pull_request_pr",
+	"568_issue_vcs_pull_request_unique_index":               "issue_vcs_pull_request_restore_uidx",
+	"569_issue_vcs_pull_request_lookup_index":               "idx_issue_vcs_pull_request_pr",
 }
 
 var preMigrationHooks = func() map[string]preMigrationHook {

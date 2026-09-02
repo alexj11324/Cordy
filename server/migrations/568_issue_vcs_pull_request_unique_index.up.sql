@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS issue_vcs_pull_request_restore_uidx;
