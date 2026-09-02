@@ -35,7 +35,7 @@ export interface ValidateLocalDirectoryResult {
   is_git_repo?: boolean;
 }
 
-async function validateLocalDirectory(
+export async function validateLocalDirectory(
   path: string,
 ): Promise<ValidateLocalDirectoryResult> {
   if (!path || !isAbsolute(path)) {
@@ -91,8 +91,17 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/**
+ * Registers the directory picker.
+ *
+ * `onDirectoryChosen` is invoked with each path the user actually selected in
+ * the OS dialog. The local Guest runner uses it to build the set of
+ * directories it is allowed to run in — a path the renderer merely names is
+ * not consent, and the dialog is the one moment consent is given.
+ */
 export function setupLocalDirectory(
   windowGetter: () => BrowserWindow | null,
+  onDirectoryChosen?: (path: string) => void | Promise<unknown>,
 ): void {
   ipcMain.handle(
     "local-directory:pick",
@@ -113,6 +122,7 @@ export function setupLocalDirectory(
         }
         const picked = result.filePaths[0];
         if (!picked) return { ok: false, reason: "cancelled" };
+        await onDirectoryChosen?.(picked);
         return { ok: true, path: picked, basename: basename(picked) };
       } catch (err) {
         return { ok: false, reason: "error", error: errorMessage(err) };

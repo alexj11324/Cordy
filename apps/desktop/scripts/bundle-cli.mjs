@@ -13,8 +13,9 @@
 // skip the build and fall through to auto-install at runtime. A genuine
 // Go compile error is fatal — you want that to block dev, not hide.
 
-import { access, chmod, copyFile, mkdir, rm } from "node:fs/promises";
+import { access, chmod, copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
+import { createHash } from "node:crypto";
 import { execFileSync, execSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -159,6 +160,14 @@ await rm(destDir, { recursive: true, force: true });
 await mkdir(destDir, { recursive: true });
 await copyFile(srcBinary, destBinary);
 await chmod(destBinary, 0o755);
+const digest = createHash("sha256")
+  .update(await readFile(destBinary))
+  .digest("hex");
+await writeFile(
+  join(destDir, `${binName}.sha256`),
+  `${digest}  ${binName}\n`,
+  { mode: 0o644 },
+);
 
 // macOS: ad-hoc sign so Gatekeeper doesn't complain when the parent app
 // (which itself may be unsigned in dev) spawns the child.
