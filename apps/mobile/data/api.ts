@@ -50,6 +50,10 @@ import type {
   Team,
   NotificationPreferenceResponse,
   NotificationPreferences,
+  ListWecomInstallationsResponse,
+  RegisterWecomBYORequest,
+  RedeemWecomBindingTokenResponse,
+  WecomInstallation,
   TaskMessagePayload,
   TimelineEntry,
   UpdateIssueRequest,
@@ -120,6 +124,30 @@ import {
   UserSchema,
   WorkspaceListSchema,
 } from "./schemas";
+import type {
+  CreateWorkspaceChannelMessageRequest,
+  CreateWorkspaceChannelRequest,
+  ListWorkspaceChannelMessagesParams,
+  ListWorkspaceChannelMessagesResponse,
+  ListWorkspaceChannelsResponse,
+  WorkspaceChannel,
+  WorkspaceChannelMessage,
+} from "./channel-types";
+import {
+  EMPTY_WORKSPACE_CHANNEL_LIST_RESPONSE,
+  EMPTY_WORKSPACE_CHANNEL_MESSAGE_LIST_RESPONSE,
+  WorkspaceChannelListResponseSchema,
+  WorkspaceChannelMessageListResponseSchema,
+  WorkspaceChannelMessageSchema,
+  WorkspaceChannelSchema,
+} from "./channel-types";
+import {
+  EMPTY_LIST_WECOM_INSTALLATIONS_RESPONSE,
+  EMPTY_REDEEM_WECOM_BINDING_TOKEN_RESPONSE,
+  ListWecomInstallationsResponseSchema,
+  RedeemWecomBindingTokenResponseSchema,
+  WecomInstallationSchema,
+} from "@patchbay/core/api/schemas";
 import type { ZodType } from "zod";
 import { getCurrentSlug } from "./workspace-store";
 import { parseWithFallback } from "@/lib/parse-response";
@@ -442,6 +470,170 @@ class ApiClient {
     return parseWithFallback(raw, WorkspaceListSchema, EMPTY_WORKSPACE_LIST, {
       endpoint: "listWorkspaces",
     });
+  }
+
+  // --- Workspace channels ---
+  // The Go snapshot currently returns the original `{ messages }` envelope;
+  // the mobile parser also accepts the additive cursor fields used by the
+  // newer Web/Desktop surface. Reads remain workspace-scoped by the
+  // X-Workspace-Slug header injected in fetch().
+  async listWorkspaceChannels(opts?: {
+    signal?: AbortSignal;
+  }): Promise<ListWorkspaceChannelsResponse> {
+    return this.fetchValidated(
+      "/api/workspace-channels",
+      WorkspaceChannelListResponseSchema,
+      EMPTY_WORKSPACE_CHANNEL_LIST_RESPONSE,
+      { ...opts, endpoint: "GET /api/workspace-channels" },
+    );
+  }
+
+  async createWorkspaceChannel(
+    body: CreateWorkspaceChannelRequest,
+  ): Promise<WorkspaceChannel> {
+    const raw = await this.fetch<unknown>("/api/workspace-channels", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    const parsed = WorkspaceChannelSchema.safeParse(raw);
+    if (
+      !parsed.success ||
+      !parsed.data.workspace_id ||
+      !parsed.data.slug
+    ) {
+      console.error("[api] ← shape mismatch POST /api/workspace-channels", {
+        issues: parsed.success ? ["missing channel identity"] : parsed.error.issues,
+      });
+      throw new ApiError("Create workspace channel response invalid", 0, raw);
+    }
+    return parsed.data as WorkspaceChannel;
+  }
+
+  async listWorkspaceChannelMessages(
+    channelId: string,
+    params: ListWorkspaceChannelMessagesParams = {},
+    opts?: { signal?: AbortSignal },
+  ): Promise<ListWorkspaceChannelMessagesResponse> {
+    const search = new URLSearchParams();
+    if (params.limit !== undefined) search.set("limit", String(params.limit));
+    if (params.before) {
+      search.set("before_created_at", params.before.created_at);
+      search.set("before_id", params.before.id);
+    }
+    const qs = search.toString();
+    return this.fetchValidated(
+      `/api/workspace-channels/${encodeURIComponent(channelId)}/messages${
+        qs ? `?${qs}` : ""
+      }`,
+      WorkspaceChannelMessageListResponseSchema,
+      EMPTY_WORKSPACE_CHANNEL_MESSAGE_LIST_RESPONSE,
+      { ...opts, endpoint: "GET /api/workspace-channels/:id/messages" },
+    );
+  }
+
+  async createWorkspaceChannelMessage(
+    channelId: string,
+    body: CreateWorkspaceChannelMessageRequest,
+  ): Promise<WorkspaceChannelMessage> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspace-channels/${encodeURIComponent(channelId)}/messages`,
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+      },
+    );
+    const parsed = WorkspaceChannelMessageSchema.safeParse(raw);
+    if (
+      !parsed.success ||
+      !parsed.data.workspace_id ||
+      !parsed.data.channel_id ||
+      !parsed.data.author_id ||
+      !parsed.data.content.trim()
+    ) {
+      console.error(
+        "[api] ← shape mismatch POST /api/workspace-channels/:id/messages",
+        {
+          issues: parsed.success ? ["missing message identity"] : parsed.error.issues,
+        },
+      );
+      throw new ApiError("Create workspace channel message response invalid", 0, raw);
+    }
+    return parsed.data as WorkspaceChannelMessage;
+  }
+
+  // --- WeCom ---
+  // Installation listing is member-visible. Register/revoke are guarded by
+  // the server's admin/owner route permission; Mobile also hides those
+  // controls for non-admins, but never treats that UI check as authorization.
+  async listWecomInstallations(
+    workspaceId: string,
+    opts?: { signal?: AbortSignal },
+  ): Promise<ListWecomInstallationsResponse> {
+    return this.fetchValidated(
+      `/api/workspaces/${encodeURIComponent(workspaceId)}/wecom/installations`,
+      ListWecomInstallationsResponseSchema,
+      EMPTY_LIST_WECOM_INSTALLATIONS_RESPONSE,
+      { ...opts, endpoint: "GET /api/workspaces/:id/wecom/installations" },
+    );
+  }
+
+  async registerWecomBYO(
+    workspaceId: string,
+    agentId: string,
+    body: RegisterWecomBYORequest,
+  ): Promise<WecomInstallation> {
+    const search = new URLSearchParams({ agent_id: agentId });
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${encodeURIComponent(
+        workspaceId,
+      )}/wecom/install/byo?${search.toString()}`,
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+      },
+    );
+    const parsed = WecomInstallationSchema.safeParse(raw);
+    if (!parsed.success || !parsed.data.id) {
+      console.error("[api] ← shape mismatch POST /api/workspaces/:id/wecom/install/byo", {
+        issues: parsed.success ? ["missing installation identity"] : parsed.error.issues,
+      });
+      throw new ApiError("WeCom installation response invalid", 0, raw);
+    }
+    return parsed.data;
+  }
+
+  async deleteWecomInstallation(
+    workspaceId: string,
+    installationId: string,
+  ): Promise<void> {
+    await this.fetch<void>(
+      `/api/workspaces/${encodeURIComponent(
+        workspaceId,
+      )}/wecom/installations/${encodeURIComponent(installationId)}`,
+      { method: "DELETE" },
+    );
+  }
+
+  async redeemWecomBindingToken(
+    token: string,
+  ): Promise<RedeemWecomBindingTokenResponse> {
+    const raw = await this.fetch<unknown>("/api/wecom/binding/redeem", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    });
+    const parsed = RedeemWecomBindingTokenResponseSchema.safeParse(raw);
+    if (
+      !parsed.success ||
+      !parsed.data.workspace_id ||
+      !parsed.data.installation_id ||
+      !parsed.data.wecom_user_id
+    ) {
+      console.error("[api] ← shape mismatch POST /api/wecom/binding/redeem", {
+        issues: parsed.success ? ["missing binding identity"] : parsed.error.issues,
+      });
+      throw new ApiError("WeCom binding response invalid", 0, raw);
+    }
+    return parsed.data;
   }
 
   // --- Inbox ---

@@ -12,6 +12,7 @@ import { useChatSessionsRealtime } from "@/data/realtime/use-chat-sessions-realt
 import { useProjectsRealtime } from "@/data/realtime/use-projects-realtime";
 import { usePinsRealtime } from "@/data/realtime/use-pins-realtime";
 import { usePresenceRealtime } from "@/data/realtime/use-presence-realtime";
+import { useChannelsRealtime } from "@/data/realtime/use-channels-realtime";
 import { useWorkspacePresencePrefetch } from "@/lib/use-workspace-presence-prefetch";
 import { ModalCloseButton } from "@/components/ui/modal-close-button";
 import { useNewIssueDraftResetOnWorkspaceChange } from "@/data/stores/new-issue-draft-store";
@@ -85,6 +86,7 @@ function RealtimeSubscriptions() {
   // the deliberately-skipped high-frequency events.
   useWorkspacePresencePrefetch();
   usePresenceRealtime();
+  useChannelsRealtime();
   return null;
 }
 
@@ -298,6 +300,11 @@ export default function WorkspaceLayout() {
           options={{ title: "Projects", headerBackTitle: "Back" }}
         />
         <Stack.Screen
+          name="channels"
+          options={{ title: "Channels", headerBackTitle: "Back" }}
+        />
+        <Stack.Screen name="channels/new" options={SHEET_OPTIONS} />
+        <Stack.Screen
           name="more/agents"
           options={{ title: "Agents", headerBackTitle: "Back" }}
         />
@@ -316,6 +323,10 @@ export default function WorkspaceLayout() {
         <Stack.Screen
           name="more/settings/notifications"
           options={{ title: "Notifications", headerBackTitle: "Settings" }}
+        />
+        <Stack.Screen
+          name="more/settings/wecom"
+          options={{ title: "WeCom", headerBackTitle: "Settings" }}
         />
         <Stack.Screen
           name="new-issue"

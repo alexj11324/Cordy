@@ -57,6 +57,7 @@ import { useWorkspaceStore } from "@/data/workspace-store";
 import { useColorScheme } from "@/lib/use-color-scheme";
 import { THEME } from "@/lib/theme";
 import { cn } from "@/lib/utils";
+import { getW8Copy } from "@/lib/w8-copy";
 
 // iOS bottom tab bar default height (above safe-area). React Navigation
 // doesn't expose this as a layout constant, but the value is stable
@@ -90,6 +91,7 @@ export function MoreTabDropdownAnchor({
   const pathname = usePathname();
   const { colorScheme } = useColorScheme();
   const t = THEME[colorScheme];
+  const copy = getW8Copy(user?.language);
   const currentWorkspace = useCurrentWorkspace(slug);
 
   const isActive = (path: string) => {
@@ -148,7 +150,11 @@ export function MoreTabDropdownAnchor({
 
           <DropdownMenuSeparator />
 
-          {NAV_ITEMS.map((item) => (
+          {[...NAV_ITEMS, {
+            label: copy.channel.title,
+            icon: "bubble.left.and.bubble.right",
+            path: "/channels",
+          }].map((item) => (
             <DropdownMenuItem
               key={item.path}
               onPress={() => slug && router.push(`/${slug}${item.path}`)}
