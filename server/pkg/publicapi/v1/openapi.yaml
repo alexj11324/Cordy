@@ -7,7 +7,7 @@ info:
     API is the first deployed consumer and applies installation identity plus
     manifest scopes. Plugin-specific context and storage remain extensions.
 servers:
-  - url: https://plugin-api.patchbay.ai/api/v1/plugin
+  - url: https://api.aspectlylabs.com/api/v1/plugin
     description: Installed Plugin and invocation callback tokens
 security:
   - pluginBearer: []
