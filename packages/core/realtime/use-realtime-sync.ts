@@ -29,6 +29,7 @@ import { larkKeys } from "../lark/queries";
 import { slackKeys } from "../slack/queries";
 import { dingtalkKeys } from "../dingtalk/queries";
 import { wecomKeys } from "../wecom/queries";
+import { weixinKeys } from "../weixin/queries";
 import { telegramKeys } from "../telegram/queries";
 import {
   onIssueCreated,
@@ -659,6 +660,7 @@ function invalidateWorkspaceScopedQueries(qc: QueryClient): void {
     qc.invalidateQueries({ queryKey: chatKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: labelKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: propertyKeys.all(wsId) });
+    qc.invalidateQueries({ queryKey: weixinKeys.all(wsId) });
     // A catalog edit missed while disconnected would otherwise sit behind the
     // 5-minute staleTime — long enough to offer a status the server already
     // archived, or to keep painting its old name.
@@ -871,6 +873,10 @@ export function useRealtimeSync(
       wecom_installation: () => {
         const wsId = getCurrentWsId();
         if (wsId) qc.invalidateQueries({ queryKey: wecomKeys.installations(wsId) });
+      },
+      weixin_installation: () => {
+        const wsId = getCurrentWsId();
+        if (wsId) qc.invalidateQueries({ queryKey: weixinKeys.installations(wsId) });
       },
       telegram_installation: () => {
         const wsId = getCurrentWsId();

@@ -7,6 +7,7 @@ import { SlackTab } from "./slack-tab";
 import { DingTalkTab } from "./dingtalk-tab";
 import { VCSTab } from "./vcs-tab";
 import { WecomTab } from "./wecom-tab";
+import { WeixinTab } from "./weixin-tab";
 import { TelegramTab } from "./telegram-tab";
 import { ApiError } from "@patchbay/core/api";
 import { composioToolkitsOptions } from "@patchbay/core/composio";
@@ -94,6 +95,17 @@ export function IntegrationsTab() {
         description={t(($) => $.wecom.page_description)}
       >
         <WecomTab />
+      </SettingsSection>
+      <SettingsSection
+        title={
+          <span className="flex items-center gap-2">
+            <IntegrationChannelIcon channel="weixin" />
+            {t(($) => $.weixin.section_title)}
+          </span>
+        }
+        description={t(($) => $.weixin.page_description)}
+      >
+        <WeixinTab />
       </SettingsSection>
       <SettingsSection
         title={

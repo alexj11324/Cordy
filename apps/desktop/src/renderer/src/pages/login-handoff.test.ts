@@ -40,7 +40,7 @@ describe("desktop auth handoff", () => {
     const parsed = new URL(url);
     const pending = pendingHandoff();
 
-    expect(parsed.pathname).toBe("/login");
+    expect(parsed.pathname).toBe("/oauth/google");
     expect(parsed.searchParams.get("platform")).toBe("desktop");
     expect(parsed.searchParams.get("state")).toBe(pending.state);
     expect(parsed.searchParams.get("code_challenge")).toBeTruthy();

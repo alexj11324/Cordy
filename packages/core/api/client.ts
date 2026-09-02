@@ -207,6 +207,10 @@ import type {
   ListWecomInstallationsResponse,
   RegisterWecomBYORequest,
   RedeemWecomBindingTokenResponse,
+  ListWeixinInstallationsResponse,
+  BeginWeixinInstallResponse,
+  WeixinInstallStatusResponse,
+  RedeemWeixinBindingTokenResponse,
   TelegramInstallation,
   ListTelegramInstallationsResponse,
   RegisterTelegramRequest,
@@ -387,6 +391,14 @@ import {
   EMPTY_WECOM_INSTALLATION,
   EMPTY_LIST_WECOM_INSTALLATIONS_RESPONSE,
   EMPTY_REDEEM_WECOM_BINDING_TOKEN_RESPONSE,
+  ListWeixinInstallationsResponseSchema,
+  BeginWeixinInstallResponseSchema,
+  WeixinInstallStatusResponseSchema,
+  RedeemWeixinBindingTokenResponseSchema,
+  EMPTY_LIST_WEIXIN_INSTALLATIONS_RESPONSE,
+  EMPTY_BEGIN_WEIXIN_INSTALL_RESPONSE,
+  EMPTY_WEIXIN_INSTALL_STATUS_RESPONSE,
+  EMPTY_REDEEM_WEIXIN_BINDING_TOKEN_RESPONSE,
   TelegramInstallationSchema,
   ListTelegramInstallationsResponseSchema,
   RedeemTelegramBindingTokenResponseSchema,
@@ -4977,6 +4989,78 @@ export class ApiClient {
       RedeemWecomBindingTokenResponseSchema,
       EMPTY_REDEEM_WECOM_BINDING_TOKEN_RESPONSE,
       { endpoint: "POST /api/wecom/binding/redeem" },
+    );
+  }
+
+  // Weixin iLink uses a bounded QR/device flow. The session belongs to the
+  // requesting user and workspace on the server; keep every identifier in a
+  // path segment encoded and pass the optional verification code only when the
+  // provider asks for it.
+  async listWeixinInstallations(workspaceId: string): Promise<ListWeixinInstallationsResponse> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${encodeURIComponent(workspaceId)}/weixin/installations`,
+    );
+    return parseWithFallback(
+      raw,
+      ListWeixinInstallationsResponseSchema,
+      EMPTY_LIST_WEIXIN_INSTALLATIONS_RESPONSE,
+      { endpoint: "GET /api/workspaces/:id/weixin/installations" },
+    );
+  }
+
+  async beginWeixinInstall(
+    workspaceId: string,
+    agentId: string,
+  ): Promise<BeginWeixinInstallResponse> {
+    const search = new URLSearchParams({ agent_id: agentId });
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${encodeURIComponent(workspaceId)}/weixin/install/begin?${search.toString()}`,
+      { method: "POST" },
+    );
+    return parseWithFallback(
+      raw,
+      BeginWeixinInstallResponseSchema,
+      EMPTY_BEGIN_WEIXIN_INSTALL_RESPONSE,
+      { endpoint: "POST /api/workspaces/:id/weixin/install/begin" },
+    );
+  }
+
+  async getWeixinInstallStatus(
+    workspaceId: string,
+    sessionId: string,
+    verifyCode?: string,
+  ): Promise<WeixinInstallStatusResponse> {
+    const search = new URLSearchParams();
+    if (verifyCode?.trim()) search.set("verify_code", verifyCode.trim());
+    const query = search.toString();
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${encodeURIComponent(workspaceId)}/weixin/install/${encodeURIComponent(sessionId)}/status${query ? `?${query}` : ""}`,
+    );
+    return parseWithFallback(
+      raw,
+      WeixinInstallStatusResponseSchema,
+      EMPTY_WEIXIN_INSTALL_STATUS_RESPONSE,
+      { endpoint: "GET /api/workspaces/:id/weixin/install/:sessionId/status" },
+    );
+  }
+
+  async deleteWeixinInstallation(workspaceId: string, installationId: string): Promise<void> {
+    await this.fetch(
+      `/api/workspaces/${encodeURIComponent(workspaceId)}/weixin/installations/${encodeURIComponent(installationId)}`,
+      { method: "DELETE" },
+    );
+  }
+
+  async redeemWeixinBindingToken(token: string): Promise<RedeemWeixinBindingTokenResponse> {
+    const raw = await this.fetch<unknown>(`/api/weixin/binding/redeem`, {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    });
+    return parseWithFallback(
+      raw,
+      RedeemWeixinBindingTokenResponseSchema,
+      EMPTY_REDEEM_WEIXIN_BINDING_TOKEN_RESPONSE,
+      { endpoint: "POST /api/weixin/binding/redeem" },
     );
   }
 

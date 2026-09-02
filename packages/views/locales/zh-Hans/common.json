@@ -121,6 +121,21 @@
     "error_not_member": "你登录的 Patchbay 账号不是当前工作区成员。",
     "error_unknown": "出现未知错误。请稍后再试，如反复失败请联系工作区管理员。"
   },
+  "weixin_bind": {
+    "page_title": "关联 Patchbay 账号",
+    "redeeming": "正在关联账号…",
+    "needs_auth_description": "需要登录 Patchbay 才能完成关联。链接中的 token 会将你的微信身份绑定到当前登录的 Patchbay 用户，因此需要先登录。",
+    "sign_in": "登录",
+    "done_title": "已关联。",
+    "done_description": "你在微信账号发送的下一条消息将直达智能体。可以关闭此页面了。",
+    "error_title": "关联未完成",
+    "error_admin_hint": "如果问题持续出现，请在微信中再次向账号发消息以获取新链接。",
+    "error_missing_token": "链接缺少 token。请在微信中再次向账号发消息以获取新链接。",
+    "error_expired": "链接无效或已过期（有效期 15 分钟）。请再次发消息获取新的链接。",
+    "error_already_bound": "该微信身份已关联到其他 Patchbay 用户。账户转移需要先显式解绑。",
+    "error_not_member": "你登录的 Patchbay 账号不是当前工作区成员。",
+    "error_unknown": "出现未知错误。请稍后再试，如反复失败请联系工作区管理员。"
+  },
   "navigation": {
     "open_in_new_tab": "在新标签页打开"
   }

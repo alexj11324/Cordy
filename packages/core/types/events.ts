@@ -89,6 +89,8 @@ export type WSEventType =
   | "invitation:revoked"
   | "github_installation:created"
   | "github_installation:deleted"
+  | "weixin_installation:created"
+  | "weixin_installation:revoked"
   | "pull_request:linked"
   | "pull_request:updated"
   | "pull_request:unlinked";
@@ -632,6 +634,8 @@ export interface WSEventPayloadMap {
   "pin:reordered": unknown;
   "github_installation:created": unknown;
   "github_installation:deleted": unknown;
+  "weixin_installation:created": unknown;
+  "weixin_installation:revoked": unknown;
   "pull_request:linked": unknown;
   "pull_request:updated": unknown;
   "pull_request:unlinked": unknown;

@@ -168,6 +168,14 @@ export type {
 } from "./chat";
 export type { StorageAdapter } from "./storage";
 export type {
+  WeixinInstallation,
+  ListWeixinInstallationsResponse,
+  BeginWeixinInstallResponse,
+  WeixinInstallStatus,
+  WeixinInstallStatusResponse,
+  RedeemWeixinBindingTokenResponse,
+} from "./weixin";
+export type {
   Project,
   ProjectStatus,
   ProjectPriority,

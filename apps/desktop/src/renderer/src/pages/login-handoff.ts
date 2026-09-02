@@ -106,7 +106,7 @@ export async function createDesktopGoogleLoginUrl(
     { state, verifier, expiresAt: Date.now() + PENDING_HANDOFF_TTL_MS },
   ]);
 
-  const url = new URL(`${appUrl.replace(/\/+$/, "")}/login`);
+  const url = new URL(`${appUrl.replace(/\/+$/, "")}/oauth/google`);
   url.searchParams.set("platform", "desktop");
   url.searchParams.set("state", state);
   url.searchParams.set("code_challenge", codeChallenge);
