@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -228,6 +229,7 @@ func TestWebhookFactory_ParksManagedInstall(t *testing.T) {
 }
 
 type stubSlashEnqueuer struct {
+	mu   sync.Mutex
 	cmds []slashCmd
 }
 
@@ -237,7 +239,15 @@ type slashCmd struct {
 }
 
 func (s *stubSlashEnqueuer) HandleEnvelope(_ context.Context, cmd slack.SlashCommand, envelopeID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.cmds = append(s.cmds, slashCmd{cmd: cmd, envelopeID: envelopeID})
+}
+
+func (s *stubSlashEnqueuer) delivered() []slashCmd {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]slashCmd(nil), s.cmds...)
 }
 
 func TestManagedWebhook_SlashDispatchesDetached(t *testing.T) {
@@ -266,13 +276,14 @@ func TestManagedWebhook_SlashDispatchesDetached(t *testing.T) {
 		t.Fatalf("slash delivery: code=%d, want ACK", rec.Code)
 	}
 	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) && len(stub.cmds) == 0 {
+	for time.Now().Before(deadline) && len(stub.delivered()) == 0 {
 		time.Sleep(10 * time.Millisecond)
 	}
-	if len(stub.cmds) != 1 {
-		t.Fatalf("slash must dispatch detached once, got %d", len(stub.cmds))
+	delivered := stub.delivered()
+	if len(delivered) != 1 {
+		t.Fatalf("slash must dispatch detached once, got %d", len(delivered))
 	}
-	got := stub.cmds[0]
+	got := delivered[0]
 	if got.cmd.Command != "/issue" || got.cmd.TriggerID != "13345224609.738474920.8088930" {
 		t.Fatalf("dispatched wrong command: %+v", got.cmd)
 	}
@@ -295,7 +306,7 @@ func TestManagedWebhook_SlashForgedSignatureRefused(t *testing.T) {
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("forged slash: code=%d, want 401", rec.Code)
 	}
-	if len(stub.cmds) != 0 {
+	if len(stub.delivered()) != 0 {
 		t.Fatal("forged slash must never dispatch")
 	}
 }

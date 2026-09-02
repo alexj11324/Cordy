@@ -122,8 +122,9 @@ func NewManagedOAuthService(cfg ManagedOAuthConfig) (*ManagedOAuthService, error
 // and persists only its hash. It returns the RAW state for the authorize URL;
 // the raw value is never stored.
 func (s *ManagedOAuthService) BeginInstall(ctx context.Context, workspaceID, installerID pgtype.UUID, redirectURL string) (state string, expiresAt time.Time, err error) {
-	if _, err := url.ParseRequestURI(redirectURL); err != nil {
-		return "", time.Time{}, fmt.Errorf("%w: %w", ErrInvalidRedirectURL, err)
+	parsed, perr := url.ParseRequestURI(redirectURL)
+	if perr != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Host == "" {
+		return "", time.Time{}, fmt.Errorf("%w: %q must be an absolute http(s) URL", ErrInvalidRedirectURL, redirectURL)
 	}
 	now := s.now()
 	if err := s.q.PurgeExpiredSlackOAuthStates(ctx, pgtype.Timestamptz{Time: now, Valid: true}); err != nil {

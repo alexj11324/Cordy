@@ -18,6 +18,7 @@ const installationsRef = vi.hoisted(() => ({
     installations: [] as unknown[],
     configured: true,
     install_supported: true,
+    managed_supported: false,
   },
 }));
 const mockRegisterBYO = vi.hoisted(() => vi.fn());
