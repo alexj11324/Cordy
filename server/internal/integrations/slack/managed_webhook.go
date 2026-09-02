@@ -102,7 +102,7 @@ type slashEnqueuer interface {
 // unsigned deliveries. Slash wires /issue-/new-/clear-over-webhook; nil
 // leaves slash handling off (events still flow).
 type ManagedWebhookConfig struct {
-	Queries       *db.Queries
+	Queries       appIDLookupQueries
 	Handle        channel.InboundHandler
 	Slash         slashEnqueuer
 	SigningSecret string
