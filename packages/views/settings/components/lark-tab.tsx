@@ -389,7 +389,7 @@ export function LarkAgentBindButton({
         className={className}
       />
     ) : (
-      <LarkAgentBotConnectedBadge installation={existing} className={className} />
+      <LarkAgentBotInstalledControls installation={existing} className={className} />
     );
   }
 
@@ -463,7 +463,7 @@ export function LarkAgentBindButton({
   );
 }
 
-// LarkAgentBotStatusRow is the compact, read-only connected affordance the
+// LarkAgentBotStatusRow is the compact, read-only installation affordance the
 // agent inspector (left column) renders instead of the full badge. It shows
 // only the status — green dot, Feishu/Lark region chip, "Connected to Lark"
 // — and is a single full-width button that deep-links into the Integrations
@@ -501,7 +501,7 @@ function LarkAgentBotStatusRow({
   );
 }
 
-// LarkAgentBotConnectedBadge is the full "already connected" affordance the
+// LarkAgentBotInstalledControls is the full installed-bot affordance the
 // Integrations tab renders in place of the Bind button when this agent has
 // an installed Lark installation. (The inspector's left column uses the compact
 // LarkAgentBotStatusRow instead, which deep-links here.) It lays out as two
@@ -528,7 +528,7 @@ function larkDevConsoleHost(region?: string): string {
     : "https://open.feishu.cn";
 }
 
-function LarkAgentBotConnectedBadge({
+function LarkAgentBotInstalledControls({
   installation,
   className,
 }: {
@@ -568,7 +568,7 @@ function LarkAgentBotConnectedBadge({
   return (
     <div
       className={cn("space-y-2", className)}
-      data-testid="lark-agent-bot-connected"
+      data-testid="lark-agent-bot-installed"
     >
       {/* Row 1: connection status (left) and the destructive unbind
           action (right). The Disconnect uses the soft-tinted

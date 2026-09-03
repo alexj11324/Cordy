@@ -55,7 +55,7 @@ func TestWecomInstallErrorMatrix(t *testing.T) {
 			err:        wecom.ErrBotOwnedBySameWorkspace,
 			wantStatus: http.StatusConflict,
 			wantCode:   "wecom_bot_owned_by_same_workspace",
-			wantError:  "this bot is already connected to another agent in this workspace — disconnect it there first, then connect it here",
+			wantError:  "this bot is already installed for another agent in this workspace — remove that installation first, then install it here",
 			why:        "go disconnect it from the other agent here",
 		},
 		{
@@ -63,7 +63,7 @@ func TestWecomInstallErrorMatrix(t *testing.T) {
 			err:        wecom.ErrBotOwnedByArchivedAgent,
 			wantStatus: http.StatusConflict,
 			wantCode:   "wecom_bot_owned_by_archived_agent",
-			wantError:  "this bot is connected to an archived agent in this workspace — restore that agent, or disconnect its bot, before connecting it here",
+			wantError:  "this bot is installed for an archived agent in this workspace — restore that agent, or remove its bot installation, before installing it here",
 			why:        "restore that agent or disconnect its bot",
 		},
 		{
@@ -71,7 +71,7 @@ func TestWecomInstallErrorMatrix(t *testing.T) {
 			err:        wecom.ErrBotOwnedByAnotherWorkspace,
 			wantStatus: http.StatusConflict,
 			wantCode:   "wecom_bot_owned_by_another_workspace",
-			wantError:  "this bot is already connected to a different Patchbay workspace — disconnect it there before connecting it here",
+			wantError:  "this bot is already installed in a different Patchbay workspace — remove that installation before installing it here",
 			why:        "go disconnect it in the other workspace",
 		},
 		{

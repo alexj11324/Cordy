@@ -168,11 +168,11 @@ func (h *Handler) RegisterTelegramBot(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, telegram.ErrCredentialsUnverifiable):
 			writeError(w, http.StatusServiceUnavailable, "could not reach Telegram to verify this bot — check the server network or proxy and try again; the token was not saved")
 		case errors.Is(err, telegram.ErrBotOwnedBySameWorkspace):
-			writeError(w, http.StatusConflict, "this Telegram bot is already connected to another agent in this workspace — disconnect it there first, then connect it here")
+			writeError(w, http.StatusConflict, "this Telegram bot is already installed for another agent in this workspace — remove that installation first, then install it here")
 		case errors.Is(err, telegram.ErrBotOwnedByArchivedAgent):
-			writeError(w, http.StatusConflict, "this Telegram bot is connected to an archived agent in this workspace — restore that agent, or disconnect its bot, before connecting it here")
+			writeError(w, http.StatusConflict, "this Telegram bot is installed for an archived agent in this workspace — restore that agent, or remove its bot installation, before installing it here")
 		case errors.Is(err, telegram.ErrBotOwnedByAnotherWorkspace):
-			writeError(w, http.StatusConflict, "this Telegram bot is already connected to a different Patchbay workspace — disconnect it there before connecting it here")
+			writeError(w, http.StatusConflict, "this Telegram bot is already installed in a different Patchbay workspace — remove that installation before installing it here")
 		case errors.Is(err, telegram.ErrWebhookConfigured):
 			writeError(w, http.StatusBadRequest, "this Telegram bot has a webhook configured — remove the webhook before connecting it with long polling")
 		default:

@@ -182,7 +182,7 @@ func (h *Handler) GetWeixinInstallStatus(w http.ResponseWriter, r *http.Request)
 		case errors.Is(err, weixin.ErrUnsafeProviderURL), errors.Is(err, weixin.ErrConfirmationIncomplete):
 			writeError(w, http.StatusBadGateway, "Weixin authorization response was invalid")
 		case errors.Is(err, weixin.ErrBotOwnedByAnotherWorkspace), errors.Is(err, weixin.ErrBotOwnedBySameWorkspace), errors.Is(err, weixin.ErrBotOwnedByArchivedAgent), errors.Is(err, weixin.ErrBindingAlreadyAssigned):
-			writeError(w, http.StatusConflict, "this Weixin account is already connected")
+			writeError(w, http.StatusConflict, "this Weixin account is already installed for another agent or workspace")
 		case errors.Is(err, weixin.ErrInstallAuthorizationChanged):
 			writeError(w, http.StatusForbidden, "authorization changed during install")
 		default:

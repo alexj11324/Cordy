@@ -25,8 +25,7 @@ export type MessagingConnectionState =
   | "degraded"
   | "error"
   | "unavailable"
-  | "paused"
-  | "experimental";
+  | "paused";
 
 export function messagingConnectionState(
   installation: MessagingConnectionSource,
@@ -47,9 +46,7 @@ export function messagingConnectionState(
     case "healthy":
       if (!runtime.observedAt || Number.isNaN(Date.parse(runtime.observedAt)))
         return "unavailable";
-      return installation.setup?.experimental === true
-        ? "experimental"
-        : "connected";
+      return "connected";
     default:
       return "unavailable";
   }

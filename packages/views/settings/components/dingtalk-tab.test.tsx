@@ -229,7 +229,7 @@ describe("DingTalkAgentBindButton", () => {
       install_supported: true,
     };
     renderUI(<DingTalkAgentBindButton agentId="agent-1" />);
-    expect(screen.getByTestId("dingtalk-agent-bot-connected")).toBeTruthy();
+    expect(screen.getByTestId("dingtalk-agent-bot-installed")).toBeTruthy();
     expect(screen.getByTestId("dingtalk-agent-bot-disconnect")).toBeTruthy();
     expect(screen.queryByTestId("dingtalk-agent-connect")).toBeNull();
   });
@@ -320,7 +320,7 @@ describe("DingTalkTab", () => {
       );
       expect(
         screen.queryByRole("heading", {
-          name: "Connections",
+          name: "Bot installation records",
           level: 2,
         }),
       ).toBeTruthy();
@@ -395,7 +395,7 @@ describe("DingTalkTab", () => {
     expect(screen.getByText("Agent agent-7")).toBeTruthy();
     expect(screen.queryByText(/staff-must-stay-private/)).toBeNull();
     expect(screen.queryByText(/Linked staff ID:/i)).toBeNull();
-    expect(screen.getByRole("heading", { name: "Connections", level: 2 })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Bot installation records", level: 2 })).toBeTruthy();
     const overviewDescription = screen.getByText(
       enSettings.dingtalk.groups_overview_description,
     );
@@ -434,7 +434,7 @@ describe("DingTalkTab", () => {
 
     renderUI(<DingTalkTab />);
     expect(screen.getByText("Agent agent-7")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Connections", level: 2 })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Bot installation records", level: 2 })).toBeTruthy();
     expect(screen.getByText("Release Bot")).toBeTruthy();
     expect(
       screen.getByRole("button", { name: /qyapi_chat_manage/i }),

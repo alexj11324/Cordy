@@ -142,7 +142,7 @@ describe("WecomAgentBindButton", () => {
   // Chinese sentence, not the English one the API happens to carry.
   it("renders the localized sentence for a coded failure, not the server's English", async () => {
     mockRegisterBYO.mockRejectedValue(
-      Object.assign(new Error("this bot is already connected to another agent in this workspace"), {
+      Object.assign(new Error("this bot is already installed for another agent in this workspace"), {
         code: "wecom_bot_owned_by_same_workspace",
       }),
     );
@@ -250,7 +250,7 @@ describe("WecomAgentBindButton", () => {
       install_supported: true,
     };
     renderUI(<WecomAgentBindButton agentId="agent-1" />);
-    expect(screen.getByTestId("wecom-agent-bot-connected")).toBeTruthy();
+    expect(screen.getByTestId("wecom-agent-bot-installed")).toBeTruthy();
     expect(screen.queryByTestId("wecom-agent-connect")).toBeNull();
   });
 
@@ -262,7 +262,7 @@ describe("WecomAgentBindButton", () => {
     };
     renderUI(<WecomAgentBindButton agentId="agent-1" agentName="Bot" />);
     expect(screen.getByTestId("wecom-agent-connect")).toBeTruthy();
-    expect(screen.queryByTestId("wecom-agent-bot-connected")).toBeNull();
+    expect(screen.queryByTestId("wecom-agent-bot-installed")).toBeNull();
   });
 
   it("renders nothing for a non-manager (member)", () => {

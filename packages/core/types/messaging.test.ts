@@ -22,7 +22,7 @@ describe("messaging connection status", () => {
     );
   });
 
-  it("keeps quota pauses and experimental transports out of success states", () => {
+  it("keeps quota pauses out of success while treating maturity as orthogonal", () => {
     expect(
       messagingConnectionState({
         status: "installed",
@@ -35,7 +35,7 @@ describe("messaging connection status", () => {
         runtime,
         setup: { mode: "managed_token", writable: true, experimental: true },
       }),
-    ).toBe("experimental");
+    ).toBe("connected");
   });
 
   it.each([

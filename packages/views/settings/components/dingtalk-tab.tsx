@@ -912,7 +912,7 @@ export function DingTalkAgentBindButton({
         className={className}
       />
     ) : (
-      <DingTalkAgentBotConnectedBadge
+      <DingTalkAgentBotInstalledControls
         installation={existing}
         botName={botName}
         botIdentityIssue={botIdentityIssue}
@@ -938,7 +938,7 @@ export function DingTalkAgentBindButton({
     try {
       await api.registerDingTalkBYO(wsId, agentId, { client_id, client_secret });
       // The dingtalk_installation realtime event also refreshes this list, but
-      // invalidate explicitly so the connected badge appears immediately.
+      // invalidate explicitly so the installed controls appear immediately.
       await qc.invalidateQueries({ queryKey: dingtalkKeys.installations(wsId) });
       toast.success(t(($) => $.dingtalk.byo_success_toast));
       setDialogOpen(false);
@@ -1064,7 +1064,7 @@ export function DingTalkAgentBindButton({
   );
 }
 
-// DingTalkAgentBotStatusRow is the compact, read-only connected affordance the
+// DingTalkAgentBotStatusRow is the compact, read-only installation affordance the
 // agent inspector renders instead of the full badge; it deep-links into the
 // Integrations tab where Manage / Disconnect live.
 function DingTalkAgentBotStatusRow({
@@ -1095,10 +1095,10 @@ function DingTalkAgentBotStatusRow({
   );
 }
 
-// DingTalkAgentBotConnectedBadge is the full "already connected" affordance the
+// DingTalkAgentBotInstalledControls is the full installed-bot affordance the
 // Integrations tab renders in place of the Connect button: a status row plus a
 // soft-destructive Disconnect. Only owners/admins ever reach this component.
-function DingTalkAgentBotConnectedBadge({
+function DingTalkAgentBotInstalledControls({
   installation,
   botName,
   botIdentityIssue,
@@ -1136,7 +1136,7 @@ function DingTalkAgentBotConnectedBadge({
   return (
     <div
       className={cn("space-y-2", className)}
-      data-testid="dingtalk-agent-bot-connected"
+      data-testid="dingtalk-agent-bot-installed"
     >
       <div className="flex items-center justify-between gap-3">
         <DingTalkConnectionLabel

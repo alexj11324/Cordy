@@ -17,6 +17,7 @@ export function MessagingConnectionStatus({
 }) {
   const { t } = useT("settings");
   const state = messagingConnectionState(installation);
+  const experimental = installation.setup?.experimental === true;
   const labels = {
     connected: t(($) => $.page.connection_status.connected),
     connecting: t(($) => $.page.connection_status.connecting),
@@ -25,7 +26,6 @@ export function MessagingConnectionStatus({
     error: t(($) => $.page.connection_status.error),
     unavailable: t(($) => $.page.connection_status.unavailable),
     paused: t(($) => $.page.connection_status.paused),
-    experimental: t(($) => $.page.connection_status.experimental),
   };
   const Icon =
     state === "connected"
@@ -64,6 +64,11 @@ export function MessagingConnectionStatus({
         />
         {labels[state]}
       </Badge>
+      {experimental ? (
+        <Badge variant="outline">
+          {t(($) => $.page.connection_status.experimental)}
+        </Badge>
+      ) : null}
     </span>
   );
 }

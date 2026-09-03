@@ -146,7 +146,7 @@ describe("SlackAgentBindButton", () => {
       install_supported: true,
     };
     renderUI(<SlackAgentBindButton agentId="agent-1" />);
-    expect(screen.getByTestId("slack-agent-bot-connected")).toBeTruthy();
+    expect(screen.getByTestId("slack-agent-bot-installed")).toBeTruthy();
     expect(screen.getByTestId("slack-agent-bot-disconnect")).toBeTruthy();
     expect(screen.getByRole("status", { name: "Connection status" }).textContent).toBe("Status unavailable");
     expect(screen.queryByTestId("slack-agent-connect")).toBeNull();

@@ -28,6 +28,20 @@ describe("MessagingConnectionStatus", () => {
     expect(copy.weixin.install_success_toast).toContain(added);
   });
 
+  it.each([
+    ["en", enSettings, "Authorized", "Sync enabled for 2 projects", "Experimental"],
+    ["zh-Hans", zhSettings, "已授权", "已为 2 个项目启用同步", "实验性"],
+    ["ja", jaSettings, "認証済み", "2 件のプロジェクトで同期を有効化", "実験的"],
+    ["ko", koSettings, "인증됨", "프로젝트 2개에서 동기화 활성화됨", "실험적"],
+  ] as const)(
+    "keeps authorization, sync enablement, and experimental maturity separate in %s",
+    (_, copy, authorization, enabledSync, experimental) => {
+      expect(copy.page.linear.healthy).toBe(authorization);
+      expect(copy.page.linear.projects_synced.replace("{{count}}", "2")).toBe(enabledSync);
+      expect(copy.page.connection_status.experimental).toBe(experimental);
+    },
+  );
+
   it("renders the requested connection terminology with an accessible state", () => {
     render(
       <I18nProvider
@@ -72,5 +86,26 @@ describe("MessagingConnectionStatus", () => {
       screen.getByRole("status", { name: "Connection status" }),
     ).toHaveTextContent("Status unavailable");
     expect(screen.queryByText("credential-sentinel")).toBeNull();
+  });
+
+  it("shows experimental maturity without replacing confirmed connectivity", () => {
+    render(
+      <I18nProvider locale="en" resources={{ en: { settings: enSettings } }}>
+        <MessagingConnectionStatus
+          installation={{
+            status: "installed",
+            runtime: {
+              state: "healthy",
+              observedAt: "2026-09-03T10:00:00Z",
+              errorCode: null,
+            },
+            setup: { mode: "managed_token", writable: true, experimental: true },
+          }}
+        />
+      </I18nProvider>,
+    );
+    const status = screen.getByRole("status", { name: "Connection status" });
+    expect(status).toHaveTextContent("Connected");
+    expect(status).toHaveTextContent("Experimental");
   });
 });

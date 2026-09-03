@@ -304,7 +304,7 @@ export function TelegramAgentBindButton({
         className={className}
       />
     ) : (
-      <TelegramAgentBotConnectedBadge installation={existing} className={className} />
+      <TelegramAgentBotInstalledControls installation={existing} className={className} />
     );
   }
 
@@ -323,10 +323,10 @@ export function TelegramAgentBindButton({
     try {
       const installation = await api.registerTelegramBot(wsId, agentId, { bot_token });
       if (!installation.id || installation.status !== "installed") {
-        throw new Error("Telegram connection returned an invalid installation");
+        throw new Error("Telegram returned an invalid installation response");
       }
       // The telegram_installation realtime event also refreshes this list, but
-      // invalidate explicitly so the connected badge appears immediately.
+      // invalidate explicitly so the installed controls appear immediately.
       await qc.invalidateQueries({ queryKey: telegramKeys.installations(wsId) });
       toast.success(t(($) => $.telegram.connect_success_toast));
       setDialogOpen(false);
@@ -431,7 +431,7 @@ export function TelegramAgentBindButton({
   );
 }
 
-// TelegramAgentBotStatusRow is the compact, read-only connected affordance the
+// TelegramAgentBotStatusRow is the compact, read-only installation affordance the
 // agent inspector renders; it deep-links into the Integrations tab.
 function TelegramAgentBotStatusRow({
   installation,
@@ -460,9 +460,9 @@ function TelegramAgentBotStatusRow({
   );
 }
 
-// TelegramAgentBotConnectedBadge is the full "already connected" affordance:
+// TelegramAgentBotInstalledControls is the full installed-bot affordance:
 // status + Disconnect, then an "Open in Telegram" deep link to the bot.
-function TelegramAgentBotConnectedBadge({
+function TelegramAgentBotInstalledControls({
   installation,
   className,
 }: {
@@ -496,7 +496,7 @@ function TelegramAgentBotConnectedBadge({
   return (
     <div
       className={cn("space-y-2", className)}
-      data-testid="telegram-agent-bot-connected"
+      data-testid="telegram-agent-bot-installed"
     >
       <div className="flex items-center justify-between gap-3">
         <span className="inline-flex min-w-0 items-center gap-2 text-caption text-muted-foreground">

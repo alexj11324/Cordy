@@ -454,7 +454,7 @@ describe("LarkAgentBindButton (CTA gate)", () => {
 // re-scan zombie-bot trap and the dual-bot conflict — these tests pin
 // the contract: confirm gating, deleteLarkInstallation wiring, cache
 // invalidation, and toast feedback on success / failure.
-describe("LarkAgentBotConnectedBadge (Unbind / Disconnect)", () => {
+describe("LarkAgentBotInstalledControls (Unbind / Disconnect)", () => {
   beforeEach(() => {
     resetFixtures();
     installationsRef.current.installations = [
@@ -553,7 +553,7 @@ describe("LarkAgentBotConnectedBadge (Unbind / Disconnect)", () => {
     // though the bot is still installed server-side.
     expect(mockInvalidate).not.toHaveBeenCalled();
     // Badge stays mounted so the user can retry.
-    expect(screen.getByTestId("lark-agent-bot-connected")).toBeTruthy();
+    expect(screen.getByTestId("lark-agent-bot-installed")).toBeTruthy();
   });
 
   it("disables the Cancel button while the request is in-flight (prevents racing the close)", async () => {
@@ -710,12 +710,12 @@ describe("LarkInstallDialog (polling terminal errors)", () => {
   });
 });
 
-// The Connected bots list used to surface Lark's raw cli_… app_id and
+// The installation list used to surface Lark's raw cli_… app_id and
 // ou_… bot_open_id, which are meaningless to product users. The row now
 // renders the Patchbay agent's avatar + name (joined via inst.agent_id),
 // since the binding is 1:1 with an Agent. These tests pin that identity
 // rendering so the row never regresses to leaking the cli_ prefix.
-describe("LarkTab connected bots list (agent identity rendering)", () => {
+describe("LarkTab installation list (agent identity rendering)", () => {
   beforeEach(resetFixtures);
 
   it("renders the Patchbay agent's name and avatar instead of the raw Lark app_id / bot_open_id", () => {

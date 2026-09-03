@@ -305,7 +305,7 @@ export function WecomAgentBindButton({
         className={className}
       />
     ) : (
-      <WecomAgentBotConnectedBadge installation={existing} className={className} />
+      <WecomAgentBotInstalledControls installation={existing} className={className} />
     );
   }
 
@@ -517,7 +517,7 @@ function WecomAgentBotStatusRow({
   );
 }
 
-function WecomAgentBotConnectedBadge({
+function WecomAgentBotInstalledControls({
   installation,
   className,
 }: {
@@ -551,7 +551,7 @@ function WecomAgentBotConnectedBadge({
   return (
     <div
       className={cn("space-y-2", className)}
-      data-testid="wecom-agent-bot-connected"
+      data-testid="wecom-agent-bot-installed"
     >
       <div className="flex items-center justify-between gap-3">
         <span className="inline-flex min-w-0 items-center gap-2 text-caption text-muted-foreground">

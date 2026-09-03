@@ -224,7 +224,7 @@ func (h *Handler) RegisterWecomBYO(w http.ResponseWriter, r *http.Request) {
 //
 // One bot is one live long connection, so the (wecom, bot_id) slot has exactly
 // one owner. Upsert conflicts on (workspace_id, agent_id, channel_type), which
-// means connecting an already-connected bot to a SECOND agent misses ON
+// means installing an already-installed bot for a SECOND agent misses ON
 // CONFLICT and trips idx_channel_installation_type_appid instead. Each sentinel
 // gets the sentence that tells the admin where the bot actually is; returning
 // err.Error() here used to toast them the raw "duplicate key value violates
@@ -244,13 +244,13 @@ func writeWecomInstallError(w http.ResponseWriter, err error, wsUUID, agentUUID 
 		return
 	case errors.Is(err, wecom.ErrBotOwnedBySameWorkspace):
 		writeErrorCode(w, http.StatusConflict, "wecom_bot_owned_by_same_workspace",
-			"this bot is already connected to another agent in this workspace — disconnect it there first, then connect it here")
+			"this bot is already installed for another agent in this workspace — remove that installation first, then install it here")
 	case errors.Is(err, wecom.ErrBotOwnedByArchivedAgent):
 		writeErrorCode(w, http.StatusConflict, "wecom_bot_owned_by_archived_agent",
-			"this bot is connected to an archived agent in this workspace — restore that agent, or disconnect its bot, before connecting it here")
+			"this bot is installed for an archived agent in this workspace — restore that agent, or remove its bot installation, before installing it here")
 	case errors.Is(err, wecom.ErrBotOwnedByAnotherWorkspace):
 		writeErrorCode(w, http.StatusConflict, "wecom_bot_owned_by_another_workspace",
-			"this bot is already connected to a different Patchbay workspace — disconnect it there before connecting it here")
+			"this bot is already installed in a different Patchbay workspace — remove that installation before installing it here")
 	case errors.Is(err, wecom.ErrInvalidInstallationParams):
 		// Something the admin left out. Their input, their fix. This code means
 		// exactly that and nothing else — the two credential outcomes below get

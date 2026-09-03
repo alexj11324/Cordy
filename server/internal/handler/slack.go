@@ -178,11 +178,11 @@ func (h *Handler) RegisterSlackBYO(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, slack.ErrInvalidBotToken), errors.Is(err, slack.ErrInvalidAppToken), errors.Is(err, slack.ErrTokenAppMismatch):
 			writeError(w, http.StatusBadRequest, err.Error())
 		case errors.Is(err, slack.ErrTeamOwnedBySameWorkspace):
-			writeError(w, http.StatusConflict, "this Slack app is already connected to another agent in this workspace — disconnect it there first, then connect it here")
+			writeError(w, http.StatusConflict, "this Slack app is already installed for another agent in this workspace — remove that installation first, then install it here")
 		case errors.Is(err, slack.ErrTeamOwnedByArchivedAgent):
-			writeError(w, http.StatusConflict, "this Slack app is connected to an archived agent in this workspace — restore that agent, or disconnect its bot, before connecting it here")
+			writeError(w, http.StatusConflict, "this Slack app is installed for an archived agent in this workspace — restore that agent, or remove its bot installation, before installing it here")
 		case errors.Is(err, slack.ErrTeamOwnedByAnotherWorkspace):
-			writeError(w, http.StatusConflict, "this Slack app is already connected to a different Patchbay workspace — disconnect it there before connecting it here")
+			writeError(w, http.StatusConflict, "this Slack app is already installed in a different Patchbay workspace — remove that installation before installing it here")
 		default:
 			// The dominant non-sentinel failure here is auth.test rejecting the
 			// pasted bot token (a user error), so guide the user to recheck the
@@ -200,7 +200,7 @@ func (h *Handler) RegisterSlackBYO(w http.ResponseWriter, r *http.Request) {
 }
 
 // publishSlackInstallationCreated emits slack_installation:created for a newly
-// connected bot. The realtime layer fans it out to the workspace; the web app
+// installed bot. The realtime layer fans it out to the workspace; the web app
 // listens on slack_installation:* to invalidate the installations query.
 func (h *Handler) publishSlackInstallationCreated(row db.ChannelInstallation, actorID string) {
 	h.publish(protocol.EventSlackInstallationCreated, uuidToString(row.WorkspaceID), "user", actorID, map[string]any{

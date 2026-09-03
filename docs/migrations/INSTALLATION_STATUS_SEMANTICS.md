@@ -101,16 +101,28 @@ not that the bot is online. All four locales have regression assertions for
 these distinctions. Unused fixed “Connected to…” badge labels were removed;
 the shared observation-based component supplies the current label instead.
 
+The follow-up semantic audit also corrected adjacent labels and state
+composition:
+
+- Lists that include revoked history are “installation records”, not only
+  installed bots or connections.
+- Provider ownership conflicts say the bot/account is already installed for an
+  Agent or workspace; they no longer claim a currently live connection.
+- `experimental` is a setup-maturity badge alongside the independently derived
+  connection status, not a replacement for an observed `Connected` state.
+- Linear's own `active` authorization state remains a separate contract. Its UI
+  says “Authorized” and “Sync enabled for N projects”, rather than claiming
+  health or completed synchronization.
+
 ## Adjacent semantic audit (read-only)
 
-Subagent findings were checked against the current source. These are follow-ups,
-not additional changes silently included in the installation rename.
+Subagent findings were checked against the current source. After the corrections
+above, these remaining items belong to other domain contracts and are follow-ups,
+not silent expansions of the messaging-installation rename.
 
 | Finding | Source evidence | More accurate wording/behavior |
 | --- | --- | --- |
 | Linear `connected: true` means a non-revoked record exists, including reauthorization-required records | `server/internal/handler/linear.go`: GetLinearConnection; `linear_worker.go`: RefreshToken failure | Separate record existence from authorization; e.g. `has_connection` plus explicit authorization state |
-| Linear labels active authorization as healthy even when sync failed | `packages/views/settings/components/linear-tab.tsx`: connectionLabel; worker updates last_error without changing active | “Authorized” for authorization; expose synchronization failure separately |
-| Linear “projects synced” counts enabled bindings, not completed imports | same UI: activeBindingCount and projects_synced; binding save precedes import enqueue | “Sync enabled for N projects” |
 | All deferred tasks are labeled retrying, including first-run attachment waits | `task-status-pill.tsx`: deferred branch; `service/task.go`: CreateChatTask.FireAt = mediaPendingUntil | Distinguish waiting for attachments, waiting for retry, and generic scheduled execution |
 | Agent workload can show idle while deferred tasks remain | `queries/agent.sql`: snapshot excludes deferred; `core/agents/derive-presence.ts`: workload counters | Include waiting work without pretending it is running |
 

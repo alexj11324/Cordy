@@ -202,7 +202,7 @@ func (h *Handler) ManagedSlackOAuthCallback(w http.ResponseWriter, r *http.Reque
 		}
 		switch {
 		case errors.Is(err, slack.ErrTeamOwnedByAnotherWorkspace):
-			writeError(w, http.StatusConflict, "this Slack workspace is already connected to a different Patchbay workspace — disconnect it there before connecting it here")
+			writeError(w, http.StatusConflict, "this Slack app is already installed in a different Patchbay workspace — remove that installation before installing it here")
 		case errors.Is(err, slack.ErrManagedAlreadyConnected):
 			writeError(w, http.StatusConflict, err.Error())
 		default:

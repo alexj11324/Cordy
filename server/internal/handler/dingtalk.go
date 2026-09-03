@@ -799,11 +799,11 @@ func (h *Handler) RegisterDingTalkBYO(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, dingtalk.ErrInvalidAppKey), errors.Is(err, dingtalk.ErrInvalidAppSecret):
 			writeError(w, http.StatusBadRequest, err.Error())
 		case errors.Is(err, dingtalk.ErrRobotOwnedBySameWorkspace):
-			writeError(w, http.StatusConflict, "this DingTalk robot is already connected to another agent in this workspace — disconnect it there first, then connect it here")
+			writeError(w, http.StatusConflict, "this DingTalk robot is already installed for another agent in this workspace — remove that installation first, then install it here")
 		case errors.Is(err, dingtalk.ErrRobotOwnedByArchivedAgent):
-			writeError(w, http.StatusConflict, "this DingTalk robot is connected to an archived agent in this workspace — restore that agent, or disconnect its robot, before connecting it here")
+			writeError(w, http.StatusConflict, "this DingTalk robot is installed for an archived agent in this workspace — restore that agent, or remove its robot installation, before installing it here")
 		case errors.Is(err, dingtalk.ErrRobotOwnedByAnotherWorkspace):
-			writeError(w, http.StatusConflict, "this DingTalk robot is already connected to a different Patchbay workspace — disconnect it there before connecting it here")
+			writeError(w, http.StatusConflict, "this DingTalk robot is already installed in a different Patchbay workspace — remove that installation before installing it here")
 		case errors.Is(err, dingtalk.ErrCredentialValidation):
 			// The access-token mint rejected the pasted credentials (a user error),
 			// so guide the user to recheck them.
@@ -824,7 +824,7 @@ func (h *Handler) RegisterDingTalkBYO(w http.ResponseWriter, r *http.Request) {
 }
 
 // publishDingTalkInstallationCreated emits dingtalk_installation:created for a
-// newly connected bot. The realtime layer fans it out to the workspace; the web
+// newly installed bot. The realtime layer fans it out to the workspace; the web
 // app listens on dingtalk_installation:* to invalidate the installations query.
 func (h *Handler) publishDingTalkInstallationCreated(row db.ChannelInstallation, actorID string) {
 	h.publish(protocol.EventDingTalkInstallationCreated, uuidToString(row.WorkspaceID), "user", actorID, map[string]any{

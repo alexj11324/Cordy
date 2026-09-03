@@ -316,15 +316,15 @@
       "error": "Connection failed",
       "unavailable": "Status unavailable",
       "paused": "Connection paused by quota",
-      "experimental": "Connection not verified",
+      "experimental": "Experimental",
       "retry": "Retry"
     },
     "linear": {
       "title": "Linear",
       "description": "Connect a Linear workspace, match projects, and choose the source of truth before synchronization is enabled.",
       "loading": "Checking Linear…",
-      "healthy": "Healthy",
-      "projects_synced": "{{count}} projects synced",
+      "healthy": "Authorized",
+      "projects_synced": "Sync enabled for {{count}} projects",
       "last_sync": "Last sync {{time}}",
       "last_sync_never": "Never synced",
       "last_webhook_received": "Last webhook received {{time}}",
@@ -473,6 +473,8 @@
     },
     "integrations_title": "Integrations",
     "integrations_description": "Connect messaging platforms once at the workspace level. Use /agents in the conversation to choose or switch the Agent for each chat.",
+    "integrations_requirements_title": "What you need",
+    "integrations_setup_steps_title": "Complete these steps",
     "back_to_app": "Back to app"
   },
   "plugins": {
@@ -929,6 +931,11 @@
   "lark": {
     "section_title": "Lark",
     "page_description": "Connect each Patchbay Agent to a Lark (飞书) PersonalAgent Bot. Members can DM the Bot, @ it in groups, and type /issue to spin up a new Patchbay issue.",
+    "setup_requirement": "A Feishu account on your phone. No developer App ID or secret is required.",
+    "setup_step_1": "Click Connect Feishu below to generate a secure authorization QR code on this page.",
+    "setup_step_2": "Open Feishu, scan the QR code, and approve creation of the PersonalAgent bot.",
+    "setup_step_3": "Return here; Patchbay verifies the authorization and saves the installation for this Agent.",
+    "setup_open": "Continue below",
     "not_enabled_title": "Lark integration not enabled",
     "not_enabled_description_prefix": "Set",
     "not_enabled_description_suffix": "on the server to enable Lark Bot installations.",
@@ -996,7 +1003,7 @@
     "install_error_session_lost": "Install session expired or was lost. Scan again to start over.",
     "install_error_forbidden": "You no longer have permission to install Lark Bots in this workspace. Ask a workspace admin to continue.",
     "install_error_generic": "Install failed. Try again.",
-    "installed_bots": "Installed bots"
+    "installed_bots": "Bot installation records"
   },
   "composio": {
     "section_title": "Composio",
@@ -1031,6 +1038,16 @@
   "slack": {
     "section_title": "Slack",
     "page_description": "Connect each Patchbay Agent to its own Slack bot. Members can DM the bot, @mention it in a channel, and type /issue to spin up a new Patchbay issue.",
+    "setup_requirement": "A Slack workspace where you can create and install apps, plus one xoxb- bot token and one xapp- app-level token.",
+    "setup_step_1": "Open the Slack app dashboard, create an app from the Patchbay manifest, and install it to your workspace.",
+    "setup_step_2": "Enable Socket Mode and generate an app-level token with connections:write; copy both xoxb- and xapp- tokens.",
+    "setup_step_3": "Click Connect Slack below, paste both tokens, and let Patchbay verify the app before saving them encrypted.",
+    "managed_setup_requirement": "A Slack workspace where you are allowed to install apps. Patchbay Cloud manages the Slack app and encrypted tokens.",
+    "managed_setup_step_1": "Click Connect Slack on this page. Patchbay opens Slack's official authorization page in your browser.",
+    "managed_setup_step_2": "Choose the Slack workspace, review the requested bot permissions, and approve the installation.",
+    "managed_setup_step_3": "Slack returns to this integrations page. Patchbay verifies the tenant, stores the installation, and starts receiving signed events automatically.",
+    "setup_manifest_open": "View Patchbay manifest",
+    "setup_open": "Open Slack app dashboard",
     "not_enabled_title": "Slack integration not enabled",
     "not_enabled_description_prefix": "Set",
     "not_enabled_description_suffix": "on the server to enable Slack bot installations.",
@@ -1074,9 +1091,14 @@
     "managed_connecting": "Opening Slack…",
     "managed_failed_toast": "Could not start the Slack install",
     "managed_workspace_name": "Slack workspace {{team}}",
-    "installed_bots": "Installed bots"
+    "installed_bots": "Bot installation records"
   },
   "dingtalk": {
+    "setup_requirement": "A DingTalk organization where you can create an internal app, with its AppKey and AppSecret.",
+    "setup_step_1": "Open DingTalk Developer, create an internal app, add a robot, and select Stream Mode for message delivery.",
+    "setup_step_2": "Grant the robot receive and send permissions, then copy the AppKey and AppSecret from Credentials.",
+    "setup_step_3": "Click Connect DingTalk below, paste both values, and let Patchbay validate the credentials before saving them encrypted.",
+    "setup_open": "Open DingTalk Developer",
     "group_routes_title": "Group routing",
     "group_routes_description": "Link your DingTalk account and @mention the connected robot in a group to discover it here. Reassigning sends future messages to a new Chat with the selected Agent; previous Chats are kept.",
     "group_routes_empty_title": "No groups discovered yet",
@@ -1127,7 +1149,7 @@
     "not_enabled_description_prefix": "Set",
     "not_enabled_description_suffix": "on the server to enable DingTalk robot installations.",
     "not_enabled_self_host_hint": "Self-hosters: see the project README for details.",
-    "connections_title": "Connections",
+    "connections_title": "Bot installation records",
     "deleted_agent": "Deleted Agent",
     "loading": "Loading…",
     "empty_title": "No bots installed yet",
@@ -1160,6 +1182,11 @@
   "wecom": {
     "section_title": "WeCom",
     "page_description": "Connect each Patchbay Agent to its own WeCom (企业微信) smart bot. Members can DM the bot, @ it in groups, and type /issue to spin up a new Patchbay issue. The Agent replies over a long WebSocket connection, so no public callback URL is required.",
+    "setup_requirement": "A WeCom organization where you can create a smart bot, plus its Bot ID and one-time long-connection secret.",
+    "setup_step_1": "Open WeCom Admin, create a smart bot, and enable long connection mode; no public callback URL is needed.",
+    "setup_step_2": "Copy the Bot ID and the secret shown by WeCom. Keep the secret private because it may be displayed only once.",
+    "setup_step_3": "Click Connect WeCom below, paste the credentials, and let Patchbay test the long connection before saving.",
+    "setup_open": "Open WeCom Admin",
     "not_enabled_title": "WeCom integration not enabled",
     "not_enabled_description_prefix": "Set",
     "not_enabled_description_suffix": "on the server to enable WeCom smart-bot installations.",
@@ -1195,19 +1222,24 @@
     "byo_submitting": "Connecting…",
     "byo_cancel": "Cancel",
     "byo_success_toast": "WeCom bot installed",
-    "byo_conflict_same_workspace": "This bot is already connected to another Agent in this workspace. Disconnect it there first, then connect it here.",
-    "byo_conflict_archived_agent": "This bot is connected to an archived Agent in this workspace. Restore that Agent, or disconnect its bot, before connecting it here.",
-    "byo_conflict_other_workspace": "This bot is already connected to a different Patchbay workspace. Disconnect it there before connecting it here.",
+    "byo_conflict_same_workspace": "This bot is already installed for another Agent in this workspace. Remove that installation first, then install it here.",
+    "byo_conflict_archived_agent": "This bot is installed for an archived Agent in this workspace. Restore that Agent, or remove its bot installation, before installing it here.",
+    "byo_conflict_other_workspace": "This bot is already installed in a different Patchbay workspace. Remove that installation before installing it here.",
     "byo_rejected": "Could not connect the bot. Check the Bot ID and secret from the WeCom admin console, and that it is a smart bot with the long connection enabled.",
     "byo_credentials_rejected": "WeCom rejected this Bot ID and secret. Check both on the WeCom admin console, and that it is a smart bot with the long connection enabled.",
     "byo_credentials_unverifiable": "Couldn't reach WeCom to verify this bot. Your credentials were not changed — try again in a moment.",
     "byo_install_failed": "Couldn't save this bot — something went wrong on our side. Your credentials were not changed; try again, and contact support if it keeps failing.",
     "byo_failed_toast": "Could not connect the WeCom bot",
-    "installed_bots": "Installed bots"
+    "installed_bots": "Bot installation records"
   },
   "weixin": {
     "section_title": "Weixin",
     "page_description": "Connect each Patchbay Agent to its own Weixin account through the iLink QR flow. Members can message the account and the Agent replies through the configured Weixin channel.",
+    "setup_requirement": "A personal WeChat account on your phone. No company, Official Account, WeCom organization, or developer AppID is required.",
+    "setup_step_1": "Click Connect WeChat below; Tencent's official iLink authorization QR code appears on this page.",
+    "setup_step_2": "Open WeChat → Scan, scan the QR code, and approve the authorization in WeChat. Enter a verification code here if requested.",
+    "setup_step_3": "Keep this page open until authorization succeeds and the account is added; expired codes can be generated again without leaving the page.",
+    "setup_open": "Continue below",
     "not_enabled_title": "Weixin integration not enabled",
     "not_enabled_description_prefix": "Set",
     "not_enabled_description_suffix": "on the server to enable Weixin installations.",
@@ -1251,16 +1283,21 @@
     "install_success": "Weixin account added.",
     "install_success_toast": "Weixin account added",
     "install_error_expired": "This authorization session expired. Start a new connection and scan the new QR code.",
-    "install_error_already_connected": "This Weixin account is already connected to another Agent or workspace.",
+    "install_error_already_connected": "This Weixin account is already installed for another Agent or workspace.",
     "install_error_forbidden": "You no longer have permission to manage this Agent. Ask a workspace admin to continue.",
     "install_error_generic": "Weixin authorization could not be completed. Start a new connection and try again.",
     "install_close": "Close",
     "install_retry": "Try again",
-    "installed_bots": "Added Weixin accounts"
+    "installed_bots": "Weixin account installation records"
   },
   "telegram": {
     "section_title": "Telegram",
     "page_description": "Connect each Patchbay Agent to its own Telegram bot. Members can DM the bot, @mention it in a group, type /issue to spin up a new Patchbay issue, and watch the agent's reply stream live.",
+    "setup_requirement": "A Telegram account and a bot token issued by the official @BotFather.",
+    "setup_step_1": "Open @BotFather, send /newbot, and finish choosing the bot name and username.",
+    "setup_step_2": "Copy the HTTP API token. Treat it like a password and do not paste it anywhere except the field below.",
+    "setup_step_3": "Remove any existing webhook for this bot, then click Connect Telegram below; Patchbay verifies the token and stores it encrypted.",
+    "setup_open": "Open @BotFather",
     "not_enabled_title": "Telegram integration not enabled",
     "not_enabled_description_prefix": "Set",
     "not_enabled_description_suffix": "on the server to enable Telegram bot installations.",
@@ -1296,7 +1333,7 @@
     "connect_cancel": "Cancel",
     "connect_success_toast": "Telegram bot installed",
     "connect_failed_toast": "Could not connect the Telegram bot",
-    "installed_bots": "Installed bots"
+    "installed_bots": "Bot installation records"
   },
   "repositories": {
     "section_title": "Repositories",

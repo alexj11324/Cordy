@@ -316,15 +316,15 @@
       "error": "接続に失敗しました",
       "unavailable": "状態を確認できません",
       "paused": "上限により接続が一時停止中",
-      "experimental": "接続未検証",
+      "experimental": "実験的",
       "retry": "再試行"
     },
     "linear": {
       "title": "Linear",
       "description": "Linear ワークスペースを接続し、プロジェクトを対応付け、同期を有効にする前に正しいデータソースを選択します。",
       "loading": "Linear を確認中…",
-      "healthy": "正常",
-      "projects_synced": "{{count}} 件のプロジェクトを同期中",
+      "healthy": "認証済み",
+      "projects_synced": "{{count}} 件のプロジェクトで同期を有効化",
       "last_sync": "最終同期 {{time}}",
       "last_sync_never": "未同期",
       "last_webhook_received": "Webhook 最終受信 {{time}}",
@@ -473,6 +473,8 @@
     },
     "integrations_title": "連携",
     "integrations_description": "メッセージングプラットフォームをワークスペースに一度接続し、会話内の /agents で各チャットのエージェントを選択・切り替えます。",
+    "integrations_requirements_title": "必要なもの",
+    "integrations_setup_steps_title": "次の手順で完了します",
     "back_to_app": "アプリに戻る"
   },
   "plugins": {
@@ -927,6 +929,11 @@
   "lark": {
     "section_title": "Lark",
     "page_description": "各 Patchbay エージェントを Lark (飞书) PersonalAgent ボットに接続します。メンバーはボットに DM したり、グループで @ メンションしたり、/issue と入力して新しい Patchbay タスクを起こすことができます。",
+    "setup_requirement": "スマートフォンの Feishu アカウント。開発者向け App ID やシークレットは不要です。",
+    "setup_step_1": "下の「Feishu に接続」をクリックすると、このページに安全な認証用 QR コードが表示されます。",
+    "setup_step_2": "Feishu を開いて QR コードをスキャンし、PersonalAgent ボットの作成を承認します。",
+    "setup_step_3": "このページに戻ると、Patchbay が認証を確認し、このエージェントのインストール設定を保存します。",
+    "setup_open": "下で続行",
     "not_enabled_title": "Lark 連携が有効化されていません",
     "not_enabled_description_prefix": "Lark ボットの設置を有効化するにはサーバーに",
     "not_enabled_description_suffix": "を設定してください。",
@@ -994,7 +1001,7 @@
     "install_error_session_lost": "設置セッションが期限切れまたは失われました。もう一度スキャンしてやり直してください。",
     "install_error_forbidden": "このワークスペースに Lark ボットを設置する権限がなくなりました。ワークスペース管理者にお問い合わせください。",
     "install_error_generic": "設置に失敗しました。もう一度お試しください。",
-    "installed_bots": "登録済みのボット"
+    "installed_bots": "ボットのインストール記録"
   },
   "composio": {
     "section_title": "Composio",
@@ -1029,6 +1036,16 @@
   "slack": {
     "section_title": "Slack",
     "page_description": "各 Patchbay エージェントを専用の Slack ボットに接続します。メンバーはボットに DM したり、チャンネルで @メンションしたり、/issue と入力して新しい Patchbay タスクを起こすことができます。",
+    "setup_requirement": "アプリを作成・インストールできる Slack ワークスペースと、xoxb- ボットトークン、xapp- アプリレベルトークン各 1 つ。",
+    "setup_step_1": "Slack アプリ管理画面を開き、Patchbay マニフェストからアプリを作成してワークスペースにインストールします。",
+    "setup_step_2": "Socket Mode を有効にし、connections:write 権限のアプリレベルトークンを作成して、xoxb- と xapp- の両方をコピーします。",
+    "setup_step_3": "下の「Slack に接続」をクリックし、2 つのトークンを貼り付けます。Patchbay がアプリを検証してから暗号化して保存します。",
+    "managed_setup_requirement": "アプリのインストール権限がある Slack ワークスペース。Slack アプリと暗号化トークンは Patchbay Cloud が管理します。",
+    "managed_setup_step_1": "このページで「Slack に接続」をクリックすると、Patchbay がブラウザで Slack の公式認可ページを開きます。",
+    "managed_setup_step_2": "Slack ワークスペースを選び、要求される Bot 権限を確認してインストールを承認します。",
+    "managed_setup_step_3": "Slack からこの連携ページに戻ると、Patchbay がテナントを検証してインストールを保存し、署名済みイベントの受信を開始します。",
+    "setup_manifest_open": "Patchbay マニフェストを表示",
+    "setup_open": "Slack アプリ管理画面を開く",
     "not_enabled_title": "Slack 連携が有効になっていません",
     "not_enabled_description_prefix": "サーバーで",
     "not_enabled_description_suffix": "を設定すると Slack ボットのインストールが有効になります。",
@@ -1072,9 +1089,14 @@
     "managed_connecting": "Slack を開いています…",
     "managed_failed_toast": "Slack インストールを開始できませんでした",
     "managed_workspace_name": "Slack ワークスペース {{team}}",
-    "installed_bots": "登録済みのボット"
+    "installed_bots": "ボットのインストール記録"
   },
   "dingtalk": {
+    "setup_requirement": "内部アプリを作成できる DingTalk 組織と、その AppKey および AppSecret。",
+    "setup_step_1": "DingTalk Developer を開き、内部アプリとロボットを作成し、メッセージ配信に Stream Mode を選択します。",
+    "setup_step_2": "ロボットの受信・送信権限を付与し、認証情報画面から AppKey と AppSecret をコピーします。",
+    "setup_step_3": "下の「DingTalk に接続」をクリックして 2 つの値を貼り付けます。Patchbay が認証情報を検証してから暗号化して保存します。",
+    "setup_open": "DingTalk Developer を開く",
     "group_routes_title": "グループルーティング",
     "group_routes_description": "DingTalk アカウントを連携し、グループで接続済みのボットを @メンションすると、ここに表示されます。担当を変更すると、以後のメッセージは選択したエージェントとの新しいチャットに届きます。以前のチャットは保持されます。",
     "group_routes_empty_title": "まだグループが検出されていません",
@@ -1124,7 +1146,7 @@
     "not_enabled_description_prefix": "サーバーで",
     "not_enabled_description_suffix": "を設定すると DingTalk ロボットのインストールが有効になります。",
     "not_enabled_self_host_hint": "セルフホストの場合: 詳細はプロジェクトの README を参照してください。",
-    "connections_title": "接続",
+    "connections_title": "ボットのインストール記録",
     "deleted_agent": "削除済みのエージェント",
     "loading": "読み込み中…",
     "empty_title": "登録済みのボットはありません",
@@ -1157,6 +1179,11 @@
   "wecom": {
     "section_title": "WeCom",
     "page_description": "各 Patchbay エージェントを専用の WeCom (企业微信) スマートボットに接続します。メンバーはボットに DM を送り、グループで @ メンションし、/issue と入力して Patchbay タスクを作成できます。WebSocket ロングコネクションで応答するため、公開コールバック URL は不要です。",
+    "setup_requirement": "スマートボットを作成できる WeCom 組織と、その Bot ID および一度だけ表示されるロングコネクション用シークレット。",
+    "setup_step_1": "WeCom 管理画面を開いてスマートボットを作成し、ロングコネクションモードを有効にします。公開コールバック URL は不要です。",
+    "setup_step_2": "Bot ID と WeCom が表示するシークレットをコピーします。シークレットは一度しか表示されない場合があるため、安全に扱ってください。",
+    "setup_step_3": "下の「WeCom に接続」をクリックし、認証情報を貼り付けます。Patchbay が保存前にロングコネクションをテストします。",
+    "setup_open": "WeCom 管理画面を開く",
     "not_enabled_title": "WeCom 連携が有効化されていません",
     "not_enabled_description_prefix": "サーバー側で",
     "not_enabled_description_suffix": "を設定すると WeCom スマートボットのインストールが有効になります。",
@@ -1192,19 +1219,24 @@
     "byo_submitting": "接続中…",
     "byo_cancel": "キャンセル",
     "byo_success_toast": "WeCom ボットを登録しました",
-    "byo_conflict_same_workspace": "このボットはこのワークスペースの別のエージェントに接続済みです。先にそちらで切断してから、ここに接続してください。",
-    "byo_conflict_archived_agent": "このボットはこのワークスペースのアーカイブ済みエージェントに接続されています。そのエージェントを復元するか、ボットを切断してから接続してください。",
-    "byo_conflict_other_workspace": "このボットは別の Patchbay ワークスペースに接続済みです。先にそちらで切断してから接続してください。",
+    "byo_conflict_same_workspace": "このボットは、このワークスペースの別のエージェントにすでにインストールされています。先にそのインストールを削除してから、ここにインストールしてください。",
+    "byo_conflict_archived_agent": "このボットは、このワークスペースのアーカイブ済みエージェントにインストールされています。そのエージェントを復元するか、ボットのインストールを削除してから、ここにインストールしてください。",
+    "byo_conflict_other_workspace": "このボットは、別の Patchbay ワークスペースにすでにインストールされています。先にそのインストールを削除してください。",
     "byo_rejected": "ボットを接続できませんでした。WeCom 管理コンソールの Bot ID とシークレット、および長時間接続が有効なスマートボットであることを確認してください。",
     "byo_credentials_rejected": "WeCom がこの Bot ID とシークレットを拒否しました。WeCom 管理コンソールで両方を確認し、長時間接続が有効なスマートボットであることもご確認ください。",
     "byo_credentials_unverifiable": "WeCom に接続できず、このボットを検証できませんでした。認証情報は変更されていません。少し時間をおいてもう一度お試しください。",
     "byo_install_failed": "ボットを保存できませんでした。こちら側の問題です。認証情報は変更されていません。もう一度お試しいただき、続くようならサポートにご連絡ください。",
     "byo_failed_toast": "WeCom ボットを接続できませんでした",
-    "installed_bots": "登録済みのボット"
+    "installed_bots": "ボットのインストール記録"
   },
   "weixin": {
     "section_title": "Weixin",
     "page_description": "iLink の QR フローで、各 Patchbay エージェントを専用の Weixin アカウントに接続します。メンバーはアカウントにメッセージを送り、エージェントは設定済みの Weixin チャネルから返信します。",
+    "setup_requirement": "スマートフォンの個人 WeChat アカウント。会社、公式アカウント、WeCom 組織、開発者 AppID は不要です。",
+    "setup_step_1": "下の「WeChat に接続」をクリックすると、Tencent 公式 iLink 認証用 QR コードがこのページに表示されます。",
+    "setup_step_2": "WeChat の「スキャン」を開いて QR コードを読み取り、WeChat 内で認証を承認します。求められた場合は、このページに確認コードを入力します。",
+    "setup_step_3": "認証が成功してアカウントが追加されるまでページを開いたままにします。期限切れの QR コードはページを離れずに再生成できます。",
+    "setup_open": "下で続行",
     "not_enabled_title": "Weixin 連携が有効化されていません",
     "not_enabled_description_prefix": "サーバー側で",
     "not_enabled_description_suffix": "を設定すると Weixin のインストールが有効になります。",
@@ -1248,16 +1280,21 @@
     "install_success": "Weixin アカウントを追加しました。",
     "install_success_toast": "Weixin アカウントを追加しました",
     "install_error_expired": "認証セッションの有効期限が切れました。新しい接続を開始して QR コードをスキャンしてください。",
-    "install_error_already_connected": "この Weixin アカウントは別のエージェントまたはワークスペースに接続済みです。",
+    "install_error_already_connected": "この Weixin アカウントは別のエージェントまたはワークスペースにすでにインストールされています。",
     "install_error_forbidden": "このエージェントを管理する権限がなくなりました。ワークスペース管理者に依頼してください。",
     "install_error_generic": "Weixin の認証を完了できませんでした。新しい接続を開始してもう一度お試しください。",
     "install_close": "閉じる",
     "install_retry": "再試行",
-    "installed_bots": "追加済みのWeixinアカウント"
+    "installed_bots": "Weixin アカウントのインストール記録"
   },
   "telegram": {
     "section_title": "Telegram",
     "page_description": "各 Patchbay エージェントを専用の Telegram ボットに接続します。メンバーはボットに DM を送ったり、グループで @メンションしたり、/issue と入力して Patchbay タスクを作成したり、エージェントの返信をリアルタイムで確認できます。",
+    "setup_requirement": "Telegram アカウントと、公式 @BotFather が発行したボットトークン。",
+    "setup_step_1": "@BotFather を開き、/newbot を送信して、ボット名とユーザー名の設定を完了します。",
+    "setup_step_2": "HTTP API トークンをコピーします。パスワードとして扱い、下の入力欄以外には貼り付けないでください。",
+    "setup_step_3": "このボットの既存 Webhook を手動で削除してから、下の「Telegram に接続」をクリックします。Patchbay がトークンを検証し、暗号化して保存します。",
+    "setup_open": "@BotFather を開く",
     "not_enabled_title": "Telegram 連携が有効になっていません",
     "not_enabled_description_prefix": "サーバーで",
     "not_enabled_description_suffix": "を設定すると Telegram ボットのインストールが有効になります。",
@@ -1293,7 +1330,7 @@
     "connect_cancel": "キャンセル",
     "connect_success_toast": "Telegram ボットを登録しました",
     "connect_failed_toast": "Telegram ボットを接続できませんでした",
-    "installed_bots": "登録済みのボット"
+    "installed_bots": "ボットのインストール記録"
   },
   "repositories": {
     "section_title": "リポジトリ",

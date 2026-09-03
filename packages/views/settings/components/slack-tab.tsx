@@ -414,7 +414,7 @@ export function SlackAgentBindButton({
         className={className}
       />
     ) : (
-      <SlackAgentBotConnectedBadge installation={existing} className={className} />
+      <SlackAgentBotInstalledControls installation={existing} className={className} />
     );
   }
 
@@ -435,7 +435,7 @@ export function SlackAgentBindButton({
     try {
       await api.registerSlackBYO(wsId, agentId, { bot_token, app_token });
       // The slack_installation realtime event also refreshes this list, but
-      // invalidate explicitly so the connected badge appears immediately.
+      // invalidate explicitly so the installed controls appear immediately.
       await qc.invalidateQueries({ queryKey: slackKeys.installations(wsId) });
       toast.success(t(($) => $.slack.byo_success_toast));
       setDialogOpen(false);
@@ -568,7 +568,7 @@ export function SlackAgentBindButton({
   );
 }
 
-// SlackAgentBotStatusRow is the compact, read-only connected affordance the
+// SlackAgentBotStatusRow is the compact, read-only installation affordance the
 // agent inspector renders instead of the full badge; it deep-links into the
 // Integrations tab where Manage / Disconnect live.
 function SlackAgentBotStatusRow({
@@ -598,11 +598,11 @@ function SlackAgentBotStatusRow({
   );
 }
 
-// SlackAgentBotConnectedBadge is the full "already connected" affordance the
+// SlackAgentBotInstalledControls is the full installed-bot affordance the
 // Integrations tab renders in place of the Connect button. Two rows: status +
 // soft-destructive Disconnect, then a secondary "Open in Slack" link to the
 // installed workspace. Only owners/admins ever reach this component.
-function SlackAgentBotConnectedBadge({
+function SlackAgentBotInstalledControls({
   installation,
   className,
 }: {
@@ -636,7 +636,7 @@ function SlackAgentBotConnectedBadge({
   return (
     <div
       className={cn("space-y-2", className)}
-      data-testid="slack-agent-bot-connected"
+      data-testid="slack-agent-bot-installed"
     >
       <div className="flex items-center justify-between gap-3">
         <span className="inline-flex min-w-0 items-center gap-2 text-caption text-muted-foreground">

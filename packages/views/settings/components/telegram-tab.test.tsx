@@ -166,12 +166,12 @@ describe("TelegramAgentBindButton", () => {
       install_supported: true,
     };
     renderUI(<TelegramAgentBindButton agentId="agent-1" />);
-    expect(screen.getByTestId("telegram-agent-bot-connected")).toBeTruthy();
+    expect(screen.getByTestId("telegram-agent-bot-installed")).toBeTruthy();
     expect(screen.getByTestId("telegram-agent-bot-disconnect")).toBeTruthy();
     expect(screen.queryByTestId("telegram-agent-connect")).toBeNull();
   });
 
-  it("opens the connected bot in Telegram", async () => {
+  it("opens the installed bot in Telegram", async () => {
     installationsRef.current = {
       installations: [
         { id: "i1", agent_id: "agent-1", status: "installed", bot_username: "my_bot" },
@@ -224,7 +224,7 @@ describe("TelegramAgentBindButton", () => {
     await userEvent.click(actions.at(-1)!);
 
     await waitFor(() => expect(mockToastError).toHaveBeenCalledWith("network failed"));
-    expect(screen.getByTestId("telegram-agent-bot-connected")).toBeTruthy();
+    expect(screen.getByTestId("telegram-agent-bot-installed")).toBeTruthy();
     expect(mockInvalidate).not.toHaveBeenCalled();
   });
 
