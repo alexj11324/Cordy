@@ -75,6 +75,10 @@ func (r *OutboundReplier) Reply(ctx context.Context, inst engine.ResolvedInstall
 		text = weixinAgentOfflineText
 	case engine.OutcomeAgentArchived:
 		text = weixinAgentArchivedText
+	case engine.OutcomeQuotaExceeded:
+		text = channel.QuotaCopyForMessage(msg).Exceeded
+	case engine.OutcomeQuotaUnavailable:
+		text = channel.QuotaCopyForMessage(msg).Unavailable
 	case engine.OutcomeFreshPending:
 		text = weixinFreshPendingText
 	case engine.OutcomeIssueUsage:

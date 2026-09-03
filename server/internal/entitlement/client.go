@@ -275,7 +275,7 @@ func normalizePolicy(wire wirePolicy) (fetchedPolicy, error) {
 		wire.ValidUntil.IsZero() || wire.ValidForSeconds <= 0 || wire.ValidForSeconds > int64(maxPolicyTTL/time.Second) {
 		return fetchedPolicy{}, ErrInvalidPolicy
 	}
-	gates := make(map[GateName]Gate, 3)
+	gates := make(map[GateName]Gate, 5)
 	for _, name := range []GateName{GateIssueCount, GateAutomationRuns} {
 		wireGate, ok := wire.Gates[string(name)]
 		if !ok {
@@ -291,7 +291,7 @@ func normalizePolicy(wire wirePolicy) (fetchedPolicy, error) {
 	// omission must not fail the fetch — the required gates above still have
 	// to work. An omitted gate resolves to an off decision (ReasonGateAbsent)
 	// at read time.
-	for _, name := range []GateName{GateImInstallationLimit} {
+	for _, name := range []GateName{GateImInstallationLimit, GateImAgentTurns, GateHostedWorkspaceLimit} {
 		wireGate, ok := wire.Gates[string(name)]
 		if !ok {
 			continue
@@ -326,7 +326,7 @@ func normalizeGate(name GateName, wire wireGate) (Gate, error) {
 	// a stock of concurrent installations, not a rate over a period: enforce
 	// with a null limit means unlimited (Pro), period fields are ignored, and
 	// only a negative limit is invalid.
-	if name == GateImInstallationLimit {
+	if name == GateImInstallationLimit || name == GateHostedWorkspaceLimit {
 		if wire.Limit == nil {
 			return Gate{Action: ActionEnforce}, nil
 		}
@@ -348,7 +348,7 @@ func normalizeGate(name GateName, wire wireGate) (Gate, error) {
 	if periodFields != 0 && periodFields != 3 {
 		return Gate{}, ErrInvalidPolicy
 	}
-	if name == GateAutomationRuns && periodFields != 3 {
+	if (name == GateAutomationRuns || name == GateImAgentTurns) && periodFields != 3 {
 		return Gate{}, ErrInvalidPolicy
 	}
 	if periodFields == 3 && (!wire.PeriodStart.Before(*wire.PeriodEnd) || !wire.PeriodStart.Before(*wire.ResetAt)) {

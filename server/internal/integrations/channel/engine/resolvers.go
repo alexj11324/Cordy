@@ -32,6 +32,8 @@ const (
 	OutcomeIssueUsage    Outcome = "issue_usage"
 	OutcomeAgentOffline  Outcome = "agent_offline"
 	OutcomeAgentArchived Outcome = "agent_archived"
+	OutcomeQuotaExceeded Outcome = "quota_exceeded"
+	OutcomeQuotaUnavailable Outcome = "quota_unavailable"
 )
 
 // DropReason enumerates the drop-audit categories. Values match the legacy

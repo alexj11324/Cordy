@@ -13,12 +13,14 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/patchbay-ai/patchbay/server/internal/analytics"
 	"github.com/patchbay-ai/patchbay/server/internal/attribution"
 	"github.com/patchbay-ai/patchbay/server/internal/chattitle"
+	"github.com/patchbay-ai/patchbay/server/internal/channelquota"
 	"github.com/patchbay-ai/patchbay/server/internal/entitlement"
 	"github.com/patchbay-ai/patchbay/server/internal/events"
 	"github.com/patchbay-ai/patchbay/server/internal/featureflags"
@@ -51,6 +53,10 @@ type TaskService struct {
 	// Entitlements supplies Cloud's workspace-scoped issue-count instruction.
 	// Nil keeps self-hosted and isolated test services unlimited.
 	Entitlements entitlement.Provider
+	// ManagedMessaging enables the hosted IM turn admission path. It is false
+	// for self-hosted/server-configured deployments, which never consume Cloud
+	// quota even when an entitlement provider is present for another feature.
+	ManagedMessaging bool
 	// SourceContextStorage is used only by the bounded 30-day cleanup pass for
 	// terminal quick-create captures. Nil disables it where storage is absent.
 	SourceContextStorage SourceContextObjectStore
@@ -1795,6 +1801,17 @@ var ErrChatQuickActionsBusy = errors.New("chat quick actions: session busy")
 // a race with archiving the session and therefore must not persist a new turn.
 var ErrChatSessionArchived = errors.New("chat task: session archived")
 
+var ErrChannelQuotaUnavailable = errors.New("chat task: hosted IM quota unavailable")
+
+type ChannelQuotaExceededError struct {
+	Used  int64
+	Limit int64
+}
+
+func (e *ChannelQuotaExceededError) Error() string {
+	return fmt.Sprintf("chat task: hosted IM quota exceeded (%d/%d)", e.Used, e.Limit)
+}
+
 // PreparedChatTaskEnqueue is an opaque, side-effect-free input snapshot built
 // before a caller opens a task-enqueue transaction.
 type PreparedChatTaskEnqueue struct {
@@ -1802,6 +1819,8 @@ type PreparedChatTaskEnqueue struct {
 	attrSource       pgtype.Text
 	attrEvidenceKind pgtype.Text
 	runtimeOverlay   runtimeMCPOverlayData
+	channelAdmission channelquota.Admission
+	workspaceID      uuid.UUID
 }
 
 // PrepareChatTaskEnqueue performs reads and optional external integration work
@@ -1837,6 +1856,10 @@ func (s *TaskService) PrepareChatTaskEnqueue(
 		accountableUser: attr.AccountableUserID,
 		attrSource:      attrSource, attrEvidenceKind: attrEvidenceKind,
 		runtimeOverlay: s.buildRuntimeMCPOverlay(ctx, initiatorUserID, agent),
+		workspaceID: uuid.UUID(agent.WorkspaceID.Bytes),
+		channelAdmission: channelquota.Resolve(
+			ctx, s.Entitlements, s.ManagedMessaging, uuid.UUID(agent.WorkspaceID.Bytes),
+		),
 	}, nil
 }
 
@@ -1898,7 +1921,7 @@ func (s *TaskService) enqueueChatTask(
 	}
 	defer tx.Rollback(ctx)
 	task, err := s.enqueueChatTaskTx(
-		ctx, s.Queries.WithTx(tx), chatSession, initiatorUserID,
+		ctx, tx, s.Queries.WithTx(tx), chatSession, initiatorUserID,
 		forceFreshSession, contextRevision, requireDelivery,
 		expectedBindingID, expectedRouteRevision, prepared,
 	)
@@ -1928,13 +1951,14 @@ func (s *TaskService) EnqueuePreparedChannelChatTaskInTx(
 		return db.AgentTaskQueue{}, errors.New("prepared channel chat task requires a context revision")
 	}
 	return s.enqueueChatTaskTx(
-		ctx, s.Queries.WithTx(tx), chatSession, initiatorUserID,
+		ctx, tx, s.Queries.WithTx(tx), chatSession, initiatorUserID,
 		forceFreshSession, contextRevision, true, pgtype.UUID{}, 0, prepared,
 	)
 }
 
 func (s *TaskService) enqueueChatTaskTx(
 	ctx context.Context,
+	tx pgx.Tx,
 	qtx *db.Queries,
 	chatSession db.ChatSession,
 	initiatorUserID pgtype.UUID,
@@ -1951,6 +1975,31 @@ func (s *TaskService) enqueueChatTaskTx(
 	}
 	if currentSession.Status != "active" {
 		return db.AgentTaskQueue{}, ErrChatSessionArchived
+	}
+
+	channelTurn, err := channelquota.HasUnownedChannelMessage(
+		ctx, tx, uuid.UUID(chatSession.ID.Bytes),
+	)
+	if err != nil {
+		return db.AgentTaskQueue{}, fmt.Errorf("check hosted IM message provenance: %w", err)
+	}
+	if channelTurn {
+		switch prepared.channelAdmission.Kind {
+		case channelquota.AdmissionBypass:
+		case channelquota.AdmissionUnavailable:
+			return db.AgentTaskQueue{}, ErrChannelQuotaUnavailable
+		case channelquota.AdmissionLimited:
+			err := channelquota.AdmitTurn(
+				ctx, tx, prepared.workspaceID, prepared.channelAdmission.Window,
+			)
+			if err != nil {
+				var exceeded *channelquota.ExceededError
+				if errors.As(err, &exceeded) {
+					return db.AgentTaskQueue{}, &ChannelQuotaExceededError{Used: exceeded.Used, Limit: exceeded.Limit}
+				}
+				return db.AgentTaskQueue{}, fmt.Errorf("admit hosted IM turn: %w", err)
+			}
+		}
 	}
 
 	agent, err := qtx.GetAgentForClaimUpdate(ctx, chatSession.AgentID)

@@ -123,6 +123,14 @@ func (r *OutboundReplier) Reply(ctx context.Context, inst engine.ResolvedInstall
 			r.logger.WarnContext(ctx, "wecom replier: archived notice failed",
 				"installation_id", util.UUIDToString(inst.ID), "error", err)
 		}
+	case engine.OutcomeQuotaExceeded:
+		if err := r.post(ctx, inst, msg, channel.QuotaCopyForMessage(msg).Exceeded); err != nil {
+			r.logger.WarnContext(ctx, "wecom replier: quota notice failed", "installation_id", util.UUIDToString(inst.ID), "error", err)
+		}
+	case engine.OutcomeQuotaUnavailable:
+		if err := r.post(ctx, inst, msg, channel.QuotaCopyForMessage(msg).Unavailable); err != nil {
+			r.logger.WarnContext(ctx, "wecom replier: quota unavailable notice failed", "installation_id", util.UUIDToString(inst.ID), "error", err)
+		}
 	case engine.OutcomeFreshPending:
 		if err := r.post(ctx, inst, msg, freshPendingText); err != nil {
 			r.logger.WarnContext(ctx, "wecom replier: fresh-start confirmation failed",

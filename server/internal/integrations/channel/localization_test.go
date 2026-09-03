@@ -37,3 +37,12 @@ func TestHubCatalogsHaveCompleteMatchingCopy(t *testing.T) {
 		t.Fatal("language variants or English fallback are inconsistent")
 	}
 }
+
+func TestQuotaCopyForMessageUsesMetadataThenScriptFallback(t *testing.T) {
+	if got := QuotaCopyForMessage(InboundMessage{Raw: []byte(`{"locale":"ja"}`)}); !strings.Contains(got.Exceeded, "ワークスペース") {
+		t.Fatalf("Japanese quota copy = %q", got.Exceeded)
+	}
+	if got := QuotaCopyForMessage(InboundMessage{Text: "请稍后重试"}); !strings.Contains(got.Unavailable, "暂时") {
+		t.Fatalf("Chinese quota copy = %q", got.Unavailable)
+	}
+}

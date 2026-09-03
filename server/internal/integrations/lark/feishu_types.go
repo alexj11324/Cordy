@@ -81,6 +81,8 @@ const (
 	OutcomeAgentOffline Outcome = "agent_offline"
 	// OutcomeAgentArchived — landed, but the agent is archived.
 	OutcomeAgentArchived Outcome = "agent_archived"
+	OutcomeQuotaExceeded Outcome = "quota_exceeded"
+	OutcomeQuotaUnavailable Outcome = "quota_unavailable"
 )
 
 // DispatchResult is the Feishu-side verdict the OutcomeReplier consumes to

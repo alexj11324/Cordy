@@ -1,4 +1,8 @@
 {
+  "quota": {
+    "exceeded": "⚠️ This workspace has reached its hosted messaging limit for the month. Existing runs will finish; upgrade to continue starting new runs.",
+    "unavailable": "⚠️ Hosted messaging usage is temporarily unavailable. No new run was started. Please try again later."
+  },
   "hub": {
     "available": "Available Agents:",
     "empty": "No available Agents were found.",

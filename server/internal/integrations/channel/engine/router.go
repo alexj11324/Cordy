@@ -1097,6 +1097,10 @@ func (r *Router) flushChatRun(
 			r.emitFlushReply(ctx, set, inst, msg, sessionID, bindingID, routeRevision, OutcomeAgentOffline)
 		case errors.Is(err, service.ErrChatTaskAgentArchived):
 			r.emitFlushReply(ctx, set, inst, msg, sessionID, bindingID, routeRevision, OutcomeAgentArchived)
+		case errors.As(err, new(*service.ChannelQuotaExceededError)):
+			r.emitFlushReply(ctx, set, inst, msg, sessionID, bindingID, routeRevision, OutcomeQuotaExceeded)
+		case errors.Is(err, service.ErrChannelQuotaUnavailable):
+			r.emitFlushReply(ctx, set, inst, msg, sessionID, bindingID, routeRevision, OutcomeQuotaUnavailable)
 		default:
 			r.logger.Error("channel router: flush enqueue chat task failed",
 				"chat_session_id", uuidString(sessionID), "err", err.Error())

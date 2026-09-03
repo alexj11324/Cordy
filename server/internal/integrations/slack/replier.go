@@ -133,6 +133,14 @@ func (r *OutboundReplier) Reply(ctx context.Context, inst engine.ResolvedInstall
 			r.logger.WarnContext(ctx, "slack replier: archived notice failed",
 				"installation_id", util.UUIDToString(inst.ID), "error", err)
 		}
+	case engine.OutcomeQuotaExceeded:
+		if err := r.postResult(ctx, inst, msg, res, channel.QuotaCopyForMessage(msg).Exceeded); err != nil {
+			r.logger.WarnContext(ctx, "slack replier: quota notice failed", "installation_id", util.UUIDToString(inst.ID), "error", err)
+		}
+	case engine.OutcomeQuotaUnavailable:
+		if err := r.postResult(ctx, inst, msg, res, channel.QuotaCopyForMessage(msg).Unavailable); err != nil {
+			r.logger.WarnContext(ctx, "slack replier: quota unavailable notice failed", "installation_id", util.UUIDToString(inst.ID), "error", err)
+		}
 	case engine.OutcomeFreshPending:
 		if err := r.postResult(ctx, inst, msg, res, freshPendingText); err != nil {
 			r.logger.WarnContext(ctx, "slack replier: fresh-start confirmation failed",

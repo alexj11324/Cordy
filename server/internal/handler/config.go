@@ -204,7 +204,8 @@ func ResolvedMessagingModeFromEnv() string {
 }
 
 func requireMessagingSetupWritable(w http.ResponseWriter) bool {
-	if messagingCapabilitiesFromEnv().SetupWritable {
+	capabilities := messagingCapabilitiesFromEnv()
+	if capabilities.SetupWritable || capabilities.Mode != "server_configured" {
 		return true
 	}
 	writeErrorCode(

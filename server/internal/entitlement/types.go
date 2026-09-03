@@ -21,11 +21,13 @@ const (
 	// than failing the whole policy — issue-count and automation gating must
 	// keep working on those deployments.
 	GateImInstallationLimit GateName = "im_installation_limit"
+	GateImAgentTurns        GateName = "im_agent_turns"
+	GateHostedWorkspaceLimit GateName = "hosted_workspace_limit"
 )
 
 func (n GateName) valid() bool {
 	switch n {
-	case GateIssueCount, GateAutomationRuns, GateImInstallationLimit:
+	case GateIssueCount, GateAutomationRuns, GateImInstallationLimit, GateImAgentTurns, GateHostedWorkspaceLimit:
 		return true
 	default:
 		return false

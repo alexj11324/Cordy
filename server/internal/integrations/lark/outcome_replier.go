@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
 	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
@@ -52,7 +53,7 @@ type noopReplier struct {
 
 func (n *noopReplier) Reply(ctx context.Context, inst Installation, msg InboundMessage, res DispatchResult) {
 	switch res.Outcome {
-	case OutcomeNeedsBinding, OutcomeAgentOffline, OutcomeAgentArchived, OutcomeFreshPending, OutcomeChatStarted, OutcomeIssueUsage:
+	case OutcomeNeedsBinding, OutcomeAgentOffline, OutcomeAgentArchived, OutcomeQuotaExceeded, OutcomeQuotaUnavailable, OutcomeFreshPending, OutcomeChatStarted, OutcomeIssueUsage:
 		n.log.Warn("lark outcome replier: outbound reply skipped (replier not wired)",
 			"outcome", string(res.Outcome),
 			"installation_id", uuidString(inst.ID),
@@ -184,6 +185,16 @@ func (r *LarkOutcomeReplier) Reply(ctx context.Context, inst Installation, msg I
 				"chat_id", string(msg.ChatID),
 				"err", err.Error(),
 			)
+		}
+	case OutcomeQuotaExceeded:
+		copy := channel.QuotaCopyForMessage(channel.InboundMessage{Text: msg.Body})
+		if err := r.sendChatNotice(ctx, inst, msg, copy.Exceeded); err != nil {
+			r.log.Warn("lark outcome replier: quota notice failed", "installation_id", uuidString(inst.ID), "err", err.Error())
+		}
+	case OutcomeQuotaUnavailable:
+		copy := channel.QuotaCopyForMessage(channel.InboundMessage{Text: msg.Body})
+		if err := r.sendChatNotice(ctx, inst, msg, copy.Unavailable); err != nil {
+			r.log.Warn("lark outcome replier: quota unavailable notice failed", "installation_id", uuidString(inst.ID), "err", err.Error())
 		}
 	case OutcomeFreshPending:
 		if err := r.sendChatNotice(ctx, inst, msg, freshPendingCopy); err != nil {
