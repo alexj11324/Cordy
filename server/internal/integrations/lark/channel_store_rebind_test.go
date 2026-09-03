@@ -33,9 +33,9 @@ const (
 
 	rbAppSame        = "cli_rb_same"
 	rbAppDiff        = "cli_rb_diff"
-	rbAppActive      = "cli_rb_active"
+	rbAppInstalled   = "cli_rb_installed"
 	rbAppWsFence     = "cli_rb_wsfence"
-	rbAppWsActive    = "cli_rb_wsactive"
+	rbAppWsInstalled = "cli_rb_wsinstalled"
 	rbAppReactivate  = "cli_rb_reactivate"
 	rbAppMove        = "cli_rb_move"
 	rbAppOrphanWS    = "cli_rb_orphan_ws"
@@ -86,7 +86,7 @@ func cleanRebindOwners(ctx context.Context, pool *pgxpool.Pool) {
 // claim EVERY revoked row EXCEPT the caller's own (workspace, agent) pair —
 // including a revoked row in another workspace (#4810: revoke is a self-serve
 // "I'm done", so it must never leave a bot permanently un-rebindable). The same
-// agent's own revoked row and any ACTIVE row (same or other workspace) must
+// agent's own revoked row and any installed row (same or other workspace) must
 // survive. (The orphan branch is covered by
 // TestChannelStore_ReclaimDeadReclaimsOrphansRefusesLiveOwners.)
 func TestChannelStore_ReclaimDeadRevokedFences(t *testing.T) {
@@ -94,7 +94,7 @@ func TestChannelStore_ReclaimDeadRevokedFences(t *testing.T) {
 	ctx := context.Background()
 	store := NewChannelStore(db.New(pool))
 
-	apps := []string{rbAppSame, rbAppDiff, rbAppActive, rbAppWsFence, rbAppWsActive, rbAppReactivate, rbAppMove}
+	apps := []string{rbAppSame, rbAppDiff, rbAppInstalled, rbAppWsFence, rbAppWsInstalled, rbAppReactivate, rbAppMove}
 	clean := func() {
 		_, _ = pool.Exec(ctx, `DELETE FROM channel_installation WHERE config->>'app_id' = ANY($1)`, apps)
 		_, _ = pool.Exec(ctx, `DELETE FROM channel_user_binding WHERE patchbay_user_id = $1`, rbUser)
@@ -155,10 +155,10 @@ RETURNING id
 		}
 	})
 
-	t.Run("active row is never deleted", func(t *testing.T) {
+	t.Run("installed row is never deleted", func(t *testing.T) {
 		clean()
-		id := insert(rbAppActive, rbWS, rbAgentA, "installed")
-		if err := store.ReclaimDeadInstallationByAppID(ctx, wsUUID, agentBUUID, rbAppActive); err != nil {
+		id := insert(rbAppInstalled, rbWS, rbAgentA, "installed")
+		if err := store.ReclaimDeadInstallationByAppID(ctx, wsUUID, agentBUUID, rbAppInstalled); err != nil {
 			t.Fatalf("ReclaimDeadInstallationByAppID: %v", err)
 		}
 		if !exists(id) {
@@ -177,14 +177,14 @@ RETURNING id
 		}
 	})
 
-	t.Run("other workspace active row is preserved", func(t *testing.T) {
+	t.Run("other workspace installed row is preserved", func(t *testing.T) {
 		clean()
-		id := insert(rbAppWsActive, rbWS2, rbAgentA, "installed")
-		if err := store.ReclaimDeadInstallationByAppID(ctx, wsUUID, agentBUUID, rbAppWsActive); err != nil {
+		id := insert(rbAppWsInstalled, rbWS2, rbAgentA, "installed")
+		if err := store.ReclaimDeadInstallationByAppID(ctx, wsUUID, agentBUUID, rbAppWsInstalled); err != nil {
 			t.Fatalf("ReclaimDeadInstallationByAppID: %v", err)
 		}
 		if !exists(id) {
-			t.Fatal("an ACTIVE row in another workspace was reclaimed; only revoked/orphan owners are dead — a live owner must never be stolen")
+			t.Fatal("an installed row in another workspace was reclaimed; only revoked/orphan owners are dead — a live owner must never be stolen")
 		}
 	})
 }
@@ -282,7 +282,7 @@ VALUES ($1, $2, 'feishu', 'oc_rb_chat', 'p2p')
 			t.Fatalf("same agent reconnect changed installation_id: got %v, want %v (in-place reactivation lost)", inst.ID, oldID)
 		}
 		if inst.Status != "installed" {
-			t.Fatalf("reactivated installation status=%q, want active", inst.Status)
+			t.Fatalf("reactivated installation status=%q, want installed", inst.Status)
 		}
 		if users, chats := countBindingsOn(oldID); users != 1 || chats != 1 {
 			t.Fatalf("bindings not preserved on reconnect: users=%d chats=%d, want 1/1", users, chats)
@@ -303,7 +303,7 @@ VALUES ($1, $2, 'feishu', 'oc_rb_chat', 'p2p')
 			t.Fatal("different agent rebind reused the old installation_id; the blocking revoked row was not cleared")
 		}
 		if inst.Status != "installed" {
-			t.Fatalf("new installation status=%q, want active", inst.Status)
+			t.Fatalf("new installation status=%q, want installed", inst.Status)
 		}
 		// The old revoked row is gone (its unique app_id slot is freed for B).
 		if _, err := store.GetLarkInstallation(ctx, oldID); !errors.Is(err, pgx.ErrNoRows) {
@@ -521,7 +521,7 @@ VALUES ($1, 'feishu', 'im.message.receive_v1', $2, 'revoked_installation')`, idS
 		return n
 	}
 	if n := count(`SELECT count(*) FROM channel_installation WHERE id = $1 AND status = 'installed'`, idStr); n != 1 {
-		t.Fatalf("reactivated installation was deleted by the racing rebind: %d active rows", n)
+		t.Fatalf("reactivated installation was deleted by the racing rebind: %d installed rows", n)
 	}
 	if n := count(`SELECT count(*) FROM channel_user_binding WHERE installation_id = $1`, idStr); n != 1 {
 		t.Fatalf("member link wiped by the racing rebind: got %d, want 1", n)
@@ -541,7 +541,7 @@ VALUES ($1, 'feishu', 'im.message.receive_v1', $2, 'revoked_installation')`, idS
 // branch of the reclaim gate — the #4810 fix. An installation whose owning
 // workspace or agent has been hard-deleted is a dead orphan still occupying the
 // (channel_type, app_id) routing slot; the reclaim must clear it so the bot can
-// be rebound. A live owner — an active agent, INCLUDING an archived one — must be
+// be rebound. A live owner — an existing agent, INCLUDING an archived one — must be
 // left in place so the follow-up upsert refuses the rebind rather than stealing
 // the bot, and InstallationOwnerByAppID must report who holds it (so the caller
 // can build an accurate conflict message).
@@ -607,14 +607,14 @@ RETURNING id
 		}
 	})
 
-	t.Run("live active owner is refused, not stolen", func(t *testing.T) {
+	t.Run("live installed owner is refused, not stolen", func(t *testing.T) {
 		clean()
 		id := insert(rbAppLive, rbWS, rbAgentA, "installed")
 		if err := store.ReclaimDeadInstallationByAppID(ctx, wsUUID, agentBUUID, rbAppLive); err != nil {
 			t.Fatalf("ReclaimDeadInstallationByAppID: %v", err)
 		}
 		if !exists(id) {
-			t.Fatal("a live active owner was reclaimed; agent B would silently steal the bot")
+			t.Fatal("a live installed owner was reclaimed; agent B would silently steal the bot")
 		}
 		owner, err := store.InstallationOwnerByAppID(ctx, rbAppLive)
 		if err != nil {

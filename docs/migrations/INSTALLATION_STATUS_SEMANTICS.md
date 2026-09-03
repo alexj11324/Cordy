@@ -57,8 +57,10 @@ deletion deadline.
   The overall run failed a separate daemon preparation-timeout test: its 150ms
   timer could expire before the expected request checkpoint. `4410febcc`
   separates the real deadline assertion from checkpoint-triggered cancellation
-  and removes sleep-based lease-count polling. Required replacement checks are
-  tracked on the PR; the earlier package results are not a claim of full CI.
+  and removes sleep-based lease-count polling. Replacement CI
+  [33781049938](https://github.com/alexj11324/Cordy/actions/runs/33781049938)
+  passed all applicable jobs on `4410febcc`, including the full backend race
+  suite. Subsequent frontend/copy changes require their own PR checks.
 - The ordinary Desktop build passed without invoking backend tooling; existing
   CSS highlight and dynamic-import warnings remain.
 - Real in-app browser, real shared components/API client, local HTTP fixtures:

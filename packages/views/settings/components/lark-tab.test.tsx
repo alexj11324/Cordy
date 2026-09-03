@@ -550,7 +550,7 @@ describe("LarkAgentBotConnectedBadge (Unbind / Disconnect)", () => {
     });
     // Cache must NOT be invalidated on failure — invalidating would
     // round-trip a refetch, momentarily flicker the row away even
-    // though the install is still active server-side.
+    // though the bot is still installed server-side.
     expect(mockInvalidate).not.toHaveBeenCalled();
     // Badge stays mounted so the user can retry.
     expect(screen.getByTestId("lark-agent-bot-connected")).toBeTruthy();

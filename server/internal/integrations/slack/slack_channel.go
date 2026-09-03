@@ -231,7 +231,7 @@ type ChannelDeps struct {
 }
 
 // RegisterSlack registers the per-installation Slack Factory so the
-// engine.Supervisor builds + supervises one slackChannel per active Slack
+// engine.Supervisor builds + supervises one slackChannel per connectable Slack
 // installation. "Adding Slack inbound" is this call plus the adapter — no engine
 // edit (the same contract as lark.RegisterFeishu).
 func RegisterSlack(reg *channel.Registry, deps ChannelDeps) {

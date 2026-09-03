@@ -222,7 +222,7 @@ describe("DingTalkAgentBindButton", () => {
     expect(secretInput.getAttribute("type")).toBe("password");
   });
 
-  it("shows the connected badge (not the CTA) when the agent already has an active install", () => {
+  it("shows the installation status (not the CTA) when the agent already has an installed bot", () => {
     installationsRef.current = {
       installations: [{ id: "i1", agent_id: "agent-1", status: "installed" }],
       configured: true,

@@ -174,7 +174,7 @@ func TestUpsert_TakesOverRevokedOwnerOnDifferentAgent(t *testing.T) {
 	}
 }
 
-// A LIVE (active) owner on another agent must still be refused with an accurate
+// A LIVE (installed) owner on another agent must still be refused with an accurate
 // same-workspace conflict — reclaim must not steal a live slot.
 func TestUpsert_RefusesLiveOwnerOnDifferentAgent(t *testing.T) {
 	ctx, pool, svc, probe := setupReclaim(t)
@@ -215,7 +215,7 @@ func TestUpsert_SameAgentReconnectInPlace(t *testing.T) {
 		t.Fatalf("same-agent reconnect should succeed, got: %v", err)
 	}
 	if got.Status != InstallationInstalled {
-		t.Errorf("status after reconnect = %q, want active", got.Status)
+		t.Errorf("status after reconnect = %q, want installed", got.Status)
 	}
 	var n int
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM channel_installation WHERE config->>'app_id' = $1`, wcRclBotSame).Scan(&n); err != nil {

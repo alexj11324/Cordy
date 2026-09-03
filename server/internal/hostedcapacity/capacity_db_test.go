@@ -127,7 +127,7 @@ func TestReconcileAgainstPostgres(t *testing.T) {
 		t.Fatalf("read paused installation: %v", err)
 	}
 	if pausedAt == nil || statusRow != "installed" {
-		t.Fatalf("paused installation: hosted_paused_at=%v status=%s, want a pause marker on an active row", pausedAt, statusRow)
+		t.Fatalf("paused installation: hosted_paused_at=%v status=%s, want a pause marker on an installed row", pausedAt, statusRow)
 	}
 	var observationState, observationCode, observer string
 	if err := pool.QueryRow(ctx, `

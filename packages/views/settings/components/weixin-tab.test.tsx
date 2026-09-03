@@ -209,7 +209,7 @@ describe("WeixinTab", () => {
     });
   });
 
-  it("renders unknown installation statuses as a safe non-active fallback", () => {
+  it("renders unknown installation statuses as a safe unavailable fallback", () => {
     installationsRef.current = {
       installations: [{ id: "installation-unknown", agent_id: "agent-1", bot_id: "bot", status: "future_status" }],
       configured: true,

@@ -243,7 +243,7 @@ describe("WecomAgentBindButton", () => {
     expect(mockRegisterBYO.mock.calls[0]?.[2].bot_name).toBeUndefined();
   });
 
-  it("shows the connected badge (not the CTA) when the agent has an active install", () => {
+  it("shows the installation status (not the CTA) when the agent has an installed bot", () => {
     installationsRef.current = {
       installations: [{ id: "i1", agent_id: "agent-1", bot_id: "aibot_x", status: "installed" }],
       configured: true,

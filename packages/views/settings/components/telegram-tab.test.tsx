@@ -157,7 +157,7 @@ describe("TelegramAgentBindButton", () => {
     expect(mockInvalidate).not.toHaveBeenCalled();
   });
 
-  it("shows the connected badge (not the CTA) when the agent already has an active install", () => {
+  it("shows the installation status (not the CTA) when the agent already has an installed bot", () => {
     installationsRef.current = {
       installations: [
         { id: "i1", agent_id: "agent-1", status: "installed", bot_username: "my_bot" },

@@ -313,7 +313,7 @@ func (r *dispatchSlotRegistry) size() int {
 }
 
 // RegisterDingTalk registers the per-installation DingTalk Factory so the
-// engine.Supervisor builds + supervises one dingtalkChannel per active
+// engine.Supervisor builds + supervises one dingtalkChannel per connectable
 // installation.
 func RegisterDingTalk(reg *channel.Registry, deps ChannelDeps) {
 	reg.Register(TypeDingTalk, newDingTalkFactory(deps))

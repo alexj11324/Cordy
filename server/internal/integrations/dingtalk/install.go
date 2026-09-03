@@ -184,7 +184,7 @@ func (s *InstallService) persistInstall(ctx context.Context, p installPersist, l
 	// Free the (dingtalk, app_id) routing slot from any DEAD prior owner — a
 	// revoked placeholder, or an orphan whose owning workspace/agent was deleted
 	// (#4810) — before the upsert, so a robot whose old owner is gone can be
-	// rebound. A live owner (active agent, including an archived one) is left in
+	// rebound. A live owner (existing agent, including an archived one) is left in
 	// place and trips the unique index below, which we turn into an accurate
 	// conflict.
 	if _, err := qtx.ReclaimDeadChannelInstallationByAppID(ctx, db.ReclaimDeadChannelInstallationByAppIDParams{

@@ -237,7 +237,7 @@ func TestUpsert_ProbesOnceOnAFreeSlot(t *testing.T) {
 		t.Fatalf("Upsert on a free slot = %v, want success", err)
 	}
 	if got.Status != InstallationInstalled {
-		t.Fatalf("status = %q, want active", got.Status)
+		t.Fatalf("status = %q, want installed", got.Status)
 	}
 	if n := probe.callCount(); n != 1 {
 		t.Fatalf("probe called %d time(s), want 1", n)

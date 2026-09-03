@@ -39,7 +39,10 @@ runtime projection and six adapter reports are now implemented. CI
 [33779190800](https://github.com/alexj11324/Cordy/actions/runs/33779190800)
 passed migration, handler, all six provider packages, sqlc and frontend checks;
 its overall failure was a daemon timing-sensitive test, repaired in `4410febcc`
-with explicit request checkpoints. Replacement CI is tracked on the PR.
+with explicit request checkpoints. Replacement CI
+[33781049938](https://github.com/alexj11324/Cordy/actions/runs/33781049938)
+passed all applicable jobs on `4410febcc`; later copy changes have their own
+PR checks.
 See [Installation and connection terminology](INSTALLATION_STATUS_SEMANTICS.md)
 for the complete installed-state rename, focused tests and browser evidence.
 

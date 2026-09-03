@@ -207,7 +207,7 @@ func (s *InstallationService) Upsert(ctx context.Context, p InstallationParams, 
 	// tionByAppID deletes any DEAD owner of this bot's slot (a revoked row held
 	// by a DIFFERENT (workspace, agent), or an orphan whose workspace/agent was
 	// deleted) and clears its dependent rows in the same statement, while
-	// leaving a LIVE owner (active or archived agent) in place to trip the
+	// leaving a LIVE owner (existing agent, including an archived one) in place to trip the
 	// index below. botSlotConflictErr has already refused every live owner
 	// above, so reaching that unique violation now means the slot changed hands
 	// despite the lock; botOwnerConflictErr still turns it into an accurate 409

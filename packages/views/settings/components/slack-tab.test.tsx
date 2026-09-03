@@ -295,7 +295,7 @@ describe("SlackTab", () => {
     renderUI(<SlackTab />);
     expect(screen.getByText("Slack workspace T1")).toBeTruthy();
     expect(screen.queryByTestId("actor-avatar")).toBeNull();
-    // An active managed install replaces the connect button.
+    // An installed managed bot replaces the connect button.
     expect(screen.queryByTestId("slack-managed-connect")).toBeNull();
   });
 });

@@ -613,7 +613,7 @@ type ChannelDeps struct {
 }
 
 // RegisterWecom registers the per-installation wecom smart-bot Factory so
-// the engine.Supervisor builds + supervises one wecomChannel per active
+// the engine.Supervisor builds + supervises one wecomChannel per connectable
 // installation. "Adding wecom smart-bot inbound" is this call plus the
 // adapter — no engine edit (same contract as lark.RegisterFeishu /
 // slack.RegisterSlack).

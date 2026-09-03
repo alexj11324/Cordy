@@ -149,7 +149,7 @@ func (s *ChannelStore) UpsertLarkInstallation(ctx context.Context, arg UpsertIns
 // ORPHAN whose owning workspace/agent has been deleted (#4810) — together with
 // every dependent row of that installation, in a single statement. A live owner
 // is deliberately left in place: the SAME agent's own revoked row (reactivated by
-// the follow-up upsert), and any ACTIVE owner whose agent still exists — including
+// the follow-up upsert), and any installed owner whose agent still exists — including
 // an ARCHIVED agent, since archiving is reversible — so the upsert surfaces a
 // conflict instead of silently stealing the bot. See the full contract, and the
 // TOCTOU / EvalPlanQual reasoning, on ReclaimDeadChannelInstallationByAppID.

@@ -597,7 +597,7 @@ func TestSupervisorReapsSupervisorWhenRevoked(t *testing.T) {
 		t.Fatalf("channel never connected")
 	}
 
-	// Revoke: drop from the active list.
+	// Revoke: drop from the connectable list.
 	q.mu.Lock()
 	q.installations = nil
 	q.mu.Unlock()

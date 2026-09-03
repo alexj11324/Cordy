@@ -625,7 +625,7 @@ func (s *RegistrationService) finishSuccess(ctx context.Context, sess *registrat
 	// UpsertChannelInstallation INSERT below. Reclaim it first — the transaction
 	// wraps both the delete and the upsert so a failure between them rolls back
 	// cleanly. A live owner is left in place (the SAME agent's own revoked row is
-	// reactivated in place by the upsert; an active/archived agent stays owned),
+	// reactivated in place by the upsert; an existing agent, including an archived one, stays owned),
 	// so the upsert surfaces the conflict below instead of stealing the bot.
 	if err := qtx.ReclaimDeadInstallationByAppID(ctx, sess.workspaceID, sess.agentID, res.ClientID); err != nil {
 		s.cfg.Logger.Warn("lark registration: reclaim dead installation",

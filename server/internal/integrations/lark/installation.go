@@ -122,7 +122,7 @@ func (s *InstallationService) GetInWorkspace(ctx context.Context, id, workspaceI
 }
 
 // ListByWorkspace returns every installation rooted at the workspace,
-// active and revoked, oldest first. The status column lets the UI
+// installed and revoked, oldest first. The status column lets the UI
 // distinguish "wired up" from "torn down but kept for audit".
 func (s *InstallationService) ListByWorkspace(ctx context.Context, workspaceID pgtype.UUID) ([]Installation, error) {
 	return s.queries.ListLarkInstallationsByWorkspace(ctx, workspaceID)

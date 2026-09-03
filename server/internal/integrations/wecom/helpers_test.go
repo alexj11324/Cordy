@@ -32,7 +32,7 @@ func TestEncodeInstallConfigRoundTrip(t *testing.T) {
 		t.Errorf("SecretEncrypted round trip = %q, want sealed", out.SecretEncrypted)
 	}
 	if out.Status != InstallationInstalled {
-		t.Errorf("Status = %q, want active", out.Status)
+		t.Errorf("Status = %q, want installed", out.Status)
 	}
 }
 

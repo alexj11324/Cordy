@@ -217,7 +217,7 @@ type ChannelDeps struct {
 }
 
 // RegisterTelegram registers the per-installation Telegram Factory so the
-// engine.Supervisor builds + supervises one polling loop per active Telegram
+// engine.Supervisor builds + supervises one polling loop per connectable Telegram
 // installation. Same contract as lark.RegisterFeishu / slack.RegisterSlack —
 // no engine edit.
 func RegisterTelegram(reg *channel.Registry, deps ChannelDeps) {

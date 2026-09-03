@@ -81,7 +81,7 @@ func TestRegisterManagedPersistsTeamKeyedInstall(t *testing.T) {
 		t.Fatal("bot token must be sealed at rest, never plaintext")
 	}
 	if row.WorkspaceID != wsID || row.Status != "installed" {
-		t.Errorf("returned row = %+v, want the active workspace install", row)
+		t.Errorf("returned row = %+v, want the installed workspace bot", row)
 	}
 }
 
