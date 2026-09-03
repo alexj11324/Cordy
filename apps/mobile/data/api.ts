@@ -16,10 +16,13 @@
 import type {
   Agent,
   AgentTask,
+  AgentThreadResponse,
   Attachment,
   ChatMessage,
   ChatPendingTask,
   ChatSession,
+  ContinueAgentThreadRequest,
+  ContinueAgentThreadResponse,
   Comment,
   CreateIssueRequest,
   CreateLabelRequest,
@@ -91,6 +94,7 @@ import {
   ActiveTasksResponseSchema,
   AgentListSchema,
   AgentTaskListSchema,
+  AgentThreadResponseSchema,
   AttachmentListSchema,
   AttachmentSchema,
   ChatMessageListSchema,
@@ -98,6 +102,7 @@ import {
   ChatPendingTaskSchema,
   ChatSessionListSchema,
   ChatSessionSchema,
+  ContinueAgentThreadResponseSchema,
   EMPTY_ACTIVE_TASKS_RESPONSE,
   EMPTY_AGENT_LIST,
   EMPTY_AGENT_TASK_LIST,
@@ -1425,6 +1430,63 @@ class ApiClient {
       TaskMessageListSchema,
       EMPTY_TASK_MESSAGE_LIST,
       { ...opts, endpoint: "GET /api/tasks/:id/messages" },
+    );
+  }
+
+  async getAgentThread(
+    taskId: string,
+    opts?: { signal?: AbortSignal },
+  ): Promise<AgentThreadResponse> {
+    return this.fetchValidated(
+      `/api/tasks/${taskId}/agent-thread`,
+      AgentThreadResponseSchema,
+      {
+        task: {
+          id: "",
+          agent_id: "",
+          runtime_id: "",
+          issue_id: "",
+          status: "cancelled",
+          priority: 0,
+          dispatched_at: null,
+          started_at: null,
+          completed_at: null,
+          result: null,
+          error: null,
+          created_at: "",
+        },
+        thread_tasks: [],
+        current_task_id: "",
+        agent: { id: "", name: "", avatar_url: null },
+        events: [],
+        availability: {
+          state: "unavailable",
+          reason_code: "invalid_response",
+          reason: "The Agent thread response was invalid.",
+        },
+        can_continue: false,
+      },
+      { ...opts, endpoint: "GET /api/tasks/:id/agent-thread" },
+    );
+  }
+
+  async continueAgentThread(
+    taskId: string,
+    request: ContinueAgentThreadRequest,
+  ): Promise<ContinueAgentThreadResponse> {
+    const raw = await this.fetch<unknown>(
+      `/api/tasks/${taskId}/agent-thread/continue`,
+      {
+        method: "POST",
+        headers: { "Idempotency-Key": request.idempotency_key },
+        body: JSON.stringify(request),
+      },
+    );
+    return parseWithFallback(
+      raw,
+      ContinueAgentThreadResponseSchema,
+      { continuation_task_id: "", status: "queued" },
+      { endpoint: "POST /api/tasks/:id/agent-thread/continue" },
     );
   }
 

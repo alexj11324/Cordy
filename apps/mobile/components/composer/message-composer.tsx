@@ -115,12 +115,16 @@ interface Props {
    *  this to show a Stop affordance while the agent is running. */
   isSending?: boolean;
   renderStop?: () => ReactNode;
+  /** Keep the send affordance visible while a provider lane accepts queued work. */
+  allowSubmitWhileSending?: boolean;
 
   /** Hard-disable. Used when chat has no usable agent. The pill shows
    *  `disabledReason` instead of `pillLabel`, and the pill is
    *  non-interactive (cannot expand). */
   disabled?: boolean;
   disabledReason?: string;
+  /** Hide file/image controls for endpoints without attachment binding. */
+  showAttachments?: boolean;
 
   /** When true the composer renders flush at the bottom of its parent
    *  WITHOUT the KeyboardStickyView keyboard-aware lift + safe-area
@@ -168,8 +172,10 @@ export function MessageComposer({
   expandTrigger,
   isSending = false,
   renderStop,
+  allowSubmitWhileSending = false,
   disabled = false,
   disabledReason,
+  showAttachments = true,
   manageKeyboard = true,
 }: Props) {
   const { colorScheme } = useColorScheme();
@@ -226,7 +232,7 @@ export function MessageComposer({
   const hasInFlightUpload = attachments.some((a) => a.status === "uploading");
   const canSend =
     !disabled &&
-    !isSending &&
+    (!isSending || allowSubmitWhileSending) &&
     !submitting &&
     !hasInFlightUpload &&
     (text.trim().length > 0 || mentions.length > 0);
@@ -558,24 +564,27 @@ export function MessageComposer({
             accessibilityLabel="Mention someone or an issue"
             className="h-8 w-8"
           />
-          <IconButton
-            name="image-outline"
-            iconSize={20}
-            onPress={onImagePress}
-            accessibilityLabel="Upload image"
-            className="h-8 w-8"
-          />
-          <IconButton
-            name="attach-outline"
-            iconSize={20}
-            onPress={onFilePress}
-            accessibilityLabel="Upload file"
-            className="h-8 w-8"
-          />
+          {showAttachments ? (
+            <>
+              <IconButton
+                name="image-outline"
+                iconSize={20}
+                onPress={onImagePress}
+                accessibilityLabel="Upload image"
+                className="h-8 w-8"
+              />
+              <IconButton
+                name="attach-outline"
+                iconSize={20}
+                onPress={onFilePress}
+                accessibilityLabel="Upload file"
+                className="h-8 w-8"
+              />
+            </>
+          ) : null}
           <View className="flex-1" />
-          {isSending && renderStop ? (
-            renderStop()
-          ) : (
+          {isSending && renderStop ? renderStop() : null}
+          {!isSending || allowSubmitWhileSending ? (
             <IconButton
               name="arrow-up"
               iconSize={18}
@@ -588,7 +597,7 @@ export function MessageComposer({
               accessibilityLabel="Send"
               accessibilityState={{ disabled: !canSend }}
             />
-          )}
+          ) : null}
         </View>
       </View>
     </View>

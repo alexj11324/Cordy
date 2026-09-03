@@ -14,10 +14,12 @@ import type {
   Agent,
   AgentInvocationTarget,
   AgentTask,
+  AgentThreadResponse,
   Attachment,
   ChatMessage,
   ChatPendingTask,
   ChatSession,
+  ContinueAgentThreadResponse,
   Comment,
   InboxItem,
   IssueLabelsResponse,
@@ -413,9 +415,7 @@ export const AgentTaskSchema: z.ZodType<AgentTask> = z.object({
   agent_id: z.string().default(""),
   runtime_id: z.string().default(""),
   issue_id: z.string().default(""),
-  status: z
-    .enum(["queued", "dispatched", "running", "completed", "failed", "cancelled"])
-    .catch("queued"),
+  status: z.string().catch("unknown"),
   priority: z.number().default(0),
   dispatched_at: z.string().nullable().default(null),
   started_at: z.string().nullable().default(null),
@@ -427,22 +427,56 @@ export const AgentTaskSchema: z.ZodType<AgentTask> = z.object({
   // so downstream truthy checks (`if (task.failure_reason)`) don't have to
   // special-case both null/undefined AND "".
   failure_reason: z
-    .enum(["agent_error", "timeout", "runtime_offline", "runtime_recovery", "manual", ""])
+    .string()
+    .nullable()
     .optional()
-    .catch("")
-    .transform((v) => (v === "" ? undefined : v)),
+    .transform((value) => value ?? undefined),
   created_at: z.string().default(""),
   chat_session_id: z.string().optional(),
   automation_run_id: z.string().optional(),
   parent_task_id: z.string().optional(),
   attempt: z.number().optional(),
   trigger_comment_id: z.string().optional(),
+  agent_thread_message: z.string().optional(),
   trigger_summary: z.string().optional(),
-  kind: z.enum(["comment", "automation", "chat", "quick_create", "direct"]).optional().catch("direct"),
+  kind: z
+    .enum(["comment", "automation", "chat", "quick_create", "direct", "message_bus"])
+    .optional()
+    .catch("direct"),
   work_dir: z.string().optional(),
-}).loose();
+}).loose() as unknown as z.ZodType<AgentTask>;
 
 export const AgentTaskListSchema = z.array(AgentTaskSchema).default([]);
+
+const AgentThreadAvailabilitySchema = z.object({
+  state: z
+    .unknown()
+    .transform((state) => (state === "available" ? "available" : "unavailable"))
+    .default("unavailable"),
+  reason_code: z.string().optional(),
+  reason: z.string().optional(),
+}).loose();
+
+const AgentThreadAgentSchema = z.object({
+  id: z.string().default(""),
+  name: z.string().default(""),
+  avatar_url: z.string().nullable().default(null),
+}).loose();
+
+export const AgentThreadResponseSchema: z.ZodType<AgentThreadResponse> = z.object({
+  task: AgentTaskSchema,
+  thread_tasks: z.array(AgentTaskSchema).default([]),
+  current_task_id: z.string().default(""),
+  agent: AgentThreadAgentSchema,
+  events: z.array(TaskMessagePayloadSchema).default([]),
+  availability: AgentThreadAvailabilitySchema,
+  can_continue: z.boolean().default(false),
+}).loose() as unknown as z.ZodType<AgentThreadResponse>;
+
+export const ContinueAgentThreadResponseSchema: z.ZodType<ContinueAgentThreadResponse> = z.object({
+  continuation_task_id: z.string().default(""),
+  status: z.enum(["queued", "coalesced"]).default("queued"),
+}).loose();
 
 export const ActiveTasksResponseSchema = z.object({
   tasks: z.array(AgentTaskSchema).default([]),

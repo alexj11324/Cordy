@@ -1,0 +1,88 @@
+const agentThread = {
+  thread_title: "Agent スレッド",
+  runs_title: "Agent の実行",
+  active: "実行中",
+  past: "履歴",
+  open_thread_for: "{{summary}} の Agent スレッドを開く",
+  tool_fallback: "ツール",
+  tool_result_ready: "結果あり",
+  process_steps_one: "{{count}} ステップ",
+  process_steps_other: "{{count}} ステップ",
+  cancel_task_title: "タスクをキャンセルしますか？",
+  cancel_task_body: "Agent は現在のステップが終わると停止します。",
+  keep_running: "実行を続ける",
+  cancel_task: "タスクをキャンセル",
+  cancel: "キャンセル",
+  comment_task: "コメントタスク",
+  automation_run: "Automation の実行",
+  chat_task: "チャットタスク",
+  quick_create: "クイック作成",
+  task: "タスク",
+  agent: "Agent",
+  continue_prompt: "この Agent スレッドを続ける",
+  permission_denied: "この Agent スレッドを続ける権限がありません。",
+  unavailable: "この Agent スレッドは続行できません。",
+  could_not_continue: "Agent スレッドを続けられませんでした。",
+  unable_to_stop: "Agent を停止できません",
+  unavailable_fallback: "この Agent スレッドは続行できません。",
+  reason_provider_session_retired:
+    "Provider セッションは削除または無効化されており、復元できません。",
+  reason_provider_session_missing:
+    "Provider セッションのデータがないため、この Agent スレッドを安全に続行できません。",
+  reason_fresh_session_required:
+    "この実行は新しい Provider セッションで開始されたため、以前のスレッドを続行できません。",
+  reason_provider_session_not_established:
+    "この実行の Provider セッションはまだ確立されていません。",
+  reason_agent_archived:
+    "この Agent はアーカイブされているため、スレッドを続行できません。",
+  reason_agent_runtime_unbound:
+    "この Agent はランタイムに接続されていないため、スレッドを続行できません。",
+  reason_agent_runtime_rebound:
+    "この Agent は別のランタイムに再接続されているため、安全に続行できません。",
+  reason_agent_runtime_missing:
+    "この Agent のランタイムは存在しないため、スレッドを続行できません。",
+  reason_agent_thread_invoke_forbidden:
+    "この Agent スレッドは読めますが、続行する権限がありません。",
+  reason_agent_thread_depth_limit:
+    "この Agent スレッドは続行回数の上限に達しました。",
+  status: {
+    queued: "待機中",
+    deferred: "再試行中",
+    dispatched: "開始中",
+    waiting_local_directory: "ディレクトリ待ち",
+    running: "実行中",
+    completed: "完了",
+    failed: "失敗",
+    cancelled: "キャンセル済み",
+  },
+  failure: {
+    queued_expired: "キューの期限切れ",
+    runtime_offline: "ランタイムがオフライン",
+    runtime_recovery: "ランタイムを復旧中",
+    timeout: "タイムアウト",
+    iteration_limit: "反復上限に達しました",
+    agent_blocked: "入力が必要です",
+    api_invalid_request: "リクエストが拒否されました",
+    skill_bundle_unavailable: "スキルのダウンロードに失敗",
+    runtime_cli_timeout: "ランタイム CLI のタイムアウト",
+    "agent_error.provider_auth_or_access": "認証に失敗",
+    "agent_error.provider_quota_limit": "クォータを使い切りました",
+    "agent_error.provider_capacity_or_rate_limit": "レート制限",
+    "agent_error.provider_server_error": "Provider エラー",
+    "agent_error.provider_network": "ネットワークエラー",
+    "agent_error.process_failure": "Agent プロセスがクラッシュ",
+    "agent_error.empty_or_unparseable_output": "使用できる出力がありません",
+    "agent_error.agent_timeout": "Agent のタイムアウト",
+    "agent_error.context_overflow": "コンテキスト上限超過",
+    "agent_error.missing_config": "設定がありません",
+    "agent_error.model_not_found_or_unavailable": "モデルを利用できません",
+    "agent_error.runtime_version_unsupported": "CLI は未対応",
+    "agent_error.runtime_missing_executable": "CLI が未インストール",
+    "agent_error.unknown": "Agent エラー",
+    agent_error: "Agent エラー",
+    codex_semantic_inactivity: "Codex の無応答タイムアウト",
+    manual: "ユーザーがキャンセル",
+  },
+} as const;
+
+export default agentThread;

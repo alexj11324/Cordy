@@ -52,11 +52,15 @@ interface Props {
   sending: boolean;
   /** Queued tasks remain busy, but do not expose Stop without draft restore. */
   allowStop?: boolean;
+  /** Keep Send available while the provider executes the current turn. */
+  allowSubmitWhileRunning?: boolean;
   /** Hard-disable typing + send. Used when there's no usable agent in the
    *  workspace or the session is archived (legacy). */
   disabled?: boolean;
   /** When `disabled`, replaces the pill label with the reason. */
   disabledReason?: string;
+  /** Hide uploads when the owning endpoint cannot bind attachments. */
+  allowAttachments?: boolean;
 }
 
 const IS_IOS = process.env.EXPO_OS === "ios";
@@ -68,8 +72,10 @@ export function ChatComposer({
   onStop,
   sending,
   allowStop = true,
+  allowSubmitWhileRunning = false,
   disabled = false,
   disabledReason,
+  allowAttachments = true,
 }: Props) {
   const wsSlug = useWorkspaceStore((s) => s.currentWorkspaceSlug);
   const copy = useChatCopy();
@@ -116,7 +122,9 @@ export function ChatComposer({
       pillIcon="chatbubble-ellipses-outline"
       disabled={disabled}
       disabledReason={disabledReason}
+      showAttachments={allowAttachments}
       isSending={sending}
+      allowSubmitWhileSending={allowSubmitWhileRunning}
       renderStop={allowStop ? () => <StopButton onPress={handleStop} /> : undefined}
       manageKeyboard={false}
     />
