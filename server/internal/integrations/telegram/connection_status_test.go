@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -13,15 +14,21 @@ import (
 
 func TestTelegramSuccessfulPollConfirmsConnection(t *testing.T) {
 	var calls atomic.Int64
+	stopServer := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
 		if calls.Add(1) > 1 {
-			<-r.Context().Done()
+			select {
+			case <-r.Context().Done():
+			case <-stopServer:
+			}
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"ok":true,"result":[]}`))
 	}))
 	defer server.Close()
+	defer close(stopServer)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	confirmed := false

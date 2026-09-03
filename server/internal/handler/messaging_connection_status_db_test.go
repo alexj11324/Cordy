@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	dbfx "github.com/patchbay-ai/patchbay/server/internal/testutil"
+	channelfx "github.com/patchbay-ai/patchbay/server/internal/testutil"
 	"github.com/patchbay-ai/patchbay/server/internal/util"
 	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 	"github.com/patchbay-ai/patchbay/server/pkg/dbid"
@@ -25,7 +25,7 @@ func TestConnectionStatusOwnershipAndPublicProjectionDB(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(pool.Close)
-	fx := dbfx.New(pool, "", "")
+	fx := channelfx.New(pool, "", "")
 	suffix := util.UUIDToString(dbid.NewV7())
 	fx.UserID = fx.User(t, "Connection status", suffix+"@example.test")
 	fx.WorkspaceID = fx.Workspace(t, "Connection status", "connection-"+suffix)

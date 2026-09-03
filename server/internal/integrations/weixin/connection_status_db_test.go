@@ -2,6 +2,7 @@ package weixin
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -26,15 +27,21 @@ func TestWeixinSuccessfulPollConfirmsConnectionDB(t *testing.T) {
 	}
 	t.Cleanup(pool.Close)
 	var calls atomic.Int64
+	stopServer := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
 		if calls.Add(1) > 1 {
-			<-r.Context().Done()
+			select {
+			case <-r.Context().Done():
+			case <-stopServer:
+			}
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"ret":0,"msgs":[]}`))
 	}))
 	defer server.Close()
+	defer close(stopServer)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	confirmed := false
