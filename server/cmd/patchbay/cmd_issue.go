@@ -212,7 +212,7 @@ var issueUpdateCmd = &cobra.Command{
 
 var issueAssignCmd = &cobra.Command{
 	Use:   "assign <id>",
-	Short: "Assign an issue to a member, agent, or team",
+	Short: "Set or clear an issue's executor (agent or team)",
 	Args:  exactArgs(1),
 	RunE:  runIssueAssign,
 }
@@ -479,8 +479,10 @@ func init() {
 	issueListCmd.Flags().Bool("full-id", false, "Show full UUIDs in table output")
 	issueListCmd.Flags().String("status", "", "Filter by status")
 	issueListCmd.Flags().String("priority", "", "Filter by priority")
-	issueListCmd.Flags().String("assignee", "", "Filter by assignee name (member, agent, or team; fuzzy match)")
-	issueListCmd.Flags().String("assignee-id", "", "Filter by assignee UUID — member, agent, or team (mutually exclusive with --assignee)")
+	issueListCmd.Flags().String("owner", "", "Filter by human owner name (workspace member; fuzzy match)")
+	issueListCmd.Flags().String("owner-id", "", "Filter by human owner UUID (mutually exclusive with --owner)")
+	issueListCmd.Flags().String("executor", "", "Filter by execution target name (agent or team; fuzzy match)")
+	issueListCmd.Flags().String("executor-id", "", "Filter by execution target UUID — agent or team (mutually exclusive with --executor)")
 	issueListCmd.Flags().String("project", "", "Filter by project ID")
 	issueListCmd.Flags().StringSlice("metadata", nil, "Filter by metadata key=value (repeatable; combined with AND). Value is JSON-parsed: 'true'/'false' → bool, numbers → number, otherwise string. Wrap as '\"42\"' to force a string when the value would otherwise sniff as a number.")
 	issueListCmd.Flags().Int("limit", 50, "Maximum number of issues to return in one page (the server caps a page at 100; use --offset to page through more)")
@@ -505,8 +507,6 @@ func init() {
 	issueCreateCmd.Flags().Bool("allow-external-file", false, "Allow --description-file / --attachment to read a path outside the current working directory. Off by default so a stale file from another run/environment can't be picked up (MUL-4252).")
 	issueCreateCmd.Flags().String("status", "", "Issue status")
 	issueCreateCmd.Flags().String("priority", "", "Issue priority")
-	issueCreateCmd.Flags().String("assignee", "", "Owner (member) or executor (agent/team) name; fuzzy match")
-	issueCreateCmd.Flags().String("assignee-id", "", "Owner or executor UUID (member → owner, agent/team → executor)")
 	issueCreateCmd.Flags().String("owner", "", "Owner member name (fuzzy match)")
 	issueCreateCmd.Flags().String("owner-id", "", "Owner member UUID")
 	issueCreateCmd.Flags().String("executor", "", "Executor agent or team name (fuzzy match)")
@@ -514,7 +514,7 @@ func init() {
 	issueCreateCmd.Flags().String("reviewer", "", "Reviewer name (member, agent, or team; fuzzy match)")
 	issueCreateCmd.Flags().String("reviewer-id", "", "Reviewer UUID")
 	issueCreateCmd.Flags().String("parent", "", "Parent issue ID")
-	issueCreateCmd.Flags().Int("stage", 0, "Stage ordinal (>=1) grouping this sub-issue into an ordered barrier group under its parent; omit for unstaged. The parent assignee is woken only when every sub-issue in a stage finishes.")
+	issueCreateCmd.Flags().Int("stage", 0, "Stage ordinal (>=1) grouping this sub-issue into an ordered barrier group under its parent; omit for unstaged. The parent executor is woken only when every sub-issue in a stage finishes.")
 	issueCreateCmd.Flags().String("project", "", "Project ID")
 	issueCreateCmd.Flags().String("start-date", "", "Start date (calendar day, YYYY-MM-DD)")
 	issueCreateCmd.Flags().String("due-date", "", "Due date (calendar day, YYYY-MM-DD)")
@@ -531,8 +531,6 @@ func init() {
 	issueUpdateCmd.Flags().Bool("allow-external-file", false, "Allow --description-file to read a path outside the current working directory. Off by default so a stale temp file from another run/environment can't be picked up (MUL-4252).")
 	issueUpdateCmd.Flags().String("status", "", "New status")
 	issueUpdateCmd.Flags().String("priority", "", "New priority")
-	issueUpdateCmd.Flags().String("assignee", "", "New owner (member) or executor (agent/team) name; fuzzy match")
-	issueUpdateCmd.Flags().String("assignee-id", "", "New owner or executor UUID (member → owner, agent/team → executor)")
 	issueUpdateCmd.Flags().String("owner", "", "New owner member name (fuzzy match)")
 	issueUpdateCmd.Flags().String("owner-id", "", "New owner member UUID")
 	issueUpdateCmd.Flags().String("executor", "", "New executor agent or team name (fuzzy match)")
@@ -556,10 +554,10 @@ func init() {
 	registerIssueReorderFlags(issueReorderCmd)
 
 	// issue assign
-	issueAssignCmd.Flags().String("to", "", "Assignee name (member, agent, or team; fuzzy match)")
-	issueAssignCmd.Flags().String("to-id", "", "Assignee UUID — member, agent, or team (mutually exclusive with --to)")
-	issueAssignCmd.Flags().Bool("unassign", false, "Remove current assignee")
-	issueAssignCmd.Flags().Bool("no-start", false, "Assign ownership without starting an agent run")
+	issueAssignCmd.Flags().String("to", "", "Executor name (agent or team; fuzzy match)")
+	issueAssignCmd.Flags().String("to-id", "", "Executor UUID — agent or team (mutually exclusive with --to)")
+	issueAssignCmd.Flags().Bool("unassign", false, "Remove the current executor")
+	issueAssignCmd.Flags().Bool("no-start", false, "Set the executor without starting an agent run")
 	issueAssignCmd.Flags().String("output", "json", "Output format: table or json")
 
 	// issue comment list
@@ -654,12 +652,23 @@ func runIssueList(cmd *cobra.Command, _ []string) error {
 	if v, _ := cmd.Flags().GetInt("limit"); v > 0 {
 		params.Set("limit", fmt.Sprintf("%d", v))
 	}
-	_, aID, hasAssignee, resolveErr := pickAssigneeFromFlags(ctx, client, cmd, "assignee", "assignee-id", issueAssigneeKinds)
-	if resolveErr != nil {
-		return fmt.Errorf("resolve assignee: %w", resolveErr)
+	if cmd.Flags().Changed("owner") || cmd.Flags().Changed("owner-id") {
+		_, ownerID, hasOwner, resolveErr := pickAssigneeFromFlags(ctx, client, cmd, "owner", "owner-id", memberOnlyKinds)
+		if resolveErr != nil {
+			return fmt.Errorf("resolve owner: %w", resolveErr)
+		}
+		if hasOwner {
+			params.Set("owner_id", ownerID)
+		}
 	}
-	if hasAssignee {
-		params.Set("executor_id", aID)
+	if cmd.Flags().Changed("executor") || cmd.Flags().Changed("executor-id") {
+		_, executorID, hasExecutor, resolveErr := pickAssigneeFromFlags(ctx, client, cmd, "executor", "executor-id", executorOnlyKinds)
+		if resolveErr != nil {
+			return fmt.Errorf("resolve executor: %w", resolveErr)
+		}
+		if hasExecutor {
+			params.Set("executor_id", executorID)
+		}
 	}
 	if v, _ := cmd.Flags().GetInt("offset"); v > 0 {
 		params.Set("offset", fmt.Sprintf("%d", v))
@@ -736,9 +745,9 @@ func runIssueList(cmd *cobra.Command, _ []string) error {
 	}
 
 	fullID, _ := cmd.Flags().GetBool("full-id")
-	headers := []string{"KEY", "TITLE", "STATUS", "PRIORITY", "ASSIGNEE", "START DATE", "DUE DATE"}
+	headers := []string{"KEY", "TITLE", "STATUS", "PRIORITY", "OWNER", "EXECUTOR", "REVIEWER", "START DATE", "DUE DATE"}
 	if fullID {
-		headers = []string{"KEY", "ID", "TITLE", "STATUS", "PRIORITY", "ASSIGNEE", "START DATE", "DUE DATE"}
+		headers = []string{"KEY", "ID", "TITLE", "STATUS", "PRIORITY", "OWNER", "EXECUTOR", "REVIEWER", "START DATE", "DUE DATE"}
 	}
 	actors := loadActorDisplayLookup(ctx, client)
 	rows := make([][]string, 0, len(issuesRaw))
@@ -747,7 +756,9 @@ func runIssueList(cmd *cobra.Command, _ []string) error {
 		if !ok {
 			continue
 		}
-		assignee := formatAssignee(issue, actors)
+		owner := formatIssueRole(issue, "owner", actors)
+		executor := formatIssueRole(issue, "executor", actors)
+		reviewer := formatIssueRole(issue, "reviewer", actors)
 		startDate := strVal(issue, "start_date")
 		if startDate != "" && len(startDate) >= 10 {
 			startDate = startDate[:10]
@@ -761,7 +772,9 @@ func runIssueList(cmd *cobra.Command, _ []string) error {
 			strVal(issue, "title"),
 			strVal(issue, "status"),
 			strVal(issue, "priority"),
-			assignee,
+			owner,
+			executor,
+			reviewer,
 			startDate,
 			dueDate,
 		}
@@ -772,7 +785,9 @@ func runIssueList(cmd *cobra.Command, _ []string) error {
 				strVal(issue, "title"),
 				strVal(issue, "status"),
 				strVal(issue, "priority"),
-				assignee,
+				owner,
+				executor,
+				reviewer,
 				startDate,
 				dueDate,
 			}
@@ -877,7 +892,9 @@ func runIssueGet(cmd *cobra.Command, args []string) error {
 	output, _ := cmd.Flags().GetString("output")
 	if output == "table" {
 		actors := loadActorDisplayLookup(ctx, client)
-		assignee := formatAssignee(issue, actors)
+		owner := formatIssueRole(issue, "owner", actors)
+		executor := formatIssueRole(issue, "executor", actors)
+		reviewer := formatIssueRole(issue, "reviewer", actors)
 		startDate := strVal(issue, "start_date")
 		if startDate != "" && len(startDate) >= 10 {
 			startDate = startDate[:10]
@@ -886,13 +903,15 @@ func runIssueGet(cmd *cobra.Command, args []string) error {
 		if dueDate != "" && len(dueDate) >= 10 {
 			dueDate = dueDate[:10]
 		}
-		headers := []string{"KEY", "TITLE", "STATUS", "PRIORITY", "ASSIGNEE", "START DATE", "DUE DATE", "DESCRIPTION"}
+		headers := []string{"KEY", "TITLE", "STATUS", "PRIORITY", "OWNER", "EXECUTOR", "REVIEWER", "START DATE", "DUE DATE", "DESCRIPTION"}
 		rows := [][]string{{
 			issueDisplayKey(issue),
 			strVal(issue, "title"),
 			strVal(issue, "status"),
 			strVal(issue, "priority"),
-			assignee,
+			owner,
+			executor,
+			reviewer,
 			startDate,
 			dueDate,
 			strVal(issue, "description"),
@@ -962,7 +981,7 @@ func runIssueChildren(cmd *cobra.Command, args []string) error {
 	output, _ := cmd.Flags().GetString("output")
 	if output == "table" {
 		actors := loadActorDisplayLookup(ctx, client)
-		headers := []string{"STAGE", "KEY", "TITLE", "STATUS", "PRIORITY", "ASSIGNEE"}
+		headers := []string{"STAGE", "KEY", "TITLE", "STATUS", "PRIORITY", "EXECUTOR"}
 		rows := make([][]string, 0, len(children))
 		for _, c := range children {
 			stageCell := "-"
@@ -975,7 +994,7 @@ func runIssueChildren(cmd *cobra.Command, args []string) error {
 				strVal(c, "title"),
 				strVal(c, "status"),
 				strVal(c, "priority"),
-				formatAssignee(c, actors),
+				formatIssueRole(c, "executor", actors),
 			})
 		}
 		cli.PrintTable(os.Stdout, headers, rows)
@@ -1212,7 +1231,7 @@ func runIssueCreate(cmd *cobra.Command, _ []string) error {
 	if v, _ := cmd.Flags().GetBool("allow-duplicate"); v {
 		body["allow_duplicate"] = true
 	}
-	if err := applyIssueRoleFlags(ctx, client, cmd, body, true); err != nil {
+	if err := applyIssueRoleFlags(ctx, client, cmd, body); err != nil {
 		return err
 	}
 
@@ -1379,7 +1398,7 @@ func runIssueUpdate(cmd *cobra.Command, args []string) error {
 		v, _ := cmd.Flags().GetString("due-date")
 		body["due_date"] = v
 	}
-	if err := applyIssueRoleFlags(ctx, client, cmd, body, true); err != nil {
+	if err := applyIssueRoleFlags(ctx, client, cmd, body); err != nil {
 		return err
 	}
 	if cmd.Flags().Changed("parent") {
@@ -1407,7 +1426,7 @@ func runIssueUpdate(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(body) == 0 {
-		return fmt.Errorf("no fields to update; use flags like --title, --status, --priority, --assignee, etc.")
+		return fmt.Errorf("no fields to update; use flags like --title, --status, --priority, --executor, etc.")
 	}
 	if noStart {
 		body["suppress_run"] = true
@@ -1467,24 +1486,15 @@ func runIssueAssign(cmd *cobra.Command, args []string) error {
 	body := map[string]any{}
 	displayTarget := toName
 	if unassign {
-		body["owner_type"] = nil
-		body["owner_id"] = nil
 		body["executor_type"] = nil
 		body["executor_id"] = nil
 	} else {
-		aType, aID, _, resolveErr := pickAssigneeFromFlags(ctx, client, cmd, "to", "to-id", issueAssigneeKinds)
+		aType, aID, _, resolveErr := pickAssigneeFromFlags(ctx, client, cmd, "to", "to-id", executorOnlyKinds)
 		if resolveErr != nil {
-			return fmt.Errorf("resolve assignee: %w", resolveErr)
+			return fmt.Errorf("resolve executor: %w", resolveErr)
 		}
-		if aType == "member" {
-			body["owner_type"] = aType
-			body["owner_id"] = aID
-			body["executor_type"] = nil
-			body["executor_id"] = nil
-		} else {
-			body["executor_type"] = aType
-			body["executor_id"] = aID
-		}
+		body["executor_type"] = aType
+		body["executor_id"] = aID
 		if displayTarget == "" {
 			displayTarget = loadActorDisplayLookup(ctx, client).actor(aType, aID)
 		}
@@ -1499,9 +1509,9 @@ func runIssueAssign(cmd *cobra.Command, args []string) error {
 	}
 
 	if unassign {
-		fmt.Fprintf(os.Stderr, "Issue %s unassigned.\n", issueDisplayKey(result))
+		fmt.Fprintf(os.Stderr, "Issue %s executor cleared.\n", issueDisplayKey(result))
 	} else {
-		fmt.Fprintf(os.Stderr, "Issue %s assigned to %s.\n", issueDisplayKey(result), displayTarget)
+		fmt.Fprintf(os.Stderr, "Issue %s executor set to %s.\n", issueDisplayKey(result), displayTarget)
 	}
 
 	output, _ := cmd.Flags().GetString("output")
@@ -2558,9 +2568,9 @@ type assigneeMatch struct {
 	Name string
 }
 
-// assigneeKinds is the set of entity types a given flag is allowed to resolve
-// to. Issue assignees accept all three (`issueAssigneeKinds`), while
-// project lead and issue subscribers are member-or-agent only
+// assigneeKinds is the set of entity types a given actor flag may resolve to.
+// Reviewer fields accept all three (`allActorKinds`), while project lead and
+// issue subscribers are member-or-agent only
 // (`memberOrAgentKinds`) — the DB CHECK on `project.lead_type` and the
 // `isWorkspaceEntity` switch in the subscriber handler both reject `team`,
 // so resolving to (team, ...) for those callers would surface as a 500 /
@@ -2570,7 +2580,7 @@ type assigneeKinds struct {
 }
 
 var (
-	issueAssigneeKinds = assigneeKinds{member: true, agent: true, team: true}
+	allActorKinds = assigneeKinds{member: true, agent: true, team: true}
 	memberOrAgentKinds = assigneeKinds{member: true, agent: true}
 	// Actor property values are members only (MUL-6286).
 	memberOnlyKinds   = assigneeKinds{member: true}
@@ -2843,15 +2853,14 @@ func resolveAssigneeByID(ctx context.Context, client *cli.APIClient, id string, 
 }
 
 // pickAssigneeFromFlags reads a (name-flag, id-flag) pair off cmd and resolves
-// it to (executor_type, executor_id), restricted to the entity types in
-// kinds. The third return reports whether either flag was *explicitly set*;
-// callers use it to decide whether to write `assignee_*` into the request
-// body. The two flags are mutually exclusive — passing both is rejected
+// it to an explicitly typed actor, restricted to the entity types in kinds.
+// The third return reports whether either flag was *explicitly set*. The two
+// flags are mutually exclusive — passing both is rejected
 // up-front so a script that accidentally sets both never silently applies one
 // over the other.
 //
 // Presence is detected via Flags().Changed (not value-emptiness): a script
-// that interpolates an empty env var (`--assignee-id "$MAYBE_UUID"`) must
+// that interpolates an empty env var (`--executor-id "$MAYBE_UUID"`) must
 // fail loudly through resolveAssignee/resolveAssigneeByID rather than silently
 // degrade to "no filter / unassigned / subscribe caller", which would defeat
 // the strict-UUID guarantee the new flags exist for.
@@ -2880,35 +2889,16 @@ func pickAssigneeFromFlags(ctx context.Context, client *cli.APIClient, cmd *cobr
 	return "", "", false, nil
 }
 
-func formatAssignee(issue map[string]any, actors actorDisplayLookup) string {
-	aType := strVal(issue, "executor_type")
-	aID := strVal(issue, "executor_id")
-	if aType == "" || aID == "" {
-		aType = strVal(issue, "owner_type")
-		aID = strVal(issue, "owner_id")
-	}
+func formatIssueRole(issue map[string]any, role string, actors actorDisplayLookup) string {
+	aType := strVal(issue, role+"_type")
+	aID := strVal(issue, role+"_id")
 	if aType == "" || aID == "" {
 		return ""
 	}
 	return actors.actor(aType, aID)
 }
 
-func applyIssueRoleFlags(ctx context.Context, client *cli.APIClient, cmd *cobra.Command, body map[string]any, includeAssignee bool) error {
-	if includeAssignee && (cmd.Flags().Changed("assignee") || cmd.Flags().Changed("assignee-id")) {
-		aType, aID, has, err := pickAssigneeFromFlags(ctx, client, cmd, "assignee", "assignee-id", issueAssigneeKinds)
-		if err != nil {
-			return fmt.Errorf("resolve assignee: %w", err)
-		}
-		if has {
-			if aType == "member" {
-				body["owner_type"] = aType
-				body["owner_id"] = aID
-			} else {
-				body["executor_type"] = aType
-				body["executor_id"] = aID
-			}
-		}
-	}
+func applyIssueRoleFlags(ctx context.Context, client *cli.APIClient, cmd *cobra.Command, body map[string]any) error {
 	if cmd.Flags().Lookup("owner") != nil && (cmd.Flags().Changed("owner") || cmd.Flags().Changed("owner-id")) {
 		aType, aID, has, err := pickAssigneeFromFlags(ctx, client, cmd, "owner", "owner-id", memberOnlyKinds)
 		if err != nil {
@@ -2930,7 +2920,7 @@ func applyIssueRoleFlags(ctx context.Context, client *cli.APIClient, cmd *cobra.
 		}
 	}
 	if cmd.Flags().Lookup("reviewer") != nil && (cmd.Flags().Changed("reviewer") || cmd.Flags().Changed("reviewer-id")) {
-		aType, aID, has, err := pickAssigneeFromFlags(ctx, client, cmd, "reviewer", "reviewer-id", issueAssigneeKinds)
+		aType, aID, has, err := pickAssigneeFromFlags(ctx, client, cmd, "reviewer", "reviewer-id", allActorKinds)
 		if err != nil {
 			return fmt.Errorf("resolve reviewer: %w", err)
 		}
