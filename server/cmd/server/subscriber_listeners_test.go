@@ -236,6 +236,42 @@ func TestSubscriberIssueUpdated_ExecutorChanged(t *testing.T) {
 	}
 }
 
+func TestSubscriberIssueUpdated_ReviewerChanged(t *testing.T) {
+	queries := db.New(testPool)
+	bus := events.New()
+	registerSubscriberListeners(bus, testPool)
+
+	reviewerID := "00000000-0000-0000-0000-0000000000f3"
+	issueID := createTestIssue(t, testWorkspaceID, testUserID)
+	t.Cleanup(func() { cleanupTestIssue(t, issueID) })
+
+	reviewerType := "agent"
+	bus.Publish(events.Event{
+		Type:        protocol.EventIssueUpdated,
+		WorkspaceID: testWorkspaceID,
+		ActorType:   "member",
+		ActorID:     testUserID,
+		Payload: map[string]any{
+			"issue": handler.IssueResponse{
+				ID:           issueID,
+				WorkspaceID:  testWorkspaceID,
+				Title:        "test issue",
+				Status:       "in_review",
+				Priority:     "medium",
+				CreatorType:  "member",
+				CreatorID:    testUserID,
+				ReviewerType: &reviewerType,
+				ReviewerID:   &reviewerID,
+			},
+			"reviewer_changed": true,
+		},
+	})
+
+	if !isSubscribed(t, queries, issueID, "agent", reviewerID) {
+		t.Fatal("expected new reviewer to be subscribed after reviewer change")
+	}
+}
+
 func TestSubscriberIssueUpdated_NoExecutorChange(t *testing.T) {
 	queries := db.New(testPool)
 	bus := events.New()

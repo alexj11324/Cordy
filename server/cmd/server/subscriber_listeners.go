@@ -29,7 +29,7 @@ func isAssignmentRecipientType(actorType string) bool {
 // serialization boundary (see subscribeDelegatedHuman).
 func registerSubscriberListeners(bus *events.Bus, pool *pgxpool.Pool) {
 	queries := db.New(pool)
-	// issue:created — subscribe creator + owner/executor (if different)
+	// issue:created — subscribe creator plus each explicit issue role.
 	bus.Subscribe(protocol.EventIssueCreated, func(e events.Event) {
 		payload, ok := e.Payload.(map[string]any)
 		if !ok {
@@ -59,6 +59,12 @@ func registerSubscriberListeners(bus *events.Bus, pool *pgxpool.Pool) {
 			addSubscriber(bus, queries, e.WorkspaceID, issue.ID, *issue.ExecutorType, *issue.ExecutorID, "executor")
 		}
 
+		if issue.ReviewerType != nil && issue.ReviewerID != nil &&
+			isAssignmentRecipientType(*issue.ReviewerType) &&
+			!(*issue.ReviewerType == issue.CreatorType && *issue.ReviewerID == issue.CreatorID) {
+			addSubscriber(bus, queries, e.WorkspaceID, issue.ID, *issue.ReviewerType, *issue.ReviewerID, "reviewer")
+		}
+
 		// Subscribe @mentioned users in description
 		if issue.Description != nil && *issue.Description != "" {
 			for _, m := range parseMentions(*issue.Description) {
@@ -74,7 +80,7 @@ func registerSubscriberListeners(bus *events.Bus, pool *pgxpool.Pool) {
 		subscribeDelegatedHuman(bus, pool, queries, e.WorkspaceID, issue.ID)
 	})
 
-	// issue:updated — subscribe new owner/executor or @mentioned users
+	// issue:updated — subscribe new role actors or @mentioned users.
 	bus.Subscribe(protocol.EventIssueUpdated, func(e events.Event) {
 		payload, ok := e.Payload.(map[string]any)
 		if !ok {
@@ -93,6 +99,11 @@ func registerSubscriberListeners(bus *events.Bus, pool *pgxpool.Pool) {
 		if executorChanged, _ := payload["executor_changed"].(bool); executorChanged {
 			if issue.ExecutorType != nil && issue.ExecutorID != nil && isAssignmentRecipientType(*issue.ExecutorType) {
 				addSubscriber(bus, queries, e.WorkspaceID, issue.ID, *issue.ExecutorType, *issue.ExecutorID, "executor")
+			}
+		}
+		if reviewerChanged, _ := payload["reviewer_changed"].(bool); reviewerChanged {
+			if issue.ReviewerType != nil && issue.ReviewerID != nil && isAssignmentRecipientType(*issue.ReviewerType) {
+				addSubscriber(bus, queries, e.WorkspaceID, issue.ID, *issue.ReviewerType, *issue.ReviewerID, "reviewer")
 			}
 		}
 
@@ -279,6 +290,8 @@ func extractIssueFields(v any) (handler.IssueResponse, bool) {
 	issue.ExecutorID, _ = m["executor_id"].(*string)
 	issue.OwnerType, _ = m["owner_type"].(*string)
 	issue.OwnerID, _ = m["owner_id"].(*string)
+	issue.ReviewerType, _ = m["reviewer_type"].(*string)
+	issue.ReviewerID, _ = m["reviewer_id"].(*string)
 	issue.Description, _ = m["description"].(*string)
 	if issue.ID == "" || issue.CreatorID == "" {
 		return handler.IssueResponse{}, false

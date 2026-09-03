@@ -658,6 +658,48 @@ func (q *Queries) GetCoordinationAgentForDispatch(ctx context.Context, arg GetCo
 	return i, err
 }
 
+const lockActiveReviewerTasksForReviewReturn = `-- name: LockActiveReviewerTasksForReviewReturn :many
+SELECT task.id
+FROM agent_task_queue AS task
+WHERE task.issue_id = $1
+  AND task.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity', 'deferred')
+  AND EXISTS (
+      SELECT 1
+      FROM agent_coordination_assignment AS assignment
+      WHERE assignment.issue_id = task.issue_id
+        AND assignment.role = 'reviewer'
+        AND (
+            assignment.dispatched_task_id = task.id
+            OR task.context->>'coordination_assignment_id' = assignment.id::text
+        )
+  )
+ORDER BY task.created_at DESC, task.id DESC
+FOR UPDATE OF task
+`
+
+// Lock order is reviewer task -> issue, matching coordinator promotion. Only
+// tasks correlated to a reviewer coordination assignment are eligible; plain
+// issue tasks must never be retired by a review return.
+func (q *Queries) LockActiveReviewerTasksForReviewReturn(ctx context.Context, issueID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, lockActiveReviewerTasksForReviewReturn, issueID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []pgtype.UUID{}
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockAgentCoordinationIssue = `-- name: LockAgentCoordinationIssue :one
 SELECT issue.id, issue.workspace_id, issue.title, issue.description, issue.status, issue.priority, issue.executor_type, issue.executor_id, issue.creator_type, issue.creator_id, issue.parent_issue_id, issue.acceptance_criteria, issue.context_refs, issue.position, issue.due_date, issue.created_at, issue.updated_at, issue.number, issue.project_id, issue.origin_type, issue.origin_id, issue.first_executed_at, issue.start_date, issue.metadata, issue.stage, issue.properties, issue.revision, issue.last_activity_at, issue.owner_type, issue.owner_id, issue.reviewer_type, issue.reviewer_id, issue.executor_generation
 FROM issue

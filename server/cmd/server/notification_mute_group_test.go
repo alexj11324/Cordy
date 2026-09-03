@@ -31,6 +31,7 @@ func TestIsNotifMutedGroupSplit(t *testing.T) {
 		{"assignments group intact", map[string]string{"assignments": "muted"}, "issue_assigned", true},
 		{"owner changes use assignments", map[string]string{"assignments": "muted"}, "owner_changed", true},
 		{"executor changes use assignments", map[string]string{"assignments": "muted"}, "executor_changed", true},
+		{"review requests use assignments", map[string]string{"assignments": "muted"}, "review_requested", true},
 		{"status group intact", map[string]string{"status_changes": "muted"}, "status_changed", true},
 		{"muting comments leaves assignments alone", map[string]string{"comments": "muted"}, "issue_assigned", false},
 

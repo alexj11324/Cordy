@@ -628,8 +628,12 @@ func main() {
 	// that cache's version, so an idle runtime could keep returning an empty
 	// claim until the cache TTL expires.
 	taskSvc, automationSvc := backgroundServices(h)
-	coordinationSvc := service.NewAgentCoordinationService(queries, pool, taskSvc)
-	taskSvc.Coordination = coordinationSvc
+	coordinationSvc := h.AgentCoordination
+	if coordinationSvc == nil {
+		coordinationSvc = service.NewAgentCoordinationService(queries, pool, taskSvc)
+		taskSvc.Coordination = coordinationSvc
+		h.AgentCoordination = coordinationSvc
+	}
 	coordinationSvc.Start(sweepCtx)
 	registerAutomationListeners(bus, automationSvc)
 

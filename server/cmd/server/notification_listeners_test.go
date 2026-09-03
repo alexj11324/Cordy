@@ -722,6 +722,52 @@ func TestNotification_ExecutorChanged(t *testing.T) {
 	}
 }
 
+func TestNotification_ReviewHandoffRequestsReview(t *testing.T) {
+	queries := db.New(testPool)
+	bus := newNotificationBus(t, queries)
+
+	reviewerID := "00000000-0000-0000-0000-0000000000e4"
+	issueID := createTestIssue(t, testWorkspaceID, testUserID)
+	t.Cleanup(func() {
+		cleanupInboxForIssue(t, issueID)
+		cleanupTestIssue(t, issueID)
+	})
+
+	reviewerType := "agent"
+	bus.Publish(events.Event{
+		Type:        protocol.EventIssueUpdated,
+		WorkspaceID: testWorkspaceID,
+		ActorType:   "member",
+		ActorID:     testUserID,
+		Payload: map[string]any{
+			"issue": handler.IssueResponse{
+				ID:           issueID,
+				WorkspaceID:  testWorkspaceID,
+				Title:        "review handoff issue",
+				Status:       "in_review",
+				Priority:     "medium",
+				CreatorType:  "member",
+				CreatorID:    testUserID,
+				ReviewerType: &reviewerType,
+				ReviewerID:   &reviewerID,
+			},
+			"owner_changed":    false,
+			"executor_changed": false,
+			"reviewer_changed": true,
+			"review_handoff":   true,
+			"status_changed":   false,
+		},
+	})
+
+	items := inboxItemsForRecipientType(t, queries, "agent", reviewerID)
+	if len(items) != 1 || items[0].Type != "review_requested" {
+		t.Fatalf("reviewer items = %#v, want one review_requested", items)
+	}
+	if items[0].Severity != "action_required" {
+		t.Fatalf("review request severity = %q, want action_required", items[0].Severity)
+	}
+}
+
 // TestNotification_TaskCompleted verifies that task:completed events do NOT
 // create inbox notifications (completion is visible from the status change).
 func TestNotification_TaskCompleted(t *testing.T) {

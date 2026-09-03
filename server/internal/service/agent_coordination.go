@@ -82,6 +82,11 @@ type coordinationEventPayload struct {
 	HandoffNote     string `json:"handoff_note,omitempty"`
 	SourceTaskID    string `json:"source_task_id,omitempty"`
 
+	ExplicitReviewer      bool   `json:"explicit_reviewer,omitempty"`
+	ReviewerReassignment bool   `json:"reviewer_reassignment,omitempty"`
+	ReviewerType          string `json:"reviewer_type,omitempty"`
+	ReviewerID            string `json:"reviewer_id,omitempty"`
+
 	OriginatorUserID     string `json:"originator_user_id,omitempty"`
 	AccountableUserID    string `json:"accountable_user_id,omitempty"`
 	OriginatorSource     string `json:"originator_source,omitempty"`
@@ -317,6 +322,31 @@ func (s *AgentCoordinationService) RecordTaskFailedTx(_ context.Context, _ *db.Q
 	return nil
 }
 
+// LockActiveReviewerTasksForReviewReturnTx acquires reviewer task rows before
+// the issue row, matching the coordinator worker's task -> issue lock order.
+func (s *AgentCoordinationService) LockActiveReviewerTasksForReviewReturnTx(ctx context.Context, qtx *db.Queries, issueID pgtype.UUID) ([]pgtype.UUID, error) {
+	taskIDs, err := qtx.LockActiveReviewerTasksForReviewReturn(ctx, issueID)
+	if err != nil {
+		return nil, fmt.Errorf("review return: lock reviewer tasks: %w", err)
+	}
+	return taskIDs, nil
+}
+
+// RetireLockedReviewerTasksForReviewReturnTx cancels only rows fenced by the
+// lock call above. A missing row means its state changed inside the supposed
+// lock window and aborts the issue transaction instead of guessing.
+func (s *AgentCoordinationService) RetireLockedReviewerTasksForReviewReturnTx(ctx context.Context, qtx *db.Queries, taskIDs []pgtype.UUID) ([]db.AgentTaskQueue, error) {
+	retired := make([]db.AgentTaskQueue, 0, len(taskIDs))
+	for _, taskID := range taskIDs {
+		task, err := qtx.CancelAgentTask(ctx, taskID)
+		if err != nil {
+			return nil, fmt.Errorf("review return: retire reviewer task %s: %w", util.UUIDToString(taskID), err)
+		}
+		retired = append(retired, task)
+	}
+	return retired, nil
+}
+
 // RecordReviewReturn is the transaction-owning wrapper for callers that have
 // already changed the issue review state. It reloads the issue by workspace in
 // the producer transaction before writing the event.
@@ -382,19 +412,29 @@ func (s *AgentCoordinationService) RecordReviewerReassignmentTx(ctx context.Cont
 	if err != nil {
 		return fmt.Errorf("reviewer reassignment: load source task: %w", err)
 	}
-	ownerType, ownerID := coordinationIssueOwner(current, CoordinationAssignmentReviewer)
-	if ownerType != "agent" || !ownerID.Valid {
-		return fmt.Errorf("reviewer reassignment: current reviewer is not an agent")
+	reviewerType, reviewerID := coordinationIssueOwner(current, CoordinationAssignmentReviewer)
+	if reviewerType == "" || !reviewerID.Valid {
+		return fmt.Errorf("reviewer reassignment: current reviewer is missing")
 	}
 	payload.AssignmentRole = CoordinationAssignmentReviewer
-	payload.OwnerType = ownerType
-	payload.OwnerID = util.UUIDToString(ownerID)
 	payload.FollowUp = boolPtr(true)
 	payload.Outcome = "reviewer_reassigned"
 	payload.SourceTaskID = util.UUIDToString(sourceTaskID)
 	payload.IssueRevision = int64Ptr(current.Revision)
 	payload.TriggerEvidenceKind = "reviewer_reassignment"
 	payload.TriggerEvidenceRefID = util.UUIDToString(sourceTaskID)
+	payload.ExplicitReviewer = true
+	payload.ReviewerReassignment = true
+	payload.ReviewerType = reviewerType
+	payload.ReviewerID = util.UUIDToString(reviewerID)
+	ownerType := ""
+	ownerID := pgtype.UUID{}
+	if reviewerType == "agent" {
+		ownerType = reviewerType
+		ownerID = reviewerID
+		payload.OwnerType = ownerType
+		payload.OwnerID = util.UUIDToString(ownerID)
+	}
 	return s.enqueueCoordinationEvent(ctx, qtx,
 		"reviewer_reassigned:"+util.UUIDToString(current.ID)+":"+fmt.Sprintf("%d", current.Revision),
 		CoordinationEventTaskCompleted,

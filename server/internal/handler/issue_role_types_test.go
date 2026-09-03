@@ -10,11 +10,11 @@ import (
 	"time"
 )
 
-// Backs the workspace Members/Agents tabs: executor_types on ListIssues must
-// filter server-side (same semantics as the ListGroupedIssues param) so the
-// client no longer post-filters loaded pages, and `total` must agree with the
+// Backs the workspace Members/Agents tabs: member ownership and agent/team
+// execution are separate filters. Both must filter server-side so the client
+// no longer post-filters loaded pages, and `total` must agree with each role
 // filter so per-status pagination counts stay correct.
-func TestListIssues_AssigneeTypesFilter(t *testing.T) {
+func TestListIssues_RoleTypesFilter(t *testing.T) {
 	ctx := context.Background()
 	suffix := time.Now().UnixNano()
 
@@ -99,7 +99,7 @@ func TestListIssues_AssigneeTypesFilter(t *testing.T) {
 	}
 
 	// Members tab: only member-assigned issues, and total agrees.
-	memberIDs, memberTotal := list("&executor_types=member")
+	memberIDs, memberTotal := list("&owner_types=member")
 	if !containsIssueID(memberIDs, memberIssue) {
 		t.Fatalf("member filter missing %s — got %v", memberIssue, memberIDs)
 	}

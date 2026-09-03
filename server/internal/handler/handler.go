@@ -189,6 +189,7 @@ type Handler struct {
 	DaemonWorkspaceRefresh WorkspaceSetRefreshNotifier
 	Bus                    *events.Bus
 	TaskService            *service.TaskService
+	AgentCoordination      *service.AgentCoordinationService
 	PluginService          *service.PluginService
 	IssueService           *service.IssueService
 	AutomationService      *service.AutomationService
@@ -495,6 +496,8 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 	// backs auto-titling. A deployment with no PATCHBAY_LLM_* configuration gets
 	// a disabled client, which turns the feature off rather than failing.
 	taskSvc.QuickActions = llmClient
+	coordinationSvc := service.NewAgentCoordinationService(queries, txStarter, taskSvc)
+	taskSvc.Coordination = coordinationSvc
 	h := &Handler{
 		Queries:                      queries,
 		DB:                           executor,
@@ -505,6 +508,7 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 		DaemonWorkspaceRefresh:       daemonWorkspaceRefresh,
 		Bus:                          bus,
 		TaskService:                  taskSvc,
+		AgentCoordination:            coordinationSvc,
 		PluginService:                service.NewPluginService(queries, txStarter),
 		IssueService:                 service.NewIssueService(queries, txStarter, bus, analyticsClient, taskSvc),
 		AutomationService:            service.NewAutomationService(queries, txStarter, bus, taskSvc),

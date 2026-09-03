@@ -31,6 +31,7 @@ var inboxTypeLabels = map[string]string{
 	"unassigned":         "取消指派",
 	"owner_changed":      "负责人变更",
 	"executor_changed":   "执行者变更",
+	"review_requested":   "请求审核",
 	"priority_changed":   "优先级变更",
 	"due_date_changed":   "截止日期变更",
 	"start_date_changed": "开始日期变更",

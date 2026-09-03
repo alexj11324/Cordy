@@ -12,6 +12,7 @@ export type IssueSubscriberReason =
   | "creator"
   | "owner"
   | "executor"
+  | "reviewer"
   | "commenter"
   | "mentioned"
   | "manual"

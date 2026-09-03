@@ -138,6 +138,7 @@ var notifTypeToGroup = map[string]string{
 	"unassigned":         "assignments",
 	"owner_changed":      "assignments",
 	"executor_changed":   "assignments",
+	"review_requested":   "assignments",
 	"status_changed":     "status_changes",
 	"new_comment":        "comments",
 	"mentioned":          "mentions",
@@ -682,6 +683,22 @@ func registerNotificationListeners(bus *events.Bus, queries *db.Queries) {
 			)
 		}
 
+		if issue.ReviewerType != nil && issue.ReviewerID != nil && isAssignmentRecipientType(*issue.ReviewerType) {
+			skip[*issue.ReviewerID] = true
+			details, _ := json.Marshal(map[string]string{
+				"new_reviewer_type": *issue.ReviewerType,
+				"new_reviewer_id":   *issue.ReviewerID,
+			})
+			notifyDirect(ctx, queries, bus,
+				*issue.ReviewerType, *issue.ReviewerID,
+				issue.WorkspaceID, e, issue.ID, issue.Status,
+				"review_requested", "action_required",
+				issue.Title,
+				"",
+				details,
+			)
+		}
+
 		// Notify @mentions in description
 		if issue.Description != nil && *issue.Description != "" {
 			mentions := parseMentions(*issue.Description)
@@ -702,6 +719,8 @@ func registerNotificationListeners(bus *events.Bus, queries *db.Queries) {
 		}
 		ownerChanged, _ := payload["owner_changed"].(bool)
 		executorChanged, _ := payload["executor_changed"].(bool)
+		reviewerChanged, _ := payload["reviewer_changed"].(bool)
+		reviewHandoff, _ := payload["review_handoff"].(bool)
 		statusChanged, _ := payload["status_changed"].(bool)
 		descriptionChanged, _ := payload["description_changed"].(bool)
 		prevDescription, _ := payload["prev_description"].(*string)
@@ -781,6 +800,23 @@ func registerNotificationListeners(bus *events.Bus, queries *db.Queries) {
 		prevExecutorType, _ := payload["prev_executor_type"].(*string)
 		prevExecutorID, _ := payload["prev_executor_id"].(*string)
 		notifyRoleChange("executor", executorChanged, prevExecutorType, prevExecutorID, issue.ExecutorType, issue.ExecutorID)
+
+		if reviewerChanged || reviewHandoff {
+			if issue.ReviewerType != nil && issue.ReviewerID != nil && isAssignmentRecipientType(*issue.ReviewerType) {
+				details, _ := json.Marshal(map[string]string{
+					"new_reviewer_type": *issue.ReviewerType,
+					"new_reviewer_id":   *issue.ReviewerID,
+				})
+				notifyDirect(ctx, queries, bus,
+					*issue.ReviewerType, *issue.ReviewerID,
+					e.WorkspaceID, e, issue.ID, issue.Status,
+					"review_requested", "action_required",
+					issue.Title,
+					"",
+					details,
+				)
+			}
+		}
 
 		if statusChanged {
 			prevStatus, _ := payload["prev_status"].(string)

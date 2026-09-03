@@ -139,6 +139,27 @@ WHERE issue.id = sqlc.arg('issue_id')
   AND issue.workspace_id = sqlc.arg('workspace_id')
 FOR KEY SHARE;
 
+-- name: LockActiveReviewerTasksForReviewReturn :many
+-- Lock order is reviewer task -> issue, matching coordinator promotion. Only
+-- tasks correlated to a reviewer coordination assignment are eligible; plain
+-- issue tasks must never be retired by a review return.
+SELECT task.id
+FROM agent_task_queue AS task
+WHERE task.issue_id = sqlc.arg('issue_id')
+  AND task.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity', 'deferred')
+  AND EXISTS (
+      SELECT 1
+      FROM agent_coordination_assignment AS assignment
+      WHERE assignment.issue_id = task.issue_id
+        AND assignment.role = 'reviewer'
+        AND (
+            assignment.dispatched_task_id = task.id
+            OR task.context->>'coordination_assignment_id' = assignment.id::text
+        )
+  )
+ORDER BY task.created_at DESC, task.id DESC
+FOR UPDATE OF task;
+
 -- name: GetAgentCoordinationAssignmentForLease :one
 -- Loads the assignment only while the caller still owns the event lease. The
 -- workspace/issue predicates are deliberate tenant fences in addition to the
