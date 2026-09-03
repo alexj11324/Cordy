@@ -22,7 +22,7 @@ function respond(runtime: unknown) {
       new Response(
         JSON.stringify({
           configured: true,
-          installations: [{ id: "installation-1", status: "active", runtime }],
+          installations: [{ id: "installation-1", status: "installed", runtime }],
         }),
         { headers: { "Content-Type": "application/json" } },
       ),

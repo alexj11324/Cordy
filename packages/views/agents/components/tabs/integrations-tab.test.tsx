@@ -295,7 +295,7 @@ describe("IntegrationsTab", () => {
     vi.setSystemTime(new Date("2026-08-19T10:00:00Z"));
     installationsRef.current = {
       installations: [
-        { id: "inst-1", agent_id: "agent-1", status: "active" },
+        { id: "inst-1", agent_id: "agent-1", status: "installed" },
       ],
       configured: true,
       install_supported: true,
@@ -338,7 +338,7 @@ describe("IntegrationsTab", () => {
     renderTab(<IntegrationsTab agent={agent} />);
     expect(screen.getByText("Platform team")).toBeTruthy();
     expect(screen.getByText("Release Bot")).toBeTruthy();
-    const connectedLabel = screen.getByText("Connected bot:");
+    const connectedLabel = screen.getByRole("status", { name: "Connection status" });
     expect(connectedLabel.parentElement?.parentElement?.classList).toContain(
       "text-caption",
     );
@@ -373,7 +373,7 @@ describe("IntegrationsTab", () => {
     membersRef.current = [{ user_id: "user-1", role: "member" }];
     installationsRef.current = {
       installations: [
-        { id: "inst-1", agent_id: "agent-1", status: "active" },
+        { id: "inst-1", agent_id: "agent-1", status: "installed" },
       ],
       configured: true,
       install_supported: true,
@@ -396,7 +396,7 @@ describe("IntegrationsTab", () => {
     renderTab(<IntegrationsTab agent={{ ...agent, owner_id: "user-2" }} />);
     expect(screen.getByText("Platform team")).toBeTruthy();
     expect(screen.getByText("Release Bot")).toBeTruthy();
-    expect(screen.getByText("Connected bot:")).toBeTruthy();
+    expect(screen.getByRole("status", { name: "Connection status" })).toBeTruthy();
     expect(screen.queryByText(/Connected to Agent/i)).toBeNull();
     expect(screen.queryByText("Lark")).toBeNull();
   });
@@ -405,7 +405,7 @@ describe("IntegrationsTab", () => {
     membersRef.current = [{ user_id: "user-1", role: "member" }];
     installationsRef.current = {
       installations: [
-        { id: "inst-1", agent_id: "agent-1", status: "active" },
+        { id: "inst-1", agent_id: "agent-1", status: "installed" },
       ],
       configured: true,
       install_supported: true,
@@ -453,7 +453,7 @@ describe("IntegrationsTab", () => {
     membersRef.current = [{ user_id: "user-1", role: "member" }];
     installationsRef.current = {
       installations: [
-        { id: "inst-1", agent_id: "agent-1", status: "active" },
+        { id: "inst-1", agent_id: "agent-1", status: "installed" },
       ],
       configured: true,
       install_supported: true,
@@ -481,7 +481,7 @@ describe("IntegrationsTab", () => {
   it("renders group loading, empty, and retryable error states", async () => {
     installationsRef.current = {
       installations: [
-        { id: "inst-1", agent_id: "agent-1", status: "active" },
+        { id: "inst-1", agent_id: "agent-1", status: "installed" },
       ],
       configured: true,
       install_supported: true,
@@ -511,7 +511,7 @@ describe("IntegrationsTab", () => {
   it("renders discovery UI only when the backend explicitly supports it", () => {
     installationsRef.current = {
       installations: [
-        { id: "inst-1", agent_id: "agent-1", status: "active" },
+        { id: "inst-1", agent_id: "agent-1", status: "installed" },
       ],
       configured: true,
       install_supported: true,
@@ -522,7 +522,7 @@ describe("IntegrationsTab", () => {
     };
 
     renderTab(<IntegrationsTab agent={agent} />);
-    expect(screen.getByText("Connected bot:")).toBeTruthy();
+    expect(screen.getByRole("status", { name: "Connection status" })).toBeTruthy();
     expect(screen.queryByText("Identity unavailable")).toBeNull();
     expect(screen.queryByTestId("dingtalk-bot-groups")).toBeNull();
   });
@@ -587,7 +587,7 @@ describe("IntegrationsTab", () => {
     // must still surface its connected state instead of "coming soon"
     // (regression for the must-fix on MUL-2988).
     installationsRef.current = {
-      installations: [{ agent_id: "agent-1", status: "active" }],
+      installations: [{ agent_id: "agent-1", status: "installed" }],
       configured: true,
       install_supported: false,
     };

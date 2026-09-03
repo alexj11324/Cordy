@@ -1,5 +1,7 @@
 "use client";
 
+import { MessagingConnectionStatus } from "./messaging-connection-status";
+
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -72,8 +74,8 @@ export function SlackTab() {
   // wired + client credentials set). The workspace-level Connect button below
   // shows only on this flag; BYO installs keep their own per-agent dialog.
   const managedSupported = data?.managed_supported === true;
-  const activeManagedInstall = installations.find(
-    (inst) => isWorkspaceInstall(inst.agent_id) && inst.status === "active",
+  const installedManagedBot = installations.find(
+    (inst) => isWorkspaceInstall(inst.agent_id) && inst.status === "installed",
   );
 
   const [disconnectTarget, setDisconnectTarget] = useState<string | null>(null);
@@ -143,7 +145,7 @@ export function SlackTab() {
         </Card>
       ) : (
         <>
-          {canManage && managedSupported && !activeManagedInstall ? (
+          {canManage && managedSupported && !installedManagedBot ? (
             <Card>
               <CardContent className="flex flex-wrap items-center justify-between gap-3">
                 <div className="space-y-1">
@@ -249,7 +251,7 @@ function InstallationRow({
   const { t } = useT("settings");
   const locale = useLocale();
   const { getAgentName } = useActorName();
-  const isActive = installation.status === "active";
+  const isInstalled = installation.status === "installed";
   // Workspace-level (managed) installs belong to no agent: show the Slack
   // workspace they connect instead of an agent name that does not exist.
   const isManaged = isWorkspaceInstall(installation.agent_id);
@@ -276,9 +278,10 @@ function InstallationRow({
           />
         )}
         <div className="space-y-1">
+          <MessagingConnectionStatus installation={installation} />
           <p className="text-body font-medium">
             {title}
-            {!isActive && (
+            {!isInstalled && (
               <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
                 {t(($) => $.slack.revoked_badge)}
               </span>
@@ -291,7 +294,7 @@ function InstallationRow({
           </p>
         </div>
       </div>
-      {canManage && isActive && (
+      {canManage && isInstalled && (
         <Button variant="outline" size="sm" onClick={onDisconnect}>
           <Trash2 className="h-3 w-3" />
           {t(($) => $.slack.disconnect)}
@@ -336,7 +339,7 @@ function slackDocsUrl(lang: string | undefined): string {
 // admin pastes the bot token (xoxb-) + app-level token (xapp-) of the Slack app
 // they created (the backend validates both belong to the same app). Visibility:
 //   1. Non-owner/admin viewers see nothing (the backend gates install/revoke).
-//   2. If this agent already has an active installation, show the connected
+//   2. If this agent already has an installed installation, show the connected
 //      badge (already-installed bots stay manageable).
 //   3. Otherwise the Connect CTA shows whenever install is available.
 export function SlackAgentBindButton({
@@ -383,11 +386,12 @@ export function SlackAgentBindButton({
   if (!canManage) return null;
 
   const existing = listing?.installations.find(
-    (inst) => inst.agent_id === agentId && inst.status === "active",
+    (inst) => inst.agent_id === agentId && inst.status === "installed",
   );
   if (existing) {
     return onShowConnectedDetails ? (
       <SlackAgentBotStatusRow
+        installation={existing}
         onClick={onShowConnectedDetails}
         className={className}
       />
@@ -550,9 +554,11 @@ export function SlackAgentBindButton({
 // agent inspector renders instead of the full badge; it deep-links into the
 // Integrations tab where Manage / Disconnect live.
 function SlackAgentBotStatusRow({
+  installation,
   onClick,
   className,
 }: {
+  installation: SlackInstallation;
   onClick: () => void;
   className?: string;
 }) {
@@ -567,8 +573,8 @@ function SlackAgentBotStatusRow({
       )}
       data-testid="slack-agent-bot-status"
     >
-      <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
-      <span className="truncate">{t(($) => $.slack.agent_bot_connected_label)}</span>
+      <span className="truncate">{t(($) => $.slack.section_title)}</span>
+      <MessagingConnectionStatus installation={installation} compact />
       <ChevronRight className="ml-auto h-3.5 w-3.5 shrink-0" />
     </button>
   );
@@ -616,8 +622,7 @@ function SlackAgentBotConnectedBadge({
     >
       <div className="flex items-center justify-between gap-3">
         <span className="inline-flex min-w-0 items-center gap-2 text-caption text-muted-foreground">
-          <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
-          <span className="truncate">{t(($) => $.slack.agent_bot_connected_label)}</span>
+          <MessagingConnectionStatus installation={installation} compact />
         </span>
         <Button
           variant="destructive"

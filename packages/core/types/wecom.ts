@@ -14,7 +14,7 @@ export interface WecomInstallation {
   /** The smart-bot identifier assigned by the WeCom admin console. */
   bot_id: string;
   installer_user_id: string;
-  status: "active" | "revoked" | string;
+  status: "installed" | "revoked" | string;
   runtime?: MessagingInstallationRuntime;
   setup?: MessagingInstallationSetup;
 }

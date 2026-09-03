@@ -1,5 +1,7 @@
 "use client";
 
+import { MessagingConnectionStatus } from "./messaging-connection-status";
+
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -222,7 +224,7 @@ function InstallationRow({
   // "Unknown Agent" when the agent has been deleted; the Disconnect
   // affordance below is the recovery path for that orphan row.
   const { getAgentName } = useActorName();
-  const isActive = installation.status === "active";
+  const isInstalled = installation.status === "installed";
   const agentName = getAgentName(installation.agent_id);
   return (
     <div className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
@@ -235,6 +237,7 @@ function InstallationRow({
           profileLink
         />
         <div className="space-y-1">
+          <MessagingConnectionStatus installation={installation} />
           <p className="text-body font-medium">
             {agentName}
             <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
@@ -242,7 +245,7 @@ function InstallationRow({
                 ? t(($) => $.lark.region_lark)
                 : t(($) => $.lark.region_feishu)}
             </span>
-            {!isActive && (
+            {!isInstalled && (
               <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
                 {t(($) => $.lark.revoked_badge)}
               </span>
@@ -255,7 +258,7 @@ function InstallationRow({
           </p>
         </div>
       </div>
-      {canManage && isActive && (
+      {canManage && isInstalled && (
         <Button variant="outline" size="sm" onClick={onDisconnect}>
           <Trash2 className="h-3 w-3" />
           {t(($) => $.lark.disconnect)}
@@ -277,7 +280,7 @@ function InstallationRow({
 //      the gate here mirrors that. `agentOwnerId` is what lets a
 //      non-admin owner through; when it is omitted the button stays
 //      workspace owner/admin-only.
-//   2. If this agent ALREADY has an active installation, they see
+//   2. If this agent ALREADY has an installed installation, they see
 //      the "Connected + Manage in Lark" badge — regardless of
 //      install_supported. install_supported governs only whether NEW
 //      scan-installs can complete; already-installed bots stay manageable
@@ -358,7 +361,7 @@ export function LarkAgentBindButton({
   // close the install entry point and link to the Bot's Lark app page where
   // scopes / display name / additional permissions are actually managed.
   const existing = listing?.installations.find(
-    (inst) => inst.agent_id === agentId && inst.status === "active",
+    (inst) => inst.agent_id === agentId && inst.status === "installed",
   );
   if (existing) {
     return onShowConnectedDetails ? (
@@ -468,13 +471,13 @@ function LarkAgentBotStatusRow({
       )}
       data-testid="lark-agent-bot-status"
     >
-      <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
       <span className="rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
         {installation.region === "lark"
           ? t(($) => $.lark.region_lark)
           : t(($) => $.lark.region_feishu)}
       </span>
-      <span className="truncate">{t(($) => $.lark.agent_bot_connected_label)}</span>
+      <span className="truncate">{t(($) => $.lark.section_title)}</span>
+      <MessagingConnectionStatus installation={installation} compact />
       <ChevronRight className="ml-auto h-3.5 w-3.5 shrink-0" />
     </button>
   );
@@ -482,7 +485,7 @@ function LarkAgentBotStatusRow({
 
 // LarkAgentBotConnectedBadge is the full "already connected" affordance the
 // Integrations tab renders in place of the Bind button when this agent has
-// an active Lark installation. (The inspector's left column uses the compact
+// an installed Lark installation. (The inspector's left column uses the compact
 // LarkAgentBotStatusRow instead, which deep-links here.) It lays out as two
 // rows: row 1 pairs a green-dot status (with the Feishu/Lark region chip) on
 // the left with a soft-destructive Disconnect button on the right; row 2
@@ -559,13 +562,12 @@ function LarkAgentBotConnectedBadge({
           and stops message delivery. */}
       <div className="flex items-center justify-between gap-3">
         <span className="inline-flex min-w-0 items-center gap-2 text-caption text-muted-foreground">
-          <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
           <span className="rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
             {installation.region === "lark"
               ? t(($) => $.lark.region_lark)
               : t(($) => $.lark.region_feishu)}
           </span>
-          <span className="truncate">{t(($) => $.lark.agent_bot_connected_label)}</span>
+          <MessagingConnectionStatus installation={installation} compact />
         </span>
         <Button
           variant="destructive"

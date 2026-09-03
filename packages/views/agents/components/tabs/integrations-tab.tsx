@@ -96,23 +96,23 @@ export function IntegrationsTab({ agent }: { agent: Agent }) {
   const canManageSlack = isWorkspaceAdmin;
   const canManageWecom = isWorkspaceAdmin;
   const canManageTelegram = isWorkspaceAdmin;
-  const hasActiveInstall =
+  const hasInstalledBot =
     listing?.installations.some(
-      (inst) => inst.agent_id === agent.id && inst.status === "active",
+      (inst) => inst.agent_id === agent.id && inst.status === "installed",
     ) ?? false;
 
   const slackConfigured = slackListing?.configured === true;
   const slackInstallSupported = slackListing?.install_supported === true;
-  const slackHasActiveInstall =
+  const slackHasInstalledBot =
     slackListing?.installations.some(
-      (inst) => inst.agent_id === agent.id && inst.status === "active",
+      (inst) => inst.agent_id === agent.id && inst.status === "installed",
     ) ?? false;
 
   const dingtalkConfigured = dingtalkListing?.configured === true;
   const dingtalkInstallation = dingtalkListing?.installations.find(
-    (inst) => inst.agent_id === agent.id && inst.status === "active",
+    (inst) => inst.agent_id === agent.id && inst.status === "installed",
   );
-  const dingtalkHasActiveInstall = !!dingtalkInstallation;
+  const dingtalkHasInstalledBot = !!dingtalkInstallation;
   const {
     data: dingtalkGroupsListing,
     isLoading: dingtalkGroupsLoading,
@@ -120,7 +120,7 @@ export function IntegrationsTab({ agent }: { agent: Agent }) {
     refetch: retryDingtalkGroups,
   } = useQuery({
     ...dingtalkAgentGroupsOptions(wsId, agent.id),
-    enabled: !!wsId && dingtalkHasActiveInstall,
+    enabled: !!wsId && dingtalkHasInstalledBot,
   });
   const dingtalkGroups = dingtalkGroupsListing?.groups ?? [];
   const dingtalkGroupDiscoverySupported =
@@ -139,16 +139,16 @@ export function IntegrationsTab({ agent }: { agent: Agent }) {
 
   const wecomConfigured = wecomListing?.configured === true;
   const wecomInstallSupported = wecomListing?.install_supported === true;
-  const wecomHasActiveInstall =
+  const wecomHasInstalledBot =
     wecomListing?.installations.some(
-      (inst) => inst.agent_id === agent.id && inst.status === "active",
+      (inst) => inst.agent_id === agent.id && inst.status === "installed",
     ) ?? false;
 
   const telegramConfigured = telegramListing?.configured === true;
   const telegramInstallSupported = telegramListing?.install_supported === true;
-  const telegramHasActiveInstall =
+  const telegramHasInstalledBot =
     telegramListing?.installations.some(
-      (inst) => inst.agent_id === agent.id && inst.status === "active",
+      (inst) => inst.agent_id === agent.id && inst.status === "installed",
     ) ?? false;
 
   // Preserve the established Integrations management gate: a member who can
@@ -184,6 +184,7 @@ export function IntegrationsTab({ agent }: { agent: Agent }) {
             </div>
             <div className="border-t px-4 py-3">
               <DingTalkConnectionLabel
+                installation={dingtalkInstallation}
                 botName={dingtalkBotIdentity?.bot_name ?? ""}
                 botIdentityIssue={dingtalkBotIdentity?.bot_identity_issue ?? ""}
                 showBotIdentity={
@@ -242,7 +243,7 @@ export function IntegrationsTab({ agent }: { agent: Agent }) {
             <p className="text-caption text-muted-foreground">
               {ts(($) => $.lark.not_enabled_title)}
             </p>
-          ) : !installSupported && !hasActiveInstall ? (
+          ) : !installSupported && !hasInstalledBot ? (
             // Key is set but the device-flow transport isn't wired in this
             // build — a fresh scan would fail at the post-poll bot-info step,
             // so we surface the "coming soon" notice instead of a broken CTA.
@@ -293,7 +294,7 @@ export function IntegrationsTab({ agent }: { agent: Agent }) {
             <p className="text-caption text-muted-foreground">
               {ts(($) => $.slack.not_enabled_title)}
             </p>
-          ) : !slackInstallSupported && !slackHasActiveInstall ? (
+          ) : !slackInstallSupported && !slackHasInstalledBot ? (
             // Secret key is set but the OAuth client credentials aren't, so a
             // fresh "Connect Slack" would 503. Surface the "coming soon" notice
             // instead of a broken CTA; an already-bound agent still renders.
@@ -327,6 +328,7 @@ export function IntegrationsTab({ agent }: { agent: Agent }) {
             // DingTalk identity and discovered groups as read-only details.
             dingtalkInstallation ? (
               <DingTalkConnectionLabel
+                installation={dingtalkInstallation}
                 botName={dingtalkBotIdentity?.bot_name ?? ""}
                 botIdentityIssue={dingtalkBotIdentity?.bot_identity_issue ?? ""}
                 showBotIdentity={
@@ -398,7 +400,7 @@ export function IntegrationsTab({ agent }: { agent: Agent }) {
             <p className="text-caption text-muted-foreground">
               {ts(($) => $.wecom.not_enabled_title)}
             </p>
-          ) : !wecomInstallSupported && !wecomHasActiveInstall ? (
+          ) : !wecomInstallSupported && !wecomHasInstalledBot ? (
             <div className="space-y-1">
               <p className="text-caption font-medium">{ts(($) => $.wecom.preview_title)}</p>
               <p className="text-caption text-muted-foreground">
@@ -432,7 +434,7 @@ export function IntegrationsTab({ agent }: { agent: Agent }) {
             <p className="text-caption text-muted-foreground">
               {ts(($) => $.telegram.not_enabled_title)}
             </p>
-          ) : !telegramInstallSupported && !telegramHasActiveInstall ? (
+          ) : !telegramInstallSupported && !telegramHasInstalledBot ? (
             <div className="space-y-1">
               <p className="text-caption font-medium">{ts(($) => $.telegram.preview_title)}</p>
               <p className="text-caption text-muted-foreground">

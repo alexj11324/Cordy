@@ -11,7 +11,7 @@ export interface DingTalkInstallation {
   workspace_id: string;
   agent_id: string;
   installer_user_id: string;
-  status: "active" | "revoked" | string;
+  status: "installed" | "revoked" | string;
   runtime?: MessagingInstallationRuntime;
   setup?: MessagingInstallationSetup;
   installed_at: string;

@@ -307,6 +307,17 @@
     "remove_failed_toast": "共有 MCP サーバーを削除できませんでした"
   },
   "page": {
+    "connection_status": {
+      "label": "接続状態",
+      "connected": "接続済み",
+      "connecting": "接続中",
+      "disconnected": "切断済み",
+      "degraded": "接続が中断されました",
+      "error": "接続に失敗しました",
+      "unavailable": "状態を確認できません",
+      "paused": "上限により接続が一時停止中",
+      "experimental": "接続未検証"
+    },
     "linear": {
       "title": "Linear",
       "description": "Linear ワークスペースを接続し、プロジェクトを対応付け、同期を有効にする前に正しいデータソースを選択します。",

@@ -12,4 +12,5 @@ export const weixinInstallationsOptions = (wsId: string) =>
     queryKey: weixinKeys.installations(wsId),
     queryFn: () => api.listWeixinInstallations(wsId),
     enabled: !!wsId,
+    refetchInterval: (query) => query.state.status === "success" ? 5_000 : false,
   });

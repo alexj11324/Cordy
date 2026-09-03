@@ -53,6 +53,7 @@ export const dingtalkInstallationsOptions = (wsId: string) =>
     queryKey: dingtalkKeys.installations(wsId),
     queryFn: () => api.listDingTalkInstallations(wsId),
     enabled: !!wsId,
+    refetchInterval: (query) => query.state.status === "success" ? 5_000 : false,
   });
 
 export const dingtalkGroupsOptions = (wsId: string) =>

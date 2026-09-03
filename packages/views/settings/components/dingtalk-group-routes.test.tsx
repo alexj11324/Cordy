@@ -49,7 +49,7 @@ beforeEach(() => {
   ]);
   mocks.listDingTalkInstallations.mockResolvedValue({
     configured: true, group_routing_supported: true,
-    installations: [{ id: "bot-1", agent_id: "agent-1", status: "active", installed_at: "" }],
+    installations: [{ id: "bot-1", agent_id: "agent-1", status: "installed", installed_at: "" }],
   });
   mocks.listDingTalkGroups.mockResolvedValue({ groups: [], group_discovery_supported: false });
   mocks.listDingTalkGroupRoutes.mockImplementation(async () => ({ routes: [currentRoute] }));
@@ -155,7 +155,7 @@ describe("DingTalk group routing in Settings", () => {
 
   it("does not query routes when the backend does not support them", async () => {
     mocks.listDingTalkInstallations.mockResolvedValue({
-      configured: true, installations: [{ id: "bot-1", agent_id: "agent-1", status: "active", installed_at: "" }],
+      configured: true, installations: [{ id: "bot-1", agent_id: "agent-1", status: "installed", installed_at: "" }],
     });
     renderSettings();
     await screen.findByText("Default agent");
@@ -170,7 +170,7 @@ describe("DingTalk group routing in Settings", () => {
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
   });
 
-  it("only displays routes for the current workspace and visible active installations", async () => {
+  it("only displays routes for the current workspace and visible installed installations", async () => {
     mocks.listDingTalkGroupRoutes.mockResolvedValue({ routes: [
       originalRoute,
       { ...originalRoute, id: "other-workspace", workspace_id: "workspace-2", conversation_title: "Other workspace group" },

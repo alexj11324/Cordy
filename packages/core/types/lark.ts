@@ -14,7 +14,7 @@ export interface LarkInstallation {
   tenant_key?: string | null;
   bot_open_id: string;
   installer_user_id: string;
-  status: "active" | "revoked" | string;
+  status: "installed" | "revoked" | string;
   runtime?: MessagingInstallationRuntime;
   setup?: MessagingInstallationSetup;
   /** Which Lark cloud the bot lives on: "feishu" (mainland) or "lark"

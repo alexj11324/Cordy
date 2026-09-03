@@ -120,7 +120,7 @@ describe("SlackAgentBindButton", () => {
   beforeEach(resetFixtures);
 
   it("opens the BYO dialog and submits the pasted bot + app tokens", async () => {
-    mockRegisterBYO.mockResolvedValue({ id: "i1", agent_id: "agent-1", status: "active" });
+    mockRegisterBYO.mockResolvedValue({ id: "i1", agent_id: "agent-1", status: "installed" });
     renderUI(<SlackAgentBindButton agentId="agent-1" agentName="Bot" />);
     await userEvent.click(screen.getByTestId("slack-agent-connect"));
     const botInput = await screen.findByTestId("slack-byo-bot-token");
@@ -137,15 +137,16 @@ describe("SlackAgentBindButton", () => {
     expect(mockOpenExternal).not.toHaveBeenCalled();
   });
 
-  it("shows the connected badge (not the CTA) when the agent already has an active install", () => {
+  it("keeps an unobserved installation manageable without claiming it is connected", () => {
     installationsRef.current = {
-      installations: [{ id: "i1", agent_id: "agent-1", status: "active", team_id: "T1" }],
+      installations: [{ id: "i1", agent_id: "agent-1", status: "installed", team_id: "T1" }],
       configured: true,
       install_supported: true,
     };
     renderUI(<SlackAgentBindButton agentId="agent-1" />);
     expect(screen.getByTestId("slack-agent-bot-connected")).toBeTruthy();
     expect(screen.getByTestId("slack-agent-bot-disconnect")).toBeTruthy();
+    expect(screen.getByRole("status", { name: "Connection status" }).textContent).toBe("Status unavailable");
     expect(screen.queryByTestId("slack-agent-connect")).toBeNull();
   });
 
@@ -153,6 +154,23 @@ describe("SlackAgentBindButton", () => {
     membersRef.current = [{ user_id: "user-1", role: "member" }];
     const { container } = renderUI(<SlackAgentBindButton agentId="agent-1" />);
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it.each([
+    ["healthy", "Connected"],
+    ["offline", "Disconnected"],
+    ["starting", "Connecting"],
+    ["future_state", "Status unavailable"],
+  ])("renders %s from the server while preserving the management action", (state, label) => {
+    installationsRef.current = {
+      installations: [{ id: "i1", agent_id: "agent-1", status: "installed", team_id: "T1",
+        runtime: { state, observedAt: "2026-09-03T12:00:00Z", errorCode: null } }],
+      configured: true, install_supported: true,
+    };
+    renderUI(<SlackAgentBindButton agentId="agent-1" />);
+    expect(screen.getByRole("status", { name: "Connection status" }).textContent).toBe(label);
+    expect(screen.getByTestId("slack-agent-bot-disconnect")).toBeTruthy();
+    expect(screen.queryByTestId("slack-agent-connect")).toBeNull();
   });
 
   it("renders nothing when install is unavailable and the agent is unbound", () => {
@@ -178,7 +196,7 @@ describe("SlackTab", () => {
 
   it("lists a connected installation with its agent name and a disconnect control", () => {
     installationsRef.current = {
-      installations: [{ id: "i1", agent_id: "agent-7", status: "active", team_id: "T1" }],
+      installations: [{ id: "i1", agent_id: "agent-7", status: "installed", team_id: "T1" }],
       configured: true,
       install_supported: true,
     };
@@ -250,7 +268,7 @@ describe("SlackTab", () => {
         {
           id: "i9",
           agent_id: "00000000-0000-0000-0000-000000000000",
-          status: "active",
+          status: "installed",
           team_id: "T1",
           bot_user_id: "UBOT",
         },

@@ -307,6 +307,17 @@
     "remove_failed_toast": "Could not remove the shared MCP server"
   },
   "page": {
+    "connection_status": {
+      "label": "Connection status",
+      "connected": "Connected",
+      "connecting": "Connecting",
+      "disconnected": "Disconnected",
+      "degraded": "Connection interrupted",
+      "error": "Connection failed",
+      "unavailable": "Status unavailable",
+      "paused": "Connection paused by quota",
+      "experimental": "Connection not verified"
+    },
     "linear": {
       "title": "Linear",
       "description": "Connect a Linear workspace, match projects, and choose the source of truth before synchronization is enabled.",

@@ -15,4 +15,5 @@ export const slackInstallationsOptions = (wsId: string) =>
     queryKey: slackKeys.installations(wsId),
     queryFn: () => api.listSlackInstallations(wsId),
     enabled: !!wsId,
+    refetchInterval: (query) => query.state.status === "success" ? 5_000 : false,
   });

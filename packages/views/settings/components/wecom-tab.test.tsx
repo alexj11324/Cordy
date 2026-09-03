@@ -123,7 +123,7 @@ describe("WecomAgentBindButton", () => {
   beforeEach(resetFixtures);
 
   it("opens the BYO dialog and submits the trimmed bot id + secret", async () => {
-    mockRegisterBYO.mockResolvedValue({ id: "i1", agent_id: "agent-1", status: "active" });
+    mockRegisterBYO.mockResolvedValue({ id: "i1", agent_id: "agent-1", status: "installed" });
     renderUI(<WecomAgentBindButton agentId="agent-1" agentName="Bot" />);
     await userEvent.click(screen.getByTestId("wecom-agent-connect"));
     await userEvent.type(await screen.findByTestId("wecom-byo-bot-id"), "  aibot_xyz  ");
@@ -245,7 +245,7 @@ describe("WecomAgentBindButton", () => {
 
   it("shows the connected badge (not the CTA) when the agent has an active install", () => {
     installationsRef.current = {
-      installations: [{ id: "i1", agent_id: "agent-1", bot_id: "aibot_x", status: "active" }],
+      installations: [{ id: "i1", agent_id: "agent-1", bot_id: "aibot_x", status: "installed" }],
       configured: true,
       install_supported: true,
     };
@@ -294,7 +294,7 @@ describe("WecomTab", () => {
 
   it("lists a connected installation with its agent name and a disconnect control", () => {
     installationsRef.current = {
-      installations: [{ id: "i1", agent_id: "agent-7", bot_id: "aibot_x", status: "active" }],
+      installations: [{ id: "i1", agent_id: "agent-7", bot_id: "aibot_x", status: "installed" }],
       configured: true,
       install_supported: true,
     };
@@ -306,7 +306,7 @@ describe("WecomTab", () => {
   it("confirms before disconnecting, then calls deleteWecomInstallation", async () => {
     mockDeleteInstallation.mockResolvedValue(undefined);
     installationsRef.current = {
-      installations: [{ id: "i1", agent_id: "agent-7", bot_id: "aibot_x", status: "active" }],
+      installations: [{ id: "i1", agent_id: "agent-7", bot_id: "aibot_x", status: "installed" }],
       configured: true,
       install_supported: true,
     };

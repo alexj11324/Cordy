@@ -187,9 +187,9 @@ describe("WeixinTab", () => {
     expect(mockToastSuccess).toHaveBeenCalled();
   }, 7000);
 
-  it("revokes an active installation only after confirmation", async () => {
+  it("revokes an installed installation only after confirmation", async () => {
     installationsRef.current = {
-      installations: [{ id: "installation-1", agent_id: "agent-1", bot_id: "personal-bot", status: "active" }],
+      installations: [{ id: "installation-1", agent_id: "agent-1", bot_id: "personal-bot", status: "installed" }],
       configured: true,
       install_supported: true,
     };

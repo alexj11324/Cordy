@@ -1,5 +1,7 @@
 "use client";
 
+import { MessagingConnectionStatus } from "./messaging-connection-status";
+
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, RefreshCw, Trash2 } from "lucide-react";
@@ -65,9 +67,9 @@ export function WeixinTab() {
   });
 
   const installations = data?.installations ?? [];
-  const activeInstallationAgentIds = new Set(
+  const installedBotAgentIds = new Set(
     installations
-      .filter((installation) => installation.status === "active")
+      .filter((installation) => installation.status === "installed")
       .map((installation) => installation.agent_id),
   );
   const agentsById = new Map(agents.map((agent) => [agent.id, agent]));
@@ -81,7 +83,7 @@ export function WeixinTab() {
     (agent) =>
       !agent.archived_at &&
       canManageAgent(agent) &&
-      !activeInstallationAgentIds.has(agent.id),
+      !installedBotAgentIds.has(agent.id),
   );
 
   const [disconnectTarget, setDisconnectTarget] = useState<string | null>(null);
@@ -264,15 +266,16 @@ function InstallationRow({
   onDisconnect: () => void;
 }) {
   const { t } = useT("settings");
-  const isActive = installation.status === "active";
+  const isInstalled = installation.status === "installed";
   return (
     <div className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
       <div className="flex min-w-0 items-start gap-3">
         <WeixinMark className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
         <div className="min-w-0 space-y-1">
+          <MessagingConnectionStatus installation={installation} />
           <p className="truncate text-body font-medium">
             {agentName}
-            {!isActive && (
+            {!isInstalled && (
               <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
                 {t(($) => $.weixin.revoked_badge)}
               </span>
@@ -284,7 +287,7 @@ function InstallationRow({
           </p>
         </div>
       </div>
-      {canManage && isActive ? (
+      {canManage && isInstalled ? (
         <Button variant="outline" size="sm" onClick={onDisconnect}>
           <Trash2 className="h-3 w-3" />
           {t(($) => $.weixin.disconnect)}

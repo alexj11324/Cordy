@@ -38,6 +38,7 @@ import {
   memberListOptions,
 } from "@patchbay/core/workspace/queries";
 import { DingTalkMark } from "./dingtalk-mark";
+import { MessagingConnectionStatus } from "./messaging-connection-status";
 import { DingTalkGroupRoutes } from "./dingtalk-group-routes";
 import { useActorName } from "@patchbay/core/workspace/hooks";
 import {
@@ -85,6 +86,7 @@ export function getDingTalkBotIdentity(
 }
 
 export function DingTalkConnectionLabel({
+  installation,
   botName,
   botIdentityIssue,
   linkedIdentityIDs = [],
@@ -92,6 +94,7 @@ export function DingTalkConnectionLabel({
   showPermissionHelp = true,
   className,
 }: {
+  installation: DingTalkInstallation;
   botName?: string;
   botIdentityIssue?: string;
   linkedIdentityIDs?: string[];
@@ -126,14 +129,8 @@ export function DingTalkConnectionLabel({
         className,
       )}
     >
-      <span
-        className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500"
-        aria-hidden="true"
-      />
       <span className="inline-flex min-w-0 items-center">
-        <span className="shrink-0">
-          {t(($) => $.dingtalk.agent_bot_connected_label)}
-        </span>
+        <MessagingConnectionStatus installation={installation} compact />
         {showBotIdentity && (
           <>
             {linkedIdentityLabel ? (
@@ -552,7 +549,7 @@ export function DingTalkTab() {
     enabled:
       configured &&
       displayedInstallations.some(
-        (installation) => installation.status === "active",
+        (installation) => installation.status === "installed",
       ),
   });
   const groupDiscoverySupported =
@@ -654,7 +651,7 @@ export function DingTalkTab() {
       )}
 
       {configured && data?.group_routing_supported === true &&
-        displayedInstallations.some((installation) => installation.status === "active") && (
+        displayedInstallations.some((installation) => installation.status === "installed") && (
         <DingTalkGroupRoutes workspaceId={wsId} installations={displayedInstallations} canManage={canManage} />
       )}
 
@@ -718,7 +715,7 @@ function InstallationRow({
 }) {
   const { t, i18n } = useT("settings");
   const { getAgentName } = useActorName();
-  const isActive = installation.status === "active";
+  const isInstalled = installation.status === "installed";
   const agentAvailable = installation.agent_available !== false;
   const agentName = agentAvailable
     ? getAgentName(installation.agent_id)
@@ -744,16 +741,17 @@ function InstallationRow({
           <div className="min-w-0 space-y-1.5">
             <h3 className="truncate text-title-sm font-medium text-pretty">
               {agentName}
-              {!isActive && (
+              {!isInstalled && (
                 <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
                   {t(($) => $.dingtalk.revoked_badge)}
                 </span>
               )}
             </h3>
             <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-              {isActive && (
+              {isInstalled && (
                 <>
                   <DingTalkConnectionLabel
+                    installation={installation}
                     botName={botIdentity?.bot_name ?? ""}
                     botIdentityIssue={botIdentity?.bot_identity_issue ?? ""}
                     linkedIdentityIDs={linkedIdentityIDs}
@@ -781,14 +779,14 @@ function InstallationRow({
             </div>
           </div>
         </div>
-        {canManage && isActive && (
+        {canManage && isInstalled && (
           <Button variant="outline" size="sm" onClick={onDisconnect}>
             <Trash2 className="h-3 w-3" aria-hidden="true" />
             {t(($) => $.dingtalk.disconnect)}
           </Button>
         )}
       </div>
-      {isActive && showGroupDiscovery && (
+      {isInstalled && showGroupDiscovery && (
         <DingTalkBotGroups
           workspaceId={workspaceId}
           installationId={installation.id}
@@ -827,7 +825,7 @@ function dingtalkDocsUrl(lang: string | undefined): string {
 // secret) of the DingTalk robot they created (the backend validates both).
 // Visibility:
 //   1. Only the agent's owner or a workspace owner/admin sees management UI.
-//   2. If this agent already has an active installation, show the connected
+//   2. If this agent already has an installed installation, show the connected
 //      badge (already-installed robots stay manageable).
 //   3. Otherwise the Connect CTA shows whenever install is available.
 export function DingTalkAgentBindButton({
@@ -886,11 +884,12 @@ export function DingTalkAgentBindButton({
   if (!canManage) return null;
 
   const existing = listing?.installations?.find(
-    (inst) => inst.agent_id === agentId && inst.status === "active",
+    (inst) => inst.agent_id === agentId && inst.status === "installed",
   );
   if (existing) {
     return onShowConnectedDetails ? (
       <DingTalkAgentBotStatusRow
+        installation={existing}
         onClick={onShowConnectedDetails}
         className={className}
       />
@@ -1051,9 +1050,11 @@ export function DingTalkAgentBindButton({
 // agent inspector renders instead of the full badge; it deep-links into the
 // Integrations tab where Manage / Disconnect live.
 function DingTalkAgentBotStatusRow({
+  installation,
   onClick,
   className,
 }: {
+  installation: DingTalkInstallation;
   onClick: () => void;
   className?: string;
 }) {
@@ -1067,7 +1068,7 @@ function DingTalkAgentBotStatusRow({
       )}
       data-testid="dingtalk-agent-bot-status"
     >
-      <DingTalkConnectionLabel showBotIdentity={false} />
+      <DingTalkConnectionLabel installation={installation} showBotIdentity={false} />
       <ChevronRight
         className="ml-auto h-3.5 w-3.5 shrink-0"
         aria-hidden="true"
@@ -1121,6 +1122,7 @@ function DingTalkAgentBotConnectedBadge({
     >
       <div className="flex items-center justify-between gap-3">
         <DingTalkConnectionLabel
+          installation={installation}
           botName={botName}
           botIdentityIssue={botIdentityIssue}
           showBotIdentity={botName !== undefined || botIdentityIssue !== undefined}

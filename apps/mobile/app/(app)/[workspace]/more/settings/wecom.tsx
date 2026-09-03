@@ -109,12 +109,12 @@ export default function WecomSettingsPage() {
           setBotId("");
           setSecret("");
           setBotName("");
-          Alert.alert(copy.wecom.connected, copy.wecom.installSuccess);
+          Alert.alert(copy.wecom.installed, copy.wecom.installSuccess);
         },
         onError: (error) => setFormError(wecomErrorMessage(error, copy.wecom.failed)),
       },
     );
-  }, [botId, botName, canManage, copy.wecom.connected, copy.wecom.failed, copy.wecom.installSuccess, copy.wecom.required, register, secret, selectedAgentId]);
+  }, [botId, botName, canManage, copy.wecom.installed, copy.wecom.failed, copy.wecom.installSuccess, copy.wecom.required, register, secret, selectedAgentId]);
 
   const confirmDisconnect = useCallback(
     (installationId: string) => {
@@ -201,15 +201,15 @@ export default function WecomSettingsPage() {
                               {installation.bot_id}
                             </Text>
                             <Text className="text-xs text-muted-foreground">
-                              {installation.status === "active"
-                                ? copy.wecom.connected
+                              {installation.status === "installed"
+                                ? copy.wecom.installed
                                 : copy.wecom.revoked}
                             </Text>
                           </View>
                           <Text className="text-sm text-muted-foreground">
                             {agentName(agents, installation.agent_id)}
                           </Text>
-                          {canManage && installation.status === "active" ? (
+                          {canManage && installation.status === "installed" ? (
                             <Pressable
                               onPress={() => confirmDisconnect(installation.id)}
                               disabled={disconnect.isPending}

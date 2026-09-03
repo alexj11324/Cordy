@@ -15,7 +15,7 @@ export interface TelegramInstallation {
   /** The bot's Telegram username (without the @). */
   bot_username: string;
   installer_user_id: string;
-  status: "active" | "revoked" | string;
+  status: "installed" | "revoked" | string;
   runtime?: MessagingInstallationRuntime;
   setup?: MessagingInstallationSetup;
   installed_at: string;

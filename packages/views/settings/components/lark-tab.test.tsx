@@ -291,7 +291,7 @@ describe("LarkAgentBindButton (CTA gate)", () => {
   // pinned by the "clicking Bind to Feishu …" test above; restore the Lark
   // case when the entry is re-enabled.
 
-  it("swaps the bind CTAs for a 'Connected + Manage in Lark' badge when this agent already has an active installation", () => {
+  it("swaps the bind CTAs for a 'Connected + Manage in Lark' badge when this agent already has an installed installation", () => {
     // Anti-zombie guard: re-scanning the same agent upserts the row
     // and orphans the previously-created Lark PersonalAgent. The badge
     // closes the install entry point and links the user to the Bot's
@@ -305,7 +305,7 @@ describe("LarkAgentBindButton (CTA gate)", () => {
         app_id: "cli_existing_app",
         bot_open_id: "ou_existing_bot",
         installer_user_id: "user-1",
-        status: "active",
+        status: "installed",
         installed_at: "2026-06-03T00:00:00Z",
         created_at: "2026-06-03T00:00:00Z",
         updated_at: "2026-06-03T00:00:00Z",
@@ -334,7 +334,8 @@ describe("LarkAgentBindButton (CTA gate)", () => {
 
   it("renders region-aware badge text and Manage link for a Lark-international (region=lark) installation", () => {
     // Dual-region: a bot installed against the Lark international cloud
-    // must show "Connected to Lark" + "Manage in Lark" copy, with the
+    // must preserve the Lark region and management link without treating an
+    // installed installation as a confirmed live connection. The
     // Manage link pointing at open.larksuite.com (not the Feishu
     // default). Without region-aware copy a user who clicked
     // "Bind to Feishu" and saw "Connected to Lark" would (rightly) be
@@ -347,7 +348,7 @@ describe("LarkAgentBindButton (CTA gate)", () => {
         app_id: "cli_lark_app",
         bot_open_id: "ou_lark_bot",
         installer_user_id: "user-1",
-        status: "active",
+        status: "installed",
         region: "lark",
         installed_at: "2026-06-03T00:00:00Z",
         created_at: "2026-06-03T00:00:00Z",
@@ -357,7 +358,8 @@ describe("LarkAgentBindButton (CTA gate)", () => {
     render(<LarkAgentBindButton agentId="agent-1" agentName="Bot" />, {
       wrapper: I18nWrapper,
     });
-    expect(screen.getByText(/Connected to Lark/i)).toBeTruthy();
+    expect(screen.getByRole("status", { name: "Connection status" }).textContent).toBe("Status unavailable");
+    expect(screen.getByText("Lark", { exact: true })).toBeTruthy();
     const link = screen.getByRole("link", { name: /Manage in Lark/i }) as HTMLAnchorElement;
     expect(link.href).toBe("https://open.larksuite.com/app/cli_lark_app");
   });
@@ -371,7 +373,7 @@ describe("LarkAgentBindButton (CTA gate)", () => {
         app_id: "cli_other",
         bot_open_id: "ou_other",
         installer_user_id: "user-1",
-        status: "active",
+        status: "installed",
         installed_at: "2026-06-03T00:00:00Z",
         created_at: "2026-06-03T00:00:00Z",
         updated_at: "2026-06-03T00:00:00Z",
@@ -399,7 +401,7 @@ describe("LarkAgentBindButton (CTA gate)", () => {
         app_id: "cli_existing_app",
         bot_open_id: "ou_existing_bot",
         installer_user_id: "user-1",
-        status: "active",
+        status: "installed",
         installed_at: "2026-06-03T00:00:00Z",
         created_at: "2026-06-03T00:00:00Z",
         updated_at: "2026-06-03T00:00:00Z",
@@ -463,7 +465,7 @@ describe("LarkAgentBotConnectedBadge (Unbind / Disconnect)", () => {
         app_id: "cli_existing_app",
         bot_open_id: "ou_existing_bot",
         installer_user_id: "user-1",
-        status: "active",
+        status: "installed",
         installed_at: "2026-06-03T00:00:00Z",
         created_at: "2026-06-03T00:00:00Z",
         updated_at: "2026-06-03T00:00:00Z",
@@ -726,7 +728,7 @@ describe("LarkTab connected bots list (agent identity rendering)", () => {
         app_id: "cli_aa941499d4f95cd9",
         bot_open_id: "ou_abc123",
         installer_user_id: "user-1",
-        status: "active",
+        status: "installed",
         installed_at: "2026-06-03T00:00:00Z",
         created_at: "2026-06-03T00:00:00Z",
         updated_at: "2026-06-03T00:00:00Z",
@@ -762,7 +764,7 @@ describe("LarkTab connected bots list (agent identity rendering)", () => {
         app_id: "cli_orphan",
         bot_open_id: "ou_orphan",
         installer_user_id: "user-1",
-        status: "active",
+        status: "installed",
         installed_at: "2026-06-03T00:00:00Z",
         created_at: "2026-06-03T00:00:00Z",
         updated_at: "2026-06-03T00:00:00Z",

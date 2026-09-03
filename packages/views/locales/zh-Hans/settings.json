@@ -307,6 +307,17 @@
     "remove_failed_toast": "共享 MCP 服务移除失败"
   },
   "page": {
+    "connection_status": {
+      "label": "连接状态",
+      "connected": "已连接",
+      "connecting": "连接中",
+      "disconnected": "已断开",
+      "degraded": "连接中断",
+      "error": "连接失败",
+      "unavailable": "暂无法确认",
+      "paused": "配额不足，连接已暂停",
+      "experimental": "连接待验证"
+    },
     "linear": {
       "title": "Linear",
       "description": "连接 Linear Workspace、匹配项目，并在开启同步前选择权威数据源。",

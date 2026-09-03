@@ -197,7 +197,7 @@ describe("DingTalkAgentBindButton", () => {
   });
 
   it("opens the BYO dialog and submits the pasted AppKey + AppSecret", async () => {
-    mockRegisterBYO.mockResolvedValue({ id: "i1", agent_id: "agent-1", status: "active" });
+    mockRegisterBYO.mockResolvedValue({ id: "i1", agent_id: "agent-1", status: "installed" });
     renderUI(<DingTalkAgentBindButton agentId="agent-1" agentName="Bot" />);
     await userEvent.click(screen.getByTestId("dingtalk-agent-connect"));
     const idInput = await screen.findByTestId("dingtalk-byo-client-id");
@@ -224,7 +224,7 @@ describe("DingTalkAgentBindButton", () => {
 
   it("shows the connected badge (not the CTA) when the agent already has an active install", () => {
     installationsRef.current = {
-      installations: [{ id: "i1", agent_id: "agent-1", status: "active" }],
+      installations: [{ id: "i1", agent_id: "agent-1", status: "installed" }],
       configured: true,
       install_supported: true,
     };
@@ -287,7 +287,7 @@ describe("DingTalkTab", () => {
         installations: [{
           id: "i-role-matrix",
           agent_id: "agent-7",
-          status: "active",
+          status: "installed",
           installed_at: "2026-08-19T00:00:00Z",
           bound_dingtalk_user_ids: ["staff-role-matrix"],
         }],
@@ -343,7 +343,7 @@ describe("DingTalkTab", () => {
       installations: [{
         id: "i1",
         agent_id: "agent-7",
-        status: "active",
+        status: "installed",
         bound_dingtalk_user_ids: ["staff-1001", "staff-1002"],
       }],
       configured: true,
@@ -371,7 +371,7 @@ describe("DingTalkTab", () => {
 
   it("does not render a linked identity when this member has no DingTalk binding", () => {
     installationsRef.current = {
-      installations: [{ id: "i1", agent_id: "agent-7", status: "active" }],
+      installations: [{ id: "i1", agent_id: "agent-7", status: "installed" }],
       configured: true,
       install_supported: true,
     };
@@ -385,7 +385,7 @@ describe("DingTalkTab", () => {
       installations: [{
         id: "i1",
         agent_id: "agent-7",
-        status: "active",
+        status: "installed",
         bound_dingtalk_user_ids: ["staff-must-stay-private"],
       }],
       configured: true,
@@ -409,7 +409,7 @@ describe("DingTalkTab", () => {
         {
           id: "i1",
           agent_id: "agent-7",
-          status: "active",
+          status: "installed",
           installed_at: "2026-08-19T00:00:00Z",
           bound_dingtalk_user_ids: ["staff-1001"],
         },
@@ -439,7 +439,7 @@ describe("DingTalkTab", () => {
     expect(
       screen.getByRole("button", { name: /qyapi_chat_manage/i }),
     ).toBeTruthy();
-    const connectedLabel = screen.getByText("Connected bot:");
+    const connectedLabel = screen.getByRole("status", { name: "Connection status" });
     const connectedStatus = connectedLabel.parentElement?.parentElement;
     expect(connectedStatus?.classList).toContain(
       "text-caption",
@@ -452,7 +452,7 @@ describe("DingTalkTab", () => {
     expect(metadata.parentElement).toBe(connectedStatus?.parentElement);
     expect(metadata.textContent).toContain("Installed");
     expect(metadata.parentElement?.textContent).toContain(
-      "Connected bot:Release Bot·Installed",
+      "Status unavailableRelease Bot·Installed",
     );
     expect(metadata.parentElement?.textContent).not.toContain("Linked staff ID");
     expect(metadata.textContent).not.toContain("Release Bot");
@@ -498,7 +498,7 @@ describe("DingTalkTab", () => {
 
   it("sorts active groups by recency, then inactive groups by title and conversation ID", () => {
     installationsRef.current = {
-      installations: [{ id: "i1", agent_id: "agent-7", status: "active" }],
+      installations: [{ id: "i1", agent_id: "agent-7", status: "installed" }],
       configured: true,
       install_supported: true,
     };
@@ -554,7 +554,7 @@ describe("DingTalkTab", () => {
 
   it("globally sorts inactive groups after merging loaded pages", async () => {
     installationsRef.current = {
-      installations: [{ id: "i1", agent_id: "agent-7", status: "active" }],
+      installations: [{ id: "i1", agent_id: "agent-7", status: "installed" }],
       configured: true,
       install_supported: true,
     };
@@ -609,7 +609,7 @@ describe("DingTalkTab", () => {
 
   it("renders discovery UI only when the backend explicitly supports it", () => {
     installationsRef.current = {
-      installations: [{ id: "i1", agent_id: "agent-7", status: "active" }],
+      installations: [{ id: "i1", agent_id: "agent-7", status: "installed" }],
       configured: true,
       install_supported: true,
     };
@@ -619,7 +619,7 @@ describe("DingTalkTab", () => {
     };
 
     renderUI(<DingTalkTab />);
-    expect(screen.getByText("Connected bot:")).toBeTruthy();
+    expect(screen.getByRole("status", { name: "Connection status" })).toBeTruthy();
     expect(screen.queryByText("Identity unavailable")).toBeNull();
     expect(screen.queryByTestId("dingtalk-bot-groups")).toBeNull();
     expect(
@@ -629,7 +629,7 @@ describe("DingTalkTab", () => {
 
   it("keeps loading and retryable error states visible before capability data arrives", async () => {
     installationsRef.current = {
-      installations: [{ id: "i1", agent_id: "agent-7", status: "active" }],
+      installations: [{ id: "i1", agent_id: "agent-7", status: "installed" }],
       configured: true,
       install_supported: true,
     };
@@ -653,7 +653,7 @@ describe("DingTalkTab", () => {
     membersRef.current = [{ user_id: "user-1", role: "member" }];
     installationsRef.current = {
       installations: [
-        { id: "i1", agent_id: "agent-7", status: "active", installed_at: "" },
+        { id: "i1", agent_id: "agent-7", status: "installed", installed_at: "" },
       ],
       configured: true,
       install_supported: true,
@@ -689,7 +689,7 @@ describe("DingTalkTab", () => {
     membersRef.current = [{ user_id: "user-1", role: "member" }];
     installationsRef.current = {
       installations: [
-        { id: "i1", agent_id: "agent-7", status: "active", installed_at: "" },
+        { id: "i1", agent_id: "agent-7", status: "installed", installed_at: "" },
       ],
       configured: true,
       install_supported: true,
@@ -722,7 +722,7 @@ describe("DingTalkTab", () => {
         {
           id: "i-private",
           agent_id: "agent-private",
-          status: "active",
+          status: "installed",
           installed_at: "2026-08-19T00:00:00Z",
         },
       ],
@@ -743,7 +743,7 @@ describe("DingTalkTab", () => {
           id: "i-orphan",
           agent_id: "agent-deleted",
           agent_available: false,
-          status: "active",
+          status: "installed",
           installed_at: "2026-08-19T00:00:00Z",
         },
       ],
@@ -762,8 +762,8 @@ describe("DingTalkTab", () => {
   it("shows a placeholder instead of 'Invalid Date' when installed_at is missing or malformed", () => {
     installationsRef.current = {
       installations: [
-        { id: "i1", agent_id: "agent-7", status: "active", installed_at: "" },
-        { id: "i2", agent_id: "agent-8", status: "active", installed_at: "not-a-date" },
+        { id: "i1", agent_id: "agent-7", status: "installed", installed_at: "" },
+        { id: "i2", agent_id: "agent-8", status: "installed", installed_at: "not-a-date" },
       ],
       configured: true,
       install_supported: true,

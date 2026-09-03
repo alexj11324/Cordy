@@ -24,7 +24,7 @@ export function DingTalkGroupRoutes({
   const routesQuery = useQuery(dingtalkGroupRoutesOptions(workspaceId));
   const agentsQuery = useQuery({ ...agentListOptions(workspaceId), enabled: !!workspaceId });
   const updateRoute = useUpdateDingTalkGroupRoute(workspaceId);
-  const activeInstallations = new Set(installations.filter((item) => item.status === "active").map((item) => item.id));
+  const activeInstallations = new Set(installations.filter((item) => item.status === "installed").map((item) => item.id));
   const routes = (routesQuery.data?.routes ?? []).filter((route) =>
     route.id && route.workspace_id === workspaceId && activeInstallations.has(route.installation_id),
   );

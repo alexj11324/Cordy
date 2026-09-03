@@ -49,7 +49,7 @@ type WecomCopy = {
   disconnectDescription: string;
   cancel: string;
   connecting: string;
-  connected: string;
+  installed: string;
   revoked: string;
   revokeFailed: string;
   selectAgent: string;
@@ -135,7 +135,7 @@ const EN: W8Copy = {
     disconnectDescription: "New messages from this bot will stop reaching Patchbay.",
     cancel: "Cancel",
     connecting: "Connecting…",
-    connected: "Connected",
+    installed: "Installed",
     revoked: "Revoked",
     revokeFailed: "Couldn’t disconnect this bot.",
     selectAgent: "Select an agent",
@@ -215,7 +215,7 @@ const JA: W8Copy = {
     disconnectDescription: "このボットからの新しいメッセージはPatchbayに届かなくなります。",
     cancel: "キャンセル",
     connecting: "接続中…",
-    connected: "接続済み",
+    installed: "インストール済み",
     revoked: "解除済み",
     revokeFailed: "ボットの接続を解除できませんでした。",
     selectAgent: "エージェントを選択",
@@ -295,7 +295,7 @@ const KO: W8Copy = {
     disconnectDescription: "이 봇의 새 메시지는 Patchbay에 도착하지 않습니다.",
     cancel: "취소",
     connecting: "연결 중…",
-    connected: "연결됨",
+    installed: "설치됨",
     revoked: "해제됨",
     revokeFailed: "봇 연결을 해제할 수 없습니다.",
     selectAgent: "에이전트 선택",
@@ -375,7 +375,7 @@ const ZH_HANS: W8Copy = {
     disconnectDescription: "此机器人发来的新消息将不再进入 Patchbay。",
     cancel: "取消",
     connecting: "连接中…",
-    connected: "已连接",
+    installed: "已安装",
     revoked: "已断开",
     revokeFailed: "无法断开此机器人。",
     selectAgent: "选择 Agent",

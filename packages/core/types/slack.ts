@@ -15,7 +15,7 @@ export interface SlackInstallation {
   /** The installed bot's Slack user id. */
   bot_user_id: string;
   installer_user_id: string;
-  status: "active" | "revoked" | string;
+  status: "installed" | "revoked" | string;
   runtime?: MessagingInstallationRuntime;
   setup?: MessagingInstallationSetup;
   installed_at: string;

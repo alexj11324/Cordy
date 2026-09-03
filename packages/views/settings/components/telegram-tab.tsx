@@ -1,5 +1,7 @@
 "use client";
 
+import { MessagingConnectionStatus } from "./messaging-connection-status";
+
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -188,7 +190,7 @@ function InstallationRow({
   const { t } = useT("settings");
   const locale = useLocale();
   const { getAgentName } = useActorName();
-  const isActive = installation.status === "active";
+  const isInstalled = installation.status === "installed";
   const agentName = getAgentName(installation.agent_id);
   return (
     <div className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
@@ -201,6 +203,7 @@ function InstallationRow({
           profileLink
         />
         <div className="space-y-1">
+          <MessagingConnectionStatus installation={installation} />
           <p className="text-body font-medium">
             {agentName}
             {installation.bot_username ? (
@@ -208,7 +211,7 @@ function InstallationRow({
                 @{installation.bot_username}
               </span>
             ) : null}
-            {!isActive && (
+            {!isInstalled && (
               <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
                 {t(($) => $.telegram.revoked_badge)}
               </span>
@@ -221,7 +224,7 @@ function InstallationRow({
           </p>
         </div>
       </div>
-      {canManage && isActive && (
+      {canManage && isInstalled && (
         <Button variant="outline" size="sm" onClick={onDisconnect}>
           <Trash2 className="h-3 w-3" />
           {t(($) => $.telegram.disconnect)}
@@ -288,11 +291,12 @@ export function TelegramAgentBindButton({
   if (!canManage) return null;
 
   const existing = listing?.installations.find(
-    (inst) => inst.agent_id === agentId && inst.status === "active",
+    (inst) => inst.agent_id === agentId && inst.status === "installed",
   );
   if (existing) {
     return onShowConnectedDetails ? (
       <TelegramAgentBotStatusRow
+        installation={existing}
         onClick={onShowConnectedDetails}
         className={className}
       />
@@ -315,7 +319,7 @@ export function TelegramAgentBindButton({
     setSubmitting(true);
     try {
       const installation = await api.registerTelegramBot(wsId, agentId, { bot_token });
-      if (!installation.id || installation.status !== "active") {
+      if (!installation.id || installation.status !== "installed") {
         throw new Error("Telegram connection returned an invalid installation");
       }
       // The telegram_installation realtime event also refreshes this list, but
@@ -427,9 +431,11 @@ export function TelegramAgentBindButton({
 // TelegramAgentBotStatusRow is the compact, read-only connected affordance the
 // agent inspector renders; it deep-links into the Integrations tab.
 function TelegramAgentBotStatusRow({
+  installation,
   onClick,
   className,
 }: {
+  installation: TelegramInstallation;
   onClick: () => void;
   className?: string;
 }) {
@@ -444,8 +450,8 @@ function TelegramAgentBotStatusRow({
       )}
       data-testid="telegram-agent-bot-status"
     >
-      <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
-      <span className="truncate">{t(($) => $.telegram.agent_bot_connected_label)}</span>
+      <span className="truncate">{t(($) => $.telegram.section_title)}</span>
+      <MessagingConnectionStatus installation={installation} compact />
       <ChevronRight className="ml-auto h-3.5 w-3.5 shrink-0" />
     </button>
   );
@@ -491,9 +497,8 @@ function TelegramAgentBotConnectedBadge({
     >
       <div className="flex items-center justify-between gap-3">
         <span className="inline-flex min-w-0 items-center gap-2 text-caption text-muted-foreground">
-          <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
           <span className="truncate">
-            {t(($) => $.telegram.agent_bot_connected_label)}
+            <MessagingConnectionStatus installation={installation} compact />
             {installation.bot_username ? ` · @${installation.bot_username}` : ""}
           </span>
         </span>
