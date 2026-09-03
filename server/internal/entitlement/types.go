@@ -14,7 +14,7 @@ type GateName string
 const (
 	GateIssueCount    GateName = "issue_count"
 	GateAutomationRuns GateName = "automation_runs"
-	// GateImInstallationLimit caps how many active channel installations a
+	// GateImInstallationLimit caps how many installed channel connections a
 	// managed workspace may hold. Unlike the counters above it is OPTIONAL on
 	// the wire: Cloud deployments that have not rolled it out simply omit it,
 	// and a missing gate resolves to an off decision (ReasonGateAbsent) rather

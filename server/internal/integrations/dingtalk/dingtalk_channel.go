@@ -17,7 +17,7 @@ import (
 // installation carries its own robot — its own AppKey plus encrypted AppSecret
 // in the installation config — so it gets its own connection, exactly
 // like the per-installation Slack and Feishu adapters. The engine.Supervisor
-// builds one dingtalkChannel per active installation (via the registered
+// builds one dingtalkChannel per installed connection (via the registered
 // Factory) and owns the lease / reconnect lifecycle; Connect blocks until the
 // run context is cancelled.
 //

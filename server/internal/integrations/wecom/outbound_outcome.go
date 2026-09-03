@@ -82,11 +82,11 @@ const (
 	// counter on a busy workspace.
 	skipOriginNotChannel skipReason = "origin_not_channel"
 
-	// skipInstallationInactive — the installation was revoked between the
+	// skipInstallationRevoked — the installation was revoked between the
 	// trigger and the reply. Not a delivery failure: there is no longer an
 	// installation to deliver through, and the bot is gone from the user's
 	// side too.
-	skipInstallationInactive skipReason = "installation_inactive"
+	skipInstallationRevoked skipReason = "installation_revoked"
 
 	// skipNothingToSay — an empty completion carrying no file. There was never
 	// a message here.

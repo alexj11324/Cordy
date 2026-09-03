@@ -15,7 +15,7 @@ func TestHistoryRouteBoundaryPendingReturnsEmptyWithoutSlackRead(t *testing.T) {
 	binding := dmBinding()
 	binding.HistoryBoundaryPending = true
 	client := &fakeHistoryClient{historyMsgs: []slack.Message{msg("U1", "old", "1.0")}}
-	page, err := newTestHistory(&fakeHistoryQueries{binding: binding, inst: activeSlackInstall()}, client).
+	page, err := newTestHistory(&fakeHistoryQueries{binding: binding, inst: installedSlackInstall()}, client).
 		Thread(context.Background(), uid(1), "", channel.HistoryOptions{})
 	if err != nil {
 		t.Fatalf("Thread: %v", err)
@@ -34,7 +34,7 @@ func TestHistoryAppliesRouteAndContextIntersection(t *testing.T) {
 		msg("U1", "context start", "3.0"), msg("U1", "context end", "4.0"),
 		msg("U1", "route end", "5.0"),
 	}}
-	page, err := newTestHistory(&fakeHistoryQueries{binding: binding, inst: activeSlackInstall()}, client).
+	page, err := newTestHistory(&fakeHistoryQueries{binding: binding, inst: installedSlackInstall()}, client).
 		Thread(context.Background(), uid(1), "", channel.HistoryOptions{After: "3.0", Until: "4.0"})
 	if err != nil {
 		t.Fatalf("Thread: %v", err)
@@ -53,7 +53,7 @@ func TestHistoryNormalizesNewChatBoundaryMessage(t *testing.T) {
 	client := &fakeHistoryClient{historyMsgs: []slack.Message{
 		msg("U1", "<@UBOT> /new investigate latency\nwith traces", "2.0"),
 	}}
-	page, err := newTestHistory(&fakeHistoryQueries{binding: binding, inst: activeSlackInstall()}, client).
+	page, err := newTestHistory(&fakeHistoryQueries{binding: binding, inst: installedSlackInstall()}, client).
 		Thread(context.Background(), uid(1), "", channel.HistoryOptions{})
 	if err != nil {
 		t.Fatalf("Thread: %v", err)
@@ -72,7 +72,7 @@ func TestHistoryFiltersTaggedControlAckAndForeignRoute(t *testing.T) {
 	foreign := msg("UBOT", "late old reply", "2.0")
 	foreign.Metadata = outboundMetadata(uid(9), 1, "task_reply")
 	client := &fakeHistoryClient{historyMsgs: []slack.Message{current, ack, foreign}}
-	page, err := newTestHistory(&fakeHistoryQueries{binding: binding, inst: activeSlackInstall()}, client).
+	page, err := newTestHistory(&fakeHistoryQueries{binding: binding, inst: installedSlackInstall()}, client).
 		Thread(context.Background(), uid(1), "", channel.HistoryOptions{})
 	if err != nil {
 		t.Fatalf("Thread: %v", err)
@@ -87,7 +87,7 @@ func TestHistoryFiltersTaggedControlAckAndForeignRoute(t *testing.T) {
 
 func TestHistoryFiltersControlAckFromLedgerWithoutMetadata(t *testing.T) {
 	binding := dmBinding()
-	q := &fakeHistoryQueries{binding: binding, inst: activeSlackInstall(), outbound: []db.ChannelOutboundMessage{{
+	q := &fakeHistoryQueries{binding: binding, inst: installedSlackInstall(), outbound: []db.ChannelOutboundMessage{{
 		ChannelMessageID: "2.0", BindingID: binding.ID, OutboundKind: "control_ack",
 	}}}
 	client := &fakeHistoryClient{historyMsgs: []slack.Message{msg("UBOT", "started", "2.0"), msg("U1", "hello", "3.0")}}
@@ -109,7 +109,7 @@ func TestHistoryCursorAdvancesWhenFullRawPageIsRouteFiltered(t *testing.T) {
 		filtered[i].Metadata = outboundMetadata(binding.ID, 2, "control_ack")
 	}
 	client := &fakeHistoryClient{historyMsgs: filtered}
-	page, err := newTestHistory(&fakeHistoryQueries{binding: binding, inst: activeSlackInstall()}, client).
+	page, err := newTestHistory(&fakeHistoryQueries{binding: binding, inst: installedSlackInstall()}, client).
 		Thread(context.Background(), uid(1), "", channel.HistoryOptions{Limit: 3})
 	if err != nil {
 		t.Fatalf("Thread: %v", err)

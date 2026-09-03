@@ -21,7 +21,7 @@ type fakeManagedTokenQueries struct {
 	loseRotation bool
 }
 
-func (q *fakeManagedTokenQueries) ListActiveManagedSlackInstallations(context.Context) ([]db.ChannelInstallation, error) {
+func (q *fakeManagedTokenQueries) ListConnectableManagedSlackInstallations(context.Context) ([]db.ChannelInstallation, error) {
 	return q.rows, nil
 }
 func (q *fakeManagedTokenQueries) RotateManagedSlackTokens(_ context.Context, p db.RotateManagedSlackTokensParams) (int64, error) {
@@ -62,7 +62,7 @@ func tokenWorkerFixture(t *testing.T, q *fakeManagedTokenQueries, server *httpte
 	if err != nil {
 		t.Fatal(err)
 	}
-	q.rows = []db.ChannelInstallation{{ID: testUUID(31), Config: encoded, Status: "active"}}
+	q.rows = []db.ChannelInstallation{{ID: testUUID(31), Config: encoded, Status: "installed"}}
 	return worker, cfg
 }
 

@@ -81,7 +81,7 @@ func TestInstallationConfigRoundTrip(t *testing.T) {
 		AgentID:         in.AgentID,
 		ChannelType:     "feishu",
 		Config:          cfg,
-		Status:          "active",
+		Status:          "installed",
 		InstallerUserID: in.InstallerUserID,
 		WsLeaseToken:    pgtype.Text{String: "node-1-g3", Valid: true},
 	}
@@ -100,7 +100,7 @@ func TestInstallationConfigRoundTrip(t *testing.T) {
 		t.Fatalf("optional config mismatch: tenant=%+v union=%+v", got.TenantKey, got.BotUnionID)
 	}
 	// Flat columns must come straight from the row, not the config.
-	if got.Status != "active" || got.WsLeaseToken.String != "node-1-g3" {
+	if got.Status != "installed" || got.WsLeaseToken.String != "node-1-g3" {
 		t.Fatalf("flat columns not preserved: status=%q lease=%q", got.Status, got.WsLeaseToken.String)
 	}
 	if got.ID != in.ID || got.WorkspaceID != in.WorkspaceID || got.InstallerUserID != in.InstallerUserID {
@@ -127,7 +127,7 @@ func TestInstallationToleratesMimeWrappedSecret(t *testing.T) {
 		t.Fatalf("marshal config: %v", err)
 	}
 
-	got, err := installationFromRow(db.ChannelInstallation{Config: cfg, Status: "active"})
+	got, err := installationFromRow(db.ChannelInstallation{Config: cfg, Status: "installed"})
 	if err != nil {
 		t.Fatalf("installationFromRow with wrapped secret: %v", err)
 	}

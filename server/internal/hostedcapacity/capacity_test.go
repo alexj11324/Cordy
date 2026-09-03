@@ -26,7 +26,7 @@ func (f *fakeTxStarter) Begin(context.Context) (pgx.Tx, error) { return f.tx, ni
 // ordered installation list and inspects the pause/resume/observation calls.
 type fakeQueries struct {
 	workspaceMissing bool
-	rows             []db.ListActiveChannelInstallationsForCapacityRow
+	rows             []db.ListInstalledChannelInstallationsForCapacityRow
 
 	pausedIDs    [][]pgtype.UUID
 	resumedIDs   [][]pgtype.UUID
@@ -43,7 +43,7 @@ func (f *fakeQueries) LockWorkspaceForHostedCapacity(_ context.Context, _ pgtype
 	return pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, nil
 }
 
-func (f *fakeQueries) ListActiveChannelInstallationsForCapacity(_ context.Context, workspaceID pgtype.UUID) ([]db.ListActiveChannelInstallationsForCapacityRow, error) {
+func (f *fakeQueries) ListInstalledChannelInstallationsForCapacity(_ context.Context, workspaceID pgtype.UUID) ([]db.ListInstalledChannelInstallationsForCapacityRow, error) {
 	f.listedIDs = append(f.listedIDs, workspaceID)
 	return f.rows, nil
 }
@@ -71,8 +71,8 @@ func pausedAt() pgtype.Timestamptz {
 	return pgtype.Timestamptz{Valid: true}
 }
 
-func inst(id byte, paused bool) db.ListActiveChannelInstallationsForCapacityRow {
-	row := db.ListActiveChannelInstallationsForCapacityRow{
+func inst(id byte, paused bool) db.ListInstalledChannelInstallationsForCapacityRow {
+	row := db.ListInstalledChannelInstallationsForCapacityRow{
 		ID: pgtype.UUID{Bytes: [16]byte{id}, Valid: true},
 	}
 	if paused {
@@ -84,7 +84,7 @@ func inst(id byte, paused bool) db.ListActiveChannelInstallationsForCapacityRow 
 func TestReconcile(t *testing.T) {
 	ws := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 	t.Run("keeps the oldest installations and pauses the rest", func(t *testing.T) {
-		q := &fakeQueries{rows: []db.ListActiveChannelInstallationsForCapacityRow{
+		q := &fakeQueries{rows: []db.ListInstalledChannelInstallationsForCapacityRow{
 			inst(1, false), inst(2, false), inst(3, false),
 		}}
 		tx := &fakeTxStarter{tx: &fakeTx{}}
@@ -106,7 +106,7 @@ func TestReconcile(t *testing.T) {
 		}
 	})
 	t.Run("resumes a paused installation that fits again", func(t *testing.T) {
-		q := &fakeQueries{rows: []db.ListActiveChannelInstallationsForCapacityRow{
+		q := &fakeQueries{rows: []db.ListInstalledChannelInstallationsForCapacityRow{
 			inst(1, true), inst(2, false),
 		}}
 		tx := &fakeTxStarter{tx: &fakeTx{}}
@@ -124,7 +124,7 @@ func TestReconcile(t *testing.T) {
 	t.Run("nil limit resumes every paused installation", func(t *testing.T) {
 		// Unlimited/bypass: the pause marker is a runtime condition, never a
 		// desired state, so nothing stays paused without a cap enforcing it.
-		q := &fakeQueries{rows: []db.ListActiveChannelInstallationsForCapacityRow{
+		q := &fakeQueries{rows: []db.ListInstalledChannelInstallationsForCapacityRow{
 			inst(1, true), inst(2, true), inst(3, false),
 		}}
 		tx := &fakeTxStarter{tx: &fakeTx{}}
@@ -137,7 +137,7 @@ func TestReconcile(t *testing.T) {
 		}
 	})
 	t.Run("paused installations get an offline observation from the entitlement observer", func(t *testing.T) {
-		q := &fakeQueries{rows: []db.ListActiveChannelInstallationsForCapacityRow{
+		q := &fakeQueries{rows: []db.ListInstalledChannelInstallationsForCapacityRow{
 			inst(1, false), inst(2, false),
 		}}
 		tx := &fakeTxStarter{tx: &fakeTx{}}
@@ -158,7 +158,7 @@ func TestReconcile(t *testing.T) {
 	t.Run("already-aligned state writes nothing", func(t *testing.T) {
 		// Two fit under the cap and are unpaused; the third is over the cap
 		// and already paused — reconcile has nothing to write.
-		q := &fakeQueries{rows: []db.ListActiveChannelInstallationsForCapacityRow{
+		q := &fakeQueries{rows: []db.ListInstalledChannelInstallationsForCapacityRow{
 			inst(1, false), inst(2, false), inst(3, true),
 		}}
 		tx := &fakeTxStarter{tx: &fakeTx{}}

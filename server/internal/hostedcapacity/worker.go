@@ -23,7 +23,7 @@ type WorkerConfig struct {
 	Logger      *slog.Logger
 }
 
-// Worker sweeps every workspace that holds active installations and re-aligns
+// Worker sweeps every workspace that holds installed connections and re-aligns
 // its pause markers with the current Cloud policy. Subscription changes land
 // here within one interval even when no install is attempted; the per-request
 // reconcile in Limiter.InstallationLimit keeps latency low, this sweep keeps
@@ -91,7 +91,7 @@ func (w *Worker) Run(ctx context.Context) {
 	}
 }
 
-// Sweep reconciles every workspace holding active installations, at most
+// Sweep reconciles every workspace holding installed connections, at most
 // `Concurrency` at a time.
 func (w *Worker) Sweep(ctx context.Context) error {
 	workspaceIDs, err := w.queries.ListHostedInstallationWorkspaces(ctx)

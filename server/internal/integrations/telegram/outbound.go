@@ -992,7 +992,7 @@ func (o *Outbound) resolveTarget(ctx context.Context, e events.Event, _ bool) (*
 	if err != nil {
 		return nil, fmt.Errorf("load telegram installation: %w", err)
 	}
-	if inst.Status != "active" {
+	if inst.Status != "installed" {
 		return nil, nil // revoked between trigger and reply
 	}
 	creds, err := decodeCredentials(inst.Config, o.decrypt)

@@ -233,7 +233,7 @@ func TestManagedSlackOAuthCallbackHappyPathRedirects(t *testing.T) {
 	var status string
 	dbfx.QueryRow(t, `SELECT config, agent_id::text, status FROM channel_installation WHERE workspace_id = $1 AND channel_type = 'slack'`,
 		testWorkspaceID).Scan(&configJSON, &agentID, &status)
-	if status != "active" {
+	if status != "installed" {
 		t.Fatalf("installation status = %q, want active", status)
 	}
 	if agentID != "00000000-0000-0000-0000-000000000000" {
@@ -297,7 +297,7 @@ func TestManagedSlackOAuthCallbackSecondTeamConflicts(t *testing.T) {
 	testutil.Call(t, h.ManagedSlackOAuthCallback, req).Want(http.StatusConflict)
 
 	var installs int
-	dbfx.QueryRow(t, `SELECT COUNT(*) FROM channel_installation WHERE workspace_id = $1 AND channel_type = 'slack' AND status = 'active'`,
+	dbfx.QueryRow(t, `SELECT COUNT(*) FROM channel_installation WHERE workspace_id = $1 AND channel_type = 'slack' AND status = 'installed'`,
 		testWorkspaceID).Scan(&installs)
 	if installs != 1 {
 		t.Fatalf("second team must not duplicate the install (active installs = %d)", installs)

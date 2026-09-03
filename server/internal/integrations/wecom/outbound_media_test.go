@@ -95,7 +95,7 @@ func oneAttachmentQueries(t *testing.T, row db.Attachment) *fakeOutboundQueries 
 	t.Helper()
 	q := &fakeOutboundQueries{
 		sessionBinding: db.ChannelChatSessionBinding{ChannelChatID: "CHAT_1", ChatType: "group"},
-		installation:   db.ChannelInstallation{Status: string(InstallationActive)},
+		installation:   db.ChannelInstallation{Status: string(InstallationInstalled)},
 		attachments:    []db.Attachment{row},
 		// Asked in the room. A file is delivered on the far side of the origin
 		// gate, so every rig here has to say where the question came from —

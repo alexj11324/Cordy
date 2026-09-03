@@ -21,7 +21,7 @@ import (
 // app — its own app-level token (xapp-, stored encrypted in the installation
 // config) — so it gets its own connection, exactly like the stage-3
 // per-installation model and like Feishu today. The engine.Supervisor builds
-// one slackChannel per active Slack installation (via the registered Factory)
+// one slackChannel per installed Slack connection (via the registered Factory)
 // and owns the lease / reconnect lifecycle; Connect blocks on the receive loop.
 //
 // Inbound events are translated by the shared inbound.go helpers, parameterized

@@ -15,7 +15,7 @@ import (
 func TestConnectionProjectionRequiresCurrentLeaseAndFreshObservation(t *testing.T) {
 	now := time.Date(2026, time.September, 3, 12, 0, 0, 0, time.UTC)
 	base := db.ListChannelConnectionStatesRow{
-		Status: "active", UpdatedAt: pgtype.Timestamptz{Time: now.Add(-time.Hour), Valid: true},
+		Status: "installed", UpdatedAt: pgtype.Timestamptz{Time: now.Add(-time.Hour), Valid: true},
 		State: pgtype.Text{String: "healthy", Valid: true},
 		ObservedAt: pgtype.Timestamptz{Time: now.Add(-time.Second), Valid: true},
 		ObserverToken: pgtype.Text{String: "current", Valid: true},

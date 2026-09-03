@@ -110,8 +110,8 @@ func (s *ChannelStore) ListLarkInstallationsByWorkspace(ctx context.Context, wor
 	return installationsFromRows(rows)
 }
 
-func (s *ChannelStore) ListActiveLarkInstallations(ctx context.Context) ([]Installation, error) {
-	rows, err := s.Queries.ListActiveChannelInstallations(ctx, channelTypeFeishu)
+func (s *ChannelStore) ListConnectableLarkInstallations(ctx context.Context) ([]Installation, error) {
+	rows, err := s.Queries.ListConnectableChannelInstallations(ctx, channelTypeFeishu)
 	if err != nil {
 		return nil, err
 	}

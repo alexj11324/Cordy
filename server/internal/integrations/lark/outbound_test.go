@@ -198,7 +198,7 @@ func newTestPatcher(t *testing.T) (*Patcher, *fakePatcherQueries, *fakeAPIClient
 			ID:                 uuidFromString(t, "1111aaaa-1111-1111-1111-111111111111"),
 			AppID:              "cli_test_app",
 			AppSecretEncrypted: []byte("ciphertext"),
-			Status:             string(InstallationActive),
+			Status:             string(InstallationInstalled),
 			AgentID:            uuidFromString(t, "aaaa1111-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
 		},
 		agent:   db.Agent{Name: "TestAgent"},

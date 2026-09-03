@@ -140,7 +140,7 @@ func installationRowID(t *testing.T, ctx context.Context, pool *pgxpool.Pool, ap
 // refused anyway has no business producing an external side effect.
 func TestUpsert_DoesNotProbeWhenAnActiveOwnerHoldsTheBot(t *testing.T) {
 	ctx, pool := setupProbe(t)
-	insertProbeInstall(t, ctx, pool, wcPrbWS, wcPrbAgentA, wcPrbBotActive, "active")
+	insertProbeInstall(t, ctx, pool, wcPrbWS, wcPrbAgentA, wcPrbBotActive, "installed")
 	victim := installationRowID(t, ctx, pool, wcPrbBotActive)
 
 	// The correct secret, deliberately: the point is that even a caller who
@@ -165,7 +165,7 @@ func TestUpsert_DoesNotProbeWhenAnActiveOwnerHoldsTheBot(t *testing.T) {
 // and the row still names a bot that may be connected.
 func TestUpsert_DoesNotProbeWhenAnArchivedOwnerHoldsTheBot(t *testing.T) {
 	ctx, pool := setupProbe(t)
-	insertProbeInstall(t, ctx, pool, wcPrbWS, wcPrbAgentArc, wcPrbBotArchived, "active")
+	insertProbeInstall(t, ctx, pool, wcPrbWS, wcPrbAgentArc, wcPrbBotArchived, "installed")
 
 	probe := &fakeProbe{}
 	svc := newProbeSvc(t, pool, probe)
@@ -183,7 +183,7 @@ func TestUpsert_DoesNotProbeWhenAnArchivedOwnerHoldsTheBot(t *testing.T) {
 // caller has no way to even know what they just disconnected.
 func TestUpsert_DoesNotProbeWhenAnotherWorkspaceHoldsTheBot(t *testing.T) {
 	ctx, pool := setupProbe(t)
-	insertProbeInstall(t, ctx, pool, wcPrbOtherWS, wcPrbAgentOth, wcPrbBotForeign, "active")
+	insertProbeInstall(t, ctx, pool, wcPrbOtherWS, wcPrbAgentOth, wcPrbBotForeign, "installed")
 	victim := installationRowID(t, ctx, pool, wcPrbBotForeign)
 
 	probe := &fakeProbe{}
@@ -236,7 +236,7 @@ func TestUpsert_ProbesOnceOnAFreeSlot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Upsert on a free slot = %v, want success", err)
 	}
-	if got.Status != InstallationActive {
+	if got.Status != InstallationInstalled {
 		t.Fatalf("status = %q, want active", got.Status)
 	}
 	if n := probe.callCount(); n != 1 {

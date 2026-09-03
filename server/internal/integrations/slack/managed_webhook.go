@@ -290,7 +290,7 @@ func (w *ManagedWebhook) translate(ctx context.Context, event slackevents.Events
 	if err != nil {
 		return channel.InboundMessage{}, false
 	}
-	if inst.Status != "active" {
+	if inst.Status != "installed" {
 		return channel.InboundMessage{}, false
 	}
 	botUserID := installBotUserID(inst.Config)

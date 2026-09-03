@@ -87,7 +87,7 @@ func TestChannelContextLockOrder(t *testing.T) {
 	if _, err := testPool.Exec(ctx, `
 		INSERT INTO channel_installation (
 			id, workspace_id, agent_id, channel_type, config, status, installer_user_id
-		) VALUES ($1, $2, $3, 'slack', '{}'::jsonb, 'active', $4)
+		) VALUES ($1, $2, $3, 'slack', '{}'::jsonb, 'installed', $4)
 	`, installationID, testWorkspaceID, agentID, testUserID); err != nil {
 		t.Fatalf("seed channel installation: %v", err)
 	}

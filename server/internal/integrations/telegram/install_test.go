@@ -44,7 +44,7 @@ func (f *fakeTelegramInstallQueries) UpsertChannelInstallation(_ context.Context
 	if f.appIDTaken {
 		return db.ChannelInstallation{}, &pgconn.PgError{Code: pgUniqueViolation}
 	}
-	return db.ChannelInstallation{ID: f.rowID, WorkspaceID: p.WorkspaceID, AgentID: p.AgentID, ChannelType: p.ChannelType, Config: p.Config, InstallerUserID: p.InstallerUserID, Status: "active"}, nil
+	return db.ChannelInstallation{ID: f.rowID, WorkspaceID: p.WorkspaceID, AgentID: p.AgentID, ChannelType: p.ChannelType, Config: p.Config, InstallerUserID: p.InstallerUserID, Status: "installed"}, nil
 }
 func (f *fakeTelegramInstallQueries) GetChannelInstallationOwnerByAppID(context.Context, db.GetChannelInstallationOwnerByAppIDParams) (db.GetChannelInstallationOwnerByAppIDRow, error) {
 	return f.owner, f.ownerErr
@@ -67,7 +67,7 @@ func (f *fakeTelegramInstallQueries) LockWorkspaceForHostedCapacity(_ context.Co
 }
 
 func (f *fakeTelegramInstallQueries) ChannelInstallationCapacitySnapshot(_ context.Context, _ db.ChannelInstallationCapacitySnapshotParams) (db.ChannelInstallationCapacitySnapshotRow, error) {
-	return db.ChannelInstallationCapacitySnapshotRow{ActiveCount: 0, SameSlot: false}, nil
+	return db.ChannelInstallationCapacitySnapshotRow{InstalledCount: 0, SameSlot: false}, nil
 }
 
 type fakeTelegramTx struct {

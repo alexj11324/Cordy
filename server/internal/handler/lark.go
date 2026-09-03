@@ -123,7 +123,7 @@ func (h *Handler) ListLarkInstallations(w http.ResponseWriter, r *http.Request) 
 // RevokeLarkInstallation (DELETE /api/workspaces/{id}/lark/installations/{installationId})
 // flips status to 'revoked' so the WS hub drops the connection on its
 // next sweep. The row itself is preserved for audit; a re-install via
-// the device-flow path flips status back to 'active' atomically.
+// the device-flow path flips status back to 'installed' atomically.
 //
 // Membership is checked at the router; the per-agent authorization
 // (canManageAgent: the bound agent's owner OR a workspace owner/admin)

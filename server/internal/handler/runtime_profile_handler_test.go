@@ -88,7 +88,7 @@ func TestDeleteRuntimeProfile_ArchivedAgentUnbindCascade(t *testing.T) {
 	var rpInstallID string
 	if err := testPool.QueryRow(ctx, `
 INSERT INTO channel_installation (workspace_id, agent_id, channel_type, config, installer_user_id, status)
-VALUES ($1, $2, 'feishu', jsonb_build_object('app_id', $3::text), $4, 'active')
+VALUES ($1, $2, 'feishu', jsonb_build_object('app_id', $3::text), $4, 'installed')
 RETURNING id`, testWorkspaceID, agentID, rpApp, testUserID).Scan(&rpInstallID); err != nil {
 		t.Fatalf("seed channel installation: %v", err)
 	}

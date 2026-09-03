@@ -132,7 +132,7 @@ func TestTheBotNameSurvivesTheConfigRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encode: %v", err)
 	}
-	out, err := installationFromRow(db.ChannelInstallation{Config: cfg, Status: "active"})
+	out, err := installationFromRow(db.ChannelInstallation{Config: cfg, Status: "installed"})
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}

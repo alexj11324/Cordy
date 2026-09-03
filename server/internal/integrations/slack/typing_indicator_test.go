@@ -53,7 +53,7 @@ func TestTypingIndicator_AddThenClear(t *testing.T) {
 	sessionID := uid(7)
 	q := &fakeOutboundQueries{
 		binding: db.ChannelChatSessionBinding{InstallationID: uid(1)},
-		inst:    db.ChannelInstallation{ID: uid(1), Status: "active", Config: slackInstallConfigJSON()},
+		inst:    db.ChannelInstallation{ID: uid(1), Status: "installed", Config: slackInstallConfigJSON()},
 	}
 	fr := &fakeReactor{}
 	m := newTestTyping(q, fr)
@@ -111,7 +111,7 @@ func TestTypingIndicator_ClearsOnTaskFailed(t *testing.T) {
 	sessionID := uid(7)
 	q := &fakeOutboundQueries{
 		binding: db.ChannelChatSessionBinding{InstallationID: uid(1)},
-		inst:    db.ChannelInstallation{ID: uid(1), Status: "active", Config: slackInstallConfigJSON()},
+		inst:    db.ChannelInstallation{ID: uid(1), Status: "installed", Config: slackInstallConfigJSON()},
 	}
 	fr := &fakeReactor{}
 	m := newTestTyping(q, fr)
@@ -146,7 +146,7 @@ func TestSlackTypingNotifier_OnSettledClears(t *testing.T) {
 	sessionID := uid(7)
 	q := &fakeOutboundQueries{
 		binding: db.ChannelChatSessionBinding{InstallationID: uid(1)},
-		inst:    db.ChannelInstallation{ID: uid(1), Status: "active", Config: slackInstallConfigJSON()},
+		inst:    db.ChannelInstallation{ID: uid(1), Status: "installed", Config: slackInstallConfigJSON()},
 	}
 	fr := &fakeReactor{}
 	m := newTestTyping(q, fr)
@@ -171,7 +171,7 @@ func TestTypingIndicator_ClearsOnTaskCancelled(t *testing.T) {
 	sessionID := uid(7)
 	q := &fakeOutboundQueries{
 		binding: db.ChannelChatSessionBinding{InstallationID: uid(1)},
-		inst:    db.ChannelInstallation{ID: uid(1), Status: "active", Config: slackInstallConfigJSON()},
+		inst:    db.ChannelInstallation{ID: uid(1), Status: "installed", Config: slackInstallConfigJSON()},
 	}
 	fr := &fakeReactor{}
 	m := newTestTyping(q, fr)
@@ -214,7 +214,7 @@ func TestTypingIndicator_ClearsOnTaskCancelled(t *testing.T) {
 func TestTypingIndicator_ClearsAfterSessionDeleteRemovedTheBinding(t *testing.T) {
 	sessionID := uid(7)
 	q := &fakeOutboundQueries{
-		inst: db.ChannelInstallation{ID: uid(1), Status: "active", Config: slackInstallConfigJSON()},
+		inst: db.ChannelInstallation{ID: uid(1), Status: "installed", Config: slackInstallConfigJSON()},
 	}
 	fr := &fakeReactor{}
 	m := newTestTyping(q, fr)
@@ -263,7 +263,7 @@ func TestTypingIndicator_ClearsOnCancelOfATaskThatReadsAsAWebRun(t *testing.T) {
 	sessionID := uid(7)
 	q := &fakeOutboundQueries{
 		binding:             db.ChannelChatSessionBinding{InstallationID: uid(1)},
-		inst:                db.ChannelInstallation{ID: uid(1), Status: "active", Config: slackInstallConfigJSON()},
+		inst:                db.ChannelInstallation{ID: uid(1), Status: "installed", Config: slackInstallConfigJSON()},
 		task:                db.AgentTaskQueue{ChatInputTaskID: uid(9)},
 		taskChannelIngested: false,
 	}
@@ -307,7 +307,7 @@ func TestTypingIndicator_ClearsOnCancelOfATaskThatReadsAsAWebRun(t *testing.T) {
 func TestTypingIndicator_TeardownDeletedInstallationStillClears(t *testing.T) {
 	sessionID := uid(7)
 	q := &fakeOutboundQueries{
-		inst: db.ChannelInstallation{ID: uid(1), Status: "active", Config: slackInstallConfigJSON()},
+		inst: db.ChannelInstallation{ID: uid(1), Status: "installed", Config: slackInstallConfigJSON()},
 	}
 	fr := &fakeReactor{}
 	m := newTestTyping(q, fr)
@@ -346,7 +346,7 @@ func TestTypingIndicator_TeardownDeletedInstallationStillClears(t *testing.T) {
 func TestTypingIndicator_ALiveInstallationIsPreferredOverTheSnapshot(t *testing.T) {
 	sessionID := uid(7)
 	q := &fakeOutboundQueries{
-		inst: db.ChannelInstallation{ID: uid(1), Status: "active", Config: slackInstallConfigJSON()},
+		inst: db.ChannelInstallation{ID: uid(1), Status: "installed", Config: slackInstallConfigJSON()},
 	}
 	fr := &fakeReactor{}
 	m := newTestTyping(q, fr)

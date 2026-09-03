@@ -289,7 +289,7 @@ func (r *Router) dispatch(ctx context.Context, set ResolverSet, msg channel.Inbo
 		}
 		return Result{}, ResolvedInstallation{}, fmt.Errorf("resolve installation: %w", err)
 	}
-	if !inst.Active {
+	if !inst.Installed {
 		return r.drop(ctx, set, msg, inst.ID, DropReasonRevokedInstallation), inst, nil
 	}
 

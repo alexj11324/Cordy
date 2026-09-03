@@ -4,7 +4,7 @@
 // capacity feature.
 //
 // Over-capacity installations are PAUSED, never revoked: their status stays
-// 'active', credentials and bindings survive, and every work-finding query
+// 'installed', credentials and bindings survive, and every work-finding query
 // (WebSocket lease acquisition, inbound routing, supervisor enumeration)
 // filters on channel_installation.hosted_paused_at IS NULL. Reconcile is the
 // only writer of the pause marker and runs under the same workspace row lock

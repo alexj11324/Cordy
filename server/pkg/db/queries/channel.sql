@@ -20,7 +20,7 @@
 -- Go layer assembles (for feishu: app_id, app_secret_encrypted, tenant_key,
 -- bot_open_id, bot_union_id, region). Re-installing the same agent on the
 -- same channel_type replaces the whole config and forces status back to
--- 'active'. The conflict key is (workspace_id, agent_id, channel_type) so an
+-- 'installed'. The conflict key is (workspace_id, agent_id, channel_type) so an
 -- agent may hold one installation per channel_type (feishu + slack + ...)
 -- without one install clobbering another. The WS lease is intentionally NOT
 -- reset here — the inbound hub owns lease lifecycle.
@@ -33,7 +33,7 @@ ON CONFLICT (workspace_id, agent_id, channel_type) DO UPDATE SET
     channel_type      = EXCLUDED.channel_type,
     config            = EXCLUDED.config,
     installer_user_id = EXCLUDED.installer_user_id,
-    status            = 'active',
+    status            = 'installed',
     installed_at      = now(),
     updated_at        = now()
 RETURNING *;
@@ -67,7 +67,7 @@ ON CONFLICT (channel_type, (config ->> 'app_id')) DO UPDATE SET
     agent_id          = EXCLUDED.agent_id,
     config            = EXCLUDED.config,
     installer_user_id = EXCLUDED.installer_user_id,
-    status            = 'active',
+    status            = 'installed',
     installed_at      = now(),
     updated_at        = now()
 WHERE channel_installation.workspace_id = EXCLUDED.workspace_id
@@ -192,7 +192,7 @@ WHERE ci.channel_type = sqlc.arg('channel_type')
 --
 -- The guard lives in the DELETE predicate (not a prior SELECT) so under READ
 -- COMMITTED the row is re-checked at execution (EvalPlanQual): a concurrent
--- same-agent reconnect that flips the revoked row back to 'active' first makes
+-- same-agent reconnect that flips the revoked row back to 'installed' first makes
 -- the predicate re-check fail, this deletes nothing, and no dependents are
 -- touched — closing the read-then-delete TOCTOU. Dependent cleanup keys off the
 -- actually-deleted id (the `dead` CTE), so it runs ONLY for a row this statement
@@ -360,8 +360,8 @@ WHERE workspace_id = sqlc.arg('workspace_id')
   AND channel_type = sqlc.arg('channel_type')
 ORDER BY created_at ASC;
 
--- name: ListActiveChannelInstallations :many
--- Boot path for a per-channel-type inbound hub: every active installation of
+-- name: ListConnectableChannelInstallations :many
+-- Boot path for a per-channel-type inbound hub: every installed connection of
 -- the given channel_type, so a hub claims leases and opens connections only
 -- for its own platform and never supervises another channel's installation.
 --
@@ -376,16 +376,16 @@ ORDER BY created_at ASC;
 SELECT ci.* FROM channel_installation ci
 JOIN workspace w ON w.id = ci.workspace_id
 JOIN agent a ON a.id = ci.agent_id
-WHERE ci.status = 'active'
+WHERE ci.status = 'installed'
   AND ci.hosted_paused_at IS NULL
   AND ci.channel_type = sqlc.arg('channel_type')
 ORDER BY ci.created_at ASC;
 
--- name: ListAllActiveChannelInstallations :many
+-- name: ListAllConnectableChannelInstallations :many
 -- Boot path for the channel-agnostic engine Supervisor (MUL-3620): every
--- active installation across ALL channel types, so one Supervisor drives every
+-- installed connection across ALL channel types, so one Supervisor drives every
 -- platform's connections rather than a per-platform hub. This is the de-
--- hardcoded counterpart of ListActiveChannelInstallations — the Supervisor
+-- hardcoded counterpart of ListConnectableChannelInstallations — the Supervisor
 -- routes each row to its registered channel.Factory by channel_type, so it
 -- never needs to know which platforms exist. Same orphan guard as the per-type
 -- query: the workspace + agent JOINs drop installations whose owning rows are
@@ -394,7 +394,7 @@ ORDER BY ci.created_at ASC;
 SELECT ci.* FROM channel_installation ci
 JOIN workspace w ON w.id = ci.workspace_id
 JOIN agent a ON a.id = ci.agent_id
-WHERE ci.status = 'active'
+WHERE ci.status = 'installed'
   AND ci.hosted_paused_at IS NULL
 ORDER BY ci.created_at ASC;
 
@@ -432,7 +432,7 @@ SET ws_lease_token       = sqlc.arg('new_token'),
     ws_lease_expires_at  = sqlc.arg('new_expires_at'),
     updated_at           = now()
 WHERE id = sqlc.arg('id')
-  AND status = 'active'
+  AND status = 'installed'
   AND hosted_paused_at IS NULL
   AND (
         ws_lease_token IS NULL
@@ -455,7 +455,7 @@ WHERE id = $1
 -- =====================
 -- A managed deployment can hold only N concurrent hosted channel
 -- installations per workspace (Cloud entitlement `im_installation_limit`).
--- Over-capacity installations are PAUSED, not revoked: status stays 'active'
+-- Over-capacity installations are PAUSED, not revoked: status stays 'installed'
 -- and credentials/bindings survive, but every work-finding query above filters
 -- on hosted_paused_at IS NULL. Reconcile is the only writer of the pause
 -- marker and runs under the same workspace row lock as admission
@@ -469,13 +469,13 @@ SELECT id FROM workspace
 WHERE id = sqlc.arg('workspace_id')
 FOR UPDATE;
 
--- name: ListActiveChannelInstallationsForCapacity :many
+-- name: ListInstalledChannelInstallationsForCapacity :many
 -- Ordered oldest-first so the FIRST `limit` installations are the ones
 -- capacity keeps; everything after them is paused. FOR UPDATE holds the rows
 -- against a concurrent install upsert inside the same transaction.
 SELECT id, hosted_paused_at FROM channel_installation
 WHERE workspace_id = sqlc.arg('workspace_id')
-  AND status = 'active'
+  AND status = 'installed'
 ORDER BY created_at ASC, id ASC
 FOR UPDATE;
 
@@ -498,28 +498,28 @@ WHERE id = ANY(@ids::uuid[]);
 -- name: ChannelInstallationCapacitySnapshot :one
 -- Admission read, taken under LockWorkspaceForHostedCapacity in the same
 -- transaction as the install upsert. same_slot is true when this exact
--- (channel_type, agent) slot already holds an active installation —
+-- (channel_type, agent) slot already holds an installed connection —
 -- reconnecting an existing install must never be refused by the cap it
 -- itself occupies.
-SELECT count(*)::bigint AS active_count,
+SELECT count(*)::bigint AS installed_count,
        EXISTS (
            SELECT 1
            FROM channel_installation AS same
            WHERE same.workspace_id = sqlc.arg('workspace_id')
-             AND same.status = 'active'
+             AND same.status = 'installed'
              AND same.channel_type = sqlc.arg('channel_type')
              AND same.agent_id IS NOT DISTINCT FROM sqlc.arg('agent_id')::uuid
        ) AS same_slot
 FROM channel_installation
 WHERE workspace_id = sqlc.arg('workspace_id')
-  AND status = 'active';
+  AND status = 'installed';
 
 -- name: ListHostedInstallationWorkspaces :many
 -- Every workspace that could have paused installations, for the background
 -- reconciler sweep. DISTINCT keeps the sweep O(workspaces), not O(installs).
 SELECT DISTINCT workspace_id
 FROM channel_installation
-WHERE status = 'active'
+WHERE status = 'installed'
 ORDER BY workspace_id;
 
 -- =====================
@@ -574,7 +574,7 @@ JOIN channel_installation ci ON ci.id = b.installation_id
 WHERE b.workspace_id = sqlc.arg('workspace_id')
   AND b.patchbay_user_id = sqlc.arg('patchbay_user_id')
   AND b.channel_type = sqlc.arg('channel_type')
-  AND ci.status = 'active'
+  AND ci.status = 'installed'
 ORDER BY b.bound_at DESC
 LIMIT 1;
 

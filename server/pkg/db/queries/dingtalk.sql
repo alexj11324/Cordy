@@ -50,7 +50,7 @@ WITH target AS MATERIALIZED (
     WHERE channel_installation.id = sqlc.arg(installation_id)
       AND channel_installation.workspace_id = sqlc.arg(workspace_id)
       AND channel_installation.channel_type = 'dingtalk'
-      AND channel_installation.status = 'active'
+      AND channel_installation.status = 'installed'
     FOR UPDATE
 ), prior_identity AS (
     SELECT
@@ -94,7 +94,7 @@ WITH target AS MATERIALIZED (
     WHERE channel_installation.id = sqlc.arg(installation_id)
       AND channel_installation.workspace_id = sqlc.arg(workspace_id)
       AND channel_installation.channel_type = 'dingtalk'
-      AND channel_installation.status = 'active'
+      AND channel_installation.status = 'installed'
     FOR KEY SHARE
 ), current_identity AS (
     SELECT identity.installation_id, identity.bot_name, identity.bot_identity_issue
@@ -172,7 +172,7 @@ JOIN channel_installation installation ON installation.id = presence.installatio
 LEFT JOIN dingtalk_bot_identity identity ON identity.installation_id = presence.installation_id
 WHERE installation.workspace_id = sqlc.arg(workspace_id)
   AND installation.channel_type = 'dingtalk'
-  AND installation.status = 'active'
+  AND installation.status = 'installed'
   AND (NOT sqlc.arg(filter_by_agent)::boolean OR installation.agent_id = sqlc.arg(agent_id))
   AND (NOT sqlc.arg(filter_by_installation)::boolean OR installation.id = sqlc.arg(filter_installation_id))
   AND (
@@ -190,7 +190,7 @@ FROM dingtalk_group_presence presence
 JOIN channel_installation installation ON installation.id = presence.installation_id
 WHERE installation.workspace_id = sqlc.arg(workspace_id)
   AND installation.channel_type = 'dingtalk'
-  AND installation.status = 'active'
+  AND installation.status = 'installed'
   AND (presence.last_active_at < sqlc.arg(active_since) OR presence.last_active_at IS NULL)
   AND (NOT sqlc.arg(filter_by_agent)::boolean OR installation.agent_id = sqlc.arg(agent_id))
 GROUP BY presence.installation_id, installation.agent_id;
@@ -207,7 +207,7 @@ FROM channel_installation installation
 JOIN dingtalk_bot_identity identity ON identity.installation_id = installation.id
 WHERE installation.workspace_id = sqlc.arg(workspace_id)
   AND installation.channel_type = 'dingtalk'
-  AND installation.status = 'active'
+  AND installation.status = 'installed'
   AND (NOT sqlc.arg(filter_by_agent)::boolean OR installation.agent_id = sqlc.arg(agent_id));
 
 -- name: ForgetDingTalkGroupPresence :one
@@ -234,7 +234,7 @@ WITH workspace_guard AS MATERIALIZED (
     JOIN workspace_guard w ON w.id = i.workspace_id
     WHERE i.id = sqlc.arg(installation_id)
       AND i.channel_type = 'dingtalk'
-      AND i.status = 'active'
+      AND i.status = 'installed'
       AND i.hosted_paused_at IS NULL
     FOR SHARE OF i
 ), group_route AS (
@@ -276,7 +276,7 @@ WITH workspace_guard AS MATERIALIZED (
     SELECT i.id FROM channel_installation i
     WHERE i.id = sqlc.arg(installation_id)
       AND i.workspace_id = sqlc.arg(workspace_id)
-      AND i.channel_type = 'dingtalk' AND i.status = 'active'
+      AND i.channel_type = 'dingtalk' AND i.status = 'installed'
       AND i.hosted_paused_at IS NULL
       AND EXISTS (SELECT 1 FROM target_agent)
     FOR SHARE OF i
@@ -307,7 +307,7 @@ WHERE chat_session_id IN (SELECT chat_session_id FROM stale);
 
 -- name: ListDingTalkGroupRoutesByWorkspace :many
 -- Settings inventory of group-to-agent assignments. Only routes under an
--- active DingTalk installation are listed; revoked installations keep their
+-- installed DingTalk connection are listed; revoked installations keep their
 -- rows for audit but disappear from the panel. Mirrors the Rust
 -- list_ding_talk_group_routes_by_workspace ordering (discovery order) with
 -- deterministic tiebreakers.
@@ -326,13 +326,13 @@ JOIN channel_installation i ON i.id = r.installation_id
 WHERE r.workspace_id = sqlc.arg(workspace_id)
   AND i.workspace_id = sqlc.arg(workspace_id)
   AND i.channel_type = 'dingtalk'
-  AND i.status = 'active'
+  AND i.status = 'installed'
 ORDER BY r.discovered_at ASC, r.conversation_id ASC, r.id ASC;
 
 -- name: ReassignDingTalkGroupRoute :one
 -- Reassigns one group to another agent without reconnecting the robot. The
 -- target agent must be an unarchived user agent in the same workspace, and the
--- route must sit under an active DingTalk installation. Bumping revision keeps
+-- route must sit under an installed DingTalk connection. Bumping revision keeps
 -- the mixed-version compatibility trigger from mistaking an admin reassignment
 -- for message activity. When the agent actually changes, the stale
 -- channel_chat_session_binding for that installation/conversation is dropped
@@ -353,7 +353,7 @@ WITH workspace_guard AS MATERIALIZED (
       AND a.kind = 'user'
       AND a.archived_at IS NULL
     FOR SHARE
-), active_installation AS MATERIALIZED (
+), connectable_installation AS MATERIALIZED (
     SELECT i.id
     FROM channel_installation i
     JOIN dingtalk_group_route r ON r.installation_id = i.id
@@ -361,7 +361,7 @@ WITH workspace_guard AS MATERIALIZED (
       AND r.workspace_id = sqlc.arg(workspace_id)
       AND i.workspace_id = sqlc.arg(workspace_id)
       AND i.channel_type = 'dingtalk'
-      AND i.status = 'active'
+      AND i.status = 'installed'
       AND EXISTS (SELECT 1 FROM target_agent)
     FOR SHARE OF i
 ), target AS (
@@ -370,7 +370,7 @@ WITH workspace_guard AS MATERIALIZED (
         r.conversation_title, r.agent_id, r.revision, r.discovered_at,
         r.updated_at, r.agent_id AS previous_agent_id
     FROM dingtalk_group_route r
-    JOIN active_installation i ON i.id = r.installation_id
+    JOIN connectable_installation i ON i.id = r.installation_id
     WHERE r.id = sqlc.arg(route_id)
       AND r.workspace_id = sqlc.arg(workspace_id)
     FOR UPDATE OF r

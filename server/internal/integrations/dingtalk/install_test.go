@@ -126,7 +126,7 @@ func (f *fakeInstallQueries) UpsertChannelInstallation(_ context.Context, arg db
 		ChannelType:     arg.ChannelType,
 		Config:          arg.Config,
 		InstallerUserID: arg.InstallerUserID,
-		Status:          "active",
+		Status:          "installed",
 	}, nil
 }
 
@@ -147,7 +147,7 @@ func (f *fakeInstallQueries) LockWorkspaceForHostedCapacity(_ context.Context, _
 }
 
 func (f *fakeInstallQueries) ChannelInstallationCapacitySnapshot(_ context.Context, _ db.ChannelInstallationCapacitySnapshotParams) (db.ChannelInstallationCapacitySnapshotRow, error) {
-	return db.ChannelInstallationCapacitySnapshotRow{ActiveCount: 0, SameSlot: false}, nil
+	return db.ChannelInstallationCapacitySnapshotRow{InstalledCount: 0, SameSlot: false}, nil
 }
 
 // fakeTx is a no-op pgx.Tx: embedding the interface satisfies it, and the

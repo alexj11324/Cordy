@@ -25,7 +25,7 @@ func (s *rejectedObserverStore) ClaimRuntimeObserver(context.Context, pgtype.UUI
 
 func TestSupervisorDoesNotConnectWithoutDurableObserverClaim(t *testing.T) {
 	store := &rejectedObserverStore{fakeStore: newFakeStore(), claimed: make(chan struct{})}
-	store.installations = []Installation{activeInst(uid(71), "connection-fixture")}
+	store.installations = []Installation{installedInst(uid(71), "connection-fixture")}
 	built := make(chan struct{}, 1)
 	registry := channel.NewRegistry()
 	registry.Register(channel.TypeFeishu, func(channel.Config) (channel.Channel, error) {

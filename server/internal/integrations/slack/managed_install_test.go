@@ -80,7 +80,7 @@ func TestRegisterManagedPersistsTeamKeyedInstall(t *testing.T) {
 	if cfg.BotTokenEncrypted == "" || cfg.BotTokenEncrypted == "xoxb-managed-test" {
 		t.Fatal("bot token must be sealed at rest, never plaintext")
 	}
-	if row.WorkspaceID != wsID || row.Status != "active" {
+	if row.WorkspaceID != wsID || row.Status != "installed" {
 		t.Errorf("returned row = %+v, want the active workspace install", row)
 	}
 }

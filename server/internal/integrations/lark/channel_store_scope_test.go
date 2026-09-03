@@ -139,8 +139,8 @@ VALUES ($1, $2, 'slack', 'oc_scope_slack', 'om_scope_slack', 'pending')
 		t.Fatalf("ListLarkInstallationsByWorkspace: got apps=%v, want exactly [%s]", apps, feishuApp)
 	}
 
-	// (ListActiveLarkInstallations channel-type + live workspace/agent scoping
-	// is covered by TestListActiveLarkInstallations_SkipsOrphans in the handler
+	// (ListConnectableLarkInstallations channel-type + live workspace/agent scoping
+	// is covered by TestListConnectableLarkInstallations_SkipsOrphans in the handler
 	// package, which has real workspace/agent fixtures the JOIN now requires.)
 
 	// --- outbound reads: a Slack binding/card must not be seen as Feishu ---

@@ -379,7 +379,7 @@ func (p *Patcher) processEvent(ctx context.Context, e events.Event) error {
 	if err != nil {
 		return fmt.Errorf("load installation: %w", err)
 	}
-	if InstallationStatus(inst.Status) != InstallationActive {
+	if InstallationStatus(inst.Status) != InstallationInstalled {
 		// Revoked between trigger and event; nothing to patch.
 		return nil
 	}

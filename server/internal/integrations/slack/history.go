@@ -114,7 +114,7 @@ func (h *History) resolve(ctx context.Context, chatSessionID pgtype.UUID) (slack
 	if err != nil {
 		return slackTarget{}, fmt.Errorf("load slack installation: %w", err)
 	}
-	if inst.Status != "active" {
+	if inst.Status != "installed" {
 		return slackTarget{}, ErrNoSlackSession // revoked install: nothing to read
 	}
 	creds, err := decodeCredentials(inst.Config, h.decrypt)

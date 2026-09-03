@@ -112,7 +112,7 @@ func NewInstallationService(queries *db.Queries, tx engine.TxStarter, box *secre
 // Upsert creates or refreshes an installation row. The conflict key on
 // channel_installation is (workspace_id, agent_id, channel_type), so
 // re-running Upsert against an existing (workspace, agent, wecom) triple
-// rotates every field on the row and flips status back to 'active'. The
+// rotates every field on the row and flips status back to 'installed'. The
 // returned Installation reflects the post-write DB state.
 //
 // The whole sequence — lock the bot's routing slot, read its current owner,
@@ -342,11 +342,11 @@ const pgUniqueViolation = "23505"
 //	revoked           → the owner's explicit "I'm done with this bot"; the
 //	                    reclaim takes it (or, if it is this caller's own row,
 //	                    the upsert reactivates it in place).
-//	active, ours      → a re-install or secret rotation of a bot this
+//	installed, ours      → a re-install or secret rotation of a bot this
 //	                    (workspace, agent) already holds. Not a conflict:
 //	                    the upsert refreshes it in place and the reclaim
 //	                    spares it.
-//	active, somebody  → refused. This is the case the whole gate exists for.
+//	installed, somebody  → refused. This is the case the whole gate exists for.
 //	          else's
 func botSlotConflictErr(ctx context.Context, qtx *Store, p InstallationParams) error {
 	owner, err := qtx.Queries.GetChannelInstallationSlotOwnerByAppID(ctx, db.GetChannelInstallationSlotOwnerByAppIDParams{
@@ -400,9 +400,9 @@ func (s *InstallationService) botOwnerConflictErr(ctx context.Context, requestin
 }
 
 // Revoke flips status to 'revoked' — the row is preserved so audit trails
-// remain queryable, and a subsequent Upsert flips it back to 'active'
+// remain queryable, and a subsequent Upsert flips it back to 'installed'
 // atomically. A revoked row is skipped by the router's installation resolver
-// (Active=false → invalid_event drop with audit).
+// (Installed=false → invalid_event drop with audit).
 func (s *InstallationService) Revoke(ctx context.Context, id pgtype.UUID) error {
 	return s.store.Queries.SetChannelInstallationStatus(ctx, db.SetChannelInstallationStatusParams{
 		ID:     id,

@@ -358,7 +358,7 @@ func bindChatSessionToChannel(t *testing.T, agentID, sessionID, channelChatID st
 	var instID string
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO channel_installation (workspace_id, agent_id, channel_type, config, status, installer_user_id)
-		VALUES ($1, $2, 'wecom', $3::jsonb, 'active', $4)
+		VALUES ($1, $2, 'wecom', $3::jsonb, 'installed', $4)
 		RETURNING id
 	`, testWorkspaceID, agentID, `{"app_id":"bot-`+channelChatID+`"}`, testUserID).Scan(&instID); err != nil {
 		t.Fatalf("create installation: %v", err)
@@ -504,7 +504,7 @@ func TestNoHistoryNoteNamesTheActualChannel(t *testing.T) {
 	var instID string
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO channel_installation (workspace_id, agent_id, channel_type, config, status, installer_user_id)
-		VALUES ($1, $2, 'wecom', '{"app_id":"bot-history-note"}'::jsonb, 'active', $3)
+		VALUES ($1, $2, 'wecom', '{"app_id":"bot-history-note"}'::jsonb, 'installed', $3)
 		RETURNING id
 	`, testWorkspaceID, agentID, testUserID).Scan(&instID); err != nil {
 		t.Fatalf("create installation: %v", err)

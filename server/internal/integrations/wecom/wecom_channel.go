@@ -69,7 +69,7 @@ const handshakeTimeout = 15 * time.Second
 const unsupportedMsgTypeReceipt = "抱歉，我暂时无法处理这类消息。"
 
 // wecomChannel is one installation's aibot smart-bot WebSocket connection.
-// The engine.Supervisor builds one per active installation via the
+// The engine.Supervisor builds one per installed connection via the
 // registered Factory and drives lease / reconnect lifecycle; Connect blocks
 // on the receive loop until ctx is cancelled or the link drops.
 type wecomChannel struct {

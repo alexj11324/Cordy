@@ -285,7 +285,7 @@ func writeWecomInstallError(w http.ResponseWriter, err error, wsUUID, agentUUID 
 
 // RevokeWecomInstallation (DELETE /api/workspaces/{id}/wecom/installations/{installationId})
 // flips status to 'revoked'. Admin-only at the router. Row-preserving so a
-// re-install through Upsert flips it back to 'active' atomically.
+// re-install through Upsert flips it back to 'installed' atomically.
 func (h *Handler) RevokeWecomInstallation(w http.ResponseWriter, r *http.Request) {
 	if !h.wecomIntegrationConfigured() {
 		writeError(w, http.StatusServiceUnavailable, "wecom integration not enabled")

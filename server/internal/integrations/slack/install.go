@@ -231,7 +231,7 @@ func (s *InstallService) liveOwnerConflictErr(ctx context.Context, requestingWor
 	}
 }
 
-// ListByWorkspace returns every Slack installation in the workspace (active and
+// ListByWorkspace returns every Slack installation in the workspace (installed and
 // revoked), for the management surface.
 func (s *InstallService) ListByWorkspace(ctx context.Context, wsID pgtype.UUID) ([]db.ChannelInstallation, error) {
 	return s.q.ListChannelInstallationsByWorkspace(ctx, db.ListChannelInstallationsByWorkspaceParams{
@@ -258,8 +258,8 @@ func (s *InstallService) GetInWorkspace(ctx context.Context, id, wsID pgtype.UUI
 }
 
 // Revoke flips status to 'revoked'. The row is preserved for audit; a re-install
-// flips it back to 'active'. The Supervisor stops supervising the installation
-// (ListActiveInstallations filters to active), so its Socket Mode connection
+// flips it back to 'installed'. The Supervisor stops supervising the installation
+// (ListConnectableInstallations filters to installed and unpaused), so its Socket Mode connection
 // winds down, and outbound drops too.
 func (s *InstallService) Revoke(ctx context.Context, id pgtype.UUID) error {
 	return s.q.SetChannelInstallationStatus(ctx, db.SetChannelInstallationStatusParams{

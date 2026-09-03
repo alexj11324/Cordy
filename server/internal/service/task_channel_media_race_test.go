@@ -94,7 +94,7 @@ func TestEnqueueChannelChatTask_ContextClearFailureRollsBackTaskAndSeal(t *testi
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO channel_installation (
 			workspace_id, agent_id, channel_type, config, installer_user_id, status
-		) VALUES ($1, $2, 'slack', '{}'::jsonb, $3, 'active')
+		) VALUES ($1, $2, 'slack', '{}'::jsonb, $3, 'installed')
 		RETURNING id
 	`, workspaceID, agentID, userID).Scan(&installationID); err != nil {
 		t.Fatalf("seed channel installation: %v", err)

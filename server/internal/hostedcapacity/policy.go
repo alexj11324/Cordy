@@ -14,7 +14,7 @@ import (
 )
 
 // ErrLimitReached is the admission refusal when a workspace already holds its
-// cap of active installations (and the new install is not reconnecting an
+// cap of installed connections (and the new install is not reconnecting an
 // existing slot). Handlers render it as 403 im_installation_limit_reached.
 var ErrLimitReached = errors.New("hosted messaging installation limit reached")
 
@@ -155,7 +155,7 @@ func AdmitInstall(ctx context.Context, q AdmitQueries, workspaceID pgtype.UUID, 
 	if err != nil {
 		return fmt.Errorf("read hosted capacity snapshot: %w", err)
 	}
-	if snapshot.ActiveCount < *limit || snapshot.SameSlot {
+	if snapshot.InstalledCount < *limit || snapshot.SameSlot {
 		return nil
 	}
 	return ErrLimitReached

@@ -37,7 +37,7 @@ type txStarter interface {
 type Queries interface {
 	WithTx(tx pgx.Tx) Queries
 	LockWorkspaceForHostedCapacity(ctx context.Context, workspaceID pgtype.UUID) (pgtype.UUID, error)
-	ListActiveChannelInstallationsForCapacity(ctx context.Context, workspaceID pgtype.UUID) ([]db.ListActiveChannelInstallationsForCapacityRow, error)
+	ListInstalledChannelInstallationsForCapacity(ctx context.Context, workspaceID pgtype.UUID) ([]db.ListInstalledChannelInstallationsForCapacityRow, error)
 	PauseChannelInstallationsForHostedCapacity(ctx context.Context, ids []pgtype.UUID) (int64, error)
 	ResumeChannelInstallationsForHostedCapacity(ctx context.Context, ids []pgtype.UUID) (int64, error)
 	ListHostedInstallationWorkspaces(ctx context.Context) ([]pgtype.UUID, error)
@@ -80,7 +80,7 @@ func Reconcile(ctx context.Context, q Queries, tx txStarter, workspaceID pgtype.
 		}
 		return result, fmt.Errorf("lock workspace for hosted capacity: %w", err)
 	}
-	rows, err := qtx.ListActiveChannelInstallationsForCapacity(ctx, workspaceID)
+	rows, err := qtx.ListInstalledChannelInstallationsForCapacity(ctx, workspaceID)
 	if err != nil {
 		return result, fmt.Errorf("list installations for hosted capacity: %w", err)
 	}

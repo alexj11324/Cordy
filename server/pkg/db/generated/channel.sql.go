@@ -17,7 +17,7 @@ SET ws_lease_token       = $1,
     ws_lease_expires_at  = $2,
     updated_at           = now()
 WHERE id = $3
-  AND status = 'active'
+  AND status = 'installed'
   AND hosted_paused_at IS NULL
   AND (
         ws_lease_token IS NULL
@@ -149,18 +149,18 @@ func (q *Queries) BackfillChannelInstallationRegionToFeishuLark(ctx context.Cont
 }
 
 const channelInstallationCapacitySnapshot = `-- name: ChannelInstallationCapacitySnapshot :one
-SELECT count(*)::bigint AS active_count,
+SELECT count(*)::bigint AS installed_count,
        EXISTS (
            SELECT 1
            FROM channel_installation AS same
            WHERE same.workspace_id = $1
-             AND same.status = 'active'
+             AND same.status = 'installed'
              AND same.channel_type = $2
              AND same.agent_id IS NOT DISTINCT FROM $3::uuid
        ) AS same_slot
 FROM channel_installation
 WHERE workspace_id = $1
-  AND status = 'active'
+  AND status = 'installed'
 `
 
 type ChannelInstallationCapacitySnapshotParams struct {
@@ -170,19 +170,19 @@ type ChannelInstallationCapacitySnapshotParams struct {
 }
 
 type ChannelInstallationCapacitySnapshotRow struct {
-	ActiveCount int64 `json:"active_count"`
+	InstalledCount int64 `json:"installed_count"`
 	SameSlot    bool  `json:"same_slot"`
 }
 
 // Admission read, taken under LockWorkspaceForHostedCapacity in the same
 // transaction as the install upsert. same_slot is true when this exact
-// (channel_type, agent) slot already holds an active installation —
+// (channel_type, agent) slot already holds an installed connection —
 // reconnecting an existing install must never be refused by the cap it
 // itself occupies.
 func (q *Queries) ChannelInstallationCapacitySnapshot(ctx context.Context, arg ChannelInstallationCapacitySnapshotParams) (ChannelInstallationCapacitySnapshotRow, error) {
 	row := q.db.QueryRow(ctx, channelInstallationCapacitySnapshot, arg.WorkspaceID, arg.ChannelType, arg.AgentID)
 	var i ChannelInstallationCapacitySnapshotRow
-	err := row.Scan(&i.ActiveCount, &i.SameSlot)
+	err := row.Scan(&i.InstalledCount, &i.SameSlot)
 	return i, err
 }
 
@@ -1078,7 +1078,7 @@ JOIN channel_installation ci ON ci.id = b.installation_id
 WHERE b.workspace_id = $1
   AND b.patchbay_user_id = $2
   AND b.channel_type = $3
-  AND ci.status = 'active'
+  AND ci.status = 'installed'
 ORDER BY b.bound_at DESC
 LIMIT 1
 `
@@ -1654,17 +1654,17 @@ func (q *Queries) GetChannelUserBindingByUserID(ctx context.Context, arg GetChan
 	return i, err
 }
 
-const listActiveChannelInstallations = `-- name: ListActiveChannelInstallations :many
+const listConnectableChannelInstallations = `-- name: ListConnectableChannelInstallations :many
 SELECT ci.id, ci.workspace_id, ci.agent_id, ci.channel_type, ci.config, ci.status, ci.ws_lease_token, ci.ws_lease_expires_at, ci.installer_user_id, ci.installed_at, ci.created_at, ci.updated_at, ci.hosted_paused_at FROM channel_installation ci
 JOIN workspace w ON w.id = ci.workspace_id
 JOIN agent a ON a.id = ci.agent_id
-WHERE ci.status = 'active'
+WHERE ci.status = 'installed'
   AND ci.hosted_paused_at IS NULL
   AND ci.channel_type = $1
 ORDER BY ci.created_at ASC
 `
 
-// Boot path for a per-channel-type inbound hub: every active installation of
+// Boot path for a per-channel-type inbound hub: every installed connection of
 // the given channel_type, so a hub claims leases and opens connections only
 // for its own platform and never supervises another channel's installation.
 //
@@ -1676,8 +1676,8 @@ ORDER BY ci.created_at ASC
 // opening a WebSocket for a bot whose workspace/agent is gone. The JOIN matches
 // the old ON DELETE CASCADE semantics: it filters on row existence, not agent
 // archival, so an archived-but-present agent's installation is still listed.
-func (q *Queries) ListActiveChannelInstallations(ctx context.Context, channelType string) ([]ChannelInstallation, error) {
-	rows, err := q.db.Query(ctx, listActiveChannelInstallations, channelType)
+func (q *Queries) ListConnectableChannelInstallations(ctx context.Context, channelType string) ([]ChannelInstallation, error) {
+	rows, err := q.db.Query(ctx, listConnectableChannelInstallations, channelType)
 	if err != nil {
 		return nil, err
 	}
@@ -1710,15 +1710,15 @@ func (q *Queries) ListActiveChannelInstallations(ctx context.Context, channelTyp
 	return items, nil
 }
 
-const listActiveChannelInstallationsForCapacity = `-- name: ListActiveChannelInstallationsForCapacity :many
+const listInstalledChannelInstallationsForCapacity = `-- name: ListInstalledChannelInstallationsForCapacity :many
 SELECT id, hosted_paused_at FROM channel_installation
 WHERE workspace_id = $1
-  AND status = 'active'
+  AND status = 'installed'
 ORDER BY created_at ASC, id ASC
 FOR UPDATE
 `
 
-type ListActiveChannelInstallationsForCapacityRow struct {
+type ListInstalledChannelInstallationsForCapacityRow struct {
 	ID             pgtype.UUID        `json:"id"`
 	HostedPausedAt pgtype.Timestamptz `json:"hosted_paused_at"`
 }
@@ -1726,15 +1726,15 @@ type ListActiveChannelInstallationsForCapacityRow struct {
 // Ordered oldest-first so the FIRST `limit` installations are the ones
 // capacity keeps; everything after them is paused. FOR UPDATE holds the rows
 // against a concurrent install upsert inside the same transaction.
-func (q *Queries) ListActiveChannelInstallationsForCapacity(ctx context.Context, workspaceID pgtype.UUID) ([]ListActiveChannelInstallationsForCapacityRow, error) {
-	rows, err := q.db.Query(ctx, listActiveChannelInstallationsForCapacity, workspaceID)
+func (q *Queries) ListInstalledChannelInstallationsForCapacity(ctx context.Context, workspaceID pgtype.UUID) ([]ListInstalledChannelInstallationsForCapacityRow, error) {
+	rows, err := q.db.Query(ctx, listInstalledChannelInstallationsForCapacity, workspaceID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ListActiveChannelInstallationsForCapacityRow{}
+	items := []ListInstalledChannelInstallationsForCapacityRow{}
 	for rows.Next() {
-		var i ListActiveChannelInstallationsForCapacityRow
+		var i ListInstalledChannelInstallationsForCapacityRow
 		if err := rows.Scan(&i.ID, &i.HostedPausedAt); err != nil {
 			return nil, err
 		}
@@ -1746,26 +1746,26 @@ func (q *Queries) ListActiveChannelInstallationsForCapacity(ctx context.Context,
 	return items, nil
 }
 
-const listAllActiveChannelInstallations = `-- name: ListAllActiveChannelInstallations :many
+const listAllConnectableChannelInstallations = `-- name: ListAllConnectableChannelInstallations :many
 SELECT ci.id, ci.workspace_id, ci.agent_id, ci.channel_type, ci.config, ci.status, ci.ws_lease_token, ci.ws_lease_expires_at, ci.installer_user_id, ci.installed_at, ci.created_at, ci.updated_at, ci.hosted_paused_at FROM channel_installation ci
 JOIN workspace w ON w.id = ci.workspace_id
 JOIN agent a ON a.id = ci.agent_id
-WHERE ci.status = 'active'
+WHERE ci.status = 'installed'
   AND ci.hosted_paused_at IS NULL
 ORDER BY ci.created_at ASC
 `
 
 // Boot path for the channel-agnostic engine Supervisor (MUL-3620): every
-// active installation across ALL channel types, so one Supervisor drives every
+// installed connection across ALL channel types, so one Supervisor drives every
 // platform's connections rather than a per-platform hub. This is the de-
-// hardcoded counterpart of ListActiveChannelInstallations — the Supervisor
+// hardcoded counterpart of ListConnectableChannelInstallations — the Supervisor
 // routes each row to its registered channel.Factory by channel_type, so it
 // never needs to know which platforms exist. Same orphan guard as the per-type
 // query: the workspace + agent JOINs drop installations whose owning rows are
 // gone (channel_installation has no FK, MUL-3515 §4), matching the old ON
 // DELETE CASCADE semantics (row existence, not agent archival).
-func (q *Queries) ListAllActiveChannelInstallations(ctx context.Context) ([]ChannelInstallation, error) {
-	rows, err := q.db.Query(ctx, listAllActiveChannelInstallations)
+func (q *Queries) ListAllConnectableChannelInstallations(ctx context.Context) ([]ChannelInstallation, error) {
+	rows, err := q.db.Query(ctx, listAllConnectableChannelInstallations)
 	if err != nil {
 		return nil, err
 	}
@@ -2004,7 +2004,7 @@ func (q *Queries) ListChannelOutboundMessagesByIDs(ctx context.Context, arg List
 const listHostedInstallationWorkspaces = `-- name: ListHostedInstallationWorkspaces :many
 SELECT DISTINCT workspace_id
 FROM channel_installation
-WHERE status = 'active'
+WHERE status = 'installed'
 ORDER BY workspace_id
 `
 
@@ -2220,7 +2220,7 @@ FOR UPDATE
 // =====================
 // A managed deployment can hold only N concurrent hosted channel
 // installations per workspace (Cloud entitlement `im_installation_limit`).
-// Over-capacity installations are PAUSED, not revoked: status stays 'active'
+// Over-capacity installations are PAUSED, not revoked: status stays 'installed'
 // and credentials/bindings survive, but every work-finding query above filters
 // on hosted_paused_at IS NULL. Reconcile is the only writer of the pause
 // marker and runs under the same workspace row lock as admission
@@ -2453,7 +2453,7 @@ type ReclaimDeadChannelInstallationByAppIDParams struct {
 //
 // The guard lives in the DELETE predicate (not a prior SELECT) so under READ
 // COMMITTED the row is re-checked at execution (EvalPlanQual): a concurrent
-// same-agent reconnect that flips the revoked row back to 'active' first makes
+// same-agent reconnect that flips the revoked row back to 'installed' first makes
 // the predicate re-check fail, this deletes nothing, and no dependents are
 // touched — closing the read-then-delete TOCTOU. Dependent cleanup keys off the
 // actually-deleted id (the `dead` CTE), so it runs ONLY for a row this statement
@@ -2943,7 +2943,7 @@ ON CONFLICT (workspace_id, agent_id, channel_type) DO UPDATE SET
     channel_type      = EXCLUDED.channel_type,
     config            = EXCLUDED.config,
     installer_user_id = EXCLUDED.installer_user_id,
-    status            = 'active',
+    status            = 'installed',
     installed_at      = now(),
     updated_at        = now()
 RETURNING id, workspace_id, agent_id, channel_type, config, status, ws_lease_token, ws_lease_expires_at, installer_user_id, installed_at, created_at, updated_at, hosted_paused_at
@@ -2976,7 +2976,7 @@ type UpsertChannelInstallationParams struct {
 // Go layer assembles (for feishu: app_id, app_secret_encrypted, tenant_key,
 // bot_open_id, bot_union_id, region). Re-installing the same agent on the
 // same channel_type replaces the whole config and forces status back to
-// 'active'. The conflict key is (workspace_id, agent_id, channel_type) so an
+// 'installed'. The conflict key is (workspace_id, agent_id, channel_type) so an
 // agent may hold one installation per channel_type (feishu + slack + ...)
 // without one install clobbering another. The WS lease is intentionally NOT
 // reset here — the inbound hub owns lease lifecycle.
@@ -3017,7 +3017,7 @@ ON CONFLICT (channel_type, (config ->> 'app_id')) DO UPDATE SET
     agent_id          = EXCLUDED.agent_id,
     config            = EXCLUDED.config,
     installer_user_id = EXCLUDED.installer_user_id,
-    status            = 'active',
+    status            = 'installed',
     installed_at      = now(),
     updated_at        = now()
 WHERE channel_installation.workspace_id = EXCLUDED.workspace_id

@@ -351,7 +351,7 @@ func TestGetChatHistory_TranscriptNamesItsChannel(t *testing.T) {
 	var instID string
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO channel_installation (workspace_id, agent_id, channel_type, config, status, installer_user_id)
-		VALUES ($1, $2, 'wecom', '{"app_id":"bot-transcript-channel"}'::jsonb, 'active', $3)
+		VALUES ($1, $2, 'wecom', '{"app_id":"bot-transcript-channel"}'::jsonb, 'installed', $3)
 		RETURNING id
 	`, testWorkspaceID, agentID, testUserID).Scan(&instID); err != nil {
 		t.Fatalf("create installation: %v", err)
@@ -435,7 +435,7 @@ func TestGetChatHistory_ChannelTaskCannotReadEarlierContextGeneration(t *testing
 	var installationID string
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO channel_installation (workspace_id, agent_id, channel_type, config, status, installer_user_id)
-		VALUES ($1, $2, 'wecom', '{"app_id":"history-context-boundary"}'::jsonb, 'active', $3)
+		VALUES ($1, $2, 'wecom', '{"app_id":"history-context-boundary"}'::jsonb, 'installed', $3)
 		RETURNING id
 	`, testWorkspaceID, agentID, testUserID).Scan(&installationID); err != nil {
 		t.Fatalf("create installation: %v", err)

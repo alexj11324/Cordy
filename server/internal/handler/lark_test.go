@@ -163,13 +163,13 @@ func TestListLarkInstallations_NotConfigured_HardCodedInstallSupportedFalse(t *t
 	}
 }
 
-// TestListActiveLarkInstallations_SkipsOrphans pins the MUL-3515 hub-boot
-// guard: ListActiveChannelInstallations is JOINed to live workspace + agent,
+// TestListConnectableLarkInstallations_SkipsOrphans pins the MUL-3515 hub-boot
+// guard: ListConnectableChannelInstallations is JOINed to live workspace + agent,
 // so an active channel_installation whose workspace or agent has been deleted
 // (channel_* has no FK cascade) is never returned — otherwise the Hub would
 // keep opening a WebSocket for a bot whose owner is gone. It also stays
 // channel_type='feishu'-scoped. Runs against the real test DB.
-func TestListActiveLarkInstallations_SkipsOrphans(t *testing.T) {
+func TestListConnectableLarkInstallations_SkipsOrphans(t *testing.T) {
 	ctx := context.Background()
 	agentID := createHandlerTestAgent(t, "LarkActiveScopeAgent", []byte("[]"))
 
@@ -192,7 +192,7 @@ func TestListActiveLarkInstallations_SkipsOrphans(t *testing.T) {
 	seed := func(ws, ag, channelType, app string) {
 		if _, err := testPool.Exec(ctx, `
 INSERT INTO channel_installation (workspace_id, agent_id, channel_type, config, installer_user_id, status)
-VALUES ($1, $2, $3, jsonb_build_object('app_id', $4::text), $5, 'active')
+VALUES ($1, $2, $3, jsonb_build_object('app_id', $4::text), $5, 'installed')
 `, ws, ag, channelType, app, testUserID); err != nil {
 			t.Fatalf("seed %s installation: %v", app, err)
 		}
@@ -201,9 +201,9 @@ VALUES ($1, $2, $3, jsonb_build_object('app_id', $4::text), $5, 'active')
 	seed(orphanWS, orphanAg, "feishu", orphanApp)     // deleted workspace + agent -> dropped
 	seed(testWorkspaceID, agentID, "slack", slackApp) // wrong channel_type -> dropped
 
-	active, err := lark.NewChannelStore(testHandler.Queries).ListActiveLarkInstallations(ctx)
+	active, err := lark.NewChannelStore(testHandler.Queries).ListConnectableLarkInstallations(ctx)
 	if err != nil {
-		t.Fatalf("ListActiveLarkInstallations: %v", err)
+		t.Fatalf("ListConnectableLarkInstallations: %v", err)
 	}
 	seen := map[string]bool{}
 	for _, inst := range active {
@@ -382,7 +382,7 @@ func TestRevokeLarkInstallation_AuthorizesAgentOwnerAndAdmins(t *testing.T) {
 		var instID string
 		if err := testPool.QueryRow(context.Background(), `
 INSERT INTO channel_installation (workspace_id, agent_id, channel_type, config, installer_user_id, status)
-VALUES ($1, $2, 'feishu', jsonb_build_object('app_id', 'cli_revoke_test'), $3, 'active')
+VALUES ($1, $2, 'feishu', jsonb_build_object('app_id', 'cli_revoke_test'), $3, 'installed')
 RETURNING id
 `, testWorkspaceID, agentID, ownerID).Scan(&instID); err != nil {
 			t.Fatalf("seed installation: %v", err)
@@ -440,7 +440,7 @@ func TestRevokeLarkInstallation_OrphanCleanableByAdminNotMember(t *testing.T) {
 		var instID string
 		if err := testPool.QueryRow(context.Background(), `
 INSERT INTO channel_installation (workspace_id, agent_id, channel_type, config, installer_user_id, status)
-VALUES ($1, $2, 'feishu', jsonb_build_object('app_id', 'cli_orphan'), $3, 'active')
+VALUES ($1, $2, 'feishu', jsonb_build_object('app_id', 'cli_orphan'), $3, 'installed')
 RETURNING id
 `, testWorkspaceID, orphanAgent, testUserID).Scan(&instID); err != nil {
 			t.Fatalf("seed orphan installation: %v", err)

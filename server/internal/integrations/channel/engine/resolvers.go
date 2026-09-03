@@ -89,7 +89,7 @@ type ResolvedInstallation struct {
 	AgentID         pgtype.UUID
 	InstallerUserID pgtype.UUID
 	RouteRevision   int64
-	Active          bool
+	Installed       bool
 	Platform        any
 }
 
@@ -264,7 +264,7 @@ var (
 // InstallationResolver routes an inbound message to its installation. The
 // adapter reads whatever platform routing key it needs from the message
 // (Source or Raw). Return ErrInstallationNotFound when none matches; return a
-// ResolvedInstallation with Active=false when it exists but is revoked.
+// ResolvedInstallation with Installed=false when it exists but is revoked.
 type InstallationResolver interface {
 	ResolveInstallation(ctx context.Context, msg channel.InboundMessage) (ResolvedInstallation, error)
 }

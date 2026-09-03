@@ -128,7 +128,7 @@ func seedMediaBindFixture(t *testing.T, pool *pgxpool.Pool) mediaBindFixture {
 		INSERT INTO channel_installation (workspace_id, agent_id, channel_type, config, installer_user_id, status)
 		VALUES ($1, $2, 'wecom',
 		        jsonb_build_object('app_id', $3::text, 'bot_id', $3::text, 'app_secret_encrypted', ''),
-		        $4, 'active')
+		        $4, 'installed')
 		RETURNING id`, f.workspaceID, f.agentID, f.botID, f.userID).Scan(&f.installationID); err != nil {
 		t.Fatalf("create installation: %v", err)
 	}

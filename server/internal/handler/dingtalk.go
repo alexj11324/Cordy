@@ -511,7 +511,7 @@ func (h *Handler) mayListInactiveDingTalkInstallation(
 		}
 		return false, err
 	}
-	if installation.Status != "active" {
+	if installation.Status != "installed" {
 		return false, nil
 	}
 	if filterByAgent {
@@ -833,7 +833,7 @@ func (h *Handler) publishDingTalkInstallationCreated(row db.ChannelInstallation,
 // flips status to 'revoked'. The router requires workspace membership; this
 // handler authorizes the bound agent's owner or a workspace owner/admin. The row
 // is preserved for audit; a re-install (re-pasting the robot's credentials)
-// flips status back to 'active'. An orphaned installation falls back to
+// flips status back to 'installed'. An orphaned installation falls back to
 // workspace owner/admin-only cleanup because there is no agent owner to resolve.
 func (h *Handler) RevokeDingTalkInstallation(w http.ResponseWriter, r *http.Request) {
 	if h.DingTalkInstall == nil {

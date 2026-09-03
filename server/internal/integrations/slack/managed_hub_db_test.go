@@ -73,7 +73,7 @@ func TestManagedSlackHubRoutesAndSwitchesInPostgres(t *testing.T) {
 	}
 	installationID := util.MustParseUUID(fx.Insert(t, "channel_installation", dbfx.Cols{
 		"workspace_id": fx.WorkspaceID, "agent_id": "00000000-0000-0000-0000-000000000000",
-		"channel_type": "slack", "config": config, "status": "active", "installer_user_id": fx.UserID,
+		"channel_type": "slack", "config": config, "status": "installed", "installer_user_id": fx.UserID,
 	}))
 	fx.Insert(t, "channel_user_binding", dbfx.Cols{
 		"workspace_id": fx.WorkspaceID, "patchbay_user_id": fx.UserID,

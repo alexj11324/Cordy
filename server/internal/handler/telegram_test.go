@@ -88,7 +88,7 @@ func TestTelegramInstallationResponseNeverExposesStoredCredential(t *testing.T) 
 		WorkspaceID:     parseUUID("22222222-2222-2222-2222-222222222222"),
 		AgentID:         parseUUID("33333333-3333-3333-3333-333333333333"),
 		InstallerUserID: parseUUID("44444444-4444-4444-4444-444444444444"),
-		Status:          "active",
+		Status:          "installed",
 		Config: json.RawMessage(
 			`{"app_id":"123456789","bot_username":"my_test_bot","bot_token_encrypted":"ciphertext-sentinel"}`,
 		),

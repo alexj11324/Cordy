@@ -72,7 +72,7 @@ func TestWeixinInstallationResponseNeverExposesStoredCredential(t *testing.T) {
 		WorkspaceID:     testWeixinUUID(t, "22222222-2222-2222-2222-222222222222"),
 		AgentID:         testWeixinUUID(t, "33333333-3333-3333-3333-333333333333"),
 		InstallerUserID: testWeixinUUID(t, "44444444-4444-4444-4444-444444444444"),
-		Status:          "active",
+		Status:          "installed",
 		Config:          json.RawMessage(`{"app_id":"bot-id","ilink_user_id":"wx-user","bot_token_encrypted":"ciphertext-sentinel"}`),
 		InstalledAt:     pgtype.Timestamptz{Time: now, Valid: true},
 		CreatedAt:       pgtype.Timestamptz{Time: now, Valid: true},

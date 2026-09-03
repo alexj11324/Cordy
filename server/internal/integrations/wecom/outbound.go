@@ -229,8 +229,8 @@ func (o *Outbound) processEvent(ctx context.Context, e events.Event) error {
 	if err != nil {
 		return fmt.Errorf("wecom: load installation: %w", err)
 	}
-	if inst.Status != string(InstallationActive) {
-		o.skipped(ctx, e, skipInstallationInactive) // revoked between trigger and reply
+	if inst.Status != string(InstallationInstalled) {
+		o.skipped(ctx, e, skipInstallationRevoked) // revoked between trigger and reply
 		return nil
 	}
 	if o.senders == nil {

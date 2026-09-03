@@ -467,13 +467,13 @@ func (f *fakeReader) GetWorkspace(_ context.Context, _ pgtype.UUID) (db.Workspac
 
 // ---- harness ----
 
-func activeResolved(t *testing.T) ResolvedInstallation {
+func installedResolved(t *testing.T) ResolvedInstallation {
 	return ResolvedInstallation{
 		ID:              uuidFromString(t, "11111111-1111-1111-1111-111111111111"),
 		WorkspaceID:     uuidFromString(t, "22222222-2222-2222-2222-222222222222"),
 		AgentID:         uuidFromString(t, "33333333-3333-3333-3333-333333333333"),
 		InstallerUserID: uuidFromString(t, "99999999-9999-9999-9999-999999999999"),
-		Active:          true,
+		Installed:          true,
 	}
 }
 
@@ -512,7 +512,7 @@ type harness struct {
 func newHarness(t *testing.T) *harness {
 	t.Helper()
 	h := &harness{
-		inst:  &fakeInstaller{inst: activeResolved(t)},
+		inst:  &fakeInstaller{inst: installedResolved(t)},
 		ident: &fakeIdentity{id: ResolvedIdentity{UserID: uuidFromString(t, "44444444-4444-4444-4444-444444444444")}},
 		dedup: &fakeDedup{token: uuidFromString(t, "55555555-5555-5555-5555-555555555555")},
 		binder: &fakeBinder{
@@ -577,7 +577,7 @@ func TestRouter_InstallationNotFound_Drops(t *testing.T) {
 
 func TestRouter_RevokedInstallation_Drops(t *testing.T) {
 	h := newHarness(t)
-	h.inst.inst.Active = false
+	h.inst.inst.Installed = false
 	if err := h.router.Handle(context.Background(), p2pMessage(t)); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

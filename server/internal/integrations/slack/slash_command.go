@@ -186,7 +186,7 @@ func (p *SlashCommandProcessor) processControl(ctx context.Context, cmd slack.Sl
 		}
 		return slashInternalErrorText
 	}
-	if !inst.Active {
+	if !inst.Installed {
 		return slashDisabledText
 	}
 	userID, err := p.resolveUser(ctx, inst, cmd.UserID)
@@ -263,7 +263,7 @@ func (p *SlashCommandProcessor) process(ctx context.Context, cmd slack.SlashComm
 		}
 		return slashDisabledText
 	}
-	if !inst.Active {
+	if !inst.Installed {
 		return slashDisabledText
 	}
 
@@ -420,7 +420,7 @@ func (p *SlashCommandProcessor) resolveInstallation(ctx context.Context, appID, 
 		WorkspaceID:     inst.WorkspaceID,
 		AgentID:         inst.AgentID,
 		InstallerUserID: inst.InstallerUserID,
-		Active:          inst.Status == "active",
+		Installed:          inst.Status == "installed",
 		Platform:        inst,
 	}, nil
 }

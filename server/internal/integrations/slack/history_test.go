@@ -78,8 +78,8 @@ func threadParent(user, text, ts string, replyCount int, latestReply string) sla
 	return m
 }
 
-func activeSlackInstall() db.ChannelInstallation {
-	return db.ChannelInstallation{Status: "active", Config: slackInstallConfigJSON()}
+func installedSlackInstall() db.ChannelInstallation {
+	return db.ChannelInstallation{Status: "installed", Config: slackInstallConfigJSON()}
 }
 
 // groupBinding builds a group session binding whose own thread root is threadRoot.
@@ -125,7 +125,7 @@ func findByTS(msgs []channel.HistoryMessage, ts string) *channel.HistoryMessage 
 // normalizes oldest-first, and tags thread parents with their id + reply count
 // without expanding thread contents.
 func TestChannelOverview(t *testing.T) {
-	q := &fakeHistoryQueries{binding: groupBinding("100.000000"), inst: activeSlackInstall()}
+	q := &fakeHistoryQueries{binding: groupBinding("100.000000"), inst: installedSlackInstall()}
 	fc := &fakeHistoryClient{
 		// Slack returns newest-first.
 		historyMsgs: []slack.Message{
@@ -163,7 +163,7 @@ func TestChannelOverview(t *testing.T) {
 }
 
 func TestChannelOverviewScopesAndSanitizesFreshGeneration(t *testing.T) {
-	q := &fakeHistoryQueries{binding: groupBinding("100.000000"), inst: activeSlackInstall()}
+	q := &fakeHistoryQueries{binding: groupBinding("100.000000"), inst: installedSlackInstall()}
 	fc := &fakeHistoryClient{historyMsgs: []slack.Message{
 		msg("U1", "new reply", "104.000000"),
 		msg("U1", "/clear current question", "103.000000"),
@@ -186,7 +186,7 @@ func TestChannelOverviewScopesAndSanitizesFreshGeneration(t *testing.T) {
 
 func TestChannelOverviewExcludesLateReplyFromPreviousGeneration(t *testing.T) {
 	q := &fakeHistoryQueries{
-		binding: groupBinding("100.000000"), inst: activeSlackInstall(),
+		binding: groupBinding("100.000000"), inst: installedSlackInstall(),
 		messageIDs: []string{"104.000000"},
 	}
 	fc := &fakeHistoryClient{historyMsgs: []slack.Message{
@@ -207,7 +207,7 @@ func TestChannelOverviewExcludesLateReplyFromPreviousGeneration(t *testing.T) {
 }
 
 func TestChannelOverviewFailsClosedForUnknownOwnBotReply(t *testing.T) {
-	q := &fakeHistoryQueries{binding: groupBinding("100.000000"), inst: activeSlackInstall()}
+	q := &fakeHistoryQueries{binding: groupBinding("100.000000"), inst: installedSlackInstall()}
 	fc := &fakeHistoryClient{historyMsgs: []slack.Message{
 		msg("UBOT", "unattributed answer", "104.000000"),
 		msg("U1", "/clear current question", "103.000000"),
@@ -225,7 +225,7 @@ func TestChannelOverviewFailsClosedForUnknownOwnBotReply(t *testing.T) {
 }
 
 func TestChannelOverviewKeepsPagingCursorWhenLateRepliesFillPage(t *testing.T) {
-	q := &fakeHistoryQueries{binding: groupBinding("100.000000"), inst: activeSlackInstall()}
+	q := &fakeHistoryQueries{binding: groupBinding("100.000000"), inst: installedSlackInstall()}
 	fc := &fakeHistoryClient{historyMsgs: []slack.Message{
 		msg("UBOT", "late old answer 2", "105.000000"),
 		msg("UBOT", "late old answer 1", "104.000000"),
@@ -243,7 +243,7 @@ func TestChannelOverviewKeepsPagingCursorWhenLateRepliesFillPage(t *testing.T) {
 }
 
 func TestChannelOverviewPendingFreshBoundaryReturnsEmpty(t *testing.T) {
-	q := &fakeHistoryQueries{binding: groupBinding("100.000000"), inst: activeSlackInstall()}
+	q := &fakeHistoryQueries{binding: groupBinding("100.000000"), inst: installedSlackInstall()}
 	fc := &fakeHistoryClient{historyMsgs: []slack.Message{msg("U1", "old context", "102.000000")}}
 	h := newTestHistory(q, fc)
 	page, err := h.ChannelOverview(context.Background(), uid(9), channel.HistoryOptions{BoundaryPending: true})
@@ -256,7 +256,7 @@ func TestChannelOverviewPendingFreshBoundaryReturnsEmpty(t *testing.T) {
 }
 
 func TestThreadPendingFreshBoundaryReturnsEmptyWithThreadID(t *testing.T) {
-	q := &fakeHistoryQueries{binding: groupBinding("50.000000"), inst: activeSlackInstall()}
+	q := &fakeHistoryQueries{binding: groupBinding("50.000000"), inst: installedSlackInstall()}
 	fc := &fakeHistoryClient{repliesMsgs: []slack.Message{msg("U1", "old context", "52.000000")}}
 	h := newTestHistory(q, fc)
 	page, err := h.Thread(context.Background(), uid(9), "", channel.HistoryOptions{BoundaryPending: true})
@@ -273,7 +273,7 @@ func TestThreadPendingFreshBoundaryReturnsEmptyWithThreadID(t *testing.T) {
 
 // TestThreadCurrent reads the session's own thread via conversations.replies.
 func TestThreadCurrent(t *testing.T) {
-	q := &fakeHistoryQueries{binding: groupBinding("50.000000"), inst: activeSlackInstall()}
+	q := &fakeHistoryQueries{binding: groupBinding("50.000000"), inst: installedSlackInstall()}
 	fc := &fakeHistoryClient{repliesMsgs: []slack.Message{
 		msg("U1", "second", "52.000000"),
 		msg("U1", "root", "50.000000"),
@@ -300,7 +300,7 @@ func TestThreadCurrent(t *testing.T) {
 
 // TestThreadByID reads a specific (non-current) thread within the same channel.
 func TestThreadByID(t *testing.T) {
-	q := &fakeHistoryQueries{binding: groupBinding("50.000000"), inst: activeSlackInstall()}
+	q := &fakeHistoryQueries{binding: groupBinding("50.000000"), inst: installedSlackInstall()}
 	fc := &fakeHistoryClient{repliesMsgs: []slack.Message{msg("U1", "x", "77.000000")}}
 	h := newTestHistory(q, fc)
 
@@ -322,7 +322,7 @@ func TestThreadByID(t *testing.T) {
 // TestThreadDMUsesHistory: a DM has no threads, so a thread read falls back to
 // the linear conversation (conversations.history).
 func TestThreadDMUsesHistory(t *testing.T) {
-	q := &fakeHistoryQueries{binding: dmBinding(), inst: activeSlackInstall()}
+	q := &fakeHistoryQueries{binding: dmBinding(), inst: installedSlackInstall()}
 	fc := &fakeHistoryClient{historyMsgs: []slack.Message{msg("U1", "hi", "100.000000")}}
 	h := newTestHistory(q, fc)
 
@@ -346,7 +346,7 @@ func TestChannelOverviewNoBinding(t *testing.T) {
 	}
 }
 
-func TestThreadInactiveInstall(t *testing.T) {
+func TestThreadIninstalledInstall(t *testing.T) {
 	q := &fakeHistoryQueries{
 		binding: groupBinding("50.0"),
 		inst:    db.ChannelInstallation{Status: "revoked", Config: slackInstallConfigJSON()},
@@ -358,7 +358,7 @@ func TestThreadInactiveInstall(t *testing.T) {
 }
 
 func TestChannelOverviewLimitClamp(t *testing.T) {
-	q := &fakeHistoryQueries{binding: groupBinding("50.0"), inst: activeSlackInstall()}
+	q := &fakeHistoryQueries{binding: groupBinding("50.0"), inst: installedSlackInstall()}
 	fc := &fakeHistoryClient{}
 	h := newTestHistory(q, fc)
 	if _, err := h.ChannelOverview(context.Background(), uid(9), channel.HistoryOptions{Limit: 5000}); err != nil {
@@ -373,7 +373,7 @@ func TestChannelOverviewLimitClamp(t *testing.T) {
 // cards, incoming webhooks): the body lives in attachments with an empty
 // top-level Text. The root must be recovered, not dropped (MUL-3931 / #4803).
 func TestThreadRecoversBotAttachmentText(t *testing.T) {
-	q := &fakeHistoryQueries{binding: groupBinding("50.000000"), inst: activeSlackInstall()}
+	q := &fakeHistoryQueries{binding: groupBinding("50.000000"), inst: installedSlackInstall()}
 	root := slack.Message{Msg: slack.Msg{
 		Username:  "Grafana",
 		BotID:     "B1",
@@ -456,7 +456,7 @@ func TestAttachmentTextPriority(t *testing.T) {
 // TestThreadRecoversBlocksText: a message with no Text and no attachment
 // fallback is flattened from its Block Kit blocks.
 func TestThreadRecoversBlocksText(t *testing.T) {
-	q := &fakeHistoryQueries{binding: groupBinding("50.000000"), inst: activeSlackInstall()}
+	q := &fakeHistoryQueries{binding: groupBinding("50.000000"), inst: installedSlackInstall()}
 	root := slack.Message{Msg: slack.Msg{
 		Username:  "Webhook",
 		BotID:     "B2",
@@ -485,7 +485,7 @@ func TestThreadRecoversBlocksText(t *testing.T) {
 // TestThreadRecoversRichTextBlock: a message whose only body is a Block Kit
 // rich_text block (the shape Slack's rich text input produces) is flattened.
 func TestThreadRecoversRichTextBlock(t *testing.T) {
-	q := &fakeHistoryQueries{binding: groupBinding("50.000000"), inst: activeSlackInstall()}
+	q := &fakeHistoryQueries{binding: groupBinding("50.000000"), inst: installedSlackInstall()}
 	root := slack.Message{Msg: slack.Msg{
 		Username:  "Webhook",
 		BotID:     "B3",
@@ -519,7 +519,7 @@ func TestThreadRecoversRichTextBlock(t *testing.T) {
 // (a join/leave/system marker) is still dropped — the fallback must not
 // resurrect content-less markers.
 func TestThreadDropsEmptySystemMarker(t *testing.T) {
-	q := &fakeHistoryQueries{binding: groupBinding("50.000000"), inst: activeSlackInstall()}
+	q := &fakeHistoryQueries{binding: groupBinding("50.000000"), inst: installedSlackInstall()}
 	fc := &fakeHistoryClient{repliesMsgs: []slack.Message{
 		{Msg: slack.Msg{SubType: "channel_join", User: "U1", Timestamp: "50.000000"}},
 		msg("U2", "real reply", "51.000000"),

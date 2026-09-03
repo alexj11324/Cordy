@@ -141,17 +141,17 @@ func TestAdmitInstall(t *testing.T) {
 		{
 			name:    "under the limit admits",
 			limit:   ptrOf(int64(3)),
-			q:       &fakeAdmitQueries{snapshot: db.ChannelInstallationCapacitySnapshotRow{ActiveCount: 2, SameSlot: false}},
+			q:       &fakeAdmitQueries{snapshot: db.ChannelInstallationCapacitySnapshotRow{InstalledCount: 2, SameSlot: false}},
 		},
 		{
 			name:  "at the limit with the same slot admits a reconnect",
 			limit: ptrOf(int64(3)),
-			q:     &fakeAdmitQueries{snapshot: db.ChannelInstallationCapacitySnapshotRow{ActiveCount: 3, SameSlot: true}},
+			q:     &fakeAdmitQueries{snapshot: db.ChannelInstallationCapacitySnapshotRow{InstalledCount: 3, SameSlot: true}},
 		},
 		{
 			name:    "at the limit with a new slot refuses",
 			limit:   ptrOf(int64(3)),
-			q:       &fakeAdmitQueries{snapshot: db.ChannelInstallationCapacitySnapshotRow{ActiveCount: 3, SameSlot: false}},
+			q:       &fakeAdmitQueries{snapshot: db.ChannelInstallationCapacitySnapshotRow{InstalledCount: 3, SameSlot: false}},
 			wantErr: ErrLimitReached,
 		},
 		{

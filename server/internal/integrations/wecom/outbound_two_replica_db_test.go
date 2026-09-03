@@ -144,7 +144,7 @@ func seedBoundTurn(t *testing.T, pool *pgxpool.Pool) boundTurn {
 		turn.sessionID, wsID, agentID, userID)
 	exec(`INSERT INTO channel_installation
 	        (id, workspace_id, agent_id, channel_type, status, installer_user_id)
-	      VALUES ($1, $2, $3, 'wecom', 'active', $4)`,
+	      VALUES ($1, $2, $3, 'wecom', 'installed', $4)`,
 		turn.instID, wsID, agentID, userID)
 	bindingID := newID()
 	exec(`INSERT INTO channel_chat_session_binding

@@ -129,7 +129,7 @@ func TestChannelChatCommandE2ERotatesRouteAndFreezesTaskDelivery(t *testing.T) {
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO channel_installation (
 			workspace_id, agent_id, channel_type, config, status, installer_user_id
-		) VALUES ($1, $2, $3, '{}'::jsonb, 'active', $4)
+		) VALUES ($1, $2, $3, '{}'::jsonb, 'installed', $4)
 		RETURNING id
 	`, testWorkspaceID, agentID, string(channelType), testUserID).Scan(&installationID); err != nil {
 		t.Fatalf("create channel installation: %v", err)
@@ -144,7 +144,7 @@ func TestChannelChatCommandE2ERotatesRouteAndFreezesTaskDelivery(t *testing.T) {
 
 	installation := engine.ResolvedInstallation{
 		ID: util.MustParseUUID(installationID), WorkspaceID: util.MustParseUUID(testWorkspaceID),
-		AgentID: util.MustParseUUID(agentID), InstallerUserID: util.MustParseUUID(testUserID), Active: true,
+		AgentID: util.MustParseUUID(agentID), InstallerUserID: util.MustParseUUID(testUserID), Installed: true,
 	}
 	chatSession := engine.NewChatSession(queries, testPool, channelType, engine.SessionTitles{
 		Direct: "Channel E2E conversation", Group: "Channel E2E group", Fallback: "Channel E2E conversation",
@@ -430,7 +430,7 @@ func TestChannelChatStaleTaskPreparationLeavesRouteAndChatUntouched(t *testing.T
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO channel_installation (
 			workspace_id, agent_id, channel_type, config, status, installer_user_id
-		) VALUES ($1, $2, 'slack', '{}'::jsonb, 'active', $3)
+		) VALUES ($1, $2, 'slack', '{}'::jsonb, 'installed', $3)
 		RETURNING id
 	`, testWorkspaceID, agentID, testUserID).Scan(&installationID); err != nil {
 		t.Fatalf("create channel installation: %v", err)
@@ -514,7 +514,7 @@ func TestSlackNativeNewCommandCreatesMessageTaskAndDeliveryAtomically(t *testing
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO channel_installation (
 			workspace_id, agent_id, channel_type, config, status, installer_user_id
-		) VALUES ($1, $2, 'slack', '{}'::jsonb, 'active', $3)
+		) VALUES ($1, $2, 'slack', '{}'::jsonb, 'installed', $3)
 		RETURNING id
 	`, testWorkspaceID, agentID, testUserID).Scan(&installationID); err != nil {
 		t.Fatalf("create channel installation: %v", err)
@@ -528,7 +528,7 @@ func TestSlackNativeNewCommandCreatesMessageTaskAndDeliveryAtomically(t *testing
 
 	installation := engine.ResolvedInstallation{
 		ID: util.MustParseUUID(installationID), WorkspaceID: util.MustParseUUID(testWorkspaceID),
-		AgentID: util.MustParseUUID(agentID), InstallerUserID: util.MustParseUUID(testUserID), Active: true,
+		AgentID: util.MustParseUUID(agentID), InstallerUserID: util.MustParseUUID(testUserID), Installed: true,
 	}
 	sessions := engine.NewChatSession(queries, testPool, channel.Type("slack"), engine.SessionTitles{})
 	starter := slackintegration.NewSlackDMControlStarter(queries, testPool, testHandler.TaskService, testHandler, nil)
@@ -647,7 +647,7 @@ func TestSlackNativeClearCommandKeepsChatAndAdvancesContextAtomically(t *testing
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO channel_installation (
 			workspace_id, agent_id, channel_type, config, status, installer_user_id
-		) VALUES ($1, $2, 'slack', '{}'::jsonb, 'active', $3)
+		) VALUES ($1, $2, 'slack', '{}'::jsonb, 'installed', $3)
 		RETURNING id
 	`, testWorkspaceID, agentID, testUserID).Scan(&installationID); err != nil {
 		t.Fatalf("create channel installation: %v", err)
@@ -661,7 +661,7 @@ func TestSlackNativeClearCommandKeepsChatAndAdvancesContextAtomically(t *testing
 
 	installation := engine.ResolvedInstallation{
 		ID: util.MustParseUUID(installationID), WorkspaceID: util.MustParseUUID(testWorkspaceID),
-		AgentID: util.MustParseUUID(agentID), InstallerUserID: util.MustParseUUID(testUserID), Active: true,
+		AgentID: util.MustParseUUID(agentID), InstallerUserID: util.MustParseUUID(testUserID), Installed: true,
 	}
 	starter := slackintegration.NewSlackDMControlStarter(queries, testPool, testHandler.TaskService, testHandler, nil)
 	if err := starter.ClearSlackDMContext(ctx, installation, util.MustParseUUID(testUserID), slackapi.SlashCommand{
@@ -755,7 +755,7 @@ func runChannelClearCommandE2E(t *testing.T, channelType channel.Type, text, com
 		INSERT INTO channel_installation (
 			workspace_id, agent_id, channel_type, config, status, installer_user_id
 		)
-		VALUES ($1, $2, $3, '{}'::jsonb, 'active', $4)
+		VALUES ($1, $2, $3, '{}'::jsonb, 'installed', $4)
 		RETURNING id
 	`, testWorkspaceID, agentID, string(channelType), testUserID).Scan(&installationID); err != nil {
 		t.Fatalf("create channel installation: %v", err)
@@ -773,7 +773,7 @@ func runChannelClearCommandE2E(t *testing.T, channelType channel.Type, text, com
 		WorkspaceID:     util.MustParseUUID(testWorkspaceID),
 		AgentID:         util.MustParseUUID(agentID),
 		InstallerUserID: util.MustParseUUID(testUserID),
-		Active:          true,
+		Installed:       true,
 	}
 	chatSession := engine.NewChatSession(queries, testPool, channelType, engine.SessionTitles{
 		Direct:   "Channel E2E conversation",

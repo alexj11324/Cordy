@@ -202,7 +202,7 @@ func TestProcessEvent_DeliversChatReplyToBoundChat(t *testing.T) {
 	t.Parallel()
 	q := &fakeOutboundQueries{
 		sessionBinding:  db.ChannelChatSessionBinding{ChannelChatID: "CHAT_1", ChatType: "group"},
-		installation:    db.ChannelInstallation{Status: string(InstallationActive)},
+		installation:    db.ChannelInstallation{Status: string(InstallationInstalled)},
 		channelIngested: askedOverWecom(), // the question came in over WeCom
 	}
 	q.fileTask(t, "33333333-3333-3333-3333-333333333333")
@@ -367,7 +367,7 @@ func TestProcessEvent_DoesNotPushAWebUIAnswerIntoTheRoom(t *testing.T) {
 	t.Parallel()
 	q := &fakeOutboundQueries{
 		sessionBinding:  db.ChannelChatSessionBinding{ChannelChatID: "CHAT_1", ChatType: "group"},
-		installation:    db.ChannelInstallation{Status: string(InstallationActive)},
+		installation:    db.ChannelInstallation{Status: string(InstallationInstalled)},
 		channelIngested: askedInTheWebUI(), // asked in the web UI, not over WeCom
 	}
 	q.fileTask(t, "33333333-3333-3333-3333-333333333333")
@@ -399,7 +399,7 @@ func TestProcessEvent_FailsClosedWhenTheTaskIdIsMissing(t *testing.T) {
 	t.Parallel()
 	q := &fakeOutboundQueries{
 		sessionBinding: db.ChannelChatSessionBinding{ChannelChatID: "CHAT_1", ChatType: "group"},
-		installation:   db.ChannelInstallation{Status: string(InstallationActive)},
+		installation:   db.ChannelInstallation{Status: string(InstallationInstalled)},
 		// Stamped as a WeCom question, and deliberately so: the gate would say
 		// deliver if it were ever consulted. Nothing here is refused for want
 		// of a permissive origin — it is refused for want of an id to ask

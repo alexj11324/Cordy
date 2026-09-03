@@ -207,7 +207,7 @@ func (h *Handler) publishSlackInstallationCreated(row db.ChannelInstallation, ac
 
 // RevokeSlackInstallation (DELETE /api/workspaces/{id}/slack/installations/{installationId})
 // flips status to 'revoked'. Admin-only at the router. The row is preserved for
-// audit; a re-install (re-pasting the app's tokens) flips status back to 'active'.
+// audit; a re-install (re-pasting the app's tokens) flips status back to 'installed'.
 func (h *Handler) RevokeSlackInstallation(w http.ResponseWriter, r *http.Request) {
 	if h.SlackInstall == nil {
 		writeError(w, http.StatusServiceUnavailable, "slack integration not configured")

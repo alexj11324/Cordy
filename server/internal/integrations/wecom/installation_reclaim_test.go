@@ -178,7 +178,7 @@ func TestUpsert_TakesOverRevokedOwnerOnDifferentAgent(t *testing.T) {
 // same-workspace conflict — reclaim must not steal a live slot.
 func TestUpsert_RefusesLiveOwnerOnDifferentAgent(t *testing.T) {
 	ctx, pool, svc, probe := setupReclaim(t)
-	insertWecomInstall(t, ctx, pool, wcRclBotLive, wcRclAgentA, "active")
+	insertWecomInstall(t, ctx, pool, wcRclBotLive, wcRclAgentA, "installed")
 
 	_, err := svc.Upsert(ctx, params(wcRclBotLive, wcRclAgentB), nil)
 	if !errors.Is(err, ErrBotOwnedBySameWorkspace) {
@@ -193,7 +193,7 @@ func TestUpsert_RefusesLiveOwnerOnDifferentAgent(t *testing.T) {
 // the conflict is reported as the archived-agent case.
 func TestUpsert_RefusesArchivedOwner(t *testing.T) {
 	ctx, pool, svc, probe := setupReclaim(t)
-	insertWecomInstall(t, ctx, pool, wcRclBotArchived, wcRclAgentArc, "active")
+	insertWecomInstall(t, ctx, pool, wcRclBotArchived, wcRclAgentArc, "installed")
 
 	_, err := svc.Upsert(ctx, params(wcRclBotArchived, wcRclAgentB), nil)
 	if !errors.Is(err, ErrBotOwnedByArchivedAgent) {
@@ -214,7 +214,7 @@ func TestUpsert_SameAgentReconnectInPlace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("same-agent reconnect should succeed, got: %v", err)
 	}
-	if got.Status != InstallationActive {
+	if got.Status != InstallationInstalled {
 		t.Errorf("status after reconnect = %q, want active", got.Status)
 	}
 	var n int

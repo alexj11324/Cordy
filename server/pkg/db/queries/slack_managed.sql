@@ -70,12 +70,12 @@ WHERE installation_id = $1;
 DELETE FROM channel_installation_runtime_observation
 WHERE installation_id = $1;
 
--- name: ListActiveManagedSlackInstallations :many
+-- name: ListConnectableManagedSlackInstallations :many
 -- Managed installations are workspace-owned and have no agent row. The socket
 -- supervisor's agent join would incorrectly discard all of these installs.
 SELECT ci.* FROM channel_installation ci
 JOIN workspace w ON w.id = ci.workspace_id
-WHERE ci.channel_type = 'slack' AND ci.status = 'active'
+WHERE ci.channel_type = 'slack' AND ci.status = 'installed'
   AND ci.hosted_paused_at IS NULL
   AND ci.config ->> 'transport' = 'webhook'
 ORDER BY ci.created_at, ci.id;
@@ -90,7 +90,7 @@ SET config = config || jsonb_build_object(
         'token_expires_at', to_jsonb(sqlc.arg(token_expires_at)::timestamptz)
     ), updated_at = now()
 WHERE id = sqlc.arg(installation_id)
-  AND channel_type = 'slack' AND status = 'active'
+  AND channel_type = 'slack' AND status = 'installed'
   AND hosted_paused_at IS NULL
   AND config ->> 'transport' = 'webhook'
   AND config ->> 'refresh_token_encrypted' = sqlc.arg(previous_refresh_token)::text;
@@ -101,7 +101,7 @@ WHERE id = sqlc.arg(installation_id)
 WITH current_installation AS MATERIALIZED (
     SELECT ci.id FROM channel_installation ci
     WHERE ci.id = sqlc.arg(installation_id)
-      AND ci.channel_type = 'slack' AND ci.status = 'active'
+      AND ci.channel_type = 'slack' AND ci.status = 'installed'
       AND ci.hosted_paused_at IS NULL
       AND ci.config ->> 'transport' = 'webhook'
       AND COALESCE(ci.config ->> 'bot_token_encrypted', '') = sqlc.arg(expected_bot_token)::text

@@ -128,7 +128,7 @@ func TestOutbound_SkipsDirectChatTaskOnBoundSlackSession(t *testing.T) {
 			ChannelChatID:  "C123",
 			Config:         []byte(`{"channel_id":"C123"}`),
 		},
-		inst: db.ChannelInstallation{ID: uid(1), Status: "active", Config: slackInstallConfigJSON()},
+		inst: db.ChannelInstallation{ID: uid(1), Status: "installed", Config: slackInstallConfigJSON()},
 	}
 	fs := &fakeSender{}
 
@@ -151,7 +151,7 @@ func TestOutbound_PostsSealedChannelTaskReply(t *testing.T) {
 			ChannelChatID:  "C123",
 			Config:         []byte(`{"channel_id":"C123"}`),
 		},
-		inst: db.ChannelInstallation{ID: uid(1), Status: "active", Config: slackInstallConfigJSON()},
+		inst: db.ChannelInstallation{ID: uid(1), Status: "installed", Config: slackInstallConfigJSON()},
 	}
 	fs := &fakeSender{result: channel.SendResult{MessageID: "1.2", MessageIDs: []string{"1.1", "1.2"}}}
 
@@ -181,7 +181,7 @@ func TestOutbound_PostsReplyToBoundSlackChannel(t *testing.T) {
 			Config:         []byte(`{"channel_id":"C123"}`),
 			LastThreadID:   pgtype.Text{String: "1111.0", Valid: true},
 		},
-		inst: db.ChannelInstallation{ID: uid(1), Status: "active", Config: slackInstallConfigJSON()},
+		inst: db.ChannelInstallation{ID: uid(1), Status: "installed", Config: slackInstallConfigJSON()},
 	}
 	fs := &fakeSender{}
 	o := newTestOutbound(q, fs)
@@ -204,7 +204,7 @@ func TestOutbound_PostsReplyToBoundSlackChannel(t *testing.T) {
 
 func TestOutbound_IgnoresNonSlackAndEmptyAndRevoked(t *testing.T) {
 	const sid = "00000000-0000-0000-0000-000000000001"
-	activeInst := db.ChannelInstallation{ID: uid(1), Status: "active", Config: slackInstallConfigJSON()}
+	installedInst := db.ChannelInstallation{ID: uid(1), Status: "installed", Config: slackInstallConfigJSON()}
 	boundBinding := db.ChannelChatSessionBinding{InstallationID: uid(1), ChannelChatID: "C1", Config: []byte(`{"channel_id":"C1"}`)}
 
 	cases := []struct {
@@ -219,7 +219,7 @@ func TestOutbound_IgnoresNonSlackAndEmptyAndRevoked(t *testing.T) {
 		},
 		{
 			name: "empty completion content",
-			q:    &fakeOutboundQueries{binding: boundBinding, inst: activeInst},
+			q:    &fakeOutboundQueries{binding: boundBinding, inst: installedInst},
 			evt:  chatDoneEvent(sid, ""),
 		},
 		{

@@ -44,7 +44,7 @@ const lockChannelInstallationForHub = `-- name: LockChannelInstallationForHub :o
 SELECT id FROM channel_installation
 WHERE id = $1
   AND workspace_id = $2
-  AND status = 'active' AND hosted_paused_at IS NULL
+  AND status = 'installed' AND hosted_paused_at IS NULL
   AND (agent_id IS NULL OR agent_id = '00000000-0000-0000-0000-000000000000'::uuid)
 FOR SHARE
 `

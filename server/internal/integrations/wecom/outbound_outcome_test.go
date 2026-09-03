@@ -66,12 +66,12 @@ func (r *outcomeRig) frames() int {
 }
 
 // deliverableTurn is a completed turn that has every right to be delivered:
-// bound session, active installation, asked in the room, words to say.
+// bound session, installed connection, asked in the room, words to say.
 func deliverableTurn(t *testing.T) *fakeOutboundQueries {
 	t.Helper()
 	q := &fakeOutboundQueries{
 		sessionBinding:  db.ChannelChatSessionBinding{ChannelChatID: "CHAT_1", ChatType: "p2p"},
-		installation:    db.ChannelInstallation{Status: string(InstallationActive)},
+		installation:    db.ChannelInstallation{Status: string(InstallationInstalled)},
 		channelIngested: askedOverWecom(),
 	}
 	q.fileTask(t, outcomeTask)
@@ -237,7 +237,7 @@ func TestSkipReasonStringsArePinned(t *testing.T) {
 	t.Parallel()
 	for want, got := range map[string]skipReason{
 		"origin_not_channel":    skipOriginNotChannel,
-		"installation_inactive": skipInstallationInactive,
+		"installation_revoked": skipInstallationRevoked,
 		"nothing_to_say":        skipNothingToSay,
 	} {
 		if string(got) != want {
@@ -256,7 +256,7 @@ func TestNotOwedIsSkippedNotDropped(t *testing.T) {
 		setup        func(q *fakeOutboundQueries)
 	}{
 		{"asked in the web UI", "origin_not_channel", func(q *fakeOutboundQueries) { q.channelIngested = askedInTheWebUI() }},
-		{"installation revoked", "installation_inactive", func(q *fakeOutboundQueries) { q.installation.Status = "revoked" }},
+		{"installation revoked", "installation_revoked", func(q *fakeOutboundQueries) { q.installation.Status = "revoked" }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

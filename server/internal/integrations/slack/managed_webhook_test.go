@@ -42,7 +42,7 @@ func (f *fakeAppLookup) GetChannelInstallationByAppID(_ context.Context, arg db.
 
 func managedRow(appIDKey string) db.ChannelInstallation {
 	return db.ChannelInstallation{
-		Status: "active",
+		Status: "installed",
 		Config: []byte(fmt.Sprintf(`{"app_id":%q,"api_app_id":"A1","team_id":"T1","bot_user_id":"UBOT"}`, appIDKey)),
 	}
 }

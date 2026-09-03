@@ -101,7 +101,7 @@ func TestReconcileAgainstPostgres(t *testing.T) {
 		exec(`
 			INSERT INTO channel_installation (
 				id, workspace_id, agent_id, channel_type, config, installer_user_id, status, created_at
-			) VALUES ($1, $2, $3, 'slack', $4::jsonb, $5, 'active', now() - ($6 || ' minutes')::interval)
+			) VALUES ($1, $2, $3, 'slack', $4::jsonb, $5, 'installed', now() - ($6 || ' minutes')::interval)
 		`, row.installation, workspaceID, row.agent, `{"app_id":"capacity-app-`+row.installation+`"}`, userID, string(rune('0'+3-i)))
 	}
 
@@ -109,7 +109,7 @@ func TestReconcileAgainstPostgres(t *testing.T) {
 	ws := util.MustParseUUID(workspaceID)
 	agent := util.MustParseUUID(agentA)
 
-	// Cap of 2 with 3 active installations: the newest is paused, not revoked.
+	// Cap of 2 with 3 installed connections: the newest is paused, not revoked.
 	result, err := Reconcile(ctx, dbQueries{queries}, pool, ws, ptrOf(int64(2)))
 	if err != nil {
 		t.Fatalf("Reconcile(cap 2): %v", err)
@@ -126,7 +126,7 @@ func TestReconcileAgainstPostgres(t *testing.T) {
 	).Scan(&pausedAt, &statusRow); err != nil {
 		t.Fatalf("read paused installation: %v", err)
 	}
-	if pausedAt == nil || statusRow != "active" {
+	if pausedAt == nil || statusRow != "installed" {
 		t.Fatalf("paused installation: hosted_paused_at=%v status=%s, want a pause marker on an active row", pausedAt, statusRow)
 	}
 	var observationState, observationCode, observer string
@@ -140,9 +140,9 @@ SELECT state, error_code, observer_token
 		t.Fatalf("observation = %s/%s/%s, want offline/hosted_quota_paused/%s", observationState, observationCode, observer, ObserverToken)
 	}
 	// The work-finding filters must not see the paused row.
-	visible, err := queries.ListActiveChannelInstallations(ctx, "slack")
+	visible, err := queries.ListConnectableChannelInstallations(ctx, "slack")
 	if err != nil {
-		t.Fatalf("ListActiveChannelInstallations: %v", err)
+		t.Fatalf("ListConnectableChannelInstallations: %v", err)
 	}
 	if len(visible) != 2 {
 		t.Fatalf("visible installations = %d, want 2 (paused row filtered)", len(visible))
@@ -175,9 +175,9 @@ SELECT state, error_code, observer_token
 	).Scan(&pausedAt); err != nil || pausedAt != nil {
 		t.Fatalf("resumed installation hosted_paused_at = %v, want NULL", pausedAt)
 	}
-	visible, err = queries.ListActiveChannelInstallations(ctx, "slack")
+	visible, err = queries.ListConnectableChannelInstallations(ctx, "slack")
 	if err != nil {
-		t.Fatalf("ListActiveChannelInstallations after resume: %v", err)
+		t.Fatalf("ListConnectableChannelInstallations after resume: %v", err)
 	}
 	if len(visible) != 3 {
 		t.Fatalf("visible installations after resume = %d, want 3", len(visible))

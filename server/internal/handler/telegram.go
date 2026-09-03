@@ -188,7 +188,7 @@ func (h *Handler) RegisterTelegramBot(w http.ResponseWriter, r *http.Request) {
 // RevokeTelegramInstallation (DELETE /api/workspaces/{id}/telegram/installations/{installationId})
 // flips status to 'revoked'. Admin-only at the router. The row is preserved
 // for audit and chat history stays in Patchbay; a re-install (re-pasting the
-// bot's token) flips status back to 'active'.
+// bot's token) flips status back to 'installed'.
 func (h *Handler) RevokeTelegramInstallation(w http.ResponseWriter, r *http.Request) {
 	if h.TelegramInstall == nil {
 		writeError(w, http.StatusServiceUnavailable, "telegram integration not configured")

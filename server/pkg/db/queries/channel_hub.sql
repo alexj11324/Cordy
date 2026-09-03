@@ -19,7 +19,7 @@ LIMIT 1;
 SELECT id FROM channel_installation
 WHERE id = sqlc.arg('installation_id')
   AND workspace_id = sqlc.arg('workspace_id')
-  AND status = 'active' AND hosted_paused_at IS NULL
+  AND status = 'installed' AND hosted_paused_at IS NULL
   AND (agent_id IS NULL OR agent_id = '00000000-0000-0000-0000-000000000000'::uuid)
 FOR SHARE;
 

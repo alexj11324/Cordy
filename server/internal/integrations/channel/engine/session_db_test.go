@@ -57,7 +57,7 @@ func seedSessionPersistenceFixture(t *testing.T, pool *pgxpool.Pool) sessionPers
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO channel_installation (
 			workspace_id, agent_id, channel_type, config, status, installer_user_id
-		) VALUES ($1, $2, 'lark', '{}'::jsonb, 'active', $3)
+		) VALUES ($1, $2, 'lark', '{}'::jsonb, 'installed', $3)
 		RETURNING id
 	`, f.workspaceID, f.agentID, f.userID).Scan(&f.installationID); err != nil {
 		t.Fatalf("create channel installation: %v", err)

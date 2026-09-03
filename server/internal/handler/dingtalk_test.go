@@ -223,7 +223,7 @@ func TestListDingTalkSettingsData_FollowsAgentViewPermissionMatrix(t *testing.T)
 		"channel_type":      "dingtalk",
 		"config":            []byte(`{"app_id":"dingtalk-settings-view","group_titles":{"cid-settings-view":"Settings group"},"group_bot_names":{"cid-settings-view":"Settings Bot"}}`),
 		"installer_user_id": testUserID,
-		"status":            "active",
+		"status":            "installed",
 	})
 	if _, err := testPool.Exec(context.Background(), `
 INSERT INTO dingtalk_group_presence (
@@ -358,7 +358,7 @@ func TestListDingTalkGroupsInactivePaginationAuthorizesInstallationBeforeCursor(
 		"channel_type":      "dingtalk",
 		"config":            []byte(`{"app_id":"dingtalk-private-inactive-pagination"}`),
 		"installer_user_id": testUserID,
-		"status":            "active",
+		"status":            "installed",
 	})
 	for _, group := range []struct {
 		conversationID    string
@@ -385,7 +385,7 @@ func TestListDingTalkGroupsInactivePaginationAuthorizesInstallationBeforeCursor(
 		"channel_type":      "dingtalk",
 		"config":            []byte(`{"app_id":"dingtalk-private-pagination-other-installation"}`),
 		"installer_user_id": testUserID,
-		"status":            "active",
+		"status":            "installed",
 	})
 	for _, conversationID := range []string{"cid-private-other-a", "cid-private-other-b"} {
 		dbfx.InsertNoID(t, "dingtalk_group_presence", testutil.Cols{
@@ -492,7 +492,7 @@ func TestListDingTalkInstallations_OrphanIsAdminOnlyAndMarkedUnavailable(t *test
 		"channel_type":      "dingtalk",
 		"config":            []byte(`{"app_id":"dingtalk-orphan"}`),
 		"installer_user_id": testUserID,
-		"status":            "active",
+		"status":            "installed",
 	})
 	if _, err := testPool.Exec(context.Background(), `DELETE FROM agent WHERE id = $1`, agentID); err != nil {
 		t.Fatalf("delete DingTalk Agent fixture: %v", err)
@@ -582,7 +582,7 @@ func TestForgetDingTalkGroup_AdminOnlyAndKeepsInstallation(t *testing.T) {
 		"channel_type":      "dingtalk",
 		"config":            []byte(`{"app_id":"dingtalk-forget"}`),
 		"installer_user_id": testUserID,
-		"status":            "active",
+		"status":            "installed",
 	})
 	if _, err := testPool.Exec(context.Background(), `
 INSERT INTO dingtalk_group_presence (
@@ -676,7 +676,7 @@ func TestRevokeDingTalkInstallation_AuthorizesAgentOwnerAndAdmins(t *testing.T) 
 			"channel_type":      "dingtalk",
 			"config":            []byte(`{"app_id":"` + appID + `"}`),
 			"installer_user_id": testUserID,
-			"status":            "active",
+			"status":            "installed",
 		})
 	}
 	revoke := func(userID, installationID string) int {
@@ -727,7 +727,7 @@ func TestRevokeDingTalkInstallation_OrphanCleanableByAdminNotMember(t *testing.T
 			"channel_type":      "dingtalk",
 			"config":            []byte(`{"app_id":"` + appID + `"}`),
 			"installer_user_id": testUserID,
-			"status":            "active",
+			"status":            "installed",
 		})
 	}
 	revoke := func(userID, installationID string) int {
@@ -902,8 +902,8 @@ func TestListDingTalkGroupsAggregatesConnectedBots(t *testing.T) {
 		title   string
 		status  string
 	}{
-		{id: installOne, agentID: agentOne, appID: "handler-group-one", name: "Release Bot", title: "", status: "active"},
-		{id: installTwo, agentID: agentTwo, appID: "handler-group-two", name: "Support Bot", title: "Platform", status: "active"},
+		{id: installOne, agentID: agentOne, appID: "handler-group-one", name: "Release Bot", title: "", status: "installed"},
+		{id: installTwo, agentID: agentTwo, appID: "handler-group-two", name: "Support Bot", title: "Platform", status: "installed"},
 	} {
 		if _, err := testPool.Exec(context.Background(), `
 INSERT INTO channel_installation (
@@ -1086,7 +1086,7 @@ INSERT INTO agent (
 		t.Fatalf("pin agent B id: %v", err)
 	}
 	for _, fixture := range []struct{ id, agentID, appID, status string }{
-		{id: install, agentID: agentA, appID: "route-test-active", status: "active"},
+		{id: install, agentID: agentA, appID: "route-test-active", status: "installed"},
 		{id: revoked, agentID: agentB, appID: "route-test-revoked", status: "revoked"},
 	} {
 		if _, err := testPool.Exec(ctx, `

@@ -21,7 +21,7 @@ func (channelLeaseTestStore) ObserveRuntime(context.Context, pgtype.UUID, string
 	return true, nil
 }
 
-func (channelLeaseTestStore) ListActiveInstallations(context.Context) ([]engine.Installation, error) {
+func (channelLeaseTestStore) ListConnectableInstallations(context.Context) ([]engine.Installation, error) {
 	return nil, nil
 }
 func (channelLeaseTestStore) ListHeldWSLeases(context.Context, []pgtype.UUID) (map[string]struct{}, error) {

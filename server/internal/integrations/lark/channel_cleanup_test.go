@@ -42,7 +42,7 @@ const (
 	ccAppWs      = "cli_cc_ws"
 )
 
-// seedFullInstallation inserts one active installation plus the full spread of
+// seedFullInstallation inserts one installed connection plus the full spread of
 // dependents (member link, chat-session binding, pending binding token, inbound
 // audit) so a cleanup path can be shown to sweep all of them.
 func seedFullInstallation(t *testing.T, ctx context.Context, pool *pgxpool.Pool, ws, agent, app, chatSess, tokenHash, auditEvent string) string {
@@ -50,7 +50,7 @@ func seedFullInstallation(t *testing.T, ctx context.Context, pool *pgxpool.Pool,
 	var id string
 	if err := pool.QueryRow(ctx, `
 INSERT INTO channel_installation (workspace_id, agent_id, channel_type, config, installer_user_id, status)
-VALUES ($1, $2, 'feishu', jsonb_build_object('app_id', $3::text), $4, 'active')
+VALUES ($1, $2, 'feishu', jsonb_build_object('app_id', $3::text), $4, 'installed')
 RETURNING id
 `, ws, agent, app, ccInstaller).Scan(&id); err != nil {
 		t.Fatalf("seed installation app=%s: %v", app, err)

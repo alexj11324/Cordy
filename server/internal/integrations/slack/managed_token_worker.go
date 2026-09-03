@@ -28,7 +28,7 @@ const (
 )
 
 type managedTokenQueries interface {
-	ListActiveManagedSlackInstallations(context.Context) ([]db.ChannelInstallation, error)
+	ListConnectableManagedSlackInstallations(context.Context) ([]db.ChannelInstallation, error)
 	RotateManagedSlackTokens(context.Context, db.RotateManagedSlackTokensParams) (int64, error)
 	ObserveManagedSlackRuntime(context.Context, db.ObserveManagedSlackRuntimeParams) (int64, error)
 }
@@ -100,7 +100,7 @@ func (w *ManagedTokenWorker) WaitWithTimeout(timeout time.Duration) bool {
 }
 
 func (w *ManagedTokenWorker) Sweep(ctx context.Context) error {
-	rows, err := w.q.ListActiveManagedSlackInstallations(ctx)
+	rows, err := w.q.ListConnectableManagedSlackInstallations(ctx)
 	if err != nil {
 		return err
 	}
@@ -135,7 +135,7 @@ func needsManagedTokenRotation(expires *time.Time, now time.Time) bool {
 }
 
 func (w *ManagedTokenWorker) refreshInstallation(ctx context.Context, row db.ChannelInstallation) {
-	if ctx.Err() != nil || row.Status != "active" || row.HostedPausedAt.Valid {
+	if ctx.Err() != nil || row.Status != "installed" || row.HostedPausedAt.Valid {
 		return
 	}
 	var cfg installConfig

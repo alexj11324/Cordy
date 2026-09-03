@@ -138,13 +138,13 @@ func newTestSlashProcessor(q slashQueries, tasks quickCreateEnqueuer, binding bi
 	return p, captured, count
 }
 
-func activeSlashInstallation() db.ChannelInstallation {
+func installedSlashInstallation() db.ChannelInstallation {
 	return db.ChannelInstallation{
 		ID:              slashTestUUID(1),
 		WorkspaceID:     slashTestUUID(2),
 		AgentID:         slashTestUUID(3),
 		InstallerUserID: slashTestUUID(4),
-		Status:          "active",
+		Status:          "installed",
 		Config:          []byte(`{"app_id":"A1","team_id":"T1"}`),
 	}
 }
@@ -165,7 +165,7 @@ func issueSlashCmd() slack.SlashCommand {
 
 func TestSlashHandle_EnqueuesQuickCreateAndAcks(t *testing.T) {
 	q := &fakeSlashQueries{
-		inst:    activeSlashInstallation(),
+		inst:    installedSlashInstallation(),
 		binding: db.ChannelUserBinding{PatchbayUserID: slashTestUUID(9)},
 	}
 	tasks := &fakeQuickCreate{}
@@ -204,7 +204,7 @@ func TestSlashHandle_EnqueuesQuickCreateAndAcks(t *testing.T) {
 
 func TestSlashHandle_MultilinePromptPassedThrough(t *testing.T) {
 	q := &fakeSlashQueries{
-		inst:    activeSlashInstallation(),
+		inst:    installedSlashInstallation(),
 		binding: db.ChannelUserBinding{PatchbayUserID: slashTestUUID(9)},
 	}
 	tasks := &fakeQuickCreate{}
@@ -223,7 +223,7 @@ func TestSlashHandle_MultilinePromptPassedThrough(t *testing.T) {
 
 func TestSlashHandle_EmptyPromptIsUsage(t *testing.T) {
 	tasks := &fakeQuickCreate{}
-	p, captured, count := newTestSlashProcessor(&fakeSlashQueries{inst: activeSlashInstallation()}, tasks, &fakeBindingMinter{})
+	p, captured, count := newTestSlashProcessor(&fakeSlashQueries{inst: installedSlashInstallation()}, tasks, &fakeBindingMinter{})
 
 	cmd := issueSlashCmd()
 	cmd.Text = "   "
@@ -238,7 +238,7 @@ func TestSlashHandle_EmptyPromptIsUsage(t *testing.T) {
 }
 
 func TestSlashHandle_UnboundUserGetsLink(t *testing.T) {
-	q := &fakeSlashQueries{inst: activeSlashInstallation(), bindErr: pgx.ErrNoRows}
+	q := &fakeSlashQueries{inst: installedSlashInstallation(), bindErr: pgx.ErrNoRows}
 	tasks := &fakeQuickCreate{}
 	bind := &fakeBindingMinter{raw: "TOKEN123"}
 	p, captured, _ := newTestSlashProcessor(q, tasks, bind)
@@ -258,7 +258,7 @@ func TestSlashHandle_UnboundUserGetsLink(t *testing.T) {
 
 func TestSlashHandle_NonMemberDropped(t *testing.T) {
 	q := &fakeSlashQueries{
-		inst:      activeSlashInstallation(),
+		inst:      installedSlashInstallation(),
 		binding:   db.ChannelUserBinding{PatchbayUserID: slashTestUUID(9)},
 		memberErr: pgx.ErrNoRows,
 	}
@@ -275,8 +275,8 @@ func TestSlashHandle_NonMemberDropped(t *testing.T) {
 	}
 }
 
-func TestSlashHandle_InactiveInstallation(t *testing.T) {
-	inst := activeSlashInstallation()
+func TestSlashHandle_IninstalledInstallation(t *testing.T) {
+	inst := installedSlashInstallation()
 	inst.Status = "revoked"
 	tasks := &fakeQuickCreate{}
 	p, captured, _ := newTestSlashProcessor(&fakeSlashQueries{inst: inst}, tasks, &fakeBindingMinter{})
@@ -290,7 +290,7 @@ func TestSlashHandle_InactiveInstallation(t *testing.T) {
 
 func TestSlashHandle_TeamMismatchTreatedAsDisconnected(t *testing.T) {
 	tasks := &fakeQuickCreate{}
-	p, captured, _ := newTestSlashProcessor(&fakeSlashQueries{inst: activeSlashInstallation()}, tasks, &fakeBindingMinter{})
+	p, captured, _ := newTestSlashProcessor(&fakeSlashQueries{inst: installedSlashInstallation()}, tasks, &fakeBindingMinter{})
 
 	cmd := issueSlashCmd()
 	cmd.TeamID = "T2" // config team is T1
@@ -303,7 +303,7 @@ func TestSlashHandle_TeamMismatchTreatedAsDisconnected(t *testing.T) {
 
 func TestSlashHandle_EnqueueFailureIsInternalError(t *testing.T) {
 	q := &fakeSlashQueries{
-		inst:    activeSlashInstallation(),
+		inst:    installedSlashInstallation(),
 		binding: db.ChannelUserBinding{PatchbayUserID: slashTestUUID(9)},
 	}
 	tasks := &fakeQuickCreate{err: errors.New("agent has no runtime")}
@@ -321,7 +321,7 @@ func TestSlashHandle_EnqueueFailureIsInternalError(t *testing.T) {
 
 func TestSlashHandle_IssueLimitReachedIsActionable(t *testing.T) {
 	q := &fakeSlashQueries{
-		inst:    activeSlashInstallation(),
+		inst:    installedSlashInstallation(),
 		binding: db.ChannelUserBinding{PatchbayUserID: slashTestUUID(9)},
 	}
 	tasks := &fakeQuickCreate{err: &service.IssueLimitReachedError{Limit: 100, PolicyRevision: 7}}
@@ -344,7 +344,7 @@ func TestSlashHandle_IssueLimitReachedIsActionable(t *testing.T) {
 
 func TestSlashHandle_IgnoresOtherCommands(t *testing.T) {
 	tasks := &fakeQuickCreate{}
-	p, _, count := newTestSlashProcessor(&fakeSlashQueries{inst: activeSlashInstallation()}, tasks, &fakeBindingMinter{})
+	p, _, count := newTestSlashProcessor(&fakeSlashQueries{inst: installedSlashInstallation()}, tasks, &fakeBindingMinter{})
 
 	cmd := issueSlashCmd()
 	cmd.Command = "/other"
@@ -356,7 +356,7 @@ func TestSlashHandle_IgnoresOtherCommands(t *testing.T) {
 }
 
 func TestSlashHandle_NewDMUsesSharedStarterAndEnvelopeDedup(t *testing.T) {
-	q := &fakeSlashQueries{inst: activeSlashInstallation(), binding: db.ChannelUserBinding{PatchbayUserID: slashTestUUID(9)}}
+	q := &fakeSlashQueries{inst: installedSlashInstallation(), binding: db.ChannelUserBinding{PatchbayUserID: slashTestUUID(9)}}
 	tasks := &fakeQuickCreate{}
 	p, captured, _ := newTestSlashProcessor(q, tasks, &fakeBindingMinter{})
 	starter := &fakeSlashControlStarter{}
@@ -377,7 +377,7 @@ func TestSlashHandle_NewDMUsesSharedStarterAndEnvelopeDedup(t *testing.T) {
 
 func TestSlashHandle_NewChannelGuidesToMentionWithoutGuessingThread(t *testing.T) {
 	q := &fakeSlashQueries{
-		inst:    activeSlashInstallation(),
+		inst:    installedSlashInstallation(),
 		binding: db.ChannelUserBinding{PatchbayUserID: slashTestUUID(9)},
 	}
 	p, captured, _ := newTestSlashProcessor(q, &fakeQuickCreate{}, &fakeBindingMinter{})
@@ -395,7 +395,7 @@ func TestSlashHandle_NewChannelGuidesToMentionWithoutGuessingThread(t *testing.T
 }
 
 func TestSlashHandle_ClearDMUsesSharedStarterAndEnvelopeDedup(t *testing.T) {
-	q := &fakeSlashQueries{inst: activeSlashInstallation(), binding: db.ChannelUserBinding{PatchbayUserID: slashTestUUID(9)}}
+	q := &fakeSlashQueries{inst: installedSlashInstallation(), binding: db.ChannelUserBinding{PatchbayUserID: slashTestUUID(9)}}
 	p, captured, _ := newTestSlashProcessor(q, &fakeQuickCreate{}, &fakeBindingMinter{})
 	starter := &fakeSlashControlStarter{}
 	p.control = starter
@@ -411,7 +411,7 @@ func TestSlashHandle_ClearDMUsesSharedStarterAndEnvelopeDedup(t *testing.T) {
 }
 
 func TestSlashHandle_ClearChannelGuidesToMentionWithoutGuessingThread(t *testing.T) {
-	q := &fakeSlashQueries{inst: activeSlashInstallation(), binding: db.ChannelUserBinding{PatchbayUserID: slashTestUUID(9)}}
+	q := &fakeSlashQueries{inst: installedSlashInstallation(), binding: db.ChannelUserBinding{PatchbayUserID: slashTestUUID(9)}}
 	p, captured, _ := newTestSlashProcessor(q, &fakeQuickCreate{}, &fakeBindingMinter{})
 	starter := &fakeSlashControlStarter{}
 	p.control = starter
@@ -428,7 +428,7 @@ func TestSlashHandle_ClearChannelGuidesToMentionWithoutGuessingThread(t *testing
 
 func TestSlashHandle_ReplayCollapsesOntoOneIssue(t *testing.T) {
 	q := &fakeSlashQueries{
-		inst:    activeSlashInstallation(),
+		inst:    installedSlashInstallation(),
 		binding: db.ChannelUserBinding{PatchbayUserID: slashTestUUID(9)},
 	}
 	tasks := &fakeQuickCreate{}
@@ -450,7 +450,7 @@ func TestSlashHandle_ReplayCollapsesOntoOneIssue(t *testing.T) {
 
 func TestSlashHandle_FreshTriggerFilesAgain(t *testing.T) {
 	q := &fakeSlashQueries{
-		inst:    activeSlashInstallation(),
+		inst:    installedSlashInstallation(),
 		binding: db.ChannelUserBinding{PatchbayUserID: slashTestUUID(9)},
 	}
 	tasks := &fakeQuickCreate{}
@@ -470,7 +470,7 @@ func TestSlashHandle_FreshTriggerFilesAgain(t *testing.T) {
 
 func TestSlashHandle_FailedEnqueueReleasesForRetry(t *testing.T) {
 	q := &fakeSlashQueries{
-		inst:    activeSlashInstallation(),
+		inst:    installedSlashInstallation(),
 		binding: db.ChannelUserBinding{PatchbayUserID: slashTestUUID(9)},
 	}
 	tasks := &fakeQuickCreate{err: errors.New("queue down")}

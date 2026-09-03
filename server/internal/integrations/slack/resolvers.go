@@ -171,7 +171,7 @@ func (r *installationResolver) ResolveInstallation(ctx context.Context, msg chan
 		WorkspaceID:     inst.WorkspaceID,
 		AgentID:         inst.AgentID,
 		InstallerUserID: inst.InstallerUserID,
-		Active:          inst.Status == "active",
+		Installed:          inst.Status == "installed",
 		Platform:        inst,
 	}, nil
 }

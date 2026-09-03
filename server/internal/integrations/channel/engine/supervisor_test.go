@@ -50,7 +50,7 @@ func newFakeStore() *fakeStore {
 	}
 }
 
-func (f *fakeStore) ListActiveInstallations(ctx context.Context) ([]Installation, error) {
+func (f *fakeStore) ListConnectableInstallations(ctx context.Context) ([]Installation, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.listErr != nil {
@@ -313,14 +313,14 @@ func waitFor(timeout time.Duration, cond func() bool) bool {
 	return cond()
 }
 
-func activeInst(id pgtype.UUID, fingerprint string) Installation {
+func installedInst(id pgtype.UUID, fingerprint string) Installation {
 	return Installation{ID: id, ChannelType: channel.TypeFeishu, Fingerprint: fingerprint, Config: []byte(`{}`)}
 }
 
 func TestSupervisorAcquiresLeaseAndConnects(t *testing.T) {
 	q := newFakeStore()
 	instID := uuidFromString(t, "11111111-1111-1111-1111-111111111111")
-	q.installations = []Installation{activeInst(instID, "fp1")}
+	q.installations = []Installation{installedInst(instID, "fp1")}
 
 	fc := &fakeChannel{typ: channel.TypeFeishu}
 	var builds int32
@@ -350,7 +350,7 @@ func TestSupervisorAcquiresLeaseAndConnects(t *testing.T) {
 }
 
 // TestSupervisorSkipsUnregisteredChannelType covers the B2 (MUL-3666) guard:
-// an active installation whose channel_type has no registered Factory must be
+// an installed connection whose channel_type has no registered Factory must be
 // left alone — never leased, never Built — because it is driven outside the
 // Supervisor (Slack's app-level connector owns one shared connection for all
 // its installations). A registered type alongside it still connects normally.
@@ -359,7 +359,7 @@ func TestSupervisorSkipsUnregisteredChannelType(t *testing.T) {
 	feishuID := uuidFromString(t, "2a111111-1111-1111-1111-111111111111")
 	slackID := uuidFromString(t, "2b222222-2222-2222-2222-222222222222")
 	q.installations = []Installation{
-		activeInst(feishuID, "fp1"),
+		installedInst(feishuID, "fp1"),
 		{ID: slackID, ChannelType: channel.Type("slack"), Fingerprint: "fp2", Config: []byte(`{}`)},
 	}
 
@@ -388,7 +388,7 @@ func TestSupervisorSkipsUnregisteredChannelType(t *testing.T) {
 func TestSupervisorInjectsHandler(t *testing.T) {
 	q := newFakeStore()
 	instID := uuidFromString(t, "1a111111-1111-1111-1111-111111111111")
-	q.installations = []Installation{activeInst(instID, "fp1")}
+	q.installations = []Installation{installedInst(instID, "fp1")}
 
 	fc := &fakeChannel{typ: channel.TypeFeishu}
 	var builds int32
@@ -424,7 +424,7 @@ func TestSupervisorInjectsHandler(t *testing.T) {
 func TestSupervisorCancelsChildContextAfterContendedAcquire(t *testing.T) {
 	q := newFakeStore()
 	instID := uuidFromString(t, "21212121-2121-2121-2121-212121212121")
-	inst := activeInst(instID, "fp1")
+	inst := installedInst(instID, "fp1")
 	leases := &contextCapturingContendedLeaseStore{acquireCtx: make(chan context.Context, 1)}
 
 	fc := &fakeChannel{typ: channel.TypeFeishu}
@@ -462,7 +462,7 @@ func TestSupervisorCancelsChildContextAfterContendedAcquire(t *testing.T) {
 func TestSupervisorSkipsWhenAnotherReplicaHoldsLease(t *testing.T) {
 	q := newFakeStore()
 	instID := uuidFromString(t, "22222222-2222-2222-2222-222222222222")
-	q.installations = []Installation{activeInst(instID, "fp1")}
+	q.installations = []Installation{installedInst(instID, "fp1")}
 	q.presetLease(instID, "other-replica", time.Now().Add(10*time.Second))
 
 	fc := &fakeChannel{typ: channel.TypeFeishu}
@@ -506,7 +506,7 @@ func TestSupervisorSkipsWhenAnotherReplicaHoldsLease(t *testing.T) {
 func TestSupervisorTwoNodesHaveExactlyOneOwner(t *testing.T) {
 	q := newFakeStore()
 	instID := uuidFromString(t, "23232323-2323-2323-2323-232323232323")
-	q.installations = []Installation{activeInst(instID, "fp1")}
+	q.installations = []Installation{installedInst(instID, "fp1")}
 
 	first := &fakeChannel{typ: channel.TypeFeishu}
 	second := &fakeChannel{typ: channel.TypeFeishu}
@@ -534,7 +534,7 @@ func TestSupervisorAcquireResponseLossWaitsForExpiryBeforeRetry(t *testing.T) {
 	q := newFakeStore()
 	q.acquireAfterWriteErr = errors.New("response lost")
 	instID := uuidFromString(t, "24242424-2424-2424-2424-242424242424")
-	q.installations = []Installation{activeInst(instID, "fp1")}
+	q.installations = []Installation{installedInst(instID, "fp1")}
 	fc := &fakeChannel{typ: channel.TypeFeishu}
 	var builds int32
 	sup := NewSupervisor(q, q, fakeRegistry(fc, &builds, nil), nil, fastConfig())
@@ -560,7 +560,7 @@ func TestSupervisorAcquireResponseLossWaitsForExpiryBeforeRetry(t *testing.T) {
 func TestSupervisorReclaimsLeaseAfterExpiry(t *testing.T) {
 	q := newFakeStore()
 	instID := uuidFromString(t, "33333333-3333-3333-3333-333333333333")
-	q.installations = []Installation{activeInst(instID, "fp1")}
+	q.installations = []Installation{installedInst(instID, "fp1")}
 	q.presetLease(instID, "other-replica", time.Now().Add(80*time.Millisecond))
 
 	fc := &fakeChannel{typ: channel.TypeFeishu}
@@ -582,7 +582,7 @@ func TestSupervisorReclaimsLeaseAfterExpiry(t *testing.T) {
 func TestSupervisorReapsSupervisorWhenRevoked(t *testing.T) {
 	q := newFakeStore()
 	instID := uuidFromString(t, "44444444-4444-4444-4444-444444444444")
-	q.installations = []Installation{activeInst(instID, "fp1")}
+	q.installations = []Installation{installedInst(instID, "fp1")}
 
 	fc := &fakeChannel{typ: channel.TypeFeishu}
 	var builds int32
@@ -614,7 +614,7 @@ func TestSupervisorReapsSupervisorWhenRevoked(t *testing.T) {
 func TestSupervisorRestartsOnCredentialsRotation(t *testing.T) {
 	q := newFakeStore()
 	instID := uuidFromString(t, "55555555-5555-5555-5555-555555555555")
-	q.installations = []Installation{activeInst(instID, "fp-one")}
+	q.installations = []Installation{installedInst(instID, "fp-one")}
 
 	fc := &fakeChannel{typ: channel.TypeFeishu}
 	var builds int32
@@ -643,7 +643,7 @@ func TestSupervisorRestartsOnCredentialsRotation(t *testing.T) {
 func TestSupervisorRotationReplacesConnectionInSameSweep(t *testing.T) {
 	q := newFakeStore()
 	instID := uuidFromString(t, "56565656-5656-5656-5656-565656565656")
-	q.installations = []Installation{activeInst(instID, "fp-one")}
+	q.installations = []Installation{installedInst(instID, "fp-one")}
 
 	fc := &fakeChannel{typ: channel.TypeFeishu}
 	var builds int32
@@ -681,7 +681,7 @@ func TestSupervisorRotationReplacesConnectionInSameSweep(t *testing.T) {
 func TestSupervisorDoesNotRestartOnUnchangedRow(t *testing.T) {
 	q := newFakeStore()
 	instID := uuidFromString(t, "66666666-6666-6666-6666-666666666666")
-	q.installations = []Installation{activeInst(instID, "stable")}
+	q.installations = []Installation{installedInst(instID, "stable")}
 
 	fc := &fakeChannel{typ: channel.TypeFeishu}
 	var builds int32
@@ -705,7 +705,7 @@ func TestSupervisorDoesNotRestartOnUnchangedRow(t *testing.T) {
 func TestSupervisorBacksOffOnBuildError(t *testing.T) {
 	q := newFakeStore()
 	instID := uuidFromString(t, "77777777-7777-7777-7777-777777777777")
-	q.installations = []Installation{activeInst(instID, "fp1")}
+	q.installations = []Installation{installedInst(instID, "fp1")}
 
 	fc := &fakeChannel{typ: channel.TypeFeishu}
 	var builds int32
@@ -729,7 +729,7 @@ func TestSupervisorBacksOffOnBuildError(t *testing.T) {
 func TestSupervisorLeaseLossCancelsConnection(t *testing.T) {
 	q := newFakeStore()
 	instID := uuidFromString(t, "88888888-8888-8888-8888-888888888888")
-	q.installations = []Installation{activeInst(instID, "fp1")}
+	q.installations = []Installation{installedInst(instID, "fp1")}
 
 	connectReturned := make(chan struct{}, 1)
 	fc := &fakeChannel{
@@ -768,7 +768,7 @@ func TestSupervisorLeaseLossCancelsConnection(t *testing.T) {
 func TestSupervisorClearedLeaseKeyCancelsOldOwner(t *testing.T) {
 	q := newFakeStore()
 	instID := uuidFromString(t, "8b8b8b8b-8b8b-8b8b-8b8b-8b8b8b8b8b8b")
-	q.installations = []Installation{activeInst(instID, "fp1")}
+	q.installations = []Installation{installedInst(instID, "fp1")}
 
 	connectReturned := make(chan struct{}, 1)
 	fc := &fakeChannel{
@@ -807,7 +807,7 @@ func TestSupervisorClearedLeaseKeyCancelsOldOwner(t *testing.T) {
 func TestSupervisorTransientRenewalErrorRecoversBeforeDeadline(t *testing.T) {
 	q := newFakeStore()
 	instID := uuidFromString(t, "89898989-8989-8989-8989-898989898989")
-	q.installations = []Installation{activeInst(instID, "fp1")}
+	q.installations = []Installation{installedInst(instID, "fp1")}
 	fc := &fakeChannel{typ: channel.TypeFeishu}
 	var builds int32
 	sup := NewSupervisor(q, q, fakeRegistry(fc, &builds, nil), nil, fastConfig())
@@ -843,7 +843,7 @@ func TestSupervisorOneWayRedisPartitionDisconnectsBeforeConfirmedExpiry(t *testi
 	q := newFakeStore()
 	q.releaseBlock = make(chan struct{})
 	instID := uuidFromString(t, "8a8a8a8a-8a8a-8a8a-8a8a-8a8a8a8a8a8a")
-	q.installations = []Installation{activeInst(instID, "fp1")}
+	q.installations = []Installation{installedInst(instID, "fp1")}
 	connectReturned := make(chan struct{}, 1)
 	fc := &fakeChannel{
 		typ: channel.TypeFeishu,
@@ -886,7 +886,7 @@ func TestSupervisorReleaseLeaseBoundedByTimeout(t *testing.T) {
 	q := newFakeStore()
 	q.releaseBlock = make(chan struct{}) // never closed; release always hits ctx.Done
 	instID := uuidFromString(t, "99999999-9999-9999-9999-999999999999")
-	q.installations = []Installation{activeInst(instID, "fp1")}
+	q.installations = []Installation{installedInst(instID, "fp1")}
 
 	fc := &fakeChannel{typ: channel.TypeFeishu}
 	var builds int32
@@ -918,7 +918,7 @@ func TestSupervisorWaitWithTimeoutReturnsFalseWhenStuck(t *testing.T) {
 	q := newFakeStore()
 	q.releaseBlock = make(chan struct{}) // never closed
 	instID := uuidFromString(t, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
-	q.installations = []Installation{activeInst(instID, "fp1")}
+	q.installations = []Installation{installedInst(instID, "fp1")}
 
 	fc := &fakeChannel{typ: channel.TypeFeishu}
 	var builds int32
@@ -950,7 +950,7 @@ func TestSupervisorWaitWithTimeoutReturnsFalseWhenStuck(t *testing.T) {
 func TestSupervisorRotationStaleReleaseDoesNotClearSuccessorLease(t *testing.T) {
 	q := newFakeStore()
 	instID := uuidFromString(t, "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
-	q.installations = []Installation{activeInst(instID, "fp-one")}
+	q.installations = []Installation{installedInst(instID, "fp-one")}
 
 	fc := &fakeChannel{typ: channel.TypeFeishu}
 	var builds int32
@@ -1041,7 +1041,7 @@ func TestSupervisorRejectsUnsafeLeaseIntervals(t *testing.T) {
 func TestSupervisorExitLogOmitsLeaseTokenField(t *testing.T) {
 	q := newFakeStore()
 	instID := uuidFromString(t, "cccccccc-cccc-cccc-cccc-cccccccccccc")
-	q.installations = []Installation{activeInst(instID, "fp1")}
+	q.installations = []Installation{installedInst(instID, "fp1")}
 
 	// First Connect fails immediately, driving the exact "connection exited
 	// with error" branch the report quoted; later attempts park on ctx.

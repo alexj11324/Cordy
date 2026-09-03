@@ -54,7 +54,7 @@ func TestManagedSlackCredentialLifecycleAndFencesDB(t *testing.T) {
 	if err := json.Unmarshal(row.Config, &initial); err != nil {
 		t.Fatal(err)
 	}
-	listed, err := q.ListActiveManagedSlackInstallations(ctx)
+	listed, err := q.ListConnectableManagedSlackInstallations(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +119,7 @@ func TestManagedSlackCredentialLifecycleAndFencesDB(t *testing.T) {
 	}{
 		{"paused", `UPDATE channel_installation SET hosted_paused_at = now() WHERE id = $1`},
 		{"revoked", `UPDATE channel_installation SET hosted_paused_at = NULL, status = 'revoked' WHERE id = $1`},
-		{"BYO", `UPDATE channel_installation SET status = 'active', config = jsonb_set(config, '{transport}', '"socket_mode"') WHERE id = $1`},
+		{"BYO", `UPDATE channel_installation SET status = 'installed', config = jsonb_set(config, '{transport}', '"socket_mode"') WHERE id = $1`},
 	} {
 		fx.Exec(t, state.sql, row.ID)
 		if count, err := q.RotateManagedSlackTokens(ctx, rotation); err != nil || count != 0 {
@@ -128,7 +128,7 @@ func TestManagedSlackCredentialLifecycleAndFencesDB(t *testing.T) {
 		if count, err := q.ObserveManagedSlackRuntime(ctx, observation); err != nil || count != 0 {
 			t.Fatalf("%s accepted a health write: count=%d err=%v", state.name, count, err)
 		}
-		listed, err := q.ListActiveManagedSlackInstallations(ctx)
+		listed, err := q.ListConnectableManagedSlackInstallations(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -102,7 +102,7 @@ func (r *installationResolver) ResolveInstallation(ctx context.Context, msg chan
 	}
 	return engine.ResolvedInstallation{
 		ID: inst.ID, WorkspaceID: inst.WorkspaceID, AgentID: inst.AgentID,
-		InstallerUserID: inst.InstallerUserID, Active: inst.Status == "active", Platform: inst,
+		InstallerUserID: inst.InstallerUserID, Installed: inst.Status == "installed", Platform: inst,
 	}, nil
 }
 

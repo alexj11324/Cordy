@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// BackfillBotUnionIDs walks every active lark_installation row whose
+// BackfillBotUnionIDs walks every connectable channel_installation row whose
 // bot_union_id is NULL and calls APIClient.GetBotInfo to capture and
 // persist it. This is the migration glue for installations created
 // before migration 112 added the column — see MUL-2671 group @-mention
@@ -48,7 +48,7 @@ func BackfillBotUnionIDs(
 		log.Info("lark backfill: APIClient not configured; skipping union_id backfill")
 		return
 	}
-	rows, err := queries.ListActiveLarkInstallations(ctx)
+	rows, err := queries.ListConnectableLarkInstallations(ctx)
 	if err != nil {
 		log.Warn("lark backfill: list installations failed", "err", err)
 		return

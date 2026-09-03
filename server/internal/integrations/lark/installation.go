@@ -52,7 +52,7 @@ func NewInstallationService(queries *db.Queries, box *secretbox.Box) (*Installat
 
 // Upsert creates a new installation or refreshes an existing one in
 // place (matching on the (workspace_id, agent_id) UNIQUE). Re-install
-// resets status to 'active' but does NOT touch the WS lease — that is
+// resets status to 'installed' but does NOT touch the WS lease — that is
 // the hub's concern, not ours. The returned row is the post-write
 // state; the encrypted secret column is included for completeness but
 // callers SHOULD NOT log or persist it elsewhere.
@@ -80,7 +80,7 @@ func (s *InstallationService) Upsert(ctx context.Context, p InstallationParams) 
 // down on its next sweep and the dispatcher drops any in-flight
 // events. The row is preserved (no DELETE) so audit history remains
 // queryable; a subsequent re-install via Upsert flips status back to
-// 'active' atomically.
+// 'installed' atomically.
 func (s *InstallationService) Revoke(ctx context.Context, id pgtype.UUID) error {
 	return s.queries.SetLarkInstallationStatus(ctx, SetInstallationStatusParams{
 		ID:     id,

@@ -105,7 +105,7 @@ func (o *Outbound) process(ctx context.Context, event events.Event) error {
 	if err != nil {
 		return fmt.Errorf("weixin: load installation: %w", err)
 	}
-	if installation.Status != "active" || installation.WorkspaceID.Valid == false {
+	if installation.Status != "installed" || installation.WorkspaceID.Valid == false {
 		return nil
 	}
 	if event.WorkspaceID != "" && event.WorkspaceID != util.UUIDToString(installation.WorkspaceID) {

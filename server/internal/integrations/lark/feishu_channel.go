@@ -231,7 +231,7 @@ func newFeishuFactory(deps FeishuChannelDeps) channel.Factory {
 }
 
 // channelInstallationStore adapts *db.Queries to engine.InstallationStore. It
-// enumerates active installations across ALL channel types (the de-hardcoded
+// enumerates installed connections across ALL channel types (the de-hardcoded
 // counterpart of the old per-feishu boot list) and manages the per-installation
 // WS lease, translating each row into the engine's Installation: ChannelType
 // selects the Factory, Config carries the platform config JSONB (verbatim), and
@@ -254,8 +254,8 @@ func NewChannelInstallationStore(q *db.Queries) ChannelInstallationStore {
 	return &channelInstallationStore{q: q}
 }
 
-func (s *channelInstallationStore) ListActiveInstallations(ctx context.Context) ([]engine.Installation, error) {
-	rows, err := s.q.ListAllActiveChannelInstallations(ctx)
+func (s *channelInstallationStore) ListConnectableInstallations(ctx context.Context) ([]engine.Installation, error) {
+	rows, err := s.q.ListAllConnectableChannelInstallations(ctx)
 	if err != nil {
 		return nil, err
 	}

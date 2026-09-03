@@ -189,7 +189,7 @@ func TestMaybeRetryFailedTaskCopiesChannelDelivery(t *testing.T) {
 	}
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO channel_installation (workspace_id, agent_id, channel_type, config, status, installer_user_id)
-		VALUES ($1, $2, 'slack', '{}'::jsonb, 'active', $3) RETURNING id
+		VALUES ($1, $2, 'slack', '{}'::jsonb, 'installed', $3) RETURNING id
 	`, workspaceID, agentID, userID).Scan(&installationID); err != nil {
 		t.Fatalf("insert channel installation: %v", err)
 	}

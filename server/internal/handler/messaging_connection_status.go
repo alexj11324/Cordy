@@ -28,14 +28,14 @@ func connectionStatus(state, code string, observedAt *string) MessagingConnectio
 }
 
 func initialConnectionStatus(status string) MessagingConnectionStatus {
-	if status != "active" {
+	if status != "installed" {
 		return connectionStatus("offline", "installation_revoked", nil)
 	}
 	return connectionStatus("starting", "", nil)
 }
 
 func projectConnectionStatus(row db.ListChannelConnectionStatesRow, now time.Time) MessagingConnectionStatus {
-	if row.Status != "active" {
+	if row.Status != "installed" {
 		return initialConnectionStatus(row.Status)
 	}
 	if row.HostedPausedAt.Valid {

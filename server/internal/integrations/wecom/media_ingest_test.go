@@ -171,7 +171,7 @@ func mediaInstallation() engine.ResolvedInstallation {
 		ID:          uuidOf(1),
 		WorkspaceID: uuidOf(2),
 		AgentID:     uuidOf(3),
-		Active:      true,
+		Installed:      true,
 		Platform:    Installation{ID: uuidOf(1), BotID: "wb-1"},
 	}
 }

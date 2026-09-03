@@ -131,10 +131,10 @@ func (q *Queries) GetRuntimeObservation(ctx context.Context, installationID pgty
 	return i, err
 }
 
-const listActiveManagedSlackInstallations = `-- name: ListActiveManagedSlackInstallations :many
+const listConnectableManagedSlackInstallations = `-- name: ListConnectableManagedSlackInstallations :many
 SELECT ci.id, ci.workspace_id, ci.agent_id, ci.channel_type, ci.config, ci.status, ci.ws_lease_token, ci.ws_lease_expires_at, ci.installer_user_id, ci.installed_at, ci.created_at, ci.updated_at, ci.hosted_paused_at FROM channel_installation ci
 JOIN workspace w ON w.id = ci.workspace_id
-WHERE ci.channel_type = 'slack' AND ci.status = 'active'
+WHERE ci.channel_type = 'slack' AND ci.status = 'installed'
   AND ci.hosted_paused_at IS NULL
   AND ci.config ->> 'transport' = 'webhook'
 ORDER BY ci.created_at, ci.id
@@ -142,8 +142,8 @@ ORDER BY ci.created_at, ci.id
 
 // Managed installations are workspace-owned and have no agent row. The socket
 // supervisor's agent join would incorrectly discard all of these installs.
-func (q *Queries) ListActiveManagedSlackInstallations(ctx context.Context) ([]ChannelInstallation, error) {
-	rows, err := q.db.Query(ctx, listActiveManagedSlackInstallations)
+func (q *Queries) ListConnectableManagedSlackInstallations(ctx context.Context) ([]ChannelInstallation, error) {
+	rows, err := q.db.Query(ctx, listConnectableManagedSlackInstallations)
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +180,7 @@ const observeManagedSlackRuntime = `-- name: ObserveManagedSlackRuntime :execrow
 WITH current_installation AS MATERIALIZED (
     SELECT ci.id FROM channel_installation ci
     WHERE ci.id = $4
-      AND ci.channel_type = 'slack' AND ci.status = 'active'
+      AND ci.channel_type = 'slack' AND ci.status = 'installed'
       AND ci.hosted_paused_at IS NULL
       AND ci.config ->> 'transport' = 'webhook'
       AND COALESCE(ci.config ->> 'bot_token_encrypted', '') = $5::text
@@ -242,7 +242,7 @@ SET config = config || jsonb_build_object(
         'token_expires_at', to_jsonb($3::timestamptz)
     ), updated_at = now()
 WHERE id = $4
-  AND channel_type = 'slack' AND status = 'active'
+  AND channel_type = 'slack' AND status = 'installed'
   AND hosted_paused_at IS NULL
   AND config ->> 'transport' = 'webhook'
   AND config ->> 'refresh_token_encrypted' = $5::text

@@ -214,7 +214,7 @@ func (s *RegistrationService) SetHostedCapacityLimiter(limiter *hostedcapacity.L
 // invalidates larkKeys.installations on the lark_installation prefix, so
 // every mounted surface (agent Integrations tab, inspector, Settings)
 // refreshes its connection badge with no page reload. Covers fresh
-// installs and revoked→active re-installs alike — both ride the same
+// installs and revoked→installed re-installs alike — both ride the same
 // UpsertLarkInstallation write. Nil-safe.
 func (s *RegistrationService) publishInstalled(workspaceID, installationID pgtype.UUID) {
 	if s.bus == nil {

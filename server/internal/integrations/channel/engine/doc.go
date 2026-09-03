@@ -8,7 +8,7 @@
 // It provides:
 //
 //  1. Supervisor — the per-installation connection supervisor generalized
-//     from lark.Hub. It enumerates active installations across ALL
+//     from lark.Hub. It enumerates installed connections across ALL
 //     channel types (no hard-coded platform), fences each behind the WS
 //     lease CAS so at most one replica connects per installation, builds
 //     the platform Channel via the channel.Registry, drives its

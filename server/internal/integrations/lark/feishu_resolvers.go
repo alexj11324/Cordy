@@ -86,7 +86,7 @@ func (r *feishuInstallationResolver) ResolveInstallation(ctx context.Context, ms
 		WorkspaceID:     inst.WorkspaceID,
 		AgentID:         inst.AgentID,
 		InstallerUserID: inst.InstallerUserID,
-		Active:          InstallationStatus(inst.Status) == InstallationActive,
+		Installed:          InstallationStatus(inst.Status) == InstallationInstalled,
 		Platform:        inst,
 	}, nil
 }

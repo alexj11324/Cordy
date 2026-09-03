@@ -157,12 +157,12 @@ RETURNING id
 
 	t.Run("active row is never deleted", func(t *testing.T) {
 		clean()
-		id := insert(rbAppActive, rbWS, rbAgentA, "active")
+		id := insert(rbAppActive, rbWS, rbAgentA, "installed")
 		if err := store.ReclaimDeadInstallationByAppID(ctx, wsUUID, agentBUUID, rbAppActive); err != nil {
 			t.Fatalf("ReclaimDeadInstallationByAppID: %v", err)
 		}
 		if !exists(id) {
-			t.Fatal("an active installation was deleted through the revoked-cleanup path")
+			t.Fatal("an installed connection was deleted through the revoked-cleanup path")
 		}
 	})
 
@@ -179,7 +179,7 @@ RETURNING id
 
 	t.Run("other workspace active row is preserved", func(t *testing.T) {
 		clean()
-		id := insert(rbAppWsActive, rbWS2, rbAgentA, "active")
+		id := insert(rbAppWsActive, rbWS2, rbAgentA, "installed")
 		if err := store.ReclaimDeadInstallationByAppID(ctx, wsUUID, agentBUUID, rbAppWsActive); err != nil {
 			t.Fatalf("ReclaimDeadInstallationByAppID: %v", err)
 		}
@@ -281,7 +281,7 @@ VALUES ($1, $2, 'feishu', 'oc_rb_chat', 'p2p')
 		if inst.ID != oldID {
 			t.Fatalf("same agent reconnect changed installation_id: got %v, want %v (in-place reactivation lost)", inst.ID, oldID)
 		}
-		if inst.Status != "active" {
+		if inst.Status != "installed" {
 			t.Fatalf("reactivated installation status=%q, want active", inst.Status)
 		}
 		if users, chats := countBindingsOn(oldID); users != 1 || chats != 1 {
@@ -302,7 +302,7 @@ VALUES ($1, $2, 'feishu', 'oc_rb_chat', 'p2p')
 		if inst.ID == oldID {
 			t.Fatal("different agent rebind reused the old installation_id; the blocking revoked row was not cleared")
 		}
-		if inst.Status != "active" {
+		if inst.Status != "installed" {
 			t.Fatalf("new installation status=%q, want active", inst.Status)
 		}
 		// The old revoked row is gone (its unique app_id slot is freed for B).
@@ -415,7 +415,7 @@ VALUES ($1, 'feishu', 'im.message.receive_v1', $2, 'revoked_installation')`, old
 // revoked installation:
 //
 //   - txReconnect (agent A reconnecting to the SAME agent) reactivates the row
-//     to 'active' but holds the row lock uncommitted;
+//     to 'installed' but holds the row lock uncommitted;
 //   - txRebind (agent B rebinding to a DIFFERENT agent) runs the full cleanup
 //     via ReclaimDeadInstallationByAppID.
 //
@@ -478,7 +478,7 @@ VALUES ($1, 'feishu', 'im.message.receive_v1', $2, 'revoked_installation')`, idS
 		t.Fatalf("begin txReconnect: %v", err)
 	}
 	defer txReconnect.Rollback(ctx)
-	if _, err := txReconnect.Exec(ctx, `UPDATE channel_installation SET status = 'active' WHERE id = $1`, idStr); err != nil {
+	if _, err := txReconnect.Exec(ctx, `UPDATE channel_installation SET status = 'installed' WHERE id = $1`, idStr); err != nil {
 		t.Fatalf("reactivate in txReconnect: %v", err)
 	}
 
@@ -520,7 +520,7 @@ VALUES ($1, 'feishu', 'im.message.receive_v1', $2, 'revoked_installation')`, idS
 		}
 		return n
 	}
-	if n := count(`SELECT count(*) FROM channel_installation WHERE id = $1 AND status = 'active'`, idStr); n != 1 {
+	if n := count(`SELECT count(*) FROM channel_installation WHERE id = $1 AND status = 'installed'`, idStr); n != 1 {
 		t.Fatalf("reactivated installation was deleted by the racing rebind: %d active rows", n)
 	}
 	if n := count(`SELECT count(*) FROM channel_user_binding WHERE installation_id = $1`, idStr); n != 1 {
@@ -587,7 +587,7 @@ RETURNING id
 
 	t.Run("orphan from a deleted workspace is reclaimed", func(t *testing.T) {
 		clean()
-		id := insert(rbAppOrphanWS, rbGhostWS, rbAgentA, "active")
+		id := insert(rbAppOrphanWS, rbGhostWS, rbAgentA, "installed")
 		if err := store.ReclaimDeadInstallationByAppID(ctx, wsUUID, agentBUUID, rbAppOrphanWS); err != nil {
 			t.Fatalf("ReclaimDeadInstallationByAppID: %v", err)
 		}
@@ -598,7 +598,7 @@ RETURNING id
 
 	t.Run("orphan from a hard-deleted agent is reclaimed", func(t *testing.T) {
 		clean()
-		id := insert(rbAppOrphanAgent, rbWS, rbGhostAgent, "active")
+		id := insert(rbAppOrphanAgent, rbWS, rbGhostAgent, "installed")
 		if err := store.ReclaimDeadInstallationByAppID(ctx, wsUUID, agentBUUID, rbAppOrphanAgent); err != nil {
 			t.Fatalf("ReclaimDeadInstallationByAppID: %v", err)
 		}
@@ -609,7 +609,7 @@ RETURNING id
 
 	t.Run("live active owner is refused, not stolen", func(t *testing.T) {
 		clean()
-		id := insert(rbAppLive, rbWS, rbAgentA, "active")
+		id := insert(rbAppLive, rbWS, rbAgentA, "installed")
 		if err := store.ReclaimDeadInstallationByAppID(ctx, wsUUID, agentBUUID, rbAppLive); err != nil {
 			t.Fatalf("ReclaimDeadInstallationByAppID: %v", err)
 		}
@@ -627,7 +627,7 @@ RETURNING id
 
 	t.Run("archived agent owner is refused and reported archived", func(t *testing.T) {
 		clean()
-		id := insert(rbAppArchived, rbWS, rbAgentArch, "active")
+		id := insert(rbAppArchived, rbWS, rbAgentArch, "installed")
 		if err := store.ReclaimDeadInstallationByAppID(ctx, wsUUID, agentBUUID, rbAppArchived); err != nil {
 			t.Fatalf("ReclaimDeadInstallationByAppID: %v", err)
 		}

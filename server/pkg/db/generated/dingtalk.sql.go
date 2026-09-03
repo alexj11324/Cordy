@@ -17,7 +17,7 @@ FROM dingtalk_group_presence presence
 JOIN channel_installation installation ON installation.id = presence.installation_id
 WHERE installation.workspace_id = $1
   AND installation.channel_type = 'dingtalk'
-  AND installation.status = 'active'
+  AND installation.status = 'installed'
   AND (presence.last_active_at < $2 OR presence.last_active_at IS NULL)
   AND (NOT $3::boolean OR installation.agent_id = $4)
 GROUP BY presence.installation_id, installation.agent_id
@@ -184,7 +184,7 @@ WITH workspace_guard AS MATERIALIZED (
     JOIN workspace_guard w ON w.id = i.workspace_id
     WHERE i.id = $2
       AND i.channel_type = 'dingtalk'
-      AND i.status = 'active'
+      AND i.status = 'installed'
       AND i.hosted_paused_at IS NULL
     FOR SHARE OF i
 ), group_route AS (
@@ -302,7 +302,7 @@ FROM channel_installation installation
 JOIN dingtalk_bot_identity identity ON identity.installation_id = installation.id
 WHERE installation.workspace_id = $1
   AND installation.channel_type = 'dingtalk'
-  AND installation.status = 'active'
+  AND installation.status = 'installed'
   AND (NOT $2::boolean OR installation.agent_id = $3)
 `
 
@@ -361,7 +361,7 @@ JOIN channel_installation installation ON installation.id = presence.installatio
 LEFT JOIN dingtalk_bot_identity identity ON identity.installation_id = presence.installation_id
 WHERE installation.workspace_id = $1
   AND installation.channel_type = 'dingtalk'
-  AND installation.status = 'active'
+  AND installation.status = 'installed'
   AND (NOT $2::boolean OR installation.agent_id = $3)
   AND (NOT $4::boolean OR installation.id = $5)
   AND (
@@ -454,12 +454,12 @@ JOIN channel_installation i ON i.id = r.installation_id
 WHERE r.workspace_id = $1
   AND i.workspace_id = $1
   AND i.channel_type = 'dingtalk'
-  AND i.status = 'active'
+  AND i.status = 'installed'
 ORDER BY r.discovered_at ASC, r.conversation_id ASC, r.id ASC
 `
 
 // Settings inventory of group-to-agent assignments. Only routes under an
-// active DingTalk installation are listed; revoked installations keep their
+// installed DingTalk connection are listed; revoked installations keep their
 // rows for audit but disappear from the panel. Mirrors the Rust
 // list_ding_talk_group_routes_by_workspace ordering (discovery order) with
 // deterministic tiebreakers.
@@ -554,7 +554,7 @@ WITH workspace_guard AS MATERIALIZED (
     SELECT i.id FROM channel_installation i
     WHERE i.id = $5
       AND i.workspace_id = $1
-      AND i.channel_type = 'dingtalk' AND i.status = 'active'
+      AND i.channel_type = 'dingtalk' AND i.status = 'installed'
       AND i.hosted_paused_at IS NULL
       AND EXISTS (SELECT 1 FROM target_agent)
     FOR SHARE OF i
@@ -631,7 +631,7 @@ WITH workspace_guard AS MATERIALIZED (
       AND a.kind = 'user'
       AND a.archived_at IS NULL
     FOR SHARE
-), active_installation AS MATERIALIZED (
+), connectable_installation AS MATERIALIZED (
     SELECT i.id
     FROM channel_installation i
     JOIN dingtalk_group_route r ON r.installation_id = i.id
@@ -639,7 +639,7 @@ WITH workspace_guard AS MATERIALIZED (
       AND r.workspace_id = $1
       AND i.workspace_id = $1
       AND i.channel_type = 'dingtalk'
-      AND i.status = 'active'
+      AND i.status = 'installed'
       AND EXISTS (SELECT 1 FROM target_agent)
     FOR SHARE OF i
 ), target AS (
@@ -648,7 +648,7 @@ WITH workspace_guard AS MATERIALIZED (
         r.conversation_title, r.agent_id, r.revision, r.discovered_at,
         r.updated_at, r.agent_id AS previous_agent_id
     FROM dingtalk_group_route r
-    JOIN active_installation i ON i.id = r.installation_id
+    JOIN connectable_installation i ON i.id = r.installation_id
     WHERE r.id = $3
       AND r.workspace_id = $1
     FOR UPDATE OF r
@@ -700,7 +700,7 @@ type ReassignDingTalkGroupRouteRow struct {
 
 // Reassigns one group to another agent without reconnecting the robot. The
 // target agent must be an unarchived user agent in the same workspace, and the
-// route must sit under an active DingTalk installation. Bumping revision keeps
+// route must sit under an installed DingTalk connection. Bumping revision keeps
 // the mixed-version compatibility trigger from mistaking an admin reassignment
 // for message activity. When the agent actually changes, the stale
 // channel_chat_session_binding for that installation/conversation is dropped
@@ -754,7 +754,7 @@ WITH target AS MATERIALIZED (
     WHERE channel_installation.id = $1
       AND channel_installation.workspace_id = $2
       AND channel_installation.channel_type = 'dingtalk'
-      AND channel_installation.status = 'active'
+      AND channel_installation.status = 'installed'
     FOR KEY SHARE
 ), current_identity AS (
     SELECT identity.installation_id, identity.bot_name, identity.bot_identity_issue
@@ -835,7 +835,7 @@ WITH target AS MATERIALIZED (
     WHERE channel_installation.id = $1
       AND channel_installation.workspace_id = $2
       AND channel_installation.channel_type = 'dingtalk'
-      AND channel_installation.status = 'active'
+      AND channel_installation.status = 'installed'
     FOR UPDATE
 ), prior_identity AS (
     SELECT

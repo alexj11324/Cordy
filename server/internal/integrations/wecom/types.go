@@ -68,7 +68,7 @@ const channelTypeWecom = string(TypeWecom)
 type InstallationStatus string
 
 const (
-	InstallationActive  InstallationStatus = "active"
+	InstallationInstalled  InstallationStatus = "installed"
 	InstallationRevoked InstallationStatus = "revoked"
 )
 

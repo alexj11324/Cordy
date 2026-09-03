@@ -56,7 +56,7 @@ func seedDingTalkContextCleanupOwner(
 	exec(`
 		INSERT INTO channel_installation (
 			id, workspace_id, agent_id, channel_type, config, installer_user_id, status
-		) VALUES ($1, $2, $3, 'dingtalk', '{}'::jsonb, $4, 'active')
+		) VALUES ($1, $2, $3, 'dingtalk', '{}'::jsonb, $4, 'installed')
 	`, owner.installationID, owner.workspaceID, owner.agentID, owner.creatorID)
 	exec(`
 		INSERT INTO chat_session (id, workspace_id, agent_id, creator_id, title)

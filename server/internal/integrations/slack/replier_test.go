@@ -59,7 +59,7 @@ func testResolvedInstallation(t *testing.T) engine.ResolvedInstallation {
 		ID:          mustUUID(t, "44444444-4444-4444-4444-444444444444"),
 		WorkspaceID: mustUUID(t, "11111111-1111-1111-1111-111111111111"),
 		AgentID:     mustUUID(t, "22222222-2222-2222-2222-222222222222"),
-		Active:      true,
+		Installed:      true,
 		Platform:    db.ChannelInstallation{Config: []byte(replierConfigJSON)},
 	}
 }

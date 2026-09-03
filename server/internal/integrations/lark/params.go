@@ -28,7 +28,7 @@ type UpsertInstallationParams struct {
 	Region             string
 }
 
-// SetInstallationStatusParams flips an installation's status (active/revoked).
+// SetInstallationStatusParams flips an installation's status (installed/revoked).
 type SetInstallationStatusParams struct {
 	ID     pgtype.UUID
 	Status string

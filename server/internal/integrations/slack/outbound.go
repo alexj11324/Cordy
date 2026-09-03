@@ -132,7 +132,7 @@ func (o *Outbound) processEvent(ctx context.Context, e events.Event) error {
 	if err != nil {
 		return fmt.Errorf("load slack installation: %w", err)
 	}
-	if inst.Status != "active" {
+	if inst.Status != "installed" {
 		return nil // revoked between trigger and reply
 	}
 	creds, err := decodeCredentials(inst.Config, o.decrypt)

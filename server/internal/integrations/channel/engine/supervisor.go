@@ -74,14 +74,14 @@ type ReleaseLeaseParams struct {
 // error. Stores wrap their backend's no-rows signal into this.
 var ErrLeaseNotAcquired = errors.New("engine: ws lease held elsewhere")
 
-// InstallationStore enumerates active installations across every channel
+// InstallationStore enumerates installed connections across every channel
 // type. LeaseStore is deliberately separate so production can keep
 // installation metadata in PostgreSQL while using Redis for low-churn leases.
 type InstallationStore interface {
-	// ListActiveInstallations returns every active installation across ALL
+	// ListConnectableInstallations returns every installed connection across ALL
 	// channel types. There is no per-platform filter here — that hard-coded
 	// "feishu" was the whole limitation MUL-3620 removes.
-	ListActiveInstallations(ctx context.Context) ([]Installation, error)
+	ListConnectableInstallations(ctx context.Context) ([]Installation, error)
 	// ClaimRuntimeObserver must durably fence the previous observer before a
 	// transport starts. ObserveRuntime returns false for a superseded token.
 	ClaimRuntimeObserver(ctx context.Context, id pgtype.UUID, token string) error
@@ -273,7 +273,7 @@ func (c Config) Validate() error {
 }
 
 // Supervisor owns the per-installation supervisor goroutines that keep a
-// long-running connection per active installation, across every channel
+// long-running connection per installed connection, across every channel
 // type. It enforces the multi-replica safety rule via the WS lease CAS —
 // at most one Supervisor globally holds the lease for any installation, so
 // duplicate event consumption across replicas is impossible.
@@ -450,18 +450,18 @@ func (s *Supervisor) WaitWithTimeout(timeout time.Duration) bool {
 // can pass the same value to WaitWithTimeout without re-deriving it.
 func (s *Supervisor) ShutdownTimeout() time.Duration { return s.cfg.ShutdownTimeout }
 
-// sweep enumerates currently-active installations and starts a supervisor
+// sweep enumerates currently-installed connections and starts a supervisor
 // for any this process does not yet supervise. Supervisors for revoked
 // installations are cancelled. Supervisors whose installation row rotated
 // credentials are cancelled and replaced inline so the new channel picks up
 // the fresh row.
 func (s *Supervisor) sweep(ctx context.Context) {
-	rows, err := s.store.ListActiveInstallations(ctx)
+	rows, err := s.store.ListConnectableInstallations(ctx)
 	if err != nil {
-		s.cfg.Logger.Warn("channel engine: list active installations failed", "error", err)
+		s.cfg.Logger.Warn("channel engine: list installed connections failed", "error", err)
 		return
 	}
-	active := make(map[string]struct{}, len(rows))
+	connectable := make(map[string]struct{}, len(rows))
 	candidates := make([]leaseCandidate, 0, len(rows))
 	candidateIDs := make([]pgtype.UUID, 0, len(rows))
 	rotationWaits := make([]rotationWait, 0)
@@ -477,7 +477,7 @@ func (s *Supervisor) sweep(ctx context.Context) {
 			continue
 		}
 		id := uuidString(row.ID)
-		active[id] = struct{}{}
+		connectable[id] = struct{}{}
 		done, rotated := s.cancelOnRotation(id, row)
 		if rotated {
 			rotationWaits = append(rotationWaits, rotationWait{installationID: id, done: done})
@@ -487,18 +487,18 @@ func (s *Supervisor) sweep(ctx context.Context) {
 			candidateIDs = append(candidateIDs, row.ID)
 		}
 	}
-	// Reap supervisors whose installation is no longer active (revoked
+	// Reap supervisors whose installation is no longer connectable (revoked
 	// since the last sweep). The supervisor exits on the next boundary,
 	// releases its lease, and the goroutine returns.
 	s.mu.Lock()
 	for id, entry := range s.supervisors {
-		if _, stillActive := active[id]; !stillActive {
+		if _, stillConnectable := connectable[id]; !stillConnectable {
 			entry.cancel()
 			delete(s.supervisors, id)
 		}
 	}
 	for id := range s.contendedSince {
-		if _, stillActive := active[id]; !stillActive {
+		if _, stillConnectable := connectable[id]; !stillConnectable {
 			delete(s.contendedSince, id)
 		}
 	}

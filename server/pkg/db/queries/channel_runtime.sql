@@ -5,7 +5,7 @@ WITH current_installation AS MATERIALIZED (
     SELECT ci.id FROM channel_installation ci
     JOIN workspace w ON w.id = ci.workspace_id
     WHERE ci.id = sqlc.arg(installation_id)
-      AND ci.status = 'active' AND ci.hosted_paused_at IS NULL
+      AND ci.status = 'installed' AND ci.hosted_paused_at IS NULL
       AND (ci.ws_lease_token IS NULL OR (
           ci.ws_lease_token = sqlc.arg(observer_token)::text
           AND ci.ws_lease_expires_at > now()
@@ -28,7 +28,7 @@ ON CONFLICT (installation_id) DO UPDATE SET
 WITH current_installation AS MATERIALIZED (
     SELECT id FROM channel_installation
     WHERE id = sqlc.arg(installation_id)
-      AND status = 'active' AND hosted_paused_at IS NULL
+      AND status = 'installed' AND hosted_paused_at IS NULL
     FOR SHARE
 )
 UPDATE channel_installation_runtime_observation AS observation
