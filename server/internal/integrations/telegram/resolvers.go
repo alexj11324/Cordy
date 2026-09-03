@@ -205,6 +205,11 @@ type chatSession interface {
 
 type sessionBinder struct{ session chatSession }
 
+func (r *sessionBinder) BindingKey(msg channel.InboundMessage) string {
+	key, _, _ := telegramSessionRouting(msg)
+	return key
+}
+
 func (r *sessionBinder) EnsureSession(ctx context.Context, p engine.EnsureSessionParams) (pgtype.UUID, error) {
 	bindingKey, config, _ := telegramSessionRouting(p.Message)
 	return r.session.EnsureSession(ctx, engine.EnsureSessionInput{

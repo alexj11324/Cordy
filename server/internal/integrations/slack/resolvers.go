@@ -318,6 +318,11 @@ func (r *deduper) Release(ctx context.Context, installationID pgtype.UUID, messa
 
 type sessionBinder struct{ session *engine.ChatSession }
 
+func (r *sessionBinder) BindingKey(msg channel.InboundMessage) string {
+	key, _, _ := slackSessionRouting(msg)
+	return key
+}
+
 func (r *sessionBinder) EnsureSession(ctx context.Context, p engine.EnsureSessionParams) (pgtype.UUID, error) {
 	bindingKey, config, _ := slackSessionRouting(p.Message)
 	return r.session.EnsureSession(ctx, engine.EnsureSessionInput{

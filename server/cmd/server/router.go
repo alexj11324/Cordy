@@ -559,8 +559,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// connection of its own outside the per-installation supervisor. The Router
 	// is the single shared inbound handler injected into every Channel.
 	channelRegistry := channel.NewRegistry()
+	channelHub := engine.NewPostgresHubRouter(queries, pool)
 	channelRouter := engine.NewRouter(h.IssueService, h.TaskService, queries, engine.RouterConfig{
-		Logger: slog.Default(), Lifecycle: h,
+		Logger: slog.Default(), Lifecycle: h, Hub: channelHub,
 	})
 	// Debounce the per-session run trigger so a burst of messages collapses
 	// into one agent run instead of one per message (MUL-2968).
@@ -854,8 +855,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			// services. Every outcome receives a private ephemeral acknowledgement.
 			slackSlash := slack.NewSlashCommandProcessor(slack.SlashCommandConfig{
 				Queries: queries,
+				Hub:     channelHub,
 				Tasks:   h.TaskService,
-				Control: slack.NewSlackDMControlStarter(queries, pool, h.TaskService, h),
+				Control: slack.NewSlackDMControlStarter(queries, pool, h.TaskService, h, channelRouter.FlushPendingSession),
 				Binding: slackBindingSvc,
 				AppURL:  appURLFromEnv(),
 				Logger:  slog.Default(),

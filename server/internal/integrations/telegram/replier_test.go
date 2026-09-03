@@ -126,6 +126,7 @@ func TestReplyCoversCommandAndIssueOutcomes(t *testing.T) {
 	issueID := telegramTestUUID(7)
 
 	for _, res := range []engine.Result{
+		{Outcome: engine.OutcomeHubCommand, ReplyText: "Switched to Reviewer"},
 		{Outcome: engine.OutcomeFreshPending},
 		{Outcome: engine.OutcomeChatStarted},
 		{Outcome: engine.OutcomeIssueUsage},
@@ -136,7 +137,7 @@ func TestReplyCoversCommandAndIssueOutcomes(t *testing.T) {
 		r.Reply(context.Background(), inst, msg, res)
 	}
 
-	want := []string{msgFreshPending, msgChatStarted, msgIssueUsage, issueDuplicateText(engine.Result{IssueID: issueID, IssueIdentifier: "MUL-7", IssueTitle: "Title"}), msgIssueNotMember, msgIssueDisabled}
+	want := []string{"Switched to Reviewer", msgFreshPending, msgChatStarted, msgIssueUsage, issueDuplicateText(engine.Result{IssueID: issueID, IssueIdentifier: "MUL-7", IssueTitle: "Title"}), msgIssueNotMember, msgIssueDisabled}
 	if len(got) != len(want) {
 		t.Fatalf("got %d replies, want %d: %+v", len(got), len(want), got)
 	}

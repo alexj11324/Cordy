@@ -111,6 +111,12 @@ func NewOutboundReplier(cfg OutboundReplierConfig) *OutboundReplier {
 // Reply routes each outcome to its user-visible message. Errors are logged, not
 // propagated: the replier runs detached from the inbound ACK path.
 func (r *OutboundReplier) Reply(ctx context.Context, inst engine.ResolvedInstallation, msg channel.InboundMessage, res engine.Result) {
+	if res.ReplyText != "" {
+		if err := r.postResult(ctx, inst, msg, res, res.ReplyText); err != nil {
+			r.logger.WarnContext(ctx, "slack Hub reply failed", "installation_id", util.UUIDToString(inst.ID), "error", err)
+		}
+		return
+	}
 	switch res.Outcome {
 	case engine.OutcomeNeedsBinding:
 		if err := r.sendBindingPrompt(ctx, inst, msg, res); err != nil {

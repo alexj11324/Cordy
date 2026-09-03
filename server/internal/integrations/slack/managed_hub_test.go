@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/slack-go/slack"
+
 	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
 )
 
@@ -45,5 +47,27 @@ func TestManagedAgentsCommandReentersTheSharedRouter(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("managed /agents was acknowledged but never entered workspace routing")
+	}
+}
+
+func TestAgentsCommandRetainsGroupScopeAndRejectsIncompleteCommands(t *testing.T) {
+	command := slack.SlashCommand{Command: "/agents", Text: "  Reviewer  ", TriggerID: "command-id", TeamID: "T1", APIAppID: "A1", ChannelID: "C1", UserID: "U1"}
+	msg, ok := InboundFromAgentsCommand(command)
+	if !ok || msg.Source.ChatType != channel.ChatTypeGroup || msg.CommandText != "/agents Reviewer" {
+		t.Fatal("a channel slash command must retain group privacy and routing scope")
+	}
+	for _, mutate := range []func(*slack.SlashCommand){
+		func(c *slack.SlashCommand) { c.Command = "/unrecognized" },
+		func(c *slack.SlashCommand) { c.TriggerID = "" },
+		func(c *slack.SlashCommand) { c.TeamID = "" },
+		func(c *slack.SlashCommand) { c.APIAppID = "" },
+		func(c *slack.SlashCommand) { c.ChannelID = "" },
+		func(c *slack.SlashCommand) { c.UserID = "" },
+	} {
+		candidate := command
+		mutate(&candidate)
+		if _, ok := InboundFromAgentsCommand(candidate); ok {
+			t.Fatal("unknown or incomplete slash command entered Hub routing")
+		}
 	}
 }

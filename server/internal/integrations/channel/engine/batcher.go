@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"context"
+	"strings"
 	"sync"
 	"time"
 )
@@ -41,6 +43,7 @@ type pendingBatcher struct {
 
 	mu      sync.Mutex
 	pending map[string]*pendingEntry
+	running map[*pendingEntry]string
 	// seq mints a monotonic generation per (re)schedule. onFire carries the
 	// generation it was armed with and bails if a newer schedule superseded
 	// it — fencing the AfterFunc race where a timer fires concurrently with
@@ -54,6 +57,7 @@ type pendingEntry struct {
 	timer stoppableTimer
 	flush func()
 	gen   uint64
+	done  chan struct{}
 }
 
 // newPendingBatcher returns a batcher with the given silence window. A
@@ -132,12 +136,67 @@ func (b *pendingBatcher) onFire(key string, gen uint64) {
 		return
 	}
 	delete(b.pending, key)
-	flush := e.flush
-	b.inflight.Add(1)
+	b.startLocked(key, e)
 	b.mu.Unlock()
 
-	defer b.inflight.Done()
-	flush()
+	b.runEntry(e)
+}
+
+func (b *pendingBatcher) startLocked(key string, entry *pendingEntry) {
+	if b.running == nil {
+		b.running = make(map[*pendingEntry]string)
+	}
+	entry.done = make(chan struct{})
+	b.running[entry] = key
+	b.inflight.Add(1)
+}
+
+func (b *pendingBatcher) runEntry(entry *pendingEntry) {
+	defer func() {
+		b.mu.Lock()
+		delete(b.running, entry)
+		close(entry.done)
+		b.mu.Unlock()
+		b.inflight.Done()
+	}()
+	entry.flush()
+}
+
+// FlushPrefix completes all pending or already-firing contexts for one Chat
+// before a Hub Agent switch. Other Chats keep their debounce windows. The
+// same entry owns its completion channel whether its timer or this call wins.
+func (b *pendingBatcher) FlushPrefix(ctx context.Context, prefix string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	b.mu.Lock()
+	var entries []*pendingEntry
+	for key, entry := range b.pending {
+		if strings.HasPrefix(key, prefix) {
+			entry.timer.Stop()
+			delete(b.pending, key)
+			b.startLocked(key, entry)
+			entries = append(entries, entry)
+		}
+	}
+	var completions []<-chan struct{}
+	for entry, key := range b.running {
+		if strings.HasPrefix(key, prefix) {
+			completions = append(completions, entry.done)
+		}
+	}
+	b.mu.Unlock()
+	for _, entry := range entries {
+		go b.runEntry(entry)
+	}
+	for _, done := range completions {
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return nil
 }
 
 // FlushAll stops the batcher and runs every still-pending flush exactly once,
@@ -148,15 +207,16 @@ func (b *pendingBatcher) FlushAll() {
 	b.mu.Lock()
 	b.stopped = true
 	entries := make([]*pendingEntry, 0, len(b.pending))
-	for _, e := range b.pending {
+	for key, e := range b.pending {
 		e.timer.Stop()
+		b.startLocked(key, e)
 		entries = append(entries, e)
 	}
 	b.pending = make(map[string]*pendingEntry)
 	b.mu.Unlock()
 
 	for _, e := range entries {
-		e.flush()
+		b.runEntry(e)
 	}
 	b.inflight.Wait()
 }

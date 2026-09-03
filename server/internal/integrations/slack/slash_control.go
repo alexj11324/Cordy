@@ -28,20 +28,26 @@ type slackDMControlStarter struct {
 	session   *engine.ChatSession
 	tasks     slashControlTasks
 	lifecycle engine.ChannelChatLifecycle
+	hub       *engine.PostgresHubRouter
+	flush     func(context.Context, pgtype.UUID) error
 }
 
 const maxSlackControlRouteRetries = 8
 
-func NewSlackDMControlStarter(q *db.Queries, tx engine.TxStarter, tasks slashControlTasks, lifecycle engine.ChannelChatLifecycle) slashControlStarter {
+func NewSlackDMControlStarter(q *db.Queries, tx engine.TxStarter, tasks slashControlTasks, lifecycle engine.ChannelChatLifecycle, flush func(context.Context, pgtype.UUID) error) slashControlStarter {
 	return &slackDMControlStarter{
 		q: q, tasks: tasks, lifecycle: lifecycle,
+		hub: engine.NewPostgresHubRouter(q, tx), flush: flush,
 		session: engine.NewChatSession(q, tx, TypeSlack, engine.SessionTitles{}),
 	}
 }
 
 func (s *slackDMControlStarter) StartSlackDMChat(ctx context.Context, inst engine.ResolvedInstallation, userID pgtype.UUID, cmd slack.SlashCommand, envelopeID string) error {
 	if envelopeID == "" {
-		return errors.New("slack /new: missing socket envelope id")
+		envelopeID = slashDedupKey(cmd.TriggerID)
+	}
+	if envelopeID == "" {
+		return errors.New("slack /new: missing command replay identity")
 	}
 	d := &deduper{q: s.q}
 	claim, err := d.Claim(ctx, inst.ID, envelopeID)
@@ -76,6 +82,14 @@ func (s *slackDMControlStarter) StartSlackDMChat(ctx context.Context, inst engin
 			Body:      body, DedupMessageID: envelopeID, ClaimToken: claim,
 			PersistMessage: body != "", HistoryBoundaryPending: true,
 			BeforeCommit: func(ctx context.Context, tx pgx.Tx, session db.ChatSession) error {
+				if workspaceOwnedSlackInstallation(inst) {
+					if err := s.hub.PersistRoute(ctx, engine.HubPersistParams{
+						Installation: inst, UserID: userID, BindingKey: cmd.ChannelID,
+						SessionID: session.ID, AgentID: inst.AgentID, Tx: tx,
+					}); err != nil {
+						return err
+					}
+				}
 				if body == "" {
 					return nil
 				}
@@ -119,7 +133,10 @@ func (s *slackDMControlStarter) StartSlackDMChat(ctx context.Context, inst engin
 
 func (s *slackDMControlStarter) ClearSlackDMContext(ctx context.Context, inst engine.ResolvedInstallation, userID pgtype.UUID, cmd slack.SlashCommand, envelopeID string) error {
 	if envelopeID == "" {
-		return errors.New("slack /clear: missing socket envelope id")
+		envelopeID = slashDedupKey(cmd.TriggerID)
+	}
+	if envelopeID == "" {
+		return errors.New("slack /clear: missing command replay identity")
 	}
 	d := &deduper{q: s.q}
 	claim, err := d.Claim(ctx, inst.ID, envelopeID)
@@ -150,6 +167,20 @@ func (s *slackDMControlStarter) ClearSlackDMContext(ctx context.Context, inst en
 		})
 		if ensureErr != nil {
 			return ensureErr
+		}
+		if workspaceOwnedSlackInstallation(inst) {
+			if s.flush == nil {
+				return errors.New("slack Hub context control has no pending-run fence")
+			}
+			if err := s.flush(ctx, sessionID); err != nil {
+				return err
+			}
+			if err := s.hub.PersistRoute(ctx, engine.HubPersistParams{
+				Installation: inst, UserID: userID, BindingKey: cmd.ChannelID,
+				SessionID: sessionID, AgentID: inst.AgentID,
+			}); err != nil {
+				return err
+			}
 		}
 
 		task = db.AgentTaskQueue{}
@@ -188,4 +219,9 @@ func (s *slackDMControlStarter) ClearSlackDMContext(ctx context.Context, inst en
 		s.tasks.FinalizeChatTaskEnqueue(ctx, task)
 	}
 	return nil
+}
+
+func workspaceOwnedSlackInstallation(inst engine.ResolvedInstallation) bool {
+	row, ok := inst.Platform.(db.ChannelInstallation)
+	return ok && (!row.AgentID.Valid || row.AgentID.Bytes == [16]byte{})
 }

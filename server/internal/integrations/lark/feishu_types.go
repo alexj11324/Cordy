@@ -88,6 +88,7 @@ const (
 // OutboundReplier adapter translates it into this shape.
 type DispatchResult struct {
 	Outcome        Outcome
+	ReplyText      string
 	DropReason     DropReason
 	InstallationID pgtype.UUID
 	ChatSessionID  pgtype.UUID

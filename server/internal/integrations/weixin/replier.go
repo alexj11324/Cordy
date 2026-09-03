@@ -58,6 +58,12 @@ func NewOutboundReplier(cfg OutboundReplierConfig) *OutboundReplier {
 }
 
 func (r *OutboundReplier) Reply(ctx context.Context, inst engine.ResolvedInstallation, msg channel.InboundMessage, result engine.Result) {
+	if result.ReplyText != "" {
+		if err := r.post(ctx, inst, msg, result.ReplyText); err != nil {
+			r.logger.WarnContext(ctx, "weixin Hub reply failed", "installation_id", util.UUIDToString(inst.ID), "error", err)
+		}
+		return
+	}
 	var text string
 	switch result.Outcome {
 	case engine.OutcomeNeedsBinding:

@@ -77,6 +77,20 @@ func testInboundForReply() channel.InboundMessage {
 	}
 }
 
+func TestReply_HubCommandPreservesConversation(t *testing.T) {
+	sender := &fakeReplySender{}
+	minter := &fakeBindingMinter{}
+	r := newTestReplier(minter, sender)
+	const reply = "已切换到 Reviewer"
+	r.Reply(context.Background(), testResolvedInstallation(t), testInboundForReply(), engine.Result{
+		Outcome: engine.OutcomeHubCommand, ReplyText: reply,
+	})
+	if sender.calls != 1 || sender.sent == nil || sender.sent.Text != reply ||
+		sender.sent.ChatID != "C1" || sender.sent.ThreadID != "1700000000.000200" || minter.calls != 0 {
+		t.Fatalf("Hub reply = %+v, sends = %d, binding mints = %d", sender.sent, sender.calls, minter.calls)
+	}
+}
+
 func TestReply_NeedsBinding_MintsAndPostsPrompt(t *testing.T) {
 	sender := &fakeReplySender{}
 	minter := &fakeBindingMinter{raw: "tok_RAW-123"}

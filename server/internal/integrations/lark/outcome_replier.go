@@ -154,6 +154,12 @@ func NewLarkOutcomeReplier(cfg OutcomeReplierConfig) OutcomeReplier {
 // the SOURCE OF TRUTH for which outcomes generate a reply, and a
 // missing branch silently drops the user-visible side effect.
 func (r *LarkOutcomeReplier) Reply(ctx context.Context, inst Installation, msg InboundMessage, res DispatchResult) {
+	if res.ReplyText != "" {
+		if err := r.sendChatNotice(ctx, inst, msg, res.ReplyText); err != nil {
+			r.log.Warn("lark Hub reply failed", "installation_id", uuidString(inst.ID), "err", err.Error())
+		}
+		return
+	}
 	switch res.Outcome {
 	case OutcomeNeedsBinding:
 		if err := r.sendBindingPrompt(ctx, inst, res); err != nil {

@@ -300,6 +300,7 @@ func (r *feishuOutboundReplier) Reply(ctx context.Context, inst engine.ResolvedI
 func dispatchResultFromEngine(res engine.Result) DispatchResult {
 	return DispatchResult{
 		Outcome:            Outcome(string(res.Outcome)),
+		ReplyText:          res.ReplyText,
 		DropReason:         DropReason(string(res.DropReason)),
 		InstallationID:     res.InstallationID,
 		ChatSessionID:      res.ChatSessionID,

@@ -173,7 +173,7 @@ func (r *installationResolver) ResolveInstallation(ctx context.Context, msg chan
 // FinalizeInstallation is invoked by the shared router after addressing and
 // membership validation, including on retries after a concurrent reassignment.
 func (r *installationResolver) FinalizeInstallation(ctx context.Context, inst engine.ResolvedInstallation, msg channel.InboundMessage) (engine.ResolvedInstallation, error) {
-	if msg.Source.ChatType != channel.ChatTypeGroup {
+	if !inst.AgentID.Valid || inst.AgentID.Bytes == [16]byte{} || msg.Source.ChatType != channel.ChatTypeGroup {
 		return inst, nil
 	}
 	raw, err := decodeDingTalkRaw(msg)

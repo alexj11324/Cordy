@@ -29,6 +29,35 @@ type slackRawEvent struct {
 	Files       []slackRawFile `json:"files,omitempty"`
 }
 
+// InboundFromAgentsCommand re-enters shared identity, permission, dedup and Hub
+// routing after Slack intercepts a slash command before Events API delivery.
+func InboundFromAgentsCommand(cmd slack.SlashCommand) (channel.InboundMessage, bool) {
+	if !strings.EqualFold(strings.TrimSpace(cmd.Command), "/agents") {
+		return channel.InboundMessage{}, false
+	}
+	for _, required := range []string{cmd.TriggerID, cmd.TeamID, cmd.APIAppID, cmd.ChannelID, cmd.UserID} {
+		if strings.TrimSpace(required) == "" {
+			return channel.InboundMessage{}, false
+		}
+	}
+	text := "/agents"
+	if selector := strings.TrimSpace(cmd.Text); selector != "" {
+		text += " " + selector
+	}
+	chatType := channel.ChatTypeGroup
+	if strings.HasPrefix(cmd.ChannelID, "D") {
+		chatType = channel.ChatTypeP2P
+	}
+	raw, _ := json.Marshal(slackRawEvent{
+		TeamID: cmd.TeamID, APIAppID: cmd.APIAppID, EventType: "slash_command", ChannelType: string(chatType),
+	})
+	return channel.InboundMessage{
+		EventID: cmd.TriggerID, MessageID: cmd.TriggerID, Type: channel.MsgTypeText,
+		Text: text, CommandText: text, AddressedToBot: true, Raw: raw,
+		Source: channel.Source{ChannelType: TypeSlack, ChatID: cmd.ChannelID, ChatType: chatType, SenderID: cmd.UserID},
+	}, true
+}
+
 // slackRawFile is the subset of a Slack file object the media resolver needs
 // to fetch the file later, off the connector ACK path. The download URL is a
 // Slack-hosted url_private(_download) that requires the installation's bot

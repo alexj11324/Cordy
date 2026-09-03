@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/slack-go/slack"
 
+	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
 	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
 	"github.com/patchbay-ai/patchbay/server/internal/service"
 	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
@@ -90,6 +91,7 @@ type SlashCommandProcessor struct {
 	q           slashQueries
 	tasks       quickCreateEnqueuer
 	control     slashControlStarter
+	hub         engine.HubRouter
 	binding     bindingMinter
 	appURL      string
 	bindingPath string
@@ -107,6 +109,7 @@ type SlashCommandConfig struct {
 	Queries     *db.Queries
 	Tasks       quickCreateEnqueuer
 	Control     slashControlStarter
+	Hub         engine.HubRouter
 	Binding     bindingMinter
 	AppURL      string
 	BindingPath string // default "/slack/bind"
@@ -132,6 +135,7 @@ func NewSlashCommandProcessor(cfg SlashCommandConfig) *SlashCommandProcessor {
 		q:           cfg.Queries,
 		tasks:       cfg.Tasks,
 		control:     cfg.Control,
+		hub:         cfg.Hub,
 		binding:     cfg.Binding,
 		appURL:      strings.TrimRight(cfg.AppURL, "/"),
 		bindingPath: bindingPath,
@@ -211,6 +215,14 @@ func (p *SlashCommandProcessor) processControl(ctx context.Context, cmd slack.Sl
 	if p.control == nil {
 		return slashInternalErrorText
 	}
+	inst, reply, err := p.resolveHubAgent(ctx, inst, userID, cmd.ChannelID)
+	if err != nil {
+		p.logger.WarnContext(ctx, "slack control Hub resolution failed", "app_id", cmd.APIAppID, "error", err)
+		return slashInternalErrorText
+	}
+	if reply != "" {
+		return reply
+	}
 	var startErr error
 	if cmd.Command == clearSlashCommand {
 		startErr = p.control.ClearSlackDMContext(ctx, inst, userID, cmd, envelopeID)
@@ -267,6 +279,15 @@ func (p *SlashCommandProcessor) process(ctx context.Context, cmd slack.SlashComm
 				"app_id", cmd.APIAppID, "error", err)
 			return slashInternalErrorText
 		}
+	}
+
+	inst, reply, err := p.resolveHubAgent(ctx, inst, userID, cmd.ChannelID)
+	if err != nil {
+		p.logger.WarnContext(ctx, "slack issue Hub resolution failed", "app_id", cmd.APIAppID, "error", err)
+		return slashInternalErrorText
+	}
+	if reply != "" {
+		return reply
 	}
 
 	// Replay guard: a signed request replayed inside the signature's
@@ -358,6 +379,28 @@ func slashDedupKey(triggerID string) string {
 		return ""
 	}
 	return "slash:" + strings.TrimSpace(triggerID)
+}
+
+// resolveHubAgent selects an invocable Agent for workspace-owned commands.
+func (p *SlashCommandProcessor) resolveHubAgent(ctx context.Context, inst engine.ResolvedInstallation, userID pgtype.UUID, bindingKey string) (engine.ResolvedInstallation, string, error) {
+	if inst.AgentID.Valid && inst.AgentID.Bytes != [16]byte{} {
+		return inst, "", nil
+	}
+	if p.hub == nil {
+		return inst, "", errors.New("workspace installation has no channel Hub router")
+	}
+	route, err := p.hub.Resolve(ctx, inst, engine.ResolvedIdentity{UserID: userID}, channel.InboundMessage{}, bindingKey)
+	if err != nil {
+		return inst, "", err
+	}
+	if !route.AgentID.Valid {
+		if route.ReplyText == "" {
+			return inst, "", engine.ErrHubAgentUnavailable
+		}
+		return inst, route.ReplyText, nil
+	}
+	inst.AgentID = route.AgentID
+	return inst, "", nil
 }
 
 // resolveInstallation maps the command's api_app_id (+ event team) to its

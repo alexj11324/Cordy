@@ -237,6 +237,18 @@ func (w *ManagedWebhook) HandleSlash(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rw.WriteHeader(http.StatusOK)
+	if msg, ok := InboundFromAgentsCommand(cmd); ok {
+		if w.handle != nil {
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), managedWebhookTimeout)
+				defer cancel()
+				if err := w.handle(ctx, msg); err != nil {
+					w.logger.WarnContext(ctx, "slack managed Hub command failed", "app_id", cmd.APIAppID, "error", err)
+				}
+			}()
+		}
+		return
+	}
 	if w.slash == nil {
 		return
 	}

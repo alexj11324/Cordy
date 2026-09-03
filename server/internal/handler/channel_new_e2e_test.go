@@ -531,7 +531,7 @@ func TestSlackNativeNewCommandCreatesMessageTaskAndDeliveryAtomically(t *testing
 		AgentID: util.MustParseUUID(agentID), InstallerUserID: util.MustParseUUID(testUserID), Active: true,
 	}
 	sessions := engine.NewChatSession(queries, testPool, channel.Type("slack"), engine.SessionTitles{})
-	starter := slackintegration.NewSlackDMControlStarter(queries, testPool, testHandler.TaskService, testHandler)
+	starter := slackintegration.NewSlackDMControlStarter(queries, testPool, testHandler.TaskService, testHandler, nil)
 	if err := starter.StartSlackDMChat(ctx, installation, util.MustParseUUID(testUserID), slackapi.SlashCommand{
 		ChannelID: "D-native-chat", Text: "investigate native command",
 	}, "envelope-native-chat"); err != nil {
@@ -663,7 +663,7 @@ func TestSlackNativeClearCommandKeepsChatAndAdvancesContextAtomically(t *testing
 		ID: util.MustParseUUID(installationID), WorkspaceID: util.MustParseUUID(testWorkspaceID),
 		AgentID: util.MustParseUUID(agentID), InstallerUserID: util.MustParseUUID(testUserID), Active: true,
 	}
-	starter := slackintegration.NewSlackDMControlStarter(queries, testPool, testHandler.TaskService, testHandler)
+	starter := slackintegration.NewSlackDMControlStarter(queries, testPool, testHandler.TaskService, testHandler, nil)
 	if err := starter.ClearSlackDMContext(ctx, installation, util.MustParseUUID(testUserID), slackapi.SlashCommand{
 		ChannelID: "D-native-clear", Text: "/issue investigate native clear",
 	}, "envelope-native-clear-message"); err != nil {

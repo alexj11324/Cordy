@@ -1,13 +1,37 @@
 package dingtalk
 
 import (
+	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
 	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
+
+func TestHubReplyPreservesGroupTarget(t *testing.T) {
+	d := newDingtalkSendServer(t)
+	r := NewOutboundReplier(OutboundReplierConfig{Client: NewClient(nil, d.srv.URL)})
+	inst := engine.ResolvedInstallation{Platform: db.ChannelInstallation{
+		Config: []byte(`{"app_id":"robot-1","robot_code":"robot-1","app_secret_encrypted":"Zml4dHVyZQ=="}`),
+	}}
+	msg := channel.InboundMessage{Source: channel.Source{ChatID: "group-fixture", ChatType: channel.ChatTypeGroup}}
+	const reply = "已切换到 Reviewer"
+	r.Reply(context.Background(), inst, msg, engine.Result{Outcome: engine.OutcomeHubCommand, ReplyText: reply})
+	if d.lastPath != pathSendGroup || d.lastBody["openConversationId"] != "group-fixture" {
+		t.Fatalf("Hub reply target = %s %+v", d.lastPath, d.lastBody)
+	}
+	var payload struct {
+		Text string `json:"text"`
+	}
+	raw, _ := d.lastBody["msgParam"].(string)
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil || payload.Text != reply {
+		t.Fatalf("Hub reply body = %q, error = %v", raw, err)
+	}
+}
 
 func TestIssueCreatedText(t *testing.T) {
 	issueID := pgtype.UUID{Valid: true}

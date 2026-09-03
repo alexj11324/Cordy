@@ -162,14 +162,16 @@ func TestReply_CommandOutcomes_PostGuidance(t *testing.T) {
 	for _, tc := range []struct {
 		outcome engine.Outcome
 		want    string
+		reply   string
 	}{
-		{engine.OutcomeFreshPending, freshPendingText},
-		{engine.OutcomeIssueUsage, issueUsageText},
+		{engine.OutcomeFreshPending, freshPendingText, ""},
+		{engine.OutcomeIssueUsage, issueUsageText, ""},
+		{engine.OutcomeHubCommand, "已切换到 Reviewer", "已切换到 Reviewer"},
 	} {
 		t.Run(string(tc.outcome), func(t *testing.T) {
 			r, inst, conn := newReplierWithConn(t)
 			msg := channel.InboundMessage{Source: channel.Source{ChatID: "USER_A", ChatType: channel.ChatTypeP2P, SenderID: "USER_A"}}
-			r.Reply(context.Background(), inst, msg, engine.Result{Outcome: tc.outcome})
+			r.Reply(context.Background(), inst, msg, engine.Result{Outcome: tc.outcome, ReplyText: tc.reply})
 			body := conn.sendBody(t, 0)
 			markdown, _ := body["markdown"].(map[string]any)
 			if got, _ := markdown["content"].(string); got != tc.want {

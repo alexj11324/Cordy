@@ -28,6 +28,7 @@ const (
 	OutcomeIngested      Outcome = "ingested"
 	OutcomeFreshPending  Outcome = "fresh_pending"
 	OutcomeChatStarted   Outcome = "chat_started"
+	OutcomeHubCommand    Outcome = "hub_command"
 	OutcomeIssueUsage    Outcome = "issue_usage"
 	OutcomeAgentOffline  Outcome = "agent_offline"
 	OutcomeAgentArchived Outcome = "agent_archived"
@@ -51,6 +52,8 @@ const (
 // legacy lark.DispatchResult.
 type Result struct {
 	Outcome              Outcome
+	// ReplyText is localized control-plane copy; it is never Agent input.
+	ReplyText            string
 	DropReason           DropReason
 	InstallationID       pgtype.UUID
 	ChatSessionID        pgtype.UUID
@@ -430,6 +433,7 @@ type ResolverSet struct {
 	// explicit-address-only policy.
 	GroupEngagement GroupEngagementChecker
 	OriginType      string
+	Hub             HubRouter
 }
 
 // IssueCreator is the narrow subset of service.IssueService the Router needs

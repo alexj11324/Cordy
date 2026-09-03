@@ -246,10 +246,12 @@ func TestLarkOutcomeReplierCommandOutcomesSendGuidance(t *testing.T) {
 		outcome  Outcome
 		hadMedia bool
 		want     string
+		reply    string
 	}{
-		{"fresh pending", OutcomeFreshPending, false, "下一条聊天消息"},
-		{"plain issue usage", OutcomeIssueUsage, false, "请填写任务标题"},
-		{"issue usage with media", OutcomeIssueUsage, true, "请添加标题，并与图片或视频一起重新发送"},
+		{"fresh pending", OutcomeFreshPending, false, "下一条聊天消息", ""},
+		{"plain issue usage", OutcomeIssueUsage, false, "请填写任务标题", ""},
+		{"issue usage with media", OutcomeIssueUsage, true, "请添加标题，并与图片或视频一起重新发送", ""},
+		{"Hub selection", Outcome("hub_command"), false, "已切换到 Reviewer", "已切换到 Reviewer"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			log := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -258,7 +260,7 @@ func TestLarkOutcomeReplierCommandOutcomesSendGuidance(t *testing.T) {
 				APIClient: stub, BindingSvc: &BindingTokenService{}, Credentials: stubCredentialsResolver{secret: "s"},
 				Queries: stubReplierQueries{}, AppURL: "https://patchbay.test", Logger: log,
 			})
-			rep.Reply(context.Background(), Installation{}, InboundMessage{ChatID: "oc_chat"}, DispatchResult{Outcome: tc.outcome, IssueUsageHadMedia: tc.hadMedia})
+			rep.Reply(context.Background(), Installation{}, InboundMessage{ChatID: "oc_chat"}, DispatchResult{Outcome: tc.outcome, IssueUsageHadMedia: tc.hadMedia, ReplyText: tc.reply})
 			if len(stub.interactiveOut) != 1 {
 				t.Fatalf("expected one guidance card, got %d", len(stub.interactiveOut))
 			}

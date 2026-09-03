@@ -40,6 +40,7 @@ type Router struct {
 	tasks     TaskEnqueuer
 	reader    SessionReader
 	lifecycle ChannelChatLifecycle
+	hub       HubRouter
 
 	batcher *pendingBatcher
 
@@ -77,6 +78,7 @@ type RouterConfig struct {
 	MediaConcurrency int
 	Logger           *slog.Logger
 	Lifecycle        ChannelChatLifecycle
+	Hub              HubRouter
 }
 
 // NewRouter builds a Router around the shared (platform-agnostic) services:
@@ -103,6 +105,7 @@ func NewRouter(issues IssueCreator, tasks TaskEnqueuer, reader SessionReader, cf
 		tasks:        tasks,
 		reader:       reader,
 		lifecycle:    cfg.Lifecycle,
+		hub:          cfg.Hub,
 		replyTimeout: cfg.ReplyTimeout,
 		mediaTimeout: cfg.MediaTimeout,
 		mediaCtx:     mediaCtx,
@@ -143,6 +146,9 @@ func (r *Router) Register(t channel.Type, set ResolverSet) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if set.Hub == nil {
+		set.Hub = r.hub
+	}
 	r.sets[t] = set
 }
 
@@ -373,6 +379,17 @@ func (r *Router) processClaimed(ctx context.Context, set ResolverSet, msg channe
 		}
 	}
 
+	workspaceOwned := !inst.AgentID.Valid || inst.AgentID.Bytes == [16]byte{}
+	if workspaceOwned && set.Hub == nil {
+		return Result{}, finalizeRelease, errors.New("workspace installation has no channel Hub router")
+	}
+	bindingKey := msg.Source.ChatID
+	if keyed, ok := set.Session.(interface {
+		BindingKey(channel.InboundMessage) string
+	}); ok {
+		bindingKey = keyed.BindingKey(msg)
+	}
+
 	// 5-6. Resolve the current Chat route, then either append normally or
 	// atomically create the next Chat route with its optional first turn.
 	sessionCreator := identity.UserID
@@ -399,6 +416,7 @@ func (r *Router) processClaimed(ctx context.Context, set ResolverSet, msg channe
 	var startedTask db.AgentTaskQueue
 	startTaskCommitted := false
 	routeChangeRetries := 0
+	var hubRoute HubResolution
 	for {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return Result{}, finalizeRelease, ctxErr
@@ -408,7 +426,7 @@ func (r *Router) processClaimed(ctx context.Context, set ResolverSet, msg channe
 		// outbound replies, /issue, and /new task preparation.
 		if finalizer, ok := set.Installation.(interface {
 			FinalizeInstallation(context.Context, ResolvedInstallation, channel.InboundMessage) (ResolvedInstallation, error)
-		}); ok {
+		}); ok && !workspaceOwned {
 			var routeErr error
 			inst, routeErr = finalizer.FinalizeInstallation(ctx, inst, msg)
 			if routeErr != nil {
@@ -421,6 +439,17 @@ func (r *Router) processClaimed(ctx context.Context, set ResolverSet, msg channe
 					return Result{}, finalizeRelease, fmt.Errorf("finalize installation route: %w", routeErr)
 				}
 			}
+			*resolved = inst
+		}
+		if workspaceOwned {
+			hubRoute, err = set.Hub.Resolve(ctx, inst, identity, msg, bindingKey)
+			if err != nil {
+				return Result{}, finalizeRelease, fmt.Errorf("resolve channel Hub: %w", err)
+			}
+			if !hubRoute.AgentID.Valid || (hubRoute.Handled && !hubRoute.EnsureSession) {
+				return hubCommandResult(inst, msg, hubRoute, pgtype.UUID{}), finalizeMark, nil
+			}
+			inst.AgentID = hubRoute.AgentID
 			*resolved = inst
 		}
 
@@ -441,6 +470,21 @@ func (r *Router) processClaimed(ctx context.Context, set ResolverSet, msg channe
 					return enqueueErr
 				}
 			}
+			if workspaceOwned {
+				enqueue := beforeCommit
+				beforeCommit = func(ctx context.Context, tx pgx.Tx, session db.ChatSession) error {
+					if err := set.Hub.PersistRoute(ctx, HubPersistParams{
+						Installation: inst, UserID: identity.UserID, BindingKey: bindingKey,
+						SessionID: session.ID, AgentID: inst.AgentID, Tx: tx,
+					}); err != nil {
+						return err
+					}
+					if enqueue != nil {
+						return enqueue(ctx, tx, session)
+					}
+					return nil
+				}
+			}
 			started, err = set.Session.StartSession(ctx, StartSessionParams{
 				Installation: inst, Creator: sessionCreator, Sender: identity.UserID, Message: msg,
 				ClaimToken: claimToken, MediaPendingSeconds: mediaPendingSeconds,
@@ -453,6 +497,20 @@ func (r *Router) processClaimed(ctx context.Context, set ResolverSet, msg channe
 				Sender:       sessionCreator,
 				Message:      msg,
 			})
+		}
+		if err == nil && workspaceOwned && !startChat {
+			if hubRoute.SwitchesAgent && r.batcher != nil {
+				err = r.FlushPendingSession(ctx, sessionID)
+			}
+			if err == nil {
+				err = set.Hub.PersistRoute(ctx, HubPersistParams{
+					Installation: inst, UserID: identity.UserID, BindingKey: bindingKey,
+					SessionID: sessionID, AgentID: inst.AgentID,
+				})
+			}
+			if err == nil && hubRoute.Handled {
+				return hubCommandResult(inst, msg, hubRoute, sessionID), finalizeMark, nil
+			}
 		}
 
 		if errors.Is(err, ErrRouteChanged) {
@@ -703,6 +761,22 @@ func (r *Router) processClaimed(ctx context.Context, set ResolverSet, msg channe
 		r.lifecycle.GenerateChannelChatTitle(inst.WorkspaceID, sessionCreator, sessionID, appendRes.InitialTitle, msg.Text)
 	}
 	return res, postAppendFinalize, nil
+}
+
+func hubCommandResult(inst ResolvedInstallation, msg channel.InboundMessage, route HubResolution, sessionID pgtype.UUID) Result {
+	return Result{
+		Outcome: OutcomeHubCommand, ReplyText: route.ReplyText,
+		InstallationID: inst.ID, ChatSessionID: sessionID, Sender: msg.Source.SenderID,
+	}
+}
+
+// FlushPendingSession fences a conversation-level control operation against
+// all pending and already-firing context generations for that Chat.
+func (r *Router) FlushPendingSession(ctx context.Context, sessionID pgtype.UUID) error {
+	if r.batcher == nil {
+		return ctx.Err()
+	}
+	return r.batcher.FlushPrefix(ctx, keyForSession(sessionID)+":")
 }
 
 func (r *Router) notifyChatStarted(inst ResolvedInstallation, creatorID pgtype.UUID, channelType channel.Type, started StartSessionResult) {
