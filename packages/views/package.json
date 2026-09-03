@@ -45,6 +45,7 @@
     "./chat": "./chat/index.ts",
     "./agent-thread": "./agent-thread/index.ts",
     "./settings": "./settings/index.ts",
+    "./integrations": "./integrations/index.tsx",
     "./settings/lark-tab": "./settings/components/lark-tab.tsx",
     "./lark": "./lark/index.ts",
     "./slack": "./slack/index.ts",
