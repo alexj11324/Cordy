@@ -1,10 +1,16 @@
 "use client";
 
 import { type ReactNode, useRef, useEffect, useState } from "react";
-import { Dices, Plus } from "lucide-react";
+import { Dices, FolderOpen, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@patchbay/ui/components/ui/button";
 import { Input } from "@patchbay/ui/components/ui/input";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+  InputGroupText,
+} from "@patchbay/ui/components/ui/input-group";
 import {
   Field,
   FieldDescription,
@@ -14,11 +20,14 @@ import {
 } from "@patchbay/ui/components/ui/field";
 import { cn } from "@patchbay/ui/lib/utils";
 import { useCreateWorkspace } from "@patchbay/core/workspace/mutations";
+import { api } from "@patchbay/core/api";
 import type { Workspace } from "@patchbay/core/types";
+import { getCurrentSlug } from "@patchbay/core/platform";
 import { isImeComposing } from "@patchbay/core/utils";
 import { matchLocale } from "@patchbay/core/i18n";
 import { useConfigStore } from "@patchbay/core/config";
 import { workspaceUrlHost } from "@patchbay/core/workspace/workspace-url";
+import { isDesktopShell } from "@patchbay/views/platform";
 import { useLogout } from "../../auth";
 import {
   StepFooter,

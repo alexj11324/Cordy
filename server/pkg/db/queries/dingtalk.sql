@@ -221,6 +221,102 @@ WHERE presence.installation_id = installation.id
   AND installation.channel_type = 'dingtalk'
 RETURNING presence.installation_id;
 
+-- name: ListDingTalkGroupRoutesByWorkspace :many
+-- Settings inventory of group-to-agent assignments. Only routes under an
+-- active DingTalk installation are listed; revoked installations keep their
+-- rows for audit but disappear from the panel. Mirrors the Rust
+-- list_ding_talk_group_routes_by_workspace ordering (discovery order) with
+-- deterministic tiebreakers.
+SELECT
+    r.id,
+    r.workspace_id,
+    r.installation_id,
+    r.conversation_id,
+    r.conversation_title,
+    r.agent_id,
+    r.revision,
+    r.discovered_at,
+    r.updated_at
+FROM dingtalk_group_route r
+JOIN channel_installation i ON i.id = r.installation_id
+WHERE r.workspace_id = sqlc.arg(workspace_id)
+  AND i.workspace_id = sqlc.arg(workspace_id)
+  AND i.channel_type = 'dingtalk'
+  AND i.status = 'active'
+ORDER BY r.discovered_at ASC, r.conversation_id ASC, r.id ASC;
+
+-- name: ReassignDingTalkGroupRoute :one
+-- Reassigns one group to another agent without reconnecting the robot. The
+-- target agent must be an unarchived user agent in the same workspace, and the
+-- route must sit under an active DingTalk installation. Bumping revision keeps
+-- the mixed-version compatibility trigger from mistaking an admin reassignment
+-- for message activity. When the agent actually changes, the stale
+-- channel_chat_session_binding for that installation/conversation is dropped
+-- (plus its outbound cards) so the next @bot message opens a session for the
+-- new agent; sessions themselves remain as history. Mirrors the Rust
+-- reassign_ding_talk_group_route semantics.
+WITH workspace_guard AS MATERIALIZED (
+    SELECT w.id
+    FROM workspace w
+    WHERE w.id = sqlc.arg(workspace_id)
+    FOR KEY SHARE
+), target_agent AS MATERIALIZED (
+    SELECT a.id
+    FROM agent a
+    JOIN workspace_guard w ON w.id = a.workspace_id
+    WHERE a.id = sqlc.arg(agent_id)
+      AND a.workspace_id = sqlc.arg(workspace_id)
+      AND a.kind = 'user'
+      AND a.archived_at IS NULL
+    FOR SHARE
+), active_installation AS MATERIALIZED (
+    SELECT i.id
+    FROM channel_installation i
+    JOIN dingtalk_group_route r ON r.installation_id = i.id
+    WHERE r.id = sqlc.arg(route_id)
+      AND r.workspace_id = sqlc.arg(workspace_id)
+      AND i.workspace_id = sqlc.arg(workspace_id)
+      AND i.channel_type = 'dingtalk'
+      AND i.status = 'active'
+      AND EXISTS (SELECT 1 FROM target_agent)
+    FOR SHARE OF i
+), target AS (
+    SELECT
+        r.id, r.workspace_id, r.installation_id, r.conversation_id,
+        r.conversation_title, r.agent_id, r.revision, r.discovered_at,
+        r.updated_at, r.agent_id AS previous_agent_id
+    FROM dingtalk_group_route r
+    JOIN active_installation i ON i.id = r.installation_id
+    WHERE r.id = sqlc.arg(route_id)
+      AND r.workspace_id = sqlc.arg(workspace_id)
+    FOR UPDATE OF r
+), updated AS (
+    UPDATE dingtalk_group_route r
+    SET agent_id = sqlc.arg(agent_id),
+        revision = r.revision + 1,
+        updated_at = now()
+    FROM target t
+    WHERE r.id = t.id
+    RETURNING
+        r.id, r.workspace_id, r.installation_id, r.conversation_id,
+        r.conversation_title, r.agent_id, r.revision, r.discovered_at,
+        r.updated_at, t.previous_agent_id
+), cleared_chat_sessions AS (
+    DELETE FROM channel_chat_session_binding b
+    USING updated u
+    WHERE u.previous_agent_id IS DISTINCT FROM u.agent_id
+      AND b.installation_id = u.installation_id
+      AND b.channel_chat_id = u.conversation_id
+    RETURNING b.chat_session_id
+), cleared_outbound_cards AS (
+    DELETE FROM channel_outbound_card_message
+    WHERE chat_session_id IN (SELECT chat_session_id FROM cleared_chat_sessions)
+)
+SELECT
+    id, workspace_id, installation_id, conversation_id,
+    conversation_title, agent_id, revision, discovered_at, updated_at
+FROM updated;
+
 -- name: DeleteDingTalkInstallationForReplacement :one
 -- Retires an installation when the same agent is connected with a DIFFERENT
 -- AppKey. A senderStaffId is scoped to one DingTalk organization, so none of the

@@ -148,6 +148,14 @@ interface TabStore {
   byWorkspace: Record<string, WorkspaceTabGroup>;
 
   /**
+   * Last authoritative workspace-slug set supplied by the workspace list.
+   * Null means the list has not settled for the current session yet. This is
+   * deliberately live-only state so deep links cannot create a Settings
+   * overlay for a deleted or unknown workspace.
+   */
+  validWorkspaceSlugs: Set<string> | null;
+
+  /**
    * Bumped by reloadActiveTab. The ActiveTabHost keys its subtree on
    * `${activeTabId}:${mountGeneration}` so a bump force-remounts the whole
    * page tree (RFC: reload is a remount, never router.revalidate()).
@@ -496,6 +504,7 @@ export const useTabStore = create<TabStore>()(
     (set, get) => ({
       activeWorkspaceSlug: null,
       byWorkspace: {},
+      validWorkspaceSlugs: null,
       mountGeneration: 0,
 
       switchWorkspace(slug, openPath) {
@@ -970,12 +979,24 @@ export const useTabStore = create<TabStore>()(
           }
         }
 
-        if (!changed) return;
-        set({ byWorkspace: nextByWorkspace, activeWorkspaceSlug: nextActive });
+        if (!changed) {
+          set({ validWorkspaceSlugs: new Set(validSlugs) });
+          return;
+        }
+        set({
+          byWorkspace: nextByWorkspace,
+          activeWorkspaceSlug: nextActive,
+          validWorkspaceSlugs: new Set(validSlugs),
+        });
       },
 
       reset() {
-        set({ activeWorkspaceSlug: null, byWorkspace: {}, mountGeneration: 0 });
+        set({
+          activeWorkspaceSlug: null,
+          byWorkspace: {},
+          validWorkspaceSlugs: null,
+          mountGeneration: 0,
+        });
       },
     }),
     {
