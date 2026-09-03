@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/patchbay-ai/patchbay/server/internal/analytics"
+	"github.com/patchbay-ai/patchbay/server/internal/entitlement"
 	"github.com/patchbay-ai/patchbay/server/internal/issuestatus"
 	"github.com/patchbay-ai/patchbay/server/internal/logger"
 	obsmetrics "github.com/patchbay-ai/patchbay/server/internal/metrics"
@@ -252,6 +253,9 @@ func (h *Handler) CreateWorkspace(w http.ResponseWriter, r *http.Request) {
 		issuePrefix = defaultIssuePrefixFromSlug(req.Slug)
 	}
 
+	userUUID := parseUUID(userID)
+	hostedPolicy := h.resolveHostedWorkspacePolicy(r.Context(), userUUID)
+
 	tx, err := h.TxStarter.Begin(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create workspace")
@@ -260,6 +264,32 @@ func (h *Handler) CreateWorkspace(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback(r.Context())
 
 	qtx := h.Queries.WithTx(tx)
+	var isGuest bool
+	if err := tx.QueryRow(r.Context(), `SELECT is_guest FROM "user" WHERE id = $1 FOR UPDATE`, userUUID).Scan(&isGuest); err != nil {
+		writeError(w, http.StatusServiceUnavailable, "workspace quota unavailable")
+		return
+	}
+	if isGuest {
+		var membershipCount int64
+		if err := tx.QueryRow(r.Context(), `SELECT count(*)::bigint FROM member WHERE user_id = $1`, userUUID).Scan(&membershipCount); err != nil {
+			writeError(w, http.StatusServiceUnavailable, guestWorkspaceQuotaMessage)
+			return
+		}
+		if membershipCount > 0 {
+			writeError(w, http.StatusForbidden, guestWorkspaceLimitMessage)
+			return
+		}
+	} else if isOfficialCloudDeployment() {
+		var ownedCount int64
+		if err := tx.QueryRow(r.Context(), `SELECT count(*)::bigint FROM member WHERE user_id = $1 AND role = 'owner'`, userUUID).Scan(&ownedCount); err != nil {
+			writeErrorCode(w, http.StatusServiceUnavailable, hostedWorkspaceQuotaCode, hostedWorkspaceQuotaMessage)
+			return
+		}
+		if status, code, message := admitHostedWorkspaceOwnership(ownedCount, hostedPolicy); status != 0 {
+			writeErrorCode(w, status, code, message)
+			return
+		}
+	}
 	ws, err := qtx.CreateWorkspace(r.Context(), db.CreateWorkspaceParams{
 		Name:        req.Name,
 		Slug:        req.Slug,
@@ -278,7 +308,7 @@ func (h *Handler) CreateWorkspace(w http.ResponseWriter, r *http.Request) {
 
 	_, err = qtx.CreateMember(r.Context(), db.CreateMemberParams{
 		WorkspaceID: ws.ID,
-		UserID:      parseUUID(userID),
+		UserID:      userUUID,
 		Role:        "owner",
 	})
 	if err != nil {
@@ -597,28 +627,70 @@ func (h *Handler) UpdateMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if (target.Role == "owner" || role == "owner") && requester.Role != "owner" {
+	hostedPolicy := hostedWorkspacePolicy{action: entitlement.ActionObserve}
+	if target.Role != "owner" && role == "owner" && isOfficialCloudDeployment() {
+		hostedPolicy = h.resolveHostedWorkspacePolicy(r.Context(), target.UserID)
+	}
+	tx, err := h.TxStarter.Begin(r.Context())
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "member update unavailable")
+		return
+	}
+	defer tx.Rollback(r.Context())
+
+	var targetIsGuest bool
+	if err := tx.QueryRow(r.Context(), `SELECT is_guest FROM "user" WHERE id = $1 FOR UPDATE`, target.UserID).Scan(&targetIsGuest); err != nil {
+		writeError(w, http.StatusServiceUnavailable, "member update unavailable")
+		return
+	}
+	var lockedWorkspaceID pgtype.UUID
+	var lockedUserID pgtype.UUID
+	var lockedRole string
+	if err := tx.QueryRow(r.Context(), `SELECT workspace_id, user_id, role FROM member WHERE id = $1 FOR UPDATE`, memberUUID).Scan(&lockedWorkspaceID, &lockedUserID, &lockedRole); err != nil || lockedWorkspaceID != requester.WorkspaceID || lockedUserID != target.UserID {
+		writeError(w, http.StatusNotFound, "member not found")
+		return
+	}
+	if (lockedRole == "owner" || role == "owner") && requester.Role != "owner" {
 		writeError(w, http.StatusForbidden, "insufficient permissions")
 		return
 	}
-
-	if target.Role == "owner" && role != "owner" {
-		members, err := h.Queries.ListMembers(r.Context(), target.WorkspaceID)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to update member")
+	if lockedRole == "owner" && role != "owner" {
+		var ownerCount int64
+		if err := tx.QueryRow(r.Context(), `SELECT count(*)::bigint FROM member WHERE workspace_id = $1 AND role = 'owner'`, lockedWorkspaceID).Scan(&ownerCount); err != nil {
+			writeError(w, http.StatusServiceUnavailable, "member update unavailable")
 			return
 		}
-		if countOwners(members) <= 1 {
+		if ownerCount <= 1 {
 			writeError(w, http.StatusBadRequest, "workspace must have at least one owner")
 			return
 		}
 	}
+	if lockedRole != "owner" && role == "owner" && isOfficialCloudDeployment() {
+		if targetIsGuest {
+			writeError(w, http.StatusForbidden, formalLoginRequiredMessage)
+			return
+		}
+		var ownedCount int64
+		if err := tx.QueryRow(r.Context(), `SELECT count(*)::bigint FROM member WHERE user_id = $1 AND role = 'owner'`, lockedUserID).Scan(&ownedCount); err != nil {
+			writeErrorCode(w, http.StatusServiceUnavailable, hostedWorkspaceQuotaCode, hostedWorkspaceQuotaMessage)
+			return
+		}
+		if status, code, message := admitHostedWorkspaceOwnership(ownedCount, hostedPolicy); status != 0 {
+			writeErrorCode(w, status, code, message)
+			return
+		}
+	}
 
-	updatedMember, err := h.Queries.UpdateMemberRole(r.Context(), db.UpdateMemberRoleParams{
+	qtx := h.Queries.WithTx(tx)
+	updatedMember, err := qtx.UpdateMemberRole(r.Context(), db.UpdateMemberRoleParams{
 		ID:   target.ID,
 		Role: role,
 	})
 	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update member")
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to update member")
 		return
 	}

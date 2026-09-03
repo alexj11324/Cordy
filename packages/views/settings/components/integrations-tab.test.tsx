@@ -6,6 +6,7 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { ApiError } from "@patchbay/core/api";
 import { configStore } from "@patchbay/core/config";
 import {
+  BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG,
   COMPOSIO_MCP_APPS_FLAG,
   LINEAR_INSTALLATION_FOUNDATION_FLAG,
 } from "@patchbay/core/feature-flags";
@@ -30,6 +31,16 @@ const messagingQuotaRef = vi.hoisted(() => ({
     | { mode: string; used: number | null; reserved: number | null; limit: number | null }
     | undefined,
 }));
+const subscriptionSummaryRef = vi.hoisted(() => ({
+  current: undefined as
+    | {
+        entitlement: {
+          hostedWorkspaceLimit?: number | null;
+          imInstallationLimit?: number | null;
+        };
+      }
+    | undefined,
+}));
 const channelInstallationsRef = vi.hoisted(() => ({
   current: {} as Partial<Record<
     "lark" | "slack" | "dingtalk" | "wecom" | "telegram" | "weixin",
@@ -52,6 +63,7 @@ vi.mock("@tanstack/react-query", () => ({
     const isMemberQuery = opts.queryKey[opts.queryKey.length - 1] === "members";
     const channel = opts.queryKey[0];
     const isMessagingQuotaQuery = channel === "messaging-quota";
+    const isSubscriptionSummaryQuery = channel === "workspace-subscriptions";
     const isChannelInstallationsQuery =
       typeof channel === "string" &&
       channel in channelInstallationsRef.current &&
@@ -61,6 +73,8 @@ vi.mock("@tanstack/react-query", () => ({
         ? membersRef.current
         : isMessagingQuotaQuery
           ? messagingQuotaRef.current
+        : isSubscriptionSummaryQuery
+          ? subscriptionSummaryRef.current
         : isChannelInstallationsQuery
           ? channelInstallationsRef.current[
               channel as keyof typeof channelInstallationsRef.current
@@ -160,6 +174,7 @@ describe("Settings IntegrationsTab", () => {
     authUserRef.current = null;
     membersRef.current = [];
     messagingQuotaRef.current = undefined;
+    subscriptionSummaryRef.current = undefined;
     channelInstallationsRef.current = {
       lark: { configured: false, install_supported: false, installations: [] },
       slack: { configured: false, install_supported: false, installations: [] },
@@ -196,6 +211,36 @@ describe("Settings IntegrationsTab", () => {
     renderTab();
     expect(screen.getByTestId("messaging-quota")).toHaveTextContent(
       "9 of 100 Agent turns used this period",
+    );
+  });
+
+  it("shows hosted installation and owned-workspace capacity", () => {
+    configStore.getState().setFeatureFlags({
+      [BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG]: true,
+      [COMPOSIO_MCP_APPS_FLAG]: true,
+      [LINEAR_INSTALLATION_FOUNDATION_FLAG]: false,
+    });
+    subscriptionSummaryRef.current = {
+      entitlement: {
+        hostedWorkspaceLimit: 4,
+        imInstallationLimit: 3,
+      },
+    };
+    channelInstallationsRef.current.slack = {
+      configured: true,
+      install_supported: true,
+      installations: [
+        { id: "hub-1", agent_id: null, status: "installed" },
+      ],
+    };
+
+    renderTab();
+
+    expect(screen.getByTestId("messaging-quota")).toHaveTextContent(
+      "Hosted installations: 1 of 3 installed",
+    );
+    expect(screen.getByTestId("messaging-quota")).toHaveTextContent(
+      "Owned hosted workspaces: up to 4",
     );
   });
 

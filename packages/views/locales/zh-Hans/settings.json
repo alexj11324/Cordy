@@ -490,6 +490,10 @@
     "integrations_quota_unavailable": "暂时不可用",
     "integrations_quota_unlimited": "无限制",
     "integrations_quota_used": "本周期已使用 {{used}} / {{limit}} 次智能体运行",
+    "integrations_installation_quota": "托管安装",
+    "integrations_installation_quota_used": "已安装 {{used}} / {{limit}} 个",
+    "integrations_workspace_quota": "名下托管工作区",
+    "integrations_workspace_quota_limit": "最多 {{limit}} 个",
     "integrations_requirements_title": "你需要准备",
     "integrations_setup_steps_title": "按以下步骤完成",
     "back_to_app": "返回应用"

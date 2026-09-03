@@ -490,6 +490,10 @@
     "integrations_quota_unavailable": "一時的に利用できません",
     "integrations_quota_unlimited": "無制限",
     "integrations_quota_used": "この期間に {{used}} / {{limit}} 回のエージェント実行を使用",
+    "integrations_installation_quota": "ホスト型インストール",
+    "integrations_installation_quota_used": "{{used}} / {{limit}} 件インストール済み",
+    "integrations_workspace_quota": "所有するホスト型ワークスペース",
+    "integrations_workspace_quota_limit": "最大 {{limit}} 件",
     "integrations_requirements_title": "必要なもの",
     "integrations_setup_steps_title": "次の手順で完了します",
     "back_to_app": "アプリに戻る"

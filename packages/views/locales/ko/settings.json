@@ -490,6 +490,10 @@
     "integrations_quota_unavailable": "일시적으로 사용할 수 없음",
     "integrations_quota_unlimited": "무제한",
     "integrations_quota_used": "이 기간 에이전트 실행 {{used}} / {{limit}}회 사용",
+    "integrations_installation_quota": "호스팅 설치",
+    "integrations_installation_quota_used": "{{used}} / {{limit}}개 설치됨",
+    "integrations_workspace_quota": "소유한 호스팅 워크스페이스",
+    "integrations_workspace_quota_limit": "최대 {{limit}}개",
     "integrations_requirements_title": "준비할 항목",
     "integrations_setup_steps_title": "다음 단계로 완료하세요",
     "back_to_app": "앱으로 돌아가기"

@@ -1141,6 +1141,9 @@ describe("workspace subscription contract", () => {
       issue_count: { mode: "unlimited" },
       automation_runs: { mode: "unlimited" },
     },
+    hosted_workspace_limit: 4,
+    im_installation_limit: null,
+    im_agent_turns: 250,
     current_period_end: "2026-09-01T00:00:00Z",
     snapshot_expires_at: null,
     version: 7,
@@ -1202,6 +1205,9 @@ describe("workspace subscription contract", () => {
     expect(summary).not.toBeNull();
     expect(summary?.entitlement.plan).toBe("pro");
     expect(summary?.entitlement.version).toBe(7);
+    expect(summary?.entitlement.hostedWorkspaceLimit).toBe(4);
+    expect(summary?.entitlement.imInstallationLimit).toBeNull();
+    expect(summary?.entitlement.imAgentTurns).toBe(250);
     expect(summary?.billingInterval).toBe("year");
     expect(summary?.humanMembers).toBe(3);
     expect(summary?.seatCapacity?.purchased).toBe(5);

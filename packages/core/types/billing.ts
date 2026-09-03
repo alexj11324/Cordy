@@ -213,6 +213,9 @@ export interface WorkspaceSubscriptionEntitlements {
     issueCount: WorkspaceEntitlementLimit;
     automationRuns: WorkspaceEntitlementLimit;
   };
+  hostedWorkspaceLimit?: number | null;
+  imInstallationLimit?: number | null;
+  imAgentTurns?: number | null;
   currentPeriodEnd: string | null;
   snapshotExpiresAt: string | null;
   version: number;

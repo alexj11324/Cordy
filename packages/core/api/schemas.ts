@@ -3434,13 +3434,16 @@ export const WorkspaceSubscriptionEntitlementsSchema = z
         automation_runs: WorkspaceEntitlementLimitSchema,
       })
       .loose(),
+    hosted_workspace_limit: z.number().int().nonnegative().nullable().optional(),
+    im_installation_limit: z.number().int().nonnegative().nullable().optional(),
+    im_agent_turns: z.number().int().nonnegative().nullable().optional(),
     current_period_end: z.string().nullable().optional(),
     snapshot_expires_at: z.string().nullable().optional(),
     version: z.number().int().nonnegative(),
   })
   .loose()
-  .transform(
-    (value): WorkspaceSubscriptionEntitlements => ({
+  .transform((value): WorkspaceSubscriptionEntitlements => {
+    const entitlement: WorkspaceSubscriptionEntitlements = {
       workspaceId: value.workspace_id,
       plan: value.plan,
       status: value.status,
@@ -3452,8 +3455,18 @@ export const WorkspaceSubscriptionEntitlementsSchema = z
       currentPeriodEnd: value.current_period_end ?? null,
       snapshotExpiresAt: value.snapshot_expires_at ?? null,
       version: value.version,
-    }),
-  );
+    };
+    if (value.hosted_workspace_limit !== undefined) {
+      entitlement.hostedWorkspaceLimit = value.hosted_workspace_limit;
+    }
+    if (value.im_installation_limit !== undefined) {
+      entitlement.imInstallationLimit = value.im_installation_limit;
+    }
+    if (value.im_agent_turns !== undefined) {
+      entitlement.imAgentTurns = value.im_agent_turns;
+    }
+    return entitlement;
+  });
 
 export const WorkspaceSubscriptionSummarySchema = z
   .object({

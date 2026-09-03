@@ -490,6 +490,10 @@
     "integrations_quota_unavailable": "Temporarily unavailable",
     "integrations_quota_unlimited": "Unlimited",
     "integrations_quota_used": "{{used}} of {{limit}} Agent turns used this period",
+    "integrations_installation_quota": "Hosted installations",
+    "integrations_installation_quota_used": "{{used}} of {{limit}} installed",
+    "integrations_workspace_quota": "Owned hosted workspaces",
+    "integrations_workspace_quota_limit": "up to {{limit}}",
     "integrations_requirements_title": "What you need",
     "integrations_setup_steps_title": "Complete these steps",
     "back_to_app": "Back to app"

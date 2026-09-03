@@ -5,10 +5,12 @@ import { useQuery } from "@tanstack/react-query";
 import { CircleAlert, Loader2, Settings2 } from "lucide-react";
 import { ApiError, api } from "@patchbay/core/api";
 import { useAuthStore } from "@patchbay/core/auth";
+import { workspaceSubscriptionSummaryOptions } from "@patchbay/core/billing";
 import { composioToolkitsOptions } from "@patchbay/core/composio";
 import { useConfigStore, useFeatureEnabled } from "@patchbay/core/config";
 import { dingtalkInstallationsOptions } from "@patchbay/core/dingtalk";
 import {
+  BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG,
   COMPOSIO_MCP_APPS_FLAG,
   LINEAR_INSTALLATION_FOUNDATION_FLAG,
 } from "@patchbay/core/feature-flags";
@@ -164,6 +166,10 @@ export function IntegrationsTab({
     currentMember?.role === "owner" || currentMember?.role === "admin";
   const isGuest = user?.is_guest === true;
   const messaging = useConfigStore((state) => state.messaging);
+  const billingEnabled = useFeatureEnabled(
+    BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG,
+    false,
+  );
   const setupWritable = messaging?.setupWritable === true;
   const [managedChannel, setManagedChannel] = useState<MessagingChannel | null>(null);
 
@@ -179,6 +185,10 @@ export function IntegrationsTab({
     enabled: !!wsId && messaging?.mode === "managed",
     staleTime: 30_000,
   });
+  const subscriptionSummary = useQuery({
+    ...workspaceSubscriptionSummaryOptions(wsId),
+    enabled: !!wsId && billingEnabled,
+  });
   const quotaConsumed =
     messagingQuota.data?.used != null
       ? messagingQuota.data.used + (messagingQuota.data.reserved ?? 0)
@@ -191,6 +201,17 @@ export function IntegrationsTab({
     telegram,
     weixin,
   };
+  const hostedEntitlement = subscriptionSummary.data?.entitlement;
+  const installationLimit = hostedEntitlement?.imInstallationLimit;
+  const workspaceLimit = hostedEntitlement?.hostedWorkspaceLimit;
+  const installedCount = Object.values(listings).reduce(
+    (count, query) =>
+      count +
+      (query.data?.installations.filter(
+        (installation) => installation.status === "installed",
+      ).length ?? 0),
+    0,
+  );
 
   const linearEnabled = useFeatureEnabled(
     LINEAR_INSTALLATION_FOUNDATION_FLAG,
@@ -243,7 +264,8 @@ export function IntegrationsTab({
     <>
       <section className="space-y-4">
         {messaging?.mode === "managed" ? (
-          <div className="text-caption text-muted-foreground" data-testid="messaging-quota">
+          <div className="space-y-1 text-caption text-muted-foreground" data-testid="messaging-quota">
+            <div>
             <span className="font-medium text-foreground">
               {t(($) => $.page.integrations_quota_title)}: {" "}
             </span>
@@ -262,6 +284,40 @@ export function IntegrationsTab({
             ) : (
               t(($) => $.page.integrations_quota_unavailable)
             )}
+            </div>
+            {billingEnabled ? (
+              <div className="flex flex-wrap gap-x-3 gap-y-1">
+                <span>
+                  {t(($) => $.page.integrations_installation_quota)}: {" "}
+                  {subscriptionSummary.isLoading
+                    ? t(($) => $.page.integrations_quota_loading)
+                    : subscriptionSummary.isError || !hostedEntitlement
+                      ? t(($) => $.page.integrations_quota_unavailable)
+                      : installationLimit === null
+                        ? t(($) => $.page.integrations_quota_unlimited)
+                        : typeof installationLimit === "number"
+                          ? t(($) => $.page.integrations_installation_quota_used, {
+                              used: installedCount,
+                              limit: installationLimit,
+                            })
+                          : t(($) => $.page.integrations_quota_unavailable)}
+                </span>
+                <span>
+                  {t(($) => $.page.integrations_workspace_quota)}: {" "}
+                  {subscriptionSummary.isLoading
+                    ? t(($) => $.page.integrations_quota_loading)
+                    : subscriptionSummary.isError || !hostedEntitlement
+                      ? t(($) => $.page.integrations_quota_unavailable)
+                      : workspaceLimit === null
+                        ? t(($) => $.page.integrations_quota_unlimited)
+                        : typeof workspaceLimit === "number"
+                          ? t(($) => $.page.integrations_workspace_quota_limit, {
+                              limit: workspaceLimit,
+                            })
+                          : t(($) => $.page.integrations_quota_unavailable)}
+                </span>
+              </div>
+            ) : null}
           </div>
         ) : null}
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
