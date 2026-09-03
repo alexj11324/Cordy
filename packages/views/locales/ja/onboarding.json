@@ -159,6 +159,17 @@
     }
   },
   "step_workspace": {
+    "projects_label": "プロジェクト（任意）",
+    "projects_placeholder": "https://github.com/org/repo",
+    "projects_add": "追加",
+    "projects_pick_folders": "フォルダを選択",
+    "projects_hint": "複数追加できます。あとから追加することもできます。",
+    "projects_invalid_url": "有効な Git リポジトリ URL を入力してください",
+    "projects_attach_failed": "ワークスペースは作成されましたが、一部のプロジェクトを追加できませんでした",
+    "projects_remove": "{{name}} を削除",
+    "projects_pick_failed": "フォルダを選択できませんでした。もう一度お試しください。",
+    "projects_local_hint": "タスクはこのデバイスで選択したフォルダを直接編集します。",
+    "projects_local_offline": "フォルダを追加するにはローカルランタイムを接続してください。リポジトリ URL は今すぐ追加できます。",
     "eyebrow_first": "最初のワークスペース",
     "eyebrow_resume": "続きから、または新規作成",
     "headline_first": "ワークスペースに名前を付けましょう。",

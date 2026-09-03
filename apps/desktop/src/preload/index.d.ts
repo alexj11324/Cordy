@@ -119,6 +119,13 @@ interface DesktopAPI {
     reason?: "cancelled" | "no_window" | "error";
     error?: string;
   }>;
+  /** Select multiple folders, one project per directory, during onboarding. */
+  pickDirectories: (defaultPath?: string) => Promise<{
+    ok: boolean;
+    folders?: Array<{ path: string; basename: string }>;
+    reason?: "cancelled" | "no_window" | "error";
+    error?: string;
+  }>;
   /** Validate that a path is an existing readable+writable directory.
    *  Mirrors the daemon's runtime check so the user sees errors before submit. */
   validateLocalDirectory: (

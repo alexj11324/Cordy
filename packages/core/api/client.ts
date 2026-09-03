@@ -3786,9 +3786,10 @@ export class ApiClient {
     return this.fetch(`/api/projects/${id}`);
   }
 
-  async createProject(data: CreateProjectRequest): Promise<Project> {
+  async createProject(data: CreateProjectRequest, workspaceSlug?: string): Promise<Project> {
     return this.fetch("/api/projects", {
       method: "POST",
+      headers: workspaceHeader(workspaceSlug),
       body: JSON.stringify(data),
     });
   }

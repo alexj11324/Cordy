@@ -159,6 +159,17 @@
     }
   },
   "step_workspace": {
+    "projects_label": "Projects (optional)",
+    "projects_placeholder": "https://github.com/org/repo",
+    "projects_add": "Add",
+    "projects_pick_folders": "Choose folders",
+    "projects_hint": "Attach more than one. You can add more later.",
+    "projects_invalid_url": "Enter a valid git repository URL",
+    "projects_attach_failed": "Workspace created, but some projects could not be attached",
+    "projects_remove": "Remove {{name}}",
+    "projects_pick_failed": "Could not select folders. Try again.",
+    "projects_local_hint": "Tasks will edit the selected folders on this machine.",
+    "projects_local_offline": "Connect the local runtime to attach folders. You can still add a repository URL.",
     "eyebrow_first": "Your first workspace",
     "eyebrow_resume": "Pick up or start fresh",
     "headline_first": "Name your workspace.",

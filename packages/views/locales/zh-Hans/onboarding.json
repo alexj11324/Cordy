@@ -159,6 +159,17 @@
     }
   },
   "step_workspace": {
+    "projects_label": "绑定项目（可选）",
+    "projects_placeholder": "https://github.com/org/repo",
+    "projects_add": "添加",
+    "projects_pick_folders": "选择本地文件夹",
+    "projects_hint": "可以一次绑定多个，之后也能在工作区里添加。",
+    "projects_invalid_url": "请输入有效的 Git 仓库地址",
+    "projects_attach_failed": "工作区已创建，但部分项目未能绑定",
+    "projects_remove": "移除 {{name}}",
+    "projects_pick_failed": "无法选择文件夹，请重试。",
+    "projects_local_hint": "任务将在这台设备上直接编辑所选文件夹。",
+    "projects_local_offline": "连接本地运行时后即可绑定文件夹，也可以先添加仓库地址。",
     "eyebrow_first": "你的第一个工作区",
     "eyebrow_resume": "继续，或重新开始",
     "headline_first": "给工作区起个名字。",

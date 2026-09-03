@@ -159,6 +159,17 @@
     }
   },
   "step_workspace": {
+    "projects_label": "프로젝트 (선택)",
+    "projects_placeholder": "https://github.com/org/repo",
+    "projects_add": "추가",
+    "projects_pick_folders": "폴더 선택",
+    "projects_hint": "여러 개를 추가할 수 있어요. 나중에 더 추가해도 됩니다.",
+    "projects_invalid_url": "유효한 Git 저장소 URL을 입력하세요",
+    "projects_attach_failed": "워크스페이스는 만들어졌지만 일부 프로젝트를 연결하지 못했어요",
+    "projects_remove": "{{name}} 제거",
+    "projects_pick_failed": "폴더를 선택할 수 없어요. 다시 시도하세요.",
+    "projects_local_hint": "태스크가 이 기기에서 선택한 폴더를 직접 수정합니다.",
+    "projects_local_offline": "폴더를 연결하려면 로컬 런타임을 연결하세요. 저장소 URL은 지금 추가할 수 있어요.",
     "eyebrow_first": "첫 워크스페이스",
     "eyebrow_resume": "이어 하거나 새로 시작",
     "headline_first": "워크스페이스 이름을 정하세요.",

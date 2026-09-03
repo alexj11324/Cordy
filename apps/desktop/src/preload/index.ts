@@ -282,6 +282,9 @@ const desktopAPI = {
   /** Open the OS folder picker and return the chosen absolute path. */
   pickDirectory: (defaultPath?: string) =>
     ipcRenderer.invoke("local-directory:pick", defaultPath),
+  /** Select multiple folders, one project per directory, during onboarding. */
+  pickDirectories: (defaultPath?: string) =>
+    ipcRenderer.invoke("local-directory:pick-many", defaultPath),
   /** Validate that a path is an existing readable+writable directory. */
   validateLocalDirectory: (path: string) =>
     ipcRenderer.invoke("local-directory:validate", path),

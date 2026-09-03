@@ -2131,6 +2131,16 @@ describe("ApiClient explicit workspace targeting", () => {
     expect(slugHeaderOf(fetchMock)).toBe("proxima-centauri");
   });
 
+  it("targets the newly created workspace when attaching an onboarding project", async () => {
+    const fetchMock = stubOk({ id: "project-1" });
+    await new ApiClient("https://api.example.test").createProject(
+      { title: "api", resources: [{ resource_type: "github_repo", resource_ref: { url: "https://github.com/acme/api" } }] },
+      "new-workspace",
+    );
+    expect(slugHeaderOf(fetchMock)).toBe("new-workspace");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.example.test/api/projects");
+  });
+
   it("sends the given slug when listing another workspace's runtimes", async () => {
     const fetchMock = stubOk([]);
     await new ApiClient("https://api.example.test").listRuntimes(

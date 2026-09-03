@@ -35,6 +35,13 @@ export interface ValidateLocalDirectoryResult {
   is_git_repo?: boolean;
 }
 
+type PickDirectoriesResult = {
+  ok: boolean;
+  folders?: Array<{ path: string; basename: string }>;
+  reason?: "cancelled" | "no_window" | "error";
+  error?: string;
+};
+
 export async function validateLocalDirectory(
   path: string,
 ): Promise<ValidateLocalDirectoryResult> {
@@ -106,8 +113,7 @@ export function setupLocalDirectory(
   ipcMain.handle(
     "local-directory:pick",
     async (event, defaultPath?: string): Promise<PickDirectoryResult> => {
-      const win =
-        BrowserWindow.fromWebContents(event.sender) ?? windowGetter();
+      const win = BrowserWindow.fromWebContents(event.sender) ?? windowGetter();
       if (!win) return { ok: false, reason: "no_window" };
       try {
         const result = await dialog.showOpenDialog(win, {
@@ -124,6 +130,32 @@ export function setupLocalDirectory(
         if (!picked) return { ok: false, reason: "cancelled" };
         await onDirectoryChosen?.(picked);
         return { ok: true, path: picked, basename: basename(picked) };
+      } catch (err) {
+        return { ok: false, reason: "error", error: errorMessage(err) };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "local-directory:pick-many",
+    async (event, defaultPath?: string): Promise<PickDirectoriesResult> => {
+      const win = BrowserWindow.fromWebContents(event.sender) ?? windowGetter();
+      if (!win) return { ok: false, reason: "no_window" };
+      try {
+        const result = await dialog.showOpenDialog(win, {
+          properties: ["openDirectory", "createDirectory", "multiSelections"],
+          ...(defaultPath ? { defaultPath } : {}),
+        });
+        if (result.canceled || result.filePaths.length === 0) {
+          return { ok: false, reason: "cancelled" };
+        }
+        const folders: Array<{ path: string; basename: string }> = [];
+        for (const path of result.filePaths) {
+          // The native selection, never renderer-provided paths, grants consent.
+          await onDirectoryChosen?.(path);
+          folders.push({ path, basename: basename(path) });
+        }
+        return { ok: true, folders };
       } catch (err) {
         return { ok: false, reason: "error", error: errorMessage(err) };
       }

@@ -88,6 +88,48 @@ describe("validateLocalDirectory", () => {
 });
 
 describe("directory picker consent", () => {
+  it("grants every folder selected by the native multi-folder picker", async () => {
+    const first = await createTemporaryDirectory();
+    const second = await createTemporaryDirectory();
+    const chosen: string[] = [];
+    ctx.showOpenDialog.mockResolvedValue({
+      canceled: false,
+      filePaths: [first, second],
+    });
+    setupLocalDirectory(
+      () => null,
+      (path) => {
+        chosen.push(path);
+      },
+    );
+
+    await expect(
+      invoke("local-directory:pick-many", "/projects"),
+    ).resolves.toMatchObject({
+      ok: true,
+      folders: [{ path: first }, { path: second }],
+    });
+    expect(chosen).toEqual([first, second]);
+    expect(ctx.showOpenDialog).toHaveBeenCalledWith(expect.anything(), {
+      properties: ["openDirectory", "createDirectory", "multiSelections"],
+      defaultPath: "/projects",
+    });
+  });
+
+  it("does not grant or return folders after cancelling a multi-folder selection", async () => {
+    const chosen = vi.fn();
+    ctx.showOpenDialog.mockResolvedValue({
+      canceled: true,
+      filePaths: ["/not-selected"],
+    });
+    setupLocalDirectory(() => null, chosen);
+    await expect(invoke("local-directory:pick-many")).resolves.toEqual({
+      ok: false,
+      reason: "cancelled",
+    });
+    expect(chosen).not.toHaveBeenCalled();
+  });
+
   it("records the directory the user actually chose", async () => {
     // The picker is the only source of a workspace grant, so this callback is
     // the point where consent enters the main process.
@@ -97,9 +139,12 @@ describe("directory picker consent", () => {
       canceled: false,
       filePaths: [directory],
     });
-    setupLocalDirectory(() => null, (path) => {
-      chosen.push(path);
-    });
+    setupLocalDirectory(
+      () => null,
+      (path) => {
+        chosen.push(path);
+      },
+    );
 
     await expect(invoke("local-directory:pick")).resolves.toMatchObject({
       ok: true,
@@ -111,9 +156,12 @@ describe("directory picker consent", () => {
   it("records nothing when the user cancels", async () => {
     const chosen: string[] = [];
     ctx.showOpenDialog.mockResolvedValue({ canceled: true, filePaths: [] });
-    setupLocalDirectory(() => null, (path) => {
-      chosen.push(path);
-    });
+    setupLocalDirectory(
+      () => null,
+      (path) => {
+        chosen.push(path);
+      },
+    );
 
     await expect(invoke("local-directory:pick")).resolves.toEqual({
       ok: false,
@@ -127,9 +175,12 @@ describe("directory picker consent", () => {
     // validate must not end up with a runnable directory.
     const directory = await createTemporaryDirectory();
     const chosen: string[] = [];
-    setupLocalDirectory(() => null, (path) => {
-      chosen.push(path);
-    });
+    setupLocalDirectory(
+      () => null,
+      (path) => {
+        chosen.push(path);
+      },
+    );
 
     await expect(
       invoke("local-directory:validate", directory),
