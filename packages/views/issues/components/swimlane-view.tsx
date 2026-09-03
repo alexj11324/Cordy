@@ -23,7 +23,7 @@ import { ChevronRight, EyeOff, GripVertical, MoreHorizontal, Pencil, Plus } from
 import { useQuery, useQueries, useQueryClient } from "@tanstack/react-query";
 import type {
   Issue,
-  IssueAssigneeType,
+  IssueExecutorType,
   IssueStatus,
   IssueStatusCategory,
   IssueTableGroupDescriptor,
@@ -93,8 +93,6 @@ type SwimLaneMoveTargetUpdates = Pick<
   UpdateIssueRequest,
   | "parent_issue_id"
   | "project_id"
-  | "owner_type"
-  | "owner_id"
   | "executor_type"
   | "executor_id"
   | "status"
@@ -235,7 +233,7 @@ interface LaneGroup {
   /** Project metadata (project grouping only) — drives the icon in the header. */
   project: Project | null;
   /** Actor (executor grouping only) — drives the avatar in the header. */
-  actor: { type: IssueAssigneeType; id: string } | null;
+  actor: { type: IssueExecutorType; id: string } | null;
   /** Whether this lane owns `issue`. */
   matches: (issue: Issue) => boolean;
   /**
@@ -413,8 +411,8 @@ function buildExecutorLanes(
 ): LaneGroup[] {
   const seen = new Map<string, LaneGroup>();
   for (const issue of visibleIssues) {
-    const executorType = (issue.executor_type ?? issue.owner_type) as IssueAssigneeType | null;
-    const executorId = issue.executor_id ?? issue.owner_id;
+    const executorType = issue.executor_type;
+    const executorId = issue.executor_id;
     if (executorType === null || executorId === null) continue;
     const rawId = `${executorType}:${executorId}`;
     const key = `executor:${rawId}`;
@@ -430,17 +428,13 @@ function buildExecutorLanes(
       project: null,
       actor: { type: executorType, id: executorId },
       matches: (i) =>
-        (i.executor_type ?? i.owner_type) === executorType &&
-        (i.executor_id ?? i.owner_id) === executorId,
-      moveUpdates:
-        executorType === "member"
-          ? { owner_type: "member", owner_id: executorId, executor_type: null, executor_id: null }
-          : { executor_type: executorType, executor_id: executorId },
+        i.executor_type === executorType && i.executor_id === executorId,
+      moveUpdates: { executor_type: executorType, executor_id: executorId },
     });
   }
 
-  // Sort by actor type (members before agents before teams) then by name.
-  const typeOrder: Record<string, number> = { member: 0, agent: 1, team: 2 };
+  // Sort by executor type (agents before teams) then by name.
+  const typeOrder: Record<string, number> = { agent: 0, team: 1 };
   const orderIndex = new Map<string, number>();
   storedOrder.forEach((id, idx) => orderIndex.set(`executor:${id}`, idx));
   const ordered = Array.from(seen.values()).sort((a, b) => {
@@ -507,18 +501,20 @@ function buildServerLanes(
       ),
     ) as Partial<Record<IssueStatus, string>>;
     const value = descriptor.value;
-    if (grouping === "executor" && value.kind === "assignee") {
+    if (grouping === "executor" && value.kind === "executor") {
       const actorRef = value.actor;
-      const actor: { type: IssueAssigneeType; id: string } | null =
+      const actor: { type: IssueExecutorType; id: string } | null =
         actorRef &&
-        (actorRef.type === "member" ||
-          actorRef.type === "agent" ||
+        (actorRef.type === "agent" ||
           actorRef.type === "team")
           ? { type: actorRef.type, id: actorRef.id }
           : null;
       const rawId = actor ? `${actor.type}:${actor.id}` : NONE_LANE_ID;
       return [{
-        key: `executor:${rawId}`,
+        // Keep the opaque server key so pagination state and the rendered
+        // lane agree (`executor:unassigned` is intentionally not the local
+        // persisted-order sentinel `executor:none`).
+        key: descriptor.key,
         rawId,
         isPinned: actor === null,
         isOrphan: false,
@@ -531,19 +527,13 @@ function buildServerLanes(
         actor,
         matches: (issue) =>
           actor
-            ? actor.type === "member"
-              ? issue.owner_type === "member" && issue.owner_id === actor.id
-              : issue.executor_type === actor.type &&
-                issue.executor_id === actor.id
+            ? issue.executor_type === actor.type &&
+              issue.executor_id === actor.id
             : issue.executor_type === null &&
-              issue.executor_id === null &&
-              issue.owner_type === null &&
-              issue.owner_id === null,
+              issue.executor_id === null,
         moveUpdates: actor
-          ? actor.type === "member"
-            ? { owner_type: "member" as const, owner_id: actor.id, executor_type: null, executor_id: null }
-            : { executor_type: actor.type, executor_id: actor.id }
-          : { executor_type: null, executor_id: null, owner_type: null, owner_id: null },
+          ? { executor_type: actor.type, executor_id: actor.id }
+          : { executor_type: null, executor_id: null },
         total: descriptor.count,
         serverCellKeys,
       }];

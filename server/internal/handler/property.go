@@ -77,7 +77,8 @@ var errClientRejected = errors.New("client rejected")
 // form: lowercased, spaces collapsed to underscores — so "Due Date", "due
 // date", and "due_date" are all rejected.
 var reservedPropertyNames = map[string]struct{}{
-	"status": {}, "priority": {}, "assignee": {}, "project": {}, "parent": {},
+	"status": {}, "priority": {}, "owner": {}, "executor": {}, "reviewer": {},
+	"assignee": {}, "project": {}, "parent": {},
 	"stage": {}, "label": {}, "labels": {}, "start_date": {}, "due_date": {},
 	"title": {}, "description": {}, "creator": {}, "created_at": {}, "updated_at": {},
 	"metadata": {}, "properties": {},
@@ -308,7 +309,7 @@ func selectOptionsHint(cfg PropertyConfig) string {
 // ---------------------------------------------------------------------------
 
 // actorPropertyKinds is the V1 value range for actor properties: workspace
-// members only. The issue assignee also accepts "agent" and "team", but
+// members only. The issue executor also accepts "agent" and "team", but
 // neither belongs in a passive reference yet — an agent reference drags in the
 // whole agent-visibility question (private / non-allow-listed agents must not
 // become discoverable by id) for no demonstrated use case, and a team is a
@@ -338,7 +339,7 @@ func actorKindsHint() string {
 }
 
 // parseActorRef splits a stored actor value. Members are referenced by
-// user_id — the same id the assignee pair uses — so "who is this" resolves
+// user_id — the same id the issue role pairs use — so "who is this" resolves
 // identically everywhere in the product.
 func parseActorRef(s string) (actorRef, error) {
 	kind, id, found := strings.Cut(s, ":")

@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func TestListGroupedIssuesAssigneePaginatesPerGroup(t *testing.T) {
+func TestListGroupedIssuesExecutorPaginatesPerGroup(t *testing.T) {
 	ctx := context.Background()
 
 	suffix := time.Now().UnixNano()
@@ -48,7 +48,7 @@ func TestListGroupedIssuesAssigneePaginatesPerGroup(t *testing.T) {
 		_, _ = testPool.Exec(context.Background(), `DELETE FROM agent WHERE id = $1`, agentID)
 	})
 
-	createIssue := func(title, assigneeType, assigneeID string, position float64, startDate *time.Time, stage *int32) string {
+	createIssue := func(title, executorType, executorID string, position float64, startDate *time.Time, stage *int32) string {
 		t.Helper()
 		var number int32
 		if err := testPool.QueryRow(ctx, `
@@ -63,13 +63,6 @@ func TestListGroupedIssuesAssigneePaginatesPerGroup(t *testing.T) {
 			t.Fatalf("next issue number: %v", err)
 		}
 
-		var ownerType, executorType any
-		var ownerID, executorID any
-		if assigneeType == "member" {
-			ownerType, ownerID = assigneeType, assigneeID
-		} else {
-			executorType, executorID = assigneeType, assigneeID
-		}
 		var id string
 		if err := testPool.QueryRow(ctx, `
 			INSERT INTO issue (
@@ -79,7 +72,7 @@ func TestListGroupedIssuesAssigneePaginatesPerGroup(t *testing.T) {
 			)
 			VALUES ($1, $2, NULL, 'todo', 'none', $3, $4, $5, $6, 'member', $7, $8, $9, $10, $11)
 			RETURNING id
-		`, testWorkspaceID, title, ownerType, ownerID, executorType, executorID, testUserID, position, number, startDate, stage).Scan(&id); err != nil {
+		`, testWorkspaceID, title, nil, nil, executorType, executorID, testUserID, position, number, startDate, stage).Scan(&id); err != nil {
 			t.Fatalf("create issue %q: %v", title, err)
 		}
 		t.Cleanup(func() {
@@ -90,15 +83,14 @@ func TestListGroupedIssuesAssigneePaginatesPerGroup(t *testing.T) {
 
 	stageTwo := int32(2)
 	startDate := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
-	createIssue("Grouped member one", "member", assigneeID, 1, &startDate, &stageTwo)
-	createIssue("Grouped member two", "member", assigneeID, 2, nil, nil)
-	createIssue("Grouped member three", "member", assigneeID, 3, nil, nil)
-	createIssue("Grouped agent one", "agent", agentID, 1, nil, nil)
+	createIssue("Grouped executor one", "agent", agentID, 1, &startDate, &stageTwo)
+	createIssue("Grouped executor two", "agent", agentID, 2, nil, nil)
+	createIssue("Grouped executor three", "agent", agentID, 3, nil, nil)
+	createIssue("Grouped executor four", "agent", agentID, 4, nil, nil)
 
 	path := fmt.Sprintf(
-		"/api/issues/grouped?workspace_id=%s&group_by=assignee&statuses=todo&limit=2&assignee_filters=member:%s,agent:%s",
+		"/api/issues/grouped?workspace_id=%s&group_by=executor&statuses=todo&limit=2&executor_filters=agent:%s",
 		testWorkspaceID,
-		assigneeID,
 		agentID,
 	)
 	w := httptest.NewRecorder()
@@ -112,42 +104,33 @@ func TestListGroupedIssuesAssigneePaginatesPerGroup(t *testing.T) {
 		t.Fatalf("decode grouped response: %v", err)
 	}
 
-	memberGroupID := "assignee:member:" + assigneeID
-	agentGroupID := "assignee:agent:" + agentID
-	groups := map[string]IssueAssigneeGroupResponse{}
+	agentGroupID := "executor:agent:" + agentID
+	groups := map[string]IssueExecutorGroupResponse{}
 	for _, group := range resp.Groups {
 		groups[group.ID] = group
-	}
-
-	memberGroup, ok := groups[memberGroupID]
-	if !ok {
-		t.Fatalf("missing member group %s in %#v", memberGroupID, resp.Groups)
-	}
-	if memberGroup.Total != 3 || len(memberGroup.Issues) != 2 {
-		t.Fatalf("member group total/page mismatch: total=%d len=%d", memberGroup.Total, len(memberGroup.Issues))
-	}
-	if memberGroup.Issues[0].Title != "Grouped member one" || memberGroup.Issues[1].Title != "Grouped member two" {
-		t.Fatalf("member group order mismatch: %#v", memberGroup.Issues)
-	}
-	if memberGroup.Issues[0].Stage == nil || *memberGroup.Issues[0].Stage != stageTwo {
-		t.Fatalf("member group first issue stage = %#v, want %d", memberGroup.Issues[0].Stage, stageTwo)
-	}
-	if memberGroup.Issues[0].StartDate == nil || *memberGroup.Issues[0].StartDate != "2026-03-01" {
-		t.Fatalf("member group first issue start_date = %#v, want 2026-03-01", memberGroup.Issues[0].StartDate)
 	}
 
 	agentGroup, ok := groups[agentGroupID]
 	if !ok {
 		t.Fatalf("missing agent group %s in %#v", agentGroupID, resp.Groups)
 	}
-	if agentGroup.Total != 1 || len(agentGroup.Issues) != 1 {
+	if agentGroup.Total != 4 || len(agentGroup.Issues) != 2 {
 		t.Fatalf("agent group total/page mismatch: total=%d len=%d", agentGroup.Total, len(agentGroup.Issues))
+	}
+	if agentGroup.Issues[0].Title != "Grouped executor one" || agentGroup.Issues[1].Title != "Grouped executor two" {
+		t.Fatalf("executor group order mismatch: %#v", agentGroup.Issues)
+	}
+	if agentGroup.Issues[0].Stage == nil || *agentGroup.Issues[0].Stage != stageTwo {
+		t.Fatalf("executor group first issue stage = %#v, want %d", agentGroup.Issues[0].Stage, stageTwo)
+	}
+	if agentGroup.Issues[0].StartDate == nil || *agentGroup.Issues[0].StartDate != "2026-03-01" {
+		t.Fatalf("executor group first issue start_date = %#v, want 2026-03-01", agentGroup.Issues[0].StartDate)
 	}
 
 	nextPath := fmt.Sprintf(
-		"/api/issues/grouped?workspace_id=%s&group_by=assignee&statuses=todo&limit=2&offset=2&group_executor_type=member&group_executor_id=%s",
+		"/api/issues/grouped?workspace_id=%s&group_by=executor&statuses=todo&limit=2&offset=2&group_executor_type=agent&group_executor_id=%s",
 		testWorkspaceID,
-		assigneeID,
+		agentID,
 	)
 	next := httptest.NewRecorder()
 	testHandler.ListGroupedIssues(next, newRequest("GET", nextPath, nil))
@@ -162,10 +145,10 @@ func TestListGroupedIssuesAssigneePaginatesPerGroup(t *testing.T) {
 	if len(nextResp.Groups) != 1 {
 		t.Fatalf("expected one next-page group, got %#v", nextResp.Groups)
 	}
-	if nextResp.Groups[0].ID != memberGroupID || nextResp.Groups[0].Total != 3 || len(nextResp.Groups[0].Issues) != 1 {
+	if nextResp.Groups[0].ID != agentGroupID || nextResp.Groups[0].Total != 4 || len(nextResp.Groups[0].Issues) != 2 {
 		t.Fatalf("unexpected next-page group: %#v", nextResp.Groups[0])
 	}
-	if nextResp.Groups[0].Issues[0].Title != "Grouped member three" {
+	if nextResp.Groups[0].Issues[0].Title != "Grouped executor three" || nextResp.Groups[0].Issues[1].Title != "Grouped executor four" {
 		t.Fatalf("unexpected next-page issue: %#v", nextResp.Groups[0].Issues[0])
 	}
 }

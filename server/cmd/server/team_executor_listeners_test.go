@@ -30,7 +30,7 @@ func createAssignmentListenerTestTeam(t *testing.T) string {
 	var teamID string
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO team (workspace_id, name, description, leader_id, creator_id)
-		VALUES ($1, 'Team assignee listener test', '', $2, $3)
+		VALUES ($1, 'Team executor listener test', '', $2, $3)
 		RETURNING id
 	`, testWorkspaceID, leaderID, testUserID).Scan(&teamID); err != nil {
 		t.Fatalf("create team: %v", err)
@@ -48,7 +48,7 @@ func createAssignmentListenerTestTeam(t *testing.T) string {
 // constrains to member/agent identities. The log assertion is load-bearing:
 // checking only for zero team rows would also pass in the broken version
 // because PostgreSQL rejects those rows before the listeners log and return.
-func TestTeamAssigneeListenersSkipUnsupportedRecipientWrites(t *testing.T) {
+func TestTeamExecutorListenersSkipUnsupportedRecipientWrites(t *testing.T) {
 	queries := db.New(testPool)
 	bus := events.New()
 	registerSubscriberListeners(bus, testPool)
@@ -66,7 +66,7 @@ func TestTeamAssigneeListenersSkipUnsupportedRecipientWrites(t *testing.T) {
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelError})))
 	defer slog.SetDefault(previousLogger)
 
-	assigneeType := "team"
+	executorType := "team"
 	issue := handler.IssueResponse{
 		ID:           issueID,
 		WorkspaceID:  testWorkspaceID,
@@ -75,7 +75,7 @@ func TestTeamAssigneeListenersSkipUnsupportedRecipientWrites(t *testing.T) {
 		Priority:     "medium",
 		CreatorType:  "member",
 		CreatorID:    testUserID,
-		ExecutorType: &assigneeType,
+		ExecutorType: &executorType,
 		ExecutorID:   &teamID,
 	}
 
@@ -93,7 +93,7 @@ func TestTeamAssigneeListenersSkipUnsupportedRecipientWrites(t *testing.T) {
 		ActorID:     testUserID,
 		Payload: map[string]any{
 			"issue":            issue,
-			"assignee_changed": true,
+			"executor_changed": true,
 		},
 	})
 

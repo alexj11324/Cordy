@@ -113,7 +113,7 @@ func TestPublishAttachmentsChangedAlsoBroadcastsUpdatedDescription(t *testing.T)
 	if !ok || gotDescription == nil || *gotDescription != description {
 		t.Fatalf("broadcast description = %#v, want %q", issuePayload["description"], description)
 	}
-	for _, key := range []string{"assignee_changed", "status_changed", "project_changed"} {
+	for _, key := range []string{"owner_changed", "executor_changed", "status_changed", "project_changed"} {
 		if changed, ok := payload[key].(bool); !ok || changed {
 			t.Fatalf("%s = %#v, want false", key, payload[key])
 		}

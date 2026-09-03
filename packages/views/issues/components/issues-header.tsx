@@ -218,7 +218,7 @@ function useIssueCounts(
             ? status
             : facet.kind === "priority"
               ? priority
-              : facet.kind === "assignee"
+              : facet.kind === "executor"
                 ? executor
                 : facet.kind === "creator"
                   ? creator
@@ -235,7 +235,7 @@ function useIssueCounts(
           continue;
         }
         for (const value of facet.values) {
-          if (facet.kind === "assignee" && value.key === "__none__") {
+          if (facet.kind === "executor" && value.key === "__none__") {
             noExecutor = value.count;
           } else if (facet.kind === "project" && value.key === "__none__") {
             noProject = value.count;
@@ -1629,7 +1629,7 @@ export function IssueFilterMenu({
             {/* Executor */}
             <DropdownMenuSub
               onOpenChange={(open) =>
-                onTableFacetChange?.(open ? { kind: "assignee" } : null)
+                onTableFacetChange?.(open ? { kind: "executor" } : null)
               }
             >
               <DropdownMenuSubTrigger>

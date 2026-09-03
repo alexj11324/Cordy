@@ -17,7 +17,7 @@ import (
 )
 
 // noneMarker stands in for a missing side of a transition — an issue that had
-// no assignee before, or was unassigned after.
+// no role actor before, or had that role cleared after.
 const noneMarker = "(none)"
 
 // headerTimelineTruncated mirrors handler.HeaderTimelineTruncated. Declared as
@@ -30,9 +30,9 @@ const headerTimelineTruncated = "X-Timeline-Truncated"
 var issueTimelineCmd = &cobra.Command{
 	Use:     "timeline <id>",
 	Aliases: []string{"history"},
-	Short:   "Chronological issue history — when status/assignee changed, how long it has been stuck",
+	Short:   "Chronological issue history — when status or roles changed, how long it has been stuck",
 	Long: `Chronological history of an issue: the activity log — status / priority /
-assignee / title / date changes, plus whatever task_completed / task_failed
+owner / executor / reviewer / title / date changes, plus whatever task_completed / task_failed
 records the server already writes — merged with comments, oldest first.
 
 Use it for the questions the current issue fields cannot answer:
@@ -71,7 +71,7 @@ Examples:
 func init() {
 	issueTimelineCmd.Flags().String("output", "table", "Output format: table or json")
 	issueTimelineCmd.Flags().Bool("activity-only", false, "Drop comments and return every activity record — including the task_completed / task_failed entries the server already writes, not just field changes. Much cheaper to read than the full timeline; use --action when you want only state transitions.")
-	issueTimelineCmd.Flags().StringSlice("action", nil, "Only return activities with these actions (repeatable or comma-separated). Implies --activity-only, since comments carry no action. Known actions: created, status_changed, priority_changed, assignee_changed, title_changed, description_updated, start_date_changed, due_date_changed, task_completed, task_failed, team_leader_evaluated.")
+	issueTimelineCmd.Flags().StringSlice("action", nil, "Only return activities with these actions (repeatable or comma-separated). Implies --activity-only, since comments carry no action. Known actions: created, status_changed, priority_changed, owner_changed, executor_changed, review_handoff, title_changed, description_updated, start_date_changed, due_date_changed, task_completed, task_failed, team_leader_evaluated.")
 	issueTimelineCmd.Flags().String("since", "", "Only return entries created after this timestamp (RFC3339)")
 	issueTimelineCmd.Flags().Int("tail", 0, "Only return the N most recent entries (applied after every other filter)")
 	issueTimelineCmd.Flags().Bool("full-id", false, "Show full UUIDs in table output")
@@ -281,7 +281,7 @@ func timelineDetail(entry map[string]any, actors actorDisplayLookup, fullID bool
 		return transitionText("", strVal(details, "to"))
 	}
 
-	// assignee_changed: {"from_type","from_id","to_type","to_id"}, any of which
+	// role changes: {"from_type","from_id","to_type","to_id"}, any of which
 	// is absent when that side was unassigned.
 	if hasAnyKey(details, "from_type", "from_id", "to_type", "to_id") {
 		return transitionText(

@@ -3,7 +3,7 @@ import {
   closestCenter,
   type CollisionDetection,
 } from "@dnd-kit/core";
-import type { Issue, IssueAssigneeType, IssueStatus, UpdateIssueRequest } from "@patchbay/core/types";
+import type { Issue, IssueExecutorType, IssueStatus, UpdateIssueRequest } from "@patchbay/core/types";
 import type { IssueGrouping } from "@patchbay/core/issues/stores/view-store";
 import { propertyIdFromViewKey } from "@patchbay/core/issues/stores/view-store";
 import { issueColumnCategory } from "@patchbay/core/issues";
@@ -12,8 +12,6 @@ import type { BoardColumnGroup } from "../components/board-column";
 export type DragMoveTargetUpdates = Pick<
   UpdateIssueRequest,
   | "status"
-  | "owner_type"
-  | "owner_id"
   | "executor_type"
   | "executor_id"
   | "project_id"
@@ -25,7 +23,7 @@ export type DragMoveUpdates = DragMoveTargetUpdates & {
   after_id: string | null;
 };
 
-const UNASSIGNED_GROUP_ID = "assignee:unassigned";
+const UNASSIGNED_GROUP_ID = "executor:unassigned";
 
 export function makeKanbanCollision(groupIds: Set<string>): CollisionDetection {
   return (args) => {
@@ -47,11 +45,11 @@ export function propertyGroupId(propertyId: string, optionId: string | null): st
   return `property:${propertyId}:${optionId ?? "none"}`;
 }
 
-export function assigneeGroupId(
-  type: IssueAssigneeType | null,
+export function executorGroupId(
+  type: IssueExecutorType | null,
   id: string | null,
 ): string {
-  return type && id ? `assignee:${type}:${id}` : UNASSIGNED_GROUP_ID;
+  return type && id ? `executor:${type}:${id}` : UNASSIGNED_GROUP_ID;
 }
 
 /** Mirrors the server's project group key (`project:<id>` / `project:none`)
@@ -84,9 +82,9 @@ export function getIssueGroupId(
     }
     return propertyGroupId(propertyId, optionId);
   }
-  return assigneeGroupId(
-    issue.executor_type ?? issue.owner_type,
-    issue.executor_id ?? issue.owner_id,
+  return executorGroupId(
+    issue.executor_type,
+    issue.executor_id,
   );
 }
 
@@ -172,11 +170,11 @@ export function issueMatchesGroup(issue: Issue, group: BoardColumnGroup): boolea
   if (group.projectId !== undefined) {
     return (issue.project_id ?? null) === group.projectId;
   }
-  const type = issue.executor_type ?? issue.owner_type;
-  const id = issue.executor_id ?? issue.owner_id;
+  const type = issue.executor_type;
+  const id = issue.executor_id;
   return (
-    (type ?? null) === (group.assigneeType ?? null) &&
-    (id ?? null) === (group.assigneeId ?? null)
+    (type ?? null) === (group.executorType ?? null) &&
+    (id ?? null) === (group.executorId ?? null)
   );
 }
 
@@ -204,27 +202,16 @@ export function getMoveUpdates(
   if (group.projectId !== undefined) {
     return { project_id: group.projectId, position };
   }
-  if (group.assigneeType === "member") {
+  if (!group.executorType) {
     return {
-      owner_type: "member",
-      owner_id: group.assigneeId ?? null,
-      executor_type: null,
-      executor_id: null,
-      position,
-    };
-  }
-  if (!group.assigneeType) {
-    return {
-      owner_type: null,
-      owner_id: null,
       executor_type: null,
       executor_id: null,
       position,
     };
   }
   return {
-    executor_type: group.assigneeType,
-    executor_id: group.assigneeId ?? null,
+    executor_type: group.executorType,
+    executor_id: group.executorId ?? null,
     position,
   };
 }

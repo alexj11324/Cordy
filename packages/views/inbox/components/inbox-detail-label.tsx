@@ -19,7 +19,8 @@ export function useTypeLabels(): Record<InboxItemType, string> {
     issue_assigned: t(($) => $.types.issue_assigned),
     issue_subscribed: t(($) => $.types.issue_subscribed),
     unassigned: t(($) => $.types.unassigned),
-    assignee_changed: t(($) => $.types.assignee_changed),
+    owner_changed: t(($) => $.types.owner_changed),
+    executor_changed: t(($) => $.types.executor_changed),
     status_changed: t(($) => $.types.status_changed),
     priority_changed: t(($) => $.types.priority_changed),
     start_date_changed: t(($) => $.types.start_date_changed),
@@ -84,16 +85,28 @@ export function InboxDetailLabel({ item }: { item: InboxItem }) {
       );
     }
     case "issue_assigned": {
+      if (details.new_owner_id) {
+        return <span>{t(($) => $.labels.assigned_owner_to, { name: getActorName(details.new_owner_type ?? "member", details.new_owner_id) })}</span>;
+      }
       if (details.new_executor_id) {
-        return <span>{t(($) => $.labels.assigned_to, { name: getActorName(details.new_executor_type ?? "member", details.new_executor_id) })}</span>;
+        return <span>{t(($) => $.labels.assigned_executor_to, { name: getActorName(details.new_executor_type ?? "member", details.new_executor_id) })}</span>;
       }
       return <span>{typeLabels[item.type]}</span>;
     }
-    case "unassigned":
-      return <span>{t(($) => $.labels.removed_assignee)}</span>;
-    case "assignee_changed": {
+    case "unassigned": {
+      if (details.prev_owner_id) return <span>{t(($) => $.labels.removed_owner)}</span>;
+      if (details.prev_executor_id) return <span>{t(($) => $.labels.removed_executor)}</span>;
+      return <span>{typeLabels[item.type]}</span>;
+    }
+    case "owner_changed": {
+      if (details.new_owner_id) {
+        return <span>{t(($) => $.labels.assigned_owner_to, { name: getActorName(details.new_owner_type ?? "member", details.new_owner_id) })}</span>;
+      }
+      return <span>{typeLabels[item.type]}</span>;
+    }
+    case "executor_changed": {
       if (details.new_executor_id) {
-        return <span>{t(($) => $.labels.assigned_to, { name: getActorName(details.new_executor_type ?? "member", details.new_executor_id) })}</span>;
+        return <span>{t(($) => $.labels.assigned_executor_to, { name: getActorName(details.new_executor_type ?? "member", details.new_executor_id) })}</span>;
       }
       return <span>{typeLabels[item.type]}</span>;
     }

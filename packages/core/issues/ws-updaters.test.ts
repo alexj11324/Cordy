@@ -640,7 +640,7 @@ describe("onIssueUpdated — position move is surgical, not a list refetch", () 
       qc,
       WS_ID,
       { ...mine, owner_type: "member", owner_id: "user-2" },
-      { assigneeChanged: true },
+      { ownerChanged: true },
     );
 
     // The card LEAVES the loaded list surgically — the fix for the residue
@@ -651,7 +651,7 @@ describe("onIssueUpdated — position move is surgical, not a list refetch", () 
     expect(qc.getQueryState(assignedKey)?.isInvalidated).toBe(false);
   });
 
-  it("flags union-scope (my:all) lists stale on an assignee change instead of guessing membership", () => {
+  it("flags union-scope (my:all) lists stale on an owner change instead of guessing membership", () => {
     const myAllListKey = issueKeys.myListSorted(WS_ID, "all", {}, undefined);
     const mine: Issue = { ...issueA, owner_type: "member", owner_id: "user-1" };
     qc.setQueryData<ListIssuesCache>(myAllListKey, makeListCache(mine));
@@ -660,7 +660,7 @@ describe("onIssueUpdated — position move is surgical, not a list refetch", () 
       qc,
       WS_ID,
       { ...mine, owner_type: "member", owner_id: "user-2" },
-      { assigneeChanged: true },
+      { ownerChanged: true },
     );
 
     // Union membership (assigned ∪ created ∪ involved) is server knowledge:

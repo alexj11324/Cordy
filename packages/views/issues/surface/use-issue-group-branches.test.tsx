@@ -75,10 +75,10 @@ describe("useIssueGroupBranches", () => {
           groups: [
             {
               key: secondPage
-                ? "assignee:unassigned"
-                : "assignee:member:user-1",
+                ? "executor:unassigned"
+                : "executor:member:user-1",
               value: {
-                kind: "assignee" as const,
+                kind: "executor" as const,
                 actor: secondPage
                   ? null
                   : { type: "member" as const, id: "user-1" },
@@ -102,7 +102,7 @@ describe("useIssueGroupBranches", () => {
         useIssueGroupBranches({
           wsId: "ws-1",
           query,
-          group: { kind: "assignee" },
+          group: { kind: "executor" },
           enabled: true,
         }),
       { wrapper: wrapper(queryClient) },

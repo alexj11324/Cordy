@@ -16,7 +16,7 @@ import { arrayMove } from "@dnd-kit/sortable";
 import { toast } from "sonner";
 import type {
   Issue,
-  IssueAssigneeType,
+  IssueExecutorType,
   IssueStatusCategory,
   Project,
   IssueProperty,
@@ -49,7 +49,7 @@ import {
   type DragMoveUpdates,
   makeKanbanCollision,
   statusGroupId,
-  assigneeGroupId,
+  executorGroupId,
   buildColumns,
   computePosition,
   findColumn,
@@ -79,7 +79,7 @@ interface BuildGroupsContext extends ProjectColumnLabels {
   getActorName: (type: string, id: string) => string;
   groupingProperty: IssueProperty | null;
   projectMap: Map<string, Project> | undefined;
-  noAssigneeLabel: string;
+  noExecutorLabel: string;
   noValueLabel: string;
 }
 
@@ -108,19 +108,14 @@ function projectColumn(
   };
 }
 
-function createDataForAssignee(
-  actor: { type: IssueAssigneeType; id: string } | null,
+function createDataForExecutor(
+  actor: { type: IssueExecutorType; id: string } | null,
 ): IssueCreateDefaults {
   if (!actor) {
     return {
-      owner_type: null,
-      owner_id: null,
       executor_type: null,
       executor_id: null,
     };
-  }
-  if (actor.type === "member") {
-    return { owner_type: "member", owner_id: actor.id };
   }
   return { executor_type: actor.type, executor_id: actor.id };
 }
@@ -154,7 +149,7 @@ function buildGroups(
     getActorName,
     groupingProperty,
     projectMap,
-    noAssigneeLabel,
+    noExecutorLabel,
     noValueLabel,
     ...projectLabels
   }: BuildGroupsContext,
@@ -212,41 +207,40 @@ function buildGroups(
 
   const groups = new Map<string, BoardColumnGroup>();
   for (const issue of issues) {
-    const assigneeType = issue.executor_type ?? issue.owner_type;
-    const assigneeId = issue.executor_id ?? issue.owner_id;
-    const id = assigneeGroupId(assigneeType, assigneeId);
+    const executorType = issue.executor_type;
+    const executorId = issue.executor_id;
+    const id = executorGroupId(executorType, executorId);
     if (groups.has(id)) continue;
 
-    if (assigneeType && assigneeId) {
+    if (executorType && executorId) {
       groups.set(id, {
         id,
-        title: getActorName(assigneeType, assigneeId),
-        assigneeType,
-        assigneeId,
-        createData: createDataForAssignee({ type: assigneeType, id: assigneeId }),
+        title: getActorName(executorType, executorId),
+        executorType,
+        executorId,
+        createData: createDataForExecutor({ type: executorType, id: executorId }),
       });
       continue;
     }
 
     groups.set(id, {
       id,
-      title: noAssigneeLabel,
-      assigneeType: null,
-      assigneeId: null,
-      createData: createDataForAssignee(null),
+      title: noExecutorLabel,
+      executorType: null,
+      executorId: null,
+      createData: createDataForExecutor(null),
     });
   }
 
   const order: Record<string, number> = {
-    member: 0,
-    agent: 1,
-    team: 2,
-    none: 3,
+    agent: 0,
+    team: 1,
+    none: 2,
   };
 
   return Array.from(groups.values()).toSorted((a, b) => {
-    const aOrder = order[a.assigneeType ?? "none"] ?? 99;
-    const bOrder = order[b.assigneeType ?? "none"] ?? 99;
+    const aOrder = order[a.executorType ?? "none"] ?? 99;
+    const bOrder = order[b.executorType ?? "none"] ?? 99;
     if (aOrder !== bOrder) return aOrder - bOrder;
     return a.title.localeCompare(b.title);
   });
@@ -346,15 +340,14 @@ function BoardViewImpl({
     () => (groupBranches?.enabled ? groupBranches.issues : issues),
     [groupBranches, issues],
   );
-  const hydratedAssigneeGroups = useMemo<BoardColumnGroup[] | undefined>(() => {
+  const hydratedExecutorGroups = useMemo<BoardColumnGroup[] | undefined>(() => {
     if (grouping === "executor" && groupBranches?.enabled) {
       return groupBranches.descriptors.flatMap((descriptor): BoardColumnGroup[] => {
-        if (descriptor.value.kind !== "assignee") return [];
+        if (descriptor.value.kind !== "executor") return [];
         const actorRef = descriptor.value.actor;
-        const actor: { type: IssueAssigneeType; id: string } | null =
+        const actor: { type: IssueExecutorType; id: string } | null =
           actorRef &&
-          (actorRef.type === "member" ||
-            actorRef.type === "agent" ||
+          (actorRef.type === "agent" ||
             actorRef.type === "team")
             ? { type: actorRef.type, id: actorRef.id }
             : null;
@@ -363,10 +356,10 @@ function BoardViewImpl({
           title: actor
             ? getActorName(actor.type, actor.id)
             : t(($) => $.filters.no_executor),
-          assigneeType: actor?.type ?? null,
-          assigneeId: actor?.id ?? null,
+          executorType: actor?.type ?? null,
+          executorId: actor?.id ?? null,
           totalCount: descriptor.count,
-          createData: createDataForAssignee(actor),
+          createData: createDataForExecutor(actor),
         }];
       });
     }
@@ -445,13 +438,13 @@ function BoardViewImpl({
   const groups = useMemo(
     () => {
       const built =
-        hydratedAssigneeGroups ??
+        hydratedExecutorGroups ??
         hydratedProjectGroups ??
         buildGroups(issues, visibleStatuses, grouping, {
           getActorName,
           groupingProperty,
           projectMap,
-          noAssigneeLabel: t(($) => $.filters.no_executor),
+          noExecutorLabel: t(($) => $.filters.no_executor),
           noValueLabel: t(($) => $.board.no_value),
           ...projectColumnLabels,
         });
@@ -460,7 +453,7 @@ function BoardViewImpl({
         totalCount: groupPagination?.[group.id]?.total ?? group.totalCount,
       }));
     },
-    [hydratedAssigneeGroups, hydratedProjectGroups, issues, visibleStatuses, grouping, getActorName, groupingProperty, projectMap, projectColumnLabels, groupPagination, t],
+    [hydratedExecutorGroups, hydratedProjectGroups, issues, visibleStatuses, grouping, getActorName, groupingProperty, projectMap, projectColumnLabels, groupPagination, t],
   );
   const groupIds = useMemo(
     () => new Set(groups.map((group) => group.id)),

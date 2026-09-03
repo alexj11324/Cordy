@@ -110,15 +110,15 @@ vi.mock("@patchbay/core/properties", async (importOriginal) => {
   };
 });
 
-// Board default grouping is "status"; swimlane switches to "assignee" per test.
+// Board default grouping is "status"; swimlane switches to "executor" per test.
 const mockViewState: Record<string, unknown> = {
   grouping: "status",
   sortBy: "position",
   sortDirection: "asc",
   cardProperties: { priority: true, executor: true, dueDate: true, project: true, childProgress: true, labels: true },
-  swimlaneGrouping: "assignee",
-  swimlaneOrders: { parent: [], project: [], assignee: [] },
-  collapsedSwimlanes: { parent: [], project: [], assignee: [] },
+  swimlaneGrouping: "executor",
+  swimlaneOrders: { parent: [], project: [], executor: [] },
+  collapsedSwimlanes: { parent: [], project: [], executor: [] },
   setSwimlaneGrouping: vi.fn(),
   setSwimlaneOrder: vi.fn(),
   toggleSwimlaneCollapsed: vi.fn(),
@@ -229,7 +229,7 @@ describe("Issues cold-load render loop (MUL-4985)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockViewState.grouping = "status";
-    mockViewState.swimlaneGrouping = "assignee";
+    mockViewState.swimlaneGrouping = "executor";
     setApiInstance({
       listMembers: pending,
       listAgents: pending,
@@ -267,8 +267,8 @@ describe("Issues cold-load render loop (MUL-4985)", () => {
     expect(screen.getByText("Board Card 0")).toBeInTheDocument();
   });
 
-  it("Swimlane grouped by assignee paints during cold load (real Virtuoso mounts, no update-depth loop)", async () => {
-    mockViewState.swimlaneGrouping = "assignee";
+  it("Swimlane grouped by executor paints during cold load (real Virtuoso mounts, no update-depth loop)", async () => {
+    mockViewState.swimlaneGrouping = "executor";
     const issues = [
       makeIssue({ id: "s1", title: "Swim Card 1", owner_type: "member", owner_id: "user-1", status: "todo" }),
       makeIssue({ id: "s2", title: "Swim Card 2", executor_type: "agent", executor_id: "agent-1", status: "in_progress" }),

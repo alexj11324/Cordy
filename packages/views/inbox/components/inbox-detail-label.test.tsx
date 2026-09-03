@@ -147,4 +147,43 @@ describe("InboxDetailLabel localized values", () => {
     expect(container.textContent).toContain("8月21日");
     expect(container.textContent).not.toContain("Aug");
   });
+
+  it("names the owner role in assignment details", () => {
+    const { container } = render(
+      <InboxDetailLabel
+        item={item({
+          type: "issue_assigned",
+          details: { new_owner_type: "member", new_owner_id: "member-2" },
+        })}
+      />,
+    );
+
+    expect(container.textContent).toBe("Set owner to Someone");
+  });
+
+  it("names the executor role in change details", () => {
+    const { container } = render(
+      <InboxDetailLabel
+        item={item({
+          type: "executor_changed",
+          details: { new_executor_type: "agent", new_executor_id: "agent-2" },
+        })}
+      />,
+    );
+
+    expect(container.textContent).toBe("Set executor to Someone");
+  });
+
+  it("names the role that was cleared", () => {
+    const { container } = render(
+      <InboxDetailLabel
+        item={item({
+          type: "unassigned",
+          details: { prev_owner_type: "member", prev_owner_id: "member-2" },
+        })}
+      />,
+    );
+
+    expect(container.textContent).toBe("Removed owner");
+  });
 });

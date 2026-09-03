@@ -25,7 +25,7 @@ const (
 // resolve from issue state alone.
 //
 // CanAccessAgent is the private-agent gate. The write paths enforce it at the
-// HTTP boundary (validateAssigneePair on assign, canEnqueueTeamLeader inside
+// HTTP boundary (validateExecutorPair on assign, canEnqueueTeamLeader inside
 // the team enqueue helper) and therefore pass an allow-all probe so the gate
 // is never duplicated or sunk into the service layer. Preview passes the real
 // gate so it never leaks a private agent's readiness to a member who cannot
@@ -47,13 +47,13 @@ type IssueTriggerProbe struct {
 }
 
 // IssueTriggerInput describes one prospective issue write in its post-write
-// shape. AssigneeChanged / StatusChanged mark which fields the write touches;
+// shape. ExecutorChanged / StatusChanged mark which fields the write touches;
 // IsCreate marks a brand-new issue (no prior task to cancel, no self-loop).
 type IssueTriggerInput struct {
 	Issue           db.Issue
 	PrevStatus      string
 	IsCreate        bool
-	AssigneeChanged bool
+	ExecutorChanged bool
 	StatusChanged   bool
 }
 
@@ -122,7 +122,7 @@ func (s *IssueService) WillEnqueueRun(ctx context.Context, in IssueTriggerInput,
 
 	var source RunEnqueueSource
 	switch {
-	case in.IsCreate || in.AssigneeChanged:
+	case in.IsCreate || in.ExecutorChanged:
 		// Backlog is the parking lot: assigning into backlog never starts a run.
 		if currentStatus == "backlog" {
 			return IssueRunTrigger{}, false

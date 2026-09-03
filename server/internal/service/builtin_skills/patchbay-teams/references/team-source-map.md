@@ -269,7 +269,7 @@ Contracts:
   `HasPendingTaskForIssueAndAgent` (idempotent per parent issue + agent).
 - no leader-invocation gate: child-done does NOT re-check whether the child's
   completer can invoke the leader. The parent was already permission-checked at
-  team-assign time (`validateAssigneePair`), so waking its own leader is a
+  team-assign time (`validateExecutorPair`), so waking its own leader is a
   coordination handoff, not a fresh invocation. Re-checking it here failed
   closed for the DEFAULT private leader (the child's completer is an
   agent/system actor with no resolvable human originator), stranding every

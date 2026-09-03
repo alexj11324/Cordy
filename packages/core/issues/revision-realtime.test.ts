@@ -270,7 +270,7 @@ describe("auxiliary revision — sibling caches under a shared key prefix", () =
     );
     // The assignee-grouped caches share the `my` prefix with the bucketed
     // ones but carry no `byStatus`.
-    qc.setQueryData(issueKeys.myAssigneeGroups("ws-1", "assigned", {}), {
+    qc.setQueryData(issueKeys.myExecutorGroups("ws-1", "assigned", {}), {
       groups: [],
     });
   }
@@ -300,7 +300,7 @@ describe("auxiliary revision — sibling caches under a shared key prefix", () =
     ).toBe(false);
     expect(
       qc.getQueryState(
-        issueKeys.myAssigneeGroups("ws-1", "assigned", {}),
+        issueKeys.myExecutorGroups("ws-1", "assigned", {}),
       )?.isInvalidated,
     ).toBe(false);
   });

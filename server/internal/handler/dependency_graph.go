@@ -1005,7 +1005,7 @@ func (h *Handler) validateDependencyGraphAssignments(ctx context.Context, r *htt
 				assignment.ownerID = assigneeID
 			case "agent", "team":
 				executorType := pgtype.Text{String: task.Assignee.Type, Valid: true}
-				status, message := h.validateAssigneePair(ctx, r, uuidToString(workspaceID), executorType, assigneeID, scopeChildOf(parent))
+				status, message := h.validateExecutorPair(ctx, r, uuidToString(workspaceID), executorType, assigneeID, scopeChildOf(parent))
 				if status != 0 {
 					return nil, &dependencyGraphError{status: status, code: "invalid_assignee", msg: message}
 				}

@@ -6,7 +6,7 @@ import { projectGanttIssuesOptions } from "../queries";
  * concrete query options. Every list-shaped mode (table, list, board,
  * swimlane) is served by the server-owned Table query channel; the Gantt
  * projection below is the one remaining scoped fetch, and it compiles its
- * assignee-type narrowing from the same plan as everything else.
+ * owner/executor narrowing from the same plan as everything else.
  */
 export function issueSurfaceGanttOptions(
   wsId: string,
@@ -16,6 +16,13 @@ export function issueSurfaceGanttOptions(
   return projectGanttIssuesOptions(
     wsId,
     projectId,
-    plan.queryFilter.executor_types ?? plan.queryFilter.assignee_types,
+    {
+      ...(plan.queryFilter.owner_types
+        ? { owner_types: plan.queryFilter.owner_types }
+        : {}),
+      ...(plan.queryFilter.executor_types
+        ? { executor_types: plan.queryFilter.executor_types }
+        : {}),
+    },
   );
 }

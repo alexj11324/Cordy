@@ -183,15 +183,14 @@ func (h *Handler) resolveIssueTableGroup(w http.ResponseWriter, r *http.Request,
 			categoryKeys:     categoryKeys,
 			statusCustomKeys: customKeys,
 		}, true
-	case "assignee":
+	case "executor":
 		return resolvedIssueTableGroup{
-			kind:      "assignee",
-			groupExpr: "CASE WHEN " + effectiveAssigneeTypeSQL + " IS NULL OR " + effectiveAssigneeIDSQL + " IS NULL THEN '__unassigned__' ELSE " + effectiveAssigneeTypeSQL + " || ':' || " + effectiveAssigneeIDSQL + "::text END",
+			kind:      "executor",
+			groupExpr: "CASE WHEN i.executor_type IS NULL OR i.executor_id IS NULL THEN '__unassigned__' ELSE i.executor_type || ':' || i.executor_id::text END",
 			// groupSortExpr runs after issues have been reduced to one row per
 			// actor. Resolving display names before GROUP BY executes one lookup
-			// per issue and turns large assignee groups into an N+1 query plan.
+			// per issue and turns large executor groups into an N+1 query plan.
 			groupSortExpr: `LOWER(COALESCE(CASE split_part(group_value, ':', 1)
-  WHEN 'member' THEN (SELECT u.name FROM "user" u WHERE u.id = split_part(group_value, ':', 2)::uuid)
   WHEN 'agent' THEN (SELECT a.name FROM agent a WHERE a.workspace_id = $1 AND a.id = split_part(group_value, ':', 2)::uuid)
   WHEN 'team' THEN (SELECT s.name FROM team s WHERE s.workspace_id = $1 AND s.id = split_part(group_value, ':', 2)::uuid)
 END, ''))`,
@@ -220,7 +219,7 @@ END, ''))`,
 			return resolvedIssueTableGroup{}, false
 		}
 		secondaryCategory := group.Secondary == "status_category"
-		if group.Primary != "assignee" && group.Primary != "project" && group.Primary != "parent" {
+		if group.Primary != "executor" && group.Primary != "project" && group.Primary != "parent" {
 			writeIssueTableUnsupportedGroup(w, "primary_group_unsupported", "This primary group is not supported.")
 			return resolvedIssueTableGroup{}, false
 		}
@@ -362,8 +361,8 @@ func (group resolvedIssueTableGroup) orderExpression(addArg func(any) string) st
 	switch group.kind {
 	case "status", "status_category":
 		return "CASE group_value WHEN 'backlog' THEN 0 WHEN 'todo' THEN 1 WHEN 'in_progress' THEN 2 WHEN 'in_review' THEN 3 WHEN 'done' THEN 4 WHEN 'blocked' THEN 5 WHEN 'cancelled' THEN 6 ELSE 7 END"
-	case "assignee":
-		return "CASE split_part(group_value, ':', 1) WHEN 'member' THEN 0 WHEN 'agent' THEN 1 WHEN 'team' THEN 2 ELSE 3 END"
+	case "executor":
+		return "CASE split_part(group_value, ':', 1) WHEN 'agent' THEN 0 WHEN 'team' THEN 1 ELSE 2 END"
 	case "project":
 		return "CASE WHEN group_value = '__no_project__' THEN 0 ELSE 1 END"
 	case "parent":
@@ -478,20 +477,20 @@ func (group resolvedIssueTableGroup) descriptor(raw string, count int64, context
 		// existing consumer of a status group keeps working. The KEY is what
 		// distinguishes the two contracts. (MUL-6243)
 		descriptor.Value = issueTableGroupValueResponse{Kind: "status", Status: raw}
-	case "assignee":
-		descriptor.Value.Kind = "assignee"
+	case "executor":
+		descriptor.Value.Kind = "executor"
 		if raw == "__unassigned__" {
-			descriptor.Key = "assignee:unassigned"
+			descriptor.Key = "executor:unassigned"
 			return descriptor, nil
 		}
 		parts := strings.SplitN(raw, ":", 2)
-		if len(parts) != 2 || !isIssueActorType(parts[0]) {
-			return descriptor, fmt.Errorf("unexpected assignee group value %q", raw)
+		if len(parts) != 2 || !isIssueExecutorType(parts[0]) {
+			return descriptor, fmt.Errorf("unexpected executor group value %q", raw)
 		}
 		if _, err := util.ParseUUID(parts[1]); err != nil {
-			return descriptor, fmt.Errorf("unexpected assignee group value %q", raw)
+			return descriptor, fmt.Errorf("unexpected executor group value %q", raw)
 		}
-		descriptor.Key = "assignee:" + raw
+		descriptor.Key = "executor:" + raw
 		descriptor.Value.Actor = &issueTableActorRef{Type: parts[0], ID: parts[1]}
 	case "project":
 		descriptor.Value.Kind = "project"
@@ -620,18 +619,18 @@ func (group resolvedIssueTableGroup) predicate(w http.ResponseWriter, key string
 		// category function: `status = ANY(...)` keeps the (workspace_id,
 		// status) index, a function wrapper would force a workspace scan.
 		return fmt.Sprintf("i.status = ANY(%s::text[])", addArg(group.categoryKeysFor(category))), true
-	case "assignee":
-		const prefix = "assignee:"
+	case "executor":
+		const prefix = "executor:"
 		if !strings.HasPrefix(key, prefix) {
 			writeError(w, http.StatusBadRequest, "invalid group_key")
 			return "", false
 		}
 		raw := strings.TrimPrefix(key, prefix)
 		if raw == "unassigned" {
-			return effectiveAssigneeTypeSQL + " IS NULL AND " + effectiveAssigneeIDSQL + " IS NULL", true
+			return "i.executor_type IS NULL AND i.executor_id IS NULL", true
 		}
 		parts := strings.SplitN(raw, ":", 2)
-		if len(parts) != 2 || !isIssueActorType(parts[0]) {
+		if len(parts) != 2 || !isIssueExecutorType(parts[0]) {
 			writeError(w, http.StatusBadRequest, "invalid group_key")
 			return "", false
 		}
@@ -640,7 +639,7 @@ func (group resolvedIssueTableGroup) predicate(w http.ResponseWriter, key string
 			writeError(w, http.StatusBadRequest, "invalid group_key")
 			return "", false
 		}
-		return fmt.Sprintf("%s = %s::text AND %s = %s::uuid", effectiveAssigneeTypeSQL, addArg(parts[0]), effectiveAssigneeIDSQL, addArg(id)), true
+		return fmt.Sprintf("i.executor_type = %s::text AND i.executor_id = %s::uuid", addArg(parts[0]), addArg(id)), true
 	case "project":
 		const prefix = "project:"
 		if !strings.HasPrefix(key, prefix) {

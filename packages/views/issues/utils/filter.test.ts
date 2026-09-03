@@ -1,9 +1,9 @@
 // @vitest-environment node
 import { describe, it, expect } from "vitest";
-import type { Issue, IssueAssigneeGroup, PropertyFilterValue } from "@patchbay/core/types";
+import type { Issue, IssueExecutorGroup, PropertyFilterValue } from "@patchbay/core/types";
 import {
   applyIssueFilters,
-  filterAssigneeGroups,
+  filterExecutorGroups,
   filterIssues,
   issueMatchesPropertyFilters,
   NO_PROPERTY_VALUE,
@@ -329,11 +329,9 @@ describe("filterIssues", () => {
   });
 });
 
-describe("filterAssigneeGroups", () => {
-  const group = (id: string, groupIssues: Issue[]): IssueAssigneeGroup => ({
+describe("filterExecutorGroups", () => {
+  const group = (id: string, groupIssues: Issue[]): IssueExecutorGroup => ({
     id,
-    owner_type: null,
-    owner_id: null,
     executor_type: id === "none" ? null : "agent",
     executor_id: id === "none" ? null : id,
     issues: groupIssues,
@@ -342,13 +340,13 @@ describe("filterAssigneeGroups", () => {
 
   it("returns the same reference when no client-side filter is active", () => {
     const groups = [group("a1", [makeIssue({ id: "1" })])];
-    expect(filterAssigneeGroups(groups, {})).toBe(groups);
-    expect(filterAssigneeGroups(groups, { showSubIssues: true })).toBe(groups);
-    expect(filterAssigneeGroups(groups, { agentRunningFilter: false })).toBe(groups);
+    expect(filterExecutorGroups(groups, {})).toBe(groups);
+    expect(filterExecutorGroups(groups, { showSubIssues: true })).toBe(groups);
+    expect(filterExecutorGroups(groups, { agentRunningFilter: false })).toBe(groups);
   });
 
   it("passes undefined through untouched", () => {
-    expect(filterAssigneeGroups(undefined, { showSubIssues: false })).toBeUndefined();
+    expect(filterExecutorGroups(undefined, { showSubIssues: false })).toBeUndefined();
   });
 
   it("hides sub-issues, recomputes total, and drops emptied groups", () => {
@@ -360,7 +358,7 @@ describe("filterAssigneeGroups", () => {
       // Every issue in this group is a sub-issue → group is removed entirely.
       group("a2", [makeIssue({ id: "C2", parent_issue_id: "P2" })]),
     ];
-    const result = filterAssigneeGroups(groups, { showSubIssues: false });
+    const result = filterExecutorGroups(groups, { showSubIssues: false });
     expect(
       result!.map((g) => ({ id: g.id, ids: g.issues.map((i) => i.id), total: g.total })),
     ).toEqual([{ id: "a1", ids: ["P1"], total: 1 }]);
@@ -372,7 +370,7 @@ describe("filterAssigneeGroups", () => {
       group("a2", [makeIssue({ id: "3" })]),
       group("none", [makeIssue({ id: "4" })]),
     ];
-    const result = filterAssigneeGroups(groups, {
+    const result = filterExecutorGroups(groups, {
       agentRunningFilter: true,
       runningIssueIds: new Set(["2", "4"]),
     });
@@ -393,7 +391,7 @@ describe("filterAssigneeGroups", () => {
     ];
     // "C" is running but is a sub-issue; "P" is a top-level issue but not
     // running → both dropped, group removed.
-    const result = filterAssigneeGroups(groups, {
+    const result = filterExecutorGroups(groups, {
       showSubIssues: false,
       agentRunningFilter: true,
       runningIssueIds: new Set(["C"]),
@@ -542,11 +540,11 @@ describe("property filters", () => {
     expect(result).toHaveLength(3);
   });
 
-  it("filterAssigneeGroups applies property filters per group", () => {
-    const groups: IssueAssigneeGroup[] = [
-      { id: "assignee:member:u-1", owner_type: "member", owner_id: "u-1", executor_type: null, executor_id: null, issues: [critical, minor], total: 2 },
+  it("filterExecutorGroups applies property filters per group", () => {
+    const groups: IssueExecutorGroup[] = [
+      { id: "executor:agent:a-1", executor_type: "agent", executor_id: "a-1", issues: [critical, minor], total: 2 },
     ];
-    const result = filterAssigneeGroups(groups, {
+    const result = filterExecutorGroups(groups, {
       propertyFilters: { [sevId]: ["opt-critical"] },
     });
     expect(result?.[0]?.issues.map((i) => i.id)).toEqual(["P1"]);

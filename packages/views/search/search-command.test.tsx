@@ -157,7 +157,7 @@ vi.mock("../common/actor-avatar", () => ({
             : undefined;
     return (
       <span
-        data-testid="issue-assignee-avatar"
+        data-testid="issue-executor-avatar"
         title={name ?? `${actorType}:${actorId}`}
       />
     );
@@ -807,7 +807,7 @@ describe("SearchCommand", () => {
     expect(screen.queryByText("deleted-issue")).not.toBeInTheDocument();
   });
 
-  it("shows the assignee avatar instead of status text for issue search results", async () => {
+  it("shows the executor avatar instead of collapsing to the owner", async () => {
     const user = userEvent.setup();
     mockMembers.current = [
       {
@@ -821,6 +821,7 @@ describe("SearchCommand", () => {
         avatar_url: null,
       },
     ];
+    mockAgents.current = [{ id: "agent-1", name: "Niko", avatar_url: null }];
     mockSearchIssues.mockResolvedValue({
       issues: [
         {
@@ -834,6 +835,8 @@ describe("SearchCommand", () => {
           priority: "none",
           owner_type: "member",
           owner_id: "user-1",
+          executor_type: "agent",
+          executor_id: "agent-1",
           creator_type: "member",
           creator_id: "user-1",
           parent_issue_id: null,
@@ -866,11 +869,12 @@ describe("SearchCommand", () => {
       { timeout: 2000 },
     );
 
-    expect(screen.getByTitle("Alice Zhang")).toBeInTheDocument();
+    expect(screen.getByTitle("Niko")).toBeInTheDocument();
+    expect(screen.queryByTitle("Alice Zhang")).not.toBeInTheDocument();
     expect(screen.queryByText("In Review")).not.toBeInTheDocument();
   });
 
-  it("shows the assignee avatar instead of status text for recent issues", () => {
+  it("shows the executor avatar instead of status text for recent issues", () => {
     mockRecentItems.current = [{ id: "issue-1", visitedAt: 1000 }];
     mockAgents.current = [{ id: "agent-1", name: "Niko", avatar_url: null }];
     mockAllIssues.current = [

@@ -593,7 +593,7 @@ describe("ApiClient server Table query", () => {
           {
             key: "service:bot-1",
             value: {
-              kind: "assignee",
+              kind: "executor",
               actor: { type: "service", id: "bot-1" },
             },
             count: 1,
@@ -626,11 +626,11 @@ describe("ApiClient server Table query", () => {
       groups: [{ value: { kind: "status", status: "paused" } }],
     });
     await expect(
-      client.listIssueTableGroups({ query, group: { kind: "assignee" } }),
+      client.listIssueTableGroups({ query, group: { kind: "executor" } }),
     ).resolves.toMatchObject({
       total: 1,
       groups: [
-        { value: { kind: "assignee", actor: { type: "service", id: "bot-1" } } },
+        { value: { kind: "executor", actor: { type: "service", id: "bot-1" } } },
       ],
     });
   });

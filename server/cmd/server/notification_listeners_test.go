@@ -16,10 +16,14 @@ import (
 
 // inboxItemsForRecipient returns all non-archived inbox items for a given recipient.
 func inboxItemsForRecipient(t *testing.T, queries *db.Queries, recipientID string) []db.ListInboxItemsRow {
+	return inboxItemsForRecipientType(t, queries, "member", recipientID)
+}
+
+func inboxItemsForRecipientType(t *testing.T, queries *db.Queries, recipientType, recipientID string) []db.ListInboxItemsRow {
 	t.Helper()
 	items, err := queries.ListInboxItems(context.Background(), db.ListInboxItemsParams{
 		WorkspaceID:   util.MustParseUUID(testWorkspaceID),
-		RecipientType: "member",
+		RecipientType: recipientType,
 		RecipientID:   util.MustParseUUID(recipientID),
 	})
 	if err != nil {
@@ -76,16 +80,16 @@ func newNotificationBus(t *testing.T, queries *db.Queries) *events.Bus {
 	return bus
 }
 
-// TestNotification_IssueCreated_AssigneeNotified verifies that when an issue is
-// created with an assignee different from the creator, the assignee receives an
-// "issue_assigned" inbox notification and the creator receives nothing.
-func TestNotification_IssueCreated_AssigneeNotified(t *testing.T) {
+// TestNotification_IssueCreated_RolesNotified verifies that distinct owner and
+// executor actors both receive an explicit assignment notification.
+func TestNotification_IssueCreated_RolesNotified(t *testing.T) {
 	queries := db.New(testPool)
 	bus := newNotificationBus(t, queries)
 
-	assigneeEmail := "notif-assignee-created@patchbay.ai"
-	assigneeID := createTestUser(t, assigneeEmail)
-	t.Cleanup(func() { cleanupTestUser(t, assigneeEmail) })
+	ownerEmail := "notif-owner-created@patchbay.ai"
+	ownerID := createTestUser(t, ownerEmail)
+	t.Cleanup(func() { cleanupTestUser(t, ownerEmail) })
+	executorID := "00000000-0000-0000-0000-0000000000e1"
 
 	issueID := createTestIssue(t, testWorkspaceID, testUserID)
 	t.Cleanup(func() {
@@ -99,7 +103,8 @@ func TestNotification_IssueCreated_AssigneeNotified(t *testing.T) {
 		inboxEvents = append(inboxEvents, e)
 	})
 
-	assigneeType := "member"
+	ownerType := "member"
+	executorType := "agent"
 	bus.Publish(events.Event{
 		Type:        protocol.EventIssueCreated,
 		WorkspaceID: testWorkspaceID,
@@ -114,22 +119,31 @@ func TestNotification_IssueCreated_AssigneeNotified(t *testing.T) {
 				Priority:     "medium",
 				CreatorType:  "member",
 				CreatorID:    testUserID,
-				ExecutorType: &assigneeType,
-				ExecutorID:   &assigneeID,
+				OwnerType:    &ownerType,
+				OwnerID:      &ownerID,
+				ExecutorType: &executorType,
+				ExecutorID:   &executorID,
 			},
 		},
 	})
 
-	// Assignee should have an inbox item
-	items := inboxItemsForRecipient(t, queries, assigneeID)
-	if len(items) != 1 {
-		t.Fatalf("expected 1 inbox item for assignee, got %d", len(items))
+	ownerItems := inboxItemsForRecipient(t, queries, ownerID)
+	if len(ownerItems) != 1 {
+		t.Fatalf("expected 1 inbox item for owner, got %d", len(ownerItems))
 	}
-	if items[0].Type != "issue_assigned" {
-		t.Fatalf("expected type 'issue_assigned', got %q", items[0].Type)
+	if ownerItems[0].Type != "issue_assigned" {
+		t.Fatalf("expected owner type 'issue_assigned', got %q", ownerItems[0].Type)
 	}
-	if items[0].Severity != "action_required" {
-		t.Fatalf("expected severity 'action_required', got %q", items[0].Severity)
+	if ownerItems[0].Severity != "action_required" {
+		t.Fatalf("expected owner severity 'action_required', got %q", ownerItems[0].Severity)
+	}
+
+	executorItems := inboxItemsForRecipientType(t, queries, "agent", executorID)
+	if len(executorItems) != 1 {
+		t.Fatalf("expected 1 inbox item for executor, got %d", len(executorItems))
+	}
+	if executorItems[0].Type != "issue_assigned" {
+		t.Fatalf("expected executor type 'issue_assigned', got %q", executorItems[0].Type)
 	}
 
 	// Creator (actor) should NOT have any inbox items
@@ -144,9 +158,9 @@ func TestNotification_IssueCreated_AssigneeNotified(t *testing.T) {
 	}
 }
 
-// TestNotification_IssueCreated_SelfAssign verifies that when the creator
-// assigns the issue to themselves, no notification is generated.
-func TestNotification_IssueCreated_SelfAssign(t *testing.T) {
+// TestNotification_IssueCreated_SelfExecutor verifies that when the creator
+// sets themselves as executor, no notification is generated.
+func TestNotification_IssueCreated_SelfExecutor(t *testing.T) {
 	queries := db.New(testPool)
 	bus := newNotificationBus(t, queries)
 
@@ -161,8 +175,8 @@ func TestNotification_IssueCreated_SelfAssign(t *testing.T) {
 		inboxEvents = append(inboxEvents, e)
 	})
 
-	assigneeType := "member"
-	assigneeID := testUserID // self-assign
+	executorType := "member"
+	executorID := testUserID // self-assign
 	bus.Publish(events.Event{
 		Type:        protocol.EventIssueCreated,
 		WorkspaceID: testWorkspaceID,
@@ -177,8 +191,8 @@ func TestNotification_IssueCreated_SelfAssign(t *testing.T) {
 				Priority:     "medium",
 				CreatorType:  "member",
 				CreatorID:    testUserID,
-				ExecutorType: &assigneeType,
-				ExecutorID:   &assigneeID,
+				ExecutorType: &executorType,
+				ExecutorID:   &executorID,
 			},
 		},
 	})
@@ -192,9 +206,9 @@ func TestNotification_IssueCreated_SelfAssign(t *testing.T) {
 	}
 }
 
-// TestNotification_IssueCreated_NoAssignee verifies that when an issue is
-// created without an assignee, no notifications are generated.
-func TestNotification_IssueCreated_NoAssignee(t *testing.T) {
+// TestNotification_IssueCreated_NoRoles verifies that when an issue is
+// created without an owner or executor, no notifications are generated.
+func TestNotification_IssueCreated_NoRoles(t *testing.T) {
 	queries := db.New(testPool)
 	bus := newNotificationBus(t, queries)
 
@@ -218,7 +232,7 @@ func TestNotification_IssueCreated_NoAssignee(t *testing.T) {
 			"issue": handler.IssueResponse{
 				ID:          issueID,
 				WorkspaceID: testWorkspaceID,
-				Title:       "no assignee issue",
+				Title:       "no roles issue",
 				Status:      "todo",
 				Priority:    "medium",
 				CreatorType: "member",
@@ -229,7 +243,7 @@ func TestNotification_IssueCreated_NoAssignee(t *testing.T) {
 
 	items := inboxItemsForRecipient(t, queries, testUserID)
 	if len(items) != 0 {
-		t.Fatalf("expected 0 inbox items for no-assignee issue, got %d", len(items))
+		t.Fatalf("expected 0 inbox items for issue without roles, got %d", len(items))
 	}
 	if len(inboxEvents) != 0 {
 		t.Fatalf("expected 0 inbox:new events, got %d", len(inboxEvents))
@@ -259,7 +273,7 @@ func TestNotification_StatusChanged(t *testing.T) {
 
 	// Manually add subscribers before the event fires
 	addTestSubscriber(t, issueID, "member", testUserID, "creator")
-	addTestSubscriber(t, issueID, "member", sub1ID, "assignee")
+	addTestSubscriber(t, issueID, "member", sub1ID, "executor")
 	addTestSubscriber(t, issueID, "member", sub2ID, "commenter")
 
 	bus.Publish(events.Event{
@@ -277,7 +291,8 @@ func TestNotification_StatusChanged(t *testing.T) {
 				CreatorType: "member",
 				CreatorID:   testUserID,
 			},
-			"assignee_changed": false,
+			"owner_changed":    false,
+			"executor_changed": false,
 			"status_changed":   true,
 			"prev_status":      "todo",
 		},
@@ -361,7 +376,8 @@ func TestNotification_StatusChanged_Muted(t *testing.T) {
 				CreatorType: "member",
 				CreatorID:   testUserID,
 			},
-			"assignee_changed": false,
+			"owner_changed":    false,
+			"executor_changed": false,
 			"status_changed":   true,
 			"prev_status":      "todo",
 		},
@@ -398,7 +414,7 @@ func TestNotification_CommentCreated(t *testing.T) {
 	// Pre-add subscribers: creator and sub1. The commenter will also be added
 	// by subscriber_listeners when the event fires.
 	addTestSubscriber(t, issueID, "member", testUserID, "creator")
-	addTestSubscriber(t, issueID, "member", sub1ID, "assignee")
+	addTestSubscriber(t, issueID, "member", sub1ID, "executor")
 
 	bus.Publish(events.Event{
 		Type:        protocol.EventCommentCreated,
@@ -546,22 +562,22 @@ func TestSubscriberSystemCommentDoesNotSubscribe(t *testing.T) {
 	}
 }
 
-// TestNotification_AssigneeChanged verifies the full assignee change flow:
-// - New assignee gets "issue_assigned" (Direct)
-// - Old assignee gets "unassigned" (Direct)
-// - Other subscribers get "assignee_changed" (Subscriber), excluding actor + old + new
+// TestNotification_OwnerChanged verifies the full owner change flow:
+// - New owner gets "issue_assigned" (Direct)
+// - Old owner gets "unassigned" (Direct)
+// - Other subscribers get "owner_changed" (Subscriber), excluding actor + old + new
 // - Actor gets nothing
-func TestNotification_AssigneeChanged(t *testing.T) {
+func TestNotification_OwnerChanged(t *testing.T) {
 	queries := db.New(testPool)
 	bus := newNotificationBus(t, queries)
 
-	oldAssigneeEmail := "notif-old-assignee@patchbay.ai"
-	oldOwnerID := createTestUser(t, oldAssigneeEmail)
-	t.Cleanup(func() { cleanupTestUser(t, oldAssigneeEmail) })
+	oldOwnerEmail := "notif-old-owner@patchbay.ai"
+	oldOwnerID := createTestUser(t, oldOwnerEmail)
+	t.Cleanup(func() { cleanupTestUser(t, oldOwnerEmail) })
 
-	newAssigneeEmail := "notif-new-assignee@patchbay.ai"
-	newOwnerID := createTestUser(t, newAssigneeEmail)
-	t.Cleanup(func() { cleanupTestUser(t, newAssigneeEmail) })
+	newOwnerEmail := "notif-new-owner@patchbay.ai"
+	newOwnerID := createTestUser(t, newOwnerEmail)
+	t.Cleanup(func() { cleanupTestUser(t, newOwnerEmail) })
 
 	bystanderEmail := "notif-bystander@patchbay.ai"
 	bystanderID := createTestUser(t, bystanderEmail)
@@ -573,9 +589,9 @@ func TestNotification_AssigneeChanged(t *testing.T) {
 		cleanupTestIssue(t, issueID)
 	})
 
-	// Pre-add subscribers: creator, old assignee, bystander
+	// Pre-add subscribers: creator, old owner, bystander
 	addTestSubscriber(t, issueID, "member", testUserID, "creator")
-	addTestSubscriber(t, issueID, "member", oldOwnerID, "assignee")
+	addTestSubscriber(t, issueID, "member", oldOwnerID, "owner")
 	addTestSubscriber(t, issueID, "member", bystanderID, "commenter")
 
 	newOwnerType := "member"
@@ -589,7 +605,7 @@ func TestNotification_AssigneeChanged(t *testing.T) {
 			"issue": handler.IssueResponse{
 				ID:          issueID,
 				WorkspaceID: testWorkspaceID,
-				Title:       "assignee change issue",
+				Title:       "owner change issue",
 				Status:      "todo",
 				Priority:    "medium",
 				CreatorType: "member",
@@ -597,17 +613,18 @@ func TestNotification_AssigneeChanged(t *testing.T) {
 				OwnerType:   &newOwnerType,
 				OwnerID:     &newOwnerID,
 			},
-			"assignee_changed": true,
+			"owner_changed":    true,
+			"executor_changed": false,
 			"status_changed":   false,
 			"prev_owner_type":  &oldOwnerType,
 			"prev_owner_id":    &oldOwnerID,
 		},
 	})
 
-	// New assignee should get "issue_assigned"
+	// New owner should get "issue_assigned"
 	newItems := inboxItemsForRecipient(t, queries, newOwnerID)
 	if len(newItems) != 1 {
-		t.Fatalf("expected 1 inbox item for new assignee, got %d", len(newItems))
+		t.Fatalf("expected 1 inbox item for new owner, got %d", len(newItems))
 	}
 	if newItems[0].Type != "issue_assigned" {
 		t.Fatalf("expected type 'issue_assigned', got %q", newItems[0].Type)
@@ -616,10 +633,10 @@ func TestNotification_AssigneeChanged(t *testing.T) {
 		t.Fatalf("expected severity 'action_required', got %q", newItems[0].Severity)
 	}
 
-	// Old assignee should get "unassigned"
+	// Old owner should get "unassigned"
 	oldItems := inboxItemsForRecipient(t, queries, oldOwnerID)
 	if len(oldItems) != 1 {
-		t.Fatalf("expected 1 inbox item for old assignee, got %d", len(oldItems))
+		t.Fatalf("expected 1 inbox item for old owner, got %d", len(oldItems))
 	}
 	if oldItems[0].Type != "unassigned" {
 		t.Fatalf("expected type 'unassigned', got %q", oldItems[0].Type)
@@ -628,13 +645,13 @@ func TestNotification_AssigneeChanged(t *testing.T) {
 		t.Fatalf("expected severity 'info', got %q", oldItems[0].Severity)
 	}
 
-	// Bystander should get "assignee_changed"
+	// Bystander should get "owner_changed"
 	bystanderItems := inboxItemsForRecipient(t, queries, bystanderID)
 	if len(bystanderItems) != 1 {
 		t.Fatalf("expected 1 inbox item for bystander, got %d", len(bystanderItems))
 	}
-	if bystanderItems[0].Type != "assignee_changed" {
-		t.Fatalf("expected type 'assignee_changed', got %q", bystanderItems[0].Type)
+	if bystanderItems[0].Type != "owner_changed" {
+		t.Fatalf("expected type 'owner_changed', got %q", bystanderItems[0].Type)
 	}
 	if bystanderItems[0].Severity != "info" {
 		t.Fatalf("expected severity 'info', got %q", bystanderItems[0].Severity)
@@ -644,6 +661,64 @@ func TestNotification_AssigneeChanged(t *testing.T) {
 	actorItems := inboxItemsForRecipient(t, queries, testUserID)
 	if len(actorItems) != 0 {
 		t.Fatalf("expected 0 inbox items for actor, got %d", len(actorItems))
+	}
+}
+
+func TestNotification_ExecutorChanged(t *testing.T) {
+	queries := db.New(testPool)
+	bus := newNotificationBus(t, queries)
+
+	oldID := "00000000-0000-0000-0000-0000000000e2"
+	newID := "00000000-0000-0000-0000-0000000000e3"
+	bystanderEmail := "notif-executor-bystander@patchbay.ai"
+	bystanderID := createTestUser(t, bystanderEmail)
+	t.Cleanup(func() { cleanupTestUser(t, bystanderEmail) })
+
+	issueID := createTestIssue(t, testWorkspaceID, testUserID)
+	t.Cleanup(func() {
+		cleanupInboxForIssue(t, issueID)
+		cleanupTestIssue(t, issueID)
+	})
+	addTestSubscriber(t, issueID, "agent", oldID, "executor")
+	addTestSubscriber(t, issueID, "member", bystanderID, "commenter")
+
+	executorType := "agent"
+	bus.Publish(events.Event{
+		Type:        protocol.EventIssueUpdated,
+		WorkspaceID: testWorkspaceID,
+		ActorType:   "member",
+		ActorID:     testUserID,
+		Payload: map[string]any{
+			"issue": handler.IssueResponse{
+				ID:           issueID,
+				WorkspaceID:  testWorkspaceID,
+				Title:        "executor change issue",
+				Status:       "todo",
+				Priority:     "medium",
+				CreatorType:  "member",
+				CreatorID:    testUserID,
+				ExecutorType: &executorType,
+				ExecutorID:   &newID,
+			},
+			"owner_changed":      false,
+			"executor_changed":   true,
+			"status_changed":     false,
+			"prev_executor_type": &executorType,
+			"prev_executor_id":   &oldID,
+		},
+	})
+
+	newItems := inboxItemsForRecipientType(t, queries, "agent", newID)
+	if len(newItems) != 1 || newItems[0].Type != "issue_assigned" {
+		t.Fatalf("new executor items = %#v, want one issue_assigned", newItems)
+	}
+	oldItems := inboxItemsForRecipientType(t, queries, "agent", oldID)
+	if len(oldItems) != 0 {
+		t.Fatalf("old agent executor items = %#v, want none", oldItems)
+	}
+	bystanderItems := inboxItemsForRecipient(t, queries, bystanderID)
+	if len(bystanderItems) != 1 || bystanderItems[0].Type != "executor_changed" {
+		t.Fatalf("bystander items = %#v, want one executor_changed", bystanderItems)
 	}
 }
 
@@ -664,7 +739,7 @@ func TestNotification_TaskCompleted(t *testing.T) {
 
 	// Pre-add subscribers: creator and the agent
 	addTestSubscriber(t, issueID, "member", testUserID, "creator")
-	addTestSubscriber(t, issueID, "agent", agentID, "assignee")
+	addTestSubscriber(t, issueID, "agent", agentID, "executor")
 
 	bus.Publish(events.Event{
 		Type:        protocol.EventTaskCompleted,
@@ -701,7 +776,7 @@ func TestNotification_TaskFailed(t *testing.T) {
 	agentID := "00000000-0000-0000-0000-aaaaaaaaaaaa"
 
 	addTestSubscriber(t, issueID, "member", testUserID, "creator")
-	addTestSubscriber(t, issueID, "agent", agentID, "assignee")
+	addTestSubscriber(t, issueID, "agent", agentID, "executor")
 
 	bus.Publish(events.Event{
 		Type:        protocol.EventTaskFailed,
@@ -745,7 +820,7 @@ func TestNotification_PriorityChanged(t *testing.T) {
 	})
 
 	addTestSubscriber(t, issueID, "member", testUserID, "creator")
-	addTestSubscriber(t, issueID, "member", sub1ID, "assignee")
+	addTestSubscriber(t, issueID, "member", sub1ID, "executor")
 
 	bus.Publish(events.Event{
 		Type:        protocol.EventIssueUpdated,
@@ -762,7 +837,8 @@ func TestNotification_PriorityChanged(t *testing.T) {
 				CreatorType: "member",
 				CreatorID:   testUserID,
 			},
-			"assignee_changed": false,
+			"owner_changed":    false,
+			"executor_changed": false,
 			"status_changed":   false,
 			"priority_changed": true,
 			"prev_priority":    "medium",
@@ -810,7 +886,7 @@ func TestNotification_DueDateChanged(t *testing.T) {
 	})
 
 	addTestSubscriber(t, issueID, "member", testUserID, "creator")
-	addTestSubscriber(t, issueID, "member", sub1ID, "assignee")
+	addTestSubscriber(t, issueID, "member", sub1ID, "executor")
 
 	dueDate := "2026-04-15"
 	bus.Publish(events.Event{
@@ -829,7 +905,8 @@ func TestNotification_DueDateChanged(t *testing.T) {
 				CreatorID:   testUserID,
 				DueDate:     &dueDate,
 			},
-			"assignee_changed": false,
+			"owner_changed":    false,
+			"executor_changed": false,
 			"status_changed":   false,
 			"due_date_changed": true,
 		},
@@ -871,7 +948,7 @@ func TestNotification_StartDateChanged(t *testing.T) {
 	})
 
 	addTestSubscriber(t, issueID, "member", testUserID, "creator")
-	addTestSubscriber(t, issueID, "member", sub1ID, "assignee")
+	addTestSubscriber(t, issueID, "member", sub1ID, "executor")
 
 	startDate := "2026-04-01"
 	bus.Publish(events.Event{
@@ -890,7 +967,8 @@ func TestNotification_StartDateChanged(t *testing.T) {
 				CreatorID:   testUserID,
 				StartDate:   &startDate,
 			},
-			"assignee_changed":   false,
+			"owner_changed":      false,
+			"executor_changed":   false,
 			"status_changed":     false,
 			"start_date_changed": true,
 		},
@@ -954,7 +1032,8 @@ func TestNotification_ParentBubble_StatusChanged(t *testing.T) {
 				CreatorType: "member",
 				CreatorID:   testUserID,
 			},
-			"assignee_changed": false,
+			"owner_changed":    false,
+			"executor_changed": false,
 			"status_changed":   true,
 			"prev_status":      "in_progress",
 		},
@@ -1066,7 +1145,8 @@ func TestNotification_ParentBubble_PriorityChangeSuppressed(t *testing.T) {
 				CreatorType: "member",
 				CreatorID:   testUserID,
 			},
-			"assignee_changed": false,
+			"owner_changed":    false,
+			"executor_changed": false,
 			"status_changed":   false,
 			"priority_changed": true,
 			"prev_priority":    "medium",
@@ -1124,7 +1204,8 @@ func publishStatusChange(bus *events.Bus, issueID, newStatus, prevStatus string)
 				CreatorType: "member",
 				CreatorID:   testUserID,
 			},
-			"assignee_changed": false,
+			"owner_changed":    false,
+			"executor_changed": false,
 			"status_changed":   true,
 			"prev_status":      prevStatus,
 		},
@@ -1151,7 +1232,7 @@ func TestNotification_StatusChange_ArchivesStaleTaskFailed(t *testing.T) {
 	})
 
 	addTestSubscriber(t, issueID, "member", testUserID, "creator")
-	addTestSubscriber(t, issueID, "member", subID, "assignee")
+	addTestSubscriber(t, issueID, "member", subID, "executor")
 
 	agentID := "00000000-0000-0000-0000-aaaaaaaaaaaa"
 

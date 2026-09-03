@@ -276,8 +276,11 @@ function flatWindowNeedsReconcile(
     return true;
   }
   if (
-    changed.assignee &&
-    ((filter.assignee_filters?.length ?? 0) > 0 || filter.include_no_assignee)
+    (changed.owner || changed.executor) &&
+    ((filter.owner_filters?.length ?? 0) > 0 ||
+      filter.include_no_owner ||
+      (filter.executor_filters?.length ?? 0) > 0 ||
+      filter.include_no_executor)
   ) {
     return true;
   }
@@ -612,8 +615,8 @@ export function invalidateIssueDerivatives(
   wsId: string,
   opts: { statusOrProjectChanged: boolean },
 ) {
-  qc.invalidateQueries({ queryKey: issueKeys.assigneeGroupsAll(wsId) });
-  qc.invalidateQueries({ queryKey: issueKeys.myAssigneeGroupsAll(wsId) });
+  qc.invalidateQueries({ queryKey: issueKeys.executorGroupsAll(wsId) });
+  qc.invalidateQueries({ queryKey: issueKeys.myExecutorGroupsAll(wsId) });
   qc.invalidateQueries({ queryKey: issueKeys.projectGanttAll(wsId) });
   if (opts.statusOrProjectChanged) {
     qc.invalidateQueries({ queryKey: projectKeys.all(wsId) });

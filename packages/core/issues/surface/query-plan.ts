@@ -1,7 +1,7 @@
 import type { CreateIssueRequest } from "../../types";
 import type { MyIssuesFilter } from "../queries";
 import {
-  assigneeTypesForActorKind,
+  roleFiltersForActorKind,
   issueScopeKey,
   UnsupportedIssueScopeError,
   type IssueScope,
@@ -63,20 +63,25 @@ export function buildIssueSurfaceQueryPlan(
 
   switch (scope.type) {
     case "workspace": {
-      const assigneeTypes = assigneeTypesForActorKind(scope.actorKind);
+      const { ownerTypes, executorTypes } = roleFiltersForActorKind(scope.actorKind);
       return {
         scopeKey,
-        queryFilter: assigneeTypes ? { executor_types: assigneeTypes } : {},
+        queryFilter: {
+          ...(ownerTypes ? { owner_types: ownerTypes } : {}),
+          ...(executorTypes ? { executor_types: executorTypes } : {}),
+        },
         createDefaults: {},
       };
     }
     case "project": {
-      const assigneeTypes = assigneeTypesForActorKind(scope.actorKind);
+      const { ownerTypes, executorTypes } = roleFiltersForActorKind(scope.actorKind);
       return {
         scopeKey,
-        queryFilter: assigneeTypes
-          ? { project_id: scope.projectId, executor_types: assigneeTypes }
-          : { project_id: scope.projectId },
+        queryFilter: {
+          project_id: scope.projectId,
+          ...(ownerTypes ? { owner_types: ownerTypes } : {}),
+          ...(executorTypes ? { executor_types: executorTypes } : {}),
+        },
         createDefaults: { project_id: scope.projectId },
       };
     }

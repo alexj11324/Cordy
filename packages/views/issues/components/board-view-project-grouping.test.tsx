@@ -3,9 +3,9 @@
  *
  * Board grouped by project. The server's group descriptors carry a project id
  * and nothing else, so both the column header text and the column's leading
- * glyph are resolved on the client — and `projectId` sits next to `assigneeId`
+ * glyph are resolved on the client — and `projectId` sits next to `executorId`
  * on BoardColumnGroup, where an unguarded fallthrough renders a project column
- * as the "no assignee" column.
+ * as the "no executor" column.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, screen } from "@testing-library/react";
@@ -279,9 +279,9 @@ describe("Board grouped by project", () => {
   it("heads a project column with that project's own icon", () => {
     render();
 
-    // BoardColumnGroup carries projectId beside assigneeId, so a project column
+    // BoardColumnGroup carries projectId beside executorId, so a project column
     // that is not matched explicitly falls through to the ASSIGNEE heading —
-    // which renders the same title text next to a no-assignee actor glyph. The
+    // which renders the same title text next to a no-executor actor glyph. The
     // icon is what tells the two apart.
     const header = screen.getByText("Acme Corp").parentElement!;
     expect(header.textContent).toContain("\u{1F680}");

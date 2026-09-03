@@ -408,7 +408,7 @@ describe("useIssueSurfaceController", () => {
     await waitFor(() => expect(listIssueTableRows).toHaveBeenCalled());
     expect(result.current.scopeKey).toBe("actor:agent:agent-1:assigned");
     expect(result.current.tableQuerySpec.scope).toEqual({
-      kind: "assignee",
+      kind: "executor",
       actor: { type: "agent", id: "agent-1" },
     });
   });
@@ -802,7 +802,7 @@ describe("useIssueSurfaceController", () => {
   );
 
   it.each([
-    { grouping: "executor" as const, expected: { kind: "assignee" } },
+    { grouping: "executor" as const, expected: { kind: "executor" } },
     { grouping: "project" as const, expected: { kind: "project" } },
   ])(
     "asks the server for $grouping groups when the board is grouped that way",
@@ -999,7 +999,7 @@ describe("useIssueSurfaceController", () => {
         "issue-running-2",
       ]),
     );
-    expect(result.current.tableQuerySpec.filters.assignees).toBeUndefined();
+    expect(result.current.tableQuerySpec.filters.actors).toBeUndefined();
     expect(result.current.tableQuerySpec.filters.working_only).toBeUndefined();
     expect(getWorkspaceWorkingAgents).toHaveBeenCalledWith("issue", undefined, undefined);
     expect(listIssues).not.toHaveBeenCalled();
@@ -1073,14 +1073,14 @@ describe("useIssueSurfaceController", () => {
           result.current.tableQuerySpec.filters.working_issue_ids,
         ).toEqual(["issue-from-working-api"]),
       );
-      expect(result.current.tableQuerySpec.filters.assignees).toBeUndefined();
+      expect(result.current.tableQuerySpec.filters.actors).toBeUndefined();
       expect(result.current.tableQuerySpec.filters.working_only).toBeUndefined();
       expect(getWorkspaceWorkingAgents).toHaveBeenCalledWith("issue", undefined, undefined);
       expect(getAgentTaskSnapshot).not.toHaveBeenCalled();
     },
   );
 
-  it("combines regular assignees with the independent running-task predicate", async () => {
+  it("combines role actors with the independent running-task predicate", async () => {
     const store = getIssueSurfaceViewStore("project:p1");
     store.getState().setViewMode("list");
     store.getState().toggleExecutorFilter({ type: "agent", id: "agent-1" });
@@ -1103,7 +1103,7 @@ describe("useIssueSurfaceController", () => {
     );
 
     await waitFor(() => {
-      expect(result.current.tableQuerySpec.filters.assignees).toEqual([
+      expect(result.current.tableQuerySpec.filters.actors).toEqual([
         { type: "agent", id: "agent-1" },
         { type: "agent", id: "agent-2" },
         { type: "member", id: "member-1" },
@@ -1113,7 +1113,7 @@ describe("useIssueSurfaceController", () => {
         "unassigned-running-issue",
       ]);
     });
-    expect(result.current.tableQuerySpec.filters.include_no_assignee).toBe(true);
+    expect(result.current.tableQuerySpec.filters.include_no_executor).toBe(true);
   });
 
   it("does not subscribe Table to the legacy offset window", async () => {
@@ -1377,7 +1377,7 @@ describe("useIssueSurfaceController", () => {
       "todo-1",
       "prog-1",
     ]);
-    expect(result.current.tableQuerySpec.filters.assignees).toBeUndefined();
+    expect(result.current.tableQuerySpec.filters.actors).toBeUndefined();
     expect(result.current.tableQuerySpec.filters.working_only).toBeUndefined();
     expect(getAgentTaskSnapshot).not.toHaveBeenCalled();
     // Cursor-paged server membership no longer forces an unknown count: the
@@ -1459,7 +1459,7 @@ describe("useIssueSurfaceController", () => {
       "todo-1",
       "prog-1",
     ]);
-    expect(result.current.tableQuerySpec.filters.assignees).toBeUndefined();
+    expect(result.current.tableQuerySpec.filters.actors).toBeUndefined();
     expect(result.current.tableQuerySpec.filters.working_only).toBeUndefined();
     // agent-2 works only on `prog-1`, which the active status filter hides. The
     // chip must not count an agent whose rows the list will not show.
@@ -1734,7 +1734,7 @@ describe("useIssueSurfaceController", () => {
     expect(result.current.tableQuerySpec.filters.working_issue_ids).toEqual(
       workingAgents.flatMap((agent) => agent.issue_ids),
     );
-    expect(result.current.tableQuerySpec.filters.assignees).toEqual(
+    expect(result.current.tableQuerySpec.filters.executors).toEqual(
       selectedAssigneeId
         ? [{ type: "agent", id: selectedAssigneeId }]
         : undefined,

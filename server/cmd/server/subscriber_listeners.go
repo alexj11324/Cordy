@@ -13,15 +13,15 @@ import (
 	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
 )
 
-// isAssignmentRecipientType reports whether an assignee can own a subscriber
+// isAssignmentRecipientType reports whether a role actor can own a subscriber
 // or inbox row. Teams are routing objects whose work runs through the leader;
 // they are not user identities and have no inbox to consume.
-func isAssignmentRecipientType(assigneeType string) bool {
-	return assigneeType == "member" || assigneeType == "agent"
+func isAssignmentRecipientType(actorType string) bool {
+	return actorType == "member" || actorType == "agent"
 }
 
 // registerSubscriberListeners wires up event bus listeners that auto-subscribe
-// relevant users to issues. This ensures creators, assignees, and commenters
+// relevant users to issues. This ensures creators, owners, executors, and commenters
 // are automatically tracked as issue subscribers.
 //
 // Takes the pool rather than *db.Queries because the delegated rule needs a
@@ -29,7 +29,7 @@ func isAssignmentRecipientType(assigneeType string) bool {
 // serialization boundary (see subscribeDelegatedHuman).
 func registerSubscriberListeners(bus *events.Bus, pool *pgxpool.Pool) {
 	queries := db.New(pool)
-	// issue:created — subscribe creator + assignee (if different)
+	// issue:created — subscribe creator + owner/executor (if different)
 	bus.Subscribe(protocol.EventIssueCreated, func(e events.Event) {
 		payload, ok := e.Payload.(map[string]any)
 		if !ok {
@@ -45,11 +45,18 @@ func registerSubscriberListeners(bus *events.Bus, pool *pgxpool.Pool) {
 		// Subscribe the creator
 		addSubscriber(bus, queries, e.WorkspaceID, issue.ID, issue.CreatorType, issue.CreatorID, "creator")
 
-		// Subscribe the assignee if it is a direct recipient and differs from the creator.
+		// Subscribe the owner if it is a direct recipient and differs from the creator.
+		if issue.OwnerType != nil && issue.OwnerID != nil &&
+			isAssignmentRecipientType(*issue.OwnerType) &&
+			!(*issue.OwnerType == issue.CreatorType && *issue.OwnerID == issue.CreatorID) {
+			addSubscriber(bus, queries, e.WorkspaceID, issue.ID, *issue.OwnerType, *issue.OwnerID, "owner")
+		}
+
+		// Subscribe the executor if it is a direct recipient and differs from the creator.
 		if issue.ExecutorType != nil && issue.ExecutorID != nil &&
 			isAssignmentRecipientType(*issue.ExecutorType) &&
 			!(*issue.ExecutorType == issue.CreatorType && *issue.ExecutorID == issue.CreatorID) {
-			addSubscriber(bus, queries, e.WorkspaceID, issue.ID, *issue.ExecutorType, *issue.ExecutorID, "assignee")
+			addSubscriber(bus, queries, e.WorkspaceID, issue.ID, *issue.ExecutorType, *issue.ExecutorID, "executor")
 		}
 
 		// Subscribe @mentioned users in description
@@ -67,7 +74,7 @@ func registerSubscriberListeners(bus *events.Bus, pool *pgxpool.Pool) {
 		subscribeDelegatedHuman(bus, pool, queries, e.WorkspaceID, issue.ID)
 	})
 
-	// issue:updated — subscribe new assignee or @mentioned users
+	// issue:updated — subscribe new owner/executor or @mentioned users
 	bus.Subscribe(protocol.EventIssueUpdated, func(e events.Event) {
 		payload, ok := e.Payload.(map[string]any)
 		if !ok {
@@ -78,10 +85,14 @@ func registerSubscriberListeners(bus *events.Bus, pool *pgxpool.Pool) {
 			return
 		}
 
-		// Subscribe new assignee if assignee changed
-		if assigneeChanged, _ := payload["assignee_changed"].(bool); assigneeChanged {
-			if newType, newID := issue.EffectiveAssignee(); newType != nil && newID != nil && isAssignmentRecipientType(*newType) {
-				addSubscriber(bus, queries, e.WorkspaceID, issue.ID, *newType, *newID, "assignee")
+		if ownerChanged, _ := payload["owner_changed"].(bool); ownerChanged {
+			if issue.OwnerType != nil && issue.OwnerID != nil && isAssignmentRecipientType(*issue.OwnerType) {
+				addSubscriber(bus, queries, e.WorkspaceID, issue.ID, *issue.OwnerType, *issue.OwnerID, "owner")
+			}
+		}
+		if executorChanged, _ := payload["executor_changed"].(bool); executorChanged {
+			if issue.ExecutorType != nil && issue.ExecutorID != nil && isAssignmentRecipientType(*issue.ExecutorType) {
+				addSubscriber(bus, queries, e.WorkspaceID, issue.ID, *issue.ExecutorType, *issue.ExecutorID, "executor")
 			}
 		}
 

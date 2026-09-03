@@ -43,7 +43,7 @@ interface IssueHoverCardProps {
  * The inline chip shows status, identifier, and as much title as fits inside
  * its `min(18rem, 100%)` cap — so a long title arrives truncated. The card
  * carries what the chip cannot: the full untruncated title, priority, a
- * description snippet, the assignee, and sub-issue progress. Issue mentions are
+ * description snippet, the executor, and sub-issue progress. Issue mentions are
  * the only kind with a hover preview — member and agent mentions render as a
  * plain `.mention` span in rich-content.tsx. This lives here rather than in
  * packages/ui because it reads workspace queries.
@@ -75,14 +75,14 @@ export function IssueHoverCard({
 }
 
 /**
- * Assignee row of the card.
+ * Executor row of the card.
  *
  * Its own component so `useActorName` — which subscribes to the workspace
  * member list, a query nothing else on this path warms — mounts only for cards
- * that actually have an assignee to name. Inlining it back into the body would
+ * that actually have an executor to name. Inlining it back into the body would
  * make the first hover on any mention pull the member directory.
  */
-function IssueHoverCardAssignee({
+function IssueHoverCardExecutor({
   actorType,
   actorId,
 }: {
@@ -157,9 +157,9 @@ function IssueHoverCardBody({
   }
 
   const preview = issue.description ? descriptionPreview(issue.description) : "";
-  const assigneeType = issue.executor_type ?? issue.owner_type;
-  const assigneeId = issue.executor_id ?? issue.owner_id;
-  const hasAssignee = !!assigneeType && !!assigneeId;
+  const executorType = issue.executor_type;
+  const executorId = issue.executor_id;
+  const hasExecutor = !!executorType && !!executorId;
   const progress = childProgress?.get(issue.id);
   const hasProgress = !!progress && progress.total > 0;
   // Board cards and list rows render the glyph into a fixed grid slot, so the
@@ -204,10 +204,10 @@ function IssueHoverCardBody({
         <p className="mt-1 text-caption text-muted-foreground line-clamp-2">{preview}</p>
       )}
 
-      {(hasAssignee || hasProgress) && (
+      {(hasExecutor || hasProgress) && (
         <div className="mt-1 flex items-center justify-between gap-3">
-          {hasAssignee ? (
-            <IssueHoverCardAssignee actorType={assigneeType} actorId={assigneeId} />
+          {hasExecutor ? (
+            <IssueHoverCardExecutor actorType={executorType} actorId={executorId} />
           ) : (
             <span />
           )}

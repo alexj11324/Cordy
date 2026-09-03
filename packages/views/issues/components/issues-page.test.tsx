@@ -66,7 +66,7 @@ const mockListIssues = vi.hoisted(() => vi.fn().mockResolvedValue({ issues: [], 
 const mockListGroupedIssues = vi.hoisted(() => vi.fn().mockResolvedValue({ groups: [] }));
 const mockListIssueTableGroups = vi.hoisted(() =>
   vi.fn(async (request: any) => {
-    if (request.group.kind !== "assignee") {
+    if (request.group.kind !== "executor") {
       return {
         query_fingerprint: "test",
         total: 0,
@@ -84,7 +84,7 @@ const mockListIssueTableGroups = vi.hoisted(() =>
       groups: response.groups.map((group: any) => ({
         key: group.id,
         value: {
-          kind: "assignee" as const,
+          kind: "executor" as const,
           actor:
             group.executor_type && group.executor_id
               ? { type: group.executor_type, id: group.executor_id }
@@ -100,7 +100,7 @@ const mockListIssueTableGroups = vi.hoisted(() =>
 );
 const mockListIssueTableRows = vi.hoisted(() =>
   vi.fn(async (request: any) => {
-    if (request.group.kind === "assignee") {
+    if (request.group.kind === "executor") {
       const response = await mockListGroupedIssues();
       const group = response.groups.find(
         (candidate: any) => candidate.id === request.group_key,
@@ -128,6 +128,9 @@ const mockListIssueTableRows = vi.hoisted(() =>
       offset: 0,
       ...(request.query.scope.executor_types
         ? { executor_types: request.query.scope.executor_types }
+        : {}),
+      ...(request.query.scope.owner_types
+        ? { owner_types: request.query.scope.owner_types }
         : {}),
     });
     return {
@@ -171,6 +174,9 @@ const mockListIssueTableFacets = vi.hoisted(() =>
               offset: 0,
               ...(request.query.scope.executor_types
                 ? { executor_types: request.query.scope.executor_types }
+                : {}),
+              ...(request.query.scope.owner_types
+                ? { owner_types: request.query.scope.owner_types }
                 : {}),
             }),
           })),
@@ -613,25 +619,21 @@ const mockIssues: Issue[] = [
   },
 ];
 
-function mockAssigneeGroups(issues: Issue[]) {
+function mockExecutorGroups(issues: Issue[]) {
   const groups = new Map<string, {
-    owner_type: Issue["owner_type"];
-    owner_id: string | null;
     executor_type: Issue["executor_type"];
     executor_id: string | null;
     issues: Issue[];
   }>();
   for (const issue of issues) {
-    const type = issue.executor_type ?? issue.owner_type;
-    const idValue = issue.executor_id ?? issue.owner_id;
+    const type = issue.executor_type;
+    const idValue = issue.executor_id;
     const id =
-      type && idValue ? `assignee:${type}:${idValue}` : "assignee:unassigned";
+      type && idValue ? `executor:${type}:${idValue}` : "executor:unassigned";
     if (!groups.has(id)) {
       groups.set(id, {
-        owner_type: type === "member" ? "member" : null,
-        owner_id: type === "member" ? idValue : null,
-        executor_type: type === "member" ? null : type,
-        executor_id: type === "member" ? null : idValue,
+        executor_type: type,
+        executor_id: idValue,
         issues: [],
       });
     }
@@ -640,8 +642,6 @@ function mockAssigneeGroups(issues: Issue[]) {
   return {
     groups: [...groups.entries()].map(([id, group]) => ({
       id,
-      owner_type: group.owner_type,
-      owner_id: group.owner_id,
       executor_type: group.executor_type,
       executor_id: group.executor_id,
       issues: group.issues,
@@ -732,7 +732,7 @@ describe("IssuesPage (shared)", () => {
 
     renderWithQuery(<IssuesPage />);
 
-    await screen.findByText("Implement auth");
+    await screen.findByText("Design landing page");
     expect(screen.getByText("Design landing page")).toBeInTheDocument();
     expect(screen.getByText("Write tests")).toBeInTheDocument();
   });
@@ -754,14 +754,11 @@ describe("IssuesPage (shared)", () => {
 
   it("groups board columns by executor", async () => {
     mockViewState.grouping = "executor";
-    mockListGroupedIssues.mockResolvedValue(mockAssigneeGroups(mockIssues));
+    mockListGroupedIssues.mockResolvedValue(mockExecutorGroups(mockIssues));
 
     renderWithQuery(<IssuesPage />);
 
-    // "Test User" renders both as the executor group header and on the
-    // executor chip of each card grouped under that header, so a unique
-    // match is not guaranteed.
-    await screen.findAllByText("Test User");
+    await screen.findAllByText("Agent One");
     expect(screen.getAllByText("Agent One").length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText("Team One").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("No executor")).toBeInTheDocument();
@@ -769,20 +766,20 @@ describe("IssuesPage (shared)", () => {
 
   it("uses table group/row branches instead of the legacy status sweep", async () => {
     mockViewState.grouping = "executor";
-    mockListGroupedIssues.mockResolvedValue(mockAssigneeGroups(mockIssues));
+    mockListGroupedIssues.mockResolvedValue(mockExecutorGroups(mockIssues));
 
     renderWithQuery(<IssuesPage />);
 
-    await screen.findByText("Implement auth");
+    await screen.findByText("Design landing page");
     expect(mockListIssueTableGroups).toHaveBeenCalledWith(
       expect.objectContaining({
-        group: { kind: "assignee" },
+        group: { kind: "executor" },
         page: { limit: 100, cursor: null },
       }),
     );
     expect(mockListIssueTableRows).toHaveBeenCalledWith(
       expect.objectContaining({
-        group: { kind: "assignee" },
+        group: { kind: "executor" },
         page: { limit: 50, cursor: null },
       }),
     );
@@ -822,17 +819,17 @@ describe("IssuesPage (shared)", () => {
     expect(screen.getByText("Agents")).toBeInTheDocument();
   });
 
-  // The Members/Agents tabs filter server-side via executor_types (the same
-  // param the grouped endpoint takes), so the mock mirrors the server's
-  // WHERE clause instead of a client-side post-filter.
-  function mockListIssuesHonoringAssigneeTypes() {
+  // Members are selected by ownership while Agents are selected by executor
+  // routing, so the mock mirrors the server's role-specific WHERE clauses.
+  function mockListIssuesHonoringRoleTypes() {
     mockListIssues.mockImplementation((params: any) => {
       const matches = mockIssues.filter((i) => {
-        const effectiveType = i.executor_type ?? i.owner_type;
         return (
           i.status === params?.status &&
+          (!params?.owner_types ||
+            (i.owner_type !== null && params.owner_types.includes(i.owner_type))) &&
           (!params?.executor_types ||
-            (effectiveType !== null && params.executor_types.includes(effectiveType)))
+            (i.executor_type !== null && params.executor_types.includes(i.executor_type)))
         );
       });
       return Promise.resolve({ issues: matches, total: matches.length });
@@ -842,7 +839,7 @@ describe("IssuesPage (shared)", () => {
   it("agents scope includes team-assigned issues", async () => {
     mockScope = "agents";
     mockViewState.viewMode = "list";
-    mockListIssuesHonoringAssigneeTypes();
+    mockListIssuesHonoringRoleTypes();
     renderWithQuery(<IssuesPage />);
 
     // Team task and agent task should be visible
@@ -858,14 +855,14 @@ describe("IssuesPage (shared)", () => {
   it("members scope excludes team-assigned issues", async () => {
     mockScope = "members";
     mockViewState.viewMode = "list";
-    mockListIssuesHonoringAssigneeTypes();
+    mockListIssuesHonoringRoleTypes();
     renderWithQuery(<IssuesPage />);
 
     await screen.findByText("Implement auth");
     expect(screen.queryByText("Team task")).not.toBeInTheDocument();
     expect(screen.queryByText("Design landing page")).not.toBeInTheDocument();
     expect(mockListIssues).toHaveBeenCalledWith(
-      expect.objectContaining({ executor_types: ["member"] }),
+      expect.objectContaining({ owner_types: ["member"] }),
     );
   });
 });

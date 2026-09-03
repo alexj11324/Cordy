@@ -2707,7 +2707,7 @@ func (h *Handler) computeCommentAgentTriggers(ctx context.Context, issue db.Issu
 		if !ok {
 			return nil, nil
 		}
-		if fallback, ok := h.routeAssigneeFallback(ctx, issue, actorType, actorID, opts); ok &&
+		if fallback, ok := h.routeExecutorFallback(ctx, issue, actorType, actorID, opts); ok &&
 			uuidToString(fallback.Agent.ID) != uuidToString(trigger.Agent.ID) {
 			trigger.EscalationFallback = &commentEscalationFallback{
 				Agent: fallback.Agent,
@@ -2724,7 +2724,7 @@ func (h *Handler) computeCommentAgentTriggers(ctx context.Context, issue db.Issu
 				return nil, nil
 			}
 			if len(triggers) == 1 {
-				if fallback, ok := h.routeAssigneeFallback(ctx, issue, actorType, actorID, opts); ok &&
+				if fallback, ok := h.routeExecutorFallback(ctx, issue, actorType, actorID, opts); ok &&
 					uuidToString(fallback.Agent.ID) != uuidToString(triggers[0].Agent.ID) {
 					triggers[0].EscalationFallback = &commentEscalationFallback{
 						Agent: fallback.Agent,
@@ -2742,7 +2742,7 @@ func (h *Handler) computeCommentAgentTriggers(ctx context.Context, issue db.Issu
 		}
 	}
 
-	if trigger, ok := h.routeAssigneeFallback(ctx, issue, actorType, actorID, opts); ok {
+	if trigger, ok := h.routeExecutorFallback(ctx, issue, actorType, actorID, opts); ok {
 		return []commentAgentTrigger{trigger}, nil
 	}
 	return nil, nil
@@ -2914,13 +2914,13 @@ func (h *Handler) routeConversationContinuationToAgent(ctx context.Context, issu
 	return trigger, true
 }
 
-func (h *Handler) routeAssigneeFallback(ctx context.Context, issue db.Issue, authorType, authorID string, opts commentTriggerComputeOptions) (commentAgentTrigger, bool) {
+func (h *Handler) routeExecutorFallback(ctx context.Context, issue db.Issue, authorType, authorID string, opts commentTriggerComputeOptions) (commentAgentTrigger, bool) {
 	if !issue.ExecutorType.Valid || !issue.ExecutorID.Valid {
 		return commentAgentTrigger{}, false
 	}
 	switch issue.ExecutorType.String {
 	case "agent":
-		agent, hasPending, ok := h.assigneeFallbackAgent(ctx, issue, authorType, authorID, opts)
+		agent, hasPending, ok := h.executorFallbackAgent(ctx, issue, authorType, authorID, opts)
 		if !ok {
 			return commentAgentTrigger{}, false
 		}

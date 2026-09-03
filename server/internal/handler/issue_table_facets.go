@@ -55,9 +55,9 @@ func issueTableQueryWithoutFacet(input issueTableQuerySpec, facet issueTableFace
 		output.Filters.Statuses = nil
 	case "priority":
 		output.Filters.Priorities = nil
-	case "assignee":
-		output.Filters.Assignees = nil
-		output.Filters.IncludeNoAssignee = false
+	case "executor":
+		output.Filters.Executors = nil
+		output.Filters.IncludeNoExecutor = false
 	case "creator":
 		output.Filters.Creators = nil
 	case "project":
@@ -91,8 +91,8 @@ func issueTableBaseFacetExpression(query issueTableQuerySpec, facet issueTableFa
 		return "i.status", len(query.Filters.Statuses) == 0
 	case "priority":
 		return "i.priority", len(query.Filters.Priorities) == 0
-	case "assignee":
-		return "CASE WHEN " + effectiveAssigneeTypeSQL + " IS NULL OR " + effectiveAssigneeIDSQL + " IS NULL THEN '__none__' ELSE " + effectiveAssigneeTypeSQL + " || ':' || " + effectiveAssigneeIDSQL + "::text END", len(query.Filters.Assignees) == 0 && !query.Filters.IncludeNoAssignee
+	case "executor":
+		return "CASE WHEN i.executor_type IS NULL OR i.executor_id IS NULL THEN '__none__' ELSE i.executor_type || ':' || i.executor_id::text END", len(query.Filters.Executors) == 0 && !query.Filters.IncludeNoExecutor
 	case "creator":
 		return "i.creator_type || ':' || i.creator_id::text", len(query.Filters.Creators) == 0
 	case "project":
@@ -195,8 +195,8 @@ func (h *Handler) issueTableFacetQuery(w http.ResponseWriter, r *http.Request, r
 		query = fmt.Sprintf(`SELECT i.status, COUNT(*)::bigint FROM issue i WHERE %s GROUP BY i.status`, compiled.where)
 	case "priority":
 		query = fmt.Sprintf(`SELECT i.priority, COUNT(*)::bigint FROM issue i WHERE %s GROUP BY i.priority`, compiled.where)
-	case "assignee":
-		query = fmt.Sprintf(`SELECT CASE WHEN %s IS NULL OR %s IS NULL THEN '__none__' ELSE %s || ':' || %s::text END, COUNT(*)::bigint FROM issue i WHERE %s GROUP BY 1`, effectiveAssigneeTypeSQL, effectiveAssigneeIDSQL, effectiveAssigneeTypeSQL, effectiveAssigneeIDSQL, compiled.where)
+	case "executor":
+		query = fmt.Sprintf(`SELECT CASE WHEN i.executor_type IS NULL OR i.executor_id IS NULL THEN '__none__' ELSE i.executor_type || ':' || i.executor_id::text END, COUNT(*)::bigint FROM issue i WHERE %s GROUP BY 1`, compiled.where)
 	case "creator":
 		query = fmt.Sprintf(`SELECT i.creator_type || ':' || i.creator_id::text, COUNT(*)::bigint FROM issue i WHERE %s GROUP BY 1`, compiled.where)
 	case "project":

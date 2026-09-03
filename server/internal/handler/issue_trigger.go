@@ -20,7 +20,7 @@ const maxPreviewTriggerIssues = 500
 
 // issueTriggerWriteProbe builds the probe the write paths feed to
 // WillEnqueueRun. The private-agent gate is already enforced at the HTTP
-// boundary (validateAssigneePair on assign) and inside enqueueTeamLeaderTask
+// boundary (validateExecutorPair on assign) and inside enqueueTeamLeaderTask
 // (canEnqueueTeamLeader), so a write must NOT re-run or sink it — it passes
 // allow-all. The self-loop check needs the request's X-Task-ID header.
 func (h *Handler) issueTriggerWriteProbe(r *http.Request, actorType, actorID string, issue db.Issue) service.IssueTriggerProbe {
@@ -44,7 +44,7 @@ func (h *Handler) issueTriggerWriteProbe(r *http.Request, actorType, actorID str
 
 // issueTriggerPreviewProbe mirrors the real write-time gates for the read-only
 // preview: the private-agent gate (so preview never leaks a private agent's
-// readiness to a member who cannot see it — matching validateAssigneePair /
+// readiness to a member who cannot see it — matching validateExecutorPair /
 // canEnqueueTeamLeader) and the same self-loop guard.
 func (h *Handler) issueTriggerPreviewProbe(r *http.Request, actorType, actorID, workspaceID string, issue db.Issue) service.IssueTriggerProbe {
 	originatorUserID := h.invokeOriginatorFromRequest(r, actorType, actorID)
@@ -241,7 +241,7 @@ func (h *Handler) PreviewIssueTrigger(w http.ResponseWriter, r *http.Request) {
 		if hasNewAssignee {
 			post.ExecutorType = newExecutorType
 			post.ExecutorID = newExecutorID
-			in.AssigneeChanged = loaded.ExecutorType.String != newExecutorType.String ||
+			in.ExecutorChanged = loaded.ExecutorType.String != newExecutorType.String ||
 				uuidToString(loaded.ExecutorID) != uuidToString(newExecutorID)
 		}
 		if req.Status != nil && *req.Status != "" {

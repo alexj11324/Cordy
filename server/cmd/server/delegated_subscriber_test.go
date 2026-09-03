@@ -275,13 +275,13 @@ func TestDeliverToSubscriber_DelegatedTier(t *testing.T) {
 		want        bool
 	}{
 		{"direct subscriber keeps every event", "creator", "status_changed", "in_progress", true},
-		{"direct subscriber keeps comments", "assignee", "new_comment", "todo", true},
+		{"direct subscriber keeps comments", "executor", "new_comment", "todo", true},
 
 		{"delegated skips routine progress", "delegated", "status_changed", "in_progress", false},
 		{"delegated skips backlog parking", "delegated", "status_changed", "backlog", false},
 		{"delegated skips todo", "delegated", "status_changed", "todo", false},
 		{"delegated skips comment churn", "delegated", "new_comment", "in_progress", false},
-		{"delegated skips assignee churn", "delegated", "assignee_changed", "in_progress", false},
+		{"delegated skips executor churn", "delegated", "executor_changed", "in_progress", false},
 		{"delegated skips date churn", "delegated", "due_date_changed", "in_progress", false},
 
 		{"delegated gets the review handoff", "delegated", "status_changed", "in_review", true},

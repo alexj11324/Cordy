@@ -1,4 +1,4 @@
-import type { Issue, IssueStatus, IssuePriority, IssueAssigneeGroup, PropertyFilterValue, PropertyOperatorFilter } from "@patchbay/core/types";
+import type { Issue, IssueStatus, IssuePriority, IssueExecutorGroup, PropertyFilterValue, PropertyOperatorFilter } from "@patchbay/core/types";
 import type { ActorFilterValue } from "@patchbay/core/issues/stores/view-store";
 import type { IssueActivityState } from "../surface/activity";
 
@@ -283,21 +283,21 @@ export function filterIssues(issues: Issue[], filters: IssueFilters): Issue[] {
 
 /**
  * Re-apply the client-only display filters to a server-grouped response.
- * The assignee-grouped board renders straight from `groups`, bypassing the
+ * The executor-grouped board renders straight from `groups`, bypassing the
  * flat `applyIssueFilters` output, so the "Show sub-issues" toggle and the
  * agents-working quick filter must be applied per group here. Recomputes
  * each group's total and drops emptied groups. Returns the input by
  * reference when no client filter is active.
  */
-export function filterAssigneeGroups(
-  groups: IssueAssigneeGroup[] | undefined,
+export function filterExecutorGroups(
+  groups: IssueExecutorGroup[] | undefined,
   filters: {
     showSubIssues?: boolean;
     agentRunningFilter?: boolean;
     runningIssueIds?: ReadonlySet<string>;
     propertyFilters?: Record<string, PropertyFilterValue[]>;
   },
-): IssueAssigneeGroup[] | undefined {
+): IssueExecutorGroup[] | undefined {
   const applyRunning = filters.agentRunningFilter === true;
   const hideSubIssues = filters.showSubIssues === false;
   const hasPropertyFilters = Object.values(filters.propertyFilters ?? {}).some(

@@ -1432,10 +1432,10 @@ describe("SwimLaneView", () => {
   });
 
   // ------------------------------------------------------------------
-  // Assignee grouping
+  // Executor grouping
   // ------------------------------------------------------------------
 
-  const assigneeIssues: Issue[] = [
+  const executorIssues: Issue[] = [
     {
       ...mockIssues[0]!,
       id: "issue-x",
@@ -1475,13 +1475,14 @@ describe("SwimLaneView", () => {
     mockViewState.swimlaneGrouping = "executor";
 
     renderWithI18n(
-      <SwimLaneView issues={assigneeIssues} onMoveIssue={vi.fn()} />,
+      <SwimLaneView issues={executorIssues} onMoveIssue={vi.fn()} />,
     );
 
-    // Unassigned pinned lane is always rendered.
-    expect(screen.getAllByText("Unassigned").length).toBeGreaterThanOrEqual(1);
-    // Mock actor name fallback for both member and agent.
-    expect(screen.getAllByText("Mock Actor").length).toBeGreaterThanOrEqual(2);
+    // No-executor pinned lane is always rendered.
+    expect(screen.getAllByText("No executor").length).toBeGreaterThanOrEqual(1);
+    // The owner-only issue remains in No executor; only the agent creates an
+    // executor lane.
+    expect(screen.getAllByText("Mock Actor").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("Issue X")).toBeInTheDocument();
     expect(screen.getByText("Issue Y")).toBeInTheDocument();
     expect(screen.getByText("Issue Z")).toBeInTheDocument();
@@ -1492,10 +1493,10 @@ describe("SwimLaneView", () => {
     const mockOnMoveIssue = vi.fn();
 
     renderWithI18n(
-      <SwimLaneView issues={assigneeIssues} onMoveIssue={mockOnMoveIssue} />,
+      <SwimLaneView issues={executorIssues} onMoveIssue={mockOnMoveIssue} />,
     );
 
-    const target = "swim:executor:member:user-1:in_review";
+    const target = "swim:executor:agent:agent-1:in_review";
     act(() => {
       lastOnDragOver({ active: { id: "issue-z" }, over: { id: target } });
     });
@@ -1506,10 +1507,8 @@ describe("SwimLaneView", () => {
     expect(mockOnMoveIssue).toHaveBeenCalledWith(
       "issue-z",
       expect.objectContaining({
-        owner_type: "member",
-        owner_id: "user-1",
-        executor_type: null,
-        executor_id: null,
+        executor_type: "agent",
+        executor_id: "agent-1",
         status: "in_review",
       }),
       expect.any(Function),
@@ -1521,7 +1520,7 @@ describe("SwimLaneView", () => {
     const mockOnMoveIssue = vi.fn();
 
     renderWithI18n(
-      <SwimLaneView issues={assigneeIssues} onMoveIssue={mockOnMoveIssue} />,
+      <SwimLaneView issues={executorIssues} onMoveIssue={mockOnMoveIssue} />,
     );
 
     const target = "swim:executor:none:done";

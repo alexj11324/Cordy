@@ -305,7 +305,7 @@
     "no_parent": "親タスクなし",
     "other_parents": "その他の親タスク",
     "no_project": "プロジェクトなし",
-    "no_executor": "未割り当て",
+    "no_executor": "実行者なし",
     "open_parent": "親タスクを開く",
     "toggle_collapse": "レーンの開閉"
   },

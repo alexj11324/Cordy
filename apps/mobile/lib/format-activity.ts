@@ -67,18 +67,31 @@ export function formatActivity(
       return `changed status: ${statusName(details.from, resolveStatusLabel)} → ${statusName(details.to, resolveStatusLabel)}`;
     case "priority_changed":
       return `changed priority: ${priorityName(details.from)} → ${priorityName(details.to)}`;
-    case "assignee_changed": {
+    case "executor_changed": {
       const isSelf =
         details.to_type === entry.actor_type &&
         details.to_id === entry.actor_id;
-      if (isSelf) return "self-assigned";
-      if (details.from_id && !details.to_id) return "removed assignee";
+      if (isSelf) return "set themselves as executor";
+      if (details.from_id && !details.to_id) return "removed executor";
       const toName =
         details.to_id && details.to_type
           ? resolveActorName(details.to_type, details.to_id)
           : null;
-      if (toName) return `assigned to ${toName}`;
-      return "changed assignee";
+      if (toName) return `set executor to ${toName}`;
+      return "changed executor";
+    }
+    case "owner_changed": {
+      const isSelf =
+        details.to_type === entry.actor_type &&
+        details.to_id === entry.actor_id;
+      if (isSelf) return "set themselves as owner";
+      if (details.from_id && !details.to_id) return "removed owner";
+      const toName =
+        details.to_id && details.to_type
+          ? resolveActorName(details.to_type, details.to_id)
+          : null;
+      if (toName) return `set owner to ${toName}`;
+      return "changed owner";
     }
     case "start_date_changed": {
       if (!details.to) return "removed start date";
@@ -126,4 +139,3 @@ export function formatActivity(
       return entry.action ?? "";
   }
 }
-

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { Issue, IssueAssigneeType } from "@patchbay/core/types";
+import type { Issue, IssueExecutorType } from "@patchbay/core/types";
 import { AppLink, NavigationProvider, type NavigationAdapter } from "../../navigation";
 import {
   IssueSurfaceActionsProvider,
@@ -111,7 +111,7 @@ const actions: IssueSurfaceActions = {
   batchDelete: vi.fn().mockResolvedValue(undefined),
 };
 
-function makeIssue(executorType: Exclude<IssueAssigneeType, "member">): Issue {
+function makeIssue(executorType: IssueExecutorType): Issue {
   return {
     id: `issue-${executorType}`,
     workspace_id: "ws-1",
@@ -144,7 +144,7 @@ function makeIssue(executorType: Exclude<IssueAssigneeType, "member">): Issue {
 }
 
 describe("BoardCardContent executor picker", () => {
-  it.each<Exclude<IssueAssigneeType, "member">>(["agent", "team"])(
+  it.each<IssueExecutorType>(["agent", "team"])(
     "opens the picker from an avatar-only %s executor without navigating the card",
     (executorType) => {
       const issue = makeIssue(executorType);

@@ -305,7 +305,7 @@
     "no_parent": "无父级",
     "other_parents": "其他父级",
     "no_project": "无项目",
-    "no_executor": "未分配",
+    "no_executor": "无执行者",
     "open_parent": "打开父级任务",
     "toggle_collapse": "切换泳道"
   },

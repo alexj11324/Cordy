@@ -2074,10 +2074,8 @@ export const EMPTY_SEARCH_PROJECTS_RESPONSE: SearchProjectsResponse = {
   total: 0,
 };
 
-const IssueAssigneeGroupSchema = z.object({
+const IssueExecutorGroupSchema = z.object({
   id: z.string(),
-  owner_type: z.string().nullable().optional(),
-  owner_id: z.string().nullable().optional(),
   executor_type: z.string().nullable(),
   executor_id: z.string().nullable(),
   issues: z.array(IssueSchema).default([]),
@@ -2085,7 +2083,7 @@ const IssueAssigneeGroupSchema = z.object({
 }).loose();
 
 export const GroupedIssuesResponseSchema = z.object({
-  groups: z.array(IssueAssigneeGroupSchema).default([]),
+  groups: z.array(IssueExecutorGroupSchema).default([]),
 }).loose();
 
 export const EMPTY_GROUPED_ISSUES_RESPONSE: GroupedIssuesResponse = {
@@ -2113,7 +2111,7 @@ const IssueTableGroupValueSchema = z.discriminatedUnion("kind", [
     status: z.string(),
   }).loose(),
   z.object({
-    kind: z.literal("assignee"),
+    kind: z.literal("executor"),
     actor: IssueTableActorRefSchema.nullable(),
   }).loose(),
   z.object({
@@ -2186,7 +2184,7 @@ const IssueTableFacetValueSchema = z.object({
 }).loose();
 
 const IssueTableFacetSchema = z.object({
-  kind: z.enum(["status", "priority", "assignee", "creator", "project", "label", "property", "working_agents"]),
+  kind: z.enum(["status", "priority", "executor", "creator", "project", "label", "property", "working_agents"]),
   property_id: z.string().optional(),
   values: z.array(IssueTableFacetValueSchema).default([]),
 }).loose();

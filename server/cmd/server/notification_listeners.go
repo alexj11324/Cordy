@@ -105,7 +105,7 @@ var delegatedStatusNotify = map[string]bool{
 }
 
 // deliverToSubscriber reports whether a subscriber row should receive this
-// notification type. Direct subscriptions (creator / assignee / commenter /
+// notification type. Direct subscriptions (creator / owner / executor / commenter /
 // mentioned / manual / automation) are unchanged — they opted in to this issue,
 // explicitly or by acting on it. Only the delegated tier is narrowed, and only
 // to drop churn.
@@ -136,7 +136,8 @@ func deliverToSubscriber(reason, notifType, issueStatus string) bool {
 var notifTypeToGroup = map[string]string{
 	"issue_assigned":     "assignments",
 	"unassigned":         "assignments",
-	"assignee_changed":   "assignments",
+	"owner_changed":      "assignments",
+	"executor_changed":   "assignments",
 	"status_changed":     "status_changes",
 	"new_comment":        "comments",
 	"mentioned":          "mentions",
@@ -633,7 +634,7 @@ func notifyMentionedMembers(
 func registerNotificationListeners(bus *events.Bus, queries *db.Queries) {
 	ctx := context.Background()
 
-	// issue:created — Direct notification to assignee if assignee != actor
+	// issue:created — direct notifications to owner/executor when they differ from the actor
 	bus.Subscribe(protocol.EventIssueCreated, func(e events.Event) {
 		payload, ok := e.Payload.(map[string]any)
 		if !ok {
@@ -647,16 +648,37 @@ func registerNotificationListeners(bus *events.Bus, queries *db.Queries) {
 		// Track who already got notified to avoid duplicates
 		skip := map[string]bool{e.ActorID: true}
 
-		// Direct notification to assignees that own an inbox.
+		// Direct notification to an owner that owns an inbox.
+		if issue.OwnerType != nil && issue.OwnerID != nil && isAssignmentRecipientType(*issue.OwnerType) {
+			skip[*issue.OwnerID] = true
+			details, _ := json.Marshal(map[string]string{
+				"new_owner_type": *issue.OwnerType,
+				"new_owner_id":   *issue.OwnerID,
+			})
+			notifyDirect(ctx, queries, bus,
+				*issue.OwnerType, *issue.OwnerID,
+				issue.WorkspaceID, e, issue.ID, issue.Status,
+				"issue_assigned", "action_required",
+				issue.Title,
+				"",
+				details,
+			)
+		}
+
+		// Direct notification to an executor that owns an inbox.
 		if issue.ExecutorType != nil && issue.ExecutorID != nil && isAssignmentRecipientType(*issue.ExecutorType) {
 			skip[*issue.ExecutorID] = true
+			details, _ := json.Marshal(map[string]string{
+				"new_executor_type": *issue.ExecutorType,
+				"new_executor_id":   *issue.ExecutorID,
+			})
 			notifyDirect(ctx, queries, bus,
 				*issue.ExecutorType, *issue.ExecutorID,
 				issue.WorkspaceID, e, issue.ID, issue.Status,
 				"issue_assigned", "action_required",
 				issue.Title,
 				"",
-				emptyDetails,
+				details,
 			)
 		}
 
@@ -668,7 +690,7 @@ func registerNotificationListeners(bus *events.Bus, queries *db.Queries) {
 		}
 	})
 
-	// issue:updated — handle assignee changes, status changes, priority, due date
+	// issue:updated — handle role changes, status changes, priority, due date
 	bus.Subscribe(protocol.EventIssueUpdated, func(e events.Event) {
 		payload, ok := e.Payload.(map[string]any)
 		if !ok {
@@ -678,78 +700,87 @@ func registerNotificationListeners(bus *events.Bus, queries *db.Queries) {
 		if !ok {
 			return
 		}
-		assigneeChanged, _ := payload["assignee_changed"].(bool)
+		ownerChanged, _ := payload["owner_changed"].(bool)
+		executorChanged, _ := payload["executor_changed"].(bool)
 		statusChanged, _ := payload["status_changed"].(bool)
 		descriptionChanged, _ := payload["description_changed"].(bool)
-		prevAssigneeType, prevAssigneeID := payloadPrevEffectiveAssignee(payload)
-		newAssigneeType, newAssigneeID := issue.EffectiveAssignee()
 		prevDescription, _ := payload["prev_description"].(*string)
 
-		if assigneeChanged {
-			// Build structured details for assignee change.
-			//
-			// map[string]string, not map[string]any: every client parses inbox
-			// `details` as a string->string map, and because the inbox endpoint
-			// returns an ARRAY, one non-string value fails the whole parse and
-			// blanks the entire list rather than one row. `any` let that be a
-			// convention a reviewer had to notice; the concrete type makes it a
-			// compile error. This is the only details map in this file that was
-			// not already string-typed.
-			detailsMap := map[string]string{}
-			if prevAssigneeType != nil {
-				detailsMap["prev_executor_type"] = *prevAssigneeType
+		notifyRoleChange := func(
+			role string,
+			changed bool,
+			prevType *string,
+			prevID *string,
+			newType *string,
+			newID *string,
+		) {
+			if !changed {
+				return
 			}
-			if prevAssigneeID != nil {
-				detailsMap["prev_executor_id"] = *prevAssigneeID
-			}
-			if newAssigneeType != nil {
-				detailsMap["new_executor_type"] = *newAssigneeType
-			}
-			if newAssigneeID != nil {
-				detailsMap["new_executor_id"] = *newAssigneeID
-			}
-			assigneeDetails, _ := json.Marshal(detailsMap)
 
-			// Direct: notify new assignee about assignment when it owns an inbox.
-			if newAssigneeType != nil && newAssigneeID != nil && isAssignmentRecipientType(*newAssigneeType) {
+			detailsMap := map[string]string{}
+			if prevType != nil {
+				detailsMap["prev_"+role+"_type"] = *prevType
+			}
+			if prevID != nil {
+				detailsMap["prev_"+role+"_id"] = *prevID
+			}
+			if newType != nil {
+				detailsMap["new_"+role+"_type"] = *newType
+			}
+			if newID != nil {
+				detailsMap["new_"+role+"_id"] = *newID
+			}
+			roleDetails, _ := json.Marshal(detailsMap)
+
+			// Direct: notify the new role actor when it owns an inbox.
+			if newType != nil && newID != nil && isAssignmentRecipientType(*newType) {
 				notifyDirect(ctx, queries, bus,
-					*newAssigneeType, *newAssigneeID,
+					*newType, *newID,
 					e.WorkspaceID, e, issue.ID, issue.Status,
 					"issue_assigned", "action_required",
 					issue.Title,
 					"",
-					assigneeDetails,
+					roleDetails,
 				)
 			}
 
-			// Direct: notify only a previous member assignee about unassignment.
+			// Direct: notify only a previous member about unassignment.
 			// This is intentionally narrower than isAssignmentRecipientType: agents
 			// do not receive unassigned notifications.
-			if prevAssigneeType != nil && prevAssigneeID != nil && *prevAssigneeType == "member" {
+			if prevType != nil && prevID != nil && *prevType == "member" {
 				notifyDirect(ctx, queries, bus,
-					"member", *prevAssigneeID,
+					"member", *prevID,
 					e.WorkspaceID, e, issue.ID, issue.Status,
 					"unassigned", "info",
 					issue.Title,
 					"",
-					assigneeDetails,
+					roleDetails,
 				)
 			}
 
-			// Subscriber: notify remaining subscribers about assignee change,
-			// excluding actor, old assignee, and new assignee
+			// Subscriber: notify remaining subscribers about the role change,
+			// excluding actor, prior role actor, and new role actor.
 			exclude := map[string]bool{}
-			if prevAssigneeID != nil {
-				exclude[*prevAssigneeID] = true
+			if prevID != nil {
+				exclude[*prevID] = true
 			}
-			if newAssigneeID != nil {
-				exclude[*newAssigneeID] = true
+			if newID != nil {
+				exclude[*newID] = true
 			}
 			notifySubscribers(ctx, queries, bus, issue.ID, issue.Status, e.WorkspaceID, e,
-				exclude, "assignee_changed", "info",
+				exclude, role+"_changed", "info",
 				issue.Title, "",
-				assigneeDetails)
+				roleDetails)
 		}
+
+		prevOwnerType, _ := payload["prev_owner_type"].(*string)
+		prevOwnerID, _ := payload["prev_owner_id"].(*string)
+		notifyRoleChange("owner", ownerChanged, prevOwnerType, prevOwnerID, issue.OwnerType, issue.OwnerID)
+
+		prevExecutorType, _ := payload["prev_executor_type"].(*string)
+		prevExecutorID, _ := payload["prev_executor_id"].(*string)
+		notifyRoleChange("executor", executorChanged, prevExecutorType, prevExecutorID, issue.ExecutorType, issue.ExecutorID)
 
 		if statusChanged {
 			prevStatus, _ := payload["prev_status"].(string)
@@ -877,7 +908,7 @@ func registerNotificationListeners(bus *events.Bus, queries *db.Queries) {
 		// body — the comment is a controlled platform signal, not a human
 		// commenter. Mention parsing is the dangerous bit: if the body
 		// transcluded a child title containing `mention://member/<uuid>`,
-		// the parent's assignee inbox would light up via the generic path.
+		// a parent's role actor inbox would light up via the generic path.
 		// Skip the listener entirely; the WS broadcast still delivers the
 		// comment to the issue timeline.
 		if authorType == "system" {
@@ -1041,15 +1072,4 @@ func inboxItemToResponse(item db.InboxItem) map[string]any {
 		"actor_id":       util.UUIDToPtr(item.ActorID),
 		"details":        json.RawMessage(item.Details),
 	}
-}
-
-func payloadPrevEffectiveAssignee(payload map[string]any) (typ *string, id *string) {
-	prevExecType, _ := payload["prev_executor_type"].(*string)
-	prevExecID, _ := payload["prev_executor_id"].(*string)
-	if prevExecType != nil && prevExecID != nil {
-		return prevExecType, prevExecID
-	}
-	prevOwnerType, _ := payload["prev_owner_type"].(*string)
-	prevOwnerID, _ := payload["prev_owner_id"].(*string)
-	return prevOwnerType, prevOwnerID
 }

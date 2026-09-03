@@ -110,7 +110,7 @@ function issueMatchesDescriptor(
   }
   const owner = primary?.value ?? value;
   switch (owner.kind) {
-    case "assignee":
+    case "executor":
       return owner.actor
         ? (issue.executor_type ?? issue.owner_type) === owner.actor.type &&
             (issue.executor_id ?? issue.owner_id) === owner.actor.id

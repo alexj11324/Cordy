@@ -362,7 +362,7 @@ func TestChildDoneMentionsParentAssignee_Agent(t *testing.T) {
 // whether to mention/inbox-row the member.
 //
 // The assignee row uses `user_id` (NOT `member.id`) — that is the
-// production invariant validated by validateAssigneePair for member
+// production invariant validated by validateExecutorPair for member
 // assignees (see server/internal/handler/issue.go), so the fixture must
 // match or it would be exercising a state that cannot occur for real.
 func TestChildDoneSkippedWhenParentMember(t *testing.T) {

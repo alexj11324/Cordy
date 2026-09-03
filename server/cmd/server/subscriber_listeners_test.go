@@ -90,7 +90,7 @@ func TestSubscriberIssueCreated_CreatorSubscribed(t *testing.T) {
 	issueID := createTestIssue(t, testWorkspaceID, testUserID)
 	t.Cleanup(func() { cleanupTestIssue(t, issueID) })
 
-	// Publish issue:created event with no assignee
+	// Publish issue:created event with no executor
 	bus.Publish(events.Event{
 		Type:        protocol.EventIssueCreated,
 		WorkspaceID: testWorkspaceID,
@@ -117,19 +117,17 @@ func TestSubscriberIssueCreated_CreatorSubscribed(t *testing.T) {
 	}
 }
 
-func TestSubscriberIssueCreated_CreatorAndAssignee(t *testing.T) {
+func TestSubscriberIssueCreated_CreatorAndExecutor(t *testing.T) {
 	queries := db.New(testPool)
 	bus := events.New()
 	registerSubscriberListeners(bus, testPool)
 
-	assigneeEmail := "subscriber-assignee-test@patchbay.ai"
-	assigneeID := createTestUser(t, assigneeEmail)
-	t.Cleanup(func() { cleanupTestUser(t, assigneeEmail) })
+	executorID := "00000000-0000-0000-0000-0000000000f1"
 
 	issueID := createTestIssue(t, testWorkspaceID, testUserID)
 	t.Cleanup(func() { cleanupTestIssue(t, issueID) })
 
-	assigneeType := "member"
+	executorType := "agent"
 	bus.Publish(events.Event{
 		Type:        protocol.EventIssueCreated,
 		WorkspaceID: testWorkspaceID,
@@ -144,8 +142,8 @@ func TestSubscriberIssueCreated_CreatorAndAssignee(t *testing.T) {
 				Priority:     "medium",
 				CreatorType:  "member",
 				CreatorID:    testUserID,
-				ExecutorType: &assigneeType,
-				ExecutorID:   &assigneeID,
+				ExecutorType: &executorType,
+				ExecutorID:   &executorID,
 			},
 		},
 	})
@@ -153,15 +151,15 @@ func TestSubscriberIssueCreated_CreatorAndAssignee(t *testing.T) {
 	if !isSubscribed(t, queries, issueID, "member", testUserID) {
 		t.Fatal("expected creator to be subscribed")
 	}
-	if !isSubscribed(t, queries, issueID, "member", assigneeID) {
-		t.Fatal("expected assignee to be subscribed")
+	if !isSubscribed(t, queries, issueID, "agent", executorID) {
+		t.Fatal("expected executor to be subscribed")
 	}
 	if count := subscriberCount(t, queries, issueID); count != 2 {
 		t.Fatalf("expected 2 subscribers, got %d", count)
 	}
 }
 
-func TestSubscriberIssueCreated_SelfAssign(t *testing.T) {
+func TestSubscriberIssueCreated_CreatorIsOwner(t *testing.T) {
 	queries := db.New(testPool)
 	bus := events.New()
 	registerSubscriberListeners(bus, testPool)
@@ -169,9 +167,9 @@ func TestSubscriberIssueCreated_SelfAssign(t *testing.T) {
 	issueID := createTestIssue(t, testWorkspaceID, testUserID)
 	t.Cleanup(func() { cleanupTestIssue(t, issueID) })
 
-	// Creator is also the assignee (self-assign)
-	assigneeType := "member"
-	assigneeID := testUserID
+	// Creator is also the owner.
+	ownerType := "member"
+	ownerID := testUserID
 	bus.Publish(events.Event{
 		Type:        protocol.EventIssueCreated,
 		WorkspaceID: testWorkspaceID,
@@ -186,34 +184,32 @@ func TestSubscriberIssueCreated_SelfAssign(t *testing.T) {
 				Priority:     "medium",
 				CreatorType:  "member",
 				CreatorID:    testUserID,
-				ExecutorType: &assigneeType,
-				ExecutorID:   &assigneeID,
+				OwnerType:    &ownerType,
+				OwnerID:      &ownerID,
 			},
 		},
 	})
 
 	// Should only have 1 subscriber record (ON CONFLICT DO NOTHING handles idempotency)
 	if count := subscriberCount(t, queries, issueID); count != 1 {
-		t.Fatalf("expected 1 subscriber for self-assign, got %d", count)
+		t.Fatalf("expected 1 subscriber when creator is owner, got %d", count)
 	}
 	if !isSubscribed(t, queries, issueID, "member", testUserID) {
-		t.Fatal("expected creator/assignee to be subscribed")
+		t.Fatal("expected creator/owner to be subscribed")
 	}
 }
 
-func TestSubscriberIssueUpdated_AssigneeChanged(t *testing.T) {
+func TestSubscriberIssueUpdated_ExecutorChanged(t *testing.T) {
 	queries := db.New(testPool)
 	bus := events.New()
 	registerSubscriberListeners(bus, testPool)
 
-	assigneeEmail := "subscriber-new-assignee-test@patchbay.ai"
-	assigneeID := createTestUser(t, assigneeEmail)
-	t.Cleanup(func() { cleanupTestUser(t, assigneeEmail) })
+	executorID := "00000000-0000-0000-0000-0000000000f2"
 
 	issueID := createTestIssue(t, testWorkspaceID, testUserID)
 	t.Cleanup(func() { cleanupTestIssue(t, issueID) })
 
-	assigneeType := "member"
+	executorType := "agent"
 	bus.Publish(events.Event{
 		Type:        protocol.EventIssueUpdated,
 		WorkspaceID: testWorkspaceID,
@@ -228,19 +224,19 @@ func TestSubscriberIssueUpdated_AssigneeChanged(t *testing.T) {
 				Priority:     "medium",
 				CreatorType:  "member",
 				CreatorID:    testUserID,
-				ExecutorType: &assigneeType,
-				ExecutorID:   &assigneeID,
+				ExecutorType: &executorType,
+				ExecutorID:   &executorID,
 			},
-			"assignee_changed": true,
+			"executor_changed": true,
 		},
 	})
 
-	if !isSubscribed(t, queries, issueID, "member", assigneeID) {
-		t.Fatal("expected new assignee to be subscribed after assignee change")
+	if !isSubscribed(t, queries, issueID, "agent", executorID) {
+		t.Fatal("expected new executor to be subscribed after executor change")
 	}
 }
 
-func TestSubscriberIssueUpdated_NoAssigneeChange(t *testing.T) {
+func TestSubscriberIssueUpdated_NoExecutorChange(t *testing.T) {
 	queries := db.New(testPool)
 	bus := events.New()
 	registerSubscriberListeners(bus, testPool)
@@ -248,7 +244,7 @@ func TestSubscriberIssueUpdated_NoAssigneeChange(t *testing.T) {
 	issueID := createTestIssue(t, testWorkspaceID, testUserID)
 	t.Cleanup(func() { cleanupTestIssue(t, issueID) })
 
-	// Publish issue:updated without assignee_changed flag
+	// Publish issue:updated without either role-change flag.
 	bus.Publish(events.Event{
 		Type:        protocol.EventIssueUpdated,
 		WorkspaceID: testWorkspaceID,
@@ -264,14 +260,15 @@ func TestSubscriberIssueUpdated_NoAssigneeChange(t *testing.T) {
 				CreatorType: "member",
 				CreatorID:   testUserID,
 			},
-			"assignee_changed": false,
+			"owner_changed":    false,
+			"executor_changed": false,
 			"status_changed":   true,
 		},
 	})
 
 	// No subscriber should have been added
 	if count := subscriberCount(t, queries, issueID); count != 0 {
-		t.Fatalf("expected 0 subscribers when assignee not changed, got %d", count)
+		t.Fatalf("expected 0 subscribers when executor not changed, got %d", count)
 	}
 }
 

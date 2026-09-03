@@ -3,6 +3,7 @@ import type { Issue } from "@patchbay/core/types";
 import type { BoardColumnGroup } from "../components/board-column";
 import {
   buildColumns,
+  executorGroupId,
   getIssueGroupId,
   getMoveAnchors,
   getMoveUpdates,
@@ -160,6 +161,54 @@ describe("status grouping with custom statuses", () => {
   });
 });
 
+describe("executor grouping", () => {
+  const ownerOnly = {
+    ...mk("owner-only", 1),
+    owner_type: "member",
+    owner_id: "member-1",
+  } as Issue;
+  const withExecutor = {
+    ...ownerOnly,
+    id: "with-executor",
+    executor_type: "agent",
+    executor_id: "agent-1",
+  } as Issue;
+  const noExecutorColumn: BoardColumnGroup = {
+    id: executorGroupId(null, null),
+    title: "No executor",
+    executorType: null,
+    executorId: null,
+  };
+  const agentColumn: BoardColumnGroup = {
+    id: executorGroupId("agent", "agent-1"),
+    title: "Agent One",
+    executorType: "agent",
+    executorId: "agent-1",
+  };
+
+  it("does not treat an owner as an executor", () => {
+    expect(getIssueGroupId(ownerOnly, "executor")).toBe(executorGroupId(null, null));
+    expect(issueMatchesGroup(ownerOnly, noExecutorColumn)).toBe(true);
+    expect(issueMatchesGroup(ownerOnly, agentColumn)).toBe(false);
+    expect(getIssueGroupId(withExecutor, "executor")).toBe(
+      executorGroupId("agent", "agent-1"),
+    );
+  });
+
+  it("moves only the executor role and preserves ownership", () => {
+    expect(getMoveUpdates(agentColumn, 5)).toEqual({
+      executor_type: "agent",
+      executor_id: "agent-1",
+      position: 5,
+    });
+    expect(getMoveUpdates(noExecutorColumn, 5)).toEqual({
+      executor_type: null,
+      executor_id: null,
+      position: 5,
+    });
+  });
+});
+
 describe("property grouping", () => {
   const propertyId = "prop-env";
   const withValue = { id: "A", properties: { [propertyId]: "opt-staging" } } as unknown as Issue;
@@ -243,9 +292,9 @@ describe("project grouping", () => {
     });
   });
 
-  it("a project column never falls through to the unassigned-assignee update", () => {
-    // projectId/assigneeId are both optional on BoardColumnGroup, so an
-    // unguarded project column would read as "no assignee" and unassign the
+  it("a project column never falls through to the unassigned-executor update", () => {
+    // projectId/executorId are both optional on BoardColumnGroup, so an
+    // unguarded project column would read as "no executor" and unassign the
     // card on every drop.
     expect(getMoveUpdates(projectColumn, 5)).not.toHaveProperty("executor_type");
   });

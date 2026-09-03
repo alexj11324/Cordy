@@ -403,16 +403,15 @@ describe("projectGanttIssuesOptions", () => {
     expect(options.queryKey).toEqual(issueKeys.projectGantt(WS_ID, PROJECT_ID));
   });
 
-  it("threads the assignee-type tab into the request and the cache key", async () => {
+  it("threads role tabs into the request and the cache key", async () => {
     const listIssues = vi
       .fn<(params?: ListIssuesParams) => Promise<ListIssuesResponse>>()
       .mockResolvedValue({ issues: [makeIssue(1)], total: 1 });
     installFakeApi(listIssues);
 
-    const agentsTab = projectGanttIssuesOptions(WS_ID, PROJECT_ID, [
-      "agent",
-      "team",
-    ]);
+    const agentsTab = projectGanttIssuesOptions(WS_ID, PROJECT_ID, {
+      executor_types: ["agent", "team"],
+    });
     await qc.fetchQuery(agentsTab);
 
     expect(listIssues).toHaveBeenCalledWith(
@@ -426,6 +425,10 @@ describe("projectGanttIssuesOptions", () => {
     expect(agentsTab.queryKey).not.toEqual(
       projectGanttIssuesOptions(WS_ID, PROJECT_ID).queryKey,
     );
+    const membersTab = projectGanttIssuesOptions(WS_ID, PROJECT_ID, {
+      owner_types: ["member"],
+    });
+    expect(membersTab.queryKey).not.toEqual(agentsTab.queryKey);
     // The unrestricted tab never sends the param.
     const unrestricted = vi
       .fn<(params?: ListIssuesParams) => Promise<ListIssuesResponse>>()
@@ -433,6 +436,7 @@ describe("projectGanttIssuesOptions", () => {
     installFakeApi(unrestricted);
     await qc.fetchQuery(projectGanttIssuesOptions(WS_ID, PROJECT_ID));
     expect(unrestricted.mock.calls[0]![0]).not.toHaveProperty("executor_types");
+    expect(unrestricted.mock.calls[0]![0]).not.toHaveProperty("owner_types");
   });
 });
 

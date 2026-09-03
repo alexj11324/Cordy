@@ -36,7 +36,6 @@ export type IssueOwnerType = "member";
 export type IssueExecutorType = "agent" | "team";
 export type IssueActorType = IssueOwnerType | IssueExecutorType;
 export type IssueReviewerType = IssueActorType;
-export type IssueAssigneeType = IssueActorType;
 
 export interface IssueReaction {
   id: string;

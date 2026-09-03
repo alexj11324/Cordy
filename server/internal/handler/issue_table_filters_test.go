@@ -137,7 +137,7 @@ func TestListIssues_TableFacetsAreServerSide(t *testing.T) {
 
 	assertList("&statuses=todo,in_progress", issueA, issueB)
 	assertList("&priorities=high", issueA, issueC)
-	assertList("&assignee_filters="+url.QueryEscape("member:"+testUserID), issueB, issueC)
+	assertList("&owner_filters="+url.QueryEscape("member:"+testUserID), issueB, issueC)
 	assertList("&project_ids="+projectA+"&include_no_project=true", issueA, issueB)
 	assertList("&label_ids="+labelA, issueA, issueC)
 	assertList("&top_level_only=true", issueA, issueB)
@@ -149,7 +149,7 @@ func TestListIssues_TableFacetsAreServerSide(t *testing.T) {
 	}
 	assertList("&q="+url.QueryEscape(fmt.Sprintf("MUL-%d", issueBNumber)), issueB)
 	assertList(
-		"&statuses=todo&priorities=high&include_no_assignee=true&label_ids="+labelA+"&top_level_only=true",
+		"&statuses=todo&priorities=high&include_no_owner=true&label_ids="+labelA+"&top_level_only=true",
 		issueA,
 	)
 

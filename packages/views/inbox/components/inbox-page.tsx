@@ -761,16 +761,16 @@ export function InboxPage() {
           <Button
             size="sm"
             onClick={() => {
-              // Seed the legacy advanced form with the original prompt so the
+              // Seed the advanced form with the original prompt so the
               // user can recover their input in the full editor instead of
-              // retyping. The agent picker hint becomes the assignee
+              // retyping. The agent picker hint becomes the executor
               // candidate (still editable).
               const prompt = detailItem.details?.original_prompt ?? "";
               const agentId = detailItem.details?.agent_id;
               useIssueDraftStore.getState().setManual({
                 description: prompt,
                 ...(agentId
-                  ? { assigneeType: "agent" as const, assigneeId: agentId }
+                  ? { executorType: "agent" as const, executorId: agentId }
                   : {}),
               });
               useModalStore.getState().open("create-issue");

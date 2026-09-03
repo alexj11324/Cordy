@@ -1678,7 +1678,7 @@ func (h *Handler) validateAutomationAssigneeForSave(
 			return false
 		}
 		// Private-leader gate: the member configuring the automation must have
-		// access to the private leader, same as validateAssigneePair.
+		// access to the private leader, same as validateExecutorPair.
 		actorType, actorID := h.resolveActor(r, requestUserID(r), util.UUIDToString(workspaceID))
 		if !h.canInvokeAgent(r.Context(), leader, actorType, actorID, h.invokeOriginatorFromRequest(r, actorType, actorID), util.UUIDToString(workspaceID)) {
 			writeError(w, http.StatusForbidden, "cannot assign automation to team with private leader")

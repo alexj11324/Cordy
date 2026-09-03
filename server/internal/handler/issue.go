@@ -429,16 +429,7 @@ func issueToResponse(i db.Issue, issuePrefix string) IssueResponse {
 	}
 }
 
-// EffectiveAssignee is executor if set, otherwise owner. Matches grouping,
-// filters, avatars, and inbox assignment.
-func (i IssueResponse) EffectiveAssignee() (typ *string, id *string) {
-	if i.ExecutorType != nil && i.ExecutorID != nil {
-		return i.ExecutorType, i.ExecutorID
-	}
-	return i.OwnerType, i.OwnerID
-}
-
-func assigneePtrsEqual(aType, aID, bType, bID *string) bool {
+func actorRefsEqual(aType, aID, bType, bID *string) bool {
 	if (aType == nil) != (bType == nil) || (aID == nil) != (bID == nil) {
 		return false
 	}
@@ -565,10 +556,8 @@ func openIssueRowToResponse(i db.ListOpenIssuesRow, issuePrefix string) IssueRes
 	}
 }
 
-type IssueAssigneeGroupResponse struct {
+type IssueExecutorGroupResponse struct {
 	ID           string          `json:"id"`
-	OwnerType    *string         `json:"owner_type,omitempty"`
-	OwnerID      *string         `json:"owner_id,omitempty"`
 	ExecutorType *string         `json:"executor_type"`
 	ExecutorID   *string         `json:"executor_id"`
 	Issues       []IssueResponse `json:"issues"`
@@ -576,7 +565,7 @@ type IssueAssigneeGroupResponse struct {
 }
 
 type GroupedIssuesResponse struct {
-	Groups []IssueAssigneeGroupResponse `json:"groups"`
+	Groups []IssueExecutorGroupResponse `json:"groups"`
 }
 
 type groupedIssueRow struct {
@@ -584,11 +573,11 @@ type groupedIssueRow struct {
 	GroupTotal int64
 }
 
-func assigneeGroupID(assigneeType pgtype.Text, assigneeID pgtype.UUID) string {
-	if assigneeType.Valid && assigneeID.Valid {
-		return "assignee:" + assigneeType.String + ":" + uuidToString(assigneeID)
+func executorGroupID(executorType pgtype.Text, executorID pgtype.UUID) string {
+	if executorType.Valid && executorID.Valid {
+		return "executor:" + executorType.String + ":" + uuidToString(executorID)
 	}
-	return "assignee:unassigned"
+	return "executor:unassigned"
 }
 
 // SearchIssueResponse extends IssueResponse with search metadata.
@@ -1209,26 +1198,58 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 		}
 		ownerFilter = id
 	}
-	var assigneeFilter pgtype.UUID
+	ownerIDsFilter, ok := parseUUIDParamList(w, r.URL.Query().Get("owner_ids"), "owner_ids")
+	if !ok {
+		return
+	}
+	ownerTypesFilter := splitCommaParam(r.URL.Query().Get("owner_types"))
+	for _, ownerType := range ownerTypesFilter {
+		if !isIssueOwnerType(ownerType) {
+			writeError(w, http.StatusBadRequest, "invalid owner_types")
+			return
+		}
+	}
+	var executorFilter pgtype.UUID
 	if a := r.URL.Query().Get("executor_id"); a != "" {
 		id, ok := parseUUIDOrBadRequest(w, a, "executor_id")
 		if !ok {
 			return
 		}
-		assigneeFilter = id
+		executorFilter = id
 	}
-	var assigneeIdsFilter []pgtype.UUID
-	if ids := r.URL.Query().Get("executor_ids"); ids != "" {
-		for _, raw := range strings.Split(ids, ",") {
-			if s := strings.TrimSpace(raw); s != "" {
-				id, ok := parseUUIDOrBadRequest(w, s, "executor_ids")
-				if !ok {
-					return
-				}
-				assigneeIdsFilter = append(assigneeIdsFilter, id)
-			}
+	executorIDsFilter, ok := parseUUIDParamList(w, r.URL.Query().Get("executor_ids"), "executor_ids")
+	if !ok {
+		return
+	}
+	executorTypesFilter := splitCommaParam(r.URL.Query().Get("executor_types"))
+	for _, executorType := range executorTypesFilter {
+		if !isIssueExecutorType(executorType) {
+			writeError(w, http.StatusBadRequest, "invalid executor_types")
+			return
 		}
 	}
+	ownerFilters, ok := parseActorFilterList(w, r.URL.Query().Get("owner_filters"), "owner_filters")
+	if !ok {
+		return
+	}
+	for _, filter := range ownerFilters {
+		if !isIssueOwnerType(filter.actorType) {
+			writeError(w, http.StatusBadRequest, "invalid owner_filters")
+			return
+		}
+	}
+	includeNoOwner := r.URL.Query().Get("include_no_owner") == "true"
+	executorFilters, ok := parseActorFilterList(w, r.URL.Query().Get("executor_filters"), "executor_filters")
+	if !ok {
+		return
+	}
+	for _, filter := range executorFilters {
+		if !isIssueExecutorType(filter.actorType) {
+			writeError(w, http.StatusBadRequest, "invalid executor_filters")
+			return
+		}
+	}
+	includeNoExecutor := r.URL.Query().Get("include_no_executor") == "true"
 	var creatorFilter pgtype.UUID
 	if c := r.URL.Query().Get("creator_id"); c != "" {
 		id, ok := parseUUIDOrBadRequest(w, c, "creator_id")
@@ -1245,8 +1266,8 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 		}
 		projectFilter = id
 	}
-	// involves_user_id widens the assignee filter to surface issues where the
-	// user is the indirect assignee (their owned agent, or a team they belong
+	// involves_user_id widens the executor filter to surface issues where the
+	// user is the indirect executor (their owned agent, or a team they belong
 	// to / lead / have an agent inside). Direct member-assignment is excluded
 	// by design — that is the meaning of `executor_id` (tab 1), and tab 3 must
 	// be disjoint from tab 1.
@@ -1295,8 +1316,8 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 			TerminalStatusKeys: terminalStatusKeys,
 			Priority:           priorityFilter,
 			OwnerID:            ownerFilter,
-			ExecutorID:         assigneeFilter,
-			ExecutorIds:        assigneeIdsFilter,
+			ExecutorID:         executorFilter,
+			ExecutorIds:        executorIDsFilter,
 			CreatorID:          creatorFilter,
 			ProjectID:          projectFilter,
 			InvolvesUserID:     involvesUserFilter,
@@ -1307,6 +1328,17 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "failed to list issues")
 			return
 		}
+		filteredIssues := issues[:0]
+		for _, issue := range issues {
+			if !issueRoleMatchesFilters(issue.OwnerType, issue.OwnerID, ownerIDsFilter, ownerTypesFilter, ownerFilters, includeNoOwner) {
+				continue
+			}
+			if !issueRoleMatchesFilters(issue.ExecutorType, issue.ExecutorID, executorIDsFilter, executorTypesFilter, executorFilters, includeNoExecutor) {
+				continue
+			}
+			filteredIssues = append(filteredIssues, issue)
+		}
+		issues = filteredIssues
 
 		prefix := h.getIssuePrefix(ctx, wsUUID)
 		ids := make([]pgtype.UUID, len(issues))
@@ -1364,18 +1396,6 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 	prioritiesFilter := splitCommaParam(r.URL.Query().Get("priorities"))
 	if len(prioritiesFilter) == 0 {
 		prioritiesFilter = splitCommaParam(r.URL.Query().Get("priority"))
-	}
-
-	// executor_types narrows the list to issues assigned to the given actor
-	// kinds (member / agent / team). Mirrors the same param on
-	// ListGroupedIssues so the workspace Members/Agents tabs can filter
-	// server-side instead of post-filtering loaded pages on the client.
-	assigneeTypesFilter := splitCommaParam(r.URL.Query().Get("executor_types"))
-	for _, assigneeType := range assigneeTypesFilter {
-		if !isIssueActorType(assigneeType) {
-			writeError(w, http.StatusBadRequest, "invalid executor_types")
-			return
-		}
 	}
 
 	// scheduled=true restricts the result to issues that have at least one of
@@ -1478,14 +1498,20 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 	if ownerFilter.Valid {
 		where = append(where, fmt.Sprintf("i.owner_id = %s::uuid", addArg(ownerFilter)))
 	}
-	if assigneeFilter.Valid {
-		where = append(where, fmt.Sprintf("i.executor_id = %s::uuid", addArg(assigneeFilter)))
+	if len(ownerIDsFilter) > 0 {
+		where = append(where, fmt.Sprintf("i.owner_id = ANY(%s::uuid[])", addArg(ownerIDsFilter)))
 	}
-	if len(assigneeIdsFilter) > 0 {
-		where = append(where, fmt.Sprintf("i.executor_id = ANY(%s::uuid[])", addArg(assigneeIdsFilter)))
+	if len(ownerTypesFilter) > 0 {
+		where = append(where, fmt.Sprintf("i.owner_type = ANY(%s::text[])", addArg(ownerTypesFilter)))
 	}
-	if len(assigneeTypesFilter) > 0 {
-		where = append(where, fmt.Sprintf("%s = ANY(%s::text[])", effectiveAssigneeTypeSQL, addArg(assigneeTypesFilter)))
+	if executorFilter.Valid {
+		where = append(where, fmt.Sprintf("i.executor_id = %s::uuid", addArg(executorFilter)))
+	}
+	if len(executorIDsFilter) > 0 {
+		where = append(where, fmt.Sprintf("i.executor_id = ANY(%s::uuid[])", addArg(executorIDsFilter)))
+	}
+	if len(executorTypesFilter) > 0 {
+		where = append(where, fmt.Sprintf("i.executor_type = ANY(%s::text[])", addArg(executorTypesFilter)))
 	}
 	if creatorFilter.Valid {
 		where = append(where, fmt.Sprintf("i.creator_id = %s::uuid", addArg(creatorFilter)))
@@ -1497,24 +1523,32 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 	// Table facets must be part of the server window. Applying them after
 	// LIMIT/OFFSET hides matches that live on later pages and makes `total`
 	// disagree with the rows the user sees/exports.
-	assigneeFilters, ok := parseActorFilterList(w, r.URL.Query().Get("assignee_filters"), "assignee_filters")
-	if !ok {
-		return
-	}
-	includeNoAssignee := r.URL.Query().Get("include_no_assignee") == "true"
-	if len(assigneeFilters) > 0 || includeNoAssignee {
-		ors := make([]string, 0, len(assigneeFilters)+1)
-		for _, filter := range assigneeFilters {
+	if len(ownerFilters) > 0 || includeNoOwner {
+		ors := make([]string, 0, len(ownerFilters)+1)
+		for _, filter := range ownerFilters {
 			ors = append(ors, fmt.Sprintf(
-				"(%s = %s::text AND %s = %s::uuid)",
-				effectiveAssigneeTypeSQL,
+				"(i.owner_type = %s::text AND i.owner_id = %s::uuid)",
 				addArg(filter.actorType),
-				effectiveAssigneeIDSQL,
 				addArg(filter.actorID),
 			))
 		}
-		if includeNoAssignee {
-			ors = append(ors, "("+effectiveAssigneeTypeSQL+" IS NULL AND "+effectiveAssigneeIDSQL+" IS NULL)")
+		if includeNoOwner {
+			ors = append(ors, "(i.owner_type IS NULL AND i.owner_id IS NULL)")
+		}
+		where = append(where, "("+strings.Join(ors, " OR ")+")")
+	}
+
+	if len(executorFilters) > 0 || includeNoExecutor {
+		ors := make([]string, 0, len(executorFilters)+1)
+		for _, filter := range executorFilters {
+			ors = append(ors, fmt.Sprintf(
+				"(i.executor_type = %s::text AND i.executor_id = %s::uuid)",
+				addArg(filter.actorType),
+				addArg(filter.actorID),
+			))
+		}
+		if includeNoExecutor {
+			ors = append(ors, "(i.executor_type IS NULL AND i.executor_id IS NULL)")
 		}
 		where = append(where, "("+strings.Join(ors, " OR ")+")")
 	}
@@ -1857,11 +1891,13 @@ func isIssueActorType(s string) bool {
 	return s == "member" || s == "agent" || s == "team"
 }
 
-// Effective assignee for grouping/filters: executor if set, otherwise owner.
-const (
-	effectiveAssigneeTypeSQL = "COALESCE(i.executor_type, i.owner_type)"
-	effectiveAssigneeIDSQL   = "COALESCE(i.executor_id, i.owner_id)"
-)
+func isIssueOwnerType(s string) bool {
+	return s == "member"
+}
+
+func isIssueExecutorType(s string) bool {
+	return s == "agent" || s == "team"
+}
 
 func parseUUIDParamList(w http.ResponseWriter, raw, fieldName string) ([]pgtype.UUID, bool) {
 	parts := splitCommaParam(raw)
@@ -1903,6 +1939,52 @@ func parseActorFilterList(w http.ResponseWriter, raw, fieldName string) ([]issue
 	return filters, true
 }
 
+func issueRoleMatchesFilters(
+	roleType pgtype.Text,
+	roleID pgtype.UUID,
+	ids []pgtype.UUID,
+	types []string,
+	actors []issueActorFilter,
+	includeNone bool,
+) bool {
+	if len(ids) > 0 {
+		matched := false
+		for _, id := range ids {
+			if roleID.Valid && id.Valid && roleID.Bytes == id.Bytes {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+	if len(types) > 0 {
+		matched := false
+		for _, candidate := range types {
+			if roleType.Valid && roleType.String == candidate {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+	if len(actors) == 0 && !includeNone {
+		return true
+	}
+	if includeNone && !roleType.Valid && !roleID.Valid {
+		return true
+	}
+	for _, actor := range actors {
+		if roleType.Valid && roleID.Valid && roleType.String == actor.actorType && roleID.Bytes == actor.actorID.Bytes {
+			return true
+		}
+	}
+	return false
+}
+
 func (h *Handler) ListGroupedIssues(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if h.DB == nil {
@@ -1912,9 +1994,9 @@ func (h *Handler) ListGroupedIssues(w http.ResponseWriter, r *http.Request) {
 
 	groupBy := r.URL.Query().Get("group_by")
 	if groupBy == "" {
-		groupBy = "assignee"
+		groupBy = "executor"
 	}
-	if groupBy != "assignee" {
+	if groupBy != "executor" {
 		writeError(w, http.StatusBadRequest, "unsupported group_by")
 		return
 	}
@@ -1981,15 +2063,42 @@ func (h *Handler) ListGroupedIssues(w http.ResponseWriter, r *http.Request) {
 		where = append(where, fmt.Sprintf("i.priority = ANY(%s::text[])", addArg(priorities)))
 	}
 
-	assigneeTypes := splitCommaParam(r.URL.Query().Get("executor_types"))
-	if len(assigneeTypes) > 0 {
-		for _, assigneeType := range assigneeTypes {
-			if !isIssueActorType(assigneeType) {
+	ownerTypes := splitCommaParam(r.URL.Query().Get("owner_types"))
+	if len(ownerTypes) > 0 {
+		for _, ownerType := range ownerTypes {
+			if !isIssueOwnerType(ownerType) {
+				writeError(w, http.StatusBadRequest, "invalid owner_types")
+				return
+			}
+		}
+		where = append(where, fmt.Sprintf("i.owner_type = ANY(%s::text[])", addArg(ownerTypes)))
+	}
+	if raw := r.URL.Query().Get("owner_id"); raw != "" {
+		id, ok := parseUUIDOrBadRequest(w, raw, "owner_id")
+		if !ok {
+			return
+		}
+		where = append(where, fmt.Sprintf("i.owner_id = %s::uuid", addArg(id)))
+	}
+	if raw := r.URL.Query().Get("owner_ids"); raw != "" {
+		ids, ok := parseUUIDParamList(w, raw, "owner_ids")
+		if !ok {
+			return
+		}
+		if len(ids) > 0 {
+			where = append(where, fmt.Sprintf("i.owner_id = ANY(%s::uuid[])", addArg(ids)))
+		}
+	}
+
+	executorTypes := splitCommaParam(r.URL.Query().Get("executor_types"))
+	if len(executorTypes) > 0 {
+		for _, executorType := range executorTypes {
+			if !isIssueExecutorType(executorType) {
 				writeError(w, http.StatusBadRequest, "invalid executor_types")
 				return
 			}
 		}
-		where = append(where, fmt.Sprintf("%s = ANY(%s::text[])", effectiveAssigneeTypeSQL, addArg(assigneeTypes)))
+		where = append(where, fmt.Sprintf("i.executor_type = ANY(%s::text[])", addArg(executorTypes)))
 	}
 
 	if raw := r.URL.Query().Get("executor_id"); raw != "" {
@@ -1997,7 +2106,7 @@ func (h *Handler) ListGroupedIssues(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			return
 		}
-		where = append(where, fmt.Sprintf("%s = %s::uuid", effectiveAssigneeIDSQL, addArg(id)))
+		where = append(where, fmt.Sprintf("i.executor_id = %s::uuid", addArg(id)))
 	}
 	if raw := r.URL.Query().Get("executor_ids"); raw != "" {
 		ids, ok := parseUUIDParamList(w, raw, "executor_ids")
@@ -2005,7 +2114,7 @@ func (h *Handler) ListGroupedIssues(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if len(ids) > 0 {
-			where = append(where, fmt.Sprintf("%s = ANY(%s::uuid[])", effectiveAssigneeIDSQL, addArg(ids)))
+			where = append(where, fmt.Sprintf("i.executor_id = ANY(%s::uuid[])", addArg(ids)))
 		}
 	}
 	if raw := r.URL.Query().Get("creator_id"); raw != "" {
@@ -2077,24 +2186,50 @@ func (h *Handler) ListGroupedIssues(w http.ResponseWriter, r *http.Request) {
 )`, ref))
 	}
 
-	assigneeFilters, ok := parseActorFilterList(w, r.URL.Query().Get("assignee_filters"), "assignee_filters")
+	ownerFilters, ok := parseActorFilterList(w, r.URL.Query().Get("owner_filters"), "owner_filters")
 	if !ok {
 		return
 	}
-	includeNoAssignee := r.URL.Query().Get("include_no_assignee") == "true"
-	if len(assigneeFilters) > 0 || includeNoAssignee {
-		ors := make([]string, 0, len(assigneeFilters)+1)
-		for _, filter := range assigneeFilters {
+	includeNoOwner := r.URL.Query().Get("include_no_owner") == "true"
+	if len(ownerFilters) > 0 || includeNoOwner {
+		ors := make([]string, 0, len(ownerFilters)+1)
+		for _, filter := range ownerFilters {
+			if !isIssueOwnerType(filter.actorType) {
+				writeError(w, http.StatusBadRequest, "invalid owner_filters")
+				return
+			}
 			ors = append(ors, fmt.Sprintf(
-				"(%s = %s::text AND %s = %s::uuid)",
-				effectiveAssigneeTypeSQL,
+				"(i.owner_type = %s::text AND i.owner_id = %s::uuid)",
 				addArg(filter.actorType),
-				effectiveAssigneeIDSQL,
 				addArg(filter.actorID),
 			))
 		}
-		if includeNoAssignee {
-			ors = append(ors, "("+effectiveAssigneeTypeSQL+" IS NULL AND "+effectiveAssigneeIDSQL+" IS NULL)")
+		if includeNoOwner {
+			ors = append(ors, "(i.owner_type IS NULL AND i.owner_id IS NULL)")
+		}
+		where = append(where, "("+strings.Join(ors, " OR ")+")")
+	}
+
+	executorFilters, ok := parseActorFilterList(w, r.URL.Query().Get("executor_filters"), "executor_filters")
+	if !ok {
+		return
+	}
+	includeNoExecutor := r.URL.Query().Get("include_no_executor") == "true"
+	if len(executorFilters) > 0 || includeNoExecutor {
+		ors := make([]string, 0, len(executorFilters)+1)
+		for _, filter := range executorFilters {
+			if !isIssueExecutorType(filter.actorType) {
+				writeError(w, http.StatusBadRequest, "invalid executor_filters")
+				return
+			}
+			ors = append(ors, fmt.Sprintf(
+				"(i.executor_type = %s::text AND i.executor_id = %s::uuid)",
+				addArg(filter.actorType),
+				addArg(filter.actorID),
+			))
+		}
+		if includeNoExecutor {
+			ors = append(ors, "(i.executor_type IS NULL AND i.executor_id IS NULL)")
 		}
 		where = append(where, "("+strings.Join(ors, " OR ")+")")
 	}
@@ -2150,9 +2285,9 @@ func (h *Handler) ListGroupedIssues(w http.ResponseWriter, r *http.Request) {
 
 	if groupExecutorType := r.URL.Query().Get("group_executor_type"); groupExecutorType != "" {
 		if groupExecutorType == "none" {
-			where = append(where, "("+effectiveAssigneeTypeSQL+" IS NULL AND "+effectiveAssigneeIDSQL+" IS NULL)")
+			where = append(where, "(i.executor_type IS NULL AND i.executor_id IS NULL)")
 		} else {
-			if !isIssueActorType(groupExecutorType) {
+			if !isIssueExecutorType(groupExecutorType) {
 				writeError(w, http.StatusBadRequest, "invalid group_executor_type")
 				return
 			}
@@ -2161,16 +2296,14 @@ func (h *Handler) ListGroupedIssues(w http.ResponseWriter, r *http.Request) {
 				writeError(w, http.StatusBadRequest, "invalid group_executor_id")
 				return
 			}
-			assigneeID, ok := parseUUIDOrBadRequest(w, rawID, "group_executor_id")
+			executorID, ok := parseUUIDOrBadRequest(w, rawID, "group_executor_id")
 			if !ok {
 				return
 			}
 			where = append(where, fmt.Sprintf(
-				"(%s = %s::text AND %s = %s::uuid)",
-				effectiveAssigneeTypeSQL,
+				"(i.executor_type = %s::text AND i.executor_id = %s::uuid)",
 				addArg(groupExecutorType),
-				effectiveAssigneeIDSQL,
-				addArg(assigneeID),
+				addArg(executorID),
 			))
 		}
 	}
@@ -2259,9 +2392,9 @@ WITH ranked AS (
 		i.creator_type, i.creator_id,
 		i.parent_issue_id, i.position, i.start_date, i.due_date, i.created_at, i.updated_at, i.last_activity_at,
 		i.number, i.project_id, i.metadata, i.stage, i.properties, i.revision,
-		COUNT(*) OVER (PARTITION BY %s, %s) AS group_total,
+		COUNT(*) OVER (PARTITION BY i.executor_type, i.executor_id) AS group_total,
 		ROW_NUMBER() OVER (
-			PARTITION BY %s, %s
+			PARTITION BY i.executor_type, i.executor_id
 			ORDER BY %s
 		) AS rn
 	FROM issue i
@@ -2276,15 +2409,14 @@ SELECT
 FROM ranked
 WHERE rn > %s AND rn <= %s + %s
 ORDER BY
-	CASE COALESCE(executor_type, owner_type)
-		WHEN 'member' THEN 0
-		WHEN 'agent' THEN 1
-		WHEN 'team' THEN 2
-		ELSE 3
+	CASE executor_type
+		WHEN 'agent' THEN 0
+		WHEN 'team' THEN 1
+		ELSE 2
 	END,
-	COALESCE(executor_type, owner_type) NULLS LAST,
-	COALESCE(executor_id, owner_id) NULLS LAST,
-	rn`, effectiveAssigneeTypeSQL, effectiveAssigneeIDSQL, effectiveAssigneeTypeSQL, effectiveAssigneeIDSQL, intraGroupOrder, strings.Join(where, " AND "), offsetRef, offsetRef, limitRef)
+	executor_type NULLS LAST,
+	executor_id NULLS LAST,
+	rn`, intraGroupOrder, strings.Join(where, " AND "), offsetRef, offsetRef, limitRef)
 
 	rows, err := h.DB.Query(ctx, query, args...)
 	if err != nil {
@@ -2349,24 +2481,16 @@ ORDER BY
 	// catalog once per custom-status row. (MUL-6243)
 	fillGrouped := h.newStatusCategoryFiller(ctx, wsUUID)
 
-	groups := []IssueAssigneeGroupResponse{}
+	groups := []IssueExecutorGroupResponse{}
 	groupIndex := map[string]int{}
 	for _, row := range groupedRows {
-		groupType := row.ExecutorType
-		groupIDVal := row.ExecutorID
-		if !groupType.Valid {
-			groupType = row.OwnerType
-			groupIDVal = row.OwnerID
-		}
-		groupID := assigneeGroupID(groupType, groupIDVal)
+		groupID := executorGroupID(row.ExecutorType, row.ExecutorID)
 		idx, exists := groupIndex[groupID]
 		if !exists {
 			idx = len(groups)
 			groupIndex[groupID] = idx
-			groups = append(groups, IssueAssigneeGroupResponse{
+			groups = append(groups, IssueExecutorGroupResponse{
 				ID:           groupID,
-				OwnerType:    textToPtr(row.OwnerType),
-				OwnerID:      uuidToPtr(row.OwnerID),
 				ExecutorType: textToPtr(row.ExecutorType),
 				ExecutorID:   uuidToPtr(row.ExecutorID),
 				Issues:       []IssueResponse{},
@@ -2725,13 +2849,13 @@ func (h *Handler) QuickCreateIssue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Reuse the same workspace-membership / archived / private-agent
-	// ownership rules as `validateAssigneePair` so a user can't POST a
+	// ownership rules as `validateExecutorPair` so a user can't POST a
 	// private agent_id they shouldn't be able to dispatch (the frontend
 	// filters them out, but the handler is the trust boundary). Team
 	// picks reach this with the resolved leader agent; the same rules
 	// apply — a private leader behind a team the user can't reach
 	// should still be rejected.
-	if status, msg := h.validateAssigneePair(
+	if status, msg := h.validateExecutorPair(
 		r.Context(), r, workspaceID,
 		pgtype.Text{String: "agent", Valid: true},
 		agentUUID,
@@ -2742,7 +2866,7 @@ func (h *Handler) QuickCreateIssue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Re-load the agent for the runtime liveness check below. Safe by
-	// construction: validateAssigneePair just confirmed it exists in this
+	// construction: validateExecutorPair just confirmed it exists in this
 	// workspace and the caller has visibility.
 	agent, err := h.Queries.GetAgentInWorkspace(r.Context(), db.GetAgentInWorkspaceParams{
 		ID:          agentUUID,
@@ -3022,17 +3146,17 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var assigneeType pgtype.Text
-	var assigneeID pgtype.UUID
+	var executorType pgtype.Text
+	var executorID pgtype.UUID
 	if req.ExecutorType != nil {
-		assigneeType = pgtype.Text{String: *req.ExecutorType, Valid: true}
+		executorType = pgtype.Text{String: *req.ExecutorType, Valid: true}
 	}
 	if req.ExecutorID != nil {
 		id, ok := parseUUIDOrBadRequest(w, *req.ExecutorID, "executor_id")
 		if !ok {
 			return
 		}
-		assigneeID = id
+		executorID = id
 	}
 
 	var parentIssueID pgtype.UUID
@@ -3044,7 +3168,7 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		parentIssueID = id
-		if assigneeType.Valid && (assigneeType.String == "agent" || assigneeType.String == "team") {
+		if executorType.Valid && (executorType.String == "agent" || executorType.String == "team") {
 			parent, err := h.Queries.GetIssueInWorkspace(r.Context(), db.GetIssueInWorkspaceParams{
 				ID:          parentIssueID,
 				WorkspaceID: wsUUID,
@@ -3057,7 +3181,7 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// An agent/team assignee on a PARENTLESS create has no issue to bind an
+	// An agent/team executor on a PARENTLESS create has no issue to bind an
 	// automation authority to, so the scope names the create itself: only a
 	// verified, still-running run_only automation task may borrow there
 	// (MUL-6691 — the reported flow, where the leader creates DRA-109/DRA-110
@@ -3067,7 +3191,7 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 		assignScope = scopeNewTopLevelIssue()
 	}
 
-	if status, msg := h.validateAssigneePair(r.Context(), r, workspaceID, assigneeType, assigneeID, assignScope); status != 0 {
+	if status, msg := h.validateExecutorPair(r.Context(), r, workspaceID, executorType, executorID, assignScope); status != 0 {
 		writeError(w, status, msg)
 		return
 	}
@@ -3105,7 +3229,7 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, msg)
 		return
 	}
-	if !h.enforceIssueWorkflowGate(r.Context(), w, wsUUID, "", status, actorRefOrNil(assigneeType, assigneeID), actorRefOrNil(reviewerType, reviewerID)) {
+	if !h.enforceIssueWorkflowGate(r.Context(), w, wsUUID, "", status, actorRefOrNil(executorType, executorID), actorRefOrNil(reviewerType, reviewerID)) {
 		return
 	}
 
@@ -3118,7 +3242,7 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 	}
 	// Project existence and the final parent boundary check are enforced inside
 	// IssueService.Create atomically with the create. The handler preloads a
-	// supplied parent only because the assignee gate must bind any automation
+	// supplied parent only because the executor gate must bind any automation
 	// authority fallback to that server-verified issue before admission.
 
 	attachmentIDs, ok := parseUUIDSliceOrBadRequest(w, req.AttachmentIDs, "attachment_ids")
@@ -3214,12 +3338,12 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 	// request rather than once per payload. (MUL-6243)
 	fillCreated := h.newStatusCategoryFiller(r.Context(), wsUUID)
 
-	// Analytics agent ID: assignee agent when the issue is being assigned
+	// Analytics agent ID: executor agent when the issue is being assigned
 	// to an agent, otherwise the creator agent for agent-authored issues.
 	// Resolved here (not in the service) because creator identity is HTTP-side.
 	analyticsAgentID := ""
-	if assigneeType.Valid && assigneeType.String == "agent" {
-		analyticsAgentID = uuidToString(assigneeID)
+	if executorType.Valid && executorType.String == "agent" {
+		analyticsAgentID = uuidToString(executorID)
 	}
 	if creatorType == "agent" && analyticsAgentID == "" {
 		analyticsAgentID = actualCreatorID
@@ -3243,8 +3367,8 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 		Description:    ptrToText(req.Description),
 		Status:         status,
 		Priority:       priority,
-		ExecutorType:   assigneeType,
-		ExecutorID:     assigneeID,
+		ExecutorType:   executorType,
+		ExecutorID:     executorID,
 		OwnerType:      ownerType,
 		OwnerID:        ownerID,
 		ReviewerType:   reviewerType,
@@ -3367,7 +3491,7 @@ type UpdateIssueRequest struct {
 	// editor's preview Eye keeps working past a refresh. Existing bindings
 	// are idempotent — re-sending the same id is a no-op.
 	AttachmentIDs []string `json:"attachment_ids"`
-	// SuppressRun, when true, applies the assignee/status change as usual but
+	// SuppressRun, when true, applies the executor/status change as usual but
 	// skips starting the agent run this write would otherwise trigger
 	// ("暂时不启动" — MUL-3375). It is not an undo: the change takes effect and
 	// the issue can be run later via manual run/rerun. Optional; omitted or
@@ -3430,13 +3554,13 @@ func mergeIssueChannelMediaDescription(current, incoming string, base *string, a
 }
 
 func refreshUntouchedNullableIssueParams(params *db.UpdateIssueParams, current db.Issue, rawFields map[string]json.RawMessage) {
-	_, assigneeTypeTouched := rawFields["executor_type"]
-	_, assigneeIDTouched := rawFields["executor_id"]
-	// Assignee type and id form one validated value. If either half was
+	_, executorTypeTouched := rawFields["executor_type"]
+	_, executorIDTouched := rawFields["executor_id"]
+	// Executor type and id form one validated value. If either half was
 	// supplied, retain the pre-validation counterpart in params rather than
 	// combining the supplied half with a concurrently-written counterpart that
 	// has never been validated with it.
-	if !assigneeTypeTouched && !assigneeIDTouched {
+	if !executorTypeTouched && !executorIDTouched {
 		params.ExecutorType = current.ExecutorType
 		params.ExecutorID = current.ExecutorID
 	}
@@ -3814,7 +3938,7 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	_, touchedType := rawFields["executor_type"]
 	_, touchedID := rawFields["executor_id"]
 	if touchedType || touchedID {
-		if status, msg := h.validateAssigneePair(r.Context(), r, workspaceID, params.ExecutorType, params.ExecutorID, scopeExistingIssue(&prevIssue)); status != 0 {
+		if status, msg := h.validateExecutorPair(r.Context(), r, workspaceID, params.ExecutorType, params.ExecutorID, scopeExistingIssue(&prevIssue)); status != 0 {
 			writeError(w, status, msg)
 			return
 		}
@@ -3896,18 +4020,15 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	fillStatus(&resp)
 	prevResp := issueToResponse(prevIssue, prefix)
 	fillStatus(&prevResp)
-	prevEffType, prevEffID := prevResp.EffectiveAssignee()
-	nextEffType, nextEffID := resp.EffectiveAssignee()
-	assigneeChanged := !assigneePtrsEqual(prevEffType, prevEffID, nextEffType, nextEffID)
-	ownerChanged := !assigneePtrsEqual(prevResp.OwnerType, prevResp.OwnerID, resp.OwnerType, resp.OwnerID)
-	executorChanged := !assigneePtrsEqual(prevResp.ExecutorType, prevResp.ExecutorID, resp.ExecutorType, resp.ExecutorID)
-	reviewerChanged := !assigneePtrsEqual(prevResp.ReviewerType, prevResp.ReviewerID, resp.ReviewerType, resp.ReviewerID)
+	ownerChanged := !actorRefsEqual(prevResp.OwnerType, prevResp.OwnerID, resp.OwnerType, resp.OwnerID)
+	executorChanged := !actorRefsEqual(prevResp.ExecutorType, prevResp.ExecutorID, resp.ExecutorType, resp.ExecutorID)
+	reviewerChanged := !actorRefsEqual(prevResp.ReviewerType, prevResp.ReviewerID, resp.ReviewerType, resp.ReviewerID)
 	statusChanged := req.Status != nil && prevIssue.Status != issue.Status
 	reviewHandoff := prevResp.StatusCategory != issuestatus.InReview &&
 		resp.StatusCategory == issuestatus.InReview && resp.ReviewerType != nil && resp.ReviewerID != nil
 	priorityChanged := req.Priority != nil && prevIssue.Priority != issue.Priority
 	// project_changed gates the client's per-project issue-list refetch the way
-	// status/assignee flags gate theirs. Without it the client must diff
+	// status/role flags gate theirs. Without it the client must diff
 	// project_id against its own cache, which breaks once an optimistic local
 	// move has overwritten the cached value (MUL-3669 / #4548).
 	projectChanged := req.ProjectID != nil && uuidToString(prevIssue.ProjectID) != uuidToString(issue.ProjectID)
@@ -3922,7 +4043,6 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 
 	h.publish(protocol.EventIssueUpdated, workspaceID, actorType, actorID, map[string]any{
 		"issue":               resp,
-		"assignee_changed":    assigneeChanged,
 		"owner_changed":       ownerChanged,
 		"executor_changed":    executorChanged,
 		"reviewer_changed":    reviewerChanged,
@@ -3960,7 +4080,7 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Reconcile the task queue. Whether this write starts an agent run — and
-	// for whom (agent assignee or team leader) — is decided by the single
+	// for whom (agent executor or team leader) — is decided by the single
 	// WillEnqueueRun predicate, shared verbatim with the preview endpoint so
 	// the two never drift (MUL-3375).
 	//
@@ -3969,7 +4089,7 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	// was too coarse: it silently dropped unrelated in-flight work (a
 	// mention-triggered run for another agent, a team task) with no requeue,
 	// and it self-cancelled a run that reassigned the issue from inside itself.
-	// Ownership handoff no longer implies interruption; the new assignee's run,
+	// Ownership handoff no longer implies interruption; the new executor's run,
 	// if any, is enqueued by WillEnqueueRun below and runs alongside whatever
 	// was already in flight. No status change — not even → cancelled — cancels
 	// active tasks: a user clicking "cancel" on an issue has no expectation that
@@ -3980,7 +4100,7 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 		service.IssueTriggerInput{
 			Issue:           issue,
 			PrevStatus:      prevIssue.Status,
-			AssigneeChanged: assigneeChanged,
+			ExecutorChanged: executorChanged,
 			StatusChanged:   statusChanged,
 		},
 		h.issueTriggerWriteProbe(r, actorType, actorID, issue),
@@ -4000,8 +4120,8 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// validateAssigneePair verifies the (executor_type, executor_id) pair refers
-// to an existing entity in the workspace. For agent and team assignees it
+// validateExecutorPair verifies the (executor_type, executor_id) pair refers
+// to an existing entity in the workspace. For agent and team executors it
 // also rejects archived targets and runs the INVOKE gate — canInvokeAgent, not
 // the softer canAccessPrivateAgent view gate: assigning an issue produces a
 // run, so it must clear the same predicate as chat / @-mention (MUL-3963).
@@ -4017,23 +4137,23 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 // Returns (statusCode, errorMessage). statusCode == 0 means the pair is valid;
 // callers should treat any non-zero status as a rejection and surface it back
 // to the client.
-func (h *Handler) validateAssigneePair(ctx context.Context, r *http.Request, workspaceID string, assigneeType pgtype.Text, assigneeID pgtype.UUID, scope assignAuthorityScope) (int, string) {
+func (h *Handler) validateExecutorPair(ctx context.Context, r *http.Request, workspaceID string, executorType pgtype.Text, executorID pgtype.UUID, scope assignAuthorityScope) (int, string) {
 	// Both unset → unassigned issue, valid.
-	if !assigneeType.Valid && !assigneeID.Valid {
+	if !executorType.Valid && !executorID.Valid {
 		return 0, ""
 	}
 	// Exactly one of type/id provided → callers must always pair them.
-	if assigneeType.Valid != assigneeID.Valid {
+	if executorType.Valid != executorID.Valid {
 		return http.StatusBadRequest, "executor_type and executor_id must be provided together"
 	}
 	wsUUID, err := util.ParseUUID(workspaceID)
 	if err != nil {
 		return http.StatusBadRequest, "invalid workspace_id"
 	}
-	switch assigneeType.String {
+	switch executorType.String {
 	case "agent":
 		agent, err := h.Queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{
-			ID:          assigneeID,
+			ID:          executorID,
 			WorkspaceID: wsUUID,
 		})
 		if err != nil {
@@ -4058,7 +4178,7 @@ func (h *Handler) validateAssigneePair(ctx context.Context, r *http.Request, wor
 		return 0, ""
 	case "team":
 		team, err := h.Queries.GetTeamInWorkspace(ctx, db.GetTeamInWorkspaceParams{
-			ID:          assigneeID,
+			ID:          executorID,
 			WorkspaceID: wsUUID,
 		})
 		if err != nil {
@@ -4094,10 +4214,10 @@ func (h *Handler) shouldEnqueueAgentTask(ctx context.Context, issue db.Issue) bo
 	if issuestatus.Effective(ctx, h.Queries, issue.WorkspaceID, issue.Status) == "backlog" {
 		return false
 	}
-	return h.isAgentAssigneeReady(ctx, issue)
+	return h.isAgentExecutorReady(ctx, issue)
 }
 
-// shouldEnqueueAssigneeFallback returns true when comment routing can fall back
+// shouldEnqueueExecutorFallback returns true when comment routing can fall back
 // to the issue's assigned agent. Fires for any status — comments are
 // conversational and can happen at any stage, including after completion
 // (e.g. follow-up questions on a done issue).
@@ -4107,12 +4227,12 @@ func (h *Handler) shouldEnqueueAgentTask(ctx context.Context, issue db.Issue) bo
 // agent's UUID is "welded" onto the issue and remains visible to every member
 // who can view it. Without this check any of those members could dispatch a new
 // task to the private agent simply by commenting (#3300).
-func (h *Handler) shouldEnqueueAssigneeFallback(ctx context.Context, issue db.Issue, actorType, actorID string, opts commentTriggerComputeOptions) bool {
-	_, hasPending, ok := h.assigneeFallbackAgent(ctx, issue, actorType, actorID, opts)
+func (h *Handler) shouldEnqueueExecutorFallback(ctx context.Context, issue db.Issue, actorType, actorID string, opts commentTriggerComputeOptions) bool {
+	_, hasPending, ok := h.executorFallbackAgent(ctx, issue, actorType, actorID, opts)
 	return ok && !hasPending
 }
 
-func (h *Handler) assigneeFallbackAgent(ctx context.Context, issue db.Issue, actorType, actorID string, opts commentTriggerComputeOptions) (db.Agent, bool, bool) {
+func (h *Handler) executorFallbackAgent(ctx context.Context, issue db.Issue, actorType, actorID string, opts commentTriggerComputeOptions) (db.Agent, bool, bool) {
 	if !issue.ExecutorType.Valid || issue.ExecutorType.String != "agent" || !issue.ExecutorID.Valid {
 		return db.Agent{}, false, false
 	}
@@ -4169,9 +4289,9 @@ func (h *Handler) isAgentRunningOnIssue(r *http.Request, actorType string, issue
 	return uuidToString(task.IssueID) == uuidToString(issue.ID)
 }
 
-// isAgentAssigneeReady checks if an issue is assigned to an active agent
+// isAgentExecutorReady checks if an issue is assigned to an active agent
 // with a valid runtime.
-func (h *Handler) isAgentAssigneeReady(ctx context.Context, issue db.Issue) bool {
+func (h *Handler) isAgentExecutorReady(ctx context.Context, issue db.Issue) bool {
 	if !issue.ExecutorType.Valid || issue.ExecutorType.String != "agent" || !issue.ExecutorID.Valid {
 		return false
 	}
@@ -4498,11 +4618,11 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 		}
 		if _, ok := rawUpdates["executor_id"]; ok {
 			if req.Updates.ExecutorID != nil {
-				assigneeUUID, err := util.ParseUUID(*req.Updates.ExecutorID)
+				executorUUID, err := util.ParseUUID(*req.Updates.ExecutorID)
 				if err != nil {
 					continue
 				}
-				params.ExecutorID = assigneeUUID
+				params.ExecutorID = executorUUID
 			} else {
 				params.ExecutorID = pgtype.UUID{Valid: false}
 			}
@@ -4620,8 +4740,8 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// Validate the resulting assignee pair when this batch update touches
-		// either assignee field. Skip the issue silently on failure.
+		// Validate the resulting executor pair when this batch update touches
+		// either executor field. Skip the issue silently on failure.
 		//
 		// Scoped PER ISSUE (prevIssue is this iteration's row), so one bound
 		// issue in the batch can never lend its authority to the others: an
@@ -4632,7 +4752,7 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 		_, batchTouchedType := rawUpdates["executor_type"]
 		_, batchTouchedID := rawUpdates["executor_id"]
 		if batchTouchedType || batchTouchedID {
-			if status, _ := h.validateAssigneePair(r.Context(), r, workspaceID, params.ExecutorType, params.ExecutorID, scopeExistingIssue(&prevIssue)); status != 0 {
+			if status, _ := h.validateExecutorPair(r.Context(), r, workspaceID, params.ExecutorType, params.ExecutorID, scopeExistingIssue(&prevIssue)); status != 0 {
 				continue
 			}
 		}
@@ -4695,12 +4815,9 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 		fillBatch(&resp)
 		prevResp := issueToResponse(prevIssue, prefix)
 		fillBatch(&prevResp)
-		prevEffType, prevEffID := prevResp.EffectiveAssignee()
-		nextEffType, nextEffID := resp.EffectiveAssignee()
-		assigneeChanged := !assigneePtrsEqual(prevEffType, prevEffID, nextEffType, nextEffID)
-		ownerChanged := !assigneePtrsEqual(prevResp.OwnerType, prevResp.OwnerID, resp.OwnerType, resp.OwnerID)
-		executorChanged := !assigneePtrsEqual(prevResp.ExecutorType, prevResp.ExecutorID, resp.ExecutorType, resp.ExecutorID)
-		reviewerChanged := !assigneePtrsEqual(prevResp.ReviewerType, prevResp.ReviewerID, resp.ReviewerType, resp.ReviewerID)
+		ownerChanged := !actorRefsEqual(prevResp.OwnerType, prevResp.OwnerID, resp.OwnerType, resp.OwnerID)
+		executorChanged := !actorRefsEqual(prevResp.ExecutorType, prevResp.ExecutorID, resp.ExecutorType, resp.ExecutorID)
+		reviewerChanged := !actorRefsEqual(prevResp.ReviewerType, prevResp.ReviewerID, resp.ReviewerType, resp.ReviewerID)
 		statusChanged := req.Updates.Status != nil && prevIssue.Status != issue.Status
 		reviewHandoff := prevResp.StatusCategory != issuestatus.InReview &&
 			resp.StatusCategory == issuestatus.InReview && resp.ReviewerType != nil && resp.ReviewerID != nil
@@ -4709,7 +4826,6 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 
 		h.publish(protocol.EventIssueUpdated, workspaceID, actorType, actorID, map[string]any{
 			"issue":              resp,
-			"assignee_changed":   assigneeChanged,
 			"owner_changed":      ownerChanged,
 			"executor_changed":   executorChanged,
 			"reviewer_changed":   reviewerChanged,
@@ -4735,7 +4851,7 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 			service.IssueTriggerInput{
 				Issue:           issue,
 				PrevStatus:      prevIssue.Status,
-				AssigneeChanged: assigneeChanged,
+				ExecutorChanged: executorChanged,
 				StatusChanged:   statusChanged,
 			},
 			h.issueTriggerWriteProbe(r, actorType, actorID, issue),

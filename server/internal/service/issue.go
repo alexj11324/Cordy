@@ -660,7 +660,8 @@ func (s *IssueService) PublishAttachmentsChanged(ctx context.Context, issue db.I
 		ActorID:     util.UUIDToString(actorID),
 		Payload: map[string]any{
 			"issue":            IssueToMapResolved(ctx, s.Queries, current, workspace.IssuePrefix),
-			"assignee_changed": false,
+			"owner_changed":    false,
+			"executor_changed": false,
 			"status_changed":   false,
 			"project_changed":  false,
 		},
@@ -789,10 +790,10 @@ func (s *IssueService) shouldEnqueueAgentTaskWithQueries(ctx context.Context, q 
 	if issuestatus.Effective(ctx, q, issue.WorkspaceID, issue.Status) == "backlog" {
 		return false
 	}
-	return isAgentAssigneeReadyWithQueries(ctx, s.runtimeLookup(q), issue)
+	return isAgentExecutorReadyWithQueries(ctx, s.runtimeLookup(q), issue)
 }
 
-func isAgentAssigneeReadyWithQueries(ctx context.Context, lookup RuntimeLookup, issue db.Issue) bool {
+func isAgentExecutorReadyWithQueries(ctx context.Context, lookup RuntimeLookup, issue db.Issue) bool {
 	_, ok := agentAssigneeVerdict(ctx, lookup, issue)
 	return ok
 }

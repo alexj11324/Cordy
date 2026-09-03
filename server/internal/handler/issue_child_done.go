@@ -525,20 +525,20 @@ func (h *Handler) buildParentAssigneeMention(ctx context.Context, parent db.Issu
 	if !parent.ExecutorType.Valid || !parent.ExecutorID.Valid {
 		return ""
 	}
-	label, ok := h.resolveAssigneeMentionLabel(ctx, parent.WorkspaceID, parent.ExecutorType.String, parent.ExecutorID)
+	label, ok := h.resolveExecutorMentionLabel(ctx, parent.WorkspaceID, parent.ExecutorType.String, parent.ExecutorID)
 	if !ok {
 		return ""
 	}
 	return fmt.Sprintf("[@%s](mention://%s/%s) ", label, parent.ExecutorType.String, uuidToString(parent.ExecutorID))
 }
 
-// resolveAssigneeMentionLabel returns the label text to render inside the
+// resolveExecutorMentionLabel returns the label text to render inside the
 // mention link. The label is for human display only — the mention regex
 // keys off the URL path, not the label — but a sensible fallback keeps the
 // rendered comment legible if the frontend has not pre-loaded the assignee.
 // Returns ok=false when the assignee row cannot be loaded; the caller
 // should then omit the mention entirely rather than emit a broken link.
-func (h *Handler) resolveAssigneeMentionLabel(ctx context.Context, workspaceID pgtype.UUID, assigneeType string, assigneeID pgtype.UUID) (string, bool) {
+func (h *Handler) resolveExecutorMentionLabel(ctx context.Context, workspaceID pgtype.UUID, assigneeType string, assigneeID pgtype.UUID) (string, bool) {
 	switch assigneeType {
 	case "agent":
 		agent, err := h.Queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{
@@ -692,7 +692,7 @@ func (h *Handler) triggerChildDoneAgent(ctx context.Context, parent db.Issue, tr
 //   - NO leader-invocation gate. Waking the parent's OWN team leader on
 //     child-done is a coordination handoff on an issue the leader already owns,
 //     not a fresh invocation — invocation permission was already enforced when
-//     the parent was assigned to the team (validateAssigneePair). The agent
+//     the parent was assigned to the team (validateExecutorPair). The agent
 //     path has never gated this. Re-checking it here on behalf of the child's
 //     completer — an agent/system actor with no resolvable human originator —
 //     failed closed for the DEFAULT private leader, silently stranding every

@@ -330,10 +330,12 @@ describe("useIssueActions", () => {
     });
   });
 
-  it("openCreateSubIssue seeds the parent's project and assignee so the sub-issue inherits them", () => {
+  it("openCreateSubIssue independently inherits the parent's owner and executor", () => {
     const parentIssue = {
       ...mockIssue,
       project_id: "project-1",
+      owner_type: "member",
+      owner_id: "user-1",
       executor_type: "agent",
       executor_id: "agent-1",
     } as Issue;
@@ -347,12 +349,14 @@ describe("useIssueActions", () => {
       parent_issue_id: "issue-1",
       parent_issue_identifier: "TES-1",
       project_id: "project-1",
+      owner_type: "member",
+      owner_id: "user-1",
       executor_type: "agent",
       executor_id: "agent-1",
     });
   });
 
-  it("openCreateSubIssue omits assignee when the parent has none", () => {
+  it("openCreateSubIssue omits role seeds when the parent has none", () => {
     const parentIssue = {
       ...mockIssue,
       project_id: "project-1",

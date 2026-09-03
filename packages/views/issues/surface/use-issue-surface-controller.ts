@@ -26,7 +26,7 @@ import {
   type IssueSurfaceQueryPlan,
 } from "@patchbay/core/issues/surface/query-plan";
 import {
-  assigneeTypesForActorKind,
+  roleFiltersForActorKind,
   type IssueScope,
 } from "@patchbay/core/issues/surface/scope";
 import type { IssueDateFilter, SortField } from "@patchbay/core/issues/stores/view-store";
@@ -432,19 +432,21 @@ export function useIssueSurfaceController({
     let queryScope: IssueTableQuerySpec["scope"];
     switch (scope.type) {
       case "workspace": {
-        const assigneeTypes = assigneeTypesForActorKind(scope.actorKind);
+        const { ownerTypes, executorTypes } = roleFiltersForActorKind(scope.actorKind);
         queryScope = {
           kind: "workspace",
-          ...(assigneeTypes ? { executor_types: assigneeTypes } : {}),
+          ...(ownerTypes ? { owner_types: ownerTypes } : {}),
+          ...(executorTypes ? { executor_types: executorTypes } : {}),
         };
         break;
       }
       case "project": {
-        const assigneeTypes = assigneeTypesForActorKind(scope.actorKind);
+        const { ownerTypes, executorTypes } = roleFiltersForActorKind(scope.actorKind);
         queryScope = {
           kind: "project",
           project_id: scope.projectId,
-          ...(assigneeTypes ? { executor_types: assigneeTypes } : {}),
+          ...(ownerTypes ? { owner_types: ownerTypes } : {}),
+          ...(executorTypes ? { executor_types: executorTypes } : {}),
         };
         break;
       }
@@ -455,10 +457,22 @@ export function useIssueSurfaceController({
         };
         break;
       case "actor":
-        queryScope = {
-          kind: scope.relation === "assigned" ? "assignee" : "creator",
-          actor: { type: scope.actorType, id: scope.actorId },
-        };
+        if (scope.relation === "created") {
+          queryScope = {
+            kind: "creator",
+            actor: { type: scope.actorType, id: scope.actorId },
+          };
+        } else if (scope.actorType === "member") {
+          queryScope = {
+            kind: "owner",
+            actor: { type: "member", id: scope.actorId },
+          };
+        } else {
+          queryScope = {
+            kind: "executor",
+            actor: { type: scope.actorType, id: scope.actorId },
+          };
+        }
         break;
       case "team":
         throw new Error("Team issue scope is not supported by the Table query");
@@ -472,13 +486,40 @@ export function useIssueSurfaceController({
             end: dateParams.date_end,
           }
         : undefined;
+    const ownerFilters = executorFilters.flatMap((filter) =>
+      filter.type === "member"
+        ? [{ type: "member" as const, id: filter.id }]
+        : [],
+    );
+    const executionFilters = executorFilters.flatMap((filter) =>
+      filter.type === "agent" || filter.type === "team"
+        ? [{ type: filter.type, id: filter.id }]
+        : [],
+    );
+    // The picker presents owners and executors as one actor set (OR). The
+    // table API's role-specific fields are independent predicates (AND), so
+    // use the explicit union when a selection crosses the role boundary.
+    const actorUnion = executorFilters.map((filter) => ({
+      type: filter.type,
+      id: filter.id,
+    }));
+    const useActorUnion =
+      ownerFilters.length > 0 &&
+      (executionFilters.length > 0 || includeNoExecutor);
     return {
       scope: queryScope,
       filters: {
         ...(statusFilters.length > 0 ? { statuses: statusFilters } : {}),
         ...(priorityFilters.length > 0 ? { priorities: priorityFilters } : {}),
-        ...(executorFilters.length > 0 ? { assignees: executorFilters } : {}),
-        ...(includeNoExecutor ? { include_no_assignee: true } : {}),
+        ...(useActorUnion
+          ? { actors: actorUnion }
+          : ownerFilters.length > 0
+            ? { owners: ownerFilters }
+            : {}),
+        ...(!useActorUnion && executionFilters.length > 0
+          ? { executors: executionFilters }
+          : {}),
+        ...(includeNoExecutor ? { include_no_executor: true } : {}),
         ...(creatorFilters.length > 0 ? { creators: creatorFilters } : {}),
         ...(viewProjectFilters.length > 0
           ? { project_ids: viewProjectFilters }
@@ -631,7 +672,7 @@ export function useIssueSurfaceController({
     if (effectiveViewMode === "swimlane") {
       return {
         kind: "compound",
-        primary: swimlaneGrouping === "executor" ? "assignee" : swimlaneGrouping,
+        primary: swimlaneGrouping,
         // Same rollout switch as the board/list branches: `status_category` is
         // a contract this feature introduced, so it is only sent once the
         // catalog confirms this workspace HAS a custom status — which can only
@@ -650,7 +691,7 @@ export function useIssueSurfaceController({
         include_empty: true,
       };
     }
-    return { kind: "assignee" };
+    return { kind: "executor" };
   }, [
     effectiveGrouping,
     effectiveViewMode,

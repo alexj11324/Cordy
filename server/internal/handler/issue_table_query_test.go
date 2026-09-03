@@ -84,7 +84,7 @@ func (tx *issueTableEnrichmentFailTx) QueryRow(ctx context.Context, sql string, 
 
 func TestCanonicalIssueTableFingerprintNormalizesSetLikeArrays(t *testing.T) {
 	left := issueTableQuerySpec{
-		Scope: issueTableScope{Kind: "workspace", ExecutorTypes: []string{"agent", "member", "agent"}},
+		Scope: issueTableScope{Kind: "workspace", ExecutorTypes: []string{"agent", "team", "agent"}},
 		Filters: issueTableFiltersRequest{
 			Statuses:   []string{"todo", "backlog", "todo"},
 			ProjectIDs: []string{"b", "a"},
@@ -92,7 +92,7 @@ func TestCanonicalIssueTableFingerprintNormalizesSetLikeArrays(t *testing.T) {
 		Sort: issueTableSortRequest{Field: "title", Direction: "asc"},
 	}
 	right := issueTableQuerySpec{
-		Scope: issueTableScope{Kind: "workspace", ExecutorTypes: []string{"member", "agent"}},
+		Scope: issueTableScope{Kind: "workspace", ExecutorTypes: []string{"team", "agent"}},
 		Filters: issueTableFiltersRequest{
 			Statuses:   []string{"backlog", "todo"},
 			ProjectIDs: []string{"a", "b"},
@@ -130,7 +130,7 @@ func TestCanonicalIssueTableFingerprintBindsWorkspace(t *testing.T) {
 	}
 }
 
-func TestIssueTableExplicitEmptyAssigneesMatchesNone(t *testing.T) {
+func TestIssueTableExplicitEmptyActorsMatchesNone(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
 	}
@@ -140,7 +140,7 @@ func TestIssueTableExplicitEmptyAssigneesMatchesNone(t *testing.T) {
 		Sort:  issueTableSortRequest{Field: "position", Direction: "asc"},
 	}
 	withEmpty := base
-	withEmpty.Filters.Assignees = []issueTableActorRef{}
+	withEmpty.Filters.Actors = []issueTableActorRef{}
 
 	unfilteredFingerprint, err := canonicalIssueTableFingerprint(testWorkspaceID, base)
 	if err != nil {
@@ -151,7 +151,7 @@ func TestIssueTableExplicitEmptyAssigneesMatchesNone(t *testing.T) {
 		t.Fatal(err)
 	}
 	if unfilteredFingerprint == emptyFingerprint {
-		t.Fatal("explicit empty assignees must not share the unfiltered cursor fingerprint")
+		t.Fatal("explicit empty actors must not share the unfiltered cursor fingerprint")
 	}
 
 	w := httptest.NewRecorder()
@@ -164,11 +164,11 @@ func TestIssueTableExplicitEmptyAssigneesMatchesNone(t *testing.T) {
 		t.Fatalf("compile failed: %d %s", w.Code, w.Body.String())
 	}
 	if !strings.Contains(compiled.where, "FALSE") {
-		t.Fatalf("explicit empty assignees predicate = %q, want FALSE", compiled.where)
+		t.Fatalf("explicit empty actors predicate = %q, want FALSE", compiled.where)
 	}
 }
 
-func TestIssueTableProjectScopeAssigneeTypes(t *testing.T) {
+func TestIssueTableProjectScopeRoleTypes(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
 	}
@@ -194,8 +194,8 @@ func TestIssueTableProjectScopeAssigneeTypes(t *testing.T) {
 	if !strings.Contains(compiled.where, "i.project_id") {
 		t.Fatalf("project predicate missing: %q", compiled.where)
 	}
-	if !strings.Contains(compiled.where, "COALESCE(i.executor_type, i.owner_type) = ANY") {
-		t.Fatalf("assignee-type narrowing missing on project scope: %q", compiled.where)
+	if !strings.Contains(compiled.where, "i.executor_type = ANY") {
+		t.Fatalf("executor-type narrowing missing on project scope: %q", compiled.where)
 	}
 
 	bad := spec
@@ -210,7 +210,7 @@ func TestIssueTableProjectScopeAssigneeTypes(t *testing.T) {
 	}
 }
 
-func TestIssueTableWorkingIssueIDsAreExplicitAndAssigneeIndependent(t *testing.T) {
+func TestIssueTableWorkingIssueIDsAreExplicitAndRoleIndependent(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
 	}
@@ -949,7 +949,7 @@ func TestIssueTableStatusGroupingOverOneThousandRows(t *testing.T) {
 		Facets: []issueTableFacetSpec{
 			{Kind: "status"},
 			{Kind: "priority"},
-			{Kind: "assignee"},
+			{Kind: "executor"},
 			{Kind: "creator"},
 			{Kind: "project"},
 		},
@@ -977,7 +977,7 @@ func TestIssueTableStatusGroupingOverOneThousandRows(t *testing.T) {
 	}
 	if batchCounts["status"]["todo"] != 501 || batchCounts["status"]["done"] != 500 ||
 		batchCounts["priority"]["none"] != 1001 ||
-		batchCounts["assignee"]["__none__"] != 1001 ||
+		batchCounts["executor"]["__none__"] != 1001 ||
 		batchCounts["creator"]["member:"+testUserID] != 1001 ||
 		batchCounts["project"][projectID] != 1001 {
 		t.Fatalf("unexpected batched facet counts: %#v", batchCounts)
@@ -1013,12 +1013,12 @@ func TestIssueTableStatusGroupingOverOneThousandRows(t *testing.T) {
 	}
 }
 
-func TestIssueTableAssigneeNamesResolveAfterGrouping(t *testing.T) {
+func TestIssueTableExecutorNamesResolveAfterGrouping(t *testing.T) {
 	ctx := context.Background()
 	var projectID string
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO project (workspace_id, title)
-		VALUES ($1, 'Server table assignee grouping')
+		VALUES ($1, 'Server table executor grouping')
 		RETURNING id
 	`, testWorkspaceID).Scan(&projectID); err != nil {
 		t.Fatalf("create project: %v", err)
@@ -1040,15 +1040,29 @@ func TestIssueTableAssigneeNamesResolveAfterGrouping(t *testing.T) {
 	`, testWorkspaceID).Scan(&finalNumber); err != nil {
 		t.Fatalf("reserve issue numbers: %v", err)
 	}
+	var agentID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO agent (
+			workspace_id, name, description, runtime_mode, runtime_config,
+			runtime_id, visibility, max_concurrent_tasks, owner_id
+		)
+		VALUES ($1, 'Server table executor', '', 'cloud', '{}'::jsonb, $2, 'workspace', 1, $3)
+		RETURNING id
+	`, testWorkspaceID, testRuntimeID, testUserID).Scan(&agentID); err != nil {
+		t.Fatalf("create executor agent: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = testPool.Exec(context.Background(), `DELETE FROM agent WHERE id = $1`, agentID)
+	})
 	if _, err := testPool.Exec(ctx, `
 		INSERT INTO issue (
 			workspace_id, title, status, priority, owner_type, owner_id, executor_type, executor_id,
 			creator_type, creator_id, position, number, project_id
 		)
 		VALUES
-			($1, 'Assigned row', 'todo', 'none', 'member', $2, NULL, NULL, 'member', $2, 1, $3, $4),
-			($1, 'Unassigned row', 'todo', 'none', NULL, NULL, NULL, NULL, 'member', $2, 2, $3 + 1, $4)
-	`, testWorkspaceID, testUserID, finalNumber-1, projectID); err != nil {
+			($1, 'Assigned row', 'todo', 'none', 'member', $2, 'agent', $3, 'member', $2, 1, $4, $5),
+			($1, 'Unassigned row', 'todo', 'none', NULL, NULL, NULL, NULL, 'member', $2, 2, $4 + 1, $5)
+	`, testWorkspaceID, testUserID, agentID, finalNumber-1, projectID); err != nil {
 		t.Fatalf("seed issues: %v", err)
 	}
 
@@ -1064,7 +1078,7 @@ func TestIssueTableAssigneeNamesResolveAfterGrouping(t *testing.T) {
 			Scope: issueTableScope{Kind: "project", ProjectID: projectID},
 			Sort:  issueTableSortRequest{Field: "position", Direction: "asc"},
 		},
-		Group: issueTableGroupSpec{Kind: "assignee"},
+		Group: issueTableGroupSpec{Kind: "executor"},
 		Page:  issueTablePageRequest{Limit: 10},
 	}))
 	if recorder.Code != http.StatusOK {
@@ -1078,17 +1092,17 @@ func TestIssueTableAssigneeNamesResolveAfterGrouping(t *testing.T) {
 	for _, group := range response.Groups {
 		counts[group.Key] = group.Count
 	}
-	if counts["assignee:member:"+testUserID] != 1 || counts["assignee:unassigned"] != 1 {
-		t.Fatalf("unexpected assignee groups: %#v", counts)
+	if counts["executor:agent:"+agentID] != 1 || counts["executor:unassigned"] != 1 {
+		t.Fatalf("unexpected executor groups: %#v", counts)
 	}
-	if response.Groups[0].Key != "assignee:member:"+testUserID ||
-		response.Groups[len(response.Groups)-1].Key != "assignee:unassigned" {
-		t.Fatalf("assignee groups are not actor-priority ordered: %#v", response.Groups)
+	if response.Groups[0].Key != "executor:agent:"+agentID ||
+		response.Groups[len(response.Groups)-1].Key != "executor:unassigned" {
+		t.Fatalf("executor groups are not actor-priority ordered: %#v", response.Groups)
 	}
 	sortedAt := strings.Index(groupQuerySQL, "), sorted AS (")
-	nameLookupAt := strings.Index(groupQuerySQL, `SELECT u.name FROM "user" u`)
+	nameLookupAt := strings.Index(groupQuerySQL, `SELECT a.name FROM agent a`)
 	if sortedAt < 0 || nameLookupAt < sortedAt {
-		t.Fatalf("assignee names must resolve after actor aggregation:\n%s", groupQuerySQL)
+		t.Fatalf("executor names must resolve after actor aggregation:\n%s", groupQuerySQL)
 	}
 }
 

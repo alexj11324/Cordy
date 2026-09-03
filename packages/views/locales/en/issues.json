@@ -308,7 +308,7 @@
     "no_parent": "No parent",
     "other_parents": "Other parents",
     "no_project": "No project",
-    "no_executor": "Unassigned",
+    "no_executor": "No executor",
     "open_parent": "Open parent issue",
     "toggle_collapse": "Toggle lane"
   },

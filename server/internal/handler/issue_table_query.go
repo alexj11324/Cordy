@@ -68,6 +68,7 @@ type issueTableActorRef struct {
 
 type issueTableScope struct {
 	Kind          string              `json:"kind"`
+	OwnerTypes    []string            `json:"owner_types,omitempty"`
 	ExecutorTypes []string            `json:"executor_types,omitempty"`
 	ProjectID     string              `json:"project_id,omitempty"`
 	Actor         *issueTableActorRef `json:"actor,omitempty"`
@@ -83,8 +84,11 @@ type issueTableDateFilterRequest struct {
 type issueTableFiltersRequest struct {
 	Statuses          []string                     `json:"statuses,omitempty"`
 	Priorities        []string                     `json:"priorities,omitempty"`
-	Assignees         []issueTableActorRef         `json:"assignees,omitempty"`
-	IncludeNoAssignee bool                         `json:"include_no_assignee,omitempty"`
+	Actors             []issueTableActorRef         `json:"actors,omitempty"`
+	Owners             []issueTableActorRef         `json:"owners,omitempty"`
+	IncludeNoOwner     bool                         `json:"include_no_owner,omitempty"`
+	Executors          []issueTableActorRef         `json:"executors,omitempty"`
+	IncludeNoExecutor  bool                         `json:"include_no_executor,omitempty"`
 	Creators          []issueTableActorRef         `json:"creators,omitempty"`
 	ProjectIDs        []string                     `json:"project_ids,omitempty"`
 	IncludeNoProject  bool                         `json:"include_no_project,omitempty"`
@@ -246,18 +250,25 @@ func equalOptionalString(a, b *string) bool {
 }
 
 func canonicalIssueTableFingerprint(workspaceID string, spec issueTableQuerySpec) (string, error) {
-	explicitEmptyAssignees :=
-		spec.Filters.Assignees != nil && len(spec.Filters.Assignees) == 0
+	explicitEmptyActors :=
+		spec.Filters.Actors != nil && len(spec.Filters.Actors) == 0
+	explicitEmptyOwners :=
+		spec.Filters.Owners != nil && len(spec.Filters.Owners) == 0
+	explicitEmptyExecutors :=
+		spec.Filters.Executors != nil && len(spec.Filters.Executors) == 0
 	explicitEmptyWorkingIssues :=
 		spec.Filters.WorkingIssueIDs != nil && len(spec.Filters.WorkingIssueIDs) == 0
 	normalized := spec
 	normalized.Search = strings.TrimSpace(normalized.Search)
+	normalized.Scope.OwnerTypes = sortedUniqueStrings(normalized.Scope.OwnerTypes)
 	normalized.Scope.ExecutorTypes = sortedUniqueStrings(normalized.Scope.ExecutorTypes)
 	normalized.Filters.Statuses = sortedUniqueStrings(normalized.Filters.Statuses)
 	normalized.Filters.Priorities = sortedUniqueStrings(normalized.Filters.Priorities)
 	normalized.Filters.ProjectIDs = sortedUniqueStrings(normalized.Filters.ProjectIDs)
 	normalized.Filters.LabelIDs = sortedUniqueStrings(normalized.Filters.LabelIDs)
-	normalized.Filters.Assignees = sortedUniqueActors(normalized.Filters.Assignees)
+	normalized.Filters.Actors = sortedUniqueActors(normalized.Filters.Actors)
+	normalized.Filters.Owners = sortedUniqueActors(normalized.Filters.Owners)
+	normalized.Filters.Executors = sortedUniqueActors(normalized.Filters.Executors)
 	normalized.Filters.WorkingIssueIDs = sortedUniqueStrings(normalized.Filters.WorkingIssueIDs)
 	normalized.Filters.Creators = sortedUniqueActors(normalized.Filters.Creators)
 	for key, values := range normalized.Filters.Properties {
@@ -266,12 +277,16 @@ func canonicalIssueTableFingerprint(workspaceID string, spec issueTableQuerySpec
 	encoded, err := json.Marshal(struct {
 		WorkspaceID                string              `json:"workspace_id"`
 		Query                      issueTableQuerySpec `json:"query"`
-		ExplicitEmptyAssignees     bool                `json:"explicit_empty_assignees,omitempty"`
+		ExplicitEmptyActors        bool                `json:"explicit_empty_actors,omitempty"`
+		ExplicitEmptyOwners        bool                `json:"explicit_empty_owners,omitempty"`
+		ExplicitEmptyExecutors     bool                `json:"explicit_empty_executors,omitempty"`
 		ExplicitEmptyWorkingIssues bool                `json:"explicit_empty_working_issues,omitempty"`
 	}{
 		WorkspaceID:                workspaceID,
 		Query:                      normalized,
-		ExplicitEmptyAssignees:     explicitEmptyAssignees,
+		ExplicitEmptyActors:        explicitEmptyActors,
+		ExplicitEmptyOwners:        explicitEmptyOwners,
+		ExplicitEmptyExecutors:     explicitEmptyExecutors,
 		ExplicitEmptyWorkingIssues: explicitEmptyWorkingIssues,
 	})
 	if err != nil {
@@ -466,23 +481,32 @@ func (h *Handler) compileIssueTableQuery(w http.ResponseWriter, r *http.Request,
 		where = append(where, fmt.Sprintf("i.priority = ANY(%s::text[])", addArg(sortedUniqueStrings(spec.Filters.Priorities))))
 	}
 
-	// Workspace and project scopes share the optional assignee-type
-	// narrowing (the Members/Agents tabs above both surfaces).
-	appendAssigneeTypes := func() bool {
+	// Workspace and project scopes share the optional role narrowing used by
+	// the Members/Agents tabs above both surfaces.
+	appendRoleTypes := func() bool {
+		for _, ownerType := range spec.Scope.OwnerTypes {
+			if !isIssueOwnerType(ownerType) {
+				writeError(w, http.StatusBadRequest, "invalid scope.owner_types")
+				return false
+			}
+		}
+		if len(spec.Scope.OwnerTypes) > 0 {
+			where = append(where, fmt.Sprintf("i.owner_type = ANY(%s::text[])", addArg(sortedUniqueStrings(spec.Scope.OwnerTypes))))
+		}
 		for _, actorType := range spec.Scope.ExecutorTypes {
-			if !isIssueActorType(actorType) {
+			if !isIssueExecutorType(actorType) {
 				writeError(w, http.StatusBadRequest, "invalid scope.executor_types")
 				return false
 			}
 		}
 		if len(spec.Scope.ExecutorTypes) > 0 {
-			where = append(where, fmt.Sprintf("%s = ANY(%s::text[])", effectiveAssigneeTypeSQL, addArg(sortedUniqueStrings(spec.Scope.ExecutorTypes))))
+			where = append(where, fmt.Sprintf("i.executor_type = ANY(%s::text[])", addArg(sortedUniqueStrings(spec.Scope.ExecutorTypes))))
 		}
 		return true
 	}
 	switch spec.Scope.Kind {
 	case "workspace":
-		if !appendAssigneeTypes() {
+		if !appendRoleTypes() {
 			return issueTableSQL{}, false
 		}
 	case "project":
@@ -492,10 +516,10 @@ func (h *Handler) compileIssueTableQuery(w http.ResponseWriter, r *http.Request,
 			return issueTableSQL{}, false
 		}
 		where = append(where, fmt.Sprintf("i.project_id = %s::uuid", addArg(projectID)))
-		if !appendAssigneeTypes() {
+		if !appendRoleTypes() {
 			return issueTableSQL{}, false
 		}
-	case "assignee":
+	case "owner":
 		if spec.Scope.Actor == nil {
 			writeError(w, http.StatusBadRequest, "scope.actor is required")
 			return issueTableSQL{}, false
@@ -504,7 +528,25 @@ func (h *Handler) compileIssueTableQuery(w http.ResponseWriter, r *http.Request,
 		if !ok {
 			return issueTableSQL{}, false
 		}
-		where = append(where, fmt.Sprintf("%s = %s::text AND %s = %s::uuid", effectiveAssigneeTypeSQL, addArg(actor.actorType), effectiveAssigneeIDSQL, addArg(actor.actorID)))
+		if !isIssueOwnerType(actor.actorType) {
+			writeError(w, http.StatusBadRequest, "invalid scope.actor")
+			return issueTableSQL{}, false
+		}
+		where = append(where, fmt.Sprintf("i.owner_type = %s::text AND i.owner_id = %s::uuid", addArg(actor.actorType), addArg(actor.actorID)))
+	case "executor":
+		if spec.Scope.Actor == nil {
+			writeError(w, http.StatusBadRequest, "scope.actor is required")
+			return issueTableSQL{}, false
+		}
+		actor, ok := parseIssueTableActor(w, *spec.Scope.Actor, "scope.actor")
+		if !ok {
+			return issueTableSQL{}, false
+		}
+		if !isIssueExecutorType(actor.actorType) {
+			writeError(w, http.StatusBadRequest, "invalid scope.actor")
+			return issueTableSQL{}, false
+		}
+		where = append(where, fmt.Sprintf("i.executor_type = %s::text AND i.executor_id = %s::uuid", addArg(actor.actorType), addArg(actor.actorID)))
 	case "creator":
 		if spec.Scope.Actor == nil {
 			writeError(w, http.StatusBadRequest, "scope.actor is required")
@@ -550,25 +592,67 @@ func (h *Handler) compileIssueTableQuery(w http.ResponseWriter, r *http.Request,
 		return issueTableSQL{}, false
 	}
 
-	if spec.Filters.Assignees != nil || spec.Filters.IncludeNoAssignee {
-		ors := make([]string, 0, len(spec.Filters.Assignees)+1)
-		for _, value := range spec.Filters.Assignees {
-			actor, ok := parseIssueTableActor(w, value, "filters.assignees")
+	if spec.Filters.Actors != nil {
+		ors := make([]string, 0, len(spec.Filters.Actors)+1)
+		for _, value := range spec.Filters.Actors {
+			actor, ok := parseIssueTableActor(w, value, "filters.actors")
 			if !ok {
 				return issueTableSQL{}, false
 			}
-			ors = append(ors, fmt.Sprintf("(%s = %s::text AND %s = %s::uuid)", effectiveAssigneeTypeSQL, addArg(actor.actorType), effectiveAssigneeIDSQL, addArg(actor.actorID)))
+			if isIssueOwnerType(actor.actorType) {
+				ors = append(ors, fmt.Sprintf("(i.owner_type = 'member' AND i.owner_id = %s::uuid)", addArg(actor.actorID)))
+			} else if isIssueExecutorType(actor.actorType) {
+				ors = append(ors, fmt.Sprintf("(i.executor_type = %s::text AND i.executor_id = %s::uuid)", addArg(actor.actorType), addArg(actor.actorID)))
+			} else {
+				writeError(w, http.StatusBadRequest, "invalid filters.actors")
+				return issueTableSQL{}, false
+			}
 		}
-		if spec.Filters.IncludeNoAssignee {
-			ors = append(ors, "("+effectiveAssigneeTypeSQL+" IS NULL AND "+effectiveAssigneeIDSQL+" IS NULL)")
+		if spec.Filters.IncludeNoExecutor {
+			ors = append(ors, "(i.executor_type IS NULL AND i.executor_id IS NULL)")
 		}
 		if len(ors) == 0 {
-			// Omitted assignees means "no assignee filter"; an explicitly
+			// Omitted actors means "no actor filter"; an explicitly
 			// empty list means "match none", so API callers can preserve an
 			// intentionally active empty predicate.
 			where = append(where, "FALSE")
 		} else {
 			where = append(where, "("+strings.Join(ors, " OR ")+")")
+		}
+	}
+
+	appendRoleActors := func(values []issueTableActorRef, fieldName, typeColumn, idColumn string, includeNone bool, validType func(string) bool) bool {
+		if values == nil && !includeNone {
+			return true
+		}
+		ors := make([]string, 0, len(values)+1)
+		for _, value := range values {
+			actor, ok := parseIssueTableActor(w, value, fieldName)
+			if !ok {
+				return false
+			}
+			if !validType(actor.actorType) {
+				writeError(w, http.StatusBadRequest, "invalid "+fieldName)
+				return false
+			}
+			ors = append(ors, fmt.Sprintf("(i.%s = %s::text AND i.%s = %s::uuid)", typeColumn, addArg(actor.actorType), idColumn, addArg(actor.actorID)))
+		}
+		if includeNone {
+			ors = append(ors, fmt.Sprintf("(i.%s IS NULL AND i.%s IS NULL)", typeColumn, idColumn))
+		}
+		if len(ors) == 0 {
+			where = append(where, "FALSE")
+		} else {
+			where = append(where, "("+strings.Join(ors, " OR ")+")")
+		}
+		return true
+	}
+	if spec.Filters.Actors == nil {
+		if !appendRoleActors(spec.Filters.Owners, "filters.owners", "owner_type", "owner_id", spec.Filters.IncludeNoOwner, isIssueOwnerType) {
+			return issueTableSQL{}, false
+		}
+		if !appendRoleActors(spec.Filters.Executors, "filters.executors", "executor_type", "executor_id", spec.Filters.IncludeNoExecutor, isIssueExecutorType) {
+			return issueTableSQL{}, false
 		}
 	}
 

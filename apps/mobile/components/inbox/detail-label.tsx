@@ -38,7 +38,8 @@ const TYPE_LABEL: Record<InboxItemType, string> = {
   issue_assigned: "Assigned",
   issue_subscribed: "Subscribed",
   unassigned: "Unassigned",
-  assignee_changed: "Reassigned",
+  owner_changed: "Owner changed",
+  executor_changed: "Executor changed",
   status_changed: "Status changed",
   priority_changed: "Priority changed",
   start_date_changed: "Start date changed",
@@ -114,17 +115,43 @@ export function InboxDetailLabel({
   const text = (() => {
     switch (item.type) {
       case "issue_assigned":
-      case "assignee_changed":
-        if (details.new_assignee_id) {
+        if (details.new_owner_id) {
           const name = getName(
-            (details.new_assignee_type ?? "member") as "member" | "agent",
-            details.new_assignee_id,
+            (details.new_owner_type ?? "member") as "member" | "agent",
+            details.new_owner_id,
           );
-          return `Assigned to ${name}`;
+          return `Set owner to ${name}`;
+        }
+        if (details.new_executor_id) {
+          const name = getName(
+            (details.new_executor_type ?? "member") as "member" | "agent",
+            details.new_executor_id,
+          );
+          return `Set executor to ${name}`;
         }
         return TYPE_LABEL[item.type];
       case "unassigned":
-        return "Removed assignee";
+        if (details.prev_owner_id) return "Removed owner";
+        if (details.prev_executor_id) return "Removed executor";
+        return TYPE_LABEL[item.type];
+      case "owner_changed":
+        if (details.new_owner_id) {
+          const name = getName(
+            (details.new_owner_type ?? "member") as "member" | "agent",
+            details.new_owner_id,
+          );
+          return `Set owner to ${name}`;
+        }
+        return TYPE_LABEL[item.type];
+      case "executor_changed":
+        if (details.new_executor_id) {
+          const name = getName(
+            (details.new_executor_type ?? "member") as "member" | "agent",
+            details.new_executor_id,
+          );
+          return `Set executor to ${name}`;
+        }
+        return TYPE_LABEL[item.type];
       case "due_date_changed":
         return details.to
           ? `Set due date to ${shortDate(details.to)}`

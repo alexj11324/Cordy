@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   actorKindForViewVariant,
-  assigneeTypesForActorKind,
+  roleFiltersForActorKind,
   myRelationForViewVariant,
   UnsupportedIssueScopeError,
   issueScopeKey,
@@ -52,7 +52,7 @@ describe("issue surface scope", () => {
       }),
     ).toEqual({
       scopeKey: "project:p1:members",
-      queryFilter: { project_id: "p1", executor_types: ["member"] },
+      queryFilter: { project_id: "p1", owner_types: ["member"] },
       createDefaults: { project_id: "p1" },
     });
     expect(
@@ -88,12 +88,16 @@ describe("issue surface scope", () => {
   });
 });
 
-describe("assigneeTypesForActorKind", () => {
+describe("roleFiltersForActorKind", () => {
   it("maps the three tabs to their API values", () => {
-    expect(assigneeTypesForActorKind("members")).toEqual(["member"]);
-    expect(assigneeTypesForActorKind("agents")).toEqual(["agent", "team"]);
-    expect(assigneeTypesForActorKind("all")).toBeUndefined();
-    expect(assigneeTypesForActorKind(undefined)).toBeUndefined();
+    expect(roleFiltersForActorKind("members")).toEqual({
+      ownerTypes: ["member"],
+    });
+    expect(roleFiltersForActorKind("agents")).toEqual({
+      executorTypes: ["agent", "team"],
+    });
+    expect(roleFiltersForActorKind("all")).toEqual({});
+    expect(roleFiltersForActorKind(undefined)).toEqual({});
   });
 });
 

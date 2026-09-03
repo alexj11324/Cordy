@@ -10,7 +10,8 @@
  */
 export type IssueSubscriberReason =
   | "creator"
-  | "assignee"
+  | "owner"
+  | "executor"
   | "commenter"
   | "mentioned"
   | "manual"

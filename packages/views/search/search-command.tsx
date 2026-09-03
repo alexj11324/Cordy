@@ -1,6 +1,6 @@
 "use client";
 
-import { issueAssigneeRef, issueStatusCategory } from "@patchbay/core/issues";
+import { issueExecutorRef, issueStatusCategory } from "@patchbay/core/issues";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
@@ -155,18 +155,18 @@ function matchesMember(member: MemberWithUser, query: string) {
   );
 }
 
-function IssueAssigneeAvatar({
-  assigneeType,
-  assigneeId,
+function IssueExecutorAvatar({
+  executorType,
+  executorId,
 }: {
-  assigneeType?: string | null;
-  assigneeId?: string | null;
+  executorType?: string | null;
+  executorId?: string | null;
 }) {
-  if (!assigneeType || !assigneeId) return null;
+  if (!executorType || !executorId) return null;
   return (
     <ActorAvatar
-      actorType={assigneeType}
-      actorId={assigneeId}
+      actorType={executorType}
+      actorId={executorId}
       size="sm"
       profileLink={false}
       className="shrink-0"
@@ -252,9 +252,9 @@ function IssueResultRow({
         <span className="min-w-0 flex-1 truncate">
           <HighlightText text={issue.title} query={query} />
         </span>
-        <IssueAssigneeAvatar
-          assigneeType={issueAssigneeRef(issue)?.type ?? null}
-          assigneeId={issueAssigneeRef(issue)?.id ?? null}
+        <IssueExecutorAvatar
+          executorType={issueExecutorRef(issue)?.type ?? null}
+          executorId={issueExecutorRef(issue)?.id ?? null}
         />
       </div>
       {issue.matched_description_snippet && (
@@ -956,9 +956,9 @@ export function SearchCommand() {
                       {item.identifier}
                     </span>
                     <span className="min-w-0 flex-1 truncate">{item.title}</span>
-                    <IssueAssigneeAvatar
-                      assigneeType={issueAssigneeRef(item)?.type ?? null}
-                      assigneeId={issueAssigneeRef(item)?.id ?? null}
+                    <IssueExecutorAvatar
+                      executorType={issueExecutorRef(item)?.type ?? null}
+                      executorId={issueExecutorRef(item)?.id ?? null}
                     />
                   </CommandPrimitive.Item>
                 ))}

@@ -262,7 +262,7 @@ function rebaseServerBranchState(
 
 function tableGroupSpec(grouping: string): IssueTableGroupSpec {
   if (grouping === "status") return { kind: "status" };
-  if (grouping === "executor") return { kind: "assignee" };
+  if (grouping === "executor") return { kind: "executor" };
   if (grouping === "project") return { kind: "project" };
   const propertyId = propertyIdFromViewKey(grouping);
   if (propertyId) return { kind: "property", property_id: propertyId };
@@ -1785,7 +1785,7 @@ export function TableView({
         // of collapsing to the schema fallback or an empty label. (MUL-6243)
         return resolveStatusLabel(value.status);
       }
-      if (value.kind === "assignee") {
+      if (value.kind === "executor") {
         return value.actor
           ? getActorName(value.actor.type, value.actor.id)
           : t(($) => $.table.unassigned);
