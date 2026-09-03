@@ -4431,6 +4431,7 @@ func (s *TaskService) completeTask(ctx context.Context, taskID pgtype.UUID, resu
 			// existing resume pointer; we still surface DB errors.
 			if err := qtx.UpdateChatSessionSession(ctx, db.UpdateChatSessionSessionParams{
 				ID:        t.ChatSessionID,
+				AgentID:   t.AgentID,
 				SessionID: pgtype.Text{String: sessionID, Valid: sessionID != ""},
 				WorkDir:   pgtype.Text{String: workDir, Valid: workDir != ""},
 				RuntimeID: sessionRuntimeID,
@@ -4446,6 +4447,7 @@ func (s *TaskService) completeTask(ctx context.Context, taskID pgtype.UUID, resu
 			if retiredSessionID != "" {
 				if err := qtx.ClearChatSessionSessionIfMatches(ctx, db.ClearChatSessionSessionIfMatchesParams{
 					ID:        t.ChatSessionID,
+					AgentID:   t.AgentID,
 					SessionID: pgtype.Text{String: retiredSessionID, Valid: true},
 					RuntimeID: t.RuntimeID,
 				}); err != nil {
@@ -4943,6 +4945,7 @@ func (s *TaskService) failTask(ctx context.Context, taskID pgtype.UUID, errMsg, 
 			if deadSession != "" {
 				if err := qtx.ClearChatSessionSessionIfMatches(ctx, db.ClearChatSessionSessionIfMatchesParams{
 					ID:        t.ChatSessionID,
+					AgentID:   t.AgentID,
 					SessionID: pgtype.Text{String: deadSession, Valid: true},
 					RuntimeID: t.RuntimeID,
 				}); err != nil {
@@ -4957,6 +4960,7 @@ func (s *TaskService) failTask(ctx context.Context, taskID pgtype.UUID, errMsg, 
 		if t.ChatSessionID.Valid && retiredSessionID != "" {
 			if err := qtx.ClearChatSessionSessionIfMatches(ctx, db.ClearChatSessionSessionIfMatchesParams{
 				ID:        t.ChatSessionID,
+				AgentID:   t.AgentID,
 				SessionID: pgtype.Text{String: retiredSessionID, Valid: true},
 				RuntimeID: t.RuntimeID,
 			}); err != nil {
@@ -4978,6 +4982,7 @@ func (s *TaskService) failTask(ctx context.Context, taskID pgtype.UUID, errMsg, 
 			}
 			if err := qtx.UpdateChatSessionSession(ctx, db.UpdateChatSessionSessionParams{
 				ID:        t.ChatSessionID,
+				AgentID:   t.AgentID,
 				SessionID: pgtype.Text{String: sessionID, Valid: sessionID != ""},
 				WorkDir:   pgtype.Text{String: workDir, Valid: workDir != ""},
 				RuntimeID: sessionRuntimeID,

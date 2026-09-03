@@ -136,6 +136,37 @@ func TestClaimTaskChatCompletePointerSkipsSessionFallbackQuery(t *testing.T) {
 	}
 }
 
+func TestClaimOldAgentTaskDoesNotBorrowNewHubAgentsResumePointer(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+	agentID, runtimeID, daemonID := createRuntimeGuardAgent(t, ctx)
+	selectedAgent := dbfx.Agent(t, "new Hub Agent", runtimeID)
+	chatSessionID := dbfx.ChatSession(t, selectedAgent, testutil.Cols{
+		"title": "Hub Agent switch", "session_id": "new-agent-session", "work_dir": "/new-agent-directory", "runtime_id": runtimeID,
+	})
+	dbfx.Task(t, agentID, testutil.Cols{
+		"runtime_id": runtimeID, "chat_session_id": chatSessionID, "status": "cancelled",
+		"session_id": "old-agent-session", "work_dir": "/old-agent-directory", "completed_at": testutil.Raw("now() - interval '1 minute'"),
+	})
+	dbfx.Insert(t, "chat_message", testutil.Cols{
+		"chat_session_id": chatSessionID, "role": "user", "content": "the old Agent's pending turn",
+	})
+	dbfx.Task(t, agentID, testutil.Cols{
+		"runtime_id": runtimeID, "chat_session_id": chatSessionID, "priority": 1000,
+	})
+	req := newDaemonTokenRequest(http.MethodPost, "/api/daemon/runtimes/"+runtimeID+"/claim", nil, testWorkspaceID, daemonID)
+	req = testutil.WithURLParams(req, "runtimeId", runtimeID)
+	var response struct {
+		Task *claimRuntimeGuardTask `json:"task"`
+	}
+	testutil.Call(t, testHandler.ClaimTaskByRuntime, req).Want(http.StatusOK).JSON(&response)
+	if response.Task == nil || response.Task.PriorSessionID != "old-agent-session" || response.Task.PriorWorkDir != "/old-agent-directory" {
+		t.Fatalf("old Agent claimed with another Agent's execution context: %+v", response.Task)
+	}
+}
+
 func TestClaimTaskChatInputLoadFailureSkipsResumeQueries(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")

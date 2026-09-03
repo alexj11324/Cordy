@@ -50,6 +50,7 @@ SET session_id = t.session_id,
 FROM agent_task_queue t
 WHERE t.id = $1
   AND t.chat_session_id = cs.id
+  AND t.agent_id = cs.agent_id
   AND t.status = 'cancelled'
   AND t.session_id IS NOT NULL
   AND t.runtime_id IS NOT NULL
@@ -169,12 +170,14 @@ SET session_id = NULL,
 WHERE id = $1
   AND session_id = $2
   AND runtime_id = $3
+  AND agent_id = $4
 `
 
 type ClearChatSessionSessionIfMatchesParams struct {
 	ID        pgtype.UUID `json:"id"`
 	SessionID pgtype.Text `json:"session_id"`
 	RuntimeID pgtype.UUID `json:"runtime_id"`
+	AgentID   pgtype.UUID `json:"agent_id"`
 }
 
 // Drops the chat session's resume pointer, but only while it still points at
@@ -192,7 +195,7 @@ type ClearChatSessionSessionIfMatchesParams struct {
 // a slower sibling's failure. work_dir is deliberately left alone — the
 // directory is still reusable, only the conversation is not.
 func (q *Queries) ClearChatSessionSessionIfMatches(ctx context.Context, arg ClearChatSessionSessionIfMatchesParams) error {
-	_, err := q.db.Exec(ctx, clearChatSessionSessionIfMatches, arg.ID, arg.SessionID, arg.RuntimeID)
+	_, err := q.db.Exec(ctx, clearChatSessionSessionIfMatches, arg.ID, arg.SessionID, arg.RuntimeID, arg.AgentID)
 	return err
 }
 
@@ -993,9 +996,10 @@ WITH retired_sessions AS (
     SELECT DISTINCT r.retired_session_id AS session_id
     FROM agent_task_queue r
     WHERE r.chat_session_id = $1
+      AND r.agent_id = $2
       AND (
-        $2::bigint IS NULL
-        OR COALESCE(r.channel_context_revision, 1) = $2::bigint
+        $3::bigint IS NULL
+        OR COALESCE(r.channel_context_revision, 1) = $3::bigint
       )
       AND r.retired_session_id IS NOT NULL
 ), resume_overflow_at AS (
@@ -1006,9 +1010,10 @@ WITH retired_sessions AS (
     SELECT MAX(t.completed_at) AS at
     FROM agent_task_queue t
     WHERE t.chat_session_id = $1
+      AND t.agent_id = $2
       AND (
-        $2::bigint IS NULL
-        OR COALESCE(t.channel_context_revision, 1) = $2::bigint
+        $3::bigint IS NULL
+        OR COALESCE(t.channel_context_revision, 1) = $3::bigint
       )
       AND t.status = 'failed'
       AND (
@@ -1020,9 +1025,10 @@ WITH retired_sessions AS (
         t.session_id, t.work_dir, t.runtime_id, t.status, t.failure_reason, t.error, t.completed_at
     FROM agent_task_queue t
     WHERE t.chat_session_id = $1
+      AND t.agent_id = $2
       AND (
-        $2::bigint IS NULL
-        OR COALESCE(t.channel_context_revision, 1) = $2::bigint
+        $3::bigint IS NULL
+        OR COALESCE(t.channel_context_revision, 1) = $3::bigint
       )
       AND t.session_id IS NOT NULL
       AND t.status IN ('completed', 'failed', 'cancelled')
@@ -1066,6 +1072,7 @@ LIMIT 1
 
 type GetLastChatTaskSessionParams struct {
 	ChatSessionID          pgtype.UUID `json:"chat_session_id"`
+	AgentID                pgtype.UUID `json:"agent_id"`
 	ChannelContextRevision pgtype.Int8 `json:"channel_context_revision"`
 }
 
@@ -1084,6 +1091,8 @@ type GetLastChatTaskSessionRow struct {
 // replaying those sessions deterministically reproduces the same terminal
 // state. Keep this list in sync with resumeUnsafeFailureReason and
 // GetLastTaskSession.
+// Agent identity is also part of the resume boundary: two Agents can share
+// one runtime and one Hub Chat without sharing provider sessions/work dirs.
 //
 // The plan depends on idx_agent_task_queue_chat_terminal_resume for the
 // terminal/cutoff scans and idx_agent_task_queue_chat_retired_session for the
@@ -1116,7 +1125,7 @@ type GetLastChatTaskSessionRow struct {
 // poisoned row invalidates the whole session, while a genuinely different
 // healthy session stays eligible.
 func (q *Queries) GetLastChatTaskSession(ctx context.Context, arg GetLastChatTaskSessionParams) (GetLastChatTaskSessionRow, error) {
-	row := q.db.QueryRow(ctx, getLastChatTaskSession, arg.ChatSessionID, arg.ChannelContextRevision)
+	row := q.db.QueryRow(ctx, getLastChatTaskSession, arg.ChatSessionID, arg.AgentID, arg.ChannelContextRevision)
 	var i GetLastChatTaskSessionRow
 	err := row.Scan(&i.SessionID, &i.WorkDir, &i.RuntimeID)
 	return i, err
@@ -3675,7 +3684,7 @@ SET session_id = COALESCE($1, session_id),
     work_dir = COALESCE($2, work_dir),
     runtime_id = COALESCE($3, runtime_id),
     updated_at = now()
-WHERE id = $4
+WHERE id = $4 AND agent_id = $5
 `
 
 type UpdateChatSessionSessionParams struct {
@@ -3683,6 +3692,7 @@ type UpdateChatSessionSessionParams struct {
 	WorkDir   pgtype.Text `json:"work_dir"`
 	RuntimeID pgtype.UUID `json:"runtime_id"`
 	ID        pgtype.UUID `json:"id"`
+	AgentID   pgtype.UUID `json:"agent_id"`
 }
 
 // Updates the resume pointer for a chat session. Empty/NULL inputs are
@@ -3690,12 +3700,15 @@ type UpdateChatSessionSessionParams struct {
 // the agent crashed before establishing one) cannot wipe out a previously
 // recorded resume pointer. This makes the chat memory robust against
 // intermittent agent failures.
+// The producing Agent must still own this Chat; late pre-Hub-switch tasks
+// cannot repopulate the new Agent's cleared execution context.
 func (q *Queries) UpdateChatSessionSession(ctx context.Context, arg UpdateChatSessionSessionParams) error {
 	_, err := q.db.Exec(ctx, updateChatSessionSession,
 		arg.SessionID,
 		arg.WorkDir,
 		arg.RuntimeID,
 		arg.ID,
+		arg.AgentID,
 	)
 	return err
 }

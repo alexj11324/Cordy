@@ -277,12 +277,14 @@ RETURNING *;
 -- the agent crashed before establishing one) cannot wipe out a previously
 -- recorded resume pointer. This makes the chat memory robust against
 -- intermittent agent failures.
+-- The producing Agent must still own this Chat; late pre-Hub-switch tasks
+-- cannot repopulate the new Agent's cleared execution context.
 UPDATE chat_session
 SET session_id = COALESCE(sqlc.narg('session_id'), session_id),
     work_dir = COALESCE(sqlc.narg('work_dir'), work_dir),
     runtime_id = COALESCE(sqlc.narg('runtime_id'), runtime_id),
     updated_at = now()
-WHERE id = sqlc.arg('id');
+WHERE id = sqlc.arg('id') AND agent_id = sqlc.arg('agent_id');
 
 -- name: ClearChatSessionSessionIfMatches :exec
 -- Drops the chat session's resume pointer, but only while it still points at
@@ -305,7 +307,8 @@ SET session_id = NULL,
     updated_at = now()
 WHERE id = sqlc.arg('id')
   AND session_id = sqlc.arg('session_id')
-  AND runtime_id = sqlc.arg('runtime_id');
+  AND runtime_id = sqlc.arg('runtime_id')
+  AND agent_id = sqlc.arg('agent_id');
 
 -- name: AdvanceCancelledChatSessionPointer :exec
 -- Moves a chat's resume pointer onto the session a CANCELLED task recorded
@@ -339,6 +342,7 @@ SET session_id = t.session_id,
 FROM agent_task_queue t
 WHERE t.id = sqlc.arg('task_id')
   AND t.chat_session_id = cs.id
+  AND t.agent_id = cs.agent_id
   AND t.status = 'cancelled'
   AND t.session_id IS NOT NULL
   AND t.runtime_id IS NOT NULL
@@ -1183,6 +1187,8 @@ RETURNING *;
 -- replaying those sessions deterministically reproduces the same terminal
 -- state. Keep this list in sync with resumeUnsafeFailureReason and
 -- GetLastTaskSession.
+-- Agent identity is also part of the resume boundary: two Agents can share
+-- one runtime and one Hub Chat without sharing provider sessions/work dirs.
 --
 -- The plan depends on idx_agent_task_queue_chat_terminal_resume for the
 -- terminal/cutoff scans and idx_agent_task_queue_chat_retired_session for the
@@ -1218,6 +1224,7 @@ WITH retired_sessions AS (
     SELECT DISTINCT r.retired_session_id AS session_id
     FROM agent_task_queue r
     WHERE r.chat_session_id = sqlc.arg('chat_session_id')
+      AND r.agent_id = sqlc.arg('agent_id')
       AND (
         sqlc.narg('channel_context_revision')::bigint IS NULL
         OR COALESCE(r.channel_context_revision, 1) = sqlc.narg('channel_context_revision')::bigint
@@ -1231,6 +1238,7 @@ WITH retired_sessions AS (
     SELECT MAX(t.completed_at) AS at
     FROM agent_task_queue t
     WHERE t.chat_session_id = sqlc.arg('chat_session_id')
+      AND t.agent_id = sqlc.arg('agent_id')
       AND (
         sqlc.narg('channel_context_revision')::bigint IS NULL
         OR COALESCE(t.channel_context_revision, 1) = sqlc.narg('channel_context_revision')::bigint
@@ -1245,6 +1253,7 @@ WITH retired_sessions AS (
         t.session_id, t.work_dir, t.runtime_id, t.status, t.failure_reason, t.error, t.completed_at
     FROM agent_task_queue t
     WHERE t.chat_session_id = sqlc.arg('chat_session_id')
+      AND t.agent_id = sqlc.arg('agent_id')
       AND (
         sqlc.narg('channel_context_revision')::bigint IS NULL
         OR COALESCE(t.channel_context_revision, 1) = sqlc.narg('channel_context_revision')::bigint

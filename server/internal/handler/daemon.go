@@ -2670,9 +2670,9 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 			}
 		}
 		projectCtx.applyTo(&resp)
-		if !task.ForceFreshSession && !task.ChannelContextRevision.Valid {
+		if !task.ForceFreshSession && !task.ChannelContextRevision.Valid && cs.AgentID == task.AgentID {
 			// Resume chat sessions only when the stored pointer was produced
-			// by the same runtime as the claiming task. When the chat_session
+			// by the same Agent and runtime as the claiming task. When the chat_session
 			// pointer is missing (legacy NULL runtime_id), stale (last task
 			// failed before reporting completion), or runtime-mismatched, fall
 			// back to the most recent task row that recorded a session_id —
@@ -2744,6 +2744,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 				started := time.Now()
 				prior, err := h.Queries.GetLastChatTaskSession(r.Context(), db.GetLastChatTaskSessionParams{
 					ChatSessionID:          cs.ID,
+					AgentID:                task.AgentID,
 					ChannelContextRevision: contextRevision,
 				})
 				h.Metrics.ObserveChatClaimLastSessionQuery(time.Since(started).Seconds())
