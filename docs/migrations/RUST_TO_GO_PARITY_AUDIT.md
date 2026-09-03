@@ -17,6 +17,12 @@ whole-product audit or an estimate of all remaining work. The historical
 [W4–W9 plan](MIGRATION_PLAN_W4_W9.md) and the original Hoplite PR report are
 checkpoints, not proof that their acceptance gates passed in the current tree.
 
+Delivery checkpoint: `1eb6b8cee26d21a9cf57956a7cd3cd499e3840fc` is pushed to
+the continuation branch. GitHub reports #729 closed, unmerged, at
+2026-09-03T14:30:02Z. No workflow run exists for this new head; this repository's
+CI runs on open pull requests or main pushes. Reopening #729 is awaiting user
+confirmation. Do not infer a passing CI result from the prior green head.
+
 Backend compilation, SQL generation and tests run in GitHub Actions. No local
 Go/Rust tooling or Docker build is part of this audit. Local frontend checks
 and browser fixtures complement CI; neither proves real provider connectivity,
@@ -78,7 +84,42 @@ An older Go-managed installation that lost its refresh token must reconnect
 through OAuth. Its missing refresh material cannot be reconstructed from the
 access token. Preserve the original encryption key for stored credentials.
 
-## Next implementation boundary: Hub routing
+## Workspace Hub implementation checkpoint — CI pending
+
+`284aa95a1` isolates Chat execution pointers by producing Agent, including late
+completion/cancellation, retired-session clearing and task-history fallback.
+Two Agents sharing a runtime may not reuse one another's provider session or
+working directory. A daemon-claim regression covers an old task after selection
+has changed.
+
+`278a2b69b` adds the shared Hub resolver and transactional selection persistence,
+all six provider reply adapters, four-language command copy, managed Slack
+`/agents` normalization, and selection-aware `/issue`, `/new` and `/clear`.
+The pending-run fence waits for already-firing as well as queued contexts before
+switching. The database test exercises real Slack resolvers and shared session
+transactions; the Agent-execution boundary is a fixture, not a real Agent CLI.
+
+`1eb6b8cee` preserves Hoplite's concurrent `9df503f44` commit and its unresolved
+Agent guard. The Slack conflict was resolved against the Rust contract: retain
+group scope and require command identity, rather than converting every unknown
+slash command into direct-message Agent input. No history was force-overwritten.
+
+The RED tests in `12a963327` failed in CI
+[33763887910](https://github.com/alexj11324/Cordy/actions/runs/33763887910): an
+unresolved workspace installation wrote a Chat, and managed `/agents` was ACKed
+without entering routing. The implementation above has **not yet compiled or
+passed its replacement tests**. SQL artifacts are staged for authoritative sqlc
+comparison in CI; manual matching is not generation proof. Local JSON formatting
+and whitespace checks pass. No local Go/Rust command, live provider, deployment,
+credential change or native UI acceptance occurred in this slice.
+
+The earlier Slack credential replacement CI
+[33762592403](https://github.com/alexj11324/Cordy/actions/runs/33762592403) on
+`1e54e1d9f` passed every applicable job, including sqlc. That result closes the
+credential row's replacement-CI gate above, not its real-provider gate and not
+this subsequent Hub change.
+
+### Retained acceptance boundaries
 
 Restore the shared engine behavior before presenting workspace-level setup as
 complete. The Rust reference resolves identity/membership before selecting the
