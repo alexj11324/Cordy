@@ -20,6 +20,7 @@ import (
 // InstallationService.DecryptAppSecret server-side). Likewise, the WS
 // lease columns are omitted; they are runtime state, not API surface.
 type LarkInstallationResponse struct {
+	Runtime MessagingConnectionStatus `json:"runtime"`
 	ID              string  `json:"id"`
 	WorkspaceID     string  `json:"workspace_id"`
 	AgentID         string  `json:"agent_id"`
@@ -39,6 +40,7 @@ type LarkInstallationResponse struct {
 
 func larkInstallationToResponse(row lark.Installation) LarkInstallationResponse {
 	resp := LarkInstallationResponse{
+		Runtime: initialConnectionStatus(row.Status),
 		ID:              uuidToString(row.ID),
 		WorkspaceID:     uuidToString(row.WorkspaceID),
 		AgentID:         uuidToString(row.AgentID),
@@ -98,6 +100,18 @@ func (h *Handler) ListLarkInstallations(w http.ResponseWriter, r *http.Request) 
 	out := make([]LarkInstallationResponse, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, larkInstallationToResponse(row))
+	}
+	ids := make([]string, 0, len(out))
+	for _, item := range out {
+		ids = append(ids, item.ID)
+	}
+	statuses, err := h.loadConnectionStatuses(r.Context(), wsUUID, ids)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load connection status")
+		return
+	}
+	for i := range out {
+		out[i].Runtime = statuses[out[i].ID]
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"installations":     out,

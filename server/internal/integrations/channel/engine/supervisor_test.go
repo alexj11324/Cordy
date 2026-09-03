@@ -61,6 +61,14 @@ func (f *fakeStore) ListActiveInstallations(ctx context.Context) ([]Installation
 	return out, nil
 }
 
+func (f *fakeStore) ClaimRuntimeObserver(context.Context, pgtype.UUID, string) error {
+	return nil
+}
+
+func (f *fakeStore) ObserveRuntime(context.Context, pgtype.UUID, string, channel.RuntimeObservation) (bool, error) {
+	return true, nil
+}
+
 func (f *fakeStore) ListHeldWSLeases(_ context.Context, ids []pgtype.UUID) (map[string]struct{}, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

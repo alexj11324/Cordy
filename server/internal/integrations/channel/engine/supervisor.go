@@ -82,6 +82,10 @@ type InstallationStore interface {
 	// channel types. There is no per-platform filter here — that hard-coded
 	// "feishu" was the whole limitation MUL-3620 removes.
 	ListActiveInstallations(ctx context.Context) ([]Installation, error)
+	// ClaimRuntimeObserver must durably fence the previous observer before a
+	// transport starts. ObserveRuntime returns false for a superseded token.
+	ClaimRuntimeObserver(ctx context.Context, id pgtype.UUID, token string) error
+	ObserveRuntime(ctx context.Context, id pgtype.UUID, token string, observation channel.RuntimeObservation) (bool, error)
 }
 
 // LeaseStore owns the token-fenced, per-installation WebSocket leases.
@@ -684,6 +688,16 @@ func (s *Supervisor) supervise(ctx context.Context, inst Installation, id string
 		s.observeTakeover(id)
 		s.setRenewalError(id, false)
 		s.adjustActiveOwners(1)
+		claimCtx, claimCancel := context.WithDeadline(ctx, confirmedUntil)
+		err = s.store.ClaimRuntimeObserver(claimCtx, inst.ID, leaseTok)
+		claimCancel()
+		if err != nil || !s.cfg.Now().Before(confirmedUntil) {
+			log.Warn("channel engine: connection status ownership unavailable", "error", err)
+			s.releaseLease(inst.ID, leaseTok)
+			s.adjustActiveOwners(-1)
+			return
+		}
+		status := s.newRuntimeStatus(inst.ID, leaseTok)
 
 		// Lease acquired. Build the platform channel via the registry,
 		// run it under a child context, and renew the lease in parallel.
@@ -695,6 +709,7 @@ func (s *Supervisor) supervise(ctx context.Context, inst Installation, id string
 		})
 		if err != nil {
 			log.Error("channel engine: build channel failed", "error", err)
+			status.finish(channel.RuntimeObservation{State: "error", ErrorCode: "configuration_invalid"})
 			s.releaseLease(inst.ID, leaseTok)
 			s.adjustActiveOwners(-1)
 			if sleep(ctx, backoff) {
@@ -705,6 +720,7 @@ func (s *Supervisor) supervise(ctx context.Context, inst Installation, id string
 		}
 
 		runCtx, runCancel := context.WithCancel(ctx)
+		runCtx = channel.WithRuntimeReporter(runCtx, status.report)
 		renewDone := make(chan struct{})
 		go func() {
 			defer close(renewDone)
@@ -712,13 +728,19 @@ func (s *Supervisor) supervise(ctx context.Context, inst Installation, id string
 			// channel exits even if its wire I/O is blocked. This is what
 			// makes "at most one active connection per installation across
 			// replicas" hold under lease theft.
-			s.renewLeaseUntil(runCtx, runCancel, inst.ID, leaseTok, confirmedUntil)
+			s.renewLeaseUntil(runCtx, runCancel, inst.ID, leaseTok, confirmedUntil, status)
 		}()
 
 		startedAt := s.cfg.Now()
 		runErr := ch.Connect(runCtx)
 		runCancel()
 		<-renewDone
+		if ctx.Err() != nil {
+			status.finish(channel.RuntimeObservation{State: "offline", ErrorCode: "supervisor_stopped"})
+		} else {
+			// finish is a no-op if lease loss already closed this generation.
+			status.finish(channel.RuntimeObservation{State: "degraded", ErrorCode: "transport_closed"})
+		}
 		s.disconnect(ch, id, log)
 		s.releaseLease(inst.ID, leaseTok)
 		s.adjustActiveOwners(-1)
@@ -775,12 +797,13 @@ func (s *Supervisor) acquireLease(ctx context.Context, instID pgtype.UUID, token
 // the same installation" failure mode. cancelRun forces the channel's ctx
 // done immediately, so Connect returns in bounded time even on a silent
 // socket. token MUST be the same per-supervisor token used to acquire.
-func (s *Supervisor) renewLeaseUntil(ctx context.Context, cancelRun context.CancelFunc, instID pgtype.UUID, token string, confirmedUntil time.Time) {
+func (s *Supervisor) renewLeaseUntil(ctx context.Context, cancelRun context.CancelFunc, instID pgtype.UUID, token string, confirmedUntil time.Time, status *runtimeStatus) {
 	nextDelay := renewalJitter(s.cfg.LeaseRenewInterval)
 	for {
 		remaining := confirmedUntil.Sub(s.cfg.Now())
 		if remaining <= 0 {
 			s.leaseLost(instID, cancelRun, "last confirmed lease expired")
+			status.finish(channel.RuntimeObservation{State: "offline", ErrorCode: "lease_expired"})
 			return
 		}
 		wait := min(nextDelay, remaining)
@@ -793,6 +816,7 @@ func (s *Supervisor) renewLeaseUntil(ctx context.Context, cancelRun context.Canc
 		}
 		if !s.cfg.Now().Before(confirmedUntil) {
 			s.leaseLost(instID, cancelRun, "last confirmed lease expired")
+			status.finish(channel.RuntimeObservation{State: "offline", ErrorCode: "lease_expired"})
 			return
 		}
 
@@ -805,6 +829,7 @@ func (s *Supervisor) renewLeaseUntil(ctx context.Context, cancelRun context.Canc
 		if err != nil {
 			if errors.Is(err, ErrLeaseNotAcquired) {
 				s.leaseLost(instID, cancelRun, "lease token no longer matches")
+				status.finish(channel.RuntimeObservation{State: "offline", ErrorCode: "lease_lost"})
 				return
 			}
 			s.setRenewalError(uuidString(instID), true)
@@ -815,9 +840,15 @@ func (s *Supervisor) renewLeaseUntil(ctx context.Context, cancelRun context.Canc
 				"confirmed_until", confirmedUntil,
 			)
 			nextDelay = s.cfg.LeaseErrorRetryInterval
+			statusCtx, statusCancel := context.WithDeadline(ctx, confirmedUntil)
+			status.renewalFailed(statusCtx)
+			statusCancel()
 			continue
 		}
 		confirmedUntil = started.Add(s.cfg.LeaseTTL - s.cfg.LeaseExpirySafetyMargin)
+		statusCtx, statusCancel := context.WithDeadline(ctx, confirmedUntil)
+		status.renewed(statusCtx)
+		statusCancel()
 		s.setRenewalError(uuidString(instID), false)
 		s.recordLeaseOperation("renew", "success")
 		if s.cfg.LeaseMetrics != nil {

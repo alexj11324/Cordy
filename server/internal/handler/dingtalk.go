@@ -25,6 +25,7 @@ import (
 // server-internal (only the outbound sender decrypts it). WS lease columns are
 // runtime state, not API surface, so they are omitted too.
 type DingTalkInstallationResponse struct {
+	Runtime MessagingConnectionStatus `json:"runtime"`
 	ID                   string   `json:"id"`
 	WorkspaceID          string   `json:"workspace_id"`
 	AgentID              string   `json:"agent_id"`
@@ -73,6 +74,7 @@ const (
 
 func dingtalkInstallationToResponse(row db.ChannelInstallation) DingTalkInstallationResponse {
 	return DingTalkInstallationResponse{
+		Runtime: initialConnectionStatus(row.Status),
 		ID:              uuidToString(row.ID),
 		WorkspaceID:     uuidToString(row.WorkspaceID),
 		AgentID:         uuidToString(row.AgentID),
@@ -199,6 +201,18 @@ func (h *Handler) ListDingTalkInstallations(w http.ResponseWriter, r *http.Reque
 		_, response.AgentAvailable = availableAgentIDs[agentID]
 		response.BoundDingTalkUserIDs = bindingsByInstallation[row.ID]
 		out = append(out, response)
+	}
+	ids := make([]string, 0, len(out))
+	for _, item := range out {
+		ids = append(ids, item.ID)
+	}
+	statuses, err := h.loadConnectionStatuses(r.Context(), wsUUID, ids)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load connection status")
+		return
+	}
+	for i := range out {
+		out[i].Runtime = statuses[out[i].ID]
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"installations":           out,

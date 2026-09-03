@@ -22,6 +22,7 @@ const (
 )
 
 type WeixinInstallationResponse struct {
+	Runtime MessagingConnectionStatus `json:"runtime"`
 	ID              string `json:"id"`
 	WorkspaceID     string `json:"workspace_id"`
 	AgentID         string `json:"agent_id"`
@@ -37,6 +38,7 @@ type WeixinInstallationResponse struct {
 func weixinInstallationToResponse(row db.ChannelInstallation) WeixinInstallationResponse {
 	public := weixin.DecodePublicConfig(row.Config)
 	return WeixinInstallationResponse{
+		Runtime: initialConnectionStatus(row.Status),
 		ID: uuidToString(row.ID), WorkspaceID: uuidToString(row.WorkspaceID), AgentID: uuidToString(row.AgentID),
 		BotID: public.BotID, ILinkUserID: public.ILinkUserID, InstallerUserID: uuidToString(row.InstallerUserID),
 		Status: row.Status, InstalledAt: row.InstalledAt.Time.UTC().Format(time.RFC3339),
@@ -85,6 +87,18 @@ func (h *Handler) ListWeixinInstallations(w http.ResponseWriter, r *http.Request
 	items := make([]WeixinInstallationResponse, 0, len(rows))
 	for _, row := range rows {
 		items = append(items, weixinInstallationToResponse(row))
+	}
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.ID)
+	}
+	statuses, err := h.loadConnectionStatuses(r.Context(), workspaceID, ids)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load connection status")
+		return
+	}
+	for i := range items {
+		items[i].Runtime = statuses[items[i].ID]
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"installations": items, "configured": true, "install_supported": true})
 }

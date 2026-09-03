@@ -18,6 +18,7 @@ import (
 // row. The encrypted bot token in config is INTENTIONALLY absent — it is
 // server-internal. WS lease columns are runtime state, not API surface.
 type TelegramInstallationResponse struct {
+	Runtime MessagingConnectionStatus `json:"runtime"`
 	ID              string `json:"id"`
 	WorkspaceID     string `json:"workspace_id"`
 	AgentID         string `json:"agent_id"`
@@ -33,6 +34,7 @@ type TelegramInstallationResponse struct {
 func telegramInstallationToResponse(row db.ChannelInstallation) TelegramInstallationResponse {
 	info := telegram.DecodePublicConfig(row.Config)
 	return TelegramInstallationResponse{
+		Runtime: initialConnectionStatus(row.Status),
 		ID:              uuidToString(row.ID),
 		WorkspaceID:     uuidToString(row.WorkspaceID),
 		AgentID:         uuidToString(row.AgentID),
@@ -71,6 +73,18 @@ func (h *Handler) ListTelegramInstallations(w http.ResponseWriter, r *http.Reque
 	out := make([]TelegramInstallationResponse, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, telegramInstallationToResponse(row))
+	}
+	ids := make([]string, 0, len(out))
+	for _, item := range out {
+		ids = append(ids, item.ID)
+	}
+	statuses, err := h.loadConnectionStatuses(r.Context(), wsUUID, ids)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load connection status")
+		return
+	}
+	for i := range out {
+		out[i].Runtime = statuses[out[i].ID]
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"installations":     out,

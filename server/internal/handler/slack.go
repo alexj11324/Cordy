@@ -19,6 +19,7 @@ import (
 // (only the outbound sender decrypts it). WS lease columns are runtime state,
 // not API surface, so they are omitted too.
 type SlackInstallationResponse struct {
+	Runtime MessagingConnectionStatus `json:"runtime"`
 	ID              string `json:"id"`
 	WorkspaceID     string `json:"workspace_id"`
 	AgentID         string `json:"agent_id"`
@@ -34,6 +35,7 @@ type SlackInstallationResponse struct {
 func slackInstallationToResponse(row db.ChannelInstallation) SlackInstallationResponse {
 	info := slack.DecodePublicConfig(row.Config)
 	return SlackInstallationResponse{
+		Runtime: initialConnectionStatus(row.Status),
 		ID:              uuidToString(row.ID),
 		WorkspaceID:     uuidToString(row.WorkspaceID),
 		AgentID:         uuidToString(row.AgentID),
@@ -79,6 +81,18 @@ func (h *Handler) ListSlackInstallations(w http.ResponseWriter, r *http.Request)
 	out := make([]SlackInstallationResponse, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, slackInstallationToResponse(row))
+	}
+	ids := make([]string, 0, len(out))
+	for _, item := range out {
+		ids = append(ids, item.ID)
+	}
+	statuses, err := h.loadConnectionStatuses(r.Context(), wsUUID, ids)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load connection status")
+		return
+	}
+	for i := range out {
+		out[i].Runtime = statuses[out[i].ID]
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"installations":     out,

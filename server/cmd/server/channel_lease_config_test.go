@@ -14,6 +14,13 @@ import (
 
 type channelLeaseTestStore struct{}
 
+func (channelLeaseTestStore) ClaimRuntimeObserver(context.Context, pgtype.UUID, string) error {
+	return nil
+}
+func (channelLeaseTestStore) ObserveRuntime(context.Context, pgtype.UUID, string, channel.RuntimeObservation) (bool, error) {
+	return true, nil
+}
+
 func (channelLeaseTestStore) ListActiveInstallations(context.Context) ([]engine.Installation, error) {
 	return nil, nil
 }

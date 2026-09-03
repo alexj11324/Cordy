@@ -42,6 +42,7 @@ type WecomBindingRedeemer interface {
 // row. The secret is NEVER included — it remains sealed on the row. BotID
 // is surfaced because operators need to see which bot is bound.
 type WecomInstallationResponse struct {
+	Runtime MessagingConnectionStatus `json:"runtime"`
 	ID              string `json:"id"`
 	WorkspaceID     string `json:"workspace_id"`
 	AgentID         string `json:"agent_id"`
@@ -52,6 +53,7 @@ type WecomInstallationResponse struct {
 
 func wecomInstallationToResponse(inst wecom.Installation) WecomInstallationResponse {
 	return WecomInstallationResponse{
+		Runtime: initialConnectionStatus(string(inst.Status)),
 		ID:              uuidToString(inst.ID),
 		WorkspaceID:     uuidToString(inst.WorkspaceID),
 		AgentID:         uuidToString(inst.AgentID),
@@ -97,6 +99,18 @@ func (h *Handler) ListWecomInstallations(w http.ResponseWriter, r *http.Request)
 	out := make([]WecomInstallationResponse, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, wecomInstallationToResponse(row))
+	}
+	ids := make([]string, 0, len(out))
+	for _, item := range out {
+		ids = append(ids, item.ID)
+	}
+	statuses, err := h.loadConnectionStatuses(r.Context(), wsUUID, ids)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load connection status")
+		return
+	}
+	for i := range out {
+		out[i].Runtime = statuses[out[i].ID]
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"installations":     out,

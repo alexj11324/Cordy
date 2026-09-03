@@ -271,6 +271,27 @@ func (s *channelInstallationStore) ListActiveInstallations(ctx context.Context) 
 	return out, nil
 }
 
+func (s *channelInstallationStore) ClaimRuntimeObserver(ctx context.Context, id pgtype.UUID, token string) error {
+	count, err := s.q.ClaimChannelRuntimeObserver(ctx, db.ClaimChannelRuntimeObserverParams{
+		InstallationID: id, ObserverToken: token,
+	})
+	if err != nil {
+		return err
+	}
+	if count != 1 {
+		return errors.New("installation cannot claim a connection observer")
+	}
+	return nil
+}
+
+func (s *channelInstallationStore) ObserveRuntime(ctx context.Context, id pgtype.UUID, token string, observation channel.RuntimeObservation) (bool, error) {
+	count, err := s.q.ObserveChannelRuntime(ctx, db.ObserveChannelRuntimeParams{
+		InstallationID: id, ObserverToken: token, State: observation.State,
+		ErrorCode: observation.ErrorCode, ErrorSummary: observation.ErrorSummary,
+	})
+	return count == 1, err
+}
+
 // PostgreSQL remains an explicit rollback/self-host lease backend. Its sweep
 // optimization returns no known holders, so the SQL CAS remains authoritative
 // and each unowned installation is attempted once per poll (never in a blind
