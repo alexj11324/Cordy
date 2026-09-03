@@ -339,6 +339,12 @@ func (h *Handler) BeginLarkInstall(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// Fail closed BEFORE the QR is issued: a workspace that cannot admit
+	// another install should not start a scan flow at all. The registration
+	// finalize re-resolves — this check only avoids a dead-end QR session.
+	if _, ok := h.hostedInstallationLimit(w, r, wsUUID); !ok {
+		return
+	}
 
 	res, err := h.LarkRegistration.BeginInstall(r.Context(), lark.BeginInstallParams{
 		WorkspaceID: wsUUID,

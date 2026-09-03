@@ -148,7 +148,7 @@ VALUES ($1, $2, $3, 'https://storage.example.test/old-image', $4)
 	svc.apiBase = srv.URL
 	params := byoParams(workspaceID, agentID)
 	params.AppKey = newAppKey
-	row, err := svc.RegisterBYO(ctx, params)
+	row, err := svc.RegisterBYO(ctx, params, nil)
 	if err != nil {
 		t.Fatalf("RegisterBYO replacement: %v", err)
 	}

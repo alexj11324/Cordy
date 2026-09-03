@@ -666,3 +666,68 @@ func (o *recordingObserver) snapshot() (cache, refresh, decisions []string, regr
 	return append([]string(nil), o.cache...), append([]string(nil), o.refresh...),
 		append([]string(nil), o.decisions...), o.versionRegressions
 }
+
+func TestImInstallationLimitGateIsOptional(t *testing.T) {
+	ws := uuid.New()
+	t.Run("absent gate keeps required gates working", func(t *testing.T) {
+		server := httptest.NewServer(policyHandler(func(*wirePolicy) {}))
+		defer server.Close()
+		client := newTestClient(t, server.URL, nil)
+		// samplePolicy carries only issue_count + automation_runs: a Cloud
+		// that has not rolled the installation gate out sends exactly this.
+		issue := client.Gate(context.Background(), ws, GateIssueCount)
+		if issue.Gate.Action != ActionEnforce || issue.Reason != ReasonRefreshed {
+			t.Fatalf("issue decision = %+v", issue)
+		}
+		im := client.Gate(context.Background(), ws, GateImInstallationLimit)
+		if im.Gate.Action != ActionOff || im.Reason != ReasonGateAbsent {
+			t.Fatalf("im decision = %+v, want off/gate_absent", im)
+		}
+	})
+	t.Run("enforce with null limit means unlimited", func(t *testing.T) {
+		server := httptest.NewServer(policyHandler(func(p *wirePolicy) {
+			p.Gates[string(GateImInstallationLimit)] = wireGate{Action: string(ActionEnforce)}
+		}))
+		defer server.Close()
+		client := newTestClient(t, server.URL, nil)
+		decision := client.Gate(context.Background(), ws, GateImInstallationLimit)
+		if decision.Gate.Action != ActionEnforce || decision.Gate.Limit != nil {
+			t.Fatalf("decision = %+v, want enforce with nil limit", decision)
+		}
+	})
+	t.Run("enforce with a concrete limit", func(t *testing.T) {
+		limit := 3
+		server := httptest.NewServer(policyHandler(func(p *wirePolicy) {
+			p.Gates[string(GateImInstallationLimit)] = wireGate{Action: string(ActionEnforce), Limit: &limit}
+		}))
+		defer server.Close()
+		client := newTestClient(t, server.URL, nil)
+		decision := client.Gate(context.Background(), ws, GateImInstallationLimit)
+		if decision.Gate.Action != ActionEnforce || decision.Gate.Limit == nil || *decision.Gate.Limit != 3 {
+			t.Fatalf("decision = %+v, want enforce limit 3", decision)
+		}
+	})
+	t.Run("negative limit invalidates the whole policy", func(t *testing.T) {
+		limit := -1
+		server := httptest.NewServer(policyHandler(func(p *wirePolicy) {
+			p.Gates[string(GateImInstallationLimit)] = wireGate{Action: string(ActionEnforce), Limit: &limit}
+		}))
+		defer server.Close()
+		client := newTestClient(t, server.URL, nil)
+		decision := client.Gate(context.Background(), ws, GateIssueCount)
+		if decision.Gate.Action != ActionOff || decision.Reason != ReasonInvalidPolicy {
+			t.Fatalf("decision = %+v, want off/invalid_policy", decision)
+		}
+	})
+	t.Run("off action resolves off", func(t *testing.T) {
+		server := httptest.NewServer(policyHandler(func(p *wirePolicy) {
+			p.Gates[string(GateImInstallationLimit)] = wireGate{Action: string(ActionOff)}
+		}))
+		defer server.Close()
+		client := newTestClient(t, server.URL, nil)
+		decision := client.Gate(context.Background(), ws, GateImInstallationLimit)
+		if decision.Gate.Action != ActionOff || decision.Reason != ReasonRefreshed {
+			t.Fatalf("decision = %+v, want off/refreshed", decision)
+		}
+	})
+}

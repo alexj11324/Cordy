@@ -74,10 +74,10 @@ func botNameParams(bot, displayName string) InstallationParams {
 func TestRotatingTheSecretKeepsTheBotName(t *testing.T) {
 	ctx, _, svc := setupBotName(t)
 
-	if _, err := svc.Upsert(ctx, botNameParams(wcNameBotA, "Patchbay Bot")); err != nil {
+	if _, err := svc.Upsert(ctx, botNameParams(wcNameBotA, "Patchbay Bot"), nil); err != nil {
 		t.Fatalf("first install: %v", err)
 	}
-	again, err := svc.Upsert(ctx, botNameParams(wcNameBotA, ""))
+	again, err := svc.Upsert(ctx, botNameParams(wcNameBotA, ""), nil)
 	if err != nil {
 		t.Fatalf("secret rotation: %v", err)
 	}
@@ -93,10 +93,10 @@ func TestRotatingTheSecretKeepsTheBotName(t *testing.T) {
 func TestRenamingTheBotOverwritesTheStoredName(t *testing.T) {
 	ctx, _, svc := setupBotName(t)
 
-	if _, err := svc.Upsert(ctx, botNameParams(wcNameBotA, "Patchbay Bot")); err != nil {
+	if _, err := svc.Upsert(ctx, botNameParams(wcNameBotA, "Patchbay Bot"), nil); err != nil {
 		t.Fatalf("first install: %v", err)
 	}
-	renamed, err := svc.Upsert(ctx, botNameParams(wcNameBotA, "Acme Support Bot"))
+	renamed, err := svc.Upsert(ctx, botNameParams(wcNameBotA, "Acme Support Bot"), nil)
 	if err != nil {
 		t.Fatalf("rename: %v", err)
 	}
@@ -111,10 +111,10 @@ func TestRenamingTheBotOverwritesTheStoredName(t *testing.T) {
 func TestSwappingTheBotDoesNotInheritTheOldName(t *testing.T) {
 	ctx, _, svc := setupBotName(t)
 
-	if _, err := svc.Upsert(ctx, botNameParams(wcNameBotA, "Patchbay Bot")); err != nil {
+	if _, err := svc.Upsert(ctx, botNameParams(wcNameBotA, "Patchbay Bot"), nil); err != nil {
 		t.Fatalf("first install: %v", err)
 	}
-	swapped, err := svc.Upsert(ctx, botNameParams(wcNameBotB, ""))
+	swapped, err := svc.Upsert(ctx, botNameParams(wcNameBotB, ""), nil)
 	if err != nil {
 		t.Fatalf("bot swap: %v", err)
 	}

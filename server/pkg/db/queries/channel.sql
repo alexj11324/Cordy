@@ -89,14 +89,20 @@ WHERE id = sqlc.arg('id')
 -- Inbound routing. The platform event carries only the channel's app
 -- identifier (Feishu app_id); the dispatcher's installation resolver routes
 -- on (channel_type, config->>'app_id'). Backed by the functional unique
--- index idx_channel_installation_type_appid.
+-- index idx_channel_installation_type_appid. A host-paused installation is
+-- invisible here: paused means "receives no work", so its inbound events find
+-- no row and are dropped. The install/ownership reads use their own queries
+-- (GetChannelInstallationOwnerByAppID / SlotOwnerByAppID) which do NOT filter
+-- on the pause, so a paused row can still be managed, disconnected, and
+-- reconnected.
 --
 -- Both params are named + explicitly typed: `config ->> 'app_id'` makes sqlc
 -- attribute a bare `$2` to the JSONB `config` column (it would emit
 -- `Config []byte`), so we pin the app_id arg to ::text to get AppID string.
 SELECT * FROM channel_installation
 WHERE channel_type = sqlc.arg('channel_type')
-  AND config ->> 'app_id' = sqlc.arg('app_id')::text;
+  AND config ->> 'app_id' = sqlc.arg('app_id')::text
+  AND hosted_paused_at IS NULL;
 
 -- name: GetChannelInstallationOwnerByAppID :one
 -- Identifies the LIVE owner of a (channel_type, config->>'app_id') routing slot
@@ -371,6 +377,7 @@ SELECT ci.* FROM channel_installation ci
 JOIN workspace w ON w.id = ci.workspace_id
 JOIN agent a ON a.id = ci.agent_id
 WHERE ci.status = 'active'
+  AND ci.hosted_paused_at IS NULL
   AND ci.channel_type = sqlc.arg('channel_type')
 ORDER BY ci.created_at ASC;
 
@@ -388,6 +395,7 @@ SELECT ci.* FROM channel_installation ci
 JOIN workspace w ON w.id = ci.workspace_id
 JOIN agent a ON a.id = ci.agent_id
 WHERE ci.status = 'active'
+  AND ci.hosted_paused_at IS NULL
 ORDER BY ci.created_at ASC;
 
 -- name: SetChannelInstallationStatus :exec
@@ -415,13 +423,17 @@ WHERE channel_type = 'feishu'
 
 -- name: AcquireChannelWSLease :one
 -- Atomically claims the WebSocket lease. CAS predicate accepts when no
--- holder exists, the holder expired, or the holder is us (renewal).
+-- holder exists, the holder expired, or the holder is us (renewal). A
+-- host-paused installation (over its workspace's hosted capacity) never
+-- holds or renews a lease: reconcile clears the lease when it pauses, and
+-- this filter keeps a paused row from re-acquiring one.
 UPDATE channel_installation
 SET ws_lease_token       = sqlc.arg('new_token'),
     ws_lease_expires_at  = sqlc.arg('new_expires_at'),
     updated_at           = now()
 WHERE id = sqlc.arg('id')
   AND status = 'active'
+  AND hosted_paused_at IS NULL
   AND (
         ws_lease_token IS NULL
         OR ws_lease_expires_at < now()
@@ -437,6 +449,78 @@ SET ws_lease_token      = NULL,
     updated_at          = now()
 WHERE id = $1
   AND ws_lease_token = sqlc.arg('current_token');
+
+-- =====================
+-- Hosted installation capacity
+-- =====================
+-- A managed deployment can hold only N concurrent hosted channel
+-- installations per workspace (Cloud entitlement `im_installation_limit`).
+-- Over-capacity installations are PAUSED, not revoked: status stays 'active'
+-- and credentials/bindings survive, but every work-finding query above filters
+-- on hosted_paused_at IS NULL. Reconcile is the only writer of the pause
+-- marker and runs under the same workspace row lock as admission
+-- (LockWorkspaceForHostedCapacity), so a capacity change and a concurrent
+-- install cannot interleave.
+
+-- name: LockWorkspaceForHostedCapacity :one
+-- The workspace row lock shared by admission and reconcile. Callers must hold
+-- it for the whole transaction that counts (or re-pauses) installations.
+SELECT id FROM workspace
+WHERE id = sqlc.arg('workspace_id')
+FOR UPDATE;
+
+-- name: ListActiveChannelInstallationsForCapacity :many
+-- Ordered oldest-first so the FIRST `limit` installations are the ones
+-- capacity keeps; everything after them is paused. FOR UPDATE holds the rows
+-- against a concurrent install upsert inside the same transaction.
+SELECT id, hosted_paused_at FROM channel_installation
+WHERE workspace_id = sqlc.arg('workspace_id')
+  AND status = 'active'
+ORDER BY created_at ASC, id ASC
+FOR UPDATE;
+
+-- name: PauseChannelInstallationsForHostedCapacity :execrows
+-- Pausing also drops the WebSocket lease so a live connection winds down on
+-- its next renewal instead of lingering until the token expires.
+UPDATE channel_installation
+SET hosted_paused_at  = now(),
+    ws_lease_token    = NULL,
+    ws_lease_expires_at = NULL,
+    updated_at        = now()
+WHERE id = ANY(@ids::uuid[]);
+
+-- name: ResumeChannelInstallationsForHostedCapacity :execrows
+UPDATE channel_installation
+SET hosted_paused_at = NULL,
+    updated_at       = now()
+WHERE id = ANY(@ids::uuid[]);
+
+-- name: ChannelInstallationCapacitySnapshot :one
+-- Admission read, taken under LockWorkspaceForHostedCapacity in the same
+-- transaction as the install upsert. same_slot is true when this exact
+-- (channel_type, agent) slot already holds an active installation —
+-- reconnecting an existing install must never be refused by the cap it
+-- itself occupies.
+SELECT count(*)::bigint AS active_count,
+       EXISTS (
+           SELECT 1
+           FROM channel_installation AS same
+           WHERE same.workspace_id = sqlc.arg('workspace_id')
+             AND same.status = 'active'
+             AND same.channel_type = sqlc.arg('channel_type')
+             AND same.agent_id IS NOT DISTINCT FROM sqlc.arg('agent_id')::uuid
+       ) AS same_slot
+FROM channel_installation
+WHERE workspace_id = sqlc.arg('workspace_id')
+  AND status = 'active';
+
+-- name: ListHostedInstallationWorkspaces :many
+-- Every workspace that could have paused installations, for the background
+-- reconciler sweep. DISTINCT keeps the sweep O(workspaces), not O(installs).
+SELECT DISTINCT workspace_id
+FROM channel_installation
+WHERE status = 'active'
+ORDER BY workspace_id;
 
 -- =====================
 -- channel_user_binding

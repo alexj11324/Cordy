@@ -14,11 +14,18 @@ type GateName string
 const (
 	GateIssueCount    GateName = "issue_count"
 	GateAutomationRuns GateName = "automation_runs"
+	// GateImInstallationLimit caps how many active channel installations a
+	// managed workspace may hold. Unlike the counters above it is OPTIONAL on
+	// the wire: Cloud deployments that have not rolled it out simply omit it,
+	// and a missing gate resolves to an off decision (ReasonGateAbsent) rather
+	// than failing the whole policy — issue-count and automation gating must
+	// keep working on those deployments.
+	GateImInstallationLimit GateName = "im_installation_limit"
 )
 
 func (n GateName) valid() bool {
 	switch n {
-	case GateIssueCount, GateAutomationRuns:
+	case GateIssueCount, GateAutomationRuns, GateImInstallationLimit:
 		return true
 	default:
 		return false
@@ -39,6 +46,7 @@ const (
 	ReasonDisabled          Reason = "disabled"
 	ReasonInvalidWorkspace  Reason = "invalid_workspace"
 	ReasonUnknownGate       Reason = "unknown_gate"
+	ReasonGateAbsent        Reason = "gate_absent"
 	ReasonCacheFresh        Reason = "cache_fresh"
 	ReasonRefreshed         Reason = "refreshed"
 	ReasonStale             Reason = "stale"

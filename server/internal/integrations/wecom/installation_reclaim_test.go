@@ -152,7 +152,7 @@ func TestUpsert_TakesOverRevokedOwnerOnDifferentAgent(t *testing.T) {
 	ctx, pool, svc, probe := setupReclaim(t)
 	insertWecomInstall(t, ctx, pool, wcRclBotRevoked, wcRclAgentA, "revoked")
 
-	got, err := svc.Upsert(ctx, params(wcRclBotRevoked, wcRclAgentB))
+	got, err := svc.Upsert(ctx, params(wcRclBotRevoked, wcRclAgentB), nil)
 	if err != nil {
 		t.Fatalf("takeover of a revoked owner should succeed, got: %v", err)
 	}
@@ -180,7 +180,7 @@ func TestUpsert_RefusesLiveOwnerOnDifferentAgent(t *testing.T) {
 	ctx, pool, svc, probe := setupReclaim(t)
 	insertWecomInstall(t, ctx, pool, wcRclBotLive, wcRclAgentA, "active")
 
-	_, err := svc.Upsert(ctx, params(wcRclBotLive, wcRclAgentB))
+	_, err := svc.Upsert(ctx, params(wcRclBotLive, wcRclAgentB), nil)
 	if !errors.Is(err, ErrBotOwnedBySameWorkspace) {
 		t.Fatalf("live owner should be refused with ErrBotOwnedBySameWorkspace, got: %v", err)
 	}
@@ -195,7 +195,7 @@ func TestUpsert_RefusesArchivedOwner(t *testing.T) {
 	ctx, pool, svc, probe := setupReclaim(t)
 	insertWecomInstall(t, ctx, pool, wcRclBotArchived, wcRclAgentArc, "active")
 
-	_, err := svc.Upsert(ctx, params(wcRclBotArchived, wcRclAgentB))
+	_, err := svc.Upsert(ctx, params(wcRclBotArchived, wcRclAgentB), nil)
 	if !errors.Is(err, ErrBotOwnedByArchivedAgent) {
 		t.Fatalf("archived owner should be refused with ErrBotOwnedByArchivedAgent, got: %v", err)
 	}
@@ -210,7 +210,7 @@ func TestUpsert_SameAgentReconnectInPlace(t *testing.T) {
 	ctx, pool, svc, probe := setupReclaim(t)
 	insertWecomInstall(t, ctx, pool, wcRclBotSame, wcRclAgentA, "revoked")
 
-	got, err := svc.Upsert(ctx, params(wcRclBotSame, wcRclAgentA))
+	got, err := svc.Upsert(ctx, params(wcRclBotSame, wcRclAgentA), nil)
 	if err != nil {
 		t.Fatalf("same-agent reconnect should succeed, got: %v", err)
 	}

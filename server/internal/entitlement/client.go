@@ -275,11 +275,26 @@ func normalizePolicy(wire wirePolicy) (fetchedPolicy, error) {
 		wire.ValidUntil.IsZero() || wire.ValidForSeconds <= 0 || wire.ValidForSeconds > int64(maxPolicyTTL/time.Second) {
 		return fetchedPolicy{}, ErrInvalidPolicy
 	}
-	gates := make(map[GateName]Gate, 2)
+	gates := make(map[GateName]Gate, 3)
 	for _, name := range []GateName{GateIssueCount, GateAutomationRuns} {
 		wireGate, ok := wire.Gates[string(name)]
 		if !ok {
 			return fetchedPolicy{}, ErrInvalidPolicy
+		}
+		gate, err := normalizeGate(name, wireGate)
+		if err != nil {
+			return fetchedPolicy{}, err
+		}
+		gates[name] = gate
+	}
+	// Optional gates: a Cloud that has not rolled one out omits it, and the
+	// omission must not fail the fetch — the required gates above still have
+	// to work. An omitted gate resolves to an off decision (ReasonGateAbsent)
+	// at read time.
+	for _, name := range []GateName{GateImInstallationLimit} {
+		wireGate, ok := wire.Gates[string(name)]
+		if !ok {
+			continue
 		}
 		gate, err := normalizeGate(name, wireGate)
 		if err != nil {
@@ -306,6 +321,20 @@ func normalizeGate(name GateName, wire wireGate) (Gate, error) {
 	case ActionEnforce:
 	default:
 		return Gate{}, ErrInvalidPolicy
+	}
+	// The installation-capacity gate is not a windowed counter. Its "limit" is
+	// a stock of concurrent installations, not a rate over a period: enforce
+	// with a null limit means unlimited (Pro), period fields are ignored, and
+	// only a negative limit is invalid.
+	if name == GateImInstallationLimit {
+		if wire.Limit == nil {
+			return Gate{Action: ActionEnforce}, nil
+		}
+		if *wire.Limit < 0 {
+			return Gate{}, ErrInvalidPolicy
+		}
+		limit := *wire.Limit
+		return Gate{Action: action, Limit: &limit}, nil
 	}
 	if wire.Limit == nil || *wire.Limit < 0 {
 		return Gate{}, ErrInvalidPolicy
@@ -335,7 +364,14 @@ func normalizeGate(name GateName, wire wireGate) (Gate, error) {
 }
 
 func decisionFromEntry(entry cacheEntry, name GateName, reason Reason, stale bool) Decision {
-	gate := cloneGate(entry.policy.gates[name])
+	gate, present := entry.policy.gates[name]
+	if !present {
+		// An optional gate the Cloud response omitted. Distinct from
+		// ReasonUnknownGate (a caller-constructed name): this name is known,
+		// the deployment just does not serve it yet.
+		return Decision{Gate: Gate{Action: ActionOff}, Reason: ReasonGateAbsent}
+	}
+	gate = cloneGate(gate)
 	if stale && gate.Action == ActionEnforce {
 		gate.Action = ActionObserve
 	}

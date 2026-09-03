@@ -55,7 +55,11 @@ type RegisterBYOParams struct {
 // connected to another agent/workspace. The dedicated Socket Mode connection
 // that consumes the stored app token lives in slack_channel.go; this method
 // only persists the installation.
-func (s *InstallService) RegisterBYO(ctx context.Context, p RegisterBYOParams) (db.ChannelInstallation, error) {
+//
+// limit is the hosted installation cap resolved by the handler (nil when the
+// deployment does not run hosted capacity): persistInstall enforces it inside
+// its transaction and refuses with hostedcapacity.ErrLimitReached.
+func (s *InstallService) RegisterBYO(ctx context.Context, p RegisterBYOParams, limit *int64) (db.ChannelInstallation, error) {
 	botToken := strings.TrimSpace(p.BotToken)
 	appToken := strings.TrimSpace(p.AppToken)
 	if !strings.HasPrefix(botToken, "xoxb-") {
@@ -125,7 +129,7 @@ func (s *InstallService) RegisterBYO(ctx context.Context, p RegisterBYOParams) (
 		installerID: p.InitiatorID,
 		appIDKey:    appID,
 		configJSON:  cfgJSON,
-	})
+	}, limit)
 }
 
 // slackOpts builds the slack.Client options shared by the install-time Web API

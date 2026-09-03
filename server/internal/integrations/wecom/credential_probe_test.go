@@ -247,7 +247,7 @@ func TestUpsertRefusesWithoutAProbe(t *testing.T) {
 		InstallerUserID: testUUID(3),
 		BotID:           "somebody-elses-bot",
 		Secret:          "a-guess",
-	})
+	}, nil)
 	if !errors.Is(err, ErrProbeRequired) {
 		t.Fatalf("Upsert without a probe = %v, want ErrProbeRequired", err)
 	}

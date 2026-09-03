@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/patchbay-ai/patchbay/server/internal/hostedcapacity"
 	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
 	"github.com/patchbay-ai/patchbay/server/internal/util/secretbox"
 	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
@@ -64,6 +65,11 @@ type installQueries interface {
 	ListChannelInstallationsByWorkspace(ctx context.Context, arg db.ListChannelInstallationsByWorkspaceParams) ([]db.ChannelInstallation, error)
 	GetChannelInstallationInWorkspace(ctx context.Context, arg db.GetChannelInstallationInWorkspaceParams) (db.ChannelInstallation, error)
 	SetChannelInstallationStatus(ctx context.Context, arg db.SetChannelInstallationStatusParams) error
+	// Hosted-capacity admission. Declared here so the tx-bound value satisfies
+	// hostedcapacity.AdmitQueries and persistInstall can enforce the cap in the
+	// same transaction as the upsert.
+	LockWorkspaceForHostedCapacity(ctx context.Context, workspaceID pgtype.UUID) (pgtype.UUID, error)
+	ChannelInstallationCapacitySnapshot(ctx context.Context, arg db.ChannelInstallationCapacitySnapshotParams) (db.ChannelInstallationCapacitySnapshotRow, error)
 }
 
 type dbInstallQueries struct{ *db.Queries }
@@ -130,8 +136,9 @@ type RegisterParams struct {
 // Register installs a user-supplied Telegram bot for an agent: validate the
 // token live via getMe (which also yields the bot's username for @-mention
 // detection), encrypt the token at rest, and persist the installation keyed
-// by (workspace, agent) with the bot id in the routing slot.
-func (s *InstallService) Register(ctx context.Context, p RegisterParams) (db.ChannelInstallation, error) {
+// by (workspace, agent) with the bot id in the routing slot. limit is the
+// hosted installation cap resolved by the handler (nil = no cap).
+func (s *InstallService) Register(ctx context.Context, p RegisterParams, limit *int64) (db.ChannelInstallation, error) {
 	token := strings.TrimSpace(p.BotToken)
 	botID, err := parseBotID(token)
 	if err != nil {
@@ -171,7 +178,7 @@ func (s *InstallService) Register(ctx context.Context, p RegisterParams) (db.Cha
 		installerID: p.InitiatorID,
 		appIDKey:    botID,
 		configJSON:  cfgJSON,
-	})
+	}, limit)
 }
 
 // classifyCredentialVerificationError separates Telegram's authoritative
@@ -208,13 +215,19 @@ func newCredentialVerificationClient() *http.Client {
 // (channel_type, app_id) routing index means the pasted bot is already
 // connected to a different live agent or workspace — refuse rather than
 // steal, with the accurate conflict message (same policy as Slack #4810).
-func (s *InstallService) persistInstall(ctx context.Context, p installPersist) (db.ChannelInstallation, error) {
+func (s *InstallService) persistInstall(ctx context.Context, p installPersist, limit *int64) (db.ChannelInstallation, error) {
 	tx, err := s.tx.Begin(ctx)
 	if err != nil {
 		return db.ChannelInstallation{}, fmt.Errorf("begin install tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	qtx := s.q.WithTx(tx)
+
+	// Hosted-capacity admission under the workspace row lock, before any slot
+	// work; a nil limit is a no-op.
+	if err := hostedcapacity.AdmitInstall(ctx, qtx, p.wsID, string(TypeTelegram), p.agentID, limit); err != nil {
+		return db.ChannelInstallation{}, err
+	}
 
 	// Free the routing slot from any DEAD prior owner before the upsert.
 	if _, err := qtx.ReclaimDeadChannelInstallationByAppID(ctx, db.ReclaimDeadChannelInstallationByAppIDParams{

@@ -26,6 +26,7 @@ import (
 	"github.com/patchbay-ai/patchbay/server/internal/events"
 	"github.com/patchbay-ai/patchbay/server/internal/featureflags"
 	"github.com/patchbay-ai/patchbay/server/internal/handler"
+	"github.com/patchbay-ai/patchbay/server/internal/hostedcapacity"
 	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
 	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
 	composiointeg "github.com/patchbay-ai/patchbay/server/internal/integrations/composio"
@@ -499,6 +500,20 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	if seatcapacity.CanRunWorker(h.SeatCapacity) {
 		h.SeatCapacityWorker = seatcapacity.NewWorker(queries, h.SeatCapacity, capacityLocker, seatcapacity.WorkerConfig{})
 	}
+	// Hosted IM installation capacity: the Cloud entitlement gate
+	// im_installation_limit decides the per-workspace cap on concurrent
+	// channel installations; the limiter reconciles durable pause markers on
+	// every resolve and the worker keeps them convergent between installs.
+	// PATCHBAY_HOSTED_IM_CAPACITY is the deployment switch — self-hosted
+	// leaves it off and every install path runs exactly as before. An enabled
+	// switch without a Cloud policy source fails closed (503) rather than
+	// letting a workspace grow past an unreadable cap.
+	hostedResolver := hostedcapacity.NewResolver(os.Getenv("PATCHBAY_HOSTED_IM_CAPACITY") == "true", h.Entitlements)
+	if hostedResolver.Enabled() {
+		h.HostedCapacity = hostedcapacity.NewLimiter(hostedResolver, queries, pool, slog.Default())
+		h.HostedCapacityWorker = hostedcapacity.NewWorker(hostedResolver, queries, pool, hostedcapacity.WorkerConfig{})
+		slog.Info("hosted IM installation capacity enforcement enabled")
+	}
 	if opts.BusinessMetrics != nil {
 		// Wire the BusinessMetrics receiver into the cloud runtime client
 		// so every outbound Fleet/Gateway request feeds the
@@ -748,6 +763,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// connection badge refreshes on every workspace client, not just
 					// the tab that polls the install status to success.
 					regSvc.SetEventBus(bus)
+					// The QR finalize re-resolves the hosted installation cap
+					// through the limiter (nil on self-hosted deployments).
+					regSvc.SetHostedCapacityLimiter(h.HostedCapacity)
 					h.LarkRegistration = regSvc
 					slog.Info("lark device-flow install enabled")
 				}

@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/patchbay-ai/patchbay/server/internal/hostedcapacity"
 	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
 	"github.com/patchbay-ai/patchbay/server/internal/util/secretbox"
 	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
@@ -140,7 +141,7 @@ func NewInstallationService(queries *db.Queries, tx engine.TxStarter, box *secre
 //     underneath them, so they are serialized on the slot itself
 //     (LockChannelInstallationAppIDSlot, a transaction-level advisory lock). A
 //     pre-read outside the transaction would leave the TOCTOU window open.
-func (s *InstallationService) Upsert(ctx context.Context, p InstallationParams) (Installation, error) {
+func (s *InstallationService) Upsert(ctx context.Context, p InstallationParams, limit *int64) (Installation, error) {
 	if err := validateInstallationParams(p); err != nil {
 		return Installation{}, err
 	}
@@ -161,6 +162,13 @@ func (s *InstallationService) Upsert(ctx context.Context, p InstallationParams) 
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	qtx := s.store.WithTx(tx)
+
+	// Hosted-capacity admission under the workspace row lock, before any slot
+	// work; a nil limit is a no-op. The Store embeds *db.Queries, so the
+	// tx-bound value already satisfies hostedcapacity.AdmitQueries.
+	if err := hostedcapacity.AdmitInstall(ctx, qtx, p.WorkspaceID, channelTypeWecom, p.AgentID, limit); err != nil {
+		return Installation{}, err
+	}
 
 	// The serialization boundary. Held until commit/rollback, so every step
 	// below sees one consistent answer for who owns this bot.

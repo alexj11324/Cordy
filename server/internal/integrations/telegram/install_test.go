@@ -62,6 +62,14 @@ func (f *fakeTelegramInstallQueries) SetChannelInstallationStatus(_ context.Cont
 	return f.statusErr
 }
 
+func (f *fakeTelegramInstallQueries) LockWorkspaceForHostedCapacity(_ context.Context, _ pgtype.UUID) (pgtype.UUID, error) {
+	return pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, nil
+}
+
+func (f *fakeTelegramInstallQueries) ChannelInstallationCapacitySnapshot(_ context.Context, _ db.ChannelInstallationCapacitySnapshotParams) (db.ChannelInstallationCapacitySnapshotRow, error) {
+	return db.ChannelInstallationCapacitySnapshotRow{ActiveCount: 0, SameSlot: false}, nil
+}
+
 type fakeTelegramTx struct {
 	pgx.Tx
 	committed bool
@@ -118,7 +126,7 @@ func TestRegisterValidatesAndEncryptsBotToken(t *testing.T) {
 	svc := newTelegramInstallTestService(t, q)
 	svc.apiBase, svc.httpClient = srv.URL, srv.Client()
 	p := RegisterParams{WorkspaceID: telegramTestUUID(1), AgentID: telegramTestUUID(2), InitiatorID: telegramTestUUID(3), BotToken: " 12345:secret "}
-	row, err := svc.Register(context.Background(), p)
+	row, err := svc.Register(context.Background(), p, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +150,7 @@ func TestRegisterRejectsMalformedTokenBeforeNetwork(t *testing.T) {
 	q := &fakeTelegramInstallQueries{}
 	svc := newTelegramInstallTestService(t, q)
 	for _, token := range []string{"", "12345:", ":secret", "abc:secret"} {
-		if _, err := svc.Register(context.Background(), RegisterParams{BotToken: token}); !errors.Is(err, ErrInvalidBotToken) {
+		if _, err := svc.Register(context.Background(), RegisterParams{BotToken: token}, nil); !errors.Is(err, ErrInvalidBotToken) {
 			t.Errorf("token %q error = %v", token, err)
 		}
 	}
@@ -157,7 +165,7 @@ func TestRegisterRefusesConfiguredWebhook(t *testing.T) {
 	q := &fakeTelegramInstallQueries{}
 	svc := newTelegramInstallTestService(t, q)
 	svc.apiBase, svc.httpClient = srv.URL, srv.Client()
-	_, err := svc.Register(context.Background(), RegisterParams{BotToken: "12345:secret"})
+	_, err := svc.Register(context.Background(), RegisterParams{BotToken: "12345:secret"}, nil)
 	if !errors.Is(err, ErrWebhookConfigured) || q.upsertCalled {
 		t.Fatalf("error = %v, persisted = %v", err, q.upsertCalled)
 	}

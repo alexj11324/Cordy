@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/patchbay-ai/patchbay/server/internal/events"
+	"github.com/patchbay-ai/patchbay/server/internal/hostedcapacity"
 	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
 )
@@ -125,6 +126,13 @@ type RegistrationService struct {
 	// is valid — install still works, it just won't push the WS frame.
 	bus *events.Bus
 
+	// capacity is optional. When wired (SetHostedCapacityLimiter), the
+	// finalize re-resolves the managed deployment's installation cap —
+	// never reusing a value from Begin, where a subscription could have
+	// changed mid-scan — and refuses over-cap installs inside the finalize
+	// transaction. Nil (self-hosted) finalizes uncapped.
+	capacity *hostedcapacity.Limiter
+
 	mu       sync.Mutex
 	sessions map[string]*registrationSession
 }
@@ -190,6 +198,13 @@ func NewRegistrationService(
 // to emit it only when a browser happens to poll to success.
 func (s *RegistrationService) SetEventBus(bus *events.Bus) {
 	s.bus = bus
+}
+
+// SetHostedCapacityLimiter wires the managed-deployment installation cap for
+// the QR finalize. Nil (the default, and every self-hosted deployment) keeps
+// finalize uncapped.
+func (s *RegistrationService) SetHostedCapacityLimiter(limiter *hostedcapacity.Limiter) {
+	s.capacity = limiter
 }
 
 // publishInstalled emits lark_installation:created on the optional bus.
@@ -586,6 +601,22 @@ func (s *RegistrationService) finishSuccess(ctx context.Context, sess *registrat
 	}
 	defer tx.Rollback(ctx)
 	qtx := s.queries.WithTx(tx)
+
+	// Hosted-capacity admission, resolved at THIS finalize (not at Begin) and
+	// enforced under the workspace row lock inside the same transaction as
+	// the upsert. A nil limiter or nil limit is a no-op.
+	var hostedLimit *int64
+	if s.capacity != nil {
+		hostedLimit, err = s.capacity.InstallationLimit(ctx, sess.workspaceID)
+		if err != nil {
+			sess.markError(RegistrationReasonInternalError, err.Error(), s.gcDeadline())
+			return
+		}
+	}
+	if err := hostedcapacity.AdmitInstall(ctx, qtx, sess.workspaceID, channelTypeFeishu, sess.agentID, hostedLimit); err != nil {
+		sess.markError(RegistrationReasonInstallationConflict, err.Error(), s.gcDeadline())
+		return
+	}
 
 	// If the same Feishu app (app_id) is held by a DEAD prior owner — a revoked
 	// placeholder left by a DIFFERENT agent in this workspace, or an orphan whose

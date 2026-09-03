@@ -45,7 +45,7 @@ func TestRegisterManagedPersistsTeamKeyedInstall(t *testing.T) {
 		WorkspaceID: wsID,
 		InstallerID: installerID,
 		Access:      managedAccess(),
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("register managed: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestRegisterManagedIncompleteAccessRefused(t *testing.T) {
 			WorkspaceID: testUUID(11),
 			InstallerID: testUUID(12),
 			Access:      access,
-		}); err == nil {
+		}, nil); err == nil {
 			t.Errorf("%s: incomplete exchange identity must be refused before touching the DB", name)
 		}
 	}
@@ -119,7 +119,7 @@ func TestRegisterManagedCrossWorkspaceConflict(t *testing.T) {
 		WorkspaceID: testUUID(11),
 		InstallerID: testUUID(12),
 		Access:      managedAccess(),
-	})
+	}, nil)
 	if !errors.Is(err, ErrTeamOwnedByAnotherWorkspace) {
 		t.Fatalf("cross-workspace team err = %v, want ErrTeamOwnedByAnotherWorkspace", err)
 	}
@@ -134,7 +134,7 @@ func TestRegisterManagedSecondTeamConflict(t *testing.T) {
 		WorkspaceID: testUUID(11),
 		InstallerID: testUUID(12),
 		Access:      managedAccess(),
-	})
+	}, nil)
 	if !errors.Is(err, ErrManagedAlreadyConnected) {
 		t.Fatalf("second-team err = %v, want ErrManagedAlreadyConnected", err)
 	}

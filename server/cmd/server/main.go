@@ -669,6 +669,12 @@ func main() {
 	if h.SeatCapacityWorker != nil {
 		go h.SeatCapacityWorker.Run(sweepCtx)
 	}
+	// Hosted IM installation capacity sweep: re-aligns durable pause markers
+	// with the Cloud policy every interval. Nil (and never started) unless
+	// PATCHBAY_HOSTED_IM_CAPACITY is on.
+	if h.HostedCapacityWorker != nil {
+		go h.HostedCapacityWorker.Run(sweepCtx)
+	}
 	if h.LinearWorker != nil {
 		go h.LinearWorker.Run(sweepCtx)
 	}

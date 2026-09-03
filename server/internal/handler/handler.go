@@ -24,6 +24,7 @@ import (
 	"github.com/patchbay-ai/patchbay/server/internal/daemonws"
 	"github.com/patchbay-ai/patchbay/server/internal/entitlement"
 	"github.com/patchbay-ai/patchbay/server/internal/events"
+	"github.com/patchbay-ai/patchbay/server/internal/hostedcapacity"
 	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
 	composio "github.com/patchbay-ai/patchbay/server/internal/integrations/composio"
 	"github.com/patchbay-ai/patchbay/server/internal/integrations/dingtalk"
@@ -203,6 +204,13 @@ type Handler struct {
 	SeatCapacity          seatcapacity.Executor
 	SeatCapacityLocker    seatcapacity.WorkspaceLocker
 	SeatCapacityWorker    *seatcapacity.Worker
+	// HostedCapacity enforces the managed deployment's per-workspace cap on
+	// concurrent hosted channel installations (Cloud gate
+	// im_installation_limit). Nil (self-hosted, or the deployment flag off)
+	// keeps every install path exactly as it was: no cap reads, no pause
+	// markers, no admission refusals.
+	HostedCapacity        *hostedcapacity.Limiter
+	HostedCapacityWorker  *hostedcapacity.Worker
 	EmailService          *service.EmailService
 	UpdateStore           UpdateStore
 	ModelListStore        ModelListStore

@@ -490,6 +490,7 @@ type ChannelInstallation struct {
 	InstalledAt      pgtype.Timestamptz `json:"installed_at"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	HostedPausedAt   pgtype.Timestamptz `json:"hosted_paused_at"`
 }
 
 type ChannelInstallationRuntimeObservation struct {

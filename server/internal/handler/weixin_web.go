@@ -53,7 +53,14 @@ func (h *Handler) newWeixinInstallationService() (*weixin.InstallationService, e
 	if err != nil {
 		return nil, err
 	}
-	return weixin.NewInstallationService(h.Queries, h.TxStarter, box, weixin.DefaultInstallSessionStore(), nil)
+	service, err := weixin.NewInstallationService(h.Queries, h.TxStarter, box, weixin.DefaultInstallSessionStore(), nil)
+	if err != nil {
+		return nil, err
+	}
+	// The QR finalize re-resolves the hosted cap through the limiter; nil on
+	// self-hosted deployments keeps finalize uncapped.
+	service.SetHostedCapacityLimiter(h.HostedCapacity)
+	return service, nil
 }
 
 func (h *Handler) ListWeixinInstallations(w http.ResponseWriter, r *http.Request) {
@@ -112,6 +119,12 @@ func (h *Handler) BeginWeixinInstall(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// Fail closed BEFORE the QR is issued: a workspace that cannot admit
+	// another install should not start a scan flow at all. The finalize
+	// re-resolves — this check only avoids a dead-end QR session.
+	if _, ok := h.hostedInstallationLimit(w, r, workspaceID); !ok {
+		return
+	}
 	result, err := service.Begin(r.Context(), weixin.BeginParams{WorkspaceID: workspaceID, AgentID: agentID, InitiatorID: initiatorID})
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "failed to start Weixin authorization")
@@ -156,6 +169,13 @@ func (h *Handler) GetWeixinInstallStatus(w http.ResponseWriter, r *http.Request)
 		case errors.Is(err, weixin.ErrInstallAuthorizationChanged):
 			writeError(w, http.StatusForbidden, "authorization changed during install")
 		default:
+			if writeHostedCapacityError(w, err) {
+				// The QR completed but the workspace is over its hosted
+				// installation cap (or the cap could not be read) — the
+				// session stays resumable, so a retry after capacity is
+				// freed or Cloud recovers can still finalize it.
+				return
+			}
 			writeError(w, http.StatusInternalServerError, "failed to save Weixin connection")
 		}
 		return

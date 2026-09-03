@@ -168,6 +168,12 @@ func (h *Handler) RegisterWecomBYO(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	// Resolve the hosted installation cap BEFORE the live credential probe,
+	// so an over-cap workspace never burns external calls.
+	limit, ok := h.hostedInstallationLimit(w, r, wsUUID)
+	if !ok {
+		return
+	}
 	inst, err := svc.Upsert(r.Context(), wecom.InstallationParams{
 		WorkspaceID:     wsUUID,
 		AgentID:         agentUUID,
@@ -175,7 +181,7 @@ func (h *Handler) RegisterWecomBYO(w http.ResponseWriter, r *http.Request) {
 		BotID:           strings.TrimSpace(body.BotID),
 		Secret:          strings.TrimSpace(body.Secret),
 		BotDisplayName:  strings.TrimSpace(body.BotName),
-	})
+	}, limit)
 	if err != nil {
 		writeWecomInstallError(w, err, wsUUID, agentUUID)
 		return
@@ -214,6 +220,10 @@ func (h *Handler) RegisterWecomBYO(w http.ResponseWriter, r *http.Request) {
 // meaning it, because the admin action differs per outcome.
 func writeWecomInstallError(w http.ResponseWriter, err error, wsUUID, agentUUID pgtype.UUID) {
 	switch {
+	case writeHostedCapacityError(w, err):
+		// The workspace is over its hosted installation cap, or the Cloud
+		// policy could not be trusted. Neither is the admin's Bot ID.
+		return
 	case errors.Is(err, wecom.ErrBotOwnedBySameWorkspace):
 		writeErrorCode(w, http.StatusConflict, "wecom_bot_owned_by_same_workspace",
 			"this bot is already connected to another agent in this workspace — disconnect it there first, then connect it here")

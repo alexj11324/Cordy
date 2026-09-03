@@ -149,7 +149,7 @@ func TestUpsert_DoesNotProbeWhenAnActiveOwnerHoldsTheBot(t *testing.T) {
 	probe := &fakeProbe{}
 	svc := newProbeSvc(t, pool, probe)
 
-	_, err := svc.Upsert(ctx, probeParams(wcPrbWS, wcPrbAgentB, wcPrbBotActive))
+	_, err := svc.Upsert(ctx, probeParams(wcPrbWS, wcPrbAgentB, wcPrbBotActive), nil)
 	if !errors.Is(err, ErrBotOwnedBySameWorkspace) {
 		t.Fatalf("Upsert = %v, want ErrBotOwnedBySameWorkspace", err)
 	}
@@ -170,7 +170,7 @@ func TestUpsert_DoesNotProbeWhenAnArchivedOwnerHoldsTheBot(t *testing.T) {
 	probe := &fakeProbe{}
 	svc := newProbeSvc(t, pool, probe)
 
-	_, err := svc.Upsert(ctx, probeParams(wcPrbWS, wcPrbAgentB, wcPrbBotArchived))
+	_, err := svc.Upsert(ctx, probeParams(wcPrbWS, wcPrbAgentB, wcPrbBotArchived), nil)
 	if !errors.Is(err, ErrBotOwnedByArchivedAgent) {
 		t.Fatalf("Upsert = %v, want ErrBotOwnedByArchivedAgent", err)
 	}
@@ -189,7 +189,7 @@ func TestUpsert_DoesNotProbeWhenAnotherWorkspaceHoldsTheBot(t *testing.T) {
 	probe := &fakeProbe{}
 	svc := newProbeSvc(t, pool, probe)
 
-	_, err := svc.Upsert(ctx, probeParams(wcPrbWS, wcPrbAgentB, wcPrbBotForeign))
+	_, err := svc.Upsert(ctx, probeParams(wcPrbWS, wcPrbAgentB, wcPrbBotForeign), nil)
 	if !errors.Is(err, ErrBotOwnedByAnotherWorkspace) {
 		t.Fatalf("Upsert = %v, want ErrBotOwnedByAnotherWorkspace", err)
 	}
@@ -213,7 +213,7 @@ func TestUpsert_ProbesAndRefusesBeforeReclaimingARevokedOwner(t *testing.T) {
 	probe := &fakeProbe{err: ErrCredentialsRejected}
 	svc := newProbeSvc(t, pool, probe)
 
-	_, err := svc.Upsert(ctx, probeParams(wcPrbWS, wcPrbAgentB, wcPrbBotRevoked))
+	_, err := svc.Upsert(ctx, probeParams(wcPrbWS, wcPrbAgentB, wcPrbBotRevoked), nil)
 	if !errors.Is(err, ErrCredentialsRejected) {
 		t.Fatalf("Upsert = %v, want ErrCredentialsRejected", err)
 	}
@@ -232,7 +232,7 @@ func TestUpsert_ProbesOnceOnAFreeSlot(t *testing.T) {
 	probe := &fakeProbe{}
 	svc := newProbeSvc(t, pool, probe)
 
-	got, err := svc.Upsert(ctx, probeParams(wcPrbWS, wcPrbAgentA, wcPrbBotFree))
+	got, err := svc.Upsert(ctx, probeParams(wcPrbWS, wcPrbAgentA, wcPrbBotFree), nil)
 	if err != nil {
 		t.Fatalf("Upsert on a free slot = %v, want success", err)
 	}
@@ -263,7 +263,7 @@ func TestUpsert_ConcurrentInstallDoesNotSubscribeBehindTheWinner(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_, err := winner.Upsert(ctx, probeParams(wcPrbWS, wcPrbAgentA, wcPrbBotFree))
+		_, err := winner.Upsert(ctx, probeParams(wcPrbWS, wcPrbAgentA, wcPrbBotFree), nil)
 		winnerErr <- err
 	}()
 
@@ -277,7 +277,7 @@ func TestUpsert_ConcurrentInstallDoesNotSubscribeBehindTheWinner(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_, err := loser.Upsert(ctx, probeParams(wcPrbWS, wcPrbAgentB, wcPrbBotFree))
+		_, err := loser.Upsert(ctx, probeParams(wcPrbWS, wcPrbAgentB, wcPrbBotFree), nil)
 		loserErr <- err
 	}()
 

@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/patchbay-ai/patchbay/server/internal/hostedcapacity"
 	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
 	"github.com/patchbay-ai/patchbay/server/internal/util/secretbox"
 	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
@@ -56,6 +57,11 @@ type installQueries interface {
 	ListChannelInstallationsByWorkspace(ctx context.Context, arg db.ListChannelInstallationsByWorkspaceParams) ([]db.ChannelInstallation, error)
 	GetChannelInstallationInWorkspace(ctx context.Context, arg db.GetChannelInstallationInWorkspaceParams) (db.ChannelInstallation, error)
 	SetChannelInstallationStatus(ctx context.Context, arg db.SetChannelInstallationStatusParams) error
+	// Hosted-capacity admission. Declared here so the tx-bound value satisfies
+	// hostedcapacity.AdmitQueries and persistInstall can enforce the cap in the
+	// same transaction as the upsert.
+	LockWorkspaceForHostedCapacity(ctx context.Context, workspaceID pgtype.UUID) (pgtype.UUID, error)
+	ChannelInstallationCapacitySnapshot(ctx context.Context, arg db.ChannelInstallationCapacitySnapshotParams) (db.ChannelInstallationCapacitySnapshotRow, error)
 }
 
 // dbInstallQueries adapts *db.Queries to installQueries — the generated WithTx
@@ -150,13 +156,20 @@ const pgUniqueViolation = "23505"
 // workspace — refuse it (ErrTeamOwnedByAnotherWorkspace) rather than steal it.
 // No chat-session retire is needed: a row's agent_id never changes (it is part
 // of the key), so existing sessions stay valid for the same agent.
-func (s *InstallService) persistInstall(ctx context.Context, p installPersist) (db.ChannelInstallation, error) {
+func (s *InstallService) persistInstall(ctx context.Context, p installPersist, limit *int64) (db.ChannelInstallation, error) {
 	tx, err := s.tx.Begin(ctx)
 	if err != nil {
 		return db.ChannelInstallation{}, fmt.Errorf("begin install tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	qtx := s.q.WithTx(tx)
+
+	// Hosted-capacity admission under the same workspace row lock the
+	// reconciler takes, before any slot work: a nil limit (self-hosted or
+	// unlimited) is a no-op, so the pre-feature code path is unchanged.
+	if err := hostedcapacity.AdmitInstall(ctx, qtx, p.wsID, string(TypeSlack), p.agentID, limit); err != nil {
+		return db.ChannelInstallation{}, err
+	}
 
 	// Free the (slack, app_id) routing slot from any DEAD prior owner — a revoked
 	// placeholder, or an orphan whose owning workspace/agent was deleted (#4810) —

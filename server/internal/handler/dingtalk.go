@@ -761,14 +761,23 @@ func (h *Handler) RegisterDingTalkBYO(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	// Resolve the hosted installation cap BEFORE the live access-token mint,
+	// so an over-cap workspace never burns external calls.
+	limit, ok := h.hostedInstallationLimit(w, r, wsUUID)
+	if !ok {
+		return
+	}
 	row, err := h.DingTalkInstall.RegisterBYO(r.Context(), dingtalk.RegisterBYOParams{
 		WorkspaceID: wsUUID,
 		AgentID:     agentUUID,
 		InitiatorID: initiatorUUID,
 		AppKey:      body.ClientID,
 		AppSecret:   body.ClientSecret,
-	})
+	}, limit)
 	if err != nil {
+		if writeHostedCapacityError(w, err) {
+			return
+		}
 		switch {
 		case errors.Is(err, dingtalk.ErrInvalidAppKey), errors.Is(err, dingtalk.ErrInvalidAppSecret):
 			writeError(w, http.StatusBadRequest, err.Error())

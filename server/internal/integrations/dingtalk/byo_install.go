@@ -54,7 +54,7 @@ type RegisterBYOParams struct {
 // conflict sentinel. The dedicated Stream connection that consumes the stored
 // credentials lives in dingtalk_channel.go; this method only persists the
 // installation.
-func (s *InstallService) RegisterBYO(ctx context.Context, p RegisterBYOParams) (db.ChannelInstallation, error) {
+func (s *InstallService) RegisterBYO(ctx context.Context, p RegisterBYOParams, limit *int64) (db.ChannelInstallation, error) {
 	appKey := strings.TrimSpace(p.AppKey)
 	appSecret := strings.TrimSpace(p.AppSecret)
 	if appKey == "" {
@@ -96,5 +96,5 @@ func (s *InstallService) RegisterBYO(ctx context.Context, p RegisterBYOParams) (
 		installerID: p.InitiatorID,
 		appIDKey:    appKey,
 		configJSON:  cfgJSON,
-	})
+	}, limit)
 }

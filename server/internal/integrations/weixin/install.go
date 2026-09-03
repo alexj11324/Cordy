@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/patchbay-ai/patchbay/server/internal/hostedcapacity"
 	"github.com/patchbay-ai/patchbay/server/internal/util"
 	"github.com/patchbay-ai/patchbay/server/internal/util/secretbox"
 	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
@@ -76,7 +77,10 @@ type InstallationService struct {
 	logger     *slog.Logger
 	now        func() time.Time
 	newClient  func(string, string, *http.Client) *Client
-	mu         sync.Mutex
+	// capacity, when set, re-resolves the hosted installation cap at QR
+	// finalize and refuses over-cap installs inside the finalize transaction.
+	capacity *hostedcapacity.Limiter
+	mu       sync.Mutex
 }
 
 func NewInstallationService(q *db.Queries, tx bindingTxStarter, box *secretbox.Box, sessions SessionStore, logger *slog.Logger) (*InstallationService, error) {
@@ -94,6 +98,14 @@ func NewInstallationService(q *db.Queries, tx bindingTxStarter, box *secretbox.B
 		httpClient: &http.Client{Timeout: 40 * time.Second}, logger: logger,
 		now: time.Now, newClient: NewClient,
 	}, nil
+}
+
+// SetHostedCapacityLimiter wires the managed-deployment installation cap. The
+// QR finalize re-resolves the limit through it (never reusing the value from
+// Begin — a subscription can change mid-scan) and refuses over-cap installs
+// inside the finalize transaction. nil (self-hosted) finalizes uncapped.
+func (s *InstallationService) SetHostedCapacityLimiter(limiter *hostedcapacity.Limiter) {
+	s.capacity = limiter
 }
 
 func (s *InstallationService) Begin(ctx context.Context, p BeginParams) (BeginResult, error) {
@@ -253,15 +265,32 @@ func (s *InstallationService) finalize(ctx context.Context, workspaceID, agentID
 	if err := validateInstallConfig(botID, userID, config); err != nil {
 		return db.ChannelInstallation{}, err
 	}
+	// Re-resolve the hosted cap now, at the finalize the user waited for —
+	// never reusing a value captured at Begin, where a subscription could
+	// have changed mid-scan (the Rust flow's deliberate choice).
+	var limit *int64
+	if s.capacity != nil {
+		resolved, err := s.capacity.InstallationLimit(ctx, workspaceID)
+		if err != nil {
+			return db.ChannelInstallation{}, err
+		}
+		limit = resolved
+	}
 	tx, err := s.tx.Begin(ctx)
 	if err != nil {
 		return db.ChannelInstallation{}, fmt.Errorf("weixin: begin installation tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	qtx := s.q.WithTx(tx)
+	// Hosted-capacity admission first, under the workspace row lock — the
+	// same lock order every install path and the reconciler use, so a
+	// capacity change can never interleave with a finalize.
+	if err := hostedcapacity.AdmitInstall(ctx, qtx, workspaceID, string(TypeWeixin), agentID, limit); err != nil {
+		return db.ChannelInstallation{}, err
+	}
 	if err := lockInstallationAgentSlot(ctx, tx, workspaceID, agentID); err != nil {
 		return db.ChannelInstallation{}, err
 	}
-	qtx := s.q.WithTx(tx)
 	if err := qtx.LockChannelInstallationAppIDSlot(ctx, db.LockChannelInstallationAppIDSlotParams{
 		ChannelType: string(TypeWeixin), AppID: botID,
 	}); err != nil {

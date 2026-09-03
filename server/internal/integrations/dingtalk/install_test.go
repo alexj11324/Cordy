@@ -142,6 +142,14 @@ func (f *fakeInstallQueries) SetChannelInstallationStatus(_ context.Context, _ d
 	return nil
 }
 
+func (f *fakeInstallQueries) LockWorkspaceForHostedCapacity(_ context.Context, _ pgtype.UUID) (pgtype.UUID, error) {
+	return pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, nil
+}
+
+func (f *fakeInstallQueries) ChannelInstallationCapacitySnapshot(_ context.Context, _ db.ChannelInstallationCapacitySnapshotParams) (db.ChannelInstallationCapacitySnapshotRow, error) {
+	return db.ChannelInstallationCapacitySnapshotRow{ActiveCount: 0, SameSlot: false}, nil
+}
+
 // fakeTx is a no-op pgx.Tx: embedding the interface satisfies it, and the
 // install paths only ever call Commit / Rollback.
 type fakeTx struct {

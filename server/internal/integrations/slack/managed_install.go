@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/patchbay-ai/patchbay/server/internal/hostedcapacity"
 	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
@@ -60,7 +61,12 @@ type RegisterManagedParams struct {
 // the upsert, silently transferring the team instead of refusing with
 // ErrTeamOwnedByAnotherWorkspace. Same-team reconnect still reactivates the
 // revoked row in place via the conflict update, preserving its bindings.
-func (s *InstallService) RegisterManaged(ctx context.Context, p RegisterManagedParams) (db.ChannelInstallation, error) {
+//
+// limit is the hosted installation cap resolved by the handler. When set, the
+// upsert runs inside a transaction that first takes the workspace capacity
+// lock and refuses with hostedcapacity.ErrLimitReached; when nil (self-hosted
+// or unlimited), the historical single-statement path runs unchanged.
+func (s *InstallService) RegisterManaged(ctx context.Context, p RegisterManagedParams, limit *int64) (db.ChannelInstallation, error) {
 	if p.Access.BotToken == "" || p.Access.AppID == "" || p.Access.TeamID == "" {
 		return db.ChannelInstallation{}, errors.New("slack: managed OAuth exchange returned an incomplete identity (missing bot token / app id / team id)")
 	}
@@ -86,27 +92,57 @@ func (s *InstallService) RegisterManaged(ctx context.Context, p RegisterManagedP
 	var nilAgent pgtype.UUID
 	nilAgent.Valid = true
 
-	inst, err := s.q.UpsertChannelInstallationByAppID(ctx, db.UpsertChannelInstallationByAppIDParams{
-		WorkspaceID:     p.WorkspaceID,
-		AgentID:         nilAgent,
-		ChannelType:     string(TypeSlack),
-		Config:          cfgJSON,
-		InstallerUserID: p.InstallerID,
-	})
+	upsert := func(q installQueries) (db.ChannelInstallation, error) {
+		return q.UpsertChannelInstallationByAppID(ctx, db.UpsertChannelInstallationByAppIDParams{
+			WorkspaceID:     p.WorkspaceID,
+			AgentID:         nilAgent,
+			ChannelType:     string(TypeSlack),
+			Config:          cfgJSON,
+			InstallerUserID: p.InstallerID,
+		})
+	}
+
+	if limit == nil {
+		inst, err := upsert(s.q)
+		if err != nil {
+			return db.ChannelInstallation{}, s.classifyManagedUpsertErr(err)
+		}
+		return inst, nil
+	}
+
+	tx, err := s.tx.Begin(ctx)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			// The conflict update fenced on the same workspace touched no row:
-			// the team is live-owned by a DIFFERENT Patchbay workspace (the
-			// query's atomic cross-workspace guard).
-			return db.ChannelInstallation{}, ErrTeamOwnedByAnotherWorkspace
-		}
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolation {
-			// The (workspace, nil-agent, slack) key is taken by a managed row
-			// for a DIFFERENT team: one managed install per workspace.
-			return db.ChannelInstallation{}, ErrManagedAlreadyConnected
-		}
-		return db.ChannelInstallation{}, fmt.Errorf("upsert managed slack installation: %w", err)
+		return db.ChannelInstallation{}, fmt.Errorf("begin managed install tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	qtx := s.q.WithTx(tx)
+	if err := hostedcapacity.AdmitInstall(ctx, qtx, p.WorkspaceID, string(TypeSlack), nilAgent, limit); err != nil {
+		return db.ChannelInstallation{}, err
+	}
+	inst, err := upsert(qtx)
+	if err != nil {
+		return db.ChannelInstallation{}, s.classifyManagedUpsertErr(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return db.ChannelInstallation{}, fmt.Errorf("commit managed slack install: %w", err)
 	}
 	return inst, nil
+}
+
+// classifyManagedUpsertErr turns the upsert's raw error into the accurate
+// conflict sentinel the handler renders.
+func (s *InstallService) classifyManagedUpsertErr(err error) error {
+	if errors.Is(err, pgx.ErrNoRows) {
+		// The conflict update fenced on the same workspace touched no row:
+		// the team is live-owned by a DIFFERENT Patchbay workspace (the
+		// query's atomic cross-workspace guard).
+		return ErrTeamOwnedByAnotherWorkspace
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolation {
+		// The (workspace, nil-agent, slack) key is taken by a managed row
+		// for a DIFFERENT team: one managed install per workspace.
+		return ErrManagedAlreadyConnected
+	}
+	return fmt.Errorf("upsert managed slack installation: %w", err)
 }

@@ -71,7 +71,7 @@ func TestRegisterBYO_PersistsEncryptedSecretKeyedByAppID(t *testing.T) {
 	row, err := svc.RegisterBYO(context.Background(), byoParams(
 		"11111111-1111-1111-1111-111111111111",
 		"22222222-2222-2222-2222-222222222222",
-	))
+	), nil)
 	if err != nil {
 		t.Fatalf("RegisterBYO: %v", err)
 	}
@@ -111,13 +111,13 @@ func TestRegisterBYO_MissingCredentials(t *testing.T) {
 	// Empty AppKey — rejected before any network call or upsert.
 	p := byoParams("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222")
 	p.AppKey = "   "
-	if _, err := svc.RegisterBYO(context.Background(), p); err != ErrInvalidAppKey {
+	if _, err := svc.RegisterBYO(context.Background(), p, nil); err != ErrInvalidAppKey {
 		t.Errorf("empty app key = %v, want ErrInvalidAppKey", err)
 	}
 	// Empty AppSecret.
 	p = byoParams("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222")
 	p.AppSecret = ""
-	if _, err := svc.RegisterBYO(context.Background(), p); err != ErrInvalidAppSecret {
+	if _, err := svc.RegisterBYO(context.Background(), p, nil); err != ErrInvalidAppSecret {
 		t.Errorf("empty app secret = %v, want ErrInvalidAppSecret", err)
 	}
 	if q.upsertCalled {
@@ -135,7 +135,7 @@ func TestRegisterBYO_AccessTokenFailure(t *testing.T) {
 	if _, err := svc.RegisterBYO(context.Background(), byoParams(
 		"11111111-1111-1111-1111-111111111111",
 		"22222222-2222-2222-2222-222222222222",
-	)); err == nil {
+	), nil); err == nil {
 		t.Fatal("expected an error when the access-token mint rejects the credentials")
 	}
 	if q.upsertCalled {
@@ -155,7 +155,7 @@ func TestRegisterBYO_CredentialValidationTimesOut(t *testing.T) {
 	_, err := svc.RegisterBYO(context.Background(), byoParams(
 		"11111111-1111-1111-1111-111111111111",
 		"22222222-2222-2222-2222-222222222222",
-	))
+	), nil)
 	if !errors.Is(err, ErrCredentialValidation) {
 		t.Fatalf("timeout error = %v, want ErrCredentialValidation", err)
 	}
@@ -182,7 +182,7 @@ func TestRegisterBYO_RobotConnectedToAnotherWorkspace_Rejected(t *testing.T) {
 	if _, err := svc.RegisterBYO(context.Background(), byoParams(
 		"11111111-1111-1111-1111-111111111111",
 		"22222222-2222-2222-2222-222222222222",
-	)); err != ErrRobotOwnedByAnotherWorkspace {
+	), nil); err != ErrRobotOwnedByAnotherWorkspace {
 		t.Fatalf("robot already connected = %v, want ErrRobotOwnedByAnotherWorkspace", err)
 	}
 	if !q.reclaimCalled {
@@ -207,7 +207,7 @@ func TestRegisterBYO_RobotConnectedToAnotherAgentSameWorkspace_Rejected(t *testi
 	if _, err := svc.RegisterBYO(context.Background(), byoParams(
 		"11111111-1111-1111-1111-111111111111",
 		"22222222-2222-2222-2222-222222222222",
-	)); err != ErrRobotOwnedBySameWorkspace {
+	), nil); err != ErrRobotOwnedBySameWorkspace {
 		t.Fatalf("robot owned by another agent in this workspace = %v, want ErrRobotOwnedBySameWorkspace", err)
 	}
 }
@@ -230,7 +230,7 @@ func TestRegisterBYO_RobotConnectedToArchivedAgent_Rejected(t *testing.T) {
 	if _, err := svc.RegisterBYO(context.Background(), byoParams(
 		"11111111-1111-1111-1111-111111111111",
 		"22222222-2222-2222-2222-222222222222",
-	)); err != ErrRobotOwnedByArchivedAgent {
+	), nil); err != ErrRobotOwnedByArchivedAgent {
 		t.Fatalf("robot owned by an archived agent = %v, want ErrRobotOwnedByArchivedAgent", err)
 	}
 }
@@ -253,7 +253,7 @@ func TestRegisterBYO_ReclaimsDeadOwner(t *testing.T) {
 	row, err := svc.RegisterBYO(context.Background(), byoParams(
 		"11111111-1111-1111-1111-111111111111",
 		"22222222-2222-2222-2222-222222222222",
-	))
+	), nil)
 	if err != nil {
 		t.Fatalf("RegisterBYO after reclaim: %v", err)
 	}
@@ -288,7 +288,7 @@ func TestRegisterBYO_SameAgentReconnect_UpdatesRowInPlace(t *testing.T) {
 	row, err := svc.RegisterBYO(context.Background(), byoParams(
 		"11111111-1111-1111-1111-111111111111",
 		"22222222-2222-2222-2222-222222222222",
-	))
+	), nil)
 	if err != nil {
 		t.Fatalf("RegisterBYO same-agent reconnect: %v", err)
 	}
@@ -334,7 +334,7 @@ func TestRegisterBYO_DifferentAppKey_ReplacesInstallationIdentity(t *testing.T) 
 	row, err := svc.RegisterBYO(context.Background(), byoParams(
 		"11111111-1111-1111-1111-111111111111",
 		"22222222-2222-2222-2222-222222222222",
-	))
+	), nil)
 	if err != nil {
 		t.Fatalf("RegisterBYO different-AppKey replacement: %v", err)
 	}
@@ -367,7 +367,7 @@ func TestRegisterBYO_OwnerLookupMiss_FallsBackToConflict(t *testing.T) {
 	if _, err := svc.RegisterBYO(context.Background(), byoParams(
 		"11111111-1111-1111-1111-111111111111",
 		"22222222-2222-2222-2222-222222222222",
-	)); err != ErrRobotOwnedByAnotherWorkspace {
+	), nil); err != ErrRobotOwnedByAnotherWorkspace {
 		t.Fatalf("owner lookup miss = %v, want fallback ErrRobotOwnedByAnotherWorkspace", err)
 	}
 	if !q.upsertCalled {

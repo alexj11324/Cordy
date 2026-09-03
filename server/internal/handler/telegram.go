@@ -127,13 +127,22 @@ func (h *Handler) RegisterTelegramBot(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	// Resolve the hosted installation cap BEFORE the live getMe call, so an
+	// over-cap workspace never burns external calls.
+	limit, ok := h.hostedInstallationLimit(w, r, wsUUID)
+	if !ok {
+		return
+	}
 	row, err := h.TelegramInstall.Register(r.Context(), telegram.RegisterParams{
 		WorkspaceID: wsUUID,
 		AgentID:     agentUUID,
 		InitiatorID: initiatorUUID,
 		BotToken:    body.BotToken,
-	})
+	}, limit)
 	if err != nil {
+		if writeHostedCapacityError(w, err) {
+			return
+		}
 		switch {
 		case errors.Is(err, telegram.ErrInvalidBotToken):
 			writeError(w, http.StatusBadRequest, err.Error())

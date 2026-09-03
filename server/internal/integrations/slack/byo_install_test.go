@@ -117,7 +117,7 @@ func TestRegisterBYO_PersistsEncryptedTokensKeyedByAppID(t *testing.T) {
 	row, err := svc.RegisterBYO(context.Background(), byoParams(
 		"11111111-1111-1111-1111-111111111111",
 		"22222222-2222-2222-2222-222222222222",
-	))
+	), nil)
 	if err != nil {
 		t.Fatalf("RegisterBYO: %v", err)
 	}
@@ -164,13 +164,13 @@ func TestRegisterBYO_InvalidTokens(t *testing.T) {
 	// Bad bot token prefix — rejected before any network call or upsert.
 	p := byoParams("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222")
 	p.BotToken = "nope-not-a-bot-token"
-	if _, err := svc.RegisterBYO(context.Background(), p); err != ErrInvalidBotToken {
+	if _, err := svc.RegisterBYO(context.Background(), p, nil); err != ErrInvalidBotToken {
 		t.Errorf("bad bot token = %v, want ErrInvalidBotToken", err)
 	}
 	// Bad app token.
 	p = byoParams("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222")
 	p.AppToken = "xapp-broken"
-	if _, err := svc.RegisterBYO(context.Background(), p); err != ErrInvalidAppToken {
+	if _, err := svc.RegisterBYO(context.Background(), p, nil); err != ErrInvalidAppToken {
 		t.Errorf("bad app token = %v, want ErrInvalidAppToken", err)
 	}
 	if q.upsertCalled {
@@ -188,7 +188,7 @@ func TestRegisterBYO_AuthTestFailure(t *testing.T) {
 	if _, err := svc.RegisterBYO(context.Background(), byoParams(
 		"11111111-1111-1111-1111-111111111111",
 		"22222222-2222-2222-2222-222222222222",
-	)); err == nil {
+	), nil); err == nil {
 		t.Fatal("expected an error when auth.test rejects the bot token")
 	}
 	if q.upsertCalled {
@@ -214,7 +214,7 @@ func TestRegisterBYO_AppConnectedToAnotherWorkspace_Rejected(t *testing.T) {
 	if _, err := svc.RegisterBYO(context.Background(), byoParams(
 		"11111111-1111-1111-1111-111111111111",
 		"22222222-2222-2222-2222-222222222222",
-	)); err != ErrTeamOwnedByAnotherWorkspace {
+	), nil); err != ErrTeamOwnedByAnotherWorkspace {
 		t.Fatalf("app already connected = %v, want ErrTeamOwnedByAnotherWorkspace", err)
 	}
 	if !q.reclaimCalled {
@@ -240,7 +240,7 @@ func TestRegisterBYO_AppConnectedToAnotherAgentSameWorkspace_Rejected(t *testing
 	if _, err := svc.RegisterBYO(context.Background(), byoParams(
 		"11111111-1111-1111-1111-111111111111",
 		"22222222-2222-2222-2222-222222222222",
-	)); err != ErrTeamOwnedBySameWorkspace {
+	), nil); err != ErrTeamOwnedBySameWorkspace {
 		t.Fatalf("app owned by another agent in this workspace = %v, want ErrTeamOwnedBySameWorkspace", err)
 	}
 }
@@ -263,7 +263,7 @@ func TestRegisterBYO_AppConnectedToArchivedAgent_Rejected(t *testing.T) {
 	if _, err := svc.RegisterBYO(context.Background(), byoParams(
 		"11111111-1111-1111-1111-111111111111",
 		"22222222-2222-2222-2222-222222222222",
-	)); err != ErrTeamOwnedByArchivedAgent {
+	), nil); err != ErrTeamOwnedByArchivedAgent {
 		t.Fatalf("app owned by an archived agent = %v, want ErrTeamOwnedByArchivedAgent", err)
 	}
 }
@@ -290,7 +290,7 @@ func TestRegisterBYO_ReconnectSameAgent_UpdatesRowInPlace(t *testing.T) {
 	row, err := svc.RegisterBYO(context.Background(), byoParams(
 		"11111111-1111-1111-1111-111111111111",
 		"22222222-2222-2222-2222-222222222222",
-	))
+	), nil)
 	if err != nil {
 		t.Fatalf("RegisterBYO: %v", err)
 	}
@@ -312,7 +312,7 @@ func TestRegisterBYO_TokenAppMismatch(t *testing.T) {
 	if _, err := svc.RegisterBYO(context.Background(), byoParams(
 		"11111111-1111-1111-1111-111111111111",
 		"22222222-2222-2222-2222-222222222222",
-	)); err != ErrTokenAppMismatch {
+	), nil); err != ErrTokenAppMismatch {
 		t.Fatalf("mismatched tokens = %v, want ErrTokenAppMismatch", err)
 	}
 	if q.upsertCalled {
@@ -332,7 +332,7 @@ func TestRegisterBYO_AppTokenNotLive(t *testing.T) {
 	if _, err := svc.RegisterBYO(context.Background(), byoParams(
 		"11111111-1111-1111-1111-111111111111",
 		"22222222-2222-2222-2222-222222222222",
-	)); err == nil {
+	), nil); err == nil {
 		t.Fatal("expected an error when the app-level token is not live")
 	}
 	if q.upsertCalled {

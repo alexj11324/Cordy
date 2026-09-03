@@ -140,14 +140,23 @@ func (h *Handler) RegisterSlackBYO(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	// Resolve the hosted installation cap BEFORE the live auth.test round
+	// trips, so an over-cap workspace never burns external calls.
+	limit, ok := h.hostedInstallationLimit(w, r, wsUUID)
+	if !ok {
+		return
+	}
 	row, err := h.SlackInstall.RegisterBYO(r.Context(), slack.RegisterBYOParams{
 		WorkspaceID: wsUUID,
 		AgentID:     agentUUID,
 		InitiatorID: initiatorUUID,
 		BotToken:    body.BotToken,
 		AppToken:    body.AppToken,
-	})
+	}, limit)
 	if err != nil {
+		if writeHostedCapacityError(w, err) {
+			return
+		}
 		switch {
 		case errors.Is(err, slack.ErrInvalidBotToken), errors.Is(err, slack.ErrInvalidAppToken), errors.Is(err, slack.ErrTokenAppMismatch):
 			writeError(w, http.StatusBadRequest, err.Error())

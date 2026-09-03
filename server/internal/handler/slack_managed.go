@@ -92,6 +92,13 @@ func (h *Handler) BeginManagedSlackInstall(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, "failed to start Slack authorization")
 		return
 	}
+	// Resolve the hosted installation cap before handing out the authorize
+	// URL: a workspace that cannot admit another install should not send its
+	// admin through Slack's consent screen at all. This is the begin-time
+	// check; the callback re-resolves at persist.
+	if _, ok := h.hostedInstallationLimit(w, r, wsUUID); !ok {
+		return
+	}
 	clientID := h.ManagedSlack.ClientID()
 	callbackURL := h.managedSlackCallbackURL()
 	if clientID == "" || callbackURL == "" {
@@ -178,12 +185,21 @@ func (h *Handler) ManagedSlackOAuthCallback(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadGateway, "slack rejected the OAuth exchange")
 		return
 	}
+	// Re-resolve the hosted cap at persist time (never reusing the begin-time
+	// value): a subscription can change between consent and callback.
+	limit, ok := h.hostedInstallationLimit(w, r, claimed.WorkspaceID)
+	if !ok {
+		return
+	}
 	row, err := h.SlackInstall.RegisterManaged(r.Context(), slack.RegisterManagedParams{
 		WorkspaceID: claimed.WorkspaceID,
 		InstallerID: claimed.InstallerUserID,
 		Access:      access,
-	})
+	}, limit)
 	if err != nil {
+		if writeHostedCapacityError(w, err) {
+			return
+		}
 		switch {
 		case errors.Is(err, slack.ErrTeamOwnedByAnotherWorkspace):
 			writeError(w, http.StatusConflict, "this Slack workspace is already connected to a different Patchbay workspace — disconnect it there before connecting it here")
