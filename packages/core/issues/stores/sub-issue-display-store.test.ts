@@ -26,6 +26,7 @@ beforeAll(() => {
 
 describe("sub-issue display store", () => {
   beforeEach(() => {
+    localStorage.clear();
     useSubIssueDisplayStore.setState({
       rowProperties: { ...DEFAULT_SUB_ISSUE_ROW_PROPERTIES },
       rowPropertyIds: [],
@@ -39,7 +40,7 @@ describe("sub-issue display store", () => {
       labels: true,
       childProgress: true,
       dueDate: true,
-      assignee: true,
+      executor: true,
     });
     expect(s.rowPropertyIds).toEqual([]);
   });
@@ -67,5 +68,31 @@ describe("sub-issue display store", () => {
 
     useSubIssueDisplayStore.getState().toggleRowPropertyId("prop-1");
     expect(useSubIssueDisplayStore.getState().rowPropertyIds).toEqual(["prop-2"]);
+  });
+
+  it("migrates the legacy assignee display preference to executor", async () => {
+    localStorage.setItem(
+      "patchbay_sub_issue_display",
+      JSON.stringify({
+        state: {
+          rowProperties: {
+            priority: true,
+            labels: true,
+            childProgress: true,
+            dueDate: true,
+            assignee: false,
+          },
+          rowPropertyIds: [],
+        },
+        version: 0,
+      }),
+    );
+
+    await useSubIssueDisplayStore.persist.rehydrate();
+
+    expect(useSubIssueDisplayStore.getState().rowProperties.executor).toBe(false);
+    expect(useSubIssueDisplayStore.getState().rowProperties).not.toHaveProperty(
+      "assignee",
+    );
   });
 });

@@ -394,7 +394,7 @@ const EMPTY_REPLIES: TimelineEntry[] = [];
 // ---------------------------------------------------------------------------
 //
 // Properties shown in the sidebar split into two groups:
-//   - core: always rendered (status / assignee / project)
+//   - core: always rendered (status / executor / project)
 //   - optional: rendered only when the issue has a value for that field OR
 //     the user explicitly added it via "+ Add property" in this session
 //     (priority / due_date / labels)
@@ -535,7 +535,7 @@ const LAST_ACTIVITY_BLOCK_VISIBLE_LIMIT = 8;
 
 // Collapsible wrapper for an activity block. Older blocks default to a single
 // "N activities" summary line so the timeline isn't dominated by status /
-// priority / assignee churn; the trailing block stays expanded because it
+// priority / executor churn; the trailing block stays expanded because it
 // usually answers "what just happened?". Expansion state is owned by the
 // parent so it survives Virtuoso's mount/unmount on scroll.
 function ActivityBlock({
@@ -684,7 +684,7 @@ function ActivityBlock({
 }
 
 // ---------------------------------------------------------------------------
-// SubIssueRow — sub-issue list item with inline status & assignee editing
+// SubIssueRow — sub-issue list item with inline status & executor editing
 // ---------------------------------------------------------------------------
 
 function SubIssueRow({
@@ -870,7 +870,7 @@ function SubIssueRow({
             }
           />
         )}
-        {rowProps.assignee && (
+        {rowProps.executor && (
           <ExecutorPicker
             executorType={child.executor_type}
             executorId={child.executor_id}
@@ -906,13 +906,13 @@ function SubIssueRow({
 // identical, so the sub-issues control needs no locale keys of its own.
 const SUB_ISSUE_ROW_PROPERTY_LABEL_KEY: Record<
   SubIssueRowPropertyKey,
-  "card_priority" | "card_labels" | "card_child_progress" | "card_due_date" | "card_assignee"
+  "card_priority" | "card_labels" | "card_child_progress" | "card_due_date" | "card_executor"
 > = {
   priority: "card_priority",
   labels: "card_labels",
   childProgress: "card_child_progress",
   dueDate: "card_due_date",
-  assignee: "card_assignee",
+  executor: "card_executor",
 };
 
 function SubIssueDisplayPopover({

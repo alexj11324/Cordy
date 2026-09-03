@@ -13,8 +13,8 @@ import {
 const NO_FILTER: IssueFilters = {
   statusFilters: [],
   priorityFilters: [],
-  assigneeFilters: [],
-  includeNoAssignee: false,
+  executorFilters: [],
+  includeNoExecutor: false,
   creatorFilters: [],
   projectFilters: [],
   includeNoProject: false,
@@ -77,39 +77,39 @@ describe("filterIssues", () => {
     expect(result.map((i) => i.id)).toEqual(["1", "4"]);
   });
 
-  // --- Assignee ---
-  it("filters by specific assignee", () => {
+  // --- Executor ---
+  it("filters by specific executor", () => {
     const result = filterIssues(issues, {
       ...NO_FILTER,
-      assigneeFilters: [{ type: "member", id: "u-1" }],
+      executorFilters: [{ type: "member", id: "u-1" }],
     });
     expect(result.map((i) => i.id)).toEqual(["1"]);
   });
 
-  it("filters by 'No assignee' only", () => {
-    const result = filterIssues(issues, { ...NO_FILTER, includeNoAssignee: true });
+  it("filters by 'No executor' only", () => {
+    const result = filterIssues(issues, { ...NO_FILTER, includeNoExecutor: true });
     expect(result.map((i) => i.id)).toEqual(["3"]);
   });
 
-  it("filters by assignee + No assignee combined", () => {
+  it("filters by executor + No executor combined", () => {
     const result = filterIssues(issues, {
       ...NO_FILTER,
-      assigneeFilters: [{ type: "agent", id: "a-1" }],
-      includeNoAssignee: true,
+      executorFilters: [{ type: "agent", id: "a-1" }],
+      includeNoExecutor: true,
     });
     expect(result.map((i) => i.id)).toEqual(["2", "3"]);
   });
 
-  it("treats an explicitly active empty assignee predicate as match-none", () => {
+  it("treats an explicitly active empty executor predicate as match-none", () => {
     const result = filterIssues(issues, {
       ...NO_FILTER,
-      assigneeFilterActive: true,
+      executorFilterActive: true,
     });
     expect(result).toEqual([]);
   });
 
-  it("hides assigned issues when only 'No assignee' is selected", () => {
-    const result = filterIssues(issues, { ...NO_FILTER, includeNoAssignee: true });
+  it("hides assigned issues when only 'No executor' is selected", () => {
+    const result = filterIssues(issues, { ...NO_FILTER, includeNoExecutor: true });
     expect(result.every((i) => !i.executor_id)).toBe(true);
   });
 
@@ -123,11 +123,11 @@ describe("filterIssues", () => {
   });
 
   // --- Combinations ---
-  it("applies status + assignee filters together", () => {
+  it("applies status + executor filters together", () => {
     const result = filterIssues(issues, {
       ...NO_FILTER,
       statusFilters: ["todo"],
-      assigneeFilters: [{ type: "member", id: "u-1" }],
+      executorFilters: [{ type: "member", id: "u-1" }],
     });
     expect(result.map((i) => i.id)).toEqual(["1"]);
   });

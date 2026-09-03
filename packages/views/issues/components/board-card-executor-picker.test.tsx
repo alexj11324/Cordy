@@ -44,7 +44,7 @@ const viewState = vi.hoisted(() => ({
   cardProperties: {
     priority: false,
     description: false,
-    assignee: true,
+    executor: true,
     startDate: true,
     dueDate: true,
     project: false,
@@ -111,20 +111,20 @@ const actions: IssueSurfaceActions = {
   batchDelete: vi.fn().mockResolvedValue(undefined),
 };
 
-function makeIssue(assigneeType: Exclude<IssueAssigneeType, "member">): Issue {
+function makeIssue(executorType: Exclude<IssueAssigneeType, "member">): Issue {
   return {
-    id: `issue-${assigneeType}`,
+    id: `issue-${executorType}`,
     workspace_id: "ws-1",
     number: 6082,
     identifier: "MUL-6082",
-    title: "Fix Board assignee interaction",
+    title: "Fix Board executor interaction",
     description: null,
     status: "todo",
     priority: "none",
     owner_type: null,
     owner_id: null,
-    executor_type: assigneeType,
-    executor_id: `${assigneeType}-1`,
+    executor_type: executorType,
+    executor_id: `${executorType}-1`,
     reviewer_type: null,
     reviewer_id: null,
     creator_type: "member",
@@ -146,8 +146,8 @@ function makeIssue(assigneeType: Exclude<IssueAssigneeType, "member">): Issue {
 describe("BoardCardContent executor picker", () => {
   it.each<Exclude<IssueAssigneeType, "member">>(["agent", "team"])(
     "opens the picker from an avatar-only %s executor without navigating the card",
-    (assigneeType) => {
-      const issue = makeIssue(assigneeType);
+    (executorType) => {
+      const issue = makeIssue(executorType);
       const { container } = render(
         <NavigationProvider value={navigation}>
           <IssueSurfaceActionsProvider actions={actions}>

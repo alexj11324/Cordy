@@ -210,7 +210,7 @@ function computePosition(ids: string[], activeId: string, issueMap: Map<string, 
 
 /**
  * One swimlane row. Lanes are produced by a per-grouping builder
- * (`buildParentLanes` / `buildProjectLanes` / `buildAssigneeLanes`) and then
+ * (`buildParentLanes` / `buildProjectLanes` / `buildExecutorLanes`) and then
  * consumed uniformly by the renderer. The matcher/move-updates closures hide
  * the grouping-specific details behind a single interface so the drag-end
  * handler doesn't need to branch on grouping.
@@ -234,7 +234,7 @@ interface LaneGroup {
   parentIssue: Pick<Issue, "id" | "status"> | null;
   /** Project metadata (project grouping only) — drives the icon in the header. */
   project: Project | null;
-  /** Actor (assignee grouping only) — drives the avatar in the header. */
+  /** Actor (executor grouping only) — drives the avatar in the header. */
   actor: { type: IssueAssigneeType; id: string } | null;
   /** Whether this lane owns `issue`. */
   matches: (issue: Issue) => boolean;
@@ -405,44 +405,44 @@ function buildProjectLanes(
   ];
 }
 
-function buildAssigneeLanes(
+function buildExecutorLanes(
   visibleIssues: Issue[],
   getActorName: (type: string, id: string) => string,
   storedOrder: string[],
-  labels: { noAssignee: string },
+  labels: { noExecutor: string },
 ): LaneGroup[] {
   const seen = new Map<string, LaneGroup>();
   for (const issue of visibleIssues) {
-    const assigneeType = (issue.executor_type ?? issue.owner_type) as IssueAssigneeType | null;
-    const assigneeId = issue.executor_id ?? issue.owner_id;
-    if (assigneeType === null || assigneeId === null) continue;
-    const rawId = `${assigneeType}:${assigneeId}`;
-    const key = `assignee:${rawId}`;
+    const executorType = (issue.executor_type ?? issue.owner_type) as IssueAssigneeType | null;
+    const executorId = issue.executor_id ?? issue.owner_id;
+    if (executorType === null || executorId === null) continue;
+    const rawId = `${executorType}:${executorId}`;
+    const key = `executor:${rawId}`;
     if (seen.has(key)) continue;
     seen.set(key, {
       key,
       rawId,
       isPinned: false,
       isOrphan: false,
-      title: getActorName(assigneeType, assigneeId),
+      title: getActorName(executorType, executorId),
       identifier: "",
       parentIssue: null,
       project: null,
-      actor: { type: assigneeType, id: assigneeId },
+      actor: { type: executorType, id: executorId },
       matches: (i) =>
-        (i.executor_type ?? i.owner_type) === assigneeType &&
-        (i.executor_id ?? i.owner_id) === assigneeId,
+        (i.executor_type ?? i.owner_type) === executorType &&
+        (i.executor_id ?? i.owner_id) === executorId,
       moveUpdates:
-        assigneeType === "member"
-          ? { owner_type: "member", owner_id: assigneeId, executor_type: null, executor_id: null }
-          : { executor_type: assigneeType, executor_id: assigneeId },
+        executorType === "member"
+          ? { owner_type: "member", owner_id: executorId, executor_type: null, executor_id: null }
+          : { executor_type: executorType, executor_id: executorId },
     });
   }
 
   // Sort by actor type (members before agents before teams) then by name.
   const typeOrder: Record<string, number> = { member: 0, agent: 1, team: 2 };
   const orderIndex = new Map<string, number>();
-  storedOrder.forEach((id, idx) => orderIndex.set(`assignee:${id}`, idx));
+  storedOrder.forEach((id, idx) => orderIndex.set(`executor:${id}`, idx));
   const ordered = Array.from(seen.values()).sort((a, b) => {
     const ai = orderIndex.get(a.key);
     const bi = orderIndex.get(b.key);
@@ -457,11 +457,11 @@ function buildAssigneeLanes(
 
   return [
     {
-      key: `assignee:${NONE_LANE_ID}`,
+      key: `executor:${NONE_LANE_ID}`,
       rawId: NONE_LANE_ID,
       isPinned: true,
       isOrphan: false,
-      title: labels.noAssignee,
+      title: labels.noExecutor,
       identifier: "",
       parentIssue: null,
       project: null,
@@ -484,7 +484,7 @@ function buildServerLanes(
     noParent: string;
     otherParents: string;
     noProject: string;
-    noAssignee: string;
+    noExecutor: string;
   },
 ): LaneGroup[] {
   const visibleStatusSet = new Set(visibleStatuses);
@@ -507,7 +507,7 @@ function buildServerLanes(
       ),
     ) as Partial<Record<IssueStatus, string>>;
     const value = descriptor.value;
-    if (grouping === "assignee" && value.kind === "assignee") {
+    if (grouping === "executor" && value.kind === "assignee") {
       const actorRef = value.actor;
       const actor: { type: IssueAssigneeType; id: string } | null =
         actorRef &&
@@ -518,13 +518,13 @@ function buildServerLanes(
           : null;
       const rawId = actor ? `${actor.type}:${actor.id}` : NONE_LANE_ID;
       return [{
-        key: `assignee:${rawId}`,
+        key: `executor:${rawId}`,
         rawId,
         isPinned: actor === null,
         isOrphan: false,
         title: actor
           ? getActorName(actor.type, actor.id)
-          : labels.noAssignee,
+          : labels.noExecutor,
         identifier: "",
         parentIssue: null,
         project: null,
@@ -668,9 +668,9 @@ function SwimLaneViewImpl({
     // Status is enforced by visible-column rendering, not by filterIssues
     statusFilters: [],
     priorityFilters: activeFiltersProp?.priorityFilters ?? [],
-    assigneeFilters: activeFiltersProp?.assigneeFilters ?? [],
-    includeNoAssignee: activeFiltersProp?.includeNoAssignee ?? false,
-    assigneeFilterActive: activeFiltersProp?.assigneeFilterActive ?? false,
+    executorFilters: activeFiltersProp?.executorFilters ?? [],
+    includeNoExecutor: activeFiltersProp?.includeNoExecutor ?? false,
+    executorFilterActive: activeFiltersProp?.executorFilterActive ?? false,
     // Extra children are not part of the server-grouped page yet, so apply
     // the same running-task issue ids returned by `/api/working-agents`.
     agentRunningFilter: activeFiltersProp?.agentRunningFilter ?? false,
@@ -708,7 +708,7 @@ function SwimLaneViewImpl({
       noParent: t(($) => $.swimlane.no_parent),
       otherParents: t(($) => $.swimlane.other_parents),
       noProject: t(($) => $.swimlane.no_project),
-      noAssignee: t(($) => $.swimlane.no_assignee),
+      noExecutor: t(($) => $.swimlane.no_executor),
     }),
     [t],
   );
@@ -826,8 +826,8 @@ function SwimLaneViewImpl({
     if (swimlaneGrouping === "project") {
       return buildProjectLanes(issues, projects, swimlaneOrder, laneLabels);
     }
-    if (swimlaneGrouping === "assignee") {
-      return buildAssigneeLanes(issues, getActorName, swimlaneOrder, laneLabels);
+    if (swimlaneGrouping === "executor") {
+      return buildExecutorLanes(issues, getActorName, swimlaneOrder, laneLabels);
     }
     // Discovery uses `mergedIssues` so batch-fetched grandchildren can
     // promote their parents to lane headers. Metadata uses `laneSourceIssues`
@@ -864,7 +864,7 @@ function SwimLaneViewImpl({
 
   // Map of issue id → owning lane key. Used by orphan detection for parent
   // grouping (a child whose canonical parent isn't a lane header here lands
-  // in the fallback) and as the matcher hot-path for project/assignee.
+  // in the fallback) and as the matcher hot-path for project/executor.
   const cells = useMemo(() => {
     const result: Record<string, Record<string, string[]>> = {};
     for (const lane of laneGroups) {

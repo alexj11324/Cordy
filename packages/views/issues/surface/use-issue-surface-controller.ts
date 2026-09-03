@@ -220,8 +220,8 @@ export function useIssueSurfaceController({
   const dateFilter = useViewStore((s) => s.dateFilter);
   const statusFilters = useViewStore((s) => s.statusFilters);
   const priorityFilters = useViewStore((s) => s.priorityFilters);
-  const assigneeFilters = useViewStore((s) => s.assigneeFilters);
-  const includeNoAssignee = useViewStore((s) => s.includeNoAssignee);
+  const executorFilters = useViewStore((s) => s.executorFilters);
+  const includeNoExecutor = useViewStore((s) => s.includeNoExecutor);
   const creatorFilters = useViewStore((s) => s.creatorFilters);
   const projectFilters = useViewStore((s) => s.projectFilters);
   const includeNoProject = useViewStore((s) => s.includeNoProject);
@@ -401,8 +401,8 @@ export function useIssueSurfaceController({
   const hasActiveFilters =
     statusFilters.length > 0 ||
     priorityFilters.length > 0 ||
-    assigneeFilters.length > 0 ||
-    includeNoAssignee ||
+    executorFilters.length > 0 ||
+    includeNoExecutor ||
     creatorFilters.length > 0 ||
     viewProjectFilters.length > 0 ||
     viewIncludeNoProject ||
@@ -477,8 +477,8 @@ export function useIssueSurfaceController({
       filters: {
         ...(statusFilters.length > 0 ? { statuses: statusFilters } : {}),
         ...(priorityFilters.length > 0 ? { priorities: priorityFilters } : {}),
-        ...(assigneeFilters.length > 0 ? { assignees: assigneeFilters } : {}),
-        ...(includeNoAssignee ? { include_no_assignee: true } : {}),
+        ...(executorFilters.length > 0 ? { assignees: executorFilters } : {}),
+        ...(includeNoExecutor ? { include_no_assignee: true } : {}),
         ...(creatorFilters.length > 0 ? { creators: creatorFilters } : {}),
         ...(viewProjectFilters.length > 0
           ? { project_ids: viewProjectFilters }
@@ -502,12 +502,12 @@ export function useIssueSurfaceController({
     };
   }, [
     agentRunningFilter,
-    assigneeFilters,
+    executorFilters,
     creatorFilters,
     dateParams,
     debouncedActiveSearch,
     effectivePropertyFilters,
-    includeNoAssignee,
+    includeNoExecutor,
     labelFilters,
     priorityFilters,
     scope,
@@ -631,7 +631,7 @@ export function useIssueSurfaceController({
     if (effectiveViewMode === "swimlane") {
       return {
         kind: "compound",
-        primary: swimlaneGrouping,
+        primary: swimlaneGrouping === "executor" ? "assignee" : swimlaneGrouping,
         // Same rollout switch as the board/list branches: `status_category` is
         // a contract this feature introduced, so it is only sent once the
         // catalog confirms this workspace HAS a custom status — which can only
@@ -688,8 +688,8 @@ export function useIssueSurfaceController({
       JSON.stringify([
         statusFilters,
         priorityFilters,
-        assigneeFilters,
-        includeNoAssignee,
+        executorFilters,
+        includeNoExecutor,
         creatorFilters,
         viewProjectFilters,
         viewIncludeNoProject,
@@ -702,12 +702,12 @@ export function useIssueSurfaceController({
       ]),
     [
       agentRunningFilter,
-      assigneeFilters,
+      executorFilters,
       creatorFilters,
       dateParams,
       debouncedActiveSearch,
       effectivePropertyFilters,
-      includeNoAssignee,
+      includeNoExecutor,
       labelFilters,
       priorityFilters,
       showSubIssues,
@@ -735,8 +735,8 @@ export function useIssueSurfaceController({
     statusFilterPending,
     statusFilterError,
     priorityFilters,
-    assigneeFilters,
-    includeNoAssignee,
+    executorFilters,
+    includeNoExecutor,
     agentRunningFilter,
     creatorFilters,
     projectFilters: viewProjectFilters,

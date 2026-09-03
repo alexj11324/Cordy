@@ -705,10 +705,10 @@ describe("useIssueSurfaceController", () => {
 
   it.each([
     {
-      name: "Assignee Board",
+      name: "Executor Board",
       configure: (store: ReturnType<typeof getIssueSurfaceViewStore>) => {
         store.getState().setViewMode("board");
-        store.getState().setGrouping("assignee");
+        store.getState().setGrouping("executor");
       },
       properties: [],
     },
@@ -802,7 +802,7 @@ describe("useIssueSurfaceController", () => {
   );
 
   it.each([
-    { grouping: "assignee" as const, expected: { kind: "assignee" } },
+    { grouping: "executor" as const, expected: { kind: "assignee" } },
     { grouping: "project" as const, expected: { kind: "project" } },
   ])(
     "asks the server for $grouping groups when the board is grouped that way",
@@ -1083,10 +1083,10 @@ describe("useIssueSurfaceController", () => {
   it("combines regular assignees with the independent running-task predicate", async () => {
     const store = getIssueSurfaceViewStore("project:p1");
     store.getState().setViewMode("list");
-    store.getState().toggleAssigneeFilter({ type: "agent", id: "agent-1" });
-    store.getState().toggleAssigneeFilter({ type: "agent", id: "agent-2" });
-    store.getState().toggleAssigneeFilter({ type: "member", id: "member-1" });
-    store.getState().toggleNoAssignee();
+    store.getState().toggleExecutorFilter({ type: "agent", id: "agent-1" });
+    store.getState().toggleExecutorFilter({ type: "agent", id: "agent-2" });
+    store.getState().toggleExecutorFilter({ type: "member", id: "member-1" });
+    store.getState().toggleNoExecutor();
     store.getState().toggleAgentRunningFilter();
     mockWorkingAgents([
       makeWorkingAgent("agent-2", ["member-assigned-running-issue"]),
@@ -1705,7 +1705,7 @@ describe("useIssueSurfaceController", () => {
     act(() => {
       store.getState().setViewMode("gantt");
       if (selectedAssigneeId) {
-        store.getState().toggleAssigneeFilter({
+        store.getState().toggleExecutorFilter({
           type: "agent",
           id: selectedAssigneeId,
         });

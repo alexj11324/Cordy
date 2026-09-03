@@ -104,8 +104,8 @@ export function useIssueSurfaceData({
   statusFilterPending,
   statusFilterError,
   priorityFilters,
-  assigneeFilters,
-  includeNoAssignee,
+  executorFilters,
+  includeNoExecutor,
   agentRunningFilter,
   creatorFilters,
   projectFilters,
@@ -133,8 +133,8 @@ export function useIssueSurfaceData({
   /** The catalog failed, so a custom status filter cannot be honoured. */
   statusFilterError: boolean;
   priorityFilters: IssueFilterState["priorityFilters"];
-  assigneeFilters: IssueFilterState["assigneeFilters"];
-  includeNoAssignee: boolean;
+  executorFilters: IssueFilterState["executorFilters"];
+  includeNoExecutor: boolean;
   agentRunningFilter: boolean;
   creatorFilters: IssueFilterState["creatorFilters"];
   projectFilters: string[];
@@ -176,8 +176,8 @@ export function useIssueSurfaceData({
     () => ({
       statusFilters,
       priorityFilters,
-      assigneeFilters,
-      includeNoAssignee,
+      executorFilters,
+      includeNoExecutor,
       creatorFilters,
       projectFilters,
       includeNoProject,
@@ -187,10 +187,10 @@ export function useIssueSurfaceData({
       showSubIssues,
     }),
     [
-      assigneeFilters,
+      executorFilters,
       agentRunningFilter,
       creatorFilters,
-      includeNoAssignee,
+      includeNoExecutor,
       includeNoProject,
       labelFilters,
       priorityFilters,
@@ -367,8 +367,8 @@ export function useIssueSurfaceData({
   const activeFilters = useMemo(
     () => ({
       priorityFilters,
-      assigneeFilters,
-      includeNoAssignee,
+      executorFilters,
+      includeNoExecutor,
       agentRunningFilter,
       runningIssueIds: workingIssueIDs,
       creatorFilters,
@@ -379,10 +379,10 @@ export function useIssueSurfaceData({
       showSubIssues,
     }),
     [
-      assigneeFilters,
+      executorFilters,
       agentRunningFilter,
       creatorFilters,
-      includeNoAssignee,
+      includeNoExecutor,
       includeNoProject,
       labelFilters,
       propertyFilters,

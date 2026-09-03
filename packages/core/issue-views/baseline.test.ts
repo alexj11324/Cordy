@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { baselineFromQuery } from "./baseline";
+import { lockedDimensionsFromQuery } from "./active-view-store";
 import { propertyFilterValueKey } from "../types";
 
 // The property-filter branch of baselineFromQuery: saved-view members must
@@ -57,5 +58,23 @@ describe("baselineFromQuery property filters", () => {
     });
     expect(baseline.raw.propertyFilters).toEqual({});
     expect(baseline.property.size).toBe(0);
+  });
+});
+
+describe("saved-view executor compatibility", () => {
+  it("normalizes legacy assignee predicates without exposing the old dimension", () => {
+    const baseline = baselineFromQuery({
+      assigneeFilters: [{ type: "agent", id: "agent-1" }],
+      includeNoAssignee: true,
+    });
+
+    expect([...baseline.executor]).toEqual(["agent:agent-1"]);
+    expect(baseline.includeNoExecutor).toBe(true);
+    expect(baseline.raw.executorFilters).toEqual([
+      { type: "agent", id: "agent-1" },
+    ]);
+    expect(lockedDimensionsFromQuery({ includeNoAssignee: true })).toEqual(
+      new Set(["executor"]),
+    );
   });
 });

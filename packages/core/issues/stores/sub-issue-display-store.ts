@@ -22,7 +22,7 @@ export const SUB_ISSUE_ROW_PROPERTY_KEYS = [
   "labels",
   "childProgress",
   "dueDate",
-  "assignee",
+  "executor",
 ] as const;
 export type SubIssueRowPropertyKey =
   (typeof SUB_ISSUE_ROW_PROPERTY_KEYS)[number];
@@ -33,7 +33,7 @@ export const DEFAULT_SUB_ISSUE_ROW_PROPERTIES: SubIssueRowProperties = {
   labels: true,
   childProgress: true,
   dueDate: true,
-  assignee: true,
+  executor: true,
 };
 
 interface SubIssueDisplayStore {
@@ -66,13 +66,25 @@ export const useSubIssueDisplayStore = create<SubIssueDisplayStore>()(
       // to visible instead of undefined (persist's default shallow merge
       // would replace the whole object with the stale persisted one).
       merge: (persisted, current) => {
-        const p = (persisted ?? {}) as Partial<SubIssueDisplayStore>;
+        const p = (persisted ?? {}) as Partial<SubIssueDisplayStore> & {
+          rowProperties?: Partial<SubIssueRowProperties> & {
+            assignee?: boolean;
+          };
+        };
+        const rowProperties = { ...(p.rowProperties ?? {}) };
+        if (
+          rowProperties.executor === undefined &&
+          typeof rowProperties.assignee === "boolean"
+        ) {
+          rowProperties.executor = rowProperties.assignee;
+        }
+        delete rowProperties.assignee;
         return {
           ...current,
           ...p,
           rowProperties: {
             ...current.rowProperties,
-            ...(p.rowProperties ?? {}),
+            ...rowProperties,
           },
         };
       },

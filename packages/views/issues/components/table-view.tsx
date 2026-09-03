@@ -262,7 +262,7 @@ function rebaseServerBranchState(
 
 function tableGroupSpec(grouping: string): IssueTableGroupSpec {
   if (grouping === "status") return { kind: "status" };
-  if (grouping === "assignee") return { kind: "assignee" };
+  if (grouping === "executor") return { kind: "assignee" };
   if (grouping === "project") return { kind: "project" };
   const propertyId = propertyIdFromViewKey(grouping);
   if (propertyId) return { kind: "property", property_id: propertyId };
@@ -274,7 +274,7 @@ type ColumnLabelKey =
   | "identifier"
   | "status"
   | "priority"
-  | "assignee"
+  | "executor"
   | "labels"
   | "project"
   | "start_date"
@@ -1176,7 +1176,7 @@ function IssueTableBodyCell({
           />
         </div>
       );
-    case "assignee":
+    case "executor":
       return (
         <div onClick={stopRowNavigation} onAuxClick={stopRowNavigation}>
           <ExecutorPicker
@@ -2301,7 +2301,7 @@ export function TableView({
         return !propertyId || exportPropertyById.has(propertyId);
       });
       const needsActors = csvColumns.some((column) => {
-        if (column.key === "assignee" || column.key === "creator") return true;
+        if (column.key === "executor" || column.key === "creator") return true;
         const propertyId = propertyIdFromViewKey(column.key);
         const property = propertyId ? exportPropertyById.get(propertyId) : undefined;
         return property ? isActorPropertyType(property.type) : false;
@@ -2351,7 +2351,7 @@ export function TableView({
               return resolveStatusLabel(issue.status);
             case "priority":
               return t(($) => $.priority[issue.priority]);
-            case "assignee":
+            case "executor":
               return issue.executor_type && issue.executor_id
                 ? exportActorName(issue.executor_type, issue.executor_id)
                 : "";

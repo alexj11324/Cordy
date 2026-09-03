@@ -5,12 +5,12 @@ import type { IssueActivityState } from "../surface/activity";
 export interface IssueFilters {
   statusFilters: IssueStatus[];
   priorityFilters: IssuePriority[];
-  assigneeFilters: ActorFilterValue[];
-  includeNoAssignee: boolean;
-  /** Keeps an explicitly active assignee predicate distinct from the normal
-   *  empty-array = no-filter state. When true with no selected assignees and
-   *  includeNoAssignee=false, the predicate intentionally matches nothing. */
-  assigneeFilterActive?: boolean;
+  executorFilters: ActorFilterValue[];
+  includeNoExecutor: boolean;
+  /** Keeps an explicitly active executor predicate distinct from the normal
+   *  empty-array = no-filter state. When true with no selected executors and
+   *  includeNoExecutor=false, the predicate intentionally matches nothing. */
+  executorFilterActive?: boolean;
   creatorFilters: ActorFilterValue[];
   projectFilters: string[];
   includeNoProject: boolean;
@@ -33,10 +33,10 @@ export interface IssueFilters {
 export interface IssueFilterState {
   statusFilters: IssueStatus[];
   priorityFilters: IssuePriority[];
-  assigneeFilters: ActorFilterValue[];
-  includeNoAssignee: boolean;
-  /** See IssueFilters.assigneeFilterActive. */
-  assigneeFilterActive?: boolean;
+  executorFilters: ActorFilterValue[];
+  includeNoExecutor: boolean;
+  /** See IssueFilters.executorFilterActive. */
+  executorFilterActive?: boolean;
   creatorFilters: ActorFilterValue[];
   projectFilters: string[];
   includeNoProject: boolean;
@@ -175,21 +175,21 @@ function issueIsWorking(issueId: string, context: IssueFilterContext) {
  * Filter issues using positive selection model.
  * Empty arrays = no filter (show all). Non-empty = show only matching.
  *
- * Assignee has a special "No assignee" toggle (includeNoAssignee):
- * - When only includeNoAssignee is true → show only unassigned issues
- * - When assigneeFilters has items → show only those assignees' issues
- * - When both → show matching assignees + unassigned
+ * Executor has a special "No executor" toggle (includeNoExecutor):
+ * - When only includeNoExecutor is true → show only unassigned issues
+ * - When executorFilters has items → show only those actors' issues
+ * - When both → show matching actors + unassigned
  */
 export function applyIssueFilters(
   issues: Issue[],
   filters: IssueFilterState,
   context: IssueFilterContext = {},
 ): Issue[] {
-  const { statusFilters, priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters, projectFilters, includeNoProject, labelFilters, workingOnly } = filters;
-  const hasAssigneeFilter =
-    filters.assigneeFilterActive === true ||
-    assigneeFilters.length > 0 ||
-    includeNoAssignee;
+  const { statusFilters, priorityFilters, executorFilters, includeNoExecutor, creatorFilters, projectFilters, includeNoProject, labelFilters, workingOnly } = filters;
+  const hasExecutorFilter =
+    filters.executorFilterActive === true ||
+    executorFilters.length > 0 ||
+    includeNoExecutor;
   const hasProjectFilter = projectFilters.length > 0 || includeNoProject;
   // Empty set passed without `agentRunningFilter` is a no-op. When the
   // filter is on but the set is missing/empty, hide everything — the
@@ -209,19 +209,19 @@ export function applyIssueFilters(
     if (priorityFilters.length > 0 && !priorityFilters.includes(issue.priority))
       return false;
 
-    if (hasAssigneeFilter) {
-      const assigneeType = issue.executor_type ?? issue.owner_type;
-      const assigneeId = issue.executor_id ?? issue.owner_id;
-      if (!assigneeId) {
-        // Unassigned issue — show only if "No assignee" is checked
-        if (!includeNoAssignee) return false;
-      } else if (assigneeFilters.length > 0) {
-        // Assigned issue — show only if assignee is in the filter list
-        if (!assigneeFilters.some(
-          (f) => f.type === assigneeType && f.id === assigneeId,
+    if (hasExecutorFilter) {
+      const executorType = issue.executor_type ?? issue.owner_type;
+      const executorId = issue.executor_id ?? issue.owner_id;
+      if (!executorId) {
+        // Unassigned issue — show only if "No executor" is checked
+        if (!includeNoExecutor) return false;
+      } else if (executorFilters.length > 0) {
+        // Assigned issue — show only if the actor is in the filter list
+        if (!executorFilters.some(
+          (f) => f.type === executorType && f.id === executorId,
         )) return false;
       } else {
-        // Only "No assignee" is checked, no specific assignees → hide assigned issues
+        // Only "No executor" is checked, no specific actors → hide assigned issues
         return false;
       }
     }
@@ -266,9 +266,9 @@ export function filterIssues(issues: Issue[], filters: IssueFilters): Issue[] {
     {
       statusFilters: filters.statusFilters,
       priorityFilters: filters.priorityFilters,
-      assigneeFilters: filters.assigneeFilters,
-      includeNoAssignee: filters.includeNoAssignee,
-      assigneeFilterActive: filters.assigneeFilterActive,
+      executorFilters: filters.executorFilters,
+      includeNoExecutor: filters.includeNoExecutor,
+      executorFilterActive: filters.executorFilterActive,
       creatorFilters: filters.creatorFilters,
       projectFilters: filters.projectFilters,
       includeNoProject: filters.includeNoProject,

@@ -103,7 +103,7 @@ function columnValue(
       return issue.status;
     case "priority":
       return issue.priority;
-    case "assignee":
+    case "executor":
       return issue.executor_id;
     case "labels":
       return issue.labels?.map((label) => label.name).join(", ");

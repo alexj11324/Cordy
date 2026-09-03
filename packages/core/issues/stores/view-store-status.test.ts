@@ -1,7 +1,11 @@
 // @vitest-environment node
 import { describe, expect, it, beforeEach } from "vitest";
 import { createStore, type StoreApi } from "zustand/vanilla";
-import { viewStoreSlice, type IssueViewState } from "./view-store";
+import {
+  mergeViewStatePersisted,
+  viewStoreSlice,
+  type IssueViewState,
+} from "./view-store";
 import { baselineFromQuery } from "../../issue-views/baseline";
 
 /**
@@ -72,5 +76,45 @@ describe("saved view baseline", () => {
     const baseline = baselineFromQuery({ statusFilters: ["", "qa"] });
 
     expect([...baseline.status]).toEqual(["qa"]);
+  });
+});
+
+describe("legacy assignee view-state migration", () => {
+  it("normalizes every persisted view dimension to executor", () => {
+    const store = createStore<IssueViewState>()((set) => viewStoreSlice(set));
+    const merged = mergeViewStatePersisted(
+      {
+        grouping: "assignee",
+        assigneeFilters: [{ type: "agent", id: "agent-1" }],
+        includeNoAssignee: true,
+        cardProperties: { assignee: false },
+        swimlaneGrouping: "assignee",
+        swimlaneOrders: { assignee: ["agent:agent-1"] },
+        collapsedSwimlanes: { assignee: ["agent:agent-2"] },
+        tableColumns: [
+          { key: "title", width: 320 },
+          { key: "assignee", width: 180 },
+        ],
+        tableGrouping: "assignee",
+      },
+      store.getState(),
+    );
+
+    expect(merged.grouping).toBe("executor");
+    expect(merged.executorFilters).toEqual([
+      { type: "agent", id: "agent-1" },
+    ]);
+    expect(merged.includeNoExecutor).toBe(true);
+    expect(merged.cardProperties.executor).toBe(false);
+    expect(merged.swimlaneGrouping).toBe("executor");
+    expect(merged.swimlaneOrders.executor).toEqual(["agent:agent-1"]);
+    expect(merged.collapsedSwimlanes.executor).toEqual(["agent:agent-2"]);
+    expect(merged.tableColumns.map((column) => column.key)).toEqual([
+      "title",
+      "executor",
+    ]);
+    expect(merged.tableGrouping).toBe("executor");
+    expect(merged).not.toHaveProperty("assigneeFilters");
+    expect(merged.cardProperties).not.toHaveProperty("assignee");
   });
 });

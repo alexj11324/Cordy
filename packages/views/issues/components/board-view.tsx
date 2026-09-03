@@ -304,7 +304,7 @@ function BoardViewImpl({
   const applyPropertyGroupValue = useCallback(
     (group: BoardColumnGroup, issueId: string) => {
       if (group.propertyId === undefined) return;
-      // Surface failures like status/assignee drags do (use-issue-surface-
+      // Surface failures like status/executor drags do (use-issue-surface-
       // actions): the mutation rolls the card back, but without a toast the
       // snap-back reads as a UI glitch instead of a rejected write.
       const onError = (err: unknown) => {
@@ -347,7 +347,7 @@ function BoardViewImpl({
     [groupBranches, issues],
   );
   const hydratedAssigneeGroups = useMemo<BoardColumnGroup[] | undefined>(() => {
-    if (grouping === "assignee" && groupBranches?.enabled) {
+    if (grouping === "executor" && groupBranches?.enabled) {
       return groupBranches.descriptors.flatMap((descriptor): BoardColumnGroup[] => {
         if (descriptor.value.kind !== "assignee") return [];
         const actorRef = descriptor.value.actor;
@@ -362,7 +362,7 @@ function BoardViewImpl({
           id: descriptor.key,
           title: actor
             ? getActorName(actor.type, actor.id)
-            : t(($) => $.filters.no_assignee),
+            : t(($) => $.filters.no_executor),
           assigneeType: actor?.type ?? null,
           assigneeId: actor?.id ?? null,
           totalCount: descriptor.count,
@@ -451,7 +451,7 @@ function BoardViewImpl({
           getActorName,
           groupingProperty,
           projectMap,
-          noAssigneeLabel: t(($) => $.filters.no_assignee),
+          noAssigneeLabel: t(($) => $.filters.no_executor),
           noValueLabel: t(($) => $.board.no_value),
           ...projectColumnLabels,
         });
@@ -613,7 +613,7 @@ function BoardViewImpl({
       const map = issueMapRef.current;
 
       if (sortBy !== "position") {
-        // Cross-column: only update group (status/assignee), keep original position.
+        // Cross-column: only update group (status/executor), keep original position.
         const currentIssue = map.get(activeId);
         if (!currentIssue || issueMatchesGroup(currentIssue, finalGroup)) {
           resetColumns();

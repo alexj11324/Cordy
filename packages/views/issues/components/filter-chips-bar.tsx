@@ -81,7 +81,7 @@ function IconStack({ children }: { children: ReactNode[] }) {
  * Name lookup for chip values, keyed the way filters actually store actors.
  *
  * Members are keyed by `user_id`, NOT by the membership row id: every actor
- * filter value — assignee, creator, and actor properties — carries the user
+ * filter value — executor, creator, and actor properties — carries the user
  * id. Keying by `Member.id` silently resolved nothing (MUL-6286 review).
  *
  * Returns undefined for anything unresolved so the caller can omit it, rather
@@ -186,8 +186,8 @@ function useFilterChips(
 
   const statusFilters = useViewStore((s) => s.statusFilters);
   const priorityFilters = useViewStore((s) => s.priorityFilters);
-  const assigneeFilters = useViewStore((s) => s.assigneeFilters);
-  const includeNoAssignee = useViewStore((s) => s.includeNoAssignee);
+  const executorFilters = useViewStore((s) => s.executorFilters);
+  const includeNoExecutor = useViewStore((s) => s.includeNoExecutor);
   const creatorFilters = useViewStore((s) => s.creatorFilters);
   const projectFilters = useViewStore((s) => s.projectFilters);
   const includeNoProject = useViewStore((s) => s.includeNoProject);
@@ -198,8 +198,8 @@ function useFilterChips(
   const hasStoreFilters =
     statusFilters.length > 0 ||
     priorityFilters.length > 0 ||
-    assigneeFilters.length > 0 ||
-    includeNoAssignee ||
+    executorFilters.length > 0 ||
+    includeNoExecutor ||
     creatorFilters.length > 0 ||
     projectFilters.length > 0 ||
     includeNoProject ||
@@ -223,15 +223,15 @@ function useFilterChips(
     ...memberListOptions(wsId),
     enabled:
       enabled &&
-      (assigneeFilters.length > 0 || creatorFilters.length > 0 || hasActorPropertyFilter),
+      (executorFilters.length > 0 || creatorFilters.length > 0 || hasActorPropertyFilter),
   });
   const { data: agents = [] } = useQuery({
     ...agentListOptions(wsId),
-    enabled: enabled && (assigneeFilters.length > 0 || creatorFilters.length > 0),
+    enabled: enabled && (executorFilters.length > 0 || creatorFilters.length > 0),
   });
   const { data: teams = [] } = useQuery({
     ...teamListOptions(wsId),
-    enabled: enabled && assigneeFilters.some((f) => f.type === "team"),
+    enabled: enabled && executorFilters.some((f) => f.type === "team"),
   });
   const { data: projects = [] } = useQuery({
     ...projectListOptions(wsId),
@@ -259,8 +259,8 @@ function useFilterChips(
     const current: FilterSnapshot = {
       statusFilters: s.statusFilters,
       priorityFilters: s.priorityFilters,
-      assigneeFilters: s.assigneeFilters,
-      includeNoAssignee: s.includeNoAssignee,
+      executorFilters: s.executorFilters,
+      includeNoExecutor: s.includeNoExecutor,
       creatorFilters: s.creatorFilters,
       projectFilters: s.projectFilters,
       includeNoProject: s.includeNoProject,
@@ -274,11 +274,11 @@ function useFilterChips(
       case "priority":
         s.resetFiltersTo({ ...current, priorityFilters: raw.priorityFilters });
         break;
-      case "assignee":
+      case "executor":
         s.resetFiltersTo({
           ...current,
-          assigneeFilters: raw.assigneeFilters,
-          includeNoAssignee: raw.includeNoAssignee,
+          executorFilters: raw.executorFilters,
+          includeNoExecutor: raw.includeNoExecutor,
         });
         break;
       case "creator":
@@ -312,12 +312,12 @@ function useFilterChips(
   const deltaPriority = baseline
     ? priorityFilters.filter((p) => !baseline.priority.has(p))
     : priorityFilters;
-  const deltaAssignees = baseline
-    ? assigneeFilters.filter((a) => !baseline.assignee.has(actorFilterKey(a)))
-    : assigneeFilters;
-  const deltaNoAssignee = baseline
-    ? includeNoAssignee && !baseline.includeNoAssignee
-    : includeNoAssignee;
+  const deltaExecutors = baseline
+    ? executorFilters.filter((actor) => !baseline.executor.has(actorFilterKey(actor)))
+    : executorFilters;
+  const deltaNoExecutor = baseline
+    ? includeNoExecutor && !baseline.includeNoExecutor
+    : includeNoExecutor;
   const deltaCreators = baseline
     ? creatorFilters.filter((a) => !baseline.creator.has(actorFilterKey(a)))
     : creatorFilters;
@@ -387,16 +387,16 @@ function useFilterChips(
       onRemove: () => clearDimension("priority"),
     });
   }
-  if (deltaAssignees.length > 0 || deltaNoAssignee) {
-    const names = deltaAssignees.map(actorName);
-    if (deltaNoAssignee) names.push(t(($) => $.filters.no_assignee));
+  if (deltaExecutors.length > 0 || deltaNoExecutor) {
+    const names = deltaExecutors.map(actorName);
+    if (deltaNoExecutor) names.push(t(($) => $.filters.no_executor));
     chips.push({
-      key: "assignee",
+      key: "executor",
       icon: <User className={CHIP_ICON_CLASS} />,
-      label: t(($) => $.filters.section_assignee),
-      valueIcons: deltaAssignees.length > 0 ? <AvatarStack actors={deltaAssignees} /> : undefined,
+      label: t(($) => $.filters.section_executor),
+      valueIcons: deltaExecutors.length > 0 ? <AvatarStack actors={deltaExecutors} /> : undefined,
       value: summarize(names),
-      onRemove: () => clearDimension("assignee"),
+      onRemove: () => clearDimension("executor"),
     });
   }
   if (deltaCreators.length > 0) {

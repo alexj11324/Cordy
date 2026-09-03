@@ -84,7 +84,7 @@ export const BoardCardContent = memo(function BoardCardContent({
 
   const showPriority = storeProperties.priority;
   const showDescription = storeProperties.description && issue.description;
-  const showExecutorSection = storeProperties.assignee;
+  const showExecutorSection = storeProperties.executor;
   const hasExecutor = !!issue.executor_type && !!issue.executor_id;
   const showStartDate = storeProperties.startDate && issue.start_date;
   const showDueDate = storeProperties.dueDate && issue.due_date;
@@ -175,7 +175,7 @@ export const BoardCardContent = memo(function BoardCardContent({
 
   return (
     <div className="rounded-lg border-[0.5px] border-surface-border bg-surface py-3 px-2.5 shadow-[var(--surface-shadow)] transition-colors group-hover/card:border-foreground/15 group-hover/card:bg-surface-hover group-data-[popup-open]/card:border-foreground/15 group-data-[popup-open]/card:bg-surface-hover">
-      {/* Row 1: priority + identifier (left), agent activity + assignee (right) */}
+      {/* Row 1: priority + identifier (left), agent activity + executor (right) */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 min-w-0">
           {priorityIconNode}
@@ -226,7 +226,7 @@ export const BoardCardContent = memo(function BoardCardContent({
         </div>
       )}
 
-      {/* Meta row: assignee (left), start date, due date, child progress (right) */}
+      {/* Meta row: executor (left), start date, due date, child progress (right) */}
       {showMetaRow && (
         <div className="mt-2 flex items-center justify-between gap-2">
           {showExecutorSection && (

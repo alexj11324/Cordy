@@ -299,11 +299,11 @@ vi.mock("@patchbay/core/issues/config", () => ({
 // Mock view store
 const mockViewState = {
   viewMode: "board" as "board" | "list",
-  grouping: "status" as "status" | "assignee",
+  grouping: "status" as "status" | "executor",
   statusFilters: [] as string[],
   priorityFilters: [] as string[],
-  assigneeFilters: [] as { type: string; id: string }[],
-  includeNoAssignee: false,
+  executorFilters: [] as { type: string; id: string }[],
+  includeNoExecutor: false,
   creatorFilters: [] as { type: string; id: string }[],
   projectFilters: [] as string[],
   includeNoProject: false,
@@ -312,12 +312,12 @@ const mockViewState = {
   cardPropertyIds: [] as string[],
   sortBy: "position" as const,
   sortDirection: "asc" as const,
-  cardProperties: { priority: true, description: true, assignee: true, dueDate: true, project: true, childProgress: true, labels: true },
+  cardProperties: { priority: true, description: true, executor: true, dueDate: true, project: true, childProgress: true, labels: true },
   tableColumns: [
     { key: "title", width: 360 },
     { key: "status", width: 150 },
     { key: "priority", width: 130 },
-    { key: "assignee", width: 180 },
+    { key: "executor", width: 180 },
     { key: "due_date", width: 140 },
     { key: "labels", width: 220 },
   ],
@@ -327,8 +327,8 @@ const mockViewState = {
   setGrouping: vi.fn(),
   toggleStatusFilter: vi.fn(),
   togglePriorityFilter: vi.fn(),
-  toggleAssigneeFilter: vi.fn(),
-  toggleNoAssignee: vi.fn(),
+  toggleExecutorFilter: vi.fn(),
+  toggleNoExecutor: vi.fn(),
   toggleCreatorFilter: vi.fn(),
   toggleProjectFilter: vi.fn(),
   toggleNoProject: vi.fn(),
@@ -370,12 +370,12 @@ vi.mock("@patchbay/core/issues/stores/view-store", () => ({
   ],
   GROUPING_OPTIONS: [
     { value: "status", label: "Status" },
-    { value: "assignee", label: "Assignee" },
+    { value: "executor", label: "Executor" },
   ],
   CARD_PROPERTY_OPTIONS: [
     { key: "priority", label: "Priority" },
     { key: "description", label: "Description" },
-    { key: "assignee", label: "Assignee" },
+    { key: "executor", label: "Executor" },
     { key: "dueDate", label: "Due date" },
     { key: "project", label: "Project" },
     { key: "labels", label: "Labels" },
@@ -752,23 +752,23 @@ describe("IssuesPage (shared)", () => {
     expect(screen.getAllByText("In Progress").length).toBeGreaterThanOrEqual(1);
   });
 
-  it("groups board columns by assignee", async () => {
-    mockViewState.grouping = "assignee";
+  it("groups board columns by executor", async () => {
+    mockViewState.grouping = "executor";
     mockListGroupedIssues.mockResolvedValue(mockAssigneeGroups(mockIssues));
 
     renderWithQuery(<IssuesPage />);
 
-    // "Test User" renders both as the assignee group header and on the
-    // assignee chip of each card grouped under that header, so a unique
+    // "Test User" renders both as the executor group header and on the
+    // executor chip of each card grouped under that header, so a unique
     // match is not guaranteed.
     await screen.findAllByText("Test User");
     expect(screen.getAllByText("Agent One").length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText("Team One").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("No assignee")).toBeInTheDocument();
+    expect(screen.getByText("No executor")).toBeInTheDocument();
   });
 
   it("uses table group/row branches instead of the legacy status sweep", async () => {
-    mockViewState.grouping = "assignee";
+    mockViewState.grouping = "executor";
     mockListGroupedIssues.mockResolvedValue(mockAssigneeGroups(mockIssues));
 
     renderWithQuery(<IssuesPage />);

@@ -53,7 +53,7 @@ vi.mock("@patchbay/core/paths", async () => {
   };
 });
 
-// Stub backend-bound hooks that the swimlane invokes for assignee groupings.
+// Stub backend-bound hooks that the swimlane invokes for executor groupings.
 // The hook MUST return a stable reference each call
 // — production `useActorName` wraps its returns in `useMemo`, and the
 // swimlane feeds the result into a `useMemo(..., [getActorName, ...])`
@@ -124,7 +124,7 @@ vi.mock("@patchbay/core/issues/config", () => ({
   },
 }));
 
-type SwimlaneGroupingMock = "parent" | "project" | "assignee";
+type SwimlaneGroupingMock = "parent" | "project" | "executor";
 
 // Mock view store. The lane order and collapsed-lane fields are mutable
 // records on the captured object so tests can simulate persisted state
@@ -145,8 +145,8 @@ const mockViewState: {
   hideStatus: (s: string) => void;
   showStatus: (s: string) => void;
   priorityFilters?: string[];
-  assigneeFilters?: any[];
-  includeNoAssignee?: boolean;
+  executorFilters?: any[];
+  includeNoExecutor?: boolean;
   creatorFilters?: any[];
   projectFilters?: string[];
   includeNoProject?: boolean;
@@ -157,18 +157,18 @@ const mockViewState: {
 } = {
   sortBy: "position",
   sortDirection: "asc",
-  cardProperties: { priority: true, description: true, assignee: true, dueDate: true, project: true, childProgress: true, labels: true },
+  cardProperties: { priority: true, description: true, executor: true, dueDate: true, project: true, childProgress: true, labels: true },
   swimlaneGrouping: "parent",
-  swimlaneOrders: { parent: [], project: [], assignee: [] },
-  collapsedSwimlanes: { parent: [], project: [], assignee: [] },
+  swimlaneOrders: { parent: [], project: [], executor: [] },
+  collapsedSwimlanes: { parent: [], project: [], executor: [] },
   setSwimlaneGrouping: vi.fn(),
   setSwimlaneOrder: vi.fn(),
   toggleSwimlaneCollapsed: vi.fn(),
   hideStatus: vi.fn(),
   showStatus: vi.fn(),
   priorityFilters: [],
-  assigneeFilters: [],
-  includeNoAssignee: false,
+  executorFilters: [],
+  includeNoExecutor: false,
   creatorFilters: [],
   projectFilters: [],
   includeNoProject: false,
@@ -402,11 +402,11 @@ describe("SwimLaneView", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockViewState.swimlaneGrouping = "parent";
-    mockViewState.swimlaneOrders = { parent: [], project: [], assignee: [] };
-    mockViewState.collapsedSwimlanes = { parent: [], project: [], assignee: [] };
+    mockViewState.swimlaneOrders = { parent: [], project: [], executor: [] };
+    mockViewState.collapsedSwimlanes = { parent: [], project: [], executor: [] };
     mockViewState.priorityFilters = [];
-    mockViewState.assigneeFilters = [];
-    mockViewState.includeNoAssignee = false;
+    mockViewState.executorFilters = [];
+    mockViewState.includeNoExecutor = false;
     mockViewState.creatorFilters = [];
     mockViewState.projectFilters = [];
     mockViewState.includeNoProject = false;
@@ -1471,8 +1471,8 @@ describe("SwimLaneView", () => {
     },
   ];
 
-  it("groups by assignee when swimlaneGrouping is 'assignee'", () => {
-    mockViewState.swimlaneGrouping = "assignee";
+  it("groups by executor when swimlaneGrouping is 'executor'", () => {
+    mockViewState.swimlaneGrouping = "executor";
 
     renderWithI18n(
       <SwimLaneView issues={assigneeIssues} onMoveIssue={vi.fn()} />,
@@ -1488,14 +1488,14 @@ describe("SwimLaneView", () => {
   });
 
   it("emits executor_type + executor_id when a card is dropped into an actor lane", () => {
-    mockViewState.swimlaneGrouping = "assignee";
+    mockViewState.swimlaneGrouping = "executor";
     const mockOnMoveIssue = vi.fn();
 
     renderWithI18n(
       <SwimLaneView issues={assigneeIssues} onMoveIssue={mockOnMoveIssue} />,
     );
 
-    const target = "swim:assignee:member:user-1:in_review";
+    const target = "swim:executor:member:user-1:in_review";
     act(() => {
       lastOnDragOver({ active: { id: "issue-z" }, over: { id: target } });
     });
@@ -1516,15 +1516,15 @@ describe("SwimLaneView", () => {
     );
   });
 
-  it("emits null assignee when a card is dropped into the 'Unassigned' lane", () => {
-    mockViewState.swimlaneGrouping = "assignee";
+  it("emits null executor when a card is dropped into the 'Unassigned' lane", () => {
+    mockViewState.swimlaneGrouping = "executor";
     const mockOnMoveIssue = vi.fn();
 
     renderWithI18n(
       <SwimLaneView issues={assigneeIssues} onMoveIssue={mockOnMoveIssue} />,
     );
 
-    const target = "swim:assignee:none:done";
+    const target = "swim:executor:none:done";
     act(() => {
       lastOnDragOver({ active: { id: "issue-x" }, over: { id: target } });
     });
@@ -1818,8 +1818,8 @@ describe("SwimLaneView", () => {
         issues={[grandparent, parent]}
         activeFilters={{
           priorityFilters: ["high"],
-          assigneeFilters: [],
-          includeNoAssignee: false,
+          executorFilters: [],
+          includeNoExecutor: false,
           creatorFilters: [],
           projectFilters: [],
           includeNoProject: false,
@@ -1918,8 +1918,8 @@ describe("SwimLaneView", () => {
         issues={[grandparent, parent]}
         activeFilters={{
           priorityFilters: [],
-          assigneeFilters: [],
-          includeNoAssignee: false,
+          executorFilters: [],
+          includeNoExecutor: false,
           agentRunningFilter: true,
           runningIssueIds: new Set(["gc-running"]),
           creatorFilters: [],
@@ -1961,8 +1961,8 @@ describe("SwimLaneView", () => {
         issues={[parent]}
         activeFilters={{
           priorityFilters: [],
-          assigneeFilters: [],
-          includeNoAssignee: false,
+          executorFilters: [],
+          includeNoExecutor: false,
           agentRunningFilter: true,
           runningIssueIds: new Set(),
           creatorFilters: [],
@@ -2048,8 +2048,8 @@ describe("SwimLaneView", () => {
         issues={[grandparent, parent]}
         activeFilters={{
           priorityFilters: [],
-          assigneeFilters: [],
-          includeNoAssignee: false,
+          executorFilters: [],
+          includeNoExecutor: false,
           creatorFilters: [],
           projectFilters: [],
           includeNoProject: false,

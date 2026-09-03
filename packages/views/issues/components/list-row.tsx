@@ -76,7 +76,7 @@ function ListRowContent({
     : issue.owner_type && issue.owner_id
       ? { type: issue.owner_type, id: issue.owner_id }
       : null;
-  const showAssignee = storeProperties.assignee && assignee;
+  const showAssignee = storeProperties.executor && assignee;
   const showStartDate = storeProperties.startDate && issue.start_date;
   const showDueDate = storeProperties.dueDate && issue.due_date;
   const showLabels = storeProperties.labels && labels.length > 0;
