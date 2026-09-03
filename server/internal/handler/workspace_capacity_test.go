@@ -58,11 +58,12 @@ func TestCreateWorkspaceGuestLimitSerializesConcurrentRequests(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		_, _ = testPool.Exec(context.Background(), `
-DELETE FROM issue_status WHERE workspace_id IN (SELECT id FROM workspace WHERE slug = ANY($1));
-DELETE FROM member WHERE user_id = $2;
-DELETE FROM workspace WHERE slug = ANY($1);
-DELETE FROM "user" WHERE id = $2`, []string{firstSlug, secondSlug}, userID)
+		cleanupContext := context.Background()
+		slugs := []string{firstSlug, secondSlug}
+		_, _ = testPool.Exec(cleanupContext, `DELETE FROM issue_status WHERE workspace_id IN (SELECT id FROM workspace WHERE slug = ANY($1))`, slugs)
+		_, _ = testPool.Exec(cleanupContext, `DELETE FROM member WHERE user_id = $1`, userID)
+		_, _ = testPool.Exec(cleanupContext, `DELETE FROM workspace WHERE slug = ANY($1)`, slugs)
+		_, _ = testPool.Exec(cleanupContext, `DELETE FROM "user" WHERE id = $1`, userID)
 	})
 
 	start := make(chan struct{})
@@ -103,19 +104,22 @@ func TestCreateWorkspaceHostedLimitSerializesConcurrentOwnership(t *testing.T) {
 	sourceSlug := "hosted-source-" + key
 	firstSlug := "hosted-first-" + key
 	secondSlug := "hosted-second-" + key
-	_, err := testPool.Exec(ctx, `
-INSERT INTO "user" (id, name, email) VALUES ($1, 'Hosted quota user', $2);
-INSERT INTO workspace (id, name, slug, issue_prefix) VALUES ($3, 'Hosted source', $4, 'HOST');
-INSERT INTO member (workspace_id, user_id, role) VALUES ($3, $1, 'owner')`, userID, fmt.Sprintf("hosted-%s@example.test", key), sourceWorkspaceID, sourceSlug)
-	if err != nil {
+	if _, err := testPool.Exec(ctx, `INSERT INTO "user" (id, name, email) VALUES ($1, 'Hosted quota user', $2)`, userID, fmt.Sprintf("hosted-%s@example.test", key)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testPool.Exec(ctx, `INSERT INTO workspace (id, name, slug, issue_prefix) VALUES ($1, 'Hosted source', $2, 'HOST')`, sourceWorkspaceID, sourceSlug); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testPool.Exec(ctx, `INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'owner')`, sourceWorkspaceID, userID); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		_, _ = testPool.Exec(context.Background(), `
-DELETE FROM issue_status WHERE workspace_id IN (SELECT id FROM workspace WHERE slug = ANY($1));
-DELETE FROM member WHERE user_id = $2;
-DELETE FROM workspace WHERE slug = ANY($1);
-DELETE FROM "user" WHERE id = $2`, []string{sourceSlug, firstSlug, secondSlug}, userID)
+		cleanupContext := context.Background()
+		slugs := []string{sourceSlug, firstSlug, secondSlug}
+		_, _ = testPool.Exec(cleanupContext, `DELETE FROM issue_status WHERE workspace_id IN (SELECT id FROM workspace WHERE slug = ANY($1))`, slugs)
+		_, _ = testPool.Exec(cleanupContext, `DELETE FROM member WHERE user_id = $1`, userID)
+		_, _ = testPool.Exec(cleanupContext, `DELETE FROM workspace WHERE slug = ANY($1)`, slugs)
+		_, _ = testPool.Exec(cleanupContext, `DELETE FROM "user" WHERE id = $1`, userID)
 	})
 	limit := 2
 	stub := entitlementtest.New()
@@ -167,25 +171,32 @@ func TestUpdateMemberHostedLimitBlocksOwnerPromotion(t *testing.T) {
 	targetMemberID := uuid.New()
 	key := uuid.NewString()
 	slugs := []string{"promotion-one-" + key, "promotion-two-" + key, "promotion-target-" + key}
-	_, err := testPool.Exec(ctx, `
-INSERT INTO "user" (id, name, email) VALUES ($1, 'Promotion target', $2);
+	if _, err := testPool.Exec(ctx, `INSERT INTO "user" (id, name, email) VALUES ($1, 'Promotion target', $2)`, targetUserID, fmt.Sprintf("promotion-%s@example.test", key)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testPool.Exec(ctx, `
 INSERT INTO workspace (id, name, slug, issue_prefix) VALUES
-  ($3, 'Promotion one', $6, 'PRO1'),
-  ($4, 'Promotion two', $7, 'PRO2'),
-  ($5, 'Promotion target', $8, 'PRO3');
+  ($1, 'Promotion one', $4, 'PRO1'),
+  ($2, 'Promotion two', $5, 'PRO2'),
+  ($3, 'Promotion target', $6, 'PRO3')`, sourceOne, sourceTwo, targetWorkspaceID, slugs[0], slugs[1], slugs[2]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testPool.Exec(ctx, `
 INSERT INTO member (workspace_id, user_id, role) VALUES
-  ($3, $1, 'owner'),
-  ($4, $1, 'owner'),
-  ($5, $9, 'owner');
-INSERT INTO member (id, workspace_id, user_id, role) VALUES ($10, $5, $1, 'member')`, targetUserID, fmt.Sprintf("promotion-%s@example.test", key), sourceOne, sourceTwo, targetWorkspaceID, slugs[0], slugs[1], slugs[2], testUserID, targetMemberID)
-	if err != nil {
+  ($1, $4, 'owner'),
+  ($2, $4, 'owner'),
+  ($3, $5, 'owner')`, sourceOne, sourceTwo, targetWorkspaceID, targetUserID, testUserID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testPool.Exec(ctx, `INSERT INTO member (id, workspace_id, user_id, role) VALUES ($1, $2, $3, 'member')`, targetMemberID, targetWorkspaceID, targetUserID); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		_, _ = testPool.Exec(context.Background(), `
-DELETE FROM member WHERE workspace_id = ANY($1);
-DELETE FROM workspace WHERE id = ANY($1);
-DELETE FROM "user" WHERE id = $2`, []uuid.UUID{sourceOne, sourceTwo, targetWorkspaceID}, targetUserID)
+		cleanupContext := context.Background()
+		workspaceIDs := []uuid.UUID{sourceOne, sourceTwo, targetWorkspaceID}
+		_, _ = testPool.Exec(cleanupContext, `DELETE FROM member WHERE workspace_id = ANY($1)`, workspaceIDs)
+		_, _ = testPool.Exec(cleanupContext, `DELETE FROM workspace WHERE id = ANY($1)`, workspaceIDs)
+		_, _ = testPool.Exec(cleanupContext, `DELETE FROM "user" WHERE id = $1`, targetUserID)
 	})
 	limit := 2
 	stub := entitlementtest.New()
