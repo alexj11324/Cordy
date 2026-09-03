@@ -1,54 +1,191 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { LarkTab } from "./lark-tab";
-import { ComposioTab } from "./composio-tab";
-import { SlackTab } from "./slack-tab";
-import { DingTalkTab } from "./dingtalk-tab";
-import { VCSTab } from "./vcs-tab";
-import { WecomTab } from "./wecom-tab";
-import { WeixinTab } from "./weixin-tab";
-import { TelegramTab } from "./telegram-tab";
-import { LinearIntegrationCard } from "./linear-tab";
+import { CircleAlert, Loader2, Settings2 } from "lucide-react";
 import { ApiError } from "@patchbay/core/api";
 import { useAuthStore } from "@patchbay/core/auth";
 import { composioToolkitsOptions } from "@patchbay/core/composio";
-import { useCurrentWorkspace } from "@patchbay/core/paths";
-import { memberListOptions } from "@patchbay/core/workspace/queries";
 import { useConfigStore, useFeatureEnabled } from "@patchbay/core/config";
+import { dingtalkInstallationsOptions } from "@patchbay/core/dingtalk";
 import {
   COMPOSIO_MCP_APPS_FLAG,
   LINEAR_INSTALLATION_FOUNDATION_FLAG,
 } from "@patchbay/core/feature-flags";
+import { larkInstallationsOptions } from "@patchbay/core/lark";
+import { useCurrentWorkspace } from "@patchbay/core/paths";
+import { slackInstallationsOptions } from "@patchbay/core/slack";
+import { telegramInstallationsOptions } from "@patchbay/core/telegram";
+import type { MessagingConnectionSource } from "@patchbay/core/types";
+import { wecomInstallationsOptions } from "@patchbay/core/wecom";
+import { weixinInstallationsOptions } from "@patchbay/core/weixin";
+import { memberListOptions } from "@patchbay/core/workspace/queries";
+import { Badge } from "@patchbay/ui/components/ui/badge";
+import { Button } from "@patchbay/ui/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@patchbay/ui/components/ui/dialog";
 import { useT } from "../../i18n";
+import { ComposioTab } from "./composio-tab";
+import { DingTalkTab } from "./dingtalk-tab";
+import { IntegrationCard } from "./integration-card";
+import type { IntegrationChannel } from "./integration-channel-icon";
+import { IntegrationSetupGuide } from "./integration-setup-guide";
+import { LarkTab } from "./lark-tab";
+import { LinearIntegrationCard } from "./linear-tab";
+import { MessagingConnectionStatus } from "./messaging-connection-status";
 import { SettingsSection, SettingsTab } from "./settings-layout";
-import { IntegrationChannelIcon } from "./integration-channel-icon";
+import { SlackTab } from "./slack-tab";
+import { TelegramTab } from "./telegram-tab";
+import { VCSTab } from "./vcs-tab";
+import { WecomTab } from "./wecom-tab";
+import { WeixinTab } from "./weixin-tab";
 
-// Integrations is the umbrella tab for third-party platform connections.
-// GitHub has its own top-level tab (see github-tab.tsx); everything else
-// — currently Lark, Composio, Slack, Telegram, the self-hosted Git providers
-// (Forgejo / Gitea / GitLab), and WeCom smart-bot, with Linear etc. to follow —
-// lives in here under its own section heading so additional integrations slot
-// in without changing the IA. IntegrationsTab is just the host; each
-// integration owns its own description and install flow.
+type MessagingChannel = Exclude<IntegrationChannel, "linear">;
+
+type InstallationSummary = MessagingConnectionSource & {
+  id: string;
+  agent_id: string | null;
+};
+
+type InstallationListing = {
+  configured: boolean;
+  install_supported?: boolean;
+  installations: readonly InstallationSummary[];
+};
+
+type IntegrationQuery = {
+  data?: InstallationListing;
+  isError: boolean;
+  isLoading: boolean;
+};
+
+function isWorkspaceInstallation(agentId: string | null | undefined): boolean {
+  return agentId == null || agentId === "";
+}
+
+function installedWorkspaceHub(listing: InstallationListing | undefined) {
+  return listing?.installations.find(
+    (installation) =>
+      isWorkspaceInstallation(installation.agent_id) &&
+      installation.status === "installed",
+  );
+}
+
+function installedRecord(listing: InstallationListing | undefined) {
+  return listing?.installations.find(
+    (installation) => installation.status === "installed",
+  );
+}
+
+function ChannelStatus({ query }: { query: IntegrationQuery }) {
+  const { t } = useT("settings");
+  if (query.isLoading) {
+    return (
+      <Badge variant="secondary">
+        <Loader2 className="animate-spin" />
+        {t(($) => $.page.integrations_loading)}
+      </Badge>
+    );
+  }
+  if (query.isError || !query.data) {
+    return (
+      <Badge variant="destructive">
+        <CircleAlert />
+        {t(($) => $.page.integrations_unavailable)}
+      </Badge>
+    );
+  }
+  const hub = installedWorkspaceHub(query.data);
+  if (hub) return <MessagingConnectionStatus installation={hub} compact />;
+  if (installedRecord(query.data)) {
+    return <Badge variant="outline">{t(($) => $.page.integrations_existing_agent)}</Badge>;
+  }
+  if (!query.data.configured) {
+    return <Badge variant="outline">{t(($) => $.page.integrations_setup_required)}</Badge>;
+  }
+  return <Badge variant="outline">{t(($) => $.page.integrations_disconnected)}</Badge>;
+}
+
+function ChannelAction({
+  canManage,
+  isGuest,
+  onOpen,
+  query,
+  setupWritable,
+}: {
+  canManage: boolean;
+  isGuest: boolean;
+  onOpen: () => void;
+  query: IntegrationQuery;
+  setupWritable: boolean;
+}) {
+  const { t } = useT("settings");
+  if (isGuest) {
+    return <span className="text-caption text-muted-foreground">{t(($) => $.page.integrations_login_required)}</span>;
+  }
+  if (!setupWritable) {
+    return <span className="text-caption text-muted-foreground">{t(($) => $.page.integrations_server_managed)}</span>;
+  }
+  if (!canManage) {
+    return <span className="text-caption text-muted-foreground">{t(($) => $.page.integrations_admin_only)}</span>;
+  }
+  if (query.isLoading || query.isError || !query.data) {
+    return <span className="text-caption text-muted-foreground">{t(($) => $.page.integrations_unavailable)}</span>;
+  }
+  return (
+    <Button type="button" variant="outline" size="sm" onClick={onOpen}>
+      <Settings2 />
+      {installedRecord(query.data)
+        ? t(($) => $.page.integrations_manage)
+        : t(($) => $.page.integrations_configure)}
+    </Button>
+  );
+}
+
 export function IntegrationsTab({
   standalone = false,
 }: {
   standalone?: boolean;
 } = {}) {
   const { t } = useT("settings");
+  const workspace = useCurrentWorkspace();
+  const wsId = workspace?.id ?? "";
+  const user = useAuthStore((state) => state.user);
+  const { data: members = [] } = useQuery({
+    ...memberListOptions(wsId),
+    enabled: !!wsId,
+  });
+  const currentMember = members.find((member) => member.user_id === user?.id);
+  const canManage =
+    currentMember?.role === "owner" || currentMember?.role === "admin";
+  const isGuest = user?.is_guest === true;
+  const messaging = useConfigStore((state) => state.messaging);
+  const setupWritable = messaging?.setupWritable === true;
+  const [managedChannel, setManagedChannel] = useState<MessagingChannel | null>(null);
+
+  const lark = useQuery({ ...larkInstallationsOptions(wsId), enabled: !!wsId });
+  const slack = useQuery({ ...slackInstallationsOptions(wsId), enabled: !!wsId });
+  const dingtalk = useQuery({ ...dingtalkInstallationsOptions(wsId), enabled: !!wsId });
+  const wecom = useQuery({ ...wecomInstallationsOptions(wsId), enabled: !!wsId });
+  const telegram = useQuery({ ...telegramInstallationsOptions(wsId), enabled: !!wsId });
+  const weixin = useQuery({ ...weixinInstallationsOptions(wsId), enabled: !!wsId });
+  const listings: Record<MessagingChannel, IntegrationQuery> = {
+    lark,
+    slack,
+    dingtalk,
+    wecom,
+    telegram,
+    weixin,
+  };
+
   const linearEnabled = useFeatureEnabled(
     LINEAR_INSTALLATION_FOUNDATION_FLAG,
     false,
   );
-  const wsId = useCurrentWorkspace()?.id ?? "";
-  const user = useAuthStore((state) => state.user);
-  const members = useQuery({
-    ...memberListOptions(wsId),
-    enabled: linearEnabled && !!wsId,
-  });
-  const currentMember = members.data?.find((member) => member.user_id === user?.id);
-  const canManage = currentMember?.role === "owner" || currentMember?.role === "admin";
   const composioEnabled = useFeatureEnabled(COMPOSIO_MCP_APPS_FLAG, false);
   const composioToolkits = useQuery({
     ...composioToolkitsOptions(),
@@ -56,132 +193,121 @@ export function IntegrationsTab({
   });
   const composioUnconfigured =
     composioToolkits.error instanceof ApiError && composioToolkits.error.status === 503;
+  const vcsAvailable = useConfigStore((state) => state.vcsIntegrationAvailable);
 
-  // Self-host-only integration: the managed cloud reports this false (field
-  // omitted from /api/config), so the whole section — header included — is
-  // hidden there rather than showing an operator-only "missing key" message.
-  const vcsAvailable = useConfigStore((s) => s.vcsIntegrationAvailable);
-
-  const content = (
-    <>
-      <SettingsSection
-        title={
-          <span className="flex items-center gap-2">
-            <IntegrationChannelIcon channel="lark" />
-            {t(($) => $.lark.section_title)}
-          </span>
-        }
-        description={t(($) => $.lark.page_description)}
-      >
-        <LarkTab />
-      </SettingsSection>
-      {composioEnabled && !composioUnconfigured && (
-        <SettingsSection title={t(($) => $.composio.section_title)}>
-          <ComposioTab />
-        </SettingsSection>
-      )}
-      <SettingsSection
-        title={
-          <span className="flex items-center gap-2">
-            <IntegrationChannelIcon channel="slack" />
-            {t(($) => $.slack.section_title)}
-          </span>
-        }
-        description={t(($) => $.slack.page_description)}
-      >
-        <SlackTab />
-      </SettingsSection>
-      <SettingsSection
-        title={
-          <span className="flex items-center gap-2">
-            <IntegrationChannelIcon channel="dingtalk" />
-            {t(($) => $.dingtalk.section_title)}
-          </span>
-        }
-        description={t(($) => $.dingtalk.page_description)}
-      >
-        <DingTalkTab />
-      </SettingsSection>
-      {vcsAvailable && (
-        <SettingsSection title={t(($) => $.vcs.section_title)}>
-          <VCSTab />
-        </SettingsSection>
-      )}
-      {linearEnabled && (
-        <SettingsSection
-          title={
-            <span className="flex items-center gap-2">
-              <IntegrationChannelIcon channel="linear" />
-              {t(($) => $.page.linear.title)}
-            </span>
-          }
-          description={t(($) => $.page.linear.description)}
-        >
-          <LinearIntegrationCard
-            canManage={canManage}
-            isGuest={user?.is_guest === true}
-            workspaceId={wsId}
-          />
-        </SettingsSection>
-      )}
-      <SettingsSection
-        title={
-          <span className="flex items-center gap-2">
-            <IntegrationChannelIcon channel="wecom" />
-            {t(($) => $.wecom.section_title)}
-          </span>
-        }
-        description={t(($) => $.wecom.page_description)}
-      >
-        <WecomTab />
-      </SettingsSection>
-      <SettingsSection
-        title={
-          <span className="flex items-center gap-2">
-            <IntegrationChannelIcon channel="weixin" />
-            {t(($) => $.weixin.section_title)}
-          </span>
-        }
-        description={t(($) => $.weixin.page_description)}
-      >
-        <WeixinTab />
-      </SettingsSection>
-      <SettingsSection
-        title={
-          <span className="flex items-center gap-2">
-            <IntegrationChannelIcon channel="telegram" />
-            {t(($) => $.telegram.section_title)}
-          </span>
-        }
-        description={t(($) => $.telegram.page_description)}
-      >
-        <TelegramTab />
-      </SettingsSection>
-    </>
-  );
-
-  // Standalone route pages (e.g. the workspace integrations page) bring
-  // their own viewport scrolling, so they get the centered page chrome
-  // instead of the settings-tab heading.
-  if (standalone) {
+  function managedContent(channel: MessagingChannel) {
+    const listing = listings[channel].data;
+    if (installedRecord(listing)) {
+      return {
+        lark: <LarkTab />,
+        slack: <SlackTab />,
+        dingtalk: <DingTalkTab />,
+        wecom: <WecomTab />,
+        telegram: <TelegramTab />,
+        weixin: <WeixinTab />,
+      }[channel];
+    }
     return (
-      <div className="mx-auto w-full max-w-6xl space-y-8 p-4 sm:p-6 lg:p-8">
-        <SettingsTab
-          title={t(($) => $.page.integrations_title)}
-          description={t(($) => $.page.integrations_description)}
-        >
-          {content}
-        </SettingsTab>
+      <div className="space-y-5">
+        <IntegrationSetupGuide
+          channel={channel}
+          managed={messaging?.mode === "managed"}
+        />
+        <p className="text-caption text-muted-foreground">
+          {t(($) => $.page.integrations_setup_unavailable)}
+        </p>
       </div>
     );
   }
 
+  const content = (
+    <>
+      <section className="space-y-4">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {([
+            ["lark", t(($) => $.lark.section_title), t(($) => $.lark.page_description), "bg-[#3370FF]/10"],
+            ["slack", t(($) => $.slack.section_title), t(($) => $.slack.page_description), "bg-[#611f69]/10"],
+            ["dingtalk", t(($) => $.dingtalk.section_title), t(($) => $.dingtalk.page_description), "bg-[#1677FF]/10"],
+            ["wecom", t(($) => $.wecom.section_title), t(($) => $.wecom.page_description), "bg-[#07C160]/10"],
+            ["telegram", t(($) => $.telegram.section_title), t(($) => $.telegram.page_description), "bg-[#2AABEE]/10"],
+            ["weixin", t(($) => $.weixin.section_title), t(($) => $.weixin.page_description), "bg-[#07C160]/10"],
+          ] as const).map(([channel, title, description, iconClassName]) => (
+            <IntegrationCard
+              key={channel}
+              channel={channel}
+              title={title}
+              description={description}
+              iconClassName={iconClassName}
+              status={<ChannelStatus query={listings[channel]} />}
+              action={
+                <ChannelAction
+                  canManage={canManage}
+                  isGuest={isGuest}
+                  setupWritable={setupWritable}
+                  query={listings[channel]}
+                  onOpen={() => setManagedChannel(channel)}
+                />
+              }
+            />
+          ))}
+          {linearEnabled ? (
+            <LinearIntegrationCard
+              canManage={canManage}
+              isGuest={isGuest}
+              workspaceId={wsId}
+            />
+          ) : null}
+        </div>
+      </section>
+
+      {composioEnabled && !composioUnconfigured ? (
+        <SettingsSection title={t(($) => $.composio.section_title)}>
+          <ComposioTab />
+        </SettingsSection>
+      ) : null}
+      {vcsAvailable ? (
+        <SettingsSection title={t(($) => $.vcs.section_title)}>
+          <VCSTab />
+        </SettingsSection>
+      ) : null}
+    </>
+  );
+
   return (
-    <SettingsTab
-      title={t(($) => $.page.tabs.integrations)}
-      description={t(($) => $.page.integrations_description)}
-    >
-      {content}
-    </SettingsTab>
+    <>
+      {standalone ? (
+        <div className="mx-auto w-full max-w-6xl space-y-8 p-4 sm:p-6 lg:p-8">
+          <SettingsTab
+            title={t(($) => $.page.integrations_title)}
+            description={t(($) => $.page.integrations_description)}
+          >
+            {content}
+          </SettingsTab>
+        </div>
+      ) : (
+        <SettingsTab
+          title={t(($) => $.page.tabs.integrations)}
+          description={t(($) => $.page.integrations_description)}
+        >
+          {content}
+        </SettingsTab>
+      )}
+
+      <Dialog
+        open={managedChannel !== null}
+        onOpenChange={(open) => !open && setManagedChannel(null)}
+      >
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>
+              {managedChannel && installedRecord(listings[managedChannel].data)
+                ? t(($) => $.page.integrations_manage)
+                : t(($) => $.page.integrations_setup_title)}
+            </DialogTitle>
+          </DialogHeader>
+          {managedChannel ? managedContent(managedChannel) : null}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

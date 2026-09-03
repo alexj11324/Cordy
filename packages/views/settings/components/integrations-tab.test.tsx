@@ -2,7 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { ApiError } from "@patchbay/core/api";
 import { configStore } from "@patchbay/core/config";
 import {
@@ -19,17 +19,52 @@ const composioErrorRef = vi.hoisted(() => ({
 const queryCallsRef = vi.hoisted(() => ({
   current: [] as { queryKey: unknown[]; enabled?: boolean }[],
 }));
+const authUserRef = vi.hoisted(() => ({
+  current: null as { id: string; is_guest?: boolean } | null,
+}));
+const membersRef = vi.hoisted(() => ({
+  current: [] as { user_id: string; role: string }[],
+}));
+const channelInstallationsRef = vi.hoisted(() => ({
+  current: {} as Partial<Record<
+    "lark" | "slack" | "dingtalk" | "wecom" | "telegram" | "weixin",
+    {
+      configured: boolean;
+      install_supported: boolean;
+      installations: {
+        id: string;
+        agent_id: string | null;
+        status: string;
+        runtime?: { state: string; observedAt: string | null; errorCode: string | null };
+      }[];
+    }
+  >>,
+}));
 
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (opts: { queryKey: unknown[]; enabled?: boolean }) => {
     queryCallsRef.current.push(opts);
+    const isMemberQuery = opts.queryKey[opts.queryKey.length - 1] === "members";
+    const channel = opts.queryKey[0];
+    const isChannelInstallationsQuery =
+      typeof channel === "string" &&
+      channel in channelInstallationsRef.current &&
+      opts.queryKey[opts.queryKey.length - 1] === "installations";
     return {
-      data: undefined,
+      data: isMemberQuery
+        ? membersRef.current
+        : isChannelInstallationsQuery
+          ? channelInstallationsRef.current[
+              channel as keyof typeof channelInstallationsRef.current
+            ]
+          : undefined,
       error: opts.enabled === false ? null : composioErrorRef.current,
       isError: opts.enabled !== false && composioErrorRef.current != null,
+      isLoading: false,
     };
   },
   queryOptions: <T,>(opts: T) => opts,
+  useQueryClient: () => ({ invalidateQueries: vi.fn() }),
 }));
 
 vi.mock("@patchbay/core/composio", () => ({
@@ -41,9 +76,20 @@ vi.mock("@patchbay/core/paths", () => ({
 }));
 
 vi.mock("@patchbay/core/auth", () => ({
-  useAuthStore: (selector: (state: { user: { id: string } }) => unknown) =>
-    selector({ user: { id: "user-1" } }),
+  useAuthStore: (selector: (state: { user: typeof authUserRef.current }) => unknown) =>
+    selector({ user: authUserRef.current }),
 }));
+
+for (const channel of ["lark", "slack", "dingtalk", "wecom", "telegram", "weixin"]) {
+  vi.doMock(`@patchbay/core/${channel}`, () => ({
+    [`${channel}InstallationsOptions`]: (workspaceId: string) => ({
+      queryKey: [channel, workspaceId, "installations"],
+    }),
+    [`${channel}Keys`]: {
+      installations: (workspaceId: string) => [channel, workspaceId, "installations"],
+    },
+  }));
+}
 
 vi.mock("./lark-tab", () => ({
   LarkTab: () => <div data-testid="lark-tab" />,
@@ -97,6 +143,16 @@ describe("Settings IntegrationsTab", () => {
   beforeEach(() => {
     queryCallsRef.current = [];
     composioErrorRef.current = null;
+    authUserRef.current = null;
+    membersRef.current = [];
+    channelInstallationsRef.current = {
+      lark: { configured: false, install_supported: false, installations: [] },
+      slack: { configured: false, install_supported: false, installations: [] },
+      dingtalk: { configured: false, install_supported: false, installations: [] },
+      wecom: { configured: false, install_supported: false, installations: [] },
+      telegram: { configured: false, install_supported: false, installations: [] },
+      weixin: { configured: false, install_supported: false, installations: [] },
+    };
     configStore.getState().setFeatureFlags({
       [COMPOSIO_MCP_APPS_FLAG]: true,
       [LINEAR_INSTALLATION_FOUNDATION_FLAG]: false,
@@ -104,6 +160,71 @@ describe("Settings IntegrationsTab", () => {
     // Reset the self-host-only VCS gate to its default (hidden) so tests stay
     // isolated; individual tests opt in below.
     configStore.getState().setAuthConfig({ allowSignup: true, vcsIntegrationAvailable: false });
+    configStore.getState().setMessagingConfig({
+      mode: "managed",
+      setupWritable: true,
+      platforms: [],
+    });
+  });
+
+  it("renders messaging integrations as workspace cards instead of expanded forms", () => {
+    renderTab();
+
+    for (const channel of ["lark", "slack", "dingtalk", "wecom", "telegram", "weixin"]) {
+      expect(screen.getByTestId(`integration-channel-card-${channel}`)).toBeInTheDocument();
+      expect(screen.queryByTestId(`${channel}-tab`)).toBeNull();
+    }
+  });
+
+  it("shows a runtime-confirmed workspace installation as connected", () => {
+    authUserRef.current = { id: "admin-user" };
+    membersRef.current = [{ user_id: "admin-user", role: "owner" }];
+    channelInstallationsRef.current.slack = {
+      configured: true,
+      install_supported: true,
+      installations: [{
+        id: "hub-1",
+        agent_id: "",
+        status: "installed",
+        runtime: {
+          state: "healthy",
+          observedAt: "2026-09-03T12:00:00Z",
+          errorCode: null,
+        },
+      }],
+    };
+
+    renderTab();
+
+    const card = screen.getByTestId("integration-channel-card-slack");
+    expect(within(card).getByText("Connected")).toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: "Manage" })).toBeInTheDocument();
+  });
+
+  it("keeps server-configured messaging read-only", () => {
+    authUserRef.current = { id: "admin-user" };
+    membersRef.current = [{ user_id: "admin-user", role: "owner" }];
+    configStore.getState().setMessagingConfig({
+      mode: "server_configured",
+      setupWritable: false,
+      platforms: [],
+    });
+
+    renderTab();
+
+    expect(screen.getAllByText("Configured by the server operator")).toHaveLength(6);
+  });
+
+  it("opens the platform setup guide without exposing deployment variables", () => {
+    authUserRef.current = { id: "admin-user" };
+    membersRef.current = [{ user_id: "admin-user", role: "owner" }];
+
+    renderTab();
+    const card = screen.getByTestId("integration-channel-card-dingtalk");
+    fireEvent.click(within(card).getByRole("button", { name: "Configure" }));
+
+    expect(screen.getByTestId("integration-setup-guide-dingtalk")).toBeInTheDocument();
+    expect(screen.queryByText("PATCHBAY_DINGTALK_SECRET_KEY")).toBeNull();
   });
 
   it("hides Composio and disables the toolkits query when the feature flag is off", () => {    configStore.getState().setFeatureFlags({ [COMPOSIO_MCP_APPS_FLAG]: false });
@@ -144,8 +265,9 @@ describe("Settings IntegrationsTab", () => {
     renderTab();
 
     for (const channel of ["lark", "slack", "dingtalk", "wecom", "weixin", "telegram"]) {
+      const card = screen.getByTestId(`integration-channel-card-${channel}`);
       const icon = screen.getByTestId(`integration-channel-icon-${channel}`);
-      const title = icon.closest("h3");
+      const title = card.querySelector("h3");
       const description = title?.nextElementSibling;
       expect(title).not.toBeNull();
       expect(description?.tagName).toBe("P");
@@ -200,6 +322,6 @@ describe("Settings IntegrationsTab", () => {
     );
 
     expect(screen.getByRole("heading", { name: "Integrations" })).toBeInTheDocument();
-    expect(screen.getByTestId("lark-tab")).toBeInTheDocument();
+    expect(screen.getByTestId("integration-channel-card-lark")).toBeInTheDocument();
   });
 });
