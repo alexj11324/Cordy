@@ -211,6 +211,11 @@ type Handler struct {
 	// markers, no admission refusals.
 	HostedCapacity        *hostedcapacity.Limiter
 	HostedCapacityWorker  *hostedcapacity.Worker
+	// ChannelConnectionLeases is set only when Redis, rather than PostgreSQL,
+	// owns channel leases. Connection-status projection reads it for the already
+	// authorized installation IDs so it can validate the observation generation
+	// against the actual lease authority.
+	ChannelConnectionLeases ChannelConnectionLeaseReader
 	EmailService          *service.EmailService
 	UpdateStore           UpdateStore
 	ModelListStore        ModelListStore

@@ -19,6 +19,10 @@ type MessagingConnectionStatus struct {
 	ErrorSummary *string `json:"errorSummary"`
 }
 
+type ChannelConnectionLeaseReader interface {
+	ListLeaseOwners(context.Context, []pgtype.UUID) (map[string]string, error)
+}
+
 func connectionStatus(state, code string, observedAt *string) MessagingConnectionStatus {
 	result := MessagingConnectionStatus{State: state, ObservedAt: observedAt}
 	if code != "" {

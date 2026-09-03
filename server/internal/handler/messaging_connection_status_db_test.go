@@ -14,6 +14,18 @@ import (
 	"github.com/patchbay-ai/patchbay/server/pkg/dbid"
 )
 
+type fixedChannelConnectionLeases struct {
+	owners    map[string]string
+	requested []string
+}
+
+func (s *fixedChannelConnectionLeases) ListLeaseOwners(_ context.Context, ids []pgtype.UUID) (map[string]string, error) {
+	for _, id := range ids {
+		s.requested = append(s.requested, uuidToString(id))
+	}
+	return s.owners, nil
+}
+
 func TestConnectionStatusOwnershipAndPublicProjectionDB(t *testing.T) {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
@@ -91,4 +103,41 @@ func TestConnectionStatusOwnershipAndPublicProjectionDB(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("redis lease authority", func(t *testing.T) {
+		id := dbid.NewV7()
+		idString := uuidToString(id)
+		_, err := pool.Exec(ctx, `INSERT INTO channel_installation
+			(id, workspace_id, agent_id, channel_type, config, installer_user_id)
+			VALUES ($1, $2, NULL, 'feishu', '{}', $3)`,
+			id, workspaceID, util.MustParseUUID(fx.UserID))
+		if err != nil {
+			t.Fatal(err)
+		}
+		fx.Cleanup(t, "DELETE FROM channel_installation WHERE id = $1", id)
+		fx.Cleanup(t, "DELETE FROM channel_installation_runtime_observation WHERE installation_id = $1", id)
+		const token = "redis-owner-generation"
+		if count, err := q.ClaimChannelRuntimeObserver(ctx, db.ClaimChannelRuntimeObserverParams{
+			InstallationID: id, ObserverToken: token,
+		}); err != nil || count != 1 {
+			t.Fatalf("claim Redis observer: count=%d err=%v", count, err)
+		}
+		if count, err := q.ObserveChannelRuntime(ctx, db.ObserveChannelRuntimeParams{
+			InstallationID: id, ObserverToken: token, State: "healthy",
+		}); err != nil || count != 1 {
+			t.Fatalf("observe Redis runtime: count=%d err=%v", count, err)
+		}
+		leases := &fixedChannelConnectionLeases{owners: map[string]string{idString: token}}
+		h.ChannelConnectionLeases = leases
+		statuses, err := h.loadConnectionStatuses(ctx, workspaceID, []string{idString})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := statuses[idString]; got.State != "healthy" || got.ErrorCode != nil {
+			t.Fatalf("Redis-owned connection projected as %+v, want healthy", got)
+		}
+		if len(leases.requested) != 1 || leases.requested[0] != idString {
+			t.Fatalf("lease lookup escaped authorized IDs: %v", leases.requested)
+		}
+	})
 }
