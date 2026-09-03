@@ -412,9 +412,9 @@ describe("ApiClient schema fallback", () => {
       expect(res).toEqual({ installations: [], configured: false });
     });
 
-    it("tolerates an old-server row and a missing install_supported flag", async () => {
+    it("tolerates omitted installation metadata and install_supported flag", async () => {
       stubFetchJson({
-        installations: [{ id: "dt-1", status: "active" }],
+        installations: [{ id: "dt-1", status: "installed" }],
         configured: true,
         // install_supported omitted (predates the flag) -> undefined, not a crash
         future_field: true,
@@ -485,9 +485,9 @@ describe("ApiClient schema fallback", () => {
       });
     });
 
-    it("defaults fields omitted by an older server", async () => {
+    it("defaults omitted optional installation fields", async () => {
       stubFetchJson({
-        installations: [{ id: "tg-1", status: "active" }],
+        installations: [{ id: "tg-1", status: "installed" }],
         configured: true,
       });
       const client = new ApiClient("https://api.example.test");

@@ -109,9 +109,9 @@ WHERE channel_type = sqlc.arg('channel_type')
 -- so the install path can refuse a rebind with an ACCURATE message instead of the
 -- old catch-all "connected to a different Patchbay workspace". Meant to be read
 -- only after ReclaimDeadChannelInstallationByAppID has removed every DEAD owner,
--- so a returned row is a live active owner. `agent_archived` distinguishes an
+-- so a returned row is a live installed owner. `agent_archived` distinguishes an
 -- archived (reversible) owner — its bot stays owned, recovered by unarchiving the
--- agent or disconnecting the bot — from a plain active one. The JOIN drops a row
+-- agent or disconnecting the bot — from an unarchived one. The JOIN drops a row
 -- whose agent no longer exists (an orphan the reclaim gate should already have
 -- cleared), so a missing row (pgx.ErrNoRows) means "no live owner". The caller
 -- reads agent_archived_at.Valid to tell an archived (reversible) owner apart.
@@ -186,7 +186,7 @@ WHERE ci.channel_type = sqlc.arg('channel_type')
 -- Deliberately NOT dead (the caller refuses these with an accurate conflict):
 --   - the SAME agent's own revoked row (agent_id = @agent_id): the upsert
 --     reactivates it in place, preserving its installation_id and every binding;
---   - a live ACTIVE owner whose agent still exists — INCLUDING an ARCHIVED agent:
+--   - a live installed owner whose agent still exists — INCLUDING an ARCHIVED agent:
 --     archive is reversible, so its bot stays owned rather than being silently
 --     stolen. Only a hard delete frees the slot.
 --

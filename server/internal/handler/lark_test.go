@@ -165,7 +165,7 @@ func TestListLarkInstallations_NotConfigured_HardCodedInstallSupportedFalse(t *t
 
 // TestListConnectableLarkInstallations_SkipsOrphans pins the MUL-3515 hub-boot
 // guard: ListConnectableChannelInstallations is JOINed to live workspace + agent,
-// so an active channel_installation whose workspace or agent has been deleted
+// so an installed channel_installation whose workspace or agent has been deleted
 // (channel_* has no FK cascade) is never returned — otherwise the Hub would
 // keep opening a WebSocket for a bot whose owner is gone. It also stays
 // channel_type='feishu'-scoped. Runs against the real test DB.

@@ -24,9 +24,9 @@ export function DingTalkGroupRoutes({
   const routesQuery = useQuery(dingtalkGroupRoutesOptions(workspaceId));
   const agentsQuery = useQuery({ ...agentListOptions(workspaceId), enabled: !!workspaceId });
   const updateRoute = useUpdateDingTalkGroupRoute(workspaceId);
-  const activeInstallations = new Set(installations.filter((item) => item.status === "installed").map((item) => item.id));
+  const installedInstallations = new Set(installations.filter((item) => item.status === "installed").map((item) => item.id));
   const routes = (routesQuery.data?.routes ?? []).filter((route) =>
-    route.id && route.workspace_id === workspaceId && activeInstallations.has(route.installation_id),
+    route.id && route.workspace_id === workspaceId && installedInstallations.has(route.installation_id),
   );
   const agents = agentsQuery.data ?? [];
   // The list endpoint already selects kind=user, including product-defined
