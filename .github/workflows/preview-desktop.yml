@@ -141,11 +141,16 @@ jobs:
             }
           done
 
-      - name: Upload preview installer
+      - name: Upload preview installer (DMG)
         uses: actions/upload-artifact@v4
         with:
-          name: patchbay-desktop-preview-mac-${{ inputs.arch }}-${{ github.sha }}
-          path: |
-            apps/desktop/dist/*-mac-${{ inputs.arch }}.dmg
-            apps/desktop/dist/*-mac-${{ inputs.arch }}.zip
+          name: patchbay-desktop-preview-mac-${{ inputs.arch }}-${{ github.sha }}-dmg
+          path: apps/desktop/dist/*-mac-${{ inputs.arch }}.dmg
+          retention-days: 14
+
+      - name: Upload preview installer (ZIP)
+        uses: actions/upload-artifact@v4
+        with:
+          name: patchbay-desktop-preview-mac-${{ inputs.arch }}-${{ github.sha }}-zip
+          path: apps/desktop/dist/*-mac-${{ inputs.arch }}.zip
           retention-days: 14
