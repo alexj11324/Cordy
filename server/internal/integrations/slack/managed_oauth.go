@@ -194,6 +194,12 @@ type OAuthAccess struct {
 	TeamID     string
 	BotUserID  string
 	AuthedUser string
+	// RefreshToken and ExpiresAt are the rotating credentials an app with the
+	// refresh grant returns. Zero values mean the app has no refresh grant;
+	// BYO installs never carry them. ExpiresAt is derived from expires_in at
+	// exchange time (the service's clock, so tests can pin it).
+	RefreshToken string
+	ExpiresAt    time.Time
 }
 
 // ExchangeCode trades a callback code for a bot token via oauth.v2.access.
@@ -224,12 +230,14 @@ func (s *ManagedOAuthService) ExchangeCode(ctx context.Context, code, redirectUR
 		return OAuthAccess{}, fmt.Errorf("slack oauth exchange: %w", err)
 	}
 	var out struct {
-		OK          bool   `json:"ok"`
-		Error       string `json:"error"`
-		AccessToken string `json:"access_token"`
-		AppID       string `json:"app_id"`
-		BotUserID   string `json:"bot_user_id"`
-		Team        struct {
+		OK           bool   `json:"ok"`
+		Error        string `json:"error"`
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		ExpiresIn    int    `json:"expires_in"`
+		AppID        string `json:"app_id"`
+		BotUserID    string `json:"bot_user_id"`
+		Team         struct {
 			ID string `json:"id"`
 		} `json:"team"`
 		AuthedUser struct {
@@ -242,11 +250,18 @@ func (s *ManagedOAuthService) ExchangeCode(ctx context.Context, code, redirectUR
 	if !out.OK || out.AccessToken == "" || out.Team.ID == "" {
 		return OAuthAccess{}, fmt.Errorf("slack oauth exchange refused: %s", out.Error)
 	}
-	return OAuthAccess{
+	access := OAuthAccess{
 		BotToken:   out.AccessToken,
 		AppID:      out.AppID,
 		TeamID:     out.Team.ID,
 		BotUserID:  out.BotUserID,
 		AuthedUser: out.AuthedUser.ID,
-	}, nil
+	}
+	if out.RefreshToken != "" {
+		access.RefreshToken = out.RefreshToken
+	}
+	if out.ExpiresIn > 0 {
+		access.ExpiresAt = s.now().Add(time.Duration(out.ExpiresIn) * time.Second)
+	}
+	return access, nil
 }

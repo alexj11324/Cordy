@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // installConfig is the JSON shape stored in channel_installation.config for a
@@ -51,6 +52,12 @@ type installConfig struct {
 	BotTokenEncrypted string `json:"bot_token_encrypted"`
 	AppTokenEncrypted string `json:"app_token_encrypted,omitempty"`
 	Transport         string `json:"transport,omitempty"`
+	// Managed installs only: the rotating OAuth credentials. The refresh
+	// token is sealed with the same box as the bot token (never plaintext);
+	// the access-token expiry is when rotation must mint a replacement.
+	// Omitted (BYO installs, or an app without the refresh grant).
+	RefreshTokenEncrypted string     `json:"refresh_token_encrypted,omitempty"`
+	TokenExpiresAt        *time.Time `json:"token_expires_at,omitempty"`
 }
 
 // credentials is the decoded, decrypted form the outbound sender runs on. The

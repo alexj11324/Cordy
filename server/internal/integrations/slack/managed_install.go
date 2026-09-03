@@ -75,14 +75,30 @@ func (s *InstallService) RegisterManaged(ctx context.Context, p RegisterManagedP
 		return db.ChannelInstallation{}, fmt.Errorf("encrypt managed slack bot token: %w", err)
 	}
 	routingKey := ManagedRoutingKey(p.Access.AppID, p.Access.TeamID)
-	cfgJSON, err := json.Marshal(installConfig{
+	cfg := installConfig{
 		AppID:             routingKey,
 		ApiAppID:          p.Access.AppID,
 		TeamID:            p.Access.TeamID,
 		BotUserID:         p.Access.BotUserID,
 		BotTokenEncrypted: base64.StdEncoding.EncodeToString(sealedBot),
 		Transport:         ManagedTransportWebhook,
-	})
+	}
+	// Persist the rotating OAuth credentials (Rust parity: the refresh token
+	// is the only way to mint a new access token without re-consent, so
+	// dropping it here would strand the installation when the access token
+	// expires). Sealed with the same box; the plaintext never round-trips.
+	if p.Access.RefreshToken != "" {
+		sealedRefresh, err := s.box.Seal([]byte(p.Access.RefreshToken))
+		if err != nil {
+			return db.ChannelInstallation{}, fmt.Errorf("encrypt managed slack refresh token: %w", err)
+		}
+		cfg.RefreshTokenEncrypted = base64.StdEncoding.EncodeToString(sealedRefresh)
+	}
+	if !p.Access.ExpiresAt.IsZero() {
+		expiresAt := p.Access.ExpiresAt
+		cfg.TokenExpiresAt = &expiresAt
+	}
+	cfgJSON, err := json.Marshal(cfg)
 	if err != nil {
 		return db.ChannelInstallation{}, fmt.Errorf("encode managed slack installation config: %w", err)
 	}
