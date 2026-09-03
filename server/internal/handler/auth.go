@@ -454,6 +454,84 @@ func (h *Handler) VerifyCode(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ClerkLogin exchanges a verified Clerk browser session for the native
+// Patchbay JWT/cookie used by the Go API. The Clerk token is never persisted.
+func (h *Handler) ClerkLogin(w http.ResponseWriter, r *http.Request) {
+	authorization := strings.TrimSpace(r.Header.Get("Authorization"))
+	scheme, token, ok := strings.Cut(authorization, " ")
+	if !ok || !strings.EqualFold(scheme, "Bearer") || strings.TrimSpace(token) == "" {
+		writeError(w, http.StatusUnauthorized, "Clerk session is required")
+		return
+	}
+	if h.ClerkAuth == nil {
+		writeError(w, http.StatusServiceUnavailable, "Clerk login is not configured")
+		return
+	}
+	identity, err := h.ClerkAuth.VerifySession(r.Context(), strings.TrimSpace(token))
+	if err != nil {
+		if errors.Is(err, errClerkUnavailable) {
+			writeError(w, http.StatusServiceUnavailable, "Clerk login is temporarily unavailable")
+		} else {
+			writeError(w, http.StatusUnauthorized, "invalid Clerk session")
+		}
+		return
+	}
+	user, isNew, err := h.findOrCreateUser(r.Context(), strings.ToLower(strings.TrimSpace(identity.Email)))
+	if err != nil {
+		if errors.Is(err, auth.ErrTemporarilyDisabledUser) {
+			writeError(w, http.StatusForbidden, auth.TemporarilyDisabledUserError)
+			return
+		}
+		var signupErr SignupError
+		if errors.As(err, &signupErr) {
+			writeError(w, http.StatusForbidden, signupErr.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to create user")
+		return
+	}
+	if isNew {
+		obsmetrics.RecordEvent(h.Analytics, h.Metrics, analytics.Signup(uuidToString(user.ID), user.Email, signupSourceFromRequest(r)))
+	}
+	emailPrefix, _, _ := strings.Cut(user.Email, "@")
+	name := strings.TrimSpace(identity.Name)
+	avatar := strings.TrimSpace(identity.AvatarURL)
+	if (name != "" && user.Name == emailPrefix) || (avatar != "" && !user.AvatarUrl.Valid) {
+		updated, updateErr := h.Queries.UpdateUser(r.Context(), db.UpdateUserParams{
+			ID: user.ID,
+			Name: func() string {
+				if name != "" && user.Name == emailPrefix {
+					return name
+				}
+				return user.Name
+			}(),
+			AvatarUrl: func() pgtype.Text {
+				if avatar != "" && !user.AvatarUrl.Valid {
+					return pgtype.Text{String: avatar, Valid: true}
+				}
+				return pgtype.Text{}
+			}(),
+		})
+		if updateErr == nil {
+			user = updated
+		}
+	}
+	tokenString, err := h.issueJWT(user)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to generate token")
+		return
+	}
+	if err := auth.SetAuthCookies(w, tokenString); err != nil {
+		slog.Warn("failed to set auth cookies", "error", err)
+	}
+	if h.CFSigner != nil {
+		for _, cookie := range h.CFSigner.SignedCookies(time.Now().Add(auth.AuthTokenTTL())) {
+			http.SetCookie(w, cookie)
+		}
+	}
+	writeJSON(w, http.StatusOK, LoginResponse{Token: tokenString, User: h.userToResponse(user)})
+}
+
 func (h *Handler) GetMe(w http.ResponseWriter, r *http.Request) {
 	userID, ok := requireUserID(w, r)
 	if !ok {

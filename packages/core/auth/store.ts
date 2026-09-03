@@ -39,6 +39,7 @@ export interface AuthState {
   retryAuthentication: () => void;
   sendCode: (email: string) => Promise<void>;
   verifyCode: (email: string, code: string) => Promise<User>;
+  loginWithClerk: (sessionToken: string, signal?: AbortSignal) => Promise<User>;
   loginWithGoogle: (code: string, redirectUri: string) => Promise<User>;
   createGuestSession: () => Promise<User>;
   loginWithToken: (token: string) => Promise<User>;
@@ -73,6 +74,25 @@ export function createAuthStore(options: AuthStoreOptions) {
       const { token, user } = await api.verifyCode(email, code);
       if (!cookieAuth) {
         // Token mode: persist for Electron / legacy.
+        storage.setItem("patchbay_token", token);
+        api.setToken(token);
+      }
+      onLogin?.();
+      identifyAnalytics(user.id, { email: user.email, name: user.name });
+      set({ user, isLoading: false, status: "authenticated" });
+      return user;
+    },
+
+    loginWithClerk: async (sessionToken: string, signal?: AbortSignal) => {
+      const { token, user } = await api.clerkLogin(sessionToken, signal);
+      if (signal?.aborted) {
+        const error = new Error("Clerk session exchange aborted");
+        error.name = "AbortError";
+        throw error;
+      }
+      if (cookieAuth) {
+        api.setToken(null);
+      } else {
         storage.setItem("patchbay_token", token);
         api.setToken(token);
       }

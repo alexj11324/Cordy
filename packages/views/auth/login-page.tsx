@@ -1,6 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  type ReactNode,
+} from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Card,
@@ -26,6 +32,10 @@ import {
   FieldSeparator,
 } from "@patchbay/ui/components/ui/field";
 import { useAuthStore } from "@patchbay/core/auth";
+import {
+  PRODUCTION_DESKTOP_CALLBACK_PROTOCOL,
+  isDesktopCallbackProtocol,
+} from "@patchbay/core/auth";
 import { workspaceKeys } from "@patchbay/core/workspace/queries";
 import { api } from "@patchbay/core/api";
 import type { User } from "@patchbay/core/types";
@@ -82,9 +92,27 @@ interface LoginPageProps {
 // Helpers
 // ---------------------------------------------------------------------------
 
-export function redirectToCliCallback(url: string, token: string, state: string) {
+export function redirectToCliCallback(
+  url: string,
+  token: string,
+  state: string,
+) {
   const separator = url.includes("?") ? "&" : "?";
   window.location.href = `${url}${separator}token=${encodeURIComponent(token)}&state=${encodeURIComponent(state)}`;
+}
+
+export function redirectToDesktopApp(
+  code: string,
+  state: string,
+  callbackProtocol = PRODUCTION_DESKTOP_CALLBACK_PROTOCOL,
+) {
+  if (!isDesktopCallbackProtocol(callbackProtocol)) {
+    throw new Error("Invalid desktop callback protocol");
+  }
+  const callback = new URL(`${callbackProtocol}://auth/callback`);
+  callback.searchParams.set("code", code);
+  callback.searchParams.set("state", state);
+  window.location.href = callback.href;
 }
 
 /**
@@ -249,9 +277,7 @@ export function LoginPage({
         onSuccess();
       } catch (err) {
         setError(
-          err instanceof Error
-            ? err.message
-            : t(($) => $.errors.code_invalid),
+          err instanceof Error ? err.message : t(($) => $.errors.code_invalid),
         );
         setCode("");
         setLoading(false);
@@ -320,9 +346,10 @@ export function LoginPage({
   };
 
   const googleEnabled = Boolean(onGoogleLogin || google);
-  const googleSeparator = showGoogleSeparator && googleEnabled ? (
-    <FieldSeparator>{t(($) => $.common.or_continue_with)}</FieldSeparator>
-  ) : null;
+  const googleSeparator =
+    showGoogleSeparator && googleEnabled ? (
+      <FieldSeparator>{t(($) => $.common.or_continue_with)}</FieldSeparator>
+    ) : null;
   const googleButton = googleEnabled ? (
     <Button
       type="button"
@@ -359,7 +386,9 @@ export function LoginPage({
   const stepHeading = (title: ReactNode, description: ReactNode) =>
     embedded ? (
       <div className="flex flex-col gap-2 text-center">
-        <h1 className="text-display-sm font-semibold tracking-tight">{title}</h1>
+        <h1 className="text-display-sm font-semibold tracking-tight">
+          {title}
+        </h1>
         <p className="text-body text-muted-foreground">{description}</p>
       </div>
     ) : (
@@ -383,9 +412,7 @@ export function LoginPage({
           className="w-full"
           size="lg"
         >
-          {loading
-            ? t(($) => $.cli.authorizing)
-            : t(($) => $.cli.authorize)}
+          {loading ? t(($) => $.cli.authorizing) : t(($) => $.cli.authorize)}
         </Button>
         <Button
           variant="ghost"
@@ -541,9 +568,7 @@ export function LoginPage({
             disabled={!email || loading}
             aria-busy={loading}
           >
-            {loading
-              ? t(($) => $.signin.sending)
-              : t(($) => $.signin.continue)}
+            {loading ? t(($) => $.signin.sending) : t(($) => $.signin.continue)}
           </Button>
         </Field>
       </FieldGroup>
@@ -601,9 +626,7 @@ export function LoginPage({
             disabled={!email || loading}
             aria-busy={loading}
           >
-            {loading
-              ? t(($) => $.signin.sending)
-              : t(($) => $.signin.continue)}
+            {loading ? t(($) => $.signin.sending) : t(($) => $.signin.continue)}
           </Button>
           {googleSeparator}
           {googleButton}

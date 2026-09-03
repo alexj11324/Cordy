@@ -1526,6 +1526,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	desktopHandoffRL := middleware.RateLimit(rdb, envPositiveInt("RATE_LIMIT_DESKTOP_HANDOFF", 20), time.Minute, trustedProxies)
 	contactSalesRL := middleware.RateLimit(rdb, envPositiveInt("RATE_LIMIT_CONTACT_SALES", 5), time.Hour, trustedProxies)
 	r.With(authRL).Post("/auth/send-code", h.SendCode)
+	r.With(authRL).Post("/auth/clerk", h.ClerkLogin)
 	r.With(authVerifyRL).Post("/auth/verify-code", h.VerifyCode)
 	// Google is retained only as the exchange leg for explicit Desktop/CLI
 	// broker flows; the Web login page uses email send-code and does not expose

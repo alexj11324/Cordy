@@ -14,6 +14,8 @@
     "postinstall": "fumadocs-mdx"
   },
   "dependencies": {
+    "@clerk/nextjs": "7.8.4",
+    "@clerk/themes": "2.4.57",
     "@patchbay/core": "workspace:*",
     "@patchbay/ui": "workspace:*",
     "@patchbay/views": "workspace:*",

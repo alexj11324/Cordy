@@ -28,6 +28,7 @@ type ClerkIdentity struct {
 }
 
 type ClerkSessionVerifier interface {
+	VerifySession(context.Context, string) (ClerkIdentity, error)
 	VerifyFreshSession(context.Context, string, time.Time) (ClerkIdentity, error)
 }
 
@@ -98,7 +99,15 @@ func newClerkAuthClient(cfg Config) (ClerkSessionVerifier, error) {
 	return &clerkAuthClient{httpClient: &http.Client{Timeout: 10 * time.Second}, apiBaseURL: "https://api.clerk.com/v1/", secretKey: cfg.ClerkSecretKey, issuer: strings.TrimRight(cfg.ClerkIssuer, "/"), authorizedParties: parties, verificationKey: key}, nil
 }
 
+func (c *clerkAuthClient) VerifySession(ctx context.Context, token string) (ClerkIdentity, error) {
+	return c.verifySession(ctx, token, nil)
+}
+
 func (c *clerkAuthClient) VerifyFreshSession(ctx context.Context, token string, startedAt time.Time) (ClerkIdentity, error) {
+	return c.verifySession(ctx, token, &startedAt)
+}
+
+func (c *clerkAuthClient) verifySession(ctx context.Context, token string, startedAt *time.Time) (ClerkIdentity, error) {
 	claims := &clerkClaims{}
 	parsed, err := jwt.ParseWithClaims(token, claims, func(*jwt.Token) (any, error) { return c.verificationKey, nil }, jwt.WithValidMethods([]string{"RS256"}), jwt.WithIssuer(c.issuer), jwt.WithLeeway(clerkSessionClockSkew))
 	if err != nil || !parsed.Valid || claims.Subject == "" || claims.Sid == "" || claims.ExpiresAt == nil || claims.NotBefore == nil || claims.Sts == "pending" {
@@ -112,7 +121,7 @@ func (c *clerkAuthClient) VerifyFreshSession(ctx context.Context, token string, 
 		return ClerkIdentity{}, err
 	}
 	createdAt := time.UnixMilli(session.CreatedAt)
-	if session.ID != claims.Sid || session.UserID != claims.Subject || session.ClientID == "" || session.Status != "active" || len(session.Actor) != 0 && string(session.Actor) != "null" || createdAt.Before(startedAt.Add(-clerkSessionClockSkew)) || createdAt.After(time.Now().Add(clerkSessionClockSkew)) {
+	if session.ID != claims.Sid || session.UserID != claims.Subject || session.ClientID == "" || session.Status != "active" || len(session.Actor) != 0 && string(session.Actor) != "null" || startedAt != nil && createdAt.Before(startedAt.Add(-clerkSessionClockSkew)) || createdAt.After(time.Now().Add(clerkSessionClockSkew)) {
 		return ClerkIdentity{}, errClerkInvalid
 	}
 	var user clerkUser

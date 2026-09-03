@@ -13,6 +13,7 @@ import {
   resolveBrowserApiBaseUrl,
   resolveBrowserWsUrl,
 } from "@/config/runtime-urls";
+import { ClerkProvider } from "@/components/clerk-provider";
 import "./globals.css";
 
 // Inter is the Latin UI face. next/font produces a hashed family (`__Inter_xxx`)
@@ -43,7 +44,13 @@ const inter = Inter({
 const geistMono = Geist_Mono({
   subsets: ["latin"],
   variable: "--font-mono",
-  fallback: ["ui-monospace", "SFMono-Regular", "Menlo", "Consolas", "monospace"],
+  fallback: [
+    "ui-monospace",
+    "SFMono-Regular",
+    "Menlo",
+    "Consolas",
+    "monospace",
+  ],
 });
 // Editorial serif used for onboarding headlines. Italic support for h1 em
 // accents (e.g. "...on one shared board."). Only loaded on routes that
@@ -139,12 +146,27 @@ export default async function RootLayout({
   const resources = { [locale]: RESOURCES[locale] };
   const apiBaseUrl = resolveBrowserApiBaseUrl(process.env);
   const wsUrl = resolveBrowserWsUrl(process.env);
+  const providers = (
+    <WebProviders
+      locale={locale}
+      resources={resources}
+      apiBaseUrl={apiBaseUrl}
+      wsUrl={wsUrl}
+    >
+      {children}
+    </WebProviders>
+  );
 
   return (
     <html
       lang={HTML_LANG[locale]}
       suppressHydrationWarning
-      className={cn("antialiased font-sans h-full", inter.variable, geistMono.variable, sourceSerif.variable)}
+      className={cn(
+        "antialiased font-sans h-full",
+        inter.variable,
+        geistMono.variable,
+        sourceSerif.variable,
+      )}
     >
       <body className="h-full overflow-hidden">
         {/*
@@ -158,24 +180,20 @@ export default async function RootLayout({
           exposes VITE_-prefixed vars to client code, so one var name covers both
           apps. See https://www.react-grab.com/
         */}
-        {process.env.NODE_ENV === "development" && process.env.VITE_REACT_GRAB && (
-          <Script
-            src="//unpkg.com/react-grab/dist/index.global.js"
-            crossOrigin="anonymous"
-            strategy="beforeInteractive"
-          />
-        )}
-        <ThemeProvider>
-          <WebProviders
-            locale={locale}
-            resources={resources}
-            apiBaseUrl={apiBaseUrl}
-            wsUrl={wsUrl}
-          >
-            {children}
-          </WebProviders>
-          <Toaster />
-        </ThemeProvider>
+        {process.env.NODE_ENV === "development" &&
+          process.env.VITE_REACT_GRAB && (
+            <Script
+              src="//unpkg.com/react-grab/dist/index.global.js"
+              crossOrigin="anonymous"
+              strategy="beforeInteractive"
+            />
+          )}
+        <ClerkProvider>
+          <ThemeProvider>
+            {providers}
+            <Toaster />
+          </ThemeProvider>
+        </ClerkProvider>
       </body>
     </html>
   );

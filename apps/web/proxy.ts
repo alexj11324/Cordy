@@ -1,4 +1,9 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import {
+  NextResponse,
+  type NextFetchEvent,
+  type NextRequest,
+} from "next/server";
 import { LOCALE_COOKIE } from "@patchbay/core/i18n";
 import {
   PATCHBAY_LOCALE_HEADER,
@@ -6,6 +11,25 @@ import {
 } from "./lib/locale-routing";
 import { runtimeRewriteDestination } from "./config/runtime-urls";
 import { isOfficialMarketingHost } from "./lib/public-host";
+
+// Clerk public routes — no authentication required
+const clerkPublicRoutes = createRouteMatcher([
+  "/",
+  "/login(.*)",
+  "/signup(.*)",
+  "/sign-in(.*)",
+  "/sign-up(.*)",
+  "/sso-callback(.*)",
+  "/oauth/google(.*)",
+  "/auth/callback",
+  "/api/webhooks(.*)",
+  "/api/config",
+  "/api/health",
+  "/pricing",
+  "/docs(.*)",
+  "/legal(.*)",
+  "/changelog",
+]);
 
 // Old workspace-scoped route segments that existed before the URL refactor
 // (pre-#1131). Any URL with these as the FIRST segment is a legacy URL that
@@ -42,12 +66,9 @@ function nextWithLocale(req: NextRequest): NextResponse {
   return NextResponse.next({ request: { headers } });
 }
 
-// Next.js 16 renamed `middleware` → `proxy`. API surface (NextRequest /
-// NextResponse / cookies / matcher) is identical; the only behavioral
-// change is the runtime — proxy is forced to nodejs and cannot opt into
-// edge.
-export function proxy(req: NextRequest) {
+function runtimeRewrite(req: NextRequest): NextResponse | null {
   const { pathname } = req.nextUrl;
+
   const runtimeDestination = runtimeRewriteDestination(pathname, process.env);
   if (runtimeDestination) {
     const url = new URL(runtimeDestination);
@@ -55,7 +76,32 @@ export function proxy(req: NextRequest) {
     return NextResponse.rewrite(url);
   }
 
-  const hasSession = req.cookies.has("patchbay_logged_in");
+  return null;
+}
+
+// Next.js 16 renamed `middleware` → `proxy`. API surface (NextRequest /
+// NextResponse / cookies / matcher) is identical; the only behavioral
+// change is the runtime — proxy is forced to nodejs and cannot opt into
+// edge.
+const clerkProxy = clerkMiddleware(async (auth, req) => {
+  const { pathname } = req.nextUrl;
+
+  if (!clerkPublicRoutes(req)) {
+    const { userId } = await auth();
+    if (!userId) {
+      const loginUrl = req.nextUrl.clone();
+      loginUrl.pathname = "/login";
+      loginUrl.search = "";
+      loginUrl.searchParams.set(
+        "redirect_url",
+        `${pathname}${req.nextUrl.search}`,
+      );
+      return NextResponse.redirect(loginUrl);
+    }
+  }
+
+  const hasSession =
+    req.cookies.has("patchbay_logged_in") || req.cookies.has("cordy_logged_in"); // legacy-brand-compat
   const lastSlug = req.cookies.get("last_workspace_slug")?.value;
 
   // --- Legacy URL redirect: /issues/... → /{slug}/issues/... ---
@@ -109,6 +155,19 @@ export function proxy(req: NextRequest) {
   // --- Default: forward locale header to RSC, no redirect/rewrite ---
   // Covers logged-out root path, /login, /:slug/*, and everything else.
   return nextWithLocale(req);
+});
+
+export function proxy(
+  req: NextRequest,
+  event?: NextFetchEvent,
+): ReturnType<typeof clerkProxy> {
+  const rewrite = runtimeRewrite(req);
+  if (rewrite) return rewrite;
+
+  return clerkProxy(
+    req,
+    event ?? ({ waitUntil: () => undefined } as unknown as NextFetchEvent),
+  );
 }
 
 export const config = {

@@ -1,9 +1,6 @@
-import type {
-  LocaleAdapter,
-  LocaleResources,
-  SupportedLocale,
-} from "../i18n";
+import type { LocaleAdapter, LocaleResources, SupportedLocale } from "../i18n";
 import type { StorageAdapter } from "../types/storage";
+import type { AuthLogoutHandler } from "../auth";
 
 /** Identifies the calling client to the server. Threaded through to
  *  ApiClient and WSClient so all HTTP requests and WS connections from
@@ -27,10 +24,12 @@ export interface CoreProviderProps {
   storage?: StorageAdapter;
   /** Use HttpOnly cookies for auth instead of localStorage tokens. Default: false. */
   cookieAuth?: boolean;
+  /** Use Clerk for auth (web only). Skips legacy token hydration and boot checks. */
+  clerkAuth?: boolean;
   /** Called after successful login (e.g. set cookie for Next.js middleware). */
   onLogin?: () => void;
   /** Called after logout (e.g. clear cookie). */
-  onLogout?: () => void;
+  onLogout?: AuthLogoutHandler;
   /** Identifies the calling client (web/desktop + version + os) to the server. */
   identity?: ClientIdentity;
   /** Active locale, determined server-side (web) or at app boot (desktop). */

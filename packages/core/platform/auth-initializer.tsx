@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { getApi } from "../api";
 import { ApiError } from "../api/client";
-import { useAuthStore } from "../auth";
+import { useAuthStore, type AuthLogoutHandler } from "../auth";
 import {
   captureSignupSource,
   identify as identifyAnalytics,
@@ -22,12 +22,7 @@ import type { User } from "../types";
 
 const logger = createLogger("auth");
 const RECOVERY_RETRY_DELAYS_MS = [
-  1_000,
-  2_000,
-  4_000,
-  8_000,
-  16_000,
-  30_000,
+  1_000, 2_000, 4_000, 8_000, 16_000, 30_000,
 ] as const;
 
 export function AuthInitializer({
@@ -36,13 +31,15 @@ export function AuthInitializer({
   onLogout,
   storage = defaultStorage,
   cookieAuth,
+  clerkAuth,
   identity,
 }: {
   children: ReactNode;
   onLogin?: () => void;
-  onLogout?: () => void;
+  onLogout?: AuthLogoutHandler;
   storage?: StorageAdapter;
   cookieAuth?: boolean;
+  clerkAuth?: boolean;
   identity?: ClientIdentity;
 }) {
   const qc = useQueryClient();
@@ -217,7 +214,7 @@ export function AuthInitializer({
     };
 
     const onAuthFailure = () => {
-      onLogout?.();
+      void onLogout?.();
       resetAnalytics();
       useAuthStore.setState({
         user: null,
@@ -322,11 +319,17 @@ export function AuthInitializer({
       void attempt();
     };
 
-    if (!cookieAuth) {
+    if (clerkAuth) {
+      useAuthStore.setState({
+        user: null,
+        isLoading: true,
+        status: "authenticating",
+      });
+    } else if (!cookieAuth) {
       const token = storage.getItem("patchbay_token");
       if (!token) {
         settled = true;
-        onLogout?.();
+        void onLogout?.();
         useAuthStore.setState({
           user: null,
           isLoading: false,
@@ -347,7 +350,7 @@ export function AuthInitializer({
       window.removeEventListener("online", retryNow);
       if (retryTimer !== undefined) clearTimeout(retryTimer);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [retryGeneration]);
 
   return <>{children}</>;

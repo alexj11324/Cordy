@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -14,6 +15,49 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 )
+
+type clerkVerifierFunc func(context.Context, string, time.Time) (ClerkIdentity, error)
+
+func (f clerkVerifierFunc) VerifySession(ctx context.Context, token string) (ClerkIdentity, error) {
+	return f(ctx, token, time.Time{})
+}
+
+func (f clerkVerifierFunc) VerifyFreshSession(ctx context.Context, token string, startedAt time.Time) (ClerkIdentity, error) {
+	return f(ctx, token, startedAt)
+}
+
+func TestClerkLoginFailsClosedBeforeDatabaseAccess(t *testing.T) {
+	tests := []struct {
+		name       string
+		authorize  string
+		verifier   ClerkSessionVerifier
+		wantStatus int
+		wantError  string
+	}{
+		{"missing bearer", "", nil, http.StatusUnauthorized, "Clerk session is required"},
+		{"not configured", "Bearer clerk-session", nil, http.StatusServiceUnavailable, "Clerk login is not configured"},
+		{"invalid", "Bearer clerk-session", clerkVerifierFunc(func(context.Context, string, time.Time) (ClerkIdentity, error) {
+			return ClerkIdentity{}, errClerkInvalid
+		}), http.StatusUnauthorized, "invalid Clerk session"},
+		{"unavailable", "Bearer clerk-session", clerkVerifierFunc(func(context.Context, string, time.Time) (ClerkIdentity, error) {
+			return ClerkIdentity{}, errClerkUnavailable
+		}), http.StatusServiceUnavailable, "Clerk login is temporarily unavailable"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			h := &Handler{ClerkAuth: test.verifier}
+			req := httptest.NewRequest(http.MethodPost, "/auth/clerk", nil)
+			if test.authorize != "" {
+				req.Header.Set("Authorization", test.authorize)
+			}
+			recorder := httptest.NewRecorder()
+			h.ClerkLogin(recorder, req)
+			if recorder.Code != test.wantStatus || !strings.Contains(recorder.Body.String(), test.wantError) {
+				t.Fatalf("response = %d %s", recorder.Code, recorder.Body.String())
+			}
+		})
+	}
+}
 
 func TestClerkAuthConfigurationFailsClosed(t *testing.T) {
 	if verifier, err := newClerkAuthClient(Config{}); err != nil || verifier != nil {

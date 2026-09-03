@@ -8,6 +8,35 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("ApiClient Clerk exchange", () => {
+  it("exchanges the Clerk session without putting it in the body", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ token: "patchbay-token", user: { id: "user-1" } }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new ApiClient("https://api.example.test");
+
+    await client.clerkLogin("clerk-session");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.example.test/auth/clerk",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          Authorization: "Bearer clerk-session",
+        }),
+      }),
+    );
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toBeUndefined();
+  });
+});
+
 describe("ApiClient agent conversation-starter compatibility", () => {
   const prompt = {
     label: "Review a PR",

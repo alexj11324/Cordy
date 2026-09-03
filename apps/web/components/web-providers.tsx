@@ -1,6 +1,9 @@
 "use client";
 
-import { useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
+import { useAuth } from "@clerk/nextjs";
+import { useAuthStore } from "@patchbay/core/auth";
+import type { AuthLogoutHandler, AuthLogoutOptions } from "@patchbay/core/auth";
 import { CoreProvider } from "@patchbay/core/platform";
 import { createBrowserCookieLocaleAdapter } from "@patchbay/core/i18n/browser";
 import type { LocaleResources, SupportedLocale } from "@patchbay/core/i18n";
@@ -13,21 +16,7 @@ import {
   clearLoggedInCookie,
 } from "@/features/auth/auth-cookie";
 import { detectWebOS } from "@/platform/client-os";
-
-// Legacy token in localStorage → keep this session in token mode so users who
-// logged in before the cookie-auth migration stay authed. They migrate to
-// cookie mode on their next logout/login cycle (logout clears patchbay_token).
-// Sunset: once telemetry shows <1% of sessions still carry patchbay_token,
-// delete this branch and hard-code `cookieAuth` — the localStorage token is
-// XSS-exposed and is the exact thing the cookie migration exists to remove.
-function hasLegacyToken(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    return Boolean(window.localStorage.getItem("patchbay_token"));
-  } catch {
-    return false;
-  }
-}
+import { ClerkAuthAdapter } from "./clerk-auth-adapter";
 
 // Derive WebSocket URL from the page origin so self-hosted / LAN deployments
 // work without an explicit runtime wsUrl. The Next.js runtime proxy handles
@@ -44,20 +33,27 @@ function deriveWsUrl(): string | undefined {
 const WEB_VERSION =
   process.env.NEXT_PUBLIC_APP_VERSION || packageJson.version || "dev";
 
-export function WebProviders({
-  children,
-  locale,
-  resources,
-  apiBaseUrl,
-  wsUrl,
-}: {
+type WebProvidersProps = {
   children: React.ReactNode;
   locale: SupportedLocale;
   resources: Record<string, LocaleResources>;
   apiBaseUrl?: string;
   wsUrl?: string;
-}) {
-  const cookieAuth = !hasLegacyToken();
+};
+
+function clearWebSessionState() {
+  useWelcomeStore.getState().reset();
+  clearLoggedInCookie();
+}
+
+function WebProviderTree({
+  children,
+  locale,
+  resources,
+  apiBaseUrl,
+  wsUrl,
+  onLogout,
+}: WebProvidersProps & { onLogout: AuthLogoutHandler }) {
   // Stable identity reference so downstream effects keyed on it don't see a
   // new object on every parent render.
   const identity = useMemo(
@@ -65,30 +61,69 @@ export function WebProviders({
     [],
   );
   const localeAdapter = useMemo(() => createBrowserCookieLocaleAdapter(), []);
+  const tree = (
+    <WebNavigationProvider>
+      <WebScrollRestorationProvider>{children}</WebScrollRestorationProvider>
+    </WebNavigationProvider>
+  );
   return (
     <CoreProvider
       apiBaseUrl={apiBaseUrl}
       wsUrl={wsUrl || deriveWsUrl()}
-      cookieAuth={cookieAuth}
+      clerkAuth
+      cookieAuth
       onLogin={setLoggedInCookie}
-      onLogout={() => {
-        // welcome-store holds the transient post-onboarding signal. Must
-        // clear on logout so user B logging into the same browser doesn't
-        // inherit user A's signal and have <WelcomeAfterOnboarding /> fire
-        // listAgents / createIssue against a workspace user B doesn't even
-        // belong to. The store's own docstring promises this reset; this
-        // is where it gets wired.
-        useWelcomeStore.getState().reset();
-        clearLoggedInCookie();
-      }}
+      onLogout={onLogout}
       identity={identity}
       locale={locale}
       resources={resources}
       localeAdapter={localeAdapter}
     >
-      <WebNavigationProvider>
-        <WebScrollRestorationProvider>{children}</WebScrollRestorationProvider>
-      </WebNavigationProvider>
+      <ClerkAuthAdapter>{tree}</ClerkAuthAdapter>
     </CoreProvider>
   );
+}
+
+function ClerkWebProviders(props: WebProvidersProps) {
+  const { isSignedIn, signOut } = useAuth();
+  // CoreProvider installs its platform callbacks once at app boot. Keep the
+  // latest Clerk state behind a stable ref so that callback never captures
+  // the initial loading state or an obsolete signOut function.
+  const clerkAuthRef = useRef({ isSignedIn, signOut });
+  clerkAuthRef.current = { isSignedIn, signOut };
+
+  const logout = useCallback<AuthLogoutHandler>(
+    async (serverLogout, options?: AuthLogoutOptions) => {
+      let signOutFailed = false;
+      try {
+        if (clerkAuthRef.current.isSignedIn) {
+          await clerkAuthRef.current.signOut();
+        }
+      } catch (error) {
+        signOutFailed = true;
+        // A transient Clerk failure must not strand the already-cleared core
+        // session on a gated workspace route. The next explicit sign-in still
+        // goes through Clerk and the Go exchange before becoming authenticated.
+        console.warn("Clerk sign-out failed during local logout", error);
+      } finally {
+        clearWebSessionState();
+        if (signOutFailed) {
+          // Core starts server revocation and platform cleanup together. Wait
+          // for the revocation response before re-exchanging Clerk, otherwise
+          // the old logout response could clear the newly issued session cookie.
+          await serverLogout;
+          if (options?.rearmAuth !== false) {
+            useAuthStore.getState().retryAuthentication();
+          }
+        }
+      }
+    },
+    [],
+  );
+
+  return <WebProviderTree {...props} onLogout={logout} />;
+}
+
+export function WebProviders(props: WebProvidersProps) {
+  return <ClerkWebProviders {...props} />;
 }

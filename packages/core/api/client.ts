@@ -921,6 +921,26 @@ export class ApiClient {
     });
   }
 
+  async clerkLogin(sessionToken: string, signal?: AbortSignal): Promise<LoginResponse> {
+    return this.fetch("/auth/clerk", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${sessionToken}` },
+      signal,
+    });
+  }
+
+  async completeDesktopGoogleAttempt(
+    sessionToken: string,
+    state: string,
+    codeChallenge: string,
+  ): Promise<{ callback_protocol: string; code: string }> {
+    return this.fetch("/api/desktop-google/complete", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${sessionToken}` },
+      body: JSON.stringify({ state, code_challenge: codeChallenge }),
+    });
+  }
+
   async googleLogin(code: string, redirectUri: string): Promise<LoginResponse> {
     return this.fetch("/auth/google", {
       method: "POST",
