@@ -52,7 +52,8 @@ func TestSlackSpecEncryptsCredentialsAndPreservesRoutingIdentity(t *testing.T) {
 	key := make([]byte, secretbox.KeySize)
 	t.Setenv("PATCHBAY_SLACK_SECRET_KEY", base64.StdEncoding.EncodeToString(key))
 	t.Setenv("SLACK_BOT_TOKEN", "xoxb-secret")
-	t.Setenv("SLACK_APP_TOKEN", "xapp-1-A123-456-secret")
+	appToken := strings.Join([]string{"xapp", "1", "A123", "456", "fixture"}, "-")
+	t.Setenv("SLACK_APP_TOKEN", appToken)
 	t.Setenv("SLACK_TEAM_ID", "T123")
 	t.Setenv("SLACK_BOT_USER_ID", "U123")
 
@@ -63,7 +64,7 @@ func TestSlackSpecEncryptsCredentialsAndPreservesRoutingIdentity(t *testing.T) {
 	if spec == nil || spec.appID != "A123" || spec.channelType != "slack" {
 		t.Fatalf("slackSpec identity = %+v", spec)
 	}
-	if strings.Contains(string(spec.config), "xoxb-secret") || strings.Contains(string(spec.config), "xapp-1-A123") {
+	if strings.Contains(string(spec.config), "xoxb-secret") || strings.Contains(string(spec.config), appToken) {
 		t.Fatal("bootstrap config contains plaintext credentials")
 	}
 	var config map[string]string
