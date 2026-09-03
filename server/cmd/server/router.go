@@ -2068,8 +2068,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireWorkspaceMember(queries))
 
-			// Assignee frequency
-			r.Get("/api/assignee-frequency", h.GetAssigneeFrequency)
+			// Executor frequency
+			r.Get("/api/executor-frequency", h.GetExecutorFrequency)
 
 			// Issues
 			r.Route("/api/issues", func(r chi.Router) {

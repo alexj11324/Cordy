@@ -36,9 +36,12 @@ const COLD = buildIssueStatusCatalog(undefined);
 function issue(overrides: Partial<GateIssue> = {}): GateIssue {
   return {
     id: "issue-1",
+    revision: 7,
     status: "backlog",
     executor_type: "agent",
     executor_id: "agent-1",
+    reviewer_type: null,
+    reviewer_id: null,
     ...overrides,
   };
 }
@@ -69,7 +72,7 @@ describe("runConfirmIntent — assign", () => {
   it("confirms when the issue is not parked", () => {
     expect(
       runConfirmIntent(issue({ status: "todo" }), { executor_type: "agent", executor_id: "a-2" }, CATALOG),
-    ).toEqual({ issueIds: ["issue-1"], mode: "assign", assigneeType: "agent", assigneeId: "a-2" });
+    ).toEqual({ issueIds: ["issue-1"], mode: "assign", executorType: "agent", executorId: "a-2" });
   });
 
   it.each([
@@ -107,14 +110,13 @@ describe("runConfirmIntent — promote", () => {
     ["custom Todo-category status", "backlog", "rework"],
     ["custom backlog-category origin", "later", "rework"],
     ["a non-todo target that still starts a run", "backlog", "in_progress"],
-    ["a custom in_review target", "backlog", "qa"],
   ])("confirms the promotion (%s)", (_label, from, to) => {
     expect(runConfirmIntent(issue({ status: from }), { status: to }, CATALOG)).toEqual({
       issueIds: ["issue-1"],
       mode: "promote",
       status: to,
-      assigneeType: "agent",
-      assigneeId: "agent-1",
+      executorType: "agent",
+      executorId: "agent-1",
     });
   });
 

@@ -318,16 +318,16 @@ func activityToEntry(a db.ActivityLog) TimelineEntry {
 	}
 }
 
-// AssigneeFrequencyEntry represents how often a user assigns to a specific target.
-type AssigneeFrequencyEntry struct {
+// ExecutorFrequencyEntry represents how often a user assigns an execution target.
+type ExecutorFrequencyEntry struct {
 	ExecutorType string `json:"executor_type"`
 	ExecutorID   string `json:"executor_id"`
 	Frequency    int64  `json:"frequency"`
 }
 
-// GetAssigneeFrequency returns assignee usage frequency for the current user,
-// combining data from assignee change activities and initial issue assignments.
-func (h *Handler) GetAssigneeFrequency(w http.ResponseWriter, r *http.Request) {
+// GetExecutorFrequency returns executor usage frequency for the current user,
+// combining data from executor change activities and initial issue assignments.
+func (h *Handler) GetExecutorFrequency(w http.ResponseWriter, r *http.Request) {
 	userID, ok := requireUserID(w, r)
 	if !ok {
 		return
@@ -337,13 +337,13 @@ func (h *Handler) GetAssigneeFrequency(w http.ResponseWriter, r *http.Request) {
 	// Aggregate frequency from both data sources.
 	freq := map[string]int64{} // key: "type:id"
 
-	// Source 1: assignee_changed activities by this user.
-	activityCounts, err := h.Queries.CountAssigneeChangesByActor(r.Context(), db.CountAssigneeChangesByActorParams{
+	// Source 1: executor_changed activities by this user.
+	activityCounts, err := h.Queries.CountExecutorChangesByActor(r.Context(), db.CountExecutorChangesByActorParams{
 		WorkspaceID: parseUUID(workspaceID),
 		ActorID:     parseUUID(userID),
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to get assignee frequency")
+		writeError(w, http.StatusInternalServerError, "failed to get executor frequency")
 		return
 	}
 	for _, row := range activityCounts {
@@ -354,13 +354,13 @@ func (h *Handler) GetAssigneeFrequency(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Source 2: issues created by this user with an assignee.
-	issueCounts, err := h.Queries.CountCreatedIssueAssignees(r.Context(), db.CountCreatedIssueAssigneesParams{
+	// Source 2: issues created by this user with an executor.
+	issueCounts, err := h.Queries.CountCreatedIssueExecutors(r.Context(), db.CountCreatedIssueExecutorsParams{
 		WorkspaceID: parseUUID(workspaceID),
 		CreatorID:   parseUUID(userID),
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to get assignee frequency")
+		writeError(w, http.StatusInternalServerError, "failed to get executor frequency")
 		return
 	}
 	for _, row := range issueCounts {
@@ -372,7 +372,7 @@ func (h *Handler) GetAssigneeFrequency(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build sorted response.
-	result := make([]AssigneeFrequencyEntry, 0, len(freq))
+	result := make([]ExecutorFrequencyEntry, 0, len(freq))
 	for key, count := range freq {
 		// Split "type:id" — type is always "member" or "agent" (no colons).
 		var aType, aID string
@@ -383,7 +383,7 @@ func (h *Handler) GetAssigneeFrequency(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 		}
-		result = append(result, AssigneeFrequencyEntry{
+		result = append(result, ExecutorFrequencyEntry{
 			ExecutorType: aType,
 			ExecutorID:   aID,
 			Frequency:    count,

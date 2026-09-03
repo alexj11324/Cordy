@@ -21,7 +21,7 @@ import {
   IssueActionsMenuItems,
   contextPrimitives,
 } from "./issue-actions-menu-items";
-import { AssigneePicker } from "../components/pickers";
+import { ExecutorPicker } from "../components/pickers";
 
 /**
  * One shared context menu per surface instead of one Base UI ContextMenu
@@ -107,7 +107,7 @@ function IssueContextMenuSingleton({
   onOpenChange: (v: boolean) => void;
 }) {
   const actions = useIssueActions(issue);
-  const [assigneeOpen, setAssigneeOpen] = useState(false);
+  const [executorOpen, setExecutorOpen] = useState(false);
 
   // Point-sized virtual anchor at the right-click position — replaces the
   // cursor anchor Base UI's own trigger would have registered.
@@ -132,20 +132,20 @@ function IssueContextMenuSingleton({
             issue={issue}
             actions={actions}
             primitives={contextPrimitives}
-            onOpenAssignee={() => setAssigneeOpen(true)}
+            onOpenExecutor={() => setExecutorOpen(true)}
           />
         </ContextMenuContent>
       </ContextMenu>
       {/* Mount the picker only once the user actually opens it, anchored at
           the right-click position so it opens where the context menu just
           was instead of jumping to the row's top-left corner. */}
-      {assigneeOpen && (
-        <AssigneePicker
-          assigneeType={issue.executor_type ?? issue.owner_type}
-          assigneeId={issue.executor_id ?? issue.owner_id}
+      {executorOpen && (
+        <ExecutorPicker
+          executorType={issue.executor_type}
+          executorId={issue.executor_id}
           onUpdate={actions.updateField}
-          open={assigneeOpen}
-          onOpenChange={setAssigneeOpen}
+          open={executorOpen}
+          onOpenChange={setExecutorOpen}
           triggerRender={
             <span
               aria-hidden

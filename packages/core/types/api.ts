@@ -118,8 +118,8 @@ export interface MoveIssueRequest
 export interface IssueTriggerPreviewParams {
   issueIds?: string[];
   isCreate?: boolean;
-  assigneeType?: IssueAssigneeType | null;
-  assigneeId?: string | null;
+  executorType?: IssueExecutorType | null;
+  executorId?: string | null;
   status?: IssueStatus;
 }
 

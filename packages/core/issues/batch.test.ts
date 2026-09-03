@@ -39,7 +39,8 @@ describe("commonIssueFields", () => {
     expect(commonIssueFields([])).toEqual({
       status: null,
       priority: null,
-      assignee: null,
+      owner: null,
+      executor: null,
     });
   });
 
@@ -49,7 +50,7 @@ describe("commonIssueFields", () => {
     ]);
     expect(common.status).toBe("in_progress");
     expect(common.priority).toBe("high");
-    expect(common.assignee).toEqual({ type: "member", id: "u-1" });
+    expect(common.owner).toEqual({ type: "member", id: "u-1" });
   });
 
   it("returns the shared status when every issue agrees, not a hardcoded default", () => {
@@ -84,38 +85,39 @@ describe("commonIssueFields", () => {
       makeIssue({ id: "a", executor_type: null, executor_id: null }),
       makeIssue({ id: "b", executor_type: null, executor_id: null }),
     ]);
-    expect(common.assignee).toEqual({ type: null, id: null });
+    expect(common.executor).toEqual({ type: null, id: null });
   });
 
-  it("returns the shared assignee when every issue points at the same actor", () => {
+  it("returns the shared executor when every issue points at the same actor", () => {
     const common = commonIssueFields([
       makeIssue({ id: "a", executor_type: "agent", executor_id: "agent-1" }),
       makeIssue({ id: "b", executor_type: "agent", executor_id: "agent-1" }),
     ]);
-    expect(common.assignee).toEqual({ type: "agent", id: "agent-1" });
+    expect(common.executor).toEqual({ type: "agent", id: "agent-1" });
   });
 
-  it("returns null assignee when actors differ", () => {
+  it("returns null owner when owners differ", () => {
     const common = commonIssueFields([
       makeIssue({ id: "a", owner_type: "member", owner_id: "u-1" }),
       makeIssue({ id: "b", owner_type: "member", owner_id: "u-2" }),
     ]);
-    expect(common.assignee).toBeNull();
+    expect(common.owner).toBeNull();
   });
 
-  it("returns null assignee when some are assigned and some are unassigned", () => {
+  it("returns null owner when some issues have an owner and some do not", () => {
     const common = commonIssueFields([
       makeIssue({ id: "a", owner_type: "member", owner_id: "u-1" }),
       makeIssue({ id: "b", executor_type: null, executor_id: null }),
     ]);
-    expect(common.assignee).toBeNull();
+    expect(common.owner).toBeNull();
   });
 
-  it("distinguishes assignees of the same id but different type", () => {
+  it("keeps owner and executor independent even when they share an id", () => {
     const common = commonIssueFields([
       makeIssue({ id: "a", owner_type: "member", owner_id: "x" }),
       makeIssue({ id: "b", executor_type: "agent", executor_id: "x" }),
     ]);
-    expect(common.assignee).toBeNull();
+    expect(common.owner).toBeNull();
+    expect(common.executor).toBeNull();
   });
 });

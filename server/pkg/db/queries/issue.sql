@@ -598,8 +598,8 @@ WHERE workspace_id = $1
   AND origin_id = $3
 LIMIT 1;
 
--- name: CountCreatedIssueAssignees :many
--- Count assignees on issues created by a specific user.
+-- name: CountCreatedIssueExecutors :many
+-- Count execution targets on issues created by a specific user.
 SELECT
   executor_type,
   executor_id,

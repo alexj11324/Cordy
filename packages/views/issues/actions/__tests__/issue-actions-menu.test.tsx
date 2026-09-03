@@ -52,8 +52,8 @@ vi.mock("@patchbay/core/workspace/queries", () => ({
     queryKey: ["workspaces", "ws-1", "teams"],
     queryFn: () => Promise.resolve([]),
   }),
-  assigneeFrequencyOptions: () => ({
-    queryKey: ["workspaces", "ws-1", "assignee-frequency"],
+  executorFrequencyOptions: () => ({
+    queryKey: ["workspaces", "ws-1", "executor-frequency"],
     queryFn: () => Promise.resolve([]),
   }),
 }));
@@ -207,7 +207,7 @@ describe("IssueActionsDropdown", () => {
     // Base UI portals the popup; role=menu lands on the popup wrapper.
     expect(await screen.findByText("Status")).toBeInTheDocument();
     expect(screen.getByText("Priority")).toBeInTheDocument();
-    expect(screen.getByText("Assignee")).toBeInTheDocument();
+    expect(screen.getByText("Executor")).toBeInTheDocument();
     expect(screen.getByText("Due date")).toBeInTheDocument();
     expect(screen.getByText("Open in new tab")).toBeInTheDocument();
     expect(screen.getByText("Copy link")).toBeInTheDocument();
@@ -219,7 +219,7 @@ describe("IssueActionsDropdown", () => {
     expect(screen.queryByText("Add sub-issue...")).not.toBeInTheDocument();
   });
 
-  it("clicking the Assignee item opens the shared AssigneePicker popover", async () => {
+  it("clicking Executor opens the shared ExecutorPicker popover", async () => {
     render(
       wrap(
         <IssueActionsDropdown
@@ -230,16 +230,12 @@ describe("IssueActionsDropdown", () => {
     );
 
     fireEvent.click(screen.getByTestId("trigger"));
-    fireEvent.click(await screen.findByText("Assignee"));
+    fireEvent.click(await screen.findByText("Executor"));
 
-    // The shared picker exposes a search input and renders the workspace
-    // member under a "Members" group — both come from `AssigneePicker`, not
-    // the legacy submenu (which had neither).
+    // The shared execution-role picker exposes search without mixing in owners.
     expect(
       await screen.findByPlaceholderText("Assign to..."),
     ).toBeInTheDocument();
-    expect(await screen.findByText("Members")).toBeInTheDocument();
-    expect(await screen.findByText("Test User")).toBeInTheDocument();
   });
 
   it("shows 'Remove parent issue' in the Relations submenu only when the issue has a parent", async () => {

@@ -2,6 +2,7 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -14,8 +15,17 @@ import {
 import { Button } from "@patchbay/ui/components/ui/button";
 import { Textarea } from "@patchbay/ui/components/ui/textarea";
 import { Spinner } from "@patchbay/ui/components/ui/spinner";
-import type { IssueAssigneeType, IssueStatus, UpdateIssueRequest } from "@patchbay/core/types";
-import { useUpdateIssue, useBatchUpdateIssues } from "@patchbay/core/issues/mutations";
+import type {
+  IssueExecutorType,
+  IssueReviewerType,
+  IssueStatus,
+  UpdateIssueRequest,
+} from "@patchbay/core/types";
+import {
+  useUpdateIssue,
+  useBatchUpdateIssues,
+  type UpdateIssueMutationInput,
+} from "@patchbay/core/issues/mutations";
 import { errorCode } from "@patchbay/core/api";
 import { useActorName } from "@patchbay/core/workspace/hooks";
 import { useWorkspaceId } from "@patchbay/core/hooks";
@@ -24,6 +34,8 @@ import { runtimeListOptions, readRuntimeCliVersion, handoffSupported } from "@pa
 import { useShortcut, shortcutMatchesEvent, isPlainShortcut } from "@patchbay/core/shortcuts";
 import { isImeComposing } from "@patchbay/core/utils";
 import { ShortcutKeycaps } from "../common/shortcut-keycaps";
+import { ActorAvatar } from "../common/actor-avatar";
+import { ReviewerPicker } from "../issues/components/pickers/executor-picker";
 import { useStatusLabel } from "../issues/utils/status-label";
 import { useT } from "../i18n";
 
@@ -59,21 +71,28 @@ function boldFenced(text: string): ReactNode {
   );
 }
 
-interface RunConfirmData {
+type RunConfirmData = {
   issueIds?: string[];
   // The two issue writes that hand work to an agent, and the only two that
   // confirm. `assign` gives the issue an agent/team owner; `promote` moves an
   // already-owned issue out of the backlog category, which starts the run on
   // its own (RunSourceStatus). Batch status changes still apply directly
   // (MUL-4155) — `promote` is the single-issue picker path only (MUL-6463).
-  mode?: "assign" | "promote";
-  /** promote only: the status KEY the issue is moving to. */
+  mode?: "assign" | "promote" | "review" | "review-return";
+  /** promote/review/review-return only: the target status key. */
   status?: IssueStatus;
-  assigneeType?: IssueAssigneeType;
-  assigneeId?: string;
-  assigneeName?: string;
+  executorType?: IssueReviewerType;
+  executorId?: string;
+  executorName?: string;
+  fromExecutorType?: IssueExecutorType | null;
+  fromExecutorId?: string | null;
+  fromExecutorName?: string;
+  excludedExecutors?: Array<{ type: IssueExecutorType; id: string }>;
+  additionalUpdates?: Partial<Omit<UpdateIssueMutationInput, "id">>;
   issueRevision?: number;
-}
+  onSuccess?: () => void;
+  onError?: () => void;
+};
 
 /**
  * Handoff confirmation for the issue writes that start agent runs.
@@ -108,6 +127,12 @@ export function RunConfirmModal({
   const issueIds = d.issueIds ?? [];
 
   const [note, setNote] = useState("");
+  const [reviewerType, setReviewerType] = useState<IssueReviewerType | null>(
+    d.mode === "review" ? d.executorType ?? null : null,
+  );
+  const [reviewerId, setReviewerId] = useState<string | null>(
+    d.mode === "review" ? d.executorId ?? null : null,
+  );
   // Which footer action is in flight, so only the clicked button shows a
   // spinner (the request runs an agent on the server for note assigns, so it is
   // not instant — the disabled-only state read as frozen).
@@ -132,15 +157,19 @@ export function RunConfirmModal({
   const { data: agents = [] } = useQuery({ ...agentListOptions(wsId), enabled: !!wsId });
   const { data: runtimes = [] } = useQuery({ ...runtimeListOptions(wsId), enabled: !!wsId });
   const { data: teams = [] } = useQuery({ ...teamListOptions(wsId), enabled: !!wsId });
+  const isReview = d.mode === "review" && !!d.status;
+  const isReviewReturn = d.mode === "review-return" && !!d.status;
+  const targetExecutorType = isReview ? reviewerType : d.executorType ?? null;
+  const targetExecutorId = isReview ? reviewerId : d.executorId ?? null;
   const localHandoff = useMemo<boolean | null>(() => {
-    if (!d.assigneeId) return null;
+    if (!targetExecutorId) return null;
     let agentId: string | undefined;
-    if (d.assigneeType === "agent") {
-      agentId = d.assigneeId;
-    } else if (d.assigneeType === "team") {
+    if (targetExecutorType === "agent") {
+      agentId = targetExecutorId;
+    } else if (targetExecutorType === "team") {
       // A team run is executed by its leader, so the leader's runtime is the
       // one that has to render the note.
-      agentId = teams.find((s) => s.id === d.assigneeId)?.leader_id;
+      agentId = teams.find((s) => s.id === targetExecutorId)?.leader_id;
     }
     if (!agentId) return null;
     const agent = agents.find((a) => a.id === agentId);
@@ -148,7 +177,7 @@ export function RunConfirmModal({
     const runtime = runtimes.find((r) => r.id === agent.runtime_id);
     if (!runtime) return null;
     return handoffSupported(readRuntimeCliVersion(runtime.metadata));
-  }, [d.assigneeType, d.assigneeId, agents, runtimes, teams]);
+  }, [targetExecutorType, targetExecutorId, agents, runtimes, teams]);
 
   // Soft gate: an old runtime can't render the note. Disable the box but let
   // the assignment proceed (MUL-3375 §6.3).
@@ -158,30 +187,57 @@ export function RunConfirmModal({
   // the issue, and re-sending the same assignee would turn a status write into
   // an assignee write on the server's side of the trigger predicate.
   const isPromote = d.mode === "promote" && !!d.status;
+  const isSameReviewer =
+    isReview &&
+    ((reviewerType === d.fromExecutorType && reviewerId === d.fromExecutorId) ||
+      d.excludedExecutors?.some(
+        (executor) => executor.type === reviewerType && executor.id === reviewerId,
+      ) === true);
+  const reviewReady = !isReview || (!!reviewerType && !!reviewerId && !isSameReviewer);
+  const noteApplies = targetExecutorType === "agent" || targetExecutorType === "team";
+  const executionType =
+    d.executorType === "agent" || d.executorType === "team" ? d.executorType : null;
 
   const applyTo = (extra: Partial<UpdateIssueRequest>) => {
-    const base: UpdateIssueRequest = isPromote
-      ? { status: d.status }
-      : {
-          ...(d.assigneeType === "member"
-            ? { owner_type: "member" as const, owner_id: d.assigneeId ?? null }
-            : { executor_type: d.assigneeType ?? null, executor_id: d.assigneeId ?? null }),
-        };
-    return { ...base, ...extra };
+    const base: UpdateIssueRequest = isReview
+      ? {
+          status: d.status,
+          reviewer_type: reviewerType,
+          reviewer_id: reviewerId,
+          ...(d.issueRevision !== undefined ? { expected_revision: d.issueRevision } : {}),
+        }
+      : isReviewReturn
+        ? {
+            status: d.status,
+            ...(d.issueRevision !== undefined ? { expected_revision: d.issueRevision } : {}),
+          }
+        : isPromote
+          ? { status: d.status }
+          : { executor_type: executionType, executor_id: d.executorId ?? null };
+    return { ...d.additionalUpdates, ...base, ...extra };
   };
 
   // The copy names whoever the issue is handed to; for a team that is the
   // team itself, since its leader deciding who works is an internal detail.
-  const assigneeName =
-    d.assigneeName ??
-    getActorName(d.assigneeType === "team" ? "team" : "agent", d.assigneeId ?? "");
+  const executorName =
+    d.executorName ??
+    (targetExecutorType && targetExecutorId
+      ? getActorName(targetExecutorType, targetExecutorId)
+      : "");
+  const previousExecutorName =
+    d.fromExecutorName ??
+    (d.fromExecutorType && d.fromExecutorId
+      ? getActorName(d.fromExecutorType, d.fromExecutorId)
+      : t(($) => $.run_confirm.unassigned));
 
   const submit = async (suppressRun: boolean) => {
-    if (issueIds.length === 0 || submitting) return;
+    if (issueIds.length === 0 || submitting || !reviewReady) return;
     setPendingAction(suppressRun ? "suppress" : "go");
     const payload = applyTo({
       ...(suppressRun ? { suppress_run: true } : {}),
-      ...(!suppressRun && !noteDisabled && note.trim() ? { handoff_note: note.trim() } : {}),
+      ...(!suppressRun && noteApplies && !noteDisabled && note.trim()
+        ? { handoff_note: note.trim() }
+        : {}),
     });
     try {
       // Completion is silent, exactly as before: the assignee and any run show
@@ -196,8 +252,10 @@ export function RunConfirmModal({
       } else {
         await batchUpdate.mutateAsync({ ids: issueIds, updates: payload });
       }
+      d.onSuccess?.();
       onClose();
     } catch (err) {
+      d.onError?.();
       toast.error(
         errorCode(err) === "revision_conflict"
           ? tIssues(($) => $.revision.conflict)
@@ -243,17 +301,32 @@ export function RunConfirmModal({
   // status it is moving to by its workspace label — a custom status is only
   // recognisable by the name its admin gave it.
   const headline: ReactNode = boldFenced(
-    isPromote
+    isReview
+      ? executorName
+        ? t(($) => $.run_confirm.review_single, {
+            from: fenced(previousExecutorName),
+            to: fenced(executorName),
+            status: fenced(statusLabel(d.status ?? "")),
+          })
+        : t(($) => $.run_confirm.review_choose, {
+            status: fenced(statusLabel(d.status ?? "")),
+          })
+      : isReviewReturn
+        ? t(($) => $.run_confirm.review_return_single, {
+            to: fenced(executorName),
+            status: fenced(statusLabel(d.status ?? "")),
+          })
+      : isPromote
       ? t(($) => $.run_confirm.promote_single, {
-          name: fenced(assigneeName),
+          name: fenced(executorName),
           status: fenced(statusLabel(d.status ?? "")),
         })
       : issueIds.length > 1
         ? t(($) => $.run_confirm.assign_batch, {
-            name: fenced(assigneeName),
+            name: fenced(executorName),
             count: issueIds.length,
           })
-        : t(($) => $.run_confirm.assign_single, { name: fenced(assigneeName) }),
+        : t(($) => $.run_confirm.assign_single, { name: fenced(executorName) }),
   );
 
   return (
@@ -263,14 +336,53 @@ export function RunConfirmModal({
           <DialogTitle>
             {isPromote
               ? t(($) => $.run_confirm.title_promote)
-              : t(($) => $.run_confirm.title_assign)}
+              : isReview
+                ? t(($) => $.run_confirm.title_review)
+                : isReviewReturn
+                  ? t(($) => $.run_confirm.title_review_return)
+                  : t(($) => $.run_confirm.title_assign)}
           </DialogTitle>
           <DialogDescription>{headline}</DialogDescription>
         </DialogHeader>
 
-        {/* Always mounted and always usable on the first frame — nothing about
+        {isReview ? (
+          <div className="grid gap-2">
+            <span className="text-body font-medium">
+              {t(($) => $.run_confirm.reviewer_label)}
+            </span>
+            <div className="flex items-center gap-2 rounded-md border border-border px-3 py-2">
+              {d.fromExecutorType && d.fromExecutorId ? (
+                <ActorAvatar
+                  actorType={d.fromExecutorType}
+                  actorId={d.fromExecutorId}
+                  size="sm"
+                />
+              ) : null}
+              <span className="min-w-0 truncate text-body">{previousExecutorName}</span>
+              <ArrowRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <div className="min-w-0 flex-1">
+                <ReviewerPicker
+                  reviewerType={reviewerType}
+                  reviewerId={reviewerId}
+                  onUpdate={(updates) => {
+                    setReviewerType(updates.reviewer_type ?? null);
+                    setReviewerId(updates.reviewer_id ?? null);
+                  }}
+                  align="start"
+                />
+              </div>
+            </div>
+            {isSameReviewer ? (
+              <p className="text-caption text-destructive">
+                {t(($) => $.run_confirm.reviewer_must_change)}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {/* Always mounted and usable on the first frame — nothing about
             this box depends on a server answer. */}
-        <div className="grid gap-1.5">
+        {noteApplies ? <div className="grid gap-1.5">
           <label className="text-body font-medium" htmlFor="handoff-note">
             {t(($) => $.run_confirm.note_label)}
           </label>
@@ -286,22 +398,28 @@ export function RunConfirmModal({
           {noteDisabled ? (
             <p className="text-caption text-muted-foreground">{t(($) => $.run_confirm.note_unsupported)}</p>
           ) : null}
-        </div>
+        </div> : null}
 
         {/* The only spinner left is on the button the user just pressed, and it
             reflects the write in flight — never a pre-flight check. */}
         <DialogFooter>
-          <Button type="button" variant="outline" disabled={submitting} onClick={() => submit(true)}>
-            {pendingAction === "suppress" ? <Spinner className="size-4" /> : t(($) => $.run_confirm.dont_start)}
-          </Button>
-          <Button type="button" disabled={submitting} onClick={() => submit(false)}>
+          {noteApplies && !isReview ? (
+            <Button type="button" variant="outline" disabled={submitting || !reviewReady} onClick={() => submit(true)}>
+              {pendingAction === "suppress" ? <Spinner className="size-4" /> : t(($) => $.run_confirm.dont_start)}
+            </Button>
+          ) : null}
+          <Button type="button" disabled={submitting || !reviewReady} onClick={() => submit(false)}>
             {pendingAction === "go" ? (
               <Spinner className="size-4" />
             ) : (
               <>
-                {isPromote
-                  ? t(($) => $.run_confirm.confirm_promote)
-                  : t(($) => $.run_confirm.confirm_assign)}
+                {isReview
+                  ? t(($) => $.run_confirm.confirm_review)
+                  : isReviewReturn
+                    ? t(($) => $.run_confirm.confirm_review_return)
+                    : isPromote
+                      ? t(($) => $.run_confirm.confirm_promote)
+                      : t(($) => $.run_confirm.confirm_assign)}
                 {/* Decorative: the accessible name stays the button's own copy,
                     not "Confirm assignment Command Enter". Absent when `send`
                     is unbound. */}

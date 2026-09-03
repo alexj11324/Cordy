@@ -277,7 +277,9 @@
     "fields": {
       "status": "ステータス",
       "priority": "優先度",
-      "assignee": "担当者",
+      "owner": "責任者",
+      "executor": "実行者",
+      "reviewer": "レビュアー",
       "labels": "ラベル",
       "project": "プロジェクト",
       "due_date": "期限",

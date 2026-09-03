@@ -390,7 +390,9 @@
     "prop_status": "状态",
     "prop_priority": "优先级",
     "prop_stage": "阶段",
-    "prop_assignee": "负责人",
+    "prop_owner": "责任人",
+    "prop_executor": "执行者",
+    "prop_reviewer": "审核人",
     "prop_start_date": "开始日期",
     "prop_due_date": "截止日期",
     "prop_project": "项目",
@@ -667,7 +669,8 @@
     "selected": "已选择 {{count}} 个",
     "status": "状态",
     "priority": "优先级",
-    "assignee": "负责人",
+    "owner": "责任人",
+    "executor": "执行者",
     "delete": "删除",
     "update_success_other": "已更新 {{count}} 个任务",
     "update_failed": "更新任务失败",
@@ -685,7 +688,7 @@
   "actions": {
     "status": "状态",
     "priority": "优先级",
-    "assignee": "负责人",
+    "executor": "执行者",
     "start_date": "开始日期",
     "start_today": "今天",
     "start_tomorrow": "明天",
@@ -733,7 +736,12 @@
     },
     "filter_options_aria": "筛选选项",
     "no_results": "无结果",
-    "assignee": {
+    "members_group": "成员",
+    "owner": {
+      "trigger_unassigned": "无负责人",
+      "search_placeholder": "搜索成员..."
+    },
+    "executor": {
       "trigger_unassigned": "未分配",
       "search_placeholder": "分配给...",
       "members_group": "成员",
@@ -741,6 +749,10 @@
       "teams_group": "团队",
       "agent_runtime_required": "请先为该智能体绑定运行时，再分配工作",
       "team_runtime_required": "请先为该团队的负责人绑定运行时，再分配工作"
+    },
+    "reviewer": {
+      "trigger_unassigned": "无评审人",
+      "search_placeholder": "搜索评审人..."
     },
     "start_date": {
       "trigger_label": "开始日期",

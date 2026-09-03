@@ -390,7 +390,9 @@
     "prop_status": "ステータス",
     "prop_priority": "優先度",
     "prop_stage": "ステージ",
-    "prop_assignee": "担当者",
+    "prop_owner": "責任者",
+    "prop_executor": "実行者",
+    "prop_reviewer": "レビュアー",
     "prop_start_date": "開始日",
     "prop_due_date": "期限",
     "prop_project": "プロジェクト",
@@ -667,7 +669,8 @@
     "selected": "{{count}} 件選択中",
     "status": "ステータス",
     "priority": "優先度",
-    "assignee": "担当者",
+    "owner": "責任者",
+    "executor": "実行者",
     "delete": "削除",
     "update_success_other": "タスク {{count}} 件を更新しました",
     "update_failed": "タスクを更新できませんでした",
@@ -685,7 +688,7 @@
   "actions": {
     "status": "ステータス",
     "priority": "優先度",
-    "assignee": "担当者",
+    "executor": "実行者",
     "start_date": "開始日",
     "start_today": "今日",
     "start_tomorrow": "明日",
@@ -733,7 +736,12 @@
     },
     "filter_options_aria": "フィルターオプション",
     "no_results": "結果なし",
-    "assignee": {
+    "members_group": "メンバー",
+    "owner": {
+      "trigger_unassigned": "担当者なし",
+      "search_placeholder": "メンバーを検索..."
+    },
+    "executor": {
       "trigger_unassigned": "未割り当て",
       "search_placeholder": "担当者を割り当て...",
       "members_group": "メンバー",
@@ -741,6 +749,10 @@
       "teams_group": "チーム",
       "agent_runtime_required": "作業を割り当てる前に、このエージェントにランタイムをバインドしてください",
       "team_runtime_required": "作業を割り当てる前に、このチームのリーダーにランタイムをバインドしてください"
+    },
+    "reviewer": {
+      "trigger_unassigned": "レビュアーなし",
+      "search_placeholder": "レビュアーを検索..."
     },
     "start_date": {
       "trigger_label": "開始日",

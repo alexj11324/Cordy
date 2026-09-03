@@ -394,7 +394,9 @@
     "prop_status": "Status",
     "prop_priority": "Priority",
     "prop_stage": "Stage",
-    "prop_assignee": "Assignee",
+    "prop_owner": "Owner",
+    "prop_executor": "Executor",
+    "prop_reviewer": "Reviewer",
     "prop_start_date": "Start date",
     "prop_due_date": "Due date",
     "prop_project": "Project",
@@ -694,7 +696,8 @@
     "selected": "{{count}} selected",
     "status": "Status",
     "priority": "Priority",
-    "assignee": "Assignee",
+    "owner": "Owner",
+    "executor": "Executor",
     "delete": "Delete",
     "update_success_one": "Updated {{count}} issue",
     "update_success_other": "Updated {{count}} issues",
@@ -716,7 +719,7 @@
   "actions": {
     "status": "Status",
     "priority": "Priority",
-    "assignee": "Assignee",
+    "executor": "Executor",
     "start_date": "Start date",
     "start_today": "Today",
     "start_tomorrow": "Tomorrow",
@@ -764,7 +767,12 @@
     },
     "filter_options_aria": "Filter options",
     "no_results": "No results",
-    "assignee": {
+    "members_group": "Members",
+    "owner": {
+      "trigger_unassigned": "No owner",
+      "search_placeholder": "Search members..."
+    },
+    "executor": {
       "trigger_unassigned": "Unassigned",
       "search_placeholder": "Assign to...",
       "members_group": "Members",
@@ -772,6 +780,10 @@
       "teams_group": "Teams",
       "agent_runtime_required": "Bind a runtime before assigning work to this agent",
       "team_runtime_required": "Bind a runtime to this team's leader before assigning work"
+    },
+    "reviewer": {
+      "trigger_unassigned": "No reviewer",
+      "search_placeholder": "Search reviewers..."
     },
     "start_date": {
       "trigger_label": "Start date",

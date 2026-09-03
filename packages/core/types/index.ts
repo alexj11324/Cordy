@@ -138,7 +138,7 @@ export {
 } from "./quick-action";
 export type {
   TimelineEntry,
-  AssigneeFrequencyEntry,
+  ExecutorFrequencyEntry,
 } from "./activity";
 export type { IssueSubscriber } from "./subscriber";
 export type * from "./events";

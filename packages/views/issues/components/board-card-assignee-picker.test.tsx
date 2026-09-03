@@ -111,8 +111,7 @@ const actions: IssueSurfaceActions = {
   batchDelete: vi.fn().mockResolvedValue(undefined),
 };
 
-function makeIssue(assigneeType: IssueAssigneeType): Issue {
-  const isMember = assigneeType === "member";
+function makeIssue(assigneeType: Exclude<IssueAssigneeType, "member">): Issue {
   return {
     id: `issue-${assigneeType}`,
     workspace_id: "ws-1",
@@ -122,10 +121,10 @@ function makeIssue(assigneeType: IssueAssigneeType): Issue {
     description: null,
     status: "todo",
     priority: "none",
-    owner_type: isMember ? "member" : null,
-    owner_id: isMember ? `${assigneeType}-1` : null,
-    executor_type: isMember ? null : assigneeType,
-    executor_id: isMember ? null : `${assigneeType}-1`,
+    owner_type: null,
+    owner_id: null,
+    executor_type: assigneeType,
+    executor_id: `${assigneeType}-1`,
     reviewer_type: null,
     reviewer_id: null,
     creator_type: "member",
@@ -144,9 +143,9 @@ function makeIssue(assigneeType: IssueAssigneeType): Issue {
   };
 }
 
-describe("BoardCardContent assignee picker", () => {
-  it.each<IssueAssigneeType>(["member", "agent", "team"])(
-    "opens the picker from an avatar-only %s assignee without navigating the card",
+describe("BoardCardContent executor picker", () => {
+  it.each<Exclude<IssueAssigneeType, "member">>(["agent", "team"])(
+    "opens the picker from an avatar-only %s executor without navigating the card",
     (assigneeType) => {
       const issue = makeIssue(assigneeType);
       const { container } = render(

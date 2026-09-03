@@ -52,7 +52,7 @@ func (q *Queries) ChildIssueProgress(ctx context.Context, arg ChildIssueProgress
 	return items, nil
 }
 
-const countCreatedIssueAssignees = `-- name: CountCreatedIssueAssignees :many
+const countCreatedIssueExecutors = `-- name: CountCreatedIssueExecutors :many
 SELECT
   executor_type,
   executor_id,
@@ -66,27 +66,27 @@ WHERE workspace_id = $1
 GROUP BY executor_type, executor_id
 `
 
-type CountCreatedIssueAssigneesParams struct {
+type CountCreatedIssueExecutorsParams struct {
 	WorkspaceID pgtype.UUID `json:"workspace_id"`
 	CreatorID   pgtype.UUID `json:"creator_id"`
 }
 
-type CountCreatedIssueAssigneesRow struct {
+type CountCreatedIssueExecutorsRow struct {
 	ExecutorType pgtype.Text `json:"executor_type"`
 	ExecutorID   pgtype.UUID `json:"executor_id"`
 	Frequency    int64       `json:"frequency"`
 }
 
-// Count assignees on issues created by a specific user.
-func (q *Queries) CountCreatedIssueAssignees(ctx context.Context, arg CountCreatedIssueAssigneesParams) ([]CountCreatedIssueAssigneesRow, error) {
-	rows, err := q.db.Query(ctx, countCreatedIssueAssignees, arg.WorkspaceID, arg.CreatorID)
+// Count execution targets on issues created by a specific user.
+func (q *Queries) CountCreatedIssueExecutors(ctx context.Context, arg CountCreatedIssueExecutorsParams) ([]CountCreatedIssueExecutorsRow, error) {
+	rows, err := q.db.Query(ctx, countCreatedIssueExecutors, arg.WorkspaceID, arg.CreatorID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []CountCreatedIssueAssigneesRow{}
+	items := []CountCreatedIssueExecutorsRow{}
 	for rows.Next() {
-		var i CountCreatedIssueAssigneesRow
+		var i CountCreatedIssueExecutorsRow
 		if err := rows.Scan(&i.ExecutorType, &i.ExecutorID, &i.Frequency); err != nil {
 			return nil, err
 		}

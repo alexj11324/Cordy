@@ -72,8 +72,11 @@ const emptyIssueDraft = () => ({
     description: "",
     status: "todo" as const,
     startDate: null as string | null,
-    assigneeType: undefined as "agent" | "team" | "member" | undefined,
-    assigneeId: undefined as string | undefined,
+    ownerId: undefined as string | undefined,
+    executorType: undefined as "agent" | "team" | undefined,
+    executorId: undefined as string | undefined,
+    reviewerType: undefined as "member" | "agent" | "team" | undefined,
+    reviewerId: undefined as string | undefined,
     labelIds: [] as string[],
     propertyValues: {} as Record<string, string | number | boolean | string[]>,
   },
@@ -251,7 +254,7 @@ vi.mock("@patchbay/core/runtimes", () => ({
 }));
 
 
-vi.mock("../issues/components/pickers/assignee-picker", () => ({
+vi.mock("../issues/components/pickers/executor-picker", () => ({
   canAssignAgent: () => true,
 }));
 

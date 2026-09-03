@@ -3,7 +3,8 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import type {
   IssueStatus,
   IssuePriority,
-  IssueAssigneeType,
+  IssueExecutorType,
+  IssueReviewerType,
   IssuePropertyValues,
 } from "../../types";
 import type { CreateMode } from "./create-mode-store";
@@ -19,7 +20,7 @@ import { normalizeStoredUploads, type DraftUpload } from "../../drafts/draft-upl
 //   shared  — belongs to the issue no matter how it is filed: project,
 //             priority, due date, attachments.
 //   manual  — the manual form's own state: title, description, status, start
-//             date, assignee, labels, custom properties.
+//             date, owner, executor, reviewer, labels, custom properties.
 //   agent   — the agent form's own state: the free-text prompt and the picked
 //             actor (agent or team).
 //   activeMode — which form the draft is currently being edited in.
@@ -49,8 +50,11 @@ export interface IssueCreateManual {
   description: string;
   status: IssueStatus;
   startDate: string | null;
-  assigneeType?: IssueAssigneeType;
-  assigneeId?: string;
+  ownerId?: string;
+  executorType?: IssueExecutorType;
+  executorId?: string;
+  reviewerType?: IssueReviewerType;
+  reviewerId?: string;
   /** Label IDs chosen in the create dialog. Attached to the issue right after
    *  it is created (the create endpoint takes no labels), so they are kept as
    *  a plain id list rather than full Label objects. */
@@ -83,8 +87,11 @@ const emptyManual = (): IssueCreateManual => ({
   description: "",
   status: "todo",
   startDate: null,
-  assigneeType: undefined,
-  assigneeId: undefined,
+  ownerId: undefined,
+  executorType: undefined,
+  executorId: undefined,
+  reviewerType: undefined,
+  reviewerId: undefined,
   labelIds: [],
   propertyValues: {},
 });
@@ -101,11 +108,12 @@ interface IssueDraftStore {
    *  create session and persistence continues to serialize this ordinary
    *  backup, so a reload cannot leak the source draft into normal create. */
   isolatedDraftBackup?: IssueCreateDraft;
-  // Last assignee picked at submit time. Persisted across drafts so the
+  lastOwnerId?: string;
+  // Last executor picked at submit time. Persisted across drafts so the
   // create-issue modal can prefill the picker with the user's most recent
-  // choice instead of always opening with no assignee.
-  lastAssigneeType?: IssueAssigneeType;
-  lastAssigneeId?: string;
+  // choice instead of always opening with no executor.
+  lastExecutorType?: IssueExecutorType;
+  lastExecutorId?: string;
   setShared: (patch: Partial<IssueCreateShared>) => void;
   setManual: (patch: Partial<IssueCreateManual>) => void;
   setAgent: (patch: Partial<IssueCreateAgent>) => void;
@@ -113,7 +121,8 @@ interface IssueDraftStore {
   clearDraft: () => void;
   beginIsolatedDraft: () => void;
   endIsolatedDraft: () => void;
-  setLastAssignee: (type?: IssueAssigneeType, id?: string) => void;
+  setLastOwner: (id?: string) => void;
+  setLastExecutor: (type?: IssueExecutorType, id?: string) => void;
   hasDraft: () => boolean;
 }
 
@@ -123,6 +132,50 @@ function isLegacyFlatDraft(d: Record<string, unknown>): boolean {
     !("shared" in d) &&
     ("title" in d || "status" in d || "labelIds" in d || "description" in d)
   );
+}
+
+type LegacyAssigneeType = "member" | "agent" | "team";
+
+function legacyAssignee(rawType: unknown, rawId: unknown):
+  | { ownerId: string }
+  | { executorType: Exclude<LegacyAssigneeType, "member">; executorId: string }
+  | undefined {
+  if (
+    (rawType !== "member" && rawType !== "agent" && rawType !== "team") ||
+    typeof rawId !== "string" ||
+    rawId.length === 0
+  ) {
+    return undefined;
+  }
+  return rawType === "member"
+    ? { ownerId: rawId }
+    : { executorType: rawType, executorId: rawId };
+}
+
+function migrateManualRole(
+  manual: IssueCreateManual,
+  raw: Record<string, unknown>,
+): IssueCreateManual {
+  const legacyManual = manual as IssueCreateManual & {
+    assigneeType?: unknown;
+    assigneeId?: unknown;
+  };
+  const legacy = legacyAssignee(
+    raw.assigneeType ?? legacyManual.assigneeType,
+    raw.assigneeId ?? legacyManual.assigneeId,
+  );
+  if (!legacy) return manual;
+
+  const next = { ...manual };
+  if ("ownerId" in legacy) {
+    if (next.ownerId === undefined) next.ownerId = legacy.ownerId;
+  } else if (next.executorType === undefined && next.executorId === undefined) {
+    next.executorType = legacy.executorType;
+    next.executorId = legacy.executorId;
+  }
+  delete (next as IssueCreateManual & { assigneeType?: unknown }).assigneeType;
+  delete (next as IssueCreateManual & { assigneeId?: unknown }).assigneeId;
+  return next;
 }
 
 // Drafts persisted by older builds either predate a later-added sub-field or
@@ -144,26 +197,32 @@ function migrateDraft(raw: unknown): IssueCreateDraft {
         // as `uploaded` placeholders (and drops stale `uploading` ones).
         attachments: normalizeStoredUploads(d.attachments),
       },
-      manual: {
+      manual: migrateManualRole({
         ...emptyManual(),
         title: (d.title as string) ?? "",
         description: (d.description as string) ?? "",
         status: (d.status as IssueStatus) ?? "todo",
         startDate: (d.startDate as string | null) ?? null,
-        assigneeType: d.assigneeType as IssueAssigneeType | undefined,
-        assigneeId: d.assigneeId as string | undefined,
+        reviewerType: d.reviewerType as IssueReviewerType | undefined,
+        reviewerId: d.reviewerId as string | undefined,
+        executorType: d.executorType as IssueExecutorType | undefined,
+        executorId: d.executorId as string | undefined,
         labelIds: Array.isArray(d.labelIds) ? (d.labelIds as string[]) : [],
         propertyValues:
           d.propertyValues && typeof d.propertyValues === "object"
             ? (d.propertyValues as IssuePropertyValues)
             : {},
-      },
+      }, d),
       agent: emptyAgent(),
       activeMode: "manual",
     };
   }
 
   const sharedRaw = (d.shared as Partial<IssueCreateShared> & { attachments?: unknown }) ?? {};
+  const manualRaw = (d.manual as Partial<IssueCreateManual> & {
+    assigneeType?: unknown;
+    assigneeId?: unknown;
+  }) ?? {};
   return {
     shared: {
       ...emptyShared(),
@@ -172,7 +231,7 @@ function migrateDraft(raw: unknown): IssueCreateDraft {
       // drops `uploading` placeholders (bytes are gone).
       attachments: normalizeStoredUploads(sharedRaw.attachments),
     },
-    manual: { ...emptyManual(), ...((d.manual as Partial<IssueCreateManual>) ?? {}) },
+    manual: migrateManualRole({ ...emptyManual(), ...manualRaw }, manualRaw),
     agent: { ...emptyAgent(), ...((d.agent as Partial<IssueCreateAgent>) ?? {}) },
     activeMode: d.activeMode === "agent" ? "agent" : "manual",
   };
@@ -182,8 +241,9 @@ export const useIssueDraftStore = create<IssueDraftStore>()(
   persist(
     (set, get) => ({
       draft: migrateDraft(undefined),
-      lastAssigneeType: undefined,
-      lastAssigneeId: undefined,
+      lastOwnerId: undefined,
+      lastExecutorType: undefined,
+      lastExecutorId: undefined,
       setShared: (patch) =>
         set((s) => ({ draft: { ...s.draft, shared: { ...s.draft.shared, ...patch } } })),
       setManual: (patch) =>
@@ -198,8 +258,9 @@ export const useIssueDraftStore = create<IssueDraftStore>()(
             shared: emptyShared(),
             manual: {
               ...emptyManual(),
-              assigneeType: s.lastAssigneeType,
-              assigneeId: s.lastAssigneeId,
+              ownerId: s.lastOwnerId,
+              executorType: s.lastExecutorType,
+              executorId: s.lastExecutorId,
             },
             agent: emptyAgent(),
             activeMode: s.draft.activeMode,
@@ -214,8 +275,9 @@ export const useIssueDraftStore = create<IssueDraftStore>()(
               shared: emptyShared(),
               manual: {
                 ...emptyManual(),
-                assigneeType: s.lastAssigneeType,
-                assigneeId: s.lastAssigneeId,
+                ownerId: s.lastOwnerId,
+                executorType: s.lastExecutorType,
+                executorId: s.lastExecutorId,
               },
               agent: emptyAgent(),
               activeMode: "agent",
@@ -226,8 +288,9 @@ export const useIssueDraftStore = create<IssueDraftStore>()(
         set((s) => s.isolatedDraftBackup
           ? { draft: s.isolatedDraftBackup, isolatedDraftBackup: undefined }
           : s),
-      setLastAssignee: (type, id) =>
-        set({ lastAssigneeType: type, lastAssigneeId: id }),
+      setLastOwner: (id) => set({ lastOwnerId: id }),
+      setLastExecutor: (type, id) =>
+        set({ lastExecutorType: type, lastExecutorId: id }),
       hasDraft: () => {
         const { manual, agent, shared } = get().draft;
         return !!(
@@ -249,16 +312,31 @@ export const useIssueDraftStore = create<IssueDraftStore>()(
       // restores the user's normal create draft, not source-specific input.
       partialize: (state) => ({
         draft: state.isolatedDraftBackup ?? state.draft,
-        lastAssigneeType: state.lastAssigneeType,
-        lastAssigneeId: state.lastAssigneeId,
+        lastOwnerId: state.lastOwnerId,
+        lastExecutorType: state.lastExecutorType,
+        lastExecutorId: state.lastExecutorId,
       }),
       merge: (persistedState, currentState) => {
         const persisted = (persistedState ?? {}) as Partial<IssueDraftStore> & {
           draft?: unknown;
+          lastAssigneeType?: unknown;
+          lastAssigneeId?: unknown;
         };
+        const {
+          lastAssigneeType: legacyType,
+          lastAssigneeId: legacyId,
+          ...persistedCanonical
+        } = persisted;
+        const legacyLast = legacyAssignee(legacyType, legacyId);
         return {
           ...currentState,
-          ...persisted,
+          ...persistedCanonical,
+          ...(legacyLast && "ownerId" in legacyLast && persisted.lastOwnerId === undefined
+            ? { lastOwnerId: legacyLast.ownerId }
+            : {}),
+          ...(legacyLast && "executorType" in legacyLast && persisted.lastExecutorType === undefined
+            ? { lastExecutorType: legacyLast.executorType, lastExecutorId: legacyLast.executorId }
+            : {}),
           draft: migrateDraft(persisted.draft),
         };
       },
@@ -272,14 +350,15 @@ registerDraftCleanup({
   storageKey: "patchbay_issue_draft",
   workspaceScoped: true,
   // Full reset, NOT clearDraft(): clearDraft deliberately keeps the
-  // last-assignee preference and re-seeds it into the fresh draft's manual
+  // last-executor preference and re-seeds it into the fresh draft's manual
   // slot — correct between drafts of one user, but on logout it would hand
-  // the previous user's last-picked assignee to the next login on this tab.
+  // the previous user's last-picked executor to the next login on this tab.
   resetInMemory: () =>
     useIssueDraftStore.setState({
       draft: migrateDraft(undefined),
-      lastAssigneeType: undefined,
-      lastAssigneeId: undefined,
+      lastOwnerId: undefined,
+      lastExecutorType: undefined,
+      lastExecutorId: undefined,
       isolatedDraftBackup: undefined,
     }),
 });

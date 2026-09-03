@@ -273,8 +273,8 @@ describe("TableView cell editors under data refresh", () => {
     expect(data).toMatchObject({
       mode: "promote",
       status: "todo",
-      assigneeType: "agent",
-      assigneeId: "agent-1",
+      executorType: "agent",
+      executorId: "agent-1",
     });
     useModalStore.getState().close();
   }, 60_000);
@@ -299,7 +299,7 @@ describe("TableView cell editors under data refresh", () => {
       listMembers: async () => [],
       listAgents: async () => [],
       listTeams: async () => [],
-      getAssigneeFrequency: async () => [],
+      getExecutorFrequency: async () => [],
       listIssueStatuses: async () => ({ statuses: [] }),
       listIssueTableRows: async () => ({
         query_fingerprint: "test",

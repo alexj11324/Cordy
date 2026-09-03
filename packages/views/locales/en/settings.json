@@ -277,7 +277,9 @@
     "fields": {
       "status": "Status",
       "priority": "Priority",
-      "assignee": "Assignee",
+      "owner": "Owner",
+      "executor": "Executor",
+      "reviewer": "Reviewer",
       "labels": "Labels",
       "project": "Project",
       "due_date": "Due date",

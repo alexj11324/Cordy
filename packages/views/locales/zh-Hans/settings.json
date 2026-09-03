@@ -277,7 +277,9 @@
     "fields": {
       "status": "状态",
       "priority": "优先级",
-      "assignee": "负责人",
+      "owner": "责任人",
+      "executor": "执行者",
+      "reviewer": "审核人",
       "labels": "标签",
       "project": "项目",
       "due_date": "截止日期",

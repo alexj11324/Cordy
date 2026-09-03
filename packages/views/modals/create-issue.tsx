@@ -29,7 +29,8 @@ import type {
   Issue,
   IssueStatus,
   IssuePriority,
-  IssueAssigneeType,
+  IssueExecutorType,
+  IssueReviewerType,
   IssuePropertyValue,
   SourceContextPreview,
 } from "@patchbay/core/types";
@@ -55,7 +56,7 @@ import { ContentEditor, type ContentEditorRef, TitleEditor, type TitleEditorRef,
 import { useIssueCreateUploads } from "./use-issue-create-uploads";
 import { useShortcut } from "@patchbay/core/shortcuts";
 import { ShortcutKeycaps } from "../common/shortcut-keycaps";
-import { StatusIcon, StatusPicker, PriorityIcon, PriorityPicker, StagePicker, AssigneePicker, StartDatePicker, DueDatePicker, LabelPicker } from "../issues/components";
+import { StatusIcon, StatusPicker, PriorityIcon, PriorityPicker, StagePicker, OwnerPicker, ExecutorPicker, ReviewerPicker, StartDatePicker, DueDatePicker, LabelPicker } from "../issues/components";
 import { maxSiblingStage } from "../issues/components/pickers/stage-picker";
 import { ProjectPicker } from "../projects/components/project-picker";
 import { useIssueTriggerPreview } from "../issues/hooks/use-issue-trigger-preview";
@@ -99,6 +100,7 @@ import { IssuePickerModal } from "./issue-picker-modal";
 import { useT } from "../i18n";
 import { SourceContextPreviewCard, useSourceContextFailureMessage } from "./source-context-preview";
 import { useIssueLimitUpgradePrompt } from "./use-issue-limit-upgrade-prompt";
+import { useAuthStore } from "@patchbay/core/auth";
 
 // ---------------------------------------------------------------------------
 // ManualCreatePanel — manual-mode body of the create-issue dialog. Renders
@@ -119,31 +121,31 @@ import { useIssueLimitUpgradePrompt } from "./use-issue-limit-upgrade-prompt";
 // editor absorbs the delta), and it expands only once the predicate resolves,
 // animating straight to the correct copy.
 function CreateRunHint({
-  assigneeType,
-  assigneeId,
+  executorType,
+  executorId,
   status,
 }: {
-  assigneeType?: IssueAssigneeType;
-  assigneeId?: string;
+  executorType?: IssueExecutorType;
+  executorId?: string;
   status: IssueStatus;
 }) {
   const { t } = useT("modals");
   const { getActorName } = useActorName();
-  const isAgentLike = assigneeType === "agent" || assigneeType === "team";
+  const isAgentLike = executorType === "agent" || executorType === "team";
   const preview = useIssueTriggerPreview({
     isCreate: true,
-    assigneeType: assigneeType ?? null,
-    assigneeId: assigneeId ?? null,
+    executorType: executorType ?? null,
+    executorId: executorId ?? null,
     status,
-    enabled: isAgentLike && !!assigneeId,
+    enabled: isAgentLike && !!executorId,
   });
 
   // Reveal only after the predicate resolves so the band animates to the final
   // copy instead of flashing "parked" before the run preview lands.
-  const ready = isAgentLike && !!assigneeId && !preview.isLoading;
+  const ready = isAgentLike && !!executorId && !preview.isLoading;
   const willStart = preview.totalCount > 0;
-  const isTeam = assigneeType === "team";
-  const triggerAgentId = preview.triggers[0]?.agent_id ?? assigneeId;
+  const isTeam = executorType === "team";
+  const triggerAgentId = preview.triggers[0]?.agent_id ?? executorId;
 
   // Avatar + copy mirror the flow. A team doesn't "work" — its leader
   // evaluates and delegates — so the team path keeps the team as the subject
@@ -153,20 +155,20 @@ function CreateRunHint({
   let avatarId: string | undefined;
   let text: string;
   if (!willStart) {
-    avatarType = assigneeType ?? "agent";
-    avatarId = assigneeId;
+    avatarType = executorType ?? "agent";
+    avatarId = executorId;
     text = t(($) => $.run_confirm.create_parked);
   } else if (isTeam) {
     avatarType = "team";
-    avatarId = assigneeId;
+    avatarId = executorId;
     text = t(($) => $.run_confirm.create_will_start_team, {
-      name: getActorName("team", assigneeId ?? ""),
+      name: getActorName("team", executorId ?? ""),
     });
   } else {
     avatarType = "agent";
     avatarId = triggerAgentId;
     text = t(($) => $.run_confirm.create_will_start, {
-      name: getActorName("agent", triggerAgentId ?? assigneeId ?? ""),
+      name: getActorName("agent", triggerAgentId ?? executorId ?? ""),
     });
   }
 
@@ -222,6 +224,7 @@ export function ManualCreatePanel({
   const router = useNavigation();
   const p = useWorkspacePaths();
   const workspaceName = useCurrentWorkspace()?.name;
+  const currentUserId = useAuthStore((s) => s.user?.id);
   const anchorCommentId = typeof data?.anchor_comment_id === "string" ? data.anchor_comment_id : null;
   const sourcePreview = data?.source_context_preview as SourceContextPreview | undefined;
   const sourceContextLoading = data?.source_context_loading === true;
@@ -241,7 +244,8 @@ export function ManualCreatePanel({
   const setAgent = useIssueDraftStore((s) => s.setAgent);
   const setActiveMode = useIssueDraftStore((s) => s.setActiveMode);
   const clearDraft = useIssueDraftStore((s) => s.clearDraft);
-  const setLastAssignee = useIssueDraftStore((s) => s.setLastAssignee);
+  const setLastOwner = useIssueDraftStore((s) => s.setLastOwner);
+  const setLastExecutor = useIssueDraftStore((s) => s.setLastExecutor);
   const setLastMode = useCreateModeStore((s) => s.setLastMode);
   const keepOpen = useQuickCreateStore((s) => s.keepOpen);
   const setKeepOpen = useQuickCreateStore((s) => s.setKeepOpen);
@@ -259,17 +263,38 @@ export function ManualCreatePanel({
   const [priority, setPriority] = useState<IssuePriority>(
     (data?.priority as IssuePriority | undefined) ?? draft.shared.priority,
   );
-  const [assigneeType, setAssigneeType] = useState<IssueAssigneeType | undefined>(() => {
-    if (data && "executor_type" in data) {
-      return (data.executor_type as IssueAssigneeType | null) ?? undefined;
+  const [ownerId, setOwnerId] = useState<string | undefined>(() => {
+    if (data && "owner_id" in data) {
+      return (data.owner_id as string | null) ?? undefined;
     }
-    return draft.manual.assigneeType;
+    return draft.manual.ownerId ?? currentUserId;
   });
-  const [assigneeId, setAssigneeId] = useState<string | undefined>(() => {
+  const [ownerWasExplicitlySet, setOwnerWasExplicitlySet] = useState(() =>
+    Boolean(data && "owner_id" in data) || draft.manual.ownerId != null,
+  );
+  const [executorType, setExecutorType] = useState<IssueExecutorType | undefined>(() => {
+    if (data && "executor_type" in data) {
+      return (data.executor_type as IssueExecutorType | null) ?? undefined;
+    }
+    return draft.manual.executorType;
+  });
+  const [executorId, setExecutorId] = useState<string | undefined>(() => {
     if (data && "executor_id" in data) {
       return (data.executor_id as string | null) ?? undefined;
     }
-    return draft.manual.assigneeId;
+    return draft.manual.executorId;
+  });
+  const [reviewerType, setReviewerType] = useState<IssueReviewerType | undefined>(() => {
+    if (data && "reviewer_type" in data) {
+      return (data.reviewer_type as IssueReviewerType | null) ?? undefined;
+    }
+    return draft.manual.reviewerType;
+  });
+  const [reviewerId, setReviewerId] = useState<string | undefined>(() => {
+    if (data && "reviewer_id" in data) {
+      return (data.reviewer_id as string | null) ?? undefined;
+    }
+    return draft.manual.reviewerId;
   });
   const [startDate, setStartDate] = useState<string | null>(draft.manual.startDate);
   const [dueDate, setDueDate] = useState<string | null>(
@@ -322,6 +347,12 @@ export function ManualCreatePanel({
   // List cache usually has it already, so this resolves synchronously.
   const wsId = useWorkspaceId();
   const { categoryOf: draftStatusCategory } = useIssueStatuses(wsId);
+  const draftCategory = draftStatusCategory(status);
+  const activeStatusRequiresExecutor =
+    draftCategory === "in_progress" ||
+    draftCategory === "in_review" ||
+    draftCategory === "blocked";
+  const reviewStatusRequiresReviewer = draftCategory === "in_review";
   const { data: workspaceProperties = [] } = useQuery(propertyListOptions(wsId));
   const { data: parentIssue } = useQuery({
     ...issueDetailOptions(wsId, parentIssueId ?? ""),
@@ -380,9 +411,18 @@ export function ManualCreatePanel({
   const updateTitle = (v: string) => { setTitle(v); setManual({ title: v }); };
   const updateStatus = (v: IssueStatus) => { setStatus(v); setManual({ status: v }); };
   const updatePriority = (v: IssuePriority) => { setPriority(v); setShared({ priority: v }); };
-  const updateAssignee = (type?: IssueAssigneeType, id?: string) => {
-    setAssigneeType(type); setAssigneeId(id);
-    setManual({ assigneeType: type, assigneeId: id });
+  const updateOwner = (id?: string) => {
+    setOwnerId(id);
+    setOwnerWasExplicitlySet(true);
+    setManual({ ownerId: id });
+  };
+  const updateExecutor = (type?: IssueExecutorType, id?: string) => {
+    setExecutorType(type); setExecutorId(id);
+    setManual({ executorType: type, executorId: id });
+  };
+  const updateReviewer = (type?: IssueReviewerType, id?: string) => {
+    setReviewerType(type); setReviewerId(id);
+    setManual({ reviewerType: type, reviewerId: id });
   };
   const updateProject = (id?: string) => { setProjectId(id); setShared({ projectId: id }); };
   const updateStartDate = (v: string | null) => { setStartDate(v); setManual({ startDate: v }); };
@@ -403,7 +443,17 @@ export function ManualCreatePanel({
   const showField = {
     status: manualFields.includes("status") || status !== "todo" || fieldPickerOpen === "status",
     priority: manualFields.includes("priority") || priority !== "none" || fieldPickerOpen === "priority",
-    assignee: manualFields.includes("assignee") || assigneeId != null || fieldPickerOpen === "assignee",
+    owner: manualFields.includes("owner") || ownerWasExplicitlySet || fieldPickerOpen === "owner",
+    executor:
+      activeStatusRequiresExecutor ||
+      manualFields.includes("executor") ||
+      executorId != null ||
+      fieldPickerOpen === "executor",
+    reviewer:
+      reviewStatusRequiresReviewer ||
+      manualFields.includes("reviewer") ||
+      reviewerId != null ||
+      fieldPickerOpen === "reviewer",
     labels: manualFields.includes("labels") || labelIds.length > 0 || fieldPickerOpen === "labels",
     project: manualFields.includes("project") || projectId != null || fieldPickerOpen === "project",
     due_date: manualFields.includes("due_date") || dueDate !== null || dueDatePickerOpen,
@@ -428,14 +478,17 @@ export function ManualCreatePanel({
     setParentIssueId(undefined);
     setStage(null);
     setChildIssues([]);
-    // Keep the just-used assignee for the next issue in the batch; reset
+    // Keep the just-used owner/executor for the next issue in the batch; reset
     // everything else across the manual + shared slots.
     setManual({
       title: "",
       description: "",
       status: "todo",
-      assigneeType,
-      assigneeId,
+      ownerId,
+      executorType,
+      executorId,
+      reviewerType: undefined,
+      reviewerId: undefined,
       startDate: null,
       labelIds: [],
       propertyValues: {},
@@ -474,6 +527,26 @@ export function ManualCreatePanel({
     uploadGate: gate,
     normalize: () => title.trim(),
     onSubmit: async (): Promise<boolean> => {
+      if (activeStatusRequiresExecutor && (!executorType || !executorId)) {
+        toast.error(t(($) => $.create_issue.active_executor_required));
+        setFieldPickerOpen("executor");
+        return false;
+      }
+      if (reviewStatusRequiresReviewer && (!reviewerType || !reviewerId)) {
+        toast.error(t(($) => $.create_issue.review_reviewer_required));
+        setFieldPickerOpen("reviewer");
+        return false;
+      }
+      if (
+        reviewerType &&
+        reviewerId &&
+        reviewerType === executorType &&
+        reviewerId === executorId
+      ) {
+        toast.error(t(($) => $.create_issue.reviewer_must_differ));
+        setFieldPickerOpen("reviewer");
+        return false;
+      }
       // Flush the description editor's pending debounce into the store BEFORE
       // snapshotting, so a late flush of pre-submit typing cannot masquerade
       // as an edit made during the request.
@@ -497,9 +570,12 @@ export function ManualCreatePanel({
               description,
               status,
               priority,
-              ...(assigneeType === "member"
-                ? { owner_type: "member" as const, owner_id: assigneeId }
-                : { executor_type: assigneeType, executor_id: assigneeId }),
+              owner_type: ownerId ? "member" : undefined,
+              owner_id: ownerId,
+              executor_type: executorType,
+              executor_id: executorId,
+              reviewer_type: reviewerType,
+              reviewer_id: reviewerId,
               start_date: startDate || undefined,
               due_date: dueDate || undefined,
               attachment_ids: activeAttachmentIds.length > 0 ? activeAttachmentIds : undefined,
@@ -515,9 +591,12 @@ export function ManualCreatePanel({
           description,
           status,
           priority,
-          ...(assigneeType === "member"
-            ? { owner_type: "member" as const, owner_id: assigneeId }
-            : { executor_type: assigneeType, executor_id: assigneeId }),
+          owner_type: ownerId ? "member" : undefined,
+          owner_id: ownerId,
+          executor_type: executorType,
+          executor_id: executorId,
+          reviewer_type: reviewerType,
+          reviewer_id: reviewerId,
           start_date: startDate || undefined,
           due_date: dueDate || undefined,
           attachment_ids: activeAttachmentIds.length > 0 ? activeAttachmentIds : undefined,
@@ -740,7 +819,8 @@ export function ManualCreatePanel({
     onAccepted: () => {
       // These preferences derive from the SUBMITTED values, not the live
       // draft — an issue was created, so record them regardless of the guard.
-      setLastAssignee(assigneeType, assigneeId);
+      setLastOwner(ownerId);
+      setLastExecutor(executorType, executorId);
       setLastMode("manual");
       // Success may only consume the draft it submitted (MUL-5181 P0): any
       // edit after the submit snapshot — typing while the request is in
@@ -783,7 +863,7 @@ export function ManualCreatePanel({
   // the agent panel:
   //   1. A one-time assist-init of the agent prompt / actor: when the agent
   //      draft is still empty, seed the prompt from title + description and the
-  //      actor from the manual assignee (if agent-like). An existing agent
+  //      actor from the manual executor (if agent-like). An existing agent
   //      draft is preserved — no repeated concatenate-then-clobber.
   //   2. The parent-issue context, which is not persisted in the draft (it is a
   //      per-invocation intent from "Add sub issue"), so it rides the carry.
@@ -804,10 +884,10 @@ export function ManualCreatePanel({
     }
     if (
       !draft.agent.actorId &&
-      assigneeId &&
-      (assigneeType === "agent" || assigneeType === "team")
+      executorId &&
+      (executorType === "agent" || executorType === "team")
     ) {
-      setAgent({ actorType: assigneeType, actorId: assigneeId });
+      setAgent({ actorType: executorType, actorId: executorId });
     }
     setLastMode("agent");
     setActiveMode("agent");
@@ -974,8 +1054,8 @@ export function ManualCreatePanel({
             )}
 
             {/* Pre-trigger preview — a passive caption above the toolbar; reveals
-                when an agent assignee will pick the issue up. */}
-            <CreateRunHint assigneeType={assigneeType} assigneeId={assigneeId} status={status} />
+                when an agent executor will pick the issue up. */}
+            <CreateRunHint executorType={executorType} executorId={executorId} status={status} />
 
             {/* Property toolbar — each field renders per the Settings → Issue
                 selection (see showField above). */}
@@ -1004,19 +1084,48 @@ export function ManualCreatePanel({
                 />
               )}
 
-              {/* Assignee */}
-              {showField.assignee && (
-                <AssigneePicker
-                  assigneeType={assigneeType ?? null}
-                  assigneeId={assigneeId ?? null}
-                  onUpdate={(u) => updateAssignee(
+              {/* Owner — the human accountable for the issue. */}
+              {showField.owner && (
+                <OwnerPicker
+                  ownerType={ownerId ? "member" : null}
+                  ownerId={ownerId ?? null}
+                  onUpdate={(u) => updateOwner(u.owner_id ?? undefined)}
+                  triggerRender={<PillButton />}
+                  align="start"
+                  open={fieldPickerOpen === "owner" ? true : undefined}
+                  onOpenChange={(open) => setFieldPickerOpen(open ? "owner" : null)}
+                />
+              )}
+
+              {/* Executor — the agent or team that performs the work. */}
+              {showField.executor && (
+                <ExecutorPicker
+                  executorType={executorType ?? null}
+                  executorId={executorId ?? null}
+                  onUpdate={(u) => updateExecutor(
                     u.executor_type ?? undefined,
                     u.executor_id ?? undefined,
                   )}
                   triggerRender={<PillButton />}
                   align="start"
-                  open={fieldPickerOpen === "assignee" ? true : undefined}
-                  onOpenChange={(open) => setFieldPickerOpen(open ? "assignee" : null)}
+                  open={fieldPickerOpen === "executor" ? true : undefined}
+                  onOpenChange={(open) => setFieldPickerOpen(open ? "executor" : null)}
+                />
+              )}
+
+              {/* Reviewer — independent from the execution role. */}
+              {showField.reviewer && (
+                <ReviewerPicker
+                  reviewerType={reviewerType ?? null}
+                  reviewerId={reviewerId ?? null}
+                  onUpdate={(u) => updateReviewer(
+                    u.reviewer_type ?? undefined,
+                    u.reviewer_id ?? undefined,
+                  )}
+                  triggerRender={<PillButton />}
+                  align="start"
+                  open={fieldPickerOpen === "reviewer" ? true : undefined}
+                  onOpenChange={(open) => setFieldPickerOpen(open ? "reviewer" : null)}
                 />
               )}
 
@@ -1221,10 +1330,22 @@ export function ManualCreatePanel({
                       {t(($) => $.create_issue.set_priority)}
                     </DropdownMenuItem>
                   )}
-                  {!showField.assignee && (
-                    <DropdownMenuItem onClick={() => setFieldPickerOpen("assignee")}>
+                  {!showField.owner && (
+                    <DropdownMenuItem onClick={() => setFieldPickerOpen("owner")}>
                       <CircleUser className="h-3.5 w-3.5" />
-                      {t(($) => $.create_issue.set_assignee)}
+                      {t(($) => $.create_issue.set_owner)}
+                    </DropdownMenuItem>
+                  )}
+                  {!showField.executor && (
+                    <DropdownMenuItem onClick={() => setFieldPickerOpen("executor")}>
+                      <CircleUser className="h-3.5 w-3.5" />
+                      {t(($) => $.create_issue.set_executor)}
+                    </DropdownMenuItem>
+                  )}
+                  {!showField.reviewer && (
+                    <DropdownMenuItem onClick={() => setFieldPickerOpen("reviewer")}>
+                      <CircleUser className="h-3.5 w-3.5" />
+                      {t(($) => $.create_issue.set_reviewer)}
                     </DropdownMenuItem>
                   )}
                   {!showField.labels && (

@@ -34,19 +34,31 @@ vi.mock("./pickers", () => ({
   PriorityPicker: ({ priority }: { priority: string | null }) => (
     <div data-testid="priority-picker" data-priority={priority ?? "__none__"} />
   ),
-  AssigneePicker: ({
-    assigneeType,
-    assigneeId,
-    mixed,
-  }: {
-    assigneeType: string | null;
-    assigneeId: string | null;
+  OwnerPicker: ({ ownerType, ownerId, mixed }: {
+    ownerType: string | null;
+    ownerId: string | null;
     mixed?: boolean;
   }) => (
     <div
-      data-testid="assignee-picker"
-      data-assignee-type={assigneeType ?? "__null__"}
-      data-assignee-id={assigneeId ?? "__null__"}
+      data-testid="owner-picker"
+      data-owner-type={ownerType ?? "__null__"}
+      data-owner-id={ownerId ?? "__null__"}
+      data-mixed={String(Boolean(mixed))}
+    />
+  ),
+  ExecutorPicker: ({
+    executorType,
+    executorId,
+    mixed,
+  }: {
+    executorType: string | null;
+    executorId: string | null;
+    mixed?: boolean;
+  }) => (
+    <div
+      data-testid="executor-picker"
+      data-executor-type={executorType ?? "__null__"}
+      data-executor-id={executorId ?? "__null__"}
       data-mixed={String(Boolean(mixed))}
     />
   ),
@@ -89,7 +101,7 @@ beforeEach(() => {
 });
 
 describe("BatchActionToolbar picker wiring", () => {
-  it("reflects the shared status / priority / assignee of the selected issues", () => {
+  it("reflects the shared status, priority, owner, and executor", () => {
     const issues = [
       makeIssue({ id: "a", status: "in_progress", priority: "high", owner_type: "member", owner_id: "u-1" }),
       makeIssue({ id: "b", status: "in_progress", priority: "high", owner_type: "member", owner_id: "u-1" }),
@@ -100,10 +112,10 @@ describe("BatchActionToolbar picker wiring", () => {
 
     expect(screen.getByTestId("status-picker")).toHaveAttribute("data-status", "in_progress");
     expect(screen.getByTestId("priority-picker")).toHaveAttribute("data-priority", "high");
-    const assignee = screen.getByTestId("assignee-picker");
-    expect(assignee).toHaveAttribute("data-assignee-type", "member");
-    expect(assignee).toHaveAttribute("data-assignee-id", "u-1");
-    expect(assignee).toHaveAttribute("data-mixed", "false");
+    const owner = screen.getByTestId("owner-picker");
+    expect(owner).toHaveAttribute("data-owner-type", "member");
+    expect(owner).toHaveAttribute("data-owner-id", "u-1");
+    expect(owner).toHaveAttribute("data-mixed", "false");
   });
 
   it("falls back to an empty (no-checkmark) state when the selection is mixed", () => {
@@ -117,7 +129,8 @@ describe("BatchActionToolbar picker wiring", () => {
 
     expect(screen.getByTestId("status-picker")).toHaveAttribute("data-status", "__none__");
     expect(screen.getByTestId("priority-picker")).toHaveAttribute("data-priority", "__none__");
-    expect(screen.getByTestId("assignee-picker")).toHaveAttribute("data-mixed", "true");
+    expect(screen.getByTestId("owner-picker")).toHaveAttribute("data-mixed", "true");
+    expect(screen.getByTestId("executor-picker")).toHaveAttribute("data-mixed", "true");
   });
 
   it("treats an all-unassigned selection as unassigned, not mixed", () => {
@@ -129,10 +142,10 @@ describe("BatchActionToolbar picker wiring", () => {
 
     render(<BatchActionToolbar issues={issues} />);
 
-    const assignee = screen.getByTestId("assignee-picker");
-    expect(assignee).toHaveAttribute("data-mixed", "false");
-    expect(assignee).toHaveAttribute("data-assignee-type", "__null__");
-    expect(assignee).toHaveAttribute("data-assignee-id", "__null__");
+    const executor = screen.getByTestId("executor-picker");
+    expect(executor).toHaveAttribute("data-mixed", "false");
+    expect(executor).toHaveAttribute("data-executor-type", "__null__");
+    expect(executor).toHaveAttribute("data-executor-id", "__null__");
   });
 
   it("renders nothing when nothing is selected", () => {

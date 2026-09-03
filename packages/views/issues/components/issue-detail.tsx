@@ -68,7 +68,7 @@ import { formatDateOnly, isPastDateOnly } from "@patchbay/core/issues/date";
 import { useUpdateIssue } from "@patchbay/core/issues/mutations";
 import { toast } from "sonner";
 import { errorCode } from "@patchbay/core/api";
-import { StatusIcon, PriorityIcon, StatusPicker, PriorityPicker, StagePicker, StartDatePicker, DueDatePicker, AssigneePicker, LabelPicker } from ".";
+import { StatusIcon, PriorityIcon, StatusPicker, PriorityPicker, StagePicker, StartDatePicker, DueDatePicker, ExecutorPicker, OwnerPicker, ReviewerPicker, LabelPicker } from ".";
 import { maxSiblingStage } from "./pickers/stage-picker";
 import { CustomPropertyValueEditor, CustomPropertyValueDisplay } from "./pickers/custom-property-picker";
 import { Switch } from "@patchbay/ui/components/ui/switch";
@@ -853,9 +853,9 @@ function SubIssueRow({
           />
         )}
         {rowProps.assignee && (
-          <AssigneePicker
-            assigneeType={child.executor_type}
-            assigneeId={child.executor_id}
+          <ExecutorPicker
+            executorType={child.executor_type}
+            executorId={child.executor_id}
             onUpdate={handleUpdate}
             align="end"
             trigger={
@@ -2328,8 +2328,14 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
           <PropRow label={t(($) => $.detail.prop_status)}>
             <StatusPicker status={issue.status} onUpdate={handleUpdateField} align="start" />
           </PropRow>
-          <PropRow label={t(($) => $.detail.prop_assignee)}>
-            <AssigneePicker assigneeType={issue.executor_type ?? issue.owner_type} assigneeId={issue.executor_id ?? issue.owner_id} onUpdate={handleUpdateField} align="start" />
+          <PropRow label={t(($) => $.detail.prop_executor)}>
+            <ExecutorPicker executorType={issue.executor_type} executorId={issue.executor_id} onUpdate={handleUpdateField} align="start" />
+          </PropRow>
+          <PropRow label={t(($) => $.detail.prop_owner)}>
+            <OwnerPicker ownerType={issue.owner_type} ownerId={issue.owner_id} onUpdate={handleUpdateField} align="start" />
+          </PropRow>
+          <PropRow label={t(($) => $.detail.prop_reviewer)}>
+            <ReviewerPicker reviewerType={issue.reviewer_type ?? null} reviewerId={issue.reviewer_id ?? null} onUpdate={handleUpdateField} align="start" />
           </PropRow>
           <PropRow label={t(($) => $.detail.prop_project)}>
             <ProjectPicker

@@ -1,7 +1,7 @@
 import type { CommentAuthorType, Reaction } from "./comment";
 import type { Attachment } from "./attachment";
 
-export interface AssigneeFrequencyEntry {
+export interface ExecutorFrequencyEntry {
   executor_type: string;
   executor_id: string;
   frequency: number;

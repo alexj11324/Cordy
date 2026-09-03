@@ -20,7 +20,7 @@ import { commonIssueFields } from "@patchbay/core/issues/batch";
 import { issueBehavesAs } from "@patchbay/core/issues";
 import { useBatchUpdateIssues, useBatchDeleteIssues } from "@patchbay/core/issues/mutations";
 import { useModalStore } from "@patchbay/core/modals";
-import { StatusPicker, PriorityPicker, AssigneePicker } from "./pickers";
+import { StatusPicker, PriorityPicker, ExecutorPicker, OwnerPicker } from "./pickers";
 import { useT } from "../../i18n";
 import { cn } from "@patchbay/ui/lib/utils";
 import {
@@ -76,7 +76,8 @@ export function BatchActionToolbar({
 
   const [statusOpen, setStatusOpen] = useState(false);
   const [priorityOpen, setPriorityOpen] = useState(false);
-  const [assigneeOpen, setAssigneeOpen] = useState(false);
+  const [ownerOpen, setOwnerOpen] = useState(false);
+  const [executorOpen, setExecutorOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const surfaceActions = useIssueSurfaceActionsOptional();
   const batchUpdate = useBatchUpdateIssues();
@@ -90,7 +91,8 @@ export function BatchActionToolbar({
     if (count > 0) return;
     setStatusOpen(false);
     setPriorityOpen(false);
-    setAssigneeOpen(false);
+    setOwnerOpen(false);
+    setExecutorOpen(false);
     setDeleteOpen(false);
   }, [count]);
 
@@ -118,14 +120,14 @@ export function BatchActionToolbar({
   // status change was previously routed through the pre-trigger modal, which for
   // the common done/cancelled case only rendered a misleading "现在开始处理？ →
   // 不会开始处理" box. Agent/team assignment still confirms via
-  // handleBatchAssignee — that is the only batch action that should preview a
+  // handleBatchExecutor — that is the only batch action that should preview a
   // run fan-out.
   const handleBatchStatus = (updates: Partial<UpdateIssueRequest>) => {
     if (!updates.status) return;
     void handleBatchUpdate(updates);
   };
 
-  const handleBatchAssignee = (updates: Partial<UpdateIssueRequest>) => {
+  const handleBatchExecutor = (updates: Partial<UpdateIssueRequest>) => {
     if ((updates.executor_type === "agent" || updates.executor_type === "team") && updates.executor_id) {
       // Backlog never starts a run on assign (parking lot), so if every selected
       // issue is in backlog the confirm modal would only render an empty "won't
@@ -139,8 +141,8 @@ export function BatchActionToolbar({
         openModal("issue-run-confirm", {
           issueIds: ids,
           mode: "assign",
-          assigneeType: updates.executor_type,
-          assigneeId: updates.executor_id,
+          executorType: updates.executor_type,
+          executorId: updates.executor_id,
         });
         return;
       }
@@ -243,16 +245,29 @@ export function BatchActionToolbar({
           align="center"
         />
 
-        {/* Assignee */}
-        <AssigneePicker
-          assigneeType={common.assignee?.type ?? null}
-          assigneeId={common.assignee?.id ?? null}
-          mixed={common.assignee === null}
-          onUpdate={handleBatchAssignee}
-          open={assigneeOpen}
-          onOpenChange={setAssigneeOpen}
+        {/* Owner */}
+        <OwnerPicker
+          ownerType={common.owner?.type ?? null}
+          ownerId={common.owner?.id ?? null}
+          mixed={common.owner === null}
+          onUpdate={handleBatchUpdate}
+          open={ownerOpen}
+          onOpenChange={setOwnerOpen}
           triggerRender={<Button variant="ghost" size="sm" disabled={loading} />}
-          trigger={t(($) => $.batch.assignee)}
+          trigger={t(($) => $.batch.owner)}
+          align="center"
+        />
+
+        {/* Executor */}
+        <ExecutorPicker
+          executorType={common.executor?.type ?? null}
+          executorId={common.executor?.id ?? null}
+          mixed={common.executor === null}
+          onUpdate={handleBatchExecutor}
+          open={executorOpen}
+          onOpenChange={setExecutorOpen}
+          triggerRender={<Button variant="ghost" size="sm" disabled={loading} />}
+          trigger={t(($) => $.batch.executor)}
           align="center"
         />
 

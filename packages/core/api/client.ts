@@ -90,7 +90,7 @@ import type {
   CreateRuntimeLocalSkillImportRequest,
   RuntimeLocalSkillImportRequest,
   TimelineEntry,
-  AssigneeFrequencyEntry,
+  ExecutorFrequencyEntry,
   TaskMessagePayload,
   Attachment,
   ChatSession,
@@ -1559,8 +1559,8 @@ export class ApiClient {
       body: JSON.stringify({
         ...(params.issueIds?.length ? { issue_ids: params.issueIds } : {}),
         ...(params.isCreate ? { is_create: true } : {}),
-        ...(params.assigneeType ? { assignee_type: params.assigneeType } : {}),
-        ...(params.assigneeId ? { executor_id: params.assigneeId } : {}),
+        ...(params.executorType ? { executor_type: params.executorType } : {}),
+        ...(params.executorId ? { executor_id: params.executorId } : {}),
         ...(params.status ? { status: params.status } : {}),
       }),
     });
@@ -1578,8 +1578,8 @@ export class ApiClient {
     });
   }
 
-  async getAssigneeFrequency(): Promise<AssigneeFrequencyEntry[]> {
-    return this.fetch("/api/assignee-frequency");
+  async getExecutorFrequency(): Promise<ExecutorFrequencyEntry[]> {
+    return this.fetch("/api/executor-frequency");
   }
 
   async updateComment(commentId: string, content: string, attachmentIds?: string[], suppressAgentIds?: string[], contentBase?: string, expectedRevision?: number): Promise<Comment> {

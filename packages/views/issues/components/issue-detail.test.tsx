@@ -86,8 +86,8 @@ vi.mock("@patchbay/core/workspace/queries", () => ({
     queryKey: ["workspaces", "ws-1", "teams"],
     queryFn: () => Promise.resolve([]),
   }),
-  assigneeFrequencyOptions: () => ({
-    queryKey: ["workspaces", "ws-1", "assignee-frequency"],
+  executorFrequencyOptions: () => ({
+    queryKey: ["workspaces", "ws-1", "executor-frequency"],
     queryFn: () => Promise.resolve([]),
   }),
   workspaceListOptions: () => ({
@@ -1103,7 +1103,9 @@ describe("IssueDetail (shared)", () => {
 
     // Core rows — always rendered regardless of whether the issue has a value.
     expect(screen.getByText("Status")).toBeInTheDocument();
-    expect(screen.getByText("Assignee")).toBeInTheDocument();
+    expect(screen.getByText("Owner")).toBeInTheDocument();
+    expect(screen.getByText("Executor")).toBeInTheDocument();
+    expect(screen.getByText("Reviewer")).toBeInTheDocument();
     // "Project" appears twice (row label + picker stub), so disambiguate by id.
     expect(screen.getByTestId("project-picker")).toBeInTheDocument();
     // priority="high" + due_date are set in the fixture, so both optional rows show.

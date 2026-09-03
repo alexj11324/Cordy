@@ -1,11 +1,24 @@
-import type { Issue, IssueStatusCategory, UpdateIssueRequest } from "@patchbay/core/types";
+import type {
+  Issue,
+  IssueExecutorType,
+  IssueReviewerType,
+  IssueStatusCategory,
+  UpdateIssueRequest,
+} from "@patchbay/core/types";
 import { issueStatusCategory } from "@patchbay/core/issues";
 import { isIssueStatusCategory, type IssueStatusCatalog } from "@patchbay/core/issue-statuses";
 
 /** The issue fields the gate reads. */
 export type GateIssue = Pick<
   Issue,
-  "id" | "status" | "status_category" | "executor_type" | "executor_id"
+  | "id"
+  | "revision"
+  | "status"
+  | "status_category"
+  | "executor_type"
+  | "executor_id"
+  | "reviewer_type"
+  | "reviewer_id"
 >;
 
 /** Payload for the `issue-run-confirm` modal, or null when nothing to confirm. */
@@ -13,15 +26,33 @@ export type RunConfirmIntent =
   | {
       issueIds: [string];
       mode: "assign";
-      assigneeType: "agent" | "team";
-      assigneeId: string;
+      executorType: "agent" | "team";
+      executorId: string;
     }
   | {
       issueIds: [string];
       mode: "promote";
       status: string;
-      assigneeType: "agent" | "team";
-      assigneeId: string;
+      executorType: "agent" | "team";
+      executorId: string;
+    }
+  | {
+      issueIds: [string];
+      mode: "review";
+      status: string;
+      fromExecutorType: IssueExecutorType | null;
+      fromExecutorId: string | null;
+      executorType: IssueReviewerType | null;
+      executorId: string | null;
+      issueRevision?: number;
+    }
+  | {
+      issueIds: [string];
+      mode: "review-return";
+      status: string;
+      executorType: "agent" | "team";
+      executorId: string;
+      issueRevision?: number;
     };
 
 /**
@@ -48,8 +79,16 @@ export function resolveStatusCategory(
   return category && isIssueStatusCategory(category) ? category : null;
 }
 
-/** Categories a promotion can land in without starting a run. */
-const NEVER_STARTS = ["backlog", "done", "cancelled"];
+const RUNS_EXECUTOR_CATEGORIES: readonly IssueStatusCategory[] = [
+  "todo",
+  "in_progress",
+  "in_review",
+  "blocked",
+];
+
+function runsExecutor(category: IssueStatusCategory | null): boolean {
+  return category !== null && RUNS_EXECUTOR_CATEGORIES.includes(category);
+}
 
 /**
  * Which confirmation, if any, an issue write needs before it is applied.
@@ -76,41 +115,86 @@ export function runConfirmIntent(
   catalog: Pick<IssueStatusCatalog, "entryOf">,
 ): RunConfirmIntent | null {
   const issueCategory = resolveStatusCategory(issue.status, issue.status_category, catalog);
-  const parked = issueCategory === "backlog";
-
-  if (
-    (updates.executor_type === "agent" || updates.executor_type === "team") &&
-    updates.executor_id &&
-    !parked
-  ) {
-    return {
-      issueIds: [issue.id],
-      mode: "assign",
-      assigneeType: updates.executor_type,
-      assigneeId: updates.executor_id,
-    };
-  }
-
-  const owner = issue.executor_type;
-  if (
-    updates.status &&
-    updates.status !== issue.status &&
-    // Unknown counts as possibly-parked: the write may promote, so confirm.
-    (parked || issueCategory === null) &&
-    (owner === "agent" || owner === "team") &&
-    issue.executor_id
-  ) {
+  if (updates.status && updates.status !== issue.status) {
     const target = resolveStatusCategory(updates.status, undefined, catalog);
-    // An unresolvable TARGET is possibly-active for the same reason.
-    if (target === null || !NEVER_STARTS.includes(target)) {
+    const nextExecutorType = Object.prototype.hasOwnProperty.call(updates, "executor_type")
+      ? updates.executor_type ?? null
+      : issue.executor_type;
+    const nextExecutorId = Object.prototype.hasOwnProperty.call(updates, "executor_id")
+      ? updates.executor_id ?? null
+      : issue.executor_id;
+    if (
+      issueCategory === "in_review" &&
+      target === "in_progress" &&
+      (issue.executor_type === "agent" || issue.executor_type === "team") &&
+      !!issue.executor_id &&
+      nextExecutorType === issue.executor_type &&
+      nextExecutorId === issue.executor_id
+    ) {
+      return {
+        issueIds: [issue.id],
+        mode: "review-return",
+        status: updates.status,
+        executorType: issue.executor_type,
+        executorId: issue.executor_id,
+        issueRevision: issue.revision,
+      };
+    }
+    if (target === "in_review" && issueCategory !== "in_review") {
+      const reviewerWasProvided =
+        Object.prototype.hasOwnProperty.call(updates, "reviewer_type") ||
+        Object.prototype.hasOwnProperty.call(updates, "reviewer_id");
+      const nextReviewerType = reviewerWasProvided
+        ? updates.reviewer_type ?? null
+        : issue.reviewer_type ?? null;
+      const nextReviewerId = reviewerWasProvided
+        ? updates.reviewer_id ?? null
+        : issue.reviewer_id ?? null;
+      const hasReviewer = !!(nextReviewerType && nextReviewerId);
+      if (
+        hasReviewer &&
+        !(nextReviewerType === nextExecutorType && nextReviewerId === nextExecutorId)
+      ) {
+        return null;
+      }
+      return {
+        issueIds: [issue.id],
+        mode: "review",
+        status: updates.status,
+        fromExecutorType: issue.executor_type,
+        fromExecutorId: issue.executor_id,
+        executorType: nextReviewerType,
+        executorId: nextReviewerId,
+        issueRevision: issue.revision,
+      };
+    }
+    if (
+      (target === null || runsExecutor(target)) &&
+      !runsExecutor(issueCategory) &&
+      (nextExecutorType === "agent" || nextExecutorType === "team") &&
+      nextExecutorId
+    ) {
       return {
         issueIds: [issue.id],
         mode: "promote",
         status: updates.status,
-        assigneeType: owner,
-        assigneeId: issue.executor_id,
+        executorType: nextExecutorType,
+        executorId: nextExecutorId,
       };
     }
+  }
+
+  if (
+    (updates.executor_type === "agent" || updates.executor_type === "team") &&
+    updates.executor_id &&
+    (runsExecutor(issueCategory) || issueCategory === null)
+  ) {
+    return {
+      issueIds: [issue.id],
+      mode: "assign",
+      executorType: updates.executor_type,
+      executorId: updates.executor_id,
+    };
   }
 
   return null;

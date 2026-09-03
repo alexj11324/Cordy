@@ -44,8 +44,8 @@ SELECT EXISTS (
     AND details->>'task_id' = @task_id::text
 ) AS exists;
 
--- name: CountAssigneeChangesByActor :many
--- Count how many times a user assigned each target via assignee_changed activities.
+-- name: CountExecutorChangesByActor :many
+-- Count how many times a user assigned each execution target.
 SELECT
   details->>'to_type' as executor_type,
   details->>'to_id' as executor_id,
@@ -54,7 +54,7 @@ FROM activity_log
 WHERE workspace_id = $1
   AND actor_id = $2
   AND actor_type = 'member'
-  AND action = 'assignee_changed'
+  AND action = 'executor_changed'
   AND details->>'to_type' IS NOT NULL
   AND details->>'to_id' IS NOT NULL
 GROUP BY details->>'to_type', details->>'to_id';

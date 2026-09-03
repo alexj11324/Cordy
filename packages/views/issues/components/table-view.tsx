@@ -131,7 +131,7 @@ import { useIssueSurfaceSelection } from "../surface/selection-context";
 import type { IssueCreateDefaults } from "../surface/types";
 import { ProgressRing } from "./progress-ring";
 import {
-  AssigneePicker,
+  ExecutorPicker,
   DueDatePicker,
   LabelPicker,
   PriorityPicker,
@@ -1179,9 +1179,9 @@ function IssueTableBodyCell({
     case "assignee":
       return (
         <div onClick={stopRowNavigation} onAuxClick={stopRowNavigation}>
-          <AssigneePicker
-            assigneeType={issue.executor_type}
-            assigneeId={issue.executor_id}
+          <ExecutorPicker
+            executorType={issue.executor_type}
+            executorId={issue.executor_id}
             onUpdate={onUpdate}
             align="start"
             open={editorOpen}

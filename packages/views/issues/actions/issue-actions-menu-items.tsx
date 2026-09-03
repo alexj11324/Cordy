@@ -86,11 +86,11 @@ interface IssueActionsMenuItemsProps {
   issue: Issue;
   actions: UseIssueActionsResult;
   primitives: MenuPrimitives;
-  /** Called when the user clicks the Assignee menu item. The parent should
-   *  close the surrounding menu and open the shared `AssigneePicker` popover.
+  /** Called when the user clicks the Executor menu item. The parent should
+   *  close the surrounding menu and open the shared `ExecutorPicker` popover.
    *  Decoupled this way so the same item can drive both the dropdown
    *  (3-dot button) and the context menu (right-click) wrappers. */
-  onOpenAssignee: () => void;
+  onOpenExecutor: () => void;
   /** If set, leave the page after the issue is deleted (used by the detail
    *  page, which renders the issue being deleted). The delete modal goes back
    *  to the list the user came from and only falls back to this path when
@@ -102,7 +102,7 @@ export function IssueActionsMenuItems({
   issue,
   actions,
   primitives: P,
-  onOpenAssignee,
+  onOpenExecutor,
   onDeletedFallbackPath,
 }: IssueActionsMenuItemsProps) {
   const { t } = useT("issues");
@@ -230,14 +230,14 @@ export function IssueActionsMenuItems({
         </P.SubContent>
       </P.Sub>
 
-      {/* Assignee — closes this menu and hands off to the shared
-          AssigneePicker (members + agents + teams, with search and
+      {/* Executor — closes this menu and hands off to the shared
+          ExecutorPicker (agents + teams, with search and
           permission checks). Keeps a single source of truth for the
-          assignee UX across detail sidebar, board cards, and right-click /
+          executor UX across detail sidebar, board cards, and right-click /
           3-dot menus. */}
-      <P.Item onClick={onOpenAssignee}>
+      <P.Item onClick={onOpenExecutor}>
         <UserMinus className="h-3.5 w-3.5" />
-        {t(($) => $.actions.assignee)}
+        {t(($) => $.actions.executor)}
       </P.Item>
 
       {/* Start date */}

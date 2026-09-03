@@ -50,15 +50,19 @@ vi.mock("./pickers", () => ({
     </div>
   ),
   PriorityPicker: () => <div data-testid="priority-picker" />,
-  AssigneePicker: ({ onUpdate }: { onUpdate: (u: Partial<UpdateIssueRequest>) => void }) => (
+  OwnerPicker: ({ onUpdate }: { onUpdate: (u: Partial<UpdateIssueRequest>) => void }) => (
+    <div>
+      <button
+        data-testid="assign-member"
+        onClick={() => onUpdate({ owner_type: "member", owner_id: "user-1" })}
+      />
+    </div>
+  ),
+  ExecutorPicker: ({ onUpdate }: { onUpdate: (u: Partial<UpdateIssueRequest>) => void }) => (
     <div>
       <button
         data-testid="assign-agent"
         onClick={() => onUpdate({ executor_type: "agent", executor_id: "agent-1" })}
-      />
-      <button
-        data-testid="assign-member"
-        onClick={() => onUpdate({ owner_type: "member", owner_id: "user-1", executor_type: null, executor_id: null })}
       />
     </div>
   ),
@@ -123,7 +127,7 @@ describe("BatchActionToolbar status routing (MUL-4155)", () => {
     fireEvent.click(screen.getByTestId("assign-agent"));
     expect(openModal).toHaveBeenCalledWith(
       "issue-run-confirm",
-      expect.objectContaining({ issueIds: ["a"], mode: "assign", assigneeType: "agent", assigneeId: "agent-1" }),
+      expect.objectContaining({ issueIds: ["a"], mode: "assign", executorType: "agent", executorId: "agent-1" }),
     );
     expect(batchUpdate).not.toHaveBeenCalled();
   });
@@ -134,7 +138,7 @@ describe("BatchActionToolbar status routing (MUL-4155)", () => {
     expect(openModal).not.toHaveBeenCalled();
     expect(batchUpdate).toHaveBeenCalledWith({
       ids: ["a"],
-      updates: { owner_type: "member", owner_id: "user-1", executor_type: null, executor_id: null },
+      updates: { owner_type: "member", owner_id: "user-1" },
     });
   });
 

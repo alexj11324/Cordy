@@ -277,7 +277,9 @@
     "fields": {
       "status": "상태",
       "priority": "우선순위",
-      "assignee": "담당자",
+      "owner": "책임자",
+      "executor": "실행자",
+      "reviewer": "리뷰어",
       "labels": "레이블",
       "project": "프로젝트",
       "due_date": "마감일",

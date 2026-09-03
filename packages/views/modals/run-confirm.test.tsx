@@ -103,6 +103,16 @@ vi.mock("../i18n", () => ({
           title_promote: "Start work now?",
           promote_single: "move to {{status}}, {{name}} starts",
           confirm_promote: "Move and start",
+          title_review: "Hand off for review",
+          review_choose: "choose reviewer for {{status}}",
+          review_single: "handoff from {{from}} to {{to}} at {{status}}",
+          title_review_return: "Return to implementation",
+          review_return_single: "return to {{to}} at {{status}}",
+          reviewer_label: "Reviewer",
+          reviewer_must_change: "choose another reviewer",
+          unassigned: "Unassigned",
+          confirm_review: "Hand off for review",
+          confirm_review_return: "Return to implementation",
         },
         // useStatusLabel resolves BUILT-IN keys through i18n and custom ones
         // through the catalog, so the promote headline needs both sources.
@@ -167,8 +177,8 @@ const noteBox = () => screen.getByPlaceholderText("scope...");
 const single = {
   issueIds: ["issue-1"],
   mode: "assign" as const,
-  assigneeType: "agent" as const,
-  assigneeId: "agent-1",
+  executorType: "agent" as const,
+  executorId: "agent-1",
 };
 
 // Promoting a parked issue out of backlog starts the run on its own, so it
@@ -178,8 +188,8 @@ const promote = {
   issueIds: ["issue-1"],
   mode: "promote" as const,
   status: "rework",
-  assigneeType: "agent" as const,
-  assigneeId: "agent-1",
+  executorType: "agent" as const,
+  executorId: "agent-1",
 };
 
 describe("RunConfirmModal", () => {
@@ -281,7 +291,7 @@ describe("RunConfirmModal", () => {
     render(
       <RunConfirmModal
         onClose={vi.fn()}
-        data={{ ...single, assigneeType: "team", assigneeId: "team-1" }}
+        data={{ ...single, executorType: "team", executorId: "team-1" }}
       />,
     );
     expect(noteBox()).toBeDisabled();

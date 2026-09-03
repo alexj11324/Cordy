@@ -4,15 +4,15 @@ import { useMemo } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { api } from "@patchbay/core/api";
 import { issueKeys } from "@patchbay/core/issues/queries";
-import type { IssueAssigneeType, IssueStatus, IssueTriggerPreviewItem } from "@patchbay/core/types";
+import type { IssueExecutorType, IssueStatus, IssueTriggerPreviewItem } from "@patchbay/core/types";
 
 export interface UseIssueTriggerPreviewParams {
   /** Existing issues to evaluate (single assign/status or batch). */
   issueIds?: string[];
-  /** Preview a not-yet-persisted issue from assignee/status (create modal). */
+  /** Preview a not-yet-persisted issue from executor/status (create modal). */
   isCreate?: boolean;
-  assigneeType?: IssueAssigneeType | null;
-  assigneeId?: string | null;
+  executorType?: IssueExecutorType | null;
+  executorId?: string | null;
   status?: IssueStatus;
   /** Caller gate — e.g. only fetch while a picker/modal is open. */
   enabled?: boolean;
@@ -33,8 +33,8 @@ function previewSignature(params: UseIssueTriggerPreviewParams): string {
   return JSON.stringify({
     ids: [...(params.issueIds ?? [])].sort(),
     create: params.isCreate ?? false,
-    at: params.assigneeType ?? null,
-    aid: params.assigneeId ?? null,
+    et: params.executorType ?? null,
+    eid: params.executorId ?? null,
     status: params.status ?? null,
   });
 }
@@ -58,7 +58,7 @@ export function useIssueTriggerPreview(
   params: UseIssueTriggerPreviewParams,
 ): UseIssueTriggerPreviewResult {
   const hasTarget =
-    (!!params.assigneeType && !!params.assigneeId) ||
+    (!!params.executorType && !!params.executorId) ||
     !!params.status ||
     (params.isCreate ?? false);
   const enabled = (params.enabled ?? true) && hasTarget;
@@ -71,8 +71,8 @@ export function useIssueTriggerPreview(
       api.previewIssueTrigger({
         issueIds: params.issueIds,
         isCreate: params.isCreate,
-        assigneeType: params.assigneeType,
-        assigneeId: params.assigneeId,
+        executorType: params.executorType,
+        executorId: params.executorId,
         status: params.status,
       }),
     enabled,
