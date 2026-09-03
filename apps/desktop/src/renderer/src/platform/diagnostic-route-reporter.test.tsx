@@ -12,7 +12,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { render } from "@testing-library/react";
 
 const authState = { user: null as { id: string } | null };
-const overlayState = { overlay: null as { type: string } | null };
+const overlayState = { overlay: null as { type: string; path?: string } | null };
 const tabState = {
   slug: null as string | null,
   tabId: null as string | null,
@@ -116,6 +116,15 @@ describe("DiagnosticRouteReporter", () => {
     rerender(<DiagnosticRouteReporter />);
 
     expect(setRendererRouteContext).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports standalone settings without leaking its workspace or query string", () => {
+    overlayState.overlay = { type: "settings", path: "/acme/settings?tab=integrations" };
+    render(<DiagnosticRouteReporter />);
+    expect(setRendererRouteContext).toHaveBeenCalledWith({
+      surface: "overlay", path: "/:slug/settings",
+    });
+    expect(getDiagnosticRoute()).toBe("/:slug/settings");
   });
 
   it("re-reports when the tab navigates to another page", () => {
