@@ -162,9 +162,13 @@ func (c *slackChannel) handleSocketEvent(ctx context.Context, sm *socketmode.Cli
 			c.dispatchSlashCommand(cmd, envelopeID)
 		}
 		return nil
-	case socketmode.EventTypeConnecting, socketmode.EventTypeConnected, socketmode.EventTypeHello:
+	case socketmode.EventTypeHello:
+		channel.ReportConnected(ctx)
+	case socketmode.EventTypeConnecting, socketmode.EventTypeConnected:
+		channel.ReportRuntime(ctx, channel.RuntimeObservation{State: "starting"})
 		c.logger.DebugContext(ctx, "slack: socket mode", "event", evt.Type, "app_id", c.appID)
 	case socketmode.EventTypeIncomingError, socketmode.EventTypeErrorBadMessage:
+		channel.ReportRuntime(ctx, channel.RuntimeObservation{State: "degraded", ErrorCode: "socket_error"})
 		c.logger.WarnContext(ctx, "slack: socket mode error", "event", evt.Type, "app_id", c.appID)
 	default:
 		if evt.Request != nil {

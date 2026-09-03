@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
 )
 
 // WSLongConnConnector is the production EventConnector that holds the
@@ -265,6 +266,9 @@ func (c *WSLongConnConnector) Run(ctx context.Context, inst Installation, emit E
 		<-pingDone
 	}()
 
+	// The provider-issued endpoint and authenticated WebSocket handshake
+	// succeeded. A supervisor lease by itself must never produce this report.
+	channel.ReportConnected(ctx)
 	log.Info("lark ws connector: connected",
 		"service_id", endpoint.ServiceID,
 		"ping_interval", pingInterval.String(),

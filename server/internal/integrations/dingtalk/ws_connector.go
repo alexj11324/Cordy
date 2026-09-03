@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
 )
 
 // This file hand-rolls the DingTalk Stream WebSocket connection, replacing the
@@ -161,11 +162,19 @@ func (c *wsConnector) run(ctx context.Context) error {
 		return conn.SetReadDeadline(time.Now().Add(c.readDeadline))
 	})
 
+	// The authenticated ticket was accepted by the gateway. Keep observation
+	// persistence off the callback ACK path and join it on this run's teardown.
+	reported := make(chan struct{})
+	go func() {
+		defer close(reported)
+		channel.ReportConnected(runCtx)
+	}()
 	defer func() {
 		cancel()
 		closeConn()
 		close(done)
 		<-pingDone
+		<-reported
 	}()
 
 	for {

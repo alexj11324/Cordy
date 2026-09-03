@@ -71,7 +71,9 @@ func (c *telegramChannel) Connect(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return nil
 			}
+			channel.ReportRuntime(ctx, channel.RuntimeObservation{State: "degraded", ErrorCode: "poll_failed"})
 			if errors.Is(err, ErrConflict) {
+				channel.ReportRuntime(ctx, channel.RuntimeObservation{State: "error", ErrorCode: "poll_conflict"})
 				c.logger.WarnContext(ctx, "telegram: getUpdates conflict — this bot token is polled by another instance; stop the other consumer or use a distinct bot per environment",
 					"bot_id", c.botID)
 				return err
@@ -92,6 +94,7 @@ func (c *telegramChannel) Connect(ctx context.Context) error {
 			}
 			return fmt.Errorf("telegram: getUpdates: %w", err)
 		}
+		channel.ReportConnected(ctx)
 		for _, u := range updates {
 			if u.UpdateID >= offset {
 				offset = u.UpdateID + 1

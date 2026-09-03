@@ -188,6 +188,7 @@ func (c *wecomChannel) Connect(ctx context.Context) (err error) {
 		return err
 	}
 	log.Info("wecom: subscribe ok")
+	channel.ReportConnected(ctx)
 
 	// Install the sender on the package-level registry so the OutboundReplier
 	// (created at boot, not per-installation) can locate this connection by

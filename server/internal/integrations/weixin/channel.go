@@ -94,11 +94,13 @@ func (c *weixinChannel) Connect(ctx context.Context) error {
 				return nil
 			}
 			c.logger.WarnContext(ctx, "weixin: getupdates failed", "bot_id", c.botID, "error", err)
+			channel.ReportRuntime(ctx, channel.RuntimeObservation{State: "degraded", ErrorCode: "poll_failed"})
 			if !sleepContext(ctx, receiveRetryDelay) {
 				return nil
 			}
 			return fmt.Errorf("weixin: getupdates: %w", err)
 		}
+		channel.ReportConnected(ctx)
 		for _, message := range updates.Messages {
 			if err := c.dispatch(ctx, message); err != nil {
 				if ctx.Err() != nil {
