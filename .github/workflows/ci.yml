@@ -4,7 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    # The migration stack is #727 -> #728 -> #729; the upper layers target
+    # migration branches, not main, and must run the same quality gates.
+    branches: [main, feat/go-mainline-patchbay, fix/go-front-align-727]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
