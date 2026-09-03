@@ -38,6 +38,25 @@ ON CONFLICT (workspace_id, agent_id, channel_type) DO UPDATE SET
     updated_at        = now()
 RETURNING *;
 
+-- name: UpsertChannelInstallationHub :one
+-- Workspace-scoped install / re-install path. A Hub has no preselected Agent;
+-- conversation routing chooses one later through /agents. The partial unique
+-- index from migration 502 is the conflict target, so restarts and credential
+-- rotations update one durable Hub row instead of appending NULL-agent rows.
+INSERT INTO channel_installation (
+    workspace_id, agent_id, channel_type, config, installer_user_id
+) VALUES (
+    $1, NULL, $2, $3, $4
+)
+ON CONFLICT (workspace_id, channel_type) WHERE agent_id IS NULL DO UPDATE SET
+    config            = EXCLUDED.config,
+    installer_user_id = EXCLUDED.installer_user_id,
+    status            = 'installed',
+    hosted_paused_at  = NULL,
+    installed_at      = now(),
+    updated_at        = now()
+RETURNING *;
+
 -- name: UpsertChannelInstallationByAppID :one
 -- Team-keyed install / re-install for channels whose natural identity is the
 -- platform workspace, not the (agent) pairing. Slack: one Slack workspace
@@ -204,9 +223,10 @@ WITH dead AS (
       AND (
             (ci.status = 'revoked'
                 AND NOT (ci.workspace_id = sqlc.arg('workspace_id')
-                         AND ci.agent_id = sqlc.arg('agent_id')))
+                         AND ci.agent_id IS NOT DISTINCT FROM sqlc.arg('agent_id')::uuid))
          OR NOT EXISTS (SELECT 1 FROM workspace w WHERE w.id = ci.workspace_id)
-         OR NOT EXISTS (SELECT 1 FROM agent a WHERE a.id = ci.agent_id)
+         OR (ci.agent_id IS NOT NULL
+             AND NOT EXISTS (SELECT 1 FROM agent a WHERE a.id = ci.agent_id))
       )
     RETURNING ci.id
 ),

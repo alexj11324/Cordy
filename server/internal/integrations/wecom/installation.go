@@ -248,13 +248,23 @@ func (s *InstallationService) Upsert(ctx context.Context, p InstallationParams, 
 		return Installation{}, err
 	}
 
-	row, err := qtx.Queries.UpsertChannelInstallation(ctx, db.UpsertChannelInstallationParams{
-		WorkspaceID:     p.WorkspaceID,
-		AgentID:         p.AgentID,
-		ChannelType:     channelTypeWecom,
-		Config:          cfg,
-		InstallerUserID: p.InstallerUserID,
-	})
+	var row db.ChannelInstallation
+	if p.AgentID.Valid {
+		row, err = qtx.Queries.UpsertChannelInstallation(ctx, db.UpsertChannelInstallationParams{
+			WorkspaceID:     p.WorkspaceID,
+			AgentID:         p.AgentID,
+			ChannelType:     channelTypeWecom,
+			Config:          cfg,
+			InstallerUserID: p.InstallerUserID,
+		})
+	} else {
+		row, err = qtx.Queries.UpsertChannelInstallationHub(ctx, db.UpsertChannelInstallationHubParams{
+			WorkspaceID:     p.WorkspaceID,
+			ChannelType:     channelTypeWecom,
+			Config:          cfg,
+			InstallerUserID: p.InstallerUserID,
+		})
+	}
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolation {

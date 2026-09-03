@@ -97,7 +97,7 @@ func (r *installationResolver) ResolveInstallation(ctx context.Context, msg chan
 		}
 		return engine.ResolvedInstallation{}, err
 	}
-	if inst.ChannelType != string(TypeWeixin) || inst.WorkspaceID.Valid == false || inst.AgentID.Valid == false {
+	if inst.ChannelType != string(TypeWeixin) || !inst.WorkspaceID.Valid {
 		return engine.ResolvedInstallation{}, engine.ErrInstallationNotFound
 	}
 	return engine.ResolvedInstallation{

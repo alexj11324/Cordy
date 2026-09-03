@@ -45,6 +45,8 @@ type fakeInstallQueries struct {
 	appIDTaken   bool
 	upsertParams db.UpsertChannelInstallationParams
 	upsertCalled bool
+	hubUpsertParams db.UpsertChannelInstallationHubParams
+	hubUpsertCalled bool
 	rowID        pgtype.UUID
 
 	// byAppID* drive the UpsertChannelInstallationByAppID stub behind
@@ -111,6 +113,18 @@ func (f *fakeInstallQueries) UpsertChannelInstallation(_ context.Context, arg db
 	}, nil
 }
 
+func (f *fakeInstallQueries) UpsertChannelInstallationHub(_ context.Context, arg db.UpsertChannelInstallationHubParams) (db.ChannelInstallation, error) {
+	f.hubUpsertCalled = true
+	f.hubUpsertParams = arg
+	if f.appIDTaken {
+		return db.ChannelInstallation{}, &pgconn.PgError{Code: "23505"}
+	}
+	return db.ChannelInstallation{
+		ID: f.rowID, WorkspaceID: arg.WorkspaceID, ChannelType: arg.ChannelType,
+		Config: arg.Config, InstallerUserID: arg.InstallerUserID, Status: "installed",
+	}, nil
+}
+
 func (f *fakeInstallQueries) UpsertChannelInstallationByAppID(_ context.Context, arg db.UpsertChannelInstallationByAppIDParams) (db.ChannelInstallation, error) {
 	f.byAppIDCalled = true
 	f.byAppIDParams = arg
@@ -173,4 +187,20 @@ func newTestInstallService(t *testing.T, q installQueries) *InstallService {
 		t.Fatalf("newInstallService: %v", err)
 	}
 	return svc
+}
+
+func TestPersistInstallUsesWorkspaceHubSlotWithoutAgent(t *testing.T) {
+	q := &fakeInstallQueries{rowID: mustUUID(t, "11111111-1111-1111-1111-111111111111")}
+	svc := newTestInstallService(t, q)
+	_, err := svc.persistInstall(context.Background(), installPersist{
+		wsID: mustUUID(t, "22222222-2222-2222-2222-222222222222"),
+		installerID: mustUUID(t, "33333333-3333-3333-3333-333333333333"),
+		appIDKey: "A123", configJSON: []byte(`{"app_id":"A123"}`),
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !q.hubUpsertCalled || q.upsertCalled || q.hubUpsertParams.ChannelType != string(TypeSlack) {
+		t.Fatalf("hub upsert = %v, agent upsert = %v, params = %+v", q.hubUpsertCalled, q.upsertCalled, q.hubUpsertParams)
+	}
 }

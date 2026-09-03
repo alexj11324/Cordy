@@ -5062,7 +5062,7 @@ export class ApiClient {
 
   async beginLarkInstall(
     workspaceId: string,
-    agentId: string,
+    agentId: string | undefined,
     region: "feishu" | "lark",
   ): Promise<BeginLarkInstallResponse> {
     // The user picks the cloud explicitly in the UI ("Bind to Feishu"
@@ -5073,7 +5073,8 @@ export class ApiClient {
     // server-side (RegionOrDefault) — we surface region as a required
     // arg here so every call site is forced to make a deliberate
     // choice rather than silently defaulting to mainland.
-    const search = new URLSearchParams({ agent_id: agentId, region });
+    const search = new URLSearchParams({ region });
+    if (agentId) search.set("agent_id", agentId);
     return this.fetch(`/api/workspaces/${workspaceId}/lark/install/begin?${search.toString()}`, {
       method: "POST",
     });
@@ -5140,11 +5141,13 @@ export class ApiClient {
   // and the backend validates + persists it, returning the new installation.
   async registerSlackBYO(
     workspaceId: string,
-    agentId: string,
+    agentId: string | undefined,
     body: RegisterSlackBYORequest,
   ): Promise<SlackInstallation> {
-    const search = new URLSearchParams({ agent_id: agentId });
-    return this.fetch(`/api/workspaces/${workspaceId}/slack/install/byo?${search.toString()}`, {
+    const search = new URLSearchParams();
+    if (agentId) search.set("agent_id", agentId);
+    const query = search.toString();
+    return this.fetch(`/api/workspaces/${workspaceId}/slack/install/byo${query ? `?${query}` : ""}`, {
       method: "POST",
       body: JSON.stringify(body),
     });
@@ -5286,12 +5289,14 @@ export class ApiClient {
   // backend validates + persists it, returning the new installation.
   async registerDingTalkBYO(
     workspaceId: string,
-    agentId: string,
+    agentId: string | undefined,
     body: RegisterDingTalkBYORequest,
   ): Promise<DingTalkInstallation> {
-    const search = new URLSearchParams({ agent_id: agentId });
+    const search = new URLSearchParams();
+    if (agentId) search.set("agent_id", agentId);
+    const query = search.toString();
     const raw = await this.fetch<unknown>(
-      `/api/workspaces/${workspaceId}/dingtalk/install/byo?${search.toString()}`,
+      `/api/workspaces/${workspaceId}/dingtalk/install/byo${query ? `?${query}` : ""}`,
       {
         method: "POST",
         body: JSON.stringify(body),
@@ -5343,12 +5348,14 @@ export class ApiClient {
   // persisting, returning the new installation.
   async registerWecomBYO(
     workspaceId: string,
-    agentId: string,
+    agentId: string | undefined,
     body: RegisterWecomBYORequest,
   ): Promise<WecomInstallation> {
-    const search = new URLSearchParams({ agent_id: agentId });
+    const search = new URLSearchParams();
+    if (agentId) search.set("agent_id", agentId);
+    const query = search.toString();
     const raw = await this.fetch<unknown>(
-      `/api/workspaces/${workspaceId}/wecom/install/byo?${search.toString()}`,
+      `/api/workspaces/${workspaceId}/wecom/install/byo${query ? `?${query}` : ""}`,
       {
         method: "POST",
         body: JSON.stringify(body),
@@ -5403,11 +5410,13 @@ export class ApiClient {
 
   async beginWeixinInstall(
     workspaceId: string,
-    agentId: string,
+    agentId: string | undefined,
   ): Promise<BeginWeixinInstallResponse> {
-    const search = new URLSearchParams({ agent_id: agentId });
+    const search = new URLSearchParams();
+    if (agentId) search.set("agent_id", agentId);
+    const query = search.toString();
     const raw = await this.fetch<unknown>(
-      `/api/workspaces/${encodeURIComponent(workspaceId)}/weixin/install/begin?${search.toString()}`,
+      `/api/workspaces/${encodeURIComponent(workspaceId)}/weixin/install/begin${query ? `?${query}` : ""}`,
       { method: "POST" },
     );
     return parseWithFallback(
@@ -5471,12 +5480,14 @@ export class ApiClient {
 
   async registerTelegramBot(
     workspaceId: string,
-    agentId: string,
+    agentId: string | undefined,
     body: RegisterTelegramRequest,
   ): Promise<TelegramInstallation> {
-    const search = new URLSearchParams({ agent_id: agentId });
+    const search = new URLSearchParams();
+    if (agentId) search.set("agent_id", agentId);
+    const query = search.toString();
     const raw = await this.fetch<unknown>(
-      `/api/workspaces/${workspaceId}/telegram/install?${search.toString()}`,
+      `/api/workspaces/${workspaceId}/telegram/install${query ? `?${query}` : ""}`,
       {
         method: "POST",
         body: JSON.stringify(body),

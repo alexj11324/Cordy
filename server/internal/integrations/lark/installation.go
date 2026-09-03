@@ -137,8 +137,6 @@ func validateInstallationParams(p InstallationParams) error {
 	switch {
 	case !p.WorkspaceID.Valid:
 		return errors.New("workspace_id is required")
-	case !p.AgentID.Valid:
-		return errors.New("agent_id is required")
 	case !p.InstallerUserID.Valid:
 		return errors.New("installer_user_id is required")
 	case p.AppID == "":

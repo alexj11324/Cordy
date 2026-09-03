@@ -120,17 +120,25 @@ func (h *Handler) BeginWeixinInstall(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	agentID, ok := parseUUIDOrBadRequest(w, strings.TrimSpace(r.URL.Query().Get("agent_id")), "agent id")
-	if !ok {
-		return
-	}
-	agent, err := h.Queries.GetAgentInWorkspace(r.Context(), db.GetAgentInWorkspaceParams{ID: agentID, WorkspaceID: workspaceID})
-	if err != nil {
-		writeError(w, http.StatusNotFound, "agent not found in this workspace")
-		return
-	}
-	if !h.canManageAgent(w, r, agent) {
-		return
+	agentIDStr := strings.TrimSpace(r.URL.Query().Get("agent_id"))
+	var agentID pgtype.UUID
+	if agentIDStr == "" {
+		if _, roleOK := h.requireWorkspaceRole(w, r, uuidToString(workspaceID), "workspace not found", "owner", "admin"); !roleOK {
+			return
+		}
+	} else {
+		agentID, ok = parseUUIDOrBadRequest(w, agentIDStr, "agent id")
+		if !ok {
+			return
+		}
+		agent, err := h.Queries.GetAgentInWorkspace(r.Context(), db.GetAgentInWorkspaceParams{ID: agentID, WorkspaceID: workspaceID})
+		if err != nil {
+			writeError(w, http.StatusNotFound, "agent not found in this workspace")
+			return
+		}
+		if !h.canManageAgent(w, r, agent) {
+			return
+		}
 	}
 	initiatorID, ok := parseUUIDOrBadRequest(w, userID, "user id")
 	if !ok {

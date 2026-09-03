@@ -748,26 +748,28 @@ func (h *Handler) RegisterDingTalkBYO(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	agentIDStr := strings.TrimSpace(r.URL.Query().Get("agent_id"))
+	var agentUUID pgtype.UUID
 	if agentIDStr == "" {
-		writeError(w, http.StatusBadRequest, "agent_id is required")
-		return
-	}
-	agentUUID, ok := parseUUIDOrBadRequest(w, agentIDStr, "agent_id")
-	if !ok {
-		return
-	}
-	// Resolve and authorize the target agent at the boundary so a wrong agent_id
-	// is a clear 404 and an unrelated member cannot connect a bot to it.
-	agent, err := h.Queries.GetAgentInWorkspace(r.Context(), db.GetAgentInWorkspaceParams{
-		ID:          agentUUID,
-		WorkspaceID: wsUUID,
-	})
-	if err != nil {
-		writeError(w, http.StatusNotFound, "agent not found in this workspace")
-		return
-	}
-	if !h.canManageAgent(w, r, agent) {
-		return
+		if _, roleOK := h.requireWorkspaceRole(w, r, uuidToString(wsUUID), "workspace not found", "owner", "admin"); !roleOK {
+			return
+		}
+	} else {
+		agentUUID, ok = parseUUIDOrBadRequest(w, agentIDStr, "agent_id")
+		if !ok {
+			return
+		}
+		// Resolve and authorize the target agent at the boundary so a wrong agent_id
+		// is a clear 404 and an unrelated member cannot install a bot for it.
+		agent, err := h.Queries.GetAgentInWorkspace(r.Context(), db.GetAgentInWorkspaceParams{
+			ID: agentUUID, WorkspaceID: wsUUID,
+		})
+		if err != nil {
+			writeError(w, http.StatusNotFound, "agent not found in this workspace")
+			return
+		}
+		if !h.canManageAgent(w, r, agent) {
+			return
+		}
 	}
 	initiatorUUID, ok := parseUUIDOrBadRequest(w, userID, "user id")
 	if !ok {

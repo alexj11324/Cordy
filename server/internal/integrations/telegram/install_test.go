@@ -21,6 +21,8 @@ import (
 type fakeTelegramInstallQueries struct {
 	upsertCalled bool
 	upsert       db.UpsertChannelInstallationParams
+	hubUpsertCalled bool
+	hubUpsert       db.UpsertChannelInstallationHubParams
 	rowID        pgtype.UUID
 	appIDTaken   bool
 	owner        db.GetChannelInstallationOwnerByAppIDRow
@@ -45,6 +47,13 @@ func (f *fakeTelegramInstallQueries) UpsertChannelInstallation(_ context.Context
 		return db.ChannelInstallation{}, &pgconn.PgError{Code: pgUniqueViolation}
 	}
 	return db.ChannelInstallation{ID: f.rowID, WorkspaceID: p.WorkspaceID, AgentID: p.AgentID, ChannelType: p.ChannelType, Config: p.Config, InstallerUserID: p.InstallerUserID, Status: "installed"}, nil
+}
+func (f *fakeTelegramInstallQueries) UpsertChannelInstallationHub(_ context.Context, p db.UpsertChannelInstallationHubParams) (db.ChannelInstallation, error) {
+	f.hubUpsertCalled, f.hubUpsert = true, p
+	if f.appIDTaken {
+		return db.ChannelInstallation{}, &pgconn.PgError{Code: pgUniqueViolation}
+	}
+	return db.ChannelInstallation{ID: f.rowID, WorkspaceID: p.WorkspaceID, ChannelType: p.ChannelType, Config: p.Config, InstallerUserID: p.InstallerUserID, Status: "installed"}, nil
 }
 func (f *fakeTelegramInstallQueries) GetChannelInstallationOwnerByAppID(context.Context, db.GetChannelInstallationOwnerByAppIDParams) (db.GetChannelInstallationOwnerByAppIDRow, error) {
 	return f.owner, f.ownerErr
@@ -102,6 +111,22 @@ func newTelegramInstallTestService(t *testing.T, q installQueries) *InstallServi
 		t.Fatal(err)
 	}
 	return svc
+}
+
+func TestPersistInstallUsesWorkspaceHubSlotWithoutAgent(t *testing.T) {
+	q := &fakeTelegramInstallQueries{rowID: pgtype.UUID{Bytes: [16]byte{1}, Valid: true}}
+	svc := newTelegramInstallTestService(t, q)
+	_, err := svc.persistInstall(context.Background(), installPersist{
+		wsID: pgtype.UUID{Bytes: [16]byte{2}, Valid: true},
+		installerID: pgtype.UUID{Bytes: [16]byte{3}, Valid: true},
+		appIDKey: "12345", configJSON: []byte(`{"app_id":"12345"}`),
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !q.hubUpsertCalled || q.upsertCalled || q.hubUpsert.ChannelType != string(TypeTelegram) {
+		t.Fatalf("hub upsert = %v, agent upsert = %v, params = %+v", q.hubUpsertCalled, q.upsertCalled, q.hubUpsert)
+	}
 }
 
 func telegramInstallAPIServer(t *testing.T, webhookURL string) *httptest.Server {

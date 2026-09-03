@@ -349,8 +349,8 @@ type BeginInstallResult struct {
 // the device_code is server-side only (Lark would honor a poll from
 // anywhere if the device_code leaked, so we never echo it).
 func (s *RegistrationService) BeginInstall(ctx context.Context, p BeginInstallParams) (BeginInstallResult, error) {
-	if !p.WorkspaceID.Valid || !p.AgentID.Valid || !p.InitiatorID.Valid {
-		return BeginInstallResult{}, errors.New("lark registration: workspace, agent, and initiator are required")
+	if !p.WorkspaceID.Valid || !p.InitiatorID.Valid {
+		return BeginInstallResult{}, errors.New("lark registration: workspace and initiator are required")
 	}
 	// Agent↔workspace pre-check — without this, a caller could open an
 	// install session against another workspace's agent by guessing the
@@ -361,12 +361,16 @@ func (s *RegistrationService) BeginInstall(ctx context.Context, p BeginInstallPa
 	// We keep the agent: its name pre-fills the bot name on Lark's
 	// PersonalAgent creation form (see botNamePreset) so the installed
 	// bot reads "<agent> - Patchbay" instead of "{用户姓名}的智能助手".
-	agent, err := s.authQueries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{
-		ID:          p.AgentID,
-		WorkspaceID: p.WorkspaceID,
-	})
-	if err != nil {
-		return BeginInstallResult{}, fmt.Errorf("lark registration: agent not in workspace: %w", err)
+	agentName := ""
+	if p.AgentID.Valid {
+		agent, err := s.authQueries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{
+			ID:          p.AgentID,
+			WorkspaceID: p.WorkspaceID,
+		})
+		if err != nil {
+			return BeginInstallResult{}, fmt.Errorf("lark registration: agent not in workspace: %w", err)
+		}
+		agentName = agent.Name
 	}
 
 	// Normalize the requested region: empty / unknown → Feishu, the same
@@ -376,7 +380,7 @@ func (s *RegistrationService) BeginInstall(ctx context.Context, p BeginInstallPa
 	// field) keeps getting the historical mainland-first behaviour.
 	region := RegionOrDefault(string(p.Region))
 
-	begin, err := s.client.Begin(ctx, botNamePreset(agent.Name), region)
+	begin, err := s.client.Begin(ctx, botNamePreset(agentName), region)
 	if err != nil {
 		return BeginInstallResult{}, fmt.Errorf("lark registration: begin: %w", err)
 	}

@@ -50,6 +50,25 @@ describe("ApiClient Weixin device flow", () => {
     expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ method: "POST" });
   });
 
+  it("omits agent_id when beginning a workspace Hub installation", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        session_id: "session-hub",
+        qr_code_url: "https://example.test/qr",
+        expires_in_seconds: 600,
+        poll_interval_seconds: 3,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new ApiClient("https://api.example.test");
+
+    await client.beginWeixinInstall("workspace/1", undefined);
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://api.example.test/api/workspaces/workspace%2F1/weixin/install/begin",
+    );
+  });
+
   it("sends a verification code only for the status retry and preserves redeem payloads", async () => {
     const fetchMock = vi
       .fn()

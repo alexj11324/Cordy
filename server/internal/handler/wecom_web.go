@@ -161,20 +161,18 @@ func (h *Handler) RegisterWecomBYO(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	agentIDStr := strings.TrimSpace(r.URL.Query().Get("agent_id"))
-	if agentIDStr == "" {
-		writeError(w, http.StatusBadRequest, "agent_id is required")
-		return
-	}
-	agentUUID, ok := parseUUIDOrBadRequest(w, agentIDStr, "agent_id")
-	if !ok {
-		return
-	}
-	if _, err := h.Queries.GetAgentInWorkspace(r.Context(), db.GetAgentInWorkspaceParams{
-		ID:          agentUUID,
-		WorkspaceID: wsUUID,
-	}); err != nil {
-		writeError(w, http.StatusNotFound, "agent not found in this workspace")
-		return
+	var agentUUID pgtype.UUID
+	if agentIDStr != "" {
+		agentUUID, ok = parseUUIDOrBadRequest(w, agentIDStr, "agent_id")
+		if !ok {
+			return
+		}
+		if _, err := h.Queries.GetAgentInWorkspace(r.Context(), db.GetAgentInWorkspaceParams{
+			ID: agentUUID, WorkspaceID: wsUUID,
+		}); err != nil {
+			writeError(w, http.StatusNotFound, "agent not found in this workspace")
+			return
+		}
 	}
 	initiatorUUID, ok := parseUUIDOrBadRequest(w, userID, "user id")
 	if !ok {

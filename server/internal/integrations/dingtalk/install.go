@@ -54,6 +54,7 @@ type installQueries interface {
 	GetDingTalkInstallationOwnerForUpdate(ctx context.Context, arg db.GetDingTalkInstallationOwnerForUpdateParams) (db.GetDingTalkInstallationOwnerForUpdateRow, error)
 	DeleteDingTalkInstallationForReplacement(ctx context.Context, arg db.DeleteDingTalkInstallationForReplacementParams) (pgtype.UUID, error)
 	UpsertChannelInstallation(ctx context.Context, arg db.UpsertChannelInstallationParams) (db.ChannelInstallation, error)
+	UpsertChannelInstallationHub(ctx context.Context, arg db.UpsertChannelInstallationHubParams) (db.ChannelInstallation, error)
 	ReclaimDeadChannelInstallationByAppID(ctx context.Context, arg db.ReclaimDeadChannelInstallationByAppIDParams) (pgtype.UUID, error)
 	GetChannelInstallationOwnerByAppID(ctx context.Context, arg db.GetChannelInstallationOwnerByAppIDParams) (db.GetChannelInstallationOwnerByAppIDRow, error)
 	ListChannelInstallationsByWorkspace(ctx context.Context, arg db.ListChannelInstallationsByWorkspaceParams) ([]db.ChannelInstallation, error)
@@ -174,11 +175,13 @@ func (s *InstallService) persistInstall(ctx context.Context, p installPersist, l
 	// A replacement deletes and recreates the unique (workspace, agent,
 	// channel) row. Serialize the logical slot across that gap so concurrent
 	// installs cannot update the newly-created identity in place.
-	if err := qtx.LockDingTalkInstallationOwner(ctx, db.LockDingTalkInstallationOwnerParams{
-		WorkspaceID: p.wsID,
-		AgentID:     p.agentID,
-	}); err != nil {
-		return db.ChannelInstallation{}, fmt.Errorf("lock dingtalk installation owner: %w", err)
+	if p.agentID.Valid {
+		if err := qtx.LockDingTalkInstallationOwner(ctx, db.LockDingTalkInstallationOwnerParams{
+			WorkspaceID: p.wsID,
+			AgentID:     p.agentID,
+		}); err != nil {
+			return db.ChannelInstallation{}, fmt.Errorf("lock dingtalk installation owner: %w", err)
+		}
 	}
 
 	// Free the (dingtalk, app_id) routing slot from any DEAD prior owner — a
@@ -197,30 +200,42 @@ func (s *InstallService) persistInstall(ctx context.Context, p installPersist, l
 		return db.ChannelInstallation{}, fmt.Errorf("reclaim dead dingtalk installation: %w", err)
 	}
 
-	current, err := qtx.GetDingTalkInstallationOwnerForUpdate(ctx, db.GetDingTalkInstallationOwnerForUpdateParams{
-		WorkspaceID: p.wsID,
-		AgentID:     p.agentID,
-	})
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return db.ChannelInstallation{}, fmt.Errorf("load current dingtalk installation: %w", err)
-	}
-	if err == nil && current.AppID != p.appIDKey {
-		if _, err := qtx.DeleteDingTalkInstallationForReplacement(ctx, db.DeleteDingTalkInstallationForReplacementParams{
-			InstallationID: current.ID,
-			WorkspaceID:    p.wsID,
-			AgentID:        p.agentID,
-		}); err != nil {
-			return db.ChannelInstallation{}, fmt.Errorf("retire replaced dingtalk installation: %w", err)
+	if p.agentID.Valid {
+		current, err := qtx.GetDingTalkInstallationOwnerForUpdate(ctx, db.GetDingTalkInstallationOwnerForUpdateParams{
+			WorkspaceID: p.wsID,
+			AgentID:     p.agentID,
+		})
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return db.ChannelInstallation{}, fmt.Errorf("load current dingtalk installation: %w", err)
+		}
+		if err == nil && current.AppID != p.appIDKey {
+			if _, err := qtx.DeleteDingTalkInstallationForReplacement(ctx, db.DeleteDingTalkInstallationForReplacementParams{
+				InstallationID: current.ID,
+				WorkspaceID:    p.wsID,
+				AgentID:        p.agentID,
+			}); err != nil {
+				return db.ChannelInstallation{}, fmt.Errorf("retire replaced dingtalk installation: %w", err)
+			}
 		}
 	}
 
-	inst, err := qtx.UpsertChannelInstallation(ctx, db.UpsertChannelInstallationParams{
-		WorkspaceID:     p.wsID,
-		AgentID:         p.agentID,
-		ChannelType:     string(TypeDingTalk),
-		Config:          p.configJSON,
-		InstallerUserID: p.installerID,
-	})
+	var inst db.ChannelInstallation
+	if p.agentID.Valid {
+		inst, err = qtx.UpsertChannelInstallation(ctx, db.UpsertChannelInstallationParams{
+			WorkspaceID:     p.wsID,
+			AgentID:         p.agentID,
+			ChannelType:     string(TypeDingTalk),
+			Config:          p.configJSON,
+			InstallerUserID: p.installerID,
+		})
+	} else {
+		inst, err = qtx.UpsertChannelInstallationHub(ctx, db.UpsertChannelInstallationHubParams{
+			WorkspaceID:     p.wsID,
+			ChannelType:     string(TypeDingTalk),
+			Config:          p.configJSON,
+			InstallerUserID: p.installerID,
+		})
+	}
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolation {

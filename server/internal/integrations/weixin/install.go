@@ -109,7 +109,7 @@ func (s *InstallationService) SetHostedCapacityLimiter(limiter *hostedcapacity.L
 }
 
 func (s *InstallationService) Begin(ctx context.Context, p BeginParams) (BeginResult, error) {
-	if s == nil || s.q == nil || !p.WorkspaceID.Valid || !p.AgentID.Valid || !p.InitiatorID.Valid {
+	if s == nil || s.q == nil || !p.WorkspaceID.Valid || !p.InitiatorID.Valid {
 		return BeginResult{}, errors.New("weixin: invalid install parameters")
 	}
 	rows, err := s.q.ListChannelInstallationsByWorkspace(ctx, db.ListChannelInstallationsByWorkspaceParams{
@@ -237,9 +237,12 @@ func (s *InstallationService) Status(ctx context.Context, sessionID string, work
 	if err != nil {
 		return StatusResult{}, ErrInstallSessionNotFound
 	}
-	agentUUID, err := util.ParseUUID(session.AgentID)
-	if err != nil {
-		return StatusResult{}, ErrInstallSessionNotFound
+	var agentUUID pgtype.UUID
+	if session.AgentID != "" {
+		agentUUID, err = util.ParseUUID(session.AgentID)
+		if err != nil {
+			return StatusResult{}, ErrInstallSessionNotFound
+		}
 	}
 	initiatorUUID, err := util.ParseUUID(session.InitiatorID)
 	if err != nil {
@@ -259,7 +262,7 @@ func (s *InstallationService) Status(ctx context.Context, sessionID string, work
 }
 
 func (s *InstallationService) finalize(ctx context.Context, workspaceID, agentID, installerID pgtype.UUID, botID, userID string, config []byte) (db.ChannelInstallation, error) {
-	if !workspaceID.Valid || !agentID.Valid || !installerID.Valid {
+	if !workspaceID.Valid || !installerID.Valid {
 		return db.ChannelInstallation{}, errors.New("weixin: invalid installation scope")
 	}
 	if err := validateInstallConfig(botID, userID, config); err != nil {
@@ -288,20 +291,29 @@ func (s *InstallationService) finalize(ctx context.Context, workspaceID, agentID
 	if err := hostedcapacity.AdmitInstall(ctx, qtx, workspaceID, string(TypeWeixin), agentID, limit); err != nil {
 		return db.ChannelInstallation{}, err
 	}
-	if err := lockInstallationAgentSlot(ctx, tx, workspaceID, agentID); err != nil {
-		return db.ChannelInstallation{}, err
+	if agentID.Valid {
+		if err := lockInstallationAgentSlot(ctx, tx, workspaceID, agentID); err != nil {
+			return db.ChannelInstallation{}, err
+		}
 	}
 	if err := qtx.LockChannelInstallationAppIDSlot(ctx, db.LockChannelInstallationAppIDSlotParams{
 		ChannelType: string(TypeWeixin), AppID: botID,
 	}); err != nil {
 		return db.ChannelInstallation{}, fmt.Errorf("weixin: lock installation app slot: %w", err)
 	}
-	agent, err := qtx.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{ID: agentID, WorkspaceID: workspaceID})
-	if err != nil || !agent.ID.Valid || agent.ArchivedAt.Valid {
+	member, err := qtx.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{UserID: installerID, WorkspaceID: workspaceID})
+	if err != nil || !member.ID.Valid {
 		return db.ChannelInstallation{}, ErrInstallAuthorizationChanged
 	}
-	member, err := qtx.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{UserID: installerID, WorkspaceID: workspaceID})
-	if err != nil || !member.ID.Valid || (member.Role != "owner" && member.Role != "admin" && agent.OwnerID != installerID) {
+	if agentID.Valid {
+		agent, err := qtx.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{ID: agentID, WorkspaceID: workspaceID})
+		if err != nil || !agent.ID.Valid || agent.ArchivedAt.Valid {
+			return db.ChannelInstallation{}, ErrInstallAuthorizationChanged
+		}
+		if member.Role != "owner" && member.Role != "admin" && agent.OwnerID != installerID {
+			return db.ChannelInstallation{}, ErrInstallAuthorizationChanged
+		}
+	} else if member.Role != "owner" && member.Role != "admin" {
 		return db.ChannelInstallation{}, ErrInstallAuthorizationChanged
 	}
 	if reclaimed, reclaimErr := qtx.ReclaimDeadChannelInstallationByAppID(ctx, db.ReclaimDeadChannelInstallationByAppIDParams{
@@ -319,16 +331,25 @@ func (s *InstallationService) finalize(ctx context.Context, workspaceID, agentID
 	if err != nil {
 		return db.ChannelInstallation{}, fmt.Errorf("weixin: list agent installations: %w", err)
 	}
-	for _, current := range rows {
-		if current.AgentID == agentID && DecodePublicConfig(current.Config).BotID != botID {
-			if err := deleteInstallationForReplacement(ctx, tx, current.ID); err != nil {
-				return db.ChannelInstallation{}, err
+	if agentID.Valid {
+		for _, current := range rows {
+			if current.AgentID == agentID && DecodePublicConfig(current.Config).BotID != botID {
+				if err := deleteInstallationForReplacement(ctx, tx, current.ID); err != nil {
+					return db.ChannelInstallation{}, err
+				}
 			}
 		}
 	}
-	row, err := qtx.UpsertChannelInstallation(ctx, db.UpsertChannelInstallationParams{
-		WorkspaceID: workspaceID, AgentID: agentID, ChannelType: string(TypeWeixin), Config: config, InstallerUserID: installerID,
-	})
+	var row db.ChannelInstallation
+	if agentID.Valid {
+		row, err = qtx.UpsertChannelInstallation(ctx, db.UpsertChannelInstallationParams{
+			WorkspaceID: workspaceID, AgentID: agentID, ChannelType: string(TypeWeixin), Config: config, InstallerUserID: installerID,
+		})
+	} else {
+		row, err = qtx.UpsertChannelInstallationHub(ctx, db.UpsertChannelInstallationHubParams{
+			WorkspaceID: workspaceID, ChannelType: string(TypeWeixin), Config: config, InstallerUserID: installerID,
+		})
+	}
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {

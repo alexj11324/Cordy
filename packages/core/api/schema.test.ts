@@ -20,6 +20,39 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("workspace Hub installation endpoints", () => {
+  it("omits agent_id for every workspace-scoped provider install", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () =>
+      new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new ApiClient("https://api.example.test");
+
+    await client.beginLarkInstall("ws-1", undefined, "lark");
+    await client.registerSlackBYO("ws-1", undefined, {
+      bot_token: "xoxb-token",
+      app_token: "xapp-token",
+    });
+    await client.registerDingTalkBYO("ws-1", undefined, {
+      client_id: "client",
+      client_secret: "secret",
+    });
+    await client.registerWecomBYO("ws-1", undefined, {
+      bot_id: "bot",
+      secret: "secret",
+    });
+    await client.registerTelegramBot("ws-1", undefined, { bot_token: "token" });
+
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "https://api.example.test/api/workspaces/ws-1/lark/install/begin?region=lark",
+      "https://api.example.test/api/workspaces/ws-1/slack/install/byo",
+      "https://api.example.test/api/workspaces/ws-1/dingtalk/install/byo",
+      "https://api.example.test/api/workspaces/ws-1/wecom/install/byo",
+      "https://api.example.test/api/workspaces/ws-1/telegram/install",
+    ]);
+  });
+});
+
 // These tests cover the five failure modes that white-screened the desktop
 // app in past incidents. The contract is: a malformed response degrades to
 // an empty/safe shape, never throws into React.

@@ -2352,9 +2352,10 @@ WITH dead AS (
       AND (
             (ci.status = 'revoked'
                 AND NOT (ci.workspace_id = $3
-                         AND ci.agent_id = $4))
+                         AND ci.agent_id IS NOT DISTINCT FROM $4::uuid))
          OR NOT EXISTS (SELECT 1 FROM workspace w WHERE w.id = ci.workspace_id)
-         OR NOT EXISTS (SELECT 1 FROM agent a WHERE a.id = ci.agent_id)
+         OR (ci.agent_id IS NOT NULL
+             AND NOT EXISTS (SELECT 1 FROM agent a WHERE a.id = ci.agent_id))
       )
     RETURNING ci.id
 ),
@@ -2992,6 +2993,59 @@ func (q *Queries) UpsertChannelInstallation(ctx context.Context, arg UpsertChann
 	row := q.db.QueryRow(ctx, upsertChannelInstallation,
 		arg.WorkspaceID,
 		arg.AgentID,
+		arg.ChannelType,
+		arg.Config,
+		arg.InstallerUserID,
+	)
+	var i ChannelInstallation
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.AgentID,
+		&i.ChannelType,
+		&i.Config,
+		&i.Status,
+		&i.WsLeaseToken,
+		&i.WsLeaseExpiresAt,
+		&i.InstallerUserID,
+		&i.InstalledAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.HostedPausedAt,
+	)
+	return i, err
+}
+
+const upsertChannelInstallationHub = `-- name: UpsertChannelInstallationHub :one
+INSERT INTO channel_installation (
+    workspace_id, agent_id, channel_type, config, installer_user_id
+) VALUES (
+    $1, NULL, $2, $3, $4
+)
+ON CONFLICT (workspace_id, channel_type) WHERE agent_id IS NULL DO UPDATE SET
+    config            = EXCLUDED.config,
+    installer_user_id = EXCLUDED.installer_user_id,
+    status            = 'installed',
+    hosted_paused_at  = NULL,
+    installed_at      = now(),
+    updated_at        = now()
+RETURNING id, workspace_id, agent_id, channel_type, config, status, ws_lease_token, ws_lease_expires_at, installer_user_id, installed_at, created_at, updated_at, hosted_paused_at
+`
+
+type UpsertChannelInstallationHubParams struct {
+	WorkspaceID     pgtype.UUID `json:"workspace_id"`
+	ChannelType     string      `json:"channel_type"`
+	Config          []byte      `json:"config"`
+	InstallerUserID pgtype.UUID `json:"installer_user_id"`
+}
+
+// Workspace-scoped install / re-install path. A Hub has no preselected Agent;
+// conversation routing chooses one later through /agents. The partial unique
+// index from migration 502 is the conflict target, so restarts and credential
+// rotations update one durable Hub row instead of appending NULL-agent rows.
+func (q *Queries) UpsertChannelInstallationHub(ctx context.Context, arg UpsertChannelInstallationHubParams) (ChannelInstallation, error) {
+	row := q.db.QueryRow(ctx, upsertChannelInstallationHub,
+		arg.WorkspaceID,
 		arg.ChannelType,
 		arg.Config,
 		arg.InstallerUserID,

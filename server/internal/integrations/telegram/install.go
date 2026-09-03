@@ -60,6 +60,7 @@ var (
 type installQueries interface {
 	WithTx(tx pgx.Tx) installQueries
 	UpsertChannelInstallation(ctx context.Context, arg db.UpsertChannelInstallationParams) (db.ChannelInstallation, error)
+	UpsertChannelInstallationHub(ctx context.Context, arg db.UpsertChannelInstallationHubParams) (db.ChannelInstallation, error)
 	ReclaimDeadChannelInstallationByAppID(ctx context.Context, arg db.ReclaimDeadChannelInstallationByAppIDParams) (pgtype.UUID, error)
 	GetChannelInstallationOwnerByAppID(ctx context.Context, arg db.GetChannelInstallationOwnerByAppIDParams) (db.GetChannelInstallationOwnerByAppIDRow, error)
 	ListChannelInstallationsByWorkspace(ctx context.Context, arg db.ListChannelInstallationsByWorkspaceParams) ([]db.ChannelInstallation, error)
@@ -239,13 +240,23 @@ func (s *InstallService) persistInstall(ctx context.Context, p installPersist, l
 		return db.ChannelInstallation{}, fmt.Errorf("reclaim dead telegram installation: %w", err)
 	}
 
-	inst, err := qtx.UpsertChannelInstallation(ctx, db.UpsertChannelInstallationParams{
-		WorkspaceID:     p.wsID,
-		AgentID:         p.agentID,
-		ChannelType:     string(TypeTelegram),
-		Config:          p.configJSON,
-		InstallerUserID: p.installerID,
-	})
+	var inst db.ChannelInstallation
+	if p.agentID.Valid {
+		inst, err = qtx.UpsertChannelInstallation(ctx, db.UpsertChannelInstallationParams{
+			WorkspaceID:     p.wsID,
+			AgentID:         p.agentID,
+			ChannelType:     string(TypeTelegram),
+			Config:          p.configJSON,
+			InstallerUserID: p.installerID,
+		})
+	} else {
+		inst, err = qtx.UpsertChannelInstallationHub(ctx, db.UpsertChannelInstallationHubParams{
+			WorkspaceID:     p.wsID,
+			ChannelType:     string(TypeTelegram),
+			Config:          p.configJSON,
+			InstallerUserID: p.installerID,
+		})
+	}
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolation {

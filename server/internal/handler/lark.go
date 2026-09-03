@@ -306,13 +306,16 @@ func (h *Handler) BeginLarkInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	agentIDStr := strings.TrimSpace(r.URL.Query().Get("agent_id"))
+	var agentUUID pgtype.UUID
 	if agentIDStr == "" {
-		writeError(w, http.StatusBadRequest, "agent_id is required")
-		return
-	}
-	agentUUID, ok := parseUUIDOrBadRequest(w, agentIDStr, "agent_id")
-	if !ok {
-		return
+		if _, roleOK := h.requireWorkspaceRole(w, r, uuidToString(wsUUID), "workspace not found", "owner", "admin"); !roleOK {
+			return
+		}
+	} else {
+		agentUUID, ok = parseUUIDOrBadRequest(w, agentIDStr, "agent_id")
+		if !ok {
+			return
+		}
 	}
 	// region is the cloud the user explicitly chose to bind against —
 	// "feishu" (mainland, accounts.feishu.cn) or "lark" (international,
@@ -337,20 +340,18 @@ func (h *Handler) BeginLarkInstall(w http.ResponseWriter, r *http.Request) {
 	// Ownership pre-check at the HTTP boundary so a malformed
 	// agent_id surfaces 404 here (not an opaque service error from
 	// inside the service's own re-check).
-	agent, err := h.Queries.GetAgentInWorkspace(r.Context(), db.GetAgentInWorkspaceParams{
-		ID:          agentUUID,
-		WorkspaceID: wsUUID,
-	})
-	if err != nil {
-		writeError(w, http.StatusNotFound, "agent not found in this workspace")
-		return
-	}
-	// Authorize the initiator against the target agent: its owner or a
-	// workspace owner/admin may bind. canManageAgent writes the 403/404
-	// itself, so a member who is neither is stopped here rather than at
-	// the (now member-level) router.
-	if !h.canManageAgent(w, r, agent) {
-		return
+	if agentUUID.Valid {
+		agent, err := h.Queries.GetAgentInWorkspace(r.Context(), db.GetAgentInWorkspaceParams{
+			ID:          agentUUID,
+			WorkspaceID: wsUUID,
+		})
+		if err != nil {
+			writeError(w, http.StatusNotFound, "agent not found in this workspace")
+			return
+		}
+		if !h.canManageAgent(w, r, agent) {
+			return
+		}
 	}
 	initiatorUUID, ok := parseUUIDOrBadRequest(w, userID, "user id")
 	if !ok {
