@@ -203,6 +203,19 @@ func ResolvedMessagingModeFromEnv() string {
 	return messagingCapabilitiesFromEnv().Mode
 }
 
+func requireMessagingSetupWritable(w http.ResponseWriter) bool {
+	if messagingCapabilitiesFromEnv().SetupWritable {
+		return true
+	}
+	writeErrorCode(
+		w,
+		http.StatusForbidden,
+		"server_managed_integration",
+		"messaging integrations are configured by the server operator",
+	)
+	return false
+}
+
 func isPublicHTTPSURL(raw string) bool {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {

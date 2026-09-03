@@ -120,6 +120,9 @@ type RegisterSlackBYORequest struct {
 // at-rest key configured (SlackInstall != nil), NOT the hosted OAuth client
 // credentials — BYO is exactly the path for deployments without a hosted app.
 func (h *Handler) RegisterSlackBYO(w http.ResponseWriter, r *http.Request) {
+	if !requireMessagingSetupWritable(w) {
+		return
+	}
 	if h.SlackInstall == nil {
 		writeError(w, http.StatusServiceUnavailable, "slack integration not enabled")
 		return
@@ -211,6 +214,9 @@ func (h *Handler) publishSlackInstallationCreated(row db.ChannelInstallation, ac
 // flips status to 'revoked'. Admin-only at the router. The row is preserved for
 // audit; a re-install (re-pasting the app's tokens) flips status back to 'installed'.
 func (h *Handler) RevokeSlackInstallation(w http.ResponseWriter, r *http.Request) {
+	if !requireMessagingSetupWritable(w) {
+		return
+	}
 	if h.SlackInstall == nil {
 		writeError(w, http.StatusServiceUnavailable, "slack integration not configured")
 		return

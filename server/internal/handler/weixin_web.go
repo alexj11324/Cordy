@@ -107,6 +107,9 @@ func (h *Handler) ListWeixinInstallations(w http.ResponseWriter, r *http.Request
 }
 
 func (h *Handler) BeginWeixinInstall(w http.ResponseWriter, r *http.Request) {
+	if !requireMessagingSetupWritable(w) {
+		return
+	}
 	service, err := h.newWeixinInstallationService()
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, "weixin integration not configured")
@@ -163,6 +166,9 @@ func (h *Handler) BeginWeixinInstall(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetWeixinInstallStatus(w http.ResponseWriter, r *http.Request) {
+	if !requireMessagingSetupWritable(w) {
+		return
+	}
 	service, err := h.newWeixinInstallationService()
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, "weixin integration not configured")
@@ -226,6 +232,9 @@ func (h *Handler) publishWeixinInstallationCreated(installationID pgtype.UUID, a
 }
 
 func (h *Handler) RevokeWeixinInstallation(w http.ResponseWriter, r *http.Request) {
+	if !requireMessagingSetupWritable(w) {
+		return
+	}
 	service, err := h.newWeixinInstallationService()
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, "weixin integration not configured")

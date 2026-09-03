@@ -57,6 +57,9 @@ func (h *Handler) managedSlackCallbackURL() string {
 // without a public URL to build the callback from) mints the state and then
 // fails loudly with 503 instead of handing out a URL that could never work.
 func (h *Handler) BeginManagedSlackInstall(w http.ResponseWriter, r *http.Request) {
+	if !requireMessagingSetupWritable(w) {
+		return
+	}
 	if h.ManagedSlack == nil {
 		writeError(w, http.StatusServiceUnavailable, "slack managed OAuth is not configured")
 		return

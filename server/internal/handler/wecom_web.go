@@ -143,6 +143,9 @@ type RegisterWecomBYORequest struct {
 // installs a user-supplied ("bring your own") wecom smart-bot for an agent.
 // Admin-only at the router.
 func (h *Handler) RegisterWecomBYO(w http.ResponseWriter, r *http.Request) {
+	if !requireMessagingSetupWritable(w) {
+		return
+	}
 	if !h.wecomIntegrationConfigured() {
 		writeError(w, http.StatusServiceUnavailable, "wecom integration not enabled")
 		return
@@ -289,6 +292,9 @@ func writeWecomInstallError(w http.ResponseWriter, err error, wsUUID, agentUUID 
 // flips status to 'revoked'. Admin-only at the router. Row-preserving so a
 // re-install through Upsert flips it back to 'installed' atomically.
 func (h *Handler) RevokeWecomInstallation(w http.ResponseWriter, r *http.Request) {
+	if !requireMessagingSetupWritable(w) {
+		return
+	}
 	if !h.wecomIntegrationConfigured() {
 		writeError(w, http.StatusServiceUnavailable, "wecom integration not enabled")
 		return

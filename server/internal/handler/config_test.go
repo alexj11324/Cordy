@@ -219,6 +219,35 @@ func TestMessagingSetupRequiresPublicHTTPSAppURL(t *testing.T) {
 	}
 }
 
+func TestRequireMessagingSetupWritable(t *testing.T) {
+	t.Run("server configured rejects app writes with stable code", func(t *testing.T) {
+		t.Setenv("PATCHBAY_APP_URL", "https://app.example.test")
+		t.Setenv("PATCHBAY_MESSAGING_MODE", "server_configured")
+		recorder := httptest.NewRecorder()
+		if requireMessagingSetupWritable(recorder) {
+			t.Fatal("server-configured messaging must be read-only")
+		}
+		if recorder.Code != http.StatusForbidden {
+			t.Fatalf("status = %d, want 403", recorder.Code)
+		}
+		var body map[string]string
+		if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if body["code"] != "server_managed_integration" {
+			t.Fatalf("code = %q", body["code"])
+		}
+	})
+
+	t.Run("managed mode permits app writes", func(t *testing.T) {
+		t.Setenv("PATCHBAY_APP_URL", "https://patchbay.aspectlylabs.com")
+		t.Setenv("PATCHBAY_MESSAGING_MODE", "managed")
+		if !requireMessagingSetupWritable(httptest.NewRecorder()) {
+			t.Fatal("managed messaging should permit setup writes")
+		}
+	})
+}
+
 func TestGetConfigUsesDaemonServerURLOverride(t *testing.T) {
 	t.Setenv("PATCHBAY_DAEMON_SERVER_URL", " https://api.internal.example/// ")
 	t.Setenv("PATCHBAY_PUBLIC_URL", "https://hooks.example.com/")

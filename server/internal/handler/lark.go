@@ -139,6 +139,9 @@ func (h *Handler) ListLarkInstallations(w http.ResponseWriter, r *http.Request) 
 // entry point keeps working without handing a plain member orphan-row
 // rights.
 func (h *Handler) RevokeLarkInstallation(w http.ResponseWriter, r *http.Request) {
+	if !requireMessagingSetupWritable(w) {
+		return
+	}
 	if h.LarkInstallations == nil {
 		writeError(w, http.StatusServiceUnavailable, "lark integration not configured")
 		return
@@ -294,6 +297,9 @@ type BeginLarkInstallResponse struct {
 // HTTP client, no RegistrationService); the UI hides the bind button
 // in that case so this should not be reached through the normal flow.
 func (h *Handler) BeginLarkInstall(w http.ResponseWriter, r *http.Request) {
+	if !requireMessagingSetupWritable(w) {
+		return
+	}
 	if h.LarkRegistration == nil {
 		writeError(w, http.StatusServiceUnavailable, "lark install not configured")
 		return
@@ -409,6 +415,9 @@ type LarkInstallStatusResponse struct {
 // before the in-process GC sweep retires the entry; reading is
 // idempotent.
 func (h *Handler) GetLarkInstallStatus(w http.ResponseWriter, r *http.Request) {
+	if !requireMessagingSetupWritable(w) {
+		return
+	}
 	if h.LarkRegistration == nil {
 		writeError(w, http.StatusServiceUnavailable, "lark install not configured")
 		return

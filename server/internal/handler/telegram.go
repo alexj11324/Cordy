@@ -107,6 +107,9 @@ type RegisterTelegramRequest struct {
 // installs a user-supplied Telegram bot for an agent. Admin-only at the
 // router. Mirrors RegisterSlackBYO.
 func (h *Handler) RegisterTelegramBot(w http.ResponseWriter, r *http.Request) {
+	if !requireMessagingSetupWritable(w) {
+		return
+	}
 	if h.TelegramInstall == nil {
 		writeError(w, http.StatusServiceUnavailable, "telegram integration not enabled")
 		return
@@ -192,6 +195,9 @@ func (h *Handler) RegisterTelegramBot(w http.ResponseWriter, r *http.Request) {
 // for audit and chat history stays in Patchbay; a re-install (re-pasting the
 // bot's token) flips status back to 'installed'.
 func (h *Handler) RevokeTelegramInstallation(w http.ResponseWriter, r *http.Request) {
+	if !requireMessagingSetupWritable(w) {
+		return
+	}
 	if h.TelegramInstall == nil {
 		writeError(w, http.StatusServiceUnavailable, "telegram integration not configured")
 		return

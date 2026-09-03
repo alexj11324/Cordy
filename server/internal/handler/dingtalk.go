@@ -735,6 +735,9 @@ type RegisterDingTalkBYORequest struct {
 // authorizes the target agent's owner or a workspace owner/admin. Like Slack's
 // BYO path this needs only the at-rest key configured (DingTalkInstall != nil).
 func (h *Handler) RegisterDingTalkBYO(w http.ResponseWriter, r *http.Request) {
+	if !requireMessagingSetupWritable(w) {
+		return
+	}
 	if h.DingTalkInstall == nil {
 		writeError(w, http.StatusServiceUnavailable, "dingtalk integration not enabled")
 		return
@@ -841,6 +844,9 @@ func (h *Handler) publishDingTalkInstallationCreated(row db.ChannelInstallation,
 // flips status back to 'installed'. An orphaned installation falls back to
 // workspace owner/admin-only cleanup because there is no agent owner to resolve.
 func (h *Handler) RevokeDingTalkInstallation(w http.ResponseWriter, r *http.Request) {
+	if !requireMessagingSetupWritable(w) {
+		return
+	}
 	if h.DingTalkInstall == nil {
 		writeError(w, http.StatusServiceUnavailable, "dingtalk integration not configured")
 		return
