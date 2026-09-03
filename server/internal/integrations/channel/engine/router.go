@@ -335,6 +335,15 @@ const (
 	finalizeRelease
 )
 
+// isUnresolvedAgent reports whether an installation carries no owning agent:
+// either no value or the nil UUID, the shape workspace-owned (managed) installs
+// persist. Such installations need the adapter's route seam to select a target
+// agent before anything downstream can run.
+func isUnresolvedAgent(id pgtype.UUID) bool {
+	var zero [16]byte
+	return !id.Valid || id.Bytes == zero
+}
+
 // processClaimed runs the post-dedup pipeline. Mirrors
 // lark.Dispatcher.processClaimed; see its boundary contract per step.
 func (r *Router) processClaimed(ctx context.Context, set ResolverSet, msg channel.InboundMessage, resolved *ResolvedInstallation, claimToken pgtype.UUID, bareFresh, startChat bool) (Result, dedupFinalize, error) {
@@ -379,7 +388,7 @@ func (r *Router) processClaimed(ctx context.Context, set ResolverSet, msg channe
 		}
 	}
 
-	workspaceOwned := !inst.AgentID.Valid || inst.AgentID.Bytes == [16]byte{}
+	workspaceOwned := isUnresolvedAgent(inst.AgentID)
 	if workspaceOwned && set.Hub == nil {
 		return Result{}, finalizeRelease, errors.New("workspace installation has no channel Hub router")
 	}
@@ -451,6 +460,15 @@ func (r *Router) processClaimed(ctx context.Context, set ResolverSet, msg channe
 			}
 			inst.AgentID = hubRoute.AgentID
 			*resolved = inst
+		}
+
+		// A workspace-owned installation (nil agent) must be given a target by
+		// the route seam above; without one there is no agent to persist a
+		// Chat against or run, so fail closed: no session write, no task, and
+		// the dedup claim is released so the message retries once a Hub is
+		// configured for the workspace.
+		if isUnresolvedAgent(inst.AgentID) {
+			return Result{}, finalizeRelease, errors.New("engine: channel routing returned no target Agent")
 		}
 
 		if startChat {

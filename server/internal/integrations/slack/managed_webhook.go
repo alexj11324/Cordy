@@ -222,8 +222,9 @@ func writeWebhookError(rw http.ResponseWriter, err error) {
 // HandleSlash serves POST ManagedSlashPath: verify the signature, parse the
 // form-encoded command, ACK, and dispatch detached. There is no Socket Mode
 // envelope id on this transport, so replay protection is the trigger_id dedup
-// claim inside the processor. Unknown commands ACK-and-drop in the processor;
-// a nil processor (slash not wired) ACKs without dispatch.
+// claim inside the processor. /agents enters the shared Hub router with its
+// original conversation scope; /issue, /new and /clear use the slash processor.
+// Unknown or incomplete Hub commands are never converted into Agent input.
 func (w *ManagedWebhook) HandleSlash(rw http.ResponseWriter, r *http.Request) {
 	body, err := w.verifiedBody(r)
 	if err != nil {
@@ -258,6 +259,7 @@ func (w *ManagedWebhook) HandleSlash(rw http.ResponseWriter, r *http.Request) {
 		w.slash.HandleEnvelope(ctx, cmd, "")
 	}()
 }
+
 // dispatchDetached normalizes one event_callback off the ACK path, mirroring
 // slackChannel.dispatchEventsAPI. The bot identity comes from the resolved
 // installation's stored config (not from a per-connection fixed id, since one
