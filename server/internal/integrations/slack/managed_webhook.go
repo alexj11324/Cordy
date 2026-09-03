@@ -222,8 +222,10 @@ func writeWebhookError(rw http.ResponseWriter, err error) {
 // HandleSlash serves POST ManagedSlashPath: verify the signature, parse the
 // form-encoded command, ACK, and dispatch detached. There is no Socket Mode
 // envelope id on this transport, so replay protection is the trigger_id dedup
-// claim inside the processor. Unknown commands ACK-and-drop in the processor;
-// a nil processor (slash not wired) ACKs without dispatch.
+// claim inside the processor. The three locally-handled commands (/issue,
+// /new, /clear) go to the slash processor; every other command re-enters the
+// shared router as an explicitly-addressed Hub command (a nil engine handle,
+// tests, ACKs only).
 func (w *ManagedWebhook) HandleSlash(rw http.ResponseWriter, r *http.Request) {
 	body, err := w.verifiedBody(r)
 	if err != nil {
@@ -237,14 +239,73 @@ func (w *ManagedWebhook) HandleSlash(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rw.WriteHeader(http.StatusOK)
-	if w.slash == nil {
+	if isLocallyHandledSlashCommand(cmd.Command) {
+		if w.slash != nil {
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), managedWebhookTimeout)
+				defer cancel()
+				w.slash.HandleEnvelope(ctx, cmd, "")
+			}()
+		}
+		return
+	}
+	w.dispatchHubCommand(cmd)
+}
+
+// isLocallyHandledSlashCommand reports whether the webhook's slash processor
+// owns this command end to end (ephemeral reply, no engine round trip).
+func isLocallyHandledSlashCommand(command string) bool {
+	command = strings.TrimSpace(command)
+	return strings.EqualFold(command, issueSlashCommand) ||
+		command == newSlashCommand ||
+		command == clearSlashCommand
+}
+
+// dispatchHubCommand re-enters a slash command the processor does not own into
+// the shared router. The message is explicitly addressed (the user typed the
+// command), and the trigger_id is the replay identity — the dedup claim keys
+// on it for this transport, exactly as the processor does for its commands.
+func (w *ManagedWebhook) dispatchHubCommand(cmd slack.SlashCommand) {
+	if w.handle == nil {
 		return
 	}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), managedWebhookTimeout)
 		defer cancel()
-		w.slash.HandleEnvelope(ctx, cmd, "")
+		msg := hubCommandMessage(cmd)
+		if err := w.handle(ctx, msg); err != nil {
+			w.logger.WarnContext(ctx, "slack managed webhook: hub command dispatch failed",
+				"app_id", cmd.APIAppID, "command", cmd.Command, "error", err)
+		}
 	}()
+}
+
+// hubCommandMessage normalizes one slash command into the channel-agnostic
+// inbound shape the router runs. A slash invocation is always a direct,
+// explicitly-addressed conversation with the workspace bot, so it enters as a
+// P2P Hub command regardless of which Slack surface launched it.
+func hubCommandMessage(cmd slack.SlashCommand) channel.InboundMessage {
+	text := strings.TrimSpace(strings.TrimSpace(cmd.Command) + " " + strings.TrimSpace(cmd.Text))
+	raw, _ := json.Marshal(slackRawEvent{
+		TeamID:    cmd.TeamID,
+		APIAppID:  cmd.APIAppID,
+		EventType: "slash_command",
+	})
+	return channel.InboundMessage{
+		EventID:     cmd.TriggerID,
+		MessageID:   cmd.TriggerID,
+		Type:        channel.MsgTypeText,
+		Text:        text,
+		CommandText: text,
+		AddressedToBot: true,
+		Source: channel.Source{
+			ChannelType: TypeSlack,
+			ChatID:      cmd.ChannelID,
+			ChatType:    channel.ChatTypeP2P,
+			SenderID:    cmd.UserID,
+		},
+		Raw: raw,
+	}
 }
 // dispatchDetached normalizes one event_callback off the ACK path, mirroring
 // slackChannel.dispatchEventsAPI. The bot identity comes from the resolved
