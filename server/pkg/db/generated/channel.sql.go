@@ -1483,7 +1483,7 @@ func (q *Queries) GetChannelInstallationInWorkspace(ctx context.Context, arg Get
 const getChannelInstallationOwnerByAppID = `-- name: GetChannelInstallationOwnerByAppID :one
 SELECT ci.workspace_id, ci.agent_id, a.archived_at AS agent_archived_at
 FROM channel_installation ci
-LEFT JOIN agent a ON a.id = ci.agent_id
+JOIN agent a ON a.id = ci.agent_id
 WHERE ci.channel_type = $1
   AND ci.config ->> 'app_id' = $2::text
 `
