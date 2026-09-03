@@ -289,7 +289,7 @@ describe("WecomTab", () => {
 
   it("shows the empty state when configured but nothing is connected", () => {
     renderUI(<WecomTab />);
-    expect(screen.getByText(/No bots connected yet/i)).toBeTruthy();
+    expect(screen.getByText(/No bots installed yet/i)).toBeTruthy();
   });
 
   it("lists a connected installation with its agent name and a disconnect control", () => {

@@ -259,7 +259,7 @@ describe("TelegramTab", () => {
 
   it("shows the empty state when configured but nothing is connected", () => {
     renderUI(<TelegramTab />);
-    expect(screen.getByText(/No bots connected yet/i)).toBeTruthy();
+    expect(screen.getByText(/No bots installed yet/i)).toBeTruthy();
   });
 
   it("lists a connected installation with its agent name and a disconnect control", () => {
@@ -319,7 +319,7 @@ describe("TelegramTab", () => {
   it("tolerates a malformed installations response", () => {
     installationsRef.current = { configured: true } as never;
     renderUI(<TelegramTab />);
-    expect(screen.getByText(/No bots connected yet/i)).toBeTruthy();
+    expect(screen.getByText(/No bots installed yet/i)).toBeTruthy();
   });
 
   it("shows a load error instead of pretending Telegram is disabled", () => {

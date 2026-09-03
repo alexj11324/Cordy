@@ -6,11 +6,28 @@ import "@testing-library/jest-dom/vitest";
 import { I18nProvider } from "@patchbay/core/i18n/react";
 import enSettings from "../../locales/en/settings.json";
 import zhSettings from "../../locales/zh-Hans/settings.json";
+import jaSettings from "../../locales/ja/settings.json";
+import koSettings from "../../locales/ko/settings.json";
 import { MessagingConnectionStatus } from "./messaging-connection-status";
 
 afterEach(cleanup);
 
 describe("MessagingConnectionStatus", () => {
+  it.each([
+    ["en", enSettings, "installed", "added", "Bot installed."],
+    ["zh-Hans", zhSettings, "已安装", "已添加", "机器人已安装。"],
+    ["ja", jaSettings, "登録しました", "追加しました", "ボットを登録しました。"],
+    ["ko", koSettings, "설치되었어요", "추가했어요", "봇이 설치되었어요."],
+  ] as const)("does not promise a live connection after installation in %s", (_, copy, installed, added, complete) => {
+    expect(copy.lark.install_success).toBe(complete);
+    expect(copy.slack.byo_success_toast).toContain(installed);
+    expect(copy.dingtalk.byo_success_toast).toContain(installed);
+    expect(copy.wecom.byo_success_toast).toContain(installed);
+    expect(copy.telegram.connect_success_toast).toContain(installed);
+    expect(copy.weixin.install_success).toContain(added);
+    expect(copy.weixin.install_success_toast).toContain(added);
+  });
+
   it("renders the requested connection terminology with an accessible state", () => {
     render(
       <I18nProvider

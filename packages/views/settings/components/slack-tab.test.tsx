@@ -31,13 +31,14 @@ const mockBeginManaged = vi.hoisted(() => vi.fn());
 const mockDeleteInstallation = vi.hoisted(() => vi.fn());
 const mockOpenExternal = vi.hoisted(() => vi.fn());
 const mockInvalidate = vi.hoisted(() => vi.fn());
+const queryErrorRef = vi.hoisted(() => ({ current: false }));
 
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (opts: { queryKey: unknown[]; enabled?: boolean }) => {
     if (opts.enabled === false) return { data: undefined, isLoading: false };
     const key = JSON.stringify(opts.queryKey);
     if (key.includes("members")) return { data: membersRef.current, isLoading: false };
-    if (key.includes("installations")) return { data: installationsRef.current, isLoading: false };
+    if (key.includes("installations")) return { data: installationsRef.current, isLoading: false, isError: queryErrorRef.current };
     return { data: undefined, isLoading: false };
   },
   useQueryClient: () => ({ invalidateQueries: mockInvalidate }),
@@ -112,6 +113,7 @@ function renderUI(children: ReactNode) {
 
 function resetFixtures() {
   vi.clearAllMocks();
+  queryErrorRef.current = false;
   membersRef.current = [{ user_id: "user-1", role: "owner" }];
   installationsRef.current = { installations: [], configured: true, install_supported: true };
 }
@@ -183,6 +185,19 @@ describe("SlackAgentBindButton", () => {
 describe("SlackTab", () => {
   beforeEach(resetFixtures);
 
+  it("does not reuse a cached connection confirmation after the status query fails", () => {
+    installationsRef.current = {
+      installations: [{ id: "i1", agent_id: "agent-1", status: "installed", team_id: "T1",
+        installed_at: "2026-09-03T12:00:00Z",
+        runtime: { state: "healthy", observedAt: "2026-09-03T12:00:00Z", errorCode: null } }],
+      configured: true, install_supported: true,
+    };
+    queryErrorRef.current = true;
+    renderUI(<SlackTab />);
+    expect(screen.getByRole("status", { name: "Connection status" }).textContent).toContain("Status unavailable");
+    expect(screen.getByRole("button", { name: "Disconnect" })).toBeTruthy();
+  });
+
   it("surfaces the not-enabled notice when the deployment has no Slack key", () => {
     installationsRef.current = { installations: [], configured: false, install_supported: false };
     renderUI(<SlackTab />);
@@ -191,7 +206,7 @@ describe("SlackTab", () => {
 
   it("shows the empty state when configured but nothing is connected", () => {
     renderUI(<SlackTab />);
-    expect(screen.getByText(/No bots connected yet/i)).toBeTruthy();
+    expect(screen.getByText(/No bots installed yet/i)).toBeTruthy();
   });
 
   it("lists a connected installation with its agent name and a disconnect control", () => {

@@ -519,10 +519,12 @@ export function DingTalkTab() {
   const canManage =
     currentMember?.role === "owner" || currentMember?.role === "admin";
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     ...dingtalkInstallationsOptions(wsId),
   });
-  const installations = data?.installations ?? [];
+  const installations = (data?.installations ?? []).map((installation) =>
+    isError ? { ...installation, runtime: undefined } : installation,
+  );
   const { data: visibleAgents = [], isLoading: agentsLoading } = useQuery({
     ...agentListOptions(wsId),
     enabled: !canManage && !!wsId,
@@ -575,6 +577,19 @@ export function DingTalkTab() {
     } finally {
       setDisconnecting(false);
     }
+  }
+
+  if (isError && !data) {
+    return (
+      <div role="alert" className="space-y-2">
+        <p className="text-caption text-muted-foreground">
+          {t(($) => $.page.connection_status.unavailable)}
+        </p>
+        <Button variant="outline" size="sm" onClick={() => void refetch()}>
+          {t(($) => $.page.connection_status.retry)}
+        </Button>
+      </div>
+    );
   }
 
   return (
@@ -862,7 +877,7 @@ export function DingTalkAgentBindButton({
   const [clientSecret, setClientSecret] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const { data: listing } = useQuery({
+  const { data: listing, isError: installationQueryFailed } = useQuery({
     ...dingtalkInstallationsOptions(wsId),
   });
   const installSupported = listing?.install_supported === true;
@@ -883,9 +898,12 @@ export function DingTalkAgentBindButton({
 
   if (!canManage) return null;
 
-  const existing = listing?.installations?.find(
+  const recordedInstallation = listing?.installations?.find(
     (inst) => inst.agent_id === agentId && inst.status === "installed",
   );
+  const existing = recordedInstallation && installationQueryFailed
+    ? { ...recordedInstallation, runtime: undefined }
+    : recordedInstallation;
   if (existing) {
     return onShowConnectedDetails ? (
       <DingTalkAgentBotStatusRow

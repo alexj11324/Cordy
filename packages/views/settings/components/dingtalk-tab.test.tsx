@@ -335,7 +335,7 @@ describe("DingTalkTab", () => {
 
   it("shows the empty state when configured but nothing is connected", () => {
     renderUI(<DingTalkTab />);
-    expect(screen.getByText(/No bots connected yet/i)).toBeTruthy();
+    expect(screen.getByText(/No bots installed yet/i)).toBeTruthy();
   });
 
   it("shows linked Staff IDs from the bot name without adding them to the row", async () => {
@@ -733,7 +733,7 @@ describe("DingTalkTab", () => {
     renderUI(<DingTalkTab />);
     expect(screen.queryByText("Agent agent-private")).toBeNull();
     expect(screen.queryByTestId("dingtalk-installation-row")).toBeNull();
-    expect(screen.getByText("No bots connected yet")).toBeTruthy();
+    expect(screen.getByText("No bots installed yet")).toBeTruthy();
   });
 
   it("labels an orphaned admin-only installation without linking to a missing Agent", () => {

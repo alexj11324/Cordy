@@ -60,11 +60,13 @@ export function WecomTab() {
   const canManage =
     currentMember?.role === "owner" || currentMember?.role === "admin";
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     ...wecomInstallationsOptions(wsId),
     enabled: !!wsId,
   });
-  const installations = data?.installations ?? [];
+  const installations = (data?.installations ?? []).map((installation) =>
+    isError ? { ...installation, runtime: undefined } : installation,
+  );
   const configured = data?.configured === true;
   const installSupported = data?.install_supported === true;
 
@@ -86,6 +88,19 @@ export function WecomTab() {
     } finally {
       setDisconnecting(false);
     }
+  }
+
+  if (isError && !data) {
+    return (
+      <div role="alert" className="space-y-2">
+        <p className="text-caption text-muted-foreground">
+          {t(($) => $.page.connection_status.unavailable)}
+        </p>
+        <Button variant="outline" size="sm" onClick={() => void refetch()}>
+          {t(($) => $.page.connection_status.retry)}
+        </Button>
+      </div>
+    );
   }
 
   return (
@@ -115,7 +130,7 @@ export function WecomTab() {
         </Card>
       ) : (
         <section className="space-y-3">
-          <h2 className="text-body font-semibold">{t(($) => $.wecom.connected_bots)}</h2>
+          <h2 className="text-body font-semibold">{t(($) => $.wecom.installed_bots)}</h2>
           {isLoading ? (
             <Card>
               <CardContent>
@@ -260,7 +275,7 @@ export function WecomAgentBindButton({
   const [botName, setBotName] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const { data: listing } = useQuery({
+  const { data: listing, isError: installationQueryFailed } = useQuery({
     ...wecomInstallationsOptions(wsId),
     enabled: !!wsId,
   });
@@ -276,9 +291,12 @@ export function WecomAgentBindButton({
 
   if (!canManage) return null;
 
-  const existing = listing?.installations.find(
+  const recordedInstallation = listing?.installations.find(
     (inst) => inst.agent_id === agentId && inst.status === "installed",
   );
+  const existing = recordedInstallation && installationQueryFailed
+    ? { ...recordedInstallation, runtime: undefined }
+    : recordedInstallation;
   if (existing) {
     return onShowConnectedDetails ? (
       <WecomAgentBotStatusRow

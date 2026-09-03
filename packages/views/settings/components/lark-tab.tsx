@@ -75,11 +75,13 @@ export function LarkTab() {
   const canManage =
     currentMember?.role === "owner" || currentMember?.role === "admin";
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     ...larkInstallationsOptions(wsId),
     enabled: !!wsId,
   });
-  const installations = data?.installations ?? [];
+  const installations = (data?.installations ?? []).map((installation) =>
+    isError ? { ...installation, runtime: undefined } : installation,
+  );
   const configured = data?.configured === true;
   // install_supported tracks whether the device-flow install path is
   // wired end-to-end on the server. When false, scan-to-bind would
@@ -105,6 +107,19 @@ export function LarkTab() {
     } finally {
       setDisconnecting(false);
     }
+  }
+
+  if (isError && !data) {
+    return (
+      <div role="alert" className="space-y-2">
+        <p className="text-caption text-muted-foreground">
+          {t(($) => $.page.connection_status.unavailable)}
+        </p>
+        <Button variant="outline" size="sm" onClick={() => void refetch()}>
+          {t(($) => $.page.connection_status.retry)}
+        </Button>
+      </div>
+    );
   }
 
   return (
@@ -140,7 +155,7 @@ export function LarkTab() {
         </Card>
       ) : (
         <section className="space-y-3">
-          <h2 className="text-body font-semibold">{t(($) => $.lark.connected_bots)}</h2>
+          <h2 className="text-body font-semibold">{t(($) => $.lark.installed_bots)}</h2>
           {isLoading ? (
             <Card>
               <CardContent>
@@ -332,7 +347,7 @@ export function LarkAgentBindButton({
     null,
   );
 
-  const { data: listing } = useQuery({
+  const { data: listing, isError: installationQueryFailed } = useQuery({
     ...larkInstallationsOptions(wsId),
     enabled: !!wsId,
   });
@@ -360,9 +375,12 @@ export function LarkAgentBindButton({
   // upserts the row and orphans the previously-created PersonalAgent, so we
   // close the install entry point and link to the Bot's Lark app page where
   // scopes / display name / additional permissions are actually managed.
-  const existing = listing?.installations.find(
+  const recordedInstallation = listing?.installations.find(
     (inst) => inst.agent_id === agentId && inst.status === "installed",
   );
+  const existing = recordedInstallation && installationQueryFailed
+    ? { ...recordedInstallation, runtime: undefined }
+    : recordedInstallation;
   if (existing) {
     return onShowConnectedDetails ? (
       <LarkAgentBotStatusRow

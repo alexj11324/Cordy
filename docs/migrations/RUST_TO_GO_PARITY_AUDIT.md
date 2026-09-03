@@ -34,6 +34,15 @@ Go/Rust tooling or Docker build is part of this audit. Local frontend checks
 and browser fixtures complement CI; neither proves real provider connectivity,
 native UI completion, or production deployment.
 
+Later connection/installation checkpoint: durable observer ownership, public
+runtime projection and six adapter reports are now implemented. CI
+[33779190800](https://github.com/alexj11324/Cordy/actions/runs/33779190800)
+passed migration, handler, all six provider packages, sqlc and frontend checks;
+its overall failure was a daemon timing-sensitive test, repaired in `4410febcc`
+with explicit request checkpoints. Replacement CI is tracked on the PR.
+See [Installation and connection terminology](INSTALLATION_STATUS_SEMANTICS.md)
+for the complete installed-state rename, focused tests and browser evidence.
+
 ## Inspected slices
 
 | Slice                         | Current evidence                                                                                                                                                                                                                                                                                                                                         | Remaining acceptance                                                                                                   |
@@ -44,8 +53,8 @@ native UI completion, or production deployment.
 | DingTalk group settings       | `76ad44ff1` restores shared UI, API/schema/query/WS contracts and four locales. Real browser + HTTP fixture verified success → failure preserving the old selection → retry; CI [33758176228](https://github.com/alexj11324/Cordy/actions/runs/33758176228) passed all applicable jobs.                                                                  | Real backend/provider reassignment in Web/Desktop.                                                                     |
 | Hosted installation capacity  | Hoplite checkpoint `a75c0591`: migration 576, seven installation admission surfaces, pause/resume worker, work-discovery filters. Later takeover CI includes these tests.                                                                                                                                                                                | Live Cloud entitlement delivery, deployed enablement and pause/resume acceptance.                                      |
 | Managed Slack credentials     | `377bb52a9` and `96afd5368` preserve Hoplite's credential work and restore encrypted rotation, health and lifecycle. Replacement CI [33762592403](https://github.com/alexj11324/Cordy/actions/runs/33762592403) passed all applicable checks on `1e54e1d9f`, including PostgreSQL-backed race tests and sqlc.                                            | Real Slack authorization/refresh/revoke and deployed mode acceptance.                                                  |
-| Workspace messaging Hub       | `278a2b69b` ports selection, invocation permissions, transactional persistence, pending-run fencing, localized replies and adapter wiring. `284aa95a1` isolates resume state by Agent; `1eb6b8cee` integrates the final Hoplite guard. Backend build and PostgreSQL-backed race tests passed in CI 33768750201; sqlc drift was corrected in `a25efa85a`. | Replacement CI after sqlc synchronization; real provider and setup/UI acceptance.                                      |
-| Messaging setup and health UI | Rust-reference frontend has `packages/core/types/messaging.ts` and shared `integration-setup-guide.tsx`; these are absent from the inspected Go tree.                                                                                                                                                                                                    | Port backend setup/runtime projection, shared contracts/UI, installation mode and truthful deployment instructions.    |
+| Workspace messaging Hub | Shared Hub selection, invocation permissions, transactional persistence, pending-run fencing, localized replies, adapter wiring and per-Agent resume isolation passed replacement CI 33769723534. | Real provider and setup/UI acceptance; workspace-owned installations must also enter connection supervision. |
+| Messaging setup and connection UI | Durable observation ownership/projection, six provider reports, shared client validation, installed-state rename and six settings pages are implemented. Focused tests and browser HTTP-fixture verification passed; see the terminology checkpoint. | Workspace-level setup guide and installation modes; Redis lease-authority projection; real native/provider and deployed acceptance. |
 | Hosted IM turn quota          | Rust entitlement/task service enforce `im_agent_turns`; no matching contract was found in the inspected Go server/core/views.                                                                                                                                                                                                                            | Per-turn admission, usage accounting/endpoint, UI, failure/rollback semantics and Cloud acceptance.                    |
 | Hosted workspace quota        | `hosted_workspace_limit` is an identified migration gate, not implemented/verified by the takeover.                                                                                                                                                                                                                                                      | Trace Rust admission and policy contract, port all creation paths, verify concurrency and hosted/self-hosted behavior. |
 | Authentication and delivery   | No current takeover evidence establishes shadcn login → real Clerk → Go session → API completion, or deployed Go backend/build identity.                                                                                                                                                                                                                 | Real browser authentication, native callback, release artifacts, production health/version and provider connectivity.  |
@@ -166,19 +175,20 @@ artifact acceptance remain open. No installer or production release was run.
 
 ### Connection status terminology
 
-User decision: the pending messaging UI must be titled **Connection status** /
+User decision: the messaging UI is titled **Connection status** /
 **连接状态** / **接続状態** / **연결 상태**, not "health status" or "健康状态".
 This follows the interface-copy rule to name the user-observable behavior
 directly. The title describes the bot's connection to its messaging platform,
 not the health of the user's computer or guaranteed Agent execution.
 
-Keep desired installation enablement separate from observed connectivity:
-`active` alone must not produce an "已连接" label. The connection UI must state
+Keep installation lifecycle separate from observed connectivity:
+`installed` alone must not produce an "已连接" label. The connection UI must state
 connecting, connected, disconnected or the specific connection problem using
 server observations, and show unavailable status when evidence is absent.
 Generic service health probes and existing protocol enum values are not renamed
-by this presentation decision. This records the agreed terminology; the setup
-and connection-status UI migration above is still pending.
+by this presentation decision. The connection-status settings rows and
+installation rename are restored; workspace-level setup guidance and the
+remaining runtime acceptance above are still open.
 
 ### Completion requirements
 

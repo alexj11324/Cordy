@@ -148,7 +148,7 @@ export function WeixinTab() {
       ) : (
         <>
           <section className="space-y-3">
-            <h2 className="text-body font-semibold">{t(($) => $.weixin.connected_bots)}</h2>
+            <h2 className="text-body font-semibold">{t(($) => $.weixin.installed_bots)}</h2>
             {installations.length === 0 ? (
               <Card>
                 <CardContent className="space-y-2">

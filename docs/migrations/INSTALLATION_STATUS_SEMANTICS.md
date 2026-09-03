@@ -47,14 +47,41 @@ deletion deadline.
 ## Verification checkpoint
 
 - Core: 21 focused tests passed, including installed accepted / active rejected.
-- Views: 141 focused tests passed across six provider pages, group routes and
+- Views: 146 focused tests passed across six provider pages, group routes and
   Agent integration views; existing jsdom navigation warning remains.
 - Core and Views typechecks passed. Mobile copy tests passed (2 tests);
   Mobile typecheck/lint passed after updating its installation-success alert.
-- Backend new/default schema, up/down/up data preservation, query generation,
-  provider reporting and all required CI: pending the replacement run.
-- Browser/native/provider/deployment acceptance: not yet completed for this
-  checkpoint. Unit tests and compiled DTOs do not prove live connectivity.
+- Backend new/default schema, up/down/up data preservation, query generation
+  and all six provider-reporting packages passed in CI
+  [33779190800](https://github.com/alexj11324/Cordy/actions/runs/33779190800).
+  The overall run failed a separate daemon preparation-timeout test: its 150ms
+  timer could expire before the expected request checkpoint. `4410febcc`
+  separates the real deadline assertion from checkpoint-triggered cancellation
+  and removes sleep-based lease-count polling. Required replacement checks are
+  tracked on the PR; the earlier package results are not a claim of full CI.
+- The ordinary Desktop build passed without invoking backend tooling; existing
+  CSS highlight and dynamic-import warnings remain.
+- Real in-app browser, real shared components/API client, local HTTP fixtures:
+  all six provider pages exercised starting/healthy/error/paused/offline,
+  missing observations, unknown states, and healthy-to-query-error transitions.
+  None claimed connectivity without a usable observation or exposed the fixture
+  diagnostic sentinel. Offline/error/paused installations retained management.
+- On a failed list request, Slack/Lark/DingTalk/WeCom preserve cached records
+  but clear their connection confirmation; Telegram/Weixin retain their existing
+  explicit list-error screen. Fresh Slack errors expose a working Retry action.
+  Slack and WeCom disconnect confirmations opened and were cancelled; WeCom's
+  confirmation initially focused Cancel. Widths 320/768/1024/1440 had no
+  horizontal overflow for the shared status row, including quota-pause copy.
+- Native apps, real provider credentials/traffic and production deployment were
+  not exercised. Browser fixtures and compiled DTOs do not prove those paths.
+
+### Additional installation-copy corrections
+
+Installed lists no longer say “Connected bots”. Installation completion toasts
+and the Lark/Weixin completion screen now confirm installation/account addition,
+not that the bot is online. All four locales have regression assertions for
+these distinctions. Unused fixed “Connected to…” badge labels were removed;
+the shared observation-based component supplies the current label instead.
 
 ## Adjacent semantic audit (read-only)
 

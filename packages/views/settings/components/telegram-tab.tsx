@@ -118,7 +118,7 @@ export function TelegramTab() {
         </Card>
       ) : (
         <section className="space-y-3">
-          <h2 className="text-body font-semibold">{t(($) => $.telegram.connected_bots)}</h2>
+          <h2 className="text-body font-semibold">{t(($) => $.telegram.installed_bots)}</h2>
           {installations.length === 0 ? (
             <Card>
               <CardContent className="space-y-2">
@@ -274,7 +274,7 @@ export function TelegramAgentBindButton({
   const [botToken, setBotToken] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const { data: listing } = useQuery({
+  const { data: listing, isError: installationQueryFailed } = useQuery({
     ...telegramInstallationsOptions(wsId),
     enabled: !!wsId,
   });
@@ -290,9 +290,12 @@ export function TelegramAgentBindButton({
 
   if (!canManage) return null;
 
-  const existing = listing?.installations.find(
+  const recordedInstallation = listing?.installations.find(
     (inst) => inst.agent_id === agentId && inst.status === "installed",
   );
+  const existing = recordedInstallation && installationQueryFailed
+    ? { ...recordedInstallation, runtime: undefined }
+    : recordedInstallation;
   if (existing) {
     return onShowConnectedDetails ? (
       <TelegramAgentBotStatusRow

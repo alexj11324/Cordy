@@ -59,11 +59,13 @@ export function SlackTab() {
   const canManage =
     currentMember?.role === "owner" || currentMember?.role === "admin";
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     ...slackInstallationsOptions(wsId),
     enabled: !!wsId,
   });
-  const installations = data?.installations ?? [];
+  const installations = (data?.installations ?? []).map((installation) =>
+    isError ? { ...installation, runtime: undefined } : installation,
+  );
   const configured = data?.configured === true;
   // install_supported tracks whether the OAuth client credentials are wired on
   // the server. When false, "Connect Slack" would 503, so we hide the connect
@@ -116,6 +118,19 @@ export function SlackTab() {
     } finally {
       setDisconnecting(false);
     }
+  }
+
+  if (isError && !data) {
+    return (
+      <div role="alert" className="space-y-2">
+        <p className="text-caption text-muted-foreground">
+          {t(($) => $.page.connection_status.unavailable)}
+        </p>
+        <Button variant="outline" size="sm" onClick={() => void refetch()}>
+          {t(($) => $.page.connection_status.retry)}
+        </Button>
+      </div>
+    );
   }
 
   return (
@@ -172,7 +187,7 @@ export function SlackTab() {
             </Card>
           ) : null}
           <section className="space-y-3">
-          <h2 className="text-body font-semibold">{t(($) => $.slack.connected_bots)}</h2>
+          <h2 className="text-body font-semibold">{t(($) => $.slack.installed_bots)}</h2>
           {isLoading ? (
             <Card>
               <CardContent>
@@ -369,7 +384,7 @@ export function SlackAgentBindButton({
   const [appToken, setAppToken] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const { data: listing } = useQuery({
+  const { data: listing, isError: installationQueryFailed } = useQuery({
     ...slackInstallationsOptions(wsId),
     enabled: !!wsId,
   });
@@ -385,9 +400,12 @@ export function SlackAgentBindButton({
 
   if (!canManage) return null;
 
-  const existing = listing?.installations.find(
+  const recordedInstallation = listing?.installations.find(
     (inst) => inst.agent_id === agentId && inst.status === "installed",
   );
+  const existing = recordedInstallation && installationQueryFailed
+    ? { ...recordedInstallation, runtime: undefined }
+    : recordedInstallation;
   if (existing) {
     return onShowConnectedDetails ? (
       <SlackAgentBotStatusRow

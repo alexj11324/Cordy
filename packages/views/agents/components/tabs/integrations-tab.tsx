@@ -61,7 +61,7 @@ export function IntegrationsTab({ agent }: { agent: Agent }) {
     ...slackInstallationsOptions(wsId),
     enabled: !!wsId,
   });
-  const { data: dingtalkListing } = useQuery({
+  const { data: dingtalkListing, isError: dingtalkQueryFailed } = useQuery({
     ...dingtalkInstallationsOptions(wsId),
   });
   const { data: wecomListing } = useQuery({
@@ -109,9 +109,12 @@ export function IntegrationsTab({ agent }: { agent: Agent }) {
     ) ?? false;
 
   const dingtalkConfigured = dingtalkListing?.configured === true;
-  const dingtalkInstallation = dingtalkListing?.installations.find(
+  const recordedDingtalkInstallation = dingtalkListing?.installations.find(
     (inst) => inst.agent_id === agent.id && inst.status === "installed",
   );
+  const dingtalkInstallation = recordedDingtalkInstallation && dingtalkQueryFailed
+    ? { ...recordedDingtalkInstallation, runtime: undefined }
+    : recordedDingtalkInstallation;
   const dingtalkHasInstalledBot = !!dingtalkInstallation;
   const {
     data: dingtalkGroupsListing,
