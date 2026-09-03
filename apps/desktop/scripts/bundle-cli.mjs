@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // Builds the `patchbay` CLI from server/cmd/patchbay and copies the binary
 // into apps/desktop/resources/bin/ so electron-vite (dev) and electron-
-// builder (prod) pick it up. Running this on every dev/build/package
-// invocation guarantees the bundled CLI always matches the current Go
-// source — no more stale binary surprises. Go's build cache makes the
-// no-op case (nothing changed) effectively free.
+// builder (prod) pick it up. Development and packaging invoke this script;
+// ordinary frontend/Electron builds do not prepare a CLI. Source-matched
+// development caching and removal of the fallback below remain separate
+// migration work.
 //
 // ldflags mirror `make build` so `patchbay --version` reports a meaningful
 // version / commit / date.

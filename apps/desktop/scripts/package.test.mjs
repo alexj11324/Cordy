@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -429,6 +430,24 @@ describe("envWithLocalBins", () => {
       workspaceBin,
       "runner-bin",
     ]);
+  });
+});
+
+describe("ordinary Desktop build boundary", () => {
+  it("keeps CLI preparation out of the normal Electron build", () => {
+    const manifestPath = [
+      resolve(process.cwd(), "package.json"),
+      resolve(process.cwd(), "apps/desktop/package.json"),
+    ].find((candidate) => {
+      if (!existsSync(candidate)) return false;
+      return JSON.parse(readFileSync(candidate, "utf-8")).name === "@patchbay/desktop";
+    });
+    expect(manifestPath, "Desktop package.json not found").toBeTruthy();
+    const { scripts } = JSON.parse(readFileSync(manifestPath, "utf-8"));
+    // Run the actual build separately for acceptance. This pins the public
+    // entry point so adding the slow CLI/release path back is a regression.
+    expect(scripts.build).toBe("electron-vite build");
+    expect(scripts.package).toBe("node scripts/package.mjs");
   });
 });
 
