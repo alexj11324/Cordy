@@ -197,6 +197,12 @@ func messagingCapabilitiesFromEnv() MessagingCapabilities {
 	}
 }
 
+// ResolvedMessagingModeFromEnv exposes the startup mode to the server boot
+// path without duplicating the capability resolution rules used by /api/config.
+func ResolvedMessagingModeFromEnv() string {
+	return messagingCapabilitiesFromEnv().Mode
+}
+
 func isPublicHTTPSURL(raw string) bool {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {

@@ -21,6 +21,7 @@ import (
 	"github.com/patchbay-ai/patchbay/server/internal/handler"
 	"github.com/patchbay-ai/patchbay/server/internal/integrations/wecom"
 	"github.com/patchbay-ai/patchbay/server/internal/logger"
+	"github.com/patchbay-ai/patchbay/server/internal/messagingbootstrap"
 	obsmetrics "github.com/patchbay-ai/patchbay/server/internal/metrics"
 	"github.com/patchbay-ai/patchbay/server/internal/profiling"
 	"github.com/patchbay-ai/patchbay/server/internal/realtime"
@@ -610,6 +611,10 @@ func main() {
 		HeartbeatScheduler:  heartbeatScheduler,
 		LLMMaxRetries:       llmMaxRetries,
 	})
+	if err := messagingbootstrap.ProvisionFromEnvironment(context.Background(), pool, handler.ResolvedMessagingModeFromEnv()); err != nil {
+		slog.Error("self-hosted messaging bootstrap failed", "error", err)
+		os.Exit(1)
+	}
 
 	srv := newMainHTTPServer(":"+port, r)
 	profilingServer := profiling.NewServer()
