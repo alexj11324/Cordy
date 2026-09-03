@@ -20,6 +20,7 @@ type groupRouteInstaller struct {
 func (f *groupRouteInstaller) FinalizeInstallation(_ context.Context, inst ResolvedInstallation, _ channel.InboundMessage) (ResolvedInstallation, error) {
 	f.calls++
 	inst.AgentID = f.agentID
+	inst.RouteRevision = int64(f.calls)
 	return inst, f.err
 }
 
@@ -77,6 +78,9 @@ func TestRouter_GroupRouteTargetReachesSessionAndOutbound(t *testing.T) {
 		}
 		if outbound.ID != h.inst.inst.ID || outbound.WorkspaceID != h.inst.inst.WorkspaceID {
 			t.Fatal("group reassignment must preserve installation and workspace identity")
+		}
+		if !startChat && h.binder.lastAppend.Installation != outbound {
+			t.Fatal("append must receive the same resolved target and revision as the session and outbound path")
 		}
 	}
 }

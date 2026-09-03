@@ -305,7 +305,7 @@ func (r *Router) dispatch(ctx context.Context, set ResolverSet, msg channel.Inbo
 		claimed = true
 	}
 
-	res, finalize, err := r.processClaimed(ctx, set, msg, inst, claimToken, bareFresh, startChat)
+	res, finalize, err := r.processClaimed(ctx, set, msg, &inst, claimToken, bareFresh, startChat)
 
 	if claimed && finalize != finalizeNone {
 		finalizeCtx, finalizeCancel := context.WithTimeout(context.WithoutCancel(ctx), dedupFinalizeTimeout)
@@ -331,7 +331,8 @@ const (
 
 // processClaimed runs the post-dedup pipeline. Mirrors
 // lark.Dispatcher.processClaimed; see its boundary contract per step.
-func (r *Router) processClaimed(ctx context.Context, set ResolverSet, msg channel.InboundMessage, inst ResolvedInstallation, claimToken pgtype.UUID, bareFresh, startChat bool) (Result, dedupFinalize, error) {
+func (r *Router) processClaimed(ctx context.Context, set ResolverSet, msg channel.InboundMessage, resolved *ResolvedInstallation, claimToken pgtype.UUID, bareFresh, startChat bool) (Result, dedupFinalize, error) {
+	inst := *resolved
 	// 3. Group-mention filter (group chats only), before identity so an
 	//    unbound user's idle group chatter never spams a binding card. With a
 	//    GroupEngagement checker wired, a follow-up inside an already-engaged
@@ -401,6 +402,26 @@ func (r *Router) processClaimed(ctx context.Context, set ResolverSet, msg channe
 	for {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return Result{}, finalizeRelease, ctxErr
+		}
+		// Discover mutable platform routes only after addressing and membership
+		// checks. Re-resolve on every fenced retry, and return the same target to
+		// outbound replies, /issue, and /new task preparation.
+		if finalizer, ok := set.Installation.(interface {
+			FinalizeInstallation(context.Context, ResolvedInstallation, channel.InboundMessage) (ResolvedInstallation, error)
+		}); ok {
+			var routeErr error
+			inst, routeErr = finalizer.FinalizeInstallation(ctx, inst, msg)
+			if routeErr != nil {
+				switch {
+				case errors.Is(routeErr, ErrTargetAgentArchived):
+					return Result{Outcome: OutcomeAgentArchived, InstallationID: resolved.ID, Sender: msg.Source.SenderID}, finalizeMark, nil
+				case errors.Is(routeErr, ErrInstallationNotFound):
+					return r.drop(ctx, set, msg, resolved.ID, DropReasonRevokedInstallation), finalizeMark, nil
+				default:
+					return Result{}, finalizeRelease, fmt.Errorf("finalize installation route: %w", routeErr)
+				}
+			}
+			*resolved = inst
 		}
 
 		if startChat {
@@ -502,6 +523,7 @@ func (r *Router) processClaimed(ctx context.Context, set ResolverSet, msg channe
 			SessionID:           sessionID,
 			Sender:              identity.UserID,
 			InstallationID:      inst.ID,
+			Installation:        inst,
 			Message:             msg,
 			ClaimToken:          claimToken,
 			MediaPendingSeconds: mediaPendingSeconds,

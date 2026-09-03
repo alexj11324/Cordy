@@ -170,6 +170,60 @@ func (r *installationResolver) ResolveInstallation(ctx context.Context, msg chan
 	}, nil
 }
 
+// FinalizeInstallation is invoked by the shared router after addressing and
+// membership validation, including on retries after a concurrent reassignment.
+func (r *installationResolver) FinalizeInstallation(ctx context.Context, inst engine.ResolvedInstallation, msg channel.InboundMessage) (engine.ResolvedInstallation, error) {
+	if msg.Source.ChatType != channel.ChatTypeGroup {
+		return inst, nil
+	}
+	raw, err := decodeDingTalkRaw(msg)
+	if err != nil {
+		return inst, err
+	}
+	route, err := r.q.DiscoverDingTalkGroupRoute(ctx, db.DiscoverDingTalkGroupRouteParams{
+		WorkspaceID: inst.WorkspaceID, InstallationID: inst.ID,
+		ConversationID: msg.Source.ChatID, ConversationTitle: raw.ConversationTitle,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return inst, engine.ErrInstallationNotFound
+	}
+	if err != nil {
+		return inst, err
+	}
+	inst.AgentID, inst.RouteRevision = route.AgentID, route.Revision
+	if !route.AgentActive {
+		return inst, engine.ErrTargetAgentArchived
+	}
+	return inst, nil
+}
+
+// groupRouteFence is run inside the session transaction, before chat/binding
+// locks. The optional cleanup retires pre-migration bindings to another agent.
+func groupRouteFence(inst engine.ResolvedInstallation, msg channel.InboundMessage, cleanStale bool) func(context.Context, pgx.Tx) error {
+	if msg.Source.ChatType != channel.ChatTypeGroup || inst.RouteRevision == 0 {
+		return nil
+	}
+	return func(ctx context.Context, tx pgx.Tx) error {
+		q := db.New(tx)
+		_, err := q.LockDingTalkGroupRouteForAppend(ctx, db.LockDingTalkGroupRouteForAppendParams{
+			WorkspaceID: inst.WorkspaceID, AgentID: inst.AgentID,
+			InstallationID: inst.ID, ConversationID: msg.Source.ChatID, Revision: inst.RouteRevision,
+		})
+		if errors.Is(err, pgx.ErrNoRows) {
+			return engine.ErrRouteChanged
+		}
+		if err != nil {
+			return err
+		}
+		if cleanStale {
+			return q.DeleteStaleDingTalkGroupSessionBindings(ctx, db.DeleteStaleDingTalkGroupSessionBindingsParams{
+				InstallationID: inst.ID, ConversationID: msg.Source.ChatID, AgentID: inst.AgentID,
+			})
+		}
+		return nil
+	}
+}
+
 // ---- identity ----
 
 type identityResolver struct{ q *db.Queries }
@@ -327,6 +381,7 @@ func (r *sessionBinder) StartSession(ctx context.Context, p engine.StartSessionP
 			WorkspaceID: p.Installation.WorkspaceID, AgentID: p.Installation.AgentID,
 			InstallationID: p.Installation.ID, Sender: p.Creator,
 			BindingKey: bindingKey, BindingConfig: config, ChatType: p.Message.Source.ChatType,
+			BeforeWrite: groupRouteFence(p.Installation, p.Message, false),
 		},
 		Initiator: p.Sender,
 		Body:      p.Message.Text, MessageID: p.Message.MessageID, ThreadID: p.Message.Source.ThreadID,
@@ -382,6 +437,7 @@ func (r *sessionBinder) EnsureSession(ctx context.Context, p engine.EnsureSessio
 		BindingKey:     bindingKey,
 		BindingConfig:  config,
 		ChatType:       p.Message.Source.ChatType,
+		BeforeWrite:    groupRouteFence(p.Installation, p.Message, true),
 	})
 	if err != nil {
 		return pgtype.UUID{}, err
@@ -422,6 +478,7 @@ func (r *sessionBinder) AppendMessage(ctx context.Context, p engine.AppendParams
 		ClaimToken:          p.ClaimToken,
 		MediaPendingSeconds: p.MediaPendingSeconds,
 		ForceFresh:          p.Message.ForceFresh,
+		BeforeWrite:         groupRouteFence(p.Installation, p.Message, false),
 	})
 	if err != nil {
 		return engine.AppendResult{}, err

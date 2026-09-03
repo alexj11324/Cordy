@@ -221,6 +221,90 @@ WHERE presence.installation_id = installation.id
   AND installation.channel_type = 'dingtalk'
 RETURNING presence.installation_id;
 
+-- name: DiscoverDingTalkGroupRoute :one
+-- Called only after the group-address and workspace-membership gates. A
+-- subsequent observation may refresh the title, never the assigned agent.
+WITH workspace_guard AS MATERIALIZED (
+    SELECT w.id FROM workspace w
+    WHERE w.id = sqlc.arg(workspace_id)
+    FOR KEY SHARE
+), installation AS MATERIALIZED (
+    SELECT i.id, i.workspace_id, i.agent_id
+    FROM channel_installation i
+    JOIN workspace_guard w ON w.id = i.workspace_id
+    WHERE i.id = sqlc.arg(installation_id)
+      AND i.channel_type = 'dingtalk'
+      AND i.status = 'active'
+      AND i.hosted_paused_at IS NULL
+    FOR SHARE OF i
+), group_route AS (
+    INSERT INTO dingtalk_group_route (
+        workspace_id, installation_id, conversation_id, conversation_title, agent_id
+    )
+    SELECT i.workspace_id, i.id, sqlc.arg(conversation_id)::text,
+           sqlc.arg(conversation_title)::text, i.agent_id
+    FROM installation i
+    ON CONFLICT (installation_id, conversation_id) DO UPDATE SET
+        conversation_title = CASE WHEN EXCLUDED.conversation_title = ''
+            THEN dingtalk_group_route.conversation_title ELSE EXCLUDED.conversation_title END,
+        updated_at = CASE WHEN EXCLUDED.conversation_title <> ''
+            AND EXCLUDED.conversation_title <> dingtalk_group_route.conversation_title
+            THEN now() ELSE dingtalk_group_route.updated_at END
+    RETURNING workspace_id, agent_id, revision
+)
+SELECT r.agent_id, r.revision, EXISTS (
+    SELECT 1 FROM agent a
+    WHERE a.id = r.agent_id AND a.workspace_id = r.workspace_id
+      AND a.kind = 'user' AND a.archived_at IS NULL
+) AS agent_active
+FROM group_route r;
+
+-- name: LockDingTalkGroupRouteForAppend :one
+-- Keep the same workspace -> agent -> installation -> group route -> binding
+-- lock order as reassignment. The lock lives through the message transaction.
+WITH workspace_guard AS MATERIALIZED (
+    SELECT w.id FROM workspace w
+    WHERE w.id = sqlc.arg(workspace_id)
+    FOR KEY SHARE
+), target_agent AS MATERIALIZED (
+    SELECT a.id FROM agent a
+    JOIN workspace_guard w ON w.id = a.workspace_id
+    WHERE a.id = sqlc.arg(agent_id)
+      AND a.kind = 'user' AND a.archived_at IS NULL
+    FOR SHARE OF a
+), installation AS MATERIALIZED (
+    SELECT i.id FROM channel_installation i
+    WHERE i.id = sqlc.arg(installation_id)
+      AND i.workspace_id = sqlc.arg(workspace_id)
+      AND i.channel_type = 'dingtalk' AND i.status = 'active'
+      AND i.hosted_paused_at IS NULL
+      AND EXISTS (SELECT 1 FROM target_agent)
+    FOR SHARE OF i
+)
+SELECT r.revision FROM dingtalk_group_route r
+JOIN installation i ON i.id = r.installation_id
+WHERE r.workspace_id = sqlc.arg(workspace_id)
+  AND r.conversation_id = sqlc.arg(conversation_id)::text
+  AND r.agent_id = sqlc.arg(agent_id)
+  AND r.revision = sqlc.arg(revision)
+FOR SHARE OF r;
+
+-- name: DeleteStaleDingTalkGroupSessionBindings :exec
+-- Called under the group route fence before ensuring the current session.
+-- Pre-migration bindings may still point to the installation's default agent.
+-- Keep Chat history but prevent old replies from reaching the reassigned group.
+WITH stale AS (
+    DELETE FROM channel_chat_session_binding b
+    USING chat_session s
+    WHERE b.installation_id = sqlc.arg(installation_id)
+      AND b.channel_chat_id = sqlc.arg(conversation_id)::text
+      AND b.chat_session_id = s.id
+      AND s.agent_id IS DISTINCT FROM sqlc.arg(agent_id)
+    RETURNING b.chat_session_id
+)
+DELETE FROM channel_outbound_card_message
+WHERE chat_session_id IN (SELECT chat_session_id FROM stale);
+
 -- name: ListDingTalkGroupRoutesByWorkspace :many
 -- Settings inventory of group-to-agent assignments. Only routes under an
 -- active DingTalk installation are listed; revoked installations keep their

@@ -280,6 +280,9 @@ type EnsureSessionInput struct {
 	BindingKey     string
 	BindingConfig  []byte
 	ChatType       channel.ChatType
+	// BeforeWrite validates and locks a mutable platform route before any
+	// session/binding locks. A rejected fence must not create an orphan Chat.
+	BeforeWrite func(context.Context, pgx.Tx) error
 }
 
 // EnsureSession returns the chat_session.id bound to (installation, BindingKey),
@@ -288,6 +291,13 @@ type EnsureSessionInput struct {
 // UNIQUE (installation_id, channel_chat_id) constraint: the loser re-reads the
 // winner's row.
 func (s *ChatSession) EnsureSession(ctx context.Context, in EnsureSessionInput) (pgtype.UUID, error) {
+	if in.BeforeWrite != nil {
+		id, err := s.createSessionAndBinding(ctx, in)
+		if isUniqueViolation(err) {
+			return pgtype.UUID{}, ErrRouteChanged
+		}
+		return id, err
+	}
 	lookup := db.GetChannelChatSessionBindingParams{InstallationID: in.InstallationID, ChannelChatID: in.BindingKey}
 
 	existing, err := s.q.GetChannelChatSessionBinding(ctx, lookup)
@@ -325,6 +335,23 @@ func (s *ChatSession) createSessionAndBinding(ctx context.Context, in EnsureSess
 	// created into a workspace mid-delete (see LockWorkspaceForChatSessionCreate).
 	if _, err := qtx.LockWorkspaceForChatSessionCreate(ctx, in.WorkspaceID); err != nil {
 		return pgtype.UUID{}, fmt.Errorf("lock workspace for chat session create: %w", err)
+	}
+	if in.BeforeWrite != nil {
+		if err := in.BeforeWrite(ctx, tx); err != nil {
+			return pgtype.UUID{}, err
+		}
+		existing, err := qtx.GetChannelChatSessionBinding(ctx, db.GetChannelChatSessionBindingParams{
+			InstallationID: in.InstallationID, ChannelChatID: in.BindingKey,
+		})
+		if err == nil {
+			if err := tx.Commit(ctx); err != nil {
+				return pgtype.UUID{}, fmt.Errorf("commit existing chat route: %w", err)
+			}
+			return existing.ChatSessionID, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return pgtype.UUID{}, fmt.Errorf("lookup fenced chat route: %w", err)
+		}
 	}
 
 	session, err := qtx.CreateChatSession(ctx, db.CreateChatSessionParams{
@@ -380,6 +407,9 @@ type AppendInput struct {
 	ClaimToken          pgtype.UUID
 	MediaPendingSeconds float64
 	ForceFresh          bool
+	// BeforeWrite takes the platform route fence before chat/binding locks,
+	// matching the lock order of administrative group reassignment.
+	BeforeWrite func(context.Context, pgx.Tx) error
 	// BeforeCommit adds work that must be atomic with this message and its
 	// context-generation change. Native slash commands use it to snapshot and
 	// enqueue the task before the message becomes visible.
@@ -401,7 +431,6 @@ type StartSessionInput struct {
 	MediaPendingSeconds    float64
 	PersistMessage         bool
 	HistoryBoundaryPending bool
-	BeforeWrite            func(context.Context, pgx.Tx) error
 	// BeforeCommit can add work that must be atomic with the route rotation and
 	// first message. The newly created session is visible through tx, but none of
 	// these writes are externally observable until StartSession commits.
@@ -420,6 +449,11 @@ func (s *ChatSession) StartSession(ctx context.Context, in StartSessionInput) (S
 	qtx := s.q.WithTx(tx)
 	if _, err := qtx.LockWorkspaceForChatSessionCreate(ctx, in.WorkspaceID); err != nil {
 		return StartSessionResult{}, fmt.Errorf("lock workspace for start chat: %w", err)
+	}
+	if in.BeforeWrite != nil {
+		if err := in.BeforeWrite(ctx, tx); err != nil {
+			return StartSessionResult{}, err
+		}
 	}
 
 	lookup := db.GetChannelChatSessionBindingParams{InstallationID: in.InstallationID, ChannelChatID: in.BindingKey}
@@ -440,11 +474,6 @@ func (s *ChatSession) StartSession(ctx context.Context, in StartSessionInput) (S
 		if err != nil || locked.ID != current.ID {
 			return StartSessionResult{}, ErrRouteChanged
 		}
-		if in.BeforeWrite != nil {
-			if err := in.BeforeWrite(ctx, tx); err != nil {
-				return StartSessionResult{}, err
-			}
-		}
 		historyEnd := locked.LastMessageID
 		if in.HistoryBoundaryPending && in.MessageID == "" {
 			// A native command has no public platform cursor. Keep the old end
@@ -460,10 +489,6 @@ func (s *ChatSession) StartSession(ctx context.Context, in StartSessionInput) (S
 			return StartSessionResult{}, fmt.Errorf("retire current chat route: %w", err)
 		}
 		nextRevision = locked.RouteRevision + 1
-	} else if in.BeforeWrite != nil {
-		if err := in.BeforeWrite(ctx, tx); err != nil {
-			return StartSessionResult{}, err
-		}
 	}
 
 	title := ""
@@ -612,6 +637,11 @@ func (s *ChatSession) AppendUserMessage(ctx context.Context, in AppendInput) (Ap
 	}
 	defer tx.Rollback(ctx)
 	qtx := s.q.WithTx(tx)
+	if in.BeforeWrite != nil {
+		if err := in.BeforeWrite(ctx, tx); err != nil {
+			return AppendResult{}, err
+		}
+	}
 	commandSource := in.CommandText
 	if commandSource == "" {
 		commandSource = in.Body

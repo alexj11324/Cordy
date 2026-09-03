@@ -170,6 +170,102 @@ func (q *Queries) ForgetDingTalkGroupPresence(ctx context.Context, arg ForgetDin
 	return installation_id, err
 }
 
+const deleteStaleDingTalkGroupSessionBindings = `-- name: DeleteStaleDingTalkGroupSessionBindings :exec
+WITH stale AS (
+    DELETE FROM channel_chat_session_binding b
+    USING chat_session s
+    WHERE b.installation_id = $1
+      AND b.channel_chat_id = $2::text
+      AND b.chat_session_id = s.id
+      AND s.agent_id IS DISTINCT FROM $3
+    RETURNING b.chat_session_id
+)
+DELETE FROM channel_outbound_card_message
+WHERE chat_session_id IN (SELECT chat_session_id FROM stale)
+`
+
+type DeleteStaleDingTalkGroupSessionBindingsParams struct {
+	InstallationID pgtype.UUID `json:"installation_id"`
+	ConversationID string      `json:"conversation_id"`
+	AgentID        pgtype.UUID `json:"agent_id"`
+}
+
+// Called under the group route fence before ensuring the current session.
+// Pre-migration bindings may still point to the installation's default agent.
+// Keep Chat history but prevent old replies from reaching the reassigned group.
+func (q *Queries) DeleteStaleDingTalkGroupSessionBindings(ctx context.Context, arg DeleteStaleDingTalkGroupSessionBindingsParams) error {
+	_, err := q.db.Exec(ctx, deleteStaleDingTalkGroupSessionBindings,
+		arg.InstallationID,
+		arg.ConversationID,
+		arg.AgentID,
+	)
+	return err
+}
+
+const discoverDingTalkGroupRoute = `-- name: DiscoverDingTalkGroupRoute :one
+WITH workspace_guard AS MATERIALIZED (
+    SELECT w.id FROM workspace w
+    WHERE w.id = $1
+    FOR KEY SHARE
+), installation AS MATERIALIZED (
+    SELECT i.id, i.workspace_id, i.agent_id
+    FROM channel_installation i
+    JOIN workspace_guard w ON w.id = i.workspace_id
+    WHERE i.id = $2
+      AND i.channel_type = 'dingtalk'
+      AND i.status = 'active'
+      AND i.hosted_paused_at IS NULL
+    FOR SHARE OF i
+), group_route AS (
+    INSERT INTO dingtalk_group_route (
+        workspace_id, installation_id, conversation_id, conversation_title, agent_id
+    )
+    SELECT i.workspace_id, i.id, $3::text,
+           $4::text, i.agent_id
+    FROM installation i
+    ON CONFLICT (installation_id, conversation_id) DO UPDATE SET
+        conversation_title = CASE WHEN EXCLUDED.conversation_title = ''
+            THEN dingtalk_group_route.conversation_title ELSE EXCLUDED.conversation_title END,
+        updated_at = CASE WHEN EXCLUDED.conversation_title <> ''
+            AND EXCLUDED.conversation_title <> dingtalk_group_route.conversation_title
+            THEN now() ELSE dingtalk_group_route.updated_at END
+    RETURNING workspace_id, agent_id, revision
+)
+SELECT r.agent_id, r.revision, EXISTS (
+    SELECT 1 FROM agent a
+    WHERE a.id = r.agent_id AND a.workspace_id = r.workspace_id
+      AND a.kind = 'user' AND a.archived_at IS NULL
+) AS agent_active
+FROM group_route r
+`
+
+type DiscoverDingTalkGroupRouteParams struct {
+	WorkspaceID       pgtype.UUID `json:"workspace_id"`
+	InstallationID    pgtype.UUID `json:"installation_id"`
+	ConversationID    string      `json:"conversation_id"`
+	ConversationTitle string      `json:"conversation_title"`
+}
+
+type DiscoverDingTalkGroupRouteRow struct {
+	AgentID     pgtype.UUID `json:"agent_id"`
+	Revision    int64       `json:"revision"`
+	AgentActive bool        `json:"agent_active"`
+}
+
+// Called only after the group-address and workspace-membership gates. A
+// subsequent observation may refresh the title, never the assigned agent.
+func (q *Queries) DiscoverDingTalkGroupRoute(ctx context.Context, arg DiscoverDingTalkGroupRouteParams) (DiscoverDingTalkGroupRouteRow, error) {
+	row := q.db.QueryRow(ctx, discoverDingTalkGroupRoute,
+		arg.WorkspaceID,
+		arg.InstallationID,
+		arg.ConversationID,
+		arg.ConversationTitle,
+	)
+	var i DiscoverDingTalkGroupRouteRow
+	err := row.Scan(&i.AgentID, &i.Revision, &i.AgentActive)
+	return i, err
+}
+
 const getDingTalkInstallationOwnerForUpdate = `-- name: GetDingTalkInstallationOwnerForUpdate :one
 SELECT id, COALESCE(config ->> 'app_id', '')::text AS app_id
 FROM channel_installation
@@ -445,6 +541,58 @@ func (q *Queries) ListDingTalkUserBindingsForMember(ctx context.Context, arg Lis
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockDingTalkGroupRouteForAppend = `-- name: LockDingTalkGroupRouteForAppend :one
+WITH workspace_guard AS MATERIALIZED (
+    SELECT w.id FROM workspace w
+    WHERE w.id = $1
+    FOR KEY SHARE
+), target_agent AS MATERIALIZED (
+    SELECT a.id FROM agent a
+    JOIN workspace_guard w ON w.id = a.workspace_id
+    WHERE a.id = $2
+      AND a.kind = 'user' AND a.archived_at IS NULL
+    FOR SHARE OF a
+), installation AS MATERIALIZED (
+    SELECT i.id FROM channel_installation i
+    WHERE i.id = $3
+      AND i.workspace_id = $1
+      AND i.channel_type = 'dingtalk' AND i.status = 'active'
+      AND i.hosted_paused_at IS NULL
+      AND EXISTS (SELECT 1 FROM target_agent)
+    FOR SHARE OF i
+)
+SELECT r.revision FROM dingtalk_group_route r
+JOIN installation i ON i.id = r.installation_id
+WHERE r.workspace_id = $1
+  AND r.conversation_id = $4::text
+  AND r.agent_id = $2
+  AND r.revision = $5
+FOR SHARE OF r
+`
+
+type LockDingTalkGroupRouteForAppendParams struct {
+	WorkspaceID    pgtype.UUID `json:"workspace_id"`
+	AgentID        pgtype.UUID `json:"agent_id"`
+	InstallationID pgtype.UUID `json:"installation_id"`
+	ConversationID string      `json:"conversation_id"`
+	Revision       int64       `json:"revision"`
+}
+
+// Keep the same workspace -> agent -> installation -> group route -> binding
+// lock order as reassignment. The lock lives through the message transaction.
+func (q *Queries) LockDingTalkGroupRouteForAppend(ctx context.Context, arg LockDingTalkGroupRouteForAppendParams) (int64, error) {
+	row := q.db.QueryRow(ctx, lockDingTalkGroupRouteForAppend,
+		arg.WorkspaceID,
+		arg.AgentID,
+		arg.InstallationID,
+		arg.ConversationID,
+		arg.Revision,
+	)
+	var revision int64
+	err := row.Scan(&revision)
+	return revision, err
 }
 
 const lockDingTalkInstallationOwner = `-- name: LockDingTalkInstallationOwner :exec

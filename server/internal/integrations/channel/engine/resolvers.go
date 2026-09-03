@@ -85,6 +85,7 @@ type ResolvedInstallation struct {
 	WorkspaceID     pgtype.UUID
 	AgentID         pgtype.UUID
 	InstallerUserID pgtype.UUID
+	RouteRevision   int64
 	Active          bool
 	Platform        any
 }
@@ -137,6 +138,7 @@ type AppendParams struct {
 	SessionID           pgtype.UUID
 	Sender              pgtype.UUID
 	InstallationID      pgtype.UUID
+	Installation        ResolvedInstallation
 	Message             channel.InboundMessage
 	ClaimToken          pgtype.UUID
 	MediaPendingSeconds float64
@@ -245,6 +247,9 @@ var (
 	// ErrRouteChanged asks the Router to resolve the platform route again and
 	// retry the same claimed message before any durable write is made.
 	ErrRouteChanged = errors.New("engine: route changed")
+	// ErrTargetAgentArchived keeps a configured group from silently falling
+	// back to the installation's default agent when its target is unavailable.
+	ErrTargetAgentArchived = errors.New("engine: target agent archived")
 	// ErrDuplicate: Claim found the message already processed / in flight →
 	// duplicate drop.
 	ErrDuplicate = errors.New("engine: duplicate message")

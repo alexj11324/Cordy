@@ -268,6 +268,29 @@ func TestDingTalkGroupRoutingRemovalMigrations(t *testing.T) {
 		t.Fatalf("mirrored Bot name = %q, want Old Draft Bot", botName)
 	}
 
+	// The restored Go group router has its own post-commit activity writer.
+	// Prove both idempotent upgrade and rollback without losing group history.
+	for _, step := range []struct {
+		file string
+		want int64
+	}{
+		{"577_dingtalk_group_activity_single_writer.up.sql", 1},
+		{"577_dingtalk_group_activity_single_writer.up.sql", 1},
+		{"577_dingtalk_group_activity_single_writer.down.sql", 2},
+		{"577_dingtalk_group_activity_single_writer.up.sql", 2},
+	} {
+		applyMigrationFile(t, ctx, conn.Conn(), step.file)
+		if _, err := conn.Exec(ctx, `UPDATE dingtalk_group_route SET updated_at = now() WHERE installation_id = $1 AND conversation_id = 'mixed-rollout'`, dingtalkInst); err != nil {
+			t.Fatalf("observe route after %s: %v", step.file, err)
+		}
+		if err := conn.QueryRow(ctx, `SELECT mention_count FROM dingtalk_group_presence WHERE installation_id = $1 AND conversation_id = 'mixed-rollout'`, dingtalkInst).Scan(&mentionCount); err != nil {
+			t.Fatalf("activity after %s: %v", step.file, err)
+		}
+		if mentionCount != step.want {
+			t.Fatalf("activity after %s = %d, want %d", step.file, mentionCount, step.want)
+		}
+	}
+
 	for _, name := range []string{
 		"389_backfill_dingtalk_bot_identity.down.sql",
 		"388_create_dingtalk_bot_identity_installation_index.down.sql",
