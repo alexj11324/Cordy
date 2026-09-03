@@ -2,6 +2,7 @@ package dingtalk
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -24,6 +25,55 @@ func (noDeliveryOutboundQueries) TaskHasChannelIngestedMessages(context.Context,
 }
 func (noDeliveryOutboundQueries) GetChannelInstallation(context.Context, db.GetChannelInstallationParams) (db.ChannelInstallation, error) {
 	panic("GetChannelInstallation must not run without a task delivery snapshot")
+}
+
+func (noDeliveryOutboundQueries) GetChannelChatSessionBindingBySessionAny(context.Context, pgtype.UUID) (db.ChannelChatSessionBinding, error) {
+	panic("binding lookup must not run without a task delivery snapshot")
+}
+
+type routedOutboundQueries struct {
+	noDeliveryOutboundQueries
+	binding db.ChannelChatSessionBinding
+	err     error
+}
+
+func (routedOutboundQueries) GetChannelTaskDelivery(context.Context, pgtype.UUID) (db.ChannelTaskDelivery, error) {
+	return db.ChannelTaskDelivery{BindingID: pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, ChannelType: string(TypeDingTalk)}, nil
+}
+
+func (q routedOutboundQueries) GetChannelChatSessionBindingBySessionAny(context.Context, pgtype.UUID) (db.ChannelChatSessionBinding, error) {
+	return q.binding, q.err
+}
+
+var errOutboundReachedTask = errors.New("valid snapshot reached task origin check")
+
+func (routedOutboundQueries) GetAgentTask(context.Context, pgtype.UUID) (db.AgentTaskQueue, error) {
+	return db.AgentTaskQueue{}, errOutboundReachedTask
+}
+
+func TestOutboundReassignmentRevokesOldDeliverySnapshot(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		binding db.ChannelChatSessionBinding
+		err     error
+		want    error
+	}{
+		{name: "binding removed by reassignment", err: pgx.ErrNoRows},
+		{name: "another binding must not retarget snapshot", binding: db.ChannelChatSessionBinding{ID: pgtype.UUID{Bytes: [16]byte{2}, Valid: true}}},
+		{name: "original generation remains valid", binding: db.ChannelChatSessionBinding{ID: pgtype.UUID{Bytes: [16]byte{1}, Valid: true}}, want: errOutboundReachedTask},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			o := NewOutbound(routedOutboundQueries{binding: tc.binding, err: tc.err}, nil, nil, nil)
+			event := events.Event{
+				Type: protocol.EventChatDone, TaskID: "11111111-1111-1111-1111-111111111111",
+				ChatSessionID: "22222222-2222-2222-2222-222222222222",
+				Payload: protocol.ChatDonePayload{Content: "reply from the original agent"},
+			}
+			if err := o.processEvent(context.Background(), event); !errors.Is(err, tc.want) {
+				t.Fatalf("processEvent = %v, want %v", err, tc.want)
+			}
+		})
+	}
 }
 
 func TestOutboundFailsClosedWithoutTaskDeliverySnapshot(t *testing.T) {

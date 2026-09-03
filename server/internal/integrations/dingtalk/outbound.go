@@ -22,6 +22,7 @@ type outboundQueries interface {
 	GetAgentTask(ctx context.Context, id pgtype.UUID) (db.AgentTaskQueue, error)
 	TaskHasChannelIngestedMessages(ctx context.Context, taskID pgtype.UUID) (bool, error)
 	GetChannelTaskDelivery(ctx context.Context, taskID pgtype.UUID) (db.ChannelTaskDelivery, error)
+	GetChannelChatSessionBindingBySessionAny(ctx context.Context, sessionID pgtype.UUID) (db.ChannelChatSessionBinding, error)
 	GetChannelInstallation(ctx context.Context, arg db.GetChannelInstallationParams) (db.ChannelInstallation, error)
 }
 
@@ -88,6 +89,19 @@ func (o *Outbound) processEvent(ctx context.Context, e events.Event) error {
 		return fmt.Errorf("lookup dingtalk task delivery: %w", err)
 	}
 	if delivery.ChannelType != string(TypeDingTalk) {
+		return nil
+	}
+	// A group reassignment removes bindings, but delivery snapshots are durable.
+	// Validate the original generation still exists without retargeting its
+	// snapshot to the new agent's Chat. Retired /new generations remain valid.
+	original, err := o.q.GetChannelChatSessionBindingBySessionAny(ctx, sessionID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("validate dingtalk delivery binding: %w", err)
+	}
+	if original.ID != delivery.BindingID || original.InstallationID != delivery.InstallationID {
 		return nil
 	}
 	binding := bindingFromTaskDelivery(delivery)
