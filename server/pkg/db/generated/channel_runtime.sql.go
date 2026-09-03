@@ -15,10 +15,10 @@ const claimChannelRuntimeObserver = `-- name: ClaimChannelRuntimeObserver :execr
 WITH current_installation AS MATERIALIZED (
     SELECT ci.id FROM channel_installation ci
     JOIN workspace w ON w.id = ci.workspace_id
-    WHERE ci.id = $1
+    WHERE ci.id = $2
       AND ci.status = 'active' AND ci.hosted_paused_at IS NULL
       AND (ci.ws_lease_token IS NULL OR (
-          ci.ws_lease_token = $2::text
+          ci.ws_lease_token = $1::text
           AND ci.ws_lease_expires_at > now()
       ))
     FOR SHARE OF ci
@@ -26,7 +26,7 @@ WITH current_installation AS MATERIALIZED (
 INSERT INTO channel_installation_runtime_observation (
     installation_id, state, observed_at, error_code, error_summary, observer_token
 )
-SELECT id, 'starting', now(), NULL, NULL, $2::text
+SELECT id, 'starting', now(), NULL, NULL, $1::text
 FROM current_installation
 ON CONFLICT (installation_id) DO UPDATE SET
     state = EXCLUDED.state, observed_at = EXCLUDED.observed_at,
@@ -35,17 +35,14 @@ ON CONFLICT (installation_id) DO UPDATE SET
 `
 
 type ClaimChannelRuntimeObserverParams struct {
-	InstallationID pgtype.UUID `json:"installation_id"`
 	ObserverToken  string      `json:"observer_token"`
+	InstallationID pgtype.UUID `json:"installation_id"`
 }
 
 // Installation -> observation lock order matches revoke and capacity pause.
 // A missing, revoked or paused installation cannot acquire a new reporter.
 func (q *Queries) ClaimChannelRuntimeObserver(ctx context.Context, arg ClaimChannelRuntimeObserverParams) (int64, error) {
-	result, err := q.db.Exec(ctx, claimChannelRuntimeObserver,
-		arg.InstallationID,
-		arg.ObserverToken,
-	)
+	result, err := q.db.Exec(ctx, claimChannelRuntimeObserver, arg.ObserverToken, arg.InstallationID)
 	if err != nil {
 		return 0, err
 	}
@@ -117,36 +114,36 @@ func (q *Queries) ListChannelConnectionStates(ctx context.Context, arg ListChann
 const observeChannelRuntime = `-- name: ObserveChannelRuntime :execrows
 WITH current_installation AS MATERIALIZED (
     SELECT id FROM channel_installation
-    WHERE id = $1
+    WHERE id = $5
       AND status = 'active' AND hosted_paused_at IS NULL
     FOR SHARE
 )
 UPDATE channel_installation_runtime_observation AS observation
-SET state = $2::text, observed_at = now(),
-    error_code = NULLIF($3::text, ''),
-    error_summary = NULLIF($4::text, ''), updated_at = now()
+SET state = $1::text, observed_at = now(),
+    error_code = NULLIF($2::text, ''),
+    error_summary = NULLIF($3::text, ''), updated_at = now()
 FROM current_installation
 WHERE observation.installation_id = current_installation.id
-  AND observation.observer_token = $5::text
+  AND observation.observer_token = $4::text
 `
 
 type ObserveChannelRuntimeParams struct {
-	InstallationID pgtype.UUID `json:"installation_id"`
 	State          string      `json:"state"`
 	ErrorCode      string      `json:"error_code"`
 	ErrorSummary   string      `json:"error_summary"`
 	ObserverToken  string      `json:"observer_token"`
+	InstallationID pgtype.UUID `json:"installation_id"`
 }
 
 // Token fencing prevents late reports from overwriting a successor. Lock the
 // installation first so deletion and hosted pause cannot leave orphan status.
 func (q *Queries) ObserveChannelRuntime(ctx context.Context, arg ObserveChannelRuntimeParams) (int64, error) {
 	result, err := q.db.Exec(ctx, observeChannelRuntime,
-		arg.InstallationID,
 		arg.State,
 		arg.ErrorCode,
 		arg.ErrorSummary,
 		arg.ObserverToken,
+		arg.InstallationID,
 	)
 	if err != nil {
 		return 0, err
