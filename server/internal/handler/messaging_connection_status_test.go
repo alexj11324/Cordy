@@ -55,6 +55,38 @@ func TestConnectionProjectionRequiresCurrentLeaseAndFreshObservation(t *testing.
 	}
 }
 
+func TestConnectionProjectionUsesTheConfiguredLeaseAuthority(t *testing.T) {
+	now := time.Date(2026, time.September, 3, 12, 0, 0, 0, time.UTC)
+	row := db.ListChannelConnectionStatesRow{
+		Status:        "installed",
+		UpdatedAt:     pgtype.Timestamptz{Time: now.Add(-time.Hour), Valid: true},
+		State:         pgtype.Text{String: "healthy", Valid: true},
+		ObservedAt:    pgtype.Timestamptz{Time: now.Add(-time.Second), Valid: true},
+		ObserverToken: pgtype.Text{String: "redis-current", Valid: true},
+	}
+	for _, tc := range []struct {
+		name  string
+		lease authoritativeChannelLease
+		state string
+		code  string
+	}{
+		{"matching Redis owner", authoritativeChannelLease{Alive: true, Token: "redis-current"}, "healthy", ""},
+		{"missing Redis owner", authoritativeChannelLease{}, "offline", "lease_expired"},
+		{"successor Redis owner", authoritativeChannelLease{Alive: true, Token: "redis-successor"}, "offline", "lease_generation_mismatch"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := projectConnectionStatusWithLease(row, now, &tc.lease)
+			code := ""
+			if got.ErrorCode != nil {
+				code = *got.ErrorCode
+			}
+			if got.State != tc.state || code != tc.code {
+				t.Fatalf("projection = %+v / %q, want %s / %q", got, code, tc.state, tc.code)
+			}
+		})
+	}
+}
+
 func TestRevokedInstallationsExposeDisconnectedStatus(t *testing.T) {
 	row := db.ChannelInstallation{Status: "revoked", Config: []byte(`{}`)}
 	for name, response := range map[string]any{

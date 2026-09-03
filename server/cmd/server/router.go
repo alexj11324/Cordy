@@ -282,11 +282,11 @@ func buildChannelSupervisor(
 	registry *channel.Registry,
 	inbound channel.InboundHandler,
 	opts RouterOptions,
-) *engine.Supervisor {
+) (*engine.Supervisor, handler.ChannelConnectionLeaseReader) {
 	cfg, err := channelSupervisorConfigFromEnv(opts.ChannelLeaseMetrics)
 	if err != nil {
 		slog.Error("channel engine: invalid lease configuration; supervisor disabled", "error", err)
-		return nil
+		return nil, nil
 	}
 
 	backend := strings.ToLower(strings.TrimSpace(os.Getenv("CHANNEL_WS_LEASE_BACKEND")))
@@ -294,31 +294,33 @@ func buildChannelSupervisor(
 		backend = "postgres"
 	}
 	var leases engine.LeaseStore
+	var connectionLeases handler.ChannelConnectionLeaseReader
 	switch backend {
 	case "postgres":
 		leases = postgresLeases
 	case "redis":
 		if opts.ChannelLeaseRedis == nil {
 			slog.Error("channel engine: Redis lease backend selected but CHANNEL_WS_LEASE_REDIS_URL/REDIS_URL is missing or invalid; supervisor disabled")
-			return nil
+			return nil, nil
 		}
 		namespace := strings.TrimSpace(os.Getenv("CHANNEL_WS_LEASE_NAMESPACE"))
 		redisLeases, err := engine.NewRedisLeaseStore(opts.ChannelLeaseRedis, namespace)
 		if err != nil {
 			slog.Error("channel engine: Redis lease configuration invalid; supervisor disabled", "error", err)
-			return nil
+			return nil, nil
 		}
 		readyCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		err = redisLeases.Ready(readyCtx)
 		cancel()
 		if err != nil {
 			slog.Error("channel engine: Redis lease backend unavailable; supervisor disabled", "error", err)
-			return nil
+			return nil, nil
 		}
 		leases = redisLeases
+		connectionLeases = redisLeases
 	default:
 		slog.Error("channel engine: unsupported CHANNEL_WS_LEASE_BACKEND; supervisor disabled", "backend", backend)
-		return nil
+		return nil, nil
 	}
 
 	slog.Info("channel engine: lease backend configured",
@@ -327,7 +329,7 @@ func buildChannelSupervisor(
 		"renew_interval", cfg.LeaseRenewInterval.String(),
 		"poll_interval", cfg.PollInterval.String(),
 	)
-	return engine.NewSupervisor(installations, leases, registry, inbound, cfg)
+	return engine.NewSupervisor(installations, leases, registry, inbound, cfg), connectionLeases
 }
 
 // channelLeasePollInterval is how often a Supervisor scans for installations
@@ -583,7 +585,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		}
 	}
 	installationStore := lark.NewChannelInstallationStore(queries)
-	h.ChannelSupervisor = buildChannelSupervisor(
+	h.ChannelSupervisor, h.ChannelConnectionLeases = buildChannelSupervisor(
 		installationStore,
 		installationStore,
 		channelRegistry,

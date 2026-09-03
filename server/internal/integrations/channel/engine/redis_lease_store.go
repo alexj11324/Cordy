@@ -101,8 +101,23 @@ func (s *RedisLeaseStore) Ready(ctx context.Context) error {
 
 func (s *RedisLeaseStore) ListHeldWSLeases(ctx context.Context, ids []pgtype.UUID) (map[string]struct{}, error) {
 	held := make(map[string]struct{}, len(ids))
+	owners, err := s.ListLeaseOwners(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for id := range owners {
+		held[id] = struct{}{}
+	}
+	return held, nil
+}
+
+// ListLeaseOwners returns the current token for each live lease. MGET is one
+// atomic, read-only O(N) operation whose results preserve the requested key
+// order: https://redis.io/docs/latest/commands/mget/.
+func (s *RedisLeaseStore) ListLeaseOwners(ctx context.Context, ids []pgtype.UUID) (map[string]string, error) {
+	owners := make(map[string]string, len(ids))
 	if len(ids) == 0 {
-		return held, nil
+		return owners, nil
 	}
 	keys := make([]string, len(ids))
 	for i, id := range ids {
@@ -116,11 +131,16 @@ func (s *RedisLeaseStore) ListHeldWSLeases(ctx context.Context, ids []pgtype.UUI
 		return nil, err
 	}
 	for i, value := range values {
-		if value != nil {
-			held[uuidString(ids[i])] = struct{}{}
+		if value == nil {
+			continue
 		}
+		token, ok := value.(string)
+		if !ok {
+			return nil, fmt.Errorf("channel lease %s has unexpected value type %T", uuidString(ids[i]), value)
+		}
+		owners[uuidString(ids[i])] = token
 	}
-	return held, nil
+	return owners, nil
 }
 
 func (s *RedisLeaseStore) TryAcquireWSLease(ctx context.Context, arg AcquireLeaseParams) error {

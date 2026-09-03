@@ -94,3 +94,27 @@ func TestRedisLeaseStoreListsOnlyHeldKeys(t *testing.T) {
 		t.Fatalf("second ID should be absent: %#v", held)
 	}
 }
+
+func TestRedisLeaseStoreListsExactOwnerTokens(t *testing.T) {
+	rdb, mock := redismock.NewClientMock()
+	store, err := NewRedisLeaseStore(rdb, "prod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id1 := uuidFromString(t, "15151515-1515-1515-1515-151515151515")
+	id2 := uuidFromString(t, "16161616-1616-1616-1616-161616161616")
+	mock.ExpectMGet(store.key(id1), store.key(id2)).SetVal([]interface{}{"node-generation", nil})
+	owners, err := store.ListLeaseOwners(context.Background(), []pgtype.UUID{id1, id2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := owners[uuidString(id1)]; got != "node-generation" {
+		t.Fatalf("first owner = %q, want node-generation", got)
+	}
+	if _, ok := owners[uuidString(id2)]; ok {
+		t.Fatalf("missing lease received an owner: %#v", owners)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}

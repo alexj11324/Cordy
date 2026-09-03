@@ -74,8 +74,8 @@ func TestBuildChannelSupervisorRedisDoesNotFallbackWhenClientMissing(t *testing.
 	t.Setenv("CHANNEL_WS_LEASE_BACKEND", "redis")
 	t.Setenv("CHANNEL_WS_LEASE_NAMESPACE", "prod")
 	store := channelLeaseTestStore{}
-	sup := buildChannelSupervisor(store, store, channel.NewRegistry(), nil, RouterOptions{})
-	if sup != nil {
+	sup, leases := buildChannelSupervisor(store, store, channel.NewRegistry(), nil, RouterOptions{})
+	if sup != nil || leases != nil {
 		t.Fatalf("Redis mode without a client must disable the supervisor, not fall back to PostgreSQL")
 	}
 }
@@ -87,8 +87,8 @@ func TestBuildChannelSupervisorRedisRequiresReadyBackend(t *testing.T) {
 	rdb, mock := redismock.NewClientMock()
 	mock.ExpectPing().SetErr(context.DeadlineExceeded)
 	store := channelLeaseTestStore{}
-	sup := buildChannelSupervisor(store, store, channel.NewRegistry(), nil, RouterOptions{ChannelLeaseRedis: rdb})
-	if sup != nil {
+	sup, leases := buildChannelSupervisor(store, store, channel.NewRegistry(), nil, RouterOptions{ChannelLeaseRedis: rdb})
+	if sup != nil || leases != nil {
 		t.Fatalf("unready Redis backend must disable the supervisor")
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {

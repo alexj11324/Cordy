@@ -38,7 +38,16 @@ func initialConnectionStatus(status string) MessagingConnectionStatus {
 	return connectionStatus("starting", "", nil)
 }
 
+type authoritativeChannelLease struct {
+	Alive bool
+	Token string
+}
+
 func projectConnectionStatus(row db.ListChannelConnectionStatesRow, now time.Time) MessagingConnectionStatus {
+	return projectConnectionStatusWithLease(row, now, nil)
+}
+
+func projectConnectionStatusWithLease(row db.ListChannelConnectionStatesRow, now time.Time, authoritative *authoritativeChannelLease) MessagingConnectionStatus {
 	if row.Status != "installed" {
 		return initialConnectionStatus(row.Status)
 	}
@@ -46,6 +55,13 @@ func projectConnectionStatus(row db.ListChannelConnectionStatesRow, now time.Tim
 		return connectionStatus("offline", "hosted_quota_paused", nil)
 	}
 	leaseAlive := row.WsLeaseExpiresAt.Valid && row.WsLeaseExpiresAt.Time.After(now)
+	leaseToken := row.WsLeaseToken.String
+	leaseTokenValid := row.WsLeaseToken.Valid
+	if authoritative != nil {
+		leaseAlive = authoritative.Alive
+		leaseToken = authoritative.Token
+		leaseTokenValid = authoritative.Alive
+	}
 	if !row.ObservedAt.Valid || !row.State.Valid {
 		age := now.Sub(row.UpdatedAt.Time)
 		if leaseAlive || (row.UpdatedAt.Valid && age >= 0 && age < time.Minute) {
@@ -64,7 +80,7 @@ func projectConnectionStatus(row db.ListChannelConnectionStatesRow, now time.Tim
 		if !leaseAlive {
 			return connectionStatus("offline", "lease_expired", &stamp)
 		}
-		if !row.WsLeaseToken.Valid || !row.ObserverToken.Valid || row.WsLeaseToken.String != row.ObserverToken.String {
+		if !leaseTokenValid || !row.ObserverToken.Valid || leaseToken != row.ObserverToken.String {
 			return connectionStatus("offline", "lease_generation_mismatch", &stamp)
 		}
 	}
@@ -94,9 +110,22 @@ func (h *Handler) loadConnectionStatuses(ctx context.Context, workspaceID pgtype
 	if err != nil {
 		return nil, err
 	}
+	var leaseOwners map[string]string
+	if h.ChannelConnectionLeases != nil {
+		leaseOwners, err = h.ChannelConnectionLeases.ListLeaseOwners(ctx, uuidIDs)
+		if err != nil {
+			return nil, err
+		}
+	}
 	now := time.Now()
 	for _, row := range rows {
-		result[uuidToString(row.InstallationID)] = projectConnectionStatus(row, now)
+		id := uuidToString(row.InstallationID)
+		var lease *authoritativeChannelLease
+		if h.ChannelConnectionLeases != nil {
+			token, alive := leaseOwners[id]
+			lease = &authoritativeChannelLease{Alive: alive, Token: token}
+		}
+		result[id] = projectConnectionStatusWithLease(row, now, lease)
 	}
 	return result, nil
 }
