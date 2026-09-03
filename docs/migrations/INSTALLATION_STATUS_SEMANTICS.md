@@ -76,6 +76,12 @@ deletion deadline.
   horizontal overflow for the shared status row, including quota-pause copy.
 - Native apps, real provider credentials/traffic and production deployment were
   not exercised. Browser fixtures and compiled DTOs do not prove those paths.
+- Workspace-owned NULL/zero-owner installations now enter the connection
+  Supervisor, while non-zero missing-Agent orphans and managed Slack webhooks
+  remain excluded. Redis-authoritative deployments batch-read only authorized
+  lease IDs and require the live owner token to match the durable observation
+  generation. RED runs 33783680469/33786632818 reproduced both omissions;
+  final runs 33785381994/33787309411 passed all applicable jobs.
 
 ### Additional installation-copy corrections
 

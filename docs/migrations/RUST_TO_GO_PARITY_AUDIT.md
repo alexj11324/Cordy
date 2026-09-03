@@ -56,8 +56,8 @@ for the complete installed-state rename, focused tests and browser evidence.
 | DingTalk group settings       | `76ad44ff1` restores shared UI, API/schema/query/WS contracts and four locales. Real browser + HTTP fixture verified success → failure preserving the old selection → retry; CI [33758176228](https://github.com/alexj11324/Cordy/actions/runs/33758176228) passed all applicable jobs.                                                                  | Real backend/provider reassignment in Web/Desktop.                                                                     |
 | Hosted installation capacity  | Hoplite checkpoint `a75c0591`: migration 576, seven installation admission surfaces, pause/resume worker, work-discovery filters. Later takeover CI includes these tests.                                                                                                                                                                                | Live Cloud entitlement delivery, deployed enablement and pause/resume acceptance.                                      |
 | Managed Slack credentials     | `377bb52a9` and `96afd5368` preserve Hoplite's credential work and restore encrypted rotation, health and lifecycle. Replacement CI [33762592403](https://github.com/alexj11324/Cordy/actions/runs/33762592403) passed all applicable checks on `1e54e1d9f`, including PostgreSQL-backed race tests and sqlc.                                            | Real Slack authorization/refresh/revoke and deployed mode acceptance.                                                  |
-| Workspace messaging Hub | Shared Hub selection, invocation permissions, transactional persistence, pending-run fencing, localized replies, adapter wiring and per-Agent resume isolation passed replacement CI 33769723534. | Real provider and setup/UI acceptance; workspace-owned installations must also enter connection supervision. |
-| Messaging setup and connection UI | Durable observation ownership/projection, six provider reports, shared client validation, installed-state rename and six settings pages are implemented. Focused tests and browser HTTP-fixture verification passed; see the terminology checkpoint. | Workspace-level setup guide and installation modes; Redis lease-authority projection; real native/provider and deployed acceptance. |
+| Workspace messaging Hub | Shared Hub selection, permissions, persistence, pending-run fencing, adapter wiring and per-Agent resume isolation passed CI. Workspace-owned NULL/zero-owner installations now enter supervision while orphan records and managed webhooks remain excluded; final CI 33785381994 passed. | Real provider and setup/UI acceptance. |
+| Messaging setup and connection UI | Durable observation ownership/projection, six provider reports, shared client validation, installed-state rename and six settings pages are implemented. Redis-authoritative leases are batch-read and token-matched in the public projection; final CI 33787309411 passed. | Workspace-level setup guide and installation modes; real native/provider and deployed acceptance. |
 | Hosted IM turn quota          | Rust entitlement/task service enforce `im_agent_turns`; no matching contract was found in the inspected Go server/core/views.                                                                                                                                                                                                                            | Per-turn admission, usage accounting/endpoint, UI, failure/rollback semantics and Cloud acceptance.                    |
 | Hosted workspace quota        | `hosted_workspace_limit` is an identified migration gate, not implemented/verified by the takeover.                                                                                                                                                                                                                                                      | Trace Rust admission and policy contract, port all creation paths, verify concurrency and hosted/self-hosted behavior. |
 | Authentication and delivery   | No current takeover evidence establishes shadcn login → real Clerk → Go session → API completion, or deployed Go backend/build identity.                                                                                                                                                                                                                 | Real browser authentication, native callback, release artifacts, production health/version and provider connectivity.  |
@@ -103,6 +103,21 @@ through OAuth. Its missing refresh material cannot be reconstructed from the
 access token. Preserve the original encryption key for stored credentials.
 
 ## Workspace Hub implementation checkpoint — CI verified
+
+The later workspace-owned supervisor and Redis-projection gaps are also closed.
+RED CI [33783680469](https://github.com/alexj11324/Cordy/actions/runs/33783680469)
+proved NULL/zero-owner installations were omitted; `14f2c2322` restores the
+Rust owner predicate while excluding managed webhooks at the store boundary,
+and final CI
+[33785381994](https://github.com/alexj11324/Cordy/actions/runs/33785381994)
+passed. RED CI
+[33786632818](https://github.com/alexj11324/Cordy/actions/runs/33786632818)
+then proved a valid Redis owner was still projected offline; `3e3aad17d`
+batch-reads only authorized lease IDs and requires the Redis owner token to
+match the durable observation token. Final CI
+[33787309411](https://github.com/alexj11324/Cordy/actions/runs/33787309411)
+passed all applicable jobs. These are fixture-backed Redis/PostgreSQL results,
+not live provider or production-deployment evidence.
 
 `284aa95a1` isolates Chat execution pointers by producing Agent, including late
 completion/cancellation, retired-session clearing and task-history fallback.
