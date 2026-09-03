@@ -1,3 +1,5 @@
+import type { MessagingInstallationRuntime, MessagingInstallationSetup } from "./messaging";
+
 /** A Lark Bot installation bound to a single Patchbay agent.
  *
  * Wire shape mirrors `LarkInstallationResponse` in
@@ -13,6 +15,8 @@ export interface LarkInstallation {
   bot_open_id: string;
   installer_user_id: string;
   status: "active" | "revoked" | string;
+  runtime?: MessagingInstallationRuntime;
+  setup?: MessagingInstallationSetup;
   /** Which Lark cloud the bot lives on: "feishu" (mainland) or "lark"
    * (international). Auto-detected at install time. Optional so an older
    * desktop build parsing a newer server — or a newer build hitting a

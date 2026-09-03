@@ -1,3 +1,5 @@
+import type { MessagingInstallationRuntime, MessagingInstallationSetup } from "./messaging";
+
 /** A DingTalk robot installation bound to a single Patchbay agent.
  *
  * Wire shape mirrors `DingTalkInstallationResponse` in
@@ -10,6 +12,8 @@ export interface DingTalkInstallation {
   agent_id: string;
   installer_user_id: string;
   status: "active" | "revoked" | string;
+  runtime?: MessagingInstallationRuntime;
+  setup?: MessagingInstallationSetup;
   installed_at: string;
   created_at: string;
   updated_at: string;

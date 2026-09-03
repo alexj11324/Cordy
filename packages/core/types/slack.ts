@@ -1,3 +1,5 @@
+import type { MessagingInstallationRuntime, MessagingInstallationSetup } from "./messaging";
+
 /** A Slack bot installation bound to a single Patchbay agent (MUL-3666).
  *
  * Wire shape mirrors `SlackInstallationResponse` in
@@ -14,6 +16,8 @@ export interface SlackInstallation {
   bot_user_id: string;
   installer_user_id: string;
   status: "active" | "revoked" | string;
+  runtime?: MessagingInstallationRuntime;
+  setup?: MessagingInstallationSetup;
   installed_at: string;
   created_at: string;
   updated_at: string;

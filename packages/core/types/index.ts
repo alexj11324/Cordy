@@ -415,3 +415,11 @@ export type {
   SaveLinearMemberBindingRequest,
   SaveLinearProjectBindingRequest,
 } from "./linear";
+export {
+  messagingConnectionState,
+  isMessagingInstallationConnected,
+  type MessagingInstallationRuntime,
+  type MessagingInstallationSetup,
+  type MessagingConnectionSource,
+  type MessagingConnectionState,
+} from "./messaging";

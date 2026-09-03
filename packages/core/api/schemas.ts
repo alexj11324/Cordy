@@ -34,6 +34,8 @@ import type {
   CreateWorkspaceSubscriptionPortalResponse,
   CronPreviewResponse,
   DingTalkInstallation,
+  ListSlackInstallationsResponse,
+  ListLarkInstallationsResponse,
   ListDingTalkInstallationsResponse,
   DingTalkGroupRoute,
   ListDingTalkGroupRoutesResponse,
@@ -3679,7 +3681,70 @@ export const MALFORMED_RUNTIME_MODEL_LIST_REQUEST: RuntimeModelListRequest = {
   updated_at: "",
 };
 
+const MessagingInstallationRuntimeSchema = z.object({
+  state: z.string(),
+  observedAt: z.string().nullable().default(null),
+  errorCode: z.string().nullable().default(null),
+  errorSummary: z.string().nullable().optional(),
+}).loose().optional().catch(undefined);
+
+const MessagingInstallationSetupSchema = z.object({
+  mode: z.string(),
+  writable: z.boolean(),
+  experimental: z.boolean(),
+}).loose().optional().catch(undefined);
+
+export const SlackInstallationSchema = z.object({
+  id: z.string(),
+  workspace_id: z.string().default(""),
+  agent_id: z.string().default(""),
+  team_id: z.string().default(""),
+  bot_user_id: z.string().default(""),
+  installer_user_id: z.string().default(""),
+  status: z.string().default("revoked"),
+  installed_at: z.string().default(""),
+  created_at: z.string().default(""),
+  updated_at: z.string().default(""),
+  runtime: MessagingInstallationRuntimeSchema,
+  setup: MessagingInstallationSetupSchema,
+}).loose();
+
+export const LarkInstallationSchema = z.object({
+  id: z.string(),
+  workspace_id: z.string().default(""),
+  agent_id: z.string().default(""),
+  app_id: z.string().default(""),
+  tenant_key: z.string().nullable().optional(),
+  bot_open_id: z.string().default(""),
+  installer_user_id: z.string().default(""),
+  status: z.string().default("revoked"),
+  region: z.string().optional(),
+  installed_at: z.string().default(""),
+  created_at: z.string().default(""),
+  updated_at: z.string().default(""),
+  runtime: MessagingInstallationRuntimeSchema,
+  setup: MessagingInstallationSetupSchema,
+}).loose();
+
+export const ListSlackInstallationsResponseSchema = z.object({
+  installations: z.array(SlackInstallationSchema).default([]),
+  configured: z.boolean().default(false),
+  install_supported: z.boolean().optional(),
+  managed_supported: z.boolean().optional(),
+}).loose();
+
+export const ListLarkInstallationsResponseSchema = z.object({
+  installations: z.array(LarkInstallationSchema).default([]),
+  configured: z.boolean().default(false),
+  install_supported: z.boolean().optional(),
+}).loose();
+
+export const EMPTY_LIST_SLACK_INSTALLATIONS_RESPONSE: ListSlackInstallationsResponse = { installations: [], configured: false };
+export const EMPTY_LIST_LARK_INSTALLATIONS_RESPONSE: ListLarkInstallationsResponse = { installations: [], configured: false };
+
 export const DingTalkInstallationSchema = z.object({
+  runtime: MessagingInstallationRuntimeSchema,
+  setup: MessagingInstallationSetupSchema,
   id: z.string(),
   workspace_id: z.string().default(""),
   agent_id: z.string().default(""),
@@ -3786,6 +3851,8 @@ export const EMPTY_REDEEM_DINGTALK_BINDING_TOKEN_RESPONSE: RedeemDingTalkBinding
 // missing `status` defaults to "revoked" rather than "active" so a broken read
 // never shows a bot as connected when it may not be.
 export const WecomInstallationSchema = z.object({
+  runtime: MessagingInstallationRuntimeSchema,
+  setup: MessagingInstallationSetupSchema,
   id: z.string(),
   workspace_id: z.string().default(""),
   agent_id: z.string().default(""),
@@ -3830,6 +3897,8 @@ export const EMPTY_REDEEM_WECOM_BINDING_TOKEN_RESPONSE: RedeemWecomBindingTokenR
 // additive server fields so older web/desktop clients remain forward
 // compatible while malformed successful responses degrade to safe empty data.
 export const WeixinInstallationSchema = z.object({
+  runtime: MessagingInstallationRuntimeSchema,
+  setup: MessagingInstallationSetupSchema,
   id: z.string(),
   workspace_id: z.string().default(""),
   agent_id: z.string().default(""),
@@ -3902,6 +3971,8 @@ export const EMPTY_REDEEM_WEIXIN_BINDING_TOKEN_RESPONSE: RedeemWeixinBindingToke
 };
 
 export const TelegramInstallationSchema = z.object({
+  runtime: MessagingInstallationRuntimeSchema,
+  setup: MessagingInstallationSetupSchema,
   id: z.string(),
   workspace_id: z.string().default(""),
   agent_id: z.string().default(""),

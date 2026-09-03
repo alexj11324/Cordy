@@ -1,3 +1,5 @@
+import type { MessagingInstallationRuntime, MessagingInstallationSetup } from "./messaging";
+
 /**
  * A Weixin iLink installation bound to one Patchbay agent.
  *
@@ -13,6 +15,8 @@ export interface WeixinInstallation {
   ilink_user_id: string;
   installer_user_id: string;
   status: "active" | "revoked" | string;
+  runtime?: MessagingInstallationRuntime;
+  setup?: MessagingInstallationSetup;
   installed_at: string;
   created_at: string;
   updated_at: string;
