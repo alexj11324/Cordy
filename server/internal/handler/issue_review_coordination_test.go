@@ -12,6 +12,8 @@ import (
 
 func TestUpdateIssue_ReviewReturnRetiresReviewerTaskAndRecordsExecutorHandoff(t *testing.T) {
 	requireIssueCoordinationDatabase(t)
+	disableIssueRoleDefaults = true
+	t.Cleanup(func() { disableIssueRoleDefaults = false })
 
 	executorID := dbfx.Agent(t, "review-return-executor", testRuntimeID)
 	reviewerID := dbfx.Agent(t, "review-return-reviewer", testRuntimeID)
@@ -71,6 +73,8 @@ func TestUpdateIssue_ReviewReturnRetiresReviewerTaskAndRecordsExecutorHandoff(t 
 
 func TestUpdateIssue_ReviewerReassignmentRetiresOldTaskAndRecordsExplicitReviewer(t *testing.T) {
 	requireIssueCoordinationDatabase(t)
+	disableIssueRoleDefaults = true
+	t.Cleanup(func() { disableIssueRoleDefaults = false })
 
 	executorID := dbfx.Agent(t, "reviewer-reassign-executor", testRuntimeID)
 	previousReviewerID := dbfx.Agent(t, "previous-reviewer", testRuntimeID)
