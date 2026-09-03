@@ -34,14 +34,10 @@ type GetChannelHubRouteParams struct {
 // Exact conversation wins; Slack channel-only commands can reuse the newest
 // active thread's selection. Never inherit a retired /new generation.
 func (q *Queries) GetChannelHubRoute(ctx context.Context, arg GetChannelHubRouteParams) ([]byte, error) {
-	row := q.db.QueryRow(ctx, getChannelHubRoute,
-		arg.InstallationID,
-		arg.BindingKey,
-		arg.ChannelID,
-	)
-	var result []byte
-	err := row.Scan(&result)
-	return result, err
+	row := q.db.QueryRow(ctx, getChannelHubRoute, arg.InstallationID, arg.BindingKey, arg.ChannelID)
+	var config []byte
+	err := row.Scan(&config)
+	return config, err
 }
 
 const lockChannelInstallationForHub = `-- name: LockChannelInstallationForHub :one
@@ -61,13 +57,10 @@ type LockChannelInstallationForHubParams struct {
 // Workspace deletion takes the workspace lock first. Hub writes then lock
 // installation, Chat and binding, and cannot revive a paused/revoked install.
 func (q *Queries) LockChannelInstallationForHub(ctx context.Context, arg LockChannelInstallationForHubParams) (pgtype.UUID, error) {
-	row := q.db.QueryRow(ctx, lockChannelInstallationForHub,
-		arg.InstallationID,
-		arg.WorkspaceID,
-	)
-	var result pgtype.UUID
-	err := row.Scan(&result)
-	return result, err
+	row := q.db.QueryRow(ctx, lockChannelInstallationForHub, arg.InstallationID, arg.WorkspaceID)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const mergeChannelHubRoute = `-- name: MergeChannelHubRoute :execrows

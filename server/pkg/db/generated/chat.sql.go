@@ -195,7 +195,12 @@ type ClearChatSessionSessionIfMatchesParams struct {
 // a slower sibling's failure. work_dir is deliberately left alone — the
 // directory is still reusable, only the conversation is not.
 func (q *Queries) ClearChatSessionSessionIfMatches(ctx context.Context, arg ClearChatSessionSessionIfMatchesParams) error {
-	_, err := q.db.Exec(ctx, clearChatSessionSessionIfMatches, arg.ID, arg.SessionID, arg.RuntimeID, arg.AgentID)
+	_, err := q.db.Exec(ctx, clearChatSessionSessionIfMatches,
+		arg.ID,
+		arg.SessionID,
+		arg.RuntimeID,
+		arg.AgentID,
+	)
 	return err
 }
 
