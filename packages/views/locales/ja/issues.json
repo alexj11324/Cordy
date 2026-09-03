@@ -869,6 +869,7 @@
     "task_initial_prompt": "このタスクに取り組んでください。",
     "task_load_failed": "この Agent スレッドは利用できません。",
     "task_continue_failed": "Agent スレッドを続行できませんでした",
+    "task_missing": "この実行には続行可能な Agent task または provider session がありません。",
     "cancel_failed": "作業をキャンセルできませんでした",
     "reason_provider_session_retired": "Provider セッションは削除または無効化されており、復元できません。",
     "reason_provider_session_missing": "Provider セッションのデータがないため、この Agent スレッドを安全に続行できません。",

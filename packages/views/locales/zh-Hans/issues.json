@@ -869,6 +869,7 @@
     "task_initial_prompt": "处理这个任务。",
     "task_load_failed": "这个 Agent 对话不可用。",
     "task_continue_failed": "无法继续这个 Agent 对话",
+    "task_missing": "这个运行没有关联的 Agent task 或可继续的 provider session。",
     "cancel_failed": "取消 task 失败",
     "reason_provider_session_retired": "Provider 会话已删除或退役，无法恢复。",
     "reason_provider_session_missing": "Provider 会话数据缺失，此 Agent 对话无法安全继续。",

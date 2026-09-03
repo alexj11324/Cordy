@@ -40,6 +40,28 @@ function renderQueue(headStatus = "running", sendNowDisabled = false) {
 }
 
 describe("ChatQueue", () => {
+  it("renders queued work without mutation controls in read-only threads", () => {
+    render(
+      <I18nProvider locale="en" resources={TEST_RESOURCES}>
+        <ChatQueue
+          readOnly
+          headStatus="running"
+          tasks={[
+            {
+              task_id: "task-read-only",
+              status: "queued",
+              content: "Read-only follow-up",
+              created_at: "2026-07-01T00:01:00Z",
+            },
+          ]}
+        />
+      </I18nProvider>,
+    );
+
+    expect(screen.getByText("Read-only follow-up")).toBeInTheDocument();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
+
   it("renders a standalone queue card without a separate header", () => {
     const { container } = renderQueue();
 

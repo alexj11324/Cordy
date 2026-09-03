@@ -25,14 +25,16 @@ import { CHAT_COLUMN, CHAT_GUTTER } from "./chat-column";
 interface ChatQueueProps {
   tasks: ChatQueuedTask[];
   headStatus: string | undefined;
-  onSendNow: (taskId: string) => Promise<void> | void;
+  onSendNow?: (taskId: string) => Promise<void> | void;
   /** Blocks "send now" independently of the head task's status — used when the
    *  caller may no longer invoke the agent, since steering a queued task
    *  dispatches a run the server would refuse (MUL-6380). */
   sendNowDisabled?: boolean;
-  onEdit: (taskId: string) => Promise<void> | void;
-  onRemove: (taskId: string) => Promise<void> | void;
-  onClear: () => Promise<void> | void;
+  /** Render queued work without mutation controls for read-only thread surfaces. */
+  readOnly?: boolean;
+  onEdit?: (taskId: string) => Promise<void> | void;
+  onRemove?: (taskId: string) => Promise<void> | void;
+  onClear?: () => Promise<void> | void;
 }
 
 export function ChatQueue({
@@ -40,6 +42,7 @@ export function ChatQueue({
   headStatus,
   onSendNow,
   sendNowDisabled = false,
+  readOnly = false,
   onEdit,
   onRemove,
   onClear,
@@ -50,7 +53,7 @@ export function ChatQueue({
     headStatus === "dispatched" ||
     headStatus === "running" ||
     headStatus === "waiting_local_directory";
-  const canSendNow = !sendNowDisabled && dispatchableHead;
+  const canSendNow = !readOnly && !!onSendNow && !sendNowDisabled && dispatchableHead;
   // The two blocked states need different copy: "wait for the reply to start"
   // is actionable, "you cannot run this agent" is not — telling a user to wait
   // for something waiting cannot fix is the bug (MUL-6380).
@@ -122,7 +125,7 @@ export function ChatQueue({
                   <span className="min-w-0 flex-1 truncate text-muted-foreground">
                     {task.content?.trim() || t(($) => $.queue.fallback)}
                   </span>
-                  <div className="flex shrink-0 items-center gap-0.5">
+                  {!readOnly ? <div className="flex shrink-0 items-center gap-0.5">
                     <span
                       className="shrink-0"
                       title={sendNowLabel}
@@ -133,7 +136,7 @@ export function ChatQueue({
                         className="px-1.5 font-normal text-muted-foreground"
                         disabled={busyAction !== null || !canSendNow}
                         aria-label={sendNowLabel}
-                        onClick={() => void run(sendNowKey, () => onSendNow(task.task_id))}
+                        onClick={() => void run(sendNowKey, () => onSendNow?.(task.task_id))}
                       >
                         {busyAction === sendNowKey ? (
                           <Loader2 className="animate-spin" aria-hidden="true" />
@@ -150,7 +153,7 @@ export function ChatQueue({
                       disabled={busyAction !== null}
                       title={t(($) => $.queue.remove)}
                       aria-label={t(($) => $.queue.remove)}
-                      onClick={() => void run(removeKey, () => onRemove(task.task_id))}
+                      onClick={() => void run(removeKey, () => onRemove?.(task.task_id))}
                     >
                       {busyAction === removeKey ? (
                         <Loader2 className="animate-spin" aria-hidden="true" />
@@ -186,7 +189,7 @@ export function ChatQueue({
                       >
                         <DropdownMenuItem
                           disabled={busyAction !== null}
-                          onClick={() => void run(editKey, () => onEdit(task.task_id))}
+                          onClick={() => void run(editKey, () => onEdit?.(task.task_id))}
                         >
                           <Pencil aria-hidden="true" />
                           {t(($) => $.queue.edit)}
@@ -195,14 +198,14 @@ export function ChatQueue({
                         <DropdownMenuItem
                           variant="destructive"
                           disabled={busyAction !== null}
-                          onClick={() => void run(clearKey, onClear)}
+                          onClick={() => void run(clearKey, () => onClear?.())}
                         >
                           <Trash2 aria-hidden="true" />
                           {t(($) => $.queue.clear)}
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
-                  </div>
+                  </div> : null}
                 </div>
               );
             })}

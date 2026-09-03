@@ -900,6 +900,7 @@
     "task_initial_prompt": "Work on this task.",
     "task_load_failed": "This Agent thread is unavailable.",
     "task_continue_failed": "Failed to continue this Agent thread",
+    "task_missing": "This run has no linked Agent task or provider session to continue.",
     "cancel_failed": "Failed to cancel task",
     "reason_provider_session_retired": "The provider session was deleted or retired and cannot be restored.",
     "reason_provider_session_missing": "The provider session data is missing, so this Agent thread cannot continue safely.",
