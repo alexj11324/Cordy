@@ -1039,7 +1039,24 @@ export interface AppConfigResponse {
    * silently ignored the unknown field, so absent must be treated as false. */
   agent_conversation_starters_supported?: boolean;
   server_version?: string;
+  /** Server-owned messaging setup capability. Older servers omit this field
+   * and must be treated as read-only/disabled by the UI. */
+  messaging?: MessagingCapabilities;
 }
+
+export type MessagingMode = "managed" | "server_configured" | "disabled" | string;
+
+export type MessagingPlatformCapability = {
+  type: string;
+  enabled: boolean;
+  experimental: boolean;
+};
+
+export type MessagingCapabilities = {
+  mode: MessagingMode;
+  setupWritable: boolean;
+  platforms: MessagingPlatformCapability[];
+};
 
 // ---------------------------------------------------------------------------
 // Schemas for the highest-risk API endpoints — those whose responses drive
@@ -1220,6 +1237,21 @@ const FeatureFlagsSchema = z.preprocess(
   z.record(z.string(), BooleanWithDefaultSchema(false)).default({}),
 );
 
+const MessagingCapabilitiesSchema = z.object({
+  mode: z.string().default("disabled"),
+  setupWritable: BooleanWithDefaultSchema(false),
+  platforms: z
+    .array(
+      z.object({
+        type: z.string(),
+        enabled: BooleanWithDefaultSchema(false),
+        experimental: BooleanWithDefaultSchema(false),
+      }).loose(),
+    )
+    .catch([])
+    .default([]),
+}).loose();
+
 export const AppConfigSchema = z.object({
   cdn_domain: z.string().default(""),
   cdn_signed: BooleanWithDefaultSchema(false),
@@ -1236,6 +1268,7 @@ export const AppConfigSchema = z.object({
   local_worktree_supported: BooleanWithDefaultSchema(false),
   agent_conversation_starters_supported: BooleanWithDefaultSchema(false),
   server_version: OptionalStringSchema,
+  messaging: MessagingCapabilitiesSchema.optional(),
 }).loose();
 
 export const EMPTY_APP_CONFIG: AppConfigResponse = {
@@ -1253,6 +1286,11 @@ export const EMPTY_APP_CONFIG: AppConfigResponse = {
   // Fail closed: old servers returned success while dropping the field.
   agent_conversation_starters_supported: false,
   feature_flags: {},
+  messaging: {
+    mode: "disabled",
+    setupWritable: false,
+    platforms: [],
+  },
 };
 
 // Preference keys may grow over time, so keep both the key and value spaces

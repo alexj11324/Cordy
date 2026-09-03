@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -8,7 +9,20 @@ import (
 
 	"github.com/patchbay-ai/patchbay/server/internal/analytics"
 	"github.com/patchbay-ai/patchbay/server/internal/featureflags"
+	"github.com/patchbay-ai/patchbay/server/internal/util/secretbox"
 )
+
+type MessagingCapabilities struct {
+	Mode          string                        `json:"mode"`
+	SetupWritable bool                          `json:"setupWritable"`
+	Platforms     []MessagingPlatformCapability `json:"platforms"`
+}
+
+type MessagingPlatformCapability struct {
+	Type         string `json:"type"`
+	Enabled      bool   `json:"enabled"`
+	Experimental bool   `json:"experimental"`
+}
 
 type AppConfig struct {
 	CdnDomain string `json:"cdn_domain"`
@@ -87,6 +101,10 @@ type AppConfig struct {
 	// which is continuously deployed so its users can't act on the version —
 	// and empty for dev builds that aren't stamped via -X main.version.
 	ServerVersion string `json:"server_version,omitempty"`
+
+	// Messaging is safe for anonymous clients: it contains only deployment
+	// mode and boolean capabilities, never provider credentials.
+	Messaging MessagingCapabilities `json:"messaging"`
 }
 
 // GetConfig is mounted on the public (unauthenticated) route group because
@@ -102,6 +120,7 @@ func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 		AllowSignup:                        os.Getenv("ALLOW_SIGNUP") != "false",
 		GoogleClientID:                     os.Getenv("GOOGLE_CLIENT_ID"),
 		WorkspaceCreationDisabled:          os.Getenv("DISABLE_WORKSPACE_CREATION") == "true",
+		Messaging:                          messagingCapabilitiesFromEnv(),
 	}
 	if h.Storage != nil {
 		config.CdnDomain = h.Storage.CdnDomain()
@@ -129,6 +148,68 @@ func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, config)
+}
+
+func messagingCapabilitiesFromEnv() MessagingCapabilities {
+	appURL := resolveFrontendAppURL()
+	officialCloud := isOfficialCloudDaemonConfig(appURL)
+	requested := strings.TrimSpace(os.Getenv("PATCHBAY_MESSAGING_MODE"))
+	configured := false
+	platforms := make([]MessagingPlatformCapability, 0, 6)
+	for _, item := range []struct {
+		channelType string
+		keyEnv      string
+	}{
+		{"lark", "PATCHBAY_LARK_SECRET_KEY"},
+		{"slack", "PATCHBAY_SLACK_SECRET_KEY"},
+		{"dingtalk", "PATCHBAY_DINGTALK_SECRET_KEY"},
+		{"wecom", "PATCHBAY_WECOM_SECRET_KEY"},
+		{"telegram", "PATCHBAY_TELEGRAM_SECRET_KEY"},
+		{"weixin", "PATCHBAY_WEIXIN_SECRET_KEY"},
+	} {
+		_, err := secretbox.LoadKey(item.keyEnv)
+		enabled := err == nil
+		configured = configured || enabled
+		platforms = append(platforms, MessagingPlatformCapability{
+			Type: item.channelType, Enabled: enabled, Experimental: true,
+		})
+	}
+
+	mode := "disabled"
+	switch requested {
+	case "managed", "server_configured", "disabled":
+		mode = requested
+	default:
+		if officialCloud {
+			mode = "managed"
+		} else if configured {
+			mode = "server_configured"
+		}
+	}
+	if mode != "disabled" && !officialCloud && !isPublicHTTPSURL(appURL) {
+		mode = "disabled"
+	}
+	for i := range platforms {
+		platforms[i].Enabled = mode != "disabled" && platforms[i].Enabled
+	}
+	return MessagingCapabilities{
+		Mode: mode, SetupWritable: mode == "managed", Platforms: platforms,
+	}
+}
+
+func isPublicHTTPSURL(raw string) bool {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return false
+	}
+	host := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
+	if host == "localhost" || strings.HasSuffix(host, ".local") {
+		return false
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return !ip.IsUnspecified() && !ip.IsLoopback() && !ip.IsPrivate() && !ip.IsLinkLocalUnicast()
+	}
+	return true
 }
 
 func daemonSetupURLsFromEnv() (string, string) {

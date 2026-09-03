@@ -185,6 +185,40 @@ func TestGetConfigExposesMessagingSetupOwnership(t *testing.T) {
 	})
 }
 
+func TestMessagingSetupRequiresPublicHTTPSAppURL(t *testing.T) {
+	for _, raw := range []string{
+		"",
+		"http://app.example.test",
+		"https://localhost",
+		"https://service.local",
+		"https://127.0.0.1",
+		"https://0.0.0.0",
+		"https://192.168.1.10",
+		"https://[fe80::1]",
+		"https://user:password@app.example.test",
+		"https://app.example.test?token=secret",
+		"https://app.example.test#fragment",
+	} {
+		t.Run(raw, func(t *testing.T) {
+			if isPublicHTTPSURL(raw) {
+				t.Fatalf("isPublicHTTPSURL(%q) = true, want false", raw)
+			}
+		})
+	}
+
+	for _, raw := range []string{
+		"https://app.example.test",
+		"https://app.example.test/settings/integrations",
+		"https://203.0.113.10",
+	} {
+		t.Run(raw, func(t *testing.T) {
+			if !isPublicHTTPSURL(raw) {
+				t.Fatalf("isPublicHTTPSURL(%q) = false, want true", raw)
+			}
+		})
+	}
+}
+
 func TestGetConfigUsesDaemonServerURLOverride(t *testing.T) {
 	t.Setenv("PATCHBAY_DAEMON_SERVER_URL", " https://api.internal.example/// ")
 	t.Setenv("PATCHBAY_PUBLIC_URL", "https://hooks.example.com/")

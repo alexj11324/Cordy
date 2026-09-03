@@ -94,6 +94,7 @@ export function AuthInitializer({
           .setAgentConversationStartersSupported(
             cfg.agent_conversation_starters_supported === true,
           );
+        configStore.getState().setMessagingConfig(cfg.messaging);
         if (cfg.posthog_key) {
           initAnalytics({
             key: cfg.posthog_key,

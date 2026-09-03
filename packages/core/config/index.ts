@@ -1,5 +1,6 @@
 import { createStore } from "zustand/vanilla";
 import { useStore } from "zustand";
+import type { MessagingCapabilities } from "../api/schemas";
 
 interface ConfigState {
   cdnDomain: string;
@@ -36,6 +37,8 @@ interface ConfigState {
   // Older handlers accepted the unknown field and returned success while
   // dropping it, so absent must fail closed.
   agentConversationStartersSupported: boolean;
+  /** Null means the server did not advertise a messaging setup contract. */
+  messaging: MessagingCapabilities | null;
   setCdnConfig: (config: { cdnDomain: string; cdnSigned?: boolean }) => void;
   setAuthConfig: (config: {
     allowSignup: boolean;
@@ -51,6 +54,7 @@ interface ConfigState {
   setServerVersion: (version?: string) => void;
   setLocalWorktreeSupported: (supported?: boolean) => void;
   setAgentConversationStartersSupported: (supported?: boolean) => void;
+  setMessagingConfig: (config?: MessagingCapabilities) => void;
 }
 
 export const configStore = createStore<ConfigState>((set) => ({
@@ -66,6 +70,7 @@ export const configStore = createStore<ConfigState>((set) => ({
   serverVersion: "",
   localWorktreeSupported: false,
   agentConversationStartersSupported: false,
+  messaging: null,
   setCdnConfig: ({ cdnDomain, cdnSigned = false }) => set({ cdnDomain, cdnSigned }),
   setAuthConfig: ({
     allowSignup,
@@ -81,6 +86,7 @@ export const configStore = createStore<ConfigState>((set) => ({
     set({ localWorktreeSupported: supported === true }),
   setAgentConversationStartersSupported: (supported = false) =>
     set({ agentConversationStartersSupported: supported === true }),
+  setMessagingConfig: (messaging) => set({ messaging: messaging ?? null }),
 }));
 
 export function useConfigStore(): ConfigState;
