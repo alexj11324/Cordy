@@ -123,14 +123,14 @@ func TestActivityIssueUpdated_StatusChanged(t *testing.T) {
 	}
 }
 
-func TestActivityIssueUpdated_AssigneeChanged(t *testing.T) {
+func TestActivityIssueUpdated_ExecutorChanged(t *testing.T) {
 	queries := db.New(testPool)
 	bus := events.New()
 	registerActivityListeners(bus, queries)
 
-	assigneeEmail := "activity-assignee-test@patchbay.ai"
-	assigneeID := createTestUser(t, assigneeEmail)
-	t.Cleanup(func() { cleanupTestUser(t, assigneeEmail) })
+	executorEmail := "activity-executor-test@patchbay.ai"
+	executorID := createTestUser(t, executorEmail)
+	t.Cleanup(func() { cleanupTestUser(t, executorEmail) })
 
 	issueID := createTestIssue(t, testWorkspaceID, testUserID)
 	t.Cleanup(func() {
@@ -138,7 +138,7 @@ func TestActivityIssueUpdated_AssigneeChanged(t *testing.T) {
 		cleanupTestIssue(t, issueID)
 	})
 
-	assigneeType := "member"
+	executorType := "agent"
 	bus.Publish(events.Event{
 		Type:        protocol.EventIssueUpdated,
 		WorkspaceID: testWorkspaceID,
@@ -153,10 +153,10 @@ func TestActivityIssueUpdated_AssigneeChanged(t *testing.T) {
 				Priority:     "medium",
 				CreatorType:  "member",
 				CreatorID:    testUserID,
-				ExecutorType: &assigneeType,
-				ExecutorID:   &assigneeID,
+				ExecutorType: &executorType,
+				ExecutorID:   &executorID,
 			},
-			"assignee_changed":   true,
+			"executor_changed":   true,
 			"prev_executor_type": (*string)(nil),
 			"prev_executor_id":   (*string)(nil),
 		},
@@ -166,19 +166,65 @@ func TestActivityIssueUpdated_AssigneeChanged(t *testing.T) {
 	if len(activities) != 1 {
 		t.Fatalf("expected 1 activity, got %d", len(activities))
 	}
-	if activities[0].Action != "assignee_changed" {
-		t.Fatalf("expected action 'assignee_changed', got %q", activities[0].Action)
+	if activities[0].Action != "executor_changed" {
+		t.Fatalf("expected action 'executor_changed', got %q", activities[0].Action)
 	}
 
 	var details map[string]string
 	if err := json.Unmarshal(activities[0].Details, &details); err != nil {
 		t.Fatalf("failed to unmarshal details: %v", err)
 	}
-	if details["to_type"] != "member" {
-		t.Fatalf("expected to_type 'member', got %q", details["to_type"])
+	if details["to_type"] != "agent" {
+		t.Fatalf("expected to_type 'agent', got %q", details["to_type"])
 	}
-	if details["to_id"] != assigneeID {
-		t.Fatalf("expected to_id %q, got %q", assigneeID, details["to_id"])
+	if details["to_id"] != executorID {
+		t.Fatalf("expected to_id %q, got %q", executorID, details["to_id"])
+	}
+}
+
+func TestActivityIssueUpdated_ReviewHandoff(t *testing.T) {
+	queries := db.New(testPool)
+	bus := events.New()
+	registerActivityListeners(bus, queries)
+
+	issueID := createTestIssue(t, testWorkspaceID, testUserID)
+	t.Cleanup(func() {
+		cleanupActivities(t, issueID)
+		cleanupTestIssue(t, issueID)
+	})
+
+	executorType, executorID := "agent", "11111111-1111-1111-1111-111111111111"
+	reviewerType, reviewerID := "member", testUserID
+	bus.Publish(events.Event{
+		Type: protocol.EventIssueUpdated, WorkspaceID: testWorkspaceID,
+		ActorType: "member", ActorID: testUserID,
+		Payload: map[string]any{
+			"issue": handler.IssueResponse{
+				ID: issueID, WorkspaceID: testWorkspaceID, Status: "in_review",
+				Priority: "medium", CreatorType: "member", CreatorID: testUserID,
+				ExecutorType: &executorType, ExecutorID: &executorID,
+				ReviewerType: &reviewerType, ReviewerID: &reviewerID,
+			},
+			"status_changed":     true,
+			"executor_changed":   false,
+			"reviewer_changed":   true,
+			"review_handoff":     true,
+			"prev_status":        "in_progress",
+			"prev_executor_type": &executorType,
+			"prev_executor_id":   &executorID,
+		},
+	})
+
+	activities := listActivitiesForIssue(t, queries, issueID)
+	if len(activities) != 1 || activities[0].Action != "review_handoff" {
+		t.Fatalf("expected one review_handoff activity, got %#v", activities)
+	}
+	var details map[string]string
+	if err := json.Unmarshal(activities[0].Details, &details); err != nil {
+		t.Fatalf("failed to unmarshal details: %v", err)
+	}
+	if details["from_id"] != executorID || details["to_id"] != reviewerID {
+		t.Fatalf("unexpected handoff details: %#v", details)
 	}
 }
 
@@ -209,7 +255,7 @@ func TestActivityIssueUpdated_NoChangeFlags(t *testing.T) {
 				CreatorType: "member",
 				CreatorID:   testUserID,
 			},
-			"assignee_changed":    false,
+			"executor_changed":    false,
 			"status_changed":      false,
 			"description_changed": false,
 		},

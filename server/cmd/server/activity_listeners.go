@@ -62,10 +62,45 @@ func registerActivityListeners(bus *events.Bus, queries *db.Queries) {
 
 		statusChanged, _ := payload["status_changed"].(bool)
 		priorityChanged, _ := payload["priority_changed"].(bool)
-		assigneeChanged, _ := payload["assignee_changed"].(bool)
+		ownerChanged, _ := payload["owner_changed"].(bool)
+		executorChanged, _ := payload["executor_changed"].(bool)
+		reviewerChanged, _ := payload["reviewer_changed"].(bool)
+		reviewHandoff, _ := payload["review_handoff"].(bool)
 		descriptionChanged, _ := payload["description_changed"].(bool)
 
-		if statusChanged {
+		if reviewHandoff || reviewerChanged {
+			previousTypeKey := "prev_reviewer_type"
+			previousIDKey := "prev_reviewer_id"
+			if reviewHandoff {
+				previousTypeKey = "prev_executor_type"
+				previousIDKey = "prev_executor_id"
+			}
+			detailsMap := map[string]string{
+				"from_status": payloadString(payload, "prev_status"),
+				"to_status":   issue.Status,
+			}
+			copyOptionalPayloadString(detailsMap, "from_type", payload, previousTypeKey)
+			copyOptionalPayloadString(detailsMap, "from_id", payload, previousIDKey)
+			if issue.ReviewerType != nil {
+				detailsMap["to_type"] = *issue.ReviewerType
+			}
+			if issue.ReviewerID != nil {
+				detailsMap["to_id"] = *issue.ReviewerID
+			}
+			details, _ := json.Marshal(detailsMap)
+			activity, err := queries.CreateActivity(ctx, db.CreateActivityParams{
+				ID: dbid.NewV7(), WorkspaceID: parseUUID(issue.WorkspaceID),
+				IssueID: parseUUID(issue.ID), ActorType: util.StrToText(e.ActorType),
+				ActorID: optionalUUID(e.ActorID), Action: "review_handoff", Details: details,
+			})
+			if err != nil {
+				slog.Error("activity: failed to record review handoff", "issue_id", issue.ID, "error", err)
+			} else {
+				publishActivityEvent(bus, e, activity)
+			}
+		}
+
+		if statusChanged && !reviewHandoff {
 			prevStatus, _ := payload["prev_status"].(string)
 			details, _ := json.Marshal(map[string]string{
 				"from": prevStatus,
@@ -111,22 +146,15 @@ func registerActivityListeners(bus *events.Bus, queries *db.Queries) {
 			}
 		}
 
-		if assigneeChanged {
-			prevAssigneeType, prevAssigneeID := payloadPrevEffectiveAssignee(payload)
-			newAssigneeType, newAssigneeID := issue.EffectiveAssignee()
-
+		if executorChanged && !reviewHandoff {
 			detailsMap := map[string]string{}
-			if prevAssigneeType != nil {
-				detailsMap["from_type"] = *prevAssigneeType
+			copyOptionalPayloadString(detailsMap, "from_type", payload, "prev_executor_type")
+			copyOptionalPayloadString(detailsMap, "from_id", payload, "prev_executor_id")
+			if issue.ExecutorType != nil {
+				detailsMap["to_type"] = *issue.ExecutorType
 			}
-			if prevAssigneeID != nil {
-				detailsMap["from_id"] = *prevAssigneeID
-			}
-			if newAssigneeType != nil {
-				detailsMap["to_type"] = *newAssigneeType
-			}
-			if newAssigneeID != nil {
-				detailsMap["to_id"] = *newAssigneeID
+			if issue.ExecutorID != nil {
+				detailsMap["to_id"] = *issue.ExecutorID
 			}
 
 			details, _ := json.Marshal(detailsMap)
@@ -136,12 +164,35 @@ func registerActivityListeners(bus *events.Bus, queries *db.Queries) {
 				IssueID:     parseUUID(issue.ID),
 				ActorType:   util.StrToText(e.ActorType),
 				ActorID:     optionalUUID(e.ActorID),
-				Action:      "assignee_changed",
+				Action:      "executor_changed",
 				Details:     details,
 			})
 			if err != nil {
-				slog.Error("activity: failed to record assignee change",
+				slog.Error("activity: failed to record executor change",
 					"issue_id", issue.ID, "error", err)
+			} else {
+				publishActivityEvent(bus, e, activity)
+			}
+		}
+
+		if ownerChanged {
+			detailsMap := map[string]string{}
+			copyOptionalPayloadString(detailsMap, "from_type", payload, "prev_owner_type")
+			copyOptionalPayloadString(detailsMap, "from_id", payload, "prev_owner_id")
+			if issue.OwnerType != nil {
+				detailsMap["to_type"] = *issue.OwnerType
+			}
+			if issue.OwnerID != nil {
+				detailsMap["to_id"] = *issue.OwnerID
+			}
+			details, _ := json.Marshal(detailsMap)
+			activity, err := queries.CreateActivity(ctx, db.CreateActivityParams{
+				ID: dbid.NewV7(), WorkspaceID: parseUUID(issue.WorkspaceID),
+				IssueID: parseUUID(issue.ID), ActorType: util.StrToText(e.ActorType),
+				ActorID: optionalUUID(e.ActorID), Action: "owner_changed", Details: details,
+			})
+			if err != nil {
+				slog.Error("activity: failed to record owner change", "issue_id", issue.ID, "error", err)
 			} else {
 				publishActivityEvent(bus, e, activity)
 			}
@@ -296,6 +347,24 @@ func handleTaskActivity(ctx context.Context, bus *events.Bus, queries *db.Querie
 	}
 
 	publishActivityEvent(bus, e, activity)
+}
+
+func payloadString(payload map[string]any, key string) string {
+	switch value := payload[key].(type) {
+	case string:
+		return value
+	case *string:
+		if value != nil {
+			return *value
+		}
+	}
+	return ""
+}
+
+func copyOptionalPayloadString(target map[string]string, targetKey string, payload map[string]any, sourceKey string) {
+	if value := payloadString(payload, sourceKey); value != "" {
+		target[targetKey] = value
+	}
 }
 
 // publishActivityEvent sends an activity:created event for WS broadcasting.

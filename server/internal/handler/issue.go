@@ -3892,12 +3892,19 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	resp := issueToResponse(issue, prefix)
 	slog.Info("issue updated", append(logger.RequestAttrs(r), "issue_id", id, "workspace_id", workspaceID)...)
 
-	h.fillStatusCategory(r.Context(), issue.WorkspaceID, &resp)
+	fillStatus := h.newStatusCategoryFiller(r.Context(), issue.WorkspaceID)
+	fillStatus(&resp)
 	prevResp := issueToResponse(prevIssue, prefix)
+	fillStatus(&prevResp)
 	prevEffType, prevEffID := prevResp.EffectiveAssignee()
 	nextEffType, nextEffID := resp.EffectiveAssignee()
 	assigneeChanged := !assigneePtrsEqual(prevEffType, prevEffID, nextEffType, nextEffID)
+	ownerChanged := !assigneePtrsEqual(prevResp.OwnerType, prevResp.OwnerID, resp.OwnerType, resp.OwnerID)
+	executorChanged := !assigneePtrsEqual(prevResp.ExecutorType, prevResp.ExecutorID, resp.ExecutorType, resp.ExecutorID)
+	reviewerChanged := !assigneePtrsEqual(prevResp.ReviewerType, prevResp.ReviewerID, resp.ReviewerType, resp.ReviewerID)
 	statusChanged := req.Status != nil && prevIssue.Status != issue.Status
+	reviewHandoff := prevResp.StatusCategory != issuestatus.InReview &&
+		resp.StatusCategory == issuestatus.InReview && resp.ReviewerType != nil && resp.ReviewerID != nil
 	priorityChanged := req.Priority != nil && prevIssue.Priority != issue.Priority
 	// project_changed gates the client's per-project issue-list refetch the way
 	// status/assignee flags gate theirs. Without it the client must diff
@@ -3916,6 +3923,10 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	h.publish(protocol.EventIssueUpdated, workspaceID, actorType, actorID, map[string]any{
 		"issue":               resp,
 		"assignee_changed":    assigneeChanged,
+		"owner_changed":       ownerChanged,
+		"executor_changed":    executorChanged,
+		"reviewer_changed":    reviewerChanged,
+		"review_handoff":      reviewHandoff,
 		"status_changed":      statusChanged,
 		"priority_changed":    priorityChanged,
 		"project_changed":     projectChanged,
@@ -3928,6 +3939,8 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 		"prev_executor_id":    uuidToPtr(prevIssue.ExecutorID),
 		"prev_owner_type":     textToPtr(prevIssue.OwnerType),
 		"prev_owner_id":       uuidToPtr(prevIssue.OwnerID),
+		"prev_reviewer_type":  textToPtr(prevIssue.ReviewerType),
+		"prev_reviewer_id":    uuidToPtr(prevIssue.ReviewerID),
 		"prev_status":         prevIssue.Status,
 		"prev_priority":       prevIssue.Priority,
 		"prev_start_date":     prevStartDate,
@@ -4681,16 +4694,26 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 
 		fillBatch(&resp)
 		prevResp := issueToResponse(prevIssue, prefix)
+		fillBatch(&prevResp)
 		prevEffType, prevEffID := prevResp.EffectiveAssignee()
 		nextEffType, nextEffID := resp.EffectiveAssignee()
 		assigneeChanged := !assigneePtrsEqual(prevEffType, prevEffID, nextEffType, nextEffID)
+		ownerChanged := !assigneePtrsEqual(prevResp.OwnerType, prevResp.OwnerID, resp.OwnerType, resp.OwnerID)
+		executorChanged := !assigneePtrsEqual(prevResp.ExecutorType, prevResp.ExecutorID, resp.ExecutorType, resp.ExecutorID)
+		reviewerChanged := !assigneePtrsEqual(prevResp.ReviewerType, prevResp.ReviewerID, resp.ReviewerType, resp.ReviewerID)
 		statusChanged := req.Updates.Status != nil && prevIssue.Status != issue.Status
+		reviewHandoff := prevResp.StatusCategory != issuestatus.InReview &&
+			resp.StatusCategory == issuestatus.InReview && resp.ReviewerType != nil && resp.ReviewerID != nil
 		priorityChanged := req.Updates.Priority != nil && prevIssue.Priority != issue.Priority
 		projectChanged := req.Updates.ProjectID != nil && uuidToString(prevIssue.ProjectID) != uuidToString(issue.ProjectID)
 
 		h.publish(protocol.EventIssueUpdated, workspaceID, actorType, actorID, map[string]any{
 			"issue":              resp,
 			"assignee_changed":   assigneeChanged,
+			"owner_changed":      ownerChanged,
+			"executor_changed":   executorChanged,
+			"reviewer_changed":   reviewerChanged,
+			"review_handoff":     reviewHandoff,
 			"status_changed":     statusChanged,
 			"priority_changed":   priorityChanged,
 			"project_changed":    projectChanged,
@@ -4698,6 +4721,8 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 			"prev_executor_id":   uuidToPtr(prevIssue.ExecutorID),
 			"prev_owner_type":    textToPtr(prevIssue.OwnerType),
 			"prev_owner_id":      uuidToPtr(prevIssue.OwnerID),
+			"prev_reviewer_type": textToPtr(prevIssue.ReviewerType),
+			"prev_reviewer_id":   uuidToPtr(prevIssue.ReviewerID),
 		})
 
 		// Reassignment does not cancel existing tasks (#4963 / MUL-4113) —

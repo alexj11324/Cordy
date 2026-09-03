@@ -69,6 +69,7 @@ import { useUpdateIssue } from "@patchbay/core/issues/mutations";
 import { toast } from "sonner";
 import { errorCode } from "@patchbay/core/api";
 import { StatusIcon, PriorityIcon, StatusPicker, PriorityPicker, StagePicker, StartDatePicker, DueDatePicker, ExecutorPicker, OwnerPicker, ReviewerPicker, LabelPicker } from ".";
+import { ExecutorHandoffRow } from "./executor-handoff-row";
 import { maxSiblingStage } from "./pickers/stage-picker";
 import { CustomPropertyValueEditor, CustomPropertyValueDisplay } from "./pickers/custom-property-picker";
 import { Switch } from "@patchbay/ui/components/ui/switch";
@@ -307,15 +308,32 @@ function formatActivity(
         from: priorityLabel(details.from ?? "?", t),
         to: priorityLabel(details.to ?? "?", t),
       });
-    case "assignee_changed": {
+    case "executor_changed": {
       const isSelfAssign = details.to_type === entry.actor_type && details.to_id === entry.actor_id;
       if (isSelfAssign) return t(($) => $.activity.self_assigned);
       const toName = details.to_id && details.to_type && resolveActorName
         ? resolveActorName(details.to_type, details.to_id)
         : null;
       if (toName) return t(($) => $.activity.assigned_to, { name: toName });
-      if (details.from_id && !details.to_id) return t(($) => $.activity.removed_assignee);
-      return t(($) => $.activity.changed_assignee);
+      if (details.from_id && !details.to_id) return t(($) => $.activity.removed_executor);
+      return t(($) => $.activity.changed_executor);
+    }
+    case "owner_changed": {
+      const toName = details.to_id && details.to_type && resolveActorName
+        ? resolveActorName(details.to_type, details.to_id)
+        : null;
+      if (toName) return t(($) => $.activity.assigned_to, { name: toName });
+      if (details.from_id && !details.to_id) return t(($) => $.activity.removed_owner);
+      return t(($) => $.activity.changed_owner);
+    }
+    case "review_handoff": {
+      const fromName = details.from_id && details.from_type && resolveActorName
+        ? resolveActorName(details.from_type, details.from_id)
+        : "?";
+      const toName = details.to_id && details.to_type && resolveActorName
+        ? resolveActorName(details.to_type, details.to_id)
+        : "?";
+      return t(($) => $.activity.review_handoff, { from: fromName, to: toName });
     }
     case "start_date_changed": {
       if (!details.to) return t(($) => $.activity.start_date_removed);
@@ -2329,7 +2347,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
             <StatusPicker status={issue.status} onUpdate={handleUpdateField} align="start" />
           </PropRow>
           <PropRow label={t(($) => $.detail.prop_executor)}>
-            <ExecutorPicker executorType={issue.executor_type} executorId={issue.executor_id} onUpdate={handleUpdateField} align="start" />
+            <ExecutorHandoffRow issue={issue} timeline={timeline} onUpdate={handleUpdateField} />
           </PropRow>
           <PropRow label={t(($) => $.detail.prop_owner)}>
             <OwnerPicker ownerType={issue.owner_type} ownerId={issue.owner_id} onUpdate={handleUpdateField} align="start" />

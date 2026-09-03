@@ -119,6 +119,10 @@ export interface IssueUpdatedPayload {
   // move — MUL-3669 / #4548). Other change flags are present on the wire too and
   // can be surfaced here when needed.
   assignee_changed?: boolean;
+  owner_changed?: boolean;
+  executor_changed?: boolean;
+  reviewer_changed?: boolean;
+  review_handoff?: boolean;
   status_changed?: boolean;
   project_changed?: boolean;
 }

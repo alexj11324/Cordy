@@ -1015,7 +1015,11 @@ export function useRealtimeSync(
       const wsId = getCurrentWsId();
       if (wsId) {
         onIssueUpdated(qc, wsId, issue, {
-          assigneeChanged: payload.assignee_changed,
+          assigneeChanged: Boolean(
+            payload.executor_changed ||
+            payload.owner_changed ||
+            payload.assignee_changed,
+          ),
           statusChanged: payload.status_changed,
           projectChanged: payload.project_changed,
         });
