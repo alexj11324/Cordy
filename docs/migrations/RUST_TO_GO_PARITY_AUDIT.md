@@ -144,6 +144,24 @@ unchanged while adding the workspace-owned path.
 
 ## Full migration completion gate
 
+### Connection status terminology
+
+User decision: the pending messaging UI must be titled **Connection status** /
+**连接状态** / **接続状態** / **연결 상태**, not "health status" or "健康状态".
+This follows the interface-copy rule to name the user-observable behavior
+directly. The title describes the bot's connection to its messaging platform,
+not the health of the user's computer or guaranteed Agent execution.
+
+Keep desired installation enablement separate from observed connectivity:
+`active` alone must not produce an "已连接" label. The connection UI must state
+connecting, connected, disconnected or the specific connection problem using
+server observations, and show unavailable status when evidence is absent.
+Generic service health probes and existing protocol enum values are not renamed
+by this presentation decision. This records the agreed terminology; the setup
+and connection-status UI migration above is still pending.
+
+### Completion requirements
+
 Before claiming complete, expand the inventory to every production feature and
 close each source → contract/schema → Go implementation → UI → runtime chain.
 Record intentional exclusions only with explicit user approval. Required CI,
