@@ -217,6 +217,9 @@ import type {
   RedeemSlackBindingTokenResponse,
   DingTalkInstallation,
   ListDingTalkInstallationsResponse,
+  DingTalkGroupRoute,
+  ListDingTalkGroupRoutesResponse,
+  UpdateDingTalkGroupRouteRequest,
   ListDingTalkGroupsResponse,
   ListDingTalkGroupsParams,
   RegisterDingTalkBYORequest,
@@ -413,6 +416,10 @@ import {
   CreateWorkspaceSubscriptionPortalResponseSchema,
   DingTalkInstallationSchema,
   ListDingTalkInstallationsResponseSchema,
+  DingTalkGroupRouteSchema,
+  ListDingTalkGroupRoutesResponseSchema,
+  EMPTY_DINGTALK_GROUP_ROUTE,
+  EMPTY_LIST_DINGTALK_GROUP_ROUTES_RESPONSE,
   ListDingTalkGroupsResponseSchema,
   RedeemDingTalkBindingTokenResponseSchema,
   EMPTY_DINGTALK_INSTALLATION,
@@ -5208,6 +5215,26 @@ export class ApiClient {
       EMPTY_LIST_DINGTALK_GROUPS_RESPONSE,
       { endpoint: "GET /api/workspaces/:id/dingtalk/groups" },
     );
+  }
+
+  async listDingTalkGroupRoutes(workspaceId: string): Promise<ListDingTalkGroupRoutesResponse> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/dingtalk/group-routes`);
+    return parseWithFallback(raw, ListDingTalkGroupRoutesResponseSchema, EMPTY_LIST_DINGTALK_GROUP_ROUTES_RESPONSE, {
+      endpoint: "GET /api/workspaces/:id/dingtalk/group-routes",
+    });
+  }
+
+  async updateDingTalkGroupRoute(
+    workspaceId: string,
+    routeId: string,
+    body: UpdateDingTalkGroupRouteRequest,
+  ): Promise<DingTalkGroupRoute> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/dingtalk/group-routes/${routeId}`, {
+      method: "PATCH", body: JSON.stringify(body),
+    });
+    return parseWithFallback(raw, DingTalkGroupRouteSchema, EMPTY_DINGTALK_GROUP_ROUTE, {
+      endpoint: "PATCH /api/workspaces/:id/dingtalk/group-routes/:routeId",
+    });
   }
 
   async listAgentDingTalkGroups(

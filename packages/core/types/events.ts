@@ -89,6 +89,7 @@ export type WSEventType =
   | "invitation:revoked"
   | "github_installation:created"
   | "github_installation:deleted"
+  | "dingtalk_group_route:updated"
   | "weixin_installation:created"
   | "weixin_installation:revoked"
   | "pull_request:linked"
@@ -634,6 +635,7 @@ export interface WSEventPayloadMap {
   "pin:reordered": unknown;
   "github_installation:created": unknown;
   "github_installation:deleted": unknown;
+  "dingtalk_group_route:updated": { id: string };
   "weixin_installation:created": unknown;
   "weixin_installation:revoked": unknown;
   "pull_request:linked": unknown;

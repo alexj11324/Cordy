@@ -34,7 +34,23 @@ export interface ListDingTalkInstallationsResponse {
    * compat; optional so an older desktop build that predates it treats it as
    * off. */
   install_supported?: boolean;
+  /** Whether this backend supports discovering and reassigning group routes. */
+  group_routing_supported?: boolean;
 }
+
+export type DingTalkGroupRoute = {
+  id: string;
+  workspace_id: string;
+  installation_id: string;
+  conversation_id: string;
+  conversation_title: string;
+  agent_id: string;
+  discovered_at: string;
+  updated_at: string;
+};
+
+export type ListDingTalkGroupRoutesResponse = { routes: DingTalkGroupRoute[] };
+export type UpdateDingTalkGroupRouteRequest = { agent_id: string };
 
 /** One connected Patchbay bot observed in a DingTalk group. */
 export interface DingTalkGroupBot {

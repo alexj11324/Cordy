@@ -38,6 +38,7 @@ import {
   memberListOptions,
 } from "@patchbay/core/workspace/queries";
 import { DingTalkMark } from "./dingtalk-mark";
+import { DingTalkGroupRoutes } from "./dingtalk-group-routes";
 import { useActorName } from "@patchbay/core/workspace/hooks";
 import {
   dingtalkGroupsOptions,
@@ -650,6 +651,11 @@ export function DingTalkTab() {
             </Card>
           )}
         </section>
+      )}
+
+      {configured && data?.group_routing_supported === true &&
+        displayedInstallations.some((installation) => installation.status === "active") && (
+        <DingTalkGroupRoutes workspaceId={wsId} installations={displayedInstallations} canManage={canManage} />
       )}
 
       <AlertDialog

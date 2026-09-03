@@ -35,6 +35,8 @@ import type {
   CronPreviewResponse,
   DingTalkInstallation,
   ListDingTalkInstallationsResponse,
+  DingTalkGroupRoute,
+  ListDingTalkGroupRoutesResponse,
   ListDingTalkGroupsResponse,
   RedeemDingTalkBindingTokenResponse,
   WecomInstallation,
@@ -3706,6 +3708,7 @@ export const ListDingTalkInstallationsResponseSchema = z.object({
   installations: z.array(DingTalkInstallationSchema).default([]),
   configured: z.boolean().default(false),
   install_supported: z.boolean().optional(),
+  group_routing_supported: z.boolean().catch(false).optional(),
 }).loose();
 
 export const EMPTY_LIST_DINGTALK_INSTALLATIONS_RESPONSE: ListDingTalkInstallationsResponse = {
@@ -3740,6 +3743,28 @@ export const EMPTY_LIST_DINGTALK_GROUPS_RESPONSE: ListDingTalkGroupsResponse = {
   groups: [],
   group_discovery_supported: false,
 };
+
+export const DingTalkGroupRouteSchema = z.object({
+  id: z.string(),
+  workspace_id: z.string().default(""),
+  installation_id: z.string().default(""),
+  conversation_id: z.string().default(""),
+  conversation_title: z.string().default(""),
+  agent_id: z.string().default(""),
+  discovered_at: z.string().default(""),
+  updated_at: z.string().default(""),
+}).loose();
+
+export const EMPTY_DINGTALK_GROUP_ROUTE: DingTalkGroupRoute = {
+  id: "", workspace_id: "", installation_id: "", conversation_id: "",
+  conversation_title: "", agent_id: "", discovered_at: "", updated_at: "",
+};
+
+export const ListDingTalkGroupRoutesResponseSchema = z.object({
+  routes: z.array(DingTalkGroupRouteSchema).default([]),
+}).loose();
+
+export const EMPTY_LIST_DINGTALK_GROUP_ROUTES_RESPONSE: ListDingTalkGroupRoutesResponse = { routes: [] };
 
 export const RedeemDingTalkBindingTokenResponseSchema = z.object({
   workspace_id: z.string().default(""),

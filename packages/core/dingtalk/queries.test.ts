@@ -7,9 +7,21 @@ import {
   dingtalkGroupsOptions,
   dingtalkInactiveGroupsOptions,
   dingtalkKeys,
+  dingtalkGroupRoutesOptions,
 } from "./queries";
 
 describe("dingtalkGroupsOptions", () => {
+  it("scopes group-route discovery to a workspace and stops polling after errors", () => {
+    const options = dingtalkGroupRoutesOptions("ws-1");
+    expect(options.queryKey).toEqual(["dingtalk", "ws-1", "group-routes"]);
+    expect(dingtalkGroupRoutesOptions("").enabled).toBe(false);
+    const interval = options.refetchInterval;
+    expect(typeof interval).toBe("function");
+    if (typeof interval !== "function") return;
+    expect(interval({ state: { status: "success" } } as never)).toBe(5_000);
+    expect(interval({ state: { status: "error" } } as never)).toBe(false);
+  });
+
   it("is workspace-scoped and polls only while discovery is healthy", () => {
     const options = dingtalkGroupsOptions("ws-1");
     expect(options.queryKey).toEqual(dingtalkKeys.groups("ws-1"));

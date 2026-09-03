@@ -266,6 +266,9 @@ export type {
 export type {
   DingTalkInstallation,
   ListDingTalkInstallationsResponse,
+  DingTalkGroupRoute,
+  ListDingTalkGroupRoutesResponse,
+  UpdateDingTalkGroupRouteRequest,
   DingTalkGroupBot,
   DingTalkGroup,
   ListDingTalkGroupsResponse,

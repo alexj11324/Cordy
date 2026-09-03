@@ -1,6 +1,8 @@
 export {
   dingtalkKeys,
   dingtalkInstallationsOptions,
+  dingtalkGroupRoutesOptions,
+  useUpdateDingTalkGroupRoute,
   dingtalkGroupsOptions,
   dingtalkAgentGroupsOptions,
   dingtalkInactiveGroupsOptions,

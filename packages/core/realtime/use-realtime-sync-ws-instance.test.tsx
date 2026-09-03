@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { renderHook } from "@testing-library/react";
+import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import type { WSClient } from "../api/ws-client";
@@ -13,6 +13,7 @@ import { workspaceWorkingAgentsKeys } from "../agents/queries";
 import { workspaceKeys } from "../workspace/queries";
 import { issueStatusKeys } from "../issue-statuses/queries";
 import { agentThreadKeys } from "../agent-thread/queries";
+import { dingtalkKeys } from "../dingtalk/queries";
 import {
   markWorkspaceDeletePending,
   unmarkWorkspaceDeletePending,
@@ -265,7 +266,7 @@ describe("useRealtimeSync — ws instance change", () => {
     });
   });
 
-  it("ignores removed DingTalk group-route events", () => {
+  it("refreshes the current workspace group routes after a DingTalk reassignment", async () => {
     const ws = createMockWs();
     renderHook(() => useRealtimeSync(ws, stores), {
       wrapper: createWrapper(qc),
@@ -273,9 +274,11 @@ describe("useRealtimeSync — ws instance change", () => {
     const onAny = vi.mocked(ws.onAny).mock.calls[0]?.[0];
     expect(onAny).toBeDefined();
 
-    onAny!({ type: "dingtalk_group_route:updated", payload: {} } as never);
+    onAny!({ type: "dingtalk_group_route:updated", payload: { id: "route-1" } });
 
-    expect(invalidateSpy).not.toHaveBeenCalled();
+    await waitFor(() => expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: dingtalkKeys.groupRoutes("ws-1"),
+    }));
   });
 
   it("invalidates the current workspace chat list when a channel creates a session", () => {
