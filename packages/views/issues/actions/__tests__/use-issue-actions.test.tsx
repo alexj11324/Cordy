@@ -185,8 +185,8 @@ describe("useIssueActions", () => {
     expect(mockOpenModal).toHaveBeenCalledWith("issue-run-confirm", {
       issueIds: ["issue-1"],
       mode: "assign",
-      assigneeType: "agent",
-      assigneeId: "agent-1",
+      executorType: "agent",
+      executorId: "agent-1",
     });
     expect(mockUpdateMutate).not.toHaveBeenCalled();
   });
@@ -229,8 +229,8 @@ describe("useIssueActions", () => {
       issueIds: ["issue-1"],
       mode: "promote",
       status: "rework",
-      assigneeType: "agent",
-      assigneeId: "agent-1",
+      executorType: "agent",
+      executorId: "agent-1",
     });
     expect(mockUpdateMutate).not.toHaveBeenCalled();
   });

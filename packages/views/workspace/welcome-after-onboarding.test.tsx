@@ -150,8 +150,9 @@ describe("WelcomeAfterOnboarding", () => {
       title: "Connect a runtime to start with Patrick",
       status: "in_progress",
       owner_type: "member",
-      executor_id: "user-1",
+      owner_id: "user-1",
     });
+    expect(mockCreateIssue.mock.calls[0]![0]).not.toHaveProperty("executor_id");
     expect(mockCreateIssue.mock.calls[0]![0].description).toContain(
       "Start with Patrick",
     );

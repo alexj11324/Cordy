@@ -27,9 +27,9 @@ describe("IssueTab", () => {
   it("renders a switch per field with the persisted selection", () => {
     renderWithI18n(<IssueTab />);
 
-    // 3 quick create fields + 7 manual create fields.
+    // 3 quick create fields + 9 manual create fields.
     const switches = screen.getAllByRole("switch");
-    expect(switches).toHaveLength(10);
+    expect(switches).toHaveLength(12);
 
     // Quick create defaults to project only.
     const [quickProject, quickPriority, quickDueDate] = switches;
@@ -37,11 +37,17 @@ describe("IssueTab", () => {
     expect(quickPriority).not.toBeChecked();
     expect(quickDueDate).not.toBeChecked();
 
-    // Manual create defaults to the classic toolbar; dates start hidden.
+    // Manual create defaults to status, priority, executor, labels, project.
     const manual = switches.slice(3);
-    for (const s of manual.slice(0, 5)) expect(s).toBeChecked();
-    expect(manual[5]).not.toBeChecked();
-    expect(manual[6]).not.toBeChecked();
+    expect(manual[0]).toBeChecked();
+    expect(manual[1]).toBeChecked();
+    expect(manual[2]).not.toBeChecked();
+    expect(manual[3]).toBeChecked();
+    expect(manual[4]).not.toBeChecked();
+    expect(manual[5]).toBeChecked();
+    expect(manual[6]).toBeChecked();
+    expect(manual[7]).not.toBeChecked();
+    expect(manual[8]).not.toBeChecked();
   });
 
   it("persists enabling a quick create field", async () => {
@@ -61,14 +67,14 @@ describe("IssueTab", () => {
     const user = userEvent.setup();
     renderWithI18n(<IssueTab />);
 
-    // Manual section starts at index 3; labels is its 4th row (index 6 overall).
-    const manualLabels = screen.getAllByRole("switch")[6];
+    // Manual section starts at index 3; labels is its 6th row (index 8 overall).
+    const manualLabels = screen.getAllByRole("switch")[8];
     await user.click(manualLabels!);
 
     expect(useIssueCreateSettingsStore.getState().manualCreateFields).toEqual([
       "status",
       "priority",
-      "assignee",
+      "executor",
       "project",
     ]);
     expect(useIssueCreateSettingsStore.getState().quickCreateFields).toEqual(["project"]);
