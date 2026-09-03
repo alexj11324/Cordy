@@ -133,9 +133,10 @@ func (h *Handler) dingtalkAgentVisibility(
 func (h *Handler) ListDingTalkInstallations(w http.ResponseWriter, r *http.Request) {
 	if h.DingTalkInstall == nil {
 		writeJSON(w, http.StatusOK, map[string]any{
-			"installations":     []DingTalkInstallationResponse{},
-			"configured":        false,
-			"install_supported": false,
+			"installations":         []DingTalkInstallationResponse{},
+			"configured":            false,
+			"install_supported":     false,
+			"group_routing_supported": false,
 		})
 		return
 	}
@@ -200,9 +201,10 @@ func (h *Handler) ListDingTalkInstallations(w http.ResponseWriter, r *http.Reque
 		out = append(out, response)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"installations":     out,
-		"configured":        true,
-		"install_supported": true,
+		"installations":           out,
+		"configured":              true,
+		"install_supported":       true,
+		"group_routing_supported": true,
 	})
 }
 
@@ -553,6 +555,153 @@ func (h *Handler) ForgetDingTalkGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// DingTalkGroupRouteResponse is the wire shape for one group-to-agent
+// assignment. Revision is intentionally absent: it is an internal fence for
+// the mixed-version compatibility trigger, and the frontend schema
+// (DingTalkGroupRouteSchema) does not carry it.
+type DingTalkGroupRouteResponse struct {
+	ID                string `json:"id"`
+	WorkspaceID       string `json:"workspace_id"`
+	InstallationID    string `json:"installation_id"`
+	ConversationID    string `json:"conversation_id"`
+	ConversationTitle string `json:"conversation_title"`
+	AgentID           string `json:"agent_id"`
+	DiscoveredAt      string `json:"discovered_at"`
+	UpdatedAt         string `json:"updated_at"`
+}
+
+func dingtalkGroupRouteToResponse(row db.DingtalkGroupRoute) DingTalkGroupRouteResponse {
+	return DingTalkGroupRouteResponse{
+		ID:                uuidToString(row.ID),
+		WorkspaceID:       uuidToString(row.WorkspaceID),
+		InstallationID:    uuidToString(row.InstallationID),
+		ConversationID:    row.ConversationID,
+		ConversationTitle: row.ConversationTitle,
+		AgentID:           uuidToString(row.AgentID),
+		DiscoveredAt:      row.DiscoveredAt.Time.UTC().Format(time.RFC3339),
+		UpdatedAt:         row.UpdatedAt.Time.UTC().Format(time.RFC3339),
+	}
+}
+
+func dingtalkReassignedRouteToResponse(row db.ReassignDingTalkGroupRouteRow) DingTalkGroupRouteResponse {
+	return DingTalkGroupRouteResponse{
+		ID:                uuidToString(row.ID),
+		WorkspaceID:       uuidToString(row.WorkspaceID),
+		InstallationID:    uuidToString(row.InstallationID),
+		ConversationID:    row.ConversationID,
+		ConversationTitle: row.ConversationTitle,
+		AgentID:           uuidToString(row.AgentID),
+		DiscoveredAt:      row.DiscoveredAt.Time.UTC().Format(time.RFC3339),
+		UpdatedAt:         row.UpdatedAt.Time.UTC().Format(time.RFC3339),
+	}
+}
+
+// ListDingTalkGroupRoutes (GET /api/workspaces/{id}/dingtalk/group-routes)
+// returns the Settings inventory of group-to-agent assignments. Member-visible
+// like the installations listing; a deployment without the at-rest key answers
+// with the stable empty shape instead of 503 so older and newer clients share
+// one code path.
+func (h *Handler) ListDingTalkGroupRoutes(w http.ResponseWriter, r *http.Request) {
+	if h.DingTalkInstall == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"routes": []DingTalkGroupRouteResponse{}})
+		return
+	}
+	wsUUID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "workspace id")
+	if !ok {
+		return
+	}
+	if _, ok := requireUserID(w, r); !ok {
+		return
+	}
+	if _, ok := h.workspaceMember(w, r, uuidToString(wsUUID)); !ok {
+		return
+	}
+	rows, err := h.Queries.ListDingTalkGroupRoutesByWorkspace(r.Context(), wsUUID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list dingtalk group routes")
+		return
+	}
+	out := make([]DingTalkGroupRouteResponse, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, dingtalkGroupRouteToResponse(row))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"routes": out})
+}
+
+// UpdateDingTalkGroupRouteRequest carries the new assignee for one group.
+type UpdateDingTalkGroupRouteRequest struct {
+	AgentID string `json:"agent_id"`
+}
+
+// UpdateDingTalkGroupRoute (PATCH /api/workspaces/{id}/dingtalk/group-routes/{routeId})
+// reassigns one discovered group to another agent without reconnecting the
+// robot. The router requires workspace membership; this handler restricts the
+// mutation to workspace owners/admins, matching the Settings panel gate and
+// the forget-group precedent.
+func (h *Handler) UpdateDingTalkGroupRoute(w http.ResponseWriter, r *http.Request) {
+	if h.DingTalkInstall == nil {
+		writeError(w, http.StatusServiceUnavailable, "dingtalk integration not configured")
+		return
+	}
+	userID, ok := requireUserID(w, r)
+	if !ok {
+		return
+	}
+	wsUUID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "workspace id")
+	if !ok {
+		return
+	}
+	routeUUID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "routeId"), "route id")
+	if !ok {
+		return
+	}
+	if _, ok := h.requireWorkspaceRole(w, r, uuidToString(wsUUID), "dingtalk group route not found", "owner", "admin"); !ok {
+		return
+	}
+	var body UpdateDingTalkGroupRouteRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	agentUUID, ok := parseUUIDOrBadRequest(w, strings.TrimSpace(body.AgentID), "agent_id")
+	if !ok {
+		return
+	}
+	target, err := h.Queries.GetAgentInWorkspace(r.Context(), db.GetAgentInWorkspaceParams{
+		ID:          agentUUID,
+		WorkspaceID: wsUUID,
+	})
+	if err != nil {
+		writeError(w, http.StatusNotFound, "agent not found in this workspace")
+		return
+	}
+	if target.Kind != "user" {
+		writeError(w, http.StatusBadRequest, "only user agents can handle a DingTalk group")
+		return
+	}
+	if target.ArchivedAt.Valid {
+		writeError(w, http.StatusConflict, "an archived agent cannot handle a DingTalk group")
+		return
+	}
+	row, err := h.Queries.ReassignDingTalkGroupRoute(r.Context(), db.ReassignDingTalkGroupRouteParams{
+		WorkspaceID: wsUUID,
+		AgentID:     agentUUID,
+		RouteID:     routeUUID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "dingtalk group route not found")
+		} else {
+			writeError(w, http.StatusInternalServerError, "failed to update dingtalk group route")
+		}
+		return
+	}
+	h.publish(protocol.EventDingTalkGroupRouteUpdated, uuidToString(wsUUID), "user", userID, map[string]any{
+		"id": uuidToString(row.ID),
+	})
+	writeJSON(w, http.StatusOK, dingtalkReassignedRouteToResponse(row))
 }
 
 // RegisterDingTalkBYORequest is the body for a bring-your-own-app install: the

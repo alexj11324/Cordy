@@ -255,7 +255,9 @@ export function DesktopShell() {
     currentSlug && workspaces.some((w) => w.slug === currentSlug)
       ? currentSlug
       : null;
-  const usesNativeVibrancy = window.desktopAPI.appInfo?.os === "macos";
+  const usesNativeVibrancy =
+    window.desktopAPI.host === "electron" &&
+    window.desktopAPI.appInfo?.os === "macos";
 
   return (
     <DesktopNavigationProvider>
@@ -288,7 +290,9 @@ export function DesktopShell() {
               50px under this one (MUL-6218). */}
           <SidebarProvider
             hasExternalTrigger
+            hoverReveal
             glass
+            data-native-vibrancy={usesNativeVibrancy ? "true" : undefined}
             className={cn(
               "flex-1 [--sidebar-wrapper-fill:var(--app-shell)]",
               usesNativeVibrancy ? "bg-transparent" : "bg-app-shell",

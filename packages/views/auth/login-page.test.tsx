@@ -1,5 +1,8 @@
+// @vitest-environment jsdom
+
+import { cleanup, render, screen, waitFor, act } from "@testing-library/react";
+import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactElement, ReactNode } from "react";
 import { I18nProvider } from "@patchbay/core/i18n/react";
@@ -107,6 +110,7 @@ describe("LoginPage", () => {
   });
 
   afterEach(() => {
+    cleanup();
     vi.useRealTimers();
   });
 
@@ -126,6 +130,50 @@ describe("LoginPage", () => {
     expect(
       screen.getByRole("button", { name: /continue/i }),
     ).toBeInTheDocument();
+  });
+
+  it("renders the cardless shadcn field layout in embedded mode", () => {
+    renderWithI18n(<LoginPage onSuccess={onSuccess} embedded />);
+
+    expect(
+      screen.getByRole("heading", {
+        level: 1,
+        name: /create or sign in to your account/i,
+      }),
+    ).toBeInTheDocument();
+    expect(document.querySelector('[data-slot="card"]')).not.toBeInTheDocument();
+    expect(document.querySelector('[data-slot="field-group"]')).toBeInTheDocument();
+    expect(screen.getByLabelText(/email/i)).toBeInTheDocument();
+  });
+
+  it("renders the Google separator and action in the embedded form", async () => {
+    const onGoogleLogin = vi.fn();
+    renderWithI18n(
+      <LoginPage
+        onSuccess={onSuccess}
+        embedded
+        showGoogleSeparator
+        onGoogleLogin={onGoogleLogin}
+      />,
+    );
+
+    expect(screen.getByText(/or continue with/i)).toBeInTheDocument();
+    await userEvent.setup().click(
+      screen.getByRole("button", { name: /continue with google/i }),
+    );
+    expect(onGoogleLogin).toHaveBeenCalledOnce();
+  });
+
+  it("keeps embedding-shell errors in the embedded form column", () => {
+    renderWithI18n(
+      <LoginPage
+        onSuccess={onSuccess}
+        embedded
+        externalError={<div role="alert">Browser sign-in failed</div>}
+      />,
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Browser sign-in failed");
   });
 
   // -------------------------------------------------------------------------

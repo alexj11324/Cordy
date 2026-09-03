@@ -458,7 +458,10 @@
       "plugins": "Plugins",
       "mcp": "MCP",
       "billing": "账单与套餐"
-    }
+    },
+    "integrations_title": "集成",
+    "integrations_description": "在工作区级别一次连接消息平台，然后在聊天中使用 /agents 选择或切换负责当前会话的智能体。",
+    "back_to_app": "返回应用"
   },
   "plugins": {
     "title": "Plugins",

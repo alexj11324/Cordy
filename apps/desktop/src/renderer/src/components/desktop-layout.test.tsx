@@ -89,10 +89,15 @@ vi.mock("./tab-content", () => ({
 
 const { DesktopShell } = await import("./desktop-layout");
 
-function renderShell() {
+function renderShell(
+  os: "macos" | "windows" = "windows",
+  host: "electron" | "browser" = "electron",
+) {
   (
     window as unknown as { desktopAPI: Record<string, unknown> }
   ).desktopAPI = {
+    host,
+    appInfo: { version: "0.0.0-test", os },
     onNavigationGesture: () => () => {},
     onInboxOpen: () => () => {},
   };
@@ -126,5 +131,39 @@ describe("DesktopShell sidebar trigger", () => {
       "data-external-trigger",
       "true",
     );
+  });
+
+  // The macOS shell is transparent so Electron's native sidebar material can
+  // show through; other platforms keep the opaque app-shell wrapper. The
+  // marker is what the globals.css `:has()` gate keys off to drop the body
+  // fill — without it the vibrancy stays buried under an opaque page.
+  it("enables the glass shell while reserving native transparency for macOS", () => {
+    const mac = renderShell("macos").container.querySelector<HTMLElement>(
+      "[data-slot='sidebar-wrapper']",
+    )!;
+
+    expect(mac).toHaveAttribute("data-sidebar-glass", "true");
+    expect(mac).toHaveAttribute("data-native-vibrancy", "true");
+    expect(mac).toHaveClass("bg-transparent");
+    expect(mac.parentElement).toHaveClass("bg-transparent");
+
+    const windows = renderShell("windows").container.querySelector<HTMLElement>(
+      "[data-slot='sidebar-wrapper']",
+    )!;
+
+    expect(windows).toHaveAttribute("data-sidebar-glass", "true");
+    expect(windows).not.toHaveAttribute("data-native-vibrancy");
+    expect(windows).toHaveClass("bg-app-shell");
+    expect(windows.parentElement).toHaveClass("bg-app-shell");
+  });
+
+  it("keeps the opaque shell in browser hosts even on macOS", () => {
+    const browser = renderShell("macos", "browser").container.querySelector<HTMLElement>(
+      "[data-slot='sidebar-wrapper']",
+    )!;
+
+    expect(browser).toHaveAttribute("data-sidebar-glass", "true");
+    expect(browser).not.toHaveAttribute("data-native-vibrancy");
+    expect(browser).toHaveClass("bg-app-shell");
   });
 });

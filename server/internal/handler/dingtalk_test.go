@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -1033,4 +1034,224 @@ func TestListDingTalkGroupsReturnsInternalErrorOnDatabaseFailure(t *testing.T) {
 	testutil.Call(t, func(w http.ResponseWriter, r *http.Request) {
 		testHandler.listDingTalkGroups(w, r, parseUUID(testWorkspaceID), "", nil)
 	}, inactiveReq).Want(http.StatusInternalServerError)
+}
+
+func TestDingTalkGroupRoutes_ListAndReassign(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("handler database unavailable")
+	}
+	ctx := context.Background()
+	const (
+		agentA     = "d1481000-0000-4000-8000-0000000000a1"
+		agentB     = "d1481000-0000-4000-8000-0000000000a2"
+		install  = "d1481000-0000-4000-8000-0000000000b1"
+		revoked  = "d1481000-0000-4000-8000-0000000000b2"
+		route    = "d1481000-0000-4000-8000-0000000000c1"
+		hiddenRt = "d1481000-0000-4000-8000-0000000000c2"
+		session  = "d1481000-0000-4000-8000-0000000000d1"
+	)
+	previousInstall := testHandler.DingTalkInstall
+	testHandler.DingTalkInstall = &dingtalkintegration.InstallService{}
+	t.Cleanup(func() { testHandler.DingTalkInstall = previousInstall })
+
+	clean := func() {
+		_, _ = testPool.Exec(ctx, `DELETE FROM channel_outbound_card_message WHERE chat_session_id = $1`, session)
+		_, _ = testPool.Exec(ctx, `DELETE FROM channel_chat_session_binding WHERE chat_session_id = $1`, session)
+		_, _ = testPool.Exec(ctx, `DELETE FROM chat_session WHERE id = $1`, session)
+		_, _ = testPool.Exec(ctx, `DELETE FROM dingtalk_group_route WHERE id = ANY($1::uuid[])`, []string{route, hiddenRt})
+		_, _ = testPool.Exec(ctx, `DELETE FROM channel_installation WHERE id = ANY($1::uuid[])`, []string{install, revoked})
+		_, _ = testPool.Exec(ctx, `DELETE FROM agent WHERE id = ANY($1::uuid[])`, []string{agentA, agentB})
+	}
+	clean()
+	t.Cleanup(clean)
+
+	runtimeID := handlerTestRuntimeID(t)
+	for _, agentID := range []string{agentA, agentB} {
+		if _, err := testPool.Exec(ctx, `
+INSERT INTO agent (
+	workspace_id, name, description, runtime_mode, runtime_config,
+	runtime_id, visibility, max_concurrent_tasks, owner_id,
+	instructions, custom_env, custom_args
+) VALUES ($1, $2, '', 'cloud', '{}'::jsonb, $3, 'private', 1, $4, '', '{}'::jsonb, '[]'::jsonb)
+`, testWorkspaceID, "group-route-agent-"+agentID[len(agentID)-2:], runtimeID, testUserID); err != nil {
+			t.Fatalf("seed route agent: %v", err)
+		}
+	}
+	if _, err := testPool.Exec(ctx, `UPDATE agent SET id = $1 WHERE id <> $1 AND workspace_id = $2 AND name = $3`,
+		agentA, testWorkspaceID, "group-route-agent-"+agentA[len(agentA)-2:]); err != nil {
+		t.Fatalf("pin agent A id: %v", err)
+	}
+	if _, err := testPool.Exec(ctx, `UPDATE agent SET id = $1 WHERE id <> $1 AND workspace_id = $2 AND name = $3`,
+		agentB, testWorkspaceID, "group-route-agent-"+agentB[len(agentB)-2:]); err != nil {
+		t.Fatalf("pin agent B id: %v", err)
+	}
+	for _, fixture := range []struct{ id, agentID, appID, status string }{
+		{id: install, agentID: agentA, appID: "route-test-active", status: "active"},
+		{id: revoked, agentID: agentB, appID: "route-test-revoked", status: "revoked"},
+	} {
+		if _, err := testPool.Exec(ctx, `
+INSERT INTO channel_installation (
+  id, workspace_id, agent_id, channel_type, config, installer_user_id, status
+) VALUES ($1, $2, $3, 'dingtalk', jsonb_build_object('app_id', $4::text), $5, $6)
+`, fixture.id, testWorkspaceID, fixture.agentID, fixture.appID, testUserID, fixture.status); err != nil {
+			t.Fatalf("seed route installation: %v", err)
+		}
+	}
+	for _, fixture := range []struct{ id, installID string }{
+		{id: route, installID: install},
+		{id: hiddenRt, installID: revoked},
+	} {
+		if _, err := testPool.Exec(ctx, `
+INSERT INTO dingtalk_group_route (
+  id, workspace_id, installation_id, conversation_id, conversation_title, agent_id
+) VALUES ($1, $2, $3, 'cid-route', 'Route group', $4)
+`, fixture.id, testWorkspaceID, fixture.installID, agentA); err != nil {
+			t.Fatalf("seed group route: %v", err)
+		}
+	}
+
+	routeContext := func(userID, routeID string) (*http.Request, *httptest.ResponseRecorder) {
+		rctx := chi.NewRouteContext()
+		rctx.URLParams.Add("id", testWorkspaceID)
+		if routeID != "" {
+			rctx.URLParams.Add("routeId", routeID)
+		}
+		var req *http.Request
+		if userID == "" {
+			req = newRequest(http.MethodGet, "/api/workspaces/"+testWorkspaceID+"/dingtalk/group-routes", nil)
+		} else {
+			req = newRequestAs(userID, http.MethodGet, "/api/workspaces/"+testWorkspaceID+"/dingtalk/group-routes", nil)
+		}
+		req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+		return req, httptest.NewRecorder()
+	}
+
+	// List hides the revoked installation's route.
+	req, rec := routeContext(testUserID, "")
+	testHandler.ListDingTalkGroupRoutes(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list routes status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var listed struct {
+		Routes []DingTalkGroupRouteResponse `json:"routes"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Routes) != 1 || listed.Routes[0].ID != route ||
+		listed.Routes[0].ConversationID != "cid-route" || listed.Routes[0].AgentID != agentA ||
+		listed.Routes[0].InstallationID != install || listed.Routes[0].WorkspaceID != testWorkspaceID ||
+		listed.Routes[0].DiscoveredAt == "" || listed.Routes[0].UpdatedAt == "" {
+		t.Fatalf("listed routes = %+v", listed.Routes)
+	}
+
+	patchRoute := func(userID, routeID string, body any) *httptest.ResponseRecorder {
+		rctx := chi.NewRouteContext()
+		rctx.URLParams.Add("id", testWorkspaceID)
+		rctx.URLParams.Add("routeId", routeID)
+		var req *http.Request
+		if userID == "" {
+			req = newRequest(http.MethodPatch, "/api/workspaces/"+testWorkspaceID+"/dingtalk/group-routes/"+routeID, body)
+		} else {
+			req = newRequestAs(userID, http.MethodPatch, "/api/workspaces/"+testWorkspaceID+"/dingtalk/group-routes/"+routeID, body)
+		}
+		req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+		rec := httptest.NewRecorder()
+		testHandler.UpdateDingTalkGroupRoute(rec, req)
+		return rec
+	}
+
+	// Stale session state for the old agent is cleared on reassignment.
+	if _, err := testPool.Exec(ctx, `INSERT INTO chat_session (id, workspace_id, agent_id, creator_id) VALUES ($1, $2, $3, $4)`, session, testWorkspaceID, agentA, testUserID); err != nil {
+		t.Fatalf("seed route session: %v", err)
+	}
+	if _, err := testPool.Exec(ctx, `
+INSERT INTO channel_chat_session_binding (
+  id, chat_session_id, installation_id, channel_type, channel_chat_id, chat_type
+) VALUES (gen_random_uuid(), $1, $2, 'dingtalk', 'cid-route', 'group')`, session, install); err != nil {
+		t.Fatalf("seed route binding: %v", err)
+	}
+	if _, err := testPool.Exec(ctx, `INSERT INTO channel_outbound_card_message (id, chat_session_id, channel_type, channel_chat_id, channel_card_message_id) VALUES (gen_random_uuid(), $1, 'dingtalk', 'cid-route', 'card-1')`, session); err != nil {
+		t.Fatalf("seed route card: %v", err)
+	}
+
+	rec = patchRoute(testUserID, route, map[string]any{"agent_id": agentB})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reassign status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var reassigned DingTalkGroupRouteResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &reassigned); err != nil {
+		t.Fatal(err)
+	}
+	if reassigned.AgentID != agentB || reassigned.ID != route {
+		t.Fatalf("reassigned route = %+v", reassigned)
+	}
+	var revision int64
+	if err := testPool.QueryRow(ctx, `SELECT revision FROM dingtalk_group_route WHERE id = $1`, route).Scan(&revision); err != nil {
+		t.Fatalf("read revision: %v", err)
+	}
+	if revision != 2 {
+		t.Fatalf("revision = %d, want 2", revision)
+	}
+	var staleBindings, staleCards int
+	if err := testPool.QueryRow(ctx, `SELECT count(*) FROM channel_chat_session_binding WHERE chat_session_id = $1`, session).Scan(&staleBindings); err != nil {
+		t.Fatalf("count stale bindings: %v", err)
+	}
+	if err := testPool.QueryRow(ctx, `SELECT count(*) FROM channel_outbound_card_message WHERE chat_session_id = $1`, session).Scan(&staleCards); err != nil {
+		t.Fatalf("count stale cards: %v", err)
+	}
+	if staleBindings != 0 || staleCards != 0 {
+		t.Fatalf("stale state remains: bindings=%d cards=%d", staleBindings, staleCards)
+	}
+
+	// Validation failures keep Rust-compatible status codes.
+	if rec := patchRoute(testUserID, route, map[string]any{"agent_id": "not-a-uuid"}); rec.Code != http.StatusBadRequest {
+		t.Fatalf("invalid agent status = %d, want 400", rec.Code)
+	}
+	if rec := patchRoute(testUserID, route, map[string]any{"agent_id": "d1481000-0000-4000-8000-00000000ffff"}); rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown agent status = %d, want 404: %s", rec.Code, rec.Body.String())
+	}
+	if rec := patchRoute(testUserID, "d1481000-0000-4000-8000-00000000ffff", map[string]any{"agent_id": agentA}); rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown route status = %d, want 404: %s", rec.Code, rec.Body.String())
+	}
+	if rec := patchRoute(testUserID, "not-a-uuid", map[string]any{"agent_id": agentA}); rec.Code != http.StatusBadRequest {
+		t.Fatalf("invalid route status = %d, want 400", rec.Code)
+	}
+	if _, err := testPool.Exec(ctx, `UPDATE agent SET archived_at = now() WHERE id = $1`, agentB); err != nil {
+		t.Fatalf("archive agent: %v", err)
+	}
+	if rec := patchRoute(testUserID, route, map[string]any{"agent_id": agentB}); rec.Code != http.StatusConflict {
+		t.Fatalf("archived agent status = %d, want 409: %s", rec.Code, rec.Body.String())
+	}
+	if _, err := testPool.Exec(ctx, `UPDATE agent SET archived_at = NULL WHERE id = $1`, agentB); err != nil {
+		t.Fatalf("restore agent: %v", err)
+	}
+	anonCtx := chi.NewRouteContext()
+	anonCtx.URLParams.Add("id", testWorkspaceID)
+	anonCtx.URLParams.Add("routeId", route)
+	anonReq := httptest.NewRequest(http.MethodPatch, "/api/workspaces/"+testWorkspaceID+"/dingtalk/group-routes/"+route, strings.NewReader(`{"agent_id": "`+agentA+`"}`))
+	anonReq = anonReq.WithContext(context.WithValue(anonReq.Context(), chi.RouteCtxKey, anonCtx))
+	anonRec := httptest.NewRecorder()
+	testHandler.UpdateDingTalkGroupRoute(anonRec, anonReq)
+	if anonRec.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated status = %d, want 401", anonRec.Code)
+	}
+
+	// A route under a revoked installation cannot be reassigned.
+	if rec := patchRoute(testUserID, hiddenRt, map[string]any{"agent_id": agentB}); rec.Code != http.StatusNotFound {
+		t.Fatalf("revoked route status = %d, want 404: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestDingTalkGroupRoutes_DisabledDeploymentReturnsStableEmptyShape(t *testing.T) {
+	rec := httptest.NewRecorder()
+	(&Handler{}).ListDingTalkGroupRoutes(rec, httptest.NewRequest(http.MethodGet, "/x", nil))
+	if rec.Code != http.StatusOK || rec.Body.String() != "{\"routes\":[]}\n" {
+		t.Fatalf("disabled routes response = %d %q", rec.Code, rec.Body.String())
+	}
+	patchRec := httptest.NewRecorder()
+	(&Handler{}).UpdateDingTalkGroupRoute(patchRec, httptest.NewRequest(http.MethodPatch, "/x", nil))
+	if patchRec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("disabled reassign status = %d, want 503", patchRec.Code)
+	}
 }

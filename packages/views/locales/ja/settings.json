@@ -458,7 +458,10 @@
       "plugins": "Plugins",
       "mcp": "MCP",
       "billing": "請求とプラン"
-    }
+    },
+    "integrations_title": "連携",
+    "integrations_description": "メッセージングプラットフォームをワークスペースに一度接続し、会話内の /agents で各チャットのエージェントを選択・切り替えます。",
+    "back_to_app": "アプリに戻る"
   },
   "plugins": {
     "title": "Plugins",

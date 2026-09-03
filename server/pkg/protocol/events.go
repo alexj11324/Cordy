@@ -202,6 +202,10 @@ const (
 	EventDingTalkInstallationRevoked   = "dingtalk_installation:revoked"
 	EventDingTalkAccountBindingUpdated = "dingtalk_installation:binding_updated"
 
+	// DingTalk group routing changes the agent a discovered group is assigned
+	// to. Front-ends invalidate the group-routes query on this event.
+	EventDingTalkGroupRouteUpdated = "dingtalk_group_route:updated"
+
 	// WeCom smart-bot installation lifecycle. Same semantics as Lark /
 	// Slack: `created` covers both first install and re-install via
 	// UpsertChannelInstallation (the UNIQUE on (workspace_id, agent_id,

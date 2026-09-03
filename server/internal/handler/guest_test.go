@@ -423,3 +423,39 @@ func TestRevokeGuestSessionRequiresTokenAndIsIdempotentlyBound(t *testing.T) {
 		t.Fatalf("repeat revoke: expected 409, got %d: %s", w.Code, w.Body.String())
 	}
 }
+
+func TestCreateGuestAuthMarksUserAsGuest(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+
+	w := httptest.NewRecorder()
+	req := guestRequest(t, http.MethodPost, "/auth/guest", nil, "")
+	testHandler.CreateGuestAuth(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("create guest: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var body struct {
+		Token string `json:"token"`
+		User  struct {
+			ID      string `json:"id"`
+			IsGuest *bool  `json:"is_guest"`
+		} `json:"user"`
+	}
+	bodyBytes := w.Body.Bytes()
+	if err := json.Unmarshal(bodyBytes, &body); err != nil {
+		t.Fatalf("decode guest response: %v (body: %s)", err, bodyBytes)
+	}
+	if body.Token == "" {
+		t.Fatalf("create guest: empty token (body: %s)", bodyBytes)
+	}
+	if body.User.IsGuest == nil || *body.User.IsGuest != true {
+		t.Fatalf("create guest: expected user.is_guest=true, got %s", bodyBytes)
+	}
+
+	t.Cleanup(func() {
+		testPool.Exec(context.Background(), `DELETE FROM guest_session WHERE user_id = $1`, body.User.ID)
+		testPool.Exec(context.Background(), `DELETE FROM "user" WHERE id = $1`, body.User.ID)
+	})
+}

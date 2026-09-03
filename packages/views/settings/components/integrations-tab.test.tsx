@@ -106,8 +106,7 @@ describe("Settings IntegrationsTab", () => {
     configStore.getState().setAuthConfig({ allowSignup: true, vcsIntegrationAvailable: false });
   });
 
-  it("hides Composio and disables the toolkits query when the feature flag is off", () => {
-    configStore.getState().setFeatureFlags({ [COMPOSIO_MCP_APPS_FLAG]: false });
+  it("hides Composio and disables the toolkits query when the feature flag is off", () => {    configStore.getState().setFeatureFlags({ [COMPOSIO_MCP_APPS_FLAG]: false });
 
     renderTab();
 
@@ -191,5 +190,16 @@ describe("Settings IntegrationsTab", () => {
     renderTab();
 
     expect(screen.getByTestId("vcs-tab")).toBeInTheDocument();
+  });
+
+  it("renders the centered page chrome in standalone route mode", () => {
+    render(
+      <I18nProvider locale="en" resources={{ en: { common: enCommon, settings: enSettings } }}>
+        <IntegrationsTab standalone />
+      </I18nProvider>,
+    );
+
+    expect(screen.getByRole("heading", { name: "Integrations" })).toBeInTheDocument();
+    expect(screen.getByTestId("lark-tab")).toBeInTheDocument();
   });
 });

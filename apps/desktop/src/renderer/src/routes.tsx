@@ -32,40 +32,19 @@ import { TeamsPage, TeamDetailPage as TeamDetailPageView } from "@patchbay/views
 import { InboxPage } from "@patchbay/views/inbox";
 import { ChatPage } from "@patchbay/views/chat";
 import { ChannelsPage } from "@patchbay/views/channels";
-import { SettingsPage } from "@patchbay/views/settings";
+import { DesktopSettingsPage } from "./components/desktop-settings-page";
 import { useT } from "@patchbay/views/i18n";
 import { useDocumentTitle } from "@/hooks/use-document-title";
-import { Download, Server } from "lucide-react";
-import { DaemonSettingsTab } from "./components/daemon-settings-tab";
-import { UpdatesSettingsTab } from "./components/updates-settings-tab";
 import { WorkspaceRouteLayout } from "./components/workspace-route-layout";
 import { DesktopRouteErrorPage } from "./components/route-error-page";
 
 /**
- * Wraps `SettingsPage` so the desktop-only extra tabs can pull their labels
- * from i18n. The route element has to be a component (not a literal JSX
- * value) for `useT` to run.
+ * Standalone desktop settings surface: owns the window title while open and
+ * injects the desktop-only daemon/updates tabs. The route element has to be
+ * a component (not a literal JSX value) for hooks to run.
  */
 function DesktopSettingsRoute() {
-  const { t } = useT("settings");
-  return (
-    <SettingsPage
-      extraAccountTabs={[
-        {
-          value: "daemon",
-          label: "Daemon",
-          icon: Server,
-          content: <DaemonSettingsTab />,
-        },
-        {
-          value: "updates",
-          label: t(($) => $.desktop.tabs.updates),
-          icon: Download,
-          content: <UpdatesSettingsTab />,
-        },
-      ]}
-    />
-  );
+  return <DesktopSettingsPage />;
 }
 
 function DesktopChannelsRoute() {
