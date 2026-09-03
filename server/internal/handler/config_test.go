@@ -106,6 +106,85 @@ func TestGetConfigIncludesRuntimeAuthConfig(t *testing.T) {
 	}
 }
 
+func TestGetConfigExposesMessagingSetupOwnership(t *testing.T) {
+	for _, name := range []string{
+		"PATCHBAY_MESSAGING_MODE",
+		"PATCHBAY_LARK_SECRET_KEY",
+		"PATCHBAY_SLACK_SECRET_KEY",
+		"PATCHBAY_DINGTALK_SECRET_KEY",
+		"PATCHBAY_WECOM_SECRET_KEY",
+		"PATCHBAY_TELEGRAM_SECRET_KEY",
+		"PATCHBAY_WEIXIN_SECRET_KEY",
+	} {
+		t.Setenv(name, "")
+	}
+	const validKey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+
+	fetch := func(t *testing.T) struct {
+		Messaging struct {
+			Mode          string `json:"mode"`
+			SetupWritable bool   `json:"setupWritable"`
+			Platforms     []struct {
+				Type         string `json:"type"`
+				Enabled      bool   `json:"enabled"`
+				Experimental bool   `json:"experimental"`
+			} `json:"platforms"`
+		} `json:"messaging"`
+	} {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+		var result struct {
+			Messaging struct {
+				Mode          string `json:"mode"`
+				SetupWritable bool   `json:"setupWritable"`
+				Platforms     []struct {
+					Type         string `json:"type"`
+					Enabled      bool   `json:"enabled"`
+					Experimental bool   `json:"experimental"`
+				} `json:"platforms"`
+			} `json:"messaging"`
+		}
+		testutil.Call(t, testHandler.GetConfig, req).Want(http.StatusOK).JSON(&result)
+		return result
+	}
+
+	t.Run("public self-host is server configured and read only", func(t *testing.T) {
+		t.Setenv("PATCHBAY_APP_URL", "https://app.example.test")
+		t.Setenv("PATCHBAY_MESSAGING_MODE", "server_configured")
+		t.Setenv("PATCHBAY_LARK_SECRET_KEY", validKey)
+		cfg := fetch(t).Messaging
+		if cfg.Mode != "server_configured" || cfg.SetupWritable {
+			t.Fatalf("messaging = %+v, want server_configured/read-only", cfg)
+		}
+		if len(cfg.Platforms) != 6 || cfg.Platforms[0].Type != "lark" || !cfg.Platforms[0].Enabled || !cfg.Platforms[0].Experimental {
+			t.Fatalf("messaging platforms = %+v, want six with configured Lark experimental", cfg.Platforms)
+		}
+	})
+
+	t.Run("official cloud defaults to managed setup", func(t *testing.T) {
+		t.Setenv("PATCHBAY_APP_URL", "https://patchbay.aspectlylabs.com")
+		t.Setenv("PATCHBAY_MESSAGING_MODE", "")
+		cfg := fetch(t).Messaging
+		if cfg.Mode != "managed" || !cfg.SetupWritable {
+			t.Fatalf("messaging = %+v, want managed/writable", cfg)
+		}
+	})
+
+	t.Run("local-only origin disables cross-device setup", func(t *testing.T) {
+		t.Setenv("PATCHBAY_APP_URL", "http://localhost:3000")
+		t.Setenv("PATCHBAY_MESSAGING_MODE", "server_configured")
+		cfg := fetch(t).Messaging
+		if cfg.Mode != "disabled" || cfg.SetupWritable {
+			t.Fatalf("messaging = %+v, want disabled/read-only", cfg)
+		}
+		for _, platform := range cfg.Platforms {
+			if platform.Enabled {
+				t.Fatalf("local-only platform was enabled: %+v", platform)
+			}
+		}
+	})
+}
+
 func TestGetConfigUsesDaemonServerURLOverride(t *testing.T) {
 	t.Setenv("PATCHBAY_DAEMON_SERVER_URL", " https://api.internal.example/// ")
 	t.Setenv("PATCHBAY_PUBLIC_URL", "https://hooks.example.com/")

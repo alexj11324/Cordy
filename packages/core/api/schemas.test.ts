@@ -1165,6 +1165,17 @@ describe("AppConfigSchema agent_conversation_starters_supported drift", () => {
 });
 
 describe("AppConfigSchema cdn_signed drift", () => {
+  it("defaults an incomplete messaging capability to disabled and read-only", () => {
+    const parsed = AppConfigSchema.parse({ messaging: { mode: "managed" } });
+    expect(parsed).toMatchObject({
+      messaging: {
+        mode: "managed",
+        setupWritable: false,
+        platforms: [],
+      },
+    });
+  });
+
   it("defaults cdn_signed to false when the server omits it (pre-MUL-3254 servers)", () => {
     const parsed = AppConfigSchema.parse({ cdn_domain: "cdn.example.com" });
     expect(parsed.cdn_signed).toBe(false);
