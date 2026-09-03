@@ -257,7 +257,7 @@ export function TelegramAgentBindButton({
   className,
   onShowConnectedDetails,
 }: {
-  agentId: string;
+  agentId?: string;
   agentName?: string;
   className?: string;
   /** Compact read-only connected row that invokes this instead of the full
@@ -291,7 +291,9 @@ export function TelegramAgentBindButton({
   if (!canManage) return null;
 
   const recordedInstallation = listing?.installations.find(
-    (inst) => inst.agent_id === agentId && inst.status === "installed",
+    (inst) =>
+      (agentId ? inst.agent_id === agentId : !inst.agent_id) &&
+      inst.status === "installed",
   );
   const existing = recordedInstallation && installationQueryFailed
     ? { ...recordedInstallation, runtime: undefined }
@@ -318,7 +320,7 @@ export function TelegramAgentBindButton({
 
   async function handleSubmit() {
     const bot_token = botToken.trim();
-    if (submitting || !agentId || !bot_token) return;
+    if (submitting || !wsId || !bot_token) return;
     setSubmitting(true);
     try {
       const installation = await api.registerTelegramBot(wsId, agentId, { bot_token });
@@ -351,7 +353,7 @@ export function TelegramAgentBindButton({
         variant="outline"
         size="sm"
         onClick={() => setDialogOpen(true)}
-        disabled={!agentId}
+        disabled={!wsId}
         title={
           agentName
             ? t(($) => $.telegram.bind_button_title, { agent: agentName })

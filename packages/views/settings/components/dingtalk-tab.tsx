@@ -852,7 +852,7 @@ export function DingTalkAgentBindButton({
   className,
   onShowConnectedDetails,
 }: {
-  agentId: string;
+  agentId?: string;
   agentName?: string;
   /** Mirrors the backend canManageAgent rule for the per-agent entry point. */
   agentOwnerId?: string | null;
@@ -899,7 +899,9 @@ export function DingTalkAgentBindButton({
   if (!canManage) return null;
 
   const recordedInstallation = listing?.installations?.find(
-    (inst) => inst.agent_id === agentId && inst.status === "installed",
+    (inst) =>
+      (agentId ? inst.agent_id === agentId : !inst.agent_id) &&
+      inst.status === "installed",
   );
   const existing = recordedInstallation && installationQueryFailed
     ? { ...recordedInstallation, runtime: undefined }
@@ -933,7 +935,7 @@ export function DingTalkAgentBindButton({
   async function handleSubmit() {
     const client_id = clientId.trim();
     const client_secret = clientSecret.trim();
-    if (submitting || !agentId || !client_id || !client_secret) return;
+    if (submitting || !wsId || !client_id || !client_secret) return;
     setSubmitting(true);
     try {
       await api.registerDingTalkBYO(wsId, agentId, { client_id, client_secret });
@@ -965,7 +967,7 @@ export function DingTalkAgentBindButton({
         variant="outline"
         size="sm"
         onClick={() => setDialogOpen(true)}
-        disabled={!agentId}
+        disabled={!wsId}
         title={
           agentName
             ? t(($) => $.dingtalk.bind_button_title, { agent: agentName })

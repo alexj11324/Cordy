@@ -259,7 +259,7 @@ export function WecomAgentBindButton({
   className,
   onShowConnectedDetails,
 }: {
-  agentId: string;
+  agentId?: string;
   agentName?: string;
   className?: string;
   onShowConnectedDetails?: () => void;
@@ -292,7 +292,9 @@ export function WecomAgentBindButton({
   if (!canManage) return null;
 
   const recordedInstallation = listing?.installations.find(
-    (inst) => inst.agent_id === agentId && inst.status === "installed",
+    (inst) =>
+      (agentId ? inst.agent_id === agentId : !inst.agent_id) &&
+      inst.status === "installed",
   );
   const existing = recordedInstallation && installationQueryFailed
     ? { ...recordedInstallation, runtime: undefined }
@@ -322,7 +324,7 @@ export function WecomAgentBindButton({
   async function handleSubmit() {
     const bot_id = botId.trim();
     const secretTrimmed = secret.trim();
-    if (submitting || !agentId || !bot_id || !secretTrimmed) return;
+    if (submitting || !wsId || !bot_id || !secretTrimmed) return;
     setSubmitting(true);
     try {
       await api.registerWecomBYO(wsId, agentId, {
@@ -389,7 +391,7 @@ export function WecomAgentBindButton({
         variant="outline"
         size="sm"
         onClick={() => setDialogOpen(true)}
-        disabled={!agentId}
+        disabled={!wsId}
         title={
           agentName
             ? t(($) => $.wecom.bind_button_title, { agent: agentName })

@@ -30,19 +30,19 @@ import {
 } from "@patchbay/ui/components/ui/dialog";
 import { useT } from "../../i18n";
 import { ComposioTab } from "./composio-tab";
-import { DingTalkTab } from "./dingtalk-tab";
+import { DingTalkAgentBindButton, DingTalkTab } from "./dingtalk-tab";
 import { IntegrationCard } from "./integration-card";
 import type { IntegrationChannel } from "./integration-channel-icon";
 import { IntegrationSetupGuide } from "./integration-setup-guide";
-import { LarkTab } from "./lark-tab";
+import { LarkAgentBindButton, LarkTab } from "./lark-tab";
 import { LinearIntegrationCard } from "./linear-tab";
 import { MessagingConnectionStatus } from "./messaging-connection-status";
 import { SettingsSection, SettingsTab } from "./settings-layout";
-import { SlackTab } from "./slack-tab";
-import { TelegramTab } from "./telegram-tab";
+import { SlackAgentBindButton, SlackTab } from "./slack-tab";
+import { TelegramAgentBindButton, TelegramTab } from "./telegram-tab";
 import { VCSTab } from "./vcs-tab";
-import { WecomTab } from "./wecom-tab";
-import { WeixinTab } from "./weixin-tab";
+import { WecomAgentBindButton, WecomTab } from "./wecom-tab";
+import { WeixinAgentBindButton, WeixinTab } from "./weixin-tab";
 
 type MessagingChannel = Exclude<IntegrationChannel, "linear">;
 
@@ -207,15 +207,24 @@ export function IntegrationsTab({
         weixin: <WeixinTab />,
       }[channel];
     }
+    if (channel === "slack" && messaging?.mode === "managed") {
+      return <SlackTab />;
+    }
+    const installAction = {
+      lark: <LarkAgentBindButton />,
+      slack: <SlackAgentBindButton />,
+      dingtalk: <DingTalkAgentBindButton />,
+      wecom: <WecomAgentBindButton />,
+      telegram: <TelegramAgentBindButton />,
+      weixin: <WeixinAgentBindButton />,
+    }[channel];
     return (
       <div className="space-y-5">
         <IntegrationSetupGuide
           channel={channel}
           managed={messaging?.mode === "managed"}
         />
-        <p className="text-caption text-muted-foreground">
-          {t(($) => $.page.integrations_setup_unavailable)}
-        </p>
+        {installAction}
       </div>
     );
   }

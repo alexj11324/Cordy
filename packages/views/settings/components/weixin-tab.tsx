@@ -246,11 +246,47 @@ export function WeixinTab() {
       {connectAgent ? (
         <WeixinInstallDialog
           wsId={wsId}
-          agent={connectAgent}
+          agentId={connectAgent.id}
+          agentName={connectAgent.name}
           onClose={() => setConnectAgent(null)}
         />
       ) : null}
     </div>
+  );
+}
+
+export function WeixinAgentBindButton({
+  agentId,
+  agentName,
+}: {
+  agentId?: string;
+  agentName?: string;
+}) {
+  const { t } = useT("settings");
+  const wsId = useWorkspaceId();
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={!wsId}
+        onClick={() => setOpen(true)}
+        title={agentName ? t(($) => $.weixin.connect_button_title, { agent: agentName }) : undefined}
+      >
+        <WeixinMark className="h-3 w-3" />
+        {t(($) => $.weixin.connect_button)}
+      </Button>
+      {open ? (
+        <WeixinInstallDialog
+          wsId={wsId}
+          agentId={agentId}
+          agentName={agentName}
+          onClose={() => setOpen(false)}
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -299,11 +335,13 @@ function InstallationRow({
 
 function WeixinInstallDialog({
   wsId,
-  agent,
+  agentId,
+  agentName,
   onClose,
 }: {
   wsId: string;
-  agent: Agent;
+  agentId?: string;
+  agentName?: string;
   onClose: () => void;
 }) {
   const { t } = useT("settings");
@@ -339,7 +377,7 @@ function WeixinInstallDialog({
     setErrorKind(null);
     setVerifyCode("");
     try {
-      const response = await api.beginWeixinInstall(wsId, agent.id);
+      const response = await api.beginWeixinInstall(wsId, agentId);
       if (closedRef.current) return;
       if (!response.session_id || !response.qr_code_url) {
         setStatus("error");
@@ -487,7 +525,9 @@ function WeixinInstallDialog({
         <DialogHeader>
           <DialogTitle>{t(($) => $.weixin.connect_dialog_title)}</DialogTitle>
           <DialogDescription>
-            {t(($) => $.weixin.connect_dialog_description, { agent: agent.name })}
+            {agentName
+              ? t(($) => $.weixin.connect_dialog_description, { agent: agentName })
+              : t(($) => $.weixin.install_scan_hint)}
           </DialogDescription>
         </DialogHeader>
 

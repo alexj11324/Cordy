@@ -363,7 +363,7 @@ export function SlackAgentBindButton({
   className,
   onShowConnectedDetails,
 }: {
-  agentId: string;
+  agentId?: string;
   agentName?: string;
   className?: string;
   /**
@@ -401,7 +401,9 @@ export function SlackAgentBindButton({
   if (!canManage) return null;
 
   const recordedInstallation = listing?.installations.find(
-    (inst) => inst.agent_id === agentId && inst.status === "installed",
+    (inst) =>
+      (agentId ? inst.agent_id === agentId : isWorkspaceInstall(inst.agent_id)) &&
+      inst.status === "installed",
   );
   const existing = recordedInstallation && installationQueryFailed
     ? { ...recordedInstallation, runtime: undefined }
@@ -430,7 +432,7 @@ export function SlackAgentBindButton({
   async function handleSubmit() {
     const bot_token = botToken.trim();
     const app_token = appToken.trim();
-    if (submitting || !agentId || !bot_token || !app_token) return;
+    if (submitting || !wsId || !bot_token || !app_token) return;
     setSubmitting(true);
     try {
       await api.registerSlackBYO(wsId, agentId, { bot_token, app_token });
@@ -462,7 +464,7 @@ export function SlackAgentBindButton({
         variant="outline"
         size="sm"
         onClick={() => setDialogOpen(true)}
-        disabled={!agentId}
+        disabled={!wsId}
         title={
           agentName
             ? t(($) => $.slack.bind_button_title, { agent: agentName })

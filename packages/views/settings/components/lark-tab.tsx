@@ -313,7 +313,7 @@ export function LarkAgentBindButton({
   className,
   onShowConnectedDetails,
 }: {
-  agentId: string;
+  agentId?: string;
   agentName?: string;
   /**
    * The bound agent's owner (`agent.owner_id`). When it matches the
@@ -376,7 +376,9 @@ export function LarkAgentBindButton({
   // close the install entry point and link to the Bot's Lark app page where
   // scopes / display name / additional permissions are actually managed.
   const recordedInstallation = listing?.installations.find(
-    (inst) => inst.agent_id === agentId && inst.status === "installed",
+    (inst) =>
+      (agentId ? inst.agent_id === agentId : !inst.agent_id) &&
+      inst.status === "installed",
   );
   const existing = recordedInstallation && installationQueryFailed
     ? { ...recordedInstallation, runtime: undefined }
@@ -418,7 +420,7 @@ export function LarkAgentBindButton({
           variant="outline"
           size="sm"
           onClick={() => setDialogRegion("feishu")}
-          disabled={!agentId}
+          disabled={!wsId}
           title={
             agentName
               ? t(($) => $.lark.bind_button_feishu_title, { agent: agentName })
@@ -437,7 +439,7 @@ export function LarkAgentBindButton({
             variant="outline"
             size="sm"
             onClick={() => setDialogRegion("lark")}
-            disabled={!agentId}
+            disabled={!wsId}
             title={
               agentName
                 ? t(($) => $.lark.bind_button_lark_title, { agent: agentName })
@@ -681,7 +683,7 @@ function LarkInstallDialog({
   onClose,
 }: {
   wsId: string;
-  agentId: string;
+  agentId?: string;
   agentName?: string;
   region: "feishu" | "lark";
   onClose: () => void;

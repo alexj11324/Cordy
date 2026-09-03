@@ -93,6 +93,7 @@ for (const channel of ["lark", "slack", "dingtalk", "wecom", "telegram", "weixin
 
 vi.mock("./lark-tab", () => ({
   LarkTab: () => <div data-testid="lark-tab" />,
+  LarkAgentBindButton: () => <button data-testid="lark-hub-install">Install</button>,
 }));
 
 vi.mock("./composio-tab", () => ({
@@ -101,10 +102,12 @@ vi.mock("./composio-tab", () => ({
 
 vi.mock("./slack-tab", () => ({
   SlackTab: () => <div data-testid="slack-tab" />,
+  SlackAgentBindButton: () => <button data-testid="slack-hub-install">Install</button>,
 }));
 
 vi.mock("./dingtalk-tab", () => ({
   DingTalkTab: () => <div data-testid="dingtalk-tab" />,
+  DingTalkAgentBindButton: () => <button data-testid="dingtalk-hub-install">Install</button>,
 }));
 
 vi.mock("./vcs-tab", () => ({
@@ -113,14 +116,17 @@ vi.mock("./vcs-tab", () => ({
 
 vi.mock("./wecom-tab", () => ({
   WecomTab: () => <div data-testid="wecom-tab" />,
+  WecomAgentBindButton: () => <button data-testid="wecom-hub-install">Install</button>,
 }));
 
 vi.mock("./telegram-tab", () => ({
   TelegramTab: () => <div data-testid="telegram-tab" />,
+  TelegramAgentBindButton: () => <button data-testid="telegram-hub-install">Install</button>,
 }));
 
 vi.mock("./weixin-tab", () => ({
   WeixinTab: () => <div data-testid="weixin-tab" />,
+  WeixinAgentBindButton: () => <button data-testid="weixin-hub-install">Install</button>,
 }));
 
 vi.mock("./linear-tab", () => ({
@@ -224,6 +230,7 @@ describe("Settings IntegrationsTab", () => {
     fireEvent.click(within(card).getByRole("button", { name: "Configure" }));
 
     expect(screen.getByTestId("integration-setup-guide-dingtalk")).toBeInTheDocument();
+    expect(screen.getByTestId("dingtalk-hub-install")).toBeInTheDocument();
     expect(screen.queryByText("PATCHBAY_DINGTALK_SECRET_KEY")).toBeNull();
   });
 
