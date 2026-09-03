@@ -179,18 +179,18 @@ func (q *Queries) ListActiveManagedSlackInstallations(ctx context.Context) ([]Ch
 const observeManagedSlackRuntime = `-- name: ObserveManagedSlackRuntime :execrows
 WITH current_installation AS MATERIALIZED (
     SELECT ci.id FROM channel_installation ci
-    WHERE ci.id = $1
+    WHERE ci.id = $4
       AND ci.channel_type = 'slack' AND ci.status = 'active'
       AND ci.hosted_paused_at IS NULL
       AND ci.config ->> 'transport' = 'webhook'
-      AND COALESCE(ci.config ->> 'bot_token_encrypted', '') = $2::text
+      AND COALESCE(ci.config ->> 'bot_token_encrypted', '') = $5::text
     FOR SHARE
 )
 INSERT INTO channel_installation_runtime_observation (
     installation_id, state, observed_at, error_code, error_summary, observer_token
 )
-SELECT id, $3::text, now(), NULLIF($4::text, ''),
-       NULLIF($5::text, ''), 'managed:slack:webhook:v1'
+SELECT id, $1::text, now(), NULLIF($2::text, ''),
+       NULLIF($3::text, ''), 'managed:slack:webhook:v1'
 FROM current_installation
 ON CONFLICT (installation_id) DO UPDATE SET
     state = EXCLUDED.state, observed_at = EXCLUDED.observed_at,
@@ -199,22 +199,22 @@ ON CONFLICT (installation_id) DO UPDATE SET
 `
 
 type ObserveManagedSlackRuntimeParams struct {
-	InstallationID   pgtype.UUID `json:"installation_id"`
-	ExpectedBotToken string      `json:"expected_bot_token"`
 	State            string      `json:"state"`
 	ErrorCode        string      `json:"error_code"`
 	ErrorSummary     string      `json:"error_summary"`
+	InstallationID   pgtype.UUID `json:"installation_id"`
+	ExpectedBotToken string      `json:"expected_bot_token"`
 }
 
 // Do not let an in-flight probe overwrite a reconnect or capacity pause.
 // Lock installation before observation, matching the capacity reconciler.
 func (q *Queries) ObserveManagedSlackRuntime(ctx context.Context, arg ObserveManagedSlackRuntimeParams) (int64, error) {
 	result, err := q.db.Exec(ctx, observeManagedSlackRuntime,
-		arg.InstallationID,
-		arg.ExpectedBotToken,
 		arg.State,
 		arg.ErrorCode,
 		arg.ErrorSummary,
+		arg.InstallationID,
+		arg.ExpectedBotToken,
 	)
 	if err != nil {
 		return 0, err
