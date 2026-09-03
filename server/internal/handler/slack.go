@@ -27,6 +27,7 @@ type SlackInstallationResponse struct {
 	BotUserID       string `json:"bot_user_id"`
 	InstallerUserID string `json:"installer_user_id"`
 	Status          string `json:"status"`
+	InstallationStatus string `json:"installation_status"`
 	InstalledAt     string `json:"installed_at"`
 	CreatedAt       string `json:"created_at"`
 	UpdatedAt       string `json:"updated_at"`
@@ -34,6 +35,7 @@ type SlackInstallationResponse struct {
 
 func slackInstallationToResponse(row db.ChannelInstallation) SlackInstallationResponse {
 	info := slack.DecodePublicConfig(row.Config)
+	legacyStatus, installationStatus := messagingInstallationWireStatuses(row.Status)
 	return SlackInstallationResponse{
 		Runtime: initialConnectionStatus(row.Status),
 		ID:              uuidToString(row.ID),
@@ -42,7 +44,8 @@ func slackInstallationToResponse(row db.ChannelInstallation) SlackInstallationRe
 		TeamID:          info.TeamID,
 		BotUserID:       info.BotUserID,
 		InstallerUserID: uuidToString(row.InstallerUserID),
-		Status:          row.Status,
+		Status:          legacyStatus,
+		InstallationStatus: installationStatus,
 		InstalledAt:     row.InstalledAt.Time.UTC().Format(time.RFC3339),
 		CreatedAt:       row.CreatedAt.Time.UTC().Format(time.RFC3339),
 		UpdatedAt:       row.UpdatedAt.Time.UTC().Format(time.RFC3339),

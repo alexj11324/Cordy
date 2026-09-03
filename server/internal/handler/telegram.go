@@ -26,6 +26,7 @@ type TelegramInstallationResponse struct {
 	BotUsername     string `json:"bot_username"`
 	InstallerUserID string `json:"installer_user_id"`
 	Status          string `json:"status"`
+	InstallationStatus string `json:"installation_status"`
 	InstalledAt     string `json:"installed_at"`
 	CreatedAt       string `json:"created_at"`
 	UpdatedAt       string `json:"updated_at"`
@@ -33,6 +34,7 @@ type TelegramInstallationResponse struct {
 
 func telegramInstallationToResponse(row db.ChannelInstallation) TelegramInstallationResponse {
 	info := telegram.DecodePublicConfig(row.Config)
+	legacyStatus, installationStatus := messagingInstallationWireStatuses(row.Status)
 	return TelegramInstallationResponse{
 		Runtime: initialConnectionStatus(row.Status),
 		ID:              uuidToString(row.ID),
@@ -41,7 +43,8 @@ func telegramInstallationToResponse(row db.ChannelInstallation) TelegramInstalla
 		BotID:           info.BotID,
 		BotUsername:     info.BotUsername,
 		InstallerUserID: uuidToString(row.InstallerUserID),
-		Status:          row.Status,
+		Status:          legacyStatus,
+		InstallationStatus: installationStatus,
 		InstalledAt:     row.InstalledAt.Time.UTC().Format(time.RFC3339),
 		CreatedAt:       row.CreatedAt.Time.UTC().Format(time.RFC3339),
 		UpdatedAt:       row.UpdatedAt.Time.UTC().Format(time.RFC3339),

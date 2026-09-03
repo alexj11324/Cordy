@@ -19,6 +19,17 @@ type MessagingConnectionStatus struct {
 	ErrorSummary *string `json:"errorSummary"`
 }
 
+// messagingInstallationWireStatuses keeps the original status field readable
+// by already-installed Desktop clients while exposing the canonical installation
+// lifecycle separately. "active" here is a compatibility spelling for
+// "installed" only; live connectivity remains owned by runtime.
+func messagingInstallationWireStatuses(canonical string) (legacy string, installation string) {
+	if canonical == "installed" {
+		return "active", canonical
+	}
+	return canonical, canonical
+}
+
 type ChannelConnectionLeaseReader interface {
 	ListLeaseOwners(context.Context, []pgtype.UUID) (map[string]string, error)
 }

@@ -12,6 +12,8 @@ export interface DingTalkInstallation {
   agent_id: string;
   installer_user_id: string;
   status: "installed" | "revoked" | string;
+  /** Canonical lifecycle field added while status remains a legacy wire alias. */
+  installation_status?: "installed" | "revoked" | string;
   runtime?: MessagingInstallationRuntime;
   setup?: MessagingInstallationSetup;
   installed_at: string;

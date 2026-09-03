@@ -31,6 +31,7 @@ type DingTalkInstallationResponse struct {
 	AgentID              string   `json:"agent_id"`
 	InstallerUserID      string   `json:"installer_user_id"`
 	Status               string   `json:"status"`
+	InstallationStatus   string   `json:"installation_status"`
 	InstalledAt          string   `json:"installed_at"`
 	CreatedAt            string   `json:"created_at"`
 	UpdatedAt            string   `json:"updated_at"`
@@ -73,13 +74,15 @@ const (
 )
 
 func dingtalkInstallationToResponse(row db.ChannelInstallation) DingTalkInstallationResponse {
+	legacyStatus, installationStatus := messagingInstallationWireStatuses(row.Status)
 	return DingTalkInstallationResponse{
 		Runtime: initialConnectionStatus(row.Status),
 		ID:              uuidToString(row.ID),
 		WorkspaceID:     uuidToString(row.WorkspaceID),
 		AgentID:         uuidToString(row.AgentID),
 		InstallerUserID: uuidToString(row.InstallerUserID),
-		Status:          row.Status,
+		Status:          legacyStatus,
+		InstallationStatus: installationStatus,
 		InstalledAt:     row.InstalledAt.Time.UTC().Format(time.RFC3339),
 		CreatedAt:       row.CreatedAt.Time.UTC().Format(time.RFC3339),
 		UpdatedAt:       row.UpdatedAt.Time.UTC().Format(time.RFC3339),

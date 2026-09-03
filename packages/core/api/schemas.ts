@@ -3732,6 +3732,17 @@ const MessagingInstallationSetupSchema = z.object({
   experimental: z.boolean(),
 }).loose().optional().catch(undefined);
 
+function normalizeMessagingInstallationStatus<
+  T extends { status: string; installation_status?: string },
+>(installation: T): T {
+  return {
+    ...installation,
+    status:
+      installation.installation_status ??
+      (installation.status === "active" ? "installed" : installation.status),
+  };
+}
+
 export const SlackInstallationSchema = z.object({
   id: z.string(),
   workspace_id: z.string().default(""),
@@ -3740,12 +3751,13 @@ export const SlackInstallationSchema = z.object({
   bot_user_id: z.string().default(""),
   installer_user_id: z.string().default(""),
   status: z.string().default("revoked"),
+  installation_status: z.string().optional(),
   installed_at: z.string().default(""),
   created_at: z.string().default(""),
   updated_at: z.string().default(""),
   runtime: MessagingInstallationRuntimeSchema,
   setup: MessagingInstallationSetupSchema,
-}).loose();
+}).loose().transform(normalizeMessagingInstallationStatus);
 
 export const LarkInstallationSchema = z.object({
   id: z.string(),
@@ -3756,13 +3768,14 @@ export const LarkInstallationSchema = z.object({
   bot_open_id: z.string().default(""),
   installer_user_id: z.string().default(""),
   status: z.string().default("revoked"),
+  installation_status: z.string().optional(),
   region: z.string().optional(),
   installed_at: z.string().default(""),
   created_at: z.string().default(""),
   updated_at: z.string().default(""),
   runtime: MessagingInstallationRuntimeSchema,
   setup: MessagingInstallationSetupSchema,
-}).loose();
+}).loose().transform(normalizeMessagingInstallationStatus);
 
 export const ListSlackInstallationsResponseSchema = z.object({
   installations: z.array(SlackInstallationSchema).default([]),
@@ -3788,12 +3801,13 @@ export const DingTalkInstallationSchema = z.object({
   agent_id: z.string().default(""),
   installer_user_id: z.string().default(""),
   status: z.string().default("revoked"),
+  installation_status: z.string().optional(),
   installed_at: z.string().default(""),
   created_at: z.string().default(""),
   updated_at: z.string().default(""),
   agent_available: z.boolean().optional(),
   bound_dingtalk_user_ids: z.array(z.string()).catch([]).default([]),
-}).loose();
+}).loose().transform(normalizeMessagingInstallationStatus);
 
 export const EMPTY_DINGTALK_INSTALLATION: DingTalkInstallation = {
   id: "",
@@ -3897,7 +3911,8 @@ export const WecomInstallationSchema = z.object({
   bot_id: z.string().default(""),
   installer_user_id: z.string().default(""),
   status: z.string().default("revoked"),
-}).loose();
+  installation_status: z.string().optional(),
+}).loose().transform(normalizeMessagingInstallationStatus);
 
 export const EMPTY_WECOM_INSTALLATION: WecomInstallation = {
   id: "",
@@ -3944,10 +3959,11 @@ export const WeixinInstallationSchema = z.object({
   ilink_user_id: z.string().default(""),
   installer_user_id: z.string().default(""),
   status: z.string().default("revoked"),
+  installation_status: z.string().optional(),
   installed_at: z.string().default(""),
   created_at: z.string().default(""),
   updated_at: z.string().default(""),
-}).loose();
+}).loose().transform(normalizeMessagingInstallationStatus);
 
 export const EMPTY_WEIXIN_INSTALLATION: WeixinInstallation = {
   id: "",
@@ -4018,10 +4034,11 @@ export const TelegramInstallationSchema = z.object({
   bot_username: z.string().default(""),
   installer_user_id: z.string().default(""),
   status: z.string().default("revoked"),
+  installation_status: z.string().optional(),
   installed_at: z.string().default(""),
   created_at: z.string().default(""),
   updated_at: z.string().default(""),
-}).loose();
+}).loose().transform(normalizeMessagingInstallationStatus);
 
 export const EMPTY_TELEGRAM_INSTALLATION: TelegramInstallation = {
   id: "",

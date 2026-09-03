@@ -117,3 +117,32 @@ func TestRevokedInstallationsExposeDisconnectedStatus(t *testing.T) {
 		})
 	}
 }
+
+func TestInstalledResponsesPreserveLegacyActiveAndExposeCanonicalStatus(t *testing.T) {
+	row := db.ChannelInstallation{Status: "installed", Config: []byte(`{}`)}
+	for name, response := range map[string]any{
+		"slack":    slackInstallationToResponse(row),
+		"dingtalk": dingtalkInstallationToResponse(row),
+		"telegram": telegramInstallationToResponse(row),
+		"weixin":   weixinInstallationToResponse(row),
+		"lark":     larkInstallationToResponse(lark.Installation{Status: "installed"}),
+		"wecom":    wecomInstallationToResponse(wecom.Installation{Status: "installed"}),
+	} {
+		t.Run(name, func(t *testing.T) {
+			encoded, err := json.Marshal(response)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got struct {
+				Status             string `json:"status"`
+				InstallationStatus string `json:"installation_status"`
+			}
+			if err := json.Unmarshal(encoded, &got); err != nil {
+				t.Fatal(err)
+			}
+			if got.Status != "active" || got.InstallationStatus != "installed" {
+				t.Fatalf("installation compatibility fields = %+v, want active/installed: %s", got, encoded)
+			}
+		})
+	}
+}

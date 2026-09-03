@@ -22,12 +22,19 @@ Web/Desktop management gates, Mobile WeCom, fixtures, and status copy.
 Actual running task/lease/session activity remains `active` where appropriate.
 WeCom's revoked-installation skip metric now uses `installation_revoked`.
 
+The public HTTP contract is additive so an installed Desktop client can span a
+server rollout. `installation_status` is the canonical lifecycle field. The
+legacy `status` field continues to project `installed` as `active`; current
+clients prefer `installation_status` and normalize an older server's lone
+`status = active` to `installed`. This adapter does not infer connectivity:
+only the separate `runtime` projection can produce a connected state.
+
 Migrations 578–580 preserve installation IDs, credentials, binding rows,
 timestamps and quota pauses; change the default/check constraint; and replace
 the partial lease index with an installed-state predicate. Concurrent index
 creation/deletion each has its own migration file. No FK/cascade is added.
-There is no dual-name runtime adapter. Backend and clients must be upgraded
-together for this intentional contract change.
+The database and internal Go/TypeScript models have no dual-name source of
+truth. Only the isolated public-wire adapter above retains the legacy spelling.
 
 ### Allowed legacy locations
 
@@ -36,13 +43,16 @@ together for this intentional contract change.
   upgrade/rollback. These are database conversion, not shipping dual-name logic.
 - `messaging-installed.test.ts` rejects the old value; the migration round-trip
   test and historical migration fixture recreate the old schema deliberately.
+- Public JSON `status = active` is a legacy compatibility projection for
+  installed Desktop clients. Delete it only after the minimum supported
+  Desktop version reads `installation_status`; owner: Desktop/API maintainers.
 - Other domains' active sessions, tasks, Agents and leases are different
   concepts, not installation-status aliases.
 
 Owner: this migration task. Deletion condition for conversion SQL and historical
 fixtures: only a separately approved schema-baseline squash that removes the
-corresponding old schema/rollback target. No runtime adapter exists or needs a
-deletion deadline.
+corresponding old schema/rollback target. The public-wire adapter has the
+separate Desktop-version deletion condition listed above.
 
 ## Verification checkpoint
 

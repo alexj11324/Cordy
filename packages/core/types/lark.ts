@@ -15,6 +15,8 @@ export interface LarkInstallation {
   bot_open_id: string;
   installer_user_id: string;
   status: "installed" | "revoked" | string;
+  /** Canonical lifecycle field added while status remains a legacy wire alias. */
+  installation_status?: "installed" | "revoked" | string;
   runtime?: MessagingInstallationRuntime;
   setup?: MessagingInstallationSetup;
   /** Which Lark cloud the bot lives on: "feishu" (mainland) or "lark"

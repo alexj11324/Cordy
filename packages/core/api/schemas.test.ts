@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   AppConfigSchema,
+  SlackInstallationSchema,
+  LarkInstallationSchema,
+  DingTalkInstallationSchema,
   WecomInstallationSchema,
   ListWecomInstallationsResponseSchema,
   RedeemWecomBindingTokenResponseSchema,
@@ -8,6 +11,7 @@ import {
   EMPTY_LIST_WECOM_INSTALLATIONS_RESPONSE,
   EMPTY_REDEEM_WECOM_BINDING_TOKEN_RESPONSE,
   TelegramInstallationSchema,
+  WeixinInstallationSchema,
   ListTelegramInstallationsResponseSchema,
   RedeemTelegramBindingTokenResponseSchema,
   EMPTY_TELEGRAM_INSTALLATION,
@@ -73,6 +77,29 @@ import {
   EMPTY_ISSUE_STATUS_ENTRY,
 } from "./schemas";
 import { parseWithFallback } from "./schema";
+
+describe.each([
+  ["slack", SlackInstallationSchema],
+  ["lark", LarkInstallationSchema],
+  ["dingtalk", DingTalkInstallationSchema],
+  ["wecom", WecomInstallationSchema],
+  ["telegram", TelegramInstallationSchema],
+  ["weixin", WeixinInstallationSchema],
+] as const)("%s installation status compatibility", (_provider, schema) => {
+  it("prefers the canonical installation_status over the legacy status field", () => {
+    expect(
+      schema.parse({
+        id: "installation-1",
+        status: "active",
+        installation_status: "installed",
+      }).status,
+    ).toBe("installed");
+  });
+
+  it("treats an old server's active status as legacy installed", () => {
+    expect(schema.parse({ id: "installation-1", status: "active" }).status).toBe("installed");
+  });
+});
 
 const baseIssue = {
   id: "11111111-1111-1111-1111-111111111111",
@@ -1734,7 +1761,7 @@ describe("IssueViewSchema", () => {
 });
 
 // WeCom smart-bot installation schemas. These gate UI affordances (the Connect
-// dialog, the "ask your operator" state, the revoked-vs-active badge), so a
+// dialog, the "ask your operator" state, and the revoked-vs-installed badge), so a
 // malformed response must degrade to the safe state rather than a broken one.
 describe("WeCom installation schemas", () => {
   it("parses a well-formed installation", () => {
@@ -1747,7 +1774,7 @@ describe("WeCom installation schemas", () => {
       status: "active",
     });
     expect(parsed.bot_id).toBe("aibot_xyz");
-    expect(parsed.status).toBe("active");
+    expect(parsed.status).toBe("installed");
   });
 
   it("defaults a missing status to 'revoked', never 'active'", () => {
@@ -1810,7 +1837,7 @@ describe("Telegram installation schemas", () => {
       status: "active",
     });
     expect(parsed.bot_username).toBe("patchbay_test_bot");
-    expect(parsed.status).toBe("active");
+    expect(parsed.status).toBe("installed");
   });
 
   it("defaults incomplete data to the disconnected state", () => {

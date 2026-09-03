@@ -49,17 +49,21 @@ type WecomInstallationResponse struct {
 	BotID           string `json:"bot_id"`
 	InstallerUserID string `json:"installer_user_id"`
 	Status          string `json:"status"`
+	InstallationStatus string `json:"installation_status"`
 }
 
 func wecomInstallationToResponse(inst wecom.Installation) WecomInstallationResponse {
+	canonicalStatus := string(inst.Status)
+	legacyStatus, installationStatus := messagingInstallationWireStatuses(canonicalStatus)
 	return WecomInstallationResponse{
-		Runtime: initialConnectionStatus(string(inst.Status)),
+		Runtime: initialConnectionStatus(canonicalStatus),
 		ID:              uuidToString(inst.ID),
 		WorkspaceID:     uuidToString(inst.WorkspaceID),
 		AgentID:         uuidToString(inst.AgentID),
 		BotID:           inst.BotID,
 		InstallerUserID: uuidToString(inst.InstallerUserID),
-		Status:          string(inst.Status),
+		Status:          legacyStatus,
+		InstallationStatus: installationStatus,
 	}
 }
 

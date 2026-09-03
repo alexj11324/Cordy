@@ -30,6 +30,7 @@ type WeixinInstallationResponse struct {
 	ILinkUserID     string `json:"ilink_user_id"`
 	InstallerUserID string `json:"installer_user_id"`
 	Status          string `json:"status"`
+	InstallationStatus string `json:"installation_status"`
 	InstalledAt     string `json:"installed_at"`
 	CreatedAt       string `json:"created_at"`
 	UpdatedAt       string `json:"updated_at"`
@@ -37,11 +38,13 @@ type WeixinInstallationResponse struct {
 
 func weixinInstallationToResponse(row db.ChannelInstallation) WeixinInstallationResponse {
 	public := weixin.DecodePublicConfig(row.Config)
+	legacyStatus, installationStatus := messagingInstallationWireStatuses(row.Status)
 	return WeixinInstallationResponse{
 		Runtime: initialConnectionStatus(row.Status),
 		ID: uuidToString(row.ID), WorkspaceID: uuidToString(row.WorkspaceID), AgentID: uuidToString(row.AgentID),
 		BotID: public.BotID, ILinkUserID: public.ILinkUserID, InstallerUserID: uuidToString(row.InstallerUserID),
-		Status: row.Status, InstalledAt: row.InstalledAt.Time.UTC().Format(time.RFC3339),
+		Status: legacyStatus, InstallationStatus: installationStatus,
+		InstalledAt: row.InstalledAt.Time.UTC().Format(time.RFC3339),
 		CreatedAt: row.CreatedAt.Time.UTC().Format(time.RFC3339), UpdatedAt: row.UpdatedAt.Time.UTC().Format(time.RFC3339),
 	}
 }
