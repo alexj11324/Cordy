@@ -25,6 +25,11 @@ const authUserRef = vi.hoisted(() => ({
 const membersRef = vi.hoisted(() => ({
   current: [] as { user_id: string; role: string }[],
 }));
+const messagingQuotaRef = vi.hoisted(() => ({
+  current: undefined as
+    | { mode: string; used: number | null; reserved: number | null; limit: number | null }
+    | undefined,
+}));
 const channelInstallationsRef = vi.hoisted(() => ({
   current: {} as Partial<Record<
     "lark" | "slack" | "dingtalk" | "wecom" | "telegram" | "weixin",
@@ -46,6 +51,7 @@ vi.mock("@tanstack/react-query", () => ({
     queryCallsRef.current.push(opts);
     const isMemberQuery = opts.queryKey[opts.queryKey.length - 1] === "members";
     const channel = opts.queryKey[0];
+    const isMessagingQuotaQuery = channel === "messaging-quota";
     const isChannelInstallationsQuery =
       typeof channel === "string" &&
       channel in channelInstallationsRef.current &&
@@ -53,6 +59,8 @@ vi.mock("@tanstack/react-query", () => ({
     return {
       data: isMemberQuery
         ? membersRef.current
+        : isMessagingQuotaQuery
+          ? messagingQuotaRef.current
         : isChannelInstallationsQuery
           ? channelInstallationsRef.current[
               channel as keyof typeof channelInstallationsRef.current
@@ -151,6 +159,7 @@ describe("Settings IntegrationsTab", () => {
     composioErrorRef.current = null;
     authUserRef.current = null;
     membersRef.current = [];
+    messagingQuotaRef.current = undefined;
     channelInstallationsRef.current = {
       lark: { configured: false, install_supported: false, installations: [] },
       slack: { configured: false, install_supported: false, installations: [] },
@@ -180,6 +189,14 @@ describe("Settings IntegrationsTab", () => {
       expect(screen.getByTestId(`integration-channel-card-${channel}`)).toBeInTheDocument();
       expect(screen.queryByTestId(`${channel}-tab`)).toBeNull();
     }
+  });
+
+  it("shows used plus reserved hosted Agent turns", () => {
+    messagingQuotaRef.current = { mode: "managed", used: 7, reserved: 2, limit: 100 };
+    renderTab();
+    expect(screen.getByTestId("messaging-quota")).toHaveTextContent(
+      "9 of 100 Agent turns used this period",
+    );
   });
 
   it("shows a runtime-confirmed workspace installation as connected", () => {

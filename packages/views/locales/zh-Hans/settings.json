@@ -485,6 +485,11 @@
     "integrations_configure": "配置",
     "integrations_setup_title": "平台配置",
     "integrations_setup_unavailable": "工作区级安装暂不可用。",
+    "integrations_quota_title": "托管消息用量",
+    "integrations_quota_loading": "加载中…",
+    "integrations_quota_unavailable": "暂时不可用",
+    "integrations_quota_unlimited": "无限制",
+    "integrations_quota_used": "本周期已使用 {{used}} / {{limit}} 次智能体运行",
     "integrations_requirements_title": "你需要准备",
     "integrations_setup_steps_title": "按以下步骤完成",
     "back_to_app": "返回应用"

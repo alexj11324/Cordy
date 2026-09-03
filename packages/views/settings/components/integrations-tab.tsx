@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CircleAlert, Loader2, Settings2 } from "lucide-react";
-import { ApiError } from "@patchbay/core/api";
+import { ApiError, api } from "@patchbay/core/api";
 import { useAuthStore } from "@patchbay/core/auth";
 import { composioToolkitsOptions } from "@patchbay/core/composio";
 import { useConfigStore, useFeatureEnabled } from "@patchbay/core/config";
@@ -173,6 +173,16 @@ export function IntegrationsTab({
   const wecom = useQuery({ ...wecomInstallationsOptions(wsId), enabled: !!wsId });
   const telegram = useQuery({ ...telegramInstallationsOptions(wsId), enabled: !!wsId });
   const weixin = useQuery({ ...weixinInstallationsOptions(wsId), enabled: !!wsId });
+  const messagingQuota = useQuery({
+    queryKey: ["messaging-quota", wsId],
+    queryFn: () => api.getMessagingQuotaUsage(wsId),
+    enabled: !!wsId && messaging?.mode === "managed",
+    staleTime: 30_000,
+  });
+  const quotaConsumed =
+    messagingQuota.data?.used != null
+      ? messagingQuota.data.used + (messagingQuota.data.reserved ?? 0)
+      : null;
   const listings: Record<MessagingChannel, IntegrationQuery> = {
     lark,
     slack,
@@ -232,6 +242,28 @@ export function IntegrationsTab({
   const content = (
     <>
       <section className="space-y-4">
+        {messaging?.mode === "managed" ? (
+          <div className="text-caption text-muted-foreground" data-testid="messaging-quota">
+            <span className="font-medium text-foreground">
+              {t(($) => $.page.integrations_quota_title)}: {" "}
+            </span>
+            {messagingQuota.isLoading ? (
+              t(($) => $.page.integrations_quota_loading)
+            ) : messagingQuota.isError || messagingQuota.data?.mode === "unavailable" ? (
+              t(($) => $.page.integrations_quota_unavailable)
+            ) : messagingQuota.data?.mode === "unlimited" ? (
+              t(($) => $.page.integrations_quota_unlimited)
+            ) : messagingQuota.data?.mode === "managed" &&
+              messagingQuota.data.limit != null && quotaConsumed != null ? (
+              t(($) => $.page.integrations_quota_used, {
+                used: quotaConsumed,
+                limit: messagingQuota.data.limit,
+              })
+            ) : (
+              t(($) => $.page.integrations_quota_unavailable)
+            )}
+          </div>
+        ) : null}
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {([
             ["lark", t(($) => $.lark.section_title), t(($) => $.lark.page_description), "bg-[#3370FF]/10"],

@@ -21,6 +21,32 @@ afterEach(() => {
 });
 
 describe("workspace Hub installation endpoints", () => {
+  it("preserves hosted messaging usage and safely falls back", async () => {
+    stubFetchJson({
+      mode: "managed",
+      used: 7,
+      reserved: 2,
+      limit: 100,
+      period_start: "2026-09-01T00:00:00Z",
+      period_end: "2026-10-01T00:00:00Z",
+      reset_at: "2026-10-01T00:00:00Z",
+    });
+    const client = new ApiClient("https://api.example.test");
+    await expect(client.getMessagingQuotaUsage("ws-1")).resolves.toMatchObject({
+      mode: "managed",
+      used: 7,
+      reserved: 2,
+      limit: 100,
+    });
+
+    stubFetchJson({ mode: "managed", used: -1 });
+    await expect(client.getMessagingQuotaUsage("ws-1")).resolves.toMatchObject({
+      mode: "disabled",
+      used: null,
+      limit: null,
+    });
+  });
+
   it("omits agent_id for every workspace-scoped provider install", async () => {
     const fetchMock = vi.fn().mockImplementation(async () =>
       new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } }),

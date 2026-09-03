@@ -34,6 +34,25 @@ type Admission struct {
 	Window Window
 }
 
+type UsageMode string
+
+const (
+	UsageDisabled    UsageMode = "disabled"
+	UsageUnavailable UsageMode = "unavailable"
+	UsageUnlimited   UsageMode = "unlimited"
+	UsageManaged     UsageMode = "managed"
+)
+
+type UsagePolicy struct {
+	Mode   UsageMode
+	Window Window
+}
+
+type Usage struct {
+	Used     int64
+	Reserved int64
+}
+
 type ExceededError struct {
 	Used  int64
 	Limit int64
@@ -74,6 +93,43 @@ func Resolve(ctx context.Context, provider entitlement.Provider, managed bool, w
 	}
 }
 
+func ResolveUsage(ctx context.Context, provider entitlement.Provider, managed bool, workspaceID uuid.UUID, now time.Time) UsagePolicy {
+	if !managed {
+		return UsagePolicy{Mode: UsageDisabled}
+	}
+	if provider == nil {
+		return UsagePolicy{Mode: UsageUnavailable}
+	}
+	decision := provider.Gate(ctx, workspaceID, entitlement.GateImAgentTurns)
+	if decision.Gate.Action == entitlement.ActionOff {
+		return UsagePolicy{Mode: UsageUnavailable}
+	}
+	if decision.Gate.Action != entitlement.ActionObserve && decision.Gate.Action != entitlement.ActionEnforce {
+		return UsagePolicy{Mode: UsageUnavailable}
+	}
+	if decision.Gate.Limit == nil {
+		return UsagePolicy{Mode: UsageUnlimited, Window: CurrentMonthWindow(0, now)}
+	}
+	if *decision.Gate.Limit >= 0 && decision.Gate.PeriodStart != nil && decision.Gate.PeriodEnd != nil && decision.Gate.PeriodStart.Before(*decision.Gate.PeriodEnd) {
+		resetAt := *decision.Gate.PeriodEnd
+		if decision.Gate.ResetAt != nil {
+			resetAt = *decision.Gate.ResetAt
+		}
+		return UsagePolicy{Mode: UsageManaged, Window: Window{
+			Limit: int64(*decision.Gate.Limit), PeriodStart: *decision.Gate.PeriodStart,
+			PeriodEnd: *decision.Gate.PeriodEnd, ResetAt: resetAt,
+		}}
+	}
+	return UsagePolicy{Mode: UsageUnavailable}
+}
+
+func CurrentMonthWindow(limit int64, now time.Time) Window {
+	now = now.UTC()
+	start := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	end := start.AddDate(0, 1, 0)
+	return Window{Limit: limit, PeriodStart: start, PeriodEnd: end, ResetAt: end}
+}
+
 type dbtx interface {
 	QueryRow(context.Context, string, ...any) pgx.Row
 }
@@ -101,7 +157,18 @@ func AdmitTurn(ctx context.Context, tx dbtx, workspaceID uuid.UUID, window Windo
 		}
 		return err
 	}
-	var used, reserved int64
+	usage, err := CountTurns(ctx, tx, workspaceID, window)
+	if err != nil {
+		return err
+	}
+	if usage.Used+usage.Reserved >= window.Limit {
+		return &ExceededError{Used: usage.Used + usage.Reserved, Limit: window.Limit}
+	}
+	return nil
+}
+
+func CountTurns(ctx context.Context, tx dbtx, workspaceID uuid.UUID, window Window) (Usage, error) {
+	var usage Usage
 	err := tx.QueryRow(ctx, `
 SELECT
   count(*) FILTER (WHERE task.status NOT IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')),
@@ -117,12 +184,6 @@ WHERE task.chat_session_id IS NOT NULL
       WHERE message.task_id = task.id
         AND message.role = 'user'
         AND message.channel_ingested = TRUE
-  )`, workspaceID, window.PeriodStart, window.PeriodEnd).Scan(&used, &reserved)
-	if err != nil {
-		return err
-	}
-	if used+reserved >= window.Limit {
-		return &ExceededError{Used: used + reserved, Limit: window.Limit}
-	}
-	return nil
+  )`, workspaceID, window.PeriodStart, window.PeriodEnd).Scan(&usage.Used, &usage.Reserved)
+	return usage, err
 }

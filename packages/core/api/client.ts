@@ -349,6 +349,9 @@ import {
   EMPTY_WEBHOOK_DELIVERY,
   AppConfigSchema,
   type AppConfigResponse,
+  type MessagingQuotaUsage,
+  MessagingQuotaUsageSchema,
+  EMPTY_MESSAGING_QUOTA_USAGE,
   GroupedIssuesResponseSchema,
   IssueTableFacetsResponseSchema,
   IssueTableGroupsResponseSchema,
@@ -5058,6 +5061,18 @@ export class ApiClient {
     const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/lark/installations`);
     return parseWithFallback(raw, ListLarkInstallationsResponseSchema, EMPTY_LIST_LARK_INSTALLATIONS_RESPONSE,
       { endpoint: "GET /api/workspaces/:id/lark/installations" });
+  }
+
+  async getMessagingQuotaUsage(workspaceId: string): Promise<MessagingQuotaUsage> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/messaging/usage`,
+    );
+    return parseWithFallback(
+      raw,
+      MessagingQuotaUsageSchema,
+      EMPTY_MESSAGING_QUOTA_USAGE,
+      { endpoint: "GET /api/workspaces/:id/messaging/usage" },
+    );
   }
 
   async beginLarkInstall(

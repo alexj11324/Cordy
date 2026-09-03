@@ -485,6 +485,11 @@
     "integrations_configure": "Configure",
     "integrations_setup_title": "Platform setup",
     "integrations_setup_unavailable": "Workspace installation is not available yet.",
+    "integrations_quota_title": "Hosted messaging usage",
+    "integrations_quota_loading": "Loading…",
+    "integrations_quota_unavailable": "Temporarily unavailable",
+    "integrations_quota_unlimited": "Unlimited",
+    "integrations_quota_used": "{{used}} of {{limit}} Agent turns used this period",
     "integrations_requirements_title": "What you need",
     "integrations_setup_steps_title": "Complete these steps",
     "back_to_app": "Back to app"

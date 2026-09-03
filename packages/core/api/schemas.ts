@@ -1058,6 +1058,38 @@ export type MessagingCapabilities = {
   platforms: MessagingPlatformCapability[];
 };
 
+export type MessagingQuotaUsage = {
+  mode: string;
+  used: number | null;
+  reserved: number | null;
+  limit: number | null;
+  period_start: string | null;
+  period_end: string | null;
+  reset_at: string | null;
+};
+
+export const MessagingQuotaUsageSchema = z
+  .object({
+    mode: z.string().default("disabled"),
+    used: z.number().int().nonnegative().nullable().default(null),
+    reserved: z.number().int().nonnegative().nullable().default(null),
+    limit: z.number().int().nonnegative().nullable().default(null),
+    period_start: z.string().nullable().default(null),
+    period_end: z.string().nullable().default(null),
+    reset_at: z.string().nullable().default(null),
+  })
+  .loose();
+
+export const EMPTY_MESSAGING_QUOTA_USAGE: MessagingQuotaUsage = {
+  mode: "disabled",
+  used: null,
+  reserved: null,
+  limit: null,
+  period_start: null,
+  period_end: null,
+  reset_at: null,
+};
+
 // ---------------------------------------------------------------------------
 // Schemas for the highest-risk API endpoints — those whose responses drive
 // the issue detail page (timeline, comments, subscribers) and the issues
