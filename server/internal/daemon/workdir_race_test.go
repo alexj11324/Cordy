@@ -650,14 +650,30 @@ func TestRunTask_ExtendsPrepareLeaseDuringStartTask(t *testing.T) {
 	}
 }
 
-type prepareLeaseCountingTransport struct {
-	base  http.RoundTripper
-	calls *atomic.Int64
+type blockedPrepareLeaseTransport struct {
+	base         http.RoundTripper
+	startEntered <-chan struct{}
+	cancel       context.CancelCauseFunc
+	started      chan struct{}
+	stopped      chan error
+	startedOnce  sync.Once
+	stoppedOnce  sync.Once
 }
 
-func (t *prepareLeaseCountingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (t *blockedPrepareLeaseTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if strings.HasSuffix(req.URL.Path, "/prepare-lease") {
-		t.calls.Add(1)
+		select {
+		case <-t.startEntered:
+		default:
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(""))}, nil
+		}
+		t.startedOnce.Do(func() {
+			close(t.started)
+			t.cancel(errTaskPrepareTimeout)
+		})
+		<-req.Context().Done()
+		t.stoppedOnce.Do(func() { t.stopped <- context.Cause(req.Context()) })
+		return nil, req.Context().Err()
 	}
 	return t.base.RoundTrip(req)
 }
@@ -672,12 +688,10 @@ func TestRunTask_PrepareTimeoutStopsLeaseDuringBlockedStartTask(t *testing.T) {
 		taskPrepareLeaseTimeout = oldTimeout
 	})
 
-	var leaseCalls atomic.Int64
 	startEntered := make(chan struct{})
 	var closeStartOnce sync.Once
 	releaseStart := make(chan struct{})
 	var releaseStartOnce sync.Once
-	t.Cleanup(func() { releaseStartOnce.Do(func() { close(releaseStart) }) })
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/prepare-lease"):
@@ -690,16 +704,12 @@ func TestRunTask_PrepareTimeoutStopsLeaseDuringBlockedStartTask(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 		}
 	}))
-	t.Cleanup(srv.Close)
+	t.Cleanup(func() {
+		releaseStartOnce.Do(func() { close(releaseStart) })
+		srv.Close()
+	})
 
-	// Count requests where the extender starts them. A cancelled RoundTrip can
-	// return before httptest schedules its handler, so counting in the handler
-	// can make an already-in-flight request look like post-timeout activity.
 	client := NewClient(srv.URL)
-	client.client.Transport = &prepareLeaseCountingTransport{
-		base:  client.client.Transport,
-		calls: &leaseCalls,
-	}
 
 	workspacesRoot := t.TempDir()
 	fakeBin := filepath.Join(t.TempDir(), "claude")
@@ -712,7 +722,7 @@ func TestRunTask_PrepareTimeoutStopsLeaseDuringBlockedStartTask(t *testing.T) {
 		workspaces:         make(map[string]*workspaceState),
 		runtimeIndex:       map[string]Runtime{"rt-1": {ID: "rt-1", Provider: "claude"}},
 		activeEnvRoots:     make(map[string]int),
-		taskPrepareTimeout: 150 * time.Millisecond,
+		taskPrepareTimeout: time.Nanosecond,
 		cfg: Config{
 			WorkspacesRoot: workspacesRoot,
 			Agents: map[string]AgentEntry{
@@ -730,41 +740,72 @@ func TestRunTask_PrepareTimeoutStopsLeaseDuringBlockedStartTask(t *testing.T) {
 		Agent:       &AgentData{ID: "agent-runtask-start-timeout", Name: "test-agent"},
 	}
 	taskLog := slog.New(slog.NewTextHandler(io.Discard, nil))
-	startedAt := time.Now()
+	// Exercise the real deadline independently of filesystem preparation speed.
+	// A 150ms deadline used to race that work and could expire before /start,
+	// even though runTask correctly cancelled the preparation.
 	_, err := d.runTask(context.Background(), task, "claude", 0, taskLog)
 	if !errors.Is(err, errTaskPrepareTimeout) {
 		t.Fatalf("runTask error = %v, want task prepare timeout", err)
 	}
-	if elapsed := time.Since(startedAt); elapsed > time.Second {
-		t.Fatalf("runTask took %s, want prepare deadline to stop blocked /start", elapsed)
-	}
 	select {
 	case <-startEntered:
+		t.Fatal("expired preparation reached /start")
 	default:
-		t.Fatal("runTask did not reach /start")
 	}
-	releaseStartOnce.Do(func() { close(releaseStart) })
-	if got := leaseCalls.Load(); got == 0 {
-		t.Fatal("prepare lease request was never started while /start was blocked")
+
+	// Deliver the same timeout cause only after both requests are in flight.
+	// This phase proves cancellation and joining, not the timer (covered above).
+	d.taskPrepareTimeout = 0
+	ctx, cancel := context.WithCancelCause(context.Background())
+	transport := &blockedPrepareLeaseTransport{
+		base:         client.client.Transport,
+		startEntered: startEntered,
+		cancel:       cancel,
+		started:      make(chan struct{}),
+		stopped:      make(chan error, 1),
 	}
-	leaseCallsAtReturn := leaseCalls.Load()
-	lastLeaseCalls := leaseCallsAtReturn
-	stableReads := 0
-	deadline := time.Now().Add(12 * taskPrepareLeaseRefresh)
-	for stableReads < 3 && time.Now().Before(deadline) {
-		time.Sleep(taskPrepareLeaseRefresh)
-		got := leaseCalls.Load()
-		if got == lastLeaseCalls {
-			stableReads++
-			continue
+	client.client.Transport = transport
+	runDone := make(chan struct{})
+	var runErr error
+	go func() {
+		_, runErr = d.runTask(ctx, task, "claude", 0, taskLog)
+		close(runDone)
+	}()
+	t.Cleanup(func() {
+		cancel(nil)
+		releaseStartOnce.Do(func() { close(releaseStart) })
+		select {
+		case <-runDone:
+		case <-time.After(5 * time.Second):
+			t.Error("runTask did not stop during cleanup")
 		}
-		lastLeaseCalls = got
-		stableReads = 0
+	})
+	guard := time.NewTimer(5 * time.Second)
+	defer guard.Stop()
+	select {
+	case <-runDone:
+	case <-guard.C:
+		t.Fatal("prepare timeout did not stop blocked /start")
 	}
-	if stableReads < 3 {
-		t.Fatalf("prepare lease kept extending after timeout: calls %d -> %d", leaseCallsAtReturn, leaseCalls.Load())
+	if !errors.Is(runErr, errTaskPrepareTimeout) {
+		t.Fatalf("runTask error = %v, want task prepare timeout", runErr)
 	}
-	if got := taskRunFailureReason(err); got != "timeout" {
+	for _, checkpoint := range []<-chan struct{}{startEntered, transport.started} {
+		select {
+		case <-checkpoint:
+		default:
+			t.Fatal("timeout was not delivered while both requests were in flight")
+		}
+	}
+	select {
+	case cause := <-transport.stopped:
+		if !errors.Is(cause, errTaskPrepareTimeout) {
+			t.Fatalf("prepare lease stopped with %v, want task prepare timeout", cause)
+		}
+	default:
+		t.Fatal("runTask returned before cancelling the in-flight prepare lease")
+	}
+	if got := taskRunFailureReason(runErr); got != "timeout" {
 		t.Fatalf("taskRunFailureReason = %q, want retryable platform timeout", got)
 	}
 }
