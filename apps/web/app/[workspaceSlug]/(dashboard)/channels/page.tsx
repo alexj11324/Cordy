@@ -1,7 +1,1 @@
-"use client";
-
-import { ChannelsPage } from "@patchbay/views/channels";
-
-export default function Page() {
-  return <ChannelsPage />;
-}
+export { ChannelsPage as default } from "@patchbay/views/channels";

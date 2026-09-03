@@ -65,6 +65,9 @@ type UserResponse struct {
 	ProfileDescription      string          `json:"profile_description"`
 	CreatedAt               string          `json:"created_at"`
 	UpdatedAt               string          `json:"updated_at"`
+	// Mirrors the Rust mainline user contract: frontend gates guest-only
+	// flows (desktop GuestSessionEntry, logout paths) on this flag.
+	IsGuest bool `json:"is_guest"`
 }
 
 // MaxProfileDescriptionLen caps the user-supplied profile_description body.
@@ -94,6 +97,7 @@ func (h *Handler) userToResponse(u db.User) UserResponse {
 		ProfileDescription:      u.ProfileDescription,
 		CreatedAt:               timestampToString(u.CreatedAt),
 		UpdatedAt:               timestampToString(u.UpdatedAt),
+		IsGuest:                 u.IsGuest,
 	}
 }
 

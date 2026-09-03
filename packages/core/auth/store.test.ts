@@ -45,19 +45,62 @@ describe("authStore", () => {
     expect(store.getState().retryGeneration).toBe(1);
   });
 
-  it("explicit logout still clears credentials and publishes unauthenticated state", () => {
+  it("explicit logout still clears credentials and publishes unauthenticated state", async () => {
     const storage = makeStorage({ patchbay_token: "t" });
     const api = makeApi();
+    api.logout = vi.fn().mockResolvedValue(undefined);
     const onLogout = vi.fn();
     const store = createAuthStore({ api, storage, onLogout });
 
     store.setState({ user: fakeUser, status: "authenticated", isLoading: false });
-    store.getState().logout();
+    await store.getState().logout();
 
     expect(storage.snapshot().patchbay_token).toBeUndefined();
     expect(api.setToken).toHaveBeenCalledWith(null);
+    expect(api.logout).not.toHaveBeenCalled();
     expect(onLogout).toHaveBeenCalledOnce();
     expect(store.getState().user).toBeNull();
     expect(store.getState().status).toBe("unauthenticated");
+  });
+
+  it("guest logout revokes the server session before clearing local state", async () => {
+    const storage = makeStorage({ patchbay_token: "guest-t" });
+    const api = makeApi();
+    api.logout = vi.fn().mockResolvedValue(undefined);
+    const store = createAuthStore({ api, storage });
+
+    store.setState({
+      user: { ...fakeUser, is_guest: true },
+      status: "authenticated",
+      isLoading: false,
+    });
+    await store.getState().logout();
+
+    expect(api.logout).toHaveBeenCalledOnce();
+    expect(store.getState().user).toBeNull();
+  });
+
+  it("createGuestSession persists the guest bearer and rejects non-guest users", async () => {
+    const storage = makeStorage();
+    const api = makeApi();
+    const guestUser = { ...fakeUser, is_guest: true };
+    api.createGuestSession = vi
+      .fn()
+      .mockResolvedValue({ token: "guest-t", user: guestUser });
+    const onLogin = vi.fn();
+    const store = createAuthStore({ api, storage, onLogin });
+
+    const user = await store.getState().createGuestSession();
+
+    expect(user).toEqual(guestUser);
+    expect(storage.snapshot().patchbay_token).toBe("guest-t");
+    expect(api.setToken).toHaveBeenCalledWith("guest-t");
+    expect(onLogin).toHaveBeenCalledOnce();
+    expect(store.getState().status).toBe("authenticated");
+
+    api.createGuestSession = vi
+      .fn()
+      .mockResolvedValue({ token: "t", user: fakeUser });
+    await expect(store.getState().createGuestSession()).rejects.toThrow();
   });
 });

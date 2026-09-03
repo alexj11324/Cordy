@@ -1,7 +1,7 @@
 "use client";
 
-import { ErrorBoundary } from "@patchbay/ui/components/common/error-boundary";
 import { TaskGraphPage } from "@patchbay/views/task-graph";
+import { ErrorBoundary } from "@patchbay/ui/components/common/error-boundary";
 
 export default function Page() {
   return (

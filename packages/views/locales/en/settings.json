@@ -458,7 +458,10 @@
       "plugins": "Plugins",
       "mcp": "MCP",
       "billing": "Billing"
-    }
+    },
+    "integrations_title": "Integrations",
+    "integrations_description": "Connect messaging platforms once at the workspace level. Use /agents in the conversation to choose or switch the Agent for each chat.",
+    "back_to_app": "Back to app"
   },
   "plugins": {
     "title": "Plugins",

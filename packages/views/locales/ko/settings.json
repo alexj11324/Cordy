@@ -458,7 +458,10 @@
       "plugins": "Plugins",
       "mcp": "MCP",
       "billing": "결제 및 요금제"
-    }
+    },
+    "integrations_title": "연동",
+    "integrations_description": "메시징 플랫폼을 워크스페이스에 한 번 연결하고, 대화에서 /agents를 사용해 각 채팅의 에이전트를 선택하거나 전환하세요.",
+    "back_to_app": "앱으로 돌아가기"
   },
   "plugins": {
     "title": "Plugins",

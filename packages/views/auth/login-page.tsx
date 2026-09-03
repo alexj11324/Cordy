@@ -56,6 +56,8 @@ interface LoginPageProps {
   onTokenObtained?: () => void;
   /** Override Google login handler (e.g. desktop opens browser externally). When provided, renders the Google button even if `google` config is omitted. */
   onGoogleLogin?: () => void;
+  /** Disable Google while an external desktop login is opening. */
+  googleLoading?: boolean;
   /** Slot rendered at the bottom of the sign-in card, below the
    *  Google button. The web shell uses it for a "Prefer the desktop
    *  app?" prompt; desktop omits it (a download prompt inside the app
@@ -119,6 +121,7 @@ export function LoginPage({
   onTokenObtained,
   onGoogleLogin,
   extra,
+  googleLoading = false,
 }: LoginPageProps) {
   const { t } = useT("auth");
   const qc = useQueryClient();
@@ -470,7 +473,8 @@ export function LoginPage({
               className="w-full"
               size="lg"
               onClick={handleGoogleLogin}
-              disabled={loading}
+              disabled={loading || googleLoading}
+              aria-busy={googleLoading}
             >
               <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
                 <path
@@ -490,7 +494,9 @@ export function LoginPage({
                   fill="#EA4335"
                 />
               </svg>
-              {t(($) => $.signin.google)}
+              {googleLoading
+                ? t(($) => $.desktop.entry.opening_google)
+                : t(($) => $.signin.google)}
             </Button>
           )}
           {extra && <div className="w-full pt-1 text-center">{extra}</div>}

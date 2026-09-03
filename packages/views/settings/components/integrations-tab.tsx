@@ -31,7 +31,11 @@ import { IntegrationChannelIcon } from "./integration-channel-icon";
 // lives in here under its own section heading so additional integrations slot
 // in without changing the IA. IntegrationsTab is just the host; each
 // integration owns its own description and install flow.
-export function IntegrationsTab() {
+export function IntegrationsTab({
+  standalone = false,
+}: {
+  standalone?: boolean;
+} = {}) {
   const { t } = useT("settings");
   const linearEnabled = useFeatureEnabled(
     LINEAR_INSTALLATION_FOUNDATION_FLAG,
@@ -58,8 +62,8 @@ export function IntegrationsTab() {
   // hidden there rather than showing an operator-only "missing key" message.
   const vcsAvailable = useConfigStore((s) => s.vcsIntegrationAvailable);
 
-  return (
-    <SettingsTab title={t(($) => $.page.tabs.integrations)}>
+  const content = (
+    <>
       <SettingsSection
         title={
           <span className="flex items-center gap-2">
@@ -115,7 +119,7 @@ export function IntegrationsTab() {
         >
           <LinearIntegrationCard
             canManage={canManage}
-            isGuest={!user}
+            isGuest={user?.is_guest === true}
             workspaceId={wsId}
           />
         </SettingsSection>
@@ -153,6 +157,31 @@ export function IntegrationsTab() {
       >
         <TelegramTab />
       </SettingsSection>
+    </>
+  );
+
+  // Standalone route pages (e.g. the workspace integrations page) bring
+  // their own viewport scrolling, so they get the centered page chrome
+  // instead of the settings-tab heading.
+  if (standalone) {
+    return (
+      <div className="mx-auto w-full max-w-6xl space-y-8 p-4 sm:p-6 lg:p-8">
+        <SettingsTab
+          title={t(($) => $.page.integrations_title)}
+          description={t(($) => $.page.integrations_description)}
+        >
+          {content}
+        </SettingsTab>
+      </div>
+    );
+  }
+
+  return (
+    <SettingsTab
+      title={t(($) => $.page.tabs.integrations)}
+      description={t(($) => $.page.integrations_description)}
+    >
+      {content}
     </SettingsTab>
   );
 }

@@ -502,6 +502,7 @@ type dependencyGraphNodeResponse struct {
 	WorkspaceID        string          `json:"workspace_id"`
 	TempID             string          `json:"temp_id"`
 	IssueID            string          `json:"issue_id"`
+	Issue              IssueResponse   `json:"issue"`
 	Title              string          `json:"title"`
 	Description        string          `json:"description"`
 	AcceptanceCriteria json.RawMessage `json:"acceptance_criteria"`
@@ -523,24 +524,53 @@ type dependencyGraphNodeResponse struct {
 	StatusCategory     string          `json:"status_category"`
 	Ready              bool            `json:"ready"`
 	BlockedBy          []string        `json:"blocked_by"`
+	Readiness          dependencyGraphNodeReadinessResponse `json:"readiness"`
+}
+
+// dependencyGraphNodeReadinessResponse mirrors the frontend
+// DependencyGraphNodeReadinessSchema: the derived gate state the task-graph
+// page filters and counts on. Raw status/category stay on the node itself.
+type dependencyGraphNodeReadinessResponse struct {
+	State                  string `json:"state"`
+	GateOpen               bool   `json:"gate_open"`
+	SatisfiedPrerequisites int    `json:"satisfied_prerequisites"`
+	TotalPrerequisites     int    `json:"total_prerequisites"`
+	UnlockCondition        string `json:"unlock_condition"`
 }
 
 type dependencyGraphEdgeResponse struct {
-	ID             string `json:"id"`
-	PlanID         string `json:"plan_id"`
-	WorkspaceID    string `json:"workspace_id"`
-	FromIssueID    string `json:"from_issue_id"`
-	ToIssueID      string `json:"to_issue_id"`
-	Type           string `json:"type"`
-	Reason         string `json:"reason"`
-	ConsumedOutput string `json:"consumed_output"`
-	CreatedAt      string `json:"created_at"`
+	ID                     string `json:"id"`
+	PlanID                 string `json:"plan_id"`
+	WorkspaceID            string `json:"workspace_id"`
+	FromIssueID            string `json:"from_issue_id"`
+	ToIssueID              string `json:"to_issue_id"`
+	From                   string `json:"from"`
+	To                     string `json:"to"`
+	Type                   string `json:"type"`
+	Reason                 string `json:"reason"`
+	ConsumedOutput         string `json:"consumed_output"`
+	CreatedAt              string `json:"created_at"`
+	PrerequisiteStatus     string `json:"prerequisite_status"`
+	Satisfied              bool   `json:"satisfied"`
+	SatisfiedPrerequisites int    `json:"satisfied_prerequisites"`
+	TotalPrerequisites     int    `json:"total_prerequisites"`
+	UnlockCondition        string `json:"unlock_condition"`
+}
+
+type dependencyGraphReadinessResponse struct {
+	Total     int `json:"total"`
+	Ready     int `json:"ready"`
+	Running   int `json:"running"`
+	Blocked   int `json:"blocked"`
+	Done      int `json:"done"`
+	Cancelled int `json:"cancelled"`
 }
 
 type dependencyGraphResponse struct {
-	Plan  dependencyGraphPlanResponse   `json:"plan"`
-	Nodes []dependencyGraphNodeResponse `json:"nodes"`
-	Edges []dependencyGraphEdgeResponse `json:"edges"`
+	Plan      dependencyGraphPlanResponse   `json:"plan"`
+	Nodes     []dependencyGraphNodeResponse `json:"nodes"`
+	Edges     []dependencyGraphEdgeResponse `json:"edges"`
+	Readiness dependencyGraphReadinessResponse `json:"readiness"`
 }
 
 func dependencyGraphPlanToResponse(plan db.DependencyGraphPlan) dependencyGraphPlanResponse {
@@ -563,9 +593,10 @@ func dependencyGraphPlanToResponse(plan db.DependencyGraphPlan) dependencyGraphP
 
 func dependencyGraphResponseMap(response dependencyGraphResponse, includeReplay bool, replayed bool) map[string]any {
 	payload := map[string]any{
-		"plan":  response.Plan,
-		"nodes": response.Nodes,
-		"edges": response.Edges,
+		"plan":      response.Plan,
+		"nodes":     response.Nodes,
+		"edges":     response.Edges,
+		"readiness": response.Readiness,
 	}
 	if includeReplay {
 		payload["replayed"] = replayed
@@ -714,11 +745,14 @@ func (h *Handler) dependencyGraphResponseForPlan(ctx context.Context, plan db.De
 		statusQueries = h.Queries
 	}
 	resolver := issuestatus.NewResolver(plan.WorkspaceID)
+	issuePrefix := h.getIssuePrefix(ctx, plan.WorkspaceID)
 	response := dependencyGraphResponse{
 		Plan:  dependencyGraphPlanToResponse(plan),
 		Nodes: make([]dependencyGraphNodeResponse, 0, len(nodes)),
 		Edges: make([]dependencyGraphEdgeResponse, 0, len(edges)),
 	}
+	categoryOf := make(map[string]string, len(nodes))
+	stateOf := make(map[string]string, len(nodes))
 	for _, node := range nodes {
 		issue := issues[uuidToString(node.IssueID)]
 		category := resolver.Effective(ctx, statusQueries, issue.Status)
@@ -755,6 +789,21 @@ func (h *Handler) dependencyGraphResponseForPlan(ctx context.Context, plan db.De
 		if err != nil {
 			return dependencyGraphResponse{}, err
 		}
+		issueKey := uuidToString(node.IssueID)
+		categoryOf[issueKey] = category
+		satisfied := 0
+		for _, prerequisiteID := range incoming[issueKey] {
+			if prerequisite, ok := issues[prerequisiteID]; ok {
+				if resolver.Effective(ctx, statusQueries, prerequisite.Status) == issuestatus.Done {
+					satisfied++
+				}
+			}
+		}
+		gateOpen := plan.Status == "active" && len(blockedBy) == 0 && category != issuestatus.Done && category != issuestatus.Cancelled
+		state := dependencyGraphNodeReadinessState(category, gateOpen, len(blockedBy) > 0)
+		stateOf[issueKey] = state
+		issueResponse := issueToResponse(issue, issuePrefix)
+		h.fillStatusCategory(ctx, plan.WorkspaceID, &issueResponse)
 		response.Nodes = append(response.Nodes, dependencyGraphNodeResponse{
 			ID:                 uuidToString(node.ID),
 			PlanID:             uuidToString(node.PlanID),
@@ -780,24 +829,90 @@ func (h *Handler) dependencyGraphResponseForPlan(ctx context.Context, plan db.De
 			ModelID:            textToPtr(node.ModelID),
 			Status:             issue.Status,
 			StatusCategory:     category,
-			Ready:              plan.Status == "active" && len(blockedBy) == 0 && category != issuestatus.Done && category != issuestatus.Cancelled,
+			Ready:              gateOpen,
 			BlockedBy:          blockedBy,
+			Issue:              issueResponse,
+			Readiness: dependencyGraphNodeReadinessResponse{
+				State:                  state,
+				GateOpen:               gateOpen,
+				SatisfiedPrerequisites: satisfied,
+				TotalPrerequisites:     len(incoming[issueKey]),
+				UnlockCondition:        "",
+			},
 		})
 	}
 	for _, edge := range edges {
+		fromKey := uuidToString(edge.FromIssueID)
+		toKey := uuidToString(edge.ToIssueID)
+		fromStatus := ""
+		satisfied := false
+		if fromIssue, ok := issues[fromKey]; ok {
+			fromStatus = fromIssue.Status
+			satisfied = categoryOf[fromKey] == issuestatus.Done
+		}
+		satisfiedCount := 0
+		if satisfied {
+			satisfiedCount = 1
+		}
 		response.Edges = append(response.Edges, dependencyGraphEdgeResponse{
-			ID:             uuidToString(edge.ID),
-			PlanID:         uuidToString(edge.PlanID),
-			WorkspaceID:    uuidToString(edge.WorkspaceID),
-			FromIssueID:    uuidToString(edge.FromIssueID),
-			ToIssueID:      uuidToString(edge.ToIssueID),
-			Type:           edge.Type,
-			Reason:         edge.Reason,
-			ConsumedOutput: edge.ConsumedOutput,
-			CreatedAt:      timestampToString(edge.CreatedAt),
+			ID:                     uuidToString(edge.ID),
+			PlanID:                 uuidToString(edge.PlanID),
+			WorkspaceID:            uuidToString(edge.WorkspaceID),
+			FromIssueID:            fromKey,
+			ToIssueID:              toKey,
+			From:                   fromKey,
+			To:                     toKey,
+			Type:                   edge.Type,
+			Reason:                 edge.Reason,
+			ConsumedOutput:         edge.ConsumedOutput,
+			CreatedAt:              timestampToString(edge.CreatedAt),
+			PrerequisiteStatus:     fromStatus,
+			Satisfied:              satisfied,
+			SatisfiedPrerequisites: satisfiedCount,
+			TotalPrerequisites:     1,
+			UnlockCondition:        "",
 		})
 	}
+	for _, node := range response.Nodes {
+		response.Readiness.Total++
+		switch node.Readiness.State {
+		case "ready":
+			response.Readiness.Ready++
+		case "running":
+			response.Readiness.Running++
+		case "blocked":
+			response.Readiness.Blocked++
+		case "done":
+			response.Readiness.Done++
+		case "cancelled":
+			response.Readiness.Cancelled++
+		}
+	}
 	return response, nil
+}
+
+// dependencyGraphNodeReadinessState derives the task-graph filter state from
+// the issue category and the already-computed gate. Vocabulary matches the
+// frontend GraphFilter/graph-utils states (ready/running/blocked + terminal
+// done/cancelled, falling back to todo).
+func dependencyGraphNodeReadinessState(category string, gateOpen bool, hasBlockers bool) string {
+	switch category {
+	case issuestatus.Done:
+		return "done"
+	case issuestatus.Cancelled:
+		return "cancelled"
+	case issuestatus.Blocked:
+		return "blocked"
+	case issuestatus.InProgress, issuestatus.InReview:
+		return "running"
+	}
+	if hasBlockers {
+		return "blocked"
+	}
+	if gateOpen {
+		return "ready"
+	}
+	return "todo"
 }
 
 func dependencyGraphIdempotencyKey(r *http.Request) (string, error) {
@@ -1245,9 +1360,14 @@ func (h *Handler) ListDependencyGraphs(w http.ResponseWriter, r *http.Request) {
 	if hasMore {
 		plans = plans[:limit]
 	}
-	graphs := make([]dependencyGraphPlanResponse, 0, len(plans))
+	graphs := make([]map[string]any, 0, len(plans))
 	for _, plan := range plans {
-		graphs = append(graphs, dependencyGraphPlanToResponse(plan))
+		response, err := h.dependencyGraphResponseForPlan(r.Context(), plan)
+		if err != nil {
+			writeDependencyGraphError(w, err)
+			return
+		}
+		graphs = append(graphs, dependencyGraphResponseMap(response, false, false))
 	}
 	var nextCursor *string
 	if hasMore && len(plans) > 0 {

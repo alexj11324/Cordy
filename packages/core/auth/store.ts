@@ -8,10 +8,21 @@ export interface AuthStoreOptions {
   api: ApiClient;
   storage: StorageAdapter;
   onLogin?: () => void;
-  onLogout?: () => void;
+  onLogout?: AuthLogoutHandler;
   /** When true, rely on HttpOnly cookies instead of localStorage for auth tokens. */
   cookieAuth?: boolean;
 }
+
+export type AuthLogoutOptions = {
+  /** Prevent platform auth recovery when cleaning up a permanently rejected session. */
+  rearmAuth?: boolean;
+};
+
+/** Optional promise that platform auth cleanup can await before re-authentication. */
+export type AuthLogoutHandler = (
+  serverLogout?: Promise<void>,
+  options?: AuthLogoutOptions,
+) => void | Promise<void>;
 
 export type AuthStatus =
   | "authenticating"
@@ -29,8 +40,10 @@ export interface AuthState {
   sendCode: (email: string) => Promise<void>;
   verifyCode: (email: string, code: string) => Promise<User>;
   loginWithGoogle: (code: string, redirectUri: string) => Promise<User>;
+  createGuestSession: () => Promise<User>;
   loginWithToken: (token: string) => Promise<User>;
-  logout: () => void;
+  /** Clears local auth state and resolves after a cookie/guest session is revoked. */
+  logout: (options?: AuthLogoutOptions) => Promise<void>;
   setUser: (user: User) => void;
   refreshMe: () => Promise<void>;
 }
@@ -38,7 +51,7 @@ export interface AuthState {
 export function createAuthStore(options: AuthStoreOptions) {
   const { api, storage, onLogin, onLogout, cookieAuth } = options;
 
-  return create<AuthState>((set) => ({
+  return create<AuthState>((set, get) => ({
     user: null,
     isLoading: true,
     status: "authenticating",
@@ -81,6 +94,21 @@ export function createAuthStore(options: AuthStoreOptions) {
       return user;
     },
 
+    createGuestSession: async () => {
+      const { token, user } = await api.createGuestSession();
+      if (user.is_guest !== true) {
+        throw new Error("server did not return a guest session");
+      }
+      // Guest auth is still token auth: the user is real and the bearer is
+      // required for every subsequent workspace/onboarding API call.
+      storage.setItem("patchbay_token", token);
+      api.setToken(token);
+      onLogin?.();
+      identifyAnalytics(user.id, { email: user.email, name: user.name });
+      set({ user, isLoading: false, status: "authenticated" });
+      return user;
+    },
+
     loginWithToken: async (token: string) => {
       storage.setItem("patchbay_token", token);
       api.setToken(token);
@@ -91,17 +119,21 @@ export function createAuthStore(options: AuthStoreOptions) {
       return user;
     },
 
-    logout: () => {
-      if (cookieAuth) {
-        // Clear server-side HttpOnly cookie.
-        api.logout().catch(() => {});
-      }
+    logout: async (logoutOptions?: AuthLogoutOptions) => {
+      const serverLogout =
+        cookieAuth || get().user?.is_guest === true
+          ? api.logout().catch(() => {})
+          : Promise.resolve();
+      const platformLogout = onLogout?.(serverLogout, logoutOptions);
+      // Keep the promise so callers that are about to start a new exchange
+      // or navigate away can serialize behind both server-side session
+      // revocation and platform auth cleanup.
       storage.removeItem("patchbay_token");
       api.setToken(null);
       setCurrentWorkspace(null, null);
       resetAnalytics();
-      onLogout?.();
       set({ user: null, isLoading: false, status: "unauthenticated" });
+      await Promise.all([serverLogout, platformLogout]);
     },
 
     setUser: (user: User) => {

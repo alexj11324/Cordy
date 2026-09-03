@@ -135,9 +135,19 @@ export interface ExtraSettingsTab {
 interface SettingsPageProps {
   /** Additional tabs injected by platform (e.g. desktop daemon settings) */
   extraAccountTabs?: ExtraSettingsTab[];
+  /** Standalone windows (e.g. desktop settings) get the sidebar-tinted nav
+      panel and skip the embedded trigger row when they bring their own
+      back navigation. Defaults to the embedded tab look. */
+  variant?: "embedded" | "standalone";
+  /** Back navigation rendered above the nav panel (standalone windows). */
+  navigationHeader?: React.ReactNode;
 }
 
-export function SettingsPage({ extraAccountTabs }: SettingsPageProps = {}) {
+export function SettingsPage({
+  extraAccountTabs,
+  variant = "embedded",
+  navigationHeader,
+}: SettingsPageProps = {}) {
   const { t } = useT("settings");
   const workspaceName = useCurrentWorkspace()?.name;
   const navigation = useNavigation();
@@ -193,13 +203,22 @@ export function SettingsPage({ extraAccountTabs }: SettingsPageProps = {}) {
       value={activeTab}
       onValueChange={handleTabChange}
       orientation={isMobile ? "horizontal" : "vertical"}
+      data-settings-variant={variant}
       className="flex flex-1 min-h-0 flex-col gap-0 overflow-y-auto md:flex-row md:overflow-hidden"
     >
       {/* Structural navigation; bounded setting groups remain in the content surface.
           Stays on the content surface color (no shell tint): the desktop's active
           tab merges into the card top, and a tinted panel under the first tabs
-          breaks that seam (MUL-4439). Zoning comes from the divider instead. */}
-      <div className="shrink-0 overflow-x-auto border-b border-surface-border p-2 md:w-56 md:overflow-y-auto md:border-b-0 md:border-r md:p-4">
+          breaks that seam (MUL-4439). Zoning comes from the divider instead.
+          Standalone windows opt into the sidebar tint explicitly. */}
+      <div
+        className={
+          variant === "standalone"
+            ? "shrink-0 overflow-x-auto border-b border-sidebar-border bg-sidebar p-2 text-sidebar-text-primary md:w-80 md:overflow-y-auto md:border-b-0 md:border-r md:p-4"
+            : "shrink-0 overflow-x-auto border-b border-surface-border p-2 md:w-56 md:overflow-y-auto md:border-b-0 md:border-r md:p-4"
+        }
+      >
+        {navigationHeader ? <div>{navigationHeader}</div> : null}
         {/* This page builds its own chrome instead of a PageHeader, so it has
             to supply the nav trigger itself — below `xl` the nav is a sheet or
             auto-collapsed, and settings has no other way back to it. */}
@@ -207,8 +226,16 @@ export function SettingsPage({ extraAccountTabs }: SettingsPageProps = {}) {
             `items-center`, a bottom margin on the `h1` is part of the box being
             centred, so it offsets the heading against the trigger beside it. */}
         <div className="flex items-center md:mb-4">
-          <CollapsedNavTrigger />
-          <h1 className="sr-only text-body font-semibold md:not-sr-only md:px-2">{t(($) => $.page.title)}</h1>
+          {navigationHeader ? null : <CollapsedNavTrigger />}
+          <h1
+            className={
+              variant === "standalone"
+                ? "sr-only font-semibold md:not-sr-only md:px-2 text-title"
+                : "sr-only text-body font-semibold md:not-sr-only md:px-2"
+            }
+          >
+            {t(($) => $.page.title)}
+          </h1>
         </div>
         <TabsList
           variant="line"
