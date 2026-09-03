@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import { I18nProvider } from "@patchbay/core/i18n/react";
 import { RESOURCES } from "@patchbay/views/locales";
@@ -30,17 +30,28 @@ vi.mock("@patchbay/core/api", () => ({
 vi.mock("@patchbay/views/auth", () => ({
   LoginPage: ({
     logo,
+    embedded,
+    showGoogleSeparator,
+    externalError,
     googleLoading,
     onGoogleLogin,
     extra,
   }: {
     logo?: ReactNode;
+    embedded?: boolean;
+    showGoogleSeparator?: boolean;
+    externalError?: ReactNode;
     googleLoading?: boolean;
     onGoogleLogin?: () => void;
     extra?: ReactNode;
   }) => (
-    <section data-testid="login-page">
+    <section
+      data-testid="login-page"
+      data-embedded={embedded ? "true" : "false"}
+      data-show-google-separator={showGoogleSeparator ? "true" : "false"}
+    >
       {logo}
+      {externalError}
       {onGoogleLogin && (
         <button
           type="button"
@@ -102,6 +113,10 @@ beforeEach(() => {
   mocks.openExternal.mockResolvedValue(undefined);
 });
 
+afterEach(() => {
+  cleanup();
+});
+
 describe("DesktopLoginPage", () => {
   it("renders the brand panel beside the form panel", () => {
     renderPage();
@@ -114,6 +129,19 @@ describe("DesktopLoginPage", () => {
     ).toHaveTextContent("Sofia Davis");
     expect(screen.getByTestId("authentication-form-panel")).toContainElement(
       screen.getByTestId("login-page"),
+    );
+  });
+
+  it("mounts the shared login page in embedded shadcn mode", () => {
+    renderPage();
+
+    expect(screen.getByTestId("login-page")).toHaveAttribute(
+      "data-embedded",
+      "true",
+    );
+    expect(screen.getByTestId("login-page")).toHaveAttribute(
+      "data-show-google-separator",
+      "true",
     );
   });
 

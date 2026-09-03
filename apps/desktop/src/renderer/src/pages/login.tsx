@@ -117,23 +117,24 @@ export function DesktopLoginPage() {
             data-testid="authentication-form-panel"
             className="flex h-full min-h-0 items-center justify-center p-6 lg:p-8"
           >
-            <div className="w-full max-w-sm space-y-4">
-              {error && (
-                <Alert variant="destructive" aria-live="polite">
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
-              <LoginPage
-                logo={<PatchbayIcon bordered size="lg" />}
-                onSuccess={() => {
-                  // Auth store update triggers AppContent re-render → shows DesktopShell.
-                  // Initial workspace navigation happens in routes.tsx via IndexRedirect.
-                }}
-                googleLoading={openingGoogle}
-                onGoogleLogin={() => void handleGoogleLogin()}
-                extra={<GuestSessionEntry />}
-              />
-            </div>
+            <LoginPage
+              embedded
+              externalError={
+                error ? (
+                  <Alert variant="destructive" aria-live="polite">
+                    <AlertDescription>{error}</AlertDescription>
+                  </Alert>
+                ) : undefined
+              }
+              showGoogleSeparator
+              onSuccess={() => {
+                // Auth store update triggers AppContent re-render → shows DesktopShell.
+                // Initial workspace navigation happens in routes.tsx via IndexRedirect.
+              }}
+              googleLoading={openingGoogle}
+              onGoogleLogin={() => void handleGoogleLogin()}
+              extra={<GuestSessionEntry />}
+            />
           </div>
         </div>
       </main>
