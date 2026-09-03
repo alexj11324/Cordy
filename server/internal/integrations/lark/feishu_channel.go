@@ -261,6 +261,9 @@ func (s *channelInstallationStore) ListConnectableInstallations(ctx context.Cont
 	}
 	out := make([]engine.Installation, 0, len(rows))
 	for _, row := range rows {
+		if !supervisorOwnsTransport(row.Config) {
+			continue
+		}
 		out = append(out, engine.Installation{
 			ID:          row.ID,
 			ChannelType: channel.Type(row.ChannelType),
@@ -269,6 +272,16 @@ func (s *channelInstallationStore) ListConnectableInstallations(ctx context.Cont
 		})
 	}
 	return out, nil
+}
+
+func supervisorOwnsTransport(raw json.RawMessage) bool {
+	var config struct {
+		Transport string `json:"transport"`
+	}
+	if err := json.Unmarshal(raw, &config); err != nil {
+		return true
+	}
+	return config.Transport != "webhook"
 }
 
 func (s *channelInstallationStore) ClaimRuntimeObserver(ctx context.Context, id pgtype.UUID, token string) error {

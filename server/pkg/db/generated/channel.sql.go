@@ -1483,7 +1483,7 @@ func (q *Queries) GetChannelInstallationInWorkspace(ctx context.Context, arg Get
 const getChannelInstallationOwnerByAppID = `-- name: GetChannelInstallationOwnerByAppID :one
 SELECT ci.workspace_id, ci.agent_id, a.archived_at AS agent_archived_at
 FROM channel_installation ci
-JOIN agent a ON a.id = ci.agent_id
+LEFT JOIN agent a ON a.id = ci.agent_id
 WHERE ci.channel_type = $1
   AND ci.config ->> 'app_id' = $2::text
 `
@@ -1657,9 +1657,12 @@ func (q *Queries) GetChannelUserBindingByUserID(ctx context.Context, arg GetChan
 const listAllConnectableChannelInstallations = `-- name: ListAllConnectableChannelInstallations :many
 SELECT ci.id, ci.workspace_id, ci.agent_id, ci.channel_type, ci.config, ci.status, ci.ws_lease_token, ci.ws_lease_expires_at, ci.installer_user_id, ci.installed_at, ci.created_at, ci.updated_at, ci.hosted_paused_at FROM channel_installation ci
 JOIN workspace w ON w.id = ci.workspace_id
-JOIN agent a ON a.id = ci.agent_id
+LEFT JOIN agent a ON a.id = ci.agent_id
 WHERE ci.status = 'installed'
   AND ci.hosted_paused_at IS NULL
+  AND (ci.agent_id IS NULL
+       OR ci.agent_id = '00000000-0000-0000-0000-000000000000'::uuid
+       OR a.id IS NOT NULL)
 ORDER BY ci.created_at ASC
 `
 
@@ -1668,10 +1671,9 @@ ORDER BY ci.created_at ASC
 // platform's connections rather than a per-platform hub. This is the de-
 // hardcoded counterpart of ListConnectableChannelInstallations — the Supervisor
 // routes each row to its registered channel.Factory by channel_type, so it
-// never needs to know which platforms exist. Same orphan guard as the per-type
-// query: the workspace + agent JOINs drop installations whose owning rows are
-// gone (channel_installation has no FK, MUL-3515 §4), matching the old ON
-// DELETE CASCADE semantics (row existence, not agent archival).
+// never needs to know which platforms exist. Same owner guard as the per-type
+// query: workspace-owned rows have no Agent, while a non-zero agent_id must
+// resolve to a live row. The workspace must always exist.
 func (q *Queries) ListAllConnectableChannelInstallations(ctx context.Context) ([]ChannelInstallation, error) {
 	rows, err := q.db.Query(ctx, listAllConnectableChannelInstallations)
 	if err != nil {
@@ -1912,10 +1914,13 @@ func (q *Queries) ListChannelOutboundMessagesByIDs(ctx context.Context, arg List
 const listConnectableChannelInstallations = `-- name: ListConnectableChannelInstallations :many
 SELECT ci.id, ci.workspace_id, ci.agent_id, ci.channel_type, ci.config, ci.status, ci.ws_lease_token, ci.ws_lease_expires_at, ci.installer_user_id, ci.installed_at, ci.created_at, ci.updated_at, ci.hosted_paused_at FROM channel_installation ci
 JOIN workspace w ON w.id = ci.workspace_id
-JOIN agent a ON a.id = ci.agent_id
+LEFT JOIN agent a ON a.id = ci.agent_id
 WHERE ci.status = 'installed'
   AND ci.hosted_paused_at IS NULL
   AND ci.channel_type = $1
+  AND (ci.agent_id IS NULL
+       OR ci.agent_id = '00000000-0000-0000-0000-000000000000'::uuid
+       OR a.id IS NOT NULL)
 ORDER BY ci.created_at ASC
 `
 
@@ -1923,14 +1928,17 @@ ORDER BY ci.created_at ASC
 // the given channel_type, so a hub claims leases and opens connections only
 // for its own platform and never supervises another channel's installation.
 //
-// The JOINs require the owning workspace and agent rows to still exist.
+// The workspace JOIN and agent existence predicate require every real owner to
+// still exist. Workspace-owned rows have no Agent; Go's managed-install path
+// also historically encoded that sentinel as the all-zero UUID, so both forms
+// remain connectable while a non-zero missing Agent is an orphan.
 // channel_installation has no FK (MUL-3515 §4), so unlike the old
 // lark_installation (which cascaded away on workspace/agent deletion) an
 // installation can be orphaned when its workspace is deleted or its agent is
 // hard-deleted (e.g. runtime teardown). Without this guard the hub would keep
-// opening a WebSocket for a bot whose workspace/agent is gone. The JOIN matches
-// the old ON DELETE CASCADE semantics: it filters on row existence, not agent
-// archival, so an archived-but-present agent's installation is still listed.
+// opening a WebSocket for a bot whose workspace/agent is gone. The predicate
+// matches the old ON DELETE CASCADE semantics for an Agent-owned row: it checks
+// row existence, not archival, so an archived-but-present Agent remains listed.
 func (q *Queries) ListConnectableChannelInstallations(ctx context.Context, channelType string) ([]ChannelInstallation, error) {
 	rows, err := q.db.Query(ctx, listConnectableChannelInstallations, channelType)
 	if err != nil {
