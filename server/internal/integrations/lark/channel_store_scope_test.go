@@ -152,3 +152,71 @@ VALUES ($1, $2, 'slack', 'oc_scope_slack', 'om_scope_slack', 'pending')
 		t.Fatalf("GetLarkOutboundCardByTask(slack card): err=%v, want pgx.ErrNoRows (scoped out)", err)
 	}
 }
+
+func TestChannelInstallationStoreListsWorkspaceOwnedSocketInstallations(t *testing.T) {
+	pool := channelScopeTestDB(t)
+	ctx := context.Background()
+	const (
+		workspaceID = "5c09e200-0000-4000-8000-000000000001"
+		orphanAgent = "5c09e200-0000-4000-8000-000000000002"
+		installerID = "5c09e200-0000-4000-8000-000000000003"
+		fixtureKey  = "workspace-owned-supervisor"
+	)
+	clean := func() {
+		_, _ = pool.Exec(context.Background(),
+			"DELETE FROM channel_installation WHERE config->>'scope_fixture' = $1", fixtureKey)
+		_, _ = pool.Exec(context.Background(), "DELETE FROM workspace WHERE id = $1", workspaceID)
+	}
+	clean()
+	t.Cleanup(clean)
+	if _, err := pool.Exec(ctx, `
+INSERT INTO workspace (id, name, slug, description)
+VALUES ($1, 'Workspace-owned supervisor fixture', 'workspace-owned-supervisor-fixture', '')`, workspaceID); err != nil {
+		t.Fatalf("insert workspace: %v", err)
+	}
+
+	rows, err := pool.Query(ctx, `
+INSERT INTO channel_installation (
+  workspace_id, agent_id, channel_type, config, installer_user_id
+) VALUES
+  ($1, NULL, 'feishu', jsonb_build_object('scope_fixture', $2::text, 'transport', 'long_connection'), $3),
+  ($1, '00000000-0000-0000-0000-000000000000', 'telegram', jsonb_build_object('scope_fixture', $2::text), $3),
+  ($1, $4, 'wecom', jsonb_build_object('scope_fixture', $2::text), $3),
+  ($1, NULL, 'slack', jsonb_build_object('scope_fixture', $2::text, 'transport', 'webhook'), $3)
+RETURNING id, channel_type`, workspaceID, fixtureKey, installerID, orphanAgent)
+	if err != nil {
+		t.Fatalf("insert installations: %v", err)
+	}
+	defer rows.Close()
+	ids := make(map[string]string)
+	for rows.Next() {
+		var id, channelType string
+		if err := rows.Scan(&id, &channelType); err != nil {
+			t.Fatal(err)
+		}
+		ids[channelType] = id
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+
+	store := NewChannelInstallationStore(db.New(pool))
+	installations, err := store.ListConnectableInstallations(ctx)
+	if err != nil {
+		t.Fatalf("ListConnectableInstallations: %v", err)
+	}
+	listed := make(map[string]struct{}, len(installations))
+	for _, installation := range installations {
+		listed[util.UUIDToString(installation.ID)] = struct{}{}
+	}
+	for _, channelType := range []string{"feishu", "telegram"} {
+		if _, ok := listed[ids[channelType]]; !ok {
+			t.Errorf("workspace-owned %s installation was omitted", channelType)
+		}
+	}
+	for _, channelType := range []string{"wecom", "slack"} {
+		if _, ok := listed[ids[channelType]]; ok {
+			t.Errorf("%s installation must not be supervised", channelType)
+		}
+	}
+}
