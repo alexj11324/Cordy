@@ -171,7 +171,7 @@ type ChannelInstallationCapacitySnapshotParams struct {
 
 type ChannelInstallationCapacitySnapshotRow struct {
 	InstalledCount int64 `json:"installed_count"`
-	SameSlot    bool  `json:"same_slot"`
+	SameSlot       bool  `json:"same_slot"`
 }
 
 // Admission read, taken under LockWorkspaceForHostedCapacity in the same
@@ -1654,98 +1654,6 @@ func (q *Queries) GetChannelUserBindingByUserID(ctx context.Context, arg GetChan
 	return i, err
 }
 
-const listConnectableChannelInstallations = `-- name: ListConnectableChannelInstallations :many
-SELECT ci.id, ci.workspace_id, ci.agent_id, ci.channel_type, ci.config, ci.status, ci.ws_lease_token, ci.ws_lease_expires_at, ci.installer_user_id, ci.installed_at, ci.created_at, ci.updated_at, ci.hosted_paused_at FROM channel_installation ci
-JOIN workspace w ON w.id = ci.workspace_id
-JOIN agent a ON a.id = ci.agent_id
-WHERE ci.status = 'installed'
-  AND ci.hosted_paused_at IS NULL
-  AND ci.channel_type = $1
-ORDER BY ci.created_at ASC
-`
-
-// Boot path for a per-channel-type inbound hub: every installed connection of
-// the given channel_type, so a hub claims leases and opens connections only
-// for its own platform and never supervises another channel's installation.
-//
-// The JOINs require the owning workspace and agent rows to still exist.
-// channel_installation has no FK (MUL-3515 §4), so unlike the old
-// lark_installation (which cascaded away on workspace/agent deletion) an
-// installation can be orphaned when its workspace is deleted or its agent is
-// hard-deleted (e.g. runtime teardown). Without this guard the hub would keep
-// opening a WebSocket for a bot whose workspace/agent is gone. The JOIN matches
-// the old ON DELETE CASCADE semantics: it filters on row existence, not agent
-// archival, so an archived-but-present agent's installation is still listed.
-func (q *Queries) ListConnectableChannelInstallations(ctx context.Context, channelType string) ([]ChannelInstallation, error) {
-	rows, err := q.db.Query(ctx, listConnectableChannelInstallations, channelType)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ChannelInstallation{}
-	for rows.Next() {
-		var i ChannelInstallation
-		if err := rows.Scan(
-			&i.ID,
-			&i.WorkspaceID,
-			&i.AgentID,
-			&i.ChannelType,
-			&i.Config,
-			&i.Status,
-			&i.WsLeaseToken,
-			&i.WsLeaseExpiresAt,
-			&i.InstallerUserID,
-			&i.InstalledAt,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.HostedPausedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listInstalledChannelInstallationsForCapacity = `-- name: ListInstalledChannelInstallationsForCapacity :many
-SELECT id, hosted_paused_at FROM channel_installation
-WHERE workspace_id = $1
-  AND status = 'installed'
-ORDER BY created_at ASC, id ASC
-FOR UPDATE
-`
-
-type ListInstalledChannelInstallationsForCapacityRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	HostedPausedAt pgtype.Timestamptz `json:"hosted_paused_at"`
-}
-
-// Ordered oldest-first so the FIRST `limit` installations are the ones
-// capacity keeps; everything after them is paused. FOR UPDATE holds the rows
-// against a concurrent install upsert inside the same transaction.
-func (q *Queries) ListInstalledChannelInstallationsForCapacity(ctx context.Context, workspaceID pgtype.UUID) ([]ListInstalledChannelInstallationsForCapacityRow, error) {
-	rows, err := q.db.Query(ctx, listInstalledChannelInstallationsForCapacity, workspaceID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListInstalledChannelInstallationsForCapacityRow{}
-	for rows.Next() {
-		var i ListInstalledChannelInstallationsForCapacityRow
-		if err := rows.Scan(&i.ID, &i.HostedPausedAt); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listAllConnectableChannelInstallations = `-- name: ListAllConnectableChannelInstallations :many
 SELECT ci.id, ci.workspace_id, ci.agent_id, ci.channel_type, ci.config, ci.status, ci.ws_lease_token, ci.ws_lease_expires_at, ci.installer_user_id, ci.installed_at, ci.created_at, ci.updated_at, ci.hosted_paused_at FROM channel_installation ci
 JOIN workspace w ON w.id = ci.workspace_id
@@ -2001,6 +1909,62 @@ func (q *Queries) ListChannelOutboundMessagesByIDs(ctx context.Context, arg List
 	return items, nil
 }
 
+const listConnectableChannelInstallations = `-- name: ListConnectableChannelInstallations :many
+SELECT ci.id, ci.workspace_id, ci.agent_id, ci.channel_type, ci.config, ci.status, ci.ws_lease_token, ci.ws_lease_expires_at, ci.installer_user_id, ci.installed_at, ci.created_at, ci.updated_at, ci.hosted_paused_at FROM channel_installation ci
+JOIN workspace w ON w.id = ci.workspace_id
+JOIN agent a ON a.id = ci.agent_id
+WHERE ci.status = 'installed'
+  AND ci.hosted_paused_at IS NULL
+  AND ci.channel_type = $1
+ORDER BY ci.created_at ASC
+`
+
+// Boot path for a per-channel-type inbound hub: every installed connection of
+// the given channel_type, so a hub claims leases and opens connections only
+// for its own platform and never supervises another channel's installation.
+//
+// The JOINs require the owning workspace and agent rows to still exist.
+// channel_installation has no FK (MUL-3515 §4), so unlike the old
+// lark_installation (which cascaded away on workspace/agent deletion) an
+// installation can be orphaned when its workspace is deleted or its agent is
+// hard-deleted (e.g. runtime teardown). Without this guard the hub would keep
+// opening a WebSocket for a bot whose workspace/agent is gone. The JOIN matches
+// the old ON DELETE CASCADE semantics: it filters on row existence, not agent
+// archival, so an archived-but-present agent's installation is still listed.
+func (q *Queries) ListConnectableChannelInstallations(ctx context.Context, channelType string) ([]ChannelInstallation, error) {
+	rows, err := q.db.Query(ctx, listConnectableChannelInstallations, channelType)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ChannelInstallation{}
+	for rows.Next() {
+		var i ChannelInstallation
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.AgentID,
+			&i.ChannelType,
+			&i.Config,
+			&i.Status,
+			&i.WsLeaseToken,
+			&i.WsLeaseExpiresAt,
+			&i.InstallerUserID,
+			&i.InstalledAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.HostedPausedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listHostedInstallationWorkspaces = `-- name: ListHostedInstallationWorkspaces :many
 SELECT DISTINCT workspace_id
 FROM channel_installation
@@ -2023,6 +1987,42 @@ func (q *Queries) ListHostedInstallationWorkspaces(ctx context.Context) ([]pgtyp
 			return nil, err
 		}
 		items = append(items, workspace_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listInstalledChannelInstallationsForCapacity = `-- name: ListInstalledChannelInstallationsForCapacity :many
+SELECT id, hosted_paused_at FROM channel_installation
+WHERE workspace_id = $1
+  AND status = 'installed'
+ORDER BY created_at ASC, id ASC
+FOR UPDATE
+`
+
+type ListInstalledChannelInstallationsForCapacityRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	HostedPausedAt pgtype.Timestamptz `json:"hosted_paused_at"`
+}
+
+// Ordered oldest-first so the FIRST `limit` installations are the ones
+// capacity keeps; everything after them is paused. FOR UPDATE holds the rows
+// against a concurrent install upsert inside the same transaction.
+func (q *Queries) ListInstalledChannelInstallationsForCapacity(ctx context.Context, workspaceID pgtype.UUID) ([]ListInstalledChannelInstallationsForCapacityRow, error) {
+	rows, err := q.db.Query(ctx, listInstalledChannelInstallationsForCapacity, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListInstalledChannelInstallationsForCapacityRow{}
+	for rows.Next() {
+		var i ListInstalledChannelInstallationsForCapacityRow
+		if err := rows.Scan(&i.ID, &i.HostedPausedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

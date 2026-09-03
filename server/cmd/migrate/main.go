@@ -352,6 +352,7 @@ var concurrentIndexCleanups = map[string]string{
 	"572_slack_oauth_state_hash_index":                          "slack_oauth_state_hash_uidx",
 	"574_channel_installation_runtime_observation_index":        "channel_installation_runtime_observation_uidx",
 	"575_idx_chat_message_channel_task":                         "idx_chat_message_channel_task",
+	"579_channel_installation_installed_lease_index":             "idx_channel_installation_installed_lease",
 }
 
 // concurrentDownIndexCleanups covers every migration whose down direction
@@ -381,6 +382,7 @@ var concurrentDownIndexCleanups = map[string]string{
 	"565_issue_pull_request_lookup_index":                   "idx_issue_pull_request_pr",
 	"568_issue_vcs_pull_request_unique_index":               "issue_vcs_pull_request_restore_uidx",
 	"569_issue_vcs_pull_request_lookup_index":               "idx_issue_vcs_pull_request_pr",
+	"580_channel_installation_legacy_lease_index":           "idx_channel_installation_lease",
 }
 
 var preMigrationHooks = func() map[string]preMigrationHook {
