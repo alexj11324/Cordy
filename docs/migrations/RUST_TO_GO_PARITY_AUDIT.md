@@ -24,7 +24,10 @@ CI [33768750201](https://github.com/alexj11324/Cordy/actions/runs/33768750201) o
 `dd9619d8985372f351d52aece294bb598dee8fad` passed backend build, migrations,
 PostgreSQL-backed race tests, frontend and platform checks. Its only failure
 was sqlc output drift. `a25efa85a` applies the exact generated diff; replacement
-CI remains required. No production deployment or final merge has occurred.
+CI [33769723534](https://github.com/alexj11324/Cordy/actions/runs/33769723534) on
+`d7d800f04` passed every applicable job, including sqlc and backend race tests.
+Only the unchanged image-budget job was skipped. No production deployment or
+final merge has occurred.
 
 Backend compilation, SQL generation and tests run in GitHub Actions. No local
 Go/Rust tooling or Docker build is part of this audit. Local frontend checks
@@ -87,7 +90,7 @@ An older Go-managed installation that lost its refresh token must reconnect
 through OAuth. Its missing refresh material cannot be reconstructed from the
 access token. Preserve the original encryption key for stored credentials.
 
-## Workspace Hub implementation checkpoint — CI pending
+## Workspace Hub implementation checkpoint — CI verified
 
 `284aa95a1` isolates Chat execution pointers by producing Agent, including late
 completion/cancellation, retired-session clearing and task-history fallback.
@@ -112,9 +115,9 @@ The RED tests in `12a963327` failed in CI
 unresolved workspace installation wrote a Chat, and managed `/agents` was ACKed
 without entering routing. The implementation above subsequently passed backend
 build, database migrations and race tests in CI **33768750201**. SQL artifact
-drift from that run is corrected in `a25efa85a`; passing replacement CI is still
-required. Local JSON formatting and whitespace checks pass. No local Go/Rust
-command, live provider, deployment,
+drift from that run is corrected in `a25efa85a`, and replacement CI
+**33769723534** passed all applicable jobs. Local JSON formatting and whitespace
+checks pass. No local Go/Rust command, live provider, deployment,
 credential change or native UI acceptance occurred in this slice.
 
 The earlier Slack credential replacement CI
@@ -141,6 +144,23 @@ Audit all affected adapters, session persistence, outbound replies, permissions,
 events, shared UI and generated SQL. Do not insert a hard-coded/default Agent
 to conceal the missing routing stage. Keep ordinary Agent-owned BYO routing
 unchanged while adding the workspace-owned path.
+
+## Desktop ordinary-build boundary
+
+`55b539806` restores the Rust-reference split: the public Desktop `build` script
+runs only `electron-vite build`. The unchanged `package.mjs` still prepares the
+target CLI separately before packaging. A regression first failed because
+`build` invoked `bundle-cli`; all 32 script tests now pass, and focused ESLint
+passes. The actual `pnpm --filter @patchbay/desktop build` command completed
+main, preload and renderer outputs without a Go/Rust invocation. Renderer build
+time was 2.34s on this prepared worktree, not a backend cold-build benchmark.
+Existing CSS highlight and dynamic-import warnings remain.
+
+This does not complete development-runtime migration: `dev.mjs` still invokes
+the CLI bundler, whose timestamp prevents an exact no-op build claim and whose
+missing-tool/binary paths still permit old or release CLI fallback. Source-matched
+dev runtime preparation, caches, isolated backend/database startup and packaged
+artifact acceptance remain open. No installer or production release was run.
 
 ## Full migration completion gate
 
