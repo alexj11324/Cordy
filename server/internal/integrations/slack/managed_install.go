@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -74,14 +75,33 @@ func (s *InstallService) RegisterManaged(ctx context.Context, p RegisterManagedP
 	if err != nil {
 		return db.ChannelInstallation{}, fmt.Errorf("encrypt managed slack bot token: %w", err)
 	}
+	var sealedRefresh string
+	var expiresAt *time.Time
+	if !p.Access.ExpiresAt.IsZero() && p.Access.RefreshToken == "" {
+		return db.ChannelInstallation{}, errors.New("slack: expiring credential has no refresh token")
+	}
+	if p.Access.RefreshToken != "" {
+		if p.Access.ExpiresAt.IsZero() {
+			return db.ChannelInstallation{}, errors.New("slack: rotating credential has no expiry")
+		}
+		sealed, err := s.box.Seal([]byte(p.Access.RefreshToken))
+		if err != nil {
+			return db.ChannelInstallation{}, fmt.Errorf("encrypt managed slack refresh token: %w", err)
+		}
+		sealedRefresh = base64.StdEncoding.EncodeToString(sealed)
+		expires := p.Access.ExpiresAt
+		expiresAt = &expires
+	}
 	routingKey := ManagedRoutingKey(p.Access.AppID, p.Access.TeamID)
 	cfgJSON, err := json.Marshal(installConfig{
-		AppID:             routingKey,
-		ApiAppID:          p.Access.AppID,
-		TeamID:            p.Access.TeamID,
-		BotUserID:         p.Access.BotUserID,
-		BotTokenEncrypted: base64.StdEncoding.EncodeToString(sealedBot),
-		Transport:         ManagedTransportWebhook,
+		AppID:                 routingKey,
+		ApiAppID:              p.Access.AppID,
+		TeamID:                p.Access.TeamID,
+		BotUserID:             p.Access.BotUserID,
+		BotTokenEncrypted:     base64.StdEncoding.EncodeToString(sealedBot),
+		Transport:             ManagedTransportWebhook,
+		RefreshTokenEncrypted: sealedRefresh,
+		TokenExpiresAt:        expiresAt,
 	})
 	if err != nil {
 		return db.ChannelInstallation{}, fmt.Errorf("encode managed slack installation config: %w", err)

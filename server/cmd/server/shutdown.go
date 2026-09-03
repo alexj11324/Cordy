@@ -41,6 +41,7 @@ type shutdownSequence struct {
 	// StopHeartbeats flushes the final batch of queued heartbeat bumps.
 	StopHeartbeats func()
 
+	JoinSlackTokens   func()
 	JoinWebhookWorker func()
 	JoinTelegram      func()
 
@@ -65,6 +66,7 @@ func (s shutdownSequence) run() {
 		s.StopOutboundRelay,
 		s.CancelWorkers,
 		s.StopHeartbeats,
+		s.JoinSlackTokens,
 		s.JoinWebhookWorker,
 		s.JoinTelegram,
 		s.JoinChannelSupervisor,

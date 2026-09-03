@@ -194,6 +194,12 @@ type OAuthAccess struct {
 	TeamID     string
 	BotUserID  string
 	AuthedUser string
+	// RefreshToken and ExpiresAt are the rotating credentials an app with the
+	// refresh grant returns. Zero values mean the app has no refresh grant;
+	// BYO installs never carry them. ExpiresAt is derived from expires_in at
+	// exchange time (the service's clock, so tests can pin it).
+	RefreshToken string
+	ExpiresAt    time.Time
 }
 
 // ExchangeCode trades a callback code for a bot token via oauth.v2.access.
@@ -219,17 +225,22 @@ func (s *ManagedOAuthService) ExchangeCode(ctx context.Context, code, redirectUR
 		return OAuthAccess{}, fmt.Errorf("slack oauth exchange: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return OAuthAccess{}, errors.New("slack oauth exchange returned an unsuccessful status")
+	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return OAuthAccess{}, fmt.Errorf("slack oauth exchange: %w", err)
 	}
 	var out struct {
-		OK          bool   `json:"ok"`
-		Error       string `json:"error"`
-		AccessToken string `json:"access_token"`
-		AppID       string `json:"app_id"`
-		BotUserID   string `json:"bot_user_id"`
-		Team        struct {
+		OK           bool   `json:"ok"`
+		Error        string `json:"error"`
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		ExpiresIn    int64  `json:"expires_in"`
+		AppID        string `json:"app_id"`
+		BotUserID    string `json:"bot_user_id"`
+		Team         struct {
 			ID string `json:"id"`
 		} `json:"team"`
 		AuthedUser struct {
@@ -242,11 +253,33 @@ func (s *ManagedOAuthService) ExchangeCode(ctx context.Context, code, redirectUR
 	if !out.OK || out.AccessToken == "" || out.Team.ID == "" {
 		return OAuthAccess{}, fmt.Errorf("slack oauth exchange refused: %s", out.Error)
 	}
+	var expiresAt time.Time
+	if out.RefreshToken != "" || out.ExpiresIn != 0 {
+		if out.RefreshToken == "" {
+			return OAuthAccess{}, errors.New("slack oauth exchange omitted the refresh credential")
+		}
+		expires, err := managedTokenExpiry(out.ExpiresIn, s.now())
+		if err != nil {
+			return OAuthAccess{}, err
+		}
+		expiresAt = expires
+	}
 	return OAuthAccess{
-		BotToken:   out.AccessToken,
-		AppID:      out.AppID,
-		TeamID:     out.Team.ID,
-		BotUserID:  out.BotUserID,
-		AuthedUser: out.AuthedUser.ID,
+		BotToken:     out.AccessToken,
+		AppID:        out.AppID,
+		TeamID:       out.Team.ID,
+		BotUserID:    out.BotUserID,
+		AuthedUser:   out.AuthedUser.ID,
+		RefreshToken: out.RefreshToken,
+		ExpiresAt:    expiresAt,
 	}, nil
+}
+
+// Both initial authorization and refresh must reject an invalid lifetime
+// before duration conversion can overflow or an unusable token is persisted.
+func managedTokenExpiry(seconds int64, now time.Time) (time.Time, error) {
+	if seconds <= 0 || seconds > int64((1<<63-1)/time.Second) {
+		return time.Time{}, errors.New("slack returned an invalid access-token lifetime")
+	}
+	return now.Add(time.Duration(seconds) * time.Second).UTC(), nil
 }

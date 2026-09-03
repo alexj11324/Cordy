@@ -52,4 +52,37 @@ func TestManagedOAuthRetainsEncryptedRotatingCredentials(t *testing.T) {
 	if stored.ExpiresAt == nil || !stored.ExpiresAt.Equal(now.Add(12*time.Hour)) {
 		t.Fatalf("access-token expiry = %v, want twelve hours after exchange", stored.ExpiresAt)
 	}
+	public, err := json.Marshal(DecodePublicConfig(q.byAppIDParams.Config))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(public), "refresh_token") || strings.Contains(string(public), "encrypted") || strings.Contains(string(public), "fixture") {
+		t.Fatal("public configuration exposed a managed credential")
+	}
+}
+
+func TestManagedOAuthRejectsUnusableRotatingResponses(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status int
+		extra  string
+	}{
+		{"missing refresh", 200, `,"expires_in":43200`},
+		{"missing expiry", 200, `,"refresh_token":"fixture"`},
+		{"negative expiry", 200, `,"refresh_token":"fixture","expires_in":-1`},
+		{"overflow expiry", 200, `,"refresh_token":"fixture","expires_in":9223372036854775807`},
+		{"unsuccessful HTTP", 503, `,"refresh_token":"fixture","expires_in":43200`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(`{"ok":true,"access_token":"fixture","app_id":"APP","team":{"id":"TEAM"}` + tc.extra + `}`))
+			}))
+			defer server.Close()
+			oauth := &ManagedOAuthService{httpClient: server.Client(), tokenURL: server.URL, clientID: "client", clientSecret: "secret", now: time.Now}
+			if _, err := oauth.ExchangeCode(context.Background(), "code", "https://app.example.test/callback"); err == nil {
+				t.Fatal("unusable expiring credential was accepted")
+			}
+		})
+	}
 }

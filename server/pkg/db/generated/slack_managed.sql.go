@@ -131,6 +131,97 @@ func (q *Queries) GetRuntimeObservation(ctx context.Context, installationID pgty
 	return i, err
 }
 
+const listActiveManagedSlackInstallations = `-- name: ListActiveManagedSlackInstallations :many
+SELECT ci.id, ci.workspace_id, ci.agent_id, ci.channel_type, ci.config, ci.status, ci.ws_lease_token, ci.ws_lease_expires_at, ci.installer_user_id, ci.installed_at, ci.created_at, ci.updated_at, ci.hosted_paused_at FROM channel_installation ci
+JOIN workspace w ON w.id = ci.workspace_id
+WHERE ci.channel_type = 'slack' AND ci.status = 'active'
+  AND ci.hosted_paused_at IS NULL
+  AND ci.config ->> 'transport' = 'webhook'
+ORDER BY ci.created_at, ci.id
+`
+
+// Managed installations are workspace-owned and have no agent row. The socket
+// supervisor's agent join would incorrectly discard all of these installs.
+func (q *Queries) ListActiveManagedSlackInstallations(ctx context.Context) ([]ChannelInstallation, error) {
+	rows, err := q.db.Query(ctx, listActiveManagedSlackInstallations)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ChannelInstallation{}
+	for rows.Next() {
+		var i ChannelInstallation
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.AgentID,
+			&i.ChannelType,
+			&i.Config,
+			&i.Status,
+			&i.WsLeaseToken,
+			&i.WsLeaseExpiresAt,
+			&i.InstallerUserID,
+			&i.InstalledAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.HostedPausedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const observeManagedSlackRuntime = `-- name: ObserveManagedSlackRuntime :execrows
+WITH current_installation AS MATERIALIZED (
+    SELECT ci.id FROM channel_installation ci
+    WHERE ci.id = $1
+      AND ci.channel_type = 'slack' AND ci.status = 'active'
+      AND ci.hosted_paused_at IS NULL
+      AND ci.config ->> 'transport' = 'webhook'
+      AND COALESCE(ci.config ->> 'bot_token_encrypted', '') = $2::text
+    FOR SHARE
+)
+INSERT INTO channel_installation_runtime_observation (
+    installation_id, state, observed_at, error_code, error_summary, observer_token
+)
+SELECT id, $3::text, now(), NULLIF($4::text, ''),
+       NULLIF($5::text, ''), 'managed:slack:webhook:v1'
+FROM current_installation
+ON CONFLICT (installation_id) DO UPDATE SET
+    state = EXCLUDED.state, observed_at = EXCLUDED.observed_at,
+    error_code = EXCLUDED.error_code, error_summary = EXCLUDED.error_summary,
+    observer_token = EXCLUDED.observer_token, updated_at = now()
+`
+
+type ObserveManagedSlackRuntimeParams struct {
+	InstallationID   pgtype.UUID `json:"installation_id"`
+	ExpectedBotToken string      `json:"expected_bot_token"`
+	State            string      `json:"state"`
+	ErrorCode        string      `json:"error_code"`
+	ErrorSummary     string      `json:"error_summary"`
+}
+
+// Do not let an in-flight probe overwrite a reconnect or capacity pause.
+// Lock installation before observation, matching the capacity reconciler.
+func (q *Queries) ObserveManagedSlackRuntime(ctx context.Context, arg ObserveManagedSlackRuntimeParams) (int64, error) {
+	result, err := q.db.Exec(ctx, observeManagedSlackRuntime,
+		arg.InstallationID,
+		arg.ExpectedBotToken,
+		arg.State,
+		arg.ErrorCode,
+		arg.ErrorSummary,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const purgeExpiredSlackOAuthStates = `-- name: PurgeExpiredSlackOAuthStates :exec
 DELETE FROM slack_oauth_state
 WHERE expires_at <= $1
@@ -141,6 +232,44 @@ WHERE expires_at <= $1
 func (q *Queries) PurgeExpiredSlackOAuthStates(ctx context.Context, expiresAt pgtype.Timestamptz) error {
 	_, err := q.db.Exec(ctx, purgeExpiredSlackOAuthStates, expiresAt)
 	return err
+}
+
+const rotateManagedSlackTokens = `-- name: RotateManagedSlackTokens :execrows
+UPDATE channel_installation
+SET config = config || jsonb_build_object(
+        'bot_token_encrypted', $1::text,
+        'refresh_token_encrypted', $2::text,
+        'token_expires_at', to_jsonb($3::timestamptz)
+    ), updated_at = now()
+WHERE id = $4
+  AND channel_type = 'slack' AND status = 'active'
+  AND hosted_paused_at IS NULL
+  AND config ->> 'transport' = 'webhook'
+  AND config ->> 'refresh_token_encrypted' = $5::text
+`
+
+type RotateManagedSlackTokensParams struct {
+	BotTokenEncrypted     string             `json:"bot_token_encrypted"`
+	RefreshTokenEncrypted string             `json:"refresh_token_encrypted"`
+	TokenExpiresAt        pgtype.Timestamptz `json:"token_expires_at"`
+	InstallationID        pgtype.UUID        `json:"installation_id"`
+	PreviousRefreshToken  string             `json:"previous_refresh_token"`
+}
+
+// Only the credential generation that was refreshed can be replaced. A
+// concurrent reconnect, revoke or hosted pause wins over a late refresh.
+func (q *Queries) RotateManagedSlackTokens(ctx context.Context, arg RotateManagedSlackTokensParams) (int64, error) {
+	result, err := q.db.Exec(ctx, rotateManagedSlackTokens,
+		arg.BotTokenEncrypted,
+		arg.RefreshTokenEncrypted,
+		arg.TokenExpiresAt,
+		arg.InstallationID,
+		arg.PreviousRefreshToken,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const upsertRuntimeObservation = `-- name: UpsertRuntimeObservation :one

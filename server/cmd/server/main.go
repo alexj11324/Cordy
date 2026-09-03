@@ -675,6 +675,9 @@ func main() {
 	if h.HostedCapacityWorker != nil {
 		go h.HostedCapacityWorker.Run(sweepCtx)
 	}
+	if h.ManagedSlackTokens != nil {
+		go h.ManagedSlackTokens.Run(sweepCtx)
+	}
 	if h.LinearWorker != nil {
 		go h.LinearWorker.Run(sweepCtx)
 	}
@@ -805,6 +808,11 @@ func main() {
 			}
 		},
 		StopHeartbeats: heartbeatScheduler.Stop,
+		JoinSlackTokens: func() {
+			if h.ManagedSlackTokens != nil && !h.ManagedSlackTokens.WaitWithTimeout(5*time.Second) {
+				slog.Warn("managed Slack token worker did not exit within shutdown timeout")
+			}
+		},
 		JoinWebhookWorker: func() {
 			if h.WebhookDeliveryWorker != nil && !h.WebhookDeliveryWorker.WaitWithTimeout(5*time.Second) {
 				slog.Warn("webhook delivery worker did not exit within shutdown timeout")

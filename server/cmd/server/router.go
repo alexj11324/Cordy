@@ -893,6 +893,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				slog.Error("slack: ManagedOAuthService init failed; managed install disabled", "error", merr)
 			} else {
 				h.ManagedSlack = managedOAuth
+				h.ManagedSlackTokens = slack.NewManagedTokenWorker(queries, box, managedOAuth, slog.Default())
 			}
 			// Managed Events API ingress for hosted-OAuth installs (no Socket
 			// Mode link). The signing secret is optional at boot — without it

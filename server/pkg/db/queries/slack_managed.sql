@@ -69,3 +69,51 @@ WHERE installation_id = $1;
 -- Used by the runtime-teardown sweep and the reclaim path.
 DELETE FROM channel_installation_runtime_observation
 WHERE installation_id = $1;
+
+-- name: ListActiveManagedSlackInstallations :many
+-- Managed installations are workspace-owned and have no agent row. The socket
+-- supervisor's agent join would incorrectly discard all of these installs.
+SELECT ci.* FROM channel_installation ci
+JOIN workspace w ON w.id = ci.workspace_id
+WHERE ci.channel_type = 'slack' AND ci.status = 'active'
+  AND ci.hosted_paused_at IS NULL
+  AND ci.config ->> 'transport' = 'webhook'
+ORDER BY ci.created_at, ci.id;
+
+-- name: RotateManagedSlackTokens :execrows
+-- Only the credential generation that was refreshed can be replaced. A
+-- concurrent reconnect, revoke or hosted pause wins over a late refresh.
+UPDATE channel_installation
+SET config = config || jsonb_build_object(
+        'bot_token_encrypted', sqlc.arg(bot_token_encrypted)::text,
+        'refresh_token_encrypted', sqlc.arg(refresh_token_encrypted)::text,
+        'token_expires_at', to_jsonb(sqlc.arg(token_expires_at)::timestamptz)
+    ), updated_at = now()
+WHERE id = sqlc.arg(installation_id)
+  AND channel_type = 'slack' AND status = 'active'
+  AND hosted_paused_at IS NULL
+  AND config ->> 'transport' = 'webhook'
+  AND config ->> 'refresh_token_encrypted' = sqlc.arg(previous_refresh_token)::text;
+
+-- name: ObserveManagedSlackRuntime :execrows
+-- Do not let an in-flight probe overwrite a reconnect or capacity pause.
+-- Lock installation before observation, matching the capacity reconciler.
+WITH current_installation AS MATERIALIZED (
+    SELECT ci.id FROM channel_installation ci
+    WHERE ci.id = sqlc.arg(installation_id)
+      AND ci.channel_type = 'slack' AND ci.status = 'active'
+      AND ci.hosted_paused_at IS NULL
+      AND ci.config ->> 'transport' = 'webhook'
+      AND COALESCE(ci.config ->> 'bot_token_encrypted', '') = sqlc.arg(expected_bot_token)::text
+    FOR SHARE
+)
+INSERT INTO channel_installation_runtime_observation (
+    installation_id, state, observed_at, error_code, error_summary, observer_token
+)
+SELECT id, sqlc.arg(state)::text, now(), NULLIF(sqlc.arg(error_code)::text, ''),
+       NULLIF(sqlc.arg(error_summary)::text, ''), 'managed:slack:webhook:v1'
+FROM current_installation
+ON CONFLICT (installation_id) DO UPDATE SET
+    state = EXCLUDED.state, observed_at = EXCLUDED.observed_at,
+    error_code = EXCLUDED.error_code, error_summary = EXCLUDED.error_summary,
+    observer_token = EXCLUDED.observer_token, updated_at = now();

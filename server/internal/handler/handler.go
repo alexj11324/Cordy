@@ -320,6 +320,9 @@ type Handler struct {
 	// deployment without a hosted app fails loudly instead of half-working.
 	// Wired in cmd/server/router.go after handler.New.
 	ManagedSlack *slack.ManagedOAuthService
+	// ManagedSlackTokens refreshes expiring hosted credentials and observes
+	// provider health. Nil without the managed client credentials and key.
+	ManagedSlackTokens *slack.ManagedTokenWorker
 	// ManagedSlackWebhook serves the deployment-wide managed Events API
 	// webhook (POST /api/integrations/slack/events). Nil unless
 	// PATCHBAY_SLACK_SECRET_KEY is set; the route 503s without a signing
