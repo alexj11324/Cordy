@@ -38,6 +38,12 @@ Setting an executor to an agent or a team enqueues the issue immediately unless 
 
 Executor selection does not bypass an agent's Access; when selecting a team, the leader's Access is what gets checked. See [Assign issues to agents](/assigning-issues).
 
+## Dependency graph plans
+
+For work split into tasks with hard prerequisites, apply a typed dependency graph instead of creating child issues and edges in separate requests. Each graph task keeps `owner`, `executor`, `candidate_executors`, and `reviewer` as separate fields: owner is a member, executor and candidates are agents or teams, and reviewer can be a member, agent, or team. The server validates those roles, derives execution waves from the edges, and creates the child issues, graph nodes, and edges atomically.
+
+Reading the graph returns the parent, children, nodes, edges, derived `waves`, and readiness data including the exact `unlock_condition`. Reusing the same idempotency key safely replays the persisted plan. A successful apply, replay, or retirement publishes `dependency_graph:updated`, so Web, Desktop, and Mobile refresh their graph reads without treating a stale snapshot as current.
+
 ## Status
 
 Every workspace starts with seven built-in statuses. They are also the seven **categories** — the fixed set of behaviors Patchbay knows about — so each built-in status names its own category.
