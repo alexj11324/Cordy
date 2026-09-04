@@ -5045,6 +5045,9 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("batch update issue failed", "issue_id", issueID, "error", err)
 			continue
 		}
+		if statusChanged {
+			h.reconcileDependencyGraphTransition(r.Context(), prevIssue, issue)
+		}
 		if reviewPlan != nil {
 			if len(reviewPlan.cancelledTasks) > 0 {
 				h.TaskService.BroadcastCancelledTasks(r.Context(), workspaceID, reviewPlan.cancelledTasks)

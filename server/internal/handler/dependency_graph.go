@@ -1284,16 +1284,10 @@ func (h *Handler) validateDependencyGraphAssignments(ctx context.Context, r *htt
 	return assignments, nil
 }
 
-type dependencyGraphRootIssue struct {
-	issue      db.Issue
-	assignment dependencyGraphTaskAssignment
-}
-
 type dependencyGraphApplyResult struct {
 	plan   db.DependencyGraphPlan
 	issues []db.Issue
 	nodes  []db.DependencyGraphNode
-	roots  []dependencyGraphRootIssue
 }
 
 func (h *Handler) applyDependencyGraphTransaction(ctx context.Context, input *dependencyGraphApplyInput, waves [][]string, assignments []dependencyGraphTaskAssignment, parent db.Issue, actor dependencyGraphActor, policy service.IssueCountPolicy, idempotencyKey, requestHash string) (dependencyGraphApplyResult, error) {
@@ -1520,13 +1514,7 @@ func (h *Handler) applyDependencyGraphTransaction(ctx context.Context, input *de
 	if err := tx.Commit(ctx); err != nil {
 		return dependencyGraphApplyResult{}, dependencyGraphDatabase("commit dependency graph apply", err)
 	}
-	result := dependencyGraphApplyResult{plan: plan, issues: issues, nodes: nodes, roots: make([]dependencyGraphRootIssue, 0, len(issues))}
-	for index, task := range input.Tasks {
-		if waveByTempID[task.TempID] == 0 {
-			result.roots = append(result.roots, dependencyGraphRootIssue{issue: issues[index], assignment: assignments[index]})
-		}
-	}
-	return result, nil
+	return dependencyGraphApplyResult{plan: plan, issues: issues, nodes: nodes}, nil
 }
 
 func dependencyGraphIsActivePlanConflict(err error) bool {
@@ -1611,34 +1599,6 @@ func (h *Handler) publishDependencyGraphUpdated(plan db.DependencyGraphPlan, par
 			"replayed":        replayed,
 		},
 	})
-}
-
-func (h *Handler) enqueueDependencyGraphRoots(ctx context.Context, result dependencyGraphApplyResult) {
-	if h.TaskService == nil || h.Queries == nil {
-		return
-	}
-	for _, root := range result.roots {
-		if !root.assignment.executorType.Valid || !root.assignment.executorID.Valid {
-			continue
-		}
-		switch root.assignment.executorType.String {
-		case "agent":
-			if !h.shouldEnqueueExecutorTask(ctx, root.issue) {
-				continue
-			}
-			if _, err := h.TaskService.EnqueueTaskForIssue(ctx, root.issue); err != nil {
-				slog.WarnContext(ctx, "dependency graph root task enqueue failed", "issue_id", uuidToString(root.issue.ID), "error", err)
-			}
-		case "team":
-			team, err := h.Queries.GetTeamInWorkspace(ctx, db.GetTeamInWorkspaceParams{ID: root.assignment.executorID, WorkspaceID: root.issue.WorkspaceID})
-			if err != nil || team.ArchivedAt.Valid {
-				continue
-			}
-			if _, err := h.TaskService.EnqueueTaskForTeamLeader(ctx, root.issue, team.LeaderID, team.ID, pgtype.UUID{}); err != nil {
-				slog.WarnContext(ctx, "dependency graph team root task enqueue failed", "issue_id", uuidToString(root.issue.ID), "team_id", uuidToString(team.ID), "error", err)
-			}
-		}
-	}
 }
 
 type dependencyGraphCancelledIssue struct {
@@ -2068,13 +2028,24 @@ func (h *Handler) ApplyIssueDependencyGraph(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	h.publishDependencyGraphIssues(r.Context(), result, actor)
-	h.enqueueDependencyGraphRoots(r.Context(), result)
-	h.publishDependencyGraphUpdated(result.plan, uuidToString(parentUUID), result.plan.Status, actor.Type, uuidToString(actor.ID), false)
+	// The graph coordinator owns ready-node admission. It promotes any newly
+	// unblocked nodes, records the admission activity, and inserts the normal
+	// agent/team task rows after the graph transaction commits. The response is
+	// built from the apply snapshot before that post-commit wakeup, matching the
+	// Rust handler contract; the graph event causes clients to refetch the live
+	// state after admission.
 	response, err := h.dependencyGraphResponseForPlan(r.Context(), result.plan)
 	if err != nil {
 		writeDependencyGraphError(w, err)
 		return
 	}
+	if h.TaskService != nil {
+		if err := h.TaskService.WakeDependencyGraphReadyTasks(r.Context(), result.plan.WorkspaceID, result.plan.ID); err != nil {
+			slog.WarnContext(r.Context(), "dependency graph readiness wakeup deferred",
+				"plan_id", uuidToString(result.plan.ID), "error", err)
+		}
+	}
+	h.publishDependencyGraphUpdated(result.plan, uuidToString(parentUUID), result.plan.Status, actor.Type, uuidToString(actor.ID), false)
 	writeJSON(w, http.StatusCreated, dependencyGraphResponseMap(response, true, false))
 }
 

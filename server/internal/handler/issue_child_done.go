@@ -67,7 +67,31 @@ import (
 // Errors are logged at warn level and swallowed: this is a best-effort
 // notification on the side of a successful status update; failing it must
 // not roll back the user's status change.
+func (h *Handler) reconcileDependencyGraphTransition(ctx context.Context, prev, issue db.Issue) {
+	if h.TaskService == nil || h.Queries == nil {
+		return
+	}
+	previousCategory := issuestatus.Effective(ctx, h.Queries, prev.WorkspaceID, prev.Status)
+	currentCategory := issuestatus.Effective(ctx, h.Queries, issue.WorkspaceID, issue.Status)
+	if previousCategory == currentCategory {
+		return
+	}
+	switch currentCategory {
+	case issuestatus.Done:
+		if err := h.TaskService.WakeDependencyGraphDependents(ctx, issue.WorkspaceID, issue.ID); err != nil {
+			slog.Warn("dependency graph wakeup after issue completion failed",
+				"issue_id", uuidToString(issue.ID), "error", err)
+		}
+	case issuestatus.Cancelled:
+		if err := h.TaskService.FlagDependencyGraphAttention(ctx, issue.WorkspaceID, issue.ID, "prerequisite issue was cancelled"); err != nil {
+			slog.Warn("dependency graph attention update after issue cancellation failed",
+				"issue_id", uuidToString(issue.ID), "error", err)
+		}
+	}
+}
+
 func (h *Handler) notifyParentOfChildDone(ctx context.Context, prev, issue db.Issue) {
+	h.reconcileDependencyGraphTransition(ctx, prev, issue)
 	if !issue.ParentIssueID.Valid {
 		return
 	}

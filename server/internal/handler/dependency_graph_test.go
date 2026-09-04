@@ -515,7 +515,7 @@ func TestApplyDependencyGraphRoundTripsRolesAndRealtime(t *testing.T) {
 				"context":             map[string]any{},
 				"outputs":             []string{"child artifact"},
 				"owner":               role("member", testUserID),
-				"candidate_executors": []any{},
+				"candidate_executors": []any{role("agent", agentID)},
 				"reviewer":            role("member", testUserID),
 			},
 		},
@@ -630,11 +630,49 @@ func TestApplyDependencyGraphRoundTripsRolesAndRealtime(t *testing.T) {
 		  AND child_node.temp_id = 'child'`, planID).Scan(&rootStatus, &rootAcceptance, &childStatus, &childAcceptance); err != nil {
 		t.Fatalf("read persisted child issues: %v", err)
 	}
-	if rootStatus != "todo" || childStatus != "blocked" {
-		t.Fatalf("persisted statuses = %s/%s, want todo/blocked", rootStatus, childStatus)
+	if rootStatus != "in_progress" || childStatus != "blocked" {
+		t.Fatalf("persisted statuses = %s/%s, want in_progress/blocked", rootStatus, childStatus)
 	}
 	if string(rootAcceptance) != `["root is complete"]` || string(childAcceptance) != `["child is complete"]` {
 		t.Fatalf("persisted acceptance criteria = %s/%s", rootAcceptance, childAcceptance)
+	}
+
+	// The apply handler returns its pre-admission snapshot, while the committed
+	// root is already in progress and has one normal queued task. Completing the
+	// prerequisite through the same status transition hook must promote the
+	// blocked child and enqueue its task exactly once.
+	rootIssueID := parseUUID(dependencyGraphTestString(root, "issue_id"))
+	childIssueID := parseUUID(dependencyGraphTestString(child, "issue_id"))
+	rootBefore, err := testHandler.Queries.GetIssueInWorkspace(ctx, db.GetIssueInWorkspaceParams{
+		ID:          rootIssueID,
+		WorkspaceID: parseUUID(testWorkspaceID),
+	})
+	if err != nil {
+		t.Fatalf("load admitted graph root: %v", err)
+	}
+	rootDone, err := testHandler.Queries.UpdateIssueStatus(ctx, db.UpdateIssueStatusParams{
+		ID:          rootIssueID,
+		Status:      "done",
+		WorkspaceID: rootBefore.WorkspaceID,
+	})
+	if err != nil {
+		t.Fatalf("complete graph root: %v", err)
+	}
+	testHandler.reconcileDependencyGraphTransition(ctx, rootBefore, rootDone)
+
+	var promotedChildStatus string
+	var graphTaskCount int
+	if err := testPool.QueryRow(ctx, `SELECT status FROM issue WHERE id = $1`, childIssueID).Scan(&promotedChildStatus); err != nil {
+		t.Fatalf("read promoted graph child: %v", err)
+	}
+	if err := testPool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM agent_task_queue
+		WHERE issue_id IN ($1, $2) AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity', 'deferred')
+	`, rootIssueID, childIssueID).Scan(&graphTaskCount); err != nil {
+		t.Fatalf("count graph tasks: %v", err)
+	}
+	if promotedChildStatus != "in_progress" || graphTaskCount != 2 {
+		t.Fatalf("dependency scheduler result = child status %q, active tasks %d; want in_progress/2", promotedChildStatus, graphTaskCount)
 	}
 
 	get := withURLParam(newRequest(http.MethodGet, "/api/issues/"+parentID+"/dependency-graph", nil), "id", parentID)

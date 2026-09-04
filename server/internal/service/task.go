@@ -2718,6 +2718,7 @@ func (s *TaskService) CancelTasksForIssue(ctx context.Context, issueID pgtype.UU
 		s.captureTaskCancelled(ctx, t)
 		s.broadcastTaskEvent(ctx, protocol.EventTaskCancelled, t)
 	}
+	s.flagDependencyAttentionForCancelledTasks(ctx, cancelled)
 	// Reconcile once per distinct agent instead of once per cancelled row:
 	// cancelling an issue often stops several tasks owned by the same agent,
 	// and each reconcile is a DB write plus a status broadcast. Matches
@@ -2779,6 +2780,7 @@ func (s *TaskService) CancelTasksForAgent(ctx context.Context, agentID pgtype.UU
 		s.captureTaskCancelled(ctx, t)
 		s.broadcastTaskEvent(ctx, protocol.EventTaskCancelled, t)
 	}
+	s.flagDependencyAttentionForCancelledTasks(ctx, cancelled)
 	// Reconcile once after the loop — agent transitions from
 	// working→available based on remaining task counts, no need to call
 	// per row (the rows we just cancelled all belong to the same agent).
@@ -2820,6 +2822,7 @@ func (s *TaskService) CancelTasksByTriggerComment(ctx context.Context, commentID
 		s.captureTaskCancelled(ctx, t)
 		s.broadcastTaskEvent(ctx, protocol.EventTaskCancelled, t)
 	}
+	s.flagDependencyAttentionForCancelledTasks(ctx, cancelled)
 	// Reconcile once per distinct agent instead of once per cancelled row: an
 	// edited/deleted trigger comment can cancel several tasks owned by the same
 	// agent, and each reconcile is a DB write plus a status broadcast (D#3319).
@@ -2855,6 +2858,7 @@ func (s *TaskService) BroadcastCancelledTasks(ctx context.Context, workspaceID s
 		s.ReconcileAgentStatus(ctx, t.AgentID)
 		s.publishTaskEvent(protocol.EventTaskCancelled, workspaceID, t)
 	}
+	s.flagDependencyAttentionForCancelledTasks(ctx, cancelled)
 	s.notifyTasksFinished(cancelled)
 }
 
@@ -3085,6 +3089,7 @@ func (s *TaskService) CancelTaskWithResult(ctx context.Context, taskID pgtype.UU
 
 	slog.Info("task cancelled", "task_id", util.UUIDToString(task.ID), "issue_id", util.UUIDToString(task.IssueID))
 	s.captureTaskCancelled(ctx, task)
+	s.flagDependencyAttentionForCancelledTasks(ctx, []db.AgentTaskQueue{task})
 	if !opts.QueuedOnly {
 		cancelledChatMessage = s.finalizeCancelledChatMessage(ctx, task, opts)
 	}
@@ -3801,6 +3806,10 @@ func (s *TaskService) ClaimTaskForRuntime(ctx context.Context, runtimeID pgtype.
 			time.Now().Add(ReclaimCheckRetryInterval),
 		)
 	}
+	if err := s.reconcileDependencyTasksForRuntime(ctx, runtimeID); err != nil {
+		slog.Warn("dependency task recovery before claim failed",
+			"runtime_id", runtimeKey, "error", err)
+	}
 
 	if s.EmptyClaim.IsEmpty(ctx, runtimeKey) {
 		outcome = "empty_cache_hit"
@@ -4074,6 +4083,12 @@ func (s *TaskService) ClaimTasksForRuntimes(ctx context.Context, runtimeIDs []pg
 	}
 	if len(claimed) >= maxTasks {
 		return claimed[:maxTasks], nil
+	}
+	for _, runtimeID := range uniqueIDs {
+		if err := s.reconcileDependencyTasksForRuntime(ctx, runtimeID); err != nil {
+			slog.Warn("dependency task recovery before batch claim failed",
+				"runtime_id", util.UUIDToString(runtimeID), "error", err)
+		}
 	}
 
 	// 3. Empty-cache short-circuit + version sampling for the remaining runtimes.
@@ -4570,6 +4585,14 @@ func (s *TaskService) completeTask(ctx context.Context, taskID pgtype.UUID, resu
 
 	slog.Info("task completed", "task_id", util.UUIDToString(task.ID), "issue_id", util.UUIDToString(task.IssueID))
 	s.captureTaskCompleted(ctx, task)
+	if task.IssueID.Valid {
+		if issue, err := s.Queries.GetIssue(ctx, task.IssueID); err == nil {
+			if err := s.WakeDependencyGraphDependents(ctx, issue.WorkspaceID, issue.ID); err != nil {
+				slog.Warn("dependency graph wakeup after task completion failed",
+					"issue_id", util.UUIDToString(issue.ID), "error", err)
+			}
+		}
+	}
 
 	// Invariant: every completed issue task must have at least one agent
 	// comment on the issue, so the user always sees something when a run
@@ -5192,6 +5215,9 @@ func (s *TaskService) failTask(ctx context.Context, taskID pgtype.UUID, errMsg, 
 
 	slog.Warn("task failed", "task_id", util.UUIDToString(task.ID), "issue_id", util.UUIDToString(task.IssueID), "error", errMsg, "failure_reason", failureReason)
 	s.captureTaskFailed(ctx, task)
+	if retried == nil && task.IssueID.Valid {
+		s.flagDependencyAttentionForIssueTask(ctx, task.IssueID, "prerequisite task failed: "+failureReason)
+	}
 
 	// The auto-retry child (if any) was created inside the transaction above so
 	// no newer chat task could jump ahead of it. Surface it now: broadcast
@@ -5977,9 +6003,14 @@ func (s *TaskService) RecoverOrphanedTasksForRuntime(ctx context.Context, runtim
 // agent:archived event the caller publishes already invalidates every client's
 // active-task view, so per-row events would be redundant noise.
 func (s *TaskService) CancelTasksForArchivedAgent(ctx context.Context, agentID pgtype.UUID) ([]db.AgentTaskQueue, error) {
-	return s.terminateTasksInTx(ctx, func(qtx *db.Queries) ([]db.AgentTaskQueue, error) {
+	cancelled, err := s.terminateTasksInTx(ctx, func(qtx *db.Queries) ([]db.AgentTaskQueue, error) {
 		return qtx.CancelAgentTasksByAgent(ctx, agentID)
 	})
+	if err != nil {
+		return nil, err
+	}
+	s.flagDependencyAttentionForCancelledTasks(ctx, cancelled)
+	return cancelled, nil
 }
 
 func (s *TaskService) terminateTasksInTx(ctx context.Context, fail func(*db.Queries) ([]db.AgentTaskQueue, error)) ([]db.AgentTaskQueue, error) {
