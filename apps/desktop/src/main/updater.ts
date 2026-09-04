@@ -1,9 +1,10 @@
 import { autoUpdater, type UpdateDownloadedEvent } from "electron-updater";
-import { app, type BrowserWindow, ipcMain } from "electron";
+import { app, dialog, type BrowserWindow, ipcMain } from "electron";
 import type {
   ManualUpdateCheckResult,
   UpdaterPreferences,
 } from "../shared/updater-types";
+import { preferredAppLocaleFromLanguages } from "./os-locale";
 import {
   DEFAULT_UPDATER_PREFERENCES,
   loadUpdaterPreferences,
@@ -50,6 +51,202 @@ export function configureMacX64UpdateChannel(
 // package.mjs publishes macOS x64 as `latest-x64-mac.yml`; the established
 // arm64 feed and runtime path remain unchanged.
 configureMacX64UpdateChannel(autoUpdater);
+
+let lastDownloadedVersion: string | null = null;
+let trackingDownloadedVersion = false;
+
+function trackDownloadedVersion(): void {
+  if (trackingDownloadedVersion) return;
+  trackingDownloadedVersion = true;
+  autoUpdater.on("update-downloaded", (info) => {
+    lastDownloadedVersion = info.version;
+  });
+}
+
+export function resetUpdaterTransientStateForTests(): void {
+  lastDownloadedVersion = null;
+  trackingDownloadedVersion = false;
+}
+
+async function performManualCheck(): Promise<ManualUpdateCheckResult> {
+  try {
+    const result = (await checkForUpdatesOnce()) as
+      | { updateInfo: { version: string }; isUpdateAvailable?: boolean }
+      | null;
+    const currentVersion = app.getVersion();
+    // Trust electron-updater's own decision rather than re-deriving it from
+    // a version-string compare. The two diverge for pre-release channels,
+    // staged rollouts, downgrades, and minimum-system-version gates — in
+    // those cases updateInfo.version differs from app.getVersion() but no
+    // `update-available` event fires, so showing "available" here would
+    // promise a download prompt that never appears.
+    return {
+      ok: true,
+      currentVersion,
+      latestVersion: result?.updateInfo.version ?? currentVersion,
+      available: result?.isUpdateAvailable ?? false,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+type MenuUpdateCopy = {
+  upToDate: string;
+  upToDateDetail: (version: string) => string;
+  updateAvailable: string;
+  updateAvailableDetail: (version: string) => string;
+  readyMessage: string;
+  readyDetail: (version: string) => string;
+  restartNow: string;
+  later: string;
+  checkFailed: string;
+  ok: string;
+};
+
+const menuUpdateCopyByLocale: Record<
+  ReturnType<typeof preferredAppLocaleFromLanguages>,
+  MenuUpdateCopy
+> = {
+  en: {
+    upToDate: "You're up to date",
+    upToDateDetail: (version) => `Patchbay ${version} is the latest version.`,
+    updateAvailable: "A new version is available",
+    updateAvailableDetail: (version) =>
+      `Version ${version} is downloading in the background. You'll be notified when it's ready to install.`,
+    readyMessage: "Update ready",
+    readyDetail: (version) =>
+      `Version ${version} is ready to install. Restart Patchbay to apply it.`,
+    restartNow: "Restart Now",
+    later: "Later",
+    checkFailed: "Couldn't check for updates",
+    ok: "OK",
+  },
+  "zh-Hans": {
+    upToDate: "已是最新版本",
+    upToDateDetail: (version) => `当前版本是 ${version}。`,
+    updateAvailable: "发现新版本",
+    updateAvailableDetail: (version) =>
+      `正在后台下载 ${version}，就绪后会通知你。`,
+    readyMessage: "更新已就绪",
+    readyDetail: (version) => `版本 ${version} 已准备好安装。重启 Patchbay 以完成更新。`,
+    restartNow: "立即重启",
+    later: "稍后",
+    checkFailed: "无法检查更新",
+    ok: "好",
+  },
+  ja: {
+    upToDate: "最新バージョンです",
+    upToDateDetail: (version) => `現在のバージョンは ${version} です。`,
+    updateAvailable: "新しいバージョンがあります",
+    updateAvailableDetail: (version) =>
+      `バージョン ${version} をバックグラウンドでダウンロードしています。準備ができたら通知します。`,
+    readyMessage: "アップデートの準備ができました",
+    readyDetail: (version) =>
+      `バージョン ${version} をインストールする準備ができました。再起動して適用します。`,
+    restartNow: "今すぐ再起動",
+    later: "後で",
+    checkFailed: "更新を確認できませんでした",
+    ok: "OK",
+  },
+  ko: {
+    upToDate: "최신 버전입니다",
+    upToDateDetail: (version) => `현재 버전은 ${version}입니다.`,
+    updateAvailable: "새 버전이 있습니다",
+    updateAvailableDetail: (version) =>
+      `${version}을(를) 백그라운드에서 다운로드하고 있습니다. 준비되면 알려 드립니다.`,
+    readyMessage: "업데이트를 설치할 준비가 되었습니다",
+    readyDetail: (version) =>
+      `${version}을(를) 설치할 준비가 되었습니다. 다시 시작하여 적용하세요.`,
+    restartNow: "지금 다시 시작",
+    later: "나중에",
+    checkFailed: "업데이트를 확인할 수 없습니다",
+    ok: "확인",
+  },
+};
+
+function menuUpdateCopy(
+  languages: readonly string[] = app.getPreferredSystemLanguages(),
+): MenuUpdateCopy {
+  return menuUpdateCopyByLocale[preferredAppLocaleFromLanguages(languages)];
+}
+
+async function showUpdateDialog(
+  window: BrowserWindow | null,
+  options: Electron.MessageBoxOptions,
+): Promise<Electron.MessageBoxReturnValue> {
+  if (window && !window.isDestroyed()) {
+    return dialog.showMessageBox(window, options);
+  }
+  return dialog.showMessageBox(options);
+}
+
+/**
+ * Native "Check for Updates…" flow for the application menu. Separate from
+ * the settings-tab IPC so a menu click still works before Cloud services
+ * are enabled, and so the result is a system dialog rather than a toast
+ * buried in Settings.
+ */
+export async function runMenuUpdateCheck(
+  getWindow: () => BrowserWindow | null,
+): Promise<void> {
+  trackDownloadedVersion();
+  const copy = menuUpdateCopy();
+  const window = getWindow();
+
+  if (lastDownloadedVersion) {
+    const { response } = await showUpdateDialog(window, {
+      type: "info",
+      message: copy.readyMessage,
+      detail: copy.readyDetail(lastDownloadedVersion),
+      buttons: [copy.restartNow, copy.later],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+    });
+    if (response === 0) {
+      autoUpdater.quitAndInstall(false, true);
+    }
+    return;
+  }
+
+  const result = await performManualCheck();
+  if (!result.ok) {
+    await showUpdateDialog(window, {
+      type: "error",
+      message: copy.checkFailed,
+      detail: result.error,
+      buttons: [copy.ok],
+      defaultId: 0,
+      noLink: true,
+    });
+    return;
+  }
+
+  if (!result.available) {
+    await showUpdateDialog(window, {
+      type: "info",
+      message: copy.upToDate,
+      detail: copy.upToDateDetail(result.currentVersion),
+      buttons: [copy.ok],
+      defaultId: 0,
+      noLink: true,
+    });
+    return;
+  }
+
+  await showUpdateDialog(window, {
+    type: "info",
+    message: copy.updateAvailable,
+    detail: copy.updateAvailableDetail(result.latestVersion),
+    buttons: [copy.ok],
+    defaultId: 0,
+    noLink: true,
+  });
+}
 
 const STARTUP_CHECK_DELAY_MS = 5_000;
 const PERIODIC_CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
@@ -204,6 +401,7 @@ export function setupAutoUpdater(
     console.error("Auto-updater error:", err);
   };
 
+  trackDownloadedVersion();
   autoUpdater.on("update-available", onUpdateAvailable);
   autoUpdater.on("download-progress", onDownloadProgress);
   autoUpdater.on("update-downloaded", onUpdateDownloaded);
@@ -263,29 +461,7 @@ export function setupAutoUpdater(
     if (!active || !isCloudEnabled()) {
       return { ok: false, error: "Cloud services disabled" };
     }
-    try {
-      const result = (await checkForUpdatesOnce()) as
-        | { updateInfo: { version: string }; isUpdateAvailable?: boolean }
-        | null;
-      const currentVersion = app.getVersion();
-      // Trust electron-updater's own decision rather than re-deriving it from
-      // a version-string compare. The two diverge for pre-release channels,
-      // staged rollouts, downgrades, and minimum-system-version gates — in
-      // those cases updateInfo.version differs from app.getVersion() but no
-      // `update-available` event fires, so showing "available" here would
-      // promise a download prompt that never appears.
-      return {
-        ok: true,
-        currentVersion,
-        latestVersion: result?.updateInfo.version ?? currentVersion,
-        available: result?.isUpdateAvailable ?? false,
-      };
-    } catch (err) {
-      return {
-        ok: false,
-        error: err instanceof Error ? err.message : String(err),
-      };
-    }
+    return performManualCheck();
   });
 
   // Initial check shortly after startup so we don't block boot, plus a

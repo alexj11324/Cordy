@@ -20,6 +20,8 @@ const ctx = vi.hoisted(() => ({
   quitAndInstall: vi.fn(),
   getVersion: vi.fn(() => "0.3.17"),
   userDataPath: "",
+  preferredLanguages: ["en-US"] as string[],
+  showMessageBox: vi.fn(async () => ({ response: 0, checkboxChecked: false })),
 }));
 
 vi.mock("electron-updater", () => {
@@ -52,8 +54,12 @@ vi.mock("electron", () => ({
   app: {
     getVersion: ctx.getVersion,
     getPath: vi.fn(() => ctx.userDataPath),
+    getPreferredSystemLanguages: () => ctx.preferredLanguages,
   },
   BrowserWindow: class BrowserWindow {},
+  dialog: {
+    showMessageBox: ctx.showMessageBox,
+  },
   ipcMain: {
     handle: ctx.ipcHandle,
     removeHandler: (channel: string) => {
@@ -64,6 +70,8 @@ vi.mock("electron", () => ({
 
 import {
   configureMacX64UpdateChannel,
+  resetUpdaterTransientStateForTests,
+  runMenuUpdateCheck,
   setupAutoUpdater,
 } from "./updater";
 import { updaterPreferencesPath } from "./updater-preferences";
@@ -177,6 +185,13 @@ describe("setupAutoUpdater", () => {
     ctx.downloadUpdate.mockClear();
     ctx.quitAndInstall.mockClear();
     ctx.getVersion.mockClear();
+    ctx.preferredLanguages = ["en-US"];
+    ctx.showMessageBox.mockClear();
+    ctx.showMessageBox.mockResolvedValue({
+      response: 0,
+      checkboxChecked: false,
+    });
+    resetUpdaterTransientStateForTests();
   });
 
   afterEach(() => {
@@ -374,5 +389,102 @@ describe("setupAutoUpdater cloud gate", () => {
     expect(ctx.checkForUpdates).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
     expect(ctx.ipcHandlers.has("updater:check")).toBe(false);
+  });
+});
+
+describe("runMenuUpdateCheck", () => {
+  beforeEach(() => {
+    ctx.handlers.clear();
+    ctx.checkForUpdates.mockReset();
+    ctx.checkForUpdates.mockResolvedValue({
+      updateInfo: { version: "0.3.18" },
+      isUpdateAvailable: false,
+    });
+    ctx.quitAndInstall.mockClear();
+    ctx.getVersion.mockClear();
+    ctx.preferredLanguages = ["en-US"];
+    ctx.showMessageBox.mockReset();
+    ctx.showMessageBox.mockResolvedValue({
+      response: 0,
+      checkboxChecked: false,
+    });
+    resetUpdaterTransientStateForTests();
+  });
+
+  it("tells the user they are on the latest version", async () => {
+    await runMenuUpdateCheck(() => null);
+
+    expect(ctx.checkForUpdates).toHaveBeenCalledTimes(1);
+    expect(ctx.showMessageBox).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "info",
+        message: "You're up to date",
+        detail: "Patchbay 0.3.17 is the latest version.",
+      }),
+    );
+    expect(ctx.quitAndInstall).not.toHaveBeenCalled();
+  });
+
+  it("explains that an available version is downloading", async () => {
+    ctx.checkForUpdates.mockResolvedValue({
+      updateInfo: { version: "0.4.0" },
+      isUpdateAvailable: true,
+    });
+
+    await runMenuUpdateCheck(() => null);
+
+    expect(ctx.showMessageBox).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "info",
+        message: "A new version is available",
+        detail:
+          "Version 0.4.0 is downloading in the background. You'll be notified when it's ready to install.",
+      }),
+    );
+  });
+
+  it("shows the check error when metadata cannot be fetched", async () => {
+    ctx.checkForUpdates.mockRejectedValue(new Error("network down"));
+
+    await runMenuUpdateCheck(() => null);
+
+    expect(ctx.showMessageBox).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "error",
+        message: "Couldn't check for updates",
+        detail: "network down",
+      }),
+    );
+  });
+
+  it("offers to restart once the package is already downloaded", async () => {
+    await runMenuUpdateCheck(() => null);
+    emitUpdater("update-downloaded", { version: "0.4.0" });
+    ctx.showMessageBox.mockClear();
+    ctx.checkForUpdates.mockClear();
+
+    await runMenuUpdateCheck(() => null);
+
+    expect(ctx.checkForUpdates).not.toHaveBeenCalled();
+    expect(ctx.showMessageBox).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: "Update ready",
+        buttons: ["Restart Now", "Later"],
+      }),
+    );
+    expect(ctx.quitAndInstall).toHaveBeenCalledWith(false, true);
+  });
+
+  it("leaves the downloaded package in place when the user chooses Later", async () => {
+    await runMenuUpdateCheck(() => null);
+    emitUpdater("update-downloaded", { version: "0.4.0" });
+    ctx.showMessageBox.mockResolvedValue({
+      response: 1,
+      checkboxChecked: false,
+    });
+
+    await runMenuUpdateCheck(() => null);
+
+    expect(ctx.quitAndInstall).not.toHaveBeenCalled();
   });
 });

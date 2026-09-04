@@ -15,6 +15,7 @@ import { GuestDeepLinkGate } from "./local-guest-deep-link-gate";
 import { LocalWorkspaceGrants } from "./local-guest-workspace";
 import { openExternalSafely, downloadURLSafely } from "./external-url";
 import { installContextMenu } from "./context-menu";
+import { installApplicationMenu } from "./application-menu";
 import { handleAppShortcut } from "./keyboard-shortcuts";
 import { installNavigationGestures } from "./navigation-gestures";
 import { installNavigationGuard } from "./navigation-guard";
@@ -726,6 +727,11 @@ if (!gotTheLock) {
     electronApp.setAppUserModelId(
       is.dev ? "ai.patchbay.desktop.dev" : "ai.patchbay.desktop",
     );
+
+    installApplicationMenu(async () => {
+      const { runMenuUpdateCheck } = await import("./updater");
+      await runMenuUpdateCheck(() => mainWindow);
+    });
 
     // macOS: replace the default Electron dock icon with the bundled logo
     // so the Canary dev build is visually distinct from a stock Electron
