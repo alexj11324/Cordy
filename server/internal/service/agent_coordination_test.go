@@ -187,10 +187,10 @@ func TestCoordinationTeamOwnerUsesTeamProvenanceAndLeaderTask(t *testing.T) {
 	}
 	task := db.AgentTaskQueue{ID: assignment.DispatchedTaskID, AgentID: leaderID}
 	context := coordinationTaskContext{
-		AssignmentID:  util.UUIDToString(assignment.ID),
-		AssignmentRole: CoordinationAssignmentExecutor,
-		OwnerType:      "team",
-		OwnerID:        util.UUIDToString(teamID),
+		AssignmentID:     util.UUIDToString(assignment.ID),
+		AssignmentRole:   CoordinationAssignmentExecutor,
+		OwnerType:        "team",
+		OwnerID:          util.UUIDToString(teamID),
 		OwnerGeneration: int64Ptr(6),
 	}
 	if !coordinationAssignmentMatchesTask(assignment, task, context) {
