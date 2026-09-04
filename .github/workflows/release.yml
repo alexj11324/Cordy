@@ -95,6 +95,9 @@ jobs:
         if: ${{ vars.ALLOW_VULN_BYPASS_FOR_TAG == github.ref_name }}
         run: echo "::warning::govulncheck was explicitly skipped for ${GITHUB_REF_NAME}; see .github/RELEASING.md"
 
+      - name: Test Desktop release artifact contract
+        run: node --test scripts/release-desktop-artifact-contract.test.mjs
+
   prepare-release:
     needs: verify
     # Only run on the canonical repository. Forks don't have the
@@ -719,7 +722,7 @@ jobs:
           const dist = resolve("dist");
           const stage = join(process.env.RUNNER_TEMP, `patchbay-desktop-${target}-${arch}`);
           const manifestName = `patchbay-desktop-${target}-${arch}-manifest.json`;
-          const assetPattern = /(?:\.7z|\.AppImage|\.deb|\.dmg|\.exe|\.rpm|\.zip|\.blockmap|^latest.*\.ya?ml$)$/i;
+          const assetPattern = /^(?:latest.*\.ya?ml|patchbay-desktop-(?!.*\.__uninstaller\.).+\.(?:7z|AppImage|deb|dmg|exe|rpm|zip|blockmap))$/i;
 
           rmSync(stage, { recursive: true, force: true });
           mkdirSync(stage, { recursive: true });
