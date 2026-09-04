@@ -8,251 +8,1591 @@ package db
 import (
 	"context"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const linearConnectionColumns = `id, workspace_id, organization_id, organization_name, actor_id, access_token_encrypted, refresh_token_encrypted, token_expires_at, scopes, webhook_id, status, last_success_at, last_error, created_by_id, created_at, updated_at`
+const bindLinearWebhook = `-- name: BindLinearWebhook :exec
+UPDATE linear_connection
+SET webhook_id = $2, updated_at = now()
+WHERE id = $1 AND status = 'active' AND (webhook_id IS NULL OR webhook_id = $2)
+`
 
-func scanLinearConnection(row pgx.Row) (LinearConnection, error) {
-	var v LinearConnection
-	err := row.Scan(&v.ID, &v.WorkspaceID, &v.OrganizationID, &v.OrganizationName, &v.ActorID,
-		&v.AccessTokenEncrypted, &v.RefreshTokenEncrypted, &v.TokenExpiresAt, &v.Scopes,
-		&v.WebhookID, &v.Status, &v.LastSuccessAt, &v.LastError, &v.CreatedByID, &v.CreatedAt, &v.UpdatedAt)
-	return v, err
+type BindLinearWebhookParams struct {
+	ID        pgtype.UUID `json:"id"`
+	WebhookID pgtype.Text `json:"webhook_id"`
 }
 
-func scanLinearBinding(row pgx.Row) (LinearProjectBinding, error) {
-	var v LinearProjectBinding
-	err := row.Scan(&v.ID, &v.WorkspaceID, &v.ConnectionID, &v.PatchbayProjectID, &v.LinearProjectID,
-		&v.LinearTeamID, &v.Status, &v.SyncMode, &v.InitialSourceOfTruth, &v.StatusMapping,
-		&v.AgentLabelMapping, &v.ActivatedAt, &v.PausedAt, &v.CreatedByID, &v.CreatedAt, &v.UpdatedAt)
-	return v, err
-}
-
-func scanLinearMember(row pgx.Row) (LinearMemberBinding, error) {
-	var v LinearMemberBinding
-	err := row.Scan(&v.ID, &v.WorkspaceID, &v.ConnectionID, &v.PatchbayUserID, &v.LinearUserID, &v.CreatedAt, &v.UpdatedAt)
-	return v, err
-}
-
-func scanLinearLink(row pgx.Row) (LinearIssueLink, error) {
-	var v LinearIssueLink
-	err := row.Scan(&v.ID, &v.WorkspaceID, &v.BindingID, &v.PatchbayIssueID, &v.LinearIssueID,
-		&v.LinearIdentifier, &v.LastCommonSnapshot, &v.RemoteUpdatedAt, &v.LastRemoteEventAtMs,
-		&v.LastRemoteEventID, &v.SyncStatus, &v.CreatedAt, &v.UpdatedAt)
-	return v, err
-}
-
-func scanLinearConflict(row pgx.Row) (LinearSyncConflict, error) {
-	var v LinearSyncConflict
-	err := row.Scan(&v.ID, &v.WorkspaceID, &v.BindingID, &v.LinkID, &v.PatchbayIssueID, &v.LinearIssueID,
-		&v.Field, &v.BaseValue, &v.LocalValue, &v.RemoteValue, &v.SourceEventID, &v.SourceEventAtMs,
-		&v.Status, &v.Resolution, &v.ResolvedValue, &v.ResolvedByID, &v.CreatedAt, &v.UpdatedAt)
-	return v, err
-}
-
-const getLinearConnectionForWorkspace = `SELECT ` + linearConnectionColumns + ` FROM linear_connection WHERE workspace_id=$1 AND status <> 'revoked' ORDER BY created_at DESC LIMIT 1`
-
-func (q *Queries) GetLinearConnectionForWorkspace(ctx context.Context, workspaceID pgtype.UUID) (LinearConnection, error) {
-	return scanLinearConnection(q.db.QueryRow(ctx, getLinearConnectionForWorkspace, workspaceID))
-}
-
-const getLinearConnectionForWorkspaceForUpdate = `SELECT ` + linearConnectionColumns + ` FROM linear_connection WHERE workspace_id=$1 ORDER BY created_at DESC LIMIT 1 FOR UPDATE`
-
-func (q *Queries) GetLinearConnectionForWorkspaceForUpdate(ctx context.Context, workspaceID pgtype.UUID) (LinearConnection, error) {
-	return scanLinearConnection(q.db.QueryRow(ctx, getLinearConnectionForWorkspaceForUpdate, workspaceID))
-}
-
-type GetLinearConnectionByIDParams struct { ID, WorkspaceID pgtype.UUID }
-
-const getLinearConnectionByID = `SELECT ` + linearConnectionColumns + ` FROM linear_connection WHERE id=$1 AND workspace_id=$2`
-
-func (q *Queries) GetLinearConnectionByID(ctx context.Context, arg GetLinearConnectionByIDParams) (LinearConnection, error) {
-	return scanLinearConnection(q.db.QueryRow(ctx, getLinearConnectionByID, arg.ID, arg.WorkspaceID))
-}
-
-const getLinearConnectionByIDUnscoped = `SELECT ` + linearConnectionColumns + ` FROM linear_connection WHERE id=$1`
-
-func (q *Queries) GetLinearConnectionByIDUnscoped(ctx context.Context, id pgtype.UUID) (LinearConnection, error) {
-	return scanLinearConnection(q.db.QueryRow(ctx, getLinearConnectionByIDUnscoped, id))
-}
-
-type FindLinearConnectionsForWebhookParams struct { OrganizationID, WebhookID string }
-
-const findLinearConnectionsForWebhook = `SELECT ` + linearConnectionColumns + ` FROM linear_connection WHERE organization_id=$1 AND status='active' AND (webhook_id=$2 OR webhook_id IS NULL) ORDER BY (webhook_id=$2) DESC, created_at DESC`
-
-func (q *Queries) FindLinearConnectionsForWebhook(ctx context.Context, arg FindLinearConnectionsForWebhookParams) ([]LinearConnection, error) {
-	rows, err := q.db.Query(ctx, findLinearConnectionsForWebhook, arg.OrganizationID, arg.WebhookID)
-	if err != nil { return nil, err }
-	defer rows.Close()
-	items := []LinearConnection{}
-	for rows.Next() {
-		v, err := scanLinearConnection(rows)
-		if err != nil { return nil, err }
-		items = append(items, v)
-	}
-	return items, rows.Err()
-}
-
-type InsertLinearOauthStateParams struct {
-	ID pgtype.UUID
-	StateHash string
-	WorkspaceID, UserID pgtype.UUID
-	CodeVerifierEncrypted []byte
-	RedirectUri string
-	ExpiresAt pgtype.Timestamptz
-}
-
-const insertLinearOauthState = `INSERT INTO linear_oauth_state(id,state_hash,workspace_id,user_id,code_verifier_encrypted,redirect_uri,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7)`
-
-func (q *Queries) InsertLinearOauthState(ctx context.Context, arg InsertLinearOauthStateParams) error {
-	_, err := q.db.Exec(ctx, insertLinearOauthState, arg.ID, arg.StateHash, arg.WorkspaceID, arg.UserID, arg.CodeVerifierEncrypted, arg.RedirectUri, arg.ExpiresAt)
+func (q *Queries) BindLinearWebhook(ctx context.Context, arg BindLinearWebhookParams) error {
+	_, err := q.db.Exec(ctx, bindLinearWebhook, arg.ID, arg.WebhookID)
 	return err
 }
 
-type ConsumeLinearOauthStateRow struct { WorkspaceID, UserID pgtype.UUID; CodeVerifierEncrypted []byte; RedirectUri string }
+const claimLinearSyncInbox = `-- name: ClaimLinearSyncInbox :one
+WITH candidate AS (
+    SELECT id FROM linear_sync_inbox
+    WHERE processed_at IS NULL AND dead_lettered_at IS NULL
+      AND available_at <= now() AND (locked_until IS NULL OR locked_until < now())
+    ORDER BY received_at, id
+    FOR UPDATE SKIP LOCKED LIMIT 1
+)
+UPDATE linear_sync_inbox i
+SET locked_by = $1, locked_until = now() + make_interval(secs => $2), attempts = attempts + 1
+FROM candidate
+WHERE i.id = candidate.id
+RETURNING i.id, i.connection_id, i.delivery_id, i.event_type, i.payload,
+          i.attempts, i.max_attempts
+`
 
-const consumeLinearOauthState = `UPDATE linear_oauth_state SET consumed_at=now() WHERE state_hash=$1 AND consumed_at IS NULL AND expires_at>now() RETURNING workspace_id,user_id,code_verifier_encrypted,redirect_uri`
+type ClaimLinearSyncInboxParams struct {
+	LockedBy pgtype.Text `json:"locked_by"`
+	Secs     float64     `json:"secs"`
+}
+
+type ClaimLinearSyncInboxRow struct {
+	ID           pgtype.UUID `json:"id"`
+	ConnectionID pgtype.UUID `json:"connection_id"`
+	DeliveryID   string      `json:"delivery_id"`
+	EventType    string      `json:"event_type"`
+	Payload      []byte      `json:"payload"`
+	Attempts     int32       `json:"attempts"`
+	MaxAttempts  int32       `json:"max_attempts"`
+}
+
+func (q *Queries) ClaimLinearSyncInbox(ctx context.Context, arg ClaimLinearSyncInboxParams) (ClaimLinearSyncInboxRow, error) {
+	row := q.db.QueryRow(ctx, claimLinearSyncInbox, arg.LockedBy, arg.Secs)
+	var i ClaimLinearSyncInboxRow
+	err := row.Scan(
+		&i.ID,
+		&i.ConnectionID,
+		&i.DeliveryID,
+		&i.EventType,
+		&i.Payload,
+		&i.Attempts,
+		&i.MaxAttempts,
+	)
+	return i, err
+}
+
+const claimLinearSyncOutbox = `-- name: ClaimLinearSyncOutbox :one
+WITH candidate AS (
+    SELECT o.id FROM linear_sync_outbox o
+    WHERE o.processed_at IS NULL AND o.dead_lettered_at IS NULL
+      AND o.available_at <= now() AND (o.locked_until IS NULL OR o.locked_until < now())
+      AND NOT EXISTS (
+          SELECT 1 FROM linear_sync_outbox older
+          WHERE older.binding_id = o.binding_id AND older.issue_id = o.issue_id
+            AND older.processed_at IS NULL AND older.dead_lettered_at IS NULL
+            AND (older.created_at, older.id) < (o.created_at, o.id)
+      )
+    ORDER BY o.created_at, o.id
+    FOR UPDATE SKIP LOCKED LIMIT 1
+)
+UPDATE linear_sync_outbox o
+SET locked_by = $1, locked_until = now() + make_interval(secs => $2),
+    attempts = attempts + 1, updated_at = now()
+FROM candidate
+WHERE o.id = candidate.id
+RETURNING o.id, o.workspace_id, o.binding_id, o.issue_id, o.event_type,
+          o.payload, o.attempts, o.max_attempts
+`
+
+type ClaimLinearSyncOutboxParams struct {
+	LockedBy pgtype.Text `json:"locked_by"`
+	Secs     float64     `json:"secs"`
+}
+
+type ClaimLinearSyncOutboxRow struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	BindingID   pgtype.UUID `json:"binding_id"`
+	IssueID     pgtype.UUID `json:"issue_id"`
+	EventType   string      `json:"event_type"`
+	Payload     []byte      `json:"payload"`
+	Attempts    int32       `json:"attempts"`
+	MaxAttempts int32       `json:"max_attempts"`
+}
+
+func (q *Queries) ClaimLinearSyncOutbox(ctx context.Context, arg ClaimLinearSyncOutboxParams) (ClaimLinearSyncOutboxRow, error) {
+	row := q.db.QueryRow(ctx, claimLinearSyncOutbox, arg.LockedBy, arg.Secs)
+	var i ClaimLinearSyncOutboxRow
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.BindingID,
+		&i.IssueID,
+		&i.EventType,
+		&i.Payload,
+		&i.Attempts,
+		&i.MaxAttempts,
+	)
+	return i, err
+}
+
+const cleanupLinearOauthStates = `-- name: CleanupLinearOauthStates :exec
+DELETE FROM linear_oauth_state
+WHERE expires_at < now() OR consumed_at < now() - interval '1 day'
+`
+
+func (q *Queries) CleanupLinearOauthStates(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, cleanupLinearOauthStates)
+	return err
+}
+
+const completeLinearSyncInbox = `-- name: CompleteLinearSyncInbox :execrows
+UPDATE linear_sync_inbox
+SET processed_at = now(), locked_by = NULL, locked_until = NULL, last_error = NULL
+WHERE id = $1 AND locked_by = $2
+`
+
+type CompleteLinearSyncInboxParams struct {
+	ID       pgtype.UUID `json:"id"`
+	LockedBy pgtype.Text `json:"locked_by"`
+}
+
+func (q *Queries) CompleteLinearSyncInbox(ctx context.Context, arg CompleteLinearSyncInboxParams) (int64, error) {
+	result, err := q.db.Exec(ctx, completeLinearSyncInbox, arg.ID, arg.LockedBy)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const completeLinearSyncOutbox = `-- name: CompleteLinearSyncOutbox :execrows
+UPDATE linear_sync_outbox
+SET processed_at = now(), locked_by = NULL, locked_until = NULL,
+    last_error = NULL, updated_at = now()
+WHERE id = $1 AND locked_by = $2
+`
+
+type CompleteLinearSyncOutboxParams struct {
+	ID       pgtype.UUID `json:"id"`
+	LockedBy pgtype.Text `json:"locked_by"`
+}
+
+func (q *Queries) CompleteLinearSyncOutbox(ctx context.Context, arg CompleteLinearSyncOutboxParams) (int64, error) {
+	result, err := q.db.Exec(ctx, completeLinearSyncOutbox, arg.ID, arg.LockedBy)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const consumeLinearOauthState = `-- name: ConsumeLinearOauthState :one
+UPDATE linear_oauth_state
+SET consumed_at = now()
+WHERE state_hash = $1 AND consumed_at IS NULL AND expires_at > now()
+RETURNING workspace_id, user_id, code_verifier_encrypted, redirect_uri
+`
+
+type ConsumeLinearOauthStateRow struct {
+	WorkspaceID           pgtype.UUID `json:"workspace_id"`
+	UserID                pgtype.UUID `json:"user_id"`
+	CodeVerifierEncrypted []byte      `json:"code_verifier_encrypted"`
+	RedirectUri           string      `json:"redirect_uri"`
+}
 
 func (q *Queries) ConsumeLinearOauthState(ctx context.Context, stateHash string) (ConsumeLinearOauthStateRow, error) {
-	var v ConsumeLinearOauthStateRow
-	err := q.db.QueryRow(ctx, consumeLinearOauthState, stateHash).Scan(&v.WorkspaceID, &v.UserID, &v.CodeVerifierEncrypted, &v.RedirectUri)
-	return v, err
+	row := q.db.QueryRow(ctx, consumeLinearOauthState, stateHash)
+	var i ConsumeLinearOauthStateRow
+	err := row.Scan(
+		&i.WorkspaceID,
+		&i.UserID,
+		&i.CodeVerifierEncrypted,
+		&i.RedirectUri,
+	)
+	return i, err
 }
 
-const cleanupLinearOauthStates = `DELETE FROM linear_oauth_state WHERE expires_at<now() OR consumed_at<now()-interval '1 day'`
+const countLinearProjectIssues = `-- name: CountLinearProjectIssues :one
+SELECT count(*)::bigint
+FROM issue
+WHERE workspace_id = $1 AND project_id = $2
+`
 
-func (q *Queries) CleanupLinearOauthStates(ctx context.Context) error { _, err := q.db.Exec(ctx, cleanupLinearOauthStates); return err }
-
-type UpsertLinearConnectionParams struct {
-	ID, WorkspaceID pgtype.UUID
-	OrganizationID, OrganizationName, ActorID string
-	AccessTokenEncrypted, RefreshTokenEncrypted []byte
-	TokenExpiresAt pgtype.Timestamptz
-	Scopes []byte
-	CreatedByID pgtype.UUID
+type CountLinearProjectIssuesParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	ProjectID   pgtype.UUID `json:"project_id"`
 }
 
-const upsertLinearConnection = `INSERT INTO linear_connection(id,workspace_id,organization_id,organization_name,actor_id,access_token_encrypted,refresh_token_encrypted,token_expires_at,scopes,status,created_by_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'active',$10) ON CONFLICT(workspace_id) DO UPDATE SET organization_id=EXCLUDED.organization_id,organization_name=EXCLUDED.organization_name,actor_id=EXCLUDED.actor_id,access_token_encrypted=EXCLUDED.access_token_encrypted,refresh_token_encrypted=EXCLUDED.refresh_token_encrypted,token_expires_at=EXCLUDED.token_expires_at,scopes=EXCLUDED.scopes,status='active',last_error=NULL,updated_at=now() RETURNING ` + linearConnectionColumns
-
-func (q *Queries) UpsertLinearConnection(ctx context.Context, arg UpsertLinearConnectionParams) (LinearConnection, error) {
-	return scanLinearConnection(q.db.QueryRow(ctx, upsertLinearConnection, arg.ID, arg.WorkspaceID, arg.OrganizationID, arg.OrganizationName, arg.ActorID, arg.AccessTokenEncrypted, arg.RefreshTokenEncrypted, arg.TokenExpiresAt, arg.Scopes, arg.CreatedByID))
+func (q *Queries) CountLinearProjectIssues(ctx context.Context, arg CountLinearProjectIssuesParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countLinearProjectIssues, arg.WorkspaceID, arg.ProjectID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
-type UpdateLinearTokensParams struct { ID pgtype.UUID; AccessTokenEncrypted, RefreshTokenEncrypted []byte; TokenExpiresAt pgtype.Timestamptz; Scope string }
-const updateLinearTokens = `UPDATE linear_connection SET access_token_encrypted=$2,refresh_token_encrypted=$3,token_expires_at=$4,scopes=CASE WHEN $5='' THEN scopes ELSE to_jsonb(regexp_split_to_array($5,'[, ]+')) END,last_error=NULL,updated_at=now() WHERE id=$1 AND status='active'`
-func (q *Queries) UpdateLinearTokens(ctx context.Context, arg UpdateLinearTokensParams) error { _, err := q.db.Exec(ctx, updateLinearTokens, arg.ID, arg.AccessTokenEncrypted, arg.RefreshTokenEncrypted, arg.TokenExpiresAt, arg.Scope); return err }
+const countLinearSyncConflicts = `-- name: CountLinearSyncConflicts :one
+SELECT count(*)::bigint
+FROM linear_sync_conflict
+WHERE workspace_id = $1 AND status = $2
+`
 
-type MarkLinearReauthorizationRequiredParams struct { ID pgtype.UUID; LastError string }
-const markLinearReauthorizationRequired = `UPDATE linear_connection SET status='reauthorization_required',last_error=$2,updated_at=now() WHERE id=$1`
-func (q *Queries) MarkLinearReauthorizationRequired(ctx context.Context, arg MarkLinearReauthorizationRequiredParams) error { _, err := q.db.Exec(ctx, markLinearReauthorizationRequired, arg.ID, arg.LastError); return err }
-
-type MarkLinearRevokedParams struct { ID pgtype.UUID; LastError string; WorkspaceID pgtype.UUID }
-const markLinearRevoked = `UPDATE linear_connection SET status='revoked',last_error=$2,updated_at=now() WHERE id=$1 AND workspace_id=$3`
-func (q *Queries) MarkLinearRevoked(ctx context.Context, arg MarkLinearRevokedParams) error { _, err := q.db.Exec(ctx, markLinearRevoked, arg.ID, arg.LastError, arg.WorkspaceID); return err }
-
-type BindLinearWebhookParams struct { ID pgtype.UUID; WebhookID string }
-const bindLinearWebhook = `UPDATE linear_connection SET webhook_id=$2,updated_at=now() WHERE id=$1 AND status='active' AND (webhook_id IS NULL OR webhook_id=$2)`
-func (q *Queries) BindLinearWebhook(ctx context.Context, arg BindLinearWebhookParams) error { _, err := q.db.Exec(ctx, bindLinearWebhook, arg.ID, arg.WebhookID); return err }
-
-const markLinearWebhookAccepted = `UPDATE linear_connection SET last_success_at=now(),last_error=NULL,updated_at=now() WHERE id=$1 AND status='active'`
-func (q *Queries) MarkLinearWebhookAccepted(ctx context.Context, id pgtype.UUID) error { _, err := q.db.Exec(ctx, markLinearWebhookAccepted, id); return err }
-
-const linearBindingColumns = `id,workspace_id,connection_id,patchbay_project_id,linear_project_id,linear_team_id,status,sync_mode,initial_source_of_truth,status_mapping,agent_label_mapping,activated_at,paused_at,created_by_id,created_at,updated_at`
-
-func scanLinearBindingRow(row pgx.Row) (LinearProjectBinding, error) { return scanLinearBinding(row) }
-
-func (q *Queries) ListLinearProjectBindings(ctx context.Context, workspaceID pgtype.UUID) ([]LinearProjectBinding, error) {
-	rows, err := q.db.Query(ctx, `SELECT `+linearBindingColumns+` FROM linear_project_binding WHERE workspace_id=$1 AND status<>'tombstone' ORDER BY created_at`, workspaceID)
-	if err != nil { return nil, err }
-	defer rows.Close()
-	items := []LinearProjectBinding{}
-	for rows.Next() { v, err := scanLinearBindingRow(rows); if err != nil { return nil, err }; items = append(items, v) }
-	return items, rows.Err()
+type CountLinearSyncConflictsParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	Status      string      `json:"status"`
 }
 
-type GetLinearProjectBindingParams struct { ID, WorkspaceID pgtype.UUID }
-func (q *Queries) GetLinearProjectBinding(ctx context.Context, arg GetLinearProjectBindingParams) (LinearProjectBinding, error) { return scanLinearBindingRow(q.db.QueryRow(ctx, `SELECT `+linearBindingColumns+` FROM linear_project_binding WHERE id=$1 AND workspace_id=$2`, arg.ID, arg.WorkspaceID)) }
-func (q *Queries) GetLinearProjectBindingForUpdate(ctx context.Context, arg GetLinearProjectBindingParams) (LinearProjectBinding, error) { return scanLinearBindingRow(q.db.QueryRow(ctx, `SELECT `+linearBindingColumns+` FROM linear_project_binding WHERE id=$1 AND workspace_id=$2 FOR UPDATE`, arg.ID, arg.WorkspaceID)) }
+func (q *Queries) CountLinearSyncConflicts(ctx context.Context, arg CountLinearSyncConflictsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countLinearSyncConflicts, arg.WorkspaceID, arg.Status)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const createLinearIssueLink = `-- name: CreateLinearIssueLink :one
+INSERT INTO linear_issue_link
+    (id, workspace_id, binding_id, patchbay_issue_id, linear_issue_id,
+     linear_identifier, last_common_snapshot, remote_updated_at,
+     last_remote_event_at_ms, last_remote_event_id, sync_status)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active')
+ON CONFLICT (workspace_id, patchbay_issue_id) WHERE sync_status <> 'deleted'
+DO UPDATE SET linear_issue_id = EXCLUDED.linear_issue_id,
+              linear_identifier = EXCLUDED.linear_identifier,
+              last_common_snapshot = EXCLUDED.last_common_snapshot,
+              remote_updated_at = EXCLUDED.remote_updated_at,
+              last_remote_event_at_ms = EXCLUDED.last_remote_event_at_ms,
+              last_remote_event_id = EXCLUDED.last_remote_event_id,
+              sync_status = 'active', updated_at = now()
+RETURNING id, workspace_id, binding_id, patchbay_issue_id, linear_issue_id,
+          linear_identifier, last_common_snapshot, remote_updated_at,
+          last_remote_event_at_ms, last_remote_event_id, sync_status, created_at,
+          updated_at
+`
+
+type CreateLinearIssueLinkParams struct {
+	ID                  pgtype.UUID        `json:"id"`
+	WorkspaceID         pgtype.UUID        `json:"workspace_id"`
+	BindingID           pgtype.UUID        `json:"binding_id"`
+	PatchbayIssueID     pgtype.UUID        `json:"patchbay_issue_id"`
+	LinearIssueID       string             `json:"linear_issue_id"`
+	LinearIdentifier    string             `json:"linear_identifier"`
+	LastCommonSnapshot  []byte             `json:"last_common_snapshot"`
+	RemoteUpdatedAt     pgtype.Timestamptz `json:"remote_updated_at"`
+	LastRemoteEventAtMs pgtype.Int8        `json:"last_remote_event_at_ms"`
+	LastRemoteEventID   pgtype.Text        `json:"last_remote_event_id"`
+}
+
+func (q *Queries) CreateLinearIssueLink(ctx context.Context, arg CreateLinearIssueLinkParams) (LinearIssueLink, error) {
+	row := q.db.QueryRow(ctx, createLinearIssueLink,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.BindingID,
+		arg.PatchbayIssueID,
+		arg.LinearIssueID,
+		arg.LinearIdentifier,
+		arg.LastCommonSnapshot,
+		arg.RemoteUpdatedAt,
+		arg.LastRemoteEventAtMs,
+		arg.LastRemoteEventID,
+	)
+	var i LinearIssueLink
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.BindingID,
+		&i.PatchbayIssueID,
+		&i.LinearIssueID,
+		&i.LinearIdentifier,
+		&i.LastCommonSnapshot,
+		&i.RemoteUpdatedAt,
+		&i.LastRemoteEventAtMs,
+		&i.LastRemoteEventID,
+		&i.SyncStatus,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createLinearProjectBinding = `-- name: CreateLinearProjectBinding :one
+INSERT INTO linear_project_binding
+    (id, workspace_id, connection_id, patchbay_project_id, linear_project_id,
+     linear_team_id, status, sync_mode, initial_source_of_truth, status_mapping,
+     agent_label_mapping, activated_at, paused_at, created_by_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+        CASE WHEN $7 = 'active' THEN now() END,
+        CASE WHEN $7 = 'paused' THEN now() END, $12)
+RETURNING id, workspace_id, connection_id, patchbay_project_id, linear_project_id,
+          linear_team_id, status, sync_mode, initial_source_of_truth,
+          status_mapping, agent_label_mapping, activated_at, paused_at,
+          created_by_id, created_at, updated_at
+`
 
 type CreateLinearProjectBindingParams struct {
-	ID, WorkspaceID, ConnectionID, PatchbayProjectID pgtype.UUID
-	LinearProjectID string
-	LinearTeamID pgtype.Text
-	Status, SyncMode string
-	InitialSourceOfTruth pgtype.Text
-	StatusMapping, AgentLabelMapping []byte
-	CreatedByID pgtype.UUID
+	ID                   pgtype.UUID `json:"id"`
+	WorkspaceID          pgtype.UUID `json:"workspace_id"`
+	ConnectionID         pgtype.UUID `json:"connection_id"`
+	PatchbayProjectID    pgtype.UUID `json:"patchbay_project_id"`
+	LinearProjectID      string      `json:"linear_project_id"`
+	LinearTeamID         pgtype.Text `json:"linear_team_id"`
+	Status               string      `json:"status"`
+	SyncMode             string      `json:"sync_mode"`
+	InitialSourceOfTruth pgtype.Text `json:"initial_source_of_truth"`
+	StatusMapping        []byte      `json:"status_mapping"`
+	AgentLabelMapping    []byte      `json:"agent_label_mapping"`
+	CreatedByID          pgtype.UUID `json:"created_by_id"`
 }
-func (q *Queries) CreateLinearProjectBinding(ctx context.Context, arg CreateLinearProjectBindingParams) (LinearProjectBinding, error) { return scanLinearBindingRow(q.db.QueryRow(ctx, `INSERT INTO linear_project_binding(id,workspace_id,connection_id,patchbay_project_id,linear_project_id,linear_team_id,status,sync_mode,initial_source_of_truth,status_mapping,agent_label_mapping,activated_at,paused_at,created_by_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,CASE WHEN $7='active' THEN now() END,CASE WHEN $7='paused' THEN now() END,$12) RETURNING `+linearBindingColumns, arg.ID, arg.WorkspaceID, arg.ConnectionID, arg.PatchbayProjectID, arg.LinearProjectID, arg.LinearTeamID, arg.Status, arg.SyncMode, arg.InitialSourceOfTruth, arg.StatusMapping, arg.AgentLabelMapping, arg.CreatedByID)) }
 
-type UpdateLinearProjectBindingParams struct { ID, WorkspaceID pgtype.UUID; Status, SyncMode string; InitialSourceOfTruth, LinearTeamID pgtype.Text; StatusMapping, AgentLabelMapping []byte }
-func (q *Queries) UpdateLinearProjectBinding(ctx context.Context, arg UpdateLinearProjectBindingParams) (LinearProjectBinding, error) { return scanLinearBindingRow(q.db.QueryRow(ctx, `UPDATE linear_project_binding SET status=$3,sync_mode=$4,initial_source_of_truth=$5,linear_team_id=$6,status_mapping=$7,agent_label_mapping=$8,activated_at=CASE WHEN $3='active' THEN COALESCE(activated_at,now()) ELSE activated_at END,paused_at=CASE WHEN $3='paused' THEN now() ELSE paused_at END,updated_at=now() WHERE id=$1 AND workspace_id=$2 RETURNING `+linearBindingColumns, arg.ID, arg.WorkspaceID, arg.Status, arg.SyncMode, arg.InitialSourceOfTruth, arg.LinearTeamID, arg.StatusMapping, arg.AgentLabelMapping)) }
+func (q *Queries) CreateLinearProjectBinding(ctx context.Context, arg CreateLinearProjectBindingParams) (LinearProjectBinding, error) {
+	row := q.db.QueryRow(ctx, createLinearProjectBinding,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.ConnectionID,
+		arg.PatchbayProjectID,
+		arg.LinearProjectID,
+		arg.LinearTeamID,
+		arg.Status,
+		arg.SyncMode,
+		arg.InitialSourceOfTruth,
+		arg.StatusMapping,
+		arg.AgentLabelMapping,
+		arg.CreatedByID,
+	)
+	var i LinearProjectBinding
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ConnectionID,
+		&i.PatchbayProjectID,
+		&i.LinearProjectID,
+		&i.LinearTeamID,
+		&i.Status,
+		&i.SyncMode,
+		&i.InitialSourceOfTruth,
+		&i.StatusMapping,
+		&i.AgentLabelMapping,
+		&i.ActivatedAt,
+		&i.PausedAt,
+		&i.CreatedByID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
 
-type TombstoneLinearProjectBindingParams struct { ID, WorkspaceID pgtype.UUID }
-const tombstoneLinearProjectBinding = `WITH tombstoned AS (UPDATE linear_project_binding AS binding SET status='tombstone',paused_at=COALESCE(binding.paused_at,now()),updated_at=now() WHERE binding.id=$1 AND binding.workspace_id=$2 RETURNING binding.id), deleted_conflicts AS (DELETE FROM linear_sync_conflict WHERE binding_id IN (SELECT id FROM tombstoned) AND workspace_id=$2), deleted_outbox AS (DELETE FROM linear_sync_outbox WHERE binding_id IN (SELECT id FROM tombstoned) AND workspace_id=$2) UPDATE linear_issue_link AS issue_link SET sync_status='deleted',updated_at=now() WHERE issue_link.binding_id IN (SELECT id FROM tombstoned) AND issue_link.workspace_id=$2`
-func (q *Queries) TombstoneLinearProjectBinding(ctx context.Context, arg TombstoneLinearProjectBindingParams) error { _, err := q.db.Exec(ctx, tombstoneLinearProjectBinding, arg.ID, arg.WorkspaceID); return err }
+const createLinearSyncConflict = `-- name: CreateLinearSyncConflict :exec
+INSERT INTO linear_sync_conflict
+    (id, workspace_id, binding_id, link_id, patchbay_issue_id, linear_issue_id,
+     field, base_value, local_value, remote_value, source_event_id,
+     source_event_at_ms)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+ON CONFLICT (link_id, field) WHERE status = 'open' DO UPDATE
+SET local_value = EXCLUDED.local_value, remote_value = EXCLUDED.remote_value,
+    source_event_id = EXCLUDED.source_event_id,
+    source_event_at_ms = EXCLUDED.source_event_at_ms, updated_at = now()
+`
 
-func (q *Queries) ListLinearMemberBindings(ctx context.Context, workspaceID pgtype.UUID) ([]LinearMemberBinding, error) { rows, err := q.db.Query(ctx, `SELECT id,workspace_id,connection_id,patchbay_user_id,linear_user_id,created_at,updated_at FROM linear_member_binding WHERE workspace_id=$1 ORDER BY created_at`, workspaceID); if err != nil { return nil, err }; defer rows.Close(); items := []LinearMemberBinding{}; for rows.Next() { v, err := scanLinearMember(rows); if err != nil { return nil, err }; items = append(items, v) }; return items, rows.Err() }
-type GetLinearMemberBindingParams struct { WorkspaceID, PatchbayUserID pgtype.UUID }
-func (q *Queries) GetLinearMemberBinding(ctx context.Context, arg GetLinearMemberBindingParams) (LinearMemberBinding, error) { return scanLinearMember(q.db.QueryRow(ctx, `SELECT id,workspace_id,connection_id,patchbay_user_id,linear_user_id,created_at,updated_at FROM linear_member_binding WHERE workspace_id=$1 AND patchbay_user_id=$2`, arg.WorkspaceID, arg.PatchbayUserID)) }
-type GetLinearMemberBindingByLinearUserParams struct { WorkspaceID pgtype.UUID; LinearUserID string }
-func (q *Queries) GetLinearMemberBindingByLinearUser(ctx context.Context, arg GetLinearMemberBindingByLinearUserParams) (LinearMemberBinding, error) { return scanLinearMember(q.db.QueryRow(ctx, `SELECT id,workspace_id,connection_id,patchbay_user_id,linear_user_id,created_at,updated_at FROM linear_member_binding WHERE workspace_id=$1 AND linear_user_id=$2`, arg.WorkspaceID, arg.LinearUserID)) }
-type UpsertLinearMemberBindingParams struct { ID, WorkspaceID, ConnectionID, PatchbayUserID pgtype.UUID; LinearUserID string }
-func (q *Queries) UpsertLinearMemberBinding(ctx context.Context, arg UpsertLinearMemberBindingParams) (LinearMemberBinding, error) { return scanLinearMember(q.db.QueryRow(ctx, `INSERT INTO linear_member_binding(id,workspace_id,connection_id,patchbay_user_id,linear_user_id) VALUES($1,$2,$3,$4,$5) ON CONFLICT(workspace_id,patchbay_user_id) DO UPDATE SET connection_id=EXCLUDED.connection_id,linear_user_id=EXCLUDED.linear_user_id,updated_at=now() RETURNING id,workspace_id,connection_id,patchbay_user_id,linear_user_id,created_at,updated_at`, arg.ID, arg.WorkspaceID, arg.ConnectionID, arg.PatchbayUserID, arg.LinearUserID)) }
-func (q *Queries) DeleteLinearMemberBinding(ctx context.Context, arg GetLinearMemberBindingParams) error { _, err := q.db.Exec(ctx, `DELETE FROM linear_member_binding WHERE workspace_id=$1 AND patchbay_user_id=$2`, arg.WorkspaceID, arg.PatchbayUserID); return err }
+type CreateLinearSyncConflictParams struct {
+	ID              pgtype.UUID `json:"id"`
+	WorkspaceID     pgtype.UUID `json:"workspace_id"`
+	BindingID       pgtype.UUID `json:"binding_id"`
+	LinkID          pgtype.UUID `json:"link_id"`
+	PatchbayIssueID pgtype.UUID `json:"patchbay_issue_id"`
+	LinearIssueID   string      `json:"linear_issue_id"`
+	Field           string      `json:"field"`
+	BaseValue       []byte      `json:"base_value"`
+	LocalValue      []byte      `json:"local_value"`
+	RemoteValue     []byte      `json:"remote_value"`
+	SourceEventID   string      `json:"source_event_id"`
+	SourceEventAtMs pgtype.Int8 `json:"source_event_at_ms"`
+}
 
-type InsertLinearSyncInboxParams struct { ID, ConnectionID pgtype.UUID; DeliveryID, EventType string; Payload []byte }
-func (q *Queries) InsertLinearSyncInbox(ctx context.Context, arg InsertLinearSyncInboxParams) (int64, error) { tag, err := q.db.Exec(ctx, `INSERT INTO linear_sync_inbox(id,connection_id,delivery_id,event_type,payload) VALUES($1,$2,$3,$4,$5) ON CONFLICT(connection_id,delivery_id) DO NOTHING`, arg.ID, arg.ConnectionID, arg.DeliveryID, arg.EventType, arg.Payload); return tag.RowsAffected(), err }
+func (q *Queries) CreateLinearSyncConflict(ctx context.Context, arg CreateLinearSyncConflictParams) error {
+	_, err := q.db.Exec(ctx, createLinearSyncConflict,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.BindingID,
+		arg.LinkID,
+		arg.PatchbayIssueID,
+		arg.LinearIssueID,
+		arg.Field,
+		arg.BaseValue,
+		arg.LocalValue,
+		arg.RemoteValue,
+		arg.SourceEventID,
+		arg.SourceEventAtMs,
+	)
+	return err
+}
 
-type ClaimLinearSyncInboxRow struct { ID, ConnectionID pgtype.UUID; DeliveryID, EventType string; Payload []byte; Attempts, MaxAttempts int32 }
-func (q *Queries) ClaimLinearSyncInbox(ctx context.Context, workerID string, leaseSeconds int32) (ClaimLinearSyncInboxRow, error) { var v ClaimLinearSyncInboxRow; err := q.db.QueryRow(ctx, `WITH candidate AS (SELECT id FROM linear_sync_inbox WHERE processed_at IS NULL AND dead_lettered_at IS NULL AND available_at<=now() AND (locked_until IS NULL OR locked_until<now()) ORDER BY received_at,id FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE linear_sync_inbox i SET locked_by=$1,locked_until=now()+make_interval(secs=>$2),attempts=attempts+1 FROM candidate WHERE i.id=candidate.id RETURNING i.id,i.connection_id,i.delivery_id,i.event_type,i.payload,i.attempts,i.max_attempts`, workerID, leaseSeconds).Scan(&v.ID,&v.ConnectionID,&v.DeliveryID,&v.EventType,&v.Payload,&v.Attempts,&v.MaxAttempts); return v, err }
-type RenewLinearSyncInboxParams struct { ID pgtype.UUID; LeaseSeconds int32; WorkerID string }
-func (q *Queries) RenewLinearSyncInbox(ctx context.Context, arg RenewLinearSyncInboxParams) (int64, error) { tag, err := q.db.Exec(ctx, `UPDATE linear_sync_inbox SET locked_until=now()+make_interval(secs=>$2) WHERE id=$1 AND locked_by=$3 AND processed_at IS NULL AND dead_lettered_at IS NULL`, arg.ID,arg.LeaseSeconds,arg.WorkerID); return tag.RowsAffected(),err }
-type CompleteLinearSyncInboxParams struct { ID pgtype.UUID; WorkerID string }
-func (q *Queries) CompleteLinearSyncInbox(ctx context.Context,arg CompleteLinearSyncInboxParams)(int64,error){tag,err:=q.db.Exec(ctx,`UPDATE linear_sync_inbox SET processed_at=now(),locked_by=NULL,locked_until=NULL,last_error=NULL WHERE id=$1 AND locked_by=$2`,arg.ID,arg.WorkerID);return tag.RowsAffected(),err}
-type RetryLinearSyncInboxParams struct { ID pgtype.UUID; DelaySeconds int32; LastError, WorkerID string }
-func (q *Queries) RetryLinearSyncInbox(ctx context.Context,arg RetryLinearSyncInboxParams)(int64,error){tag,err:=q.db.Exec(ctx,`UPDATE linear_sync_inbox SET available_at=now()+make_interval(secs=>$2),locked_by=NULL,locked_until=NULL,last_error=$3 WHERE id=$1 AND locked_by=$4`,arg.ID,arg.DelaySeconds,arg.LastError,arg.WorkerID);return tag.RowsAffected(),err}
-type DeadLetterLinearSyncInboxParams struct { ID pgtype.UUID; LastError, WorkerID string }
-func (q *Queries) DeadLetterLinearSyncInbox(ctx context.Context,arg DeadLetterLinearSyncInboxParams)(int64,error){tag,err:=q.db.Exec(ctx,`UPDATE linear_sync_inbox SET dead_lettered_at=now(),locked_by=NULL,locked_until=NULL,last_error=$2 WHERE id=$1 AND locked_by=$3`,arg.ID,arg.LastError,arg.WorkerID);return tag.RowsAffected(),err}
+const deadLetterLinearSyncInbox = `-- name: DeadLetterLinearSyncInbox :execrows
+UPDATE linear_sync_inbox
+SET dead_lettered_at = now(), locked_by = NULL, locked_until = NULL, last_error = $2
+WHERE id = $1 AND locked_by = $3
+`
 
-type ClaimLinearSyncOutboxRow struct { ID, WorkspaceID, BindingID, IssueID pgtype.UUID; EventType string; Payload []byte; Attempts, MaxAttempts int32 }
-func (q *Queries) ClaimLinearSyncOutbox(ctx context.Context, workerID string, leaseSeconds int32) (ClaimLinearSyncOutboxRow,error){var v ClaimLinearSyncOutboxRow;err:=q.db.QueryRow(ctx,`WITH candidate AS (SELECT o.id FROM linear_sync_outbox o WHERE o.processed_at IS NULL AND o.dead_lettered_at IS NULL AND o.available_at<=now() AND (o.locked_until IS NULL OR o.locked_until<now()) AND NOT EXISTS (SELECT 1 FROM linear_sync_outbox older WHERE older.binding_id=o.binding_id AND older.issue_id=o.issue_id AND older.processed_at IS NULL AND older.dead_lettered_at IS NULL AND (older.created_at,older.id)<(o.created_at,o.id)) ORDER BY o.created_at,o.id FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE linear_sync_outbox o SET locked_by=$1,locked_until=now()+make_interval(secs=>$2),attempts=attempts+1,updated_at=now() FROM candidate WHERE o.id=candidate.id RETURNING o.id,o.workspace_id,o.binding_id,o.issue_id,o.event_type,o.payload,o.attempts,o.max_attempts`,workerID,leaseSeconds).Scan(&v.ID,&v.WorkspaceID,&v.BindingID,&v.IssueID,&v.EventType,&v.Payload,&v.Attempts,&v.MaxAttempts);return v,err}
-type RenewLinearSyncOutboxParams struct { ID pgtype.UUID; LeaseSeconds int32; WorkerID string }
-func (q *Queries) RenewLinearSyncOutbox(ctx context.Context,arg RenewLinearSyncOutboxParams)(int64,error){tag,err:=q.db.Exec(ctx,`UPDATE linear_sync_outbox SET locked_until=now()+make_interval(secs=>$2),updated_at=now() WHERE id=$1 AND locked_by=$3 AND processed_at IS NULL AND dead_lettered_at IS NULL`,arg.ID,arg.LeaseSeconds,arg.WorkerID);return tag.RowsAffected(),err}
-type CompleteLinearSyncOutboxParams struct { ID pgtype.UUID; WorkerID string }
-func (q *Queries) CompleteLinearSyncOutbox(ctx context.Context,arg CompleteLinearSyncOutboxParams)(int64,error){tag,err:=q.db.Exec(ctx,`UPDATE linear_sync_outbox SET processed_at=now(),locked_by=NULL,locked_until=NULL,last_error=NULL,updated_at=now() WHERE id=$1 AND locked_by=$2`,arg.ID,arg.WorkerID);return tag.RowsAffected(),err}
-type RetryLinearSyncOutboxParams struct { ID pgtype.UUID; DelaySeconds int32; LastError, WorkerID string }
-func (q *Queries) RetryLinearSyncOutbox(ctx context.Context,arg RetryLinearSyncOutboxParams)(int64,error){tag,err:=q.db.Exec(ctx,`UPDATE linear_sync_outbox SET available_at=now()+make_interval(secs=>$2),locked_by=NULL,locked_until=NULL,last_error=$3,updated_at=now() WHERE id=$1 AND locked_by=$4`,arg.ID,arg.DelaySeconds,arg.LastError,arg.WorkerID);return tag.RowsAffected(),err}
-type DeadLetterLinearSyncOutboxParams struct { ID pgtype.UUID; LastError, WorkerID string }
-func (q *Queries) DeadLetterLinearSyncOutbox(ctx context.Context,arg DeadLetterLinearSyncOutboxParams)(int64,error){tag,err:=q.db.Exec(ctx,`UPDATE linear_sync_outbox SET dead_lettered_at=now(),locked_by=NULL,locked_until=NULL,last_error=$2,updated_at=now() WHERE id=$1 AND locked_by=$3`,arg.ID,arg.LastError,arg.WorkerID);return tag.RowsAffected(),err}
+type DeadLetterLinearSyncInboxParams struct {
+	ID        pgtype.UUID `json:"id"`
+	LastError pgtype.Text `json:"last_error"`
+	LockedBy  pgtype.Text `json:"locked_by"`
+}
 
-type GetLinearIssueLinkByRemoteParams struct { BindingID pgtype.UUID; LinearIssueID string }
-func (q *Queries) GetLinearIssueLinkByRemote(ctx context.Context,arg GetLinearIssueLinkByRemoteParams)(LinearIssueLink,error){return scanLinearLink(q.db.QueryRow(ctx,`SELECT id,workspace_id,binding_id,patchbay_issue_id,linear_issue_id,linear_identifier,last_common_snapshot,remote_updated_at,last_remote_event_at_ms,last_remote_event_id,sync_status,created_at,updated_at FROM linear_issue_link WHERE binding_id=$1 AND linear_issue_id=$2 FOR UPDATE`,arg.BindingID,arg.LinearIssueID))}
-type GetLinearIssueLinkByLocalParams struct { WorkspaceID, BindingID, PatchbayIssueID pgtype.UUID }
-func (q *Queries) GetLinearIssueLinkByLocal(ctx context.Context,arg GetLinearIssueLinkByLocalParams)(LinearIssueLink,error){return scanLinearLink(q.db.QueryRow(ctx,`SELECT id,workspace_id,binding_id,patchbay_issue_id,linear_issue_id,linear_identifier,last_common_snapshot,remote_updated_at,last_remote_event_at_ms,last_remote_event_id,sync_status,created_at,updated_at FROM linear_issue_link WHERE workspace_id=$1 AND binding_id=$2 AND patchbay_issue_id=$3 AND sync_status<>'deleted' FOR UPDATE`,arg.WorkspaceID,arg.BindingID,arg.PatchbayIssueID))}
-type CreateLinearIssueLinkParams struct { ID, WorkspaceID, BindingID, PatchbayIssueID pgtype.UUID; LinearIssueID, LinearIdentifier string; LastCommonSnapshot []byte; RemoteUpdatedAt pgtype.Timestamptz; LastRemoteEventAtMs pgtype.Int8; LastRemoteEventID pgtype.Text }
-func (q *Queries) CreateLinearIssueLink(ctx context.Context,arg CreateLinearIssueLinkParams)(LinearIssueLink,error){return scanLinearLink(q.db.QueryRow(ctx,`INSERT INTO linear_issue_link(id,workspace_id,binding_id,patchbay_issue_id,linear_issue_id,linear_identifier,last_common_snapshot,remote_updated_at,last_remote_event_at_ms,last_remote_event_id,sync_status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'active') ON CONFLICT(workspace_id,patchbay_issue_id) WHERE sync_status<>'deleted' DO UPDATE SET linear_issue_id=EXCLUDED.linear_issue_id,linear_identifier=EXCLUDED.linear_identifier,last_common_snapshot=EXCLUDED.last_common_snapshot,remote_updated_at=EXCLUDED.remote_updated_at,last_remote_event_at_ms=EXCLUDED.last_remote_event_at_ms,last_remote_event_id=EXCLUDED.last_remote_event_id,sync_status='active',updated_at=now() RETURNING id,workspace_id,binding_id,patchbay_issue_id,linear_issue_id,linear_identifier,last_common_snapshot,remote_updated_at,last_remote_event_at_ms,last_remote_event_id,sync_status,created_at,updated_at`,arg.ID,arg.WorkspaceID,arg.BindingID,arg.PatchbayIssueID,arg.LinearIssueID,arg.LinearIdentifier,arg.LastCommonSnapshot,arg.RemoteUpdatedAt,arg.LastRemoteEventAtMs,arg.LastRemoteEventID))}
-type UpdateLinearIssueLinkParams struct { ID, WorkspaceID pgtype.UUID; LinearIdentifier string; LastCommonSnapshot []byte; RemoteUpdatedAt pgtype.Timestamptz; LastRemoteEventAtMs pgtype.Int8; LastRemoteEventID pgtype.Text; SyncStatus string }
-func (q *Queries) UpdateLinearIssueLink(ctx context.Context,arg UpdateLinearIssueLinkParams)error{_,err:=q.db.Exec(ctx,`UPDATE linear_issue_link SET linear_identifier=$2,last_common_snapshot=$3,remote_updated_at=$4,last_remote_event_at_ms=$5,last_remote_event_id=$6,sync_status=$7,updated_at=now() WHERE id=$1 AND workspace_id=$8`,arg.ID,arg.LinearIdentifier,arg.LastCommonSnapshot,arg.RemoteUpdatedAt,arg.LastRemoteEventAtMs,arg.LastRemoteEventID,arg.SyncStatus,arg.WorkspaceID);return err}
-type SetLinearIssueLinkDeletedParams struct { ID, WorkspaceID pgtype.UUID }
-func(q *Queries)SetLinearIssueLinkDeleted(ctx context.Context,arg SetLinearIssueLinkDeletedParams)error{_,err:=q.db.Exec(ctx,`UPDATE linear_issue_link SET sync_status='deleted',updated_at=now() WHERE id=$1 AND workspace_id=$2`,arg.ID,arg.WorkspaceID);return err}
+func (q *Queries) DeadLetterLinearSyncInbox(ctx context.Context, arg DeadLetterLinearSyncInboxParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deadLetterLinearSyncInbox, arg.ID, arg.LastError, arg.LockedBy)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
 
-type CreateLinearSyncConflictParams struct { ID, WorkspaceID, BindingID, LinkID, PatchbayIssueID pgtype.UUID; LinearIssueID, Field string; BaseValue, LocalValue, RemoteValue []byte; SourceEventID string; SourceEventAtMs pgtype.Int8 }
-func(q *Queries)CreateLinearSyncConflict(ctx context.Context,arg CreateLinearSyncConflictParams)error{_,err:=q.db.Exec(ctx,`INSERT INTO linear_sync_conflict(id,workspace_id,binding_id,link_id,patchbay_issue_id,linear_issue_id,field,base_value,local_value,remote_value,source_event_id,source_event_at_ms) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT(link_id,field) WHERE status='open' DO UPDATE SET local_value=EXCLUDED.local_value,remote_value=EXCLUDED.remote_value,source_event_id=EXCLUDED.source_event_id,source_event_at_ms=EXCLUDED.source_event_at_ms,updated_at=now()`,arg.ID,arg.WorkspaceID,arg.BindingID,arg.LinkID,arg.PatchbayIssueID,arg.LinearIssueID,arg.Field,arg.BaseValue,arg.LocalValue,arg.RemoteValue,arg.SourceEventID,arg.SourceEventAtMs);return err}
+const deadLetterLinearSyncOutbox = `-- name: DeadLetterLinearSyncOutbox :execrows
+UPDATE linear_sync_outbox
+SET dead_lettered_at = now(), locked_by = NULL, locked_until = NULL,
+    last_error = $2, updated_at = now()
+WHERE id = $1 AND locked_by = $3
+`
 
-type ListLinearSyncConflictsParams struct { WorkspaceID pgtype.UUID; Status string }
-type ListLinearSyncConflictsRow struct { LinearSyncConflict; LinearIdentifier pgtype.Text }
-func(q *Queries)ListLinearSyncConflicts(ctx context.Context,arg ListLinearSyncConflictsParams)([]ListLinearSyncConflictsRow,error){rows,err:=q.db.Query(ctx,`SELECT c.id,c.workspace_id,c.binding_id,c.link_id,c.patchbay_issue_id,c.linear_issue_id,l.linear_identifier,c.field,c.base_value,c.local_value,c.remote_value,c.source_event_id,c.source_event_at_ms,c.status,c.resolution,c.resolved_value,c.resolved_by_id,c.created_at,c.updated_at FROM linear_sync_conflict c LEFT JOIN linear_issue_link l ON l.id=c.link_id WHERE c.workspace_id=$1 AND c.status=$2 ORDER BY c.created_at DESC`,arg.WorkspaceID,arg.Status);if err!=nil{return nil,err};defer rows.Close();items:=[]ListLinearSyncConflictsRow{};for rows.Next(){var v ListLinearSyncConflictsRow; if err:=rows.Scan(&v.ID,&v.WorkspaceID,&v.BindingID,&v.LinkID,&v.PatchbayIssueID,&v.LinearIssueID,&v.LinearIdentifier,&v.Field,&v.BaseValue,&v.LocalValue,&v.RemoteValue,&v.SourceEventID,&v.SourceEventAtMs,&v.Status,&v.Resolution,&v.ResolvedValue,&v.ResolvedByID,&v.CreatedAt,&v.UpdatedAt);err!=nil{return nil,err};items=append(items,v)};return items,rows.Err()}
-type GetLinearSyncConflictForUpdateParams struct { ID, WorkspaceID pgtype.UUID }
-func(q *Queries)GetLinearSyncConflictForUpdate(ctx context.Context,arg GetLinearSyncConflictForUpdateParams)(LinearSyncConflict,error){return scanLinearConflict(q.db.QueryRow(ctx,`SELECT id,workspace_id,binding_id,link_id,patchbay_issue_id,linear_issue_id,field,base_value,local_value,remote_value,source_event_id,source_event_at_ms,status,resolution,resolved_value,resolved_by_id,created_at,updated_at FROM linear_sync_conflict WHERE id=$1 AND workspace_id=$2 FOR UPDATE`,arg.ID,arg.WorkspaceID))}
-type ResolveLinearSyncConflictParams struct { ID, WorkspaceID pgtype.UUID; Resolution string; ResolvedValue []byte; ResolvedByID pgtype.UUID }
-func(q *Queries)ResolveLinearSyncConflict(ctx context.Context,arg ResolveLinearSyncConflictParams)(int64,error){tag,err:=q.db.Exec(ctx,`UPDATE linear_sync_conflict SET status='resolved',resolution=$3,resolved_value=$4,resolved_by_id=$5,updated_at=now() WHERE id=$1 AND workspace_id=$2 AND status='open'`,arg.ID,arg.WorkspaceID,arg.Resolution,arg.ResolvedValue,arg.ResolvedByID);return tag.RowsAffected(),err}
-type CountLinearSyncConflictsParams struct { WorkspaceID pgtype.UUID; Status string }
-func(q *Queries)CountLinearSyncConflicts(ctx context.Context,arg CountLinearSyncConflictsParams)(int64,error){var n int64;err:=q.db.QueryRow(ctx,`SELECT count(*)::bigint FROM linear_sync_conflict WHERE workspace_id=$1 AND status=$2`,arg.WorkspaceID,arg.Status).Scan(&n);return n,err}
+type DeadLetterLinearSyncOutboxParams struct {
+	ID        pgtype.UUID `json:"id"`
+	LastError pgtype.Text `json:"last_error"`
+	LockedBy  pgtype.Text `json:"locked_by"`
+}
 
-type LinearProjectBelongsToWorkspaceParams struct { ProjectID, WorkspaceID pgtype.UUID }
-func(q *Queries)LinearProjectBelongsToWorkspace(ctx context.Context,arg LinearProjectBelongsToWorkspaceParams)(bool,error){var ok bool;err:=q.db.QueryRow(ctx,`SELECT EXISTS(SELECT 1 FROM project WHERE id=$1 AND workspace_id=$2)`,arg.ProjectID,arg.WorkspaceID).Scan(&ok);return ok,err}
-type CountLinearProjectIssuesParams struct { WorkspaceID, ProjectID pgtype.UUID }
-func(q *Queries)CountLinearProjectIssues(ctx context.Context,arg CountLinearProjectIssuesParams)(int64,error){var n int64;err:=q.db.QueryRow(ctx,`SELECT count(*)::bigint FROM issue WHERE workspace_id=$1 AND project_id=$2`,arg.WorkspaceID,arg.ProjectID).Scan(&n);return n,err}
+func (q *Queries) DeadLetterLinearSyncOutbox(ctx context.Context, arg DeadLetterLinearSyncOutboxParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deadLetterLinearSyncOutbox, arg.ID, arg.LastError, arg.LockedBy)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteLinearMemberBinding = `-- name: DeleteLinearMemberBinding :exec
+DELETE FROM linear_member_binding
+WHERE workspace_id = $1 AND patchbay_user_id = $2
+`
+
+type DeleteLinearMemberBindingParams struct {
+	WorkspaceID    pgtype.UUID `json:"workspace_id"`
+	PatchbayUserID pgtype.UUID `json:"patchbay_user_id"`
+}
+
+func (q *Queries) DeleteLinearMemberBinding(ctx context.Context, arg DeleteLinearMemberBindingParams) error {
+	_, err := q.db.Exec(ctx, deleteLinearMemberBinding, arg.WorkspaceID, arg.PatchbayUserID)
+	return err
+}
+
+const findLinearConnectionsForWebhook = `-- name: FindLinearConnectionsForWebhook :many
+SELECT id, workspace_id, organization_id, organization_name, actor_id,
+       access_token_encrypted, refresh_token_encrypted, token_expires_at,
+       scopes, webhook_id, status, last_success_at, last_error, created_by_id,
+       created_at, updated_at
+FROM linear_connection
+WHERE organization_id = $1
+  AND status = 'active'
+  AND (webhook_id = $2 OR webhook_id IS NULL)
+ORDER BY (webhook_id = $2) DESC, created_at DESC
+`
+
+type FindLinearConnectionsForWebhookParams struct {
+	OrganizationID string      `json:"organization_id"`
+	WebhookID      pgtype.Text `json:"webhook_id"`
+}
+
+func (q *Queries) FindLinearConnectionsForWebhook(ctx context.Context, arg FindLinearConnectionsForWebhookParams) ([]LinearConnection, error) {
+	rows, err := q.db.Query(ctx, findLinearConnectionsForWebhook, arg.OrganizationID, arg.WebhookID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []LinearConnection{}
+	for rows.Next() {
+		var i LinearConnection
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.OrganizationID,
+			&i.OrganizationName,
+			&i.ActorID,
+			&i.AccessTokenEncrypted,
+			&i.RefreshTokenEncrypted,
+			&i.TokenExpiresAt,
+			&i.Scopes,
+			&i.WebhookID,
+			&i.Status,
+			&i.LastSuccessAt,
+			&i.LastError,
+			&i.CreatedByID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getLinearConnectionByID = `-- name: GetLinearConnectionByID :one
+SELECT id, workspace_id, organization_id, organization_name, actor_id,
+       access_token_encrypted, refresh_token_encrypted, token_expires_at,
+       scopes, webhook_id, status, last_success_at, last_error, created_by_id,
+       created_at, updated_at
+FROM linear_connection
+WHERE id = $1 AND workspace_id = $2
+`
+
+type GetLinearConnectionByIDParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) GetLinearConnectionByID(ctx context.Context, arg GetLinearConnectionByIDParams) (LinearConnection, error) {
+	row := q.db.QueryRow(ctx, getLinearConnectionByID, arg.ID, arg.WorkspaceID)
+	var i LinearConnection
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.OrganizationID,
+		&i.OrganizationName,
+		&i.ActorID,
+		&i.AccessTokenEncrypted,
+		&i.RefreshTokenEncrypted,
+		&i.TokenExpiresAt,
+		&i.Scopes,
+		&i.WebhookID,
+		&i.Status,
+		&i.LastSuccessAt,
+		&i.LastError,
+		&i.CreatedByID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getLinearConnectionByIDUnscoped = `-- name: GetLinearConnectionByIDUnscoped :one
+SELECT id, workspace_id, organization_id, organization_name, actor_id,
+       access_token_encrypted, refresh_token_encrypted, token_expires_at,
+       scopes, webhook_id, status, last_success_at, last_error, created_by_id,
+       created_at, updated_at
+FROM linear_connection
+WHERE id = $1
+`
+
+func (q *Queries) GetLinearConnectionByIDUnscoped(ctx context.Context, id pgtype.UUID) (LinearConnection, error) {
+	row := q.db.QueryRow(ctx, getLinearConnectionByIDUnscoped, id)
+	var i LinearConnection
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.OrganizationID,
+		&i.OrganizationName,
+		&i.ActorID,
+		&i.AccessTokenEncrypted,
+		&i.RefreshTokenEncrypted,
+		&i.TokenExpiresAt,
+		&i.Scopes,
+		&i.WebhookID,
+		&i.Status,
+		&i.LastSuccessAt,
+		&i.LastError,
+		&i.CreatedByID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getLinearConnectionForWorkspace = `-- name: GetLinearConnectionForWorkspace :one
+
+SELECT id, workspace_id, organization_id, organization_name, actor_id,
+       access_token_encrypted, refresh_token_encrypted, token_expires_at,
+       scopes, webhook_id, status, last_success_at, last_error, created_by_id,
+       created_at, updated_at
+FROM linear_connection
+WHERE workspace_id = $1 AND status <> 'revoked'
+ORDER BY created_at DESC
+LIMIT 1
+`
+
+// Linear is deliberately kept in one query source so OAuth, installation,
+// queue ownership, links, conflicts, and cleanup share the same workspace
+// predicates. Relationships are application-owned; this file adds no FKs.
+func (q *Queries) GetLinearConnectionForWorkspace(ctx context.Context, workspaceID pgtype.UUID) (LinearConnection, error) {
+	row := q.db.QueryRow(ctx, getLinearConnectionForWorkspace, workspaceID)
+	var i LinearConnection
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.OrganizationID,
+		&i.OrganizationName,
+		&i.ActorID,
+		&i.AccessTokenEncrypted,
+		&i.RefreshTokenEncrypted,
+		&i.TokenExpiresAt,
+		&i.Scopes,
+		&i.WebhookID,
+		&i.Status,
+		&i.LastSuccessAt,
+		&i.LastError,
+		&i.CreatedByID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getLinearConnectionForWorkspaceForUpdate = `-- name: GetLinearConnectionForWorkspaceForUpdate :one
+SELECT id, workspace_id, organization_id, organization_name, actor_id,
+       access_token_encrypted, refresh_token_encrypted, token_expires_at,
+       scopes, webhook_id, status, last_success_at, last_error, created_by_id,
+       created_at, updated_at
+FROM linear_connection
+WHERE workspace_id = $1
+ORDER BY created_at DESC
+LIMIT 1
+FOR UPDATE
+`
+
+func (q *Queries) GetLinearConnectionForWorkspaceForUpdate(ctx context.Context, workspaceID pgtype.UUID) (LinearConnection, error) {
+	row := q.db.QueryRow(ctx, getLinearConnectionForWorkspaceForUpdate, workspaceID)
+	var i LinearConnection
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.OrganizationID,
+		&i.OrganizationName,
+		&i.ActorID,
+		&i.AccessTokenEncrypted,
+		&i.RefreshTokenEncrypted,
+		&i.TokenExpiresAt,
+		&i.Scopes,
+		&i.WebhookID,
+		&i.Status,
+		&i.LastSuccessAt,
+		&i.LastError,
+		&i.CreatedByID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getLinearIssueLinkByLocal = `-- name: GetLinearIssueLinkByLocal :one
+SELECT id, workspace_id, binding_id, patchbay_issue_id, linear_issue_id,
+       linear_identifier, last_common_snapshot, remote_updated_at,
+       last_remote_event_at_ms, last_remote_event_id, sync_status, created_at,
+       updated_at
+FROM linear_issue_link
+WHERE workspace_id = $1 AND binding_id = $2 AND patchbay_issue_id = $3
+  AND sync_status <> 'deleted'
+FOR UPDATE
+`
+
+type GetLinearIssueLinkByLocalParams struct {
+	WorkspaceID     pgtype.UUID `json:"workspace_id"`
+	BindingID       pgtype.UUID `json:"binding_id"`
+	PatchbayIssueID pgtype.UUID `json:"patchbay_issue_id"`
+}
+
+func (q *Queries) GetLinearIssueLinkByLocal(ctx context.Context, arg GetLinearIssueLinkByLocalParams) (LinearIssueLink, error) {
+	row := q.db.QueryRow(ctx, getLinearIssueLinkByLocal, arg.WorkspaceID, arg.BindingID, arg.PatchbayIssueID)
+	var i LinearIssueLink
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.BindingID,
+		&i.PatchbayIssueID,
+		&i.LinearIssueID,
+		&i.LinearIdentifier,
+		&i.LastCommonSnapshot,
+		&i.RemoteUpdatedAt,
+		&i.LastRemoteEventAtMs,
+		&i.LastRemoteEventID,
+		&i.SyncStatus,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getLinearIssueLinkByRemote = `-- name: GetLinearIssueLinkByRemote :one
+SELECT id, workspace_id, binding_id, patchbay_issue_id, linear_issue_id,
+       linear_identifier, last_common_snapshot, remote_updated_at,
+       last_remote_event_at_ms, last_remote_event_id, sync_status, created_at,
+       updated_at
+FROM linear_issue_link
+WHERE binding_id = $1 AND linear_issue_id = $2
+FOR UPDATE
+`
+
+type GetLinearIssueLinkByRemoteParams struct {
+	BindingID     pgtype.UUID `json:"binding_id"`
+	LinearIssueID string      `json:"linear_issue_id"`
+}
+
+func (q *Queries) GetLinearIssueLinkByRemote(ctx context.Context, arg GetLinearIssueLinkByRemoteParams) (LinearIssueLink, error) {
+	row := q.db.QueryRow(ctx, getLinearIssueLinkByRemote, arg.BindingID, arg.LinearIssueID)
+	var i LinearIssueLink
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.BindingID,
+		&i.PatchbayIssueID,
+		&i.LinearIssueID,
+		&i.LinearIdentifier,
+		&i.LastCommonSnapshot,
+		&i.RemoteUpdatedAt,
+		&i.LastRemoteEventAtMs,
+		&i.LastRemoteEventID,
+		&i.SyncStatus,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getLinearMemberBinding = `-- name: GetLinearMemberBinding :one
+SELECT id, workspace_id, connection_id, patchbay_user_id, linear_user_id,
+       created_at, updated_at
+FROM linear_member_binding
+WHERE workspace_id = $1 AND patchbay_user_id = $2
+`
+
+type GetLinearMemberBindingParams struct {
+	WorkspaceID    pgtype.UUID `json:"workspace_id"`
+	PatchbayUserID pgtype.UUID `json:"patchbay_user_id"`
+}
+
+func (q *Queries) GetLinearMemberBinding(ctx context.Context, arg GetLinearMemberBindingParams) (LinearMemberBinding, error) {
+	row := q.db.QueryRow(ctx, getLinearMemberBinding, arg.WorkspaceID, arg.PatchbayUserID)
+	var i LinearMemberBinding
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ConnectionID,
+		&i.PatchbayUserID,
+		&i.LinearUserID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getLinearMemberBindingByLinearUser = `-- name: GetLinearMemberBindingByLinearUser :one
+SELECT id, workspace_id, connection_id, patchbay_user_id, linear_user_id,
+       created_at, updated_at
+FROM linear_member_binding
+WHERE workspace_id = $1 AND linear_user_id = $2
+`
+
+type GetLinearMemberBindingByLinearUserParams struct {
+	WorkspaceID  pgtype.UUID `json:"workspace_id"`
+	LinearUserID string      `json:"linear_user_id"`
+}
+
+func (q *Queries) GetLinearMemberBindingByLinearUser(ctx context.Context, arg GetLinearMemberBindingByLinearUserParams) (LinearMemberBinding, error) {
+	row := q.db.QueryRow(ctx, getLinearMemberBindingByLinearUser, arg.WorkspaceID, arg.LinearUserID)
+	var i LinearMemberBinding
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ConnectionID,
+		&i.PatchbayUserID,
+		&i.LinearUserID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getLinearProjectBinding = `-- name: GetLinearProjectBinding :one
+SELECT id, workspace_id, connection_id, patchbay_project_id, linear_project_id,
+       linear_team_id, status, sync_mode, initial_source_of_truth,
+       status_mapping, agent_label_mapping, activated_at, paused_at,
+       created_by_id, created_at, updated_at
+FROM linear_project_binding
+WHERE id = $1 AND workspace_id = $2
+`
+
+type GetLinearProjectBindingParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) GetLinearProjectBinding(ctx context.Context, arg GetLinearProjectBindingParams) (LinearProjectBinding, error) {
+	row := q.db.QueryRow(ctx, getLinearProjectBinding, arg.ID, arg.WorkspaceID)
+	var i LinearProjectBinding
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ConnectionID,
+		&i.PatchbayProjectID,
+		&i.LinearProjectID,
+		&i.LinearTeamID,
+		&i.Status,
+		&i.SyncMode,
+		&i.InitialSourceOfTruth,
+		&i.StatusMapping,
+		&i.AgentLabelMapping,
+		&i.ActivatedAt,
+		&i.PausedAt,
+		&i.CreatedByID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getLinearProjectBindingForUpdate = `-- name: GetLinearProjectBindingForUpdate :one
+SELECT id, workspace_id, connection_id, patchbay_project_id, linear_project_id,
+       linear_team_id, status, sync_mode, initial_source_of_truth,
+       status_mapping, agent_label_mapping, activated_at, paused_at,
+       created_by_id, created_at, updated_at
+FROM linear_project_binding
+WHERE id = $1 AND workspace_id = $2
+FOR UPDATE
+`
+
+type GetLinearProjectBindingForUpdateParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) GetLinearProjectBindingForUpdate(ctx context.Context, arg GetLinearProjectBindingForUpdateParams) (LinearProjectBinding, error) {
+	row := q.db.QueryRow(ctx, getLinearProjectBindingForUpdate, arg.ID, arg.WorkspaceID)
+	var i LinearProjectBinding
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ConnectionID,
+		&i.PatchbayProjectID,
+		&i.LinearProjectID,
+		&i.LinearTeamID,
+		&i.Status,
+		&i.SyncMode,
+		&i.InitialSourceOfTruth,
+		&i.StatusMapping,
+		&i.AgentLabelMapping,
+		&i.ActivatedAt,
+		&i.PausedAt,
+		&i.CreatedByID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getLinearSyncConflictForUpdate = `-- name: GetLinearSyncConflictForUpdate :one
+SELECT id, workspace_id, binding_id, link_id, patchbay_issue_id, linear_issue_id,
+       field, base_value, local_value, remote_value, source_event_id,
+       source_event_at_ms, status, resolution, resolved_value, resolved_by_id,
+       created_at, updated_at
+FROM linear_sync_conflict
+WHERE id = $1 AND workspace_id = $2
+FOR UPDATE
+`
+
+type GetLinearSyncConflictForUpdateParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) GetLinearSyncConflictForUpdate(ctx context.Context, arg GetLinearSyncConflictForUpdateParams) (LinearSyncConflict, error) {
+	row := q.db.QueryRow(ctx, getLinearSyncConflictForUpdate, arg.ID, arg.WorkspaceID)
+	var i LinearSyncConflict
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.BindingID,
+		&i.LinkID,
+		&i.PatchbayIssueID,
+		&i.LinearIssueID,
+		&i.Field,
+		&i.BaseValue,
+		&i.LocalValue,
+		&i.RemoteValue,
+		&i.SourceEventID,
+		&i.SourceEventAtMs,
+		&i.Status,
+		&i.Resolution,
+		&i.ResolvedValue,
+		&i.ResolvedByID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const insertLinearOauthState = `-- name: InsertLinearOauthState :exec
+INSERT INTO linear_oauth_state
+    (id, state_hash, workspace_id, user_id, code_verifier_encrypted,
+     redirect_uri, expires_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+`
+
+type InsertLinearOauthStateParams struct {
+	ID                    pgtype.UUID        `json:"id"`
+	StateHash             string             `json:"state_hash"`
+	WorkspaceID           pgtype.UUID        `json:"workspace_id"`
+	UserID                pgtype.UUID        `json:"user_id"`
+	CodeVerifierEncrypted []byte             `json:"code_verifier_encrypted"`
+	RedirectUri           string             `json:"redirect_uri"`
+	ExpiresAt             pgtype.Timestamptz `json:"expires_at"`
+}
+
+func (q *Queries) InsertLinearOauthState(ctx context.Context, arg InsertLinearOauthStateParams) error {
+	_, err := q.db.Exec(ctx, insertLinearOauthState,
+		arg.ID,
+		arg.StateHash,
+		arg.WorkspaceID,
+		arg.UserID,
+		arg.CodeVerifierEncrypted,
+		arg.RedirectUri,
+		arg.ExpiresAt,
+	)
+	return err
+}
+
+const insertLinearSyncInbox = `-- name: InsertLinearSyncInbox :execrows
+INSERT INTO linear_sync_inbox (id, connection_id, delivery_id, event_type, payload)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (connection_id, delivery_id) DO NOTHING
+`
+
+type InsertLinearSyncInboxParams struct {
+	ID           pgtype.UUID `json:"id"`
+	ConnectionID pgtype.UUID `json:"connection_id"`
+	DeliveryID   string      `json:"delivery_id"`
+	EventType    string      `json:"event_type"`
+	Payload      []byte      `json:"payload"`
+}
+
+func (q *Queries) InsertLinearSyncInbox(ctx context.Context, arg InsertLinearSyncInboxParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertLinearSyncInbox,
+		arg.ID,
+		arg.ConnectionID,
+		arg.DeliveryID,
+		arg.EventType,
+		arg.Payload,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const linearProjectBelongsToWorkspace = `-- name: LinearProjectBelongsToWorkspace :one
+SELECT EXISTS (
+    SELECT 1 FROM project
+    WHERE id = $1 AND workspace_id = $2
+)
+`
+
+type LinearProjectBelongsToWorkspaceParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) LinearProjectBelongsToWorkspace(ctx context.Context, arg LinearProjectBelongsToWorkspaceParams) (bool, error) {
+	row := q.db.QueryRow(ctx, linearProjectBelongsToWorkspace, arg.ID, arg.WorkspaceID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const listLinearMemberBindings = `-- name: ListLinearMemberBindings :many
+SELECT id, workspace_id, connection_id, patchbay_user_id, linear_user_id,
+       created_at, updated_at
+FROM linear_member_binding
+WHERE workspace_id = $1
+ORDER BY created_at
+`
+
+func (q *Queries) ListLinearMemberBindings(ctx context.Context, workspaceID pgtype.UUID) ([]LinearMemberBinding, error) {
+	rows, err := q.db.Query(ctx, listLinearMemberBindings, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []LinearMemberBinding{}
+	for rows.Next() {
+		var i LinearMemberBinding
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.ConnectionID,
+			&i.PatchbayUserID,
+			&i.LinearUserID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLinearProjectBindings = `-- name: ListLinearProjectBindings :many
+SELECT id, workspace_id, connection_id, patchbay_project_id, linear_project_id,
+       linear_team_id, status, sync_mode, initial_source_of_truth,
+       status_mapping, agent_label_mapping, activated_at, paused_at,
+       created_by_id, created_at, updated_at
+FROM linear_project_binding
+WHERE workspace_id = $1 AND status <> 'tombstone'
+ORDER BY created_at
+`
+
+func (q *Queries) ListLinearProjectBindings(ctx context.Context, workspaceID pgtype.UUID) ([]LinearProjectBinding, error) {
+	rows, err := q.db.Query(ctx, listLinearProjectBindings, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []LinearProjectBinding{}
+	for rows.Next() {
+		var i LinearProjectBinding
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.ConnectionID,
+			&i.PatchbayProjectID,
+			&i.LinearProjectID,
+			&i.LinearTeamID,
+			&i.Status,
+			&i.SyncMode,
+			&i.InitialSourceOfTruth,
+			&i.StatusMapping,
+			&i.AgentLabelMapping,
+			&i.ActivatedAt,
+			&i.PausedAt,
+			&i.CreatedByID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLinearSyncConflicts = `-- name: ListLinearSyncConflicts :many
+SELECT c.id, c.workspace_id, c.binding_id, c.link_id, c.patchbay_issue_id,
+       c.linear_issue_id, l.linear_identifier, c.field, c.base_value,
+       c.local_value, c.remote_value, c.source_event_id, c.source_event_at_ms,
+       c.status, c.resolution, c.resolved_value, c.resolved_by_id,
+       c.created_at, c.updated_at
+FROM linear_sync_conflict c
+LEFT JOIN linear_issue_link l ON l.id = c.link_id
+WHERE c.workspace_id = $1 AND c.status = $2
+ORDER BY c.created_at DESC
+`
+
+type ListLinearSyncConflictsParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	Status      string      `json:"status"`
+}
+
+type ListLinearSyncConflictsRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	WorkspaceID      pgtype.UUID        `json:"workspace_id"`
+	BindingID        pgtype.UUID        `json:"binding_id"`
+	LinkID           pgtype.UUID        `json:"link_id"`
+	PatchbayIssueID  pgtype.UUID        `json:"patchbay_issue_id"`
+	LinearIssueID    string             `json:"linear_issue_id"`
+	LinearIdentifier pgtype.Text        `json:"linear_identifier"`
+	Field            string             `json:"field"`
+	BaseValue        []byte             `json:"base_value"`
+	LocalValue       []byte             `json:"local_value"`
+	RemoteValue      []byte             `json:"remote_value"`
+	SourceEventID    string             `json:"source_event_id"`
+	SourceEventAtMs  pgtype.Int8        `json:"source_event_at_ms"`
+	Status           string             `json:"status"`
+	Resolution       pgtype.Text        `json:"resolution"`
+	ResolvedValue    []byte             `json:"resolved_value"`
+	ResolvedByID     pgtype.UUID        `json:"resolved_by_id"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) ListLinearSyncConflicts(ctx context.Context, arg ListLinearSyncConflictsParams) ([]ListLinearSyncConflictsRow, error) {
+	rows, err := q.db.Query(ctx, listLinearSyncConflicts, arg.WorkspaceID, arg.Status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListLinearSyncConflictsRow{}
+	for rows.Next() {
+		var i ListLinearSyncConflictsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.BindingID,
+			&i.LinkID,
+			&i.PatchbayIssueID,
+			&i.LinearIssueID,
+			&i.LinearIdentifier,
+			&i.Field,
+			&i.BaseValue,
+			&i.LocalValue,
+			&i.RemoteValue,
+			&i.SourceEventID,
+			&i.SourceEventAtMs,
+			&i.Status,
+			&i.Resolution,
+			&i.ResolvedValue,
+			&i.ResolvedByID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const markLinearReauthorizationRequired = `-- name: MarkLinearReauthorizationRequired :exec
+UPDATE linear_connection
+SET status = 'reauthorization_required', last_error = $2, updated_at = now()
+WHERE id = $1
+`
+
+type MarkLinearReauthorizationRequiredParams struct {
+	ID        pgtype.UUID `json:"id"`
+	LastError pgtype.Text `json:"last_error"`
+}
+
+func (q *Queries) MarkLinearReauthorizationRequired(ctx context.Context, arg MarkLinearReauthorizationRequiredParams) error {
+	_, err := q.db.Exec(ctx, markLinearReauthorizationRequired, arg.ID, arg.LastError)
+	return err
+}
+
+const markLinearRevoked = `-- name: MarkLinearRevoked :exec
+UPDATE linear_connection
+SET status = 'revoked', last_error = $2, updated_at = now()
+WHERE id = $1 AND workspace_id = $3
+`
+
+type MarkLinearRevokedParams struct {
+	ID          pgtype.UUID `json:"id"`
+	LastError   pgtype.Text `json:"last_error"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) MarkLinearRevoked(ctx context.Context, arg MarkLinearRevokedParams) error {
+	_, err := q.db.Exec(ctx, markLinearRevoked, arg.ID, arg.LastError, arg.WorkspaceID)
+	return err
+}
+
+const markLinearWebhookAccepted = `-- name: MarkLinearWebhookAccepted :exec
+UPDATE linear_connection
+SET last_success_at = now(), last_error = NULL, updated_at = now()
+WHERE id = $1 AND status = 'active'
+`
+
+func (q *Queries) MarkLinearWebhookAccepted(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, markLinearWebhookAccepted, id)
+	return err
+}
+
+const renewLinearSyncInbox = `-- name: RenewLinearSyncInbox :execrows
+UPDATE linear_sync_inbox
+SET locked_until = now() + make_interval(secs => $2)
+WHERE id = $1 AND locked_by = $3 AND processed_at IS NULL AND dead_lettered_at IS NULL
+`
+
+type RenewLinearSyncInboxParams struct {
+	ID       pgtype.UUID `json:"id"`
+	Secs     float64     `json:"secs"`
+	LockedBy pgtype.Text `json:"locked_by"`
+}
+
+func (q *Queries) RenewLinearSyncInbox(ctx context.Context, arg RenewLinearSyncInboxParams) (int64, error) {
+	result, err := q.db.Exec(ctx, renewLinearSyncInbox, arg.ID, arg.Secs, arg.LockedBy)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const renewLinearSyncOutbox = `-- name: RenewLinearSyncOutbox :execrows
+UPDATE linear_sync_outbox
+SET locked_until = now() + make_interval(secs => $2), updated_at = now()
+WHERE id = $1 AND locked_by = $3 AND processed_at IS NULL AND dead_lettered_at IS NULL
+`
+
+type RenewLinearSyncOutboxParams struct {
+	ID       pgtype.UUID `json:"id"`
+	Secs     float64     `json:"secs"`
+	LockedBy pgtype.Text `json:"locked_by"`
+}
+
+func (q *Queries) RenewLinearSyncOutbox(ctx context.Context, arg RenewLinearSyncOutboxParams) (int64, error) {
+	result, err := q.db.Exec(ctx, renewLinearSyncOutbox, arg.ID, arg.Secs, arg.LockedBy)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const resolveLinearSyncConflict = `-- name: ResolveLinearSyncConflict :execrows
+UPDATE linear_sync_conflict
+SET status = 'resolved', resolution = $3, resolved_value = $4,
+    resolved_by_id = $5, updated_at = now()
+WHERE id = $1 AND workspace_id = $2 AND status = 'open'
+`
+
+type ResolveLinearSyncConflictParams struct {
+	ID            pgtype.UUID `json:"id"`
+	WorkspaceID   pgtype.UUID `json:"workspace_id"`
+	Resolution    pgtype.Text `json:"resolution"`
+	ResolvedValue []byte      `json:"resolved_value"`
+	ResolvedByID  pgtype.UUID `json:"resolved_by_id"`
+}
+
+func (q *Queries) ResolveLinearSyncConflict(ctx context.Context, arg ResolveLinearSyncConflictParams) (int64, error) {
+	result, err := q.db.Exec(ctx, resolveLinearSyncConflict,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.Resolution,
+		arg.ResolvedValue,
+		arg.ResolvedByID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const retryLinearSyncInbox = `-- name: RetryLinearSyncInbox :execrows
+UPDATE linear_sync_inbox
+SET available_at = now() + make_interval(secs => $2), locked_by = NULL,
+    locked_until = NULL, last_error = $3
+WHERE id = $1 AND locked_by = $4
+`
+
+type RetryLinearSyncInboxParams struct {
+	ID        pgtype.UUID `json:"id"`
+	Secs      float64     `json:"secs"`
+	LastError pgtype.Text `json:"last_error"`
+	LockedBy  pgtype.Text `json:"locked_by"`
+}
+
+func (q *Queries) RetryLinearSyncInbox(ctx context.Context, arg RetryLinearSyncInboxParams) (int64, error) {
+	result, err := q.db.Exec(ctx, retryLinearSyncInbox,
+		arg.ID,
+		arg.Secs,
+		arg.LastError,
+		arg.LockedBy,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const retryLinearSyncOutbox = `-- name: RetryLinearSyncOutbox :execrows
+UPDATE linear_sync_outbox
+SET available_at = now() + make_interval(secs => $2), locked_by = NULL,
+    locked_until = NULL, last_error = $3, updated_at = now()
+WHERE id = $1 AND locked_by = $4
+`
+
+type RetryLinearSyncOutboxParams struct {
+	ID        pgtype.UUID `json:"id"`
+	Secs      float64     `json:"secs"`
+	LastError pgtype.Text `json:"last_error"`
+	LockedBy  pgtype.Text `json:"locked_by"`
+}
+
+func (q *Queries) RetryLinearSyncOutbox(ctx context.Context, arg RetryLinearSyncOutboxParams) (int64, error) {
+	result, err := q.db.Exec(ctx, retryLinearSyncOutbox,
+		arg.ID,
+		arg.Secs,
+		arg.LastError,
+		arg.LockedBy,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const setLinearIssueLinkDeleted = `-- name: SetLinearIssueLinkDeleted :exec
+UPDATE linear_issue_link
+SET sync_status = 'deleted', updated_at = now()
+WHERE id = $1 AND workspace_id = $2
+`
+
+type SetLinearIssueLinkDeletedParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) SetLinearIssueLinkDeleted(ctx context.Context, arg SetLinearIssueLinkDeletedParams) error {
+	_, err := q.db.Exec(ctx, setLinearIssueLinkDeleted, arg.ID, arg.WorkspaceID)
+	return err
+}
+
+const tombstoneLinearProjectBinding = `-- name: TombstoneLinearProjectBinding :exec
+WITH tombstoned AS (
+    UPDATE linear_project_binding AS binding
+    SET status = 'tombstone', paused_at = COALESCE(binding.paused_at, now()), updated_at = now()
+    WHERE binding.id = $1 AND binding.workspace_id = $2
+    RETURNING binding.id
+), deleted_conflicts AS (
+    DELETE FROM linear_sync_conflict
+    WHERE binding_id IN (SELECT id FROM tombstoned) AND workspace_id = $2
+), deleted_outbox AS (
+    DELETE FROM linear_sync_outbox
+    WHERE binding_id IN (SELECT id FROM tombstoned) AND workspace_id = $2
+)
+UPDATE linear_issue_link AS issue_link
+SET sync_status = 'deleted', updated_at = now()
+WHERE issue_link.binding_id IN (SELECT id FROM tombstoned) AND issue_link.workspace_id = $2
+`
+
+type TombstoneLinearProjectBindingParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) TombstoneLinearProjectBinding(ctx context.Context, arg TombstoneLinearProjectBindingParams) error {
+	_, err := q.db.Exec(ctx, tombstoneLinearProjectBinding, arg.ID, arg.WorkspaceID)
+	return err
+}
+
+const updateLinearIssueLink = `-- name: UpdateLinearIssueLink :exec
+UPDATE linear_issue_link
+SET linear_identifier = $2, last_common_snapshot = $3,
+    remote_updated_at = $4, last_remote_event_at_ms = $5,
+    last_remote_event_id = $6, sync_status = $7, updated_at = now()
+WHERE id = $1 AND workspace_id = $8
+`
+
+type UpdateLinearIssueLinkParams struct {
+	ID                  pgtype.UUID        `json:"id"`
+	LinearIdentifier    string             `json:"linear_identifier"`
+	LastCommonSnapshot  []byte             `json:"last_common_snapshot"`
+	RemoteUpdatedAt     pgtype.Timestamptz `json:"remote_updated_at"`
+	LastRemoteEventAtMs pgtype.Int8        `json:"last_remote_event_at_ms"`
+	LastRemoteEventID   pgtype.Text        `json:"last_remote_event_id"`
+	SyncStatus          string             `json:"sync_status"`
+	WorkspaceID         pgtype.UUID        `json:"workspace_id"`
+}
+
+func (q *Queries) UpdateLinearIssueLink(ctx context.Context, arg UpdateLinearIssueLinkParams) error {
+	_, err := q.db.Exec(ctx, updateLinearIssueLink,
+		arg.ID,
+		arg.LinearIdentifier,
+		arg.LastCommonSnapshot,
+		arg.RemoteUpdatedAt,
+		arg.LastRemoteEventAtMs,
+		arg.LastRemoteEventID,
+		arg.SyncStatus,
+		arg.WorkspaceID,
+	)
+	return err
+}
+
+const updateLinearProjectBinding = `-- name: UpdateLinearProjectBinding :one
+UPDATE linear_project_binding
+SET status = $3, sync_mode = $4, initial_source_of_truth = $5,
+    linear_team_id = $6, status_mapping = $7, agent_label_mapping = $8,
+    activated_at = CASE WHEN $3 = 'active' THEN COALESCE(activated_at, now()) ELSE activated_at END,
+    paused_at = CASE WHEN $3 = 'paused' THEN now() ELSE paused_at END,
+    updated_at = now()
+WHERE id = $1 AND workspace_id = $2
+RETURNING id, workspace_id, connection_id, patchbay_project_id, linear_project_id,
+          linear_team_id, status, sync_mode, initial_source_of_truth,
+          status_mapping, agent_label_mapping, activated_at, paused_at,
+          created_by_id, created_at, updated_at
+`
+
+type UpdateLinearProjectBindingParams struct {
+	ID                   pgtype.UUID `json:"id"`
+	WorkspaceID          pgtype.UUID `json:"workspace_id"`
+	Status               string      `json:"status"`
+	SyncMode             string      `json:"sync_mode"`
+	InitialSourceOfTruth pgtype.Text `json:"initial_source_of_truth"`
+	LinearTeamID         pgtype.Text `json:"linear_team_id"`
+	StatusMapping        []byte      `json:"status_mapping"`
+	AgentLabelMapping    []byte      `json:"agent_label_mapping"`
+}
+
+func (q *Queries) UpdateLinearProjectBinding(ctx context.Context, arg UpdateLinearProjectBindingParams) (LinearProjectBinding, error) {
+	row := q.db.QueryRow(ctx, updateLinearProjectBinding,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.Status,
+		arg.SyncMode,
+		arg.InitialSourceOfTruth,
+		arg.LinearTeamID,
+		arg.StatusMapping,
+		arg.AgentLabelMapping,
+	)
+	var i LinearProjectBinding
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ConnectionID,
+		&i.PatchbayProjectID,
+		&i.LinearProjectID,
+		&i.LinearTeamID,
+		&i.Status,
+		&i.SyncMode,
+		&i.InitialSourceOfTruth,
+		&i.StatusMapping,
+		&i.AgentLabelMapping,
+		&i.ActivatedAt,
+		&i.PausedAt,
+		&i.CreatedByID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateLinearTokens = `-- name: UpdateLinearTokens :exec
+UPDATE linear_connection
+SET access_token_encrypted = $2, refresh_token_encrypted = $3,
+    token_expires_at = $4,
+    scopes = CASE WHEN $5 = '' THEN scopes ELSE to_jsonb(regexp_split_to_array($5, '[, ]+')) END,
+    last_error = NULL, updated_at = now()
+WHERE id = $1 AND status = 'active'
+`
+
+type UpdateLinearTokensParams struct {
+	ID                    pgtype.UUID        `json:"id"`
+	AccessTokenEncrypted  []byte             `json:"access_token_encrypted"`
+	RefreshTokenEncrypted []byte             `json:"refresh_token_encrypted"`
+	TokenExpiresAt        pgtype.Timestamptz `json:"token_expires_at"`
+	Column5               interface{}        `json:"column_5"`
+}
+
+func (q *Queries) UpdateLinearTokens(ctx context.Context, arg UpdateLinearTokensParams) error {
+	_, err := q.db.Exec(ctx, updateLinearTokens,
+		arg.ID,
+		arg.AccessTokenEncrypted,
+		arg.RefreshTokenEncrypted,
+		arg.TokenExpiresAt,
+		arg.Column5,
+	)
+	return err
+}
+
+const upsertLinearConnection = `-- name: UpsertLinearConnection :one
+INSERT INTO linear_connection
+    (id, workspace_id, organization_id, organization_name, actor_id,
+     access_token_encrypted, refresh_token_encrypted, token_expires_at, scopes,
+     status, created_by_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', $10)
+ON CONFLICT (workspace_id) DO UPDATE
+SET organization_id = EXCLUDED.organization_id,
+    organization_name = EXCLUDED.organization_name,
+    actor_id = EXCLUDED.actor_id,
+    access_token_encrypted = EXCLUDED.access_token_encrypted,
+    refresh_token_encrypted = EXCLUDED.refresh_token_encrypted,
+    token_expires_at = EXCLUDED.token_expires_at,
+    scopes = EXCLUDED.scopes,
+    status = 'active',
+    last_error = NULL,
+    updated_at = now()
+RETURNING id, workspace_id, organization_id, organization_name, actor_id,
+          access_token_encrypted, refresh_token_encrypted, token_expires_at,
+          scopes, webhook_id, status, last_success_at, last_error, created_by_id,
+          created_at, updated_at
+`
+
+type UpsertLinearConnectionParams struct {
+	ID                    pgtype.UUID        `json:"id"`
+	WorkspaceID           pgtype.UUID        `json:"workspace_id"`
+	OrganizationID        string             `json:"organization_id"`
+	OrganizationName      string             `json:"organization_name"`
+	ActorID               string             `json:"actor_id"`
+	AccessTokenEncrypted  []byte             `json:"access_token_encrypted"`
+	RefreshTokenEncrypted []byte             `json:"refresh_token_encrypted"`
+	TokenExpiresAt        pgtype.Timestamptz `json:"token_expires_at"`
+	Scopes                []byte             `json:"scopes"`
+	CreatedByID           pgtype.UUID        `json:"created_by_id"`
+}
+
+func (q *Queries) UpsertLinearConnection(ctx context.Context, arg UpsertLinearConnectionParams) (LinearConnection, error) {
+	row := q.db.QueryRow(ctx, upsertLinearConnection,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.OrganizationID,
+		arg.OrganizationName,
+		arg.ActorID,
+		arg.AccessTokenEncrypted,
+		arg.RefreshTokenEncrypted,
+		arg.TokenExpiresAt,
+		arg.Scopes,
+		arg.CreatedByID,
+	)
+	var i LinearConnection
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.OrganizationID,
+		&i.OrganizationName,
+		&i.ActorID,
+		&i.AccessTokenEncrypted,
+		&i.RefreshTokenEncrypted,
+		&i.TokenExpiresAt,
+		&i.Scopes,
+		&i.WebhookID,
+		&i.Status,
+		&i.LastSuccessAt,
+		&i.LastError,
+		&i.CreatedByID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const upsertLinearMemberBinding = `-- name: UpsertLinearMemberBinding :one
+INSERT INTO linear_member_binding
+    (id, workspace_id, connection_id, patchbay_user_id, linear_user_id)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (workspace_id, patchbay_user_id) DO UPDATE
+SET connection_id = EXCLUDED.connection_id,
+    linear_user_id = EXCLUDED.linear_user_id, updated_at = now()
+RETURNING id, workspace_id, connection_id, patchbay_user_id, linear_user_id,
+          created_at, updated_at
+`
+
+type UpsertLinearMemberBindingParams struct {
+	ID             pgtype.UUID `json:"id"`
+	WorkspaceID    pgtype.UUID `json:"workspace_id"`
+	ConnectionID   pgtype.UUID `json:"connection_id"`
+	PatchbayUserID pgtype.UUID `json:"patchbay_user_id"`
+	LinearUserID   string      `json:"linear_user_id"`
+}
+
+func (q *Queries) UpsertLinearMemberBinding(ctx context.Context, arg UpsertLinearMemberBindingParams) (LinearMemberBinding, error) {
+	row := q.db.QueryRow(ctx, upsertLinearMemberBinding,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.ConnectionID,
+		arg.PatchbayUserID,
+		arg.LinearUserID,
+	)
+	var i LinearMemberBinding
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ConnectionID,
+		&i.PatchbayUserID,
+		&i.LinearUserID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}

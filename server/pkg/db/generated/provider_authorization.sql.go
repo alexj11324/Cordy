@@ -93,48 +93,7 @@ func (q *Queries) CreateAuthorizationAuditEvent(ctx context.Context, arg CreateA
 
 const createProviderAuthorizationDecision = `-- name: CreateProviderAuthorizationDecision :one
 WITH budget_lock AS (
-    SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))
-), final_decision AS (
-    SELECT
-        CASE
-            WHEN $5::boolean
-             AND $6::text = 'allow'
-             AND reservation_totals.total_reserved > $7::bigint - $8::bigint
-            THEN 'deny'
-            ELSE $6::text
-        END AS decision,
-        CASE
-            WHEN $5::boolean
-             AND $6::text = 'allow'
-             AND reservation_totals.total_reserved > $7::bigint - $8::bigint
-            THEN $9::text
-            ELSE $10::text
-        END AS reason,
-        CASE
-            WHEN $5::boolean
-             AND $6::text = 'allow'
-             AND reservation_totals.total_reserved > $7::bigint - $8::bigint
-            THEN 0::bigint
-            ELSE $8::bigint
-        END AS reservation
-    FROM (
-        SELECT COALESCE(sum(
-            CASE
-                WHEN event.context->>'provider_request_tokens' ~ '^[0-9]+$'
-                THEN (event.context->>'provider_request_tokens')::bigint
-                ELSE 0::bigint
-            END
-        ), 0)::bigint AS total_reserved
-        FROM authorization_audit_event AS event
-        CROSS JOIN budget_lock
-        WHERE event.workspace_id = $2
-          AND event.action = 'credential.use'
-          AND event.resource_type = 'provider_identity'
-          AND event.resource_id = $3
-          AND event.decision = 'allow'
-          AND event.matched_grant_ids && $4::uuid[]
-          AND event.context->>'provider_budget_reservation' = 'true'
-    ) AS reservation_totals
+    SELECT pg_advisory_xact_lock(hashtextextended($22::text, 0))
 )
 INSERT INTO authorization_audit_event (
     id, workspace_id, principal_type, principal_id, on_behalf_of_user_id,
@@ -143,18 +102,146 @@ INSERT INTO authorization_audit_event (
     context
 )
 SELECT
-    $11, $2, $12, $13, $14, $15, $16, $17, $18, $3,
-    final_decision.decision, final_decision.reason, $4, $19, $20, $21,
+    $1, $2, $3, $4, $5,
+    $6, $7, $8, $9, $10,
+    CASE
+        WHEN $11::boolean
+         AND $12::text = 'allow'
+         AND (
+             SELECT COALESCE(sum(
+                 CASE
+                     WHEN event.context->>'provider_request_tokens' ~ '^[0-9]+$'
+                     THEN (event.context->>'provider_request_tokens')::bigint
+                     ELSE 0::bigint
+                 END
+             ), 0)::bigint
+             FROM authorization_audit_event AS event
+             CROSS JOIN budget_lock
+             WHERE event.workspace_id = $2
+               AND event.action = 'credential.use'
+               AND event.resource_type = 'provider_identity'
+               AND event.resource_id = $10
+               AND event.decision = 'allow'
+               AND event.matched_grant_ids && $13::uuid[]
+               AND event.context->>'provider_budget_reservation' = 'true'
+         ) > $14::bigint - $15::bigint
+        THEN 'deny'
+        ELSE $12::text
+    END,
+    CASE
+        WHEN $11::boolean
+         AND $12::text = 'allow'
+         AND (
+             SELECT COALESCE(sum(
+                 CASE
+                     WHEN event.context->>'provider_request_tokens' ~ '^[0-9]+$'
+                     THEN (event.context->>'provider_request_tokens')::bigint
+                     ELSE 0::bigint
+                 END
+             ), 0)::bigint
+             FROM authorization_audit_event AS event
+             CROSS JOIN budget_lock
+             WHERE event.workspace_id = $2
+               AND event.action = 'credential.use'
+               AND event.resource_type = 'provider_identity'
+               AND event.resource_id = $10
+               AND event.decision = 'allow'
+               AND event.matched_grant_ids && $13::uuid[]
+               AND event.context->>'provider_budget_reservation' = 'true'
+         ) > $14::bigint - $15::bigint
+        THEN $16::text
+        ELSE $17::text
+    END,
+    $13,
+    $18, $19, $20,
     jsonb_set(
         jsonb_set(
-            $22::jsonb,
+            $21::jsonb,
             '{provider_request_tokens}',
-            to_jsonb(final_decision.reservation)
+            to_jsonb(
+                CASE
+                    WHEN $11::boolean
+                     AND $12::text = 'allow'
+                     AND (
+                         SELECT COALESCE(sum(
+                             CASE
+                                 WHEN event.context->>'provider_request_tokens' ~ '^[0-9]+$'
+                                 THEN (event.context->>'provider_request_tokens')::bigint
+                                 ELSE 0::bigint
+                             END
+                         ), 0)::bigint
+                         FROM authorization_audit_event AS event
+                         CROSS JOIN budget_lock
+                         WHERE event.workspace_id = $2
+                           AND event.action = 'credential.use'
+                           AND event.resource_type = 'provider_identity'
+                           AND event.resource_id = $10
+                           AND event.decision = 'allow'
+                           AND event.matched_grant_ids && $13::uuid[]
+                           AND event.context->>'provider_budget_reservation' = 'true'
+                     ) > $14::bigint - $15::bigint
+                    THEN 0::bigint
+                    ELSE $15::bigint
+                END
+            )
         ),
         '{provider_budget_reservation}',
-        to_jsonb(final_decision.decision = 'allow' AND final_decision.reservation > 0)
+        to_jsonb(
+            (
+                CASE
+                    WHEN $11::boolean
+                     AND $12::text = 'allow'
+                     AND (
+                         SELECT COALESCE(sum(
+                             CASE
+                                 WHEN event.context->>'provider_request_tokens' ~ '^[0-9]+$'
+                                 THEN (event.context->>'provider_request_tokens')::bigint
+                                 ELSE 0::bigint
+                             END
+                         ), 0)::bigint
+                         FROM authorization_audit_event AS event
+                         CROSS JOIN budget_lock
+                         WHERE event.workspace_id = $2
+                           AND event.action = 'credential.use'
+                           AND event.resource_type = 'provider_identity'
+                           AND event.resource_id = $10
+                           AND event.decision = 'allow'
+                           AND event.matched_grant_ids && $13::uuid[]
+                           AND event.context->>'provider_budget_reservation' = 'true'
+                     ) > $14::bigint - $15::bigint
+                    THEN 'deny'
+                    ELSE $12::text
+                END
+            ) = 'allow'
+            AND (
+                CASE
+                    WHEN $11::boolean
+                     AND $12::text = 'allow'
+                     AND (
+                         SELECT COALESCE(sum(
+                             CASE
+                                 WHEN event.context->>'provider_request_tokens' ~ '^[0-9]+$'
+                                 THEN (event.context->>'provider_request_tokens')::bigint
+                                 ELSE 0::bigint
+                             END
+                         ), 0)::bigint
+                         FROM authorization_audit_event AS event
+                         CROSS JOIN budget_lock
+                         WHERE event.workspace_id = $2
+                           AND event.action = 'credential.use'
+                           AND event.resource_type = 'provider_identity'
+                           AND event.resource_id = $10
+                           AND event.decision = 'allow'
+                           AND event.matched_grant_ids && $13::uuid[]
+                           AND event.context->>'provider_budget_reservation' = 'true'
+                     ) > $14::bigint - $15::bigint
+                    THEN 0::bigint
+                    ELSE $15::bigint
+                END
+            ) > 0
+        )
     )
-FROM final_decision
+FROM budget_lock
 RETURNING id, workspace_id, principal_type, principal_id, on_behalf_of_user_id,
           via_agent_id, device_id, action, resource_type, resource_id, decision,
           reason, matched_grant_ids, policy_version, obligations,
@@ -162,43 +249,38 @@ RETURNING id, workspace_id, principal_type, principal_id, on_behalf_of_user_id,
 `
 
 type CreateProviderAuthorizationDecisionParams struct {
-	BudgetLockKey       string        `json:"budget_lock_key"`
-	WorkspaceID         pgtype.UUID   `json:"workspace_id"`
-	ResourceID          pgtype.UUID   `json:"resource_id"`
-	MatchedGrantIds     []pgtype.UUID `json:"matched_grant_ids"`
-	EnforceBudget       bool          `json:"enforce_budget"`
-	Decision            string        `json:"decision"`
-	BudgetLimit         int64         `json:"budget_limit"`
-	Reservation         int64         `json:"reservation"`
-	BudgetExhaustedReason string      `json:"budget_exhausted_reason"`
-	Reason              string        `json:"reason"`
-	ID                  pgtype.UUID   `json:"id"`
-	PrincipalType       string        `json:"principal_type"`
-	PrincipalID         pgtype.UUID   `json:"principal_id"`
-	OnBehalfOfUserID    pgtype.UUID   `json:"on_behalf_of_user_id"`
-	ViaAgentID          pgtype.UUID   `json:"via_agent_id"`
-	DeviceID            pgtype.UUID   `json:"device_id"`
-	Action              string        `json:"action"`
-	ResourceType        string        `json:"resource_type"`
-	PolicyVersion       string        `json:"policy_version"`
-	Obligations         []byte        `json:"obligations"`
-	DelegationChain     []byte        `json:"delegation_chain"`
-	Context             []byte        `json:"context"`
+	ID                    pgtype.UUID   `json:"id"`
+	WorkspaceID           pgtype.UUID   `json:"workspace_id"`
+	PrincipalType         string        `json:"principal_type"`
+	PrincipalID           pgtype.UUID   `json:"principal_id"`
+	OnBehalfOfUserID      pgtype.UUID   `json:"on_behalf_of_user_id"`
+	ViaAgentID            pgtype.UUID   `json:"via_agent_id"`
+	DeviceID              pgtype.UUID   `json:"device_id"`
+	Action                string        `json:"action"`
+	ResourceType          string        `json:"resource_type"`
+	ResourceID            pgtype.UUID   `json:"resource_id"`
+	EnforceBudget         bool          `json:"enforce_budget"`
+	Decision              string        `json:"decision"`
+	MatchedGrantIds       []pgtype.UUID `json:"matched_grant_ids"`
+	BudgetLimit           int64         `json:"budget_limit"`
+	Reservation           int64         `json:"reservation"`
+	BudgetExhaustedReason string        `json:"budget_exhausted_reason"`
+	Reason                string        `json:"reason"`
+	PolicyVersion         string        `json:"policy_version"`
+	Obligations           []byte        `json:"obligations"`
+	DelegationChain       []byte        `json:"delegation_chain"`
+	Context               []byte        `json:"context"`
+	BudgetLockKey         string        `json:"budget_lock_key"`
 }
 
+// Provider budget admission and the corresponding explain event must share one
+// transaction-level lock. A read-then-insert pair lets two daemons both see
+// the same remaining budget; this query serializes the read and records the
+// final decision atomically. It never stores bearer tokens or secrets.
 func (q *Queries) CreateProviderAuthorizationDecision(ctx context.Context, arg CreateProviderAuthorizationDecisionParams) (AuthorizationAuditEvent, error) {
 	row := q.db.QueryRow(ctx, createProviderAuthorizationDecision,
-		arg.BudgetLockKey,
-		arg.WorkspaceID,
-		arg.ResourceID,
-		arg.MatchedGrantIds,
-		arg.EnforceBudget,
-		arg.Decision,
-		arg.BudgetLimit,
-		arg.Reservation,
-		arg.BudgetExhaustedReason,
-		arg.Reason,
 		arg.ID,
+		arg.WorkspaceID,
 		arg.PrincipalType,
 		arg.PrincipalID,
 		arg.OnBehalfOfUserID,
@@ -206,10 +288,19 @@ func (q *Queries) CreateProviderAuthorizationDecision(ctx context.Context, arg C
 		arg.DeviceID,
 		arg.Action,
 		arg.ResourceType,
+		arg.ResourceID,
+		arg.EnforceBudget,
+		arg.Decision,
+		arg.MatchedGrantIds,
+		arg.BudgetLimit,
+		arg.Reservation,
+		arg.BudgetExhaustedReason,
+		arg.Reason,
 		arg.PolicyVersion,
 		arg.Obligations,
 		arg.DelegationChain,
 		arg.Context,
+		arg.BudgetLockKey,
 	)
 	var i AuthorizationAuditEvent
 	err := row.Scan(

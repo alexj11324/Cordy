@@ -60,74 +60,6 @@ func (q *Queries) CreateWorkProduct(ctx context.Context, arg CreateWorkProductPa
 	return i, err
 }
 
-const listUnassociatedWorkProducts = `-- name: ListUnassociatedWorkProducts :many
-SELECT id, workspace_id, kind, provider, external_identity, external_url, provider_record_type, provider_record_id, created_at, updated_at
-FROM work_product product
-WHERE product.workspace_id = $1
-  AND product.kind = $2
-  AND (
-      $3 = ''
-      OR strpos(lower(product.external_identity), lower($3)) > 0
-      OR strpos(lower(COALESCE(product.external_url, '')), lower($3)) > 0
-  )
-  AND NOT EXISTS (
-      SELECT 1
-      FROM work_product_relation relation
-      WHERE relation.workspace_id = product.workspace_id
-        AND relation.work_product_id = product.id
-        AND relation.detached_at IS NULL
-        AND relation.issue_id IS NOT NULL
-        AND relation.relation_source IN ('manual_explicit', 'task_explicit', 'execution_branch_discovery', 'provider_discovery')
-  )
-ORDER BY product.updated_at DESC, product.id DESC
-LIMIT $4 OFFSET $5
-`
-
-type ListUnassociatedWorkProductsParams struct {
-	WorkspaceID pgtype.UUID `json:"workspace_id"`
-	Kind        string      `json:"kind"`
-	Search      string      `json:"search"`
-	Limit       int32       `json:"limit"`
-	Offset      int32       `json:"offset"`
-}
-
-func (q *Queries) ListUnassociatedWorkProducts(ctx context.Context, arg ListUnassociatedWorkProductsParams) ([]WorkProduct, error) {
-	rows, err := q.db.Query(ctx, listUnassociatedWorkProducts,
-		arg.WorkspaceID,
-		arg.Kind,
-		arg.Search,
-		arg.Limit,
-		arg.Offset,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []WorkProduct{}
-	for rows.Next() {
-		var i WorkProduct
-		if err := rows.Scan(
-			&i.ID,
-			&i.WorkspaceID,
-			&i.Kind,
-			&i.Provider,
-			&i.ExternalIdentity,
-			&i.ExternalUrl,
-			&i.ProviderRecordType,
-			&i.ProviderRecordID,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const createWorkProductRelation = `-- name: CreateWorkProductRelation :one
 WITH product_scope AS (
     SELECT id FROM work_product WHERE id = $2 AND workspace_id = $1
@@ -372,6 +304,9 @@ type DetachWorkProductRelationsForIssueParams struct {
 	IssueID        pgtype.UUID `json:"issue_id"`
 }
 
+// Canonical detach addresses the product rather than a relation id. A product
+// can have several live claims for one issue, so all claims visible to the
+// authenticated actor are soft-detached in one statement and remain auditable.
 func (q *Queries) DetachWorkProductRelationsForIssue(ctx context.Context, arg DetachWorkProductRelationsForIssueParams) ([]WorkProductRelation, error) {
 	rows, err := q.db.Query(ctx, detachWorkProductRelationsForIssue,
 		arg.DetachedByType,
@@ -682,6 +617,40 @@ func (q *Queries) ListExecutionProvenanceByTask(ctx context.Context, arg ListExe
 	return items, nil
 }
 
+const listIssueIDsForWorkProduct = `-- name: ListIssueIDsForWorkProduct :many
+SELECT DISTINCT issue_id
+FROM work_product_relation
+WHERE workspace_id = $1 AND work_product_id = $2
+  AND issue_id IS NOT NULL AND detached_at IS NULL
+  AND relation_source IN ('manual_explicit', 'task_explicit', 'execution_branch_discovery', 'provider_discovery')
+ORDER BY issue_id
+`
+
+type ListIssueIDsForWorkProductParams struct {
+	WorkspaceID   pgtype.UUID `json:"workspace_id"`
+	WorkProductID pgtype.UUID `json:"work_product_id"`
+}
+
+func (q *Queries) ListIssueIDsForWorkProduct(ctx context.Context, arg ListIssueIDsForWorkProductParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listIssueIDsForWorkProduct, arg.WorkspaceID, arg.WorkProductID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []pgtype.UUID{}
+	for rows.Next() {
+		var issue_id pgtype.UUID
+		if err := rows.Scan(&issue_id); err != nil {
+			return nil, err
+		}
+		items = append(items, issue_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPendingExecutionDiscoveryTasks = `-- name: ListPendingExecutionDiscoveryTasks :many
 SELECT DISTINCT workspace_id, task_id
 FROM agent_task_execution_provenance
@@ -753,6 +722,74 @@ func (q *Queries) ListProvenanceByWorkspace(ctx context.Context, arg ListProvena
 			&i.DiscoveryReason,
 			&i.DiscoveryWorkProductID,
 			&i.DiscoveryAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUnassociatedWorkProducts = `-- name: ListUnassociatedWorkProducts :many
+SELECT id, workspace_id, kind, provider, external_identity, external_url, provider_record_type, provider_record_id, created_at, updated_at
+FROM work_product product
+WHERE product.workspace_id = $1
+  AND product.kind = $2
+  AND (
+      $3 = ''
+      OR strpos(lower(product.external_identity), lower($3)) > 0
+      OR strpos(lower(COALESCE(product.external_url, '')), lower($3)) > 0
+  )
+  AND NOT EXISTS (
+      SELECT 1
+      FROM work_product_relation relation
+      WHERE relation.workspace_id = product.workspace_id
+        AND relation.work_product_id = product.id
+        AND relation.detached_at IS NULL
+        AND relation.issue_id IS NOT NULL
+        AND relation.relation_source IN ('manual_explicit', 'task_explicit', 'execution_branch_discovery', 'provider_discovery')
+  )
+ORDER BY product.updated_at DESC, product.id DESC
+LIMIT $4 OFFSET $5
+`
+
+type ListUnassociatedWorkProductsParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	Kind        string      `json:"kind"`
+	Search      string      `json:"search"`
+	Limit       int32       `json:"limit"`
+	Offset      int32       `json:"offset"`
+}
+
+func (q *Queries) ListUnassociatedWorkProducts(ctx context.Context, arg ListUnassociatedWorkProductsParams) ([]WorkProduct, error) {
+	rows, err := q.db.Query(ctx, listUnassociatedWorkProducts,
+		arg.WorkspaceID,
+		arg.Kind,
+		arg.Search,
+		arg.Limit,
+		arg.Offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []WorkProduct{}
+	for rows.Next() {
+		var i WorkProduct
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.Kind,
+			&i.Provider,
+			&i.ExternalIdentity,
+			&i.ExternalUrl,
+			&i.ProviderRecordType,
+			&i.ProviderRecordID,
+			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
@@ -919,40 +956,6 @@ func (q *Queries) ListWorkProductRelationsByTask(ctx context.Context, arg ListWo
 	return items, nil
 }
 
-const listIssueIDsForWorkProduct = `-- name: ListIssueIDsForWorkProduct :many
-SELECT DISTINCT issue_id
-FROM work_product_relation
-WHERE workspace_id = $1 AND work_product_id = $2
-  AND issue_id IS NOT NULL AND detached_at IS NULL
-  AND relation_source IN ('manual_explicit', 'task_explicit', 'execution_branch_discovery', 'provider_discovery')
-ORDER BY issue_id
-`
-
-type ListIssueIDsForWorkProductParams struct {
-	WorkspaceID   pgtype.UUID `json:"workspace_id"`
-	WorkProductID pgtype.UUID `json:"work_product_id"`
-}
-
-func (q *Queries) ListIssueIDsForWorkProduct(ctx context.Context, arg ListIssueIDsForWorkProductParams) ([]pgtype.UUID, error) {
-	rows, err := q.db.Query(ctx, listIssueIDsForWorkProduct, arg.WorkspaceID, arg.WorkProductID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []pgtype.UUID{}
-	for rows.Next() {
-		var issueID pgtype.UUID
-		if err := rows.Scan(&issueID); err != nil {
-			return nil, err
-		}
-		items = append(items, issueID)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listWorkProductsByIssue = `-- name: ListWorkProductsByIssue :many
 WITH linked AS (
     SELECT DISTINCT ON (product.id)
@@ -1023,10 +1026,9 @@ type ListWorkProductsByIssueRow struct {
 // relation that put it there, so a caller never has to correlate two lists to
 // learn why a product is attached or which relation to detach.
 //
-// provider_reference relations are excluded: those record a bare mention in a
-// PR body, which is evidence that somebody typed the identifier, not a claim
-// that the PR does the issue's work. Surfacing them would let any passing
-// mention masquerade as delivered work.
+// One product may have a discovery claim and a later explicit confirmation.
+// Return one row per product and prefer the strongest current claim, matching
+// the Rust source's DISTINCT ON policy.
 func (q *Queries) ListWorkProductsByIssue(ctx context.Context, arg ListWorkProductsByIssueParams) ([]ListWorkProductsByIssueRow, error) {
 	rows, err := q.db.Query(ctx, listWorkProductsByIssue,
 		arg.WorkspaceID,

@@ -483,17 +483,10 @@ type LinkIssueToPullRequestParams struct {
 // =====================
 // Issue ↔ Pull Request link
 // =====================
-// close_intent reflects the PR's explicit close declaration at the moment
-// the webhook is allowed to update that intent. Open/edit/merge webhooks use
-// the current title/body parse result so authors can remove a closing keyword
-// before merge. Post-terminal edits can opt into preserving the stored value,
-// keeping the merge-time decision stable.
-//
-// mention_only marks a link justified ONLY by a bare body mention (no closing
-// keyword, no title/branch reference). It follows the same preserve gate as
-// close_intent so a post-terminal edit can't retroactively hide a PR that did
-// the work. Such a link is stored as a `provider_reference` relation, which
-// every issue-facing read filters out (see ListWorkProductsByIssue).
+// Preserve the existing identifier-based GitHub auto-link contract. The
+// relation is still written to the unified Work Product tables, so the
+// current provider discovery behavior and the new explicit Work Product
+// surface share one durable representation.
 func (q *Queries) LinkIssueToPullRequest(ctx context.Context, arg LinkIssueToPullRequestParams) error {
 	_, err := q.db.Exec(ctx, linkIssueToPullRequest,
 		arg.IssueID,

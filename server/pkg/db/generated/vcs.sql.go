@@ -283,11 +283,8 @@ type LinkIssueToVCSPullRequestParams struct {
 // =====================
 // Issue ↔ VCS PR link
 // =====================
-// mention_only marks a link justified ONLY by a bare body mention (no closing
-// keyword and no title/branch reference), mirroring the GitHub link upsert. It
-// is stored as a `provider_reference` relation source rather than a flag.
-// preserve_close_intent freezes both close_intent and the relation source once
-// a terminal merge/close event has been recorded.
+// Keep the existing identifier-based self-hosted VCS auto-link contract while
+// storing its relation in the unified Work Product model.
 func (q *Queries) LinkIssueToVCSPullRequest(ctx context.Context, arg LinkIssueToVCSPullRequestParams) error {
 	_, err := q.db.Exec(ctx, linkIssueToVCSPullRequest,
 		arg.IssueID,

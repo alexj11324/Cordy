@@ -14,9 +14,9 @@ FROM work_product product
 WHERE product.workspace_id = $1
   AND product.kind = $2
   AND (
-      $3 = ''
-      OR strpos(lower(product.external_identity), lower($3)) > 0
-      OR strpos(lower(COALESCE(product.external_url, '')), lower($3)) > 0
+      sqlc.arg('search') = ''
+      OR strpos(lower(product.external_identity), lower(sqlc.arg('search'))) > 0
+      OR strpos(lower(COALESCE(product.external_url, '')), lower(sqlc.arg('search'))) > 0
   )
   AND NOT EXISTS (
       SELECT 1
@@ -28,7 +28,7 @@ WHERE product.workspace_id = $1
         AND relation.relation_source IN ('manual_explicit', 'task_explicit', 'execution_branch_discovery', 'provider_discovery')
   )
 ORDER BY product.updated_at DESC, product.id DESC
-LIMIT $4 OFFSET $5;
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
 -- name: ListWorkProductsByIssue :many
 -- The issue's Work Product list. Each row carries the product and the live

@@ -11,6 +11,39 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const consumeTaskCapabilityLease = `-- name: ConsumeTaskCapabilityLease :execrows
+UPDATE task_token
+SET revoked_at = now(), revoked_reason = $1
+WHERE id = $2
+  AND workspace_id = $3
+  AND task_id = $4
+  AND revoked_at IS NULL
+  AND expires_at > now()
+`
+
+type ConsumeTaskCapabilityLeaseParams struct {
+	RevokedReason pgtype.Text `json:"revoked_reason"`
+	ID            pgtype.UUID `json:"id"`
+	WorkspaceID   pgtype.UUID `json:"workspace_id"`
+	TaskID        pgtype.UUID `json:"task_id"`
+}
+
+// One-shot consumers must revoke, not delete: the row remains available to the
+// explain/audit and replay paths while the update is atomic with the caller's
+// transaction (IssueService.Create for quick-create).
+func (q *Queries) ConsumeTaskCapabilityLease(ctx context.Context, arg ConsumeTaskCapabilityLeaseParams) (int64, error) {
+	result, err := q.db.Exec(ctx, consumeTaskCapabilityLease,
+		arg.RevokedReason,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.TaskID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const createTaskToken = `-- name: CreateTaskToken :one
 WITH target_agent_guard AS MATERIALIZED (
     SELECT agent.id, agent.workspace_id
@@ -175,6 +208,24 @@ func (q *Queries) CreateTaskToken(ctx context.Context, arg CreateTaskTokenParams
 	return i, err
 }
 
+const deleteExpiredTaskTokens = `-- name: DeleteExpiredTaskTokens :exec
+DELETE FROM task_token WHERE expires_at <= now()
+`
+
+func (q *Queries) DeleteExpiredTaskTokens(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, deleteExpiredTaskTokens)
+	return err
+}
+
+const deleteTaskTokensByTask = `-- name: DeleteTaskTokensByTask :exec
+DELETE FROM task_token WHERE task_id = $1
+`
+
+func (q *Queries) DeleteTaskTokensByTask(ctx context.Context, taskID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteTaskTokensByTask, taskID)
+	return err
+}
+
 const getCurrentTaskCapabilityLease = `-- name: GetCurrentTaskCapabilityLease :one
 SELECT id, token_hash, task_id, agent_id, workspace_id, user_id,
        expires_at, created_at, scope, parent_token_id, parent_fence,
@@ -196,6 +247,10 @@ type GetCurrentTaskCapabilityLeaseParams struct {
 	ClaimDispatchedAt pgtype.Timestamptz `json:"claim_dispatched_at"`
 }
 
+// Resolve the one active lease for the task's current dispatched claim. The
+// task-token middleware validates the presented bearer separately; this query
+// is for task-scoped consumers (notably quick-create) that need the server's
+// lease id without trusting a client-supplied id.
 func (q *Queries) GetCurrentTaskCapabilityLease(ctx context.Context, arg GetCurrentTaskCapabilityLeaseParams) (TaskToken, error) {
 	row := q.db.QueryRow(ctx, getCurrentTaskCapabilityLease, arg.TaskID, arg.WorkspaceID, arg.ClaimDispatchedAt)
 	var i TaskToken
@@ -220,49 +275,6 @@ func (q *Queries) GetCurrentTaskCapabilityLease(ctx context.Context, arg GetCurr
 		&i.RevokedReason,
 	)
 	return i, err
-}
-
-const consumeTaskCapabilityLease = `-- name: ConsumeTaskCapabilityLease :execrows
-UPDATE task_token
-SET revoked_at = now(), revoked_reason = $1
-WHERE id = $2
-  AND workspace_id = $3
-  AND task_id = $4
-  AND revoked_at IS NULL
-  AND expires_at > now()
-`
-
-type ConsumeTaskCapabilityLeaseParams struct {
-	RevokedReason pgtype.Text `json:"revoked_reason"`
-	ID            pgtype.UUID `json:"id"`
-	WorkspaceID   pgtype.UUID `json:"workspace_id"`
-	TaskID        pgtype.UUID `json:"task_id"`
-}
-
-func (q *Queries) ConsumeTaskCapabilityLease(ctx context.Context, arg ConsumeTaskCapabilityLeaseParams) (int64, error) {
-	result, err := q.db.Exec(ctx, consumeTaskCapabilityLease, arg.RevokedReason, arg.ID, arg.WorkspaceID, arg.TaskID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
-const deleteExpiredTaskTokens = `-- name: DeleteExpiredTaskTokens :exec
-DELETE FROM task_token WHERE expires_at <= now()
-`
-
-func (q *Queries) DeleteExpiredTaskTokens(ctx context.Context) error {
-	_, err := q.db.Exec(ctx, deleteExpiredTaskTokens)
-	return err
-}
-
-const deleteTaskTokensByTask = `-- name: DeleteTaskTokensByTask :exec
-DELETE FROM task_token WHERE task_id = $1
-`
-
-func (q *Queries) DeleteTaskTokensByTask(ctx context.Context, taskID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, deleteTaskTokensByTask, taskID)
-	return err
 }
 
 const getTaskTokenByHash = `-- name: GetTaskTokenByHash :one
