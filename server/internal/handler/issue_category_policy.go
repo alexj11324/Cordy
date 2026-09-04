@@ -67,9 +67,7 @@ func (h *Handler) ListIssueCategoryPolicies(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	policies, err := h.Queries.ListWorkspaceIssueCategoryPolicies(r.Context(), db.ListWorkspaceIssueCategoryPoliciesParams{
-		WorkspaceID: wsUUID,
-	})
+	policies, err := h.Queries.ListWorkspaceIssueCategoryPolicies(r.Context(), wsUUID)
 	if err != nil {
 		slog.Warn("ListIssueCategoryPolicies failed", append(logger.RequestAttrs(r), "error", err)...)
 		writeError(w, http.StatusInternalServerError, "failed to list issue category policies")

@@ -12,6 +12,7 @@ import (
 )
 
 const getWorkspaceIssueCategoryPolicy = `-- name: GetWorkspaceIssueCategoryPolicy :one
+
 SELECT workspace_id,
        category,
        default_execution_agent_id,
@@ -28,6 +29,7 @@ type GetWorkspaceIssueCategoryPolicyParams struct {
 	Category    string      `json:"category"`
 }
 
+// Workspace-wide execution and review defaults for issue status categories.
 func (q *Queries) GetWorkspaceIssueCategoryPolicy(ctx context.Context, arg GetWorkspaceIssueCategoryPolicyParams) (WorkspaceIssueCategoryPolicy, error) {
 	row := q.db.QueryRow(ctx, getWorkspaceIssueCategoryPolicy, arg.WorkspaceID, arg.Category)
 	var i WorkspaceIssueCategoryPolicy
@@ -54,12 +56,8 @@ WHERE workspace_id = $1
 ORDER BY category
 `
 
-type ListWorkspaceIssueCategoryPoliciesParams struct {
-	WorkspaceID pgtype.UUID `json:"workspace_id"`
-}
-
-func (q *Queries) ListWorkspaceIssueCategoryPolicies(ctx context.Context, arg ListWorkspaceIssueCategoryPoliciesParams) ([]WorkspaceIssueCategoryPolicy, error) {
-	rows, err := q.db.Query(ctx, listWorkspaceIssueCategoryPolicies, arg.WorkspaceID)
+func (q *Queries) ListWorkspaceIssueCategoryPolicies(ctx context.Context, workspaceID pgtype.UUID) ([]WorkspaceIssueCategoryPolicy, error) {
+	rows, err := q.db.Query(ctx, listWorkspaceIssueCategoryPolicies, workspaceID)
 	if err != nil {
 		return nil, err
 	}
