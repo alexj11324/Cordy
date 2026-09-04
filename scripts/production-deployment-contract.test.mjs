@@ -185,4 +185,16 @@ test("the deployed Web Clerk provider is runtime-configured and accepts both bro
     /CLERK_AUTHORIZED_PARTIES: https:\/\/accounts\.aspectlylabs\.com,https:\/\/patchbay\.aspectlylabs\.com/u,
   );
   assert.match(productionOverride, /PATCHBAY_CLERK_PUBLISHABLE_KEY/u);
+  assert.match(
+    productionOverride,
+    /NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: \$\{PATCHBAY_CLERK_PUBLISHABLE_KEY/u,
+  );
+  assert.match(
+    productionOverride,
+    /CLERK_SECRET_KEY: \$\{CLERK_SECRET_KEY/u,
+  );
+  assert.match(
+    deployGateway,
+    /release \/ "deploy\/origin\/production-product\.override\.yml"/u,
+  );
 });
