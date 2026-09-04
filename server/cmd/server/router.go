@@ -2450,7 +2450,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			r.Get("/api/agent-task-snapshot", h.ListWorkspaceAgentTaskSnapshot)
 
 			// Independent workspace-level list backing the issues-header
-			// "agents working" chip and its assignee-id Table filter.
+			// "agents working" chip and its executor-id Table filter.
 			r.Get("/api/working-agents", h.ListWorkspaceWorkingAgents)
 
 			// Workspace-wide daily agent activity (last 30d, anchored on

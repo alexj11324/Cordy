@@ -43,7 +43,7 @@ func TestCommentMentionsAnyone(t *testing.T) {
 }
 
 // shouldEnqueueTeamLeaderOnCommentForTest reports whether the shared cascade
-// would wake the issue's assigned team leader.
+// would wake the issue executor's team leader.
 func shouldEnqueueTeamLeaderOnCommentForTest(ctx context.Context, issue db.Issue, content, authorType, authorID string) bool {
 	triggers, _ := testHandler.computeCommentAgentTriggers(ctx, issue, content, nil, authorType, authorID, commentTriggerComputeOptions{})
 	return triggersContainIssueExecutorTeamLeader(triggers)
@@ -63,7 +63,7 @@ func triggersContainIssueExecutorTeamLeader(triggers []commentAgentTrigger) bool
 	return false
 }
 
-// teamCommentTriggerFixture wires a team assigned to a fresh issue and
+// teamCommentTriggerFixture wires a team executor on a fresh issue and
 // returns the loaded db.Issue plus the leader agent UUID for use in
 // cascade integration tests.
 type teamCommentTriggerFixture struct {
@@ -127,7 +127,7 @@ func newTeamCommentTriggerFixture(t *testing.T) teamCommentTriggerFixture {
 }
 
 // TestShouldEnqueueTeamLeaderOnComment_SkipsWhenCommentRoutesElsewhere
-// pins the cascade: explicit participant mentions do not also wake the assigned
+// pins the cascade: explicit participant mentions do not also wake the executor's
 // team leader. Issue cross-references are not routing and do not suppress the
 // leader.
 func TestShouldEnqueueTeamLeaderOnComment_SkipsWhenMemberMentionsAnyone(t *testing.T) {
@@ -207,7 +207,7 @@ func TestShouldEnqueueTeamLeaderOnComment_SkipsWhenMemberMentionsAnyone(t *testi
 			authorType:  "agent",
 			authorID:    fx.OtherID,
 			want:        false,
-			description: "explicit @agent routes only to the mentioned target; the assigned team-leader fallback must not also fire (no double-enqueue)",
+			description: "explicit @agent routes only to the mentioned target; the executor's team-leader fallback must not also fire (no double-enqueue)",
 		},
 	}
 
@@ -224,8 +224,8 @@ func TestShouldEnqueueTeamLeaderOnComment_SkipsWhenMemberMentionsAnyone(t *testi
 
 // TestShouldEnqueueTeamLeaderOnComment_AgentAuthoredWorkerCommentsWakeLeader
 // pins the MUL-3879 restored behavior in the new MUL-3794 cascade: an
-// agent-authored worker-result comment on a team-assigned issue wakes the
-// assigned team leader so the leader→worker→leader coordination loop stays
+// agent-authored worker-result comment on a team-executor issue wakes the
+// team executor's leader so the leader→worker→leader coordination loop stays
 // closed, while the leader's own self-trigger loop stays suppressed.
 func TestShouldEnqueueTeamLeaderOnComment_AgentAuthoredWorkerCommentsWakeLeader(t *testing.T) {
 	if testHandler == nil || testPool == nil {
@@ -263,7 +263,7 @@ func TestShouldEnqueueTeamLeaderOnComment_AgentAuthoredWorkerCommentsWakeLeader(
 	}
 
 	// Case 1: a worker agent (not the leader) posts a result comment on the
-	// team-assigned issue — the assigned leader must wake to coordinate.
+	// team-executor issue — the executor's leader must wake to coordinate.
 	t.Run("worker agent comment wakes team leader", func(t *testing.T) {
 		clearTasks()
 		if got := shouldEnqueueTeamLeaderOnCommentForTest(ctx, fx.Issue, "pushed the fix, PR is up", "agent", fx.OtherID); !got {
@@ -296,13 +296,13 @@ func TestShouldEnqueueTeamLeaderOnComment_AgentAuthoredWorkerCommentsWakeLeader(
 	})
 
 	// Case 4: an agent-authored comment carrying an explicit @agent mention
-	// routes only to the mentioned target — the assigned team leader must NOT
+	// routes only to the mentioned target — the executor's team leader must NOT
 	// also be enqueued via the fallback path (no double-enqueue).
-	t.Run("explicit mention does not double-enqueue assigned leader", func(t *testing.T) {
+	t.Run("explicit mention does not double-enqueue executor leader", func(t *testing.T) {
 		clearTasks()
 		content := "handing to [@Other](mention://agent/" + fx.OtherID + ")"
 		if got := shouldEnqueueTeamLeaderOnCommentForTest(ctx, fx.Issue, content, "agent", fx.LeaderID); got {
-			t.Fatalf("explicit mention: expected no assigned-leader fallback, got wake")
+			t.Fatalf("explicit mention: expected no executor-leader fallback, got wake")
 		}
 	})
 }
@@ -377,7 +377,7 @@ func TestCreateComment_TeamPlainReplyToMemberParentKeepsRootMentionOwner(t *test
 
 	// 3. Member posts a reply in the same thread with NO mentions.
 	//    The root's @OtherAgent mention owns the thread, so the reply returns
-	//    to OtherAgent instead of falling back to the assigned team leader.
+	//    to OtherAgent instead of falling back to the executor's team leader.
 	postMemberComment(map[string]any{
 		"content":   "any update?",
 		"parent_id": parent.ID,
@@ -457,16 +457,16 @@ func TestCreateComment_DualRoleAgentWorkerCommentWakesLeader(t *testing.T) {
 	}
 }
 
-// TestCreateComment_TeamLeaderMentionTaskDoesNotSelfTriggerAssignedFallback
+// TestCreateComment_TeamLeaderMentionTaskDoesNotSelfTriggerExecutorFallback
 // pins MUL-4024's direct-mention gap:
 //
-//   - A member explicitly @mentions the issue's assigned team leader by agent
+//   - A member explicitly @mentions the issue executor's team leader by agent
 //     id, which queues a generic mention task for L (is_leader_task=false,
 //     team_id=NULL).
 //   - L posts a plain reply while running that mention task.
-//   - The assigned-team fallback must not treat that generic mention task as a
+//   - The executor-team fallback must not treat that generic mention task as a
 //     same-team worker result and queue L again as the leader.
-func TestCreateComment_TeamLeaderMentionTaskDoesNotSelfTriggerAssignedFallback(t *testing.T) {
+func TestCreateComment_TeamLeaderMentionTaskDoesNotSelfTriggerExecutorFallback(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
 	}
@@ -546,12 +546,12 @@ func TestCreateComment_TeamLeaderMentionTaskDoesNotSelfTriggerAssignedFallback(t
 	}
 }
 
-// TestCreateComment_TeamLeaderThreadParentTaskDoesNotSelfTriggerAssignedFallback
+// TestCreateComment_TeamLeaderThreadParentTaskDoesNotSelfTriggerExecutorFallback
 // pins MUL-4024's thread-parent gap: a member reply to the leader's earlier
 // comment queues L through EnqueueTaskForThreadParent (is_leader_task=false,
 // team_id=NULL). L's reply from that generic task must not queue L again as
-// the assigned team leader.
-func TestCreateComment_TeamLeaderThreadParentTaskDoesNotSelfTriggerAssignedFallback(t *testing.T) {
+// the executor's team leader.
+func TestCreateComment_TeamLeaderThreadParentTaskDoesNotSelfTriggerExecutorFallback(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
 	}
@@ -780,7 +780,7 @@ func TestCreateComment_TeamMentionPrivateLeaderBlocksPlainMember(t *testing.T) {
 
 // TestCreateComment_TeamMentionTriggersLeader verifies that @mentioning a
 // team in a comment triggers the team's leader agent via the mention path,
-// even when the issue is NOT assigned to that team.
+// even when the issue does NOT use that team as executor.
 func TestCreateComment_TeamMentionTriggersLeader(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
@@ -807,7 +807,7 @@ func TestCreateComment_TeamMentionTriggersLeader(t *testing.T) {
 		testPool.Exec(context.Background(), `DELETE FROM team WHERE id = $1`, teamID)
 	})
 
-	// Create an issue NOT assigned to the team (assigned to nobody).
+	// Create an issue NOT executed by the team (with no executor).
 	var issueID string
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO issue (workspace_id, creator_type, creator_id, title)

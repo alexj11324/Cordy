@@ -29,10 +29,10 @@ func (h *Handler) issueTriggerWriteProbe(r *http.Request, actorType, actorID str
 		IsSelfLoop: func() bool {
 			return h.isAgentRunningOnIssue(r, actorType, issue)
 		},
-		SuppressActiveSelfAssignment: func(agentID pgtype.UUID) bool {
-			suppress := h.shouldSuppressActiveSelfAssignment(r.Context(), actorType, actorID, issue.ID, agentID)
+		SuppressActiveSelfExecutor: func(agentID pgtype.UUID) bool {
+			suppress := h.shouldSuppressActiveSelfExecutor(r.Context(), actorType, actorID, issue.ID, agentID)
 			if suppress {
-				slog.Info("suppressing duplicate self-assignment enqueue",
+				slog.Info("suppressing duplicate self-executor enqueue",
 					"issue_id", uuidToString(issue.ID),
 					"agent_id", uuidToString(agentID),
 				)
@@ -55,13 +55,13 @@ func (h *Handler) issueTriggerPreviewProbe(r *http.Request, actorType, actorID, 
 		IsSelfLoop: func() bool {
 			return h.isAgentRunningOnIssue(r, actorType, issue)
 		},
-		SuppressActiveSelfAssignment: func(agentID pgtype.UUID) bool {
-			return h.shouldSuppressActiveSelfAssignment(r.Context(), actorType, actorID, issue.ID, agentID)
+		SuppressActiveSelfExecutor: func(agentID pgtype.UUID) bool {
+			return h.shouldSuppressActiveSelfExecutor(r.Context(), actorType, actorID, issue.ID, agentID)
 		},
 	}
 }
 
-// shouldSuppressActiveSelfAssignment prevents a trusted task-scoped agent
+// shouldSuppressActiveSelfExecutor prevents a trusted task-scoped agent
 // actor from creating another run for the target pair merely to claim issue
 // ownership. It intentionally checks the TARGET pair, not whether the actor is
 // busy anywhere: cross-issue self handoffs are a supported workflow and must
@@ -70,7 +70,7 @@ func (h *Handler) issueTriggerPreviewProbe(r *http.Request, actorType, actorID, 
 // itself intact. The API still returns success for that ownership write; only
 // the server log exposes the failed advisory lookup, because enqueue is the
 // optional side effect and suppressing it is safer than risking duplicate work.
-func (h *Handler) shouldSuppressActiveSelfAssignment(ctx context.Context, actorType, actorID string, issueID, targetAgentID pgtype.UUID) bool {
+func (h *Handler) shouldSuppressActiveSelfExecutor(ctx context.Context, actorType, actorID string, issueID, targetAgentID pgtype.UUID) bool {
 	if actorType != "agent" || actorID == "" || actorID != uuidToString(targetAgentID) {
 		return false
 	}
@@ -109,14 +109,14 @@ func memberActorUserID(actorType, actorID string) pgtype.UUID {
 	return uid
 }
 
-// IssueTriggerPreviewRequest asks "if I apply this assignee and/or status to
+// IssueTriggerPreviewRequest asks "if I apply this executor and/or status to
 // these issues (or create one), which runs will start". All fields are
 // optional; a nil prospective field means "leave unchanged".
 type IssueTriggerPreviewRequest struct {
 	// IssueIDs are existing issues to evaluate (single assign, single status,
 	// or a batch). Empty with IsCreate=true evaluates a candidate new issue.
 	IssueIDs []string `json:"issue_ids"`
-	// IsCreate previews a not-yet-persisted issue from AssigneeType/ID/Status.
+	// IsCreate previews a not-yet-persisted issue from ExecutorType/ID/Status.
 	IsCreate     bool    `json:"is_create"`
 	ExecutorType *string `json:"executor_type"`
 	ExecutorID   *string `json:"executor_id"`
@@ -127,7 +127,7 @@ type IssueTriggerPreviewRequest struct {
 // prospective write. AgentID is the runnable agent (team leader for teams).
 // HandoffSupported is the soft-gate signal: false when the target runtime's
 // daemon is too old to render a handoff note, so the UI can gray out the note
-// box rather than silently drop the text. The assignment itself still works.
+// box rather than silently drop the text. The executor write itself still works.
 type IssueTriggerPreviewItem struct {
 	IssueID          string `json:"issue_id"`
 	AgentID          string `json:"agent_id"`
@@ -169,12 +169,12 @@ func (h *Handler) PreviewIssueTrigger(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve the prospective assignee once — a malformed id is a deterministic
+	// Resolve the prospective executor once — a malformed id is a deterministic
 	// 400, never a silent miscount.
 	var (
 		newExecutorType pgtype.Text
 		newExecutorID   pgtype.UUID
-		hasNewAssignee  bool
+		hasNewExecutor  bool
 	)
 	if req.ExecutorType != nil && *req.ExecutorType != "" && req.ExecutorID != nil && *req.ExecutorID != "" {
 		id, parseOK := parseUUIDOrBadRequest(w, *req.ExecutorID, "executor_id")
@@ -183,7 +183,7 @@ func (h *Handler) PreviewIssueTrigger(w http.ResponseWriter, r *http.Request) {
 		}
 		newExecutorType = pgtype.Text{String: *req.ExecutorType, Valid: true}
 		newExecutorID = id
-		hasNewAssignee = true
+		hasNewExecutor = true
 	}
 
 	actorType, actorID := h.resolveActor(r, userID, workspaceID)
@@ -238,7 +238,7 @@ func (h *Handler) PreviewIssueTrigger(w http.ResponseWriter, r *http.Request) {
 
 		post := loaded
 		in := service.IssueTriggerInput{PrevStatus: loaded.Status}
-		if hasNewAssignee {
+		if hasNewExecutor {
 			post.ExecutorType = newExecutorType
 			post.ExecutorID = newExecutorID
 			in.ExecutorChanged = loaded.ExecutorType.String != newExecutorType.String ||

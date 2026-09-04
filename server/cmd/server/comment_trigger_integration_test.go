@@ -172,8 +172,8 @@ func createSecondAgent(t *testing.T) string {
 	return id
 }
 
-// createIssueAssignedToAgent creates a todo issue assigned to the given agent.
-func createIssueAssignedToAgent(t *testing.T, title, agentID string) string {
+// createIssueWithAgentExecutor creates a todo issue executed by the given agent.
+func createIssueWithAgentExecutor(t *testing.T, title, agentID string) string {
 	t.Helper()
 	resp := authRequest(t, "PUT", fmt.Sprintf("/api/issues/%s", createIssue(t, title)), map[string]any{
 		"executor_type": "agent",
@@ -253,7 +253,7 @@ func strPtr(s string) *string { return &s }
 // - presence/absence of @mentions
 func TestCommentTriggerOnComment(t *testing.T) {
 	agentID := getAgentID(t)
-	issueID := createIssueAssignedToAgent(t, "Comment trigger integration test", agentID)
+	issueID := createIssueWithAgentExecutor(t, "Comment trigger integration test", agentID)
 	t.Cleanup(func() {
 		clearTasks(t, issueID)
 		resp := authRequest(t, "DELETE", "/api/issues/"+issueID, nil)
@@ -270,7 +270,7 @@ func TestCommentTriggerOnComment(t *testing.T) {
 
 	t.Run("top-level comment mentioning only others suppresses trigger", func(t *testing.T) {
 		clearTasks(t, issueID)
-		// Mention a fake agent UUID that is not the assignee.
+		// Mention a fake agent UUID that is not the executor.
 		content := "[@SomeoneElse](mention://agent/00000000-0000-0000-0000-000000000001) what do you think?"
 		postComment(t, issueID, content, nil)
 		if n := countPendingTasks(t, issueID); n != 0 {
@@ -278,7 +278,7 @@ func TestCommentTriggerOnComment(t *testing.T) {
 		}
 	})
 
-	t.Run("top-level comment mentioning assignee triggers agent", func(t *testing.T) {
+	t.Run("top-level comment mentioning executor triggers agent", func(t *testing.T) {
 		clearTasks(t, issueID)
 		content := fmt.Sprintf("[@Agent](mention://agent/%s) fix this", agentID)
 		postComment(t, issueID, content, nil)
@@ -298,7 +298,7 @@ func TestCommentTriggerOnComment(t *testing.T) {
 		}
 	})
 
-	// Regression guard for #1301: the assignee on_comment path must record
+	// Regression guard for #1301: the executor on_comment path must record
 	// the NEW reply as trigger_comment_id, not the thread root. Otherwise
 	// the daemon feeds stale content to the agent prompt, which with
 	// `--resume` sessions surfaces as "already replied, no further action".
@@ -317,7 +317,7 @@ func TestCommentTriggerOnComment(t *testing.T) {
 		}
 	})
 
-	t.Run("reply to unowned member thread without mentions does not trigger assignee", func(t *testing.T) {
+	t.Run("reply to unowned member thread without mentions does not trigger executor", func(t *testing.T) {
 		clearTasks(t, issueID)
 		// Member starts a thread.
 		threadID := postComment(t, issueID, "Hey team, what do you think?", nil)
@@ -352,39 +352,39 @@ func TestCommentTriggerOnComment(t *testing.T) {
 		}
 	})
 
-	t.Run("reply to member thread mentioning assignee triggers agent", func(t *testing.T) {
+	t.Run("reply to member thread mentioning executor triggers agent", func(t *testing.T) {
 		clearTasks(t, issueID)
 		// Member starts a thread.
 		threadID := postComment(t, issueID, "Question about this", nil)
 		clearTasks(t, issueID)
-		// Reply mentioning the assignee agent.
+		// Reply mentioning the executor agent.
 		content := fmt.Sprintf("[@Agent](mention://agent/%s) can you help with this?", agentID)
 		postComment(t, issueID, content, strPtr(threadID))
 		if n := countPendingTasks(t, issueID); n != 0 {
-			// The mention of the assignee agent unblocks on_comment but
-			// the assignee-mention path in on_mention skips the assignee.
+			// The mention of the executor agent unblocks on_comment but
+			// the executor-mention path in on_mention skips the executor.
 			// Either 0 or 1 is acceptable depending on the on_comment logic.
 			// With our implementation: isReplyToMemberThread returns false
-			// (assignee mentioned), and commentMentionsOthersButNotAssignee
-			// returns false (assignee is mentioned). So on_comment triggers.
+			// (executor mentioned), and commentMentionsOthersButNotExecutor
+			// returns false (executor is mentioned). So on_comment triggers.
 			// Let's re-check.
 		}
 		if n := countPendingTasks(t, issueID); n != 1 {
-			t.Errorf("expected 1 pending task (assignee mentioned in member thread), got %d", n)
+			t.Errorf("expected 1 pending task (executor mentioned in member thread), got %d", n)
 		}
 	})
 
-	t.Run("reply to member thread that @mentioned assignee triggers without re-mention", func(t *testing.T) {
+	t.Run("reply to member thread that @mentioned executor triggers without re-mention", func(t *testing.T) {
 		clearTasks(t, issueID)
-		// Member starts a thread that @mentions the assignee agent.
+		// Member starts a thread that @mentions the executor agent.
 		content := fmt.Sprintf("[@Agent](mention://agent/%s) can you review this?", agentID)
 		threadID := postComment(t, issueID, content, nil)
 		// Clear the task created by the top-level mention.
 		clearTasks(t, issueID)
-		// Reply in the thread WITHOUT re-mentioning the assignee.
+		// Reply in the thread WITHOUT re-mentioning the executor.
 		postComment(t, issueID, "Here is more context for you", strPtr(threadID))
 		if n := countPendingTasks(t, issueID); n != 1 {
-			t.Errorf("expected 1 pending task (assignee mentioned in thread root), got %d", n)
+			t.Errorf("expected 1 pending task (executor mentioned in thread root), got %d", n)
 		}
 	})
 }
@@ -393,7 +393,7 @@ func TestCommentTriggerOnComment(t *testing.T) {
 // trigger agent execution — @all is a broadcast, not a direct request.
 func TestCommentTriggerAtAllSuppression(t *testing.T) {
 	agentID := getAgentID(t)
-	issueID := createIssueAssignedToAgent(t, "@all suppression test", agentID)
+	issueID := createIssueWithAgentExecutor(t, "@all suppression test", agentID)
 	t.Cleanup(func() {
 		clearTasks(t, issueID)
 		resp := authRequest(t, "DELETE", "/api/issues/"+issueID, nil)
@@ -469,7 +469,7 @@ func TestCommentTriggerOnAssignNoStatusGate(t *testing.T) {
 func TestCommentTriggerOnMentionNoStatusGate(t *testing.T) {
 	agentID := getAgentID(t)
 
-	// Create a done issue (not assigned to agent).
+	// Create a done issue (not executed by the agent).
 	issueID := createIssue(t, "On-mention done issue test")
 	resp := authRequest(t, "PUT", "/api/issues/"+issueID, map[string]any{
 		"status": "done",
@@ -497,7 +497,7 @@ func TestCommentTriggerOnMentionNoStatusGate(t *testing.T) {
 func TestCommentTriggerThreadExplicitMentions(t *testing.T) {
 	agentID := getAgentID(t)
 
-	// Create an issue NOT assigned to the agent, so on_comment won't fire.
+	// Create an issue NOT executed by the agent, so on_comment won't fire.
 	issueID := createIssue(t, "Thread-inherited mention test")
 	t.Cleanup(func() {
 		clearTasks(t, issueID)
@@ -613,12 +613,12 @@ func TestCommentTriggerThreadExplicitMentions(t *testing.T) {
 // also cancels any active tasks that were triggered by it. Without this,
 // the daemon would still claim the queued task after the FK SET NULL
 // nullified its trigger_comment_id, and the agent would either run with a
-// stale prompt (race during claim) or with a generic "you are assigned"
+// stale prompt (race during claim) or with a generic "you are the executor"
 // prompt that has no record of the now-deleted user request — both of
 // which manifest as "the agent still sees the deleted comment".
 func TestDeleteCommentCancelsTriggeredTasks(t *testing.T) {
 	agentID := getAgentID(t)
-	issueID := createIssueAssignedToAgent(t, "Delete-comment cancels task test", agentID)
+	issueID := createIssueWithAgentExecutor(t, "Delete-comment cancels task test", agentID)
 	t.Cleanup(func() {
 		clearTasks(t, issueID)
 		resp := authRequest(t, "DELETE", "/api/issues/"+issueID, nil)
@@ -648,7 +648,7 @@ func TestDeleteCommentCancelsTriggeredTasks(t *testing.T) {
 // duplicate tasks (coalescing dedup).
 func TestCommentTriggerCoalescing(t *testing.T) {
 	agentID := getAgentID(t)
-	issueID := createIssueAssignedToAgent(t, "Coalescing test", agentID)
+	issueID := createIssueWithAgentExecutor(t, "Coalescing test", agentID)
 	t.Cleanup(func() {
 		clearTasks(t, issueID)
 		resp := authRequest(t, "DELETE", "/api/issues/"+issueID, nil)
@@ -664,16 +664,16 @@ func TestCommentTriggerCoalescing(t *testing.T) {
 	}
 }
 
-// TestCommentTriggerMentionAssigneeDoneIssue verifies that @mentioning the
-// assigned agent on a done issue still triggers execution. Previously the
-// assignee was unconditionally skipped in the mention path (assuming
+// TestCommentTriggerMentionExecutorDoneIssue verifies that @mentioning the
+// issue executor on a done issue still triggers execution. Previously the
+// executor was unconditionally skipped in the mention path (assuming
 // on_comment handled it), but on_comment is suppressed for terminal statuses.
-func TestCommentTriggerMentionAssigneeDoneIssue(t *testing.T) {
+func TestCommentTriggerMentionExecutorDoneIssue(t *testing.T) {
 	agentID := getAgentID(t)
 
-	// Create an issue assigned to the agent, then mark it done.
-	issueID := createIssueAssignedToAgent(t, "Mention-assignee-done test", agentID)
-	clearTasks(t, issueID) // clear any tasks from assignment
+	// Create an issue executed by the agent, then mark it done.
+	issueID := createIssueWithAgentExecutor(t, "Mention-executor-done test", agentID)
+	clearTasks(t, issueID) // clear any tasks from executor routing
 	resp := authRequest(t, "PUT", "/api/issues/"+issueID, map[string]any{
 		"status": "done",
 	})
@@ -685,11 +685,11 @@ func TestCommentTriggerMentionAssigneeDoneIssue(t *testing.T) {
 		resp.Body.Close()
 	})
 
-	// @mention the assigned agent on the done issue — should trigger.
+	// @mention the executor agent on the done issue — should trigger.
 	content := fmt.Sprintf("[@Agent](mention://agent/%s) reopen this please", agentID)
 	postComment(t, issueID, content, nil)
 
 	if n := countPendingTasks(t, issueID); n != 1 {
-		t.Errorf("expected 1 pending task after @mention of assignee on done issue, got %d", n)
+		t.Errorf("expected 1 pending task after @mention of executor on done issue, got %d", n)
 	}
 }

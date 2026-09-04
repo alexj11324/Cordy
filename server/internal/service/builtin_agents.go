@@ -10,7 +10,7 @@ import (
 // which owners are free to change.
 //
 // The row stays kind='user': kind='system' means "invisible execution carrier"
-// in this schema (hidden from agent lists and assignment surfaces, and hard
+// in this schema (hidden from agent lists and executor-selection surfaces, and hard
 // deleted when its runtime goes away), and Patrick needs the opposite of all
 // three.
 const PatrickSystemKey = "patrick"

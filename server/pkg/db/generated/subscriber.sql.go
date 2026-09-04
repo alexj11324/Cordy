@@ -100,7 +100,7 @@ type AddIssueSubscriberParams struct {
 	Reason   string      `json:"reason"`
 }
 
-// Auto-subscribe path (creator / assignee / commenter / mentioned / automation /
+// Auto-subscribe path (creator / owner / executor / commenter / mentioned / automation /
 // delegated).
 //
 // Two behaviors are load-bearing here:
@@ -110,7 +110,7 @@ type AddIssueSubscriberParams struct {
 //     sticks on a tree an agent keeps adding to (MUL-5483).
 //
 //  2. An ACTIVE 'delegated' row is upgraded when the user becomes directly
-//     involved (assigned / mentioned / commented). Without this the reason
+//     involved (owned / executed / mentioned / commented). Without this the reason
 //     stays 'delegated' forever and someone who is now a real participant keeps
 //     getting the reduced delivery tier.
 //

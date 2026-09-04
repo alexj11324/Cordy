@@ -25,7 +25,7 @@ const (
 	// does not distinguish "target is private" from "target does not exist".
 	ReasonInvocationNotAllowed ReasonCode = "invocation_not_allowed"
 	// ReasonTargetUnavailable: the target cannot run (archived agent, deleted /
-	// archived team, unresolvable leader, or no assignee).
+	// archived team, unresolvable leader, or no executor).
 	ReasonTargetUnavailable ReasonCode = "target_unavailable"
 	// ReasonRuntimeOffline: the target is permitted and bound to a runtime, but
 	// that runtime is not online at dispatch time. The task is not lost — the

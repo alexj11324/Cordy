@@ -64,9 +64,9 @@ func TestListIssues_TableFacetsAreServerSide(t *testing.T) {
 		return number
 	}
 
-	insertIssue := func(title, status, priority string, assigned bool, projectID, parentID *string) string {
+	insertIssue := func(title, status, priority string, ownedByMember bool, projectID, parentID *string) string {
 		var ownerType, ownerID, executorType, executorID *string
-		if assigned {
+		if ownedByMember {
 			member := "member"
 			ownerType = &member
 			ownerID = &testUserID

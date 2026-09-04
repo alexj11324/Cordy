@@ -162,7 +162,7 @@ patchbay runtime activity <runtime-id>
 
 | 命令 | 用途 |
 | --- | --- |
-| `issue` | 创建、更新、分配和搜索任务；管理评论、订阅、标签、属性与执行记录 |
+| `issue` | 创建、更新、设置 executor 和搜索任务；管理评论、订阅、标签、属性与执行记录 |
 | `project` | 管理项目及其资源 |
 | `label`、`property` | 管理工作区标签和自定义属性 |
 | `agent`、`skill`、`team` | 管理智能体、skill 和团队 |
@@ -233,6 +233,7 @@ CLI 配置文件包含可代表你访问 Patchbay 的令牌。不要提交到仓
 | | `reorder <id>` | 在列内移动 | |
 | | `search <query>` | 搜索任务 | `--limit`、`--include-closed` |
 | | `children <id>` | 按阶段分组列出子任务 | |
+| | `dependency-graph get <id>` / `apply <parent-id>` | 读取或一次性应用 typed dependency graph | `get`：`--output`；`apply`：`--idempotency-key`、`--plan-file` / `--plan-stdin`、`--allow-external-file`、`--output` |
 | | `pull-requests <id>` | 列出关联的 PR | |
 | | `comment list/add/delete/resolve/unresolve` | 管理评论 | `add`：`--content` / `--content-stdin` / `--content-file`、`--parent`、`--attachment`；`list`：`--since`、`--thread`、`--tail` |
 | | `subscriber list/add/remove <issue-id>` | 管理订阅者 | `--user`、`--user-id`（缺省为当前用户） |
@@ -298,12 +299,30 @@ CLI 配置文件包含可代表你访问 Patchbay 的令牌。不要提交到仓
 | `update` | — | 更新 CLI 到最新版本 | |
 | `version` | — | 查看版本信息 | `--output`（`text` 或 `json`） |
 
+## 依赖图命令
+
+当一个父任务要拆成带有硬前置条件的多个任务时，请使用 typed plan：
+
+```bash
+patchbay issue dependency-graph get MUL-123 --output table
+patchbay issue dependency-graph apply MUL-123 \
+  --idempotency-key plan-mul-123-v1 --plan-file ./dependency-plan.json
+cat dependency-plan.json | patchbay issue dependency-graph apply MUL-123 \
+  --idempotency-key plan-mul-123-v1 --plan-stdin --output json
+```
+
+当前角色契约是显式的：`owner` 必须是工作区 member；`executor` 和
+`candidate_executors` 必须是 agent 或 team；`reviewer` 可以是 member、agent
+或 team。服务端会校验计划并推导 `waves`；`get` 和成功的 `apply` 会返回
+parent、children、nodes、edges 以及带有 `unlock_condition` 的就绪信息。重复使用
+幂等键会重放同一个计划。图发生变更时会发布 `dependency_graph:updated`，连接中的客户端会刷新数据。
+
 ## 在其他编码智能体里操作 Patchbay
 
 如果你的工作大多发生在 Codex、Claude Code 或 Cursor 里，可以直接在那里操作 Patchbay，
 不必切回终端。[Patchbay CLI skill](https://github.com/patchbay-ai/patchbay-cli)
 会教这些智能体安全地使用本页的命令：低成本地读任务和评论线程、通过文件写评论，
-以及正确处理 mention、状态变更和指派带来的副作用。
+以及正确处理 mention、状态变更和 owner、executor、reviewer 变更带来的副作用。
 
 它完全通过你已认证的 CLI 运行，本身不授予任何权限 —— 权限仍然只来自你的登录、
 所选 profile 和 workspace。要求 CLI 版本不低于 v0.4.26。该仓库的 README 说明了

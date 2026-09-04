@@ -326,7 +326,7 @@ type ExecutorFrequencyEntry struct {
 }
 
 // GetExecutorFrequency returns executor usage frequency for the current user,
-// combining data from executor change activities and initial issue assignments.
+// combining data from executor change activities and initial issue executor writes.
 func (h *Handler) GetExecutorFrequency(w http.ResponseWriter, r *http.Request) {
 	userID, ok := requireUserID(w, r)
 	if !ok {

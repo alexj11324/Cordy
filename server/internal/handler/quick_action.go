@@ -173,11 +173,11 @@ func validateQuickActionPrompt(raw string) (string, error) {
 	return prompt, nil
 }
 
-func validateQuickActionAssignee(assigneeType, assigneeID string) error {
-	if assigneeType != "agent" && assigneeType != "team" {
+func validateQuickActionExecutor(executorType, executorID string) error {
+	if executorType != "agent" && executorType != "team" {
 		return fmt.Errorf("executor_type must be \"agent\" or \"team\"")
 	}
-	if strings.TrimSpace(assigneeID) == "" {
+	if strings.TrimSpace(executorID) == "" {
 		return fmt.Errorf("executor_id is required")
 	}
 	return nil
@@ -547,11 +547,11 @@ func (h *Handler) CreateQuickAction(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := validateQuickActionAssignee(req.ExecutorType, req.ExecutorID); err != nil {
+	if err := validateQuickActionExecutor(req.ExecutorType, req.ExecutorID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	assigneeUUID, ok := parseUUIDOrBadRequest(w, req.ExecutorID, "executor_id")
+	executorUUID, ok := parseUUIDOrBadRequest(w, req.ExecutorID, "executor_id")
 	if !ok {
 		return
 	}
@@ -564,7 +564,7 @@ func (h *Handler) CreateQuickAction(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !h.validateQuickActionBinding(w, r, req.ExecutorType, assigneeUUID, wsUUID, visibility) {
+	if !h.validateQuickActionBinding(w, r, req.ExecutorType, executorUUID, wsUUID, visibility) {
 		return
 	}
 
@@ -579,7 +579,7 @@ func (h *Handler) CreateQuickAction(w http.ResponseWriter, r *http.Request) {
 		Name:          name,
 		Description:   description,
 		ExecutorType:  req.ExecutorType,
-		ExecutorID:    assigneeUUID,
+		ExecutorID:    executorUUID,
 		Prompt:        prompt,
 		Visibility:    visibility,
 		CreatedByType: "member",
@@ -666,7 +666,7 @@ func (h *Handler) UpdateQuickAction(w http.ResponseWriter, r *http.Request) {
 	if req.ExecutorID != nil {
 		newID = *req.ExecutorID
 	}
-	if err := validateQuickActionAssignee(newType, newID); err != nil {
+	if err := validateQuickActionExecutor(newType, newID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -761,14 +761,14 @@ func trimmedWithinLimit(w http.ResponseWriter, raw string, limit int, field stri
 	return v, true
 }
 
-// validateQuickActionBinding checks that the target exists in this workspace
+// validateQuickActionBinding checks that the executor exists in this workspace
 // and, for a `public` action, that every member can invoke it. Writes the 400
 // itself and returns false when the binding is rejected.
-func (h *Handler) validateQuickActionBinding(w http.ResponseWriter, r *http.Request, assigneeType string, id, workspaceID pgtype.UUID, visibility string) bool {
-	qa := db.QuickAction{ExecutorType: assigneeType, ExecutorID: id, WorkspaceID: workspaceID}
+func (h *Handler) validateQuickActionBinding(w http.ResponseWriter, r *http.Request, executorType string, id, workspaceID pgtype.UUID, visibility string) bool {
+	qa := db.QuickAction{ExecutorType: executorType, ExecutorID: id, WorkspaceID: workspaceID}
 	target := h.resolveQuickActionTarget(r.Context(), qa)
 	if !target.Found {
-		writeError(w, http.StatusBadRequest, "assignee not found in this workspace")
+		writeError(w, http.StatusBadRequest, "executor not found in this workspace")
 		return false
 	}
 	// A public action promises "everyone can run this". Binding a target the

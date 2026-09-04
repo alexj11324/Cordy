@@ -104,15 +104,15 @@ func systemCommentOn(t *testing.T, issueID string) (content, authorIDStr string,
 	return
 }
 
-// TestChildDoneNotifiesParent — the happy path for an unassigned parent. A
+// TestChildDoneNotifiesParent — the happy path for a parent with no executor. A
 // child transitioning from a non-done status into `done` while its parent is
 // open must produce exactly one top-level platform-generated comment on the
 // parent. The comment must reference the child by its workspace-specific
 // identifier (NOT a hardcoded `MUL-` prefix — that was the bug PR #2918
-// review called out). When the parent has no assignee, the body must NOT
-// carry any agent/member/team mention either; the assignee-mention is the
+// review called out). When the parent has no executor, the body must NOT
+// carry any agent/member/team mention either; the executor-mention is the
 // only mention we ever inject (see MUL-2538 Option C — covered separately
-// in TestChildDoneMentionsParentAssignee_* below).
+// in TestChildDoneMentionsParentExecutor_* below).
 func TestChildDoneNotifiesParent(t *testing.T) {
 	fx := newChildDoneFixture(t, "todo")
 
@@ -143,13 +143,13 @@ func TestChildDoneNotifiesParent(t *testing.T) {
 	}
 
 	// The comment must contain the safe issue mention. With no parent
-	// assignee, none of the routing mentions should appear either.
+	// executor, none of the routing mentions should appear either.
 	if !strings.Contains(content, "mention://issue/"+fx.child.ID) {
 		t.Errorf("expected mention://issue/<child-id> link in comment, got: %s", content)
 	}
 	for _, banned := range []string{"mention://agent/", "mention://member/", "mention://team/"} {
 		if strings.Contains(content, banned) {
-			t.Errorf("parent has no assignee but comment included %q mention, got: %s", banned, content)
+			t.Errorf("parent has no executor but comment included %q mention, got: %s", banned, content)
 		}
 	}
 }
@@ -189,7 +189,7 @@ func TestChildReopenAndDoneFiresAgain(t *testing.T) {
 }
 
 // TestChildDoneSkippedWhenParentDone — when the parent is already at a
-// terminal status, there is nothing for the parent assignee to advance to,
+// terminal status, there is nothing for the parent executor to advance to,
 // so the notification must NOT fire.
 func TestChildDoneSkippedWhenParentDone(t *testing.T) {
 	fx := newChildDoneFixture(t, "done")
@@ -214,7 +214,7 @@ func TestChildDoneSkippedWhenParentCancelled(t *testing.T) {
 
 // TestChildDoneSkippedWhenParentBacklog — a parent deliberately parked in
 // `backlog` must not be woken when a child completes. Waking it would
-// re-activate the parent assignee, which can then promote sibling backlog
+// re-activate the parent executor, which can then promote sibling backlog
 // sub-issues into todo — the surprise auto-activation reported in #4320 /
 // MUL-3497. No system comment, no trigger, until the user explicitly moves
 // the parent out of backlog.
@@ -257,23 +257,23 @@ func TestChildDoneSkippedWhenNoParent(t *testing.T) {
 	}
 }
 
-// setIssueAssigneeDirect bypasses UpdateIssue (and its assignment trigger
-// side effects) by writing to the assignee columns directly. The child-done
+// setIssueRoleDirect bypasses UpdateIssue (and its executor trigger side
+// effects) by writing to the role columns directly. The child-done
 // notification helper reads the parent row through GetIssue at fire time,
-// so a direct UPDATE is enough to drive the dispatch under each assignee
+// so a direct UPDATE is enough to drive the dispatch under each executor
 // type without queuing a parallel agent task at setup.
-func setIssueAssigneeDirect(t *testing.T, issueID, assigneeType, assigneeID string) {
+func setIssueRoleDirect(t *testing.T, issueID, executorType, executorID string) {
 	t.Helper()
-	if assigneeType == "member" {
+	if executorType == "member" {
 		if _, err := testPool.Exec(context.Background(),
 			`UPDATE issue SET owner_type = 'member', owner_id = $2, executor_type = NULL, executor_id = NULL WHERE id = $1`,
-			issueID, assigneeID,
+			issueID, executorID,
 		); err != nil {
 			t.Fatalf("set parent owner: %v", err)
 		}
 	} else if _, err := testPool.Exec(context.Background(),
 		`UPDATE issue SET executor_type = $2, executor_id = $3 WHERE id = $1`,
-		issueID, assigneeType, assigneeID,
+		issueID, executorType, executorID,
 	); err != nil {
 		t.Fatalf("set parent executor: %v", err)
 	}
@@ -281,7 +281,7 @@ func setIssueAssigneeDirect(t *testing.T, issueID, assigneeType, assigneeID stri
 		`DELETE FROM agent_task_queue WHERE issue_id = $1 AND status IN ('queued','dispatched','running')`,
 		issueID,
 	); err != nil {
-		t.Fatalf("clear leftover tasks after assignee rewrite: %v", err)
+		t.Fatalf("clear leftover tasks after executor rewrite: %v", err)
 	}
 }
 
@@ -321,13 +321,13 @@ func countInboxItems(t *testing.T, recipientUserID, issueID string) int {
 	return n
 }
 
-// TestChildDoneMentionsParentAssignee_Agent verifies the MUL-2538 Option C
-// happy path for an agent parent assignee: the system comment carries a
+// TestChildDoneMentionsParentExecutor_Agent verifies the MUL-2538 Option C
+// happy path for an agent parent executor: the system comment carries a
 // `mention://agent/<id>` link AND a real mention-style task is enqueued on
 // the parent. The trigger fires through TaskService.EnqueueTaskForMention,
 // so the dedupe + readiness checks match the @-mention path users already
 // rely on.
-func TestChildDoneMentionsParentAssignee_Agent(t *testing.T) {
+func TestChildDoneMentionsParentExecutor_Agent(t *testing.T) {
 	fx := newChildDoneFixture(t, "in_progress")
 
 	var agentID string
@@ -337,7 +337,7 @@ func TestChildDoneMentionsParentAssignee_Agent(t *testing.T) {
 	).Scan(&agentID); err != nil {
 		t.Fatalf("locate test agent: %v", err)
 	}
-	setIssueAssigneeDirect(t, fx.parent.ID, "agent", agentID)
+	setIssueRoleDirect(t, fx.parent.ID, "agent", agentID)
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(),
 			`DELETE FROM agent_task_queue WHERE issue_id = $1`, fx.parent.ID)
@@ -356,14 +356,14 @@ func TestChildDoneMentionsParentAssignee_Agent(t *testing.T) {
 }
 
 // TestChildDoneSkippedWhenParentMember verifies the MUL-2538 follow-up: a
-// human parent assignee should NOT receive the platform-generated system
+// human parent owner should NOT receive the platform-generated system
 // comment at all. Humans read their own timeline manually; the automated
 // notification is pure noise and skipping it also removes the question of
 // whether to mention/inbox-row the member.
 //
-// The assignee row uses `user_id` (NOT `member.id`) — that is the
-// production invariant validated by validateExecutorPair for member
-// assignees (see server/internal/handler/issue.go), so the fixture must
+// The owner row uses `user_id` (NOT `member.id`) — that is the
+// production invariant validated by validateOwnerPair for member owners
+// (see server/internal/handler/issue.go), so the fixture must
 // match or it would be exercising a state that cannot occur for real.
 func TestChildDoneSkippedWhenParentMember(t *testing.T) {
 	fx := newChildDoneFixture(t, "in_progress")
@@ -375,7 +375,7 @@ func TestChildDoneSkippedWhenParentMember(t *testing.T) {
 	).Scan(&userID); err != nil {
 		t.Fatalf("locate workspace member: %v", err)
 	}
-	setIssueAssigneeDirect(t, fx.parent.ID, "member", userID)
+	setIssueRoleDirect(t, fx.parent.ID, "member", userID)
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(),
 			`DELETE FROM inbox_item WHERE issue_id = $1`, fx.parent.ID)
@@ -384,22 +384,22 @@ func TestChildDoneSkippedWhenParentMember(t *testing.T) {
 	updateChildStatus(t, fx.child.ID, "done")
 
 	if got := countSystemCommentsOn(t, fx.parent.ID); got != 0 {
-		t.Errorf("parent with member assignee should not receive a system comment, got %d", got)
+		t.Errorf("parent with member owner should not receive a system comment, got %d", got)
 	}
 	if got := countInboxItems(t, userID, fx.parent.ID); got != 0 {
-		t.Errorf("parent with member assignee should not receive an inbox row, got %d", got)
+		t.Errorf("parent with member owner should not receive an inbox row, got %d", got)
 	}
 }
 
-// TestChildDoneMentionsParentAssignee_Team verifies the team branch: the
+// TestChildDoneMentionsParentExecutor_Team verifies the team branch: the
 // system comment carries a `mention://team/<id>` link and the team
 // leader receives a leader-role task. Reuses the team fixture helper from
 // team_comment_trigger_test.go.
-func TestChildDoneMentionsParentAssignee_Team(t *testing.T) {
+func TestChildDoneMentionsParentExecutor_Team(t *testing.T) {
 	fx := newChildDoneFixture(t, "in_progress")
 	sq := newTeamCommentTriggerFixture(t)
 
-	setIssueAssigneeDirect(t, fx.parent.ID, "team", sq.TeamID)
+	setIssueRoleDirect(t, fx.parent.ID, "team", sq.TeamID)
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(),
 			`DELETE FROM agent_task_queue WHERE issue_id = $1`, fx.parent.ID)
@@ -418,7 +418,7 @@ func TestChildDoneMentionsParentAssignee_Team(t *testing.T) {
 }
 
 // TestChildDoneTriggersParentAgentWhenSameAgentOwnsChild — when the parent
-// agent assignee is the SAME agent that owns the just-finished child, the
+// agent executor is the SAME agent that owns the just-finished child, the
 // parent agent must still be triggered (MUL-2808). A child finishing and
 // waking its parent is a serial sub-task handoff between two different
 // issues, not a self-loop — and the lone-agent decomposition pattern (one
@@ -436,11 +436,11 @@ func TestChildDoneTriggersParentAgentWhenSameAgentOwnsChild(t *testing.T) {
 	).Scan(&agentID); err != nil {
 		t.Fatalf("locate test agent: %v", err)
 	}
-	// Both child and parent assigned to the same agent. Setting the child
-	// assignee via direct SQL avoids the assignment-trigger side effect
+	// Both child and parent use the same agent executor. Setting the child
+	// executor via direct SQL avoids the executor-trigger side effect
 	// that would otherwise queue an unrelated task on the child.
-	setIssueAssigneeDirect(t, fx.parent.ID, "agent", agentID)
-	setIssueAssigneeDirect(t, fx.child.ID, "agent", agentID)
+	setIssueRoleDirect(t, fx.parent.ID, "agent", agentID)
+	setIssueRoleDirect(t, fx.child.ID, "agent", agentID)
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(),
 			`DELETE FROM agent_task_queue WHERE issue_id IN ($1, $2)`,
@@ -451,7 +451,7 @@ func TestChildDoneTriggersParentAgentWhenSameAgentOwnsChild(t *testing.T) {
 
 	content := parentSystemCommentContent(t, fx.parent.ID)
 	if !strings.Contains(content, "mention://agent/"+agentID) {
-		t.Errorf("expected parent-assignee mention in system comment, got: %s", content)
+		t.Errorf("expected parent-executor mention in system comment, got: %s", content)
 	}
 	if got := countPendingTasksForAgent(t, fx.parent.ID, agentID); got != 1 {
 		t.Errorf("expected 1 pending task on parent (serial sub-task handoff), got %d", got)
@@ -459,7 +459,7 @@ func TestChildDoneTriggersParentAgentWhenSameAgentOwnsChild(t *testing.T) {
 }
 
 // TestChildDoneTriggersParentAgentWhenChildTeamSharesLeader — parent is
-// assigned to agent A directly; the finished child is assigned to a team
+// with agent A as executor; the finished child has a team executor
 // whose leader is also agent A. Because the parent is an AGENT, dispatch
 // routes through the agent path, which (post-MUL-2808) has no self-trigger
 // guard: A coordinates the parent and must be woken to advance it when the
@@ -471,9 +471,9 @@ func TestChildDoneTriggersParentAgentWhenChildTeamSharesLeader(t *testing.T) {
 	fx := newChildDoneFixture(t, "in_progress")
 	sq := newTeamCommentTriggerFixture(t)
 
-	// Parent agent == team leader, child assigned to the team.
-	setIssueAssigneeDirect(t, fx.parent.ID, "agent", sq.LeaderID)
-	setIssueAssigneeDirect(t, fx.child.ID, "team", sq.TeamID)
+	// Parent agent == team leader, child executor is the team.
+	setIssueRoleDirect(t, fx.parent.ID, "agent", sq.LeaderID)
+	setIssueRoleDirect(t, fx.child.ID, "team", sq.TeamID)
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(),
 			`DELETE FROM agent_task_queue WHERE issue_id IN ($1, $2)`,
@@ -519,8 +519,8 @@ func TestChildDoneWakesLeaderWhenParentAndChildTeamsShareLeader(t *testing.T) {
 		testPool.Exec(context.Background(), `DELETE FROM team WHERE id = $1`, childTeamID)
 	})
 
-	setIssueAssigneeDirect(t, fx.parent.ID, "team", parentTeam.TeamID)
-	setIssueAssigneeDirect(t, fx.child.ID, "team", childTeamID)
+	setIssueRoleDirect(t, fx.parent.ID, "team", parentTeam.TeamID)
+	setIssueRoleDirect(t, fx.child.ID, "team", childTeamID)
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(),
 			`DELETE FROM agent_task_queue WHERE issue_id IN ($1, $2)`,
@@ -539,7 +539,7 @@ func TestChildDoneWakesLeaderWhenParentAndChildTeamsShareLeader(t *testing.T) {
 }
 
 // TestChildDoneWakesLeaderWhenChildIsSameTeam — the MUL-3969 repro. Parent
-// and the just-finished child are BOTH assigned to the same team (the common
+// and the just-finished child BOTH have the same team executor (the common
 // "a team decomposes its parent into sub-issues it works itself" pattern).
 // The old same-team guard suppressed the leader wake, so the stage-barrier
 // system comment landed on the parent but the "wrap up / advance" instruction
@@ -549,8 +549,8 @@ func TestChildDoneWakesLeaderWhenChildIsSameTeam(t *testing.T) {
 	fx := newChildDoneFixture(t, "in_progress")
 	sq := newTeamCommentTriggerFixture(t)
 
-	setIssueAssigneeDirect(t, fx.parent.ID, "team", sq.TeamID)
-	setIssueAssigneeDirect(t, fx.child.ID, "team", sq.TeamID)
+	setIssueRoleDirect(t, fx.parent.ID, "team", sq.TeamID)
+	setIssueRoleDirect(t, fx.child.ID, "team", sq.TeamID)
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(),
 			`DELETE FROM agent_task_queue WHERE issue_id IN ($1, $2)`,
@@ -580,8 +580,8 @@ func TestStageLeaderPrepareTimeoutRetryCanAdvanceNextStage(t *testing.T) {
 	ctx := context.Background()
 	fx := newChildDoneFixture(t, "in_progress")
 	sq := newTeamCommentTriggerFixture(t)
-	setIssueAssigneeDirect(t, fx.parent.ID, "team", sq.TeamID)
-	setIssueAssigneeDirect(t, fx.child.ID, "team", sq.TeamID)
+	setIssueRoleDirect(t, fx.parent.ID, "team", sq.TeamID)
+	setIssueRoleDirect(t, fx.child.ID, "team", sq.TeamID)
 	if _, err := testPool.Exec(ctx, `UPDATE issue SET stage = 1 WHERE id = $1`, fx.child.ID); err != nil {
 		t.Fatalf("set stage 1: %v", err)
 	}

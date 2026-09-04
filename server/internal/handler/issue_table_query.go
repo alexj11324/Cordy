@@ -573,16 +573,18 @@ func (h *Handler) compileIssueTableQuery(w http.ResponseWriter, r *http.Request,
 		}
 		switch relation {
 		case "assigned":
+			// Public relation spelling retained for saved views; it means direct
+			// member ownership, never executor selection.
 			where = append(where, fmt.Sprintf("i.owner_type = 'member' AND i.owner_id = %s::uuid", addArg(userUUID)))
 		case "created":
 			where = append(where, fmt.Sprintf("i.creator_type = 'member' AND i.creator_id = %s::uuid", addArg(userUUID)))
 		case "involved":
 			where = appendIssueTableInvolvedPredicate(where, addArg, userUUID)
 		case "any":
-			assignedRef := addArg(userUUID)
+			ownerRef := addArg(userUUID)
 			createdRef := addArg(userUUID)
 			involved := appendIssueTableInvolvedPredicate(nil, addArg, userUUID)[0]
-			where = append(where, fmt.Sprintf("((i.owner_type = 'member' AND i.owner_id = %s::uuid) OR (i.creator_type = 'member' AND i.creator_id = %s::uuid) OR %s)", assignedRef, createdRef, involved))
+			where = append(where, fmt.Sprintf("((i.owner_type = 'member' AND i.owner_id = %s::uuid) OR (i.creator_type = 'member' AND i.creator_id = %s::uuid) OR %s)", ownerRef, createdRef, involved))
 		default:
 			writeError(w, http.StatusBadRequest, "invalid scope.relation")
 			return issueTableSQL{}, false

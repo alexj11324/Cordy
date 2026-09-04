@@ -1155,7 +1155,7 @@ func TestRouter_IssueCommandWithMediaBindsWithoutChatRun(t *testing.T) {
 		Issue: db.Issue{
 			ID: uuidFromString(t, "88888888-8888-4888-8888-888888888888"), Number: 43, Title: "Inspect image",
 		},
-		AssignedTaskID: issueTaskID,
+		ExecutorTaskID: issueTaskID,
 	}
 	if err := h.router.Handle(context.Background(), p2pMessage(t)); err != nil {
 		t.Fatalf("Handle: %v", err)
@@ -1416,7 +1416,7 @@ func TestRouter_IssueCommand_MediaTargetsCreatedIssue(t *testing.T) {
 			}
 			h.issues.result = service.IssueCreateResult{
 				Issue:          db.Issue{ID: issueID, Number: 42, Title: tc.title},
-				AssignedTaskID: issueTaskID,
+				ExecutorTaskID: issueTaskID,
 			}
 			msg := p2pMessage(t)
 			msg.Type = channel.MsgTypeImage
@@ -1443,8 +1443,8 @@ func TestRouter_IssueCommand_MediaTargetsCreatedIssue(t *testing.T) {
 			if got := h.binder.boundMedia().IssueDescriptionBase; !got.Valid || got.String != tc.description {
 				t.Fatalf("media description base = %#v, want valid %q", got, tc.description)
 			}
-			if h.issues.opts.AssignedAgentRunFireAt.IsZero() {
-				t.Fatal("media-backed /issue must defer its assigned-agent task")
+			if h.issues.opts.ExecutorRunFireAt.IsZero() {
+				t.Fatal("media-backed /issue must defer its executor-agent task")
 			}
 			if !waitFor(time.Second, func() bool {
 				h.tasks.mu.Lock()
@@ -1466,7 +1466,7 @@ func TestRouter_IssueCommand_MediaTargetsCreatedIssue(t *testing.T) {
 	}
 }
 
-func TestRouter_IssueCommand_WithoutMediaKeepsImmediateAssignedTask(t *testing.T) {
+func TestRouter_IssueCommand_WithoutMediaKeepsImmediateExecutorTask(t *testing.T) {
 	h := newHarness(t)
 	h.media.noMedia = true
 	h.binder.appendResult = AppendResult{
@@ -1482,8 +1482,8 @@ func TestRouter_IssueCommand_WithoutMediaKeepsImmediateAssignedTask(t *testing.T
 	if err := h.router.Handle(context.Background(), p2pMessage(t)); err != nil {
 		t.Fatalf("Handle: %v", err)
 	}
-	if !h.issues.opts.AssignedAgentRunFireAt.IsZero() {
-		t.Fatalf("text-only /issue unexpectedly deferred its assigned task until %v", h.issues.opts.AssignedAgentRunFireAt)
+	if !h.issues.opts.ExecutorRunFireAt.IsZero() {
+		t.Fatalf("text-only /issue unexpectedly deferred its executor task until %v", h.issues.opts.ExecutorRunFireAt)
 	}
 	h.tasks.mu.Lock()
 	promotions := len(h.tasks.issueTaskPromotions)
@@ -1505,7 +1505,7 @@ func TestRouter_IssueCommand_BindFailurePromotesDeferredTaskWithoutAttachmentEve
 	h.binder.bindErr = errors.New("attachment write failed")
 	h.issues.result = service.IssueCreateResult{
 		Issue:          db.Issue{ID: uuidFromString(t, "77777777-7777-7777-7777-777777777777"), Number: 42, Title: "Fix broken layout"},
-		AssignedTaskID: issueTaskID,
+		ExecutorTaskID: issueTaskID,
 	}
 
 	if err := h.router.Handle(context.Background(), p2pMessage(t)); err != nil {

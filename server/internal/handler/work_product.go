@@ -338,7 +338,7 @@ func (h *Handler) resolveWorkProductRelationActor(w http.ResponseWriter, r *http
 		return workProductRelationActor{}, false
 	}
 	if !sameWorkProductUUID(task.AgentID, actorUUID) || !sameWorkProductUUID(task.IssueID, issueUUID) {
-		writeError(w, http.StatusForbidden, "task may only attach products to its assigned issue")
+		writeError(w, http.StatusForbidden, "task may only attach products to its issue")
 		return workProductRelationActor{}, false
 	}
 	actor := workProductRelationActor{Type: "agent", ID: actorUUID}

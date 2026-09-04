@@ -87,21 +87,21 @@ func TestEditCommentTriggers(t *testing.T) {
 		}
 	})
 
-	t.Run("edit on agent-assigned issue cancels and re-triggers assignee task", func(t *testing.T) {
-		assignedIssue := createIssueAssignedToAgent(t, "Edit assignee trigger test", agentID)
+	t.Run("edit on agent-executor issue cancels and re-triggers executor task", func(t *testing.T) {
+		executorIssue := createIssueWithAgentExecutor(t, "Edit executor trigger test", agentID)
 		t.Cleanup(func() {
-			clearTasks(t, assignedIssue)
-			resp := authRequest(t, "DELETE", "/api/issues/"+assignedIssue, nil)
+			clearTasks(t, executorIssue)
+			resp := authRequest(t, "DELETE", "/api/issues/"+executorIssue, nil)
 			resp.Body.Close()
 		})
-		clearTasks(t, assignedIssue)
+		clearTasks(t, executorIssue)
 
-		commentID := postComment(t, assignedIssue, "fix the login page", nil)
-		if n := countPendingTasks(t, assignedIssue); n != 1 {
+		commentID := postComment(t, executorIssue, "fix the login page", nil)
+		if n := countPendingTasks(t, executorIssue); n != 1 {
 			t.Fatalf("expected 1 pending task from on_comment trigger, got %d", n)
 		}
 
-		clearTasks(t, assignedIssue)
+		clearTasks(t, executorIssue)
 
 		resp := authRequest(t, "PUT", "/api/comments/"+commentID, map[string]any{
 			"content": "actually fix the signup page instead",
@@ -113,8 +113,8 @@ func TestEditCommentTriggers(t *testing.T) {
 		}
 		resp.Body.Close()
 
-		if n := countPendingTasks(t, assignedIssue); n != 1 {
-			t.Errorf("expected 1 pending task after edit re-triggered assignee, got %d", n)
+		if n := countPendingTasks(t, executorIssue); n != 1 {
+			t.Errorf("expected 1 pending task after edit re-triggered executor, got %d", n)
 		}
 	})
 }

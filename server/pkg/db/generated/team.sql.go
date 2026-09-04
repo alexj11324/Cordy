@@ -151,36 +151,6 @@ func (q *Queries) GetTeam(ctx context.Context, id pgtype.UUID) (Team, error) {
 	return i, err
 }
 
-const getTeamByAssignee = `-- name: GetTeamByAssignee :one
-SELECT s.id, s.workspace_id, s.name, s.description, s.leader_id, s.creator_id, s.created_at, s.updated_at, s.archived_at, s.archived_by, s.avatar_url, s.instructions FROM team s WHERE s.id = $1 AND s.workspace_id = $2
-`
-
-type GetTeamByAssigneeParams struct {
-	ID          pgtype.UUID `json:"id"`
-	WorkspaceID pgtype.UUID `json:"workspace_id"`
-}
-
-// Look up the team when an issue is assigned to a team.
-func (q *Queries) GetTeamByAssignee(ctx context.Context, arg GetTeamByAssigneeParams) (Team, error) {
-	row := q.db.QueryRow(ctx, getTeamByAssignee, arg.ID, arg.WorkspaceID)
-	var i Team
-	err := row.Scan(
-		&i.ID,
-		&i.WorkspaceID,
-		&i.Name,
-		&i.Description,
-		&i.LeaderID,
-		&i.CreatorID,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.ArchivedAt,
-		&i.ArchivedBy,
-		&i.AvatarUrl,
-		&i.Instructions,
-	)
-	return i, err
-}
-
 const getTeamInWorkspace = `-- name: GetTeamInWorkspace :one
 SELECT id, workspace_id, name, description, leader_id, creator_id, created_at, updated_at, archived_at, archived_by, avatar_url, instructions FROM team WHERE id = $1 AND workspace_id = $2
 `
@@ -653,19 +623,19 @@ func (q *Queries) RemoveTeamMember(ctx context.Context, arg RemoveTeamMemberPara
 	return result.RowsAffected(), nil
 }
 
-const transferTeamAssignees = `-- name: TransferTeamAssignees :exec
+const transferIssueExecutors = `-- name: TransferIssueExecutors :exec
 UPDATE issue SET executor_type = 'agent', executor_id = $2, revision = revision + 1, updated_at = now()
 WHERE executor_type = 'team' AND executor_id = $1
 `
 
-type TransferTeamAssigneesParams struct {
+type TransferIssueExecutorsParams struct {
 	ExecutorID   pgtype.UUID `json:"executor_id"`
 	ExecutorID_2 pgtype.UUID `json:"executor_id_2"`
 }
 
-// Transfer all issues assigned to a team to the team's leader agent.
-func (q *Queries) TransferTeamAssignees(ctx context.Context, arg TransferTeamAssigneesParams) error {
-	_, err := q.db.Exec(ctx, transferTeamAssignees, arg.ExecutorID, arg.ExecutorID_2)
+// Transfer all issue executors pointing at a team to the team's leader agent.
+func (q *Queries) TransferIssueExecutors(ctx context.Context, arg TransferIssueExecutorsParams) error {
+	_, err := q.db.Exec(ctx, transferIssueExecutors, arg.ExecutorID, arg.ExecutorID_2)
 	return err
 }
 
@@ -682,10 +652,10 @@ type TransferTeamAutomationsToLeaderParams struct {
 	ExecutorID_2 pgtype.UUID `json:"executor_id_2"`
 }
 
-// Mirrors TransferTeamAssignees for automation rows: when a team is archived,
+// Mirrors TransferIssueExecutors for automation rows: when a team is archived,
 // any automation still pointing at the team would otherwise dangle and the
-// admission gate would skip every subsequent dispatch with "assignee team
-// cannot be resolved". Rewrite the assignee in place to the leader agent so
+// admission gate would skip every subsequent dispatch with "executor team
+// cannot be resolved". Rewrite the executor in place to the leader agent so
 // the automation keeps firing under the same leader-only execution semantics
 // it had a moment before the archive (Path A from PB-2429).
 func (q *Queries) TransferTeamAutomationsToLeader(ctx context.Context, arg TransferTeamAutomationsToLeaderParams) error {

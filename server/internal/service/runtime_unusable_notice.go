@@ -12,10 +12,10 @@ import (
 	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
 )
 
-// noteRuntimeUnusable leaves the refusal on the issue when an assignment cannot
-// be enqueued because the assignee's agent CLI cannot run on its machine.
+// noteRuntimeUnusable leaves the refusal on the issue when an executor task
+// cannot be enqueued because the executor agent CLI cannot run on its machine.
 //
-// Assignment is the trigger with no reply anyone reads: the API returns the
+// Executor routing is the trigger with no reply anyone reads: the API returns the
 // updated issue, and nothing in it says "and by the way, nothing will run".
 // Without this the user gets exactly the silence this change exists to remove
 // (MUL-6164).

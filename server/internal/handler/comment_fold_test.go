@@ -143,7 +143,7 @@ func TestListComments_FoldLatestReplyWins(t *testing.T) {
 }
 
 // TestListComments_FoldComposesWithRecent confirms fold applies per thread under
-// the --recent grouping (the assignment-entry read the prompt steers agents to).
+// the --recent grouping (the executor-entry read the prompt steers agents to).
 // recent returns both threads; the reply-resolved thread1 folds to root1 + r1b
 // while the unresolved thread2 stays full.
 func TestListComments_FoldComposesWithRecent(t *testing.T) {

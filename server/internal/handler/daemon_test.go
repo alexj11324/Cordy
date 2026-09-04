@@ -2061,7 +2061,7 @@ func TestClaimTask_ProjectGithubReposOverrideWorkspaceRepos(t *testing.T) {
 // When an issue belongs to a project that has a description, the claim handler
 // must surface that description as project_description so the daemon can inject
 // it into the brief. This is the handler-side boundary the execenv tests can't
-// cover: if this assignment regresses, the description silently stops reaching
+// cover: if this executor routing regresses, the description silently stops reaching
 // the agent while the execenv rendering tests still pass.
 func TestClaimTask_ProjectDescriptionInjected(t *testing.T) {
 	if testHandler == nil {
@@ -2600,7 +2600,7 @@ func TestCompleteTask_CommentTriggered_SuppressesTrivialDoneOutput(t *testing.T)
 	}
 }
 
-func TestCompleteTask_AssignmentTriggered_DoesNotSuppressTrivialDoneOutput(t *testing.T) {
+func TestCompleteTask_ExecutorTriggered_DoesNotSuppressTrivialDoneOutput(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
 	}
@@ -2610,7 +2610,7 @@ func TestCompleteTask_AssignmentTriggered_DoesNotSuppressTrivialDoneOutput(t *te
 		SELECT a.id, a.runtime_id FROM agent a WHERE a.workspace_id = $1 LIMIT 1
 	`, testWorkspaceID).Scan(&agentID, &runtimeID)
 
-	issueID := dbfx.Issue(t, "assignment-trivial-done fixture", testutil.Cols{
+	issueID := dbfx.Issue(t, "executor-trivial-done fixture", testutil.Cols{
 		"status": "in_progress",
 		"number": 81201,
 	})

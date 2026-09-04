@@ -341,7 +341,7 @@ func TestPreviewCommentTriggers_PlainReplyToMultiAgentRootRoutesFirstMentionedOw
 // TestPreviewCommentTriggers_TeamExecutorPlainReplyKeepsRootMentionOwner is the
 // cascade replacement for the old MUL-3744 inherited-mention scenario:
 //
-//   - Issue is assigned to a TEAM (leader L).
+//   - Issue is executed by a TEAM (leader L).
 //   - Member root comment @mentions another agent (Kim).
 //   - Member posts a plain reply with no mention of its own ("hello").
 //
@@ -358,7 +358,7 @@ func TestPreviewCommentTriggers_TeamExecutorPlainReplyKeepsRootMentionOwner(t *t
 	teamID := createCommentTriggerPreviewTeam(t, "Preview Team Reply Routing", leaderID)
 	issueID := createCommentTriggerPreviewIssue(t, "team reply mention inheritance MUL-3744", "team", teamID)
 
-	// Sanity: a plain top-level "hello" by a member on this team-assigned
+	// Sanity: a plain top-level "hello" by a member on this team-executor
 	// issue wakes the leader (no @mention is routing the work).
 	topLevelPreview := previewCommentTriggersForTest(t, issueID, CommentTriggerPreviewRequest{
 		Content: "hello",
@@ -1316,7 +1316,7 @@ func TestPreviewCommentTriggers_AllSuppressesExecutorAndPendingDedupes(t *testin
 	}
 }
 
-func TestPreviewCommentTriggers_AssignedTeamLeaderAndSuppress(t *testing.T) {
+func TestPreviewCommentTriggers_ExecutorTeamLeaderAndSuppress(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
 	}

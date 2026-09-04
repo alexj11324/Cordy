@@ -250,7 +250,7 @@ func TestClassifyDirect_AgentCreatedNoOriginIsUnattributed(t *testing.T) {
 }
 
 func TestClassifyDirect_ActorOverridesCreator(t *testing.T) {
-	// A member directly assigned/promoted an issue someone else created: the
+	// A member directly set/promoted an issue executor on an issue someone else created: the
 	// acting member is accountable, ahead of the creator (MUL-4302 §4).
 	got := ClassifyDirect(DirectFacts{
 		IssueID:     issue,
@@ -265,7 +265,7 @@ func TestClassifyDirect_ActorOverridesCreator(t *testing.T) {
 		t.Errorf("actor should be attributed, got %v want %v", got.UserID, human)
 	}
 	if got.EvidenceKind != EvidenceIssueAssignment || got.EvidenceRefID != issue {
-		t.Errorf("evidence should point at the assigned issue")
+		t.Errorf("evidence should point at the executor issue")
 	}
 }
 

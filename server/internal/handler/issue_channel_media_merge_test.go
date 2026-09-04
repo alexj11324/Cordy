@@ -67,7 +67,7 @@ func TestMergeIssueChannelMediaDescriptionDoesNotResurrectDeletedAttachment(t *t
 	}
 }
 
-func TestRefreshUntouchedNullableIssueParamsKeepsValidatedAssigneePair(t *testing.T) {
+func TestRefreshUntouchedNullableIssueParamsKeepsValidatedExecutorPair(t *testing.T) {
 	oldID := pgtype.UUID{Bytes: uuid.MustParse("77777777-7777-4777-8777-777777777777"), Valid: true}
 	concurrentID := pgtype.UUID{Bytes: uuid.MustParse("88888888-8888-4888-8888-888888888888"), Valid: true}
 	params := db.UpdateIssueParams{
@@ -84,7 +84,7 @@ func TestRefreshUntouchedNullableIssueParamsKeepsValidatedAssigneePair(t *testin
 	})
 
 	if params.ExecutorType.String != "agent" || params.ExecutorID != oldID {
-		t.Fatalf("validated assignee pair was recombined: type=%#v id=%#v", params.ExecutorType, params.ExecutorID)
+		t.Fatalf("validated executor pair was recombined: type=%#v id=%#v", params.ExecutorType, params.ExecutorID)
 	}
 }
 

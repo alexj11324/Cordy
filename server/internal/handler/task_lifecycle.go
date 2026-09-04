@@ -142,18 +142,18 @@ func (h *Handler) PinTaskSession(w http.ResponseWriter, r *http.Request) {
 
 // RerunIssueRequest is the optional body of POST /api/issues/{id}/rerun.
 // All fields are optional; an empty body keeps the legacy "rerun the issue's
-// current assignee" behaviour used by the CLI.
+// current executor" behaviour used by the CLI.
 type RerunIssueRequest struct {
 	// TaskID identifies the execution-log row the user clicked retry on.
 	// When set, the rerun targets the agent that ran that specific task
 	// (and reuses its leader/worker role) rather than the issue's current
-	// assignee — so clicking retry on row that belonged to a now-displaced
-	// agent re-fires that same agent, not the new assignee.
+	// executor — so clicking retry on a row that belonged to a now-displaced
+	// agent re-fires that same agent, not the new executor.
 	TaskID string `json:"task_id,omitempty"`
 }
 
 // RerunIssue manually re-enqueues an agent run for the issue. By default it
-// targets the issue's current assignee (agent or team leader); if the
+// targets the issue's current executor (agent or team leader); if the
 // request body carries task_id, the rerun targets the agent that ran that
 // specific past task instead. The new task is flagged force_fresh_session=true:
 // the daemon claim handler skips the (agent_id, issue_id) session-resume
@@ -170,7 +170,7 @@ func (h *Handler) RerunIssue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Body is optional. A zero-length body or `{}` keeps the legacy
-	// assignee-driven rerun behaviour the CLI relies on.
+	// executor-driven rerun behaviour the CLI relies on.
 	var req RerunIssueRequest
 	if r.ContentLength != 0 {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
@@ -202,7 +202,7 @@ func (h *Handler) RerunIssue(w http.ResponseWriter, r *http.Request) {
 	// Re-validate the operator's invoke permission on the resolved target agent
 	// before cancelling / creating anything (MUL-4525). Issue visibility does not
 	// grant the right to trigger a private agent — a task_id rerun must gate the
-	// historical agent, not the (possibly reassigned) current assignee.
+	// historical agent, not the (possibly changed) current executor.
 	originatorUserID := h.invokeOriginatorFromRequest(r, actorType, actorID)
 	canInvoke := func(agent db.Agent) bool {
 		return h.canInvokeAgent(r.Context(), agent, actorType, actorID, originatorUserID, workspaceID)

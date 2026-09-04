@@ -11,14 +11,14 @@ import (
 
 // These tests pin the authorization contract of RecordTeamLeaderEvaluation
 // after MUL-6622 / GH #7487. Two gates, in order: the caller owns the task, and
-// the caller is still the team's leader. The target issue's own assignee is
+// the caller is still the team's leader. The target issue's own executor is
 // deliberately not consulted.
 
 type teamEvalFixture struct {
 	TeamID      string
 	LeaderID     string
 	OtherID      string
-	TeamIssueID string // issue assigned to the team
+	TeamIssueID string // issue executed by the team
 }
 
 func newTeamEvalFixture(t *testing.T) teamEvalFixture {
@@ -102,9 +102,9 @@ func loadEvaluations(t *testing.T, issueID string) []recordedEvaluation {
 }
 
 // The regression: a leader task on an issue owned by an individual agent (the
-// `@team`-mention path) used to be rejected with "issue is not assigned to a
+// `@team`-mention path) used to be rejected with "issue is not executed by a
 // team", dropping the decision entirely.
-func TestRecordTeamLeaderEvaluation_AcceptedOnNonTeamAssignedIssue(t *testing.T) {
+func TestRecordTeamLeaderEvaluation_AcceptedOnNonTeamExecutorIssue(t *testing.T) {
 	fx := newTeamEvalFixture(t)
 	issueID := dbfx.Issue(t, "agent-owned issue", testutil.Cols{
 		"executor_type": "agent",
@@ -133,7 +133,7 @@ func TestRecordTeamLeaderEvaluation_AcceptedOnNonTeamAssignedIssue(t *testing.T)
 }
 
 // A child issue the leader itself is running on records fine too — the parent's
-// team assignment is irrelevant to the check.
+// team executor selection is irrelevant to the check.
 func TestRecordTeamLeaderEvaluation_AcceptedOnChildIssueBoundTask(t *testing.T) {
 	fx := newTeamEvalFixture(t)
 	childID := dbfx.Issue(t, "team child issue", testutil.Cols{

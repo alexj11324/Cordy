@@ -119,7 +119,7 @@ type IssueCreateOpts struct {
 	ActorID string
 
 	// AnalyticsAgentID is the agent associated with the issue for
-	// analytics purposes (assignee agent or, for agent-created issues,
+	// analytics purposes (executor agent or, for agent-created issues,
 	// the creator agent). Resolved by the caller because it depends on
 	// transport context.
 	AnalyticsAgentID string
@@ -130,11 +130,11 @@ type IssueCreateOpts struct {
 	// metadata at the handler layer.
 	Platform string
 
-	// AssignedAgentRunFireAt creates the automatic assigned-agent task in a
+	// ExecutorRunFireAt creates the automatic executor task in a
 	// durable deferred state. Channel /issue uses this while detached media is
 	// still resolving, then promotes the returned task after attachment binding.
 	// Zero preserves the ordinary immediate enqueue path.
-	AssignedAgentRunFireAt time.Time
+	ExecutorRunFireAt time.Time
 }
 
 // ErrActiveDuplicate signals that the duplicate guard found an active
@@ -180,9 +180,9 @@ var ErrSourceContextAlreadyAttached = errors.New("source context is already atta
 type IssueCreateResult struct {
 	Issue       db.Issue
 	Attachments []db.Attachment
-	// AssignedTaskID is populated when Create enqueues the automatic task for
-	// an agent assignee, including a task deferred by AssignedAgentRunFireAt.
-	AssignedTaskID pgtype.UUID
+	// ExecutorTaskID is populated when Create enqueues the automatic task for
+	// an agent executor, including a task deferred by ExecutorRunFireAt.
+	ExecutorTaskID pgtype.UUID
 	// Labels is the authoritative set of labels attached to the new issue in
 	// the create transaction (empty when none were requested). Callers echo it
 	// on the create response + issue:created event so every client renders the
@@ -201,20 +201,20 @@ type IssueCreateResult struct {
 //  5. Insert the issue row (with optional origin stamping).
 //  6. Commit.
 //  7. Link any pre-uploaded attachments (post-commit, idempotent).
-//  8. For a media-gated channel issue, persist its deferred assigned-agent
+//  8. For a media-gated channel issue, persist its deferred executor-agent
 //     task in the issue transaction so both rows become visible atomically.
 //     Ordinary creates keep their existing event-before-enqueue ordering.
 //  9. Publish EventIssueCreated to the bus (payload via opts.BroadcastPayload).
 //  10. Capture the IssueCreated analytics event.
 //  11. Enqueue the ordinary agent task or trigger the team leader when the
-//     issue is assigned and not in `backlog`.
+//     issue has an executor and is not in `backlog`.
 //
 // Validation that lives in the service (parent existence, project
 // workspace membership, parent → project back-fill) is enforced here so
 // every create entry — HTTP `POST /issues`, Lark `/issue`, future
 // MCP/API-key callers — shares the same workspace boundary semantics.
 // Caller-owned validation is limited to transport-shaped checks: title
-// required, RFC3339 date format, assignee pair sanity.
+// required, RFC3339 date format, and role-pair sanity.
 func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts IssueCreateOpts) (IssueCreateResult, error) {
 	issueCountPolicy := ResolveIssueCountPolicy(ctx, s.Entitlements, p.WorkspaceID)
 	tx, err := s.TxStarter.Begin(ctx)
@@ -339,7 +339,7 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 	}
 
 	var issue db.Issue
-	var assignedTask db.AgentTaskQueue
+	var executorTask db.AgentTaskQueue
 	if p.OriginType.Valid {
 		issue, err = qtx.CreateIssueWithOrigin(ctx, db.CreateIssueWithOriginParams{
 			ID:            dbid.NewV7(),
@@ -468,12 +468,12 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 		}
 	}
 
-	if !opts.AssignedAgentRunFireAt.IsZero() && s.shouldEnqueueAgentTaskWithQueries(ctx, qtx, issue) {
-		// The issue must never become visible without its media-gated assigned
+	if !opts.ExecutorRunFireAt.IsZero() && s.shouldEnqueueExecutorTaskWithQueries(ctx, qtx, issue) {
+		// The issue must never become visible without its media-gated executor
 		// task. Inserting both rows through qtx makes the unique-index winner
 		// deterministic: any observer that can discover the committed issue also
 		// sees the inert deferred task and must merge into it.
-		assignedTask, err = s.TaskService.createDeferredChannelIssueTaskWithQueries(ctx, qtx, issue, opts.AssignedAgentRunFireAt)
+		executorTask, err = s.TaskService.createDeferredChannelIssueTaskWithQueries(ctx, qtx, issue, opts.ExecutorRunFireAt)
 		if err != nil {
 			return IssueCreateResult{}, fmt.Errorf("create deferred channel issue task: %w", err)
 		}
@@ -490,22 +490,22 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 		actorID = util.UUIDToString(issue.CreatorID)
 	}
 
-	var assignedTaskID pgtype.UUID
-	if !opts.AssignedAgentRunFireAt.IsZero() {
-		assignedTaskID = assignedTask.ID
-		if assignedTaskID.Valid {
-			if err := s.TaskService.hydrateDeferredChannelIssueTaskOverlay(ctx, assignedTask); err != nil {
+	var executorTaskID pgtype.UUID
+	if !opts.ExecutorRunFireAt.IsZero() {
+		executorTaskID = executorTask.ID
+		if executorTaskID.Valid {
+			if err := s.TaskService.hydrateDeferredChannelIssueTaskOverlay(ctx, executorTask); err != nil {
 				// Runtime overlays are best-effort on every enqueue path. The task is
 				// already durable and safely deferred, so an optional integration
 				// failure must not turn a committed issue into a retry duplicate.
 				slog.Warn("hydrate deferred channel issue task overlay failed",
 					"issue_id", util.UUIDToString(issue.ID),
-					"task_id", util.UUIDToString(assignedTask.ID),
+					"task_id", util.UUIDToString(executorTask.ID),
 					"error", err)
 			}
-		} else if s.shouldEnqueueTeamLeaderOnAssign(ctx, issue) {
-			// AssignedAgentRunFireAt currently belongs to channel /issue, which
-			// always resolves an agent assignee. Preserve the ordinary team path
+		} else if s.shouldEnqueueTeamLeaderOnExecutor(ctx, issue) {
+			// ExecutorRunFireAt currently belongs to channel /issue, which
+			// always resolves an agent executor. Preserve the ordinary team path
 			// for any future caller that supplies the option with a team.
 			s.enqueueTeamLeaderTask(ctx, issue, pgtype.UUID{}, p.CreatorType, actorID)
 		}
@@ -513,11 +513,11 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 
 	s.publishIssueCreated(issue, attachments, labels, p.CreatorType, actorID, opts)
 	s.captureCreatedAnalytics(issue, p.CreatorType, actorID, opts)
-	if opts.AssignedAgentRunFireAt.IsZero() {
-		assignedTaskID = s.maybeEnqueueOnAssign(ctx, issue, p.CreatorType, actorID, opts.AssignedAgentRunFireAt)
+	if opts.ExecutorRunFireAt.IsZero() {
+		executorTaskID = s.maybeEnqueueOnExecutor(ctx, issue, p.CreatorType, actorID, opts.ExecutorRunFireAt)
 	}
 
-	return IssueCreateResult{Issue: issue, Attachments: attachments, Labels: labels, AssignedTaskID: assignedTaskID}, nil
+	return IssueCreateResult{Issue: issue, Attachments: attachments, Labels: labels, ExecutorTaskID: executorTaskID}, nil
 }
 
 // validateIssueLabels checks that every requested label exists in the
@@ -734,7 +734,7 @@ func classifyOrigin(issue db.Issue, opts IssueCreateOpts) (source, taskID, autom
 	}
 }
 
-func (s *IssueService) maybeEnqueueOnAssign(ctx context.Context, issue db.Issue, creatorType, actorID string, agentRunFireAt time.Time) pgtype.UUID {
+func (s *IssueService) maybeEnqueueOnExecutor(ctx context.Context, issue db.Issue, creatorType, actorID string, executorRunFireAt time.Time) pgtype.UUID {
 	if !issue.ExecutorType.Valid || !issue.ExecutorID.Valid {
 		return pgtype.UUID{}
 	}
@@ -744,11 +744,11 @@ func (s *IssueService) maybeEnqueueOnAssign(ctx context.Context, issue db.Issue,
 	if issuestatus.Effective(ctx, s.Queries, issue.WorkspaceID, issue.Status) == "backlog" {
 		return pgtype.UUID{}
 	}
-	verdict, admitted := agentAssigneeVerdict(ctx, s.runtimeLookup(s.Queries), issue)
+	verdict, admitted := agentExecutorVerdict(ctx, s.runtimeLookup(s.Queries), issue)
 	if !admitted && verdict.Reason == dispatch.ReasonRuntimeUnusable {
-		// Assignment has no response the assigner reads for this outcome, so the
+		// Executor routing has no response the caller reads for this outcome, so the
 		// refusal explains itself on the issue instead of vanishing (MUL-6164).
-		// Only here, not in the create-with-assignee path above: that one runs
+		// Only here, not in the create-with-executor path above: that one runs
 		// inside the issue's transaction, and a notice about a machine has no
 		// business deciding whether the issue itself commits.
 		s.noteRuntimeUnusable(ctx, issue, verdict)
@@ -756,10 +756,10 @@ func (s *IssueService) maybeEnqueueOnAssign(ctx context.Context, issue db.Issue,
 	if admitted {
 		var task db.AgentTaskQueue
 		var err error
-		if agentRunFireAt.IsZero() {
+		if executorRunFireAt.IsZero() {
 			task, err = s.TaskService.EnqueueTaskForIssue(ctx, issue)
 		} else {
-			task, err = s.TaskService.EnqueueDeferredChannelIssueTask(ctx, issue, agentRunFireAt)
+			task, err = s.TaskService.EnqueueDeferredChannelIssueTask(ctx, issue, executorRunFireAt)
 		}
 		if err != nil {
 			slog.Warn("enqueue agent task on create failed",
@@ -769,22 +769,22 @@ func (s *IssueService) maybeEnqueueOnAssign(ctx context.Context, issue db.Issue,
 			return task.ID
 		}
 	}
-	if s.shouldEnqueueTeamLeaderOnAssign(ctx, issue) {
+	if s.shouldEnqueueTeamLeaderOnExecutor(ctx, issue) {
 		s.enqueueTeamLeaderTask(ctx, issue, pgtype.UUID{}, creatorType, actorID)
 	}
 	return pgtype.UUID{}
 }
 
-// shouldEnqueueAgentTaskWithQueries returns true when an issue create should
-// trigger the assigned agent. Backlog issues are skipped — backlog acts as a
-// parking lot for pre-assigning without immediate execution. The assignment
-// path does the same test through agentAssigneeVerdict, which also tells it
+// shouldEnqueueExecutorTaskWithQueries returns true when an issue create should
+// trigger the selected executor agent. Backlog issues are skipped — backlog
+// acts as a parking lot for preconfiguring without immediate execution. The
+// executor path does the same test through agentExecutorVerdict, which also tells it
 // WHY a refusal happened; this one runs inside the create transaction, where
 // there is nothing to tell anyone yet.
 //
-// Mirrors handler.shouldEnqueueAgentTask; kept here to make the service
+// Mirrors handler.shouldEnqueueExecutorTask; kept here to make the service
 // self-contained, since both code paths must move together.
-func (s *IssueService) shouldEnqueueAgentTaskWithQueries(ctx context.Context, q *db.Queries, issue db.Issue) bool {
+func (s *IssueService) shouldEnqueueExecutorTaskWithQueries(ctx context.Context, q *db.Queries, issue db.Issue) bool {
 	// Resolved through q, not s.Queries: this runs inside the create
 	// transaction and must see the same snapshot as the rest of it. (MUL-6243)
 	if issuestatus.Effective(ctx, q, issue.WorkspaceID, issue.Status) == "backlog" {
@@ -794,17 +794,17 @@ func (s *IssueService) shouldEnqueueAgentTaskWithQueries(ctx context.Context, q 
 }
 
 func isAgentExecutorReadyWithQueries(ctx context.Context, lookup RuntimeLookup, issue db.Issue) bool {
-	_, ok := agentAssigneeVerdict(ctx, lookup, issue)
+	_, ok := agentExecutorVerdict(ctx, lookup, issue)
 	return ok
 }
 
-// agentAssigneeVerdict resolves the issue's agent assignee through the shared
+// agentExecutorVerdict resolves the issue's agent executor through the shared
 // readiness check and reports whether work may be enqueued for it, plus the
 // verdict when it may not.
 //
 // Only a BLOCKED verdict stops the enqueue. A merely offline machine still
 // queues: that work runs when the laptop comes back, and people rely on it.
-func agentAssigneeVerdict(ctx context.Context, lookup RuntimeLookup, issue db.Issue) (AgentVerdict, bool) {
+func agentExecutorVerdict(ctx context.Context, lookup RuntimeLookup, issue db.Issue) (AgentVerdict, bool) {
 	if !issue.ExecutorType.Valid || issue.ExecutorType.String != "agent" || !issue.ExecutorID.Valid {
 		return AgentVerdict{}, false
 	}
@@ -819,7 +819,7 @@ func agentAssigneeVerdict(ctx context.Context, lookup RuntimeLookup, issue db.Is
 	return verdict, !verdict.Blocked()
 }
 
-func (s *IssueService) shouldEnqueueTeamLeaderOnAssign(ctx context.Context, issue db.Issue) bool {
+func (s *IssueService) shouldEnqueueTeamLeaderOnExecutor(ctx context.Context, issue db.Issue) bool {
 	if issuestatus.Effective(ctx, s.Queries, issue.WorkspaceID, issue.Status) == "backlog" {
 		return false
 	}

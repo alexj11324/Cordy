@@ -564,7 +564,7 @@ const AutomationIssueCommandsGuard = "Do not run `patchbay issue get`, `patchbay
 
 // writeWorkflowAutomation emits the automation run-only workflow.
 func writeWorkflowAutomation(b *strings.Builder, ctx TaskContextForEnv) {
-	b.WriteString("**This task was triggered by an Automation in run-only mode.** There is no assigned Patchbay issue for this run.\n\n")
+	b.WriteString("**This task was triggered by an Automation in run-only mode.** There is no Patchbay issue attached to this run.\n\n")
 	fmt.Fprintf(b, "- Automation run ID: `%s`\n", ctx.AutomationRunID)
 	if ctx.AutomationID != "" {
 		fmt.Fprintf(b, "- Automation ID: `%s`\n", ctx.AutomationID)
@@ -622,7 +622,7 @@ func writeWorkflowAutomation(b *strings.Builder, ctx TaskContextForEnv) {
 //
 // The in_progress moment is the START of work, not the end of the turn: a
 // turn that advances the issue's own ask makes "being worked" true the moment
-// it begins, and the first work turn on a fresh assignment can run for half
+// it begins, and the first work turn after fresh executor routing can run for half
 // an hour — judged only at turn end, the board showed todo the whole time
 // (Bohan's post-merge report on MUL-6417). This is the old rule's timing
 // with the fact anchor's conditionality: an ancillary turn still writes
@@ -656,7 +656,7 @@ func writeWorkflowAutomation(b *strings.Builder, ctx TaskContextForEnv) {
 //
 // The invariants MUL-6300 pinned survive as consequences instead of gates: a
 // conversational turn changes nothing about the issue's state, so it writes
-// nothing; an @mention pull-in on someone else's (or an unassigned) issue
+// nothing; an @mention pull-in on someone else's (or an issue without an executor)
 // almost never changes its state, so it writes nothing — but a turn that
 // genuinely does move the work may now record it, regardless of which run
 // triggered the turn or which executor is recorded on the issue.

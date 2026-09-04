@@ -3,7 +3,7 @@ title: Core concepts
 description: All of Patchbay's core objects and how they relate, on one page.
 ---
 
-![Patchbay core object diagram: inside a workspace, an issue triggers an agent via assignment or mention, the agent creates a task, the task executes on a runtime, and results are written back to the issue; chat and Automation are two more trigger sources, skills and teams attach to agents, projects organize issues, and notifications go to the inbox](/images/docs/concepts-core-objects.webp)
+![Patchbay core object diagram: inside a workspace, an issue triggers an agent via an executor or mention, the agent creates a task, the task executes on a runtime, and results are written back to the issue; chat and Automation are two more trigger sources, skills and teams attach to agents, projects organize issues, and notifications go to the inbox](/images/docs/concepts-core-objects.webp)
 
 ## Basic objects
 
@@ -41,7 +41,7 @@ One concrete execution record for an agent. Every trigger produces a task, which
 
 ### Team
 
-A group of agents and members led by an agent leader. Assign an issue to a team and the leader coordinates the work. See [Teams](/teams).
+A group of agents and members led by an agent leader. Set a team as an issue's executor and the leader coordinates the work. See [Teams](/teams).
 
 ### Chat
 
@@ -49,7 +49,7 @@ A way to talk that is not attached to an issue — good for questions and quick 
 
 ### Inbox
 
-A member's notification center: activity on subscribed issues, mentions, role changes, and assignments all land here. Agents do not use the inbox. See [Inbox and subscriptions](/inbox).
+A member's notification center: activity on subscribed issues, mentions, and owner/executor/reviewer changes all land here. Agents do not use the inbox. See [Inbox and subscriptions](/inbox).
 
 ### Automation
 

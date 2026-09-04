@@ -372,9 +372,9 @@ LIMIT 1;
 -- protecting. The reconcile pass runs each returned comment through
 -- computeCommentAgentTriggers under its OWN author_type, and for an agent author
 -- it then keeps ONLY explicit @agent/@team mention triggers
--- (keepExplicitMentionTriggers) — the assigned-team-leader fallback and all
+-- (keepExplicitMentionTriggers) — the executor-team-leader fallback and all
 -- other conversational routing are dropped, so a plain agent reply /
--- acknowledgement yields nothing regardless of issue assignment. The reconcile
+-- acknowledgement yields nothing regardless of issue executor. The reconcile
 -- pass further keeps only triggers routing to the agent that just completed, so
 -- an agent comment can never fan out to an unrelated agent. Ordered ASC so
 -- replaying in order lets later comments coalesce onto the follow-up created by

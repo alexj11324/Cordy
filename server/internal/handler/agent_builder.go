@@ -53,7 +53,7 @@ type CreateAgentBuilderSessionResponse struct {
 // CreateAgentBuilderSession starts a private configuration conversation on an
 // existing runtime. A hidden system agent is the execution carrier because the
 // chat/task pipeline is intentionally agent-backed; it never appears in normal
-// agent lists and cannot be selected as an assignee.
+// agent lists and cannot be selected as an issue executor.
 func (h *Handler) CreateAgentBuilderSession(w http.ResponseWriter, r *http.Request) {
 	workspaceID := h.resolveWorkspaceID(r)
 	userID, ok := requireUserID(w, r)

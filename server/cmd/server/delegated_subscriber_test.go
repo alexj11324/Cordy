@@ -109,7 +109,7 @@ func subscriberReason(t *testing.T, queries *db.Queries, issueID, userType, user
 
 // TestDelegatedSubscribe_AgentCreatedSubIssue is MUL-5483's headline case. Every
 // pre-existing auto-subscribe rule keys on ACTOR identity, so an agent-created,
-// agent-assigned sub-issue ends up with a full subscriber list and zero members
+// agent-executor sub-issue ends up with a full subscriber list and zero members
 // to notify. The human the run is attributed to must be subscribed instead.
 func TestDelegatedSubscribe_AgentCreatedSubIssue(t *testing.T) {
 	queries := db.New(testPool)

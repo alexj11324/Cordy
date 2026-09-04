@@ -499,7 +499,7 @@ func (s *TaskService) attributionFromComment(ctx context.Context, comment db.Com
 
 // resolveOriginatorForIssueTask returns the top-of-chain human for issue-backed
 // dispatches. Comment-triggered runs keep the existing comment-chain semantics;
-// direct issue assignment/creation falls back to the issue's member creator.
+// direct issue executor changes/creation fall back to the issue's member creator.
 // Agent-created issues that carry an explicit task-origin link — quick_create
 // (daemon quick-create flow) or agent_create (an agent's ordinary `issue
 // create`, MUL-4305) — inherit that origin task's originator, since origin_id
@@ -511,7 +511,7 @@ func (s *TaskService) resolveOriginatorForIssueTask(ctx context.Context, issue d
 
 // attributionForIssueTask resolves the full attribution for an issue-backed
 // enqueue. Comment-triggered runs keep the comment-chain semantics; direct
-// assignment/creation falls back to the issue's member creator; agent-created
+// executor change/creation falls back to the issue's member creator; agent-created
 // quick-create issues inherit the origin task's human as a delegation. The
 // accountable-human value is byte-identical to resolveOriginatorForIssueTask,
 // which now delegates here — so there is a single source of truth and
@@ -1049,7 +1049,7 @@ func taskErrorType(reason string) string {
 	}
 }
 
-// EnqueueTaskForIssue creates a queued task for an agent-assigned issue.
+// EnqueueTaskForIssue creates a queued task for an issue with an agent executor.
 // No context snapshot is stored — the agent fetches all data it needs at
 // runtime via the patchbay CLI.
 func (s *TaskService) EnqueueTaskForIssue(ctx context.Context, issue db.Issue, triggerCommentID ...pgtype.UUID) (db.AgentTaskQueue, error) {
@@ -1060,7 +1060,7 @@ func (s *TaskService) EnqueueTaskForIssue(ctx context.Context, issue db.Issue, t
 	return s.enqueueIssueTask(ctx, issue, commentID, false, "", pgtype.UUID{}, pgtype.UUID{}, pgtype.Timestamptz{})
 }
 
-// EnqueueDeferredChannelIssueTask persists the assigned task for a media-backed
+// EnqueueDeferredChannelIssueTask persists the executor task for a media-backed
 // channel /issue turn without making it claimable yet. The fireAt deadline is a
 // crash-safe fallback; the channel router promotes the task as soon as the
 // detached attachment transaction settles.
@@ -1111,9 +1111,9 @@ func (s *TaskService) hydrateDeferredChannelIssueTaskOverlay(ctx context.Context
 	return nil
 }
 
-// EnqueueTaskForIssueWithHandoff is the assign/promote variant that carries a
+// EnqueueTaskForIssueWithHandoff is the executor-set/promote variant that carries a
 // handoff note into the run's opening context (MUL-3375). The note rides a
-// dedicated task column; the daemon renders it via the assignment-handoff
+// dedicated task column; the daemon renders it via the executor-handoff
 // branch. Empty note behaves exactly like EnqueueTaskForIssue. actorUserID is the
 // member who performed the assign/promote and becomes the accountable human for
 // the run (MUL-4302 §4); invalid when the caller has no member actor.
@@ -1192,7 +1192,7 @@ func (s *TaskService) enqueueIssueTaskWithCommentPlan(ctx context.Context, issue
 
 	// The issue executor reacting to an agent-authored comment is a
 	// comment_source attribution (a special case of delegation); a member
-	// comment or direct member assignment is direct_human. attr.UserID is the
+	// comment or direct member executor change is direct_human. attr.UserID is the
 	// same value the pre-MUL-4302 resolver produced, so overlay/authorization
 	// are unchanged; the extra fields are audit provenance.
 	attr := s.attributionForIssueTask(ctx, issue, triggerCommentID, attribution.SourceCommentSource, actorUserID)
@@ -1488,7 +1488,7 @@ func (s *TaskService) EnqueueDeferredExecutorFallback(ctx context.Context, issue
 // agent (Queries.CreateQuickCreateTask is agent-scoped); TeamID is the
 // hint the daemon claim handler uses to layer the team-leader briefing
 // onto the agent's Instructions, matching the behavior of issue-bound
-// tasks assigned to the team.
+// tasks whose executor is the team.
 type QuickCreateContext struct {
 	Type          string   `json:"type"`
 	Prompt        string   `json:"prompt"`
@@ -4563,7 +4563,7 @@ func (s *TaskService) completeTask(ctx context.Context, taskID pgtype.UUID, resu
 	// ping, or CLI reply), HasAgentCommentedSince returns true and we skip.
 	// Otherwise, synthesize one from the final output. For comment-triggered
 	// tasks, TriggerCommentID threads the fallback under the original comment;
-	// for assignment-triggered tasks it is NULL and the fallback is top-level.
+	// for executor-triggered tasks it is NULL and the fallback is top-level.
 	// Chat tasks have no IssueID and are handled separately below.
 	if task.IssueID.Valid {
 		suppressNoActionComment, err := HasTeamLeaderNoActionEvaluationForTask(ctx, s.Queries, task)
@@ -5726,19 +5726,19 @@ func (s *TaskService) RerunIssue(ctx context.Context, issueID pgtype.UUID, sourc
 		case issue.ExecutorType.String == "team" && issue.ExecutorID.Valid:
 			team, err := s.Queries.GetTeam(ctx, issue.ExecutorID)
 			if err != nil {
-				return nil, fmt.Errorf("issue is assigned to a team but team not found")
+			return nil, fmt.Errorf("issue executor is a team but team not found")
 			}
 			agentID = team.LeaderID
 			isLeader = true
 			teamID = issue.ExecutorID
 		default:
-			return nil, fmt.Errorf("issue is not assigned to an agent or team")
+			return nil, fmt.Errorf("issue has no agent or team executor")
 		}
 	}
 
 	// Re-validate invoke permission on the RESOLVED target before mutating
 	// anything (MUL-4525). For a task_id rerun this gates the historical agent,
-	// so a since-reassigned issue can't be used to re-fire a private agent the
+	// so an issue whose executor changed can't be used to re-fire a private agent the
 	// operator may only view. A block fails closed: no prior task is cancelled,
 	// no new task is created.
 	if canInvoke != nil {
@@ -5888,7 +5888,7 @@ func (s *TaskService) promoteNewestSurvivingComment(ctx context.Context, ids []p
 // When the target agent is the issue's single-agent executor we use the
 // executor-driven path (enqueueIssueTask) so the issue-executor bookkeeping
 // stays in sync; otherwise (team member, prior executor that has since been
-// reassigned, mention agent) we use the mention path.
+// executor changed, mention agent) we use the mention path.
 //
 // force_fresh_session is pinned to true on every rerun row on purpose. It is
 // the rollback-safe legacy signal: an OLD claim handler (mid rolling deploy)
@@ -7654,7 +7654,7 @@ func quickCreateFailureDetail(result []byte) string {
 // stamped with origin_type=quick_create + origin_id=<task_id> by the
 // daemon-injected PATCHBAY_QUICK_CREATE_TASK_ID env var, so this lookup is
 // deterministic — robust against the same agent creating other issues in
-// parallel (e.g. assignment task running while max_concurrent_tasks > 1
+	// parallel (e.g. executor task running while max_concurrent_tasks > 1
 // permits another quick-create alongside it).
 func (s *TaskService) notifyQuickCreateCompleted(ctx context.Context, task db.AgentTaskQueue, qc QuickCreateContext, result []byte) {
 	requesterID, err := util.ParseUUID(qc.RequesterID)

@@ -13,10 +13,10 @@ import (
 	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
 )
 
-// isAssignmentRecipientType reports whether a role actor can own a subscriber
+// isIssueRoleRecipientType reports whether an issue role actor can own a subscriber
 // or inbox row. Teams are routing objects whose work runs through the leader;
 // they are not user identities and have no inbox to consume.
-func isAssignmentRecipientType(actorType string) bool {
+func isIssueRoleRecipientType(actorType string) bool {
 	return actorType == "member" || actorType == "agent"
 }
 
@@ -47,20 +47,20 @@ func registerSubscriberListeners(bus *events.Bus, pool *pgxpool.Pool) {
 
 		// Subscribe the owner if it is a direct recipient and differs from the creator.
 		if issue.OwnerType != nil && issue.OwnerID != nil &&
-			isAssignmentRecipientType(*issue.OwnerType) &&
+			isIssueRoleRecipientType(*issue.OwnerType) &&
 			!(*issue.OwnerType == issue.CreatorType && *issue.OwnerID == issue.CreatorID) {
 			addSubscriber(bus, queries, e.WorkspaceID, issue.ID, *issue.OwnerType, *issue.OwnerID, "owner")
 		}
 
 		// Subscribe the executor if it is a direct recipient and differs from the creator.
 		if issue.ExecutorType != nil && issue.ExecutorID != nil &&
-			isAssignmentRecipientType(*issue.ExecutorType) &&
+			isIssueRoleRecipientType(*issue.ExecutorType) &&
 			!(*issue.ExecutorType == issue.CreatorType && *issue.ExecutorID == issue.CreatorID) {
 			addSubscriber(bus, queries, e.WorkspaceID, issue.ID, *issue.ExecutorType, *issue.ExecutorID, "executor")
 		}
 
 		if issue.ReviewerType != nil && issue.ReviewerID != nil &&
-			isAssignmentRecipientType(*issue.ReviewerType) &&
+			isIssueRoleRecipientType(*issue.ReviewerType) &&
 			!(*issue.ReviewerType == issue.CreatorType && *issue.ReviewerID == issue.CreatorID) {
 			addSubscriber(bus, queries, e.WorkspaceID, issue.ID, *issue.ReviewerType, *issue.ReviewerID, "reviewer")
 		}
@@ -92,17 +92,17 @@ func registerSubscriberListeners(bus *events.Bus, pool *pgxpool.Pool) {
 		}
 
 		if ownerChanged, _ := payload["owner_changed"].(bool); ownerChanged {
-			if issue.OwnerType != nil && issue.OwnerID != nil && isAssignmentRecipientType(*issue.OwnerType) {
+			if issue.OwnerType != nil && issue.OwnerID != nil && isIssueRoleRecipientType(*issue.OwnerType) {
 				addSubscriber(bus, queries, e.WorkspaceID, issue.ID, *issue.OwnerType, *issue.OwnerID, "owner")
 			}
 		}
 		if executorChanged, _ := payload["executor_changed"].(bool); executorChanged {
-			if issue.ExecutorType != nil && issue.ExecutorID != nil && isAssignmentRecipientType(*issue.ExecutorType) {
+			if issue.ExecutorType != nil && issue.ExecutorID != nil && isIssueRoleRecipientType(*issue.ExecutorType) {
 				addSubscriber(bus, queries, e.WorkspaceID, issue.ID, *issue.ExecutorType, *issue.ExecutorID, "executor")
 			}
 		}
 		if reviewerChanged, _ := payload["reviewer_changed"].(bool); reviewerChanged {
-			if issue.ReviewerType != nil && issue.ReviewerID != nil && isAssignmentRecipientType(*issue.ReviewerType) {
+			if issue.ReviewerType != nil && issue.ReviewerID != nil && isIssueRoleRecipientType(*issue.ReviewerType) {
 				addSubscriber(bus, queries, e.WorkspaceID, issue.ID, *issue.ReviewerType, *issue.ReviewerID, "reviewer")
 			}
 		}

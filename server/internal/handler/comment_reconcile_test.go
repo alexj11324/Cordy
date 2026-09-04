@@ -66,7 +66,7 @@ func TestCompleteTask_ReconcilesMemberCommentPostedDuringRun(t *testing.T) {
 		`SELECT id, runtime_id FROM agent WHERE workspace_id = $1 AND runtime_id IS NOT NULL LIMIT 1`,
 		testWorkspaceID).Scan(&agentID, &runtimeID)
 
-	// Issue assigned to the agent so a plain member comment routes to it.
+	// Issue executed by the agent so a plain member comment routes to it.
 	issueID := dbfx.Issue(t, "reconcile-e2e fixture", testutil.Cols{
 		"status":        "in_progress",
 		"number":        999001,
@@ -168,7 +168,7 @@ func TestCompleteTask_DoesNotReTriggerOtherAgentMentionedDuringRun(t *testing.T)
 	// A second, workspace-invocable agent that a member can @mention.
 	agentB := createHandlerTestAgent(t, "Reconcile Other Agent B", nil)
 
-	// Issue assigned to A so A's completion is the one that reconciles.
+	// Issue executed by A so A's completion is the one that reconciles.
 	issueID := dbfx.Issue(t, "reconcile-other-agent fixture", testutil.Cols{
 		"status":        "in_progress",
 		"number":        999003,
@@ -247,7 +247,7 @@ func TestCompleteTask_ReconcilesAgentAuthoredMentionToCompletedAgent(t *testing.
 	agentA := createHandlerTestAgent(t, "Reconcile A2A Author A", nil)
 	agentB := createHandlerTestAgent(t, "Reconcile A2A Target B", nil)
 
-	// Issue assigned to B so B's completion is the one that reconciles.
+	// Issue executed by B so B's completion is the one that reconciles.
 	issueID := dbfx.Issue(t, "reconcile-a2a-mention fixture", testutil.Cols{
 		"status":        "in_progress",
 		"number":        999007,
@@ -316,7 +316,7 @@ func TestCompleteTask_ReconcilesAgentAuthoredMentionToCompletedAgent(t *testing.
 }
 
 // TestCompleteTask_DoesNotReconcilePlainAgentReply guards the anti-loop
-// boundary of MUL-4304 on an agent-assigned issue: an agent-authored comment
+// boundary of MUL-4304 on an agent-executor issue: an agent-authored comment
 // with NO explicit @mention (a plain reply / acknowledgement) must never earn a
 // follow-up, even though reconcile now considers agent comments. Only explicit
 // @agent/@team mentions are replayed.
@@ -371,10 +371,10 @@ func TestCompleteTask_DoesNotReconcilePlainAgentReply(t *testing.T) {
 }
 
 // TestCompleteTask_DoesNotReconcilePlainWorkerReplyOnTeamIssue is the MUL-4304
-// review must-fix #2 regression test. On a TEAM-assigned issue,
+// review must-fix #2 regression test. On a TEAM-executor issue,
 // computeCommentAgentTriggers routes a plain worker-agent reply (no mention) to
-// the team leader via routeAssignedTeamLeaderFallback (Source = issue
-// assignee) — that is the create-time leader→worker→leader coordination path.
+// the team leader via routeTeamExecutorLeaderFallback (Source = issue
+// executor) — that is the create-time leader→worker→leader coordination path.
 // Reconcile must NOT replay that fallback: it compensates ONLY explicit
 // @agent/@team mentions (keepExplicitMentionTriggers). So when the team leader
 // completes a task and a worker's plain reply arrived during the run, no

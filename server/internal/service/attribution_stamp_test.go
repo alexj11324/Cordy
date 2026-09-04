@@ -16,7 +16,7 @@ import (
 )
 
 // seedAttributionFixture creates the minimal user/workspace/member/runtime/agent
-// graph plus a member-created issue assigned to the agent, and returns the ids
+// graph plus a member-created issue executed by the agent, and returns the ids
 // needed to enqueue a run. Everything is cleaned up via t.Cleanup.
 func seedAttributionFixture(t *testing.T, pool *pgxpool.Pool) (workspaceID, userID, agentID, issueID string) {
 	t.Helper()
@@ -64,7 +64,7 @@ func seedAttributionFixture(t *testing.T, pool *pgxpool.Pool) (workspaceID, user
 }
 
 // TestEnqueueTaskForIssueStampsDirectHumanAttribution is the acceptance test for
-// the Phase 1 foundation (MUL-4302 §11): a member-assigned run must land with a
+// the Phase 1 foundation (MUL-4302 §11): an issue-executor run must land with a
 // non-empty, correct attribution — source=direct_human, the accountable human
 // equal to the issue creator, and evidence pointing back at the issue.
 func TestEnqueueTaskForIssueStampsDirectHumanAttribution(t *testing.T) {

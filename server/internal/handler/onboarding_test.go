@@ -287,8 +287,8 @@ func TestBootstrapOnboardingRuntimeCreatesSingleGuideIssue(t *testing.T) {
 
 	var (
 		issueTitle    string
-		assigneeType  string
-		assigneeID    string
+		executorType  string
+		executorID    string
 		issueStatus   string
 		issuePriority string
 	)
@@ -296,14 +296,14 @@ func TestBootstrapOnboardingRuntimeCreatesSingleGuideIssue(t *testing.T) {
 		SELECT title, executor_type, executor_id, status, priority
 		  FROM issue
 		 WHERE id = $1
-	`, resp.IssueID).Scan(&issueTitle, &assigneeType, &assigneeID, &issueStatus, &issuePriority); err != nil {
+	`, resp.IssueID).Scan(&issueTitle, &executorType, &executorID, &issueStatus, &issuePriority); err != nil {
 		t.Fatalf("lookup onboarding issue: %v", err)
 	}
 	if issueTitle != onboardingIssueTitle {
 		t.Fatalf("issue title = %q, want %q", issueTitle, onboardingIssueTitle)
 	}
-	if assigneeType != "agent" || assigneeID != resp.AgentID {
-		t.Fatalf("issue assignee = %s/%s, want agent/%s", assigneeType, assigneeID, resp.AgentID)
+	if executorType != "agent" || executorID != resp.AgentID {
+		t.Fatalf("issue executor = %s/%s, want agent/%s", executorType, executorID, resp.AgentID)
 	}
 	if issueStatus != "todo" || issuePriority != "high" {
 		t.Fatalf("issue status/priority = %s/%s, want todo/high", issueStatus, issuePriority)
@@ -529,8 +529,8 @@ func TestBootstrapOnboardingNoRuntimeCreatesSingleGuideIssue(t *testing.T) {
 
 	var (
 		issueTitle    string
-		assigneeType  string
-		assigneeID    string
+		ownerType     string
+		ownerID       string
 		issueStatus   string
 		issuePriority string
 		description   string
@@ -539,14 +539,14 @@ func TestBootstrapOnboardingNoRuntimeCreatesSingleGuideIssue(t *testing.T) {
 		SELECT title, owner_type, owner_id, status, priority, description
 		  FROM issue
 		 WHERE id = $1
-	`, resp.IssueID).Scan(&issueTitle, &assigneeType, &assigneeID, &issueStatus, &issuePriority, &description); err != nil {
+	`, resp.IssueID).Scan(&issueTitle, &ownerType, &ownerID, &issueStatus, &issuePriority, &description); err != nil {
 		t.Fatalf("lookup no-runtime onboarding issue: %v", err)
 	}
 	if issueTitle != noRuntimeIssueTitle {
 		t.Fatalf("issue title = %q, want %q", issueTitle, noRuntimeIssueTitle)
 	}
-	if assigneeType != "member" || assigneeID != testUserID {
-		t.Fatalf("issue owner = %s/%s, want member/%s", assigneeType, assigneeID, testUserID)
+	if ownerType != "member" || ownerID != testUserID {
+		t.Fatalf("issue owner = %s/%s, want member/%s", ownerType, ownerID, testUserID)
 	}
 	if issueStatus != "todo" || issuePriority != "high" {
 		t.Fatalf("issue status/priority = %s/%s, want todo/high", issueStatus, issuePriority)

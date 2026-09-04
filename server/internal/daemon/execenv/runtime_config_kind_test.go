@@ -18,7 +18,7 @@ func TestClassifyTask(t *testing.T) {
 		{"quick-create", TaskContextForEnv{QuickCreatePrompt: "p"}, kindQuickCreate},
 		{"automation", TaskContextForEnv{AutomationRunID: "r"}, kindAutomationRunOnly},
 		{"issue-comment-triggered", TaskContextForEnv{IssueID: "i", TriggerCommentID: "c"}, kindIssue},
-		{"issue-assignment-triggered", TaskContextForEnv{IssueID: "i"}, kindIssue},
+		{"issue-executor-triggered", TaskContextForEnv{IssueID: "i"}, kindIssue},
 		{"issue-bare", TaskContextForEnv{}, kindIssue},
 		{"tiebreak-chat-vs-quick", TaskContextForEnv{ChatSessionID: "c", QuickCreatePrompt: "p"}, kindChat},
 		{"tiebreak-quick-vs-automation", TaskContextForEnv{QuickCreatePrompt: "p", AutomationRunID: "r"}, kindQuickCreate},

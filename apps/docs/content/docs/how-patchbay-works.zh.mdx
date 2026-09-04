@@ -5,7 +5,7 @@ description: Patchbay 记录并协调工作，连接的电脑负责执行。
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-把一个任务分配给智能体后，Patchbay 会创建一条 task，由连接电脑上的运行时领取。运行时调用本地 AI 编程工具，并把进度和结果写回原来的任务。
+把一个任务的 executor 设为智能体后，Patchbay 会创建一条 task，由连接电脑上的运行时领取。运行时调用本地 AI 编程工具，并把进度和结果写回原来的任务。
 
 ## 一次执行的完整链路
 
@@ -35,7 +35,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 ## 智能体的触发方式
 
-智能体不会自己开始工作，每次执行都由一个明确的动作触发：分配任务、在评论中 @智能体、直接对话，或自动化。四种方式的选择和通用规则见[让智能体开始工作](/triggering-agents)。
+智能体不会自己开始工作，每次执行都由一个明确的动作触发：设置任务 executor、在评论中 @智能体、直接对话，或自动化。四种方式的选择和通用规则见[让智能体开始工作](/triggering-agents)。
 
 ## 执行结束与任务完成
 
@@ -45,4 +45,4 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 - [守护进程与运行时](/daemon-runtimes) — 了解电脑如何连接 Patchbay，以及运行时上线、离线时会发生什么。
 - [Task](/tasks) — 查看 task 的状态、重试和取消规则。
-- [分配任务给智能体](/assigning-issues) — 了解最常用的协作方式。
+- [设置任务 executor](/assigning-issues) — 了解最常用的协作方式。

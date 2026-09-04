@@ -1018,21 +1018,21 @@ func renderIssueContext(provider string, ctx TaskContextForEnv) string {
 
 	var b strings.Builder
 
-	b.WriteString("# Task Assignment\n\n")
+	b.WriteString("# Issue Execution\n\n")
 	fmt.Fprintf(&b, "**Issue ID:** %s\n\n", ctx.IssueID)
 
 	if ctx.TriggerCommentID != "" {
 		b.WriteString("**Trigger:** Comment Reply\n")
 		b.WriteString("**Triggering comment ID:** `" + ctx.TriggerCommentID + "`\n\n")
 	} else {
-		b.WriteString("**Trigger:** New Assignment\n\n")
+		b.WriteString("**Trigger:** Executor Routing\n\n")
 	}
 
-	// Assignment handoff note (MUL-3375): the assigner's scoping instruction for
+	// Executor handoff note (MUL-3375): the executor setter's scoping instruction for
 	// this run. Distinct from a comment — there is no thread to reply to.
 	if ctx.HandoffNote != "" {
 		b.WriteString("## Handoff Note\n\n")
-		b.WriteString("The person who assigned this issue left this instruction for the run. Treat it as scope guidance and follow it before doing anything broader:\n\n")
+		b.WriteString("The person who set this issue's executor left this instruction for the run. Treat it as scope guidance and follow it before doing anything broader:\n\n")
 		fmt.Fprintf(&b, "> %s\n\n", ctx.HandoffNote)
 	}
 
@@ -1077,7 +1077,7 @@ func renderAutomationContext(ctx TaskContextForEnv) string {
 	}
 
 	b.WriteString("## Quick Start\n\n")
-	b.WriteString("This is a run-only automation task with no assigned issue. Do not run `patchbay issue get` unless the automation instructions explicitly ask you to create or update an issue.\n\n")
+	b.WriteString("This is a run-only automation task with no Patchbay issue attached. Do not run `patchbay issue get` unless the automation instructions explicitly ask you to create or update an issue.\n\n")
 	if ctx.AutomationID != "" {
 		fmt.Fprintf(&b, "Run `patchbay automation get %s --output json` if you need the full automation configuration.\n\n", ctx.AutomationID)
 	}

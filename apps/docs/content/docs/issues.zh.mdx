@@ -36,7 +36,13 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 设置 executor 为智能体或团队时，任务不在 `backlog` 就会立即入队；运行时离线时，task 留在队列中等待。已归档的智能体和团队不能被设置为 executor。
 
-设置 executor 不会绕过智能体的访问范围（Access）；设置为团队时，校验的是 leader 的 Access。详见[分配任务给智能体](/assigning-issues)。
+设置 executor 不会绕过智能体的访问范围（Access）；设置为团队时，校验的是 leader 的 Access。详见[设置任务 executor](/assigning-issues)。
+
+## 依赖图计划
+
+如果一项工作要拆成带有硬前置条件的多个任务，请使用 typed dependency graph 一次性提交，不要把创建子任务和依赖边拆成互不关联的请求。每个图任务分别保存 `owner`、`executor`、`candidate_executors` 和 `reviewer`：owner 必须是 member，executor 和候选执行者必须是 agent 或 team，reviewer 可以是 member、agent 或 team。服务端会校验这些角色，根据依赖边推导执行 wave，并在一个事务中创建子任务、图节点和依赖边。
+
+读取依赖图会返回 parent、children、nodes、edges、推导出的 `waves`，以及包含准确 `unlock_condition` 的就绪信息。重复使用同一个幂等键会安全读回已保存的计划。成功 apply、重放或停用计划都会发布 `dependency_graph:updated`，Web、Desktop 和 Mobile 会据此刷新图数据，不会继续使用过期快照。
 
 ## 状态
 
@@ -69,8 +75,8 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 | 分类 | 该分类下的状态都会这样 |
 |---|---|
-| `backlog` | 停着不动：分配给智能体不会启动执行。把任务移出这个分类才会启动，除非目标是 `done` 或 `cancelled`。 |
-| `todo` | 排队等待开始。和 `backlog` 不同，处于这个分类的任务一分配智能体就立即启动执行。 |
+| `backlog` | 停着不动：设置 agent/team executor 不会启动执行。把任务移出这个分类才会启动，除非目标是 `done` 或 `cancelled`。 |
+| `todo` | 排队等待开始。和 `backlog` 不同，处于这个分类的任务设置 agent executor 就立即启动执行。 |
 | `in_progress` | 算作正在处理：执行失败且没有其他执行在进行时，任务回到 `todo`。 |
 | `in_review` | 算作已交付、等待检查：会结束[自动化](/automations)的运行，之前的"执行失败"通知也会自动归档。 |
 | `done` | 算作已完成：会结束子任务的一个阶段，并计入父任务的进度。 |
@@ -118,5 +124,5 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 - [项目](/projects) — 组织需要多条任务一起完成的工作。
 - [评论](/comments) — 围绕任务讨论、回复和 @提及。
-- [分配任务给智能体](/assigning-issues) — 把工作交给智能体并开始第一次执行。
+- [设置任务 executor](/assigning-issues) — 把工作交给智能体并开始第一次执行。
 - [Task](/tasks) — 了解排队、运行、重试和取消。

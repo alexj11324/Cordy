@@ -8,10 +8,10 @@ import (
 	"testing"
 )
 
-// TestCreateIssueAssignedToTeamEnqueuesLeader verifies that creating an
+// TestCreateIssueWithTeamExecutorEnqueuesLeader verifies that creating an
 // issue with executor_type=team immediately enqueues a task for the team
-// leader (mirrors the agent-assignee parking-lot rule: skip backlog only).
-func TestCreateIssueAssignedToTeamEnqueuesLeader(t *testing.T) {
+// leader (mirrors the agent-executor parking-lot rule: skip backlog only).
+func TestCreateIssueWithTeamExecutorEnqueuesLeader(t *testing.T) {
 	ctx := context.Background()
 
 	// Look up the seeded test agent — it has a runtime, so it can lead a team.
@@ -33,10 +33,10 @@ func TestCreateIssueAssignedToTeamEnqueuesLeader(t *testing.T) {
 	}
 	defer testPool.Exec(ctx, `DELETE FROM team WHERE id = $1`, teamID)
 
-	// Create an issue assigned to the team.
+	// Create an issue with the team as executor.
 	w := httptest.NewRecorder()
 	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
-		"title":         "Team-assigned at creation",
+		"title":         "Team executor at creation",
 		"executor_type": "team",
 		"executor_id":   teamID,
 	})
@@ -64,6 +64,6 @@ func TestCreateIssueAssignedToTeamEnqueuesLeader(t *testing.T) {
 		t.Fatalf("count tasks: %v", err)
 	}
 	if taskCount == 0 {
-		t.Fatalf("expected team-leader task to be enqueued after team-assigned create, got 0")
+		t.Fatalf("expected team-leader task to be enqueued after team-executor create, got 0")
 	}
 }

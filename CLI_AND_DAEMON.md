@@ -57,6 +57,28 @@ patchbay daemon start
 
 `patchbay login` automatically discovers all workspaces you belong to and adds them to the daemon watch list.
 
+## Dependency graph plans
+
+Use the typed graph commands when one issue is a parent for several tasks with
+hard prerequisites. The server validates the role-specific fields, derives
+waves, and creates the child issues, graph nodes, and edges atomically:
+
+```bash
+patchbay issue dependency-graph get MUL-123 --output table
+patchbay issue dependency-graph apply MUL-123 \
+  --idempotency-key plan-mul-123-v1 --plan-file ./dependency-plan.json
+cat dependency-plan.json | patchbay issue dependency-graph apply MUL-123 \
+  --idempotency-key plan-mul-123-v1 --plan-stdin --output json
+```
+
+The plan uses explicit `owner`, `executor`, `candidate_executors`, and
+`reviewer` objects. An owner is a workspace member; an executor or candidate
+is an agent or team; a reviewer may be a member, agent, or team. `get` and
+successful `apply` expose the parent, children, nodes, edges, derived `waves`,
+and readiness `unlock_condition`. Reusing the idempotency key replays the same
+plan rather than creating duplicate child issues. Graph mutations publish
+`dependency_graph:updated` so connected clients refresh their reads.
+
 ## Authentication
 
 ### Browser Login
@@ -93,7 +115,7 @@ Removes the stored authentication token.
 
 ## Agent Daemon
 
-The daemon is the local agent runtime. It detects available AI CLIs on your machine, registers them with the Patchbay server, and executes tasks when agents are assigned work.
+The daemon is the local agent runtime. It detects available AI CLIs on your machine, registers them with the Patchbay server, and executes tasks when agents receive routed executor work.
 
 ### Start
 

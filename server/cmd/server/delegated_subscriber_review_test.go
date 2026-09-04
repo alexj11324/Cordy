@@ -89,7 +89,7 @@ func TestAddSubscriber_BroadcastsOnRealInsert(t *testing.T) {
 }
 
 // TestDelegatedUpgradesToDirectReason covers finding 4. Once the user is
-// actually participating — assigned, mentioned, or commenting — they are no
+// actually participating — owning/executing, being mentioned, or commenting — they are no
 // longer a passive delegate, so the reduced delivery tier must stop applying.
 // ON CONFLICT DO NOTHING pinned reason at 'delegated' forever.
 func TestDelegatedUpgradesToDirectReason(t *testing.T) {

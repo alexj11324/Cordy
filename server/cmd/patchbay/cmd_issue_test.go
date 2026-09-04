@@ -1266,7 +1266,7 @@ func TestRunIssueRunMessagesResolvesShortTaskPrefix(t *testing.T) {
 	}
 }
 
-func TestResolveAssignee(t *testing.T) {
+func TestResolveActor(t *testing.T) {
 	membersResp := []map[string]any{
 		{"user_id": "user-1111", "name": "Alice Smith", "email": "alice@example.com"},
 		{"user_id": "user-2222", "name": "Bob Jones", "email": "bob@example.com"},
@@ -1299,7 +1299,7 @@ func TestResolveAssignee(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("exact match member", func(t *testing.T) {
-		aType, aID, err := resolveAssignee(ctx, client, "Alice Smith", allActorKinds)
+		aType, aID, err := resolveActor(ctx, client, "Alice Smith", allActorKinds)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1309,7 +1309,7 @@ func TestResolveAssignee(t *testing.T) {
 	})
 
 	t.Run("case-insensitive substring", func(t *testing.T) {
-		aType, aID, err := resolveAssignee(ctx, client, "bob", allActorKinds)
+		aType, aID, err := resolveActor(ctx, client, "bob", allActorKinds)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1321,7 +1321,7 @@ func TestResolveAssignee(t *testing.T) {
 	// MUL-6286: the CLI documents member email as a way to address an actor
 	// property value ("--value alice@example.com"), so email has to resolve.
 	t.Run("match member by email", func(t *testing.T) {
-		aType, aID, err := resolveAssignee(ctx, client, "alice@example.com", memberOnlyKinds)
+		aType, aID, err := resolveActor(ctx, client, "alice@example.com", memberOnlyKinds)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1331,7 +1331,7 @@ func TestResolveAssignee(t *testing.T) {
 	})
 
 	t.Run("match member by email case-insensitively", func(t *testing.T) {
-		aType, aID, err := resolveAssignee(ctx, client, "BOB@EXAMPLE.COM", allActorKinds)
+		aType, aID, err := resolveActor(ctx, client, "BOB@EXAMPLE.COM", allActorKinds)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1345,7 +1345,7 @@ func TestResolveAssignee(t *testing.T) {
 	// carries an agent whose name embeds this exact email, so without the
 	// ranking this resolves to that agent (or errors as ambiguous).
 	t.Run("email outranks a name substring match", func(t *testing.T) {
-		aType, aID, err := resolveAssignee(ctx, client, "alice@example.com", allActorKinds)
+		aType, aID, err := resolveActor(ctx, client, "alice@example.com", allActorKinds)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1371,7 +1371,7 @@ func TestResolveAssignee(t *testing.T) {
 	})
 
 	t.Run("match agent", func(t *testing.T) {
-		aType, aID, err := resolveAssignee(ctx, client, "codebot", allActorKinds)
+		aType, aID, err := resolveActor(ctx, client, "codebot", allActorKinds)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1382,9 +1382,9 @@ func TestResolveAssignee(t *testing.T) {
 
 	// MUL-2165: team names must resolve to (team, <id>) so the automation
 	// quick-create prompt can route work to a team (e.g. "Super Human")
-	// instead of falling through to "Unrecognized assignee".
+	// instead of falling through to "Unrecognized actor".
 	t.Run("match team by exact name", func(t *testing.T) {
-		aType, aID, err := resolveAssignee(ctx, client, "Super Human", allActorKinds)
+		aType, aID, err := resolveActor(ctx, client, "Super Human", allActorKinds)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1394,7 +1394,7 @@ func TestResolveAssignee(t *testing.T) {
 	})
 
 	t.Run("match team by case-insensitive substring", func(t *testing.T) {
-		aType, aID, err := resolveAssignee(ctx, client, "super", allActorKinds)
+		aType, aID, err := resolveActor(ctx, client, "super", allActorKinds)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1404,7 +1404,7 @@ func TestResolveAssignee(t *testing.T) {
 	})
 
 	t.Run("match team by bare @ display name", func(t *testing.T) {
-		aType, aID, err := resolveAssignee(ctx, client, "@Super Human", allActorKinds)
+		aType, aID, err := resolveActor(ctx, client, "@Super Human", allActorKinds)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1414,7 +1414,7 @@ func TestResolveAssignee(t *testing.T) {
 	})
 
 	t.Run("no match", func(t *testing.T) {
-		_, _, err := resolveAssignee(ctx, client, "nobody", allActorKinds)
+		_, _, err := resolveActor(ctx, client, "nobody", allActorKinds)
 		if err == nil {
 			t.Fatal("expected error for no match")
 		}
@@ -1423,7 +1423,7 @@ func TestResolveAssignee(t *testing.T) {
 	t.Run("ambiguous", func(t *testing.T) {
 		// Both "Alice Smith" and "Bob Jones" contain a space — but let's use a broader query
 		// "e" matches "Alice Smith" and "Bob Jones" and "CodeBot"
-		_, _, err := resolveAssignee(ctx, client, "o", allActorKinds)
+		_, _, err := resolveActor(ctx, client, "o", allActorKinds)
 		if err == nil {
 			t.Fatal("expected error for ambiguous match")
 		}
@@ -1434,17 +1434,17 @@ func TestResolveAssignee(t *testing.T) {
 
 	t.Run("missing workspace ID", func(t *testing.T) {
 		noWSClient := cli.NewAPIClient(srv.URL, "", "test-token")
-		_, _, err := resolveAssignee(ctx, noWSClient, "alice", allActorKinds)
+		_, _, err := resolveActor(ctx, noWSClient, "alice", allActorKinds)
 		if err == nil {
 			t.Fatal("expected error for missing workspace ID")
 		}
 	})
 }
 
-func TestResolveAssigneeRetriesTransientNetworkErrors(t *testing.T) {
-	origSleep := assigneeResolveRetrySleep
-	assigneeResolveRetrySleep = func(context.Context, time.Duration) bool { return false }
-	t.Cleanup(func() { assigneeResolveRetrySleep = origSleep })
+func TestResolveActorRetriesTransientNetworkErrors(t *testing.T) {
+	origSleep := actorResolveRetrySleep
+	actorResolveRetrySleep = func(context.Context, time.Duration) bool { return false }
+	t.Cleanup(func() { actorResolveRetrySleep = origSleep })
 
 	var memberHits int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1477,9 +1477,9 @@ func TestResolveAssigneeRetriesTransientNetworkErrors(t *testing.T) {
 	defer srv.Close()
 
 	client := cli.NewAPIClient(srv.URL, "ws-1", "test-token")
-	aType, aID, err := resolveAssignee(context.Background(), client, "Alice", allActorKinds)
+	aType, aID, err := resolveActor(context.Background(), client, "Alice", allActorKinds)
 	if err != nil {
-		t.Fatalf("resolveAssignee should retry transient EOF: %v", err)
+		t.Fatalf("resolveActor should retry transient EOF: %v", err)
 	}
 	if aType != "member" || aID != "user-1111" {
 		t.Fatalf("got (%q, %q), want Alice member", aType, aID)
@@ -1489,7 +1489,7 @@ func TestResolveAssigneeRetriesTransientNetworkErrors(t *testing.T) {
 	}
 }
 
-func TestResolveAssigneeDoesNotRetryHTTPStatusErrors(t *testing.T) {
+func TestResolveActorDoesNotRetryHTTPStatusErrors(t *testing.T) {
 	var memberHits int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -1507,7 +1507,7 @@ func TestResolveAssigneeDoesNotRetryHTTPStatusErrors(t *testing.T) {
 	defer srv.Close()
 
 	client := cli.NewAPIClient(srv.URL, "ws-1", "test-token")
-	_, _, err := resolveAssignee(context.Background(), client, "Alice", allActorKinds)
+	_, _, err := resolveActor(context.Background(), client, "Alice", allActorKinds)
 	if err == nil {
 		t.Fatal("expected not-found error after non-retryable members fetch")
 	}
@@ -1516,7 +1516,7 @@ func TestResolveAssigneeDoesNotRetryHTTPStatusErrors(t *testing.T) {
 	}
 }
 
-func TestNormalizeAssigneeLookupInput(t *testing.T) {
+func TestNormalizeActorLookupInput(t *testing.T) {
 	tests := []struct {
 		name string
 		in   string
@@ -1534,21 +1534,21 @@ func TestNormalizeAssigneeLookupInput(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := normalizeAssigneeLookupInput(tt.in); got != tt.want {
-				t.Errorf("normalizeAssigneeLookupInput(%q) = %q, want %q", tt.in, got, tt.want)
+			if got := normalizeActorLookupInput(tt.in); got != tt.want {
+				t.Errorf("normalizeActorLookupInput(%q) = %q, want %q", tt.in, got, tt.want)
 			}
 		})
 	}
 }
 
-// TestResolveAssigneeRespectsKinds covers the MUL-2165 follow-up: callers
+// TestResolveActorRespectsKinds covers the MUL-2165 follow-up: callers
 // whose target schema is member-or-agent-only (project.lead_type DB CHECK
 // at server/migrations/034_projects.up.sql:10, and the subscriber handler's
 // isWorkspaceEntity switch at server/internal/handler/handler.go:414) must
 // be able to opt out of team resolution. Without this, "--lead <TeamName>"
 // would return (team, ...) and the request would 500/403 server-side
 // instead of failing with a clean CLI-side resolution error.
-func TestResolveAssigneeRespectsKinds(t *testing.T) {
+func TestResolveActorRespectsKinds(t *testing.T) {
 	membersResp := []map[string]any{
 		{"user_id": "user-1111", "name": "Alice"},
 	}
@@ -1580,14 +1580,14 @@ func TestResolveAssigneeRespectsKinds(t *testing.T) {
 
 	t.Run("memberOrAgentKinds skips the /api/teams fetch entirely", func(t *testing.T) {
 		before := teamsHits
-		_, _, _ = resolveAssignee(ctx, client, "Alice", memberOrAgentKinds)
+		_, _, _ = resolveActor(ctx, client, "Alice", memberOrAgentKinds)
 		if teamsHits != before {
 			t.Errorf("expected memberOrAgentKinds to skip /api/teams, but it was called %d time(s)", teamsHits-before)
 		}
 	})
 
 	t.Run("memberOrAgentKinds rejects a team name with a member-or-agent-only error", func(t *testing.T) {
-		_, _, err := resolveAssignee(ctx, client, "Super Human", memberOrAgentKinds)
+		_, _, err := resolveActor(ctx, client, "Super Human", memberOrAgentKinds)
 		if err == nil {
 			t.Fatal("expected resolution error for team name under memberOrAgentKinds")
 		}
@@ -1600,7 +1600,7 @@ func TestResolveAssigneeRespectsKinds(t *testing.T) {
 	})
 
 	t.Run("memberOrAgentKinds rejects a team UUID via the strict resolver", func(t *testing.T) {
-		_, _, err := resolveAssigneeByID(ctx, client, "ccccccc1-2222-3333-4444-555555555555", memberOrAgentKinds)
+		_, _, err := resolveActorByID(ctx, client, "ccccccc1-2222-3333-4444-555555555555", memberOrAgentKinds)
 		if err == nil {
 			t.Fatal("expected not-found error for team UUID under memberOrAgentKinds")
 		}
@@ -1610,7 +1610,7 @@ func TestResolveAssigneeRespectsKinds(t *testing.T) {
 	})
 
 	t.Run("allActorKinds still resolves the same team name (control)", func(t *testing.T) {
-		aType, aID, err := resolveAssignee(ctx, client, "Super Human", allActorKinds)
+		aType, aID, err := resolveActor(ctx, client, "Super Human", allActorKinds)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1620,11 +1620,11 @@ func TestResolveAssigneeRespectsKinds(t *testing.T) {
 	})
 }
 
-// TestResolveAssigneeExactMatchWins covers the substring-collision scenario from
+// TestResolveActorExactMatchWins covers the substring-collision scenario from
 // patchbay-ai/patchbay#1620: when one name is a substring of another (e.g.
 // "reviewer" vs "peer-reviewer"), an exact match on the shorter name must
 // short-circuit substring matching instead of erroring out as ambiguous.
-func TestResolveAssigneeExactMatchWins(t *testing.T) {
+func TestResolveActorExactMatchWins(t *testing.T) {
 	agentsResp := []map[string]any{
 		{"id": "f656eab8-1111-1111-1111-111111111111", "name": "reviewer"},
 		{"id": "9b0ff9a2-2222-2222-2222-222222222222", "name": "peer-reviewer"},
@@ -1647,7 +1647,7 @@ func TestResolveAssigneeExactMatchWins(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("exact shorter name resolves to shorter agent", func(t *testing.T) {
-		aType, aID, err := resolveAssignee(ctx, client, "reviewer", allActorKinds)
+		aType, aID, err := resolveActor(ctx, client, "reviewer", allActorKinds)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1657,7 +1657,7 @@ func TestResolveAssigneeExactMatchWins(t *testing.T) {
 	})
 
 	t.Run("exact longer name still resolves unambiguously", func(t *testing.T) {
-		aType, aID, err := resolveAssignee(ctx, client, "peer-reviewer", allActorKinds)
+		aType, aID, err := resolveActor(ctx, client, "peer-reviewer", allActorKinds)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1667,7 +1667,7 @@ func TestResolveAssigneeExactMatchWins(t *testing.T) {
 	})
 
 	t.Run("exact match is case-insensitive and tolerates whitespace", func(t *testing.T) {
-		aType, aID, err := resolveAssignee(ctx, client, "  Reviewer  ", allActorKinds)
+		aType, aID, err := resolveActor(ctx, client, "  Reviewer  ", allActorKinds)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1679,7 +1679,7 @@ func TestResolveAssigneeExactMatchWins(t *testing.T) {
 	t.Run("substring-only input falls back and stays ambiguous", func(t *testing.T) {
 		// "review" matches both agents via substring and neither via exact name,
 		// so the existing ambiguity error is preserved.
-		_, _, err := resolveAssignee(ctx, client, "review", allActorKinds)
+		_, _, err := resolveActor(ctx, client, "review", allActorKinds)
 		if err == nil {
 			t.Fatal("expected error for ambiguous substring match")
 		}
@@ -1689,10 +1689,10 @@ func TestResolveAssigneeExactMatchWins(t *testing.T) {
 	})
 }
 
-// TestResolveAssigneeByID covers the ID/ShortID escape hatch from
+// TestResolveActorByID covers the ID/ShortID escape hatch from
 // patchbay-ai/patchbay#1620: passing a full UUID or its 8-char prefix must
 // resolve directly without going through name matching.
-func TestResolveAssigneeByID(t *testing.T) {
+func TestResolveActorByID(t *testing.T) {
 	membersResp := []map[string]any{
 		{"user_id": "aaaaaaaa-1111-1111-1111-111111111111", "name": "Alice"},
 	}
@@ -1721,7 +1721,7 @@ func TestResolveAssigneeByID(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("full UUID resolves agent", func(t *testing.T) {
-		aType, aID, err := resolveAssignee(ctx, client, "f656eab8-1111-1111-1111-111111111111", allActorKinds)
+		aType, aID, err := resolveActor(ctx, client, "f656eab8-1111-1111-1111-111111111111", allActorKinds)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1731,7 +1731,7 @@ func TestResolveAssigneeByID(t *testing.T) {
 	})
 
 	t.Run("8-char ShortID resolves agent", func(t *testing.T) {
-		aType, aID, err := resolveAssignee(ctx, client, "f656eab8", allActorKinds)
+		aType, aID, err := resolveActor(ctx, client, "f656eab8", allActorKinds)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1741,7 +1741,7 @@ func TestResolveAssigneeByID(t *testing.T) {
 	})
 
 	t.Run("uppercase ShortID still resolves", func(t *testing.T) {
-		aType, aID, err := resolveAssignee(ctx, client, "F656EAB8", allActorKinds)
+		aType, aID, err := resolveActor(ctx, client, "F656EAB8", allActorKinds)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1751,7 +1751,7 @@ func TestResolveAssigneeByID(t *testing.T) {
 	})
 
 	t.Run("ShortID resolves a member", func(t *testing.T) {
-		aType, aID, err := resolveAssignee(ctx, client, "aaaaaaaa", allActorKinds)
+		aType, aID, err := resolveActor(ctx, client, "aaaaaaaa", allActorKinds)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1761,11 +1761,11 @@ func TestResolveAssigneeByID(t *testing.T) {
 	})
 }
 
-// TestResolveAssigneeByIDStrict covers the strict UUID resolver that backs
-// --assignee-id / --to-id / --user-id. Unlike resolveAssignee it must reject
+// TestResolveActorByIDStrict covers the strict UUID resolver that backs
+// --actor-id / --to-id / --user-id. Unlike resolveActor it must reject
 // non-UUID inputs (no name fallback) and surface a clear error when the UUID
 // is well-formed but not present in the workspace.
-func TestResolveAssigneeByIDStrict(t *testing.T) {
+func TestResolveActorByIDStrict(t *testing.T) {
 	membersResp := []map[string]any{
 		{"user_id": "aaaaaaaa-1111-1111-1111-111111111111", "name": "Alice"},
 	}
@@ -1797,7 +1797,7 @@ func TestResolveAssigneeByIDStrict(t *testing.T) {
 		// This is the MUL-1254 scenario: agent "J" is unreachable by name
 		// because every other agent has "J" in it. UUID lookup must
 		// deterministically pick the right one.
-		aType, aID, err := resolveAssigneeByID(ctx, client, "5fb87ac7-23b5-4a7a-81fa-ed295a54545d", allActorKinds)
+		aType, aID, err := resolveActorByID(ctx, client, "5fb87ac7-23b5-4a7a-81fa-ed295a54545d", allActorKinds)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1807,7 +1807,7 @@ func TestResolveAssigneeByIDStrict(t *testing.T) {
 	})
 
 	t.Run("uppercase UUID is normalized", func(t *testing.T) {
-		aType, aID, err := resolveAssigneeByID(ctx, client, "5FB87AC7-23B5-4A7A-81FA-ED295A54545D", allActorKinds)
+		aType, aID, err := resolveActorByID(ctx, client, "5FB87AC7-23B5-4A7A-81FA-ED295A54545D", allActorKinds)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1817,7 +1817,7 @@ func TestResolveAssigneeByIDStrict(t *testing.T) {
 	})
 
 	t.Run("UUID resolves a member", func(t *testing.T) {
-		aType, aID, err := resolveAssigneeByID(ctx, client, "aaaaaaaa-1111-1111-1111-111111111111", allActorKinds)
+		aType, aID, err := resolveActorByID(ctx, client, "aaaaaaaa-1111-1111-1111-111111111111", allActorKinds)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1826,11 +1826,11 @@ func TestResolveAssigneeByIDStrict(t *testing.T) {
 		}
 	})
 
-	// MUL-2165: --assignee-id <team-uuid> must resolve to (team, <id>) so
+	// MUL-2165: --actor-id <team-uuid> must resolve to (team, <id>) so
 	// scripts that read the team list and pin its UUID can assign work to a
 	// team in a single deterministic call.
 	t.Run("UUID resolves a team", func(t *testing.T) {
-		aType, aID, err := resolveAssigneeByID(ctx, client, "ccccccc1-2222-3333-4444-555555555555", allActorKinds)
+		aType, aID, err := resolveActorByID(ctx, client, "ccccccc1-2222-3333-4444-555555555555", allActorKinds)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1840,7 +1840,7 @@ func TestResolveAssigneeByIDStrict(t *testing.T) {
 	})
 
 	t.Run("non-UUID input is rejected without name fallback", func(t *testing.T) {
-		_, _, err := resolveAssigneeByID(ctx, client, "Alice", allActorKinds)
+		_, _, err := resolveActorByID(ctx, client, "Alice", allActorKinds)
 		if err == nil {
 			t.Fatal("expected error for non-UUID input")
 		}
@@ -1850,14 +1850,14 @@ func TestResolveAssigneeByIDStrict(t *testing.T) {
 	})
 
 	t.Run("UUID prefix (ShortID) is rejected — strict mode requires canonical form", func(t *testing.T) {
-		_, _, err := resolveAssigneeByID(ctx, client, "5fb87ac7", allActorKinds)
+		_, _, err := resolveActorByID(ctx, client, "5fb87ac7", allActorKinds)
 		if err == nil {
 			t.Fatal("expected error for ShortID")
 		}
 	})
 
 	t.Run("well-formed UUID with no matching entity errors", func(t *testing.T) {
-		_, _, err := resolveAssigneeByID(ctx, client, "deadbeef-1111-1111-1111-111111111111", allActorKinds)
+		_, _, err := resolveActorByID(ctx, client, "deadbeef-1111-1111-1111-111111111111", allActorKinds)
 		if err == nil {
 			t.Fatal("expected error for missing entity")
 		}
@@ -1868,17 +1868,17 @@ func TestResolveAssigneeByIDStrict(t *testing.T) {
 
 	t.Run("missing workspace ID", func(t *testing.T) {
 		noWSClient := cli.NewAPIClient(srv.URL, "", "test-token")
-		_, _, err := resolveAssigneeByID(ctx, noWSClient, "5fb87ac7-23b5-4a7a-81fa-ed295a54545d", allActorKinds)
+		_, _, err := resolveActorByID(ctx, noWSClient, "5fb87ac7-23b5-4a7a-81fa-ed295a54545d", allActorKinds)
 		if err == nil {
 			t.Fatal("expected error for missing workspace ID")
 		}
 	})
 }
 
-func TestResolveAssigneeByIDRetriesTransientNetworkErrors(t *testing.T) {
-	origSleep := assigneeResolveRetrySleep
-	assigneeResolveRetrySleep = func(context.Context, time.Duration) bool { return false }
-	t.Cleanup(func() { assigneeResolveRetrySleep = origSleep })
+func TestResolveActorByIDRetriesTransientNetworkErrors(t *testing.T) {
+	origSleep := actorResolveRetrySleep
+	actorResolveRetrySleep = func(context.Context, time.Duration) bool { return false }
+	t.Cleanup(func() { actorResolveRetrySleep = origSleep })
 
 	var agentsHits int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1911,9 +1911,9 @@ func TestResolveAssigneeByIDRetriesTransientNetworkErrors(t *testing.T) {
 	defer srv.Close()
 
 	client := cli.NewAPIClient(srv.URL, "ws-1", "test-token")
-	aType, aID, err := resolveAssigneeByID(context.Background(), client, "5fb87ac7-23b5-4a7a-81fa-ed295a54545d", allActorKinds)
+	aType, aID, err := resolveActorByID(context.Background(), client, "5fb87ac7-23b5-4a7a-81fa-ed295a54545d", allActorKinds)
 	if err != nil {
-		t.Fatalf("resolveAssigneeByID should retry transient EOF: %v", err)
+		t.Fatalf("resolveActorByID should retry transient EOF: %v", err)
 	}
 	if aType != "agent" || aID != "5fb87ac7-23b5-4a7a-81fa-ed295a54545d" {
 		t.Fatalf("got (%q, %q), want agent J", aType, aID)
@@ -1923,11 +1923,11 @@ func TestResolveAssigneeByIDRetriesTransientNetworkErrors(t *testing.T) {
 	}
 }
 
-// TestPickAssigneeFromFlags covers the flag-pair picker that backs every
-// assignee-taking command. The mutual-exclusion guard is the load-bearing
+// TestPickActorFromFlags covers the flag-pair picker that backs every
+// actor-taking command. The mutual-exclusion guard is the load-bearing
 // piece — silently preferring one side would let a buggy script set both
 // flags and assign the wrong entity.
-func TestPickAssigneeFromFlags(t *testing.T) {
+func TestPickActorFromFlags(t *testing.T) {
 	membersResp := []map[string]any{
 		{"user_id": "aaaaaaaa-1111-1111-1111-111111111111", "name": "Alice"},
 	}
@@ -1953,13 +1953,13 @@ func TestPickAssigneeFromFlags(t *testing.T) {
 
 	newCmd := func() *cobra.Command {
 		c := &cobra.Command{Use: "test"}
-		c.Flags().String("assignee", "", "")
-		c.Flags().String("assignee-id", "", "")
+		c.Flags().String("actor", "", "")
+		c.Flags().String("actor-id", "", "")
 		return c
 	}
 
 	t.Run("neither flag set returns hasValue=false", func(t *testing.T) {
-		_, _, has, err := pickAssigneeFromFlags(ctx, client, newCmd(), "assignee", "assignee-id", allActorKinds)
+		_, _, has, err := pickActorFromFlags(ctx, client, newCmd(), "actor", "actor-id", allActorKinds)
 		if err != nil {
 			t.Fatalf("unexpected err: %v", err)
 		}
@@ -1970,8 +1970,8 @@ func TestPickAssigneeFromFlags(t *testing.T) {
 
 	t.Run("name flag uses fuzzy resolver", func(t *testing.T) {
 		c := newCmd()
-		_ = c.Flags().Set("assignee", "Alice")
-		typ, id, has, err := pickAssigneeFromFlags(ctx, client, c, "assignee", "assignee-id", allActorKinds)
+		_ = c.Flags().Set("actor", "Alice")
+		typ, id, has, err := pickActorFromFlags(ctx, client, c, "actor", "actor-id", allActorKinds)
 		if err != nil || !has || typ != "member" || id != "aaaaaaaa-1111-1111-1111-111111111111" {
 			t.Errorf("got (%q, %q, %v, %v), want Alice", typ, id, has, err)
 		}
@@ -1979,8 +1979,8 @@ func TestPickAssigneeFromFlags(t *testing.T) {
 
 	t.Run("id flag uses strict resolver", func(t *testing.T) {
 		c := newCmd()
-		_ = c.Flags().Set("assignee-id", "5fb87ac7-23b5-4a7a-81fa-ed295a54545d")
-		typ, id, has, err := pickAssigneeFromFlags(ctx, client, c, "assignee", "assignee-id", allActorKinds)
+		_ = c.Flags().Set("actor-id", "5fb87ac7-23b5-4a7a-81fa-ed295a54545d")
+		typ, id, has, err := pickActorFromFlags(ctx, client, c, "actor", "actor-id", allActorKinds)
 		if err != nil || !has || typ != "agent" || id != "5fb87ac7-23b5-4a7a-81fa-ed295a54545d" {
 			t.Errorf("got (%q, %q, %v, %v), want agent J", typ, id, has, err)
 		}
@@ -1988,9 +1988,9 @@ func TestPickAssigneeFromFlags(t *testing.T) {
 
 	t.Run("both flags set is rejected", func(t *testing.T) {
 		c := newCmd()
-		_ = c.Flags().Set("assignee", "Alice")
-		_ = c.Flags().Set("assignee-id", "5fb87ac7-23b5-4a7a-81fa-ed295a54545d")
-		_, _, _, err := pickAssigneeFromFlags(ctx, client, c, "assignee", "assignee-id", allActorKinds)
+		_ = c.Flags().Set("actor", "Alice")
+		_ = c.Flags().Set("actor-id", "5fb87ac7-23b5-4a7a-81fa-ed295a54545d")
+		_, _, _, err := pickActorFromFlags(ctx, client, c, "actor", "actor-id", allActorKinds)
 		if err == nil {
 			t.Fatal("expected mutually-exclusive error")
 		}
@@ -2000,17 +2000,17 @@ func TestPickAssigneeFromFlags(t *testing.T) {
 	})
 
 	// Explicit-empty regression: a script that interpolates an empty env var
-	// into `--assignee-id "$MAYBE_UUID"` must NOT silently route through the
+	// into `--actor-id "$MAYBE_UUID"` must NOT silently route through the
 	// "no flag set" branch — that would defeat the whole point of the strict
 	// UUID flag (issue list returning everything, create leaving the issue
-	// unassigned, subscriber add subscribing the caller). Detection is via
+	// without an executor, subscriber add subscribing the caller). Detection is via
 	// Flags().Changed, so an explicit empty string surfaces as a UUID error.
-	t.Run("explicit empty --assignee-id surfaces as UUID error, not silent skip", func(t *testing.T) {
+	t.Run("explicit empty --actor-id surfaces as UUID error, not silent skip", func(t *testing.T) {
 		c := newCmd()
-		_ = c.Flags().Set("assignee-id", "")
-		_, _, has, err := pickAssigneeFromFlags(ctx, client, c, "assignee", "assignee-id", allActorKinds)
+		_ = c.Flags().Set("actor-id", "")
+		_, _, has, err := pickActorFromFlags(ctx, client, c, "actor", "actor-id", allActorKinds)
 		if err == nil {
-			t.Fatal("expected UUID error for explicit empty assignee-id")
+			t.Fatal("expected UUID error for explicit empty actor-id")
 		}
 		if !has {
 			t.Errorf("expected hasValue=true so caller treats this as a real attempt, not a no-op")
@@ -2020,12 +2020,12 @@ func TestPickAssigneeFromFlags(t *testing.T) {
 		}
 	})
 
-	t.Run("explicit empty --assignee surfaces as not-found, not silent skip", func(t *testing.T) {
+	t.Run("explicit empty --actor surfaces as not-found, not silent skip", func(t *testing.T) {
 		c := newCmd()
-		_ = c.Flags().Set("assignee", "")
-		_, _, has, err := pickAssigneeFromFlags(ctx, client, c, "assignee", "assignee-id", allActorKinds)
+		_ = c.Flags().Set("actor", "")
+		_, _, has, err := pickActorFromFlags(ctx, client, c, "actor", "actor-id", allActorKinds)
 		if err == nil {
-			t.Fatal("expected resolver error for explicit empty assignee")
+			t.Fatal("expected resolver error for explicit empty actor")
 		}
 		if !has {
 			t.Errorf("expected hasValue=true so caller treats this as a real attempt, not a no-op")
@@ -2034,16 +2034,16 @@ func TestPickAssigneeFromFlags(t *testing.T) {
 
 	t.Run("explicit empty on both flags is mutually exclusive (set wins over value)", func(t *testing.T) {
 		c := newCmd()
-		_ = c.Flags().Set("assignee", "")
-		_ = c.Flags().Set("assignee-id", "")
-		_, _, _, err := pickAssigneeFromFlags(ctx, client, c, "assignee", "assignee-id", allActorKinds)
+		_ = c.Flags().Set("actor", "")
+		_ = c.Flags().Set("actor-id", "")
+		_, _, _, err := pickActorFromFlags(ctx, client, c, "actor", "actor-id", allActorKinds)
 		if err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
 			t.Errorf("expected mutually-exclusive error, got: %v", err)
 		}
 	})
 }
 
-// TestPickAssigneeFromFlagsMemberOrAgentKinds is the call-site regression
+// TestPickActorFromFlagsMemberOrAgentKinds is the call-site regression
 // for the MUL-2165 follow-up. Subscriber add/remove and project lead pass
 // memberOrAgentKinds because their target schema rejects teams
 // (subscriber: server/internal/handler/handler.go:414;
@@ -2052,7 +2052,7 @@ func TestPickAssigneeFromFlags(t *testing.T) {
 // `patchbay project create --lead "<TeamName>"` would resolve to
 // (team, ...) and surface as a 500/403 server-side instead of a clean
 // CLI-side resolution error.
-func TestPickAssigneeFromFlagsMemberOrAgentKinds(t *testing.T) {
+func TestPickActorFromFlagsMemberOrAgentKinds(t *testing.T) {
 	membersResp := []map[string]any{
 		{"user_id": "aaaaaaaa-1111-1111-1111-111111111111", "name": "Alice"},
 	}
@@ -2093,7 +2093,7 @@ func TestPickAssigneeFromFlagsMemberOrAgentKinds(t *testing.T) {
 		before := teamsHits
 		c := newCmd("user", "user-id")
 		_ = c.Flags().Set("user", "Super Human")
-		_, _, _, err := pickAssigneeFromFlags(ctx, client, c, "user", "user-id", memberOrAgentKinds)
+		_, _, _, err := pickActorFromFlags(ctx, client, c, "user", "user-id", memberOrAgentKinds)
 		if err == nil {
 			t.Fatal("expected resolution error for team name under memberOrAgentKinds")
 		}
@@ -2108,7 +2108,7 @@ func TestPickAssigneeFromFlagsMemberOrAgentKinds(t *testing.T) {
 	t.Run("subscriber --user-id with a team UUID is rejected", func(t *testing.T) {
 		c := newCmd("user", "user-id")
 		_ = c.Flags().Set("user-id", "ccccccc1-2222-3333-4444-555555555555")
-		_, _, _, err := pickAssigneeFromFlags(ctx, client, c, "user", "user-id", memberOrAgentKinds)
+		_, _, _, err := pickActorFromFlags(ctx, client, c, "user", "user-id", memberOrAgentKinds)
 		if err == nil {
 			t.Fatal("expected not-found error for team UUID under memberOrAgentKinds")
 		}
@@ -2120,7 +2120,7 @@ func TestPickAssigneeFromFlagsMemberOrAgentKinds(t *testing.T) {
 	t.Run("project --lead with a member name still resolves cleanly", func(t *testing.T) {
 		c := newCmd("lead", "lead-id")
 		_ = c.Flags().Set("lead", "Alice")
-		typ, id, has, err := pickAssigneeFromFlags(ctx, client, c, "lead", "lead-id", memberOrAgentKinds)
+		typ, id, has, err := pickActorFromFlags(ctx, client, c, "lead", "lead-id", memberOrAgentKinds)
 		if err != nil || !has || typ != "member" || id != "aaaaaaaa-1111-1111-1111-111111111111" {
 			t.Errorf("got (%q, %q, %v, %v), want member Alice", typ, id, has, err)
 		}
@@ -2129,7 +2129,7 @@ func TestPickAssigneeFromFlagsMemberOrAgentKinds(t *testing.T) {
 	t.Run("project --lead with an agent name still resolves cleanly", func(t *testing.T) {
 		c := newCmd("lead", "lead-id")
 		_ = c.Flags().Set("lead", "J")
-		typ, id, has, err := pickAssigneeFromFlags(ctx, client, c, "lead", "lead-id", memberOrAgentKinds)
+		typ, id, has, err := pickActorFromFlags(ctx, client, c, "lead", "lead-id", memberOrAgentKinds)
 		if err != nil || !has || typ != "agent" || id != "5fb87ac7-23b5-4a7a-81fa-ed295a54545d" {
 			t.Errorf("got (%q, %q, %v, %v), want agent J", typ, id, has, err)
 		}
@@ -2254,9 +2254,9 @@ func TestIssueSubscriberMutationBody(t *testing.T) {
 
 			body := map[string]any{}
 			if tt.user != "" {
-				uType, uID, err := resolveAssignee(ctx, client, tt.user, allActorKinds)
+				uType, uID, err := resolveActor(ctx, client, tt.user, allActorKinds)
 				if err != nil {
-					t.Fatalf("resolveAssignee: %v", err)
+					t.Fatalf("resolveActor: %v", err)
 				}
 				body["user_type"] = uType
 				body["user_id"] = uID
@@ -3146,7 +3146,7 @@ func TestRunIssueUpdateNoStartSendsSuppressRun(t *testing.T) {
 	}
 }
 
-func TestRunIssueAssignUnassignClearsOnlyExecutor(t *testing.T) {
+func TestRunIssueExecutorUpdateUnassignClearsOnlyExecutor(t *testing.T) {
 	var body map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -3168,8 +3168,8 @@ func TestRunIssueAssignUnassignClearsOnlyExecutor(t *testing.T) {
 
 	cmd := newIssueAssignTestCmd()
 	_ = cmd.Flags().Set("unassign", "true")
-	if err := runIssueAssign(cmd, []string{"MUL-1"}); err != nil {
-		t.Fatalf("runIssueAssign: %v", err)
+	if err := runIssueExecutorUpdate(cmd, []string{"MUL-1"}); err != nil {
+		t.Fatalf("runIssueExecutorUpdate: %v", err)
 	}
 	if body["executor_type"] != nil || body["executor_id"] != nil {
 		t.Fatalf("executor clear fields = %#v", body)
@@ -3212,7 +3212,7 @@ func TestRunIssueStatusNoStartSendsSuppressRun(t *testing.T) {
 	}
 }
 
-func TestRunIssueAssignNoStartSendsSuppressRun(t *testing.T) {
+func TestRunIssueExecutorUpdateNoStartSendsSuppressRun(t *testing.T) {
 	const agentID = "5fb87ac7-23b5-4a7a-81fa-ed295a54545d"
 	var body map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -3242,8 +3242,8 @@ func TestRunIssueAssignNoStartSendsSuppressRun(t *testing.T) {
 	cmd := newIssueAssignTestCmd()
 	_ = cmd.Flags().Set("to-id", agentID)
 	_ = cmd.Flags().Set("no-start", "true")
-	if err := runIssueAssign(cmd, []string{"MUL-1"}); err != nil {
-		t.Fatalf("runIssueAssign: %v", err)
+	if err := runIssueExecutorUpdate(cmd, []string{"MUL-1"}); err != nil {
+		t.Fatalf("runIssueExecutorUpdate: %v", err)
 	}
 	if got := body["suppress_run"]; got != true {
 		t.Fatalf("suppress_run = %#v, want true", got)
@@ -3256,11 +3256,11 @@ func TestRunIssueAssignNoStartSendsSuppressRun(t *testing.T) {
 	}
 }
 
-func TestRunIssueAssignRejectsNoStartWithUnassign(t *testing.T) {
+func TestRunIssueExecutorUpdateRejectsNoStartWithUnassign(t *testing.T) {
 	cmd := newIssueAssignTestCmd()
 	_ = cmd.Flags().Set("unassign", "true")
 	_ = cmd.Flags().Set("no-start", "true")
-	err := runIssueAssign(cmd, []string{"MUL-1"})
+	err := runIssueExecutorUpdate(cmd, []string{"MUL-1"})
 	if err == nil || !strings.Contains(err.Error(), "--no-start") {
 		t.Fatalf("expected --no-start validation error, got %v", err)
 	}

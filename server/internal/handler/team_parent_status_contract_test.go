@@ -42,21 +42,21 @@ func leaderCommentRuntimeBrief(t *testing.T, instructions string) string {
 	return string(data)
 }
 
-// TestTeamAssignedLeaderCanWrapUpOnCommentTurn covers the team's most common
+// TestTeamExecutorLeaderCanWrapUpOnCommentTurn covers the team's most common
 // shape: work dispatched by @mention with no child issues, so no child-done
 // system comment ever arrives to carry an explicit status ask. The member
 // simply posts "done". The leader must still be able to close the parent out.
-func TestTeamAssignedLeaderCanWrapUpOnCommentTurn(t *testing.T) {
+func TestTeamExecutorLeaderCanWrapUpOnCommentTurn(t *testing.T) {
 	ctx := context.Background()
 	leaderID, _ := seededLeaderAgent(t)
 	team := seedTeamForBriefing(t, leaderID, "Owning Team", "")
 
-	// The issue is assigned to this team → the server grants status ownership.
+	// The issue is executed by this team → the server grants status ownership.
 	briefing := buildTeamLeaderBriefing(ctx, testHandler.Queries, team, true)
 	brief := leaderCommentRuntimeBrief(t, briefing)
 
 	if !strings.Contains(briefing, "Own the parent issue status") {
-		t.Fatalf("team-assigned briefing must grant status ownership:\n%s", briefing)
+		t.Fatalf("team-executor briefing must grant status ownership:\n%s", briefing)
 	}
 
 	// The runtime brief must not carry a blanket no-status-change rule: any
@@ -95,7 +95,7 @@ func TestGuestLeaderCannotChangeStatusOnCommentTurn(t *testing.T) {
 	leaderID, _ := seededLeaderAgent(t)
 	team := seedTeamForBriefing(t, leaderID, "Guest Team", "")
 
-	// The issue is assigned to someone else → no status ownership.
+	// The issue is executed by someone else → no status ownership.
 	briefing := buildTeamLeaderBriefing(ctx, testHandler.Queries, team, false)
 	brief := leaderCommentRuntimeBrief(t, briefing)
 
@@ -121,7 +121,7 @@ func TestGuestLeaderCannotChangeStatusOnCommentTurn(t *testing.T) {
 	combined := briefing + "\n" + brief
 	if strings.Contains(combined, "patchbay issue status <issue-id> in_review") {
 		t.Error("combined instructions hand a guest leader an in_review command for " +
-			"an issue assigned to someone else")
+			"an issue executed by someone else")
 	}
 	// The prohibition wraps across source lines, so match on compacted text.
 	compact := strings.Join(strings.Fields(briefing), " ")

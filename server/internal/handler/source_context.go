@@ -641,19 +641,19 @@ func (h *Handler) createManualCommentSubIssue(w http.ResponseWriter, r *http.Req
 	if !validateIssueEnum(w, "priority", priority, validIssuePriorities) {
 		return errSourceContextResponseWritten
 	}
-	var assigneeType pgtype.Text
-	var assigneeID pgtype.UUID
+	var executorType pgtype.Text
+	var executorID pgtype.UUID
 	if input.ExecutorType != nil && strings.TrimSpace(*input.ExecutorType) != "" {
-		assigneeType = pgtype.Text{String: strings.TrimSpace(*input.ExecutorType), Valid: true}
+		executorType = pgtype.Text{String: strings.TrimSpace(*input.ExecutorType), Valid: true}
 	}
 	if input.ExecutorID != nil && strings.TrimSpace(*input.ExecutorID) != "" {
 		parsed, err := util.ParseUUID(strings.TrimSpace(*input.ExecutorID))
 		if err != nil {
 			return sourceContextBadRequest("invalid executor_id")
 		}
-		assigneeID = parsed
+		executorID = parsed
 	}
-	if code, message := h.validateExecutorPair(r.Context(), r, util.UUIDToString(workspaceID), assigneeType, assigneeID, scopeNoDelegation()); code != 0 {
+	if code, message := h.validateExecutorPair(r.Context(), r, util.UUIDToString(workspaceID), executorType, executorID, scopeNoDelegation()); code != 0 {
 		writeError(w, code, message)
 		return errSourceContextResponseWritten
 	}
@@ -701,7 +701,7 @@ func (h *Handler) createManualCommentSubIssue(w http.ResponseWriter, r *http.Req
 	prefix := h.getIssuePrefix(r.Context(), workspaceID)
 	result, err := h.IssueService.Create(r.Context(), service.IssueCreateParams{
 		WorkspaceID: workspaceID, Title: title, Description: ptrToText(input.Description), Status: status, Priority: priority,
-		ExecutorType: assigneeType, ExecutorID: assigneeID, CreatorType: "member", CreatorID: userID,
+		ExecutorType: executorType, ExecutorID: executorID, CreatorType: "member", CreatorID: userID,
 		ParentIssueID: capture.SourceIssueID, ProjectID: projectID, StartDate: startDate, DueDate: dueDate,
 		AttachmentIDs: attachmentIDs, LabelIDs: labelIDs, Stage: stage,
 		AllowDuplicate: input.AllowDuplicate, SourceContext: &capture,

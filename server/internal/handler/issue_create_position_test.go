@@ -16,7 +16,7 @@ import (
 // TestCreateIssuePositionTopOfColumn verifies that a newly created issue is
 // placed above all existing issues in the same status column (manual sort order).
 //
-// Before the fix, new issues were always assigned position=0. After drag-reorder
+// Before the fix, new issues were always given position=0. After drag-reorder
 // activity, existing issues accumulate negative positions at the top of the
 // column, so a fresh issue at 0 would land in the middle of a long list.
 //

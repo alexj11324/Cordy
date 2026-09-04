@@ -32,13 +32,13 @@ import (
 //   - parent must not be "done" or "cancelled" — the parent is already
 //     closed and a notification has no follow-up to drive
 //   - parent must not be "backlog" — a parent parked in backlog is being
-//     deliberately held for later; waking its assignee (which can then
+//     deliberately held for later; waking its executor (which can then
 //     promote sibling backlog sub-issues into todo) is exactly the
 //     unwanted auto-activation reported in #4320 / MUL-3497. A parked
 //     parent stays inert until the user explicitly moves it out of backlog.
-//   - parent assignee must not be a member (human). Humans read their
-//     issues manually; an automated system comment is pure noise for them
-//     and there is nothing to "trigger" on a human assignee. Skipping the
+//   - parent must have an executor, not merely a member owner. Humans read
+//     their issues manually; an automated system comment is pure noise for
+//     them and there is no executor to trigger. Skipping the
 //     comment entirely (Bohan's call on MUL-2538) also sidesteps the
 //     mention question — no comment, no mention, no inbox row.
 //   - the completion must close a STAGE barrier (MUL-3508). Sub-issues under
@@ -47,21 +47,21 @@ import (
 //     unfinished stage is terminal (stageBarrierClosed). An unstaged sibling
 //     set is one implicit stage, so this fires once when the last sub-issue
 //     finishes instead of on every child — the default fix for the
-//     fire-on-every-child cascade reported in #4320. The woken assignee
+//     fire-on-every-child cascade reported in #4320. The woken executor
 //     decides whether to promote the next stage (agent-driven advancement);
 //     the server only detects the barrier and wakes.
 //
 // The comment is inserted directly via db.Queries (not through the
 // CreateComment HTTP handler) so it bypasses the generic on_comment trigger
-// path. When the parent has an agent or team assignee, the comment body
+// path. When the parent has an agent or team executor, the comment body
 // embeds a single `mention://{agent,team}/<id>` link that targets the
-// parent assignee — Bohan's product call on MUL-2538 ("system child-done
-// comment 无脑 mention parent assignee，member/team/agent 都覆盖", later
-// narrowed to skip member assignees outright). To keep the platform in
+// parent executor — Bohan's product call on MUL-2538 ("system child-done
+// comment 无脑 mention parent executor，member/team/agent 都覆盖", later
+// narrowed to skip member owners outright). To keep the platform in
 // control of side effects, the cmd/server notification + subscriber
 // listeners still skip system comments wholesale, so smuggled mentions from
-// the child title cannot light up unrelated members. The parent assignee's
-// own trigger is fired explicitly by dispatchParentAssigneeTrigger below,
+// the child title cannot light up unrelated members. The parent executor's
+// own trigger is fired explicitly by dispatchParentExecutorTrigger below,
 // with the idempotency guard documented there.
 //
 // Errors are logged at warn level and swallowed: this is a best-effort
@@ -102,7 +102,7 @@ func (h *Handler) notifyParentOfChildDone(ctx context.Context, prev, issue db.Is
 		return
 	}
 	// A parent parked in backlog is deliberately held for later. Posting the
-	// system comment would wake its assignee, and the woken agent can then
+	// system comment would wake its executor, and the woken agent can then
 	// promote sibling backlog sub-issues into todo — the surprise auto-
 	// activation reported in #4320 / MUL-3497. Skip the whole notification so
 	// a backlog parent stays inert until the user explicitly promotes it.
@@ -113,11 +113,11 @@ func (h *Handler) notifyParentOfChildDone(ctx context.Context, prev, issue db.Is
 	// an automated system comment is just noise and there is no agent task
 	// to trigger. Skip the whole notification — MUL-2538. Member is never a
 	// valid executor after the owner/executor split.
-	if parentAssigneeIsHuman(parent) {
+	if parentHasHumanOwner(parent) {
 		return
 	}
 
-	// Stage barrier (MUL-3508 / discussion #4320). The notification + assignee
+	// Stage barrier (MUL-3508 / discussion #4320). The notification + executor
 	// wake fire only when this completion *closes a stage* — i.e. every sibling
 	// in the lowest unfinished stage is now terminal. An unstaged sibling set is
 	// one implicit stage, so this collapses to "wake once when the last
@@ -154,7 +154,7 @@ func (h *Handler) notifyParentOfChildDone(ctx context.Context, prev, issue db.Is
 // Evaluating the stage barrier per-child inside the batch loop used the
 // mid-batch sibling snapshot, so a batch that closed several stages at once
 // fired one comment per intermediate stage: the first (stale) comment pinned the
-// parent assignee's wake to an already-superseded "advance Stage N+1"
+// parent executor's wake to an already-superseded "advance Stage N+1"
 // instruction while the accurate final wake was swallowed by the pending-task
 // dedup, and the outcome depended on issue_ids order (MUL-4155). Aggregating
 // here makes the result order-independent — each affected parent gets at most
@@ -204,7 +204,7 @@ func (h *Handler) notifyParentsOfBatchChildDone(ctx context.Context, completed [
 		if parentStatus == "backlog" {
 			continue
 		}
-		if parentAssigneeIsHuman(parent) {
+		if parentHasHumanOwner(parent) {
 			continue
 		}
 
@@ -260,7 +260,7 @@ func (h *Handler) notifyParentsOfBatchChildDone(ctx context.Context, completed [
 }
 
 // postChildDoneComment builds and posts the parent's child-done system comment
-// for a closed stage barrier, then dispatches the parent-assignee trigger. It
+// for a closed stage barrier, then dispatches the parent-executor trigger. It
 // assumes every guard in notifyParentOfChildDone / notifyParentsOfBatchChildDone
 // has already passed and that `completed` is a terminal child whose barrier is
 // closed within `children` (the final sibling set).
@@ -277,10 +277,10 @@ func (h *Handler) postChildDoneComment(ctx context.Context, parent, completed db
 	title := sanitizeChildTitleForSystemComment(completed.Title)
 	parentID := uuidToString(parent.ID)
 
-	// Build the parent-assignee mention prefix. Empty when the parent has no
-	// assignee or the assignee row is missing (deleted member, archived
+	// Build the parent-executor mention prefix. Empty when the parent has no
+	// executor or the executor row is missing (deleted member, archived
 	// agent the workspace lost track of, etc.).
-	mentionPrefix := h.buildParentAssigneeMention(ctx, parent)
+	mentionPrefix := h.buildParentExecutorMention(ctx, parent)
 
 	var content string
 	if staged {
@@ -342,13 +342,13 @@ func (h *Handler) postChildDoneComment(ctx context.Context, parent, completed db
 		"issue_revision":      created.IssueRevision,
 	})
 
-	// Dispatch the explicit trigger / inbox row for the parent assignee.
+	// Dispatch the explicit trigger / inbox row for the parent executor.
 	// Listener-level mention parsing is intentionally NOT involved (the
 	// notification + subscriber listeners both short-circuit on
 	// author_type='system'); this keeps smuggled mentions from the child
 	// title inert and gives the platform a single place to apply the loop
 	// and idempotency guards.
-	h.dispatchParentAssigneeTrigger(ctx, parent, comment)
+	h.dispatchParentExecutorTrigger(ctx, parent, comment)
 }
 
 // isTerminalChildStatus reports whether a child issue status counts as
@@ -510,18 +510,18 @@ func sanitizeChildTitleForSystemComment(title string) string {
 	return cleaned
 }
 
-func parentAssigneeIsHuman(parent db.Issue) bool {
+func parentHasHumanOwner(parent db.Issue) bool {
 	if parent.ExecutorType.Valid {
 		return false
 	}
 	return parent.OwnerType.Valid && parent.OwnerType.String == "member"
 }
 
-// buildParentAssigneeMention returns the markdown prefix that the system
+// buildParentExecutorMention returns the markdown prefix that the system
 // comment should lead with, including a trailing space, so the body reads
 // like a normal mention-led comment. Returns the empty string when the
-// parent has no assignee or the assignee row could not be loaded.
-func (h *Handler) buildParentAssigneeMention(ctx context.Context, parent db.Issue) string {
+// parent has no executor or the executor row could not be loaded.
+func (h *Handler) buildParentExecutorMention(ctx context.Context, parent db.Issue) string {
 	if !parent.ExecutorType.Valid || !parent.ExecutorID.Valid {
 		return ""
 	}
@@ -535,14 +535,14 @@ func (h *Handler) buildParentAssigneeMention(ctx context.Context, parent db.Issu
 // resolveExecutorMentionLabel returns the label text to render inside the
 // mention link. The label is for human display only — the mention regex
 // keys off the URL path, not the label — but a sensible fallback keeps the
-// rendered comment legible if the frontend has not pre-loaded the assignee.
-// Returns ok=false when the assignee row cannot be loaded; the caller
+// rendered comment legible if the frontend has not pre-loaded the executor.
+// Returns ok=false when the executor row cannot be loaded; the caller
 // should then omit the mention entirely rather than emit a broken link.
-func (h *Handler) resolveExecutorMentionLabel(ctx context.Context, workspaceID pgtype.UUID, assigneeType string, assigneeID pgtype.UUID) (string, bool) {
-	switch assigneeType {
+func (h *Handler) resolveExecutorMentionLabel(ctx context.Context, workspaceID pgtype.UUID, executorType string, executorID pgtype.UUID) (string, bool) {
+	switch executorType {
 	case "agent":
 		agent, err := h.Queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{
-			ID:          assigneeID,
+			ID:          executorID,
 			WorkspaceID: workspaceID,
 		})
 		if err != nil {
@@ -551,7 +551,7 @@ func (h *Handler) resolveExecutorMentionLabel(ctx context.Context, workspaceID p
 		return sanitizeMentionLabel(agent.Name), true
 	case "team":
 		team, err := h.Queries.GetTeamInWorkspace(ctx, db.GetTeamInWorkspaceParams{
-			ID:          assigneeID,
+			ID:          executorID,
 			WorkspaceID: workspaceID,
 		})
 		if err != nil {
@@ -570,21 +570,21 @@ func sanitizeMentionLabel(name string) string {
 	cleaned := strings.ReplaceAll(name, "]", "")
 	cleaned = strings.TrimSpace(cleaned)
 	if cleaned == "" {
-		return "assignee"
+		return "executor"
 	}
 	return cleaned
 }
 
-// dispatchParentAssigneeTrigger fires the explicit side effect that pairs
+// dispatchParentExecutorTrigger fires the explicit side effect that pairs
 // with the @mention link in the system comment body — an agent task for
-// agent or team-leader assignees. Member assignees never reach this code
+// agent or team-leader executors. Member owners never reach this code
 // path; notifyParentOfChildDone skips them outright. The generic comment
 // listener is intentionally bypassed (it short-circuits on
 // author_type='system'), so this is the single place where the platform
 // applies the idempotency guard for the child-done notification.
 //
 // Side-effect semantics (intentionally narrower than a normal @mention):
-//   - agent parent: one EnqueueTaskForMention on the parent assignee, same
+//   - agent parent: one EnqueueTaskForMention on the parent executor, same
 //     trigger surface as a real @-mention so dedupe and readiness checks
 //     match what users already rely on.
 //   - team parent: one EnqueueTaskForTeamLeader on the team LEADER only.
@@ -596,7 +596,7 @@ func sanitizeMentionLabel(name string) string {
 //     parent's own leader, chosen (and permission-checked) at team-assign
 //     time, so no actor identity is threaded in — see triggerChildDoneTeam.
 //   - notification_preference is not consulted: this is a platform routing
-//     signal targeted at the assignee that already owns the parent, not a
+//     signal targeted at the executor that already owns the parent, not a
 //     general notification. Per-user mute settings are evaluated by the
 //     downstream agent_task / inbox pipeline once the task is dispatched.
 //   - notification_listeners.go short-circuits on author_type='system', so
@@ -604,16 +604,16 @@ func sanitizeMentionLabel(name string) string {
 //     child title are inert — only the explicit dispatch below runs.
 //
 // Guards applied here:
-//   - No-op when the parent has no assignee row.
+//   - No-op when the parent has no executor row.
 //   - NO self-trigger guard on either the agent OR the team path. Waking the
-//     parent assignee when one of its children finishes is a serial sub-task
+//     parent executor when one of its children finishes is a serial sub-task
 //     handoff across two DIFFERENT issues, not a self-loop — legitimate per
 //     isAgentRunningOnIssue and the @mention self-trigger path
 //     (computeMentionedAgentCommentTriggers). The team path used to skip a
 //     same-team or shared-leader child on the theory that the leader had
 //     already observed the work through its own coordination cycle on the
 //     child. That stranded the common pattern where a team decomposes its
-//     parent into sub-issues assigned to its own team: the stage-barrier
+//     parent into sub-issues with its own team as executor: the stage-barrier
 //     system comment lands on the PARENT carrying the "advance the next stage /
 //     wrap up" instruction, which a child-side wake never delivers — so the
 //     parent silently stalled in in_progress (MUL-3969). The team path now
@@ -624,8 +624,8 @@ func sanitizeMentionLabel(name string) string {
 //     bounds any re-trigger, since a leader waking on the parent does not by
 //     itself push a child back into a terminal transition.
 //   - Readiness: archived agents / missing runtimes are silently skipped
-//     so a closed-out agent does not surface as a phantom assignee.
-func (h *Handler) dispatchParentAssigneeTrigger(ctx context.Context, parent db.Issue, systemComment db.Comment) {
+//     so a closed-out agent does not surface as a phantom executor.
+func (h *Handler) dispatchParentExecutorTrigger(ctx context.Context, parent db.Issue, systemComment db.Comment) {
 	if !parent.ExecutorType.Valid || !parent.ExecutorID.Valid {
 		return
 	}
@@ -639,7 +639,7 @@ func (h *Handler) dispatchParentAssigneeTrigger(ctx context.Context, parent db.I
 }
 
 // triggerChildDoneAgent enqueues a mention-style task for the parent's
-// agent assignee.
+// agent executor.
 //
 // There is intentionally NO same-agent self-trigger guard here, unlike the
 // team path. Waking the parent agent when one of its children finishes is a
@@ -679,7 +679,7 @@ func (h *Handler) triggerChildDoneAgent(ctx context.Context, parent db.Issue, tr
 }
 
 // triggerChildDoneTeam enqueues a leader-role task for the parent's team
-// assignee. It mirrors the agent path (see triggerChildDoneAgent) exactly:
+// executor. It mirrors the agent path (see triggerChildDoneAgent) exactly:
 //
 //   - NO self-trigger guard: even when the finished child is owned by the same
 //     team or by another team sharing this leader, the leader must still be
@@ -687,12 +687,12 @@ func (h *Handler) triggerChildDoneAgent(ctx context.Context, parent db.Issue, tr
 //     same-team / shared-leader guards assumed the leader had already observed
 //     the child via its own coordination cycle, but that wake lands on the
 //     CHILD and never carries the parent-level stage-barrier instruction, so it
-//     stranded the common "team decomposes its parent into sub-issues assigned
+//     stranded the common "team decomposes its parent into sub-issues executed
 //     to its own team" pattern (MUL-3969).
 //   - NO leader-invocation gate. Waking the parent's OWN team leader on
 //     child-done is a coordination handoff on an issue the leader already owns,
 //     not a fresh invocation — invocation permission was already enforced when
-//     the parent was assigned to the team (validateExecutorPair). The agent
+//     the parent executor was set to the team (validateExecutorPair). The agent
 //     path has never gated this. Re-checking it here on behalf of the child's
 //     completer — an agent/system actor with no resolvable human originator —
 //     failed closed for the DEFAULT private leader, silently stranding every

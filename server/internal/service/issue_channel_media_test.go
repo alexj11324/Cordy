@@ -238,14 +238,14 @@ func TestCreateMediaGatedIssueCommitsDeferredTaskAtomicallyBeforeCreatedEvent(t 
 		ExecutorID:   agentUUID,
 		CreatorType:  "member",
 		CreatorID:    userUUID,
-	}, IssueCreateOpts{AssignedAgentRunFireAt: time.Now().Add(time.Minute)})
+	}, IssueCreateOpts{ExecutorRunFireAt: time.Now().Add(time.Minute)})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	if callbackErr != nil {
 		t.Fatal(callbackErr)
 	}
-	if !result.AssignedTaskID.Valid {
+	if !result.ExecutorTaskID.Valid {
 		t.Fatal("media-gated issue did not return its deferred task")
 	}
 	if !isDuplicatePendingTaskErr(competingErr) {
@@ -267,8 +267,8 @@ func TestCreateMediaGatedIssueCommitsDeferredTaskAtomicallyBeforeCreatedEvent(t 
 		Scan(&taskID, &triggerCommentID, &taskCount); err != nil {
 		t.Fatalf("load final pending task: %v", err)
 	}
-	if taskCount != 1 || taskID != result.AssignedTaskID || triggerCommentID != mergedCommentID {
-		t.Fatalf("pending task = count %d id %v trigger %v, want one task %v with trigger %v", taskCount, taskID, triggerCommentID, result.AssignedTaskID, mergedCommentID)
+	if taskCount != 1 || taskID != result.ExecutorTaskID || triggerCommentID != mergedCommentID {
+		t.Fatalf("pending task = count %d id %v trigger %v, want one task %v with trigger %v", taskCount, taskID, triggerCommentID, result.ExecutorTaskID, mergedCommentID)
 	}
 }
 

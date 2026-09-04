@@ -12,7 +12,7 @@ import (
 
 // Backs the Project Gantt view: only issues with at least one of
 // start_date / due_date should come back when scheduled=true, regardless of
-// status or assignee. The unfiltered call must keep returning everything.
+// status or executor. The unfiltered call must keep returning everything.
 func TestListIssues_ScheduledFilter(t *testing.T) {
 	ctx := context.Background()
 	suffix := time.Now().UnixNano()

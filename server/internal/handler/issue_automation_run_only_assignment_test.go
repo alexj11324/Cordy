@@ -45,7 +45,7 @@ type runOnlyAutomationFixture struct {
 
 // newRunOnlyAutomationFixture wires the fixture with accountableUserID as the
 // task's accountable human (the trigger_owner MUL-4302 resolves) and
-// targetAgentID as the automation's assignee.
+// targetAgentID as the automation's executor.
 func newRunOnlyAutomationFixture(t *testing.T, targetAgentID, accountableUserID string, over ...testutil.Cols) runOnlyAutomationFixture {
 	t.Helper()
 
@@ -91,17 +91,17 @@ func newRunOnlyAutomationFixture(t *testing.T, targetAgentID, accountableUserID 
 	}
 }
 
-// topLevelIssueRequest is a parentless `issue create` with an assignee, spoken by
+// topLevelIssueRequest is a parentless `issue create` with an executor, spoken by
 // an agent run — the request a run_only leader makes when it turns scan results
 // into work.
-func topLevelIssueRequest(t *testing.T, assigneeType, assigneeID, status, actorAgentID, taskID string) *http.Request {
+func topLevelIssueRequest(t *testing.T, executorType, executorID, status, actorAgentID, taskID string) *http.Request {
 	t.Helper()
 	r := newRequest(http.MethodPost, "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
 		"title":           "MUL-6691 top-level " + t.Name(),
 		"status":          status,
 		"priority":        "low",
-		"executor_type":   assigneeType,
-		"executor_id":     assigneeID,
+		"executor_type":   executorType,
+		"executor_id":     executorID,
 		"allow_duplicate": true,
 	})
 	if actorAgentID != "" {
@@ -113,13 +113,13 @@ func topLevelIssueRequest(t *testing.T, assigneeType, assigneeID, status, actorA
 	return r
 }
 
-// createUnassignedIssueAsRun has the run create a parentless issue with no
-// assignee (always allowed) and returns its id. This is the DRA-109 state the
+// createIssueWithoutExecutorAsRun has the run create a parentless issue with no
+// executor (always allowed) and returns its id. This is the DRA-109 state the
 // report got stuck in.
-func createUnassignedIssueAsRun(t *testing.T, actorAgentID, taskID string) string {
+func createIssueWithoutExecutorAsRun(t *testing.T, actorAgentID, taskID string) string {
 	t.Helper()
 	r := newRequest(http.MethodPost, "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
-		"title":           "MUL-6691 unassigned " + t.Name(),
+		"title":           "MUL-6691 without-executor " + t.Name(),
 		"status":          "todo",
 		"priority":        "low",
 		"allow_duplicate": true,
@@ -195,14 +195,14 @@ func TestCreateIssue_RunOnlyAutomationLeaderAssignsPrivateWorker(t *testing.T) {
 
 		total, withOriginator := tasksFor(t, created.ID, workerID)
 		if total != 1 || withOriginator != 0 {
-			t.Fatalf("team assignment must dispatch its private leader once and unattributed, got %d tasks (%d attributed)", total, withOriginator)
+			t.Fatalf("team executor routing must dispatch its private leader once and unattributed, got %d tasks (%d attributed)", total, withOriginator)
 		}
 	})
 
 	t.Run("sub-issue under an issue the run created is admitted", func(t *testing.T) {
 		workerID, ownerID, _ := privateAgentTestFixture(t)
 		fx := newRunOnlyAutomationFixture(t, workerID, ownerID)
-		parentID := createUnassignedIssueAsRun(t, fx.LeaderAgentID, fx.LeaderTaskID)
+		parentID := createIssueWithoutExecutorAsRun(t, fx.LeaderAgentID, fx.LeaderTaskID)
 
 		var created IssueResponse
 		testutil.Call(t, testHandler.CreateIssue,
@@ -344,17 +344,17 @@ func TestUpdateIssue_AutomationLeaderAssignsPrivateWorker(t *testing.T) {
 		t.Skip("database not available")
 	}
 
-	// The reported symptom, end to end: create unassigned, then assign.
-	t.Run("run_only run assigns an issue it created", func(t *testing.T) {
+	// The reported symptom, end to end: create without an executor, then set one.
+	t.Run("run_only run sets the executor on an issue it created", func(t *testing.T) {
 		workerID, ownerID, _ := privateAgentTestFixture(t)
 		fx := newRunOnlyAutomationFixture(t, workerID, ownerID)
-		issueID := createUnassignedIssueAsRun(t, fx.LeaderAgentID, fx.LeaderTaskID)
+		issueID := createIssueWithoutExecutorAsRun(t, fx.LeaderAgentID, fx.LeaderTaskID)
 
 		agentAssigns(t, fx.LeaderAgentID, fx.LeaderTaskID, issueID, workerID).Want(http.StatusOK)
 
 		total, withOriginator := tasksFor(t, issueID, workerID)
 		if total != 1 {
-			t.Fatalf("assignment must dispatch the private worker exactly once, got %d tasks", total)
+			t.Fatalf("executor routing must dispatch the private worker exactly once, got %d tasks", total)
 		}
 		if withOriginator != 0 {
 			t.Fatal("borrowed authority is authorization-only; the worker task must stay unattributed")
@@ -365,7 +365,7 @@ func TestUpdateIssue_AutomationLeaderAssignsPrivateWorker(t *testing.T) {
 		workerID, ownerID, _ := privateAgentTestFixture(t)
 		fx := newRunOnlyAutomationFixture(t, workerID, ownerID)
 		teamID := dbfx.Team(t, "MUL-6691 Update Team", workerID)
-		issueID := createUnassignedIssueAsRun(t, fx.LeaderAgentID, fx.LeaderTaskID)
+		issueID := createIssueWithoutExecutorAsRun(t, fx.LeaderAgentID, fx.LeaderTaskID)
 
 		testutil.Call(t, testHandler.UpdateIssue, testutil.WithURLParams(
 			asRun(newRequest(http.MethodPatch, "/api/issues/"+issueID, map[string]any{
@@ -377,7 +377,7 @@ func TestUpdateIssue_AutomationLeaderAssignsPrivateWorker(t *testing.T) {
 	})
 
 	// create_issue mode: the same lineage MUL-4857 already accepts for child
-	// creation now also works for the assignment verb — but ONLY through the
+	// creation now also works for the executor-setting verb — but ONLY through the
 	// precise accountable-human rule, never through the coarse creator fallback.
 	t.Run("create_issue leader with an attribution stamp assigns via its accountable human", func(t *testing.T) {
 		workerID, ownerID, plainMemberID := privateAgentTestFixture(t)
@@ -385,7 +385,7 @@ func TestUpdateIssue_AutomationLeaderAssignsPrivateWorker(t *testing.T) {
 		// Production stamps this task trigger_owner/accountable (MUL-4302); the
 		// fixture does not, so set it explicitly to exercise that branch. Point
 		// the automation's creator at someone with no rights so ONLY the
-		// accountable human can carry the assignment.
+		// accountable human can carry the executor-setting operation.
 		dbfx.Exec(t, `UPDATE automation SET created_by_id = $1 WHERE id = $2`, plainMemberID, fx.AutomationID)
 		stampAutomationAttribution(t, fx.LeaderTaskID, ownerID, "trigger_owner")
 
@@ -451,20 +451,20 @@ func TestUpdateIssue_AutomationLeaderAssignsPrivateWorker(t *testing.T) {
 		fx := newAutomationDelegationFixture(t, workerID, ownerID, "automation")
 		stampAutomationAttribution(t, fx.LeaderTaskID, ownerID, "trigger_owner")
 
-		// Creating the unassigned issue is allowed (no assignee, no gate).
-		launderedID := createUnassignedIssueAsRun(t, fx.LeaderAgentID, fx.LeaderTaskID)
+		// Creating the issue without an executor is allowed (no executor, no gate).
+		launderedID := createIssueWithoutExecutorAsRun(t, fx.LeaderAgentID, fx.LeaderTaskID)
 
 		// Assigning it is not: the issue is agent_create-bound to this task, but
 		// the task has no run_only lineage to prove.
 		agentAssigns(t, fx.LeaderAgentID, fx.LeaderTaskID, launderedID, workerID).Want(http.StatusForbidden)
 
-		// Nor is creating a private-assignee child under it.
+		// Nor is creating a private-executor child under it.
 		testutil.Call(t, testHandler.CreateIssue,
 			automationChildIssueRequest(t, "agent", workerID, launderedID, "todo", fx.LeaderAgentID, fx.LeaderTaskID),
 		).Want(http.StatusForbidden)
 
 		if total, _ := tasksFor(t, launderedID, workerID); total != 0 {
-			t.Fatalf("laundered assignment enqueued %d tasks", total)
+			t.Fatalf("laundered executor routing enqueued %d tasks", total)
 		}
 	})
 
@@ -476,14 +476,14 @@ func TestUpdateIssue_AutomationLeaderAssignsPrivateWorker(t *testing.T) {
 		agentAssigns(t, fx.LeaderAgentID, fx.LeaderTaskID, foreignIssueID, workerID).Want(http.StatusForbidden)
 
 		if total, _ := tasksFor(t, foreignIssueID, workerID); total != 0 {
-			t.Fatalf("refused assignment enqueued %d tasks", total)
+			t.Fatalf("refused executor routing enqueued %d tasks", total)
 		}
 	})
 
 	t.Run("run_only run cannot assign an issue created by a sibling run", func(t *testing.T) {
 		workerID, ownerID, _ := privateAgentTestFixture(t)
 		owning := newRunOnlyAutomationFixture(t, workerID, ownerID)
-		issueID := createUnassignedIssueAsRun(t, owning.LeaderAgentID, owning.LeaderTaskID)
+		issueID := createIssueWithoutExecutorAsRun(t, owning.LeaderAgentID, owning.LeaderTaskID)
 
 		// A second, equally well-formed run of its own automation. Binding on the
 		// creating TASK (not the automation) is what keeps it out.
@@ -494,7 +494,7 @@ func TestUpdateIssue_AutomationLeaderAssignsPrivateWorker(t *testing.T) {
 	t.Run("plain member is still refused", func(t *testing.T) {
 		workerID, _, plainMemberID := privateAgentTestFixture(t)
 		fx := newRunOnlyAutomationFixture(t, workerID, plainMemberID)
-		issueID := createUnassignedIssueAsRun(t, fx.LeaderAgentID, fx.LeaderTaskID)
+		issueID := createIssueWithoutExecutorAsRun(t, fx.LeaderAgentID, fx.LeaderTaskID)
 
 		testutil.Call(t, testHandler.UpdateIssue, testutil.WithURLParams(
 			newRequestAs(plainMemberID, http.MethodPatch, "/api/issues/"+issueID, map[string]any{
@@ -529,15 +529,15 @@ func batchAssignAsRun(t *testing.T, headerUserID, agentID, taskID, targetAgentID
 	return testutil.Call(t, testHandler.BatchUpdateIssues, req)
 }
 
-// assigneeOf returns an issue's assignee agent id, or "" when unassigned.
-func assigneeOf(t *testing.T, issueID string) string {
+// executorIDOf returns an issue's executor agent id, or "" when no executor is set.
+func executorIDOf(t *testing.T, issueID string) string {
 	t.Helper()
-	var assignee *string
-	dbfx.QueryRow(t, `SELECT executor_id::text FROM issue WHERE id = $1`, issueID).Scan(&assignee)
-	if assignee == nil {
+	var executor *string
+	dbfx.QueryRow(t, `SELECT executor_id::text FROM issue WHERE id = $1`, issueID).Scan(&executor)
+	if executor == nil {
 		return ""
 	}
-	return *assignee
+	return *executor
 }
 
 // Review must-fix 3: BatchUpdateIssues is a real agent-reachable authorization
@@ -551,17 +551,17 @@ func TestBatchUpdateIssues_AutomationAuthorityIsPerIssue(t *testing.T) {
 	t.Run("bound issue is updated and a foreign issue in the same batch is not", func(t *testing.T) {
 		workerID, ownerID, plainMemberID := privateAgentTestFixture(t)
 		fx := newRunOnlyAutomationFixture(t, workerID, ownerID)
-		ownIssueID := createUnassignedIssueAsRun(t, fx.LeaderAgentID, fx.LeaderTaskID)
+		ownIssueID := createIssueWithoutExecutorAsRun(t, fx.LeaderAgentID, fx.LeaderTaskID)
 		foreignIssueID := seedBareIssue(t, fx.LeaderAgentID)
 
 		batchAssignAsRun(t, plainMemberID, fx.LeaderAgentID, fx.LeaderTaskID, workerID, ownIssueID, foreignIssueID).
 			Want(http.StatusOK)
 
-		if got := assigneeOf(t, ownIssueID); got != workerID {
-			t.Fatalf("bound issue assignee = %q, want %q", got, workerID)
+		if got := executorIDOf(t, ownIssueID); got != workerID {
+			t.Fatalf("bound issue executor = %q, want %q", got, workerID)
 		}
-		if got := assigneeOf(t, foreignIssueID); got != "" {
-			t.Fatalf("foreign issue in the same batch was assigned to %q; per-issue scoping leaked", got)
+		if got := executorIDOf(t, foreignIssueID); got != "" {
+			t.Fatalf("foreign issue in the same batch was given executor %q; per-issue scoping leaked", got)
 		}
 		if total, _ := tasksFor(t, foreignIssueID, workerID); total != 0 {
 			t.Fatalf("foreign issue enqueued %d tasks", total)
@@ -572,27 +572,27 @@ func TestBatchUpdateIssues_AutomationAuthorityIsPerIssue(t *testing.T) {
 		workerID, ownerID, plainMemberID := privateAgentTestFixture(t)
 		fx := newAutomationDelegationFixture(t, workerID, ownerID, "automation")
 		stampAutomationAttribution(t, fx.LeaderTaskID, ownerID, "trigger_owner")
-		launderedID := createUnassignedIssueAsRun(t, fx.LeaderAgentID, fx.LeaderTaskID)
+		launderedID := createIssueWithoutExecutorAsRun(t, fx.LeaderAgentID, fx.LeaderTaskID)
 
 		batchAssignAsRun(t, plainMemberID, fx.LeaderAgentID, fx.LeaderTaskID, workerID, launderedID).
 			Want(http.StatusOK)
 
-		if got := assigneeOf(t, launderedID); got != "" {
-			t.Fatalf("laundered issue was assigned to %q; the run_only lineage check did not apply", got)
+		if got := executorIDOf(t, launderedID); got != "" {
+			t.Fatalf("laundered issue was given executor %q; the run_only lineage check did not apply", got)
 		}
 	})
 
 	t.Run("refuses a task that is no longer running", func(t *testing.T) {
 		workerID, ownerID, plainMemberID := privateAgentTestFixture(t)
 		fx := newRunOnlyAutomationFixture(t, workerID, ownerID)
-		ownIssueID := createUnassignedIssueAsRun(t, fx.LeaderAgentID, fx.LeaderTaskID)
+		ownIssueID := createIssueWithoutExecutorAsRun(t, fx.LeaderAgentID, fx.LeaderTaskID)
 		dbfx.Exec(t, `UPDATE agent_task_queue SET status = 'completed' WHERE id = $1`, fx.LeaderTaskID)
 
 		batchAssignAsRun(t, plainMemberID, fx.LeaderAgentID, fx.LeaderTaskID, workerID, ownIssueID).
 			Want(http.StatusOK)
 
-		if got := assigneeOf(t, ownIssueID); got != "" {
-			t.Fatalf("completed task assigned the issue to %q", got)
+		if got := executorIDOf(t, ownIssueID); got != "" {
+			t.Fatalf("completed task gave the issue executor %q", got)
 		}
 	})
 }

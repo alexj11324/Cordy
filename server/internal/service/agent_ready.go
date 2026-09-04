@@ -167,7 +167,7 @@ func parseRuntimeOfflineReason(metadata []byte) (runtimeOfflineReason, bool) {
 // trigger is refused because the target's agent CLI cannot run on its machine.
 //
 // It lives here, next to the verdict, because two layers write it: the handler
-// for a refused @mention and the service for a refused assignment. One text,
+// for a refused @mention and the service for a refused executor routing. One text,
 // one place to fix it. It names the repair command when the daemon reported
 // one and stays useful when it did not — a natively installed CLI has no
 // postinstall to re-run, and inventing a command would send the user somewhere
@@ -175,7 +175,7 @@ func parseRuntimeOfflineReason(metadata []byte) (runtimeOfflineReason, bool) {
 func RuntimeUnusableNotice(agentName string, verdict AgentVerdict) string {
 	name := agentName
 	if name == "" {
-		name = "The assigned agent"
+		name = "The executor agent"
 	}
 	if verdict.Repair != nil && verdict.Repair.Command != "" {
 		return fmt.Sprintf(

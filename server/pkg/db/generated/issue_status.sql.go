@@ -32,7 +32,7 @@ type ArchiveIssueStatusEntryParams struct {
 //
 // Archiving retires a status from future use only. Issues already on it keep
 // it — Effective ignores archived_at, so their behavior is unchanged — while
-// Resolve rejects it, so nothing new can be assigned to it.
+// Resolve rejects it, so no issue can newly move to it.
 func (q *Queries) ArchiveIssueStatusEntry(ctx context.Context, arg ArchiveIssueStatusEntryParams) (IssueStatus, error) {
 	row := q.db.QueryRow(ctx, archiveIssueStatusEntry, arg.ID, arg.WorkspaceID)
 	var i IssueStatus
@@ -330,7 +330,7 @@ type ListIssueStatusKeysByCategoriesParams struct {
 // (workspace_id, status) unusable and forces a full workspace scan.
 //
 // ARCHIVED statuses are included on purpose: archiving retires a status from
-// future assignment but leaves existing issues on it, and those issues must
+// future use but leaves existing issues on it, and those issues must
 // still appear in their category's column.
 func (q *Queries) ListIssueStatusKeysByCategories(ctx context.Context, arg ListIssueStatusKeysByCategoriesParams) ([]string, error) {
 	rows, err := q.db.Query(ctx, listIssueStatusKeysByCategories, arg.WorkspaceID, arg.Categories)
@@ -418,7 +418,7 @@ const seedIssueStatusEntries = `-- name: SeedIssueStatusEntries :exec
 INSERT INTO issue_status (workspace_id, key, name, description, category, color, is_system, position)
 VALUES
     ($1::uuid, 'backlog', 'Backlog', 'Parked. Assigning an issue here never starts an agent run.', 'backlog', '#6b7280', TRUE, 0),
-    ($1::uuid, 'todo', 'Todo', 'Queued for work. Moving an issue here starts the assigned agent.', 'todo', '#6b7280', TRUE, 0),
+    ($1::uuid, 'todo', 'Todo', 'Queued for work. Moving an issue here starts its executor agent.', 'todo', '#6b7280', TRUE, 0),
     ($1::uuid, 'in_progress', 'In Progress', 'Actively being worked on.', 'in_progress', '#f59e0b', TRUE, 0),
     ($1::uuid, 'in_review', 'In Review', 'Work delivered, waiting on human review. Finalizes the automation run.', 'in_review', '#22c55e', TRUE, 0),
     ($1::uuid, 'done', 'Done', 'Completed.', 'done', '#3b82f6', TRUE, 0),

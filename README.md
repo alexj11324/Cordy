@@ -41,7 +41,7 @@ You already run Claude Code, Codex, and three other agents. Each one lives in it
 tab, forgets everything when the session ends, and leaves you re-explaining the same context for
 the fourth time today. The more agents you add, the more of your day goes to babysitting them.
 
-Patchbay puts those agents and your teammates in one workspace. An agent gets assigned an issue,
+Patchbay puts those agents and your teammates in one workspace. An agent becomes an issue's executor,
 picks it up on its own, works on a runtime you control, comments as it goes, and hands the result
 back for review. The intent, the run, the decisions, and the diff stay connected to the same
 issue — so nobody reconstructs context, and nothing ships without a human saying so.

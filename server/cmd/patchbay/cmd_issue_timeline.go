@@ -282,7 +282,7 @@ func timelineDetail(entry map[string]any, actors actorDisplayLookup, fullID bool
 	}
 
 	// role changes: {"from_type","from_id","to_type","to_id"}, any of which
-	// is absent when that side was unassigned.
+	// is absent when that side has no role actor.
 	if hasAnyKey(details, "from_type", "from_id", "to_type", "to_id") {
 		return transitionText(
 			timelineActor(strVal(details, "from_type"), strVal(details, "from_id"), actors, fullID),

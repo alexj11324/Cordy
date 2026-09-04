@@ -310,14 +310,14 @@ func TestListWorkspaceWorkingAgents(t *testing.T) {
 	insertedIssueIDs := make([]string, 0, 6)
 	insertIssue := func(
 		title, creatorType, creatorID string,
-		assigneeType, assigneeID any,
+		roleType, roleID any,
 	) string {
 		t.Helper()
 		var ownerType, ownerID, executorType, executorID any
-		if typ, ok := assigneeType.(string); ok && typ == "member" {
-			ownerType, ownerID = assigneeType, assigneeID
+		if typ, ok := roleType.(string); ok && typ == "member" {
+			ownerType, ownerID = roleType, roleID
 		} else {
-			executorType, executorID = assigneeType, assigneeID
+			executorType, executorID = roleType, roleID
 		}
 		var issueID string
 		if err := testPool.QueryRow(ctx, `
@@ -345,8 +345,8 @@ func TestListWorkspaceWorkingAgents(t *testing.T) {
 		insertedIssueIDs = append(insertedIssueIDs, issueID)
 		return issueID
 	}
-	assignedIssueID := insertIssue(
-		"working-agent-assigned-to-me",
+	ownedIssueID := insertIssue(
+		"working-agent-owned-by-me",
 		"member",
 		testUserID,
 		"member",
@@ -414,14 +414,14 @@ func TestListWorkspaceWorkingAgents(t *testing.T) {
 		chatSessionID   any
 		automationRunID any
 	}{
-		{workingAgentID, "running", assignedIssueID, nil, nil},
+		{workingAgentID, "running", ownedIssueID, nil, nil},
 		{workingAgentID, "running", ownedAgentIssueID, nil, nil},
 		{workingAgentID, "running", outsideIssueID, nil, nil},
 		{workingAgentID, "running", directMemberTeamIssueID, nil, nil},
 		{workingAgentID, "running", ownedLeaderTeamIssueID, nil, nil},
 		{workingAgentID, "running", ownedMemberTeamIssueID, nil, nil},
 		{workingAgentID, "running", nil, chatSessionID, nil},
-		{workingAgentID, "running", assignedIssueID, nil, automationRunID},
+		{workingAgentID, "running", ownedIssueID, nil, automationRunID},
 		{workingAgentID, "running", nil, nil, nil},
 		{queuedAgentID, "queued", nil, nil, nil},
 	} {
@@ -461,7 +461,7 @@ func TestListWorkspaceWorkingAgents(t *testing.T) {
 			name:      "all sources",
 			wantCount: 9,
 			wantIssueIDs: []string{
-				assignedIssueID,
+				ownedIssueID,
 				ownedAgentIssueID,
 				outsideIssueID,
 				directMemberTeamIssueID,
@@ -474,7 +474,7 @@ func TestListWorkspaceWorkingAgents(t *testing.T) {
 			query:     "?type=issue",
 			wantCount: 6,
 			wantIssueIDs: []string{
-				assignedIssueID,
+				ownedIssueID,
 				ownedAgentIssueID,
 				outsideIssueID,
 				directMemberTeamIssueID,
@@ -486,7 +486,7 @@ func TestListWorkspaceWorkingAgents(t *testing.T) {
 			name:         "automation",
 			query:        "?type=automation",
 			wantCount:    1,
-			wantIssueIDs: []string{assignedIssueID},
+			wantIssueIDs: []string{ownedIssueID},
 		},
 		{name: "chat", query: "?type=chat", wantCount: 1, wantIssueIDs: []string{}},
 		{
@@ -494,7 +494,7 @@ func TestListWorkspaceWorkingAgents(t *testing.T) {
 			query:     "?type=issue&scope=mine",
 			wantCount: 5,
 			wantIssueIDs: []string{
-				assignedIssueID,
+				ownedIssueID,
 				ownedAgentIssueID,
 				directMemberTeamIssueID,
 				ownedLeaderTeamIssueID,
@@ -506,7 +506,7 @@ func TestListWorkspaceWorkingAgents(t *testing.T) {
 			query:     "?type=issue&scope=mine&relation=any",
 			wantCount: 5,
 			wantIssueIDs: []string{
-				assignedIssueID,
+				ownedIssueID,
 				ownedAgentIssueID,
 				directMemberTeamIssueID,
 				ownedLeaderTeamIssueID,
@@ -514,16 +514,16 @@ func TestListWorkspaceWorkingAgents(t *testing.T) {
 			},
 		},
 		{
-			name:         "mine assigned",
+			name:         "mine owner",
 			query:        "?type=issue&scope=mine&relation=assigned",
 			wantCount:    1,
-			wantIssueIDs: []string{assignedIssueID},
+			wantIssueIDs: []string{ownedIssueID},
 		},
 		{
 			name:         "mine created",
 			query:        "?type=issue&scope=mine&relation=created",
 			wantCount:    1,
-			wantIssueIDs: []string{assignedIssueID},
+			wantIssueIDs: []string{ownedIssueID},
 		},
 		{
 			name:      "mine involved",

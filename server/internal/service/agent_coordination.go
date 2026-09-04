@@ -55,7 +55,7 @@ var (
 // coordinationTaskContext is the immutable provenance written into a
 // coordinator-created task. The owner generation and issue revision are
 // snapshots: completion producers use them to reject a stale task after an
-// assignee/reviewer change. Pointers preserve the distinction between an old
+// executor/reviewer change. Pointers preserve the distinction between an old
 // row with no snapshot and a snapshot whose value happens to be zero.
 type coordinationTaskContext struct {
 	AssignmentID    string `json:"coordination_assignment_id"`
@@ -445,7 +445,7 @@ func (s *AgentCoordinationService) RecordReviewerReassignmentTx(ctx context.Cont
 
 // RecordReviewerTaskCancelledTx implements only the durable reviewer retry
 // case. An executor cancellation is not silently converted into a reviewer
-// event, and a queued/unassigned reviewer task is not retried from guessed
+// event, and a queued reviewer task with no current reviewer is not retried from guessed
 // state.
 func (s *AgentCoordinationService) RecordReviewerTaskCancelledTx(ctx context.Context, qtx *db.Queries, task db.AgentTaskQueue) error {
 	if !coordinationTaskEligible(task) || task.Status != "cancelled" {

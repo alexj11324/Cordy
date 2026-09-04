@@ -34,7 +34,7 @@ func requireSessionExcluded(t *testing.T, sessionID pgtype.Text, err error) {
 	}
 }
 
-// setupRerunTestFixture creates an issue assigned to the integration test
+// setupRerunTestFixture creates an issue executed by the integration test
 // agent and returns (issueID, agentID, runtimeID).
 func setupRerunTestFixture(t *testing.T) (string, string, string) {
 	t.Helper()
@@ -761,10 +761,10 @@ func TestRerunIssueSetsForceFreshSession(t *testing.T) {
 
 // TestRerunIssueTargetsSourceTaskAgent asserts that when a source task ID is
 // supplied (the execution-log retry-button path), the rerun targets the agent
-// that ran that specific past task — not the issue's current assignee.
+// that ran that specific past task — not the issue's current executor.
 // Without this, clicking retry on a row whose agent has since been displaced
-// (team worker, @-mention agent, or a prior assignee) re-fires the new
-// assignee instead, which is the MUL-2457 bug.
+// (team worker, @-mention agent, or a prior executor) re-fires the new
+// executor instead, which is the MUL-2457 bug.
 func TestRerunIssueTargetsSourceTaskAgent(t *testing.T) {
 	if testPool == nil {
 		t.Skip("no database connection")
@@ -776,8 +776,8 @@ func TestRerunIssueTargetsSourceTaskAgent(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a second agent in the same workspace + runtime so we can stand
-	// in as a "row whose agent is no longer the issue assignee" — e.g. a
-	// team worker or an @-mentioned agent. The issue's assignee is still
+	// in as a "row whose agent is no longer the issue executor" — e.g. a
+	// team worker or an @-mentioned agent. The issue's executor is still
 	// the primary agent; the rerun must target this secondary one because
 	// that's whose task row the user clicked.
 	var secondaryAgentID string
@@ -834,7 +834,7 @@ func TestRerunIssueTargetsSourceTaskAgent(t *testing.T) {
 
 	gotAgent := util.UUIDToString(task.AgentID)
 	if gotAgent != secondaryAgentID {
-		t.Fatalf("rerun targeted wrong agent: got %s, want %s (issue assignee is %s — must not be picked)",
+		t.Fatalf("rerun targeted wrong agent: got %s, want %s (issue executor is %s — must not be picked)",
 			gotAgent, secondaryAgentID, primaryAgentID)
 	}
 	if !task.ForceFreshSession {

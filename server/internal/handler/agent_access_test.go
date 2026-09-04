@@ -227,7 +227,7 @@ func TestListAgentTasks_PrivateAgentForbidsPlainMember(t *testing.T) {
 }
 
 // TestCreateIssue_AssignToPrivateAgentForbidsPlainMember verifies that the
-// issue-assignment surface is gated by the same predicate. Without this gate
+// issue-executor surface is gated by the same predicate. Without this gate
 // a plain workspace member could side-step chat/@-mention by assigning a
 // private agent to an issue and letting normal task dispatch run it.
 func TestCreateIssue_AssignToPrivateAgentForbidsPlainMember(t *testing.T) {
@@ -264,7 +264,7 @@ func TestCreateIssue_AssignToPrivateAgentForbidsPlainMember(t *testing.T) {
 	}
 
 	// Plain member: denied with 403 — closes the back door where issue
-	// assignment would otherwise hand the agent a task without going
+	// executor routing would otherwise hand the agent a task without going
 	// through chat / @-mention.
 	w = httptest.NewRecorder()
 	testHandler.CreateIssue(w, newRequestAs(memberID, "POST", "/api/issues?workspace_id="+testWorkspaceID, body(memberID)))
@@ -510,7 +510,7 @@ func TestMentionAgent_RejectsCrossWorkspaceAgentUUID(t *testing.T) {
 // agent's UUID is "welded" onto that issue and any member with comment
 // access could previously dispatch a new task to the private agent simply by
 // posting a plain (non-@mention) comment, bypassing the visibility gate that
-// #2359 added to chat / @mention / assignment.
+// #2359 added to chat / @mention / executor routing.
 //
 // The gate must (as tightened by MUL-3963 — the cases below are the source of
 // truth, this list only summarises them):
@@ -539,7 +539,7 @@ func TestShouldEnqueueOnComment_PrivateAgentGate(t *testing.T) {
 		        COALESCE((SELECT MAX(number) FROM issue WHERE workspace_id = $1), 0) + 1)
 		RETURNING id
 	`, testWorkspaceID, testUserID, agentID).Scan(&issueID); err != nil {
-		t.Fatalf("create issue assigned to private agent: %v", err)
+		t.Fatalf("create issue executed by private agent: %v", err)
 	}
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(), `DELETE FROM issue WHERE id = $1`, issueID)

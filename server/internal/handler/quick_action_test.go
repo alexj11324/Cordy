@@ -99,21 +99,21 @@ func TestNormalizeQuickActionVisibility(t *testing.T) {
 	}
 }
 
-// TestValidateQuickActionAssignee locks the polymorphic binding to the two
+// TestValidateQuickActionExecutor locks the polymorphic binding to the two
 // supported actor kinds; anything else would store a target the run path
 // cannot resolve.
-func TestValidateQuickActionAssignee(t *testing.T) {
-	if err := validateQuickActionAssignee("agent", "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0"); err != nil {
+func TestValidateQuickActionExecutor(t *testing.T) {
+	if err := validateQuickActionExecutor("agent", "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0"); err != nil {
 		t.Fatalf("agent binding must be accepted, got %v", err)
 	}
-	if err := validateQuickActionAssignee("team", "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0"); err != nil {
+	if err := validateQuickActionExecutor("team", "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0"); err != nil {
 		t.Fatalf("team binding must be accepted, got %v", err)
 	}
-	if err := validateQuickActionAssignee("member", "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0"); err == nil {
+	if err := validateQuickActionExecutor("member", "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0"); err == nil {
 		t.Fatal("a member binding must be rejected: members are not runnable targets")
 	}
-	if err := validateQuickActionAssignee("agent", "  "); err == nil {
-		t.Fatal("a blank assignee id must be rejected")
+	if err := validateQuickActionExecutor("agent", "  "); err == nil {
+		t.Fatal("a blank executor id must be rejected")
 	}
 }
 

@@ -190,12 +190,12 @@ func TestTimelineDetail(t *testing.T) {
 			want:  "in_review → done",
 		},
 		{
-			name:  "assignee set from nobody",
+			name:  "executor set from nobody",
 			entry: map[string]any{"type": "activity", "details": map[string]any{"to_type": "agent", "to_id": "abcdefgh1234"}},
 			want:  "(none) → agent:abcdefgh",
 		},
 		{
-			name:  "unassigned",
+			name:  "executor cleared",
 			entry: map[string]any{"type": "activity", "details": map[string]any{"from_type": "member", "from_id": "abcdefgh1234"}},
 			want:  "member:abcdefgh → (none)",
 		},

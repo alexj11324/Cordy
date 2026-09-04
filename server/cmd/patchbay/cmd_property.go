@@ -443,7 +443,7 @@ func makePropertyArchiveRun(archive bool) func(*cobra.Command, []string) error {
 // resolveActorPropertyRef turns one --value token into a "member:<uuid>"
 // actor reference. An already-prefixed token is taken as-is (after checking
 // the id parses); anything else goes through the same member lookup
-// `--assignee` uses, so names, emails, UUIDs and short ids all work.
+// actor lookup uses, so names, emails, UUIDs and short ids all work.
 func resolveActorPropertyRef(ctx context.Context, client *cli.APIClient, raw string) (string, error) {
 	token := strings.TrimSpace(raw)
 	if token == "" {
@@ -455,7 +455,7 @@ func resolveActorPropertyRef(ctx context.Context, client *cli.APIClient, raw str
 		}
 		return kind + ":" + strings.TrimSpace(id), nil
 	}
-	actorType, actorID, err := resolveAssignee(ctx, client, token, memberOnlyKinds)
+	actorType, actorID, err := resolveActor(ctx, client, token, memberOnlyKinds)
 	if err != nil {
 		return "", err
 	}
@@ -646,7 +646,7 @@ func fetchActorPropertyNames(ctx context.Context, client *cli.APIClient, propert
 	}
 	names := make(map[string]string)
 	var members []map[string]any
-	if err := getAssigneeJSON(ctx, client, "/api/workspaces/"+client.WorkspaceID+"/members", &members); err == nil {
+	if err := getActorJSON(ctx, client, "/api/workspaces/"+client.WorkspaceID+"/members", &members); err == nil {
 		for _, m := range members {
 			if id := strVal(m, "user_id"); id != "" {
 				names["member:"+id] = strVal(m, "name")

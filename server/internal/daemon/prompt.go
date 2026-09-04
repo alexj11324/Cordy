@@ -251,16 +251,16 @@ func buildPromptBody(task Task, provider string) string {
 	}
 	var b strings.Builder
 	b.WriteString("You are running as a local coding agent for a Patchbay workspace.\n\n")
-	fmt.Fprintf(&b, "Your assigned issue ID is: %s\n\n", task.IssueID)
-	// Assignment handoff (MUL-3375): a free-text instruction the person who
-	// assigned/promoted this issue left for you. Frame it as a handoff, not a
+	fmt.Fprintf(&b, "Your executor issue ID is: %s\n\n", task.IssueID)
+	// Executor handoff (MUL-3375): a free-text instruction the person who
+	// set/promoted this issue's executor left for you. Frame it as a handoff, not a
 	// comment to reply to — there is no comment thread to answer here.
 	if task.HandoffNote != "" {
-		b.WriteString("You were handed this issue with a handoff note. Treat it as the assigner's scoping instruction for this run; follow it before doing anything broader, and do not reply to it as if it were a comment:\n\n")
+		b.WriteString("You were handed this issue with a handoff note. Treat it as the executor setter's scoping instruction for this run; follow it before doing anything broader, and do not reply to it as if it were a comment:\n\n")
 		fmt.Fprintf(&b, "> %s\n\n", task.HandoffNote)
 	}
 	fmt.Fprintf(&b, "Start by running `patchbay issue get %s --output json` to understand your task, then complete it.\n", task.IssueID)
-	fmt.Fprintf(&b, "For comment history, follow the rule in your runtime workflow file (assignment-triggered tasks treat the read as mandatory). Scan the threads first with `patchbay issue comment list %s --roots-only --summary --compact --output json`, then expand only what matters with `--thread <thread-id> --tail 30`. For `--since` incremental polling, pagination, and folding, see `patchbay issue comment list --help`.\n", task.IssueID)
+	fmt.Fprintf(&b, "For comment history, follow the rule in your runtime workflow file (executor-triggered tasks treat the read as mandatory). Scan the threads first with `patchbay issue comment list %s --roots-only --summary --compact --output json`, then expand only what matters with `--thread <thread-id> --tail 30`. For `--since` incremental polling, pagination, and folding, see `patchbay issue comment list --help`.\n", task.IssueID)
 	return b.String()
 }
 
@@ -338,7 +338,7 @@ func buildQuickCreatePrompt(task Task) string {
 			fmt.Fprintf(&b, "    - When the user did NOT name a routing target, default to the picker TEAM: pass `--executor-id %q` (the team's UUID). The user opened quick-create with the team selected; you (the leader agent) are running on the team's behalf, so the team — not you — is the expected executor. Never leave the issue without an executor, and do not assign it to your own agent UUID.\n\n", task.TeamID)
 		}
 	case agentID != "":
-		fmt.Fprintf(&b, "    - When the user did NOT name a routing target, default to YOURSELF: pass `--executor-id %q` (your agent UUID). The picker agent is the expected executor because the user opened quick-create with you selected — never leave the issue without an executor. Use the UUID flag, not `--executor <name>`, so the assignment is unambiguous even when other agents share part of your name.\n\n", agentID)
+			fmt.Fprintf(&b, "    - When the user did NOT name a routing target, default to YOURSELF: pass `--executor-id %q` (your agent UUID). The picker agent is the expected executor because the user opened quick-create with you selected — never leave the issue without an executor. Use the UUID flag, not `--executor <name>`, so executor routing is unambiguous even when other agents share part of your name.\n\n", agentID)
 	case agentName != "":
 		fmt.Fprintf(&b, "    - When the user did NOT name a routing target, default to YOURSELF: pass `--executor %q`. The picker agent is the expected executor because the user opened quick-create with you selected — never leave the issue without an executor.\n\n", agentName)
 	default:
@@ -396,7 +396,7 @@ func buildQuickCreatePrompt(task Task) string {
 func buildCommentPrompt(task Task, provider string) string {
 	var b strings.Builder
 	b.WriteString("You are running as a local coding agent for a Patchbay workspace.\n\n")
-	fmt.Fprintf(&b, "Your assigned issue ID is: %s\n\n", task.IssueID)
+	fmt.Fprintf(&b, "Your executor issue ID is: %s\n\n", task.IssueID)
 	if task.TriggerCommentContent != "" {
 		authorLabel := "A user"
 		if task.TriggerAuthorType == "system" {
@@ -742,7 +742,7 @@ func channelDisplayName(channelType string) string {
 func buildAutomationPrompt(task Task) string {
 	var b strings.Builder
 	b.WriteString("You are running as a local coding agent for a Patchbay workspace.\n\n")
-	b.WriteString("This task was triggered by an Automation in run-only mode. There is no assigned Patchbay issue for this run.\n\n")
+	b.WriteString("This task was triggered by an Automation in run-only mode. There is no Patchbay issue attached to this run.\n\n")
 	fmt.Fprintf(&b, "Automation run ID: %s\n", task.AutomationRunID)
 	if task.AutomationID != "" {
 		fmt.Fprintf(&b, "Automation ID: %s\n", task.AutomationID)

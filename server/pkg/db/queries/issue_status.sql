@@ -11,7 +11,7 @@
 INSERT INTO issue_status (workspace_id, key, name, description, category, color, is_system, position)
 VALUES
     (sqlc.arg('workspace_id')::uuid, 'backlog', 'Backlog', 'Parked. Assigning an issue here never starts an agent run.', 'backlog', '#6b7280', TRUE, 0),
-    (sqlc.arg('workspace_id')::uuid, 'todo', 'Todo', 'Queued for work. Moving an issue here starts the assigned agent.', 'todo', '#6b7280', TRUE, 0),
+    (sqlc.arg('workspace_id')::uuid, 'todo', 'Todo', 'Queued for work. Moving an issue here starts its executor agent.', 'todo', '#6b7280', TRUE, 0),
     (sqlc.arg('workspace_id')::uuid, 'in_progress', 'In Progress', 'Actively being worked on.', 'in_progress', '#f59e0b', TRUE, 0),
     (sqlc.arg('workspace_id')::uuid, 'in_review', 'In Review', 'Work delivered, waiting on human review. Finalizes the automation run.', 'in_review', '#22c55e', TRUE, 0),
     (sqlc.arg('workspace_id')::uuid, 'done', 'Done', 'Completed.', 'done', '#3b82f6', TRUE, 0),
@@ -92,7 +92,7 @@ RETURNING *;
 --
 -- Archiving retires a status from future use only. Issues already on it keep
 -- it — Effective ignores archived_at, so their behavior is unchanged — while
--- Resolve rejects it, so nothing new can be assigned to it.
+-- Resolve rejects it, so no issue can newly move to it.
 UPDATE issue_status SET
     archived_at = now(),
     updated_at = now()
@@ -138,7 +138,7 @@ SELECT pg_advisory_xact_lock_shared(hashtextextended(sqlc.arg('workspace_id')::u
 -- (workspace_id, status) unusable and forces a full workspace scan.
 --
 -- ARCHIVED statuses are included on purpose: archiving retires a status from
--- future assignment but leaves existing issues on it, and those issues must
+-- future use but leaves existing issues on it, and those issues must
 -- still appear in their category's column.
 SELECT key FROM issue_status
 WHERE workspace_id = sqlc.arg('workspace_id')::uuid

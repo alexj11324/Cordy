@@ -225,7 +225,7 @@ func (h *Handler) invokeOriginatorFromRequest(r *http.Request, actorType, actorI
 	return ""
 }
 
-// assignAuthorityScope tells the invoke gate WHAT an assignment is being made
+// assignAuthorityScope tells the invoke gate WHAT issue role operation is being made
 // against, so an unattributed automation run can only borrow authority for work
 // it is verifiably doing itself (MUL-6691).
 //
@@ -235,7 +235,7 @@ func (h *Handler) invokeOriginatorFromRequest(r *http.Request, actorType, actorI
 // behavior of "real originator or deny", which is what the member-only entry
 // points want.
 type assignAuthorityScope struct {
-	// Issue is the already-loaded issue the assignment binds to: the PARENT for
+	// Issue is the already-loaded issue the role operation binds to: the PARENT for
 	// scopeKindChildOf, the issue ITSELF for scopeKindExistingIssue. Its
 	// workspace must match the request's, and the speaking run must be
 	// verifiably attached to it (issueBoundToAutomationTask) before any authority
@@ -245,7 +245,7 @@ type assignAuthorityScope struct {
 	Kind assignScopeKind
 }
 
-// assignScopeKind distinguishes the assignment shapes, because they do NOT admit
+// assignScopeKind distinguishes the role-operation shapes, because they do NOT admit
 // the same fallbacks: only child creation — the surface MUL-4857 already shipped
 // — may fall back to the coarse automation-creator authority.
 type assignScopeKind int
@@ -262,7 +262,7 @@ const (
 	scopeKindNewTopLevelIssue
 )
 
-// scopeChildOf binds the assignment to the parent a child is being created
+// scopeChildOf binds the executor operation to the parent a child is being created
 // under. A nil parent yields the empty scope, which grants nothing.
 func scopeChildOf(parent *db.Issue) assignAuthorityScope {
 	if parent == nil {
@@ -271,7 +271,7 @@ func scopeChildOf(parent *db.Issue) assignAuthorityScope {
 	return assignAuthorityScope{Issue: parent, Kind: scopeKindChildOf}
 }
 
-// scopeExistingIssue binds the assignment to the issue being updated.
+// scopeExistingIssue binds the role operation to the issue being updated.
 func scopeExistingIssue(issue *db.Issue) assignAuthorityScope {
 	if issue == nil {
 		return assignAuthorityScope{}
@@ -280,7 +280,7 @@ func scopeExistingIssue(issue *db.Issue) assignAuthorityScope {
 }
 
 // scopeNewTopLevelIssue marks a create with no parent, where the issue being
-// assigned does not exist yet.
+// executor target does not exist yet.
 func scopeNewTopLevelIssue() assignAuthorityScope {
 	return assignAuthorityScope{Kind: scopeKindNewTopLevelIssue}
 }
@@ -304,7 +304,7 @@ func (h *Handler) effectiveInvocationAuthorityFromRequest(r *http.Request, scope
 }
 
 // automationAssignAuthorityFromRequest resolves the borrowed authority for an
-// assignment made by an unattributed agent run, in precedence order:
+// executor operation made by an unattributed agent run, in precedence order:
 //
 //  1. the speaking task's OWN accountable human (automationTaskAssignAuthority) —
 //     precise, already recorded on the task row, and available for both
@@ -343,7 +343,7 @@ func (h *Handler) automationAssignAuthorityFromRequest(r *http.Request, scope as
 }
 
 // automationTaskAssignAuthority resolves the effective invoking human for an
-// assignment performed by an unattributed automation run, keyed on the run's OWN
+// executor operation performed by an unattributed automation run, keyed on the run's OWN
 // accountable human rather than on the automation's creator (MUL-6691).
 //
 // WHY the accountable user and not automation.created_by_id: since MUL-4302 the
@@ -369,7 +369,7 @@ func (h *Handler) automationAssignAuthorityFromRequest(r *http.Request, scope as
 //     invoke its own owner's private agents, which is precisely the owner
 //     white-list bypass canInvokeAgent exists to prevent. `delegation` is
 //     excluded too, so authority does not propagate to descendant runs;
-//   - the assignment is bound to work this run verifiably owns —
+//   - the executor operation is bound to work this run verifiably owns —
 //     issueBoundToAutomationTask for an existing issue (which for a run_only-created
 //     issue re-proves the run_only lineage, so a create_issue task cannot escape
 //     its same-issue bound via a fresh top-level issue), or the task's own
@@ -473,7 +473,7 @@ func (h *Handler) issueBoundToAutomationTask(ctx context.Context, issue db.Issue
 // an automation RUN whose automation lives in the request's workspace. Used both
 // when there is no issue to bind to yet and when binding to a run_only-created
 // issue. A create_issue-mode leader task carries no automation_run_id (it is
-// enqueued through the ordinary issue-assignment path), so it never qualifies
+// enqueued through the ordinary issue-executor path), so it never qualifies
 // here and must go through the `origin_type=automation` binding instead.
 func (h *Handler) taskRunsAutomationInWorkspace(ctx context.Context, task db.AgentTaskQueue, workspaceID string) bool {
 	if !task.AutomationRunID.Valid {
@@ -534,7 +534,7 @@ func (h *Handler) taskRunsAutomationInWorkspace(ctx context.Context, task db.Age
 // motion (the dispatched leader task, or a descendant it @mentioned into being),
 // while a foreign run's task carries a different issue_id and is rejected. Note we
 // do NOT key on automation_run_id: in create_issue mode (the reported scenario) the
-// leader task is enqueued through the ordinary issue-assignment path and carries
+// leader task is enqueued through the ordinary issue-executor path and carries
 // no automation_run_id — the run links back via its own issue_id, not the task's.
 //
 // Any mismatch, missing lineage, or lookup error returns "" and the gate stays
@@ -755,7 +755,7 @@ func (h *Handler) loadInvocationTargetsByAgent(ctx context.Context, agents []db.
 // canEnqueueTeamLeader returns true when the given actor is allowed to
 // trigger the team's private leader. It loads the leader agent and delegates
 // to canInvokeAgent so the leader-trigger path honours invocation permission
-// exactly like a direct assignment/mention. Non-public leaders require owner /
+// exactly like direct executor routing/mention. Non-public leaders require owner /
 // allow-list; system-initiated triggers (e.g. github webhooks) are judged as
 // system principals (workspace target only).
 func (h *Handler) canEnqueueTeamLeader(ctx context.Context, leaderID pgtype.UUID, actorType, actorID, originatorUserID, workspaceID string) bool {

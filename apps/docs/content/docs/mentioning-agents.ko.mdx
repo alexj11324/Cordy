@@ -7,9 +7,9 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 댓글에서 에이전트를 @멘션하면 새 정보를 검토하거나 질문에 답하거나 현재 executor를 돕게 할 수 있습니다. 해당 댓글이 이번 실행의 시작점이 되며 태스크의 owner, executor, reviewer와 상태는 바뀌지 않습니다.
 
-## 할당과 @멘션 중 선택
+## executor 설정과 @멘션 중 선택
 
-| | 에이전트에게 할당 | 댓글에서 에이전트 @멘션 |
+| | 에이전트를 executor로 설정 | 댓글에서 에이전트 @멘션 |
 |---|---|---|
 | 적합한 경우 | 에이전트를 태스크 전체의 executor로 지정할 때 | 현재 댓글을 에이전트가 처리하게 할 때 |
 | executor 변경 | 예 | 아니요 |
@@ -17,7 +17,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 | 한 번에 선택 | 에이전트 또는 팀 하나 | 여러 에이전트 또는 팀을 @멘션 가능 |
 | 이번 실행의 초점 | 태스크 전체 | 트리거한 댓글과 같은 묶음으로 합쳐진 댓글 |
 
-executor를 명확히 정해야 한다면 [할당](/assigning-issues)을 사용하고, 논의에 잠시 참여시키기만 한다면 @멘션을 사용하세요.
+executor를 명확히 정해야 한다면 [역할 설정](/assigning-issues)을 사용하고, 논의에 잠시 참여시키기만 한다면 @멘션을 사용하세요.
 
 ## 트리거 미리보기
 

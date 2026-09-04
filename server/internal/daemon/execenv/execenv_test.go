@@ -922,7 +922,7 @@ func TestWriteContextFilesAutomationRunOnly(t *testing.T) {
 		"automation-1",
 		"Check dependencies and report outdated packages.",
 		"patchbay automation get automation-1 --output json",
-		"no assigned issue",
+		"no Patchbay issue attached",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("automation context missing %q\n---\n%s", want, s)
@@ -2318,7 +2318,7 @@ func TestPrepareWithRepoContextOpencode(t *testing.T) {
 
 // TestInjectRuntimeConfigRequiresExplicitCommentPost ensures the injected
 // workflow makes "post a comment with results" an explicit, unmissable step in
-// both the assignment- and comment-triggered branches, plus hard-warns in the
+// both the executor- and comment-triggered branches, plus hard-warns in the
 // Output section that terminal/log text is not user-visible. Agents were
 // silently finishing tasks without ever posting their result to the issue; see
 // MUL-1124. Covering this in a test prevents the guidance from decaying back
@@ -2326,14 +2326,14 @@ func TestPrepareWithRepoContextOpencode(t *testing.T) {
 func TestInjectRuntimeConfigRequiresExplicitCommentPost(t *testing.T) {
 	t.Parallel()
 
-	assignmentCtx := TaskContextForEnv{IssueID: "issue-1"}
+	executorCtx := TaskContextForEnv{IssueID: "issue-1"}
 	commentCtx := TaskContextForEnv{IssueID: "issue-1", TriggerCommentID: "comment-1"}
 
 	for _, tc := range []struct {
 		name string
 		ctx  TaskContextForEnv
 	}{
-		{"assignment-triggered", assignmentCtx},
+		{"executor-triggered", executorCtx},
 		{"comment-triggered", commentCtx},
 	} {
 		tc := tc
@@ -5981,11 +5981,11 @@ func TestInjectRuntimeConfigBriefOmitsResumedThreadAnchor(t *testing.T) {
 	}
 }
 
-// TestInjectRuntimeConfigAssignmentTriggerScansRootsFirst pins that the
-// assignment-triggered Workflow keeps comment catch-up mandatory while bounding
+// TestInjectRuntimeConfigExecutorTriggerScansRootsFirst pins that the
+// executor-triggered Workflow keeps comment catch-up mandatory while bounding
 // the mandatory first read to a roots scan. Older context stays reachable
 // through explicit pagination.
-func TestInjectRuntimeConfigAssignmentTriggerScansRootsFirst(t *testing.T) {
+func TestInjectRuntimeConfigExecutorTriggerScansRootsFirst(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
@@ -6006,7 +6006,7 @@ func TestInjectRuntimeConfigAssignmentTriggerScansRootsFirst(t *testing.T) {
 		"Skipping this step is the most common cause",
 	} {
 		if !strings.Contains(s, want) {
-			t.Errorf("assignment Workflow regressed mandatory scan-first catch-up, missing %q\n---\n%s", want, s)
+			t.Errorf("executor Workflow regressed mandatory scan-first catch-up, missing %q\n---\n%s", want, s)
 		}
 	}
 	// Older context must remain reachable through pagination. The cursor
@@ -6017,7 +6017,7 @@ func TestInjectRuntimeConfigAssignmentTriggerScansRootsFirst(t *testing.T) {
 		"paging cursors, and full flag semantics: `--help`",
 	} {
 		if !strings.Contains(s, want) {
-			t.Errorf("assignment Workflow missing older-history pagination guidance %q\n---\n%s", want, s)
+			t.Errorf("executor Workflow missing older-history pagination guidance %q\n---\n%s", want, s)
 		}
 	}
 	for _, banned := range []string{
@@ -6027,7 +6027,7 @@ func TestInjectRuntimeConfigAssignmentTriggerScansRootsFirst(t *testing.T) {
 		"`--recent` is a way to read the full history",
 	} {
 		if strings.Contains(s, banned) {
-			t.Errorf("assignment Workflow still carries full-flat mandatory phrasing %q\n---\n%s", banned, s)
+			t.Errorf("executor Workflow still carries full-flat mandatory phrasing %q\n---\n%s", banned, s)
 		}
 	}
 	for _, banned := range []string{
@@ -6035,7 +6035,7 @@ func TestInjectRuntimeConfigAssignmentTriggerScansRootsFirst(t *testing.T) {
 		"switch to `--recent",
 	} {
 		if strings.Contains(s, banned) {
-			t.Errorf("assignment Workflow regressed to replacement-style --recent phrasing %q\n---\n%s", banned, s)
+			t.Errorf("executor Workflow regressed to replacement-style --recent phrasing %q\n---\n%s", banned, s)
 		}
 	}
 }
@@ -6109,7 +6109,7 @@ func TestInjectRuntimeConfigCatchUpScansRootsFirst(t *testing.T) {
 // the `## Issue Metadata` section (semantic guide + recommended keys +
 // pin/clear rules) and the metadata-read guidance on the issue-get step
 // are emitted only when the task carries a real issue id (comment-triggered
-// or assignment-triggered). Chat / quick-create / run-only automation don't
+// or executor-triggered). Chat / quick-create / run-only automation don't
 // have an issue, so injecting the section there would just guarantee a
 // failed CLI call on every entry. The discovery line in Available
 // Commands → Core is global and must appear everywhere so that the agent
@@ -6224,7 +6224,7 @@ func TestInjectRuntimeConfigIssueMetadataSectionScope(t *testing.T) {
 			want: withSection,
 		},
 		{
-			name:     "assignment_triggered",
+			name:     "executor_triggered",
 			ctx:      TaskContextForEnv{IssueID: "issue-md-2"},
 			provider: "claude",
 			filename: "CLAUDE.md",

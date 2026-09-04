@@ -12,7 +12,7 @@ import (
 // reach RerunIssue's reclaim branch. The issue-executor enqueue surfaces the raw
 // unique violation, but enqueueMentionTaskWithCommentPlan normalizes it into the
 // bare ErrDuplicatePendingTask sentinel — and that is the path EVERY rerun takes
-// whose target is not the issue's current agent assignee (team leader, an agent
+// whose target is not the issue's current agent executor (team leader, an agent
 // re-fired by task_id after being displaced, a mentioned agent).
 //
 // Matching only the pgconn shape silently excluded all of those from the reclaim,

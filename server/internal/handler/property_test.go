@@ -370,6 +370,9 @@ func TestValidatePropertyNameReserved(t *testing.T) {
 	if _, err := validatePropertyName("Severity"); err != nil {
 		t.Fatalf("legit name rejected: %v", err)
 	}
+	if _, err := validatePropertyName("assignee"); err != nil {
+		t.Fatalf("retired aggregate issue-role name should be available as a custom property: %v", err)
+	}
 }
 
 // TestPropertyOptionRemovalGuard: removing a select option still referenced
@@ -809,7 +812,7 @@ func TestParseActorRefUnit(t *testing.T) {
 	}{
 		{"no colon", uuid.NewString(), `"<kind>:<uuid>"`},
 		{"empty string", "", `"<kind>:<uuid>"`},
-		// "agent" and "team" are assignee kinds deliberately left out of the
+		// "agent" and "team" are executor kinds deliberately left out of the
 		// V1 value range; both must read as unknown, not silently accepted.
 		{"agent kind", "agent:" + uuid.NewString(), "unknown actor kind"},
 		{"team kind", "team:" + uuid.NewString(), "unknown actor kind"},

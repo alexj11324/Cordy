@@ -587,8 +587,8 @@ func TestAutomationDepartedSubscriberReadRepair(t *testing.T) {
 // TestAutomationDispatchFansOutSubscribersToIssue is the integration check
 // for the dispatch path: an automation with a default subscriber list must
 // auto-subscribe each entry to the issue it spawns, with reason='automation'.
-// Belt-and-braces: also confirms that the creator-of-the-issue (the assignee
-// agent — see TestAutomationCreatedIssueCreatorIsAssigneeAgent) gets a row
+// Belt-and-braces: also confirms that the creator-of-the-issue (the automation
+// executor agent — see TestAutomationCreatedIssueCreatorIsExecutorAgent) gets a row
 // with reason='creator', and the two reasons don't fight (PK is one row per
 // (issue, user_type, user_id), so the first one wins on conflict).
 func TestAutomationDispatchFansOutSubscribersToIssue(t *testing.T) {
@@ -746,7 +746,7 @@ func TestAutomationDispatchNotifiesSubscribersOnCreate(t *testing.T) {
 // an automation with an empty subscriber template must NOT create any inbox
 // rows on dispatch — otherwise we'd be paging the workspace on every quiet
 // automation run. The corresponding issue_subscriber rows are also expected
-// to be absent (other-reason rows like creator/assignee are filtered out by
+// to be absent (other-reason rows like creator/executor are filtered out by
 // the WHERE type = 'issue_subscribed' clause).
 func TestAutomationDispatchSkipsInboxWhenNoSubscribers(t *testing.T) {
 	ctx := context.Background()

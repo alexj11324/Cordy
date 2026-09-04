@@ -162,7 +162,7 @@ See [Daemon and runtimes](/daemon-runtimes) for how it works and for custom prof
 
 | Command | Purpose |
 | --- | --- |
-| `issue` | Create, update, assign, and search issues; manage comments, subscribers, labels, properties, and runs |
+| `issue` | Create, update, set owner/executor/reviewer roles, and search issues; manage comments, subscribers, labels, properties, and runs |
 | `project` | Manage projects and their resources |
 | `label`, `property` | Manage workspace labels and custom properties |
 | `agent`, `skill`, `team` | Manage agents, skills, and teams |
@@ -241,6 +241,7 @@ The tables below cover every current top-level command, grouped the way the CLI 
 | | `reorder <id>` | Move within a column | |
 | | `search <query>` | Search issues | `--limit`, `--include-closed` |
 | | `children <id>` | List sub-issues grouped by stage | |
+| | `dependency-graph get <id>` / `apply <parent-id>` | Read or atomically apply a typed dependency graph | `get`: `--output`; `apply`: `--idempotency-key`, `--plan-file` / `--plan-stdin`, `--allow-external-file`, `--output` |
 | | `pull-requests <id>` | List linked PRs | |
 | | `comment list/add/delete/resolve/unresolve` | Manage comments | `add`: `--content` / `--content-stdin` / `--content-file`, `--parent`, `--attachment`; `list`: `--since`, `--thread`, `--tail` |
 | | `subscriber list/add/remove <issue-id>` | Manage subscribers | `--user`, `--user-id` (defaults to the current user) |
@@ -306,6 +307,25 @@ The tables below cover every current top-level command, grouped the way the CLI 
 | `update` | — | Update the CLI to the latest version | |
 | `version` | — | Print version information | `--output` (`text` or `json`) |
 
+## Dependency graph commands
+
+Use a typed plan when a parent issue is split into tasks with hard prerequisites:
+
+```bash
+patchbay issue dependency-graph get MUL-123 --output table
+patchbay issue dependency-graph apply MUL-123 \
+  --idempotency-key plan-mul-123-v1 --plan-file ./dependency-plan.json
+cat dependency-plan.json | patchbay issue dependency-graph apply MUL-123 \
+  --idempotency-key plan-mul-123-v1 --plan-stdin --output json
+```
+
+The plan's current role contract is explicit: `owner` is a workspace member;
+`executor` and `candidate_executors` are agents or teams; `reviewer` may be a
+member, agent, or team. The server validates the plan and derives `waves`;
+`get` and successful `apply` return the parent, children, nodes, edges, and
+readiness `unlock_condition`. Reusing the idempotency key replays the same
+plan. Graph mutations publish `dependency_graph:updated` for connected clients.
+
 ## Driving Patchbay from another coding agent
 
 If most of your work already happens inside Codex, Claude Code, or Cursor, you can
@@ -313,7 +333,7 @@ operate Patchbay from there instead of switching to a terminal. The
 [Patchbay CLI skill](https://github.com/patchbay-ai/patchbay-cli) teaches those agents
 to drive the commands on this page safely: reading issues and comment threads
 without burning tokens, writing comments through a file, and handling the side
-effects that mentions, status changes, and assignments carry.
+effects that mentions, status changes, and owner/executor/reviewer changes carry.
 
 It runs entirely through your authenticated CLI and grants no access of its own —
 permissions still come from your login, selected profile, and workspace. It requires

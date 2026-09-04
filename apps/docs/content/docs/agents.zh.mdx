@@ -5,7 +5,7 @@ description: 智能体是在工作区中反复使用的一套身份、能力和�
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-智能体是 [Patchbay 工作区](/workspaces)中的协作者。你可以把任务分配给它、在评论中 @它，或直接和它对话。它会通过绑定的运行时调用 AI 编程工具，并把进度和结果写回工作区。
+智能体是 [Patchbay 工作区](/workspaces)中的协作者。你可以把它设为任务的 executor、在评论中 @它，或直接和它对话。任务的 owner 和 reviewer 是独立角色。它会通过绑定的运行时调用 AI 编程工具，并把进度和结果写回工作区。
 
 智能体本身不是一个持续运行的进程。它是一套可以反复使用的身份和配置，只有收到工作时才会产生具体的[Task](/tasks)。
 
@@ -75,7 +75,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 ## 归档和恢复
 
-不再使用的智能体可以归档。归档后，它不再出现在选择器中，也不能被分配或 @提及；历史记录保留，之后可以恢复。
+不再使用的智能体可以归档。归档后，它不再出现在选择器中，也不能被设为 executor 或 @提及；历史记录保留，之后可以恢复。
 
 <Callout type="warning">
 归档会取消该智能体所有尚未结束的 task，包括排队中和正在运行的 task。

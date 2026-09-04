@@ -1156,12 +1156,12 @@ func TestScheduledAutomationAllowsActiveDuplicateIssue(t *testing.T) {
 	}
 }
 
-// TestAutomationCreatedIssueCreatorIsAssigneeAgent locks in that an issue spawned
-// by an automation reports the assignee agent — not the human who configured the
+// TestAutomationCreatedIssueCreatorIsExecutorAgent locks in that an issue spawned
+// by an automation reports the executor agent — not the human who configured the
 // automation — as its creator. The matching issue:created event must carry the
 // same actor identity so downstream activity / notification listeners stay in
 // sync with the issue row.
-func TestAutomationCreatedIssueCreatorIsAssigneeAgent(t *testing.T) {
+func TestAutomationCreatedIssueCreatorIsExecutorAgent(t *testing.T) {
 	ctx := context.Background()
 	title := fmt.Sprintf("Automation creator attribution %d", time.Now().UnixNano())
 	var automationID, issueID string
@@ -1224,7 +1224,7 @@ func TestAutomationCreatedIssueCreatorIsAssigneeAgent(t *testing.T) {
 		t.Fatalf("issue creator_type = %q, want agent", creatorType)
 	}
 	if creatorID != agentID {
-		t.Fatalf("issue creator_id = %q, want assignee agent %q", creatorID, agentID)
+		t.Fatalf("issue creator_id = %q, want executor agent %q", creatorID, agentID)
 	}
 
 	select {
@@ -1439,34 +1439,34 @@ func TestUpdateAutomationCanSetAndClearProject(t *testing.T) {
 	}
 }
 
-// TestCreateIssueRejectsNonexistentMemberAssignee covers the bug where any
+// TestCreateIssueRejectsNonexistentMemberOwner covers the bug where any
 // well-formed UUID was accepted as executor_id without checking workspace
 // membership.
-func TestCreateIssueRejectsNonexistentMemberAssignee(t *testing.T) {
+func TestCreateIssueRejectsNonexistentMemberOwner(t *testing.T) {
 	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
-		"title":      "Ghost member assignee",
+		"title":      "Ghost member owner",
 		"owner_type": "member",
 		"owner_id":   "00000000-0000-0000-0000-000000000000",
 	})
 	testutil.Call(t, testHandler.CreateIssue, req).Want(http.StatusBadRequest)
 }
 
-// TestCreateIssueRejectsNonexistentAgentAssignee verifies the same check on
+// TestCreateIssueRejectsNonexistentAgentExecutor verifies the same check on
 // the agent branch — previously rejected with 403 "agent not found"; we want a
 // consistent 400 from the new validator.
-func TestCreateIssueRejectsNonexistentAgentAssignee(t *testing.T) {
+func TestCreateIssueRejectsNonexistentAgentExecutor(t *testing.T) {
 	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
-		"title":         "Ghost agent assignee",
+		"title":         "Ghost agent executor",
 		"executor_type": "agent",
 		"executor_id":   "00000000-0000-0000-0000-000000000000",
 	})
 	testutil.Call(t, testHandler.CreateIssue, req).Want(http.StatusBadRequest)
 }
 
-// TestCreateIssueRejectsAssigneeTypeWithoutID rejects requests where only one
+// TestCreateIssueRejectsRoleTypeWithoutID rejects requests where only one
 // of the two fields was supplied — historically this would create an issue
 // with an inconsistent state.
-func TestCreateIssueRejectsAssigneeTypeWithoutID(t *testing.T) {
+func TestCreateIssueRejectsRoleTypeWithoutID(t *testing.T) {
 	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
 		"title":      "Lone owner_type",
 		"owner_type": "member",
@@ -1474,8 +1474,8 @@ func TestCreateIssueRejectsAssigneeTypeWithoutID(t *testing.T) {
 	testutil.Call(t, testHandler.CreateIssue, req).Want(http.StatusBadRequest)
 }
 
-// TestCreateIssueRejectsAssigneeIDWithoutType is the symmetric case.
-func TestCreateIssueRejectsAssigneeIDWithoutType(t *testing.T) {
+// TestCreateIssueRejectsRoleIDWithoutType is the symmetric case.
+func TestCreateIssueRejectsRoleIDWithoutType(t *testing.T) {
 	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
 		"title":       "Lone executor_id",
 		"executor_id": testUserID,
@@ -1485,7 +1485,7 @@ func TestCreateIssueRejectsAssigneeIDWithoutType(t *testing.T) {
 
 // TestCreateIssueRejectsUnknownExecutorType guards against typos like
 // "members" or "user" that previously sneaked through.
-func TestCreateIssueRejectsUnknownAssigneeType(t *testing.T) {
+func TestCreateIssueRejectsUnknownExecutorType(t *testing.T) {
 	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
 		"title":         "Bogus executor_type",
 		"executor_type": "user",
@@ -1494,11 +1494,11 @@ func TestCreateIssueRejectsUnknownAssigneeType(t *testing.T) {
 	testutil.Call(t, testHandler.CreateIssue, req).Want(http.StatusBadRequest)
 }
 
-// TestCreateIssueAcceptsValidMemberAssignee is the positive control — the
+// TestCreateIssueAcceptsValidMemberOwner is the positive control — the
 // validator must not block legitimate workspace members.
-func TestCreateIssueAcceptsValidMemberAssignee(t *testing.T) {
+func TestCreateIssueAcceptsValidMemberOwner(t *testing.T) {
 	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
-		"title":      "Valid member assignee",
+		"title":      "Valid member owner",
 		"owner_type": "member",
 		"owner_id":   testUserID,
 	})
@@ -1513,8 +1513,8 @@ func TestCreateIssueAcceptsValidMemberAssignee(t *testing.T) {
 
 // TestCreateIssueRejectsMalformedExecutorID covers the case where parseUUID
 // silently produces an invalid pgtype.UUID and the validator would otherwise
-// treat (no type + unparseable id) as "no assignee" and accept the request.
-func TestCreateIssueRejectsMalformedAssigneeID(t *testing.T) {
+// treat (no type + unparseable id) as "no executor" and accept the request.
+func TestCreateIssueRejectsMalformedExecutorID(t *testing.T) {
 	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
 		"title":       "Malformed executor_id only",
 		"executor_id": "not-a-uuid",
@@ -1540,11 +1540,11 @@ func TestCreateIssueRejectsMalformedAttachmentIDBeforeWrite(t *testing.T) {
 }
 
 // TestUpdateIssueRejectsMalformedExecutorID is the equivalent for the update
-// path, where the same parseUUID-shaped gap existed on a previously-unassigned
+// path, where the same parseUUID-shaped gap existed on an issue without an executor
 // issue.
-func TestUpdateIssueRejectsMalformedAssigneeID(t *testing.T) {
+func TestUpdateIssueRejectsMalformedExecutorID(t *testing.T) {
 	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
-		"title": "Update malformed assignee target",
+		"title": "Update malformed executor target",
 	})
 	w := testutil.Call(t, testHandler.CreateIssue, req).Want(http.StatusCreated)
 	var created IssueResponse
@@ -1562,11 +1562,11 @@ func TestUpdateIssueRejectsMalformedAssigneeID(t *testing.T) {
 	w = testutil.Call(t, testHandler.UpdateIssue, req).Want(http.StatusBadRequest)
 }
 
-// TestUpdateIssueRejectsNonexistentMemberAssignee verifies the same gap is
+// TestUpdateIssueRejectsNonexistentMemberOwner verifies the same gap is
 // closed on the update path — UpdateIssue previously only validated agents.
-func TestUpdateIssueRejectsNonexistentMemberAssignee(t *testing.T) {
+func TestUpdateIssueRejectsNonexistentMemberOwner(t *testing.T) {
 	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
-		"title": "Update assignee target",
+		"title": "Update owner target",
 	})
 	w := testutil.Call(t, testHandler.CreateIssue, req).Want(http.StatusCreated)
 	var created IssueResponse
@@ -1585,12 +1585,12 @@ func TestUpdateIssueRejectsNonexistentMemberAssignee(t *testing.T) {
 	w = testutil.Call(t, testHandler.UpdateIssue, req).Want(http.StatusBadRequest)
 }
 
-// TestUpdateIssueAllowsExplicitUnassign verifies that sending null for both
-// fields still works after the new validator landed — clearing the assignee
+// TestUpdateIssueAllowsExplicitRoleClear verifies that sending null for both
+// fields still works after the new validator landed — clearing the issue roles
 // must not be misclassified as a mismatched pair.
-func TestUpdateIssueAllowsExplicitUnassign(t *testing.T) {
+func TestUpdateIssueAllowsExplicitRoleClear(t *testing.T) {
 	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
-		"title":      "Issue to unassign",
+		"title":      "Issue to clear roles",
 		"owner_type": "member",
 		"owner_id":   testUserID,
 	})
@@ -1614,7 +1614,7 @@ func TestUpdateIssueAllowsExplicitUnassign(t *testing.T) {
 	var updated IssueResponse
 	json.NewDecoder(w.Body).Decode(&updated)
 	if updated.ExecutorType != nil || updated.ExecutorID != nil {
-		t.Fatalf("UpdateIssue: expected assignee cleared, got type=%v id=%v", updated.ExecutorType, updated.ExecutorID)
+		t.Fatalf("UpdateIssue: expected executor cleared, got type=%v id=%v", updated.ExecutorType, updated.ExecutorID)
 	}
 }
 
@@ -2676,7 +2676,7 @@ func TestResolveActor(t *testing.T) {
 }
 
 // TestBacklogNoTriggerOnCreate verifies that creating a backlog issue with an
-// agent assignee does NOT enqueue a task — backlog is a parking lot.
+// agent executor does NOT enqueue a task — backlog is a parking lot.
 func TestBacklogNoTriggerOnCreate(t *testing.T) {
 	ctx := context.Background()
 
@@ -2718,7 +2718,7 @@ func TestBacklogNoTriggerOnCreate(t *testing.T) {
 	testHandler.DeleteIssue(httptest.NewRecorder(), cleanupReq)
 }
 
-// TestBacklogToTodoTriggersAgent verifies that moving an agent-assigned issue
+// TestBacklogToTodoTriggersAgent verifies that moving an issue with an agent executor
 // from "backlog" to "todo" enqueues exactly one agent task (none on creation,
 // one on status transition).
 func TestBacklogToTodoTriggersAgent(t *testing.T) {
@@ -2733,7 +2733,7 @@ func TestBacklogToTodoTriggersAgent(t *testing.T) {
 		t.Fatalf("failed to find test agent: %v", err)
 	}
 
-	// Create a backlog issue assigned to the agent — should NOT trigger.
+	// Create a backlog issue with the agent as executor — should NOT trigger.
 	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
 		"title":         "Backlog trigger test",
 		"status":        "backlog",
@@ -2772,24 +2772,24 @@ func TestBacklogToTodoTriggersAgent(t *testing.T) {
 	testHandler.DeleteIssue(httptest.NewRecorder(), cleanupReq)
 }
 
-// TestBacklogToTodoByAgentTriggersDifferentAssignee verifies that the
+// TestBacklogToTodoByAgentTriggersDifferentExecutor verifies that the
 // documented sub-task chain works: when an agent (parent / Step 1) promotes
-// a backlog issue assigned to a different agent (child / Step 2), the
+// a backlog issue executed by a different agent (child / Step 2), the
 // child's task is enqueued. Previously the backlog→active trigger was
 // gated on `actorType == "member"`, which silently dropped agent-driven
 // promotions and broke the serial sub-task workflow.
-func TestBacklogToTodoByAgentTriggersDifferentAssignee(t *testing.T) {
+func TestBacklogToTodoByAgentTriggersDifferentExecutor(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
 	}
 	ctx := context.Background()
 
-	// Parent agent (the actor) + child agent (the assignee).
+	// Parent agent (the actor) + child agent (the executor).
 	parentAgent := createHandlerTestAgent(t, "Backlog Parent Agent", nil)
 	childAgent := createHandlerTestAgent(t, "Backlog Child Agent", nil)
 	parentTask := createHandlerTestTaskForAgent(t, parentAgent)
 
-	// Create a backlog issue assigned to the child agent — should NOT trigger
+	// Create a backlog issue executed by the child agent — should NOT trigger
 	// on creation (backlog parking-lot rule).
 	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
 		"title":         "Serial sub-task Step 2",
@@ -2877,7 +2877,7 @@ func TestBacklogToTodoByAgentSameIssueDoesNotSelfTrigger(t *testing.T) {
 
 // TestBacklogToTodoByAgentSameAgentDifferentIssue verifies the documented
 // same-agent serial chain still fires: when an agent is running a task on
-// issue I1 and promotes a DIFFERENT backlog issue I2 (also assigned to
+// issue I1 and promotes a DIFFERENT backlog issue I2 (also executed by
 // itself), I2 must be enqueued. This was over-blocked by the previous
 // agent-id-based self-loop guard, which made the same-agent serial
 // workflow silently break.
@@ -2904,7 +2904,7 @@ func TestBacklogToTodoByAgentSameAgentDifferentIssue(t *testing.T) {
 		testPool.Exec(ctx, `DELETE FROM issue WHERE id = $1`, step1.ID)
 	})
 
-	// Step 2 issue — backlog, also assigned to the same agent.
+	// Step 2 issue — backlog, also executed by the same agent.
 	req = newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
 		"title":         "Step 2 (backlog)",
 		"status":        "backlog",
@@ -2938,11 +2938,11 @@ func TestBacklogToTodoByAgentSameAgentDifferentIssue(t *testing.T) {
 	}
 }
 
-// TestAssignIssueToSelfWithActiveTargetRunDoesNotDuplicate covers the direct
-// assignment form of #6947: an agent already working on an issue may claim its
-// ownership, but that ownership write must not enqueue a second run for the
+// TestSetIssueExecutorToSelfWithActiveTargetRunDoesNotDuplicate covers the direct
+// executor form of #6947: an agent already working on an issue may claim its
+// executor role, but that role write must not enqueue a second run for the
 // same (issue, agent) pair.
-func TestAssignIssueToSelfWithActiveTargetRunDoesNotDuplicate(t *testing.T) {
+func TestSetIssueExecutorToSelfWithActiveTargetRunDoesNotDuplicate(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
 	}
@@ -2962,7 +2962,7 @@ func TestAssignIssueToSelfWithActiveTargetRunDoesNotDuplicate(t *testing.T) {
 	var preview IssueTriggerPreviewResponse
 	previewRecorder.JSON(&preview)
 	if preview.TotalCount != 0 {
-		t.Fatalf("preview promised a duplicate self-assignment run: %+v", preview)
+		t.Fatalf("preview promised a duplicate self-executor run: %+v", preview)
 	}
 
 	req := withURLParam(newRequest("PUT", "/api/issues/"+issue.ID, map[string]any{
@@ -2973,14 +2973,14 @@ func TestAssignIssueToSelfWithActiveTargetRunDoesNotDuplicate(t *testing.T) {
 	req.Header.Set("X-Task-ID", runningTask)
 	testutil.Call(t, testHandler.UpdateIssue, req).Want(http.StatusOK)
 	if got := queuedTaskCountFor(t, issue.ID, agentID); got != 0 {
-		t.Fatalf("self-assignment duplicated an active target run: got %d queued task(s)", got)
+		t.Fatalf("self-executor write duplicated an active target run: got %d queued task(s)", got)
 	}
 	if got := taskStatus(t, runningTask); got != "running" {
 		t.Fatalf("existing target run must survive ownership claim, got status %q", got)
 	}
 }
 
-func TestShouldSuppressActiveSelfAssignmentFailsClosedOnLookupError(t *testing.T) {
+func TestShouldSuppressActiveSelfExecutorFailsClosedOnLookupError(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
 	}
@@ -2989,7 +2989,7 @@ func TestShouldSuppressActiveSelfAssignmentFailsClosedOnLookupError(t *testing.T
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	if !testHandler.shouldSuppressActiveSelfAssignment(
+	if !testHandler.shouldSuppressActiveSelfExecutor(
 		ctx,
 		"agent",
 		agentID,
@@ -3000,10 +3000,10 @@ func TestShouldSuppressActiveSelfAssignmentFailsClosedOnLookupError(t *testing.T
 	}
 }
 
-// TestAssignDifferentIssueToSelfStillEnqueues locks in the intentional
-// cross-issue handoff behavior: an agent working on I1 may assign fresh I2 to
-// itself, and I2 still gets a queued run.
-func TestAssignDifferentIssueToSelfStillEnqueues(t *testing.T) {
+// TestSetDifferentIssueExecutorToSelfStillEnqueues locks in the intentional
+// cross-issue handoff behavior: an agent working on I1 may set itself as the
+// executor of fresh I2, and I2 still gets a queued run.
+func TestSetDifferentIssueExecutorToSelfStillEnqueues(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
 	}
@@ -3020,14 +3020,14 @@ func TestAssignDifferentIssueToSelfStillEnqueues(t *testing.T) {
 	req.Header.Set("X-Task-ID", sourceTask)
 	testutil.Call(t, testHandler.UpdateIssue, req).Want(http.StatusOK)
 	if got := queuedTaskCountFor(t, target.ID, agentID); got != 1 {
-		t.Fatalf("cross-issue self-assignment should enqueue one run, got %d", got)
+		t.Fatalf("cross-issue self-executor write should enqueue one run, got %d", got)
 	}
 }
 
-// TestBatchAssignFreshIssuesToSelfEnqueuesEach protects triage/automation
-// batches: being busy on a source issue is not a global self-assignment ban.
+// TestBatchSetFreshIssueExecutorsToSelfEnqueuesEach protects triage/automation
+// batches: being busy on a source issue is not a global self-executor ban.
 // Every fresh target keeps the existing enqueue behavior.
-func TestBatchAssignFreshIssuesToSelfEnqueuesEach(t *testing.T) {
+func TestBatchSetFreshIssueExecutorsToSelfEnqueuesEach(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
 	}
@@ -3055,8 +3055,9 @@ func TestBatchAssignFreshIssuesToSelfEnqueuesEach(t *testing.T) {
 }
 
 // TestAssignActiveIssueToDifferentAgentStillEnqueues verifies the duplicate
-// guard never turns a real agent-to-agent transfer into an ownership-only
-// update. The old task survives per #4963 and the new assignee gets a run.
+// guard never turns a real agent-to-agent executor transfer into an
+// ownership-only update. The old task survives per #4963 and the new executor
+// gets a run.
 func TestAssignActiveIssueToDifferentAgentStillEnqueues(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
@@ -3074,19 +3075,19 @@ func TestAssignActiveIssueToDifferentAgentStillEnqueues(t *testing.T) {
 	req.Header.Set("X-Task-ID", actorTask)
 	testutil.Call(t, testHandler.UpdateIssue, req).Want(http.StatusOK)
 	if got := queuedTaskCountFor(t, issue.ID, targetAgent); got != 1 {
-		t.Fatalf("new assignee should get one queued run, got %d", got)
+		t.Fatalf("new executor should get one queued run, got %d", got)
 	}
 	if got := taskStatus(t, actorTask); got != "running" {
 		t.Fatalf("old active task must survive transfer, got status %q", got)
 	}
 }
 
-// TestBatchBacklogToTodoByAgentTriggersAssignee mirrors the single-update
+// TestBatchBacklogToTodoByAgentTriggersExecutor mirrors the single-update
 // serial-chain test on the BatchUpdateIssues path. Earlier the
 // member-only gate would silently drop agent-driven batch promotions; the
 // task-issue self-loop guard must let cross-issue (same-agent) batch
 // promotions through.
-func TestBatchBacklogToTodoByAgentTriggersAssignee(t *testing.T) {
+func TestBatchBacklogToTodoByAgentTriggersExecutor(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
 	}
@@ -3131,7 +3132,7 @@ func TestBatchBacklogToTodoByAgentTriggersAssignee(t *testing.T) {
 
 // TestBacklogToTodoByAgentTriggersTeamLeader covers the team branch of
 // the backlog→active trigger when the actor is an agent: the leader agent
-// of a team must wake when one of its team-assigned backlog issues is
+// of a team must wake when one of its team-executor backlog issues is
 // promoted by another agent (or by the leader itself acting from a task
 // on a different issue). The task-issue self-loop guard must allow this —
 // only a true same-issue self-loop should be suppressed.
@@ -3162,7 +3163,7 @@ func TestBacklogToTodoByAgentTriggersTeamLeader(t *testing.T) {
 	})
 
 	// Driver agent (not the leader, task is on no specific issue) promotes
-	// the team-assigned backlog issue. Team leader must be enqueued.
+	// the team-executor backlog issue. Team leader must be enqueued.
 	req = newRequest("PUT", "/api/issues/"+created.ID, map[string]any{"status": "todo"})
 	req = withURLParam(req, "id", created.ID)
 	req.Header.Set("X-Agent-ID", driverAgent)
@@ -3207,7 +3208,7 @@ func TestRootMentionOwnerRoutesMemberReplyButNotAgentReply(t *testing.T) {
 	agentA := createHandlerTestAgent(t, "Loop Agent A", nil)
 	agentB := createHandlerTestAgent(t, "Loop Agent B", nil)
 
-	// Create an unassigned issue so on_comment doesn't fire.
+	// Create an issue without an executor so on_comment doesn't fire.
 	w := httptest.NewRecorder()
 	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
 		"title":  "Agent mention inheritance test",
@@ -3318,7 +3319,7 @@ func TestRootMentionOwnerRoutesMemberReplyButNotAgentReply(t *testing.T) {
 // (e.g. J posting a PR completion that @mentions a reviewer agent), a later
 // member reply in the same thread with no explicit mentions must NOT inherit
 // the @reviewer mention. The reviewer was a one-shot delegation; subsequent
-// member follow-ups are directed at the assignee, not the reviewer.
+// member follow-ups are directed at the executor, not the reviewer.
 func TestMemberReplyToAgentRootDoesNotInheritParentMentions(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
@@ -3404,7 +3405,7 @@ func TestNestedMemberReplyUsesDirectParentForMentionInheritance(t *testing.T) {
 		t.Skip("database not available")
 	}
 
-	assigneeAgent := createHandlerTestAgent(t, "Nested Mention Assignee", nil)
+	executorAgent := createHandlerTestAgent(t, "Nested Mention Executor", nil)
 	mentionedAgent := createHandlerTestAgent(t, "Nested Mention Target", nil)
 	parentAgent := createHandlerTestAgent(t, "Nested Direct Parent", nil)
 
@@ -3421,7 +3422,7 @@ func TestNestedMemberReplyUsesDirectParentForMentionInheritance(t *testing.T) {
 		"creator_id":    testUserID,
 		"title":         "nested mention inheritance regression",
 		"executor_type": "agent",
-		"executor_id":   assigneeAgent,
+		"executor_id":   executorAgent,
 		"number":        number,
 	})
 	t.Cleanup(func() {
@@ -3478,16 +3479,16 @@ func TestNestedMemberReplyUsesDirectParentForMentionInheritance(t *testing.T) {
 	}
 }
 
-// TestNestedMemberReplyUnderMemberSkipsAssigneeFallback verifies that a nested
+// TestNestedMemberReplyUnderMemberSkipsExecutorFallback verifies that a nested
 // reply whose direct parent is human-owned neither routes to a sibling agent
-// reply nor falls back to the issue assignee. A sibling agent comment alone
+// reply nor falls back to the issue executor. A sibling agent comment alone
 // does not establish a conversation owner for the member-authored root.
-func TestNestedMemberReplyUnderMemberSkipsAssigneeFallback(t *testing.T) {
+func TestNestedMemberReplyUnderMemberSkipsExecutorFallback(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
 	}
 
-	assigneeAgent := createHandlerTestAgent(t, "Nested Participation Assignee", nil)
+	executorAgent := createHandlerTestAgent(t, "Nested Participation Executor", nil)
 
 	var number int
 	dbfx.QueryRow(t, `
@@ -3502,7 +3503,7 @@ func TestNestedMemberReplyUnderMemberSkipsAssigneeFallback(t *testing.T) {
 		"creator_id":    testUserID,
 		"title":         "nested participation regression",
 		"executor_type": "agent",
-		"executor_id":   assigneeAgent,
+		"executor_id":   executorAgent,
 		"number":        number,
 	})
 	t.Cleanup(func() {
@@ -3511,13 +3512,13 @@ func TestNestedMemberReplyUnderMemberSkipsAssigneeFallback(t *testing.T) {
 		testPool.Exec(context.Background(), `DELETE FROM issue WHERE id = $1`, issueID)
 	})
 
-	countAssigneeQueued := func() int {
+	countExecutorQueued := func() int {
 		t.Helper()
 		var n int
 		dbfx.QueryRow(t, `
 			SELECT count(*) FROM agent_task_queue
 			WHERE issue_id = $1 AND agent_id = $2 AND status = 'queued'
-		`, issueID, assigneeAgent).Scan(&n)
+		`, issueID, executorAgent).Scan(&n)
 		return n
 	}
 	postMemberComment := func(body map[string]any) CommentResponse {
@@ -3534,7 +3535,7 @@ func TestNestedMemberReplyUnderMemberSkipsAssigneeFallback(t *testing.T) {
 	dbfx.Exec(t, `
 		INSERT INTO comment (workspace_id, issue_id, author_type, author_id, content, parent_id)
 		VALUES ($1, $2, 'agent', $3, 'expiration policy is the issue', $4)
-	`, testWorkspaceID, issueID, assigneeAgent, rootID)
+	`, testWorkspaceID, issueID, executorAgent, rootID)
 	humanParentID := dbfx.Comment(t, issueID, "I have seen this too", testutil.Cols{
 		"parent_id": rootID,
 	})
@@ -3546,8 +3547,8 @@ func TestNestedMemberReplyUnderMemberSkipsAssigneeFallback(t *testing.T) {
 	if nested.ParentID == nil || *nested.ParentID != humanParentID {
 		t.Fatalf("stored nested reply parent_id should keep direct parent %s, got %v", humanParentID, nested.ParentID)
 	}
-	if got := countAssigneeQueued(); got != 0 {
-		t.Fatalf("plain nested human reply queued assignee tasks = %d, want 0", got)
+	if got := countExecutorQueued(); got != 0 {
+		t.Fatalf("plain nested human reply queued executor tasks = %d, want 0", got)
 	}
 }
 

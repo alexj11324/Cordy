@@ -210,11 +210,11 @@ var issueUpdateCmd = &cobra.Command{
 	RunE:  runIssueUpdate,
 }
 
-var issueAssignCmd = &cobra.Command{
+var issueExecutorCmd = &cobra.Command{
 	Use:   "assign <id>",
 	Short: "Set or clear an issue's executor (agent or team)",
 	Args:  exactArgs(1),
-	RunE:  runIssueAssign,
+	RunE:  runIssueExecutorUpdate,
 }
 
 var issueStatusCmd = &cobra.Command{
@@ -341,7 +341,7 @@ var issueUsageCmd = &cobra.Command{
 
 var issueRerunCmd = &cobra.Command{
 	Use:   "rerun <id>",
-	Short: "Re-enqueue an issue's current agent assignment as a fresh task",
+	Short: "Re-enqueue an issue's current executor as a fresh task",
 	Args:  exactArgs(1),
 	RunE:  runIssueRerun,
 }
@@ -452,7 +452,7 @@ func init() {
 	issueCmd.AddCommand(issueChildrenCmd)
 	issueCmd.AddCommand(issueCreateCmd)
 	issueCmd.AddCommand(issueUpdateCmd)
-	issueCmd.AddCommand(issueAssignCmd)
+	issueCmd.AddCommand(issueExecutorCmd)
 	issueCmd.AddCommand(issueStatusCmd)
 	issueCmd.AddCommand(issueReorderCmd)
 	issueCmd.AddCommand(issueCommentCmd)
@@ -554,11 +554,11 @@ func init() {
 	registerIssueReorderFlags(issueReorderCmd)
 
 	// issue assign
-	issueAssignCmd.Flags().String("to", "", "Executor name (agent or team; fuzzy match)")
-	issueAssignCmd.Flags().String("to-id", "", "Executor UUID — agent or team (mutually exclusive with --to)")
-	issueAssignCmd.Flags().Bool("unassign", false, "Remove the current executor")
-	issueAssignCmd.Flags().Bool("no-start", false, "Set the executor without starting an agent run")
-	issueAssignCmd.Flags().String("output", "json", "Output format: table or json")
+	issueExecutorCmd.Flags().String("to", "", "Executor name (agent or team; fuzzy match)")
+	issueExecutorCmd.Flags().String("to-id", "", "Executor UUID — agent or team (mutually exclusive with --to)")
+	issueExecutorCmd.Flags().Bool("unassign", false, "Remove the current executor")
+	issueExecutorCmd.Flags().Bool("no-start", false, "Set the executor without starting an agent run")
+	issueExecutorCmd.Flags().String("output", "json", "Output format: table or json")
 
 	// issue comment list
 	issueCommentListCmd.Flags().String("output", "table", "Output format: table or json")
@@ -653,7 +653,7 @@ func runIssueList(cmd *cobra.Command, _ []string) error {
 		params.Set("limit", fmt.Sprintf("%d", v))
 	}
 	if cmd.Flags().Changed("owner") || cmd.Flags().Changed("owner-id") {
-		_, ownerID, hasOwner, resolveErr := pickAssigneeFromFlags(ctx, client, cmd, "owner", "owner-id", memberOnlyKinds)
+		_, ownerID, hasOwner, resolveErr := pickActorFromFlags(ctx, client, cmd, "owner", "owner-id", memberOnlyKinds)
 		if resolveErr != nil {
 			return fmt.Errorf("resolve owner: %w", resolveErr)
 		}
@@ -662,7 +662,7 @@ func runIssueList(cmd *cobra.Command, _ []string) error {
 		}
 	}
 	if cmd.Flags().Changed("executor") || cmd.Flags().Changed("executor-id") {
-		_, executorID, hasExecutor, resolveErr := pickAssigneeFromFlags(ctx, client, cmd, "executor", "executor-id", executorOnlyKinds)
+		_, executorID, hasExecutor, resolveErr := pickActorFromFlags(ctx, client, cmd, "executor", "executor-id", executorOnlyKinds)
 		if resolveErr != nil {
 			return fmt.Errorf("resolve executor: %w", resolveErr)
 		}
@@ -1453,7 +1453,7 @@ func runIssueUpdate(cmd *cobra.Command, args []string) error {
 	return cli.PrintJSON(os.Stdout, result)
 }
 
-func runIssueAssign(cmd *cobra.Command, args []string) error {
+func runIssueExecutorUpdate(cmd *cobra.Command, args []string) error {
 	toName, _ := cmd.Flags().GetString("to")
 	unassign, _ := cmd.Flags().GetBool("unassign")
 	noStart, _ := cmd.Flags().GetBool("no-start")
@@ -1489,7 +1489,7 @@ func runIssueAssign(cmd *cobra.Command, args []string) error {
 		body["executor_type"] = nil
 		body["executor_id"] = nil
 	} else {
-		aType, aID, _, resolveErr := pickAssigneeFromFlags(ctx, client, cmd, "to", "to-id", executorOnlyKinds)
+		aType, aID, _, resolveErr := pickActorFromFlags(ctx, client, cmd, "to", "to-id", executorOnlyKinds)
 		if resolveErr != nil {
 			return fmt.Errorf("resolve executor: %w", resolveErr)
 		}
@@ -1505,7 +1505,7 @@ func runIssueAssign(cmd *cobra.Command, args []string) error {
 
 	var result map[string]any
 	if err := client.PutJSON(ctx, "/api/issues/"+issueRef.ID, body, &result); err != nil {
-		return fmt.Errorf("assign issue: %w", err)
+		return fmt.Errorf("set issue executor: %w", err)
 	}
 
 	if unassign {
@@ -2524,7 +2524,7 @@ func runIssueSubscriberMutation(cmd *cobra.Command, issueID, action string) erro
 
 	body := map[string]any{}
 	userName, _ := cmd.Flags().GetString("user")
-	uType, uID, hasUser, resolveErr := pickAssigneeFromFlags(ctx, client, cmd, "user", "user-id", memberOrAgentKinds)
+	uType, uID, hasUser, resolveErr := pickActorFromFlags(ctx, client, cmd, "user", "user-id", memberOrAgentKinds)
 	if resolveErr != nil {
 		return fmt.Errorf("resolve user: %w", resolveErr)
 	}
@@ -2562,32 +2562,32 @@ func runIssueSubscriberMutation(cmd *cobra.Command, issueID, action string) erro
 // Helpers
 // ---------------------------------------------------------------------------
 
-type assigneeMatch struct {
+type actorMatch struct {
 	Type string // "member", "agent", or "team"
 	ID   string // user_id for members, agent id for agents, team id for teams
 	Name string
 }
 
-// assigneeKinds is the set of entity types a given actor flag may resolve to.
+// actorKinds is the set of entity types a given actor flag may resolve to.
 // Reviewer fields accept all three (`allActorKinds`), while project lead and
 // issue subscribers are member-or-agent only
 // (`memberOrAgentKinds`) — the DB CHECK on `project.lead_type` and the
 // `isWorkspaceEntity` switch in the subscriber handler both reject `team`,
 // so resolving to (team, ...) for those callers would surface as a 500 /
 // 403 instead of a clean CLI-side resolution error (MUL-2165 follow-up).
-type assigneeKinds struct {
+type actorKinds struct {
 	member, agent, team bool
 }
 
 var (
-	allActorKinds = assigneeKinds{member: true, agent: true, team: true}
-	memberOrAgentKinds = assigneeKinds{member: true, agent: true}
+	allActorKinds = actorKinds{member: true, agent: true, team: true}
+	memberOrAgentKinds = actorKinds{member: true, agent: true}
 	// Actor property values are members only (MUL-6286).
-	memberOnlyKinds   = assigneeKinds{member: true}
-	executorOnlyKinds = assigneeKinds{agent: true, team: true}
+	memberOnlyKinds   = actorKinds{member: true}
+	executorOnlyKinds = actorKinds{agent: true, team: true}
 )
 
-var assigneeResolveRetrySleep = func(ctx context.Context, d time.Duration) bool {
+var actorResolveRetrySleep = func(ctx context.Context, d time.Duration) bool {
 	timer := time.NewTimer(d)
 	defer timer.Stop()
 	select {
@@ -2598,27 +2598,27 @@ var assigneeResolveRetrySleep = func(ctx context.Context, d time.Duration) bool 
 	}
 }
 
-func getAssigneeJSON(ctx context.Context, client *cli.APIClient, path string, out any) error {
+func getActorJSON(ctx context.Context, client *cli.APIClient, path string, out any) error {
 	delays := []time.Duration{100 * time.Millisecond, 250 * time.Millisecond}
 	var err error
 	for attempt := 0; attempt <= len(delays); attempt++ {
 		err = client.GetJSON(ctx, path, out)
-		if err == nil || !isRetryableAssigneeResolveError(err) || attempt == len(delays) {
+		if err == nil || !isRetryableActorResolveError(err) || attempt == len(delays) {
 			return err
 		}
-		if assigneeResolveRetrySleep(ctx, delays[attempt]) {
+		if actorResolveRetrySleep(ctx, delays[attempt]) {
 			return ctx.Err()
 		}
 	}
 	return err
 }
 
-func isRetryableAssigneeResolveError(err error) bool {
+func isRetryableActorResolveError(err error) bool {
 	var netErr *cli.NetworkError
 	return errors.As(err, &netErr)
 }
 
-func (k assigneeKinds) describe() string {
+func (k actorKinds) describe() string {
 	parts := make([]string, 0, 3)
 	if k.member {
 		parts = append(parts, "member")
@@ -2641,12 +2641,12 @@ func (k assigneeKinds) describe() string {
 	}
 }
 
-func resolveAssignee(ctx context.Context, client *cli.APIClient, name string, kinds assigneeKinds) (string, string, error) {
+func resolveActor(ctx context.Context, client *cli.APIClient, name string, kinds actorKinds) (string, string, error) {
 	if client.WorkspaceID == "" {
-		return "", "", fmt.Errorf("workspace ID is required to resolve assignees; use --workspace-id or set PATCHBAY_WORKSPACE_ID")
+		return "", "", fmt.Errorf("workspace ID is required to resolve actors; use --workspace-id or set PATCHBAY_WORKSPACE_ID")
 	}
 
-	input := normalizeAssigneeLookupInput(name)
+	input := normalizeActorLookupInput(name)
 	if input == "" {
 		return "", "", fmt.Errorf("no %s found matching %q", kinds.describe(), name)
 	}
@@ -2658,7 +2658,7 @@ func resolveAssignee(ctx context.Context, client *cli.APIClient, name string, ki
 	//   1. idMatches        — full UUID or 8-char ShortID (as shown by `truncateID`).
 	//   2. exactMatches     — case-insensitive full name equality.
 	//   3. substringMatches — preserves the existing partial-name UX.
-	var idMatches, exactMatches, substringMatches []assigneeMatch
+	var idMatches, exactMatches, substringMatches []actorMatch
 	var errs []error
 	var fetchAttempts int
 
@@ -2667,7 +2667,7 @@ func resolveAssignee(ctx context.Context, client *cli.APIClient, name string, ki
 	// email is as unambiguous as their id, and is what people actually have to
 	// hand. Without it, `--value bohan@example.com` fails to resolve.
 	classify := func(entityType, id, displayName string, exactAliases ...string) {
-		match := assigneeMatch{Type: entityType, ID: id, Name: displayName}
+		match := actorMatch{Type: entityType, ID: id, Name: displayName}
 		if id != "" && (strings.EqualFold(id, input) || strings.EqualFold(truncateID(id), input)) {
 			idMatches = append(idMatches, match)
 			return
@@ -2691,7 +2691,7 @@ func resolveAssignee(ctx context.Context, client *cli.APIClient, name string, ki
 	if kinds.member {
 		fetchAttempts++
 		var members []map[string]any
-		if err := getAssigneeJSON(ctx, client, "/api/workspaces/"+client.WorkspaceID+"/members", &members); err != nil {
+		if err := getActorJSON(ctx, client, "/api/workspaces/"+client.WorkspaceID+"/members", &members); err != nil {
 			errs = append(errs, fmt.Errorf("fetch members: %w", err))
 		} else {
 			for _, m := range members {
@@ -2705,7 +2705,7 @@ func resolveAssignee(ctx context.Context, client *cli.APIClient, name string, ki
 		fetchAttempts++
 		var agents []map[string]any
 		agentPath := "/api/agents?" + url.Values{"workspace_id": {client.WorkspaceID}}.Encode()
-		if err := getAssigneeJSON(ctx, client, agentPath, &agents); err != nil {
+		if err := getActorJSON(ctx, client, agentPath, &agents); err != nil {
 			errs = append(errs, fmt.Errorf("fetch agents: %w", err))
 		} else {
 			for _, a := range agents {
@@ -2714,17 +2714,17 @@ func resolveAssignee(ctx context.Context, client *cli.APIClient, name string, ki
 		}
 	}
 
-	// Search teams. The platform allows issues to be assigned to a team
+	// Search teams. The platform allows issues to use a team as executor
 	// (the leader agent then coordinates delegation), so team names must
 	// resolve here too for issue-executor callers — otherwise a user saying
 	// "assign to <TeamName>" silently falls through and the automation
-	// prompt emits "Unrecognized assignee: <TeamName>" (MUL-2165). Callers
+	// prompt emits "Unrecognized actor: <TeamName>" (MUL-2165). Callers
 	// whose target schema is member-or-agent only (project lead, subscriber)
 	// must opt out via `kinds.team = false`.
 	if kinds.team {
 		fetchAttempts++
 		var teams []map[string]any
-		if err := getAssigneeJSON(ctx, client, "/api/teams", &teams); err != nil {
+		if err := getActorJSON(ctx, client, "/api/teams", &teams); err != nil {
 			errs = append(errs, fmt.Errorf("fetch teams: %w", err))
 		} else {
 			for _, s := range teams {
@@ -2742,23 +2742,23 @@ func resolveAssignee(ctx context.Context, client *cli.APIClient, name string, ki
 		for i, e := range errs {
 			msgs[i] = e.Error()
 		}
-		return "", "", fmt.Errorf("failed to resolve assignee: %s", strings.Join(msgs, "; "))
+		return "", "", fmt.Errorf("failed to resolve actor: %s", strings.Join(msgs, "; "))
 	}
 
-	for _, bucket := range [][]assigneeMatch{idMatches, exactMatches, substringMatches} {
+	for _, bucket := range [][]actorMatch{idMatches, exactMatches, substringMatches} {
 		switch len(bucket) {
 		case 0:
 			continue
 		case 1:
 			return bucket[0].Type, bucket[0].ID, nil
 		default:
-			return "", "", ambiguousAssigneeError(input, bucket)
+			return "", "", ambiguousActorError(input, bucket)
 		}
 	}
 	return "", "", fmt.Errorf("no %s found matching %q", kinds.describe(), input)
 }
 
-func normalizeAssigneeLookupInput(raw string) string {
+func normalizeActorLookupInput(raw string) string {
 	input := strings.TrimSpace(raw)
 	if m := util.MentionRe.FindStringSubmatch(input); len(m) == 4 && m[0] == input {
 		switch m[2] {
@@ -2772,24 +2772,24 @@ func normalizeAssigneeLookupInput(raw string) string {
 	return strings.TrimSpace(input)
 }
 
-func ambiguousAssigneeError(input string, matches []assigneeMatch) error {
+func ambiguousActorError(input string, matches []actorMatch) error {
 	parts := make([]string, 0, len(matches))
 	for _, m := range matches {
 		parts = append(parts, fmt.Sprintf("  %s %q (%s)", m.Type, m.Name, truncateID(m.ID)))
 	}
-	return fmt.Errorf("ambiguous assignee %q; matches:\n%s", input, strings.Join(parts, "\n"))
+	return fmt.Errorf("ambiguous actor %q; matches:\n%s", input, strings.Join(parts, "\n"))
 }
 
-// resolveAssigneeByID strictly resolves a canonical UUID to (executor_type,
+// resolveActorByID strictly resolves a canonical UUID to (executor_type,
 // executor_id) by looking it up against the workspace's members, agents, and
 // (when allowed) teams. It is the deterministic counterpart to
-// resolveAssignee: callers that already hold a UUID (e.g. agents reading IDs
+// resolveActor: callers that already hold a UUID (e.g. agents reading IDs
 // from `patchbay workspace member list --output json`) should use this instead of
 // round-tripping through name matching, which can be ambiguous in workspaces
 // with overlapping names.
-func resolveAssigneeByID(ctx context.Context, client *cli.APIClient, id string, kinds assigneeKinds) (string, string, error) {
+func resolveActorByID(ctx context.Context, client *cli.APIClient, id string, kinds actorKinds) (string, string, error) {
 	if client.WorkspaceID == "" {
-		return "", "", fmt.Errorf("workspace ID is required to resolve assignees; use --workspace-id or set PATCHBAY_WORKSPACE_ID")
+		return "", "", fmt.Errorf("workspace ID is required to resolve actors; use --workspace-id or set PATCHBAY_WORKSPACE_ID")
 	}
 	input := strings.TrimSpace(id)
 	if !uuidRegexp.MatchString(input) {
@@ -2799,20 +2799,20 @@ func resolveAssigneeByID(ctx context.Context, client *cli.APIClient, id string, 
 	var members []map[string]any
 	var memberErr error
 	if kinds.member {
-		memberErr = getAssigneeJSON(ctx, client, "/api/workspaces/"+client.WorkspaceID+"/members", &members)
+		memberErr = getActorJSON(ctx, client, "/api/workspaces/"+client.WorkspaceID+"/members", &members)
 	}
 
 	var agents []map[string]any
 	var agentErr error
 	if kinds.agent {
 		agentPath := "/api/agents?" + url.Values{"workspace_id": {client.WorkspaceID}}.Encode()
-		agentErr = getAssigneeJSON(ctx, client, agentPath, &agents)
+		agentErr = getActorJSON(ctx, client, agentPath, &agents)
 	}
 
 	var teams []map[string]any
 	var teamErr error
 	if kinds.team {
-		teamErr = getAssigneeJSON(ctx, client, "/api/teams", &teams)
+		teamErr = getActorJSON(ctx, client, "/api/teams", &teams)
 	}
 
 	allFailed := true
@@ -2830,7 +2830,7 @@ func resolveAssigneeByID(ctx context.Context, client *cli.APIClient, id string, 
 		}
 	}
 	if hasFetch && allFailed {
-		return "", "", fmt.Errorf("failed to resolve assignee: %v; %v; %v", memberErr, agentErr, teamErr)
+		return "", "", fmt.Errorf("failed to resolve actor: %v; %v; %v", memberErr, agentErr, teamErr)
 	}
 
 	for _, m := range members {
@@ -2852,7 +2852,7 @@ func resolveAssigneeByID(ctx context.Context, client *cli.APIClient, id string, 
 	return "", "", fmt.Errorf("no %s found with ID %q", kinds.describe(), input)
 }
 
-// pickAssigneeFromFlags reads a (name-flag, id-flag) pair off cmd and resolves
+// pickActorFromFlags reads a (name-flag, id-flag) pair off cmd and resolves
 // it to an explicitly typed actor, restricted to the entity types in kinds.
 // The third return reports whether either flag was *explicitly set*. The two
 // flags are mutually exclusive — passing both is rejected
@@ -2861,10 +2861,10 @@ func resolveAssigneeByID(ctx context.Context, client *cli.APIClient, id string, 
 //
 // Presence is detected via Flags().Changed (not value-emptiness): a script
 // that interpolates an empty env var (`--executor-id "$MAYBE_UUID"`) must
-// fail loudly through resolveAssignee/resolveAssigneeByID rather than silently
-// degrade to "no filter / unassigned / subscribe caller", which would defeat
+// fail loudly through resolveActor/resolveActorByID rather than silently
+// degrade to "no filter / no executor / subscribe caller", which would defeat
 // the strict-UUID guarantee the new flags exist for.
-func pickAssigneeFromFlags(ctx context.Context, client *cli.APIClient, cmd *cobra.Command, nameFlag, idFlag string, kinds assigneeKinds) (string, string, bool, error) {
+func pickActorFromFlags(ctx context.Context, client *cli.APIClient, cmd *cobra.Command, nameFlag, idFlag string, kinds actorKinds) (string, string, bool, error) {
 	nameSet := cmd.Flags().Changed(nameFlag)
 	idSet := cmd.Flags().Changed(idFlag)
 	if nameSet && idSet {
@@ -2872,7 +2872,7 @@ func pickAssigneeFromFlags(ctx context.Context, client *cli.APIClient, cmd *cobr
 	}
 	if idSet {
 		idVal, _ := cmd.Flags().GetString(idFlag)
-		t, i, err := resolveAssigneeByID(ctx, client, idVal, kinds)
+		t, i, err := resolveActorByID(ctx, client, idVal, kinds)
 		if err != nil {
 			return "", "", true, err
 		}
@@ -2880,7 +2880,7 @@ func pickAssigneeFromFlags(ctx context.Context, client *cli.APIClient, cmd *cobr
 	}
 	if nameSet {
 		name, _ := cmd.Flags().GetString(nameFlag)
-		t, i, err := resolveAssignee(ctx, client, name, kinds)
+		t, i, err := resolveActor(ctx, client, name, kinds)
 		if err != nil {
 			return "", "", true, err
 		}
@@ -2900,7 +2900,7 @@ func formatIssueRole(issue map[string]any, role string, actors actorDisplayLooku
 
 func applyIssueRoleFlags(ctx context.Context, client *cli.APIClient, cmd *cobra.Command, body map[string]any) error {
 	if cmd.Flags().Lookup("owner") != nil && (cmd.Flags().Changed("owner") || cmd.Flags().Changed("owner-id")) {
-		aType, aID, has, err := pickAssigneeFromFlags(ctx, client, cmd, "owner", "owner-id", memberOnlyKinds)
+		aType, aID, has, err := pickActorFromFlags(ctx, client, cmd, "owner", "owner-id", memberOnlyKinds)
 		if err != nil {
 			return fmt.Errorf("resolve owner: %w", err)
 		}
@@ -2910,7 +2910,7 @@ func applyIssueRoleFlags(ctx context.Context, client *cli.APIClient, cmd *cobra.
 		}
 	}
 	if cmd.Flags().Lookup("executor") != nil && (cmd.Flags().Changed("executor") || cmd.Flags().Changed("executor-id")) {
-		aType, aID, has, err := pickAssigneeFromFlags(ctx, client, cmd, "executor", "executor-id", executorOnlyKinds)
+		aType, aID, has, err := pickActorFromFlags(ctx, client, cmd, "executor", "executor-id", executorOnlyKinds)
 		if err != nil {
 			return fmt.Errorf("resolve executor: %w", err)
 		}
@@ -2920,7 +2920,7 @@ func applyIssueRoleFlags(ctx context.Context, client *cli.APIClient, cmd *cobra.
 		}
 	}
 	if cmd.Flags().Lookup("reviewer") != nil && (cmd.Flags().Changed("reviewer") || cmd.Flags().Changed("reviewer-id")) {
-		aType, aID, has, err := pickAssigneeFromFlags(ctx, client, cmd, "reviewer", "reviewer-id", allActorKinds)
+		aType, aID, has, err := pickActorFromFlags(ctx, client, cmd, "reviewer", "reviewer-id", allActorKinds)
 		if err != nil {
 			return fmt.Errorf("resolve reviewer: %w", err)
 		}

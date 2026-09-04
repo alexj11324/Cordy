@@ -272,7 +272,7 @@ func TestResolveOriginatorFromTriggerComment_AgentAuthoredInheritsFromParent(t *
 
 // TestAttributionForIssueTask_SystemCommentFallsThroughToIssueProvenance covers
 // the Stage-completion cascade (MUL-4302; raised by Bohan). Closing the last
-// sub-issue in a Stage wakes the parent's assignee agent through a SYSTEM-authored
+// sub-issue in a Stage wakes the parent's executor agent through a SYSTEM-authored
 // child-done comment that threads no actor. That system comment carries no human,
 // so attribution must NOT stop at it (which would degrade to owner_fallback, the
 // agent's own owner) — it must fall through to the PARENT issue's own provenance
@@ -327,7 +327,7 @@ func TestAttributionForIssueTask_SystemCommentFallsThroughToIssueProvenance(t *t
 }
 
 // TestResolveOriginatorForIssueTask_MemberCreatedNoComment covers direct issue
-// assignment/creation: there is no trigger comment to inspect, but the issue's
+// executor routing/creation: there is no trigger comment to inspect, but the issue's
 // human creator is still the run originator for Composio overlay gating.
 func TestResolveOriginatorForIssueTask_MemberCreatedNoComment(t *testing.T) {
 	userID := util.MustParseUUID("11111111-1111-1111-1111-111111111111")
@@ -370,7 +370,7 @@ func TestResolveOriginatorForIssueTask_QuickCreateIssueInheritsParentTask(t *tes
 // the MUL-4305 fix: an agent that creates an issue through the ordinary
 // `issue create` path gets origin_type='agent_create' + origin_id=<acting
 // task>. The issue creator is the agent, but the top-of-chain human lives on
-// that acting task and must be inherited so downstream assignment /
+// that acting task and must be inherited so downstream executor routing /
 // team-leader runs (and the A2A mentions they emit) keep the originator.
 func TestResolveOriginatorForIssueTask_AgentCreateIssueInheritsParentTask(t *testing.T) {
 	pool := newResolveOriginatorPool(t)

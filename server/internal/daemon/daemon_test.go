@@ -1114,8 +1114,8 @@ func TestBuildPromptAutomationRunOnly(t *testing.T) {
 	if strings.Contains(prompt, "Do not run `patchbay issue get`") {
 		t.Fatalf("automation prompt restates the issue-command boundary the brief owns (MUL-5696)\n---\n%s", prompt)
 	}
-	if strings.Contains(prompt, "Your assigned issue ID is:") {
-		t.Fatalf("automation prompt should not use issue assignment template\n---\n%s", prompt)
+	if strings.Contains(prompt, "Your executor issue ID is:") {
+		t.Fatalf("automation prompt should not use issue executor template\n---\n%s", prompt)
 	}
 }
 

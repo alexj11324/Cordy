@@ -15,7 +15,7 @@ import (
 // SERVER-trusted X-Task-ID (resolveActor only grants "agent" once the
 // agent/task pair is validated). That link is what lets
 // resolveOriginatorForIssueTask recover the top-of-chain human for any
-// downstream assignment / team-leader run and keep A2A mentions authorized.
+// downstream executor routing / team-leader run and keep A2A mentions authorized.
 func TestCreateIssue_AgentCreate_StampsActingTaskOrigin(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")

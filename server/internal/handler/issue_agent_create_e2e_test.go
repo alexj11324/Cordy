@@ -41,8 +41,8 @@ func createPrivateAgentOwnedBy(t *testing.T, name, ownerID string) string {
 // invocation gate:
 //
 //	human H triggers agent A → A creates an issue via the ordinary
-//	`issue create` path AND assigns it to a team whose leader is a private
-//	agent owned by H → the leader's assignment run @-mentions a *second*
+//	`issue create` path AND sets a team executor whose leader is a private
+//	agent owned by H → the leader's executor run @-mentions a *second*
 //	private agent J (also owned by H) → J must be triggered.
 //
 // Pre-fix, A's create left the issue unattributed, the leader task stored a
@@ -91,7 +91,7 @@ func TestAgentCreateOriginator_E2E_CreateAssignTeam_PrivateWorkerTriggered(t *te
 	// assigns it to the private-leader team in the same call.
 	w := httptest.NewRecorder()
 	r := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
-		"title":         "MUL-4305 E2E agent-created + team-assigned",
+		"title":         "MUL-4305 E2E agent-created + team-executor",
 		"executor_type": "team",
 		"executor_id":   teamID,
 	})
@@ -122,7 +122,7 @@ func TestAgentCreateOriginator_E2E_CreateAssignTeam_PrivateWorkerTriggered(t *te
 		t.Fatalf("issue origin = (%q,%q), want (agent_create,%s)", originType, originID, creatorTaskID)
 	}
 
-	// The team-leader assignment task must have been enqueued carrying H.
+	// The team-leader executor task must have been enqueued carrying H.
 	var leaderTaskID, leaderOriginator string
 	if err := testPool.QueryRow(ctx, `
 		SELECT id, COALESCE(originator_user_id::text, '')
@@ -136,7 +136,7 @@ func TestAgentCreateOriginator_E2E_CreateAssignTeam_PrivateWorkerTriggered(t *te
 		t.Fatalf("team-leader task originator = %q, want the original human H %q", leaderOriginator, ownerH)
 	}
 
-	// Step 2: the leader L, running its assignment task, posts a comment that
+	// Step 2: the leader L, running its executor task, posts a comment that
 	// @-mentions the private worker J. The comment stamps source_task_id = the
 	// leader task, so the originator chain resolves to H.
 	w = httptest.NewRecorder()
@@ -169,8 +169,8 @@ func TestAgentCreateOriginator_E2E_CreateAssignTeam_PrivateWorkerTriggered(t *te
 // locks the specific team-leader GATE change in this PR, which the create path
 // above does not exercise (create routes through the ungated service enqueue).
 //
-// Agent A (running for human H) creates an UNASSIGNED issue via the ordinary
-// path, then assigns it to a private-leader team via UpdateIssue. That assign
+// Agent A (running for human H) creates an issue WITHOUT AN EXECUTOR via the ordinary
+// path, then sets a private-leader team as executor via UpdateIssue. That executor change
 // routes through the handler enqueueTeamLeaderTask gate. Pre-fix the gate saw
 // an empty originator for an agent actor and denied the private leader, so no
 // leader task was enqueued even though the HTTP assign returned 200. With the
@@ -209,10 +209,10 @@ func TestAgentCreateOriginator_E2E_UpdateAssignTeam_HandlerGateAdmitsPrivateLead
 		testPool.Exec(context.Background(), `DELETE FROM agent_task_queue WHERE id = $1`, creatorTaskID)
 	})
 
-	// Agent A creates an unassigned issue via the ordinary path.
+	// Agent A creates an issue without an executor via the ordinary path.
 	w := httptest.NewRecorder()
 	r := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
-		"title": "MUL-4305 E2E unassigned then team-assigned",
+		"title": "MUL-4305 E2E without-executor then team-executor",
 	})
 	r.Header.Set("X-Agent-ID", creatorAID)
 	r.Header.Set("X-Task-ID", creatorTaskID)

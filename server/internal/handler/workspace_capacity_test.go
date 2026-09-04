@@ -167,6 +167,13 @@ func TestUpdateMemberHostedLimitBlocksOwnerPromotion(t *testing.T) {
 	targetUserID := uuid.New()
 	sourceOne := uuid.New()
 	sourceTwo := uuid.New()
+	// resolveHostedWorkspacePolicy uses the lexicographically first owned
+	// workspace as a representative for the account-scoped Cloud policy. Keep
+	// the source order deterministic so the call assertion below protects that
+	// contract instead of depending on random UUID ordering.
+	if sourceTwo.String() < sourceOne.String() {
+		sourceOne, sourceTwo = sourceTwo, sourceOne
+	}
 	targetWorkspaceID := uuid.New()
 	targetMemberID := uuid.New()
 	key := uuid.NewString()
@@ -200,7 +207,9 @@ INSERT INTO member (workspace_id, user_id, role) VALUES
 	})
 	limit := 2
 	stub := entitlementtest.New()
-	stub.Set(sourceOne, entitlement.GateHostedWorkspaceLimit, entitlement.Decision{Gate: entitlement.Gate{Action: entitlement.ActionEnforce, Limit: &limit}})
+	decision := entitlement.Decision{Gate: entitlement.Gate{Action: entitlement.ActionEnforce, Limit: &limit}}
+	stub.Set(sourceOne, entitlement.GateHostedWorkspaceLimit, decision)
+	stub.Set(sourceTwo, entitlement.GateHostedWorkspaceLimit, decision)
 	previous := testHandler.Entitlements
 	testHandler.Entitlements = stub
 	t.Cleanup(func() { testHandler.Entitlements = previous })
@@ -214,6 +223,10 @@ INSERT INTO member (workspace_id, user_id, role) VALUES
 	recorder := testutil.Call(t, testHandler.UpdateMember, req).Want(http.StatusForbidden)
 	if !strings.Contains(recorder.Body.String(), hostedWorkspaceLimitCode) {
 		t.Fatalf("response = %s", recorder.Body.String())
+	}
+	calls := stub.Calls()
+	if len(calls) != 1 || calls[0].WorkspaceID != sourceOne || calls[0].Gate != entitlement.GateHostedWorkspaceLimit {
+		t.Fatalf("entitlement calls = %+v; want one call for the canonical representative %s", calls, sourceOne)
 	}
 	var role string
 	if err := testPool.QueryRow(ctx, `SELECT role FROM member WHERE id = $1`, targetMemberID).Scan(&role); err != nil || role != "member" {

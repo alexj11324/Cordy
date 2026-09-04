@@ -212,11 +212,11 @@ func TestRerunIssue_PrivateHistoricalAgent(t *testing.T) {
 	origID := util.UUIDToString(orig.ID)
 
 	// Reassign the issue to a SECOND agent that testUserID CAN invoke (a
-	// workspace-invocable public_to agent). Now the issue's CURRENT assignee and
+	// workspace-invocable public_to agent). Now the issue's CURRENT executor and
 	// the source task's HISTORICAL agent differ: if the rerun wrongly validated
-	// the current assignee, testUserID would be allowed — so the 403 below proves
+	// the current executor, testUserID would be allowed — so the 403 below proves
 	// the gate is keyed on the historical private agent named by task_id.
-	currentAgentID := createHandlerTestAgent(t, "RerunCurrentAssignee", []byte("[]"))
+	currentAgentID := createHandlerTestAgent(t, "RerunCurrentExecutor", []byte("[]"))
 	if _, err := testPool.Exec(ctx, `UPDATE issue SET executor_id = $1 WHERE id = $2`, currentAgentID, issueID); err != nil {
 		t.Fatalf("reassign issue to second agent: %v", err)
 	}
@@ -238,7 +238,7 @@ func TestRerunIssue_PrivateHistoricalAgent(t *testing.T) {
 	beforeCount, beforeStatus := taskCount(), origStatus()
 
 	// DENY: testUserID (workspace owner) can view the issue AND can invoke the
-	// current assignee, but cannot invoke the HISTORICAL private agent named by
+	// current executor, but cannot invoke the HISTORICAL private agent named by
 	// task_id → structured 403, and nothing is cancelled or created.
 	denyW := httptest.NewRecorder()
 	denyReq := withURLParam(newRequest("POST", "/api/issues/"+issueID+"/rerun", map[string]any{"task_id": origID}), "id", issueID)
@@ -257,7 +257,7 @@ func TestRerunIssue_PrivateHistoricalAgent(t *testing.T) {
 	}
 
 	// ALLOW: the HISTORICAL agent's owner may rerun it, and the new task must
-	// target the historical agent — not the issue's current assignee.
+	// target the historical agent — not the issue's current executor.
 	allowW := httptest.NewRecorder()
 	allowReq := withURLParam(newRequestAs(ownerID, "POST", "/api/issues/"+issueID+"/rerun", map[string]any{"task_id": origID}), "id", issueID)
 	testHandler.RerunIssue(allowW, allowReq)
@@ -272,7 +272,7 @@ func TestRerunIssue_PrivateHistoricalAgent(t *testing.T) {
 		t.Fatalf("decode rerun response: %v", err)
 	}
 	if reran.AgentID != agentID {
-		t.Errorf("reran task agent_id = %q, want historical agent %q (not current assignee %q)", reran.AgentID, agentID, currentAgentID)
+		t.Errorf("reran task agent_id = %q, want historical agent %q (not current executor %q)", reran.AgentID, agentID, currentAgentID)
 	}
 	if reran.ID == origID {
 		t.Errorf("expected a new task id, got the original %q", origID)

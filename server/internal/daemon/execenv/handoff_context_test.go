@@ -18,8 +18,8 @@ func TestRenderIssueContext_HandoffNote(t *testing.T) {
 	if !strings.Contains(md, note) {
 		t.Fatalf("handoff note text missing:\n%s", md)
 	}
-	if !strings.Contains(md, "**Trigger:** New Assignment") {
-		t.Fatalf("handoff note must render under the assignment trigger:\n%s", md)
+	if !strings.Contains(md, "**Trigger:** Executor Routing") {
+		t.Fatalf("handoff note must render under the executor trigger:\n%s", md)
 	}
 }
 

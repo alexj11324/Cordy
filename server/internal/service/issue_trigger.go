@@ -13,10 +13,10 @@ import (
 type RunEnqueueSource string
 
 const (
-	// RunSourceAssign covers issue creation and assignee changes — the issue
+	// RunSourceExecutor covers issue creation and executor changes — the issue
 	// is being handed to an agent/team. Parks silently on backlog.
-	RunSourceAssign RunEnqueueSource = "assign"
-	// RunSourceStatus covers promoting an already-assigned issue out of
+	RunSourceExecutor RunEnqueueSource = "assign"
+	// RunSourceStatus covers promoting an issue with an executor out of
 	// backlog into an active status.
 	RunSourceStatus RunEnqueueSource = "status"
 )
@@ -35,7 +35,7 @@ const (
 // calling agent re-triggering its own running task. Only the status source
 // consults it. A nil func means "not a self-loop".
 //
-// SuppressActiveSelfAssignment reports whether a direct agent assignment is a
+// SuppressActiveSelfExecutor reports whether a direct agent executor change is a
 // trusted agent claiming ownership for itself while the target (issue, agent)
 // pair already has a non-terminal task. The ownership update still succeeds;
 // only the duplicate enqueue is suppressed. Cross-issue handoffs to a fresh
@@ -43,7 +43,7 @@ const (
 type IssueTriggerProbe struct {
 	CanAccessAgent               func(agent db.Agent) bool
 	IsSelfLoop                   func() bool
-	SuppressActiveSelfAssignment func(agentID pgtype.UUID) bool
+	SuppressActiveSelfExecutor func(agentID pgtype.UUID) bool
 }
 
 // IssueTriggerInput describes one prospective issue write in its post-write
@@ -58,7 +58,7 @@ type IssueTriggerInput struct {
 }
 
 // IssueRunTrigger is the resolved decision shared by preview and the write
-// paths. AgentID is the agent that will actually run — the assignee for an
+// paths. AgentID is the agent that will actually run — the executor for an
 // agent issue, the team leader for a team issue.
 type IssueRunTrigger struct {
 	IssueID      pgtype.UUID
@@ -76,7 +76,7 @@ func allowAllAgents(db.Agent) bool { return true }
 // omitted, four entry points inconsistent — see MUL-3375).
 //
 // It is intentionally a distinct predicate from the comment trigger
-// (assignee fallback comment routing): issue writes park on backlog while comments fire
+// (executor fallback comment routing): issue writes park on backlog while comments fire
 // in any status. The two only share leaf readiness checks (AgentReadiness,
 // the pending-task dedup), not the top-level decision.
 //
@@ -85,15 +85,15 @@ func allowAllAgents(db.Agent) bool { return true }
 // CreateAgentTask, guarded by the (issue_id, agent_id) partial unique index
 // over pending (queued/dispatched) tasks; the pending check below mirrors that
 // guard, and only the status source needs it:
-//   - status source (backlog → active) can re-fire against an assignee that
+//   - status source (backlog → active) can re-fire against an executor that
 //     already holds a pending task (e.g. one a @mention raised while the issue
 //     sat in backlog); the check keeps preview from promising a run the unique
 //     index would coalesce away.
-//   - assign source (create / assignee change) skips the check: a create
-//     targets a fresh issue with no prior task, and a reassignment no longer
+//   - assign source (create / executor change) skips the check: a create
+//     targets a fresh issue with no prior task, and an executor change no longer
 //     cancels existing tasks (#4963 / MUL-4113) — in the rare case the new
-//     assignee already holds a pending task the insert simply no-ops on the
-//     same unique index, so the assignee still ends up with one pending run.
+//     executor already holds a pending task the insert simply no-ops on the
+//     same unique index, so the executor still ends up with one pending run.
 func (s *IssueService) WillEnqueueRun(ctx context.Context, in IssueTriggerInput, probe IssueTriggerProbe) (IssueRunTrigger, bool) {
 	issue := in.Issue
 	if !issue.ExecutorType.Valid || !issue.ExecutorID.Valid {
@@ -127,7 +127,7 @@ func (s *IssueService) WillEnqueueRun(ctx context.Context, in IssueTriggerInput,
 		if currentStatus == "backlog" {
 			return IssueRunTrigger{}, false
 		}
-		source = RunSourceAssign
+		source = RunSourceExecutor
 	case in.StatusChanged && prevStatus == "backlog" &&
 		currentStatus != "backlog" &&
 		currentStatus != "done" && currentStatus != "cancelled":
@@ -148,8 +148,8 @@ func (s *IssueService) WillEnqueueRun(ctx context.Context, in IssueTriggerInput,
 		if !canAccess(agent) {
 			return IssueRunTrigger{}, false
 		}
-		if source == RunSourceAssign && !in.IsCreate && probe.SuppressActiveSelfAssignment != nil &&
-			probe.SuppressActiveSelfAssignment(issue.ExecutorID) {
+		if source == RunSourceExecutor && !in.IsCreate && probe.SuppressActiveSelfExecutor != nil &&
+			probe.SuppressActiveSelfExecutor(issue.ExecutorID) {
 			return IssueRunTrigger{}, false
 		}
 		if source == RunSourceStatus && s.hasPendingRun(ctx, issue.ID, issue.ExecutorID) {
@@ -163,7 +163,7 @@ func (s *IssueService) WillEnqueueRun(ctx context.Context, in IssueTriggerInput,
 		}, true
 
 	case "team":
-		// Pair-scoped self-assignment suppression intentionally applies only to
+		// Pair-scoped self-executor suppression intentionally applies only to
 		// direct agent ownership. Assigning a team changes execution context
 		// (leader briefing, roles, and member routing), so even when the acting
 		// agent is that team's leader it is an intentional group handoff rather

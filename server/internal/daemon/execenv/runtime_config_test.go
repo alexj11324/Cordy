@@ -26,7 +26,7 @@ func TestSubIssueCreationSectionPresentForIssueRuns(t *testing.T) {
 		ctx  TaskContextForEnv
 	}{
 		{
-			name: "assignment-triggered",
+			name: "executor-triggered",
 			ctx:  TaskContextForEnv{IssueID: "11111111-2222-3333-4444-555555555555"},
 		},
 		{
@@ -422,7 +422,7 @@ func TestSessionContinuityNoticeLivesOutsideBrief(t *testing.T) {
 }
 
 // The issue workflow must keep every Agent Identity guardrail after the
-// comment/assignment branches were merged into one byte-stable section.
+// comment/executor branches were merged into one byte-stable section.
 func TestIssueWorkflowHonorsAgentIdentity(t *testing.T) {
 	t.Parallel()
 	const issueID = "77777777-8888-9999-aaaa-bbbbbbbbbbbb"
@@ -676,7 +676,7 @@ func TestWorkspaceContextRenderedAcrossTaskKinds(t *testing.T) {
 		ctx  TaskContextForEnv
 	}{
 		{
-			name: "assignment-triggered",
+			name: "executor-triggered",
 			ctx: TaskContextForEnv{
 				IssueID:          "11111111-2222-3333-4444-555555555555",
 				WorkspaceContext: wsContext,
@@ -1794,7 +1794,7 @@ func TestInjectRuntimeConfigByteIdenticalAcrossTriggers(t *testing.T) {
 		name   string
 		mutate func(c *TaskContextForEnv)
 	}{
-		{"assignment-triggered", func(c *TaskContextForEnv) {}},
+		{"executor-triggered", func(c *TaskContextForEnv) {}},
 		{"comment-triggered", func(c *TaskContextForEnv) {
 			c.TriggerCommentID = "comment-1"
 			c.TriggerThreadID = "thread-1"

@@ -37,7 +37,7 @@ type CountExecutorChangesByActorRow struct {
 	Frequency    int64       `json:"frequency"`
 }
 
-// Count how many times a user assigned each execution target.
+// Count how many times a user selected each execution target.
 func (q *Queries) CountExecutorChangesByActor(ctx context.Context, arg CountExecutorChangesByActorParams) ([]CountExecutorChangesByActorRow, error) {
 	rows, err := q.db.Query(ctx, countExecutorChangesByActor, arg.WorkspaceID, arg.ActorID)
 	if err != nil {
@@ -174,7 +174,7 @@ type ListActivitiesForIssueParams struct {
 // Capping with ORDER BY created_at ASC instead discards the newest rows, which
 // made a busy issue's timeline appear to stop at some point in the past with no
 // indication anything was missing. Activity is machine-paced (description
-// autosave, every agent run, status/assignee changes), so this was reachable in
+// autosave, every agent run, and issue-role changes), so this was reachable in
 // normal use, not only on pathological issues (MUL-5492).
 func (q *Queries) ListActivitiesForIssue(ctx context.Context, arg ListActivitiesForIssueParams) ([]ActivityLog, error) {
 	rows, err := q.db.Query(ctx, listActivitiesForIssue, arg.IssueID, arg.Limit)

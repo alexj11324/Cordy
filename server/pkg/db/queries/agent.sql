@@ -17,7 +17,7 @@ ORDER BY created_at ASC;
 -- tasks and books real usage, so a per-agent rollup returns it whether or not
 -- any list endpoint will ever name it. Those surfaces need the full population
 -- to decide what to hide (MUL-5409). Do NOT use this to build a user-facing
--- agent list — `kind = 'system'` must stay out of every picker and assignee
+-- agent list — `kind = 'system'` must stay out of every picker and executor
 -- surface.
 SELECT * FROM agent
 WHERE workspace_id = $1
@@ -73,7 +73,7 @@ RETURNING *;
 -- One hidden builder agent per creation session. Keeping the execution carrier
 -- session-scoped freezes its model/runtime configuration when multiple builder
 -- flows are open concurrently, while `kind = 'system'` keeps it out of normal
--- agent lists and assignment surfaces.
+-- agent lists and executor-selection surfaces.
 INSERT INTO agent (
     workspace_id, name, description, runtime_mode, runtime_config, runtime_id,
     visibility, permission_mode, max_concurrent_tasks, owner_id, instructions,
@@ -213,7 +213,7 @@ RETURNING *;
 -- name: ArchiveAgentsByRuntime :many
 -- Bulk-archives every active agent bound to any runtime in the given set.
 -- Used when revoking a leaving member's runtimes so agents pinned to those
--- runtimes can no longer be assigned new work. Returns the affected rows so
+-- runtimes can no longer receive new executor work. Returns the affected rows so
 -- the caller can broadcast agent:archived per agent.
 --
 -- System agents are exempt: they belong to the workspace rather than to the
@@ -374,7 +374,7 @@ RETURNING *;
 -- name: CreateCoordinationAgentTask :one
 -- Coordination handoffs must persist their provenance in the same INSERT as
 -- the queued task. Keeping this as a separate query preserves the existing
--- CreateAgentTask contract for ordinary mention/assignment paths while giving
+-- CreateAgentTask contract for ordinary mention/executor paths while giving
 -- the durable worker an atomic context payload.
 INSERT INTO agent_task_queue (
     agent_id, runtime_id, issue_id, status, priority, context, handoff_note,
@@ -432,7 +432,7 @@ LIMIT 1;
 -- locks the owners' workspace rows in the writer's own transaction and returns
 -- false once they are gone, so this statement writes no row instead of stranding
 -- a task in a workspace that has just been deleted (MUL-5999).
--- Channel /issue media resolves after issue creation. Persist the assigned
+-- Channel /issue media resolves after issue creation. Persist the selected
 -- issue task up front for crash safety, but keep it inert until attachment
 -- binding settles or the fire_at fallback is promoted by the normal sweeper.
 INSERT INTO agent_task_queue (
@@ -528,9 +528,9 @@ RETURNING *;
 -- a task in a workspace that has just been deleted (MUL-5999).
 -- Deferred tasks are inert until PromoteDueDeferredTasksForRuntime flips them
 -- to queued. Used for comment-routing escalation: a thread-owner primary task
--- gets a delayed assignee fallback without waking both agents at t=0.
+-- gets a delayed executor fallback without waking both agents at t=0.
 -- Attribution is resolved and stamped at creation (not at promotion), from the
--- same trigger comment as the primary task, so the fallback assignee's run
+-- same trigger comment as the primary task, so the fallback executor's run
 -- carries a non-NULL source and evidence rather than bypassing attribution
 -- (MUL-4302 §2).
 INSERT INTO agent_task_queue (
@@ -1564,7 +1564,7 @@ RETURNING *;
 --
 -- The row must ALSO have been queued for a full grace of its own. Enqueue binds
 -- a task to agent.runtime_id without checking that the runtime is up, so
--- runtime liveness alone would fail a task the instant it is assigned to a
+-- runtime liveness alone would fail a task the instant it is routed to a
 -- runtime that has been offline a while — a laptop closed overnight would turn
 -- "assign this issue" into a failure inside one 30s sweep tick instead of
 -- waiting for the machine to come back. Requiring the task's own age keeps the
@@ -1984,9 +1984,9 @@ WHERE issue_id = @issue_id
 -- its claim response built. Folding afterward would add a planned id that is
 -- absent from that response's delivered_comment_ids receipt; completion
 -- reconciliation handles it instead. Ordinary 'deferred' rows remain excluded:
--- assignee-fallback escalations have their own fire_at lifecycle and may coexist
+-- executor-fallback escalations have their own fire_at lifecycle and may coexist
 -- with a queued primary. The one exception is a task explicitly marked
--- channel_issue_media_pending. It is the issue's sole assigned-agent task and
+-- channel_issue_media_pending. It is the issue's sole executor-agent task and
 -- has not been claimable yet, so a new comment must merge into it instead of
 -- creating a competing queued task. coalesced_comment_ids remains the pre-claim
 -- plan; the claim path records the actual embedded subset in
@@ -2389,7 +2389,7 @@ ORDER BY atq.priority DESC, atq.created_at ASC;
 --
 -- Scope is deliberately tight:
 --   * retry_of_task_id IS NOT NULL — only auto-retry clones, never a fresh run.
---   * escalation_for_task_id IS NULL — assignee-fallback escalations own their
+--   * escalation_for_task_id IS NULL — executor-fallback escalations own their
 --     fire_at lifecycle and are SUPPOSED to coexist with an active primary.
 --   * channel-media pending rows are excluded for the same reason: that deferred
 --     row is the issue's own task waiting on media, not a superseded retry.
@@ -2706,6 +2706,7 @@ WHERE a.workspace_id = $1
         AND i.workspace_id = a.workspace_id
         AND (
           (
+            -- `assigned` is the public relation spelling for member ownership.
             @mine_relation::text IN ('assigned', 'any')
             AND i.owner_type = 'member'
             AND i.owner_id = @member_id::uuid
@@ -2821,7 +2822,7 @@ LIMIT 1;
 -- name: CreateSystemUserAgent :one
 -- Creates a product-defined agent that members can still see, chat with, and
 -- assign issues to. Deliberately kind='user': kind='system' hides the row from
--- agent lists and assignment surfaces and hard deletes it with its runtime.
+-- agent lists and executor-selection surfaces and hard deletes it with its runtime.
 -- Every product-owned field is a server constant; instructions stays empty
 -- because the system half ships with the binary and is layered in at claim
 -- time, leaving this column free for the workspace's own notes.

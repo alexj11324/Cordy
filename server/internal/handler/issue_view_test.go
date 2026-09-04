@@ -65,7 +65,7 @@ func TestCreateAndListIssueView(t *testing.T) {
 func TestMyIssueViewForcedPrivate(t *testing.T) {
 
 	view, code, body := createIssueViewForTest(t, map[string]any{
-		"name":          "My assigned",
+		"name":          "My owned",
 		"scope_type":    "my",
 		"scope_variant": "assigned",
 		"visibility":    "workspace", // must be overridden

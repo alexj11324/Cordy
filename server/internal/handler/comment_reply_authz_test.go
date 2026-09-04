@@ -46,7 +46,7 @@ func TestTaskCoversReplyParent(t *testing.T) {
 		})
 	}
 
-	// An assignment-triggered task (no trigger comment, no coalesced set) covers
+	// An executor-triggered task (no trigger comment, no coalesced set) covers
 	// nothing here; the caller only consults this when TriggerCommentID is valid.
 	empty := db.AgentTaskQueue{}
 	if taskCoversReplyParent(empty, util.MustParseUUID(trigger)) {

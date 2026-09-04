@@ -13,7 +13,7 @@ type taskKind int
 
 const (
 	// kindIssue: this run operates on a real Patchbay issue. It deliberately
-	// does NOT distinguish comment-triggered from assignment-triggered runs.
+	// does NOT distinguish comment-triggered from executor-triggered runs.
 	//
 	// Those were two kinds until MUL-5377. Splitting them made the rendered
 	// brief — which Claude Code loads into messages[0], ahead of the entire

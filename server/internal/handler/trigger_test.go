@@ -27,14 +27,14 @@ const (
 	otherMemberID   = "dddddddd-dddd-dddd-dddd-dddddddddddd"
 )
 
-func issueWithAgentAssignee() db.Issue {
+func issueWithAgentExecutor() db.Issue {
 	return db.Issue{
 		ExecutorType: testText("agent"),
 		ExecutorID:   testUUID(agentExecutorID),
 	}
 }
 
-func issueNoAssignee() db.Issue {
+func issueWithoutExecutor() db.Issue {
 	return db.Issue{}
 }
 
@@ -102,12 +102,12 @@ func TestIsNoteComment(t *testing.T) {
 }
 
 // TestTriggerTasksForComment_NoteShortCircuits proves a /note comment returns
-// before the cascade tries to resolve mentions, parent ownership, or assignee
+// before the cascade tries to resolve mentions, parent ownership, or executor
 // fallback. A nil-Queries Handler would panic if the /note guard were missing or
 // moved below those branches.
 func TestTriggerTasksForComment_NoteShortCircuits(t *testing.T) {
 	h := &Handler{} // nil Queries / TaskService on purpose
-	issue := issueWithAgentAssignee()
+	issue := issueWithAgentExecutor()
 	comment := db.Comment{
 		Content: fmt.Sprintf("/note cc [@Other](mention://agent/%s) just an fyi", otherAgentID),
 	}

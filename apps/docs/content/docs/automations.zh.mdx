@@ -27,7 +27,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 | 模式 | 行为 | 适合 |
 |---|---|---|
-| **创建任务** | 每次触发先创建一条任务，再分配给执行方；讨论、状态和执行记录都保留在任务中。 | 需要团队查看、确认或继续处理的工作。 |
+| **创建任务** | 每次触发先创建一条任务，再设置 executor；讨论、状态和执行记录都保留在任务中。 | 需要团队查看、确认或继续处理的工作。 |
 | **仅运行** | 直接创建 task，不产生任务；结果只在自动化的运行历史中查看。 | 无需协作记录的后台 task。 |
 
 **创建任务**模式与普通任务使用相同的 task 队列：运行时离线时可以先创建任务，task 等待运行时上线。
@@ -155,6 +155,6 @@ patchbay automation trigger-rotate-url <automation-id> <trigger-id>
 
 ## 接下来
 
-- [分配任务给智能体](/assigning-issues) — 分配与确认窗口。
+- [设置任务 executor](/assigning-issues) — executor 变更与确认窗口。
 - [收件箱与订阅](/inbox) — 运行通知的接收位置。
 - [Task](/tasks) — 执行状态与失败处理。

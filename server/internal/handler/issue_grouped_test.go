@@ -14,23 +14,23 @@ func TestListGroupedIssuesExecutorPaginatesPerGroup(t *testing.T) {
 	ctx := context.Background()
 
 	suffix := time.Now().UnixNano()
-	var assigneeID string
+	var ownerID string
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO "user" (name, email)
 		VALUES ($1, $2)
 		RETURNING id
-	`, "Grouped Issues Test User", fmt.Sprintf("grouped-%d@patchbay.ai", suffix)).Scan(&assigneeID); err != nil {
-		t.Fatalf("create assignee user: %v", err)
+	`, "Grouped Issues Test User", fmt.Sprintf("grouped-%d@patchbay.ai", suffix)).Scan(&ownerID); err != nil {
+		t.Fatalf("create owner user: %v", err)
 	}
 	t.Cleanup(func() {
-		_, _ = testPool.Exec(context.Background(), `DELETE FROM "user" WHERE id = $1`, assigneeID)
+		_, _ = testPool.Exec(context.Background(), `DELETE FROM "user" WHERE id = $1`, ownerID)
 	})
 
 	if _, err := testPool.Exec(ctx, `
 		INSERT INTO member (workspace_id, user_id, role)
 		VALUES ($1, $2, 'member')
-	`, testWorkspaceID, assigneeID); err != nil {
-		t.Fatalf("create assignee member: %v", err)
+	`, testWorkspaceID, ownerID); err != nil {
+		t.Fatalf("create owner member: %v", err)
 	}
 
 	var agentID string

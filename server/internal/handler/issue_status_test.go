@@ -318,7 +318,7 @@ func TestArchiveRetiresStatusWithoutTouchingExistingIssues(t *testing.T) {
 		t.Errorf("Effective on an archived status = %q, want %q", got, issuestatus.InProgress)
 	}
 
-	// But nothing NEW can be assigned to it.
+	// But nothing NEW can use it.
 	rec := httptest.NewRecorder()
 	testHandler.CreateIssue(rec, newRequest(http.MethodPost, "/api/issues", map[string]any{
 		"title": "should be refused", "status": "in_use_a",

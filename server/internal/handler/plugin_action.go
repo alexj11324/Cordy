@@ -341,7 +341,7 @@ func (h *Handler) GetPluginIssue(w http.ResponseWriter, r *http.Request) {
 
 // PatchPluginIssue — PATCH /v1/issues/{issue_ref}
 //
-// Title and description only. Status, priority, assignee, parent, project and
+// Title and description only. Status, priority, owner, executor, reviewer, parent, project and
 // stage each carry dispatch, catalog or hierarchy semantics — a status change
 // can start an agent run, and custom statuses resolve through a per-workspace
 // catalog — and duplicating those rules here would give a plugin a second,

@@ -185,9 +185,9 @@ var errIssueStatusArchivedRace = errors.New("issue status was archived while the
 // retirement, so the two orderings are both covered:
 //
 //   - archive first: it commits, this re-resolve then fails and the write is
-//     rejected, so no new assignment lands on an archived status;
+//     rejected, so no new issue write lands on an archived status;
 //   - writer first: archive blocks until this transaction commits, then retires
-//     the status from future use while the issue keeps its existing assignment.
+//     the status from future use while the issue keeps its existing role values.
 //
 // A built-in status is a no-op: it can never be archived (enforced by
 // issue_status_system_not_archivable), so the common path takes no lock and
@@ -1268,7 +1268,7 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 	}
 	// involves_user_id widens the executor filter to surface issues where the
 	// user is the indirect executor (their owned agent, or a team they belong
-	// to / lead / have an agent inside). Direct member-assignment is excluded
+	// to / lead / have an agent inside). Direct member ownership is excluded
 	// by design — that is the meaning of `executor_id` (tab 1), and tab 3 must
 	// be disjoint from tab 1.
 	var involvesUserFilter pgtype.UUID
@@ -2144,7 +2144,7 @@ func (h *Handler) ListGroupedIssues(w http.ResponseWriter, r *http.Request) {
 	// Mirror the involves_user_id 4-branch UNION from sqlc's ListIssues /
 	// ListOpenIssues / CountIssues. ListGroupedIssues is a hand-written dynamic
 	// SQL builder that does not share parameters with sqlc, so the fragment is
-	// re-implemented here in lock-step. Member-direct assignment is excluded by
+	// re-implemented here in lock-step. Member-direct ownership is excluded by
 	// design: that semantics belongs to tab 1 (`executor_id`), and tab 3 must
 	// stay disjoint from tab 1.
 	if raw := r.URL.Query().Get("involves_user_id"); raw != "" {
@@ -2735,8 +2735,8 @@ func (h *Handler) ChildIssueProgress(w http.ResponseWriter, r *http.Request) {
 //
 // Exactly one of AgentID / TeamID is required. When TeamID is set, the
 // task is enqueued against the team's leader agent and the leader receives
-// the same Operating Protocol briefing it would for an issue assigned to
-// the team, so it can choose to delegate to a team member as usual.
+// the same Operating Protocol briefing it would for an issue whose executor
+// is the team, so it can choose to delegate to a team member as usual.
 //
 // ProjectID is optional and lets the modal target a specific project so
 // the agent's `patchbay issue create` invocation passes `--project <uuid>`
@@ -2816,7 +2816,7 @@ func (h *Handler) QuickCreateIssue(w http.ResponseWriter, r *http.Request) {
 	// Resolve the actor to the agent that will actually run the task. For
 	// agent picks that's the agent itself; for team picks it's the team's
 	// leader agent. The leader receives a team-leader briefing on dispatch
-	// (see daemon.go), matching the behavior of an issue assigned to the
+	// (see daemon.go), matching the behavior of an issue whose executor is the
 	// team — picking a team here is functionally "ask the team leader to
 	// create this issue, on behalf of the team".
 	var agentUUID pgtype.UUID
@@ -3305,7 +3305,7 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 	} else if creatorType == "agent" {
 		// MUL-4305: an agent creating an issue via the ordinary create path
 		// carries no explicit origin, which historically left the new issue
-		// unattributed. Any run later derived from it (agent assignment,
+		// unattributed. Any run later derived from it (executor routing,
 		// team-leader trigger) then lost the top-of-chain human originator,
 		// so A2A @-mentions from those runs failed the canInvokeAgent gate
 		// against private agents. Stamp the acting task as the issue's origin
@@ -3338,7 +3338,7 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 	// request rather than once per payload. (MUL-6243)
 	fillCreated := h.newStatusCategoryFiller(r.Context(), wsUUID)
 
-	// Analytics agent ID: executor agent when the issue is being assigned
+	// Analytics agent ID: executor agent when the issue is being routed
 	// to an agent, otherwise the creator agent for agent-authored issues.
 	// Resolved here (not in the service) because creator identity is HTTP-side.
 	analyticsAgentID := ""
@@ -4018,7 +4018,7 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	// The scope is THIS issue: an unattributed automation run that verifiably owns
 	// the work on it may point it at a private agent, exactly as it may when
 	// creating a child under it. Before MUL-6691 this passed nil, so the reported
-	// flow — create DRA-109 unassigned, then assign it — was refused even though
+	// flow — create DRA-109 without an executor, then set its executor — was refused even though
 	// the identical lineage was accepted on the create path.
 	_, touchedType := rawFields["executor_type"]
 	_, touchedID := rawFields["executor_id"]
@@ -4196,11 +4196,11 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	// WillEnqueueRun predicate, shared verbatim with the preview endpoint so
 	// the two never drift (MUL-3375).
 	//
-	// A reassignment intentionally does NOT cancel existing tasks on the issue
+	// An executor change intentionally does NOT cancel existing tasks on the issue
 	// (#4963 / MUL-4113). The previous "cancel every active task on the issue"
 	// was too coarse: it silently dropped unrelated in-flight work (a
 	// mention-triggered run for another agent, a team task) with no requeue,
-	// and it self-cancelled a run that reassigned the issue from inside itself.
+	// and it self-cancelled a run that changed the issue executor from inside itself.
 	// Ownership handoff no longer implies interruption; the new executor's run,
 	// if any, is enqueued by WillEnqueueRun below and runs alongside whatever
 	// was already in flight. No status change — not even → cancelled — cancels
@@ -4240,7 +4240,7 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 // That means owner-only for a private agent, with NO workspace-admin bypass
 // and NO unconditional agent-to-agent bypass — an agent caller (X-Agent-ID) is
 // judged by the top-of-chain human originator like everywhere else.
-// scope names the work the assignment belongs to. An unattributed automation
+// scope names the work the executor change belongs to. An unattributed automation
 // run may borrow an automation authority only within it — the parent issue for
 // child creation, the issue itself for an update, or the run's own verified
 // automation when creating a parentless issue (MUL-4857, MUL-6691). It never
@@ -4250,7 +4250,7 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 // callers should treat any non-zero status as a rejection and surface it back
 // to the client.
 func (h *Handler) validateExecutorPair(ctx context.Context, r *http.Request, workspaceID string, executorType pgtype.Text, executorID pgtype.UUID, scope assignAuthorityScope) (int, string) {
-	// Both unset → unassigned issue, valid.
+	// Both unset → issue with no executor, valid.
 	if !executorType.Valid && !executorID.Valid {
 		return 0, ""
 	}
@@ -4316,12 +4316,12 @@ func (h *Handler) validateExecutorPair(ctx context.Context, r *http.Request, wor
 	}
 }
 
-// shouldEnqueueAgentTask returns true when an issue creation or assignment
-// should trigger the assigned agent. Backlog issues are skipped — backlog
-// acts as a parking lot where issues can be pre-assigned without immediately
-// triggering execution. Moving out of backlog is handled separately in
-// UpdateIssue.
-func (h *Handler) shouldEnqueueAgentTask(ctx context.Context, issue db.Issue) bool {
+// shouldEnqueueExecutorTask returns true when an issue creation or executor
+// change should trigger the selected agent. Backlog issues are skipped —
+// backlog acts as a parking lot where issues can be preconfigured without
+// immediately triggering execution. Moving out of backlog is handled
+// separately in UpdateIssue.
+func (h *Handler) shouldEnqueueExecutorTask(ctx context.Context, issue db.Issue) bool {
 	// A custom status in the backlog category parks like Backlog. (MUL-6243)
 	if issuestatus.Effective(ctx, h.Queries, issue.WorkspaceID, issue.Status) == "backlog" {
 		return false
@@ -4330,7 +4330,7 @@ func (h *Handler) shouldEnqueueAgentTask(ctx context.Context, issue db.Issue) bo
 }
 
 // shouldEnqueueExecutorFallback returns true when comment routing can fall back
-// to the issue's assigned agent. Fires for any status — comments are
+// to the issue's executor agent. Fires for any status — comments are
 // conversational and can happen at any stage, including after completion
 // (e.g. follow-up questions on a done issue).
 //
@@ -4371,7 +4371,7 @@ func (h *Handler) executorFallbackAgent(ctx context.Context, issue db.Issue, act
 // itself, complete the run, flip again, and so on.
 //
 // Same-agent cross-issue handoff (Agent A finishing a task on issue I1 then
-// promoting issue I2 — even when I2 is also assigned to A) is NOT a loop
+// promoting issue I2 — even when I2 also has A as executor) is NOT a loop
 // and must fire; that is the documented serial sub-task chain. Member
 // actors never match.
 //
@@ -4401,7 +4401,7 @@ func (h *Handler) isAgentRunningOnIssue(r *http.Request, actorType string, issue
 	return uuidToString(task.IssueID) == uuidToString(issue.ID)
 }
 
-// isAgentExecutorReady checks if an issue is assigned to an active agent
+// isAgentExecutorReady checks if an issue has an active agent executor
 // with a valid runtime.
 func (h *Handler) isAgentExecutorReady(ctx context.Context, issue db.Issue) bool {
 	if !issue.ExecutorType.Valid || issue.ExecutorType.String != "agent" || !issue.ExecutorID.Valid {
@@ -4419,7 +4419,7 @@ func (h *Handler) isAgentExecutorReady(ctx context.Context, issue db.Issue) bool
 	if err != nil || !verdict.Blocked() {
 		return err == nil
 	}
-	// Assignment has no response the assigner reads for this outcome, so a
+	// Executor routing has no response the caller reads for this outcome, so a
 	// refusal that needs human repair leaves the explanation on the issue
 	// (MUL-6164). An unbound agent keeps its silent skip: the agent list
 	// already shows it has no runtime, and nothing about it is new here.
@@ -4976,7 +4976,7 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 			"prev_reviewer_id":   uuidToPtr(prevIssue.ReviewerID),
 		})
 
-		// Reassignment does not cancel existing tasks (#4963 / MUL-4113) —
+		// Executor changes do not cancel existing tasks (#4963 / MUL-4113) —
 		// mirrors UpdateIssue. See that handler for the rationale.
 		//
 		// Same single predicate as UpdateIssue — batch must not grow its own

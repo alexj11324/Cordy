@@ -285,7 +285,7 @@ func RuntimeOffline(ownerID, workspaceID, runtimeID, daemonID, provider string) 
 
 // IssueExecuted fires at most once per issue lifetime — on the first task
 // completion that flips `issues.first_executed_at` from NULL via an atomic
-// UPDATE. Retries, re-assignments, and comment-triggered follow-ups never
+// UPDATE. Retries, executor changes, and comment-triggered follow-ups never
 // re-emit, which is what keeps the ≥1/≥2/≥5/≥10 funnel buckets honest.
 //
 // Deliberately not stamped here: the workspace's Nth-issue ordinal.

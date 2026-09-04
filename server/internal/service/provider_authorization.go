@@ -133,7 +133,7 @@ func (s *ProviderAuthorizationService) CreateGrant(ctx context.Context, workspac
 	case "user":
 		_, err = s.Queries.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{UserID: input.GranteeID, WorkspaceID: workspaceID})
 	case "team":
-		_, err = s.Queries.GetTeamByAssignee(ctx, db.GetTeamByAssigneeParams{ID: input.GranteeID, WorkspaceID: workspaceID})
+		_, err = s.Queries.GetTeamInWorkspace(ctx, db.GetTeamInWorkspaceParams{ID: input.GranteeID, WorkspaceID: workspaceID})
 	case "agent_definition":
 		_, err = s.Queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{ID: input.GranteeID, WorkspaceID: workspaceID})
 	}

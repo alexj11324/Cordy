@@ -8,15 +8,15 @@ import (
 	"github.com/patchbay-ai/patchbay/server/internal/testutil"
 )
 
-func automationChildIssueRequest(t *testing.T, assigneeType, assigneeID, parentIssueID, status, actorAgentID, taskID string) *http.Request {
+func automationChildIssueRequest(t *testing.T, executorType, executorID, parentIssueID, status, actorAgentID, taskID string) *http.Request {
 	t.Helper()
 
 	r := newRequest(http.MethodPost, "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
-		"title":           "automation private-assignee child " + t.Name(),
+		"title":           "automation private-executor child " + t.Name(),
 		"status":          status,
 		"priority":        "low",
-		"executor_type":   assigneeType,
-		"executor_id":     assigneeID,
+		"executor_type":   executorType,
+		"executor_id":     executorID,
 		"parent_issue_id": parentIssueID,
 		"allow_duplicate": true,
 	})
@@ -54,7 +54,7 @@ func TestCreateIssue_AutomationLeaderAssignsPrivateWorker(t *testing.T) {
 			t.Fatalf("created child parent_issue_id = %v, want %q", created.ParentIssueID, parentIssueID)
 		}
 		if created.ExecutorType == nil || *created.ExecutorType != "agent" || created.ExecutorID == nil || *created.ExecutorID != workerID {
-			t.Fatalf("created child assignee = (%v, %v), want (agent, %s)", created.ExecutorType, created.ExecutorID, workerID)
+			t.Fatalf("created child executor = (%v, %v), want (agent, %s)", created.ExecutorType, created.ExecutorID, workerID)
 		}
 
 		var queued int
@@ -102,7 +102,7 @@ func TestCreateIssue_AutomationLeaderAssignsPrivateWorker(t *testing.T) {
 		).Want(http.StatusCreated).JSON(&created)
 		cleanupAutomationChildIssue(t, created.ID)
 		if created.ExecutorType == nil || *created.ExecutorType != "team" || created.ExecutorID == nil || *created.ExecutorID != teamID {
-			t.Fatalf("created child assignee = (%v, %v), want (team, %s)", created.ExecutorType, created.ExecutorID, teamID)
+			t.Fatalf("created child executor = (%v, %v), want (team, %s)", created.ExecutorType, created.ExecutorID, teamID)
 		}
 
 		var taskCount int
@@ -174,7 +174,7 @@ func TestCreateIssue_AutomationLeaderAssignsPrivateWorker(t *testing.T) {
 		).Want(http.StatusForbidden)
 	})
 
-	t.Run("cross-workspace parent is rejected before assignee authorization", func(t *testing.T) {
+	t.Run("cross-workspace parent is rejected before executor authorization", func(t *testing.T) {
 		workerID, ownerID, _ := privateAgentTestFixture(t)
 		fx := newAutomationDelegationFixture(t, workerID, ownerID, "automation")
 		teamID := dbfx.Team(t, "Automation Cross-Workspace Team", workerID)
@@ -185,20 +185,20 @@ func TestCreateIssue_AutomationLeaderAssignsPrivateWorker(t *testing.T) {
 		})
 
 		for _, target := range []struct {
-			name, assigneeType, assigneeID string
+			name, executorType, executorID string
 		}{
-			{name: "agent", assigneeType: "agent", assigneeID: workerID},
-			{name: "team", assigneeType: "team", assigneeID: teamID},
+			{name: "agent", executorType: "agent", executorID: workerID},
+			{name: "team", executorType: "team", executorID: teamID},
 		} {
 			t.Run(target.name, func(t *testing.T) {
 				resp := testutil.Call(t, testHandler.CreateIssue,
-					automationChildIssueRequest(t, target.assigneeType, target.assigneeID, foreignParentID, "backlog", fx.LeaderAgentID, fx.LeaderTaskID),
+				automationChildIssueRequest(t, target.executorType, target.executorID, foreignParentID, "backlog", fx.LeaderAgentID, fx.LeaderTaskID),
 				).Want(http.StatusBadRequest)
 				if !strings.Contains(resp.Text(), "parent issue not found in this workspace") {
 					t.Fatalf("cross-workspace parent rejection = %q, want workspace boundary error", resp.Text())
 				}
 
-				title := "automation private-assignee child " + t.Name()
+				title := "automation private-executor child " + t.Name()
 				if count := dbfx.Count(t, `SELECT count(*) FROM issue WHERE workspace_id = $1 AND title = $2`, testWorkspaceID, title); count != 0 {
 					t.Fatalf("cross-workspace parent rejection created %d issue rows", count)
 				}

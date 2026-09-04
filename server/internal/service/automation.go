@@ -631,7 +631,7 @@ func dispatchFailReasonCode(err error) dispatch.ReasonCode {
 //
 // When the automation is assigned to a team (Path A from MUL-2429), the
 // created issue inherits executor_type='team' + executor_id=team. The
-// existing issue listener chain (shouldEnqueueTeamLeaderOnAssign →
+// existing issue listener chain (shouldEnqueueTeamLeaderOnExecutor →
 // enqueueTeamLeaderTask) then routes the work to the team leader, exactly
 // as a human manually assigning the issue to that team would.
 //
@@ -762,7 +762,7 @@ func (s *AutomationService) dispatchCreateIssue(ctx context.Context, ap db.Autom
 
 	// Publish issue:created so the existing event chain fires
 	// (subscriber listeners, activity listeners, notification listeners). For
-	// team automations, this is what triggers shouldEnqueueTeamLeaderOnAssign
+	// team automations, this is what triggers shouldEnqueueTeamLeaderOnExecutor
 	// → enqueueTeamLeaderTask — no separate team-routing code needed here.
 	prefix := s.getIssuePrefix(ap.WorkspaceID)
 	s.Bus.Publish(events.Event{

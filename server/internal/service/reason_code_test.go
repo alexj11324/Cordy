@@ -88,7 +88,7 @@ func TestAgentReadinessVerdict(t *testing.T) {
 	}
 }
 
-// The notice is the only thing a user sees when an assignment or an
+// The notice is the only thing a user sees when executor routing or an
 // agent-authored mention is refused, so it has to carry the repair command when
 // there is one and stay actionable when there is not.
 func TestRuntimeUnusableNotice(t *testing.T) {

@@ -673,14 +673,14 @@ func (r *Router) processClaimed(ctx context.Context, set ResolverSet, msg channe
 		// One lookup feeds both the broadcast payload's identifier and the
 		// chat reply's.
 		prefix := r.issuePrefix(ctx, inst.WorkspaceID)
-		var assignedRunFireAt time.Time
+		var executorRunFireAt time.Time
 		if resolveMedia {
 			// The generic deferred-task sweeper is the crash fallback. Leave room
 			// after the media deadline for the bounded attachment finalizer so it
 			// cannot race an issue agent reading the newly-created issue.
-			assignedRunFireAt = localMediaDeadline.Add(mediaFinalizeTimeout)
+			executorRunFireAt = localMediaDeadline.Add(mediaFinalizeTimeout)
 		}
-		issueRes, err := r.createIssue(ctx, inst, set.OriginType, identity.UserID, sessionID, *appendRes.IssueCommand, prefix, assignedRunFireAt)
+		issueRes, err := r.createIssue(ctx, inst, set.OriginType, identity.UserID, sessionID, *appendRes.IssueCommand, prefix, executorRunFireAt)
 		if errors.Is(err, service.ErrActiveDuplicate) && issueRes.DuplicateIssue != nil {
 			duplicate := *issueRes.DuplicateIssue
 			res.IssueID = duplicate.ID
@@ -703,13 +703,13 @@ func (r *Router) processClaimed(ctx context.Context, set ResolverSet, msg channe
 		}
 		res.IssueID = issueRes.Issue.ID
 		mediaIssue = issueRes.Issue
-		deferredIssueTaskID = issueRes.AssignedTaskID
+		deferredIssueTaskID = issueRes.ExecutorTaskID
 		res.IssueNumber = issueRes.Issue.Number
 		res.IssueTitle = issueRes.Issue.Title
 		// Same renderer the broadcast payload uses, so a degraded prefix can't
 		// show the chat "#42" while the realtime list shows "-42".
 		res.IssueIdentifier = service.IssueIdentifier(prefix, issueRes.Issue.Number)
-		// IssueService.Create already enqueues the assigned agent's issue task.
+		// IssueService.Create already enqueues the issue executor's task.
 		// Scheduling the command as a chat run too makes the agent execute the
 		// same /issue input again. A synchronous issue command is terminal.
 		if resolveMedia {
@@ -1180,7 +1180,7 @@ func (r *Router) drop(ctx context.Context, set ResolverSet, msg channel.InboundM
 	return Result{Outcome: OutcomeDropped, DropReason: reason, InstallationID: instID}
 }
 
-func (r *Router) createIssue(ctx context.Context, inst ResolvedInstallation, originType string, creatorUserID, sessionID pgtype.UUID, cmd IssueCommand, issuePrefix string, assignedRunFireAt time.Time) (service.IssueCreateResult, error) {
+func (r *Router) createIssue(ctx context.Context, inst ResolvedInstallation, originType string, creatorUserID, sessionID pgtype.UUID, cmd IssueCommand, issuePrefix string, executorRunFireAt time.Time) (service.IssueCreateResult, error) {
 	if cmd.Title == "" {
 		return service.IssueCreateResult{}, ErrEmptyIssueTitle
 	}
@@ -1206,7 +1206,7 @@ func (r *Router) createIssue(ctx context.Context, inst ResolvedInstallation, ori
 	// IssueResponse that handler path broadcasts, so clients see one issue
 	// shape regardless of which entry point created the issue.
 	opts := service.IssueCreateOpts{
-		AssignedAgentRunFireAt: assignedRunFireAt,
+		ExecutorRunFireAt: executorRunFireAt,
 		BroadcastPayload: func(issue db.Issue, _ []db.Attachment, _ []db.IssueLabel) map[string]any {
 			// Plain IssueToMap is authoritative here: this path always creates
 			// with the built-in "todo" above, and a built-in status IS its own

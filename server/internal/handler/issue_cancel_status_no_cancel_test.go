@@ -57,7 +57,7 @@ func TestUpdateIssueCancelStatusDoesNotCancelActiveTasks(t *testing.T) {
 
 	for i, status := range activeTaskStatuses {
 		t.Run(status, func(t *testing.T) {
-			issueID := insertAgentAssignedIssue(t, ownerAgent, 92130+i, "cancel-status-no-cancel-"+status)
+			issueID := insertAgentExecutorIssue(t, ownerAgent, 92130+i, "cancel-status-no-cancel-"+status)
 			ownerTask := insertIssueTaskWithStatus(t, ownerAgent, issueID, status)
 			mentionTask := insertRunningIssueTask(t, mentionAgent, issueID)
 
@@ -72,7 +72,7 @@ func TestUpdateIssueCancelStatusDoesNotCancelActiveTasks(t *testing.T) {
 			}
 
 			if got := taskStatus(t, ownerTask); got != status {
-				t.Fatalf("assignee's %s task must survive issue → cancelled, got status %q", status, got)
+				t.Fatalf("executor's %s task must survive issue → cancelled, got status %q", status, got)
 			}
 			if got := taskStatus(t, mentionTask); got != "running" {
 				t.Fatalf("unrelated agent's task must survive issue → cancelled, got status %q", got)
@@ -95,7 +95,7 @@ func TestBatchUpdateIssueCancelStatusDoesNotCancelActiveTasks(t *testing.T) {
 	issueIDs := make([]string, 0, len(activeTaskStatuses))
 	taskByStatus := make(map[string]string, len(activeTaskStatuses))
 	for i, status := range activeTaskStatuses {
-		issueID := insertAgentAssignedIssue(t, ownerAgent, 92140+i, "batch-cancel-status-no-cancel-"+status)
+		issueID := insertAgentExecutorIssue(t, ownerAgent, 92140+i, "batch-cancel-status-no-cancel-"+status)
 		taskByStatus[status] = insertIssueTaskWithStatus(t, ownerAgent, issueID, status)
 		issueIDs = append(issueIDs, issueID)
 	}

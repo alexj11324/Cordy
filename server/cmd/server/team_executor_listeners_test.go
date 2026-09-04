@@ -70,7 +70,7 @@ func TestTeamExecutorListenersSkipUnsupportedRecipientWrites(t *testing.T) {
 	issue := handler.IssueResponse{
 		ID:           issueID,
 		WorkspaceID:  testWorkspaceID,
-		Title:        "team-assigned issue",
+		Title:        "team-executor issue",
 		Status:       "todo",
 		Priority:     "medium",
 		CreatorType:  "member",
@@ -112,7 +112,7 @@ func TestTeamExecutorListenersSkipUnsupportedRecipientWrites(t *testing.T) {
 		"SQLSTATE 23514",
 	} {
 		if strings.Contains(issueLogs, unexpected) {
-			t.Fatalf("team assignment attempted an unsupported recipient write (%q):\n%s", unexpected, issueLogs)
+		t.Fatalf("team executor routing attempted an unsupported recipient write (%q):\n%s", unexpected, issueLogs)
 		}
 	}
 

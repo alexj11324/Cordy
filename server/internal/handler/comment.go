@@ -1828,7 +1828,7 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 			// The task.IssueID scope is important: the CLI stamps X-Task-ID on
 			// every request, so an agent legitimately commenting on a different
 			// issue must not be blocked by its current task's trigger.
-			// Assignment-triggered tasks (no TriggerCommentID) are also
+			// Executor-triggered tasks (no TriggerCommentID) are also
 			// unaffected.
 			if task.IssueID.Valid && uuidToString(task.IssueID) == uuidToString(issue.ID) {
 				if task.TriggerCommentID.Valid {
@@ -2688,12 +2688,12 @@ func (h *Handler) computeCommentAgentTriggers(ctx context.Context, issue db.Issu
 		// conversation routing (parent-author / thread-root continuation) or
 		// the member executor fallback. They retain one narrow path restored
 		// after MUL-3794 (MUL-3879): a worker-agent result comment on a
-		// team-assigned issue can still wake the assigned team leader, so
+		// team-executor issue can still wake the team executor's leader, so
 		// the leader→worker→leader coordination loop stays closed. The leader
 		// self-trigger guard lives in
 		// routeTeamExecutorLeaderFallback. Explicit @agent / @team mentions
 		// are already handled above, so this never double-enqueues a mentioned
-		// target alongside the assigned leader.
+		// target alongside the executor's leader.
 		if issue.ExecutorType.Valid && issue.ExecutorType.String == "team" {
 			if trigger, ok := h.routeTeamExecutorLeaderFallback(ctx, issue, actorType, actorID, opts); ok {
 				return []commentAgentTrigger{trigger}, nil

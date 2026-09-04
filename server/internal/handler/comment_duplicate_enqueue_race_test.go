@@ -18,7 +18,7 @@ const (
 	dupRaceHeadB = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 )
 
-// dupRaceFixture creates a workspace-invocable agent and an issue assigned to it.
+// dupRaceFixture creates a workspace-invocable agent and an issue executed by it.
 func dupRaceFixture(t *testing.T, agentName string, issueNumber int) (agentID, issueID, runtimeID string) {
 	t.Helper()
 	ctx := context.Background()

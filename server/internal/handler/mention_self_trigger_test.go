@@ -23,7 +23,7 @@ func enqueueMentionedAgentTasksForTest(t *testing.T, ctx context.Context, issue 
 // the behavior we want post-MUL-2338:
 //
 //   - cross-issue self-mention enqueues (child→parent handoff between issues
-//     assigned to the same agent must not be swallowed)
+//     executed by the same agent must not be swallowed)
 //   - same-issue self-mention with an in-flight running task enqueues a
 //     follow-up (queue coalescing already allows this — the comment handler
 //     must not pre-empt it with an extra in-thread guard)
@@ -153,7 +153,7 @@ func countQueuedOrDispatched(t *testing.T, agentID, issueID string) int {
 // TestEnqueueMentionedAgentTasks_SelfMentionCrossIssueEnqueues is the
 // regression test for the MUL-2338 child→parent handoff. The same agent runs
 // in a child issue, then posts a top-level comment on the parent issue (whose
-// assignee is the same agent) that @mentions itself. The comment handler MUST
+// executor is the same agent) that @mentions itself. The comment handler MUST
 // enqueue a task on the parent issue — silently dropping the trigger was the
 // bug Bohan reported.
 func TestEnqueueMentionedAgentTasks_SelfMentionCrossIssueEnqueues(t *testing.T) {

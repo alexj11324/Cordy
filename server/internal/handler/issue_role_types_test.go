@@ -23,7 +23,7 @@ func TestListIssues_RoleTypesFilter(t *testing.T) {
 	var projectID string
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO project (workspace_id, title) VALUES ($1, $2) RETURNING id
-	`, testWorkspaceID, fmt.Sprintf("Assignee Types %d", suffix)).Scan(&projectID); err != nil {
+	`, testWorkspaceID, fmt.Sprintf("Issue Role Types %d", suffix)).Scan(&projectID); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
 	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM project WHERE id = $1`, projectID) })
@@ -36,7 +36,7 @@ func TestListIssues_RoleTypesFilter(t *testing.T) {
 		)
 		VALUES ($1, $2, '', 'cloud', '{}'::jsonb, $3, 'workspace', 1, $4)
 		RETURNING id
-	`, testWorkspaceID, fmt.Sprintf("Assignee Types Agent %d", suffix), testRuntimeID, testUserID).Scan(&agentID); err != nil {
+	`, testWorkspaceID, fmt.Sprintf("Issue Role Types Agent %d", suffix), testRuntimeID, testUserID).Scan(&agentID); err != nil {
 		t.Fatalf("create agent: %v", err)
 	}
 	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM agent WHERE id = $1`, agentID) })
@@ -64,7 +64,7 @@ func TestListIssues_RoleTypesFilter(t *testing.T) {
 	memberType, agentType := "member", "agent"
 	memberIssue := insertIssue(fmt.Sprintf("at-member-%d", suffix), &memberType, &testUserID, nil, nil)
 	agentIssue := insertIssue(fmt.Sprintf("at-agent-%d", suffix), nil, nil, &agentType, &agentID)
-	unassignedIssue := insertIssue(fmt.Sprintf("at-none-%d", suffix), nil, nil, nil, nil)
+	withoutExecutorIssue := insertIssue(fmt.Sprintf("at-none-%d", suffix), nil, nil, nil, nil)
 
 	list := func(query string) (ids []string, total int64) {
 		path := fmt.Sprintf("/api/issues?workspace_id=%s&project_id=%s&limit=500%s",
@@ -89,7 +89,7 @@ func TestListIssues_RoleTypesFilter(t *testing.T) {
 
 	// Baseline: every project issue comes back without the filter.
 	allIDs, allTotal := list("")
-	for _, want := range []string{memberIssue, agentIssue, unassignedIssue} {
+	for _, want := range []string{memberIssue, agentIssue, withoutExecutorIssue} {
 		if !containsIssueID(allIDs, want) {
 			t.Fatalf("baseline list missing %s — all=%v", want, allIDs)
 		}
@@ -98,12 +98,12 @@ func TestListIssues_RoleTypesFilter(t *testing.T) {
 		t.Fatalf("baseline total: want 3, got %d", allTotal)
 	}
 
-	// Members tab: only member-assigned issues, and total agrees.
+	// Members tab: only member-owned issues, and total agrees.
 	memberIDs, memberTotal := list("&owner_types=member")
 	if !containsIssueID(memberIDs, memberIssue) {
 		t.Fatalf("member filter missing %s — got %v", memberIssue, memberIDs)
 	}
-	if containsIssueID(memberIDs, agentIssue) || containsIssueID(memberIDs, unassignedIssue) {
+	if containsIssueID(memberIDs, agentIssue) || containsIssueID(memberIDs, withoutExecutorIssue) {
 		t.Fatalf("member filter leaked non-member issues: %v", memberIDs)
 	}
 	if memberTotal != 1 {
@@ -111,12 +111,12 @@ func TestListIssues_RoleTypesFilter(t *testing.T) {
 	}
 
 	// Agents tab: agent+team kinds — team has no rows here, param must
-	// still parse and return the agent-assigned issue only.
+	// still parse and return the agent-executor issue only.
 	agentIDs, agentTotal := list("&executor_types=agent,team")
 	if !containsIssueID(agentIDs, agentIssue) {
 		t.Fatalf("agent filter missing %s — got %v", agentIssue, agentIDs)
 	}
-	if containsIssueID(agentIDs, memberIssue) || containsIssueID(agentIDs, unassignedIssue) {
+	if containsIssueID(agentIDs, memberIssue) || containsIssueID(agentIDs, withoutExecutorIssue) {
 		t.Fatalf("agent filter leaked non-agent issues: %v", agentIDs)
 	}
 	if agentTotal != 1 {

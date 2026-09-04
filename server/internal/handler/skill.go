@@ -76,7 +76,7 @@ type SkillSummaryResponse struct {
 
 // AgentSkillSummary is the still-narrower shape used for skills embedded in
 // an Agent payload (`GET /api/agents`, `GET /api/agents/{id}`). The agent
-// list batch query only joins enough columns to render the assignee chip in
+// list batch query only joins enough columns to render the executor chip in
 // the UI; the standalone `/api/agents/{id}/skills` endpoint returns the full
 // SkillSummaryResponse for callers that need the source/origin info.
 type AgentSkillSummary struct {

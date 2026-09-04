@@ -323,7 +323,7 @@ func TestPromoteDueDeferred_CancelsSupersededRetry(t *testing.T) {
 }
 
 // TestPromoteDueDeferred_LeavesNonRetryDeferredRowsAlone bounds the cancellation
-// above. Assignee-fallback escalations are deferred rows that are SUPPOSED to
+// above. Executor-fallback escalations are deferred rows that are SUPPOSED to
 // coexist with an active primary task — they own their own fire_at lifecycle and
 // exist precisely to fire when the primary goes quiet. Cancelling those would
 // silently disable escalation, so the sweep is scoped to auto-retry clones.
@@ -378,9 +378,9 @@ func taskStatusByID(t *testing.T, id string) string {
 	return status
 }
 
-// TestFailTaskAndRerunConcurrently_NonAssigneeTarget runs the same race as
+// TestFailTaskAndRerunConcurrently_NonExecutorTarget runs the same race as
 // TestFailTaskAndRerunConcurrently_NeverStrandsRunningTask, but for a rerun whose
-// target is NOT the issue's current agent assignee — a past task re-fired by
+// target is NOT the issue's current agent executor — a past task re-fired by
 // task_id after the issue was reassigned.
 //
 // That routes the enqueue through enqueueMentionTaskWithCommentPlan, which
@@ -388,25 +388,25 @@ func taskStatusByID(t *testing.T, id string) string {
 // instead of surfacing the pgconn error. The reclaim branch has to recognise that
 // shape too, otherwise every team-leader / displaced-agent / mentioned-agent
 // rerun losing this race reports a hard failure to the operator.
-func TestFailTaskAndRerunConcurrently_NonAssigneeTarget(t *testing.T) {
+func TestFailTaskAndRerunConcurrently_NonExecutorTarget(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
 	}
 	ctx := context.Background()
 
-	runtimeID := dbfx.Runtime(t, "non-assignee-race-runtime")
-	assigneeID := dbfx.Agent(t, "non-assignee-race-current", runtimeID)
-	displacedID := dbfx.Agent(t, "non-assignee-race-displaced", runtimeID)
+	runtimeID := dbfx.Runtime(t, "non-executor-race-runtime")
+	executorID := dbfx.Agent(t, "non-executor-race-current", runtimeID)
+	displacedID := dbfx.Agent(t, "non-executor-race-displaced", runtimeID)
 	issueID := dbfx.Issue(t, "rerun a displaced agent while it fails", testutil.Cols{
 		"executor_type": "agent",
-		"executor_id":   assigneeID,
+		"executor_id":   executorID,
 	})
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(), `DELETE FROM agent_task_queue WHERE issue_id = $1`, issueID)
 	})
 
 	// The execution-log row the operator clicks retry on: it belonged to the
-	// displaced agent, so the rerun targets that agent rather than the assignee.
+	// displaced agent, so the rerun targets that agent rather than the executor.
 	sourceTaskID := dbfx.Task(t, displacedID, testutil.Cols{
 		"issue_id":   issueID,
 		"runtime_id": runtimeID,
@@ -445,7 +445,7 @@ func TestFailTaskAndRerunConcurrently_NonAssigneeTarget(t *testing.T) {
 			t.Fatalf("round %d: FailTask must never abort on slot contention: %v", i, failErr)
 		}
 		if rerunErr != nil {
-			t.Fatalf("round %d: a non-assignee rerun must reclaim the slot, not surface the normalized sentinel: %v", i, rerunErr)
+			t.Fatalf("round %d: a non-executor rerun must reclaim the slot, not surface the normalized sentinel: %v", i, rerunErr)
 		}
 		if got := taskStatusByID(t, runningID); got != "failed" {
 			t.Fatalf("round %d: parent must commit as failed, got %q", i, got)

@@ -33,8 +33,9 @@ func unavailableHostedWorkspacePolicy() hostedWorkspacePolicy {
 }
 
 // resolveHostedWorkspacePolicy reads Cloud before a database transaction is
-// opened. One existing owned workspace supplies the account-scoped policy;
-// the guaranteed two-workspace Free allowance needs no synthetic workspace.
+// opened. Cloud's policy is account-scoped, so one stable representative among
+// the user's owned workspaces is sufficient; the guaranteed two-workspace Free
+// allowance needs no synthetic workspace.
 func (h *Handler) resolveHostedWorkspacePolicy(ctx context.Context, userID pgtype.UUID) hostedWorkspacePolicy {
 	if !isOfficialCloudDeployment() {
 		return hostedWorkspacePolicy{action: entitlement.ActionObserve}

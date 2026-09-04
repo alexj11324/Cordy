@@ -909,12 +909,12 @@ func runAutomationTriggerDelete(cmd *cobra.Command, args []string) error {
 func resolveAutomationSubscriberInputs(ctx context.Context, client *cli.APIClient, refs []string) ([]map[string]string, error) {
 	inputs := make([]map[string]string, 0, len(refs))
 	seen := map[string]struct{}{}
-	memberOnly := assigneeKinds{member: true}
+	memberOnly := actorKinds{member: true}
 	for _, ref := range refs {
 		if strings.TrimSpace(ref) == "" {
 			return nil, fmt.Errorf("--subscriber cannot be empty")
 		}
-		userType, userID, err := resolveAssignee(ctx, client, ref, memberOnly)
+		userType, userID, err := resolveActor(ctx, client, ref, memberOnly)
 		if err != nil {
 			return nil, fmt.Errorf("resolve subscriber %q: %w", ref, err)
 		}

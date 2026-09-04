@@ -301,8 +301,12 @@ components:
         - description
         - status
         - priority
-        - assignee_type
-        - assignee_id
+        - owner_type
+        - owner_id
+        - executor_type
+        - executor_id
+        - reviewer_type
+        - reviewer_id
         - creator_type
         - creator_id
         - parent_issue_id
@@ -327,8 +331,12 @@ components:
         status: { type: string }
         status_category: { type: string }
         priority: { type: string }
-        assignee_type: { type: [string, "null"] }
-        assignee_id: { type: [string, "null"] }
+        owner_type: { type: [string, "null"] }
+        owner_id: { type: [string, "null"] }
+        executor_type: { type: [string, "null"] }
+        executor_id: { type: [string, "null"] }
+        reviewer_type: { type: [string, "null"] }
+        reviewer_id: { type: [string, "null"] }
         creator_type: { type: string }
         creator_id: { type: string }
         parent_issue_id: { type: [string, "null"] }

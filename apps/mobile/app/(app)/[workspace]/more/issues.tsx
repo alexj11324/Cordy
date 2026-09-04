@@ -97,14 +97,12 @@ export default function IssuesPage() {
   // category the server already resolved onto each issue. (MUL-6243)
   const catalog = useIssueStatuses();
 
-  const allIssues = data ?? [];
-
   // Scope pre-filter — mirrors roleFiltersForActorKind() in web. Applied
   // before status/priority filtering so chip filters operate on the visible
   // slice. Owner and executor are independent roles; do not coalesce them.
   const scopedIssues = useMemo(() => {
-    return filterIssuesByScope(allIssues, scope);
-  }, [allIssues, scope]);
+    return filterIssuesByScope(data ?? [], scope);
+  }, [data, scope]);
 
   const filtered = useMemo(
     () => filterIssues(scopedIssues, statusFilters, priorityFilters),

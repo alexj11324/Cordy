@@ -57,8 +57,8 @@ func TestConsecutiveCommentsMergeNotDropped(t *testing.T) {
 		t.Skip("no database connection")
 	}
 	agentID := getAgentID(t)
-	issueID := createIssueAssignedToAgent(t, "Merge-not-drop test", agentID)
-	clearTasks(t, issueID) // drop the assignment task so we start clean
+	issueID := createIssueWithAgentExecutor(t, "Merge-not-drop test", agentID)
+	clearTasks(t, issueID) // drop the executor task so we start clean
 	t.Cleanup(func() {
 		clearTasks(t, issueID)
 		resp := authRequest(t, "DELETE", "/api/issues/"+issueID, nil)
@@ -201,8 +201,8 @@ func TestMergeCommentIntoPendingTask_RecomputesOriginatorAndSkipsDispatched(t *t
 	queries := db.New(testPool)
 
 	agentID := getAgentID(t)
-	issueID := createIssueAssignedToAgent(t, "Merge recompute test", agentID)
-	clearTasks(t, issueID) // drop the assignment task so we start clean
+	issueID := createIssueWithAgentExecutor(t, "Merge recompute test", agentID)
+	clearTasks(t, issueID) // drop the executor task so we start clean
 	t.Cleanup(func() {
 		clearTasks(t, issueID)
 		resp := authRequest(t, "DELETE", "/api/issues/"+issueID, nil)
@@ -314,7 +314,7 @@ func taskOriginator(t *testing.T, issueID, agentID string) string {
 // TestMergeCommentIntoPendingTask_TargetsQueuedNotDeferred is the MUL-4195
 // round-4 regression test. When a `(issue, agent)` pair has BOTH an older
 // queued task (the run about to be claimed) and a newer deferred
-// assignee-fallback task, a new comment's merge must land on the QUEUED task —
+// executor-fallback task, a new comment's merge must land on the QUEUED task —
 // the one that will actually run next — not the newer deferred fallback. An
 // earlier `status IN ('queued','deferred') ORDER BY created_at DESC` target
 // picked the deferred row, so the comment missed the imminent run and the
@@ -329,7 +329,7 @@ func TestMergeCommentIntoPendingTask_TargetsQueuedNotDeferred(t *testing.T) {
 	queries := db.New(testPool)
 
 	agentID := getAgentID(t)
-	issueID := createIssueAssignedToAgent(t, "Merge target queued-vs-deferred test", agentID)
+	issueID := createIssueWithAgentExecutor(t, "Merge target queued-vs-deferred test", agentID)
 	clearTasks(t, issueID)
 	t.Cleanup(func() {
 		clearTasks(t, issueID)
@@ -356,7 +356,7 @@ func TestMergeCommentIntoPendingTask_TargetsQueuedNotDeferred(t *testing.T) {
 	`, agentID, runtimeID, issueID, cidQueued).Scan(&queuedTaskID); err != nil {
 		t.Fatalf("seed queued task: %v", err)
 	}
-	// ... and a NEWER deferred assignee-fallback task for the same (issue, agent).
+	// ... and a NEWER deferred executor-fallback task for the same (issue, agent).
 	var deferredTaskID string
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO agent_task_queue (agent_id, runtime_id, issue_id, trigger_comment_id, status, priority, created_at, fire_at)

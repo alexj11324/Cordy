@@ -91,7 +91,7 @@ func setupSweeperTestFixture(t *testing.T, taskStatus string) (string, string, s
 		t.Fatalf("failed to find test agent: %v", err)
 	}
 
-	// Create an issue assigned to the agent
+	// Create an issue executed by the agent
 	var issueID string
 	err = testPool.QueryRow(ctx, `
 		INSERT INTO issue (workspace_id, title, status, priority, creator_type, creator_id, executor_type, executor_id)
@@ -1041,7 +1041,7 @@ func TestSweepDoesNotResetIssueAlreadyInReview(t *testing.T) {
 // become expirable once that runtime has been silent past the reconnect grace.
 // A third phase covers the other direction: liveness alone is not enough
 // either, because enqueue binds a task to its agent's runtime without checking
-// that the runtime is up. A task assigned to an already-dead runtime must still
+// that the runtime is up. A task routed to an already-dead runtime must still
 // get its own full grace to wait, or assigning an issue to a laptop that is
 // closed overnight fails inside one sweep tick.
 // A runtime_offline retry stays exempt throughout; FailExpiredRuntimeReconnectRetries owns its exit.

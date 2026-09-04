@@ -103,9 +103,9 @@ func TestBuildQuickCreatePromptLargestAcceptedSourceContextFitsBudget(t *testing
 
 func TestIssuePromptsKeepSourceContextRuleOutOfPerTurnMessage(t *testing.T) {
 	const rule = "If the issue JSON contains `source_context`"
-	assignment := buildPromptBody(Task{IssueID: "issue-1"}, "claude")
+	executorPrompt := buildPromptBody(Task{IssueID: "issue-1"}, "claude")
 	comment := buildCommentPrompt(Task{IssueID: "issue-1", TriggerCommentID: "comment-1"}, "claude")
-	if strings.Contains(assignment, rule) || strings.Contains(comment, rule) {
+	if strings.Contains(executorPrompt, rule) || strings.Contains(comment, rule) {
 		t.Fatal("source-context precedence rule must live in the cache-stable runtime brief, not per-turn prompts")
 	}
 }
@@ -1030,7 +1030,7 @@ func TestBuildChatPromptSlashSkills(t *testing.T) {
 
 // TestBuildPromptDefaultScansRootsFirst pins that the catch-all fallback
 // prompt (no trigger comment, no chat, no automation, no quick-create)
-// starts assignment-triggered comment catch-up with a bounded roots scan and
+// starts executor-triggered comment catch-up with a bounded roots scan and
 // only then offers the full-thread read, while still keeping older history
 // available through pagination.
 func TestBuildPromptDefaultScansRootsFirst(t *testing.T) {
@@ -1064,13 +1064,13 @@ func TestBuildPromptDefaultScansRootsFirst(t *testing.T) {
 		}
 	}
 	// The legacy "If you need comment history" soft phrasing conflicts with
-	// the assignment-trigger runtime workflow, which treats reading comments
+	// the executor-trigger runtime workflow, which treats reading comments
 	// as mandatory. Guard against it sneaking back in.
 	if strings.Contains(out, "If you need comment history") {
 		t.Errorf("default BuildPrompt still carries the legacy 'If you need' soft phrasing that conflicts with the mandatory workflow\n--- output ---\n%s", out)
 	}
 	if strings.Contains(out, "patchbay issue comment list issue-default-1 --output json") {
-		t.Errorf("default BuildPrompt still presents the unbounded flat read as the assignment catch-up command\n--- output ---\n%s", out)
+		t.Errorf("default BuildPrompt still presents the unbounded flat read as the executor catch-up command\n--- output ---\n%s", out)
 	}
 }
 
@@ -1687,9 +1687,9 @@ func TestPerTurnContextBlocksOmittedWhenEmpty(t *testing.T) {
 	}
 }
 
-// An assignment-triggered run carries the initiator too — it is not a
+// An executor-triggered run carries the initiator too — it is not a
 // comment-path-only block.
-func TestPerTurnContextBlocksOnAssignmentPath(t *testing.T) {
+func TestPerTurnContextBlocksOnExecutorPath(t *testing.T) {
 	t.Parallel()
 
 	prompt := BuildPrompt(Task{
@@ -1698,7 +1698,7 @@ func TestPerTurnContextBlocksOnAssignmentPath(t *testing.T) {
 		InitiatorName: "GPT-Boy",
 	}, "claude")
 	if !strings.Contains(prompt, "initiated by **GPT-Boy**, another agent in this workspace") {
-		t.Errorf("assignment-triggered prompt lost the initiator block\n---\n%s", prompt)
+		t.Errorf("executor-triggered prompt lost the initiator block\n---\n%s", prompt)
 	}
 }
 
@@ -1717,8 +1717,8 @@ func TestTurnModeMarkersRetired(t *testing.T) {
 	}{
 		{"comment-triggered with content", Task{IssueID: "issue-1", TriggerCommentID: "c-1", TriggerCommentContent: "please look"}},
 		{"comment-triggered with EMPTY content", Task{IssueID: "issue-1", TriggerCommentID: "c-1"}},
-		{"assignment-triggered", Task{IssueID: "issue-1"}},
-		{"assignment-triggered with handoff note", Task{IssueID: "issue-1", HandoffNote: "start with the API"}},
+		{"executor-triggered", Task{IssueID: "issue-1"}},
+		{"executor-triggered with handoff note", Task{IssueID: "issue-1", HandoffNote: "start with the API"}},
 		{"chat", Task{ChatSessionID: "chat-1"}},
 		{"quick-create", Task{QuickCreatePrompt: "make an issue"}},
 		{"automation", Task{AutomationRunID: "run-1"}},

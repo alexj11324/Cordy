@@ -23,9 +23,9 @@ func insertRunningIssueTask(t *testing.T, agentID, issueID string) string {
 	return taskID
 }
 
-// insertAgentAssignedIssue inserts an issue assigned to the given agent and
+// insertAgentExecutorIssue inserts an issue executed by the given agent and
 // returns its id, registering cleanup.
-func insertAgentAssignedIssue(t *testing.T, agentID string, number int, title string) string {
+func insertAgentExecutorIssue(t *testing.T, agentID string, number int, title string) string {
 	t.Helper()
 	var issueID string
 	if err := testPool.QueryRow(context.Background(), `
@@ -40,8 +40,8 @@ func insertAgentAssignedIssue(t *testing.T, agentID string, number int, title st
 }
 
 // TestUpdateIssueReassignDoesNotCancelActiveTasks locks in the #4963 / MUL-4113
-// decision: changing an issue's assignee cancels nothing. Both the previous
-// assignee's own in-flight run and an unrelated (mention-triggered) run for a
+// decision: changing an issue's executor cancels nothing. Both the previous
+// executor's own in-flight run and an unrelated (mention-triggered) run for a
 // different agent must survive the reassignment.
 func TestUpdateIssueReassignDoesNotCancelActiveTasks(t *testing.T) {
 	if testHandler == nil {
@@ -51,11 +51,11 @@ func TestUpdateIssueReassignDoesNotCancelActiveTasks(t *testing.T) {
 	ownerAgent := createHandlerTestAgent(t, "ReassignNoCancelOwner", []byte("[]"))
 	mentionAgent := createHandlerTestAgent(t, "ReassignNoCancelMention", []byte("[]"))
 
-	issueID := insertAgentAssignedIssue(t, ownerAgent, 92110, "reassign-no-cancel")
+	issueID := insertAgentExecutorIssue(t, ownerAgent, 92110, "reassign-no-cancel")
 	ownerTask := insertRunningIssueTask(t, ownerAgent, issueID)
 	mentionTask := insertRunningIssueTask(t, mentionAgent, issueID)
 
-	// Reassign from ownerAgent to a member — a genuine assignee change that
+	// Reassign from ownerAgent to a member — a genuine executor change that
 	// does not itself enqueue a new agent run.
 	w := httptest.NewRecorder()
 	req := newRequest("PUT", "/api/issues/"+issueID, map[string]any{
@@ -69,7 +69,7 @@ func TestUpdateIssueReassignDoesNotCancelActiveTasks(t *testing.T) {
 	}
 
 	if got := taskStatus(t, ownerTask); got != "running" {
-		t.Fatalf("previous assignee's own task must survive reassignment, got status %q", got)
+		t.Fatalf("previous executor's own task must survive executor change, got status %q", got)
 	}
 	if got := taskStatus(t, mentionTask); got != "running" {
 		t.Fatalf("unrelated agent's task must survive reassignment (no collateral cancel), got status %q", got)
@@ -87,7 +87,7 @@ func TestBatchUpdateIssueReassignDoesNotCancelActiveTasks(t *testing.T) {
 	ownerAgent := createHandlerTestAgent(t, "BatchReassignNoCancelOwner", []byte("[]"))
 	mentionAgent := createHandlerTestAgent(t, "BatchReassignNoCancelMention", []byte("[]"))
 
-	issueID := insertAgentAssignedIssue(t, ownerAgent, 92111, "batch-reassign-no-cancel")
+	issueID := insertAgentExecutorIssue(t, ownerAgent, 92111, "batch-reassign-no-cancel")
 	ownerTask := insertRunningIssueTask(t, ownerAgent, issueID)
 	mentionTask := insertRunningIssueTask(t, mentionAgent, issueID)
 
@@ -105,7 +105,7 @@ func TestBatchUpdateIssueReassignDoesNotCancelActiveTasks(t *testing.T) {
 	}
 
 	if got := taskStatus(t, ownerTask); got != "running" {
-		t.Fatalf("previous assignee's own task must survive batch reassignment, got status %q", got)
+		t.Fatalf("previous executor's own task must survive batch executor change, got status %q", got)
 	}
 	if got := taskStatus(t, mentionTask); got != "running" {
 		t.Fatalf("unrelated agent's task must survive batch reassignment, got status %q", got)
@@ -126,9 +126,9 @@ func queuedTaskCountFor(t *testing.T, issueID, agentID string) int {
 }
 
 // TestUpdateIssueReassignToAgentKeepsOldTaskAndEnqueuesNew covers the core
-// handoff path the member-target tests above do not: reassigning from one agent
-// to ANOTHER agent. The previous assignee's in-flight run must survive (the
-// #4963 / MUL-4113 no-cancel guarantee), and the new assignee must still get
+// handoff path the member-target tests above do not: changing from one agent
+// to ANOTHER agent. The previous executor's in-flight run must survive (the
+// #4963 / MUL-4113 no-cancel guarantee), and the new executor must still get
 // its run enqueued by WillEnqueueRun — the two effects are independent.
 func TestUpdateIssueReassignToAgentKeepsOldTaskAndEnqueuesNew(t *testing.T) {
 	if testHandler == nil {
@@ -138,10 +138,10 @@ func TestUpdateIssueReassignToAgentKeepsOldTaskAndEnqueuesNew(t *testing.T) {
 	ownerAgent := createHandlerTestAgent(t, "ReassignAgentToAgentOwner", []byte("[]"))
 	newAgent := createHandlerTestAgent(t, "ReassignAgentToAgentNew", []byte("[]"))
 
-	issueID := insertAgentAssignedIssue(t, ownerAgent, 92112, "reassign-agent-to-agent")
+	issueID := insertAgentExecutorIssue(t, ownerAgent, 92112, "reassign-agent-to-agent")
 	ownerTask := insertRunningIssueTask(t, ownerAgent, issueID)
 
-	// Reassign from ownerAgent to newAgent — an agent→agent ownership handoff.
+	// Reassign from ownerAgent to newAgent — an agent→agent executor handoff.
 	w := httptest.NewRecorder()
 	req := newRequest("PUT", "/api/issues/"+issueID, map[string]any{
 		"executor_type": "agent",
@@ -157,6 +157,6 @@ func TestUpdateIssueReassignToAgentKeepsOldTaskAndEnqueuesNew(t *testing.T) {
 		t.Fatalf("previous agent's own task must survive agent→agent reassignment, got status %q", got)
 	}
 	if got := queuedTaskCountFor(t, issueID, newAgent); got != 1 {
-		t.Fatalf("new assignee must get exactly one run enqueued, got %d queued tasks", got)
+		t.Fatalf("new executor must get exactly one run enqueued, got %d queued tasks", got)
 	}
 }

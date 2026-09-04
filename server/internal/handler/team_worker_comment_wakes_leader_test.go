@@ -12,7 +12,7 @@ import (
 // TestCreateComment_WorkerAgentCommentWakesTeamLeader_MUL4015 pins the
 // full CreateComment behavior for the scenario reported in MUL-4015:
 //
-//   - Issue is assigned to a team (leader L).
+//   - Issue is executed by a team (leader L).
 //   - L delegates work by @-mentioning a distinct worker agent W. That
 //     triggers a task for W (leader→worker handoff).
 //   - W completes its work and posts a plain "done" comment via CreateComment
@@ -190,7 +190,7 @@ func TestCreateComment_WorkerAgentCommentDoesNotWakeLeader_WhenLeaderTaskPending
 //     source_task_id is invalid.
 //   - W runs, W posts a "done" comment. invokeOriginatorFromRequest returns ""
 //     (W's task originator is NULL).
-//   - routeAssignedTeamLeaderFallback calls canInvokeAgent(L, "agent", W, "").
+//   - routeTeamExecutorLeaderFallback calls canInvokeAgent(L, "agent", W, "").
 //     For a private leader that fails closed: effectiveUser is empty and
 //     L.OwnerID != "".
 //   - Leader is never woken → the leader→worker→leader loop stays broken.
@@ -242,8 +242,8 @@ func TestCreateComment_WorkerAgentCommentWakesPrivateTeamLeader_MUL4015(t *testi
 		testPool.Exec(context.Background(), `DELETE FROM team WHERE id = $1`, teamID)
 	})
 
-	// Issue assigned to the team, created by M (testUserID). CreatorType=member
-	// keeps the assign-time originator resolution to M.
+	// Issue executed by the team, created by M (testUserID). CreatorType=member
+	// keeps the executor-set-time originator resolution to M.
 	var issueID string
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO issue (workspace_id, creator_type, creator_id, title, executor_type, executor_id)
@@ -321,7 +321,7 @@ func TestCreateComment_WorkerAgentCommentWakesPrivateTeamLeader_MUL4015(t *testi
 	}
 
 	// Now the worker posts a "done" comment. This must wake the private
-	// leader via routeAssignedTeamLeaderFallback → canInvokeAgent(L, "agent",
+	// leader via routeTeamExecutorLeaderFallback → canInvokeAgent(L, "agent",
 	// W, originator=M): the effective user M matches L.OwnerID so the
 	// private-only gate opens.
 	//

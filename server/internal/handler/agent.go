@@ -477,7 +477,7 @@ type AgentTaskResponse struct {
 	QuickCreateDueDate       string                 `json:"quick_create_due_date,omitempty"`       // explicit calendar due date selected in quick-create
 	QuickCreateAttachmentIDs []string               `json:"quick_create_attachment_ids,omitempty"` // attachment ids uploaded in the quick-create prompt and bound on issue create
 	QuickCreateSourceContext json.RawMessage        `json:"quick_create_source_context,omitempty"` // immutable historical context for source-context quick-create
-	HandoffNote              string                 `json:"handoff_note,omitempty"`                // assignment handoff instruction; rendered into the run's opening prompt + issue_context.md (omitempty so old daemons ignore it)
+	HandoffNote              string                 `json:"handoff_note,omitempty"`                // executor handoff instruction; rendered into the run's opening prompt + issue_context.md (omitempty so old daemons ignore it)
 	TeamID                   string                 `json:"team_id,omitempty"`                     // for quick-create tasks where the picker was a team; Agent is still the resolved leader
 	TeamName                 string                 `json:"team_name,omitempty"`                   // display name for the picker team
 	ParentIssueID            string                 `json:"parent_issue_id,omitempty"`             // for quick-create tasks opened from "Add sub issue" — UUID of the parent issue the new issue should be filed under
@@ -688,7 +688,7 @@ type ChatAttachmentMeta struct {
 // into a not-yet-started run (MUL-4195) so the daemon can embed it directly in
 // the prompt. The earlier merge path only shipped comment IDs plus a
 // "they are in the triggering thread" hint, which is WRONG when the folded
-// comments span multiple threads (an issue's assignee can be triggered from
+// comments span multiple threads (an issue's executor can be triggered from
 // different threads). Shipping thread_id / author / created_at / content lets
 // the prompt address each folded comment without assuming a single thread or
 // relying on a `--recent N` window that may not cover them all. The mirror
@@ -961,7 +961,7 @@ func basename(p string) string {
 // no extra DB lookup is needed: chat / automation / comment-on-issue (any
 // triggered task with both an issue_id and trigger_comment_id) / quick_create
 // (no linked source — the agent is creating the issue itself) / direct
-// (assignee-driven task on an existing issue).
+// (executor-driven task on an existing issue).
 func computeTaskKind(t db.AgentTaskQueue) string {
 	if uuidToString(t.ChatSessionID) != "" {
 		return "chat"
@@ -2553,8 +2553,10 @@ func (h *Handler) ListWorkspaceWorkingAgents(w http.ResponseWriter, r *http.Requ
 		}
 		switch mineRelation {
 		case "assigned", "created", "involved", "any":
+			// The public "assigned" relation means direct member ownership;
+			// executor membership is represented by "involved".
 		default:
-			writeError(w, http.StatusBadRequest, "invalid relation: must be assigned, created, involved, or any")
+			writeError(w, http.StatusBadRequest, "invalid relation: must be assigned (owned), created, involved, or any")
 			return
 		}
 		userID, ok := requireUserID(w, r)

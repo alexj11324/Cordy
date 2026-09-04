@@ -196,12 +196,12 @@ func deleteTestIssue(t *testing.T, id string) {
 // A single batch that finishes sub-issues spanning multiple stages must
 // evaluate the parent stage barrier ONCE against the batch's final committed
 // state, not per-child mid-batch. The mid-batch behaviour fired one comment per
-// intermediate stage, pinned the parent assignee's wake to a stale "advance the
+// intermediate stage, pinned the parent executor's wake to a stale "advance the
 // next stage" instruction, and produced order-dependent output. These tests
 // lock in the aggregated behaviour: at most one accurate comment + one wake per
 // parent, identical regardless of issue_ids order.
 
-// stagedBatchFixture is a parent (agent-assigned, in_progress) with two ordered
+// stagedBatchFixture is a parent (agent-executor, in_progress) with two ordered
 // stages of two in_progress children each, so a single batch that finishes all
 // four exercises the cross-stage barrier aggregation.
 type stagedBatchFixture struct {
@@ -231,7 +231,7 @@ func newStagedBatchFixture(t *testing.T) stagedBatchFixture {
 
 	// Assign the parent to the ready test agent via direct SQL so the child-done
 	// wake actually enqueues a task we can pin to the final comment — without the
-	// assignment trigger queuing an unrelated task at setup.
+	// executor trigger queuing an unrelated task at setup.
 	var agentID string
 	if err := testPool.QueryRow(context.Background(),
 		`SELECT id FROM agent WHERE workspace_id = $1 AND name = $2`,
@@ -239,7 +239,7 @@ func newStagedBatchFixture(t *testing.T) stagedBatchFixture {
 	).Scan(&agentID); err != nil {
 		t.Fatalf("locate test agent: %v", err)
 	}
-	setIssueAssigneeDirect(t, parent.ID, "agent", agentID)
+	setIssueRoleDirect(t, parent.ID, "agent", agentID)
 
 	mkChild := func(stage int32) IssueResponse {
 		cw := httptest.NewRecorder()
@@ -327,7 +327,7 @@ func triggerCommentIDForAgentTask(t *testing.T, issueID, agentID string) string 
 // TestBatchChildDoneCrossStage_OneComment is the MUL-4155 core. A single batch
 // that finishes children across two stages must produce exactly ONE accurate
 // system comment on the parent — announcing the highest stage closed by the
-// final state, never a stale "Stage 2 is next" — and the parent assignee's
+// final state, never a stale "Stage 2 is next" — and the parent executor's
 // single wake must be pinned to that final comment, regardless of id order.
 func TestBatchChildDoneCrossStage_OneComment(t *testing.T) {
 	assertFinal := func(t *testing.T, parentID, agentID string) {

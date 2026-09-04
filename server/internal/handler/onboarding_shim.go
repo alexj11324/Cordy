@@ -73,7 +73,7 @@ const onboardingAssistantInstructions = `You are Patchbay Helper, the built-in A
 
 ## What Patchbay is
 
-Patchbay is an open-source, AI-native team workspace (source: https://github.com/patchbay-ai/patchbay). The core idea: AI agents are treated as real teammates — they get assigned issues on a kanban-style board, comment in threads, change status, and run code, exactly like human members. You can also chat directly with agents (chat), group them into teams, and run scheduled or triggered automation (automation).
+Patchbay is an open-source, AI-native team workspace (source: https://github.com/patchbay-ai/patchbay). The core idea: AI agents are treated as real teammates — they execute issues on a kanban-style board, comment in threads, change status, and run code, exactly like human members. You can also chat directly with agents (chat), group them into teams, and run scheduled or triggered automation (automation).
 
 For concept details (workspace / issue / project / agent / runtime / skill / team / automation / inbox / chat session): fetch https://patchbay.aspectlylabs.com/docs via WebFetch — that's authoritative. For the "why" or implementation, fetch the GitHub repo above. Never paraphrase concepts from memory.
 
@@ -96,7 +96,7 @@ Be concise and direct, like a colleague. Respond in the user's language (Chinese
 
 const onboardingIssueDescription = `Welcome to Patchbay.
 
-This is your guided first run. Patchbay Helper is assigned to this issue and will help you try the core workflow:
+This is your guided first run. Patchbay Helper is the executor for this issue and will help you try the core workflow:
 
 1. Read Patchbay Helper's first comment.
 2. Reply with something you want to build, fix, write, or plan.
@@ -129,7 +129,7 @@ type bootstrapOnboardingNoRuntimeResponse struct {
 // BootstrapOnboardingRuntime — DEPRECATED, kept for desktop < v3.
 //
 // Creates or reuses one "Patchbay Helper" agent on the supplied runtime,
-// creates or reuses one onboarding issue assigned to it, then marks the
+// creates or reuses one onboarding issue with it as executor, then marks the
 // user onboarded. Single transaction.
 func (h *Handler) BootstrapOnboardingRuntime(w http.ResponseWriter, r *http.Request) {
 	userID, ok := requireUserID(w, r)
@@ -329,7 +329,7 @@ func (h *Handler) BootstrapOnboardingRuntime(w http.ResponseWriter, r *http.Requ
 			uuidToString(assistant.ID), "", "", analytics.SourceOnboarding,
 			platform,
 		))
-		if h.shouldEnqueueAgentTask(r.Context(), issue) {
+		if h.shouldEnqueueExecutorTask(r.Context(), issue) {
 			h.TaskService.EnqueueTaskForIssue(r.Context(), issue)
 		}
 	}
@@ -353,7 +353,7 @@ func (h *Handler) BootstrapOnboardingRuntime(w http.ResponseWriter, r *http.Requ
 
 // BootstrapOnboardingNoRuntime — DEPRECATED, kept for desktop < v3.
 //
-// Creates or reuses one "install a runtime" guide issue (assigned to the
+// Creates or reuses one "install a runtime" guide issue (owned by the
 // member themselves) and marks onboarding complete. The user explicitly
 // skipped the runtime step, so we unconditionally seed regardless of any
 // pre-existing runtime on the workspace.
@@ -516,7 +516,7 @@ func enNoRuntimeIssueDescription() string {
 		"1. Create a project for your current work.",
 		"2. Create a few issues and move them across backlog, todo, in_progress, and done.",
 		"3. Add priorities, labels, comments, and subscriptions.",
-		"4. Use Inbox to track assignments and mentions.",
+		"4. Use Inbox to track issue routing and mentions.",
 		"",
 		"That gives you the project-management layer first. Once a runtime is connected, agents can start working from the same issues.",
 		"",

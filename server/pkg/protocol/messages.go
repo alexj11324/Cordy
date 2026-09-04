@@ -83,7 +83,7 @@ type Message struct {
 	Payload json.RawMessage `json:"payload"`
 }
 
-// TaskDispatchPayload is sent from server to daemon when a task is assigned.
+// TaskDispatchPayload is sent from server to daemon when a task is routed.
 type TaskDispatchPayload struct {
 	TaskID      string `json:"task_id"`
 	IssueID     string `json:"issue_id"`

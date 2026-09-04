@@ -479,7 +479,7 @@ type DeleteIssueParams struct {
 // itself is correctly untouched, but the links are already gone) — the exact
 // cross-tenant leak the #1661 guard above exists to prevent.
 //
-// Coordination outbox and assignment rows are operational state without
+// Coordination outbox and executor-routing rows are operational state without
 // foreign keys to issue. Remove only the rows for this workspace-scoped target
 // in this same statement, before the issue becomes invisible. This preserves
 // task history and leaves normal worker retry semantics unchanged when the
@@ -889,7 +889,7 @@ type GetIssueByOriginParams struct {
 // Finds the issue stamped with a specific (origin_type, origin_id) pair.
 // Used by quick-create completion to deterministically locate the issue
 // produced by a given agent_task_queue.id — robust against concurrent
-// issue creates by the same agent (assignment task + quick-create both
+// issue creates by the same agent (executor task + quick-create both
 // running with max_concurrent_tasks > 1).
 func (q *Queries) GetIssueByOrigin(ctx context.Context, arg GetIssueByOriginParams) (Issue, error) {
 	row := q.db.QueryRow(ctx, getIssueByOrigin, arg.WorkspaceID, arg.OriginType, arg.OriginID)
@@ -1198,13 +1198,13 @@ WHERE i.workspace_id = $1
   AND ($12::jsonb IS NULL OR i.metadata @> $12::jsonb)
   AND (
     $13::uuid IS NULL
-    -- (1) assignee is an agent owned by the user
+    -- (1) executor is an agent owned by the user
     OR (i.executor_type = 'agent' AND i.executor_id IN (
           SELECT a.id FROM agent a
            WHERE a.workspace_id = $1
              AND a.owner_id     = $13::uuid
     ))
-    -- (2)(3)(4) assignee is a team related to the user — three relations
+    -- (2)(3)(4) executor is a team related to the user — three relations
     OR (i.executor_type = 'team' AND i.executor_id IN (
           -- (2) the user is a human member of the team
           SELECT sm.team_id
@@ -1286,12 +1286,12 @@ type ListIssuesRow struct {
 	Revision       int64              `json:"revision"`
 }
 
-// involves_user_id widens the assignee filter to surface issues where the user
-// is *indirectly* the assignee — via an owned agent or a team they belong to /
+// involves_user_id widens the executor filter to surface issues where the user
+// is *indirectly* the executor — via an owned agent or a team they belong to /
 // lead / have an agent inside. The semantics intentionally exclude direct
 // member ownership (`owner_type='member' AND owner_id=involves_user_id`)
 // because that is already the meaning of the `owner_id` filter (tab 1
-// "Assigned to me"), and the two filters must produce disjoint result sets.
+// "Owned by me"), and the two filters must produce disjoint result sets.
 func (q *Queries) ListIssues(ctx context.Context, arg ListIssuesParams) ([]ListIssuesRow, error) {
 	rows, err := q.db.Query(ctx, listIssues,
 		arg.WorkspaceID,
@@ -1503,7 +1503,7 @@ type ListOpenIssuesRow struct {
 }
 
 // See ListIssues for the semantics of involves_user_id (mirrors the 4-branch
-// filter; member-direct assignment is intentionally excluded).
+// filter; member-direct ownership is intentionally excluded).
 func (q *Queries) ListOpenIssues(ctx context.Context, arg ListOpenIssuesParams) ([]ListOpenIssuesRow, error) {
 	rows, err := q.db.Query(ctx, listOpenIssues,
 		arg.WorkspaceID,
@@ -1690,7 +1690,7 @@ type MarkIssueFirstExecutedRow struct {
 // Flips first_executed_at from NULL to now() atomically. Returns the row if
 // this was the first time the issue was executed; no rows otherwise. The
 // analytics issue_executed event fires exactly when this returns a row —
-// retries and re-assignments hit the WHERE clause and no-op.
+// retries and executor changes hit the WHERE clause and no-op.
 func (q *Queries) MarkIssueFirstExecuted(ctx context.Context, id pgtype.UUID) (MarkIssueFirstExecutedRow, error) {
 	row := q.db.QueryRow(ctx, markIssueFirstExecuted, id)
 	var i MarkIssueFirstExecutedRow

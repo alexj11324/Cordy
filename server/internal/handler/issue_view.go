@@ -29,6 +29,9 @@ const issueViewsPerOwnerMax = 100
 
 var (
 	validIssueViewScopeTypes        = []string{"workspace", "my", "project"}
+	// "assigned" is the existing saved-view/API spelling for the member-owner
+	// relation. Keep the wire value stable while keeping its role semantics
+	// explicit at the server boundary.
 	validIssueViewMyVariants        = []string{"assigned", "created", "involved", "any"}
 	validIssueViewWorkspaceVariants = []string{"members", "agents"}
 	validIssueViewVisibilities      = []string{"private", "workspace"}
@@ -36,7 +39,7 @@ var (
 
 // validateIssueViewVariant returns the pgtype value for a scope_variant
 // input under the given scope_type, or ok=false when the pairing is
-// invalid. Workspace and project variants are optional assignee-type
+// invalid. Workspace and project variants are optional role-type
 // narrowing (NULL = the unrestricted All tab); my variants are required.
 func validateIssueViewVariant(scopeType string, variant *string) (pgtype.Text, bool) {
 	switch scopeType {

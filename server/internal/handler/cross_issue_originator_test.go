@@ -141,7 +141,7 @@ func agentAssigns(t *testing.T, agentID, taskID, issueID, targetAgentID string) 
 	))
 }
 
-// agentCreatesSubIssue creates a `todo` sub-issue assigned to targetAgentID, which
+// agentCreatesSubIssue creates a `todo` sub-issue executed by targetAgentID, which
 // dispatches that agent immediately — the third way the report saw the chain fail.
 // The title is unique per target so the active-duplicate guard never masks the
 // authorization outcome this asserts.

@@ -264,11 +264,11 @@ func TestIssueTableWorkingIssueIDsAreExplicitAndRoleIndependent(t *testing.T) {
 		t.Errorf("working-issue predicate = %q, want issue-id membership", compiled.where)
 	}
 	if strings.Contains(compiled.where, "i.executor_id") {
-		t.Fatalf("working-issue predicate must not filter issue assignees: %q", compiled.where)
+		t.Fatalf("working-issue predicate must not filter issue role actors: %q", compiled.where)
 	}
 }
 
-func TestIssueTableWorkingIssueProjectionMatchesTaskIssuesNotAssignees(t *testing.T) {
+func TestIssueTableWorkingIssueProjectionMatchesTaskIssuesNotRoleActors(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
 	}
@@ -290,15 +290,15 @@ func TestIssueTableWorkingIssueProjectionMatchesTaskIssuesNotAssignees(t *testin
 		t.Fatalf("reserve issue numbers: %v", err)
 	}
 
-	insertIssue := func(title string, number int, assigneeType string, assigneeID any) string {
+	insertIssue := func(title string, number int, roleType string, roleID any) string {
 		t.Helper()
 		var issueID string
 		var ownerType, executorType any
 		var ownerID, executorID any
-		if assigneeType == "member" {
-			ownerType, ownerID = assigneeType, assigneeID
+		if roleType == "member" {
+			ownerType, ownerID = roleType, roleID
 		} else {
-			executorType, executorID = assigneeType, assigneeID
+			executorType, executorID = roleType, roleID
 		}
 		if err := testPool.QueryRow(ctx, `
 			INSERT INTO issue (
@@ -326,14 +326,14 @@ func TestIssueTableWorkingIssueProjectionMatchesTaskIssuesNotAssignees(t *testin
 		return issueID
 	}
 
-	assignedOnlyIssueID := insertIssue(
-		"assigned to working agent but not being edited",
+	executorOnlyIssueID := insertIssue(
+		"executed by working agent but not being edited",
 		finalNumber-2,
 		"agent",
 		workingAgentID,
 	)
 	editedIssueID := insertIssue(
-		"being edited by working agent but assigned to member",
+		"being edited by working agent but owned by member",
 		finalNumber-1,
 		"member",
 		testUserID,
@@ -418,8 +418,8 @@ func TestIssueTableWorkingIssueProjectionMatchesTaskIssuesNotAssignees(t *testin
 	if _, ok := gotIssueIDs[otherAgentIssueID]; !ok {
 		t.Errorf("missing issue edited by other working agent: %s", otherAgentIssueID)
 	}
-	if _, ok := gotIssueIDs[assignedOnlyIssueID]; ok {
-		t.Errorf("included assigned-only issue without a running task: %s", assignedOnlyIssueID)
+	if _, ok := gotIssueIDs[executorOnlyIssueID]; ok {
+		t.Errorf("included executor-only issue without a running task: %s", executorOnlyIssueID)
 	}
 
 	empty := listRows([]string{})
@@ -1060,8 +1060,8 @@ func TestIssueTableExecutorNamesResolveAfterGrouping(t *testing.T) {
 			creator_type, creator_id, position, number, project_id
 		)
 		VALUES
-			($1, 'Assigned row', 'todo', 'none', 'member', $2, 'agent', $3, 'member', $2, 1, $4, $5),
-			($1, 'Unassigned row', 'todo', 'none', NULL, NULL, NULL, NULL, 'member', $2, 2, $4 + 1, $5)
+			($1, 'Owned and executed row', 'todo', 'none', 'member', $2, 'agent', $3, 'member', $2, 1, $4, $5),
+			($1, 'No executor row', 'todo', 'none', NULL, NULL, NULL, NULL, 'member', $2, 2, $4 + 1, $5)
 	`, testWorkspaceID, testUserID, agentID, finalNumber-1, projectID); err != nil {
 		t.Fatalf("seed issues: %v", err)
 	}

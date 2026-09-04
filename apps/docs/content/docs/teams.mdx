@@ -19,25 +19,25 @@ When the scope is clear, assign directly to the matching [agent](/agents).
 
 | Setting | What it does |
 |---|---|
-| **Leader** | Must be an agent. Receives work assigned to the team and decides how to handle it. |
+| **Leader** | Must be an agent. Receives work routed to the team executor and decides how to handle it. |
 | **Members** | Can be agents or human members. The same member can join multiple teams. |
 | **Role descriptions** | Tell the leader what work each member is suited for. Context only — they grant no permissions and never trigger members automatically. |
 | **Team instructions** | Hold routing rules, collaboration norms, and team-wide background. Provided to the leader only. |
 
 Creating a team requires a name and a leader. The team leader automatically becomes a member; you can then add more members and fill in role descriptions and team instructions.
 
-## Execution flow after assignment
+## Execution flow after setting a team executor
 
 When a non-Backlog issue has a team executor, Patchbay immediately enqueues a `task` for the **leader agent** (not for every member). The flow then looks like this:
 
-1. **Leader claims the task.** The agent runtime picks up the task on its next poll, same as any other agent assignment.
+1. **Leader claims the task.** The agent runtime picks up the task on its next poll, same as any other executor run.
 2. **Leader is briefed.** On claim, Patchbay appends three sections to the leader's system prompt — see [What the leader sees on every turn](#what-the-leader-sees-on-every-turn) below.
 3. **Leader posts one delegation comment.** The comment `@`-mentions the chosen member(s) using the exact mention markdown from the roster — that mention triggers a new `task` for each mentioned agent.
 4. **Leader records its evaluation** via `patchbay team activity <issue-id> action --reason "..."`. This writes an entry to the issue's activity timeline so humans can see the leader actually evaluated the trigger.
-5. **The dispatch turn leaves the parent `in_progress`.** Same agent-managed status contract as a direct agent assignment — coordinating the team is working the parent's ask, so the parent moves from `todo` to `in_progress`, and dispatching members is not delivery, so it stays there while the team works.
+5. **The dispatch turn leaves the parent `in_progress`.** Same agent-managed status contract as a direct executor run — coordinating the team is working the parent's ask, so the parent moves from `todo` to `in_progress`, and dispatching members is not delivery, so it stays there while the team works.
 6. **Leader stops.** The leader does not do the implementation itself. When the delegated member posts back — or when a sub-issue / stage barrier closes — the leader is re-triggered to read the update and either delegate the next step, escalate, move the parent to `in_review` once the overall goal is met, or stay silent. `done` is left to a human reviewer or existing integrations (for example a PR with close intent that merges).
 
-If the issue is in **Backlog**, the leader is not triggered — Backlog is a parking lot, same rule as for direct agent assignment.
+If the issue is in **Backlog**, the leader is not triggered — Backlog is a parking lot, same rule as for a direct agent executor.
 
 ### What the leader sees on every turn
 
@@ -80,7 +80,7 @@ Dedup applies on top of these rules: if the leader already has a `queued` or `di
 
 Adding an agent to a team does not bypass its [Access](/agents#permissions-and-access). When regular members create or manage teams, they can only pick agents they are allowed to run.
 
-Whether a member can assign or @-mention a team also depends on whether they can run the team's leader. If the leader is archived, or the current member isn't allowed to run it, the team can't be assigned or @-mentioned.
+Whether a member can set a team as executor or @-mention it also depends on whether they can run the team's leader. If the leader is archived, or the current member isn't allowed to run it, the team can't be selected as executor or @-mentioned.
 
 ## Creation and management permissions
 

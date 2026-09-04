@@ -14,7 +14,7 @@ import (
 // side of the MUL-3730 fix: when a comment @mentions a team, the leader task
 // it enqueues must carry team_id on the task row, so the daemon claim handler
 // can locate the team and inject the briefing (keyed off is_leader_task +
-// team_id, not issue assignee). The issue here is NOT assigned to the team —
+// team_id, not issue executor). The issue here is NOT executed by the team —
 // exactly the comment-mention path that the old issue-executor gate missed.
 func TestCreateComment_TeamMentionStampsTeamIDOnLeaderTask(t *testing.T) {
 	if testHandler == nil || testPool == nil {
@@ -39,7 +39,7 @@ func TestCreateComment_TeamMentionStampsTeamIDOnLeaderTask(t *testing.T) {
 	}
 	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM team WHERE id = $1`, teamID) })
 
-	// Issue assigned to nobody (definitely not the team) — the leader task is
+	// Issue without an executor (definitely not the team) — the leader task is
 	// produced purely by the @team comment mention.
 	var issueID string
 	if err := testPool.QueryRow(ctx, `

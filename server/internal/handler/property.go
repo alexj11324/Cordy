@@ -78,7 +78,7 @@ var errClientRejected = errors.New("client rejected")
 // date", and "due_date" are all rejected.
 var reservedPropertyNames = map[string]struct{}{
 	"status": {}, "priority": {}, "owner": {}, "executor": {}, "reviewer": {},
-	"assignee": {}, "project": {}, "parent": {},
+	"project": {}, "parent": {},
 	"stage": {}, "label": {}, "labels": {}, "start_date": {}, "due_date": {},
 	"title": {}, "description": {}, "creator": {}, "created_at": {}, "updated_at": {},
 	"metadata": {}, "properties": {},

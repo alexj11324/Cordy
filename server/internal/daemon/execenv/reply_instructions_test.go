@@ -262,9 +262,9 @@ func TestWindowsCommentReplyInstructionsHaveNoStdin(t *testing.T) {
 	}
 }
 
-// TestInjectRuntimeConfigWindowsAssignmentBriefStaysFileOnly pins the PR #3654
-// review fix: on Windows, the ASSIGNMENT-triggered brief must never *recommend*
-// `--content-stdin`. Unlike the comment-trigger path, the assignment workflow
+// TestInjectRuntimeConfigWindowsExecutorBriefStaysFileOnly pins the PR #3654
+// review fix: on Windows, the EXECUTOR-triggered brief must never *recommend*
+// `--content-stdin`. Unlike the comment-trigger path, the executor workflow
 // has no BuildCommentReplyInstructions override, so an agent that follows the
 // "post your final results" step literally would pipe its final comment through
 // PowerShell and drop non-ASCII bytes (#2198 / #2236 / #2376). The OS-aware
@@ -273,12 +273,12 @@ func TestWindowsCommentReplyInstructionsHaveNoStdin(t *testing.T) {
 // stdin. The flag synopsis may still *list* `--content-stdin` as available.
 //
 // Not parallel: mutates the package-level runtimeGOOS.
-func TestInjectRuntimeConfigWindowsAssignmentBriefStaysFileOnly(t *testing.T) {
+func TestInjectRuntimeConfigWindowsExecutorBriefStaysFileOnly(t *testing.T) {
 	saved := runtimeGOOS
 	t.Cleanup(func() { runtimeGOOS = saved })
 	runtimeGOOS = "windows"
 
-	// Assignment-triggered: IssueID set, no TriggerCommentID.
+	// Executor-triggered: IssueID set, no TriggerCommentID.
 	ctx := TaskContextForEnv{IssueID: "issue-1"}
 
 	for _, provider := range []string{"claude", "codex", "opencode"} {

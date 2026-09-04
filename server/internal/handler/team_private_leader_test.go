@@ -9,7 +9,7 @@ import (
 )
 
 // TestCreateIssue_TeamPrivateLeader_PlainMemberBlocked verifies that a
-// plain member cannot create an issue assigned to a team whose leader is
+// plain member cannot create an issue executed by a team whose leader is
 // a private agent.
 func TestCreateIssue_TeamPrivateLeader_PlainMemberBlocked(t *testing.T) {
 	if testHandler == nil || testPool == nil {
@@ -44,7 +44,7 @@ func TestCreateIssue_TeamPrivateLeader_PlainMemberBlocked(t *testing.T) {
 }
 
 // TestUpdateIssue_TeamPrivateLeader_PlainMemberBlocked verifies that a
-// plain member cannot update an issue's assignee to a private-leader team.
+// plain member cannot update an issue's executor to a private-leader team.
 func TestUpdateIssue_TeamPrivateLeader_PlainMemberBlocked(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
@@ -65,7 +65,7 @@ func TestUpdateIssue_TeamPrivateLeader_PlainMemberBlocked(t *testing.T) {
 		testPool.Exec(context.Background(), `DELETE FROM team WHERE id = $1`, teamID)
 	})
 
-	// Create an unassigned issue as workspace owner.
+	// Create an issue without an executor as workspace owner.
 	var issueID string
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO issue (workspace_id, creator_type, creator_id, title)
@@ -139,7 +139,7 @@ func TestCreateIssue_TeamPrivateLeader_OwnerAllowed(t *testing.T) {
 }
 
 // TestComment_TeamPrivateLeader_PlainMemberNoEnqueue verifies that a plain
-// member posting a comment on an issue assigned to a private-leader team
+// member posting a comment on an issue executed by a private-leader team
 // does NOT trigger the leader.
 func TestComment_TeamPrivateLeader_PlainMemberNoEnqueue(t *testing.T) {
 	if testHandler == nil || testPool == nil {
@@ -161,7 +161,7 @@ func TestComment_TeamPrivateLeader_PlainMemberNoEnqueue(t *testing.T) {
 		testPool.Exec(context.Background(), `DELETE FROM team WHERE id = $1`, teamID)
 	})
 
-	// Create issue assigned to the team as workspace owner.
+	// Create issue executed by the team as workspace owner.
 	var issueID string
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO issue (workspace_id, creator_type, creator_id, title, executor_type, executor_id)
@@ -201,10 +201,10 @@ func TestComment_TeamPrivateLeader_PlainMemberNoEnqueue(t *testing.T) {
 }
 
 // TestChildDone_TeamPrivateLeader_PlainMemberWakesLeader verifies that when
-// a plain member completes a child issue whose parent is assigned to a
+// a plain member completes a child issue whose parent is executed by a
 // private-leader team, the leader IS woken. Child-done no longer re-checks
 // leader invocation permission (MUL-4063 / GH #4928): the parent was already
-// assigned to the team — which passed the invocation gate — so waking that
+// executed by the team — which passed the invocation gate — so waking that
 // team's own leader to advance the next stage is a coordination handoff, not
 // a fresh invocation. This mirrors the ungated agent-parent path
 // (triggerChildDoneAgent); agent and team child-done now follow one path.
@@ -228,7 +228,7 @@ func TestChildDone_TeamPrivateLeader_PlainMemberWakesLeader(t *testing.T) {
 		testPool.Exec(context.Background(), `DELETE FROM team WHERE id = $1`, teamID)
 	})
 
-	// Create parent issue assigned to the team (as the AGENT OWNER, who is
+	// Create parent issue executed by the team (as the AGENT OWNER, who is
 	// allowed to invoke the private leader under MUL-3963).
 	w := httptest.NewRecorder()
 	r := newRequestAs(ownerID, "POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
@@ -254,7 +254,7 @@ func TestChildDone_TeamPrivateLeader_PlainMemberWakesLeader(t *testing.T) {
 	// Clear any tasks enqueued by the create.
 	testPool.Exec(ctx, `DELETE FROM agent_task_queue WHERE issue_id = $1`, parent.ID)
 
-	// Create a child issue via API (as workspace owner, with member assignee).
+	// Create a child issue via API (as workspace owner, with member owner).
 	w = httptest.NewRecorder()
 	r = newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
 		"title":           "child task",
@@ -328,7 +328,7 @@ func TestChildDone_TeamPrivateLeader_AgentActorWakesLeader(t *testing.T) {
 		testPool.Exec(context.Background(), `DELETE FROM team WHERE id = $1`, teamID)
 	})
 
-	// Parent assigned to the team by the agent owner (allowed under MUL-3963).
+	// Parent executed by the team, set by the agent owner (allowed under MUL-3963).
 	w := httptest.NewRecorder()
 	r := newRequestAs(ownerID, "POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
 		"title":         "parent with private-leader team (agent child-done)",
@@ -354,7 +354,7 @@ func TestChildDone_TeamPrivateLeader_AgentActorWakesLeader(t *testing.T) {
 	// only thing that can create one.
 	testPool.Exec(ctx, `DELETE FROM agent_task_queue WHERE issue_id = $1`, parent.ID)
 
-	// Child assigned to the worker agent, in progress.
+	// Child executed by the worker agent, in progress.
 	w = httptest.NewRecorder()
 	r = newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
 		"title":           "child task worked by an agent",
@@ -440,7 +440,7 @@ func TestComment_TeamPrivateLeader_AgentActorAllowed(t *testing.T) {
 		testPool.Exec(context.Background(), `DELETE FROM team WHERE id = $1`, teamID)
 	})
 
-	// Create issue assigned to the team.
+	// Create issue executed by the team.
 	var issueID string
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO issue (workspace_id, creator_type, creator_id, title, executor_type, executor_id)

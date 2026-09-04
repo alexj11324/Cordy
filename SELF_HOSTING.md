@@ -98,7 +98,7 @@ Changes to `ALLOW_SIGNUP`, `DISABLE_WORKSPACE_CREATION`, and `GOOGLE_CLIENT_ID` 
 
 ### Step 3 — Install CLI & Start Daemon
 
-The daemon runs on your local machine (not inside Docker). It detects installed AI agent CLIs, registers them with the server, and executes tasks when agents are assigned work.
+The daemon runs on your local machine (not inside Docker). It detects installed AI agent CLIs, registers them with the server, and executes tasks when agents receive routed executor work.
 
 Each team member who wants to run AI agents locally needs to:
 

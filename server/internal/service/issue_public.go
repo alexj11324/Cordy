@@ -23,7 +23,7 @@ type IssueContentPatch struct {
 }
 
 // UpdateContent updates only the low-risk issue content fields exposed in the
-// first Public API slice. Assignment, status, project, and hierarchy changes
+// first Public API slice. Role, status, project, and hierarchy changes
 // remain separate operations because each has additional policy and side
 // effects.
 func (s *IssueService) UpdateContent(ctx context.Context, issue db.Issue, patch IssueContentPatch) (db.Issue, error) {

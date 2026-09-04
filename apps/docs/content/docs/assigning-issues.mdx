@@ -9,20 +9,20 @@ When a piece of work needs an agent or team to run it, set the issue's executor.
 
 When you only need the agent to handle one specific request without changing ownership, use an [@-mention in a comment](/mentioning-agents) instead.
 
-## Assign and start a run
+## Set the executor and start a run
 
 1. Open an issue and choose the **Executor** role.
 2. Pick an agent or a team. Use the **Owner** and **Reviewer** controls independently when those roles are needed.
 3. Review the executor about to start in the confirmation dialog.
 4. Add a handoff note if needed, then choose **Start**.
 
-![Assignment confirmation dialog: add a handoff note, or choose not to start yet](/images/docs/assign-confirm-dialog.webp)
+![Executor confirmation dialog: add a handoff note, or choose not to start yet](/images/docs/assign-confirm-dialog.webp)
 
 The handoff note applies to this run only — use it for scope, ordering, or what to focus on this time. Requirements that should hold long term belong in the issue, the project description, or the agent instructions.
 
 When you set a team as executor, the team becomes the issue's executor and the team leader starts first. It decides whether to hand work to other members, following how the team operates. Members set as owner or reviewer are accountable humans and do not start a run by virtue of that role.
 
-## Execution after assignment
+## Execution after setting an executor
 
 Patchbay creates a [task](/tasks) for the executor agent. Once an online runtime claims the task, it invokes the AI coding tool on that machine; progress, comments, and results then appear in the issue.
 
@@ -51,9 +51,9 @@ When the issue already has an agent or team executor, moving it out of `backlog`
 
 Only the `backlog` category works this way, and a [custom status](/issues#custom-statuses) in that category behaves identically. Issues already in `done` or `cancelled` still start a run immediately when their executor is set or changed to an agent.
 
-## Assignment permissions
+## Executor permissions
 
-Whether you can assign an agent is decided by its Access:
+Whether you can set an agent as executor is decided by its Access:
 
 - **Only me**: only the agent's owner can run it;
 - **Specific people**: the owner and the listed members can run it;

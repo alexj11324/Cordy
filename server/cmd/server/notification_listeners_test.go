@@ -81,7 +81,7 @@ func newNotificationBus(t *testing.T, queries *db.Queries) *events.Bus {
 }
 
 // TestNotification_IssueCreated_RolesNotified verifies that distinct owner and
-// executor actors both receive an explicit assignment notification.
+// executor actors both receive an explicit issue-role notification.
 func TestNotification_IssueCreated_RolesNotified(t *testing.T) {
 	queries := db.New(testPool)
 	bus := newNotificationBus(t, queries)

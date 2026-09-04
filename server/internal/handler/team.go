@@ -501,18 +501,18 @@ func (h *Handler) DeleteTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Transfer issues assigned to this team to the leader agent.
-	if err := h.Queries.TransferTeamAssignees(r.Context(), db.TransferTeamAssigneesParams{
+	// Transfer issue executors pointing at this team to the leader agent.
+	if err := h.Queries.TransferIssueExecutors(r.Context(), db.TransferIssueExecutorsParams{
 		ExecutorID:   team.ID,
 		ExecutorID_2: team.LeaderID,
 	}); err != nil {
-		slog.Warn("transfer team assignees failed", "team_id", uuidToString(team.ID), "error", err)
+		slog.Warn("transfer issue executors failed", "team_id", uuidToString(team.ID), "error", err)
 	}
 
 	// Mirror the issue-executor transfer for automations that target this
 	// team. Without this, automation.executor_id would still point at the
 	// archived team row and every subsequent dispatch would skip with
-	// "assignee team is archived" — visible to ops but useless to the
+	// "executor team is archived" — visible to ops but useless to the
 	// owner. Rewriting to the leader keeps the automation semantics
 	// unchanged (Path A from MUL-2429 is leader-only execution anyway).
 	if err := h.Queries.TransferTeamAutomationsToLeader(r.Context(), db.TransferTeamAutomationsToLeaderParams{
@@ -951,8 +951,8 @@ func (h *Handler) UpdateTeamMemberRole(w http.ResponseWriter, r *http.Request) {
 // The leader-turn check is task-provenance based (is_leader_task + team_id on
 // the X-Task-ID row), the SAME source the claim path uses to inject the team
 // briefing and the mandatory-recording instruction. The target issue's own
-// assignee is deliberately NOT consulted: leaders legitimately run on issues
-// that are not team-assigned. See MUL-6622 / GH #7487.
+// executor is deliberately NOT consulted: leaders legitimately run on issues
+// whose executor is not this team. See MUL-6622 / GH #7487.
 //
 // Two authorization gates, in this order: the caller must own the task, and must
 // still be the team's leader. The first is what makes it safe to quote the
@@ -979,13 +979,13 @@ func (h *Handler) RecordTeamLeaderEvaluation(w http.ResponseWriter, r *http.Requ
 	}
 
 	// Authority for "is this run a team leader turn" is the TASK ROW, not the
-	// target issue's assignee (MUL-6622 / GH #7487). is_leader_task + team_id
+	// target issue's executor (MUL-6622 / GH #7487). is_leader_task + team_id
 	// are stamped at enqueue time and are exactly what the claim path keys the
 	// team briefing and the mandatory-`team activity` instruction off
 	// (handler/daemon.go, daemon/prompt.go taskIsTeamLeader). Gating this
 	// endpoint on issue.executor_type == "team" instead made the recording
 	// call unsatisfiable on the paths where a leader legitimately runs on a
-	// non-team-assigned issue — a `@team` mention on an issue owned by a
+	// issue whose executor is not a team — a `@team` mention on an issue owned by a
 	// plain agent, or a leader task bound to a child issue — and because the
 	// no_action instruction forbids substituting a comment, the decision left
 	// no trace at all.
@@ -1029,7 +1029,7 @@ func (h *Handler) RecordTeamLeaderEvaluation(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	// Narrowing vs. the old behavior: a leader agent running a NON-leader task
-	// on a team-assigned issue (for example a same-team worker task) used to
+	// on an issue with a team executor (for example a same-team worker task) used to
 	// be accepted here. It is rejected now — it is not running as the leader,
 	// and the runtime only mandates this call when taskIsTeamLeader(task).
 	if !task.IsLeaderTask {
@@ -1126,7 +1126,7 @@ func (h *Handler) RecordTeamLeaderEvaluation(w http.ResponseWriter, r *http.Requ
 
 // shouldSuppressTeamLeaderSelfTrigger reports whether a team leader's own
 // comment should be blocked from re-enqueuing that same leader. The only
-// leader-authored non-leader task allowed to wake the assigned leader is a
+// leader-authored non-leader task allowed to wake the selected leader is a
 // same-team worker task; generic agent tasks such as direct mentions and
 // thread-parent replies are not worker-role proof and must not self-trigger.
 func (h *Handler) shouldSuppressTeamLeaderSelfTrigger(ctx context.Context, issueID, leaderID, teamID pgtype.UUID) bool {
@@ -1161,13 +1161,13 @@ func commentMentionsAnyone(content string) bool {
 // The team-leader assign/promotion readiness decision now lives in the single
 // service.IssueService.WillEnqueueRun predicate (MUL-3375), shared by the issue
 // write paths and the preview endpoint. The former handler-local mirrors
-// (shouldEnqueueTeamLeaderOnAssign / isTeamLeaderReady) were removed to stop
+// (shouldEnqueueTeamLeaderOnExecutor / isTeamLeaderReady) were removed to stop
 // the four-entry-point drift. The team enqueue side effect still flows through
 // enqueueTeamLeaderTask below, which keeps the leader access gate and pending
 // dedup in one place.
 
-// enqueueTeamLeaderTask triggers the team leader agent for an issue assigned
-// to a team. Assign and backlog-promotion paths use this directly; comment
+// enqueueTeamLeaderTask triggers the team leader agent for an issue whose
+// executor is a team. Executor-change and backlog-promotion paths use this directly; comment
 // paths go through computeCommentAgentTriggers so preview and create share the
 // same trigger set.
 // enqueueTeamLeaderTask returns true when it actually enqueued a leader task

@@ -104,10 +104,6 @@ SELECT EXISTS(
 -- name: CountTeamMembers :one
 SELECT count(*) FROM team_member WHERE team_id = $1;
 
--- name: GetTeamByAssignee :one
--- Look up the team when an issue is assigned to a team.
-SELECT s.* FROM team s WHERE s.id = $1 AND s.workspace_id = $2;
-
 -- name: ListTeamsByMember :many
 -- Find all teams a given entity belongs to in a workspace.
 SELECT s.* FROM team s
@@ -115,16 +111,16 @@ JOIN team_member sm ON sm.team_id = s.id
 WHERE s.workspace_id = $1 AND sm.member_type = $2 AND sm.member_id = $3
 ORDER BY s.created_at ASC;
 
--- name: TransferTeamAssignees :exec
--- Transfer all issues assigned to a team to the team's leader agent.
+-- name: TransferIssueExecutors :exec
+-- Transfer all issue executors pointing at a team to the team's leader agent.
 UPDATE issue SET executor_type = 'agent', executor_id = $2, revision = revision + 1, updated_at = now()
 WHERE executor_type = 'team' AND executor_id = $1;
 
 -- name: TransferTeamAutomationsToLeader :exec
--- Mirrors TransferTeamAssignees for automation rows: when a team is archived,
+-- Mirrors TransferIssueExecutors for automation rows: when a team is archived,
 -- any automation still pointing at the team would otherwise dangle and the
--- admission gate would skip every subsequent dispatch with "assignee team
--- cannot be resolved". Rewrite the assignee in place to the leader agent so
+-- admission gate would skip every subsequent dispatch with "executor team
+-- cannot be resolved". Rewrite the executor in place to the leader agent so
 -- the automation keeps firing under the same leader-only execution semantics
 -- it had a moment before the archive (Path A from PB-2429).
 UPDATE automation

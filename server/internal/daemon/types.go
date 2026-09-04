@@ -152,7 +152,7 @@ type Task struct {
 	QuickCreateDueDate            string                 `json:"quick_create_due_date,omitempty"`            // explicit calendar due date selected in quick-create
 	QuickCreateAttachmentIDs      []string               `json:"quick_create_attachment_ids,omitempty"`      // attachments uploaded in the quick-create prompt and bound by issue create
 	QuickCreateSourceContext      json.RawMessage        `json:"quick_create_source_context,omitempty"`      // immutable historical context, separate from the new instruction
-	HandoffNote                   string                 `json:"handoff_note,omitempty"`                     // assignment handoff instruction; rendered into the opening prompt + issue_context.md
+	HandoffNote                   string                 `json:"handoff_note,omitempty"`                     // executor handoff instruction; rendered into the opening prompt + issue_context.md
 
 	TeamID                string `json:"team_id,omitempty"`                 // when the picker was a team, the team's UUID; Agent is still the resolved leader
 	TeamName              string `json:"team_name,omitempty"`               // display name for the picker team, used in prompt text

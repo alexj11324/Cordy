@@ -534,7 +534,7 @@ func TestUpdateComment_AutomationAuthorityReStampedToEditingTask(t *testing.T) {
 
 // TestCreateComment_AutomationWorkerResultWakesTeamLeader locks the review's
 // accepted behavior: effectiveInvoker() lets the automation-creator authority reach
-// the plain (non-@mention) assigned-team-leader fallback too, so a worker's
+// the plain (non-@mention) executor-team-leader fallback too, so a worker's
 // result comment on the automation issue can still wake the private team leader
 // and close the leader -> worker -> leader loop under the automation chain.
 func TestCreateComment_AutomationWorkerResultWakesTeamLeader(t *testing.T) {

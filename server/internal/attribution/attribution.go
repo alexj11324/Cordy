@@ -246,14 +246,14 @@ func ClassifyComment(f CommentFacts, agentAuthoredSource Source) Result {
 }
 
 // DirectFacts are the facts for a run with no trigger comment: a direct issue
-// assignment/creation, or an agent-created issue with a quick-create origin.
+// executor routing/creation, or an agent-created issue with a quick-create origin.
 type DirectFacts struct {
 	IssueID     pgtype.UUID
 	CreatorType string
 	CreatorID   pgtype.UUID
 
 	// ActorUserID is the member who PERFORMED the action that enqueued this run
-	// (assigned the issue, promoted the backlog child, created-with-executor).
+	// (set the issue executor, promoted the backlog child, created-with-executor).
 	// When valid it is the accountable human per MUL-4302 §4 ("执行 assign /
 	// promote 的成员") and takes precedence over the issue creator: the person who
 	// acted, not whoever happened to file the issue, is on the hook. Left invalid
@@ -280,7 +280,7 @@ type DirectFacts struct {
 
 // ClassifyDirect resolves attribution for a run with no trigger comment.
 func ClassifyDirect(f DirectFacts) Result {
-	// A member who directly assigned/promoted the issue is the accountable human,
+	// A member who directly set/promoted the issue executor is the accountable human,
 	// ahead of the issue's creator (MUL-4302 §4). Evidence points at the issue the
 	// action targeted.
 	if f.ActorUserID.Valid {

@@ -162,7 +162,7 @@ patchbay runtime activity <runtime-id>
 
 | コマンド | 用途 |
 | --- | --- |
-| `issue` | タスクの作成、更新、割り当て、検索。コメント、購読者、ラベル、プロパティ、実行履歴の管理 |
+| `issue` | タスクの作成、更新、owner・executor・reviewer ロールの設定、検索。コメント、購読者、ラベル、プロパティ、実行履歴の管理 |
 | `project` | プロジェクトとそのリソースを管理 |
 | `label`、`property` | ワークスペースのラベルとカスタムプロパティを管理 |
 | `agent`、`skill`、`team` | エージェント、スキル、チームを管理 |
@@ -233,6 +233,7 @@ CLI の設定ファイルには、あなたとして Patchbay にアクセスで
 | | `reorder <id>` | カラム内で移動 | |
 | | `search <query>` | タスクを検索 | `--limit`、`--include-closed` |
 | | `children <id>` | サブタスクをステージごとに一覧 | |
+| | `dependency-graph get <id>` / `apply <parent-id>` | 型付き dependency graph の読み取りまたは原子的な適用 | `get`: `--output`；`apply`: `--idempotency-key`、`--plan-file` / `--plan-stdin`、`--allow-external-file`、`--output` |
 | | `pull-requests <id>` | 関連付けられた PR を一覧 | |
 | | `comment list/add/delete/resolve/unresolve` | コメントを管理 | `add`: `--content` / `--content-stdin` / `--content-file`、`--parent`、`--attachment`；`list`: `--since`、`--thread`、`--tail` |
 | | `subscriber list/add/remove <issue-id>` | 購読者を管理 | `--user`、`--user-id`（省略時は現在のユーザー） |
@@ -298,13 +299,31 @@ CLI の設定ファイルには、あなたとして Patchbay にアクセスで
 | `update` | — | CLI を最新バージョンに更新 | |
 | `version` | — | バージョン情報を表示 | `--output`（`text` または `json`） |
 
+## 依存グラフのコマンド
+
+親タスクをハードな前提条件を持つ複数のタスクへ分割する場合は、型付き plan を使います。
+
+```bash
+patchbay issue dependency-graph get MUL-123 --output table
+patchbay issue dependency-graph apply MUL-123 \
+  --idempotency-key plan-mul-123-v1 --plan-file ./dependency-plan.json
+cat dependency-plan.json | patchbay issue dependency-graph apply MUL-123 \
+  --idempotency-key plan-mul-123-v1 --plan-stdin --output json
+```
+
+現在のロール契約は明示的です。`owner` はワークスペースの member、`executor` と
+`candidate_executors` は agent または team、`reviewer` は member、agent、team のいずれかです。
+サーバーが plan を検証して `waves` を導出し、`get` と成功した `apply` は parent、children、nodes、
+edges、`unlock_condition` 付きの準備状態を返します。同じ冪等キーを再利用すると同じ plan が再生されます。
+グラフの変更は `dependency_graph:updated` を発行し、接続中のクライアントがデータを再取得します。
+
 ## 別のコーディングエージェントから Patchbay を操作する
 
 作業の多くを Codex、Claude Code、Cursor の中で進めているなら、ターミナルに切り替えず
 そこから Patchbay を操作できます。[Patchbay CLI skill](https://github.com/patchbay-ai/patchbay-cli)
 は、このページのコマンドを安全に扱う方法をそれらのエージェントに教えます。タスクと
 コメントスレッドをトークンを浪費せずに読み、コメントはファイル経由で書き、メンション・
-ステータス変更・アサインが伴う副作用を正しく扱います。
+ステータス変更・owner、executor、reviewer の変更が伴う副作用を正しく扱います。
 
 認証済みの CLI を通してのみ動作し、それ自体は何の権限も与えません。権限は引き続き
 ログイン、選択中のプロファイル、ワークスペースに由来します。CLI は v0.4.26 以降が必要です。

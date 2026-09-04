@@ -133,6 +133,9 @@ func deliverToSubscriber(reason, notifType, issueStatus string) bool {
 
 // notifTypeToGroup maps each InboxItemType to a user-configurable preference
 // group. Types not in this map are always delivered (not configurable).
+// `issue_assigned` and `unassigned` are retained wire values for the excluded
+// frontend/inbox clients; their details payloads carry the explicit owner,
+// executor, or reviewer keys below.
 var notifTypeToGroup = map[string]string{
 	"issue_assigned":     "assignments",
 	"unassigned":         "assignments",
@@ -546,7 +549,7 @@ func notifyMentionedMembers(
 	}
 
 	// Expand each @team mention to its human members. Agent members of a
-	// team are reached via comment-trigger / assignment paths, not the
+	// team are reached via comment-trigger / executor-routing paths, not the
 	// mention-inbox path, so we only seed member-typed recipients here.
 	for _, sid := range teamIDs {
 		teamUUID, err := util.ParseUUID(sid)
@@ -650,7 +653,7 @@ func registerNotificationListeners(bus *events.Bus, queries *db.Queries) {
 		skip := map[string]bool{e.ActorID: true}
 
 		// Direct notification to an owner that owns an inbox.
-		if issue.OwnerType != nil && issue.OwnerID != nil && isAssignmentRecipientType(*issue.OwnerType) {
+		if issue.OwnerType != nil && issue.OwnerID != nil && isIssueRoleRecipientType(*issue.OwnerType) {
 			skip[*issue.OwnerID] = true
 			details, _ := json.Marshal(map[string]string{
 				"new_owner_type": *issue.OwnerType,
@@ -667,7 +670,7 @@ func registerNotificationListeners(bus *events.Bus, queries *db.Queries) {
 		}
 
 		// Direct notification to an executor that owns an inbox.
-		if issue.ExecutorType != nil && issue.ExecutorID != nil && isAssignmentRecipientType(*issue.ExecutorType) {
+		if issue.ExecutorType != nil && issue.ExecutorID != nil && isIssueRoleRecipientType(*issue.ExecutorType) {
 			skip[*issue.ExecutorID] = true
 			details, _ := json.Marshal(map[string]string{
 				"new_executor_type": *issue.ExecutorType,
@@ -683,7 +686,7 @@ func registerNotificationListeners(bus *events.Bus, queries *db.Queries) {
 			)
 		}
 
-		if issue.ReviewerType != nil && issue.ReviewerID != nil && isAssignmentRecipientType(*issue.ReviewerType) {
+		if issue.ReviewerType != nil && issue.ReviewerID != nil && isIssueRoleRecipientType(*issue.ReviewerType) {
 			skip[*issue.ReviewerID] = true
 			details, _ := json.Marshal(map[string]string{
 				"new_reviewer_type": *issue.ReviewerType,
@@ -753,7 +756,7 @@ func registerNotificationListeners(bus *events.Bus, queries *db.Queries) {
 			roleDetails, _ := json.Marshal(detailsMap)
 
 			// Direct: notify the new role actor when it owns an inbox.
-			if newType != nil && newID != nil && isAssignmentRecipientType(*newType) {
+			if newType != nil && newID != nil && isIssueRoleRecipientType(*newType) {
 				notifyDirect(ctx, queries, bus,
 					*newType, *newID,
 					e.WorkspaceID, e, issue.ID, issue.Status,
@@ -765,7 +768,7 @@ func registerNotificationListeners(bus *events.Bus, queries *db.Queries) {
 			}
 
 			// Direct: notify only a previous member about unassignment.
-			// This is intentionally narrower than isAssignmentRecipientType: agents
+			// This is intentionally narrower than isIssueRoleRecipientType: agents
 			// do not receive unassigned notifications.
 			if prevType != nil && prevID != nil && *prevType == "member" {
 				notifyDirect(ctx, queries, bus,
@@ -802,7 +805,7 @@ func registerNotificationListeners(bus *events.Bus, queries *db.Queries) {
 		notifyRoleChange("executor", executorChanged, prevExecutorType, prevExecutorID, issue.ExecutorType, issue.ExecutorID)
 
 		if reviewerChanged || reviewHandoff {
-			if issue.ReviewerType != nil && issue.ReviewerID != nil && isAssignmentRecipientType(*issue.ReviewerType) {
+			if issue.ReviewerType != nil && issue.ReviewerID != nil && isIssueRoleRecipientType(*issue.ReviewerType) {
 				details, _ := json.Marshal(map[string]string{
 					"new_reviewer_type": *issue.ReviewerType,
 					"new_reviewer_id":   *issue.ReviewerID,

@@ -69,7 +69,7 @@ func taskCountFor(t *testing.T, issueID, agentID string) int {
 }
 
 // TestPreviewIssueTrigger_CreateAgentVsBacklog covers the create entry point:
-// an active status with an agent assignee previews one run; the same assignee
+// an active status with an agent executor previews one run; the same executor
 // parked in backlog previews none.
 func TestPreviewIssueTrigger_CreateAgentVsBacklog(t *testing.T) {
 	agentID := seededReadyAgentID(t)
@@ -98,7 +98,7 @@ func TestPreviewIssueTrigger_CreateAgentVsBacklog(t *testing.T) {
 	}
 }
 
-// TestPreviewIssueTrigger_MemberNoTrigger verifies a member assignee never
+// TestPreviewIssueTrigger_MemberNoTrigger verifies a member owner never
 // previews a run.
 func TestPreviewIssueTrigger_MemberNoTrigger(t *testing.T) {
 	resp := previewIssueTrigger(t, map[string]any{
@@ -108,12 +108,12 @@ func TestPreviewIssueTrigger_MemberNoTrigger(t *testing.T) {
 		"status":        "todo",
 	})
 	if resp.TotalCount != 0 {
-		t.Fatalf("member assignee: expected 0 triggers, got %+v", resp)
+		t.Fatalf("member owner: expected 0 triggers, got %+v", resp)
 	}
 }
 
 // TestPreviewIssueTrigger_BatchAggregates verifies the batch shape: two
-// agent-assigned issues moving out of backlog preview two distinct runs.
+// agent-executor issues moving out of backlog preview two distinct runs.
 func TestPreviewIssueTrigger_BatchAggregates(t *testing.T) {
 	agentID := seededReadyAgentID(t)
 	i1 := createIssueForTest(t, map[string]any{"title": "batch preview 1", "status": "backlog", "executor_type": "agent", "executor_id": agentID})
@@ -144,7 +144,7 @@ func TestPreviewIssueTrigger_BatchAggregates(t *testing.T) {
 func TestPreviewIssueTrigger_MatchesWritePath(t *testing.T) {
 	agentID := seededReadyAgentID(t)
 
-	// Case 1: preview says assign will start → write path enqueues.
+	// Case 1: preview says setting the executor will start → write path enqueues.
 	issue := createIssueForTest(t, map[string]any{"title": "match write 1", "status": "todo"})
 	pv := previewIssueTrigger(t, map[string]any{
 		"issue_ids":     []string{issue.ID},
@@ -164,7 +164,7 @@ func TestPreviewIssueTrigger_MatchesWritePath(t *testing.T) {
 		t.Fatalf("preview promised a run but write path enqueued none")
 	}
 
-	// Case 2: preview says backlog assign will NOT start → write enqueues none.
+	// Case 2: preview says a backlog executor will NOT start → write enqueues none.
 	issue2 := createIssueForTest(t, map[string]any{"title": "match write 2", "status": "backlog"})
 	pv2 := previewIssueTrigger(t, map[string]any{
 		"issue_ids":     []string{issue2.ID},
@@ -187,11 +187,11 @@ func TestPreviewIssueTrigger_MatchesWritePath(t *testing.T) {
 }
 
 // TestUpdateIssueSuppressRunSkipsEnqueue verifies suppress_run applies the
-// assignee change but starts no run, while the same write without it does.
+// executor change but starts no run, while the same write without it does.
 func TestUpdateIssueSuppressRunSkipsEnqueue(t *testing.T) {
 	agentID := seededReadyAgentID(t)
 
-	// Suppressed assign: assignee set, no task.
+	// Suppressed executor: executor set, no task.
 	suppressed := createIssueForTest(t, map[string]any{"title": "suppress on", "status": "todo"})
 	w := httptest.NewRecorder()
 	req := withURLParam(newRequest("PUT", "/api/issues/"+suppressed.ID, map[string]any{
