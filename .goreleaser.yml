@@ -64,6 +64,12 @@ changelog:
       - "^test:"
       - "^chore:"
 
+release:
+  # prepare-release creates the one gated draft that already contains the
+  # Desktop assets. Reuse it so CLI archives and checksums land in the same
+  # release instead of a second hidden draft for the same tag.
+  use_existing_draft: true
+
 homebrew_casks:
   - name: patchbay
     ids:

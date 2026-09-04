@@ -930,6 +930,25 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Verify GoReleaser reused the staged draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.verify.outputs.tag_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_json="$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100")"
+          release_count="$(jq --arg tag "$TAG_NAME" '[.[][] | select(.tag_name == $tag)] | length' <<< "$release_json")"
+          if [ "$release_count" -ne 1 ]; then
+            echo "::error::Expected exactly one release for $TAG_NAME after GoReleaser, found $release_count."
+            exit 1
+          fi
+          is_draft="$(jq -r --arg tag "$TAG_NAME" '.[][] | select(.tag_name == $tag) | .draft' <<< "$release_json")"
+          if [ "$is_draft" != "true" ]; then
+            echo "::error::The single release for $TAG_NAME is no longer the staged draft."
+            exit 1
+          fi
+
       - name: Stage stable Homebrew cask
         if: needs.verify.outputs.is_stable == 'true'
         uses: actions/upload-artifact@v4
