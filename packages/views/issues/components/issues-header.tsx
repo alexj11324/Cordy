@@ -122,6 +122,7 @@ import { matchesPinyin } from "../../editor/extensions/pinyin-match";
 import { FILTER_ITEM_CLASS, HoverCheck } from "../../common/hover-check";
 import { WorkspaceAgentWorkingChip } from "./workspace-agent-working-chip";
 import { TableColumnPicker } from "./table-view";
+import { getIssueExecutor } from "../utils/issue-executor";
 
 type LocalDateRange = {
   from: Date | undefined;
@@ -251,12 +252,11 @@ function useIssueCounts(
       status.set(issue.status, (status.get(issue.status) ?? 0) + 1);
       priority.set(issue.priority, (priority.get(issue.priority) ?? 0) + 1);
 
-      const executorType = issue.executor_type ?? issue.owner_type;
-      const executorId = issue.executor_id ?? issue.owner_id;
-      if (!executorId) {
+      const issueExecutor = getIssueExecutor(issue);
+      if (!issueExecutor) {
         noExecutor++;
       } else {
-        const actorKey = `${executorType}:${executorId}`;
+        const actorKey = `${issueExecutor.type}:${issueExecutor.id}`;
         executor.set(actorKey, (executor.get(actorKey) ?? 0) + 1);
       }
 

@@ -26,6 +26,7 @@ import { CustomStatusChip } from "./custom-status-chip";
 import { IssueAgentActivityIndicator } from "./issue-agent-activity-indicator";
 import { useIssueSurfaceSelection } from "../surface/selection-context";
 import { useLocale } from "../../i18n";
+import { getIssueExecutor } from "../utils/issue-executor";
 
 export interface ChildProgress {
   done: number;
@@ -71,12 +72,8 @@ function ListRowContent({
 
   const showProject = storeProperties.project && project;
   const showChildProgress = storeProperties.childProgress && childProgress;
-  const assignee = issue.executor_type && issue.executor_id
-    ? { type: issue.executor_type, id: issue.executor_id }
-    : issue.owner_type && issue.owner_id
-      ? { type: issue.owner_type, id: issue.owner_id }
-      : null;
-  const showAssignee = storeProperties.executor && assignee;
+  const executor = getIssueExecutor(issue);
+  const showExecutor = storeProperties.executor && executor;
   const showStartDate = storeProperties.startDate && issue.start_date;
   const showDueDate = storeProperties.dueDate && issue.due_date;
   const showLabels = storeProperties.labels && labels.length > 0;
@@ -175,10 +172,10 @@ function ListRowContent({
               {formatDate(issue.due_date!, locale)}
             </span>
           )}
-          {showAssignee && (
+          {showExecutor && (
             <ActorAvatar
-              actorType={assignee.type}
-              actorId={assignee.id}
+              actorType={executor.type}
+              actorId={executor.id}
               size="sm"
               enableHoverCard
             />

@@ -54,7 +54,7 @@ function makeIssue(overrides: Partial<Issue> = {}): Issue {
 }
 
 const issues: Issue[] = [
-  makeIssue({ id: "1", status: "todo", priority: "high", owner_type: "member", owner_id: "u-1", creator_type: "member", creator_id: "u-1", project_id: "p-1" }),
+  makeIssue({ id: "1", status: "todo", priority: "high", owner_type: "member", owner_id: "u-1", executor_type: "agent", executor_id: "a-2", creator_type: "member", creator_id: "u-1", project_id: "p-1" }),
   makeIssue({ id: "2", status: "in_progress", priority: "medium", executor_type: "agent", executor_id: "a-1", creator_type: "agent", creator_id: "a-1", project_id: "p-2" }),
   makeIssue({ id: "3", status: "done", priority: "low", executor_type: null, executor_id: null, creator_type: "member", creator_id: "u-2", project_id: null }),
   makeIssue({ id: "4", status: "todo", priority: "urgent", owner_type: "member", owner_id: "u-2", creator_type: "member", creator_id: "u-1", project_id: "p-1" }),
@@ -81,14 +81,14 @@ describe("filterIssues", () => {
   it("filters by specific executor", () => {
     const result = filterIssues(issues, {
       ...NO_FILTER,
-      executorFilters: [{ type: "member", id: "u-1" }],
+      executorFilters: [{ type: "agent", id: "a-2" }],
     });
     expect(result.map((i) => i.id)).toEqual(["1"]);
   });
 
   it("filters by 'No executor' only", () => {
     const result = filterIssues(issues, { ...NO_FILTER, includeNoExecutor: true });
-    expect(result.map((i) => i.id)).toEqual(["3"]);
+    expect(result.map((i) => i.id)).toEqual(["3", "4"]);
   });
 
   it("filters by executor + No executor combined", () => {
@@ -97,7 +97,7 @@ describe("filterIssues", () => {
       executorFilters: [{ type: "agent", id: "a-1" }],
       includeNoExecutor: true,
     });
-    expect(result.map((i) => i.id)).toEqual(["2", "3"]);
+    expect(result.map((i) => i.id)).toEqual(["2", "3", "4"]);
   });
 
   it("treats an explicitly active empty executor predicate as match-none", () => {
@@ -127,7 +127,7 @@ describe("filterIssues", () => {
     const result = filterIssues(issues, {
       ...NO_FILTER,
       statusFilters: ["todo"],
-      executorFilters: [{ type: "member", id: "u-1" }],
+      executorFilters: [{ type: "agent", id: "a-2" }],
     });
     expect(result.map((i) => i.id)).toEqual(["1"]);
   });

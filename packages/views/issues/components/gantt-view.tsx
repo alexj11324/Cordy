@@ -25,6 +25,7 @@ import { PriorityIcon } from "./priority-icon";
 import { IssueActionsContextMenu } from "../actions";
 import { sortIssues } from "../utils/sort";
 import { useLocale, useT } from "../../i18n";
+import { getIssueExecutor } from "../utils/issue-executor";
 
 // ---------------------------------------------------------------------------
 // Date utilities — everything is UTC-day-aligned so a `due_date` ISO string
@@ -329,6 +330,7 @@ function ScheduledRow({
     enabled: !!issue.project_id,
   });
   const project = issue.project_id ? projects.find((pr) => pr.id === issue.project_id) : undefined;
+  const executor = getIssueExecutor(issue);
 
   const start = parseDay(issue.start_date);
   const due = parseDay(issue.due_date);
@@ -387,14 +389,10 @@ function ScheduledRow({
           </span>
           <span className="truncate flex-1">{issue.title}</span>
           {project && <ProjectIcon project={project} size="sm" />}
-          {(issue.executor_type && issue.executor_id
-            ? { type: issue.executor_type, id: issue.executor_id }
-            : issue.owner_type && issue.owner_id
-              ? { type: issue.owner_type, id: issue.owner_id }
-              : null) && (
+          {executor && (
             <ActorAvatar
-              actorType={(issue.executor_type ?? issue.owner_type)!}
-              actorId={(issue.executor_id ?? issue.owner_id)!}
+              actorType={executor.type}
+              actorId={executor.id}
               size="sm"
               enableHoverCard
             />

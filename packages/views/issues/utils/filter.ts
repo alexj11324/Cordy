@@ -1,6 +1,7 @@
 import type { Issue, IssueStatus, IssuePriority, IssueExecutorGroup, PropertyFilterValue, PropertyOperatorFilter } from "@patchbay/core/types";
 import type { ActorFilterValue } from "@patchbay/core/issues/stores/view-store";
 import type { IssueActivityState } from "../surface/activity";
+import { getIssueExecutor } from "./issue-executor";
 
 export interface IssueFilters {
   statusFilters: IssueStatus[];
@@ -210,15 +211,14 @@ export function applyIssueFilters(
       return false;
 
     if (hasExecutorFilter) {
-      const executorType = issue.executor_type ?? issue.owner_type;
-      const executorId = issue.executor_id ?? issue.owner_id;
-      if (!executorId) {
+      const issueExecutor = getIssueExecutor(issue);
+      if (!issueExecutor) {
         // Unassigned issue — show only if "No executor" is checked
         if (!includeNoExecutor) return false;
       } else if (executorFilters.length > 0) {
         // Assigned issue — show only if the actor is in the filter list
         if (!executorFilters.some(
-          (f) => f.type === executorType && f.id === executorId,
+          (f) => f.type === issueExecutor.type && f.id === issueExecutor.id,
         )) return false;
       } else {
         // Only "No executor" is checked, no specific actors → hide assigned issues

@@ -26,6 +26,7 @@ import type {
   IssueTableQuerySpec,
   IssueTableRowsResponse,
 } from "@patchbay/core/types";
+import { getIssueExecutor } from "../utils/issue-executor";
 
 export interface IssueGroupPageState {
   total: number;
@@ -110,12 +111,14 @@ function issueMatchesDescriptor(
   }
   const owner = primary?.value ?? value;
   switch (owner.kind) {
-    case "executor":
+    case "executor": {
+      const executor = getIssueExecutor(issue);
       return owner.actor
-        ? (issue.executor_type ?? issue.owner_type) === owner.actor.type &&
-            (issue.executor_id ?? issue.owner_id) === owner.actor.id
-        : (issue.executor_type ?? issue.owner_type) === null &&
-            (issue.executor_id ?? issue.owner_id) === null;
+        ? executor !== null &&
+            executor.type === owner.actor.type &&
+            executor.id === owner.actor.id
+        : executor === null;
+    }
     case "project":
       return issue.project_id === owner.project_id;
     case "parent":
