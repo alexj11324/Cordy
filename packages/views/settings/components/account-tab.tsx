@@ -97,15 +97,19 @@ export function AccountTab() {
     isEqual: profilesEqual,
   });
 
-  const handleEditToggle = () => {
+  const handleEditToggle = async () => {
     if (!isEditing) {
       setIsEditing(true);
       return;
     }
-    autoSave.flush();
-    if (profileName.trim() && !descriptionTooLong) {
-      setIsEditing(false);
+    // Stay in edit mode until the latest draft is actually persisted. A blur
+    // save may still be in flight; flush queues this draft, and flipping
+    // `enabled` first would make useAutoSave drop that queue.
+    if (!profileName.trim() || descriptionTooLong) {
+      return;
     }
+    const saved = await autoSave.flush();
+    if (saved) setIsEditing(false);
   };
 
   return (

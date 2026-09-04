@@ -17,19 +17,25 @@ function AutoSaveHarness({
   value,
   onSave,
   onSuccess,
+  enabled = true,
+  flushRef,
 }: {
   value: string;
   onSave: (value: string) => Promise<void>;
   onSuccess: (value: string) => void;
+  enabled?: boolean;
+  flushRef?: { current: (() => Promise<boolean>) | null };
 }) {
-  useAutoSave({
+  const { flush } = useAutoSave({
     value,
     savedValue: "",
     onSave,
     onSuccess,
+    enabled,
     delay: 650,
     isEqual: (left, right) => left === right,
   });
+  if (flushRef) flushRef.current = flush;
   return null;
 }
 
@@ -99,5 +105,51 @@ describe("useAutoSave success feedback", () => {
     await act(async () => second.resolve());
     await waitFor(() => expect(onSuccess).toHaveBeenCalledWith("second"));
     expect(onSuccess).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets flush wait until a queued draft is persisted", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const first = deferred<void>();
+    const second = deferred<void>();
+    const onSave = vi
+      .fn<(value: string) => Promise<void>>()
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+    const onSuccess = vi.fn();
+    const flushRef: { current: (() => Promise<boolean>) | null } = {
+      current: null,
+    };
+    const { rerender } = render(
+      <AutoSaveHarness
+        value="first"
+        onSave={onSave}
+        onSuccess={onSuccess}
+        flushRef={flushRef}
+      />,
+    );
+
+    act(() => vi.advanceTimersByTime(650));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith("first"));
+
+    rerender(
+      <AutoSaveHarness
+        value="second"
+        onSave={onSave}
+        onSuccess={onSuccess}
+        flushRef={flushRef}
+      />,
+    );
+
+    let flushed!: Promise<boolean>;
+    act(() => {
+      flushed = flushRef.current!();
+    });
+    expect(onSave).toHaveBeenCalledTimes(1);
+
+    await act(async () => first.resolve());
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith("second"));
+    await act(async () => second.resolve());
+    await expect(flushed).resolves.toBe(true);
+    expect(onSuccess).toHaveBeenCalledWith("second");
   });
 });

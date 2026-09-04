@@ -138,4 +138,65 @@ describe("AccountTab", () => {
       });
     });
   });
+
+  it("keeps Done from dropping a newer draft while a blur save is in flight", async () => {
+    const first = Promise.withResolvers<{
+      id: string;
+      name: string;
+      profile_description: string;
+      avatar_url: string | null;
+    }>();
+    const second = Promise.withResolvers<{
+      id: string;
+      name: string;
+      profile_description: string;
+      avatar_url: string | null;
+    }>();
+    mockUpdateMe
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(() => second.promise);
+
+    const user = userEvent.setup();
+    render(<AccountTab />, { wrapper: I18nWrapper });
+
+    await user.click(screen.getByRole("button", { name: "Edit profile info" }));
+    const name = screen.getByRole("textbox", { name: "Name" });
+    await user.clear(name);
+    await user.type(name, "Ada Lovelace");
+    name.blur();
+
+    await waitFor(() => expect(mockUpdateMe).toHaveBeenCalledTimes(1));
+
+    const about = screen.getByRole("textbox", { name: "About you" });
+    await user.clear(about);
+    await user.type(about, "Wrote notes");
+    const doneClick = user.click(
+      screen.getByRole("button", { name: "Done editing profile info" }),
+    );
+
+    expect(screen.getByRole("textbox", { name: "Name" })).toBeInTheDocument();
+
+    first.resolve({
+      ...userRef.current,
+      name: "Ada Lovelace",
+    });
+    await waitFor(() =>
+      expect(mockUpdateMe).toHaveBeenCalledWith({
+        name: "Ada Lovelace",
+        profile_description: "Wrote notes",
+      }),
+    );
+
+    second.resolve({
+      ...userRef.current,
+      name: "Ada Lovelace",
+      profile_description: "Wrote notes",
+    });
+    await doneClick;
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("textbox", { name: "Name" }),
+      ).not.toBeInTheDocument();
+    });
+  });
 });
