@@ -599,8 +599,7 @@ WHERE assignment.id = sqlc.arg('assignment_id')
 -- name: PromoteCoordinationAgentTaskForLease :one
 UPDATE agent_task_queue AS task
 SET status = CASE WHEN task.status = 'deferred' THEN 'queued' ELSE task.status END,
-    fire_at = NULL,
-    updated_at = now()
+    fire_at = NULL
 FROM agent_coordination_assignment AS assignment
 JOIN agent_coordination_outbox AS event ON event.id = assignment.event_id
 WHERE assignment.id = sqlc.arg('assignment_id')
