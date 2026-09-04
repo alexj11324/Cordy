@@ -58,9 +58,6 @@
     "workspace_group": "工作区",
     "configure_group": "配置",
     "unread_overflow": "99+",
-    "discord_card": {
-      "title": "加入 Discord",
-      "dismiss": "关闭"
-    }
+    "guest_account": "Guest"
   }
 }

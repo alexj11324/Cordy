@@ -1,11 +1,24 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@patchbay/core/api";
+import { renderWithI18n } from "../test/i18n";
 import { AppSidebar } from "./app-sidebar";
 
-const { appForeground, chatSessions, chatStore, detail, deletePin, inboxItems, navigation, pins, sidebarState, summary, workspaces } = vi.hoisted(() => ({
+const { appForeground, authUser, chatSessions, chatStore, detail, deletePin, inboxItems, navigation, pins, sidebarState, summary, workspaces } = vi.hoisted(() => ({
   appForeground: { current: true },
-  sidebarState: { setOpenMobile: vi.fn() },
+  authUser: {
+    current: {
+      id: "user-1",
+      name: "Test User",
+      email: "user@example.com",
+      is_guest: false as boolean,
+    },
+  },
+  sidebarState: {
+    current: "expanded" as "expanded" | "collapsed",
+    setHoverRevealSuspended: vi.fn(),
+    setOpenMobile: vi.fn(),
+  },
   chatSessions: { current: [] as { id?: string; unread_count?: number }[] },
   chatStore: { current: { activeSessionId: null as string | null, isOpen: false } },
   detail: { current: { isPending: false, isError: false, data: null as unknown, error: null as unknown } },
@@ -57,18 +70,29 @@ vi.mock("@patchbay/ui/components/ui/sidebar", () => ({
     children,
     isActive,
     render,
+    size,
   }: {
     children: React.ReactNode;
     isActive?: boolean;
     render?: React.ReactElement<{ href?: string }>;
+    size?: string;
   }) => (
-    <button type="button" data-active={isActive ? "true" : undefined} data-href={render?.props.href}>
+    <button
+      type="button"
+      data-active={isActive ? "true" : undefined}
+      data-href={render?.props.href}
+      data-size={size}
+    >
       {children}
     </button>
   ),
   SidebarMenuItem: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   SidebarRail: () => null,
-  useSidebar: () => ({ setOpenMobile: sidebarState.setOpenMobile }),
+  useSidebar: () => ({
+    state: sidebarState.current,
+    setHoverRevealSuspended: sidebarState.setHoverRevealSuspended,
+    setOpenMobile: sidebarState.setOpenMobile,
+  }),
 }));
 vi.mock("@patchbay/ui/components/ui/dropdown-menu", () => ({
   DropdownMenu: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -92,7 +116,9 @@ vi.mock("@patchbay/ui/components/ui/tooltip", () => ({
 vi.mock("../common/use-app-foreground", () => ({
   useAppForeground: () => appForeground.current,
 }));
-vi.mock("./help-launcher", () => ({ HelpLauncher: () => null }));
+vi.mock("./help-launcher", () => ({
+  HelpLauncher: () => <button type="button">Help</button>,
+}));
 vi.mock("../auth", () => ({ useLogout: () => vi.fn() }));
 vi.mock("../issues/components/status-icon", () => ({ StatusIcon: () => <span /> }));
 vi.mock("../navigation", () => ({
@@ -104,7 +130,11 @@ vi.mock("../workspace/workspace-avatar", () => ({ WorkspaceAvatar: () => <span /
 vi.mock("@patchbay/ui/components/common/actor-avatar", () => ({ ActorAvatar: () => <span /> }));
 
 vi.mock("@patchbay/core/auth", () => ({
-  useAuthStore: (selector: (state: { user: { id: string } }) => unknown) => selector({ user: { id: "user-1" } }),
+  useAuthStore: (
+    selector: (state: {
+      user: { id: string; name: string; email: string; is_guest: boolean };
+    }) => unknown,
+  ) => selector({ user: authUser.current }),
 }));
 // Callable-store shape (selectorFn + getState) per the repo testing rules.
 vi.mock("@patchbay/core/chat", () => ({
@@ -192,6 +222,16 @@ vi.mock("@tanstack/react-query", async (importOriginal) => ({
   useQueryClient: () => ({ fetchQuery: vi.fn(), invalidateQueries: vi.fn() }),
 }));
 
+beforeEach(() => {
+  sidebarState.current = "expanded";
+  authUser.current = {
+    id: "user-1",
+    name: "Test User",
+    email: "user@example.com",
+    is_guest: false,
+  };
+});
+
 describe("PinRow", () => {
   beforeEach(() => {
     deletePin.mockReset();
@@ -266,6 +306,63 @@ describe("mobile sheet dismissal", () => {
     rerender(<AppSidebar />);
 
     expect(sidebarState.setOpenMobile).not.toHaveBeenCalled();
+  });
+});
+
+describe("collapsed footer", () => {
+  beforeEach(() => {
+    sidebarState.current = "expanded";
+    authUser.current = {
+      id: "user-1",
+      name: "Test User",
+      email: "user@example.com",
+      is_guest: false,
+    };
+  });
+
+  it("keeps the compact account control and hides Help until the sidebar is expanded", () => {
+    const { container, rerender } = render(<AppSidebar />);
+    expect(screen.getByRole("button", { name: "Help" })).toBeInTheDocument();
+
+    sidebarState.current = "collapsed";
+    rerender(<AppSidebar />);
+
+    expect(screen.queryByRole("button", { name: "Help" })).not.toBeInTheDocument();
+    expect(container.querySelector('button[data-size="lg"]')).not.toBeNull();
+  });
+});
+
+describe("account footer", () => {
+  beforeEach(() => {
+    sidebarState.current = "expanded";
+    authUser.current = {
+      id: "user-1",
+      name: "Test User",
+      email: "user@example.com",
+      is_guest: false,
+    };
+  });
+
+  it("renders the signed-in account at the bottom, separate from the workspace switcher", () => {
+    const { container } = renderWithI18n(<AppSidebar />);
+    const account = container.querySelector('button[data-size="lg"]');
+    expect(account).toHaveTextContent("Test User");
+    expect(account).toHaveTextContent("user@example.com");
+    expect(screen.queryByText("Join our Discord")).not.toBeInTheDocument();
+  });
+
+  it("labels a Guest account in the footer instead of an email", () => {
+    authUser.current = {
+      id: "guest-1",
+      name: "Alex",
+      email: "guest@example.com",
+      is_guest: true,
+    };
+    const { container } = renderWithI18n(<AppSidebar />);
+    const account = container.querySelector('button[data-size="lg"]');
+    expect(account).toHaveTextContent("Alex");
+    expect(account).toHaveTextContent("Guest");
+    expect(account).not.toHaveTextContent("guest@example.com");
   });
 });
 

@@ -6,7 +6,6 @@ import { cn } from "@patchbay/ui/lib/utils";
 import { useScrollFade } from "@patchbay/ui/hooks/use-scroll-fade";
 import { AppLink, useNavigation } from "../navigation";
 import { HelpLauncher } from "./help-launcher";
-import { JoinDiscordCard } from "./join-discord-card";
 import {
   DndContext,
   PointerSensor,
@@ -20,6 +19,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { Layers,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
   LogOut,
   Plus,
   Check,
@@ -173,6 +173,13 @@ const configureNav: { key: NavKey; labelKey: NavLabelKey }[] = [
   { key: "settings", labelKey: "settings" },
 ];
 
+function sidebarNavIconClassName(isActive: boolean) {
+  return cn("text-sidebar-icon-secondary", isActive && "text-sidebar-icon-active");
+}
+
+const SIDEBAR_NAV_BUTTON_CLASS =
+  "text-sidebar-text-secondary hover:not-data-active:bg-sidebar-item-hover data-active:bg-sidebar-item-active data-active:text-sidebar-item-active-foreground";
+
 function DraftDot() {
   const hasDraft = useIssueDraftStore((s) => s.hasDraft());
   if (!hasDraft) return null;
@@ -238,7 +245,7 @@ function SortablePinItem({
           onNavigate?.();
         }}
         className={cn(
-          "text-muted-foreground hover:not-data-active:bg-sidebar-accent/70 data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground",
+          SIDEBAR_NAV_BUTTON_CLASS,
           isDragging && "pointer-events-none",
         )}
       >
@@ -253,7 +260,7 @@ function SortablePinItem({
         <Tooltip>
           <TooltipTrigger
             render={<span role="button" tabIndex={0} aria-label={t(($) => $.sidebar.unpin_tooltip)} />}
-            className="hidden size-2.5 shrink-0 items-center justify-center rounded-sm text-muted-foreground group-hover/pin:flex hover:text-foreground"
+            className="hidden size-2.5 shrink-0 items-center justify-center rounded-sm text-sidebar-text-secondary group-hover/pin:flex hover:text-sidebar-text-primary"
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
@@ -363,7 +370,7 @@ function PinRow({
         pathname={pathname}
         onUnpin={onUnpin}
         label={view.name}
-        iconNode={<Layers className="!size-3.5 shrink-0" />}
+        iconNode={<Layers className="!size-3.5 shrink-0 text-sidebar-icon-secondary" />}
         // Active only when this exact view is open on its surface — the
         // path alone also matches the plain tab.
         isActiveOverride={
@@ -456,7 +463,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
   // pinned items, the workspace switcher's programmatic push, and anything
   // added later. `setOpenMobile` is a no-op on desktop, where the sheet is not
   // the sidebar's rendering at all.
-  const { setOpenMobile } = useSidebar();
+  const { state: sidebarState, setOpenMobile, setHoverRevealSuspended } = useSidebar();
   useEffect(() => {
     setOpenMobile(false);
   }, [pathname, setOpenMobile]);
@@ -605,6 +612,10 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
   });
 
   const createIssueShortcut = useShortcut("createIssue");
+  const accountSecondary =
+    user?.is_guest === true
+      ? t(($) => $.sidebar.guest_account)
+      : (user?.email ?? "");
 
   return (
       <Sidebar variant="inset">
@@ -613,7 +624,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
         <SidebarHeader className={cn("py-3", headerClassName)} style={headerStyle}>
           <SidebarMenu>
             <SidebarMenuItem>
-              <DropdownMenu>
+              <DropdownMenu onOpenChange={setHoverRevealSuspended}>
                 <DropdownMenuTrigger
                   render={
                     <SidebarMenuButton>
@@ -630,7 +641,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                       <span className="flex-1 truncate font-medium">
                         {workspace?.name ?? "Patchbay"}
                       </span>
-                      <ChevronDown className="size-3 text-muted-foreground" />
+                      <ChevronDown className="size-3 text-sidebar-icon-secondary" />
                     </SidebarMenuButton>
                   }
                 />
@@ -640,25 +651,8 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                   side="bottom"
                   sideOffset={4}
                 >
-                  <div className="flex items-center gap-2.5 px-2 py-1.5">
-                    <ActorAvatar
-                      name={user?.name ?? ""}
-                      initials={(user?.name ?? "U").charAt(0).toUpperCase()}
-                      avatarUrl={resolvePublicFileUrl(user?.avatar_url)}
-                      size="lg"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-body font-medium leading-tight">
-                        {user?.name}
-                      </p>
-                      <p className="truncate text-caption text-muted-foreground leading-tight">
-                        {user?.email}
-                      </p>
-                    </div>
-                  </div>
-                  <DropdownMenuSeparator />
                   <DropdownMenuGroup>
-                    <DropdownMenuLabel className="text-caption text-muted-foreground">
+                    <DropdownMenuLabel className="text-caption text-sidebar-text-secondary">
                       {t(($) => $.sidebar.workspaces_label)}
                     </DropdownMenuLabel>
                     {workspaces.map((ws) => (
@@ -696,7 +690,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                     <>
                       <DropdownMenuSeparator />
                       <DropdownMenuGroup>
-                        <DropdownMenuLabel className="text-caption text-muted-foreground">
+                        <DropdownMenuLabel className="text-caption text-sidebar-text-secondary">
                           {t(($) => $.sidebar.pending_invitations_label)}
                         </DropdownMenuLabel>
                         {myInvitations.map((inv) => (
@@ -716,7 +710,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                             </button>
                             <button
                               type="button"
-                              className="text-caption px-2 py-0.5 rounded bg-muted text-muted-foreground hover:bg-muted/80 disabled:opacity-50"
+                              className="text-caption px-2 py-0.5 rounded bg-muted text-sidebar-text-secondary hover:bg-muted/80 disabled:opacity-50"
                               disabled={declineInvitationMut.isPending}
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -730,13 +724,6 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                       </DropdownMenuGroup>
                     </>
                   )}
-                  <DropdownMenuSeparator />
-                  <DropdownMenuGroup>
-                    <DropdownMenuItem variant="destructive" onClick={logout}>
-                      <LogOut className="h-3.5 w-3.5" />
-                      {t(($) => $.sidebar.log_out)}
-                    </DropdownMenuItem>
-                  </DropdownMenuGroup>
                 </DropdownMenuContent>
               </DropdownMenu>
             </SidebarMenuItem>
@@ -749,11 +736,11 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
             )}
             <SidebarMenuItem>
               <SidebarMenuButton
-                className="text-muted-foreground"
+                className="text-sidebar-text-secondary"
                 onClick={() => openCreateIssueWithPreference()}
               >
                 <span className="relative">
-                  <SquarePen />
+                  <SquarePen className="text-sidebar-icon-secondary" />
                   <DraftDot />
                 </span>
                 <span>{t(($) => $.sidebar.new_issue)}</span>
@@ -779,9 +766,9 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                       <SidebarMenuButton
                         isActive={isActive}
                         render={<AppLink href={href} />}
-                        className="text-muted-foreground hover:not-data-active:bg-sidebar-accent/70 data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground"
+                        className={SIDEBAR_NAV_BUTTON_CLASS}
                       >
-                        <Icon />
+                        <Icon className={sidebarNavIconClassName(isActive)} />
                         <span>{t(($) => $.nav[item.labelKey])}</span>
                         {item.key === "inbox" && unreadCount > 0 && (
                           <CappedNumberFlow
@@ -810,11 +797,11 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
               <SidebarGroup className="group/pinned">
                 <SidebarGroupLabel
                   render={<CollapsibleTrigger />}
-                  className="group/trigger cursor-pointer hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground"
+                  className="group/trigger cursor-pointer hover:bg-sidebar-item-hover hover:text-sidebar-item-active-foreground"
                 >
                   <span>{t(($) => $.sidebar.pinned_label)}</span>
-                  <ChevronRight className="!size-3 ml-1 stroke-[2.5] transition-transform duration-200 group-data-[panel-open]/trigger:rotate-90" />
-                  <span className="ml-auto text-micro text-muted-foreground opacity-0 transition-opacity group-hover/pinned:opacity-100">{visiblePinned.length}</span>
+                  <ChevronRight className="!size-3 ml-1 stroke-[2.5] text-sidebar-icon-secondary transition-transform duration-200 group-data-[panel-open]/trigger:rotate-90" />
+                  <span className="ml-auto text-micro text-sidebar-text-secondary opacity-0 transition-opacity group-hover/pinned:opacity-100">{visiblePinned.length}</span>
                 </SidebarGroupLabel>
                 <CollapsibleContent>
                   <SidebarGroupContent>
@@ -853,9 +840,9 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                       <SidebarMenuButton
                         isActive={isActive}
                         render={<AppLink href={href} />}
-                        className="text-muted-foreground hover:not-data-active:bg-sidebar-accent/70 data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground"
+                        className={SIDEBAR_NAV_BUTTON_CLASS}
                       >
-                        <Icon />
+                        <Icon className={sidebarNavIconClassName(isActive)} />
                         <span>{t(($) => $.nav[item.labelKey])}</span>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
@@ -878,9 +865,9 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                       <SidebarMenuButton
                         isActive={isActive}
                         render={<AppLink href={href} />}
-                        className="text-muted-foreground hover:not-data-active:bg-sidebar-accent/70 data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground"
+                        className={SIDEBAR_NAV_BUTTON_CLASS}
                       >
-                        <Icon />
+                        <Icon className={sidebarNavIconClassName(isActive)} />
                         <span>{t(($) => $.nav[item.labelKey])}</span>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
@@ -891,14 +878,72 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
           </SidebarGroup>
         </SidebarContent>
 
-        <SidebarFooter className="p-2">
-          {/* One utility strip: the Discord link takes the leading space the
-              help trigger was leaving empty. `justify-end` keeps the trigger
-              right-aligned once the Discord link is dismissed. */}
-          <div className="flex items-center justify-end gap-1">
-            <JoinDiscordCard />
-            <HelpLauncher />
-          </div>
+        <SidebarFooter className="p-1">
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <div className="flex min-w-0 items-center gap-1">
+                <DropdownMenu onOpenChange={setHoverRevealSuspended}>
+                  <DropdownMenuTrigger
+                    render={
+                      <SidebarMenuButton
+                        size="lg"
+                        className="min-w-0 flex-1 text-left"
+                      >
+                        <ActorAvatar
+                          name={user?.name ?? ""}
+                          initials={(user?.name ?? "U").charAt(0).toUpperCase()}
+                          avatarUrl={resolvePublicFileUrl(user?.avatar_url)}
+                          size="sm"
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-body font-medium leading-tight">
+                            {user?.name}
+                          </span>
+                          <span className="block truncate text-caption text-sidebar-text-secondary leading-tight">
+                            {accountSecondary}
+                          </span>
+                        </span>
+                        <ChevronUp className="ml-auto size-4 text-sidebar-icon-secondary" />
+                      </SidebarMenuButton>
+                    }
+                  />
+                  <DropdownMenuContent
+                    side="top"
+                    align="start"
+                    sideOffset={8}
+                    className="min-w-56"
+                  >
+                    <div className="flex items-center gap-2.5 px-2 py-1.5">
+                      <ActorAvatar
+                        name={user?.name ?? ""}
+                        initials={(user?.name ?? "U").charAt(0).toUpperCase()}
+                        avatarUrl={resolvePublicFileUrl(user?.avatar_url)}
+                        size="lg"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-body font-medium leading-tight">
+                          {user?.name}
+                        </p>
+                        <p className="truncate text-caption text-sidebar-text-secondary leading-tight">
+                          {accountSecondary}
+                        </p>
+                      </div>
+                    </div>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuGroup>
+                      <DropdownMenuItem variant="destructive" onClick={logout}>
+                        <LogOut className="h-3.5 w-3.5" />
+                        {t(($) => $.sidebar.log_out)}
+                      </DropdownMenuItem>
+                    </DropdownMenuGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                {sidebarState !== "collapsed" && (
+                  <HelpLauncher onOpenChange={setHoverRevealSuspended} />
+                )}
+              </div>
+            </SidebarMenuItem>
+          </SidebarMenu>
         </SidebarFooter>
         <SidebarRail />
       </Sidebar>

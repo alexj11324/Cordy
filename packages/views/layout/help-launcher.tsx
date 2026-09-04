@@ -30,7 +30,11 @@ const CHANGELOG_URL = "https://github.com/alexj11324/Cordy/releases";
 // installed, and there is intentionally no marketing/download page to proxy.
 const DOWNLOAD_URL = "https://github.com/alexj11324/Cordy/releases/latest";
 
-export function HelpLauncher() {
+export function HelpLauncher({
+  onOpenChange,
+}: {
+  onOpenChange?: (open: boolean) => void;
+} = {}) {
   const { t } = useT("layout");
   const serverVersion = useConfigStore((state) => state.serverVersion);
   // Web-only: offering "download the desktop app" inside the desktop app is
@@ -44,11 +48,11 @@ export function HelpLauncher() {
   // of popping in a frame late.
   const desktop = isDesktopShell();
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={onOpenChange}>
       <DropdownMenuTrigger
         aria-label={t(($) => $.help.trigger)}
         title={t(($) => $.help.trigger)}
-        className="inline-flex size-7 items-center justify-center rounded-full text-muted-foreground transition-colors cursor-pointer hover:bg-accent hover:text-foreground data-popup-open:bg-accent data-popup-open:text-foreground"
+        className="inline-flex size-7 items-center justify-center rounded-full text-sidebar-icon-secondary transition-colors cursor-pointer hover:bg-sidebar-item-hover hover:text-sidebar-text-primary data-popup-open:bg-sidebar-item-active data-popup-open:text-sidebar-item-active-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring"
       >
         <CircleHelp className="size-4" />
       </DropdownMenuTrigger>

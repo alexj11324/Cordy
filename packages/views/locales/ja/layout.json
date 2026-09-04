@@ -58,9 +58,6 @@
     "workspace_group": "ワークスペース",
     "configure_group": "設定",
     "unread_overflow": "99+",
-    "discord_card": {
-      "title": "Discord に参加",
-      "dismiss": "閉じる"
-    }
+    "guest_account": "Guest"
   }
 }

@@ -248,7 +248,10 @@
 
 /* Desktop navigation glass. Electron supplies native `sidebar` vibrancy on
  * macOS; this translucent surface is also the browser/non-macOS fallback.
- * The compact Sheet is portalled outside the opted-in wrapper and stays solid. */
+ * The compact Sheet is portalled outside the opted-in wrapper and stays solid.
+ *
+ * No edge border or drop shadow: the content plane is its own card, and a
+ * sidebar glow reads as a divider against it (LobeHub-style glass sits flush). */
 [data-slot="sidebar-wrapper"][data-sidebar-glass="true"]
   [data-slot="sidebar-container"] {
   background-color: var(--sidebar);
@@ -259,12 +262,8 @@
       transparent 36%
     ),
     color-mix(in oklab, var(--sidebar) 70%, transparent);
-  border-inline-end: 1px solid color-mix(
-    in oklab,
-    var(--foreground) 10%,
-    transparent
-  );
-  box-shadow: 10px 0 30px color-mix(in oklab, var(--foreground) 7%, transparent);
+  border-inline-end: none;
+  box-shadow: none;
   -webkit-backdrop-filter: blur(24px) saturate(125%);
   backdrop-filter: blur(24px) saturate(125%);
 }
@@ -278,8 +277,6 @@
   [data-slot="sidebar-wrapper"][data-sidebar-glass="true"]
     [data-slot="sidebar-container"] {
     background: var(--sidebar);
-    border-inline-end-color: var(--sidebar-border);
-    box-shadow: none;
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
