@@ -81,8 +81,8 @@ function nodeReadiness(node: DependencyGraphNode) {
 }
 
 function nodeActor(node: DependencyGraphNode): string | null {
-  const type = node.executor_type || node.assignee_type;
-  const id = node.executor_id || node.assignee_id;
+  const type = node.executor_type;
+  const id = node.executor_id;
   if (!type || !id) return null;
   return `${type}:${id.slice(0, 8)}`;
 }

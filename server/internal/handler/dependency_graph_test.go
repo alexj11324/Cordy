@@ -49,6 +49,94 @@ func TestValidateDependencyGraphPlanRejectsTransitiveEdge(t *testing.T) {
 	}
 }
 
+func TestValidateDependencyGraphPlanUsesExplicitRoleContracts(t *testing.T) {
+	input := dependencyGraphValidationFixture(nil)
+	runtimeID := "00000000-0000-0000-0000-000000000004"
+	input.Tasks[0].Owner = &dependencyGraphRoleInput{Type: "member", ID: "00000000-0000-0000-0000-000000000002"}
+	input.Tasks[0].Executor = &dependencyGraphRoleInput{Type: "agent", ID: "00000000-0000-0000-0000-000000000003"}
+	input.Tasks[0].CandidateExecutors = []dependencyGraphRoleInput{
+		{Type: "team", ID: "00000000-0000-0000-0000-000000000005"},
+	}
+	input.Tasks[0].Reviewer = &dependencyGraphRoleInput{Type: "member", ID: "00000000-0000-0000-0000-000000000006"}
+	input.Tasks[0].RuntimeID = &runtimeID
+	modelID := "claude-test-model"
+	input.Tasks[0].ModelID = &modelID
+
+	if _, err := validateDependencyGraphPlan(&input); err != nil {
+		t.Fatalf("validateDependencyGraphPlan rejected explicit role contract: %v", err)
+	}
+	encoded, err := json.Marshal(input)
+	if err != nil {
+		t.Fatalf("marshal explicit role contract: %v", err)
+	}
+	if strings.Contains(string(encoded), "assign"+"ee") {
+		t.Fatalf("explicit dependency graph contract still serializes legacy assignee fields: %s", encoded)
+	}
+	for _, field := range []string{"owner", "executor", "candidate_executors", "reviewer"} {
+		if !strings.Contains(string(encoded), `"`+field+`"`) {
+			t.Fatalf("explicit dependency graph contract omitted %s: %s", field, encoded)
+		}
+	}
+}
+
+func TestValidateDependencyGraphPlanRejectsRoleKindMismatch(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*dependencyGraphTaskInput)
+		want   string
+	}{
+		{
+			name: "owner cannot be an agent",
+			mutate: func(task *dependencyGraphTaskInput) {
+				task.Owner = &dependencyGraphRoleInput{Type: "agent", ID: "00000000-0000-0000-0000-000000000002"}
+			},
+			want: "tasks[0].owner.type must be member",
+		},
+		{
+			name: "executor cannot be a member",
+			mutate: func(task *dependencyGraphTaskInput) {
+				task.Executor = &dependencyGraphRoleInput{Type: "member", ID: "00000000-0000-0000-0000-000000000002"}
+			},
+			want: "tasks[0].executor.type must be agent or team",
+		},
+		{
+			name: "candidate cannot be a member",
+			mutate: func(task *dependencyGraphTaskInput) {
+				task.CandidateExecutors = []dependencyGraphRoleInput{{Type: "member", ID: "00000000-0000-0000-0000-000000000002"}}
+			},
+			want: "tasks[0].candidate_executors[0].type must be agent or team",
+		},
+		{
+			name: "reviewer accepts all role kinds",
+			mutate: func(task *dependencyGraphTaskInput) {
+				task.Reviewer = &dependencyGraphRoleInput{Type: "service", ID: "00000000-0000-0000-0000-000000000002"}
+			},
+			want: "tasks[0].reviewer.type must be member, agent, or team",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			input := dependencyGraphValidationFixture(nil)
+			tt.mutate(&input.Tasks[0])
+			if _, err := validateDependencyGraphPlan(&input); err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("validateDependencyGraphPlan error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidateDependencyGraphExecutionTargetRequiresPair(t *testing.T) {
+	runtimeID := "00000000-0000-0000-0000-000000000002"
+	modelID := "claude-test-model"
+	if _, _, err := validateDependencyGraphExecutionTarget(&runtimeID, nil, "tasks[0]"); err == nil || !strings.Contains(err.Error(), "must be provided together") {
+		t.Fatalf("runtime without model error = %v, want paired-target validation", err)
+	}
+	if _, _, err := validateDependencyGraphExecutionTarget(nil, &modelID, "tasks[0]"); err == nil || !strings.Contains(err.Error(), "must be provided together") {
+		t.Fatalf("model without runtime error = %v, want paired-target validation", err)
+	}
+}
+
 func TestDependencyGraphCursorProjectMismatch(t *testing.T) {
 	projectA := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 	projectB := pgtype.UUID{Bytes: [16]byte{2}, Valid: true}

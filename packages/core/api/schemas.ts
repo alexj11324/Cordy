@@ -1641,7 +1641,11 @@ const dependencyGraphRecordSchema = z.preprocess(
   z.record(z.string(), z.unknown()).default({}),
 );
 
-const DependencyGraphActorSchema = z.object({
+// Graph candidate references are executor targets only. Keep the type open at
+// the transport boundary for forward-compatible responses, while the current
+// role contract is represented explicitly by DependencyGraphExecutor in the
+// shared TypeScript model and enforced by the Go apply handler.
+const DependencyGraphExecutorSchema = z.object({
   type: z.string().default(""),
   id: z.string().default(""),
 }).loose();
@@ -1693,7 +1697,7 @@ const DependencyGraphNodeSchema = z.object({
   outputs: dependencyGraphStringArraySchema,
   executor_type: z.string().nullable().default(null),
   executor_id: z.string().nullable().default(null),
-  candidate_executors: z.array(DependencyGraphActorSchema).default([]),
+  candidate_executors: z.array(DependencyGraphExecutorSchema).default([]),
   owner_type: z.string().nullable().default(null),
   owner_id: z.string().nullable().default(null),
   reviewer_type: z.string().nullable().default(null),
@@ -1714,9 +1718,6 @@ const DependencyGraphNodeSchema = z.object({
     total_prerequisites: 0,
     unlock_condition: "",
   }),
-  assignee_type: z.string().nullable().optional().catch(undefined),
-  assignee_id: z.string().nullable().optional().catch(undefined),
-  candidate_assignees: z.array(DependencyGraphActorSchema).optional().catch(undefined),
 }).loose();
 
 const DependencyGraphEdgeSchema = z.object({

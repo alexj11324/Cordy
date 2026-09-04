@@ -42,20 +42,27 @@ const (
 	dependencyGraphMaxIdempotencyKey = 200
 )
 
-type dependencyGraphAssigneeInput struct {
+// dependencyGraphRoleInput is a typed issue role. The role field determines
+// which actor kinds are valid: owner is a workspace member, executor is an
+// agent or team, and reviewer may be a member, agent, or team.
+type dependencyGraphRoleInput struct {
 	Type string `json:"type"`
 	ID   string `json:"id"`
 }
 
 type dependencyGraphTaskInput struct {
-	TempID             string                         `json:"temp_id"`
-	Title              string                         `json:"title"`
-	Description        string                         `json:"description"`
-	AcceptanceCriteria []string                       `json:"acceptance_criteria"`
-	Context            json.RawMessage                `json:"context"`
-	Outputs            []string                       `json:"outputs"`
-	Assignee           *dependencyGraphAssigneeInput  `json:"assignee"`
-	CandidateAssignees []dependencyGraphAssigneeInput `json:"candidate_assignees"`
+	TempID             string                     `json:"temp_id"`
+	Title              string                     `json:"title"`
+	Description        string                     `json:"description"`
+	AcceptanceCriteria []string                   `json:"acceptance_criteria"`
+	Context            json.RawMessage            `json:"context"`
+	Outputs            []string                   `json:"outputs"`
+	Owner              *dependencyGraphRoleInput  `json:"owner"`
+	Executor           *dependencyGraphRoleInput  `json:"executor"`
+	CandidateExecutors []dependencyGraphRoleInput `json:"candidate_executors"`
+	Reviewer           *dependencyGraphRoleInput  `json:"reviewer"`
+	RuntimeID          *string                    `json:"runtime_id"`
+	ModelID            *string                    `json:"model_id"`
 }
 
 type dependencyGraphEdgeInput struct {
@@ -99,8 +106,8 @@ func dependencyGraphConflict(code, message string) error {
 	return &dependencyGraphError{status: http.StatusConflict, code: code, msg: message}
 }
 
-func dependencyGraphAssigneeNotFound(message string) error {
-	return &dependencyGraphError{status: http.StatusUnprocessableEntity, code: "invalid_assignee", msg: message}
+func dependencyGraphInvalidReference(code, message string) error {
+	return &dependencyGraphError{status: http.StatusUnprocessableEntity, code: code, msg: message}
 }
 
 func dependencyGraphDatabase(message string, cause error) error {
@@ -159,19 +166,58 @@ func canonicalDependencyGraphJSON(raw json.RawMessage, field string, requireObje
 	return canonical, nil
 }
 
-func validateDependencyGraphAssigneeShape(assignee *dependencyGraphAssigneeInput, field string) (pgtype.UUID, error) {
-	if assignee == nil {
+func validateDependencyGraphRoleShape(role *dependencyGraphRoleInput, field string) (pgtype.UUID, error) {
+	if role == nil {
 		return pgtype.UUID{}, nil
 	}
-	if assignee.Type != "member" && assignee.Type != "agent" && assignee.Type != "team" {
+	if role.Type != "member" && role.Type != "agent" && role.Type != "team" {
 		return pgtype.UUID{}, invalidDependencyGraph(field + ".type must be member, agent, or team")
 	}
-	u, err := util.ParseUUID(assignee.ID)
+	u, err := util.ParseUUID(role.ID)
 	if err != nil || !u.Valid {
 		return pgtype.UUID{}, invalidDependencyGraph(field + ".id must be a non-nil UUID")
 	}
-	assignee.ID = uuidToString(u)
+	role.ID = uuidToString(u)
 	return u, nil
+}
+
+func validateDependencyGraphExecutorShape(executor *dependencyGraphRoleInput, field string) (pgtype.UUID, error) {
+	id, err := validateDependencyGraphRoleShape(executor, field)
+	if err != nil || executor == nil {
+		return id, err
+	}
+	if executor.Type != "agent" && executor.Type != "team" {
+		return pgtype.UUID{}, invalidDependencyGraph(field + ".type must be agent or team")
+	}
+	return id, nil
+}
+
+func validateDependencyGraphOwnerShape(owner *dependencyGraphRoleInput, field string) (pgtype.UUID, error) {
+	id, err := validateDependencyGraphRoleShape(owner, field)
+	if err != nil || owner == nil {
+		return id, err
+	}
+	if owner.Type != "member" {
+		return pgtype.UUID{}, invalidDependencyGraph(field + ".type must be member")
+	}
+	return id, nil
+}
+
+func validateDependencyGraphExecutionTarget(runtimeID, modelID *string, field string) (pgtype.UUID, pgtype.Text, error) {
+	if runtimeID == nil && modelID == nil {
+		return pgtype.UUID{}, pgtype.Text{}, nil
+	}
+	if runtimeID == nil || modelID == nil {
+		return pgtype.UUID{}, pgtype.Text{}, invalidDependencyGraph(field + ".runtime_id and " + field + ".model_id must be provided together")
+	}
+	id, err := util.ParseUUID(*runtimeID)
+	if err != nil || !id.Valid {
+		return pgtype.UUID{}, pgtype.Text{}, invalidDependencyGraph(field + ".runtime_id must be a non-nil UUID")
+	}
+	if err := validateDependencyGraphText(*modelID, field+".model_id", 255, true); err != nil {
+		return pgtype.UUID{}, pgtype.Text{}, err
+	}
+	return id, pgtype.Text{String: *modelID, Valid: true}, nil
 }
 
 type dependencyGraphAdjacency struct {
@@ -272,16 +318,25 @@ func validateDependencyGraphPlan(input *dependencyGraphApplyInput) ([][]string, 
 			return nil, err
 		}
 		task.Context = contextJSON
-		if task.CandidateAssignees == nil {
-			task.CandidateAssignees = []dependencyGraphAssigneeInput{}
+		if task.CandidateExecutors == nil {
+			task.CandidateExecutors = []dependencyGraphRoleInput{}
 		}
-		if _, err := validateDependencyGraphAssigneeShape(task.Assignee, field+".assignee"); err != nil {
+		if _, err := validateDependencyGraphOwnerShape(task.Owner, field+".owner"); err != nil {
 			return nil, err
 		}
-		for candidateIndex := range task.CandidateAssignees {
-			if _, err := validateDependencyGraphAssigneeShape(&task.CandidateAssignees[candidateIndex], fmt.Sprintf("%s.candidate_assignees[%d]", field, candidateIndex)); err != nil {
+		if _, err := validateDependencyGraphExecutorShape(task.Executor, field+".executor"); err != nil {
+			return nil, err
+		}
+		for candidateIndex := range task.CandidateExecutors {
+			if _, err := validateDependencyGraphExecutorShape(&task.CandidateExecutors[candidateIndex], fmt.Sprintf("%s.candidate_executors[%d]", field, candidateIndex)); err != nil {
 				return nil, err
 			}
+		}
+		if _, err := validateDependencyGraphRoleShape(task.Reviewer, field+".reviewer"); err != nil {
+			return nil, err
+		}
+		if _, _, err := validateDependencyGraphExecutionTarget(task.RuntimeID, task.ModelID, field); err != nil {
+			return nil, err
 		}
 	}
 
@@ -947,43 +1002,93 @@ type dependencyGraphTaskAssignment struct {
 	executorID         pgtype.UUID
 	ownerType          pgtype.Text
 	ownerID            pgtype.UUID
+	reviewerType       pgtype.Text
+	reviewerID         pgtype.UUID
 	candidateExecutors []byte
+	runtimeID          pgtype.UUID
+	modelID            pgtype.Text
 }
 
-func (h *Handler) validateDependencyGraphCandidate(ctx context.Context, workspaceID pgtype.UUID, candidate dependencyGraphAssigneeInput) error {
-	id, err := util.ParseUUID(candidate.ID)
+func validateDependencyGraphActor(ctx context.Context, queries *db.Queries, workspaceID pgtype.UUID, actor dependencyGraphRoleInput, code string) error {
+	id, err := util.ParseUUID(actor.ID)
 	if err != nil || !id.Valid {
-		return dependencyGraphAssigneeNotFound("candidate assignee id is invalid")
+		return dependencyGraphInvalidReference(code, "role id is invalid")
 	}
-	switch candidate.Type {
+	switch actor.Type {
 	case "member":
-		if _, err := h.Queries.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{UserID: id, WorkspaceID: workspaceID}); err != nil {
-			return dependencyGraphAssigneeNotFound("candidate member is not in this workspace")
+		if _, err := queries.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{UserID: id, WorkspaceID: workspaceID}); err != nil {
+			return dependencyGraphInvalidReference(code, "member is not in this workspace")
 		}
 	case "agent":
-		agent, err := h.Queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{ID: id, WorkspaceID: workspaceID})
+		agent, err := queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{ID: id, WorkspaceID: workspaceID})
 		if err != nil {
-			return dependencyGraphAssigneeNotFound("candidate agent is not in this workspace")
+			return dependencyGraphInvalidReference(code, "agent is not in this workspace")
 		}
 		if agent.ArchivedAt.Valid {
-			return dependencyGraphAssigneeNotFound("candidate agent is archived")
+			return dependencyGraphInvalidReference(code, "agent is archived")
 		}
 	case "team":
-		team, err := h.Queries.GetTeamInWorkspace(ctx, db.GetTeamInWorkspaceParams{ID: id, WorkspaceID: workspaceID})
+		team, err := queries.GetTeamInWorkspace(ctx, db.GetTeamInWorkspaceParams{ID: id, WorkspaceID: workspaceID})
 		if err != nil {
-			return dependencyGraphAssigneeNotFound("candidate team is not in this workspace")
+			return dependencyGraphInvalidReference(code, "team is not in this workspace")
 		}
 		if team.ArchivedAt.Valid {
-			return dependencyGraphAssigneeNotFound("candidate team is archived")
+			return dependencyGraphInvalidReference(code, "team is archived")
 		}
-		leader, err := h.Queries.GetAgent(ctx, team.LeaderID)
+		leader, err := queries.GetAgent(ctx, team.LeaderID)
 		if err != nil || leader.WorkspaceID != workspaceID || leader.ArchivedAt.Valid {
-			return dependencyGraphAssigneeNotFound("candidate team leader is not active")
+			return dependencyGraphInvalidReference(code, "team leader is not active")
 		}
 	default:
-		return dependencyGraphAssigneeNotFound("candidate assignee type is invalid")
+		return dependencyGraphInvalidReference(code, "role type is invalid")
 	}
 	return nil
+}
+
+func (h *Handler) validateDependencyGraphExecutor(ctx context.Context, r *http.Request, workspaceID pgtype.UUID, parent *db.Issue, executor *dependencyGraphRoleInput, field string) (pgtype.UUID, error) {
+	id, err := validateDependencyGraphExecutorShape(executor, field)
+	if err != nil || executor == nil {
+		return id, err
+	}
+	if err := validateDependencyGraphActor(ctx, h.Queries, workspaceID, *executor, "invalid_executor"); err != nil {
+		return pgtype.UUID{}, err
+	}
+	executorType := pgtype.Text{String: executor.Type, Valid: true}
+	status, message := h.validateExecutorPair(ctx, r, uuidToString(workspaceID), executorType, id, scopeChildOf(parent))
+	if status != 0 {
+		return pgtype.UUID{}, &dependencyGraphError{status: status, code: "invalid_executor", msg: message}
+	}
+	return id, nil
+}
+
+func (h *Handler) validateDependencyGraphOwner(ctx context.Context, workspaceID pgtype.UUID, owner *dependencyGraphRoleInput, field string) (pgtype.UUID, error) {
+	id, err := validateDependencyGraphOwnerShape(owner, field)
+	if err != nil || owner == nil {
+		return id, err
+	}
+	if err := validateDependencyGraphActor(ctx, h.Queries, workspaceID, *owner, "invalid_owner"); err != nil {
+		return pgtype.UUID{}, err
+	}
+	return id, nil
+}
+
+func (h *Handler) validateDependencyGraphReviewer(ctx context.Context, r *http.Request, workspaceID pgtype.UUID, parent *db.Issue, reviewer *dependencyGraphRoleInput, field string) (pgtype.UUID, error) {
+	id, err := validateDependencyGraphRoleShape(reviewer, field)
+	if err != nil || reviewer == nil {
+		return id, err
+	}
+	if err := validateDependencyGraphActor(ctx, h.Queries, workspaceID, *reviewer, "invalid_reviewer"); err != nil {
+		return pgtype.UUID{}, err
+	}
+	if reviewer.Type == "member" {
+		return id, nil
+	}
+	executorType := pgtype.Text{String: reviewer.Type, Valid: true}
+	status, message := h.validateExecutorPair(ctx, r, uuidToString(workspaceID), executorType, id, scopeChildOf(parent))
+	if status != 0 {
+		return pgtype.UUID{}, &dependencyGraphError{status: status, code: "invalid_reviewer", msg: message}
+	}
+	return id, nil
 }
 
 func (h *Handler) validateDependencyGraphAssignments(ctx context.Context, r *http.Request, workspaceID pgtype.UUID, parent *db.Issue, input *dependencyGraphApplyInput) ([]dependencyGraphTaskAssignment, error) {
@@ -991,48 +1096,60 @@ func (h *Handler) validateDependencyGraphAssignments(ctx context.Context, r *htt
 	for index := range input.Tasks {
 		task := &input.Tasks[index]
 		assignment := dependencyGraphTaskAssignment{}
-		if task.Assignee != nil {
-			assigneeID, err := validateDependencyGraphAssigneeShape(task.Assignee, fmt.Sprintf("tasks[%d].assignee", index))
+		if task.Owner != nil {
+			ownerID, err := h.validateDependencyGraphOwner(ctx, workspaceID, task.Owner, fmt.Sprintf("tasks[%d].owner", index))
 			if err != nil {
 				return nil, err
 			}
-			if err := h.validateDependencyGraphCandidate(ctx, workspaceID, *task.Assignee); err != nil {
+			assignment.ownerType = pgtype.Text{String: "member", Valid: true}
+			assignment.ownerID = ownerID
+		}
+		if task.Executor != nil {
+			executorID, err := h.validateDependencyGraphExecutor(ctx, r, workspaceID, parent, task.Executor, fmt.Sprintf("tasks[%d].executor", index))
+			if err != nil {
 				return nil, err
 			}
-			switch task.Assignee.Type {
-			case "member":
-				assignment.ownerType = pgtype.Text{String: "member", Valid: true}
-				assignment.ownerID = assigneeID
-			case "agent", "team":
-				executorType := pgtype.Text{String: task.Assignee.Type, Valid: true}
-				status, message := h.validateExecutorPair(ctx, r, uuidToString(workspaceID), executorType, assigneeID, scopeChildOf(parent))
-				if status != 0 {
-					return nil, &dependencyGraphError{status: status, code: "invalid_assignee", msg: message}
-				}
-				assignment.executorType = executorType
-				assignment.executorID = assigneeID
-			}
+			assignment.executorType = pgtype.Text{String: task.Executor.Type, Valid: true}
+			assignment.executorID = executorID
 		}
-		seenCandidates := make(map[string]struct{}, len(task.CandidateAssignees))
-		for candidateIndex := range task.CandidateAssignees {
-			candidate := &task.CandidateAssignees[candidateIndex]
-			if _, err := validateDependencyGraphAssigneeShape(candidate, fmt.Sprintf("tasks[%d].candidate_assignees[%d]", index, candidateIndex)); err != nil {
+		if task.Reviewer != nil {
+			reviewerID, err := h.validateDependencyGraphReviewer(ctx, r, workspaceID, parent, task.Reviewer, fmt.Sprintf("tasks[%d].reviewer", index))
+			if err != nil {
+				return nil, err
+			}
+			assignment.reviewerType = pgtype.Text{String: task.Reviewer.Type, Valid: true}
+			assignment.reviewerID = reviewerID
+		}
+		seenCandidates := make(map[string]struct{}, len(task.CandidateExecutors))
+		for candidateIndex := range task.CandidateExecutors {
+			candidate := &task.CandidateExecutors[candidateIndex]
+			candidateField := fmt.Sprintf("tasks[%d].candidate_executors[%d]", index, candidateIndex)
+			if _, err := validateDependencyGraphExecutorShape(candidate, candidateField); err != nil {
 				return nil, err
 			}
 			key := candidate.Type + "\x00" + candidate.ID
 			if _, exists := seenCandidates[key]; exists {
-				return nil, invalidDependencyGraph(fmt.Sprintf("tasks[%d].candidate_assignees contains duplicate assignee", index))
+				return nil, invalidDependencyGraph(fmt.Sprintf("tasks[%d].candidate_executors contains duplicate executor", index))
 			}
 			seenCandidates[key] = struct{}{}
-			if err := h.validateDependencyGraphCandidate(ctx, workspaceID, *candidate); err != nil {
+			if _, err := h.validateDependencyGraphExecutor(ctx, r, workspaceID, parent, candidate, candidateField); err != nil {
 				return nil, err
 			}
 		}
-		candidateJSON, err := json.Marshal(task.CandidateAssignees)
+		candidateJSON, err := json.Marshal(task.CandidateExecutors)
 		if err != nil {
 			return nil, dependencyGraphDatabase("encode dependency graph candidates", err)
 		}
 		assignment.candidateExecutors = candidateJSON
+		assignment.runtimeID, assignment.modelID, err = validateDependencyGraphExecutionTarget(task.RuntimeID, task.ModelID, fmt.Sprintf("tasks[%d]", index))
+		if err != nil {
+			return nil, err
+		}
+		if assignment.runtimeID.Valid {
+			if _, err := h.Queries.GetAgentRuntimeForWorkspace(ctx, db.GetAgentRuntimeForWorkspaceParams{ID: assignment.runtimeID, WorkspaceID: workspaceID}); err != nil {
+				return nil, dependencyGraphInvalidReference("invalid_runtime", "runtime is not in this workspace")
+			}
+		}
 		assignments[index] = assignment
 	}
 	return assignments, nil
@@ -1081,6 +1198,37 @@ func (h *Handler) applyDependencyGraphTransaction(ctx context.Context, input *de
 	}
 	if !isNotFound(err) {
 		return dependencyGraphApplyResult{}, dependencyGraphDatabase("check active dependency graph for parent", err)
+	}
+	// The preflight checks above provide early, role-specific errors. Recheck
+	// every persisted actor and runtime through the transaction-bound query set
+	// so a concurrent archive/delete cannot leave a graph pointing at a stale
+	// workspace object, matching the Rust service's atomic validation boundary.
+	for index, task := range input.Tasks {
+		if task.Owner != nil {
+			if err := validateDependencyGraphActor(ctx, qtx, actor.WorkspaceID, *task.Owner, "invalid_owner"); err != nil {
+				return dependencyGraphApplyResult{}, err
+			}
+		}
+		if task.Executor != nil {
+			if err := validateDependencyGraphActor(ctx, qtx, actor.WorkspaceID, *task.Executor, "invalid_executor"); err != nil {
+				return dependencyGraphApplyResult{}, err
+			}
+		}
+		if task.Reviewer != nil {
+			if err := validateDependencyGraphActor(ctx, qtx, actor.WorkspaceID, *task.Reviewer, "invalid_reviewer"); err != nil {
+				return dependencyGraphApplyResult{}, err
+			}
+		}
+		for _, candidate := range task.CandidateExecutors {
+			if err := validateDependencyGraphActor(ctx, qtx, actor.WorkspaceID, candidate, "invalid_executor"); err != nil {
+				return dependencyGraphApplyResult{}, err
+			}
+		}
+		if assignments[index].runtimeID.Valid {
+			if _, err := qtx.GetAgentRuntimeForWorkspace(ctx, db.GetAgentRuntimeForWorkspaceParams{ID: assignments[index].runtimeID, WorkspaceID: actor.WorkspaceID}); err != nil {
+				return dependencyGraphApplyResult{}, dependencyGraphInvalidReference("invalid_runtime", "runtime is not in this workspace")
+			}
+		}
 	}
 	plan, err := qtx.CreateDependencyGraphPlan(ctx, db.CreateDependencyGraphPlanParams{
 		WorkspaceID:    actor.WorkspaceID,
@@ -1132,6 +1280,8 @@ func (h *Handler) applyDependencyGraphTransaction(ctx context.Context, input *de
 			ProjectID:     lockedProjectID,
 			OwnerType:     assignment.ownerType,
 			OwnerID:       assignment.ownerID,
+			ReviewerType:  assignment.reviewerType,
+			ReviewerID:    assignment.reviewerID,
 		})
 		if err != nil {
 			return dependencyGraphApplyResult{}, dependencyGraphDatabase("create dependency graph issue", err)
@@ -1160,10 +1310,10 @@ func (h *Handler) applyDependencyGraphTransaction(ctx context.Context, input *de
 			ExecutorID:   assignment.executorID,
 			OwnerType:    assignment.ownerType,
 			OwnerID:      assignment.ownerID,
-			ReviewerType: pgtype.Text{},
-			ReviewerID:   pgtype.UUID{},
-			RuntimeID:    pgtype.UUID{},
-			ModelID:      pgtype.Text{},
+			ReviewerType: assignment.reviewerType,
+			ReviewerID:   assignment.reviewerID,
+			RuntimeID:    assignment.runtimeID,
+			ModelID:      assignment.modelID,
 			Column20:     dbid.NewV7(),
 		})
 		if err != nil {

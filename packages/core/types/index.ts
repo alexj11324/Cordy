@@ -200,7 +200,9 @@ export type {
 } from "./project";
 export type {
   DependencyGraphReadinessState,
-  DependencyGraphActor,
+  DependencyGraphOwner,
+  DependencyGraphExecutor,
+  DependencyGraphReviewer,
   DependencyGraphPlan,
   DependencyGraphReadiness,
   DependencyGraphNodeReadiness,
