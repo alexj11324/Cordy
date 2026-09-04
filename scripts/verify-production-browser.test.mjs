@@ -57,12 +57,41 @@ test("builds the PKCE-bound Accounts login page used by Desktop", () => {
 
 test("production browser acceptance includes the standalone broker and Go Clerk exchange", async () => {
   const source = await import("node:fs/promises").then(({ readFile }) =>
-    readFile(new URL("./verify-production-browser.mjs", import.meta.url), "utf8"),
+    readFile(
+      new URL("./verify-production-browser.mjs", import.meta.url),
+      "utf8",
+    ),
   );
   assert.match(source, /ACCOUNTS_ORIGIN\}\/login`/u);
   assert.match(source, /url\.pathname === "\/auth\/clerk"/u);
   assert.match(source, /Web Clerk session exchange/u);
   assert.match(source, /user\?\.is_guest/u);
+});
+
+test("production browser acceptance treats root as an app entry", async () => {
+  const source = await import("node:fs/promises").then(({ readFile }) =>
+    readFile(
+      new URL("./verify-production-browser.mjs", import.meta.url),
+      "utf8",
+    ),
+  );
+  assert.match(source, /Web app entry/u);
+  assert.match(source, /url\.pathname === "\/login"/u);
+  assert.match(source, /url\.pathname === target/u);
+  assert.doesNotMatch(source, /a\[href="\/login"\]/u);
+  assert.doesNotMatch(source, /product landing page/u);
+});
+
+test("authenticated Web acceptance carries the real cookie session", async () => {
+  const source = await import("node:fs/promises").then(({ readFile }) =>
+    readFile(
+      new URL("./verify-production-browser.mjs", import.meta.url),
+      "utf8",
+    ),
+  );
+  assert.match(source, /storageState: await context\.storageState\(\)/u);
+  assert.match(source, /storageState: auth\.storageState/u);
+  assert.doesNotMatch(source, /localStorage\.setItem\("patchbay_token"/u);
 });
 
 test("requires Google and not a lookalike OAuth destination", () => {

@@ -26,4 +26,15 @@ describe("StepWelcome status labels", () => {
     expect(screen.getAllByText("已完成")).toHaveLength(2);
     expect(screen.queryByText("In Progress")).not.toBeInTheDocument();
   });
+
+  it("links web visitors directly to the latest GitHub release", () => {
+    renderWithI18n(<StepWelcome isWeb onNext={vi.fn()} />);
+
+    expect(
+      screen.getByRole("link", { name: "Download Desktop" }),
+    ).toHaveAttribute(
+      "href",
+      "https://github.com/alexj11324/Cordy/releases/latest",
+    );
+  });
 });

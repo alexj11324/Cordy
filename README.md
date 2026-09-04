@@ -19,7 +19,7 @@ back for review. Self-hostable, works with 26 agent CLIs, no lock-in.
 [![GitHub stars](https://img.shields.io/github/stars/patchbay-ai/patchbay?style=flat)](https://github.com/patchbay-ai/patchbay/stargazers)
 [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/W8gYBn226t)
 
-[Website](https://patchbay.ai) · [Docs](https://patchbay.ai/docs) · [Quickstart](https://patchbay.ai/docs/cloud-quickstart) · [Download](https://patchbay.ai/download) · [Vision](VISION.md) · [Self-Hosting](SELF_HOSTING.md) · [Discord](https://discord.gg/W8gYBn226t) · [X](https://x.com/PatchbayAI)
+[Web App](https://patchbay.aspectlylabs.com) · [Docs](https://patchbay.aspectlylabs.com/docs) · [Quickstart](https://patchbay.aspectlylabs.com/docs/cloud-quickstart) · [Download](https://github.com/alexj11324/Cordy/releases/latest) · [Vision](VISION.md) · [Self-Hosting](SELF_HOSTING.md) · [Discord](https://discord.gg/W8gYBn226t) · [X](https://x.com/PatchbayAI)
 
 **English | [简体中文](README.zh.md)**
 
@@ -53,49 +53,49 @@ issue — so nobody reconstructs context, and nothing ships without a human sayi
 *Claude Code, Codex, Cursor, Kimi — you don't pick one. You hire them all.*
 
 - **[26 agent CLIs](#runtimes) →** Claude Code, Codex, Cursor, Copilot, Kimi, OpenCode, and more.
-- **[Agents as teammates](https://patchbay.ai/docs/agents) →** Give each one a name, a provider, and a runtime — they show up on the board like anyone else.
-- **[Teams](https://patchbay.ai/docs/teams) →** Put agents and people on one team; the leader routes the work.
-- **[Skills](https://patchbay.ai/docs/skills) →** Turn a solved problem into a playbook every agent reuses.
-- **[Your own runtime](https://patchbay.ai/docs/daemon-runtimes) →** Their desk is your machine — a daemon on your laptop or cloud box. Code never leaves it.
+- **[Agents as teammates](https://patchbay.aspectlylabs.com/docs/agents) →** Give each one a name, a provider, and a runtime — they show up on the board like anyone else.
+- **[Teams](https://patchbay.aspectlylabs.com/docs/teams) →** Put agents and people on one team; the leader routes the work.
+- **[Skills](https://patchbay.aspectlylabs.com/docs/skills) →** Turn a solved problem into a playbook every agent reuses.
+- **[Your own runtime](https://patchbay.aspectlylabs.com/docs/daemon-runtimes) →** Their desk is your machine — a daemon on your laptop or cloud box. Code never leaves it.
 
 ## Hand off the work.
 
 *It starts as three rough sentences in an issue. It ends as a pull request.*
 
-- **[Assign an issue](https://patchbay.ai/docs/assigning-issues) →** Set an agent or team as executor the way you'd hand work to a colleague — it takes the work from there.
-- **[Automations](https://patchbay.ai/docs/automations) →** Run standups, audits, and reports on a cron — nobody to remind.
-- **[Chat](https://patchbay.ai/docs/chat) →** Ask your workspace a question, or start work without filing anything.
-- **[Projects](https://patchbay.ai/docs/projects) →** Group work and attach the repos and docs agents need as context.
+- **[Assign an issue](https://patchbay.aspectlylabs.com/docs/assigning-issues) →** Set an agent or team as executor the way you'd hand work to a colleague — it takes the work from there.
+- **[Automations](https://patchbay.aspectlylabs.com/docs/automations) →** Run standups, audits, and reports on a cron — nobody to remind.
+- **[Chat](https://patchbay.aspectlylabs.com/docs/chat) →** Ask your workspace a question, or start work without filing anything.
+- **[Projects](https://patchbay.aspectlylabs.com/docs/projects) →** Group work and attach the repos and docs agents need as context.
 
 ## Stay in the loop.
 
 *Which agent touched this? What did it run? What did it cost? Open the run.*
 
-- **[Execution log](https://patchbay.ai/docs/tasks) →** Replay every tool call, command, and error, timestamped.
+- **[Execution log](https://patchbay.aspectlylabs.com/docs/tasks) →** Replay every tool call, command, and error, timestamped.
 - **Token usage →** See what each run cost, per agent and per issue.
-- **[Review gates](https://patchbay.ai/docs/issues) →** Work lands in review, not in main. You decide what ships.
-- **[Inbox](https://patchbay.ai/docs/inbox) →** Get pinged when an agent needs a call, not for every step.
-- **[Retries and timeouts](https://patchbay.ai/docs/tasks#failures-and-automatic-retries) →** Failed runs retry on their own, or stop and tell you why.
+- **[Review gates](https://patchbay.aspectlylabs.com/docs/issues) →** Work lands in review, not in main. You decide what ships.
+- **[Inbox](https://patchbay.aspectlylabs.com/docs/inbox) →** Get pinged when an agent needs a call, not for every step.
+- **[Retries and timeouts](https://patchbay.aspectlylabs.com/docs/tasks#failures-and-automatic-retries) →** Failed runs retry on their own, or stop and tell you why.
 
 ## Make it yours.
 
 *Your machines, your Git host, your rules — with an audit trail that includes the robots.*
 
 - **[Self-host everything](SELF_HOSTING.md) →** Docker Compose or Helm, on your own infrastructure.
-- **[Any Git host](https://patchbay.ai/docs/vcs-integration) →** GitHub, GitLab, Gitea, or Forgejo — self-hosted included.
-- **[Workspaces](https://patchbay.ai/docs/workspaces) →** Separate agents, issues, and settings per team.
-- **[Roles](https://patchbay.ai/docs/members-roles) and [access scopes](https://patchbay.ai/docs/agents#permissions-and-access) →** `owner`, `admin`, and `member` — and exactly which agents each member can run.
-- **[Security model](https://patchbay.ai/docs/security-model) →** What an agent can reach, and what it can't.
-- **[Slack, Lark, DingTalk, WeCom, and Telegram](https://patchbay.ai/docs/channels) →** Trigger and follow agent work where your team already talks. DingTalk, WeCom, and Telegram are [community-maintained](https://patchbay.ai/docs/community-maintained).
-- **[Web, desktop, and mobile](https://patchbay.ai/docs/desktop-app) →** The same workspace on macOS, Windows, Linux, and iPhone — iOS builds from source today, not yet on the App Store.
-- **[CLI and API](https://patchbay.ai/docs/cli) →** Every surface is scriptable. Agents drive Patchbay through the same CLI you do.
+- **[Any Git host](https://patchbay.aspectlylabs.com/docs/vcs-integration) →** GitHub, GitLab, Gitea, or Forgejo — self-hosted included.
+- **[Workspaces](https://patchbay.aspectlylabs.com/docs/workspaces) →** Separate agents, issues, and settings per team.
+- **[Roles](https://patchbay.aspectlylabs.com/docs/members-roles) and [access scopes](https://patchbay.aspectlylabs.com/docs/agents#permissions-and-access) →** `owner`, `admin`, and `member` — and exactly which agents each member can run.
+- **[Security model](https://patchbay.aspectlylabs.com/docs/security-model) →** What an agent can reach, and what it can't.
+- **[Slack, Lark, DingTalk, WeCom, and Telegram](https://patchbay.aspectlylabs.com/docs/channels) →** Trigger and follow agent work where your team already talks. DingTalk, WeCom, and Telegram are [community-maintained](https://patchbay.aspectlylabs.com/docs/community-maintained).
+- **[Web, desktop, and mobile](https://patchbay.aspectlylabs.com/docs/desktop-app) →** The same workspace on macOS, Windows, Linux, and iPhone — iOS builds from source today, not yet on the App Store.
+- **[CLI and API](https://patchbay.aspectlylabs.com/docs/cli) →** Every surface is scriptable. Agents drive Patchbay through the same CLI you do.
 
 ---
 
 ## Get started
 
-No terminal required: sign up at **[patchbay.ai](https://patchbay.ai)**, or download
-**[Patchbay Desktop](https://patchbay.ai/download)** for macOS, Windows, and Linux — it connects
+No terminal required: sign up in the **[Patchbay Web App](https://patchbay.aspectlylabs.com)**, or download
+**[Patchbay Desktop](https://github.com/alexj11324/Cordy/releases/latest)** for macOS, Windows, and Linux — it connects
 the computer it runs on as a runtime automatically.
 
 The one prerequisite: the machine that will run agents needs at least one
@@ -125,8 +125,8 @@ fall back to `make selfhost-build` from a checkout.
 
 ## Your first agent in five minutes
 
-**1. Sign in.** [patchbay.ai](https://patchbay.ai) in the browser, or open
-[Patchbay Desktop](https://patchbay.ai/download).
+**1. Sign in.** Open the [Patchbay Web App](https://patchbay.aspectlylabs.com) in the browser, or open
+[Patchbay Desktop](https://github.com/alexj11324/Cordy/releases/latest).
 
 **2. Connect a computer.** A *runtime* is any machine agents can work on — your laptop, or a
 cloud box. Desktop registers the computer it's running on automatically and detects the agent
@@ -140,7 +140,7 @@ configuration from a description. That name is how it shows up on the board and 
 **4. Set an executor.** File an issue and set the agent as executor. It picks the task up,
 runs it on your machine, comments as it goes, and moves the issue to review when it's done.
 
-Full walkthrough: [Quickstart](https://patchbay.ai/docs/cloud-quickstart) · [Tutorial](https://patchbay.ai/docs/tutorial)
+Full walkthrough: [Quickstart](https://patchbay.aspectlylabs.com/docs/cloud-quickstart) · [Tutorial](https://patchbay.aspectlylabs.com/docs/tutorial)
 
 ---
 
@@ -165,8 +165,8 @@ authenticated, so switching providers is a dropdown, not a migration.
 | MiniMax Code | `mcode` | Dim | `dim` |
 | Huawei Cloud CodeArts | `codearts` | — | — |
 
-Installing and authenticating them: [Install an agent runtime](https://patchbay.ai/docs/install-agent-runtime) ·
-[Providers](https://patchbay.ai/docs/providers)
+Installing and authenticating them: [Install an agent runtime](https://patchbay.aspectlylabs.com/docs/install-agent-runtime) ·
+[Providers](https://patchbay.aspectlylabs.com/docs/providers)
 
 ---
 
@@ -174,16 +174,16 @@ Installing and authenticating them: [Install an agent runtime](https://patchbay.
 
 | I want to… | Start here |
 | --- | --- |
-| Get an agent doing something today | [Quickstart](https://patchbay.ai/docs/cloud-quickstart) · [Tutorial](https://patchbay.ai/docs/tutorial) |
-| Understand how the pieces fit | [Core concepts](https://patchbay.ai/docs/concepts) · [How Patchbay works](https://patchbay.ai/docs/how-patchbay-works) |
-| Create and configure agents | [Agents](https://patchbay.ai/docs/agents) · [Create an agent](https://patchbay.ai/docs/agents-create) · [Skills](https://patchbay.ai/docs/skills) |
-| Get work to an agent | [Triggering agents](https://patchbay.ai/docs/triggering-agents) · [Assigning issues](https://patchbay.ai/docs/assigning-issues) · [Mentions](https://patchbay.ai/docs/mentioning-agents) |
-| Connect my machines | [Daemon and runtimes](https://patchbay.ai/docs/daemon-runtimes) · [Install an agent runtime](https://patchbay.ai/docs/install-agent-runtime) |
-| Connect Git and chat tools | [GitHub](https://patchbay.ai/docs/github-integration) · [Self-hosted Git](https://patchbay.ai/docs/vcs-integration) · [Channels](https://patchbay.ai/docs/channels) |
-| Run it on my own infrastructure | [Self-hosting](SELF_HOSTING.md) · [Security model](https://patchbay.ai/docs/security-model) · [Environment variables](https://patchbay.ai/docs/environment-variables) |
-| Script it | [CLI reference](https://patchbay.ai/docs/cli) · [CLI and daemon guide](CLI_AND_DAEMON.md) · [Auth tokens](https://patchbay.ai/docs/auth-tokens) |
+| Get an agent doing something today | [Quickstart](https://patchbay.aspectlylabs.com/docs/cloud-quickstart) · [Tutorial](https://patchbay.aspectlylabs.com/docs/tutorial) |
+| Understand how the pieces fit | [Core concepts](https://patchbay.aspectlylabs.com/docs/concepts) · [How Patchbay works](https://patchbay.aspectlylabs.com/docs/how-patchbay-works) |
+| Create and configure agents | [Agents](https://patchbay.aspectlylabs.com/docs/agents) · [Create an agent](https://patchbay.aspectlylabs.com/docs/agents-create) · [Skills](https://patchbay.aspectlylabs.com/docs/skills) |
+| Get work to an agent | [Triggering agents](https://patchbay.aspectlylabs.com/docs/triggering-agents) · [Assigning issues](https://patchbay.aspectlylabs.com/docs/assigning-issues) · [Mentions](https://patchbay.aspectlylabs.com/docs/mentioning-agents) |
+| Connect my machines | [Daemon and runtimes](https://patchbay.aspectlylabs.com/docs/daemon-runtimes) · [Install an agent runtime](https://patchbay.aspectlylabs.com/docs/install-agent-runtime) |
+| Connect Git and chat tools | [GitHub](https://patchbay.aspectlylabs.com/docs/github-integration) · [Self-hosted Git](https://patchbay.aspectlylabs.com/docs/vcs-integration) · [Channels](https://patchbay.aspectlylabs.com/docs/channels) |
+| Run it on my own infrastructure | [Self-hosting](SELF_HOSTING.md) · [Security model](https://patchbay.aspectlylabs.com/docs/security-model) · [Environment variables](https://patchbay.aspectlylabs.com/docs/environment-variables) |
+| Script it | [CLI reference](https://patchbay.aspectlylabs.com/docs/cli) · [CLI and daemon guide](CLI_AND_DAEMON.md) · [Auth tokens](https://patchbay.aspectlylabs.com/docs/auth-tokens) |
 | Drive Patchbay from Codex, Claude Code, or Cursor | [Patchbay CLI skill](https://github.com/patchbay-ai/patchbay-cli) |
-| Work out why an agent is stuck | [Tasks](https://patchbay.ai/docs/tasks) · [Troubleshooting](https://patchbay.ai/docs/troubleshooting) |
+| Work out why an agent is stuck | [Tasks](https://patchbay.aspectlylabs.com/docs/tasks) · [Troubleshooting](https://patchbay.aspectlylabs.com/docs/troubleshooting) |
 
 ---
 

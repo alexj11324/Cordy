@@ -2,10 +2,10 @@
  * The browser tab title contract for the web app.
  *
  * Two writers produce titles and they must agree: Next.js metadata renders the
- * `<title>` for statically known routes (landing, auth), and
+ * `<title>` for statically known routes (root, auth), and
  * `WorkspaceDocumentTitle` sets `document.title` on workspace routes, whose
  * names only exist in the query cache. Both go through the constants here so
- * `Issues | Patchbay` and `Changelog | Patchbay` can never drift into two
+ * `Issues | Patchbay` and `Settings | Patchbay` can never drift into two
  * different separators.
  *
  * Pure and React-free on purpose: the root layout is a server component and
@@ -13,7 +13,8 @@
  */
 
 /** Root fallback — the title of a page that has nothing more specific to say. */
-export const SITE_TITLE = "Patchbay — Project Management for Human + Agent Teams";
+export const SITE_TITLE =
+  "Patchbay — Project Management for Human + Agent Teams";
 
 /** Appended to every page-specific title. */
 export const TITLE_SUFFIX = " | Patchbay";
@@ -53,7 +54,9 @@ function clipTitle(title: string): string {
  * An empty or whitespace-only name falls back to {@link SITE_TITLE} rather than
  * rendering a bare ` | Patchbay`.
  */
-export function formatDocumentTitle(pageTitle: string | null | undefined): string {
+export function formatDocumentTitle(
+  pageTitle: string | null | undefined,
+): string {
   const trimmed = pageTitle?.trim();
   if (!trimmed) return SITE_TITLE;
   return `${clipTitle(trimmed)}${TITLE_SUFFIX}`;

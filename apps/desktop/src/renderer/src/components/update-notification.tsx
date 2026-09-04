@@ -4,12 +4,10 @@ import { RefreshCw, X } from "lucide-react";
 // Downloads run silently in the background (main process has
 // autoDownload=true). The renderer only renders UI once the package is fully
 // downloaded and waiting for a restart.
-type UpdateState =
-  | { status: "idle" }
-  | { status: "ready"; version: string };
+type UpdateState = { status: "idle" } | { status: "ready"; version: string };
 
 function changelogUrl(version: string): string {
-  return `https://patchbay.aspectlylabs.com/changelog#release-${version.replace(/\./g, "-")}`;
+  return `https://github.com/alexj11324/Cordy/releases/tag/v${version}`;
 }
 
 export function UpdateNotification() {

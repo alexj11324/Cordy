@@ -408,7 +408,7 @@ jobs:
             echo "### Production deployment"
             echo "- Source: \`$SOURCE_SHA\`"
             echo "- Complete image set: backend, web, docs, auth-broker"
-            echo "- Runtime, Google OAuth start, public-route, and authenticated browser verification: passed"
+            echo "- Runtime, Google OAuth start, app-entry, and authenticated browser verification: passed"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload browser failure screenshot

@@ -35,9 +35,9 @@ describe("prefixLocale", () => {
   });
 
   it("leaves external URLs alone", () => {
-    expect(prefixLocale("https://patchbay.aspectlylabs.com/download", "zh")).toBe(
-      "https://patchbay.aspectlylabs.com/download",
-    );
+    expect(
+      prefixLocale("https://github.com/alexj11324/Cordy/releases/latest", "zh"),
+    ).toBe("https://github.com/alexj11324/Cordy/releases/latest");
     expect(prefixLocale("mailto:hello@patchbay.ai", "zh")).toBe(
       "mailto:hello@patchbay.ai",
     );
