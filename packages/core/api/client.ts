@@ -274,15 +274,6 @@ import type {
 } from "../types";
 import type { OnboardingCompletionPath } from "../onboarding/types";
 
-// Work Product surfaces all page the same way: explicit page/per_page because
-// the server caps per_page and reports has_more rather than a total.
-function workProductPageQuery(params: WorkProductPageParams): string {
-  const search = new URLSearchParams();
-  if (params.page != null) search.set("page", String(params.page));
-  if (params.per_page != null) search.set("per_page", String(params.per_page));
-  const query = search.toString();
-  return query ? `?${query}` : "";
-}
 import type {
   CreateFeedbackResponse,
   FeedbackContext,
@@ -406,8 +397,6 @@ import {
   ExecutionProvenanceSchema,
   EMPTY_WORK_PRODUCT,
   EMPTY_WORK_PRODUCT_PAGE,
-  EMPTY_WORK_PRODUCT_RELATION,
-  EMPTY_WORK_PRODUCT_RELATION_PAGE,
   EMPTY_EXECUTION_PROVENANCE,
   EMPTY_EXECUTION_PROVENANCE_PAGE,
   TeamSchema,

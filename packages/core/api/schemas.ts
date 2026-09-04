@@ -1410,7 +1410,7 @@ export const CommentsListSchema = z.array(CommentSchema);
 // UI treats it as "could not read the result" rather than a successful run.
 export const EMPTY_COMMENT: Comment = {
   id: "",
-  issue_id: null,
+  issue_id: "",
   author_type: "member",
   author_id: "",
   content: "",

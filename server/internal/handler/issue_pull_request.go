@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/patchbay-ai/patchbay/server/internal/integrations/ghsnapshot"
 	"github.com/patchbay-ai/patchbay/server/internal/issuestatus"
@@ -156,7 +155,7 @@ func (h *Handler) validateTaskExplicitGitHubProduct(ctx context.Context, q *db.Q
 		if provenance.HeadState != "attached" || !headRepositoryMatches(provenance.RepoIdentity, repoIdentity) {
 			continue
 		}
-		executionWorkspace := textWorkProductValue(provenance.ExecutionWorkspace)
+		executionWorkspace := strings.TrimSpace(provenance.ExecutionWorkspace)
 		if executionWorkspace == "" || !taskExecutionWorkspaceMatches(textWorkProductValue(task.WorkDir), textWorkProductValue(task.DurableWorkDir), executionWorkspace) {
 			continue
 		}
