@@ -321,6 +321,83 @@ func TestRunMigrationsConcurrentAlreadyApplied(t *testing.T) {
 	}
 }
 
+func TestRunMigrationsRecordsLegacyEquivalentWithoutSQLOrHook(t *testing.T) {
+	f := newFixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), raceTestTimeout)
+	defer cancel()
+
+	const current = "449_patrick_workspace_unique_index"
+	legacy := legacyEquivalentMigration(current, "up")
+	if legacy != "453_patrick_workspace_unique_index" {
+		t.Fatalf("legacy equivalent = %q, want Patrick Rust migration", legacy)
+	}
+
+	if _, err := f.pool.Exec(ctx, fmt.Sprintf(`
+		CREATE TABLE %s (
+			version TEXT PRIMARY KEY,
+			applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+		)
+	`,
+		pgx.Identifier{f.schema, "schema_migrations"}.Sanitize(),
+	)); err != nil {
+		t.Fatalf("create legacy migration ledger: %v", err)
+	}
+	if _, err := f.pool.Exec(ctx, fmt.Sprintf(`
+		INSERT INTO %s (version) VALUES ($1)
+	`, pgx.Identifier{f.schema, "schema_migrations"}.Sanitize()), legacy); err != nil {
+		t.Fatalf("seed legacy migration: %v", err)
+	}
+
+	marker := pgx.Identifier{f.schema, "legacy_equivalent_sql_ran"}.Sanitize()
+	dir := t.TempDir()
+	upFile := filepath.Join(dir, current+".up.sql")
+	downFile := filepath.Join(dir, current+".down.sql")
+	if err := os.WriteFile(upFile, []byte("CREATE TABLE "+marker+" (id integer);\n"), 0o600); err != nil {
+		t.Fatalf("write equivalent up migration: %v", err)
+	}
+	if err := os.WriteFile(downFile, []byte("DROP TABLE "+marker+";\n"), 0o600); err != nil {
+		t.Fatalf("write equivalent down migration: %v", err)
+	}
+
+	var hookCalls atomic.Int32
+	opts := runOptions{
+		Direction:             "up",
+		Files:                 []string{upFile},
+		SchemaMigrationsTable: f.tableFQN,
+		AdvisoryLockKey:       f.lockKey,
+		Hooks: map[string]preMigrationHook{
+			current: func(context.Context, *pgxpool.Pool) error {
+				hookCalls.Add(1)
+				return nil
+			},
+		},
+	}
+	if err := runMigrations(ctx, f.pool, opts); err != nil {
+		t.Fatalf("record equivalent up migration: %v", err)
+	}
+	if hookCalls.Load() != 0 {
+		t.Fatalf("equivalent up migration hook ran %d times, want 0", hookCalls.Load())
+	}
+	if f.tableExists(t, "legacy_equivalent_sql_ran") {
+		t.Fatal("equivalent up migration executed SQL")
+	}
+	if got, want := f.appliedVersions(t), []string{current, legacy}; !equalStrings(got, want) {
+		t.Fatalf("equivalent up ledger = %v, want %v", got, want)
+	}
+
+	opts.Direction = "down"
+	opts.Files = []string{downFile}
+	if err := runMigrations(ctx, f.pool, opts); err != nil {
+		t.Fatalf("record equivalent down migration: %v", err)
+	}
+	if hookCalls.Load() != 0 {
+		t.Fatalf("equivalent down migration hook ran %d times, want 0", hookCalls.Load())
+	}
+	if got, want := f.appliedVersions(t), []string{legacy}; !equalStrings(got, want) {
+		t.Fatalf("equivalent down ledger = %v, want %v", got, want)
+	}
+}
+
 // TestRunMigrationsAdvisoryLockSerializes proves the lock genuinely
 // blocks contenders. We acquire the same advisory key on a side
 // connection BEFORE spawning any runMigrations goroutine, then start N
