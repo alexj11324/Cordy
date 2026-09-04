@@ -12,8 +12,8 @@ been recorded yet.
 The source reference is Rust `9df7c06cf767d599c697656a1d43d0eab3e3dea2`
 (`origin/archive/rust-mainline`, also the inspected `origin/main`). The Go
 continuation is `hoplite/kalymna-ed979cf8`, on the #727 → #728 → #729 stack.
-This document is a **partial, evidence-backed inventory**, not a completed
-whole-product audit or an estimate of all remaining work. The historical
+This document is an evidence-backed responsibility inventory, not a completed
+whole-product migration certification or an estimate of all remaining work. The historical
 [W4–W9 plan](MIGRATION_PLAN_W4_W9.md) and the original Hoplite PR report are
 checkpoints, not proof that their acceptance gates passed in the current tree.
 For this work item, the maintained shipping-documentation and dependency-graph
@@ -32,13 +32,17 @@ CI [33769723534](https://github.com/alexj11324/Cordy/actions/runs/33769723534) o
 Only the unchanged image-budget job was skipped. No production deployment or
 final merge has occurred.
 
-Evidence snapshot for the previous responsibility-domain handoff: CI
-[`33824678711`](https://github.com/alexj11324/Cordy/actions/runs/33824678711)
-passed on `0c71849dc` with the earlier dependency-graph code from `395c5fb41`
-in its history. That run is not evidence for the current re-audit: the graph
-response, CLI, and realtime acceptance added after it require a replacement
-GitHub run. The replacement run and any deployed apply/read/WebSocket evidence
-must be recorded before this responsibility block can be called closed.
+Current responsibility-domain evidence: replacement CI
+[`33831259464`](https://github.com/alexj11324/Cordy/actions/runs/33831259464)
+passed on `a1037b624`, including migrations, SQL generation, the race-enabled Go
+test wrapper, frontend checks and platform checks. The backend log reports the
+handler, patchbay CLI and server packages passing; the graph acceptance tests
+are included in those packages. Mobile Verify
+[`33831259471`](https://github.com/alexj11324/Cordy/actions/runs/33831259471)
+also passed on the same SHA. This is the replacement evidence for the graph
+response, CLI and realtime changes. It closes the source/contract/test/CI gate
+for this responsibility block; no production deployment or deployed
+apply/read/WebSocket observation has occurred.
 
 Backend compilation, SQL generation and tests run in GitHub Actions. No local
 Go/Rust tooling or Docker build is part of this audit. Local frontend checks
@@ -69,7 +73,7 @@ for the complete installed-state rename, focused tests and browser evidence.
 | Managed Slack credentials     | `377bb52a9` and `96afd5368` preserve Hoplite's credential work and restore encrypted rotation, health and lifecycle. Replacement CI [33762592403](https://github.com/alexj11324/Cordy/actions/runs/33762592403) passed all applicable checks on `1e54e1d9f`, including PostgreSQL-backed race tests and sqlc.                                            | Real Slack authorization/refresh/revoke and deployed mode acceptance.                                                  |
 | Workspace messaging Hub | Shared Hub selection, permissions, persistence, pending-run fencing, adapter wiring and per-Agent resume isolation passed CI. Workspace-owned NULL/zero-owner installations now enter supervision while orphan records and managed webhooks remain excluded; final CI 33785381994 passed. | Real provider and setup/UI acceptance. |
 | Messaging setup and connection UI | Durable observation ownership/projection, six provider reports, shared client validation, installed-state rename and six settings pages are implemented. Redis-authoritative leases are batch-read and token-matched in the public projection; final CI 33787309411 passed. | Workspace-level setup guide and installation modes; real native/provider and deployed acceptance. |
-| Dependency graph role semantics | Go now carries the Rust role contract through `server/internal/handler/dependency_graph.go`: `owner` is a member, `executor` and `candidate_executors` are agent/team targets, `reviewer` accepts member/agent/team, and `runtime_id`/`model_id` are paired. Apply writes those explicit issue/node columns and acceptance criteria atomically; read returns Rust-shaped `parent`, `children`, `nodes`, `edges`, derived `waves`, temp-id edge endpoints, and fail-closed readiness. `patchbay issue dependency-graph get/apply` forwards the typed plan and idempotency header. Core/View/Mobile consumers use `executor_*`, `candidate_executors`, readiness, and `dependency_graph:updated`; no current graph consumer uses the retired aliases. `TestApplyDependencyGraphRoundTripsRolesAndRealtime`, `TestListDependencyGraphsReturnsNestedResponses`, the CLI request/output tests, `TestPostJSONWithHeaderPreservesClientContext`, and `TestRegisterListeners_DependencyGraphUpdatedBroadcastsWorkspaceFrame` are the focused acceptance set. | Replacement GitHub CI must run the Go handler/CLI/realtime tests, sqlc and frontend checks; a deployed Go service still needs an actual apply → read-by-parent/read-by-plan → WebSocket refresh observation. No local Go test is permitted by repository rules. Historical graph migrations retain the old columns only in the immutable up migration and rename-back down migration listed in the residual inventory. |
+| Dependency graph role semantics | Go now carries the Rust role contract through `server/internal/handler/dependency_graph.go`: `owner` is a member, `executor` and `candidate_executors` are agent/team targets, `reviewer` accepts member/agent/team, and `runtime_id`/`model_id` are paired. Apply writes those explicit issue/node columns and acceptance criteria atomically; read returns Rust-shaped `parent`, `children`, `nodes`, `edges`, derived `waves`, temp-id edge endpoints, and fail-closed readiness. `patchbay issue dependency-graph get/apply` forwards the typed plan and idempotency header. Core/View/Mobile consumers use `executor_*`, `candidate_executors`, readiness, and `dependency_graph:updated`; no current graph consumer uses the retired aliases. `TestApplyDependencyGraphRoundTripsRolesAndRealtime`, `TestListDependencyGraphsReturnsNestedResponses`, the CLI request/output tests, `TestPostJSONWithHeaderPreservesClientContext`, and `TestRegisterListeners_DependencyGraphUpdatedBroadcastsWorkspaceFrame` are the focused acceptance set. Replacement CI [`33831259464`](https://github.com/alexj11324/Cordy/actions/runs/33831259464) passed on `a1037b624`, with Mobile Verify [`33831259471`](https://github.com/alexj11324/Cordy/actions/runs/33831259471) also green. | Source/contract/test/CI acceptance is closed. A deployed Go service still needs an actual apply → read-by-parent/read-by-plan → WebSocket refresh observation. No local Go test is permitted by repository rules. Historical graph migrations retain the old columns only in the immutable up migration and rename-back down migration listed in the residual inventory. |
 | Hosted IM turn quota          | Go implementation is present in `79b2cac95`, `11ae5375b`, `server/internal/channelquota`, `server/internal/service/task.go`, `server/internal/handler/messaging_usage.go`, and the Settings/Core contracts. Managed channel-ingested turns use the Cloud `im_agent_turns` gate, count accepted plus in-flight turns, serialize admission on the workspace row, expose usage/reset data, and bypass self-hosted messaging. The earlier targeted run [`33798936215`](https://github.com/alexj11324/Cordy/actions/runs/33798936215) was cancelled before backend completion, but replacement CI [`33824678711`](https://github.com/alexj11324/Cordy/actions/runs/33824678711) on `0c71849dc` passed the complete applicable backend/frontend/sqlc suite. | Cloud entitlement rollout, deployed enablement, and real provider/deployment acceptance. The implementation and replacement-CI gates are no longer open; its end-to-end shipping gate remains open. |
 | Hosted workspace quota        | Go implementation is present in `d1707c566` and `36f1b0724`: `server/internal/handler/workspace_capacity.go` resolves the Cloud `hosted_workspace_limit` gate and `server/internal/handler/workspace.go` applies it to workspace creation and owner promotion, with `server/internal/seatcapacity` serializing ownership decisions. CI [`33803663947`](https://github.com/alexj11324/Cordy/actions/runs/33803663947) first exposed two fixtures sending multiple SQL commands through a prepared statement; `36f1b0724` split those statements, and replacement CI [`33824678711`](https://github.com/alexj11324/Cordy/actions/runs/33824678711) on `0c71849dc` passed the complete applicable backend, sqlc, and frontend suite. | Cloud entitlement rollout, deployed enablement, and live hosted/self-hosted acceptance. The implementation, fixture fix, and replacement-CI gates are closed; concurrency and deployment evidence still need live acceptance. |
 | Authentication and delivery   | Go source now contains the Clerk provider/adapter, split shadcn shell, SSO callback and Desktop handoff (`8f4d98b49`, `8cb3f6dbb`). Focused source/tests do not establish browser JavaScript → real Clerk → Go session → frontend API completion, or a deployed Go backend/build identity.                                                                                                                                                                                                                 | Real browser authentication, native callback, release artifacts, production health/version and provider connectivity.  |
@@ -111,10 +115,11 @@ and assert parent/children, temp-id edge endpoints, readiness counts, and
 children plus a replay graph event; (4) pass that event through the server
 listener and assert a workspace WebSocket frame; (5) run Core/View/docs checks.
 The first four steps are represented by the named Go tests in the graph row and
-must be executed by GitHub Actions because local Go is prohibited. A deployed
-Go instance must still be exercised for the same HTTP and WebSocket sequence;
-until those CI and deployment observations are attached, this block remains
-open.
+were executed by GitHub Actions because local Go is prohibited. CI
+`33831259464` passed the race-enabled backend suite, including the handler,
+patchbay CLI and server packages containing those tests. A deployed Go instance
+must still be exercised for the same HTTP and WebSocket sequence; until that
+deployment observation is attached, the runtime/deployment gate remains open.
 
 The former frontend deletion inventory is now partly reconciled: `8f4d98b49`
 restores the Go Clerk provider/adapter, `/sign-in`, `/sign-up`, SSO callback and
@@ -152,8 +157,9 @@ above or below:
   Rust response material and publishes `dependency_graph:updated`; the Go CLI
   now exposes the Rust `get`/`apply` commands. This audit replaces the stale
   wording with named handler, CLI, frontend, and realtime acceptance tests.
-  The implementation is not called closed until replacement CI and a deployed
-  WebSocket observation exist.
+  Replacement CI [`33831259464`](https://github.com/alexj11324/Cordy/actions/runs/33831259464)
+  passed the graph handler, CLI and realtime packages. The source/contract/test/
+  CI gate is therefore closed; a deployed WebSocket observation remains open.
 
 The following are reviewed but are not stale closures: native onboarding and
 Electron acceptance, real DingTalk/Slack/provider flows, deployed messaging
