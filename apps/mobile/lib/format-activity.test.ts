@@ -43,4 +43,66 @@ describe("formatActivity role changes", () => {
       ),
     ).toBe("removed owner");
   });
+
+  it("distinguishes reviewer assignment from a review handoff", () => {
+    expect(
+      formatActivity(
+        activity("review_handoff", {
+          from_status: "in_review",
+          to_status: "in_review",
+          to_type: "agent",
+          to_id: "agent-2",
+        }),
+        actorName,
+      ),
+    ).toBe("assigned reviewer to Build Agent");
+
+    expect(
+      formatActivity(
+        activity("review_handoff", {
+          from_status: "in_progress",
+          to_status: "in_review",
+          from_type: "agent",
+          from_id: "agent-2",
+          to_type: "member",
+          to_id: "member-1",
+        }),
+        actorName,
+      ),
+    ).toBe("handed review from Build Agent to Alex");
+  });
+
+  it("renders reviewer replacement and removal with reviewer terminology", () => {
+    expect(
+      formatActivity(
+        activity("review_handoff", {
+          from_status: "in_review",
+          to_status: "in_review",
+          from_type: "member",
+          from_id: "member-1",
+          to_type: "agent",
+          to_id: "agent-2",
+        }),
+        actorName,
+      ),
+    ).toBe("changed reviewer from Alex to Build Agent");
+
+    expect(
+      formatActivity(
+        activity("review_handoff", {
+          from_status: "in_review",
+          to_status: "in_review",
+          from_type: "agent",
+          from_id: "agent-2",
+        }),
+        actorName,
+      ),
+    ).toBe("removed reviewer");
+  });
+
+  it("preserves the raw action for unknown activity events", () => {
+    expect(formatActivity(activity("future_activity", {}), actorName)).toBe(
+      "future_activity",
+    );
+  });
 });

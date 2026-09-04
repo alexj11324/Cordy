@@ -93,6 +93,30 @@ export function formatActivity(
       if (toName) return `set owner to ${toName}`;
       return "changed owner";
     }
+    case "review_handoff": {
+      const fromName =
+        details.from_id && details.from_type
+          ? resolveActorName(details.from_type, details.from_id)
+          : "?";
+      const toName =
+        details.to_id && details.to_type
+          ? resolveActorName(details.to_type, details.to_id)
+          : "?";
+
+      // The activity API uses one action for reviewer assignment/replacement
+      // and a real handoff. The status pair is the contract-level
+      // discriminator: a reviewer-only change leaves the status unchanged;
+      // entering review transfers the review from the executor.
+      const hasStatusPair =
+        typeof details.from_status === "string" &&
+        typeof details.to_status === "string";
+      if (!hasStatusPair || details.from_status !== details.to_status) {
+        return `handed review from ${fromName} to ${toName}`;
+      }
+      if (!details.to_id) return "removed reviewer";
+      if (!details.from_id) return `assigned reviewer to ${toName}`;
+      return `changed reviewer from ${fromName} to ${toName}`;
+    }
     case "start_date_changed": {
       if (!details.to) return "removed start date";
       return `set start date to ${shortDate(details.to)}`;
