@@ -6,7 +6,7 @@ description: |
 type: application
 version: 0.1.0
 appVersion: "latest"
-home: https://patchbay.ai
+home: https://patchbay.aspectlylabs.com
 sources:
   - https://github.com/patchbay-ai/patchbay
 keywords:

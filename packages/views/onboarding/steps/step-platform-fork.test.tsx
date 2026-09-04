@@ -57,14 +57,14 @@ function renderFork(
   });
   render(
     <QueryClientProvider client={qc}>
-    <I18nProvider locale="en" resources={TEST_RESOURCES}>
-      <StepPlatformFork
-        wsId="ws_test"
-        onNext={onNext}
-        cliInstructions={<div data-testid="cli-instructions">install me</div>}
-        {...overrides}
-      />
-    </I18nProvider>
+      <I18nProvider locale="en" resources={TEST_RESOURCES}>
+        <StepPlatformFork
+          wsId="ws_test"
+          onNext={onNext}
+          cliInstructions={<div data-testid="cli-instructions">install me</div>}
+          {...overrides}
+        />
+      </I18nProvider>
     </QueryClientProvider>,
   );
   return { onNext };
@@ -87,7 +87,9 @@ describe("StepPlatformFork", () => {
   it("renders the three fork options at rest", () => {
     renderFork();
     expect(screen.getByText(/^use this computer$/i)).toBeInTheDocument();
-    expect(screen.getByText(/^connect from the terminal$/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/^connect from the terminal$/i),
+    ).toBeInTheDocument();
     expect(screen.getByText(/^use a cloud computer$/i)).toBeInTheDocument();
     // Cloud option is a "Coming soon" preview — not yet wired up.
     expect(screen.getByText(/^coming soon$/i)).toBeInTheDocument();
@@ -100,16 +102,16 @@ describe("StepPlatformFork", () => {
 
   it("footer: Skip only + explanatory hint (no Continue)", () => {
     renderFork();
-    expect(
-      screen.getByRole("button", { name: /skip for now/i }),
-    ).toBeEnabled();
+    expect(screen.getByRole("button", { name: /skip for now/i })).toBeEnabled();
     // Continue is gone — it lived in the footer before; now advancement
     // for the CLI path is owned by the CLI dialog's own button.
     expect(
       screen.queryByRole("button", { name: /^continue$/i }),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByText(/pick a way to connect — or skip and connect a computer later/i),
+      screen.getByText(
+        /pick a way to connect — or skip and connect a computer later/i,
+      ),
     ).toBeInTheDocument();
   });
 
@@ -132,10 +134,10 @@ describe("StepPlatformFork", () => {
 
     await user.click(screen.getByText(/^use this computer$/i));
 
-    // Routes to the new /download page (not GitHub releases) so the
-    // user lands on the OS auto-detect surface.
+    // Routes to the canonical release page; no deleted marketing route sits
+    // between onboarding and the installer assets.
     expect(openSpy).toHaveBeenCalledWith(
-      "/download",
+      "https://github.com/alexj11324/Cordy/releases/latest",
       "_blank",
       "noopener,noreferrer",
     );
@@ -177,7 +179,9 @@ describe("StepPlatformFork", () => {
     await user.click(screen.getByRole("button", { name: /show steps/i }));
 
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByText(/1 computer connected/i)).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(/1 computer connected/i),
+    ).toBeInTheDocument();
     expect(
       within(dialog).getByText(/selected: claude code/i),
     ).toBeInTheDocument();
@@ -193,5 +197,4 @@ describe("StepPlatformFork", () => {
     // the runtime's own default applies.
     expect(onNext).toHaveBeenCalledWith(rt, undefined);
   });
-
 });

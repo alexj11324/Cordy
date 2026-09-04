@@ -215,6 +215,62 @@ class ProductionDeployContractTests(unittest.TestCase):
             with self.assertRaisesRegex(production_deploy.DeploymentError, "--bootstrap"):
                 deployment.deploy(self.manifest())
 
+    def test_failed_deploy_records_runtime_diagnostics_before_rollback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            deployment = production_deploy.ProductionDeployment(Path(directory))
+            deployment.initialize_directories()
+            current = self.manifest()
+            current["source_sha"] = "b" * 40
+            deployment.atomic_json(deployment.current_path, current)
+            deployment.fetch_main = mock.Mock(return_value="a" * 40)
+            deployment.apply = mock.Mock(
+                side_effect=[
+                    production_deploy.DeploymentError("candidate failed"),
+                    None,
+                ]
+            )
+            deployment.record_runtime_diagnostics = mock.Mock()
+
+            with self.assertRaisesRegex(
+                production_deploy.DeploymentError, "candidate failed"
+            ):
+                deployment.deploy(self.manifest())
+
+            deployment.record_runtime_diagnostics.assert_called_once_with("a" * 40)
+
+    def test_runtime_diagnostics_timeout_cannot_delay_rollback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            deployment = production_deploy.ProductionDeployment(Path(directory))
+            deployment.initialize_directories()
+            timeout = production_deploy.subprocess.TimeoutExpired(
+                ["docker", "inspect"],
+                timeout=5,
+                output="partial output",
+            )
+
+            with mock.patch.object(
+                production_deploy.subprocess,
+                "run",
+                side_effect=timeout,
+            ) as run:
+                deployment.record_runtime_diagnostics("a" * 40)
+
+            self.assertEqual(
+                run.call_count,
+                len(production_deploy.BOOTSTRAP_CONTAINERS) * 2,
+            )
+            self.assertTrue(
+                all(call.kwargs["timeout"] == 5 for call in run.call_args_list)
+            )
+            diagnostics = json.loads(
+                (deployment.history / f"failed-runtime-{'a' * 40}.json").read_text()
+            )
+            for entry in diagnostics["containers"].values():
+                self.assertIn("[diagnostic command timed out]", entry["state"])
+                self.assertIsNone(entry["state_exit_code"])
+                self.assertIn("[diagnostic command timed out]", entry["logs"])
+                self.assertIsNone(entry["logs_exit_code"])
+
     def test_deploy_receipt_contains_browser_credentials(self):
         with tempfile.TemporaryDirectory() as directory:
             deployment = production_deploy.ProductionDeployment(Path(directory))

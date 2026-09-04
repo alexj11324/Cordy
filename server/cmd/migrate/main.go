@@ -352,7 +352,7 @@ var concurrentIndexCleanups = map[string]string{
 	"572_slack_oauth_state_hash_index":                          "slack_oauth_state_hash_uidx",
 	"574_channel_installation_runtime_observation_index":        "channel_installation_runtime_observation_uidx",
 	"575_idx_chat_message_channel_task":                         "idx_chat_message_channel_task",
-	"579_channel_installation_installed_lease_index":             "idx_channel_installation_installed_lease",
+	"579_channel_installation_installed_lease_index":            "idx_channel_installation_installed_lease",
 }
 
 // concurrentDownIndexCleanups covers every migration whose down direction
@@ -465,6 +465,161 @@ var upMigrationConditions = map[string]migrationCondition{
 	"371_comment_content_search_index_strategy": whenIndexUsable(commentContentBigramIndex),
 }
 
+// legacyEquivalentMigrations maps Go-mainline migration names to the Rust
+// migration whose SQL already established the same schema. Production
+// keeps migration identity by full file stem rather than numeric prefix, so a
+// direct Rust-to-Go upgrade would otherwise replay dozens of identical CREATE,
+// ALTER, and index statements under their new Go sequence numbers.
+var legacyEquivalentMigrations = map[string]string{
+	"449_patrick_workspace_unique_index":                        "453_patrick_workspace_unique_index",
+	"451_drop_issue_assignee_index":                             "455_drop_issue_assignee_index",
+	"452_drop_issue_workspace_assignee_index":                   "456_drop_issue_workspace_assignee_index",
+	"453_issue_workspace_executor_index":                        "457_issue_workspace_executor_index",
+	"454_issue_workspace_owner_index":                           "458_issue_workspace_owner_index",
+	"456_agent_task_execution_lane_key":                         "409_agent_task_queue_execution_lane_key",
+	"457_agent_task_execution_lane_active_unique":               "410_agent_task_queue_execution_lane_active_unique",
+	"458_task_capability_lease":                                 "411_authorization_foundation",
+	"459_authorization_grant_id_index":                          "412_authorization_grant_id_index",
+	"460_authorization_grant_lookup_index":                      "413_authorization_grant_lookup_index",
+	"461_authorization_audit_id_index":                          "414_authorization_audit_id_index",
+	"462_authorization_audit_lookup_index":                      "415_authorization_audit_lookup_index",
+	"463_task_capability_parent_index":                          "416_task_capability_parent_index",
+	"464_task_capability_claim_fence_index":                     "417_task_capability_claim_fence_index",
+	"465_dependency_graph_domain":                               "418_dependency_graph_domain",
+	"466_dependency_graph_plan_id_index":                        "419_dependency_graph_plan_id_index",
+	"467_dependency_graph_node_id_index":                        "420_dependency_graph_node_id_index",
+	"468_dependency_graph_edge_id_index":                        "421_dependency_graph_edge_id_index",
+	"469_dependency_graph_idempotency_index":                    "422_dependency_graph_idempotency_index",
+	"470_dependency_graph_active_parent_index":                  "423_dependency_graph_active_parent_index",
+	"471_dependency_graph_node_temp_index":                      "424_dependency_graph_node_temp_index",
+	"472_dependency_graph_edge_direction_index":                 "425_dependency_graph_edge_direction_index",
+	"473_dependency_graph_edge_from_index":                      "426_dependency_graph_edge_from_index",
+	"474_dependency_graph_edge_to_index":                        "427_dependency_graph_edge_to_index",
+	"475_dependency_graph_execution_gate":                       "428_dependency_graph_execution_gate",
+	"476_dependency_graph_attention":                            "429_dependency_graph_attention",
+	"477_work_product_table":                                    "430_work_product_table",
+	"478_work_product_id_index":                                 "431_work_product_id_index",
+	"479_work_product_primary_key":                              "432_work_product_primary_key",
+	"480_work_product_external_identity_index":                  "433_work_product_external_identity_index",
+	"481_work_product_provider_record_index":                    "434_work_product_provider_record_index",
+	"482_work_product_relation_table":                           "435_work_product_relation_table",
+	"483_work_product_relation_id_index":                        "436_work_product_relation_id_index",
+	"484_work_product_relation_primary_key":                     "437_work_product_relation_primary_key",
+	"485_work_product_relation_key_index":                       "438_work_product_relation_key_index",
+	"486_work_product_relation_issue_index":                     "439_work_product_relation_issue_index",
+	"487_work_product_relation_product_index":                   "440_work_product_relation_product_index",
+	"488_work_product_relation_task_index":                      "441_work_product_relation_task_index",
+	"489_agent_task_execution_provenance_table":                 "442_agent_task_execution_provenance_table",
+	"490_agent_task_execution_provenance_identity_index":        "443_agent_task_execution_provenance_identity_index",
+	"491_agent_task_execution_provenance_primary_key":           "444_agent_task_execution_provenance_primary_key",
+	"492_agent_task_execution_provenance_branch_index":          "445_agent_task_execution_provenance_branch_index",
+	"493_workspace_channel":                                     "386_workspace_channel",
+	"494_workspace_channel_id_index":                            "387_workspace_channel_id_index",
+	"495_workspace_channel_primary_key":                         "388_workspace_channel_primary_key",
+	"496_workspace_channel_slug_index":                          "389_workspace_channel_slug_index",
+	"497_workspace_channel_message":                             "390_workspace_channel_message",
+	"498_workspace_channel_message_id_index":                    "391_workspace_channel_message_id_index",
+	"499_workspace_channel_message_primary_key":                 "392_workspace_channel_message_primary_key",
+	"500_workspace_channel_message_channel_index":               "393_workspace_channel_message_channel_index",
+	"501_channel_installation_workspace_scope":                  "386_channel_installation_workspace_scope",
+	"502_channel_installation_hub_unique":                       "387_channel_installation_hub_unique",
+	"503_guest_user_flag":                                       "397_guest_user_flag",
+	"504_guest_session":                                         "398_guest_session",
+	"505_guest_session_id_index":                                "399_guest_session_id_index",
+	"506_guest_session_token_index":                             "400_guest_session_token_index",
+	"507_agent_coordination_outbox":                             "401_agent_coordination_outbox",
+	"508_agent_coordination_event_key_index":                    "402_agent_coordination_event_key_index",
+	"509_agent_coordination_assignment_key_index":               "403_agent_coordination_assignment_key_index",
+	"510_agent_coordination_pending_index":                      "404_agent_coordination_pending_index",
+	"511_agent_coordination_outbox_id_index":                    "405_agent_coordination_outbox_id_index",
+	"512_agent_coordination_assignment_id_index":                "406_agent_coordination_assignment_id_index",
+	"513_agent_coordination_primary_keys":                       "407_agent_coordination_primary_keys",
+	"515_dependency_graph_issue_created_outbox":                 "448_dependency_graph_issue_created_outbox",
+	"516_dependency_graph_issue_created_outbox_key":             "449_dependency_graph_issue_created_outbox_key",
+	"517_agent_task_execution_provenance_discovery_queue_index": "450_agent_task_execution_provenance_discovery_queue_index",
+	"518_agent_task_execution_target":                           "459_agent_task_execution_target",
+	"519_dependency_graph_executor_fields":                      "460_dependency_graph_executor_fields",
+	"520_dependency_graph_roles_target":                         "463_dependency_graph_roles_target",
+	"521_issue_category_policy":                                 "461_issue_category_policy",
+	"522_issue_category_policy_workspace_category_index":        "462_issue_category_policy_workspace_category_index",
+	"524_issue_subscriber_roles":                                "480_issue_subscriber_roles",
+	"529_channel_receive_state":                                 "378_channel_receive_state",
+	"532_uq_linear_connection_id":                               "466_linear_connection_id_index",
+	"533_uq_linear_connection_workspace":                        "467_linear_connection_workspace_index",
+	"534_uq_linear_connection_identity":                         "468_linear_connection_identity_index",
+	"535_uq_linear_oauth_state_id":                              "469_linear_oauth_state_id_index",
+	"536_uq_linear_oauth_state_hash":                            "470_linear_oauth_state_hash_index",
+	"537_idx_linear_oauth_state_expiry":                         "471_linear_oauth_state_expiry_index",
+	"538_uq_linear_sync_inbox_id":                               "472_linear_sync_inbox_id_index",
+	"539_uq_linear_sync_inbox_delivery":                         "473_linear_sync_inbox_delivery_index",
+	"548_linear_issue_origin":                                   "486_linear_issue_origin",
+	"550_uq_linear_sync_outbox_event":                           "489_linear_sync_outbox_event_index",
+	"551_idx_linear_sync_outbox_claim":                          "490_linear_sync_outbox_claim_index",
+	"552_uq_linear_sync_outbox_id":                              "494_linear_sync_outbox_id_index",
+	"553_uq_linear_member_binding_user":                         "492_linear_member_binding_user_index",
+	"554_uq_linear_member_binding_linear":                       "493_linear_member_binding_linear_index",
+	"555_uq_linear_member_binding_id":                           "495_linear_member_binding_id_index",
+	"556_uq_linear_sync_conflict_open":                          "497_linear_sync_conflict_open_index",
+	"557_idx_linear_sync_conflict_list":                         "498_linear_sync_conflict_list_index",
+	"558_uq_linear_sync_conflict_id":                            "499_linear_sync_conflict_id_index",
+	"571_slack_oauth_state":                                     "465_slack_oauth_state",
+	"572_slack_oauth_state_hash_index":                          "466_slack_oauth_state_hash_index",
+	"573_channel_installation_runtime_observation":              "481_channel_installation_runtime_observation",
+	"574_channel_installation_runtime_observation_index":        "482_channel_installation_runtime_observation_index",
+	"576_channel_installation_hosted_pause":                     "481_channel_installation_hosted_pause",
+}
+
+var legacyEquivalentUpMigrations = map[string]string{
+	"442_vcs_reference_only_repair":           "447_issue_vcs_pull_request_table_cleanup",
+	"446_team_rename":                         "394_team_rename",
+	"447_automation_rename":                   "451_automation_schema_rename",
+	"448_patrick_system_agent_rename":         "452_patrick_system_agent_rename",
+	"450_issue_roles":                         "454_issue_roles",
+	"455_automation_executor_columns":         "464_automation_executor_columns",
+	"531_linear_sync_foundation":              "465_linear_installation_foundation",
+	"562_backfill_pull_request_work_products": "447_issue_vcs_pull_request_table_cleanup",
+	"563_issue_pull_request_primary_key":      "446_issue_pull_request_table_cleanup",
+	"564_issue_pull_request_unique_index":     "446_issue_pull_request_table_cleanup",
+	"565_issue_pull_request_lookup_index":     "446_issue_pull_request_table_cleanup",
+	"566_drop_issue_pull_request":             "446_issue_pull_request_table_cleanup",
+	"567_issue_vcs_pull_request_primary_key":  "447_issue_vcs_pull_request_table_cleanup",
+	"568_issue_vcs_pull_request_unique_index": "447_issue_vcs_pull_request_table_cleanup",
+	"569_issue_vcs_pull_request_lookup_index": "447_issue_vcs_pull_request_table_cleanup",
+	"570_drop_issue_vcs_pull_request":         "447_issue_vcs_pull_request_table_cleanup",
+}
+
+var legacyEquivalentDownMigrations = map[string]string{
+	"442_vcs_reference_only_repair":           "447_issue_vcs_pull_request_table_cleanup",
+	"446_team_rename":                         "394_team_rename",
+	"447_automation_rename":                   "451_automation_schema_rename",
+	"448_patrick_system_agent_rename":         "452_patrick_system_agent_rename",
+	"450_issue_roles":                         "454_issue_roles",
+	"455_automation_executor_columns":         "464_automation_executor_columns",
+	"531_linear_sync_foundation":              "465_linear_installation_foundation",
+	"562_backfill_pull_request_work_products": "447_issue_vcs_pull_request_table_cleanup",
+	"563_issue_pull_request_primary_key":      "446_issue_pull_request_table_cleanup",
+	"564_issue_pull_request_unique_index":     "446_issue_pull_request_table_cleanup",
+	"565_issue_pull_request_lookup_index":     "446_issue_pull_request_table_cleanup",
+	"566_drop_issue_pull_request":             "446_issue_pull_request_table_cleanup",
+	"567_issue_vcs_pull_request_primary_key":  "447_issue_vcs_pull_request_table_cleanup",
+	"568_issue_vcs_pull_request_unique_index": "447_issue_vcs_pull_request_table_cleanup",
+	"569_issue_vcs_pull_request_lookup_index": "447_issue_vcs_pull_request_table_cleanup",
+	"570_drop_issue_vcs_pull_request":         "447_issue_vcs_pull_request_table_cleanup",
+}
+
+func legacyEquivalentMigration(version, direction string) string {
+	if legacy := legacyEquivalentMigrations[version]; legacy != "" {
+		return legacy
+	}
+	if direction == "up" {
+		return legacyEquivalentUpMigrations[version]
+	}
+	if direction == "down" {
+		return legacyEquivalentDownMigrations[version]
+	}
+	return ""
+}
+
 func hooksForDirection(direction string) map[string]preMigrationHook {
 	switch direction {
 	case "up":
@@ -495,8 +650,6 @@ func conditionsForDirection(direction string) map[string]migrationCondition {
 	if direction == "up" {
 		return upMigrationConditions
 	}
-	// Rollbacks intentionally ignore environment gates: they restore the
-	// portable pre-migration schema regardless of which up SQL actually ran.
 	return nil
 }
 
@@ -886,22 +1039,39 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool, opts runOptions) err
 			}
 		}
 
+		legacyVersion := legacyEquivalentMigration(version, opts.Direction)
+		if legacyVersion != "" {
+			var legacyExists bool
+			if err := conn.QueryRow(ctx, existsSQL, legacyVersion).Scan(&legacyExists); err != nil {
+				return fmt.Errorf(
+					"check legacy equivalent %q for migration %q: %w",
+					legacyVersion,
+					version,
+					err,
+				)
+			}
+			if legacyExists {
+				if opts.Direction == "up" {
+					_, err = conn.Exec(ctx, insertSQL, version)
+				} else {
+					_, err = conn.Exec(ctx, deleteSQL, version)
+				}
+				if err != nil {
+					return fmt.Errorf("record equivalent migration %q: %w", version, err)
+				}
+				fmt.Printf(
+					"  %s  %s (SQL skipped: legacy migration %s already owns this transition)\n",
+					opts.Direction,
+					version,
+					legacyVersion,
+				)
+				continue
+			}
+		}
+
 		sql, err := os.ReadFile(file)
 		if err != nil {
 			return fmt.Errorf("read migration %q: %w", file, err)
-		}
-
-		// Run any pre-migration hook before the SQL file. Hooks
-		// receive the *pgxpool.Pool (not the loop's pinned conn), so
-		// they can acquire other session-level locks without
-		// colliding with migrationAdvisoryLockKey. Hook failures
-		// abort the run before schema_migrations is updated, so the
-		// same version retries cleanly on the next invocation.
-		if hook, ok := opts.Hooks[version]; ok && hook != nil {
-			slog.Info("running pre-migration hook", "version", version, "direction", opts.Direction)
-			if err := hook(ctx, pool); err != nil {
-				return fmt.Errorf("pre-migration hook for %q (%s): %w", version, opts.Direction, err)
-			}
 		}
 
 		applySQL := true
@@ -914,6 +1084,17 @@ func runMigrations(ctx context.Context, pool *pgxpool.Pool, opts runOptions) err
 		}
 
 		if applySQL {
+			// Conditions run before hooks so an environment-owned no-op
+			// cannot trigger a hook for SQL that will not execute. Hooks
+			// receive the pool (not the loop's pinned connection), allowing
+			// them to take their own session-level locks safely.
+			if hook, ok := opts.Hooks[version]; ok && hook != nil {
+				slog.Info("running pre-migration hook", "version", version, "direction", opts.Direction)
+				if err := hook(ctx, pool); err != nil {
+					return fmt.Errorf("pre-migration hook for %q (%s): %w", version, opts.Direction, err)
+				}
+			}
+
 			if _, err := conn.Exec(ctx, string(sql)); err != nil {
 				return fmt.Errorf("apply migration %q: %w", file, err)
 			}

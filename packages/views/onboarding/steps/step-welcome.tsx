@@ -89,7 +89,9 @@ export function StepWelcome({
               {t(($) => $.welcome.headline_line1)}
               <br />
               {t(($) => $.welcome.headline_line2)}{" "}
-              <em className="italic text-brand">{t(($) => $.welcome.headline_emphasis)}</em>
+              <em className="italic text-brand">
+                {t(($) => $.welcome.headline_emphasis)}
+              </em>
             </h1>
 
             <div className="flex flex-col gap-4">
@@ -114,7 +116,7 @@ export function StepWelcome({
                       onboarding tab in case the desktop install
                       stalls and the user falls back here. */}
                   <a
-                    href="/download"
+                    href="https://github.com/alexj11324/Cordy/releases/latest"
                     target="_blank"
                     rel="noopener noreferrer"
                     className={buttonVariants({ size: "lg" })}
@@ -185,7 +187,6 @@ export function StepWelcome({
   );
 }
 
-
 /**
  * A day in a solo user's multi-agent workspace. Five activity cards
  * woven through 3 shared issues (MCA-42 appears 3×) so the reader can
@@ -209,9 +210,13 @@ function WelcomeIllustration() {
         issueId="MCA-42"
         content={
           <>
-            <Mention>{t(($) => $.welcome.illustration.card1_mention_content)}</Mention>
+            <Mention>
+              {t(($) => $.welcome.illustration.card1_mention_content)}
+            </Mention>
             {t(($) => $.welcome.illustration.card1_body_prefix)}
-            <Mention>{t(($) => $.welcome.illustration.card1_mention_research)}</Mention>
+            <Mention>
+              {t(($) => $.welcome.illustration.card1_mention_research)}
+            </Mention>
             {t(($) => $.welcome.illustration.card1_body_suffix)}
           </>
         }
@@ -261,7 +266,9 @@ function WelcomeIllustration() {
         content={
           <>
             {t(($) => $.welcome.illustration.card5_body_prefix)}
-            <Mention>{t(($) => $.welcome.illustration.card5_mention_you)}</Mention>
+            <Mention>
+              {t(($) => $.welcome.illustration.card5_mention_you)}
+            </Mention>
             {t(($) => $.welcome.illustration.card5_body_suffix)}
           </>
         }
@@ -328,9 +335,7 @@ function MockActivityCard({
         </span>
       </div>
 
-      <p className="mt-2.5 text-body leading-snug text-foreground">
-        {content}
-      </p>
+      <p className="mt-2.5 text-body leading-snug text-foreground">{content}</p>
 
       {status && <StatusFooter status={status} timestamp={timestamp} />}
     </div>

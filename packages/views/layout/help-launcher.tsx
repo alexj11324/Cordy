@@ -24,12 +24,11 @@ import { DISCORD_URL, DiscordIcon } from "./discord";
 import { useT } from "../i18n";
 
 const DOCS_URL = "https://patchbay.aspectlylabs.com/docs";
-const CHANGELOG_URL = "https://patchbay.aspectlylabs.com/changelog";
-// Absolute, including on self-hosted deployments: the installers we ship are
-// the same binaries either way, and the desktop client can point at a
-// self-hosted backend once installed. A self-host-relative /download would
-// only serve a copy of this page that still has to reach our release assets.
-const DOWNLOAD_URL = "https://patchbay.aspectlylabs.com/download";
+const CHANGELOG_URL = "https://github.com/alexj11324/Cordy/releases";
+// Installers are published with releases. Keep this absolute for self-hosted
+// deployments too: the desktop client can point at a self-hosted backend once
+// installed, and there is intentionally no marketing/download page to proxy.
+const DOWNLOAD_URL = "https://github.com/alexj11324/Cordy/releases/latest";
 
 export function HelpLauncher() {
   const { t } = useT("layout");
@@ -88,11 +87,7 @@ export function HelpLauncher() {
         </DropdownMenuItem>
         <DropdownMenuItem
           render={
-            <a
-              href={CHANGELOG_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-            />
+            <a href={CHANGELOG_URL} target="_blank" rel="noopener noreferrer" />
           }
         >
           <History className="h-3.5 w-3.5" />
