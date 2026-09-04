@@ -3,7 +3,7 @@
 
 The GitHub Actions SSH key is forced to this executable. The gateway accepts a
 small JSON protocol on stdin, validates an exact current-main commit plus four
-allow-listed GHCR digests, serializes deployments, and owns rollback. It never
+allow-listed GHCR digests, and serializes Go-only deployments. It never
 executes a caller-provided command or shell fragment.
 """
 
@@ -25,7 +25,6 @@ from urllib.request import Request, urlopen
 
 
 SCHEMA_VERSION = 1
-ROLLBACK_SCHEMA_VERSION = 2
 REPOSITORY = "alexj11324/Cordy"  # legacy-brand-compat: current GitHub repository identity
 REPOSITORY_URL = "https://github.com/alexj11324/Cordy.git"  # legacy-brand-compat
 DEFAULT_ROOT = Path("/var/lib/patchbay-production")
@@ -253,7 +252,6 @@ class ProductionDeployment:
         self.history = root / "history"
         self.secrets = root / "secrets"
         self.current_path = root / "current.json"
-        self.previous_path = root / "previous.json"
 
     def initialize_directories(self) -> None:
         for path in (self.root, self.releases, self.history, self.secrets):
@@ -338,10 +336,9 @@ class ProductionDeployment:
 
     def prune_releases(self) -> None:
         retained: set[str] = set()
-        for state_path in (self.current_path, self.previous_path):
-            raw = self.read_json(state_path)
-            if raw is not None:
-                retained.add(validate_stored_manifest(raw)["source_sha"])
+        raw = self.read_json(self.current_path)
+        if raw is not None:
+            retained.add(validate_stored_manifest(raw)["source_sha"])
 
         for release in sorted(self.releases.iterdir()):
             if not SHA_RE.fullmatch(release.name) or release.name in retained:
@@ -530,7 +527,7 @@ class ProductionDeployment:
         run(["docker", "compose", *arguments], env=env)
 
     def record_runtime_diagnostics(self, source_sha: str) -> None:
-        """Persist bounded container state and logs before rollback replaces it."""
+        """Persist bounded container state and logs for a failed Go deployment."""
         diagnostics: dict[str, Any] = {"source_sha": source_sha, "containers": {}}
         for container in BOOTSTRAP_CONTAINERS.values():
             entry: dict[str, Any] = {}
@@ -722,30 +719,15 @@ class ProductionDeployment:
         try:
             self.apply(request)
             browser_auth = self.issue_browser_acceptance_credentials()
-        except Exception as deploy_error:
+        except Exception:
             try:
                 self.record_runtime_diagnostics(source_sha)
             except Exception as diagnostics_error:
                 log(f"failed to record deployment diagnostics: {diagnostics_error}")
-            if unchanged:
-                log(
-                    "deployment verification failed for an unchanged revision; "
-                    "skipping rollback because this run made no state transition"
-                )
-                raise
-            log(f"deployment failed; restoring {current['source_sha']}")
-            try:
-                self.apply(current)
-            except Exception as rollback_error:
-                raise DeploymentError(
-                    f"deployment failed ({deploy_error}); automatic rollback also failed "
-                    f"({rollback_error})"
-                ) from rollback_error
             raise
 
         if not unchanged:
             self.atomic_json(self.history / f"{source_sha}.json", request)
-            self.atomic_json(self.previous_path, current)
             self.atomic_json(self.current_path, request)
         self.prune_releases()
         return {
@@ -757,46 +739,6 @@ class ProductionDeployment:
             "browser_auth": browser_auth,
         }
 
-    def rollback(
-        self, failed_source_sha: str, failed_workflow_run_id: str
-    ) -> dict[str, Any]:
-        failed_source_sha = require_sha(failed_source_sha, "failed_source_sha")
-        failed_workflow_run_id = require_workflow_run_id(
-            failed_workflow_run_id, "failed_workflow_run_id"
-        )
-        current_raw = self.read_json(self.current_path)
-        if current_raw is None:
-            raise DeploymentError("cannot roll back without a current deployment")
-        current = validate_stored_manifest(current_raw)
-        if (
-            current["source_sha"] != failed_source_sha
-            or current.get("workflow_run_id") != failed_workflow_run_id
-        ):
-            return {
-                "ok": True,
-                "action": "rollback",
-                "source_sha": current["source_sha"],
-                "workflow_run_id": current.get("workflow_run_id", ""),
-                "unchanged": True,
-            }
-        previous_raw = self.read_json(self.previous_path)
-        if previous_raw is None:
-            raise DeploymentError("cannot roll back because no previous deployment is recorded")
-        previous = validate_stored_manifest(previous_raw)
-        self.apply(previous)
-        self.atomic_json(self.history / f"failed-{failed_source_sha}.json", current)
-        self.atomic_json(self.current_path, previous)
-        self.previous_path.unlink(missing_ok=True)
-        self.prune_releases()
-        return {
-            "ok": True,
-            "action": "rollback",
-            "source_sha": previous["source_sha"],
-            "failed_source_sha": failed_source_sha,
-            "failed_workflow_run_id": failed_workflow_run_id,
-            "unchanged": False,
-        }
-
     def handle(self, request: dict[str, Any]) -> dict[str, Any]:
         self.initialize_directories()
         lock_path = self.root / "deployment.lock"
@@ -806,13 +748,6 @@ class ProductionDeployment:
                 if request.get("schema_version") != SCHEMA_VERSION:
                     raise DeploymentError("unsupported deployment protocol")
                 return self.deploy(validate_deploy_request(request))
-            if request.get("action") == "rollback":
-                if request.get("schema_version") != ROLLBACK_SCHEMA_VERSION:
-                    raise DeploymentError("unsupported rollback protocol")
-                return self.rollback(
-                    request.get("failed_source_sha"),
-                    request.get("failed_workflow_run_id"),
-                )
             raise DeploymentError("unsupported deployment action")
 
 

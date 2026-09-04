@@ -9,7 +9,7 @@ revision. Completion means all of the following are true:
 2. Backend, Web, Docs, and Auth Broker were all built for `linux/arm64` from
    that same full SHA and published by immutable digest.
 3. The restricted server gateway accepted that SHA as the current remote
-   `main`, deployed the four digests, and retained the preceding manifest.
+   `main` and deployed the four digests.
 4. The Go API, Web, Docs, and Accounts Auth Broker all report
    `X-Patchbay-Build: sha-<full-sha>` and
    `X-Patchbay-Commit: <full-sha>`.
@@ -37,8 +37,8 @@ merge to main
   -> restricted server gateway
   -> local runtime/version probes
   -> public domain/version/route probes
-  -> authenticated Chromium Issues + Task Graph acceptance
-  -> success, or automatic rollback to previous manifest
+  -> authenticated Chromium product acceptance
+  -> success, or failure diagnostics with the Go candidate left in place
 ```
 
 The matrix is only scheduling parallelism. It has no changed-path filter and no
@@ -90,9 +90,8 @@ captures the currently running containers' required environment values into
 mode-0600 JSON under `/var/lib/patchbay-production/secrets`. It never prints
 those values. The initial current manifest records the existing image digests
 (falling back to an allow-listed configured tag only when local Docker metadata
-has no digest) so the first automatic deployment also has a rollback target.
-Re-running the installer validates and preserves existing deployment history
-instead of bootstrapping over it.
+has no digest). Re-running the installer validates and preserves existing
+deployment history instead of bootstrapping over it.
 
 Provision `production-smoke@aspectlylabs.com` once in the production Clerk
 instance before enabling automatic deployment. It must remain a dedicated
@@ -102,9 +101,10 @@ creates only short-lived credentials and does not persist them in GitHub.
 
 That bootstrap target is checked for service readiness only, because it may
 predate this pipeline's complete acceptance contract (and may be the broken
-version the first deployment is intended to replace). Normal deployment and
-rollback perform local readiness/version checks; GitHub's authenticated browser
-gate owns business-page acceptance and requests rollback if it fails.
+version the first deployment is intended to replace). Normal deployment
+performs local readiness/version checks; GitHub's authenticated browser gate
+owns business-page acceptance and reports failure without mutating production
+again.
 
 The server gateway accepts a maximum 64 KiB JSON request. A deployment request
 must name `alexj11324/Cordy`, the exact current 40-character `main` SHA, and <!-- legacy-brand-compat -->
@@ -112,7 +112,7 @@ exactly four allow-listed `ghcr.io/alexj11324/patchbay-*` sha256 references.
 Caller-provided commands, paths, Compose options, tags such as `latest`, and
 arbitrary registries are rejected.
 
-## Deployment and rollback behavior
+## Go-only deployment behavior
 
 The gateway serializes operations with a host lock. It fetches `main` into a
 bare cache, creates a detached release worktree, pulls all four digests before
@@ -130,30 +130,21 @@ is part of the public deployment contract; it must be installed together with
 the matching `deploy/origin/nginx/aspectlylabs-origin.conf` rather than relying
 on a container-only `DOCS_URL` value.
 
-Rollback is bound to both the failed source SHA and the exact GitHub Actions
-run that changed production. An unchanged redeployment cannot roll production
-back to an older revision if a later external probe fails. The rollback request
-uses a newer fail-closed protocol version, so an older gateway rejects it rather
-than applying an unbound rollback.
-
-After a successful state transition, the gateway keeps only the current and
-immediately preceding detached release worktrees. Older release worktrees are
+The gateway accepts deployment requests only. There is no rollback action and
+no previous-manifest execution path. After a successful state transition, it
+keeps only the current detached release worktree. Older release worktrees are
 removed through the bare repository; compact JSON history remains for audit.
 
 The Go backend is made ready before Web, so migrations finish before new Web
 traffic. Every image update is followed by local readiness, build, and commit
-probes. If any
-command, local probe, or short-lived browser credential request fails, the
-gateway immediately reapplies the preceding manifest. If the later public or
-authenticated-browser probes fail, GitHub Actions sends a separate rollback
-request; it is accepted only when the failed SHA is still the current
-deployment and that exact workflow run performed the state transition. This
-prevents rollback from racing a newer release or downgrading an unchanged one.
+probes. If any command, local probe, short-lived browser credential request, or
+later public browser check fails, the workflow fails and the gateway stores
+bounded container diagnostics. It does not restore an older image set. Recovery
+is a repaired Go revision deployed through the same current-main pipeline.
 
-Database migrations must remain backward-compatible with the immediately prior
-application image. Automatic image rollback cannot reverse a destructive
-schema migration safely; such a migration requires a separately reviewed
-expand/migrate/contract sequence.
+Database migrations must therefore be forward-safe, retryable, and compatible
+with the current production data. A destructive schema migration requires a
+separately reviewed expand/migrate/contract sequence.
 
 ## Runtime and edge secrets
 

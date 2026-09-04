@@ -208,14 +208,14 @@ class ProductionDeployContractTests(unittest.TestCase):
                 calls,
             )
 
-    def test_deploy_requires_a_bootstrapped_rollback_target(self):
+    def test_deploy_requires_bootstrapped_production_state(self):
         with tempfile.TemporaryDirectory() as directory:
             deployment = production_deploy.ProductionDeployment(Path(directory))
             deployment.fetch_main = mock.Mock(return_value="a" * 40)
             with self.assertRaisesRegex(production_deploy.DeploymentError, "--bootstrap"):
                 deployment.deploy(self.manifest())
 
-    def test_failed_deploy_records_runtime_diagnostics_before_rollback(self):
+    def test_failed_deploy_records_diagnostics_without_restoring_old_images(self):
         with tempfile.TemporaryDirectory() as directory:
             deployment = production_deploy.ProductionDeployment(Path(directory))
             deployment.initialize_directories()
@@ -224,10 +224,7 @@ class ProductionDeployContractTests(unittest.TestCase):
             deployment.atomic_json(deployment.current_path, current)
             deployment.fetch_main = mock.Mock(return_value="a" * 40)
             deployment.apply = mock.Mock(
-                side_effect=[
-                    production_deploy.DeploymentError("candidate failed"),
-                    None,
-                ]
+                side_effect=production_deploy.DeploymentError("candidate failed")
             )
             deployment.record_runtime_diagnostics = mock.Mock()
 
@@ -237,8 +234,9 @@ class ProductionDeployContractTests(unittest.TestCase):
                 deployment.deploy(self.manifest())
 
             deployment.record_runtime_diagnostics.assert_called_once_with("a" * 40)
+            deployment.apply.assert_called_once_with(self.manifest())
 
-    def test_runtime_diagnostics_timeout_cannot_delay_rollback(self):
+    def test_runtime_diagnostics_timeout_cannot_delay_failure_reporting(self):
         with tempfile.TemporaryDirectory() as directory:
             deployment = production_deploy.ProductionDeployment(Path(directory))
             deployment.initialize_directories()
@@ -295,7 +293,7 @@ class ProductionDeployContractTests(unittest.TestCase):
             self.assertFalse(receipt["unchanged"])
             deployment.prune_releases.assert_called_once_with()
 
-    def test_unchanged_deploy_does_not_rollback_after_verification_failure(self):
+    def test_unchanged_deploy_does_not_reapply_old_images_after_verification_failure(self):
         with tempfile.TemporaryDirectory() as directory:
             deployment = production_deploy.ProductionDeployment(Path(directory))
             deployment.initialize_directories()
@@ -314,73 +312,27 @@ class ProductionDeployContractTests(unittest.TestCase):
 
             deployment.apply.assert_called_once_with(current)
 
-    def test_rollback_ignores_an_unchanged_redeployment_run(self):
-        with tempfile.TemporaryDirectory() as directory:
-            deployment = production_deploy.ProductionDeployment(Path(directory))
-            deployment.initialize_directories()
-            current = self.manifest()
-            current["workflow_run_id"] = "111"
-            previous = self.manifest()
-            previous["source_sha"] = "b" * 40
-            previous["workflow_run_id"] = "99"
-            deployment.atomic_json(deployment.current_path, current)
-            deployment.atomic_json(deployment.previous_path, previous)
-            deployment.apply = mock.Mock()
-
-            receipt = deployment.rollback("a" * 40, "222")
-
-            self.assertTrue(receipt["unchanged"])
-            self.assertEqual(receipt["source_sha"], "a" * 40)
-            self.assertEqual(receipt["workflow_run_id"], "111")
-            deployment.apply.assert_not_called()
-
-    def test_legacy_rollback_protocol_cannot_bypass_run_binding(self):
+    def test_rejects_rollback_actions(self):
         with tempfile.TemporaryDirectory() as directory:
             deployment = production_deploy.ProductionDeployment(Path(directory))
             with self.assertRaisesRegex(
-                production_deploy.DeploymentError, "unsupported rollback protocol"
+                production_deploy.DeploymentError, "unsupported deployment action"
             ):
                 deployment.handle(
                     {
-                        "schema_version": 1,
+                        "schema_version": 2,
                         "action": "rollback",
                         "failed_source_sha": "a" * 40,
                         "failed_workflow_run_id": "222",
                     }
                 )
 
-    def test_rollback_reverts_only_the_matching_deployment_run(self):
+    def test_release_pruning_retains_only_the_current_worktree(self):
         with tempfile.TemporaryDirectory() as directory:
             deployment = production_deploy.ProductionDeployment(Path(directory))
             deployment.initialize_directories()
             current = self.manifest()
-            current["workflow_run_id"] = "222"
-            previous = self.manifest()
-            previous["source_sha"] = "b" * 40
-            previous["workflow_run_id"] = "111"
             deployment.atomic_json(deployment.current_path, current)
-            deployment.atomic_json(deployment.previous_path, previous)
-            deployment.apply = mock.Mock()
-            deployment.prune_releases = mock.Mock()
-            normalized_previous = production_deploy.validate_stored_manifest(previous)
-
-            receipt = deployment.rollback("a" * 40, "222")
-
-            self.assertFalse(receipt["unchanged"])
-            self.assertEqual(receipt["source_sha"], "b" * 40)
-            self.assertEqual(receipt["failed_workflow_run_id"], "222")
-            deployment.apply.assert_called_once_with(normalized_previous)
-            deployment.prune_releases.assert_called_once_with()
-
-    def test_release_pruning_retains_only_current_and_rollback_worktrees(self):
-        with tempfile.TemporaryDirectory() as directory:
-            deployment = production_deploy.ProductionDeployment(Path(directory))
-            deployment.initialize_directories()
-            current = self.manifest()
-            previous = self.manifest()
-            previous["source_sha"] = "b" * 40
-            deployment.atomic_json(deployment.current_path, current)
-            deployment.atomic_json(deployment.previous_path, previous)
             for sha in ("a" * 40, "b" * 40, "c" * 40):
                 (deployment.releases / sha).mkdir()
 
@@ -400,8 +352,11 @@ class ProductionDeployContractTests(unittest.TestCase):
                 for arguments in observed
                 if "worktree" in arguments and "remove" in arguments
             ]
-            self.assertEqual(len(removals), 1)
-            self.assertEqual(Path(removals[0][-1]).name, "c" * 40)
+            self.assertEqual(len(removals), 2)
+            self.assertEqual(
+                {Path(arguments[-1]).name for arguments in removals},
+                {"b" * 40, "c" * 40},
+            )
 
     def observed_apply_probes(self, *, bootstrap):
         with tempfile.TemporaryDirectory() as directory:
