@@ -9,7 +9,6 @@ import {
   MoreHorizontal,
   Pencil,
   Plus,
-  Search,
   SlidersHorizontal,
   X,
 } from "lucide-react";
@@ -33,7 +32,6 @@ import { Badge } from "@patchbay/ui/components/ui/badge";
 import { Input } from "@patchbay/ui/components/ui/input";
 import { Textarea } from "@patchbay/ui/components/ui/textarea";
 import { Label as FieldLabel } from "@patchbay/ui/components/ui/label";
-import { Switch } from "@patchbay/ui/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -76,8 +74,17 @@ import {
   PropertyIconGlyph,
   PropertyIconPicker,
 } from "../../common/property-icon";
-import { useLocale, useT } from "../../i18n";
-import { SettingsTab } from "./settings-layout";
+import { useT } from "../../i18n";
+import {
+  SettingsCard,
+  SettingsEmpty,
+  SettingsIconButton,
+  SettingsListRow,
+  SettingsPillButton,
+  SettingsSearchField,
+  SettingsSection,
+  SettingsTab,
+} from "./settings-layout";
 
 const MAX_ACTIVE_PROPERTIES = 20;
 
@@ -109,7 +116,6 @@ function typeHasOptions(type: string): boolean {
 
 export function PropertiesTab() {
   const { t } = useT("settings");
-  const locale = useLocale();
   const wsId = useWorkspaceId();
   const user = useAuthStore((s) => s.user);
 
@@ -141,180 +147,150 @@ export function PropertiesTab() {
     <SettingsTab
       title={t(($) => $.properties.title)}
       description={t(($) => $.properties.description)}
+      action={
+        canManage ? (
+          <SettingsPillButton
+            icon={Plus}
+            active
+            onClick={() => setCreateOpen(true)}
+            disabled={activeCount >= MAX_ACTIVE_PROPERTIES}
+          >
+            {t(($) => $.properties.new_property)}
+          </SettingsPillButton>
+        ) : undefined
+      }
     >
-      <div className="space-y-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="relative w-full sm:max-w-sm">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder={t(($) => $.properties.search_placeholder)}
-              className="pl-9"
-            />
-          </div>
-          <div className="flex items-center gap-4">
-            <label className="flex items-center gap-2 text-caption text-muted-foreground">
-              <Switch checked={showArchived} onCheckedChange={setShowArchived} />
-              {t(($) => $.properties.show_archived)}
-            </label>
-            <span className="text-caption tabular-nums text-muted-foreground">
-              {t(($) => $.properties.limit_hint, {
+      <SettingsSection
+        description={
+          canManage
+            ? t(($) => $.properties.limit_hint, {
                 count: activeCount,
                 max: MAX_ACTIVE_PROPERTIES,
-              })}
-            </span>
-            {canManage && (
-              <Button
-                className="gap-2"
-                onClick={() => setCreateOpen(true)}
-                disabled={activeCount >= MAX_ACTIVE_PROPERTIES}
-              >
-                <Plus className="size-4" />
-                {t(($) => $.properties.new_property)}
-              </Button>
-            )}
+              })
+            : t(($) => $.properties.editor.admin_hint)
+        }
+        action={
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <SettingsPillButton
+              active={showArchived}
+              onClick={() => setShowArchived((current) => !current)}
+            >
+              {t(($) => $.properties.show_archived)}
+            </SettingsPillButton>
+            <SettingsSearchField
+              value={query}
+              onValueChange={setQuery}
+              placeholder={t(($) => $.properties.search_placeholder)}
+              className="w-full sm:w-52"
+            />
           </div>
-        </div>
-
-        {!canManage && (
-          <p className="text-caption text-muted-foreground">
-            {t(($) => $.properties.editor.admin_hint)}
-          </p>
-        )}
-
-        <div className="overflow-hidden rounded-lg border border-surface-border bg-card">
-          <div className="hidden grid-cols-[minmax(10rem,1fr)_6rem_minmax(10rem,1.4fr)_6rem_7rem_2rem] gap-4 border-b border-surface-border bg-muted/20 px-4 py-2.5 text-caption font-medium text-muted-foreground md:grid">
-            <span>{t(($) => $.properties.columns.name)}</span>
-            <span>{t(($) => $.properties.columns.type)}</span>
-            <span>{t(($) => $.properties.columns.options)}</span>
-            <span>{t(($) => $.properties.columns.usage)}</span>
-            <span>{t(($) => $.properties.columns.updated)}</span>
-            <span />
-          </div>
-
+        }
+      >
+        <SettingsCard>
           {isLoading ? (
-            <div className="px-4 py-12 text-center text-body text-muted-foreground">
-              {t(($) => $.properties.loading)}
-            </div>
+            <SettingsEmpty title={t(($) => $.properties.loading)} />
           ) : visible.length === 0 ? (
-            <div className="px-4 py-12 text-center">
-              <SlidersHorizontal className="mx-auto size-6 text-faint-foreground" />
-              <p className="mt-3 text-body font-medium">
-                {query
+            <SettingsEmpty
+              title={
+                query
                   ? t(($) => $.properties.no_results)
-                  : t(($) => $.properties.empty)}
-              </p>
-              {!query && (
-                <p className="mx-auto mt-1 max-w-sm text-caption text-muted-foreground">
-                  {t(($) => $.properties.empty_hint)}
-                </p>
-              )}
-            </div>
+                  : t(($) => $.properties.empty)
+              }
+              description={!query ? t(($) => $.properties.empty_hint) : undefined}
+            />
           ) : (
-            <div className="divide-y divide-surface-border">
-              {visible.map((property) => (
-                <div
-                  key={property.id}
-                  className="grid gap-2 px-4 py-3 md:grid-cols-[minmax(10rem,1fr)_6rem_minmax(10rem,1.4fr)_6rem_7rem_2rem] md:items-center md:gap-4"
-                >
-                  <div className="flex min-w-0 items-center gap-2">
-                    <PropertyIcon property={property} />
-                    <span className="truncate text-body font-medium">{property.name}</span>
-                    {property.archived && (
-                      <Badge variant="outline" className="shrink-0 text-micro">
-                        {t(($) => $.properties.archived_badge)}
-                      </Badge>
-                    )}
+            visible.map((property) => (
+              <SettingsListRow key={property.id}>
+                <div className="flex min-w-0 flex-1 items-center gap-2">
+                  <PropertyIcon property={property} />
+                  <div className="min-w-0">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="truncate text-body font-medium">{property.name}</span>
+                      {property.archived && (
+                        <Badge variant="outline" className="shrink-0 text-micro">
+                          {t(($) => $.properties.archived_badge)}
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="truncate text-caption text-muted-foreground">
+                      <PropertyTypeLabel type={property.type} />
+                    </p>
                   </div>
-                  <span className="text-caption text-muted-foreground md:text-body">
-                    <PropertyTypeLabel type={property.type} />
-                  </span>
-                  <div className="flex min-w-0 flex-wrap items-center gap-1">
-                    {(property.config.options ?? []).slice(0, 6).map((option) => (
+                </div>
+                <div className="hidden min-w-0 flex-wrap items-center gap-1 md:flex">
+                  {(property.config.options ?? []).slice(0, 6).map((option) => (
+                    <span
+                      key={option.id}
+                      className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-caption"
+                    >
                       <span
-                        key={option.id}
-                        className="inline-flex items-center gap-1.5 rounded-full border border-surface-border px-2 py-0.5 text-caption"
-                      >
-                        <span
-                          className="size-2 rounded-full"
-                          style={{ backgroundColor: option.color }}
-                        />
-                        {option.name}
-                      </span>
-                    ))}
-                    {(property.config.options?.length ?? 0) > 6 && (
-                      <span className="text-caption text-muted-foreground">
-                        +{(property.config.options?.length ?? 0) - 6}
-                      </span>
-                    )}
-                    {!typeHasOptions(property.type) && (
-                      <span className="text-caption text-muted-foreground">—</span>
-                    )}
-                  </div>
-                  <span className="text-caption tabular-nums text-muted-foreground md:text-body">
-                    {t(($) => $.properties.usage_count, { count: property.usage_count ?? 0 })}
-                  </span>
-                  <span className="text-caption text-muted-foreground">
-                    {new Date(property.updated_at).toLocaleDateString(locale)}
-                  </span>
-                  {canManage ? (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        render={
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            aria-label={t(($) => $.properties.actions.open, { name: property.name })}
-                          >
-                            <MoreHorizontal className="size-4" />
-                          </Button>
-                        }
+                        className="size-2 rounded-full"
+                        style={{ backgroundColor: option.color }}
                       />
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => setEditing(property)}>
-                          <Pencil className="size-4" />
-                          {t(($) => $.properties.actions.edit)}
-                        </DropdownMenuItem>
-                        {property.archived ? (
-                          <DropdownMenuItem
-                            onClick={() =>
-                              update.mutate(
-                                { id: property.id, archived: false },
-                                {
-                                  onError: (error) =>
-                                    toast.error(
-                                      error instanceof Error
-                                        ? error.message
-                                        : t(($) => $.properties.save_failed),
-                                    ),
-                                },
-                              )
-                            }
-                          >
-                            <ArchiveRestore className="size-4" />
-                            {t(($) => $.properties.actions.unarchive)}
-                          </DropdownMenuItem>
-                        ) : (
-                          <DropdownMenuItem
-                            variant="destructive"
-                            onClick={() => setPendingArchive(property)}
-                          >
-                            <Archive className="size-4" />
-                            {t(($) => $.properties.actions.archive)}
-                          </DropdownMenuItem>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  ) : (
-                    <span />
+                      {option.name}
+                    </span>
+                  ))}
+                  {(property.config.options?.length ?? 0) > 6 && (
+                    <span className="text-caption text-muted-foreground">
+                      +{(property.config.options?.length ?? 0) - 6}
+                    </span>
                   )}
                 </div>
-              ))}
-            </div>
+                <span className="hidden shrink-0 text-caption text-muted-foreground md:inline">
+                  {t(($) => $.properties.usage_count, { count: property.usage_count ?? 0 })}
+                </span>
+                {canManage ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      render={
+                        <SettingsIconButton
+                          aria-label={t(($) => $.properties.actions.open, { name: property.name })}
+                        >
+                          <MoreHorizontal className="size-4" />
+                        </SettingsIconButton>
+                      }
+                    />
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => setEditing(property)}>
+                        <Pencil className="size-4" />
+                        {t(($) => $.properties.actions.edit)}
+                      </DropdownMenuItem>
+                      {property.archived ? (
+                        <DropdownMenuItem
+                          onClick={() =>
+                            update.mutate(
+                              { id: property.id, archived: false },
+                              {
+                                onError: (error) =>
+                                  toast.error(
+                                    error instanceof Error
+                                      ? error.message
+                                      : t(($) => $.properties.save_failed),
+                                  ),
+                              },
+                            )
+                          }
+                        >
+                          <ArchiveRestore className="size-4" />
+                          {t(($) => $.properties.actions.unarchive)}
+                        </DropdownMenuItem>
+                      ) : (
+                        <DropdownMenuItem
+                          variant="destructive"
+                          onClick={() => setPendingArchive(property)}
+                        >
+                          <Archive className="size-4" />
+                          {t(($) => $.properties.actions.archive)}
+                        </DropdownMenuItem>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : null}
+              </SettingsListRow>
+            ))
           )}
-        </div>
-      </div>
+        </SettingsCard>
+      </SettingsSection>
 
       <PropertyEditorDialog open={createOpen} onOpenChange={setCreateOpen} />
       <PropertyEditorDialog

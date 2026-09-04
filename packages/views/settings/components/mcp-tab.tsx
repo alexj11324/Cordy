@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Loader2, Pencil, Plus, Server, Trash2 } from "lucide-react";
+import { Loader2, Plus } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -15,7 +15,6 @@ import {
   AlertDialogTitle,
 } from "@patchbay/ui/components/ui/alert-dialog";
 import { Badge } from "@patchbay/ui/components/ui/badge";
-import { Button } from "@patchbay/ui/components/ui/button";
 import { useCurrentWorkspace } from "@patchbay/core/paths";
 import { useCurrentMember } from "@patchbay/core/permissions";
 import { workspaceMcpServersOptions } from "@patchbay/core/workspace/queries";
@@ -28,7 +27,14 @@ import type { WorkspaceMcpServer } from "@patchbay/core/types";
 import { McpServerDialog } from "../../agents/components/tabs/mcp-server-dialog";
 import type { ManagedMcpServer } from "../../agents/components/tabs/mcp-config-model";
 import { useT } from "../../i18n";
-import { SettingsCard, SettingsSection, SettingsTab } from "./settings-layout";
+import {
+  SettingsCard,
+  SettingsEmpty,
+  SettingsListRow,
+  SettingsPillButton,
+  SettingsSection,
+  SettingsTab,
+} from "./settings-layout";
 
 /**
  * The workspace MCP server library (GH #6062).
@@ -140,16 +146,16 @@ export function McpTab() {
         description={t(($) => $.mcp.write_only_note)}
         action={
           canManage ? (
-            <Button
-              size="sm"
+            <SettingsPillButton
+              icon={Plus}
+              active
               onClick={() => {
                 setEditingServer(null);
                 setEditorOpen(true);
               }}
             >
-              <Plus className="h-4 w-4" />
               {t(($) => $.mcp.add_server)}
-            </Button>
+            </SettingsPillButton>
           ) : null
         }
       >
@@ -159,30 +165,23 @@ export function McpTab() {
               <Loader2 className="h-4 w-4 animate-spin" />
             </div>
           ) : servers.length === 0 ? (
-            <div className="px-4 py-8 text-center">
-              <Server className="mx-auto h-5 w-5 text-muted-foreground" />
-              <p className="mt-3 text-body font-medium">
-                {t(($) => $.mcp.empty_title)}
-              </p>
-              <p className="mx-auto mt-1 max-w-md text-caption leading-5 text-muted-foreground">
-                {t(($) => $.mcp.empty_description)}
-              </p>
-            </div>
+            <SettingsEmpty
+              title={t(($) => $.mcp.empty_title)}
+              description={t(($) => $.mcp.empty_description)}
+            />
           ) : (
-            <ul className="divide-y divide-surface-border">
-              {servers.map((server) => (
-                <McpServerRow
-                  key={server.name}
-                  server={server}
-                  canManage={canManage}
-                  onEdit={() => {
-                    setEditingServer(server);
-                    setEditorOpen(true);
-                  }}
-                  onDelete={() => setDeletingServer(server)}
-                />
-              ))}
-            </ul>
+            servers.map((server) => (
+              <McpServerRow
+                key={server.name}
+                server={server}
+                canManage={canManage}
+                onEdit={() => {
+                  setEditingServer(server);
+                  setEditorOpen(true);
+                }}
+                onDelete={() => setDeletingServer(server)}
+              />
+            ))
           )}
         </SettingsCard>
         {!canManage && !currentMember.isLoading ? (
@@ -249,7 +248,7 @@ function McpServerRow({
 }) {
   const { t } = useT("settings");
   return (
-    <li className="flex items-center gap-3 px-4 py-3">
+    <SettingsListRow>
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">
           <span className="truncate text-body font-medium">{server.name}</span>
@@ -262,26 +261,23 @@ function McpServerRow({
         </p>
       </div>
       {canManage ? (
-        <div className="flex shrink-0 items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
+        <div className="flex shrink-0 items-center gap-1.5">
+          <SettingsPillButton
             onClick={onEdit}
             aria-label={t(($) => $.mcp.edit_server)}
           >
-            <Pencil className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
+            {t(($) => $.mcp.edit_server)}
+          </SettingsPillButton>
+          <SettingsPillButton
+            tone="destructive"
             onClick={onDelete}
             aria-label={t(($) => $.mcp.remove_server)}
           >
-            <Trash2 className="h-4 w-4" />
-          </Button>
+            {t(($) => $.mcp.remove_server)}
+          </SettingsPillButton>
         </div>
       ) : null}
-    </li>
+    </SettingsListRow>
   );
 }
 

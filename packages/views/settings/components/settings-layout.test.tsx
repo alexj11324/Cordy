@@ -4,9 +4,11 @@ import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { Check, Pencil } from "lucide-react";
 import {
+  SETTINGS_CONTROL_CLASS,
   SettingsCard,
   SettingsPillButton,
   SettingsRow,
+  SettingsSearchField,
   SettingsSection,
   SettingsTab,
 } from "./settings-layout";
@@ -86,5 +88,31 @@ describe("settings layout primitives", () => {
     expect(screen.getByRole("button", { name: "Done" })).toHaveClass(
       "bg-primary",
     );
+  });
+
+  it("renders a destructive pill without Linear outline chrome", () => {
+    render(
+      <SettingsPillButton tone="destructive">Leave</SettingsPillButton>,
+    );
+
+    expect(screen.getByRole("button", { name: "Leave" })).toHaveClass(
+      "rounded-full",
+      "bg-destructive/10",
+    );
+  });
+
+  it("renders search as a filled pill, not a bordered Linear field", () => {
+    render(
+      <SettingsSearchField
+        value=""
+        onValueChange={() => undefined}
+        placeholder="Search actions..."
+      />,
+    );
+
+    expect(screen.getByLabelText("Search actions...")).toHaveClass(
+      "rounded-full",
+    );
+    expect(SETTINGS_CONTROL_CLASS).toContain("rounded-full");
   });
 });

@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { AlertCircle, ArrowDownToLine, Check, Loader2 } from "lucide-react";
-import { Button } from "@patchbay/ui/components/ui/button";
 import { Switch } from "@patchbay/ui/components/ui/switch";
 import { useT } from "@patchbay/views/i18n";
-import { SettingsCard, SettingsRow, SettingsTab } from "@patchbay/views/settings";
+import { SettingsCard, SettingsPillButton, SettingsRow, SettingsTab } from "@patchbay/views/settings";
 import { toast } from "sonner";
 
 type CheckState =
@@ -126,9 +125,7 @@ export function UpdatesSettingsTab() {
             </>
           }
         >
-          <Button
-            variant="outline"
-            size="sm"
+          <SettingsPillButton
             onClick={handleCheck}
             disabled={state.status === "checking"}
           >
@@ -140,7 +137,7 @@ export function UpdatesSettingsTab() {
             ) : (
               t(($) => $.desktop.updates.check_now)
             )}
-          </Button>
+          </SettingsPillButton>
         </SettingsRow>
       </SettingsCard>
     </SettingsTab>

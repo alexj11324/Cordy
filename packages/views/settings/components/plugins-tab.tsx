@@ -39,7 +39,7 @@ import { Textarea } from "@patchbay/ui/components/ui/textarea";
 import { Switch } from "@patchbay/ui/components/ui/switch";
 import { mcpHooks, PluginHookActivity, PluginMCPApproval, PluginScheduleActivity } from "../../plugins";
 import { useLocale, useT } from "../../i18n";
-import { SettingsCard, SettingsSection, SettingsTab } from "./settings-layout";
+import { SettingsCard, SettingsPillButton, SettingsSection, SettingsTab } from "./settings-layout";
 
 /**
  * The scope list is the entire trust model: there is no signature, no
@@ -605,17 +605,16 @@ function InstalledPlugin({
                   : t(($) => $.plugins.disabled)))
                 .catch(reportError)}
             />
-            <Button
-              size="icon"
-              variant="ghost"
+            <SettingsPillButton
+              tone="destructive"
               aria-label={t(($) => $.plugins.uninstall)}
               disabled={!canManage || isMutating}
               onClick={() => uninstallMutation.mutateAsync(installation.id)
                 .then(() => toast.success(t(($) => $.plugins.uninstalled)))
                 .catch(reportError)}
             >
-              {uninstallMutation.isPending ? <Loader2 className="animate-spin" /> : <Trash2 />}
-            </Button>
+              {uninstallMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : t(($) => $.plugins.uninstall)}
+            </SettingsPillButton>
           </div>
         </div>
 

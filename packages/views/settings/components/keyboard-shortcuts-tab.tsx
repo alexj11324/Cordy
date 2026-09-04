@@ -1,9 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Keyboard, RotateCcw, Search, X } from "lucide-react";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Input } from "@patchbay/ui/components/ui/input";
+import { useMemo, useState, type KeyboardEvent } from "react";
+import { Keyboard } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,7 +33,10 @@ import { useT } from "../../i18n";
 import { ShortcutKeycaps } from "../../common/shortcut-keycaps";
 import {
   SettingsCard,
+  SettingsEmpty,
+  SettingsPillButton,
   SettingsRow,
+  SettingsSearchField,
   SettingsSection,
   SettingsTab,
 } from "./settings-layout";
@@ -74,7 +75,7 @@ export function KeyboardShortcutsTab() {
 
   const groups: readonly ShortcutCategory[] = ["general", "navigation"];
 
-  const capture = (actionId: ShortcutActionId, event: React.KeyboardEvent) => {
+  const capture = (actionId: ShortcutActionId, event: KeyboardEvent) => {
     event.preventDefault();
     event.stopPropagation();
     if (event.repeat || isImeComposing(event)) return;
@@ -115,31 +116,22 @@ export function KeyboardShortcutsTab() {
     <SettingsTab
       title={t(($) => $.shortcuts.title)}
       description={t(($) => $.shortcuts.description)}
+      action={
+        <SettingsPillButton
+          onClick={() => setResetConfirmOpen(true)}
+          disabled={Object.keys(overrides).length === 0}
+        >
+          {t(($) => $.shortcuts.reset_all)}
+        </SettingsPillButton>
+      }
     >
-      <div>
-        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="relative min-w-0 flex-1 sm:max-w-sm">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder={t(($) => $.shortcuts.search_placeholder)}
-              aria-label={t(($) => $.shortcuts.search_placeholder)}
-              className="pl-8"
-            />
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setResetConfirmOpen(true)}
-            disabled={Object.keys(overrides).length === 0}
-          >
-            <RotateCcw className="size-3.5" />
-            {t(($) => $.shortcuts.reset_all)}
-          </Button>
-        </div>
+      <SettingsSearchField
+        value={query}
+        onValueChange={setQuery}
+        placeholder={t(($) => $.shortcuts.search_placeholder)}
+        className="max-w-sm"
+      />
 
-        <div className="space-y-12">
       {groups.map((category) => {
         const actions = visibleActions.filter(
           (action) => action.category === category,
@@ -187,9 +179,7 @@ export function KeyboardShortcutsTab() {
       })}
 
       {visibleActions.length === 0 ? (
-        <div className="rounded-lg border border-dashed px-4 py-10 text-center text-body text-muted-foreground">
-          {t(($) => $.shortcuts.no_results)}
-        </div>
+        <SettingsEmpty title={t(($) => $.shortcuts.no_results)} />
       ) : null}
 
       <SettingsSection
@@ -205,8 +195,6 @@ export function KeyboardShortcutsTab() {
           <FixedShortcutRow label={t(($) => $.shortcuts.fixed.close_dialog)} shortcut={createShortcutChord("Escape")} />
         </SettingsCard>
       </SettingsSection>
-        </div>
-      </div>
 
       <AlertDialog open={resetConfirmOpen} onOpenChange={setResetConfirmOpen}>
         <AlertDialogContent>
@@ -259,7 +247,7 @@ function ShortcutRow({
   error: CaptureError;
   onStartRecording: () => void;
   onCancelRecording: () => void;
-  onCapture: (event: React.KeyboardEvent) => void;
+  onCapture: (event: KeyboardEvent) => void;
   onDisable: () => void;
   onReset: () => void;
 }) {
@@ -295,55 +283,47 @@ function ShortcutRow({
       size="select-wide"
     >
       <div className="flex flex-col items-stretch gap-1.5 sm:items-end">
-        <div className="flex items-center justify-end gap-1.5">
+        <div className="flex flex-wrap items-center justify-end gap-1.5">
           <button
             type="button"
             onClick={onStartRecording}
             onKeyDown={recording ? onCapture : undefined}
             onBlur={onCancelRecording}
             className={cn(
-              "inline-flex h-8 min-w-28 items-center justify-center rounded-md border bg-background px-2.5 font-mono text-caption font-medium shadow-xs outline-none transition-colors hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-ring",
-              recording && "border-brand bg-brand/5 text-brand ring-2 ring-brand/20",
-              error && "border-destructive text-destructive ring-destructive/20",
+              "inline-flex h-8 min-w-28 items-center justify-center rounded-full bg-muted px-3 text-body font-medium outline-none transition-colors hover:bg-muted/80 focus-visible:ring-2 focus-visible:ring-ring",
+              recording && "bg-primary/10 text-primary ring-2 ring-primary/20",
+              error && "bg-destructive/10 text-destructive ring-2 ring-destructive/20",
             )}
             aria-label={t(($) => $.shortcuts.record_aria, { action: label })}
             aria-pressed={recording}
           >
             {recording ? (
-              <span className="inline-flex items-center gap-1.5 font-sans">
+              <span className="inline-flex items-center gap-1.5">
                 <Keyboard className="size-3.5" />
                 {t(($) => $.shortcuts.recording)}
               </span>
             ) : shortcut ? (
               <ShortcutKeycaps shortcut={shortcut} decorative />
             ) : (
-              <span className="font-sans font-normal text-muted-foreground">
+              <span className="font-normal text-muted-foreground">
                 {t(($) => $.shortcuts.unassigned)}
               </span>
             )}
           </button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
+          <SettingsPillButton
             onClick={onReset}
             disabled={!customized}
             aria-label={t(($) => $.shortcuts.reset_action, { action: label })}
-            title={t(($) => $.shortcuts.reset)}
           >
-            <RotateCcw className="size-3.5" />
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
+            {t(($) => $.shortcuts.reset)}
+          </SettingsPillButton>
+          <SettingsPillButton
             onClick={onDisable}
             disabled={shortcut === null}
             aria-label={t(($) => $.shortcuts.disable_action, { action: label })}
-            title={t(($) => $.shortcuts.disable)}
           >
-            <X className="size-3.5" />
-          </Button>
+            {t(($) => $.shortcuts.disable)}
+          </SettingsPillButton>
         </div>
         {errorText ? (
           <span role="alert" className="max-w-72 text-right text-caption text-destructive">

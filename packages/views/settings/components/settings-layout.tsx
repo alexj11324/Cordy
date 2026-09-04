@@ -1,5 +1,14 @@
-import type { ButtonHTMLAttributes, ReactNode } from "react";
-import { AlertCircle, Check, Loader2, type LucideIcon } from "lucide-react";
+import type {
+  ButtonHTMLAttributes,
+  ComponentProps,
+  InputHTMLAttributes,
+  ReactNode,
+  TextareaHTMLAttributes,
+} from "react";
+import { AlertCircle, Check, Loader2, Search, type LucideIcon } from "lucide-react";
+import { Input } from "@patchbay/ui/components/ui/input";
+import { SelectTrigger } from "@patchbay/ui/components/ui/select";
+import { Textarea } from "@patchbay/ui/components/ui/textarea";
 import { cn } from "@patchbay/ui/lib/utils";
 
 export type SettingsSaveStatus = "idle" | "saving" | "saved" | "error";
@@ -11,6 +20,17 @@ export type SettingsSaveStatus = "idle" | "saving" | "saved" | "error";
  */
 export const SETTINGS_INLINE_FIELD_CLASS =
   "h-auto min-h-0 rounded-none border-0 bg-transparent px-0 py-0 text-body text-muted-foreground shadow-none placeholder:text-muted-foreground focus-visible:border-transparent focus-visible:ring-0 focus-visible:ring-transparent dark:bg-transparent";
+
+/**
+ * Filled pill chrome for settings controls (selects, search, single-line
+ * inputs). Replaces Linear/Multica bordered fields so the inner page matches
+ * the Buzz shell rather than looking like a second product.
+ */
+export const SETTINGS_CONTROL_CLASS =
+  "h-8 w-full rounded-full border-transparent bg-muted px-3 text-body shadow-none hover:bg-muted/80 focus-visible:border-transparent focus-visible:ring-2 focus-visible:ring-ring dark:bg-muted dark:hover:bg-muted/80";
+
+export const SETTINGS_TEXTAREA_CLASS =
+  "min-h-[4.5rem] rounded-xl border-transparent bg-muted px-3 py-2 text-body shadow-none hover:bg-muted/80 focus-visible:border-transparent focus-visible:ring-2 focus-visible:ring-ring dark:bg-muted dark:hover:bg-muted/80";
 
 export function SettingsTab({
   title,
@@ -216,25 +236,72 @@ export function SettingsRow({
   );
 }
 
+/** Name + meta on the left, actions on the right — catalog rows inside a card. */
+export function SettingsListRow({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex min-h-16 items-center gap-4 px-4 py-3 text-body",
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+export function SettingsEmpty({
+  title,
+  description,
+  className,
+}: {
+  title: ReactNode;
+  description?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn("px-4 py-10 text-center", className)}>
+      <p className="text-body font-medium">{title}</p>
+      {description ? (
+        <p className="mx-auto mt-1 max-w-md text-body text-muted-foreground">
+          {description}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 export function SettingsPillButton({
   children,
   icon: Icon,
   active = false,
+  tone,
   className,
   type = "button",
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
   icon?: LucideIcon;
   active?: boolean;
+  tone?: "muted" | "primary" | "destructive";
 }) {
+  const resolvedTone = tone ?? (active ? "primary" : "muted");
   return (
     <button
       type={type}
       className={cn(
         "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-body font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60",
-        active
-          ? "border-transparent bg-primary text-primary-foreground shadow-sm hover:bg-primary/90"
-          : "border-transparent bg-muted text-foreground hover:bg-muted/80",
+        resolvedTone === "primary" &&
+          "border-transparent bg-primary text-primary-foreground shadow-sm hover:bg-primary/90",
+        resolvedTone === "muted" &&
+          "border-transparent bg-muted text-foreground hover:bg-muted/80",
+        resolvedTone === "destructive" &&
+          "border-transparent bg-destructive/10 text-destructive hover:bg-destructive/15",
         className,
       )}
       {...props}
@@ -242,6 +309,82 @@ export function SettingsPillButton({
       {Icon ? <Icon className="size-4 shrink-0" /> : null}
       {children}
     </button>
+  );
+}
+
+export function SettingsIconButton({
+  className,
+  type = "button",
+  children,
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button
+      type={type}
+      className={cn(
+        "inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60",
+        className,
+      )}
+      {...props}
+    >
+      {children}
+    </button>
+  );
+}
+
+export function SettingsField({
+  className,
+  ...props
+}: InputHTMLAttributes<HTMLInputElement>) {
+  return <Input className={cn(SETTINGS_CONTROL_CLASS, className)} {...props} />;
+}
+
+export function SettingsTextarea({
+  className,
+  ...props
+}: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return (
+    <Textarea className={cn(SETTINGS_TEXTAREA_CLASS, className)} {...props} />
+  );
+}
+
+export function SettingsSelectTrigger({
+  className,
+  ...props
+}: ComponentProps<typeof SelectTrigger>) {
+  return (
+    <SelectTrigger
+      className={cn(SETTINGS_CONTROL_CLASS, "justify-between", className)}
+      {...props}
+    />
+  );
+}
+
+export function SettingsSearchField({
+  value,
+  onValueChange,
+  placeholder,
+  className,
+  id,
+}: {
+  value: string;
+  onValueChange: (value: string) => void;
+  placeholder: string;
+  className?: string;
+  id?: string;
+}) {
+  return (
+    <div className={cn("relative min-w-0", className)}>
+      <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+      <Input
+        id={id}
+        value={value}
+        onChange={(event) => onValueChange(event.target.value)}
+        placeholder={placeholder}
+        aria-label={placeholder}
+        className={cn(SETTINGS_CONTROL_CLASS, "pl-9")}
+      />
+    </div>
   );
 }
 

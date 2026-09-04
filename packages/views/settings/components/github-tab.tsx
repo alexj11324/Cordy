@@ -3,10 +3,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ExternalLink, GitCommitHorizontal, Link2, PanelRight } from "lucide-react";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Card, CardContent } from "@patchbay/ui/components/ui/card";
-import { Label } from "@patchbay/ui/components/ui/label";
+import { ExternalLink } from "lucide-react";
 import { Switch } from "@patchbay/ui/components/ui/switch";
 import {
   AlertDialog,
@@ -28,9 +25,15 @@ import {
 } from "@patchbay/core/github";
 import { api } from "@patchbay/core/api";
 import type { Workspace } from "@patchbay/core/types";
-import { AppLink, useNavigation } from "../../navigation";
+import { useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
-import { SettingsTab } from "./settings-layout";
+import {
+  SettingsCard,
+  SettingsPillButton,
+  SettingsRow,
+  SettingsSection,
+  SettingsTab,
+} from "./settings-layout";
 import { GitHubMark } from "./github-mark";
 
 type SettingsKey =
@@ -133,202 +136,175 @@ export function GitHubTab() {
       title={t(($) => $.page.tabs.github)}
       description={t(($) => $.github.page_description)}
     >
-      <section className="space-y-3">
-        <Card>
-          <CardContent>
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex items-start gap-3">
-                <div className="rounded-md border bg-muted/50 p-2 text-muted-foreground">
-                  <GitHubMark className="h-4 w-4" />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="github-master" className="text-body font-medium">
-                    {t(($) => $.github.section_master)}
-                  </Label>
-                  <p className="text-body text-muted-foreground">
-                    {flags.enabled
-                      ? t(($) => $.github.master_description_on)
-                      : t(($) => $.github.master_description_off)}
-                  </p>
-                </div>
-              </div>
-              <Switch
-                id="github-master"
-                checked={flags.enabled}
-                onCheckedChange={(v) => persistSetting("github_enabled", v)}
-                disabled={!canManage || savingKey === "github_enabled"}
-              />
-            </div>
-          </CardContent>
-        </Card>
-      </section>
+      <SettingsSection>
+        <SettingsCard>
+          <SettingsRow
+            htmlFor="github-master"
+            label={t(($) => $.github.section_master)}
+            description={
+              flags.enabled
+                ? t(($) => $.github.master_description_on)
+                : t(($) => $.github.master_description_off)
+            }
+            align="start"
+          >
+            <Switch
+              id="github-master"
+              checked={flags.enabled}
+              onCheckedChange={(v) => persistSetting("github_enabled", v)}
+              disabled={!canManage || savingKey === "github_enabled"}
+            />
+          </SettingsRow>
+        </SettingsCard>
+      </SettingsSection>
 
-      <section className="space-y-3">
-        <h2 className="text-body font-semibold">{t(($) => $.github.section_connection)}</h2>
-        <Card>
-          <CardContent className="space-y-4">
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex items-start gap-3">
-                <GitHubMark className="h-6 w-6 mt-0.5 shrink-0" />
-                <div className="space-y-1">
-                  <p className="text-body font-medium">{t(($) => $.github.connection_title)}</p>
-                  {connected ? (
-                    <>
-                      <p className="text-caption text-muted-foreground">
-                        {t(($) => $.github.connected_to, {
-                          login: installations.map((i) => i.account_login).join(", "),
-                        })}
-                      </p>
-                      {primaryInstallation?.connected_by && (
-                        <p className="text-caption text-muted-foreground">
-                          {t(($) => $.github.connected_by, {
-                            name: primaryInstallation.connected_by!,
-                          })}
-                        </p>
-                      )}
-                    </>
-                  ) : canManage ? (
-                    <p className="text-caption text-muted-foreground">
-                      {t(($) => $.github.connection_description_prefix)}{" "}
-                      <code className="rounded bg-muted px-1 py-0.5 text-micro">
-                        {t(($) => $.github.connection_identifier_example)}
-                      </code>{" "}
-                      {t(($) => $.github.connection_description_suffix)}{" "}
-                      <strong>{t(($) => $.github.connection_description_done)}</strong>.
-                    </p>
-                  ) : (
-                    <p className="text-caption text-muted-foreground">
-                      {t(($) => $.github.contact_admin_to_connect)}
-                    </p>
-                  )}
-                </div>
-              </div>
-              {canManage && (
-                <div className="flex items-center gap-2">
-                  {connected && primaryInstallation ? (
-                    // Disconnect must stay reachable even when the master switch
-                    // is off — disconnect is a separate intent (revoke the App
-                    // grant) from hiding the feature.
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setDisconnectTarget(primaryInstallation.id)}
-                    >
-                      {t(($) => $.github.disconnect)}
-                    </Button>
-                  ) : (
-                    <Button
-                      size="sm"
-                      onClick={handleConnect}
-                      disabled={connecting || !configured}
-                      title={
-                        !configured
-                          ? t(($) => $.github.connect_disabled_tooltip)
-                          : undefined
-                      }
-                    >
-                      {connecting
-                        ? t(($) => $.github.connect_opening)
-                        : t(($) => $.github.connect_github)}
-                    </Button>
-                  )}
-                </div>
-              )}
-            </div>
+      <SettingsSection title={t(($) => $.github.section_connection)}>
+        <SettingsCard>
+          <SettingsRow
+            label={
+              <span className="inline-flex items-center gap-2">
+                <GitHubMark className="size-4" />
+                {t(($) => $.github.connection_title)}
+              </span>
+            }
+            description={
+              connected ? (
+                <>
+                  {t(($) => $.github.connected_to, {
+                    login: installations.map((i) => i.account_login).join(", "),
+                  })}
+                  {primaryInstallation?.connected_by ? (
+                    <span className="mt-1 block">
+                      {t(($) => $.github.connected_by, {
+                        name: primaryInstallation.connected_by!,
+                      })}
+                    </span>
+                  ) : null}
+                </>
+              ) : canManage ? (
+                <>
+                  {t(($) => $.github.connection_description_prefix)}{" "}
+                  <code className="rounded bg-muted px-1 py-0.5 text-micro">
+                    {t(($) => $.github.connection_identifier_example)}
+                  </code>{" "}
+                  {t(($) => $.github.connection_description_suffix)}{" "}
+                  <strong>{t(($) => $.github.connection_description_done)}</strong>.
+                </>
+              ) : (
+                t(($) => $.github.contact_admin_to_connect)
+              )
+            }
+            align="start"
+          >
+            {canManage ? (
+              connected && primaryInstallation ? (
+                <SettingsPillButton
+                  onClick={() => setDisconnectTarget(primaryInstallation.id)}
+                >
+                  {t(($) => $.github.disconnect)}
+                </SettingsPillButton>
+              ) : (
+                <SettingsPillButton
+                  active
+                  onClick={handleConnect}
+                  disabled={connecting || !configured}
+                  title={
+                    !configured
+                      ? t(($) => $.github.connect_disabled_tooltip)
+                      : undefined
+                  }
+                >
+                  {connecting
+                    ? t(($) => $.github.connect_opening)
+                    : t(($) => $.github.connect_github)}
+                </SettingsPillButton>
+              )
+            ) : null}
+          </SettingsRow>
 
-            {canManage && !configured && (
-              <p className="text-caption text-muted-foreground">
-                {t(($) => $.github.not_configured)}{" "}
-                <code className="rounded bg-muted px-1 py-0.5 text-micro">GITHUB_APP_SLUG</code>{" "}
-                {t(($) => $.github.not_configured_and)}{" "}
-                <code className="rounded bg-muted px-1 py-0.5 text-micro">GITHUB_WEBHOOK_SECRET</code>.
-              </p>
-            )}
+          {canManage && !configured ? (
+            <p className="px-4 py-3 text-caption text-muted-foreground">
+              {t(($) => $.github.not_configured)}{" "}
+              <code className="rounded bg-muted px-1 py-0.5 text-micro">GITHUB_APP_SLUG</code>{" "}
+              {t(($) => $.github.not_configured_and)}{" "}
+              <code className="rounded bg-muted px-1 py-0.5 text-micro">GITHUB_WEBHOOK_SECRET</code>.
+            </p>
+          ) : null}
 
-            {!canManage && connected && (
-              <p className="text-caption text-muted-foreground">
-                {t(($) => $.github.read_only_hint)}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      </section>
+          {!canManage && connected ? (
+            <p className="px-4 py-3 text-caption text-muted-foreground">
+              {t(($) => $.github.read_only_hint)}
+            </p>
+          ) : null}
+        </SettingsCard>
+      </SettingsSection>
 
-      <section className="space-y-3">
-        <h2 className="text-body font-semibold">{t(($) => $.github.section_features)}</h2>
-        <Card className="gap-0 py-0">
-          <CardContent className="divide-y divide-surface-border px-0">
-            <FeatureRow
+      <SettingsSection title={t(($) => $.github.section_features)}>
+        <SettingsCard>
+          <SettingsRow
+            htmlFor="github-pr-sidebar"
+            label={t(($) => $.github.feature_pr_sidebar_label)}
+            description={t(($) => $.github.feature_pr_sidebar_description)}
+            align="start"
+          >
+            <Switch
               id="github-pr-sidebar"
-              icon={<PanelRight className="h-4 w-4" />}
-              label={t(($) => $.github.feature_pr_sidebar_label)}
-              description={
-                <p className="text-body text-muted-foreground">
-                  {t(($) => $.github.feature_pr_sidebar_description)}
-                </p>
-              }
               checked={flags.prSidebar}
               disabled={!canManage || !flags.enabled || savingKey === "github_pr_sidebar_enabled"}
               onCheckedChange={(v) => persistSetting("github_pr_sidebar_enabled", v)}
             />
+          </SettingsRow>
 
-            <FeatureRow
+          <SettingsRow
+            htmlFor="github-coauthor"
+            label={t(($) => $.github.feature_co_author_label)}
+            description={
+              <>
+                {t(($) => $.github.feature_co_author_description_prefix)}{" "}
+                <code className="rounded bg-muted px-1 py-0.5 text-caption">
+                  {"Co-authored-by: patchbay-agent <github@patchbay.ai>"}
+                </code>{" "}
+                {t(($) => $.github.feature_co_author_description_suffix)}
+              </>
+            }
+            align="start"
+          >
+            <Switch
               id="github-coauthor"
-              icon={<GitCommitHorizontal className="h-4 w-4" />}
-              label={t(($) => $.github.feature_co_author_label)}
-              description={
-                <p className="text-body text-muted-foreground">
-                  {t(($) => $.github.feature_co_author_description_prefix)}{" "}
-                  <code className="rounded bg-muted px-1 py-0.5 text-caption">
-                    {"Co-authored-by: patchbay-agent <github@patchbay.ai>"}
-                  </code>{" "}
-                  {t(($) => $.github.feature_co_author_description_suffix)}
-                </p>
-              }
               checked={flags.coAuthor}
               disabled={!canManage || !flags.enabled || savingKey === "co_authored_by_enabled"}
               onCheckedChange={(v) => persistSetting("co_authored_by_enabled", v)}
             />
+          </SettingsRow>
 
-            <FeatureRow
+          <SettingsRow
+            htmlFor="github-auto-link"
+            label={t(($) => $.github.feature_auto_link_label)}
+            description={t(($) => $.github.feature_auto_link_description)}
+            align="start"
+          >
+            <Switch
               id="github-auto-link"
-              icon={<Link2 className="h-4 w-4" />}
-              label={t(($) => $.github.feature_auto_link_label)}
-              description={
-                <p className="text-body text-muted-foreground">
-                  {t(($) => $.github.feature_auto_link_description)}
-                </p>
-              }
               checked={flags.autoLinkPRs}
               disabled={!canManage || !flags.enabled || savingKey === "github_auto_link_prs_enabled"}
               onCheckedChange={(v) => persistSetting("github_auto_link_prs_enabled", v)}
             />
+          </SettingsRow>
+        </SettingsCard>
+      </SettingsSection>
 
-          </CardContent>
-        </Card>
-      </section>
-
-      <section className="space-y-3">
-        <h2 className="text-body font-semibold">{t(($) => $.github.section_repositories)}</h2>
-        <Card>
-          <CardContent>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-body font-medium">
-                {t(($) => $.github.repositories_shortcut_label)}
-              </p>
-              <Button
-                variant="outline"
-                size="sm"
-                render={<AppLink href={repositoriesHref} />}
-                nativeButton={false}
-              >
-                <ExternalLink className="h-3 w-3" />
-                {t(($) => $.github.repositories_shortcut_link)}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </section>
+      <SettingsSection title={t(($) => $.github.section_repositories)}>
+        <SettingsCard>
+          <SettingsRow label={t(($) => $.github.repositories_shortcut_label)}>
+            <SettingsPillButton
+              icon={ExternalLink}
+              onClick={() => navigation.push(repositoriesHref)}
+            >
+              {t(($) => $.github.repositories_shortcut_link)}
+            </SettingsPillButton>
+          </SettingsRow>
+        </SettingsCard>
+      </SettingsSection>
 
       <AlertDialog
         open={!!disconnectTarget}
@@ -358,43 +334,5 @@ export function GitHubTab() {
         </AlertDialogContent>
       </AlertDialog>
     </SettingsTab>
-  );
-}
-
-function FeatureRow({
-  id,
-  icon,
-  label,
-  description,
-  checked,
-  disabled,
-  onCheckedChange,
-}: {
-  id: string;
-  icon: React.ReactNode;
-  label: string;
-  description: React.ReactNode;
-  checked: boolean;
-  disabled: boolean;
-  onCheckedChange: (v: boolean) => void;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-4 px-4 py-3.5">
-      <div className="flex items-start gap-3">
-        <div className="rounded-md border bg-muted/50 p-2 text-muted-foreground">{icon}</div>
-        <div className="space-y-1">
-          <Label htmlFor={id} className="text-body font-medium">
-            {label}
-          </Label>
-          {description}
-        </div>
-      </div>
-      <Switch
-        id={id}
-        checked={checked}
-        disabled={disabled}
-        onCheckedChange={onCheckedChange}
-      />
-    </div>
   );
 }

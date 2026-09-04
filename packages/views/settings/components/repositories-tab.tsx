@@ -1,10 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { LoaderCircle, Plus, Search, Trash2 } from "lucide-react";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Button } from "@patchbay/ui/components/ui/button";
+import { LoaderCircle, Plus } from "lucide-react";
 import { Badge } from "@patchbay/ui/components/ui/badge";
+import { Button } from "@patchbay/ui/components/ui/button";
 import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
 import {
   Dialog,
@@ -18,7 +17,6 @@ import {
   Select,
   SelectContent,
   SelectItem,
-  SelectTrigger,
   SelectValue,
 } from "@patchbay/ui/components/ui/select";
 import {
@@ -55,8 +53,14 @@ import { useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
 import {
   SettingsCard,
+  SettingsEmpty,
+  SettingsField,
+  SettingsListRow,
+  SettingsPillButton,
   SettingsSaveState,
+  SettingsSearchField,
   SettingsSection,
+  SettingsSelectTrigger,
   SettingsTab,
 } from "./settings-layout";
 import { useAutoSave } from "./use-auto-save";
@@ -377,17 +381,15 @@ export function RepositoriesTab() {
       <SettingsSection>
         <SettingsCard>
           {repositories.length === 0 ? (
-            <div className="px-4 py-8 text-center text-caption text-muted-foreground">
-              {t(($) => $.repositories.empty)}
-            </div>
+            <SettingsEmpty title={t(($) => $.repositories.empty)} />
           ) : null}
 
           {repositories.map((repository, index) => (
-            <div
+            <SettingsListRow
               key={index}
-              className="grid gap-2 px-4 py-3.5 sm:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)_auto] sm:items-center"
+              className="flex-col items-stretch gap-2 sm:flex-row sm:items-center"
             >
-              <Input
+              <SettingsField
                 type="text"
                 name={`repository-${index}-url`}
                 autoComplete="off"
@@ -401,9 +403,9 @@ export function RepositoriesTab() {
                 disabled={!canManageWorkspace}
                 aria-invalid={!repository.url.trim()}
                 placeholder={t(($) => $.repositories.url_placeholder)}
-                className="font-mono text-caption"
+                className="flex-1 font-mono text-caption"
               />
-              <Input
+              <SettingsField
                 type="text"
                 name={`repository-${index}-description`}
                 autoComplete="off"
@@ -415,30 +417,28 @@ export function RepositoriesTab() {
                 onBlur={autoSave.flush}
                 disabled={!canManageWorkspace}
                 placeholder={t(($) => $.repositories.description_placeholder)}
+                className="flex-1"
               />
               {canManageWorkspace ? (
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
+                <SettingsPillButton
+                  tone="destructive"
                   aria-label={t(($) => $.repositories.delete_aria)}
-                  className="justify-self-end text-muted-foreground hover:text-destructive"
                   onClick={() => setPendingRemovalIndex(index)}
                 >
-                  <Trash2 className="size-3.5" />
-                </Button>
+                  {t(($) => $.repositories.delete_aria)}
+                </SettingsPillButton>
               ) : null}
-            </div>
+            </SettingsListRow>
           ))}
 
           {canManageWorkspace ? (
-            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5">
+            <SettingsListRow className="flex-wrap justify-between">
               <div className="flex flex-wrap items-center gap-2">
-                <Button variant="outline" size="sm" onClick={addRepository}>
-                  <Plus className="size-3.5" />
+                <SettingsPillButton icon={Plus} onClick={addRepository}>
                   {t(($) => $.repositories.add)}
-                </Button>
-                <Button
-                  size="sm"
+                </SettingsPillButton>
+                <SettingsPillButton
+                  active
                   onClick={handleGitHubAction}
                   disabled={
                     connectingGitHub ||
@@ -460,14 +460,14 @@ export function RepositoriesTab() {
                   {githubInstallations.length > 0
                     ? t(($) => $.repositories.choose_from_github)
                     : t(($) => $.repositories.connect_github)}
-                </Button>
+                </SettingsPillButton>
               </div>
               {!allUrlsValid ? (
                 <span className="text-caption text-muted-foreground">
                   {t(($) => $.repositories.url_empty)}
                 </span>
               ) : null}
-            </div>
+            </SettingsListRow>
           ) : (
             <div className="px-4 py-3 text-caption text-muted-foreground">
               {t(($) => $.repositories.manage_hint)}
@@ -504,11 +504,11 @@ export function RepositoriesTab() {
                   setSelectedInstallationID(value ?? "")
                 }
               >
-                <SelectTrigger
+                <SettingsSelectTrigger
                   aria-label={t(($) => $.repositories.github_account)}
                 >
                   <SelectValue />
-                </SelectTrigger>
+                </SettingsSelectTrigger>
                 <SelectContent>
                   {githubInstallations.map((installation) => (
                     <SelectItem
@@ -529,20 +529,13 @@ export function RepositoriesTab() {
               </p>
             ) : null}
 
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={repositorySearch}
-                onChange={(event) => setRepositorySearch(event.target.value)}
-                placeholder={t(
-                  ($) => $.repositories.github_search_placeholder,
-                )}
-                aria-label={t(
-                  ($) => $.repositories.github_search_placeholder,
-                )}
-                className="pl-8"
-              />
-            </div>
+            <SettingsSearchField
+              value={repositorySearch}
+              onValueChange={setRepositorySearch}
+              placeholder={t(
+                ($) => $.repositories.github_search_placeholder,
+              )}
+            />
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto border-y">

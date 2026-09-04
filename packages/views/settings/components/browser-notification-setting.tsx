@@ -7,10 +7,9 @@ import {
   requestWebNotificationPermission,
   type WebNotificationPermission,
 } from "@patchbay/core/platform";
-import { Button } from "@patchbay/ui/components/ui/button";
 import { isDesktopShell } from "../../platform";
 import { useT } from "../../i18n";
-import { SettingsCard, SettingsRow } from "./settings-layout";
+import { SettingsCard, SettingsPillButton, SettingsRow } from "./settings-layout";
 
 /**
  * Web-only control for the browser permission that native notification banners
@@ -54,9 +53,9 @@ export function BrowserNotificationSetting() {
         description={statusHint}
       >
           {permission === "default" && (
-            <Button size="sm" variant="outline" onClick={handleEnable}>
+            <SettingsPillButton active onClick={handleEnable}>
               {t(($) => $.notifications.browser.enable)}
-            </Button>
+            </SettingsPillButton>
           )}
           {permission === "granted" && (
             <span className="shrink-0 text-caption font-medium text-muted-foreground">

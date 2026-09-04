@@ -6,7 +6,6 @@ import {
   Select,
   SelectContent,
   SelectItem,
-  SelectTrigger,
   SelectValue,
 } from "@patchbay/ui/components/ui/select";
 import { Switch } from "@patchbay/ui/components/ui/switch";
@@ -26,6 +25,7 @@ import {
   SettingsCard,
   SettingsRow,
   SettingsSection,
+  SettingsSelectTrigger,
   SettingsTab,
 } from "./settings-layout";
 
@@ -114,15 +114,13 @@ export function PreferencesTab() {
                 });
               }}
             >
-              <SelectTrigger
-                size="sm"
-                className="w-full"
+              <SettingsSelectTrigger
                 aria-label={t(($) => $.preferences.theme.title)}
               >
                 <SelectValue>
                   {themeOptions.find((option) => option.value === theme)?.label}
                 </SelectValue>
-              </SelectTrigger>
+              </SettingsSelectTrigger>
               <SelectContent align="end">
                 {themeOptions.map((option) => (
                   <SelectItem key={option.value} value={option.value}>
@@ -144,15 +142,13 @@ export function PreferencesTab() {
                 if (next) void handleLanguageChange(next as SupportedLocale);
               }}
             >
-              <SelectTrigger
-                size="sm"
-                className="w-full"
+              <SettingsSelectTrigger
                 aria-label={t(($) => $.preferences.language.title)}
               >
                 <SelectValue>
                   {languageOptions.find((option) => option.value === currentLocale)?.label}
                 </SelectValue>
-              </SelectTrigger>
+              </SettingsSelectTrigger>
               <SelectContent align="end">
                 {languageOptions.map((option) => (
                   <SelectItem key={option.value} value={option.value}>
@@ -260,13 +256,12 @@ function TimezoneRow() {
           if (next) void handleChange(next);
         }}
       >
-        <SelectTrigger
-          size="sm"
-          className="w-full font-mono text-caption"
+        <SettingsSelectTrigger
+          className="font-mono text-caption"
           aria-label={t(($) => $.preferences.timezone.title)}
         >
           <SelectValue>{formatTZLabel(value)}</SelectValue>
-        </SelectTrigger>
+        </SettingsSelectTrigger>
         <SelectContent align="end" className="max-h-72">
           <SelectItem value={BROWSER_TZ_VALUE} className="font-mono text-caption">
             {formatTZLabel(BROWSER_TZ_VALUE)}
