@@ -270,7 +270,7 @@ func (s *InstallationService) finalize(ctx context.Context, workspaceID, agentID
 	}
 	// Re-resolve the hosted cap now, at the finalize the user waited for —
 	// never reusing a value captured at Begin, where a subscription could
-	// have changed mid-scan (the Rust flow's deliberate choice).
+	// have changed mid-scan.
 	var limit *int64
 	if s.capacity != nil {
 		resolved, err := s.capacity.InstallationLimit(ctx, workspaceID)

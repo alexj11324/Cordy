@@ -460,8 +460,7 @@ ORDER BY r.discovered_at ASC, r.conversation_id ASC, r.id ASC
 
 // Settings inventory of group-to-agent assignments. Only routes under an
 // installed DingTalk connection are listed; revoked installations keep their
-// rows for audit but disappear from the panel. Mirrors the Rust
-// list_ding_talk_group_routes_by_workspace ordering (discovery order) with
+// rows for audit but disappear from the panel. Preserve discovery order with
 // deterministic tiebreakers.
 func (q *Queries) ListDingTalkGroupRoutesByWorkspace(ctx context.Context, workspaceID pgtype.UUID) ([]DingtalkGroupRoute, error) {
 	rows, err := q.db.Query(ctx, listDingTalkGroupRoutesByWorkspace, workspaceID)
@@ -705,8 +704,7 @@ type ReassignDingTalkGroupRouteRow struct {
 // for message activity. When the agent actually changes, the stale
 // channel_chat_session_binding for that installation/conversation is dropped
 // (plus its outbound cards) so the next @bot message opens a session for the
-// new agent; sessions themselves remain as history. Mirrors the Rust
-// reassign_ding_talk_group_route semantics.
+// new agent; sessions themselves remain as history.
 func (q *Queries) ReassignDingTalkGroupRoute(ctx context.Context, arg ReassignDingTalkGroupRouteParams) (ReassignDingTalkGroupRouteRow, error) {
 	row := q.db.QueryRow(ctx, reassignDingTalkGroupRoute, arg.WorkspaceID, arg.AgentID, arg.RouteID)
 	var i ReassignDingTalkGroupRouteRow

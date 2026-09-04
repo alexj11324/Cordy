@@ -789,8 +789,8 @@ func TestDeleteWorkspaceRequiresOwner(t *testing.T) {
 }
 
 func TestDingTalkGroupsThroughRouterSupportsFilteredWorkspaceAndAgentScopes(t *testing.T) {
-	// The group-routes management surface is part of the migrated DingTalk
-	// product (Rust mainline exposes GET/PATCH on it), so the workspace list
+	// The group-routes management surface is part of the DingTalk product, so
+	// the workspace list
 	// must answer 200 for a member — the old "route was removed, want 404"
 	// expectation predates that migration.
 	routesResp := authRequest(t, http.MethodGet, "/api/workspaces/"+testWorkspaceID+"/dingtalk/group-routes", nil)

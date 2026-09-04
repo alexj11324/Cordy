@@ -25,8 +25,8 @@ const TypeWeixin channel.Type = "weixin"
 // iLink. It is intentionally a channel-specific string, not a new schema.
 const OriginWeixinChat = "weixin_chat"
 
-// DefaultBaseURL is the only provider host documented by the Rust mainline
-// adapter. Per-installation redirect hosts are accepted only when they pass
+// DefaultBaseURL is the canonical provider host. Per-installation redirect
+// hosts are accepted only when they pass
 // ValidateProviderBaseURL.
 const DefaultBaseURL = "https://ilinkai.weixin.qq.com"
 
@@ -58,8 +58,8 @@ type PublicConfig struct {
 
 var errMissingCredentials = errors.New("weixin: installation is missing bot credentials")
 
-// DecodeCredentials parses the exact config shape written by the Rust
-// mainline installer and decrypts bot_token_encrypted. No provider-specific
+// DecodeCredentials parses the installation config shape and decrypts
+// bot_token_encrypted. No provider-specific
 // token format is inferred here: iLink returns the opaque bot token at QR
 // confirmation time.
 func DecodeCredentials(raw json.RawMessage, decrypt Decrypter) (Credentials, error) {
@@ -129,8 +129,8 @@ func normalizeBaseURL(value string) string {
 	return value
 }
 
-// ValidateProviderBaseURL applies the redirect-host boundary from the Rust
-// adapter. iLink may return a regional redirect host, but it must remain an
+// ValidateProviderBaseURL applies the adapter's redirect-host boundary. iLink
+// may return a regional redirect host, but it must remain an
 // HTTPS host under the documented Tencent Weixin domain. Paths and queries
 // are discarded so a provider-supplied callback cannot smuggle an arbitrary
 // request target into later API calls.

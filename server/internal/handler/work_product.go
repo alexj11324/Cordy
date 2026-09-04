@@ -1010,8 +1010,8 @@ func (h *Handler) ListProvenanceByWorkspace(w http.ResponseWriter, r *http.Reque
 	})
 }
 
-// classifyBranchDiscovery is the durable discovery policy copied from the
-// Rust mainline. A provider match is never enough by itself: the execution
+// classifyBranchDiscovery is the durable discovery policy. A provider match
+// is never enough by itself: the execution
 // must have an attached head, no other persisted execution may claim the same
 // workspace/repository/branch, and exactly one provider object must match.
 func classifyBranchDiscovery(headState string, otherExecutionCount, matchCount int) branchDiscoveryDecision {

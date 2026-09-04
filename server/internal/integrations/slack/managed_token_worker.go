@@ -121,7 +121,7 @@ func (w *ManagedTokenWorker) Sweep(ctx context.Context) error {
 }
 
 func managedHealthConcurrency(count int) int {
-	// This is the Rust freshness budget: at least eight concurrent probes,
+	// Keep at least eight concurrent probes, then scale the sweep
 	// scaled so a large sweep cannot age out early observations before it ends.
 	installationsPerSlot := int(managedHealthSweepBudget / managedInstallationTimeout)
 	if count <= 0 {

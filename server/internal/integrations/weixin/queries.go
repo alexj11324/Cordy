@@ -39,8 +39,7 @@ WHERE installation_id = $1
   AND retired_at IS NULL`
 	lockAgentSlotSQL = `SELECT pg_advisory_xact_lock(hashtext($1::text), hashtext($2::text))`
 
-	// This is the same application-layer cleanup contract as the Rust
-	// mainline. The generic channel schema deliberately has no FK/cascade, so
+	// The generic channel schema deliberately has no FK/cascade, so
 	// replacing an upstream account must explicitly remove provider-owned state
 	// while detaching the audit trail for operator diagnosis.
 	deleteInstallationForReplacementSQL = `WITH doomed AS (

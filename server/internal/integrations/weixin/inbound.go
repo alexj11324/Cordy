@@ -18,7 +18,7 @@ type RawEvent struct {
 	ContextToken string `json:"context_token"`
 }
 
-// NormalizeInbound applies the Rust mainline's verified iLink boundaries:
+// NormalizeInbound applies the verified iLink boundaries:
 // direct text only, non-empty sender/context, and self-message rejection.
 // A false result is a product drop and must not enter the shared router.
 func NormalizeInbound(message WeixinMessage, botID string) (channel.InboundMessage, bool) {

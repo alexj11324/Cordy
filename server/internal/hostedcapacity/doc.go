@@ -1,7 +1,6 @@
 // Package hostedcapacity enforces the managed deployment's per-workspace cap
 // on concurrent hosted channel installations (Cloud entitlement gate
-// im_installation_limit). It is the Go port of the Rust hosted installation
-// capacity feature.
+// im_installation_limit).
 //
 // Over-capacity installations are PAUSED, never revoked: their status stays
 // 'installed', credentials and bindings survive, and every work-finding query

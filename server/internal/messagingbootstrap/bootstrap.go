@@ -43,8 +43,8 @@ type installationSpec struct {
 	config      []byte
 }
 
-// ProvisionFromEnvironment applies the same opt-in credential bootstrap
-// contract as the Rust server. It is idempotent and must run before the channel
+// ProvisionFromEnvironment applies the server's opt-in credential bootstrap
+// contract. It is idempotent and must run before the channel
 // supervisor so the first sweep can discover the resulting installation rows.
 func ProvisionFromEnvironment(ctx context.Context, pool *pgxpool.Pool, mode string) error {
 	if mode != serverConfigured {

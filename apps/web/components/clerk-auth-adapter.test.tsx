@@ -98,7 +98,7 @@ describe("ClerkAuthAdapter", () => {
     signOut.mockReset().mockResolvedValue(undefined);
   });
 
-  it("only marks the current Clerk identity ready after its Rust exchange", async () => {
+  it("only marks the current Clerk identity ready after its API session exchange", async () => {
     let finishSecondExchange: (() => void) | undefined;
     const secondExchange = new Promise<void>((resolve) => {
       finishSecondExchange = resolve;

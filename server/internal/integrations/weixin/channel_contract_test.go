@@ -10,7 +10,7 @@ import (
 	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
 )
 
-func TestUnsupportedDirectMessageGetsRustContractNotice(t *testing.T) {
+func TestUnsupportedDirectMessageGetsContractNotice(t *testing.T) {
 	var got struct {
 		ToUserID string `json:"to_user_id"`
 		Text     string `json:"-"`

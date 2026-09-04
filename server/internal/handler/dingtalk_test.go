@@ -1204,7 +1204,7 @@ INSERT INTO channel_chat_session_binding (
 		t.Fatalf("stale state remains: bindings=%d cards=%d", staleBindings, staleCards)
 	}
 
-	// Validation failures keep Rust-compatible status codes.
+	// Validation failures keep the public API status-code contract.
 	if rec := patchRoute(testUserID, route, map[string]any{"agent_id": "not-a-uuid"}); rec.Code != http.StatusBadRequest {
 		t.Fatalf("invalid agent status = %d, want 400", rec.Code)
 	}

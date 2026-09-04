@@ -16,7 +16,7 @@ import (
 
 // ObserverToken marks runtime observations written by this package, so the
 // supervision surface can tell entitlement-driven pauses apart from
-// per-channel connectivity verdicts. Mirrors the Rust observer identity.
+// per-channel connectivity verdicts. The value is a durable observer identity.
 const ObserverToken = "managed:entitlement:v1"
 
 const (
@@ -57,7 +57,7 @@ type ReconcileResult struct {
 
 // Reconcile aligns a workspace's durable pause markers with limit. A nil
 // limit keeps every installation (bypass/unlimited — resume-all semantics),
-// matching the Rust reconcile: the marker is a runtime condition, never a
+// The marker is a runtime condition, never a
 // desired state, so nothing stays paused without a cap enforcing it.
 //
 // The whole pass runs in one transaction under the same workspace row lock
@@ -139,7 +139,7 @@ func text(value string) pgtype.Text {
 
 // Limiter is the handler-facing service: resolve the policy, reconcile the
 // durable markers, and hand the install path its limit. The reconcile-on-
-// resolve mirrors the Rust flow, so an upgrade or downgrade is applied the
+// resolve also reconciles immediately, so an upgrade or downgrade is applied the
 // moment any install asks, not only on the worker's next sweep.
 type Limiter struct {
 	resolver *Resolver

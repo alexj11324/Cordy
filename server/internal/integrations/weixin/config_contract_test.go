@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-func TestValidateProviderBaseURLEnforcesRustRedirectBoundary(t *testing.T) {
+func TestValidateProviderBaseURLEnforcesRedirectBoundary(t *testing.T) {
 	tests := []struct {
 		name    string
 		input   string

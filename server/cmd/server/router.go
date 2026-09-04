@@ -1198,7 +1198,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	}
 
 	// Native Weixin/iLink integration. This is the personal-WeChat QR + HTTP
-	// long-poll adapter from the Rust mainline contract, not the separate
+	// long-poll adapter, not the separate
 	// corporate WeCom WebSocket adapter. It reuses the generic channel tables,
 	// shared engine session/dedup pipeline, and the same installation lease.
 	// The at-rest key gates all provider wiring; handlers remain registered and

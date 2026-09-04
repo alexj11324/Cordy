@@ -21,8 +21,7 @@ import (
 	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
-// This file is the managed (hosted) Slack OAuth backend — the Go counterpart
-// of the Rust slice's slack_managed begin/callback path. Self-hosted
+// This file is the managed (hosted) Slack OAuth backend. Self-hosted
 // deployments stay on the BYO Socket Mode path (byo_install.go); this service
 // owns the account-level OAuth state for the hosted flow: minting single-use,
 // ten-minute, hash-stored state tokens and consuming them exactly once on the
@@ -33,14 +32,13 @@ import (
 // credential handling of its own: the managed client id/secret arrive via
 // config, and the HTTP client is injected so tests point it at httptest.
 
-// ManagedOAuthStateTTL bounds one install authorization, matching the Rust
-// OAUTH_STATE_TTL. The sweeper (PurgeExpiredSlackOAuthStates, called at the
+// ManagedOAuthStateTTL bounds one install authorization. The sweeper
+// (PurgeExpiredSlackOAuthStates, called at the
 // head of every BeginInstall) reclaims abandoned rows; workspace teardown
 // drops the rest outright.
 const ManagedOAuthStateTTL = 10 * time.Minute
 
-// ManagedSlackBotScopes is the scope set requested for the hosted Slack app,
-// mirroring the Rust SLACK_BOT_SCOPES.
+// ManagedSlackBotScopes is the scope set requested for the hosted Slack app.
 const ManagedSlackBotScopes = "app_mentions:read,channels:history,chat:write,commands,files:read,groups:history,im:history,mpim:history,reactions:write,users:read"
 
 // DefaultSlackOAuthTokenURL is Slack's token endpoint. Overridden in tests.

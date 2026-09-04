@@ -67,7 +67,7 @@ type MessageItem struct {
 	TextItem *TextItem `json:"text_item"`
 }
 
-// WeixinMessage mirrors the fields used by the Rust iLink adapter. Unknown
+// WeixinMessage contains the iLink fields consumed by this adapter. Unknown
 // provider fields are intentionally ignored for forward compatibility.
 type WeixinMessage struct {
 	Seq          int64         `json:"seq"`
@@ -124,7 +124,7 @@ func NewClient(baseURL, token string, httpClient *http.Client) *Client {
 	}
 }
 
-// RequestQRCode calls the real QR endpoint from the Rust mainline adapter.
+// RequestQRCode calls the provider's QR endpoint.
 func (c *Client) RequestQRCode(ctx context.Context, localTokens []string) (QRCodeResponse, error) {
 	var out QRCodeResponse
 	err := c.doJSON(ctx, http.MethodPost, "ilink/bot/get_bot_qrcode?bot_type=3", map[string]any{
@@ -140,7 +140,7 @@ func (c *Client) RequestQRCode(ctx context.Context, localTokens []string) (QRCod
 }
 
 // QRStatus calls the real QR polling endpoint. verifyCode is omitted when
-// empty, matching the Rust adapter's query construction.
+// empty, as required by the provider query contract.
 func (c *Client) QRStatus(ctx context.Context, qrCode, verifyCode string) (QRStatusResponse, error) {
 	path := "ilink/bot/get_qrcode_status?qrcode=" + url.QueryEscape(qrCode)
 	if strings.TrimSpace(verifyCode) != "" {
@@ -267,7 +267,7 @@ func encodedClientVersion() int64 {
 		}
 	}
 	// iLink encodes semantic-version components in three successive bytes;
-	// the Rust 0.1.0 mainline client therefore sends 0x000100 (256).
+	// version 0.1.0 therefore sends 0x000100 (256).
 	return ((values[0] & 0xff) << 16) | ((values[1] & 0xff) << 8) | (values[2] & 0xff)
 }
 
