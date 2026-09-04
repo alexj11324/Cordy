@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { RootEntry } from "@/features/auth/root-entry";
 
 export default function RootPage() {
-  redirect("/login");
+  return <RootEntry />;
 }

@@ -99,7 +99,10 @@ async function verifyAccountsLoginSurface(browser, sourceSha) {
     ]);
     assert.ok(shellBox, "Accounts split shell must have a rendered box");
     assert.ok(formBox, "Accounts black form panel must have a rendered box");
-    assert.ok(brandBox, "Accounts charcoal brand panel must have a rendered box");
+    assert.ok(
+      brandBox,
+      "Accounts charcoal brand panel must have a rendered box",
+    );
     assert.ok(
       brandBox.x < formBox.x &&
         formBox.width >= shellBox.width * 0.45 &&
@@ -121,9 +124,20 @@ async function verifyStandaloneAccountsLoginSurface(browser, sourceSha) {
     const response = await page.goto(`${ACCOUNTS_ORIGIN}/login`, {
       waitUntil: "domcontentloaded",
     });
-    assert.ok(response, "standalone Accounts login page must return a response");
-    assert.equal(response.status(), 200, "standalone Accounts login page status");
-    requireBuildHeaders(response.headers(), sourceSha, "standalone Accounts login");
+    assert.ok(
+      response,
+      "standalone Accounts login page must return a response",
+    );
+    assert.equal(
+      response.status(),
+      200,
+      "standalone Accounts login page status",
+    );
+    requireBuildHeaders(
+      response.headers(),
+      sourceSha,
+      "standalone Accounts login",
+    );
     await clerk.loaded({ page });
     await expect(page.getByTestId("accounts-auth-shell")).toBeVisible();
     await expect(
@@ -152,7 +166,8 @@ async function verifyGoogleOAuthStart(browser) {
     );
   });
   const google = page.waitForURL(
-    (url) => url.protocol === "https:" && url.hostname === "accounts.google.com",
+    (url) =>
+      url.protocol === "https:" && url.hostname === "accounts.google.com",
   );
   try {
     await page.goto(entryUrl, { waitUntil: "domcontentloaded" });
@@ -191,7 +206,11 @@ async function redeemSyntheticLogin(browser, credentials, publishableKey) {
         headers: { "x-patchbay-auth-contract-version": "1" },
       },
     );
-    assert.equal(registered.status(), 200, "desktop login attempt registration");
+    assert.equal(
+      registered.status(),
+      200,
+      "desktop login attempt registration",
+    );
 
     await page.goto(`${ACCOUNTS_ORIGIN}/oauth/google/callback?${query}`, {
       waitUntil: "domcontentloaded",
@@ -252,37 +271,50 @@ async function redeemSyntheticLogin(browser, credentials, publishableKey) {
       redirect: "error",
     });
     assert.equal(redeemed.status, 200, "one-time desktop handoff redemption");
-    return requireRedeemedSession(await redeemed.json());
+    return {
+      token: requireRedeemedSession(await redeemed.json()),
+      // Carries the active Clerk identity and the Web API's HttpOnly session
+      // cookie into the separate product-navigation check. A localStorage-only
+      // token is deliberately ignored by the cookie-auth Web application.
+      storageState: await context.storageState(),
+    };
   } finally {
     await context.close();
   }
 }
 
-async function verifyAuthenticatedProduct(browser, sourceSha, token) {
+async function verifyAuthenticatedProduct(browser, sourceSha, auth) {
+  const meResponse = await fetch(`${API_ORIGIN}/api/me`, {
+    headers: { authorization: `Bearer ${auth.token}` },
+    redirect: "error",
+  });
+  assert.equal(meResponse.status, 200, "authenticated user profile");
+  const me = await meResponse.json();
+
   const workspacesResponse = await fetch(`${API_ORIGIN}/api/workspaces`, {
-    headers: { authorization: `Bearer ${token}` },
+    headers: { authorization: `Bearer ${auth.token}` },
     redirect: "error",
   });
   assert.equal(workspacesResponse.status, 200, "authenticated workspace list");
   const workspaces = await workspacesResponse.json();
   assert.ok(Array.isArray(workspaces), "workspace API must return an array");
   const target =
-    typeof workspaces[0]?.slug === "string"
-      ? `/${workspaces[0].slug}/issues`
-      : "/workspaces/new";
+    me?.onboarded_at == null
+      ? "/onboarding"
+      : typeof workspaces[0]?.slug === "string"
+        ? `/${workspaces[0].slug}/issues`
+        : "/workspaces/new";
 
   const publicContext = await browser.newContext({ locale: "en-US" });
   const publicPage = await publicContext.newPage();
   try {
-    const landing = await publicPage.goto(PRODUCT_ORIGIN, {
+    const appEntry = await publicPage.goto(PRODUCT_ORIGIN, {
       waitUntil: "domcontentloaded",
     });
-    assert.ok(landing, "product landing page must return a response");
-    assert.equal(landing.status(), 200, "product landing page status");
-    requireBuildHeaders(landing.headers(), sourceSha, "Web landing page");
-    const loginLink = publicPage.locator('a[href="/login"]').first();
-    await expect(loginLink).toBeVisible();
-    await loginLink.click();
+    assert.ok(appEntry, "product app entry must return a response");
+    assert.equal(appEntry.status(), 200, "product app entry status");
+    requireBuildHeaders(appEntry.headers(), sourceSha, "Web app entry");
+    await clerk.loaded({ page: publicPage });
     await publicPage.waitForURL((url) => {
       return url.origin === PRODUCT_ORIGIN && url.pathname === "/login";
     });
@@ -326,10 +358,13 @@ async function verifyAuthenticatedProduct(browser, sourceSha, token) {
     await publicContext.close();
   }
 
-  const context = await browser.newContext({ locale: "en-US" });
-  await context.addInitScript((session) => {
-    window.localStorage.setItem("patchbay_token", session);
-  }, token);
+  const context = await browser.newContext({
+    locale: "en-US",
+    storageState: auth.storageState,
+  });
+  // Exercise the first-login/sluggish-cookie path instead of letting the
+  // proxy short-circuit root navigation from a previously remembered slug.
+  await context.clearCookies({ name: "last_workspace_slug" });
   await context.addCookies([
     {
       name: "patchbay-locale",
@@ -342,6 +377,20 @@ async function verifyAuthenticatedProduct(browser, sourceSha, token) {
   ]);
   const page = await context.newPage();
   try {
+    const rootResponse = await page.goto(PRODUCT_ORIGIN, {
+      waitUntil: "domcontentloaded",
+    });
+    assert.ok(rootResponse, "authenticated app entry must return a response");
+    assert.equal(rootResponse.status(), 200, "authenticated app entry status");
+    requireBuildHeaders(
+      rootResponse.headers(),
+      sourceSha,
+      "authenticated Web app entry",
+    );
+    await page.waitForURL((url) => {
+      return url.origin === PRODUCT_ORIGIN && url.pathname === target;
+    });
+
     const protectedResponse = await page.goto(`${PRODUCT_ORIGIN}${target}`, {
       waitUntil: "domcontentloaded",
     });
@@ -356,7 +405,9 @@ async function verifyAuthenticatedProduct(browser, sourceSha, token) {
     assert.notEqual(new URL(page.url()).pathname, "/login");
     await expect(page.locator("main")).toBeVisible();
   } catch (error) {
-    await page.screenshot({ path: SCREENSHOT_PATH, fullPage: true }).catch(() => {});
+    await page
+      .screenshot({ path: SCREENSHOT_PATH, fullPage: true })
+      .catch(() => {});
     throw error;
   } finally {
     await context.close();
@@ -373,12 +424,12 @@ export async function verifyProductionBrowser(sourceSha, receipt) {
     await verifyStandaloneAccountsLoginSurface(browser, sourceSha);
     await verifyAccountsLoginSurface(browser, sourceSha);
     await verifyGoogleOAuthStart(browser);
-    const token = await redeemSyntheticLogin(
+    const auth = await redeemSyntheticLogin(
       browser,
       credentials,
       publishableKey,
     );
-    await verifyAuthenticatedProduct(browser, sourceSha, token);
+    await verifyAuthenticatedProduct(browser, sourceSha, auth);
   } finally {
     await browser.close();
   }

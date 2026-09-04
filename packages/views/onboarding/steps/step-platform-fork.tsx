@@ -14,10 +14,7 @@ import {
 import { cn } from "@patchbay/ui/lib/utils";
 import type { AgentRuntime } from "@patchbay/core/types";
 import { runtimeDisplayLabel } from "@patchbay/core/runtimes";
-import {
-  StepFooter,
-  StepHeading,
-} from "../components/step-shell";
+import { StepFooter, StepHeading } from "../components/step-shell";
 import {
   PatrickRuntimeChoice,
   type PatrickRuntimeSelection,
@@ -48,11 +45,9 @@ import { useT } from "../../i18n";
 
 type DialogState = "cli" | null;
 
-// Single canonical download destination — the /download page owns
-// OS + arch detection, the All-Platforms matrix, release-note links,
-// and the CLI / Cloud alternates. Kept in sync with landing-hero.tsx
-// and landing footer nav, both of which target the same path.
-const DOWNLOAD_PAGE_URL = "/download";
+// Releases are the canonical installer destination now that the web app no
+// longer ships a marketing/download surface.
+const DOWNLOAD_PAGE_URL = "https://github.com/alexj11324/Cordy/releases/latest";
 
 export function StepPlatformFork({
   wsId,
@@ -65,7 +60,10 @@ export function StepPlatformFork({
    *  the workspace being set up rather than whichever one the app is currently
    *  showing. */
   wsSlug?: string;
-  onNext: (runtime: AgentRuntime | null, model?: string) => void | Promise<void>;
+  onNext: (
+    runtime: AgentRuntime | null,
+    model?: string,
+  ) => void | Promise<void>;
   /** Platform-specific CLI install card, rendered inside the CLI dialog. */
   cliInstructions?: ReactNode;
 }) {
@@ -131,42 +129,37 @@ export function StepPlatformFork({
             disabled
           />
         </div>
-
       </div>
 
       {/* Advancement for the CLI path is owned by the CLI dialog's own
           "Connect & continue" button; Skip creates the single self-serve
           onboarding issue. */}
       <StepFooter hint={footerHint}>
-        <Button
-          variant="ghost"
-          className="w-full"
-          onClick={() => onNext(null)}
-        >
+        <Button variant="ghost" className="w-full" onClick={() => onNext(null)}>
           {t(($) => $.step_runtime.skip)}
         </Button>
       </StepFooter>
 
-    <CliInstallDialog
-      open={dialog === "cli"}
-      onClose={() => setDialog(null)}
-      onConnect={handleCliConnect}
-      runtimes={picker.runtimes}
-      choice={{ runtimeId: picker.selectedId ?? "", model }}
-      onChoiceChange={(next) => {
-        if (next.runtimeId !== picker.selectedId) {
-          picker.setSelectedId(next.runtimeId);
+      <CliInstallDialog
+        open={dialog === "cli"}
+        onClose={() => setDialog(null)}
+        onConnect={handleCliConnect}
+        runtimes={picker.runtimes}
+        choice={{ runtimeId: picker.selectedId ?? "", model }}
+        onChoiceChange={(next) => {
+          if (next.runtimeId !== picker.selectedId) {
+            picker.setSelectedId(next.runtimeId);
+          }
+          setModel(next.model);
+        }}
+        hasRuntimes={picker.hasRuntimes}
+        canConnect={picker.selected !== null}
+        selectedName={
+          picker.selected ? runtimeDisplayLabel(picker.selected) : null
         }
-        setModel(next.model);
-      }}
-      hasRuntimes={picker.hasRuntimes}
-      canConnect={picker.selected !== null}
-      selectedName={
-        picker.selected ? runtimeDisplayLabel(picker.selected) : null
-      }
-      connecting={connecting}
-      cliInstructions={cliInstructions}
-    />
+        connecting={connecting}
+        cliInstructions={cliInstructions}
+      />
     </>
   );
 }
@@ -297,7 +290,9 @@ function CliInstallDialog({
     <Dialog open={open} onOpenChange={(o) => (o ? null : onClose())}>
       <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-[560px]">
         <DialogHeader>
-          <DialogTitle>{t(($) => $.step_platform.cli_dialog_title)}</DialogTitle>
+          <DialogTitle>
+            {t(($) => $.step_platform.cli_dialog_title)}
+          </DialogTitle>
           <DialogDescription>
             {t(($) => $.step_platform.cli_dialog_description)}
           </DialogDescription>
@@ -311,7 +306,9 @@ function CliInstallDialog({
               <div className="flex items-center gap-2 pt-1 text-body">
                 <div className="h-2 w-2 rounded-full bg-success" />
                 <span className="font-medium">
-                  {t(($) => $.step_platform.runtimes_connected, { count: runtimes.length })}
+                  {t(($) => $.step_platform.runtimes_connected, {
+                    count: runtimes.length,
+                  })}
                 </span>
               </div>
               {/* Cap the runtime list at ~4 rows visible, scroll the rest.
@@ -467,7 +464,9 @@ function CliWaitingStatus({ dialogOpen }: { dialogOpen: boolean }) {
         {stage === "stalled" && (
           <>
             {t(($) => $.step_platform.stage_stalled_prefix)}
-            <span className="font-medium text-foreground">{t(($) => $.step_platform.stage_stalled_term)}</span>
+            <span className="font-medium text-foreground">
+              {t(($) => $.step_platform.stage_stalled_term)}
+            </span>
             {t(($) => $.step_platform.stage_stalled_suffix)}
           </>
         )}

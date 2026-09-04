@@ -166,7 +166,7 @@ STUB
     cat "$tmp/install.out" >&2 || true
     return 1
   fi
-  if ! grep -q "https://patchbay.ai/settings?tab=tokens" "$tmp/install.out"; then
+  if ! grep -q "https://patchbay.aspectlylabs.com/settings?tab=tokens" "$tmp/install.out"; then
     echo "expected direct API Tokens settings URL in installer output" >&2
     cat "$tmp/install.out" >&2 || true
     return 1

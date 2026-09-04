@@ -446,13 +446,13 @@ patchbay daemon stop
 
 ## Switching to Patchbay Cloud
 
-If you've been self-hosting and want to switch your CLI to [Patchbay Cloud](https://patchbay.ai):
+If you've been self-hosting and want to switch your CLI to [Patchbay Cloud](https://patchbay.aspectlylabs.com):
 
 ```bash
 patchbay setup
 ```
 
-This reconfigures the CLI for patchbay.ai, re-authenticates, and restarts the daemon. You will be prompted before overwriting the existing configuration.
+This reconfigures the CLI for Patchbay Cloud, re-authenticates, and restarts the daemon. You will be prompted before overwriting the existing configuration.
 
 > Your local Docker services are unaffected. Stop them separately if you no longer need them.
 

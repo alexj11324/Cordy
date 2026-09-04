@@ -129,7 +129,7 @@ describe("proxy legacy workspace route redirects", () => {
   });
 
   it.each(["patchbay.aspectlylabs.com"])(
-    "resolves a slugless session off the marketing host %s instead of stranding it",
+    "resolves a slugless session on the production app host %s instead of stranding it",
     async (host) => {
       expect(
         await redirectLocation("/inbox", { patchbay_logged_in: "1" }, host),

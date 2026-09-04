@@ -40,11 +40,13 @@ describe("UpdateNotification", () => {
     render(<UpdateNotification />);
     act(() => updateDownloaded({ version: "0.4.27" }));
 
-    expect(screen.queryByRole("button", { name: "Later" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Later" }),
+    ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "See changelog" }));
 
     expect(mocks.openExternal).toHaveBeenCalledWith(
-      "https://patchbay.aspectlylabs.com/changelog#release-0-4-27",
+      "https://github.com/alexj11324/Cordy/releases/tag/v0.4.27",
     );
   });
 

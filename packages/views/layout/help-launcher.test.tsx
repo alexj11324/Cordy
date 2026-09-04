@@ -17,13 +17,12 @@ vi.mock("../platform/local-directory", () => ({
 // selector against the real en/layout.json to assert on actual copy.
 vi.mock("../i18n", () => ({
   useT: () => ({
-    t: (
-      sel: (r: typeof enLayout) => string,
-      vars?: Record<string, string>,
-    ) => {
+    t: (sel: (r: typeof enLayout) => string, vars?: Record<string, string>) => {
       const template = sel(enLayout);
       return vars
-        ? template.replace(/\{\{(\w+)\}\}/g, (_, key) => String(vars[key] ?? ""))
+        ? template.replace(/\{\{(\w+)\}\}/g, (_, key) =>
+            String(vars[key] ?? ""),
+          )
         : template;
     },
   }),
@@ -45,7 +44,9 @@ vi.mock("@patchbay/ui/components/ui/dropdown-menu", async () => {
   const GroupContext = createContext(false);
   return {
     DropdownMenu: ({ children }: { children: ReactNode }) => <>{children}</>,
-    DropdownMenuContent: ({ children }: { children: ReactNode }) => <>{children}</>,
+    DropdownMenuContent: ({ children }: { children: ReactNode }) => (
+      <>{children}</>
+    ),
     // Base UI's `render` prop swaps in a caller-supplied element (here the
     // <a>) and adopts the item's children. Flattening it to a bare fragment —
     // as this mock originally did — would drop the anchor entirely and make an
@@ -56,7 +57,8 @@ vi.mock("@patchbay/ui/components/ui/dropdown-menu", async () => {
     }: {
       children: ReactNode;
       render?: ReactElement;
-    }) => (render ? cloneElement(render, undefined, children) : <>{children}</>),
+    }) =>
+      render ? cloneElement(render, undefined, children) : <>{children}</>,
     DropdownMenuGroup: ({ children }: { children: ReactNode }) => (
       <GroupContext.Provider value={true}>{children}</GroupContext.Provider>
     ),
@@ -69,7 +71,9 @@ vi.mock("@patchbay/ui/components/ui/dropdown-menu", async () => {
       return <div>{children}</div>;
     },
     DropdownMenuSeparator: () => null,
-    DropdownMenuTrigger: ({ children }: { children: ReactNode }) => <>{children}</>,
+    DropdownMenuTrigger: ({ children }: { children: ReactNode }) => (
+      <>{children}</>
+    ),
   };
 });
 
@@ -104,12 +108,19 @@ describe("HelpLauncher", () => {
   });
 
   // MUL-6462: after web onboarding the desktop download CTA was unreachable —
-  // no entry anywhere in the app, so users had to remember the URL or detour
-  // through the marketing site. The Help menu is the persistent home for it.
-  it("links to the download page on web", () => {
+  // no entry anywhere in the app, so users had to remember the URL. The Help
+  // menu is the persistent home for it.
+  it("links to the latest GitHub release on web", () => {
     render(<HelpLauncher />);
     const link = screen.getByRole("link", { name: /Desktop app/ });
-    expect(link).toHaveAttribute("href", "https://patchbay.aspectlylabs.com/download");
+    expect(link).toHaveAttribute(
+      "href",
+      "https://github.com/alexj11324/Cordy/releases/latest",
+    );
+    expect(screen.getByRole("link", { name: /Change log/i })).toHaveAttribute(
+      "href",
+      "https://github.com/alexj11324/Cordy/releases",
+    );
   });
 
   // AppSidebar is shared: apps/desktop renders the same component tree. Without
