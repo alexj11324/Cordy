@@ -4,7 +4,7 @@
  * related-issues bucket.
  *
  * Layout mirrors web's `packages/views/issues/components/list-row.tsx`:
- *   [status?]  priority  identifier  title  …  assignee
+ *   [status?]  priority  identifier  title  …  selected role actor
  *
  * `showStatus` is opt-in because the grouped lists already carry the status
  * CATEGORY in their section header (rendering the glyph again per-row would be
@@ -21,14 +21,9 @@
  * Behavioral parity:
  *   - Same `Issue` type, same owner/executor semantics
  *     (root CLAUDE.md "Data identity must agree").
- *   - Mirrors web `packages/views/issues/components/list-row.tsx`:
- *     render the assignee whenever executor or owner is set —
- *     `ActorAvatar` itself handles member / agent / team rendering
- *     (rounded square + people glyph or `team.avatar_url` for teams). A
- *     future fourth enum value falls through to ActorAvatar's initials
- *     fallback, which is the real "enum drift downgrades, not crashes"
- *     behavior — earlier whitelist (member/agent only) silently dropped
- *     team assignees instead.
+ *   - The trailing actor is explicitly selected by `actorRole`; owner and
+ *     executor are separate columns, so this row never falls back from one to
+ *     the other. `ActorAvatar` handles member / agent / team rendering.
  */
 import { Pressable, View } from "react-native";
 import type { Issue } from "@patchbay/core/types";
@@ -38,6 +33,7 @@ import { PriorityIcon } from "@/components/ui/priority-icon";
 import { StatusIcon } from "@/components/ui/status-icon";
 import { CustomStatusChip } from "@/components/issue/custom-status-chip";
 import { issueColumnCategory } from "@/lib/issue-status";
+import { issueActorForRole, type IssueRole } from "@/lib/issue-scope";
 import { useIssueStatuses } from "@/lib/use-issue-statuses";
 
 interface Props {
@@ -45,12 +41,20 @@ interface Props {
   onPress: () => void;
   /** Render the status icon inline at the start of the row. Default: false. */
   showStatus?: boolean;
+  /** Choose the independent issue role represented by the trailing avatar. */
+  actorRole?: IssueRole;
 }
 
-export function IssueRow({ issue, onPress, showStatus = false }: Props) {
+export function IssueRow({
+  issue,
+  onPress,
+  showStatus = false,
+  actorRole = "executor",
+}: Props) {
   // One catalog read for both the icon's colour and the chip — see the
   // divergence note in `custom-status-chip.tsx`.
   const catalog = useIssueStatuses();
+  const actor = issueActorForRole(issue, actorRole);
   return (
     <Pressable onPress={onPress} className="active:bg-secondary px-4 py-3">
       <View className="flex-row items-center gap-3">
@@ -75,13 +79,8 @@ export function IssueRow({ issue, onPress, showStatus = false }: Props) {
           </Text>
           <CustomStatusChip status={issue.status} catalog={catalog} />
         </View>
-        {(issue.executor_type && issue.executor_id) || (issue.owner_type && issue.owner_id) ? (
-          <ActorAvatar
-            type={(issue.executor_type ?? issue.owner_type)!}
-            id={(issue.executor_id ?? issue.owner_id)!}
-            size={20}
-            showPresence
-          />
+        {actor ? (
+          <ActorAvatar type={actor.type} id={actor.id} size={20} showPresence />
         ) : null}
       </View>
     </Pressable>

@@ -4,15 +4,17 @@
  * `all / members / agents` scope tabs, group by status, allow status +
  * priority filtering.
  *
- * Scope is a **client-side** filter on `assignee_type` — matches web
- * `issues-page.tsx:90-94`. This keeps `issueListOptions(wsId)` workspace-
- * scoped (no scope param on the wire), so `issueKeys.list(wsId)` and
- * `useIssuesRealtime` need no changes.
+ * Scope is a **client-side** filter on the independent role columns — it
+ * mirrors the web role filter in `packages/core/issues/surface/scope.ts`:
+ * Members use `owner_type === "member"`; Agents use
+ * `executor_type === "agent" || "team"`. This keeps
+ * `issueListOptions(wsId)` workspace-scoped (no scope param on the wire), so
+ * `issueKeys.list(wsId)` and `useIssuesRealtime` need no changes.
  *
  * Differences vs My Issues (`(tabs)/my-issues.tsx`):
  *   - Workspace-wide list (all issues), not user-scoped.
- *   - Three scopes are `all / members / agents` (assignee_type pre-filter),
- *     not `assigned / created / agents` (per-user predicates).
+ *   - Three scopes are `all / members / agents` (explicit owner/executor
+ *     pre-filter), not `assigned / created / agents` (per-user predicates).
  *   - Independent filter store (`useIssuesViewStore`) so workspace-level
  *     filters don't bleed into the per-user view.
  *
@@ -50,6 +52,7 @@ import { PRIORITY_LABEL, STATUS_LABEL } from "@/lib/issue-status";
 import { useIssueStatuses } from "@/lib/use-issue-statuses";
 import { groupIssuesByCategory } from "@/lib/group-issues-by-category";
 import { filterIssues } from "@/lib/filter-issues";
+import { filterIssuesByScope } from "@/lib/issue-scope";
 import { useColorScheme } from "@/lib/use-color-scheme";
 import { THEME } from "@/lib/theme";
 
@@ -96,18 +99,11 @@ export default function IssuesPage() {
 
   const allIssues = data ?? [];
 
-  // Scope pre-filter — mirrors web `issues-page.tsx:90-94`. Applied before
-  // status/priority filtering so chip filters operate on the visible slice.
+  // Scope pre-filter — mirrors roleFiltersForActorKind() in web. Applied
+  // before status/priority filtering so chip filters operate on the visible
+  // slice. Owner and executor are independent roles; do not coalesce them.
   const scopedIssues = useMemo(() => {
-    if (scope === "members") {
-      return allIssues.filter((i) => (i.executor_type ?? i.owner_type) === "member");
-    }
-    if (scope === "agents") {
-      return allIssues.filter(
-        (i) => (i.executor_type ?? i.owner_type) === "agent" || (i.executor_type ?? i.owner_type) === "team",
-      );
-    }
-    return allIssues;
+    return filterIssuesByScope(allIssues, scope);
   }, [allIssues, scope]);
 
   const filtered = useMemo(
@@ -182,6 +178,7 @@ export default function IssuesPage() {
           renderItem={({ item }) => (
             <IssueRow
               issue={item}
+              actorRole={scope === "members" ? "owner" : "executor"}
               onPress={() => {
                 if (wsSlug) router.push(`/${wsSlug}/issue/${item.id}`);
               }}
@@ -270,7 +267,9 @@ function ScopeToolbar<S extends string>({
             >
               <Text
                 numberOfLines={1}
-                className={active ? "text-accent-foreground" : "text-muted-foreground"}
+                className={
+                  active ? "text-accent-foreground" : "text-muted-foreground"
+                }
               >
                 {s.label}
               </Text>
@@ -374,8 +373,8 @@ function emptyMessageForScope(scope: IssuesScope): string {
     case "all":
       return "No issues in this workspace.";
     case "members":
-      return "No issues assigned to a member.";
+      return "No issues have a member as owner.";
     case "agents":
-      return "No issues assigned to agents or teams.";
+      return "No issues have an agent or team as executor.";
   }
 }
