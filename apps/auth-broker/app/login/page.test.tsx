@@ -49,6 +49,8 @@ vi.mock("@/lib/auth-messages", () => ({
     login: "Login",
     desktopFailed: "The desktop sign-in could not be completed.",
     opening: "Opening Patchbay…",
+    finishing: "Finishing sign-in…",
+    open: "Open Patchbay",
   }),
 }));
 
@@ -56,6 +58,7 @@ const originalFormSubmit = HTMLFormElement.prototype.submit;
 
 beforeEach(() => {
   cleanup();
+  document.querySelectorAll("form").forEach((form) => form.remove());
   HTMLFormElement.prototype.submit = originalFormSubmit;
   mocks.auth.isLoaded = true;
   mocks.auth.isSignedIn = false;
@@ -76,20 +79,29 @@ afterEach(() => {
 });
 
 describe("Accounts desktop login", () => {
-  it("registers the desktop attempt before rendering the custom login form", async () => {
+  it("registers the desktop attempt without replacing the custom login form", async () => {
     render(<Page />);
 
-    expect(screen.queryByTestId("accounts-login-form")).not.toBeInTheDocument();
+    expect(await screen.findByTestId("accounts-login-form")).toHaveAttribute(
+      "data-return-url",
+      `/login?platform=desktop&state=${STATE}&code_challenge=${CHALLENGE}`,
+    );
+    expect(screen.queryByText("Opening Patchbay…")).not.toBeInTheDocument();
     await waitFor(() =>
       expect(mocks.register).toHaveBeenCalledWith({
         state: STATE,
         code_challenge: CHALLENGE,
       }),
     );
-    expect(await screen.findByTestId("accounts-login-form")).toHaveAttribute(
-      "data-return-url",
-      `/login?platform=desktop&state=${STATE}&code_challenge=${CHALLENGE}`,
-    );
+  });
+
+  it("keeps the login form visible while Clerk is still loading a desktop binding", () => {
+    mocks.auth.isLoaded = false;
+
+    render(<Page />);
+
+    expect(screen.getByTestId("accounts-login-form")).toBeInTheDocument();
+    expect(screen.queryByText("Opening Patchbay…")).not.toBeInTheDocument();
   });
 
   it("renders the custom form for a direct Accounts login without a Desktop binding", async () => {
@@ -182,5 +194,57 @@ describe("Accounts desktop login", () => {
     ).toBe("clerk-session-token");
     expect(mocks.complete).not.toHaveBeenCalled();
     expect(mocks.signOut).not.toHaveBeenCalled();
+    expect(screen.queryByText("Opening Patchbay…")).not.toBeInTheDocument();
+    expect(screen.getByText("Finishing sign-in…")).toBeInTheDocument();
+  });
+
+  it("completes a production desktop binding even if Clerk signs in while register is in flight", async () => {
+    let resolveRegister: ((value: undefined) => void) | undefined;
+    mocks.register.mockReturnValue(
+      new Promise((resolve) => {
+        resolveRegister = resolve;
+      }),
+    );
+
+    const { rerender } = render(<Page />);
+    expect(await screen.findByTestId("accounts-login-form")).toBeInTheDocument();
+    await waitFor(() => expect(mocks.register).toHaveBeenCalledOnce());
+
+    mocks.auth.isSignedIn = true;
+    mocks.getToken.mockResolvedValue("clerk-session-token");
+    mocks.complete.mockResolvedValue({
+      code: `pbd_${"c".repeat(43)}`,
+      callbackProtocol: "patchbay",
+    });
+    rerender(<Page />);
+
+    await waitFor(() => expect(mocks.complete).toHaveBeenCalledOnce());
+    expect(
+      await screen.findByRole("link", { name: "Open Patchbay" }),
+    ).toHaveAttribute(
+      "href",
+      `patchbay://auth/callback?code=pbd_${"c".repeat(43)}&state=${STATE}`,
+    );
+    resolveRegister?.(undefined);
+  });
+
+  it("keeps a clickable desktop callback when production complete cannot auto-open the app", async () => {
+    mocks.auth.isSignedIn = true;
+    mocks.getToken.mockResolvedValue("clerk-session-token");
+    mocks.complete.mockResolvedValue({
+      code: `pbd_${"c".repeat(43)}`,
+      callbackProtocol: "patchbay",
+    });
+
+    render(<Page />);
+
+    expect(
+      await screen.findByRole("link", { name: "Open Patchbay" }),
+    ).toHaveAttribute(
+      "href",
+      `patchbay://auth/callback?code=pbd_${"c".repeat(43)}&state=${STATE}`,
+    );
+    expect(screen.getByText("Finishing sign-in…")).toBeInTheDocument();
+    expect(screen.queryByText("Opening Patchbay…")).not.toBeInTheDocument();
   });
 });
