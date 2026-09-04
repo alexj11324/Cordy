@@ -324,7 +324,7 @@ func TestRetireDependencyGraphCancelsChildrenAndTasksAtomically(t *testing.T) {
 	taskID := dbfx.Task(t, agentID, testutil.Cols{
 		"issue_id":   childID,
 		"runtime_id": testRuntimeID,
-		"status":     "waiting_capacity",
+		"status":     "queued",
 	})
 
 	var planID string
@@ -391,7 +391,7 @@ func TestDeleteIssueCleansAffectedDependencyGraph(t *testing.T) {
 	taskID := dbfx.Task(t, agentID, testutil.Cols{
 		"issue_id":   childID,
 		"runtime_id": testRuntimeID,
-		"status":     "waiting_capacity",
+		"status":     "queued",
 	})
 
 	var planID string
