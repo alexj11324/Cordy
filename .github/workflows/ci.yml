@@ -62,6 +62,7 @@ jobs:
               - 'apps/web/**'
               - 'apps/desktop/**'
               - 'apps/docs/**'
+              - 'apps/auth-broker/**'
               - 'packages/**'
               - 'package.json'
               - '.npmrc'
@@ -69,6 +70,7 @@ jobs:
               - 'pnpm-workspace.yaml'
               - 'turbo.json'
               - 'knip.jsonc'
+              - '.gitignore'
               - '.github/workflows/ci.yml'
               - 'scripts/generate-reserved-slugs.mjs'
               - 'server/internal/handler/reserved_slugs.json'
@@ -102,6 +104,10 @@ jobs:
             # over-match rather than silently skip validation.
             backend:
               - 'server/**'
+              # Multiple server tests parse and install the checked-in plugin
+              # examples directly, so they are backend test inputs even
+              # though they live outside the Go module.
+              - 'examples/plugins/**'
               - 'deploy/helm/**'
               # pkg/agent/worktree_capability_contract_test.go reads this file
               # and compares LOCAL_WORKTREE_CAPABILITY against the daemon's
