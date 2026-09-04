@@ -802,7 +802,8 @@ jobs:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: node scripts/check-image-budget.mjs --base "origin/${{ github.base_ref }}"
 
-  installer:
+  installer_matrix:
+    name: installer (${{ matrix.os }})
     # Stub-driven shell tests for scripts/install.sh and scripts/install.ps1.
     # Kept off the heavy backend job so installer regressions surface
     # independently, and exercised on macOS too because the installer targets
@@ -827,6 +828,24 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: ./scripts/install.ps1.test.ps1
+
+  # Branch protection requires the stable `installer` context. A matrix job
+  # reports only `installer (<os>)` contexts, so aggregate the three platform
+  # results instead of leaving the required check permanently pending.
+  installer:
+    needs: installer_matrix
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check installer job results
+        env:
+          MATRIX_RESULT: ${{ needs.installer_matrix.result }}
+        run: |
+          echo "installer matrix: $MATRIX_RESULT"
+          if [ "$MATRIX_RESULT" != "success" ]; then
+            echo "::error::installer validation failed"
+            exit 1
+          fi
 
   production-delivery:
     # The production pipeline's own surfaces -- the deploy workflow, the four
