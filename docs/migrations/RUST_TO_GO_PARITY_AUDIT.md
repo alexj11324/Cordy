@@ -32,6 +32,13 @@ CI [33769723534](https://github.com/alexj11324/Cordy/actions/runs/33769723534) o
 Only the unchanged image-budget job was skipped. No production deployment or
 final merge has occurred.
 
+Evidence snapshot for this responsibility-domain handoff: CI
+[`33824678711`](https://github.com/alexj11324/Cordy/actions/runs/33824678711)
+passed on `0c71849dc` with the dependency-graph code from `395c5fb41` in its
+history. The quota rows below therefore distinguish completed implementation
+and CI evidence from the still-open Cloud rollout, deployment, and live-provider
+acceptance gates.
+
 Backend compilation, SQL generation and tests run in GitHub Actions. No local
 Go/Rust tooling or Docker build is part of this audit. Local frontend checks
 and browser fixtures complement CI; neither proves real provider connectivity,
