@@ -127,16 +127,16 @@ test("all four services expose matching build and commit fingerprints", () => {
   assert.match(deployGateway, /expected_commit/u);
 });
 
-test("deployment is serialized, protected, and rollback-bound", () => {
+test("deployment is serialized, protected, and Go-only", () => {
   assert.match(workflow, /group: aspectlylabs-production/u);
   assert.match(workflow, /cancel-in-progress: false/u);
   assert.match(workflow, /environment:\n\s+name: production/u);
   assert.match(workflow, /PRODUCTION_SSH_PRIVATE_KEY/u);
   assert.match(workflow, /StrictHostKeyChecking=yes/u);
-  assert.match(workflow, /schema_version: 2/u);
-  assert.match(workflow, /failed_workflow_run_id/u);
   assert.match(deployGateway, /current_main != source_sha/u);
-  assert.match(deployGateway, /automatic rollback/u);
+  assert.doesNotMatch(workflow, /action: "rollback"/u);
+  assert.doesNotMatch(deployGateway, /def rollback|automatic rollback/u);
+  assert.match(deployGateway, /record_runtime_diagnostics/u);
 });
 
 test("public routing uses the Aspectly Labs product domains", () => {
