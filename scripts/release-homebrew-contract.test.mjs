@@ -9,9 +9,10 @@ async function read(path) {
 }
 
 test("release publishes the CLI as a cask in the dedicated Homebrew tap", async () => {
-  const [config, workflow] = await Promise.all([
+  const [config, workflow, publisher] = await Promise.all([
     read(".goreleaser.yml"),
     read(".github/workflows/release.yml"),
+    read("scripts/publish-homebrew-cask.mjs"),
   ]);
 
   assert.match(config, /^homebrew_casks:$/mu);
@@ -26,13 +27,15 @@ test("release publishes the CLI as a cask in the dedicated Homebrew tap", async 
     /GH_TOKEN: \$\{\{ secrets\.HOMEBREW_TAP_GITHUB_TOKEN \}\}/u,
   );
   assert.match(
-    workflow,
+    publisher,
     /HOMEBREW_TAP_GITHUB_TOKEN is required to publish alexj11324\/homebrew-tap/u,
   );
   assert.match(
     workflow,
     /node --test scripts\/release-homebrew-contract\.test\.mjs/u,
   );
+  assert.match(workflow, /scripts\/publish-homebrew-cask\.test\.mjs/u);
+  assert.match(workflow, /node scripts\/publish-homebrew-cask\.mjs/u);
   assert.match(workflow, /^  publish-homebrew:$/mu);
   assert.match(
     workflow,
@@ -40,7 +43,7 @@ test("release publishes the CLI as a cask in the dedicated Homebrew tap", async 
   );
   assert.match(workflow, /path: dist\/homebrew\/Casks\/patchbay\.rb/u);
   assert.match(
-    workflow,
+    publisher,
     /repos\/alexj11324\/homebrew-tap\/contents\/Casks\/patchbay\.rb/u,
   );
 

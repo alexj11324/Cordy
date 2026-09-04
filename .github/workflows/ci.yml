@@ -888,6 +888,7 @@ jobs:
             scripts/assemble-production-manifest.test.mjs \
             scripts/auth-broker-release-contract.test.mjs \
             scripts/production-deployment-contract.test.mjs \
+            scripts/publish-homebrew-cask.test.mjs \
             scripts/release-desktop-artifact-contract.test.mjs \
             scripts/release-homebrew-contract.test.mjs \
             scripts/verify-production-browser.test.mjs \

@@ -3,6 +3,8 @@ package cli
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +19,86 @@ func TestReleaseDistributionContract(t *testing.T) {
 	}
 	if HomebrewPackage != "alexj11324/tap/patchbay" {
 		t.Fatalf("Homebrew package = %q", HomebrewPackage)
+	}
+}
+
+func withBrewCommandStub(t *testing.T, stub func(args ...string) (string, error)) {
+	t.Helper()
+	previous := brewCommand
+	brewCommand = stub
+	t.Cleanup(func() { brewCommand = previous })
+}
+
+func TestUpdateViaBrewMigratesLegacyFormulaToCask(t *testing.T) {
+	var calls [][]string
+	withBrewCommandStub(t, func(args ...string) (string, error) {
+		calls = append(calls, append([]string(nil), args...))
+		switch strings.Join(args, " ") {
+		case "list --formula alexj11324/Cordy/patchbay":
+			return "patchbay 0.2.8", nil
+		case "list --cask " + HomebrewPackage:
+			return "", errors.New("not installed")
+		default:
+			return strings.Join(args, " "), nil
+		}
+	})
+
+	if _, err := UpdateViaBrew(); err != nil {
+		t.Fatalf("UpdateViaBrew() error = %v", err)
+	}
+	want := [][]string{
+		{"list", "--formula", "alexj11324/Cordy/patchbay"},
+		{"list", "--cask", HomebrewPackage},
+		{"unlink", "alexj11324/Cordy/patchbay"},
+		{"install", "--cask", HomebrewPackage},
+		{"uninstall", "--formula", "--ignore-dependencies", "alexj11324/Cordy/patchbay"},
+	}
+	if !reflect.DeepEqual(calls, want) {
+		t.Fatalf("brew calls = %#v, want %#v", calls, want)
+	}
+}
+
+func TestUpdateViaBrewRelinksLegacyFormulaWhenCaskInstallFails(t *testing.T) {
+	var calls [][]string
+	installErr := errors.New("cask install failed")
+	withBrewCommandStub(t, func(args ...string) (string, error) {
+		calls = append(calls, append([]string(nil), args...))
+		switch strings.Join(args, " ") {
+		case "list --formula alexj11324/Cordy/patchbay":
+			return "patchbay 0.2.8", nil
+		case "list --cask " + HomebrewPackage:
+			return "", errors.New("not installed")
+		case "install --cask " + HomebrewPackage:
+			return "install failed", installErr
+		default:
+			return strings.Join(args, " "), nil
+		}
+	})
+
+	if _, err := UpdateViaBrew(); !errors.Is(err, installErr) {
+		t.Fatalf("UpdateViaBrew() error = %v, want %v", err, installErr)
+	}
+	if got := calls[len(calls)-1]; !reflect.DeepEqual(got, []string{"link", "alexj11324/Cordy/patchbay"}) {
+		t.Fatalf("final brew call = %#v, want legacy relink", got)
+	}
+}
+
+func TestUpdateViaBrewUpgradesCurrentCask(t *testing.T) {
+	var calls [][]string
+	withBrewCommandStub(t, func(args ...string) (string, error) {
+		calls = append(calls, append([]string(nil), args...))
+		if len(args) > 1 && args[0] == "list" && args[1] == "--formula" {
+			return "", errors.New("not installed")
+		}
+		return "upgraded", nil
+	})
+
+	if _, err := UpdateViaBrew(); err != nil {
+		t.Fatalf("UpdateViaBrew() error = %v", err)
+	}
+	wantLast := []string{"upgrade", HomebrewPackage}
+	if got := calls[len(calls)-1]; !reflect.DeepEqual(got, wantLast) {
+		t.Fatalf("final brew call = %#v, want %#v", got, wantLast)
 	}
 }
 

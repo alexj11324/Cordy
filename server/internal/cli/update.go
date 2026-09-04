@@ -43,6 +43,17 @@ const (
 
 const DefaultUpdateDownloadTimeout = 120 * time.Second
 
+var brewCommand = func(args ...string) (string, error) {
+	cmd := exec.Command("brew", args...)
+	output, err := cmd.CombinedOutput()
+	return string(output), err
+}
+
+var legacyHomebrewFormulae = []string{
+	"alexj11324/Cordy/patchbay",
+	"patchbay-ai/tap/patchbay",
+}
+
 // GitHubRelease is the subset of the GitHub releases API response we need.
 type GitHubRelease struct {
 	TagName string               `json:"tag_name"`
@@ -337,15 +348,73 @@ func GetBrewPrefix() string {
 	return strings.TrimSpace(string(out))
 }
 
-// UpdateViaBrew upgrades the canonical Patchbay Homebrew cask.
-// Returns the combined output and any error.
-func UpdateViaBrew() (string, error) {
-	cmd := exec.Command("brew", "upgrade", HomebrewPackage)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return string(out), fmt.Errorf("brew upgrade failed: %w", err)
+func brewPackageInstalled(kind, packageName string) bool {
+	_, err := brewCommand("list", kind, packageName)
+	return err == nil
+}
+
+func appendBrewOutput(builder *strings.Builder, output string) {
+	if output == "" {
+		return
 	}
-	return string(out), nil
+	builder.WriteString(output)
+	if !strings.HasSuffix(output, "\n") {
+		builder.WriteByte('\n')
+	}
+}
+
+func migrateLegacyHomebrewFormula(legacyFormula string) (string, error) {
+	var output strings.Builder
+	caskAlreadyInstalled := brewPackageInstalled("--cask", HomebrewPackage)
+	if !caskAlreadyInstalled {
+		unlinkOutput, err := brewCommand("unlink", legacyFormula)
+		appendBrewOutput(&output, unlinkOutput)
+		if err != nil {
+			return output.String(), fmt.Errorf("unlink legacy Homebrew formula %s: %w", legacyFormula, err)
+		}
+
+		installOutput, installErr := brewCommand("install", "--cask", HomebrewPackage)
+		appendBrewOutput(&output, installOutput)
+		if installErr != nil {
+			relinkOutput, relinkErr := brewCommand("link", legacyFormula)
+			appendBrewOutput(&output, relinkOutput)
+			if relinkErr != nil {
+				return output.String(), fmt.Errorf("install Homebrew cask %s: %w (legacy relink also failed: %v)", HomebrewPackage, installErr, relinkErr)
+			}
+			return output.String(), fmt.Errorf("install Homebrew cask %s: %w", HomebrewPackage, installErr)
+		}
+	}
+
+	uninstallOutput, err := brewCommand("uninstall", "--formula", "--ignore-dependencies", legacyFormula)
+	appendBrewOutput(&output, uninstallOutput)
+	if err != nil {
+		return output.String(), fmt.Errorf("remove legacy Homebrew formula %s: %w", legacyFormula, err)
+	}
+	if caskAlreadyInstalled {
+		upgradeOutput, upgradeErr := brewCommand("upgrade", HomebrewPackage)
+		appendBrewOutput(&output, upgradeOutput)
+		if upgradeErr != nil {
+			return output.String(), fmt.Errorf("brew upgrade failed: %w", upgradeErr)
+		}
+	}
+	return output.String(), nil
+}
+
+// UpdateViaBrew upgrades the canonical Patchbay Homebrew cask. Installations
+// made from either historical Formula tap are migrated transactionally: the
+// old binary is unlinked before the Cask install and relinked if that install
+// fails, so a failed migration does not strand the CLI.
+func UpdateViaBrew() (string, error) {
+	for _, legacyFormula := range legacyHomebrewFormulae {
+		if brewPackageInstalled("--formula", legacyFormula) {
+			return migrateLegacyHomebrewFormula(legacyFormula)
+		}
+	}
+	output, err := brewCommand("upgrade", HomebrewPackage)
+	if err != nil {
+		return output, fmt.Errorf("brew upgrade failed: %w", err)
+	}
+	return output, nil
 }
 
 func updateDownloadTimeoutOrDefault(timeout time.Duration) time.Duration {

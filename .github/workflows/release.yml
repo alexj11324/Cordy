@@ -101,7 +101,7 @@ jobs:
         run: node --test scripts/release-desktop-artifact-contract.test.mjs
 
       - name: Test Homebrew release contract
-        run: node --test scripts/release-homebrew-contract.test.mjs
+        run: node --test scripts/release-homebrew-contract.test.mjs scripts/publish-homebrew-cask.test.mjs
 
   prepare-release:
     needs: verify
@@ -969,6 +969,16 @@ jobs:
     if: needs.verify.outputs.is_stable == 'true' && needs.publish-release.result == 'success'
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout verified release commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify.outputs.commit_sha }}
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Download generated Homebrew cask
         uses: actions/download-artifact@v4
         with:
@@ -996,26 +1006,4 @@ jobs:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.verify.outputs.tag_name }}
         shell: bash
-        run: |
-          set -euo pipefail
-          if [ -z "$GH_TOKEN" ]; then
-            echo "::error::HOMEBREW_TAP_GITHUB_TOKEN is required to publish alexj11324/homebrew-tap."
-            exit 1
-          fi
-          test -f "$CASK_PATH" || {
-            echo "::error::Generated Homebrew cask is missing: $CASK_PATH"
-            exit 1
-          }
-
-          endpoint="repos/alexj11324/homebrew-tap/contents/Casks/patchbay.rb"
-          existing_sha="$(gh api "$endpoint?ref=main" --jq .sha 2>/dev/null || true)"
-          jq -n \
-            --rawfile cask "$CASK_PATH" \
-            --arg message "Update Patchbay to $TAG_NAME" \
-            --arg sha "$existing_sha" \
-            '{message: $message, content: ($cask | @base64), branch: "main"}
-             + if $sha == "" then {} else {sha: $sha} end' |
-            gh api --method PUT "$endpoint" --input - >/dev/null
-
-          gh api "$endpoint?ref=main" --jq .content |
-            tr -d '\n' | base64 --decode | cmp - "$CASK_PATH"
+        run: node scripts/publish-homebrew-cask.mjs
