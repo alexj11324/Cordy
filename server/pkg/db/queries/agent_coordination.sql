@@ -190,13 +190,24 @@ FROM agent_coordination_assignment AS assignment
 JOIN agent_coordination_outbox AS event ON event.id = assignment.event_id
 JOIN agent_task_queue AS task ON task.id = sqlc.arg('task_id')
 JOIN agent AS task_agent ON task_agent.id = task.agent_id
+LEFT JOIN team AS task_team
+  ON task_team.id = assignment.owner_id
+ AND assignment.owner_type = 'team'
 WHERE assignment.workspace_id = sqlc.arg('workspace_id')
   AND assignment.issue_id = sqlc.arg('issue_id')
   AND event.workspace_id = assignment.workspace_id
   AND event.issue_id = assignment.issue_id
   AND task.issue_id = assignment.issue_id
-  AND task.agent_id = assignment.owner_id
   AND task_agent.workspace_id = assignment.workspace_id
+  AND (
+      (assignment.owner_type = 'agent' AND task.agent_id = assignment.owner_id)
+      OR (
+          assignment.owner_type = 'team'
+          AND task.agent_id = task_team.leader_id
+          AND task_team.workspace_id = assignment.workspace_id
+          AND task_team.archived_at IS NULL
+      )
+  )
   AND (
       assignment.dispatched_task_id = sqlc.arg('task_id')
       OR (
@@ -380,13 +391,25 @@ SET status = 'completed',
 FROM agent_coordination_outbox AS event
 JOIN agent AS task_agent ON task_agent.id = sqlc.arg('agent_id')
 JOIN agent_task_queue AS task ON task.id = sqlc.arg('task_id')
+LEFT JOIN team AS task_team
+  ON task_team.id = assignment.owner_id
+ AND assignment.owner_type = 'team'
 WHERE assignment.event_id = event.id
   AND assignment.id = sqlc.arg('assignment_id')
   AND assignment.dispatched_task_id = task.id
   AND assignment.workspace_id = sqlc.arg('workspace_id')
   AND assignment.issue_id = sqlc.arg('issue_id')
-  AND task.agent_id = sqlc.arg('agent_id')
   AND task_agent.workspace_id = assignment.workspace_id
+  AND (
+      (assignment.owner_type = 'agent' AND task.agent_id = sqlc.arg('agent_id'))
+      OR (
+          assignment.owner_type = 'team'
+          AND task.agent_id = sqlc.arg('agent_id')
+          AND task_team.leader_id = sqlc.arg('agent_id')
+          AND task_team.workspace_id = assignment.workspace_id
+          AND task_team.archived_at IS NULL
+      )
+  )
   AND task.issue_id = assignment.issue_id
   AND task.status IN ('completed', 'cancelled')
   AND assignment.status IN ('assigned', 'dispatched', 'completed')
@@ -472,3 +495,31 @@ WHERE event.id = assignment.event_id
   AND owner_agent.workspace_id = event.workspace_id
   AND owner_agent.kind = 'user'
   AND owner_agent.archived_at IS NULL;
+
+-- Team executor handoffs retain the team as the durable assignment owner while
+-- dispatching the team's current leader agent. This is separate from the agent
+-- assignment query because owner_type is part of the provenance contract.
+-- name: AssignTeamCoordinationAssignmentForLease :execrows
+UPDATE agent_coordination_assignment AS assignment
+SET owner_type = 'team',
+    owner_id = sqlc.arg('team_id'),
+    status = 'assigned',
+    assigned_at = COALESCE(assignment.assigned_at, now()),
+    decision = assignment.decision || sqlc.arg('decision')::jsonb,
+    last_error = NULL,
+    updated_at = now()
+FROM agent_coordination_outbox AS event
+JOIN team AS target_team ON target_team.id = sqlc.arg('team_id')
+WHERE event.id = assignment.event_id
+  AND assignment.id = sqlc.arg('assignment_id')
+  AND assignment.event_id = sqlc.arg('event_id')
+  AND assignment.workspace_id = sqlc.arg('workspace_id')
+  AND assignment.issue_id = sqlc.arg('issue_id')
+  AND assignment.status IN ('pending', 'assigned')
+  AND event.workspace_id = assignment.workspace_id
+  AND event.issue_id = assignment.issue_id
+  AND event.status = 'processing'
+  AND event.lease_owner = sqlc.arg('lease_owner')
+  AND event.lease_expires_at > now()
+  AND target_team.workspace_id = assignment.workspace_id
+  AND target_team.archived_at IS NULL;

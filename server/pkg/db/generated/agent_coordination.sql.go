@@ -80,6 +80,61 @@ func (q *Queries) AssignAgentCoordinationAssignmentForLease(ctx context.Context,
 	return result.RowsAffected(), nil
 }
 
+const assignTeamCoordinationAssignmentForLease = `-- name: AssignTeamCoordinationAssignmentForLease :execrows
+UPDATE agent_coordination_assignment AS assignment
+SET owner_type = 'team',
+    owner_id = $1,
+    status = 'assigned',
+    assigned_at = COALESCE(assignment.assigned_at, now()),
+    decision = assignment.decision || $2::jsonb,
+    last_error = NULL,
+    updated_at = now()
+FROM agent_coordination_outbox AS event
+JOIN team AS target_team ON target_team.id = $1
+WHERE event.id = assignment.event_id
+  AND assignment.id = $3
+  AND assignment.event_id = $4
+  AND assignment.workspace_id = $5
+  AND assignment.issue_id = $6
+  AND assignment.status IN ('pending', 'assigned')
+  AND event.workspace_id = assignment.workspace_id
+  AND event.issue_id = assignment.issue_id
+  AND event.status = 'processing'
+  AND event.lease_owner = $7
+  AND event.lease_expires_at > now()
+  AND target_team.workspace_id = assignment.workspace_id
+  AND target_team.archived_at IS NULL
+`
+
+type AssignTeamCoordinationAssignmentForLeaseParams struct {
+	TeamID       pgtype.UUID `json:"team_id"`
+	Decision     []byte      `json:"decision"`
+	AssignmentID pgtype.UUID `json:"assignment_id"`
+	EventID      pgtype.UUID `json:"event_id"`
+	WorkspaceID  pgtype.UUID `json:"workspace_id"`
+	IssueID      pgtype.UUID `json:"issue_id"`
+	LeaseOwner   pgtype.Text `json:"lease_owner"`
+}
+
+// Team executor handoffs retain the team as the durable assignment owner while
+// dispatching the team's current leader agent. This is separate from the agent
+// assignment query because owner_type is part of the provenance contract.
+func (q *Queries) AssignTeamCoordinationAssignmentForLease(ctx context.Context, arg AssignTeamCoordinationAssignmentForLeaseParams) (int64, error) {
+	result, err := q.db.Exec(ctx, assignTeamCoordinationAssignmentForLease,
+		arg.TeamID,
+		arg.Decision,
+		arg.AssignmentID,
+		arg.EventID,
+		arg.WorkspaceID,
+		arg.IssueID,
+		arg.LeaseOwner,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const claimAgentCoordinationOutbox = `-- name: ClaimAgentCoordinationOutbox :many
 WITH due AS MATERIALIZED (
     SELECT id
@@ -217,13 +272,25 @@ SET status = 'completed',
 FROM agent_coordination_outbox AS event
 JOIN agent AS task_agent ON task_agent.id = $4
 JOIN agent_task_queue AS task ON task.id = $5
+LEFT JOIN team AS task_team
+  ON task_team.id = assignment.owner_id
+ AND assignment.owner_type = 'team'
 WHERE assignment.event_id = event.id
   AND assignment.id = $1
   AND assignment.dispatched_task_id = task.id
   AND assignment.workspace_id = $2
   AND assignment.issue_id = $3
-  AND task.agent_id = $4
   AND task_agent.workspace_id = assignment.workspace_id
+  AND (
+      (assignment.owner_type = 'agent' AND task.agent_id = $4)
+      OR (
+          assignment.owner_type = 'team'
+          AND task.agent_id = $4
+          AND task_team.leader_id = $4
+          AND task_team.workspace_id = assignment.workspace_id
+          AND task_team.archived_at IS NULL
+      )
+  )
   AND task.issue_id = assignment.issue_id
   AND task.status IN ('completed', 'cancelled')
   AND assignment.status IN ('assigned', 'dispatched', 'completed')
@@ -524,13 +591,24 @@ FROM agent_coordination_assignment AS assignment
 JOIN agent_coordination_outbox AS event ON event.id = assignment.event_id
 JOIN agent_task_queue AS task ON task.id = $1
 JOIN agent AS task_agent ON task_agent.id = task.agent_id
+LEFT JOIN team AS task_team
+  ON task_team.id = assignment.owner_id
+ AND assignment.owner_type = 'team'
 WHERE assignment.workspace_id = $2
   AND assignment.issue_id = $3
   AND event.workspace_id = assignment.workspace_id
   AND event.issue_id = assignment.issue_id
   AND task.issue_id = assignment.issue_id
-  AND task.agent_id = assignment.owner_id
   AND task_agent.workspace_id = assignment.workspace_id
+  AND (
+      (assignment.owner_type = 'agent' AND task.agent_id = assignment.owner_id)
+      OR (
+          assignment.owner_type = 'team'
+          AND task.agent_id = task_team.leader_id
+          AND task_team.workspace_id = assignment.workspace_id
+          AND task_team.archived_at IS NULL
+      )
+  )
   AND (
       assignment.dispatched_task_id = $1
       OR (

@@ -308,7 +308,7 @@ func (s *AgentCoordinationService) RecordTaskCompletedTx(ctx context.Context, qt
 	}
 
 	followUp := assignment.Role == CoordinationAssignmentExecutor
-	payload := coordinationCompletionPayload(task, assignment, issue, followUp, "completed")
+	payload := coordinationCompletionPayload(task, assignment, issue, taskContext, followUp, "completed")
 	if !followUp {
 		return s.enqueueCoordinationEvent(ctx, qtx,
 			"task_completed:"+util.UUIDToString(task.ID),
@@ -809,8 +809,8 @@ func (s *AgentCoordinationService) processClaim(ctx context.Context, event db.Ag
 		if ownerErr != nil {
 			return s.deferClaim(ctx, qtx, event, assignment, ownerErr.Error())
 		}
-		if ownerType != "agent" || !ownerID.Valid {
-			return s.deferClaim(ctx, qtx, event, assignment, "owner is not an explicit agent")
+		if (ownerType != "agent" && ownerType != "team") || !ownerID.Valid {
+			return s.deferClaim(ctx, qtx, event, assignment, "owner is not an agent or team")
 		}
 		if assignment.Status != "dispatched" && !coordinationOwnerMatchesIssue(issue, assignment.Role, ownerType, ownerID, payload.OwnerGeneration) {
 			if ownerType == "agent" && ownerID.Valid {
@@ -828,11 +828,27 @@ func (s *AgentCoordinationService) processClaim(ctx context.Context, event db.Ag
 			}
 			return s.deferClaim(ctx, qtx, event, assignment, "owner decision is stale for the current issue assignment")
 		}
-		if assignment.Status == "dispatched" && !sameCoordinationUUID(assignment.OwnerID, ownerID) {
+		if assignment.Status == "dispatched" && (assignment.OwnerType.String != ownerType || !sameCoordinationUUID(assignment.OwnerID, ownerID)) {
 			return s.deferClaim(ctx, qtx, event, assignment, "dispatched assignment owner changed")
 		}
+		dispatchAgentID := ownerID
+		teamID := optionalUUID(payload.TeamID)
+		if ownerType == "team" {
+			team, teamErr := qtx.GetTeamInWorkspace(ctx, db.GetTeamInWorkspaceParams{
+				ID:          ownerID,
+				WorkspaceID: event.WorkspaceID,
+			})
+			if errors.Is(teamErr, pgx.ErrNoRows) {
+				return s.deferClaim(ctx, qtx, event, assignment, "executor team is missing or archived")
+			}
+			if teamErr != nil {
+				return s.deferClaim(ctx, qtx, event, assignment, "load executor team: "+teamErr.Error())
+			}
+			dispatchAgentID = team.LeaderID
+			teamID = team.ID
+		}
 		target, err := qtx.GetCoordinationAgentForDispatch(ctx, db.GetCoordinationAgentForDispatchParams{
-			AgentID: ownerID, WorkspaceID: event.WorkspaceID, RuntimeStaleSeconds: coordinationRuntimeStaleAfter.Seconds(),
+			AgentID: dispatchAgentID, WorkspaceID: event.WorkspaceID, RuntimeStaleSeconds: coordinationRuntimeStaleAfter.Seconds(),
 		})
 		if errors.Is(err, pgx.ErrNoRows) {
 			return s.deferClaim(ctx, qtx, event, assignment, "agent is archived, rebound, offline, or stale")
@@ -844,29 +860,40 @@ func (s *AgentCoordinationService) processClaim(ctx context.Context, event db.Ag
 		if assignment.Status == "pending" || assignment.Status == "assigned" {
 			decision, marshalErr := json.Marshal(map[string]any{
 				"event_key":  event.EventKey,
-				"owner_type": "agent",
+				"owner_type": ownerType,
 				"owner_id":   util.UUIDToString(ownerID),
 			})
 			if marshalErr != nil {
 				return s.deferClaim(ctx, qtx, event, assignment, "marshal owner decision: "+marshalErr.Error())
 			}
-			changed, updateErr := qtx.AssignAgentCoordinationAssignmentForLease(ctx, db.AssignAgentCoordinationAssignmentForLeaseParams{
-				AssignmentID: assignment.ID, EventID: event.ID, WorkspaceID: event.WorkspaceID, IssueID: event.IssueID,
-				OwnerID: ownerID, Decision: decision, LeaseOwner: event.LeaseOwner,
-			})
+			var (
+				changed   int64
+				updateErr error
+			)
+			if ownerType == "team" {
+				changed, updateErr = qtx.AssignTeamCoordinationAssignmentForLease(ctx, db.AssignTeamCoordinationAssignmentForLeaseParams{
+					AssignmentID: assignment.ID, EventID: event.ID, WorkspaceID: event.WorkspaceID, IssueID: event.IssueID,
+					TeamID: ownerID, Decision: decision, LeaseOwner: event.LeaseOwner,
+				})
+			} else {
+				changed, updateErr = qtx.AssignAgentCoordinationAssignmentForLease(ctx, db.AssignAgentCoordinationAssignmentForLeaseParams{
+					AssignmentID: assignment.ID, EventID: event.ID, WorkspaceID: event.WorkspaceID, IssueID: event.IssueID,
+					OwnerID: ownerID, Decision: decision, LeaseOwner: event.LeaseOwner,
+				})
+			}
 			if updateErr != nil {
 				return updateErr
 			}
 			if changed != 1 {
 				return ErrCoordinationLeaseLost
 			}
-			assignment.OwnerType = pgtype.Text{String: "agent", Valid: true}
+			assignment.OwnerType = pgtype.Text{String: ownerType, Valid: true}
 			assignment.OwnerID = ownerID
 			assignment.Status = "assigned"
 		}
 
 		activeTask, activeErr := qtx.GetActiveCoordinationTask(ctx, db.GetActiveCoordinationTaskParams{
-			WorkspaceID: event.WorkspaceID, IssueID: event.IssueID, AgentID: ownerID, AssignmentID: assignment.ID,
+			WorkspaceID: event.WorkspaceID, IssueID: event.IssueID, AgentID: dispatchAgentID, AssignmentID: assignment.ID,
 		})
 		if errors.Is(activeErr, pgx.ErrNoRows) {
 			contextJSON, contextErr := marshalCoordinationTaskContext(assignment, issue)
@@ -883,14 +910,14 @@ func (s *AgentCoordinationService) processClaim(ctx context.Context, event db.Ag
 			}
 			activeTask, err = qtx.CreateCoordinationAgentTask(ctx, db.CreateCoordinationAgentTaskParams{
 				ID:                   dbid.NewV7(),
-				AgentID:              ownerID,
+				AgentID:              dispatchAgentID,
 				RuntimeID:            target.RuntimeID,
 				IssueID:              event.IssueID,
 				WorkspaceID:          event.WorkspaceID,
 				Priority:             priorityToInt(issue.Priority),
 				Context:              contextJSON,
 				HandoffNote:          optionalText(payload.HandoffNote),
-				TeamID:               optionalUUID(payload.TeamID),
+				TeamID:               teamID,
 				OriginatorUserID:     optionalUUID(payload.OriginatorUserID),
 				AccountableUserID:    optionalUUID(payload.AccountableUserID),
 				OriginatorSource:     optionalText(payload.OriginatorSource),
@@ -911,7 +938,7 @@ func (s *AgentCoordinationService) processClaim(ctx context.Context, event db.Ag
 		decision, marshalErr := json.Marshal(map[string]any{
 			"event_key": event.EventKey,
 			"task_id":   util.UUIDToString(activeTask.ID),
-			"agent_id":  util.UUIDToString(ownerID),
+			"agent_id":  util.UUIDToString(dispatchAgentID),
 		})
 		if marshalErr != nil {
 			return marshalErr
@@ -1199,35 +1226,54 @@ func coordinationAssignmentMatchesTask(assignment db.AgentCoordinationAssignment
 	if assignment.Role != taskContext.AssignmentRole && taskContext.AssignmentRole != "" {
 		return false
 	}
-	return assignment.OwnerType.Valid && assignment.OwnerType.String == "agent" && sameCoordinationUUID(assignment.OwnerID, task.AgentID) && sameCoordinationUUID(assignment.DispatchedTaskID, task.ID) && (assignment.Status == "assigned" || assignment.Status == "dispatched" || assignment.Status == "completed")
+	if !assignment.OwnerType.Valid || !sameCoordinationUUID(assignment.DispatchedTaskID, task.ID) || (assignment.Status != "assigned" && assignment.Status != "dispatched" && assignment.Status != "completed") {
+		return false
+	}
+	if assignment.OwnerType.String == "agent" {
+		return sameCoordinationUUID(assignment.OwnerID, task.AgentID)
+	}
+	ownerID, err := util.ParseUUID(taskContext.OwnerID)
+	return assignment.OwnerType.String == "team" && taskContext.OwnerType == "team" && err == nil && sameCoordinationUUID(assignment.OwnerID, ownerID)
 }
 
 func coordinationCompletionStillOwnsIssue(issue db.Issue, role string, taskContext coordinationTaskContext, agentID pgtype.UUID) bool {
 	ownerID, err := util.ParseUUID(taskContext.OwnerID)
-	if err != nil || !sameCoordinationUUID(ownerID, agentID) {
+	if err != nil {
 		return false
 	}
 	switch role {
 	case CoordinationAssignmentExecutor:
-		if coordinationText(issue.ExecutorType) != "agent" || !sameCoordinationUUID(issue.ExecutorID, agentID) {
+		if coordinationText(taskContext.OwnerType) == "team" {
+			if coordinationText(issue.ExecutorType) != "team" || !sameCoordinationUUID(issue.ExecutorID, ownerID) {
+				return false
+			}
+			return taskContext.OwnerGeneration == nil || *taskContext.OwnerGeneration == issue.ExecutorGeneration
+		}
+		if !sameCoordinationUUID(ownerID, agentID) || coordinationText(issue.ExecutorType) != "agent" || !sameCoordinationUUID(issue.ExecutorID, agentID) {
 			return false
 		}
 		return taskContext.OwnerGeneration == nil || *taskContext.OwnerGeneration == issue.ExecutorGeneration
 	case CoordinationAssignmentReviewer:
-		return coordinationText(issue.ReviewerType) == "agent" && sameCoordinationUUID(issue.ReviewerID, agentID)
+		return sameCoordinationUUID(ownerID, agentID) && coordinationText(issue.ReviewerType) == "agent" && sameCoordinationUUID(issue.ReviewerID, agentID)
 	default:
 		return false
 	}
 }
 
-func coordinationCompletionPayload(task db.AgentTaskQueue, assignment db.AgentCoordinationAssignment, issue db.Issue, followUp bool, outcome string) coordinationEventPayload {
+func coordinationCompletionPayload(task db.AgentTaskQueue, assignment db.AgentCoordinationAssignment, issue db.Issue, taskContext coordinationTaskContext, followUp bool, outcome string) coordinationEventPayload {
 	payload := coordinationTaskPayload(task)
 	payload.AssignmentID = util.UUIDToString(assignment.ID)
 	payload.AssignmentRole = assignment.Role
+	payload.OwnerType = taskContext.OwnerType
+	payload.OwnerID = taskContext.OwnerID
+	payload.OwnerGeneration = taskContext.OwnerGeneration
 	payload.FollowUp = boolPtr(followUp)
 	payload.Outcome = outcome
 	payload.SourceTaskID = util.UUIDToString(task.ID)
-	payload.IssueRevision = int64Ptr(issue.Revision)
+	payload.IssueRevision = taskContext.IssueRevision
+	if payload.IssueRevision == nil {
+		payload.IssueRevision = int64Ptr(issue.Revision)
+	}
 	return payload
 }
 
@@ -1253,7 +1299,13 @@ func coordinationIssueOwner(issue db.Issue, role string) (string, pgtype.UUID) {
 
 func coordinationOwnerMatchesIssue(issue db.Issue, role, ownerType string, ownerID pgtype.UUID, expectedGeneration *int64) bool {
 	currentType, currentID := coordinationIssueOwner(issue, role)
-	if ownerType != "agent" || currentType != "agent" || !sameCoordinationUUID(currentID, ownerID) {
+	if role == CoordinationAssignmentReviewer && ownerType != "agent" {
+		return false
+	}
+	if role == CoordinationAssignmentExecutor && ownerType != "agent" && ownerType != "team" {
+		return false
+	}
+	if currentType != ownerType || !sameCoordinationUUID(currentID, ownerID) {
 		return false
 	}
 	return role != CoordinationAssignmentExecutor || expectedGeneration == nil || *expectedGeneration == issue.ExecutorGeneration

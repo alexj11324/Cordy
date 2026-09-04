@@ -161,6 +161,48 @@ func TestCoordinationOwnerMatchesCurrentIssueAssignment(t *testing.T) {
 	}
 }
 
+func TestCoordinationTeamOwnerUsesTeamProvenanceAndLeaderTask(t *testing.T) {
+	teamID := testCoordinationUUID("00000000-0000-0000-0000-000000000010")
+	leaderID := testCoordinationUUID("00000000-0000-0000-0000-000000000011")
+	issue := db.Issue{
+		ExecutorType:       pgtype.Text{String: "team", Valid: true},
+		ExecutorID:         teamID,
+		ExecutorGeneration: 6,
+	}
+	if !coordinationOwnerMatchesIssue(issue, CoordinationAssignmentExecutor, "team", teamID, int64Ptr(6)) {
+		t.Fatal("current team executor should be dispatchable through its leader")
+	}
+	if coordinationOwnerMatchesIssue(issue, CoordinationAssignmentExecutor, "agent", leaderID, int64Ptr(6)) {
+		t.Fatal("leader agent must not replace the durable team owner")
+	}
+
+	assignment := db.AgentCoordinationAssignment{
+		ID:               testCoordinationUUID("00000000-0000-0000-0000-000000000012"),
+		Role:             CoordinationAssignmentExecutor,
+		Status:           "dispatched",
+		OwnerType:        pgtype.Text{String: "team", Valid: true},
+		OwnerID:          teamID,
+		DispatchedTaskID: testCoordinationUUID("00000000-0000-0000-0000-000000000013"),
+	}
+	task := db.AgentTaskQueue{ID: assignment.DispatchedTaskID, AgentID: leaderID}
+	context := coordinationTaskContext{
+		AssignmentID:  util.UUIDToString(assignment.ID),
+		AssignmentRole: CoordinationAssignmentExecutor,
+		OwnerType:      "team",
+		OwnerID:        util.UUIDToString(teamID),
+	}
+	if !coordinationAssignmentMatchesTask(assignment, task, context) {
+		t.Fatal("team assignment should accept the team's leader task")
+	}
+	if !coordinationCompletionStillOwnsIssue(issue, CoordinationAssignmentExecutor, context, leaderID) {
+		t.Fatal("team completion should be fenced by the team while executed by its leader")
+	}
+	issue.ExecutorGeneration = 7
+	if coordinationCompletionStillOwnsIssue(issue, CoordinationAssignmentExecutor, context, leaderID) {
+		t.Fatal("team completion with a stale generation should be rejected")
+	}
+}
+
 func TestCoordinationFollowUpUsesExplicitFalse(t *testing.T) {
 	if !coordinationFollowUp(coordinationEventPayload{}) {
 		t.Fatal("legacy/missing follow_up should remain retryable")
