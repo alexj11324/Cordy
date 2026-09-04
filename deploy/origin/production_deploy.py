@@ -623,7 +623,7 @@ class ProductionDeployment:
             "-f",
             str(release / "docker-compose.selfhost.yml"),
             "-f",
-            str(self.static_directory / "production-product.override.yml"),
+            str(release / "deploy/origin/production-product.override.yml"),
         ]
         for service in ("backend", "frontend"):
             self.compose(
@@ -645,7 +645,7 @@ class ProductionDeployment:
                 "--project-name",
                 "cordy",  # legacy-brand-compat: preserves the production Compose project
                 "-f",
-                str(self.static_directory / "production-docs.compose.yml"),
+                str(release / "deploy/origin/production-docs.compose.yml"),
                 "up",
                 "-d",
                 "--no-deps",

@@ -371,6 +371,39 @@ class ProductionDeployContractTests(unittest.TestCase):
                 deployment.apply(manifest)
             return [call.args[0] for call in deployment.probe.call_args_list]
 
+    def test_apply_uses_overlays_from_the_verified_release(self):
+        with tempfile.TemporaryDirectory() as directory:
+            release = Path(directory) / "release"
+            deployment = production_deploy.ProductionDeployment(Path(directory))
+            deployment.checkout = mock.Mock(return_value=release)
+            deployment.deployment_environment = mock.Mock(return_value=({}, {}))
+            deployment.compose = mock.Mock()
+            deployment.probe = mock.Mock()
+
+            with mock.patch.object(production_deploy, "run"):
+                deployment.apply(self.manifest())
+
+            compose_arguments = [
+                call.args[0] for call in deployment.compose.call_args_list
+            ]
+            self.assertTrue(
+                all(
+                    str(release / "deploy/origin/production-product.override.yml")
+                    in arguments
+                    for arguments in compose_arguments[:2]
+                )
+            )
+            self.assertIn(
+                str(release / "deploy/origin/production-docs.compose.yml"),
+                compose_arguments[2],
+            )
+            self.assertTrue(
+                all(
+                    str(deployment.static_directory) not in " ".join(arguments)
+                    for arguments in compose_arguments
+                )
+            )
+
     def test_bootstrap_recovery_uses_readiness_not_new_business_route_contract(self):
         urls = self.observed_apply_probes(bootstrap=True)
         self.assertIn("http://127.0.0.1:3110/login", urls)

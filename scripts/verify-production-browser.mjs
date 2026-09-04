@@ -203,13 +203,17 @@ async function redeemSyntheticLogin(browser, credentials, publishableKey) {
       `${ACCOUNTS_ORIGIN}/v1/desktop/google/attempt`,
       {
         data: { state, code_challenge: codeChallenge },
-        headers: { "x-patchbay-auth-contract-version": "1" },
+        headers: {
+          origin: ACCOUNTS_ORIGIN,
+          "x-patchbay-auth-contract-version": "1",
+        },
       },
     );
+    const registrationBody = await registered.text();
     assert.equal(
       registered.status(),
       200,
-      "desktop login attempt registration",
+      `desktop login attempt registration: ${registrationBody}`,
     );
 
     await page.goto(`${ACCOUNTS_ORIGIN}/oauth/google/callback?${query}`, {
