@@ -21,7 +21,11 @@ BEGIN
        NEW.owner_id IS NOT DISTINCT FROM OLD.owner_id THEN
         RETURN NEW;
     END IF;
-    source_issue := CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+    IF TG_OP = 'DELETE' THEN
+        source_issue := OLD;
+    ELSE
+        source_issue := NEW;
+    END IF;
     operation := CASE TG_OP WHEN 'INSERT' THEN 'issue_created' WHEN 'DELETE' THEN 'issue_deleted' ELSE 'issue_updated' END;
     FOR binding IN
         SELECT id FROM linear_project_binding
@@ -49,7 +53,7 @@ BEGIN
                  'owner_id', source_issue.owner_id,
                  'revision', source_issue.revision
              )
-        ON CONFLICT (binding_id, event_key) DO NOTHING;
+        ) ON CONFLICT (binding_id, event_key) DO NOTHING;
     END LOOP;
     RETURN COALESCE(NEW, OLD);
 END;

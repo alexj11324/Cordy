@@ -120,9 +120,9 @@ describe("useRealtimeSync — ws instance change", () => {
     // Should have called invalidateQueries for all workspace-scoped keys
     // (17 workspace-scoped [incl. property definitions and Weixin] + 6 per-issue
     // prefixes + the workspace working-agents projection + 5 per-chat
-    // prefixes + Agent Thread + workspace list + cross-workspace inbox unread
-    // summary = 33 calls)
-    expect(invalidateSpy).toHaveBeenCalledTimes(33);
+    // prefixes + Work Product catalog + Agent Thread + workspace list +
+    // cross-workspace inbox unread summary = 34 calls)
+    expect(invalidateSpy).toHaveBeenCalledTimes(34);
   });
 
   it("does not re-invalidate when rerendered with the same ws instance", () => {

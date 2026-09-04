@@ -170,10 +170,10 @@ RETURNING id, workspace_id, connection_id, patchbay_project_id, linear_project_i
 
 -- name: TombstoneLinearProjectBinding :exec
 WITH tombstoned AS (
-    UPDATE linear_project_binding
-    SET status = 'tombstone', paused_at = COALESCE(paused_at, now()), updated_at = now()
-    WHERE id = $1 AND workspace_id = $2
-    RETURNING id
+    UPDATE linear_project_binding AS binding
+    SET status = 'tombstone', paused_at = COALESCE(binding.paused_at, now()), updated_at = now()
+    WHERE binding.id = $1 AND binding.workspace_id = $2
+    RETURNING binding.id
 ), deleted_conflicts AS (
     DELETE FROM linear_sync_conflict
     WHERE binding_id IN (SELECT id FROM tombstoned) AND workspace_id = $2

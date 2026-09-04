@@ -26,6 +26,10 @@ func TestHandleTaskReportsWindowsCodexProcessStartFailure(t *testing.T) {
 	var failBody atomic.Value
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case strings.HasSuffix(r.URL.Path, "/provider-authorization"):
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"allowed":true,"decision":"allow"}`)
+			return
 		case strings.HasSuffix(r.URL.Path, "/fail"):
 			var body map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
