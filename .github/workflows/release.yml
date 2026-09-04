@@ -98,6 +98,9 @@ jobs:
       - name: Test Desktop release artifact contract
         run: node --test scripts/release-desktop-artifact-contract.test.mjs
 
+      - name: Test Homebrew release contract
+        run: node --test scripts/release-homebrew-contract.test.mjs
+
   prepare-release:
     needs: verify
     # Only run on the canonical repository. Forks don't have the
@@ -916,6 +919,16 @@ jobs:
               --clobber
           done < <(find "$DESKTOP_ASSETS_DIR" -type f -print0)
 
+      - name: Require Homebrew tap publishing credential
+        env:
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          if [ -z "$HOMEBREW_TAP_GITHUB_TOKEN" ]; then
+            echo "::error::HOMEBREW_TAP_GITHUB_TOKEN is required to publish alexj11324/homebrew-tap."
+            exit 1
+          fi
+
       - name: Publish Go CLI and Homebrew artifacts
         uses: goreleaser/goreleaser-action@v6
         with:
@@ -926,6 +939,7 @@ jobs:
           args: release --clean --draft
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
 
       - name: Verify staged release is still a draft at the verified commit
         env:

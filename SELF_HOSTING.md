@@ -52,7 +52,7 @@ Open http://localhost:3000. To log in, configure `RESEND_API_KEY` in `.env` for 
 > **CLI only?** If the self-host server is already running and you only need the CLI on a macOS/Linux machine, install it with Homebrew:
 >
 > ```bash
-> brew install alexj11324/Cordy/patchbay
+> brew install alexj11324/tap/patchbay
 > ```
 
 ---
@@ -105,7 +105,7 @@ Each team member who wants to run AI agents locally needs to:
 ### a) Install the CLI and an AI agent
 
 ```bash
-brew install alexj11324/Cordy/patchbay
+brew install alexj11324/tap/patchbay
 ```
 
 You also need at least one AI agent CLI installed:

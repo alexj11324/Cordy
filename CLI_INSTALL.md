@@ -40,7 +40,7 @@ which brew
 If `brew` is found, install via Homebrew:
 
 ```bash
-brew install alexj11324/Cordy/patchbay
+brew install alexj11324/tap/patchbay
 ```
 
 Then verify:
@@ -54,7 +54,7 @@ If the version prints successfully, skip to **Step 3**.
 To upgrade later, run:
 
 ```bash
-brew upgrade alexj11324/Cordy/patchbay
+brew upgrade alexj11324/tap/patchbay
 ```
 
 ### Option B: Download from GitHub Releases (macOS/Linux, no Homebrew)
