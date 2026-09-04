@@ -19,14 +19,11 @@ test("release publishes the CLI as a cask in the dedicated Homebrew tap", async 
   assert.match(config, /^\s+name: homebrew-tap$/mu);
   assert.match(config, /^\s+directory: Casks$/mu);
   assert.match(config, /^\s+binaries:\n\s+- patchbay$/mu);
-  assert.match(
-    config,
-    /token: "\{\{ \.Env\.HOMEBREW_TAP_GITHUB_TOKEN \}\}"/u,
-  );
+  assert.match(config, /^\s+skip_upload: true$/mu);
 
   assert.match(
     workflow,
-    /HOMEBREW_TAP_GITHUB_TOKEN: \$\{\{ secrets\.HOMEBREW_TAP_GITHUB_TOKEN \}\}/u,
+    /GH_TOKEN: \$\{\{ secrets\.HOMEBREW_TAP_GITHUB_TOKEN \}\}/u,
   );
   assert.match(
     workflow,
@@ -35,6 +32,24 @@ test("release publishes the CLI as a cask in the dedicated Homebrew tap", async 
   assert.match(
     workflow,
     /node --test scripts\/release-homebrew-contract\.test\.mjs/u,
+  );
+  assert.match(workflow, /^  publish-homebrew:$/mu);
+  assert.match(
+    workflow,
+    /needs\.verify\.outputs\.is_stable == 'true'/u,
+  );
+  assert.match(workflow, /path: dist\/homebrew\/Casks\/patchbay\.rb/u);
+  assert.match(
+    workflow,
+    /repos\/alexj11324\/homebrew-tap\/contents\/Casks\/patchbay\.rb/u,
+  );
+
+  const promote = workflow.indexOf("Promote the fully gated release");
+  const publishCask = workflow.indexOf("Publish stable Homebrew cask");
+  assert.ok(promote >= 0, "release must be promoted explicitly");
+  assert.ok(
+    publishCask > promote,
+    "the stable cask must be published only after the release is public",
   );
 });
 

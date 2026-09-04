@@ -74,8 +74,11 @@ homebrew_casks:
       owner: alexj11324
       name: homebrew-tap
       branch: main
-      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     directory: Casks
+    # Publishing is intentionally separated from GoReleaser so the public tap
+    # can never point at a draft release. The release workflow uploads this
+    # generated cask only after it promotes the fully gated GitHub release.
+    skip_upload: true
     homepage: "https://github.com/alexj11324/Cordy"
     description: "Patchbay CLI — local agent runtime and management tool for the Patchbay platform"
     # No license stanza: Patchbay ships under the Patchbay License (Apache 2.0

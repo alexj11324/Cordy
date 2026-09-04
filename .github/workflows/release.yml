@@ -13,7 +13,9 @@ permissions:
   packages: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  # Serialize tags so an older release cannot overwrite the stable Homebrew
+  # cask after a newer tag has already published it.
+  group: release-${{ github.repository }}
   cancel-in-progress: false
 
 jobs:
@@ -919,16 +921,6 @@ jobs:
               --clobber
           done < <(find "$DESKTOP_ASSETS_DIR" -type f -print0)
 
-      - name: Require Homebrew tap publishing credential
-        env:
-          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          if [ -z "$HOMEBREW_TAP_GITHUB_TOKEN" ]; then
-            echo "::error::HOMEBREW_TAP_GITHUB_TOKEN is required to publish alexj11324/homebrew-tap."
-            exit 1
-          fi
-
       - name: Publish Go CLI and Homebrew artifacts
         uses: goreleaser/goreleaser-action@v6
         with:
@@ -939,7 +931,15 @@ jobs:
           args: release --clean --draft
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+
+      - name: Stage stable Homebrew cask
+        if: needs.verify.outputs.is_stable == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: homebrew-cask
+          path: dist/homebrew/Casks/patchbay.rb
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Verify staged release is still a draft at the verified commit
         env:
@@ -961,3 +961,61 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.verify.outputs.tag_name }}
         run: gh release edit "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
+
+  publish-homebrew:
+    needs: [verify, publish-release]
+    # The stable cask is a release channel, not a prerelease channel. Keep it
+    # unchanged for tags such as v1.0.0-rc1.
+    if: needs.verify.outputs.is_stable == 'true' && needs.publish-release.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download generated Homebrew cask
+        uses: actions/download-artifact@v4
+        with:
+          name: homebrew-cask
+          path: ${{ runner.temp }}/homebrew-cask
+
+      - name: Verify release is public at the gated commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.verify.outputs.tag_name }}
+          VERIFIED_SHA: ${{ needs.verify.outputs.commit_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = "false"
+          tag_sha="$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG_NAME" --jq .sha)"
+          test "$tag_sha" = "$VERIFIED_SHA" || {
+            echo "::error::Release tag $TAG_NAME moved before Homebrew publication."
+            exit 1
+          }
+
+      - name: Publish stable Homebrew cask
+        env:
+          CASK_PATH: ${{ runner.temp }}/homebrew-cask/patchbay.rb
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.verify.outputs.tag_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::HOMEBREW_TAP_GITHUB_TOKEN is required to publish alexj11324/homebrew-tap."
+            exit 1
+          fi
+          test -f "$CASK_PATH" || {
+            echo "::error::Generated Homebrew cask is missing: $CASK_PATH"
+            exit 1
+          }
+
+          endpoint="repos/alexj11324/homebrew-tap/contents/Casks/patchbay.rb"
+          existing_sha="$(gh api "$endpoint?ref=main" --jq .sha 2>/dev/null || true)"
+          jq -n \
+            --rawfile cask "$CASK_PATH" \
+            --arg message "Update Patchbay to $TAG_NAME" \
+            --arg sha "$existing_sha" \
+            '{message: $message, content: ($cask | @base64), branch: "main"}
+             + if $sha == "" then {} else {sha: $sha} end' |
+            gh api --method PUT "$endpoint" --input - >/dev/null
+
+          gh api "$endpoint?ref=main" --jq .content |
+            tr -d '\n' | base64 --decode | cmp - "$CASK_PATH"

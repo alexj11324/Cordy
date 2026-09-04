@@ -8,6 +8,18 @@ import (
 	"time"
 )
 
+func TestReleaseDistributionContract(t *testing.T) {
+	if GitHubReleaseRepository != "alexj11324/Cordy" {
+		t.Fatalf("release repository = %q", GitHubReleaseRepository)
+	}
+	if GitHubReleaseWebURL != "https://github.com/alexj11324/Cordy/releases" {
+		t.Fatalf("release web URL = %q", GitHubReleaseWebURL)
+	}
+	if HomebrewPackage != "alexj11324/tap/patchbay" {
+		t.Fatalf("Homebrew package = %q", HomebrewPackage)
+	}
+}
+
 func TestReleaseAssetCandidates(t *testing.T) {
 	tests := []struct {
 		name          string
