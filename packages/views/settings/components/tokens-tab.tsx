@@ -1,17 +1,24 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Trash2, Copy, Check, Info } from "lucide-react";
+import { Copy, Check, Info } from "lucide-react";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@patchbay/ui/components/ui/tooltip";
 import type { PersonalAccessToken } from "@patchbay/core/types";
 import { Alert, AlertDescription } from "@patchbay/ui/components/ui/alert";
 import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
-import { Input } from "@patchbay/ui/components/ui/input";
 import { Button } from "@patchbay/ui/components/ui/button";
-import { SettingsCard, SettingsSection, SettingsTab } from "./settings-layout";
+import {
+  SettingsCard,
+  SettingsEmpty,
+  SettingsField,
+  SettingsListRow,
+  SettingsPillButton,
+  SettingsSection,
+  SettingsSelectTrigger,
+  SettingsTab,
+} from "./settings-layout";
 import {
   Select,
-  SelectTrigger,
   SelectValue,
   SelectContent,
   SelectItem,
@@ -140,8 +147,8 @@ export function TokensTab() {
     >
       <SettingsSection>
         <SettingsCard>
-          <div className="grid gap-3 px-4 py-3 sm:grid-cols-[1fr_120px_auto]">
-            <Input
+          <SettingsListRow className="flex-col items-stretch gap-3 sm:flex-row sm:items-center">
+            <SettingsField
               type="text"
               name="token-name"
               autoComplete="off"
@@ -149,26 +156,31 @@ export function TokensTab() {
               value={tokenName}
               onChange={(e) => setTokenName(e.target.value)}
               placeholder={t(($) => $.tokens.name_placeholder)}
+              className="flex-1"
             />
             <Select
               items={expiryItems}
               value={tokenExpiry}
               onValueChange={(v) => { if (v) setTokenExpiry(v); }}
             >
-              <SelectTrigger
-                size="sm"
+              <SettingsSelectTrigger
+                className="w-full sm:w-32"
                 aria-label={t(($) => $.tokens.title)}
-              ><SelectValue /></SelectTrigger>
+              ><SelectValue /></SettingsSelectTrigger>
               <SelectContent>
                 {expiryItems.map((item) => (
                   <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            <Button onClick={handleCreateToken} disabled={tokenCreating || !tokenName.trim()}>
+            <SettingsPillButton
+              active
+              onClick={handleCreateToken}
+              disabled={tokenCreating || !tokenName.trim()}
+            >
               {tokenCreating ? t(($) => $.tokens.creating) : t(($) => $.tokens.create)}
-            </Button>
-          </div>
+            </SettingsPillButton>
+          </SettingsListRow>
         </SettingsCard>
       </SettingsSection>
 
@@ -185,12 +197,12 @@ export function TokensTab() {
               </div>
             ))
           ) : tokens.length === 0 ? (
-            <p className="px-4 py-8 text-center text-caption text-muted-foreground">
-              {tokensLoadFailed ? t(($) => $.tokens.load_failed) : t(($) => $.tokens.empty)}
-            </p>
+            <SettingsEmpty
+              title={tokensLoadFailed ? t(($) => $.tokens.load_failed) : t(($) => $.tokens.empty)}
+            />
           ) : (
             tokens.map((token) => (
-              <div key={token.id} className="flex min-h-16 items-center gap-4 px-4 py-3">
+              <SettingsListRow key={token.id}>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-body font-medium">{token.name}</div>
                   <div className="text-caption text-muted-foreground">
@@ -208,23 +220,15 @@ export function TokensTab() {
                     })}
                   </div>
                 </div>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={() => setRevokeConfirmId(token.id)}
-                        disabled={tokenRevoking === token.id}
-                        aria-label={t(($) => $.tokens.revoke_aria, { name: token.name })}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    }
-                  />
-                  <TooltipContent>{t(($) => $.tokens.revoke_tooltip)}</TooltipContent>
-                </Tooltip>
-              </div>
+                <SettingsPillButton
+                  tone="destructive"
+                  onClick={() => setRevokeConfirmId(token.id)}
+                  disabled={tokenRevoking === token.id}
+                  aria-label={t(($) => $.tokens.revoke_aria, { name: token.name })}
+                >
+                  {t(($) => $.tokens.revoke_tooltip)}
+                </SettingsPillButton>
+              </SettingsListRow>
             ))
           )}
         </SettingsCard>

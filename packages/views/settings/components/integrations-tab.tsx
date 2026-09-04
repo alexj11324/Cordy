@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CircleAlert, Loader2, Settings2 } from "lucide-react";
+import { CircleAlert, Loader2 } from "lucide-react";
 import { ApiError, api } from "@patchbay/core/api";
 import { useAuthStore } from "@patchbay/core/auth";
 import { workspaceSubscriptionSummaryOptions } from "@patchbay/core/billing";
@@ -23,7 +23,6 @@ import { wecomInstallationsOptions } from "@patchbay/core/wecom";
 import { weixinInstallationsOptions } from "@patchbay/core/weixin";
 import { memberListOptions } from "@patchbay/core/workspace/queries";
 import { Badge } from "@patchbay/ui/components/ui/badge";
-import { Button } from "@patchbay/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -39,7 +38,7 @@ import { IntegrationSetupGuide } from "./integration-setup-guide";
 import { LarkAgentBindButton, LarkTab } from "./lark-tab";
 import { LinearIntegrationCard } from "./linear-tab";
 import { MessagingConnectionStatus } from "./messaging-connection-status";
-import { SettingsSection, SettingsTab } from "./settings-layout";
+import { SettingsSection, SettingsTab, SettingsPillButton } from "./settings-layout";
 import { SlackAgentBindButton, SlackTab } from "./slack-tab";
 import { TelegramAgentBindButton, TelegramTab } from "./telegram-tab";
 import { VCSTab } from "./vcs-tab";
@@ -139,12 +138,11 @@ function ChannelAction({
     return <span className="text-caption text-muted-foreground">{t(($) => $.page.integrations_unavailable)}</span>;
   }
   return (
-    <Button type="button" variant="outline" size="sm" onClick={onOpen}>
-      <Settings2 />
+    <SettingsPillButton onClick={onOpen}>
       {installedRecord(query.data)
         ? t(($) => $.page.integrations_manage)
         : t(($) => $.page.integrations_configure)}
-    </Button>
+    </SettingsPillButton>
   );
 }
 

@@ -3,18 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Clock,
-  Copy,
   Crown,
   Link,
   Loader2,
   Mail,
   MoreHorizontal,
-  Plus,
   Shield,
-  Trash2,
   User,
   UserMinus,
-  X,
 } from "lucide-react";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { useOptionalNavigation } from "../../navigation";
@@ -26,9 +22,6 @@ import type {
   ShareLink,
   WorkspaceSeatPurchasePreview,
 } from "@patchbay/core/types";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Card, CardContent } from "@patchbay/ui/components/ui/card";
 import { Badge } from "@patchbay/ui/components/ui/badge";
 import {
   AlertDialog,
@@ -42,7 +35,6 @@ import {
 } from "@patchbay/ui/components/ui/alert-dialog";
 import {
   Select,
-  SelectTrigger,
   SelectValue,
   SelectContent,
   SelectItem,
@@ -75,7 +67,16 @@ import {
 } from "@patchbay/core/workspace/queries";
 import { api, errorCode } from "@patchbay/core/api";
 import { useLocale, useT } from "../../i18n";
-import { SettingsCard, SettingsSection, SettingsTab } from "./settings-layout";
+import {
+  SettingsCard,
+  SettingsField,
+  SettingsIconButton,
+  SettingsListRow,
+  SettingsPillButton,
+  SettingsSection,
+  SettingsSelectTrigger,
+  SettingsTab,
+} from "./settings-layout";
 import { formatStripeMinorAmount } from "./billing-format";
 import {
   isSingleSeatInvitePreview,
@@ -179,7 +180,7 @@ function MemberRow({
   const showMenu = canEditRole || canRemove;
 
   return (
-    <div className="flex items-center gap-3 px-4 py-3">
+    <SettingsListRow>
       <ActorAvatar actorType="member" actorId={member.user_id} size="lg" />
       <div className="min-w-0 flex-1">
         <div className="text-body font-medium truncate">{member.name}</div>
@@ -189,9 +190,9 @@ function MemberRow({
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
-              <Button variant="ghost" size="icon-sm" disabled={busy}>
-                <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
-              </Button>
+              <SettingsIconButton disabled={busy}>
+                <MoreHorizontal className="h-4 w-4" />
+              </SettingsIconButton>
             }
           />
           <DropdownMenuContent align="end" className="w-auto">
@@ -254,7 +255,7 @@ function MemberRow({
         <RoleIcon className="h-3 w-3" />
         {rc.label}
       </Badge>
-    </div>
+    </SettingsListRow>
   );
 }
 
@@ -274,7 +275,7 @@ function InvitationRow({
   const rc = roleConfig[invitation.role];
 
   return (
-    <div className="flex items-center gap-3 px-4 py-3">
+    <SettingsListRow>
       <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
         <Mail className="h-4 w-4 text-muted-foreground" />
       </div>
@@ -286,20 +287,19 @@ function InvitationRow({
         </div>
       </div>
       {canManage && (
-        <Button
-          variant="ghost"
-          size="icon-sm"
+        <SettingsPillButton
+          tone="destructive"
           disabled={busy}
           onClick={onRevoke}
           title={t(($) => $.members.revoke_invitation_tooltip)}
         >
-          <X className="h-4 w-4 text-muted-foreground" />
-        </Button>
+          {t(($) => $.members.revoke_invitation_tooltip)}
+        </SettingsPillButton>
       )}
       <Badge variant="outline">
         {rc.label}
       </Badge>
-    </div>
+    </SettingsListRow>
   );
 }
 
@@ -322,7 +322,7 @@ function ShareLinkRow({
   const joinUrl = buildShareLinkUrl(navigation, link.code);
 
   return (
-    <div className="flex items-center gap-3 px-4 py-3">
+    <SettingsListRow>
       <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
         <Link className="h-4 w-4 text-muted-foreground" />
       </div>
@@ -338,27 +338,24 @@ function ShareLinkRow({
           {joinUrl}
         </div>
       </div>
-      <Button
-        variant="ghost"
-        size="icon-sm"
+      <SettingsPillButton
         onClick={onCopy}
         title={t(($) => $.members.share_link_copy_tooltip)}
       >
-        <Copy className="h-4 w-4 text-muted-foreground" />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon-sm"
+        {t(($) => $.members.share_link_copy_tooltip)}
+      </SettingsPillButton>
+      <SettingsPillButton
+        tone="destructive"
         disabled={busy}
         onClick={onRevoke}
         title={t(($) => $.members.share_link_revoke_tooltip)}
       >
-        <Trash2 className="h-4 w-4 text-muted-foreground" />
-      </Button>
+        {t(($) => $.members.share_link_revoke_tooltip)}
+      </SettingsPillButton>
       <Badge variant="outline">
         {rc.label}
       </Badge>
-    </div>
+    </SettingsListRow>
   );
 }
 
@@ -789,72 +786,67 @@ export function MembersTab() {
       <SettingsSection title={t(($) => $.members.section_title, { count: members.length })}>
 
         {canManageWorkspace && (
-          <Card>
-            <CardContent className="space-y-3">
-              <div className="flex items-center gap-2">
-                <Plus className="h-4 w-4 text-muted-foreground" />
-                <h3 className="text-body font-medium">{t(($) => $.members.invite_title)}</h3>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-[1fr_120px_auto]">
-                <Input
-                  type="email"
-                  name="invite-email"
-                  autoComplete="email"
-                  spellCheck={false}
-                  aria-label={t(($) => $.members.invite_email_placeholder)}
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                  placeholder={t(($) => $.members.invite_email_placeholder)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && inviteEmail.trim()) handleInviteMember();
-                  }}
-                />
-                <Select
-                  items={(["member", "admin"] as const).map((value) => ({
-                    value,
-                    label: roleConfig[value].label,
-                  }))}
-                  value={inviteRole}
-                  onValueChange={(value) => setInviteRole(value as MemberRole)}
-                >
-                  <SelectTrigger size="sm">
-                    <SelectValue>{() => roleConfig[inviteRole].label}</SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="member">{roleConfig.member.label}</SelectItem>
-                    <SelectItem value="admin">{roleConfig.admin.label}</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button
-                  onClick={handleInviteMember}
-                  disabled={inviteLoading || !inviteEmail.trim()}
-                >
-                  {inviteLoading ? t(($) => $.members.inviting) : t(($) => $.members.invite_button)}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          <SettingsCard>
+            <SettingsListRow className="flex-col items-stretch gap-3 sm:flex-row sm:items-center">
+              <SettingsField
+                type="email"
+                name="invite-email"
+                autoComplete="email"
+                spellCheck={false}
+                aria-label={t(($) => $.members.invite_email_placeholder)}
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                placeholder={t(($) => $.members.invite_email_placeholder)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && inviteEmail.trim()) handleInviteMember();
+                }}
+                className="flex-1"
+              />
+              <Select
+                items={(["member", "admin"] as const).map((value) => ({
+                  value,
+                  label: roleConfig[value].label,
+                }))}
+                value={inviteRole}
+                onValueChange={(value) => setInviteRole(value as MemberRole)}
+              >
+                <SettingsSelectTrigger className="w-full sm:w-32">
+                  <SelectValue>{() => roleConfig[inviteRole].label}</SelectValue>
+                </SettingsSelectTrigger>
+                <SelectContent>
+                  <SelectItem value="member">{roleConfig.member.label}</SelectItem>
+                  <SelectItem value="admin">{roleConfig.admin.label}</SelectItem>
+                </SelectContent>
+              </Select>
+              <SettingsPillButton
+                active
+                onClick={handleInviteMember}
+                disabled={inviteLoading || !inviteEmail.trim()}
+              >
+                {inviteLoading ? t(($) => $.members.inviting) : t(($) => $.members.invite_button)}
+              </SettingsPillButton>
+            </SettingsListRow>
+          </SettingsCard>
         )}
 
         {members.length > 0 ? (
           <SettingsCard>
             {members.map((m) => (
-              <div key={m.id}>
-                <MemberRow
-                  member={m}
-                  canManage={canManageWorkspace}
-                  canManageOwners={isOwner}
-                  ownerCount={ownerCount}
-                  isSelf={m.user_id === user?.id}
-                  busy={memberActionId === m.id}
-                  onRoleChange={(role) => handleRoleChange(m.id, role)}
-                  onRemove={() => handleRemoveMember(m)}
-                />
-              </div>
+              <MemberRow
+                key={m.id}
+                member={m}
+                canManage={canManageWorkspace}
+                canManageOwners={isOwner}
+                ownerCount={ownerCount}
+                isSelf={m.user_id === user?.id}
+                busy={memberActionId === m.id}
+                onRoleChange={(role) => handleRoleChange(m.id, role)}
+                onRemove={() => handleRemoveMember(m)}
+              />
             ))}
           </SettingsCard>
         ) : (
-          <p className="text-body text-muted-foreground">{t(($) => $.members.no_members)}</p>
+          <p className="px-4 text-body text-muted-foreground">{t(($) => $.members.no_members)}</p>
         )}
       </SettingsSection>
 
@@ -862,14 +854,13 @@ export function MembersTab() {
         <SettingsSection title={t(($) => $.members.pending_title, { count: invitations.length })}>
           <SettingsCard>
             {invitations.map((inv) => (
-              <div key={inv.id}>
-                <InvitationRow
-                  invitation={inv}
-                  canManage={canManageWorkspace}
-                  onRevoke={() => handleRevokeInvitation(inv)}
-                  busy={invitationActionId === inv.id}
-                />
-              </div>
+              <InvitationRow
+                key={inv.id}
+                invitation={inv}
+                canManage={canManageWorkspace}
+                onRevoke={() => handleRevokeInvitation(inv)}
+                busy={invitationActionId === inv.id}
+              />
             ))}
           </SettingsCard>
         </SettingsSection>
@@ -877,80 +868,78 @@ export function MembersTab() {
 
       {canManageWorkspace && (
         <SettingsSection title={t(($) => $.members.share_links_title, { count: shareLinks.length })}>
-          <Card>
-            <CardContent className="space-y-3">
-              <div className="flex items-center gap-2">
-                <Link className="h-4 w-4 text-muted-foreground" />
-                <h3 className="text-body font-medium">{t(($) => $.members.share_links_create_title)}</h3>
+          <SettingsCard>
+            <SettingsListRow className="flex-col items-stretch gap-3 sm:flex-row sm:items-center">
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                <span className="shrink-0 text-body text-muted-foreground">{t(($) => $.members.role_field)}</span>
+                <Select
+                  items={(["member", "admin"] as const).map((value) => ({
+                    value,
+                    label: roleConfig[value].label,
+                  }))}
+                  value={shareLinkRole}
+                  onValueChange={(value) => setShareLinkRole(value as MemberRole)}
+                >
+                  <SettingsSelectTrigger className="w-full sm:w-32">
+                    <SelectValue>{() => roleConfig[shareLinkRole].label}</SelectValue>
+                  </SettingsSelectTrigger>
+                  <SelectContent className="min-w-0">
+                    <SelectItem value="member">{roleConfig.member.label}</SelectItem>
+                    <SelectItem value="admin">{roleConfig.admin.label}</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                <div className="flex min-w-0 flex-1 basis-40 items-center gap-2">
-                  <span className="text-body text-muted-foreground shrink-0">{t(($) => $.members.role_field)}</span>
-                  <Select
-                    items={(["member", "admin"] as const).map((value) => ({
-                      value,
-                      label: roleConfig[value].label,
-                    }))}
-                    value={shareLinkRole}
-                    onValueChange={(value) => setShareLinkRole(value as MemberRole)}
-                  >
-                    <SelectTrigger size="sm">
-                      <SelectValue>{() => roleConfig[shareLinkRole].label}</SelectValue>
-                    </SelectTrigger>
-                    <SelectContent className="min-w-0">
-                      <SelectItem value="member">{roleConfig.member.label}</SelectItem>
-                      <SelectItem value="admin">{roleConfig.admin.label}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex min-w-0 flex-1 basis-40 items-center gap-2">
-                  <span className="text-body text-muted-foreground shrink-0">{t(($) => $.members.expiry_field)}</span>
-                  <Select
-                    items={[
-                      { value: "24", label: t(($) => $.members.expiry_24h) },
-                      { value: "168", label: t(($) => $.members.expiry_7d) },
-                      { value: "720", label: t(($) => $.members.expiry_30d) },
-                      { value: "0", label: t(($) => $.members.expiry_never) },
-                    ]}
-                    value={shareLinkExpiry}
-                    onValueChange={(v) => v && setShareLinkExpiry(v)}
-                  >
-                    <SelectTrigger size="sm">
-                      <SelectValue>{() => {
-                        const opts: Record<string, string> = {
-                          "24": t(($) => $.members.expiry_24h),
-                          "168": t(($) => $.members.expiry_7d),
-                          "720": t(($) => $.members.expiry_30d),
-                          "0": t(($) => $.members.expiry_never),
-                        };
-                        return opts[shareLinkExpiry] || shareLinkExpiry;
-                      }}</SelectValue>
-                    </SelectTrigger>
-                    <SelectContent className="min-w-0">
-                      <SelectItem value="24">{t(($) => $.members.expiry_24h)}</SelectItem>
-                      <SelectItem value="168">{t(($) => $.members.expiry_7d)}</SelectItem>
-                      <SelectItem value="720">{t(($) => $.members.expiry_30d)}</SelectItem>
-                      <SelectItem value="0">{t(($) => $.members.expiry_never)}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button onClick={handleCreateShareLink} disabled={shareLinkLoading} className="shrink-0">
-                  {shareLinkLoading ? t(($) => $.members.share_links_creating) : t(($) => $.members.share_links_create_button)}
-                </Button>
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                <span className="shrink-0 text-body text-muted-foreground">{t(($) => $.members.expiry_field)}</span>
+                <Select
+                  items={[
+                    { value: "24", label: t(($) => $.members.expiry_24h) },
+                    { value: "168", label: t(($) => $.members.expiry_7d) },
+                    { value: "720", label: t(($) => $.members.expiry_30d) },
+                    { value: "0", label: t(($) => $.members.expiry_never) },
+                  ]}
+                  value={shareLinkExpiry}
+                  onValueChange={(v) => v && setShareLinkExpiry(v)}
+                >
+                  <SettingsSelectTrigger className="w-full sm:w-32">
+                    <SelectValue>{() => {
+                      const opts: Record<string, string> = {
+                        "24": t(($) => $.members.expiry_24h),
+                        "168": t(($) => $.members.expiry_7d),
+                        "720": t(($) => $.members.expiry_30d),
+                        "0": t(($) => $.members.expiry_never),
+                      };
+                      return opts[shareLinkExpiry] || shareLinkExpiry;
+                    }}</SelectValue>
+                  </SettingsSelectTrigger>
+                  <SelectContent className="min-w-0">
+                    <SelectItem value="24">{t(($) => $.members.expiry_24h)}</SelectItem>
+                    <SelectItem value="168">{t(($) => $.members.expiry_7d)}</SelectItem>
+                    <SelectItem value="720">{t(($) => $.members.expiry_30d)}</SelectItem>
+                    <SelectItem value="0">{t(($) => $.members.expiry_never)}</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-            </CardContent>
-          </Card>
+              <SettingsPillButton
+                active
+                onClick={handleCreateShareLink}
+                disabled={shareLinkLoading}
+                className="shrink-0"
+              >
+                {shareLinkLoading ? t(($) => $.members.share_links_creating) : t(($) => $.members.share_links_create_button)}
+              </SettingsPillButton>
+            </SettingsListRow>
+          </SettingsCard>
           {shareLinks.length > 0 && (
             <SettingsCard>
               {shareLinks.map((link) => (
-                <div key={link.id}>
-                  <ShareLinkRow
-                    link={link}
-                    onRevoke={() => handleRevokeShareLink(link)}
-                    busy={shareLinkActionId === link.id}
-                    onCopy={() => handleCopyShareLink(link)}
-                  />
-                </div>
+                <ShareLinkRow
+                  key={link.id}
+                  link={link}
+                  onRevoke={() => handleRevokeShareLink(link)}
+                  busy={shareLinkActionId === link.id}
+                  onCopy={() => handleCopyShareLink(link)}
+                />
               ))}
             </SettingsCard>
           )}

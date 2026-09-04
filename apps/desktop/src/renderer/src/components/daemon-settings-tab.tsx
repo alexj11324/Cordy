@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback, type ReactNode } from "react";
 import { AlertCircle, Info, LogIn } from "lucide-react";
-import { Button } from "@patchbay/ui/components/ui/button";
 import { Switch } from "@patchbay/ui/components/ui/switch";
 import { cn } from "@patchbay/ui/lib/utils";
 import { toast } from "sonner";
 import {
   SettingsCard,
+  SettingsPillButton,
   SettingsRow,
   SettingsSection,
   SettingsTab,
@@ -112,15 +112,15 @@ export function DaemonSettingsTab() {
               {t(($) => $.desktop.daemon.signin_expired_description)}
             </p>
           </div>
-          <Button
-            size="sm"
+          <SettingsPillButton
+            active
             className="shrink-0"
             onClick={handleReauth}
             disabled={reauthLoading}
           >
-            <LogIn className="size-3.5 mr-1.5" />
+            <LogIn className="size-3.5" />
             {t(($) => $.desktop.daemon.signin_again)}
-          </Button>
+          </SettingsPillButton>
         </div>
       )}
 
@@ -136,6 +136,7 @@ export function DaemonSettingsTab() {
         </div>
       )}
 
+      <SettingsSection>
       <SettingsCard>
         <SettingsRow
           label={t(($) => $.desktop.daemon.auto_start_title)}
@@ -170,9 +171,7 @@ export function DaemonSettingsTab() {
           }
         >
           {cliInstalled === false && (
-            <Button
-              variant="outline"
-              size="sm"
+            <SettingsPillButton
               onClick={() =>
                 window.desktopAPI.openExternal(
                   "https://github.com/alexj11324/Cordy#cli-installation",
@@ -180,11 +179,12 @@ export function DaemonSettingsTab() {
               }
             >
               {t(($) => $.desktop.daemon.installation_guide)}
-            </Button>
+            </SettingsPillButton>
           )}
           {cliInstalled !== false && <span />}
         </SettingsRow>
       </SettingsCard>
+      </SettingsSection>
 
       {/* Diagnostics — moved out of the logs panel so the panel can focus
           on logs. These fields matter for support tickets and bug reports,

@@ -2,9 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LogOut } from "lucide-react";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Textarea } from "@patchbay/ui/components/ui/textarea";
-import { Button } from "@patchbay/ui/components/ui/button";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -39,10 +36,13 @@ import { DeleteWorkspaceDialog } from "./delete-workspace-dialog";
 import { useT } from "../../i18n";
 import {
   SettingsCard,
+  SettingsField,
+  SettingsPillButton,
   SettingsRow,
   SettingsSaveState,
   SettingsSection,
   SettingsTab,
+  SettingsTextarea,
   type SettingsSaveStatus,
 } from "./settings-layout";
 import { useAutoSave } from "./use-auto-save";
@@ -365,7 +365,7 @@ export function WorkspaceTab() {
             label={t(($) => $.workspace.name_label)}
             size="text"
           >
-            <Input
+            <SettingsField
               type="text"
               name="workspace-name"
               autoComplete="organization"
@@ -382,7 +382,7 @@ export function WorkspaceTab() {
             size="text"
             align="start"
           >
-            <Textarea
+            <SettingsTextarea
               name="workspace-description"
               autoComplete="off"
               aria-label={t(($) => $.workspace.description_label)}
@@ -401,7 +401,7 @@ export function WorkspaceTab() {
             size="text"
             align="start"
           >
-            <Textarea
+            <SettingsTextarea
               name="workspace-context"
               autoComplete="off"
               aria-label={t(($) => $.workspace.context_label)}
@@ -419,7 +419,7 @@ export function WorkspaceTab() {
             label={t(($) => $.workspace.slug_label)}
             size="text"
           >
-            <Input
+            <SettingsField
               type="text"
               name="workspace-slug"
               autoComplete="off"
@@ -427,7 +427,7 @@ export function WorkspaceTab() {
               aria-label={t(($) => $.workspace.slug_label)}
               value={workspace.slug}
               readOnly
-              className="bg-muted/50 font-mono text-muted-foreground dark:bg-muted/50"
+              className="font-mono text-muted-foreground"
             />
           </SettingsRow>
 
@@ -438,7 +438,7 @@ export function WorkspaceTab() {
             })}
             size="code"
           >
-              <Input
+              <SettingsField
                 type="text"
                 name="workspace-issue-prefix"
                 autoComplete="off"
@@ -490,14 +490,12 @@ export function WorkspaceTab() {
                   : t(($) => $.workspace.leave_default)
               }
             >
-              <Button
-                variant="outline"
-                size="sm"
+              <SettingsPillButton
                 onClick={handleLeaveWorkspace}
                 disabled={actionId === "leave" || isSoleOwner}
               >
                 {actionId === "leave" ? t(($) => $.workspace.leaving) : t(($) => $.workspace.leave_button)}
-              </Button>
+              </SettingsPillButton>
             </SettingsRow>
 
             {isOwner && (
@@ -509,14 +507,13 @@ export function WorkspaceTab() {
                 }
                 description={t(($) => $.workspace.delete_description)}
               >
-                <Button
-                  variant="destructive"
-                  size="sm"
+                <SettingsPillButton
+                  tone="destructive"
                   onClick={() => setDeleteDialogOpen(true)}
                   disabled={actionId === "delete-workspace"}
                 >
                   {actionId === "delete-workspace" ? t(($) => $.workspace.deleting) : t(($) => $.workspace.delete_button)}
-                </Button>
+                </SettingsPillButton>
               </SettingsRow>
             )}
           </SettingsCard>

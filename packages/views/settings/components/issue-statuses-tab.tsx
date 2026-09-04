@@ -7,7 +7,6 @@ import {
   GripVertical,
   MoreHorizontal,
   Pencil,
-  Plus,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -82,7 +81,7 @@ import { ColorPicker, COLOR_PICKER_PRESETS } from "../../common/color-picker";
 import { StatusIcon } from "../../issues/components/status-icon";
 import { useStatusLabel } from "../../issues/utils/status-label";
 import { useT } from "../../i18n";
-import { SettingsTab } from "./settings-layout";
+import { SettingsCard, SettingsEmpty, SettingsIconButton, SettingsPillButton, SettingsTab } from "./settings-layout";
 
 /**
  * Workspace issue status catalog management (MUL-6243).
@@ -161,41 +160,33 @@ export function IssueStatusesTab() {
       title={t(($) => $.issue_statuses.title)}
       description={t(($) => $.issue_statuses.description)}
     >
-      <div className="space-y-4">
-        {/* Offered only once the workspace has something archived. A permanently
-            disabled "Show archived (0)" is a control that can never do
-            anything. */}
-        {archivedCount > 0 && (
-          <label className="flex items-center justify-end gap-2 text-caption text-muted-foreground">
-            {t(($) => $.issue_statuses.show_archived, { count: archivedCount })}
-            <Switch checked={showArchived} onCheckedChange={setShowArchived} />
-          </label>
-        )}
+      {archivedCount > 0 && (
+        <label className="flex items-center justify-end gap-2 px-4 text-caption text-muted-foreground">
+          {t(($) => $.issue_statuses.show_archived, { count: archivedCount })}
+          <Switch checked={showArchived} onCheckedChange={setShowArchived} />
+        </label>
+      )}
 
-        {isLoading ? (
-          <div className="rounded-lg border border-surface-border bg-card px-4 py-12 text-center text-body text-muted-foreground">
-            {t(($) => $.issue_statuses.loading)}
-          </div>
-        ) : (
-          // One list, not seven cards: the categories are sections of a single
-          // workflow, and seven separate borders made them read as seven
-          // unrelated settings.
-          <div className="overflow-hidden rounded-lg border border-surface-border bg-card">
-            {groups.map((group) => (
-              <CategorySection
-                key={group.category}
-                category={group.category}
-                builtIn={group.builtIn}
-                custom={group.custom}
-                canManage={isAdmin}
-                onCreate={() => setCreateCategory(group.category)}
-                onEdit={setEditing}
-                onArchive={setPendingArchive}
-              />
-            ))}
-          </div>
-        )}
-      </div>
+      {isLoading ? (
+        <SettingsCard>
+          <SettingsEmpty title={t(($) => $.issue_statuses.loading)} />
+        </SettingsCard>
+      ) : (
+        <SettingsCard>
+          {groups.map((group) => (
+            <CategorySection
+              key={group.category}
+              category={group.category}
+              builtIn={group.builtIn}
+              custom={group.custom}
+              canManage={isAdmin}
+              onCreate={() => setCreateCategory(group.category)}
+              onEdit={setEditing}
+              onArchive={setPendingArchive}
+            />
+          ))}
+        </SettingsCard>
+      )}
 
       <StatusEditorDialog
         open={createCategory !== null}
@@ -276,30 +267,18 @@ function CategorySection({
   const canReorder = canManage && sortableIds.length > 1;
 
   return (
-    <section className="border-b border-surface-border last:border-b-0">
+    <div>
       {/* Label plus the one action the header owns. The category glyph is the
           same glyph the built-in row renders directly below it, so it said
           nothing the eye had not already read. */}
-      <div className="flex items-center justify-between gap-2 bg-muted/20 px-4 py-1.5">
-        <span className="text-caption font-medium text-muted-foreground">
+      <div className="flex items-center justify-between gap-2 px-4 py-2">
+        <span className="text-body font-semibold text-muted-foreground">
           {labelOf(category)}
         </span>
         {canManage && (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={t(($) => $.issue_statuses.add)}
-                  onClick={onCreate}
-                >
-                  <Plus className="size-4" />
-                </Button>
-              }
-            />
-            <TooltipContent>{t(($) => $.issue_statuses.add)}</TooltipContent>
-          </Tooltip>
+          <SettingsPillButton onClick={onCreate} aria-label={t(($) => $.issue_statuses.add)}>
+            {t(($) => $.issue_statuses.add)}
+          </SettingsPillButton>
         )}
       </div>
 
@@ -326,7 +305,7 @@ function CategorySection({
           </SortableContext>
         </DndContext>
       </div>
-    </section>
+    </div>
   );
 }
 
@@ -430,13 +409,11 @@ function CustomStatusRow({
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
-              <Button
-                variant="ghost"
-                size="icon-sm"
+              <SettingsIconButton
                 aria-label={t(($) => $.issue_statuses.actions.open, { name: entry.name })}
               >
                 <MoreHorizontal className="size-4" />
-              </Button>
+              </SettingsIconButton>
             }
           />
           <DropdownMenuContent align="end">

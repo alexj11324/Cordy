@@ -11,7 +11,6 @@ import {
   MoreHorizontal,
   Pencil,
   Plus,
-  Search,
   Trash2,
   TriangleAlert,
   Zap,
@@ -61,8 +60,17 @@ import {
 } from "@patchbay/ui/components/ui/dropdown-menu";
 import { cn } from "@patchbay/ui/lib/utils";
 import { AgentPicker } from "../../automations/components/pickers/agent-picker";
-import { useLocale, useT } from "../../i18n";
-import { SettingsTab } from "./settings-layout";
+import { useT } from "../../i18n";
+import {
+  SettingsCard,
+  SettingsEmpty,
+  SettingsIconButton,
+  SettingsListRow,
+  SettingsPillButton,
+  SettingsSearchField,
+  SettingsSection,
+  SettingsTab,
+} from "./settings-layout";
 
 // Quick Actions catalog (MUL-5465).
 //
@@ -187,7 +195,6 @@ function toFormState(action: QuickAction): FormState {
 
 export function QuickActionsTab() {
   const { t } = useT("settings");
-  const locale = useLocale();
   const wsId = useWorkspaceId();
   const { data: actions = [], isLoading } = useQuery(quickActionListOptions(wsId, true));
 
@@ -248,66 +255,45 @@ export function QuickActionsTab() {
     <SettingsTab
       title={t(($) => $.quick_actions.title)}
       description={t(($) => $.quick_actions.description)}
+      action={
+        <SettingsPillButton icon={Plus} active onClick={() => setCreating(true)}>
+          {t(($) => $.quick_actions.add)}
+        </SettingsPillButton>
+      }
     >
-      <div className="space-y-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="relative w-full sm:max-w-sm">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder={t(($) => $.quick_actions.search_placeholder)}
-              className="pl-9"
-            />
-          </div>
-          <Button className="gap-2" onClick={() => setCreating(true)}>
-            <Plus className="size-4" />
-            {t(($) => $.quick_actions.add)}
-          </Button>
-        </div>
-
-        <div className="overflow-hidden rounded-lg border border-surface-border bg-card">
-          <div className="hidden grid-cols-[minmax(10rem,1fr)_minmax(9rem,1fr)_6rem_5rem_7rem_2rem] gap-4 border-b border-surface-border bg-muted/20 px-4 py-2.5 text-caption font-medium text-muted-foreground md:grid">
-            <span>{t(($) => $.quick_actions.columns.name)}</span>
-            <span>{t(($) => $.quick_actions.columns.target)}</span>
-            <span>{t(($) => $.quick_actions.columns.visibility)}</span>
-            <span>{t(($) => $.quick_actions.columns.usage)}</span>
-            <span>{t(($) => $.quick_actions.columns.updated)}</span>
-            <span />
-          </div>
-
+      <SettingsSection
+        action={
+          <SettingsSearchField
+            value={query}
+            onValueChange={setQuery}
+            placeholder={t(($) => $.quick_actions.search_placeholder)}
+            className="w-full sm:w-52"
+          />
+        }
+      >
+        <SettingsCard>
           {isLoading ? (
-            <div className="px-4 py-12 text-center text-body text-muted-foreground">
-              {t(($) => $.quick_actions.loading)}
-            </div>
+            <SettingsEmpty title={t(($) => $.quick_actions.loading)} />
           ) : filtered.length === 0 ? (
-            <div className="px-4 py-12 text-center">
-              <Zap className="mx-auto size-6 text-faint-foreground" />
-              <p className="mt-3 text-body font-medium">
-                {query
+            <SettingsEmpty
+              title={
+                query
                   ? t(($) => $.quick_actions.no_results)
-                  : t(($) => $.quick_actions.empty_title)}
-              </p>
-              {!query ? (
-                <p className="mx-auto mt-1 max-w-sm text-caption text-muted-foreground">
-                  {t(($) => $.quick_actions.empty_hint)}
-                </p>
-              ) : null}
-            </div>
+                  : t(($) => $.quick_actions.empty_title)
+              }
+              description={!query ? t(($) => $.quick_actions.empty_hint) : undefined}
+            />
           ) : (
-            <div className="divide-y divide-surface-border">
-              {filtered.map((action) => {
-                const stale = isStale(action);
-                return (
-                  <div
-                    key={action.id}
-                    className={cn(
-                      "grid gap-2 px-4 py-3 md:grid-cols-[minmax(10rem,1fr)_minmax(9rem,1fr)_6rem_5rem_7rem_2rem] md:items-center md:gap-4",
-                      action.status !== "active" && "opacity-60",
-                    )}
-                  >
+            filtered.map((action) => {
+              const stale = isStale(action);
+              return (
+                <SettingsListRow
+                  key={action.id}
+                  className={action.status !== "active" ? "opacity-60" : undefined}
+                >
+                  <Zap className="size-3.5 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0 flex-1">
                     <div className="flex min-w-0 items-center gap-2">
-                      <Zap className="size-3.5 shrink-0 text-muted-foreground" />
                       <span className="truncate text-body font-medium">{action.name}</span>
                       {action.status !== "active" ? (
                         <Badge variant="outline" className="shrink-0 font-normal">
@@ -315,71 +301,66 @@ export function QuickActionsTab() {
                         </Badge>
                       ) : null}
                     </div>
-                    <div className="min-w-0 truncate text-caption text-muted-foreground md:text-body">
+                    <p className="truncate text-caption text-muted-foreground">
                       <TargetLine action={action} t={t} />
-                    </div>
-                    <div className="min-w-0">
-                      <VisibilityBadge action={action} t={t} />
-                    </div>
-                    <span
-                      className={cn(
-                        "text-caption tabular-nums text-muted-foreground md:text-body",
-                        stale && "text-warning",
-                      )}
-                    >
-                      {action.use_count === 0
-                        ? t(($) => $.quick_actions.never_used)
-                        : t(($) => $.quick_actions.used_count, { count: action.use_count })}
-                    </span>
-                    <span className="text-caption text-muted-foreground">
-                      {new Date(action.updated_at).toLocaleDateString(locale)}
-                    </span>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        render={
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            aria-label={t(($) => $.quick_actions.actions_open, { name: action.name })}
-                          >
-                            <MoreHorizontal className="size-4" />
-                          </Button>
-                        }
-                      />
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => setEditing(action)}>
-                          <Pencil className="size-4" />
-                          {t(($) => $.quick_actions.edit)}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => void handleArchiveToggle(action)}>
-                          {action.status === "active" ? (
-                            <>
-                              <Archive className="size-4" />
-                              {t(($) => $.quick_actions.archive)}
-                            </>
-                          ) : (
-                            <>
-                              <ArchiveRestore className="size-4" />
-                              {t(($) => $.quick_actions.unarchive)}
-                            </>
-                          )}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          variant="destructive"
-                          onClick={() => setDeleteTarget(action)}
-                        >
-                          <Trash2 className="size-4" />
-                          {t(($) => $.quick_actions.delete)}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    </p>
                   </div>
-                );
-              })}
-            </div>
+                  <div className="hidden shrink-0 md:block">
+                    <VisibilityBadge action={action} t={t} />
+                  </div>
+                  <span
+                    className={cn(
+                      "hidden shrink-0 text-caption tabular-nums text-muted-foreground md:inline",
+                      stale && "text-warning",
+                    )}
+                  >
+                    {action.use_count === 0
+                      ? t(($) => $.quick_actions.never_used)
+                      : t(($) => $.quick_actions.used_count, { count: action.use_count })}
+                  </span>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      render={
+                        <SettingsIconButton
+                          aria-label={t(($) => $.quick_actions.actions_open, { name: action.name })}
+                        >
+                          <MoreHorizontal className="size-4" />
+                        </SettingsIconButton>
+                      }
+                    />
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => setEditing(action)}>
+                        <Pencil className="size-4" />
+                        {t(($) => $.quick_actions.edit)}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => void handleArchiveToggle(action)}>
+                        {action.status === "active" ? (
+                          <>
+                            <Archive className="size-4" />
+                            {t(($) => $.quick_actions.archive)}
+                          </>
+                        ) : (
+                          <>
+                            <ArchiveRestore className="size-4" />
+                            {t(($) => $.quick_actions.unarchive)}
+                          </>
+                        )}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onClick={() => setDeleteTarget(action)}
+                      >
+                        <Trash2 className="size-4" />
+                        {t(($) => $.quick_actions.delete)}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </SettingsListRow>
+              );
+            })
           )}
-        </div>
-      </div>
+        </SettingsCard>
+      </SettingsSection>
 
       <QuickActionDialog
         open={creating || editing !== null}
