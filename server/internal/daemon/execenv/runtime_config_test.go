@@ -53,7 +53,7 @@ func TestSubIssueCreationSectionPresentForIssueRuns(t *testing.T) {
 				// plus the skill pointer; the skill side of the contract is
 				// asserted in internal/service
 				// (TestWorkingOnIssuesSkillCoversIssueLoopContracts).
-				"`--status todo` starts an agent-assigned child immediately",
+				"`--status todo` starts a child with an agent/team executor immediately",
 				"`--status backlog` parks it",
 				"`--stage <N>` groups children into ordered stages",
 				"read the `patchbay-working-on-issues` skill",
