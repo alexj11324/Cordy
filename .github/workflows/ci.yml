@@ -36,10 +36,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Test CI triage contract
+        run: node --test scripts/ci-triage-contract.test.mjs
+
       - name: Filter paths
         id: filter
         uses: dorny/paths-filter@v3
         with:
+          # Pull requests use GitHub's changed-file API and ignore this input.
+          # On main pushes, explicitly comparing the branch to its previous
+          # commit lets the post-merge run reuse the same path triage instead
+          # of unconditionally repeating every expensive validation lane.
+          base: ${{ github.ref }}
           # apps/docs is built by the frontend turbo run. apps/mobile has its
           # own mobile-verify workflow. Everything else
           # the frontend job touches is listed here; bias toward
@@ -135,8 +148,10 @@ jobs:
 
       - name: Decide
         id: decide
-        # Always run everything on push to main (full validation); on
-        # pull_request, run only the areas whose paths changed.
+        # Pull requests and post-merge main pushes both run only the areas
+        # whose paths changed. Main remains protected by strict, up-to-date PR
+        # checks, while the production workflow still builds and verifies the
+        # complete exact-SHA image set after this workflow succeeds.
         # The gated jobs themselves always run and report success — their
         # steps are gated on these outputs rather than the job being skipped
         # — so the required "frontend" / "backend" status checks are
@@ -145,26 +160,21 @@ jobs:
         # goes missing for any OTHER reason (a failed `changes`, a cancelled
         # run) still reports non-success and fails the gate.
         env:
-          EVENT_NAME: ${{ github.event_name }}
           FRONTEND_CHANGED: ${{ steps.filter.outputs.frontend }}
           BACKEND_CHANGED: ${{ steps.filter.outputs.backend }}
           SQLC_CHANGED: ${{ steps.filter.outputs.sqlc }}
         run: |
-          if [ "$EVENT_NAME" != "pull_request" ] || [ "$FRONTEND_CHANGED" = "true" ]; then
-            echo "frontend=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "frontend=false" >> "$GITHUB_OUTPUT"
-          fi
-          if [ "$EVENT_NAME" != "pull_request" ] || [ "$BACKEND_CHANGED" = "true" ]; then
-            echo "backend=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "backend=false" >> "$GITHUB_OUTPUT"
-          fi
-          if [ "$EVENT_NAME" != "pull_request" ] || [ "$SQLC_CHANGED" = "true" ]; then
-            echo "sqlc=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "sqlc=false" >> "$GITHUB_OUTPUT"
-          fi
+          for decision in "$FRONTEND_CHANGED" "$BACKEND_CHANGED" "$SQLC_CHANGED"; do
+            if [ "$decision" != "true" ] && [ "$decision" != "false" ]; then
+              echo "::error::path filter returned an invalid decision"
+              exit 1
+            fi
+          done
+          {
+            echo "frontend=$FRONTEND_CHANGED"
+            echo "backend=$BACKEND_CHANGED"
+            echo "sqlc=$SQLC_CHANGED"
+          } >> "$GITHUB_OUTPUT"
 
   sqlc-check:
     needs: changes
