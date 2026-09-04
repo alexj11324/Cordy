@@ -761,8 +761,8 @@ type ListUnassociatedWorkProductsParams struct {
 	WorkspaceID pgtype.UUID `json:"workspace_id"`
 	Kind        string      `json:"kind"`
 	Search      interface{} `json:"search"`
-	Limit       int32       `json:"limit"`
 	Offset      int32       `json:"offset"`
+	Limit       int32       `json:"limit"`
 }
 
 func (q *Queries) ListUnassociatedWorkProducts(ctx context.Context, arg ListUnassociatedWorkProductsParams) ([]WorkProduct, error) {
