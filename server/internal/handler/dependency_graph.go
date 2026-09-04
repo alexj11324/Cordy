@@ -1641,6 +1641,145 @@ func (h *Handler) enqueueDependencyGraphRoots(ctx context.Context, result depend
 	}
 }
 
+type dependencyGraphCancelledIssue struct {
+	previous db.Issue
+	updated  db.Issue
+}
+
+type dependencyGraphCancellation struct {
+	cancelledIssues []dependencyGraphCancelledIssue
+	cancelledTasks  []db.AgentTaskQueue
+}
+
+// cancelDependencyGraphChildren keeps graph retirement's lifecycle side
+// effects in the same transaction as the plan status change. The Rust
+// implementation first locks every non-terminal child, then cancels its task
+// rows, then changes the issue status. Keeping that order here prevents a
+// concurrent issue update or task claim from observing a half-retired graph.
+func (h *Handler) cancelDependencyGraphChildren(
+	ctx context.Context,
+	qtx *db.Queries,
+	workspaceID pgtype.UUID,
+	nodes []db.DependencyGraphNode,
+) (dependencyGraphCancellation, error) {
+	issueIDs := make([]pgtype.UUID, 0, len(nodes))
+	seen := make(map[pgtype.UUID]struct{}, len(nodes))
+	for _, node := range nodes {
+		if !node.IssueID.Valid {
+			return dependencyGraphCancellation{}, dependencyGraphIntegrity("dependency graph node contains an invalid issue id")
+		}
+		if _, ok := seen[node.IssueID]; ok {
+			continue
+		}
+		seen[node.IssueID] = struct{}{}
+		issueIDs = append(issueIDs, node.IssueID)
+	}
+	sort.Slice(issueIDs, func(i, j int) bool {
+		return uuidToString(issueIDs[i]) < uuidToString(issueIDs[j])
+	})
+
+	previous := make([]db.Issue, 0, len(issueIDs))
+	for _, issueID := range issueIDs {
+		issue, err := qtx.LockIssueForDescriptionUpdate(ctx, db.LockIssueForDescriptionUpdateParams{
+			ID:          issueID,
+			WorkspaceID: workspaceID,
+		})
+		if err != nil {
+			if isNotFound(err) {
+				// A graph node can outlive an explicitly deleted issue because the
+				// graph tables intentionally have no foreign keys. There is no
+				// issue state to reconcile in that case; keep retiring the plan.
+				continue
+			}
+			return dependencyGraphCancellation{}, dependencyGraphDatabase("lock dependency graph child issue", err)
+		}
+		category := issuestatus.Effective(ctx, qtx, workspaceID, issue.Status)
+		if category == issuestatus.Done || category == issuestatus.Cancelled {
+			continue
+		}
+		previous = append(previous, issue)
+	}
+
+	cancellation := dependencyGraphCancellation{
+		cancelledIssues: make([]dependencyGraphCancelledIssue, 0, len(previous)),
+		cancelledTasks:  make([]db.AgentTaskQueue, 0),
+	}
+	for _, issue := range previous {
+		cancelled, err := qtx.CancelAgentTasksByIssue(ctx, issue.ID)
+		if err != nil {
+			return dependencyGraphCancellation{}, dependencyGraphDatabase("cancel dependency graph child tasks", err)
+		}
+		cancellation.cancelledTasks = append(cancellation.cancelledTasks, cancelled...)
+	}
+	if err := service.SettleDeliveredDelegatedFailureRecoveries(ctx, qtx, cancellation.cancelledTasks...); err != nil {
+		return dependencyGraphCancellation{}, dependencyGraphDatabase("settle dependency graph child tasks", err)
+	}
+	for _, issue := range previous {
+		updated, err := qtx.UpdateIssueStatus(ctx, db.UpdateIssueStatusParams{
+			ID:          issue.ID,
+			Status:      issuestatus.Cancelled,
+			WorkspaceID: workspaceID,
+		})
+		if err != nil {
+			return dependencyGraphCancellation{}, dependencyGraphDatabase("cancel dependency graph child issue", err)
+		}
+		cancellation.cancelledIssues = append(cancellation.cancelledIssues, dependencyGraphCancelledIssue{
+			previous: issue,
+			updated:  updated,
+		})
+	}
+	return cancellation, nil
+}
+
+// publishDependencyGraphIssueUpdated emits the same issue:updated contract as
+// an ordinary status mutation. Consumers use the flags and previous snapshot
+// to update lists, activity, inbox and subscribers; publishing only a bare
+// issue object would leave those side effects missing after retirement.
+func (h *Handler) publishDependencyGraphIssueUpdated(
+	ctx context.Context,
+	previous db.Issue,
+	updated db.Issue,
+	actorType string,
+	actorID string,
+) {
+	if h.Bus == nil {
+		return
+	}
+	prefix := h.getIssuePrefix(ctx, updated.WorkspaceID)
+	response := issueToResponse(updated, prefix)
+	previousResponse := issueToResponse(previous, prefix)
+	h.fillStatusCategory(ctx, updated.WorkspaceID, &response)
+	h.fillStatusCategory(ctx, previous.WorkspaceID, &previousResponse)
+	h.publish(protocol.EventIssueUpdated, uuidToString(updated.WorkspaceID), actorType, actorID, map[string]any{
+		"issue":               response,
+		"owner_changed":       !actorRefsEqual(previousResponse.OwnerType, previousResponse.OwnerID, response.OwnerType, response.OwnerID),
+		"executor_changed":    !actorRefsEqual(previousResponse.ExecutorType, previousResponse.ExecutorID, response.ExecutorType, response.ExecutorID),
+		"reviewer_changed":    !actorRefsEqual(previousResponse.ReviewerType, previousResponse.ReviewerID, response.ReviewerType, response.ReviewerID),
+		"review_handoff":      false,
+		"status_changed":      previous.Status != updated.Status,
+		"priority_changed":    false,
+		"project_changed":     false,
+		"start_date_changed":  false,
+		"due_date_changed":    false,
+		"description_changed": false,
+		"title_changed":       false,
+		"prev_title":          previous.Title,
+		"prev_executor_type":  textToPtr(previous.ExecutorType),
+		"prev_executor_id":    uuidToPtr(previous.ExecutorID),
+		"prev_owner_type":     textToPtr(previous.OwnerType),
+		"prev_owner_id":       uuidToPtr(previous.OwnerID),
+		"prev_reviewer_type":  textToPtr(previous.ReviewerType),
+		"prev_reviewer_id":    uuidToPtr(previous.ReviewerID),
+		"prev_status":         previous.Status,
+		"prev_priority":       previous.Priority,
+		"prev_start_date":     dateToPtr(previous.StartDate),
+		"prev_due_date":       dateToPtr(previous.DueDate),
+		"prev_description":    textToPtr(previous.Description),
+		"creator_type":        previous.CreatorType,
+		"creator_id":          uuidToString(previous.CreatorID),
+	})
+}
+
 func (h *Handler) ListDependencyGraphs(w http.ResponseWriter, r *http.Request) {
 	wsID := h.resolveWorkspaceID(r)
 	actor, ok := h.dependencyGraphActorForRequest(w, r, wsID)
@@ -1926,6 +2065,19 @@ func (h *Handler) RetireDependencyGraph(w http.ResponseWriter, r *http.Request) 
 		writeDependencyGraphError(w, dependencyGraphConflict("plan_not_active", "dependency graph plan is not active"))
 		return
 	}
+	nodes, err := qtx.ListDependencyGraphNodesByPlan(r.Context(), db.ListDependencyGraphNodesByPlanParams{
+		PlanID:       plan.ID,
+		WorkspaceID:  actor.WorkspaceID,
+	})
+	if err != nil {
+		writeDependencyGraphError(w, dependencyGraphDatabase("list dependency graph child nodes", err))
+		return
+	}
+	cancellation, err := h.cancelDependencyGraphChildren(r.Context(), qtx, actor.WorkspaceID, nodes)
+	if err != nil {
+		writeDependencyGraphError(w, err)
+		return
+	}
 	updated, err := qtx.UpdateDependencyGraphPlanStatus(r.Context(), db.UpdateDependencyGraphPlanStatusParams{ID: planUUID, WorkspaceID: actor.WorkspaceID, Status: "cancelled"})
 	if err != nil {
 		writeDependencyGraphError(w, dependencyGraphDatabase("retire dependency graph plan", err))
@@ -1934,6 +2086,12 @@ func (h *Handler) RetireDependencyGraph(w http.ResponseWriter, r *http.Request) 
 	if err := tx.Commit(r.Context()); err != nil {
 		writeDependencyGraphError(w, dependencyGraphDatabase("commit dependency graph retire", err))
 		return
+	}
+	if h.TaskService != nil && len(cancellation.cancelledTasks) > 0 {
+		h.TaskService.BroadcastCancelledTasks(r.Context(), uuidToString(actor.WorkspaceID), cancellation.cancelledTasks)
+	}
+	for _, issue := range cancellation.cancelledIssues {
+		h.publishDependencyGraphIssueUpdated(r.Context(), issue.previous, issue.updated, actor.Type, uuidToString(actor.ID))
 	}
 	h.publishDependencyGraphUpdated(updated, uuidToString(updated.ParentIssueID), updated.Status, actor.Type, uuidToString(actor.ID), false)
 	response, err := h.dependencyGraphResponseForPlan(r.Context(), updated)

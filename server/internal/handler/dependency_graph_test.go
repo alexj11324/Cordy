@@ -12,6 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/patchbay-ai/patchbay/server/internal/events"
+	"github.com/patchbay-ai/patchbay/server/internal/testutil"
 	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
 )
@@ -304,6 +305,73 @@ func TestListDependencyGraphsReturnsNestedResponses(t *testing.T) {
 	}
 	if found.Readiness.Total != 2 || found.Readiness.Ready != 1 || found.Readiness.Blocked != 1 {
 		t.Fatalf("list: graph readiness = %+v, want total=2 ready=1 blocked=1 (body: %s)", found.Readiness, bodyBytes)
+	}
+}
+
+func TestRetireDependencyGraphCancelsChildrenAndTasksAtomically(t *testing.T) {
+	if testHandler == nil || testPool == nil || dbfx == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+	parentID := dbfx.Issue(t, "graph retirement parent")
+	agentID := dbfx.Agent(t, "graph retirement agent", testRuntimeID)
+	childID := dbfx.Issue(t, "graph retirement child", testutil.Cols{
+		"status":        "in_progress",
+		"executor_type": "agent",
+		"executor_id":   agentID,
+		"parent_issue_id": parentID,
+	})
+	taskID := dbfx.Task(t, agentID, testutil.Cols{
+		"issue_id":   childID,
+		"runtime_id": testRuntimeID,
+		"status":     "waiting_capacity",
+	})
+
+	var planID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO dependency_graph_plan (workspace_id, parent_issue_id, idempotency_key, request_hash, goal, status, created_by_type, created_by_id)
+		VALUES ($1, $2, $3, $4, 'retire graph', 'active', 'member', $5)
+		RETURNING id
+	`, testWorkspaceID, parentID, "test-retire-"+t.Name(), "hash-retire", testUserID).Scan(&planID); err != nil {
+		t.Fatalf("insert retirement plan: %v", err)
+	}
+	t.Cleanup(func() {
+		cleanupCtx := context.Background()
+		_, _ = testPool.Exec(cleanupCtx, `DELETE FROM dependency_graph_node WHERE plan_id = $1`, planID)
+		_, _ = testPool.Exec(cleanupCtx, `DELETE FROM dependency_graph_plan WHERE id = $1`, planID)
+		_, _ = testPool.Exec(cleanupCtx, `DELETE FROM agent_task_queue WHERE id = $1`, taskID)
+		_, _ = testPool.Exec(cleanupCtx, `DELETE FROM issue WHERE id IN ($1, $2)`, parentID, childID)
+		_, _ = testPool.Exec(cleanupCtx, `DELETE FROM agent WHERE id = $1`, agentID)
+	})
+	if _, err := testPool.Exec(ctx, `
+		INSERT INTO dependency_graph_node (plan_id, workspace_id, temp_id, issue_id, title, wave)
+		VALUES ($1, $2, 'child', $3, 'graph retirement child', 0)
+	`, planID, testWorkspaceID, childID); err != nil {
+		t.Fatalf("insert retirement node: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/dependency-graphs/"+planID+"/retire", nil)
+	req.Header.Set("X-User-ID", testUserID)
+	req.Header.Set("X-Workspace-Slug", handlerTestWorkspaceSlug)
+	req = withURLParam(req, "id", planID)
+	w := httptest.NewRecorder()
+	testHandler.RetireDependencyGraph(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("retire: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var planStatus, issueStatus, taskStatus string
+	if err := testPool.QueryRow(ctx, `
+		SELECT plan.status, issue.status, task.status
+		FROM dependency_graph_plan plan
+		JOIN issue ON issue.id = $2
+		JOIN agent_task_queue task ON task.id = $3
+		WHERE plan.id = $1
+	`, planID, childID, taskID).Scan(&planStatus, &issueStatus, &taskStatus); err != nil {
+		t.Fatalf("read retirement state: %v", err)
+	}
+	if planStatus != "cancelled" || issueStatus != "cancelled" || taskStatus != "cancelled" {
+		t.Fatalf("retirement state = plan %q, issue %q, task %q; want all cancelled", planStatus, issueStatus, taskStatus)
 	}
 }
 

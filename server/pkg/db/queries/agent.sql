@@ -740,7 +740,7 @@ WHERE id = sqlc.arg(task_id)
 -- this now; a status flip to cancelled/done no longer does (MUL-4465).
 UPDATE agent_task_queue
 SET status = 'cancelled', completed_at = now(), prepare_lease_expires_at = NULL
-WHERE issue_id = $1 AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
+WHERE issue_id = $1 AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity', 'deferred')
 RETURNING *;
 
 -- name: CancelPendingTasksByIssueAndAgent :many
