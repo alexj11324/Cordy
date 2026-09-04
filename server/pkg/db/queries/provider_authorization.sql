@@ -71,14 +71,14 @@ RETURNING *;
 -- final decision atomically. It never stores bearer tokens or secrets.
 WITH budget_lock AS (
     SELECT pg_advisory_xact_lock(hashtextextended(@budget_lock_key::text, 0))
-), prior_reservations AS (
+), reservation_totals AS (
     SELECT COALESCE(sum(
         CASE
             WHEN event.context->>'provider_request_tokens' ~ '^[0-9]+$'
             THEN (event.context->>'provider_request_tokens')::bigint
             ELSE 0::bigint
         END
-    ), 0)::bigint AS reserved
+    ), 0)::bigint AS total_reserved
     FROM authorization_audit_event event
     CROSS JOIN budget_lock
     WHERE event.workspace_id = @workspace_id
@@ -93,25 +93,25 @@ WITH budget_lock AS (
         CASE
             WHEN @enforce_budget::boolean
              AND @decision::text = 'allow'
-             AND reserved > @budget_limit::bigint - @reservation::bigint
+             AND reservation_totals.total_reserved > @budget_limit::bigint - @reservation::bigint
             THEN 'deny'
             ELSE @decision::text
         END AS decision,
         CASE
             WHEN @enforce_budget::boolean
              AND @decision::text = 'allow'
-             AND reserved > @budget_limit::bigint - @reservation::bigint
+             AND reservation_totals.total_reserved > @budget_limit::bigint - @reservation::bigint
             THEN @budget_exhausted_reason::text
             ELSE @reason::text
         END AS reason,
         CASE
             WHEN @enforce_budget::boolean
              AND @decision::text = 'allow'
-             AND reserved > @budget_limit::bigint - @reservation::bigint
+             AND reservation_totals.total_reserved > @budget_limit::bigint - @reservation::bigint
             THEN 0::bigint
             ELSE @reservation::bigint
         END AS reservation
-    FROM prior_reservations
+    FROM reservation_totals
 )
 INSERT INTO authorization_audit_event (
     id, workspace_id, principal_type, principal_id, on_behalf_of_user_id,

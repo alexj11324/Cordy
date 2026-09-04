@@ -94,14 +94,14 @@ func (q *Queries) CreateAuthorizationAuditEvent(ctx context.Context, arg CreateA
 const createProviderAuthorizationDecision = `-- name: CreateProviderAuthorizationDecision :one
 WITH budget_lock AS (
     SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))
-), prior_reservations AS (
+), reservation_totals AS (
     SELECT COALESCE(sum(
         CASE
             WHEN event.context->>'provider_request_tokens' ~ '^[0-9]+$'
             THEN (event.context->>'provider_request_tokens')::bigint
             ELSE 0::bigint
         END
-    ), 0)::bigint AS reserved
+    ), 0)::bigint AS total_reserved
     FROM authorization_audit_event event
     CROSS JOIN budget_lock
     WHERE event.workspace_id = $2
@@ -116,25 +116,25 @@ WITH budget_lock AS (
         CASE
             WHEN $5::boolean
              AND $6::text = 'allow'
-             AND reserved > $7::bigint - $8::bigint
+             AND reservation_totals.total_reserved > $7::bigint - $8::bigint
             THEN 'deny'
             ELSE $6::text
         END AS decision,
         CASE
             WHEN $5::boolean
              AND $6::text = 'allow'
-             AND reserved > $7::bigint - $8::bigint
+             AND reservation_totals.total_reserved > $7::bigint - $8::bigint
             THEN $9::text
             ELSE $10::text
         END AS reason,
         CASE
             WHEN $5::boolean
              AND $6::text = 'allow'
-             AND reserved > $7::bigint - $8::bigint
+             AND reservation_totals.total_reserved > $7::bigint - $8::bigint
             THEN 0::bigint
             ELSE $8::bigint
         END AS reservation
-	FROM prior_reservations
+	FROM reservation_totals
 )
 INSERT INTO authorization_audit_event (
     id, workspace_id, principal_type, principal_id, on_behalf_of_user_id,
