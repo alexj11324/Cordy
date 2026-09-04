@@ -1651,6 +1651,54 @@ type dependencyGraphCancellation struct {
 	cancelledTasks  []db.AgentTaskQueue
 }
 
+// dependencyGraphChildIssueIDsForDelete returns every graph child owned by a
+// plan affected by deleting issueID. Graph tables intentionally have no
+// foreign keys, so plan/node rows are locked here and removed by DeleteIssue
+// in the same transaction after these children are reconciled.
+func dependencyGraphChildIssueIDsForDelete(
+	ctx context.Context,
+	dbConn dbExecutor,
+	workspaceID pgtype.UUID,
+	issueID pgtype.UUID,
+) ([]pgtype.UUID, error) {
+	rows, err := dbConn.Query(ctx, `
+		SELECT node.issue_id
+		FROM dependency_graph_plan AS plan
+		JOIN dependency_graph_node AS node
+		  ON node.plan_id = plan.id
+		 AND node.workspace_id = plan.workspace_id
+		WHERE plan.workspace_id = $1
+		  AND (
+		      plan.parent_issue_id = $2
+		      OR node.issue_id = $2
+		      OR EXISTS (
+		          SELECT 1
+		          FROM dependency_graph_edge AS edge
+		          WHERE edge.plan_id = plan.id
+		            AND edge.workspace_id = plan.workspace_id
+		            AND (edge.from_issue_id = $2 OR edge.to_issue_id = $2)
+		      )
+		  )
+		  AND node.issue_id <> $2
+		FOR UPDATE OF plan, node`, workspaceID, issueID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	issueIDs := make([]pgtype.UUID, 0)
+	for rows.Next() {
+		var childID pgtype.UUID
+		if err := rows.Scan(&childID); err != nil {
+			return nil, err
+		}
+		issueIDs = append(issueIDs, childID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return issueIDs, nil
+}
+
 // cancelDependencyGraphChildren keeps graph retirement's lifecycle side
 // effects in the same transaction as the plan status change. The Rust
 // implementation first locks every non-terminal child, then cancels its task

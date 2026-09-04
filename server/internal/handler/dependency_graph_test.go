@@ -375,6 +375,78 @@ func TestRetireDependencyGraphCancelsChildrenAndTasksAtomically(t *testing.T) {
 	}
 }
 
+func TestDeleteIssueCleansAffectedDependencyGraph(t *testing.T) {
+	if testHandler == nil || testPool == nil || dbfx == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+	parentID := dbfx.Issue(t, "graph delete parent")
+	agentID := dbfx.Agent(t, "graph delete agent", testRuntimeID)
+	childID := dbfx.Issue(t, "graph delete child", testutil.Cols{
+		"status":          "in_progress",
+		"executor_type":   "agent",
+		"executor_id":     agentID,
+		"parent_issue_id": parentID,
+	})
+	taskID := dbfx.Task(t, agentID, testutil.Cols{
+		"issue_id":   childID,
+		"runtime_id": testRuntimeID,
+		"status":     "waiting_capacity",
+	})
+
+	var planID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO dependency_graph_plan (workspace_id, parent_issue_id, idempotency_key, request_hash, goal, status, created_by_type, created_by_id)
+		VALUES ($1, $2, $3, $4, 'delete graph', 'active', 'member', $5)
+		RETURNING id
+	`, testWorkspaceID, parentID, "test-delete-"+t.Name(), "hash-delete", testUserID).Scan(&planID); err != nil {
+		t.Fatalf("insert delete plan: %v", err)
+	}
+	t.Cleanup(func() {
+		cleanupCtx := context.Background()
+		_, _ = testPool.Exec(cleanupCtx, `DELETE FROM dependency_graph_node WHERE plan_id = $1`, planID)
+		_, _ = testPool.Exec(cleanupCtx, `DELETE FROM dependency_graph_plan WHERE id = $1`, planID)
+		_, _ = testPool.Exec(cleanupCtx, `DELETE FROM agent_task_queue WHERE id = $1`, taskID)
+		_, _ = testPool.Exec(cleanupCtx, `DELETE FROM issue WHERE id IN ($1, $2)`, parentID, childID)
+		_, _ = testPool.Exec(cleanupCtx, `DELETE FROM agent WHERE id = $1`, agentID)
+	})
+	if _, err := testPool.Exec(ctx, `
+		INSERT INTO dependency_graph_node (plan_id, workspace_id, temp_id, issue_id, title, wave)
+		VALUES ($1, $2, 'child', $3, 'graph delete child', 0)
+	`, planID, testWorkspaceID, childID); err != nil {
+		t.Fatalf("insert delete node: %v", err)
+	}
+
+	req := newRequest(http.MethodDelete, "/api/issues/"+parentID, nil)
+	req = withURLParam(req, "id", parentID)
+	w := httptest.NewRecorder()
+	testHandler.DeleteIssue(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("delete: expected 204, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var issueStatus, taskStatus string
+	if err := testPool.QueryRow(ctx, `SELECT status FROM issue WHERE id = $1`, childID).Scan(&issueStatus); err != nil {
+		t.Fatalf("read surviving graph child: %v", err)
+	}
+	if err := testPool.QueryRow(ctx, `SELECT status FROM agent_task_queue WHERE id = $1`, taskID).Scan(&taskStatus); err != nil {
+		t.Fatalf("read cancelled graph task: %v", err)
+	}
+	if issueStatus != "cancelled" || taskStatus != "cancelled" {
+		t.Fatalf("delete cancellation = issue %q, task %q; want both cancelled", issueStatus, taskStatus)
+	}
+	var graphRows int
+	if err := testPool.QueryRow(ctx, `
+		SELECT (SELECT COUNT(*) FROM dependency_graph_plan WHERE id = $1)
+		     + (SELECT COUNT(*) FROM dependency_graph_node WHERE plan_id = $1)
+	`, planID).Scan(&graphRows); err != nil {
+		t.Fatalf("count deleted graph rows: %v", err)
+	}
+	if graphRows != 0 {
+		t.Fatalf("dependency graph rows after parent delete = %d, want 0", graphRows)
+	}
+}
+
 // TestApplyDependencyGraphRoundTripsRolesAndRealtime is the handler-level
 // acceptance for the Rust graph contract. It exercises the durable boundary,
 // not only JSON validation: apply creates role-explicit child issues/nodes,

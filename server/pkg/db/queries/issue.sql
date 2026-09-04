@@ -404,12 +404,57 @@ cleared_coordination_outbox AS (
       AND issue_id IN (SELECT target.id FROM target)
       AND (SELECT count(*) FROM cleared_coordination_assignments) >= 0
     RETURNING id
+),
+affected_dependency_graph_plans AS (
+    SELECT plan.id
+    FROM dependency_graph_plan AS plan
+    WHERE plan.workspace_id = $2
+      AND plan.parent_issue_id IN (SELECT target.id FROM target)
+    UNION
+    SELECT node.plan_id
+    FROM dependency_graph_node AS node
+    WHERE node.workspace_id = $2
+      AND node.issue_id IN (SELECT target.id FROM target)
+    UNION
+    SELECT edge.plan_id
+    FROM dependency_graph_edge AS edge
+    WHERE edge.workspace_id = $2
+      AND (edge.from_issue_id IN (SELECT target.id FROM target)
+           OR edge.to_issue_id IN (SELECT target.id FROM target))
+),
+cleared_dependency_graph_issue_created_outbox AS (
+    DELETE FROM dependency_graph_issue_created_outbox
+    WHERE workspace_id = $2
+      AND plan_id IN (SELECT id FROM affected_dependency_graph_plans)
+    RETURNING id
+),
+cleared_dependency_graph_edges AS (
+    DELETE FROM dependency_graph_edge
+    WHERE workspace_id = $2
+      AND plan_id IN (SELECT id FROM affected_dependency_graph_plans)
+    RETURNING id
+),
+cleared_dependency_graph_nodes AS (
+    DELETE FROM dependency_graph_node
+    WHERE workspace_id = $2
+      AND plan_id IN (SELECT id FROM affected_dependency_graph_plans)
+    RETURNING id
+),
+cleared_dependency_graph_plans AS (
+    DELETE FROM dependency_graph_plan
+    WHERE workspace_id = $2
+      AND id IN (SELECT id FROM affected_dependency_graph_plans)
+    RETURNING id
 )
 DELETE FROM issue
 WHERE issue.id IN (SELECT target.id FROM target)
   AND (SELECT count(*) FROM cleared_attachments) >= 0
   AND (SELECT count(*) FROM cleared_work_product_relations) >= 0
-  AND (SELECT count(*) FROM cleared_coordination_outbox) >= 0;
+  AND (SELECT count(*) FROM cleared_coordination_outbox) >= 0
+  AND (SELECT count(*) FROM cleared_dependency_graph_issue_created_outbox) >= 0
+  AND (SELECT count(*) FROM cleared_dependency_graph_edges) >= 0
+  AND (SELECT count(*) FROM cleared_dependency_graph_nodes) >= 0
+  AND (SELECT count(*) FROM cleared_dependency_graph_plans) >= 0;
 
 -- name: ListOpenIssues :many
 -- See ListIssues for the semantics of involves_user_id (mirrors the 4-branch

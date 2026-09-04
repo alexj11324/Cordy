@@ -4518,7 +4518,6 @@ func (h *Handler) DeleteIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.TaskService.CancelTasksForIssue(r.Context(), issue.ID)
 	// Fail any linked automation runs before delete (ON DELETE SET NULL clears issue_id).
 	_ = h.AutomationService.FailAutomationRunsByIssue(r.Context(), issue.ID)
 
@@ -4531,6 +4530,12 @@ func (h *Handler) DeleteIssue(w http.ResponseWriter, r *http.Request) {
 	h.deleteS3Objects(r.Context(), deleteResult.AttachmentURLs)
 	userID := requestUserID(r)
 	actorType, actorID := h.resolveActor(r, userID, uuidToString(issue.WorkspaceID))
+	if h.TaskService != nil && len(deleteResult.CancelledTasks) > 0 {
+		h.TaskService.BroadcastCancelledTasks(r.Context(), uuidToString(issue.WorkspaceID), deleteResult.CancelledTasks)
+	}
+	for _, cancelled := range deleteResult.CancelledIssues {
+		h.publishDependencyGraphIssueUpdated(r.Context(), cancelled.previous, cancelled.updated, actorType, actorID)
+	}
 	// Always emit the resolved UUID — frontend caches key by UUID, so an
 	// identifier-style payload ("MUL-123") would leave stale entries on
 	// other clients after an identifier-path delete.
@@ -4549,6 +4554,8 @@ func (h *Handler) DeleteIssue(w http.ResponseWriter, r *http.Request) {
 type issueDeleteResult struct {
 	AttachmentURLs   []string
 	DetachedChildren []db.Issue
+	CancelledIssues  []dependencyGraphCancelledIssue
+	CancelledTasks   []db.AgentTaskQueue
 }
 
 func (h *Handler) deleteIssueAndCollectAttachmentURLs(ctx context.Context, issue db.Issue, excludedIssueIDs []pgtype.UUID) (issueDeleteResult, error) {
@@ -4573,6 +4580,28 @@ func (h *Handler) deleteIssuesAndCollectAttachmentURLs(ctx context.Context, issu
 		}); err != nil {
 			return issueDeleteResult{}, fmt.Errorf("lock issue for delete: %w", err)
 		}
+		childIDs, err := dependencyGraphChildIssueIDsForDelete(ctx, tx, issue.WorkspaceID, issue.ID)
+		if err != nil {
+			return issueDeleteResult{}, fmt.Errorf("list dependency graph children for delete: %w", err)
+		}
+		childNodes := make([]db.DependencyGraphNode, 0, len(childIDs))
+		for _, childID := range childIDs {
+			childNodes = append(childNodes, db.DependencyGraphNode{IssueID: childID})
+		}
+		cancellation, err := h.cancelDependencyGraphChildren(ctx, qtx, issue.WorkspaceID, childNodes)
+		if err != nil {
+			return issueDeleteResult{}, fmt.Errorf("cancel dependency graph children for delete: %w", err)
+		}
+		result.CancelledIssues = append(result.CancelledIssues, cancellation.cancelledIssues...)
+		result.CancelledTasks = append(result.CancelledTasks, cancellation.cancelledTasks...)
+		cancelled, err := qtx.CancelAgentTasksByIssue(ctx, issue.ID)
+		if err != nil {
+			return issueDeleteResult{}, fmt.Errorf("cancel issue tasks: %w", err)
+		}
+		if err := service.SettleDeliveredDelegatedFailureRecoveries(ctx, qtx, cancelled...); err != nil {
+			return issueDeleteResult{}, fmt.Errorf("settle issue tasks: %w", err)
+		}
+		result.CancelledTasks = append(result.CancelledTasks, cancelled...)
 		detached, err := qtx.DetachDirectChildIssues(ctx, db.DetachDirectChildIssuesParams{
 			WorkspaceID: issue.WorkspaceID, ParentIssueID: issue.ID, ExcludedIssueIds: excludedIssueIDs,
 		})
@@ -5163,7 +5192,6 @@ func (h *Handler) BatchDeleteIssues(w http.ResponseWriter, r *http.Request) {
 		seenIssueIDs[issueUUID] = struct{}{}
 		issues = append(issues, issue)
 		excludedIDs = append(excludedIDs, issue.ID)
-		h.TaskService.CancelTasksForIssue(r.Context(), issue.ID)
 		_ = h.AutomationService.FailAutomationRunsByIssue(r.Context(), issue.ID)
 	}
 	deleteResult, err := h.deleteIssuesAndCollectAttachmentURLs(r.Context(), issues, excludedIDs)
@@ -5174,6 +5202,12 @@ func (h *Handler) BatchDeleteIssues(w http.ResponseWriter, r *http.Request) {
 	}
 	h.deleteS3Objects(r.Context(), deleteResult.AttachmentURLs)
 	actorType, actorID := h.resolveActor(r, userID, workspaceID)
+	if h.TaskService != nil && len(deleteResult.CancelledTasks) > 0 {
+		h.TaskService.BroadcastCancelledTasks(r.Context(), workspaceID, deleteResult.CancelledTasks)
+	}
+	for _, cancelled := range deleteResult.CancelledIssues {
+		h.publishDependencyGraphIssueUpdated(r.Context(), cancelled.previous, cancelled.updated, actorType, actorID)
+	}
 	for _, issue := range issues {
 		h.publish(protocol.EventIssueDeleted, workspaceID, actorType, actorID, map[string]any{"issue_id": uuidToString(issue.ID)})
 	}
