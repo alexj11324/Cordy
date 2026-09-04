@@ -145,13 +145,13 @@ func activeThreadID(triggerThreadID, triggerCommentID string) string {
 //     `?` before the bytes reach `patchbay.exe` (#2198 Chinese, #2236
 //     Chinese, #2376 Cyrillic).
 //     2. On any host, when the model emits a multi-flag command (e.g.
-//     `patchbay issue create --title ... --assignee-id ... --project ...`)
+//     `patchbay issue create --title ... --executor-id ... --project ...`)
 //     the bash heredoc/flag boundary is fragile: a `BODY \` "terminator
 //     with trailing token" is not recognised as the heredoc end, so flag
 //     lines after it are swallowed into the description; or a clean
-//     terminator turns the trailing `--assignee ...` line into a separate
+//     terminator turns the trailing `--executor ...` line into a separate
 //     shell statement that fails while the create already succeeded with
-//     no assignee. Both paths exit 0 with silently dropped flags. Github
+//     no executor. Both paths exit 0 with silently dropped flags. Github
 //     issue #4182 documents two confirmed cases (OXY-78, OXY-76).
 //
 // The single safe path is therefore: write the body to a UTF-8 file with

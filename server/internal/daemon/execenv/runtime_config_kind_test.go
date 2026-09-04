@@ -226,6 +226,9 @@ func TestSlimQuickCreateAvailableCommands(t *testing.T) {
 	for _, want := range []string{
 		"## Available Commands",
 		"patchbay issue create --title",
+		"--owner-id <uuid>",
+		"--executor-id <uuid>",
+		"--reviewer-id <uuid>",
 		"`patchbay --help`",
 	} {
 		if !strings.Contains(out, want) {
@@ -250,6 +253,9 @@ func TestSlimQuickCreateAvailableCommands(t *testing.T) {
 		if strings.Contains(out, banned) {
 			t.Errorf("quick_create slim Available Commands should NOT advertise %q (hard guardrails forbid the call)", banned)
 		}
+	}
+	if strings.Contains(out, "--assignee") {
+		t.Fatalf("quick_create brief still advertises aggregate assignee flags")
 	}
 }
 

@@ -1470,6 +1470,9 @@ func TestInjectRuntimeConfigAvailableCommandsCoreOnly(t *testing.T) {
 		"patchbay issue create --title",
 		"patchbay issue update <id>",
 		"patchbay issue assign <id>",
+		"--owner-id <uuid>",
+		"--executor-id <uuid>",
+		"--reviewer-id <uuid>",
 		"--no-start",
 		"--description-file <path>",
 		"--parent \"\"",
@@ -1481,6 +1484,9 @@ func TestInjectRuntimeConfigAvailableCommandsCoreOnly(t *testing.T) {
 		if !strings.Contains(s, want) {
 			t.Errorf("AGENTS.md missing core command/help text %q\n---\n%s", want, s)
 		}
+	}
+	if strings.Contains(s, "--assignee") {
+		t.Fatalf("AGENTS.md still advertises aggregate assignee flags\n---\n%s", s)
 	}
 
 	// Team maintenance is team-leader surface and is gated on that (MUL-5442):

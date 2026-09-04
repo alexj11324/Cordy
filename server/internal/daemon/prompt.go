@@ -186,7 +186,7 @@ func buildActiveSiblingRunsBlock(currentIssueID string, runs []ActiveSiblingRunD
 	b.WriteString("## Active sibling runs\n\n")
 	b.WriteString("This agent has other in-flight issue tasks. Before starting overlapping code or PR work, check this issue's comment history for a claim or handoff")
 	fmt.Fprintf(&b, " (`patchbay issue comment list %s --roots-only --summary --compact --output json`)", currentIssueID)
-	b.WriteString(" and inspect relevant siblings with the `run-messages` commands below — coordinate with existing work instead of opening a second PR. For writes that only record ownership or status of work already underway, use `--no-start` on `patchbay issue assign`/`update`/`status`.\n\n")
+	b.WriteString(" and inspect relevant siblings with the `run-messages` commands below — coordinate with existing work instead of opening a second PR. For writes that only record an executor or status of work already underway, use `--no-start` on `patchbay issue assign`/`update`/`status`.\n\n")
 	for _, run := range runs {
 		issueLabel := run.IssueIdentifier
 		if issueLabel == "" {
@@ -316,10 +316,10 @@ func buildQuickCreatePrompt(task Task) string {
 		b.WriteString("- **priority**: one of `urgent`, `high`, `medium`, `low`, or omit. Map P0/P1 → urgent/high; \"asap\" → urgent. If unspecified, omit.\n\n")
 	}
 
-	// assignee
-	b.WriteString("- **assignee**:\n")
-	b.WriteString("    - When the user names someone (\"assign to X\" / \"@X\"), call `patchbay workspace member list --output json`, `patchbay agent list --output json`, and `patchbay team list --output json` and find the matching entity by display name. Teams are first-class assignees too — a team name (e.g. \"Super Human\") routes work to the team leader, who then delegates. On a clean unambiguous match, prefer `--assignee-id <uuid>` using the `user_id` (member) or `id` (agent or team) from that JSON — UUID matching is exact and robust to name collisions in workspaces with overlapping names. `--assignee <name>` (fuzzy) is acceptable as a fallback when names are unambiguous. On no match or ambiguous match, do NOT pass either flag — instead append a final line to the description: `Unrecognized assignee: X`.\n")
-	b.WriteString("    - Treat bare @-routing as an assignee directive even when the user did not write the English word \"assign\". This includes Chinese imperatives like `让 @独立团 review 这个 PR`, `给 @X 处理`, or `交给 @X`; strip the leading `@`/`＠` before matching display names. Do not keep that routing wrapper or `@Name` in the description unless it is a true CC-style notification rather than ownership. If the matched entity is a team, pass the team's `id` as `--assignee-id`, not the leader agent's id.\n")
+	// explicit issue roles
+	b.WriteString("- **owner / executor**:\n")
+	b.WriteString("    - When the user names someone (\"assign to X\" / \"@X\"), call `patchbay workspace member list --output json`, `patchbay agent list --output json`, and `patchbay team list --output json` and find the matching entity by display name. A member is the accountable owner: pass `--owner-id <user_id>` (or `--owner <name>`). An agent or team is the execution target: pass `--executor-id <id>` (or `--executor <name>`). A team executor routes work to its leader, who then delegates. UUID flags are preferred because they stay exact when names overlap. On no match or ambiguity, do NOT pass a role flag; instead append a final line to the description: `Unrecognized routing target: X`.\n")
+	b.WriteString("    - Treat bare @-routing as an owner/executor directive even when the user did not write the English word \"assign\". This includes Chinese imperatives like `让 @独立团 review 这个 PR`, `给 @X 处理`, or `交给 @X`; strip the leading `@`/`＠` before matching display names. Do not keep that routing wrapper or `@Name` in the description unless it is a true CC-style notification. If the matched entity is a team, pass the team's `id` as `--executor-id`, not the leader agent's id.\n")
 	agentID := ""
 	agentName := ""
 	if task.Agent != nil {
@@ -330,19 +330,19 @@ func buildQuickCreatePrompt(task Task) string {
 	case task.TeamID != "":
 		// The user opened quick-create with a TEAM selected. The task
 		// runs on the team's leader agent, but the team is the expected
-		// owner — assigning to the leader would mask the team's
+		// executor — assigning to the leader would mask the team's
 		// delegation flow. Always point the default at the team UUID.
 		if task.TeamName != "" {
-			fmt.Fprintf(&b, "    - When the user did NOT name an assignee, default to the picker TEAM %q: pass `--assignee-id %q` (the team's UUID). The user opened quick-create with the team selected; you (the leader agent) are running on the team's behalf, so the team — not you — is the expected owner. Never leave the issue unassigned, and do not assign it to your own agent UUID.\n\n", task.TeamName, task.TeamID)
+			fmt.Fprintf(&b, "    - When the user did NOT name a routing target, default to the picker TEAM %q: pass `--executor-id %q` (the team's UUID). The user opened quick-create with the team selected; you (the leader agent) are running on the team's behalf, so the team — not you — is the expected executor. Never leave the issue without an executor, and do not assign it to your own agent UUID.\n\n", task.TeamName, task.TeamID)
 		} else {
-			fmt.Fprintf(&b, "    - When the user did NOT name an assignee, default to the picker TEAM: pass `--assignee-id %q` (the team's UUID). The user opened quick-create with the team selected; you (the leader agent) are running on the team's behalf, so the team — not you — is the expected owner. Never leave the issue unassigned, and do not assign it to your own agent UUID.\n\n", task.TeamID)
+			fmt.Fprintf(&b, "    - When the user did NOT name a routing target, default to the picker TEAM: pass `--executor-id %q` (the team's UUID). The user opened quick-create with the team selected; you (the leader agent) are running on the team's behalf, so the team — not you — is the expected executor. Never leave the issue without an executor, and do not assign it to your own agent UUID.\n\n", task.TeamID)
 		}
 	case agentID != "":
-		fmt.Fprintf(&b, "    - When the user did NOT name an assignee, default to YOURSELF: pass `--assignee-id %q` (your agent UUID). The picker agent is the expected owner because the user opened quick-create with you selected — never leave the issue unassigned. Use the UUID flag, not `--assignee <name>`, so the assignment is unambiguous even when other agents share part of your name.\n\n", agentID)
+		fmt.Fprintf(&b, "    - When the user did NOT name a routing target, default to YOURSELF: pass `--executor-id %q` (your agent UUID). The picker agent is the expected executor because the user opened quick-create with you selected — never leave the issue without an executor. Use the UUID flag, not `--executor <name>`, so the assignment is unambiguous even when other agents share part of your name.\n\n", agentID)
 	case agentName != "":
-		fmt.Fprintf(&b, "    - When the user did NOT name an assignee, default to YOURSELF: pass `--assignee %q`. The picker agent is the expected owner because the user opened quick-create with you selected — never leave the issue unassigned.\n\n", agentName)
+		fmt.Fprintf(&b, "    - When the user did NOT name a routing target, default to YOURSELF: pass `--executor %q`. The picker agent is the expected executor because the user opened quick-create with you selected — never leave the issue without an executor.\n\n", agentName)
 	default:
-		b.WriteString("    - When the user did NOT name an assignee, default to YOURSELF (the picker agent): pass `--assignee-id <your agent UUID>` (preferred) or `--assignee <your agent name>`. Never leave the issue unassigned.\n\n")
+		b.WriteString("    - When the user did NOT name a routing target, default to YOURSELF (the picker agent): pass `--executor-id <your agent UUID>` (preferred) or `--executor <your agent name>`. Never leave the issue without an executor.\n\n")
 	}
 
 	if task.QuickCreateDueDate != "" {

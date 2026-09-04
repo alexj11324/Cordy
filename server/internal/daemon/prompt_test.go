@@ -110,31 +110,36 @@ func TestIssuePromptsKeepSourceContextRuleOutOfPerTurnMessage(t *testing.T) {
 	}
 }
 
-// TestBuildQuickCreatePromptAssigneeIncludesTeams locks in the MUL-2165
-// fix: the assignee-resolution rules must tell the agent to consult the
+// TestBuildQuickCreatePromptRoleRoutingIncludesTeams locks in the MUL-2165
+// fix: role-routing rules must tell the agent to consult the
 // team list alongside members and agents. Before this, a quick-create
-// input like "assign to <TeamName>" silently fell through to
-// "Unrecognized assignee" because teams were never queried.
-func TestBuildQuickCreatePromptAssigneeIncludesTeams(t *testing.T) {
+// input like "assign to <TeamName>" silently fell through to an unrecognized
+// routing target because teams were never queried.
+func TestBuildQuickCreatePromptRoleRoutingIncludesTeams(t *testing.T) {
 	out := buildQuickCreatePrompt(Task{QuickCreatePrompt: "fix the login button color"})
 	mustContain := []string{
 		"patchbay team list",
-		"Teams are first-class assignees",
-		"Treat bare @-routing as an assignee directive",
+		"A member is the accountable owner",
+		"--owner-id <user_id>",
+		"--executor-id <id>",
+		"Treat bare @-routing as an owner/executor directive",
 		"让 @独立团 review 这个 PR",
-		"pass the team's `id` as `--assignee-id`",
+		"pass the team's `id` as `--executor-id`",
 	}
 	for _, s := range mustContain {
 		if !strings.Contains(out, s) {
-			t.Errorf("buildQuickCreatePrompt assignee block missing %q\n--- output ---\n%s", s, out)
+			t.Errorf("buildQuickCreatePrompt role block missing %q\n--- output ---\n%s", s, out)
 		}
+	}
+	if strings.Contains(out, "--assignee") {
+		t.Fatalf("quick-create prompt still advertises aggregate assignee flags:\n%s", out)
 	}
 }
 
 // TestBuildQuickCreatePromptTeamDefaultsToTeam locks in the MUL-2203
 // fix: when the picker was a team, the task runs on the team's leader
-// agent, but the default assignee for issues created by this run must
-// point at the TEAM's UUID — not the leader agent's UUID. The previous
+// agent, but the default executor for issues created by this run must point at
+// the TEAM's UUID — not the leader agent's UUID. The previous
 // "default to YOURSELF" instruction made team-created issues land under
 // the leader, hiding them from the team's delegation flow.
 func TestBuildQuickCreatePromptTeamDefaultsToTeam(t *testing.T) {
@@ -150,12 +155,12 @@ func TestBuildQuickCreatePromptTeamDefaultsToTeam(t *testing.T) {
 		TeamName:         teamName,
 	})
 
-	// The default-assignee instruction must point at the team UUID.
-	if !strings.Contains(out, "--assignee-id \""+teamID+"\"") {
+	// The default-executor instruction must point at the team UUID.
+	if !strings.Contains(out, "--executor-id \""+teamID+"\"") {
 		t.Errorf("buildQuickCreatePrompt with TeamID must default to the team's UUID, got:\n%s", out)
 	}
 	// And it must NOT tell the agent to default to itself (the leader).
-	if strings.Contains(out, "--assignee-id \""+leaderID+"\"") {
+	if strings.Contains(out, "--executor-id \""+leaderID+"\"") {
 		t.Errorf("buildQuickCreatePrompt with TeamID must NOT default to the leader agent's UUID, got:\n%s", out)
 	}
 	// The team name should appear in the instruction so the agent has

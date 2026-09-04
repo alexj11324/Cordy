@@ -63,7 +63,7 @@ func TestBuildCommentReplyInstructionsCodexLinux(t *testing.T) {
 //     model retried forever.
 //   - GitHub #4182 (OXY-78 / OXY-76): an agent wrapped extra flags around an
 //     `--content-stdin` HEREDOC; the bash heredoc/flag boundary swallowed
-//     `--assignee` / `--project` into stdin or dropped them as failed
+//     `--executor` / `--project` into stdin or dropped them as failed
 //     standalone shell statements, while the create still exited 0 with nulls.
 //
 // Both classes are shell-driven, so the guardrail is uniform across providers

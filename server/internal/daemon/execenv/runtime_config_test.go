@@ -102,7 +102,7 @@ func TestBriefHasNoParentNotificationGuidance(t *testing.T) {
 
 		// The pre-MUL-2538 phrasing instructed the agent to compose a
 		// parent comment by hand — including a hardcoded `MUL-` prefix
-		// and an assignee mention. The intermediate revision (PR #3055
+		// and an executor mention. The intermediate revision (PR #3055
 		// before Bohan's call) instead told the agent NOT to post one.
 		// Both framings must stay out.
 		for _, banned := range []string{
@@ -112,7 +112,7 @@ func TestBriefHasNoParentNotificationGuidance(t *testing.T) {
 			"patchbay issue comment add <parent-id>",
 			"with NO `--parent`",
 			"link the child as `[MUL-",
-			"`@mention` the parent's assignee",
+			"`@mention` the parent's executor",
 			"`mention://agent/<id>`",
 			"`mention://member/<id>`",
 			"`mention://team/<id>`",
@@ -122,12 +122,12 @@ func TestBriefHasNoParentNotificationGuidance(t *testing.T) {
 			"Do NOT post your own parent-notification comment",
 			"parent-notification comment",
 			"system comment on the parent fires from the status transition",
-			"re-trigger the parent's assignee for nothing",
+			"re-trigger the parent's executor for nothing",
 			"platform posts a top-level system comment on the parent",
 			// Earlier revisions split rules by trigger type or used
 			// table/subsection layouts. None of those structures should
 			// come back either.
-			"| Parent assignee | Parent status |",
+			"| Parent executor | Parent status |",
 			"The same agent as yourself",
 			"| Member or team |",
 			"### A. Notify the parent",
@@ -152,7 +152,7 @@ func TestBriefHasNoParentNotificationGuidance(t *testing.T) {
 }
 
 // The status rule is a fact judgment with two write moments (MUL-6417): no
-// trigger-type modes, no assignee gate. A turn that advances the issue's own
+// trigger-type modes, no executor gate. A turn that advances the issue's own
 // ask records in_progress when it STARTS — judged only at turn end, a fresh
 // assignment sat in todo for the whole first work turn (Bohan's post-merge
 // report) — and the end of the turn records the state the work reached. The
@@ -193,8 +193,8 @@ func TestStatusRuleIsFactJudgmentAtBothMoments(t *testing.T) {
 		// see the catalog.
 		"already in an `in_progress`-category status",
 		"the board should show the issue being worked while you work, not only after",
-		// No assignee gate: the judgment applies to whoever is running.
-		"whoever the assignee is",
+		// No executor gate: the judgment applies regardless of trigger/run identity.
+		"regardless of who triggered or is executing this turn",
 		// Delivery lands in in_review and the ceiling keeps `done` human.
 		"`done` stays human",
 		// Assigned deliverables must not be misread as status-neutral
@@ -215,7 +215,7 @@ func TestStatusRuleIsFactJudgmentAtBothMoments(t *testing.T) {
 	}
 
 	// The retired gates must not come back: no trigger-type modes, no
-	// assignee-scoped arc, no UNCONDITIONAL opening flip (the start moment is
+	// executor-scoped arc, no UNCONDITIONAL opening flip (the start moment is
 	// conditional on the turn advancing the issue's ask), and no end-only
 	// timing that hides a long first work turn in todo.
 	for _, banned := range []string{
