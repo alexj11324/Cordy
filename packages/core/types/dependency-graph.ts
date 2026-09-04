@@ -67,7 +67,7 @@ export type DependencyGraphNode = {
   workspace_id: string;
   temp_id: string;
   issue_id: string;
-  issue?: Issue;
+  issue: Issue;
   title: string;
   description: string;
   acceptance_criteria: string[];
@@ -113,7 +113,7 @@ export type DependencyGraphEdge = {
 
 export type DependencyGraphResponse = {
   plan: DependencyGraphPlan;
-  parent?: Issue;
+  parent: Issue;
   children: Issue[];
   nodes: DependencyGraphNode[];
   edges: DependencyGraphEdge[];

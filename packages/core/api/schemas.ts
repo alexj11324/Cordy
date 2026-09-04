@@ -1689,7 +1689,7 @@ const DependencyGraphNodeSchema = z.object({
   workspace_id: z.string().default(""),
   temp_id: z.string().default(""),
   issue_id: z.string().default(""),
-  issue: IssueSchema.optional().catch(undefined),
+  issue: IssueSchema,
   title: z.string().default(""),
   description: z.string().default(""),
   acceptance_criteria: dependencyGraphStringArraySchema,
@@ -1698,7 +1698,7 @@ const DependencyGraphNodeSchema = z.object({
   executor_type: z.string().nullable().default(null),
   executor_id: z.string().nullable().default(null),
   candidate_executors: z.array(DependencyGraphExecutorSchema).default([]),
-  owner_type: z.string().nullable().default(null),
+  owner_type: z.literal("member").nullable().default(null),
   owner_id: z.string().nullable().default(null),
   reviewer_type: z.string().nullable().default(null),
   reviewer_id: z.string().nullable().default(null),
@@ -1711,13 +1711,7 @@ const DependencyGraphNodeSchema = z.object({
   blocked_by: z.array(z.string()).default([]),
   created_at: z.string().default(""),
   updated_at: z.string().default(""),
-  readiness: DependencyGraphNodeReadinessSchema.default({
-    state: "todo",
-    gate_open: false,
-    satisfied_prerequisites: 0,
-    total_prerequisites: 0,
-    unlock_condition: "",
-  }),
+  readiness: DependencyGraphNodeReadinessSchema,
 }).loose();
 
 const DependencyGraphEdgeSchema = z.object({
@@ -1741,19 +1735,12 @@ const DependencyGraphEdgeSchema = z.object({
 
 const dependencyGraphResponseSchema = z.object({
   plan: DependencyGraphPlanSchema,
-  parent: IssueSchema.optional().catch(undefined),
+  parent: IssueSchema,
   children: z.array(IssueSchema).default([]),
   nodes: z.array(DependencyGraphNodeSchema).default([]),
   edges: z.array(DependencyGraphEdgeSchema).default([]),
   waves: z.array(z.array(z.string())).default([]),
-  readiness: DependencyGraphReadinessSchema.default({
-    total: 0,
-    ready: 0,
-    running: 0,
-    blocked: 0,
-    done: 0,
-    cancelled: 0,
-  }),
+  readiness: DependencyGraphReadinessSchema,
 }).loose();
 
 export const DependencyGraphResponseSchema = dependencyGraphResponseSchema;

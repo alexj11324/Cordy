@@ -5,6 +5,32 @@ import { ApiClient } from "../api/client";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("GET /api/issues/:id/dependency-graph contract", () => {
+  const issue = {
+    id: "target",
+    workspace_id: "ws-1",
+    number: 1,
+    identifier: "PB-1",
+    title: "Target",
+    description: null,
+    status: "blocked",
+    priority: "medium",
+    owner_type: "member",
+    owner_id: "member-1",
+    executor_type: "agent",
+    executor_id: "agent-1",
+    reviewer_type: "agent",
+    reviewer_id: "reviewer-1",
+    creator_type: "member",
+    creator_id: "member-1",
+    parent_issue_id: null,
+    project_id: null,
+    position: 0,
+    start_date: null,
+    due_date: null,
+    created_at: "2026-09-01T00:00:00Z",
+    updated_at: "2026-09-01T00:00:00Z",
+  };
+
   it("parses the persisted Go node gate fields", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({
@@ -22,12 +48,14 @@ describe("GET /api/issues/:id/dependency-graph contract", () => {
           created_at: "2026-09-01T00:00:00Z",
           updated_at: "2026-09-01T00:00:00Z",
         },
+        parent: issue,
         nodes: [{
           id: "node-1",
           plan_id: "plan-1",
           workspace_id: "ws-1",
           temp_id: "target",
           issue_id: "target",
+          issue,
           title: "Target",
           description: "",
           acceptance_criteria: [],
@@ -117,6 +145,40 @@ describe("GET /api/issues/:id/dependency-graph contract", () => {
       "https://api.example.test/api/issues/target/dependency-graph",
       expect.any(Object),
     );
+  });
+
+  it("rejects a graph response with a non-member owner role", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        plan: { id: "plan-1" },
+        parent: issue,
+        nodes: [{
+          id: "node-1",
+          issue,
+          owner_type: "agent",
+          readiness: {
+            state: "ready",
+            gate_open: true,
+            satisfied_prerequisites: 0,
+            total_prerequisites: 0,
+            unlock_condition: "No hard prerequisites; ready immediately",
+          },
+        }],
+        edges: [],
+        readiness: {
+          total: 1,
+          ready: 1,
+          running: 0,
+          blocked: 0,
+          done: 0,
+          cancelled: 0,
+        },
+      }), { status: 200, headers: { "Content-Type": "application/json" } }),
+    ));
+
+    await expect(
+      new ApiClient("https://api.example.test").getDependencyGraph("target"),
+    ).rejects.toThrow("malformed graph");
   });
 
   it("normalizes the Go no-active-plan response to null", async () => {
