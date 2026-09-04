@@ -215,6 +215,29 @@ class ProductionDeployContractTests(unittest.TestCase):
             with self.assertRaisesRegex(production_deploy.DeploymentError, "--bootstrap"):
                 deployment.deploy(self.manifest())
 
+    def test_failed_deploy_records_runtime_diagnostics_before_rollback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            deployment = production_deploy.ProductionDeployment(Path(directory))
+            deployment.initialize_directories()
+            current = self.manifest()
+            current["source_sha"] = "b" * 40
+            deployment.atomic_json(deployment.current_path, current)
+            deployment.fetch_main = mock.Mock(return_value="a" * 40)
+            deployment.apply = mock.Mock(
+                side_effect=[
+                    production_deploy.DeploymentError("candidate failed"),
+                    None,
+                ]
+            )
+            deployment.record_runtime_diagnostics = mock.Mock()
+
+            with self.assertRaisesRegex(
+                production_deploy.DeploymentError, "candidate failed"
+            ):
+                deployment.deploy(self.manifest())
+
+            deployment.record_runtime_diagnostics.assert_called_once_with("a" * 40)
+
     def test_deploy_receipt_contains_browser_credentials(self):
         with tempfile.TemporaryDirectory() as directory:
             deployment = production_deploy.ProductionDeployment(Path(directory))

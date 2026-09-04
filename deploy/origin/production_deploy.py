@@ -529,6 +529,39 @@ class ProductionDeployment:
     def compose(self, arguments: list[str], *, env: dict[str, str]) -> None:
         run(["docker", "compose", *arguments], env=env)
 
+    def record_runtime_diagnostics(self, source_sha: str) -> None:
+        """Persist container state and recent logs before rollback replaces it."""
+        diagnostics: dict[str, Any] = {"source_sha": source_sha, "containers": {}}
+        for container in BOOTSTRAP_CONTAINERS.values():
+            entry: dict[str, Any] = {}
+            for label, arguments in (
+                (
+                    "state",
+                    [
+                        "docker",
+                        "inspect",
+                        "--format",
+                        "{{json .State}}",
+                        container,
+                    ],
+                ),
+                ("logs", ["docker", "logs", "--tail", "200", container]),
+            ):
+                completed = subprocess.run(
+                    arguments,
+                    check=False,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                )
+                entry[label] = completed.stdout[-32_000:]
+                entry[f"{label}_exit_code"] = completed.returncode
+            diagnostics["containers"][container] = entry
+        self.atomic_json(
+            self.history / f"failed-runtime-{source_sha}.json",
+            diagnostics,
+        )
+
     def probe(
         self,
         url: str,
@@ -680,6 +713,10 @@ class ProductionDeployment:
             self.apply(request)
             browser_auth = self.issue_browser_acceptance_credentials()
         except Exception as deploy_error:
+            try:
+                self.record_runtime_diagnostics(source_sha)
+            except Exception as diagnostics_error:
+                log(f"failed to record deployment diagnostics: {diagnostics_error}")
             if unchanged:
                 log(
                     "deployment verification failed for an unchanged revision; "
