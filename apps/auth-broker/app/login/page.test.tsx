@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { renderToString } from "react-dom/server";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -226,4 +227,12 @@ it("waits for the session notification after signOut resolves, without exposing 
   mocks.auth.sessionId = "";
   rerender(<Page />);
   expect(await screen.findByTestId("accounts-login-form")).toBeInTheDocument();
+});
+
+it.each([true, false])("never paints an account form for a signed-in session before effects run (desktop=%s)", (desktop) => {
+  mocks.auth.isSignedIn = true;
+  if (!desktop) mocks.searchParams.current = new URLSearchParams();
+  const html = renderToString(<Page />);
+  expect(html).not.toContain('data-testid="accounts-login-form"');
+  expect(html).toContain('role="status"');
 });
