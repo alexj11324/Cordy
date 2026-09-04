@@ -272,9 +272,6 @@ SET status = 'completed',
 FROM agent_coordination_outbox AS event
 JOIN agent AS task_agent ON task_agent.id = $4
 JOIN agent_task_queue AS task ON task.id = $5
-LEFT JOIN team AS task_team
-  ON task_team.id = assignment.owner_id
- AND assignment.owner_type = 'team'
 WHERE assignment.event_id = event.id
   AND assignment.id = $1
   AND assignment.dispatched_task_id = task.id
@@ -286,9 +283,14 @@ WHERE assignment.event_id = event.id
       OR (
           assignment.owner_type = 'team'
           AND task.agent_id = $4
-          AND task_team.leader_id = $4
-          AND task_team.workspace_id = assignment.workspace_id
-          AND task_team.archived_at IS NULL
+          AND EXISTS (
+              SELECT 1
+              FROM team AS task_team
+              WHERE task_team.id = assignment.owner_id
+                AND task_team.leader_id = $4
+                AND task_team.workspace_id = assignment.workspace_id
+                AND task_team.archived_at IS NULL
+          )
       )
   )
   AND task.issue_id = assignment.issue_id

@@ -662,7 +662,7 @@ func (s *AgentCoordinationService) processClaim(ctx context.Context, event db.Ag
 		if !coordinationFollowUp(payload) || assignment.Status == "completed" {
 			return s.completeClaimedOutbox(ctx, qtx, event)
 		}
-		if payload.AssignmentRole != "" && payload.AssignmentRole != assignment.Role {
+		if !coordinationEventAssignmentRoleMatches(event, payload, assignment) {
 			return s.deferClaim(ctx, qtx, event, assignment, "assignment role does not match event payload")
 		}
 		if assignment.Status == "blocked" {
@@ -1865,6 +1865,24 @@ func decodeCoordinationEventPayload(raw []byte) (coordinationEventPayload, error
 
 func coordinationFollowUp(payload coordinationEventPayload) bool {
 	return payload.FollowUp == nil || *payload.FollowUp
+}
+
+// A task_completed event carries the source assignment role. An implementation
+// completion therefore legitimately targets a reviewer assignment, while an
+// explicit reviewer handoff/cancellation and a review return keep the same
+// role on both sides. Keep this distinction explicit so the coordinator does
+// not reject its primary executor -> reviewer handoff as a corrupted event.
+func coordinationEventAssignmentRoleMatches(
+	event db.AgentCoordinationOutbox,
+	payload coordinationEventPayload,
+	assignment db.AgentCoordinationAssignment,
+) bool {
+	if payload.AssignmentRole == "" || payload.AssignmentRole == assignment.Role {
+		return true
+	}
+	return event.EventType == CoordinationEventTaskCompleted &&
+		payload.AssignmentRole == CoordinationAssignmentExecutor &&
+		assignment.Role == CoordinationAssignmentReviewer
 }
 
 func coordinationRetryFor(message string) time.Duration {

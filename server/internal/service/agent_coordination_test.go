@@ -215,6 +215,26 @@ func TestCoordinationFollowUpUsesExplicitFalse(t *testing.T) {
 	}
 }
 
+func TestCoordinationEventAssignmentRoleAllowsImplementationToReviewerHandoff(t *testing.T) {
+	event := db.AgentCoordinationOutbox{EventType: CoordinationEventTaskCompleted}
+	payload := coordinationEventPayload{AssignmentRole: CoordinationAssignmentExecutor}
+	assignment := db.AgentCoordinationAssignment{Role: CoordinationAssignmentReviewer}
+	if !coordinationEventAssignmentRoleMatches(event, payload, assignment) {
+		t.Fatal("implementation completion should be allowed to target reviewer assignment")
+	}
+
+	payload.AssignmentRole = CoordinationAssignmentReviewer
+	if !coordinationEventAssignmentRoleMatches(event, payload, assignment) {
+		t.Fatal("reviewer event should match reviewer assignment")
+	}
+
+	event.EventType = CoordinationEventReviewReturned
+	payload.AssignmentRole = CoordinationAssignmentExecutor
+	if coordinationEventAssignmentRoleMatches(event, payload, assignment) {
+		t.Fatal("review return must not target reviewer assignment")
+	}
+}
+
 func TestCoordinationHandoffNoteHasAUsefulDefault(t *testing.T) {
 	if got := coordinationHandoffNote("", "in_review"); got == "" || !strings.Contains(got, "implementation task completed") {
 		t.Fatalf("review handoff default = %q", got)
