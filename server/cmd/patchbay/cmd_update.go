@@ -50,7 +50,7 @@ func runUpdate(_ *cobra.Command, _ []string) error {
 		output, err := cli.UpdateViaBrew()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s\n", output)
-			return fmt.Errorf("brew upgrade failed: %w\nYou can try manually: brew upgrade patchbay-ai/tap/patchbay", err)
+			return fmt.Errorf("Homebrew update failed: %w\nYou can try manually: brew upgrade %s", err, cli.HomebrewPackage)
 		}
 		fmt.Fprintln(os.Stderr, "Update complete.")
 		return nil
@@ -58,7 +58,7 @@ func runUpdate(_ *cobra.Command, _ []string) error {
 
 	// Not installed via brew — download binary directly from GitHub Releases.
 	if latest == nil {
-		return fmt.Errorf("could not determine latest version; check https://github.com/patchbay-ai/patchbay/releases/latest")
+		return fmt.Errorf("could not determine latest version; check %s/latest", cli.GitHubReleaseWebURL)
 	}
 	targetVersion := latest.TagName
 	fmt.Fprintf(os.Stderr, "Downloading %s from GitHub Releases...\n", targetVersion)

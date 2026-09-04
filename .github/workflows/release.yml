@@ -98,6 +98,9 @@ jobs:
       - name: Test Desktop release artifact contract
         run: node --test scripts/release-desktop-artifact-contract.test.mjs
 
+      - name: Test Homebrew release contract
+        run: node --test scripts/release-homebrew-contract.test.mjs scripts/publish-homebrew-cask.test.mjs
+
   prepare-release:
     needs: verify
     # Only run on the canonical repository. Forks don't have the
@@ -927,6 +930,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Stage stable Homebrew cask
+        if: needs.verify.outputs.is_stable == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: homebrew-cask
+          path: dist/homebrew/Casks/patchbay.rb
+          if-no-files-found: error
+
       - name: Verify staged release is still a draft at the verified commit
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -947,3 +958,49 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.verify.outputs.tag_name }}
         run: gh release edit "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
+
+  publish-homebrew:
+    needs: [verify, publish-release]
+    # The stable cask is a release channel, not a prerelease channel. Keep it
+    # unchanged for tags such as v1.0.0-rc1.
+    if: needs.verify.outputs.is_stable == 'true' && needs.publish-release.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout verified release commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify.outputs.commit_sha }}
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Download generated Homebrew cask
+        uses: actions/download-artifact@v4
+        with:
+          name: homebrew-cask
+          path: ${{ runner.temp }}/homebrew-cask
+
+      - name: Verify release is public at the gated commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.verify.outputs.tag_name }}
+          VERIFIED_SHA: ${{ needs.verify.outputs.commit_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = "false"
+          tag_sha="$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG_NAME" --jq .sha)"
+          test "$tag_sha" = "$VERIFIED_SHA" || {
+            echo "::error::Release tag $TAG_NAME moved before Homebrew publication."
+            exit 1
+          }
+
+      - name: Publish stable Homebrew cask
+        env:
+          CASK_PATH: ${{ runner.temp }}/homebrew-cask/patchbay.rb
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.verify.outputs.tag_name }}
+        shell: bash
+        run: node scripts/publish-homebrew-cask.mjs

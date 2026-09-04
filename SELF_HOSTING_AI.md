@@ -31,7 +31,7 @@ Wait for the server output `✓ Patchbay server is running and CLI is ready!` be
 git clone https://github.com/alexj11324/Cordy.git
 cd Cordy
 make selfhost
-brew install alexj11324/Cordy/patchbay
+brew install alexj11324/tap/patchbay
 patchbay setup self-host
 ```
 

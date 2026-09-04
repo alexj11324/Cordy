@@ -64,22 +64,23 @@ changelog:
       - "^test:"
       - "^chore:"
 
-brews:
+homebrew_casks:
   - name: patchbay
     ids:
       - versioned
+    binaries:
+      - patchbay
     repository:
       owner: alexj11324
-      name: Cordy
+      name: homebrew-tap
       branch: main
-      token: "{{ .Env.GITHUB_TOKEN }}"
-    directory: Formula
+    directory: Casks
+    # Publishing is intentionally separated from GoReleaser so the public tap
+    # can never point at a draft release. The release workflow uploads this
+    # generated cask only after it promotes the fully gated GitHub release.
+    skip_upload: true
     homepage: "https://github.com/alexj11324/Cordy"
     description: "Patchbay CLI — local agent runtime and management tool for the Patchbay platform"
     # No license stanza: Patchbay ships under the Patchbay License (Apache 2.0
     # terms with additional conditions, see LICENSE), which has no SPDX
     # identifier, so declaring "Apache-2.0" here would be a false claim.
-    install: |
-      bin.install "patchbay"
-    test: |
-      system "#{bin}/patchbay", "version"

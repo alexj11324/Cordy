@@ -17,7 +17,7 @@ set -euo pipefail
 REPO_URL="https://github.com/alexj11324/Cordy.git"
 REPO_WEB_URL="https://github.com/alexj11324/Cordy"  # without .git, for GitHub web APIs
 INSTALL_DIR="${PATCHBAY_INSTALL_DIR:-$HOME/.patchbay/server}"
-BREW_PACKAGE="alexj11324/Cordy/patchbay"
+BREW_PACKAGE="alexj11324/tap/patchbay"
 
 # Host ports Compose reported after `up -d`; set by setup_server and reused by
 # the summary so the health check and the printed URLs cannot diverge.
@@ -121,7 +121,7 @@ install_cli_brew() {
   info "Installing Patchbay CLI via Homebrew..."
   local brew_log
   brew_log=$(mktemp)
-  if ! brew tap alexj11324/Cordy >"$brew_log" 2>&1; then
+  if ! brew tap alexj11324/tap >"$brew_log" 2>&1; then
     warn "Failed to add Homebrew tap. Falling back to GitHub Releases binary install."
     _dump_brew_log "$brew_log"
     rm -f "$brew_log"

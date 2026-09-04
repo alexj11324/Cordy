@@ -24,11 +24,22 @@ import (
 	"github.com/patchbay-ai/patchbay/server/internal/selfexec"
 )
 
-// ChecksumManifestName is the asset name GoReleaser publishes for the
-// checksum manifest (`checksum.name_template: "checksums.txt"` in
-// .goreleaser.yml). Kept as a constant rather than inlined so a future rename
-// changes one place.
-const ChecksumManifestName = "checksums.txt"
+const (
+	// ChecksumManifestName is the asset name GoReleaser publishes for the
+	// checksum manifest (`checksum.name_template: "checksums.txt"` in
+	// .goreleaser.yml). Kept as a constant rather than inlined so a future rename
+	// changes one place.
+	ChecksumManifestName = "checksums.txt"
+
+	// GitHubReleaseRepository and GitHubReleaseWebURL are the canonical source
+	// for CLI release discovery, direct downloads, and user-facing recovery
+	// guidance. HomebrewPackage is the stable cask published by release.yml.
+	GitHubReleaseRepository = "alexj11324/Cordy"
+	GitHubReleaseWebURL     = "https://github.com/" + GitHubReleaseRepository + "/releases"
+	HomebrewPackage         = "alexj11324/tap/patchbay"
+
+	githubReleaseAPIURL = "https://api.github.com/repos/" + GitHubReleaseRepository + "/releases"
+)
 
 const DefaultUpdateDownloadTimeout = 120 * time.Second
 
@@ -226,7 +237,7 @@ func verifyAssetSHA256(data []byte, expectedHex, assetName string) error {
 
 func fetchReleaseByTag(tag string) (*GitHubRelease, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest(http.MethodGet, "https://api.github.com/repos/patchbay-ai/patchbay/releases/tags/"+tag, nil)
+	req, err := http.NewRequest(http.MethodGet, githubReleaseAPIURL+"/tags/"+tag, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -252,7 +263,7 @@ func fetchReleaseByTag(tag string) (*GitHubRelease, error) {
 // FetchLatestRelease fetches the latest release tag from the patchbay GitHub repo.
 func FetchLatestRelease() (*GitHubRelease, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest(http.MethodGet, "https://api.github.com/repos/patchbay-ai/patchbay/releases/latest", nil)
+	req, err := http.NewRequest(http.MethodGet, githubReleaseAPIURL+"/latest", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -326,15 +337,14 @@ func GetBrewPrefix() string {
 	return strings.TrimSpace(string(out))
 }
 
-// UpdateViaBrew runs `brew upgrade patchbay-ai/tap/patchbay`.
-// Returns the combined output and any error.
+// UpdateViaBrew upgrades the canonical Patchbay Homebrew cask.
 func UpdateViaBrew() (string, error) {
-	cmd := exec.Command("brew", "upgrade", "patchbay-ai/tap/patchbay")
-	out, err := cmd.CombinedOutput()
+	cmd := exec.Command("brew", "upgrade", HomebrewPackage)
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return string(out), fmt.Errorf("brew upgrade failed: %w", err)
+		return string(output), fmt.Errorf("brew upgrade failed: %w", err)
 	}
-	return string(out), nil
+	return string(output), nil
 }
 
 func updateDownloadTimeoutOrDefault(timeout time.Duration) time.Duration {
