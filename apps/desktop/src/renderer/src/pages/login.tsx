@@ -54,7 +54,7 @@ export function DesktopLoginPage() {
       <main className="flex min-h-0 flex-1 items-center justify-center overflow-auto px-8 py-12">
         <div className="flex w-full max-w-md -translate-y-[4vh] flex-col items-center text-center">
           <PatchbayIcon className="size-16 text-white" noSpin />
-          <h1 className="mt-8 text-3xl font-semibold tracking-tight">
+          <h1 className="mt-8 text-display-sm font-semibold tracking-tight">
             {t(($) => $.desktop.entry.browser_title)}
           </h1>
           <p className="mt-3 text-body leading-relaxed text-zinc-400">

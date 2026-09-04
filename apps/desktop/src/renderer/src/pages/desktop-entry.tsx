@@ -96,7 +96,7 @@ export function DesktopEntryPage({
               Patchbay
             </h1>
           </div>
-          <p className="mt-12 max-w-lg text-balance text-xl leading-relaxed font-medium text-zinc-200 sm:text-2xl">
+          <p className="mt-12 max-w-lg text-balance text-title leading-relaxed font-medium text-zinc-200 sm:text-display-sm">
             {t(($) => $.guest.hero_tagline)}
           </p>
           <div
