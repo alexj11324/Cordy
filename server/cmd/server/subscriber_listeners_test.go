@@ -272,6 +272,45 @@ func TestSubscriberIssueUpdated_ReviewerChanged(t *testing.T) {
 	}
 }
 
+func TestSubscriberIssueUpdated_ReviewHandoffWithExistingReviewer(t *testing.T) {
+	queries := db.New(testPool)
+	bus := events.New()
+	registerSubscriberListeners(bus, testPool)
+
+	reviewerID := "00000000-0000-0000-0000-0000000000f4"
+	issueID := createTestIssue(t, testWorkspaceID, testUserID)
+	t.Cleanup(func() { cleanupTestIssue(t, issueID) })
+
+	reviewerType := "agent"
+	bus.Publish(events.Event{
+		Type:        protocol.EventIssueUpdated,
+		WorkspaceID: testWorkspaceID,
+		ActorType:   "member",
+		ActorID:     testUserID,
+		Payload: map[string]any{
+			"issue": handler.IssueResponse{
+				ID:           issueID,
+				WorkspaceID:  testWorkspaceID,
+				Title:        "test issue",
+				Status:       "in_review",
+				Priority:     "medium",
+				CreatorType:  "member",
+				CreatorID:    testUserID,
+				ReviewerType: &reviewerType,
+				ReviewerID:   &reviewerID,
+			},
+			// The reviewer was already assigned; only the status crossed into
+			// review, so reviewer_changed is false.
+			"reviewer_changed": false,
+			"review_handoff":   true,
+		},
+	})
+
+	if !isSubscribed(t, queries, issueID, "agent", reviewerID) {
+		t.Fatal("expected existing reviewer to be subscribed after review handoff")
+	}
+}
+
 func TestSubscriberIssueUpdated_NoExecutorChange(t *testing.T) {
 	queries := db.New(testPool)
 	bus := events.New()

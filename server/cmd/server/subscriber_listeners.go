@@ -86,6 +86,7 @@ func registerSubscriberListeners(bus *events.Bus, pool *pgxpool.Pool) {
 		if !ok {
 			return
 		}
+		reviewHandoff, _ := payload["review_handoff"].(bool)
 		issue, ok := extractIssueFields(payload["issue"])
 		if !ok {
 			return
@@ -101,7 +102,12 @@ func registerSubscriberListeners(bus *events.Bus, pool *pgxpool.Pool) {
 				addSubscriber(bus, queries, e.WorkspaceID, issue.ID, *issue.ExecutorType, *issue.ExecutorID, "executor")
 			}
 		}
-		if reviewerChanged, _ := payload["reviewer_changed"].(bool); reviewerChanged {
+		// Entering review is a reviewer assignment even when the reviewer was
+		// already present on the issue. The Rust listener uses the same
+		// `review_handoff || reviewer_changed` predicate; omitting the handoff
+		// flag leaves that reviewer out of the issue subscriber set on a pure
+		// status transition.
+		if reviewerChanged, _ := payload["reviewer_changed"].(bool); reviewerChanged || reviewHandoff {
 			if issue.ReviewerType != nil && issue.ReviewerID != nil && isIssueRoleRecipientType(*issue.ReviewerType) {
 				addSubscriber(bus, queries, e.WorkspaceID, issue.ID, *issue.ReviewerType, *issue.ReviewerID, "reviewer")
 			}
