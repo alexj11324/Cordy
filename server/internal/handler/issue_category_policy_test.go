@@ -85,7 +85,6 @@ func TestUpdateIssueCategoryPolicyMatchesRustValidationContract(t *testing.T) {
 	requireIssueCategoryPolicyDatabase(t)
 	runtimeID := dbfx.Runtime(t, "policy validation runtime")
 	executionID := dbfx.Agent(t, "policy execution agent", runtimeID)
-	reviewerID := dbfx.Agent(t, "policy reviewer agent", runtimeID)
 	noRuntimeID := dbfx.Agent(t, "policy no runtime agent", "")
 	archivedID := dbfx.Agent(t, "policy archived agent", runtimeID, testutil.Cols{
 		"archived_at": testutil.Raw("now()"),
