@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -210,6 +211,18 @@ func TestCoordinationFollowUpUsesExplicitFalse(t *testing.T) {
 	falseValue := false
 	if coordinationFollowUp(coordinationEventPayload{FollowUp: &falseValue}) {
 		t.Fatal("explicit follow_up=false should not dispatch a child")
+	}
+}
+
+func TestCoordinationHandoffNoteHasAUsefulDefault(t *testing.T) {
+	if got := coordinationHandoffNote("", "in_review"); got == "" || !strings.Contains(got, "implementation task completed") {
+		t.Fatalf("review handoff default = %q", got)
+	}
+	if got := coordinationHandoffNote("", "in_progress"); got == "" || !strings.Contains(got, "review feedback") {
+		t.Fatalf("review return default = %q", got)
+	}
+	if got := coordinationHandoffNote("  explicit note  ", "in_review"); got != "explicit note" {
+		t.Fatalf("explicit handoff note = %q", got)
 	}
 }
 

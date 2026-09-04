@@ -944,6 +944,7 @@ func (s *AgentCoordinationService) processClaim(ctx context.Context, event db.Ag
 			if !triggerEvidenceRefID.Valid {
 				triggerEvidenceRefID = event.ID
 			}
+			handoffNote := coordinationHandoffNote(payload.HandoffNote, issue.Status)
 			initialStatus := "queued"
 			if reviewPublication != nil {
 				initialStatus = "deferred"
@@ -957,7 +958,7 @@ func (s *AgentCoordinationService) processClaim(ctx context.Context, event db.Ag
 				InitialStatus:        initialStatus,
 				Priority:             priorityToInt(issue.Priority),
 				Context:              contextJSON,
-				HandoffNote:          optionalText(payload.HandoffNote),
+				HandoffNote:          optionalText(handoffNote),
 				TeamID:               teamID,
 				OriginatorUserID:     optionalUUID(payload.OriginatorUserID),
 				AccountableUserID:    optionalUUID(payload.AccountableUserID),
@@ -1171,6 +1172,16 @@ func coordinationDecisionField(raw []byte, key string) string {
 func coordinationDecisionString(decision map[string]any, key string) string {
 	value, _ := decision[key].(string)
 	return strings.TrimSpace(value)
+}
+
+func coordinationHandoffNote(note, issueStatus string) string {
+	if note = strings.TrimSpace(note); note != "" {
+		return note
+	}
+	if issueStatus == "in_review" {
+		return "Coordinator handoff: the implementation task completed. Review the change and either complete the issue or return it to in progress with actionable feedback."
+	}
+	return "Coordinator handoff: review returned this issue to in progress. Resume implementation and address the review feedback."
 }
 
 func (s *AgentCoordinationService) completeClaimedOutbox(ctx context.Context, qtx *db.Queries, event db.AgentCoordinationOutbox) error {
@@ -1500,7 +1511,7 @@ func coordinationCompletionStillOwnsIssue(issue db.Issue, role string, taskConte
 	}
 	switch role {
 	case CoordinationAssignmentExecutor:
-		if coordinationText(taskContext.OwnerType) == "team" {
+		if strings.TrimSpace(taskContext.OwnerType) == "team" {
 			if coordinationText(issue.ExecutorType) != "team" || !sameCoordinationUUID(issue.ExecutorID, ownerID) {
 				return false
 			}
