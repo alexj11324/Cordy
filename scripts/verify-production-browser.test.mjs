@@ -66,6 +66,10 @@ test("production browser acceptance includes the standalone broker and Go Clerk 
   assert.match(source, /url\.pathname === "\/auth\/clerk"/u);
   assert.match(source, /Web Clerk session exchange/u);
   assert.match(source, /user\?\.is_guest/u);
+  assert.match(
+    source,
+    /headers: \{\s*origin: ACCOUNTS_ORIGIN,\s*"x-patchbay-auth-contract-version": "1",\s*\}/u,
+  );
 });
 
 test("production browser acceptance treats root as an app entry", async () => {
