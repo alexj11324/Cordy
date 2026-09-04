@@ -347,8 +347,11 @@ app that executes another revision.
 
 Focused cache/launcher tests, Desktop's full 81-file/715-test suite, Node
 typecheck, shell syntax and the development-environment registry tests passed
-locally. GitHub Actions remains authoritative for the current head's backend
-and frontend checks. A human-run `make dev`/Electron/daemon smoke path is still
+locally. Replacement GitHub Actions run
+[`33850974154`](https://github.com/alexj11324/Cordy/actions/runs/33850974154)
+passed all applicable backend, frontend, Mobile, SQLC, Windows, installer,
+vulnerability and delivery jobs for `94bad5cef`. A human-run
+`make dev`/Electron/daemon smoke path is still
 required before calling native development runtime acceptance complete; agents
 do not run the local Go or Rust pipelines in this repository.
 
