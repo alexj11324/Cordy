@@ -760,7 +760,7 @@ LIMIT $5 OFFSET $4
 type ListUnassociatedWorkProductsParams struct {
 	WorkspaceID pgtype.UUID `json:"workspace_id"`
 	Kind        string      `json:"kind"`
-	Search      string      `json:"search"`
+	Search      interface{} `json:"search"`
 	Limit       int32       `json:"limit"`
 	Offset      int32       `json:"offset"`
 }
