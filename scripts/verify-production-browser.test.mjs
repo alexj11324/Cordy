@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   ACCOUNTS_ORIGIN,
   API_ORIGIN,
+  buildAccountsLoginProbeUrl,
   buildGoogleOAuthProbeUrl,
   buildPkceChallenge,
   PRODUCT_ORIGIN,
@@ -39,6 +40,19 @@ test("builds a PKCE-bound direct Accounts Google OAuth entry", () => {
   assert.equal(url.searchParams.get("state"), "s".repeat(43));
   assert.equal(url.searchParams.has("app_origin"), false);
   assert.equal(url.href.includes("localhost"), false);
+});
+
+test("builds the PKCE-bound Accounts login page used by Desktop", () => {
+  const url = new URL(
+    buildAccountsLoginProbeUrl({
+      codeChallenge: "c".repeat(43),
+      state: "s".repeat(43),
+    }),
+  );
+  assert.equal(url.origin, ACCOUNTS_ORIGIN);
+  assert.equal(url.pathname, "/login");
+  assert.equal(url.searchParams.get("platform"), "desktop");
+  assert.equal(url.searchParams.has("app_origin"), false);
 });
 
 test("requires Google and not a lookalike OAuth destination", () => {

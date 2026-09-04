@@ -1,13 +1,13 @@
 import { useState, type FormEvent } from "react";
 import { Button } from "@patchbay/ui/components/ui/button";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@patchbay/ui/components/ui/card";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@patchbay/ui/components/ui/dialog";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@patchbay/ui/components/ui/dialog";
 import { Input } from "@patchbay/ui/components/ui/input";
 import { Label } from "@patchbay/ui/components/ui/label";
 import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
@@ -19,12 +19,12 @@ import type {
 } from "../../../shared/local-guest";
 
 type DesktopEntryPageProps = {
-  onEnableCloudMode: () => Promise<void>;
+  onSignIn: () => Promise<void>;
   onGuestSession: (session: LocalGuestSession) => void;
 };
 
 export function DesktopEntryPage({
-  onEnableCloudMode,
+  onSignIn,
   onGuestSession,
 }: DesktopEntryPageProps) {
   const { t } = useT("auth");
@@ -68,7 +68,7 @@ export function DesktopEntryPage({
     setCloudSubmitting(true);
     setCloudError(false);
     try {
-      await onEnableCloudMode();
+      await onSignIn();
     } catch {
       setCloudError(true);
     } finally {
@@ -77,21 +77,35 @@ export function DesktopEntryPage({
   };
 
   return (
-    <div className="flex h-screen flex-col bg-page-canvas text-foreground">
+    <div
+      data-testid="desktop-entry"
+      className="flex h-screen flex-col bg-zinc-950 text-white"
+    >
       <DragStrip />
-      <main className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-6">
-        <Card className="w-full max-w-sm">
-          <CardHeader className="items-center text-center">
-            <PatchbayIcon bordered size="lg" />
-            <CardTitle>{t(($) => $.signin.title)}</CardTitle>
-            <CardDescription>
-              {t(($) => $.guest.entry_description)}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
+      <main className="flex min-h-0 flex-1 items-center justify-center overflow-auto px-8 py-12">
+        <div className="flex w-full max-w-2xl -translate-y-[4vh] flex-col items-center text-center">
+          <div
+            data-testid="desktop-entry-brand"
+            className="flex items-center gap-4"
+          >
+            <PatchbayIcon
+              className="size-16 shrink-0 text-white sm:size-20"
+              noSpin
+            />
+            <h1 className="text-5xl font-semibold tracking-[-0.04em] text-white sm:text-6xl">
+              Patchbay
+            </h1>
+          </div>
+          <p className="mt-12 max-w-lg text-balance text-xl leading-relaxed font-medium text-zinc-200 sm:text-2xl">
+            {t(($) => $.guest.hero_tagline)}
+          </p>
+          <div
+            data-testid="desktop-entry-actions"
+            className="mt-12 flex items-center justify-center gap-3"
+          >
             <Button
               type="button"
-              variant="outline"
+              className="h-11 min-w-28 rounded-full bg-white px-6 text-zinc-950 hover:bg-zinc-200"
               disabled={cloudSubmitting}
               onClick={() => {
                 void handleCloudSignIn();
@@ -101,16 +115,21 @@ export function DesktopEntryPage({
                 ? t(($) => $.guest.signin_loading)
                 : t(($) => $.guest.signin_button)}
             </Button>
-            <Button type="button" onClick={openGuestDialog}>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-11 min-w-28 rounded-full border-zinc-700 bg-zinc-900 px-6 text-white hover:bg-zinc-800 hover:text-white"
+              onClick={openGuestDialog}
+            >
               {t(($) => $.guest.button)}
             </Button>
-            {cloudError && (
-              <p role="alert" className="text-caption text-destructive">
-                {t(($) => $.guest.unavailable)}
-              </p>
-            )}
-          </CardContent>
-        </Card>
+          </div>
+          {cloudError && (
+            <p role="alert" className="mt-4 text-caption text-red-400">
+              {t(($) => $.desktop.entry.login_error)}
+            </p>
+          )}
+        </div>
       </main>
 
       <Dialog

@@ -14,6 +14,7 @@ import {
 import {
   ACCOUNTS_ORIGIN,
   API_ORIGIN,
+  buildAccountsLoginProbeUrl,
   buildGoogleOAuthProbeUrl,
   buildPkceChallenge,
   PRODUCT_ORIGIN,
@@ -29,6 +30,83 @@ const SCREENSHOT_PATH = path.join(
   process.env.RUNNER_TEMP ?? process.env.TMPDIR ?? ".",
   "production-browser-failure.png",
 );
+
+async function verifyAccountsLoginSurface(browser, sourceSha) {
+  const context = await browser.newContext({
+    locale: "en-US",
+    viewport: { width: 1440, height: 900 },
+  });
+  const page = await context.newPage();
+  const state = randomBytes(32).toString("base64url");
+  const codeChallenge = randomBytes(32).toString("base64url");
+  try {
+    const publicHandoff = await context.request.post(
+      `${API_ORIGIN}/api/desktop-handoff/initiate`,
+      {
+        data: {
+          state,
+          code_challenge: codeChallenge,
+          callback_protocol: "patchbay",
+        },
+      },
+    );
+    assert.equal(
+      publicHandoff.status(),
+      200,
+      "public desktop handoff registration",
+    );
+
+    const brokerRegistration = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return (
+        url.origin === ACCOUNTS_ORIGIN &&
+        url.pathname === "/v1/desktop/google/attempt" &&
+        response.request().method() === "POST"
+      );
+    });
+    const response = await page.goto(
+      buildAccountsLoginProbeUrl({ codeChallenge, state }),
+      { waitUntil: "domcontentloaded" },
+    );
+    assert.ok(response, "Accounts login page must return a response");
+    assert.equal(response.status(), 200, "Accounts login page status");
+    requireBuildHeaders(response.headers(), sourceSha, "Accounts login");
+    assert.equal(
+      (await brokerRegistration).status(),
+      200,
+      "Accounts desktop attempt registration",
+    );
+
+    await clerk.loaded({ page });
+    const authShell = page.getByTestId("accounts-auth-shell");
+    const formPanel = page.getByTestId("accounts-auth-form-panel");
+    const brandPanel = page.getByTestId("accounts-auth-brand-panel");
+    await expect(authShell).toBeVisible();
+    await expect(formPanel).toBeVisible();
+    await expect(brandPanel).toBeVisible();
+    await expect(page.getByTestId("patchbay-mark")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Sign in to Patchbay", exact: true }),
+    ).toBeVisible();
+
+    const [shellBox, formBox, brandBox] = await Promise.all([
+      authShell.boundingBox(),
+      formPanel.boundingBox(),
+      brandPanel.boundingBox(),
+    ]);
+    assert.ok(shellBox, "Accounts split shell must have a rendered box");
+    assert.ok(formBox, "Accounts white form panel must have a rendered box");
+    assert.ok(brandBox, "Accounts black brand panel must have a rendered box");
+    assert.ok(
+      formBox.x < brandBox.x &&
+        formBox.width >= shellBox.width * 0.45 &&
+        brandBox.width >= shellBox.width * 0.45,
+      "Accounts login must render white-left and black-right panels",
+    );
+  } finally {
+    await context.close();
+  }
+}
 
 async function verifyGoogleOAuthStart(browser) {
   const context = await browser.newContext({ locale: "en-US" });
@@ -243,6 +321,7 @@ export async function verifyProductionBrowser(sourceSha, receipt) {
   );
   const browser = await chromium.launch({ headless: true });
   try {
+    await verifyAccountsLoginSurface(browser, sourceSha);
     await verifyGoogleOAuthStart(browser);
     const token = await redeemSyntheticLogin(
       browser,
@@ -265,7 +344,7 @@ async function main() {
   const receipt = JSON.parse(await readFile(receiptPath, "utf8"));
   await verifyProductionBrowser(sourceSha, receipt);
   console.log(
-    "production Google OAuth start, one-time broker login, and authenticated Web acceptance passed",
+    "production Accounts login UI, Google OAuth start, one-time broker login, and authenticated Web acceptance passed",
   );
 }
 

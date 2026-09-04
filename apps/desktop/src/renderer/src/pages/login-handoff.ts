@@ -80,7 +80,7 @@ function randomBase64Url(byteLength: number): string {
 }
 
 /** Register a PKCE binding, then build the browser login URL. */
-export async function createDesktopGoogleLoginUrl(
+export async function createDesktopLoginUrl(
   accountsUrl: string,
   initiate: (
     state: string,
@@ -106,7 +106,7 @@ export async function createDesktopGoogleLoginUrl(
     { state, verifier, expiresAt: Date.now() + PENDING_HANDOFF_TTL_MS },
   ]);
 
-  const url = new URL(`${accountsUrl.replace(/\/+$/, "")}/oauth/google`);
+  const url = new URL(`${accountsUrl.replace(/\/+$/, "")}/login`);
   url.searchParams.set("platform", "desktop");
   url.searchParams.set("state", state);
   url.searchParams.set("code_challenge", codeChallenge);

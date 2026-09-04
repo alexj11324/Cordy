@@ -1,9 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@patchbay/core/api";
-import {
-  completeDesktopHandoff,
-  createDesktopGoogleLoginUrl,
-} from "./login-handoff";
+import { completeDesktopHandoff, createDesktopLoginUrl } from "./login-handoff";
 
 const PENDING_HANDOFF_KEY = "patchbay_desktop_login_handoff";
 
@@ -33,14 +30,14 @@ describe("desktop auth handoff", () => {
   it("registers a PKCE binding before building the browser URL", async () => {
     const initiate = vi.fn().mockResolvedValue({ registered: true });
 
-    const url = await createDesktopGoogleLoginUrl(
+    const url = await createDesktopLoginUrl(
       "https://patchbay.example/",
       initiate,
     );
     const parsed = new URL(url);
     const pending = pendingHandoff();
 
-    expect(parsed.pathname).toBe("/oauth/google");
+    expect(parsed.pathname).toBe("/login");
     expect(parsed.searchParams.get("platform")).toBe("desktop");
     expect(parsed.searchParams.get("state")).toBe(pending.state);
     expect(parsed.searchParams.get("code_challenge")).toBeTruthy();
@@ -54,7 +51,10 @@ describe("desktop auth handoff", () => {
 
   it("redeems once and makes a replay a no-op after clearing the verifier", async () => {
     const initiate = vi.fn().mockResolvedValue({ registered: true });
-    const url = await createDesktopGoogleLoginUrl("https://patchbay.example", initiate);
+    const url = await createDesktopLoginUrl(
+      "https://patchbay.example",
+      initiate,
+    );
     const state = new URL(url).searchParams.get("state");
     if (!state) throw new Error("missing handoff state");
 
@@ -81,13 +81,18 @@ describe("desktop auth handoff", () => {
 
   it("drops a terminal redeem failure so a consumed or expired code is not retried", async () => {
     const initiate = vi.fn().mockResolvedValue({ registered: true });
-    const url = await createDesktopGoogleLoginUrl("https://patchbay.example", initiate);
+    const url = await createDesktopLoginUrl(
+      "https://patchbay.example",
+      initiate,
+    );
     const state = new URL(url).searchParams.get("state");
     if (!state) throw new Error("missing handoff state");
 
     const redeem = vi
       .fn()
-      .mockRejectedValue(new ApiError("invalid desktop auth handoff", 401, "Unauthorized"));
+      .mockRejectedValue(
+        new ApiError("invalid desktop auth handoff", 401, "Unauthorized"),
+      );
 
     await expect(
       completeDesktopHandoff("pbd_consumed-code", state, {

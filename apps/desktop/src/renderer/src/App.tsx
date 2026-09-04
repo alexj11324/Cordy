@@ -20,7 +20,7 @@ import { useAuthStore } from "@patchbay/core/auth";
 import { useWelcomeStore } from "@patchbay/core/onboarding";
 import { workspaceKeys } from "@patchbay/core/workspace/queries";
 import { useWorkspaceList } from "@patchbay/core/workspace";
-import { api } from "@patchbay/core/api";
+import { api, ApiClient } from "@patchbay/core/api";
 import { useHasOnboarded } from "@patchbay/core/paths";
 import { setCurrentWorkspace } from "@patchbay/core/platform";
 import { ThemeProvider } from "@patchbay/ui/components/common/theme-provider";
@@ -28,7 +28,10 @@ import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
 import { Toaster } from "@patchbay/ui/components/ui/sonner";
 import { DesktopLoginPage } from "./pages/login";
 import { DesktopAuthRecoveryPage } from "./pages/auth-recovery";
-import { completeDesktopHandoff } from "./pages/login-handoff";
+import {
+  completeDesktopHandoff,
+  createDesktopLoginUrl,
+} from "./pages/login-handoff";
 import {
   GuestSessionRecoveryPage,
   LocalGuestShell,
@@ -552,13 +555,29 @@ export default function App() {
     });
   }, [localeAdapter, locale]);
 
-  const enableCloudMode = useCallback(async () => {
+  const startSignIn = useCallback(async () => {
+    if (!runtimeConfigResult.ok) {
+      throw new Error("Desktop runtime configuration is unavailable");
+    }
+    const runtimeConfig = runtimeConfigResult.config;
+    const handoffClient = new ApiClient(runtimeConfig.apiUrl);
+    const loginUrl = await createDesktopLoginUrl(
+      runtimeConfig.accountsUrl,
+      (state, codeChallenge) =>
+        handoffClient.initiateDesktopAuthHandoff(state, codeChallenge),
+    );
     const result = await window.desktopAPI.enableCloudMode();
     if (!result.ok) {
       throw new Error(`Unable to enable cloud mode: ${result.reason}`);
     }
+    try {
+      await window.desktopAPI.openExternal(loginUrl);
+    } catch (error) {
+      await window.desktopAPI.disableCloudMode().catch(() => undefined);
+      throw error;
+    }
     setBootState({ kind: "cloud" });
-  }, []);
+  }, [runtimeConfigResult]);
 
   const enterGuest = useCallback((session: LocalGuestSession) => {
     setBootState({ kind: "guest", session });
@@ -664,7 +683,7 @@ export default function App() {
       case "entry":
         return (
           <DesktopEntryPage
-            onEnableCloudMode={enableCloudMode}
+            onSignIn={startSignIn}
             onGuestSession={enterGuest}
           />
         );

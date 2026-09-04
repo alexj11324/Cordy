@@ -28,6 +28,7 @@ ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
 COPY --from=builder --chown=nextjs:nodejs /app/apps/auth-broker/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/apps/auth-broker/.next/static ./apps/auth-broker/.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/apps/auth-broker/public ./apps/auth-broker/public
 COPY --chown=nextjs:nodejs LICENSE NOTICE ./
 USER nextjs
 EXPOSE 3000

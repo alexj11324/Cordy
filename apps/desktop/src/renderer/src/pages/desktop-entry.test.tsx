@@ -13,15 +13,19 @@ function installDesktopAPI(createGuestSession: ReturnType<typeof vi.fn>) {
   });
 }
 
-function renderEntry(onGuestSession = vi.fn()) {
+function renderEntry({
+  onSignIn = vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+  onGuestSession = vi.fn<(session: LocalGuestSession) => void>(),
+}: {
+  onSignIn?: () => Promise<void>;
+  onGuestSession?: (session: LocalGuestSession) => void;
+} = {}) {
   return {
+    onSignIn,
     onGuestSession,
     ...render(
       <I18nProvider locale="zh-Hans" resources={RESOURCES}>
-        <DesktopEntryPage
-          onEnableCloudMode={vi.fn().mockResolvedValue(undefined)}
-          onGuestSession={onGuestSession}
-        />
+        <DesktopEntryPage onSignIn={onSignIn} onGuestSession={onGuestSession} />
       </I18nProvider>,
     ),
   };
@@ -32,6 +36,32 @@ beforeEach(() => {
 });
 
 describe("DesktopEntryPage", () => {
+  it("shows the black welcome surface with Sign in and Guest side by side", () => {
+    installDesktopAPI(vi.fn());
+    renderEntry();
+
+    expect(screen.getByTestId("desktop-entry")).toHaveClass("bg-zinc-950");
+    expect(screen.getByTestId("desktop-entry-brand")).toHaveTextContent(
+      "Patchbay",
+    );
+    expect(screen.getByTestId("desktop-entry-actions")).toContainElement(
+      screen.getByRole("button", { name: "登录" }),
+    );
+    expect(screen.getByTestId("desktop-entry-actions")).toContainElement(
+      screen.getByRole("button", { name: "Guest" }),
+    );
+  });
+
+  it("opens browser sign-in from the welcome surface", async () => {
+    installDesktopAPI(vi.fn());
+    const onSignIn = vi.fn().mockResolvedValue(undefined);
+    renderEntry({ onSignIn });
+
+    fireEvent.click(screen.getByRole("button", { name: "登录" }));
+
+    await waitFor(() => expect(onSignIn).toHaveBeenCalledOnce());
+  });
+
   it("opens the localized Guest username dialog and creates a local session", async () => {
     const createGuestSession = vi.fn().mockResolvedValue({
       ok: true,
@@ -41,9 +71,7 @@ describe("DesktopEntryPage", () => {
     const { onGuestSession } = renderEntry();
 
     fireEvent.click(screen.getByRole("button", { name: "Guest" }));
-    expect(
-      await screen.findByText("请设置你的账号名"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("请设置你的账号名")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("账号名"), {
       target: { value: "Alice" },
     });

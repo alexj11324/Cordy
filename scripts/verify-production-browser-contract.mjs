@@ -46,6 +46,22 @@ export function buildGoogleOAuthProbeUrl({ codeChallenge, state }) {
   return url.href;
 }
 
+export function buildAccountsLoginProbeUrl({ codeChallenge, state }) {
+  if (
+    !HANDOFF_VALUE_PATTERN.test(codeChallenge) ||
+    !HANDOFF_VALUE_PATTERN.test(state)
+  ) {
+    throw new Error("Accounts login probe requires a valid desktop handoff");
+  }
+  const url = new URL("/login", ACCOUNTS_ORIGIN);
+  url.search = new URLSearchParams({
+    platform: "desktop",
+    state,
+    code_challenge: codeChallenge,
+  }).toString();
+  return url.href;
+}
+
 export function requireGoogleOAuthNavigation(rawUrl) {
   const url = new URL(rawUrl);
   if (url.protocol !== "https:" || url.hostname !== "accounts.google.com") {

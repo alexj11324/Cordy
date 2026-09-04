@@ -11,6 +11,10 @@ test("auth broker release remains an independently gated image", () => {
   assert.ok(workflow.jobs["docker-auth-broker-merge"]);
   assert.match(JSON.stringify(workflow.jobs["publish-release"].needs), /docker-auth-broker-merge/);
   assert.match(read("Dockerfile.auth-broker"), /pnpm --filter @patchbay\/auth-broker build/);
+  assert.match(
+    read("Dockerfile.auth-broker"),
+    /COPY --from=builder[^\n]*apps\/auth-broker\/public/u,
+  );
   const deployment = read("deploy/helm/patchbay-auth-broker/templates/deployment.yaml");
   for (const name of ["CLERK_PUBLISHABLE_KEY", "PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN", "PATCHBAY_ORIGIN_AUTH_TOKEN"]) assert.match(deployment, new RegExp(name));
   assert.match(deployment, /image\.digest must be an immutable sha256 digest/);
@@ -26,8 +30,11 @@ test("shipping contract names only the Go API authority", () => {
   assert.doesNotMatch(JSON.stringify(contract), /rust/i);
 });
 
-test("desktop opens the accounts Google route directly", () => {
+test("desktop opens the Accounts login surface directly", () => {
   const handoff = read("apps/desktop/src/renderer/src/pages/login-handoff.ts");
-  assert.match(handoff, /new URL\(`\$\{accountsUrl\.replace\(\/\\\/\+\$\/, ""\)\}\/oauth\/google`\)/);
-  assert.doesNotMatch(handoff, /localhost|\/login\?/);
+  assert.match(
+    handoff,
+    /new URL\(`\$\{accountsUrl\.replace\(\/\\\/\+\$\/, ""\)\}\/login`\)/,
+  );
+  assert.doesNotMatch(handoff, /localhost|\/oauth\/google/);
 });

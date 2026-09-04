@@ -1,26 +1,22 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ReactNode } from "react";
 import { I18nProvider } from "@patchbay/core/i18n/react";
 import { RESOURCES } from "@patchbay/views/locales";
 import { DesktopLoginPage } from "./login";
 
 const mocks = vi.hoisted(() => ({
-  createGuestSession: vi.fn(),
   initiateDesktopAuthHandoff: vi.fn(),
   openExternal: vi.fn(),
-  createDesktopGoogleLoginUrl: vi.fn(),
-}));
-
-vi.mock("@patchbay/core/auth", () => ({
-  useAuthStore: (
-    selector: (state: {
-      createGuestSession: typeof mocks.createGuestSession;
-    }) => unknown,
-  ) => selector({ createGuestSession: mocks.createGuestSession }),
+  createDesktopLoginUrl: vi.fn(),
 }));
 
 vi.mock("@patchbay/core/api", () => ({
@@ -28,43 +24,11 @@ vi.mock("@patchbay/core/api", () => ({
 }));
 
 vi.mock("@patchbay/views/auth", () => ({
-  LoginPage: ({
-    logo,
-    embedded,
-    showGoogleSeparator,
-    externalError,
-    googleLoading,
-    onGoogleLogin,
-    extra,
-  }: {
-    logo?: ReactNode;
-    embedded?: boolean;
-    showGoogleSeparator?: boolean;
-    externalError?: ReactNode;
-    googleLoading?: boolean;
-    onGoogleLogin?: () => void;
-    extra?: ReactNode;
-  }) => (
-    <section
-      data-testid="login-page"
-      data-embedded={embedded ? "true" : "false"}
-      data-show-google-separator={showGoogleSeparator ? "true" : "false"}
-    >
-      {logo}
-      {externalError}
-      {onGoogleLogin && (
-        <button
-          type="button"
-          onClick={onGoogleLogin}
-          disabled={googleLoading}
-          aria-busy={googleLoading}
-        >
-          Continue with Google
-        </button>
-      )}
-      {extra}
-    </section>
-  ),
+  LoginPage: () => <div data-testid="legacy-embedded-login" />,
+}));
+
+vi.mock("@patchbay/core/auth", () => ({
+  useAuthStore: () => vi.fn(),
 }));
 
 vi.mock("@patchbay/ui/components/common/patchbay-icon", () => ({
@@ -76,7 +40,7 @@ vi.mock("@patchbay/views/platform", () => ({
 }));
 
 vi.mock("./login-handoff", () => ({
-  createDesktopGoogleLoginUrl: mocks.createDesktopGoogleLoginUrl,
+  createDesktopLoginUrl: mocks.createDesktopLoginUrl,
 }));
 
 function renderPage() {
@@ -100,13 +64,13 @@ function renderPage() {
 
 beforeEach(() => {
   vi.restoreAllMocks();
-  mocks.createDesktopGoogleLoginUrl.mockImplementation(
+  mocks.createDesktopLoginUrl.mockImplementation(
     async (
       _accountsUrl: string,
       register: (state: string, challenge: string) => Promise<unknown>,
     ) => {
       await register("state-1", "challenge-1");
-      return "https://accounts.example/google?state=state-1";
+      return "https://accounts.example/login?state=state-1";
     },
   );
   mocks.initiateDesktopAuthHandoff.mockResolvedValue({ registered: true });
@@ -118,64 +82,22 @@ afterEach(() => {
 });
 
 describe("DesktopLoginPage", () => {
-  it("renders the brand panel beside the form panel", () => {
+  it("keeps the Clerk form out of Desktop", () => {
     renderPage();
 
-    expect(
-      screen.getByTestId("authentication-brand-panel"),
-    ).toHaveTextContent("Patchbay");
-    expect(
-      screen.getByTestId("authentication-brand-panel"),
-    ).toHaveTextContent("Sofia Davis");
-    expect(screen.getByTestId("authentication-form-panel")).toContainElement(
-      screen.getByTestId("login-page"),
+    expect(screen.getByTestId("desktop-login-pending")).toHaveClass(
+      "bg-zinc-950",
     );
-  });
-
-  it("mounts the shared login page in embedded shadcn mode", () => {
-    renderPage();
-
-    expect(screen.getByTestId("login-page")).toHaveAttribute(
-      "data-embedded",
-      "true",
-    );
-    expect(screen.getByTestId("login-page")).toHaveAttribute(
-      "data-show-google-separator",
-      "true",
-    );
-  });
-
-  it("continues as guest through the auth store", async () => {
-    mocks.createGuestSession.mockResolvedValue({ is_guest: true });
-    renderPage();
-
-    fireEvent.click(screen.getByRole("button", { name: "Continue as guest" }));
-
-    await waitFor(() => {
-      expect(mocks.createGuestSession).toHaveBeenCalledOnce();
-    });
     expect(
-      screen.queryByText(/Could not start a guest session/),
+      screen.queryByTestId("authentication-form-panel"),
     ).not.toBeInTheDocument();
+    expect(screen.queryByText("Continue with Google")).not.toBeInTheDocument();
   });
 
-  it("shows a guest error when the server refuses the session", async () => {
-    mocks.createGuestSession.mockRejectedValue(new Error("offline"));
+  it("can reopen the Accounts login page through a fresh PKCE handoff", async () => {
     renderPage();
 
-    fireEvent.click(screen.getByRole("button", { name: "Continue as guest" }));
-
-    expect(
-      await screen.findByText(/Could not start a guest session/),
-    ).toBeInTheDocument();
-  });
-
-  it("opens Google login in the browser through the registered handoff", async () => {
-    renderPage();
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Continue with Google" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Open sign-in" }));
 
     await waitFor(() => {
       expect(mocks.initiateDesktopAuthHandoff).toHaveBeenCalledWith(
@@ -183,31 +105,12 @@ describe("DesktopLoginPage", () => {
         "challenge-1",
       );
     });
-    expect(mocks.openExternal).toHaveBeenCalledWith(
-      "https://accounts.example/google?state=state-1",
+    expect(mocks.createDesktopLoginUrl).toHaveBeenCalledWith(
+      "https://accounts.example",
+      expect.any(Function),
     );
-  });
-
-  it("disables Google while the browser handoff is opening", async () => {
-    let release!: () => void;
-    const gate = new Promise<unknown>((resolve) => {
-      release = () => resolve({ registered: true });
-    });
-    mocks.initiateDesktopAuthHandoff.mockReturnValue(gate);
-    renderPage();
-
-    const button = screen.getByRole("button", {
-      name: "Continue with Google",
-    });
-    fireEvent.click(button);
-
-    expect(await screen.findByRole("button", { name: "Continue with Google" }))
-      .toBeDisabled();
-    release();
-    await waitFor(() => {
-      expect(
-        screen.getByRole("button", { name: "Continue with Google" }),
-      ).not.toBeDisabled();
-    });
+    expect(mocks.openExternal).toHaveBeenCalledWith(
+      "https://accounts.example/login?state=state-1",
+    );
   });
 });
