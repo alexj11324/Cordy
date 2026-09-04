@@ -14,9 +14,9 @@
  * pass through unchanged. New @-mentions added during the edit get serialized
  * normally via the marker pipeline.
  *
- * Properties (status / priority / owner / executor / labels / project / due_date)
- * are NOT edited here — they have dedicated chip pickers on the detail page.
- * This screen only owns the two free-text fields.
+ * Properties (status / priority / owner / executor / reviewer / labels /
+ * project / due_date) are NOT edited here — they have dedicated chip pickers
+ * on the detail page. This screen only owns the two free-text fields.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -78,7 +78,14 @@ export default function EditIssue() {
       currentDescription.trim() !==
         stripChannelMediaMarkers(initialDescription).trim()
     );
-  }, [detail.data, seeded, title, initialTitle, currentDescription, initialDescription]);
+  }, [
+    detail.data,
+    seeded,
+    title,
+    initialTitle,
+    currentDescription,
+    initialDescription,
+  ]);
 
   const canSave =
     seeded && title.trim().length > 0 && dirty && !update.isPending;
@@ -88,18 +95,14 @@ export default function EditIssue() {
       router.back();
       return;
     }
-    Alert.alert(
-      "Discard changes?",
-      "Your edits to this issue will be lost.",
-      [
-        { text: "Keep editing", style: "cancel" },
-        {
-          text: "Discard",
-          style: "destructive",
-          onPress: () => router.back(),
-        },
-      ],
-    );
+    Alert.alert("Discard changes?", "Your edits to this issue will be lost.", [
+      { text: "Keep editing", style: "cancel" },
+      {
+        text: "Discard",
+        style: "destructive",
+        onPress: () => router.back(),
+      },
+    ]);
   }, [dirty]);
 
   const onSave = useCallback(() => {

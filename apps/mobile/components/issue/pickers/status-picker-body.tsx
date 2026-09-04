@@ -27,9 +27,10 @@ import { THEME } from "@/lib/theme";
 interface Props {
   value: IssueStatus;
   onChange: (next: IssueStatus) => void;
+  disabled?: boolean;
 }
 
-export function StatusPickerBody({ value, onChange }: Props) {
+export function StatusPickerBody({ value, onChange, disabled = false }: Props) {
   const { colorScheme } = useColorScheme();
   const checkColor =
     colorScheme === "dark" ? THEME.dark.primary : THEME.light.primary;
@@ -47,8 +48,14 @@ export function StatusPickerBody({ value, onChange }: Props) {
           return (
             <Pressable
               key={option.key}
+              disabled={disabled}
               onPress={() => onChange(option.key)}
-              className="flex-row items-center gap-3 rounded-lg px-3 py-3 active:bg-secondary"
+              className={
+                disabled
+                  ? "flex-row items-center gap-3 rounded-lg px-3 py-3 opacity-50"
+                  : "flex-row items-center gap-3 rounded-lg px-3 py-3 active:bg-secondary"
+              }
+              accessibilityState={{ disabled, selected }}
             >
               <StatusIcon
                 status={option.key}

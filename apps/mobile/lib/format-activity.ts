@@ -1,8 +1,8 @@
 /**
  * Activity-row text formatter. Subset of the web `formatActivity` in
- * packages/views/issues/components/issue-detail.tsx:95 — same actions,
- * English-only copy (mobile v1 is English-only; mirror the structure when
- * mobile gains i18n).
+ * packages/views/issues/components/issue-detail.tsx:95 — same actions. Review
+ * assignment/handoff copy follows the account language; legacy non-review
+ * actions retain their existing English copy until their own migration.
  *
  * Unknown actions fall through to the raw string in `entry.action`. NEVER
  * throw and NEVER drop the row — that's the API Response Compatibility rule
@@ -17,6 +17,7 @@ import type {
 } from "@patchbay/core/types";
 import { formatDateOnly } from "@patchbay/core/issues/date";
 import { STATUS_LABEL, isIssueStatusCategory } from "@/lib/issue-status";
+import { formatIssueRoleCopy, getIssueRoleCopy } from "@/lib/issue-role-copy";
 
 const PRIORITY_LABEL: Record<IssuePriority, string> = {
   urgent: "Urgent",
@@ -63,7 +64,7 @@ function reviewActivityIsHandoff(
   toStatus: string | undefined,
   resolveCategory?: (statusKey: string) => IssueStatusCategory,
 ): boolean {
-  if (!fromStatus || !toStatus) return true;
+  if (!fromStatus || !toStatus) return false;
   const fromCategory =
     resolveCategory?.(fromStatus) ??
     (isIssueStatusCategory(fromStatus) ? fromStatus : undefined);
@@ -73,7 +74,7 @@ function reviewActivityIsHandoff(
   if (fromCategory && toCategory) {
     return fromCategory !== "in_review" && toCategory === "in_review";
   }
-  return fromStatus !== toStatus;
+  return false;
 }
 
 // start_date / due_date are calendar days — format timezone-safely (no offset
@@ -91,6 +92,7 @@ export function formatActivity(
   ) => string,
   resolveStatusLabel?: (statusKey: string) => string,
   resolveStatusCategory?: (statusKey: string) => IssueStatusCategory,
+  language?: string | null,
 ): string {
   const details = entry.details ?? {};
   switch (entry.action) {
@@ -123,6 +125,7 @@ export function formatActivity(
       return "changed owner";
     }
     case "review_handoff": {
+      const copy = getIssueRoleCopy(language);
       const fromType = detailString(details, "from_type");
       const fromId = detailString(details, "from_id");
       const toType = detailString(details, "to_type");
@@ -142,11 +145,19 @@ export function formatActivity(
           resolveStatusCategory,
         )
       ) {
-        return `handed review from ${fromName} to ${toName}`;
+        return formatIssueRoleCopy(copy.reviewHandoffFromTo, {
+          from: fromName,
+          to: toName,
+        });
       }
-      if (!toId) return "removed reviewer";
-      if (!fromId) return `assigned reviewer to ${toName}`;
-      return `changed reviewer from ${fromName} to ${toName}`;
+      if (!toId) return copy.reviewerRemoved;
+      if (!fromId) {
+        return formatIssueRoleCopy(copy.reviewerAssignedTo, { name: toName });
+      }
+      return formatIssueRoleCopy(copy.reviewerChangedFromTo, {
+        from: fromName,
+        to: toName,
+      });
     }
     case "start_date_changed": {
       const to = detailString(details, "to");

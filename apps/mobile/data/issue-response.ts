@@ -1,28 +1,15 @@
 import type { Issue } from "@patchbay/core/types";
-import {
-  CreateIssueResponseSchema,
-  IssueSchema,
-} from "@patchbay/core/api/schemas";
-import { parseWithFallback } from "@/lib/parse-response";
 
-export function parseCreatedIssueResponse(raw: unknown): Issue {
-  const issue = parseWithFallback<Issue | null>(
-    raw,
-    CreateIssueResponseSchema,
-    null,
-    { endpoint: "POST /api/issues" },
-  );
+/** Require the identity fields after ApiClient's schema-validation rail. */
+export function requireCreatedIssueResponse(issue: Issue | null): Issue {
   if (!issue) throw new Error("Invalid issue create response");
   return issue;
 }
 
-export function parseUpdatedIssueResponse(
+export function requireUpdatedIssueResponse(
   expectedIssueId: string,
-  raw: unknown,
+  issue: Issue | null,
 ): Issue {
-  const issue = parseWithFallback<Issue | null>(raw, IssueSchema, null, {
-    endpoint: "PUT /api/issues/:id",
-  });
   if (!issue || issue.id !== expectedIssueId) {
     throw new Error("Invalid issue update response");
   }

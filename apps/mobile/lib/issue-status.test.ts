@@ -35,8 +35,13 @@ function entry(
   };
 }
 
-function issue(overrides: Partial<Issue>): Pick<Issue, "status" | "status_category"> {
-  return { status: "todo", ...overrides } as Pick<Issue, "status" | "status_category">;
+function issue(
+  overrides: Partial<Issue>,
+): Pick<Issue, "status" | "status_category"> {
+  return { status: "todo", ...overrides } as Pick<
+    Issue,
+    "status" | "status_category"
+  >;
 }
 
 describe("issueColumnCategory", () => {
@@ -44,7 +49,9 @@ describe("issueColumnCategory", () => {
   // already resolved onto the payload.
   it("prefers the server-resolved category", () => {
     expect(
-      issueColumnCategory(issue({ status: "human_review", status_category: "in_review" })),
+      issueColumnCategory(
+        issue({ status: "human_review", status_category: "in_review" }),
+      ),
     ).toBe("in_review");
   });
 
@@ -61,15 +68,28 @@ describe("issueColumnCategory", () => {
 
   it("ignores a category value this build does not know", () => {
     expect(
-      issueColumnCategory(issue({ status: "qa", status_category: "started" as never })),
+      issueColumnCategory(
+        issue({ status: "qa", status_category: "started" as never }),
+      ),
     ).toBe("todo");
   });
 
   it("puts every built-in in a board section except cancelled", () => {
-    for (const key of ["backlog", "todo", "in_progress", "in_review", "done", "blocked"]) {
-      expect(BOARD_CATEGORIES).toContain(issueColumnCategory(issue({ status: key })));
+    for (const key of [
+      "backlog",
+      "todo",
+      "in_progress",
+      "in_review",
+      "done",
+      "blocked",
+    ]) {
+      expect(BOARD_CATEGORIES).toContain(
+        issueColumnCategory(issue({ status: key })),
+      );
     }
-    expect(BOARD_CATEGORIES).not.toContain(issueColumnCategory(issue({ status: "cancelled" })));
+    expect(BOARD_CATEGORIES).not.toContain(
+      issueColumnCategory(issue({ status: "cancelled" })),
+    );
   });
 });
 
@@ -80,15 +100,37 @@ describe("buildIssueStatusCatalog", () => {
   it("resolves every built-in with no catalog loaded", () => {
     const c = buildIssueStatusCatalog(undefined);
     expect(c.isLoaded).toBe(false);
-    for (const key of ["backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"]) {
+    for (const key of [
+      "backlog",
+      "todo",
+      "in_progress",
+      "in_review",
+      "done",
+      "blocked",
+      "cancelled",
+    ]) {
       expect(c.categoryOf(key)).toBe(key);
     }
     expect(c.labelOf("in_review")).toBe("In Review");
     expect(c.colorOf("in_review")).toBeNull();
   });
 
+  it("localizes the in-review status in every supported account language", () => {
+    expect(
+      buildIssueStatusCatalog(undefined, "zh-CN").labelOf("in_review"),
+    ).toBe("审核中");
+    expect(
+      buildIssueStatusCatalog(undefined, "ja-JP").labelOf("in_review"),
+    ).toBe("レビュー中");
+    expect(
+      buildIssueStatusCatalog(undefined, "ko-KR").labelOf("in_review"),
+    ).toBe("리뷰 중");
+  });
+
   it("maps a custom status to its category and name", () => {
-    const c = buildIssueStatusCatalog([entry("human_review", "in_review", { name: "Human Review" })]);
+    const c = buildIssueStatusCatalog([
+      entry("human_review", "in_review", { name: "Human Review" }),
+    ]);
     expect(c.categoryOf("human_review")).toBe("in_review");
     expect(c.labelOf("human_review")).toBe("Human Review");
     expect(c.colorOf("human_review")).toBe("#123456");
@@ -112,7 +154,10 @@ describe("buildIssueStatusCatalog", () => {
       is_system: true,
       color: "#22c55e",
     });
-    const c = buildIssueStatusCatalog([builtIn, entry("qa", "in_review", { name: "QA" })]);
+    const c = buildIssueStatusCatalog([
+      builtIn,
+      entry("qa", "in_review", { name: "QA" }),
+    ]);
     expect(c.labelOf("in_review")).toBe("In Review");
     expect(c.colorOf("in_review")).toBeNull();
     expect(c.colorOf("qa")).toBe("#123456");
@@ -120,7 +165,9 @@ describe("buildIssueStatusCatalog", () => {
 
   it("issueStatusColor answers the same question for an entry in hand", () => {
     expect(issueStatusColor(undefined)).toBeNull();
-    expect(issueStatusColor(entry("qa", "in_review", { is_system: true }))).toBeNull();
+    expect(
+      issueStatusColor(entry("qa", "in_review", { is_system: true })),
+    ).toBeNull();
     expect(issueStatusColor(entry("qa", "in_review"))).toBe("#123456");
   });
 });
@@ -201,20 +248,31 @@ describe("issueBehavesAs", () => {
 
   it("treats a custom status in the cancelled category as closed", () => {
     expect(
-      issueBehavesAsAny(issue({ status: "wont_do", status_category: "cancelled" }), CLOSED_CATEGORIES),
+      issueBehavesAsAny(
+        issue({ status: "wont_do", status_category: "cancelled" }),
+        CLOSED_CATEGORIES,
+      ),
     ).toBe(true);
   });
 
   it("still answers for the built-ins", () => {
-    expect(issueBehavesAsAny(issue({ status: "done" }), CLOSED_CATEGORIES)).toBe(true);
-    expect(issueBehavesAsAny(issue({ status: "cancelled" }), CLOSED_CATEGORIES)).toBe(true);
-    expect(issueBehavesAsAny(issue({ status: "in_review" }), CLOSED_CATEGORIES)).toBe(false);
+    expect(
+      issueBehavesAsAny(issue({ status: "done" }), CLOSED_CATEGORIES),
+    ).toBe(true);
+    expect(
+      issueBehavesAsAny(issue({ status: "cancelled" }), CLOSED_CATEGORIES),
+    ).toBe(true);
+    expect(
+      issueBehavesAsAny(issue({ status: "in_review" }), CLOSED_CATEGORIES),
+    ).toBe(false);
   });
 
   // An unresolved custom key fails SAFE: false keeps the row at full opacity
   // rather than dimming work that may well still be open.
   it("says no for a status it cannot resolve", () => {
-    expect(issueBehavesAsAny(issue({ status: "qa" }), CLOSED_CATEGORIES)).toBe(false);
+    expect(issueBehavesAsAny(issue({ status: "qa" }), CLOSED_CATEGORIES)).toBe(
+      false,
+    );
   });
 });
 
@@ -222,7 +280,9 @@ describe("isCustomStatus", () => {
   // Drives the row chip: a section header already names the category, so the
   // chip must speak only when the status adds something the header does not.
   it("is true for a custom status the catalog knows", () => {
-    const c = buildIssueStatusCatalog([entry("qa", "in_review", { name: "QA" })]);
+    const c = buildIssueStatusCatalog([
+      entry("qa", "in_review", { name: "QA" }),
+    ]);
     expect(isCustomStatus(c, "qa")).toBe(true);
   });
 
@@ -236,14 +296,18 @@ describe("isCustomStatus", () => {
   // Backstop for a server that omits `is_system` — the schema defaults it to
   // false, and a built-in must stay silent either way.
   it("stays silent for a built-in row missing is_system", () => {
-    const c = buildIssueStatusCatalog([entry("done", "done", { name: "Done" })]);
+    const c = buildIssueStatusCatalog([
+      entry("done", "done", { name: "Done" }),
+    ]);
     expect(isCustomStatus(c, "done")).toBe(false);
   });
 
   // No catalog means no name to show, so the row renders exactly as it did
   // before the catalog existed rather than flashing a chip.
   it("stays silent when the catalog has not landed", () => {
-    expect(isCustomStatus(buildIssueStatusCatalog(undefined), "qa")).toBe(false);
+    expect(isCustomStatus(buildIssueStatusCatalog(undefined), "qa")).toBe(
+      false,
+    );
     expect(isCustomStatus(buildIssueStatusCatalog([]), "qa")).toBe(false);
   });
 });

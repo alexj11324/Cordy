@@ -34,6 +34,7 @@ export function RolePickerBody({
   onChange,
   allowUnassigned = true,
   excludedActor = null,
+  disabled = false,
 }: {
   kind: RolePickerKind;
   value: RoleValue;
@@ -41,6 +42,7 @@ export function RolePickerBody({
   onChange: (next: RoleValue) => void;
   allowUnassigned?: boolean;
   excludedActor?: RoleValue;
+  disabled?: boolean;
 }) {
   const wsId = useWorkspaceStore((state) => state.currentWorkspaceId);
   const language = useAuthStore((state) => state.user?.language);
@@ -113,7 +115,7 @@ export function RolePickerBody({
           item.kind === "actor" && item.actor.needsRuntime === true;
         return (
           <Pressable
-            disabled={needsRuntime}
+            disabled={disabled || needsRuntime}
             onPress={() =>
               onChange(
                 item.kind === "unassigned"
@@ -123,8 +125,12 @@ export function RolePickerBody({
             }
             className={cn(
               "flex-row items-center gap-3 px-4 py-3 active:bg-secondary",
-              needsRuntime && "opacity-50",
+              (disabled || needsRuntime) && "opacity-50",
             )}
+            accessibilityState={{
+              disabled: disabled || needsRuntime,
+              selected: isIssueRoleOptionSelected(value, item),
+            }}
           >
             {item.kind === "unassigned" ? (
               <View

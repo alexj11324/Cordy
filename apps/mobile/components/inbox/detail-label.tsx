@@ -6,8 +6,9 @@
  * explicit owner/executor wording so an incomplete executor payload cannot
  * be rendered as a member assignment.
  *
- * Web is i18n-driven (useT). Mobile v1 is English-only; when mobile ships
- * i18n, mirror the namespace structure.
+ * Reviewer assignment/request copy follows the account language. Legacy
+ * non-review inbox labels retain their existing English copy until their own
+ * localization migration.
  */
 import { View } from "react-native";
 import type { InboxItem, IssuePriority } from "@patchbay/core/types";
@@ -15,6 +16,7 @@ import { Text } from "@/components/ui/text";
 import { StatusIcon } from "@/components/ui/status-icon";
 import { PriorityIcon } from "@/components/ui/priority-icon";
 import { useActorLookup } from "@/data/use-actor-name";
+import { useAuthStore } from "@/data/auth-store";
 import { inboxDetailText } from "@/lib/inbox-detail-text";
 import { useIssueStatuses } from "@/lib/use-issue-statuses";
 import { cn } from "@/lib/utils";
@@ -36,6 +38,7 @@ export function InboxDetailLabel({
   className?: string;
 }) {
   const { getName } = useActorLookup();
+  const language = useAuthStore((state) => state.user?.language);
   // `details.to` is a status KEY and may be a custom one, so its name, colour
   // and glyph all resolve through the workspace catalog. (MUL-6243)
   const { categoryOf, colorOf, labelOf } = useIssueStatuses();
@@ -73,12 +76,17 @@ export function InboxDetailLabel({
     );
   }
 
-  const text = inboxDetailText(item, (type, id) => {
-    if (type === "member" || type === "agent" || type === "team") {
-      return getName(type, id);
-    }
-    return "Unknown";
-  });
+  const text = inboxDetailText(
+    item,
+    (type, id) => {
+      if (type === "member" || type === "agent" || type === "team") {
+        return getName(type, id);
+      }
+      return "Unknown";
+    },
+    language,
+    categoryOf,
+  );
 
   return (
     <Text

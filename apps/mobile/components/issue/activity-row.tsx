@@ -29,7 +29,9 @@ import { ActorAvatar } from "@/components/ui/actor-avatar";
 import { formatActivity } from "@/lib/format-activity";
 import { timeAgo } from "@/lib/time-ago";
 import { useActorLookup } from "@/data/use-actor-name";
+import { useAuthStore } from "@/data/auth-store";
 import { useIssueStatuses } from "@/lib/use-issue-statuses";
+import { getIssueRoleCopy } from "@/lib/issue-role-copy";
 import type { IssueStatusCatalog } from "@/lib/issue-status";
 import { useColorScheme } from "@/lib/use-color-scheme";
 import { THEME } from "@/lib/theme";
@@ -108,7 +110,14 @@ function LeadIcon({
   }
   return (
     <ActorAvatar
-      type={entry.actor_type as "member" | "agent"}
+      type={
+        entry.actor_type === "member" ||
+        entry.actor_type === "agent" ||
+        entry.actor_type === "team" ||
+        entry.actor_type === "system"
+          ? entry.actor_type
+          : null
+      }
       id={entry.actor_id}
       size={16}
     />
@@ -117,19 +126,25 @@ function LeadIcon({
 
 export function ActivityRow({ entry }: { entry: TimelineEntry }) {
   const { getName } = useActorLookup();
+  const language = useAuthStore((state) => state.user?.language);
+  const roleCopy = getIssueRoleCopy(language);
   const catalog = useIssueStatuses();
   const { colorScheme } = useColorScheme();
   const mutedFg = THEME[colorScheme].mutedForeground;
   const resolveName = (
     type: string | null | undefined,
     id: string | null | undefined,
-  ): string => getName(type as "member" | "agent" | null | undefined, id);
+  ): string =>
+    type === "member" || type === "agent" || type === "team"
+      ? getName(type, id)
+      : roleCopy.unknown;
   const actorName = resolveName(entry.actor_type, entry.actor_id);
   const verb = formatActivity(
     entry,
     resolveName,
     catalog.labelOf,
     catalog.categoryOf,
+    language,
   );
   const showCoalesceBadge =
     (entry.coalesced_count ?? 1) > 1 &&

@@ -76,6 +76,7 @@ import {
   EMPTY_LIST_DEPENDENCY_GRAPHS_RESPONSE,
   EMPTY_LIST_WECOM_INSTALLATIONS_RESPONSE,
   EMPTY_TIMELINE_ENTRIES,
+  CreateIssueResponseSchema,
   DependencyGraphResponseSchema,
   IssueSchema,
   ListWecomInstallationsResponseSchema,
@@ -168,8 +169,8 @@ import { parseWithFallback } from "@/lib/parse-response";
 import { createRequestId } from "@/lib/request-id";
 import { buildCommentUpdateBody } from "./revision";
 import {
-  parseCreatedIssueResponse,
-  parseUpdatedIssueResponse,
+  requireCreatedIssueResponse,
+  requireUpdatedIssueResponse,
 } from "./issue-response";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
@@ -833,11 +834,14 @@ class ApiClient {
   // CreateIssue). Mobile sends only the fields the form fills in; backend
   // applies its own defaults for anything omitted.
   async createIssue(body: CreateIssueRequest): Promise<Issue> {
-    const raw = await this.fetch<unknown>("/api/issues", {
-      method: "POST",
-      body: JSON.stringify(body),
-    });
-    return parseCreatedIssueResponse(raw);
+    const parsed = await this.fetchValidatedWith<Issue | null>(
+      "/api/issues",
+      CreateIssueResponseSchema,
+      null,
+      { method: "POST", body: JSON.stringify(body) },
+      { endpoint: "POST /api/issues" },
+    );
+    return requireCreatedIssueResponse(parsed);
   }
 
   // Timeline returns the full ASC entry list in one shot — server-side
@@ -1024,11 +1028,14 @@ class ApiClient {
   // Method is PUT to match backend router (server/cmd/server/router.go:327)
   // and web client (packages/core/api/client.ts:465).
   async updateIssue(id: string, body: UpdateIssueRequest): Promise<Issue> {
-    const raw = await this.fetch<unknown>(`/api/issues/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(body),
-    });
-    return parseUpdatedIssueResponse(id, raw);
+    const parsed = await this.fetchValidatedWith<Issue | null>(
+      `/api/issues/${id}`,
+      IssueSchema,
+      null,
+      { method: "PUT", body: JSON.stringify(body) },
+      { endpoint: "PUT /api/issues/:id" },
+    );
+    return requireUpdatedIssueResponse(id, parsed);
   }
 
   // Backend returns 204 No Content on success

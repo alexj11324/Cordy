@@ -23,6 +23,7 @@ import type {
   IssueStatusCategory,
   IssueStatusEntry,
 } from "@patchbay/core/types";
+import { normalizeProductLocale, type ProductLocale } from "@/lib/locale";
 
 /**
  * The 7 categories in canonical display order. Mirrors `ALL_STATUSES` in
@@ -58,15 +59,56 @@ export const BOARD_CATEGORIES: IssueStatusCategory[] = STATUS_CATEGORIES.filter(
  * its labels, exactly as web resolves built-ins through i18n and only custom
  * statuses through the catalog (`useStatusLabel`).
  */
-export const STATUS_LABEL: Record<IssueStatusCategory, string> = {
-  backlog: "Backlog",
-  todo: "Todo",
-  in_progress: "In Progress",
-  in_review: "In Review",
-  done: "Done",
-  blocked: "Blocked",
-  cancelled: "Cancelled",
+const STATUS_LABELS: Record<
+  ProductLocale,
+  Record<IssueStatusCategory, string>
+> = {
+  en: {
+    backlog: "Backlog",
+    todo: "Todo",
+    in_progress: "In Progress",
+    in_review: "In Review",
+    done: "Done",
+    blocked: "Blocked",
+    cancelled: "Cancelled",
+  },
+  "zh-Hans": {
+    backlog: "待整理",
+    todo: "待办",
+    in_progress: "进行中",
+    in_review: "审核中",
+    done: "已完成",
+    blocked: "已阻塞",
+    cancelled: "已取消",
+  },
+  ja: {
+    backlog: "バックログ",
+    todo: "未着手",
+    in_progress: "進行中",
+    in_review: "レビュー中",
+    done: "完了",
+    blocked: "ブロック中",
+    cancelled: "キャンセル",
+  },
+  ko: {
+    backlog: "백로그",
+    todo: "할 일",
+    in_progress: "진행 중",
+    in_review: "리뷰 중",
+    done: "완료",
+    blocked: "차단됨",
+    cancelled: "취소됨",
+  },
 };
+
+/** English compatibility map for pure callers that do not hold an account locale. */
+export const STATUS_LABEL = STATUS_LABELS.en;
+
+export function issueStatusLabels(
+  language: string | null | undefined,
+): Record<IssueStatusCategory, string> {
+  return STATUS_LABELS[normalizeProductLocale(language)];
+}
 
 export const PRIORITY_LABEL: Record<IssuePriority, string> = {
   none: "No priority",
@@ -78,7 +120,9 @@ export const PRIORITY_LABEL: Record<IssuePriority, string> = {
 
 const CATEGORY_SET = new Set<string>(STATUS_CATEGORIES);
 
-export function isIssueStatusCategory(value: string): value is IssueStatusCategory {
+export function isIssueStatusCategory(
+  value: string,
+): value is IssueStatusCategory {
   return CATEGORY_SET.has(value);
 }
 
@@ -155,7 +199,10 @@ export function issueBehavesAsAny(
 }
 
 /** The categories that mean "this issue is closed" — done or cancelled. */
-export const CLOSED_CATEGORIES: readonly IssueStatusCategory[] = ["done", "cancelled"];
+export const CLOSED_CATEGORIES: readonly IssueStatusCategory[] = [
+  "done",
+  "cancelled",
+];
 
 /**
  * The `#rrggbb` a surface must paint one catalog entry with, or null when it
@@ -167,7 +214,9 @@ export const CLOSED_CATEGORIES: readonly IssueStatusCategory[] = ["done", "cance
  * same status in two different greens depending on which control you look at
  * (MUL-6440).
  */
-export function issueStatusColor(entry: IssueStatusEntry | undefined): string | null {
+export function issueStatusColor(
+  entry: IssueStatusEntry | undefined,
+): string | null {
   if (!entry || entry.is_system === true) return null;
   return entry.color || null;
 }
@@ -208,9 +257,11 @@ export interface IssueStatusCatalog {
  */
 export function buildIssueStatusCatalog(
   entries: IssueStatusEntry[] | undefined,
+  language?: string | null,
 ): IssueStatusCatalog {
   const list = entries ?? [];
   const byKey = new Map(list.map((entry) => [entry.key, entry]));
+  const builtInLabels = issueStatusLabels(language);
 
   return {
     statuses: list,
@@ -225,7 +276,7 @@ export function buildIssueStatusCatalog(
     labelOf: (statusKey) => {
       // Built-in first, so a workspace that never opened status settings reads
       // exactly as it did before the catalog existed.
-      if (isIssueStatusCategory(statusKey)) return STATUS_LABEL[statusKey];
+      if (isIssueStatusCategory(statusKey)) return builtInLabels[statusKey];
       return byKey.get(statusKey)?.name ?? statusKey;
     },
     inCategory: (category) =>
@@ -250,7 +301,9 @@ export function isCustomStatus(
   // `is_system` is the authority. The key comparison is the backstop for a
   // server that does not send it — the schema defaults it to false, and a
   // built-in must stay silent either way.
-  return entry.is_system !== true && statusKey !== catalog.categoryOf(statusKey);
+  return (
+    entry.is_system !== true && statusKey !== catalog.categoryOf(statusKey)
+  );
 }
 
 /** One row in the status picker / status filter. */
@@ -281,7 +334,14 @@ export function statusOptions(catalog: IssueStatusCatalog): StatusOption[] {
   return STATUS_CATEGORIES.flatMap<StatusOption>((category) => {
     const entries = catalog.inCategory(category);
     if (entries.length === 0) {
-      return [{ key: category, category, label: STATUS_LABEL[category], color: null }];
+      return [
+        {
+          key: category,
+          category,
+          label: catalog.labelOf(category),
+          color: null,
+        },
+      ];
     }
     return entries.map((entry) => ({
       key: entry.key,

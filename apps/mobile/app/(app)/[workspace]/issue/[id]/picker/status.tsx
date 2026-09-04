@@ -6,15 +6,17 @@
  * calls `useUpdateIssue` directly on selection, then `router.back()`s. No
  * onChange callback to a parent.
  *
- * If the cache is cold (rare — the user reaches this screen by tapping
- * a chip on the issue-detail page that already populated it), the picker
- * still renders against the current value of `todo` and the optimistic
- * mutation patches the cache when the user picks.
+ * If the cache is cold, the picker waits for the issue instead of accepting a
+ * selection against guessed role/status state. That keeps handoff validation
+ * tied to the same snapshot the user sees.
  */
-import { Alert } from "react-native";
+import { useRef } from "react";
+import { ActivityIndicator, Alert, View } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { StatusPickerBody } from "@/components/issue/pickers/status-picker-body";
+import { Button } from "@/components/ui/button";
+import { Text } from "@/components/ui/text";
 import { issueDetailOptions } from "@/data/queries/issues";
 import { useUpdateIssue } from "@/data/mutations/issues";
 import { useAuthStore } from "@/data/auth-store";
@@ -22,7 +24,7 @@ import { useWorkspaceStore } from "@/data/workspace-store";
 import { getIssueRoleCopy } from "@/lib/issue-role-copy";
 import { issueActorForRole } from "@/lib/issue-scope";
 import { issueStatusCategory } from "@/lib/issue-status";
-import { reviewWorkflowViolation } from "@/lib/issue-review-workflow";
+import { planIssueStatusSelection } from "@/lib/issue-review-workflow";
 import { useIssueStatuses } from "@/lib/use-issue-statuses";
 
 export default function IssueStatusPickerRoute() {
@@ -34,38 +36,58 @@ export default function IssueStatusPickerRoute() {
   const language = useAuthStore((s) => s.user?.language);
   const copy = getIssueRoleCopy(language);
   const catalog = useIssueStatuses();
-  const { data: issue } = useQuery(issueDetailOptions(wsId, id));
+  const detail = useQuery(issueDetailOptions(wsId, id));
+  const issue = detail.data;
   const updateIssue = useUpdateIssue(id);
+  const writingRef = useRef(false);
+
+  if (detail.isLoading) {
+    return (
+      <View className="flex-1 items-center justify-center bg-background">
+        <ActivityIndicator />
+      </View>
+    );
+  }
+  if (detail.error || !issue) {
+    return (
+      <View className="flex-1 items-center justify-center gap-3 bg-background px-6">
+        <Text className="text-sm text-destructive">{copy.loadIssueFailed}</Text>
+        <Button variant="outline" onPress={() => detail.refetch()}>
+          <Text>{copy.retry}</Text>
+        </Button>
+      </View>
+    );
+  }
 
   return (
     <StatusPickerBody
-      value={issue?.status ?? "todo"}
+      value={issue.status}
+      disabled={updateIssue.isPending}
       onChange={(next) => {
-        if (!issue) return;
+        if (writingRef.current) return;
         const previousCategory =
           issueStatusCategory(issue) ?? catalog.categoryOf(issue.status);
-        const violation = reviewWorkflowViolation({
+        const plan = planIssueStatusSelection({
           previousCategory,
+          nextStatus: next,
           nextCategory: catalog.categoryOf(next),
           executor: issueActorForRole(issue, "executor"),
           reviewer: issueActorForRole(issue, "reviewer"),
         });
-        if (violation === "executor_required") {
+        if (plan.kind === "blocked") {
           Alert.alert(copy.executor, copy.executorRequired);
           return;
         }
-        if (
-          violation === "reviewer_required" ||
-          violation === "reviewer_must_differ"
-        ) {
+        if (plan.kind === "choose_reviewer") {
           router.replace({
             pathname: "/[workspace]/issue/[id]/picker/reviewer",
-            params: { workspace, id, handoffStatus: next },
+            params: { workspace, id, handoffStatus: plan.status },
           });
           return;
         }
+        writingRef.current = true;
         updateIssue.mutate(
-          { status: next },
+          { status: plan.status },
           {
             onSuccess: () => router.back(),
             onError: (error) =>
@@ -73,6 +95,9 @@ export default function IssueStatusPickerRoute() {
                 copy.updateFailed,
                 error instanceof Error ? error.message : copy.updateFailed,
               ),
+            onSettled: () => {
+              writingRef.current = false;
+            },
           },
         );
       }}

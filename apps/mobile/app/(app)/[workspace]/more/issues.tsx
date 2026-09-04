@@ -48,7 +48,7 @@ import {
   type IssuesScope,
 } from "@/data/stores/issues-view-store";
 import { useClearFiltersOnWorkspaceChange } from "@/lib/use-clear-filters-on-workspace-change";
-import { PRIORITY_LABEL, STATUS_LABEL } from "@/lib/issue-status";
+import { PRIORITY_LABEL } from "@/lib/issue-status";
 import { useIssueStatuses } from "@/lib/use-issue-statuses";
 import { groupIssuesByCategory } from "@/lib/group-issues-by-category";
 import { filterIssues } from "@/lib/filter-issues";
@@ -172,6 +172,7 @@ export default function IssuesPage() {
             <SectionHeader
               category={section.category}
               count={section.data.length}
+              label={catalog.labelOf(section.category)}
             />
           )}
           contentContainerClassName="pb-6"
@@ -342,16 +343,18 @@ function Chip({ label, onClear }: { label: string; onClear: () => void }) {
 function SectionHeader({
   category,
   count,
+  label,
 }: {
   category: IssueStatusCategory;
   count: number;
+  label: string;
 }) {
   return (
     <View className="flex-row items-center gap-2 px-4 py-2 bg-background">
       {/* A category IS a built-in status key, so it resolves to its own glyph. */}
       <StatusIcon status={category} size={14} />
       <Text className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-        {STATUS_LABEL[category]}
+        {label}
       </Text>
       <Text className="text-xs text-muted-foreground/60">{count}</Text>
     </View>

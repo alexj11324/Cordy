@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { getIssueRoleCopy, ISSUE_ROLE_COPY_LOCALES } from "./issue-role-copy";
+import {
+  formatIssueRoleCopy,
+  getIssueRoleCopy,
+  ISSUE_ROLE_COPY_LOCALES,
+} from "./issue-role-copy";
 
 describe("issue role copy", () => {
   it("provides every role-picker label in all four product locales", () => {
@@ -24,5 +28,31 @@ describe("issue role copy", () => {
     expect(copy.reviewHandoff).toBe("Review handoff");
     expect(copy.reviewerRequired).toContain("reviewer");
     expect(copy.reviewerMustDiffer).toContain("executor");
+    expect(
+      formatIssueRoleCopy(copy.reviewHandoffFromTo, {
+        from: "Build Agent",
+        to: "Alex",
+      }),
+    ).toBe("handed review from Build Agent to Alex");
+    expect(formatIssueRoleCopy(copy.reviewerAssignedTo, { name: "Alex" })).toBe(
+      "assigned reviewer to Alex",
+    );
+  });
+
+  it("localizes review activity and inbox copy in every product language", () => {
+    expect(
+      formatIssueRoleCopy(getIssueRoleCopy("zh-CN").reviewRequestedFor, {
+        name: "小林",
+      }),
+    ).toBe("已请求小林进行审核");
+    expect(
+      formatIssueRoleCopy(getIssueRoleCopy("ja-JP").reviewerChangedFromTo, {
+        from: "A",
+        to: "B",
+      }),
+    ).toBe("レビュー担当を A から B に変更しました");
+    expect(getIssueRoleCopy("ko-KR").reviewerRemoved).toBe(
+      "검토자를 제거했습니다",
+    );
   });
 });

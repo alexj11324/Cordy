@@ -556,10 +556,23 @@ export function useUpdateIssue(issueId: string) {
         );
       }
     },
-    onSettled: () => {
+    onSettled: (_server, _error, patch) => {
       qc.invalidateQueries({ queryKey: issueKeys.detail(wsId, issueId) });
       qc.invalidateQueries({ queryKey: issueKeys.myAll(wsId) });
       qc.invalidateQueries({ queryKey: issueKeys.list(wsId) });
+      // A review handoff changes status and creates review-request inbox
+      // effects. Keep the current device correct even when its WS echo was
+      // interrupted between the HTTP response and the activity/inbox events.
+      if (
+        patch.status !== undefined ||
+        patch.reviewer_type !== undefined ||
+        patch.reviewer_id !== undefined
+      ) {
+        qc.invalidateQueries({ queryKey: inboxKeys.all(wsId) });
+        qc.invalidateQueries({
+          queryKey: issueKeys.timeline(wsId, issueId),
+        });
+      }
     },
   });
 }

@@ -17,6 +17,11 @@ export type ReviewWorkflowViolation =
   | "reviewer_required"
   | "reviewer_must_differ";
 
+export type IssueStatusSelectionPlan =
+  | { kind: "apply"; status: IssueStatus }
+  | { kind: "choose_reviewer"; status: IssueStatus }
+  | { kind: "blocked"; violation: "executor_required" };
+
 const EXECUTOR_REQUIRED_CATEGORIES: readonly IssueStatusCategory[] = [
   "in_progress",
   "in_review",
@@ -71,4 +76,40 @@ export function reviewWorkflowViolation({
   if (!reviewer) return "reviewer_required";
   if (sameActor(executor, reviewer)) return "reviewer_must_differ";
   return null;
+}
+
+/**
+ * Translate the workflow gate into the three UI outcomes shared by existing
+ * and draft issue status pickers. Entering review never writes status first:
+ * the reviewer picker completes the status + reviewer pair together.
+ */
+export function planIssueStatusSelection({
+  previousCategory,
+  nextStatus,
+  nextCategory,
+  executor,
+  reviewer,
+}: {
+  previousCategory: IssueStatusCategory | null | undefined;
+  nextStatus: IssueStatus;
+  nextCategory: IssueStatusCategory;
+  executor: IssueRoleRef | null;
+  reviewer: IssueRoleRef | null;
+}): IssueStatusSelectionPlan {
+  const violation = reviewWorkflowViolation({
+    previousCategory,
+    nextCategory,
+    executor,
+    reviewer,
+  });
+  if (violation === "executor_required") {
+    return { kind: "blocked", violation };
+  }
+  if (
+    violation === "reviewer_required" ||
+    violation === "reviewer_must_differ"
+  ) {
+    return { kind: "choose_reviewer", status: nextStatus };
+  }
+  return { kind: "apply", status: nextStatus };
 }

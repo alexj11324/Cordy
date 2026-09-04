@@ -1,5 +1,11 @@
-import type { InboxItem, InboxItemType } from "@patchbay/core/types";
+import type {
+  InboxItem,
+  InboxItemType,
+  IssueStatusCategory,
+} from "@patchbay/core/types";
 import { formatDateOnly } from "@patchbay/core/issues/date";
+import { formatIssueRoleCopy, getIssueRoleCopy } from "@/lib/issue-role-copy";
+import { isIssueStatusCategory } from "@/lib/issue-status";
 
 const TYPE_LABEL: Record<InboxItemType, string> = {
   issue_assigned: "Assigned",
@@ -34,9 +40,26 @@ function singleLine(value: string | null | undefined): string {
   return (value ?? "").replace(/\s+/g, " ").trim();
 }
 
+function sentenceCase(value: string): string {
+  return value.length > 0 ? value[0]!.toUpperCase() + value.slice(1) : value;
+}
+
+function issueIsInReview(
+  status: string | null,
+  resolveStatusCategory?: (statusKey: string) => IssueStatusCategory,
+): boolean {
+  if (!status) return false;
+  const category =
+    resolveStatusCategory?.(status) ??
+    (isIssueStatusCategory(status) ? status : undefined);
+  return category === "in_review";
+}
+
 export function inboxDetailText(
   item: InboxItem,
   resolveActorName: (type: string | null | undefined, id: string) => string,
+  language?: string | null,
+  resolveStatusCategory?: (statusKey: string) => IssueStatusCategory,
 ): string {
   const details = item.details ?? {};
   switch (item.type) {
@@ -60,10 +83,20 @@ export function inboxDetailText(
       return details.new_executor_id
         ? `Set executor to ${resolveActorName(details.new_executor_type, details.new_executor_id)}`
         : typeLabel(item.type);
-    case "review_requested":
-      return details.new_reviewer_id
-        ? `Review requested for ${resolveActorName(details.new_reviewer_type, details.new_reviewer_id)}`
-        : typeLabel(item.type);
+    case "review_requested": {
+      const copy = getIssueRoleCopy(language);
+      if (!details.new_reviewer_id) return copy.reviewRequested;
+      const name = resolveActorName(
+        details.new_reviewer_type,
+        details.new_reviewer_id,
+      );
+      if (issueIsInReview(item.issue_status, resolveStatusCategory)) {
+        return formatIssueRoleCopy(copy.reviewRequestedFor, { name });
+      }
+      return sentenceCase(
+        formatIssueRoleCopy(copy.reviewerAssignedTo, { name }),
+      );
+    }
     case "due_date_changed":
       return details.to
         ? `Set due date to ${formatDateOnly(details.to, { month: "short", day: "numeric" }, "en-US")}`

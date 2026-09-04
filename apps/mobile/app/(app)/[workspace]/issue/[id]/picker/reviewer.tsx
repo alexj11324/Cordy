@@ -1,7 +1,10 @@
-import { Alert } from "react-native";
+import { useRef } from "react";
+import { ActivityIndicator, Alert, View } from "react-native";
 import { router, Stack, useLocalSearchParams } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { RolePickerBody } from "@/components/issue/pickers/role-picker-body";
+import { Button } from "@/components/ui/button";
+import { Text } from "@/components/ui/text";
 import { useAuthStore } from "@/data/auth-store";
 import { useUpdateIssue } from "@/data/mutations/issues";
 import { issueDetailOptions } from "@/data/queries/issues";
@@ -26,8 +29,10 @@ export default function IssueReviewerPickerRoute() {
   const language = useAuthStore((state) => state.user?.language);
   const copy = getIssueRoleCopy(language);
   const catalog = useIssueStatuses();
-  const { data: issue } = useQuery(issueDetailOptions(wsId, id));
+  const detail = useQuery(issueDetailOptions(wsId, id));
+  const issue = detail.data;
   const updateIssue = useUpdateIssue(id);
+  const writingRef = useRef(false);
   const query = useNativeSearchBar(copy.searchReviewers, { autoFocus: true });
   const value = issue ? issueActorForRole(issue, "reviewer") : null;
   const executor = issue ? issueActorForRole(issue, "executor") : null;
@@ -42,6 +47,36 @@ export default function IssueReviewerPickerRoute() {
     !!nextCategory &&
     isReviewHandoff(currentCategory, nextCategory);
 
+  if (detail.isLoading) {
+    return (
+      <>
+        <Stack.Screen
+          options={{ title: isHandoff ? copy.reviewHandoff : copy.reviewer }}
+        />
+        <View className="flex-1 items-center justify-center bg-background">
+          <ActivityIndicator />
+        </View>
+      </>
+    );
+  }
+  if (detail.error || !issue) {
+    return (
+      <>
+        <Stack.Screen
+          options={{ title: isHandoff ? copy.reviewHandoff : copy.reviewer }}
+        />
+        <View className="flex-1 items-center justify-center gap-3 bg-background px-6">
+          <Text className="text-sm text-destructive">
+            {copy.loadIssueFailed}
+          </Text>
+          <Button variant="outline" onPress={() => detail.refetch()}>
+            <Text>{copy.retry}</Text>
+          </Button>
+        </View>
+      </>
+    );
+  }
+
   return (
     <>
       <Stack.Screen
@@ -51,12 +86,14 @@ export default function IssueReviewerPickerRoute() {
         kind="reviewer"
         value={value}
         query={query}
+        disabled={updateIssue.isPending}
         allowUnassigned={!isHandoff}
         excludedActor={
           isHandoff || currentCategory === "in_review" ? executor : null
         }
         onChange={(next) => {
-          if (isHandoff && !next) return;
+          if (writingRef.current || (isHandoff && !next)) return;
+          writingRef.current = true;
           updateIssue.mutate(
             isHandoff && handoffStatus && next
               ? reviewHandoffPatch(handoffStatus, next)
@@ -68,6 +105,9 @@ export default function IssueReviewerPickerRoute() {
                   copy.updateFailed,
                   error instanceof Error ? error.message : copy.updateFailed,
                 ),
+              onSettled: () => {
+                writingRef.current = false;
+              },
             },
           );
         }}

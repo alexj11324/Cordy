@@ -43,6 +43,7 @@ type NewIssueDraftState = {
   setOwner: (next: RoleValue) => void;
   setExecutor: (next: ExecutorValue) => void;
   setReviewer: (next: RoleValue) => void;
+  setReviewHandoff: (status: IssueStatus, reviewer: NonNullable<RoleValue>) => void;
   setDueDate: (next: string | null) => void;
   setProject: (next: Project | null) => void;
   reset: () => void;
@@ -74,6 +75,7 @@ export const useNewIssueDraftStore = create<NewIssueDraftState>((set) => ({
   setOwner: (next) => set({ owner: next }),
   setExecutor: (next) => set({ executor: next }),
   setReviewer: (next) => set({ reviewer: next }),
+  setReviewHandoff: (status, reviewer) => set({ status, reviewer }),
   setDueDate: (next) => set({ dueDate: next }),
   setProject: (next) => set({ project: next }),
   reset: () => set({ ...INITIAL }),

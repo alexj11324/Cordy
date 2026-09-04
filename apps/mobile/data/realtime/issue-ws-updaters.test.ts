@@ -6,10 +6,13 @@ import { issueKeys } from "@/data/queries/issue-keys";
 import {
   addCommentReaction,
   addIssueReaction,
+  appendTimelineEntry,
   onIssueAuxiliaryRevision,
   invalidateIssueAfterReconnect,
   patchIssueDetail,
   patchIssueLabels,
+  patchIssuesList,
+  patchMyIssuesList,
   removeIssueReaction,
   replaceCommentTimelineEntry,
 } from "./issue-ws-updaters";
@@ -65,6 +68,79 @@ describe("mobile issue revision gates", () => {
 
   const wsId = "workspace-1";
   const issueId = "issue-1";
+
+  it("applies a review handoff snapshot to detail and both list projections", () => {
+    const qc = new QueryClient();
+    const base = {
+      id: issueId,
+      owner_type: "member",
+      owner_id: "owner-1",
+      executor_type: "agent",
+      executor_id: "agent-1",
+      reviewer_type: null,
+      reviewer_id: null,
+      status: "in_progress",
+      revision: 1,
+    } as Issue;
+    const myKey = issueKeys.myList(wsId, "assigned", {
+      owner_id: "owner-1",
+    });
+    qc.setQueryData(issueKeys.detail(wsId, issueId), base);
+    qc.setQueryData(issueKeys.list(wsId), [base]);
+    qc.setQueryData(myKey, [base]);
+
+    const handoff = {
+      ...base,
+      status: "in_review",
+      status_category: "in_review" as const,
+      reviewer_type: "member" as const,
+      reviewer_id: "reviewer-1",
+      revision: 2,
+    };
+    patchIssueDetail(qc, wsId, handoff);
+    patchIssuesList(qc, wsId, handoff);
+    patchMyIssuesList(qc, wsId, handoff);
+
+    for (const cached of [
+      qc.getQueryData<Issue>(issueKeys.detail(wsId, issueId)),
+      qc.getQueryData<Issue[]>(issueKeys.list(wsId))?.[0],
+      qc.getQueryData<Issue[]>(myKey)?.[0],
+    ]) {
+      expect(cached).toMatchObject({
+        owner_id: "owner-1",
+        executor_id: "agent-1",
+        reviewer_id: "reviewer-1",
+        status: "in_review",
+        revision: 2,
+      });
+    }
+  });
+
+  it("appends the review activity emitted after the issue snapshot", () => {
+    const qc = new QueryClient();
+    const key = issueKeys.timeline(wsId, issueId);
+    qc.setQueryData<TimelineEntry[]>(key, []);
+    const reviewEntry: TimelineEntry = {
+      type: "activity",
+      id: "activity-review",
+      actor_type: "member",
+      actor_id: "owner-1",
+      action: "review_handoff",
+      details: {
+        from_status: "in_progress",
+        to_status: "in_review",
+        from_type: "agent",
+        from_id: "agent-1",
+        to_type: "member",
+        to_id: "reviewer-1",
+      },
+      created_at: "2026-09-03T00:00:00Z",
+    };
+
+    appendTimelineEntry(qc, wsId, issueId, reviewEntry);
+
+    expect(qc.getQueryData<TimelineEntry[]>(key)).toEqual([reviewEntry]);
+  });
 
   it("rejects stale issue snapshots and accepts a newer one", () => {
     const qc = new QueryClient();

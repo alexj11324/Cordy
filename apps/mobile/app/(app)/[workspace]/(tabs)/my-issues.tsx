@@ -47,7 +47,7 @@ import { useAuthStore } from "@/data/auth-store";
 import { useWorkspaceStore } from "@/data/workspace-store";
 import { useMyIssuesViewStore } from "@/data/stores/my-issues-view-store";
 import { useClearFiltersOnWorkspaceChange } from "@/lib/use-clear-filters-on-workspace-change";
-import { PRIORITY_LABEL, STATUS_LABEL } from "@/lib/issue-status";
+import { PRIORITY_LABEL } from "@/lib/issue-status";
 import { useIssueStatuses } from "@/lib/use-issue-statuses";
 import { groupIssuesByCategory } from "@/lib/group-issues-by-category";
 import { filterIssues } from "@/lib/filter-issues";
@@ -117,8 +117,7 @@ export default function MyIssues() {
   const hasActiveFilters =
     statusFilters.length > 0 || priorityFilters.length > 0;
 
-  const showEmptyState =
-    !isLoading && !error && filtered.length === 0;
+  const showEmptyState = !isLoading && !error && filtered.length === 0;
 
   return (
     <View className="flex-1 bg-background">
@@ -175,6 +174,7 @@ export default function MyIssues() {
             <SectionHeader
               category={section.category}
               count={section.data.length}
+              label={catalog.labelOf(section.category)}
             />
           )}
           contentContainerClassName="pb-6"
@@ -191,7 +191,6 @@ export default function MyIssues() {
           onRefresh={refetch}
         />
       )}
-
     </View>
   );
 }
@@ -274,7 +273,9 @@ function ScopeToolbar<S extends string>({
             >
               <Text
                 numberOfLines={1}
-                className={active ? "text-accent-foreground" : "text-muted-foreground"}
+                className={
+                  active ? "text-accent-foreground" : "text-muted-foreground"
+                }
               >
                 {s.label}
               </Text>
@@ -307,10 +308,18 @@ function ActiveFilterChips({
   return (
     <View className="flex-row flex-wrap gap-1.5 px-4 pb-2">
       {statusFilters.map((s) => (
-        <Chip key={`s-${s}`} label={statusLabelOf(s)} onClear={() => onClearStatus(s)} />
+        <Chip
+          key={`s-${s}`}
+          label={statusLabelOf(s)}
+          onClear={() => onClearStatus(s)}
+        />
       ))}
       {priorityFilters.map((p) => (
-        <Chip key={`p-${p}`} label={PRIORITY_LABEL[p]} onClear={() => onClearPriority(p)} />
+        <Chip
+          key={`p-${p}`}
+          label={PRIORITY_LABEL[p]}
+          onClear={() => onClearPriority(p)}
+        />
       ))}
     </View>
   );
@@ -339,16 +348,18 @@ function Chip({ label, onClear }: { label: string; onClear: () => void }) {
 function SectionHeader({
   category,
   count,
+  label,
 }: {
   category: IssueStatusCategory;
   count: number;
+  label: string;
 }) {
   return (
     <View className="flex-row items-center gap-2 px-4 py-2 bg-background">
       {/* A category IS a built-in status key, so it resolves to its own glyph. */}
       <StatusIcon status={category} size={14} />
       <Text className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-        {STATUS_LABEL[category]}
+        {label}
       </Text>
       <Text className="text-xs text-muted-foreground/60">{count}</Text>
     </View>

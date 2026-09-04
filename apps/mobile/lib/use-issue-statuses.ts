@@ -21,6 +21,7 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { issueStatusListOptions } from "@/data/queries/issue-statuses";
 import { useWorkspaceStore } from "@/data/workspace-store";
+import { useAuthStore } from "@/data/auth-store";
 import {
   buildIssueStatusCatalog,
   type IssueStatusCatalog,
@@ -28,6 +29,10 @@ import {
 
 export function useIssueStatuses(): IssueStatusCatalog {
   const wsId = useWorkspaceStore((s) => s.currentWorkspaceId);
+  const language = useAuthStore((s) => s.user?.language);
   const { data } = useQuery(issueStatusListOptions(wsId));
-  return useMemo(() => buildIssueStatusCatalog(data), [data]);
+  return useMemo(
+    () => buildIssueStatusCatalog(data, language),
+    [data, language],
+  );
 }

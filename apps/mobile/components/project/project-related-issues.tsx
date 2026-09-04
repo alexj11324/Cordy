@@ -34,11 +34,8 @@ import { IssueRow } from "@/components/issue/issue-row";
 import { IssuesLoading } from "@/components/issue/issues-loading";
 import { projectIssuesOptions } from "@/data/queries/projects";
 import { useWorkspaceStore } from "@/data/workspace-store";
-import {
-  BOARD_CATEGORIES,
-  STATUS_LABEL,
-  issueColumnCategory,
-} from "@/lib/issue-status";
+import { BOARD_CATEGORIES, issueColumnCategory } from "@/lib/issue-status";
+import { useIssueStatuses } from "@/lib/use-issue-statuses";
 
 interface Props {
   projectId: string;
@@ -47,6 +44,7 @@ interface Props {
 export function ProjectRelatedIssues({ projectId }: Props) {
   const wsId = useWorkspaceStore((s) => s.currentWorkspaceId);
   const wsSlug = useWorkspaceStore((s) => s.currentWorkspaceSlug);
+  const catalog = useIssueStatuses();
   const { data, isLoading, error, refetch } = useQuery(
     projectIssuesOptions(wsId, projectId),
   );
@@ -96,7 +94,11 @@ export function ProjectRelatedIssues({ projectId }: Props) {
         if (issues.length === 0) return null;
         return (
           <View key={category}>
-            <SectionHeader category={category} count={issues.length} />
+            <SectionHeader
+              category={category}
+              count={issues.length}
+              label={catalog.labelOf(category)}
+            />
             {issues.map((issue) => (
               <IssueRow
                 key={issue.id}
@@ -114,16 +116,18 @@ export function ProjectRelatedIssues({ projectId }: Props) {
 function SectionHeader({
   category,
   count,
+  label,
 }: {
   category: IssueStatusCategory;
   count: number;
+  label: string;
 }) {
   return (
     <View className="flex-row items-center gap-2 px-4 py-2 bg-background">
       {/* A category IS a built-in status key, so it resolves to its own glyph. */}
       <StatusIcon status={category} size={14} />
       <Text className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-        {STATUS_LABEL[category]}
+        {label}
       </Text>
       <Text className="text-xs text-muted-foreground/60">{count}</Text>
     </View>

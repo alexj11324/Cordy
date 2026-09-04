@@ -48,7 +48,12 @@ export default function IssueDetail() {
   // [workspace]/(tabs)/inbox.tsx). `highlight` is the target comment id;
   // `h` is a per-tap nonce so re-tapping the same row re-fires the
   // scroll-and-flash effect.
-  const { id, workspace: wsSlug, highlight, h } = useLocalSearchParams<{
+  const {
+    id,
+    workspace: wsSlug,
+    highlight,
+    h,
+  } = useLocalSearchParams<{
     id: string;
     workspace: string;
     highlight?: string;
@@ -108,8 +113,8 @@ export default function IssueDetail() {
   // Three-dot menu: Pin/Unpin / Copy link / Open on web (if web URL set) /
   // Delete. Mirrors apps/mobile/app/(app)/[workspace]/project/[id].tsx — same
   // ActionSheetIOS + Alert.alert confirm pattern. Property edits (status,
-  // priority, owner, executor, due_date) live on the IssueHeaderCard chips inside
-  // the timeline list, not in this menu — one entry per action.
+  // priority, owner, executor, reviewer, due_date) live on the IssueHeaderCard
+  // chips inside the timeline list, not in this menu — one entry per action.
   const onPressMore = useCallback(() => {
     if (!issue || !wsSlug) return;
     const webUrl = process.env.EXPO_PUBLIC_WEB_URL;
@@ -184,9 +189,7 @@ export default function IssueDetail() {
         <View className="flex-1 items-center justify-center px-6 gap-3">
           <Text className="text-sm text-destructive text-center">
             Failed to load issue:{" "}
-            {detail.error instanceof Error
-              ? detail.error.message
-              : "not found"}
+            {detail.error instanceof Error ? detail.error.message : "not found"}
           </Text>
           <Button variant="outline" onPress={() => detail.refetch()}>
             <Text>Retry</Text>

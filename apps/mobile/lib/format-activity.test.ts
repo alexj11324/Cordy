@@ -126,6 +126,62 @@ describe("formatActivity role changes", () => {
     ).toBe("changed reviewer from Alex to Build Agent");
   });
 
+  it("does not claim a handoff when status evidence is missing or unknown", () => {
+    expect(
+      formatActivity(
+        activity("review_handoff", {
+          from_type: "member",
+          from_id: "member-1",
+          to_type: "agent",
+          to_id: "agent-2",
+        }),
+        actorName,
+      ),
+    ).toBe("changed reviewer from Alex to Build Agent");
+
+    expect(
+      formatActivity(
+        activity("review_handoff", {
+          from_status: "future_a",
+          to_status: "future_b",
+          from_type: "member",
+          from_id: "member-1",
+          to_type: "agent",
+          to_id: "agent-2",
+        }),
+        actorName,
+      ),
+    ).toBe("changed reviewer from Alex to Build Agent");
+  });
+
+  it("localizes review handoff wording without changing unknown-event fallback", () => {
+    expect(
+      formatActivity(
+        activity("review_handoff", {
+          from_status: "in_progress",
+          to_status: "in_review",
+          from_type: "agent",
+          from_id: "agent-2",
+          to_type: "member",
+          to_id: "member-1",
+        }),
+        actorName,
+        undefined,
+        undefined,
+        "zh-CN",
+      ),
+    ).toBe("将审核从 Build Agent 移交给 Alex");
+    expect(
+      formatActivity(
+        activity("future_review_activity", {}),
+        actorName,
+        undefined,
+        undefined,
+        "zh-CN",
+      ),
+    ).toBe("future_review_activity");
+  });
+
   it("ignores malformed optional detail values without throwing", () => {
     expect(
       formatActivity(

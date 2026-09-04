@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { Issue } from "@patchbay/core/types";
 import {
-  parseCreatedIssueResponse,
-  parseUpdatedIssueResponse,
+  CreateIssueResponseSchema,
+  IssueSchema,
+} from "@patchbay/core/api/schemas";
+import {
+  requireCreatedIssueResponse,
+  requireUpdatedIssueResponse,
 } from "./issue-response";
 
 function issue(overrides: Partial<Issue> = {}): Issue {
@@ -40,7 +44,8 @@ function issue(overrides: Partial<Issue> = {}): Issue {
 
 describe("issue response boundary", () => {
   it("preserves all three independent roles through create parsing", () => {
-    expect(parseCreatedIssueResponse(issue())).toMatchObject({
+    const parsed = CreateIssueResponseSchema.parse(issue()) as Issue;
+    expect(requireCreatedIssueResponse(parsed)).toMatchObject({
       owner_id: "member-1",
       executor_id: "agent-1",
       reviewer_id: "member-2",
@@ -48,14 +53,16 @@ describe("issue response boundary", () => {
   });
 
   it("rejects a malformed create response instead of reporting success", () => {
-    expect(() =>
-      parseCreatedIssueResponse({ title: "missing id" }),
-    ).toThrow("Invalid issue create response");
+    const parsed = CreateIssueResponseSchema.safeParse({ title: "missing id" });
+    expect(parsed.success).toBe(false);
+    expect(() => requireCreatedIssueResponse(null)).toThrow(
+      "Invalid issue create response",
+    );
   });
 
   it("rejects an update response for a different issue", () => {
     expect(() =>
-      parseUpdatedIssueResponse("issue-1", issue({ id: "issue-2" })),
+      requireUpdatedIssueResponse("issue-1", issue({ id: "issue-2" })),
     ).toThrow("Invalid issue update response");
   });
 
@@ -65,7 +72,8 @@ describe("issue response boundary", () => {
       reviewer_type: "external_reviewer",
     };
 
-    const parsed = parseUpdatedIssueResponse("issue-1", raw);
+    const parsedSchema = IssueSchema.parse(raw) as Issue;
+    const parsed = requireUpdatedIssueResponse("issue-1", parsedSchema);
     expect(
       (parsed as unknown as { reviewer_type: string }).reviewer_type,
     ).toBe("external_reviewer");

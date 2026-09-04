@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  planIssueStatusSelection,
   reviewHandoffPatch,
   isReviewHandoff,
   reviewWorkflowViolation,
@@ -80,5 +81,39 @@ describe("issue review workflow", () => {
     });
     expect(patch).not.toHaveProperty("owner_type");
     expect(patch).not.toHaveProperty("executor_type");
+  });
+
+  it("routes status selection through the reviewer picker before entering review", () => {
+    expect(
+      planIssueStatusSelection({
+        previousCategory: "in_progress",
+        nextStatus: "quality-review",
+        nextCategory: "in_review",
+        executor,
+        reviewer: null,
+      }),
+    ).toEqual({ kind: "choose_reviewer", status: "quality-review" });
+
+    expect(
+      planIssueStatusSelection({
+        previousCategory: "in_progress",
+        nextStatus: "quality-review",
+        nextCategory: "in_review",
+        executor,
+        reviewer,
+      }),
+    ).toEqual({ kind: "apply", status: "quality-review" });
+  });
+
+  it("blocks an active status selection until an executor exists", () => {
+    expect(
+      planIssueStatusSelection({
+        previousCategory: "todo",
+        nextStatus: "in_review",
+        nextCategory: "in_review",
+        executor: null,
+        reviewer,
+      }),
+    ).toEqual({ kind: "blocked", violation: "executor_required" });
   });
 });
