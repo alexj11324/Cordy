@@ -58,6 +58,7 @@ import { useColorScheme } from "@/lib/use-color-scheme";
 import { THEME } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import { getW8Copy } from "@/lib/w8-copy";
+import { useChatCopy } from "@/lib/use-chat-copy";
 
 // iOS bottom tab bar default height (above safe-area). React Navigation
 // doesn't expose this as a layout constant, but the value is stable
@@ -82,6 +83,15 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Work Products", icon: "doc.on.doc", path: "/more/work-products" },
 ];
 
+export function navigationItems(agentsLabel: string): NavItem[] {
+  return [
+    ...NAV_ITEMS,
+    // The Agents screen is read-only on mobile: it is the native entry point
+    // for choosing an invokable Agent and opening the existing Chat tab.
+    { label: agentsLabel, icon: "cpu", path: "/more/agents" },
+  ];
+}
+
 export function MoreTabDropdownAnchor({
   triggerRef,
 }: {
@@ -94,6 +104,7 @@ export function MoreTabDropdownAnchor({
   const { colorScheme } = useColorScheme();
   const t = THEME[colorScheme];
   const copy = getW8Copy(user?.language);
+  const chatCopy = useChatCopy();
   const currentWorkspace = useCurrentWorkspace(slug);
 
   const isActive = (path: string) => {
@@ -152,7 +163,7 @@ export function MoreTabDropdownAnchor({
 
           <DropdownMenuSeparator />
 
-          {[...NAV_ITEMS, {
+          {[...navigationItems(chatCopy.agents), {
             label: copy.channel.title,
             icon: "bubble.left.and.bubble.right",
             path: "/channels",
