@@ -310,11 +310,11 @@ function formatActivity(
       });
     case "executor_changed": {
       const isSelfAssign = details.to_type === entry.actor_type && details.to_id === entry.actor_id;
-      if (isSelfAssign) return t(($) => $.activity.self_assigned);
+      if (isSelfAssign) return t(($) => $.activity.set_self_as_executor);
       const toName = details.to_id && details.to_type && resolveActorName
         ? resolveActorName(details.to_type, details.to_id)
         : null;
-      if (toName) return t(($) => $.activity.assigned_to, { name: toName });
+      if (toName) return t(($) => $.activity.set_executor_to, { name: toName });
       if (details.from_id && !details.to_id) return t(($) => $.activity.removed_executor);
       return t(($) => $.activity.changed_executor);
     }
@@ -322,7 +322,7 @@ function formatActivity(
       const toName = details.to_id && details.to_type && resolveActorName
         ? resolveActorName(details.to_type, details.to_id)
         : null;
-      if (toName) return t(($) => $.activity.assigned_to, { name: toName });
+      if (toName) return t(($) => $.activity.set_owner_to, { name: toName });
       if (details.from_id && !details.to_id) return t(($) => $.activity.removed_owner);
       return t(($) => $.activity.changed_owner);
     }
