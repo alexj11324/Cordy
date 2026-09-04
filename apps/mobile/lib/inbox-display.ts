@@ -2,7 +2,7 @@
  * Inbox title display helpers.
  *
  * Mirrors packages/views/inbox/components/inbox-display.ts. Keeping behavior
- * identical is required by apps/mobile/AGENTS.md "Behavioral parity":
+ * identical is required by apps/mobile/CLAUDE.md "Behavioral parity":
  * the title a user sees in the mobile inbox MUST match what they see on
  * web for the same item. When the web version changes, sync this file.
  */
@@ -56,7 +56,7 @@ export function getInboxDisplayTitle(item: InboxItem): string {
  *
  * Mirrors packages/core/inbox/queries.ts deduplicateInboxItems. **MUST stay
  * aligned with that function** — see the inbox dedup incident in this file's
- * companion `apps/mobile/AGENTS.md` "Behavioral parity" section. Skipping
+ * companion `apps/mobile/CLAUDE.md` "Behavioral parity" section. Skipping
  * this step makes the same workspace/user show different unread counts on
  * mobile vs web.
  *

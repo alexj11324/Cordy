@@ -7,7 +7,7 @@ import type { IssueStatusCategory } from "@patchbay/core/types";
 import { useT } from "../../i18n";
 
 /**
- * Resolves a status KEY to the label the UI should show (PB-6243).
+ * Resolves a status KEY to the label the UI should show (MUL-6243).
  *
  * The catalog carries a `name` for every status including the 7 built-ins, but
  * those built-in names are seeded in English by the server. Rendering them

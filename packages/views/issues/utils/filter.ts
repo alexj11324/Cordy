@@ -1,6 +1,7 @@
-import type { Issue, IssueStatus, IssuePriority, IssueExecutorGroup } from "@patchbay/core/types";
+import type { Issue, IssueStatus, IssuePriority, IssueExecutorGroup, PropertyFilterValue, PropertyOperatorFilter } from "@patchbay/core/types";
 import type { ActorFilterValue } from "@patchbay/core/issues/stores/view-store";
 import type { IssueActivityState } from "../surface/activity";
+import { getIssueExecutor } from "./issue-executor";
 
 export interface IssueFilters {
   statusFilters: IssueStatus[];
@@ -15,9 +16,9 @@ export interface IssueFilters {
   projectFilters: string[];
   includeNoProject: boolean;
   labelFilters: string[];
-  /** Custom-property filters: definition id → selected option ids (OR within
+  /** Custom-property filters: definition id → selected values (OR within
    *  a definition, AND across definitions; checkbox uses "true"/"false"). */
-  propertyFilters?: Record<string, string[]>;
+  propertyFilters?: Record<string, PropertyFilterValue[]>;
   // When `agentRunningFilter` is true, only keep issues whose id is in
   // `runningIssueIds`. The surface derives this set from the independent
   // `/api/working-agents` projection so filter.ts stays free of fetching.
@@ -41,7 +42,7 @@ export interface IssueFilterState {
   projectFilters: string[];
   includeNoProject: boolean;
   labelFilters: string[];
-  propertyFilters?: Record<string, string[]>;
+  propertyFilters?: Record<string, PropertyFilterValue[]>;
   workingOnly: boolean;
   /** See IssueFilters.showSubIssues — only an explicit `false` hides. */
   showSubIssues?: boolean;
@@ -55,21 +56,82 @@ export interface IssueFilterContext {
 /**
  * Filter value that selects issues where a custom property is UNSET ("No
  * value"). Mirrors the backend sentinel in `parsePropertiesFilterParam`
- * (the Rust property handler); cannot collide with a real option id
+ * (`server/internal/handler/property.go`); cannot collide with a real option id
  * (select options are UUIDs, checkbox uses "true"/"false").
  */
 export const NO_PROPERTY_VALUE = "__none__";
 
 /**
+ * Match one stored value against one operator filter member. Mirrors the
+ * server-side operator predicates in `parsePropertiesFilterParam`
+ * (`server/internal/handler/property.go`):
+ *
+ * - `contains` is a case-insensitive substring test over stored strings only
+ *   (the server's guarded `ILIKE '%…%'`), so "Foo" and "foo" agree.
+ * - `gt`/`gte`/`lt`/`lte` only match numeric stored values — the server
+ *   guards with `jsonb_typeof(...) = 'number'`, so a text value is a miss
+ *   here too.
+ * - `before`/`after` only match string values and compare lexicographically,
+ *   which is chronological for the "YYYY-MM-DD" date-only strings the server
+ *   stores and filters on.
+ *
+ * A missing key never matches an operator (the server's `->>` yields NULL,
+ * which no operator predicate satisfies) — handled by the caller before this
+ * runs.
+ */
+export function issueValueMatchesOperator(
+  value: NonNullable<Issue["properties"]>[string],
+  filter: PropertyOperatorFilter,
+): boolean {
+  switch (filter.op) {
+    case "contains": {
+      const needle = filter.value.toLowerCase();
+      // An empty needle would substring-match every value ("".includes("") is
+      // true); the server rejects an empty operator value outright, so the
+      // matcher must refuse it too rather than match-all on hand-edited
+      // saved-view blobs.
+      if (needle === "") return false;
+      if (typeof value === "string") return value.toLowerCase().includes(needle);
+      // Numbers, booleans, and arrays never match. Although jsonb ->> can
+      // serialize them, contains is deliberately a text/url operator on both
+      // the server and the client.
+      return false;
+    }
+    case "gt":
+    case "gte":
+    case "lt":
+    case "lte": {
+      if (typeof value !== "number") return false;
+      const bound = Number(filter.value);
+      if (!Number.isFinite(bound)) return false;
+      if (filter.op === "gt") return value > bound;
+      if (filter.op === "gte") return value >= bound;
+      if (filter.op === "lt") return value < bound;
+      return value <= bound;
+    }
+    case "before":
+    case "after": {
+      if (typeof value !== "string") return false;
+      return filter.op === "before" ? value < filter.value : value > filter.value;
+    }
+    default:
+      return false;
+  }
+}
+
+/**
  * Match one issue against the property filters. Select values are single
  * option-id strings, multi_select values are option-id arrays, checkbox
- * values are booleans compared against the "true"/"false" pseudo-options.
- * An issue with no value for a filtered definition matches only when the
- * "No value" (NO_PROPERTY_VALUE) pseudo-option is selected for it.
+ * values are booleans compared against the "true"/"false" pseudo-options,
+ * and scalar definitions accept operator members (`PropertyOperatorFilter`)
+ * alongside plain equality strings. Within one definition any member
+ * matching is enough (OR); every definition must match (AND). An issue with
+ * no value for a filtered definition matches only when the "No value"
+ * (NO_PROPERTY_VALUE) pseudo-option is selected for it.
  */
 export function issueMatchesPropertyFilters(
   issue: Issue,
-  propertyFilters: Record<string, string[]> | undefined,
+  propertyFilters: Record<string, PropertyFilterValue[]> | undefined,
 ): boolean {
   if (!propertyFilters) return true;
   for (const [propertyId, selected] of Object.entries(propertyFilters)) {
@@ -79,15 +141,26 @@ export function issueMatchesPropertyFilters(
       if (selected.includes(NO_PROPERTY_VALUE)) continue;
       return false;
     }
-    if (typeof value === "string") {
-      if (!selected.includes(value)) return false;
-    } else if (Array.isArray(value)) {
-      if (!value.some((id) => selected.includes(id))) return false;
-    } else if (typeof value === "boolean") {
-      if (!selected.includes(String(value))) return false;
-    } else {
-      return false;
-    }
+    const matched = selected.some((member) => {
+      if (member === NO_PROPERTY_VALUE) {
+        // The sentinel never matches a SET value: a literal "__none__" text
+        // value is a real value (the server's key-absence predicate excludes
+        // it from a No-value filter), and this path must agree with the
+        // server.
+        return false;
+      }
+      if (typeof member === "string") {
+        if (typeof value === "string") return member === value;
+        // Compare numerically so "3.50" and 3.5 agree with the server's
+        // jsonb number containment.
+        if (typeof value === "number") return Number(member) === value;
+        if (Array.isArray(value)) return value.includes(member);
+        if (typeof value === "boolean") return member === String(value);
+        return false;
+      }
+      return issueValueMatchesOperator(value, member);
+    });
+    if (!matched) return false;
   }
   return true;
 }
@@ -105,8 +178,8 @@ function issueIsWorking(issueId: string, context: IssueFilterContext) {
  *
  * Executor has a special "No executor" toggle (includeNoExecutor):
  * - When only includeNoExecutor is true → show only unassigned issues
- * - When executorFilters has items → show only those executors' issues
- * - When both → show matching executors + unassigned
+ * - When executorFilters has items → show only those actors' issues
+ * - When both → show matching actors + unassigned
  */
 export function applyIssueFilters(
   issues: Issue[],
@@ -138,20 +211,19 @@ export function applyIssueFilters(
       return false;
 
     if (hasExecutorFilter) {
-      // The filter picker is shared by all issue actors. Members are the
-      // human owner role, while agents and teams are the execution role;
-      // compare each filter against the corresponding role instead of
-      // treating a member filter as an executor id.
-      const matchesSelected = executorFilters.some((f) => {
-        if (f.type === "member") {
-          return f.type === issue.owner_type && f.id === issue.owner_id;
-        }
-        return f.type === issue.executor_type && f.id === issue.executor_id;
-      });
-      // "No executor" is the unassigned execution bucket. A human owner is
-      // independent from execution and must not exclude an issue here.
-      const matchesNoExecutor = includeNoExecutor && !issue.executor_id;
-      if (!matchesSelected && !matchesNoExecutor) return false;
+      const issueExecutor = getIssueExecutor(issue);
+      if (!issueExecutor) {
+        // Unassigned issue — show only if "No executor" is checked
+        if (!includeNoExecutor) return false;
+      } else if (executorFilters.length > 0) {
+        // Assigned issue — show only if the actor is in the filter list
+        if (!executorFilters.some(
+          (f) => f.type === issueExecutor.type && f.id === issueExecutor.id,
+        )) return false;
+      } else {
+        // Only "No executor" is checked, no specific actors → hide assigned issues
+        return false;
+      }
     }
 
     if (
@@ -223,7 +295,7 @@ export function filterExecutorGroups(
     showSubIssues?: boolean;
     agentRunningFilter?: boolean;
     runningIssueIds?: ReadonlySet<string>;
-    propertyFilters?: Record<string, string[]>;
+    propertyFilters?: Record<string, PropertyFilterValue[]>;
   },
 ): IssueExecutorGroup[] | undefined {
   const applyRunning = filters.agentRunningFilter === true;

@@ -3,7 +3,7 @@
  * native iOS ActionSheetIOS) and `isPressed` (drives the caller's highlight
  * ring while the sheet is on screen).
  *
- * iOS-native first per apps/mobile/AGENTS.md §UI components → waterfall step
+ * iOS-native first per apps/mobile/CLAUDE.md §UI components → waterfall step
  * 1: `ActionSheetIOS.showActionSheetWithOptions`. Zero custom layout, zero
  * animation, zero overflow math, zero new deps.
  *

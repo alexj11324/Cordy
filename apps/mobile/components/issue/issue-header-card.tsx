@@ -2,9 +2,9 @@
  * Slim header for the issue detail screen.
  *
  * Linear iOS-inspired layout:
- *   - identifier (PB-NN) above as a small muted label
+ *   - identifier (MUL-NN) above as a small muted label
  *   - title in a large bold treatment
- *   - attribute chip row below (status / priority / executor / labels /
+ *   - attribute chip row below (status / priority / owner / executor / labels /
  *     project / due date) — tappable, opens picker sheets
  *
  * The native iOS Stack header still renders `issue.identifier` as the

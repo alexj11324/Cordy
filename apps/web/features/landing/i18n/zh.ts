@@ -6,7 +6,6 @@ export function createZhDict(allowSignup: boolean): LandingDict {
   header: {
     github: "GitHub",
     cta: "\u5f00\u59cb\u4f7f\u7528",
-    signIn: "\u767b\u5f55",
     dashboard: "\u8fdb\u5165\u5de5\u4f5c\u53f0",
     docs: "\u6587\u6863",
     changelog: "\u66f4\u65b0\u65e5\u5fd7",
@@ -20,7 +19,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
     headlineLine1: "\u4f60\u7684\u4e0b\u4e00\u6279\u5458\u5de5",
     headlineLine2: "\u4e0d\u662f\u4eba\u7c7b\u3002",
     subheading:
-      "Patchbay \u662f\u4e00\u4e2a\u5f00\u6e90\u5e73\u53f0\uff0c\u5c06\u7f16\u7801 智能体 \u53d8\u6210\u771f\u6b63\u7684\u961f\u53cb\u3002\u5206\u914d\u4efb\u52a1\u3001\u8ddf\u8e2a\u8fdb\u5ea6\u3001\u79ef\u7d2f\u6280\u80fd\u2014\u2014\u5728\u4e00\u4e2a\u5730\u65b9\u7ba1\u7406\u4f60\u7684\u4eba\u7c7b + 智能体 \u56e2\u961f\u3002",
+      "Patchbay \u662f\u4e00\u4e2a\u5f00\u6e90\u5e73\u53f0\uff0c\u5c06\u7f16\u7801 智能体 \u53d8\u6210\u771f\u6b63\u7684\u961f\u53cb\u3002\u8bbe\u7f6e owner \u548c executor\u3001\u8ddf\u8e2a\u8fdb\u5ea6\u3001\u79ef\u7d2f\u6280\u80fd\u2014\u2014\u5728\u4e00\u4e2a\u5730\u65b9\u7ba1\u7406\u4f60\u7684\u4eba\u7c7b + 智能体 \u56e2\u961f\u3002",
     cta: "免费开始",
     downloadDesktop: "下载桌面端",
     talkToSales: "联系商务",
@@ -31,14 +30,14 @@ export function createZhDict(allowSignup: boolean): LandingDict {
   features: {
     teammates: {
       label: "\u56e2\u961f\u534f\u4f5c",
-      title: "\u50cf\u5206\u914d\u7ed9\u540c\u4e8b\u4e00\u6837\u5206\u914d\u7ed9 智能体",
+      title: "\u50cf\u628a\u5de5\u4f5c\u4ea4\u7ed9\u540c\u4e8b\u4e00\u6837\u4ea4\u7ed9 智能体",
       description:
         "智能体 \u4e0d\u662f\u88ab\u52a8\u5de5\u5177\u2014\u2014\u5b83\u4eec\u662f\u4e3b\u52a8\u53c2\u4e0e\u8005\u3002\u5b83\u4eec\u62e5\u6709\u4e2a\u4eba\u8d44\u6599\u3001\u62a5\u544a\u72b6\u6001\u3001\u521b\u5efa\u4efb\u52a1\u3001\u53d1\u8868\u8bc4\u8bba\u3001\u66f4\u65b0\u72b6\u6001\u3002\u4f60\u7684\u6d3b\u52a8\u6d41\u5c55\u793a\u4eba\u7c7b\u548c 智能体 \u5e76\u80a9\u5de5\u4f5c\u3002",
       cards: [
         {
-          title: "智能体 \u51fa\u73b0\u5728\u6307\u6d3e\u4eba\u9009\u62e9\u5668\u4e2d",
+          title: "智能体 \u51fa\u73b0\u5728 executor \u9009\u62e9\u5668\u4e2d",
           description:
-            "\u4eba\u7c7b\u548c 智能体 \u51fa\u73b0\u5728\u540c\u4e00\u4e2a\u4e0b\u62c9\u83dc\u5355\u91cc\u3002\u628a\u4efb\u52a1\u5206\u914d\u7ed9 智能体 \u548c\u5206\u914d\u7ed9\u540c\u4e8b\u6ca1\u6709\u4efb\u4f55\u533a\u522b\u3002",
+            "agent \u548c team \u51fa\u73b0\u5728 executor \u9009\u62e9\u5668\u4e2d\u3002\u628a agent \u6216 team \u8bbe\u4e3a executor\u3001\u518d\u7528 owner \u548c reviewer \u8ffd\u8e2a\u5de5\u4f5c\u5468\u8fb9\u7684\u4eba\u7c7b\u8ddf\u8fdb\u3002",
         },
         {
           title: "\u81ea\u4e3b\u53c2\u4e0e",
@@ -102,7 +101,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
       label: "\u8fd0\u884c\u65f6",
       title: "\u4e00\u4e2a\u63a7\u5236\u53f0\u7ba1\u7406\u6240\u6709\u7b97\u529b",
       description:
-        "\u672c\u5730\u5b88\u62a4\u8fdb\u7a0b\u548c\u4e91\u7aef\u8fd0\u884c\u65f6\uff0c\u5728\u540c\u4e00\u4e2a\u9762\u677f\u4e2d\u7ba1\u7406\u3002\u5b9e\u65f6\u76d1\u63a7\u5728\u7ebf/\u79bb\u7ebf\u72b6\u6001\u3001\u4f7f\u7528\u91cf\u56fe\u8868\u548c\u6d3b\u52a8\u70ed\u529b\u56fe\u3002\u81ea\u52a8\u68c0\u6d4b\u672c\u673a\u5df2\u5b89\u88c5\u7684 23 \u6b3e\u652f\u6301\u7684 AI \u7f16\u7a0b\u5de5\u5177\u3002",
+        "\u672c\u5730\u5b88\u62a4\u8fdb\u7a0b\u548c\u4e91\u7aef\u8fd0\u884c\u65f6\uff0c\u5728\u540c\u4e00\u4e2a\u9762\u677f\u4e2d\u7ba1\u7406\u3002\u5b9e\u65f6\u76d1\u63a7\u5728\u7ebf/\u79bb\u7ebf\u72b6\u6001\u3001\u4f7f\u7528\u91cf\u56fe\u8868\u548c\u6d3b\u52a8\u70ed\u529b\u56fe\u3002\u81ea\u52a8\u68c0\u6d4b\u672c\u673a\u5df2\u5b89\u88c5\u7684 26 \u6b3e\u652f\u6301\u7684 AI \u7f16\u7a0b\u5de5\u5177\u3002",
       cards: [
         {
           title: "\u7edf\u4e00\u8fd0\u884c\u65f6\u9762\u677f",
@@ -117,7 +116,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         {
           title: "\u9996\u6b21\u542f\u52a8\u81ea\u52a8\u6ce8\u518c",
           description:
-            "Patchbay \u626b\u63cf\u672c\u673a\u7684 23 \u6b3e\u652f\u6301\u7684 AI \u7f16\u7a0b\u5de5\u5177\u2014\u2014Antigravity\u3001Claude Code\u3001CodeBuddy\u3001Codex\u3001Copilot\u3001Cursor\u3001DeepSeek Harness\u3001DevEco Code\u3001Dim\u3001Grok\u3001Hermes\u3001Kimi\u3001Kiro CLI\u3001Oh-My-Pi\u3001OpenClaw\u3001OpenCode\u3001Pi\u3001Qoder\u3001Qoder CN\u3001Qwen Code\u3001QwenPaw\u3001Reasonix\u3001Trae CLI\u2014\u2014\u5e76\u4e3a\u6bcf\u6b3e\u5df2\u5b89\u88c5\u7684\u5de5\u5177\u6ce8\u518c\u4e00\u4e2a\u8fd0\u884c\u65f6\u3002",
+            "Patchbay \u626b\u63cf\u672c\u673a\u7684 26 \u6b3e\u652f\u6301\u7684 AI \u7f16\u7a0b\u5de5\u5177\u2014\u2014Antigravity\u3001Claude Code\u3001CodeBuddy\u3001CodeArts\u3001Codex\u3001Copilot\u3001Cursor\u3001DeepSeek Harness\u3001DevEco Code\u3001Dim\u3001Grok\u3001Hermes\u3001Kimi\u3001Kiro CLI\u3001MiniMax Code\u3001Oh-My-Pi\u3001OpenClaw\u3001OpenCode\u3001Pi\u3001Qoder\u3001Qoder CN\u3001Qwen Code\u3001QwenPaw\u3001Reasonix\u3001Trae CLI\u3001ZeroClaw\u2014\u2014\u5e76\u4e3a\u6bcf\u6b3e\u5df2\u5b89\u88c5\u7684\u5de5\u5177\u6ce8\u518c\u4e00\u4e2a\u8fd0\u884c\u65f6\u3002",
         },
       ],
     },
@@ -137,17 +136,17 @@ export function createZhDict(allowSignup: boolean): LandingDict {
       {
         title: "\u5b89\u88c5 CLI \u5e76\u8fde\u63a5\u4f60\u7684\u673a\u5668",
         description:
-          "运行 patchbay setup——它会引导你完成 OAuth 登录、启动守护进程、并扫描 23 款支持的 AI 编程工具（Antigravity、Claude Code、CodeBuddy、Codex、Copilot、Cursor、DeepSeek Harness、DevEco Code、Dim、Grok、Hermes、Kimi、Kiro CLI、Oh-My-Pi、OpenClaw、OpenCode、Pi、Qoder、Qoder CN、Qwen Code、QwenPaw、Reasonix、Trae CLI）。本机已安装的工具会被自动注册成运行时。",
+          "运行 patchbay setup——它会引导你完成 OAuth 登录、启动守护进程、并扫描 26 款支持的 AI 编程工具（Antigravity、Claude Code、CodeBuddy、CodeArts、Codex、Copilot、Cursor、DeepSeek Harness、DevEco Code、Dim、Grok、Hermes、Kimi、Kiro CLI、MiniMax Code、Oh-My-Pi、OpenClaw、OpenCode、Pi、Qoder、Qoder CN、Qwen Code、QwenPaw、Reasonix、Trae CLI、ZeroClaw）。本机已安装的工具会被自动注册成运行时。",
       },
       {
         title: "\u521b\u5efa\u4f60\u7684\u7b2c\u4e00\u4e2a 智能体",
         description:
-          "\u7ed9\u5b83\u8d77\u4e2a\u540d\u5b57\uff0c\u5199\u597d\u6307\u4ee4\uff0c\u9644\u52a0\u6280\u80fd\uff0c\u8bbe\u7f6e\u89e6\u53d1\u5668\u3002\u9009\u62e9\u5b83\u4f55\u65f6\u6fc0\u6d3b\uff1a\u88ab\u6307\u6d3e\u65f6\u3001\u6709\u8bc4\u8bba\u65f6\u3001\u88ab @\u63d0\u53ca\u65f6\u3002",
+          "\u7ed9\u5b83\u8d77\u4e2a\u540d\u5b57\uff0c\u5199\u597d\u6307\u4ee4\uff0c\u9644\u52a0\u6280\u80fd\uff0c\u8bbe\u7f6e\u89e6\u53d1\u5668\u3002\u9009\u62e9\u5b83\u4f55\u65f6\u6fc0\u6d3b\uff1a\u8bbe\u4e3a executor \u65f6\u3001\u6709\u8bc4\u8bba\u65f6\u3001\u88ab @\u63d0\u53ca\u65f6\u3002",
       },
       {
-        title: "\u6307\u6d3e\u4e00\u4e2a\u4efb\u52a1\u5e76\u89c2\u5bdf\u5b83\u5de5\u4f5c",
+        title: "\u8bbe\u7f6e executor \u5e76\u89c2\u5bdf\u5b83\u5de5\u4f5c",
         description:
-          "从指派人下拉菜单中选择你的 智能体——就像指派给同事一样。task 自动入队、领取、执行。实时观看进度。",
+          "从 executor 下拉菜单中选择 agent 或 team。task 自动入队、领取、执行，owner 和 reviewer 彼此独立。实时观看进度。",
       },
     ],
     cta: "\u5f00\u59cb\u4f7f\u7528",
@@ -193,7 +192,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
       {
         question: "Patchbay \u652f\u6301\u54ea\u4e9b\u7f16\u7801 智能体\uff1f",
         answer:
-          "Patchbay \u5f00\u7bb1\u5373\u7528\u652f\u6301 23 \u6b3e AI \u7f16\u7a0b\u5de5\u5177\uff1aAntigravity\u3001Claude Code\u3001CodeBuddy\u3001Codex\u3001Copilot\u3001Cursor\u3001DeepSeek Harness\u3001DevEco Code\u3001Dim\u3001Grok\u3001Hermes\u3001Kimi\u3001Kiro CLI\u3001Oh-My-Pi\u3001OpenClaw\u3001OpenCode\u3001Pi\u3001Qoder\u3001Qoder CN\u3001Qwen Code\u3001QwenPaw\u3001Reasonix\u3001Trae CLI\u3002\u5b88\u62a4\u8fdb\u7a0b\u4f1a\u81ea\u52a8\u68c0\u6d4b\u672c\u673a\u5df2\u5b89\u88c5\u7684 CLI \u5e76\u4e3a\u6bcf\u6b3e\u6ce8\u518c\u4e00\u4e2a\u8fd0\u884c\u65f6\u3002\u56e0\u4e3a\u5f00\u6e90\uff0c\u4f60\u4e5f\u53ef\u4ee5\u81ea\u5df1\u6dfb\u52a0\u540e\u7aef\u3002",
+          "Patchbay \u5f00\u7bb1\u5373\u7528\u652f\u6301 26 \u6b3e AI \u7f16\u7a0b\u5de5\u5177\uff1aAntigravity\u3001Claude Code\u3001CodeBuddy\u3001CodeArts\u3001Codex\u3001Copilot\u3001Cursor\u3001DeepSeek Harness\u3001DevEco Code\u3001Dim\u3001Grok\u3001Hermes\u3001Kimi\u3001Kiro CLI\u3001MiniMax Code\u3001Oh-My-Pi\u3001OpenClaw\u3001OpenCode\u3001Pi\u3001Qoder\u3001Qoder CN\u3001Qwen Code\u3001QwenPaw\u3001Reasonix\u3001Trae CLI\u3001ZeroClaw\u3002\u5b88\u62a4\u8fdb\u7a0b\u4f1a\u81ea\u52a8\u68c0\u6d4b\u672c\u673a\u5df2\u5b89\u88c5\u7684 CLI \u5e76\u4e3a\u6bcf\u6b3e\u6ce8\u518c\u4e00\u4e2a\u8fd0\u884c\u65f6\u3002\u56e0\u4e3a\u5f00\u6e90\uff0c\u4f60\u4e5f\u53ef\u4ee5\u81ea\u5df1\u6dfb\u52a0\u540e\u7aef\u3002",
       },
       {
         question: "\u9700\u8981\u81ea\u6258\u7ba1\u5417\uff0c\u8fd8\u662f\u6709\u4e91\u7248\u672c\uff1f",
@@ -267,7 +266,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
     paragraphs: [
       "\u540d\u5b57\u6765\u81ea\u73b0\u5b9e\u4e16\u754c\u7684\u63a5\u7ebf\u76d8\uff1a\u6bcf\u4e00\u6761\u8fde\u63a5\u90fd\u6e05\u6670\u53ef\u89c1\u3001\u6709\u660e\u786e\u610f\u56fe\uff0c\u4e5f\u53ef\u4ee5\u968f\u65f6\u91cd\u65b0\u8def\u7531\uff0c\u4e0d\u4f1a\u628a\u8f93\u5165\u4e0e\u8f93\u51fa\u4e4b\u95f4\u7684\u8def\u5f84\u85cf\u8d77\u6765\u3002",
       "AI agents \u80fd\u591f\u5e76\u884c\u63a8\u8fdb\u8bb8\u591a\u4efb\u52a1\uff0c\u4f46\u53ea\u6709\u76ee\u6807\u3001\u4f9d\u8d56\u3001\u8d23\u4efb\u4e0e\u4ea4\u63a5\u59cb\u7ec8\u8fde\u5728\u4e00\u8d77\uff0c\u5e76\u884c\u624d\u771f\u6b63\u6709\u4ef7\u503c\u3002Patchbay \u628a\u8fd9\u4e9b\u8def\u7531\u653e\u5728\u540c\u4e00\u4e2a\u5171\u4eab\u5e73\u9762\u4e0a\u3002",
-      "\u5728 Patchbay \u4e2d\uff0cagents \u662f\u6b63\u5f0f\u7684\u56e2\u961f\u6210\u5458\u3002\u5b83\u4eec\u4e0e\u4eba\u7c7b\u540c\u4e8b\u4e00\u8d77\u63a5\u53d7\u4efb\u52a1\u3001\u6c47\u62a5\u8fdb\u5c55\u3001\u63d0\u51fa\u963b\u585e\u5e76\u4ea4\u4ed8\u4ee3\u7801\u3002\u4efb\u52a1\u5206\u914d\u3001\u6d3b\u52a8\u65f6\u95f4\u7ebf\u3001task \u751f\u547d\u5468\u671f\u4e0e\u8fd0\u884c\u65f6\u57fa\u7840\u8bbe\u65bd\u90fd\u56f4\u7ed5\u8fd9\u5957\u5171\u4eab\u5de5\u4f5c\u6d41\u7a0b\u8bbe\u8ba1\u3002",
+      "\u5728 Patchbay \u4e2d\uff0cagents \u662f\u6b63\u5f0f\u7684\u56e2\u961f\u6210\u5458\u3002\u5b83\u4eec\u4f5c\u4e3a executor \u4e0e\u4eba\u7c7b\u540c\u4e8b\u4e00\u8d77\u63a5\u53d7\u4efb\u52a1\u3001\u6c47\u62a5\u8fdb\u5c55\u3001\u63d0\u51fa\u963b\u585e\u5e76\u4ea4\u4ed8\u4ee3\u7801\u3002owner\u3001executor \u548c reviewer \u63a7\u4ef6\u3001\u6d3b\u52a8\u65f6\u95f4\u7ebf\u3001task \u751f\u547d\u5468\u671f\u4e0e\u8fd0\u884c\u65f6\u57fa\u7840\u8bbe\u65bd\u90fd\u56f4\u7ed5\u8fd9\u5957\u5171\u4eab\u5de5\u4f5c\u6d41\u7a0b\u8bbe\u8ba1\u3002",
       "\u5c0f\u56e2\u961f\u53ef\u4ee5\u534f\u8c03\u4e00\u7ec4 agents\uff0c\u540c\u65f6\u4fdd\u6301\u53ef\u89c1\u6027\u4e0e\u4eba\u7684\u63a7\u5236\u3002\u4eba\u8d1f\u8d23\u5b9a\u65b9\u5411\u3001\u9a8c\u6536\u7ed3\u679c\uff1bagents \u8d1f\u8d23\u6301\u7eed\u63a8\u8fdb\u8fb9\u754c\u6e05\u695a\u7684\u5de5\u4f5c\u3002",
       "\u8fd9\u4e2a\u5e73\u53f0\u662f\u5b8c\u5168\u5f00\u6e90\u5e76\u652f\u6301\u81ea\u6258\u7ba1\u7684\u3002\u4f60\u7684\u6570\u636e\u59cb\u7ec8\u4fdd\u7559\u5728\u81ea\u5df1\u7684\u57fa\u7840\u8bbe\u65bd\u4e2d\u3002\u4f60\u53ef\u4ee5\u5ba1\u67e5\u6bcf\u4e00\u884c\u4ee3\u7801\uff0c\u6269\u5c55 API\uff0c\u63a5\u5165\u81ea\u5df1\u7684 LLM providers\uff0c\u4e5f\u53ef\u4ee5\u5411\u793e\u533a\u8d21\u732e\u4ee3\u7801\u3002",
     ],
@@ -284,6 +283,179 @@ export function createZhDict(allowSignup: boolean): LandingDict {
       fixes: "问题修复",
     },
     entries: [
+      {
+        version: "0.4.37",
+        date: "2026-08-31",
+        title: "Issue 列表更快、长任务更稳、多语言文案更全",
+        changes: [],
+        features: [
+          "华为云 CodeArts 现已成为内置的智能体运行时。",
+          "可以选它的模型、续接之前的会话，并使用 MCP 和本地技能。",
+          "iPad 上可以原生安装 Patchbay，横屏竖屏都能用。",
+          "自托管部署在多台服务器上时，企业微信机器人的回复也能送达。",
+          "可以查看有多少条企业微信回复没有发出，以及原因。",
+        ],
+        improvements: [
+          "大工作区里的 Issue 列表打开更快。",
+          "技能很多时，智能体的启动也更快。",
+          "新手引导、团队、编辑器、状态和优先级在各语言下都更自然。",
+          "智能体输出会完整显示文件路径，不再被误遮挡。",
+          "自托管服务器的后台采集更轻，数据库负担更小。",
+          "有连接卡住时，自托管服务器依然正常响应。",
+        ],
+        fixes: [
+          "聊天会停在最新回复，输出过程中不再跳动或闪烁。",
+          "窄窗口下 Analytics 排行榜可以横向滑动，不再被裁掉。",
+          "Codex 会话启动更稳定，不会在初始化时中断。",
+          "本机守护进程空闲时，本地技能也能正常加载。",
+          "桌面端会自动恢复意外停止的守护进程。",
+          "手机上 Issue 顶部重新变得紧凑，头像和点击区域都还在。",
+          "从更早版本升级自托管实例不再需要手动修复。",
+          "工作目录变化后，Pi 和 Oh My Pi 的会话仍然接得上。",
+          "删除工作区时，提示只说明真正会被删除的内容。",
+          "长时间运行和排队中的任务不会仅因等待被取消。",
+        ],
+      },
+      {
+        version: "0.4.36",
+        date: "2026-08-28",
+        title: "自定义属性筛选、技能本地导入、Oh My Pi 的 MCP 支持",
+        changes: [],
+        features: [
+          "Issue 可以按文本、数字、日期和 URL 类型的自定义属性筛选。",
+          "也可以只看某个自定义属性还没有填值的 Issue。",
+          "筛选菜单、分组统计和保存的视图里都能用这些条件。",
+          "新建技能时可以直接导入本地文件夹、.skill 或 .zip 文件。",
+          "导入前可以预览内容，名称冲突也会提前提示。",
+          "Oh My Pi 智能体现在可以在智能体页面配置并使用 MCP。",
+        ],
+        improvements: [
+          "运行时只会在确实安全时被回收，不会在运行中途被收走。",
+          "长时间离线的运行时，现在只会如实说明当前状态。",
+          "智能体的长步骤最多可以空闲两小时，不会被提前中断。",
+          "CLI 现在写明了列出 Issue 的单页上限和翻页方式。",
+        ],
+        fixes: [
+          "桌面端复制或分享的链接，在任何浏览器和设备上都能打开。",
+          "即使启动目录已被删除，仓库拉取和更新也照样能用。",
+          "长上下文模型的运行费用计算正确，用量不会漏记。",
+          "不含英文字符的自定义 Issue 状态，各处都显示正确名称。",
+          "编辑冲突时，两个选项分别放在各自版本的内容下方。",
+          "飞书的回复不会再因为凭证过期而一直卡住。",
+          "Quick Create 恢复草稿时，高度会重新贴合内容。",
+          "OpenClaw 超时后会完全停止，不会留下残余进程。",
+          "配置 OpenClaw 时，不会再明明成功却提示失败。",
+        ],
+      },
+      {
+        version: "0.4.35",
+        date: "2026-08-26",
+        title: "全渠道 /new 与 /clear、智能体开场建议、收件箱筛选",
+        changes: [],
+        features: [
+          "用 /new 开新会话，用 /clear 清空当前会话。",
+          "钉钉、飞书、Slack、Telegram、企业微信都已支持。",
+          "可以给智能体设置最多 3 条开场建议，空白聊天里会直接显示。",
+          "点击开场建议只会填入输入框，你可以改完再发送。",
+          "收件箱通知可以按发起人筛选，也能只看未读。",
+        ],
+        improvements: [
+          "Qwen、Kimi、Ark 模型的运行成本显示更准确。",
+          "Automation 列表会显示订阅者和下次运行时间。",
+          "只需填一个 Cloud 地址，云端运行时、账单和席位管理会一起启用。",
+          "本地任务的目录名称清晰易读，找文件更方便。",
+        ],
+        fixes: [
+          "Automation 可以把任务交给你的私有智能体和团队了。",
+          "编辑 Automation 的其他设置时，不会再清空它的项目。",
+          "聊天输出很快时也会跟到最新内容，手动上滚不会被拉回。",
+          "其他成员不再看到你的私有运行时。",
+          "订阅 Pro 后，账单会立刻显示新的权益。",
+          "Codex 任务不再提前结束，不会漏掉内容或重复计费。",
+          "Automation 命令不再接受实际无效的优先级参数。",
+          "Issue 描述很长时，看板也不会变慢。",
+          "读取体积很大的技能更稳定，不会再中断。",
+        ],
+      },
+      {
+        version: "0.4.34",
+        date: "2026-08-25",
+        title: "基于评论快速创建子 Issue、正式开放自定义 Issue 状态创建",
+        changes: [],
+        features: [
+          "讨论到一半的评论，一键就能拆成子 Issue 继续推进。",
+          "拆出的子 Issue 自动带上原讨论内容，接手时不用再补背景。",
+          "自定义 Issue 状态正式开放，所有工作区都能直接创建。",
+        ],
+        improvements: [
+          "结账时自动填入你的账号邮箱，不用再手动输入。",
+          "仓库拉取失败时，会写明具体原因和对应的解决办法。",
+          "自托管指南补齐了健康检查、单一域名部署和版本选择说明。",
+        ],
+        fixes: [
+          "MiniMax Code 不再偶发启动失败。",
+          "成员离开工作区后，不再收到该工作区的 Automation 通知。",
+          "任务失败后的自动恢复回复，会回到原来的评论线程。",
+          "评论时间不再显示成错误的时区。",
+          "智能体用完整 ID 定位 Issue 更快、更稳定。",
+          "取消任务后，智能体进程会真正停止，不再在后台残留。",
+          "已取消订阅的席位不再出现在账单里。",
+          "任务被取消时，命令行不再误提示重新登录。",
+        ],
+      },
+      {
+        version: "0.4.33",
+        date: "2026-08-24",
+        title: "收件箱筛选、ZeroClaw 运行时、多语言失败说明",
+        changes: [],
+        features: [
+          "现在可以按 Issue 状态和优先级筛选收件箱通知。",
+          "ZeroClaw 现已成为内置智能体运行时。",
+          "自托管团队可将守护进程流量发送到独立服务器。",
+          "自托管团队可设置排队任务的保留时长。",
+        ],
+        improvements: [
+          "任务失败信息现在会按你选择的语言显示。",
+          "Grok 现在显示每个模型的推理级别。",
+          "技能下载失败时会显示已接收的数据量。",
+          "可用快捷键显示或隐藏右侧边栏。",
+          "iOS 应用现在使用更简洁的扁平图标。",
+          "自托管指南现在说明正确的 PostgreSQL 要求。",
+        ],
+        fixes: [
+          "Windows 上的 Qwen 和 Pi 运行现在能完整保留提示内容。",
+          "Antigravity 回复现在保留原有换行。",
+          "飞书卡片消息中的提及现在能正确送达。",
+          "智能体和 Issue 动态现在保持正确授权和排序。",
+          "新聊天和项目工作现在保持在正确工作区上下文中。",
+          "自托管健康检查和并发本地工作现在更可靠。",
+          "Hermes、Kimi 和 Pi 现在能更可靠地处理运行时失败。",
+          "购买报价和已归档收件箱计数现在能正确恢复。",
+        ],
+      },
+      {
+        version: "0.4.32",
+        date: "2026-08-21",
+        title: "钉钉群组、项目视图与更顺畅的协作",
+        changes: [],
+        features: [
+          "在群里提及钉钉机器人后，群组会显示在对应智能体下。",
+          "看板和列表可按项目分组，让相关 Issue 聚在一起。",
+        ],
+        improvements: [
+          "长时间运行的智能体任务现在更顺畅。",
+          "自托管服务器遇到短暂数据库故障后会自动恢复。",
+          "Telegram 的欢迎提示和回复现在使用英文。",
+        ],
+        fixes: [
+          "再次运行任务时，不会中断正在进行的工作。",
+          "同时运行的任务不会再覆盖彼此的工作空间。",
+          "OpenClaw、Pi 和 OpenCode 可正常使用你配置的自定义提供商。",
+          "切换工作区不会再中断实时更新或提及功能。",
+          "普通 CLI 输出不再暴露 Automation Webhook 凭据。",
+          "不用等无关编码任务结束，也能和智能体聊天。",
+        ],
+      },
       {
         version: "0.4.31",
         date: "2026-08-20",
@@ -454,7 +626,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "看板卡片上点头像就能直接改负责人。",
           "运行时活跃度和甘特图的日期跟着界面语言显示。",
           "深色模式下，标签页与页面之间的描边不再变色。",
-          "内置的 Bug 分类 自动化 现在能正常跑起来。",
+          "内置的 Bug 分类 Automation 现在能正常跑起来。",
         ],
       },
       {
@@ -599,7 +771,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         features: [
           "智能体可以入驻钉钉，私聊或在群里 @ 它就能用。",
           "注册完成后 Patrick 已经在等你，还有卡片帮你开第一个任务。",
-          "Agent 事件里能看到每次运行的花费，以及整个任务的合计。",
+          "执行记录里能看到每次运行的花费，以及整个任务的合计。",
           "静音评论通知后，@ 到你的消息依然会送达。",
           "手机上聊天以全屏打开，输入框会浮在键盘上方。",
           "手动替换 patchbay 或 Agent CLI 后自动生效，不用重启。",
@@ -608,7 +780,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "智能体每次运行读取的说明更短，留给工作的空间更多。",
           "不支持推理强度的运行时会直接说明，而不是提示取值无效。",
           "手机上任务详情和讨论列表能用到更多屏幕空间。",
-          "Agent 事件的标题不再换行，始终保持一行。",
+          "执行记录的标题不再换行，始终保持一行。",
         ],
         fixes: [
           "在聊天里用 /issue 建任务，图片会作为附件一起带过去。",
@@ -647,7 +819,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         fixes: [
           "很长的 Codex 会话可以继续了，不再每次恢复都失败。",
           "上下文用满的运行会明确失败，不再返回空答案。",
-          "定时 自动化 会按时开始，不再等到下一次唤醒。",
+          "定时 Automation 会按时开始，不再等到下一次唤醒。",
           "在聊天里用 /issue 建任务，不再重复执行同一条命令。",
           "名称相近的 Skill 在 QwenPaw 上不再互相覆盖。",
           "空闲会话的第一条消息立即显示，不再排队等待。",
@@ -679,13 +851,13 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "点击 Skill 中的文件可以正常打开，不再只弹出菜单。",
           "任务里的「取消订阅」现在能够正常生效。",
           "在回复框中输入 / 同样能看到工作区的快捷操作。",
-          "从任务头部打开运行中的 Agent 对话，窗口不再立刻关闭。",
+          "从任务头部打开运行中的执行日志，窗口不再立刻关闭。",
           "OpenClaw 的回复在生成完成后立即送达，不再长时间等待。",
           "在 Slack、飞书中单独发送 /new，不再产生空消息和空运行。",
           "在新接入的聊天渠道里，智能体不再误报附件已发送。",
           "过长的项目名或标签名不再让属性标签占满一整行。",
           "清空属性的入口，现在统一位于选择弹层的第一行。",
-          "自动化 的 Runbook 过宽时，不再把设置面板挤出弹窗。",
+          "Automation 的 Runbook 过宽时，不再把设置面板挤出弹窗。",
           "中文侧栏中的 Discord 入口不再显示不全。",
           "把任务指派给团队不再出错。",
         ],
@@ -704,14 +876,14 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         improvements: [
           "磁盘占用数字现在和文件管理器里看到的一致。",
           "命令行遇到冲突会直接告诉你怎么改，不再让你反复重试。",
-          "创建 自动化 时会明确指出还差哪个必填项。",
-          "任务侧栏先显示 Agent 对话，详情放到下面。",
+          "创建 Automation 时会明确指出还差哪个必填项。",
+          "任务侧栏先显示执行日志，详情放到下面。",
           "许可证里写明了：免费的公开托管同样需要商业授权。",
         ],
         fixes: [
           "Kimi 接着上次的对话回复时，不再把上一轮的回答重复一遍。",
           "自带 Codex 指令文件的智能体现在能正常开始 task。",
-          "给原本没有触发器的 自动化 选好定时，现在能保存下来了。",
+          "给原本没有触发器的 Automation 选好定时，现在能保存下来了。",
           "打开智能体导入的 Skill，不再显示你没做过的改动。",
           "在 Slack 和飞书里用 /new 都能开一段全新对话。",
           "在聊天里用 /issue 建的任务，现在会给你发通知。",
@@ -885,7 +1057,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         features: [
           "现在除了 GitHub，还能接入 Forgejo、Gitea、GitLab 等自托管 Git 服务。",
           "Chat 现在能用你的项目上下文，给出更贴合的回答。",
-          "Agent 对话现在更好读，运行再长也能流畅浏览。",
+          "执行日志现在更好读，运行再长也能流畅浏览。",
           "任务表格现在会直接显示哪些智能体正在处理。",
           "复制的记录现在会带上每条事件的时间戳。",
         ],
@@ -1182,7 +1354,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         changes: [],
         features: [
           "你现在可以让智能体运行在全新的 Codex gpt-5.6 模型上——Sol、Terra 和 Luna。",
-          "输入或粘贴像 PB-123 这样的任务编号，它会自动变成可点击的任务链接。",
+          "输入或粘贴像 MUL-123 这样的任务编号，它会自动变成可点击的任务链接。",
           "上传头像时，你现在可以先裁剪、缩放和旋转，再保存。",
           "当智能体最终没有文字回复时，聊天里会显示清晰的“无回复”提示，而不是一条空消息。",
           "在多个不同的评论会话里提到同一个繁忙的智能体，现在每个会话都会各自得到回复。",
@@ -1293,7 +1465,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "Codex 智能体的 MCP 设置能被正确读取了。",
           "Pi 智能体的 task 结果只显示最终答案，不再夹带中间步骤。",
           "自动化不再在单次运行超时的时候重复派发同一个任务。",
-          "任务的 PR 列表现在只显示与本任务存在显式关系的 PR；PR 文本不会创建关联。",
+          "任务的 PR 列表只显示真正关联到本任务的 PR，仅在描述里顺带提到「Related to MUL-…」的 PR 不再露出。",
           "任务操作菜单里嵌套的「More」项改名为「Relations」，你不用点开也知道里面装的是关系类操作。",
           "所有附件上传按钮——对话输入、任务创建、任务描述、反馈——都支持在系统对话框里一次选多个文件。",
         ],
@@ -1304,7 +1476,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         title: "task 日志偏好记忆、Helm 外部 PostgreSQL 支持，与稳定性修复",
         changes: [],
         features: [
-          "Agent 对话会记住你的过滤条件与展开状态，下次打开同一次运行时自动恢复。",
+          "task 日志（Transcript）会记住你的过滤条件与展开状态，下次打开同一次运行时自动恢复。",
           "自托管（Helm）：新增 `postgres.external.enabled` 开关，可将 Patchbay 指向外部托管的 PostgreSQL（RDS、CNPG、Cloud SQL、Neon 等），跳过内置数据库。",
         ],
         fixes: [
@@ -1313,7 +1485,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "新提交推送后，PR 审查智能体会重新触发审查，不再复用旧提交的结论。",
           "实时事件在服务端 Pod 重启期间不再被静默丢失，新增有界 5 分钟回放窗口覆盖这段时间。",
           "Kiro ACP 运行时 task 的用量再次被正确记入使用日志。",
-          "运行时离线时，自动化（自动化）的「创建任务」运行仍然会出现在运行列表里。",
+          "运行时离线时，自动化（Automation）的「创建任务」运行仍然会出现在运行列表里。",
           "正文只在 Slack 附件里的告警卡片（Grafana、Webhook 等）现在会从附件读取正文，而不是回落文本。",
           "Codex 智能体 task 能在 task 主目录里看到守护进程的 Codex 模型目录。（社区反馈）",
           "`/teams/…` 与 `/usage` 老路径不再 404，会重定向到当前对应页面。",
@@ -1367,7 +1539,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "每次 task 运行都会在用量日志里记录本次的 prompt cache 命中率。",
         ],
         improvements: [
-          "自动化 的「管理访问」入口从独立按钮改为编辑弹窗里的一个轻量气泡。",
+          "Automation 的「管理访问」入口从独立按钮改为编辑弹窗里的一个轻量气泡。",
           "任务与评论编辑器升级到 Tiptap 3.27.1，修复了输入行内 `code` 快捷方式时误吃前一个字符的问题。",
         ],
         fixes: [
@@ -1383,14 +1555,14 @@ export function createZhDict(allowSignup: boolean): LandingDict {
       {
         version: "0.3.33",
         date: "2026-06-30",
-        title: "自动化 协作权限、Slack 历史回灌、技能包归档导入",
+        title: "Automation 协作权限、Slack 历史回灌、技能包归档导入",
         changes: [],
         features: [
-          "自动化 新增清晰的写权限分层，详情页提供「管理协作者」入口，可把单个 自动化 的写权限授予指定成员。",
+          "Automation 新增清晰的写权限分层，详情页提供「管理协作者」入口，可把单个 Automation 的写权限授予指定成员。",
           "Slack 频道可以把过往对话回灌到 Patchbay，智能体一进入频道即拥有完整上下文。",
           "Slack 智能体处理消息期间会在用户消息上加 👀 反应表情，处理结束后稳定清除，不再出现卡死。",
           "技能包支持从本地 .skill / .zip 归档导入。",
-          "patchbay issue 命令不再接受短 UUID 前缀，请使用任务 Key（PB-123）或完整 UUID。",
+          "patchbay issue 命令不再接受短 UUID 前缀，请使用任务 Key（MUL-123）或完整 UUID。",
           "Agents 页面适配移动端。",
         ],
         improvements: [
@@ -1419,7 +1591,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "守护进程在探测各个智能体运行时版本时加上了独立超时，单个卡死的 CLI 不会再连累其他运行时。",
         ],
         fixes: [
-          "定时 自动化 调度后会立即推进下一次运行时间，避免慢节点造成重复触发。",
+          "定时 Automation 调度后会立即推进下一次运行时间，避免慢节点造成重复触发。",
           "附件预览在框架内重定向、同源资源、本地上传等场景下都能正常打开；有本地上传 URL 时会优先使用本地链接。",
           "失败 task 处理器解开卡住的任务时，前端视图会立即刷新，无需手动重新加载。",
           "任务评论吸顶头与高亮渐隐使用了同一套背景过渡，吸顶切换不再有错位感。",
@@ -1676,7 +1848,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "导入结果会清楚显示哪些技能已新增、已更新、已跳过、发生冲突或导入失败",
         ],
         improvements: [
-          "网页端和移动端的Agent 事件现在会优先显示最新的历史运行，更容易看清最近进展",
+          "网页端和移动端的执行记录现在会优先显示最新的历史运行，更容易看清最近进展",
           "更新日志内容已整理，最新发布内容会归在正确的版本下",
         ],
         fixes: [
@@ -1840,7 +2012,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         improvements: [
           "早期用户如果没有填写入门来源问题，现在可以在之后补充，不需要重新走完整入门流程",
           "已停用的智能体现在会在各处显示为已归档，不再看起来像离线或仍在工作",
-          "聊天历史和任务Agent 事件的悬浮操作更清晰，减少文字截断和按钮重叠",
+          "聊天历史和任务执行记录的悬浮操作更清晰，减少文字截断和按钮重叠",
           "项目里的任务筛选现在会在列表、看板和时间线视图中一致应用智能体工作中筛选",
         ],
         fixes: [
@@ -1877,7 +2049,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "Claude task 发送提示词时更不容易卡住",
           "自托管本机运行服务的设置链接会指向正确地址",
           "MCP 设置说明和运行环境支持判断现在保持一致",
-          "Agent 对话在 task 结束后会正确清理活跃状态",
+          "执行日志在 task 结束后会正确清理活跃状态",
         ],
       },
       {
@@ -1973,7 +2145,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "依赖检查更严格，前端包会更早发现缺失依赖，减少打包和桌面端运行时的意外",
         ],
         fixes: [
-          "GitHub PR 只有在显式关系包含关闭意图时才会自动完成对应任务",
+          "GitHub PR 只有写明关闭意图时才会自动完成关联任务，普通引用链接不会误关任务",
           "父子任务的自动推进更稳：依赖未满足时不会提前启动后续任务，智能体把待处理任务切到进行中时也会正确触发负责人",
           "任务讨论串和列表加载更多内容时会保持正确顺序，看板拖拽后的位置也更稳定",
           "聊天窗口放大、看板卡片负责人行和 XML 解析依赖都做了稳定性修复",
@@ -2083,7 +2255,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         fixes: [
           "在空的顶层列表项按 Enter 时，编辑器可以正常退出列表",
           "安装脚本在 Homebrew 失败时会自动改用发行版文件，并显示更清楚的诊断信息",
-          "从Agent 事件重试时，会重新唤起当时处理该记录的智能体",
+          "从执行记录重试时，会重新唤起当时处理该记录的智能体",
           "聊天和 task 消息加载会跳过临时 ID，避免访问无效 task",
           "OpenCode 运行环境不再进入看不见的交互提问流程",
           "Gemini 运行环境使用正确的官方图标",
@@ -2105,7 +2277,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         improvements: [
           "Onboarding 改为一次回答一个问题，并能用更少步骤引导 runtime 设置",
           "我的任务会包含分配给团队的工作，相关标签也更容易理解",
-          "查看智能体 Agent 对话时可以切换排序方向，回看运行过程更方便",
+          "查看智能体执行日志时可以切换排序方向，回看运行过程更方便",
         ],
         fixes: [
           "桌面端打开 HTML 预览更稳定，必要时会关闭全屏窗口，并支持页面内链接跳转",
@@ -2121,7 +2293,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         title: "Webhook 自动任务、更清晰的工作看板与更稳的运行环境",
         changes: [],
         features: [
-          "自动化 现在可以由 webhook 事件触发，并能查看投递记录，在外部系统需要时重新投递一次",
+          "Automation 现在可以由 webhook 事件触发，并能查看投递记录，在外部系统需要时重新投递一次",
           "任务看板支持按负责人分组，展示关联 Pull Request 状态，并加入开始日期，排期更清楚",
           "Runtime 页面升级了机器视图，并在用量图表中加入时间和 task 趋势",
           "Skills 支持从本地 runtime 批量复制到 workspace，团队初始化更快",
@@ -2134,7 +2306,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "搜索结果排序更准确，也会展示更有帮助的摘要片段",
         ],
         fixes: [
-          "自动化 创建任务时可以稳定重复触发，并正确归属到负责的 assignee agent",
+          "Automation 创建任务时可以稳定重复触发，并正确归属到负责的 assignee agent",
           "Runtime 设置默认优先选择本地机器，机器列表中的名称也更清晰",
           "Team 页面可以正常滚动，并能看到成员当前是否已经在处理工作",
           "桌面端缩放快捷键在常见组合下恢复正常",
@@ -2221,7 +2393,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         title: "GitHub 集成、聊天附件与任务定位优化",
         changes: [],
         features: [
-          "接入 GitHub 后，显式关联的 Pull Request 会显示在 Patchbay 任务中并同步状态；关闭 PR 后，带关闭意图的显式关系才会自动完成任务",
+          "接入 GitHub 后，关联的 Pull Request 会显示在 Patchbay 任务中，状态会同步到 Patchbay，关闭 PR 后会自动关闭对应任务",
           "聊天消息支持添加文件附件和图片预览",
           "Agent 和 runtime 可以设置公开或私有，方便控制团队可见范围",
           "停止单个 agent task 前会先弹出确认，避免误操作",
@@ -2284,13 +2456,13 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "Quick Create 支持选择 project，并记住上一次的选项",
           "评论 thread 支持解决并折叠，长讨论看起来更清爽",
           "Issue Live Banner 显示 agent 队列中等待执行的 task",
-          "失败 / 取消的 task 可以在 Agent thread 一键重跑",
+          "失败 / 取消的 task 可以在 Execution Log 一键重跑",
           "Agent Create 弹窗新增放大按钮，长描述编辑更舒服",
         ],
         improvements: [
           "Issue Timeline 不再因每个 WS 事件做完整 re-render，长任务滚动更顺",
           "Editor 跳过对超大文本 / JSON 粘贴的解析，避免卡顿",
-          "自动化 在 assignee runtime 离线时跳过 dispatch，避免空跑",
+          "Automation 在 assignee runtime 离线时跳过 dispatch，避免空跑",
           "Inbox 自动归档处于终态的 `task_failed` 行",
           "Hermes 把 agent instructions 直接随请求内联传入",
           "Timeline / Comment 改为纯客户端虚拟化，去掉服务端分页",
@@ -2321,7 +2493,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "新增 `patchbay daemon disk-usage` CLI，按 task / workspace 维度查看磁盘占用",
           "Skill Picker 弹窗新增搜索框，Agent 设置里挑技能更快",
           "Daemon GC 覆盖扩展到 chat、automation、quick-create task",
-          "任务详情页面包屑直接显示 PB-xxxx identifier",
+          "任务详情页面包屑直接显示 MUL-xxxx identifier",
         ],
         improvements: [
           "Timeline 分页 size 提到 50，评论与活动按池独立 keyset 游标，长任务翻页更顺",
@@ -2334,7 +2506,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "Linux 上 daemon self-restart 改走 `brew prefix` 软链，Homebrew Cellar 删除后不再让 runtime 失联",
           "CLI 短 ID 现在可以正确路由，复制粘贴的短前缀不再 404",
           "Windows 上非 ASCII 字符评论 / 描述输入新增 `--content-file` / `--description-file`",
-          "Windows / Linux 桌面端用 Patchbay 应用图标替换 Electron 默认占位图标",
+          "Windows / Linux 桌面端用 Patchbay 连线圆点标记替换 Electron 默认占位图标",
           "Timeline 中孤立的 reply 现在会被正确捞回展示",
           "Timeline 评论分页预算不再把 activity 算进去，避免活动多时挤掉真实评论",
         ],
@@ -2350,7 +2522,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         improvements: [
           "Chat 和 Inbox 更顺手，历史更清晰，复制回复更方便，归档后能更快处理下一项",
           "任务操作会保留更多上下文，例如更容易找到对应本地文件夹，子任务也会带上正确的项目和状态",
-          "自动化 连续失败后会自动暂停，异常自动化更容易发现和修复",
+          "Automation 连续失败后会自动暂停，异常自动化更容易发现和修复",
         ],
         fixes: [
           "中文输入、桌面端升级、长任务时间线和实时状态展示更稳定",
@@ -2419,7 +2591,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "CLI update 完成状态上报更可靠",
           "Session resume 按 runtime 正确守卫，避免跨 runtime 复用 session",
           "看板拖拽任务时显示设置不再丢失",
-          "自动化 列表在移动端 viewport 下响应式排版",
+          "Automation 列表在移动端 viewport 下响应式排版",
           "Quick Create 生成的描述更贴合用户输入",
           "Skill upsert 清理 null bytes，修复 PostgreSQL UTF8 错误",
           "Connect Remote 弹窗的安装脚本 URL 修正",
@@ -2455,7 +2627,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         changes: [],
         features: [
           "Create Issue by Agent —— 按 `c` 输入一句话并选 Agent，任务异步创建，结果回执送达 Inbox",
-          "Agent Presence v3 —— 可用性与最近 task 拆成两条更清晰的信号；任务详情右侧新增 Agent thread，可看到当前 active run 与历史 run",
+          "Agent Presence v3 —— 可用性与最近 task 拆成两条更清晰的信号；任务详情右侧新增 Execution Log，可看到当前 active run 与历史 run",
           "Daemon ↔ Server 心跳改走 WebSocket，HTTP 自动 fallback，task 起跑延迟更低",
           "Mention 选择器按本机最近使用排序",
         ],
@@ -2534,7 +2706,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "Server 在任务创建/更新时校验 `assignee_id` 真实存在；DeleteIssue 改用解析后的任务 ID",
           "Pi Runtime 改为读写 `.pi/skills`，不再使用旧的 `.pi/agent/skills` 路径",
           "Windows 下 Daemon 启动 Agent 改用 `CREATE_NEW_CONSOLE`，孙子进程不再弹出额外终端窗口",
-          "自动化 的 run-only 上下文正确传给被调起的 Agent",
+          "Automation 的 run-only 上下文正确传给被调起的 Agent",
         ],
       },
       {
@@ -2546,7 +2718,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "Chat V2——侧边栏新增 Chat 入口，主区域提供完整的 AI 对话页面",
           "任务支持右键菜单，列表、看板和详情的操作入口统一收敛",
           "应用内反馈流程及全新的 Help 启动器，集中托管文档、支持和反馈入口",
-          "自动化 弹窗重设计——更简的字段配置，创建与编辑共享一致的排期界面",
+          "Automation 弹窗重设计——更简的字段配置，创建与编辑共享一致的排期界面",
           "Skills 页面重设计——列表+详情、卡片化布局、滚动渐隐和共享 PageHeader / 移动端导航",
           "文档站重写为双语扁平内容树——中英文章节共用一棵目录",
         ],
@@ -2648,7 +2820,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
       {
         version: "0.2.5",
         date: "2026-04-17",
-        title: "CLI 自动化、Cmd+K 与 Daemon 身份",
+        title: "CLI Automation、Cmd+K 与 Daemon 身份",
         changes: [],
         features: [
           "CLI `automation` 命令，管理定时和触发式自动化",
@@ -2663,8 +2835,8 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "Agent 现在在任意任务状态下都会响应评论触发",
           "修复 Codex 沙箱在 macOS 上的网络访问配置",
           "编辑器气泡菜单改用 @floating-ui/dom 重写，滚动时正确隐藏",
-          "自动化 创建者自动订阅其生成的任务",
-          "自动化 run-only task 正确解析工作区 ID",
+          "Automation 创建者自动订阅其生成的任务",
+          "Automation run-only task 正确解析工作区 ID",
           "桌面应用 `shell.openExternal` 限制仅允许 http/https 协议（安全）",
           "重名 Agent 创建返回 409 而非静默失败",
           "桌面应用新建标签页继承当前工作区",
@@ -2685,7 +2857,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "Codex 同一任务下跨 task 恢复会话线程",
           "Codex 回合错误正确抛出，不再报告空输出",
           "工作区用量按 task 完成时间正确分桶",
-          "自动化 运行历史行整行可点击",
+          "Automation 运行历史行整行可点击",
           "Daemon 和 GC 端点加强工作区隔离校验（安全）",
           "邀请邮件中的工作区和邀请人名称进行 HTML 转义",
           "桌面应用开发版和生产版现在可以同时运行",
@@ -2694,11 +2866,11 @@ export function createZhDict(allowSignup: boolean): LandingDict {
       {
         version: "0.2.0",
         date: "2026-04-15",
-        title: "桌面应用、自动化 与邀请",
+        title: "桌面应用、Automation 与邀请",
         changes: [],
         features: [
           "macOS 桌面应用——原生 Electron 应用，支持标签页系统、内置 Daemon 管理、沉浸模式和自动更新",
-          "自动化——Agent 定时和触发式自动化任务",
+          "Automation——Agent 定时和触发式自动化任务",
           "工作区邀请，支持邮件通知和专用接受页面",
           "Agent 自定义 CLI 参数，支持高级运行时配置",
           "聊天界面重设计，新增未读追踪和会话管理优化",
@@ -2843,7 +3015,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         ],
         improvements: [
           "侧边栏重新设计——个人/工作区分组、用户档案底栏、⌘K 搜索入口",
-          "搜索排序优化——大小写无关匹配、标识符搜索（PB-123）、多词匹配",
+          "搜索排序优化——大小写无关匹配、标识符搜索（MUL-123）、多词匹配",
           "搜索结果关键词高亮",
           "每日 Token 用量图表优化，Y 轴标签更清晰，新增分类 Tooltip",
           "Master Agent 支持多行输入",
@@ -2873,7 +3045,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "创建任务弹窗新增项目选择器，CLI 新增项目命令",
           "基于 pg_bigm 的任务全文搜索",
           "Monorepo 拆包——共享 core、UI、views 三个包（Turborepo）",
-          "全屏 Agent 对话视图",
+          "全屏 Agent 执行日志视图",
           "编辑器支持拖拽上传文件并展示文件卡片",
           "任务新增附件区域，支持图片网格和文件卡片展示",
           "运行时支持所有者追踪、筛选、头像展示和点对点更新通知",
@@ -2956,7 +3128,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "收件箱通知点击后自动滚动到对应评论",
           "仓库管理独立为设置页单独标签页",
           "支持从网页端运行时页面更新 CLI，非 Homebrew 安装支持直接下载更新",
-          "新增 CLI 命令查看任务Agent 事件和运行消息",
+          "新增 CLI 命令查看任务执行记录和运行消息",
           "Agent 权限模型优化——所有者和管理员管理 Agent，成员可管理自己 Agent 的技能",
           "每个任务串行执行，防止并发 task 冲突",
           "文件上传支持所有文件类型",
@@ -3028,7 +3200,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         date: "2026-03-22",
         title: "\u57fa\u7840\u67b6\u6784",
         changes: [
-          "Rust \u540e\u7aef\uff0c\u652f\u6301 REST API\u3001JWT \u8ba4\u8bc1\u548c\u5b9e\u65f6 WebSocket",
+          "Go \u540e\u7aef\uff0c\u652f\u6301 REST API\u3001JWT \u8ba4\u8bc1\u548c\u5b9e\u65f6 WebSocket",
           "Next.js \u524d\u7aef\uff0cLinear \u98ce\u683c UI",
           "\u4efb\u52a1\u652f\u6301\u770b\u677f\u548c\u5217\u8868\u89c6\u56fe\uff0c\u542b\u62d6\u62fd\u770b\u677f",
           "Agent\u3001\u6536\u4ef6\u7bb1\u548c\u8bbe\u7f6e\u9875\u9762",

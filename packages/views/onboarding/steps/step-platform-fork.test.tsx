@@ -17,20 +17,12 @@ const mocks = vi.hoisted(() => ({
     setSelectedId: vi.fn<(id: string) => void>(),
     hasRuntimes: false,
   },
-  pickerOptions: vi.fn(),
 }));
 
 // Swap out the runtime picker so tests can drive runtimes / selection
 // without a real TanStack Query + WS stack.
 vi.mock("../components/use-runtime-picker", () => ({
-  useRuntimePicker: (
-    _wsId: string,
-    _wsSlug?: string,
-    options?: { enabled?: boolean },
-  ) => {
-    mocks.pickerOptions(options);
-    return mocks.pickerState;
-  },
+  useRuntimePicker: () => mocks.pickerState,
 }));
 
 import { StepPlatformFork } from "./step-platform-fork";
@@ -89,14 +81,7 @@ function resetPicker(patch: Partial<typeof mocks.pickerState> = {}) {
 describe("StepPlatformFork", () => {
   beforeEach(() => {
     resetPicker();
-    mocks.pickerOptions.mockReset();
     vi.restoreAllMocks();
-  });
-
-  it("does not poll runtime discovery in backend-free preview mode", () => {
-    renderFork({ backendFree: true });
-
-    expect(mocks.pickerOptions).toHaveBeenCalledWith({ enabled: false });
   });
 
   it("renders the three fork options at rest", () => {

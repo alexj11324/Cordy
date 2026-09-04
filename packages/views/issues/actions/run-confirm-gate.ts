@@ -62,7 +62,7 @@ export type RunConfirmIntent =
  * into `todo`, which is indistinguishable from a real `todo` and is exactly
  * the guess this gate must not make: it decides whether a write may start an
  * agent, so an unresolvable key has to stay unresolved and let the caller fail
- * safe. (PB-6463)
+ * safe. (MUL-6463)
  *
  * Resolution order mirrors the server (`issuestatus.Effective`): a category the
  * payload already carries wins, a BUILT-IN key is its own category, and only a
@@ -79,8 +79,6 @@ export function resolveStatusCategory(
   return category && isIssueStatusCategory(category) ? category : null;
 }
 
-/** Categories whose admission path can start an executor run. Keep this in
- * sync with the backend `issue_status::runs_executor` contract. */
 const RUNS_EXECUTOR_CATEGORIES: readonly IssueStatusCategory[] = [
   "todo",
   "in_progress",
@@ -97,22 +95,16 @@ function runsExecutor(category: IssueStatusCategory | null): boolean {
  *
  * Both writes that can hand work to an agent confirm; everything else applies
  * directly. Pure so every entry point — issue detail, context menu, table row —
- * routes on one answer instead of re-deriving it (PB-6463).
+ * routes on one answer instead of re-deriving it (MUL-6463).
  *
- * - **assign**: changing the executor while the issue is in an executable
- *   category (Todo, In Progress, In Review, or Blocked).
- * - **promote**: admitting an already-executable issue into In Progress.
- *   Any transition from a non-executable category into an executable category
- *   can start an agent directly.
- * - **review**: entering the Review category. The dialog requires a reviewer
- *   different from the current owner and sends status + reviewer atomically.
- *   If a reviewer is already on the issue (or supplied in the same write),
- *   the write applies directly.
- * - **review-return**: returning from Review to In Progress. The existing
- *   implementation owner is restored by the durable coordinator, so the
- *   dialog preserves the handoff-note and suppress-run choices before the
- *   status write is applied. Redundant executor fields from grouped surfaces
- *   do not turn this into a different assignment.
+ * - **assign**: giving the issue an agent/team owner. Skipped only when the
+ *   issue is KNOWN to be parked, because assigning into the backlog category
+ *   never starts a run (`server/internal/service/issue_trigger.go`) and the
+ *   dialog would promise something that cannot happen.
+ * - **promote**: moving an already-owned issue out of the backlog category.
+ *   That status change alone starts the run (`RunSourceStatus`), so it earns
+ *   the same dialog — for built-in `todo` and every custom Todo-category
+ *   status alike.
  *
  * Unresolvable categories fail toward confirming: a dialog the user dismisses
  * costs a click, a silent start costs an unwanted agent run.
@@ -123,7 +115,6 @@ export function runConfirmIntent(
   catalog: Pick<IssueStatusCatalog, "entryOf">,
 ): RunConfirmIntent | null {
   const issueCategory = resolveStatusCategory(issue.status, issue.status_category, catalog);
-
   if (updates.status && updates.status !== issue.status) {
     const target = resolveStatusCategory(updates.status, undefined, catalog);
     const nextExecutorType = Object.prototype.hasOwnProperty.call(updates, "executor_type")
@@ -160,11 +151,10 @@ export function runConfirmIntent(
         ? updates.reviewer_id ?? null
         : issue.reviewer_id ?? null;
       const hasReviewer = !!(nextReviewerType && nextReviewerId);
-      const sameAsExecutor =
+      if (
         hasReviewer &&
-        nextReviewerType === nextExecutorType &&
-        nextReviewerId === nextExecutorId;
-      if (hasReviewer && !sameAsExecutor) {
+        !(nextReviewerType === nextExecutorType && nextReviewerId === nextExecutorId)
+      ) {
         return null;
       }
       return {

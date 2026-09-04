@@ -4,14 +4,14 @@ export type AutomationExecutionMode = "create_issue" | "run_only";
 
 // `executor_type` selects which polymorphic actor backs the automation:
 // "agent" → executor_id references agent(id); "team" → executor_id references
-// team(id) and dispatch resolves to team.leader_id at run time (PB-2429,
-// Path A). Older servers omit this field — callers should default to "agent".
+// team(id) and dispatch resolves to team.leader_id at run time.
 export type AutomationExecutorType = "agent" | "team";
+export type AutomationAssigneeType = AutomationExecutorType;
 
 export type AutomationTriggerKind = "schedule" | "webhook" | "api";
 
 // `skipped` is emitted by the backend pre-flight admission check
-// (executor runtime offline at dispatch time, PB-1899). The frontend MUST
+// (assignee runtime offline at dispatch time, MUL-1899). The frontend MUST
 // handle it explicitly — falling through to a generic case used to show
 // the run as still-pending which masked the no-op.
 export type AutomationRunStatus =
@@ -139,7 +139,9 @@ export interface AutomationQuotaUsage {
   action: "off" | "observe" | "enforce";
   used: number | null;
   reserved: number | null;
+  total: number | null;
   limit: number | null;
+  reached: boolean | null;
   period_start: string | null;
   period_end: string | null;
   reset_at: string | null;
@@ -169,7 +171,7 @@ export interface UpdateAutomationRequest {
   description?: string | null;
   project_id?: string | null;
   // Send `executor_type` together with `executor_id` whenever you change the
-  // executor — the server requires both for a type swap.
+  // assignee — the server requires both for a type swap.
   executor_type?: AutomationExecutorType;
   executor_id?: string;
   status?: AutomationStatus;
@@ -226,7 +228,7 @@ export interface ListAutomationRunsResponse {
 
 // Webhook delivery enum is server-canonical. The frontend MUST `default`
 // any switch on it to a generic fallback — see API Response Compatibility
-// rules in AGENTS.md. PR1 collapsed `skipped` into `dispatched` (the run
+// rules in CLAUDE.md. PR1 collapsed `skipped` into `dispatched` (the run
 // itself carries the skip state); a future server may add new values.
 export type WebhookDeliveryStatus =
   | "queued"

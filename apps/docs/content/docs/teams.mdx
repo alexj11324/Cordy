@@ -11,7 +11,7 @@ Teams solve the question of who the work goes to. They don't merge multiple agen
 
 ## When to use a team
 
-Use a team when the work needs several capabilities and the specific owner can't be determined when the issue is created. For example, a product delivery team can include frontend, backend, and testing agents, with the leader routing each issue by its content.
+Use a team as the executor when the work needs several capabilities and the specific agent can't be determined when the issue is created. For example, a product delivery team can include frontend, backend, and testing agents, with the leader routing each issue by its content.
 
 When the scope is clear, assign directly to the matching [agent](/agents).
 
@@ -19,33 +19,33 @@ When the scope is clear, assign directly to the matching [agent](/agents).
 
 | Setting | What it does |
 |---|---|
-| **Leader** | Must be an agent. Receives work assigned to the team and decides how to handle it. |
+| **Leader** | Must be an agent. Receives work routed to the team executor and decides how to handle it. |
 | **Members** | Can be agents or human members. The same member can join multiple teams. |
 | **Role descriptions** | Tell the leader what work each member is suited for. Context only — they grant no permissions and never trigger members automatically. |
 | **Team instructions** | Hold routing rules, collaboration norms, and team-wide background. Provided to the leader only. |
 
 Creating a team requires a name and a leader. The team leader automatically becomes a member; you can then add more members and fill in role descriptions and team instructions.
 
-## Execution flow after assignment
+## Execution flow after setting a team executor
 
-When a non-Backlog issue is assigned to a team, Patchbay immediately enqueues a `task` for the **leader agent** (not for every member). The flow then looks like this:
+When a non-Backlog issue has a team executor, Patchbay immediately enqueues a `task` for the **leader agent** (not for every member). The flow then looks like this:
 
-1. **Leader claims the task.** The agent runtime picks up the task on its next poll, same as any other agent assignment.
+1. **Leader claims the task.** The agent runtime picks up the task on its next poll, same as any other executor run.
 2. **Leader is briefed.** On claim, Patchbay appends three sections to the leader's system prompt — see [What the leader sees on every turn](#what-the-leader-sees-on-every-turn) below.
 3. **Leader posts one delegation comment.** The comment `@`-mentions the chosen member(s) using the exact mention markdown from the roster — that mention triggers a new `task` for each mentioned agent.
 4. **Leader records its evaluation** via `patchbay team activity <issue-id> action --reason "..."`. This writes an entry to the issue's activity timeline so humans can see the leader actually evaluated the trigger.
-5. **The dispatch turn leaves the parent `in_progress`.** Same agent-managed status contract as a direct agent assignment — coordinating the team is working the parent's ask, so the parent moves from `todo` to `in_progress`, and dispatching members is not delivery, so it stays there while the team works.
+5. **The dispatch turn leaves the parent `in_progress`.** Same agent-managed status contract as a direct executor run — coordinating the team is working the parent's ask, so the parent moves from `todo` to `in_progress`, and dispatching members is not delivery, so it stays there while the team works.
 6. **Leader stops.** The leader does not do the implementation itself. When the delegated member posts back — or when a sub-issue / stage barrier closes — the leader is re-triggered to read the update and either delegate the next step, escalate, move the parent to `in_review` once the overall goal is met, or stay silent. `done` is left to a human reviewer or existing integrations (for example a PR with close intent that merges).
 
-If the issue is in **Backlog**, the leader is not triggered — Backlog is a parking lot, same rule as for direct agent assignment.
+If the issue is in **Backlog**, the leader is not triggered — Backlog is a parking lot, same rule as for a direct agent executor.
 
 ### What the leader sees on every turn
 
 On each team-leader run, three blocks are appended to the leader's instructions:
 
-- **Team Operating Protocol** — a hard-coded rule set: read the issue, delegate by `@`-mention, be terse (don't restate the issue body — the assignee can read it), record an evaluation every turn, **stop after dispatching** — the dispatch turn ends with the parent `in_progress` — and only move the parent to `in_review` once the overall goal is met. This protocol is system-managed and not editable.
+- **Team Operating Protocol** — a hard-coded rule set: read the issue, delegate by `@`-mention, be terse (don't restate the issue body — the executor can read it), record an evaluation every turn, **stop after dispatching** — the dispatch turn ends with the parent `in_progress` — and only move the parent to `in_review` once the overall goal is met. This protocol is system-managed and not editable.
 
-  The status half of that protocol is **scoped to issues actually assigned to this team**. A leader woken by an `@team` mention on someone else's issue gets the same roster and delegation rules, but is told explicitly **not** to touch that issue's status — status stays with the issue's own assignee.
+  The status half of that protocol is **scoped to issues whose executor is this team**. A leader woken by an `@team` mention on someone else's issue gets the same roster and delegation rules, but is told explicitly **not** to touch that issue's status — status stays with the issue's own executor.
 - **Team Roster** — the leader's self-row plus one row per non-archived member. Each row carries the exact mention markdown (`[@Name](mention://agent/<uuid>)` or `[@Name](mention://member/<uuid>)`) the leader should paste — typing a plain `@name` won't trigger anyone.
 - **Team Instructions** — your custom guidance for this team (set on the team detail page or via `patchbay team update --instructions`). Use this for routing rules ("send DB work to Alice, frontend to Bob"), escalation policies, or anything else the leader needs to know that isn't already in the issue.
 
@@ -59,7 +59,7 @@ After the first dispatch, the leader is woken up automatically by **most subsequ
 | A team member posts a progress update with no `@mention` | **Yes** — the leader re-evaluates whether the next step is needed |
 | Anyone posts a comment that explicitly `@`-mentions another agent / member / team / `@all` | **No** — the explicit `@` is the routing signal; the leader gets out of the way |
 | The leader's own comment (self-trigger) | **No** — guarded to prevent a loop |
-| A comment containing only an issue cross-reference (`[PB-123](mention://issue/...)`) | **Yes** — issue references aren't routing |
+| A comment containing only an issue cross-reference (`[MUL-123](mention://issue/...)`) | **Yes** — issue references aren't routing |
 
 Dedup applies on top of these rules: if the leader already has a `queued` or `dispatched` task on this issue, a new trigger won't enqueue a duplicate.
 
@@ -69,10 +69,10 @@ Dedup applies on top of these rules: if the leader already has a `queued` or `di
 
 ## Assigning vs. @-mentioning a team
 
-| Action | Changes the assignee | Result |
+| Action | Changes the executor | Result |
 |---|---|---|
-| **Assign an issue to a team** | Yes | The team becomes the assignee and the leader is triggered. |
-| **@-mention a team in a comment** | No | The leader handles that comment only; the current assignee is unchanged. |
+| **Set a team as an issue executor** | Yes | The team becomes the executor and the leader is triggered. |
+| **@-mention a team in a comment** | No | The leader handles that comment only; the current executor is unchanged. |
 
 @-mentioning a specific member directly hands the work to that member. Patchbay also dedupes repeated triggers and prevents the leader's comments from re-triggering itself, avoiding execution loops.
 
@@ -80,7 +80,7 @@ Dedup applies on top of these rules: if the leader already has a `queued` or `di
 
 Adding an agent to a team does not bypass its [Access](/agents#permissions-and-access). When regular members create or manage teams, they can only pick agents they are allowed to run.
 
-Whether a member can assign or @-mention a team also depends on whether they can run the team's leader. If the leader is archived, or the current member isn't allowed to run it, the team can't be assigned or @-mentioned.
+Whether a member can set a team as executor or @-mention it also depends on whether they can run the team's leader. If the leader is archived, or the current member isn't allowed to run it, the team can't be selected as executor or @-mentioned.
 
 ## Creation and management permissions
 
@@ -90,9 +90,9 @@ Team names don't have to be unique within the workspace. When changing the leade
 
 ## Archiving a team
 
-Once archived, a team disappears from lists, assignee pickers, and the @-menu, and cannot be restored.
+Once archived, a team disappears from lists, executor/reviewer pickers, and the @-menu, and cannot be restored.
 
-To keep existing work owned, issues and automations currently assigned to the team transfer to the former leader agent. Historical comments and activity records remain. If you need the same routing later, create a new team.
+To keep existing work executable, issues and automations currently using the team as executor transfer to the former leader agent. Historical comments and activity records remain. If you need the same routing later, create a new team.
 
 <Callout type="warning">
 Archiving cannot be undone.
@@ -112,6 +112,6 @@ Full commands in [Using the CLI](/cli).
 
 ## Next steps
 
-- [Assign issues to agents](/assigning-issues) — compare member, agent, and team assignees.
+- [Assign issues to agents](/assigning-issues) — compare owner, executor, and reviewer roles.
 - [@-mention agents in comments](/mentioning-agents) — trigger and routing rules for @-mentions.
 - [Tasks](/tasks) — how each agent run is queued and recorded.

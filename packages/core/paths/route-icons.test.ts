@@ -44,10 +44,9 @@ describe("workspace page coverage", () => {
 describe("pageForSegment", () => {
   it("maps a known segment to its page key", () => {
     expect(pageForSegment("projects")).toBe("projects");
+    expect(pageForSegment("work-products")).toBe("workProducts");
     expect(pageForSegment("my-issues")).toBe("myIssues");
     expect(pageForSegment("settings")).toBe("settings");
-    expect(pageForSegment("integrations")).toBe("integrations");
-    expect(pageForSegment("task-graph")).toBe("taskGraph");
   });
 
   it("returns null for an unknown segment", () => {
@@ -59,13 +58,12 @@ describe("pageForSegment", () => {
 describe("resolveRouteIconName", () => {
   it("resolves a page path to its page icon", () => {
     expect(resolveRouteIconName("/acme/projects")).toBe("FolderKanban");
-    expect(resolveRouteIconName("/acme/automations")).toBe("AlarmClockCheck");
+    expect(resolveRouteIconName("/acme/work-products")).toBe("FileText");
+    expect(resolveRouteIconName("/acme/automations")).toBe("Zap");
     expect(resolveRouteIconName("/acme/chat")).toBe("MessageSquare");
-    expect(resolveRouteIconName("/acme/channels")).toBe("Hash");
-    expect(resolveRouteIconName("/acme/teams")).toBe("PeopleGroup");
+    expect(resolveRouteIconName("/acme/teams")).toBe("Users");
     expect(resolveRouteIconName("/acme/usage")).toBe("BarChart3");
     expect(resolveRouteIconName("/acme/my-issues")).toBe("CircleUser");
-    expect(resolveRouteIconName("/acme/integrations")).toBe("Plug");
     expect(resolveRouteIconName("/acme/task-graph")).toBe("Network");
   });
 

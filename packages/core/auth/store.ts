@@ -40,11 +40,10 @@ export interface AuthState {
   sendCode: (email: string) => Promise<void>;
   verifyCode: (email: string, code: string) => Promise<User>;
   loginWithClerk: (sessionToken: string, signal?: AbortSignal) => Promise<User>;
+  loginWithGoogle: (code: string, redirectUri: string) => Promise<User>;
   createGuestSession: () => Promise<User>;
-  /** Starts a guest bearer for a desktop OAuth handoff without publishing it as the active UI user. */
-  createGuestSessionForHandoff: () => Promise<User>;
   loginWithToken: (token: string) => Promise<User>;
-  /** Clears local auth state and resolves after a cookie session is revoked. */
+  /** Clears local auth state and resolves after a cookie/guest session is revoked. */
   logout: (options?: AuthLogoutOptions) => Promise<void>;
   setUser: (user: User) => void;
   refreshMe: () => Promise<void>;
@@ -52,14 +51,6 @@ export interface AuthState {
 
 export function createAuthStore(options: AuthStoreOptions) {
   const { api, storage, onLogin, onLogout, cookieAuth } = options;
-
-  const requestGuestSession = async () => {
-    const { token, user } = await api.createGuestSession();
-    if (user.is_guest !== true) {
-      throw new Error("server did not return a guest session");
-    }
-    return { token, user };
-  };
 
   return create<AuthState>((set, get) => ({
     user: null,
@@ -99,9 +90,6 @@ export function createAuthStore(options: AuthStoreOptions) {
         error.name = "AbortError";
         throw error;
       }
-      // The Clerk token is only an input to the exchange. Every subsequent
-      // API and WebSocket request uses the HttpOnly Patchbay session cookie.
-      api.setTokenProvider(null);
       if (cookieAuth) {
         api.setToken(null);
       } else {
@@ -114,8 +102,23 @@ export function createAuthStore(options: AuthStoreOptions) {
       return user;
     },
 
+    loginWithGoogle: async (code: string, redirectUri: string) => {
+      const { token, user } = await api.googleLogin(code, redirectUri);
+      if (!cookieAuth) {
+        storage.setItem("patchbay_token", token);
+        api.setToken(token);
+      }
+      onLogin?.();
+      identifyAnalytics(user.id, { email: user.email, name: user.name });
+      set({ user, isLoading: false, status: "authenticated" });
+      return user;
+    },
+
     createGuestSession: async () => {
-      const { token, user } = await requestGuestSession();
+      const { token, user } = await api.createGuestSession();
+      if (user.is_guest !== true) {
+        throw new Error("server did not return a guest session");
+      }
       // Guest auth is still token auth: the user is real and the bearer is
       // required for every subsequent workspace/onboarding API call.
       storage.setItem("patchbay_token", token);
@@ -125,14 +128,7 @@ export function createAuthStore(options: AuthStoreOptions) {
       set({ user, isLoading: false, status: "authenticated" });
       return user;
     },
-    createGuestSessionForHandoff: async () => {
-      const { token, user } = await requestGuestSession();
-      // The bootstrap bearer only authenticates the one desktop initiation.
-      // Keep it in the in-memory API client so the renderer remains on the
-      // login page, and let the server claim it when Google completes.
-      api.setToken(token);
-      return user;
-    },
+
     loginWithToken: async (token: string) => {
       storage.setItem("patchbay_token", token);
       api.setToken(token);
@@ -149,9 +145,9 @@ export function createAuthStore(options: AuthStoreOptions) {
           ? api.logout().catch(() => {})
           : Promise.resolve();
       const platformLogout = onLogout?.(serverLogout, logoutOptions);
-      // Keep the promise so callers that are about to start a new Clerk
-      // exchange or navigate away can serialize behind both server-side
-      // session revocation and platform auth cleanup (for example Clerk).
+      // Keep the promise so callers that are about to start a new exchange
+      // or navigate away can serialize behind both server-side session
+      // revocation and platform auth cleanup.
       storage.removeItem("patchbay_token");
       api.setToken(null);
       setCurrentWorkspace(null, null);

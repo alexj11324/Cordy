@@ -56,6 +56,34 @@ if ($parseErrors) {
 }
 
 $installerSource = Get-Content -Raw -Path $InstallerPath
+
+# The installer is a current release/self-host entry point. Keep its
+# repository, release API, download, and copy-paste hints on the canonical
+# Cordy target without policing historical asset names used by checksum
+# compatibility logic below.
+foreach ($required in @(
+        'https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1',
+        '$RepoUrl       = "https://github.com/alexj11324/Cordy.git"',
+        '$RepoWebUrl    = "https://github.com/alexj11324/Cordy"',
+        'https://api.github.com/repos/alexj11324/Cordy/releases/latest',
+        'https://github.com/alexj11324/Cordy/releases/download/'
+    )) {
+    if (-not $installerSource.Contains($required)) {
+        Fail-Test "install.ps1 is missing the canonical current release/self-host address: $required"
+    }
+}
+foreach ($retired in @(
+        'https://github.com/patchbay-ai/patchbay.git',
+        'https://github.com/patchbay-ai/patchbay/',
+        'https://github.com/patchbay-ai/patchbay"',
+        'https://raw.githubusercontent.com/patchbay-ai/patchbay/',
+        'https://api.github.com/repos/patchbay-ai/patchbay/'
+    )) {
+    if ($installerSource.Contains($retired)) {
+        Fail-Test "install.ps1 still contains a retired current address: $retired"
+    }
+}
+
 foreach ($banned in @("Get-SelfHostBackendPort", "Get-SelfHostFrontendPort", "Get-EnvFileValue")) {
     if ($installerSource -match [regex]::Escape($banned)) {
         Fail-Test "install.ps1 must not re-derive host ports from .env (found $banned)"
@@ -112,46 +140,7 @@ if ($null -ne $failureResult) {
 }
 
 # ---------------------------------------------------------------------------
-# 3. Legacy brand identifiers migrate without overwriting custom repositories
-# ---------------------------------------------------------------------------
-$migrationDir = Join-Path ([System.IO.Path]::GetTempPath()) ("patchbay-ps1-migration-" + [guid]::NewGuid().ToString("N"))
-New-Item -ItemType Directory -Path $migrationDir -Force | Out-Null
-try {
-    $migrationEnv = Join-Path $migrationDir ".env"
-    @(
-        "CORDY_BACKEND_IMAGE=ghcr.io/cordy-ai/cordy-backend" # legacy-brand-compat
-        "CORDY_WEB_IMAGE=ghcr.io/cordy-ai/cordy-web" # legacy-brand-compat
-    ) | Set-Content $migrationEnv
-
-    & {
-        Invoke-Expression $definitions
-        Update-LegacySelfHostImageRepositories -EnvPath $migrationEnv
-    } | Out-Null
-    $migrated = @(Get-Content $migrationEnv)
-    if ($migrated -notcontains "PATCHBAY_BACKEND_IMAGE=ghcr.io/alexj11324/patchbay-backend" -or
-        $migrated -notcontains "PATCHBAY_WEB_IMAGE=ghcr.io/alexj11324/patchbay-web") {
-        Fail-Test "install.ps1 did not migrate the exact legacy image repositories"
-    }
-
-    @(
-        "CORDY_BACKEND_IMAGE=registry.example/custom-backend" # legacy-brand-compat
-        "CORDY_WEB_IMAGE=registry.example/custom-web" # legacy-brand-compat
-    ) | Set-Content $migrationEnv
-    & {
-        Invoke-Expression $definitions
-        Update-LegacySelfHostImageRepositories -EnvPath $migrationEnv
-    } | Out-Null
-    $custom = @(Get-Content $migrationEnv)
-    if ($custom -notcontains "PATCHBAY_BACKEND_IMAGE=registry.example/custom-backend" -or
-        $custom -notcontains "PATCHBAY_WEB_IMAGE=registry.example/custom-web") {
-        Fail-Test "install.ps1 overwrote an operator-customized image repository"
-    }
-} finally {
-    Remove-Item $migrationDir -Recurse -Force -ErrorAction SilentlyContinue
-}
-
-# ---------------------------------------------------------------------------
-# 4. End to end: the probed URL and the printed URLs are the published ports
+# 3. End to end: the probed URL and the printed URLs are the published ports
 # ---------------------------------------------------------------------------
 $cases = @(
     @{ Label = "defaults"; Env = @{}; Mutation = $null; Backend = "8080"; Frontend = "3000" }

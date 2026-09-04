@@ -37,7 +37,7 @@ export default function Inbox() {
   const { data: rawItems, isLoading, error, refetch, isRefetching } = useQuery(
     inboxListOptions(wsId),
   );
-  // Dedup + drop archived to match web/desktop. See AGENTS.md
+  // Dedup + drop archived to match web/desktop. See CLAUDE.md
   // "Behavioral parity" → inbox dedup incident.
   const data = useMemo(
     () => deduplicateInboxItems(rawItems ?? []),

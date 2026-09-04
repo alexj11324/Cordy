@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   AppConfigSchema,
+  SlackInstallationSchema,
+  LarkInstallationSchema,
+  DingTalkInstallationSchema,
   WecomInstallationSchema,
   ListWecomInstallationsResponseSchema,
   RedeemWecomBindingTokenResponseSchema,
@@ -8,6 +11,7 @@ import {
   EMPTY_LIST_WECOM_INSTALLATIONS_RESPONSE,
   EMPTY_REDEEM_WECOM_BINDING_TOKEN_RESPONSE,
   TelegramInstallationSchema,
+  WeixinInstallationSchema,
   ListTelegramInstallationsResponseSchema,
   RedeemTelegramBindingTokenResponseSchema,
   EMPTY_TELEGRAM_INSTALLATION,
@@ -26,11 +30,14 @@ import {
   DashboardUsageDailyListSchema,
   ChatDraftRestoresResponseSchema,
   ChatPendingTaskSchema,
+  ChatSessionListSchema,
+  ChatSessionSchema,
   PrioritizeQueuedChatTaskResponseSchema,
   CreateFeedbackResponseSchema,
   DuplicateIssueErrorBodySchema,
   EMPTY_CHAT_DRAFT_RESTORES,
   EMPTY_CHAT_PENDING_TASK,
+  EMPTY_CHAT_SESSION,
   EMPTY_PRIORITIZE_QUEUED_CHAT_TASK_RESPONSE,
   EMPTY_CREATE_FEEDBACK_RESPONSE,
   EMPTY_INBOX_ITEMS,
@@ -52,6 +59,7 @@ import {
   SendChatMessageResponseSchema,
   TeamListSchema,
   TeamSchema,
+  SourceContextPreviewSchema,
   TimelineEntriesSchema,
   UserSchema,
   PluginInstallationSchema,
@@ -60,7 +68,6 @@ import {
   PluginPreviewSchema,
   EMPTY_PLUGIN_INSTALLATION_LIST,
   EMPTY_PLUGIN_PREVIEW,
-  AgentThreadResponseSchema,
 } from "./schemas";
 import { IssueViewSchema, IssueViewListSchema } from "./schemas";
 import {
@@ -71,21 +78,40 @@ import {
 } from "./schemas";
 import { parseWithFallback } from "./schema";
 
+describe.each([
+  ["slack", SlackInstallationSchema],
+  ["lark", LarkInstallationSchema],
+  ["dingtalk", DingTalkInstallationSchema],
+  ["wecom", WecomInstallationSchema],
+  ["telegram", TelegramInstallationSchema],
+  ["weixin", WeixinInstallationSchema],
+] as const)("%s installation status compatibility", (_provider, schema) => {
+  it("prefers the canonical installation_status over the legacy status field", () => {
+    expect(
+      schema.parse({
+        id: "installation-1",
+        status: "active",
+        installation_status: "installed",
+      }).status,
+    ).toBe("installed");
+  });
+
+  it("treats an old server's active status as legacy installed", () => {
+    expect(schema.parse({ id: "installation-1", status: "active" }).status).toBe("installed");
+  });
+});
+
 const baseIssue = {
   id: "11111111-1111-1111-1111-111111111111",
   workspace_id: "ws-1",
   number: 1,
-  identifier: "PB-1",
+  identifier: "MUL-1",
   title: "Test",
   description: null,
   status: "todo",
   priority: "medium",
-  owner_type: null,
-  owner_id: null,
   executor_type: null,
   executor_id: null,
-  reviewer_type: null,
-  reviewer_id: null,
   creator_type: "member",
   creator_id: "user-1",
   parent_issue_id: null,
@@ -99,60 +125,177 @@ const baseIssue = {
   updated_at: "2026-01-01T00:00:00Z",
 };
 
-describe("AgentThreadResponseSchema availability compatibility", () => {
-  it("preserves the complete continuation turn alongside its bounded summary", () => {
-    const parsed = AgentThreadResponseSchema.safeParse({
-      task: {
-        id: "task-2",
-        trigger_summary: "Bounded summary",
-        agent_thread_message:
-          "The complete continuation instruction with details beyond the summary limit.",
-      },
-      thread_tasks: [
-        {
-          id: "task-2",
-          trigger_summary: "Bounded summary",
-          agent_thread_message:
-            "The complete continuation instruction with details beyond the summary limit.",
-        },
-      ],
-      agent: { id: "agent-1", name: "Builder" },
-      availability: { state: "available" },
-      can_continue: true,
-    });
+describe("ChatSessionSchema", () => {
+  const baseSession = {
+    id: "chat-1",
+    workspace_id: "ws-1",
+    agent_id: "agent-1",
+    creator_id: "user-1",
+    title: "Channel chat",
+    status: "active",
+    has_unread: false,
+    created_at: "2026-08-18T00:00:00Z",
+    updated_at: "2026-08-18T00:00:00Z",
+  };
 
-    expect(parsed.success).toBe(true);
-    if (!parsed.success) return;
-    expect(parsed.data.task.agent_thread_message).toContain(
-      "details beyond the summary limit",
-    );
+  it("accepts channel route metadata and leaves it absent for first-party Chats", () => {
+    expect(ChatSessionSchema.parse(baseSession).channel_source).toBeUndefined();
+
+    const parsed = ChatSessionSchema.parse({
+      ...baseSession,
+      channel_source: {
+        channel_type: "slack",
+        installation_id: "installation-1",
+        route_revision: 3,
+      },
+      is_current_channel_route: false,
+    });
+    expect(parsed.channel_source).toEqual({
+      channel_type: "slack",
+      installation_id: "installation-1",
+      route_revision: 3,
+    });
+    expect(parsed.is_current_channel_route).toBe(false);
   });
 
-  it("keeps the thread envelope when the server adds an availability state", () => {
-    const parsed = AgentThreadResponseSchema.safeParse({
-      task: { id: "task-1" },
-      thread_tasks: [{ id: "task-1", status: "completed" }],
-      current_task_id: "task-1",
-      agent: { id: "agent-1", name: "Builder" },
-      events: [{ task_id: "task-1", seq: 1, type: "tool_use", content: "done" }],
-      availability: {
-        state: "provider_reconnecting",
-        reason_code: "provider_reconnecting",
-        reason: "The provider is reconnecting.",
-      },
-      can_continue: true,
+  it("degrades malformed session metadata without dropping the Chat", () => {
+    const parsed = ChatSessionSchema.parse({
+      ...baseSession,
+      channel_source: { channel_type: 42 },
+      is_current_channel_route: "yes",
     });
+    expect(parsed.channel_source).toBeUndefined();
+    expect(parsed.is_current_channel_route).toBeUndefined();
+    expect(parsed.id).toBe("chat-1");
 
-    expect(parsed.success).toBe(true);
-    if (!parsed.success) return;
-    expect(parsed.data.availability.state).toBe("unavailable");
-    expect(parsed.data.events).toHaveLength(1);
-    expect(parsed.data.thread_tasks[0]?.id).toBe("task-1");
-    expect(parsed.data.availability.reason_code).toBe("provider_reconnecting");
+    expect(parseWithFallback({ id: 42 }, ChatSessionSchema, EMPTY_CHAT_SESSION, {
+      endpoint: "GET /api/chat/sessions/:id",
+    })).toEqual(EMPTY_CHAT_SESSION);
+  });
+
+  it("drops one malformed list item without hiding the other Chats", () => {
+    const parsed = ChatSessionListSchema.parse([
+      baseSession,
+      { ...baseSession, id: 42 },
+      {
+        ...baseSession,
+        id: "onboarding-chat",
+        last_message: {
+          content: "Welcome",
+          role: "assistant",
+          created_at: "2026-08-18T00:00:00Z",
+          message_kind: "onboarding_opening",
+        },
+      },
+    ]);
+
+    expect(parsed.map((session) => session.id)).toEqual(["chat-1", "onboarding-chat"]);
+    expect(parsed[1]?.last_message?.message_kind).toBe("onboarding_opening");
   });
 });
-
 describe("IssueSchema (via ListIssuesResponseSchema)", () => {
+  // A custom status key can be derived rather than readable — "客户确认" becomes
+  // `in_review_2` — so the display name travels with it. The field has to
+  // survive a server that predates it, since an issue that fails validation
+  // degrades to a stub rather than losing one field. (MUL-6749)
+  it("carries a custom status's display name", () => {
+    const parsed = ListIssuesResponseSchema.parse({
+      issues: [{ ...baseIssue, status: "in_review_2", status_name: "客户确认" }],
+      total: 1,
+    });
+    expect(parsed.issues[0]?.status_name).toBe("客户确认");
+  });
+  it("drops only a malformed status_name, keeping the issue and the list", () => {
+    for (const bad of [42, { name: "x" }, ["x"], true]) {
+      const parsed = ListIssuesResponseSchema.parse({
+        issues: [{ ...baseIssue, status: "in_review_2", status_name: bad }],
+        total: 1,
+      });
+      expect(parsed.issues).toHaveLength(1);
+      expect(parsed.issues[0]?.id).toBe(baseIssue.id);
+      expect(parsed.issues[0]?.status).toBe("in_review_2");
+      expect(parsed.issues[0]?.status_name).toBeUndefined();
+    }
+  });
+  it("still parses an issue from a server that does not send status_name", () => {
+    const { status_name: _omitted, ...withoutName } = { ...baseIssue, status_name: "x" };
+    const parsed = ListIssuesResponseSchema.parse({ issues: [withoutName], total: 1 });
+    expect(parsed.issues[0]?.id).toBe(baseIssue.id);
+    expect(parsed.issues[0]?.status_name).toBeUndefined();
+  });
+  it("keeps the issue while independently dropping a malformed source context", () => {
+    const parsed = ListIssuesResponseSchema.parse({
+      issues: [{ ...baseIssue, source_context: { snapshot: "bad" } }],
+      total: 1,
+    });
+    expect(parsed.issues[0]?.id).toBe(baseIssue.id);
+    expect(parsed.issues[0]?.source_context).toBeUndefined();
+  });
+  it("parses source-context change reasons without requiring them from older servers", () => {
+    const sourceContext = {
+      id: "context-1",
+      version: 1,
+      usage: "read_only_historical_background",
+      captured_at: "2026-08-21T12:00:00Z",
+      display_state: "changed",
+      source_issue_state: "changed",
+      comment_thread_state: "unchanged",
+      anchor_comment_state: "available",
+      can_open_current_source: true,
+      change_reasons: ["issue_description_attachments"],
+      change_details: {
+        changed_comment_ids: ["comment-1"],
+        added_comments: [{
+          id: "comment-2", parent_id: "comment-1", type: "comment", content: "new reply",
+          author: { type: "member", id: "user-2", name: "Bob" },
+          created_at: "later", updated_at: "later", revision: 1, attachments: [],
+        }],
+        removed_comment_ids: ["comment-3"],
+        description_attachment_changes: [{
+          kind: "removed", attachment_id: "attachment-1", filename: "old.txt",
+        }],
+      },
+      snapshot: {
+        source_issue: {
+          id: "issue-1", identifier: "MUL-1", number: 1, title: "Source",
+          description: null, created_at: "now", updated_at: "now", revision: 1,
+          attachments: [],
+        },
+        comment_thread: [{
+          id: "comment-1", parent_id: null, type: "comment", content: "history",
+          author: { type: "member", id: "user-1", name: "Alice" },
+          created_at: "now", updated_at: "now", revision: 1, attachments: [],
+        }],
+        anchor_comment_id: "comment-1",
+      },
+    };
+    const parsed = ListIssuesResponseSchema.parse({
+      issues: [{ ...baseIssue, source_context: sourceContext }],
+      total: 1,
+    });
+    expect(parsed.issues[0]?.source_context?.change_reasons).toEqual(["issue_description_attachments"]);
+    expect(parsed.issues[0]?.source_context?.change_details).toEqual(sourceContext.change_details);
+
+    const { change_reasons: _reasonsOmitted, change_details: _detailsOmitted, ...legacyContext } = sourceContext;
+    const legacy = ListIssuesResponseSchema.parse({
+      issues: [{ ...baseIssue, source_context: legacyContext }],
+      total: 1,
+    });
+    expect(legacy.issues[0]?.source_context?.change_reasons).toBeUndefined();
+    expect(legacy.issues[0]?.source_context?.change_details).toBeUndefined();
+
+    const malformed = ListIssuesResponseSchema.parse({
+      issues: [{
+        ...baseIssue,
+        source_context: {
+          ...sourceContext,
+          change_details: { ...sourceContext.change_details, added_comments: [{ id: 42 }] },
+        },
+      }],
+      total: 1,
+    });
+    expect(malformed.issues[0]?.source_context).toBeUndefined();
+  });
   it("accepts null activity during backfill and rejects malformed activity", () => {
     const parsed = ListIssuesResponseSchema.parse({
       issues: [{ ...baseIssue, last_activity_at: null }],
@@ -256,6 +399,50 @@ describe("IssueSchema (via ListIssuesResponseSchema)", () => {
   });
 });
 
+describe("SourceContextPreviewSchema", () => {
+  it("parses a thread-history preview and rejects a missing token", () => {
+    const preview = {
+      source_issue: {
+        id: "issue-1", identifier: "MUL-1", number: 1, title: "Source",
+        description: null, created_at: "now", updated_at: "now", revision: 1,
+        attachments: [],
+      },
+      comment_thread: [{
+        id: "comment-1", parent_id: null, type: "comment", content: "history",
+        author: { type: "member", id: "user-1", name: "Alice" },
+        created_at: "now", updated_at: "now", revision: 1, attachments: [],
+      }],
+      anchor_comment_id: "comment-1",
+      capture_token: "sha256:token",
+      limits: { comment_count: 1, text_bytes: 7, attachment_count: 0, attachment_bytes: 0 },
+    };
+    expect(SourceContextPreviewSchema.parse(preview).comment_thread).toHaveLength(1);
+    expect(() => SourceContextPreviewSchema.parse({ ...preview, capture_token: "" })).toThrow();
+  });
+
+  it("normalizes null attachment lists from early source-context servers", () => {
+    const preview = {
+      source_issue: {
+        id: "issue-1", identifier: "MUL-1", number: 1, title: "Source",
+        description: null, created_at: "now", updated_at: "now", revision: 1,
+        attachments: null,
+      },
+      comment_thread: [{
+        id: "comment-1", parent_id: null, type: "comment", content: "history",
+        author: { type: "member", id: "user-1", name: "Alice" },
+        created_at: "now", updated_at: "now", revision: 1, attachments: null,
+      }],
+      anchor_comment_id: "comment-1",
+      capture_token: "sha256:token",
+      limits: { comment_count: 1, text_bytes: 7, attachment_count: 0, attachment_bytes: 0 },
+    };
+
+    const parsed = SourceContextPreviewSchema.parse(preview);
+    expect(parsed.source_issue.attachments).toEqual([]);
+    expect(parsed.comment_thread[0]?.attachments).toEqual([]);
+  });
+});
+
 describe("IssuePropertySchema (via ListPropertiesResponseSchema)", () => {
   const baseProperty = {
     id: "22222222-2222-2222-2222-222222222222",
@@ -308,7 +495,7 @@ describe("IssuePropertySchema (via ListPropertiesResponseSchema)", () => {
 
 // POST /api/issues/preview-trigger feeds this schema through parseWithFallback
 // in client.previewIssueTrigger with fallback { triggers: [], total_count: 0 }
-// (PB-3375). The four entry points read it to decide "will this start a run",
+// (MUL-3375). The four entry points read it to decide "will this start a run",
 // so malformed / missing / null drift must degrade to "nothing will start"
 // rather than throw into the picker/modal.
 const PREVIEW_FALLBACK = { triggers: [], total_count: 0 };
@@ -697,10 +884,10 @@ describe("CreateFeedbackResponseSchema", () => {
 describe("DuplicateIssueErrorBodySchema", () => {
   const valid = {
     code: "active_duplicate_issue",
-    error: "An active issue with this title already exists: PB-12 – Login bug",
+    error: "An active issue with this title already exists: MUL-12 – Login bug",
     issue: {
       id: "11111111-1111-1111-1111-111111111111",
-      identifier: "PB-12",
+      identifier: "MUL-12",
       title: "Login bug",
     },
   };
@@ -779,6 +966,16 @@ describe("UserSchema timezone drift", () => {
       { endpoint: "GET /api/me" },
     );
     expect(parsed).toBe(EMPTY_USER);
+  });
+});
+
+describe("UserSchema guest identity", () => {
+  it("preserves guest identity and defaults legacy users to formal", () => {
+    expect(UserSchema.parse({ id: "guest-1", is_guest: true }).is_guest).toBe(
+      true,
+    );
+    expect(UserSchema.parse({ id: "user-1" }).is_guest).toBe(false);
+    expect(EMPTY_USER.is_guest).toBe(false);
   });
 });
 
@@ -934,11 +1131,11 @@ describe("dashboard + runtime usage schema drift", () => {
     // denominator instead of inventing a failure that never happened.
     //
     // Defaulting to a failure bucket instead was considered and rejected: the
-    // realistic drift here is the backend omitting the field
+    // realistic drift here is someone adding `omitempty` to the Go struct
     // tag, which would strip the field from exactly the SUCCESS rows and turn
     // every window into a 100% error rate. Deflating a rate under drift is
     // the milder failure. TestDashboardFailureWireContractKeepsEmptyReason
-    // Backend contract tests guard the other side by
+    // (server/internal/handler/dashboard_test.go) guards the other side by
     // pinning that the server always emits the field.
     expect(daily[0]?.failure_reason).toBe("");
     expect(daily[0]?.task_count).toBe(0);
@@ -984,8 +1181,39 @@ describe("AppConfigSchema local_worktree_supported drift", () => {
   });
 });
 
+describe("AppConfigSchema agent_conversation_starters_supported drift", () => {
+  it("defaults to false when the server predates the persistence contract", () => {
+    expect(AppConfigSchema.parse({}).agent_conversation_starters_supported).toBe(false);
+  });
+
+  it("coerces a malformed declaration to false", () => {
+    expect(
+      AppConfigSchema.parse({ agent_conversation_starters_supported: "yes" })
+        .agent_conversation_starters_supported,
+    ).toBe(false);
+  });
+
+  it("carries a genuine declaration through", () => {
+    expect(
+      AppConfigSchema.parse({ agent_conversation_starters_supported: true })
+        .agent_conversation_starters_supported,
+    ).toBe(true);
+  });
+});
+
 describe("AppConfigSchema cdn_signed drift", () => {
-  it("defaults cdn_signed to false when the server omits it (pre-PB-3254 servers)", () => {
+  it("defaults an incomplete messaging capability to disabled and read-only", () => {
+    const parsed = AppConfigSchema.parse({ messaging: { mode: "managed" } });
+    expect(parsed).toMatchObject({
+      messaging: {
+        mode: "managed",
+        setupWritable: false,
+        platforms: [],
+      },
+    });
+  });
+
+  it("defaults cdn_signed to false when the server omits it (pre-MUL-3254 servers)", () => {
     const parsed = AppConfigSchema.parse({ cdn_domain: "cdn.example.com" });
     expect(parsed.cdn_signed).toBe(false);
   });
@@ -1089,13 +1317,23 @@ describe("InboxItemListSchema", () => {
 
   it("parses a well-formed archived list and tolerates extra fields", () => {
     const parsed = parseWithFallback(
-      [row({ issue_status: "in_progress", details: { comment_id: "c-1" }, future_field: 1 })],
+      [row({
+        issue_status: "in_progress",
+        issue_priority: "high",
+        details: { comment_id: "c-1" },
+        future_field: 1,
+      })],
       InboxItemListSchema,
       EMPTY_INBOX_ITEMS,
       ENDPOINT,
     );
     expect(parsed).toHaveLength(1);
-    expect(parsed[0]).toMatchObject({ id: "inbox-1", archived: true });
+    expect(parsed[0]).toMatchObject({
+      id: "inbox-1",
+      archived: true,
+      issue_status: "in_progress",
+      issue_priority: "high",
+    });
   });
 
   it("keeps a notification type this client doesn't know yet", () => {
@@ -1117,6 +1355,17 @@ describe("InboxItemListSchema", () => {
     expect(
       parseWithFallback([withoutOptionals], InboxItemListSchema, EMPTY_INBOX_ITEMS, ENDPOINT),
     ).toHaveLength(1);
+  });
+
+  it("returns the empty fallback when an issue projection is wrong-typed", () => {
+    expect(
+      parseWithFallback(
+        [row({ issue_priority: 3 })],
+        InboxItemListSchema,
+        EMPTY_INBOX_ITEMS,
+        ENDPOINT,
+      ),
+    ).toBe(EMPTY_INBOX_ITEMS);
   });
 
   it("returns the empty fallback for a non-array body", () => {
@@ -1198,7 +1447,7 @@ describe("SearchProjectsResponseSchema date drift", () => {
 });
 
 // The "run now" flow branches on run.status/reason_code to avoid a false-success
-// toast (PB-4525), so the trigger response must survive backend drift.
+// toast (MUL-4525), so the trigger response must survive backend drift.
 describe("AutomationRunSchema", () => {
   const ENDPOINT = { endpoint: "POST /api/automations/:id/trigger" };
   const baseRun = {
@@ -1219,7 +1468,7 @@ describe("AutomationRunSchema", () => {
 
   it("preserves a blocked run's status and reason_code", () => {
     const parsed = parseWithFallback(
-      { ...baseRun, status: "skipped", failure_reason: "you are not allowed to trigger this automation's executor agent", reason_code: "invocation_not_allowed" },
+      { ...baseRun, status: "skipped", failure_reason: "you are not allowed to trigger this automation's assignee agent", reason_code: "invocation_not_allowed" },
       AutomationRunSchema,
       FALLBACK_AUTOMATION_RUN,
       ENDPOINT,
@@ -1275,7 +1524,7 @@ describe("AutomationQuotaUsageSchema", () => {
 });
 
 // The comment composer branches on preview.blocked to warn before sending
-// (PB-4525 §2), so the additive field must parse and degrade gracefully.
+// (MUL-4525 §2), so the additive field must parse and degrade gracefully.
 describe("CommentTriggerPreviewSchema.blocked", () => {
   it("parses blocked mention outcomes alongside agents", () => {
     const parsed = CommentTriggerPreviewSchema.parse({
@@ -1336,6 +1585,7 @@ describe("RuntimeModelListRequestSchema", () => {
           default_level: "low",
         },
         service_tiers: [{ id: "fast", name: "Fast" }],
+        supports_explicit_standard_service_tier: true,
       },
     ],
   };
@@ -1354,6 +1604,9 @@ describe("RuntimeModelListRequestSchema", () => {
       { value: "high", label: "High" },
     ]);
     expect(parsed.models?.[0]?.service_tiers).toEqual([{ id: "fast", name: "Fast" }]);
+    expect(
+      parsed.models?.[0]?.supports_explicit_standard_service_tier,
+    ).toBe(true);
     expect(parsed.cached).toBeUndefined();
   });
 
@@ -1368,7 +1621,7 @@ describe("RuntimeModelListRequestSchema", () => {
     expect(parsed.cached_at).toBe("2026-07-29T00:00:00Z");
   });
 
-  // A backend that predates PB-5444 sends neither marker; an even older one
+  // A backend that predates MUL-5444 sends neither marker; an even older one
   // may omit `supported`. Both must stay usable rather than reading as
   // "runtime manages the model itself" off an undefined.
   it("defaults supported to true on an older backend that omits it", () => {
@@ -1381,6 +1634,24 @@ describe("RuntimeModelListRequestSchema", () => {
     );
     expect(parsed.supported).toBe(true);
     expect(parsed.cached).toBeUndefined();
+  });
+
+  it("treats an older daemon that omits explicit-standard support as unsupported", () => {
+    const model = completed.models[0]!;
+    const {
+      supports_explicit_standard_service_tier: _omitted,
+      ...oldDaemonModel
+    } = model;
+    const parsed = parseWithFallback(
+      { ...completed, models: [oldDaemonModel] },
+      RuntimeModelListRequestSchema,
+      MALFORMED_RUNTIME_MODEL_LIST_REQUEST,
+      { endpoint: "test" },
+    );
+
+    expect(
+      parsed.models?.[0]?.supports_explicit_standard_service_tier,
+    ).toBeUndefined();
   });
 
   it("passes an unknown status through instead of failing the whole response", () => {
@@ -1407,6 +1678,15 @@ describe("RuntimeModelListRequestSchema", () => {
       { ...completed, supported: "yes" },
       { ...completed, models: "nope" },
       { ...completed, models: [{ label: "no id" }] },
+      {
+        ...completed,
+        models: [
+          {
+            ...completed.models[0],
+            supports_explicit_standard_service_tier: "yes",
+          },
+        ],
+      },
     ]) {
       const parsed = parseWithFallback(
         malformed,
@@ -1491,7 +1771,7 @@ describe("IssueViewSchema", () => {
 });
 
 // WeCom smart-bot installation schemas. These gate UI affordances (the Connect
-// dialog, the "ask your operator" state, the revoked-vs-active badge), so a
+// dialog, the "ask your operator" state, and the revoked-vs-installed badge), so a
 // malformed response must degrade to the safe state rather than a broken one.
 describe("WeCom installation schemas", () => {
   it("parses a well-formed installation", () => {
@@ -1504,7 +1784,7 @@ describe("WeCom installation schemas", () => {
       status: "active",
     });
     expect(parsed.bot_id).toBe("aibot_xyz");
-    expect(parsed.status).toBe("active");
+    expect(parsed.status).toBe("installed");
   });
 
   it("defaults a missing status to 'revoked', never 'active'", () => {
@@ -1567,7 +1847,7 @@ describe("Telegram installation schemas", () => {
       status: "active",
     });
     expect(parsed.bot_username).toBe("patchbay_test_bot");
-    expect(parsed.status).toBe("active");
+    expect(parsed.status).toBe("installed");
   });
 
   it("defaults incomplete data to the disconnected state", () => {
@@ -1630,10 +1910,10 @@ describe("Plugin schemas", () => {
     // state where a component could render it.
     const parsed = PluginInstallationSchema.parse({
       id: "installation-1",
-      config: { repo: "alexj11324/Cordy" },
+      config: { repo: "patchbay-ai/patchbay" },
       configured_secrets: ["token"],
     });
-    expect(parsed.config).toEqual({ repo: "alexj11324/Cordy" });
+    expect(parsed.config).toEqual({ repo: "patchbay-ai/patchbay" });
     expect(parsed.configured_secrets).toEqual(["token"]);
     expect(Object.keys(parsed)).not.toContain("secrets");
   });
@@ -1693,9 +1973,36 @@ describe("Plugin schemas", () => {
     expect(parsed.installed_version).toBe("1.0.0");
     expect(parsed.added_scopes).toEqual(["comments:write"]);
   });
+
+  it("preserves automatic schedules on both consent and installed Plugin payloads", () => {
+    const schedule = { cron: "*/5 * * * *", timezone: "Asia/Shanghai" };
+    const preview = PluginPreviewSchema.parse({
+      manifest: {
+        key: "com.example.digest",
+        name: "Digest",
+        version: "1.0.0",
+        author: { name: "example" },
+        contributes: {
+          hooks: [{ key: "digest", name: "Digest", triggers: ["schedule"], schedule }],
+        },
+      },
+    });
+    expect(preview.manifest.contributes?.hooks?.[0]?.schedule).toEqual(schedule);
+
+    const installation = PluginInstallationSchema.parse({
+      id: "installation-1",
+      hooks: [{
+        key: "digest",
+        name: "Digest",
+        triggers: ["schedule"],
+        schedule: { ...schedule, next_run_at: "2026-08-23T10:15:00Z" },
+      }],
+    });
+    expect(installation.hooks[0]?.schedule?.next_run_at).toBe("2026-08-23T10:15:00Z");
+  });
 });
 
-// Issue status catalog (PB-6243). The catalog drives how every status renders,
+// Issue status catalog (MUL-6243). The catalog drives how every status renders,
 // so a drifting or malformed response must degrade to the built-ins rather than
 // leaving the UI with no statuses at all.
 describe("issue status catalog schemas", () => {
@@ -1750,7 +2057,7 @@ describe("issue status catalog schemas", () => {
 
   // PATCH /api/issue-statuses/reorder returns the same catalog shape as the
   // list endpoint, so a malformed reorder response degrades the same way rather
-  // than leaving the settings page holding an unparsed blob. (PB-6243)
+  // than leaving the settings page holding an unparsed blob. (MUL-6243)
   it("falls back on a malformed reorder response", () => {
     const parsed = parseWithFallback(
       { statuses: [{ id: 1 }], total: "many" },

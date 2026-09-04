@@ -1,24 +1,28 @@
-export type WorkProductKind =
-  | "pull_request"
-  | "branch"
-  | "commit"
-  | "preview"
-  | "artifact"
-  | "document";
+/**
+ * Work Product and execution provenance contracts exposed by the Go API.
+ *
+ * The server serializes pgx nullable values as either JSON null/string values
+ * (depending on the pgx version), while the client contract deliberately
+ * normalizes them to string | null at the API boundary.  Unknown provider,
+ * relation, head, and discovery values remain strings so a newer backend can
+ * be rendered without invalidating the whole response.
+ */
 
-export type WorkProductRelationSource =
-  | "manual_explicit"
-  | "task_explicit"
-  | "execution_branch_discovery";
+import type { GitHubPullRequest } from "./github";
 
-export type WorkProductDiscoveryStatus =
-  | "not_attempted"
-  | "pending"
-  | "in_progress"
-  | "unassociated"
-  | "ambiguous"
-  | "associated"
-  | "ineligible";
+export type WorkProduct = {
+  id: string;
+  workspace_id: string;
+  kind: string;
+  provider: string;
+  external_identity: string;
+  external_url: string | null;
+  provider_record_type: string | null;
+  provider_record_id: string | null;
+  created_at: string;
+  updated_at: string;
+  association_state?: "associated" | "unassociated" | string;
+};
 
 export type WorkProductRelation = {
   id: string;
@@ -28,9 +32,9 @@ export type WorkProductRelation = {
   task_id: string | null;
   run_id: string | null;
   relation_key: string;
-  relation_source: WorkProductRelationSource | string;
-  attached_by_type: "user" | "agent" | string;
-  attached_by_id: string;
+  relation_source: string;
+  attached_by_type: string;
+  attached_by_id: string | null;
   attached_at: string;
   close_intent: boolean;
   detached_at: string | null;
@@ -40,33 +44,18 @@ export type WorkProductRelation = {
   detached_run_id: string | null;
 };
 
-export type WorkProduct = {
-  id: string;
-  workspace_id: string;
-  kind: WorkProductKind | string;
-  provider: string;
-  external_identity: string;
-  external_url: string | null;
-  provider_record_type: string | null;
-  provider_record_id: string | null;
-  created_at: string;
-  updated_at: string;
-  association_state: "associated" | "unassociated" | string;
-  relation: WorkProductRelation | null;
-};
-
 export type ExecutionProvenance = {
   task_id: string;
   workspace_id: string;
   run_id: string | null;
-  repo_identity: string | null;
-  execution_workspace: string | null;
+  repo_identity: string;
+  execution_workspace: string;
   head_branch: string | null;
   head_sha: string | null;
   head_state: string;
-  started_at: string | null;
+  started_at: string;
   finished_at: string | null;
-  discovery_status: WorkProductDiscoveryStatus | string;
+  discovery_status: string;
   discovery_lease_id: string | null;
   discovery_match_count: number;
   discovery_reason: string | null;
@@ -75,22 +64,39 @@ export type ExecutionProvenance = {
   updated_at: string;
 };
 
-export type IssueWorkProductsResponse = {
-  work_products: WorkProduct[];
+export type WorkProductPage = {
+  products: WorkProduct[];
+  page: number;
+  per_page: number;
+  has_more: boolean;
 };
 
-export type TaskWorkProductsResponse = {
-  task_id: string;
-  provenances: ExecutionProvenance[];
-  work_products: WorkProduct[];
+export type WorkProductRelationPage = {
+  relations: WorkProductRelation[];
+  page: number;
+  per_page: number;
+  has_more: boolean;
 };
 
-export type UnassociatedWorkProductsResponse = {
-  work_products: WorkProduct[];
-  next_page: number | null;
+export type ExecutionProvenancePage = {
+  provenance: ExecutionProvenance[];
+  page: number;
+  per_page: number;
+  has_more: boolean;
 };
 
-export type AttachIssuePullRequestRequest = {
+/**
+ * Human-created relations contain only user-controlled intent.  Actor, task,
+ * run, relation key, and source are derived by the server from auth/request
+ * context; accepting those fields here would suggest an unsafe impersonation
+ * contract to callers.
+ */
+export type AttachExistingWorkProductRequest = {
+  work_product_id: string;
+  close_intent?: boolean;
+};
+
+export type IssuePullRequestAttachRequest = {
   url: string;
   title?: string;
   state?: string;
@@ -101,18 +107,79 @@ export type AttachIssuePullRequestRequest = {
   close_intent?: boolean;
 };
 
-export type AttachIssuePullRequestResponse = {
-  pull_request: import("./github").GitHubPullRequest;
+export type WorkProductAttachmentResponse = {
   work_product: WorkProduct;
   relation: WorkProductRelation;
 };
 
-export type AttachWorkProductRequest = {
-  work_product_id: string;
-  close_intent?: boolean;
+export type UnassociatedWorkProductPage = {
+  work_products: WorkProduct[];
+  next_page: number | null;
 };
 
-export type AttachWorkProductResponse = {
+export type IssuePullRequestListResponse = {
+  pull_requests: GitHubPullRequest[];
+};
+
+export type IssuePullRequestAttachResponse = {
+  pull_request: GitHubPullRequest;
   work_product: WorkProduct;
   relation: WorkProductRelation;
 };
+
+export type TaskWorkProductsResponse = {
+  task_id: string;
+  provenances: ExecutionProvenance[];
+  work_products: WorkProductView[];
+};
+
+export type WorkProductPageParams = {
+  page?: number;
+  per_page?: number;
+};
+
+/**
+ * One row of a Work Product surface: the product, the relation that attached
+ * it, and — when the product mirrors a provider pull request — the PR card the
+ * retired `/pull-requests` endpoint used to return on its own.
+ *
+ * `pull_request` is absent rather than null on products with no upstream
+ * record, so a caller branches on presence instead of on an empty card.
+ */
+export type WorkProductView = WorkProduct & {
+  relation: WorkProductRelationSummary;
+  pull_request?: GitHubPullRequest;
+};
+
+/**
+ * The relation as a surface presents it: why the product is attached and who
+ * attached it. The relation key and the detach columns are omitted — they are
+ * server-internal and always empty on a live row.
+ */
+export type WorkProductRelationSummary = {
+  id: string;
+  issue_id?: string | null;
+  task_id?: string | null;
+  run_id?: string | null;
+  relation_source: string;
+  attached_by_type: string;
+  attached_by_id: string | null;
+  attached_at: string;
+  close_intent: boolean;
+};
+
+export type WorkProductViewPage = {
+  work_products: WorkProductView[];
+  page: number;
+  per_page: number;
+  has_more: boolean;
+};
+
+// Canonical issue/task lists are unpaged in the Rust contract. Keep the page
+// type above for the workspace catalog/provenance endpoints only.
+export type WorkProductViewListResponse = {
+  work_products: WorkProductView[];
+};
+
+/** @deprecated use AttachExistingWorkProductRequest. */
+export type CreateWorkProductRelationRequest = AttachExistingWorkProductRequest;

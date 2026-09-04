@@ -22,6 +22,7 @@ import { memberListOptions, agentListOptions } from "@patchbay/core/workspace/qu
 import { useUpdateRuntime } from "@patchbay/core/runtimes/mutations";
 import {
   deriveRuntimeHealth,
+  isRuntimeUsableForUser,
   runtimeDisplayName,
   runtimeProfileListOptions,
 } from "@patchbay/core/runtimes";
@@ -66,7 +67,7 @@ function shortDaemonId(id: string | null): string | null {
 }
 
 // 30s tick keeps derived runtime health honest as time-based windows
-// (recently_lost → offline → about_to_gc) cross thresholds without any new
+// (recently_lost → offline → long_offline) cross thresholds without any new
 // query data arriving. Agent presence has no time windows anymore, so it
 // doesn't need this — but useWorkspacePresenceMap is the dependency we
 // already mounted on this page, and that's wired to query data, not `now`.
@@ -119,6 +120,7 @@ export function RuntimeDetail({
     : false;
   const isRuntimeOwner = user && runtime.owner_id === user.id;
   const canEditRuntime = isAdmin || isRuntimeOwner;
+  const canReadRuntime = isRuntimeUsableForUser(runtime, user?.id ?? null);
   const runtimeProfile: RuntimeProfile | null = runtime.profile_id
     ? profiles.find((p) => p.id === runtime.profile_id) ?? null
     : null;
@@ -193,7 +195,7 @@ export function RuntimeDetail({
               cliVersion={cliVersion}
               daemonShort={daemonShort}
             />
-            <UsageSection runtime={runtime} />
+            {canReadRuntime && <UsageSection runtime={runtime} />}
           </div>
 
           {/* Right rail: serving agents + diagnostics */}
@@ -481,7 +483,7 @@ function DiagnosticsCard({
   runtime: AgentRuntime;
   /**
    * Runtime owner only — narrower than the card's other affordances on
-   * purpose (PB-6126). Sharing a machine with the workspace is the owner's
+   * purpose (MUL-6126). Sharing a machine with the workspace is the owner's
    * call, so a workspace admin sees the read-only chip here even though they
    * may still rename or delete the runtime.
    */
@@ -509,7 +511,7 @@ function DiagnosticsCard({
         {canDelete && (
           // The button stays clickable even when the runtime is a live
           // local daemon (self-healing). The owner explicitly asked for
-          // it (PB-3352) — disabling here left them looking at a button
+          // it (MUL-3352) — disabling here left them looking at a button
           // they had every permission to click but couldn't. The dialog
           // raises a self-heal banner so the user sees the trade-off
           // before confirming.
@@ -531,7 +533,7 @@ function DiagnosticsCard({
 }
 
 // VisibilityReadout renders a static "Private" / "Public" pill for everyone
-// who is not the runtime owner — workspace admins included (PB-6126). Its
+// who is not the runtime owner — workspace admins included (MUL-6126). Its
 // tooltip is phrased in the third person for that reason; the editor's own
 // hints stay in the second person. The description used to sit under the
 // chip; it now lives in the hover tooltip so the Diagnostics column stays

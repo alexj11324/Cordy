@@ -1,0 +1,472 @@
+package slack
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"net/url"
+	"strings"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/slack-go/slack"
+
+	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
+	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
+	"github.com/patchbay-ai/patchbay/server/internal/service"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+)
+
+// This file implements the Slack `/issue`, `/new`, and `/clear` SLASH COMMANDS. They are
+// deliberately separate from message-prefix commands: on Slack
+// a message whose first character is `/` is intercepted by the client as a
+// slash command and never delivered to the app, so the message-prefix form of
+// `/issue` cannot work here at all (MUL-3908). Registering `/issue` as a real
+// slash command in the app manifest is what makes it reach us — as an
+// `EventTypeSlashCommand` over the same Socket Mode connection.
+//
+// The command is a QUICK-CREATE entry point: it does NOT create the issue
+// itself. It takes the invoker's natural-language description as a prompt and
+// enqueues a quick-create task against the installation's agent — the very same
+// pipeline as the web "quick create" modal (TaskService.EnqueueQuickCreateTask).
+// The agent turns the prompt into a well-formed `patchbay issue create` in the
+// background, so the issue gets a proper title + structured description instead
+// of the raw one-liner the user typed. Because creation is asynchronous, the
+// command replies with a PRIVATE (ephemeral) acknowledgement via the command's
+// response_url — there is no issue number to hand back yet — and the agent's
+// completion surfaces to the invoker as a Patchbay inbox notification through the
+// shared quick-create completion path. It starts no chat session / chat run.
+//
+// The installation routing and identity + membership checks mirror the message
+// path (resolvers.go) so a slash-command quick-create respects the same
+// workspace boundary and account binding as every other Slack entry point; they
+// are kept local so the proven inbound pipeline is untouched.
+
+const issueSlashCommand = "/issue"
+const newSlashCommand = "/new"
+const clearSlashCommand = "/clear"
+
+// User-facing ephemeral replies. Kept terse; only the invoker sees them.
+const (
+	slashUsageText            = "Tell me what to file, e.g. `/issue the login button does nothing on Safari`."
+	slashQueuedText           = "✅ On it — I'm turning that into an issue. You'll get a Patchbay notification when it's ready."
+	slashNotMemberText        = "You're not a member of this Patchbay workspace, so I can't file an issue for you."
+	slashLinkAccountFallback  = "Link your Slack account to Patchbay first, then try `/issue` again."
+	slashIssueLimitText       = "⚠️ This workspace has reached its issue limit. Open Patchbay to view the available recovery options."
+	slashInternalErrorText    = "⚠️ Something went wrong creating the issue. Please try again."
+	slashDisabledText         = "This Slack app isn't connected to Patchbay (or was disconnected). Ask a workspace admin to reconnect it."
+	slashNewStartedText       = "✅ Started a new Patchbay chat."
+	slashNewThreadGuideText   = "In a channel, start the new chat from the target thread with `@Patchbay /new`."
+	slashClearStartedText     = "✅ Cleared the agent context in this Patchbay chat."
+	slashClearThreadGuideText = "In a channel, clear the target thread's context with `@Patchbay /clear`."
+)
+
+// slashQueries is the narrow slice of generated queries the slash-command
+// processor needs. *db.Queries satisfies it; tests supply a fake. The
+// installation / member resolution mirrors the message-path resolvers
+// (resolvers.go) but is kept local so the proven inbound pipeline is untouched.
+type slashQueries interface {
+	GetChannelInstallationByAppID(ctx context.Context, arg db.GetChannelInstallationByAppIDParams) (db.ChannelInstallation, error)
+	GetChannelUserBindingByUserID(ctx context.Context, arg db.GetChannelUserBindingByUserIDParams) (db.ChannelUserBinding, error)
+	GetMemberByUserAndWorkspace(ctx context.Context, arg db.GetMemberByUserAndWorkspaceParams) (db.Member, error)
+	ClaimChannelInboundDedup(ctx context.Context, arg db.ClaimChannelInboundDedupParams) (db.ChannelInboundMessageDedup, error)
+	MarkChannelInboundDedupProcessed(ctx context.Context, arg db.MarkChannelInboundDedupProcessedParams) (int64, error)
+	ReleaseChannelInboundDedup(ctx context.Context, arg db.ReleaseChannelInboundDedupParams) (int64, error)
+}
+
+// quickCreateEnqueuer is the narrow slice of *service.TaskService the slash
+// command needs to hand the invoker's prompt to the agent. *service.TaskService
+// satisfies it; tests supply a fake.
+type quickCreateEnqueuer interface {
+	EnqueueQuickCreateTask(ctx context.Context, workspaceID, requesterID, agentID, teamID pgtype.UUID, prompt, priority, dueDate string, projectID, parentIssueID pgtype.UUID, attachmentIDs []pgtype.UUID) (db.AgentTaskQueue, error)
+}
+
+type slashControlStarter interface {
+	StartSlackDMChat(ctx context.Context, inst engine.ResolvedInstallation, userID pgtype.UUID, cmd slack.SlashCommand, envelopeID string) error
+	ClearSlackDMContext(ctx context.Context, inst engine.ResolvedInstallation, userID pgtype.UUID, cmd slack.SlashCommand, envelopeID string) error
+}
+
+// SlashCommandProcessor handles Slack `/issue`, `/new`, and `/clear` commands end to end.
+type SlashCommandProcessor struct {
+	q           slashQueries
+	tasks       quickCreateEnqueuer
+	control     slashControlStarter
+	hub         engine.HubRouter
+	binding     bindingMinter
+	appURL      string
+	bindingPath string
+	logger      *slog.Logger
+	// respond posts an ephemeral reply to the command's response_url. Injected
+	// so tests can capture the reply without hitting Slack.
+	respond func(ctx context.Context, responseURL, text string) error
+}
+
+// SlashCommandConfig configures the processor. Binding + AppURL are required for
+// the unbound-user "link your account" reply; without them that case falls back
+// to a plain instruction. Tasks + Queries are required for the command to do
+// anything.
+type SlashCommandConfig struct {
+	Queries     *db.Queries
+	Tasks       quickCreateEnqueuer
+	Control     slashControlStarter
+	Hub         engine.HubRouter
+	Binding     bindingMinter
+	AppURL      string
+	BindingPath string // default "/slack/bind"
+	Logger      *slog.Logger
+}
+
+// NewSlashCommandProcessor builds the processor. The default responder POSTs an
+// ephemeral message to the command's response_url (a signed webhook — no bot
+// token required).
+func NewSlashCommandProcessor(cfg SlashCommandConfig) *SlashCommandProcessor {
+	logger := cfg.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+	bindingPath := cfg.BindingPath
+	if bindingPath == "" {
+		bindingPath = "/slack/bind"
+	}
+	if !strings.HasPrefix(bindingPath, "/") {
+		bindingPath = "/" + bindingPath
+	}
+	p := &SlashCommandProcessor{
+		q:           cfg.Queries,
+		tasks:       cfg.Tasks,
+		control:     cfg.Control,
+		hub:         cfg.Hub,
+		binding:     cfg.Binding,
+		appURL:      strings.TrimRight(cfg.AppURL, "/"),
+		bindingPath: bindingPath,
+		logger:      logger,
+	}
+	p.respond = func(ctx context.Context, responseURL, text string) error {
+		return slack.PostWebhookContext(ctx, responseURL, &slack.WebhookMessage{
+			ResponseType: slack.ResponseTypeEphemeral,
+			Text:         text,
+		})
+	}
+	return p
+}
+
+// Handle processes one slash command and delivers the ephemeral reply. It is
+// called from a detached goroutine (the socket receive loop has already ACKed),
+// so it never returns an error — every outcome is a user-facing message.
+func (p *SlashCommandProcessor) Handle(ctx context.Context, cmd slack.SlashCommand) {
+	p.HandleEnvelope(ctx, cmd, "")
+}
+
+// HandleEnvelope preserves Socket Mode's durable envelope id for control-command dedup.
+func (p *SlashCommandProcessor) HandleEnvelope(ctx context.Context, cmd slack.SlashCommand, envelopeID string) {
+	command := strings.TrimSpace(cmd.Command)
+	if !strings.EqualFold(command, issueSlashCommand) && command != newSlashCommand && command != clearSlashCommand {
+		return
+	}
+	var text string
+	if command == newSlashCommand || command == clearSlashCommand {
+		text = p.processControl(ctx, cmd, envelopeID)
+	} else {
+		text = p.process(ctx, cmd)
+	}
+	if text == "" || cmd.ResponseURL == "" {
+		return
+	}
+	if err := p.respond(ctx, cmd.ResponseURL, text); err != nil {
+		p.logger.WarnContext(ctx, "slack slash command: response_url reply failed",
+			"app_id", cmd.APIAppID, "error", err)
+	}
+}
+
+func (p *SlashCommandProcessor) processControl(ctx context.Context, cmd slack.SlashCommand, envelopeID string) string {
+	inst, err := p.resolveInstallation(ctx, cmd.APIAppID, cmd.TeamID)
+	if err != nil {
+		if errors.Is(err, engine.ErrInstallationNotFound) {
+			return slashDisabledText
+		}
+		return slashInternalErrorText
+	}
+	if !inst.Installed {
+		return slashDisabledText
+	}
+	userID, err := p.resolveUser(ctx, inst, cmd.UserID)
+	if err != nil {
+		switch {
+		case errors.Is(err, engine.ErrSenderUnbound):
+			return p.bindingText(ctx, inst, cmd.UserID)
+		case errors.Is(err, engine.ErrSenderNotMember):
+			return slashNotMemberText
+		default:
+			return slashInternalErrorText
+		}
+	}
+	// Keep command availability and channel-routing guidance behind the same
+	// installation, account-binding, and workspace-membership checks as every
+	// other Slack entry point.
+	// Slash payloads do not carry thread_ts; rotating a channel-level guess
+	// would move an unrelated conversation. Channel users must use the mention
+	// form, which arrives through the ordinary Router with an exact thread root.
+	if !strings.HasPrefix(cmd.ChannelID, "D") {
+		if cmd.Command == clearSlashCommand {
+			return slashClearThreadGuideText
+		}
+		return slashNewThreadGuideText
+	}
+	if p.control == nil {
+		return slashInternalErrorText
+	}
+	inst, reply, err := p.resolveHubAgent(ctx, inst, userID, cmd.ChannelID)
+	if err != nil {
+		p.logger.WarnContext(ctx, "slack control Hub resolution failed", "app_id", cmd.APIAppID, "error", err)
+		return slashInternalErrorText
+	}
+	if reply != "" {
+		return reply
+	}
+	var startErr error
+	if cmd.Command == clearSlashCommand {
+		startErr = p.control.ClearSlackDMContext(ctx, inst, userID, cmd, envelopeID)
+	} else {
+		startErr = p.control.StartSlackDMChat(ctx, inst, userID, cmd, envelopeID)
+	}
+	if startErr != nil {
+		if errors.Is(startErr, engine.ErrDuplicate) {
+			if cmd.Command == clearSlashCommand {
+				return slashClearStartedText
+			}
+			return slashNewStartedText
+		}
+		p.logger.WarnContext(ctx, "slack slash command: session control failed",
+			"outcome", "session_control_failed", "command", cmd.Command,
+			"channel_type", string(TypeSlack), "app_id", cmd.APIAppID, "error", startErr)
+		return slashInternalErrorText
+	}
+	if cmd.Command == clearSlashCommand {
+		return slashClearStartedText
+	}
+	return slashNewStartedText
+}
+
+// process runs the command and returns the ephemeral text to reply with.
+func (p *SlashCommandProcessor) process(ctx context.Context, cmd slack.SlashCommand) string {
+	prompt := strings.TrimSpace(cmd.Text)
+	if prompt == "" {
+		return slashUsageText
+	}
+
+	inst, err := p.resolveInstallation(ctx, cmd.APIAppID, cmd.TeamID)
+	if err != nil {
+		if !errors.Is(err, engine.ErrInstallationNotFound) {
+			p.logger.WarnContext(ctx, "slack slash command: resolve installation failed",
+				"app_id", cmd.APIAppID, "error", err)
+			return slashInternalErrorText
+		}
+		return slashDisabledText
+	}
+	if !inst.Installed {
+		return slashDisabledText
+	}
+
+	userID, err := p.resolveUser(ctx, inst, cmd.UserID)
+	if err != nil {
+		switch {
+		case errors.Is(err, engine.ErrSenderUnbound):
+			return p.bindingText(ctx, inst, cmd.UserID)
+		case errors.Is(err, engine.ErrSenderNotMember):
+			return slashNotMemberText
+		default:
+			p.logger.WarnContext(ctx, "slack slash command: resolve user failed",
+				"app_id", cmd.APIAppID, "error", err)
+			return slashInternalErrorText
+		}
+	}
+
+	inst, reply, err := p.resolveHubAgent(ctx, inst, userID, cmd.ChannelID)
+	if err != nil {
+		p.logger.WarnContext(ctx, "slack issue Hub resolution failed", "app_id", cmd.APIAppID, "error", err)
+		return slashInternalErrorText
+	}
+	if reply != "" {
+		return reply
+	}
+
+	// Replay guard: a signed request replayed inside the signature's
+	// five-minute window — or re-delivered by Slack — must not file the issue
+	// twice. The claim shares the inbound dedup table with message ingress,
+	// keyed by Slack's per-invocation trigger_id (prefix-kept out of the
+	// message-ts namespace). Everything above this point is a read;
+	// enqueueing is the one side effect, so the claim is taken here.
+	dedupKey := slashDedupKey(cmd.TriggerID)
+	var claimToken pgtype.UUID
+	claimed := false
+	if dedupKey != "" {
+		claim, err := p.q.ClaimChannelInboundDedup(ctx, db.ClaimChannelInboundDedupParams{
+			InstallationID: inst.ID,
+			MessageID:      dedupKey,
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				// A live claim or a processed row: this exact invocation was
+				// already accepted. Repeat the acknowledgement instead of
+				// filing a second issue.
+				return slashQueuedText
+			}
+			p.logger.WarnContext(ctx, "slack slash command: dedup claim failed",
+				"app_id", cmd.APIAppID, "error", err)
+			return slashInternalErrorText
+		}
+		claimToken, claimed = claim.ClaimToken, true
+	}
+
+	// Hand the raw natural-language prompt to the installation's agent as a
+	// quick-create task; the agent authors the well-formed issue in the
+	// background and attributes it to the bound member. No project / parent /
+	// attachments and no team routing — the slash command targets the
+	// installation's own agent directly.
+	if _, err := p.tasks.EnqueueQuickCreateTask(
+		ctx,
+		inst.WorkspaceID,
+		userID,
+		inst.AgentID,
+		pgtype.UUID{}, // no team — dispatch straight to the installation agent
+		prompt,
+		"",            // no explicit priority
+		"",            // no explicit due date
+		pgtype.UUID{}, // no project
+		pgtype.UUID{}, // no parent issue
+		nil,           // no attachments
+	); err != nil {
+		if claimed {
+			// A failed enqueue releases the claim so the invoker can retry
+			// the same command; only a success marks it consumed.
+			if _, rerr := p.q.ReleaseChannelInboundDedup(ctx, db.ReleaseChannelInboundDedupParams{
+				InstallationID: inst.ID,
+				MessageID:      dedupKey,
+				ClaimToken:     claimToken,
+			}); rerr != nil {
+				p.logger.WarnContext(ctx, "slack slash command: dedup release failed",
+					"app_id", cmd.APIAppID, "error", rerr)
+			}
+		}
+		var limitErr *service.IssueLimitReachedError
+		if errors.As(err, &limitErr) {
+			return slashIssueLimitText
+		}
+		p.logger.WarnContext(ctx, "slack slash command: enqueue quick-create failed",
+			"app_id", cmd.APIAppID, "error", err)
+		return slashInternalErrorText
+	}
+	if claimed {
+		if _, merr := p.q.MarkChannelInboundDedupProcessed(ctx, db.MarkChannelInboundDedupProcessedParams{
+			InstallationID: inst.ID,
+			MessageID:      dedupKey,
+			ClaimToken:     claimToken,
+		}); merr != nil {
+			p.logger.WarnContext(ctx, "slack slash command: dedup mark failed",
+				"app_id", cmd.APIAppID, "error", merr)
+		}
+	}
+	return slashQueuedText
+}
+
+// slashDedupKey maps one slash-command invocation to its replay-claim key.
+// trigger_id is Slack's per-invocation id, so a replayed or re-delivered
+// request reuses the key while a fresh command gets its own. The prefix keeps
+// the key out of the message-ts namespace sharing the same table. An empty
+// trigger (older payloads) has no stable key — filing is better than refusing.
+func slashDedupKey(triggerID string) string {
+	if strings.TrimSpace(triggerID) == "" {
+		return ""
+	}
+	return "slash:" + strings.TrimSpace(triggerID)
+}
+
+// resolveHubAgent selects an invocable Agent for workspace-owned commands.
+func (p *SlashCommandProcessor) resolveHubAgent(ctx context.Context, inst engine.ResolvedInstallation, userID pgtype.UUID, bindingKey string) (engine.ResolvedInstallation, string, error) {
+	if inst.AgentID.Valid && inst.AgentID.Bytes != [16]byte{} {
+		return inst, "", nil
+	}
+	if p.hub == nil {
+		return inst, "", errors.New("workspace installation has no channel Hub router")
+	}
+	route, err := p.hub.Resolve(ctx, inst, engine.ResolvedIdentity{UserID: userID}, channel.InboundMessage{}, bindingKey)
+	if err != nil {
+		return inst, "", err
+	}
+	if !route.AgentID.Valid {
+		if route.ReplyText == "" {
+			return inst, "", engine.ErrHubAgentUnavailable
+		}
+		return inst, route.ReplyText, nil
+	}
+	inst.AgentID = route.AgentID
+	return inst, "", nil
+}
+
+// resolveInstallation maps the command's api_app_id (+ event team) to its
+// installation, applying the same team-scoping guard as inbound routing.
+// Managed installs store the tenant composite in the routing slot, so the
+// lookup falls back to it on a miss (see lookupInstallation).
+func (p *SlashCommandProcessor) resolveInstallation(ctx context.Context, appID, teamID string) (engine.ResolvedInstallation, error) {
+	inst, err := lookupInstallation(ctx, p.q, appID, teamID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return engine.ResolvedInstallation{}, engine.ErrInstallationNotFound
+		}
+		return engine.ResolvedInstallation{}, err
+	}
+	return engine.ResolvedInstallation{
+		ID:              inst.ID,
+		WorkspaceID:     inst.WorkspaceID,
+		AgentID:         inst.AgentID,
+		InstallerUserID: inst.InstallerUserID,
+		Installed:          inst.Status == "installed",
+		Platform:        inst,
+	}, nil
+}
+
+// resolveUser maps the Slack user id to the bound Patchbay user, re-checking
+// workspace membership (no binding→member FK). Returns engine.ErrSenderUnbound
+// or engine.ErrSenderNotMember for the product cases.
+func (p *SlashCommandProcessor) resolveUser(ctx context.Context, inst engine.ResolvedInstallation, slackUserID string) (pgtype.UUID, error) {
+	binding, err := p.q.GetChannelUserBindingByUserID(ctx, db.GetChannelUserBindingByUserIDParams{
+		InstallationID: inst.ID,
+		ChannelUserID:  slackUserID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return pgtype.UUID{}, engine.ErrSenderUnbound
+		}
+		return pgtype.UUID{}, err
+	}
+	if _, err := p.q.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
+		UserID:      binding.PatchbayUserID,
+		WorkspaceID: inst.WorkspaceID,
+	}); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return pgtype.UUID{}, engine.ErrSenderNotMember
+		}
+		return pgtype.UUID{}, err
+	}
+	return binding.PatchbayUserID, nil
+}
+
+// bindingText mints a single-use binding token and returns a "link your account"
+// prompt, mirroring the outbound replier's NeedsBinding message. Falls back to a
+// plain instruction when the binding service / app URL are not configured.
+func (p *SlashCommandProcessor) bindingText(ctx context.Context, inst engine.ResolvedInstallation, slackUserID string) string {
+	if p.binding == nil || p.appURL == "" {
+		return slashLinkAccountFallback
+	}
+	token, err := p.binding.Mint(ctx, inst.WorkspaceID, inst.ID, slackUserID)
+	if err != nil {
+		p.logger.WarnContext(ctx, "slack slash command: mint binding token failed",
+			"installation_id", inst.ID, "error", err)
+		return slashLinkAccountFallback
+	}
+	bindURL := p.appURL + p.bindingPath + "?token=" + url.QueryEscape(token.Raw)
+	// Wrap the URL as an explicit Slack link so the base64url token's `_`/`-`
+	// are not mangled by mrkdwn (same reasoning as the replier).
+	return "👋 To file issues, link your Slack account to Patchbay: <" +
+		bindURL + "|link your account>\n(This link expires in 15 minutes.)"
+}

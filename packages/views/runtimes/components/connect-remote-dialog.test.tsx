@@ -41,6 +41,7 @@ function resetConfigStore() {
   configStore.setState({
     cdnDomain: "",
     allowSignup: true,
+    googleClientId: "",
     daemonServerUrl: "",
     daemonAppUrl: "",
     workspaceCreationDisabled: false,

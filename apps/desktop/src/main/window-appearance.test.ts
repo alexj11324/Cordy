@@ -1,6 +1,5 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-
 import { resolveMainWindowAppearance } from "./window-appearance";
 
 describe("resolveMainWindowAppearance", () => {

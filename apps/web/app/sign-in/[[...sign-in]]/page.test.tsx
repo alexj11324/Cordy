@@ -36,5 +36,4 @@ describe("SignInPage (sign-in route)", () => {
       fallbackRedirectUrl: "/usage?tab=billing#summary",
     });
   });
-
 });

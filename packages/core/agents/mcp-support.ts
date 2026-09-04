@@ -2,12 +2,13 @@
 // forwards MCP servers to the underlying CLI. The MCP config tab is hidden
 // for every other provider so a user can't save a value the runtime will
 // silently ignore. Keep this list in sync with the backends in
-// Rust provider adapters that read the task MCP configuration, plus providers
-// whose per-task environment preparers materialise MCP
+// `server/pkg/agent/` that read `ExecOptions.McpConfig`, plus providers whose
+// per-task preparers in `server/internal/daemon/execenv/` materialise MCP
 // config for CLIs that do not receive it through ExecOptions.
 const MCP_SUPPORTED_PROVIDERS = new Set([
   "claude",
   "codebuddy",
+  "codearts",
   "codex",
   "cursor",
   "grok",
@@ -25,6 +26,7 @@ const MCP_SUPPORTED_PROVIDERS = new Set([
   "mcode",
   "traecli",
   "dim",
+  "omp",
 ]);
 
 export function providerSupportsMcpConfig(provider: string | undefined | null): boolean {

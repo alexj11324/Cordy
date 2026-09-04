@@ -1,181 +1,87 @@
 "use client";
 
-import {
-  Suspense,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useClerk, useSignIn } from "@clerk/nextjs";
 import { useSearchParams } from "next/navigation";
 import { AuthShell } from "@/components/auth-shell";
-import { useAuthMessages } from "@/lib/auth-messages";
 import { registerDesktopGoogleAttempt } from "@/lib/broker-client";
 import { readDesktopHandoffBinding } from "@/lib/desktop-handoff";
-import {
-  GOOGLE_OAUTH_START_TIMEOUT_MS,
-  GoogleOAuthStartTimeoutError,
-  hasClerkOAuthReturn,
-  readGoogleSso,
-  startGoogleOAuth,
-  withGoogleOAuthStartTimeout,
-} from "@/lib/google-oauth";
+import { hasClerkOAuthReturn, readGoogleSso, startGoogleOAuth } from "@/lib/google-oauth";
+import { useAuthMessages } from "@/lib/auth-messages";
+import { resolveStandaloneReturnUrl } from "@/lib/redirect";
 
-export default function GoogleOAuthPage() {
-  return (
-    <Suspense>
-      <GoogleOAuthContent />
-    </Suspense>
-  );
-}
+export default function Page() { return <Suspense><Content /></Suspense>; }
 
-function GoogleOAuthContent() {
-  const searchParams = useSearchParams();
-  const binding = useMemo(
-    () => readDesktopHandoffBinding(searchParams),
-    [searchParams],
-  );
+function Content() {
+  const params = useSearchParams();
+  const binding = useMemo(() => readDesktopHandoffBinding(params), [params]);
+  const desktopRequest = params.get("platform") === "desktop";
+  const returnUrl = useMemo(() => {
+    if (binding) return `/login?${binding.query}`;
+    return resolveStandaloneReturnUrl(
+      params.get("return_url") ?? params.get("redirect_url"),
+    );
+  }, [binding, params]);
   const clerk = useClerk();
   const { signIn } = useSignIn();
-  const { messages } = useAuthMessages();
-  const attempted = useRef(false);
-  const registeringAttempt = useRef(false);
-  const clearingSession = useRef(false);
-  const startTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [attemptRegistered, setAttemptRegistered] = useState(false);
-  const [error, setError] = useState<"failed" | "timeout" | null>(null);
-  const clearStartTimeout = useCallback(() => {
-    if (startTimeout.current !== null) {
-      clearTimeout(startTimeout.current);
-      startTimeout.current = null;
-    }
-  }, []);
-
-  useEffect(
-    () => () => {
-      if (startTimeout.current !== null) {
-        clearTimeout(startTimeout.current);
-        startTimeout.current = null;
-      }
-    },
-    [],
-  );
+  const messages = useAuthMessages();
+  const started = useRef(false);
+  const [registered, setRegistered] = useState(false);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
-    if (attempted.current || error) return;
-    if (!binding) {
-      setError("failed");
+    if (started.current || error) return;
+    if (desktopRequest && !binding) {
+      setError(true);
       return;
     }
-
-    if (startTimeout.current === null) {
-      startTimeout.current = setTimeout(() => {
-        startTimeout.current = null;
-        if (!attempted.current) setError("timeout");
-      }, GOOGLE_OAUTH_START_TIMEOUT_MS);
-    }
     if (!clerk.loaded) return;
-
-    if (hasClerkOAuthReturn(searchParams, window.location.hash)) {
-      attempted.current = true;
-      clearStartTimeout();
+    if (hasClerkOAuthReturn(params, window.location.hash)) {
+      started.current = true;
       window.location.replace(
         `/oauth/google/callback${window.location.search}${window.location.hash}`,
       );
       return;
     }
-
-    if (!attemptRegistered) {
-      if (registeringAttempt.current) return;
-      registeringAttempt.current = true;
-      void withGoogleOAuthStartTimeout(
-        registerDesktopGoogleAttempt({
-          state: binding.state,
-          code_challenge: binding.codeChallenge,
-        }),
-      )
-        .then(() => setAttemptRegistered(true))
-        .catch((caught) => {
-          registeringAttempt.current = false;
-          clearStartTimeout();
-          setError(
-            caught instanceof GoogleOAuthStartTimeoutError ? "timeout" : "failed",
-          );
-        });
-      return;
-    }
-
-    if (clerk.session) {
-      if (searchParams.get("clerk_reset") === "1") {
-        clearStartTimeout();
-        setError("failed");
-        return;
-      }
-      if (clearingSession.current) return;
-      clearingSession.current = true;
-      const resetQuery = new URLSearchParams(binding.query);
-      resetQuery.set("clerk_reset", "1");
-      void withGoogleOAuthStartTimeout(
-        clerk.signOut({
-          sessionId: clerk.session.id,
-          redirectUrl: `/oauth/google?${resetQuery}`,
-        }),
-      ).catch((caught) => {
-        clearingSession.current = false;
-        clearStartTimeout();
-        setError(
-          caught instanceof GoogleOAuthStartTimeoutError ? "timeout" : "failed",
-        );
-      });
-      return;
-    }
-
-    if (!readGoogleSso(signIn)) return;
-    attempted.current = true;
-    clearStartTimeout();
-    void withGoogleOAuthStartTimeout(
-      startGoogleOAuth(signIn, {
-        returnUrl: `/login?${binding.query}`,
-        callbackUrl: `/oauth/google/callback?${binding.query}`,
-        origin: window.location.origin,
-      }),
-    )
-      .then(({ error: clerkError }) => {
-        if (clerkError) setError("failed");
+    if (binding && !registered) {
+      started.current = true;
+      void registerDesktopGoogleAttempt({
+        state: binding.state,
+        code_challenge: binding.codeChallenge,
       })
-      .catch((caught) =>
-        setError(
-          caught instanceof GoogleOAuthStartTimeoutError ? "timeout" : "failed",
-        ),
-      );
-  }, [
-    attemptRegistered,
-    binding,
-    clearStartTimeout,
-    clerk,
-    error,
-    searchParams,
-    signIn,
-  ]);
+        .then(() => {
+          started.current = false;
+          setRegistered(true);
+        })
+        .catch(() => setError(true));
+      return;
+    }
+    if (!binding && clerk.session) {
+      started.current = true;
+      window.location.replace(returnUrl);
+      return;
+    }
+    if (binding && clerk.session) {
+      started.current = true;
+      void clerk
+        .signOut({
+          sessionId: clerk.session.id,
+          redirectUrl: `/oauth/google?${binding.query}`,
+        })
+        .catch(() => setError(true));
+      return;
+    }
+    const query = binding
+      ? binding.query
+      : new URLSearchParams({ return_url: returnUrl }).toString();
+    if (!readGoogleSso(signIn)) return;
+    started.current = true;
+    void startGoogleOAuth(signIn, window.location.origin, query)
+      .then(({ error: failure }) => {
+        if (failure) setError(true);
+      })
+      .catch(() => setError(true));
+  }, [binding, clerk, desktopRequest, error, params, registered, returnUrl, signIn]);
 
-  return (
-    <AuthShell>
-      <p role={error ? "alert" : "status"} aria-live="polite">
-        {error
-          ? binding
-            ? error === "timeout"
-              ? messages.web.google_oauth.timeout
-              : messages.web.google_oauth.failed
-            : messages.web.google_oauth.invalid_binding
-          : messages.web.google_oauth.starting}
-      </p>
-      {error && binding && (
-        <button type="button" onClick={() => window.location.reload()}>
-          {messages.web.google_oauth.retry}
-        </button>
-      )}
-    </AuthShell>
-  );
+  return <AuthShell><p role={error ? "alert" : "status"}>{error ? messages.startFailed : messages.starting}</p>{error && <button onClick={() => window.location.reload()}>{messages.retry}</button>}</AuthShell>;
 }

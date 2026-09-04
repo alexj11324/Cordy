@@ -255,6 +255,8 @@ describe("MermaidDiagram inline presentation", () => {
   it("renders the diagram in an empty sandbox at its natural size", async () => {
     render(<MermaidDiagram chart={CHART} />);
 
+    expect(screen.getByLabelText("Mermaid diagram")).toBeInTheDocument();
+
     const frame = await waitFor(() => {
       const found = document.querySelector<HTMLIFrameElement>(".mermaid-diagram-frame");
       expect(found).not.toBeNull();
@@ -264,6 +266,7 @@ describe("MermaidDiagram inline presentation", () => {
     expect(frame.getAttribute("sandbox")).toBe("");
     expect(frame.style.width).toBe("1000px");
     expect(frame.style.height).toBe("500px");
+    expect(frame.title).toBe("Mermaid diagram");
   });
 
   it("copies the source straight from the inline toolbar", async () => {
@@ -286,7 +289,7 @@ describe("MermaidDiagram inline presentation", () => {
   });
 });
 
-// Kim's acceptance (PB-4908): a still click opens, a horizontal drag moves a
+// Kim's acceptance (MUL-4908): a still click opens, a horizontal drag moves a
 // wide diagram, and no gesture past the threshold may open the viewer on
 // release. Before this, every attempt to drag a wide diagram ended in a click
 // and the viewer opened on top of the user.

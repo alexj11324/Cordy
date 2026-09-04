@@ -19,12 +19,12 @@ import { AppLink } from "../../../navigation";
 import { useT } from "../../../i18n";
 
 /**
- * Creator-only MCP tab on the agent detail page (PB-3870). Lets the agent
+ * Creator-only MCP tab on the agent detail page (MUL-3870). Lets the agent
  * owner pick which of *their own* active Composio connections this agent may
  * mount as MCP servers — the selection is written to
  * `agent.composio_toolkit_allowlist`. At dispatch the overlay is mounted for
  * ANY run that passes the agent's invocation permission and always uses the
- * agent OWNER's Composio connection (PB-3963) — it is no longer gated on the
+ * agent OWNER's Composio connection (MUL-3963) — it is no longer gated on the
  * run originator being the owner. That is why sharing the agent (public_to)
  * surfaces the warning banner below: everyone who can invoke the agent can
  * drive these apps through it.
@@ -82,7 +82,7 @@ export function AgentMcpTab({ agent }: { agent: Agent }) {
 
   const settingsHref = `${paths.settings()}?tab=integrations`;
 
-  // Composio access warning (PB-3963). Once an agent is shared, anyone who
+  // Composio access warning (MUL-3963). Once an agent is shared, anyone who
   // can invoke it can drive the Composio apps enabled here on the owner's
   // behalf — so surface a heads-up whenever the agent is not private and
   // there's something to enable (or already enabled). Public-to-workspace

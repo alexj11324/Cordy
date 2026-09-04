@@ -66,7 +66,7 @@ const HEALTH_SEVERITY: Record<RuntimeHealth, number> = {
   online: 0,
   recently_lost: 1,
   offline: 2,
-  about_to_gc: 3,
+  long_offline: 3,
 };
 
 export function splitRuntimeName(name: string): {
@@ -80,7 +80,7 @@ export function splitRuntimeName(name: string): {
 
 // The label for a runtime rendered under (or next to) its machine's name.
 // A machine-level rename stamps the same custom_name on every runtime of
-// the daemon (PB-4217), so repeating it per runtime is noise — fall back
+// the daemon (MUL-4217), so repeating it per runtime is noise — fall back
 // to the provider base (e.g. "Claude"). A one-off per-runtime rename that
 // differs from the machine name stays visible verbatim.
 export function runtimeRowLabel(
@@ -286,7 +286,7 @@ function runtimeDeviceName(runtime: AgentRuntime): string | null {
   return raw.split(" · ")[0]?.trim() || null;
 }
 
-// The custom name shared by every runtime on a machine (PB-4217). A
+// The custom name shared by every runtime on a machine (MUL-4217). A
 // machine-level rename writes the same custom_name to all runtimes on the
 // daemon, so a name shared by all of them is the machine's label. A one-off
 // per-runtime rename (not shared) is deliberately ignored here so it can't

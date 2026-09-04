@@ -1,7 +1,6 @@
 "use client";
 
 import { statusCategoryOfKey } from "@patchbay/core/issues";
-import { useDroppable } from "@dnd-kit/core";
 import { Eye, MoreHorizontal } from "lucide-react";
 import type { IssueStatusCategory } from "@patchbay/core/types";
 import { Button } from "@patchbay/ui/components/ui/button";
@@ -14,7 +13,6 @@ import {
 import { useViewStoreApi } from "@patchbay/core/issues/stores/view-store-context";
 import { StatusIcon } from "./status-icon";
 import { useT } from "../../i18n";
-import { statusGroupId } from "../utils/drag-utils";
 
 /**
  * Single source of truth for the "Hidden columns" side panel rendered by
@@ -55,32 +53,14 @@ export function HiddenColumnsPanel({
 export function HiddenColumnRow({
   status,
   total,
-  droppable = false,
-  onShow,
 }: {
   status: IssueStatusCategory;
   total?: number;
-  /** Board rows are drop targets; swimlane rows remain display-only. */
-  droppable?: boolean;
-  onShow?: () => void;
 }) {
   const { t } = useT("issues");
   const viewStoreApi = useViewStoreApi();
-  const { setNodeRef, isOver } = useDroppable({
-    id: statusGroupId(status),
-    disabled: !droppable,
-  });
   return (
-    <div
-      ref={setNodeRef}
-      data-hidden-column-drop-target={droppable ? status : undefined}
-      data-hidden-column-drop-over={isOver ? "true" : "false"}
-      className={`flex items-center justify-between rounded-lg px-2.5 py-2 transition-colors ${
-        isOver
-          ? "bg-brand/10 text-foreground ring-1 ring-inset ring-brand/60"
-          : "hover:bg-muted/50"
-      }`}
-    >
+    <div className="flex items-center justify-between rounded-lg px-2.5 py-2 hover:bg-muted/50">
       <div className="flex items-center gap-2">
         <StatusIcon status={status} className="h-3.5 w-3.5" />
         <span className="text-body">{t(($) => $.status[statusCategoryOfKey(status)])}</span>
@@ -105,7 +85,7 @@ export function HiddenColumnRow({
           />
           <DropdownMenuContent align="end">
             <DropdownMenuItem
-              onClick={onShow ?? (() => viewStoreApi.getState().showStatus(status))}
+              onClick={() => viewStoreApi.getState().showStatus(status)}
             >
               <Eye className="size-3.5" />
               {t(($) => $.board.show_column)}

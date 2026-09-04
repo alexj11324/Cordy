@@ -1,14 +1,5 @@
-import type {
-  Issue,
-  IssueActorType,
-  IssueExecutorType,
-  IssueMetadata,
-  IssueOwnerType,
-  IssuePriority,
-  IssueReviewerType,
-  IssueStatus,
-  IssueStatusCategory,
-} from "./issue";
+import type { Issue, IssueMetadata, IssueStatus, IssueStatusCategory, IssuePriority, IssueActorType, IssueOwnerType, IssueExecutorType, IssueReviewerType } from "./issue";
+import type { PropertyFilterValue } from "./property";
 import type { MemberRole } from "./workspace";
 import type { Project } from "./project";
 
@@ -35,6 +26,30 @@ export interface CreateIssueRequest {
    *  Unknown or non-issue ids are rejected by the server with 400. */
   label_ids?: string[];
 }
+
+export interface CreateCommentSubIssueManualRequest {
+  mode: "manual";
+  capture_token: string;
+  issue: CreateIssueRequest;
+}
+
+export interface CreateCommentSubIssueAgentRequest {
+  mode: "agent";
+  capture_token: string;
+  quick_create: {
+    agent_id?: string;
+    team_id?: string;
+    prompt: string;
+    priority?: IssuePriority;
+    due_date?: string;
+    project_id?: string | null;
+    attachment_ids?: string[];
+  };
+}
+
+export type CreateCommentSubIssueRequest =
+  | CreateCommentSubIssueManualRequest
+  | CreateCommentSubIssueAgentRequest;
 
 export interface UpdateIssueRequest {
   /** Legacy aggregate compare-and-swap token. New text editors use field
@@ -67,11 +82,11 @@ export interface UpdateIssueRequest {
    *  surface in `issueAttachments` and keep their preview Eye on refresh. */
   attachment_ids?: string[];
   /** Skip starting the agent run this write would trigger ("暂时不启动",
-   *  PB-3375). The executor/status change still applies. Control field —
+   *  MUL-3375). The assignee/status change still applies. Control field —
    *  strip from optimistic cache patches; never written onto the Issue. */
   suppress_run?: boolean;
   /** Free-text handoff instruction injected into the started run's opening
-   *  context (PB-3375). Only consumed when a run actually starts. Control
+   *  context (MUL-3375). Only consumed when a run actually starts. Control
    *  field — strip from optimistic cache patches. */
   handoff_note?: string;
 }
@@ -89,10 +104,10 @@ export interface MoveIssueRequest
     | "owner_id"
     | "executor_type"
     | "executor_id"
+    | "reviewer_type"
+    | "reviewer_id"
     | "parent_issue_id"
     | "project_id"
-    | "suppress_run"
-    | "handoff_note"
   > {
   before_id: string | null;
   after_id: string | null;
@@ -137,19 +152,19 @@ export interface ListIssuesParams {
    * Filter by status CATEGORY rather than by exact key, so one bucket holds a
    * category's canonical status plus every custom status that inherits it.
    * This is what keeps the board's fan-out fixed at 7 requests however many
-   * custom statuses a workspace defines. (PB-6243)
+   * custom statuses a workspace defines. (MUL-6243)
    */
   status_category?: IssueStatusCategory;
   /** Multi-value form of `status_category`. OR within the field. */
   status_categories?: IssueStatusCategory[];
   priority?: IssuePriority;
+  /** Multi-value table facet. OR within the field. */
+  priorities?: IssuePriority[];
   owner_id?: string;
   owner_ids?: string[];
   owner_types?: IssueOwnerType[];
   owner_filters?: IssueOwnerRef[];
   include_no_owner?: boolean;
-  /** Multi-value table facet. OR within the field. */
-  priorities?: IssuePriority[];
   executor_id?: string;
   executor_ids?: string[];
   /**
@@ -180,15 +195,16 @@ export interface ListIssuesParams {
    * executor — executor is one of the user's owned agents, or a team that
    * involves the user (human member / leader-via-owned-agent / agent member
    * owned by the user). Direct member assignment is intentionally excluded:
-   * `involves_user_id` and `executor_id=<user>` (tab "Assigned to me") produce
+   * `involves_user_id` and `owner_id=<user>` (tab "Assigned to me") produce
    * disjoint result sets by construction.
    */
   involves_user_id?: string;
   /** JSONB containment filter on `issue.metadata`. AND across keys. */
   metadata?: IssueMetadata;
   /** Custom-property filter: definition id → accepted values (option ids or
-   *  "true"/"false" for checkbox). OR within a definition, AND across. */
-  properties?: Record<string, string[]>;
+   *  "true"/"false" for checkbox; a plain string is exact equality, an
+   *  operator object narrows it). OR within a definition, AND across. */
+  properties?: Record<string, PropertyFilterValue[]>;
   open_only?: boolean;
   /**
    * Restrict the result to issues with at least one of `start_date` /
@@ -249,8 +265,9 @@ export interface ListGroupedIssuesParams {
   /** JSONB containment filter on `issue.metadata`. AND across keys. */
   metadata?: IssueMetadata;
   /** Custom-property filter: definition id → accepted values (option ids or
-   *  "true"/"false" for checkbox). OR within a definition, AND across. */
-  properties?: Record<string, string[]>;
+   *  "true"/"false" for checkbox; a plain string is exact equality, an
+   *  operator object narrows it). OR within a definition, AND across. */
+  properties?: Record<string, PropertyFilterValue[]>;
   owner_filters?: IssueOwnerRef[];
   include_no_owner?: boolean;
   executor_filters?: IssueExecutorRef[];
@@ -301,17 +318,8 @@ export interface GroupedIssuesResponse {
 // are evaluated against the complete result set; the browser only owns view
 // state such as collapsed groups/parents.
 export type IssueTableScope =
-  | {
-      kind: "workspace";
-      owner_types?: IssueOwnerType[];
-      executor_types?: IssueExecutorType[];
-    }
-  | {
-      kind: "project";
-      project_id: string;
-      owner_types?: IssueOwnerType[];
-      executor_types?: IssueExecutorType[];
-    }
+  | { kind: "workspace"; owner_types?: IssueOwnerType[]; executor_types?: IssueExecutorType[] }
+  | { kind: "project"; project_id: string; owner_types?: IssueOwnerType[]; executor_types?: IssueExecutorType[] }
   | { kind: "owner"; actor: IssueOwnerRef }
   | { kind: "executor"; actor: IssueExecutorRef }
   | { kind: "creator"; actor: IssueActorRef }
@@ -330,7 +338,9 @@ export interface IssueTableFilters {
   project_ids?: string[];
   include_no_project?: boolean;
   label_ids?: string[];
-  properties?: Record<string, string[]>;
+  /** Same shape as `ListIssuesParams.properties`: bare strings are exact
+   *  equality / "No value", operator objects narrow scalar matches. */
+  properties?: Record<string, PropertyFilterValue[]>;
   date?: {
     field: "created_at" | "updated_at";
     start: string;
@@ -377,7 +387,7 @@ export type IssueTableGroupSpec =
    * many statuses a workspace defines. The descriptor still reports
    * `value.kind === "status"` because a category's value IS its canonical
    * status key; the group KEY is what distinguishes the two contracts.
-   * (PB-6243)
+   * (MUL-6243)
    */
   | { kind: "status_category" }
   | { kind: "executor" }
@@ -505,7 +515,7 @@ export interface IssueTableFacetValue {
 
 export interface IssueTableFacet {
   kind: IssueTableFacetSpec["kind"];
-  property_id?: string | null;
+  property_id?: string;
   values: IssueTableFacetValue[];
 }
 
@@ -536,7 +546,7 @@ export interface IssueStatusBucket {
  * `api.listIssues` responses by the query functions in `issues/queries.ts`.
  */
 export interface ListIssuesCache {
-  /** Bucketed by status CATEGORY — see PAGINATED_CATEGORIES. (PB-6243) */
+  /** Bucketed by status CATEGORY — see PAGINATED_CATEGORIES. (MUL-6243) */
   byStatus: Partial<Record<IssueStatusCategory, IssueStatusBucket>>;
 }
 

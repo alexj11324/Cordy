@@ -2,7 +2,7 @@
  * Reaction chip bar. Mobile RN port of
  * `packages/ui/components/common/reaction-bar.tsx`. Same `groupReactions`
  * algorithm so counts and "reacted by me" detection match web exactly —
- * counts-must-agree parity rule from apps/mobile/AGENTS.md.
+ * counts-must-agree parity rule from apps/mobile/CLAUDE.md.
  *
  * Empty state: when there are zero reactions the bar renders nothing.
  * Adding a new reaction is intentionally NOT exposed here — that entry

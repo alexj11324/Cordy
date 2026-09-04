@@ -9,9 +9,9 @@
  * Display while editing: plain text `Hi @bohan please` (sentinel invisible).
  * On send: scan for `⁣@<word>` runs, zip with the ordered `markers`
  * list to produce `[@<name>](mention://<type>/<id>)` markdown that the
- * backend's mention parser already accepts. **Issues drop the `@` in the
- * label** — they render as
- * `[PB-123](mention://issue/<uuid>)` to match web (mention-extension.ts).
+ * backend's `util.ParseMentions` regex (server/internal/util/mention.go:16)
+ * already accepts. **Issues drop the `@` in the label** — they render as
+ * `[MUL-123](mention://issue/<uuid>)` to match web (mention-extension.ts).
  *
  * Sentinel mismatch (e.g. user copy-paste broke a marker) → serializer
  * falls back to plain text with all sentinels stripped: never crash, never
@@ -27,7 +27,7 @@ export interface MentionMarker {
   /** UUID for member/agent/team/issue, the literal "all" for @all. */
   id: string;
   /** Display name without the leading `@`. For issues this is the
-   *  identifier (e.g. "PB-123"). May contain non-ASCII chars. */
+   *  identifier (e.g. "MUL-123"). May contain non-ASCII chars. */
   name: string;
 }
 

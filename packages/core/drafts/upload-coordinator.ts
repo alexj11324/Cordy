@@ -3,7 +3,7 @@ import type { Attachment } from "../types";
 import { createLogger } from "../logger";
 
 /**
- * Module-level file-upload coordinator (PB-5181, L2).
+ * Module-level file-upload coordinator (MUL-5181, L2).
  *
  * Ownership inversion: an upload is owned here, NOT by the React component that
  * started it. The composer only records a persisted placeholder (a

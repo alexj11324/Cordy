@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LoaderCircle, Plus, Search, Trash2 } from "lucide-react";
-import { SettingsInput as Input } from "@patchbay/ui/components/common/lobe-settings";
+import { Input } from "@patchbay/ui/components/ui/input";
 import { Button } from "@patchbay/ui/components/ui/button";
 import { Badge } from "@patchbay/ui/components/ui/badge";
 import { Checkbox } from "@patchbay/ui/components/ui/checkbox";

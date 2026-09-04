@@ -1,10 +1,5 @@
 import { runtimeConfigFromDevEnv } from "../../../shared/runtime-config";
-import type {
-  DaemonAutoStartResult,
-  DaemonPrefs,
-  DaemonStatus,
-  LocalRuntimeProbe,
-} from "../../../shared/daemon-types";
+import type { DaemonPrefs, DaemonStatus, LocalRuntimeProbe } from "../../../shared/daemon-types";
 import type { NavigationGesture } from "../../../shared/navigation-gestures";
 import type { IssueWindowRequest } from "../../../shared/issue-window";
 
@@ -97,7 +92,6 @@ export function installWebDesktopBridge(): boolean {
     appInfo: {
       version: import.meta.env.VITE_APP_VERSION || "vite",
       os: browserPlatform(),
-      authCallbackProtocol: "patchbay",
     },
     systemLocale: navigator.language || "en",
     onSystemLocaleChanged: (callback: (locale: string) => void) => {
@@ -112,7 +106,7 @@ export function installWebDesktopBridge(): boolean {
     reportAuthSession: (_userId: string | null) => undefined,
     // Browser Vite hosts have no native deep-link receiver. The canonical
     // handoff is delivered only by Electron's main/preload bridge through
-    // a native custom protocol; this host must never accept an HTTP callback.
+    // patchbay://auth/callback; this host must never accept an HTTP callback.
     onAuthHandoff: (
       _callback: (payload: { code: string; state: string }) => boolean | Promise<boolean>,
     ) => noopUnsubscribe(),
@@ -194,17 +188,11 @@ export function installWebDesktopBridge(): boolean {
       ...BROWSER_DAEMON_PREFS,
       ...prefs,
     }),
-    autoStart: async (): Promise<DaemonAutoStartResult> => ({
-      success: false,
-      state: "stopped",
-      reason: "start_failed",
-      error: BROWSER_RENDERER_ERROR,
-    }),
+    autoStart: async () => undefined,
     retryInstall: async () => undefined,
     startLogStream: () => undefined,
     stopLogStream: () => undefined,
     onLogLine: (_callback: (line: string) => void) => noopUnsubscribe(),
-    onLogReset: (_callback: () => void) => noopUnsubscribe(),
     openLogFile: async () => ({
       success: false,
       error: BROWSER_RENDERER_ERROR,

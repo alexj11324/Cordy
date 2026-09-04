@@ -1,7 +1,7 @@
 /**
  * Top-level navigation hardening for renderer windows.
  *
- * Scope note (PB-4899) — this is origin hardening ONLY, and deliberately NOT
+ * Scope note (MUL-4899) — this is origin hardening ONLY, and deliberately NOT
  * the mechanism that handles in-app links.
  *
  * Client-side routing never fires `will-navigate`: React Router pushes history

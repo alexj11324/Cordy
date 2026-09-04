@@ -13,9 +13,8 @@
 // exactly as documented. This module only adds the two knobs needed for two
 // Electron processes to coexist.
 
-import { createHash } from "node:crypto";
 import { statSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { basename, join } from "node:path";
 
 // Worktree renderer ports start at 5174 so they never reuse 5173 — the primary
 // checkout's default — even when a worktree's offset is 0 (e.g. POSIX cksum of
@@ -36,10 +35,6 @@ const RESTRICTED_PORTS_IN_RANGE = [6000];
 function avoidRestrictedPort(port) {
   const index = RESTRICTED_PORTS_IN_RANGE.indexOf(port);
   return index === -1 ? port : RENDERER_PORT_BASE + OFFSET_MODULO + index;
-}
-
-export function rendererPortForOffset(offset) {
-  return avoidRestrictedPort(RENDERER_PORT_BASE + offset);
 }
 
 // POSIX cksum (CRC-32), kept byte-compatible with `cksum(1)` so the offset
@@ -79,95 +74,24 @@ export function offsetForPath(path) {
   return cksum(Buffer.from(path)) % OFFSET_MODULO;
 }
 
-/** Stable checkout identity used in names that must not collide across clones. */
-export function checkoutIdentity(path) {
-  return createHash("sha256")
-    .update(resolve(path))
-    .digest("hex")
-    .slice(0, 16);
-}
-
 export function rendererPortForPath(path) {
-  return rendererPortForOffset(offsetForPath(path));
+  return avoidRestrictedPort(RENDERER_PORT_BASE + offsetForPath(path));
 }
 
-// Worktree → a readable, filesystem-safe suffix containing the full checkout
-// identity prefix and the port offset. The identity is required because two
-// independent clones can have the same basename and the same 0–999 offset.
-// The dev app then gets its own userData / single-instance lock under a name
-// such as "Patchbay Canary patchbay-a1b2c3d4-194".
+// Worktree → a readable, unique, filesystem-safe suffix "<folder>-<offset>".
+// The dev app then shows e.g. "Patchbay Canary mul-3724-194" in Cmd+Tab and gets
+// its own userData / single-instance lock under that name. The offset is what
+// makes the lock unique: the folder name alone collides for worktrees that share
+// a basename at different paths (e.g. /a/patchbay vs /b/patchbay) or whose names
+// slug to the same fallback — those would share one lock and the second Electron
+// would still be blocked.
 export function appSuffixForPath(path) {
   const slug =
     basename(path)
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "") || "worktree";
-  return `${slug}-${checkoutIdentity(path).slice(0, 8)}-${offsetForPath(path)}`;
-}
-
-export function appSuffixForOffset(path, offset) {
-  const slug =
-    basename(path)
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "") || "worktree";
-  return `${slug}-${checkoutIdentity(path).slice(0, 8)}-${offset}`;
-}
-
-const AUTH_CALLBACK_PROTOCOL_PREFIX = "patchbay-canary";
-const AUTH_CALLBACK_SUFFIX_MAX_LENGTH = 48;
-
-export function authCallbackProtocolForSuffix(suffix) {
-  const normalized = String(suffix ?? "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  if (!normalized) return AUTH_CALLBACK_PROTOCOL_PREFIX;
-  if (normalized.length <= AUTH_CALLBACK_SUFFIX_MAX_LENGTH) {
-    return `${AUTH_CALLBACK_PROTOCOL_PREFIX}-${normalized}`;
-  }
-
-  const offset = normalized.match(/-\d+$/)?.[0] ?? "";
-  const availablePrefixLength = AUTH_CALLBACK_SUFFIX_MAX_LENGTH - offset.length;
-  const bounded = `${normalized.slice(0, availablePrefixLength).replace(/-+$/g, "")}${offset}`;
-  return `${AUTH_CALLBACK_PROTOCOL_PREFIX}-${bounded}`;
-}
-
-export function devElectronDistPath({
-  home,
-  authCallbackProtocol,
-  electronVersion,
-  arch,
-}) {
-  if (!home || !authCallbackProtocol || !electronVersion || !arch) {
-    throw new Error("Incomplete development Electron path inputs");
-  }
-  return join(
-    home,
-    "Applications",
-    "Patchbay Development",
-    authCallbackProtocol,
-    `${electronVersion}-${arch}`,
-  );
-}
-
-export function applyMacOSDevElectronEnv(
-  env,
-  {
-    home,
-    electronVersion,
-    arch = process.arch,
-    platform = process.platform,
-  } = {},
-) {
-  if (platform !== "darwin") return env;
-  env.PATCHBAY_DEV_ELECTRON_DIST_PATH = devElectronDistPath({
-    home,
-    authCallbackProtocol: env.DESKTOP_AUTH_CALLBACK_PROTOCOL,
-    electronVersion,
-    arch,
-  });
-  return env;
+  return `${slug}-${offsetForPath(path)}`;
 }
 
 // A linked git worktree has a `.git` FILE (a "gitdir:" pointer); the primary
@@ -186,29 +110,21 @@ export function repoRootFromScriptDir(scriptDir) {
   return join(scriptDir, "..", "..", "..");
 }
 
-// Populate the renderer port, app suffix, and isolated auth callback protocol
-// without overriding values the caller set explicitly. Returns `env`.
+// Populate DESKTOP_RENDERER_PORT / DESKTOP_APP_SUFFIX on `env` for a worktree
+// checkout, without overriding values the caller set explicitly. Returns `env`.
 export function applyWorktreeDevEnv(env, { root, log = false } = {}) {
   const hasPort = Boolean(env.DESKTOP_RENDERER_PORT);
   const hasSuffix = Boolean(env.DESKTOP_APP_SUFFIX);
-  const hasAuthCallbackProtocol = Boolean(env.DESKTOP_AUTH_CALLBACK_PROTOCOL);
-  const linkedWorktree = isLinkedWorktree(root);
+  if (hasPort && hasSuffix) return env; // explicit overrides win outright
+  if (!isLinkedWorktree(root)) return env; // primary checkout → keep defaults
 
-  if (linkedWorktree) {
-    if (!hasPort) env.DESKTOP_RENDERER_PORT = String(rendererPortForPath(root));
-    if (!hasSuffix) env.DESKTOP_APP_SUFFIX = appSuffixForPath(root);
-  }
-  if (!hasAuthCallbackProtocol) {
-    env.DESKTOP_AUTH_CALLBACK_PROTOCOL = authCallbackProtocolForSuffix(
-      env.DESKTOP_APP_SUFFIX,
-    );
-  }
+  if (!hasPort) env.DESKTOP_RENDERER_PORT = String(rendererPortForPath(root));
+  if (!hasSuffix) env.DESKTOP_APP_SUFFIX = appSuffixForPath(root);
 
-  if (log && linkedWorktree) {
+  if (log) {
     console.log(
       `[dev:desktop] worktree isolation → renderer port ${env.DESKTOP_RENDERER_PORT}, ` +
-        `app "Patchbay Canary ${env.DESKTOP_APP_SUFFIX}", ` +
-        `callback ${env.DESKTOP_AUTH_CALLBACK_PROTOCOL}://`,
+        `app "Patchbay Canary ${env.DESKTOP_APP_SUFFIX}"`,
     );
   }
   return env;

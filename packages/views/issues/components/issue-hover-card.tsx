@@ -25,7 +25,7 @@ interface IssueHoverCardProps {
   children: ReactNode;
   /**
    * Identifier to name the issue with when the detail fetch fails (e.g.
-   * "PB-7"). The same label the chip degrades to, so a card that cannot load
+   * "MUL-7"). The same label the chip degrades to, so a card that cannot load
    * still says which issue it is about.
    */
   fallbackLabel?: string;

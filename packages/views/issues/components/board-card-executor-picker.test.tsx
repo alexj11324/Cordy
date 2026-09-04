@@ -67,6 +67,7 @@ vi.mock("@patchbay/core/workspace/hooks", () => ({
 }));
 
 vi.mock("../../i18n", () => ({
+  useLocale: () => "en",
   useT: () => ({ t: () => "Translated" }),
   useTimeAgo: () => () => "now",
 }));
@@ -97,6 +98,7 @@ const navigation: NavigationAdapter = {
   back: vi.fn(),
   pathname: "/acme/issues",
   searchParams: new URLSearchParams(),
+  hash: "",
   getShareableUrl: (path) => `https://app.example${path}`,
 };
 
@@ -114,7 +116,7 @@ function makeIssue(executorType: IssueExecutorType): Issue {
     id: `issue-${executorType}`,
     workspace_id: "ws-1",
     number: 6082,
-    identifier: "PB-6082",
+    identifier: "MUL-6082",
     title: "Fix Board executor interaction",
     description: null,
     status: "todo",

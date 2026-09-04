@@ -2,15 +2,7 @@ import { forwardRef, useEffect, useRef, useState, useImperativeHandle } from "re
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type {
-  DependencyGraphEdge,
-  DependencyGraphNode,
-  DependencyGraphResponse,
-  Issue,
-  IssueStatusEntry,
-  Label,
-  TimelineEntry,
-} from "@patchbay/core/types";
+import type { Issue, IssueStatusEntry, Label, TimelineEntry } from "@patchbay/core/types";
 import { issueStatusKeys } from "@patchbay/core/issue-statuses";
 import { I18nProvider } from "@patchbay/core/i18n/react";
 import { toast } from "sonner";
@@ -29,6 +21,7 @@ const mockViewport = vi.hoisted(() => ({ isMobile: false }));
 // Counts MockContentEditor mounts. This pins the description to exactly one
 // eager editor per issue and catches stale editor reuse across issue switches.
 const contentEditorMounts = vi.hoisted(() => ({ count: 0 }));
+const mockUseWSEvent = vi.hoisted(() => vi.fn());
 // Stable empty-attachments reference: the real store returns a shared constant
 // so the `useCommentDraftStore(s => s.getAttachments(key))` selector keeps a
 // stable identity. A fresh `[]` per call would loop useSyncExternalStore.
@@ -68,12 +61,10 @@ vi.mock("@patchbay/core/auth", () => ({
 vi.mock("@patchbay/core/workspace/hooks", () => ({
   useActorName: () => ({
     getMemberName: (id: string) => (id === "user-1" ? "Test User" : "Unknown"),
-    getAgentName: (id: string) =>
-      id === "agent-1" ? "Claude Agent" : id === "agent-2" ? "Reviewer Agent" : "Unknown Agent",
+    getAgentName: (id: string) => (id === "agent-1" ? "Claude Agent" : "Unknown Agent"),
     getActorName: (type: string, id: string) => {
       if (type === "member" && id === "user-1") return "Test User";
       if (type === "agent" && id === "agent-1") return "Claude Agent";
-      if (type === "agent" && id === "agent-2") return "Reviewer Agent";
       return "Unknown";
     },
     getActorInitials: (type: string) => (type === "member" ? "TU" : "CA"),
@@ -298,6 +289,7 @@ vi.mock("../../projects/components/project-picker", () => ({
 // Mock api
 const mockApiObj = vi.hoisted(() => ({
   getIssue: vi.fn(),
+  getDependencyGraph: vi.fn().mockResolvedValue(null),
   listTimeline: vi.fn().mockResolvedValue([]),
   listComments: vi.fn().mockResolvedValue([]),
   createComment: vi.fn(),
@@ -316,10 +308,6 @@ const mockApiObj = vi.hoisted(() => ({
   listChildIssues: vi.fn().mockResolvedValue({ issues: [] }),
   getChildIssueProgress: vi.fn().mockResolvedValue({ progress: [] }),
   getAgentTaskSnapshot: vi.fn().mockResolvedValue([]),
-  // The default detail fixture has no active graph. Keep that as an explicit
-  // empty response so the dependency section does not turn unrelated detail
-  // coverage into an API-error test.
-  getDependencyGraph: vi.fn().mockResolvedValue(null),
   // The sub-issues header chip reads this narrowed to the parent issue.
   getWorkspaceWorkingAgents: vi.fn().mockResolvedValue([]),
   listProperties: vi.fn().mockResolvedValue({ properties: [], total: 0 }),
@@ -510,10 +498,14 @@ beforeEach(() => {
 });
 
 // Mock modals
+const mockOpenModal = vi.hoisted(() => vi.fn());
 vi.mock("@patchbay/core/modals", () => ({
   useModalStore: Object.assign(
-    () => ({ open: vi.fn() }),
-    { getState: () => ({ open: vi.fn() }) },
+    (selector?: (state: { open: typeof mockOpenModal }) => unknown) => {
+      const state = { open: mockOpenModal };
+      return selector ? selector(state) : state;
+    },
+    { getState: () => ({ open: mockOpenModal }) },
   ),
 }));
 
@@ -524,7 +516,7 @@ vi.mock("@patchbay/core/hooks/use-file-upload", () => ({
 
 // Mock realtime
 vi.mock("@patchbay/core/realtime", () => ({
-  useWSEvent: vi.fn(),
+  useWSEvent: mockUseWSEvent,
   useWSReconnect: vi.fn(),
   useWS: () => ({ subscribe: vi.fn(() => () => {}), onReconnect: vi.fn(() => () => {}) }),
   WSProvider: ({ children }: { children: React.ReactNode }) => children,
@@ -558,11 +550,12 @@ const mockIssue: Issue = {
   description: "Add JWT auth to the backend",
   status: "in_progress",
   priority: "high",
-  owner_type: "member", owner_id: "user-1",
-  executor_type: "agent",
-  executor_id: "agent-1",
-  reviewer_type: "agent",
-  reviewer_id: "agent-2",
+  owner_type: "member",
+  owner_id: "user-1",
+  executor_type: null,
+  executor_id: null,
+  reviewer_type: null,
+  reviewer_id: null,
   creator_type: "member",
   creator_id: "user-1",
   parent_issue_id: null,
@@ -603,122 +596,6 @@ const mockTimeline: TimelineEntry[] = [
   },
 ];
 
-function dependencyNode(
-  nodeIssue: Issue,
-  state: DependencyGraphNode["readiness"]["state"],
-  satisfied: number,
-  total: number,
-): DependencyGraphNode {
-  return {
-    id: `node-${nodeIssue.id}`,
-    temp_id: nodeIssue.identifier,
-    issue_id: nodeIssue.id,
-    issue: nodeIssue,
-    title: nodeIssue.title,
-    description: nodeIssue.description ?? "",
-    acceptance_criteria: [],
-    context: {},
-    outputs: [`${nodeIssue.identifier}-output`],
-    owner_type: nodeIssue.owner_type,
-    owner_id: nodeIssue.owner_id,
-    executor_type: nodeIssue.executor_type,
-    executor_id: nodeIssue.executor_id,
-    candidate_executors: [],
-    reviewer_type: nodeIssue.reviewer_type,
-    reviewer_id: nodeIssue.reviewer_id,
-    runtime_id: null,
-    model_id: null,
-    wave: 0,
-    status: nodeIssue.status,
-    readiness: {
-      state,
-      gate_open: satisfied === total,
-      satisfied_prerequisites: satisfied,
-      total_prerequisites: total,
-      unlock_condition: `All ${total} hard prerequisites must be Done (${satisfied}/${total} currently satisfied)`,
-    },
-  };
-}
-
-function dependencyEdge(
-  source: Issue,
-  target: Issue,
-  status: string,
-  satisfied: boolean,
-  index: number,
-): DependencyGraphEdge {
-  return {
-    id: `edge-${index}`,
-    plan_id: "plan-1",
-    from_issue_id: source.id,
-    to_issue_id: target.id,
-    from: source.identifier,
-    to: target.identifier,
-    type: "hard",
-    reason: `${target.identifier} consumes ${source.identifier}'s output`,
-    consumed_output: `${source.identifier}-output`,
-    prerequisite_status: status,
-    satisfied,
-    satisfied_prerequisites: satisfied ? 1 : 0,
-    total_prerequisites: 2,
-    unlock_condition: "All 2 hard prerequisites must be Done (1/2 currently satisfied)",
-  };
-}
-
-function dependencyGraphFixture(): DependencyGraphResponse {
-  const sourceDone = {
-    ...mockIssue,
-    id: "issue-2",
-    identifier: "TES-2",
-    title: "Prepare schema",
-    status: "done" as const,
-  };
-  const sourceRunning = {
-    ...mockIssue,
-    id: "issue-3",
-    identifier: "TES-3",
-    title: "Build API",
-    status: "in_progress" as const,
-  };
-  const target = { ...mockIssue, status: "blocked" as const };
-  const nodes = [
-    dependencyNode(sourceDone, "done", 0, 0),
-    dependencyNode(sourceRunning, "running", 0, 0),
-    dependencyNode(target, "blocked", 1, 2),
-  ];
-  return {
-    plan: {
-      id: "plan-1",
-      workspace_id: "ws-1",
-      parent_issue_id: "parent-1",
-      idempotency_key: "detail-test",
-      goal: "Ship API",
-      status: "active",
-      attention_required: false,
-      attention_reason: null,
-      created_by_type: "member",
-      created_by_id: "user-1",
-      created_at: "2026-08-29T00:00:00Z",
-      updated_at: "2026-08-29T00:00:00Z",
-    },
-    parent: { ...mockIssue, id: "parent-1", identifier: "TES-9" },
-    children: nodes.map((node) => node.issue),
-    nodes,
-    edges: [
-      dependencyEdge(sourceDone, target, "done", true, 1),
-      dependencyEdge(sourceRunning, target, "in_progress", false, 2),
-    ],
-    waves: [["TES-2", "TES-3"], ["TES-1"]],
-    readiness: { total: 3, ready: 0, running: 1, blocked: 1, done: 1, cancelled: 0 },
-  };
-}
-
-// Canvas animation belongs to thinking-orbs; issue-detail only cares that
-// the Working row and Agent button mount.
-vi.mock("thinking-orbs", () => ({
-  ThinkingOrb: () => <span data-testid="thinking-orb" />,
-}));
-
 // ---------------------------------------------------------------------------
 // Import component under test (after mocks)
 // ---------------------------------------------------------------------------
@@ -754,7 +631,7 @@ function renderIssueDetail(issueId = "issue-1") {
  * statuses resolve to their real name, category and color. Seeding the query
  * (rather than stubbing the hook) keeps the shipped resolvers in the path; the
  * generous staleTime on the catalog query means it is never refetched. Every
- * other test runs without it — the cold-catalog case. (PB-6243)
+ * other test runs without it — the cold-catalog case. (MUL-6243)
  */
 function renderIssueDetailWithStatusCatalog(
   entries: IssueStatusEntry[],
@@ -821,6 +698,7 @@ describe("IssueDetail (shared)", () => {
     mockViewport.isMobile = false;
     // Default: issue loads successfully
     mockApiObj.getIssue.mockResolvedValue(mockIssue);
+    mockApiObj.getDependencyGraph.mockResolvedValue(null);
     // /timeline returns the entries flat in chronological order (oldest first).
     mockApiObj.listTimeline.mockResolvedValue(mockTimeline);
     mockApiObj.listIssueReactions.mockResolvedValue([]);
@@ -833,7 +711,6 @@ describe("IssueDetail (shared)", () => {
     mockApiObj.listIssues.mockResolvedValue({ issues: [], total: 0 });
     mockApiObj.getActiveTasksForIssue.mockResolvedValue({ tasks: [] });
     mockApiObj.listTasksByIssue.mockResolvedValue([]);
-    mockApiObj.getDependencyGraph.mockResolvedValue(null);
     mockApiObj.rerunIssue.mockResolvedValue({ id: "task-rerun" });
     mockApiObj.listMembers.mockResolvedValue([
       { user_id: "user-1", name: "Test User", email: "test@test.com", role: "admin" },
@@ -842,6 +719,117 @@ describe("IssueDetail (shared)", () => {
     // Reset project mock — individual tests override per case. Default fixture
     // has project_id: null so getProject is not invoked.
     mockApiObj.getProject.mockReset();
+  });
+
+  it("loads and displays the issue dependency gate through React Query", async () => {
+    mockApiObj.getDependencyGraph.mockResolvedValue({
+      plan: {
+        id: "plan-1",
+        attention_required: false,
+        attention_reason: null,
+      },
+      nodes: [
+        {
+          issue_id: "source-1",
+          title: "Prepare release notes",
+          status: "in_progress",
+          status_category: "in_progress",
+          ready: true,
+          blocked_by: [],
+        },
+        {
+          issue_id: "issue-1",
+          title: "Ship release",
+          status: "blocked",
+          status_category: "blocked",
+          ready: false,
+          blocked_by: ["source-1"],
+        },
+      ],
+      edges: [{
+        id: "edge-1",
+        type: "hard",
+        from_issue_id: "source-1",
+        to_issue_id: "issue-1",
+        reason: "Release notes are required",
+      }],
+    });
+
+    renderIssueDetail();
+
+    expect(await screen.findByText("Blocked by 1 prerequisite(s) · 0/1 prerequisites satisfied")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open prerequisite Prepare release notes" })).toHaveAttribute(
+      "href",
+      "/test/issues/source-1",
+    );
+    expect(mockApiObj.getDependencyGraph).toHaveBeenCalledWith(
+      "issue-1",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
+
+  it("refreshes dependency state from the real issue lifecycle events", async () => {
+    renderIssueDetail();
+
+    await screen.findByText("No hard prerequisites. This issue can start immediately.");
+
+    expect(mockUseWSEvent).toHaveBeenCalledWith("issue:created", expect.any(Function));
+    expect(mockUseWSEvent).toHaveBeenCalledWith("issue:updated", expect.any(Function));
+    expect(mockUseWSEvent).toHaveBeenCalledWith("issue:deleted", expect.any(Function));
+    expect(mockUseWSEvent).toHaveBeenCalledWith(
+      "dependency_graph:updated",
+      expect.any(Function),
+    );
+  });
+
+  it("opens source-context creation from both a root comment and a reply", async () => {
+    mockApiObj.listTimeline.mockResolvedValue([
+      { ...mockTimeline[0], id: "source-root", parent_id: null },
+      { ...mockTimeline[1], id: "source-reply", parent_id: "source-root" },
+    ]);
+    const { container } = renderIssueDetail();
+    await screen.findByText("Started working on this");
+
+    const menuButton = (commentId: string) => Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button[aria-label="Comment actions"]'),
+    )
+      .find((button): button is HTMLButtonElement => button?.closest("[id^='comment-']")?.id === `comment-${commentId}`);
+    await waitFor(() => expect(menuButton("source-root")).toBeTruthy());
+    await waitFor(() => expect(menuButton("source-reply")).toBeTruthy());
+
+    fireEvent.click(menuButton("source-root")!);
+    const branchAction = await screen.findByText("Create sub-issue from here");
+    expect(branchAction.closest('[role="menuitem"]')?.querySelector(".lucide-message-square-plus")).toBeInTheDocument();
+    fireEvent.click(branchAction);
+    expect(mockOpenModal).toHaveBeenLastCalledWith("quick-create-issue", expect.objectContaining({
+      anchor_comment_id: "source-root",
+      parent_issue_id: "issue-1",
+    }));
+
+    fireEvent.click(menuButton("source-reply")!);
+    fireEvent.click(await screen.findByText("Create sub-issue from here"));
+    expect(mockOpenModal).toHaveBeenLastCalledWith("quick-create-issue", expect.objectContaining({
+      anchor_comment_id: "source-reply",
+      parent_issue_id: "issue-1",
+    }));
+  });
+
+  it("does not offer source-context creation for system comments", async () => {
+    mockApiObj.listTimeline.mockResolvedValue([{
+      ...mockTimeline[0],
+      id: "system-comment",
+      comment_type: "system",
+    }]);
+    const { container } = renderIssueDetail();
+    await screen.findByText("Started working on this");
+
+    const menuButton = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button[aria-label="Comment actions"]'),
+    ).find((button) => button.closest("[id^='comment-']")?.id === "comment-system-comment");
+    expect(menuButton).toBeTruthy();
+    fireEvent.click(menuButton!);
+
+    expect(screen.queryByText("Create sub-issue from here")).not.toBeInTheDocument();
   });
 
   it("shows loading skeleton while data is loading", () => {
@@ -909,12 +897,108 @@ describe("IssueDetail (shared)", () => {
     expect(contentEditorMounts.count).toBe(1);
   });
 
+  it("reconciles a cached list snapshot so source context appears on first entry", async () => {
+    const sourceContext: NonNullable<Issue["source_context"]> = {
+      id: "context-1",
+      version: 1,
+      usage: "read_only_historical_background",
+      captured_at: "2026-08-21T12:00:00Z",
+      display_state: "unchanged",
+      source_issue_state: "unchanged",
+      comment_thread_state: "unchanged",
+      anchor_comment_state: "available",
+      can_open_current_source: true,
+      current_source: {
+        issue_id: "source-issue",
+        anchor_comment_id: "source-comment",
+        identifier: "TES-7",
+      },
+      source_author_state: [],
+      snapshot: {
+        version: 1,
+        captured_by_user_id: "user-1",
+        captured_at: "2026-08-21T12:00:00Z",
+        source_issue: {
+          id: "source-issue",
+          identifier: "TES-7",
+          number: 7,
+          title: "Source issue",
+          description: "Source description",
+          created_at: "2026-08-20T00:00:00Z",
+          updated_at: "2026-08-21T00:00:00Z",
+          revision: 2,
+          attachments: [],
+        },
+        anchor_comment_id: "source-comment",
+        comment_thread: [
+          {
+            id: "source-comment",
+            parent_id: null,
+            type: "comment",
+            content: "Source comment",
+            author: { type: "member", id: "user-1", name: "Test User" },
+            created_at: "2026-08-21T01:00:00Z",
+            updated_at: "2026-08-21T01:00:00Z",
+            revision: 1,
+            attachments: [],
+          },
+        ],
+      },
+    };
+    const cachedWithoutDetailOnlyContext: Issue = {
+      ...mockIssue,
+      parent_issue_id: "source-issue",
+    };
+    const authoritativeDetail: Issue = {
+      ...cachedWithoutDetailOnlyContext,
+      source_context: sourceContext,
+    };
+    const parentIssue: Issue = {
+      ...mockIssue,
+      id: "source-issue",
+      identifier: "TES-7",
+      number: 7,
+      title: "Source issue",
+      parent_issue_id: null,
+    };
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, gcTime: 0, staleTime: Infinity },
+        mutations: { retry: false },
+      },
+    });
+    queryClient.setQueryData(
+      ["issues", "ws-1", "detail", "issue-1"],
+      cachedWithoutDetailOnlyContext,
+    );
+    mockApiObj.getIssue.mockImplementation((issueId: string) =>
+      Promise.resolve(issueId === "source-issue" ? parentIssue : authoritativeDetail),
+    );
+
+    render(
+      <I18nProvider locale="en" resources={TEST_RESOURCES}>
+        <QueryClientProvider client={queryClient}>
+          <IssueDetail issueId="issue-1" />
+        </QueryClientProvider>
+      </I18nProvider>,
+    );
+
+    const snapshotAction = await screen.findByRole("button", { name: "Context snapshot" });
+    const summary = snapshotAction.closest<HTMLElement>('[data-slot="source-context-summary"]');
+    expect(summary).toHaveTextContent("Sub-issue of");
+    expect(within(summary!).getByRole("link", { name: "TES-7 Source issue" })).toBeInTheDocument();
+    // The summary replaces the plain parent row rather than adding a second one.
+    expect(screen.getAllByText("Sub-issue of")).toHaveLength(1);
+    expect(screen.queryByText(/From TES-7/)).not.toBeInTheDocument();
+    expect(mockApiObj.getIssue).toHaveBeenCalledWith("issue-1");
+  });
+
   it("opts the description editor into the unmount flush", async () => {
     // Closing the issue modal must save the description the user last saw —
     // ContentEditor drops pending debounced updates on unmount by default
     // (so cancelled comment drafts aren't resurrected), and only this
     // explicit opt-in keeps a paste-then-close from losing the image
-    // markdown and its attachment_ids bind (PB-3254). The flush behavior
+    // markdown and its attachment_ids bind (MUL-3254). The flush behavior
     // itself is covered in content-editor.test.tsx; this pins the wiring.
     renderIssueDetail();
 
@@ -1019,7 +1103,9 @@ describe("IssueDetail (shared)", () => {
 
     // Core rows — always rendered regardless of whether the issue has a value.
     expect(screen.getByText("Status")).toBeInTheDocument();
+    expect(screen.getByText("Owner")).toBeInTheDocument();
     expect(screen.getByText("Executor")).toBeInTheDocument();
+    expect(screen.getByText("Reviewer")).toBeInTheDocument();
     // "Project" appears twice (row label + picker stub), so disambiguate by id.
     expect(screen.getByTestId("project-picker")).toBeInTheDocument();
     // priority="high" + due_date are set in the fixture, so both optional rows show.
@@ -1059,27 +1145,6 @@ describe("IssueDetail (shared)", () => {
     // No parent → no standalone Parent issue section either.
     expect(screen.queryByText("Parent issue")).not.toBeInTheDocument();
     expect(screen.getByText("Add property")).toBeInTheDocument();
-  });
-
-  it("renders every persisted prerequisite with its real status and fail-closed target readiness", async () => {
-    mockApiObj.getDependencyGraph.mockResolvedValue(dependencyGraphFixture());
-
-    renderIssueDetail();
-
-    const section = await screen.findByRole("region", { name: "Dependencies" });
-    expect(within(section).getByText("Prepare schema")).toBeInTheDocument();
-    expect(within(section).getByText("Build API")).toBeInTheDocument();
-    expect(
-      within(section).getByText(/Blocked · 1\/2 hard prerequisites satisfied/),
-    ).toBeInTheDocument();
-    expect(within(section).getAllByText("Done")).toHaveLength(2);
-    expect(within(section).getByText("In Progress")).toBeInTheDocument();
-    expect(within(section).getByText(/TES-2's output/)).toBeInTheDocument();
-
-    const sourceLink = within(section).getByRole("link", {
-      name: "Open prerequisite TES-2",
-    });
-    expect(sourceLink).toHaveAttribute("href", "/test/issues/TES-2");
   });
 
   it("uses a non-resizable layout with the sidebar sheet closed by default on mobile", async () => {
@@ -1240,7 +1305,9 @@ describe("IssueDetail (shared)", () => {
     expect(screen.getByText("Updated")).toBeInTheDocument();
   });
 
-  it("does not render the Agent thread events or a sidebar agent conversation button", async () => {
+  // Details is creator + immutable timestamps, so it ranks below the
+  // execution log, which is what people actually open the sidebar for.
+  it("orders the Details section after the execution log", async () => {
     mockApiObj.listTasksByIssue.mockResolvedValue([
       {
         id: "task-past",
@@ -1252,7 +1319,7 @@ describe("IssueDetail (shared)", () => {
         dispatched_at: null,
         started_at: "2026-06-08T08:00:00Z",
         completed_at: "2026-06-08T08:05:00Z",
-        result: { output: "Auth is in place." },
+        result: null,
         error: null,
         created_at: "2026-06-08T08:00:00Z",
         trigger_summary: "Started from comment",
@@ -1261,17 +1328,13 @@ describe("IssueDetail (shared)", () => {
 
     renderIssueDetail();
 
-    await waitFor(() => {
-      expect(screen.getByText("Details")).toBeInTheDocument();
-    });
+    const executionLog = await screen.findByText("Execution log");
+    const details = screen.getByText("Details");
 
-    expect(screen.queryByText("Agent thread")).not.toBeInTheDocument();
+    // DOCUMENT_POSITION_FOLLOWING: Details comes after the execution log.
     expect(
-      screen.queryByRole("button", { name: "Open Claude Agent conversation" }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Open conversation" }),
-    ).not.toBeInTheDocument();
+      executionLog.compareDocumentPosition(details) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it("shows 'not found' message when issue does not exist", async () => {
@@ -1349,7 +1412,7 @@ describe("IssueDetail (shared)", () => {
         id: "comment-child-done",
         actor_type: "system",
         actor_id: "00000000-0000-0000-0000-000000000000",
-        content: "Sub-issue PB-123 is done.",
+        content: "Sub-issue MUL-123 is done.",
         parent_id: null,
         created_at: "2026-01-18T00:00:00Z",
         updated_at: "2026-01-18T00:00:00Z",
@@ -1359,7 +1422,7 @@ describe("IssueDetail (shared)", () => {
 
     renderIssueDetail();
 
-    await screen.findByText("Sub-issue PB-123 is done.");
+    await screen.findByText("Sub-issue MUL-123 is done.");
     expect(screen.queryByRole("button", { name: "Retry task" })).not.toBeInTheDocument();
   });
 
@@ -1495,39 +1558,8 @@ describe("IssueDetail (shared)", () => {
     });
   });
 
-  it("renders a review handoff as the previous owner pointing to the reviewer", async () => {
-    mockApiObj.listTimeline.mockResolvedValue([
-      {
-        type: "activity",
-        id: "act-review-handoff",
-        actor_type: "agent",
-        actor_id: "agent-1",
-        action: "review_handoff",
-        details: {
-          from_type: "agent",
-          from_id: "agent-1",
-          to_type: "agent",
-          to_id: "agent-2",
-          from_status: "in_progress",
-          to_status: "in_review",
-        },
-        created_at: "2026-01-18T00:00:00Z",
-      },
-    ] as TimelineEntry[]);
-
-    renderIssueDetail();
-
-    const label = await screen.findByText("handed off review");
-    const handoff = label.parentElement;
-    expect(handoff).not.toBeNull();
-    expect(within(handoff!).getAllByText("Claude Agent")).toHaveLength(2);
-    expect(within(handoff!).getByText("Reviewer Agent")).toBeInTheDocument();
-    expect(within(handoff!).getAllByTestId("actor-avatar")).toHaveLength(2);
-    expect(handoff!.querySelector("svg")).toBeInTheDocument();
-  });
-
   // -------------------------------------------------------------------------
-  // PB-6413 — the activity glyph is per CATEGORY, so a move into a custom
+  // MUL-6413 — the activity glyph is per CATEGORY, so a move into a custom
   // status drew the icon of the built-in it sits beside: "In Review → Awaiting
   // Response" repainted identically and read as though nothing had moved.
   // Colour is what carries a custom status's own identity.
@@ -2215,6 +2247,10 @@ describe("IssueDetail (shared)", () => {
       parent_issue_id: "issue-1",
       executor_type: null,
       executor_id: null,
+      owner_type: null,
+      owner_id: null,
+      reviewer_type: null,
+      reviewer_id: null,
       due_date: null,
       priority: "none",
       ...overrides,
@@ -2356,7 +2392,7 @@ describe("IssueDetail (shared)", () => {
   });
 
   // Deliberately drives the real Base UI DropdownMenu rather than a stub: the
-  // bug these tests pin (PB-5710) was a handler wired to `onSelect`, which
+  // bug these tests pin (MUL-5710) was a handler wired to `onSelect`, which
   // typechecks because Menu.Item's props extend the whole div attribute set,
   // then lands on the DOM as the native text-selection event and never fires.
   // Only the real menu reproduces that; any hand-rolled mock hides it.
@@ -2375,7 +2411,7 @@ describe("IssueDetail (shared)", () => {
       mockApiObj.listIssueSubscribers.mockResolvedValue(subscribedAsMember);
       // The menu only exists when there is a sub-tree for its second item to
       // act on. A childless issue renders a direct button instead — covered
-      // by the "no sub-issues" tests below (PB-5714).
+      // by the "no sub-issues" tests below (MUL-5714).
       mockApiObj.listChildIssues.mockResolvedValue({
         issues: [{ ...mockIssue, id: "child-1", parent_issue_id: "issue-1" }],
       });
@@ -2444,7 +2480,7 @@ describe("IssueDetail (shared)", () => {
 
   // The reported bug: on an issue with no sub-issues the only way to leave was
   // a menu whose second item pointed at a sub-tree that does not exist
-  // (PB-5714).
+  // (MUL-5714).
   describe("unsubscribe without sub-issues", () => {
     const subscribedAsMember = [
       {
@@ -2496,7 +2532,7 @@ describe("IssueDetail (shared)", () => {
     // opt_out_scope='issue'; the subtree route writes 'subtree', which also
     // blocks FUTURE children from re-subscribing the user. Collapsing the menu
     // must not quietly upgrade a one-issue opt-out into a whole-tree one
-    // in the Rust subscriber query module.
+    // (server/pkg/db/queries/subscriber.sql).
     it("uses the root-only route, never the subtree one", async () => {
       renderIssueDetail();
 
@@ -2523,7 +2559,7 @@ describe("IssueDetail (shared)", () => {
       // reaches an enabled button — the in-flight guard is what stops it. Two
       // overlapping toggles is the one case the mutation's whole-list snapshot
       // cannot survive: the second snapshots the first one's optimistic patch
-      // and rolls back to it (PB-5714).
+      // and rolls back to it (MUL-5714).
       fireEvent.click(button);
       fireEvent.click(button);
 
@@ -2572,7 +2608,7 @@ describe("IssueDetail (shared)", () => {
   // which reads as "not subscribed" for everyone. Rendering that default
   // showed a Subscribe button to people who were already subscribed, and a
   // click landing in that window sent a subscribe instead of the unsubscribe
-  // they meant (PB-5714).
+  // they meant (MUL-5714).
   describe("subscription state before the query resolves", () => {
     afterEach(() => {
       document.body.innerHTML = "";
@@ -2603,8 +2639,8 @@ describe("IssueDetail (shared)", () => {
   // renders everyone — including people who ARE subscribed — as unchecked.
   // Clicking one of those rows sends an explicit subscribe, which rewrites the
   // target's reason to 'manual' and clears any opt-out scope
-    // in the Rust subscriber query module, discarding a delegated
-  // subscription or a deliberate opt-out (PB-5714).
+  // (server/pkg/db/queries/subscriber.sql), discarding a delegated
+  // subscription or a deliberate opt-out (MUL-5714).
   describe("subscriber picker before the query resolves", () => {
     // The picker sits next to the subscribe control in the Activity header.
     // Anchor on the heading, not on that control — the whole point of these

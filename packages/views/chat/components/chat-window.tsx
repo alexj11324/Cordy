@@ -22,6 +22,7 @@ import { api, dispatchReasonCode } from "@patchbay/core/api";
 import {
   isAgentRuntimeBound,
   useAgentPresenceDetail,
+  useCustomizeConversationStartersHref,
   useWorkspaceAgentAvailability,
 } from "@patchbay/core/agents";
 import { ActorAvatar } from "../../common/actor-avatar";
@@ -72,6 +73,7 @@ import { useChatInputFocus } from "./use-chat-input-focus";
 import { ChatMessageList, ChatMessageSkeleton } from "./chat-message-list";
 import { ChatInput } from "./chat-input";
 import { ChatQueue } from "./chat-queue";
+import { EmptyState } from "./chat-empty-state";
 import { SessionRenameInput } from "./session-rename-input";
 import { ChatResizeHandles } from "./chat-resize-handles";
 import { useChatContextItems } from "./use-chat-context-items";
@@ -87,7 +89,7 @@ import {
 import { useChatProjectContextSupport } from "./use-chat-project-context-support";
 import { createLogger } from "@patchbay/core/logger";
 import type { Agent, Attachment, ChatMessage, ChatSession, PendingChatTasksResponse } from "@patchbay/core/types";
-import { useT } from "../../i18n";
+import { useLocale, useT } from "../../i18n";
 
 const uiLogger = createLogger("chat.ui");
 const apiLogger = createLogger("chat.api");
@@ -103,7 +105,7 @@ export function ChatWindow() {
     chatQuickActionsPendingOptions(activeSessionId ?? ""),
   );
   // Drop a stuck pending marker (dead daemon / failed supplement) so the pill
-  // spinner stops and a later refresh starts clean (PB-5149).
+  // spinner stops and a later refresh starts clean (MUL-5149).
   useQuickActionsPendingTimeout(activeSessionId ?? null, quickActionsPending);
   // Toast when an accepted refresh later fails in the daemon (async half).
   useQuickActionsFailureToast(activeSessionId ?? null);
@@ -142,7 +144,7 @@ export function ChatWindow() {
   const allMessages = [...messagePages].reverse().flatMap((page) => page.messages);
   // Skeleton only shows for an un-cached session fetch. Cached switches
   // return data synchronously — no flash. `enabled: false` (new chat)
-  // keeps isLoading false so the starter prompts aren't hidden.
+  // keeps isLoading false so the conversation starters aren't hidden.
   // Server-authoritative pending task. Survives refresh / reopen / session
   // switch because it's keyed on sessionId in the Query cache; WS events
   // (chat:message / chat:done / task:*) keep it invalidated in real time.
@@ -187,6 +189,25 @@ export function ChatWindow() {
   // Nonce handed to ChatInput to pull focus into the compose box: when a new
   // chat starts (⊕ or switching agent), and whenever the window itself opens.
   const { focusRequest, requestInputFocus } = useChatInputFocus(isOpen);
+  const [conversationStarterRequest, setConversationStarterRequest] = useState<{
+    id: number;
+    content: string;
+  } | null>(null);
+  const nextConversationStarterRequestIdRef = useRef(0);
+  const prefillConversationStarter = useCallback(
+    (prompt: string) => {
+      setConversationStarterRequest({
+        id: ++nextConversationStarterRequestIdRef.current,
+        content: prompt,
+      });
+      requestInputFocus();
+    },
+    [requestInputFocus],
+  );
+  const handleConversationStarterApplied = useCallback(
+    () => setConversationStarterRequest(null),
+    [],
+  );
 
   // Legacy archived sessions (the old soft-archive feature was removed but
   // pre-existing rows with status='archived' may still exist) are excluded
@@ -245,11 +266,18 @@ export function ChatWindow() {
   // A session outlives the permission that created it: the agent can be flipped
   // to personal, change owner, or drop this member from its allow-list, and the
   // server then refuses every send with `invocation_not_allowed` while still
-  // serving the Agent event history (PB-4525). Judge the SESSION's agent, not just the
+  // serving the transcript (MUL-4525). Judge the SESSION's agent, not just the
   // picker list, so the composer goes read-only up front rather than after the
-  // user types (PB-6380). Mirrors use-chat-controller.ts.
+  // user types (MUL-6380). Mirrors use-chat-controller.ts.
   const isAgentAccessRevoked =
     !!activeAgent && !canAssignAgent(activeAgent, user?.id, memberRole);
+
+  // "Customize" under the starter buttons — the only place the empty state
+  // admits that those buttons are configuration at all.
+  const customizeConversationStartersHref = useCustomizeConversationStartersHref(
+    activeAgent,
+    wsId,
+  );
 
   const projectContextSupport = useChatProjectContextSupport(wsId, activeAgent);
 
@@ -316,7 +344,7 @@ export function ChatWindow() {
   // chat:done so a reply arriving while the user watches triggers this effect
   // again and is instantly cleared. `appForeground` gates the "is looking"
   // assumption: a reply landing while the window is open but the app is
-  // backgrounded must stay unread so the sidebar badges it (PB-4485), then
+  // backgrounded must stay unread so the sidebar badges it (MUL-4485), then
   // clears when the user refocuses and this effect re-runs.
   const currentHasUnread =
     sessions.find((s) => s.id === activeSessionId)?.has_unread ?? false;
@@ -397,7 +425,7 @@ export function ChatWindow() {
   );
 
   // Upload transport moved into the coordinated-upload engine inside ChatInput
-  // (PB-5181 L2); the host only says whether the affordance exists. Uploads
+  // (MUL-5181 L2); the host only says whether the affordance exists. Uploads
   // remain workspace-scoped drafts — sending is still the point where a
   // session is created (if needed) and attachment_ids bind to the message.
 
@@ -521,7 +549,7 @@ export function ChatWindow() {
         created_at: result.created_at,
         attachments: draftAttachments,
       };
-      // Single door into the message caches (PB-5711): idempotent by id, so
+      // Single door into the message caches (MUL-5711): idempotent by id, so
       // this row and the chat:message echo of the same send converge in either
       // arrival order, and this richer row (it carries the draft attachments)
       // is never downgraded by the echo, which has no attachments field.
@@ -746,7 +774,7 @@ export function ChatWindow() {
   // viewport, so the chat body's gutter (CHAT_GUTTER) has to key off the
   // window's own width, not the page behind it.
   const containerClass = cn(
-    "absolute z-50 flex flex-col overflow-hidden bg-surface-raised @container",
+    "absolute z-50 flex flex-col overflow-hidden bg-surface-raised/80 backdrop-blur-xl supports-[backdrop-filter]:backdrop-saturate-150 @container",
     isMobile
       ? "inset-x-0"
       : "right-2 rounded-xl shadow-[var(--floating-shadow)] ring-1 ring-surface-border",
@@ -767,7 +795,7 @@ export function ChatWindow() {
   const keyboard = useVisualViewportKeyboard();
   const containerStyle: React.CSSProperties = {
     transformOrigin: "bottom right",
-    pointerEvents: isOpen ? "auto" : "none",
+    pointerEvents: isVisible ? "auto" : "none",
     ...(isMobile
       ? {
           // Full-screen panel anchored to the visible bottom edge;
@@ -805,6 +833,8 @@ export function ChatWindow() {
       ref={windowRef}
       className={containerClass}
       style={containerStyle}
+      aria-hidden={!isVisible}
+      inert={!isVisible ? true : undefined}
       initial={{ opacity: 0, scale: 0.95, ...motionSize }}
       animate={{
         opacity: isVisible ? 1 : 0,
@@ -829,6 +859,7 @@ export function ChatWindow() {
                   variant="ghost"
                   size="icon-sm"
                   className="rounded-full text-muted-foreground"
+                  aria-label={t(($) => $.window.new_chat_tooltip)}
                   onClick={handleNewChat}
                 />
               }
@@ -855,6 +886,11 @@ export function ChatWindow() {
                     variant="ghost"
                     size="icon-sm"
                     className="text-muted-foreground"
+                    aria-label={
+                      isExpanded || isAtMax
+                        ? t(($) => $.window.restore_tooltip)
+                        : t(($) => $.window.expand_tooltip)
+                    }
                     onClick={toggleExpand}
                   />
                 }
@@ -873,6 +909,7 @@ export function ChatWindow() {
                   variant="ghost"
                   size="icon-sm"
                   className="text-muted-foreground"
+                  aria-label={t(($) => $.window.minimize_tooltip)}
                   onClick={handleMinimize}
                 />
               }
@@ -891,10 +928,6 @@ export function ChatWindow() {
         <ChatMessageList
           key={activeSessionId}
           messages={messages}
-          agentId={activeAgent?.id}
-          agentName={activeAgent?.name}
-          userId={user?.id}
-          userName={user?.name}
           pendingTask={pendingTask}
           availability={availability}
           firstItemIndex={firstItemIndex}
@@ -922,9 +955,10 @@ export function ChatWindow() {
         />
       ) : (
         <EmptyState
+          agent={activeAgent}
           hasSessions={sessions.length > 0}
-          agentName={activeAgent?.name}
-          onPickPrompt={(text) => handleSend(text)}
+          onPickPrompt={prefillConversationStarter}
+          customizeHref={customizeConversationStartersHref}
         />
       )}
 
@@ -952,25 +986,29 @@ export function ChatWindow() {
         <OfflineBanner agentName={activeAgent?.name} availability={availability} />
       )}
 
+      <ChatQueue
+        tasks={queuedTasks}
+        headStatus={pendingTask?.status}
+        onSendNow={handleSendQueuedTaskNow}
+        sendNowDisabled={isAgentAccessRevoked}
+        onEdit={handleEditQueuedTask}
+        onRemove={handleRemoveQueuedTask}
+        onClear={handleClearQueuedTasks}
+      />
+
+      {/* Input — disabled for legacy archived sessions and for sessions whose
+       *  agent has been archived (read-only); locked out entirely when there's
+       *  no agent (the EmptyState above carries the CTA). */}
       <ChatInput
         onSend={handleSend}
         restoreDraftRequest={restoreDraftRequest}
+        conversationStarterRequest={conversationStarterRequest}
+        onConversationStarterApplied={handleConversationStarterApplied}
         onRestoreDraftApplied={handleRestoreDraftApplied}
         uploadEnabled={!!activeAgent && !isAgentAccessRevoked}
         onStop={handleStop}
         isRunning={!!pendingTaskId}
         allowSubmitWhileRunning={pendingTask?.supports_queue === true}
-        queueSlot={
-          <ChatQueue
-            tasks={queuedTasks}
-            headStatus={pendingTask?.status}
-            onSendNow={handleSendQueuedTaskNow}
-            sendNowDisabled={isAgentAccessRevoked}
-            onEdit={handleEditQueuedTask}
-            onRemove={handleRemoveQueuedTask}
-            onClear={handleClearQueuedTasks}
-          />
-        }
         disabled={
           isSessionArchived ||
           isAgentArchived ||
@@ -991,7 +1029,6 @@ export function ChatWindow() {
         }
         leftAdornment={
           <AgentDropdown
-            compact
             agents={availableAgents}
             activeAgent={activeAgent}
             userId={user?.id}
@@ -1015,14 +1052,11 @@ export function AgentDropdown({
   activeAgent,
   userId,
   onSelect,
-  compact = false,
 }: {
   agents: Agent[];
   activeAgent: Agent | null;
   userId: string | undefined;
   onSelect: (agent: Agent) => void;
-  /** Avatar-only trigger, matching the LobeHub composer model chip. */
-  compact?: boolean;
 }) {
   const { t } = useT("chat");
   const [open, setOpen] = useState(false);
@@ -1067,36 +1101,21 @@ export function AgentDropdown({
       triggerRender={
         <button
           type="button"
-          aria-label={activeAgent.name}
-          className={
-            compact
-              ? "flex size-8 items-center justify-center rounded-full outline-none transition-colors hover:bg-accent aria-expanded:bg-accent"
-              : "flex items-center gap-1.5 rounded-md px-1.5 py-1 -ml-1 cursor-pointer outline-none transition-colors hover:bg-accent aria-expanded:bg-accent"
-          }
+          className="flex items-center gap-1.5 rounded-md px-1.5 py-1 -ml-1 cursor-pointer outline-none transition-colors hover:bg-accent aria-expanded:bg-accent"
         />
       }
       trigger={
-        compact ? (
+        <>
           <ActorAvatar
             actorType="agent"
             actorId={activeAgent.id}
-            size="lg"
-            profileLink={false}
+            size="md"
+            enableHoverCard
             showStatusDot
           />
-        ) : (
-          <>
-            <ActorAvatar
-              actorType="agent"
-              actorId={activeAgent.id}
-              size="md"
-              enableHoverCard
-              showStatusDot
-            />
-            <span className="text-caption font-medium max-w-28 truncate">{activeAgent.name}</span>
-            <ChevronDown className="size-3 text-muted-foreground shrink-0" />
-          </>
-        )
+          <span className="text-caption font-medium max-w-28 truncate">{activeAgent.name}</span>
+          <ChevronDown className="size-3 text-muted-foreground shrink-0" />
+        </>
       }
     >
       {filteredMine.length === 0 && filteredOthers.length === 0 ? (
@@ -1629,6 +1648,7 @@ function SessionDropdown({
 
 function useFormatTimeAgo(): (dateStr: string) => string {
   const { t } = useT("chat");
+  const locale = useLocale();
   return (dateStr: string) => {
     const date = new Date(dateStr);
     const now = new Date();
@@ -1641,88 +1661,6 @@ function useFormatTimeAgo(): (dateStr: string) => string {
     if (diffMins < 60) return t(($) => $.session_history.time.minutes, { count: diffMins });
     if (diffHours < 24) return t(($) => $.session_history.time.hours, { count: diffHours });
     if (diffDays < 7) return t(($) => $.session_history.time.days, { count: diffDays });
-    return date.toLocaleDateString();
+    return date.toLocaleDateString(locale);
   };
-}
-
-// Three starter prompts shown on the empty state. Each is keyed into the
-// chat namespace so labels translate per locale; the icon stays raw since
-// emojis are locale-neutral.
-const STARTER_KEYS: ("list_open" | "summarize_today" | "plan_next")[] = [
-  "list_open",
-  "summarize_today",
-  "plan_next",
-];
-const STARTER_ICONS: Record<(typeof STARTER_KEYS)[number], string> = {
-  list_open: "📋",
-  summarize_today: "📝",
-  plan_next: "💡",
-};
-
-function EmptyState({
-  hasSessions,
-  agentName,
-  onPickPrompt,
-}: {
-  hasSessions: boolean;
-  agentName?: string;
-  onPickPrompt: (text: string) => void;
-}) {
-  const { t } = useT("chat");
-  // First-time experience: the user has never started a chat in this
-  // workspace. Educate before suggesting actions — starter prompts
-  // presume the user already knows what chat is for.
-  if (!hasSessions) {
-    return (
-      <div className="flex min-h-0 flex-1 flex-col items-center justify-center-safe gap-3 overflow-y-auto px-6 py-8">
-        <div className="text-center space-y-3">
-          <h3 className="text-title-sm font-semibold">
-            {t(($) => $.empty_state.first_time_title)}
-          </h3>
-          <p className="text-body text-muted-foreground">
-            {t(($) => $.empty_state.first_time_intro)}{" "}
-            <span className="font-medium text-foreground">
-              {t(($) => $.empty_state.first_time_pillars)}
-            </span>
-            {t(($) => $.empty_state.first_time_pillars_suffix)}
-          </p>
-          <p className="text-body text-muted-foreground">
-            {t(($) => $.empty_state.first_time_actions)}
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  // Returning user: starter prompts are the fastest path back to action.
-  return (
-    <div className="flex min-h-0 flex-1 flex-col items-center justify-center-safe gap-5 overflow-y-auto px-6 py-8">
-      <div className="text-center space-y-1">
-        <h3 className="text-title-sm font-semibold">
-          {agentName
-            ? t(($) => $.empty_state.returning_title_named, { name: agentName })
-            : t(($) => $.empty_state.returning_title_default)}
-        </h3>
-        <p className="text-body text-muted-foreground">
-          {t(($) => $.empty_state.returning_subtitle)}
-        </p>
-      </div>
-      <div className="w-full max-w-xs space-y-2">
-        {STARTER_KEYS.map((key) => {
-          const text = t(($) => $.starter_prompts[key]);
-          return (
-            <button
-              key={key}
-              type="button"
-              onClick={() => onPickPrompt(text)}
-              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-left text-body text-foreground transition-colors hover:bg-accent hover:border-brand/40"
-            >
-              <span className="mr-2">{STARTER_ICONS[key]}</span>
-              {text}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
 }

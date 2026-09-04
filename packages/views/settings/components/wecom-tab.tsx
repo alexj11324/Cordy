@@ -1,5 +1,7 @@
 "use client";
 
+import { MessagingConnectionStatus } from "./messaging-connection-status";
+
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -15,7 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@patchbay/ui/components/ui/dialog";
-import { SettingsInput as Input } from "@patchbay/ui/components/common/lobe-settings";
+import { Input } from "@patchbay/ui/components/ui/input";
 import { Label } from "@patchbay/ui/components/ui/label";
 import {
   AlertDialog,
@@ -34,10 +36,7 @@ import { useActorName } from "@patchbay/core/workspace/hooks";
 import { wecomInstallationsOptions, wecomKeys } from "@patchbay/core/wecom";
 import { errorCode } from "@patchbay/core/api";
 import { api } from "@patchbay/core/api";
-import {
-  isMessagingInstallationHealthy,
-  type WecomInstallation,
-} from "@patchbay/core/types";
+import type { WecomInstallation } from "@patchbay/core/types";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { useT } from "../../i18n";
 
@@ -46,10 +45,11 @@ import { useT } from "../../i18n";
 // admin-only (the backend enforces it; the UI hides the button for non-
 // admins to match).
 //
-// The settings page connects one workspace-scoped Hub. The channel selects
-// the active Agent with `/agents`; the optional per-Agent form remains
-// available for legacy links and existing installations.
-export function WecomTab({ installationId }: { installationId?: string } = {}) {
+// Adding a new installation flows through the Agent detail page: the install
+// path is per-agent (each Patchbay agent gets exactly one bot — the
+// (workspace_id, agent_id, channel_type) UNIQUE in channel_installation), so
+// asking the user to pick an agent here would re-create that page's picker.
+export function WecomTab() {
   const { t } = useT("settings");
   const wsId = useWorkspaceId();
   const qc = useQueryClient();
@@ -60,12 +60,12 @@ export function WecomTab({ installationId }: { installationId?: string } = {}) {
   const canManage =
     currentMember?.role === "owner" || currentMember?.role === "admin";
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     ...wecomInstallationsOptions(wsId),
     enabled: !!wsId,
   });
-  const installations = (data?.installations ?? []).filter(
-    (installation) => !installationId || installation.id === installationId,
+  const installations = (data?.installations ?? []).map((installation) =>
+    isError ? { ...installation, runtime: undefined } : installation,
   );
   const configured = data?.configured === true;
   const installSupported = data?.install_supported === true;
@@ -88,6 +88,19 @@ export function WecomTab({ installationId }: { installationId?: string } = {}) {
     } finally {
       setDisconnecting(false);
     }
+  }
+
+  if (isError && !data) {
+    return (
+      <div role="alert" className="space-y-2">
+        <p className="text-caption text-muted-foreground">
+          {t(($) => $.page.connection_status.unavailable)}
+        </p>
+        <Button variant="outline" size="sm" onClick={() => void refetch()}>
+          {t(($) => $.page.connection_status.retry)}
+        </Button>
+      </div>
+    );
   }
 
   return (
@@ -117,7 +130,7 @@ export function WecomTab({ installationId }: { installationId?: string } = {}) {
         </Card>
       ) : (
         <section className="space-y-3">
-          <h2 className="text-body font-semibold">{t(($) => $.wecom.connected_bots)}</h2>
+          <h2 className="text-body font-semibold">{t(($) => $.wecom.installed_bots)}</h2>
           {isLoading ? (
             <Card>
               <CardContent>
@@ -194,46 +207,34 @@ function InstallationRow({
 }) {
   const { t } = useT("settings");
   const { getAgentName } = useActorName();
-  const isActive = installation.status === "active";
-  const isHealthy = isMessagingInstallationHealthy(installation);
-  const agentName = installation.agent_id
-    ? getAgentName(installation.agent_id)
-    : t(($) => $.page.integrations_workspace_hub);
+  const isInstalled = installation.status === "installed";
+  const agentName = getAgentName(installation.agent_id);
   return (
     <div className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
       <div className="flex items-start gap-3">
-        {installation.agent_id ? (
-          <ActorAvatar
-            actorType="agent"
-            actorId={installation.agent_id}
-            size="lg"
-            enableHoverCard
-            profileLink
-          />
-        ) : (
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#07C160]/10">
-            <WecomMark className="h-5 w-5" />
-          </span>
-        )}
+        <ActorAvatar
+          actorType="agent"
+          actorId={installation.agent_id}
+          size="lg"
+          enableHoverCard
+          profileLink
+        />
         <div className="space-y-1">
+          <MessagingConnectionStatus installation={installation} />
           <p className="text-body font-medium">
             {agentName}
-            {!isActive ? (
+            {!isInstalled && (
               <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
                 {t(($) => $.wecom.revoked_badge)}
               </span>
-            ) : !isHealthy ? (
-              <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
-                {t(($) => $.page.integrations_status)}
-              </span>
-            ) : null}
+            )}
           </p>
           <p className="text-micro text-muted-foreground">
             {t(($) => $.wecom.bot_id_label, { botId: installation.bot_id })}
           </p>
         </div>
       </div>
-      {canManage && isActive && (
+      {canManage && isInstalled && (
         <Button variant="outline" size="sm" onClick={onDisconnect}>
           <Trash2 className="h-3 w-3" />
           {t(($) => $.wecom.disconnect)}
@@ -249,7 +250,7 @@ function InstallationRow({
 // its long-connection secret from the WeCom admin console.
 // Visibility:
 //   1. Non-owner/admin viewers see nothing (the backend gates install/revoke).
-//   2. If this agent already has an active installation, show the connected
+//   2. If this agent already has an installed installation, show the connected
 //      badge.
 //   3. Otherwise the Connect CTA shows whenever install is available.
 export function WecomAgentBindButton({
@@ -274,7 +275,7 @@ export function WecomAgentBindButton({
   const [botName, setBotName] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const { data: listing } = useQuery({
+  const { data: listing, isError: installationQueryFailed } = useQuery({
     ...wecomInstallationsOptions(wsId),
     enabled: !!wsId,
   });
@@ -290,25 +291,23 @@ export function WecomAgentBindButton({
 
   if (!canManage) return null;
 
-  const existing = listing?.installations.find(
+  const recordedInstallation = listing?.installations.find(
     (inst) =>
-      (agentId ? inst.agent_id === agentId : inst.agent_id === null) &&
-      inst.status === "active",
+      (agentId ? inst.agent_id === agentId : !inst.agent_id) &&
+      inst.status === "installed",
   );
+  const existing = recordedInstallation && installationQueryFailed
+    ? { ...recordedInstallation, runtime: undefined }
+    : recordedInstallation;
   if (existing) {
-    const healthy = isMessagingInstallationHealthy(existing);
     return onShowConnectedDetails ? (
       <WecomAgentBotStatusRow
+        installation={existing}
         onClick={onShowConnectedDetails}
-        healthy={healthy}
         className={className}
       />
     ) : (
-      <WecomAgentBotConnectedBadge
-        installation={existing}
-        healthy={healthy}
-        className={className}
-      />
+      <WecomAgentBotInstalledControls installation={existing} className={className} />
     );
   }
 
@@ -325,7 +324,7 @@ export function WecomAgentBindButton({
   async function handleSubmit() {
     const bot_id = botId.trim();
     const secretTrimmed = secret.trim();
-    if (submitting || !bot_id || !secretTrimmed) return;
+    if (submitting || !wsId || !bot_id || !secretTrimmed) return;
     setSubmitting(true);
     try {
       await api.registerWecomBYO(wsId, agentId, {
@@ -392,6 +391,7 @@ export function WecomAgentBindButton({
         variant="outline"
         size="sm"
         onClick={() => setDialogOpen(true)}
+        disabled={!wsId}
         title={
           agentName
             ? t(($) => $.wecom.bind_button_title, { agent: agentName })
@@ -493,12 +493,12 @@ export function WecomAgentBindButton({
 }
 
 function WecomAgentBotStatusRow({
+  installation,
   onClick,
-  healthy,
   className,
 }: {
+  installation: WecomInstallation;
   onClick: () => void;
-  healthy: boolean;
   className?: string;
 }) {
   const { t } = useT("settings");
@@ -512,29 +512,18 @@ function WecomAgentBotStatusRow({
       )}
       data-testid="wecom-agent-bot-status"
     >
-      <span
-        className={cn(
-          "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
-          healthy ? "bg-emerald-500" : "bg-amber-500",
-        )}
-      />
-      <span className="truncate">
-        {healthy
-          ? t(($) => $.wecom.agent_bot_connected_label)
-          : t(($) => $.page.integrations_status)}
-      </span>
+      <span className="truncate">{t(($) => $.wecom.section_title)}</span>
+      <MessagingConnectionStatus installation={installation} compact />
       <ChevronRight className="ml-auto h-3.5 w-3.5 shrink-0" />
     </button>
   );
 }
 
-function WecomAgentBotConnectedBadge({
+function WecomAgentBotInstalledControls({
   installation,
-  healthy,
   className,
 }: {
   installation: WecomInstallation;
-  healthy: boolean;
   className?: string;
 }) {
   const { t } = useT("settings");
@@ -564,22 +553,13 @@ function WecomAgentBotConnectedBadge({
   return (
     <div
       className={cn("space-y-2", className)}
-      data-testid="wecom-agent-bot-connected"
+      data-testid="wecom-agent-bot-installed"
     >
       <div className="flex items-center justify-between gap-3">
         <span className="inline-flex min-w-0 items-center gap-2 text-caption text-muted-foreground">
-          <span
-            className={cn(
-              "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
-              healthy ? "bg-emerald-500" : "bg-amber-500",
-            )}
-          />
           <span className="truncate">
-            {healthy
-              ? t(($) => $.wecom.agent_bot_connected_label_with_id, {
-                  botId: installation.bot_id,
-                })
-              : t(($) => $.page.integrations_status)}
+            <MessagingConnectionStatus installation={installation} compact />
+            <span className="ml-2">{installation.bot_id}</span>
           </span>
         </span>
         <Button

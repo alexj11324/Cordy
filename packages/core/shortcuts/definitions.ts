@@ -9,6 +9,7 @@ export type ShortcutActionId =
   | "openSearch"
   | "createIssue"
   | "toggleSidebar"
+  | "toggleRightSidebar"
   | "toggleChat"
   | "findInIssue"
   | "openThreadNav"
@@ -80,6 +81,12 @@ export const SHORTCUT_ACTIONS: readonly ShortcutActionDefinition[] = [
   { id: "openSearch", category: "general", defaultShortcut: primary("K"), allowInEditable: true },
   { id: "createIssue", category: "general", defaultShortcut: createShortcutChord("C"), allowInEditable: false },
   { id: "toggleSidebar", category: "general", defaultShortcut: primary("B"), allowInEditable: false },
+  {
+    id: "toggleRightSidebar",
+    category: "general",
+    defaultShortcut: primary("/"),
+    allowInEditable: false,
+  },
   // Mod+J follows the "toggle a docked panel" convention, and is one of the few
   // letters this module's own policy leaves free on every platform and runtime:
   // it is neither app-owned (PRIMARY_RESERVED_KEYS) nor browser-owned
@@ -312,7 +319,7 @@ const PRIMARY_RESERVED_KEYS = new Set([
 // new tab/window, bookmark, view source. A web page cannot reliably own
 // them, but the Electron renderer receives the bare primary chords as plain
 // keydowns — neither Electron's default menu nor the desktop shell binds
-// any of them — so exactly those are recordable on desktop (PB-4457).
+// any of them — so exactly those are recordable on desktop (MUL-4457).
 // Variants with extra modifiers stay reserved on both runtimes: several
 // belong to the OS or window manager (Option+Cmd+D toggles the macOS Dock,
 // Ctrl+Alt+T opens a terminal on common Linux desktops), which even the

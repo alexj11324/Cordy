@@ -23,9 +23,9 @@ describe("mobile Agent thread locale resources", () => {
   });
 
   it("provides localized labels for public task event steps", () => {
-    expect(
-      formatAgentThreadCopy(en.process_steps_other, { count: "2" }),
-    ).toBe("2 steps");
+    expect(formatAgentThreadCopy(en.process_steps_other, { count: "2" })).toBe(
+      "2 steps",
+    );
     expect(en.tool_fallback).toBe("Tool");
     expect(en.tool_result_ready).toBe("result ready");
   });

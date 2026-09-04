@@ -10,8 +10,11 @@ import { useIssuesRealtime } from "@/data/realtime/use-issues-realtime";
 import { useMyIssuesRealtime } from "@/data/realtime/use-my-issues-realtime";
 import { useChatSessionsRealtime } from "@/data/realtime/use-chat-sessions-realtime";
 import { useProjectsRealtime } from "@/data/realtime/use-projects-realtime";
+import { useDependencyGraphsRealtime } from "@/data/realtime/use-dependency-graphs-realtime";
 import { usePinsRealtime } from "@/data/realtime/use-pins-realtime";
 import { usePresenceRealtime } from "@/data/realtime/use-presence-realtime";
+import { useChannelsRealtime } from "@/data/realtime/use-channels-realtime";
+import { useWorkProductsRealtime } from "@/data/realtime/use-work-products-realtime";
 import { useWorkspacePresencePrefetch } from "@/lib/use-workspace-presence-prefetch";
 import { ModalCloseButton } from "@/components/ui/modal-close-button";
 import { useNewIssueDraftResetOnWorkspaceChange } from "@/data/stores/new-issue-draft-store";
@@ -78,6 +81,7 @@ function RealtimeSubscriptions() {
   useMyIssuesRealtime();
   useChatSessionsRealtime();
   useProjectsRealtime();
+  useDependencyGraphsRealtime();
   usePinsRealtime();
   // Presence: warm the three queries up front so avatars don't flash a
   // dotless first render, and listen for daemon/agent/task events to keep
@@ -85,12 +89,14 @@ function RealtimeSubscriptions() {
   // the deliberately-skipped high-frequency events.
   useWorkspacePresencePrefetch();
   usePresenceRealtime();
+  useChannelsRealtime();
+  useWorkProductsRealtime();
   return null;
 }
 
 /**
  * Workspace context layout. Reads the slug from the URL (the route is the
- * source of truth — see apps/mobile/AGENTS.md "Behavioral parity"), validates
+ * source of truth — see apps/mobile/CLAUDE.md "Behavioral parity"), validates
  * membership against the workspaces list, then syncs id+slug into the
  * Zustand store so ApiClient.fetch can read the slug synchronously when
  * injecting the X-Workspace-Slug header.
@@ -113,7 +119,7 @@ export default function WorkspaceLayout() {
   }, [matched, setCurrentWorkspace]);
 
   // Wipe cross-route Zustand draft stores whenever the active workspace
-  // changes — a draft picked under workspace A (executor id, draft
+  // changes — a draft picked under workspace A (owner/executor id, draft
   // session id, etc.) is invalid in workspace B and must not leak.
   useNewIssueDraftResetOnWorkspaceChange(matched?.id ?? null);
   useNewProjectDraftResetOnWorkspaceChange(matched?.id ?? null);
@@ -146,6 +152,10 @@ export default function WorkspaceLayout() {
             headerBackTitle: "Back",
           }}
         />
+        {/* Title and back label come from the route itself so they follow
+            the account language; a static title here would win the first
+            frame and flash English. */}
+        <Stack.Screen name="task-graph" />
         <Stack.Screen
           name="project/[id]/edit"
           options={{
@@ -183,36 +193,27 @@ export default function WorkspaceLayout() {
           name="issue/[id]/picker/priority"
           options={SHEET_OPTIONS}
         />
-        {/* Experiment: executor uses iOS-native nav header + UISearchController
+        {/* Role pickers use iOS-native nav headers + UISearchController
             instead of the body-rendered header pattern in SHEET_OPTIONS.
             Eliminates the #3634 overlap class of bugs and the focus-loss
             footgun of a custom TextInput inside ListHeaderComponent. The
             route file wires `headerSearchBarOptions` via setOptions. If this
             proves out, propagate to label / project / other search pickers
-            and update AGENTS.md Lesson 6 with a carve-out. */}
-        <Stack.Screen
-          name="issue/[id]/picker/executor"
-          options={{
-            ...SHEET_OPTIONS,
-            headerShown: true,
-            title: "Executor",
-          }}
-        />
+            and update CLAUDE.md Lesson 6 with a carve-out. */}
         <Stack.Screen
           name="issue/[id]/picker/owner"
           options={{
             ...SHEET_OPTIONS,
             headerShown: true,
-            title: "Owner",
           }}
         />
         <Stack.Screen
+          name="issue/[id]/picker/executor"
+          options={{ ...SHEET_OPTIONS, headerShown: true }}
+        />
+        <Stack.Screen
           name="issue/[id]/picker/reviewer"
-          options={{
-            ...SHEET_OPTIONS,
-            headerShown: true,
-            title: "Reviewer",
-          }}
+          options={{ ...SHEET_OPTIONS, headerShown: true }}
         />
         <Stack.Screen
           name="issue/[id]/picker/label"
@@ -276,28 +277,19 @@ export default function WorkspaceLayout() {
           options={SHEET_OPTIONS}
         />
         <Stack.Screen
-          name="new-issue-picker/executor"
-          options={{
-            ...SHEET_OPTIONS,
-            headerShown: true,
-            title: "Executor",
-          }}
-        />
-        <Stack.Screen
           name="new-issue-picker/owner"
           options={{
             ...SHEET_OPTIONS,
             headerShown: true,
-            title: "Owner",
           }}
         />
         <Stack.Screen
+          name="new-issue-picker/executor"
+          options={{ ...SHEET_OPTIONS, headerShown: true }}
+        />
+        <Stack.Screen
           name="new-issue-picker/reviewer"
-          options={{
-            ...SHEET_OPTIONS,
-            headerShown: true,
-            title: "Reviewer",
-          }}
+          options={{ ...SHEET_OPTIONS, headerShown: true }}
         />
         <Stack.Screen
           name="new-issue-picker/project"
@@ -334,6 +326,11 @@ export default function WorkspaceLayout() {
           options={{ title: "Projects", headerBackTitle: "Back" }}
         />
         <Stack.Screen
+          name="channels"
+          options={{ title: "Channels", headerBackTitle: "Back" }}
+        />
+        <Stack.Screen name="channels/new" options={SHEET_OPTIONS} />
+        <Stack.Screen
           name="more/agents"
           options={{ title: "Agents", headerBackTitle: "Back" }}
         />
@@ -352,6 +349,10 @@ export default function WorkspaceLayout() {
         <Stack.Screen
           name="more/settings/notifications"
           options={{ title: "Notifications", headerBackTitle: "Settings" }}
+        />
+        <Stack.Screen
+          name="more/settings/wecom"
+          options={{ title: "WeCom", headerBackTitle: "Settings" }}
         />
         <Stack.Screen
           name="new-issue"

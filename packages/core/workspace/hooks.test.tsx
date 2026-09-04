@@ -98,7 +98,7 @@ describe("useActorName", () => {
     vi.restoreAllMocks();
   });
 
-  // PB-4985 regression: while the member/agent/team directory queries are
+  // MUL-4985 regression: while the member/agent/team directory queries are
   // still loading, `data` is undefined. A `= []` default allocated a fresh
   // array every render, so `getActorName` (memoized on those arrays) changed
   // identity on every render. Consumers that list `getActorName` in their own

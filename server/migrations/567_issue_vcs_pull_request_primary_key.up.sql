@@ -1,0 +1,1 @@
+ALTER TABLE issue_vcs_pull_request DROP CONSTRAINT IF EXISTS issue_vcs_pull_request_pkey;

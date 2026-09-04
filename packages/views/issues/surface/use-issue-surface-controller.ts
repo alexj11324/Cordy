@@ -15,7 +15,6 @@ import type {
 } from "@patchbay/core/types";
 import { workspaceWorkingAgentsOptions } from "@patchbay/core/agents";
 import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useModalStore } from "@patchbay/core/modals";
 import { ALL_STATUSES } from "@patchbay/core/issues/config";
 import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
 import { statusFilterColumns } from "@patchbay/core/issues";
@@ -36,7 +35,6 @@ import { propertyIdFromViewKey } from "@patchbay/core/issues/stores/view-store";
 import { useViewStore } from "@patchbay/core/issues/stores/view-store-context";
 import type { IssueFilters } from "../utils/filter";
 import type { ChildProgress } from "../components/list-row";
-import { runConfirmIntent } from "../actions/run-confirm-gate";
 import { IssueTableExportIntegrityError } from "../components/table-view-model";
 import type { IssueSurfaceMode } from "./types";
 import type { IssueSurfaceActions } from "./actions-context";
@@ -47,7 +45,6 @@ import {
 import type { IssueCreateDefaults } from "./types";
 import {
   useIssueSurfaceActions,
-  type MoveIssueCallbacks,
   type MoveIssueUpdates,
 } from "./use-issue-surface-actions";
 import { useIssueSurfaceData } from "./use-issue-surface-data";
@@ -73,14 +70,13 @@ export interface IssueSurfaceController {
   createDefaults: IssueCreateDefaults;
   viewMode: IssueSurfaceMode;
   allowGantt: boolean;
-  allowGraph: boolean;
   surfaceIssues: Issue[];
   projectIssues: Issue[];
   issues: Issue[];
   swimlaneIssues: Issue[];
   /** Agents currently working inside THIS surface, under the surface's active
    *  filters — the header chip's count, so clicking it leaves exactly these
-   *  agents' rows (PB-4884, PB-5525). `undefined` means the projection has
+   *  agents' rows (MUL-4884, MUL-5525). `undefined` means the projection has
    *  not resolved yet; the chip renders an indeterminate state rather than a
    *  number it cannot stand behind. */
   workingAgents: WorkingAgentSummary[] | undefined;
@@ -89,11 +85,9 @@ export interface IssueSurfaceController {
   ganttIssues: Issue[];
   visibleStatuses: IssueStatusCategory[];
   hiddenStatuses: IssueStatusCategory[];
-  /** Hidden rows that are display-hidden, rather than excluded by a status filter. */
-  droppableHiddenStatuses: IssueStatusCategory[];
   /** Exact server counts plus cursor controls for List/status Board. */
   statusPagination?: IssueStatusPagination;
-  /** Exact group catalog plus independent row cursors for Executor/Property
+  /** Exact group catalog plus independent row cursors for Assignee/Property
    * Board and compound Swimlane cells. */
   groupBranches?: IssueGroupBranches;
   activeFilters: Omit<IssueFilters, "statusFilters">;
@@ -129,7 +123,7 @@ export interface IssueSurfaceController {
   /**
    * The status catalog a CUSTOM status filter depends on failed to load. The
    * filter cannot be honoured, so the surface shows a retryable error rather
-   * than an unexplained empty board. (PB-6243)
+   * than an unexplained empty board. (MUL-6243)
    */
   isStatusCatalogError: boolean;
   /** Re-runs the failed catalog request behind {@link isStatusCatalogError}. */
@@ -138,8 +132,8 @@ export interface IssueSurfaceController {
   moveIssue: (
     issueId: string,
     updates: MoveIssueUpdates,
-    callbacks?: MoveIssueCallbacks,
-  ) => boolean;
+    onSettled?: () => void,
+  ) => void;
 }
 
 function issueDateFilterToApiParams(filter: IssueDateFilter | null) {
@@ -181,7 +175,7 @@ function useDebouncedTableSearch(value: string, delayMs = 250) {
  * for as long as the query has no data — which is the whole window right after
  * a workspace switch. Downstream that array is a memo dependency, so the empty
  * default alone was enough to rebuild the derived Sets, the table query spec,
- * and the branch query list once per render (PB-5477). */
+ * and the branch query list once per render (MUL-5477). */
 const EMPTY_LIST: never[] = [];
 
 /**
@@ -239,10 +233,10 @@ export function useIssueSurfaceController({
   const cardProperties = useViewStore((s) => s.cardProperties);
   const swimlaneGrouping = useViewStore((s) => s.swimlaneGrouping);
   const tableColumns = useViewStore((s) => s.tableColumns);
+  const tableGrouping = useViewStore((s) => s.tableGrouping);
   const listCollapsedStatuses = useViewStore((s) => s.listCollapsedStatuses);
   const hiddenStatusCategories = useViewStore((s) => s.hiddenStatusCategories);
   const catalog = useIssueStatuses(wsId);
-  const openModal = useModalStore((state) => state.open);
   const { hasCustomStatuses } = catalog;
   const [tableSearch, setTableSearch] = useState("");
 
@@ -347,7 +341,7 @@ export function useIssueSurfaceController({
    * A custom-status filter cannot be routed until the catalog answers. While it
    * is pending the surface must HOLD ITS LOADING STATE, and on failure it must
    * surface a retryable error — not fetch zero branches and render an empty
-   * board, which is what "return no columns" alone produced. (PB-6243)
+   * board, which is what "return no columns" alone produced. (MUL-6243)
    */
   const statusFilterPending = statusColumnsForFilters.state === "pending";
   const statusFilterError = statusColumnsForFilters.state === "error";
@@ -360,19 +354,11 @@ export function useIssueSurfaceController({
    */
   const statusFilterUnresolved = statusFilterPending || statusFilterError;
 
-  const droppableHiddenStatuses = useMemo<IssueStatusCategory[]>(() => {
-    if (statusFilters.length === 0) return hiddenStatusCategories;
-    if (statusColumnsForFilters.state !== "resolved") return [];
-    return hiddenStatusCategories.filter((status) =>
-      statusColumnsForFilters.columns.has(status),
-    );
-  }, [hiddenStatusCategories, statusColumnsForFilters, statusFilters]);
-
   // Columns are CATEGORIES. Two independent things narrow them, and conflating
   // them is what let "hide the Backlog column" also drop every custom status in
   // other categories: `hiddenStatusCategories` is display state, `statusFilters`
   // is a filter over concrete status KEYS which we map back to the columns those
-  // keys land in. (PB-6243)
+  // keys land in. (MUL-6243)
   const serverStatuses = useMemo<IssueStatusCategory[]>(
     () => {
       const selected =
@@ -511,9 +497,8 @@ export function useIssueSurfaceController({
         : [],
     );
     // The picker presents owners and executors as one actor set (OR). The
-    // table API's `owners` and `executors` fields are independent predicates
-    // (AND), so use its explicit union field whenever a selection crosses the
-    // role boundary or combines an owner with the no-executor bucket.
+    // table API's role-specific fields are independent predicates (AND), so
+    // use the explicit union when a selection crosses the role boundary.
     const actorUnion = executorFilters.map((filter) => ({
       type: filter.type,
       id: filter.id,
@@ -692,11 +677,12 @@ export function useIssueSurfaceController({
         // a contract this feature introduced, so it is only sent once the
         // catalog confirms this workspace HAS a custom status — which can only
         // be true if the fleet already serves this version. Otherwise the
-        // swimlane keeps the exact request it made before. (PB-6243)
+        // swimlane keeps the exact request it made before. (MUL-6243)
         secondary: hasCustomStatuses ? "status_category" : "status",
         secondary_values: serverStatuses,
       };
     }
+    if (effectiveGrouping === "project") return { kind: "project" };
     const propertyId = propertyIdFromViewKey(effectiveGrouping);
     if (propertyId) {
       return {
@@ -803,6 +789,11 @@ export function useIssueSurfaceController({
     loadProjects:
       cardProperties.project ||
       (usesTable && tableColumns.some((column) => column.key === "project")) ||
+      // Project group headers resolve their title through the projects query,
+      // so grouping by project has to load it even when no card/column shows
+      // the project itself.
+      (usesTable && tableGrouping === "project") ||
+      (effectiveViewMode === "board" && effectiveGrouping === "project") ||
       (effectiveViewMode === "swimlane" && swimlaneGrouping === "project"),
   });
 
@@ -877,35 +868,9 @@ export function useIssueSurfaceController({
     return issues;
   }, [tableQuerySpec]);
 
-  const { actions, openCreateIssue, moveIssue: commitMoveIssue } = useIssueSurfaceActions({
+  const { actions, openCreateIssue, moveIssue } = useIssueSurfaceActions({
     createDefaults: resolvedCreateDefaults,
   });
-  const moveIssue = useCallback(
-    (
-      issueId: string,
-      updates: MoveIssueUpdates,
-      callbacks?: MoveIssueCallbacks,
-    ) => {
-      const issue = data.issues.find((candidate) => candidate.id === issueId);
-      const intent = issue && runConfirmIntent(issue, updates, catalog);
-      if (intent?.mode === "review" || intent?.mode === "review-return") {
-        const { before_id, after_id, ...fields } = updates;
-        openModal("issue-run-confirm", {
-          ...intent,
-          additionalUpdates: {
-            ...fields,
-            move_intent: { before_id, after_id },
-          },
-          onSuccess: callbacks?.onSuccess,
-          onError: callbacks?.onError,
-        });
-        return false;
-      }
-      commitMoveIssue(issueId, updates, callbacks);
-      return true;
-    },
-    [catalog, commitMoveIssue, data.issues, openModal],
-  );
 
   const { ganttWorkingScopeIssues: _ganttWorkingScope, ...surfaceData } = data;
 
@@ -915,10 +880,8 @@ export function useIssueSurfaceController({
     createDefaults: resolvedCreateDefaults,
     viewMode: effectiveViewMode,
     allowGantt: allowedModes.has("gantt") && !!projectId,
-    allowGraph: allowedModes.has("graph"),
     ...surfaceData,
     workingAgents,
-    droppableHiddenStatuses,
     hasActiveFilters,
     statusPagination: usesServerStatusSurface
       ? data.statusPagination

@@ -6,19 +6,19 @@ import { InboxListSchema } from "./schemas";
  *
  * Scope, stated precisely because the name of this file used to overclaim:
  * these are hand-written fixtures run against `InboxListSchema`. They pin how
- * this client REACTS to a given payload. They cannot fail when the Rust server
- * starts sending something new — nothing here executes server code.
+ * this client REACTS to a given payload. They cannot fail when the API producer
+ * starts sending something new — nothing here executes the producer.
  *
- * The matching server-side contract is covered independently by the Rust
- * notification and inbox modules.
+ * The matching producer-side guarantee is structural rather than exercised by
+ * this test: every `details` value in the API contract is a string.
  *
- * Why both halves exist: during PB-5483 a new inbox type was added and the
+ * Why both halves exist: during MUL-5483 a new inbox type was added and the
  * mobile label map was updated so `tsc` passed — but a NUMBER went into
  * `details.child_count`, and `details` is `z.record(z.string(), z.string())`.
  * Because the endpoint parses an ARRAY, one bad row fails the whole parse and
  * `listInbox` falls back to `EMPTY_INBOX_LIST`: the entire mobile inbox
  * renders empty, not just that row. The blast radius is what these tests
- * document.
+ * document; the compile-time type is what prevents it.
  */
 describe("inbox list schema", () => {
   it("parses a row shaped like the documented server payload", () => {
@@ -79,7 +79,7 @@ describe("inbox list schema", () => {
   });
 
   it("renders an unknown server type instead of dropping the row", () => {
-    // Mirrors the root AGENTS.md API-compatibility rule and mobile's own
+    // Mirrors the root CLAUDE.md API-compatibility rule and mobile's own
     // "render every inbox type, never silently drop a category" parity rule: a
     // type this build has never heard of must still parse.
     const future = {
@@ -91,5 +91,24 @@ describe("inbox list schema", () => {
 
     const parsed = InboxListSchema.safeParse([future]);
     expect(parsed.success).toBe(true);
+  });
+
+  it("preserves reviewer details on review requests", () => {
+    const reviewRequest = {
+      id: "inbox-review",
+      recipient_type: "agent",
+      recipient_id: "agent-2",
+      type: "review_requested",
+      details: {
+        new_reviewer_type: "agent",
+        new_reviewer_id: "agent-2",
+      },
+    };
+
+    const parsed = InboxListSchema.safeParse([reviewRequest]);
+    expect(parsed.success).toBe(true);
+    expect(
+      parsed.success && parsed.data[0]?.details?.new_reviewer_id,
+    ).toBe("agent-2");
   });
 });

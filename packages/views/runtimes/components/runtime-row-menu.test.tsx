@@ -156,6 +156,7 @@ function makeAdapter(
     back: vi.fn(),
     pathname: "/ws-1/runtimes",
     searchParams: new URLSearchParams(),
+    hash: "",
     getShareableUrl: (p) => p,
     ...overrides,
   };
@@ -190,7 +191,7 @@ describe("runtime list row menu", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("renders the kebab menu for an online local runtime (self-healing is no longer hidden)", () => {
-    // PB-3352: hiding the kebab on a self-healing row left owners reading
+    // MUL-3352: hiding the kebab on a self-healing row left owners reading
     // it as a missing permission. The action stays available; the dialog
     // surfaces the self-heal warning instead.
     renderActionsCell(
@@ -236,10 +237,10 @@ describe("runtime list row menu", () => {
     );
 
     fireEvent.click(screen.getByLabelText("Row actions"));
-    fireEvent.click(screen.getByText("Edit custom device"));
+    fireEvent.click(screen.getByText("Edit custom runtime"));
 
     expect(
-      screen.getByRole("heading", { name: "Edit custom device" }),
+      screen.getByRole("heading", { name: "Edit custom runtime" }),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Display name")).toHaveValue("Custom Codex");
   });

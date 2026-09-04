@@ -100,7 +100,7 @@ export function buildIssueSurfaceQueryPlan(
           scope.relation === "assigned"
             ? scope.actorType === "member"
               ? { owner_type: "member", owner_id: scope.actorId }
-              : { executor_type: "agent", executor_id: scope.actorId }
+              : { executor_type: scope.actorType, executor_id: scope.actorId }
             : {},
       };
     case "team":

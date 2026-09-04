@@ -28,7 +28,7 @@ function makeIssue(title: string): Issue {
     id: "issue-1",
     workspace_id: "ws-1",
     number: 1,
-    identifier: "PB-1",
+    identifier: "MUL-1",
     title,
     description: null,
     status: "todo",
@@ -178,7 +178,7 @@ describe("InlineTitle", () => {
     // The identifier is inside the title cell and not focusable, so clicking
     // it blurs the input (→ commit) and is the click that previously leaked
     // into row navigation.
-    await user.click(screen.getByText("PB-1"));
+    await user.click(screen.getByText("MUL-1"));
 
     expect(onUpdate).toHaveBeenCalledWith({ title: "Renamed" });
     expect(screen.queryByRole("textbox")).toBeNull();
@@ -213,7 +213,7 @@ describe("InlineTitle", () => {
   it("renders the agent-activity badge for the row's issue, between the identifier and the title", () => {
     render(<Harness title="Original" />);
 
-    const identifier = screen.getByText("PB-1");
+    const identifier = screen.getByText("MUL-1");
     const badge = screen.getByTestId("issue-agent-activity");
     const titleButton = screen.getByRole("button", { name: "Original" });
 

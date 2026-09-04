@@ -53,7 +53,7 @@ describe("resolveRemoteApiUrl", () => {
 
   // Same defect as the browser base, same fix: the rewrite target already
   // appends the full incoming pathname (`/api/**`, `/uploads/**`, `/ws`), so a
-  // configured `/api` suffix would double it (PB-5922).
+  // configured `/api` suffix would double it (MUL-5922).
   it("strips a trailing /api from server-side rewrite targets", () => {
     expect(
       resolveRemoteApiUrl({ REMOTE_API_URL: "http://backend:8080/api" }),
@@ -213,6 +213,7 @@ describe("browser runtime URLs", () => {
 describe("runtimeRewriteDestination", () => {
   it("keeps same-origin fallback when no runtime upstreams are configured", () => {
     expect(runtimeRewriteDestination("/api/config", {})).toBeUndefined();
+    expect(runtimeRewriteDestination("/api/v1/plugin/context", {})).toBeUndefined();
     expect(runtimeRewriteDestination("/auth/send-code", {})).toBeUndefined();
     expect(
       runtimeRewriteDestination("/uploads/workspaces/a.png", {}),
@@ -244,6 +245,11 @@ describe("runtimeRewriteDestination", () => {
       }),
     ).toBe("http://backend:8080/api/config");
     expect(
+      runtimeRewriteDestination("/api/v1/plugin/issues/PB-6581", {
+        REMOTE_API_URL: "http://backend:8080",
+      }),
+    ).toBe("http://backend:8080/api/v1/plugin/issues/PB-6581");
+    expect(
       runtimeRewriteDestination("/auth/send-code", {
         REMOTE_API_URL: "http://backend:8080",
       }),
@@ -268,6 +274,27 @@ describe("runtimeRewriteDestination", () => {
         DOCS_URL: "http://patchbay-docs:3000",
       }),
     ).toBe("http://patchbay-docs:3000/docs/zh/agents");
+  });
+
+  it("maps the CLI health probe to the runtime API origin", () => {
+    expect(
+      runtimeRewriteDestination("/health", {
+        REMOTE_API_URL: "http://backend:8080",
+      }),
+    ).toBe("http://backend:8080/health");
+    expect(runtimeRewriteDestination("/health", {})).toBeUndefined();
+    // Probe variants stay unproxied: /healthz is the k8s alias and /readyz
+    // the deep check — both go to the backend directly in every topology.
+    expect(
+      runtimeRewriteDestination("/healthz", {
+        REMOTE_API_URL: "http://backend:8080",
+      }),
+    ).toBeUndefined();
+    expect(
+      runtimeRewriteDestination("/readyz", {
+        REMOTE_API_URL: "http://backend:8080",
+      }),
+    ).toBeUndefined();
   });
 
   it("maps websocket paths to the runtime API origin", () => {

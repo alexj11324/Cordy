@@ -7,41 +7,11 @@ import enChat from "../../locales/en/chat.json";
 import enEditor from "../../locales/en/editor.json";
 
 // Uploads flow through the module-level coordinator, which calls
-// `api.uploadFile(file, ctx, signal)` (PB-5181 L2).
+// `api.uploadFile(file, ctx, signal)` (MUL-5181 L2).
 const mockApiUploadFile = vi.hoisted(() => vi.fn());
 
 vi.mock("@patchbay/core/api", () => ({
   api: { uploadFile: mockApiUploadFile },
-}));
-
-vi.mock("@lobehub/ui/es/Flex/index", () => ({
-  Flexbox: ({
-    children,
-    className,
-    style,
-    ...rest
-  }: React.PropsWithChildren<{
-    className?: string;
-    style?: React.CSSProperties;
-    [key: string]: unknown;
-  }>) => {
-    const dom: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(rest)) {
-      if (
-        key.startsWith("data-") ||
-        key.startsWith("aria-") ||
-        key === "id" ||
-        key === "role"
-      ) {
-        dom[key] = value;
-      }
-    }
-    return (
-      <div className={className} style={style} {...dom}>
-        {children}
-      </div>
-    );
-  },
 }));
 
 /**
@@ -55,7 +25,7 @@ vi.mock("@lobehub/ui/es/Flex/index", () => ({
  * mocked here (as in editor/content-editor.test.tsx); everything from
  * ContentEditor upward is the real component.
  *
- * The bug being pinned (PB-4864 review): one editor instance serves every
+ * The bug being pinned (MUL-4864 review): one editor instance serves every
  * chat draft. Typing in session A arms a debounce; switching to session B
  * before it fires means the timer runs with B's `draftKey` in scope, filing
  * A's document into B's draft — breaking "existing sessions keep independent
@@ -359,7 +329,7 @@ describe("ChatInput draft isolation across a composer switch (real debounce)", (
   });
 
   it("keeps a New Chat draft intact when only the agent changes", () => {
-    // The PB-4864 headline behavior, verified through the real debounce:
+    // The MUL-4864 headline behavior, verified through the real debounce:
     // switching agent does not move draftKey, so there is nothing to flush and
     // nothing to lose.
     const { rerender } = render(element());

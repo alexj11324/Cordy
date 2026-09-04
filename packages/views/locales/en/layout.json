@@ -2,18 +2,18 @@
   "nav": {
     "inbox": "Inbox",
     "chat": "Chat",
-    "channels": "Channels",
     "my_issues": "My Issues",
     "issues": "Issues",
-    "task_graph": "Task Graph",
+    "task_graph": "Dependency Graph",
     "projects": "Projects",
+    "work_products": "Work Products",
     "automations": "Automation",
     "agents": "Agents",
-    "teams": "Team",
+    "teams": "Teams",
+    "channels": "Channels",
     "usage": "Analytics",
-    "runtimes": "Devices",
+    "runtimes": "Runtimes",
     "skills": "Skills",
-    "integrations": "Integrations",
     "settings": "Settings"
   },
   "tab": {
@@ -25,7 +25,7 @@
     "team": "Team",
     "skill": "Skill",
     "machine": "Machine",
-    "runtime": "Device",
+    "runtime": "Runtime",
     "attachment": "Attachment",
     "create_agent": "Create Agent",
     "unknown": "Unknown page"

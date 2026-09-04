@@ -73,12 +73,13 @@ function boldFenced(text: string): ReactNode {
 
 type RunConfirmData = {
   issueIds?: string[];
-  // `assign` gives the issue an agent/team owner; `promote` moves an
-  // already-owned issue out of the backlog category; `review` atomically
-  // changes status and owner so review work cannot be left unclaimed;
-  // `review-return` confirms the durable handoff back to that owner.
+  // The two issue writes that hand work to an agent, and the only two that
+  // confirm. `assign` gives the issue an agent/team owner; `promote` moves an
+  // already-owned issue out of the backlog category, which starts the run on
+  // its own (RunSourceStatus). Batch status changes still apply directly
+  // (MUL-4155) — `promote` is the single-issue picker path only (MUL-6463).
   mode?: "assign" | "promote" | "review" | "review-return";
-  /** promote/review/review-return only: the status KEY the issue is moving to. */
+  /** promote/review/review-return only: the target status key. */
   status?: IssueStatus;
   executorType?: IssueReviewerType;
   executorId?: string;
@@ -89,7 +90,6 @@ type RunConfirmData = {
   excludedExecutors?: Array<{ type: IssueExecutorType; id: string }>;
   additionalUpdates?: Partial<Omit<UpdateIssueMutationInput, "id">>;
   issueRevision?: number;
-  /** Board-only callbacks kept in the in-memory modal store until the write settles. */
   onSuccess?: () => void;
   onError?: () => void;
 };
@@ -98,19 +98,19 @@ type RunConfirmData = {
  * Handoff confirmation for the issue writes that start agent runs.
  *
  * The rule is "dialog = you are handing this to an agent", NOT "you are
- * confirming N runs" (PB-5010). It therefore does no pre-flight prediction:
+ * confirming N runs" (MUL-5010). It therefore does no pre-flight prediction:
  * opening it fires no request, so the note box and buttons are usable on the
  * first frame. Previously it called POST /api/issues/preview-trigger on open
  * and blocked the whole dialog behind a "检查中…" spinner; because that query is
  * keyed per issue id with staleTime 0, every new issue was a guaranteed cache
  * miss and the wait was unavoidable.
  *
- * Completion is silent: the executor/status change and any run it starts
+ * Completion is silent: the assignee/status change and any run it starts
  * surface through the issue's normal updates, so the confirm adds no result
  * toast. Whether a run starts stays the server's existing decision at write
  * time. Dismissing the dialog (X / Esc / click-outside) cancels without any
- * write. Shared by single assign (1 id), batch assign (N ids), the
- * single-issue promotion out of backlog, review handoff, and review return.
+ * write. Shared by single assign (1 id), batch assign (N ids), and the
+ * single-issue promotion out of backlog.
  */
 export function RunConfirmModal({
   onClose,
@@ -145,9 +145,9 @@ export function RunConfirmModal({
   // Handoff-support verdict, resolved entirely from warm client caches
   // (useWorkspacePresencePrefetch keeps agents / teams / runtimes hot), so the
   // note box settles on the first frame with no round-trip — the same shape as
-  // the quick-create version gate. An agent executor targets its own runtime; a
+  // the quick-create version gate. An agent assignee targets its own runtime; a
   // team targets its leader's, which the team list gives us directly, so both
-  // are knowable locally. `null` means "cannot tell" (executor not in cache
+  // are knowable locally. `null` means "cannot tell" (assignee not in cache
   // yet, or no runtime bound) and leaves the box enabled: the note is a soft
   // gate, and a spurious warning is worse than a note an old daemon drops.
   const wsId = useWorkspaceId();
@@ -180,27 +180,23 @@ export function RunConfirmModal({
   }, [targetExecutorType, targetExecutorId, agents, runtimes, teams]);
 
   // Soft gate: an old runtime can't render the note. Disable the box but let
-  // the assignment proceed (PB-3375 §6.3).
+  // the assignment proceed (MUL-3375 §6.3).
   const noteDisabled = localHandoff === false;
 
   // A promotion carries the status and nothing else: the owner is already on
-  // the issue, and re-sending the same executor would turn a status write into
-  // an executor write on the server's side of the trigger predicate.
+  // the issue, and re-sending the same assignee would turn a status write into
+  // an assignee write on the server's side of the trigger predicate.
   const isPromote = d.mode === "promote" && !!d.status;
   const isSameReviewer =
     isReview &&
     ((reviewerType === d.fromExecutorType && reviewerId === d.fromExecutorId) ||
       d.excludedExecutors?.some(
-        (owner) => owner.type === reviewerType && owner.id === reviewerId,
+        (executor) => executor.type === reviewerType && executor.id === reviewerId,
       ) === true);
-  const reviewReady =
-    !isReview || (!!reviewerType && !!reviewerId && !isSameReviewer);
-  const noteApplies =
-    targetExecutorType === "agent" || targetExecutorType === "team";
+  const reviewReady = !isReview || (!!reviewerType && !!reviewerId && !isSameReviewer);
+  const noteApplies = targetExecutorType === "agent" || targetExecutorType === "team";
   const executionType =
-    d.executorType === "agent" || d.executorType === "team"
-      ? d.executorType
-      : null;
+    d.executorType === "agent" || d.executorType === "team" ? d.executorType : null;
 
   const applyTo = (extra: Partial<UpdateIssueRequest>) => {
     const base: UpdateIssueRequest = isReview
@@ -208,23 +204,16 @@ export function RunConfirmModal({
           status: d.status,
           reviewer_type: reviewerType,
           reviewer_id: reviewerId,
-          ...(d.issueRevision !== undefined
-            ? { expected_revision: d.issueRevision }
-            : {}),
+          ...(d.issueRevision !== undefined ? { expected_revision: d.issueRevision } : {}),
         }
       : isReviewReturn
-      ? {
-          status: d.status,
-          ...(d.issueRevision !== undefined
-            ? { expected_revision: d.issueRevision }
-            : {}),
-        }
-      : isPromote
-      ? { status: d.status }
-      : {
-          executor_type: executionType,
-          executor_id: d.executorId ?? null,
-        };
+        ? {
+            status: d.status,
+            ...(d.issueRevision !== undefined ? { expected_revision: d.issueRevision } : {}),
+          }
+        : isPromote
+          ? { status: d.status }
+          : { executor_type: executionType, executor_id: d.executorId ?? null };
     return { ...d.additionalUpdates, ...base, ...extra };
   };
 
@@ -251,8 +240,8 @@ export function RunConfirmModal({
         : {}),
     });
     try {
-      // Completion is silent, exactly as before: the executor and any run show
-      // up through the issue's normal executor / run-status updates, so there is
+      // Completion is silent, exactly as before: the assignee and any run show
+      // up through the issue's normal assignee / run-status updates, so there is
       // no result toast to add here. Whether a run started is the server's
       // existing decision at write time, not something this dialog reports.
       if (issueIds.length === 1) {
@@ -280,7 +269,7 @@ export function RunConfirmModal({
 
   /**
    * The configured `send` chord confirms the assignment, the same chord that
-   * creates from the issue composer (PB-5694).
+   * creates from the issue composer (MUL-5694).
    *
    * Bound on the dialog, not on the note box, because the chord means "run the
    * primary action" no matter which control has focus — and the note box is
@@ -323,10 +312,10 @@ export function RunConfirmModal({
             status: fenced(statusLabel(d.status ?? "")),
           })
       : isReviewReturn
-      ? t(($) => $.run_confirm.review_return_single, {
-          to: fenced(executorName),
-          status: fenced(statusLabel(d.status ?? "")),
-        })
+        ? t(($) => $.run_confirm.review_return_single, {
+            to: fenced(executorName),
+            status: fenced(statusLabel(d.status ?? "")),
+          })
       : isPromote
       ? t(($) => $.run_confirm.promote_single, {
           name: fenced(executorName),
@@ -341,12 +330,7 @@ export function RunConfirmModal({
   );
 
   return (
-    <Dialog
-      open
-      onOpenChange={(v) => {
-        if (!v && !submitting) onClose();
-      }}
-    >
+    <Dialog open onOpenChange={(v) => { if (!v && !submitting) onClose(); }}>
       <DialogContent onKeyDown={onDialogKeyDown}>
         <DialogHeader>
           <DialogTitle>
@@ -396,40 +380,31 @@ export function RunConfirmModal({
           </div>
         ) : null}
 
-        {/* Always mounted and always usable on the first frame — nothing about
+        {/* Always mounted and usable on the first frame — nothing about
             this box depends on a server answer. */}
-        {noteApplies ? (
-          <div className="grid gap-1.5">
-            <label className="text-body font-medium" htmlFor="handoff-note">
-              {t(($) => $.run_confirm.note_label)}
-            </label>
-            <Textarea
-              id="handoff-note"
-              value={note}
-              maxLength={MAX_HANDOFF_NOTE}
-              disabled={submitting || noteDisabled}
-              placeholder={t(($) => $.run_confirm.note_placeholder)}
-              onChange={(e) => setNote(e.target.value)}
-              rows={3}
-            />
-            {noteDisabled ? (
-              <p className="text-caption text-muted-foreground">
-                {t(($) => $.run_confirm.note_unsupported)}
-              </p>
-            ) : null}
-          </div>
-        ) : null}
+        {noteApplies ? <div className="grid gap-1.5">
+          <label className="text-body font-medium" htmlFor="handoff-note">
+            {t(($) => $.run_confirm.note_label)}
+          </label>
+          <Textarea
+            id="handoff-note"
+            value={note}
+            maxLength={MAX_HANDOFF_NOTE}
+            disabled={submitting || noteDisabled}
+            placeholder={t(($) => $.run_confirm.note_placeholder)}
+            onChange={(e) => setNote(e.target.value)}
+            rows={3}
+          />
+          {noteDisabled ? (
+            <p className="text-caption text-muted-foreground">{t(($) => $.run_confirm.note_unsupported)}</p>
+          ) : null}
+        </div> : null}
 
         {/* The only spinner left is on the button the user just pressed, and it
             reflects the write in flight — never a pre-flight check. */}
         <DialogFooter>
           {noteApplies && !isReview ? (
-            <Button
-              type="button"
-              variant="outline"
-              disabled={submitting || !reviewReady}
-              onClick={() => submit(true)}
-            >
+            <Button type="button" variant="outline" disabled={submitting || !reviewReady} onClick={() => submit(true)}>
               {pendingAction === "suppress" ? <Spinner className="size-4" /> : t(($) => $.run_confirm.dont_start)}
             </Button>
           ) : null}
@@ -441,10 +416,10 @@ export function RunConfirmModal({
                 {isReview
                   ? t(($) => $.run_confirm.confirm_review)
                   : isReviewReturn
-                  ? t(($) => $.run_confirm.confirm_review_return)
-                  : isPromote
-                  ? t(($) => $.run_confirm.confirm_promote)
-                  : t(($) => $.run_confirm.confirm_assign)}
+                    ? t(($) => $.run_confirm.confirm_review_return)
+                    : isPromote
+                      ? t(($) => $.run_confirm.confirm_promote)
+                      : t(($) => $.run_confirm.confirm_assign)}
                 {/* Decorative: the accessible name stays the button's own copy,
                     not "Confirm assignment Command Enter". Absent when `send`
                     is unbound. */}

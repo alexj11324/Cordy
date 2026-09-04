@@ -2,7 +2,7 @@
  * Coalesces consecutive identical activity entries. The exact rule is mirrored
  * from packages/views/issues/components/issue-detail.tsx:841-866 — this is a
  * behavioral parity gate: mobile must show the same N timeline entries as
- * web/desktop after coalescing (apps/mobile/AGENTS.md "Counts and visibility
+ * web/desktop after coalescing (apps/mobile/CLAUDE.md "Counts and visibility
  * must agree").
  *
  * Rule (ASC chronological input):

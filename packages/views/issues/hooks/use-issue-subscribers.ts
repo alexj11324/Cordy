@@ -30,7 +30,7 @@ import { useT } from "../../i18n";
  * that user to "wait for the next update" is wrong advice. ApiError.body is the
  * discriminator: parseErrorBody leaves it undefined when the response was not
  * JSON, and populated when the server sent a real error document
- * (PB-5483 review round 8).
+ * (MUL-5483 review round 8).
  */
 function isMissingRouteError(err: unknown): boolean {
   return err instanceof ApiError && err.status === 404 && err.body === undefined;
@@ -72,7 +72,7 @@ export function useIssueSubscribers(issueId: string, userId?: string) {
             // reason changed — a delegate who got assigned, mentioned, or
             // commented is upgraded out of the reduced tier. Patch it rather
             // than bailing, or the "Watching via agent" badge keeps claiming a
-            // delegation that no longer applies (PB-5483).
+            // delegation that no longer applies (MUL-5483).
             if (existing) {
               if (existing.reason === p.reason) return old;
               return old.map((s) =>
@@ -129,12 +129,12 @@ export function useIssueSubscribers(issueId: string, userId?: string) {
   // the default, and that means the subscriber picker too, not just the
   // subscribe button: an unchecked row for someone already subscribed sends an
   // explicit subscribe, which rewrites their reason to 'manual' and clears any
-  // opt-out scope in the Rust subscriber query module. A failed query stays
-  // unknown as well; only a resolved one is truth (PB-5714).
+  // opt-out scope (server/pkg/db/queries/subscriber.sql). A failed query stays
+  // unknown as well; only a resolved one is truth (MUL-5714).
   const subscriptionKnown = isSuccess;
   // Why the current user is watching. Drives the "your agent created this on
   // your behalf" explanation — a subscription nobody remembers opting into
-  // reads as the product being creepy unless it says why (PB-5483).
+  // reads as the product being creepy unless it says why (MUL-5483).
   const subscriptionReason = ownSubscription?.reason;
 
   // Serializes direct toggles. Disabling the button covers the ordinary case,
@@ -142,12 +142,12 @@ export function useIssueSubscribers(issueId: string, userId?: string) {
   // same tick both reach a still-enabled control. Overlapping toggles are the
   // one thing useToggleIssueSubscriber's whole-list optimistic snapshot cannot
   // survive: the second call snapshots the first one's patch and, on failure,
-  // rolls back to it instead of to the server's state (PB-5714).
+  // rolls back to it instead of to the server's state (MUL-5714).
   const toggleInFlight = useRef(false);
 
   // The optimistic patch in useToggleIssueSubscriber rolls itself back on
   // failure, which puts the row back exactly as it was — indistinguishable from
-  // a button that never fired. Say so instead (PB-5714).
+  // a button that never fired. Say so instead (MUL-5714).
   const toggleSubscriber = useCallback(
     (
       subUserId: string,
@@ -187,7 +187,7 @@ export function useIssueSubscribers(issueId: string, userId?: string) {
   // Success needs a message for the same reason, and only here: this mutation
   // is deliberately not optimistic (it retires an unknown number of descendant
   // subscriptions), so unlike the direct toggle there is no label or avatar
-  // flipping to confirm the click landed (PB-5714).
+  // flipping to confirm the click landed (MUL-5714).
   const unsubscribeFromSubtree = useCallback(() => {
     if (!userId) return;
     subtreeMutation.mutate(

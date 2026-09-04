@@ -49,7 +49,7 @@ import {
 import { buildAutomationWebhookUrl } from "@patchbay/core/automations";
 import { api } from "@patchbay/core/api";
 import type {
-  AutomationExecutorType,
+  AutomationAssigneeType,
   AutomationCollaborator,
   AutomationExecutionMode,
   AutomationTrigger,
@@ -59,7 +59,7 @@ import { ActorAvatar } from "../../common/actor-avatar";
 import { SegmentedToggle } from "../../common/segmented-toggle";
 import { ProjectPicker } from "../../projects/components/project-picker";
 import { ProjectIcon } from "../../projects/components/project-icon";
-import { AgentPicker, type ExecutorSelection } from "./pickers/agent-picker";
+import { AgentPicker, type AssigneeSelection } from "./pickers/agent-picker";
 import { SubscriberMultiSelect } from "./subscriber-multi-select";
 import { AutomationAccessManager } from "./automation-access-manager";
 import { ScheduleEditor } from "./schedule-editor/schedule-editor";
@@ -81,7 +81,7 @@ export interface AutomationInitial {
   title: string;
   description: string;
   project_id: string | null;
-  executor_type: AutomationExecutorType;
+  executor_type: AutomationAssigneeType;
   executor_id: string;
   execution_mode: AutomationExecutionMode;
   subscriber_user_ids?: string[];
@@ -153,10 +153,10 @@ export function AutomationDialog(props: AutomationDialogProps) {
   const [title, setTitle] = useState(initial.title ?? "");
   const [description, setDescription] = useState(initial.description ?? "");
   const [projectId, setProjectId] = useState<string | null>(initial.project_id ?? null);
-  const [executorType, setExecutorType] = useState<AutomationExecutorType>(
+  const [assigneeType, setAssigneeType] = useState<AutomationAssigneeType>(
     initial.executor_type ?? "agent",
   );
-  const [executorId, setExecutorId] = useState<string>(initial.executor_id ?? "");
+  const [assigneeId, setAssigneeId] = useState<string>(initial.executor_id ?? "");
   const [executionMode, setExecutionMode] = useState<AutomationExecutionMode>(
     initial.execution_mode ?? "create_issue",
   );
@@ -188,7 +188,7 @@ export function AutomationDialog(props: AutomationDialogProps) {
   // reflect, so anything it showed would be a proposal dressed as the
   // automation's state — and `scheduleDirty` below, comparing that proposal
   // against itself, then dropped the save on the floor under a success toast
-  // (PB-5649). The schedule is asked for explicitly instead: until the user
+  // (MUL-5649). The schedule is asked for explicitly instead: until the user
   // adds one, the panel says the automation is manual, and once they do, Save
   // writes what it shows whether or not they touched the default.
   const [scheduleAdded, setScheduleAdded] = useState(false);
@@ -236,23 +236,23 @@ export function AutomationDialog(props: AutomationDialogProps) {
   const showScheduleEmptyState =
     !isCreate && existingSchedule === null && !scheduleAdded && !schedulePillDisabled;
 
-  const selectedExecutor = useMemo(() => {
-    if (!executorId) return null;
-    if (executorType === "team") {
-      const team = teams.find((s) => s.id === executorId);
+  const selectedAssignee = useMemo(() => {
+    if (!assigneeId) return null;
+    if (assigneeType === "team") {
+      const team = teams.find((s) => s.id === assigneeId);
       return team ? { name: team.name, description: team.description } : null;
     }
-    const agent = agents.find((a) => a.id === executorId);
+    const agent = agents.find((a) => a.id === assigneeId);
     return agent ? { name: agent.name, description: agent.description } : null;
-  }, [agents, teams, executorId, executorType]);
+  }, [agents, teams, assigneeId, assigneeType]);
   const selectedProject = useMemo(
     () => projects.find((project) => project.id === projectId) ?? null,
     [projects, projectId],
   );
 
-  const handleExecutorChange = (next: ExecutorSelection) => {
-    setExecutorType(next.type);
-    setExecutorId(next.id);
+  const handleAssigneeChange = (next: AssigneeSelection) => {
+    setAssigneeType(next.type);
+    setAssigneeId(next.id);
   };
 
   const createAutomation = useCreateAutomation();
@@ -273,7 +273,7 @@ export function AutomationDialog(props: AutomationDialogProps) {
   // locked schedule (2+ triggers) or a stored one the user never touched is not
   // sent, so a preview 400 on the stored expression — an expression the server
   // accepted once and may now reject, e.g. a timezone its tzdata dropped — must
-  // not veto edits to the title, prompt or executor. A schedule the user just
+  // not veto edits to the title, prompt or assignee. A schedule the user just
   // added has no stored counterpart to differ from: adding it IS the change.
   const scheduleWillBeWritten =
     triggerKind === "schedule" &&
@@ -283,8 +283,8 @@ export function AutomationDialog(props: AutomationDialogProps) {
   // The FIRST empty required field in reading order — the user fills one, the
   // next surfaces. Only these two are answered here: a rejected schedule is
   // re-checked against the server below, which toasts its actual reason.
-  const missingField: "title" | "executor" | null =
-    title.trim().length === 0 ? "title" : executorId.length === 0 ? "executor" : null;
+  const missingField: "title" | "assignee" | null =
+    title.trim().length === 0 ? "title" : assigneeId.length === 0 ? "assignee" : null;
 
   // Inline errors appear only after a submit attempt: a form that opens already
   // shouting at the user for fields they have not reached yet is worse than the
@@ -292,8 +292,8 @@ export function AutomationDialog(props: AutomationDialogProps) {
   // so filling the field clears its error without a second submit.
   const [showErrors, setShowErrors] = useState(false);
   const titleEditorRef = useRef<TitleEditorRef>(null);
-  const executorTriggerRef = useRef<HTMLButtonElement>(null);
-  const executorErrorId = useId();
+  const assigneeTriggerRef = useRef<HTMLButtonElement>(null);
+  const assigneeErrorId = useId();
 
   const handleSubmit = async () => {
     if (submitting) return;
@@ -302,7 +302,7 @@ export function AutomationDialog(props: AutomationDialogProps) {
       // focusing scrolls the config column to it on its own.
       setShowErrors(true);
       if (missingField === "title") titleEditorRef.current?.focus();
-      else executorTriggerRef.current?.focus();
+      else assigneeTriggerRef.current?.focus();
       return;
     }
     setSubmitting(true);
@@ -315,9 +315,9 @@ export function AutomationDialog(props: AutomationDialogProps) {
         const automation = await createAutomation.mutateAsync({
           title: title.trim(),
           description: description.trim() || undefined,
-          project_id: executionMode === "create_issue" ? projectId : null,
-          executor_type: executorType,
-          executor_id: executorId,
+          project_id: projectId,
+          executor_type: assigneeType,
+          executor_id: assigneeId,
           execution_mode: executionMode,
           subscribers: subscriberUserIds.map((user_id) => ({
             user_type: "member" as const,
@@ -368,9 +368,9 @@ export function AutomationDialog(props: AutomationDialogProps) {
           id: props.automationId,
           title: title.trim(),
           description: description.trim() || null,
-          project_id: executionMode === "create_issue" ? projectId : null,
-          executor_type: executorType,
-          executor_id: executorId,
+          project_id: projectId,
+          executor_type: assigneeType,
+          executor_id: assigneeId,
           execution_mode: executionMode,
           subscribers: subscriberUserIds.map((user_id) => ({
             user_type: "member" as const,
@@ -410,7 +410,7 @@ export function AutomationDialog(props: AutomationDialogProps) {
         // event_filters from the same dialog. PATCH only when the snapshot
         // taken on open differs from the live state. Sending an explicit
         // empty array clears filters server-side (tri-state semantics — see
-        // the Rust automation update request).
+        // UpdateAutomationTriggerRequest in automation.go).
         if (
           triggerKind === "webhook" &&
           eventFiltersDirty &&
@@ -609,25 +609,31 @@ export function AutomationDialog(props: AutomationDialogProps) {
           {/* Right: Configuration */}
           <aside className="w-full lg:w-[380px] shrink-0 overflow-visible lg:overflow-y-auto px-5 py-5 space-y-5 bg-muted/30">
             <AgentSection
-              ref={executorTriggerRef}
-              selectedType={executorType}
-              selectedId={executorId}
-              onChange={handleExecutorChange}
-              selectedName={selectedExecutor?.name}
-              selectedDescription={selectedExecutor?.description}
-              invalid={showErrors && executorId.length === 0}
-              errorId={executorErrorId}
+              ref={assigneeTriggerRef}
+              selectedType={assigneeType}
+              selectedId={assigneeId}
+              onChange={handleAssigneeChange}
+              selectedName={selectedAssignee?.name}
+              selectedDescription={selectedAssignee?.description}
+              invalid={showErrors && assigneeId.length === 0}
+              errorId={assigneeErrorId}
             />
 
             <OutputModeSection mode={executionMode} onChange={setExecutionMode} />
 
-            {executionMode === "create_issue" && (
-              <ProjectSection
-                projectId={projectId}
-                selectedProject={selectedProject}
-                onChange={setProjectId}
-              />
-            )}
+            {/* Shown for BOTH output modes (MUL-6681). The project is not only
+                issue routing: for a run_only automation it is the ONLY source of
+                project context the daemon has (there is no issue to inherit it
+                from), so it decides whether the run gets the project's
+                repository / local_directory — and with it worktree isolation —
+                or a bare workdir. Hiding it here left run_only automations with
+                no way to bind one, and the save below used to send null for
+                run_only, silently clearing a binding made via the CLI. */}
+            <ProjectSection
+              projectId={projectId}
+              selectedProject={selectedProject}
+              onChange={setProjectId}
+            />
 
             {executionMode === "create_issue" && (
               <SubscribersSection
@@ -764,12 +770,12 @@ function AgentSection({
   errorId,
 }: {
   ref: React.Ref<HTMLButtonElement>;
-  selectedType: AutomationExecutorType;
+  selectedType: AutomationAssigneeType;
   selectedId: string;
-  onChange: (next: ExecutorSelection) => void;
+  onChange: (next: AssigneeSelection) => void;
   selectedName?: string;
   selectedDescription?: string;
-  /** A submit was attempted with no executor picked. */
+  /** A submit was attempted with no assignee picked. */
   invalid: boolean;
   errorId: string;
 }) {
@@ -780,9 +786,9 @@ function AgentSection({
       {/* Marked required, unlike the Project and Subscribers pickers below it:
           the three look identical, and nothing else told the user that only
           this one blocks Create (#6231). */}
-      <SectionLabel required>{t(($) => $.dialog.section_executor)}</SectionLabel>
+      <SectionLabel required>{t(($) => $.dialog.section_assignee)}</SectionLabel>
       <AgentPicker
-        executor={hasSelection ? { type: selectedType, id: selectedId } : null}
+        assignee={hasSelection ? { type: selectedType, id: selectedId } : null}
         onChange={onChange}
         align="start"
         triggerRender={
@@ -811,7 +817,7 @@ function AgentSection({
             )}
             <span className="flex-1 min-w-0">
               <span className="block text-body font-medium truncate">
-                {selectedName ?? t(($) => $.dialog.select_executor)}
+                {selectedName ?? t(($) => $.dialog.select_assignee)}
               </span>
               {selectedDescription && (
                 <span className="block text-caption text-muted-foreground truncate">
@@ -825,7 +831,7 @@ function AgentSection({
       />
       {invalid && (
         <p id={errorId} role="alert" className="mt-1.5 text-caption text-destructive">
-          {t(($) => $.dialog.error_executor_required)}
+          {t(($) => $.dialog.error_assignee_required)}
         </p>
       )}
     </div>
@@ -902,6 +908,9 @@ function ProjectSection({
   return (
     <div>
       <SectionLabel>{t(($) => $.dialog.section_project)}</SectionLabel>
+      <p className="mb-2 text-micro text-muted-foreground">
+        {t(($) => $.dialog.project_hint)}
+      </p>
       <ProjectPicker
         projectId={projectId}
         onUpdate={(updates) => onChange(updates.project_id ?? null)}

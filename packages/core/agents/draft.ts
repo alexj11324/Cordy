@@ -3,6 +3,7 @@ import type {
   Agent,
   AgentInvocationTargetInput,
   AgentPermissionScope,
+  AgentConversationStarter,
   CreateAgentRequest,
   RuntimeDevice,
 } from "../types";
@@ -25,6 +26,7 @@ export interface AgentDraft {
   name: string;
   description: string;
   instructions: string;
+  conversationStarters: AgentConversationStarter[];
   avatarUrl: string | null;
   runtimeId: string;
   model: string;
@@ -43,6 +45,7 @@ export const EMPTY_AGENT_DRAFT: AgentDraft = {
   name: "",
   description: "",
   instructions: "",
+  conversationStarters: [],
   avatarUrl: null,
   runtimeId: "",
   model: "",
@@ -61,7 +64,7 @@ export const EMPTY_AGENT_DRAFT: AgentDraft = {
  * them together is what stops an orphan `thinking_level` / `service_tier`
  * from being persisted for a model that never advertised it — the daemon
  * would silently fall back at execution time and the settings page would
- * disagree with what actually ran (PB-5390).
+ * disagree with what actually ran (MUL-5390).
  */
 export function applyDraftRuntimeChange(
   draft: AgentDraft,
@@ -86,7 +89,7 @@ export function applyDraftModelChange(
 }
 
 /**
- * Mirrors the server's Unicode scalar-count check. The
+ * Mirrors the server's `utf8.RuneCountInString` check (agent.go:1013). The
  * textarea's `maxLength` covers typing and pasting, but a duplicated agent or
  * an AI-builder draft can seed a longer value programmatically — without this
  * the create button would submit into a guaranteed 400.
@@ -162,7 +165,7 @@ export function deriveDuplicateAccess(
  * exact runtime. When the source runtime is gone, private to somebody else or
  * offline, the draft falls back to another runtime and the three are cleared
  * for the user to pick again — the same rule `patchbay agent copy` already
- * enforces server-side. Before PB-5390 the fallback kept
+ * enforces server-side (cmd_agent_copy.go). Before MUL-5390 the fallback kept
  * the source `model` and silently persisted a cross-provider value.
  */
 export function buildDuplicateDraft(
@@ -186,6 +189,7 @@ export function buildDuplicateDraft(
     name: `${source.name}${options.nameSuffix}`,
     description: source.description ?? "",
     instructions: source.instructions ?? "",
+    conversationStarters: (source.conversation_starters ?? []).map((item) => ({ ...item })),
     avatarUrl: source.avatar_url ?? null,
     runtimeId: keepsRuntime
       ? (source.runtime_id as string)
@@ -216,6 +220,14 @@ export function buildCreateAgentRequest(options: {
     name: draft.name.trim(),
     description: draft.description.trim(),
     instructions: draft.instructions.trim() || undefined,
+    ...(draft.conversationStarters.length > 0
+      ? {
+          conversation_starters: draft.conversationStarters.map((item) => ({
+            label: item.label.trim(),
+            prompt: item.prompt.trim(),
+          })),
+        }
+      : {}),
     avatar_url: draft.avatarUrl ?? undefined,
     runtime_id: runtimeId,
     model: draft.model.trim() || undefined,

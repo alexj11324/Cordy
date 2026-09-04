@@ -15,10 +15,11 @@ import { I18nProvider } from "@patchbay/core/i18n/react";
 import enCommon from "../locales/en/common.json";
 import enModals from "../locales/en/modals.json";
 import enEditor from "../locales/en/editor.json";
+import enIssues from "../locales/en/issues.json";
 
 const TEST_RESOURCES = {
   // `editor` carries the shared upload-gate copy ("Uploading…").
-  en: { common: enCommon, modals: enModals, editor: enEditor },
+  en: { common: enCommon, modals: enModals, editor: enEditor, issues: enIssues },
 };
 
 function I18nWrapper({ children }: { children: ReactNode }) {
@@ -31,6 +32,7 @@ function I18nWrapper({ children }: { children: ReactNode }) {
 
 const mockPush = vi.hoisted(() => vi.fn());
 const mockCreateIssue = vi.hoisted(() => vi.fn());
+const mockCreateCommentSubIssue = vi.hoisted(() => vi.fn());
 const mockAttachLabel = vi.hoisted(() => vi.fn());
 const mockListProperties = vi.hoisted(() => vi.fn());
 const mockSetIssueProperty = vi.hoisted(() => vi.fn());
@@ -45,20 +47,47 @@ const mockSetKeepOpen = vi.hoisted(() => vi.fn());
 const mockToastCustom = vi.hoisted(() => vi.fn());
 const mockToastDismiss = vi.hoisted(() => vi.fn());
 const mockToastError = vi.hoisted(() => vi.fn());
+const mockShowIssueLimitUpgradePrompt = vi.hoisted(() => vi.fn());
 // Uploads flow through the module-level coordinator, which calls
-// `api.uploadFile(file, ctx, signal)` (PB-5181 L2). Tests drive uploads by
+// `api.uploadFile(file, ctx, signal)` (MUL-5181 L2). Tests drive uploads by
 // mocking that call; it resolves a plain server Attachment row.
 const mockApiUploadFile = vi.hoisted(() => vi.fn());
 
-vi.mock("@patchbay/core/auth", () => ({
-  useAuthStore: Object.assign(
-    (selector?: (state: { user: { id: string } }) => unknown) => {
-      const state = { user: { id: "user-1" } };
-      return selector ? selector(state) : state;
+const sourceContextPanelData = () => ({
+  anchor_comment_id: "comment-source",
+  source_context_preview: {
+    source_issue: {
+      id: "issue-source",
+      identifier: "MUL-9",
+      number: 9,
+      title: "Source",
+      description: "Historical body",
+      created_at: "2026-08-20T00:00:00Z",
+      updated_at: "2026-08-21T00:00:00Z",
+      revision: 1,
+      attachments: [],
     },
-    { getState: () => ({ user: { id: "user-1" } }) },
-  ),
-}));
+    comment_thread: [{
+      id: "comment-source",
+      parent_id: null,
+      type: "comment",
+      content: "Historical comment",
+      author: { type: "member", id: "user-1", name: "Alice" },
+      created_at: "2026-08-21T00:00:00Z",
+      updated_at: "2026-08-21T00:00:00Z",
+      revision: 1,
+      attachments: [],
+    }],
+    anchor_comment_id: "comment-source",
+    capture_token: "sha256:preview-token",
+    limits: {
+      comment_count: 1,
+      text_bytes: 100,
+      attachment_count: 0,
+      attachment_bytes: 0,
+    },
+  },
+});
 
 type DraftAttachment = {
   id: string;
@@ -78,7 +107,7 @@ type DraftAttachment = {
   created_at: string;
 };
 
-// Coordinator-owned upload entry persisted in the shared pool (PB-5181 L2).
+// Coordinator-owned upload entry persisted in the shared pool (MUL-5181 L2).
 type DraftUploadEntry = {
   clientUploadId: string;
   status: "uploading" | "uploaded" | "failed" | "interrupted";
@@ -99,7 +128,7 @@ const emptyIssueDraft = () => ({
   manual: {
     title: "",
     description: "",
-    status: "todo" as "backlog" | "todo" | "in_progress" | "in_review" | "blocked" | "done" | "cancelled",
+    status: "todo" as const,
     startDate: null as string | null,
     ownerId: undefined as string | undefined,
     executorType: undefined as "agent" | "team" | undefined,
@@ -183,8 +212,8 @@ vi.mock("@patchbay/core/hooks", () => ({
   useWorkspaceId: () => "ws-test",
 }));
 
-vi.mock("@patchbay/core/issue-statuses/hooks", () => ({
-  useIssueStatuses: () => ({ categoryOf: (status: string) => status }),
+vi.mock("./use-issue-limit-upgrade-prompt", () => ({
+  useIssueLimitUpgradePrompt: () => mockShowIssueLimitUpgradePrompt,
 }));
 
 vi.mock("@patchbay/core/issues/queries", () => ({
@@ -214,7 +243,12 @@ vi.mock("@patchbay/core/workspace/hooks", () => ({
   useActorName: () => ({ getActorName: () => "Agent" }),
 }));
 
-// CreateRunHint now renders an ActorAvatar for agent/team executors. This
+vi.mock("@patchbay/core/auth", () => ({
+  useAuthStore: (selector: (state: { user: { id: string } }) => unknown) =>
+    selector({ user: { id: "user-1" } }),
+}));
+
+// CreateRunHint now renders an ActorAvatar for agent/team assignees. This
 // suite is about the create form, not the avatar (whose own workspace/presence/
 // navigation hook tree is exercised elsewhere), so stub it inert.
 vi.mock("../common/actor-avatar", () => ({
@@ -242,6 +276,12 @@ vi.mock("@patchbay/core/issues/stores/issue-create-settings-store", () => ({
 
 vi.mock("@patchbay/core/issues/mutations", () => ({
   useCreateIssue: () => ({ mutateAsync: mockCreateIssue }),
+  useCreateCommentSubIssue: () => ({
+    mutateAsync: ({ anchorCommentId, data }: {
+      anchorCommentId: string;
+      data: unknown;
+    }) => mockCreateCommentSubIssue(anchorCommentId, data),
+  }),
   useUpdateIssue: () => ({ mutate: vi.fn() }),
 }));
 
@@ -298,6 +338,7 @@ vi.mock("@patchbay/core/api", async () => {
   >("@patchbay/core/api/schemas");
   return {
     api: {
+      createCommentSubIssue: mockCreateCommentSubIssue,
       listProperties: mockListProperties,
       setIssueProperty: mockSetIssueProperty,
       uploadFile: mockApiUploadFile,
@@ -562,8 +603,8 @@ vi.mock("@patchbay/ui/components/ui/switch", () => ({
 }));
 
 vi.mock("@patchbay/ui/components/common/file-upload-button", () => ({
-  FileUploadButton: ({ onSelect }: { onSelect: (file: File) => void }) => (
-    <button type="button" onClick={() => onSelect(new File(["test"], "test.txt"))}>
+  FileUploadButton: ({ onSelect, size }: { onSelect: (file: File) => void; size?: string }) => (
+    <button type="button" data-size={size} onClick={() => onSelect(new File(["test"], "test.txt"))}>
       Upload file
     </button>
   ),
@@ -606,7 +647,7 @@ describe("CreateIssueModal", () => {
     mockSetKeepOpen.mockImplementation((v: boolean) => {
       mockQuickCreateStore.keepOpen = v;
     });
-    // Reset the unified draft mock so per-test seeding (executor, project, …)
+    // Reset the unified draft mock so per-test seeding (assignee, project, …)
     // doesn't leak into the next test in the suite.
     mockDraftStore.draft = emptyIssueDraft();
     mockSetShared.mockImplementation((patch: Partial<typeof mockDraftStore.draft.shared>) => {
@@ -620,6 +661,7 @@ describe("CreateIssueModal", () => {
     });
     mockClearDraft.mockImplementation(() => {
       const next = emptyIssueDraft();
+      next.manual.ownerId = mockDraftStore.lastOwnerId;
       next.manual.executorType = mockDraftStore.lastExecutorType;
       next.manual.executorId = mockDraftStore.lastExecutorId;
       mockDraftStore.draft = next;
@@ -651,6 +693,13 @@ describe("CreateIssueModal", () => {
       // is that the field is present (not undefined).
       labels: [],
     });
+    mockCreateCommentSubIssue.mockResolvedValue({
+      id: "issue-source-child",
+      identifier: "TES-124",
+      title: "Create from source comment",
+      status: "todo",
+      labels: [],
+    });
     mockAttachLabel.mockResolvedValue({ labels: [] });
     mockListProperties.mockResolvedValue({
       properties: [
@@ -675,6 +724,12 @@ describe("CreateIssueModal", () => {
     mockSetIssueProperty.mockResolvedValue({
       properties: { "property-tier": "option-enterprise" },
     });
+  });
+
+  it("uses the same compact attachment control as agent mode", () => {
+    renderModal(<CreateIssueModal onClose={vi.fn()} />);
+
+    expect(screen.getByRole("button", { name: "Upload file" })).toHaveAttribute("data-size", "sm");
   });
 
   it("shows success feedback with a direct path to the new issue", async () => {
@@ -703,8 +758,8 @@ describe("CreateIssueModal", () => {
         start_date: undefined,
         due_date: undefined,
         attachment_ids: undefined,
-        parent_issue_id: undefined,
         label_ids: undefined,
+        parent_issue_id: undefined,
         stage: undefined,
         project_id: undefined,
       });
@@ -729,24 +784,6 @@ describe("CreateIssueModal", () => {
 
     expect(mockPush).toHaveBeenCalledWith("/ws-test/issues/issue-123");
     expect(mockToastDismiss).toHaveBeenCalledWith("toast-1");
-  });
-
-  it("blocks active issue creation until an executor is selected", async () => {
-    mockDraftStore.draft.manual.status = "in_progress";
-    const user = userEvent.setup();
-
-    renderModal(<CreateIssueModal onClose={vi.fn()} />);
-    await user.type(screen.getByPlaceholderText("Issue title"), "Owned active work");
-
-    expect(
-      screen.getByText("Choose an executor for an issue with work underway."),
-    ).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Create Issue" }));
-
-    expect(mockCreateIssue).not.toHaveBeenCalled();
-    expect(mockToastError).toHaveBeenCalledWith(
-      "Choose an executor for an issue with work underway.",
-    );
   });
 
   it("forwards selected labels in the create payload so they attach in the same transaction", async () => {
@@ -840,8 +877,8 @@ describe("CreateIssueModal", () => {
         start_date: undefined,
         due_date: undefined,
         attachment_ids: undefined,
-        parent_issue_id: undefined,
         label_ids: undefined,
+        parent_issue_id: undefined,
         stage: undefined,
         project_id: undefined,
       });
@@ -899,7 +936,7 @@ describe("CreateIssueModal", () => {
 
     await user.click(screen.getByRole("button", { name: "Upload file" }));
 
-    // Coordinator flow (PB-5181 L2): a placeholder is written at pick time,
+    // Coordinator flow (MUL-5181 L2): a placeholder is written at pick time,
     // then settles into an `uploaded` entry carrying the server row.
     await waitFor(() => {
       const uploads = mockDraftStore.draft.shared.attachments;
@@ -1092,12 +1129,12 @@ describe("CreateIssueModal", () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
     mockCreateIssue.mockRejectedValue(
-      new ApiError("An active issue with this title already exists: PB-7 – Login bug", 409, "Conflict", {
+      new ApiError("An active issue with this title already exists: MUL-7 – Login bug", 409, "Conflict", {
         code: "active_duplicate_issue",
-        error: "An active issue with this title already exists: PB-7 – Login bug",
+        error: "An active issue with this title already exists: MUL-7 – Login bug",
         issue: {
           id: "issue-dup",
-          identifier: "PB-7",
+          identifier: "MUL-7",
           title: "Login bug",
         },
       }),
@@ -1116,7 +1153,7 @@ describe("CreateIssueModal", () => {
     render(renderToast("toast-dup"));
 
     expect(screen.getByText("Duplicate issue")).toBeInTheDocument();
-    expect(screen.getByText(/PB-7/)).toBeInTheDocument();
+    expect(screen.getByText(/MUL-7/)).toBeInTheDocument();
     expect(screen.getByText(/Login bug/)).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "View existing issue" }));
@@ -1143,6 +1180,29 @@ describe("CreateIssueModal", () => {
     await waitFor(() => expect(mockToastError).toHaveBeenCalledTimes(1));
     expect(mockToastError).toHaveBeenCalledWith("Backend says title is taken");
     expect(mockToastCustom).not.toHaveBeenCalled();
+  });
+
+  it("offers the Cloud-authorized upgrade recovery when manual create reaches the issue limit", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    mockCreateIssue.mockRejectedValue(
+      new ApiError("workspace has reached its issue limit", 402, "Payment Required", {
+        code: "issue_limit_reached",
+        limit: 1000,
+        policy_revision: 1,
+      }),
+    );
+
+    renderModal(<CreateIssueModal onClose={onClose} />);
+    await user.type(screen.getByPlaceholderText("Issue title"), "One more issue");
+    await user.click(screen.getByRole("button", { name: "Create Issue" }));
+
+    await waitFor(() => {
+      expect(mockShowIssueLimitUpgradePrompt).toHaveBeenCalledTimes(1);
+    });
+    expect(mockToastError).not.toHaveBeenCalled();
+    expect(mockClearDraft).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   // Non-409 errors with a real message: surface the backend reason rather
@@ -1220,7 +1280,7 @@ describe("CreateIssueModal", () => {
   // from "Add sub issue". Before this, the agent panel received no parent
   // context and the new issue was filed as a standalone — silently dropping
   // the sub-issue intent set by openCreateSubIssue. The parent_issue_identifier
-  // tags along so the agent panel can render a "Sub-issue of PB-XX" chip
+  // tags along so the agent panel can render a "Sub-issue of MUL-XX" chip
   // without an extra round-trip.
   //
   // The identifier fallback matters here: the mocked issueDetailOptions
@@ -1238,7 +1298,7 @@ describe("CreateIssueModal", () => {
         onSwitchMode={onSwitchMode}
         data={{
           parent_issue_id: "parent-uuid-1",
-          parent_issue_identifier: "PB-2534",
+          parent_issue_identifier: "MUL-2534",
         }}
         isExpanded={false}
         setIsExpanded={vi.fn()}
@@ -1253,9 +1313,101 @@ describe("CreateIssueModal", () => {
     // still rides the carry channel. The prompt rides the store now.
     expect(onSwitchMode.mock.calls[0]?.[0]).toEqual({
       parent_issue_id: "parent-uuid-1",
-      parent_issue_identifier: "PB-2534",
+      parent_issue_identifier: "MUL-2534",
     });
     expect(mockSetAgent).toHaveBeenCalledWith({ prompt: "Refactor auth" });
+  });
+
+  it("keeps captured context separate from the upstream description scroller", () => {
+    renderModal(
+      <ManualCreatePanel
+        onClose={vi.fn()}
+        onSwitchMode={vi.fn()}
+        data={sourceContextPanelData()}
+        isExpanded={false}
+        setIsExpanded={vi.fn()}
+      />,
+    );
+
+    const description = screen.getByPlaceholderText("Add description...").parentElement;
+    const sourceContext = document.querySelector<HTMLElement>('[data-slot="source-context-preview"]');
+
+    expect(description).toHaveClass(
+      "relative",
+      "flex",
+      "flex-1",
+      "min-h-0",
+      "overflow-y-auto",
+      "px-5",
+    );
+    expect(sourceContext).toHaveClass("shrink-0");
+    expect(description?.parentElement).toBe(sourceContext?.parentElement);
+    expect(description?.nextElementSibling).toBe(sourceContext);
+    expect(description).not.toContainElement(sourceContext);
+  });
+
+  it("locks only a source-context parent and leaves ordinary parent controls unchanged", async () => {
+    const user = userEvent.setup();
+    const contextRender = renderModal(
+      <ManualCreatePanel
+        onClose={vi.fn()}
+        onSwitchMode={vi.fn()}
+        data={{
+          ...sourceContextPanelData(),
+          parent_issue_id: "parent-uuid-1",
+          parent_issue_identifier: "MUL-2534",
+        }}
+        isExpanded={false}
+        setIsExpanded={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("manual-sub-issue-chip")).toHaveTextContent("Sub-issue of MUL-2534");
+    await user.click(screen.getByRole("button", { name: "More options" }));
+    expect(screen.queryByText("Set parent issue...")).toBeNull();
+    expect(screen.queryByText("Remove parent")).toBeNull();
+
+    contextRender.unmount();
+    renderModal(
+      <ManualCreatePanel
+        onClose={vi.fn()}
+        onSwitchMode={vi.fn()}
+        data={{
+          parent_issue_id: "parent-uuid-1",
+          parent_issue_identifier: "MUL-2534",
+        }}
+        isExpanded={false}
+        setIsExpanded={vi.fn()}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "More options" }));
+    expect(screen.getByText("Set parent issue...")).toBeInTheDocument();
+  });
+
+  it("submits source-context manual create through the dedicated endpoint", async () => {
+    const user = userEvent.setup();
+    renderModal(
+      <ManualCreatePanel
+        onClose={vi.fn()}
+        onSwitchMode={vi.fn()}
+        data={sourceContextPanelData()}
+        isExpanded={false}
+        setIsExpanded={vi.fn()}
+      />,
+    );
+
+    await user.type(screen.getByPlaceholderText("Issue title"), "Create from source comment");
+    await user.click(screen.getByRole("button", { name: "Create Issue" }));
+
+    await waitFor(() => expect(mockCreateCommentSubIssue).toHaveBeenCalledWith(
+      "comment-source",
+      {
+        mode: "manual",
+        capture_token: "sha256:preview-token",
+        issue: expect.objectContaining({ title: "Create from source comment" }),
+      },
+    ));
+    expect(mockCreateIssue).not.toHaveBeenCalled();
   });
 
   // Start date is a low-frequency field — by default it lives behind the
@@ -1357,7 +1509,7 @@ describe("CreateIssueModal", () => {
     expect(mockPush).toHaveBeenCalledWith("/ws-test/settings?tab=issue");
   });
 
-  // PB-5181: switching to agent must PRESERVE the manual draft. The agent
+  // MUL-5181: switching to agent must PRESERVE the manual draft. The agent
   // prompt is assist-init'd from title + description (a one-time convenience
   // when the agent slot is empty), but the manual title/description are left
   // untouched so a later agent→manual switch restores them verbatim — no
@@ -1392,10 +1544,10 @@ describe("CreateIssueModal", () => {
     );
   });
 
-  // PB-4808 — manual create had no upload gate at all: Create, Enter on the
+  // MUL-4808 — manual create had no upload gate at all: Create, Enter on the
   // title, and Switch to Agent would each fix the draft while an image was
   // still uploading, dropping it from the description with no warning.
-  // PB-5181 P0: the issue draft is a SINGLETON store. A submit that outlives
+  // MUL-5181 P0: the issue draft is a SINGLETON store. A submit that outlives
   // its dialog may only consume the draft it submitted — never one the user
   // typed after closing and reopening.
   describe("stale-submit draft guard", () => {
@@ -1491,7 +1643,7 @@ describe("CreateIssueModal", () => {
 
   describe("upload submit gate", () => {
     /** Attach a file whose upload stays in flight until the caller releases it.
-     *  Controls the coordinator's `api.uploadFile` promise (PB-5181 L2). */
+     *  Controls the coordinator's `api.uploadFile` promise (MUL-5181 L2). */
     function startPendingUpload() {
       let release!: (result: unknown) => void;
       mockApiUploadFile.mockImplementationOnce(
@@ -1539,7 +1691,7 @@ describe("CreateIssueModal", () => {
     });
 
     // Plain Enter in the title was removed as a create trigger in #5532 — it
-    // fired from a half-typed title. PB-4931 adds the explicit `send` chord
+    // fired from a half-typed title. MUL-4931 adds the explicit `send` chord
     // alongside it; plain Enter must stay inert.
     it("never submits manual create from plain Enter in the title", async () => {
       const user = userEvent.setup();
@@ -1584,7 +1736,7 @@ describe("CreateIssueModal", () => {
     });
   });
 
-  // PB-4931 — manual create had no submit shortcut at all, while agent create
+  // MUL-4931 — manual create had no submit shortcut at all, while agent create
   // has had one all along.
   describe("send shortcut", () => {
     function renderManual() {
@@ -1680,7 +1832,7 @@ describe("CreateIssueModal", () => {
       });
 
       await act(async () => {
-        release({ id: "issue-1", identifier: "PB-1", title: "Double tap", status: "todo" });
+        release({ id: "issue-1", identifier: "MUL-1", title: "Double tap", status: "todo" });
       });
       expect(mockCreateIssue).toHaveBeenCalledTimes(1);
     });
@@ -1725,7 +1877,7 @@ describe("CreateIssueModal", () => {
     });
   });
 
-  // PB-6236 — the manual panel shares the agent panel's phone treatment; it
+  // MUL-6236 — the manual panel shares the agent panel's phone treatment; it
   // is one tap away behind "Switch to Manual", so it hit the same bugs.
   describe("phone layout", () => {
     it("caps the dialog inside the viewport on phones", () => {

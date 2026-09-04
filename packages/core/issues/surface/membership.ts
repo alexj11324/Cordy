@@ -15,7 +15,7 @@ export type IssueMembership = true | false | "unknown";
 
 /**
  * The field groups a write can touch that move an issue in or out of a
- * filtered list (executor / project) or shift per-status bucket totals
+ * filtered list (owner / executor / project) or shift per-status bucket totals
  * (status). Creator is not here: it is immutable after create.
  */
 export interface IssueChangedDims {
@@ -64,7 +64,7 @@ export function listFilterDependsOn(
   changed: IssueChangedDims,
 ): boolean {
   // my:all is the union of assigned / created / involved — the assigned and
-  // involved legs key on the executor.
+  // involved legs key on the owner/executor roles.
   if (scope === "all") return changed.owner || changed.executor;
   if (
     changed.owner &&

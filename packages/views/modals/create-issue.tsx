@@ -32,6 +32,7 @@ import type {
   IssueExecutorType,
   IssueReviewerType,
   IssuePropertyValue,
+  SourceContextPreview,
 } from "@patchbay/core/types";
 import { contentReferencesAttachment } from "@patchbay/core/types";
 import {
@@ -71,7 +72,11 @@ import {
   type ManualCreateField,
 } from "@patchbay/core/issues/stores/issue-create-settings-store";
 import { issueDetailOptions, childIssuesOptions } from "@patchbay/core/issues/queries";
-import { useCreateIssue, useUpdateIssue } from "@patchbay/core/issues/mutations";
+import {
+  useCreateCommentSubIssue,
+  useCreateIssue,
+  useUpdateIssue,
+} from "@patchbay/core/issues/mutations";
 import { useAttachLabelToIssue } from "@patchbay/core/labels";
 import {
   propertyListOptions,
@@ -93,6 +98,8 @@ import {
 } from "../issues/components/pickers/custom-property-picker";
 import { IssuePickerModal } from "./issue-picker-modal";
 import { useT } from "../i18n";
+import { SourceContextPreviewCard, useSourceContextFailureMessage } from "./source-context-preview";
+import { useIssueLimitUpgradePrompt } from "./use-issue-limit-upgrade-prompt";
 import { useAuthStore } from "@patchbay/core/auth";
 
 // ---------------------------------------------------------------------------
@@ -103,7 +110,7 @@ import { useAuthStore } from "@patchbay/core/auth";
 // shell's local mode state.
 // ---------------------------------------------------------------------------
 
-// CreateRunHint is the create modal's passive pre-trigger label (PB-3375 §4):
+// CreateRunHint is the create modal's passive pre-trigger label (MUL-3375 §4):
 // whether saving will start a run, driven by the unified backend predicate
 // (preview, isCreate) — never a frontend guess. No dialog, no blocking.
 //
@@ -211,12 +218,25 @@ export function ManualCreatePanel({
   setIsExpanded: (v: boolean) => void;
 }) {
   const { t } = useT("modals");
+  const { t: tIssues } = useT("issues");
   const { t: tEditor } = useT("editor");
   const { t: tProjects } = useT("projects");
   const router = useNavigation();
   const p = useWorkspacePaths();
   const workspaceName = useCurrentWorkspace()?.name;
   const currentUserId = useAuthStore((s) => s.user?.id);
+  const anchorCommentId = typeof data?.anchor_comment_id === "string" ? data.anchor_comment_id : null;
+  const sourcePreview = data?.source_context_preview as SourceContextPreview | undefined;
+  const sourceContextLoading = data?.source_context_loading === true;
+  const sourceContextFailed = data?.source_context_failed === true;
+  const sourceContextError = data?.source_context_error;
+  const refetchSourceContext = data?.source_context_refetch as (() => Promise<unknown>) | undefined;
+  const sourceContextExpanded = typeof data?.source_context_expanded === "boolean"
+    ? data.source_context_expanded
+    : undefined;
+  const onSourceContextExpandedChange = data?.source_context_on_expanded_change as ((expanded: boolean) => void) | undefined;
+  const sourceContextFailureMessage = useSourceContextFailureMessage();
+  const showIssueLimitUpgradePrompt = useIssueLimitUpgradePrompt();
 
   const draft = useIssueDraftStore((s) => s.draft);
   const setManual = useIssueDraftStore((s) => s.setManual);
@@ -292,6 +312,9 @@ export function ManualCreatePanel({
   const [parentIssueId, setParentIssueId] = useState<string | undefined>(
     (data?.parent_issue_id as string) || undefined,
   );
+  const parentIssueLocked = anchorCommentId !== null
+    && typeof data?.parent_issue_id === "string"
+    && data.parent_issue_id.length > 0;
   // Stage only applies to a sub-issue; kept local (not in the persisted draft)
   // since it's a per-creation choice tied to the chosen parent.
   const [stage, setStage] = useState<number | null>(
@@ -374,7 +397,7 @@ export function ManualCreatePanel({
   // mode (which assist-inits the agent prompt from the description and would
   // carry a stripped body across).
   const uploadGate = useUploadGate(descEditorRef);
-  // Coordinator-owned uploads in the shared pool (PB-5181, L2): a file picked
+  // Coordinator-owned uploads in the shared pool (MUL-5181, L2): a file picked
   // here survives dialog close, aborts on logout, and is dropped after a
   // reload. `gate` widens the editor gate with the pool's placeholders.
   const {
@@ -420,8 +443,7 @@ export function ManualCreatePanel({
   const showField = {
     status: manualFields.includes("status") || status !== "todo" || fieldPickerOpen === "status",
     priority: manualFields.includes("priority") || priority !== "none" || fieldPickerOpen === "priority",
-    owner:
-      manualFields.includes("owner") || ownerWasExplicitlySet || fieldPickerOpen === "owner",
+    owner: manualFields.includes("owner") || ownerWasExplicitlySet || fieldPickerOpen === "owner",
     executor:
       activeStatusRequiresExecutor ||
       manualFields.includes("executor") ||
@@ -439,6 +461,7 @@ export function ManualCreatePanel({
   };
 
   const createIssueMutation = useCreateIssue();
+  const createCommentSubIssueMutation = useCreateCommentSubIssue();
   const updateIssueMutation = useUpdateIssue();
   const attachLabelMutation = useAttachLabelToIssue();
   const setIssuePropertyMutation = useSetIssueProperty();
@@ -455,8 +478,8 @@ export function ManualCreatePanel({
     setParentIssueId(undefined);
     setStage(null);
     setChildIssues([]);
-    // Keep the just-used role selections for the next issue in the batch;
-    // reset everything else across the manual + shared slots.
+    // Keep the just-used owner/executor for the next issue in the batch; reset
+    // everything else across the manual + shared slots.
     setManual({
       title: "",
       description: "",
@@ -464,8 +487,8 @@ export function ManualCreatePanel({
       ownerId,
       executorType,
       executorId,
-      reviewerType,
-      reviewerId,
+      reviewerType: undefined,
+      reviewerId: undefined,
       startDate: null,
       labelIds: [],
       propertyValues: {},
@@ -486,7 +509,7 @@ export function ManualCreatePanel({
   // editor body — a title-only issue is valid — so `normalize` ignores the
   // description markdown and feeds the title through as the empty-guard/content;
   // the body is read separately inside onSubmit.
-  // Stale-submit guard (PB-5181 P0): the issue draft is a SINGLETON store
+  // Stale-submit guard (MUL-5181 P0): the issue draft is a SINGLETON store
   // and the editors stay interactive during a request. Snapshot the draft's
   // object identity at submit; success clears ONLY an untouched draft —
   // whether the edit came mid-flight or from a reopened dialog.
@@ -535,31 +558,60 @@ export function ManualCreatePanel({
       const activeAttachmentIds = draftAttachments
         .filter((a) => contentReferencesAttachment(description ?? "", a))
         .map((a) => a.id);
-      const issue = await createIssueMutation.mutateAsync({
-        title: title.trim(),
-        description,
-        status,
-        priority,
-        owner_type: ownerId ? "member" : undefined,
-        owner_id: ownerId,
-        executor_type: executorType,
-        executor_id: executorId,
-        reviewer_type: reviewerType,
-        reviewer_id: reviewerId,
-        start_date: startDate || undefined,
-        due_date: dueDate || undefined,
-        attachment_ids: activeAttachmentIds.length > 0 ? activeAttachmentIds : undefined,
-        // The server attaches these in the same transaction as the create and
-        // echoes them back as `issue.labels`, so a stale selection fails the
-        // create instead of leaving a committed-but-unlabeled issue. A legacy
-        // backend that predates this ignores the field — handled by the
-        // compatibility fallback below.
-        label_ids: labelIds.length > 0 ? labelIds : undefined,
-        parent_issue_id: parentIssueId,
-        // Stage is only meaningful for a sub-issue (relative to its siblings).
-        stage: parentIssueId && stage != null ? stage : undefined,
-        project_id: projectId,
-      });
+      let issue: Issue;
+      if (anchorCommentId && sourcePreview) {
+        issue = await createCommentSubIssueMutation.mutateAsync({
+          anchorCommentId,
+          data: {
+            mode: "manual",
+            capture_token: sourcePreview.capture_token,
+            issue: {
+              title: title.trim(),
+              description,
+              status,
+              priority,
+              owner_type: ownerId ? "member" : undefined,
+              owner_id: ownerId,
+              executor_type: executorType,
+              executor_id: executorId,
+              reviewer_type: reviewerType,
+              reviewer_id: reviewerId,
+              start_date: startDate || undefined,
+              due_date: dueDate || undefined,
+              attachment_ids: activeAttachmentIds.length > 0 ? activeAttachmentIds : undefined,
+              label_ids: labelIds.length > 0 ? labelIds : undefined,
+              stage: parentIssueId && stage != null ? stage : undefined,
+              project_id: projectId,
+            },
+          },
+        });
+      } else {
+        issue = await createIssueMutation.mutateAsync({
+          title: title.trim(),
+          description,
+          status,
+          priority,
+          owner_type: ownerId ? "member" : undefined,
+          owner_id: ownerId,
+          executor_type: executorType,
+          executor_id: executorId,
+          reviewer_type: reviewerType,
+          reviewer_id: reviewerId,
+          start_date: startDate || undefined,
+          due_date: dueDate || undefined,
+          attachment_ids: activeAttachmentIds.length > 0 ? activeAttachmentIds : undefined,
+          // The server attaches these in the same transaction as the create and
+          // echoes them back as `issue.labels`, so a stale selection fails the
+          // create instead of leaving a committed-but-unlabeled issue. A legacy
+          // backend that predates this ignores the field — handled by the
+          // compatibility fallback below.
+          label_ids: labelIds.length > 0 ? labelIds : undefined,
+          parent_issue_id: parentIssueId,
+          // Stage is only meaningful for a sub-issue (relative to its siblings).
+          stage: parentIssueId && stage != null ? stage : undefined,
+          project_id: projectId,
+        });
+      }
 
       // Custom-property values can only be addressed once the issue has an
       // id. Keep the modal in its submitting state until every value settles
@@ -650,7 +702,7 @@ export function ManualCreatePanel({
       }
 
       // The old post-create "agent paused in Backlog" blocking panel is gone —
-      // a passive inline hint now warns before submit (PB-3375). The draft
+      // a passive inline hint now warns before submit (MUL-3375). The draft
       // reset + close/keep-open happens in onAccepted once we report success.
       {
         toast.custom((toastId) => (
@@ -687,6 +739,30 @@ export function ManualCreatePanel({
       }
       return true;
     } catch (err) {
+      const sourceCode = err instanceof ApiError && err.body && typeof err.body === "object"
+        ? (err.body as { code?: unknown }).code
+        : undefined;
+      if (anchorCommentId && (
+        sourceCode === "source_context_changed"
+        || sourceCode === "anchor_comment_deleted"
+        || sourceCode === "source_issue_deleted"
+      )) {
+        await refetchSourceContext?.();
+        toast.error(sourceContextFailureMessage(err) ?? tIssues(($) => $.source_context.error_source_changed));
+        return false;
+      }
+      if (anchorCommentId && sourceCode === "source_context_server_unsupported") {
+        toast.error(tIssues(($) => $.source_context.error_server_unsupported));
+        return false;
+      }
+      if (anchorCommentId && sourceCode === "source_context_too_large") {
+        toast.error(sourceContextFailureMessage(err) ?? tIssues(($) => $.source_context.error_too_large));
+        return false;
+      }
+      if (sourceCode === "issue_limit_reached") {
+        showIssueLimitUpgradePrompt();
+        return false;
+      }
       // Duplicate-issue is the only structured 409 the create endpoint
       // returns. We schema-guard the body (ApiError.body is `unknown`) so a
       // future server-side rename / drop of `code` / `issue` degrades to the
@@ -746,7 +822,7 @@ export function ManualCreatePanel({
       setLastOwner(ownerId);
       setLastExecutor(executorType, executorId);
       setLastMode("manual");
-      // Success may only consume the draft it submitted (PB-5181 P0): any
+      // Success may only consume the draft it submitted (MUL-5181 P0): any
       // edit after the submit snapshot — typing while the request is in
       // flight, or a reopened dialog — survives, and the dialog then stays
       // open on the newer draft instead of closing/resetting over it. Flush
@@ -771,6 +847,7 @@ export function ManualCreatePanel({
   // at the fix; otherwise hand off to the composer (single-flight + gate live
   // there).
   const handleSubmit = () => {
+    if (anchorCommentId && !sourcePreview) return;
     if (!title.trim()) {
       titleEditorRef.current?.focus();
       return;
@@ -830,14 +907,16 @@ export function ManualCreatePanel({
 
   // One state for the button and the keyboard paths, so a rendered affordance
   // can never disagree with what `handleSubmit` will actually do.
-  const submitState: "submitting" | "uploading" | "missing_title" | "ready" =
+  const submitState: "submitting" | "uploading" | "missing_title" | "source_unavailable" | "ready" =
     submitting
       ? "submitting"
       : gate.uploading
         ? "uploading"
-        : !title.trim()
-          ? "missing_title"
-          : "ready";
+        : anchorCommentId && !sourcePreview
+          ? "source_unavailable"
+          : !title.trim()
+            ? "missing_title"
+            : "ready";
   const submitBusy = submitState === "submitting" || submitState === "uploading";
 
   // Built once and reused by both footer branches: rendering a separate Button
@@ -851,7 +930,7 @@ export function ManualCreatePanel({
       // keyboard and screen-reader users could never reach the tooltip that
       // explains why nothing happens. `handleSubmit` is the real gate either way.
       disabled={submitBusy}
-      aria-disabled={submitState === "missing_title" || undefined}
+      aria-disabled={submitState === "missing_title" || submitState === "source_unavailable" || undefined}
       aria-busy={submitBusy || undefined}
       // The Button base only dims/blocks on native `disabled`, so aria-disabled
       // would otherwise stay a fully lit, pressable-looking primary button.
@@ -961,6 +1040,18 @@ export function ManualCreatePanel({
               {descDragOver && <FileDropOverlay />}
             </div>
 
+            {anchorCommentId && (
+              <SourceContextPreviewCard
+                preview={sourcePreview}
+                loading={sourceContextLoading}
+                failed={sourceContextFailed}
+                error={sourceContextError}
+                onRetry={refetchSourceContext ? () => { void refetchSourceContext(); } : undefined}
+                constrainToParent
+                expanded={sourceContextExpanded}
+                onExpandedChange={onSourceContextExpandedChange}
+              />
+            )}
 
             {/* Pre-trigger preview — a passive caption above the toolbar; reveals
                 when an agent executor will pick the issue up. */}
@@ -993,7 +1084,7 @@ export function ManualCreatePanel({
                 />
               )}
 
-              {/* Owner — a human accountable for the issue. */}
+              {/* Owner — the human accountable for the issue. */}
               {showField.owner && (
                 <OwnerPicker
                   ownerType={ownerId ? "member" : null}
@@ -1006,7 +1097,7 @@ export function ManualCreatePanel({
                 />
               )}
 
-              {/* Executor */}
+              {/* Executor — the agent or team that performs the work. */}
               {showField.executor && (
                 <ExecutorPicker
                   executorType={executorType ?? null}
@@ -1022,7 +1113,7 @@ export function ManualCreatePanel({
                 />
               )}
 
-              {/* Reviewer — independent from the implementation executor. */}
+              {/* Reviewer — independent from the execution role. */}
               {showField.reviewer && (
                 <ReviewerPicker
                   reviewerType={reviewerType ?? null}
@@ -1151,7 +1242,18 @@ export function ManualCreatePanel({
               {/* Parent chip — appears when parent is set.
                   Placed before the ⋯ so it wraps to a new line with ⋯ if
                   space is tight, but ⋯ always stays last in DOM order. */}
-              {parentIssueId && parentIssue && (
+              {parentIssueId && parentIssueLocked ? (
+                <span
+                  data-testid="manual-sub-issue-chip"
+                  className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-caption text-muted-foreground"
+                >
+                  {t(($) => $.create_issue.subissue_of, {
+                    identifier: parentIssue?.identifier
+                      ?? (data?.parent_issue_identifier as string | undefined)
+                      ?? "",
+                  })}
+                </span>
+              ) : parentIssueId && parentIssue ? (
                 <div className="inline-flex items-center rounded-full border text-caption transition-colors hover:bg-accent/60">
                   <button
                     type="button"
@@ -1172,7 +1274,7 @@ export function ManualCreatePanel({
                     <XIcon className="size-3" />
                   </button>
                 </div>
-              )}
+              ) : null}
 
               {/* Child chips — one per queued sub-issue. Links are deferred
                   until create resolves (see handleSubmit). */}
@@ -1270,7 +1372,7 @@ export function ManualCreatePanel({
                       {t(($) => $.create_issue.set_start_date)}
                     </DropdownMenuItem>
                   )}
-                  {parentIssueId && parentIssue ? (
+                  {!parentIssueLocked && (parentIssueId && parentIssue ? (
                     <DropdownMenuItem onClick={() => setParentPickerOpen(true)}>
                       <ArrowUp className="h-3.5 w-3.5" />
                       {t(($) => $.create_issue.parent_with_id, { identifier: parentIssue.identifier })}
@@ -1280,7 +1382,7 @@ export function ManualCreatePanel({
                       <ArrowUp className="h-3.5 w-3.5" />
                       {t(($) => $.create_issue.set_parent)}
                     </DropdownMenuItem>
-                  )}
+                  ))}
                   <DropdownMenuItem onClick={() => setChildPickerOpen(true)}>
                     <ArrowDown className="h-3.5 w-3.5" />
                     {t(($) => $.create_issue.add_subissue)}
@@ -1334,7 +1436,7 @@ export function ManualCreatePanel({
                     <Settings2 className="h-3.5 w-3.5" />
                     {t(($) => $.create_issue.customize_fields)}
                   </DropdownMenuItem>
-                  {parentIssueId && parentIssue && (
+                  {!parentIssueLocked && parentIssueId && parentIssue && (
                     <>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
@@ -1349,16 +1451,6 @@ export function ManualCreatePanel({
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
-            {activeStatusRequiresExecutor && (!executorType || !executorId) ? (
-              <p className="px-5 pb-2 text-caption text-destructive">
-                {t(($) => $.create_issue.active_executor_required)}
-              </p>
-            ) : null}
-            {reviewStatusRequiresReviewer && (!reviewerType || !reviewerId) ? (
-              <p className="px-5 pb-2 text-caption text-destructive">
-                {t(($) => $.create_issue.review_reviewer_required)}
-              </p>
-            ) : null}
 
             {/* Parent / child pickers — rendered inline so they stack over this
                 modal instead of replacing it via useModalStore. */}
@@ -1393,12 +1485,13 @@ export function ManualCreatePanel({
 
             {/* Footer — same 2x2-grid-on-phones / single-row-from-`sm` shape
                 as the agent panel; see the note on AgentCreatePanel's footer
-                for why (PB-6236). TooltipProvider/Tooltip render no DOM and
+                for why (MUL-6236). TooltipProvider/Tooltip render no DOM and
                 TooltipContent is portaled, so the Create button stays a direct
                 grid child in both branches below. */}
             <div className="grid grid-cols-[auto_1fr] items-center gap-x-2 gap-y-2.5 border-t px-4 py-3 shrink-0 sm:flex sm:flex-wrap">
               <div className="flex min-h-7 items-center gap-2 sm:mr-auto">
                 <FileUploadButton
+                  size="sm"
                   multiple
                   onSelect={(file) => descEditorRef.current?.uploadFile(file)}
                 />
@@ -1452,7 +1545,7 @@ export function manualDialogContentClass(isExpanded: boolean) {
     // Phone gutter — see the matching note in create-issue-dialog.tsx: the
     // `!important` widths below also override DialogContent's
     // `max-w-[calc(100%-2rem)]`, leaving the card edge to edge on a phone
-    // (PB-6236). `!h-96` stays a hard height; it already fits the shortest
+    // (MUL-6236). `!h-96` stays a hard height; it already fits the shortest
     // phone we support.
     "!w-full !max-w-[calc(100vw-1.5rem)]",
     isExpanded

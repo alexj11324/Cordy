@@ -177,7 +177,7 @@ function CurrentIssueRow({
 }) {
   // Lazy issue detail — only enabled while the card is mounted AND we have
   // a running issue id. snapshot already gives us the id; this hook just
-  // resolves the human identifier (PB-123) + title.
+  // resolves the human identifier (MUL-123) + title.
   const { data: issue } = useQuery({
     ...issueDetailOptions(wsId, issueId ?? ""),
     enabled: !!issueId,

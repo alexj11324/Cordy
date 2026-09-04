@@ -1,7 +1,0 @@
-[build]
-# Tokio emits task/resource/operation telemetry only with its instrumentation cfg.
-rustflags = ["--cfg", "tokio_unstable"]
-
-[env]
-# Production builds use the checked-in query metadata and do not require a live DB.
-SQLX_OFFLINE = "true"

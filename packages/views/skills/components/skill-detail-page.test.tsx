@@ -123,6 +123,7 @@ function renderPage(searchParams = new URLSearchParams()) {
     back: vi.fn(),
     pathname: "/acme/skills/skill-1",
     searchParams,
+    hash: "",
     getShareableUrl: (path) => path,
   };
   render(
@@ -212,7 +213,7 @@ describe("SkillDetailPage file mode", () => {
   });
 });
 
-describe("SkillDetailPage edit action (PB-5654)", () => {
+describe("SkillDetailPage edit action (MUL-5654)", () => {
   /** Opens a file row's action menu the way the rail exposes it. */
   async function openRowMenu(path: string | RegExp) {
     // The file-name button carries role="tab", so a "button" match on the row
@@ -332,7 +333,7 @@ describe("SkillDetailPage properties", () => {
 });
 
 /**
- * PB-5645. Dirty state is measured against the seeded baseline, not against
+ * MUL-5645. Dirty state is measured against the seeded baseline, not against
  * the latest server skill. The two failures that rule prevents:
  *
  * 1. A description carrying trailing whitespace — what `description: |`
@@ -343,7 +344,7 @@ describe("SkillDetailPage properties", () => {
  *    against the NEW server skill. Any agent edit froze the editor on stale
  *    text behind a conflict banner, whatever the description looked like.
  */
-describe("SkillDetailPage draft baseline (PB-5645)", () => {
+describe("SkillDetailPage draft baseline (MUL-5645)", () => {
   const CONFLICT_BANNER = "Someone else updated this skill";
 
   it("opens clean when the description carries a trailing newline", async () => {

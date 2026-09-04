@@ -198,7 +198,7 @@ interface ContentEditorBaseProps {
   slashCommandMode?: "skill" | "command";
   /**
    * Quick actions to offer in the "command" `/` menu, plus the resolver that
-   * turns a pick into the text it would post (PB-5465). Read through
+   * turns a pick into the text it would post (MUL-5465). Read through
    * functions so a newly created action appears without remounting the editor.
    */
   quickActionMenu?: BuiltinCommandSuggestionOptions;
@@ -281,7 +281,7 @@ interface ContentEditorRef {
   /**
    * Append a markdown fragment to the end of the document (parsed, not raw
    * text), firing the normal `onUpdate` pipeline. For the upload write-back
-   * path (PB-5181): an upload that outlived the mount that started it settles
+   * path (MUL-5181): an upload that outlived the mount that started it settles
    * while a NEW editor instance is showing the same draft — that editor never
    * owned the upload's promise, so this is how the finished attachment's link
    * lands in the visible document instead of only in the persisted draft.
@@ -430,7 +430,7 @@ const ContentEditor = forwardRef<ContentEditorRef, ContentEditorProps>(
     // Attachment.normalize() can't swap the persisted /api/attachments/<id>/
     // download URL to a freshly-loadable one, and the <img> renders broken in
     // any environment where the renderer's origin doesn't proxy /api to the
-    // API host (PB-3192, Desktop/Electron).
+    // API host (MUL-3192, Desktop/Electron).
     const [sessionUploads, setSessionUploads] = useState<Attachment[]>([]);
     // Wrap the caller-supplied uploader so we can stash each successful result
     // in `sessionUploads`. The wrapper is rebuilt only when the underlying

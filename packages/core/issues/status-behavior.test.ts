@@ -68,7 +68,7 @@ describe("issueBehavesAs", () => {
 /**
  * The board/list/swimlane column a card renders in. Columns are categories and
  * `issue.status` is a key, so a custom status has to be translated — the
- * regression it guards is a card in NO column at all (PB-6409).
+ * regression it guards is a card in NO column at all (MUL-6409).
  */
 describe("issueColumnCategory", () => {
   it("answers a built-in key with no server hint", () => {

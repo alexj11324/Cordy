@@ -991,7 +991,7 @@ function ProfileDetailsForm({
             (list, daemon pull, register) do not yet enforce 'private', so
             offering a private toggle would leak the profile to other members.
             Re-add once creator-visibility filtering exists. Follow-up:
-            PB-3308. */}
+            MUL-3308. */}
 
         {formError && (
           <p role="alert" className="text-caption text-destructive">

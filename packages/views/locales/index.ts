@@ -14,6 +14,7 @@ import enSearch from "./en/search.json";
 import enInbox from "./en/inbox.json";
 import enWorkspace from "./en/workspace.json";
 import enProjects from "./en/projects.json";
+import enWorkProducts from "./en/work-products.json";
 import enAutomations from "./en/automations.json";
 import enSkills from "./en/skills.json";
 import enChat from "./en/chat.json";
@@ -24,6 +25,8 @@ import enUsage from "./en/usage.json";
 import enUi from "./en/ui.json";
 import enTeams from "./en/teams.json";
 import enBilling from "./en/billing.json";
+import enChannels from "./en/channels.json";
+import enTaskGraph from "./en/task-graph.json";
 import zhHansCommon from "./zh-Hans/common.json";
 import zhHansAuth from "./zh-Hans/auth.json";
 import zhHansSettings from "./zh-Hans/settings.json";
@@ -39,6 +42,7 @@ import zhHansSearch from "./zh-Hans/search.json";
 import zhHansInbox from "./zh-Hans/inbox.json";
 import zhHansWorkspace from "./zh-Hans/workspace.json";
 import zhHansProjects from "./zh-Hans/projects.json";
+import zhHansWorkProducts from "./zh-Hans/work-products.json";
 import zhHansAutomations from "./zh-Hans/automations.json";
 import zhHansSkills from "./zh-Hans/skills.json";
 import zhHansChat from "./zh-Hans/chat.json";
@@ -49,6 +53,8 @@ import zhHansUsage from "./zh-Hans/usage.json";
 import zhHansUi from "./zh-Hans/ui.json";
 import zhHansTeams from "./zh-Hans/teams.json";
 import zhHansBilling from "./zh-Hans/billing.json";
+import zhHansChannels from "./zh-Hans/channels.json";
+import zhHansTaskGraph from "./zh-Hans/task-graph.json";
 import koCommon from "./ko/common.json";
 import koAuth from "./ko/auth.json";
 import koSettings from "./ko/settings.json";
@@ -64,6 +70,7 @@ import koSearch from "./ko/search.json";
 import koInbox from "./ko/inbox.json";
 import koWorkspace from "./ko/workspace.json";
 import koProjects from "./ko/projects.json";
+import koWorkProducts from "./ko/work-products.json";
 import koAutomations from "./ko/automations.json";
 import koSkills from "./ko/skills.json";
 import koChat from "./ko/chat.json";
@@ -74,6 +81,8 @@ import koUsage from "./ko/usage.json";
 import koUi from "./ko/ui.json";
 import koTeams from "./ko/teams.json";
 import koBilling from "./ko/billing.json";
+import koChannels from "./ko/channels.json";
+import koTaskGraph from "./ko/task-graph.json";
 import jaCommon from "./ja/common.json";
 import jaAuth from "./ja/auth.json";
 import jaSettings from "./ja/settings.json";
@@ -89,6 +98,7 @@ import jaSearch from "./ja/search.json";
 import jaInbox from "./ja/inbox.json";
 import jaWorkspace from "./ja/workspace.json";
 import jaProjects from "./ja/projects.json";
+import jaWorkProducts from "./ja/work-products.json";
 import jaAutomations from "./ja/automations.json";
 import jaSkills from "./ja/skills.json";
 import jaChat from "./ja/chat.json";
@@ -99,6 +109,8 @@ import jaUsage from "./ja/usage.json";
 import jaUi from "./ja/ui.json";
 import jaTeams from "./ja/teams.json";
 import jaBilling from "./ja/billing.json";
+import jaChannels from "./ja/channels.json";
+import jaTaskGraph from "./ja/task-graph.json";
 
 // Single source of truth for the resource bundle. Both apps (web layout +
 // desktop App.tsx) import from here so adding a locale or namespace happens
@@ -120,6 +132,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     inbox: enInbox,
     workspace: enWorkspace,
     projects: enProjects,
+    "work-products": enWorkProducts,
     automations: enAutomations,
     skills: enSkills,
     chat: enChat,
@@ -130,6 +143,8 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     ui: enUi,
     teams: enTeams,
     billing: enBilling,
+    channels: enChannels,
+    "task-graph": enTaskGraph,
   },
   "zh-Hans": {
     common: zhHansCommon,
@@ -147,6 +162,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     inbox: zhHansInbox,
     workspace: zhHansWorkspace,
     projects: zhHansProjects,
+    "work-products": zhHansWorkProducts,
     automations: zhHansAutomations,
     skills: zhHansSkills,
     chat: zhHansChat,
@@ -157,6 +173,8 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     ui: zhHansUi,
     teams: zhHansTeams,
     billing: zhHansBilling,
+    channels: zhHansChannels,
+    "task-graph": zhHansTaskGraph,
   },
   ko: {
     common: koCommon,
@@ -174,6 +192,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     inbox: koInbox,
     workspace: koWorkspace,
     projects: koProjects,
+    "work-products": koWorkProducts,
     automations: koAutomations,
     skills: koSkills,
     chat: koChat,
@@ -184,6 +203,8 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     ui: koUi,
     teams: koTeams,
     billing: koBilling,
+    channels: koChannels,
+    "task-graph": koTaskGraph,
   },
   ja: {
     common: jaCommon,
@@ -201,6 +222,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     inbox: jaInbox,
     workspace: jaWorkspace,
     projects: jaProjects,
+    "work-products": jaWorkProducts,
     automations: jaAutomations,
     skills: jaSkills,
     chat: jaChat,
@@ -211,5 +233,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     ui: jaUi,
     teams: jaTeams,
     billing: jaBilling,
+    channels: jaChannels,
+    "task-graph": jaTaskGraph,
   },
 };

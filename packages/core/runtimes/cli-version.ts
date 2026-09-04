@@ -3,7 +3,7 @@
  * agent-create flow (Quick Create modal) requires the daemon's bundled
  * patchbay CLI to be at least this version — older daemons either
  * double-create issues on partial CLI failures, drop quick-create attachment
- * bindings, or mishandle pasted screenshot URLs (see PR #1851 / PB-1496).
+ * bindings, or mishandle pasted screenshot URLs (see PR #1851 / MUL-1496).
  *
  * Both the frontend pre-validation in the modal and the server's
  * `/api/issues/quick-create` handler enforce this; the server is the
@@ -90,9 +90,9 @@ export function readRuntimeCliVersion(metadata: Record<string, unknown> | undefi
 
 /**
  * Frontend mirror of the server's `MinHandoffCLIVersion` soft gate
- * in the Rust agent-version module. The assignment handoff note is only rendered
+ * (`server/pkg/agent/version.go`). The assignment handoff note is only rendered
  * into the run's opening prompt by daemons at or above this patchbay CLI version
- * (PB-3375); older daemons silently drop it. Unlike the quick-create gate this
+ * (MUL-3375); older daemons silently drop it. Unlike the quick-create gate this
  * never blocks the assignment — the UI just grays out the note box and warns.
  *
  * Keep in lockstep with the server constant; the two are enforced independently
@@ -148,7 +148,7 @@ function meetsMinCliVersion(detected: string | undefined | null, minimum: string
 /**
  * Capability a daemon advertises when it implements worktree mode for
  * local_directory resources. Mirrors `DaemonCapabilityLocalWorktreeV1` in
- * the Rust protocol crate.
+ * `server/pkg/protocol/messages.go`.
  */
 export const LOCAL_WORKTREE_CAPABILITY = "local-worktree-v1";
 
@@ -174,7 +174,7 @@ type RuntimeCapabilityRow = {
  * So the client stopped trying. The server is asked instead — it knows its own
  * version by construction — at every write path (create project, add resource,
  * update resource) and again at claim time, which is the gate that actually
- * keeps agents out of the user's working copy (PB-5707). This function only
+ * keeps agents out of the user's working copy (MUL-5707). This function only
  * decides whether to PRESELECT parallel mode, where a wrong guess costs a
  * radio button, not a blocked user or a misleading instruction.
  *

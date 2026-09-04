@@ -1,21 +1,19 @@
+// @vitest-environment node
 import { join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import {
-  devRuntimeBuildArguments,
-  devRuntimeBuildEnvironment,
   devRuntimeComponents,
-  isCompleteDevRuntimeCacheHit,
-  selectCompleteDevRuntimeCacheIdentity,
+  goBuildArguments,
 } from "./prepare-dev-runtime.mjs";
 
-describe("complete development runtime artifacts", () => {
+describe("complete Go development runtime artifacts", () => {
   it("stages CLI, backend and migration binaries for one source fingerprint", () => {
     const components = devRuntimeComponents({
       repoRoot: "/repo",
       platform: "darwin",
       arch: "arm64",
-      cargoTargetDir: "/repo/server-rs/target",
     });
     expect(components.map(({ id }) => id)).toEqual([
       "cli",
@@ -23,121 +21,53 @@ describe("complete development runtime artifacts", () => {
       "migrations",
     ]);
     expect(components[0].destinationBinary).toBe(
-      join("/repo", ".patchbay-dev", "bin", "patchbay"),
-    );
-    expect(components[0].additionalDestinations).toEqual([
       join("/repo", "apps", "desktop", "resources", "bin", "patchbay"),
-    ]);
+    );
     expect(components[1].destinationBinary).toBe(
-      join("/repo", ".patchbay-dev", "bin", "patchbay-server"),
+      join("/repo", ".patchbay-dev", "bin", "server"),
+    );
+    expect(components[2].destinationBinary).toBe(
+      join("/repo", ".patchbay-dev", "bin", "migrate"),
     );
   });
 
-  it("keeps development Cargo outputs inside each worktree", () => {
-    const components = devRuntimeComponents({
-      repoRoot: "/repo/worktree-a",
-      platform: "linux",
+  it("uses the target Go environment and version flags for the CLI", () => {
+    const [cli] = devRuntimeComponents({
+      repoRoot: "/repo",
+      platform: "win32",
       arch: "x64",
     });
-
-    expect(components[0].sourceBinary).toBe(
-      join(
-        "/repo/worktree-a",
-        "server-rs",
-        "target",
-        "x86_64-unknown-linux-gnu",
-        "debug",
-        "patchbay",
-      ),
-    );
+    expect(goBuildArguments(cli, {
+      version: "dev",
+      commit: "abc123",
+      date: "2026-09-04T00:00:00Z",
+    })).toEqual([
+      "build",
+      "-trimpath",
+      "-ldflags",
+      "-X main.version=dev -X main.commit=abc123 -X main.date=2026-09-04T00:00:00Z",
+      "-o",
+      join("/repo", "server", "bin", "windows-amd64", "patchbay.exe"),
+      "./cmd/patchbay",
+    ]);
   });
 
-  it("builds all runtime packages in one incremental Cargo invocation", () => {
-    const components = devRuntimeComponents({
+  it("does not pass CLI-only date flags to the migration binary", () => {
+    const [, , migrations] = devRuntimeComponents({
       repoRoot: "/repo",
       platform: "linux",
       arch: "x64",
-      cargoTargetDir: "/repo/server-rs/target",
     });
-    expect(
-      devRuntimeBuildArguments("x86_64-unknown-linux-gnu", components),
-    ).toEqual([
+    expect(goBuildArguments(migrations, {
+      version: "dev",
+      commit: "abc123",
+      date: "2026-09-04T00:00:00Z",
+    })).toEqual([
       "build",
-      "--locked",
-      "--target",
-      "x86_64-unknown-linux-gnu",
-      "-p",
-      "patchbay-cli",
-      "-p",
-      "patchbay-server",
-      "-p",
-      "patchbay-migrate",
-      "--bins",
+      "-trimpath",
+      "-o",
+      join("/repo", "server", "bin", "linux-amd64", "migrate"),
+      "./cmd/migrate",
     ]);
-  });
-
-  it("keeps rustup proxies discoverable when Cargo is resolved outside PATH", () => {
-    const env = { PATH: "/usr/bin", RUSTC_WRAPPER: "sccache" };
-    expect(
-      devRuntimeBuildEnvironment(env, "/home/dev/.cargo/bin/cargo"),
-    ).toMatchObject({
-      PATH: expect.stringMatching(/^\/home\/dev\/\.cargo\/bin:/),
-      RUSTC_WRAPPER: "sccache",
-    });
-  });
-
-  it("requires one complete cache identity before rustc-less staging", () => {
-    const expected = {
-      sourceFingerprint: "source-a",
-      rustTarget: "aarch64-apple-darwin",
-      buildVariables: { version: "dev-source-a" },
-    };
-
-    expect(
-      selectCompleteDevRuntimeCacheIdentity(
-        {
-          completeFingerprints: [
-            {
-              ...expected,
-              identityKey: "complete-rustc-one",
-              newestMtimeMs: 1,
-            },
-            {
-              ...expected,
-              sourceFingerprint: "different-source",
-              identityKey: "newer-different-source",
-              newestMtimeMs: 2,
-            },
-            {
-              ...expected,
-              identityKey: "newest-complete",
-              newestMtimeMs: 3,
-            },
-          ],
-        },
-        expected,
-      ),
-    ).toBe("newest-complete");
-    expect(
-      selectCompleteDevRuntimeCacheIdentity(
-        { completeFingerprints: [] },
-        expected,
-      ),
-    ).toBeNull();
-  });
-
-  it("does not treat an empty rustc-less cache probe as a hit", () => {
-    expect(
-      isCompleteDevRuntimeCacheHit([], {
-        canUseCache: false,
-        componentCount: 3,
-      }),
-    ).toBe(false);
-    expect(
-      isCompleteDevRuntimeCacheHit([{}, {}, {}], {
-        canUseCache: true,
-        componentCount: 3,
-      }),
-    ).toBe(true);
   });
 });

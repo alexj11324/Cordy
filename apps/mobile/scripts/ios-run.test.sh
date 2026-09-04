@@ -41,6 +41,9 @@ chmod +x "$BIN_DIR/pnpm"
 
 PATH="$BIN_DIR:$PATH"
 export PATH
+# Bash may retain the real pnpm path from the parent shell. Clear its command
+# hash so the stub is used for every assertion below.
+hash -r
 
 fail() {
   echo "FAIL: $1" >&2

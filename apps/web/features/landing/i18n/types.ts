@@ -43,7 +43,6 @@ export type LandingDict = {
   header: {
     github: string;
     cta: string;
-    signIn: string;
     dashboard: string;
     docs: string;
     changelog: string;

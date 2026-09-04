@@ -23,17 +23,16 @@ import type { LinkClickIntent } from "../../navigation/click-intent";
 const WORKSPACE_ROUTE_SEGMENTS = new Set([
   "usage",
   "issues",
-  "task-graph",
   "projects",
   "automations",
   "agents",
   "chat",
+  "teams",
   "inbox",
   "my-issues",
   "runtimes",
   "skills",
   "settings",
-  "integrations",
 ]);
 
 /**
@@ -66,7 +65,7 @@ function isWorkspaceScopedPath(pathname: string): boolean {
  * An agent or a user pasting `https://<app-host>/acme/issues/123` means the same
  * destination as `/acme/issues/123`. Without this, the URL reads as external and
  * the desktop app hands it to the system browser instead of opening a tab
- * (PB-5208).
+ * (MUL-5208).
  *
  * `appOrigin` is the deployment's public app URL, which only the platform layer
  * knows (web: the current origin; desktop: the connected environment's app URL).
@@ -98,7 +97,7 @@ export interface WorkspaceEntityRef {
   kind: "issue" | "project";
   /**
    * Entity id, decoded from the path. A UUID for either kind, or — for an
-   * issue only — a bare identifier (`PB-123`). Callers dispatch on the shape
+   * issue only — a bare identifier (`MUL-123`). Callers dispatch on the shape
    * with `isIssueIdentifier`: an identifier still has to be resolved to a real
    * issue before it can be rendered as a chip.
    */
@@ -127,7 +126,7 @@ const UUID_RE =
  * A project is only ever addressed by UUID — it has no shorthand. An issue has
  * both, and the identifier form is the one that matters most: `copyLink` and
  * `openInNewTab` both build `paths.issueDetail(identifier || id)`, and the
- * issue route rewrites a UUID URL back to the identifier, so `PB-123` is what
+ * issue route rewrites a UUID URL back to the identifier, so `MUL-123` is what
  * a user actually copies out of the app or the address bar. Accepting only the
  * UUID here would leave the shape people really paste as a raw URL.
  *

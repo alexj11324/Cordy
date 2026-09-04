@@ -1,6 +1,6 @@
 /**
  * Pure picker body for an issue's project — single-select. Mirrors the
- * executor picker pattern: header + search bar are the iOS native nav
+ * assignee picker pattern: header + search bar are the iOS native nav
  * header (registered in `app/(app)/[workspace]/_layout.tsx`); the route
  * wires `headerSearchBarOptions.onChangeText` to a local `query` state
  * via `useNativeSearchBar` and passes it in as `query`. Body is a pure
@@ -47,7 +47,7 @@ export function ProjectPickerBody({ value, query, onChange }: Props) {
     if (q) return projectRows;
 
     // Pin selected project to the top (below "No project"). Apple HIG
-    // doesn't require this — product UX choice that mirrors executor.
+    // doesn't require this — product UX choice that mirrors assignee.
     const selected = projectRows.find(
       (r) => r.kind === "project" && r.project.id === value?.id,
     );

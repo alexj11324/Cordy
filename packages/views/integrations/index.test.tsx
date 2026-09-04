@@ -10,7 +10,8 @@ vi.mock("../settings/components/integrations-tab", () => ({
   ),
 }));
 
-import { WorkspaceIntegrationsPage } from "./index";
+// Exercise the same public entry point imported by the Web route.
+import { WorkspaceIntegrationsPage } from "@patchbay/views/integrations";
 
 describe("WorkspaceIntegrationsPage", () => {
   it("delegates scrolling to the shared route viewport", () => {

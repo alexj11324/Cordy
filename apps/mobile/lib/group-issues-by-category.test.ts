@@ -8,7 +8,7 @@ function issue(id: string, status: string, statusCategory?: string): Issue {
     id,
     workspace_id: "ws-1",
     number: 1,
-    identifier: `PB-${id}`,
+    identifier: `MUL-${id}`,
     title: id,
     description: null,
     status,
@@ -38,7 +38,7 @@ function issue(id: string, status: string, statusCategory?: string): Issue {
 describe("groupIssuesByCategory", () => {
   // The regression this exists for: bucketing by `issue.status` created a `qa`
   // bucket no section ever read, so the issue was simply not on the screen
-  // while the header counts said nothing was wrong (PB-6457).
+  // while the header counts said nothing was wrong (MUL-6457).
   it("puts a custom status in its category's section", () => {
     const sections = groupIssuesByCategory([
       issue("a", "qa", "in_review"),

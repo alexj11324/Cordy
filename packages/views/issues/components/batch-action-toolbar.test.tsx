@@ -21,15 +21,6 @@ vi.mock("@patchbay/core/issues/mutations", () => ({
   useBatchDeleteIssues: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
-vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
-vi.mock("@patchbay/core/issue-statuses/hooks", () => ({
-  useIssueStatuses: () => ({ categoryOf: (status: string) => status }),
-}));
-vi.mock("@patchbay/core/modals", () => ({
-  useModalStore: (selector: (state: { open: () => void }) => unknown) =>
-    selector({ open: vi.fn() }),
-}));
-
 vi.mock("../../i18n", () => ({
   useT: () => ({ t: () => "label" }),
 }));
@@ -42,6 +33,18 @@ vi.mock("./pickers", () => ({
   ),
   PriorityPicker: ({ priority }: { priority: string | null }) => (
     <div data-testid="priority-picker" data-priority={priority ?? "__none__"} />
+  ),
+  OwnerPicker: ({ ownerType, ownerId, mixed }: {
+    ownerType: string | null;
+    ownerId: string | null;
+    mixed?: boolean;
+  }) => (
+    <div
+      data-testid="owner-picker"
+      data-owner-type={ownerType ?? "__null__"}
+      data-owner-id={ownerId ?? "__null__"}
+      data-mixed={String(Boolean(mixed))}
+    />
   ),
   ExecutorPicker: ({
     executorType,
@@ -59,7 +62,6 @@ vi.mock("./pickers", () => ({
       data-mixed={String(Boolean(mixed))}
     />
   ),
-  OwnerPicker: () => <div data-testid="owner-picker" />,
 }));
 
 function makeIssue(overrides: Partial<Issue> = {}): Issue {
@@ -67,7 +69,7 @@ function makeIssue(overrides: Partial<Issue> = {}): Issue {
     id: "issue-1",
     workspace_id: "ws-1",
     number: 1,
-    identifier: "PB-1",
+    identifier: "MUL-1",
     title: "Issue 1",
     description: null,
     status: "todo",
@@ -99,10 +101,10 @@ beforeEach(() => {
 });
 
 describe("BatchActionToolbar picker wiring", () => {
-  it("reflects the shared status / priority / executor of the selected issues", () => {
+  it("reflects the shared status, priority, owner, and executor", () => {
     const issues = [
-      makeIssue({ id: "a", status: "in_progress", priority: "high", executor_type: "agent", executor_id: "agent-1" }),
-      makeIssue({ id: "b", status: "in_progress", priority: "high", executor_type: "agent", executor_id: "agent-1" }),
+      makeIssue({ id: "a", status: "in_progress", priority: "high", owner_type: "member", owner_id: "u-1" }),
+      makeIssue({ id: "b", status: "in_progress", priority: "high", owner_type: "member", owner_id: "u-1" }),
     ];
     selection.selectedIds = new Set(["a", "b"]);
 
@@ -110,10 +112,10 @@ describe("BatchActionToolbar picker wiring", () => {
 
     expect(screen.getByTestId("status-picker")).toHaveAttribute("data-status", "in_progress");
     expect(screen.getByTestId("priority-picker")).toHaveAttribute("data-priority", "high");
-    const executor = screen.getByTestId("executor-picker");
-    expect(executor).toHaveAttribute("data-executor-type", "agent");
-    expect(executor).toHaveAttribute("data-executor-id", "agent-1");
-    expect(executor).toHaveAttribute("data-mixed", "false");
+    const owner = screen.getByTestId("owner-picker");
+    expect(owner).toHaveAttribute("data-owner-type", "member");
+    expect(owner).toHaveAttribute("data-owner-id", "u-1");
+    expect(owner).toHaveAttribute("data-mixed", "false");
   });
 
   it("falls back to an empty (no-checkmark) state when the selection is mixed", () => {
@@ -127,6 +129,7 @@ describe("BatchActionToolbar picker wiring", () => {
 
     expect(screen.getByTestId("status-picker")).toHaveAttribute("data-status", "__none__");
     expect(screen.getByTestId("priority-picker")).toHaveAttribute("data-priority", "__none__");
+    expect(screen.getByTestId("owner-picker")).toHaveAttribute("data-mixed", "true");
     expect(screen.getByTestId("executor-picker")).toHaveAttribute("data-mixed", "true");
   });
 

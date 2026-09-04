@@ -4,28 +4,34 @@ The `patchbay` CLI connects your local machine to Patchbay. It handles authentic
 
 ## Installation
 
-### Install script (macOS/Linux)
+### Homebrew (macOS/Linux)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash
+brew install alexj11324/Cordy/patchbay
 ```
 
 ### Build from Source
 
 ```bash
 git clone https://github.com/alexj11324/Cordy.git
-cd patchbay
+cd Cordy
 make build
-cp bin/patchbay /usr/local/bin/patchbay
+cp server/bin/patchbay /usr/local/bin/patchbay
 ```
 
 ### Update
 
 ```bash
+brew upgrade alexj11324/Cordy/patchbay
+```
+
+For install script or manual installs, use:
+
+```bash
 patchbay update
 ```
 
-`patchbay update` downloads and verifies the latest GitHub Release.
+`patchbay update` auto-detects your installation method and upgrades accordingly.
 
 ## Quick Start
 
@@ -50,6 +56,28 @@ patchbay daemon start
 ```
 
 `patchbay login` automatically discovers all workspaces you belong to and adds them to the daemon watch list.
+
+## Dependency graph plans
+
+Use the typed graph commands when one issue is a parent for several tasks with
+hard prerequisites. The server validates the role-specific fields, derives
+waves, and creates the child issues, graph nodes, and edges atomically:
+
+```bash
+patchbay issue dependency-graph get MUL-123 --output table
+patchbay issue dependency-graph apply MUL-123 \
+  --idempotency-key plan-mul-123-v1 --plan-file ./dependency-plan.json
+cat dependency-plan.json | patchbay issue dependency-graph apply MUL-123 \
+  --idempotency-key plan-mul-123-v1 --plan-stdin --output json
+```
+
+The plan uses explicit `owner`, `executor`, `candidate_executors`, and
+`reviewer` objects. An owner is a workspace member; an executor or candidate
+is an agent or team; a reviewer may be a member, agent, or team. `get` and
+successful `apply` expose the parent, children, nodes, edges, derived `waves`,
+and readiness `unlock_condition`. Reusing the idempotency key replays the same
+plan rather than creating duplicate child issues. Graph mutations publish
+`dependency_graph:updated` so connected clients refresh their reads.
 
 ## Authentication
 
@@ -87,7 +115,7 @@ Removes the stored authentication token.
 
 ## Agent Daemon
 
-The daemon is the local agent runtime. It detects available AI CLIs on your machine, registers them with the Patchbay server, and executes tasks when agents are assigned work.
+The daemon is the local agent runtime. It detects available AI CLIs on your machine, registers them with the Patchbay server, and executes tasks when agents receive routed executor work.
 
 ### Start
 
@@ -201,6 +229,7 @@ The daemon auto-detects these AI CLIs on your PATH:
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | `claude` | Anthropic's coding agent |
 | [Antigravity CLI](https://antigravity.google/docs/cli-install) | `agy` | Google Antigravity CLI |
 | [CodeBuddy Code](https://www.codebuddy.ai/docs/cli/quickstart) | `codebuddy` | Tencent CodeBuddy Code (reads `CODEBUDDY.md`, not `CLAUDE.md`) |
+| [Huawei Cloud CodeArts](https://support.huaweicloud.com/usermanual-cli/codeartsagent_cli_0001.html) | `codearts` | Huawei Cloud coding agent (OpenCode-compatible JSON protocol) |
 | [DevEco Code](https://gitcode.com/openharmony-sig/deveco-code) | `deveco` | OpenHarmony DevEco Code |
 | [Codex](https://github.com/openai/codex) | `codex` | OpenAI's coding agent |
 | [GitHub Copilot CLI](https://docs.github.com/en/copilot) | `copilot` | GitHub's coding agent (model routed by your GitHub entitlement) |
@@ -228,7 +257,7 @@ You need at least one installed. The daemon registers each detected CLI as an av
 ### How It Works
 
 1. On start, the daemon detects installed agent CLIs and registers a runtime for each agent in each watched workspace
-2. It polls the server at a configurable interval (default: 3s) for claimed tasks
+2. The server pushes a wake signal over the WebSocket connection when work is waiting, and the daemon claims across all of its runtimes in one batch. A periodic poll (default: 30s) runs as the catch-up path — a wake signal cuts the wait short, so this interval puts no floor under normal task pickup; it bounds how long work can sit when a signal is missed or the connection is down
 3. When a task arrives, it creates an isolated workspace directory, spawns the agent CLI, and streams results back
 4. Heartbeats are sent periodically (default: 15s) so the server knows the daemon is alive
 5. On shutdown, all runtimes are deregistered
@@ -239,10 +268,14 @@ Daemon behavior is configured via flags or environment variables:
 
 | Setting | Flag | Env Variable | Default |
 |---------|------|--------------|---------|
-| Poll interval | `--poll-interval` | `PATCHBAY_DAEMON_POLL_INTERVAL` | `3s` |
+| Poll interval | `--poll-interval` | `PATCHBAY_DAEMON_POLL_INTERVAL` | `30s` (catch-up fallback; WebSocket wake signals deliver work sooner) |
 | Heartbeat interval | `--heartbeat-interval` | `PATCHBAY_DAEMON_HEARTBEAT_INTERVAL` | `15s` |
 | Agent timeout | `--agent-timeout` | `PATCHBAY_AGENT_TIMEOUT` | `0` (no cap; bounded by the watchdogs) |
-| Codex semantic inactivity timeout | `--codex-semantic-inactivity-timeout` | `PATCHBAY_CODEX_SEMANTIC_INACTIVITY_TIMEOUT` | `10m` |
+| Agent idle watchdog | — | `PATCHBAY_AGENT_IDLE_WATCHDOG` | `2h` (`0` disables the whole watchdog suite) |
+| Agent tool watchdog | — | `PATCHBAY_AGENT_TOOL_WATCHDOG` | same as the idle watchdog (`0` = never force-stop during a tool call) |
+| Codex semantic inactivity timeout | `--codex-semantic-inactivity-timeout` | `PATCHBAY_CODEX_SEMANTIC_INACTIVITY_TIMEOUT` | same as the idle watchdog (Codex's timer is not tool-aware, so it tracks the larger of the idle / tool budgets) |
+| Codex first-turn no-progress timeout | — | `PATCHBAY_CODEX_FIRST_TURN_TIMEOUT` | `0` (keeps the built-in `60s` ceiling) |
+| Codex handshake timeout | `--codex-handshake-timeout` | `PATCHBAY_CODEX_HANDSHAKE_TIMEOUT` | `30s`; `thread/start` and `thread/resume`: `60s` (an explicit value overrides both budgets globally) |
 | OpenCode idle watchdog | — | `PATCHBAY_OPENCODE_IDLE_WATCHDOG` | `10m` (`0` falls back to the generic idle watchdog; cannot extend it) |
 | Max concurrent tasks | `--max-concurrent-tasks` | `PATCHBAY_DAEMON_MAX_CONCURRENT_TASKS` | `20` |
 | Daemon ID | `--daemon-id` | `PATCHBAY_DAEMON_ID` | hostname |
@@ -260,6 +293,7 @@ Daemon behavior is configured via flags or environment variables:
 | GC repo maintenance | — | `PATCHBAY_GC_REPO_MAINTENANCE_ENABLED` | `true` (set `false`/`0` to disable heavy Git maintenance only) |
 | GC Hermes memory TTL (per-agent `memories/`) | — | `PATCHBAY_GC_HERMES_MEMORY_TTL` | `2160h` (90d; set `0` to disable) |
 | GC Hermes session TTL (per-conversation `state.db`) | — | `PATCHBAY_GC_HERMES_SESSION_TTL` | `336h` (14d; set `0` to disable) |
+| GC task temp legacy TTL (pre-lock `patchbay-task-*`) | — | `PATCHBAY_GC_TASK_TEMP_LEGACY_TTL` | `0` (disabled; set a duration to opt in) |
 
 #### Workspace garbage collection
 
@@ -277,8 +311,9 @@ The daemon periodically scans `PATCHBAY_WORKSPACES_ROOT` and applies several dis
 
   Short worktree cleanup and eligible cache eviction continue on every GC cycle, including while agents are active. Heavy repo maintenance (`reflog expire` and `git gc`) starts only while the daemon is otherwise idle. A checkout or newly claimed task cancels it and takes priority; interrupted work remains pending for a later idle GC cycle. Operators can disable only these heavy commands with `PATCHBAY_GC_REPO_MAINTENANCE_ENABLED=false` without disabling worktree cleanup or cache eviction.
 
-- **Hermes session store reclamation** — a conversation's Hermes Agent event history (`state.db`) lives at `<profile dir>/hermes-sessions/<agent-id>/<hermes-profile>/<conversation>/`, outside any task directory, so a follow-up turn can resume it (see [Hermes agent memory](#hermes-agent-memory)). A store untouched for `PATCHBAY_GC_HERMES_SESSION_TTL` is removed. The default matches the Codex session store rather than the memory store above: these hold full Agent event histories, and reclaiming an idle one costs a thread that starts fresh (with a continuity notice), not an agent that forgot what it learned. A store a running task holds is never reclaimed.
+- **Hermes session store reclamation** — a conversation's Hermes transcript (`state.db`) lives at `<profile dir>/hermes-sessions/<agent-id>/<hermes-profile>/<conversation>/`, outside any task directory, so a follow-up turn can resume it (see [Hermes agent memory](#hermes-agent-memory)). A store untouched for `PATCHBAY_GC_HERMES_SESSION_TTL` is removed. The default matches the Codex session store rather than the memory store above: these hold full transcripts, and reclaiming an idle one costs a thread that starts fresh (with a continuity notice), not an agent that forgot what it learned. A store a running task holds is never reclaimed.
 - **Hermes memory store reclamation** — a Hermes agent's long-term memory (`memories/`) lives at `<profile dir>/hermes-state/<agent-id>/<hermes-profile>/`, outside any task directory, so it survives across tasks and issues (see [Hermes agent memory](#hermes-agent-memory)). A store untouched for `PATCHBAY_GC_HERMES_MEMORY_TTL` is removed, giving a deleted agent's memory an eventual-reclamation guarantee. The default is deliberately long: these are a handful of markdown files, and reclaiming one is user-visible amnesia rather than a cache miss. A store a running task holds is never reclaimed.
+- **Task temp dir reclamation** — every task gets a private temp directory (`patchbay-task-*`) under the system temp base (`/tmp`, or `PATCHBAY_AGENT_TEMP_BASE`), exported to the agent as `TMPDIR`/`TMP`/`TEMP`. It is removed when the run ends, but that removal never happens when the daemon is killed and does not succeed while a file inside is still open — common on Windows, where an open handle makes the delete fail outright. These directories live outside `PATCHBAY_WORKSPACES_ROOT`, so nothing else reclaimed them and whatever the end-of-run removal missed accumulated forever. Every GC cycle now sweeps the temp base. Liveness is decided by the directory's `.task_lock` — the same OS advisory lock an env root uses, which the kernel releases when the holding process dies — not by age: a directory still in use is never removed however old it is, including one owned by a different daemon sharing the same temp base, and a directory whose owner is gone is removed on the next cycle however new it is. Directories left by a daemon predating that lock carry no lock file, so nothing can be proven about them and age is the only signal available. Reclaiming those is an operator's explicit decision: `PATCHBAY_GC_TASK_TEMP_LEGACY_TTL` defaults to `0`, which leaves them in place. Set it to a duration only once you know no pre-lock daemon is still running tasks on this machine — a task may legitimately run for weeks (there is no default agent timeout), a daemon on another profile can still be on the old binary, and every daemon on the machine shares one temp base, so a TTL here can delete a `TMPDIR` that is still in use. Each GC cycle logs how many such directories it left alone. Even with a TTL set, a directory holding no task content is never reclaimed on age — an old empty leftover, or a shell left by a daemon that died between creating the directory and publishing its lock — because holding no content is exactly what a directory currently being published looks like, and deleting one of those would take the `TMPDIR` of a task that is starting. Those shells are a few bytes each. Only entries carrying the `patchbay-task-` prefix are ever considered — the temp base itself is usually shared with other programs — and a directory this sweep cannot read is never touched.
 
 Configured patterns are basename-only — entries containing `/` or `\` are silently dropped — and `.git` subtrees are never descended into. The managed Codex cache is matched by its exact relative path, so a repository's own `.sandbox-bin` is not removed unless an operator explicitly adds that basename to `PATCHBAY_GC_ARTIFACT_PATTERNS`. The default list (`node_modules`, `.next`, `.turbo`) is intentionally narrow; extend it per deployment if your repos consistently produce other regenerable directories (for example, `PATCHBAY_GC_ARTIFACT_PATTERNS=node_modules,.next,.turbo,target,__pycache__`). To disable artifact cleanup entirely, including the managed Codex cache, set `PATCHBAY_GC_ARTIFACT_TTL=0`.
 
@@ -296,6 +331,8 @@ Agent-specific overrides:
 | `PATCHBAY_CODEBUDDY_PATH` | Custom path to the `codebuddy` binary |
 | `PATCHBAY_CODEBUDDY_MODEL` | Override the CodeBuddy model used |
 | `PATCHBAY_CODEBUDDY_ARGS` | Default extra arguments for CodeBuddy runs |
+| `PATCHBAY_CODEARTS_PATH` | Custom path to the `codearts` launcher or binary |
+| `PATCHBAY_CODEARTS_MODEL` | Override the CodeArts model used |
 | `PATCHBAY_DEVECO_PATH` | Custom path to the `deveco` binary |
 | `PATCHBAY_DEVECO_MODEL` | Override the DevEco Code model used |
 | `PATCHBAY_CODEX_PATH` | Custom path to the `codex` binary |
@@ -376,7 +413,7 @@ Consequences worth knowing:
 
 - **Memory is agent-scoped but runtime-local.** One agent's memory is never visible to another, and the user's own `~/.hermes/memories` is never read or written. The store lives in this runtime's Patchbay profile directory, so it does **not** follow the agent to another machine — an agent that runs on two runtimes has a separate memory line on each. Everything else in the home — auth, config, plugins — is still shared from the user's real home by symlink, so the agent does not need its own login.
 - **To carry existing local memory in**, copy it into the store once: `cp -R ~/.hermes/memories/. "<profile dir>/hermes-state/<agent-id>/default/"`. To wipe an agent's memory, delete that directory.
-- **Conversation history is covered too, in a separate store.** Hermes keeps every ACP session in `<HERMES_HOME>/state.db`, which the overlay links to a per-conversation store at `<profile dir>/hermes-sessions/<agent-id>/<hermes-profile>/<issue-id | chat_\<chat-session-id\>>/`, so a follow-up turn resumes the actual Agent event history. The shard is per conversation rather than per agent on purpose: tasks of one conversation run one after another, so a shard has a single writer at a time, while two issues never share a database. A host that cannot create the link (Windows without symlink privileges) keeps the database task-local instead, untouched — the link is proven creatable before anything is moved, and a copy is never used, because a copied SQLite database would absorb the turn's writes into a file the next task discards.
+- **Conversation history is covered too, in a separate store.** Hermes keeps every ACP session in `<HERMES_HOME>/state.db`, which the overlay links to a per-conversation store at `<profile dir>/hermes-sessions/<agent-id>/<hermes-profile>/<issue-id | chat_\<chat-session-id\>>/`, so a follow-up turn resumes the actual transcript. The shard is per conversation rather than per agent on purpose: tasks of one conversation run one after another, so a shard has a single writer at a time, while two issues never share a database. A host that cannot create the link (Windows without symlink privileges) keeps the database task-local instead, untouched — the link is proven creatable before anything is moved, and a copy is never used, because a copied SQLite database would absorb the turn's writes into a file the next task discards.
 - **Concurrent tasks of one agent are last-writer-wins.** Hermes rewrites its memory files whole, so two tasks writing memory at the same time can overwrite each other.
 - **Every Hermes agent gets the overlay in practice**, so every one of them gets a persistent memory store. The daemon builds the overlay only when a task carries skills, but the server appends Patchbay's built-in skills to every agent's skill set (`LoadAgentSkillBundles`), so that list is never empty — leaving an agent's own skill list empty does not opt out of the overlay, and is not a way to keep using the host's `~/.hermes/memories`.
 
@@ -483,14 +520,13 @@ patchbay issue list
 patchbay issue list --status in_progress
 patchbay issue list --priority urgent --executor "Agent Name"
 patchbay issue list --executor-id 5fb87ac7-23b5-4a7a-81fa-ed295a54545d
-patchbay issue list --owner "Human Owner"
 patchbay issue list --full-id
 patchbay issue list --limit 20 --output json
 patchbay issue list --status todo --sort position       # board order (the default)
 patchbay issue list --sort created_at --direction desc  # newest first
 ```
 
-Table output shows a routable issue `KEY` such as `PB-123`; copy that key into follow-up commands like `issue get`, `issue comment list`, `issue status`, or `--parent`. Add `--full-id` when you need canonical UUIDs. Available filters include `--status`, `--priority`, `--executor` / `--executor-id`, `--owner` / `--owner-id`, `--project`, `--metadata`, and `--limit`. Use the UUID forms for unambiguous filtering when names overlap.
+Table output shows a routable issue `KEY` such as `MUL-123`; copy that key into follow-up commands like `issue get`, `issue comment list`, `issue status`, or `--parent`. Add `--full-id` when you need canonical UUIDs. Available filters: `--status`, `--priority`, `--owner` / `--owner-id`, `--executor` / `--executor-id`, `--project`, `--metadata`, `--limit`. An owner is a workspace member; an executor is an agent or team. Use the role-specific ID flags for unambiguous filtering when names overlap.
 
 Results come back in board order (`position`, ascending) by default. Pass `--sort` to change the column (`position`, `title`, `created_at`, `start_date`, `due_date`, `priority`) and `--direction asc|desc` to flip the order. `position` is always ascending (it is the manual drag order), so `--direction` is rejected when `--sort` is `position` or omitted — use it only with `title`, `created_at`, `start_date`, `due_date`, or `priority`.
 
@@ -512,19 +548,16 @@ patchbay issue get <id> --output json
 
 ```bash
 patchbay issue create --title "Fix login bug" --description "..." --priority high --executor "Lambda"
-patchbay issue create --title "Fix login bug" --owner-id 5fb87ac7-23b5-4a7a-81fa-ed295a54545d
+patchbay issue create --title "Fix login bug" --executor-id 5fb87ac7-23b5-4a7a-81fa-ed295a54545d
 ```
 
-Flags: `--title` (required), `--description`, `--status`, `--priority`, `--executor` / `--executor-id`, `--owner` / `--owner-id`, `--reviewer` / `--reviewer-id`, `--parent`, `--project`, `--due-date`. The name and UUID forms are mutually exclusive; use UUIDs when scripting against the IDs returned by `patchbay workspace member list --output json` / `patchbay agent list --output json`.
+Flags: `--title` (required), `--description`, `--status`, `--priority`, `--owner` / `--owner-id`, `--executor` / `--executor-id`, `--reviewer` / `--reviewer-id`, `--parent`, `--project`, `--due-date`. The owner must be a workspace member; the executor must be an agent or team; the reviewer may be a member, agent, or team. Use role-specific ID flags when scripting against the IDs returned by `patchbay workspace member list --output json` / `patchbay agent list --output json`.
 
 ### Update Issue
 
 ```bash
 patchbay issue update <id> --title "New title" --priority urgent
 patchbay issue update <id> --position 4.5
-patchbay issue update <id> --executor-id <agent-or-team-uuid> --no-start
-patchbay issue update <id> --owner-id <member-uuid> --no-start
-patchbay issue update <id> --reviewer-id <actor-uuid> --no-start
 ```
 
 `--position` sets the raw ordering value within the board column (lower sorts first). For relative moves, `issue reorder` is easier because it works out the value for you.
@@ -542,15 +575,15 @@ patchbay issue reorder <id> --after  <other>   # directly below another issue in
 
 Pick exactly one of `--top`, `--bottom`, `--before`, or `--after`. Reorder stays inside the issue's current column, so `--before` / `--after` must name an issue in that same column. To move an issue to a different column, change its status first with `issue status`, then reorder within the new column.
 
-### Set Issue Roles
+### Assign Issue
 
 ```bash
-patchbay issue update <id> --executor "Lambda"
-patchbay issue update <id> --owner "Human Owner"
-patchbay issue update <id> --reviewer "Reviewer Name"
+patchbay issue assign <id> --to "Lambda"
+patchbay issue assign <id> --to-id 5fb87ac7-23b5-4a7a-81fa-ed295a54545d
+patchbay issue assign <id> --unassign
 ```
 
-Use `--executor-id`, `--owner-id`, or `--reviewer-id` to target a canonical UUID. Executors are agents or teams, owners are workspace members, and reviewers may be any supported actor.
+Pass `--to-id <uuid>` to assign by canonical UUID (mutually exclusive with `--to`); useful when names overlap across members and agents.
 
 ### Change Status
 
@@ -831,6 +864,11 @@ patchbay automation get <id>
 patchbay automation get <id> --output json   # includes triggers
 ```
 
+In JSON output `triggers` is a **top-level key alongside `automation`**, not nested
+inside it — the payload is `{"automation": {...}, "triggers": [...], "collaborators": [...]}`.
+Read trigger ids with `jq '.triggers[].id'`, or use `automation trigger-list` below.
+The table output shows only the automation's own fields, not its triggers.
+
 ### Create / Update / Delete
 
 ```bash
@@ -867,12 +905,22 @@ patchbay automation runs <id> --limit 50 --output json
 ### Schedule Triggers
 
 ```bash
+patchbay automation trigger-list <automation-id>              # ids, kind, schedule, next run
+patchbay automation trigger-list <automation-id> --full-id    # canonical UUIDs
 patchbay automation trigger-add <automation-id> --cron "0 9 * * 1-5" --timezone "America/New_York"
 patchbay automation trigger-update <automation-id> <trigger-id> --enabled=false
 patchbay automation trigger-delete <automation-id> <trigger-id>
 ```
 
-Only cron-based `schedule` triggers are currently exposed via the CLI. The data model also defines `webhook` and `api` kinds, but there is no server endpoint that fires them yet, so they're not surfaced here.
+`trigger-list` is the way to obtain the `<trigger-id>` that `trigger-update`,
+`trigger-delete` and `trigger-rotate-url` require. Like automation ids, trigger ids
+may be passed as a short prefix as long as it is unique within that automation; use
+`--full-id` to print canonical UUIDs. Webhook credentials are redacted in this
+output — use `automation get <id> --output json --show-secrets` to reveal them.
+
+The CLI exposes cron-based `schedule` triggers via `trigger-add`, and `webhook`
+triggers via `trigger-add --kind webhook` plus `trigger-rotate-url`. The data model
+also defines an `api` kind, which is not surfaced here.
 
 ## Other Commands
 
@@ -897,10 +945,9 @@ patchbay daemon status --output json
 ## Error Messages
 
 The CLI funnels command errors returned to the top-level handler through a
-single user-facing translation layer (`server-rs/crates/patchbay-cli/src/error.rs`)
-so that what you see on the terminal is a short, actionable sentence rather
-than a raw internal error, an HTTP status line, or an internal `resolve issue:
-...` chain. (A
+single user-facing translation layer (`server/internal/cli/errors.go`) so that
+what you see on the terminal is a short, actionable sentence rather than a raw
+Go error, an HTTP status line, or an internal `resolve issue: ...` chain. (A
 few commands print their own output or run deliberate fast probes — for example
 `setup`'s short `/health` reachability check — and don't go through this
 layer.) The underlying detail is still available on demand (see `--debug`).
@@ -927,7 +974,7 @@ precedence order), messages switch to **Chinese**. No flag is needed; set the
 locale as usual:
 
 ```bash
-LANG=zh_CN.UTF-8 patchbay issue get PB-9999   # 错误信息显示为中文
+LANG=zh_CN.UTF-8 patchbay issue get MUL-9999   # 错误信息显示为中文
 ```
 
 ### Exit codes
@@ -944,7 +991,7 @@ The process exit code is tiered so scripts can branch on the failure class:
 | `5` | validation (HTTP 400, 422) |
 
 ```bash
-patchbay issue get PB-9999
+patchbay issue get MUL-9999
 if [ $? -eq 4 ]; then echo "no such issue"; fi
 ```
 
@@ -957,16 +1004,60 @@ to file a bug or understand exactly what the server returned:
 
 ```bash
 patchbay issue list --debug
-PATCHBAY_DEBUG=1 patchbay issue update PB-1234 --title "x"
+PATCHBAY_DEBUG=1 patchbay issue update MUL-1234 --title "x"
 ```
 
 ### Request timeout
 
 API requests use a default timeout of 30 seconds. Override it with
-`PATCHBAY_HTTP_TIMEOUT` when you are on a slow network; it accepts a duration
+`PATCHBAY_HTTP_TIMEOUT` when you are on a slow network; it accepts a Go duration
 (`45s`, `2m`) or a plain number of seconds (`45`). Command-level deadlines are
 always at least this value, so raising it takes effect across all commands.
 
 ```bash
 PATCHBAY_HTTP_TIMEOUT=60s patchbay issue list
 ```
+
+### Stall detection (skill commands)
+
+A total-elapsed timeout punishes the transfer that is working: a large skill
+arriving steadily over a slow link is cut off mid-body, while a dead connection
+is held open for the full budget. The `skill` commands therefore fail on a lack
+of *progress* instead:
+
+- A read that receives no bytes for **15 seconds** fails immediately, reported
+  as a stalled transfer rather than a timeout.
+- A transfer that keeps producing bytes runs to completion, however long it
+  takes, behind a loose **10 minute** whole-request ceiling.
+
+Override the no-progress budget with `PATCHBAY_HTTP_STALL_TIMEOUT` (same format
+as `PATCHBAY_HTTP_TIMEOUT`). If only `PATCHBAY_HTTP_TIMEOUT` is set it applies on
+this path too, as the no-progress budget — it keeps meaning "the longest I will
+wait for this server", not "the longest this download may take".
+
+```bash
+PATCHBAY_HTTP_STALL_TIMEOUT=45s patchbay skill get <id>
+```
+
+Every other command still uses the total-elapsed timeout above. Stall detection
+starts here because skill payloads are the largest responses the CLI reads; the
+mechanism itself is not skill-specific.
+
+### Skill payload size
+
+`patchbay skill get` and `patchbay skill files list` return **metadata only** by
+default — path, byte size and content hash for each file, plus the size and
+hash of the SKILL.md body. Sizes are what tell you which file makes a skill
+large, and they stay available no matter how large it gets.
+
+Pass `--with-content` when you actually need the bodies:
+
+```bash
+patchbay skill files list <id>                  # paths and sizes
+patchbay skill files list <id> --with-content   # bodies inlined
+```
+
+On the API, both endpoints accept `?include=content` and `?include=metadata`.
+A request that sends neither still gets `content`, on both endpoints, so a
+server upgrade never changes what an un-upgraded client receives — it is the
+CLI that asks for the smaller shape.

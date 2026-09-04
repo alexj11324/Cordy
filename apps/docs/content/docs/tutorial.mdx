@@ -40,7 +40,7 @@ Creating it opens the new workspace. The sidebar on the left is where every late
 
 Agents execute work on the computers you connect, using the AI coding tools installed on those computers.
 
-This tutorial uses [Patchbay Desktop](https://patchbay.aspectlylabs.com/download): after downloading and signing in, it registers this computer as a runtime automatically and detects the installed AI coding tools. Open **Configure → Devices** at the bottom of the sidebar and confirm the computer is online:
+This tutorial uses [Patchbay Desktop](https://patchbay.aspectlylabs.com/download): after downloading and signing in, it registers this computer as a runtime automatically and detects the installed AI coding tools. Open **Configure → Runtimes** at the bottom of the sidebar and confirm the computer is online:
 
 ![The runtime list with this computer online](/images/docs/tutorial-runtimes-list.webp)
 
@@ -52,7 +52,7 @@ Desktop is not required: on the Runtimes page, click **Add a computer** and foll
 
 ## Create your first agent
 
-Agents are full members of a workspace: they can be assigned issues, post comments, and talk with you. The first agent is a helper that handles day-to-day workspace chores; a number of later steps in this tutorial are handed to it.
+Agents are full members of a workspace: they can execute issues, post comments, and talk with you. The first agent is a helper that handles day-to-day workspace chores; a number of later steps in this tutorial are handed to it as executor.
 
 Open **Agents** in the sidebar, click **New agent**, choose **Start blank**, and fill in three fields:
 
@@ -104,7 +104,7 @@ Open **Settings → Repositories** to confirm: `personal-website` is in the list
 
 Without the GitHub CLI, you can create the repository on GitHub yourself and add it manually on the same page; the result is the same.
 
-Finally, click **Connect GitHub** on the same page and authorize the repository as prompted. Once connected, PRs are mirrored into Patchbay; an agent must register a PR from its authenticated task/run, or you can explicitly Attach the mirrored Work Product to the issue. PR state and CI results then show up in the issue. An issue identifier remains optional context for human search.
+Finally, click **Connect GitHub** on the same page and authorize the repository as prompted. Once connected, pull requests that reference an issue identifier link to that issue automatically, and PR state and CI results show up in the issue.
 
 ## The first issue: build the site
 
@@ -147,13 +147,15 @@ The description carries three kinds of information: constraints (start from the 
 
 ![Agent mode in the new issue dialog, with Engineer selected as the creator](/images/docs/tutorial-new-issue-agent-mode.webp)
 
-After submitting, Patchbay creates the issue (`PB-1`, with a generated title) and sets Engineer as the assignee. Engineer starts executing and the status moves to In Progress. The right side of the issue holds everything happening on it: status, assignee, linked pull requests, and the shared Agent thread.
+After submitting, Patchbay creates the issue (`MUL-1`, with a generated title) and sets Engineer as the executor. Engineer starts executing and the status moves to In Progress. The right side of the issue holds everything happening on it: status, owner, executor, reviewer, linked pull requests, and the execution log.
 
-The run takes a few minutes, and there are two ways into its progress: the working-status badge next to the title, and **Agent thread** on the right — open the current run:
+The run takes a few minutes, and there are two ways into its progress: the working-status badge next to the title, and **Execution log** on the right — open the current run:
 
 ![The two entry points for checking progress](/images/docs/tutorial-issue-engineer-working.webp)
 
-The Agent thread shows every public step of the run: **Agent** messages are its narration, and **Bash**, **Read**, and **Edit** are the commands it ran and the files it read and wrote. At the moment of this screenshot it is taking screenshots of the finished pages to check its own work, and has just found that the divider in the pricing table is misaligned. Click the ⓘ in the top right to see the computer, AI coding tool, and working directory used for the run.
+The execution log holds every step of the run: **Agent** rows are its own narration, and **Bash**, **Read**, and **Edit** are the commands it ran and the files it read and wrote. At the moment of this screenshot it is taking screenshots of the finished pages to check its own work, and has just found that the divider in the pricing table is misaligned. Click the ⓘ in the top right to see the computer, AI coding tool, and working directory used for the run.
+
+![Execution log: every step Engineer took](/images/docs/tutorial-execution-log.webp)
 
 ## Sign-off: talk it over in the issue
 
@@ -171,7 +173,7 @@ Open it, select Engineer, and type `@` to reference the current issue — the co
 
 ![Asking in chat with the issue referenced](/images/docs/tutorial-chat-ask-in-issue.webp)
 
-Engineer's reply has two parts: the local server is running, with the address to open; and the PR was already submitted but had not been explicitly registered, so it remains unassociated even if its title, branch, or body contains `PB-1`. Select the PR in the issue's Attach control to create the audited relation.
+Engineer's reply has two parts: the local server is running, with the address to open; and the PR was in fact already submitted, but the title, branch name, and body all lacked `MUL-1`, so automatic linking had nothing to match — it then added the identifier to the PR title.
 
 ![Engineer's reply: the local address and why the PR was not linked](/images/docs/tutorial-chat-engineer-reply.webp)
 
@@ -185,9 +187,9 @@ Back on the issue, a PR card now appears in the **Pull requests** area on the ri
 
 ## Write feedback into the instructions
 
-This round of review exposed two of Engineer's working habits: it checks its own work with repeated screenshots after finishing, which takes up a lot of run time; and it does not explicitly register the PR it opens. An issue identifier in the PR is optional and does not replace registration. Neither is a one-off mistake — both are things it repeats every time. What needs changing is not this issue but its instructions.
+This round of review exposed two of Engineer's working habits: it checks its own work with repeated screenshots after finishing, which takes up a lot of run time; and it opens PRs without the issue identifier, so they don't link. Neither is a one-off mistake — both are things it repeats every time. What needs changing is not this issue but its instructions.
 
-You don't have to edit the instructions by hand: an agent can update its own configuration with the patchbay CLI. In the same conversation, give Engineer the two rules — no screenshot self-checks after finishing, since review happens in a browser; and every PR must be registered through the authenticated task/run context or an explicit Attach operation — and have it write them into its own instructions:
+You don't have to edit the instructions by hand: an agent can update its own configuration with the patchbay CLI. In the same conversation, give Engineer the two rules — no screenshot self-checks after finishing, since review happens in a browser; and the branch name or title of a PR must carry the issue identifier — and have it write them into its own instructions:
 
 ![Asking Engineer to write the rules into its own instructions](/images/docs/tutorial-chat-update-instructions.webp)
 
@@ -207,13 +209,13 @@ Creation again goes to Patchbay helper: an agent named Reviewer, this time on Co
 
 ![Reviewer's configuration](/images/docs/tutorial-reviewer-detail.webp)
 
-Review needs no new issue and no change of assignee. Back in PB-1's comment box, type `@Reviewer` to mention it, write what needs doing, and send — a hint below the box says that Reviewer starts executing once the comment is sent:
+Review needs no new issue and no change of executor. Back in MUL-1's comment box, type `@Reviewer` to mention it, write what needs doing, and send — a hint below the box says that Reviewer starts executing once the comment is sent:
 
 ![Starting a review by @-mentioning Reviewer in a comment](/images/docs/tutorial-comment-mention-reviewer.webp)
 
 A few minutes later the review comment comes back, with the conclusion that changes are needed before merging. Five findings in two groups — three on code conventions, two on requirement conformance — each with a file and line number. The two conformance findings are exactly what Engineer could not see itself: the pricing table presents invented prices, deposits, and tax terms as real content with no placeholder marking, and the contact section carries an unverified Instagram link. The comment ends with what it verified itself: typecheck, lint, and build all pass.
 
-Fixing needs no new process: @Engineer in the comment box and ask it to clear all the findings. Engineer starts executing on send, visible both in the badge next to the title and in the Agent thread on the right:
+Fixing needs no new process: @Engineer in the comment box and ask it to clear all the findings. Engineer starts executing on send, visible both in the badge next to the title and in the execution log on the right:
 
 ![Reviewer's findings, with @Engineer picking up the fixes](/images/docs/tutorial-reviewer-findings.webp)
 
@@ -237,7 +239,7 @@ That closes the loop on the first issue: from the description of the requirement
 
 ## Form a team
 
-The PB-1 loop works, but every hand-off started with you: mention Reviewer after reviewing, mention Engineer after the review. Coordination itself became your job. That layer can be handed off too. Patchbay's answer to it is the **team**: a named group of agents and members led by a leader agent. When an issue is assigned to a team, the leader takes it: reads the issue, delegates the work, and moves the status along. When a member replies, the leader is woken automatically and decides the next step; at the end it reports the deliverable to you. The leader takes over exactly the role you just played.
+The MUL-1 loop works, but every hand-off started with you: mention Reviewer after reviewing, mention Engineer after the review. Coordination itself became your job. That layer can be handed off too. Patchbay's answer to it is the **team**: a named group of agents and members led by a leader agent. When a team is the issue's executor, the leader takes it: reads the issue, delegates the work, and moves the status along. When a member replies, the leader is woken automatically and decides the next step; at the end it reports the deliverable to you. The leader takes over exactly the role you just played.
 
 A team is the division of labor you already have, plus a leader:
 
@@ -273,21 +275,21 @@ One of these two skills is about doing the work, the other about reporting it:
 - **tdd**, attached to Engineer, is an engineering method: write a failing test first, then the implementation that makes exactly that test pass;
 - **i-have-adhd**, attached to Lead, is a reporting style: the first line is always an actionable next step, multi-step items are numbered, and progress stays visible. Everything the leader produces is a report addressed to you, so this skill decides what you end up reading.
 
-A team's way of working settles into skills, and a new agent inherits it by attaching one. Import is not the only source: **New skill** offers three routes — create manually, import from URL, and copy from a local runtime — not covered in detail here; see [Skills](/skills):
+A team's way of working settles into skills, and a new agent inherits it by attaching one. Import is not the only source: **New skill** offers four routes — create manually, import from a local folder, import from URL, and copy from a local runtime — not covered in detail here; see [Skills](/skills):
 
-![The three ways to add a new skill](/images/docs/tutorial-skill-new-modal.webp)
+![The four ways to add a new skill](/images/docs/tutorial-skill-new-modal.webp)
 
 Read the files of a third-party skill before importing it: Patchbay does not sandbox them, and a skill's content is handed to the AI coding tool as-is.
 
 ## The second issue: hand it to the team
 
-Give the team a complete piece of work: turn the site into a generic template — replace the real name with a placeholder photographer name and the real email with `hello@example.com`, leaving layout and content structure untouched. This issue does not have to be written by hand: describe the requirement to Lead in Chat and create it with **Create with agent**, assigned to the team — a team, like an agent or a member, can appear anywhere an assignee can:
+Give the team a complete piece of work: turn the site into a generic template — replace the real name with a placeholder photographer name and the real email with `hello@example.com`, leaving layout and content structure untouched. This issue does not have to be written by hand: describe the requirement to Lead in Chat and create it with **Create with agent**, setting the team as executor — the owner and reviewer remain independent roles:
 
 ![Creating an issue from a conversation with Create with agent](/images/docs/tutorial-create-with-agent.webp)
 
 In the generated issue, the requirement is already organized into a structured description, and the badge next to the title shows the leader has taken it:
 
-![PB-2: Lead creates the issue and starts work](/images/docs/tutorial-issue-team-created.webp)
+![MUL-2: Lead creates the issue and starts work](/images/docs/tutorial-issue-team-created.webp)
 
 What follows is all the leader's work. Its delegation comment is more than a forward: it adds two constraints the issue did not have — the placeholder identity must be consistent site-wide, and the sweep must cover metadata and the README — before handing off to Engineer. When Engineer finishes, it reports the PR on the same timeline:
 
@@ -297,11 +299,11 @@ The review comes back with zero findings and Lead delivers: it mentions you for 
 
 ![Lead's delivery report](/images/docs/tutorial-team-delivery.webp)
 
-From organizing the requirement, to settling the approach, development, review, and the delivery report, no step of this issue needed you to connect it. Sign-off works the same as on PB-1 — you can also have it start a local server and look in the browser, not repeated here. Done is still yours: reply to merge, or change the status by hand. Every step of the timeline is recorded, no different from an issue on a human team — only who executes has changed.
+From organizing the requirement, to settling the approach, development, review, and the delivery report, no step of this issue needed you to connect it. Sign-off works the same as on MUL-1 — you can also have it start a local server and look in the browser, not repeated here. Done is still yours: reply to merge, or change the status by hand. Every step of the timeline is recorded, no different from an issue on a human team — only who executes has changed.
 
 ## Automation: Automation
 
-Every trigger so far started with you — assignment, mention, chat. **Automation** is a fourth kind of trigger: starting work automatically on a schedule.
+Every trigger so far started with you — setting an executor, mentioning an agent, or chatting. **Automation** is a fourth kind of trigger: starting work automatically on a schedule.
 
 Configuring it takes one sentence: tell Patchbay helper that at nine every Monday morning, Reviewer should run a full check over the site's repository — redundancy and dead code, questionable structure, places that could follow conventions better — writing findings into issue comments and changing no code:
 

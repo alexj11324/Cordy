@@ -8,7 +8,7 @@
  *
  * Header note: the parent _layout.tsx already declares the `issue/[id]`
  * Stack.Screen with title "Issue". We override that here once the data
- * lands so the navigation bar shows `PB-123` (Linear-style).
+ * lands so the navigation bar shows `MUL-123` (Linear-style).
  */
 import { useCallback, useEffect } from "react";
 import {
@@ -48,7 +48,12 @@ export default function IssueDetail() {
   // [workspace]/(tabs)/inbox.tsx). `highlight` is the target comment id;
   // `h` is a per-tap nonce so re-tapping the same row re-fires the
   // scroll-and-flash effect.
-  const { id, workspace: wsSlug, highlight, h } = useLocalSearchParams<{
+  const {
+    id,
+    workspace: wsSlug,
+    highlight,
+    h,
+  } = useLocalSearchParams<{
     id: string;
     workspace: string;
     highlight?: string;
@@ -60,7 +65,7 @@ export default function IssueDetail() {
   const detail = useQuery(issueDetailOptions(wsId, id));
   const timeline = useQuery(issueTimelineOptions(wsId, id));
 
-  // Subscribe to per-issue WS events: status/priority/executor/label
+  // Subscribe to per-issue WS events: status/priority/owner/executor/label
   // changes, comments, activity, reactions, agent task progress.
   // Mounted with `id` — cleans up automatically on navigate-away.
   // If another client deletes the issue we're viewing, pop back so the
@@ -68,7 +73,7 @@ export default function IssueDetail() {
   useIssueRealtime(id, () => router.back());
 
   // Track viewed issues so the chat composer's `@` suggestion bar can
-  // surface "Recent" — the user just looked at PB-123, likely wants to
+  // surface "Recent" — the user just looked at MUL-123, likely wants to
   // ask the agent about it next. Workspace-scoped + in-memory; see
   // data/viewed-issues-store.ts.
   useEffect(() => {
@@ -108,8 +113,8 @@ export default function IssueDetail() {
   // Three-dot menu: Pin/Unpin / Copy link / Open on web (if web URL set) /
   // Delete. Mirrors apps/mobile/app/(app)/[workspace]/project/[id].tsx — same
   // ActionSheetIOS + Alert.alert confirm pattern. Property edits (status,
-  // priority, executor, due_date) live on the IssueHeaderCard chips inside
-  // the timeline list, not in this menu — one entry per action.
+  // priority, owner, executor, reviewer, due_date) live on the IssueHeaderCard
+  // chips inside the timeline list, not in this menu — one entry per action.
   const onPressMore = useCallback(() => {
     if (!issue || !wsSlug) return;
     const webUrl = process.env.EXPO_PUBLIC_WEB_URL;
@@ -184,9 +189,7 @@ export default function IssueDetail() {
         <View className="flex-1 items-center justify-center px-6 gap-3">
           <Text className="text-sm text-destructive text-center">
             Failed to load issue:{" "}
-            {detail.error instanceof Error
-              ? detail.error.message
-              : "not found"}
+            {detail.error instanceof Error ? detail.error.message : "not found"}
           </Text>
           <Button variant="outline" onPress={() => detail.refetch()}>
             <Text>Retry</Text>

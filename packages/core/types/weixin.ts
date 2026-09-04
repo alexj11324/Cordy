@@ -1,50 +1,60 @@
-import type {
-  MessagingInstallationRuntime,
-  MessagingInstallationSetup,
-} from "./messaging";
+import type { MessagingInstallationRuntime, MessagingInstallationSetup } from "./messaging";
 
-export type WeixinInstallation = {
+/**
+ * A Weixin iLink installation bound to one Patchbay agent.
+ *
+ * The fields mirror WeixinInstallationResponse in the Go HTTP handler. The
+ * status is intentionally open-ended so a newer server can add a terminal
+ * state without crashing an older client.
+ */
+export interface WeixinInstallation {
   id: string;
   workspace_id: string;
-  /** Null for a workspace Hub; the channel selects an Agent with /agents. */
-  agent_id: string | null;
+  agent_id: string;
   bot_id: string;
   ilink_user_id: string;
   installer_user_id: string;
-  status: "active" | "revoked" | string;
+  status: "installed" | "revoked" | string;
+  /** Canonical lifecycle field added while status remains a legacy wire alias. */
+  installation_status?: "installed" | "revoked" | string;
+  runtime?: MessagingInstallationRuntime;
+  setup?: MessagingInstallationSetup;
   installed_at: string;
   created_at: string;
   updated_at: string;
-  runtime?: MessagingInstallationRuntime;
-  setup?: MessagingInstallationSetup;
-};
+}
 
-export type ListWeixinInstallationsResponse = {
+export interface ListWeixinInstallationsResponse {
   installations: WeixinInstallation[];
+  /** Whether the deployment has the at-rest key needed for Weixin installs. */
   configured: boolean;
+  /** Whether the QR install flow is available in this deployment. */
   install_supported?: boolean;
-};
+}
 
-export type BeginWeixinInstallResponse = {
+export interface BeginWeixinInstallResponse {
   session_id: string;
-  /** Display payload returned by iLink (`qrcode_img_content`). */
-  qr_code_content?: string;
-  /** Kept for older clients; the server now puts the display payload here,
-   * never the polling `qrcode` token. */
   qr_code_url: string;
   expires_in_seconds: number;
   poll_interval_seconds: number;
-};
+}
 
-export type WeixinInstallStatusResponse = {
-  status: string;
+export type WeixinInstallStatus =
+  | "pending"
+  | "scanned"
+  | "need_verify_code"
+  | "already_connected"
+  | "expired"
+  | "success"
+  | string;
+
+export interface WeixinInstallStatusResponse {
+  status: WeixinInstallStatus;
   installation_id?: string;
-  /** Stable diagnostic code when the provider reports a non-success state. */
-  errorCode?: string;
-};
+}
 
-export type RedeemWeixinBindingTokenResponse = {
+export interface RedeemWeixinBindingTokenResponse {
   workspace_id: string;
   installation_id: string;
   weixin_user_id: string;
-};
+}

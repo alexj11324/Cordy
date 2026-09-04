@@ -69,7 +69,6 @@ export default function OnboardingPage() {
   return (
     <div className="h-full overflow-y-auto bg-background">
       <OnboardingFlow
-        singlePane
         onComplete={(ws, destination) => {
           completingRef.current = true;
           if (ws && destination?.kind === "chat") {

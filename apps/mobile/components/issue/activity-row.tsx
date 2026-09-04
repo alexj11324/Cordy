@@ -29,7 +29,9 @@ import { ActorAvatar } from "@/components/ui/actor-avatar";
 import { formatActivity } from "@/lib/format-activity";
 import { timeAgo } from "@/lib/time-ago";
 import { useActorLookup } from "@/data/use-actor-name";
+import { useAuthStore } from "@/data/auth-store";
 import { useIssueStatuses } from "@/lib/use-issue-statuses";
+import { getIssueRoleCopy } from "@/lib/issue-role-copy";
 import type { IssueStatusCatalog } from "@/lib/issue-status";
 import { useColorScheme } from "@/lib/use-color-scheme";
 import { THEME } from "@/lib/theme";
@@ -87,7 +89,7 @@ function LeadIcon({
   const details = (entry.details ?? {}) as Record<string, string>;
   if (entry.action === "status_changed" && details.to) {
     // `details.to` is a status KEY: the glyph comes from its category and the
-    // colour from the catalog, so a custom status is recognizable. (PB-6243)
+    // colour from the catalog, so a custom status is recognizable. (MUL-6243)
     return (
       <StatusIcon
         status={details.to}
@@ -108,7 +110,14 @@ function LeadIcon({
   }
   return (
     <ActorAvatar
-      type={entry.actor_type as "member" | "agent"}
+      type={
+        entry.actor_type === "member" ||
+        entry.actor_type === "agent" ||
+        entry.actor_type === "team" ||
+        entry.actor_type === "system"
+          ? entry.actor_type
+          : null
+      }
       id={entry.actor_id}
       size={16}
     />
@@ -117,6 +126,8 @@ function LeadIcon({
 
 export function ActivityRow({ entry }: { entry: TimelineEntry }) {
   const { getName } = useActorLookup();
+  const language = useAuthStore((state) => state.user?.language);
+  const roleCopy = getIssueRoleCopy(language);
   const catalog = useIssueStatuses();
   const { colorScheme } = useColorScheme();
   const mutedFg = THEME[colorScheme].mutedForeground;
@@ -124,9 +135,17 @@ export function ActivityRow({ entry }: { entry: TimelineEntry }) {
     type: string | null | undefined,
     id: string | null | undefined,
   ): string =>
-    getName(type as "member" | "agent" | null | undefined, id);
+    type === "member" || type === "agent" || type === "team"
+      ? getName(type, id)
+      : roleCopy.unknown;
   const actorName = resolveName(entry.actor_type, entry.actor_id);
-  const verb = formatActivity(entry, resolveName, catalog.labelOf);
+  const verb = formatActivity(
+    entry,
+    resolveName,
+    catalog.labelOf,
+    catalog.categoryOf,
+    language,
+  );
   const showCoalesceBadge =
     (entry.coalesced_count ?? 1) > 1 &&
     entry.action !== "task_completed" &&
@@ -137,10 +156,7 @@ export function ActivityRow({ entry }: { entry: TimelineEntry }) {
       <View className="w-4 items-center justify-center shrink-0">
         <LeadIcon entry={entry} catalog={catalog} mutedFg={mutedFg} />
       </View>
-      <Text
-        className="text-xs text-muted-foreground flex-1"
-        numberOfLines={1}
-      >
+      <Text className="text-xs text-muted-foreground flex-1" numberOfLines={1}>
         <Text className="text-xs text-muted-foreground font-medium">
           {actorName}
         </Text>

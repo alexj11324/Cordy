@@ -4,7 +4,7 @@
  * Prefix shape mirrors web's `packages/core/issues/queries.ts` so the same
  * WS invalidation surface (e.g. `invalidateQueries({ queryKey: issueKeys.myAll(wsId) })`)
  * eventually drives both clients. Keys are workspace-scoped — switching
- * workspace flips wsId and the cache moves automatically (root AGENTS.md
+ * workspace flips wsId and the cache moves automatically (root CLAUDE.md
  * "Workspace-scoped queries must key on wsId").
  */
 import type { ListIssuesParams } from "@patchbay/core/types";
@@ -13,12 +13,7 @@ export type MyIssuesScope = "assigned" | "created" | "agents";
 
 export type MyIssuesFilter = Pick<
   ListIssuesParams,
-  | "owner_id"
-  | "owner_ids"
-  | "executor_id"
-  | "executor_ids"
-  | "creator_id"
-  | "involves_user_id"
+  "owner_id" | "executor_id" | "creator_id" | "involves_user_id"
 >;
 
 export const issueKeys = {
@@ -34,7 +29,7 @@ export const issueKeys = {
     [...issueKeys.all(wsId), "detail", id] as const,
   timeline: (wsId: string | null, id: string) =>
     [...issueKeys.all(wsId), "timeline", id] as const,
-  // Active and deferred tasks for an issue (queued/deferred/dispatched/running). Drives
+  // Currently-running tasks for an issue (queued/dispatched/running). Drives
   // the "Working" state of the AgentActivityRow inside IssueHeaderCard.
   activeTasks: (wsId: string | null, id: string) =>
     [...issueKeys.all(wsId), "active-tasks", id] as const,

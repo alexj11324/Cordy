@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Shell(ls /Users/alexjiang/Desktop/vibe/Patchbay/tasks/ 2>/dev/null; ls /Users/alexjiang/Desktop/vibe/Patchbay/server-rs/scripts/ 2>/dev/null)"
-    ],
-    "deny": [],
-    "defaultMode": "default"
-  }
-}

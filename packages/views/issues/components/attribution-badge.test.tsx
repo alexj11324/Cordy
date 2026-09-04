@@ -51,7 +51,7 @@ describe("AttributionBadge", () => {
       .toBeInTheDocument();
   });
 
-  it("shows a backfilled attribution in the normal tone, not a warning (PB-4768)", () => {
+  it("shows a backfilled attribution in the normal tone, not a warning (MUL-4768)", () => {
     // Backfill is non-precise for the coverage metric — a historical, after-the-
     // fact record — but that does not make the displayed name wrong, so it must
     // read like any other resolved attribution rather than a yellow warning.
@@ -72,7 +72,7 @@ describe("AttributionBadge", () => {
     expect(screen.getByTitle("Backfilled attribution")).toBeInTheDocument();
   });
 
-  it("avatar variant shows no warning ring for a backfilled attribution (PB-4768)", () => {
+  it("avatar variant shows no warning ring for a backfilled attribution (MUL-4768)", () => {
     const attribution: TaskAttribution = {
       source: "backfill",
       precise: false,
@@ -114,7 +114,7 @@ describe("AttributionBadge", () => {
     expect(container.querySelector("[data-slot='badge']")).toBeNull();
   });
 
-  it("renders nothing when no responsible member resolved (PB-4765)", () => {
+  it("renders nothing when no responsible member resolved (MUL-4765)", () => {
     const attribution: TaskAttribution = {
       source: "unattributed",
       precise: false,

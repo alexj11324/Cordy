@@ -88,13 +88,15 @@ type Issue = {
   status: string;
   priority: string;
   description?: string | null;
+  owner_type?: string | null;
+  owner_id?: string | null;
   executor_type?: string | null;
   executor_id?: string | null;
 };
 
 const BASE_ISSUE: Issue = {
   id: "issue-1",
-  identifier: "PB-3405",
+  identifier: "MUL-3405",
   title: "A very long issue title that the inline chip never shows",
   status: "todo",
   priority: "none",
@@ -147,7 +149,7 @@ function mockIssue(
 function renderCard(fallbackLabel?: string): void {
   renderWithI18n(
     <IssueHoverCard issueId="issue-1" delay={0} fallbackLabel={fallbackLabel}>
-      <span>PB-3405</span>
+      <span>MUL-3405</span>
     </IssueHoverCard>,
   );
 }
@@ -155,15 +157,15 @@ function renderCard(fallbackLabel?: string): void {
 async function openCard(): Promise<void> {
   const user = userEvent.setup();
   renderCard();
-  await user.hover(screen.getByText("PB-3405"));
+  await user.hover(screen.getByText("MUL-3405"));
   await screen.findByTestId("status-icon");
 }
 
 /** Opens a card whose detail query never resolves into an issue. */
-async function openFailedCard(fallbackLabel = "PB-7"): Promise<void> {
+async function openFailedCard(fallbackLabel = "MUL-7"): Promise<void> {
   const user = userEvent.setup();
   renderCard(fallbackLabel);
-  await user.hover(screen.getByText("PB-3405"));
+  await user.hover(screen.getByText("MUL-3405"));
   await screen.findByText(NOT_FOUND_TEXT);
 }
 
@@ -186,7 +188,7 @@ describe("IssueHoverCard", () => {
     // Assert the trigger actually rendered BEFORE asserting the absent fetch.
     // Without this, a component that throws or renders nothing would satisfy
     // the deferred-fetch assertion and the guarantee would be untested.
-    expect(screen.getByText("PB-3405")).toBeInTheDocument();
+    expect(screen.getByText("MUL-3405")).toBeInTheDocument();
     expect(mockUseQuery).not.toHaveBeenCalled();
   });
 
@@ -194,7 +196,7 @@ describe("IssueHoverCard", () => {
     const user = userEvent.setup();
     renderCard();
 
-    await user.hover(screen.getByText("PB-3405"));
+    await user.hover(screen.getByText("MUL-3405"));
 
     expect(
       await screen.findByText("A very long issue title that the inline chip never shows"),
@@ -254,7 +256,7 @@ describe("IssueHoverCard", () => {
     expect(mockUseActorName).toHaveBeenCalled();
   });
 
-  it("omits the executor when the issue is unassigned", async () => {
+  it("omits the executor when the issue has no executor", async () => {
     mockIssue({ ...BASE_ISSUE, executor_type: null, executor_id: null });
 
     await openCard();
@@ -341,9 +343,9 @@ describe("IssueHoverCard", () => {
   it("keeps the skeleton while the detail query is pending", async () => {
     mockQueries({ phase: "pending" });
     const user = userEvent.setup();
-    renderCard("PB-7");
+    renderCard("MUL-7");
 
-    await user.hover(screen.getByText("PB-3405"));
+    await user.hover(screen.getByText("MUL-3405"));
 
     expect(await screen.findByTestId("issue-hover-card-skeleton")).toBeInTheDocument();
     expect(screen.queryByText(NOT_FOUND_TEXT)).not.toBeInTheDocument();
@@ -355,7 +357,7 @@ describe("IssueHoverCard", () => {
     await openFailedCard();
 
     expect(screen.queryByTestId("issue-hover-card-skeleton")).not.toBeInTheDocument();
-    expect(screen.getByText("PB-7")).toBeInTheDocument();
+    expect(screen.getByText("MUL-7")).toBeInTheDocument();
   });
 
   it("replaces the skeleton with the not-found state when the query settles with no issue", async () => {
@@ -364,6 +366,6 @@ describe("IssueHoverCard", () => {
     await openFailedCard();
 
     expect(screen.queryByTestId("issue-hover-card-skeleton")).not.toBeInTheDocument();
-    expect(screen.getByText("PB-7")).toBeInTheDocument();
+    expect(screen.getByText("MUL-7")).toBeInTheDocument();
   });
 });

@@ -3,165 +3,118 @@
 import { access, chmod, copyFile, mkdir, rm } from "node:fs/promises";
 import { constants } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
-  binaryNameForPlatform,
-  cargoTargetDirectoryForProfile,
-  devRustTargetFor,
-  devBuildVariables,
-  resolveCargoCommand,
-  rustBuildEnvironment,
-} from "./bundle-cli.mjs";
-import {
-  defaultDevCliCacheDir,
-  inspectDevRuntimeCache,
+  defaultDevRuntimeCacheDir,
+  goSourceFingerprint,
+  goTargetFor,
+  goToolchainIdentity,
   pruneDevRuntimeCache,
-  rustBuildEnvironmentFingerprint,
-  rustSourceFingerprint,
-  rustToolchainIdentity,
-  stageCachedDevCli,
-  storeDevCli,
-} from "./dev-cli-cache.mjs";
+  stageCachedDevRuntime,
+  storeDevRuntime,
+} from "./dev-runtime-cache.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const defaultRepoRoot = resolve(here, "..", "..", "..");
 
-function executableName(name, platform) {
-  return platform === "win32" ? `${name}.exe` : name;
+function executableName(name, suffix) {
+  return `${name}${suffix}`;
 }
 
 export function devRuntimeComponents({
   repoRoot = defaultRepoRoot,
   platform = process.platform,
   arch = process.arch,
-  cargoTargetDir = cargoTargetDirectoryForProfile(
-    "dev",
-    process.env,
-    join(repoRoot, "server-rs"),
-  ),
 } = {}) {
-  const rustTarget = devRustTargetFor(platform, arch);
-  const builtDir = join(cargoTargetDir, rustTarget, "debug");
+  const target = goTargetFor(platform, arch);
+  const sourceDir = join(repoRoot, "server", "bin", target.target);
   const stagedDir = join(repoRoot, ".patchbay-dev", "bin");
   return [
     {
       id: "cli",
-      packageName: "patchbay-cli",
-      profile: "dev",
-      binaryName: binaryNameForPlatform(platform),
-      sourceBinary: join(builtDir, binaryNameForPlatform(platform)),
-      destinationBinary: join(stagedDir, binaryNameForPlatform(platform)),
-      additionalDestinations: [
-        join(
+      packagePath: "./cmd/patchbay",
+      profile: "dev-cli",
+      binaryName: executableName("patchbay", target.suffix),
+      sourceBinary: join(
+        sourceDir,
+        executableName("patchbay", target.suffix),
+      ),
+      destinationBinary: join(
         repoRoot,
         "apps",
         "desktop",
         "resources",
         "bin",
-        binaryNameForPlatform(platform),
-        ),
-      ],
+        executableName("patchbay", target.suffix),
+      ),
     },
     {
       id: "backend",
-      packageName: "patchbay-server",
+      packagePath: "./cmd/server",
       profile: "dev-server",
-      binaryName: executableName("patchbay-server", platform),
-      sourceBinary: join(builtDir, executableName("patchbay-server", platform)),
+      binaryName: executableName("server", target.suffix),
+      sourceBinary: join(sourceDir, executableName("server", target.suffix)),
       destinationBinary: join(
         stagedDir,
-        executableName("patchbay-server", platform),
+        executableName("server", target.suffix),
       ),
     },
     {
       id: "migrations",
-      packageName: "patchbay-migrate",
+      packagePath: "./cmd/migrate",
       profile: "dev-migrate",
-      binaryName: executableName("patchbay-migrate", platform),
-      sourceBinary: join(
-        builtDir,
-        executableName("patchbay-migrate", platform),
-      ),
+      binaryName: executableName("migrate", target.suffix),
+      sourceBinary: join(sourceDir, executableName("migrate", target.suffix)),
       destinationBinary: join(
         stagedDir,
-        executableName("patchbay-migrate", platform),
+        executableName("migrate", target.suffix),
       ),
     },
   ];
 }
 
-async function stageAdditionalDestinations(component, platform) {
-  for (const destination of component.additionalDestinations || []) {
-    await mkdir(dirname(destination), { recursive: true });
-    await rm(destination, { force: true });
-    await rm(`${destination}.dev-manifest.json`, { force: true });
-    await copyFile(component.destinationBinary, destination);
-    await copyFile(
-      `${component.destinationBinary}.dev-manifest.json`,
-      `${destination}.dev-manifest.json`,
+export function goBuildArguments(component, buildVariables) {
+  const ldflags = [];
+  if (component.id === "cli") {
+    ldflags.push(
+      `-X main.version=${buildVariables.version}`,
+      `-X main.commit=${buildVariables.commit}`,
+      `-X main.date=${buildVariables.date}`,
     );
-    if (platform !== "win32") await chmod(destination, 0o755);
+  } else if (component.id === "backend") {
+    ldflags.push(
+      `-X main.version=${buildVariables.version}`,
+      `-X main.commit=${buildVariables.commit}`,
+    );
   }
-}
-
-export function devRuntimeBuildArguments(rustTarget, components) {
   return [
     "build",
-    "--locked",
-    "--target",
-    rustTarget,
-    ...components.flatMap(({ packageName }) => ["-p", packageName]),
-    "--bins",
+    "-trimpath",
+    ...(ldflags.length > 0 ? ["-ldflags", ldflags.join(" ")] : []),
+    "-o",
+    component.sourceBinary,
+    component.packagePath,
   ];
 }
 
-export function devRuntimeBuildEnvironment(env, cargoCommand) {
-  const buildEnv = rustBuildEnvironment(env);
-  if (isAbsolute(cargoCommand)) {
-    buildEnv.PATH = [dirname(cargoCommand), buildEnv.PATH]
-      .filter(Boolean)
-      .join(delimiter);
+function git(repoRoot, ...args) {
+  try {
+    return execFileSync("git", args, { encoding: "utf8", cwd: repoRoot }).trim();
+  } catch {
+    return "";
   }
-  return buildEnv;
 }
 
-/**
- * Select one complete cache group before staging any runtime component. A
- * source checkout without an available rustc cannot prove the active
- * toolchain, so independently selecting the newest CLI/backend/migration
- * entry could combine binaries produced by different toolchains. Returning
- * null deliberately forces one local incremental build when no complete
- * source/target/build-variable group is available.
- */
-export function selectCompleteDevRuntimeCacheIdentity(
-  cacheReport,
-  { sourceFingerprint, rustTarget, buildVariables },
-) {
-  return (
-    cacheReport.completeFingerprints
-      .filter(
-        (entry) =>
-          entry.sourceFingerprint === sourceFingerprint &&
-          entry.rustTarget === rustTarget &&
-          JSON.stringify(entry.buildVariables || {}) ===
-            JSON.stringify(buildVariables),
-      )
-      .sort((left, right) => right.newestMtimeMs - left.newestMtimeMs)[0]
-      ?.identityKey || null
-  );
-}
-
-export function isCompleteDevRuntimeCacheHit(
-  cached,
-  { canUseCache, componentCount },
-) {
-  return (
-    canUseCache &&
-    cached.length === componentCount &&
-    cached.every(Boolean)
-  );
+function buildVariables(repoRoot) {
+  return {
+    version:
+      git(repoRoot, "describe", "--tags", "--match", "v[0-9]*", "--always", "--dirty") ||
+      "dev",
+    commit: git(repoRoot, "rev-parse", "--short", "HEAD") || "unknown",
+    date: new Date().toISOString().replace(/\.\d+Z$/, "Z"),
+  };
 }
 
 async function exists(path) {
@@ -173,15 +126,8 @@ async function exists(path) {
   }
 }
 
-async function signMacBinary(path, platform) {
-  if (process.platform !== "darwin" || platform !== "darwin") return;
-  try {
-    execFileSync("codesign", ["-s", "-", "--force", path], {
-      stdio: "pipe",
-    });
-  } catch {
-    // Best effort. Unsigned Cargo outputs still run in local development.
-  }
+function goExecutable(env) {
+  return env.GO || (process.platform === "win32" ? "go.exe" : "go");
 }
 
 export async function prepareDevRuntime({
@@ -190,141 +136,121 @@ export async function prepareDevRuntime({
   platform = process.platform,
   arch = process.arch,
 } = {}) {
-  const serverRsDir = join(repoRoot, "server-rs");
-  const rustTarget = devRustTargetFor(platform, arch);
-  const cargoTargetDir = cargoTargetDirectoryForProfile(
-    "dev",
-    env,
-    serverRsDir,
-  );
-  const sourceFingerprint = rustSourceFingerprint(repoRoot);
-  const cargoCommand = resolveCargoCommand(env, platform);
-  const toolchainIdentity = rustToolchainIdentity(env, cargoCommand, {
-    platform,
-    cwd: serverRsDir,
-  });
-  const buildVariables = devBuildVariables(
-    sourceFingerprint,
-    rustBuildEnvironmentFingerprint(env, rustTarget, "dev"),
-  );
-  const cacheRoot = defaultDevCliCacheDir({ env, platform });
-  const components = devRuntimeComponents({
-    repoRoot,
-    platform,
-    arch,
-    cargoTargetDir,
-  });
+  const target = goTargetFor(platform, arch);
+  const components = devRuntimeComponents({ repoRoot, platform, arch });
+  const sourceFingerprint = goSourceFingerprint(repoRoot);
+  const toolchainIdentity = goToolchainIdentity(env);
+  const variables = buildVariables(repoRoot);
+  const cacheBuildVariables = {
+    version: variables.version,
+    commit: variables.commit,
+    cgoEnabled: "0",
+    goflags: env.GOFLAGS || "",
+    trimpath: true,
+  };
+  const cacheRoot = defaultDevRuntimeCacheDir({ env, platform });
 
-  // If rustc is unavailable, an exact toolchain key cannot be computed. Pick
-  // one complete source/target/build-variable identity first so the three
-  // staged binaries cannot accidentally come from different historical
-  // toolchains. A cache hit remains Rust-free; only a complete miss reaches
-  // the incremental Cargo build below.
-  let cacheIdentityKey;
-  if (!toolchainIdentity) {
-    const cacheReport = await inspectDevRuntimeCache({ cacheRoot });
-    cacheIdentityKey = selectCompleteDevRuntimeCacheIdentity(cacheReport, {
-      sourceFingerprint,
-      rustTarget,
-      buildVariables,
-    });
-  }
+  const cached = await Promise.all(
+    components.map((component) =>
+      stageCachedDevRuntime({
+        cacheRoot,
+        sourceFingerprint,
+        target: target.target,
+        profile: component.profile,
+        toolchainIdentity,
+        buildVariables: cacheBuildVariables,
+        destinationBinary: component.destinationBinary,
+      }),
+    ),
+  );
 
-  // Without a toolchain identity, only a complete group selected above is
-  // safe to stage. If no such group exists, skip all historical entries so
-  // separate CLI/backend/migration profiles cannot be mixed accidentally.
-  const canUseCache = Boolean(toolchainIdentity || cacheIdentityKey);
-  const cached = canUseCache
-    ? await Promise.all(
-        components.map((component) =>
-          stageCachedDevCli({
-            cacheRoot,
-            sourceFingerprint,
-            rustTarget,
-            profile: component.profile,
-            toolchainIdentity,
-            cacheIdentityKey,
-            buildVariables,
-            destinationBinary: component.destinationBinary,
-          }),
-        ),
-      )
-    : [];
-  if (
-    isCompleteDevRuntimeCacheHit(cached, {
-      canUseCache,
-      componentCount: components.length,
-    })
-  ) {
-    for (const component of components) {
-      await stageAdditionalDestinations(component, platform);
-    }
-    await pruneDevRuntimeCache({ cacheRoot });
+  if (cached.every(Boolean)) {
     console.log(
       `[dev-runtime] source-matched cache hit ${sourceFingerprint.slice(0, 12)} (${components.map(({ id }) => id).join(", ")})`,
     );
-    return { cacheHit: true, components, sourceFingerprint };
+    return {
+      cacheHit: true,
+      components,
+      sourceFingerprint,
+      cacheKey: cached.map((entry) => entry.manifest.cacheKey),
+    };
   }
 
-  if (!cargoCommand) {
+  const go = goExecutable(env);
+  if (!toolchainIdentity) {
     throw new Error(
-      "[dev-runtime] cache miss requires Rust/Cargo; install Rust or set CARGO to its executable path",
+      "[dev-runtime] cache miss requires Go; install Go 1.26.6 or set GO to its executable path",
     );
   }
-  const buildEnv = devRuntimeBuildEnvironment(env, cargoCommand);
-  console.log(
-    `[dev-runtime] cache miss ${sourceFingerprint.slice(0, 12)}; building CLI, backend and migrations once${buildEnv.RUSTC_WRAPPER ? ` with ${buildEnv.RUSTC_WRAPPER}` : ""}`,
-  );
-  execFileSync(cargoCommand, devRuntimeBuildArguments(rustTarget, components), {
-    cwd: serverRsDir,
-    stdio: "inherit",
-    env: {
-      ...buildEnv,
-      CARGO_TARGET_DIR: cargoTargetDir,
-      PATCHBAY_BUILD_VERSION: buildVariables.version,
-      PATCHBAY_BUILD_COMMIT: buildVariables.commit,
-      PATCHBAY_BUILD_DATE: buildVariables.date,
-      PATCHBAY_GIT_COMMIT: buildVariables.commit,
-    },
-  });
 
-  for (const component of components) {
+  const buildEnv = {
+    ...env,
+    CGO_ENABLED: "0",
+    GOOS: target.goos,
+    GOARCH: target.goarch,
+  };
+  console.log(
+    `[dev-runtime] cache miss ${sourceFingerprint.slice(0, 12)}; building missing Go runtime artifacts for ${target.target}`,
+  );
+
+  for (let index = 0; index < components.length; index += 1) {
+    if (cached[index]) continue;
+    const component = components[index];
+    await mkdir(dirname(component.sourceBinary), { recursive: true });
+    execFileSync(
+      go,
+      goBuildArguments(component, variables),
+      {
+        cwd: join(repoRoot, "server"),
+        stdio: "inherit",
+        env: buildEnv,
+      },
+    );
     if (!(await exists(component.sourceBinary))) {
       throw new Error(
-        `[dev-runtime] Cargo did not produce ${component.sourceBinary}`,
+        `[dev-runtime] Go did not produce ${component.sourceBinary}`,
       );
     }
-    await mkdir(dirname(component.destinationBinary), { recursive: true });
     await rm(component.destinationBinary, { force: true });
-    await copyFile(component.sourceBinary, component.destinationBinary);
-    if (platform !== "win32") await chmod(component.destinationBinary, 0o755);
-    await signMacBinary(component.destinationBinary, platform);
-    await storeDevCli({
+    await mkdir(dirname(component.destinationBinary), { recursive: true });
+    await stageSourceBinary(component);
+    const stored = await storeDevRuntime({
       cacheRoot,
       sourceBinary: component.destinationBinary,
       binaryName: component.binaryName,
       sourceFingerprint,
-      rustTarget,
+      target: target.target,
       profile: component.profile,
       toolchainIdentity,
-      buildVariables,
+      buildVariables: cacheBuildVariables,
       buildMetadata: { component: component.id },
     });
-    await stageCachedDevCli({
+    await stageCachedDevRuntime({
       cacheRoot,
       sourceFingerprint,
-      rustTarget,
+      target: target.target,
       profile: component.profile,
       toolchainIdentity,
-      buildVariables,
+      buildVariables: cacheBuildVariables,
       destinationBinary: component.destinationBinary,
     });
-    await stageAdditionalDestinations(component, platform);
+    await pruneDevRuntimeCache({
+      cacheRoot,
+      target: target.target,
+      profile: component.profile,
+      keep: 5,
+      preserveEntryDir: stored?.entryDir,
+    });
   }
 
-  await pruneDevRuntimeCache({ cacheRoot });
-
   return { cacheHit: false, components, sourceFingerprint };
+}
+
+async function stageSourceBinary(component) {
+  await copyFile(component.sourceBinary, component.destinationBinary);
+  if (!component.binaryName.endsWith(".exe")) {
+    await chmod(component.destinationBinary, 0o755);
+  }
 }
 
 if (

@@ -25,15 +25,16 @@ import { LabelChip } from "../../labels/label-chip";
 import { CustomStatusChip } from "./custom-status-chip";
 import { IssueAgentActivityIndicator } from "./issue-agent-activity-indicator";
 import { useIssueSurfaceSelection } from "../surface/selection-context";
-import { DependencyBlockerBadge } from "./dependency-blocker-badge";
+import { useLocale } from "../../i18n";
+import { getIssueExecutor } from "../utils/issue-executor";
 
 export interface ChildProgress {
   done: number;
   total: number;
 }
 
-function formatDate(date: string): string {
-  return formatDateOnly(date, { month: "short", day: "numeric" }, "en-US");
+function formatDate(date: string, locale: string): string {
+  return formatDateOnly(date, { month: "short", day: "numeric" }, locale);
 }
 
 function ListRowContent({
@@ -55,6 +56,7 @@ function ListRowContent({
   containerProps?: Record<string, unknown>;
   checkboxProps?: Pick<React.HTMLAttributes<HTMLDivElement>, "onClick" | "onMouseDown" | "onPointerDown">;
 }) {
+  const locale = useLocale();
   const selection = useIssueSurfaceSelection();
   const selected = selection.selectedIds.has(issue.id);
   const toggle = selection.toggle;
@@ -70,7 +72,8 @@ function ListRowContent({
 
   const showProject = storeProperties.project && project;
   const showChildProgress = storeProperties.childProgress && childProgress;
-  const showExecutor = storeProperties.executor && issue.executor_type && issue.executor_id;
+  const executor = getIssueExecutor(issue);
+  const showExecutor = storeProperties.executor && executor;
   const showStartDate = storeProperties.startDate && issue.start_date;
   const showDueDate = storeProperties.dueDate && issue.due_date;
   const showLabels = storeProperties.labels && labels.length > 0;
@@ -117,9 +120,8 @@ function ListRowContent({
           <span className="flex min-w-0 flex-1 items-center gap-1.5">
             <span className="truncate">{issue.title}</span>
             {/* List sections are categories, so a custom status needs to name
-                itself on the row. Silent for built-ins. (PB-6243) */}
+                itself on the row. Silent for built-ins. (MUL-6243) */}
             <CustomStatusChip status={issue.status} className="shrink-0" />
-            <DependencyBlockerBadge issueId={issue.id} className="shrink-0" />
             {showChildProgress && (
               <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted/60 px-1.5 py-0.5">
                 <ProgressRing done={childProgress!.done} total={childProgress!.total} size={14} />
@@ -162,18 +164,18 @@ function ListRowContent({
           )}
           {showStartDate && (
             <span className="shrink-0 text-caption text-muted-foreground">
-              {formatDate(issue.start_date!)}
+              {formatDate(issue.start_date!, locale)}
             </span>
           )}
           {showDueDate && (
             <span className="shrink-0 text-caption text-muted-foreground">
-              {formatDate(issue.due_date!)}
+              {formatDate(issue.due_date!, locale)}
             </span>
           )}
           {showExecutor && (
             <ActorAvatar
-              actorType={issue.executor_type!}
-              actorId={issue.executor_id!}
+              actorType={executor.type}
+              actorId={executor.id}
               size="sm"
               enableHoverCard
             />

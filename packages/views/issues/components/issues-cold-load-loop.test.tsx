@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  *
- * PB-4985 regression — cold-load render loop on the Issues route.
+ * MUL-4985 regression — cold-load render loop on the Issues route.
  *
  * These tests render Board and Swimlane with the REAL react-virtuoso and the
  * REAL `useActorName`, while the member/agent/team directory queries are held
@@ -15,7 +15,7 @@
  * point of the reproduction.)
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { BoardView } from "./board-view";
@@ -24,7 +24,6 @@ import { IssueContextMenuProvider } from "../actions";
 import { setApiInstance } from "@patchbay/core/api";
 import type { ApiClient } from "@patchbay/core/api/client";
 import type { Issue } from "@patchbay/core/types";
-import type { IssueStatusPagination } from "../surface/use-issue-status-branches";
 import { I18nProvider } from "@patchbay/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enIssues from "../../locales/en/issues.json";
@@ -150,17 +149,7 @@ vi.mock("@patchbay/core/modals", () => ({
 }));
 
 vi.mock("@dnd-kit/core", () => ({
-  DndContext: ({
-    children,
-    onDragStart,
-    onDragOver,
-    onDragEnd,
-  }: any) => {
-    lastOnDragStart = onDragStart;
-    lastOnDragOver = onDragOver;
-    lastOnDragEnd = onDragEnd;
-    return children;
-  },
+  DndContext: ({ children }: any) => children,
   DragOverlay: () => null,
   PointerSensor: class {},
   useSensor: () => ({}),
@@ -191,23 +180,6 @@ vi.mock("@dnd-kit/utilities", () => ({
 // The whole point: directory queries stay pending so useActorName renders in
 // the cold-load state. A never-resolving promise keeps `data` undefined.
 const pending = () => new Promise<never>(() => {});
-
-let lastOnDragStart: ((event: any) => void) | undefined;
-let lastOnDragOver: ((event: any) => void) | undefined;
-let lastOnDragEnd: ((event: any) => void) | undefined;
-
-function page(total: number) {
-  return {
-    total,
-    loaded: total,
-    hasMore: false,
-    isLoading: false,
-    isFetching: false,
-    isError: false,
-    loadMore: vi.fn(),
-    retry: vi.fn(),
-  };
-}
 
 function makeIssue(overrides: Partial<Issue> & { id: string }): Issue {
   return {
@@ -253,12 +225,9 @@ function renderWithProviders(ui: ReactNode) {
   );
 }
 
-describe("Issues cold-load render loop (PB-4985)", () => {
+describe("Issues cold-load render loop (MUL-4985)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    lastOnDragStart = undefined;
-    lastOnDragOver = undefined;
-    lastOnDragEnd = undefined;
     mockViewState.grouping = "status";
     mockViewState.swimlaneGrouping = "executor";
     setApiInstance({
@@ -314,153 +283,5 @@ describe("Issues cold-load render loop (PB-4985)", () => {
       expect(screen.getByText("Swim Card 1")).toBeInTheDocument();
     });
     expect(screen.getByText("Swim Card 3")).toBeInTheDocument();
-  });
-
-  it("hides empty status columns while keeping them as hidden drop targets", () => {
-    const issues = [makeIssue({ id: "todo-1", status: "todo" })];
-    const pagination = {
-      todo: page(1),
-      in_progress: page(0),
-    } as unknown as IssueStatusPagination;
-
-    const { container } = renderWithProviders(
-      <BoardView
-        issues={issues}
-        visibleStatuses={["todo", "in_progress"]}
-        hiddenStatuses={[]}
-        statusPagination={pagination}
-        onMoveIssue={vi.fn()}
-      />,
-    );
-
-    expect(
-      container.querySelector('[data-board-column="status:todo"]'),
-    ).not.toBeNull();
-    expect(
-      container.querySelector('[data-board-column="status:in_progress"]'),
-    ).toBeNull();
-    expect(
-      container.querySelector('[data-hidden-column-drop-target="in_progress"]'),
-    ).not.toBeNull();
-  });
-
-  it("does not make filter-only hidden statuses drop targets", () => {
-    const issues = [makeIssue({ id: "todo-1", status: "todo" })];
-
-    const { container } = renderWithProviders(
-      <BoardView
-        issues={issues}
-        visibleStatuses={["todo"]}
-        hiddenStatuses={["in_progress"]}
-        droppableHiddenStatuses={[]}
-        onMoveIssue={vi.fn()}
-      />,
-    );
-
-    expect(
-      container.querySelector('[data-hidden-column-drop-target="in_progress"]'),
-    ).toBeNull();
-  });
-
-  it("reveals an auto-hidden empty status after a card is dropped there", () => {
-    const onMoveIssue = vi.fn();
-    const issues = [makeIssue({ id: "todo-1", status: "todo" })];
-    const pagination = {
-      todo: page(1),
-      in_progress: page(0),
-    } as unknown as IssueStatusPagination;
-
-    const { container } = renderWithProviders(
-      <BoardView
-        issues={issues}
-        visibleStatuses={["todo", "in_progress"]}
-        hiddenStatuses={[]}
-        statusPagination={pagination}
-        onMoveIssue={onMoveIssue}
-      />,
-    );
-
-    expect(
-      container.querySelector('[data-board-column="status:in_progress"]'),
-    ).toBeNull();
-
-    act(() => {
-      lastOnDragStart?.({ active: { id: "todo-1" } });
-    });
-    act(() => {
-      lastOnDragOver?.({
-        active: { id: "todo-1" },
-        over: { id: "status:in_progress" },
-      });
-    });
-    act(() => {
-      lastOnDragEnd?.({
-        active: { id: "todo-1" },
-        over: { id: "status:in_progress" },
-      });
-    });
-
-    expect(onMoveIssue).toHaveBeenCalledWith(
-      "todo-1",
-      expect.objectContaining({ status: "in_progress" }),
-      expect.objectContaining({
-        onSettled: expect.any(Function),
-        onSuccess: expect.any(Function),
-        onError: expect.any(Function),
-      }),
-    );
-    expect(
-      container.querySelector('[data-board-column="status:in_progress"]'),
-    ).not.toBeNull();
-    expect(
-      container.querySelector('[data-hidden-column-drop-target="in_progress"]'),
-    ).toBeNull();
-  });
-
-  it("moves a card to a hidden status and reveals that status", () => {
-    const onMoveIssue = vi.fn();
-    const issues = [makeIssue({ id: "todo-1", status: "todo" })];
-    const showStatus = mockViewState.showStatus as ReturnType<typeof vi.fn>;
-    const pagination = {
-      todo: page(1),
-      in_progress: page(0),
-    } as unknown as IssueStatusPagination;
-
-    renderWithProviders(
-      <BoardView
-        issues={issues}
-        visibleStatuses={["todo"]}
-        hiddenStatuses={["in_progress"]}
-        statusPagination={pagination}
-        onMoveIssue={onMoveIssue}
-      />,
-    );
-
-    act(() => {
-      lastOnDragStart?.({ active: { id: "todo-1" } });
-    });
-    act(() => {
-      lastOnDragOver?.({
-        active: { id: "todo-1" },
-        over: { id: "status:in_progress" },
-      });
-    });
-    act(() => {
-      lastOnDragEnd?.({
-        active: { id: "todo-1" },
-        over: { id: "status:in_progress" },
-      });
-    });
-
-    expect(onMoveIssue).toHaveBeenCalledWith(
-      "todo-1",
-      expect.objectContaining({ status: "in_progress" }),
-      expect.objectContaining({
-        onSettled: expect.any(Function),
-        onSuccess: expect.any(Function),
-        onError: expect.any(Function),
-      }),
-    );
-    expect(showStatus).toHaveBeenCalledWith("in_progress");
   });
 });

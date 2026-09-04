@@ -1,12 +1,12 @@
 /**
  * IssueIdentifierAutolink — Linear-style live autolinking of bare issue
- * identifiers (e.g. `PB-123`) in the editable editor.
+ * identifiers (e.g. `MUL-123`) in the editable editor.
  *
  * When the user finishes a bare identifier by typing a boundary character
  * (space / punctuation) after it, or pastes text containing identifiers, the
  * completed token is resolved against the workspace and — on an exact match —
  * replaced with a real `issue` mention node. On save the mention serialises to
- * the canonical `[PB-123](mention://issue/<uuid>)`.
+ * the canonical `[MUL-123](mention://issue/<uuid>)`.
  *
  * Resolution is async, so this is NOT a synchronous Tiptap InputRule/PasteRule.
  * A ProseMirror plugin captures the SPECIFIC candidate range(s) introduced by a
@@ -35,7 +35,7 @@ import type { RefObject } from "react";
 export interface ResolvedIssueRef {
   /** Issue UUID. */
   id: string;
-  /** Canonical identifier as returned by the server, e.g. "PB-123". */
+  /** Canonical identifier as returned by the server, e.g. "MUL-123". */
   identifier: string;
 }
 

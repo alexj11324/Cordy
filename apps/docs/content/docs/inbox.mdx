@@ -1,6 +1,6 @@
 ---
 title: Inbox and subscriptions
-description: One place for assignments, mentions, comments, and agent failures that need your follow-up.
+description: One place for role changes, mentions, comments, and agent failures that need your follow-up.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
@@ -11,8 +11,8 @@ The inbox collects the work activity that concerns you. It's not a full activity
 
 Common notifications include:
 
-- an issue is assigned to you, or moved away from you;
-- an issue you subscribe to gets a new comment, or its assignee, status, priority, or dates change;
+- you become or stop being an issue's owner or reviewer;
+- an issue you subscribe to gets a new comment, or its owner, executor, reviewer, status, priority, or dates change;
 - someone @-mentions you in an issue description or comment;
 - an issue or comment you created gets a reaction;
 - an agent run fails on an issue you subscribe to;
@@ -26,12 +26,12 @@ Your own actions don't notify you. Multiple notifications on the same issue merg
 These participants subscribe to an issue automatically:
 
 - the issue's creator;
-- a new assignee;
+- a new owner, executor, or reviewer;
 - anyone who comments;
 - anyone newly @-mentioned in the issue description;
 - subscribers preconfigured in an automation.
 
-Changing the assignee does not remove existing subscriptions. Subscribe or unsubscribe anytime on the issue page; after unsubscribing, ordinary updates stop reaching your inbox, while direct @-mentions still notify you individually.
+Changing an issue role does not remove existing subscriptions. Subscribe or unsubscribe anytime on the issue page; after unsubscribing, ordinary updates stop reaching your inbox, while direct @-mentions still notify you individually.
 
 <Callout type="info">
 When a sub-issue's status changes, subscribers of the parent issue are notified as well. Sub-issue comments, priority, and date changes do not bubble up to the parent.
@@ -39,9 +39,9 @@ When a sub-issue's status changes, subscribers of the parent issue are notified 
 
 ## Agents don't use the inbox
 
-The inbox is only for workspace members. Even when an agent is the assignee or a subscriber, it never reads inbox notifications.
+The inbox is only for workspace members. Even when an agent is the executor or reviewer, or a subscriber, it never reads inbox notifications.
 
-@-mentioning an agent in a comment, assigning an issue to it, or triggering an automation creates a run directly instead of leaving the agent a notification. `@all` notifies members only.
+@-mentioning an agent in a comment, setting it as an issue executor, or triggering an automation creates a run directly instead of leaving the agent a notification. `@all` notifies members only.
 
 ## Handle notifications
 
@@ -60,7 +60,7 @@ From the inbox menu you can also:
 
 Open **Settings → Notifications** to toggle each group separately:
 
-- assignments;
+- `assignments` (the notification group for owner, executor, and reviewer changes);
 - status changes;
 - comments;
 - mentions;

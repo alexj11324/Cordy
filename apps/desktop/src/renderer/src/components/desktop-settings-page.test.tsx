@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import type { ReactNode } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { getActiveTab, useTabStore } from "@/stores/tab-store";
 
@@ -105,5 +105,18 @@ describe("DesktopSettingsPage window title", () => {
     expect(screen.getByTestId("settings-extra-updates")).toHaveTextContent(
       "Updates settings panel",
     );
+  });
+
+  it("renders a back button only when onBack is provided", () => {
+    const { unmount } = render(<DesktopSettingsPage onBack={() => {}} />);
+    expect(
+      screen.getByRole("button", { name: "Back to app" }),
+    ).toBeInTheDocument();
+    unmount();
+
+    render(<DesktopSettingsPage />);
+    expect(
+      screen.queryByRole("button", { name: "Back to app" }),
+    ).not.toBeInTheDocument();
   });
 });

@@ -1,5 +1,5 @@
 /**
- * Screen-scoped image sequence for the lightbox (PB-5752).
+ * Screen-scoped image sequence for the lightbox (MUL-5752).
  *
  * A screen that can show several images (an issue: description + every
  * comment; a chat session: every message) mounts this once with its blocks in

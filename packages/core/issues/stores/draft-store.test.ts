@@ -40,8 +40,11 @@ const RESET_STATE = {
       description: "",
       status: "todo" as const,
       startDate: null,
+      ownerId: undefined,
       executorType: undefined,
       executorId: undefined,
+      reviewerType: undefined,
+      reviewerId: undefined,
       labelIds: [],
       propertyValues: {},
     },
@@ -52,36 +55,37 @@ const RESET_STATE = {
     },
     activeMode: "manual" as const,
   },
+  lastOwnerId: undefined,
   lastExecutorType: undefined,
   lastExecutorId: undefined,
 };
 
-describe("issue draft store — last executor", () => {
+describe("issue draft store — remembered roles", () => {
   beforeEach(() => {
     useIssueDraftStore.setState(RESET_STATE);
   });
 
-  it("clearDraft prefills the next manual draft with the remembered executor", () => {
-    const { setManual, setLastExecutor, clearDraft } =
+  it("clearDraft prefills the next manual draft with the remembered owner", () => {
+    const { setManual, setLastOwner, clearDraft } =
       useIssueDraftStore.getState();
 
-    setManual({ title: "first", executorType: "agent", executorId: "alice" });
-    setLastExecutor("agent", "alice");
+    setManual({ title: "first", ownerId: "alice" });
+    setLastOwner("alice");
     clearDraft();
 
     const { draft } = useIssueDraftStore.getState();
     expect(draft.manual.title).toBe("");
-    expect(draft.manual.executorType).toBe("agent");
-    expect(draft.manual.executorId).toBe("alice");
+    expect(draft.manual.ownerId).toBe("alice");
   });
 
-  it("clearDraft yields an empty executor when none has ever been remembered", () => {
+  it("clearDraft yields empty roles when none has ever been remembered", () => {
     const { setManual, clearDraft } = useIssueDraftStore.getState();
 
     setManual({ title: "first" });
     clearDraft();
 
     const { draft } = useIssueDraftStore.getState();
+    expect(draft.manual.ownerId).toBeUndefined();
     expect(draft.manual.executorType).toBeUndefined();
     expect(draft.manual.executorId).toBeUndefined();
   });
@@ -131,6 +135,21 @@ describe("issue draft store — last executor", () => {
     expect(useIssueDraftStore.getState().draft.manual.propertyValues).toEqual({});
   });
 
+  it("isolates a source-context create draft and restores the ordinary draft", () => {
+    const store = useIssueDraftStore.getState();
+    store.setManual({ title: "ordinary draft" });
+    const ordinary = useIssueDraftStore.getState().draft;
+
+    store.beginIsolatedDraft();
+    expect(useIssueDraftStore.getState().draft.manual.title).toBe("");
+    useIssueDraftStore.getState().setManual({ title: "source-only draft" });
+    expect(useIssueDraftStore.getState().draft.manual.title).toBe("source-only draft");
+
+    useIssueDraftStore.getState().endIsolatedDraft();
+    expect(useIssueDraftStore.getState().draft).toEqual(ordinary);
+    expect(useIssueDraftStore.getState().isolatedDraftBackup).toBeUndefined();
+  });
+
   it("clearDraft removes the persisted project selection", () => {
     const { setShared, clearDraft } = useIssueDraftStore.getState();
 
@@ -149,17 +168,16 @@ describe("issue draft store — last executor", () => {
     expect(useIssueDraftStore.getState().draft.agent.prompt).toBe("");
   });
 
-  it("setLastExecutor(undefined) lets the user opt back out of a default", () => {
-    const { setLastExecutor, clearDraft } = useIssueDraftStore.getState();
+  it("setLastOwner(undefined) lets the user opt back out of a default", () => {
+    const { setLastOwner, clearDraft } = useIssueDraftStore.getState();
 
-    setLastExecutor("agent", "alice");
+    setLastOwner("alice");
     clearDraft();
-    expect(useIssueDraftStore.getState().draft.manual.executorId).toBe("alice");
+    expect(useIssueDraftStore.getState().draft.manual.ownerId).toBe("alice");
 
-    setLastExecutor(undefined, undefined);
+    setLastOwner(undefined);
     clearDraft();
-    expect(useIssueDraftStore.getState().draft.manual.executorId).toBeUndefined();
-    expect(useIssueDraftStore.getState().draft.manual.executorType).toBeUndefined();
+    expect(useIssueDraftStore.getState().draft.manual.ownerId).toBeUndefined();
   });
 });
 
@@ -197,7 +215,7 @@ describe("issue draft store — legacy rehydrate", () => {
     setCurrentWorkspace(null, null);
   });
 
-  it("migrates a pre-PB-5181 flat draft into the shared/manual slots", async () => {
+  it("migrates a pre-MUL-5181 flat draft into the shared/manual slots", async () => {
     localStorage.setItem(
       "patchbay_issue_draft:acme",
       JSON.stringify({
@@ -270,43 +288,6 @@ describe("issue draft store — legacy rehydrate", () => {
     expect(draft.manual.status).toBe("todo");
     expect(draft.agent.prompt).toBe("keep me");
     expect(draft.activeMode).toBe("agent");
-  });
-
-  it("migrates legacy assignee fields into owner/executor roles", async () => {
-    localStorage.setItem(
-      "patchbay_issue_draft:roles",
-      JSON.stringify({
-        state: {
-          draft: {
-            shared: {},
-            manual: {
-              title: "human-owned",
-              assigneeType: "member",
-              assigneeId: "user-1",
-            },
-            agent: {},
-            activeMode: "manual",
-          },
-          lastAssigneeType: "agent",
-          lastAssigneeId: "agent-1",
-        },
-        version: 0,
-      }),
-    );
-
-    setCurrentWorkspace("roles", "ws_roles");
-    await flush();
-    await flush();
-
-    const state = useIssueDraftStore.getState();
-    expect(state.draft.manual.ownerId).toBe("user-1");
-    expect(state.draft.manual.executorType).toBeUndefined();
-    expect(state.draft.manual.executorId).toBeUndefined();
-    expect(state.lastOwnerId).toBeUndefined();
-    expect(state.lastExecutorType).toBe("agent");
-    expect(state.lastExecutorId).toBe("agent-1");
-    expect((state.draft.manual as unknown as Record<string, unknown>).assigneeType).toBeUndefined();
-    expect((state.draft.manual as unknown as Record<string, unknown>).assigneeId).toBeUndefined();
   });
 
   it("normalizes pre-L2 shared attachments and drops stale uploading placeholders", async () => {
@@ -403,18 +384,21 @@ describe("issue draft store — logout cleanup", () => {
     setCurrentWorkspace(null, null);
   });
 
-  it("registered reset wipes the last-executor preference, not just the draft", () => {
-    const { setManual, setLastExecutor } = useIssueDraftStore.getState();
-    setManual({ title: "wip", executorType: "agent", executorId: "alice" });
-    setLastExecutor("agent", "alice");
+  it("registered reset wipes remembered role preferences, not just the draft", () => {
+    const { setManual, setLastOwner, setLastExecutor } = useIssueDraftStore.getState();
+    setManual({ title: "wip", ownerId: "alice", executorType: "agent", executorId: "agent-1" });
+    setLastOwner("alice");
+    setLastExecutor("agent", "agent-1");
 
     resetAllRegisteredDrafts();
 
     const state = useIssueDraftStore.getState();
+    expect(state.lastOwnerId).toBeUndefined();
     expect(state.lastExecutorType).toBeUndefined();
     expect(state.lastExecutorId).toBeUndefined();
-    // clearDraft() would have re-seeded the manual slot from lastExecutor —
+    // clearDraft() would have re-seeded the manual slot from remembered roles —
     // the logout reset must not hand the next login a previous user's pick.
+    expect(state.draft.manual.ownerId).toBeUndefined();
     expect(state.draft.manual.executorType).toBeUndefined();
     expect(state.draft.manual.executorId).toBeUndefined();
   });
@@ -424,15 +408,15 @@ describe("issue draft store — logout cleanup", () => {
     await flush();
     await flush();
 
-    const { setManual, setLastExecutor } = useIssueDraftStore.getState();
+    const { setManual, setLastOwner } = useIssueDraftStore.getState();
     setManual({ title: "secret wip" });
-    setLastExecutor("agent", "alice");
+    setLastOwner("alice");
     expect(localStorage.getItem("patchbay_issue_draft:acme")).not.toBeNull();
 
     // use-logout's order: reset first (each reset is a setState, and persist
     // writes the new state back to storage under the still-active slug), THEN
     // remove the keys. The reverse order resurrects the key with the previous
-    // user's lastExecutor inside.
+    // user's remembered owner inside.
     resetAllRegisteredDrafts();
     clearWorkspaceStorage(defaultStorage, "acme");
 

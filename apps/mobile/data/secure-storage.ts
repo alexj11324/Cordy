@@ -6,6 +6,7 @@
 import * as SecureStore from "expo-secure-store";
 
 const TOKEN_KEY = "patchbay_token";
+const LEGACY_GUEST_CREDENTIALS_KEY = "patchbay_guest_credentials";
 
 export async function getToken(): Promise<string | null> {
   return SecureStore.getItemAsync(TOKEN_KEY);
@@ -17,4 +18,9 @@ export async function setToken(token: string): Promise<void> {
 
 export async function clearToken(): Promise<void> {
   await SecureStore.deleteItemAsync(TOKEN_KEY);
+}
+
+/** Remove credentials written by the short-lived mobile Guest experiment. */
+export async function clearLegacyGuestCredentials(): Promise<void> {
+  await SecureStore.deleteItemAsync(LEGACY_GUEST_CREDENTIALS_KEY);
 }

@@ -4,7 +4,7 @@
  * Avatar tap opens an iOS native ActionSheet (Take Photo / Choose from Library
  * / Remove). Mirrors the avatar upload flow in
  * packages/views/settings/components/account-tab.tsx but the picker uses
- * native APIs per AGENTS.md "iOS native > RNR > discuss" waterfall.
+ * native APIs per CLAUDE.md "iOS native > RNR > discuss" waterfall.
  *
  * Save runs PATCH /api/me then writes the returned user back to the auth
  * store via setUser — same source-of-truth pattern as web (server response

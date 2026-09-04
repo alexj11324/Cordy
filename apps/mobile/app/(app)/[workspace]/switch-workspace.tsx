@@ -11,7 +11,7 @@
  *   The previous flow ("popover → tap row → instant switch") had no friction
  *   against fat-finger taps in the cramped popover, and the user lost their
  *   entire navigation context (tabs, scroll position) with one accidental
- *   tap. iOS Alert is the platform-correct gate (mobile/AGENTS.md Principle
+ *   tap. iOS Alert is the platform-correct gate (mobile/CLAUDE.md Principle
  *   3 — iOS native > RNR > discuss).
  *
  * Switching itself stays minimal: `router.dismiss()` to close this sheet,

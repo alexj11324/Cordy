@@ -36,7 +36,7 @@ function makeAttachment(id: string): Attachment {
   };
 }
 
-// The pre-PB-4864 scheme kept one new-chat draft per agent, in `__new__:<id>`
+// The pre-MUL-4864 scheme kept one new-chat draft per agent, in `__new__:<id>`
 // slots. Those slots have no timestamp, so on upgrade only one can survive:
 // the one for the agent the workspace has selected — the draft the user would
 // have been shown. The rest were the invisible multi-draft state, and go.
@@ -72,7 +72,7 @@ describe("chat store — legacy per-agent new-chat draft migration", () => {
 
     const store = createChatStore({ storage });
 
-    // Legacy bare Attachment rows load as `uploaded` entries (PB-5181 L2).
+    // Legacy bare Attachment rows load as `uploaded` entries (MUL-5181 L2).
     expect(
       store
         .getState()
@@ -185,24 +185,6 @@ describe("chat store — selected project", () => {
 
     store.getState().setSelectedProjectId(null);
     expect(storage.getItem("patchbay:chat:selectedProjectId")).toBeNull();
-  });
-});
-
-describe("chat store — cross-surface navigation signals", () => {
-  it("increments intent and topics signals without persisting them", () => {
-    const storage = memStorage();
-    const store = createChatStore({ storage });
-
-    expect(store.getState().agentIntentRevision).toBe(0);
-    expect(store.getState().topicsViewRequest).toBe(0);
-
-    store.getState().supersedeAgentIntent();
-    store.getState().requestTopicsView();
-
-    expect(store.getState().agentIntentRevision).toBe(1);
-    expect(store.getState().topicsViewRequest).toBe(1);
-    expect(storage.getItem("patchbay:chat:agentIntentRevision")).toBeNull();
-    expect(storage.getItem("patchbay:chat:topicsViewRequest")).toBeNull();
   });
 });
 
@@ -326,7 +308,7 @@ describe("chat store — applied draft-restore ledger", () => {
   });
 });
 
-// Coordinator-owned upload lifecycle in the draft slots (PB-5181 L2).
+// Coordinator-owned upload lifecycle in the draft slots (MUL-5181 L2).
 describe("chat store — draft upload ops", () => {
   const ATTACHMENTS_KEY = "patchbay:chat:draft-attachments";
 

@@ -20,6 +20,7 @@ import type {
 import { api, ApiError } from "@patchbay/core/api";
 import { useWorkspaceId } from "@patchbay/core/hooks";
 import {
+  isRuntimeUsableForUser,
   runtimeCapabilitiesOptions,
   runtimeDisplayLabel,
 } from "@patchbay/core/runtimes";
@@ -50,18 +51,24 @@ type SelectedSkill =
 export function SkillsTab({
   agent,
   runtime,
+  currentUserId,
   canEdit = true,
 }: {
   agent: Agent;
   runtime: AgentRuntime | null;
+  currentUserId?: string | null;
   canEdit?: boolean;
 }) {
   const { t } = useT("agents");
   const qc = useQueryClient();
   const wsId = useWorkspaceId();
   const { data: workspaceSkills = [] } = useQuery(skillListOptions(wsId));
+  const canReadRuntime =
+    runtime != null && isRuntimeUsableForUser(runtime, currentUserId ?? null);
   const runtimeId =
-    runtime?.runtime_mode === "local" && runtime.status === "online"
+    runtime?.runtime_mode === "local" &&
+    runtime.status === "online" &&
+    canReadRuntime
       ? runtime.id
       : null;
   const runtimeQuery = useQuery(runtimeCapabilitiesOptions(runtimeId));
@@ -232,7 +239,7 @@ export function SkillsTab({
       <CapabilitySection
         title={t(($) => $.tab_body.skills.runtime_title)}
         description={t(($) => $.tab_body.skills.runtime_hint, {
-          runtime: runtime ? runtimeDisplayLabel(runtime) : "Device",
+          runtime: runtime ? runtimeDisplayLabel(runtime) : "Runtime",
         })}
         action={
           runtimeId ? (
@@ -255,6 +262,8 @@ export function SkillsTab({
       >
         {!runtime ? (
           <RuntimeNotice text={t(($) => $.tab_body.skills.runtime_missing)} />
+        ) : !canReadRuntime ? (
+          <RuntimeNotice text={t(($) => $.tab_body.skills.runtime_forbidden)} />
         ) : runtime.status !== "online" ? (
           <RuntimeNotice text={t(($) => $.tab_body.skills.runtime_offline)} />
         ) : runtimeQuery.isLoading ? (

@@ -9,7 +9,7 @@ import {
 } from "@patchbay/ui/components/ui/item";
 import { useT } from "../../i18n";
 
-/** Mirrors the Patrick avatar URL in the Rust onboarding handler.
+/** Mirrors `patrickAgentAvatarURL` in server/internal/handler/patrick_agent.go.
  *  Placeholder until Patrick has real artwork — these two must move together or
  *  onboarding shows one face and the created agent another. */
 export const PATRICK_PLACEHOLDER_EMOJI = "🦄";

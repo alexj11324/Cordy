@@ -1,5 +1,5 @@
 /**
- * PB-5208 — a link that points back at this deployment is an in-app
+ * MUL-5208 — a link that points back at this deployment is an in-app
  * destination, not an external one.
  *
  * Chat and comments render agent-written content full of absolute URLs. When one
@@ -83,16 +83,16 @@ function renderContent(content: string) {
 
 describe("RichContent link routing", () => {
   it("routes a link to this deployment into the app instead of the browser", () => {
-    renderContent(`[PB-1](${APP_ORIGIN}/acme/issues/PB-1)`);
+    renderContent(`[MUL-1](${APP_ORIGIN}/acme/issues/MUL-1)`);
 
-    screen.getByText("PB-1").click();
+    screen.getByText("MUL-1").click();
 
-    expect(navigatedPaths).toEqual(["/acme/issues/PB-1"]);
+    expect(navigatedPaths).toEqual(["/acme/issues/MUL-1"]);
     expect(openSpy).not.toHaveBeenCalled();
   });
 
   it("still hands a genuinely external link to the browser", () => {
-    const external = "https://github.com/alexj11324/Cordy/pull/1";
+    const external = "https://github.com/patchbay-ai/patchbay/pull/1";
     renderContent(`[#1](${external})`);
 
     screen.getByText("#1").click();

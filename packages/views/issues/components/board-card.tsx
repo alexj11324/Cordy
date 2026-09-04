@@ -17,7 +17,7 @@ import { ActorAvatar } from "../../common/actor-avatar";
 import { PropertyIcon } from "../../common/property-icon";
 import { useWorkspacePaths } from "@patchbay/core/paths";
 import { useActorName } from "@patchbay/core/workspace/hooks";
-import { useTimeAgo } from "../../i18n";
+import { useLocale, useT, useTimeAgo } from "../../i18n";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { PriorityIcon } from "./priority-icon";
 import { PriorityPicker, ExecutorPicker, StartDatePicker, DueDatePicker } from "./pickers";
@@ -29,11 +29,8 @@ import { LabelChip } from "../../labels/label-chip";
 import { IssueAgentActivityIndicator } from "./issue-agent-activity-indicator";
 import { CustomStatusChip, useIsCustomStatus } from "./custom-status-chip";
 import { useIssueSurfaceActionsOptional } from "../surface/actions-context";
-import { useT } from "../../i18n";
-import { DependencyBlockerBadge } from "./dependency-blocker-badge";
-
-function formatDate(date: string): string {
-  return formatDateOnly(date, { month: "short", day: "numeric" }, "en-US");
+function formatDate(date: string, locale: string): string {
+  return formatDateOnly(date, { month: "short", day: "numeric" }, locale);
 }
 
 /** Stops event from bubbling to Link/drag handlers */
@@ -61,6 +58,7 @@ export const BoardCardContent = memo(function BoardCardContent({
   project?: Project;
 }) {
   const { t } = useT("issues");
+  const locale = useLocale();
   const timeAgo = useTimeAgo();
   const storeProperties = useViewStore((s) => s.cardProperties);
   const cardPropertyIds = useViewStore((s) => s.cardPropertyIds);
@@ -176,7 +174,7 @@ export const BoardCardContent = memo(function BoardCardContent({
   const showRightMeta = !!showStartDate || !!showDueDate || !!showChildProgress || showUpdatedHint;
 
   return (
-    <div className="running-task-card border-beam rounded-lg border-[0.5px] border-surface-border bg-surface py-3 px-2.5 shadow-[var(--surface-shadow)] transition-colors group-hover/card:border-foreground/15 group-hover/card:bg-surface-hover group-data-[popup-open]/card:border-foreground/15 group-data-[popup-open]/card:bg-surface-hover">
+    <div className="rounded-lg border-[0.5px] border-surface-border bg-surface py-3 px-2.5 shadow-[var(--surface-shadow)] transition-colors group-hover/card:border-foreground/15 group-hover/card:bg-surface-hover group-data-[popup-open]/card:border-foreground/15 group-data-[popup-open]/card:bg-surface-hover">
       {/* Row 1: priority + identifier (left), agent activity + executor (right) */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 min-w-0">
@@ -203,7 +201,7 @@ export const BoardCardContent = memo(function BoardCardContent({
 
       {/* Chip row: status + project + labels + custom property values.
           The status chip renders only for a CUSTOM status — the column header
-          already names the category. (PB-6243) */}
+          already names the category. (MUL-6243) */}
       {(showCustomStatus || showProject || showLabels || cardCustomProperties.length > 0) && (
         <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
           <CustomStatusChip status={issue.status} />
@@ -228,8 +226,6 @@ export const BoardCardContent = memo(function BoardCardContent({
         </div>
       )}
 
-      <DependencyBlockerBadge issueId={issue.id} className="mt-1.5" />
-
       {/* Meta row: executor (left), start date, due date, child progress (right) */}
       {showMetaRow && (
         <div className="mt-2 flex items-center justify-between gap-2">
@@ -249,7 +245,7 @@ export const BoardCardContent = memo(function BoardCardContent({
                       trigger={
                         <span className="flex items-center gap-1 text-caption text-muted-foreground">
                           <CalendarClock className="size-3" />
-                          {formatDate(issue.start_date!)}
+                          {formatDate(issue.start_date!, locale)}
                         </span>
                       }
                     />
@@ -257,7 +253,7 @@ export const BoardCardContent = memo(function BoardCardContent({
                 ) : (
                   <span className="flex shrink-0 items-center gap-1 text-caption text-muted-foreground">
                     <CalendarClock className="size-3" />
-                    {formatDate(issue.start_date!)}
+                    {formatDate(issue.start_date!, locale)}
                   </span>
                 )
               )}
@@ -276,7 +272,7 @@ export const BoardCardContent = memo(function BoardCardContent({
                           }`}
                         >
                           <CalendarDays className="size-3" />
-                          {formatDate(issue.due_date!)}
+                          {formatDate(issue.due_date!, locale)}
                         </span>
                       }
                     />
@@ -290,7 +286,7 @@ export const BoardCardContent = memo(function BoardCardContent({
                     }`}
                   >
                     <CalendarDays className="size-3" />
-                    {formatDate(issue.due_date!)}
+                    {formatDate(issue.due_date!, locale)}
                   </span>
                 )
               )}

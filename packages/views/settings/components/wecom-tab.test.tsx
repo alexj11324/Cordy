@@ -31,12 +31,6 @@ const mockRegisterBYO = vi.hoisted(() => vi.fn());
 const mockDeleteInstallation = vi.hoisted(() => vi.fn());
 const mockInvalidate = vi.hoisted(() => vi.fn());
 
-const healthyRuntime = {
-  state: "healthy",
-  observedAt: null,
-  errorCode: null,
-} as const;
-
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (opts: { queryKey: unknown[]; enabled?: boolean }) => {
     if (opts.enabled === false) return { data: undefined, isLoading: false };
@@ -129,12 +123,7 @@ describe("WecomAgentBindButton", () => {
   beforeEach(resetFixtures);
 
   it("opens the BYO dialog and submits the trimmed bot id + secret", async () => {
-    mockRegisterBYO.mockResolvedValue({
-      id: "i1",
-      agent_id: "agent-1",
-      status: "active",
-      runtime: healthyRuntime,
-    });
+    mockRegisterBYO.mockResolvedValue({ id: "i1", agent_id: "agent-1", status: "installed" });
     renderUI(<WecomAgentBindButton agentId="agent-1" agentName="Bot" />);
     await userEvent.click(screen.getByTestId("wecom-agent-connect"));
     await userEvent.type(await screen.findByTestId("wecom-byo-bot-id"), "  aibot_xyz  ");
@@ -153,7 +142,7 @@ describe("WecomAgentBindButton", () => {
   // Chinese sentence, not the English one the API happens to carry.
   it("renders the localized sentence for a coded failure, not the server's English", async () => {
     mockRegisterBYO.mockRejectedValue(
-      Object.assign(new Error("this bot is already connected to another agent in this workspace"), {
+      Object.assign(new Error("this bot is already installed for another agent in this workspace"), {
         code: "wecom_bot_owned_by_same_workspace",
       }),
     );
@@ -254,14 +243,14 @@ describe("WecomAgentBindButton", () => {
     expect(mockRegisterBYO.mock.calls[0]?.[2].bot_name).toBeUndefined();
   });
 
-  it("shows the connected badge (not the CTA) when the agent has an active install", () => {
+  it("shows the installation status (not the CTA) when the agent has an installed bot", () => {
     installationsRef.current = {
-      installations: [{ id: "i1", agent_id: "agent-1", bot_id: "aibot_x", status: "active", runtime: healthyRuntime }],
+      installations: [{ id: "i1", agent_id: "agent-1", bot_id: "aibot_x", status: "installed" }],
       configured: true,
       install_supported: true,
     };
     renderUI(<WecomAgentBindButton agentId="agent-1" />);
-    expect(screen.getByTestId("wecom-agent-bot-connected")).toBeTruthy();
+    expect(screen.getByTestId("wecom-agent-bot-installed")).toBeTruthy();
     expect(screen.queryByTestId("wecom-agent-connect")).toBeNull();
   });
 
@@ -273,7 +262,7 @@ describe("WecomAgentBindButton", () => {
     };
     renderUI(<WecomAgentBindButton agentId="agent-1" agentName="Bot" />);
     expect(screen.getByTestId("wecom-agent-connect")).toBeTruthy();
-    expect(screen.queryByTestId("wecom-agent-bot-connected")).toBeNull();
+    expect(screen.queryByTestId("wecom-agent-bot-installed")).toBeNull();
   });
 
   it("renders nothing for a non-manager (member)", () => {
@@ -300,12 +289,12 @@ describe("WecomTab", () => {
 
   it("shows the empty state when configured but nothing is connected", () => {
     renderUI(<WecomTab />);
-    expect(screen.getByText(/No bots connected yet/i)).toBeTruthy();
+    expect(screen.getByText(/No bots installed yet/i)).toBeTruthy();
   });
 
   it("lists a connected installation with its agent name and a disconnect control", () => {
     installationsRef.current = {
-      installations: [{ id: "i1", agent_id: "agent-7", bot_id: "aibot_x", status: "active", runtime: healthyRuntime }],
+      installations: [{ id: "i1", agent_id: "agent-7", bot_id: "aibot_x", status: "installed" }],
       configured: true,
       install_supported: true,
     };
@@ -317,7 +306,7 @@ describe("WecomTab", () => {
   it("confirms before disconnecting, then calls deleteWecomInstallation", async () => {
     mockDeleteInstallation.mockResolvedValue(undefined);
     installationsRef.current = {
-      installations: [{ id: "i1", agent_id: "agent-7", bot_id: "aibot_x", status: "active", runtime: healthyRuntime }],
+      installations: [{ id: "i1", agent_id: "agent-7", bot_id: "aibot_x", status: "installed" }],
       configured: true,
       install_supported: true,
     };

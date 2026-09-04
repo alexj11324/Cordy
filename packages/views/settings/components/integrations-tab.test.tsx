@@ -2,19 +2,13 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { ApiError } from "@patchbay/core/api";
 import { configStore } from "@patchbay/core/config";
 import {
   BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG,
   COMPOSIO_MCP_APPS_FLAG,
+  LINEAR_INSTALLATION_FOUNDATION_FLAG,
 } from "@patchbay/core/feature-flags";
 import { I18nProvider } from "@patchbay/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
@@ -32,67 +26,44 @@ const authUserRef = vi.hoisted(() => ({
 const membersRef = vi.hoisted(() => ({
   current: [] as { user_id: string; role: string }[],
 }));
-const channelInstallationsRef = vi.hoisted(() => ({
-  current: {} as Partial<
-    Record<
-      "lark" | "slack" | "dingtalk" | "wecom" | "telegram" | "weixin",
-      {
-        configured: boolean;
-        install_supported: boolean;
-        installations: {
-          id: string;
-          agent_id: string | null;
-          status: string;
-          region?: string;
-          runtime?: { state: string; observedAt: string | null; errorCode: string | null };
-          setup?: { experimental?: boolean };
-        }[];
-      }
-    >
-  >,
-}));
-const navigationRef = vi.hoisted(() => ({
-  searchParams: new URLSearchParams("tab=integrations"),
-  replace: vi.fn(),
-}));
-const toastSuccess = vi.hoisted(() => vi.fn());
-const toastError = vi.hoisted(() => vi.fn());
-
-vi.mock("sonner", () => ({
-  toast: {
-    success: toastSuccess,
-    error: toastError,
-  },
-}));
 const messagingQuotaRef = vi.hoisted(() => ({
-  current: null as null | {
-    mode: string;
-    limit: number | null;
-    used: number | null;
-    reserved: number | null;
-    reset_at: string | null;
-  },
+  current: undefined as
+    | { mode: string; used: number | null; reserved: number | null; limit: number | null }
+    | undefined,
 }));
 const subscriptionSummaryRef = vi.hoisted(() => ({
-  current: null as null | {
-    entitlement: {
-      hostedWorkspaceLimit?: number | null;
-      imInstallationLimit?: number | null;
-      imAgentTurns?: number | null;
-    };
-  },
+  current: undefined as
+    | {
+        entitlement: {
+          hostedWorkspaceLimit?: number | null;
+          imInstallationLimit?: number | null;
+        };
+      }
+    | undefined,
 }));
-const navigationPush = vi.hoisted(() => vi.fn());
+const channelInstallationsRef = vi.hoisted(() => ({
+  current: {} as Partial<Record<
+    "lark" | "slack" | "dingtalk" | "wecom" | "telegram" | "weixin",
+    {
+      configured: boolean;
+      install_supported: boolean;
+      installations: {
+        id: string;
+        agent_id: string | null;
+        status: string;
+        runtime?: { state: string; observedAt: string | null; errorCode: string | null };
+      }[];
+    }
+  >>,
+}));
 
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (opts: { queryKey: unknown[]; enabled?: boolean }) => {
     queryCallsRef.current.push(opts);
     const isMemberQuery = opts.queryKey[opts.queryKey.length - 1] === "members";
-    const isMessagingQuotaQuery = opts.queryKey[0] === "messaging-quota";
-    const isSubscriptionSummaryQuery =
-      opts.queryKey[0] === "workspace-subscriptions" &&
-      opts.queryKey[opts.queryKey.length - 1] === "summary";
     const channel = opts.queryKey[0];
+    const isMessagingQuotaQuery = channel === "messaging-quota";
+    const isSubscriptionSummaryQuery = channel === "workspace-subscriptions";
     const isChannelInstallationsQuery =
       typeof channel === "string" &&
       channel in channelInstallationsRef.current &&
@@ -102,8 +73,8 @@ vi.mock("@tanstack/react-query", () => ({
         ? membersRef.current
         : isMessagingQuotaQuery
           ? messagingQuotaRef.current
-          : isSubscriptionSummaryQuery
-            ? subscriptionSummaryRef.current
+        : isSubscriptionSummaryQuery
+          ? subscriptionSummaryRef.current
         : isChannelInstallationsQuery
           ? channelInstallationsRef.current[
               channel as keyof typeof channelInstallationsRef.current
@@ -122,24 +93,8 @@ vi.mock("@patchbay/core/composio", () => ({
   composioToolkitsOptions: () => ({ queryKey: ["composio", "toolkits"] }),
 }));
 
-vi.mock("@patchbay/core/hooks", () => ({
-  useWorkspaceId: () => "workspace-id",
-}));
-
 vi.mock("@patchbay/core/paths", () => ({
-  paths: {
-    workspace: (slug: string) => ({ settings: () => `/${slug}/settings` }),
-  },
-  useCurrentWorkspace: () => ({ id: "workspace-id", slug: "acme" }),
-}));
-
-vi.mock("../../navigation", () => ({
-  useNavigation: () => ({
-    pathname: "/acme/settings",
-    searchParams: navigationRef.searchParams,
-    replace: navigationRef.replace,
-    push: navigationPush,
-  }),
+  useCurrentWorkspace: () => ({ id: "workspace-1", name: "Acme", slug: "acme" }),
 }));
 
 vi.mock("@patchbay/core/auth", () => ({
@@ -147,9 +102,20 @@ vi.mock("@patchbay/core/auth", () => ({
     selector({ user: authUserRef.current }),
 }));
 
+for (const channel of ["lark", "slack", "dingtalk", "wecom", "telegram", "weixin"]) {
+  vi.doMock(`@patchbay/core/${channel}`, () => ({
+    [`${channel}InstallationsOptions`]: (workspaceId: string) => ({
+      queryKey: [channel, workspaceId, "installations"],
+    }),
+    [`${channel}Keys`]: {
+      installations: (workspaceId: string) => [channel, workspaceId, "installations"],
+    },
+  }));
+}
+
 vi.mock("./lark-tab", () => ({
   LarkTab: () => <div data-testid="lark-tab" />,
-  LarkAgentBindButton: () => <button>Connect Lark</button>,
+  LarkAgentBindButton: () => <button data-testid="lark-hub-install">Install</button>,
 }));
 
 vi.mock("./composio-tab", () => ({
@@ -158,12 +124,12 @@ vi.mock("./composio-tab", () => ({
 
 vi.mock("./slack-tab", () => ({
   SlackTab: () => <div data-testid="slack-tab" />,
-  SlackAgentBindButton: () => <button>Connect Slack</button>,
+  SlackAgentBindButton: () => <button data-testid="slack-hub-install">Install</button>,
 }));
 
 vi.mock("./dingtalk-tab", () => ({
   DingTalkTab: () => <div data-testid="dingtalk-tab" />,
-  DingTalkAgentBindButton: () => <button>Connect DingTalk</button>,
+  DingTalkAgentBindButton: () => <button data-testid="dingtalk-hub-install">Install</button>,
 }));
 
 vi.mock("./vcs-tab", () => ({
@@ -172,17 +138,21 @@ vi.mock("./vcs-tab", () => ({
 
 vi.mock("./wecom-tab", () => ({
   WecomTab: () => <div data-testid="wecom-tab" />,
-  WecomAgentBindButton: () => <button>Connect WeCom</button>,
+  WecomAgentBindButton: () => <button data-testid="wecom-hub-install">Install</button>,
 }));
 
 vi.mock("./telegram-tab", () => ({
   TelegramTab: () => <div data-testid="telegram-tab" />,
-  TelegramAgentBindButton: () => <button>Connect Telegram</button>,
+  TelegramAgentBindButton: () => <button data-testid="telegram-hub-install">Install</button>,
 }));
 
 vi.mock("./weixin-tab", () => ({
   WeixinTab: () => <div data-testid="weixin-tab" />,
-  WeixinAgentBindButton: () => <button>Connect WeChat</button>,
+  WeixinAgentBindButton: () => <button data-testid="weixin-hub-install">Install</button>,
+}));
+
+vi.mock("./linear-tab", () => ({
+  LinearIntegrationCard: () => <div data-testid="integration-channel-card-linear" />,
 }));
 
 import { IntegrationsTab } from "./integrations-tab";
@@ -197,32 +167,26 @@ function renderTab() {
   );
 }
 
-function setSuccessfulEmptyChannelListings() {
-  channelInstallationsRef.current = {
-    lark: { configured: false, install_supported: false, installations: [] },
-    slack: { configured: false, install_supported: false, installations: [] },
-    dingtalk: { configured: false, install_supported: false, installations: [] },
-    wecom: { configured: false, install_supported: false, installations: [] },
-    telegram: { configured: false, install_supported: false, installations: [] },
-    weixin: { configured: false, install_supported: false, installations: [] },
-  };
-}
-
 describe("Settings IntegrationsTab", () => {
   beforeEach(() => {
     queryCallsRef.current = [];
     composioErrorRef.current = null;
     authUserRef.current = null;
     membersRef.current = [];
-    channelInstallationsRef.current = {};
-    navigationRef.searchParams = new URLSearchParams("tab=integrations");
-    navigationRef.replace.mockReset();
-    toastSuccess.mockReset();
-    toastError.mockReset();
-    messagingQuotaRef.current = null;
-    subscriptionSummaryRef.current = null;
-    navigationPush.mockReset();
-    configStore.getState().setFeatureFlags({ [COMPOSIO_MCP_APPS_FLAG]: true });
+    messagingQuotaRef.current = undefined;
+    subscriptionSummaryRef.current = undefined;
+    channelInstallationsRef.current = {
+      lark: { configured: false, install_supported: false, installations: [] },
+      slack: { configured: false, install_supported: false, installations: [] },
+      dingtalk: { configured: false, install_supported: false, installations: [] },
+      wecom: { configured: false, install_supported: false, installations: [] },
+      telegram: { configured: false, install_supported: false, installations: [] },
+      weixin: { configured: false, install_supported: false, installations: [] },
+    };
+    configStore.getState().setFeatureFlags({
+      [COMPOSIO_MCP_APPS_FLAG]: true,
+      [LINEAR_INSTALLATION_FOUNDATION_FLAG]: false,
+    });
     // Reset the self-host-only VCS gate to its default (hidden) so tests stay
     // isolated; individual tests opt in below.
     configStore.getState().setAuthConfig({ allowSignup: true, vcsIntegrationAvailable: false });
@@ -233,8 +197,106 @@ describe("Settings IntegrationsTab", () => {
     });
   });
 
-  it("hides Composio and disables the toolkits query when the feature flag is off", () => {
-    configStore.getState().setFeatureFlags({ [COMPOSIO_MCP_APPS_FLAG]: false });
+  it("renders messaging integrations as workspace cards instead of expanded forms", () => {
+    renderTab();
+
+    for (const channel of ["lark", "slack", "dingtalk", "wecom", "telegram", "weixin"]) {
+      expect(screen.getByTestId(`integration-channel-card-${channel}`)).toBeInTheDocument();
+      expect(screen.queryByTestId(`${channel}-tab`)).toBeNull();
+    }
+  });
+
+  it("shows used plus reserved hosted Agent turns", () => {
+    messagingQuotaRef.current = { mode: "managed", used: 7, reserved: 2, limit: 100 };
+    renderTab();
+    expect(screen.getByTestId("messaging-quota")).toHaveTextContent(
+      "9 of 100 Agent turns used this period",
+    );
+  });
+
+  it("shows hosted installation and owned-workspace capacity", () => {
+    configStore.getState().setFeatureFlags({
+      [BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG]: true,
+      [COMPOSIO_MCP_APPS_FLAG]: true,
+      [LINEAR_INSTALLATION_FOUNDATION_FLAG]: false,
+    });
+    subscriptionSummaryRef.current = {
+      entitlement: {
+        hostedWorkspaceLimit: 4,
+        imInstallationLimit: 3,
+      },
+    };
+    channelInstallationsRef.current.slack = {
+      configured: true,
+      install_supported: true,
+      installations: [
+        { id: "hub-1", agent_id: null, status: "installed" },
+      ],
+    };
+
+    renderTab();
+
+    expect(screen.getByTestId("messaging-quota")).toHaveTextContent(
+      "Hosted installations: 1 of 3 installed",
+    );
+    expect(screen.getByTestId("messaging-quota")).toHaveTextContent(
+      "Owned hosted workspaces: up to 4",
+    );
+  });
+
+  it("shows a runtime-confirmed workspace installation as connected", () => {
+    authUserRef.current = { id: "admin-user" };
+    membersRef.current = [{ user_id: "admin-user", role: "owner" }];
+    channelInstallationsRef.current.slack = {
+      configured: true,
+      install_supported: true,
+      installations: [{
+        id: "hub-1",
+        agent_id: "",
+        status: "installed",
+        runtime: {
+          state: "healthy",
+          observedAt: "2026-09-03T12:00:00Z",
+          errorCode: null,
+        },
+      }],
+    };
+
+    renderTab();
+
+    const card = screen.getByTestId("integration-channel-card-slack");
+    expect(within(card).getByText("Connected")).toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: "Manage" })).toBeInTheDocument();
+  });
+
+  it("keeps server-configured messaging read-only", () => {
+    authUserRef.current = { id: "admin-user" };
+    membersRef.current = [{ user_id: "admin-user", role: "owner" }];
+    configStore.getState().setMessagingConfig({
+      mode: "server_configured",
+      setupWritable: false,
+      platforms: [],
+    });
+
+    renderTab();
+
+    expect(screen.getAllByText("Configured by the server operator")).toHaveLength(6);
+  });
+
+  it("opens the platform setup guide without exposing deployment variables", () => {
+    authUserRef.current = { id: "admin-user" };
+    membersRef.current = [{ user_id: "admin-user", role: "owner" }];
+
+    renderTab();
+    const card = screen.getByTestId("integration-channel-card-dingtalk");
+    fireEvent.click(within(card).getByRole("button", { name: "Configure" }));
+
+    expect(screen.getByTestId("integration-setup-guide-dingtalk")).toBeInTheDocument();
+    expect(screen.getByTestId("dingtalk-hub-install")).toBeInTheDocument();
+    expect(screen.queryByText("PATCHBAY_DINGTALK_SECRET_KEY")).toBeNull();
+  });
+
+  it("hides Composio and disables the toolkits query when the feature flag is off", () => {    configStore.getState().setFeatureFlags({ [COMPOSIO_MCP_APPS_FLAG]: false });
 
     renderTab();
 
@@ -255,26 +317,23 @@ describe("Settings IntegrationsTab", () => {
     expect(composioQuery?.enabled).toBe(true);
   });
 
-  it("surfaces and consumes Slack OAuth callback failures without touching other params", async () => {
-    navigationRef.searchParams = new URLSearchParams(
-      "tab=integrations&slack_error=slack_authorization_denied",
-    );
-
+  it("shows Linear only when its installation feature is enabled", () => {
     renderTab();
+    expect(screen.queryByTestId("integration-channel-card-linear")).toBeNull();
 
-    await waitFor(() =>
-      expect(toastError).toHaveBeenCalledWith("Slack authorization was canceled"),
-    );
-    expect(navigationRef.replace).toHaveBeenCalledWith(
-      "/acme/settings?tab=integrations",
-    );
-    expect(toastSuccess).not.toHaveBeenCalled();
+    cleanup();
+    configStore.getState().setFeatureFlags({
+      [COMPOSIO_MCP_APPS_FLAG]: true,
+      [LINEAR_INSTALLATION_FOUNDATION_FLAG]: true,
+    });
+    renderTab();
+    expect(screen.getByTestId("integration-channel-card-linear")).toBeInTheDocument();
   });
 
   it("shows each channel description below its icon and title", () => {
     renderTab();
 
-    for (const channel of ["weixin", "lark", "slack", "dingtalk", "wecom", "telegram"]) {
+    for (const channel of ["lark", "slack", "dingtalk", "wecom", "weixin", "telegram"]) {
       const card = screen.getByTestId(`integration-channel-card-${channel}`);
       const icon = screen.getByTestId(`integration-channel-icon-${channel}`);
       const title = card.querySelector("h3");
@@ -282,374 +341,23 @@ describe("Settings IntegrationsTab", () => {
       expect(title).not.toBeNull();
       expect(description?.tagName).toBe("P");
       expect(description).toHaveClass("text-caption", "text-muted-foreground");
-      expect(card.parentElement).toHaveClass("grid", "md:grid-cols-2", "xl:grid-cols-3");
       expect(icon).not.toHaveClass("border");
-      expect(icon).toHaveClass("size-12");
+      expect(icon).not.toHaveClass("bg-muted/40");
     }
-  });
-
-  it("shows connected Hub management actions without an Agent preselection", () => {
-    authUserRef.current = { id: "admin-user" };
-    membersRef.current = [{ user_id: "admin-user", role: "owner" }];
-    channelInstallationsRef.current.dingtalk = {
-      configured: true,
-      install_supported: true,
-      installations: [{
-        id: "hub-1",
-        agent_id: null,
-        status: "active",
-        runtime: { state: "healthy", observedAt: null, errorCode: null },
-      }],
-    };
-
-    renderTab();
-
-    expect(screen.getByText("Connected")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Manage" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Reconnect" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Disconnect" })).toBeInTheDocument();
-  });
-
-  it("localizes runtime health from the stable error code and state", () => {
-    authUserRef.current = { id: "admin-user" };
-    membersRef.current = [{ user_id: "admin-user", role: "owner" }];
-    channelInstallationsRef.current.dingtalk = {
-      configured: true,
-      install_supported: true,
-      installations: [{
-        id: "offline-hub",
-        agent_id: null,
-        status: "active",
-        runtime: {
-          state: "offline",
-          observedAt: "2026-09-01T00:00:00Z",
-          errorCode: "lease_expired",
-        },
-      }],
-    };
-
-    renderTab();
-
-    expect(screen.getByText("Runtime offline")).toBeInTheDocument();
-    expect(screen.queryByText("The runtime that owned this connection is no longer active.")).toBeNull();
-  });
-
-  it("shows hosted capacity and opens the billing upgrade from this page", () => {
-    authUserRef.current = { id: "user-1" };
-    membersRef.current = [{ user_id: "user-1", role: "owner" }];
-    setSuccessfulEmptyChannelListings();
-    channelInstallationsRef.current.telegram = {
-      configured: true,
-      install_supported: true,
-      installations: [{
-        id: "telegram-1",
-        agent_id: null,
-        status: "active",
-        runtime: {
-          state: "healthy",
-          observedAt: "2026-09-01T00:00:00Z",
-          errorCode: null,
-        },
-      }],
-    };
-    messagingQuotaRef.current = {
-      mode: "managed",
-      limit: 100,
-      used: 10,
-      reserved: 1,
-      reset_at: "2026-10-01T00:00:00Z",
-    };
-    subscriptionSummaryRef.current = {
-      entitlement: {
-        hostedWorkspaceLimit: 2,
-        imInstallationLimit: 1,
-        imAgentTurns: 100,
-      },
-    };
-    configStore.getState().setFeatureFlags({
-      [COMPOSIO_MCP_APPS_FLAG]: true,
-      [BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG]: true,
-    });
-
-    renderTab();
-
-    expect(screen.getByTestId("messaging-quota")).toHaveTextContent(
-      "11/100 Agent turns used",
-    );
-    expect(screen.getByTestId("messaging-quota")).toHaveTextContent("1/1 active");
-    expect(screen.getByTestId("messaging-quota")).toHaveTextContent("up to 2");
-    fireEvent.click(screen.getByRole("button", { name: "Upgrade hosted messaging" }));
-    expect(navigationPush).toHaveBeenCalledWith("/acme/settings?tab=billing");
-  });
-
-  it("does not under-report installation usage while a provider listing is missing", () => {
-    authUserRef.current = { id: "user-1" };
-    membersRef.current = [{ user_id: "user-1", role: "owner" }];
-    setSuccessfulEmptyChannelListings();
-    delete channelInstallationsRef.current.weixin;
-    subscriptionSummaryRef.current = {
-      entitlement: { imInstallationLimit: 10 },
-    };
-    configStore.getState().setFeatureFlags({
-      [COMPOSIO_MCP_APPS_FLAG]: true,
-      [BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG]: true,
-    });
-
-    renderTab();
-
-    expect(screen.getByTestId("messaging-quota")).toHaveTextContent(
-      "Hosted installations: Usage unavailable",
-    );
-  });
-
-  it("surfaces a hosted quota pause even when another installation is healthy", () => {
-    authUserRef.current = { id: "admin-user" };
-    membersRef.current = [{ user_id: "admin-user", role: "owner" }];
-    channelInstallationsRef.current.telegram = {
-      configured: true,
-      install_supported: true,
-      installations: [
-        {
-          id: "telegram-hub",
-          agent_id: null,
-          status: "active",
-          runtime: { state: "healthy", observedAt: null, errorCode: null },
-        },
-        {
-          id: "telegram-agent-paused",
-          agent_id: "agent-1",
-          status: "active",
-          runtime: {
-            state: "offline",
-            observedAt: null,
-            errorCode: "hosted_quota_paused",
-          },
-        },
-      ],
-    };
-
-    renderTab();
-
-    const card = screen.getByTestId("integration-channel-card-telegram");
-    expect(
-      within(card).getByText(
-        "Hosted quota paused — upgrade or disconnect another installation",
-      ),
-    ).toBeInTheDocument();
-    expect(within(card).queryByText("Connected")).toBeNull();
-  });
-
-  it("offers a billing upgrade when only the hosted workspace cap is finite", () => {
-    authUserRef.current = { id: "user-1" };
-    membersRef.current = [{ user_id: "user-1", role: "owner" }];
-    subscriptionSummaryRef.current = {
-      entitlement: { hostedWorkspaceLimit: 2 },
-    };
-    configStore.getState().setFeatureFlags({
-      [COMPOSIO_MCP_APPS_FLAG]: true,
-      [BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG]: true,
-    });
-
-    renderTab();
-
-    fireEvent.click(screen.getByRole("button", { name: "Upgrade hosted messaging" }));
-    expect(navigationPush).toHaveBeenCalledWith("/acme/settings?tab=billing");
-  });
-
-  it("names hosted quota pauses instead of reporting a generic offline runtime", () => {
-    channelInstallationsRef.current.telegram = {
-      configured: true,
-      install_supported: true,
-      installations: [{
-        id: "telegram-paused",
-        agent_id: null,
-        status: "active",
-        runtime: {
-          state: "offline",
-          observedAt: "2026-09-01T00:00:00Z",
-          errorCode: "hosted_quota_paused",
-        },
-      }],
-    };
-
-    renderTab();
-
-    expect(
-      screen.getByText(
-        "Hosted quota paused — upgrade or disconnect another installation",
-      ),
-    ).toBeInTheDocument();
-  });
-
-  it("opens an actionable setup detail instead of exposing a deployment variable", () => {
-    authUserRef.current = { id: "admin-user" };
-    membersRef.current = [{ user_id: "admin-user", role: "owner" }];
-    channelInstallationsRef.current.dingtalk = {
-      configured: false,
-      install_supported: false,
-      installations: [],
-    };
-
-    renderTab();
-
-    expect(screen.getByText("Not enabled on this deployment")).toBeInTheDocument();
-    expect(screen.queryByText("Not configured")).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "Configure" }));
-
-    expect(screen.getByRole("heading", { name: "Platform setup" })).toBeInTheDocument();
-    expect(screen.getByTestId("integration-setup-guide-dingtalk")).toBeInTheDocument();
-    expect(screen.getByText("Connection setup is temporarily unavailable.")).toBeInTheDocument();
-    expect(screen.queryByText("PATCHBAY_DINGTALK_SECRET_KEY")).toBeNull();
-  });
-
-  it("keeps an active Agent-scoped installation manageable without a Hub", () => {
-    authUserRef.current = { id: "admin-user" };
-    membersRef.current = [{ user_id: "admin-user", role: "owner" }];
-    channelInstallationsRef.current.telegram = {
-      configured: true,
-      install_supported: false,
-      installations: [{ id: "agent-install", agent_id: "agent-1", status: "active" }],
-    };
-
-    renderTab();
-
-    const card = screen.getByTestId("integration-channel-card-telegram");
-    fireEvent.click(within(card).getByRole("button", { name: "Manage" }));
-
-    expect(screen.getByRole("heading", { name: "Manage" })).toBeInTheDocument();
-    expect(screen.getByTestId("telegram-tab")).toBeInTheDocument();
-    expect(screen.queryByTestId("integration-setup-guide-telegram")).toBeNull();
-  });
-
-  it.each([
-    ["lark", "Connect Lark"],
-    ["slack", "Connect Slack"],
-    ["dingtalk", "Connect DingTalk"],
-    ["wecom", "Connect WeCom"],
-    ["telegram", "Connect Telegram"],
-    ["weixin", "Connect WeChat"],
-  ] as const)(
-    "keeps the complete %s setup and real connection action on this page",
-    (channel, connectLabel) => {
-      authUserRef.current = { id: "admin-user" };
-      membersRef.current = [{ user_id: "admin-user", role: "owner" }];
-      channelInstallationsRef.current[channel] = {
-        configured: true,
-        install_supported: true,
-        installations: [],
-      };
-
-      renderTab();
-
-      const card = screen.getByTestId(`integration-channel-card-${channel}`);
-      fireEvent.click(
-        within(card).getByRole("button", { name: "Set up" }),
-      );
-
-      expect(
-        screen.getByTestId(`integration-setup-guide-${channel}`),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByRole("button", { name: connectLabel }),
-      ).toBeInTheDocument();
-    },
-  );
-
-  it("hides reconnect for an active international Lark Hub while that flow is disabled", () => {
-    authUserRef.current = { id: "admin-user" };
-    membersRef.current = [{ user_id: "admin-user", role: "owner" }];
-    channelInstallationsRef.current.lark = {
-      configured: true,
-      install_supported: true,
-      installations: [{
-        id: "lark-hub",
-        agent_id: null,
-        status: "active",
-        region: "lark",
-        runtime: { state: "healthy", observedAt: null, errorCode: null },
-      }],
-    };
-
-    renderTab();
-
-    expect(screen.getByRole("button", { name: "Manage" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Disconnect" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Reconnect" })).toBeNull();
-  });
-
-  it("labels an active installation experimental until its provider path is verified", () => {
-    authUserRef.current = { id: "admin-user" };
-    membersRef.current = [{ user_id: "admin-user", role: "owner" }];
-    channelInstallationsRef.current.dingtalk = {
-      configured: true,
-      install_supported: true,
-      installations: [{
-        id: "experimental-hub",
-        agent_id: null,
-        status: "active",
-        runtime: { state: "healthy", observedAt: null, errorCode: null },
-        setup: { experimental: true },
-      }],
-    };
-
-    renderTab();
-
-    expect(screen.getByText("Experimental")).toBeInTheDocument();
-    expect(screen.queryByText("Connected")).toBeNull();
-  });
-
-  it("explains that Agent selection happens in the connected chat", () => {
-    renderTab();
-
-    expect(
-      screen.getByText(
-        "Connect a platform once, then use /agents in the chat to choose which Agent handles each conversation.",
-      ),
-    ).toBeInTheDocument();
-    expect(screen.getAllByText("Workspace admin only")).toHaveLength(6);
-  });
-
-  it("shows a login gate for guests instead of an external connection action", () => {
-    authUserRef.current = { id: "guest-user", is_guest: true };
-    membersRef.current = [{ user_id: "guest-user", role: "owner" }];
-
-    renderTab();
-
-    expect(screen.getAllByText("Log in to connect")).toHaveLength(6);
-    expect(screen.queryByText("Workspace admin only")).toBeNull();
   });
 
   // Reaching for a generic lucide glyph is how Slack and WeCom ended up sharing
   // one speech bubble, with nothing on the row saying which platform it was
-  // (#6585). Requiring distinct shapes is the cheap guard against a
+  // (#6585). Requiring five distinct shapes is the cheap guard against a
   // regression to that.
   it("gives every channel its own brand mark", () => {
     renderTab();
 
-    const shapes = ["weixin", "lark", "slack", "dingtalk", "wecom", "telegram"].map(
+    const shapes = ["lark", "slack", "dingtalk", "wecom", "weixin", "telegram"].map(
       (channel) => screen.getByTestId(`integration-channel-icon-${channel}`).innerHTML,
     );
 
     expect(new Set(shapes).size).toBe(shapes.length);
-  });
-
-  it("keeps legacy DingTalk route management available", () => {
-    channelInstallationsRef.current.dingtalk = {
-      configured: true,
-      install_supported: true,
-      installations: [{
-        id: "legacy-1",
-        agent_id: "legacy-agent",
-        status: "active",
-        runtime: { state: "healthy", observedAt: null, errorCode: null },
-      }],
-    };
-
-    renderTab();
-
-    expect(screen.getByText("Legacy DingTalk routing")).toBeInTheDocument();
-    expect(screen.getByTestId("dingtalk-tab")).toBeInTheDocument();
   });
 
   it("hides Composio when the feature flag is on but the server reports 503", () => {
@@ -658,12 +366,6 @@ describe("Settings IntegrationsTab", () => {
     renderTab();
 
     expect(screen.queryByTestId("composio-tab")).toBeNull();
-    expect(
-      screen.getAllByText(
-        "Patchbay could not load this platform's connection status.",
-      ),
-    ).toHaveLength(6);
-    expect(screen.queryByText(/connection health/i)).toBeNull();
   });
 
   it("hides the Git providers section when the deployment reports it unavailable", () => {
@@ -679,5 +381,16 @@ describe("Settings IntegrationsTab", () => {
     renderTab();
 
     expect(screen.getByTestId("vcs-tab")).toBeInTheDocument();
+  });
+
+  it("renders the centered page chrome in standalone route mode", () => {
+    render(
+      <I18nProvider locale="en" resources={{ en: { common: enCommon, settings: enSettings } }}>
+        <IntegrationsTab standalone />
+      </I18nProvider>,
+    );
+
+    expect(screen.getByRole("heading", { name: "Integrations" })).toBeInTheDocument();
+    expect(screen.getByTestId("integration-channel-card-lark")).toBeInTheDocument();
   });
 });

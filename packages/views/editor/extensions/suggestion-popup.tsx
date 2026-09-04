@@ -197,7 +197,7 @@ export function createSuggestionPopupRender<
           // stops propagation, and Base UI's dismiss layer listens for Escape on
           // `document` in the bubble phase without consulting defaultPrevented.
           // Without stopPropagation the same keypress that closes this popup
-          // also closes the host Dialog and discards the draft (PB-5429).
+          // also closes the host Dialog and discards the draft (MUL-5429).
           // This handler is the only layer that knows a picker is open, so
           // stopping here fixes every host at once (create-issue dialog, chat
           // input, comment composer).

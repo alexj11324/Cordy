@@ -14,11 +14,7 @@ export type PickDirectoryResult = {
 
 export type PickDirectoriesResult = {
   ok: boolean;
-  folders?: Array<{
-    path: string;
-    basename: string;
-    originUrl: string | null;
-  }>;
+  folders?: Array<{ path: string; basename: string }>;
   reason?: "cancelled" | "no_window" | "error" | "unsupported";
   error?: string;
 };
@@ -73,18 +69,18 @@ export async function pickDirectory(
   return api.pickDirectory(defaultPath);
 }
 
-export async function pickDirectories(
-  defaultPath?: string,
-): Promise<PickDirectoriesResult> {
-  const api = readDesktopAPI();
-  if (!api?.pickDirectories) return { ok: false, reason: "unsupported" };
-  return api.pickDirectories(defaultPath);
-}
-
 export async function validateLocalDirectory(
   path: string,
 ): Promise<ValidateLocalDirectoryResult> {
   const api = readDesktopAPI();
   if (!api?.validateLocalDirectory) return { ok: false, reason: "unsupported" };
   return api.validateLocalDirectory(path);
+}
+
+export async function pickDirectories(
+  defaultPath?: string,
+): Promise<PickDirectoriesResult> {
+  const api = readDesktopAPI();
+  if (!api?.pickDirectories) return { ok: false, reason: "unsupported" };
+  return api.pickDirectories(defaultPath);
 }

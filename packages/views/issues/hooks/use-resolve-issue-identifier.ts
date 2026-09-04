@@ -7,7 +7,7 @@ import { isIssueIdentifier } from "@patchbay/ui/markdown";
 import type { Issue } from "@patchbay/core/types";
 
 /**
- * Resolve a bare issue identifier ("PB-123") to a real issue in the current
+ * Resolve a bare issue identifier ("MUL-123") to a real issue in the current
  * workspace, or `null`. Backs the Linear-style autolink render path.
  *
  * Server state → TanStack Query (key includes wsId + identifier, so identical

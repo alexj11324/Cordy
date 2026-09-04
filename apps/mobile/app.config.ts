@@ -25,13 +25,15 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     version: "0.1.0",
     orientation: "portrait",
     userInterfaceStyle: "automatic",
-    scheme: ["patchbay", "cordy"], // legacy-brand-compat
+    scheme: "patchbay",
     // 1024x1024 source shared with the desktop client
     // (apps/desktop/build/icon.png). Expo prebuild generates every required
     // iOS icon size from this single PNG.
     icon: "./assets/icon.png",
     ios: {
-      supportsTablet: false,
+      // Expo keeps the top-level portrait policy for iPhone while adding all
+      // iPad orientations required for multitasking when tablet support is on.
+      supportsTablet: true,
       // Pins DEVELOPMENT_TEAM on every prebuild. Leaving it unset is the normal
       // path — `expo run:ios` then resolves a signing identity from the Keychain
       // itself, which is right when the Apple ID owns exactly one team. With
@@ -85,6 +87,14 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         },
       ],
     ],
-    extra: { APP_ENV: env },
+    extra: {
+      APP_ENV: env,
+      // EAS injects this at build time. Keeping it in dynamic config makes
+      // the project identity explicit and prevents builds from silently
+      // targeting a different EAS project.
+      eas: {
+        projectId: process.env.EAS_PROJECT_ID,
+      },
+    },
   };
 };

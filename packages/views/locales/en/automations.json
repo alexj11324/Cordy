@@ -10,7 +10,7 @@
       "mode": "Mode",
       "status": "Status",
       "last_run": "Last run",
-      "executor": "Executor",
+      "assignee": "Assignee",
       "trigger": "Trigger",
       "next_run": "Next run",
       "created": "Created"
@@ -27,7 +27,7 @@
   "status": {
     "active": "Active",
     "paused": "Paused",
-    "paused_runtime_required": "Paused — the executor needs a device",
+    "paused_runtime_required": "Paused — the assignee needs a runtime",
     "archived": "Archived"
   },
   "execution_mode": {
@@ -70,20 +70,21 @@
     "not_found": "Automation not found",
     "pause_aria": "Pause automation",
     "activate_aria": "Activate automation",
-    "paused_runtime_required": "Paused because the executor lost its device. Bind a device, then reactivate this automation.",
-    "bind_runtime": "Bind device",
+    "paused_runtime_required": "Paused because the assignee lost its runtime. Bind a runtime, then reactivate this automation.",
+    "bind_runtime": "Bind runtime",
     "edit": "Edit",
     "run_now": "Run now",
     "running": "Running...",
     "toast_triggered": "Automation triggered",
     "toast_trigger_failed": "Failed to trigger automation",
     "run_blocked_invocation_not_allowed": "Not triggered — you don't have permission to use this automation's agent",
-    "run_blocked_runtime_offline": "Not triggered — the agent's device is offline",
-    "run_blocked_agent_runtime_required": "Not triggered — the agent has no device; bind one to run it",
+    "run_blocked_runtime_offline": "Not triggered — the agent's runtime is offline",
+    "run_blocked_agent_runtime_required": "Not triggered — the agent has no runtime; bind one to run it",
     "run_blocked_target_unavailable": "Not triggered — the agent is unavailable",
     "run_blocked_attribution": "Not triggered — the run couldn't be attributed to a responsible member",
     "run_blocked_already_active": "Not triggered — a recent run already covers this",
     "run_blocked_quota_exceeded": "Not triggered — the run limit for this period has been reached",
+    "run_blocked_issue_limit_reached": "Not triggered — the workspace has reached its issue limit",
     "run_blocked_generic": "Not triggered — the run was blocked",
     "section_properties": "Properties",
     "section_triggers": "Triggers",
@@ -141,9 +142,7 @@
   },
   "run": {
     "issue_linked": "Issue linked",
-    "open_thread_aria": "Open Agent thread",
-    "thread_title": "Automation run Agent thread",
-    "no_task": "This Automation run has no linked Agent task or provider session, so it cannot be continued.",
+    "view_log": "View execution log",
     "skipped_group": {
       "label": "Skipped",
       "summary": "{{count}} skipped runs"
@@ -283,10 +282,11 @@
     "toast_update_partial_with_reason": "Automation updated, but schedule failed to save: {{reason}}",
     "toast_update_failed": "Failed to update automation",
     "section_agent": "Agent",
-    "section_executor": "Executor",
+    "section_assignee": "Assignee",
     "select_agent": "Select agent",
-    "select_executor": "Select agent or team",
+    "select_assignee": "Select agent or team",
     "section_project": "Project",
+    "project_hint": "Also sets where runs execute — the project's repository or local directory",
     "no_project": "No project",
     "section_output_mode": "Output mode",
     "section_subscribers": "Subscribers",
@@ -318,7 +318,7 @@
     "schedule_empty": "No schedule — this automation only runs when triggered manually.",
     "schedule_add": "Add schedule",
     "error_title_required": "Enter a name for this automation.",
-    "error_executor_required": "Choose the agent or team that will run this automation.",
+    "error_assignee_required": "Choose the agent or team that will run this automation.",
     "output_modes": {
       "create_issue": {
         "label": "Create issue",
@@ -419,11 +419,11 @@
   "agent_picker": {
     "filter_placeholder": "Filter agents or teams...",
     "select_agent": "Select agent",
-    "select_executor": "Select agent or team",
+    "select_assignee": "Select agent or team",
     "agents_group": "Agents",
     "teams_group": "Teams",
-    "agent_runtime_required": "Bind a device before selecting this agent",
-    "team_runtime_required": "Bind a device to this team's leader before selecting it"
+    "agent_runtime_required": "Bind a runtime before selecting this agent",
+    "team_runtime_required": "Bind a runtime to this team's leader before selecting it"
   },
   "timezone_picker": {
     "search_placeholder": "Search timezone..."
@@ -434,7 +434,7 @@
     "filter_active_count_one": "{{count}} filter",
     "filter_active_count_other": "{{count}} filters",
     "clear_filters": "Clear filters",
-    "section_executor": "Executor",
+    "section_assignee": "Assignee",
     "section_mode": "Mode",
     "section_trigger": "Trigger",
     "section_creator": "Created by",

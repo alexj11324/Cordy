@@ -10,10 +10,11 @@
  *                                ─ OfflineBanner
  *                                ─ ChatComposer
  *
- * Session switching, agent selection, and session deletion all happen
- * inside this screen via Modal sheets — there is no `/chat/[id]` sub-route.
+ * Session switching happens through the native `chat-sessions` formSheet;
+ * agent selection and deletion stay in native controls — there is no
+ * `/chat/[id]` sub-route.
  *
- * State (all local, none in Zustand):
+ * State (mobile-local and persisted per workspace):
  *   - activeSessionId   — which session is being viewed (null = new chat blank)
  *   - selectedAgentId   — overrides currentSession.agent_id when set (used
  *                         when starting a new chat with a freshly-picked agent)
@@ -37,7 +38,7 @@ import {
   Platform,
   View,
 } from "react-native";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useFocusEffect, useIsFocused } from "@react-navigation/native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
@@ -73,6 +74,10 @@ import {
   useChatDraftsStore,
 } from "@/data/stores/chat-drafts-store";
 import { useChatSessionPickerStore } from "@/data/stores/chat-session-picker-store";
+import {
+  loadChatActiveSession,
+  saveChatActiveSession,
+} from "@/data/chat-session-storage";
 import { useChatSessionRealtime } from "@/data/realtime/use-chat-session-realtime";
 import {
   invalidatePendingTask,
@@ -92,16 +97,32 @@ import { OfflineBanner } from "@/components/chat/offline-banner";
 import { RuntimeRequiredBanner } from "@/components/chat/runtime-required-banner";
 import { useChatSelectStore } from "@/data/chat-select-store";
 import { isAgentRuntimeBound } from "@/lib/is-agent-runtime-bound";
+import { chatSessionDisplayTitle } from "@/lib/chat-session-title";
+import {
+  chatRouteParams,
+  firstChatRouteParam,
+  resolveActiveChatSessionId,
+} from "@/lib/chat-session-state";
+import { useChatCopy } from "@/lib/use-chat-copy";
 
 export default function ChatTab() {
   const qc = useQueryClient();
+  const { agent: agentParam, session: sessionParam } = useLocalSearchParams<{
+    agent?: string | string[];
+    session?: string | string[];
+  }>();
   const wsId = useWorkspaceStore((s) => s.currentWorkspaceId);
   const wsSlug = useWorkspaceStore((s) => s.currentWorkspaceSlug);
   const userId = useAuthStore((s) => s.user?.id);
+  const copy = useChatCopy();
 
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
+  const workspaceRef = useRef(wsId);
+  const hydratedWsRef = useRef<string | null>(null);
+  const restoredWsRef = useRef<string | null>(null);
+  const routeIntentRef = useRef<string | null>(null);
 
   // Bridge to the chat-sessions formSheet route. Mirror local
   // activeSessionId into the store so the picker can render the current
@@ -117,26 +138,19 @@ export default function ChatTab() {
   }, [activeSessionId, setStoreActiveSessionId]);
 
   // ── Server state ───────────────────────────────────────────────────────
-  const { data: sessions = [] } = useQuery(chatSessionsOptions(wsId));
-  const { data: agents = [] } = useQuery(agentListOptions(wsId));
-  const { data: members = [] } = useQuery(memberListOptions(wsId));
+  const { data: sessions = [], isSuccess: sessionsLoaded } = useQuery(
+    chatSessionsOptions(wsId),
+  );
+  const { data: agents = [], isSuccess: agentsLoaded } = useQuery(
+    agentListOptions(wsId),
+  );
+  const { data: members = [], isSuccess: membersLoaded } = useQuery(
+    memberListOptions(wsId),
+  );
 
-  // ── Auto-hydrate active session on first Chat tab entry ────────────────
-  // Mobile-only deviation from web: web's chat-window opens to an empty
-  // state when no `activeSessionId` is persisted; on a phone, picking
-  // a session is 4 taps, so jump straight to the most recent session.
-  // Hydration is one-shot per workspace.
-  const hydratedWsRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!wsId) return;
-    if (hydratedWsRef.current === wsId) return;
-    if (sessions.length === 0) {
-      hydratedWsRef.current = wsId;
-      return;
-    }
-    hydratedWsRef.current = wsId;
-    setActiveSessionId(sessions[0].id);
-  }, [wsId, sessions]);
+  const routeSessionId = firstChatRouteParam(sessionParam);
+  const routeAgentId = firstChatRouteParam(agentParam);
+  const routeIntentKey = `${wsId ?? ""}:${routeSessionId ?? ""}:${routeAgentId ?? ""}`;
   const { data: messages = [], isLoading: messagesLoading } = useQuery(
     chatMessagesOptions(activeSessionId),
   );
@@ -163,7 +177,7 @@ export default function ChatTab() {
   // a message enqueues a run, so it clears the server's invoke gate
   // (`canInvokeAgent`), which has no admin bypass. Shared rule, not a mobile
   // copy: a local mirror drifted from it and let admins pick a teammate's
-  // personal agent only to be 403'd on send (PB-6380 / GH #7180).
+  // personal agent only to be 403'd on send (MUL-6380 / GH #7180).
   const availableAgents = useMemo(
     () =>
       agents.filter(
@@ -174,6 +188,140 @@ export default function ChatTab() {
       ),
     [agents, userId, memberRole],
   );
+
+  // ── Restore active session / deep-link intent ──────────────────────────
+  // Mobile's native tab stays mounted across tab switches. Restore the
+  // selected thread only after the sessions query is settled; otherwise the
+  // initial `[]` during loading permanently suppresses hydration. A valid
+  // `?session=` or permission-checked `?agent=` intent wins over the stored
+  // selection, matching the web/desktop ChatPage entry contract.
+  useEffect(() => {
+    if (workspaceRef.current === wsId) return;
+    workspaceRef.current = wsId;
+    hydratedWsRef.current = null;
+    restoredWsRef.current = null;
+    routeIntentRef.current = null;
+    setActiveSessionId(null);
+    setSelectedAgentId(null);
+  }, [wsId]);
+
+  useEffect(() => {
+    if (!wsId || !sessionsLoaded || !agentsLoaded || !membersLoaded) return;
+    if (hydratedWsRef.current === wsId) return;
+    hydratedWsRef.current = wsId;
+    let cancelled = false;
+
+    void loadChatActiveSession(wsId).then((persistedId) => {
+      if (cancelled) return;
+      // A new URL intent arrived while SecureStore was reading. Let the
+      // route-intent effect own that newer selection instead of resurrecting
+      // the old one after the user has navigated.
+      if (
+        routeIntentRef.current !== null &&
+        routeIntentRef.current !== routeIntentKey
+      ) {
+        restoredWsRef.current = wsId;
+        return;
+      }
+
+      const linkedSession = routeSessionId
+        ? sessions.find((session) => session.id === routeSessionId)
+        : null;
+      const linkedAgent = routeAgentId
+        ? availableAgents.find((agent) => agent.id === routeAgentId)
+        : null;
+      const nextSessionId = linkedSession
+        ? linkedSession.id
+        : linkedAgent
+          ? null
+          : resolveActiveChatSessionId(persistedId, sessions);
+
+      setSelectedAgentId(linkedAgent && !linkedSession ? linkedAgent.id : null);
+      setActiveSessionId(nextSessionId);
+      restoredWsRef.current = wsId;
+      routeIntentRef.current = routeIntentKey;
+      void saveChatActiveSession(wsId, nextSessionId);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    agentsLoaded,
+    availableAgents,
+    membersLoaded,
+    routeAgentId,
+    routeIntentKey,
+    routeSessionId,
+    sessions,
+    sessionsLoaded,
+    wsId,
+  ]);
+
+  // Handle a new route intent while the tab remains mounted. The initial
+  // restore above records the first intent, so changing only the query string
+  // still opens the requested native thread/agent instead of being ignored.
+  useEffect(() => {
+    if (!wsId || !sessionsLoaded || !agentsLoaded || !membersLoaded) return;
+    if (hydratedWsRef.current !== wsId) return;
+    if (routeIntentRef.current === routeIntentKey) return;
+    routeIntentRef.current = routeIntentKey;
+
+    const linkedSession = routeSessionId
+      ? sessions.find((session) => session.id === routeSessionId)
+      : null;
+    if (linkedSession) {
+      setSelectedAgentId(null);
+      setActiveSessionId(linkedSession.id);
+      return;
+    }
+
+    const linkedAgent = routeAgentId
+      ? availableAgents.find((agent) => agent.id === routeAgentId)
+      : null;
+    if (linkedAgent) {
+      setSelectedAgentId(linkedAgent.id);
+      setActiveSessionId(null);
+    }
+  }, [
+    agentsLoaded,
+    availableAgents,
+    membersLoaded,
+    routeAgentId,
+    routeIntentKey,
+    routeSessionId,
+    sessions,
+    sessionsLoaded,
+    wsId,
+  ]);
+
+  useEffect(() => {
+    if (!wsId || !sessionsLoaded || restoredWsRef.current !== wsId) return;
+    void saveChatActiveSession(wsId, activeSessionId);
+  }, [activeSessionId, sessionsLoaded, wsId]);
+
+  // Keep the native tab deep-linkable after the user changes sessions or
+  // starts a new agent thread. The restore gate prevents the initial render
+  // from stripping a pending `?session=`/`?agent=` before SecureStore and the
+  // settled agent/session queries have reconciled it. `router.setParams`
+  // updates this tab in place, so the native sheet/back stack is untouched.
+  useEffect(() => {
+    if (!wsId || restoredWsRef.current !== wsId) return;
+    const nextParams = chatRouteParams(activeSessionId, selectedAgentId);
+    if (
+      routeSessionId === (nextParams.session ?? null) &&
+      routeAgentId === (nextParams.agent ?? null)
+    ) {
+      return;
+    }
+    router.setParams(nextParams);
+  }, [
+    activeSessionId,
+    routeAgentId,
+    routeSessionId,
+    selectedAgentId,
+    wsId,
+  ]);
 
   const activeSession = useMemo(
     () => sessions.find((s) => s.id === activeSessionId) ?? null,
@@ -195,10 +343,10 @@ export default function ChatTab() {
   // A session outlives the permission that created it: the agent can be flipped
   // to personal, change owner, or drop this member from its allow-list, and the
   // server then refuses every send with `invocation_not_allowed` while still
-  // serving the Agent thread (PB-4525 — read uses the view gate, send re-runs the
+  // serving the transcript (MUL-4525 — read uses the view gate, send re-runs the
   // invoke gate). `currentAgent` deliberately resolves an open session's agent
   // from the FULL list so the header stays honest, which means the picker filter
-  // above cannot cover this case — judge the bound agent too (PB-6380).
+  // above cannot cover this case — judge the bound agent too (MUL-6380).
   const accessRevoked =
     currentAgent !== null &&
     !canAssignAgentToIssue(currentAgent, {
@@ -287,15 +435,15 @@ export default function ChatTab() {
       // this state; this is the belt-and-braces guard.
       if (accessRevoked) {
         Alert.alert(
-          "No permission to run this agent",
-          "You no longer have permission to run this agent, so the message was not sent. Ask its owner for access.",
+          copy.permissionAlertTitle,
+          copy.permissionAlertDescription,
         );
         return;
       }
       if (!runtimeBound) {
         Alert.alert(
-          "Runtime required",
-          "Bind a runtime to this agent on web or desktop before sending a message.",
+          copy.runtimeRequiredTitle,
+          copy.runtimeRequiredAlertDescription,
         );
         return;
       }
@@ -307,8 +455,11 @@ export default function ChatTab() {
       } catch (err) {
         // Session create runs the same invoke gate as a send, so a permission
         // change refuses here too — and this is the only layer that sees the
-        // reason code (PB-6380).
-        Alert.alert("Message not sent", sendFailureMessage(err));
+        // reason code (MUL-6380).
+        Alert.alert(
+          copy.messageNotSent,
+          sendFailureMessage(err, copy.sendFailure),
+        );
         throw err;
       }
       if (!sessionId) return;
@@ -389,8 +540,11 @@ export default function ChatTab() {
         );
         // The composer restores the draft on a thrown rejection but says nothing
         // about it, so a revoked-permission 403 used to read as a silent no-op
-        // (PB-6380). Name the cause here: only this layer sees the error body.
-        Alert.alert("Message not sent", sendFailureMessage(err));
+        // (MUL-6380). Name the cause here: only this layer sees the error body.
+        Alert.alert(
+          copy.messageNotSent,
+          sendFailureMessage(err, copy.sendFailure),
+        );
         throw err;
       }
     },
@@ -403,6 +557,7 @@ export default function ChatTab() {
       qc,
       promoteNewDraft,
       clearDraft,
+      copy,
     ],
   );
 
@@ -449,12 +604,14 @@ export default function ChatTab() {
   const handleDeleteActive = useCallback(() => {
     if (!activeSession) return;
     Alert.alert(
-      "Delete this chat?",
-      activeSession.title || "Untitled chat",
+      copy.deleteChatTitle,
+      copy.deleteChatDescription(
+        chatSessionDisplayTitle(activeSession.title, copy.newChat),
+      ),
       [
-        { text: "Cancel", style: "cancel" },
+        { text: copy.cancel, style: "cancel" },
         {
-          text: "Delete",
+          text: copy.delete,
           style: "destructive",
           onPress: () => {
             const id = activeSession.id;
@@ -465,7 +622,7 @@ export default function ChatTab() {
       ],
       { cancelable: true },
     );
-  }, [activeSession, deleteSession]);
+  }, [activeSession, copy, deleteSession]);
 
   // ── Composer disabled-state ────────────────────────────────────────────
   const disabled =
@@ -475,15 +632,15 @@ export default function ChatTab() {
     isArchived === true ||
     !runtimeBound;
   const disabledReason = !currentAgent
-    ? "No agent selected"
+    ? copy.noAgentSelected
     : accessRevoked
-      ? "You can no longer run this agent"
+      ? copy.accessRevoked
       : availability === "none"
-        ? "No agents in this workspace"
+        ? copy.noAgentsWorkspace
         : isArchived
-          ? "This chat is archived"
+          ? copy.archivedChat
           : !runtimeBound
-            ? "Agent needs a runtime"
+            ? copy.agentNeedsRuntime
           : undefined;
 
   return (
@@ -519,7 +676,7 @@ export default function ChatTab() {
           messages={visibleMessages}
           loading={messagesLoading}
           hasSessions={sessions.length > 0}
-          agentName={currentAgent?.name}
+          agent={currentAgent}
           onPickPrompt={(text) => setDraft(draftKey, text)}
           onQuickAction={(action) =>
             handleSend(action.prompt, [], { clearDraft: false })

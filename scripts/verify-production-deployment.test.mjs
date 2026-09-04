@@ -45,11 +45,22 @@ test("verifies backend, Web, Docs, and Auth Broker from one source SHA", async (
   const fakeFetch = async (url) => {
     seen.push(url);
     if (url.endsWith("/api/config")) {
-      return Response.json({ server_version: EXPECTED_BUILD });
+      return Response.json(
+        {},
+        {
+          headers: {
+            "x-patchbay-build": EXPECTED_BUILD,
+            "x-patchbay-commit": SOURCE_SHA,
+          },
+        },
+      );
     }
     return new Response("ok", {
       status: 200,
-      headers: { "x-patchbay-build": EXPECTED_BUILD },
+      headers: {
+        "x-patchbay-build": EXPECTED_BUILD,
+        "x-patchbay-commit": SOURCE_SHA,
+      },
     });
   };
 

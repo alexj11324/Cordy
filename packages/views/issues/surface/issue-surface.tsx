@@ -28,7 +28,6 @@ import type { Issue } from "@patchbay/core/types";
 import { BoardView } from "../components/board-view";
 import { BatchActionToolbar } from "../components/batch-action-toolbar";
 import { GanttView } from "../components/gantt-view";
-import { DependencyGraphView } from "../components/dependency-graph-view";
 import { IssuesHeader } from "../components/issues-header";
 import { ListView } from "../components/list-view";
 import { SwimLaneView } from "../components/swimlane-view";
@@ -99,7 +98,7 @@ export function IssueSurface({
   );
   // While a view is open, the scope axis the view captured belongs to the
   // VIEW, not to whichever tab the user stood on: workspace/project views
-  // carry an executor-type variant, my views a relation variant. The user's
+  // carry an assignee-type variant, my views a relation variant. The user's
   // own tab state is never touched — it is exactly where they left it when
   // the view closes (or vanishes). A variant-free view resolves to the
   // unrestricted axis value.
@@ -247,7 +246,6 @@ function IssueSurfaceContent({
             scopedIssues={controller.surfaceIssues}
             workingAgents={controller.workingAgents}
             allowGantt={controller.allowGantt}
-            allowGraph={controller.allowGraph}
             isRefreshing={controller.isRefreshing}
             facetCountsExact={
               controller.facetCountsExact
@@ -266,14 +264,8 @@ function IssueSurfaceContent({
         {/* A failed status catalog precedes loading/empty/content on purpose.
             Row fetching is suspended while it is down (a custom status filter
             cannot be routed without it), so every branch below would render an
-            unexplained empty surface with no way out. (PB-6243) */}
-        {controller.viewMode === "graph" ? (
-          <div className={cn("flex flex-col flex-1 min-h-0", contentClassName)}>
-            <DependencyGraphView
-              projectId={scope.type === "project" ? scope.projectId : undefined}
-            />
-          </div>
-        ) : controller.isStatusCatalogError ? (
+            unexplained empty surface with no way out. (MUL-6243) */}
+        {controller.isStatusCatalogError ? (
           <StatusCatalogErrorState onRetry={controller.retryStatusCatalog} />
         ) : controller.isLoading ? (
           renderLoading ? (
@@ -285,7 +277,7 @@ function IssueSurfaceContent({
           // A filtered-empty surface is NOT an empty surface. Claiming "no
           // issues here yet" and offering to create one is wrong when the rows
           // exist and a filter is hiding them — and it is the state the
-          // agents-working chip drops you into most often (PB-5525). This
+          // agents-working chip drops you into most often (MUL-5525). This
           // branch precedes `renderEmpty` on purpose: every surface's own empty
           // copy describes the unfiltered case.
           controller.hasActiveFilters ? (
@@ -315,7 +307,6 @@ function IssueSurfaceContent({
                 issues={issues}
                 visibleStatuses={controller.visibleStatuses}
                 hiddenStatuses={controller.hiddenStatuses}
-                droppableHiddenStatuses={controller.droppableHiddenStatuses}
                 onMoveIssue={controller.moveIssue}
                 childProgressMap={controller.childProgressMap}
                 projectMap={controller.projectMap}

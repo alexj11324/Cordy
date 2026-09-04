@@ -86,7 +86,7 @@ describe("handleAppShortcut — zoom in", () => {
   });
 });
 
-describe("handleAppShortcut — zoom out (regression: PB-2354)", () => {
+describe("handleAppShortcut — zoom out (regression: MUL-2354)", () => {
   it("zooms out on Cmd+- (unshifted)", () => {
     const wc = makeWc(1);
     expect(handleAppShortcut(key("-", { meta: true }), wc, "darwin")).toBe(true);

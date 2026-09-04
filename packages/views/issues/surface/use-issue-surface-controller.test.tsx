@@ -30,7 +30,7 @@ function makeIssue(
   return {
     workspace_id: "ws-1",
     number: 1,
-    identifier: "PB-1",
+    identifier: "MUL-1",
     title: overrides.id,
     description: null,
     priority: "none",
@@ -78,11 +78,9 @@ vi.mock("@patchbay/core/issues/mutations", () => ({
 }));
 
 vi.mock("@patchbay/core/modals", () => ({
-  useModalStore: Object.assign(
-    (selector: (state: { open: typeof openModal }) => unknown) =>
-      selector({ open: openModal }),
-    { getState: () => ({ open: openModal }) },
-  ),
+  useModalStore: {
+    getState: () => ({ open: openModal }),
+  },
 }));
 
 vi.mock("../../i18n", () => ({
@@ -187,7 +185,7 @@ describe("useIssueSurfaceController", () => {
     setApiInstance({
       // The board pages by category, so every surface stub answers the catalog
       // read. Empty is the real shape for a workspace with no custom statuses:
-      // a built-in key IS its own category. (PB-6243)
+      // a built-in key IS its own category. (MUL-6243)
       listIssueStatuses: async () => ({ statuses: [], categories: [], total: 0 }),
       listIssues,
       ...tableMethods,
@@ -245,13 +243,13 @@ describe("useIssueSurfaceController", () => {
           scope: { kind: "project", project_id: "p1" },
         }),
         // A workspace with no custom statuses keeps the original contract —
-        // that is what makes this safe across a rolling deploy. (PB-6243)
+        // that is what makes this safe across a rolling deploy. (MUL-6243)
         group: { kind: "status" },
       }),
     );
   });
 
-  // PB-5477. `tableQuerySpec` is the identity every downstream consumer keys
+  // MUL-5477. `tableQuerySpec` is the identity every downstream consumer keys
   // off: the facet request, the status/group branch hooks, and — the expensive
   // one — the Table's `useQueries` branch list, which is rebuilt whenever this
   // object changes. Two of the queries feeding the spec defaulted their data to
@@ -262,7 +260,7 @@ describe("useIssueSurfaceController", () => {
     setApiInstance({
       // The board pages by category, so every surface stub answers the catalog
       // read. Empty is the real shape for a workspace with no custom statuses:
-      // a built-in key IS its own category. (PB-6243)
+      // a built-in key IS its own category. (MUL-6243)
       listIssueStatuses: async () => ({ statuses: [], categories: [], total: 0 }),
       listIssues,
       listIssueTableRows,
@@ -348,7 +346,7 @@ describe("useIssueSurfaceController", () => {
     setApiInstance({
       // The board pages by category, so every surface stub answers the catalog
       // read. Empty is the real shape for a workspace with no custom statuses:
-      // a built-in key IS its own category. (PB-6243)
+      // a built-in key IS its own category. (MUL-6243)
       listIssueStatuses: async () => ({ statuses: [], categories: [], total: 0 }),
       listIssues: legacyListIssues,
       listIssueTableRows: tableRows,
@@ -427,7 +425,8 @@ describe("useIssueSurfaceController", () => {
       surfaceKey: "my:user-1:assigned",
       scope: { type: "my" as const, relation: "assigned" as const, userId: "user-1" },
       expected: {
-        owner_type: "member", owner_id: "user-1",
+        owner_type: "member",
+        owner_id: "user-1",
         status: "todo",
       },
     },
@@ -513,7 +512,7 @@ describe("useIssueSurfaceController", () => {
           before_id: "issue-0",
           after_id: "issue-2",
         },
-        { onSettled },
+        onSettled,
       );
     });
 
@@ -539,104 +538,6 @@ describe("useIssueSurfaceController", () => {
       | undefined;
     options?.onSettled?.();
     expect(onSettled).toHaveBeenCalled();
-  });
-
-  it("routes a drag into review through an atomic reviewer handoff", async () => {
-    fixtureRows = [
-      makeIssue({
-        id: "issue-review",
-        status: "in_progress",
-        executor_type: "agent",
-        executor_id: "agent-1",
-        revision: 9,
-      }),
-    ];
-    listIssues.mockResolvedValue({ issues: fixtureRows, total: fixtureRows.length });
-    const { result } = renderHook(
-      () =>
-        useIssueSurfaceController({
-          scope: { type: "project", projectId: "p1" },
-          modes: ["board", "list", "swimlane", "gantt"],
-        }),
-      { wrapper: makeWrapper(qc, "project:p1") },
-    );
-    await waitFor(() => expect(result.current.issues).toHaveLength(1));
-
-    let committed = true;
-    act(() => {
-      committed = result.current.moveIssue("issue-review", {
-        status: "in_review",
-        position: 42,
-        before_id: null,
-        after_id: null,
-      });
-    });
-
-    expect(committed).toBe(false);
-    expect(openModal).toHaveBeenCalledWith(
-      "issue-run-confirm",
-      expect.objectContaining({
-        mode: "review",
-        issueRevision: 9,
-        additionalUpdates: expect.objectContaining({
-          position: 42,
-          move_intent: { before_id: null, after_id: null },
-        }),
-      }),
-    );
-    expect(updateIssueMutate).not.toHaveBeenCalled();
-  });
-
-  it("routes a grouped review return with repeated owner fields through confirmation", async () => {
-    fixtureRows = [
-      makeIssue({
-        id: "issue-review-return",
-        status: "in_review",
-        executor_type: "agent",
-        executor_id: "agent-1",
-        revision: 10,
-      }),
-    ];
-    listIssues.mockResolvedValue({ issues: fixtureRows, total: fixtureRows.length });
-    const { result } = renderHook(
-      () =>
-        useIssueSurfaceController({
-          scope: { type: "project", projectId: "p1" },
-          modes: ["board", "list", "swimlane", "gantt"],
-        }),
-      { wrapper: makeWrapper(qc, "project:p1") },
-    );
-    await waitFor(() => expect(result.current.issues).toHaveLength(1));
-
-    let committed = true;
-    act(() => {
-      committed = result.current.moveIssue("issue-review-return", {
-        status: "in_progress",
-        executor_type: "agent",
-        executor_id: "agent-1",
-        position: 42,
-        before_id: null,
-        after_id: null,
-      });
-    });
-
-    expect(committed).toBe(false);
-    expect(openModal).toHaveBeenCalledWith(
-      "issue-run-confirm",
-      expect.objectContaining({
-        mode: "review-return",
-        executorType: "agent",
-        executorId: "agent-1",
-        issueRevision: 10,
-        additionalUpdates: expect.objectContaining({
-          executor_type: "agent",
-          executor_id: "agent-1",
-          position: 42,
-          move_intent: { before_id: null, after_id: null },
-        }),
-      }),
-    );
-    expect(updateIssueMutate).not.toHaveBeenCalled();
   });
 
   it("exposes surface actions and surface-local selection", async () => {
@@ -763,7 +664,7 @@ describe("useIssueSurfaceController", () => {
     setApiInstance({
       // The board pages by category, so every surface stub answers the catalog
       // read. Empty is the real shape for a workspace with no custom statuses:
-      // a built-in key IS its own category. (PB-6243)
+      // a built-in key IS its own category. (MUL-6243)
       listIssueStatuses: async () => ({ statuses: [], categories: [], total: 0 }),
       listIssues,
       listIssueTableFacets,
@@ -852,7 +753,7 @@ describe("useIssueSurfaceController", () => {
       setApiInstance({
       // The board pages by category, so every surface stub answers the catalog
       // read. Empty is the real shape for a workspace with no custom statuses:
-      // a built-in key IS its own category. (PB-6243)
+      // a built-in key IS its own category. (MUL-6243)
       listIssueStatuses: async () => ({ statuses: [], categories: [], total: 0 }),
         listIssues,
         ...tableMethods,
@@ -900,6 +801,47 @@ describe("useIssueSurfaceController", () => {
     },
   );
 
+  it.each([
+    { grouping: "executor" as const, expected: { kind: "executor" } },
+    { grouping: "project" as const, expected: { kind: "project" } },
+  ])(
+    "asks the server for $grouping groups when the board is grouped that way",
+    async ({ grouping, expected }) => {
+      // The board's columns ARE the server's group descriptors, so the group
+      // spec it requests is the whole contract — a board that asks for the
+      // wrong dimension renders another dimension's columns.
+      const store = getIssueSurfaceViewStore("project:p1");
+      store.getState().setViewMode("board");
+      store.getState().setGrouping(grouping);
+      const tableMethods = statusTableMethodsFromLegacy(listIssues);
+      const listIssueTableGroups = vi.fn(tableMethods.listIssueTableGroups);
+      setApiInstance({
+        listIssueStatuses: async () => ({ statuses: [], categories: [], total: 0 }),
+        listIssues,
+        ...tableMethods,
+        listIssueTableGroups,
+        listGroupedIssues: vi.fn(() => never()),
+        listProjects: vi.fn(() => Promise.resolve({ projects: [], total: 0 })),
+        getAgentTaskSnapshot: vi.fn(() => Promise.resolve([])),
+        getChildIssueProgress: vi.fn(() => Promise.resolve([])),
+      } as unknown as ApiClient);
+
+      renderHook(
+        () =>
+          useIssueSurfaceController({
+            scope: { type: "project", projectId: "p1" },
+            modes: ["board", "list", "swimlane"],
+          }),
+        { wrapper: makeWrapper(qc, "project:p1") },
+      );
+
+      await waitFor(() => expect(listIssueTableGroups).toHaveBeenCalled());
+      expect(listIssueTableGroups.mock.calls[0]?.[0]).toEqual(
+        expect.objectContaining({ group: expected }),
+      );
+    },
+  );
+
   it("fails Table export closed when schema fallback would truncate the CSV", async () => {
     const store = getIssueSurfaceViewStore("project:p1");
     store.getState().setViewMode("table");
@@ -917,7 +859,7 @@ describe("useIssueSurfaceController", () => {
     setApiInstance({
       // The board pages by category, so every surface stub answers the catalog
       // read. Empty is the real shape for a workspace with no custom statuses:
-      // a built-in key IS its own category. (PB-6243)
+      // a built-in key IS its own category. (MUL-6243)
       listIssueStatuses: async () => ({ statuses: [], categories: [], total: 0 }),
       listIssues,
       listIssueTableRows,
@@ -971,7 +913,7 @@ describe("useIssueSurfaceController", () => {
     setApiInstance({
       // The board pages by category, so every surface stub answers the catalog
       // read. Empty is the real shape for a workspace with no custom statuses:
-      // a built-in key IS its own category. (PB-6243)
+      // a built-in key IS its own category. (MUL-6243)
       listIssueStatuses: async () => ({ statuses: [], categories: [], total: 0 }),
       listIssues,
       listIssueTableRows,
@@ -1028,7 +970,7 @@ describe("useIssueSurfaceController", () => {
     setApiInstance({
       // The board pages by category, so every surface stub answers the catalog
       // read. Empty is the real shape for a workspace with no custom statuses:
-      // a built-in key IS its own category. (PB-6243)
+      // a built-in key IS its own category. (MUL-6243)
       listIssueStatuses: async () => ({ statuses: [], categories: [], total: 0 }),
       listIssues,
       listGroupedIssues: vi.fn(() => never()),
@@ -1057,7 +999,7 @@ describe("useIssueSurfaceController", () => {
         "issue-running-2",
       ]),
     );
-    expect(result.current.tableQuerySpec.filters.executors).toBeUndefined();
+    expect(result.current.tableQuerySpec.filters.actors).toBeUndefined();
     expect(result.current.tableQuerySpec.filters.working_only).toBeUndefined();
     expect(getWorkspaceWorkingAgents).toHaveBeenCalledWith("issue", undefined, undefined);
     expect(listIssues).not.toHaveBeenCalled();
@@ -1073,7 +1015,7 @@ describe("useIssueSurfaceController", () => {
     setApiInstance({
       // The board pages by category, so every surface stub answers the catalog
       // read. Empty is the real shape for a workspace with no custom statuses:
-      // a built-in key IS its own category. (PB-6243)
+      // a built-in key IS its own category. (MUL-6243)
       listIssueStatuses: async () => ({ statuses: [], categories: [], total: 0 }),
       listIssues,
       listGroupedIssues: vi.fn(() => never()),
@@ -1131,14 +1073,14 @@ describe("useIssueSurfaceController", () => {
           result.current.tableQuerySpec.filters.working_issue_ids,
         ).toEqual(["issue-from-working-api"]),
       );
-      expect(result.current.tableQuerySpec.filters.executors).toBeUndefined();
+      expect(result.current.tableQuerySpec.filters.actors).toBeUndefined();
       expect(result.current.tableQuerySpec.filters.working_only).toBeUndefined();
       expect(getWorkspaceWorkingAgents).toHaveBeenCalledWith("issue", undefined, undefined);
       expect(getAgentTaskSnapshot).not.toHaveBeenCalled();
     },
   );
 
-  it("combines regular executors with the independent running-task predicate", async () => {
+  it("combines role actors with the independent running-task predicate", async () => {
     const store = getIssueSurfaceViewStore("project:p1");
     store.getState().setViewMode("list");
     store.getState().toggleExecutorFilter({ type: "agent", id: "agent-1" });
@@ -1166,8 +1108,6 @@ describe("useIssueSurfaceController", () => {
         { type: "agent", id: "agent-2" },
         { type: "member", id: "member-1" },
       ]);
-      expect(result.current.tableQuerySpec.filters.executors).toBeUndefined();
-      expect(result.current.tableQuerySpec.filters.owners).toBeUndefined();
       expect(result.current.tableQuerySpec.filters.working_issue_ids).toEqual([
         "member-assigned-running-issue",
         "unassigned-running-issue",
@@ -1276,7 +1216,7 @@ describe("useIssueSurfaceController", () => {
     expect(result.current.isEmpty).toBe(true);
   });
 
-  // --- cancelled as a default status (PB-4290) ------------------------
+  // --- cancelled as a default status (MUL-4290) ------------------------
   // Cancelled is a first-class default lifecycle status: fetched into the
   // cache, surfaced by default, narrowed (not unlocked) by the status filter,
   // and hideable like any other status.
@@ -1400,7 +1340,7 @@ describe("useIssueSurfaceController", () => {
     );
   });
 
-  // --- working-chip scope (PB-4884, PB-5525) ---------------------------
+  // --- working-chip scope (MUL-4884, MUL-5525) ---------------------------
   // The header chip promises "N agents working" where N is the number of agents
   // holding rows that clicking it leaves. The running-issue ids still come from
   // the working-agents endpoint and go to the server as a filter; the COUNT
@@ -1437,7 +1377,7 @@ describe("useIssueSurfaceController", () => {
       "todo-1",
       "prog-1",
     ]);
-    expect(result.current.tableQuerySpec.filters.executors).toBeUndefined();
+    expect(result.current.tableQuerySpec.filters.actors).toBeUndefined();
     expect(result.current.tableQuerySpec.filters.working_only).toBeUndefined();
     expect(getAgentTaskSnapshot).not.toHaveBeenCalled();
     // Cursor-paged server membership no longer forces an unknown count: the
@@ -1461,7 +1401,7 @@ describe("useIssueSurfaceController", () => {
       makeWorkingAgent("agent-1", ["todo-1"]),
       // Working on an issue this project does not contain. The old
       // workspace-wide chip counted it here and then opened an empty list
-      // (PB-5525).
+      // (MUL-5525).
       makeWorkingAgent("agent-elsewhere", ["other-project-1"]),
     ]);
 
@@ -1519,7 +1459,7 @@ describe("useIssueSurfaceController", () => {
       "todo-1",
       "prog-1",
     ]);
-    expect(result.current.tableQuerySpec.filters.executors).toBeUndefined();
+    expect(result.current.tableQuerySpec.filters.actors).toBeUndefined();
     expect(result.current.tableQuerySpec.filters.working_only).toBeUndefined();
     // agent-2 works only on `prog-1`, which the active status filter hides. The
     // chip must not count an agent whose rows the list will not show.
@@ -1699,10 +1639,10 @@ describe("useIssueSurfaceController", () => {
     }),
   ];
 
-  it("filters Gantt by running-task issue ids rather than issue executors", async () => {
+  it("filters Gantt by running-task issue ids rather than issue assignees", async () => {
     mockGanttIssues(ganttFixture);
     mockWorkingAgents([
-      // The editing agent deliberately differs from the issue executor.
+      // The editing agent deliberately differs from the issue assignee.
       makeWorkingAgent("agent-editor", ["gantt-open"]),
     ]);
     // Contradictory legacy membership must not affect the canvas.
@@ -1747,16 +1687,16 @@ describe("useIssueSurfaceController", () => {
     {
       name: "the working-agent API returns no agents",
       workingAgents: [] as WorkspaceWorkingAgent[],
-      selectedExecutorId: null,
+      selectedAssigneeId: null,
     },
     {
-      name: "the selected executor excludes all running-task issues",
+      name: "the selected assignee excludes all running-task issues",
       workingAgents: [makeWorkingAgent("agent-1", ["gantt-open"])],
-      selectedExecutorId: "agent-2",
+      selectedAssigneeId: "agent-2",
     },
   ])("keeps Gantt empty when $name", async ({
     workingAgents,
-    selectedExecutorId,
+    selectedAssigneeId,
   }) => {
     mockGanttIssues(ganttFixture);
     mockWorkingAgents(workingAgents);
@@ -1764,10 +1704,10 @@ describe("useIssueSurfaceController", () => {
     const store = getIssueSurfaceViewStore("project:p1");
     act(() => {
       store.getState().setViewMode("gantt");
-      if (selectedExecutorId) {
+      if (selectedAssigneeId) {
         store.getState().toggleExecutorFilter({
           type: "agent",
-          id: selectedExecutorId,
+          id: selectedAssigneeId,
         });
       }
       store.getState().toggleAgentRunningFilter();
@@ -1795,8 +1735,8 @@ describe("useIssueSurfaceController", () => {
       workingAgents.flatMap((agent) => agent.issue_ids),
     );
     expect(result.current.tableQuerySpec.filters.executors).toEqual(
-      selectedExecutorId
-        ? [{ type: "agent", id: selectedExecutorId }]
+      selectedAssigneeId
+        ? [{ type: "agent", id: selectedAssigneeId }]
         : undefined,
     );
     expect(result.current.filteredGanttIssues).toEqual([]);

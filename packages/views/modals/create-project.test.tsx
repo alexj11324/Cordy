@@ -181,7 +181,7 @@ describe("CreateProjectModal", () => {
     render(<CreateProjectModal onClose={vi.fn()} />);
 
     // The Tooltip is the single reveal mechanism. A native `title` carrying the
-    // same URL would stack a browser tooltip on top of it (PB-4836).
+    // same URL would stack a browser tooltip on top of it (MUL-4836).
     expect(screen.getByRole("tooltip", { name: longRepoUrl })).toBeInTheDocument();
     expect(screen.queryByTitle(longRepoUrl)).toBeNull();
   });

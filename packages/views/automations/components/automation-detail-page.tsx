@@ -7,7 +7,7 @@ import {
   Webhook, RotateCw, Server,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { automationDetailOptions, automationRunsOptions } from "@patchbay/core/automations/queries";
+import { automationDetailOptions, automationRunsOptions, automationRunOptions } from "@patchbay/core/automations/queries";
 import { projectDetailOptions } from "@patchbay/core/projects/queries";
 import {
   useUpdateAutomation,
@@ -60,14 +60,16 @@ import type {
   AutomationSubscriber,
   AutomationTrigger,
 } from "@patchbay/core/types";
+import type { AgentTask } from "@patchbay/core/types/agent";
 import { ReadonlyContent } from "../../editor";
+import { TranscriptButton } from "../../common/task-transcript";
 import { AutomationDialog } from "./automation-dialog";
 import { runNowToastKind, runNowBlockedKey } from "./run-now-toast";
+import { WebhookPayloadPreview } from "./webhook-payload-preview";
 import { WebhookDeliveriesSection } from "./webhook-deliveries-section";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { useT } from "../../i18n";
 import { PageHeader } from "../../layout/page-header";
-import { TaskAgentThreadDialog } from "../../agent-thread";
 
 // A run that already happened is an instant in the reader's day, so it reads in
 // the reader's zone (no timeZone passed). A run that is still to come belongs to
@@ -78,20 +80,61 @@ type RunStatus = "issue_created" | "running" | "skipped" | "completed" | "failed
 const RUN_VISUAL: Record<RunStatus, { color: string; icon: typeof CheckCircle2; spin?: boolean }> = {
   issue_created: { color: "text-blue-500", icon: Clock },
   running: { color: "text-blue-500", icon: Loader2, spin: true },
-  // `skipped` (admission check found the executor runtime offline,
-  // PB-1899) is muted so it doesn't read as a failure-ratio inflator.
+  // `skipped` (admission check found the assignee runtime offline,
+  // MUL-1899) is muted so it doesn't read as a failure-ratio inflator.
   // The row still shows failure_reason which carries the skip context.
   skipped: { color: "text-muted-foreground", icon: Ban },
   completed: { color: "text-emerald-500", icon: CheckCircle2 },
   failed: { color: "text-destructive", icon: XCircle },
 };
 
-function RunRow({ run }: { run: AutomationRun }) {
+// WebhookPayloadSlot lazy-fetches the full run (incl. trigger_payload) once
+// the parent dialog actually mounts this slot. The list endpoint omits
+// trigger_payload to keep responses small (worst case 256 KiB × N runs),
+// so the detail-on-demand fetch lives here.
+function WebhookPayloadSlot({ automationId, runId }: { automationId: string; runId: string }) {
+  const wsId = useWorkspaceId();
+  const { data, isLoading } = useQuery(
+    automationRunOptions(wsId, automationId, runId),
+  );
+  if (isLoading) {
+    return <Skeleton className="h-9 w-full" />;
+  }
+  if (!data || data.trigger_payload == null) {
+    return null;
+  }
+  return <WebhookPayloadPreview payload={data.trigger_payload} />;
+}
+
+function RunRow({ run, agentId, agentName }: { run: AutomationRun; agentId: string; agentName: string }) {
   const { t, i18n } = useT("automations");
-  const [threadOpen, setThreadOpen] = useState(false);
+  const wsPaths = useWorkspacePaths();
   const status = (RUN_VISUAL[run.status as RunStatus] ? (run.status as RunStatus) : "issue_created");
   const visual = RUN_VISUAL[status];
   const StatusIcon = visual.icon;
+
+  // For runs with a task_id (run_only mode), build a minimal AgentTask so
+  // TranscriptButton can lazy-load the execution transcript.
+  const syntheticTask: AgentTask | null = run.task_id
+    ? {
+        id: run.task_id,
+        agent_id: agentId,
+        runtime_id: "",
+        issue_id: "",
+        status:
+          run.status === "running" ? "running" :
+          run.status === "completed" ? "completed" :
+          run.status === "failed" ? "failed" :
+          "queued",
+        priority: 0,
+        dispatched_at: null,
+        started_at: run.triggered_at || null,
+        completed_at: run.completed_at || null,
+        result: null,
+        error: run.failure_reason || null,
+        created_at: run.created_at,
+      }
+    : null;
 
   const content = (
     <>
@@ -112,45 +155,54 @@ function RunRow({ run }: { run: AutomationRun }) {
       <span className="w-32 shrink-0 text-right text-caption text-muted-foreground tabular-nums">
         {formatInTimeZone(run.triggered_at || run.created_at, undefined, i18n.language)}
       </span>
-    </>
-  );
-
-  const rowClass = "flex w-full items-center gap-3 px-4 py-2.5 text-left text-body hover:bg-accent/30 transition-colors";
-
-  return (
-    <>
-      <button
-        type="button"
-        className={rowClass}
-        onClick={() => setThreadOpen(true)}
-        aria-label={t(($) => $.run.open_thread_aria)}
-      >
-        {content}
-      </button>
-      {threadOpen && (
-        <TaskAgentThreadDialog
-          taskId={run.task_id}
-          open
-          onOpenChange={setThreadOpen}
-          title={t(($) => $.run.thread_title)}
-          unavailableReason={run.task_id ? undefined : t(($) => $.run.no_task)}
+      {syntheticTask && !run.issue_id && (
+        <TranscriptButton
+          task={syntheticTask}
+          agentName={agentName}
+          isLive={run.status === "running"}
+          title={t(($) => $.run.view_log)}
+          headerSlot={
+            run.source === "webhook" ? (
+              <WebhookPayloadSlot automationId={run.automation_id} runId={run.id} />
+            ) : undefined
+          }
         />
       )}
     </>
   );
+
+  const rowClass = "flex items-center gap-3 px-4 py-2.5 text-body hover:bg-accent/30 transition-colors";
+
+  if (run.issue_id) {
+    return (
+      <AppLink href={wsPaths.issueDetail(run.issue_id)} className={cn(rowClass, "cursor-pointer")}>
+        {content}
+      </AppLink>
+    );
+  }
+
+  return <div className={rowClass}>{content}</div>;
 }
 
-function RunHistoryList({ runs }: { runs: AutomationRun[] }) {
+function RunHistoryList({
+  runs,
+  agentId,
+  agentName,
+}: {
+  runs: AutomationRun[];
+  agentId: string;
+  agentName: string;
+}) {
   const visibleRuns = runs.filter((run) => run.status !== "skipped");
   const skippedRuns = runs.filter((run) => run.status === "skipped");
 
   return (
     <div className="rounded-md border overflow-hidden">
       {visibleRuns.map((run) => (
-        <RunRow key={run.id} run={run} />
+        <RunRow key={run.id} run={run} agentId={agentId} agentName={agentName} />
       ))}
       {skippedRuns.length > 0 && (
-        <SkippedRunsGroup runs={skippedRuns} />
+        <SkippedRunsGroup runs={skippedRuns} agentId={agentId} agentName={agentName} />
       )}
     </div>
   );
@@ -158,8 +210,12 @@ function RunHistoryList({ runs }: { runs: AutomationRun[] }) {
 
 function SkippedRunsGroup({
   runs,
+  agentId,
+  agentName,
 }: {
   runs: AutomationRun[];
+  agentId: string;
+  agentName: string;
 }) {
   const { t, i18n } = useT("automations");
   const [open, setOpen] = useState(false);
@@ -191,7 +247,7 @@ function SkippedRunsGroup({
       {open && (
         <div className="border-t bg-background">
           {runs.map((run) => (
-            <RunRow key={run.id} run={run} />
+            <RunRow key={run.id} run={run} agentId={agentId} agentName={agentName} />
           ))}
         </div>
       )}
@@ -668,7 +724,7 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
     try {
       const run = await triggerAutomation.mutateAsync(automationId);
       // Manual "run now" returns 200 even when admission blocks the run, so the
-      // toast is driven by the run's domain status, not the HTTP 2xx (PB-4525).
+      // toast is driven by the run's domain status, not the HTTP 2xx (MUL-4525).
       // Success is a whitelist (issue_created/running) — a skipped run warns, a
       // failed or unknown/future status errors — never a false "triggered".
       const kind = runNowToastKind(run?.status);
@@ -691,7 +747,7 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
         return;
       }
       // Only a 4xx message is written for the user; a 5xx one is internal
-      // server detail (PB-6472), so an unclassified dispatch failure shows the
+      // server detail (MUL-6472), so an unclassified dispatch failure shows the
       // localized generic sentence instead of the raw body.
       toast.error(clientErrorMessage(e) || t(($) => $.detail.toast_trigger_failed));
     }
@@ -842,28 +898,30 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
                   {t(($) => $.execution_mode[automation.execution_mode as AutomationExecutionMode])}
                 </div>
               </div>
-              {automation.execution_mode === "create_issue" && (
-                <div>
-                  <label className="text-caption text-muted-foreground">{t(($) => $.detail.field_project)}</label>
-                  <div className="mt-1 min-w-0">
-                    {!automation.project_id ? (
-                      <span className="text-muted-foreground">{t(($) => $.detail.no_project)}</span>
-                    ) : projectLoading ? (
-                      <Skeleton className="h-5 w-32" />
-                    ) : project ? (
-                      <AppLink
-                        href={wsPaths.projectDetail(project.id)}
-                        className="inline-flex max-w-full items-center gap-1.5 text-foreground hover:underline"
-                      >
-                        <ProjectIcon project={project} size="md" />
-                        <span className="truncate">{project.title}</span>
-                      </AppLink>
-                    ) : (
-                      <span className="text-muted-foreground">{t(($) => $.detail.project_unavailable)}</span>
-                    )}
-                  </div>
+              {/* Shown for BOTH output modes (MUL-6681): a run_only automation's
+                  project decides its execution environment (repository /
+                  local_directory, and therefore worktree isolation), so an
+                  operator debugging a run needs to see it here. */}
+              <div>
+                <label className="text-caption text-muted-foreground">{t(($) => $.detail.field_project)}</label>
+                <div className="mt-1 min-w-0">
+                  {!automation.project_id ? (
+                    <span className="text-muted-foreground">{t(($) => $.detail.no_project)}</span>
+                  ) : projectLoading ? (
+                    <Skeleton className="h-5 w-32" />
+                  ) : project ? (
+                    <AppLink
+                      href={wsPaths.projectDetail(project.id)}
+                      className="inline-flex max-w-full items-center gap-1.5 text-foreground hover:underline"
+                    >
+                      <ProjectIcon project={project} size="md" />
+                      <span className="truncate">{project.title}</span>
+                    </AppLink>
+                  ) : (
+                    <span className="text-muted-foreground">{t(($) => $.detail.project_unavailable)}</span>
+                  )}
                 </div>
-              )}
+              </div>
               {automation.execution_mode === "create_issue" && (
                 <div className="col-span-2">
                   <label className="text-caption text-muted-foreground">
@@ -935,7 +993,11 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
                 {t(($) => $.detail.no_runs)}
               </div>
             ) : (
-              <RunHistoryList runs={runs} />
+              <RunHistoryList
+                runs={runs}
+                agentId={automation.executor_id}
+                agentName={getActorName(automation.executor_type, automation.executor_id)}
+              />
             )}
           </section>
 

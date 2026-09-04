@@ -6,7 +6,7 @@
  *
  * Visual structure mirrors web's InboxListItem
  * (packages/views/inbox/components/inbox-list-item.tsx). Per
- * apps/mobile/AGENTS.md "Visual alignment is baseline":
+ * apps/mobile/CLAUDE.md "Visual alignment is baseline":
  *   - Right column stacks vertically: status icon on top row, time on bottom.
  *   - Secondary line uses the type-aware `InboxDetailLabel`, not raw body.
  */
@@ -59,7 +59,7 @@ export function InboxRow({ item, onPress }: Props) {
             {/* The glyph is per category, so it alone cannot tell "In Review"
                 from a custom "Human Review" — a move between two statuses of
                 one category would leave this row pixel-identical and read as
-                "the inbox never updated" (PB-6395). Colour is what carries a
+                "the inbox never updated" (MUL-6395). Colour is what carries a
                 custom status's identity; `colorOf` is null for a built-in,
                 which keeps it on its category token. */}
             {item.issue_status ? (
@@ -73,7 +73,8 @@ export function InboxRow({ item, onPress }: Props) {
           </View>
           {/* Bottom row: [type-aware detail label] (left) | [time] (right).
               Detail label mirrors web InboxDetailLabel — same per-type
-              wording (Mentioned / Set status to ... / Assigned to ... / etc),
+              wording (Mentioned / Set status to ... / Set owner or executor
+              to ... / etc),
               not the raw markdown body. */}
           <View className="flex-row items-center gap-2 mt-0.5">
             <View className="flex-1 min-w-0">

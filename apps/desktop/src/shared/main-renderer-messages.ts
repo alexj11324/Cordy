@@ -5,8 +5,6 @@
  */
 export const MAIN_RENDERER_CHANNEL_STATE_CHANNEL =
   "main-renderer:channel-state";
-export const MAIN_RENDERER_MESSAGE_ACK_CHANNEL =
-  "main-renderer:message-ack";
 
 export const MAIN_RENDERER_MESSAGE_CHANNELS = [
   "auth:handoff",
@@ -50,43 +48,6 @@ type SendMessage = (
   payload: unknown,
 ) => void;
 
-type AuthHandoffPayload = {
-  code: string;
-  state: string;
-};
-
-export type MainRendererMessageAcknowledgement = {
-  channel: "auth:handoff";
-  payload: AuthHandoffPayload;
-};
-
-function isAuthHandoffPayload(value: unknown): value is AuthHandoffPayload {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as Record<string, unknown>;
-  return typeof candidate.code === "string" && typeof candidate.state === "string";
-}
-
-function isSameAuthHandoff(left: unknown, right: AuthHandoffPayload): boolean {
-  return (
-    isAuthHandoffPayload(left) &&
-    left.code === right.code &&
-    left.state === right.state
-  );
-}
-
-export function parseMainRendererMessageAcknowledgement(
-  value: unknown,
-): MainRendererMessageAcknowledgement | null {
-  if (!value || typeof value !== "object") return null;
-  const candidate = value as Record<string, unknown>;
-  if (candidate.channel !== "auth:handoff") return null;
-  if (!isAuthHandoffPayload(candidate.payload)) return null;
-  return {
-    channel: "auth:handoff",
-    payload: candidate.payload,
-  };
-}
-
 /**
  * Holds renderer-bound messages until the specific React listener is ready.
  * Readiness is per BrowserWindow lifecycle; pending messages intentionally
@@ -104,14 +65,6 @@ export class MainRendererMessageQueue {
     payload: unknown,
     send: SendMessage,
   ): void {
-    if (channel === "auth:handoff") {
-      const queued = this.pending.get(channel) ?? [];
-      queued.push(payload);
-      this.pending.set(channel, queued);
-      if (this.readyChannels.has(channel)) send(channel, payload);
-      return;
-    }
-
     if (this.readyChannels.has(channel)) {
       send(channel, payload);
       return;
@@ -134,21 +87,8 @@ export class MainRendererMessageQueue {
     this.readyChannels.add(channel);
     const queued = this.pending.get(channel);
     if (!queued) return;
+    this.pending.delete(channel);
     for (const payload of queued) send(channel, payload);
-    if (channel !== "auth:handoff") this.pending.delete(channel);
-  }
-
-  /** Retire an auth handoff only after its renderer has redeemed it. */
-  acknowledge(channel: MainRendererMessageChannel, payload: unknown): void {
-    if (channel !== "auth:handoff" || !isAuthHandoffPayload(payload)) return;
-    const queued = this.pending.get(channel);
-    if (!queued) return;
-    const index = queued.findIndex((candidate) =>
-      isSameAuthHandoff(candidate, payload),
-    );
-    if (index < 0) return;
-    queued.splice(index, 1);
-    if (queued.length === 0) this.pending.delete(channel);
   }
 
   /** Clear readiness when the main renderer is replaced, without losing work. */

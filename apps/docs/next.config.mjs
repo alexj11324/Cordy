@@ -4,7 +4,6 @@ const withMDX = createMDX();
 
 /** @type {import('next').NextConfig} */
 const config = {
-  output: "standalone",
   reactStrictMode: true,
   basePath: "/docs",
   async headers() {
@@ -15,6 +14,10 @@ const config = {
           {
             key: "X-Patchbay-Build",
             value: process.env.NEXT_PUBLIC_APP_VERSION || "dev",
+          },
+          {
+            key: "X-Patchbay-Commit",
+            value: process.env.NEXT_PUBLIC_COMMIT_SHA || "unknown",
           },
         ],
       },
@@ -60,26 +63,6 @@ const config = {
       {
         source: "/zh/cli/reference",
         destination: "/zh/cli",
-        permanent: true,
-      },
-      {
-        source: "/how-cordy-works", // legacy-brand-compat
-        destination: "/how-patchbay-works",
-        permanent: true,
-      },
-      {
-        source: "/zh/how-cordy-works", // legacy-brand-compat
-        destination: "/zh/how-patchbay-works",
-        permanent: true,
-      },
-      {
-        source: "/ja/how-cordy-works", // legacy-brand-compat
-        destination: "/ja/how-patchbay-works",
-        permanent: true,
-      },
-      {
-        source: "/ko/how-cordy-works", // legacy-brand-compat
-        destination: "/ko/how-patchbay-works",
         permanent: true,
       },
     ];

@@ -170,7 +170,7 @@ describe("countUnreadChatSessions", () => {
   it("excludes archived sessions even when they carry unread", () => {
     // The stuck-badge bug: an archived session keeps has_unread, but it is
     // hidden from the default list and read-only, so the badge must ignore it
-    // (PB-4372).
+    // (MUL-4372).
     const sessions = [
       session({ id: "archived-unread", status: "archived", has_unread: true }),
       session({ id: "active-unread", status: "active", has_unread: true }),

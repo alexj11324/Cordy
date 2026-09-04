@@ -2,8 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 vi.mock("@clerk/nextjs/server", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("@clerk/nextjs/server")>();
+  const actual = await importOriginal<typeof import("@clerk/nextjs/server")>();
   type TestClerkMiddlewareHandler = (
     auth: () => Promise<{ userId: string | null }>,
     request: NextRequest,
@@ -12,13 +11,11 @@ vi.mock("@clerk/nextjs/server", async (importOriginal) => {
 
   return {
     ...actual,
-    clerkMiddleware: (handler: TestClerkMiddlewareHandler) =>
-      async (request: NextRequest) =>
+    clerkMiddleware:
+      (handler: TestClerkMiddlewareHandler) => async (request: NextRequest) =>
         handler(
           async () => ({
-            userId: request.cookies.has("patchbay_logged_in")
-              ? "user-1"
-              : null,
+            userId: request.cookies.has("patchbay_logged_in") ? "user-1" : null,
           }),
           request,
           undefined as never,
@@ -64,7 +61,9 @@ describe("web app manifest", () => {
   it("ships both icon sizes Chrome requires, plus a maskable one", () => {
     const icons = manifest().icons ?? [];
     const sizesFor = (purpose: string) =>
-      icons.filter((icon) => icon.purpose === purpose).map((icon) => icon.sizes);
+      icons
+        .filter((icon) => icon.purpose === purpose)
+        .map((icon) => icon.sizes);
 
     expect(sizesFor("any")).toEqual(
       expect.arrayContaining(["192x192", "512x512"]),
@@ -91,9 +90,9 @@ describe("web app manifest", () => {
     const target = await launch({ patchbay_logged_in: "1" });
 
     expect(target).toContain("/login");
-    expect(new URL(target ?? "", "https://patchbay.aspectlylabs.com").pathname).not.toBe(
-      "/",
-    );
+    expect(
+      new URL(target ?? "", "https://patchbay.aspectlylabs.com").pathname,
+    ).not.toBe("/");
   });
 
   it("points every shortcut at a path that resolves the same way", async () => {

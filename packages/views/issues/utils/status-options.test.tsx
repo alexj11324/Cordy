@@ -78,7 +78,7 @@ describe("useStatusOptions", () => {
     ]);
   });
 
-  // One flat list, never nested by category (PB-6399): a custom status sits
+  // One flat list, never nested by category (MUL-6399): a custom status sits
   // directly after the built-in of the category it behaves as, so the whole
   // catalog reads top to bottom in canonical order.
   it("places a custom status inline, after the built-in of its category", () => {
@@ -116,6 +116,22 @@ describe("useStatusOptions", () => {
     const { result } = renderHook(() => useStatusOptions("workspace-1"));
 
     expect(result.current.map((o) => o.key)).not.toContain("qa");
+  });
+
+  it("lets a read-only filter include an archived status still in use", () => {
+    catalogEntries = [
+      ...BUILT_INS,
+      entry({
+        key: "qa",
+        name: "QA",
+        archived_at: "2026-01-01T00:00:00Z",
+      }),
+    ];
+    const { result } = renderHook(() =>
+      useStatusOptions("workspace-1", ["qa"]),
+    );
+
+    expect(result.current.map((o) => o.key)).toContain("qa");
   });
 
   // Built-ins keep their semantic token color; a hex here would override it.

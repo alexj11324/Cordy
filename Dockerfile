@@ -1,42 +1,26 @@
-# syntax=docker/dockerfile:1
+# --- Build stage ---
+FROM golang:1.26-alpine AS builder
 
-# --- Rust production binaries ---
-FROM rust:1-alpine AS builder
+RUN apk add --no-cache git
 
-RUN apk add --no-cache build-base
+WORKDIR /src
 
-WORKDIR /src/server-rs
+# Cache dependencies
+COPY server/go.mod server/go.sum ./server/
+RUN cd server && go mod download
 
-# Keep the Rust build self-contained and lockfile-reproducible.
-COPY server-rs/Cargo.toml server-rs/Cargo.lock ./
-COPY server-rs/.cargo/ ./.cargo/
-COPY server-rs/.sqlx/ ./.sqlx/
-COPY server-rs/crates/ ./crates/
+# Copy server source
+COPY server/ ./server/
 
-# These Rust crates embed these source assets at compile time. The explicit
-# copies keep Markdown assets available even when the Docker context excludes
-# repository documentation.
-COPY server-rs/crates/patchbay-service/assets/ /src/server-rs/crates/patchbay-service/assets/
-COPY server-rs/crates/patchbay-handler/assets/ /src/server-rs/crates/patchbay-handler/assets/
-
+# Build binaries
 ARG VERSION=dev
 ARG COMMIT=unknown
 ARG DATE=unknown
-RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
-    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
-    --mount=type=cache,target=/src/server-rs/target,sharing=locked \
-    PATCHBAY_BUILD_VERSION="${VERSION}" \
-    PATCHBAY_BUILD_COMMIT="${COMMIT}" \
-    PATCHBAY_BUILD_DATE="${DATE}" \
-    PATCHBAY_GIT_COMMIT="${COMMIT}" \
-    cargo build --release --locked -p patchbay-server -p patchbay-cli -p patchbay-migrate --bins && \
-    mkdir -p /out && \
-    cp target/release/patchbay-server /out/server && \
-    cp target/release/patchbay /out/patchbay && \
-    cp target/release/patchbay-migrate /out/migrate && \
-    cp target/release/backfill_task_usage_hourly /out/ && \
-    cp target/release/backfill_issue_last_activity /out/ && \
-    cp target/release/backfill_codex_usage_cache /out/
+RUN cd server && CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}" -o bin/server ./cmd/server
+RUN cd server && CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" -o bin/patchbay ./cmd/patchbay
+RUN cd server && CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/migrate ./cmd/migrate
+RUN cd server && CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/backfill_task_usage_hourly ./cmd/backfill_task_usage_hourly
+RUN cd server && CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/backfill_codex_usage_cache ./cmd/backfill_codex_usage_cache
 
 # --- Runtime stage ---
 FROM alpine:3.21
@@ -45,17 +29,16 @@ RUN apk add --no-cache ca-certificates tzdata
 
 WORKDIR /app
 
-COPY --from=builder /out/ ./
-COPY migrations/ ./migrations/
+COPY --from=builder /src/server/bin/server .
+COPY --from=builder /src/server/bin/patchbay .
+COPY --from=builder /src/server/bin/migrate .
+COPY --from=builder /src/server/bin/backfill_task_usage_hourly .
+COPY --from=builder /src/server/bin/backfill_codex_usage_cache .
+COPY server/migrations/ ./migrations/
 COPY LICENSE NOTICE ./
 COPY docker/entrypoint.sh .
 RUN sed -i 's/\r$//' entrypoint.sh && chmod +x entrypoint.sh
 
 EXPOSE 8080
-
-# The entrypoint completes migrations before starting the server. /readyz then
-# reports database connectivity, while the Helm liveness probe uses /health.
-HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=6 \
-    CMD wget -q -O /dev/null "http://127.0.0.1:${PORT:-8080}/readyz" || exit 1
 
 ENTRYPOINT ["./entrypoint.sh"]

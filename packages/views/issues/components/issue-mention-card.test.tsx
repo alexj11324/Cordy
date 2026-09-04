@@ -42,6 +42,7 @@ function makeAdapter(
     back: vi.fn(),
     pathname: "/",
     searchParams: new URLSearchParams(),
+    hash: "",
     getShareableUrl: (p) => p,
     ...overrides,
   };
@@ -53,7 +54,7 @@ function renderCard(
   issueId = "issue-1",
 ) {
   const card = (
-    <IssueMentionCard issueId={issueId} fallbackLabel="PB-7" />
+    <IssueMentionCard issueId={issueId} fallbackLabel="MUL-7" />
   );
   return renderWithI18n(
     <NavigationProvider value={adapter}>
@@ -92,7 +93,7 @@ describe("IssueMentionCard", () => {
     renderCard(makeAdapter({ push, openInNewTab }));
 
     fireEvent.click(screen.getByTestId("issue-chip"), { metaKey: true });
-    expect(openInNewTab).toHaveBeenCalledWith("/acme/issues/issue-1", "PB-7");
+    expect(openInNewTab).toHaveBeenCalledWith("/acme/issues/issue-1", "MUL-7");
     expect(push).not.toHaveBeenCalled();
   });
 
@@ -140,14 +141,14 @@ describe("IssueMentionCard", () => {
   });
 
   it("uses current-issue content when the resolved target matches the current issue id", () => {
-    renderCard(makeAdapter(), { id: "issue-1", identifier: "PB-7" });
+    renderCard(makeAdapter(), { id: "issue-1", identifier: "MUL-7" });
 
     expect(screen.getByTestId("issue-chip")).toHaveAttribute("data-current", "true");
-    expect(screen.getByTestId("issue-chip")).toHaveTextContent("This issue · PB-7");
+    expect(screen.getByTestId("issue-chip")).toHaveTextContent("This issue · MUL-7");
   });
 
   it("does not infer current-issue context from the visible fallback label", () => {
-    renderCard(makeAdapter(), { id: "issue-2", identifier: "PB-7" });
+    renderCard(makeAdapter(), { id: "issue-2", identifier: "MUL-7" });
 
     expect(screen.getByTestId("issue-chip")).toHaveAttribute("data-current", "false");
   });

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { act, renderHook } from "@testing-library/react";
+import { renderHook } from "@testing-library/react";
 import { useLogout } from "./use-logout";
 
 // Order of the destructive calls is the contract under test: each in-memory
@@ -64,45 +64,21 @@ describe("useLogout", () => {
     mockClearWorkspaceStorage.mockImplementation((_a: unknown, slug: string) =>
       calls.push(`clear:${slug}`),
     );
-    mockAuthLogout.mockResolvedValue(undefined);
   });
 
-  it("resets in-memory drafts BEFORE removing their persisted keys", async () => {
+  it("resets in-memory drafts BEFORE removing their persisted keys", () => {
     const { result } = renderHook(() => useLogout());
-    await act(async () => result.current());
+    result.current();
 
     expect(calls).toEqual(["reset", "clear:acme", "clear:beta"]);
   });
 
-  it("still ends by clearing the query cache, auth, and navigating to /login", async () => {
+  it("still ends by clearing the query cache, auth, and navigating to /login", () => {
     const { result } = renderHook(() => useLogout());
-    await act(async () => result.current());
+    result.current();
 
     expect(mockQueryClientClear).toHaveBeenCalledTimes(1);
     expect(mockAuthLogout).toHaveBeenCalledTimes(1);
-    expect(mockPush).toHaveBeenCalledWith("/login");
-  });
-
-  it("waits for platform session revocation before navigating", async () => {
-    let finishAuthLogout: (() => void) | undefined;
-    mockAuthLogout.mockImplementationOnce(
-      () =>
-        new Promise<void>((resolve) => {
-          finishAuthLogout = resolve;
-        }),
-    );
-    const { result } = renderHook(() => useLogout());
-
-    let logout: Promise<void> | undefined;
-    act(() => {
-      logout = result.current();
-    });
-    expect(mockPush).not.toHaveBeenCalled();
-
-    await act(async () => {
-      finishAuthLogout?.();
-      await logout;
-    });
     expect(mockPush).toHaveBeenCalledWith("/login");
   });
 });

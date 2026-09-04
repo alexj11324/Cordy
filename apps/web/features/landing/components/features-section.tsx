@@ -165,7 +165,7 @@ function TeammatesVisual() {
         <div className="flex items-center gap-1.5 min-w-0 text-caption">
           <span className="text-muted-foreground">Patchbay Demo</span>
           <ChevronRight className="h-3 w-3 text-faint-foreground shrink-0" />
-          <span className="text-muted-foreground">PB-18</span>
+          <span className="text-muted-foreground">MUL-18</span>
           <ChevronRight className="h-3 w-3 text-faint-foreground shrink-0" />
           <span className="truncate">Refactor API error handling middleware</span>
         </div>
@@ -397,15 +397,15 @@ function TeammatesVisual() {
 
 const mockToolCalls = [
   { type: "thinking" as const, content: "Analyzing the error handling patterns across all 14 handler files…" },
-  { type: "tool_use" as const, tool: "Read", summary: "server-rs/crates/patchbay-handler/src/issue.rs" },
-  { type: "tool_result" as const, preview: "async fn create_issue(State(state): State<AppState>, …) { …" },
-  { type: "tool_use" as const, tool: "Edit", summary: "server-rs/crates/patchbay-handler/src/issue.rs — unify API errors" },
-  { type: "tool_result" as const, preview: "Updated 3 error responses to use the shared API error type" },
-  { type: "thinking" as const, content: "Now checking comment.rs for the same inconsistent patterns…" },
-  { type: "tool_use" as const, tool: "Read", summary: "server-rs/crates/patchbay-handler/src/comment.rs" },
-  { type: "tool_result" as const, preview: "async fn create_comment(State(state): State<AppState>, …) { …" },
-  { type: "tool_use" as const, tool: "Bash", summary: "cargo test -p patchbay-handler error_responses" },
-  { type: "tool_result" as const, preview: "test result: ok. 12 passed; 0 failed" },
+  { type: "tool_use" as const, tool: "Read", summary: "server/internal/handler/issue.go" },
+  { type: "tool_result" as const, preview: "func (h *IssueHandler) Create(w http.ResponseWriter, r *http.Request) { …" },
+  { type: "tool_use" as const, tool: "Edit", summary: "server/internal/handler/issue.go — replace writeJSON error calls" },
+  { type: "tool_result" as const, preview: "Updated 3 error responses to use writeError() helper" },
+  { type: "thinking" as const, content: "Now checking handler/comment.go for the same inconsistent patterns…" },
+  { type: "tool_use" as const, tool: "Read", summary: "server/internal/handler/comment.go" },
+  { type: "tool_result" as const, preview: "func (h *CommentHandler) Create(w http.ResponseWriter, r *http.Request) { …" },
+  { type: "tool_use" as const, tool: "Bash", summary: "go test ./internal/handler/ -run TestErrorResponses" },
+  { type: "tool_result" as const, preview: "ok  \tgithub.com/patchbay/server/internal/handler\t0.847s" },
 ];
 
 const mockTaskHistory = [
@@ -424,7 +424,7 @@ function AutonomousVisual() {
         <div className="flex items-center gap-1.5 min-w-0 text-caption">
           <span className="text-muted-foreground">Patchbay Demo</span>
           <ChevronRight className="h-3 w-3 text-faint-foreground shrink-0" />
-          <span className="text-muted-foreground">PB-18</span>
+          <span className="text-muted-foreground">MUL-18</span>
           <ChevronRight className="h-3 w-3 text-faint-foreground shrink-0" />
           <span className="truncate">Refactor API error handling middleware</span>
         </div>
@@ -649,7 +649,7 @@ function SkillsVisual() {
                       <ol className="list-decimal pl-4 space-y-0.5">
                         <li>Analyze the current schema from migrations/</li>
                         <li>Generate migration SQL with proper ordering</li>
-                        <li>Validate with SQLx and cargo check</li>
+                        <li>Validate with sqlc compile</li>
                         <li>Run tests against a fresh database</li>
                       </ol>
                     </div>

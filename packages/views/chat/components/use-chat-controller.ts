@@ -16,6 +16,7 @@ import { api, dispatchReasonCode } from "@patchbay/core/api";
 import {
   isAgentRuntimeBound as hasAgentRuntime,
   useAgentPresenceDetail,
+  useCustomizeConversationStartersHref,
   useWorkspaceAgentAvailability,
 } from "@patchbay/core/agents";
 import {
@@ -79,7 +80,7 @@ export function deriveChatTitle(content: string): string {
  * The active session answers this on its own, deliberately. The new-chat
  * composer is ONE box per workspace (see DRAFT_NEW_SESSION), so moving the
  * agent picker re-points where the next send goes without moving the view or
- * the draft slot — that is not "navigating away" (PB-4864). Counting it as
+ * the draft slot — that is not "navigating away" (MUL-4864). Counting it as
  * such would leave a completed send's text sitting in the composer, primed to
  * be sent a second time to the agent just picked.
  *
@@ -277,6 +278,25 @@ export function useChatController(opts?: { isActive?: boolean }) {
     () => setFocusInputRequest((n) => n + 1),
     [],
   );
+  const [conversationStarterRequest, setConversationStarterRequest] = useState<{
+    id: number;
+    content: string;
+  } | null>(null);
+  const nextConversationStarterRequestIdRef = useRef(0);
+  const prefillConversationStarter = useCallback(
+    (prompt: string) => {
+      setConversationStarterRequest({
+        id: ++nextConversationStarterRequestIdRef.current,
+        content: prompt,
+      });
+      requestInputFocus();
+    },
+    [requestInputFocus],
+  );
+  const handleConversationStarterApplied = useCallback(
+    () => setConversationStarterRequest(null),
+    [],
+  );
 
   const currentSession = activeSessionId
     ? sessions.find((s) => s.id === activeSessionId)
@@ -344,12 +364,20 @@ export function useChatController(opts?: { isActive?: boolean }) {
   // A session outlives the permission that created it. The agent can be flipped
   // to personal, change owner, or drop this member from its allow-list, and the
   // server then refuses every send with `invocation_not_allowed` while still
-  // serving the Agent event history (PB-4525 — read uses the view gate, send re-runs the
+  // serving the transcript (MUL-4525 — read uses the view gate, send re-runs the
   // invoke gate). Judge the SESSION's agent, not just the picker list, so the
   // composer goes read-only up front instead of after the user types
-  // (PB-6380). Same rule the server enforces, via the shared predicate.
+  // (MUL-6380). Same rule the server enforces, via the shared predicate.
   const isAgentAccessRevoked =
     !!activeAgent && !canAssignAgent(activeAgent, user?.id, memberRole);
+
+  // "Customize" under the starter buttons in the empty state — the only place
+  // that admits those buttons are configuration. Resolved here so the full
+  // page and the floating window cannot disagree about who sees it.
+  const customizeConversationStartersHref = useCustomizeConversationStartersHref(
+    activeAgent,
+    wsId,
+  );
 
   const agentAvailability = useWorkspaceAgentAvailability();
   const noAgent = agentAvailability === "none";
@@ -365,11 +393,11 @@ export function useChatController(opts?: { isActive?: boolean }) {
   // the floating overlay passes `isOpen`, the tab passes `true`. `appForeground`
   // additionally requires the window to be visible and focused: a reply landing
   // while the app is backgrounded must stay unread so the sidebar badges it
-  // (PB-4485); it clears the moment the user returns and this effect re-runs.
+  // (MUL-4485); it clears the moment the user returns and this effect re-runs.
   //
   // The read is deferred by a tick and cancelled on cleanup, so a session that
   // is only *momentarily* active never gets marked read. This is the fix for
-  // PB-4360's mount race: `activeSessionId` is persisted, so on a bare `/chat`
+  // MUL-4360's mount race: `activeSessionId` is persisted, so on a bare `/chat`
   // navigation the page restores the last session for one frame before its
   // URL→store effect (which runs AFTER this hook's effects, since the hook is
   // called first) clears it back to null. Without the defer, that restored-but-
@@ -455,7 +483,7 @@ export function useChatController(opts?: { isActive?: boolean }) {
   }, [activeSessionId, sessionsLoaded, sessions, qc, setActiveSession]);
 
   // Upload transport moved into the coordinated-upload engine inside ChatInput
-  // (PB-5181 L2); surfaces only forward whether the affordance exists.
+  // (MUL-5181 L2); surfaces only forward whether the affordance exists.
   const uploadEnabled = !!activeAgent;
 
   const handleSend = useCallback(
@@ -518,7 +546,7 @@ export function useChatController(opts?: { isActive?: boolean }) {
       } catch (err) {
         apiLogger.error("sendChatMessage.ensureSession.error", err);
         // A revoked invoke permission blocks session create with a structured
-        // 403 (PB-4525) — name the cause instead of a generic failure.
+        // 403 (MUL-4525) — name the cause instead of a generic failure.
         const reason = dispatchReasonCode(err);
         toast.error(
           reason === "invocation_not_allowed"
@@ -546,7 +574,7 @@ export function useChatController(opts?: { isActive?: boolean }) {
       } catch (err) {
         apiLogger.error("sendChatMessage.error", { sessionId, err });
         // Invoke permission can be revoked mid-session; the send is refused with
-        // a structured 403 before anything persists (PB-4525). Surface the
+        // a structured 403 before anything persists (MUL-4525). Surface the
         // specific cause so the user knows it is a permission change, not a
         // transient failure they should retry.
         const reason = dispatchReasonCode(err);
@@ -581,7 +609,7 @@ export function useChatController(opts?: { isActive?: boolean }) {
         created_at: result.created_at,
         attachments: draftAttachments,
       };
-      // Single door into the message caches (PB-5711): idempotent by id, so
+      // Single door into the message caches (MUL-5711): idempotent by id, so
       // this row and the chat:message echo of the same send converge in either
       // arrival order, and this richer row (it carries the draft attachments)
       // is never downgraded by the echo, which has no attachments field.
@@ -815,6 +843,7 @@ export function useChatController(opts?: { isActive?: boolean }) {
     isAgentAccessRevoked,
     isAgentRuntimeBound,
     activeAgent,
+    customizeConversationStartersHref,
     noAgent,
     availability,
     // messages
@@ -832,6 +861,9 @@ export function useChatController(opts?: { isActive?: boolean }) {
     handleRestoreDraftApplied,
     // compose-box focus nonce (bumped on new chat)
     focusInputRequest,
+    conversationStarterRequest,
+    handleConversationStarterApplied,
+    prefillConversationStarter,
     // actions
     handleSend,
     handleStop,

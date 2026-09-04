@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { AlertCircle, ArrowDownToLine, Check, Loader2 } from "lucide-react";
 import { Button } from "@patchbay/ui/components/ui/button";
-import { SettingsSwitch as Switch } from "@patchbay/ui/components/common/lobe-settings";
+import { Switch } from "@patchbay/ui/components/ui/switch";
 import { useT } from "@patchbay/views/i18n";
 import { SettingsCard, SettingsRow, SettingsTab } from "@patchbay/views/settings";
 import { toast } from "sonner";

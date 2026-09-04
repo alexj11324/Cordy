@@ -288,7 +288,7 @@ export function useSetChatSessionPinned() {
  * Archiving also zeroes the row's unread locally so every badge (FAB, sidebar
  * Chat tab, chat-window header) drops it in the same frame the row moves to the
  * Archived view. The backend already forces unread to 0 for archived rows (see
- * ListAllChatSessionsByCreator / PB-4360); this is the optimistic half so there
+ * ListAllChatSessionsByCreator / MUL-4360); this is the optimistic half so there
  * is no window where the header/sidebar still count a just-archived session
  * before the refetch lands. Unarchive does NOT restore a count here — the true
  * unread state comes back from the server refetch (last_read_at is untouched).
@@ -375,7 +375,7 @@ export function useDeleteChatSession() {
 
 /**
  * Refresh the quick-action suggestions for a session's latest assistant turn
- * (PB-5149). Optimistically raises the pending marker for that turn — its pills
+ * (MUL-5149). Optimistically raises the pending marker for that turn — its pills
  * go inert and the refresh icon spins — and rolls it back on failure. The
  * refreshed pills arrive over the chat:quick_actions realtime event, which
  * clears the marker (applyChatQuickActionsToCache). Never retried: a refresh is

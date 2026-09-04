@@ -69,32 +69,11 @@ if [ "$locked" = "1" ]; then
   exit 1
 fi
 
-worktree_git_dir="$(git -C "$target" rev-parse --absolute-git-dir)"
-lifecycle_lock="$worktree_git_dir/patchbay-dev-lifecycle.lock"
-if ! mkdir "$lifecycle_lock" 2>/dev/null; then
-  echo "Refusing to remove worktree while its development lifecycle is busy: $target" >&2
-  echo "Inspect lifecycle lock: $lifecycle_lock" >&2
-  exit 1
-fi
-lifecycle_lock_held=1
-release_lifecycle_lock() {
-  if [ "$lifecycle_lock_held" = "1" ]; then
-    rmdir "$lifecycle_lock" 2>/dev/null || true
-    lifecycle_lock_held=0
-  fi
-}
-trap release_lifecycle_lock EXIT
-
 if [ -n "$(git -C "$target" status --porcelain --untracked-files=all)" ]; then
   echo "Refusing to remove dirty worktree before its database is dropped: $target" >&2
   echo "Commit, stash, or discard its changes first." >&2
   exit 1
 fi
-
-# The checkout owns its complete development process manifest. Stop only the
-# process tree whose PID and platform start identities still match that manifest;
-# stop-dev refuses deletion if it cannot prove ownership safely.
-node "$script_dir/stop-dev.mjs" --repo-root "$target"
 
 worktree_env="$target/.env.worktree"
 if [ -f "$worktree_env" ]; then
@@ -112,26 +91,5 @@ else
   echo "No .env.worktree found; skipping database cleanup."
 fi
 
-# Git must otherwise walk every directory entry while removing the worktree.
-# pnpm's global store may deduplicate file contents, but each worktree still has
-# its own high-cardinality node_modules link tree; Rust target and frontend
-# output trees are similarly disposable and worktree-local. Remove only these
-# explicit ignored build paths after the dirty-tree and database safety gates.
-for disposable_path in \
-  "$target/node_modules" \
-  "$target/server-rs/target" \
-  "$target/.patchbay-dev" \
-  "$target/.turbo" \
-  "$target/apps/desktop/out" \
-  "$target/apps/desktop/dist" \
-  "$target/apps/web/.next" \
-  "$target/apps/docs/.next"; do
-  if [ -e "$disposable_path" ]; then
-    echo "Removing disposable worktree output: ${disposable_path#"$target"/}"
-    rm -rf -- "$disposable_path"
-  fi
-done
-
 git -C "$repo_root" worktree remove "$target"
-lifecycle_lock_held=0
 echo "Removed worktree '$target'."

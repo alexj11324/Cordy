@@ -84,9 +84,9 @@ export function CreateAgentDialog({
   const isDuplicate = !!template;
   const queryClient = useQueryClient();
   const wsId = useWorkspaceId();
-  // PB-4010: rolls out the private / public_to access model in the create
+  // MUL-4010: rolls out the private / public_to access model in the create
   // flow to match the AccessPicker on the agent detail page. Shares the
-  // `composio_mcp_apps` switch with the Composio rollout — the PB-3963
+  // `composio_mcp_apps` switch with the Composio rollout — the MUL-3963
   // permission model exists to gate Composio sharing, so both surfaces flip
   // together. Defaults OFF so production stays on the legacy Workspace /
   // Personal toggle until Composio is greenlit.
@@ -104,7 +104,7 @@ export function CreateAgentDialog({
     template?.visibility ?? "workspace",
   );
 
-  // New access state (PB-3963 aligned). When duplicating, seed from the
+  // New access state (MUL-3963 aligned). When duplicating, seed from the
   // template so the clone lands with the source agent's grants; otherwise
   // default to public_to + workspace, matching the legacy "Workspace" default
   // so a plain "click Create" produces the same result as before.
@@ -231,7 +231,7 @@ export function CreateAgentDialog({
         skill_ids: [...selectedSkillIds],
       };
       if (accessPickerEnabled) {
-        // New PB-3963 shape: send the authoritative permission fields and
+        // New MUL-3963 shape: send the authoritative permission fields and
         // let the backend derive the legacy `visibility` field. Mirror the
         // AccessPicker `emit` normalisation — a public_to with zero targets
         // collapses to private as defense in depth so the backend never sees
@@ -262,7 +262,7 @@ export function CreateAgentDialog({
         // Duplicate path: forward the hidden config fields the source
         // agent had so the clone is functional out of the box (args /
         // concurrency). Skills flow through the dialog form. As of
-        // PB-2600 the agent resource shape no longer carries
+        // MUL-2600 the agent resource shape no longer carries
         // custom_env values, so duplication cannot copy env at all —
         // the user has to re-set env on the clone via the env tab
         // (which now goes through the audited `/env` endpoint). The
@@ -277,7 +277,7 @@ export function CreateAgentDialog({
       // Team context: attach the agent after skills land so the
       // team's Members tab shows the agent with its skills already
       // in place. Atomicity is best-effort by design (see plan in
-      // PB-2178) — a partial failure surfaces a warning toast and
+      // MUL-2178) — a partial failure surfaces a warning toast and
       // the user can retry from the Add Member dialog.
       if (createdAgent && teamId) {
         await attachToTeam(createdAgent.id, createdAgent.name);
@@ -494,7 +494,7 @@ export function CreateAgentDialog({
  * AccessSection — inline access editor for the create/duplicate flow, gated
  * on `COMPOSIO_MCP_APPS_FLAG`. Mirrors the semantics of
  * `AccessPicker` on the agent detail page: the underlying model is
- * `permission_mode` + `invocation_targets` (PB-3963), not the legacy
+ * `permission_mode` + `invocation_targets` (MUL-3963), not the legacy
  * `visibility`.
  *
  * The three mutually exclusive scopes mirror AccessPicker on the detail page.

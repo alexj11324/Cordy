@@ -14,13 +14,13 @@ import { defaultStorage } from "../../platform/storage";
 import { registerDraftCleanup } from "../../drafts/cleanup-registry";
 import { normalizeStoredUploads, type DraftUpload } from "../../drafts/draft-upload";
 
-// One logical Issue-Create draft (PB-5181), split so switching between the
+// One logical Issue-Create draft (MUL-5181), split so switching between the
 // manual form and the agent form never destroys the other side's content.
 //
 //   shared  — belongs to the issue no matter how it is filed: project,
 //             priority, due date, attachments.
 //   manual  — the manual form's own state: title, description, status, start
-//             date, executor, labels, custom properties.
+//             date, owner, executor, reviewer, labels, custom properties.
 //   agent   — the agent form's own state: the free-text prompt and the picked
 //             actor (agent or team).
 //   activeMode — which form the draft is currently being edited in.
@@ -39,7 +39,7 @@ export interface IssueCreateShared {
   /** Uploads for the dialog (placeholders + completed), referenced by the
    *  manual description OR the agent prompt markdown. A single pool so an
    *  image survives a mode switch from either side; each submit path sends
-   *  only the ids its own content references. Coordinator-owned (PB-5181 L2):
+   *  only the ids its own content references. Coordinator-owned (MUL-5181 L2):
    *  a placeholder written at pick time survives dialog close, and one still
    *  `uploading` at load time is dropped on rehydrate. */
   attachments: DraftUpload[];
@@ -104,6 +104,10 @@ const emptyAgent = (): IssueCreateAgent => ({
 
 interface IssueDraftStore {
   draft: IssueCreateDraft;
+  /** In-memory only. While present, writes target an isolated source-context
+   *  create session and persistence continues to serialize this ordinary
+   *  backup, so a reload cannot leak the source draft into normal create. */
+  isolatedDraftBackup?: IssueCreateDraft;
   lastOwnerId?: string;
   // Last executor picked at submit time. Persisted across drafts so the
   // create-issue modal can prefill the picker with the user's most recent
@@ -115,6 +119,8 @@ interface IssueDraftStore {
   setAgent: (patch: Partial<IssueCreateAgent>) => void;
   setActiveMode: (mode: CreateMode) => void;
   clearDraft: () => void;
+  beginIsolatedDraft: () => void;
+  endIsolatedDraft: () => void;
   setLastOwner: (id?: string) => void;
   setLastExecutor: (type?: IssueExecutorType, id?: string) => void;
   hasDraft: () => boolean;
@@ -167,14 +173,13 @@ function migrateManualRole(
     next.executorType = legacy.executorType;
     next.executorId = legacy.executorId;
   }
-  // Do not retain the removed fields in the canonical draft snapshot.
   delete (next as IssueCreateManual & { assigneeType?: unknown }).assigneeType;
   delete (next as IssueCreateManual & { assigneeId?: unknown }).assigneeId;
   return next;
 }
 
 // Drafts persisted by older builds either predate a later-added sub-field or
-// use the pre-PB-5181 flat shape. Backfill defaults so every read site can
+// use the pre-MUL-5181 flat shape. Backfill defaults so every read site can
 // rely on the declared IssueCreateDraft shape instead of re-defending, and lift
 // a legacy flat draft into the manual/shared slots (there was no agent prompt
 // in that store — it lived in `patchbay_quick_create` and is not carried over).
@@ -182,21 +187,6 @@ function migrateDraft(raw: unknown): IssueCreateDraft {
   const d = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
 
   if (isLegacyFlatDraft(d)) {
-    const manual = migrateManualRole(
-      {
-        ...emptyManual(),
-        title: (d.title as string) ?? "",
-        description: (d.description as string) ?? "",
-        status: (d.status as IssueStatus) ?? "todo",
-        startDate: (d.startDate as string | null) ?? null,
-        labelIds: Array.isArray(d.labelIds) ? (d.labelIds as string[]) : [],
-        propertyValues:
-          d.propertyValues && typeof d.propertyValues === "object"
-            ? (d.propertyValues as IssuePropertyValues)
-            : {},
-      },
-      d,
-    );
     return {
       shared: {
         ...emptyShared(),
@@ -207,16 +197,22 @@ function migrateDraft(raw: unknown): IssueCreateDraft {
         // as `uploaded` placeholders (and drops stale `uploading` ones).
         attachments: normalizeStoredUploads(d.attachments),
       },
-      manual: migrateManualRole(
-        {
-          ...manual,
-          reviewerType: d.reviewerType as IssueReviewerType | undefined,
-          reviewerId: d.reviewerId as string | undefined,
-          executorType: d.executorType as IssueExecutorType | undefined,
-          executorId: d.executorId as string | undefined,
-        },
-        d,
-      ),
+      manual: migrateManualRole({
+        ...emptyManual(),
+        title: (d.title as string) ?? "",
+        description: (d.description as string) ?? "",
+        status: (d.status as IssueStatus) ?? "todo",
+        startDate: (d.startDate as string | null) ?? null,
+        reviewerType: d.reviewerType as IssueReviewerType | undefined,
+        reviewerId: d.reviewerId as string | undefined,
+        executorType: d.executorType as IssueExecutorType | undefined,
+        executorId: d.executorId as string | undefined,
+        labelIds: Array.isArray(d.labelIds) ? (d.labelIds as string[]) : [],
+        propertyValues:
+          d.propertyValues && typeof d.propertyValues === "object"
+            ? (d.propertyValues as IssuePropertyValues)
+            : {},
+      }, d),
       agent: emptyAgent(),
       activeMode: "manual",
     };
@@ -270,9 +266,31 @@ export const useIssueDraftStore = create<IssueDraftStore>()(
             activeMode: s.draft.activeMode,
           },
         })),
+      beginIsolatedDraft: () =>
+        set((s) => {
+          if (s.isolatedDraftBackup) return s;
+          return {
+            isolatedDraftBackup: s.draft,
+            draft: {
+              shared: emptyShared(),
+              manual: {
+                ...emptyManual(),
+                ownerId: s.lastOwnerId,
+                executorType: s.lastExecutorType,
+                executorId: s.lastExecutorId,
+              },
+              agent: emptyAgent(),
+              activeMode: "agent",
+            },
+          };
+        }),
+      endIsolatedDraft: () =>
+        set((s) => s.isolatedDraftBackup
+          ? { draft: s.isolatedDraftBackup, isolatedDraftBackup: undefined }
+          : s),
+      setLastOwner: (id) => set({ lastOwnerId: id }),
       setLastExecutor: (type, id) =>
         set({ lastExecutorType: type, lastExecutorId: id }),
-      setLastOwner: (id) => set({ lastOwnerId: id }),
       hasDraft: () => {
         const { manual, agent, shared } = get().draft;
         return !!(
@@ -289,6 +307,15 @@ export const useIssueDraftStore = create<IssueDraftStore>()(
     {
       name: "patchbay_issue_draft",
       storage: createJSONStorage(() => createWorkspaceAwareStorage(defaultStorage)),
+      // An isolated source-context draft must never reach localStorage. Persist
+      // the ordinary backup throughout that session; a crash/reload therefore
+      // restores the user's normal create draft, not source-specific input.
+      partialize: (state) => ({
+        draft: state.isolatedDraftBackup ?? state.draft,
+        lastOwnerId: state.lastOwnerId,
+        lastExecutorType: state.lastExecutorType,
+        lastExecutorId: state.lastExecutorId,
+      }),
       merge: (persistedState, currentState) => {
         const persisted = (persistedState ?? {}) as Partial<IssueDraftStore> & {
           draft?: unknown;
@@ -296,14 +323,11 @@ export const useIssueDraftStore = create<IssueDraftStore>()(
           lastAssigneeId?: unknown;
         };
         const {
-          lastAssigneeType: _legacyLastAssigneeType,
-          lastAssigneeId: _legacyLastAssigneeId,
+          lastAssigneeType: legacyType,
+          lastAssigneeId: legacyId,
           ...persistedCanonical
         } = persisted;
-        const legacyLast = legacyAssignee(
-          _legacyLastAssigneeType,
-          _legacyLastAssigneeId,
-        );
+        const legacyLast = legacyAssignee(legacyType, legacyId);
         return {
           ...currentState,
           ...persistedCanonical,
@@ -311,10 +335,7 @@ export const useIssueDraftStore = create<IssueDraftStore>()(
             ? { lastOwnerId: legacyLast.ownerId }
             : {}),
           ...(legacyLast && "executorType" in legacyLast && persisted.lastExecutorType === undefined
-            ? {
-                lastExecutorType: legacyLast.executorType,
-                lastExecutorId: legacyLast.executorId,
-              }
+            ? { lastExecutorType: legacyLast.executorType, lastExecutorId: legacyLast.executorId }
             : {}),
           draft: migrateDraft(persisted.draft),
         };
@@ -338,5 +359,6 @@ registerDraftCleanup({
       lastOwnerId: undefined,
       lastExecutorType: undefined,
       lastExecutorId: undefined,
+      isolatedDraftBackup: undefined,
     }),
 });

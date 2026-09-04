@@ -54,7 +54,7 @@ function makeRuntime(overrides: Partial<RuntimeDevice>): RuntimeDevice {
 }
 
 // Machine "Jiayuan's MacBook Pro": a machine-level rename stamped the same
-// custom_name on both runtimes (PB-4217) — the exact shape that made the
+// custom_name on both runtimes (MUL-4217) — the exact shape that made the
 // old flat list unreadable.
 const RT_CLAUDE = makeRuntime({
   id: "rt-claude",
@@ -115,7 +115,7 @@ function renderPicker(
 }
 
 function openPicker() {
-  fireEvent.click(screen.getByRole("button", { name: /^Device · / }));
+  fireEvent.click(screen.getByRole("button", { name: /^Runtime · / }));
 }
 
 describe("RuntimePicker (agent settings)", () => {
@@ -128,7 +128,7 @@ describe("RuntimePicker (agent settings)", () => {
     // trigger was just the machine name.
     expect(
       screen.getByRole("button", {
-        name: /Device · Claude · Jiayuan's MacBook Pro · online/,
+        name: /Runtime · Claude · Jiayuan's MacBook Pro · online/,
       }),
     ).toBeTruthy();
   });
@@ -223,7 +223,7 @@ describe("RuntimePicker (agent settings)", () => {
         }),
       ],
     });
-    fireEvent.click(screen.getByRole("button", { name: /^Device · none/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Runtime · none/ }));
 
     expect(
       screen.getByRole("button", { name: /^Jiayuan's MacBook Pro/ }),
@@ -237,7 +237,7 @@ describe("RuntimePicker (agent settings)", () => {
 
   it("skips the pointless single-machine list when nothing is selected", () => {
     renderPicker({ value: "", runtimes: [RT_CLAUDE, RT_CODEX] });
-    fireEvent.click(screen.getByRole("button", { name: /^Device · none/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Runtime · none/ }));
 
     expect(screen.getByRole("button", { name: /^Claude/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: /^Codex/ })).toBeTruthy();

@@ -11,7 +11,7 @@ import { renderWithI18n } from "../test/i18n";
 
 describe("left sidebar resizing", () => {
   beforeEach(() => {
-    window.localStorage.clear();
+    localStorage.clear();
     document.documentElement.removeAttribute("data-sidebar-resizing");
   });
 
@@ -22,6 +22,7 @@ describe("left sidebar resizing", () => {
 
   it("previews width directly and commits only when the pointer is released", () => {
     const stableConsumerRender = vi.fn();
+    const setItem = vi.spyOn(Storage.prototype, "setItem");
 
     function StableSidebarConsumer() {
       useSidebar();
@@ -79,7 +80,7 @@ describe("left sidebar resizing", () => {
     expect(sidebarGap.style.width).toBe("300px");
     expect(sidebarContainer.style.width).toBe("300px");
     expect(wrapper.style.getPropertyValue("--sidebar-width")).toBe("256px");
-    expect(window.localStorage.getItem("sidebar_width")).toBeNull();
+    expect(setItem).not.toHaveBeenCalled();
     expect(stableConsumerRender).toHaveBeenCalledTimes(1);
 
     fireEvent.pointerUp(document, { pointerId: 7 });
@@ -87,7 +88,8 @@ describe("left sidebar resizing", () => {
     expect(sidebarGap.style.width).toBe("");
     expect(sidebarContainer.style.width).toBe("");
     expect(wrapper.style.getPropertyValue("--sidebar-width")).toBe("300px");
-    expect(window.localStorage.getItem("sidebar_width")).toBe("300");
+    expect(setItem).toHaveBeenCalledTimes(1);
+    expect(setItem).toHaveBeenCalledWith("sidebar_width", "300");
     expect(releasePointerCapture).toHaveBeenCalledWith(7);
     expect(wrapper).not.toHaveAttribute("data-sidebar-resizing");
     expect(document.documentElement).not.toHaveAttribute("data-sidebar-resizing");
@@ -98,6 +100,7 @@ describe("left sidebar resizing", () => {
   });
 
   it("restores the committed width and cursor state when pointer capture is cancelled", () => {
+    const setItem = vi.spyOn(Storage.prototype, "setItem");
     const { container } = renderWithI18n(
       <SidebarProvider>
         <Sidebar>
@@ -138,7 +141,7 @@ describe("left sidebar resizing", () => {
     expect(sidebarGap.style.width).toBe("");
     expect(sidebarContainer.style.width).toBe("");
     expect(wrapper.style.getPropertyValue("--sidebar-width")).toBe("256px");
-    expect(window.localStorage.getItem("sidebar_width")).toBeNull();
+    expect(setItem).not.toHaveBeenCalled();
     expect(wrapper).not.toHaveAttribute("data-sidebar-resizing");
     expect(document.documentElement).not.toHaveAttribute("data-sidebar-resizing");
   });

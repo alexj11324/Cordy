@@ -1,0 +1,196 @@
+// @vitest-environment node
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ApiClient } from "../api/client";
+
+afterEach(() => vi.unstubAllGlobals());
+
+describe("GET /api/issues/:id/dependency-graph contract", () => {
+  const issue = {
+    id: "target",
+    workspace_id: "ws-1",
+    number: 1,
+    identifier: "PB-1",
+    title: "Target",
+    description: null,
+    status: "blocked",
+    priority: "medium",
+    owner_type: "member",
+    owner_id: "member-1",
+    executor_type: "agent",
+    executor_id: "agent-1",
+    reviewer_type: "agent",
+    reviewer_id: "reviewer-1",
+    creator_type: "member",
+    creator_id: "member-1",
+    parent_issue_id: null,
+    project_id: null,
+    position: 0,
+    start_date: null,
+    due_date: null,
+    created_at: "2026-09-01T00:00:00Z",
+    updated_at: "2026-09-01T00:00:00Z",
+  };
+
+  it("parses the persisted Go node gate fields", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        plan: {
+          id: "plan-1",
+          workspace_id: "ws-1",
+          parent_issue_id: "target",
+          idempotency_key: "key-1",
+          goal: "Ship safely",
+          status: "active",
+          attention_required: false,
+          attention_reason: null,
+          created_by_type: "member",
+          created_by_id: "member-1",
+          created_at: "2026-09-01T00:00:00Z",
+          updated_at: "2026-09-01T00:00:00Z",
+        },
+        parent: issue,
+        nodes: [{
+          id: "node-1",
+          plan_id: "plan-1",
+          workspace_id: "ws-1",
+          temp_id: "target",
+          issue_id: "target",
+          issue,
+          title: "Target",
+          description: "",
+          acceptance_criteria: [],
+          context: {},
+          outputs: [],
+          executor_type: "agent",
+          executor_id: "agent-1",
+          candidate_executors: [{ type: "team", id: "team-1" }],
+          wave: 1,
+          owner_type: "member",
+          owner_id: "member-1",
+          reviewer_type: "agent",
+          reviewer_id: "reviewer-1",
+          runtime_id: "runtime-1",
+          model_id: "model-1",
+          status: "blocked",
+          status_category: "blocked",
+          ready: false,
+          blocked_by: ["source-1"],
+          readiness: {
+            state: "blocked",
+            gate_open: false,
+            satisfied_prerequisites: 0,
+            total_prerequisites: 1,
+            unlock_condition: "All 1 hard prerequisites must be Done (0/1 currently satisfied)",
+          },
+          created_at: "2026-09-01T00:00:00Z",
+          updated_at: "2026-09-01T00:00:00Z",
+        }],
+        edges: [{
+          id: "edge-1",
+          plan_id: "plan-1",
+          workspace_id: "ws-1",
+          from_issue_id: "source-1",
+          to_issue_id: "target",
+          from: "source",
+          to: "target",
+          type: "hard",
+          reason: "Needs source output",
+          consumed_output: "artifact",
+          created_at: "2026-09-01T00:00:00Z",
+        }],
+        waves: [["source"], ["target"]],
+        readiness: {
+          total: 1,
+          ready: 0,
+          running: 0,
+          blocked: 1,
+          done: 0,
+          cancelled: 0,
+        },
+      }), { status: 200, headers: { "Content-Type": "application/json" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const graph = await new ApiClient("https://api.example.test").getDependencyGraph("target");
+
+    expect(graph?.nodes[0]).toMatchObject({
+      status_category: "blocked",
+      ready: false,
+      blocked_by: ["source-1"],
+      executor_type: "agent",
+      executor_id: "agent-1",
+      candidate_executors: [{ type: "team", id: "team-1" }],
+      owner_type: "member",
+      owner_id: "member-1",
+      reviewer_type: "agent",
+      reviewer_id: "reviewer-1",
+      runtime_id: "runtime-1",
+      model_id: "model-1",
+    });
+    expect(graph?.nodes[0]?.readiness).toMatchObject({
+      state: "blocked",
+      gate_open: false,
+      total_prerequisites: 1,
+    });
+    expect(graph?.edges[0]).toMatchObject({
+      from_issue_id: "source-1",
+      to_issue_id: "target",
+      from: "source",
+      to: "target",
+      type: "hard",
+    });
+    expect(graph?.waves).toEqual([["source"], ["target"]]);
+    expect(graph?.readiness).toMatchObject({ total: 1, blocked: 1 });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.example.test/api/issues/target/dependency-graph",
+      expect.any(Object),
+    );
+  });
+
+  it("rejects a graph response with a non-member owner role", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        plan: { id: "plan-1" },
+        parent: issue,
+        nodes: [{
+          id: "node-1",
+          issue,
+          owner_type: "agent",
+          readiness: {
+            state: "ready",
+            gate_open: true,
+            satisfied_prerequisites: 0,
+            total_prerequisites: 0,
+            unlock_condition: "No hard prerequisites; ready immediately",
+          },
+        }],
+        edges: [],
+        readiness: {
+          total: 1,
+          ready: 1,
+          running: 0,
+          blocked: 0,
+          done: 0,
+          cancelled: 0,
+        },
+      }), { status: 200, headers: { "Content-Type": "application/json" } }),
+    ));
+
+    await expect(
+      new ApiClient("https://api.example.test").getDependencyGraph("target"),
+    ).rejects.toThrow("malformed graph");
+  });
+
+  it("normalizes the Go no-active-plan response to null", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ plan: null, nodes: [], edges: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    ));
+
+    await expect(
+      new ApiClient("https://api.example.test").getDependencyGraph("standalone"),
+    ).resolves.toBeNull();
+  });
+});

@@ -3,12 +3,12 @@
  * (member/agent → avatar URL or initials chip), stripped down for phone use:
  * no hover card, no nested focus management.
  *
- * Behavioral parity rules (apps/mobile/AGENTS.md):
+ * Behavioral parity rules (apps/mobile/CLAUDE.md):
  *   - Same actor type → same name → same initials. Lookup is shared via
  *     useActorLookup which reads the same MemberWithUser / Agent lists.
  *   - Agents get distinct visual treatment (brand-tinted background) to
  *     match web's "agents render with distinct styling" rule from the
- *     repo-root AGENTS.md "Agent Assignees" section.
+ *     repo-root role semantics: agents and teams are execution targets.
  *
  * Presence dot: opt-in via `showPresence`. Mirrors web's `showStatusDot`
  * (`packages/views/common/actor-avatar.tsx:51`). The prop is opt-in (default
@@ -30,9 +30,9 @@ import { THEME } from "@/lib/theme";
 // `system` actors are server-side automation (state changes triggered by the
 // platform itself, not a member or an agent). InboxItem.actor_type carries
 // this third value (packages/core/types/inbox.ts:28). `team` is a third
-// issue actor polymorph (packages/core/types/issue.ts IssueActorType) — when
+// issue-role polymorphism (packages/core/types/issue.ts IssueActorType) — when
 // a team has an avatar_url we render it; otherwise fall back to a generic
-// group glyph so team-assigned issues from web never render blank.
+// group glyph so team-executed issues from web never render blank.
 interface Props {
   type: "member" | "agent" | "system" | "team" | null | undefined;
   id: string | null | undefined;

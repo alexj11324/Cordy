@@ -92,14 +92,16 @@ const clerkProxy = clerkMiddleware(async (auth, req) => {
       const loginUrl = req.nextUrl.clone();
       loginUrl.pathname = "/login";
       loginUrl.search = "";
-      loginUrl.searchParams.set("redirect_url", `${pathname}${req.nextUrl.search}`);
+      loginUrl.searchParams.set(
+        "redirect_url",
+        `${pathname}${req.nextUrl.search}`,
+      );
       return NextResponse.redirect(loginUrl);
     }
   }
 
   const hasSession =
-    req.cookies.has("patchbay_logged_in") ||
-    req.cookies.has("cordy_logged_in"); // legacy-brand-compat
+    req.cookies.has("patchbay_logged_in") || req.cookies.has("cordy_logged_in"); // legacy-brand-compat
   const lastSlug = req.cookies.get("last_workspace_slug")?.value;
 
   // --- Legacy URL redirect: /issues/... → /{slug}/issues/... ---

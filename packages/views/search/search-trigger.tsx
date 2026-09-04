@@ -14,10 +14,10 @@ export function SearchTrigger() {
   const shortcut = useShortcut("openSearch");
   return (
     <SidebarMenuButton
-      className="text-sidebar-text-secondary"
+      className="text-muted-foreground"
       onClick={() => useSearchStore.getState().setOpen(true)}
     >
-      <Search className="text-sidebar-icon-secondary" />
+      <Search />
       <span>{t(($) => $.trigger.label)}</span>
       {shortcut ? (
         <ShortcutKeycaps shortcut={shortcut} decorative className="pointer-events-none ml-auto" />

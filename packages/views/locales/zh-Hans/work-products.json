@@ -1,0 +1,62 @@
+{
+  "page": {
+    "title": "工作成果",
+    "description": "从 daemon 执行 provenance 中发现的交付物。",
+    "empty": "暂无工作成果",
+    "error": "无法加载工作成果。",
+    "provenance_title": "执行 provenance",
+    "provenance_empty": "尚未记录执行 provenance。",
+    "load_more": "加载更多",
+    "retry": "重试"
+  },
+  "detail": {
+    "title": "工作成果",
+    "not_found": "此工作成果不可用。",
+    "external_identity": "外部标识",
+    "provider": "提供方",
+    "kind": "类型",
+    "created": "创建时间",
+    "updated": "更新时间",
+    "open_external": "打开外部资源",
+    "provenance": "执行 provenance",
+    "provenance_empty": "没有 provenance 指向此工作成果。",
+    "back": "返回工作成果"
+  },
+  "relations": {
+    "title": "工作成果",
+    "empty": "此任务没有关联工作成果。",
+    "attach": "关联工作成果",
+    "dialog_title": "关联工作成果",
+    "select_label": "工作成果",
+    "select_placeholder": "选择工作成果",
+    "no_products": "没有可关联的工作成果。",
+    "close_intent": "交付后建议关闭此任务",
+    "close_intent_short": "关闭建议",
+    "link": "关联",
+    "cancel": "取消",
+    "success": "工作成果已关联。",
+    "error": "无法关联工作成果。",
+    "loading": "正在加载工作成果…",
+    "detach": "移除工作成果",
+    "detach_success": "工作成果已移除。",
+    "detach_error": "无法移除工作成果。",
+    "url_label": "Pull Request URL",
+    "url_placeholder": "https://github.com/owner/repository/pull/123",
+    "attach_url": "关联 Pull Request",
+    "source_manual": "由成员关联",
+    "source_task": "由任务上报",
+    "source_branch": "从运行分支发现",
+    "source_provider": "由代码托管方发现"
+  },
+  "provenance": {
+    "status": "发现状态",
+    "head": "Head",
+    "branch": "分支",
+    "sha": "提交 SHA",
+    "repo": "仓库",
+    "workspace": "执行工作区",
+    "matches": "匹配数",
+    "reason": "原因",
+    "unknown": "未知"
+  }
+}

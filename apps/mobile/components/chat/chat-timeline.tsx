@@ -1,14 +1,12 @@
 /**
- * Public per-task event summary — which tools ran and whether a task reported
- * an error. Rendered:
+ * Per-task execution trace — what the agent is/was thinking and which tools
+ * it called. Rendered:
  *
  *   - Live (under the StatusPill while a task is in flight), AND
  *   - Persisted (under the assistant bubble once the message has landed)
  *
- * Public process steps (tool_use / tool_result / error) collapse behind a
- * single "N steps" toggle. Provider thinking payloads are deliberately not
- * rendered: they stay in the task-event cache for status/audit processing but
- * never become user-visible chain-of-thought. Final text is NOT rendered here —
+ * Process steps (thinking / tool_use / tool_result / error) collapse
+ * behind a single "N steps" toggle. Final text is NOT rendered here —
  * the parent renders the assistant message's `content` (or the latest
  * streaming text) as its own markdown block.
  *
@@ -31,11 +29,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import {
-  formatAgentThreadCopy,
-  type AgentThreadCopy,
-} from "@/lib/agent-thread-i18n";
-import { useAgentThreadCopy } from "@/lib/use-agent-thread-copy";
+import { useChatCopy } from "@/lib/use-chat-copy";
 
 interface Props {
   items: TaskMessagePayload[];
@@ -45,42 +39,29 @@ interface Props {
 }
 
 export function ChatTimeline({ items, isStreaming = false }: Props) {
-  const copy = useAgentThreadCopy();
-  const processSteps = items.filter(
-    (item) =>
-      item.type === "tool_use" ||
-      item.type === "tool_result" ||
-      item.type === "error",
-  );
+  const copy = useChatCopy();
+  const processSteps = items.filter((i) => i.type !== "text");
   if (processSteps.length === 0) return null;
-  const processLabel = formatAgentThreadCopy(
-    processSteps.length === 1
-      ? copy.process_steps_one
-      : copy.process_steps_other,
-    { count: String(processSteps.length) },
-  );
 
   return (
     <Collapsible defaultOpen={isStreaming}>
       <CollapsibleTrigger asChild>
         <View
           accessibilityRole="button"
-          accessibilityLabel={processLabel}
+          accessibilityLabel={copy.processSteps(processSteps.length)}
           className="flex-row items-center gap-1 active:opacity-70"
         >
           <Ionicons name="chevron-forward" size={12} color="#71717a" />
           {isStreaming ? <StreamingDot /> : null}
-          <Text className="text-xs text-muted-foreground">{processLabel}</Text>
+          <Text className="text-xs text-muted-foreground">
+            {copy.processSteps(processSteps.length)}
+          </Text>
         </View>
       </CollapsibleTrigger>
       <CollapsibleContent>
         <View className="mt-1 rounded-lg border border-border bg-muted/20 px-2 py-1.5 gap-0.5">
           {processSteps.map((item) => (
-            <StepRow
-              key={`${item.task_id}-${item.seq}`}
-              item={item}
-              copy={copy}
-            />
+            <StepRow key={`${item.task_id}-${item.seq}`} item={item} />
           ))}
         </View>
       </CollapsibleContent>
@@ -95,18 +76,14 @@ function StreamingDot() {
   return <View className="h-1.5 w-1.5 rounded-full bg-primary" />;
 }
 
-function StepRow({
-  item,
-  copy,
-}: {
-  item: TaskMessagePayload;
-  copy: AgentThreadCopy;
-}) {
+function StepRow({ item }: { item: TaskMessagePayload }) {
   switch (item.type) {
+    case "thinking":
+      return <ThinkingRow item={item} />;
     case "tool_use":
-      return <ToolCallRow item={item} copy={copy} />;
+      return <ToolCallRow item={item} />;
     case "tool_result":
-      return <ToolResultRow item={item} copy={copy} />;
+      return <ToolResultRow item={item} />;
     case "error":
       return <ErrorRow item={item} />;
     default:
@@ -114,44 +91,127 @@ function StepRow({
   }
 }
 
-function ToolCallRow({
-  item,
-  copy,
-}: {
-  item: TaskMessagePayload;
-  copy: AgentThreadCopy;
-}) {
+function ThinkingRow({ item }: { item: TaskMessagePayload }) {
+  const text = item.content ?? "";
+  if (!text) return null;
+  const preview = text.length > 80 ? `${text.slice(0, 80)}…` : text;
   return (
-    <View
-      data-agent-thread-event="tool_use"
-      className="py-0.5 flex-row items-center gap-1.5"
-    >
-      <Ionicons name="construct-outline" size={12} color="#71717a" />
-      <Text className="text-xs font-medium text-foreground">
-        {item.tool ?? copy.tool_fallback}
-      </Text>
-    </View>
+    <Collapsible>
+      <CollapsibleTrigger asChild>
+        <View className="py-0.5 flex-row items-start gap-1.5 active:opacity-70">
+          <Ionicons
+            name="bulb-outline"
+            size={12}
+            color="#a1a1aa"
+            style={{ marginTop: 2 }}
+          />
+          <Text
+            className="flex-1 text-xs italic text-muted-foreground"
+            numberOfLines={1}
+          >
+            {preview}
+          </Text>
+        </View>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <Text className="ml-4 mt-0.5 text-xs italic text-muted-foreground">
+          {text}
+        </Text>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
-function ToolResultRow({
-  item,
-  copy,
-}: {
-  item: TaskMessagePayload;
-  copy: AgentThreadCopy;
-}) {
-  const prefix = item.tool
-    ? `${item.tool} ${copy.tool_result_ready}`
-    : copy.tool_result_ready;
+function ToolCallRow({ item }: { item: TaskMessagePayload }) {
+  const copy = useChatCopy();
+  const summary = getToolSummary(item);
+  const hasInput = !!item.input && Object.keys(item.input).length > 0;
+  // If the call has no expandable input, render a non-interactive row —
+  // wrapping a static row in Collapsible adds a wasted tap target.
+  if (!hasInput) {
+    return (
+      <View className="py-0.5 flex-row items-center gap-1.5">
+        <View style={{ width: 12 }} />
+        <Text className="text-xs font-medium text-foreground">
+          {item.tool ?? copy.toolFallback}
+        </Text>
+        {summary ? (
+          <Text
+            className="flex-1 text-xs text-muted-foreground"
+            numberOfLines={1}
+          >
+            {summary}
+          </Text>
+        ) : null}
+      </View>
+    );
+  }
   return (
-    <View
-      data-agent-thread-event="tool_result"
-      className="py-0.5 flex-row items-center gap-1.5"
-    >
-      <Ionicons name="checkmark-circle-outline" size={12} color="#71717a" />
-      <Text className="text-xs text-muted-foreground">{prefix}</Text>
-    </View>
+    <Collapsible>
+      <CollapsibleTrigger asChild>
+        <View className="py-0.5 flex-row items-center gap-1.5 active:opacity-70">
+          <Ionicons name="chevron-forward" size={12} color="#71717a" />
+          <Text className="text-xs font-medium text-foreground">
+            {item.tool ?? copy.toolFallback}
+          </Text>
+          {summary ? (
+            <Text
+              className="flex-1 text-xs text-muted-foreground"
+              numberOfLines={1}
+            >
+              {summary}
+            </Text>
+          ) : null}
+        </View>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <View className="ml-4 mt-1 rounded bg-muted/40 px-2 py-1.5">
+          <Text className="text-xs text-muted-foreground">
+            {JSON.stringify(item.input, null, 2)}
+          </Text>
+        </View>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+function ToolResultRow({ item }: { item: TaskMessagePayload }) {
+  const copy = useChatCopy();
+  const output = item.output ?? "";
+  if (!output) return null;
+  const preview = output.length > 80 ? `${output.slice(0, 80)}…` : output;
+  const prefix = item.tool
+    ? copy.toolResultNamed(item.tool)
+    : copy.toolResultUnnamed;
+  return (
+    <Collapsible>
+      <CollapsibleTrigger asChild>
+        <View className="py-0.5 flex-row items-start gap-1.5 active:opacity-70">
+          <Ionicons
+            name="chevron-forward"
+            size={12}
+            color="#71717a"
+            style={{ marginTop: 2 }}
+          />
+          <Text
+            className="flex-1 text-xs text-muted-foreground/80"
+            numberOfLines={1}
+          >
+            <Text className="text-xs text-muted-foreground">{prefix}</Text>
+            {preview}
+          </Text>
+        </View>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <View className="ml-4 mt-1 rounded bg-muted/40 px-2 py-1.5">
+          <Text className="text-xs text-muted-foreground">
+            {output.length > 4000
+              ? `${output.slice(0, 4000)}\n…${copy.truncated}`
+              : output}
+          </Text>
+        </View>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
@@ -169,4 +229,44 @@ function ErrorRow({ item }: { item: TaskMessagePayload }) {
       </Text>
     </View>
   );
+}
+
+/**
+ * Mirror of web's `getToolSummary` (chat-message-list.tsx) — picks the most
+ * informative single-line summary from a tool_use payload. Order matters:
+ * `query` / `file_path` / `pattern` are the headline params, `command` /
+ * `prompt` get truncated, and a final loop catches whichever short string
+ * a future tool might emit.
+ */
+function getToolSummary(item: TaskMessagePayload): string {
+  if (!item.input) return "";
+  const inp = item.input as Record<string, unknown>;
+  const pick = (k: string): string | undefined => {
+    const v = inp[k];
+    return typeof v === "string" && v.length > 0 ? v : undefined;
+  };
+  const q = pick("query");
+  if (q) return q;
+  const fp = pick("file_path") ?? pick("path");
+  if (fp) return shortenPath(fp);
+  const p = pick("pattern");
+  if (p) return p;
+  const d = pick("description");
+  if (d) return d;
+  const cmd = pick("command");
+  if (cmd) return cmd.length > 100 ? `${cmd.slice(0, 100)}…` : cmd;
+  const prompt = pick("prompt");
+  if (prompt) return prompt.length > 100 ? `${prompt.slice(0, 100)}…` : prompt;
+  const skill = pick("skill");
+  if (skill) return skill;
+  for (const v of Object.values(inp)) {
+    if (typeof v === "string" && v.length > 0 && v.length < 120) return v;
+  }
+  return "";
+}
+
+function shortenPath(p: string): string {
+  const parts = p.split("/");
+  if (parts.length <= 3) return p;
+  return `…/${parts.slice(-2).join("/")}`;
 }

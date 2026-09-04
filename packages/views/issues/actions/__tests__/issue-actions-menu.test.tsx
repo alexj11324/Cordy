@@ -99,6 +99,7 @@ vi.mock("../../../navigation", () => ({
     push: vi.fn(),
     pathname: "/test/issues/issue-1",
     searchParams: new URLSearchParams(),
+    hash: "",
     back: vi.fn(),
     replace: vi.fn(),
     ...(navState.hasOpenInNewTab ? { openInNewTab: openInNewTabMock } : {}),
@@ -218,7 +219,7 @@ describe("IssueActionsDropdown", () => {
     expect(screen.queryByText("Add sub-issue...")).not.toBeInTheDocument();
   });
 
-  it("clicking the Executor item opens the shared ExecutorPicker popover", async () => {
+  it("clicking Executor opens the shared ExecutorPicker popover", async () => {
     render(
       wrap(
         <IssueActionsDropdown
@@ -231,13 +232,10 @@ describe("IssueActionsDropdown", () => {
     fireEvent.click(screen.getByTestId("trigger"));
     fireEvent.click(await screen.findByText("Executor"));
 
-    // The shared executor picker exposes a search input. Human members are
-    // owners now, so they intentionally do not appear in the executor list.
+    // The shared execution-role picker exposes search without mixing in owners.
     expect(
       await screen.findByPlaceholderText("Assign to..."),
     ).toBeInTheDocument();
-    expect(screen.queryByText("Members")).not.toBeInTheDocument();
-    expect(screen.queryByText("Test User")).not.toBeInTheDocument();
   });
 
   it("shows 'Remove parent issue' in the Relations submenu only when the issue has a parent", async () => {

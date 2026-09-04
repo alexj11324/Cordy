@@ -21,17 +21,15 @@ import type { OnboardingStep } from "./types";
  *     critical path. It is collected post-onboarding by the workspace
  *     source-backfill prompt, and only after agents have completed
  *     work for the user — see `needs-backfill.ts`.
- *   - "about_you" (role / use_case) was a questionnaire screen before
- *     the workspace step. It is no longer asked in-flow; the JSONB
- *     slots remain so source-backfill and any previously stored
- *     answers still round-trip, and Patrick bootstrap still reads them
- *     when present.
+ *   - "role" / "use_case" merged into the single "about_you" step so
+ *     related personalization inputs stay together.
  *
  * Runtime is the final form step. A connected path provisions Patrick and opens
  * the interactive onboarding chat as part of the runtime step's submit action;
  * that chat is the product experience itself, not another progress-screen step.
  */
 export const ONBOARDING_STEP_ORDER: readonly OnboardingStep[] = [
+  "about_you",
   "workspace",
   "runtime",
 ] as const;

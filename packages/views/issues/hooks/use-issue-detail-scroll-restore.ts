@@ -7,7 +7,7 @@ type UseIssueDetailScrollRestoreArgs = {
   disabled?: boolean;
   /**
    * Authoritative restore target from the platform's tab memento, when one
-   * is being served (PB-4741). It wins over this hook's module-level map:
+   * is being served (MUL-4741). It wins over this hook's module-level map:
    * the memento is captured from the live DOM at the moment the view is
    * left, while the map only hears scroll *events* — content-driven
    * position shifts (scroll anchoring, streaming blocks collapsing) move

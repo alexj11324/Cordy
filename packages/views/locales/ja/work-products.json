@@ -1,0 +1,62 @@
+{
+  "page": {
+    "title": "成果物",
+    "description": "daemon 実行 provenance から検出された成果物。",
+    "empty": "成果物はまだありません",
+    "error": "成果物を読み込めませんでした。",
+    "provenance_title": "実行 provenance",
+    "provenance_empty": "実行 provenance はまだ記録されていません。",
+    "load_more": "さらに読み込む",
+    "retry": "再試行"
+  },
+  "detail": {
+    "title": "成果物",
+    "not_found": "この成果物は利用できません。",
+    "external_identity": "外部識別子",
+    "provider": "プロバイダー",
+    "kind": "種類",
+    "created": "作成日時",
+    "updated": "更新日時",
+    "open_external": "外部リソースを開く",
+    "provenance": "実行 provenance",
+    "provenance_empty": "この成果物を指す provenance はありません。",
+    "back": "成果物に戻る"
+  },
+  "relations": {
+    "title": "成果物",
+    "empty": "この課題に関連付けられた成果物はありません。",
+    "attach": "成果物を関連付ける",
+    "dialog_title": "成果物を関連付ける",
+    "select_label": "成果物",
+    "select_placeholder": "成果物を選択",
+    "no_products": "関連付けられる成果物はありません。",
+    "close_intent": "納品後にこの課題を閉じることを提案",
+    "close_intent_short": "終了提案",
+    "link": "関連付ける",
+    "cancel": "キャンセル",
+    "success": "成果物を関連付けました。",
+    "error": "成果物を関連付けられませんでした。",
+    "loading": "成果物を読み込んでいます…",
+    "detach": "成果物を外す",
+    "detach_success": "成果物を外しました。",
+    "detach_error": "成果物を外せませんでした。",
+    "url_label": "Pull request URL",
+    "url_placeholder": "https://github.com/owner/repository/pull/123",
+    "attach_url": "Pull request を関連付ける",
+    "source_manual": "メンバーが関連付け",
+    "source_task": "タスクが報告",
+    "source_branch": "実行ブランチから検出",
+    "source_provider": "プロバイダーが検出"
+  },
+  "provenance": {
+    "status": "検出",
+    "head": "Head",
+    "branch": "ブランチ",
+    "sha": "コミット SHA",
+    "repo": "リポジトリ",
+    "workspace": "実行ワークスペース",
+    "matches": "一致数",
+    "reason": "理由",
+    "unknown": "不明"
+  }
+}

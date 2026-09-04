@@ -1,9 +1,8 @@
 import { app } from "electron";
-import { readFile, writeFile } from "fs/promises";
+import { readFile } from "fs/promises";
 import { join } from "path";
 import {
   DEFAULT_RUNTIME_CONFIG,
-  isStaleDevelopmentRuntimeConfig,
   parseRuntimeConfig,
   runtimeConfigFromDevEnv,
   type RuntimeConfig,
@@ -27,27 +26,7 @@ export async function loadRuntimeConfig(options: {
   const configPath = options.configPath ?? desktopConfigPath();
   try {
     const raw = await readFile(configPath, "utf-8");
-    const config = parseRuntimeConfig(raw);
-    if (isStaleDevelopmentRuntimeConfig(config)) {
-      const migrated = { ...DEFAULT_RUNTIME_CONFIG };
-      try {
-        await writeFile(
-          configPath,
-          `${JSON.stringify(migrated, null, 2)}\n`,
-          "utf-8",
-        );
-      } catch (err) {
-        console.warn(
-          "[runtime-config] using cloud defaults; failed to persist the migrated desktop config:",
-          err,
-        );
-      }
-      return { ok: true, config: migrated };
-    }
-    return {
-      ok: true,
-      config,
-    };
+    return { ok: true, config: parseRuntimeConfig(raw) };
   } catch (err) {
     if (isMissingFileError(err)) {
       return { ok: true, config: { ...DEFAULT_RUNTIME_CONFIG } };
@@ -68,9 +47,9 @@ export function desktopConfigPath(): string {
 function isMissingFileError(err: unknown): boolean {
   return Boolean(
     err &&
-    typeof err === "object" &&
-    "code" in err &&
-    (err as NodeJS.ErrnoException).code === "ENOENT",
+      typeof err === "object" &&
+      "code" in err &&
+      (err as NodeJS.ErrnoException).code === "ENOENT",
   );
 }
 

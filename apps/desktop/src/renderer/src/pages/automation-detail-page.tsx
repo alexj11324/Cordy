@@ -10,7 +10,7 @@ export function AutomationDetailPage() {
   const wsId = useWorkspaceId();
   const { data } = useQuery(automationDetailOptions(wsId, id!));
 
-  // Plain text only — no leading ⚡ glyph in the title (PB-4370).
+  // Plain text only — no leading ⚡ glyph in the title (MUL-4370).
   useDocumentTitle(data ? data.automation.title : "Automation");
 
   if (!id) return null;

@@ -15,7 +15,7 @@ import { useT } from "../../i18n";
  * Product-fixed starter cards rendered under Patrick's onboarding opening (the
  * first assistant reply after the hidden `onboarding_kickoff`). They replace
  * that one message's LLM quick-action chips with three concrete ways to start,
- * so a new member never faces a blank canvas (PB-5765).
+ * so a new member never faces a blank canvas (MUL-5765).
  *
  * Clicking a card goes through the same path as a quick-action chip: the
  * card's prompt is sent as a visible member message and Patrick starts working.

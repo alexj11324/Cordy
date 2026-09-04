@@ -1,11 +1,11 @@
 // @vitest-environment node
 /**
- * Two regressions are pinned here, both found in review of PB-5345.
+ * Two regressions are pinned here, both found in review of MUL-5345.
  *
  * 1. The breadcrumb was acked inside `onCaptured`, which fires on hand-off to
  *    the PostHog SDK — not on delivery. An app that froze again or was killed
  *    while the request was still in flight lost the report AND the file, which
- *    is precisely the PB-4115 failure the ack protocol exists to prevent.
+ *    is precisely the MUL-4115 failure the ack protocol exists to prevent.
  * 2. The whole breadcrumb context was spread into telemetry props, so the
  *    workspace slug, tab id and absolute window URL shipped with every report
  *    despite the stated "bucketed path only" constraint.
@@ -150,7 +150,7 @@ describe("telemetry props carry no raw identifiers", () => {
     expect(props).not.toHaveProperty("windowUrl");
   });
 
-  // PB-5345: stack capture is gone, but a machine upgrading from v0.4.13–
+  // MUL-5345: stack capture is gone, but a machine upgrading from v0.4.13–
   // v0.4.18 can still have a pending breadcrumb whose context holds a captured
   // stack — including the live handles the old capture path never shipped but
   // the on-disk file could carry. The whitelist is what keeps that off the

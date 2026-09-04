@@ -1,44 +1,38 @@
-/**
- * Executor picker route for an existing issue. Uses the native iOS Stack
- * header + UISearchController (registered in ../_layout.tsx with
- * `headerShown: true` + title); the search bar wiring is encapsulated in
- * `useNativeSearchBar`.
- */
-import { useLocalSearchParams, router } from "expo-router";
+import { router, Stack, useLocalSearchParams } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { ExecutorPickerBody } from "@/components/issue/pickers/executor-picker-body";
-import { issueDetailOptions } from "@/data/queries/issues";
+import { useAuthStore } from "@/data/auth-store";
 import { useUpdateIssue } from "@/data/mutations/issues";
+import { issueDetailOptions } from "@/data/queries/issues";
 import { useWorkspaceStore } from "@/data/workspace-store";
+import { getIssueRoleCopy } from "@/lib/issue-role-copy";
+import { executorPatch } from "@/lib/issue-role-patch";
 import { useNativeSearchBar } from "@/lib/use-native-search-bar";
 
 export default function IssueExecutorPickerRoute() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const wsId = useWorkspaceStore((s) => s.currentWorkspaceId);
+  const wsId = useWorkspaceStore((state) => state.currentWorkspaceId);
+  const language = useAuthStore((state) => state.user?.language);
+  const copy = getIssueRoleCopy(language);
   const { data: issue } = useQuery(issueDetailOptions(wsId, id));
   const updateIssue = useUpdateIssue(id);
-  const query = useNativeSearchBar("Search people", { autoFocus: true });
-
+  const query = useNativeSearchBar(copy.searchExecutors, { autoFocus: true });
   const value =
-    issue?.executor_type && issue?.executor_id
+    issue?.executor_type && issue.executor_id
       ? { type: issue.executor_type, id: issue.executor_id }
       : null;
 
   return (
-    <ExecutorPickerBody
-      value={value}
-      query={query}
-      onChange={(next) => {
-        if (next === null) {
-          updateIssue.mutate({ executor_type: null, executor_id: null });
-        } else {
-          updateIssue.mutate({
-            executor_type: next.type,
-            executor_id: next.id,
-          });
-        }
-        router.back();
-      }}
-    />
+    <>
+      <Stack.Screen options={{ title: copy.executor }} />
+      <ExecutorPickerBody
+        value={value}
+        query={query}
+        onChange={(next) => {
+          updateIssue.mutate(executorPatch(next));
+          router.back();
+        }}
+      />
+    </>
   );
 }

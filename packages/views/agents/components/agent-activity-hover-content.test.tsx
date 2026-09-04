@@ -9,7 +9,7 @@ import { renderWithI18n } from "../../test/i18n";
 // must describe tasks — not agents. A single agent can run several tasks at
 // once (e.g. the workspace chip reads "2 working" for two unique agents while
 // the card lists three task rows). An agent-worded header here would print
-// "3 agents working" for those two agents, contradicting the chip. PB-3872.
+// "3 agents working" for those two agents, contradicting the chip. MUL-3872.
 
 vi.mock("@patchbay/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
@@ -148,15 +148,15 @@ describe("AgentActivityHoverContent", () => {
 // The workspace chip says WHO is working ("N agents working"). This card
 // says WHERE: the two figures the chip does not carry, and the rows grouped
 // by issue. It stays silent about work it excludes — see the component doc.
-// PB-4884.
+// MUL-4884.
 describe("WorkspaceAgentActivityHoverContent", () => {
   it("carries the two figures the chip does not, and groups rows by issue", () => {
     renderWithI18n(
       <WorkspaceAgentActivityHoverContent
         issues={[
-          makeIssue("i-1", "PB-4879", "Counting logic looks wrong"),
-          makeIssue("i-2", "PB-4881", "daemon extra work dir"),
-          makeIssue("i-3", "PB-4883", "First PR review flow"),
+          makeIssue("i-1", "MUL-4879", "Counting logic looks wrong"),
+          makeIssue("i-2", "MUL-4881", "daemon extra work dir"),
+          makeIssue("i-3", "MUL-4883", "First PR review flow"),
         ]}
         tasksByIssueId={
           new Map([
@@ -177,7 +177,7 @@ describe("WorkspaceAgentActivityHoverContent", () => {
 
     expect(screen.getByText("3 issues · 4 tasks")).toBeInTheDocument();
     // Rows group under their issue, mirroring what clicking the chip does.
-    expect(screen.getByText("PB-4879")).toBeInTheDocument();
+    expect(screen.getByText("MUL-4879")).toBeInTheDocument();
     expect(screen.getByText("Counting logic looks wrong")).toBeInTheDocument();
     expect(screen.getAllByTestId("actor-avatar")).toHaveLength(4);
   });
@@ -188,7 +188,7 @@ describe("WorkspaceAgentActivityHoverContent", () => {
     // perceived. The card only ever describes what IS counted.
     renderWithI18n(
       <WorkspaceAgentActivityHoverContent
-        issues={[makeIssue("i-1", "PB-1", "One")]}
+        issues={[makeIssue("i-1", "MUL-1", "One")]}
         tasksByIssueId={
           new Map([["i-1", [makeTask({ id: "t1", issue_id: "i-1" })]]])
         }
@@ -216,7 +216,7 @@ describe("WorkspaceAgentActivityHoverContent", () => {
   it("renders the Chinese copy for the counted units", () => {
     renderWithI18n(
       <WorkspaceAgentActivityHoverContent
-        issues={[makeIssue("i-1", "PB-1", "One")]}
+        issues={[makeIssue("i-1", "MUL-1", "One")]}
         tasksByIssueId={
           new Map([["i-1", [makeTask({ id: "t1", issue_id: "i-1" })]]])
         }

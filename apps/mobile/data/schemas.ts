@@ -7,7 +7,7 @@
  *
  * If web/desktop later need these same schemas, promote them to core; until
  * then they live here so mobile satisfies its "Parse, don't cast" rule
- * (root AGENTS.md "API Response Compatibility") for these endpoints.
+ * (root CLAUDE.md "API Response Compatibility") for these endpoints.
  */
 import { z } from "zod";
 import type {
@@ -118,7 +118,7 @@ export const EMPTY_COMMENT: Comment = {
  *  Value type is z.string() (not z.enum) so a future server-side value like
  *  "snoozed" downgrades gracefully (read sites treat unknown as enabled)
  *  instead of failing schema parse and dropping the entire preferences map.
- *  Per AGENTS.md "Enum drift downgrades, not crashes". */
+ *  Per CLAUDE.md "Enum drift downgrades, not crashes". */
 export const NotificationPreferenceResponseSchema = z.object({
   workspace_id: z.string().default(""),
   preferences: z.record(z.string(), z.string()).default({}),
@@ -250,7 +250,7 @@ export const ChatSessionSchema: z.ZodType<ChatSession> = z.object({
   agent_id: z.string().default(""),
   creator_id: z.string().default(""),
   title: z.string().default(""),
-  // Enum drift defense (root AGENTS.md "Enum drift downgrades, not crashes"):
+  // Enum drift defense (root CLAUDE.md "Enum drift downgrades, not crashes"):
   // unknown server values fall back to "active" so the row still renders.
   status: z.enum(["active", "archived"]).catch("active"),
   has_unread: z.boolean().default(false),
@@ -343,7 +343,7 @@ export const TaskMessagePayloadSchema: z.ZodType<TaskMessagePayload> = z.object(
   seq: z.number().default(0),
   // Enum drift defense: unknown server-side types fall back to "text" so
   // the row still renders (as a plain markdown chunk) instead of crashing
-  // the timeline. Matches root AGENTS.md "Enum drift downgrades, not crashes".
+  // the timeline. Matches root CLAUDE.md "Enum drift downgrades, not crashes".
   type: z
     .enum(["text", "thinking", "tool_use", "tool_result", "error"])
     .catch("text"),
@@ -367,7 +367,7 @@ export const EMPTY_TASK_MESSAGE_LIST: TaskMessagePayload[] = [];
 // defense.
 //
 // match_source is the server's hint of which field matched. Enum-drift defense
-// (root AGENTS.md "Enum drift downgrades, not crashes"): unknown values fall
+// (root CLAUDE.md "Enum drift downgrades, not crashes"): unknown values fall
 // back to "title" so the row still renders without a snippet line.
 
 const SearchIssueResultSchema = IssueSchema.safeExtend({
@@ -406,10 +406,9 @@ export const EMPTY_SEARCH_PROJECTS_RESPONSE: SearchProjectsResponse = {
 // Mirrors AgentTask in packages/core/types/agent.ts. Backend handlers:
 //   GET  /api/issues/{id}/active-task → { tasks: AgentTask[] } (may be empty)
 //   GET  /api/issues/{id}/task-runs   → AgentTask[]
-// Lenient on every field — status stays open and only malformed/missing input
-// falls back to an explicit unknown value, while
-// failure_reason remains an open string so a future server-side value renders
-// without crashing the row (root AGENTS.md "Enum drift downgrades, not crashes").
+// Lenient on every field — status / kind / failure_reason all use `.catch()`
+// so a future server-side enum value renders a generic fallback rather than
+// crashing the row (root CLAUDE.md "Enum drift downgrades, not crashes").
 
 export const AgentTaskSchema: z.ZodType<AgentTask> = z.object({
   id: z.string(),
@@ -423,9 +422,10 @@ export const AgentTaskSchema: z.ZodType<AgentTask> = z.object({
   completed_at: z.string().nullable().default(null),
   result: z.unknown().default(null),
   error: z.string().nullable().default(null),
-  // Keep provider-specific failure reasons forward-compatible. The server
-  // may add a refined `agent_error.*` value without making mobile discard the
-  // whole task record.
+  // Backend uses empty string ("") as the "not failed" sentinel (Go
+  // `omitempty` on a custom string-typed enum). Normalize that to `undefined`
+  // so downstream truthy checks (`if (task.failure_reason)`) don't have to
+  // special-case both null/undefined AND "".
   failure_reason: z
     .string()
     .nullable()
@@ -444,13 +444,11 @@ export const AgentTaskSchema: z.ZodType<AgentTask> = z.object({
     .optional()
     .catch("direct"),
   work_dir: z.string().optional(),
-}).loose();
+}).loose() as unknown as z.ZodType<AgentTask>;
 
 export const AgentTaskListSchema = z.array(AgentTaskSchema).default([]);
 
 const AgentThreadAvailabilitySchema = z.object({
-  // Preserve the thread envelope when a newer server adds an availability
-  // state. Unknown states are terminal from this client's perspective.
   state: z
     .unknown()
     .transform((state) => (state === "available" ? "available" : "unavailable"))
@@ -465,7 +463,6 @@ const AgentThreadAgentSchema = z.object({
   avatar_url: z.string().nullable().default(null),
 }).loose();
 
-/** Canonical task-to-thread envelope shared with web and desktop. */
 export const AgentThreadResponseSchema: z.ZodType<AgentThreadResponse> = z.object({
   task: AgentTaskSchema,
   thread_tasks: z.array(AgentTaskSchema).default([]),
@@ -638,7 +635,7 @@ const AgentInvocationTargetSchema: z.ZodType<AgentInvocationTarget> = z
 
 // Agent schema is loose on every enum / structural field — the agent table is
 // where new modes/visibilities/statuses get added most often. We need only id,
-// name, avatar_url, and a couple of flags for the role picker + chat
+// name, avatar_url, and a couple of flags for the executor picker + chat
 // header; everything else is informational and safe to default.
 export const AgentSchema: z.ZodType<Agent> = z.object({
   id: z.string(),
@@ -648,13 +645,24 @@ export const AgentSchema: z.ZodType<Agent> = z.object({
   name: z.string().default(""),
   description: z.string().default(""),
   instructions: z.string().default(""),
+  conversation_starters: z
+    .array(
+      z
+        .object({
+          label: z.string().default(""),
+          prompt: z.string().default(""),
+        })
+        .loose(),
+    )
+    .catch([])
+    .default([]),
   avatar_url: z.string().nullable().default(null),
   runtime_mode: z.string().catch("daemon") as unknown as z.ZodType<
     Agent["runtime_mode"]
   >,
   runtime_config: z.record(z.string(), z.unknown()).default({}),
   custom_args: z.array(z.string()).default([]),
-  // PB-2600: agent resource shape no longer carries custom_env or
+  // MUL-2600: agent resource shape no longer carries custom_env or
   // custom_env_redacted. Mobile keeps only the coarse metadata that
   // mirrors web's expectations. Real env values are reachable via the
   // dedicated /env endpoint and we don't expose env editing on mobile.

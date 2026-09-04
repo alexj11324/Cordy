@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useUser, useAuth } from "@clerk/nextjs";
 import { ApiError } from "@patchbay/core/api";
 import { useAuthStore } from "@patchbay/core/auth";
@@ -20,7 +14,7 @@ type ExchangedClerkIdentity = {
   userId: string;
 };
 
-/** True only after the current Clerk session has become a Rust session. */
+/** True only after the current Clerk session has become a Go API session. */
 export function useClerkSessionExchangeReady(): boolean {
   return useContext(ClerkSessionExchangeContext);
 }
@@ -34,11 +28,7 @@ export function useClerkSessionExchangeReady(): boolean {
  *
  * Mount this component inside `<CoreProvider>` (web only).
  */
-export function ClerkAuthAdapter({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export function ClerkAuthAdapter({ children }: { children: React.ReactNode }) {
   const { user: clerkUser, isLoaded: clerkLoaded } = useUser();
   const { getToken, isSignedIn, sessionId, signOut } = useAuth();
   const clerkUserId = clerkUser?.id;

@@ -68,7 +68,8 @@ export function useArchiveInbox() {
       await qc.cancelQueries({ queryKey: key });
       const prev = qc.getQueryData<InboxItem[]>(key);
       // Match web: archive every row that shares the same issue_id — the
-      // single archive endpoint archives all sibling rows server-side too.
+      // single archive endpoint archives all sibling rows server-side too
+      // (`server/internal/queries/inbox.sql` UPDATE … WHERE issue_id = ?).
       // Patching only the tapped row would let dedup'd siblings briefly
       // resurface between the request and the WS invalidate.
       const target = prev?.find((i) => i.id === id);

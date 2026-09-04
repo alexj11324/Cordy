@@ -16,7 +16,7 @@ export type QuickCreateActorType = "agent" | "team";
 // matches how draft-store / issues-scope-store / comment-collapse-store
 // already namespace themselves.
 //
-// The last project is deliberately NOT remembered (PB-5862). Actor and
+// The last project is deliberately NOT remembered (MUL-5862). Actor and
 // project look symmetrical but aren't: an issue's target project is a
 // property of the issue being filed, not a standing preference, so carrying
 // the previous one forward guesses wrong as soon as the user moves on — and
@@ -31,7 +31,7 @@ export type QuickCreateActorType = "agent" | "team";
 //
 // The in-progress agent prompt no longer lives here — it moved into the
 // unified issue-create draft's `agent` slot (draft-store) so it shares one
-// lifecycle with the manual draft (PB-5181). This store keeps only the
+// lifecycle with the manual draft (MUL-5181). This store keeps only the
 // last-successful actor and the shared keep-open toggle.
 interface QuickCreateState {
   lastActorType: QuickCreateActorType | null;

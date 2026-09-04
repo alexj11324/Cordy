@@ -9,7 +9,7 @@ import enChat from "../../locales/en/chat.json";
 import enEditor from "../../locales/en/editor.json";
 
 // Uploads flow through the module-level coordinator, which calls
-// `api.uploadFile(file, ctx, signal)` (PB-5181 L2). Tests drive uploads by
+// `api.uploadFile(file, ctx, signal)` (MUL-5181 L2). Tests drive uploads by
 // mocking that call; it resolves a server Attachment row (makeUpload's extra
 // link/markdownLink fields are ignored by the engine, which re-derives them).
 const mockApiUploadFile = vi.hoisted(() => vi.fn());
@@ -61,36 +61,11 @@ const editorProps = vi.hoisted(() => ({
 }));
 // Records imperative editor calls so tests can assert whether a commit
 // scrubbed the editor (clearEditor) or left it intact (fire-and-forget).
-const editorState = vi.hoisted(() => ({ cleared: 0, blurred: 0, focused: 0 }));
-
-vi.mock("@lobehub/ui/es/Flex/index", () => ({
-  Flexbox: ({
-    children,
-    className,
-    style,
-    ...rest
-  }: React.PropsWithChildren<{
-    className?: string;
-    style?: React.CSSProperties;
-    [key: string]: unknown;
-  }>) => {
-    const dom: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(rest)) {
-      if (
-        key.startsWith("data-") ||
-        key.startsWith("aria-") ||
-        key === "id" ||
-        key === "role"
-      ) {
-        dom[key] = value;
-      }
-    }
-    return (
-      <div className={className} style={style} {...dom}>
-        {children}
-      </div>
-    );
-  },
+const editorState = vi.hoisted(() => ({
+  cleared: 0,
+  blurred: 0,
+  focused: 0,
+  adopted: [] as string[],
 }));
 
 vi.mock("../../editor", async () => ({
@@ -193,6 +168,7 @@ vi.mock("../../editor", async () => ({
       // Same file: the upload-pinned adopt path needs the real Guard 0, which
       // this mock has no concept of. Kept so the ref honours the full contract.
       adoptContent: (markdown: string) => {
+        editorState.adopted.push(markdown);
         valueRef.current = markdown;
       },
     }));
@@ -239,7 +215,7 @@ vi.mock("../../projects/components/project-picker", () => ({
 
 // Mock chat store with an in-memory implementation that supports both
 // (selector) calls and getState(). Draft attachments hold coordinator-owned
-// DraftUpload entries (PB-5181 L2).
+// DraftUpload entries (MUL-5181 L2).
 vi.mock("@patchbay/core/chat", () => {
   const state = {
     activeSessionId: null as string | null,
@@ -278,6 +254,7 @@ beforeEach(() => {
   editorState.cleared = 0;
   editorState.blurred = 0;
   editorState.focused = 0;
+  editorState.adopted = [];
   const state = useChatStore.getState() as unknown as {
     activeSessionId: string | null;
     selectedAgentId: string;
@@ -400,7 +377,7 @@ function element(props: Partial<React.ComponentProps<typeof ChatInput>>) {
   );
 }
 
-// PB-4864: an uncreated chat has ONE draft per workspace. `selectedAgentId`
+// MUL-4864: an uncreated chat has ONE draft per workspace. `selectedAgentId`
 // picks where the first send goes; it does not own the draft. Switching agent
 // mid-compose must therefore change nothing the user can see.
 describe("ChatInput new-chat draft identity", () => {
@@ -524,10 +501,49 @@ describe("ChatInput focusRequest", () => {
   });
 });
 
+describe("ChatInput conversation starter prefill", () => {
+  it("replaces live editor text and the stored draft", () => {
+    const onConversationStarterApplied = vi.fn();
+    const { rerender } = renderInput();
+
+    fireEvent.change(screen.getByTestId("editor"), {
+      target: { value: "unfinished local text" },
+    });
+    rerender(
+      element({
+        conversationStarterRequest: {
+          id: 1,
+          content: "Review the release pull request.",
+        },
+        onConversationStarterApplied,
+      }),
+    );
+
+    expect(useChatStore.getState().setInputDraft).toHaveBeenLastCalledWith(
+      "__draft_new__",
+      "Review the release pull request.",
+    );
+    expect(editorState.adopted).toEqual(["Review the release pull request."]);
+    expect(onConversationStarterApplied).toHaveBeenCalledTimes(1);
+  });
+
+  it("applies each request only once", () => {
+    const request = {
+      id: 1,
+      content: "Review the release pull request.",
+    };
+    const { rerender } = renderInput({ conversationStarterRequest: request });
+
+    rerender(element({ conversationStarterRequest: request }));
+
+    expect(editorState.adopted).toEqual([request.content]);
+  });
+});
+
 describe("ChatInput @ context wiring", () => {
   it("configures chat @ with current/recent issue/project context", () => {
     const contextItems = [
-      { id: "issue-1", label: "PB-1", type: "issue" as const, group: "current" as const },
+      { id: "issue-1", label: "MUL-1", type: "issue" as const, group: "current" as const },
     ];
 
     renderInput({ contextItems });
@@ -623,7 +639,7 @@ describe("ChatInput project context", () => {
     expect(onProjectChange).toHaveBeenCalledWith(null);
   });
 
-  it("keeps Stop and shows Queue Send when the running composer has content", async () => {
+  it("swaps Stop for Queue Send when the running composer has content", async () => {
     const onSend = vi.fn<ChatInputOnSend>(async () => true);
     const onStop = vi.fn();
     renderInput({ isRunning: true, allowSubmitWhileRunning: true, onSend, onStop });
@@ -635,7 +651,7 @@ describe("ChatInput project context", () => {
       target: { value: "follow-up" },
     });
 
-    expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Stop" })).not.toBeInTheDocument();
     const queueButton = screen.getByRole("button", { name: "Queue message" });
     expect(queueButton).not.toBeDisabled();
     fireEvent.click(queueButton);
@@ -659,7 +675,6 @@ describe("ChatInput project context", () => {
       target: { value: "follow-up with attachment" },
     });
     expect(screen.getByRole("button", { name: "Queue message" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
 
     await act(async () => {
       dropHandlers.onDrop?.([
@@ -687,58 +702,6 @@ describe("ChatInput project context", () => {
     expect(await screen.findByRole("button", { name: "Queue message" })).not.toBeDisabled();
   });
 
-  it("asks Wait vs Steer before sending from an issue conversation", async () => {
-    const onSend = vi.fn<ChatInputOnSend>(async () => true);
-    const onSteer = vi.fn<ChatInputOnSend>(async () => true);
-    renderInput({
-      isRunning: true,
-      allowSubmitWhileRunning: true,
-      chooseFollowUp: true,
-      onSend,
-      onSteer,
-      onStop: vi.fn(),
-    });
-
-    fireEvent.change(screen.getByTestId("editor"), {
-      target: { value: "keep going" },
-    });
-
-    const followUpButton = screen.getByRole("button", { name: "Choose how to follow up" });
-    expect(followUpButton).toHaveAttribute("aria-haspopup", "dialog");
-    expect(followUpButton).toHaveAttribute("aria-expanded", "false");
-    fireEvent.click(followUpButton);
-    expect(followUpButton).toHaveAttribute("aria-expanded", "true");
-    expect(onSend).not.toHaveBeenCalled();
-    expect(onSteer).not.toHaveBeenCalled();
-    expect(await screen.findByText("The agent is still working")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: /Wait/ }));
-    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1));
-    expect(onSteer).not.toHaveBeenCalled();
-  });
-
-  it("steers an issue follow-up instead of queueing it", async () => {
-    const onSend = vi.fn<ChatInputOnSend>(async () => true);
-    const onSteer = vi.fn<ChatInputOnSend>(async () => true);
-    renderInput({
-      isRunning: true,
-      allowSubmitWhileRunning: true,
-      chooseFollowUp: true,
-      onSend,
-      onSteer,
-      onStop: vi.fn(),
-    });
-
-    fireEvent.change(screen.getByTestId("editor"), {
-      target: { value: "change course" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Choose how to follow up" }));
-    fireEvent.click(await screen.findByRole("button", { name: /Steer/ }));
-
-    await waitFor(() => expect(onSteer).toHaveBeenCalledTimes(1));
-    expect(onSend).not.toHaveBeenCalled();
-  });
-
   it("shows only Stop while an older server is running", () => {
     renderInput({ isRunning: true, onStop: vi.fn() });
 
@@ -747,24 +710,18 @@ describe("ChatInput project context", () => {
   });
 
   it("keeps the composer chrome independent of the queue", () => {
+    // The follow-up queue tucks its bottom edge under the composer, which
+    // therefore ALWAYS paints on top (static z-10) — but the queue's presence
+    // must never restyle the input surface itself.
     const { container } = renderInput();
     const surface = container.querySelector('[data-slot="chat-input-surface"]');
-    const actions = container.querySelector('[data-slot="chat-input-actions"]');
 
     expect(container.firstElementChild).toHaveClass("relative", "z-10");
-    expect(surface).toHaveAttribute("data-lobe-chat-input");
-    expect(surface).toHaveClass("rounded-xl");
-    expect(actions).toBeInTheDocument();
-  });
-
-  it("renders the queue tray inside the composer card", () => {
-    const { container } = renderInput({
-      queueSlot: <div data-testid="queue-slot">queued</div>,
-    });
-    const surface = container.querySelector('[data-slot="chat-input-surface"]');
-
-    expect(surface?.contains(screen.getByTestId("queue-slot"))).toBe(true);
-    expect(surface).toHaveAttribute("data-lobe-chat-input");
+    expect(surface).toHaveClass("rounded-lg");
+    expect(surface).not.toHaveClass(
+      "rounded-4xl",
+      "shadow-[var(--menu-shadow)]",
+    );
   });
 
   it("locks the project control while a send is in flight so a mid-send switch cannot retarget the session", async () => {
@@ -773,7 +730,7 @@ describe("ChatInput project context", () => {
     // while that create is in flight, the session would be created against the
     // old project while the UI already shows the new one — the agent would
     // then receive a project/repo context the user no longer intends
-    // (PB-5150). The control must stay locked for the whole send, not only
+    // (MUL-5150). The control must stay locked for the whole send, not only
     // once the agent is running.
     let resolveSend: (accepted: boolean) => void;
     const sendPromise = new Promise<boolean>((res) => {
@@ -884,7 +841,7 @@ describe("ChatInput attachment wiring", () => {
     );
   });
 
-  it("binds attachment_ids when the upload's markdownLink differs from its link (PB-3130 regression)", async () => {
+  it("binds attachment_ids when the upload's markdownLink differs from its link (MUL-3130 regression)", async () => {
     // Pin: real LocalStorage uploads return `link` =
     // /uploads/<key>?exp&sig (short-lived) and `markdownLink` =
     // /api/attachments/<id>/download (stable). The editor persists
@@ -1477,7 +1434,7 @@ describe("ChatInput commit handoff", () => {
     expect(editorState.cleared).toBeGreaterThan(0);
     expect(useChatStore.getState().clearInputDraft).toHaveBeenCalledWith("__draft_new__");
     // Chat is a conversation: the caret returns to the box for the next turn
-    // rather than being dropped (PB-5181 follow-up).
+    // rather than being dropped (MUL-5181 follow-up).
     await waitFor(() => expect(editorState.focused).toBeGreaterThan(0));
     expect(editorState.blurred).toBe(0);
   });
@@ -1568,7 +1525,7 @@ describe("ChatInput send keeps composer focus", () => {
   });
 });
 
-// PB-6380: the composer's placeholder is the only text on screen once the input
+// MUL-6380: the composer's placeholder is the only text on screen once the input
 // is disabled, so it has to name the right reason. `agentAccessRevoked` wins over
 // `noAgent` because both are true in the reported case — the workspace's only
 // agent is the one this user may no longer run — and "create an agent" would then

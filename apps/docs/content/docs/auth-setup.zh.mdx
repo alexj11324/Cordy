@@ -18,10 +18,10 @@ Patchbay 默认使用邮箱验证码登录，也可以增加 Google OAuth。已�
 1. 在 [Resend](https://resend.com/) 验证发信域名并创建 API key。
 2. 设置：
 
-   ```dotenv
-   RESEND_API_KEY=re_xxxxxxxxxxxxxxxx
-   RESEND_FROM_EMAIL=noreply@example.com
-   ```
+ ```dotenv
+ RESEND_API_KEY=re_xxxxxxxxxxxxxxxx
+ RESEND_FROM_EMAIL=noreply@example.com
+ ```
 
 3. 重启 API 服务。
 
@@ -78,16 +78,24 @@ PATCHBAY_DEV_VERIFICATION_CODE=888888
 
 ## Google 登录
 
-1. 在托管的 `accounts` 服务中配置 Google provider。
-2. 把 broker 回调地址加入 **Authorized redirect URIs**：
+1. 在 [Google Cloud Console](https://console.cloud.google.com/) 创建 OAuth 2.0 client。
+2. 把 Patchbay 前端的回调地址加入 **Authorized redirect URIs**：
 
-   ```text
-   https://accounts.example.com/oauth/google/callback
-   ```
+ ```text
+ https://patchbay.example.com/auth/callback
+ ```
 
-3. Desktop 登录只使用 broker 的 `/oauth/google` 与
-   `/oauth/google/callback`。broker 只通过 `patchbay://auth/callback` 返回
-   一次性 PKCE code，Rust API 在 `/api/desktop-handoff/redeem` 兑换它。
+3. 设置：
+
+ ```dotenv
+ GOOGLE_CLIENT_ID=xxxxx.apps.googleusercontent.com
+ GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxxxxxxxxxxx
+ GOOGLE_REDIRECT_URI=https://patchbay.example.com/auth/callback
+ ```
+
+4. 重启 API 服务。
+
+Google Console 与 `GOOGLE_REDIRECT_URI` 中的地址必须完全一致，包括协议、端口和结尾斜杠。配置生效后，登录页会出现 Google 登录按钮；前端镜像不需要重新构建。
 
 ## 注册范围控制
 
@@ -133,7 +141,7 @@ ALLOWED_EMAILS=partner@example.net
 
 ## 登录有效期
 
-浏览器登录默认保持 30 天。可以用 `AUTH_TOKEN_TTL` 调整，支持 duration 或正整数秒数：
+浏览器登录默认保持 30 天。可以用 `AUTH_TOKEN_TTL` 调整，支持 Go duration 或正整数秒数：
 
 ```dotenv
 AUTH_TOKEN_TTL=720h

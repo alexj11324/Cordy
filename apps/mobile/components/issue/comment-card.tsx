@@ -5,7 +5,7 @@
  * recursive indentation. This matches the user's design call: "放在一个 card
  * 内部就行了 / no need for the Replying to label".
  *
- * Mobile flat-list rule (apps/mobile/AGENTS.md): same comments as web,
+ * Mobile flat-list rule (apps/mobile/CLAUDE.md): same comments as web,
  * different layout — web shows recursive tree, mobile shows one bubble per
  * thread. Counts agree (no comment is dropped or duplicated).
  *
@@ -64,7 +64,7 @@ interface Props {
   /** Plumbed through so each CommentBody can wire its reaction toggle to
    *  the correct issue's mutation key. */
   issueId: string;
-  /** Human-readable identifier (e.g. `PB-123`) used to build the shareable
+  /** Human-readable identifier (e.g. `MUL-123`) used to build the shareable
    *  web URL for the long-press "Copy Link" item. Optional — that item
    *  hides when missing. */
   issueIdentifier: string | undefined;

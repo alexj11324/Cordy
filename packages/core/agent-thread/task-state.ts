@@ -1,80 +1,39 @@
 import type { AgentTask, ChatPendingTask, ChatQueuedTask } from "../types";
 
-const ACTIVE_TASK_STATUSES = new Set([
-  "queued",
-  "deferred",
-  "dispatched",
-  "waiting_local_directory",
-  "running",
-]);
-
-const EXECUTING_TASK_STATUSES = new Set([
-  "dispatched",
-  "waiting_local_directory",
-  "running",
-]);
-
-const QUEUED_TASK_STATUSES = new Set(["queued", "deferred"]);
-
-export function isAgentTaskActive(task: Pick<AgentTask, "status">): boolean {
-  return ACTIVE_TASK_STATUSES.has(task.status);
+export function isAgentTaskActive(task: AgentTask): boolean {
+  switch (task.status) {
+    case "queued":
+    case "deferred":
+    case "dispatched":
+    case "waiting_local_directory":
+    case "running":
+      return true;
+    case "completed":
+    case "failed":
+    case "cancelled":
+      return false;
+    default:
+      return false;
+  }
 }
 
-export interface AgentThreadTaskState {
-  /** The task that owns the provider lane right now, if any. */
-  headTask: AgentTask | null;
-  /** The task that can be stopped while the provider is executing. */
-  executingTask: AgentTask | null;
-  /** Deferred/queued children behind the lane head. */
-  queuedTasks: ChatQueuedTask[];
+export function deriveAgentThreadTaskState(tasks: AgentTask[]): {
+  executingTask?: AgentTask;
   pendingTask: ChatPendingTask | null;
-}
-
-/**
- * Derive the provider lane from the complete task chain, not from the
- * envelope's newest task. A continuation child can be queued while its parent
- * is still running; in that state the parent remains the stop/status head and
- * the child is an explicit queue entry.
- */
-export function deriveAgentThreadTaskState(
-  tasks: readonly AgentTask[],
-): AgentThreadTaskState {
-  const activeTasks = tasks
-    .filter(isAgentTaskActive)
-    .slice()
-    .sort(
-      (left, right) =>
-        left.created_at.localeCompare(right.created_at) ||
-        left.id.localeCompare(right.id),
-    );
-  const executingTask =
-    activeTasks.find((task) => EXECUTING_TASK_STATUSES.has(task.status)) ??
-    null;
-  const headTask = executingTask ?? activeTasks[0] ?? null;
-  const queuedTasks = activeTasks
-    .filter(
-      (task) =>
-        task.id !== headTask?.id && QUEUED_TASK_STATUSES.has(task.status),
-    )
-    .map<ChatQueuedTask>((task) => ({
-      task_id: task.id,
-      status: task.status,
-      created_at: task.created_at,
-      content: task.trigger_summary?.trim() || task.handoff_note?.trim(),
-    }));
-
+  queuedTasks: ChatQueuedTask[];
+} {
+  const active = tasks.filter(isAgentTaskActive);
+  const executingTask = active.find((task) =>
+    task.status === "running" || task.status === "dispatched" || task.status === "waiting_local_directory",
+  );
+  const head = executingTask ?? active[0];
   return {
-    headTask,
     executingTask,
-    queuedTasks,
-    pendingTask: headTask
-      ? {
-          task_id: headTask.id,
-          status: headTask.status,
-          created_at: headTask.created_at,
-          supports_queue: true,
-          queued_tasks: queuedTasks,
-        }
+    pendingTask: head
+      ? { task_id: head.id, status: head.status, created_at: head.created_at }
       : null,
+    queuedTasks: active
+      .filter((task) => task.id !== head?.id)
+      .map((task) => ({ task_id: task.id, status: task.status, created_at: task.created_at })),
   };
 }

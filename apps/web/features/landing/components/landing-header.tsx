@@ -3,10 +3,9 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Menu, X } from "lucide-react";
-import { Show, SignInButton, SignUpButton, UserButton } from "@clerk/nextjs";
-import { useConfigStore } from "@patchbay/core/config";
 import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
 import { cn } from "@patchbay/ui/lib/utils";
+import { useAuthStore } from "@patchbay/core/auth";
 import { docsHrefForLocale, useLocale } from "../i18n";
 import { useDashboardCtaHref } from "../utils/use-dashboard-cta";
 import { formatStarCount, useGithubStars } from "../utils/use-github-stars";
@@ -18,9 +17,9 @@ export function LandingHeader({
   variant?: "dark" | "light";
 }) {
   const { t, locale } = useLocale();
+  const user = useAuthStore((s) => s.user);
   const stars = useGithubStars();
   const starsLabel = stars != null ? formatStarCount(stars) : null;
-  const allowSignup = useConfigStore((state) => state.allowSignup);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const docsHref = docsHrefForLocale(locale);
   const navLinks = [
@@ -29,6 +28,7 @@ export function LandingHeader({
     { href: "/changelog", label: t.header.changelog },
   ];
   const ctaHref = useDashboardCtaHref();
+  const ctaLabel = user ? t.header.dashboard : t.header.cta;
 
   return (
     <header
@@ -105,37 +105,12 @@ export function LandingHeader({
             {t.header.github}
             {starsLabel ? <GitHubStarsBadge label={starsLabel} /> : null}
           </Link>
-          <>
-            <Show when="signed-out">
-              <SignInButton>
-                <button
-                  type="button"
-                  className={headerButtonClassName("ghost", variant)}
-                >
-                  {t.header.signIn}
-                </button>
-              </SignInButton>
-              {allowSignup ? (
-                <SignUpButton>
-                  <button
-                    type="button"
-                    className={headerButtonClassName("solid", variant)}
-                  >
-                    {t.header.cta}
-                  </button>
-                </SignUpButton>
-              ) : null}
-            </Show>
-            <Show when="signed-in">
-              <UserButton />
-              <Link
-                href={ctaHref}
-                className={headerButtonClassName("solid", variant)}
-              >
-                {t.header.dashboard}
-              </Link>
-            </Show>
-          </>
+          <Link
+            href={ctaHref}
+            className={headerButtonClassName("solid", variant)}
+          >
+            {ctaLabel}
+          </Link>
         </div>
       </div>
 
@@ -177,39 +152,6 @@ export function LandingHeader({
               {t.header.github}
               {starsLabel ? <GitHubStarsBadge label={starsLabel} /> : null}
             </Link>
-            <>
-              <Show when="signed-out">
-                <SignInButton>
-                  <button
-                    type="button"
-                    onClick={() => setIsMenuOpen(false)}
-                    className={mobileNavLinkClassName(variant)}
-                  >
-                    {t.header.signIn}
-                  </button>
-                </SignInButton>
-                {allowSignup ? (
-                  <SignUpButton>
-                    <button
-                      type="button"
-                      onClick={() => setIsMenuOpen(false)}
-                      className={mobileNavLinkClassName(variant)}
-                    >
-                      {t.header.cta}
-                    </button>
-                  </SignUpButton>
-                ) : null}
-              </Show>
-              <Show when="signed-in">
-                <Link
-                  href={ctaHref}
-                  onClick={() => setIsMenuOpen(false)}
-                  className={mobileNavLinkClassName(variant)}
-                >
-                  {t.header.dashboard}
-                </Link>
-              </Show>
-            </>
           </div>
         </div>
       ) : null}

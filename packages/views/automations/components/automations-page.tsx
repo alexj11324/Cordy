@@ -3,7 +3,6 @@
 import { useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
-  AlarmClockCheck,
   BarChart3,
   Bug,
   Clock,
@@ -60,7 +59,7 @@ import {
   AutomationRowActions,
 } from "./automation-list-actions";
 import type { ScheduleConfig } from "./schedule-editor/model";
-import { useT, useTimeAgo } from "../../i18n";
+import { useLocale, useT, useTimeAgo } from "../../i18n";
 
 // Column template — single source of truth for header, rows, and skeletons.
 // Same conventions as the skills list (see list-grid.tsx and the comment
@@ -70,11 +69,11 @@ import { useT, useTimeAgo } from "../../i18n";
 //   the grid carries min-width = Σ(enabled tracks + gaps) and the wrapper
 //   scrolls horizontally when the enabled set outgrows the container. An
 //   enabled column must NEVER silently vanish (the "dead toggle" bug).
-// - Container < @2xl: static core set (name + executor), no horizontal
+// - Container < @2xl: static core set (name + assignee), no horizontal
 //   scroll, column toggles don't apply.
 const GRID_COLS =
-  "grid-cols-[0.75rem_1rem_minmax(120px,1fr)_var(--apc-executor)_1.75rem_0.75rem] " +
-  "@2xl:grid-cols-[0.75rem_1rem_minmax(200px,1fr)_var(--apc-executor)_var(--apc-trigger)_var(--apc-lastrun)_var(--apc-nextrun)_var(--apc-mode)_var(--apc-creator)_var(--apc-created)_1.75rem_0.75rem]";
+  "grid-cols-[0.75rem_1rem_minmax(120px,1fr)_var(--apc-assignee)_1.75rem_0.75rem] " +
+  "@2xl:grid-cols-[0.75rem_1rem_minmax(200px,1fr)_var(--apc-assignee)_var(--apc-trigger)_var(--apc-lastrun)_var(--apc-nextrun)_var(--apc-mode)_var(--apc-creator)_var(--apc-created)_1.75rem_0.75rem]";
 
 // h-12 rows; the virtualizer's fixed-size contract.
 const ROW_HEIGHT = 48;
@@ -82,7 +81,7 @@ const ROW_HEIGHT = 48;
 // Single source for hideable column widths: track vars and the grid's
 // min-width derive from the same numbers.
 const COLUMN_WIDTHS: Record<AutomationColumnKey, number> = {
-  executor: 144,
+  assignee: 144,
   trigger: 144,
   lastRun: 120,
   nextRun: 104,
@@ -108,7 +107,7 @@ function columnTrackVars(
       0,
     );
   return {
-    "--apc-executor": width("executor"),
+    "--apc-assignee": width("assignee"),
     "--apc-trigger": width("trigger"),
     "--apc-lastrun": width("lastRun"),
     "--apc-nextrun": width("nextRun"),
@@ -266,7 +265,7 @@ function NameCell({ automation }: { automation: Automation }) {
   );
 }
 
-function ExecutorCell({ automation }: { automation: Automation }) {
+function AssigneeCell({ automation }: { automation: Automation }) {
   const { getActorName } = useActorName();
   return (
     <ListGridCell className="gap-1.5">
@@ -468,9 +467,9 @@ function AutomationListHeader({
       <ListGridHeaderCell sorted={sorted("name")} onSort={() => onSort("name")}>
         {t(($) => $.page.table.name)}
       </ListGridHeaderCell>
-      {isColVisible("executor") ? (
+      {isColVisible("assignee") ? (
         <ListGridHeaderCell>
-          {t(($) => $.page.table.executor)}
+          {t(($) => $.page.table.assignee)}
         </ListGridHeaderCell>
       ) : (
         <ListGridHeaderCell className="px-0" />
@@ -601,6 +600,7 @@ function LoadingSkeleton() {
 
 export function AutomationsPage() {
   const { t } = useT("automations");
+  const locale = useLocale();
   const wsId = useWorkspaceId();
   const wsPaths = useWorkspacePaths();
   const rowLink = useRowLink();
@@ -673,8 +673,8 @@ export function AutomationsPage() {
   const rows = useMemo<Automation[]>(() => {
     const filtered = scopeRows.filter((a) => {
       if (
-        filters.executors.length > 0 &&
-        !filters.executors.includes(
+        filters.assignees.length > 0 &&
+        !filters.assignees.includes(
           actorFilterValue(a.executor_type, a.executor_id),
         )
       ) {
@@ -766,7 +766,7 @@ export function AutomationsPage() {
     <div className="relative flex flex-1 min-h-0 flex-col">
       {/* Header */}
       <CollectionPageHeader
-        icon={AlarmClockCheck}
+        icon={Zap}
         title={t(($) => $.page.title)}
         count={totalCount}
         actions={
@@ -803,14 +803,14 @@ export function AutomationsPage() {
         </div>
       ) : showEmpty ? (
         <div className="flex flex-col items-center px-5 py-16">
-          <AlarmClockCheck className="mb-3 h-10 w-10 text-faint-foreground" />
+          <Zap className="mb-3 h-10 w-10 text-faint-foreground" />
           <p className="text-body text-muted-foreground">
             {t(($) => $.page.empty.title)}
           </p>
           <p className="mb-6 mt-1 text-caption text-muted-foreground">
             {t(($) => $.page.empty.hint)}
           </p>
-          <div className="flex w-full max-w-3xl flex-col gap-3">
+          <div className="grid w-full max-w-3xl grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {TEMPLATES.map((tpl) => {
               const Icon = tpl.icon;
               return (
@@ -906,8 +906,8 @@ export function AutomationsPage() {
                         onToggle={() => toggleSelected(automation.id)}
                       />
                       <NameCell automation={automation} />
-                      {isColVisible("executor") ? (
-                        <ExecutorCell automation={automation} />
+                      {isColVisible("assignee") ? (
+                        <AssigneeCell automation={automation} />
                       ) : (
                         <ListGridCell className="px-0" />
                       )}
@@ -938,7 +938,7 @@ export function AutomationsPage() {
                       )}
                       {isColVisible("created") ? (
                         <ListGridCell className="hidden whitespace-nowrap text-caption tabular-nums text-muted-foreground @2xl:flex">
-                          {new Date(automation.created_at).toLocaleDateString()}
+                          {new Date(automation.created_at).toLocaleDateString(locale)}
                         </ListGridCell>
                       ) : (
                         <ListGridCell className="hidden px-0 @2xl:flex" />

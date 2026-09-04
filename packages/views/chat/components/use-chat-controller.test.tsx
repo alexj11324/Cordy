@@ -118,7 +118,7 @@ vi.mock("@patchbay/core/api", () => ({
     clearQueuedChatTasks: vi.fn(),
     prioritizeQueuedChatTask: vi.fn(),
   },
-  // Names the 403 that a revoked invoke permission raises (PB-4525); plain
+  // Names the 403 that a revoked invoke permission raises (MUL-4525); plain
   // failures have no reason code.
   dispatchReasonCode: () => undefined,
 }));
@@ -126,6 +126,7 @@ vi.mock("@patchbay/core/agents", () => ({
   isAgentRuntimeBound: (agent: { runtime_id: string; runtime_bound?: boolean }) =>
     agent.runtime_bound !== false && agent.runtime_id.length > 0,
   useAgentPresenceDetail: () => ({ availability: "online" }),
+  useCustomizeConversationStartersHref: () => null,
   useWorkspaceAgentAvailability: () => "available",
 }));
 vi.mock("@patchbay/core/hooks/use-file-upload", () => ({
@@ -328,7 +329,7 @@ describe("useChatController project context", () => {
     // The open session belongs to agent B, but the persisted preference is
     // still agent A. Switching to another project clears the active session,
     // which would otherwise drop selection back to the stale agent A and send
-    // the lazily-created chat to the wrong agent (PB-5150 regression). The
+    // the lazily-created chat to the wrong agent (MUL-5150 regression). The
     // switch must first sync selectedAgentId to the open session's agent.
     const projectSession = makeSession({
       id: "project-session",
@@ -834,7 +835,7 @@ describe("useChatController queued task actions", () => {
   });
 });
 
-// PB-4360 mount race: `activeSessionId` is persisted, so on a bare `/chat`
+// MUL-4360 mount race: `activeSessionId` is persisted, so on a bare `/chat`
 // navigation the page restores the last session as active for one frame before
 // its URL→store effect clears it back to null. The auto-mark-read must NOT fire
 // for that transiently-active session — otherwise the badge vanishes though the
@@ -887,11 +888,11 @@ describe("useChatController auto mark-read", () => {
   });
 });
 
-// Foreground gating (PB-4485): a reply that lands while the app is backgrounded
+// Foreground gating (MUL-4485): a reply that lands while the app is backgrounded
 // must stay unread and clear once the user returns. This composes with the
-// PB-4360 mount-race defer above — the read is scheduled a tick after the
+// MUL-4360 mount-race defer above — the read is scheduled a tick after the
 // effect runs — so each assertion advances fake timers to let it (or not) fire.
-describe("useChatController auto mark-read — foreground gating (PB-4485)", () => {
+describe("useChatController auto mark-read — foreground gating (MUL-4485)", () => {
   const unreadActive = makeSession({ id: "sU", agent_id: "agent-a", has_unread: true });
 
   beforeEach(() => {
@@ -1058,7 +1059,7 @@ describe("useChatController durable draft restores (#5219)", () => {
 
 // After a send, the composer is scrubbed only if the user is still on the
 // session they sent from — otherwise the shared editor is showing a different
-// draft and clearing it would wipe visible input. PB-4864 changes what
+// draft and clearing it would wipe visible input. MUL-4864 changes what
 // "still here" means: with ONE new-chat draft, the composer no longer belongs
 // to an agent, so only `activeSessionId` can answer it.
 describe("useChatController.handleSend — compose target tracking", () => {
@@ -1178,10 +1179,10 @@ describe("useChatController.handleSend — compose target tracking", () => {
   });
 });
 
-// PB-6380: a chat session outlives the permission that created it. The agent can
+// MUL-6380: a chat session outlives the permission that created it. The agent can
 // be flipped to personal, change owner, or drop this member from its allow-list;
-// the server keeps serving the Agent event history (view gate) but refuses every send
-// (invoke gate, PB-4525). The controller must reach that verdict up front so the
+// the server keeps serving the transcript (view gate) but refuses every send
+// (invoke gate, MUL-4525). The controller must reach that verdict up front so the
 // composer is read-only, instead of the user learning it from a 403 after typing.
 describe("useChatController revoked invoke permission", () => {
   const revokedSession = makeSession({ id: "revoked", agent_id: "agent-a" });
@@ -1199,7 +1200,7 @@ describe("useChatController revoked invoke permission", () => {
     invokableAgentIds.current = [];
     const result = setup("revoked", [revokedSession], [agentA]);
 
-    // Still bound — the Agent event history stays readable and the header keeps naming
+    // Still bound — the transcript stays readable and the header keeps naming
     // the real agent; only running is refused.
     expect(result.current.activeAgent?.id).toBe("agent-a");
     expect(result.current.isAgentAccessRevoked).toBe(true);

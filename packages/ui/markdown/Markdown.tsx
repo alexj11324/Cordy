@@ -78,7 +78,7 @@ export interface MarkdownProps {
    */
   renderFileCard?: (props: { href: string; filename: string }) => React.ReactNode
   /**
-   * When true, bare issue identifiers (e.g. `PB-123`, `TES-1`) are rewritten
+   * When true, bare issue identifiers (e.g. `MUL-123`, `TES-1`) are rewritten
    * to `mention://issue/<identifier>` links so `renderMention` can resolve them
    * to a navigable issue chip. Off by default — enable only on surfaces whose
    * `renderMention` knows how to resolve an identifier (see the app wrapper in

@@ -9,19 +9,19 @@ const {
   retryAuthentication,
   signOut,
 } = vi.hoisted(() => ({
-    coreProps: {
-      current: null as null | {
-        onLogout?: (
-          serverLogout?: Promise<void>,
-          options?: { rearmAuth?: boolean },
-        ) => void | Promise<void>;
-      },
+  coreProps: {
+    current: null as null | {
+      onLogout?: (
+        serverLogout?: Promise<void>,
+        options?: { rearmAuth?: boolean },
+      ) => void | Promise<void>;
     },
-    resetWelcome: vi.fn(),
-    clearLoggedInCookie: vi.fn(),
-    retryAuthentication: vi.fn(),
-    signOut: vi.fn(),
-  }));
+  },
+  resetWelcome: vi.fn(),
+  clearLoggedInCookie: vi.fn(),
+  retryAuthentication: vi.fn(),
+  signOut: vi.fn(),
+}));
 
 vi.mock("@clerk/nextjs", () => ({
   useAuth: () => ({ isSignedIn: true, signOut }),

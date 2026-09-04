@@ -1,232 +1,106 @@
-// @vitest-environment jsdom
-
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@patchbay/core/api";
-import {
-  clearDesktopHandoffVerifier,
-  completeDesktopHandoff,
-  createDesktopGoogleLoginUrl as createDesktopGoogleLoginUrlWithInitiation,
-  readDesktopHandoffVerifier,
-} from "./login-handoff";
+import { completeDesktopHandoff, createDesktopLoginUrl } from "./login-handoff";
 
-const initiateDesktopGoogleAttempt = vi.fn(async () => ({ registered: true }));
+const PENDING_HANDOFF_KEY = "patchbay_desktop_login_handoff";
 
-function createDesktopGoogleLoginUrl(
-  accountsUrl: string,
-  callbackProtocol = "patchbay",
-) {
-  return createDesktopGoogleLoginUrlWithInitiation(
-    accountsUrl,
-    callbackProtocol,
-    initiateDesktopGoogleAttempt,
-  );
+function pendingHandoff(): {
+  state: string;
+  verifier: string;
+  expiresAt: number;
+} {
+  const raw = localStorage.getItem(PENDING_HANDOFF_KEY);
+  if (!raw) throw new Error("desktop handoff was not persisted");
+  const value: unknown = JSON.parse(raw);
+  if (!Array.isArray(value) || value.length !== 1) {
+    throw new Error("unexpected pending handoff shape");
+  }
+  return value[0] as {
+    state: string;
+    verifier: string;
+    expiresAt: number;
+  };
 }
 
-describe("desktop login handoff", () => {
+describe("desktop auth handoff", () => {
   beforeEach(() => {
-    sessionStorage.clear();
     localStorage.clear();
-    initiateDesktopGoogleAttempt.mockClear();
-    vi.stubGlobal("crypto", {
-      getRandomValues: (bytes: Uint8Array) => {
-        bytes.fill(7);
-        return bytes;
-      },
-      subtle: {
-        digest: vi.fn(async () => new Uint8Array(32).buffer),
-      },
-    });
   });
 
-  it("authenticates the callback destination before exposing the browser binding", async () => {
-    const url = await createDesktopGoogleLoginUrl(
-      "https://accounts.aspectlylabs.com",
-      "patchbay-canary-login-fix-123",
+  it("registers a PKCE binding before building the browser URL", async () => {
+    const initiate = vi.fn().mockResolvedValue({ registered: true });
+
+    const url = await createDesktopLoginUrl(
+      "https://patchbay.example/",
+      initiate,
     );
     const parsed = new URL(url);
+    const pending = pendingHandoff();
 
-    expect(parsed.origin).toBe("https://accounts.aspectlylabs.com");
-    expect(parsed.pathname).toBe("/oauth/google");
+    expect(parsed.pathname).toBe("/login");
     expect(parsed.searchParams.get("platform")).toBe("desktop");
-    expect(parsed.searchParams.get("callback_protocol")).toBeNull();
-    expect(parsed.searchParams.get("code_challenge")).toHaveLength(43);
-    const state = parsed.searchParams.get("state");
-    expect(state).toHaveLength(43);
-    expect(parsed.searchParams.get("token")).toBeNull();
-    expect(readDesktopHandoffVerifier(state ?? "")).toHaveLength(43);
-    expect(initiateDesktopGoogleAttempt).toHaveBeenCalledWith(
-      state,
+    expect(parsed.searchParams.get("state")).toBe(pending.state);
+    expect(parsed.searchParams.get("code_challenge")).toBeTruthy();
+    expect(pending.verifier).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(pending.expiresAt).toBeGreaterThan(Date.now());
+    expect(initiate).toHaveBeenCalledWith(
+      pending.state,
       parsed.searchParams.get("code_challenge"),
-      "patchbay-canary-login-fix-123",
     );
   });
 
-  it("does not retain a verifier when server-side initiation fails", async () => {
-    initiateDesktopGoogleAttempt.mockResolvedValueOnce({ registered: false });
-
-    await expect(
-      createDesktopGoogleLoginUrl("https://accounts.aspectlylabs.com"),
-    ).rejects.toThrow(/initiation was rejected/i);
-
-    expect(localStorage.getItem("patchbay_desktop_login_handoff")).toBeNull();
-  });
-
-  it("does not clear the pending verifier for an unsolicited state", async () => {
-    await createDesktopGoogleLoginUrl("https://accounts.aspectlylabs.com");
-
-    expect(readDesktopHandoffVerifier("wrong-state")).toBeNull();
-    const raw = localStorage.getItem("patchbay_desktop_login_handoff");
-    expect(raw).not.toBeNull();
-  });
-
-  it("keeps the verifier after the renderer session is recreated", async () => {
-    const url = await createDesktopGoogleLoginUrl(
-      "https://accounts.aspectlylabs.com",
+  it("redeems once and makes a replay a no-op after clearing the verifier", async () => {
+    const initiate = vi.fn().mockResolvedValue({ registered: true });
+    const url = await createDesktopLoginUrl(
+      "https://patchbay.example",
+      initiate,
     );
-    const state = new URL(url).searchParams.get("state") ?? "";
+    const state = new URL(url).searchParams.get("state");
+    if (!state) throw new Error("missing handoff state");
 
-    sessionStorage.clear();
-
-    expect(readDesktopHandoffVerifier(state)).toHaveLength(43);
-  });
-
-  it("rejects an expired verifier", async () => {
-    vi.useFakeTimers();
-    try {
-      const url = await createDesktopGoogleLoginUrl(
-        "https://accounts.aspectlylabs.com",
-      );
-      const state = new URL(url).searchParams.get("state") ?? "";
-
-      vi.advanceTimersByTime(10 * 60 * 1000);
-
-      expect(readDesktopHandoffVerifier(state)).toBeNull();
-      expect(localStorage.getItem("patchbay_desktop_login_handoff")).toBeNull();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("clears the verifier only for the matching completed handoff", async () => {
-    const url = await createDesktopGoogleLoginUrl(
-      "https://accounts.aspectlylabs.com",
-    );
-    const state = new URL(url).searchParams.get("state") ?? "";
-
-    clearDesktopHandoffVerifier(state);
-
-    expect(readDesktopHandoffVerifier(state)).toBeNull();
-  });
-
-  it("retains independent verifiers when multiple browser logins are pending", async () => {
-    let seed = 7;
-    vi.stubGlobal("crypto", {
-      getRandomValues: (bytes: Uint8Array) => {
-        bytes.fill(seed++);
-        return bytes;
-      },
-      subtle: {
-        digest: vi.fn(async () => new Uint8Array(32).buffer),
-      },
-    });
-
-    const firstUrl = await createDesktopGoogleLoginUrl(
-      "https://accounts.aspectlylabs.com",
-    );
-    const secondUrl = await createDesktopGoogleLoginUrl(
-      "https://accounts.aspectlylabs.com",
-    );
-    const firstState = new URL(firstUrl).searchParams.get("state") ?? "";
-    const secondState = new URL(secondUrl).searchParams.get("state") ?? "";
-
-    expect(firstState).not.toBe(secondState);
-    expect(readDesktopHandoffVerifier(firstState)).toHaveLength(43);
-    expect(readDesktopHandoffVerifier(secondState)).toHaveLength(43);
-
-    clearDesktopHandoffVerifier(firstState);
-
-    expect(readDesktopHandoffVerifier(firstState)).toBeNull();
-    expect(readDesktopHandoffVerifier(secondState)).toHaveLength(43);
-  });
-
-  it("recovers from the persisted token after redeem succeeds but user hydration fails", async () => {
-    const url = await createDesktopGoogleLoginUrl(
-      "https://accounts.aspectlylabs.com",
-    );
-    const state = new URL(url).searchParams.get("state") ?? "";
-    const redeem = vi.fn().mockResolvedValue({ token: "session-token" });
-    const login = vi
-      .fn()
-      .mockRejectedValue(new TypeError("temporarily offline"));
+    const redeem = vi.fn().mockResolvedValue({ token: "native-jwt" });
+    const login = vi.fn().mockResolvedValue(undefined);
     const recoverPersistedToken = vi.fn();
+    const dependencies = { redeem, login, recoverPersistedToken };
 
     await expect(
-      completeDesktopHandoff("pbd_code", state, {
-        redeem,
-        login,
-        recoverPersistedToken,
-      }),
-    ).resolves.toEqual({ acknowledged: true, authenticated: false });
-
-    expect(login).toHaveBeenCalledWith("session-token");
-    expect(recoverPersistedToken).toHaveBeenCalledOnce();
-    expect(readDesktopHandoffVerifier(state)).toBeNull();
-  });
-
-  it("acknowledges a code only after redemption and authentication succeed", async () => {
-    const url = await createDesktopGoogleLoginUrl(
-      "https://accounts.aspectlylabs.com",
-    );
-    const state = new URL(url).searchParams.get("state") ?? "";
-
-    await expect(
-      completeDesktopHandoff("pbd_code", state, {
-        redeem: vi.fn().mockResolvedValue({ token: "session-token" }),
-        login: vi.fn().mockResolvedValue(undefined),
-        recoverPersistedToken: vi.fn(),
-      }),
+      completeDesktopHandoff("pbd_one-time-code", state, dependencies),
     ).resolves.toEqual({ acknowledged: true, authenticated: true });
-
-    expect(readDesktopHandoffVerifier(state)).toBeNull();
-  });
-
-  it("keeps the verifier when the one-time code was not redeemed", async () => {
-    const url = await createDesktopGoogleLoginUrl(
-      "https://accounts.aspectlylabs.com",
+    expect(redeem).toHaveBeenCalledWith(
+      "pbd_one-time-code",
+      expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
     );
-    const state = new URL(url).searchParams.get("state") ?? "";
-    const recoverPersistedToken = vi.fn();
+    expect(login).toHaveBeenCalledWith("native-jwt");
+    expect(localStorage.getItem(PENDING_HANDOFF_KEY)).toBeNull();
 
     await expect(
-      completeDesktopHandoff("invalid-code", state, {
-        redeem: vi.fn().mockRejectedValue(new Error("invalid handoff")),
-        login: vi.fn(),
-        recoverPersistedToken,
-      }),
-    ).rejects.toThrow("invalid handoff");
-
-    expect(recoverPersistedToken).not.toHaveBeenCalled();
-    expect(readDesktopHandoffVerifier(state)).toHaveLength(43);
+      completeDesktopHandoff("pbd_one-time-code", state, dependencies),
+    ).resolves.toEqual({ acknowledged: true, authenticated: false });
+    expect(redeem).toHaveBeenCalledTimes(1);
   });
 
-  it("retires the verifier after a terminal redeem rejection", async () => {
-    const url = await createDesktopGoogleLoginUrl(
-      "https://accounts.aspectlylabs.com",
+  it("drops a terminal redeem failure so a consumed or expired code is not retried", async () => {
+    const initiate = vi.fn().mockResolvedValue({ registered: true });
+    const url = await createDesktopLoginUrl(
+      "https://patchbay.example",
+      initiate,
     );
-    const state = new URL(url).searchParams.get("state") ?? "";
+    const state = new URL(url).searchParams.get("state");
+    if (!state) throw new Error("missing handoff state");
+
+    const redeem = vi
+      .fn()
+      .mockRejectedValue(
+        new ApiError("invalid desktop auth handoff", 401, "Unauthorized"),
+      );
 
     await expect(
-      completeDesktopHandoff("invalid-code", state, {
-        redeem: vi
-          .fn()
-          .mockRejectedValue(
-            new ApiError("invalid desktop handoff", 401, "Unauthorized"),
-          ),
+      completeDesktopHandoff("pbd_consumed-code", state, {
+        redeem,
         login: vi.fn(),
         recoverPersistedToken: vi.fn(),
       }),
     ).resolves.toEqual({ acknowledged: true, authenticated: false });
-
-    expect(readDesktopHandoffVerifier(state)).toBeNull();
+    expect(localStorage.getItem(PENDING_HANDOFF_KEY)).toBeNull();
   });
 });

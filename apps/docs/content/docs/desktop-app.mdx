@@ -91,45 +91,14 @@ These are the default locations — if your home directory has been moved or red
 This is **not** the CLI's `~/.patchbay/config.json`, and the key names differ: the CLI uses `server_url`, Desktop uses `apiUrl`. Desktop never reads the CLI's config — it manages a separate daemon profile under `~/.patchbay/profiles/desktop-<host>/`. Editing `config.json` does not change which server Desktop connects to.
 </Callout>
 
-`apiUrl` is the backend's public address; it is required and must use `http` or `https`. The other three URLs can be omitted — Desktop derives them automatically:
+`apiUrl` is the backend's public address; it is required and must use `http` or `https`. The other two URLs can be omitted — Desktop derives them automatically:
 
 - `wsUrl`: swaps the `apiUrl` scheme to `ws` or `wss` and appends `/ws` to the path;
 - `appUrl`: strips the `api.` prefix when the host starts with `api.` and has at least three labels (`api.example.com` → `example.com`); otherwise it stays the same as `apiUrl`.
-- `accountsUrl`: reuses `appUrl` unless authentication is deployed on a separate origin.
 
-### Desktop local development and hosted login
-
-For normal local development, use:
-
-```bash
-pnpm dev
-```
-
-This uses the checkout's isolated local API, database, and
-`http://localhost:<port>` login origin. To run local Electron/Vite while
-testing the hosted Google login and API, use the explicit hosted profile:
-
-```bash
-pnpm dev:hosted
-```
-
-That profile uses the complete hosted tuple:
-
-- `https://accounts.aspectlylabs.com` for the Google/Clerk login broker;
-- `https://api.aspectlylabs.com` for the API and WebSocket;
-- `https://patchbay.aspectlylabs.com` for the public app URL.
-
-The Electron renderer still hot-reloads locally, but the OAuth flow never
-passes through localhost. Hosted mode can read and change shared hosted data,
-so it is opt-in, does not silently fall back to local services, and keeps its
-Electron session storage separate from the local profile. Use
-`pnpm dev:doctor --hosted` to recheck the hosted API and accounts broker from a
-separate terminal.
-
-Usually `apiUrl` alone is enough. Override explicitly only when the derivation doesn't match your deployment; the four common cases:
+Usually `apiUrl` alone is enough. Override explicitly only when the derivation doesn't match your deployment; the three common cases:
 
 - the web app and the API are on different domains;
-- the authentication broker is on a separate domain;
 - WebSocket is deployed separately;
 - the host doesn't fit the prefix-stripping convention (two-label hosts like `api.local` keep their prefix).
 
@@ -138,14 +107,11 @@ Usually `apiUrl` alone is enough. Override explicitly only when the derivation d
   "schemaVersion": 1,
   "apiUrl": "https://api.example.com",
   "appUrl": "https://app.example.com",
-  "accountsUrl": "https://accounts.example.com",
   "wsUrl": "wss://ws.example.com/socket"
 }
 ```
 
 Restart Desktop after saving — the file is read once at startup. The two failure modes look different, which is the fastest way to tell them apart:
-
-The packaged app ignores the built-in Vite development tuple (`http://localhost:8080`, `ws://localhost:8080/ws`, and `http://localhost:3000`) if it is left behind in `desktop.json`, and returns to the cloud defaults. Other explicit self-hosted URLs remain supported.
 
 - **File not found** (wrong directory, or a filename that isn't exactly `desktop.json`) — Desktop uses the default Cloud configuration and shows no error. So if Desktop still reports a Cloud address and no configuration error, the file is not where Desktop is looking.
 - **File found but invalid** JSON, version, or URLs — Desktop shows a configuration error and does not fall back to Cloud.

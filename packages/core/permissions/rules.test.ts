@@ -183,7 +183,7 @@ describe("canAssignAgentToIssue", () => {
     ).toBe(true);
   });
 
-  it("denies a workspace admin from assigning someone else's private agent (PB-3963: admins no longer bypass)", () => {
+  it("denies a workspace admin from assigning someone else's private agent (MUL-3963: admins no longer bypass)", () => {
     const a = makeAgent({
       visibility: "private",
       permission_mode: "private",
@@ -340,7 +340,7 @@ describe("canEditComment / canDeleteComment", () => {
   });
   it("admin CAN delete an agent-authored comment", () => {
     // delete is broader than edit — admins moderate any comment regardless of
-    // author type. Mirrors the backend comment permission gate.
+    // author type. Mirrors backend `comment.go:507-512`.
     const c = makeComment({ author_type: "agent", author_id: "agt_1" });
     expect(canDeleteComment(c, { userId: BOB, role: "admin" }).allowed).toBe(
       true,

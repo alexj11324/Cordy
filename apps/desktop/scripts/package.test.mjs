@@ -1,89 +1,19 @@
+// @vitest-environment node
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
 import { afterEach, describe, it, expect } from "vitest";
 import {
-  bundleCliArgsForTarget,
   builderArgsForTarget,
   deriveVersion,
   DESCRIBE_ARGS,
   envWithLocalBins,
-  installPrebuiltCliForTarget,
   normalizeGitVersion,
   parsePackageArgs,
   resolveBuildMatrix,
   stripLeadingSeparator,
 } from "./package.mjs";
-
-describe("exact-commit prebuilt CLI artifacts", () => {
-  const cleanups = [];
-
-  afterEach(() => {
-    while (cleanups.length)
-      rmSync(cleanups.pop(), { recursive: true, force: true });
-  });
-
-  it("validates commit, target and checksum before staging the binary", () => {
-    const root = mkdtempSync(join(tmpdir(), "patchbay-prebuilt-cli-"));
-    cleanups.push(root);
-    const artifactDir = join(root, "artifact");
-    const desktopDirectory = join(root, "desktop");
-    mkdirSync(artifactDir, { recursive: true });
-    const binary = join(artifactDir, "patchbay");
-    writeFileSync(binary, "release fixture");
-    writeFileSync(
-      join(artifactDir, "manifest.json"),
-      JSON.stringify({
-        schemaVersion: 1,
-        commit: "exact-commit",
-        rustTarget: "aarch64-apple-darwin",
-        runtimePlatform: "darwin",
-        runtimeArch: "arm64",
-        binaryName: "patchbay",
-        sha256: createHash("sha256").update("release fixture").digest("hex"),
-      }),
-    );
-
-    const staged = installPrebuiltCliForTarget(
-      { platform: "mac", arch: "arm64" },
-      artifactDir,
-      { desktopDirectory, expectedCommit: "exact-commit" },
-    );
-    expect(readFileSync(staged, "utf8")).toBe("release fixture");
-    expect(
-      existsSync(
-        join(desktopDirectory, "resources", "bin", "release-cli-manifest.json"),
-      ),
-    ).toBe(true);
-  });
-
-  it("rejects an artifact from another commit", () => {
-    const root = mkdtempSync(join(tmpdir(), "patchbay-prebuilt-cli-"));
-    cleanups.push(root);
-    const artifactDir = join(root, "artifact");
-    mkdirSync(artifactDir, { recursive: true });
-    writeFileSync(
-      join(artifactDir, "manifest.json"),
-      JSON.stringify({ commit: "old" }),
-    );
-    expect(() =>
-      installPrebuiltCliForTarget(
-        { platform: "mac", arch: "arm64" },
-        artifactDir,
-        { desktopDirectory: join(root, "desktop"), expectedCommit: "new" },
-      ),
-    ).toThrow(/does not match commit\/target/);
-  });
-});
 
 describe("normalizeGitVersion", () => {
   it("returns null for empty / nullish input", () => {
@@ -186,7 +116,7 @@ describe("deriveVersion (real git describe)", () => {
     const run = (...args) =>
       execFileSync("git", args, { cwd: dir, encoding: "utf-8" });
     run("init", "-q");
-    run("config", "user.email", "test@example.com");
+    run("config", "user.email", "test@patchbay.ai");
     run("config", "user.name", "test");
     run("config", "commit.gpgsign", "false");
     run("commit", "-q", "--allow-empty", "-m", "root");
@@ -226,23 +156,18 @@ describe("deriveVersion (real git describe)", () => {
 
 describe("stripLeadingSeparator", () => {
   it("removes the leading -- inserted by npm/pnpm", () => {
-    expect(
-      stripLeadingSeparator(["--", "--mac", "--arm64", "--publish", "always"]),
-    ).toEqual(["--mac", "--arm64", "--publish", "always"]);
+    expect(stripLeadingSeparator(["--", "--mac", "--arm64", "--publish", "always"])).toEqual([
+      "--mac", "--arm64", "--publish", "always",
+    ]);
   });
 
   it("leaves args untouched when there is no leading --", () => {
-    expect(stripLeadingSeparator(["--mac", "--arm64"])).toEqual([
-      "--mac",
-      "--arm64",
-    ]);
+    expect(stripLeadingSeparator(["--mac", "--arm64"])).toEqual(["--mac", "--arm64"]);
   });
 
   it("does not strip a -- that appears mid-argv", () => {
     expect(stripLeadingSeparator(["--mac", "--", "--arm64"])).toEqual([
-      "--mac",
-      "--",
-      "--arm64",
+      "--mac", "--", "--arm64",
     ]);
   });
 
@@ -255,14 +180,10 @@ describe("parsePackageArgs", () => {
   it("collects per-platform targets and shared args", () => {
     expect(
       parsePackageArgs([
-        "--win",
-        "nsis",
-        "--mac",
-        "dmg",
-        "zip",
+        "--win", "nsis",
+        "--mac", "dmg", "zip",
         "--arm64",
-        "--publish",
-        "never",
+        "--publish", "never",
       ]),
     ).toEqual({
       allPlatforms: false,
@@ -285,9 +206,7 @@ describe("parsePackageArgs", () => {
   });
 
   it("tracks the all-platforms shortcut", () => {
-    expect(
-      parsePackageArgs(["--all-platforms", "--publish", "never"]).allPlatforms,
-    ).toBe(true);
+    expect(parsePackageArgs(["--all-platforms", "--publish", "never"]).allPlatforms).toBe(true);
   });
 });
 
@@ -308,8 +227,8 @@ describe("resolveBuildMatrix", () => {
     ).toEqual([{ platform: "mac", arch: "arm64" }]);
   });
 
-  it("fails before packaging when all-platforms would require Rust cross-linkers", () => {
-    expect(() =>
+  it("expands all-platforms on macOS", () => {
+    expect(
       resolveBuildMatrix(
         {
           allPlatforms: true,
@@ -321,23 +240,14 @@ describe("resolveBuildMatrix", () => {
         "darwin",
         "arm64",
       ),
-    ).toThrow(/cannot build Rust CLIs across operating systems/);
-  });
-
-  it("rejects an explicit cross-platform target before invoking Cargo", () => {
-    expect(() =>
-      resolveBuildMatrix(
-        {
-          allPlatforms: false,
-          sharedArgs: [],
-          platformTargets: { mac: [], win: [], linux: [] },
-          requestedPlatforms: ["win"],
-          requestedArchs: ["x64"],
-        },
-        "darwin",
-        "arm64",
-      ),
-    ).toThrow(/cannot build Rust CLI for win on mac/);
+    ).toEqual([
+      { platform: "mac", arch: "arm64" },
+      { platform: "mac", arch: "x64" },
+      { platform: "win", arch: "x64" },
+      { platform: "win", arch: "arm64" },
+      { platform: "linux", arch: "x64" },
+      { platform: "linux", arch: "arm64" },
+    ]);
   });
 
   it("rejects unsupported architectures", () => {
@@ -491,22 +401,6 @@ describe("builderArgsForTarget", () => {
   });
 });
 
-describe("bundleCliArgsForTarget", () => {
-  it("requires the release profile for every formal Desktop package", () => {
-    const args = bundleCliArgsForTarget({ platform: "mac", arch: "arm64" });
-
-    expect(args[0]).toMatch(/bundle-cli\.mjs$/);
-    expect(args.slice(1)).toEqual([
-      "--profile",
-      "release",
-      "--target-platform",
-      "darwin",
-      "--target-arch",
-      "arm64",
-    ]);
-  });
-});
-
 describe("envWithLocalBins", () => {
   it("prepends desktop-local binary directories to PATH", () => {
     const desktopRoot = "/repo/apps/desktop";
@@ -525,13 +419,7 @@ describe("envWithLocalBins", () => {
   it("preserves an existing Path key and avoids duplicate entries", () => {
     const desktopRoot = "/repo/apps/desktop";
     const desktopBin = resolve(desktopRoot, "node_modules", ".bin");
-    const workspaceBin = resolve(
-      desktopRoot,
-      "..",
-      "..",
-      "node_modules",
-      ".bin",
-    );
+    const workspaceBin = resolve(desktopRoot, "..", "..", "node_modules", ".bin");
     const result = envWithLocalBins(
       { Path: [desktopBin, "runner-bin", workspaceBin].join(delimiter) },
       desktopRoot,
@@ -545,8 +433,26 @@ describe("envWithLocalBins", () => {
   });
 });
 
+describe("ordinary Desktop build boundary", () => {
+  it("keeps CLI preparation out of the normal Electron build", () => {
+    const manifestPath = [
+      resolve(process.cwd(), "package.json"),
+      resolve(process.cwd(), "apps/desktop/package.json"),
+    ].find((candidate) => {
+      if (!existsSync(candidate)) return false;
+      return JSON.parse(readFileSync(candidate, "utf-8")).name === "@patchbay/desktop";
+    });
+    expect(manifestPath, "Desktop package.json not found").toBeTruthy();
+    const { scripts } = JSON.parse(readFileSync(manifestPath, "utf-8"));
+    // Run the actual build separately for acceptance. This pins the public
+    // entry point so adding the slow CLI/release path back is a regression.
+    expect(scripts.build).toBe("electron-vite build");
+    expect(scripts.package).toBe("node scripts/package.mjs");
+  });
+});
+
 describe("electron-builder.yml packaging config", () => {
-  // Regression guard for upstream packaging issue 5595. The
+  // Regression guard for github.com/patchbay-ai/patchbay/issues/5595. The
   // multi-arch release build writes each target's output to
   // dist/<platform>-<arch> in the same apps/desktop dir; electron-builder
   // only auto-excludes the *current* target's output dir, so without an
@@ -588,5 +494,16 @@ describe("electron-builder.yml packaging config", () => {
     const entries = readFilesBlock(readFileSync(configPath, "utf-8"));
     expect(entries.length).toBeGreaterThan(0);
     expect(entries).toContain("!dist/**");
+  });
+
+  it("pins the canonical release repository and hardened macOS signing", () => {
+    expect(configPath, "electron-builder.yml not found").toBeTruthy();
+    const raw = readFileSync(configPath, "utf-8");
+    expect(raw).toMatch(/\nmac:\n(?:.*\n)*? {2}hardenedRuntime: true\n/);
+    expect(raw).toContain("  entitlements: build/entitlements.mac.plist");
+    expect(raw).toContain("  entitlementsInherit: build/entitlements.mac.plist");
+    expect(raw).toMatch(/\npublish:\n[\s\S]*\n {2}owner: alexj11324\n/);
+    expect(raw).toMatch(/\npublish:\n[\s\S]*\n {2}repo: Cordy\n/);
+    expect(raw).toMatch(/\npublish:\n[\s\S]*\n {2}releaseType: draft\n/);
   });
 });

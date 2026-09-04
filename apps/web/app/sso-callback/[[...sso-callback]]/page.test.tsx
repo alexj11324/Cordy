@@ -37,5 +37,4 @@ describe("SSOCallbackPage", () => {
       signUpFallbackRedirectUrl: "/usage?tab=billing#summary",
     });
   });
-
 });

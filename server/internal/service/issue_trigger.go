@@ -1,0 +1,218 @@
+package service
+
+import (
+	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/patchbay-ai/patchbay/server/internal/issuestatus"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+)
+
+// RunEnqueueSource identifies which kind of issue write would start an agent
+// run. It is surfaced in preview responses so the UI can explain each trigger.
+type RunEnqueueSource string
+
+const (
+	// RunSourceExecutor covers issue creation and executor changes — the issue
+	// is being handed to an agent/team. Parks silently on backlog.
+	RunSourceExecutor RunEnqueueSource = "assign"
+	// RunSourceStatus covers promoting an issue with an executor out of
+	// backlog into an active status.
+	RunSourceStatus RunEnqueueSource = "status"
+)
+
+// IssueTriggerProbe carries the request-scoped checks WillEnqueueRun cannot
+// resolve from issue state alone.
+//
+// CanAccessAgent is the private-agent gate. The write paths enforce it at the
+// HTTP boundary (validateExecutorPair on assign, canEnqueueTeamLeader inside
+// the team enqueue helper) and therefore pass an allow-all probe so the gate
+// is never duplicated or sunk into the service layer. Preview passes the real
+// gate so it never leaks a private agent's readiness to a member who cannot
+// see it. A nil func is treated as allow-all.
+//
+// IsSelfLoop reports whether promoting this issue out of backlog would be the
+// calling agent re-triggering its own running task. Only the status source
+// consults it. A nil func means "not a self-loop".
+//
+// SuppressActiveSelfExecutor reports whether a direct agent executor change is a
+// trusted agent claiming ownership for itself while the target (issue, agent)
+// pair already has a non-terminal task. The ownership update still succeeds;
+// only the duplicate enqueue is suppressed. Cross-issue handoffs to a fresh
+// target remain runnable. A nil func means "do not suppress".
+type IssueTriggerProbe struct {
+	CanAccessAgent               func(agent db.Agent) bool
+	IsSelfLoop                   func() bool
+	SuppressActiveSelfExecutor func(agentID pgtype.UUID) bool
+}
+
+// IssueTriggerInput describes one prospective issue write in its post-write
+// shape. ExecutorChanged / StatusChanged mark which fields the write touches;
+// IsCreate marks a brand-new issue (no prior task to cancel, no self-loop).
+type IssueTriggerInput struct {
+	Issue           db.Issue
+	PrevStatus      string
+	IsCreate        bool
+	ExecutorChanged bool
+	StatusChanged   bool
+}
+
+// IssueRunTrigger is the resolved decision shared by preview and the write
+// paths. AgentID is the agent that will actually run — the executor for an
+// agent issue, the team leader for a team issue.
+type IssueRunTrigger struct {
+	IssueID      pgtype.UUID
+	AgentID      pgtype.UUID
+	ExecutorType string
+	Source       RunEnqueueSource
+}
+
+func allowAllAgents(db.Agent) bool { return true }
+
+// WillEnqueueRun is the single predicate answering "will this issue write
+// start an agent run, and for whom". It is the one source of truth shared by
+// the issue update / batch-update write paths and the preview endpoint,
+// replacing the per-site copies that drifted (team omitted, self-loop
+// omitted, four entry points inconsistent — see MUL-3375).
+//
+// It is intentionally a distinct predicate from the comment trigger
+// (executor fallback comment routing): issue writes park on backlog while comments fire
+// in any status. The two only share leaf readiness checks (AgentReadiness,
+// the pending-task dedup), not the top-level decision.
+//
+// The decision must equal the real enqueue conditions so preview never claims
+// a net-new run that the write path then drops. The write enqueues through
+// CreateAgentTask, guarded by the (issue_id, agent_id) partial unique index
+// over pending (queued/dispatched) tasks; the pending check below mirrors that
+// guard, and only the status source needs it:
+//   - status source (backlog → active) can re-fire against an executor that
+//     already holds a pending task (e.g. one a @mention raised while the issue
+//     sat in backlog); the check keeps preview from promising a run the unique
+//     index would coalesce away.
+//   - assign source (create / executor change) skips the check: a create
+//     targets a fresh issue with no prior task, and an executor change no longer
+//     cancels existing tasks (#4963 / MUL-4113) — in the rare case the new
+//     executor already holds a pending task the insert simply no-ops on the
+//     same unique index, so the executor still ends up with one pending run.
+func (s *IssueService) WillEnqueueRun(ctx context.Context, in IssueTriggerInput, probe IssueTriggerProbe) (IssueRunTrigger, bool) {
+	issue := in.Issue
+	if !issue.ExecutorType.Valid || !issue.ExecutorID.Valid {
+		return IssueRunTrigger{}, false
+	}
+	canAccess := probe.CanAccessAgent
+	if canAccess == nil {
+		canAccess = allowAllAgents
+	}
+
+	// The status source also requires LEAVING the backlog category, not merely
+	// changing the status key. Before custom statuses a key change out of
+	// `backlog` was always a category change, so the two were the same
+	// condition; now `backlog` → a custom status in the `backlog` category is a
+	// move within the parking lot, and starting a run on it would break the one
+	// promise backlog makes. (MUL-6463)
+	//
+	// Both sides of the transition are normalized to the canonical status they
+	// inherit, so a custom status in the `backlog` category parks exactly like
+	// Backlog and a custom status in the `todo` category starts a run exactly
+	// like Todo. Built-in keys resolve to themselves without a query, leaving
+	// this decision bit-identical for workspaces with no custom statuses —
+	// which is the whole set of them until an admin defines one. (MUL-6243)
+	currentStatus := issuestatus.Effective(ctx, s.Queries, issue.WorkspaceID, issue.Status)
+	prevStatus := issuestatus.Effective(ctx, s.Queries, issue.WorkspaceID, in.PrevStatus)
+
+	var source RunEnqueueSource
+	switch {
+	case in.IsCreate || in.ExecutorChanged:
+		// Backlog is the parking lot: assigning into backlog never starts a run.
+		if currentStatus == "backlog" {
+			return IssueRunTrigger{}, false
+		}
+		source = RunSourceExecutor
+	case in.StatusChanged && prevStatus == "backlog" &&
+		currentStatus != "backlog" &&
+		currentStatus != "done" && currentStatus != "cancelled":
+		if probe.IsSelfLoop != nil && probe.IsSelfLoop() {
+			return IssueRunTrigger{}, false
+		}
+		source = RunSourceStatus
+	default:
+		return IssueRunTrigger{}, false
+	}
+
+	switch issue.ExecutorType.String {
+	case "agent":
+		agent, err := s.Queries.GetAgent(ctx, issue.ExecutorID)
+		if err != nil || !agent.RuntimeID.Valid || agent.ArchivedAt.Valid {
+			return IssueRunTrigger{}, false
+		}
+		if !canAccess(agent) {
+			return IssueRunTrigger{}, false
+		}
+		if source == RunSourceExecutor && !in.IsCreate && probe.SuppressActiveSelfExecutor != nil &&
+			probe.SuppressActiveSelfExecutor(issue.ExecutorID) {
+			return IssueRunTrigger{}, false
+		}
+		if source == RunSourceStatus && s.hasPendingRun(ctx, issue.ID, issue.ExecutorID) {
+			return IssueRunTrigger{}, false
+		}
+		return IssueRunTrigger{
+			IssueID:      issue.ID,
+			AgentID:      issue.ExecutorID,
+			ExecutorType: "agent",
+			Source:       source,
+		}, true
+
+	case "team":
+		// Pair-scoped self-executor suppression intentionally applies only to
+		// direct agent ownership. Assigning a team changes execution context
+		// (leader briefing, roles, and member routing), so even when the acting
+		// agent is that team's leader it is an intentional group handoff rather
+		// than a redundant direct self-claim. The status path below still uses
+		// the leader's pending-task guard.
+		team, err := s.Queries.GetTeamInWorkspace(ctx, db.GetTeamInWorkspaceParams{
+			ID:          issue.ExecutorID,
+			WorkspaceID: issue.WorkspaceID,
+		})
+		if err != nil {
+			return IssueRunTrigger{}, false
+		}
+		leader, err := s.Queries.GetAgent(ctx, team.LeaderID)
+		if err != nil {
+			return IssueRunTrigger{}, false
+		}
+		verdict, err := AgentReadiness(ctx, s.runtimeLookup(s.Queries), leader)
+		if err != nil || !verdict.Ready() {
+			return IssueRunTrigger{}, false
+		}
+		if !canAccess(leader) {
+			return IssueRunTrigger{}, false
+		}
+		if source == RunSourceStatus && s.hasPendingRun(ctx, issue.ID, team.LeaderID) {
+			return IssueRunTrigger{}, false
+		}
+		return IssueRunTrigger{
+			IssueID:      issue.ID,
+			AgentID:      team.LeaderID,
+			ExecutorType: "team",
+			Source:       source,
+		}, true
+	}
+	return IssueRunTrigger{}, false
+}
+
+// hasPendingRun reports whether the agent already holds a queued or dispatched
+// task for the issue (the (issue_id, agent_id) unique-index slot). Errors fail
+// closed to "pending" so preview never over-promises a run.
+func (s *IssueService) hasPendingRun(ctx context.Context, issueID, agentID pgtype.UUID) bool {
+	pending, err := s.Queries.HasPendingTaskForIssueAndAgent(ctx, db.HasPendingTaskForIssueAndAgentParams{
+		IssueID: issueID,
+		AgentID: agentID,
+		// Key dedup on the reviewed head so a pending run against an old HEAD
+		// does not shadow a request after HEAD advanced (TEN-356).
+		HeadSha: headShaText(s.TaskService.ResolveIssueReviewSHA(ctx, issueID)),
+	})
+	if err != nil {
+		return true
+	}
+	return pending
+}

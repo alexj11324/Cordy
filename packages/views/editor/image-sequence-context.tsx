@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * ImageSequenceProvider — prev / next for the images of ONE surface (PB-5752).
+ * ImageSequenceProvider — prev / next for the images of ONE surface (MUL-5752).
  *
  * A surface that can hold several images (an issue: description + every
  * comment; a chat session: every message) mounts this once with the ordered

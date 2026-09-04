@@ -1,0 +1,62 @@
+{
+  "page": {
+    "title": "작업 결과물",
+    "description": "daemon 실행 provenance에서 발견된 결과물입니다.",
+    "empty": "아직 작업 결과물이 없습니다",
+    "error": "작업 결과물을 불러올 수 없습니다.",
+    "provenance_title": "실행 provenance",
+    "provenance_empty": "기록된 실행 provenance가 없습니다.",
+    "load_more": "더 불러오기",
+    "retry": "다시 시도"
+  },
+  "detail": {
+    "title": "작업 결과물",
+    "not_found": "이 작업 결과물을 사용할 수 없습니다.",
+    "external_identity": "외부 식별자",
+    "provider": "제공자",
+    "kind": "종류",
+    "created": "생성됨",
+    "updated": "업데이트됨",
+    "open_external": "외부 리소스 열기",
+    "provenance": "실행 provenance",
+    "provenance_empty": "이 결과물을 가리키는 provenance가 없습니다.",
+    "back": "작업 결과물로 돌아가기"
+  },
+  "relations": {
+    "title": "작업 결과물",
+    "empty": "이 이슈에 연결된 작업 결과물이 없습니다.",
+    "attach": "작업 결과물 연결",
+    "dialog_title": "작업 결과물 연결",
+    "select_label": "작업 결과물",
+    "select_placeholder": "작업 결과물 선택",
+    "no_products": "연결할 수 있는 작업 결과물이 없습니다.",
+    "close_intent": "전달 후 이 이슈를 닫도록 제안",
+    "close_intent_short": "닫기 제안",
+    "link": "연결",
+    "cancel": "취소",
+    "success": "작업 결과물을 연결했습니다.",
+    "error": "작업 결과물을 연결할 수 없습니다.",
+    "loading": "작업 결과물을 불러오는 중…",
+    "detach": "작업 결과물 제거",
+    "detach_success": "작업 결과물을 제거했습니다.",
+    "detach_error": "작업 결과물을 제거할 수 없습니다.",
+    "url_label": "Pull request URL",
+    "url_placeholder": "https://github.com/owner/repository/pull/123",
+    "attach_url": "Pull request 연결",
+    "source_manual": "멤버가 연결",
+    "source_task": "작업이 보고",
+    "source_branch": "실행 브랜치에서 발견",
+    "source_provider": "제공자가 발견"
+  },
+  "provenance": {
+    "status": "발견 상태",
+    "head": "Head",
+    "branch": "브랜치",
+    "sha": "커밋 SHA",
+    "repo": "저장소",
+    "workspace": "실행 작업 공간",
+    "matches": "일치 수",
+    "reason": "이유",
+    "unknown": "알 수 없음"
+  }
+}

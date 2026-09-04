@@ -6,7 +6,7 @@ import { Bot } from "lucide-react";
 import { useWorkspaceId } from "@patchbay/core/hooks";
 import { isAgentRuntimeBound } from "@patchbay/core/agents";
 import { agentListOptions, teamListOptions } from "@patchbay/core/workspace/queries";
-import type { AutomationExecutorType } from "@patchbay/core/types";
+import type { AutomationAssigneeType } from "@patchbay/core/types";
 import { ActorAvatar } from "../../../common/actor-avatar";
 import {
   PropertyPicker,
@@ -17,20 +17,20 @@ import {
 import { useT } from "../../../i18n";
 import { matchesPinyin } from "../../../editor/extensions/pinyin-match";
 
-export interface ExecutorSelection {
-  type: AutomationExecutorType;
+export interface AssigneeSelection {
+  type: AutomationAssigneeType;
   id: string;
 }
 
 export function AgentPicker({
-  executor,
+  assignee,
   onChange,
   trigger: customTrigger,
   triggerRender,
   align = "start",
 }: {
-  executor: ExecutorSelection | null;
-  onChange: (next: ExecutorSelection) => void;
+  assignee: AssigneeSelection | null;
+  onChange: (next: AssigneeSelection) => void;
   trigger?: React.ReactNode;
   triggerRender?: React.ReactElement;
   align?: "start" | "center" | "end";
@@ -50,9 +50,9 @@ export function AgentPicker({
   );
 
   const selectedAgent =
-    executor?.type === "agent" ? activeAgents.find((a) => a.id === executor.id) : undefined;
+    assignee?.type === "agent" ? activeAgents.find((a) => a.id === assignee.id) : undefined;
   const selectedTeam =
-    executor?.type === "team" ? activeTeams.find((s) => s.id === executor.id) : undefined;
+    assignee?.type === "team" ? activeTeams.find((s) => s.id === assignee.id) : undefined;
   const selectedName = selectedAgent?.name ?? selectedTeam?.name;
 
   const query = filter.trim().toLowerCase();
@@ -61,10 +61,10 @@ export function AgentPicker({
   const filteredAgents = activeAgents.filter((a) => matches(a.name));
   const filteredTeams = activeTeams.filter((s) => matches(s.name));
 
-  const isSelected = (type: AutomationExecutorType, id: string) =>
-    executor?.type === type && executor?.id === id;
+  const isSelected = (type: AutomationAssigneeType, id: string) =>
+    assignee?.type === type && assignee?.id === id;
 
-  const handlePick = (type: AutomationExecutorType, id: string) => {
+  const handlePick = (type: AutomationAssigneeType, id: string) => {
     onChange({ type, id });
     setOpen(false);
   };
@@ -82,20 +82,20 @@ export function AgentPicker({
       trigger={
         customTrigger ?? (
           <>
-            {executor && (selectedAgent || selectedTeam) ? (
+            {assignee && (selectedAgent || selectedTeam) ? (
               <>
                 <ActorAvatar
-                  actorType={executor.type}
-                  actorId={executor.id}
+                  actorType={assignee.type}
+                  actorId={assignee.id}
                   size="sm"
-                  showStatusDot={executor.type === "agent"}
+                  showStatusDot={assignee.type === "agent"}
                 />
                 <span className="truncate">{selectedName}</span>
               </>
             ) : (
               <>
                 <Bot className="size-3" />
-                <span>{t(($) => $.agent_picker.select_executor)}</span>
+                <span>{t(($) => $.agent_picker.select_assignee)}</span>
               </>
             )}
           </>

@@ -53,7 +53,7 @@ export function settleUploadNode(editor: any, uploadId: string, result: UploadRe
   const hit = findUploadNode(editor, uploadId);
   if (!hit) return false;
   // Persist the stable per-attachment URL, never the short-lived signed one
-  // (PB-3130). `link` is the fallback for the no-workspace avatar branch.
+  // (MUL-3130). `link` is the fallback for the no-workspace avatar branch.
   const href = result.markdownLink || result.link;
   const isImage = (result.content_type ?? "").startsWith("image/");
   const tr = editor.state.tr;
@@ -227,7 +227,7 @@ export async function uploadAndInsertFile(
 
     try {
       const result = await handler(file, uploadId);
-      // The upload outlives the mount (coordinator-owned, PB-5181): by the
+      // The upload outlives the mount (coordinator-owned, MUL-5181): by the
       // time it settles this editor may be destroyed. Dispatching against a
       // destroyed EditorView throws, and the catch would dispatch again —
       // the write-back path owns delivery for dead editors, not this swap.

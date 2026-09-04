@@ -40,9 +40,9 @@ export function toggleActorRefValue(current: string[], key: string): string[] | 
 }
 
 /**
- * Value editor for `actor` / `multi_actor` custom properties (PB-6286).
+ * Value editor for `actor` / `multi_actor` custom properties (MUL-6286).
  *
- * Shaped like ExecutorPicker's members section — same rows, same avatars — but
+ * Shaped like the role pickers' members section — same rows and avatars — but
  * members are the only kind an actor property accepts. Agents and teams are
  * assignable but not referenceable: an agent would need the picker to answer
  * visibility and invoke-permission questions that a passive reference has no
@@ -117,7 +117,7 @@ export function ActorPropertyPicker({
       {emptyRow}
 
       {filteredMembers.length > 0 && (
-        <PickerSection label={t(($) => $.pickers.executor.members_group)}>
+        <PickerSection label={t(($) => $.pickers.members_group)}>
           {filteredMembers.map((m) => {
             const key = formatActorRef("member", m.user_id);
             const isSelected = selectedKeys.has(key);

@@ -5,15 +5,11 @@ description: Link pull requests to Patchbay issues and watch development progres
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Once GitHub is connected, Patchbay mirrors pull requests and keeps their state,
-change size, CI results, and merge conflicts visible in issue detail. A PR is
-shown for an issue only after an authenticated task/run registers it or a
-workspace member explicitly attaches it. An issue identifier such as `PB-123`
-is useful for people searching GitHub, but it never establishes the relation.
+Once GitHub is connected, Patchbay automatically links pull requests based on issue identifiers. Issue detail shows PR state, change size, CI results, and merge conflicts in place.
 
 The GitHub integration only reads the repositories authorized at install time; it never pushes commits, comments, or status checks.
 
-Self-hosted Patchbay can also connect self-hosted Forgejo, Gitea, or GitLab instances in parallel, with the same explicit relation, merge-to-Done, and CI display. The entry point is **Settings → Integrations → Git hosting**; see [Self-hosted Git hosting](/vcs-integration). Patchbay Cloud does not offer this entry point.
+Self-hosted Patchbay can also connect self-hosted Forgejo, Gitea, or GitLab instances in parallel, with the same PR auto-linking, merge-to-Done, and CI display. The entry point is **Settings → Integrations → Git hosting**; see [Self-hosted Git hosting](/vcs-integration). Patchbay Cloud does not offer this entry point.
 
 ## Connect GitHub
 
@@ -33,48 +29,41 @@ The **GitHub connection** decides which repositories Patchbay receives PR events
 
 ## Feature switches
 
-**Settings → GitHub** has three switches:
+**Settings → GitHub** has four switches:
 
 | Switch | Effect |
 |---|---|
-| GitHub integration | Master switch. When off, the two below stop working, but the GitHub App stays connected. |
+| GitHub integration | Master switch. When off, the three below stop working, but the GitHub App stays connected. |
 | PR sidebar | Shows linked pull requests in issue detail. |
-| Co-authored-by | Adds `Co-authored-by: patchbay-agent <patchbay-agent@users.noreply.github.com>` to commits created by agents. |
+| Co-authored-by | Adds `Co-authored-by: patchbay-agent <github@patchbay.ai>` to commits created by agents. |
+| Auto-link PRs | Detects issue identifiers in a PR's branch name, title, and body. |
 | **PR card → CI & mergeability** | For each linked PR, Patchbay fetches an authenticated GitHub API snapshot and mirrors its **CI status** and **mergeability** onto the card (see **What the PR card shows** below). |
 
 
 
 ## Link a PR to an issue
 
-The canonical relation is an explicit operation. When an agent creates a PR
-inside an authenticated task/run, it can register the PR as that execution's
-Work Product. A workspace member can attach an already mirrored Work Product
-from the issue, or use the CLI:
+The simplest approach is to put the issue identifier in the branch name or PR title. For example, for issue `MUL-123`:
 
-### Attaching at creation time (CLI / agents)
-
-```bash
-patchbay issue pull-request attach PB-123 --url https://github.com/acme/api/pull/6
+```text
+mul-123-fix-login-redirect
 ```
 
-- The issue argument is resolved by the current workspace, and the attach is an explicit audited relation; the PR URL does not select a different workspace or task.
-- A workspace member's manual URL Attach works without any GitHub App installation — the sidebar then shows at least the PR number and a clickable URL.
-- A task-scoped Attach must have provider metadata from the authorized GitHub App so the server can verify the exact repository and execution branch. Caller-supplied title, branch, or SHA fields never replace that ownership proof.
-- With an installation present, Patchbay pulls the full metadata (title, state, branch, head) through the App API itself; members don't need `--url` extras.
-- Optional flags (`--title`, `--state`, `--branch`, `--head-sha`) accept what `gh pr view --json` prints for a manual member Attach when no installation exists.
-- Add `--close-intent` when this explicit relation should move the issue to Done after the PR is merged. Text in the PR title, body, branch, commit, or comments never creates close intent.
+```text
+MUL-123 Fix the redirect after login
+```
 
-All explicit paths are idempotent and converge on one Work Product relation
-record. GitHub webhooks only mirror provider state and refresh an existing
-relation; they never scan PR text or create an association. A task that ends
-without explicit registration may perform one deterministic lookup using its
-own persisted repository identity, execution workspace, and exact head branch.
-Only one exact GitHub PR match is attachable. Zero matches remain
-unassociated; multiple matches, a shared/active branch, default branch,
-detached head, or an unavailable lookup remain visibly ambiguous or ineligible
-for human confirmation. The branch is used for this first lookup only and is
-not a durable relation key. A PR containing `PB-123` but lacking an explicit
-attach is therefore still unassociated.
+Patchbay ignores case and only matches the current workspace's issue prefix. One PR can link to multiple issues.
+
+If the identifier appears only in the PR body, use one of GitHub's close intents:
+
+```text
+Closes MUL-123
+Fixes MUL-123
+Resolves MUL-123
+```
+
+A reference-only mention in the body, such as `Related to MUL-123`, is not shown as a working PR for that issue. Commit messages and PR comments don't trigger linking either.
 
 ## View PRs on an issue
 
@@ -94,21 +83,19 @@ Click an entry to open the PR on GitHub. Turning off the **PR sidebar** only hid
 
 A merged PR doesn't necessarily mean the issue is finished. Patchbay only moves an issue to `Done` when all of the following hold:
 
-1. at least one explicit linked relation has `close_intent` enabled;
-2. the issue has no other working PR still `Open` or `Draft`;
+1. at least one merged linked PR used a close intent immediately followed by the identifier, such as `Closes MUL-123` (forms with words in between, like `Closes login MUL-123`, don't count);
+2. the issue has no other working PR still `Open` or `Draft` (reference-only mentions in the body don't count);
 3. the issue is not currently `done` or `cancelled`.
 
-Writing `PB-123` anywhere in a PR does not establish a link or trigger
-completion. A PR closed without merging doesn't complete the issue either.
+So writing `MUL-123` only in the branch name or title establishes the link but doesn't by itself trigger completion. A PR closed without merging doesn't complete the issue either.
 
 The status change is written to the timeline as a system action, and members subscribed to the issue are notified.
 
 ## Multiple workspaces
 
-The same GitHub App installation can be connected to multiple Patchbay
-workspaces. GitHub events mirror into each workspace separately, while every
-explicit relation is checked against that workspace. Workspaces never see
-each other's issues or relations.
+The same GitHub App installation can be connected to multiple Patchbay workspaces. GitHub events flow into each workspace separately and are matched against each workspace's own issue prefix.
+
+For example, a PR that references both `MUL-1` and `ENG-2` can link in two workspaces with different prefixes. Workspaces never see each other's issues.
 
 ## Disconnect
 
@@ -137,6 +124,7 @@ Repository permissions:
 | Permission | Level |
 |---|---|
 | Metadata | Read-only |
+| Contents | Read-only; required by the PR snapshot query, which reads the head commit together with mergeability and the CI rollup |
 | Pull requests | Read-only |
 | Checks | Read-only; used to show CI status |
 | Commit statuses | Read-only; used to aggregate legacy-status CI |
@@ -146,7 +134,7 @@ Subscribe to these events:
 - **Pull request**;
 - **Check suite**, **Check run**, and **Status**, which trigger CI and mergeability refreshes.
 
-If you don't need CI shown in Patchbay, you can skip the Checks and Commit statuses permissions and their events.
+If you don't need CI shown in Patchbay, you can skip the Checks and Commit statuses permissions and their events. Contents is still required — without it the snapshot query fails outright and the PR card also loses merge state.
 
 <Callout type="warning">
 This is the **Webhook secret**, not the OAuth Client secret. If the two sides have different webhook secrets, GitHub deliveries return `401 invalid signature`.
@@ -171,7 +159,7 @@ GITHUB_APP_ID=<the GitHub App's numeric ID>
 GITHUB_APP_PRIVATE_KEY=<full PEM private key, keeping the BEGIN/END lines and newlines>
 ```
 
-Generate the private key under the GitHub App's **Private keys → Generate a private key**. Without them the integration degrades gracefully: PRs still mirror and existing explicit relations still render — the PR card just shows no CI or merge state.
+Generate the private key under the GitHub App's **Private keys → Generate a private key**. Without them the integration degrades gracefully: PRs still mirror, issues still auto-link and move to Done on merge — the PR card just shows no CI or merge state.
 
 ### 3. Update the database and connect
 
@@ -187,10 +175,10 @@ Restart the API server, then complete the connection in **Settings → GitHub**.
 
 - **Connect button disabled**: check that `GITHUB_APP_SLUG` and `GITHUB_WEBHOOK_SECRET` reached the API process.
 - **Webhook returns 401**: confirm the GitHub App and the API use the same webhook secret, then redeliver from GitHub's **Recent Deliveries**.
-- **PR not linked**: use the issue's explicit Attach action or CLI with the PR URL. For an agent run, inspect its execution provenance and discovery status; a matching identifier in PR text is not sufficient.
-- **PR remains unassociated after a run**: zero matches, multiple matches, a shared/default/detached branch, or a provider lookup failure requires explicit human confirmation. The task detail records the reason.
-- **No CI status**: confirm `GITHUB_APP_ID` and `GITHUB_APP_PRIVATE_KEY` are configured, and that the App has read-only Checks and Commit statuses permissions with the matching events subscribed. After adding permissions to an installed App, each installation's owner must also approve them on GitHub before they take effect.
-- **Issue not completed after the PR merged**: confirm the explicit relation has `close_intent` enabled, and check whether other linked PRs are still Open or Draft.
+- **PR not linked**: check that the repository is in the App's authorized scope, auto-linking is on, and the identifier belongs to the current workspace.
+- **Identifier in the body but not shown**: switch to `Closes MUL-123`, or put the identifier in the branch name or PR title.
+- **No CI status**: confirm `GITHUB_APP_ID` and `GITHUB_APP_PRIVATE_KEY` are configured, and that the App has read-only Contents, Checks, and Commit statuses permissions with the matching events subscribed. Without Contents the whole snapshot fails, so the PR card shows neither CI nor merge state. After adding permissions to an installed App, each installation's owner must also approve them on GitHub before they take effect.
+- **Issue not completed after the PR merged**: confirm the PR used a close intent, and check whether other linked PRs are still Open or Draft.
 
 ## Next steps
 

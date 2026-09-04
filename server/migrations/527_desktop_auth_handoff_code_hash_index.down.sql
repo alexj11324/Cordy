@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS desktop_auth_handoff_code_hash_uidx;

@@ -28,12 +28,6 @@ const mockToastError = vi.hoisted(() => vi.fn());
 const telegramQueryErrorRef = vi.hoisted(() => ({ current: false }));
 const telegramQueryLoadingRef = vi.hoisted(() => ({ current: false }));
 
-const healthyRuntime = {
-  state: "healthy",
-  observedAt: null,
-  errorCode: null,
-} as const;
-
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (opts: { queryKey: unknown[]; enabled?: boolean }) => {
     if (opts.enabled === false) return { data: undefined, isLoading: false };
@@ -129,16 +123,7 @@ describe("TelegramAgentBindButton", () => {
   beforeEach(resetFixtures);
 
   it("opens the connect dialog and submits the pasted bot token", async () => {
-    mockRegister.mockResolvedValue({
-      id: "i1",
-      agent_id: "agent-1",
-      status: "active",
-      runtime: {
-        state: "starting",
-        observedAt: null,
-        errorCode: null,
-      },
-    });
+    mockRegister.mockResolvedValue({ id: "i1", agent_id: "agent-1", status: "installed" });
     renderUI(<TelegramAgentBindButton agentId="agent-1" agentName="Bot" />);
     await userEvent.click(screen.getByTestId("telegram-agent-connect"));
     const tokenInput = await screen.findByTestId("telegram-bot-token");
@@ -151,8 +136,6 @@ describe("TelegramAgentBindButton", () => {
       }),
     );
     expect(mockOpenExternal).not.toHaveBeenCalled();
-    expect(mockInvalidate).toHaveBeenCalled();
-    expect(mockToastError).not.toHaveBeenCalled();
   });
 
   it("opens the localized Telegram setup guide", async () => {
@@ -174,24 +157,24 @@ describe("TelegramAgentBindButton", () => {
     expect(mockInvalidate).not.toHaveBeenCalled();
   });
 
-  it("shows the connected badge (not the CTA) when the agent already has an active install", () => {
+  it("shows the installation status (not the CTA) when the agent already has an installed bot", () => {
     installationsRef.current = {
       installations: [
-        { id: "i1", agent_id: "agent-1", status: "active", bot_username: "my_bot", runtime: healthyRuntime },
+        { id: "i1", agent_id: "agent-1", status: "installed", bot_username: "my_bot" },
       ],
       configured: true,
       install_supported: true,
     };
     renderUI(<TelegramAgentBindButton agentId="agent-1" />);
-    expect(screen.getByTestId("telegram-agent-bot-connected")).toBeTruthy();
+    expect(screen.getByTestId("telegram-agent-bot-installed")).toBeTruthy();
     expect(screen.getByTestId("telegram-agent-bot-disconnect")).toBeTruthy();
     expect(screen.queryByTestId("telegram-agent-connect")).toBeNull();
   });
 
-  it("opens the connected bot in Telegram", async () => {
+  it("opens the installed bot in Telegram", async () => {
     installationsRef.current = {
       installations: [
-        { id: "i1", agent_id: "agent-1", status: "active", bot_username: "my_bot", runtime: healthyRuntime },
+        { id: "i1", agent_id: "agent-1", status: "installed", bot_username: "my_bot" },
       ],
       configured: true,
       install_supported: true,
@@ -207,7 +190,7 @@ describe("TelegramAgentBindButton", () => {
     mockDeleteInstallation.mockResolvedValue(undefined);
     installationsRef.current = {
       installations: [
-        { id: "i1", agent_id: "agent-1", status: "active", bot_username: "my_bot", runtime: healthyRuntime },
+        { id: "i1", agent_id: "agent-1", status: "installed", bot_username: "my_bot" },
       ],
       configured: true,
       install_supported: true,
@@ -229,7 +212,7 @@ describe("TelegramAgentBindButton", () => {
     mockDeleteInstallation.mockRejectedValue(new Error("network failed"));
     installationsRef.current = {
       installations: [
-        { id: "i1", agent_id: "agent-1", status: "active", bot_username: "my_bot", runtime: healthyRuntime },
+        { id: "i1", agent_id: "agent-1", status: "installed", bot_username: "my_bot" },
       ],
       configured: true,
       install_supported: true,
@@ -241,7 +224,7 @@ describe("TelegramAgentBindButton", () => {
     await userEvent.click(actions.at(-1)!);
 
     await waitFor(() => expect(mockToastError).toHaveBeenCalledWith("network failed"));
-    expect(screen.getByTestId("telegram-agent-bot-connected")).toBeTruthy();
+    expect(screen.getByTestId("telegram-agent-bot-installed")).toBeTruthy();
     expect(mockInvalidate).not.toHaveBeenCalled();
   });
 
@@ -276,13 +259,13 @@ describe("TelegramTab", () => {
 
   it("shows the empty state when configured but nothing is connected", () => {
     renderUI(<TelegramTab />);
-    expect(screen.getByText(/No bots connected yet/i)).toBeTruthy();
+    expect(screen.getByText(/No bots installed yet/i)).toBeTruthy();
   });
 
   it("lists a connected installation with its agent name and a disconnect control", () => {
     installationsRef.current = {
       installations: [
-        { id: "i1", agent_id: "agent-7", status: "active", bot_username: "my_bot", runtime: healthyRuntime },
+        { id: "i1", agent_id: "agent-7", status: "installed", bot_username: "my_bot" },
       ],
       configured: true,
       install_supported: true,
@@ -297,7 +280,7 @@ describe("TelegramTab", () => {
     mockDeleteInstallation.mockResolvedValue(undefined);
     installationsRef.current = {
       installations: [
-        { id: "i1", agent_id: "agent-7", status: "active", bot_username: "my_bot", runtime: healthyRuntime },
+        { id: "i1", agent_id: "agent-7", status: "installed", bot_username: "my_bot" },
       ],
       configured: true,
       install_supported: true,
@@ -317,7 +300,7 @@ describe("TelegramTab", () => {
     mockDeleteInstallation.mockRejectedValue(new Error("network failed"));
     installationsRef.current = {
       installations: [
-        { id: "i1", agent_id: "agent-7", status: "active", bot_username: "my_bot", runtime: healthyRuntime },
+        { id: "i1", agent_id: "agent-7", status: "installed", bot_username: "my_bot" },
       ],
       configured: true,
       install_supported: true,
@@ -331,12 +314,12 @@ describe("TelegramTab", () => {
     expect(mockInvalidate).not.toHaveBeenCalled();
   });
 
-  // Malformed-response defense (AGENTS.md → API Compatibility): a response
+  // Malformed-response defense (CLAUDE.md → API Compatibility): a response
   // missing `installations` must not crash the panel.
   it("tolerates a malformed installations response", () => {
     installationsRef.current = { configured: true } as never;
     renderUI(<TelegramTab />);
-    expect(screen.getByText(/No bots connected yet/i)).toBeTruthy();
+    expect(screen.getByText(/No bots installed yet/i)).toBeTruthy();
   });
 
   it("shows a load error instead of pretending Telegram is disabled", () => {

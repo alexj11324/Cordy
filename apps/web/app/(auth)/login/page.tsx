@@ -98,7 +98,7 @@ function LoginContent() {
       try {
         // The managed web identity boundary authenticates the Clerk session
         // supplied by the ApiClient. The backend then exchanges that identity
-        // for the native Patchbay bearer understood by the CLI and Rust API.
+        // for the native Patchbay bearer understood by the CLI and Go API.
         const { token } = await api.issueCliToken();
         if (!token) throw new Error("Patchbay CLI token unavailable");
         redirectToCliCallback(cliCallback, token, cliState);

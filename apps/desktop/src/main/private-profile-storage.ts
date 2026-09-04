@@ -1,8 +1,4 @@
-import {
-  chmod,
-  lstat,
-  readdir,
-} from "node:fs/promises";
+import { chmod, lstat, readdir } from "node:fs/promises";
 import { join } from "node:path";
 
 const PRIVATE_PROFILE_FILES = [

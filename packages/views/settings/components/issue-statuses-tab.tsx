@@ -27,7 +27,6 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { useWorkspaceId } from "@patchbay/core/hooks";
 import { useAuthStore } from "@patchbay/core/auth";
-import { useFeatureEnabled } from "@patchbay/core/config";
 import { memberListOptions } from "@patchbay/core/workspace/queries";
 import { issueStatusColor, issueStatusListOptions } from "@patchbay/core/issue-statuses/queries";
 import {
@@ -39,10 +38,10 @@ import {
 import { ALL_STATUSES } from "@patchbay/core/issues/config";
 import type { IssueStatusCategory, IssueStatusEntry } from "@patchbay/core/types";
 import { Button } from "@patchbay/ui/components/ui/button";
-import { SettingsInput as Input } from "@patchbay/ui/components/common/lobe-settings";
+import { Input } from "@patchbay/ui/components/ui/input";
 import { Textarea } from "@patchbay/ui/components/ui/textarea";
 import { Label as FieldLabel } from "@patchbay/ui/components/ui/label";
-import { SettingsSwitch as Switch } from "@patchbay/ui/components/common/lobe-settings";
+import { Switch } from "@patchbay/ui/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -86,7 +85,7 @@ import { useT } from "../../i18n";
 import { SettingsTab } from "./settings-layout";
 
 /**
- * Workspace issue status catalog management (PB-6243).
+ * Workspace issue status catalog management (MUL-6243).
  *
  * The page is organised by CATEGORY rather than as one flat list, because a
  * category is not decoration here — it is the behavior a status inherits. A
@@ -100,7 +99,7 @@ import { SettingsTab } from "./settings-layout";
  * definition, and the default workspace has to look identical for every user
  * who never opens this page.
  *
- * The chrome is deliberately thin (PB-6422). A category and its built-in row
+ * The chrome is deliberately thin (MUL-6422). A category and its built-in row
  * are the same concept seen twice, so anything the row already carries — the
  * glyph, the behavior sentence — is noise on the header above it. What is left
  * on a header is the label and the one action it owns.
@@ -123,7 +122,6 @@ const EMPTY_DRAFT: StatusDraft = {
 export function IssueStatusesTab() {
   const { t } = useT("settings");
   const wsId = useWorkspaceId();
-  const canCreate = useFeatureEnabled("custom_issue_statuses");
 
   const [showArchived, setShowArchived] = useState(false);
   const [createCategory, setCreateCategory] = useState<IssueStatusCategory | null>(null);
@@ -164,12 +162,6 @@ export function IssueStatusesTab() {
       description={t(($) => $.issue_statuses.description)}
     >
       <div className="space-y-4">
-        {!canCreate && (
-          <p className="rounded-lg border border-surface-border bg-muted/20 px-4 py-3 text-caption text-muted-foreground">
-            {t(($) => $.issue_statuses.flag_off)}
-          </p>
-        )}
-
         {/* Offered only once the workspace has something archived. A permanently
             disabled "Show archived (0)" is a control that can never do
             anything. */}
@@ -196,7 +188,6 @@ export function IssueStatusesTab() {
                 builtIn={group.builtIn}
                 custom={group.custom}
                 canManage={isAdmin}
-                canCreate={isAdmin && canCreate}
                 onCreate={() => setCreateCategory(group.category)}
                 onEdit={setEditing}
                 onArchive={setPendingArchive}
@@ -227,7 +218,6 @@ function CategorySection({
   builtIn,
   custom,
   canManage,
-  canCreate,
   onCreate,
   onEdit,
   onArchive,
@@ -236,7 +226,6 @@ function CategorySection({
   builtIn: IssueStatusEntry | undefined;
   custom: IssueStatusEntry[];
   canManage: boolean;
-  canCreate: boolean;
   onCreate: () => void;
   onEdit: (status: IssueStatusEntry) => void;
   onArchive: (status: IssueStatusEntry) => void;
@@ -295,7 +284,7 @@ function CategorySection({
         <span className="text-caption font-medium text-muted-foreground">
           {labelOf(category)}
         </span>
-        {canCreate && (
+        {canManage && (
           <Tooltip>
             <TooltipTrigger
               render={
@@ -396,7 +385,7 @@ function CustomStatusRow({
       {/* The handle rides inside the row's own left padding instead of taking a
           column of its own. A reserved gutter indents every status away from
           the card edge — including the built-in rows, which can never be
-          dragged — and that indent is what the list reads as. (PB-6422) */}
+          dragged — and that indent is what the list reads as. (MUL-6422) */}
       {canReorder && (
         <button
           type="button"
@@ -535,7 +524,22 @@ function StatusEditorDialog({
         category: draft.category,
         color: draft.color,
       },
-      { onSuccess: () => onOpenChange(false), onError },
+      {
+        onSuccess: (created) => {
+          onOpenChange(false);
+          // The key is derived server-side and is the only handle the API and
+          // the CLI accept, so creation has to say what it minted. A name with
+          // no ASCII to slug gets one that cannot be guessed back from the name
+          // — "客户确认" becomes `in_review_2` (MUL-6749) — so staying silent
+          // would leave the admin no way to learn it short of reopening the
+          // row. The dialog is already closing; a toast is the one surface
+          // still visible.
+          if (created?.key) {
+            toast.success(t(($) => $.issue_statuses.editor.created, { key: created.key }));
+          }
+        },
+        onError,
+      },
     );
   };
 
@@ -573,7 +577,7 @@ function StatusEditorDialog({
                 status does not move it — so it has to be readable somewhere.
                 Here, not as a chip on every row: the list is for scanning
                 names, and a slug beside each one is what turned it into a
-                table of internals. (PB-6422) */}
+                table of internals. (MUL-6422) */}
             {status && (
               <p className="text-caption text-muted-foreground">
                 {t(($) => $.issue_statuses.editor.key_hint, { key: status.key })}

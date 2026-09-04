@@ -10,14 +10,14 @@
  *   2. Members — sorted alphabetically
  *   3. Agents — sorted alphabetically
  *   4. Teams — sorted alphabetically (archived hidden). Selecting a team
- *      emits `mention://team/<uuid>`; the Rust backend wakes the team's
- *      leader agent.
+ *      emits `mention://team/<uuid>`; backend wakes the team's leader
+ *      agent (server/internal/handler/comment.go:444).
  *
  * `chat` sections (chat is user ↔ single agent — `@member`/`@agent` are
  * noise; `@` here means "reference a resource for the agent"):
  *   1. Recent — issues the user opened most recently (from the in-memory
  *      viewed-issues store), max 5
- *   2. My issues — assigned-to-me, deduped against Recent, max 10
+ *   2. My issues — owned-by-me, deduped against Recent, max 10
  *
  * Closed issues (status `done` / `cancelled`) are dimmed but selectable,
  * matching web's behaviour (mention-suggestion.tsx).
@@ -83,7 +83,7 @@ export function MentionSuggestionBar({
   const wsId = useWorkspaceStore((s) => s.currentWorkspaceId);
   const isChat = mode === "chat";
   // Rows are icon-only, so colour is the only thing that can carry a custom
-  // status's identity here. (PB-6243)
+  // status's identity here. (MUL-6243)
   const catalog = useIssueStatuses();
 
   // Comment-mode data — disabled in chat mode to avoid wasted fetches.
@@ -362,7 +362,7 @@ export function MentionSuggestionBar({
           // By CATEGORY, not by key: a custom status in the done category IS
           // done, and `status === "done"` silently disagrees — the row would
           // render at full opacity as though the work were still open.
-          // (PB-6243)
+          // (MUL-6243)
           const closed = issueBehavesAsAny(item.issue, CLOSED_CATEGORIES);
           return (
             <Pressable

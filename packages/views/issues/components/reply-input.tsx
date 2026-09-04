@@ -22,7 +22,7 @@ import { useQuickActionMenu } from "../hooks/use-quick-action-menu";
 
 interface ReplyInputProps {
   issueId: string;
-  parentId?: string;
+  parentId: string;
   placeholder?: string;
   avatarType: string;
   avatarId: string;
@@ -63,7 +63,7 @@ function ReplyInput({
   const uploadGate = useUploadGate(editorRef);
   // Quick actions in the `/` menu — same catalog and same insert-don't-run
   // behavior as the top-level composer. A reply posts to the same issue, so
-  // `/` has to offer the same thing here (PB-5588).
+  // `/` has to offer the same thing here (MUL-5588).
   const quickActionMenu = useQuickActionMenu(issueId);
   // If a draft key is provided, hydrate from store on mount (defaultValue is
   // the only injection point on ContentEditorRef) and flush on every onUpdate.
@@ -75,7 +75,7 @@ function ReplyInput({
   const [isEmpty, setIsEmpty] = useState(!initialDraft?.trim());
   const [suppressedAgentIds, setSuppressedAgentIds] = useState<Set<string>>(() => new Set());
   const triggerPreview = useCommentTriggerPreview({ issueId, parentId, content });
-  // Uploads for this reply session (PB-5181) — owned by the coordinator. With
+  // Uploads for this reply session (MUL-5181) — owned by the coordinator. With
   // a draftKey they persist in the draft store so scroll-out/close no longer
   // drops an in-flight upload; without one (no persistence context) they fall
   // back to session-local state inside the hook.

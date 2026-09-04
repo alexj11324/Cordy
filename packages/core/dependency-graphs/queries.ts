@@ -1,6 +1,9 @@
 import { queryOptions } from "@tanstack/react-query";
 import { api, ApiError } from "../api";
-import type { DependencyGraphResponse } from "../types";
+import type {
+  DependencyGraphResponse,
+  ListDependencyGraphsResponse,
+} from "../types";
 
 export const dependencyGraphKeys = {
   all: (wsId: string) => ["dependency-graphs", wsId] as const,
@@ -10,27 +13,39 @@ export const dependencyGraphKeys = {
     [...dependencyGraphKeys.all(wsId), "detail", issueId] as const,
 };
 
+async function loadAllDependencyGraphs(
+  projectId: string | undefined,
+  signal: AbortSignal | undefined,
+): Promise<DependencyGraphResponse[]> {
+  const graphs: DependencyGraphResponse[] = [];
+  let cursor: string | undefined;
+
+  for (;;) {
+    const page: ListDependencyGraphsResponse = await api.listDependencyGraphs(
+      {
+        ...(projectId ? { projectId } : {}),
+        limit: 64,
+        ...(cursor ? { cursor } : {}),
+      },
+      { signal },
+    );
+    graphs.push(...page.graphs);
+
+    const nextCursor = page.next_cursor ?? undefined;
+    if (!nextCursor) break;
+    if (nextCursor === cursor) {
+      throw new Error("Dependency graph pagination returned a repeated cursor");
+    }
+    cursor = nextCursor;
+  }
+
+  return graphs;
+}
+
 export function dependencyGraphsOptions(wsId: string, projectId?: string) {
   return queryOptions({
     queryKey: dependencyGraphKeys.list(wsId, projectId),
-    queryFn: async () => {
-      const graphs: DependencyGraphResponse[] = [];
-      let cursor: string | undefined;
-      do {
-        const page = await api.listDependencyGraphs({
-          ...(projectId ? { projectId } : {}),
-          limit: 64,
-          ...(cursor ? { cursor } : {}),
-        });
-        graphs.push(...page.graphs);
-        const nextCursor = page.next_cursor ?? undefined;
-        if (nextCursor !== undefined && nextCursor === cursor) {
-          throw new Error("dependency graph pagination cursor did not advance");
-        }
-        cursor = nextCursor;
-      } while (cursor);
-      return graphs;
-    },
+    queryFn: ({ signal }) => loadAllDependencyGraphs(projectId, signal),
     staleTime: 0,
   });
 }
@@ -38,11 +53,11 @@ export function dependencyGraphsOptions(wsId: string, projectId?: string) {
 export function dependencyGraphOptions(wsId: string, issueId: string) {
   return queryOptions<DependencyGraphResponse | null>({
     queryKey: dependencyGraphKeys.detail(wsId, issueId),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       try {
-        return await api.getDependencyGraph(issueId);
+        return await api.getDependencyGraph(issueId, { signal });
       } catch (error) {
-        // A normal issue is allowed to have no active graph. Preserve real
+        // An issue without an active graph is a normal state. Preserve real
         // transport/auth/server failures for the detail surface to report.
         if (error instanceof ApiError && error.status === 404) return null;
         throw error;

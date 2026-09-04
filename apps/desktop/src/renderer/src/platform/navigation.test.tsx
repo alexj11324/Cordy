@@ -1,25 +1,22 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render } from "@testing-library/react";
+import { act, render } from "@testing-library/react";
 import { useEffect } from "react";
 
-// PB-4741: the adapter mutates tab sessions in the REAL store (no router,
+// MUL-4741: the adapter mutates tab sessions in the REAL store (no router,
 // no mocks needed for it anymore) — the Coordinator, not tested here, is
 // what projects sessions into the single router. Overlay and auth stay
 // mocked so we can spy on their entry points.
 
 const overlay = vi.hoisted(() => ({
-  overlay: null as null | { type: string; path?: string },
+  overlay: null as null | { type: string },
   open: vi.fn(),
   close: vi.fn(),
 }));
 
 vi.mock("@/stores/window-overlay-store", () => ({
-  useWindowOverlayStore: Object.assign(
-    (selector: (state: typeof overlay) => unknown) => selector(overlay),
-    {
+  useWindowOverlayStore: Object.assign(() => null, {
     getState: () => overlay,
-    },
-  ),
+  }),
 }));
 
 const auth = vi.hoisted(() => ({ logout: vi.fn() }));
@@ -31,21 +28,16 @@ vi.mock("@patchbay/core/auth", () => ({
 }));
 
 import { DesktopNavigationProvider, routeContentLinkPath } from "./navigation";
-import { useNavigation } from "@patchbay/views/navigation";
-import { useModalStore } from "@patchbay/core/modals";
+import { currentPath, useNavigation } from "@patchbay/views/navigation";
 import { useTabStore, getActiveTab } from "@/stores/tab-store";
 
 beforeEach(() => {
   overlay.open.mockReset();
   overlay.close.mockReset();
   overlay.overlay = null;
-  useModalStore.getState().close();
   auth.logout.mockReset();
   useTabStore.getState().reset();
   useTabStore.getState().switchWorkspace("acme"); // default tab /acme/issues
-  useTabStore
-    .getState()
-    .validateWorkspaceSlugs(new Set(["acme", "butter"]));
   Object.defineProperty(window, "desktopAPI", {
     configurable: true,
     value: {
@@ -168,55 +160,6 @@ describe("push", () => {
     expect(overlay.open).toHaveBeenCalledWith({ type: "new-workspace" });
     expect(acmeGroup()).toBe(before);
   });
-
-  it("opens Settings as a window-level page without touching sessions", () => {
-    const getAdapter = renderProvider();
-    const before = acmeGroup();
-
-    getAdapter().push("/acme/settings?tab=tokens");
-
-    expect(overlay.open).toHaveBeenCalledWith({
-      type: "settings",
-      path: "/acme/settings?tab=tokens",
-    });
-    expect(acmeGroup()).toBe(before);
-  });
-
-  it("closes a portaled modal before opening Settings", () => {
-    const getAdapter = renderProvider();
-    useModalStore.getState().open("create-issue");
-
-    getAdapter().push("/acme/settings");
-
-    expect(useModalStore.getState().modal).toBeNull();
-    expect(overlay.open).toHaveBeenCalledWith({
-      type: "settings",
-      path: "/acme/settings",
-    });
-  });
-
-  it("switches workspace before opening that workspace's Settings page", () => {
-    const getAdapter = renderProvider();
-
-    getAdapter().push("/butter/settings");
-
-    expect(useTabStore.getState().activeWorkspaceSlug).toBe("butter");
-    expect(getActiveTab(useTabStore.getState())?.url).toBe("/butter/issues");
-    expect(overlay.open).toHaveBeenCalledWith({
-      type: "settings",
-      path: "/butter/settings",
-    });
-  });
-
-  it("keeps an unknown workspace Settings deep link on the normal stale-workspace path", () => {
-    const getAdapter = renderProvider();
-
-    getAdapter().push("/deleted/settings");
-
-    expect(overlay.open).not.toHaveBeenCalled();
-    expect(useTabStore.getState().activeWorkspaceSlug).toBe("deleted");
-    expect(getActiveTab(useTabStore.getState())?.url).toBe("/deleted/issues");
-  });
 });
 
 describe("push with pinned active tab", () => {
@@ -274,17 +217,6 @@ describe("back", () => {
     expect(active.url).toBe("/acme/issues");
     expect(active.history.index).toBe(0);
   });
-
-  it("returns from the standalone Settings page without changing tab history", () => {
-    const getAdapter = renderProvider();
-    const before = getActiveTab(useTabStore.getState())!.history;
-    overlay.overlay = { type: "settings", path: "/acme/settings" };
-
-    getAdapter().back!();
-
-    expect(overlay.close).toHaveBeenCalledOnce();
-    expect(getActiveTab(useTabStore.getState())!.history).toEqual(before);
-  });
 });
 
 // Consumed by `useBackOrReplace` — a page whose subject was deleted steps back
@@ -323,21 +255,48 @@ describe("canGoBack", () => {
 
     expect(getAdapter().canGoBack!()).toBe(false);
   });
+});
 
-  it("is true in Settings because back returns to the app", () => {
+// MUL-6784: the tab URL is the only place the fragment survives on desktop —
+// the renderer's own `window.location` is the packaged file:// page — so a
+// share or feedback link built from this adapter depends on `hash` being here.
+describe("current location", () => {
+  it("splits the active tab URL into pathname, search and fragment", () => {
     const getAdapter = renderProvider();
-    overlay.overlay = { type: "settings", path: "/acme/settings" };
 
-    expect(getAdapter().canGoBack!()).toBe(true);
+    act(() => getAdapter().push("/acme/issues/MUL-1?tab=activity#comment-c1"));
+
+    expect(getAdapter().pathname).toBe("/acme/issues/MUL-1");
+    expect(getAdapter().searchParams.get("tab")).toBe("activity");
+    expect(getAdapter().hash).toBe("#comment-c1");
+  });
+
+  it('reports "" for a tab URL that carries no fragment', () => {
+    const getAdapter = renderProvider();
+
+    act(() => getAdapter().push("/acme/issues/MUL-1?tab=activity"));
+
+    expect(getAdapter().hash).toBe("");
+  });
+
+  it("rebuilds the current page as a web URL that keeps the fragment", () => {
+    const getAdapter = renderProvider();
+
+    act(() => getAdapter().push("/acme/issues/MUL-1#comment-c1"));
+
+    const adapter = getAdapter();
+    expect(adapter.getShareableUrl(currentPath(adapter))).toBe(
+      "https://app.example/acme/issues/MUL-1#comment-c1",
+    );
   });
 });
 
-describe("routeContentLinkPath (links inside content — PB-5208)", () => {
+describe("routeContentLinkPath (links inside content — MUL-5208)", () => {
   it("opens a same-workspace path in a foreground tab of its own", () => {
-    routeContentLinkPath("/acme/issues/PB-1");
+    routeContentLinkPath("/acme/issues/MUL-1");
 
     const group = useTabStore.getState().byWorkspace.acme;
-    const opened = group.tabs.find((t) => t.url === "/acme/issues/PB-1")!;
+    const opened = group.tabs.find((t) => t.url === "/acme/issues/MUL-1")!;
     expect(opened).toBeDefined();
     expect(group.activeTabId).toBe(opened.id);
   });

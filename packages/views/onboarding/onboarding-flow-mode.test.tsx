@@ -22,11 +22,7 @@ vi.mock("@patchbay/core/api", () => ({
 }));
 
 vi.mock("@patchbay/core/workspace/mutations", () => ({
-  useCreateWorkspace: () => ({
-    mutate: vi.fn(),
-    mutateAsync: vi.fn(),
-    isPending: false,
-  }),
+  useCreateWorkspace: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 vi.mock("@patchbay/core/auth", () => ({
@@ -72,7 +68,7 @@ describe("OnboardingFlow — new-workspace mode", () => {
     // The welcome screen teaches what Patchbay is; someone creating a second
     // workspace already knows, so the flow opens on naming it.
     expect(
-      screen.getByRole("heading", { name: /Set up your first workspace/i }),
+      screen.getByRole("heading", { name: /Name your workspace/i }),
     ).toBeInTheDocument();
   });
 
@@ -89,7 +85,7 @@ describe("OnboardingFlow — new-workspace mode", () => {
     renderFlow({});
 
     expect(
-      screen.queryByRole("heading", { name: /Set up your first workspace/i }),
+      screen.queryByRole("heading", { name: /Name your workspace/i }),
     ).not.toBeInTheDocument();
   });
 });

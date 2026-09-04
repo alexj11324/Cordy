@@ -32,7 +32,7 @@ describe("dispatchReasonCode", () => {
 
 describe("sendFailureMessage", () => {
   // The point of the helper: a revoked permission must not read as a transient
-  // failure the user should retry (PB-6380).
+  // failure the user should retry (MUL-6380).
   it("names revoked permission instead of suggesting a retry", () => {
     const message = sendFailureMessage(
       apiError({ reason_code: "invocation_not_allowed" }),
@@ -49,5 +49,18 @@ describe("sendFailureMessage", () => {
 
   it("falls back to a retryable message for anything else", () => {
     expect(sendFailureMessage(new Error("timeout"))).toMatch(/try again/i);
+  });
+
+  it("accepts the active locale copy without changing the reason mapping", () => {
+    expect(
+      sendFailureMessage(
+        apiError({ reason_code: "agent_runtime_required" }),
+        {
+          invocationNotAllowed: "无权运行",
+          runtimeRequired: "请绑定运行时",
+          fallback: "请重试",
+        },
+      ),
+    ).toBe("请绑定运行时");
   });
 });

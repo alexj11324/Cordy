@@ -9,7 +9,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@patchbay/ui/components/ui/dialog";
-import { SettingsInput as Input } from "@patchbay/ui/components/common/lobe-settings";
+import { Input } from "@patchbay/ui/components/ui/input";
 import { Label } from "@patchbay/ui/components/ui/label";
 import { Button } from "@patchbay/ui/components/ui/button";
 import { isImeComposing } from "@patchbay/core/utils";

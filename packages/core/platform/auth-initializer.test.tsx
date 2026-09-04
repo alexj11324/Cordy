@@ -12,6 +12,7 @@ import {
   useAuthStore,
 } from "../auth";
 import type { StorageAdapter, User, Workspace } from "../types";
+import { configStore } from "../config";
 import { workspaceKeys } from "../workspace/queries";
 import { AuthInitializer } from "./auth-initializer";
 
@@ -73,13 +74,11 @@ function renderInitializer({
   api,
   storage = makeStorage({ patchbay_token: "token-1" }),
   cookieAuth = false,
-  clerkAuth = false,
   platform = "desktop",
 }: {
   api: ApiClient;
   storage?: StorageAdapter;
   cookieAuth?: boolean;
-  clerkAuth?: boolean;
   platform?: "desktop" | "web";
 }) {
   const onLogin = vi.fn();
@@ -96,7 +95,6 @@ function renderInitializer({
     <QueryClientProvider client={queryClient}>
       <AuthInitializer
         cookieAuth={cookieAuth}
-        clerkAuth={clerkAuth}
         identity={{ platform }}
         onLogin={onLogin}
         onLogout={onLogout}
@@ -112,6 +110,7 @@ function renderInitializer({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  configStore.getState().setMessagingConfig(undefined);
 });
 
 afterEach(() => {
@@ -119,20 +118,19 @@ afterEach(() => {
 });
 
 describe("AuthInitializer recovery", () => {
-  it("leaves Clerk session bootstrap to the Clerk adapter", async () => {
-    const getMe = vi.fn().mockResolvedValue(fakeUser);
-    const api = makeApi({ getMe });
-    renderInitializer({
-      api,
-      cookieAuth: true,
-      clerkAuth: true,
-      platform: "web",
-    });
+  it("publishes the server-owned messaging setup capability", async () => {
+    const messaging = {
+      mode: "server_configured",
+      setupWritable: false,
+      platforms: [{ type: "lark", enabled: true, experimental: true }],
+    };
+    renderInitializer({ api: makeApi({ getConfig: vi.fn().mockResolvedValue({ messaging }) }) });
 
     await waitFor(() => {
-      expect(useAuthStore.getState().status).toBe("authenticating");
+      expect((configStore.getState() as unknown as { messaging?: unknown }).messaging).toEqual(
+        messaging,
+      );
     });
-    expect(getMe).not.toHaveBeenCalled();
   });
 
   it("keeps the token and recovers on the online event after a network failure", async () => {

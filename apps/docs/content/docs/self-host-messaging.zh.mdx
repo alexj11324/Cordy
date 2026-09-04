@@ -1,0 +1,86 @@
+---
+title: 自托管消息
+description: 在自托管部署中运行 Slack 消息：BYO Socket Mode 配置、托管 OAuth 说明、localhost 坑点和凭据处理。
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+自托管部署通过自备应用（BYO）Socket Mode 接入 Slack：每个智能体对应一个 Slack app，Patchbay 为每个已连接 app 各维护一条 Socket Mode 连接。Patchbay Cloud 无需额外配置；自托管部署需要先设置 token 加密密钥和成员可达的公网地址。
+
+本页是 [Slack Bot 集成](/slack-bot-integration) 和 [聊天集成](/channels) 的自托管配套说明。容器搭建与升级见 [自托管快速上手](/self-host-quickstart)，完整变量说明见 [环境变量](/environment-variables)。
+
+## 自托管 Slack 的工作方式
+
+- 一个 Slack app 对应一个 Patchbay 智能体。需要接入多个智能体时，为每个智能体分别创建 app。
+- Bot 使用 Socket Mode 主动连接 Slack，BYO 安装不需要配置公网 Request URL 或 OAuth Redirect URL。
+- 每个安装都携带自己的 App-level Token（`xapp-`），并拥有只用该 token 鉴权的独立 Socket Mode 连接。Bot token（`xoxb-`）只用于 `chat.postMessage` 这类出站 Web API 调用。
+- 入站事件按真实 Slack app id 路由（`config->>'app_id'`，与事件中的 `api_app_id` 比对），因此多个 BYO app，也就是多个智能体，可以共存于同一个 Slack workspace。
+
+管理接口只有四个：
+
+- `GET /api/workspaces/{id}/slack/installations` —— 查看安装列表，成员可见。
+- `POST /api/workspaces/{id}/slack/install/byo?agent_id=…` —— 连接 BYO app，需要 owner 或 admin。请求体：`{ "bot_token": "xoxb-…", "app_token": "xapp-…" }`。
+- `DELETE /api/workspaces/{id}/slack/installations/{installationId}` —— 断开连接，需要 owner 或 admin。数据行会保留用于审计，重新连接会将其翻回 active。
+- `POST /api/slack/binding/redeem` —— 从"绑定账号"提示进入，把 Slack 用户 id 绑定到当前登录的 Patchbay 用户。
+
+仅托管部署可用（没有 `PATCHBAY_SLACK_CLIENT_ID/_SECRET` 时保持惰性）：
+
+- `POST /api/workspaces/{id}/slack/install/managed` —— 发起托管 OAuth 授权（owner/admin）。Body：`{ "redirect_url": "…" }`。
+- `GET /api/integrations/slack/oauth/callback` —— 公开的 Slack 跳转落点；消费一次性 state、交换 code，然后 302 到绑定的 redirect URL。
+- `POST /api/integrations/slack/events` —— 公开的托管 Events API webhook（HMAC 签名，按 app + team 路由租户）。托管安装没有 Socket Mode 连接：这是它唯一的入站，Supervisor 只驻留它的槽位而不拨号。
+- `POST /api/integrations/slack/commands` —— 公开的托管 slash-command webhook（签名机制相同；因为没有 Socket Mode envelope，防重放靠 `trigger_id` 声明）。
+
+## 1. BYO Socket Mode 部署
+
+1. 先设置 `PATCHBAY_SLACK_SECRET_KEY`（见[凭据处理](#4-凭据处理)）并重启后端。没有它，Slack 集成完全不会启用。
+2. 按 [Slack Bot 集成](/slack-bot-integration) 中的 manifest 为每个智能体创建一个 Slack app，安装到 Slack workspace，然后复制 `xoxb-` Bot token 和 `xapp-` App-level Token（需要 `connections:write` scope）。
+3. 在 Patchbay 中打开该智能体的**集成**页面并填入两个 token，也可以直接调用 `POST .../slack/install/byo?agent_id=…`。
+4. Patchbay 在落库前会验证这对 token：
+   - Bot token 必须以 `xoxb-` 开头，并通过实时 `auth.test` 校验（同时拿到 team id 和 Bot 用户 id）；
+   - App-level Token 必须以 `xapp-` 开头、能解析出 app id，并通过实时 `apps.connections.open` 校验，不会存入永远收不到事件的 token；
+   - 两个 token 必须属于同一个 Slack app（用 `auth.test` 返回的 bot id 查 `bots.info` 比对）。配对不一致直接返回 `400`，不会连上一个坏掉的状态。
+5. 一个智能体只能连一个 Bot：安装数据行按工作区 + 智能体组织。重连同一智能体会原地更新该行。已在别处连接过的 Slack app 会返回 `409` 拒绝，先去原智能体或原工作区断开（如果所属智能体已归档，先恢复或断开它的 Bot）。
+
+## 2. 托管 OAuth 回调说明
+
+Go 后端在 BYO 之外还带有一个托管（managed）OAuth 服务（`server/internal/integrations/slack/managed_oauth.go`）。它管理一次性、10 分钟有效、只存哈希的安装 state，入库的只有 state 哈希，并在 `https://slack.com/api/oauth.v2.access` 完成 code 交换。安装者访问 `https://slack.com/oauth/v2/authorize`，scope 为 `ManagedSlackBotScopes`（`app_mentions:read,channels:history,chat:write,commands,files:read,groups:history,im:history,mpim:history,reactions:write,users:read`）。没有托管客户端凭据时，交换会明确报错，不会半截运行。
+
+自托管部署只走 BYO，不需要配置任何 OAuth 回调：Go 服务里虽有托管 begin/callback 路由，但在没有托管客户端凭据（`PATCHBAY_SLACK_CLIENT_ID/_SECRET`）时保持惰性；BYO 安装本身不做任何 OAuth code 交换。自托管安装不要在 app manifest 里加 Slack redirect URL，Socket Mode 不需要它。
+
+## 3. localhost 绑定警告
+
+<Callout type="warning">
+Docker Compose 把 `3000` 和 `8080` 只绑定在 `127.0.0.1` 上。不要把绑定改成 `0.0.0.0` 对外暴露；应在前面架带 HTTPS 的反向代理（例如 Caddy），再转发到 `127.0.0.1:3000` / `127.0.0.1:8080`。见[自托管快速上手](/self-host-quickstart#3-choose-how-to-access)。
+</Callout>
+
+消息链接能否正常工作，取决于两个 URL 设置：
+
+- 账号绑定链接使用 `PATCHBAY_APP_URL`，未设置时回退到 `FRONTEND_ORIGIN`，绝不是 `PATCHBAY_PUBLIC_URL`（后端/API 地址）。它必须指向所有成员都能访问的 Patchbay 地址，不能是 loopback 地址。
+- 自托管部署必须把 `FRONTEND_ORIGIN` 设为公网应用地址；邀请链接、cookie 属性、WebSocket 来源校验都从它推导。
+
+如果绑定链接或 `/api/config` 的 `daemon_server_url` 仍然是 `localhost` 地址，说明 `.env` 还留着本地默认值：把 `FRONTEND_ORIGIN` 和 `PATCHBAY_APP_URL` 显式改成公网地址，然后用 `docker compose -f docker-compose.selfhost.yml up -d` 重建容器（只 `restart` 不会重读 `.env`）。
+
+## 4. 凭据处理
+
+- `PATCHBAY_SLACK_SECRET_KEY` 是 Slack 唯一的部署级密钥，为 base64 编码的 32 字节：
+
+  ```dotenv
+  PATCHBAY_SLACK_SECRET_KEY=<base64 编码的 32 字节密钥>
+  ```
+
+  ```bash
+  openssl rand -base64 32
+  ```
+
+  安装服务要求加密盒非空，开发环境也不允许明文存 token。该密钥是整个集成的总开关：没有它就没有 Slack。
+- 两个 token 都用该密钥加密后存入安装配置（`xoxb-` 出站 token 存为 `bot_token_encrypted`，`xapp-` Socket Mode token 存为 `app_token_encrypted`），落盘形态为 base64 编码密文，绝不明文。API 响应会有意隐去加密后的 Bot token，只返回可展示字段（`app_id`、`team_id`、`bot_user_id`）。
+- 粘贴来的 token 即凭据：不要写进任务、评论或代码仓库。服务端在校验前会对两个值去首尾空格。
+- 该密钥需要长期保存：更换或丢失后，已存 token 无法解密，所有 Bot 都要重新连接。
+- 账号绑定 token 只能使用一次，15 分钟后过期；兑换时绑定的是会话中的 Patchbay 用户，而不是 token 里带的身份。只有工作区成员可以兑换。给 Bot 再发一条消息即可获得新链接。
+
+## 接下来
+
+- [Slack Bot 集成](/slack-bot-integration) —— 创建 Slack app 并填入 token。
+- [聊天集成](/channels) —— 会话隔离和账号绑定机制。
+- [环境变量](/environment-variables) —— 服务端完整配置说明。
+- [自托管快速上手](/self-host-quickstart) —— 容器搭建与远程访问。

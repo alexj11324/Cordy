@@ -7,14 +7,7 @@ import { WecomMark } from "./wecom-mark";
 import { WeixinMark } from "./weixin-mark";
 import { cn } from "@patchbay/ui/lib/utils";
 
-export type IntegrationChannel =
-  | "lark"
-  | "slack"
-  | "dingtalk"
-  | "wecom"
-  | "telegram"
-  | "weixin"
-  | "linear";
+export type IntegrationChannel = "lark" | "slack" | "dingtalk" | "wecom" | "weixin" | "telegram" | "linear";
 
 // Every channel gets its own brand mark, never a generic lucide glyph: the icon
 // is what tells a reader which platform the section belongs to, and a stand-in
@@ -30,25 +23,15 @@ export function IntegrationChannelIcon({
   className?: string;
   size?: "sm" | "lg";
 }) {
-  const iconSize = size === "lg" ? "h-7 w-7" : "h-4 w-4";
+  const markClassName = size === "lg" ? "h-7 w-7" : "h-4 w-4";
   const icon = {
-    lark: <LarkMark className={iconSize} />,
-    slack: <SlackMark className={iconSize} />,
-    dingtalk: <DingTalkMark className={iconSize} />,
-    wecom: <WecomMark className={iconSize} />,
-    telegram: <TelegramMark className={iconSize} />,
-    weixin: <WeixinMark className={iconSize} />,
-    linear: <LinearMark className={iconSize} />,
-  }[channel];
-  const brandColor = {
-    lark: "text-[#3370FF]",
-    // SlackMark renders its four brand colors internally.
-    slack: "text-[#611f69]",
-    dingtalk: "text-[#1677FF]",
-    wecom: "text-[#07C160]",
-    telegram: "text-[#2AABEE]",
-    weixin: "text-[#07C160]",
-    linear: "text-[#5E6AD2]",
+    lark: <LarkMark className={markClassName} />,
+    linear: <LinearMark className={markClassName} />,
+    slack: <SlackMark className={markClassName} />,
+    dingtalk: <DingTalkMark className={markClassName} />,
+    wecom: <WecomMark className={markClassName} />,
+    weixin: <WeixinMark className={markClassName} />,
+    telegram: <TelegramMark className={markClassName} />,
   }[channel];
 
   return (
@@ -56,9 +39,8 @@ export function IntegrationChannelIcon({
       aria-hidden="true"
       data-testid={`integration-channel-icon-${channel}`}
       className={cn(
-        "flex shrink-0 items-center justify-center",
-        size === "lg" ? "size-12 rounded-2xl" : "size-5",
-        brandColor,
+        "flex shrink-0 items-center justify-center text-muted-foreground",
+        size === "lg" ? "size-12 rounded-xl bg-surface-muted" : "size-5",
         className,
       )}
     >

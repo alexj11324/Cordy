@@ -1,6 +1,6 @@
 ---
 title: Self-hosted Git providers
-description: Connect a self-hosted Forgejo, Gitea, or GitLab instance per workspace so explicitly attached pull/merge requests can move an issue to Done on merge and show CI status.
+description: Connect a self-hosted Forgejo, Gitea, or GitLab instance per workspace so pull/merge requests that reference an issue identifier auto-attach to that issue, move it to Done on merge, and show CI status.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
@@ -14,7 +14,7 @@ and set `PATCHBAY_VCS_SECRET_KEY`; until then the section does not appear in
 Settings → Integrations.
 </Callout>
 
-Patchbay connects to a self-hosted Git provider per workspace: **Forgejo**, **Gitea**, or **GitLab**. Once connected, pull requests (GitLab: merge requests) are mirrored as Work Products. They appear under **Pull requests** only after an authenticated task/run registers them or a workspace member explicitly attaches them to an [issue](/issues). A `PB-123` identifier in a branch, title, or body is optional human-readable context and never creates a relation. An explicitly attached relation with close intent can move the issue to **Done** after merge. CI for the head commit shows as a checks bar on the card.
+Patchbay connects to a self-hosted Git provider per workspace: **Forgejo**, **Gitea**, or **GitLab**. Once connected, any pull request (GitLab: merge request) whose branch name, title, or body contains an issue identifier (for example `MUL-123`) is **auto-linked** to that [issue](/issues), appears under **Pull requests** in the issue sidebar, and — when merged with a closing keyword — moves the issue to **Done**. CI for the head commit shows as a checks bar on the card.
 
 These providers run alongside GitHub: a workspace can use any combination.
 
@@ -81,18 +81,8 @@ Patchbay authenticates every delivery against the stored secret, so a webhook wi
 ## What gets mirrored
 
 - **Pull / merge requests** — open, closed, merged, and draft state, author, branch, and (where the provider supplies them) diff stats.
-- **Work Product relations** — webhook deliveries mirror provider objects but never inspect PR text or create Issue relations. Use the issue's Attach action/API to select an unassociated product; task/run registration is the agent path. A relation with explicit close intent on a merged PR moves the issue to **Done** once no linked PR is still open.
+- **Issue links** — identifiers in the title, body, or branch link the PR to the issue. A closing keyword (`Closes`/`Fixes`/`Resolves MUL-123`) on a merged PR moves the issue to **Done** once no linked PR is still open.
 - **CI** — Forgejo/Gitea commit statuses and GitLab pipelines aggregate into a passed/failed/pending checks bar for the head commit.
-
-If a task finishes without registration, Patchbay may perform one exact-branch
-lookup using that task's persisted repository identity, execution workspace, and
-head branch. Only one match is durable. Zero matches remain unassociated;
-multiple matches, shared or active branches, default/detached heads, and lookup
-failures remain visibly ambiguous or ineligible for explicit confirmation. The
-branch is used only for this first lookup, not as a lasting association key.
-This automatic lookup is currently available only for GitHub App repositories;
-Forgejo, Gitea, and GitLab products remain unassociated until a member explicitly
-attaches them.
 
 ## Agents opening pull requests
 

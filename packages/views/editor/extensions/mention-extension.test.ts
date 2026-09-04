@@ -96,16 +96,16 @@ describe("mention tokenizer", () => {
   });
 
   it("parses issue mentions without @ prefix", () => {
-    const token = tokenize("[PB-123](mention://issue/aaa-bbb)");
+    const token = tokenize("[MUL-123](mention://issue/aaa-bbb)");
     expect(token).toBeDefined();
-    expect(token!.attributes.label).toBe("PB-123");
+    expect(token!.attributes.label).toBe("MUL-123");
     expect(token!.attributes.type).toBe("issue");
   });
 
   it("finds an issue mention nested inside task list Markdown", () => {
-    const token = tokenize("- [ ] [PB-123](mention://issue/aaa-bbb)");
+    const token = tokenize("- [ ] [MUL-123](mention://issue/aaa-bbb)");
     expect(token).toBeDefined();
-    expect(token!.attributes.label).toBe("PB-123");
+    expect(token!.attributes.label).toBe("MUL-123");
     expect(token!.attributes.type).toBe("issue");
     expect(token!.attributes.id).toBe("aaa-bbb");
   });

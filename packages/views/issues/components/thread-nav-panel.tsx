@@ -22,7 +22,7 @@ import {
 import { ActorAvatar } from "../../common/actor-avatar";
 import { pickerNavigationDirection } from "../../common/picker-keys";
 import { ShortcutKeycaps } from "../../common/shortcut-keycaps";
-import { useT } from "../../i18n";
+import { useLocale, useT } from "../../i18n";
 import { commentPreview } from "./thread-minimap";
 
 // ---------------------------------------------------------------------------
@@ -35,7 +35,7 @@ import { commentPreview } from "./thread-minimap";
 // compress to their 5px floor and stop being countable at all. A list fixes
 // the cost model — 8-10 titles readable in one glance instead of one at a
 // time — and search/filter make 24 threads and 240 threads cost the same
-// (PB-5755).
+// (MUL-5755).
 //
 // The panel deliberately does NOT mark which threads are currently on screen.
 // "On screen" is a set, not a point — a tall viewport holds several threads at
@@ -204,6 +204,7 @@ function ThreadRow({
   onHover: (threadId: string | null) => void;
 }) {
   const { t } = useT("issues");
+  const locale = useLocale();
   const { thread, title, excerpt, authorName } = prepared;
   return (
     <button
@@ -245,7 +246,7 @@ function ThreadRow({
             {highlightMatches(title, query)}
           </span>
           <span className="shrink-0 text-micro tabular-nums text-faint-foreground">
-            {formatStamp(prepared.thread.entry.created_at, prepared.group)}
+            {formatStamp(prepared.thread.entry.created_at, prepared.group, locale)}
           </span>
         </span>
         <span className="mt-1 flex min-w-0 items-center gap-1.5 text-caption text-muted-foreground">
@@ -284,13 +285,13 @@ function ThreadRow({
  * "earlier", and it rendered as a bare `11:41 PM` with nothing saying which
  * day. One boundary, decided once, cannot drift from itself.
  */
-export function formatStamp(createdAt: string, group: ThreadDayGroup): string {
+export function formatStamp(createdAt: string, group: ThreadDayGroup, locale: string): string {
   const ts = Date.parse(createdAt);
   if (Number.isNaN(ts)) return "";
   const d = new Date(ts);
   return group === "earlier"
-    ? d.toLocaleDateString(undefined, { month: "short", day: "numeric" })
-    : d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    ? d.toLocaleDateString(locale, { month: "short", day: "numeric" })
+    : d.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
 }
 
 interface ThreadNavPanelProps {

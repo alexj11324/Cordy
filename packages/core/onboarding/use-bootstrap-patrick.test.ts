@@ -126,7 +126,7 @@ describe("bootstrapPatrick", () => {
     expect(mocks.startPatrickOnboarding).not.toHaveBeenCalled();
   });
 
-  // PB-5501: on desktop the tab system also writes the global
+  // MUL-5501: on desktop the tab system also writes the global
   // current-workspace singleton, and it reclaims it while this flow runs —
   // the new workspace has no tab group yet. Every request here therefore has
   // to name its own workspace; when they did not, Patrick was provisioned into

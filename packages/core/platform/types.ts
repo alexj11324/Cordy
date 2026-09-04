@@ -1,8 +1,4 @@
-import type {
-  LocaleAdapter,
-  LocaleResources,
-  SupportedLocale,
-} from "../i18n";
+import type { LocaleAdapter, LocaleResources, SupportedLocale } from "../i18n";
 import type { StorageAdapter } from "../types/storage";
 import type { AuthLogoutHandler } from "../auth";
 
@@ -28,11 +24,11 @@ export interface CoreProviderProps {
   storage?: StorageAdapter;
   /** Use HttpOnly cookies for auth instead of localStorage tokens. Default: false. */
   cookieAuth?: boolean;
-  /** Use Clerk for auth (web only). Skips legacy token hydration and boot checks. Default: false. */
+  /** Use Clerk for auth (web only). Skips legacy token hydration and boot checks. */
   clerkAuth?: boolean;
   /** Called after successful login (e.g. set cookie for Next.js middleware). */
   onLogin?: () => void;
-  /** Called during logout (e.g. clear cookie or revoke platform auth). */
+  /** Called after logout (e.g. clear cookie). */
   onLogout?: AuthLogoutHandler;
   /** Identifies the calling client (web/desktop + version + os) to the server. */
   identity?: ClientIdentity;

@@ -22,12 +22,7 @@ import type { User } from "../types";
 
 const logger = createLogger("auth");
 const RECOVERY_RETRY_DELAYS_MS = [
-  1_000,
-  2_000,
-  4_000,
-  8_000,
-  16_000,
-  30_000,
+  1_000, 2_000, 4_000, 8_000, 16_000, 30_000,
 ] as const;
 
 export function AuthInitializer({
@@ -70,6 +65,7 @@ export function AuthInitializer({
         }
         configStore.getState().setAuthConfig({
           allowSignup: cfg.allow_signup,
+          googleClientId: cfg.google_client_id,
           // Old servers omit this field — treat that as "creation allowed"
           // (the managed-cloud default) rather than blocking the UI.
           workspaceCreationDisabled: cfg.workspace_creation_disabled === true,
@@ -87,6 +83,14 @@ export function AuthInitializer({
         configStore
           .getState()
           .setLocalWorktreeSupported(cfg.local_worktree_supported === true);
+        // Older agent handlers returned success while silently dropping this
+        // additive field, so writes stay disabled unless the server declares
+        // the persistence contract explicitly.
+        configStore
+          .getState()
+          .setAgentConversationStartersSupported(
+            cfg.agent_conversation_starters_supported === true,
+          );
         configStore.getState().setMessagingConfig(cfg.messaging);
         if (cfg.posthog_key) {
           initAnalytics({
@@ -316,17 +320,12 @@ export function AuthInitializer({
     };
 
     if (clerkAuth) {
-      // ClerkAuthAdapter owns the one-time Clerk -> Patchbay session exchange.
-      // Starting /api/me here races that exchange and produces a false 401.
       useAuthStore.setState({
         user: null,
         isLoading: true,
         status: "authenticating",
       });
-    } else if (cookieAuth) {
-      window.addEventListener("online", retryNow);
-      void attempt();
-    } else {
+    } else if (!cookieAuth) {
       const token = storage.getItem("patchbay_token");
       if (!token) {
         settled = true;
@@ -341,6 +340,9 @@ export function AuthInitializer({
         window.addEventListener("online", retryNow);
         void attempt();
       }
+    } else {
+      window.addEventListener("online", retryNow);
+      void attempt();
     }
 
     return () => {
@@ -348,7 +350,7 @@ export function AuthInitializer({
       window.removeEventListener("online", retryNow);
       if (retryTimer !== undefined) clearTimeout(retryTimer);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [retryGeneration]);
 
   return <>{children}</>;

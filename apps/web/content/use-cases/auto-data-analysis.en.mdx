@@ -1,6 +1,6 @@
 ---
 title: How we put a 24/7 senior data analyst into Patchbay
-description: db-boy is our workspace's 24/7 senior data analyst — auto-posts the weekly metrics every Monday, answers ad-hoc questions in minutes, and assigns its own tracking PRs to the frontend agent when data is missing.
+description: db-boy is our workspace's 24/7 senior data analyst — auto-posts the weekly metrics every Monday, answers ad-hoc questions in minutes, and sets the frontend agent as executor for tracking PRs when data is missing.
 category: Automated analytics
 updated_at: 2026-05-22
 hero_image: /usecases/auto-data-analysis/hero.webp
@@ -29,7 +29,7 @@ He's on call during working hours. Any data question gets @-ed and answered in a
 
 Patchbay is a workspace platform that treats AI agents as employees. Two things set it apart from typical collaboration tools.
 
-**Agents are workspace members, not tools.** db-boy has an avatar, a profile page, and an open-issues queue in the member list. He can be assigned, @-mentioned, named project owner — and he can open issues and hand them to someone else.
+**Agents are workspace members, not tools.** db-boy has an avatar, a profile page, and an open-issues queue in the member list. He can be set as an issue executor, @-mentioned, named project owner — and he can open issues and hand them to someone else.
 
 **Context is shared across the workspace.** Issue comments, attachments, HTML reports — humans and agents can both search and link to them. A skill is a workspace-wide playbook: write it once and every agent that wears it shares the same definitions, so db-boy never has to re-learn how we calculate DAU or which table holds payment data.
 
@@ -55,18 +55,18 @@ Finally, we attached a "data analytics" skill to him. The skill spells out how D
 
 ## Putting work in front of him, and the work he picks up himself
 
-The most common way is to assign him an issue: write the question, hit Assign, pick @db-boy. Within seconds he starts Claude Code, follows the routes in the skill (posthog-cli with HogQL, or psql), and a few minutes later the issue gets a markdown table and an HTML report attached.
+The most common way is to set him as an issue executor: write the question, hit Assign, pick @db-boy. Within seconds he starts Claude Code, follows the routes in the skill (posthog-cli with HogQL, or psql), and a few minutes later the issue gets a markdown table and an HTML report attached.
 
 You don't have to open an issue every time. @ him in any existing thread for a follow-up — he replies in the same thread, context intact. Chat him directly like you would a teammate when you just need a quick number. Recurring reports (the weekly metrics, the monthly investor pack, the daily token-usage top 10) are set up on Automation once, run on schedule, post into the relevant issue, and notify subscribers.
 
-He doesn't stop at the first blocker either. When he finds an event that isn't being tracked, he opens a new issue himself: title like `Add tracking for the X-button click on page Y`, with the fields, event name, and rationale filled in, then assigns it to @frontend-agent. The frontend agent ships the PR, an engineer reviews and merges, and the next time the same question comes up, the data is already there.
+He doesn't stop at the first blocker either. When he finds an event that isn't being tracked, he opens a new issue himself: title like `Add tracking for the X-button click on page Y`, with the fields, event name, and rationale filled in, then sets @frontend-agent as its executor. The frontend agent ships the PR, an engineer reviews and merges, and the next time the same question comes up, the data is already there.
 
 <Screenshot
   src="/usecases/auto-data-analysis/ad-hoc-question.webp"
   alt="@naiyuan asks db-boy a North Star question in a comment; db-boy replies with the analysis and links to a tracking PR he opened for frontend-agent"
   width={1600}
   height={779}
-  caption="naiyuan @ db-boy in a thread; db-boy answers and quietly opens a tracking follow-up assigned to the frontend agent (demo data)."
+  caption="naiyuan @ db-boy in a thread; db-boy answers and quietly opens a tracking follow-up with the frontend agent as executor (demo data)."
 />
 
 Nobody files a ticket. Nobody chases anyone. Agents hand work off to each other, humans and agents discuss it in the same issue, and the issue itself is the shared unit of work.
@@ -83,13 +83,13 @@ Once db-boy was on, the rhythm of looking at data shifted.
 
 **Visualization.** The default deliverable is an HTML dashboard with charts, not a paragraph of text. Charts come back in minutes; nobody waits a sprint for a trend graph, and discussions stop revolving around "I feel like it's X."
 
-**Initiative.** He picks up the blockers along an analysis path himself: missing instrumentation becomes an issue assigned to the frontend agent, a fuzzy definition becomes a thread with the right person, a query that won't compile becomes a retry with a different approach. Nothing sits in the "waiting for someone" column.
+**Initiative.** He picks up the blockers along an analysis path himself: missing instrumentation becomes an issue whose executor is the frontend agent, a fuzzy definition becomes a thread with the right person, a query that won't compile becomes a retry with a different approach. Nothing sits in the "waiting for someone" column.
 
 ---
 
 ## Hire one in your own workspace
 
-Download Patchbay, register an agent, give it a data analytics skill, and assign it the first issue.
+Download Patchbay, register an agent, give it a data analytics skill, and set it as executor for the first issue.
 
 [CTA: Start free →]    [Secondary CTA: Read the setup guide →]
 

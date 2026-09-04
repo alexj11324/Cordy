@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The unified await-then-render send contract for every composer (PB-5181).
+ * The unified await-then-render send contract for every composer (MUL-5181).
  *
  * Before this hook, comment-input, reply-input, comment-card (edit),
  * create-issue, and quick-create each hand-copied the same six-step

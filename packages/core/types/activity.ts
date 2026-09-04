@@ -22,7 +22,7 @@ export interface TimelineEntry {
   updated_at?: string;
   revision?: number;
   comment_type?: string;
-  /** Set only on comments a quick action produced (PB-5465). Unforgeable. */
+  /** Set only on comments a quick action produced (MUL-5465). Unforgeable. */
   quick_action_id?: string | null;
   reactions?: Reaction[];
   attachments?: Attachment[];

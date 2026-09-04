@@ -42,7 +42,7 @@ function extractWorkspaceSlug(path: string): string | null {
  * desktop are rendered as a window-level overlay instead of a tab route.
  * Returns `true` if the navigation was handled (caller should NOT proceed).
  *
- * PB-4741 note: the old adapter also parked the tab's router at "/" when
+ * MUL-4741 note: the old adapter also parked the tab's router at "/" when
  * opening these overlays. Under the session architecture the Coordinator
  * parks the single router automatically whenever `activeWorkspaceSlug` goes
  * null (the zero-workspace flows), and an overlay opened over a still-valid
@@ -182,7 +182,7 @@ function tryRouteToPinnedNewTab(path: string): boolean {
  * RouterProvider (there is no per-tab provider anymore; the active session's
  * URL is the location for everyone).
  *
- * PB-4741 invariant 1: none of these operations touch the router. They
+ * MUL-4741 invariant 1: none of these operations touch the router. They
  * mutate tab sessions in the store; the Coordinator reconciles the single
  * router to the active session URL with a navigation token.
  */
@@ -203,7 +203,8 @@ export function DesktopNavigationProvider({
     const { pathname, suffix } = splitTabUrl(url);
     const hashIdx = suffix.indexOf("#");
     const search = hashIdx === -1 ? suffix : suffix.slice(0, hashIdx);
-    return { pathname, search };
+    const hash = hashIdx === -1 ? "" : suffix.slice(hashIdx);
+    return { pathname, search, hash };
   }, [activeUrl, settingsPath]);
 
   const adapter: NavigationAdapter = useMemo(
@@ -249,6 +250,9 @@ export function DesktopNavigationProvider({
       },
       pathname: location.pathname,
       searchParams: new URLSearchParams(location.search),
+      // The tab's URL is the only place the fragment survives on desktop: the
+      // renderer's own `window.location` is the packaged file:// page.
+      hash: location.hash,
       openInNewTab: (
         path: string,
         title?: string,
@@ -258,7 +262,7 @@ export function DesktopNavigationProvider({
         // Cross-workspace "open in new tab" switches workspace and opens
         // the path there (focus follows the user), REGARDLESS of
         // `opts.activate`. This is a deliberate product exception to the
-        // background-tab contract (decided with PB-5860): a background tab
+        // background-tab contract (decided with MUL-5860): a background tab
         // added to a non-visible workspace's group would give the user zero
         // feedback — "nothing happened" is worse than losing the background
         // semantics for the rare cross-workspace link. Same-workspace

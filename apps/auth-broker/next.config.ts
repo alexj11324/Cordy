@@ -1,35 +1,16 @@
 import type { NextConfig } from "next";
-import { resolve } from "path";
+import { resolve } from "node:path";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  ...(process.env.STANDALONE === "true"
-    ? {
-        output: "standalone" as const,
-        outputFileTracingRoot: resolve(__dirname, "../.."),
-      }
-    : {}),
-  async headers() {
-    return [
-      {
-        source: "/:path*",
-        headers: [
-          { key: "Cache-Control", value: "no-store" },
-          { key: "Referrer-Policy", value: "no-referrer" },
-          { key: "X-Content-Type-Options", value: "nosniff" },
-          { key: "X-Frame-Options", value: "DENY" },
-          {
-            key: "X-Patchbay-Build",
-            value: process.env.NEXT_PUBLIC_APP_VERSION || "dev",
-          },
-          {
-            key: "Permissions-Policy",
-            value: "camera=(), microphone=(), geolocation=()",
-          },
-        ],
-      },
-    ];
-  },
+  outputFileTracingRoot: resolve(__dirname, "../.."),
+  ...(process.env.STANDALONE === "true" ? { output: "standalone" as const } : {}),
+  async headers() { return [{ source: "/:path*", headers: [
+    { key: "Cache-Control", value: "no-store" }, { key: "Referrer-Policy", value: "no-referrer" },
+    { key: "X-Content-Type-Options", value: "nosniff" }, { key: "X-Frame-Options", value: "DENY" },
+    { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+    { key: "X-Patchbay-Build", value: process.env.NEXT_PUBLIC_APP_VERSION || "dev" },
+    { key: "X-Patchbay-Commit", value: process.env.NEXT_PUBLIC_COMMIT_SHA || "unknown" }
+  ] }]; }
 };
-
 export default nextConfig;

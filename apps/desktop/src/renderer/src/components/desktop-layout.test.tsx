@@ -1,11 +1,10 @@
 import type { ReactNode } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, waitFor } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { render } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { I18nProvider } from "@patchbay/core/i18n/react";
 import { useSidebar } from "@patchbay/ui/components/ui/sidebar";
 import { RESOURCES } from "@patchbay/views/locales";
-import { useWindowOverlayStore } from "@/stores/window-overlay-store";
 
 // The shell resolves the mocked `getCurrentSlug()` against the workspace list
 // before mounting workspace-scoped chrome, so the list has to contain it or
@@ -68,9 +67,7 @@ vi.mock("@patchbay/views/layout", () => ({
   NavigationProgress: () => null,
 }));
 
-vi.mock("@patchbay/views/modals/registry", () => ({
-  ModalRegistry: () => null,
-}));
+vi.mock("@patchbay/views/modals/registry", () => ({ ModalRegistry: () => null }));
 vi.mock("@patchbay/views/search", () => ({
   SearchCommand: () => null,
   SearchTrigger: () => null,
@@ -83,38 +80,22 @@ vi.mock("./window-overlay", () => ({ WindowOverlay: () => null }));
 // a `PageHeader` reads before deciding to render its own fallback trigger.
 vi.mock("./tab-content", () => ({
   TabContent: () => {
-    const {
-      hasExternalTrigger,
-      open,
-      state,
-      toggleSidebar,
-      revealHoverSidebar,
-    } = useSidebar();
+    const { hasExternalTrigger } = useSidebar();
     return (
-      <div
-        data-testid="page-content"
-        data-external-trigger={hasExternalTrigger}
-        data-open={open}
-        data-state={state}
-      >
-        <button data-testid="toggle-sidebar" onClick={toggleSidebar} />
-        <button data-testid="reveal-sidebar" onClick={revealHoverSidebar} />
-      </div>
+      <div data-testid="page-content" data-external-trigger={hasExternalTrigger} />
     );
   },
 }));
 
 const { DesktopShell } = await import("./desktop-layout");
 
-beforeEach(() => {
-  useWindowOverlayStore.getState().close();
-});
-
 function renderShell(
-  os: "macos" | "windows" = "macos",
+  os: "macos" | "windows" = "windows",
   host: "electron" | "browser" = "electron",
 ) {
-  (window as unknown as { desktopAPI: Record<string, unknown> }).desktopAPI = {
+  (
+    window as unknown as { desktopAPI: Record<string, unknown> }
+  ).desktopAPI = {
     host,
     appInfo: { version: "0.0.0-test", os },
     onNavigationGesture: () => () => {},
@@ -136,24 +117,26 @@ function renderShell(
 }
 
 describe("DesktopShell sidebar trigger", () => {
-  it("makes the covered application inert while standalone Settings is open", () => {
-    const { getByTestId } = renderShell();
-    const underlay = getByTestId("desktop-application-underlay");
+  // The window toolbar parks a trigger beside the traffic lights that never
+  // scrolls away, so nothing inside the canvas may add a second one. Desktop
+  // windows sit below `xl`, exactly the band where `PageHeader`'s fallback
+  // trigger renders, so every page used to stack an identical icon 50px under
+  // this one — and a third when a list/detail surface brought its own header
+  // along (MUL-6218).
+  it("keeps exactly one trigger and tells page headers not to add another", () => {
+    const { container, getByTestId } = renderShell();
 
-    act(() => {
-      useWindowOverlayStore.getState().open({
-        type: "settings",
-        path: "/acme/settings",
-      });
-    });
-    expect(underlay).toHaveAttribute("inert");
-    expect(underlay).toHaveAttribute("aria-hidden", "true");
-
-    act(() => useWindowOverlayStore.getState().close());
-    expect(underlay).not.toHaveAttribute("inert");
-    expect(underlay).not.toHaveAttribute("aria-hidden");
+    expect(container.querySelectorAll("[data-slot='sidebar-trigger']")).toHaveLength(1);
+    expect(getByTestId("page-content")).toHaveAttribute(
+      "data-external-trigger",
+      "true",
+    );
   });
 
+  // The macOS shell is transparent so Electron's native sidebar material can
+  // show through; other platforms keep the opaque app-shell wrapper. The
+  // marker is what the globals.css `:has()` gate keys off to drop the body
+  // fill — without it the vibrancy stays buried under an opaque page.
   it("enables the glass shell while reserving native transparency for macOS", () => {
     const mac = renderShell("macos").container.querySelector<HTMLElement>(
       "[data-slot='sidebar-wrapper']",
@@ -172,60 +155,15 @@ describe("DesktopShell sidebar trigger", () => {
     expect(windows).not.toHaveAttribute("data-native-vibrancy");
     expect(windows).toHaveClass("bg-app-shell");
     expect(windows.parentElement).toHaveClass("bg-app-shell");
-
-    const browserMac = renderShell(
-      "macos",
-      "browser",
-    ).container.querySelector<HTMLElement>("[data-slot='sidebar-wrapper']")!;
-
-    expect(browserMac).toHaveAttribute("data-sidebar-glass", "true");
-    expect(browserMac).not.toHaveAttribute("data-native-vibrancy");
-    expect(browserMac).toHaveClass("bg-app-shell");
-    expect(browserMac.parentElement).toHaveClass("bg-app-shell");
   });
 
-  // The window toolbar parks a trigger beside the traffic lights that never
-  // scrolls away, so nothing inside the canvas may add a second one. Desktop
-  // windows sit below `xl`, exactly the band where `PageHeader`'s fallback
-  // trigger renders, so every page used to stack an identical icon 50px under
-  // this one — and a third when a list/detail surface brought its own header
-  // along (PB-6218).
-  it("keeps exactly one trigger and tells page headers not to add another", () => {
-    const { container, getByTestId } = renderShell();
+  it("keeps the opaque shell in browser hosts even on macOS", () => {
+    const browser = renderShell("macos", "browser").container.querySelector<HTMLElement>(
+      "[data-slot='sidebar-wrapper']",
+    )!;
 
-    expect(
-      container.querySelectorAll("[data-slot='sidebar-trigger']"),
-    ).toHaveLength(1);
-    expect(getByTestId("page-content")).toHaveAttribute(
-      "data-external-trigger",
-      "true",
-    );
-  });
-
-  it("keeps desktop geometry collapsed during a temporary hover reveal", async () => {
-    const { container, getByTestId } = renderShell();
-    const topBar = container.querySelector("header");
-    const canvas = getByTestId("page-content").parentElement;
-
-    expect(topBar).toHaveStyle({ paddingLeft: "0px" });
-    expect(canvas).toHaveStyle({ marginLeft: "2px" });
-
-    fireEvent.click(getByTestId("toggle-sidebar"));
-    await waitFor(() => {
-      expect(getByTestId("page-content")).toHaveAttribute("data-open", "false");
-      expect(topBar).toHaveStyle({ paddingLeft: "184px" });
-      expect(canvas).toHaveStyle({ marginLeft: "8px" });
-    });
-
-    fireEvent.click(getByTestId("reveal-sidebar"));
-    await waitFor(() => {
-      expect(getByTestId("page-content")).toHaveAttribute(
-        "data-state",
-        "expanded",
-      );
-      expect(getByTestId("page-content")).toHaveAttribute("data-open", "false");
-    });
-    expect(topBar).toHaveStyle({ paddingLeft: "184px" });
-    expect(canvas).toHaveStyle({ marginLeft: "8px" });
+    expect(browser).toHaveAttribute("data-sidebar-glass", "true");
+    expect(browser).not.toHaveAttribute("data-native-vibrancy");
+    expect(browser).toHaveClass("bg-app-shell");
   });
 });

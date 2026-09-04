@@ -4,22 +4,13 @@
   "title": "Patchbay auth broker contract",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "name",
-    "version",
-    "origins",
-    "broker",
-    "rustApi",
-    "desktop",
-    "authority"
-  ],
+  "required": ["name", "version", "origins", "broker", "goApi", "desktop", "client", "authority"],
   "properties": {
     "$schema": { "type": "string" },
     "name": { "const": "patchbay-auth-broker" },
     "version": { "const": 1 },
     "origins": {
-      "type": "object",
-      "additionalProperties": false,
+      "type": "object", "additionalProperties": false,
       "required": ["broker", "product", "api"],
       "properties": {
         "broker": { "const": "https://accounts.aspectlylabs.com" },
@@ -28,16 +19,8 @@
       }
     },
     "broker": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "googleStartPath",
-        "googleCallbackPath",
-        "desktopCompletionPath",
-        "desktopAttemptPath",
-        "desktopCompletePath",
-        "contractPath"
-      ],
+      "type": "object", "additionalProperties": false,
+      "required": ["googleStartPath", "googleCallbackPath", "desktopCompletionPath", "desktopAttemptPath", "desktopCompletePath", "contractPath"],
       "properties": {
         "googleStartPath": { "const": "/oauth/google" },
         "googleCallbackPath": { "const": "/oauth/google/callback" },
@@ -47,14 +30,9 @@
         "contractPath": { "const": "/v1/contract" }
       }
     },
-    "rustApi": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "desktopAttemptPath",
-        "desktopCompletePath",
-        "desktopRedeemPath"
-      ],
+    "goApi": {
+      "type": "object", "additionalProperties": false,
+      "required": ["desktopAttemptPath", "desktopCompletePath", "desktopRedeemPath"],
       "properties": {
         "desktopAttemptPath": { "const": "/api/desktop-google/attempt" },
         "desktopCompletePath": { "const": "/api/desktop-google/complete" },
@@ -62,40 +40,36 @@
       }
     },
     "desktop": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "callbackUrl",
-        "queryParameters",
-        "pkceMethod",
-        "bearerAllowedInCallback"
-      ],
+      "type": "object", "additionalProperties": false,
+      "required": ["callbackUrl", "queryParameters", "pkceMethod", "bearerAllowedInCallback"],
       "properties": {
         "callbackUrl": { "const": "patchbay://auth/callback" },
-        "queryParameters": {
-          "type": "array",
-          "prefixItems": [{ "const": "code" }, { "const": "state" }],
-          "items": false,
-          "minItems": 2,
-          "maxItems": 2
-        },
+        "queryParameters": { "type": "array", "prefixItems": [{ "const": "code" }, { "const": "state" }], "items": false, "minItems": 2, "maxItems": 2 },
         "pkceMethod": { "const": "S256" },
         "bearerAllowedInCallback": { "const": false }
       }
     },
+    "client": {
+      "type": "object", "additionalProperties": false,
+      "required": ["clerkExchangePath", "guestPath", "logoutPath", "mePath", "websocketPath", "guestTokenPrefix", "guestWorkspaceAccess", "guestWebsocketAccess"],
+      "properties": {
+        "clerkExchangePath": { "const": "/auth/clerk" },
+        "guestPath": { "const": "/auth/guest" },
+        "logoutPath": { "const": "/auth/logout" },
+        "mePath": { "const": "/api/me" },
+        "websocketPath": { "const": "/ws" },
+        "guestTokenPrefix": { "const": "pbg_" },
+        "guestWorkspaceAccess": { "const": false },
+        "guestWebsocketAccess": { "const": false }
+      }
+    },
     "authority": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "identity",
-        "patchbaySession",
-        "oneTimeGrant",
-        "brokerPersistence"
-      ],
+      "type": "object", "additionalProperties": false,
+      "required": ["identity", "patchbaySession", "oneTimeGrant", "brokerPersistence"],
       "properties": {
         "identity": { "const": "clerk" },
-        "patchbaySession": { "const": "rust-api" },
-        "oneTimeGrant": { "const": "rust-api" },
+        "patchbaySession": { "const": "go-api" },
+        "oneTimeGrant": { "const": "go-api" },
         "brokerPersistence": { "const": "none" }
       }
     }

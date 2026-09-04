@@ -23,8 +23,8 @@ import type { MetadataRoute } from "next";
  *   sips -s format png --resampleHeightWidth 192 192 ../../../desktop/build/icon.png --out icon-192.png
  *
  * The two `any` icons come from the desktop app icon so an installed web app
- * and an installed desktop app show the same artwork; the maskable one is
- * full-bleed because Android crops it to the launcher's shape.
+ * and an installed desktop app show the same routing mark; the maskable one
+ * is full-bleed because Android crops it to the launcher's shape.
  */
 
 /** Launch path. Exported so manifest.test.ts can run it through the proxy. */

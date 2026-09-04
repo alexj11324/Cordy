@@ -7,7 +7,7 @@
  * runtime coupling. Zod schemas + fallbacks are imported from
  * @patchbay/core/api/schemas (pure data, on the mobile sharing whitelist).
  *
- * Design checklist (apps/mobile/AGENTS.md "Lessons → ApiClient capability list"):
+ * Design checklist (apps/mobile/CLAUDE.md "Lessons → ApiClient capability list"):
  *   1. Zod parseWithFallback for endpoints with schemas (drift defense)
  *   2. onUnauthorized callback on 401 (auto sign-out, avoids retry loops)
  *   3. X-Request-ID per request + structured logger (debug + tracing)
@@ -28,6 +28,7 @@ import type {
   CreateLabelRequest,
   CreateProjectRequest,
   CreateProjectResourceRequest,
+  DependencyGraphResponse,
   InboxItem,
   Issue,
   IssueLabelsResponse,
@@ -38,6 +39,10 @@ import type {
   ListLabelsResponse,
   ListProjectResourcesResponse,
   ListProjectsResponse,
+  ListDependencyGraphsResponse,
+  WorkProduct,
+  WorkProductPage,
+  WorkProductPageParams,
   MemberWithUser,
   PinnedItem,
   PinnedItemType,
@@ -53,6 +58,10 @@ import type {
   Team,
   NotificationPreferenceResponse,
   NotificationPreferences,
+  ListWecomInstallationsResponse,
+  RegisterWecomBYORequest,
+  RedeemWecomBindingTokenResponse,
+  WecomInstallation,
   TaskMessagePayload,
   TimelineEntry,
   UpdateIssueRequest,
@@ -64,11 +73,23 @@ import type {
 import {
   EMPTY_LIST_ISSUE_STATUSES_RESPONSE,
   EMPTY_LIST_ISSUES_RESPONSE,
+  EMPTY_LIST_DEPENDENCY_GRAPHS_RESPONSE,
+  EMPTY_LIST_WECOM_INSTALLATIONS_RESPONSE,
   EMPTY_TIMELINE_ENTRIES,
+  CreateIssueResponseSchema,
+  DependencyGraphResponseSchema,
   IssueSchema,
+  ListWecomInstallationsResponseSchema,
+  ListDependencyGraphsResponseSchema,
   ListIssuesResponseSchema,
   ListIssueStatusesResponseSchema,
+  RedeemWecomBindingTokenResponseSchema,
   TimelineEntriesSchema,
+  WecomInstallationSchema,
+  EMPTY_WORK_PRODUCT,
+  EMPTY_WORK_PRODUCT_PAGE,
+  WorkProductPageSchema,
+  WorkProductSchema,
 } from "@patchbay/core/api/schemas";
 import {
   ActiveTasksResponseSchema,
@@ -125,11 +146,32 @@ import {
   UserSchema,
   WorkspaceListSchema,
 } from "./schemas";
+import type {
+  CreateWorkspaceChannelMessageRequest,
+  CreateWorkspaceChannelRequest,
+  ListWorkspaceChannelMessagesParams,
+  ListWorkspaceChannelMessagesResponse,
+  ListWorkspaceChannelsResponse,
+  WorkspaceChannel,
+  WorkspaceChannelMessage,
+} from "./channel-types";
+import {
+  EMPTY_WORKSPACE_CHANNEL_LIST_RESPONSE,
+  EMPTY_WORKSPACE_CHANNEL_MESSAGE_LIST_RESPONSE,
+  WorkspaceChannelListResponseSchema,
+  WorkspaceChannelMessageListResponseSchema,
+  WorkspaceChannelMessageSchema,
+  WorkspaceChannelSchema,
+} from "./channel-types";
 import type { ZodType } from "zod";
 import { getCurrentSlug } from "./workspace-store";
 import { parseWithFallback } from "@/lib/parse-response";
 import { createRequestId } from "@/lib/request-id";
 import { buildCommentUpdateBody } from "./revision";
+import {
+  requireCreatedIssueResponse,
+  requireUpdatedIssueResponse,
+} from "./issue-response";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
@@ -156,7 +198,7 @@ export interface FileAsset {
 }
 
 /** Web mirrors this from `packages/core/constants/upload.ts`. Mobile keeps
- *  its own copy per the `mirror, don't import` rule in apps/mobile/AGENTS.md. */
+ *  its own copy per the `mirror, don't import` rule in apps/mobile/CLAUDE.md. */
 const MAX_FILE_SIZE = 100 * 1024 * 1024;
 
 /** Hard ceiling for every HTTP request. Mobile-specific because iOS may
@@ -217,8 +259,8 @@ class ApiClient {
     if (this.token) {
       headers["Authorization"] = `Bearer ${this.token}`;
     }
-    // Backend workspace middleware resolves slug → ws UUID and gates
-    // membership. Mirrors packages/core/api/client.ts.
+    // Backend middleware (server/internal/middleware/workspace.go) resolves
+    // slug → ws UUID and gates membership. Mirrors packages/core/api/client.ts.
     const slug = getCurrentSlug();
     if (slug && !headers["X-Workspace-Slug"]) {
       headers["X-Workspace-Slug"] = slug;
@@ -385,6 +427,10 @@ class ApiClient {
     });
   }
 
+  async logout(): Promise<void> {
+    await this.fetch<void>("/auth/logout", { method: "POST" });
+  }
+
   async getMe(opts?: { signal?: AbortSignal }): Promise<User> {
     return this.fetchValidated(
       "/api/me",
@@ -447,6 +493,170 @@ class ApiClient {
     return parseWithFallback(raw, WorkspaceListSchema, EMPTY_WORKSPACE_LIST, {
       endpoint: "listWorkspaces",
     });
+  }
+
+  // --- Workspace channels ---
+  // The Go snapshot currently returns the original `{ messages }` envelope;
+  // the mobile parser also accepts the additive cursor fields used by the
+  // newer Web/Desktop surface. Reads remain workspace-scoped by the
+  // X-Workspace-Slug header injected in fetch().
+  async listWorkspaceChannels(opts?: {
+    signal?: AbortSignal;
+  }): Promise<ListWorkspaceChannelsResponse> {
+    return this.fetchValidated(
+      "/api/workspace-channels",
+      WorkspaceChannelListResponseSchema,
+      EMPTY_WORKSPACE_CHANNEL_LIST_RESPONSE,
+      { ...opts, endpoint: "GET /api/workspace-channels" },
+    );
+  }
+
+  async createWorkspaceChannel(
+    body: CreateWorkspaceChannelRequest,
+  ): Promise<WorkspaceChannel> {
+    const raw = await this.fetch<unknown>("/api/workspace-channels", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    const parsed = WorkspaceChannelSchema.safeParse(raw);
+    if (
+      !parsed.success ||
+      !parsed.data.workspace_id ||
+      !parsed.data.slug
+    ) {
+      console.error("[api] ← shape mismatch POST /api/workspace-channels", {
+        issues: parsed.success ? ["missing channel identity"] : parsed.error.issues,
+      });
+      throw new ApiError("Create workspace channel response invalid", 0, raw);
+    }
+    return parsed.data as WorkspaceChannel;
+  }
+
+  async listWorkspaceChannelMessages(
+    channelId: string,
+    params: ListWorkspaceChannelMessagesParams = {},
+    opts?: { signal?: AbortSignal },
+  ): Promise<ListWorkspaceChannelMessagesResponse> {
+    const search = new URLSearchParams();
+    if (params.limit !== undefined) search.set("limit", String(params.limit));
+    if (params.before) {
+      search.set("before_created_at", params.before.created_at);
+      search.set("before_id", params.before.id);
+    }
+    const qs = search.toString();
+    return this.fetchValidated(
+      `/api/workspace-channels/${encodeURIComponent(channelId)}/messages${
+        qs ? `?${qs}` : ""
+      }`,
+      WorkspaceChannelMessageListResponseSchema,
+      EMPTY_WORKSPACE_CHANNEL_MESSAGE_LIST_RESPONSE,
+      { ...opts, endpoint: "GET /api/workspace-channels/:id/messages" },
+    );
+  }
+
+  async createWorkspaceChannelMessage(
+    channelId: string,
+    body: CreateWorkspaceChannelMessageRequest,
+  ): Promise<WorkspaceChannelMessage> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspace-channels/${encodeURIComponent(channelId)}/messages`,
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+      },
+    );
+    const parsed = WorkspaceChannelMessageSchema.safeParse(raw);
+    if (
+      !parsed.success ||
+      !parsed.data.workspace_id ||
+      !parsed.data.channel_id ||
+      !parsed.data.author_id ||
+      !parsed.data.content.trim()
+    ) {
+      console.error(
+        "[api] ← shape mismatch POST /api/workspace-channels/:id/messages",
+        {
+          issues: parsed.success ? ["missing message identity"] : parsed.error.issues,
+        },
+      );
+      throw new ApiError("Create workspace channel message response invalid", 0, raw);
+    }
+    return parsed.data as WorkspaceChannelMessage;
+  }
+
+  // --- WeCom ---
+  // Installation listing is member-visible. Register/revoke are guarded by
+  // the server's admin/owner route permission; Mobile also hides those
+  // controls for non-admins, but never treats that UI check as authorization.
+  async listWecomInstallations(
+    workspaceId: string,
+    opts?: { signal?: AbortSignal },
+  ): Promise<ListWecomInstallationsResponse> {
+    return this.fetchValidated(
+      `/api/workspaces/${encodeURIComponent(workspaceId)}/wecom/installations`,
+      ListWecomInstallationsResponseSchema,
+      EMPTY_LIST_WECOM_INSTALLATIONS_RESPONSE,
+      { ...opts, endpoint: "GET /api/workspaces/:id/wecom/installations" },
+    );
+  }
+
+  async registerWecomBYO(
+    workspaceId: string,
+    agentId: string,
+    body: RegisterWecomBYORequest,
+  ): Promise<WecomInstallation> {
+    const search = new URLSearchParams({ agent_id: agentId });
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${encodeURIComponent(
+        workspaceId,
+      )}/wecom/install/byo?${search.toString()}`,
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+      },
+    );
+    const parsed = WecomInstallationSchema.safeParse(raw);
+    if (!parsed.success || !parsed.data.id) {
+      console.error("[api] ← shape mismatch POST /api/workspaces/:id/wecom/install/byo", {
+        issues: parsed.success ? ["missing installation identity"] : parsed.error.issues,
+      });
+      throw new ApiError("WeCom installation response invalid", 0, raw);
+    }
+    return parsed.data;
+  }
+
+  async deleteWecomInstallation(
+    workspaceId: string,
+    installationId: string,
+  ): Promise<void> {
+    await this.fetch<void>(
+      `/api/workspaces/${encodeURIComponent(
+        workspaceId,
+      )}/wecom/installations/${encodeURIComponent(installationId)}`,
+      { method: "DELETE" },
+    );
+  }
+
+  async redeemWecomBindingToken(
+    token: string,
+  ): Promise<RedeemWecomBindingTokenResponse> {
+    const raw = await this.fetch<unknown>("/api/wecom/binding/redeem", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    });
+    const parsed = RedeemWecomBindingTokenResponseSchema.safeParse(raw);
+    if (
+      !parsed.success ||
+      !parsed.data.workspace_id ||
+      !parsed.data.installation_id ||
+      !parsed.data.wecom_user_id
+    ) {
+      console.error("[api] ← shape mismatch POST /api/wecom/binding/redeem", {
+        issues: parsed.success ? ["missing binding identity"] : parsed.error.issues,
+      });
+      throw new ApiError("WeCom binding response invalid", 0, raw);
+    }
+    return parsed.data;
   }
 
   // --- Inbox ---
@@ -520,7 +730,8 @@ class ApiClient {
   }
 
   // Workspace runtimes — feeds the presence dot's availability dimension
-  // (runtime.status + last_seen_at). The backend route is GET /api/runtimes.
+  // (runtime.status + last_seen_at). Backend route registered in
+  // server/cmd/server/router.go:514 (GET /api/runtimes).
   async listRuntimes(opts?: { signal?: AbortSignal }): Promise<RuntimeDevice[]> {
     const raw = await this.fetch<unknown>("/api/runtimes", {
       signal: opts?.signal,
@@ -533,8 +744,8 @@ class ApiClient {
   // Workspace-wide active agent tasks + each agent's most recent terminal —
   // feeds the workload dimension of presence (currently unused in the mobile
   // dot; reserved for the P1 long-press peek sheet). Listed here now so the
-  // realtime invalidation path can be wired in one PR. The backend route is
-  // GET /api/agent-task-snapshot.
+  // realtime invalidation path can be wired in one PR. Backend route at
+  // server/cmd/server/router.go:539 (GET /api/agent-task-snapshot).
   async listAgentTaskSnapshot(
     opts?: { signal?: AbortSignal },
   ): Promise<AgentTask[]> {
@@ -564,8 +775,8 @@ class ApiClient {
     for (const [k, v] of Object.entries(params)) {
       if (v == null) continue;
       if (Array.isArray(v)) {
-        // Backend parses comma-separated lists from a single query value.
-        // Match web's serialization
+        // Backend parses comma-separated lists (server/internal/handler/issue.go
+        // uses strings.Split on a single query value). Match web's serialization
         // in packages/core/api/client.ts:407 — repeated keys would silently
         // collapse to the first value only.
         if (v.length > 0) search.set(k, v.map(String).join(","));
@@ -618,14 +829,19 @@ class ApiClient {
     );
   }
 
-  // Write endpoint — mirrors POST /api/issues. Mobile sends only the fields
-  // the form fills in; backend
+  // Write endpoint — mirrors POST /api/issues
+  // (server/cmd/server/router.go:320, server/internal/handler/issue.go
+  // CreateIssue). Mobile sends only the fields the form fills in; backend
   // applies its own defaults for anything omitted.
   async createIssue(body: CreateIssueRequest): Promise<Issue> {
-    return this.fetch<Issue>("/api/issues", {
-      method: "POST",
-      body: JSON.stringify(body),
-    });
+    const parsed = await this.fetchValidatedWith<Issue | null>(
+      "/api/issues",
+      CreateIssueResponseSchema,
+      null,
+      { method: "POST", body: JSON.stringify(body) },
+      { endpoint: "POST /api/issues" },
+    );
+    return requireCreatedIssueResponse(parsed);
   }
 
   // Timeline returns the full ASC entry list in one shot — server-side
@@ -633,7 +849,7 @@ class ApiClient {
   // were pure overhead and split reply threads at page boundaries).
   // Call WITHOUT pagination params: the legacy `limit/before/after/around`
   // path returns the old wrapped shape for back-compat, which mobile must
-  // NOT trigger.
+  // NOT trigger. See server/internal/handler/activity.go:60-69.
   async listTimeline(
     issueId: string,
     opts?: { signal?: AbortSignal },
@@ -662,9 +878,9 @@ class ApiClient {
     );
   }
 
-  // Active tasks for an issue (status in queued/deferred/dispatched/running). Returns
-  // the inner `tasks` array directly — the handler wraps it in `{ tasks: [] }`
-  // so the response object survives
+  // Active tasks for an issue (status in queued/dispatched/running). Returns
+  // the inner `tasks` array directly — handler wraps it in `{ tasks: [] }`
+  // (server/internal/handler/daemon.go:1866) so the response object survives
   // future field additions without breaking the cache shape.
   async listActiveTasksForIssue(
     issueId: string,
@@ -680,7 +896,7 @@ class ApiClient {
   }
 
   // All tasks (any status) for an issue — drives the "Runs" history section.
-  // Path is `/task-runs`, NOT `/tasks` —
+  // Path is `/task-runs` (server/cmd/server/router.go:353), NOT `/tasks` —
   // the latter doesn't exist on this scope.
   async listTasksByIssue(
     issueId: string,
@@ -699,7 +915,8 @@ class ApiClient {
     content: string,
     opts?: { parentId?: string; type?: string; attachmentIds?: string[] },
   ): Promise<Comment> {
-    // Body shape mirrors the backend `CreateCommentRequest`. `parent_id` is sent only
+    // Body shape mirrors backend `CreateCommentRequest`
+    // (server/internal/handler/comment.go:165). `parent_id` is sent only
     // when present so top-level comments don't carry an explicit null.
     // `type` defaults to "comment" matching web client.ts:686.
     return this.fetchValidatedWith(
@@ -805,18 +1022,24 @@ class ApiClient {
   }
 
   // --- Issue update ---
-  // Write endpoint — the mutation surface handles errors via rollback, so
-  // we let bad responses surface naturally (no parseWithFallback).
-  // Method is PUT to match the backend router and web client
-  // (packages/core/api/client.ts:465).
+  // Write endpoint — the mutation surface handles validation errors via
+  // rollback. A malformed success body is rejected before it can replace the
+  // optimistic issue snapshot.
+  // Method is PUT to match backend router (server/cmd/server/router.go:327)
+  // and web client (packages/core/api/client.ts:465).
   async updateIssue(id: string, body: UpdateIssueRequest): Promise<Issue> {
-    return this.fetch<Issue>(`/api/issues/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(body),
-    });
+    const parsed = await this.fetchValidatedWith<Issue | null>(
+      `/api/issues/${id}`,
+      IssueSchema,
+      null,
+      { method: "PUT", body: JSON.stringify(body) },
+      { endpoint: "PUT /api/issues/:id" },
+    );
+    return requireUpdatedIssueResponse(id, parsed);
   }
 
-  // Backend returns 204 No Content on success. this.fetch already
+  // Backend returns 204 No Content on success
+  // (server/internal/handler/issue.go DeleteIssue). this.fetch already
   // short-circuits 204 → undefined (api.ts:270), so no body parsing needed.
   async deleteIssue(id: string): Promise<void> {
     await this.fetch<void>(`/api/issues/${id}`, { method: "DELETE" });
@@ -871,7 +1094,7 @@ class ApiClient {
     );
   }
 
-  // --- Issue status catalog (PB-6243) ---
+  // --- Issue status catalog (MUL-6243) ---
   /**
    * The workspace's issue statuses — the 7 built-ins plus any custom ones an
    * admin defined. Reads are open to every workspace member; the catalog
@@ -910,6 +1133,47 @@ class ApiClient {
       EMPTY_LIST_PROJECTS_RESPONSE,
       { endpoint: "GET /api/projects" },
     );
+  }
+
+  async listDependencyGraphs(
+    params?: { projectId?: string; limit?: number; cursor?: string },
+    opts?: { signal?: AbortSignal },
+  ): Promise<ListDependencyGraphsResponse> {
+    const search = new URLSearchParams();
+    if (params?.projectId) search.set("project_id", params.projectId);
+    if (params?.limit !== undefined) search.set("limit", String(params.limit));
+    if (params?.cursor) search.set("cursor", params.cursor);
+    const query = search.toString();
+    const raw = await this.fetch<unknown>(
+      query ? `/api/dependency-graphs?${query}` : "/api/dependency-graphs",
+      { signal: opts?.signal },
+    );
+    return parseWithFallback(
+      raw,
+      ListDependencyGraphsResponseSchema,
+      EMPTY_LIST_DEPENDENCY_GRAPHS_RESPONSE,
+      { endpoint: "GET /api/dependency-graphs" },
+    );
+  }
+
+  async getDependencyGraph(
+    parentIssueId: string,
+    opts?: { signal?: AbortSignal },
+  ): Promise<DependencyGraphResponse> {
+    const raw = await this.fetch<unknown>(
+      `/api/issues/${encodeURIComponent(parentIssueId)}/dependency-graph`,
+      { signal: opts?.signal },
+    );
+    const graph = parseWithFallback<DependencyGraphResponse | null>(
+      raw,
+      DependencyGraphResponseSchema,
+      null,
+      { endpoint: "GET /api/issues/:id/dependency-graph" },
+    );
+    if (!graph) {
+      throw new Error("GET /api/issues/:id/dependency-graph returned a malformed graph");
+    }
+    return graph;
   }
 
   /** Workspace-wide project search. See `searchIssues` for the signal
@@ -973,6 +1237,38 @@ class ApiClient {
 
   async deleteProject(id: string): Promise<void> {
     await this.fetch<void>(`/api/projects/${id}`, { method: "DELETE" });
+  }
+
+  // Work Products are workspace-scoped through X-Workspace-Slug, matching
+  // the web/desktop core client. Mobile owns this thin API mirror so it keeps
+  // its independent auth/timeout behavior while sharing the normalized W6
+  // types and zod response contract.
+  async listWorkProducts(
+    params: WorkProductPageParams = {},
+    opts?: { signal?: AbortSignal },
+  ): Promise<WorkProductPage> {
+    const search = new URLSearchParams();
+    if (params.page != null) search.set("page", String(params.page));
+    if (params.per_page != null) search.set("per_page", String(params.per_page));
+    const query = search.toString();
+    return this.fetchValidated(
+      `/api/work-products${query ? `?${query}` : ""}`,
+      WorkProductPageSchema,
+      EMPTY_WORK_PRODUCT_PAGE,
+      { signal: opts?.signal, endpoint: "GET /api/work-products" },
+    );
+  }
+
+  async getWorkProduct(
+    id: string,
+    opts?: { signal?: AbortSignal },
+  ): Promise<WorkProduct> {
+    return this.fetchValidated(
+      `/api/work-products/${encodeURIComponent(id)}`,
+      WorkProductSchema,
+      EMPTY_WORK_PRODUCT,
+      { signal: opts?.signal, endpoint: "GET /api/work-products/:id" },
+    );
   }
 
   // --- Project resources ---
@@ -1082,8 +1378,10 @@ class ApiClient {
     // Strict parse — we need task_id + created_at to anchor the optimistic
     // StatusPill. Fallback would silently break the elapsed-time timer.
     //
-    // `attachment_ids` mirrors the comment / issue create payloads. The Rust
-    // chat service attaches the listed files after inserting the message row.
+    // `attachment_ids` mirrors the comment / issue create payloads —
+    // server-side `chat.go` back-fills `chat_message_id` on the listed
+    // attachments after the message row is inserted (see
+    // server/internal/handler/chat.go:410-456).
     const body: { content: string; attachment_ids?: string[] } = { content };
     if (opts?.attachmentIds && opts.attachmentIds.length > 0) {
       body.attachment_ids = opts.attachmentIds;
@@ -1149,12 +1447,6 @@ class ApiClient {
     );
   }
 
-  /**
-   * Load the canonical Agent thread envelope for any persisted task. The
-   * server applies workspace/source ownership and provider-session
-   * availability before returning this data; mobile never infers those
-   * boundaries from a run row.
-   */
   async getAgentThread(
     taskId: string,
     opts?: { signal?: AbortSignal },
@@ -1174,12 +1466,12 @@ class ApiClient {
           started_at: null,
           completed_at: null,
           result: null,
-        error: null,
-        created_at: "",
-      },
-      thread_tasks: [],
-      current_task_id: "",
-      agent: { id: "", name: "", avatar_url: null },
+          error: null,
+          created_at: "",
+        },
+        thread_tasks: [],
+        current_task_id: "",
+        agent: { id: "", name: "", avatar_url: null },
         events: [],
         availability: {
           state: "unavailable",
@@ -1192,9 +1484,6 @@ class ApiClient {
     );
   }
 
-  /** Queue the next user turn against the exact provider session represented
-   * by the source task. The server owns idempotency and lane serialization;
-   * the client supplies a fresh key for each intentional send. */
   async continueAgentThread(
     taskId: string,
     request: ContinueAgentThreadRequest,

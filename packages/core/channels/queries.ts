@@ -1,41 +1,87 @@
-import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query";
+import {
+  infiniteQueryOptions,
+  queryOptions,
+  type InfiniteData,
+} from "@tanstack/react-query";
 import { api } from "../api";
+import { channelKeys } from "./keys";
+import { mergeWorkspaceChannelMessageInfiniteData } from "./cache";
+import {
+  normalizeWorkspaceChannelsResponse,
+  normalizeWorkspaceChannelMessagesResponse,
+  type ListWorkspaceChannelMessagesResponse,
+  type WorkspaceChannelMessageCursor,
+} from "../types/channel";
 
-export const channelKeys = {
-  all: (wsId: string) => ["channels", wsId] as const,
-  list: (wsId: string) => [...channelKeys.all(wsId), "list"] as const,
-  detail: (wsId: string, channelId: string) =>
-    [...channelKeys.all(wsId), "detail", channelId] as const,
-  messagesAll: () => ["channels", "messages"] as const,
-  messages: (channelId: string) => [...channelKeys.messagesAll(), channelId] as const,
-};
+export { channelKeys } from "./keys";
 
 export function channelListOptions(wsId: string) {
   return queryOptions({
     queryKey: channelKeys.list(wsId),
-    queryFn: () => api.listChannels(),
-    staleTime: Infinity,
+    queryFn: async () =>
+      normalizeWorkspaceChannelsResponse(await api.listWorkspaceChannels()),
+    enabled: Boolean(wsId),
   });
 }
 
 export function channelDetailOptions(wsId: string, channelId: string) {
   return queryOptions({
     queryKey: channelKeys.detail(wsId, channelId),
-    queryFn: () => api.getChannel(channelId),
-    enabled: !!channelId,
-    staleTime: Infinity,
+    queryFn: () => api.getWorkspaceChannel(channelId),
+    enabled: Boolean(wsId && channelId),
   });
 }
 
-export function channelMessagesOptions(channelId: string, limit = 50) {
+export const CHANNEL_MESSAGE_PAGE_SIZE = 50;
+
+type ChannelMessageInfiniteData = InfiniteData<
+  ListWorkspaceChannelMessagesResponse,
+  WorkspaceChannelMessageCursor | null
+>;
+
+function isChannelMessageInfiniteData(
+  value: unknown,
+): value is ChannelMessageInfiniteData {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as { pages?: unknown; pageParams?: unknown };
+  if (!Array.isArray(candidate.pages) || !Array.isArray(candidate.pageParams)) {
+    return false;
+  }
+  return candidate.pages.every((page) => {
+    if (typeof page !== "object" || page === null) return false;
+    return Array.isArray((page as { messages?: unknown }).messages);
+  });
+}
+
+function mergeChannelMessageQueryData(
+  previous: unknown,
+  incoming: unknown,
+): unknown {
+  if (!isChannelMessageInfiniteData(incoming)) return incoming;
+  return mergeWorkspaceChannelMessageInfiniteData(
+    isChannelMessageInfiniteData(previous) ? previous : undefined,
+    incoming,
+  );
+}
+
+export function channelMessagesOptions(
+  wsId: string,
+  channelId: string,
+  limit = CHANNEL_MESSAGE_PAGE_SIZE,
+) {
   return infiniteQueryOptions({
-    queryKey: channelKeys.messages(channelId),
-    queryFn: ({ pageParam }) =>
-      api.listChannelMessagesPage(channelId, { before: pageParam, limit }),
-    initialPageParam: null as { created_at: string; id: string } | null,
+    queryKey: channelKeys.messages(wsId, channelId),
+    queryFn: async ({ pageParam }) =>
+      normalizeWorkspaceChannelMessagesResponse(
+        await api.listWorkspaceChannelMessages(channelId, {
+          before: pageParam,
+          limit,
+        }),
+      ),
+    initialPageParam: null as WorkspaceChannelMessageCursor | null,
     getNextPageParam: (lastPage) =>
       lastPage.has_more ? lastPage.next_cursor ?? undefined : undefined,
-    enabled: !!channelId,
-    staleTime: 0,
+    enabled: Boolean(wsId && channelId),
+    structuralSharing: mergeChannelMessageQueryData,
   });
 }

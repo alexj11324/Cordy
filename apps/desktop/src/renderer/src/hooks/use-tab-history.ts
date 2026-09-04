@@ -1,9 +1,8 @@
 import { useCallback, useEffect } from "react";
 import { useTabStore, useActiveTabHistory } from "@/stores/tab-store";
-import { useWindowOverlayStore } from "@/stores/window-overlay-store";
 
 /**
- * Shell back/forward for the active tab (PB-4741 session architecture).
+ * Shell back/forward for the active tab (MUL-4741 session architecture).
  *
  * Per-tab history is a virtual stack on the tab session — the single app
  * router has no usable history of its own (the Coordinator always navigates
@@ -13,23 +12,15 @@ import { useWindowOverlayStore } from "@/stores/window-overlay-store";
  */
 export function useTabHistory() {
   const { historyIndex, historyLength } = useActiveTabHistory();
-  const settingsOpen = useWindowOverlayStore(
-    (state) => state.overlay?.type === "settings",
-  );
 
-  const canGoBack = settingsOpen || historyIndex > 0;
-  const canGoForward = !settingsOpen && historyIndex < historyLength - 1;
+  const canGoBack = historyIndex > 0;
+  const canGoForward = historyIndex < historyLength - 1;
 
   const goBack = useCallback(() => {
-    if (useWindowOverlayStore.getState().overlay?.type === "settings") {
-      useWindowOverlayStore.getState().close();
-      return;
-    }
     useTabStore.getState().goBack();
   }, []);
 
   const goForward = useCallback(() => {
-    if (useWindowOverlayStore.getState().overlay?.type === "settings") return;
     useTabStore.getState().goForward();
   }, []);
 

@@ -10,6 +10,9 @@ const draft = (): AgentDraft => ({
   name: "Release manager",
   description: "Ships carefully",
   instructions: "# Role\nShip.",
+  conversationStarters: [
+    { label: "Plan a release", prompt: "Plan the next release." },
+  ],
   avatarUrl: "🚀",
   runtimeId: "runtime-1",
   model: "gpt-5.6-sol",
@@ -33,7 +36,7 @@ describe("stored agent draft", () => {
 
   // The runtime a conversation executes on is owned by its carrier agent. A
   // copy inside the draft could only go stale and put the picker on a runtime
-  // that runs nothing (PB-5163), so the restore takes it from the caller.
+  // that runs nothing (MUL-5163), so the restore takes it from the caller.
   it("takes the runtime from the caller, not the stored copy", () => {
     const stored = toStoredAgentDraft(draft(), null);
     expect(stored).not.toHaveProperty("runtimeId");

@@ -23,7 +23,7 @@ import { cn } from "@patchbay/ui/lib/utils";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { useT } from "../../i18n";
 
-// Quick Actions sidebar section (PB-5465).
+// Quick Actions sidebar section (MUL-5465).
 //
 // The list is NOT filtered by invoke permission. An earlier version hid
 // actions the viewer could not run, which meant two people on one issue saw

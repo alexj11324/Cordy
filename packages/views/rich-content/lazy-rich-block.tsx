@@ -2,7 +2,7 @@
 
 /**
  * LazyRichBlock — near-viewport, stable-size mount gate for rich blocks
- * (PB-4922 performance contract).
+ * (MUL-4922 performance contract).
  *
  * A long chat session or a long comment thread can contain dozens of Mermaid
  * diagrams and sandboxed HTML iframes. Instantiating them all at once costs a
@@ -25,7 +25,7 @@
  *    scrolled far away. Unmounting would re-run Mermaid and rebuild the iframe
  *    on every pass, and would discard the viewer's pan/zoom state — trading a
  *    one-time cost for a repeated one. Memory is bounded by "blocks the user
- *    actually scrolled past", not by the whole Agent event history.
+ *    actually scrolled past", not by the whole transcript.
  */
 
 import {
@@ -54,7 +54,7 @@ const useIsomorphicLayoutEffect =
  * How far outside the viewport a block starts mounting. Sized to cover
  * Virtuoso's own overscan (`increaseViewportBy` is 400px top / 600px bottom in
  * the chat list) so a block is ready by the time it is scrolled into view,
- * without eagerly building the whole Agent event history.
+ * without eagerly building the whole transcript.
  */
 const NEAR_VIEWPORT_ROOT_MARGIN = "800px 0px";
 

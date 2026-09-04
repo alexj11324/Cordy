@@ -5,14 +5,20 @@
  *     the next launch can retry
  *   - logout = clear token + clear in-memory user + setToken(null)
  *
- * NOT shared with web/desktop (per Sharing Principles in root AGENTS.md).
+ * NOT shared with web/desktop (per Sharing Principles in root CLAUDE.md).
  * Storage backend is expo-secure-store (mobile only); web uses HttpOnly
  * cookies, desktop uses localStorage via StorageAdapter.
  */
 import { create } from "zustand";
 import type { User } from "@patchbay/core/types";
 import { api, ApiError } from "./api";
-import { clearToken, getToken, setToken } from "./secure-storage";
+import {
+  clearLegacyGuestCredentials,
+  clearToken,
+  getToken,
+  setToken,
+} from "./secure-storage";
+import { queryClient } from "./query-client";
 import { useWorkspaceStore } from "./workspace-store";
 
 interface AuthState {
@@ -39,7 +45,25 @@ export const useAuthStore = create<AuthState>((set) => ({
 
     const token = await getToken();
     if (!token) {
+      await Promise.allSettled([
+        clearLegacyGuestCredentials(),
+        useWorkspaceStore.getState().clear(),
+      ]);
+      queryClient.clear();
       set({ isLoading: false });
+      return;
+    }
+    // Guest mode is Desktop-local-only. Never restore a bearer created by the
+    // removed mobile Guest experiment, even if an older build persisted one.
+    if (token.startsWith("pbg_")) {
+      api.setToken(null);
+      await Promise.allSettled([
+        clearToken(),
+        clearLegacyGuestCredentials(),
+        useWorkspaceStore.getState().clear(),
+      ]);
+      queryClient.clear();
+      set({ user: null, isLoading: false });
       return;
     }
     api.setToken(token);
@@ -50,7 +74,11 @@ export const useAuthStore = create<AuthState>((set) => ({
       // Only clear token on a genuine 401. Network blips / 5xx keep the
       // token so the next launch (or a manual refresh) can retry.
       if (err instanceof ApiError && err.status === 401) {
-        await clearToken();
+        await Promise.allSettled([
+          clearToken(),
+          useWorkspaceStore.getState().clear(),
+        ]);
+        queryClient.clear();
         api.setToken(null);
       }
       set({ user: null, isLoading: false });
@@ -70,9 +98,24 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   logout: async () => {
-    await clearToken();
-    api.setToken(null);
-    set({ user: null });
+    let token: string | null = null;
+    try {
+      token = await getToken();
+      // Clear local state in finally so a network failure cannot strand the
+      // user in the app.
+      if (token) await api.logout();
+    } catch {
+      // Local sign-out remains safe even when the server is unreachable.
+    } finally {
+      api.setToken(null);
+      await Promise.allSettled([
+        clearToken(),
+        clearLegacyGuestCredentials(),
+        useWorkspaceStore.getState().clear(),
+      ]);
+      queryClient.clear();
+      set({ user: null });
+    }
   },
 
   setUser: (user) => set({ user }),

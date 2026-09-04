@@ -12,13 +12,15 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 
 const mockQuickCreateIssue = vi.hoisted(() => vi.fn());
+const mockCreateCommentSubIssue = vi.hoisted(() => vi.fn());
 const mockSetLastActor = vi.hoisted(() => vi.fn());
 const mockSetQuickCreateFieldVisible = vi.hoisted(() => vi.fn());
 const mockSetKeepOpen = vi.hoisted(() => vi.fn());
 const mockSetLastMode = vi.hoisted(() => vi.fn());
 const mockToastSuccess = vi.hoisted(() => vi.fn());
+const mockShowIssueLimitUpgradePrompt = vi.hoisted(() => vi.fn());
 // Uploads flow through the module-level coordinator, which calls
-// `api.uploadFile(file, ctx, signal)` (PB-5181 L2).
+// `api.uploadFile(file, ctx, signal)` (MUL-5181 L2).
 const mockApiUploadFile = vi.hoisted(() => vi.fn());
 const mockNavigationPush = vi.hoisted(() => vi.fn());
 const mockSetShared = vi.hoisted(() => vi.fn());
@@ -26,6 +28,37 @@ const mockSetManual = vi.hoisted(() => vi.fn());
 const mockSetAgent = vi.hoisted(() => vi.fn());
 const mockSetActiveMode = vi.hoisted(() => vi.fn());
 const mockClearDraft = vi.hoisted(() => vi.fn());
+
+const sourceContextPanelData = {
+  anchor_comment_id: "comment-source",
+  source_context_preview: {
+    source_issue: {
+      id: "issue-source",
+      identifier: "MUL-9",
+      number: 9,
+      title: "Source",
+      description: "Historical body",
+      created_at: "2026-08-20T00:00:00Z",
+      updated_at: "2026-08-21T00:00:00Z",
+      revision: 1,
+      attachments: [],
+    },
+    comment_thread: [{
+      id: "comment-source",
+      parent_id: null,
+      type: "comment",
+      content: "Historical comment",
+      author: { type: "member", id: "user-1", name: "Alice" },
+      created_at: "2026-08-21T00:00:00Z",
+      updated_at: "2026-08-21T00:00:00Z",
+      revision: 1,
+      attachments: [],
+    }],
+    anchor_comment_id: "comment-source",
+    capture_token: "sha256:preview-token",
+    limits: { comment_count: 1, text_bytes: 100, attachment_count: 0, attachment_bytes: 0 },
+  },
+};
 
 const emptyIssueDraft = () => ({
   shared: {
@@ -39,8 +72,11 @@ const emptyIssueDraft = () => ({
     description: "",
     status: "todo" as const,
     startDate: null as string | null,
+    ownerId: undefined as string | undefined,
     executorType: undefined as "agent" | "team" | undefined,
     executorId: undefined as string | undefined,
+    reviewerType: undefined as "member" | "agent" | "team" | undefined,
+    reviewerId: undefined as string | undefined,
     labelIds: [] as string[],
     propertyValues: {} as Record<string, string | number | boolean | string[]>,
   },
@@ -67,7 +103,7 @@ const mockQuickCreateStore = {
   setLastActor: mockSetLastActor,
   keepOpen: false,
   setKeepOpen: mockSetKeepOpen,
-  // Not part of the store's interface any more (PB-5862), but an older
+  // Not part of the store's interface any more (MUL-5862), but an older
   // build persisted it and localStorage still hands it back on rehydrate.
   // Kept here so the tests can prove the panel ignores it.
   lastProjectId: null as string | null,
@@ -122,18 +158,37 @@ vi.mock("@tanstack/react-query", () => ({
   },
 }));
 
+const { ApiError } = vi.hoisted(() => {
+  class ApiErrorImpl extends Error {
+    readonly status: number;
+    readonly statusText: string;
+    readonly body?: unknown;
+    constructor(message: string, status: number, statusText: string, body?: unknown) {
+      super(message);
+      this.name = "ApiError";
+      this.status = status;
+      this.statusText = statusText;
+      this.body = body;
+    }
+  }
+  return { ApiError: ApiErrorImpl };
+});
+
 vi.mock("@patchbay/core/api", () => ({
   api: {
+    createCommentSubIssue: mockCreateCommentSubIssue,
     quickCreateIssue: mockQuickCreateIssue,
     uploadFile: mockApiUploadFile,
   },
-  ApiError: class ApiError extends Error {
-    body?: unknown;
-  },
+  ApiError,
 }));
 
 vi.mock("@patchbay/core/hooks", () => ({
   useWorkspaceId: () => "ws-test",
+}));
+
+vi.mock("./use-issue-limit-upgrade-prompt", () => ({
+  useIssueLimitUpgradePrompt: () => mockShowIssueLimitUpgradePrompt,
 }));
 
 vi.mock("@patchbay/core/paths", () => ({
@@ -412,9 +467,9 @@ vi.mock("@patchbay/ui/components/ui/switch", () => ({
 
 vi.mock("@patchbay/ui/components/common/file-upload-button", () => ({
   // `disabled` is forwarded so the "can still queue another file mid-upload"
-  // guarantee is actually assertable here (PB-4808).
-  FileUploadButton: ({ disabled }: { disabled?: boolean }) => (
-    <button type="button" disabled={disabled}>Upload file</button>
+  // guarantee is actually assertable here (MUL-4808).
+  FileUploadButton: ({ disabled, size }: { disabled?: boolean; size?: string }) => (
+    <button type="button" disabled={disabled} data-size={size}>Upload file</button>
   ),
 }));
 
@@ -429,10 +484,11 @@ import enCommon from "../locales/en/common.json";
 import enModals from "../locales/en/modals.json";
 import enEditor from "../locales/en/editor.json";
 import enProjects from "../locales/en/projects.json";
+import enIssues from "../locales/en/issues.json";
 import { AgentCreatePanel } from "./quick-create-issue";
 
 const TEST_RESOURCES = {
-  en: { common: enCommon, modals: enModals, editor: enEditor, projects: enProjects },
+  en: { common: enCommon, modals: enModals, editor: enEditor, projects: enProjects, issues: enIssues },
 };
 
 function renderPanel(props: React.ComponentProps<typeof AgentCreatePanel>) {
@@ -470,6 +526,7 @@ describe("AgentCreatePanel", () => {
     mockProjectsQuery.isSuccess = true;
     mockTeamsData.list = [];
     mockQuickCreateIssue.mockResolvedValue(undefined);
+    mockCreateCommentSubIssue.mockResolvedValue({ task_id: "task-source-child" });
     mockApiUploadFile.mockResolvedValue({
       id: "019ec09d-6222-722b-bdfa-427b105d80be",
       workspace_id: "ws-test",
@@ -575,6 +632,28 @@ describe("AgentCreatePanel", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it("shows the upgrade recovery immediately when quick create is rejected by the issue preflight", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    mockQuickCreateIssue.mockRejectedValue(
+      new ApiError("workspace has reached its issue limit", 402, "Payment Required", {
+        code: "issue_limit_reached",
+        limit: 1000,
+        policy_revision: 1,
+      }),
+    );
+
+    renderPanel({ onClose, isExpanded: false, setIsExpanded: vi.fn() });
+    await user.click(screen.getByRole("button", { name: /^Create$/i }));
+
+    await waitFor(() => {
+      expect(mockShowIssueLimitUpgradePrompt).toHaveBeenCalledTimes(1);
+    });
+    expect(mockToastSuccess).not.toHaveBeenCalled();
+    expect(mockClearDraft).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it("reveals optional fields from the overflow and submits their values", async () => {
     const user = userEvent.setup();
 
@@ -644,7 +723,7 @@ describe("AgentCreatePanel", () => {
     });
   });
 
-  // PB-5181 P0: success may only consume the draft it submitted — the editor
+  // MUL-5181 P0: success may only consume the draft it submitted — the editor
   // stays interactive during the request, so mid-flight edits must survive.
   it("typing draft B while draft A's quick-create is pending survives the success (mounted)", async () => {
     let resolveCreate!: (v: unknown) => void;
@@ -676,7 +755,7 @@ describe("AgentCreatePanel", () => {
     expect(mockIssueDraftStore.draft.agent.prompt).toBe("Draft B prompt");
   });
 
-  // PB-5181 P0: a submit that outlives its dialog may only consume the draft
+  // MUL-5181 P0: a submit that outlives its dialog may only consume the draft
   // it submitted — never one typed after closing and reopening.
   it("a late quick-create success does NOT clear a draft replaced after close", async () => {
     let resolveCreate!: (v: unknown) => void;
@@ -812,7 +891,7 @@ describe("AgentCreatePanel", () => {
   // re-seeded the pill with it and quietly filed the following issue into the
   // same place. The target project belongs to the issue being filed, not to
   // the user as a standing preference — the actor is the only thing that
-  // carries over now (PB-5862).
+  // carries over now (MUL-5862).
   describe("project is not remembered across creates", () => {
     it("ignores a lastProjectId left behind by an older build", () => {
       mockQuickCreateStore.lastProjectId = "proj-1";
@@ -862,7 +941,7 @@ describe("AgentCreatePanel", () => {
   // BOTH local state and the draft; dropping only local state would leave the
   // next open re-seeding the same dead value and trigger the server's
   // `project not found` rejection. The draft is now the only persisted copy —
-  // the last-create memory is gone (PB-5862).
+  // the last-create memory is gone (MUL-5862).
   it("clears a stale drafted project once the projects list resolves without it", async () => {
     mockIssueDraftStore.draft.shared.projectId = "deleted-proj";
     mockProjectsQuery.data = [];
@@ -878,7 +957,7 @@ describe("AgentCreatePanel", () => {
 
   // Dropping a project used to cost two clicks — open the popover, hit
   // "No project" — because the pill had no clear affordance of its own
-  // (PB-5862). The × is part of the pill, so it only exists once the field
+  // (MUL-5862). The × is part of the pill, so it only exists once the field
   // has a value to drop.
   describe("project pill quick-clear", () => {
     it("has no × while no project is selected", () => {
@@ -935,7 +1014,7 @@ describe("AgentCreatePanel", () => {
       setIsExpanded: vi.fn(),
       data: {
         parent_issue_id: "parent-uuid-1",
-        parent_issue_identifier: "PB-2534",
+        parent_issue_identifier: "MUL-2534",
       },
     });
 
@@ -970,7 +1049,61 @@ describe("AgentCreatePanel", () => {
     expect(screen.queryByTestId("agent-sub-issue-chip")).toBeNull();
   });
 
-  // PB-4808 — Quick Create already gated Create; these pin the two gaps:
+  it("keeps captured context separate from the upstream prompt scroller", () => {
+    renderPanel({
+      onClose: vi.fn(),
+      isExpanded: false,
+      setIsExpanded: vi.fn(),
+      data: sourceContextPanelData,
+    });
+
+    const prompt = screen.getByPlaceholderText(
+      'Tell the agent what to do with this context, e.g. "continue investigating and fix the issue described here"',
+    ).parentElement;
+    const sourceContext = document.querySelector<HTMLElement>('[data-slot="source-context-preview"]');
+
+    expect(prompt).toHaveClass("flex-1", "min-h-[140px]", "overflow-y-auto");
+    expect(sourceContext).toHaveClass("shrink-0");
+    expect(prompt?.parentElement).toBe(sourceContext?.parentElement);
+    expect(prompt?.nextElementSibling).toBe(sourceContext);
+    expect(prompt).not.toContainElement(sourceContext);
+  });
+
+  it("submits source-context agent create through the dedicated endpoint", async () => {
+    const user = userEvent.setup();
+    renderPanel({
+      onClose: vi.fn(),
+      isExpanded: false,
+      setIsExpanded: vi.fn(),
+      data: {
+        ...sourceContextPanelData,
+        parent_issue_id: "parent-uuid-1",
+        parent_issue_identifier: "MUL-9",
+      },
+    });
+
+    const editor = screen.getByPlaceholderText(
+      'Tell the agent what to do with this context, e.g. "continue investigating and fix the issue described here"',
+    );
+    await user.clear(editor);
+    await user.type(editor, "Investigate with captured context");
+    await user.click(screen.getByRole("button", { name: /^Create$/i }));
+
+    await waitFor(() => expect(mockCreateCommentSubIssue).toHaveBeenCalledWith(
+      "comment-source",
+      {
+        mode: "agent",
+        capture_token: "sha256:preview-token",
+        quick_create: expect.objectContaining({
+          agent_id: "agent-1",
+          prompt: "Investigate with captured context",
+        }),
+      },
+    ));
+    expect(mockQuickCreateIssue).not.toHaveBeenCalled();
+  });
+
+  // MUL-4808 — Quick Create already gated Create; these pin the two gaps:
   // the mode switch (which re-serializes the prompt into the manual draft)
   // and the file button that used to lock during an upload for no reason.
   describe("upload submit gate", () => {
@@ -1011,7 +1144,7 @@ describe("AgentCreatePanel", () => {
     });
   });
 
-  // PB-4931 — this path files a real issue, so a double-fire is a duplicate
+  // MUL-4931 — this path files a real issue, so a double-fire is a duplicate
   // issue, not a cosmetic glitch. `submitting` is state: two chords landing in
   // one tick both read the pre-update value, so only a synchronously-flipped
   // ref can gate it. Mirrors the manual-create regression.
@@ -1047,7 +1180,7 @@ describe("AgentCreatePanel", () => {
     });
   });
 
-  // PB-6236 — the footer reflows to a 2x2 grid on phones. jsdom has no
+  // MUL-6236 — the footer reflows to a 2x2 grid on phones. jsdom has no
   // layout, so these pin the two structural preconditions the grid depends
   // on rather than the rendered geometry.
   describe("phone footer layout", () => {
@@ -1073,6 +1206,7 @@ describe("AgentCreatePanel", () => {
       expect(create.parentElement).toBe(footer);
       expect(keepOpen.parentElement?.parentElement).toBe(footer);
       expect(attach.parentElement?.parentElement).toBe(footer);
+      expect(attach).toHaveAttribute("data-size", "sm");
     });
 
     it("hides the send keycaps below the sm breakpoint", () => {

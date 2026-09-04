@@ -148,7 +148,7 @@ describe("DesktopRouteErrorPage", () => {
     });
   });
 
-  // --- 404 as a first-class product state (PB-4899) -----------------------
+  // --- 404 as a first-class product state (MUL-4899) -----------------------
 
   describe("404 Not Found", () => {
     it("renders a Not Found page, not a crash report, for an unroutable path", async () => {

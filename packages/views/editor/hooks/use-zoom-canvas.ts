@@ -49,7 +49,7 @@ interface UseZoomCanvasOptions {
   content: Size | null;
   /**
    * Whether Left/Right pan the canvas. Set false when the surrounding viewer
-   * binds those keys itself — image-sequence prev/next (PB-5752) — so the two
+   * binds those keys itself — image-sequence prev/next (MUL-5752) — so the two
    * handlers can't both fire on one press. Up/Down keep panning either way,
    * and drag / wheel still pan horizontally.
    */

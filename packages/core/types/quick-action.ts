@@ -1,5 +1,5 @@
 /**
- * Issue Quick Actions (PB-5465) — workspace-level presets for "who to call
+ * Issue Quick Actions (MUL-5465) — workspace-level presets for "who to call
  * and what to say" on an existing issue.
  *
  * Running one is not a separate dispatch path: the server renders the prompt,
@@ -21,7 +21,7 @@
  */
 export type QuickActionVisibility = "private" | "public";
 
-export type QuickActionExecutorType = "agent" | "team";
+export type QuickActionAssigneeType = "agent" | "team";
 
 export type QuickActionStatus = "active" | "archived";
 
@@ -30,7 +30,7 @@ export interface QuickAction {
   workspace_id: string;
   name: string;
   description: string;
-  executor_type: QuickActionExecutorType | string;
+  executor_type: QuickActionAssigneeType | string;
   executor_id: string;
   /** Sent verbatim — there is no interpolation step. */
   prompt: string;
@@ -56,7 +56,7 @@ export interface QuickAction {
 export interface CreateQuickActionRequest {
   name: string;
   description?: string;
-  executor_type: QuickActionExecutorType;
+  executor_type: QuickActionAssigneeType;
   executor_id: string;
   prompt: string;
   visibility?: QuickActionVisibility;
@@ -65,7 +65,7 @@ export interface CreateQuickActionRequest {
 export interface UpdateQuickActionRequest {
   name?: string;
   description?: string;
-  executor_type?: QuickActionExecutorType;
+  executor_type?: QuickActionAssigneeType;
   executor_id?: string;
   prompt?: string;
   visibility?: QuickActionVisibility;

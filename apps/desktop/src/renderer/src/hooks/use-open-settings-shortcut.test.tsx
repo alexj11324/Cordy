@@ -6,6 +6,7 @@ import { useTabStore } from "@/stores/tab-store";
 import { useWindowOverlayStore } from "@/stores/window-overlay-store";
 import {
   openSettingsPage,
+  openSettingsTab,
   useOpenSettingsShortcut,
 } from "./use-open-settings-shortcut";
 
@@ -42,6 +43,11 @@ function tabUrls(): string[] {
   return useTabStore.getState().byWorkspace.acme?.tabs.map((t) => t.url) ?? [];
 }
 
+function activeTabUrl(): string | undefined {
+  const group = useTabStore.getState().byWorkspace.acme;
+  return group?.tabs.find((t) => t.id === group.activeTabId)?.url;
+}
+
 /** Installs a desktopAPI stub; `deliver()` plays the chord main would send. */
 function stubDesktopAPI(kind: "main" | "issue") {
   let handler: (() => void) | null = null;
@@ -60,6 +66,44 @@ function stubDesktopAPI(kind: "main" | "issue") {
   };
   return { onOpenSettings, deliver: () => handler?.() };
 }
+
+describe("openSettingsTab", () => {
+  beforeEach(() => {
+    seedTabs();
+    useWindowOverlayStore.setState({ overlay: null });
+  });
+
+  it("opens Settings for the active workspace and focuses it", () => {
+    openSettingsTab();
+
+    expect(tabUrls()).toEqual(["/acme/issues", "/acme/settings"]);
+    expect(activeTabUrl()).toBe("/acme/settings");
+  });
+
+  it("reuses the Settings tab instead of stacking duplicates", () => {
+    openSettingsTab();
+    useTabStore.getState().setActiveTab("t1");
+    openSettingsTab();
+
+    expect(tabUrls()).toEqual(["/acme/issues", "/acme/settings"]);
+    expect(activeTabUrl()).toBe("/acme/settings");
+  });
+
+  it("does nothing while a pre-workspace overlay covers the window", () => {
+    useWindowOverlayStore.setState({ overlay: { type: "onboarding" } });
+
+    openSettingsTab();
+
+    expect(tabUrls()).toEqual(["/acme/issues"]);
+  });
+
+  it("does nothing without an active workspace (logged out)", () => {
+    useTabStore.setState({ activeWorkspaceSlug: null });
+
+    expect(() => openSettingsTab()).not.toThrow();
+    expect(tabUrls()).toEqual(["/acme/issues"]);
+  });
+});
 
 describe("openSettingsPage", () => {
   beforeEach(() => {

@@ -21,10 +21,7 @@ import type {
   Project,
   IssueProperty,
 } from "@patchbay/core/types";
-import {
-  useViewStore,
-  useViewStoreApi,
-} from "@patchbay/core/issues/stores/view-store-context";
+import { useViewStore } from "@patchbay/core/issues/stores/view-store-context";
 import { propertyIdFromViewKey } from "@patchbay/core/issues/stores/view-store";
 import { propertyListOptions, useSetIssueProperty, useUnsetIssueProperty } from "@patchbay/core/properties";
 import { useWorkspaceId } from "@patchbay/core/hooks";
@@ -41,7 +38,6 @@ import type {
   IssueStatusPageState,
   IssueStatusPagination,
 } from "../surface/use-issue-status-branches";
-import type { MoveIssueCallbacks } from "../surface/use-issue-surface-actions";
 import type {
   IssueGroupBranches,
   IssueGroupPageState,
@@ -62,6 +58,7 @@ import {
   issueMatchesGroup,
   getMoveUpdates,
   propertyGroupId,
+  projectGroupId,
 } from "../utils/drag-utils";
 
 function isStatusGroup(
@@ -70,26 +67,100 @@ function isStatusGroup(
   return group.status !== undefined;
 }
 
-function makeStatusGroup(status: IssueStatusCategory): BoardColumnGroup {
+interface ProjectColumnLabels {
+  noProject: string;
+  /** A project id the projects query cannot resolve — deleted, or not visible
+   *  to this member. Shares the Table's wording so one board column and one
+   *  table group row never describe the same project differently. */
+  unavailableProject: string;
+}
+
+interface BuildGroupsContext extends ProjectColumnLabels {
+  getActorName: (type: string, id: string) => string;
+  groupingProperty: IssueProperty | null;
+  projectMap: Map<string, Project> | undefined;
+  noExecutorLabel: string;
+  noValueLabel: string;
+}
+
+/**
+ * One project column. Shared by the client fallback (columns derived from
+ * loaded cards) and the server path (columns derived from group descriptors)
+ * so the two can never describe the same project differently.
+ */
+function projectColumn(
+  id: string,
+  projectId: string | null,
+  projectMap: Map<string, Project> | undefined,
+  labels: ProjectColumnLabels,
+  totalCount?: number,
+): BoardColumnGroup {
+  const project = projectId ? projectMap?.get(projectId) ?? null : null;
   return {
-    id: statusGroupId(status),
-    title: status,
-    status,
-    createData: { status },
+    id,
+    title: projectId
+      ? project?.title ?? labels.unavailableProject
+      : labels.noProject,
+    projectId,
+    project,
+    totalCount,
+    createData: { project_id: projectId },
   };
+}
+
+function createDataForExecutor(
+  actor: { type: IssueExecutorType; id: string } | null,
+): IssueCreateDefaults {
+  if (!actor) {
+    return {
+      executor_type: null,
+      executor_id: null,
+    };
+  }
+  return { executor_type: actor.type, executor_id: actor.id };
+}
+
+/**
+ * Keep the "No project" column present as a drop target — clearing a card's
+ * project by dragging has to stay possible even in a workspace where every
+ * card currently has one. A board with no columns at all is left alone: that
+ * is the surface's empty state, not a board missing one column.
+ */
+function withNoProjectColumn(
+  columns: BoardColumnGroup[],
+  projectMap: Map<string, Project> | undefined,
+  labels: ProjectColumnLabels,
+): BoardColumnGroup[] {
+  if (columns.length === 0) return columns;
+  if (columns.some((column) => column.projectId === null)) return columns;
+  // No-project sorts first server-side, so it is always in the first page of
+  // descriptors when it exists — an absent one cannot arrive with a later page.
+  return [
+    projectColumn(projectGroupId(null), null, projectMap, labels, 0),
+    ...columns,
+  ];
 }
 
 function buildGroups(
   issues: Issue[],
   visibleStatuses: IssueStatusCategory[],
   grouping: IssueGrouping,
-  getActorName: (type: string, id: string) => string,
-  noExecutorLabel: string,
-  groupingProperty: IssueProperty | null,
-  noValueLabel: string,
+  {
+    getActorName,
+    groupingProperty,
+    projectMap,
+    noExecutorLabel,
+    noValueLabel,
+    ...projectLabels
+  }: BuildGroupsContext,
 ): BoardColumnGroup[] {
   if (grouping === "status") {
-    return visibleStatuses.map(makeStatusGroup);
+    return visibleStatuses.map((status) => ({
+      id: statusGroupId(status),
+      title: status,
+      status,
+      createData: { status },
+    }));
   }
 
   // Select-property board: one column per option (definition order) plus a
@@ -114,21 +185,40 @@ function buildGroups(
     return columns;
   }
 
+  // Project board: one column per project the loaded cards reference, plus the
+  // "No project" column. Ordering mirrors the server's group order (no-project
+  // first, then project title) so the client fallback and the paged server
+  // columns cannot disagree.
+  if (grouping === "project") {
+    const columns = new Map<string, BoardColumnGroup>();
+    for (const issue of issues) {
+      const projectId = issue.project_id ?? null;
+      const id = projectGroupId(projectId);
+      if (columns.has(id)) continue;
+      columns.set(id, projectColumn(id, projectId, projectMap, projectLabels));
+    }
+    const ordered = Array.from(columns.values()).toSorted((a, b) => {
+      if (a.projectId === null) return b.projectId === null ? 0 : -1;
+      if (b.projectId === null) return 1;
+      return a.title.localeCompare(b.title);
+    });
+    return withNoProjectColumn(ordered, projectMap, projectLabels);
+  }
+
   const groups = new Map<string, BoardColumnGroup>();
   for (const issue of issues) {
-    const id = executorGroupId(issue.executor_type, issue.executor_id);
+    const executorType = issue.executor_type;
+    const executorId = issue.executor_id;
+    const id = executorGroupId(executorType, executorId);
     if (groups.has(id)) continue;
 
-    if (issue.executor_type && issue.executor_id) {
+    if (executorType && executorId) {
       groups.set(id, {
         id,
-        title: getActorName(issue.executor_type, issue.executor_id),
-        executorType: issue.executor_type,
-        executorId: issue.executor_id,
-        createData: {
-          executor_type: issue.executor_type,
-          executor_id: issue.executor_id,
-        },
+        title: getActorName(executorType, executorId),
+        executorType,
+        executorId,
+        createData: createDataForExecutor({ type: executorType, id: executorId }),
       });
       continue;
     }
@@ -138,18 +228,14 @@ function buildGroups(
       title: noExecutorLabel,
       executorType: null,
       executorId: null,
-      createData: {
-        executor_type: null,
-        executor_id: null,
-      },
+      createData: createDataForExecutor(null),
     });
   }
 
   const order: Record<string, number> = {
-    member: 0,
-    agent: 1,
-    team: 2,
-    none: 3,
+    agent: 0,
+    team: 1,
+    none: 2,
   };
 
   return Array.from(groups.values()).toSorted((a, b) => {
@@ -167,7 +253,6 @@ function BoardViewImpl({
   issues,
   visibleStatuses,
   hiddenStatuses,
-  droppableHiddenStatuses,
   onMoveIssue,
   childProgressMap = EMPTY_PROGRESS_MAP,
   projectMap,
@@ -179,13 +264,7 @@ function BoardViewImpl({
   issues: Issue[];
   visibleStatuses: IssueStatusCategory[];
   hiddenStatuses: IssueStatusCategory[];
-  /** Manual hidden statuses allowed as destinations; filter-only statuses are excluded. */
-  droppableHiddenStatuses?: IssueStatusCategory[];
-  onMoveIssue: (
-    issueId: string,
-    updates: DragMoveUpdates,
-    callbacks?: MoveIssueCallbacks,
-  ) => boolean | void;
+  onMoveIssue: (issueId: string, updates: DragMoveUpdates, onSettled?: () => void) => void;
   childProgressMap?: Map<string, ChildProgress>;
   projectMap?: Map<string, Project>;
   /** When set, the per-column "+" pre-fills the project on the create form. */
@@ -197,7 +276,6 @@ function BoardViewImpl({
   const { t } = useT("issues");
   const storeGrouping = useViewStore((s) => s.grouping);
   const sortBy = useViewStore((s) => s.sortBy);
-  const viewStoreApi = useViewStoreApi();
   const boardWsId = useWorkspaceId();
   const { data: workspaceProperties = [] } = useQuery(propertyListOptions(boardWsId));
   const groupingPropertyId = propertyIdFromViewKey(storeGrouping);
@@ -269,7 +347,8 @@ function BoardViewImpl({
         const actorRef = descriptor.value.actor;
         const actor: { type: IssueExecutorType; id: string } | null =
           actorRef &&
-          (actorRef.type === "agent" || actorRef.type === "team")
+          (actorRef.type === "agent" ||
+            actorRef.type === "team")
             ? { type: actorRef.type, id: actorRef.id }
             : null;
         return [{
@@ -280,15 +359,40 @@ function BoardViewImpl({
           executorType: actor?.type ?? null,
           executorId: actor?.id ?? null,
           totalCount: descriptor.count,
-          createData: {
-            executor_type: actor?.type ?? null,
-            executor_id: actor?.id ?? null,
-          },
+          createData: createDataForExecutor(actor),
         }];
       });
     }
     return undefined;
   }, [getActorName, groupBranches, grouping, t]);
+  const projectColumnLabels = useMemo<ProjectColumnLabels>(
+    () => ({
+      noProject: t(($) => $.swimlane.no_project),
+      unavailableProject: t(($) => $.table.value_unavailable),
+    }),
+    [t],
+  );
+  const hydratedProjectGroups = useMemo<BoardColumnGroup[] | undefined>(() => {
+    if (grouping !== "project" || !groupBranches?.enabled) return undefined;
+    const columns = groupBranches.descriptors.flatMap(
+      (descriptor): BoardColumnGroup[] =>
+        descriptor.value.kind === "project"
+          ? [
+              projectColumn(
+                // The descriptor key, not our own: it is what `groupPagination`
+                // is keyed by. `projectGroupId` reproduces it exactly, which is
+                // what lets cards bucket into these columns at all.
+                descriptor.key,
+                descriptor.value.project_id ?? null,
+                projectMap,
+                projectColumnLabels,
+                descriptor.count,
+              ),
+            ]
+          : [],
+    );
+    return withNoProjectColumn(columns, projectMap, projectColumnLabels);
+  }, [groupBranches, grouping, projectColumnLabels, projectMap]);
   const groupPagination = useMemo(() => {
     if (!groupBranches?.enabled) return undefined;
     const grouped = new Map<string, IssueGroupPageState[]>();
@@ -335,125 +439,29 @@ function BoardViewImpl({
     () => {
       const built =
         hydratedExecutorGroups ??
-        buildGroups(
-        issues,
-        visibleStatuses,
-        grouping,
-        getActorName,
-        t(($) => $.filters.no_executor),
-        groupingProperty,
-        t(($) => $.board.no_value),
-        );
+        hydratedProjectGroups ??
+        buildGroups(issues, visibleStatuses, grouping, {
+          getActorName,
+          groupingProperty,
+          projectMap,
+          noExecutorLabel: t(($) => $.filters.no_executor),
+          noValueLabel: t(($) => $.board.no_value),
+          ...projectColumnLabels,
+        });
       return built.map((group) => ({
         ...group,
         totalCount: groupPagination?.[group.id]?.total ?? group.totalCount,
       }));
     },
-    [hydratedExecutorGroups, issues, visibleStatuses, grouping, getActorName, groupingProperty, groupPagination, t],
+    [hydratedExecutorGroups, hydratedProjectGroups, issues, visibleStatuses, grouping, getActorName, groupingProperty, projectMap, projectColumnLabels, groupPagination, t],
   );
-  // Empty status columns remain server-backed drop targets, but they do not
-  // earn a full 280px board column. Keep them in the local drag map and move
-  // them into the hidden panel until a card is placed there.
-  const emptyStatusIds = useMemo(() => {
-    if (grouping !== "status") return new Set<string>();
-    const ids = new Set<string>();
-    for (const group of groups) {
-      if (!group.status) continue;
-      const page = statusPagination?.[group.status];
-      const hasLoadedIssue = groupedIssues.some((issue) =>
-        issueMatchesGroup(issue, group),
-      );
-      if (
-        page &&
-        !page.isLoading &&
-        !page.isFetching &&
-        !page.isError &&
-        page.total === 0 &&
-        !hasLoadedIssue
-      ) {
-        ids.add(group.id);
-      }
-    }
-    return ids;
-  }, [groupedIssues, groups, grouping, statusPagination]);
-  // A dropped card can take one render to appear in the server-backed status
-  // branch. Keep an auto-hidden target expanded during that handoff so the
-  // card does not appear to disappear after a successful drop.
-  const [revealedEmptyStatuses, setRevealedEmptyStatuses] = useState<
-    Set<IssueStatusCategory>
-  >(() => new Set<IssueStatusCategory>());
-
-  const renderedGroups = useMemo(
-    () =>
-      groups.filter(
-        (group) =>
-          !emptyStatusIds.has(group.id) ||
-          (group.status !== undefined &&
-            revealedEmptyStatuses.has(group.status)),
-      ),
-    [emptyStatusIds, groups, revealedEmptyStatuses],
-  );
-  const hiddenBoardStatuses = useMemo(() => {
-    const statuses = [...hiddenStatuses];
-    const seen = new Set(statuses);
-    for (const group of groups) {
-      if (
-        group.status &&
-        emptyStatusIds.has(group.id) &&
-        !revealedEmptyStatuses.has(group.status) &&
-        !seen.has(group.status)
-      ) {
-        statuses.push(group.status);
-        seen.add(group.status);
-      }
-    }
-    return statuses.filter((status) => !revealedEmptyStatuses.has(status));
-  }, [emptyStatusIds, groups, hiddenStatuses, revealedEmptyStatuses]);
-  const hiddenDropStatusSet = useMemo(
-    () => new Set(droppableHiddenStatuses ?? hiddenStatuses),
-    [droppableHiddenStatuses, hiddenStatuses],
-  );
-  const hiddenDropStatuses = useMemo(() => {
-    const statuses = hiddenStatuses.filter((status) =>
-      hiddenDropStatusSet.has(status),
-    );
-    for (const group of groups) {
-      if (
-        group.status &&
-        emptyStatusIds.has(group.id) &&
-        !revealedEmptyStatuses.has(group.status) &&
-        !statuses.includes(group.status)
-      ) {
-        statuses.push(group.status);
-      }
-    }
-    return statuses.filter((status) => !revealedEmptyStatuses.has(status));
-  }, [
-    emptyStatusIds,
-    groups,
-    hiddenDropStatusSet,
-    hiddenStatuses,
-    revealedEmptyStatuses,
-  ]);
-  const dropGroups = useMemo(() => {
-    if (grouping !== "status") return groups;
-    const result: BoardColumnGroup[] = [...groups];
-    const seen = new Set(result.map((group) => group.id));
-    for (const status of hiddenDropStatuses) {
-      const group = makeStatusGroup(status);
-      if (seen.has(group.id)) continue;
-      result.push(group);
-      seen.add(group.id);
-    }
-    return result;
-  }, [grouping, groups, hiddenDropStatuses]);
   const groupIds = useMemo(
-    () => new Set(dropGroups.map((group) => group.id)),
-    [dropGroups],
+    () => new Set(groups.map((group) => group.id)),
+    [groups],
   );
   const groupMap = useMemo(
-    () => new Map(dropGroups.map((group) => [group.id, group])),
-    [dropGroups],
+    () => new Map(groups.map((group) => [group.id, group])),
+    [groups],
   );
   const collisionDetection = useMemo(
     () => makeKanbanCollision(groupIds),
@@ -462,34 +470,6 @@ function BoardViewImpl({
 
   // --- Drag state ---
   const [activeIssue, setActiveIssue] = useState<Issue | null>(null);
-
-  useEffect(() => {
-    setRevealedEmptyStatuses((previous) => {
-      let changed = false;
-      const next = new Set(previous);
-      for (const status of previous) {
-        if (!emptyStatusIds.has(statusGroupId(status))) {
-          next.delete(status);
-          changed = true;
-        }
-      }
-      return changed ? next : previous;
-    });
-  }, [emptyStatusIds]);
-
-  const showHiddenStatus = useCallback(
-    (status: IssueStatusCategory) => {
-      if (emptyStatusIds.has(statusGroupId(status))) {
-        setRevealedEmptyStatuses((previous) => {
-          if (previous.has(status)) return previous;
-          return new Set(previous).add(status);
-        });
-      }
-      viewStoreApi.getState().showStatus(status);
-    },
-    [emptyStatusIds, viewStoreApi],
-  );
-
   // Shared drag/settle primitive: owns the local column mirror, the
   // dragging/settling locks, the post-move animation-frame throttle, and the
   // settle callback. Shared with list-view (and swimlane) so the surfaces
@@ -504,26 +484,13 @@ function BoardViewImpl({
     recentlyMovedRef,
     settleVersion,
     beginSettle,
-  } = useDragSettle(() =>
-    buildColumns(groupedIssues, dropGroups, grouping, groupingOptionIds),
-  );
+  } = useDragSettle(() => buildColumns(groupedIssues, groups, grouping, groupingOptionIds));
 
   useEffect(() => {
     if (!isDraggingRef.current && !isSettlingRef.current) {
-      setColumns(
-        buildColumns(groupedIssues, dropGroups, grouping, groupingOptionIds),
-      );
+      setColumns(buildColumns(groupedIssues, groups, grouping, groupingOptionIds));
     }
-  }, [
-    groupedIssues,
-    dropGroups,
-    grouping,
-    groupingOptionIds,
-    settleVersion,
-    setColumns,
-    isDraggingRef,
-    isSettlingRef,
-  ]);
+  }, [groupedIssues, groups, grouping, groupingOptionIds, settleVersion, setColumns, isDraggingRef, isSettlingRef]);
 
   // --- Issue map ---
   // Frozen during drag so BoardColumn/DraggableBoardCard props stay
@@ -575,7 +542,7 @@ function BoardViewImpl({
 
         recentlyMovedRef.current = true;
         const oldIds = prev[activeCol]!.filter((id) => id !== activeId);
-        const newIds = [...(prev[overCol] ?? [])];
+        const newIds = [...prev[overCol]!];
         const overIndex = newIds.indexOf(overId);
         const insertIndex = overIndex >= 0 ? overIndex : newIds.length;
         newIds.splice(insertIndex, 0, activeId);
@@ -592,9 +559,7 @@ function BoardViewImpl({
       setActiveIssue(null);
 
       const resetColumns = () =>
-        setColumns(
-          buildColumns(groupedIssues, dropGroups, grouping, groupingOptionIds),
-        );
+        setColumns(buildColumns(groupedIssues, groups, grouping, groupingOptionIds));
 
       if (!over) {
         resetColumns();
@@ -639,25 +604,6 @@ function BoardViewImpl({
       }
 
       const map = issueMapRef.current;
-      const revealDroppedStatus = () => {
-        const targetStatus = finalGroup.status;
-        if (!targetStatus || !hiddenDropStatuses.includes(targetStatus)) return;
-        showHiddenStatus(targetStatus);
-      };
-      const restoreDroppedStatus = () => {
-        const targetStatus = finalGroup.status;
-        if (!targetStatus || !hiddenDropStatuses.includes(targetStatus)) return;
-        if (emptyStatusIds.has(finalGroup.id)) {
-          setRevealedEmptyStatuses((previous) => {
-            if (!previous.has(targetStatus)) return previous;
-            const next = new Set(previous);
-            next.delete(targetStatus);
-            return next;
-          });
-        } else {
-          viewStoreApi.getState().hideStatus(targetStatus);
-        }
-      };
 
       if (sortBy !== "position") {
         // Cross-column: only update group (status/executor), keep original position.
@@ -683,25 +629,14 @@ function BoardViewImpl({
           const fromIds = (prev[activeCol] ?? []).filter((cid) => cid !== activeId);
           return { ...prev, [activeCol]: fromIds, [overCol]: targetIds };
         });
-        const settle = beginSettle();
-        const committed = onMoveIssue(
+        onMoveIssue(
           activeId,
           {
             ...getMoveUpdates(finalGroup, currentIssue.position, currentIssue),
             ...getMoveAnchors(targetIds, activeId),
           },
-          {
-            onSettled: settle,
-            onSuccess: revealDroppedStatus,
-            onError: restoreDroppedStatus,
-          },
+          beginSettle(),
         );
-        if (committed === false) {
-          settle();
-          resetColumns();
-          return;
-        }
-        revealDroppedStatus();
         applyPropertyGroupValue(finalGroup, activeId);
         return;
       }
@@ -723,59 +658,28 @@ function BoardViewImpl({
       // success (onSuccess already patched the moved card in place), the revert
       // on error (onError restored the snapshot). Without it a failed move would
       // strand the card at the drop target, since onSettled no longer refetches.
-      const settle = beginSettle();
-      const committed = onMoveIssue(
+      onMoveIssue(
         activeId,
         {
           ...getMoveUpdates(finalGroup, newPosition, currentIssue),
           ...getMoveAnchors(finalIds, activeId),
         },
-        {
-          onSettled: settle,
-          onSuccess: revealDroppedStatus,
-          onError: restoreDroppedStatus,
-        },
+        beginSettle(),
       );
-      if (committed === false) {
-        settle();
-        resetColumns();
-        return;
-      }
-      revealDroppedStatus();
       applyPropertyGroupValue(finalGroup, activeId);
     },
-    [
-      groupedIssues,
-      dropGroups,
-      grouping,
-      groupingOptionIds,
-      onMoveIssue,
-      groupIds,
-      groupMap,
-      sortBy,
-      beginSettle,
-      columnsRef,
-      isDraggingRef,
-      setColumns,
-      applyPropertyGroupValue,
-      emptyStatusIds,
-      hiddenDropStatuses,
-      showHiddenStatus,
-      viewStoreApi,
-    ],
+    [groupedIssues, groups, grouping, groupingOptionIds, onMoveIssue, groupIds, groupMap, sortBy, beginSettle, columnsRef, isDraggingRef, setColumns, applyPropertyGroupValue],
   );
 
   // An aborted drag (pointercancel, window resize, tab hide, Escape) fires
   // onDragCancel instead of onDragEnd. Releasing the drag lock here keeps the
   // column mirror resyncing with the cache afterwards — see the same handler in
-  // list-view for the touch path that makes this routine (PB-6240).
+  // list-view for the touch path that makes this routine (MUL-6240).
   const handleDragCancel = useCallback(() => {
     isDraggingRef.current = false;
     setActiveIssue(null);
-    setColumns(
-      buildColumns(groupedIssues, dropGroups, grouping, groupingOptionIds),
-    );
-  }, [groupedIssues, dropGroups, grouping, groupingOptionIds, setColumns, isDraggingRef]);
+    setColumns(buildColumns(groupedIssues, groups, grouping, groupingOptionIds));
+  }, [groupedIssues, groups, grouping, groupingOptionIds, setColumns, isDraggingRef]);
 
   return (
     <DndContext
@@ -810,7 +714,7 @@ function BoardViewImpl({
             </div>
           )
         ) : (
-          renderedGroups.map((group) =>
+          groups.map((group) =>
             isStatusGroup(group) ? (
               <ServerPaginatedBoardColumn
                 key={group.id}
@@ -865,12 +769,10 @@ function BoardViewImpl({
         )}
 
 
-        {grouping === "status" && hiddenBoardStatuses.length > 0 && (
+        {grouping === "status" && hiddenStatuses.length > 0 && (
           <BoardHiddenColumnsPanel
-            hiddenStatuses={hiddenBoardStatuses}
-            droppableStatuses={hiddenDropStatuses}
+            hiddenStatuses={hiddenStatuses}
             statusPagination={statusPagination}
-            onShowStatus={showHiddenStatus}
           />
         )}
       </div>
@@ -945,14 +847,10 @@ const ServerPaginatedBoardColumn = memo(function ServerPaginatedBoardColumn({
 
 function BoardHiddenColumnsPanel({
   hiddenStatuses,
-  droppableStatuses,
   statusPagination,
-  onShowStatus,
 }: {
   hiddenStatuses: IssueStatusCategory[];
-  droppableStatuses: IssueStatusCategory[];
   statusPagination?: IssueStatusPagination;
-  onShowStatus: (status: IssueStatusCategory) => void;
 }) {
   return (
     <HiddenColumnsPanel
@@ -962,8 +860,6 @@ function BoardHiddenColumnsPanel({
           key={status}
           status={status}
           total={statusPagination?.[status]?.total}
-          droppable={droppableStatuses.includes(status)}
-          onShow={() => onShowStatus(status)}
         />
       )}
     />

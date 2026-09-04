@@ -15,7 +15,7 @@ export type DesktopProfileRequest =
   | { action: "clear_credentials"; profile: string };
 
 /**
- * Ask the bundled Rust CLI to mutate a Desktop profile under its native
+ * Ask the bundled Go CLI to mutate a Desktop profile under its native
  * cross-process lock. The request travels over stdin so credentials never
  * appear in argv, process listings, or launcher logs.
  */

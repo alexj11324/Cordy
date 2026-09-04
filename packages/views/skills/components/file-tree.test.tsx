@@ -82,7 +82,7 @@ describe("FileTree row actions", () => {
       />,
     );
 
-    // PB-5654: the trigger widens its hit area with an absolutely positioned
+    // MUL-5654: the trigger widens its hit area with an absolutely positioned
     // `after:-inset-1`. Drop `relative` and that pseudo-element resolves
     // against the row instead, covering it end to end and swallowing every
     // click on the file name — the row stops selecting and opens this menu.

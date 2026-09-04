@@ -44,7 +44,13 @@ const inter = Inter({
 const geistMono = Geist_Mono({
   subsets: ["latin"],
   variable: "--font-mono",
-  fallback: ["ui-monospace", "SFMono-Regular", "Menlo", "Consolas", "monospace"],
+  fallback: [
+    "ui-monospace",
+    "SFMono-Regular",
+    "Menlo",
+    "Consolas",
+    "monospace",
+  ],
 });
 // Editorial serif used for onboarding headlines. Italic support for h1 em
 // accents (e.g. "...on one shared board."). Only loaded on routes that
@@ -155,7 +161,12 @@ export default async function RootLayout({
     <html
       lang={HTML_LANG[locale]}
       suppressHydrationWarning
-      className={cn("antialiased font-sans h-full", inter.variable, geistMono.variable, sourceSerif.variable)}
+      className={cn(
+        "antialiased font-sans h-full",
+        inter.variable,
+        geistMono.variable,
+        sourceSerif.variable,
+      )}
     >
       <body className="h-full overflow-hidden">
         {/*
@@ -169,14 +180,22 @@ export default async function RootLayout({
           exposes VITE_-prefixed vars to client code, so one var name covers both
           apps. See https://www.react-grab.com/
         */}
-        {process.env.NODE_ENV === "development" && process.env.VITE_REACT_GRAB && (
-          <Script
-            src="//unpkg.com/react-grab/dist/index.global.js"
-            crossOrigin="anonymous"
-            strategy="beforeInteractive"
-          />
-        )}
-        <ClerkProvider>
+        {process.env.NODE_ENV === "development" &&
+          process.env.VITE_REACT_GRAB && (
+            <Script
+              src="//unpkg.com/react-grab/dist/index.global.js"
+              crossOrigin="anonymous"
+              strategy="beforeInteractive"
+            />
+          )}
+        <ClerkProvider
+          // Keep this server-read value runtime-configurable in standalone
+          // images. NEXT_PUBLIC_* values are otherwise frozen at build time.
+          publishableKey={
+            process.env.PATCHBAY_CLERK_PUBLISHABLE_KEY ??
+            process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+          }
+        >
           <ThemeProvider>
             {providers}
             <Toaster />

@@ -414,7 +414,7 @@ describe("SlashCommandList keyboard handling", () => {
     expect(command).toHaveBeenCalledWith(selectableItems[0]);
   });
 
-  // PB-5495: same Ctrl aliases the command bar (cmdk) accepts, so the slash
+  // MUL-5495: same Ctrl aliases the command bar (cmdk) accepts, so the slash
   // picker navigates like every other list in the product.
   it("navigates with Ctrl+N/J and Ctrl+P/K, and leaves the bare letters alone", () => {
     const ref = createRef<SlashCommandListRef>();
@@ -468,7 +468,7 @@ describe("SlashCommandList keyboard handling", () => {
     expect(command).toHaveBeenCalledWith(selectableItems[0]);
   });
 
-  // PB-3685: plain Tab accepts the highlighted item like Enter; Shift+Tab and
+  // MUL-3685: plain Tab accepts the highlighted item like Enter; Shift+Tab and
   // modifier+Tab fall through so reverse focus / OS switching are preserved.
   it("accepts the highlighted item on plain Tab, ignoring Shift/modifier+Tab", () => {
     const ref = createRef<SlashCommandListRef>();
@@ -593,7 +593,7 @@ describe("SlashCommandList built-in command rendering", () => {
 });
 
 
-// Async quick-action rendering in the `/` menu (PB-5465, review finding #4).
+// Async quick-action rendering in the `/` menu (MUL-5465, review finding #4).
 //
 // The render request resolves after an arbitrary delay, during which the user
 // keeps typing. Three behaviours have to hold, and each one was a real bug at

@@ -1,5 +1,7 @@
 "use client";
 
+import { MessagingConnectionStatus } from "./messaging-connection-status";
+
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -12,7 +14,6 @@ import { ChevronRight, ExternalLink, RefreshCw, Trash2 } from "lucide-react";
 // was fine. The named export maps straight to `exports.QRCode` and
 // resolves correctly under both bundlers.
 import { QRCode } from "react-qr-code";
-import { LarkMark } from "./lark-mark";
 import { cn } from "@patchbay/ui/lib/utils";
 import { Button } from "@patchbay/ui/components/ui/button";
 import { Card, CardContent } from "@patchbay/ui/components/ui/card";
@@ -40,15 +41,11 @@ import { memberListOptions } from "@patchbay/core/workspace/queries";
 import { useActorName } from "@patchbay/core/workspace/hooks";
 import { larkInstallationsOptions, larkKeys } from "@patchbay/core/lark";
 import { api, ApiError } from "@patchbay/core/api";
-import {
-  isMessagingInstallationHealthy,
-  type LarkInstallation,
-  type LarkInstallStatusResponse,
-} from "@patchbay/core/types";
+import type { LarkInstallation, LarkInstallStatusResponse } from "@patchbay/core/types";
 import { ActorAvatar } from "../../common/actor-avatar";
-import { useT } from "../../i18n";
+import { useLocale, useT } from "../../i18n";
 
-// PB-3083: the Lark (international, open.larksuite.com) "connect a Bot"
+// MUL-3083: the Lark (international, open.larksuite.com) "connect a Bot"
 // entry is temporarily hidden while its install → inbound pipeline is
 // stabilized — some Lark installs complete on Lark's side but never land a
 // `lark_installation` row, so the Bot silently can't receive messages.
@@ -61,10 +58,13 @@ const LARK_INTL_CONNECT_ENABLED: boolean = false;
 // Listing is member-visible; the disconnect action is admin-only (the
 // backend enforces it; the UI hides the button for non-admins to match).
 //
-// The settings page connects one workspace-scoped Hub. The channel selects
-// the active Agent with `/agents`; the optional per-Agent form remains
-// available for legacy links and existing installations.
-export function LarkTab({ installationId }: { installationId?: string } = {}) {
+// Adding a new installation flows through the Agent detail page: the
+// install path is per-agent (each Patchbay Agent gets exactly one Bot —
+// see the (workspace_id, agent_id) UNIQUE in lark_installation), so
+// asking the user to pick an agent here would re-create that page's
+// picker. The "Bind your first agent" copy in the empty state hints
+// users at the right entry point.
+export function LarkTab() {
   const { t } = useT("settings");
   const wsId = useWorkspaceId();
   const qc = useQueryClient();
@@ -75,12 +75,12 @@ export function LarkTab({ installationId }: { installationId?: string } = {}) {
   const canManage =
     currentMember?.role === "owner" || currentMember?.role === "admin";
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     ...larkInstallationsOptions(wsId),
     enabled: !!wsId,
   });
-  const installations = (data?.installations ?? []).filter(
-    (installation) => !installationId || installation.id === installationId,
+  const installations = (data?.installations ?? []).map((installation) =>
+    isError ? { ...installation, runtime: undefined } : installation,
   );
   const configured = data?.configured === true;
   // install_supported tracks whether the device-flow install path is
@@ -107,6 +107,19 @@ export function LarkTab({ installationId }: { installationId?: string } = {}) {
     } finally {
       setDisconnecting(false);
     }
+  }
+
+  if (isError && !data) {
+    return (
+      <div role="alert" className="space-y-2">
+        <p className="text-caption text-muted-foreground">
+          {t(($) => $.page.connection_status.unavailable)}
+        </p>
+        <Button variant="outline" size="sm" onClick={() => void refetch()}>
+          {t(($) => $.page.connection_status.retry)}
+        </Button>
+      </div>
+    );
   }
 
   return (
@@ -142,7 +155,7 @@ export function LarkTab({ installationId }: { installationId?: string } = {}) {
         </Card>
       ) : (
         <section className="space-y-3">
-          <h2 className="text-body font-semibold">{t(($) => $.lark.connected_bots)}</h2>
+          <h2 className="text-body font-semibold">{t(($) => $.lark.installed_bots)}</h2>
           {isLoading ? (
             <Card>
               <CardContent>
@@ -218,32 +231,28 @@ function InstallationRow({
   onDisconnect: () => void;
 }) {
   const { t } = useT("settings");
-  // Render the Patchbay agent's identity for legacy Agent-scoped rows. A
-  // workspace Hub has no Agent until a chat uses `/agents`, so it gets the
-  // platform mark instead of being sent through the Agent avatar lookup.
+  const locale = useLocale();
+  // The bot is bound 1:1 to a Patchbay Agent (per the (workspace_id,
+  // agent_id) UNIQUE in lark_installation). Render the Patchbay agent's
+  // identity here rather than the raw Lark app_id / bot_open_id — those
+  // mean nothing to product users. getAgentName falls back to
+  // "Unknown Agent" when the agent has been deleted; the Disconnect
+  // affordance below is the recovery path for that orphan row.
   const { getAgentName } = useActorName();
-  const isActive = installation.status === "active";
-  const isHealthy = isMessagingInstallationHealthy(installation);
-  const agentName = installation.agent_id
-    ? getAgentName(installation.agent_id)
-    : t(($) => $.page.integrations_workspace_hub);
+  const isInstalled = installation.status === "installed";
+  const agentName = getAgentName(installation.agent_id);
   return (
     <div className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
       <div className="flex items-start gap-3">
-        {installation.agent_id ? (
-          <ActorAvatar
-            actorType="agent"
-            actorId={installation.agent_id}
-            size="lg"
-            enableHoverCard
-            profileLink
-          />
-        ) : (
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#3370FF]/10">
-            <LarkMark className="h-5 w-5" />
-          </span>
-        )}
+        <ActorAvatar
+          actorType="agent"
+          actorId={installation.agent_id}
+          size="lg"
+          enableHoverCard
+          profileLink
+        />
         <div className="space-y-1">
+          <MessagingConnectionStatus installation={installation} />
           <p className="text-body font-medium">
             {agentName}
             <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
@@ -251,24 +260,20 @@ function InstallationRow({
                 ? t(($) => $.lark.region_lark)
                 : t(($) => $.lark.region_feishu)}
             </span>
-            {!isActive ? (
+            {!isInstalled && (
               <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
                 {t(($) => $.lark.revoked_badge)}
               </span>
-            ) : !isHealthy ? (
-              <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
-                {t(($) => $.page.integrations_status)}
-              </span>
-            ) : null}
+            )}
           </p>
           <p className="text-micro text-muted-foreground">
             {t(($) => $.lark.installed_at_label, {
-              when: new Date(installation.installed_at).toLocaleString(),
+              when: new Date(installation.installed_at).toLocaleString(locale),
             })}
           </p>
         </div>
       </div>
-      {canManage && isActive && (
+      {canManage && isInstalled && (
         <Button variant="outline" size="sm" onClick={onDisconnect}>
           <Trash2 className="h-3 w-3" />
           {t(($) => $.lark.disconnect)}
@@ -286,16 +291,16 @@ function InstallationRow({
 //   1. Only the agent's owner or a workspace owner/admin see anything —
 //      the backend authorizes `POST /lark/install/begin`, the status
 //      poll, AND disconnect with canManageAgent (agent owner OR ws
-//      owner/admin; see the Rust Lark handler, PB-4213), so
+//      owner/admin; see server/internal/handler/lark.go, MUL-4213), so
 //      the gate here mirrors that. `agentOwnerId` is what lets a
 //      non-admin owner through; when it is omitted the button stays
 //      workspace owner/admin-only.
-//   2. If this agent ALREADY has a healthy installation, they see
+//   2. If this agent ALREADY has an installed installation, they see
 //      the "Connected + Manage in Lark" badge — regardless of
 //      install_supported. install_supported governs only whether NEW
 //      scan-installs can complete; already-installed bots stay manageable
 //      when the device-flow transport is unwired (see
-//      the Rust Lark handler — "already-installed bots still
+//      server/internal/handler/lark.go — "already-installed bots still
 //      appear and remain manageable"). Gating the badge on it would hide a
 //      bound agent's connected state the moment the transport went away.
 //   3. Otherwise the Bind CTA shows only when install_supported is true —
@@ -307,7 +312,6 @@ export function LarkAgentBindButton({
   agentOwnerId,
   className,
   onShowConnectedDetails,
-  workspaceScoped = false,
 }: {
   agentId?: string;
   agentName?: string;
@@ -315,7 +319,7 @@ export function LarkAgentBindButton({
    * The bound agent's owner (`agent.owner_id`). When it matches the
    * current user, the button treats them as able to manage the bot even
    * if they are not a workspace owner/admin — mirroring the backend's
-   * canManageAgent authorization (PB-4213). Omit it to keep the button
+   * canManageAgent authorization (MUL-4213). Omit it to keep the button
    * workspace owner/admin-only.
    */
   agentOwnerId?: string | null;
@@ -327,10 +331,8 @@ export function LarkAgentBindButton({
    * "jump to the Integrations tab" handler so the left column stays a
    * glanceable summary and the management actions live in one place (the
    * tab). The tab itself omits this prop and gets the full badge.
-  */
+   */
   onShowConnectedDetails?: () => void;
-  /** The workspace Integrations card connects the platform Hub, not an Agent. */
-  workspaceScoped?: boolean;
 }) {
   const { t } = useT("settings");
   const wsId = useWorkspaceId();
@@ -345,7 +347,7 @@ export function LarkAgentBindButton({
     null,
   );
 
-  const { data: listing } = useQuery({
+  const { data: listing, isError: installationQueryFailed } = useQuery({
     ...larkInstallationsOptions(wsId),
     enabled: !!wsId,
   });
@@ -361,38 +363,35 @@ export function LarkAgentBindButton({
   const isAgentOwner =
     !!user?.id && agentOwnerId != null && agentOwnerId === user.id;
   // Mirror the backend canManageAgent gate: the agent's owner OR a
-  // workspace owner/admin may bind/manage the bot (PB-4213).
+  // workspace owner/admin may bind/manage the bot (MUL-4213).
   const canManage = isWorkspaceAdmin || isAgentOwner;
 
   if (!canManage) return null;
 
   // Existing-installation check runs BEFORE the install_supported gate:
   // already-installed bots stay manageable even when new scan-installs are
-  // unavailable (the Rust Lark handler). Surfacing the badge here
+  // unavailable (server/internal/handler/lark.go). Surfacing the badge here
   // also closes the re-scan zombie-bot trap — re-scanning the same agent
   // upserts the row and orphans the previously-created PersonalAgent, so we
   // close the install entry point and link to the Bot's Lark app page where
   // scopes / display name / additional permissions are actually managed.
-  const existing = listing?.installations.find(
+  const recordedInstallation = listing?.installations.find(
     (inst) =>
-      (agentId ? inst.agent_id === agentId : inst.agent_id === null) &&
-      inst.status === "active",
+      (agentId ? inst.agent_id === agentId : !inst.agent_id) &&
+      inst.status === "installed",
   );
+  const existing = recordedInstallation && installationQueryFailed
+    ? { ...recordedInstallation, runtime: undefined }
+    : recordedInstallation;
   if (existing) {
-    const healthy = isMessagingInstallationHealthy(existing);
     return onShowConnectedDetails ? (
       <LarkAgentBotStatusRow
         installation={existing}
         onClick={onShowConnectedDetails}
-        healthy={healthy}
         className={className}
       />
     ) : (
-      <LarkAgentBotConnectedBadge
-        installation={existing}
-        healthy={healthy}
-        className={className}
-      />
+      <LarkAgentBotInstalledControls installation={existing} className={className} />
     );
   }
 
@@ -405,7 +404,7 @@ export function LarkAgentBindButton({
   // entry points instead of one auto-detect QR because Lark only emits
   // tenant_brand="lark" mid-poll AFTER the user has authorized; until
   // then a Lark user has to scan a QR served from accounts.feishu.cn,
-  // which has surfaced as confusing for international users (PB-3083
+  // which has surfaced as confusing for international users (MUL-3083
   // follow-up). Each button passes its region to the install dialog,
   // which threads it to the backend so the device-flow `begin` POSTs
   // directly against the matching accounts host. The mid-poll
@@ -421,6 +420,7 @@ export function LarkAgentBindButton({
           variant="outline"
           size="sm"
           onClick={() => setDialogRegion("feishu")}
+          disabled={!wsId}
           title={
             agentName
               ? t(($) => $.lark.bind_button_feishu_title, { agent: agentName })
@@ -429,11 +429,9 @@ export function LarkAgentBindButton({
           data-testid="lark-agent-bind-feishu"
         >
           <ExternalLink className="h-3 w-3" />
-          {workspaceScoped
-            ? t(($) => $.lark.workspace_connect_feishu)
-            : t(($) => $.lark.bind_button_feishu)}
+          {t(($) => $.lark.bind_button_feishu)}
         </Button>
-        {/* PB-3083: Lark (international) bind entry is temporarily hidden —
+        {/* MUL-3083: Lark (international) bind entry is temporarily hidden —
             see LARK_INTL_CONNECT_ENABLED. Mainland Feishu (above) is
             unaffected. */}
         {LARK_INTL_CONNECT_ENABLED && (
@@ -441,6 +439,7 @@ export function LarkAgentBindButton({
             variant="outline"
             size="sm"
             onClick={() => setDialogRegion("lark")}
+            disabled={!wsId}
             title={
               agentName
                 ? t(($) => $.lark.bind_button_lark_title, { agent: agentName })
@@ -466,7 +465,7 @@ export function LarkAgentBindButton({
   );
 }
 
-// LarkAgentBotStatusRow is the compact, read-only connected affordance the
+// LarkAgentBotStatusRow is the compact, read-only installation affordance the
 // agent inspector (left column) renders instead of the full badge. It shows
 // only the status — green dot, Feishu/Lark region chip, "Connected to Lark"
 // — and is a single full-width button that deep-links into the Integrations
@@ -475,12 +474,10 @@ export function LarkAgentBindButton({
 function LarkAgentBotStatusRow({
   installation,
   onClick,
-  healthy,
   className,
 }: {
   installation: LarkInstallation;
   onClick: () => void;
-  healthy: boolean;
   className?: string;
 }) {
   const { t } = useT("settings");
@@ -494,30 +491,21 @@ function LarkAgentBotStatusRow({
       )}
       data-testid="lark-agent-bot-status"
     >
-      <span
-        className={cn(
-          "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
-          healthy ? "bg-emerald-500" : "bg-amber-500",
-        )}
-      />
       <span className="rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
         {installation.region === "lark"
           ? t(($) => $.lark.region_lark)
           : t(($) => $.lark.region_feishu)}
       </span>
-      <span className="truncate">
-        {healthy
-          ? t(($) => $.lark.agent_bot_connected_label)
-          : t(($) => $.page.integrations_status)}
-      </span>
+      <span className="truncate">{t(($) => $.lark.section_title)}</span>
+      <MessagingConnectionStatus installation={installation} compact />
       <ChevronRight className="ml-auto h-3.5 w-3.5 shrink-0" />
     </button>
   );
 }
 
-// LarkAgentBotConnectedBadge is the full "already connected" affordance the
+// LarkAgentBotInstalledControls is the full installed-bot affordance the
 // Integrations tab renders in place of the Bind button when this agent has
-// an active Lark installation. (The inspector's left column uses the compact
+// an installed Lark installation. (The inspector's left column uses the compact
 // LarkAgentBotStatusRow instead, which deep-links here.) It lays out as two
 // rows: row 1 pairs a green-dot status (with the Feishu/Lark region chip) on
 // the left with a soft-destructive Disconnect button on the right; row 2
@@ -527,7 +515,7 @@ function LarkAgentBotStatusRow({
 // Visibility rules carry over from the parent `LarkAgentBindButton`:
 // only the agent's owner or a workspace owner/admin ever reach this
 // component, so the unbind affordance is unconditionally shown — the
-// backend authorizes DELETE with the same canManageAgent check (PB-4213)
+// backend authorizes DELETE with the same canManageAgent check (MUL-4213)
 // and would 403 anyone else, which makes a redundant gate here dead code.
 //
 // The dev-console host depends on which Lark cloud the bot lives on:
@@ -535,20 +523,18 @@ function LarkAgentBotStatusRow({
 // (international) bots at open.larksuite.com. The region is auto-detected
 // at install time and surfaced per installation on the listings
 // response; an older server that omits `region` defaults to Feishu
-// (API-compat — see AGENTS.md).
+// (API-compat — see CLAUDE.md).
 function larkDevConsoleHost(region?: string): string {
   return region === "lark"
     ? "https://open.larksuite.com"
     : "https://open.feishu.cn";
 }
 
-function LarkAgentBotConnectedBadge({
+function LarkAgentBotInstalledControls({
   installation,
-  healthy,
   className,
 }: {
   installation: LarkInstallation;
-  healthy: boolean;
   className?: string;
 }) {
   const { t } = useT("settings");
@@ -584,34 +570,24 @@ function LarkAgentBotConnectedBadge({
   return (
     <div
       className={cn("space-y-2", className)}
-      data-testid="lark-agent-bot-connected"
+      data-testid="lark-agent-bot-installed"
     >
       {/* Row 1: connection status (left) and the destructive unbind
           action (right). The Disconnect uses the soft-tinted
           `destructive` button variant — it reads dangerous without the
           loud solid-red, and stays visible because it is the user-facing
           recovery path for the install_supported=false / re-scan
-          zombie-bot trap (the Rust Lark handler). Confirmation
+          zombie-bot trap (server/internal/handler/lark.go). Confirmation
           is mandatory: the backend disconnect tears down the WebSocket
           and stops message delivery. */}
       <div className="flex items-center justify-between gap-3">
         <span className="inline-flex min-w-0 items-center gap-2 text-caption text-muted-foreground">
-          <span
-            className={cn(
-              "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
-              healthy ? "bg-emerald-500" : "bg-amber-500",
-            )}
-          />
           <span className="rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
             {installation.region === "lark"
               ? t(($) => $.lark.region_lark)
               : t(($) => $.lark.region_feishu)}
           </span>
-          <span className="truncate">
-            {healthy
-              ? t(($) => $.lark.agent_bot_connected_label)
-              : t(($) => $.page.integrations_status)}
-          </span>
+          <MessagingConnectionStatus installation={installation} compact />
         </span>
         <Button
           variant="destructive"

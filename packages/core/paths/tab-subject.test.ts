@@ -11,6 +11,7 @@ describe("parseTabSubject", () => {
     ["/acme/issues", { kind: "page", page: "issues" }],
     ["/acme/my-issues", { kind: "page", page: "myIssues" }],
     ["/acme/projects", { kind: "page", page: "projects" }],
+    ["/acme/work-products", { kind: "page", page: "workProducts" }],
     ["/acme/automations", { kind: "page", page: "automations" }],
     ["/acme/agents", { kind: "page", page: "agents" }],
     ["/acme/teams", { kind: "page", page: "teams" }],
@@ -35,7 +36,7 @@ describe("parseTabSubject", () => {
     // Actors
     ["/acme/agents/ag1", { kind: "actor", actorType: "agent", id: "ag1" }],
     ["/acme/members/m1", { kind: "actor", actorType: "member", id: "m1" }],
-    ["/acme/teams/team1", { kind: "actor", actorType: "team", id: "team1" }],
+    ["/acme/teams/tm1", { kind: "actor", actorType: "team", id: "tm1" }],
     // Flow — /new must win over the actor detail pattern
     ["/acme/agents/new", { kind: "flow", flow: "create-agent" }],
     // Runtime machine vs nested runtime
@@ -46,11 +47,11 @@ describe("parseTabSubject", () => {
     ],
     // Containers — selection (and archived sub-list) live in the query string
     ["/acme/inbox", { kind: "inbox", selectedKey: null, archived: false }],
-    ["/acme/inbox?issue=PB-9", { kind: "inbox", selectedKey: "PB-9", archived: false }],
+    ["/acme/inbox?issue=MUL-9", { kind: "inbox", selectedKey: "MUL-9", archived: false }],
     ["/acme/inbox?view=archived", { kind: "inbox", selectedKey: null, archived: true }],
     [
-      "/acme/inbox?view=archived&issue=PB-9",
-      { kind: "inbox", selectedKey: "PB-9", archived: true },
+      "/acme/inbox?view=archived&issue=MUL-9",
+      { kind: "inbox", selectedKey: "MUL-9", archived: true },
     ],
     ["/acme/chat", { kind: "chat", sessionId: null }],
     ["/acme/chat?session=sess-1", { kind: "chat", sessionId: "sess-1" }],

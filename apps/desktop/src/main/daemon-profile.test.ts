@@ -11,6 +11,7 @@ import {
   profileConfigPath,
   profileDir,
   profileLogPath,
+  profilePidPath,
   profileUserIdPath,
 } from "./daemon-profile";
 
@@ -30,7 +31,7 @@ describe("deriveProfileName", () => {
     );
   });
 
-  it("keeps IPv6 literals within the Rust profile-name grammar", () => {
+  it("keeps IPv6 literals within the Go helper profile-name grammar", () => {
     expect(deriveProfileName("http://[::1]:8080")).toBe(
       "desktop----1--8080",
     );
@@ -51,6 +52,9 @@ describe("profile paths", () => {
     expect(profileLogPath("desktop-api.aspectlylabs.com")).toBe(
       join(dir, "daemon.log"),
     );
+    expect(profilePidPath("desktop-api.aspectlylabs.com")).toBe(
+      join(dir, "daemon.pid"),
+    );
     expect(profileUserIdPath("desktop-api.aspectlylabs.com")).toBe(
       join(dir, ".desktop-user-id"),
     );
@@ -62,6 +66,7 @@ describe("profile paths", () => {
     expect(() => profileDir("")).toThrow(/unresolved/);
     expect(() => profileConfigPath("")).toThrow(/unresolved/);
     expect(() => profileLogPath("")).toThrow(/unresolved/);
+    expect(() => profilePidPath("")).toThrow(/unresolved/);
     expect(() => profileUserIdPath("")).toThrow(/unresolved/);
   });
 

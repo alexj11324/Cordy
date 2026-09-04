@@ -72,7 +72,7 @@ describe("issue create settings store", () => {
     );
   });
 
-  it("migrates the legacy assignee visibility to both explicit roles", () => {
+  it("migrates legacy assignee visibility to the explicit roles", () => {
     expect(
       migrateIssueCreateSettings(
         {
@@ -96,7 +96,7 @@ describe("issue create settings store", () => {
     ).toEqual([]);
   });
 
-  it("resets both modes to the product defaults", () => {
+  it("resets both modes to product defaults", () => {
     useIssueCreateSettingsStore.setState({
       quickCreateFields: ["project", "priority"],
       manualCreateFields: ["owner", "reviewer"],

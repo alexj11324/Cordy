@@ -1,7 +1,7 @@
 import { homedir } from "os";
 import { join } from "path";
 
-// Keep this in sync with patchbay_daemon::control_client::health_port_for_profile.
+// Keep the Go impl in sync: server/cmd/patchbay/cmd_daemon.go healthPortForProfile.
 export const DEFAULT_HEALTH_PORT = 19514;
 
 /**
@@ -28,9 +28,6 @@ export function assertResolvedProfile(profile: string): void {
 export function deriveProfileName(targetUrl: string): string {
   try {
     const url = new URL(targetUrl);
-    // URL.host wraps IPv6 literals in brackets. Strip both brackets and
-    // colons so the generated profile stays within the Rust validator's
-    // lowercase/digit/dot/hyphen grammar while remaining deterministic.
     const host = url.host
       .replaceAll("[", "-")
       .replaceAll("]", "-")
@@ -67,10 +64,13 @@ export function profileLogPath(profile: string): string {
   return join(profileDir(profile), "daemon.log");
 }
 
-// Legacy sidecar retained only so the startup hardening pass can restrict files
-// written by older Desktop versions. Current credentials store the owner id in
-// the same atomic config.json replacement as the PAT; runtime code must not use
-// this path as an authority for token reuse.
+export function profilePidPath(profile: string): string {
+  return join(profileDir(profile), "daemon.pid");
+}
+
+// Legacy sidecar retained only so the startup hardening pass can restrict
+// files written by older Desktop versions. Current credentials store the owner
+// id in the same locked, atomic config.json replacement as the PAT.
 export function profileUserIdPath(profile: string): string {
   return join(profileDir(profile), ".desktop-user-id");
 }

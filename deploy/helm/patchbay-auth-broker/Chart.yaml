@@ -1,6 +1,4 @@
 apiVersion: v2
 name: patchbay-auth-broker
-description: Independently released, stateless Patchbay authentication broker
-type: application
 version: 0.1.0
-appVersion: "dev"
+type: application

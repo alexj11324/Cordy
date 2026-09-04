@@ -102,8 +102,8 @@ export function TaskAgentThreadScreen({ taskId }: Props) {
           : [],
     [task, threadQuery.data?.thread_tasks],
   );
-  const continuationParentTaskId = task?.id ?? taskId;
-  const agentName = threadQuery.data?.agent.name?.trim() || copy.agent;
+  const continuationParentTaskId =
+    threadQuery.data?.current_task_id || task?.id || taskId;
   const messages = useMemo<ChatMessage[]>(
     () =>
       threadTasks.flatMap((threadTask) =>
@@ -118,7 +118,7 @@ export function TaskAgentThreadScreen({ taskId }: Props) {
   const pendingTask = taskState.pendingTask;
   const liveTaskId =
     taskState.executingTask?.id ??
-    taskState.headTask?.id ??
+    pendingTask?.task_id ??
     continuationParentTaskId;
   const liveTaskMessages = useQuery(taskMessagesOptions(liveTaskId));
 
@@ -233,7 +233,7 @@ export function TaskAgentThreadScreen({ taskId }: Props) {
           messages={messages}
           loading={threadQuery.isPending}
           hasSessions
-          agentName={agentName}
+          agent={null}
           onPickPrompt={(text) => setDraft(`agent-thread:${taskId}`, text)}
           pendingTask={pendingTask}
           liveTaskMessages={liveTaskMessages.data ?? []}

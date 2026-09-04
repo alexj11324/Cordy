@@ -12,7 +12,7 @@
  * so a status offered in one and missing from the other can't happen (that is
  * how an issue becomes unfindable). Until the catalog lands, or against a
  * backend that predates it, that list is exactly the 7 built-ins this picker
- * always offered. (PB-6243)
+ * always offered. (MUL-6243)
  */
 import { Pressable, ScrollView, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -27,9 +27,10 @@ import { THEME } from "@/lib/theme";
 interface Props {
   value: IssueStatus;
   onChange: (next: IssueStatus) => void;
+  disabled?: boolean;
 }
 
-export function StatusPickerBody({ value, onChange }: Props) {
+export function StatusPickerBody({ value, onChange, disabled = false }: Props) {
   const { colorScheme } = useColorScheme();
   const checkColor =
     colorScheme === "dark" ? THEME.dark.primary : THEME.light.primary;
@@ -47,8 +48,14 @@ export function StatusPickerBody({ value, onChange }: Props) {
           return (
             <Pressable
               key={option.key}
+              disabled={disabled}
               onPress={() => onChange(option.key)}
-              className="flex-row items-center gap-3 rounded-lg px-3 py-3 active:bg-secondary"
+              className={
+                disabled
+                  ? "flex-row items-center gap-3 rounded-lg px-3 py-3 opacity-50"
+                  : "flex-row items-center gap-3 rounded-lg px-3 py-3 active:bg-secondary"
+              }
+              accessibilityState={{ disabled, selected }}
             >
               <StatusIcon
                 status={option.key}

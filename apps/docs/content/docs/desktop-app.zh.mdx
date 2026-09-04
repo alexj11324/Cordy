@@ -38,7 +38,7 @@ Desktop 内置的 CLI 只供应用管理运行时使用。如果你还要在终�
 
 ## 桌面标签页
 
-Desktop 会为每个工作区单独保存标签页。例如，你在工作区 A 打开了三个 issue，切到工作区 B 后会看到 B 自己的标签页；切回 A 时，之前的三个标签页仍然保留。
+Desktop 会为每个工作区单独保存标签页。例如，你在工作区 A 打开了三个任务，切到工作区 B 后会看到 B 自己的标签页；切回 A 时，之前的三个标签页仍然保留。
 
 同一资源只会在当前工作区打开一次。标签页可以重新排序、固定、关闭，也会保留各自的前进、后退和滚动位置。点击或粘贴本部署的应用链接会直接在标签页中打开，不会跳转到浏览器。
 
@@ -82,8 +82,8 @@ Desktop 默认连接 Patchbay Cloud。连接自托管实例时，在用户目录
 
 ```json
 {
-  "schemaVersion": 1,
-  "apiUrl": "https://api.example.com"
+ "schemaVersion": 1,
+ "apiUrl": "https://api.example.com"
 }
 ```
 
@@ -91,53 +91,23 @@ Desktop 默认连接 Patchbay Cloud。连接自托管实例时，在用户目录
 这个文件**不是** CLI 的 `~/.patchbay/config.json`，字段名也不同：CLI 用 `server_url`，Desktop 用 `apiUrl`。Desktop 不会读取 CLI 的配置，它在 `~/.patchbay/profiles/desktop-<host>/` 下管理独立的 daemon profile。改 `config.json` 不会影响 Desktop 连接哪个服务。
 </Callout>
 
-`apiUrl` 是 backend 的公开地址，必须填写，且必须使用 `http` 或 `https`。另外三个地址可以省略，Desktop 会自动推导：
+`apiUrl` 是 backend 的公开地址，必须填写，且必须使用 `http` 或 `https`。另外两个地址可以省略，Desktop 会自动推导：
 
 - `wsUrl`：把 `apiUrl` 的协议换成 `ws` 或 `wss`，并在路径后追加 `/ws`；
 - `appUrl`：域名以 `api.` 开头且至少三段时去掉 `api.` 前缀（`api.example.com` → `example.com`），否则保持与 `apiUrl` 相同。
-- `accountsUrl`：默认复用 `appUrl`；认证 broker 独立部署时再单独设置。
 
-### Desktop 本地开发与 hosted 登录
-
-正常本地开发使用：
-
-```bash
-pnpm dev
-```
-
-这会使用隔离的本地 API、数据库和 `http://localhost:<port>` 登录入口。
-如果需要在本地运行 Electron/Vite，但实际验证 hosted Google 登录和 API，使用：
-
-```bash
-pnpm dev:hosted
-```
-
-这个命令会使用完整的 hosted 配置：
-
-- `https://accounts.aspectlylabs.com`：Google/Clerk 登录 broker；
-- `https://api.aspectlylabs.com`：API 和 WebSocket；
-- `https://patchbay.aspectlylabs.com`：应用公共地址。
-
-Electron 的热更新渲染器仍然可以使用本地端口，但 OAuth 链路不会再经过
-localhost。由于 hosted 模式连接共享数据，它不会作为默认开发模式，也不会
-在本地服务不可用时静默回退到另一个环境；它的 Electron 会话存储也与本地
-profile 分开。若要在另一个终端重新检查 hosted API 和 accounts broker，运行
-`pnpm dev:doctor --hosted`。
-
-通常只写 `apiUrl` 即可。推导不符合预期时再显式覆盖，常见情况有四类：
+通常只写 `apiUrl` 即可。推导不符合预期时再显式覆盖，常见情况有三类：
 
 - Web 与 API 不同域；
-- 认证 broker 使用独立域名；
 - WebSocket 单独部署；
 - 域名不满足剥前缀的约定（`api.local` 这类两段域名不会去掉前缀）。
 
 ```json
 {
-  "schemaVersion": 1,
-  "apiUrl": "https://api.example.com",
-  "appUrl": "https://app.example.com",
-  "accountsUrl": "https://accounts.example.com",
-  "wsUrl": "wss://ws.example.com/socket"
+ "schemaVersion": 1,
+ "apiUrl": "https://api.example.com",
+ "appUrl": "https://app.example.com",
+ "wsUrl": "wss://ws.example.com/socket"
 }
 ```
 
@@ -166,8 +136,8 @@ $dir = "$env:USERPROFILE\.patchbay"
 New-Item -ItemType Directory -Force $dir | Out-Null
 $json = @'
 {
-  "schemaVersion": 1,
-  "apiUrl": "https://api.example.com"
+ "schemaVersion": 1,
+ "apiUrl": "https://api.example.com"
 }
 '@
 [System.IO.File]::WriteAllText("$dir\desktop.json", $json)
@@ -195,10 +165,10 @@ Get-FileHash .\patchbay-cli-<version>-windows-amd64.zip -Algorithm SHA256
 
 1. **把隔离的文件恢复回来** —— Windows 安全中心 → *病毒和威胁防护* → *保护历史记录* → 选中 Patchbay 那一条 → *操作* → *还原*。
 2. **加排除项**，避免再次被隔离 —— *病毒和威胁防护* → *管理设置* → *排除项* → *添加或删除排除项* → *文件夹*，两个都要加：
-   - `%LOCALAPPDATA%\Programs\@patchbaydesktop`
-   - `%APPDATA%\Patchbay`
+ - `%LOCALAPPDATA%\Programs\@patchbaydesktop`
+ - `%APPDATA%\Patchbay`
 
-   两个路径缺一不可：内置 CLI 被删掉后，Desktop 会把替换版本下载到 `%APPDATA%\Patchbay\bin`，只排除安装目录的话，下载下来的副本还会再被隔离一次，陷入循环。
+ 两个路径缺一不可：内置 CLI 被删掉后，Desktop 会把替换版本下载到 `%APPDATA%\Patchbay\bin`，只排除安装目录的话，下载下来的副本还会再被隔离一次，陷入循环。
 3. **把误报提交给微软** —— 在 [Microsoft Security Intelligence 文件提交页](https://www.microsoft.com/en-us/wdsi/filesubmission)选择 *Software developer* 和 *Incorrectly detected as malware*。这一步才是让检测对所有用户撤销的办法，一般几天内生效。
 
 <Callout type="warning">

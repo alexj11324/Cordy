@@ -21,7 +21,7 @@ curl -i https://api.example.com/health
 curl -i https://api.example.com/readyz
 ```
 
-`/health` only says the API process is responding; `/readyz` checks whether the database is reachable. The Rust entrypoint runs migrations before serving, so a migration failure prevents readiness. Include the error, relevant logs, CLI version, and operating system when reporting a problem; remove tokens, email addresses, and other sensitive details before submitting.
+`/health` only says the API process is responding; `/readyz` also checks the database and migrations. Include the error, relevant logs, CLI version, and operating system when reporting a problem; remove tokens, email addresses, and other sensitive details before submitting.
 
 ## Daemon fails to connect
 
@@ -56,7 +56,7 @@ patchbay config show
 
 ## Issue does not start executing
 
-Open the issue's **Agent thread** and check the task's current status and what it is waiting for.
+Open the issue's **execution log** and check the task's current status and what it is waiting for.
 
 ### `queued` status
 
@@ -67,7 +67,7 @@ Open the issue's **Agent thread** and check the task's current status and what i
 3. Does the agent still have concurrency headroom?
 4. Does the daemon still have global execution capacity?
 
-An agent runs at most 6 tasks concurrently by default; a single daemon runs at most 20. At the limit, new tasks stay in the queue until a running one finishes. Tasks also keep queueing while the runtime is offline; they only fail after going unclaimed for more than 2 hours.
+An agent runs at most 6 tasks concurrently by default; a single daemon runs at most 20. At the limit, new tasks stay in the queue until a running one finishes. Tasks also keep queueing while the runtime is offline; they only fail once that runtime has stopped heartbeating for longer than the reconnect grace and the task has itself waited that long, so a long queue behind a busy runtime is never expired for waiting, and assigning work to a machine that is already offline still leaves a full grace to bring it back.
 
 ```bash
 patchbay daemon status --output json
@@ -83,11 +83,11 @@ This means another in-flight task is using the same local directory. Patchbay wa
 
 This wait only exists in the directory's `in_place` ("Direct") mode. If the directory is a git repository, switching the resource to `worktree` ("Parallel") removes the queue altogether: each task gets its own worktree and hands its work back as a branch, so nothing waits on anything. See [Project resources](/project-resources#how-tasks-share-the-directory).
 
-Otherwise you just wait for the earlier task to finish. If it is stuck, stop it from its Agent thread, or pick a different local directory for the current agent. This directory mutex lives in the daemon's memory — no lock file is written to disk. If you suspect stale lock state, `patchbay daemon restart` releases it; there is nothing to delete manually.
+Otherwise you just wait for the earlier task to finish. If it is stuck, stop it from its execution log, or pick a different local directory for the current agent. This directory mutex lives in the daemon's memory — no lock file is written to disk. If you suspect stale lock state, `patchbay daemon restart` releases it; there is nothing to delete manually.
 
 ## AI coding tool fails to start
 
-An online daemon does not mean the tool itself works. Open the run's Agent thread and focus on:
+An online daemon does not mean the tool itself works. Open the run's detailed record and focus on:
 
 - Whether the tool has completed sign-in.
 - Whether the API key, quota, or model permissions are available.
@@ -95,7 +95,7 @@ An online daemon does not mean the tool itself works. Open the run's Agent threa
 - Whether the local working directory exists and is writable.
 - Whether the agent's custom arguments or environment variables are valid.
 
-Run the same tool directly in a terminal on the executing computer first. If the tool cannot start on its own, fix its sign-in or configuration, then continue the task from the Agent thread.
+Run the same tool directly in a terminal on the executing computer first. If the tool cannot start on its own, fix its sign-in or configuration, then retry the task from the execution log.
 
 ## Realtime updates stop working
 
@@ -108,6 +108,10 @@ Check the `/ws` connection under **Network → WS** in the browser's developer t
 - Whether the reverse proxy forwards the WebSocket Upgrade request.
 - Whether the browser sign-in has expired.
 
+A plain `curl` against `/ws` returning HTTP 400 is expected: the endpoint requires workspace-scoped query parameters and rejects a bare handshake before any WebSocket upgrade happens. A 400/401 recorded in the backend logs therefore proves only that ordinary HTTP routing reaches the backend — it does not prove the proxy preserves the WebSocket `Upgrade` headers. To verify the actual connection, open the browser DevTools → Network → WS tab (or use a WebSocket-aware client) and look for a `101` handshake.
+
+Self-host note: daemons dial `/api/daemon/ws` for their long connection (not `/ws`) — route it to the backend the same way. If the WebSocket handshake fails there, the daemon silently falls back to polling; repeated `status=400` lines on that path in the backend log are the symptom.
+
 Containers read `.env` only at creation time; recreate them after changes:
 
 ```bash
@@ -115,6 +119,16 @@ docker compose -f docker-compose.selfhost.yml up -d
 ```
 
 For a complete reverse-proxy example, see the [self-host quickstart](/self-host-quickstart#3-choose-how-to-access).
+
+## `patchbay setup` reports the server is not reachable
+
+The CLI reachability probe GETs `<server-url>/health` and needs a 200. The backend serves this path. Current web releases forward `/health` to the backend, but older ones do not — a reverse proxy that forwards everything to such an older frontend returns 404, and the CLI concludes the server is down while the stack is healthy.
+
+Routing `/health` to the backend (port 8080) explicitly in your proxy works across all releases — both Caddy examples in the [self-host quickstart](/self-host-quickstart#3-choose-how-to-access) do this. Confirm with:
+
+```bash
+curl -fsS <server-url>/health
+```
 
 ## Verification code and invitation emails not delivered
 
@@ -173,21 +187,14 @@ If the numbers look right after a manual run, the rollup function works and the 
 
 A normal upgrade needs no action for 103: `migrate up` automatically backfills historical usage data before applying it — an empty database passes straight through, and instances with history are backfilled month by month before continuing.
 
-If the backend still fails to start with `refusing to drop legacy daily rollups`, the automatic backfill did not complete (for example, it failed partway, or the SQL was applied directly instead of through `migrate up`). With PostgreSQL running, use the binary already shipped in the backend image. Override the normal entrypoint because that entrypoint exits on the failed migration:
+If the backend still fails to start with `refusing to drop legacy daily rollups`, the automatic backfill did not complete (for example, it failed partway, or the SQL was applied directly instead of through `migrate up`). Run the backfill command manually, then restart the backend:
 
 ```bash
-docker compose -f docker-compose.selfhost.yml run --rm --no-deps \
-  --entrypoint /app/backfill_task_usage_hourly backend
+cd server
+DATABASE_URL='postgres://...' go run ./cmd/backfill_task_usage_hourly
 ```
 
-A source checkout is an alternative only when a Rust toolchain is installed:
-
-```bash
-make rust-build
-DATABASE_URL='postgres://...' ./bin/backfill_task_usage_hourly
-```
-
-Useful flags: `--dry-run` previews without writing; `--sleep-between-slices` adds a pause between slices to reduce read pressure on a busy instance. The command works in monthly slices and is idempotent — rerun it directly after an interruption. It holds an advisory lock and is mutually exclusive with the server's scheduled rollup, so it cannot produce duplicate or inconsistent rollup data. When it finishes, restart the backend and confirm `/readyz` returns HTTP 200 with `{"status":"ready"}`. The handler only checks database reachability; successful server startup separately confirms that the entrypoint migration completed.
+Useful flags: `--dry-run` previews without writing; `--sleep-between-slices` adds a pause between slices to reduce read pressure on a busy instance. The command works in monthly slices and is idempotent — rerun it directly after an interruption. It holds an advisory lock and is mutually exclusive with the server's scheduled rollup, so it cannot produce duplicate or inconsistent rollup data. When it finishes, restart the backend and confirm `migrations` is `ok` on `/readyz`.
 
 ## Port already in use
 
@@ -221,7 +228,7 @@ patchbay daemon stop
 patchbay daemon start --foreground
 ```
 
-If you still cannot pin it down, search existing issues or file a new one on [GitHub Issues](https://github.com/alexj11324/Cordy/issues).
+If you still cannot pin it down, search existing issues or file a new one on [GitHub Issues](https://github.com/patchbay-ai/patchbay/issues).
 
 ## Next steps
 

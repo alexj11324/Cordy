@@ -1,7 +1,4 @@
 {{- $backendImageTag := default .Chart.AppVersion .Values.images.backend.tag -}}
-{{- if and (gt (int .Values.backend.replicas) 1) (not .Values.backend.redis.enabled) -}}
-{{- fail "backend.redis.enabled must be true when backend.replicas is greater than 1 so desktop handoff codes use a shared store" -}}
-{{- end -}}
 {{- if .Values.backend.uploads.persistence.enabled -}}
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -30,15 +27,16 @@ metadata:
     app.kubernetes.io/component: backend
 spec:
   # The backend entrypoint runs migrations before starting. Concurrent
-  # runs are protected by a Postgres advisory lock in patchbay-migrate (see
-  # GitHub issue 3647), so multiple replicas no longer race;
+  # runs are protected by a Postgres advisory lock in cmd/migrate (see
+  # GitHub patchbay-ai/patchbay#3647), so multiple replicas no longer race;
   # 1 is still the chart default (strategy: Recreate, no leader split).
   replicas: {{ .Values.backend.replicas }}
   strategy:
     type: Recreate
   selector:
     matchLabels:
-      {{- include "patchbay.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/name: patchbay
+      app.kubernetes.io/instance: {{ .Release.Name }}
       app.kubernetes.io/component: backend
   template:
     metadata:
@@ -53,9 +51,9 @@ spec:
         # lookup returns empty during `helm template`/`--dry-run`, so the
         # rendered value there is a placeholder; on a real install/upgrade it
         # reflects the actual Secret and rolls pods on rotation.
-        checksum/secret: {{ (lookup "v1" "Secret" .Release.Namespace (include "patchbay.existingSecret" .)).data | toYaml | sha256sum }}
+        checksum/secret: {{ (lookup "v1" "Secret" .Release.Namespace .Values.existingSecret).data | toYaml | sha256sum }}
       labels:
-        {{- include "patchbay.podLabels" . | nindent 8 }}
+        {{- include "patchbay.labels" . | nindent 8 }}
         app.kubernetes.io/component: backend
     spec:
       containers:
@@ -69,22 +67,11 @@ spec:
             - configMapRef:
                 name: {{ .Release.Name }}-config
             - secretRef:
-                name: {{ include "patchbay.existingSecret" . }}
-          {{- if or (not .Values.postgres.external.enabled) .Values.backend.redis.enabled }}
+                name: {{ .Values.existingSecret }}
+          {{- if not .Values.postgres.external.enabled }}
           env:
-            {{- if not .Values.postgres.external.enabled }}
             - name: DATABASE_URL
               value: {{ include "patchbay.databaseUrl" . | quote }}
-            {{- end }}
-            {{- if .Values.backend.redis.enabled }}
-            - name: PATCHBAY_REQUIRE_SHARED_DESKTOP_HANDOFF
-              value: "true"
-            - name: REDIS_URL
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "patchbay.existingSecret" . }}
-                  key: {{ .Values.backend.redis.secretKey | quote }}
-            {{- end }}
           {{- end }}
           {{- if .Values.backend.uploads.persistence.enabled }}
           volumeMounts:
@@ -93,16 +80,15 @@ spec:
           {{- end }}
           # The entrypoint runs `./migrate up` before serving traffic. On a
           # cold cluster (Postgres still coming up) this can take minutes. The
-          # startupProbe holds off liveness/readiness until /healthz is OK,
-          # giving migrations a ~5 min budget (30 * 10s) so the pod is never
-          # killed mid-migration. Once it passes, readiness keeps checking the
-          # database while liveness only checks the backend process; a database
-          # outage must remove the pod from service, not restart it.
+          # startupProbe holds off liveness/readiness until /healthz is OK.
+          # Its 10 minute window exceeds the shared 3 minute database retry
+          # budget and leaves time for migrations before kubelet may restart
+          # the pod.
           startupProbe:
             httpGet:
               path: /healthz
               port: 8080
-            failureThreshold: 30
+            failureThreshold: 60
             periodSeconds: 10
           readinessProbe:
             httpGet:
@@ -112,8 +98,8 @@ spec:
             periodSeconds: 10
           livenessProbe:
             httpGet:
-              # Liveness must only prove that the process can answer HTTP;
-              # database outages belong to readiness and must not restart it.
+              # Liveness must not depend on PostgreSQL. A database outage makes
+              # the pod NotReady, but should not restart an otherwise live API.
               path: /health
               port: 8080
             initialDelaySeconds: 30
@@ -145,7 +131,8 @@ metadata:
 spec:
   type: ClusterIP
   selector:
-    {{- include "patchbay.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/name: patchbay
+    app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/component: backend
   ports:
     - port: 8080

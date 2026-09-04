@@ -3,9 +3,9 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import type { Issue, UpdateIssueRequest } from "@patchbay/core/types";
 import { BatchActionToolbar } from "./batch-action-toolbar";
 
-// Batch writes use the same category scheduling contract as single-issue
-// writes: Todo, In Progress, In Review, and Blocked can start execution;
-// Backlog and terminal categories apply directly.
+// MUL-4155: batch status changes must apply directly (no run-confirm modal),
+// while agent/team assignment still confirms and delete still confirms. These
+// tests drive the pickers' onUpdate callbacks and assert which path is taken.
 
 const selection = vi.hoisted(() => ({
   selectedIds: new Set<string>(),
@@ -29,16 +29,12 @@ const openModal = vi.hoisted(() => vi.fn());
 vi.mock("@patchbay/core/modals", () => ({
   useModalStore: (selector: (s: { open: typeof openModal }) => unknown) => selector({ open: openModal }),
 }));
-vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
-vi.mock("@patchbay/core/issue-statuses/hooks", () => ({
-  useIssueStatuses: () => ({ categoryOf: (status: string) => status }),
-}));
 
 vi.mock("../../i18n", () => ({ useT: () => ({ t: () => "label" }) }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 // Interactive picker stubs: each renders buttons that fire the real onUpdate the
-// toolbar passes in, so we exercise handleBatchStatus / handleBatchExecutor.
+// toolbar passes in, so we exercise handleBatchStatus / handleBatchAssignee.
 const ACTIVE_STATUSES = ["todo", "in_progress", "in_review", "blocked"] as const;
 const TERMINAL_STATUSES = ["done", "cancelled"] as const;
 vi.mock("./pickers", () => ({
@@ -54,19 +50,22 @@ vi.mock("./pickers", () => ({
     </div>
   ),
   PriorityPicker: () => <div data-testid="priority-picker" />,
-  ExecutorPicker: ({ onUpdate }: { onUpdate: (u: Partial<UpdateIssueRequest>) => void }) => (
+  OwnerPicker: ({ onUpdate }: { onUpdate: (u: Partial<UpdateIssueRequest>) => void }) => (
     <div>
-      <button
-        data-testid="assign-agent"
-        onClick={() => onUpdate({ executor_type: "agent", executor_id: "agent-1" })}
-      />
       <button
         data-testid="assign-member"
         onClick={() => onUpdate({ owner_type: "member", owner_id: "user-1" })}
       />
     </div>
   ),
-  OwnerPicker: () => <div data-testid="owner-picker" />,
+  ExecutorPicker: ({ onUpdate }: { onUpdate: (u: Partial<UpdateIssueRequest>) => void }) => (
+    <div>
+      <button
+        data-testid="assign-agent"
+        onClick={() => onUpdate({ executor_type: "agent", executor_id: "agent-1" })}
+      />
+    </div>
+  ),
 }));
 
 function makeIssue(overrides: Partial<Issue> = {}): Issue {
@@ -74,7 +73,7 @@ function makeIssue(overrides: Partial<Issue> = {}): Issue {
     id: "a",
     workspace_id: "ws-1",
     number: 1,
-    identifier: "PB-1",
+    identifier: "MUL-1",
     title: "Issue",
     description: null,
     status: "todo",
@@ -108,9 +107,9 @@ beforeEach(() => {
   openModal.mockClear();
 });
 
-describe("BatchActionToolbar status routing (PB-4155)", () => {
-  it("applies non-running, non-review status targets directly", () => {
-    for (const status of [...TERMINAL_STATUSES, "backlog"]) {
+describe("BatchActionToolbar status routing (MUL-4155)", () => {
+  it("applies every status target directly, never opening the run-confirm modal", () => {
+    for (const status of [...ACTIVE_STATUSES, ...TERMINAL_STATUSES, "backlog"]) {
       batchUpdate.mockClear();
       openModal.mockClear();
       // A backlog issue in the selection is the case that historically could
@@ -123,84 +122,8 @@ describe("BatchActionToolbar status routing (PB-4155)", () => {
     }
   });
 
-  it.each(["todo", "blocked"])("confirms admission into %s", (status) => {
-    render(
-      <BatchActionToolbar
-        issues={[
-          makeIssue({
-            status: "backlog",
-            executor_type: "agent",
-            executor_id: "agent-1",
-          }),
-        ]}
-      />,
-    );
-    fireEvent.click(screen.getByTestId(`status-${status}`));
-    expect(openModal).toHaveBeenCalledWith(
-      "issue-run-confirm",
-      expect.objectContaining({
-        issueIds: ["a"],
-        mode: "promote",
-        status,
-        executorType: "agent",
-        executorId: "agent-1",
-      }),
-    );
-  });
-
-  it("applies a transition within executable categories directly", () => {
-    render(
-      <BatchActionToolbar
-        issues={[
-          makeIssue({
-            status: "todo",
-            executor_type: "agent",
-            executor_id: "agent-1",
-          }),
-        ]}
-      />,
-    );
-    fireEvent.click(screen.getByTestId("status-in_progress"));
-    expect(openModal).not.toHaveBeenCalled();
-    expect(batchUpdate).toHaveBeenCalledWith({
-      ids: ["a"],
-      updates: { status: "in_progress" },
-    });
-  });
-
-  it("routes entry into review through reviewer selection", () => {
-    render(
-      <BatchActionToolbar
-        issues={[
-          makeIssue({ executor_type: "agent", executor_id: "agent-1" }),
-        ]}
-      />,
-    );
-    fireEvent.click(screen.getByTestId("status-in_review"));
-    expect(openModal).toHaveBeenCalledWith(
-      "issue-run-confirm",
-      expect.objectContaining({
-        issueIds: ["a"],
-        mode: "review",
-        status: "in_review",
-        excludedExecutors: [{ type: "agent", id: "agent-1" }],
-      }),
-    );
-    expect(batchUpdate).not.toHaveBeenCalled();
-  });
-
-  it("routes executor assignment on In Progress through the run-confirm modal", () => {
-    render(<BatchActionToolbar issues={[makeIssue({ status: "in_progress" })]} />);
-    fireEvent.click(screen.getByTestId("assign-agent"));
-    expect(openModal).toHaveBeenCalledWith(
-      "issue-run-confirm",
-      expect.objectContaining({ issueIds: ["a"], mode: "assign", executorType: "agent", executorId: "agent-1" }),
-    );
-    expect(batchUpdate).not.toHaveBeenCalled();
-  });
-
-  it.each(["todo", "blocked", "in_review"])("confirms assigning an executor in %s", (status) => {
-    render(<BatchActionToolbar issues={[makeIssue({ status: status as Issue["status"] })]} />);
+  it("still routes agent assignment through the run-confirm modal", () => {
+    render(<BatchActionToolbar issues={[makeIssue({ status: "todo" })]} />);
     fireEvent.click(screen.getByTestId("assign-agent"));
     expect(openModal).toHaveBeenCalledWith(
       "issue-run-confirm",

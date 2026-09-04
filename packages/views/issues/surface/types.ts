@@ -5,9 +5,16 @@ import type { ViewMode } from "@patchbay/core/issues/stores/view-store";
 export type IssueCreateDefaults = Partial<
   Omit<
     CreateIssueRequest,
-    "executor_type" | "executor_id" | "parent_issue_id" | "project_id"
+    | "owner_type"
+    | "owner_id"
+    | "executor_type"
+    | "executor_id"
+    | "parent_issue_id"
+    | "project_id"
   >
 > & {
+  owner_type?: CreateIssueRequest["owner_type"] | null;
+  owner_id?: string | null;
   executor_type?: CreateIssueRequest["executor_type"] | null;
   executor_id?: string | null;
   parent_issue_id?: string | null;
@@ -18,7 +25,7 @@ export type IssueCreateDefaults = Partial<
 
 export type IssueSurfaceMode = Extract<
   ViewMode,
-  "board" | "list" | "table" | "swimlane" | "gantt" | "graph"
+  "board" | "list" | "table" | "swimlane" | "gantt"
 >;
 
 export interface IssueSurfaceProps {

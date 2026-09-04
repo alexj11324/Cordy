@@ -1,13 +1,11 @@
 import { useState } from "react";
-import { useAuthStore } from "@patchbay/core/auth";
 import { api } from "@patchbay/core/api";
 import { Alert, AlertDescription } from "@patchbay/ui/components/ui/alert";
 import { Button } from "@patchbay/ui/components/ui/button";
 import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
-import { LoginPage } from "@patchbay/views/auth";
 import { useT } from "@patchbay/views/i18n";
 import { DragStrip } from "@patchbay/views/platform";
-import { createDesktopGoogleLoginUrl } from "./login-handoff";
+import { createDesktopLoginUrl } from "./login-handoff";
 
 function requireRuntimeAccountsUrl(): string {
   const runtimeConfig = window.desktopAPI.runtimeConfig;
@@ -19,143 +17,71 @@ function requireRuntimeAccountsUrl(): string {
   return runtimeConfig.config.accountsUrl;
 }
 
-function GuestSessionEntry() {
-  const { t } = useT("auth");
-  const createGuestSession = useAuthStore((state) => state.createGuestSession);
-  const [isStarting, setIsStarting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const handleContinue = async () => {
-    if (isStarting) return;
-    setIsStarting(true);
-    setError(null);
-    try {
-      const user = await createGuestSession();
-      if (user.is_guest !== true) {
-        throw new Error("The server did not return a guest session");
-      }
-    } catch {
-      setError(t(($) => $.desktop.entry.guest_error));
-      setIsStarting(false);
-    }
-  };
-
-  return (
-    <div className="w-full space-y-2">
-      <Button
-        type="button"
-        variant="ghost"
-        className="h-auto w-full px-1 py-1 text-body text-muted-foreground"
-        onClick={() => void handleContinue()}
-        disabled={isStarting}
-        aria-busy={isStarting}
-      >
-        {isStarting
-          ? t(($) => $.desktop.entry.skipping)
-          : t(($) => $.desktop.entry.skip)}
-      </Button>
-      {error && (
-        <Alert variant="destructive" aria-live="polite">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-    </div>
-  );
-}
-
+/**
+ * Desktop owns only the native handoff boundary. All Clerk UI lives on the
+ * Accounts origin so browser auth, cookies, and recovery stay in one place.
+ */
 export function DesktopLoginPage() {
   const accountsUrl = requireRuntimeAccountsUrl();
   const { t } = useT("auth");
-  const user = useAuthStore((state) => state.user);
-  const createGuestSessionForHandoff = useAuthStore(
-    (state) => state.createGuestSessionForHandoff,
-  );
-  const [openingGoogle, setOpeningGoogle] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [opening, setOpening] = useState(false);
+  const [error, setError] = useState(false);
 
-  const handleGoogleLogin = async () => {
-    if (openingGoogle) return;
-    setOpeningGoogle(true);
-    setError(null);
-    let bootstrapGuestStarted = false;
+  const openSignIn = async () => {
+    if (opening) return;
+    setOpening(true);
+    setError(false);
     try {
-      // The server accepts a non-production callback protocol only from an
-      // authenticated desktop initiation. A first-run client establishes an
-      // in-memory guest bearer before opening the browser, without publishing
-      // that bootstrap identity to AppContent. The server claims it when the
-      // fresh Google session completes.
-      if (!user) {
-        await createGuestSessionForHandoff();
-        bootstrapGuestStarted = true;
-      }
-      const url = await createDesktopGoogleLoginUrl(
+      const url = await createDesktopLoginUrl(
         accountsUrl,
-        window.desktopAPI.appInfo.authCallbackProtocol,
-        (state, codeChallenge, callbackProtocol) =>
-          api.initiateDesktopGoogleAttempt(
-            state,
-            codeChallenge,
-            callbackProtocol,
-          ),
+        (state, codeChallenge) =>
+          api.initiateDesktopAuthHandoff(state, codeChallenge),
       );
       await window.desktopAPI.openExternal(url);
     } catch {
-      if (bootstrapGuestStarted) {
-        await api.logout().catch(() => undefined);
-        api.setToken(null);
-      }
-      setError(t(($) => $.desktop.entry.login_error));
+      setError(true);
     } finally {
-      setOpeningGoogle(false);
+      setOpening(false);
     }
   };
 
   return (
-    <div className="flex h-screen flex-col bg-background">
+    <div
+      data-testid="desktop-login-pending"
+      className="flex h-screen flex-col bg-zinc-950 text-white"
+    >
       <DragStrip />
-      <main
-        id="desktop-login"
-        className="flex min-h-0 flex-1 flex-col overflow-y-auto"
-      >
-        <div
-          data-testid="authentication-example"
-          className="relative grid min-h-0 w-full flex-1 grid-cols-2"
-        >
-          <div
-            data-testid="authentication-brand-panel"
-            className="relative flex h-full min-h-0 flex-col p-10 text-primary dark:border-r"
+      <main className="flex min-h-0 flex-1 items-center justify-center overflow-auto px-8 py-12">
+        <div className="flex w-full max-w-md -translate-y-[4vh] flex-col items-center text-center">
+          <PatchbayIcon className="size-16 text-white" noSpin />
+          <h1 className="mt-8 text-display-sm font-semibold tracking-tight">
+            {t(($) => $.desktop.entry.browser_title)}
+          </h1>
+          <p className="mt-3 text-body leading-relaxed text-zinc-400">
+            {t(($) => $.desktop.entry.browser_description)}
+          </p>
+          <Button
+            type="button"
+            className="mt-8 h-11 rounded-full bg-white px-6 text-zinc-950 hover:bg-zinc-200"
+            disabled={opening}
+            aria-busy={opening}
+            onClick={() => void openSignIn()}
           >
-            <div className="absolute inset-0 bg-primary/5" aria-hidden="true" />
-            <div className="relative z-20 flex items-center text-title font-medium">
-              <PatchbayIcon className="mr-2 h-6 w-6" noSpin />
-              {t(($) => $.desktop.entry.brand)}
-            </div>
-            <div className="relative z-20 mt-auto">
-              <blockquote className="leading-normal text-balance">
-                {t(($) => $.desktop.entry.quote)}
-              </blockquote>
-            </div>
-          </div>
-          <div
-            data-testid="authentication-form-panel"
-            className="flex h-full min-h-0 items-center justify-center p-6 lg:p-8"
-          >
-            <LoginPage
-              embedded
-              externalError={
-                error ? (
-                  <Alert variant="destructive" aria-live="polite">
-                    <AlertDescription>{error}</AlertDescription>
-                  </Alert>
-                ) : undefined
-              }
-              showGoogleSeparator
-              googleLoading={openingGoogle}
-              onGoogleLogin={() => void handleGoogleLogin()}
-              onSuccess={() => undefined}
-              extra={<GuestSessionEntry />}
-            />
-          </div>
+            {opening
+              ? t(($) => $.desktop.entry.browser_opening)
+              : t(($) => $.desktop.entry.browser_button)}
+          </Button>
+          {error && (
+            <Alert
+              variant="destructive"
+              className="mt-5 border-red-900 bg-red-950/40 text-left"
+              aria-live="polite"
+            >
+              <AlertDescription>
+                {t(($) => $.desktop.entry.login_error)}
+              </AlertDescription>
+            </Alert>
+          )}
         </div>
       </main>
     </div>

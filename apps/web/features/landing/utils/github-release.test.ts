@@ -61,6 +61,16 @@ afterEach(() => {
 });
 
 describe("fetchLatestRelease", () => {
+  it("queries the canonical GitHub release repository", async () => {
+    const fetchMock = mockFetchWithReleases([]);
+
+    await fetchLatestRelease();
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://api.github.com/repos/alexj11324/Cordy/releases?per_page=5",
+    );
+  });
+
   it("uses the latest release when its desktop assets are complete", async () => {
     mockFetchWithReleases([
       releasePayload({ tag: "v0.2.14", assets: completeAssets("0.2.14") }),
@@ -72,7 +82,7 @@ describe("fetchLatestRelease", () => {
     expect(result.assets.winX64Exe).toContain("0.2.14");
   });
 
-  // PB-6313: v0.4.28's Windows packaging job failed and its Linux job
+  // MUL-6313: v0.4.28's Windows packaging job failed and its Linux job
   // never finished, so the newest release carried Mac builds only and
   // /download rendered every Windows and Linux button as disabled.
   it("steps back to the newest complete release when the latest is missing platforms", async () => {

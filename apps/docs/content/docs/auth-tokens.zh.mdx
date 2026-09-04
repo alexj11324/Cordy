@@ -19,10 +19,6 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 个人访问令牌（PAT）以 `pby_` 开头，代表你的账号。它可以访问你有权访问的全部工作区和 API，需要像密码一样保管。
 
-<Callout type="info">
-如果你从 Patchbay 更名前的版本升级，请重新登录并替换所有已保存的 PAT。使用旧产品前缀的令牌不再被接受。
-</Callout>
-
 在 **设置 → API Token** 中创建令牌时，需要填写名称，并选择 30 天、90 天、1 年或永不过期，默认选中 90 天。完整令牌只显示一次；关闭窗口后，Patchbay 只保留：
 
 - 令牌的哈希值；
@@ -32,7 +28,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 完整值无法找回，丢失时吊销旧令牌并创建新的。
 
 <Callout type="warning">
-不要把 PAT 写入仓库、issue、评论、截图或日志，也不要直接放进会被保存的 shell 命令中。
+不要把 PAT 写入仓库、任务、评论、截图或日志，也不要直接放进会被保存的 shell 命令中。
 </Callout>
 
 ## CLI 与 PAT
@@ -60,15 +56,15 @@ patchbay login --token
 export PATCHBAY_TOKEN='pby_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
 
 curl https://api.aspectlylabs.com/api/me \
-  -H "Authorization: Bearer $PATCHBAY_TOKEN"
+ -H "Authorization: Bearer $PATCHBAY_TOKEN"
 ```
 
 调用工作区级 API 时，还需要按接口要求提供工作区：
 
 ```bash
 curl https://api.aspectlylabs.com/api/issues \
-  -H "Authorization: Bearer $PATCHBAY_TOKEN" \
-  -H "X-Workspace-ID: $PATCHBAY_WORKSPACE_ID"
+ -H "Authorization: Bearer $PATCHBAY_TOKEN" \
+ -H "X-Workspace-ID: $PATCHBAY_WORKSPACE_ID"
 ```
 
 脚本中的令牌取自 secret manager 或受保护的环境变量，不要硬编码。自托管实例把域名替换为自己的公开 API 地址。

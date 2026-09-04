@@ -30,10 +30,10 @@ import type {
 import { ISSUE_PROPERTY_TYPES } from "@patchbay/core/types";
 import { Button } from "@patchbay/ui/components/ui/button";
 import { Badge } from "@patchbay/ui/components/ui/badge";
-import { SettingsInput as Input } from "@patchbay/ui/components/common/lobe-settings";
+import { Input } from "@patchbay/ui/components/ui/input";
 import { Textarea } from "@patchbay/ui/components/ui/textarea";
 import { Label as FieldLabel } from "@patchbay/ui/components/ui/label";
-import { SettingsSwitch as Switch } from "@patchbay/ui/components/common/lobe-settings";
+import { Switch } from "@patchbay/ui/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -76,7 +76,7 @@ import {
   PropertyIconGlyph,
   PropertyIconPicker,
 } from "../../common/property-icon";
-import { useT } from "../../i18n";
+import { useLocale, useT } from "../../i18n";
 import { SettingsTab } from "./settings-layout";
 
 const MAX_ACTIVE_PROPERTIES = 20;
@@ -109,6 +109,7 @@ function typeHasOptions(type: string): boolean {
 
 export function PropertiesTab() {
   const { t } = useT("settings");
+  const locale = useLocale();
   const wsId = useWorkspaceId();
   const user = useAuthStore((s) => s.user);
 
@@ -255,7 +256,7 @@ export function PropertiesTab() {
                     {t(($) => $.properties.usage_count, { count: property.usage_count ?? 0 })}
                   </span>
                   <span className="text-caption text-muted-foreground">
-                    {new Date(property.updated_at).toLocaleDateString()}
+                    {new Date(property.updated_at).toLocaleDateString(locale)}
                   </span>
                   {canManage ? (
                     <DropdownMenu>

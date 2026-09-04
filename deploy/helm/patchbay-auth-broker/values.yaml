@@ -1,39 +1,15 @@
-# The chart renders no workload by default. Enabling and routing the canonical
-# hostname are separate, explicitly confirmed production operations.
 enabled: false
-
+replicas: 2
 image:
   repository: ghcr.io/alexj11324/patchbay-auth-broker
   digest: ""
   pullPolicy: IfNotPresent
-
-replicas: 2
-
 config:
   apiOrigin: https://api.aspectlylabs.com
   brokerOrigin: https://accounts.aspectlylabs.com
-
 existingSecret: patchbay-auth-broker
-clerkPublishableKeySecretKey: CLERK_PUBLISHABLE_KEY
-rustBrokerAuthTokenSecretKey: PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN
-
 service:
-  port: 3000
-
+  port: 80
 ingress:
   enabled: false
-  className: nginx
   host: accounts.aspectlylabs.com
-  tlsSecretName: ""
-
-resources:
-  requests:
-    cpu: 50m
-    memory: 128Mi
-  limits:
-    cpu: 500m
-    memory: 512Mi
-
-podAnnotations: {}
-affinity: {}
-tolerations: []

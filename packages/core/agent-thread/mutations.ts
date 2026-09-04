@@ -1,16 +1,9 @@
-import {
-  useMutation,
-  useQueryClient,
-  type QueryClient,
-} from "@tanstack/react-query";
+import { useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { api } from "../api";
-import { useWorkspaceId } from "../hooks";
 import { chatKeys } from "../chat/queries";
+import { issueKeys } from "../issues/queries";
+import type { ContinueAgentThreadRequest } from "../types";
 import { agentThreadKeys } from "./queries";
-import type {
-  ContinueAgentThreadRequest,
-  ContinueAgentThreadResponse,
-} from "../types";
 
 /**
  * Invalidate every cache identity affected by a continuation. The Agent
@@ -25,8 +18,13 @@ export function invalidateAgentThreadContinuationQueries(
   continuationTaskId?: string | null,
 ) {
   queryClient.invalidateQueries({ queryKey: agentThreadKeys.all(wsId) });
-  queryClient.invalidateQueries({ queryKey: agentThreadKeys.task(wsId, taskId) });
-  queryClient.invalidateQueries({ queryKey: chatKeys.taskMessages(taskId) });
+  queryClient.invalidateQueries({
+    queryKey: agentThreadKeys.detail(wsId, taskId),
+  });
+  queryClient.invalidateQueries({ queryKey: issueKeys.tasksAll() });
+  queryClient.invalidateQueries({
+    queryKey: chatKeys.taskMessages(taskId),
+  });
   if (continuationTaskId) {
     queryClient.invalidateQueries({
       queryKey: chatKeys.taskMessages(continuationTaskId),
@@ -34,22 +32,17 @@ export function invalidateAgentThreadContinuationQueries(
   }
 }
 
-export function useContinueAgentThread() {
+export function useContinueAgentThread(wsId: string) {
   const queryClient = useQueryClient();
-  const wsId = useWorkspaceId();
-
-  return useMutation<
-    ContinueAgentThreadResponse,
-    Error,
-    { taskId: string; request: ContinueAgentThreadRequest }
-  >({
-    mutationFn: ({ taskId, request }) => api.continueAgentThread(taskId, request),
-    onSuccess: (response, { taskId }) =>
+  return useMutation({
+    mutationFn: ({ taskId, request }: { taskId: string; request: ContinueAgentThreadRequest }) =>
+      api.continueAgentThread(taskId, request),
+    onSuccess: (result, variables) =>
       invalidateAgentThreadContinuationQueries(
         queryClient,
         wsId,
-        taskId,
-        response.continuation_task_id,
+        variables.taskId,
+        result.continuation_task_id,
       ),
   });
 }

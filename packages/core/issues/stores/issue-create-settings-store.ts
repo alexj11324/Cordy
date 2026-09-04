@@ -34,10 +34,8 @@ export const MANUAL_CREATE_FIELDS: ManualCreateField[] = [
 ];
 
 export const DEFAULT_QUICK_CREATE_FIELDS: QuickCreateField[] = ["project"];
-// Keep the first-run form focused on execution. Owner is still defaulted to
-// the current member by the create dialog, but its picker is available from
-// the overflow. Reviewer appears when a review status or workspace policy
-// requires it.
+// Keep the first-run form focused on execution; Owner and Reviewer remain in
+// overflow unless their values or the selected status require them.
 export const DEFAULT_MANUAL_CREATE_FIELDS: ManualCreateField[] = [
   "status",
   "priority",
@@ -96,10 +94,6 @@ export function migrateIssueCreateSettings(
       : {};
   let manualFields = persisted.manualCreateFields;
   if (version < 2 && Array.isArray(manualFields) && manualFields.includes("assignee")) {
-    // The old single assignee picker represented both human responsibility
-    // and execution. Preserve that user's intent in the two explicit role
-    // pickers; otherwise the new default keeps Owner out of the first-run
-    // toolbar while still defaulting it to the current member.
     manualFields = [
       ...manualFields.filter((field) => field !== "assignee"),
       "owner",

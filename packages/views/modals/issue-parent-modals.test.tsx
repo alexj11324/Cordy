@@ -36,7 +36,7 @@ vi.mock("./issue-picker-modal", () => ({
     <button
       type="button"
       onClick={() =>
-        onSelect({ id: "selected-1", identifier: "PB-2", revision: 5 })
+        onSelect({ id: "selected-1", identifier: "MUL-2", revision: 5 })
       }
     >
       Select issue

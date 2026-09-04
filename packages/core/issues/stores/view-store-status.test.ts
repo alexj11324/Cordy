@@ -1,12 +1,16 @@
 // @vitest-environment node
 import { describe, expect, it, beforeEach } from "vitest";
 import { createStore, type StoreApi } from "zustand/vanilla";
-import { mergeViewStatePersisted, viewStoreSlice, type IssueViewState } from "./view-store";
+import {
+  mergeViewStatePersisted,
+  viewStoreSlice,
+  type IssueViewState,
+} from "./view-store";
 import { baselineFromQuery } from "../../issue-views/baseline";
 
 /**
  * Column visibility and the status filter used to be the same field. That was
- * only ever correct while a category held exactly one status; since PB-6243 a
+ * only ever correct while a category held exactly one status; since MUL-6243 a
  * category can hold several, and the two questions have different answers.
  */
 describe("column visibility vs status filter", () => {
@@ -75,32 +79,42 @@ describe("saved view baseline", () => {
   });
 });
 
-describe("legacy view-state migration", () => {
-  it("translates assignee fields before merging persisted state", () => {
-    const current = createStore<IssueViewState>()((set) => viewStoreSlice(set)).getState();
+describe("legacy assignee view-state migration", () => {
+  it("normalizes every persisted view dimension to executor", () => {
+    const store = createStore<IssueViewState>()((set) => viewStoreSlice(set));
     const merged = mergeViewStatePersisted(
       {
         grouping: "assignee",
-        swimlaneGrouping: "assignee",
-        tableGrouping: "assignee",
-        assigneeFilters: [{ type: "member", id: "user-1" }],
+        assigneeFilters: [{ type: "agent", id: "agent-1" }],
         includeNoAssignee: true,
         cardProperties: { assignee: false },
-        tableColumns: [{ key: "title" }, { key: "assignee" }],
-        swimlaneOrders: { assignee: ["member:user-1"] },
-        collapsedSwimlanes: { assignee: ["none"] },
+        swimlaneGrouping: "assignee",
+        swimlaneOrders: { assignee: ["agent:agent-1"] },
+        collapsedSwimlanes: { assignee: ["agent:agent-2"] },
+        tableColumns: [
+          { key: "title", width: 320 },
+          { key: "assignee", width: 180 },
+        ],
+        tableGrouping: "assignee",
       },
-      current,
+      store.getState(),
     );
 
     expect(merged.grouping).toBe("executor");
-    expect(merged.swimlaneGrouping).toBe("executor");
-    expect(merged.tableGrouping).toBe("executor");
-    expect(merged.executorFilters).toEqual([{ type: "member", id: "user-1" }]);
+    expect(merged.executorFilters).toEqual([
+      { type: "agent", id: "agent-1" },
+    ]);
     expect(merged.includeNoExecutor).toBe(true);
     expect(merged.cardProperties.executor).toBe(false);
-    expect(merged.tableColumns.map((column) => column.key)).toEqual(["title", "executor"]);
-    expect(merged.swimlaneOrders.executor).toEqual(["member:user-1"]);
-    expect(merged.collapsedSwimlanes.executor).toEqual(["none"]);
+    expect(merged.swimlaneGrouping).toBe("executor");
+    expect(merged.swimlaneOrders.executor).toEqual(["agent:agent-1"]);
+    expect(merged.collapsedSwimlanes.executor).toEqual(["agent:agent-2"]);
+    expect(merged.tableColumns.map((column) => column.key)).toEqual([
+      "title",
+      "executor",
+    ]);
+    expect(merged.tableGrouping).toBe("executor");
+    expect(merged).not.toHaveProperty("assigneeFilters");
+    expect(merged.cardProperties).not.toHaveProperty("assignee");
   });
 });

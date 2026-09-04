@@ -1,6 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  type ReactNode,
+} from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Card,
@@ -29,7 +35,7 @@ import { useAuthStore } from "@patchbay/core/auth";
 import {
   PRODUCTION_DESKTOP_CALLBACK_PROTOCOL,
   isDesktopCallbackProtocol,
-} from "@patchbay/core/auth/desktop-callback-protocol";
+} from "@patchbay/core/auth";
 import { workspaceKeys } from "@patchbay/core/workspace/queries";
 import { api } from "@patchbay/core/api";
 import type { User } from "@patchbay/core/types";
@@ -38,6 +44,13 @@ import { useT } from "../i18n";
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+interface GoogleAuthConfig {
+  clientId: string;
+  redirectUri: string;
+  /** Opaque state passed through Google OAuth (e.g. "platform:desktop"). */
+  state?: string;
+}
 
 interface CliCallbackConfig {
   /** Validated localhost callback URL */
@@ -52,15 +65,17 @@ interface LoginPageProps {
   /** Called after successful login. The workspace list is seeded into React
    *  Query before this fires, so the caller can compute a destination URL. */
   onSuccess: () => void;
+  /** Google OAuth config. Omit to disable Google login. */
+  google?: GoogleAuthConfig;
   /** CLI callback config for authorizing CLI tools. */
   cliCallback?: CliCallbackConfig;
   /** Called after a token is obtained (e.g. to set cookies). */
   onTokenObtained?: () => void;
-  /** Canonical brokered Google login handler (e.g. desktop opens browser externally). */
+  /** Override Google login handler (e.g. desktop opens browser externally). When provided, renders the Google button even if `google` config is omitted. */
   onGoogleLogin?: () => void;
-  /** Render the cardless narrow form used by the authentication example. */
+  /** Render the cardless narrow form used by the desktop authentication shell. */
   embedded?: boolean;
-  /** Render the example's separator between Email and Google. */
+  /** Render the separator between Email and Google in the embedded form. */
   showGoogleSeparator?: boolean;
   /** Disable Google while an external desktop login is opening. */
   googleLoading?: boolean;
@@ -77,16 +92,15 @@ interface LoginPageProps {
 // Helpers
 // ---------------------------------------------------------------------------
 
-export function redirectToCliCallback(url: string, token: string, state: string) {
+export function redirectToCliCallback(
+  url: string,
+  token: string,
+  state: string,
+) {
   const separator = url.includes("?") ? "&" : "?";
   window.location.href = `${url}${separator}token=${encodeURIComponent(token)}&state=${encodeURIComponent(state)}`;
 }
 
-/**
- * Hand a freshly issued native session to the installed desktop app. The
- * custom protocol lets the OS show its normal "Open Patchbay?" confirmation
- * before Electron receives the one-time code through its deep-link handler.
- */
 export function redirectToDesktopApp(
   code: string,
   state: string,
@@ -113,9 +127,23 @@ export function validateCliCallback(cliCallback: string): boolean {
     const h = cbUrl.hostname;
     if (h === "localhost" || h === "127.0.0.1") return true;
     // Allow RFC 1918 private IPs: 10.x.x.x, 172.16-31.x.x, 192.168.x.x
-    if (/^10\./.test(h)) return true;
-    if (/^172\.(1[6-9]|2\d|3[01])\./.test(h)) return true;
-    if (/^192\.168\./.test(h)) return true;
+    // Match the complete hostname first: a public DNS name such as
+    // `10.attacker.example` must not pass a prefix-only check.
+    if (!/^(?:\d{1,3}\.){3}\d{1,3}$/.test(h)) return false;
+    const octets = h.split(".").map(Number);
+    const [first, second] = octets;
+    if (
+      first === undefined ||
+      second === undefined ||
+      octets.some((octet) => octet > 255)
+    ) {
+      return false;
+    }
+    if (first === 10) return true;
+    if (first === 172 && second >= 16 && second <= 31) {
+      return true;
+    }
+    if (first === 192 && second === 168) return true;
     return false;
   } catch {
     return false;
@@ -129,6 +157,7 @@ export function validateCliCallback(cliCallback: string): boolean {
 export function LoginPage({
   logo,
   onSuccess,
+  google,
   cliCallback,
   onTokenObtained,
   onGoogleLogin,
@@ -248,9 +277,7 @@ export function LoginPage({
         onSuccess();
       } catch (err) {
         setError(
-          err instanceof Error
-            ? err.message
-            : t(($) => $.errors.code_invalid),
+          err instanceof Error ? err.message : t(($) => $.errors.code_invalid),
         );
         setCode("");
         setLoading(false);
@@ -303,17 +330,31 @@ export function LoginPage({
   const handleGoogleLogin = () => {
     if (onGoogleLogin) {
       onGoogleLogin();
+      return;
     }
+    if (!google) return;
+    const params = new URLSearchParams({
+      client_id: google.clientId,
+      redirect_uri: google.redirectUri,
+      response_type: "code",
+      scope: "openid email profile",
+      access_type: "offline",
+      prompt: "select_account",
+    });
+    if (google.state) params.set("state", google.state);
+    window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
   };
 
-  const googleEnabled = Boolean(onGoogleLogin);
-  const googleSeparator = showGoogleSeparator && googleEnabled ? (
-    <FieldSeparator>{t(($) => $.common.or_continue_with)}</FieldSeparator>
-  ) : null;
+  const googleEnabled = Boolean(onGoogleLogin || google);
+  const googleSeparator =
+    showGoogleSeparator && googleEnabled ? (
+      <FieldSeparator>{t(($) => $.common.or_continue_with)}</FieldSeparator>
+    ) : null;
   const googleButton = googleEnabled ? (
     <Button
       type="button"
       variant="outline"
+      className="w-full"
       onClick={handleGoogleLogin}
       disabled={loading || googleLoading}
       aria-busy={googleLoading}
@@ -345,7 +386,9 @@ export function LoginPage({
   const stepHeading = (title: ReactNode, description: ReactNode) =>
     embedded ? (
       <div className="flex flex-col gap-2 text-center">
-        <h1 className="text-display-sm font-semibold tracking-tight">{title}</h1>
+        <h1 className="text-display-sm font-semibold tracking-tight">
+          {title}
+        </h1>
         <p className="text-body text-muted-foreground">{description}</p>
       </div>
     ) : (
@@ -369,9 +412,7 @@ export function LoginPage({
           className="w-full"
           size="lg"
         >
-          {loading
-            ? t(($) => $.cli.authorizing)
-            : t(($) => $.cli.authorize)}
+          {loading ? t(($) => $.cli.authorizing) : t(($) => $.cli.authorize)}
         </Button>
         <Button
           variant="ghost"
@@ -527,9 +568,7 @@ export function LoginPage({
             disabled={!email || loading}
             aria-busy={loading}
           >
-            {loading
-              ? t(($) => $.signin.sending)
-              : t(($) => $.signin.continue)}
+            {loading ? t(($) => $.signin.sending) : t(($) => $.signin.continue)}
           </Button>
         </Field>
       </FieldGroup>
@@ -587,9 +626,7 @@ export function LoginPage({
             disabled={!email || loading}
             aria-busy={loading}
           >
-            {loading
-              ? t(($) => $.signin.sending)
-              : t(($) => $.signin.continue)}
+            {loading ? t(($) => $.signin.sending) : t(($) => $.signin.continue)}
           </Button>
           {googleSeparator}
           {googleButton}

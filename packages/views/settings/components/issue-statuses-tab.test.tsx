@@ -10,7 +10,6 @@ import { IssueStatusesTab } from "./issue-statuses-tab";
 const reorderMutate = vi.hoisted(() => vi.fn());
 let catalog: IssueStatusEntry[] = [];
 let role: string = "owner";
-let flagOn = true;
 
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (options: { queryKey: readonly unknown[] }) => ({
@@ -22,7 +21,6 @@ vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
 vi.mock("@patchbay/core/auth", () => ({
   useAuthStore: (selector: (s: unknown) => unknown) => selector({ user: { id: "u-1" } }),
 }));
-vi.mock("@patchbay/core/config", () => ({ useFeatureEnabled: () => flagOn }));
 vi.mock("@patchbay/core/workspace/queries", () => ({
   memberListOptions: () => ({ queryKey: ["members", "ws-1"] }),
 }));
@@ -86,28 +84,16 @@ afterEach(() => {
   reorderMutate.mockClear();
   catalog = [];
   role = "owner";
-  flagOn = true;
 });
 
 describe("IssueStatusesTab", () => {
-  it("offers status creation to an owner when the rollout flag is on", () => {
+  // Creation answers to workspace role alone since MUL-6643 removed the
+  // rollout flag; an owner gets the affordance on every deployment.
+  it("offers status creation to an owner", () => {
     catalog = [BUILT_IN_IN_REVIEW];
     render(<IssueStatusesTab />);
 
     expect(screen.getAllByLabelText(en.issue_statuses.add).length).toBeGreaterThan(0);
-    expect(screen.queryByText(en.issue_statuses.flag_off)).toBeNull();
-  });
-
-  // The flag gates CREATION only. Existing statuses stay fully readable, which
-  // is what makes the flag safe to leave off after the backend ships.
-  it("hides creation and explains why when the flag is off", () => {
-    catalog = [BUILT_IN_IN_REVIEW, entry({ key: "qa", name: "QA" })];
-    flagOn = false;
-    render(<IssueStatusesTab />);
-
-    expect(screen.queryByLabelText(en.issue_statuses.add)).toBeNull();
-    expect(screen.getByText(en.issue_statuses.flag_off)).toBeInTheDocument();
-    expect(screen.getByText("QA")).toBeInTheDocument();
   });
 
   it("hides creation and row actions from a non-admin member", () => {
@@ -140,7 +126,7 @@ describe("IssueStatusesTab", () => {
   });
 
   // The category header used to repeat the sentence its built-in row already
-  // carried, so every category said the same thing twice. (PB-6422)
+  // carried, so every category said the same thing twice. (MUL-6422)
   it("states a category's behavior once, on its built-in row", () => {
     catalog = [BUILT_IN_IN_REVIEW];
     render(<IssueStatusesTab />);

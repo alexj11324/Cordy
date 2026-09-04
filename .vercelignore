@@ -16,6 +16,7 @@ _features
 .vscode
 
 /.dockerignore
+/.goreleaser.yml
 /Dockerfile
 /Dockerfile.web
 /Makefile
@@ -28,8 +29,7 @@ _features
 /docker/
 /docs/
 /e2e/
-/server-rs/
-/migrations/
+/server/
 /apps/*
 # Vercel checks directory entries without a trailing slash before descending.
 !/apps/web

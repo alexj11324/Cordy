@@ -291,7 +291,7 @@ function ActorRolePickerImpl({
       ) : null}
 
       {filteredMembers.length > 0 ? (
-        <PickerSection label={t(($) => $.pickers.executor.members_group)}>
+        <PickerSection label={t(($) => $.pickers.members_group)}>
           {filteredMembers.map((member) => (
             <PickerItem
               key={member.user_id}

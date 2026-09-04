@@ -293,9 +293,10 @@ const mockIssues: Issue[] = [
     description: "Child description",
     status: "in_progress",
     priority: "medium",
-    owner_type: "member", owner_id: "user-1",
-    executor_type: "agent",
-    executor_id: "agent-1",
+    owner_type: "member",
+    executor_id: "user-1",
+    owner_id: "user-1",
+    executor_type: null,
     reviewer_type: null,
     reviewer_id: null,
     creator_type: "member",
@@ -428,7 +429,7 @@ describe("SwimLaneView", () => {
     expect(screen.getByText("In Progress")).toBeInTheDocument();
   });
 
-  // PB-4290: `cancelled` is a first-class default status. Status columns come
+  // MUL-4290: `cancelled` is a first-class default status. Status columns come
   // from `visibleStatuses` in ALL_STATUSES order, so the Cancelled column
   // renders by default (ordered last) and is only dropped when the status
   // filter narrows to a subset that excludes it.
@@ -476,7 +477,7 @@ describe("SwimLaneView", () => {
 
   // Cells are CATEGORIES, cards carry concrete status KEYS. Keying the cell by
   // the raw key gave a custom status a cell that does not exist, and the card
-  // fell out of the grid entirely (PB-6409).
+  // fell out of the grid entirely (MUL-6409).
   const customStatusOrphan: Issue = {
     ...cancelledOrphan,
     id: "custom-orphan",
@@ -617,9 +618,10 @@ describe("SwimLaneView", () => {
     description: null,
     status: "todo",
     priority: "medium",
-    owner_type: "member", owner_id: "user-1",
+    owner_type: "member",
+    owner_id: "user-1",
     executor_type: null,
-    executor_id: null,
+    executor_id: "user-1",
     reviewer_type: null,
     reviewer_id: null,
     creator_type: "member",
@@ -910,7 +912,7 @@ describe("SwimLaneView", () => {
         before_id: null,
         after_id: null,
       },
-      expect.objectContaining({ onSettled: expect.any(Function) }),
+      expect.any(Function),
     );
   });
 
@@ -930,10 +932,9 @@ describe("SwimLaneView", () => {
 
     // The move carries a settle callback (held from drop until the mutation
     // settles); invoking it releases the lock and re-syncs from the cache.
-    const callbacks = mockOnMoveIssue.mock.calls[0]?.[2] as
-      | { onSettled?: () => void }
+    const onSettled = mockOnMoveIssue.mock.calls[0]?.[2] as
+      | (() => void)
       | undefined;
-    const onSettled = callbacks?.onSettled;
     expect(typeof onSettled).toBe("function");
     expect(() => act(() => onSettled?.())).not.toThrow();
   });
@@ -980,7 +981,7 @@ describe("SwimLaneView", () => {
         parent_issue_id: "parent-1",
         status: "todo",
       }),
-      expect.objectContaining({ onSettled: expect.any(Function) }),
+      expect.any(Function),
     );
   });
 
@@ -1041,10 +1042,10 @@ describe("SwimLaneView", () => {
       description: null,
       status: "todo",
       priority: "high",
-      owner_type: null,
-      owner_id: null,
       executor_type: null,
       executor_id: null,
+      owner_type: null,
+      owner_id: null,
       reviewer_type: null,
       reviewer_id: null,
       creator_type: "member",
@@ -1069,10 +1070,10 @@ describe("SwimLaneView", () => {
       description: null,
       status: "todo",
       priority: "high",
-      owner_type: null,
-      owner_id: null,
       executor_type: null,
       executor_id: null,
+      owner_type: null,
+      owner_id: null,
       reviewer_type: null,
       reviewer_id: null,
       creator_type: "member",
@@ -1097,10 +1098,10 @@ describe("SwimLaneView", () => {
       description: null,
       status: "in_progress",
       priority: "medium",
-      owner_type: null,
-      owner_id: null,
       executor_type: null,
       executor_id: null,
+      owner_type: null,
+      owner_id: null,
       reviewer_type: null,
       reviewer_id: null,
       creator_type: "member",
@@ -1125,10 +1126,10 @@ describe("SwimLaneView", () => {
       description: null,
       status: "in_progress",
       priority: "medium",
-      owner_type: null,
-      owner_id: null,
       executor_type: null,
       executor_id: null,
+      owner_type: null,
+      owner_id: null,
       reviewer_type: null,
       reviewer_id: null,
       creator_type: "member",
@@ -1403,7 +1404,7 @@ describe("SwimLaneView", () => {
     expect(mockOnMoveIssue).toHaveBeenCalledWith(
       "issue-c",
       expect.objectContaining({ project_id: "proj-1", status: "todo" }),
-      expect.objectContaining({ onSettled: expect.any(Function) }),
+      expect.any(Function),
     );
   });
 
@@ -1426,7 +1427,7 @@ describe("SwimLaneView", () => {
     expect(mockOnMoveIssue).toHaveBeenCalledWith(
       "issue-a",
       expect.objectContaining({ project_id: null, status: "in_review" }),
-      expect.objectContaining({ onSettled: expect.any(Function) }),
+      expect.any(Function),
     );
   });
 
@@ -1440,7 +1441,8 @@ describe("SwimLaneView", () => {
       id: "issue-x",
       identifier: "PROJ-200",
       title: "Issue X",
-      owner_type: "member", owner_id: "user-1",
+      owner_type: "member",
+      owner_id: "user-1",
       parent_issue_id: null,
       project_id: null,
       status: "todo",
@@ -1476,16 +1478,17 @@ describe("SwimLaneView", () => {
       <SwimLaneView issues={executorIssues} onMoveIssue={vi.fn()} />,
     );
 
-    // Unassigned pinned lane is always rendered.
-    expect(screen.getAllByText("Unassigned").length).toBeGreaterThanOrEqual(1);
-    // Mock actor name fallback for both member and agent.
-    expect(screen.getAllByText("Mock Actor").length).toBeGreaterThanOrEqual(2);
+    // No-executor pinned lane is always rendered.
+    expect(screen.getAllByText("No executor").length).toBeGreaterThanOrEqual(1);
+    // The owner-only issue remains in No executor; only the agent creates an
+    // executor lane.
+    expect(screen.getAllByText("Mock Actor").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("Issue X")).toBeInTheDocument();
     expect(screen.getByText("Issue Y")).toBeInTheDocument();
     expect(screen.getByText("Issue Z")).toBeInTheDocument();
   });
 
-  it("emits executor_type + executor_id when a card is dropped into an agent lane", () => {
+  it("emits executor_type + executor_id when a card is dropped into an actor lane", () => {
     mockViewState.swimlaneGrouping = "executor";
     const mockOnMoveIssue = vi.fn();
 
@@ -1504,10 +1507,11 @@ describe("SwimLaneView", () => {
     expect(mockOnMoveIssue).toHaveBeenCalledWith(
       "issue-z",
       expect.objectContaining({
-        executor_type: "agent", executor_id: "agent-1",
+        executor_type: "agent",
+        executor_id: "agent-1",
         status: "in_review",
       }),
-      expect.objectContaining({ onSettled: expect.any(Function) }),
+      expect.any(Function),
     );
   });
 
@@ -1534,7 +1538,7 @@ describe("SwimLaneView", () => {
         executor_id: null,
         status: "done",
       }),
-      expect.objectContaining({ onSettled: expect.any(Function) }),
+      expect.any(Function),
     );
   });
 
@@ -1584,10 +1588,10 @@ describe("SwimLaneView", () => {
       description: null,
       status: "todo",
       priority: "none",
-      owner_type: null,
-      owner_id: null,
       executor_type: null,
       executor_id: null,
+      owner_type: null,
+      owner_id: null,
       reviewer_type: null,
       reviewer_id: null,
       creator_type: "member",
@@ -1663,10 +1667,10 @@ describe("SwimLaneView", () => {
       description: null,
       status: "todo",
       priority: "none",
-      owner_type: null,
-      owner_id: null,
       executor_type: null,
       executor_id: null,
+      owner_type: null,
+      owner_id: null,
       reviewer_type: null,
       reviewer_id: null,
       creator_type: "member",
@@ -1749,10 +1753,10 @@ describe("SwimLaneView", () => {
       description: null,
       status: "todo",
       priority: "high",
-      owner_type: null,
-      owner_id: null,
       executor_type: null,
       executor_id: null,
+      owner_type: null,
+      owner_id: null,
       reviewer_type: null,
       reviewer_id: null,
       creator_type: "member",
@@ -1847,10 +1851,10 @@ describe("SwimLaneView", () => {
       description: null,
       status: "todo",
       priority: "medium",
-      owner_type: null,
-      owner_id: null,
       executor_type: null,
       executor_id: null,
+      owner_type: null,
+      owner_id: null,
       reviewer_type: null,
       reviewer_id: null,
       creator_type: "member",
@@ -1991,10 +1995,10 @@ describe("SwimLaneView", () => {
       description: null,
       status: "todo",
       priority: "medium",
-      owner_type: null,
-      owner_id: null,
       executor_type: null,
       executor_id: null,
+      owner_type: null,
+      owner_id: null,
       reviewer_type: null,
       reviewer_id: null,
       creator_type: "member",
@@ -2070,7 +2074,7 @@ describe("SwimLaneView", () => {
   });
 });
 
-describe("SwimLaneView tab-session scroll restoration (PB-4741)", () => {
+describe("SwimLaneView tab-session scroll restoration (MUL-4741)", () => {
   it("registers the outer scroller for memento capture and restores the saved offset at attach", () => {
     const adapter = {
       get: (key: string) =>

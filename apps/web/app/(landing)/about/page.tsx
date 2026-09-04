@@ -4,11 +4,11 @@ import { AboutPageClient } from "@/features/landing/components/about-page-client
 export const metadata: Metadata = {
   title: "About",
   description:
-    "Learn about Patchbay, the open-source coordination surface for human + agent teams.",
+    "Learn about Patchbay — multiplexed information and computing agent. An open-source project management platform for human + agent teams.",
   openGraph: {
     title: "About Patchbay",
     description:
-      "The story behind Patchbay and why we're building visible, human-directed coordination for agent teams.",
+      "The story behind Patchbay and why we're building project management for human + agent teams.",
     url: "/about",
   },
   alternates: {

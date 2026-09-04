@@ -391,7 +391,7 @@ describe("ContentEditor", () => {
   // different destination mid-debounce (chat swapping draftKey between
   // sessions). Without it the armed debounce fires after the switch and, since
   // onUpdate always resolves to the latest render's closure, files the old
-  // document under the new destination (PB-4864).
+  // document under the new destination (MUL-4864).
   describe("flushPendingUpdate", () => {
     it("hands back the pending markdown and cancels the debounce so it cannot fire later", () => {
       vi.useFakeTimers();
@@ -593,7 +593,7 @@ describe("ContentEditor", () => {
   });
 
   it("refreshes the live placeholder getter and repaints when the placeholder prop changes", () => {
-    // Repro for PB-4276: Tiptap's Placeholder snapshots a *string* option at
+    // Repro for MUL-4276: Tiptap's Placeholder snapshots a *string* option at
     // mount, so switching between an archived and an active chat session under
     // the SAME agent (no editor remount) left the input frozen on the archived
     // copy. The fix wires a *getter* over a live ref into the extension and, on
@@ -653,9 +653,9 @@ function asUploadResult(att: Attachment): UploadResult {
   return { ...att, link: att.url, markdownLink: `/api/attachments/${att.id}/download` };
 }
 
-// PB-4808 — the document IS the upload queue, so hosts gate submit off it
+// MUL-4808 — the document IS the upload queue, so hosts gate submit off it
 // instead of each keeping a counter. These pin the publisher's contract.
-describe("ContentEditor — onUploadingChange (PB-4808)", () => {
+describe("ContentEditor — onUploadingChange (MUL-4808)", () => {
   const uploadingNode = { attrs: { uploading: true } };
   const settledNode = { attrs: { uploading: false } };
 
@@ -768,7 +768,7 @@ describe("ContentEditor — onUploadingChange (PB-4808)", () => {
   });
 });
 
-// PB-3192 — surfaces like the quick-create modal upload images through the
+// MUL-3192 — surfaces like the quick-create modal upload images through the
 // editor without a server-supplied `attachments` prop. Without in-session
 // tracking, the AttachmentDownloadProvider had nothing to resolve the
 // freshly-inserted /api/attachments/<id>/download URL against, so
@@ -776,7 +776,7 @@ describe("ContentEditor — onUploadingChange (PB-4808)", () => {
 // <img> rendered broken on Desktop where the renderer's origin doesn't
 // proxy /api to the API host. ContentEditor now wraps onUploadFile so the
 // successful UploadResult lands in the provider as a tracked record.
-describe("ContentEditor — in-session attachment tracking (PB-3192)", () => {
+describe("ContentEditor — in-session attachment tracking (MUL-3192)", () => {
   it("seeds the AttachmentDownloadProvider with the caller-supplied attachments prop", () => {
     const att = makeAttachment("seed-1");
     render(<ContentEditor attachments={[att]} />);

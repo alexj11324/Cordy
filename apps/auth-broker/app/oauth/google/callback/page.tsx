@@ -4,124 +4,42 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useClerk, useSignIn, useSignUp } from "@clerk/nextjs";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AuthShell } from "@/components/auth-shell";
-import { useAuthMessages } from "@/lib/auth-messages";
 import { readDesktopHandoffBinding } from "@/lib/desktop-handoff";
-import {
-  consumeGoogleOAuthNonce,
-  googleOAuthAttemptIsReady,
-} from "@/lib/google-oauth";
+import { consumeGoogleOAuthNonce, googleOAuthAttemptIsReady } from "@/lib/google-oauth";
+import { useAuthMessages } from "@/lib/auth-messages";
+import { resolveStandaloneReturnUrl } from "@/lib/redirect";
 
-export default function GoogleOAuthCallbackPage() {
-  return (
-    <Suspense>
-      <GoogleOAuthCallbackContent />
-    </Suspense>
-  );
-}
-
-function GoogleOAuthCallbackContent() {
-  const searchParams = useSearchParams();
-  const binding = useMemo(
-    () => readDesktopHandoffBinding(searchParams),
-    [searchParams],
-  );
-  const clerk = useClerk();
-  const { signIn } = useSignIn();
-  const { signUp } = useSignUp();
-  const router = useRouter();
-  const { messages } = useAuthMessages();
-  const attempted = useRef(false);
-  const nonceConsumed = useRef(false);
-  const [error, setError] = useState(false);
-
+export default function Page() { return <Suspense><Content /></Suspense>; }
+function Content() {
+  const params = useSearchParams();
+  const binding = useMemo(() => readDesktopHandoffBinding(params), [params]);
+  const desktopRequest = params.get("platform") === "desktop";
+  const returnUrl = useMemo(() => {
+    if (binding) return `/login?${binding.query}`;
+    return resolveStandaloneReturnUrl(
+      params.get("return_url") ?? params.get("redirect_url"),
+    );
+  }, [binding, params]);
+  const clerk = useClerk(); const { signIn } = useSignIn(); const { signUp } = useSignUp(); const router = useRouter(); const messages = useAuthMessages(); const attempted = useRef(false); const [error, setError] = useState(false);
   useEffect(() => {
-    if (!binding) {
-      setError(true);
-      return;
-    }
+    if (desktopRequest && !binding) { setError(true); return; }
     if (!clerk.loaded || attempted.current || !signIn || !signUp) return;
-    const destination = `/login?${binding.query}`;
-    const failClosed = () => setError(true);
-    const navigate = (url: string) => {
-      if (/^https?:\/\//.test(url)) window.location.assign(url);
-      else router.replace(url);
-    };
-    type FinalizeOptions = NonNullable<Parameters<typeof signIn.finalize>[0]>;
-    const handleNavigate: NonNullable<FinalizeOptions["navigate"]> = async ({
-      session,
-      decorateUrl,
-    }) => {
-      if (session?.currentTask) return failClosed();
-      navigate(decorateUrl(destination));
-    };
-    const finalizeSignIn = async () => {
-      const { error: finalizeError } = await signIn.finalize({
-        navigate: handleNavigate,
-      });
-      if (finalizeError) failClosed();
-    };
-    const finalizeSignUp = async () => {
-      const { error: finalizeError } = await signUp.finalize({
-        navigate: handleNavigate,
-      });
-      if (finalizeError) failClosed();
-    };
-
-    const complete = async () => {
-      if (signIn.status === "complete") return finalizeSignIn();
-      if (signIn.isTransferable) {
-        const { error: transferError } = await signUp.create({ transfer: true });
-        if (transferError || (signUp.status as string) !== "complete") {
-          return failClosed();
-        }
-        return finalizeSignUp();
-      }
-      if (signUp.isTransferable) {
-        const { error: transferError } = await signIn.create({ transfer: true });
-        if (transferError || (signIn.status as string) !== "complete") {
-          return failClosed();
-        }
-        return finalizeSignIn();
-      }
-      if ((signUp.status as string) === "complete") return finalizeSignUp();
-      const existingSessionId =
-        signIn.existingSession?.sessionId ?? signUp.existingSession?.sessionId;
-      if (!existingSessionId) return failClosed();
-      await clerk.setActive({
-        session: existingSessionId,
-        navigate: async ({ session, decorateUrl }) => {
-          if (session?.currentTask) return failClosed();
-          navigate(decorateUrl(destination));
-        },
-      });
-    };
-
+    const destination = returnUrl; const fail = () => setError(true);
+    const navigate = (url: string) => /^https?:\/\//.test(url) ? window.location.assign(url) : router.replace(url);
+    type Options = NonNullable<Parameters<typeof signIn.finalize>[0]>;
+    const onNavigate: NonNullable<Options["navigate"]> = async ({ session, decorateUrl }) => { if (session?.currentTask) return fail(); navigate(decorateUrl(destination)); };
     const run = async () => {
-      if (!nonceConsumed.current) {
-        const ready = await consumeGoogleOAuthNonce(
-          signIn,
-          searchParams.get("rotating_token_nonce"),
-        );
-        if (!ready) return;
-        nonceConsumed.current = true;
-      }
+      if (!await consumeGoogleOAuthNonce(signIn, params.get("rotating_token_nonce"))) return;
       if (!googleOAuthAttemptIsReady(signIn, signUp)) return;
       attempted.current = true;
-      await complete();
+      if (signIn.status === "complete") { const result = await signIn.finalize({ navigate: onNavigate }); if (result.error) fail(); return; }
+      if (signIn.isTransferable) { const transfer = await signUp.create({ transfer: true }); if (transfer.error || (signUp.status as string) !== "complete") return fail(); const result = await signUp.finalize({ navigate: onNavigate }); if (result.error) fail(); return; }
+      if (signUp.isTransferable) { const transfer = await signIn.create({ transfer: true }); if (transfer.error || (signIn.status as string) !== "complete") return fail(); const result = await signIn.finalize({ navigate: onNavigate }); if (result.error) fail(); return; }
+      const session = signIn.existingSession?.sessionId ?? signUp.existingSession?.sessionId;
+      if (!session) return fail();
+      await clerk.setActive({ session, navigate: async ({ session: active, decorateUrl }) => { if (active?.currentTask) return fail(); navigate(decorateUrl(destination)); } });
     };
-    void run().catch(failClosed);
-  }, [binding, clerk, router, searchParams, signIn, signUp]);
-
-  return (
-    <AuthShell>
-      <p role={error ? "alert" : "status"} aria-live="polite">
-        {error
-          ? binding
-            ? messages.web.google_oauth.failed
-            : messages.web.google_oauth.invalid_binding
-          : messages.web.google_oauth.completing}
-      </p>
-      <div id="clerk-captcha" />
-    </AuthShell>
-  );
+    void run().catch(fail);
+  }, [binding, clerk, desktopRequest, params, returnUrl, router, signIn, signUp]);
+  return <AuthShell><p role={error ? "alert" : "status"}>{error ? messages.completeFailed : messages.completing}</p><div id="clerk-captcha" /></AuthShell>;
 }

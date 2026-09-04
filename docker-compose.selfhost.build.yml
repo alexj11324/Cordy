@@ -18,6 +18,4 @@ services:
       context: .
       dockerfile: Dockerfile.web
       args:
-        NEXT_PUBLIC_APP_VERSION: ${NEXT_PUBLIC_APP_VERSION:-dev}
-        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-}
-        NEXT_PUBLIC_DESKTOP_APP_ORIGIN: ${NEXT_PUBLIC_DESKTOP_APP_ORIGIN:-}
+        NEXT_PUBLIC_APP_VERSION: dev

@@ -6,7 +6,7 @@ import {
   blockedTriggerLabel,
 } from "./comment-trigger-outcomes";
 
-// PB-4525 §2: the create/edit comment response's trigger_outcomes drive the
+// MUL-4525 §2: the create/edit comment response's trigger_outcomes drive the
 // "posted, but N not triggered" warning, so parsing must be defensive (drop
 // malformed entries, tolerate older servers) and count only real blocks.
 describe("comment trigger outcomes", () => {
@@ -27,12 +27,11 @@ describe("comment trigger outcomes", () => {
     expect(parseCommentTriggerOutcomes("nope")).toEqual([]);
   });
 
-  it("treats queued/coalesced/deferred/side_chat as handled; blocked warns", () => {
+  it("treats only queued/coalesced/deferred as handled; blocked warns", () => {
     const raw = [
       { target_type: "agent", target_id: "a1", status: "queued", reason_code: "queued" },
       { target_type: "agent", target_id: "a2", status: "coalesced", reason_code: "coalesced" },
       { target_type: "agent", target_id: "a3", status: "deferred", reason_code: "deferred" },
-      { target_type: "agent", target_id: "a4", status: "side_chat", reason_code: "side_chat" },
       { target_type: "team", target_id: "s1", status: "blocked", reason_code: "invocation_not_allowed" },
     ];
     const unhandled = unhandledCommentTriggerOutcomes(raw);

@@ -1,5 +1,7 @@
 "use client";
 
+import { MessagingConnectionStatus } from "./messaging-connection-status";
+
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -15,7 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@patchbay/ui/components/ui/dialog";
-import { SettingsInput as Input } from "@patchbay/ui/components/common/lobe-settings";
+import { Input } from "@patchbay/ui/components/ui/input";
 import { Label } from "@patchbay/ui/components/ui/label";
 import {
   AlertDialog,
@@ -33,20 +35,18 @@ import { memberListOptions } from "@patchbay/core/workspace/queries";
 import { useActorName } from "@patchbay/core/workspace/hooks";
 import { telegramInstallationsOptions, telegramKeys } from "@patchbay/core/telegram";
 import { api } from "@patchbay/core/api";
-import {
-  isMessagingInstallationHealthy,
-  type TelegramInstallation,
-} from "@patchbay/core/types";
+import type { TelegramInstallation } from "@patchbay/core/types";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { openExternal } from "../../platform";
-import { useT } from "../../i18n";
+import { useLocale, useT } from "../../i18n";
 
 // TelegramTab is the workspace settings panel for Telegram bot installations,
 // mirroring SlackTab: listing is member-visible; the disconnect action is
-// admin-only (backend-enforced; the UI hides the button to match). The settings
-// page connects a workspace Hub, and the channel selects the active Agent with
-// `/agents`; the optional per-Agent form remains available for legacy links.
-export function TelegramTab({ installationId }: { installationId?: string } = {}) {
+// admin-only (backend-enforced; the UI hides the button to match). Adding a
+// new installation flows through the Agent detail page — the install path is
+// per-agent (one bot per agent, the (workspace_id, agent_id, channel_type)
+// UNIQUE in channel_installation).
+export function TelegramTab() {
   const { t } = useT("settings");
   const wsId = useWorkspaceId();
   const qc = useQueryClient();
@@ -61,9 +61,7 @@ export function TelegramTab({ installationId }: { installationId?: string } = {}
     ...telegramInstallationsOptions(wsId),
     enabled: !!wsId,
   });
-  const installations = (data?.installations ?? []).filter(
-    (installation) => !installationId || installation.id === installationId,
-  );
+  const installations = data?.installations ?? [];
   const configured = data?.configured === true;
 
   const [disconnectTarget, setDisconnectTarget] = useState<string | null>(null);
@@ -120,7 +118,7 @@ export function TelegramTab({ installationId }: { installationId?: string } = {}
         </Card>
       ) : (
         <section className="space-y-3">
-          <h2 className="text-body font-semibold">{t(($) => $.telegram.connected_bots)}</h2>
+          <h2 className="text-body font-semibold">{t(($) => $.telegram.installed_bots)}</h2>
           {installations.length === 0 ? (
             <Card>
               <CardContent className="space-y-2">
@@ -190,29 +188,22 @@ function InstallationRow({
   onDisconnect: () => void;
 }) {
   const { t } = useT("settings");
+  const locale = useLocale();
   const { getAgentName } = useActorName();
-  const isActive = installation.status === "active";
-  const isHealthy = isMessagingInstallationHealthy(installation);
-  const agentName = installation.agent_id
-    ? getAgentName(installation.agent_id)
-    : t(($) => $.page.integrations_workspace_hub);
+  const isInstalled = installation.status === "installed";
+  const agentName = getAgentName(installation.agent_id);
   return (
     <div className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
       <div className="flex items-start gap-3">
-        {installation.agent_id ? (
-          <ActorAvatar
-            actorType="agent"
-            actorId={installation.agent_id}
-            size="lg"
-            enableHoverCard
-            profileLink
-          />
-        ) : (
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#2AABEE]/10">
-            <TelegramMark className="h-5 w-5" />
-          </span>
-        )}
+        <ActorAvatar
+          actorType="agent"
+          actorId={installation.agent_id}
+          size="lg"
+          enableHoverCard
+          profileLink
+        />
         <div className="space-y-1">
+          <MessagingConnectionStatus installation={installation} />
           <p className="text-body font-medium">
             {agentName}
             {installation.bot_username ? (
@@ -220,24 +211,20 @@ function InstallationRow({
                 @{installation.bot_username}
               </span>
             ) : null}
-            {!isActive ? (
+            {!isInstalled && (
               <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
                 {t(($) => $.telegram.revoked_badge)}
               </span>
-            ) : !isHealthy ? (
-              <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
-                {t(($) => $.page.integrations_status)}
-              </span>
-            ) : null}
+            )}
           </p>
           <p className="text-micro text-muted-foreground">
             {t(($) => $.telegram.installed_at_label, {
-              when: new Date(installation.installed_at).toLocaleString(),
+              when: new Date(installation.installed_at).toLocaleString(locale),
             })}
           </p>
         </div>
       </div>
-      {canManage && isActive && (
+      {canManage && isInstalled && (
         <Button variant="outline" size="sm" onClick={onDisconnect}>
           <Trash2 className="h-3 w-3" />
           {t(($) => $.telegram.disconnect)}
@@ -287,7 +274,7 @@ export function TelegramAgentBindButton({
   const [botToken, setBotToken] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const { data: listing } = useQuery({
+  const { data: listing, isError: installationQueryFailed } = useQuery({
     ...telegramInstallationsOptions(wsId),
     enabled: !!wsId,
   });
@@ -303,25 +290,23 @@ export function TelegramAgentBindButton({
 
   if (!canManage) return null;
 
-  const existing = listing?.installations.find(
+  const recordedInstallation = listing?.installations.find(
     (inst) =>
-      (agentId ? inst.agent_id === agentId : inst.agent_id === null) &&
-      inst.status === "active",
+      (agentId ? inst.agent_id === agentId : !inst.agent_id) &&
+      inst.status === "installed",
   );
+  const existing = recordedInstallation && installationQueryFailed
+    ? { ...recordedInstallation, runtime: undefined }
+    : recordedInstallation;
   if (existing) {
-    const healthy = isMessagingInstallationHealthy(existing);
     return onShowConnectedDetails ? (
       <TelegramAgentBotStatusRow
+        installation={existing}
         onClick={onShowConnectedDetails}
-        healthy={healthy}
         className={className}
       />
     ) : (
-      <TelegramAgentBotConnectedBadge
-        installation={existing}
-        healthy={healthy}
-        className={className}
-      />
+      <TelegramAgentBotInstalledControls installation={existing} className={className} />
     );
   }
 
@@ -335,19 +320,15 @@ export function TelegramAgentBindButton({
 
   async function handleSubmit() {
     const bot_token = botToken.trim();
-    if (submitting || !bot_token) return;
+    if (submitting || !wsId || !bot_token) return;
     setSubmitting(true);
     try {
       const installation = await api.registerTelegramBot(wsId, agentId, { bot_token });
-      // A newly persisted installation is expected to be `starting` until the
-      // Supervisor completes its first getUpdates round trip. Treat the
-      // durable active installation as success here; the runtime badge below
-      // reports the handshake independently and will turn healthy afterward.
-      if (!installation.id || installation.status !== "active") {
-        throw new Error("Telegram connection returned an invalid installation");
+      if (!installation.id || installation.status !== "installed") {
+        throw new Error("Telegram returned an invalid installation response");
       }
       // The telegram_installation realtime event also refreshes this list, but
-      // invalidate explicitly so the connected badge appears immediately.
+      // invalidate explicitly so the installed controls appear immediately.
       await qc.invalidateQueries({ queryKey: telegramKeys.installations(wsId) });
       toast.success(t(($) => $.telegram.connect_success_toast));
       setDialogOpen(false);
@@ -372,6 +353,7 @@ export function TelegramAgentBindButton({
         variant="outline"
         size="sm"
         onClick={() => setDialogOpen(true)}
+        disabled={!wsId}
         title={
           agentName
             ? t(($) => $.telegram.bind_button_title, { agent: agentName })
@@ -416,6 +398,8 @@ export function TelegramAgentBindButton({
               type="password"
               value={botToken}
               onChange={(e) => setBotToken(e.target.value)}
+              // Telegram token shape: a format hint, not copy.
+              // eslint-disable-next-line no-restricted-syntax
               placeholder="123456789:AA…"
               autoComplete="off"
               spellCheck={false}
@@ -449,15 +433,15 @@ export function TelegramAgentBindButton({
   );
 }
 
-// TelegramAgentBotStatusRow is the compact, read-only connected affordance the
+// TelegramAgentBotStatusRow is the compact, read-only installation affordance the
 // agent inspector renders; it deep-links into the Integrations tab.
 function TelegramAgentBotStatusRow({
+  installation,
   onClick,
-  healthy,
   className,
 }: {
+  installation: TelegramInstallation;
   onClick: () => void;
-  healthy: boolean;
   className?: string;
 }) {
   const { t } = useT("settings");
@@ -471,31 +455,20 @@ function TelegramAgentBotStatusRow({
       )}
       data-testid="telegram-agent-bot-status"
     >
-      <span
-        className={cn(
-          "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
-          healthy ? "bg-emerald-500" : "bg-amber-500",
-        )}
-      />
-      <span className="truncate">
-        {healthy
-          ? t(($) => $.telegram.agent_bot_connected_label)
-          : t(($) => $.page.integrations_status)}
-      </span>
+      <span className="truncate">{t(($) => $.telegram.section_title)}</span>
+      <MessagingConnectionStatus installation={installation} compact />
       <ChevronRight className="ml-auto h-3.5 w-3.5 shrink-0" />
     </button>
   );
 }
 
-// TelegramAgentBotConnectedBadge is the full "already connected" affordance:
+// TelegramAgentBotInstalledControls is the full installed-bot affordance:
 // status + Disconnect, then an "Open in Telegram" deep link to the bot.
-function TelegramAgentBotConnectedBadge({
+function TelegramAgentBotInstalledControls({
   installation,
-  healthy,
   className,
 }: {
   installation: TelegramInstallation;
-  healthy: boolean;
   className?: string;
 }) {
   const { t } = useT("settings");
@@ -525,20 +498,12 @@ function TelegramAgentBotConnectedBadge({
   return (
     <div
       className={cn("space-y-2", className)}
-      data-testid="telegram-agent-bot-connected"
+      data-testid="telegram-agent-bot-installed"
     >
       <div className="flex items-center justify-between gap-3">
         <span className="inline-flex min-w-0 items-center gap-2 text-caption text-muted-foreground">
-          <span
-            className={cn(
-              "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
-              healthy ? "bg-emerald-500" : "bg-amber-500",
-            )}
-          />
           <span className="truncate">
-            {healthy
-              ? t(($) => $.telegram.agent_bot_connected_label)
-              : t(($) => $.page.integrations_status)}
+            <MessagingConnectionStatus installation={installation} compact />
             {installation.bot_username ? ` · @${installation.bot_username}` : ""}
           </span>
         </span>

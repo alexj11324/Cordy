@@ -109,13 +109,17 @@ function checkForUpdatesOnce(): Promise<unknown> {
   return p;
 }
 
-export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null): void {
+export function setupAutoUpdater(
+  getMainWindow: () => BrowserWindow | null,
+  isCloudEnabled: () => boolean = () => true,
+): () => void {
   const preferencesFilePath = updaterPreferencesPath(app.getPath("userData"));
   let automaticUpdatesEnabled =
     DEFAULT_UPDATER_PREFERENCES.automaticUpdates;
   let startupCheckElapsed = false;
   let startupTimer: ReturnType<typeof setTimeout> | null = null;
   let periodicTimer: ReturnType<typeof setInterval> | null = null;
+  let active = true;
   const preferencesReady = loadUpdaterPreferences(preferencesFilePath).then(
     (preferences) => {
       automaticUpdatesEnabled = preferences.automaticUpdates;
@@ -126,7 +130,7 @@ export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null): voi
   const runAutomaticCheck = (errorMessage: string): void => {
     void preferencesReady
       .then(() => {
-        if (!automaticUpdatesEnabled) return;
+        if (!active || !isCloudEnabled() || !automaticUpdatesEnabled) return;
         return checkForUpdatesOnce();
       })
       .catch((err) => {
@@ -137,6 +141,7 @@ export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null): voi
   // Arm the startup + periodic background checks. Idempotent: an already-armed
   // timer is left in place so re-enabling never stacks duplicate schedules.
   const scheduleBackgroundChecks = (): void => {
+    if (!active || !isCloudEnabled()) return;
     if (startupTimer === null && !startupCheckElapsed) {
       // Initial check shortly after startup so we don't block boot.
       startupTimer = setTimeout(() => {
@@ -169,45 +174,57 @@ export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null): voi
     }
   };
 
-  autoUpdater.on("update-available", (info) => {
+  const onUpdateAvailable = (info: { version: string; releaseNotes?: unknown }) => {
+    if (!active || !isCloudEnabled()) return;
     // Forwarded for renderer-side state tracking only; the notification UI
     // does not render an "available" affordance with autoDownload=true.
     sendToLiveRenderer(getMainWindow(), "updater:update-available", {
       version: info.version,
       releaseNotes: info.releaseNotes,
     });
-  });
+  };
 
-  autoUpdater.on("download-progress", (progress) => {
+  const onDownloadProgress = (progress: { percent: number }) => {
+    if (!active || !isCloudEnabled()) return;
     sendToLiveRenderer(getMainWindow(), "updater:download-progress", {
       percent: progress.percent,
     });
-  });
+  };
 
-  autoUpdater.on("update-downloaded", (info: UpdateDownloadedEvent) => {
+  const onUpdateDownloaded = (info: UpdateDownloadedEvent) => {
+    if (!active || !isCloudEnabled()) return;
     sendToLiveRenderer(getMainWindow(), "updater:update-downloaded", {
       version: info.version,
       releaseNotes: info.releaseNotes,
     });
-  });
+  };
 
-  autoUpdater.on("error", (err) => {
+  const onUpdaterError = (err: unknown) => {
+    if (!active || !isCloudEnabled()) return;
     console.error("Auto-updater error:", err);
-  });
+  };
+
+  autoUpdater.on("update-available", onUpdateAvailable);
+  autoUpdater.on("download-progress", onDownloadProgress);
+  autoUpdater.on("update-downloaded", onUpdateDownloaded);
+  autoUpdater.on("error", onUpdaterError);
 
   // Retained for IPC back-compat with older renderer bundles. With
   // autoDownload=true the renderer no longer triggers this path.
   ipcMain.handle("updater:download", () => {
+    if (!active || !isCloudEnabled()) throw new Error("Cloud services disabled");
     return autoUpdater.downloadUpdate();
   });
 
   ipcMain.handle("updater:install", () => {
+    if (!active || !isCloudEnabled()) throw new Error("Cloud services disabled");
     autoUpdater.quitAndInstall(false, true);
   });
 
   ipcMain.handle(
     "updater:get-preferences",
     async (): Promise<UpdaterPreferences> => {
+      if (!active || !isCloudEnabled()) throw new Error("Cloud services disabled");
       await preferencesReady;
       return { automaticUpdates: automaticUpdatesEnabled };
     },
@@ -216,6 +233,7 @@ export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null): voi
   ipcMain.handle(
     "updater:set-automatic-updates",
     async (_event, enabled: unknown): Promise<UpdaterPreferences> => {
+      if (!active || !isCloudEnabled()) throw new Error("Cloud services disabled");
       if (typeof enabled !== "boolean") {
         throw new TypeError("automaticUpdates must be a boolean");
       }
@@ -242,6 +260,9 @@ export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null): voi
   );
 
   ipcMain.handle("updater:check", async (): Promise<ManualUpdateCheckResult> => {
+    if (!active || !isCloudEnabled()) {
+      return { ok: false, error: "Cloud services disabled" };
+    }
     try {
       const result = (await checkForUpdatesOnce()) as
         | { updateInfo: { version: string }; isUpdateAvailable?: boolean }
@@ -271,4 +292,19 @@ export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null): voi
   // background poll for long-running sessions. Both are torn down when the
   // user disables automatic updates and re-armed when they turn them back on.
   scheduleBackgroundChecks();
+
+  return () => {
+    if (!active) return;
+    active = false;
+    cancelBackgroundChecks();
+    autoUpdater.removeListener("update-available", onUpdateAvailable);
+    autoUpdater.removeListener("download-progress", onDownloadProgress);
+    autoUpdater.removeListener("update-downloaded", onUpdateDownloaded);
+    autoUpdater.removeListener("error", onUpdaterError);
+    ipcMain.removeHandler("updater:download");
+    ipcMain.removeHandler("updater:install");
+    ipcMain.removeHandler("updater:get-preferences");
+    ipcMain.removeHandler("updater:set-automatic-updates");
+    ipcMain.removeHandler("updater:check");
+  };
 }

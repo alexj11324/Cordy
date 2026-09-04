@@ -79,17 +79,15 @@ export function useIssueActions(issue: Issue | null): UseIssueActionsResult {
       options?: IssueSurfaceMutationOptions,
     ) => {
       if (!issueId) return;
-      // Writes that hand work to an agent — assigning, promoting out of the
-      // parking lot, entering Review, and returning from Review — confirm
-      // first through the shared Gate. Review also chooses a reviewer and
-      // sends status + reviewer in one update. The modal applies the change
-      // itself. If a reviewer is already set, entering Review applies
-      // directly.
+      // The two writes that can hand work to an agent — giving it an owner, and
+      // promoting it out of the parking lot — confirm first, through the shared
+      // gate every single-issue entry point routes on (runConfirmIntent). The
+      // modal applies the change itself; everything else applies directly.
       //
       // Not wired into drag-and-drop or the batch toolbar, which keep applying
       // directly. That is the existing split, not a new one: a drop is direct
       // manipulation whose card has already moved, and batch status was made
-      // deliberately dialog-free in PB-4155.
+      // deliberately dialog-free in MUL-4155.
       const intent = issue && runConfirmIntent(issue, updates, { entryOf });
       if (intent) {
         openModal("issue-run-confirm", intent);
@@ -161,7 +159,7 @@ export function useIssueActions(issue: Issue | null): UseIssueActionsResult {
 
   const copyLink = useCallback(async () => {
     if (!issueId) return;
-    // Share the identifier form (`/{ws}/issues/PB-123`): a pasted link should
+    // Share the identifier form (`/{ws}/issues/MUL-123`): a pasted link should
     // say which issue it points at. The UUID form stays valid, so links copied
     // before this still resolve.
     const url = navigation.getShareableUrl(paths.issueDetail(issueIdentifier || issueId));
@@ -178,14 +176,11 @@ export function useIssueActions(issue: Issue | null): UseIssueActionsResult {
       parent_issue_id: issueId,
       parent_issue_identifier: issueIdentifier,
       ...(issueProjectId ? { project_id: issueProjectId } : {}),
-      // Inherit the parent's owner and executor independently so a sub-issue
-      // created from the "Add sub-issue" entry keeps both responsibility
-      // fields (discussion #1728). The modal keys off whether these fields are
-      // present, not their value, so a seed overrides the sticky last-used
-      // values it would otherwise fall back to. Executor type is meaningless
-      // without its id, and owner is only valid for workspace members.
-      ...(issueOwnerType === "member" && issueOwnerId
-        ? { owner_type: "member" as const, owner_id: issueOwnerId }
+      // Owner and executor are independent roles. Inherit each complete pair
+      // separately so a parent with human ownership and agent execution does
+      // not collapse into one ambiguous assignment on the child.
+      ...(issueOwnerType && issueOwnerId
+        ? { owner_type: issueOwnerType, owner_id: issueOwnerId }
         : {}),
       ...(issueExecutorType && issueExecutorId
         ? { executor_type: issueExecutorType, executor_id: issueExecutorId }

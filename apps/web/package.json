@@ -1,19 +1,21 @@
 {
   "name": "@patchbay/web",
-  "version": "0.4.31",
+  "version": "0.4.37",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node ../../scripts/dev-web.mjs",
-    "build": "fumadocs-mdx && next build --webpack",
+    "dev": "sh -c 'next dev --webpack --port \"${FRONTEND_PORT:-3000}\"'",
+    "build": "next build --webpack",
     "start": "next start",
-    "typecheck": "fumadocs-mdx && tsc --noEmit",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
+    "mdx": "fumadocs-mdx",
     "postinstall": "fumadocs-mdx"
   },
   "dependencies": {
-    "@clerk/nextjs": "^7.7.9",
+    "@clerk/nextjs": "7.8.4",
+    "@clerk/themes": "2.4.57",
     "@patchbay/core": "workspace:*",
     "@patchbay/ui": "workspace:*",
     "@patchbay/views": "workspace:*",
@@ -32,6 +34,7 @@
   "devDependencies": {
     "@patchbay/eslint-config": "workspace:*",
     "@tailwindcss/postcss": "catalog:",
+    "postcss": "catalog:",
     "@testing-library/jest-dom": "catalog:",
     "@testing-library/react": "catalog:",
     "@testing-library/user-event": "catalog:",
@@ -39,7 +42,6 @@
     "@types/react-dom": "catalog:",
     "@vitejs/plugin-react": "catalog:",
     "jsdom": "catalog:",
-    "postcss": "catalog:",
     "tailwindcss": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

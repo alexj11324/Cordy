@@ -61,7 +61,7 @@ describe("useSetChatSessionArchived", () => {
     vi.restoreAllMocks();
   });
 
-  // PB-4360: archiving must zero the row's unread locally so no badge (FAB,
+  // MUL-4360: archiving must zero the row's unread locally so no badge (FAB,
   // sidebar Chat tab, chat-window header) keeps counting a just-archived
   // session in the frame before the refetch lands. Mirrors the backend, which
   // forces unread to 0 for archived rows in ListAllChatSessionsByCreator.

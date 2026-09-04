@@ -75,6 +75,7 @@ vi.mock("../navigation", () => ({
     back: vi.fn(),
     pathname: "/acme/issues",
     searchParams: new URLSearchParams(),
+    hash: "",
     ...(navState.hasOpenInNewTab ? { openInNewTab: openInNewTabMock } : {}),
     getShareableUrl: getShareableUrlMock,
   }),
@@ -278,7 +279,7 @@ describe("AttachmentPreviewModal — dispatch", () => {
       const frame = document.querySelector("iframe[sandbox]") as HTMLIFrameElement | null;
       expect(frame).toBeTruthy();
       // `allow-scripts` is required so vanilla-JS chart libraries render
-      // (PB-2330). The combination with `allow-same-origin` would defeat
+      // (MUL-2330). The combination with `allow-same-origin` would defeat
       // the sandbox, so this assertion must stay exact.
       expect(frame?.getAttribute("sandbox")).toBe("allow-scripts");
       // srcdoc carries the original HTML plus the fragment-nav shim
@@ -311,7 +312,7 @@ describe("AttachmentPreviewModal — dispatch", () => {
   });
 });
 
-describe("AttachmentPreviewModal — server-relative download_url resolution (PB-2976)", () => {
+describe("AttachmentPreviewModal — server-relative download_url resolution (MUL-2976)", () => {
   // The unified `/api/attachments/{id}/download` endpoint returns a
   // server-relative path on non-CloudFront deployments. The web app keeps
   // working same-origin because `apiBaseUrl=""`, but the desktop renderer

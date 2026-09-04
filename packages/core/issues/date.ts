@@ -2,7 +2,7 @@
 // offer no time-of-day input, so "Mar 1" must mean Mar 1 for every viewer
 // regardless of timezone. They are transported as a date-only "YYYY-MM-DD"
 // string. These helpers convert between that string and a Date WITHOUT letting
-// the local timezone shift the day — the bug behind GH #3618 / PB-2925 was
+// the local timezone shift the day — the bug behind GH #3618 / MUL-2925 was
 // serializing a local-midnight Date via toISOString() (which injects a tz) and
 // reading it back through UTC day boundaries.
 //

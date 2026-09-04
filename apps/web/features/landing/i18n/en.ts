@@ -6,7 +6,6 @@ export function createEnDict(allowSignup: boolean): LandingDict {
   header: {
     github: "GitHub",
     cta: "Get started",
-    signIn: "Sign in",
     dashboard: "Dashboard",
     docs: "Docs",
     changelog: "Changelog",
@@ -20,7 +19,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
     headlineLine1: "Your next 10 hires",
     headlineLine2: "won\u2019t be human.",
     subheading:
-      "Patchbay is an open-source platform that turns coding agents into real teammates. Assign tasks, track progress, compound skills \u2014 manage your human + agent workforce in one place.",
+      "Patchbay is an open-source platform that turns coding agents into real teammates. Set owners and executors, track progress, compound skills \u2014 manage your human + agent workforce in one place.",
     cta: "Start free trial",
     downloadDesktop: "Download Desktop",
     talkToSales: "Talk to sales",
@@ -31,14 +30,14 @@ export function createEnDict(allowSignup: boolean): LandingDict {
   features: {
     teammates: {
       label: "TEAMMATES",
-      title: "Assign to an agent like you\u2019d assign to a colleague",
+      title: "Route work to an agent like you\u2019d hand it to a colleague",
       description:
         "Agents aren\u2019t passive tools \u2014 they\u2019re active participants. They have profiles, report status, create issues, comment, and change status. Your activity feed shows humans and agents working side by side.",
       cards: [
         {
-          title: "Agents in the assignee picker",
+          title: "Agents in the executor picker",
           description:
-            "Humans and agents appear in the same dropdown. Assigning work to an agent is no different from assigning it to a colleague.",
+            "Agents and teams appear in the executor picker. Set an agent or team as executor, then use owner and reviewer for the human follow-up around the work.",
         },
         {
           title: "Autonomous participation",
@@ -102,7 +101,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
       label: "RUNTIMES",
       title: "One dashboard for all your compute",
       description:
-        "Local daemons and cloud runtimes, managed from a single panel. Real-time monitoring of online/offline status, usage charts, and activity heatmaps. Auto-detects 23 supported coding tools on your machine.",
+        "Local daemons and cloud runtimes, managed from a single panel. Real-time monitoring of online/offline status, usage charts, and activity heatmaps. Auto-detects 26 supported coding tools on your machine.",
       cards: [
         {
           title: "Unified runtime panel",
@@ -117,7 +116,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         {
           title: "Auto-detection on first run",
           description:
-            "Patchbay scans for 23 supported coding tools \u2014 Antigravity, Claude Code, CodeBuddy, Codex, Copilot, Cursor, DeepSeek Harness, DevEco Code, Dim, Grok, Hermes, Kimi, Kiro CLI, Oh-My-Pi, OpenClaw, OpenCode, Pi, Qoder, Qoder CN, Qwen Code, QwenPaw, Reasonix, and Trae CLI \u2014 and registers a runtime for each one it finds.",
+            "Patchbay scans for 26 supported coding tools \u2014 Antigravity, Claude Code, CodeBuddy, CodeArts, Codex, Copilot, Cursor, DeepSeek Harness, DevEco Code, Dim, Grok, Hermes, Kimi, Kiro CLI, MiniMax Code, Oh-My-Pi, OpenClaw, OpenCode, Pi, Qoder, Qoder CN, Qwen Code, QwenPaw, Reasonix, Trae CLI, and ZeroClaw \u2014 and registers a runtime for each one it finds.",
         },
       ],
     },
@@ -137,17 +136,17 @@ export function createEnDict(allowSignup: boolean): LandingDict {
       {
         title: "Install the CLI & connect your machine",
         description:
-          "Run patchbay setup \u2014 it walks you through OAuth, starts the daemon, and scans for the 23 supported coding tools (Antigravity, Claude Code, CodeBuddy, Codex, Copilot, Cursor, DeepSeek Harness, DevEco Code, Dim, Grok, Hermes, Kimi, Kiro CLI, Oh-My-Pi, OpenClaw, OpenCode, Pi, Qoder, Qoder CN, Qwen Code, QwenPaw, Reasonix, Trae CLI). Whichever ones you already have installed get registered as runtimes automatically.",
+          "Run patchbay setup \u2014 it walks you through OAuth, starts the daemon, and scans for the 26 supported coding tools (Antigravity, Claude Code, CodeBuddy, CodeArts, Codex, Copilot, Cursor, DeepSeek Harness, DevEco Code, Dim, Grok, Hermes, Kimi, Kiro CLI, MiniMax Code, Oh-My-Pi, OpenClaw, OpenCode, Pi, Qoder, Qoder CN, Qwen Code, QwenPaw, Reasonix, Trae CLI, ZeroClaw). Whichever ones you already have installed get registered as runtimes automatically.",
       },
       {
         title: "Create your first agent",
         description:
-          "Give it a name, write instructions, and attach skills. Agents automatically activate on assignment, on comment, or on mention.",
+          "Give it a name, write instructions, and attach skills. Agents automatically activate when set as executor, on comment, or on mention.",
       },
       {
-        title: "Assign an issue and watch it work",
+        title: "Set an executor and watch it work",
         description:
-          "Pick your agent from the assignee dropdown \u2014 just like assigning to a teammate. The task is queued, claimed, and executed automatically. Watch progress in real time.",
+          "Pick an agent or team from the executor dropdown. The task is queued, claimed, and executed automatically, while owner and reviewer stay independent. Watch progress in real time.",
       },
     ],
     cta: "Get started",
@@ -193,7 +192,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
       {
         question: "What coding agents does Patchbay support?",
         answer:
-          "Patchbay supports 23 coding tools out of the box: Antigravity, Claude Code, CodeBuddy, Codex, Copilot, Cursor, DeepSeek Harness, DevEco Code, Dim, Grok, Hermes, Kimi, Kiro CLI, Oh-My-Pi, OpenClaw, OpenCode, Pi, Qoder, Qoder CN, Qwen Code, QwenPaw, Reasonix, and Trae CLI. The daemon auto-detects whichever CLIs you already have installed and registers a runtime for each one. Since it's open source, you can also add your own backends.",
+          "Patchbay supports 26 coding tools out of the box: Antigravity, Claude Code, CodeBuddy, CodeArts, Codex, Copilot, Cursor, DeepSeek Harness, DevEco Code, Dim, Grok, Hermes, Kimi, Kiro CLI, MiniMax Code, Oh-My-Pi, OpenClaw, OpenCode, Pi, Qoder, Qoder CN, Qwen Code, QwenPaw, Reasonix, Trae CLI, and ZeroClaw. The daemon auto-detects whichever CLIs you already have installed and registers a runtime for each one. Since it's open source, you can also add your own backends.",
       },
       {
         question: "Do I need to self-host, or is there a cloud version?",
@@ -268,7 +267,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
     paragraphs: [
       "The name comes from a physical patch bay: a panel where connections are visible, intentional, and easy to reroute without hiding the path between inputs and outputs.",
       "AI agents make it possible to move many tasks at once, but parallel work is only useful when goals, dependencies, ownership, and handoffs stay connected. Patchbay keeps that routing on one shared surface.",
-      "In Patchbay, agents are first-class teammates. They get assigned issues, report progress, raise blockers, and ship code alongside their human colleagues. The assignee picker, activity timeline, task lifecycle, and runtime infrastructure all support that shared workflow.",
+      "In Patchbay, agents are first-class teammates. They execute scoped issues, report progress, raise blockers, and ship code alongside their human colleagues. The owner, executor, and reviewer controls, activity timeline, task lifecycle, and runtime infrastructure all support that shared workflow.",
       "Small teams can coordinate a fleet of agents without giving up visibility or human control. People set direction and review outcomes; agents keep well-scoped work moving.",
       "The platform is fully open source and self-hostable. Your data stays on your infrastructure. Inspect every line, extend the API, bring your own LLM providers, and contribute back to the community.",
     ],
@@ -285,6 +284,179 @@ export function createEnDict(allowSignup: boolean): LandingDict {
       fixes: "Bug Fixes",
     },
     entries: [
+      {
+        version: "0.4.37",
+        date: "2026-08-31",
+        title: "Faster Issue lists, steadier long runs, and more complete localization",
+        changes: [],
+        features: [
+          "Use Huawei Cloud CodeArts as a native agent runtime.",
+          "Pick its models, pick up past sessions, and bring your MCP servers and local Skills.",
+          "Install Patchbay natively on iPad, in any screen orientation.",
+          "WeCom bot replies still arrive when you self-host Patchbay across several servers.",
+          "See how many WeCom replies never made it out, and why.",
+        ],
+        improvements: [
+          "Issue lists open faster in large workspaces.",
+          "Agents start faster when a lot of Skills are available to them.",
+          "Onboarding, Teams, the editor, statuses, and priorities read naturally in every language.",
+          "Agent output shows full file paths again, with nothing hidden by mistake.",
+          "Self-hosted servers do less background work against the database.",
+          "A self-hosted server keeps answering even when a connection stalls.",
+        ],
+        fixes: [
+          "Chat stays on the newest reply, with no jumping or flickering while it streams.",
+          "The Analytics leaderboard scrolls sideways in narrow windows instead of being cut off.",
+          "Codex sessions start reliably instead of giving up during setup.",
+          "Local Skills load even when the daemon on your machine has gone idle.",
+          "The desktop app brings back its daemon if it stops unexpectedly.",
+          "The Issue header on phones is compact again, with avatars and tap targets intact.",
+          "Self-hosted upgrades from older versions finish without manual repair.",
+          "Pi and Oh My Pi keep their session when the working folder changes.",
+          "Deleting a workspace now says exactly what will be removed.",
+          "Long runs and queued tasks are no longer cancelled just for waiting.",
+        ],
+      },
+      {
+        version: "0.4.36",
+        date: "2026-08-28",
+        title: "Custom property filters, Skill imports, and MCP for Oh My Pi",
+        changes: [],
+        features: [
+          "Filter Issues by custom text, number, date, and URL properties.",
+          "Or find just the Issues where a custom property has no value yet.",
+          "These filters show up in the filter menu, in facets, and in saved views.",
+          "Create a Skill by importing a local folder, a .skill file, or a .zip.",
+          "Preview what's inside before you import, and catch name conflicts up front.",
+          "Oh My Pi agents can now use MCP servers you manage on the agent page.",
+        ],
+        improvements: [
+          "Runtimes are only reclaimed when it's safe, so nothing disappears mid-run.",
+          "A runtime that has been offline for a long time now says exactly that.",
+          "Long agent steps get up to two hours of idle time before they stop.",
+          "The CLI now spells out the page size and paging options for listing Issues.",
+        ],
+        fixes: [
+          "Links you copy or share from the desktop app open in any browser, on any device.",
+          "Repository checkouts keep working even if the folder you started from is gone.",
+          "Runs on long-context models are priced correctly, so usage is no longer undercounted.",
+          "Custom Issue statuses without Latin letters show the right name everywhere.",
+          "When an edit conflicts, each choice sits right under the version it applies to.",
+          "Lark replies no longer stall after a credential expires.",
+          "Quick Create restores your draft at the right height again.",
+          "OpenClaw runs stop completely when they time out, leaving no processes behind.",
+          "Setting up OpenClaw no longer fails when it already had everything it needed.",
+        ],
+      },
+      {
+        version: "0.4.35",
+        date: "2026-08-26",
+        title: "Session controls in every chat channel, agent conversation starters, and Inbox filters",
+        changes: [],
+        features: [
+          "Start a fresh session with /new, or clear the current one with /clear.",
+          "Both work in DingTalk, Lark, Slack, Telegram, and WeCom.",
+          "Give an agent up to three conversation starters, shown in every empty chat.",
+          "Tapping a starter fills the composer, so you can edit it before sending.",
+          "Filter Inbox notifications by who started them, or show only unread ones.",
+        ],
+        improvements: [
+          "Run costs for Qwen, Kimi, and Ark models are now accurate.",
+          "The Automation list shows subscribers and the next scheduled run.",
+          "A single Cloud address turns on cloud runtimes, billing, and seat management together.",
+          "Local task folders now have readable names, so your files are easy to find.",
+        ],
+        fixes: [
+          "Automations can hand work to your private agents and Teams again.",
+          "An Automation keeps its Project when you edit its other settings.",
+          "Chat follows the newest output as it streams, and scrolling up no longer snaps you back.",
+          "Private runtimes are no longer visible to other members.",
+          "Billing reflects your Pro plan right after you subscribe.",
+          "Codex runs no longer end early, so nothing is missed or counted twice.",
+          "Automation commands no longer accept a priority option that did nothing.",
+          "Issue boards stay fast even when descriptions are very long.",
+          "Reading large Skills is reliable and no longer stops midway.",
+        ],
+      },
+      {
+        version: "0.4.34",
+        date: "2026-08-25",
+        title: "Sub-Issues from comments, and custom Issue statuses for every workspace",
+        changes: [],
+        features: [
+          "Turn any comment into a sub-Issue with one click.",
+          "New sub-Issues carry the original discussion, so whoever picks them up starts with full context.",
+          "Custom Issue statuses are now open to every workspace — create your own right away.",
+        ],
+        improvements: [
+          "Checkout pre-fills your account email automatically.",
+          "Failed repository checkouts now say exactly what went wrong and how to fix it.",
+          "Self-hosting guides now cover health checks, single-domain setups, and choosing a release.",
+        ],
+        fixes: [
+          "MiniMax Code no longer fails intermittently on startup.",
+          "Members who leave a workspace no longer get its Automation notifications.",
+          "Automatic recovery replies for failed tasks now land in the original comment thread.",
+          "Comment timestamps no longer show the wrong timezone.",
+          "Agents locate Issues by full ID faster and more reliably.",
+          "Cancelling a task now truly stops the agent — nothing keeps running in the background.",
+          "Cancelled subscription seats no longer appear in billing.",
+          "When a task is cancelled, the CLI no longer asks you to sign in again.",
+        ],
+      },
+      {
+        version: "0.4.33",
+        date: "2026-08-24",
+        title: "Inbox filters, the ZeroClaw runtime, and localized failure messages",
+        changes: [],
+        features: [
+          "Filter Inbox notifications by Issue status and priority.",
+          "Use ZeroClaw as a native agent runtime.",
+          "Self-hosted teams can send daemon traffic to a separate server.",
+          "Self-hosted teams can set how long queued tasks remain available.",
+        ],
+        improvements: [
+          "Task failure messages now appear in your chosen language.",
+          "Grok shows each model's supported reasoning levels.",
+          "Skill download failures now show how much data arrived.",
+          "Use a keyboard shortcut to show or hide the right sidebar.",
+          "The iOS app now has a cleaner flat icon.",
+          "Self-hosting guides now state the right PostgreSQL requirements.",
+        ],
+        fixes: [
+          "Windows Qwen and Pi runs now preserve complete prompts.",
+          "Antigravity responses keep their original line breaks.",
+          "Lark post mentions reach the intended people.",
+          "Agent and Issue activity stays correctly authorized and ordered.",
+          "New chats and project work stay in the right workspace context.",
+          "Self-hosted health checks and concurrent local work stay reliable.",
+          "Hermes, Kimi, and Pi now handle runtime failures more reliably.",
+          "Purchase quotes and archived Inbox counts now recover correctly.",
+        ],
+      },
+      {
+        version: "0.4.32",
+        date: "2026-08-21",
+        title: "DingTalk groups, Project views, and smoother teamwork",
+        changes: [],
+        features: [
+          "Mention a DingTalk bot in a group and that group appears under its agent.",
+          "Group Board and Table views by Project to keep related Issues together.",
+        ],
+        improvements: [
+          "Long-running agents stay more responsive while they work.",
+          "Self-hosted servers recover automatically after a brief database outage.",
+          "Telegram now greets you and replies in English.",
+        ],
+        fixes: [
+          "Running a task again no longer stops work already in progress.",
+          "Tasks running at the same time no longer overwrite one another’s workspace.",
+          "OpenClaw, Pi, and OpenCode work with the custom providers you configure.",
+          "Changing workspaces no longer interrupts live updates or @mentions.",
+          "Automation webhook secrets stay out of normal CLI output.",
+          "Chat with your agents without waiting for unrelated coding work to finish.",
+        ],
+      },
       {
         version: "0.4.31",
         date: "2026-08-20",
@@ -330,7 +502,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
       {
         version: "0.4.29",
         date: "2026-08-18",
-        title: "MiniMax Code, cleaner Agent threads, and Hermes agent fixes",
+        title: "MiniMax Code, cleaner run transcripts, and Hermes agent fixes",
         changes: [],
         features: [
           "You can now run agents with MiniMax Code.",
@@ -338,7 +510,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         ],
         improvements: [
           "Hermes agent runs now show tools while they are working.",
-          "Agent threads are easier to scan without repeated names.",
+          "Agent transcripts are easier to scan without repeated names.",
         ],
         fixes: [
           "Tasks keep running through brief runtime connection drops.",
@@ -371,12 +543,12 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         version: "0.4.27",
         date: "2026-08-17",
         title:
-          "Workspace MCP servers, share-link invites, and a rebuilt Agent thread",
+          "Workspace MCP servers, share-link invites, and a rebuilt transcript",
         changes: [],
         features: [
           "You can now set up MCP servers once for a workspace and hand them to individual agents.",
           "You can now create a share link that lets someone join your workspace directly.",
-          "The Agent thread now reads as steps, with a two-lane event timeline and an outcome summary.",
+          "The transcript now reads as steps, with a two-lane timeline and an outcome summary.",
           "Files sent in Slack now arrive in the conversation as attachments.",
           "You can now add Patchbay to your phone's home screen and open it like an app.",
           "Browser tabs are now named after the workspace page you have open.",
@@ -490,7 +662,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "A leftover port setting no longer blocks `patchbay login`.",
           "Cursor tasks now reach the MCP servers you configured.",
           "Issue titles created from Slack keep their links unchanged.",
-          "A PR no longer changes an Issue in another workspace unless the relation is explicitly attached there.",
+          "A PR no longer closes a same-numbered Issue in another workspace.",
           "The attachment download button downloads in every storage mode.",
           "Agent results are no longer cut short.",
         ],
@@ -604,7 +776,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         features: [
           "Your agents can now live in DingTalk — DM them or @-mention them in a group.",
           "Signing up now ends with Patrick ready to talk, plus cards to start your first task.",
-          "The Agent thread shows what each run cost, and the whole Issue's total.",
+          "The execution log shows what each run cost, and the whole Issue's total.",
           "Muting comment notifications no longer hides messages that @-mention you.",
           "Chat on a phone opens full screen and the composer rides above the keyboard.",
           "Replacing your patchbay or agent CLI now takes effect on its own, no restart.",
@@ -613,7 +785,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Agents read shorter instructions each run, leaving more room for your work.",
           "Runtimes with no reasoning dial now say so instead of rejecting your setting.",
           "Issue detail and the discussion list on a phone use more of the screen.",
-          "The Agent thread header stays on one line instead of wrapping.",
+          "The execution log header stays on one line instead of wrapping.",
         ],
         fixes: [
           "Images sent with /issue in chat now arrive as attachments on the new Issue.",
@@ -710,7 +882,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Disk usage now matches what your file manager shows, down to the last folder.",
           "The command line now tells you how to fix a conflict instead of asking you to retry.",
           "Creating an automation now points at the required field that is still missing.",
-          "The Issue sidebar puts the Agent thread first and Details underneath.",
+          "The Issue sidebar puts the execution log first and Details underneath.",
           "The license now says plainly that free public hosting still needs a commercial license.",
         ],
         fixes: [
@@ -762,11 +934,11 @@ export function createEnDict(allowSignup: boolean): LandingDict {
       {
         version: "0.4.15",
         date: "2026-07-30",
-        title: "Sharper skills, clearer Agent event histories, and dependable workspaces",
+        title: "Sharper skills, clearer transcripts, and dependable workspaces",
         changes: [],
         features: [
           "Skills now separate overview and files, with a clear Save prompt for unsaved edits.",
-          "Task Agent event histories now show file edits as readable diffs and clean command output.",
+          "Task transcripts now show file edits as readable diffs and clean command output.",
           "You can now toggle the floating chat window with a keyboard shortcut.",
           "Issue links use readable keys and can open in a new browser tab.",
           "Mention and command pickers now support Ctrl+N/J/P/K navigation.",
@@ -778,7 +950,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Self-hosted setup now carries your configuration into the daemon.",
         ],
         fixes: [
-          "Codex file changes are now preserved in task Agent event histories.",
+          "Codex file changes are now preserved in task transcripts.",
           "Hermes agents now recover from a lost resumed session.",
           "Qoder CLI is now found when Patchbay starts from a desktop app.",
           "Daemon updates no longer wait forever while the machine is idle.",
@@ -856,7 +1028,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         ],
         improvements: [
           "The thread quick-jump rail now sits on the right edge.",
-          "The Agent thread now follows live task output as it streams in.",
+          "The transcript now follows live task output as it streams in.",
         ],
         fixes: [
           "Searching for someone to mention now works even with spaces in the name.",
@@ -890,9 +1062,9 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         features: [
           "You can now connect self-hosted Git providers — Forgejo, Gitea, and GitLab — alongside GitHub.",
           "Chat can now use your project's context to give more relevant answers.",
-          "The Agent thread is now easier to read and stays smooth on long runs.",
+          "The execution log is now easier to read and stays smooth on long runs.",
           "The issue table now shows which agents are working, right in the list.",
-          "Copied Agent event histories now include a timestamp for each event.",
+          "Copied transcripts now include a timestamp for each event.",
         ],
         improvements: [
           "Cursor agents now show their thinking and tool activity as they work.",
@@ -1107,7 +1279,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Fetching recent context from Lark is fast and reliable again.",
           "Dropdown selections now show proper names instead of internal values.",
           "With the sidebar collapsed, page content is now evenly aligned.",
-          "Cancelling a task no longer scrambles the agent's Agent thread.",
+          "Cancelling a task no longer scrambles the agent's transcript.",
           "Running several Codex tasks at once no longer makes them block each other.",
           "Your scroll position is now reliably kept as you move around an issue.",
           "Pasting content with unusual characters into a comment no longer breaks it.",
@@ -1169,7 +1341,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         ],
         fixes: [
           "Marking an issue cancelled no longer interrupts agent work that is still running.",
-          "An agent's task events now stay complete and in the right order.",
+          "An agent's task transcript now stays complete and in the right order.",
           "Pressing Enter no longer cuts off text you are still typing in Chinese, Japanese, or Korean.",
           "Unread counts now match across the sidebar, mobile, and your thread list.",
           "Archiving a chat now clears its outside channel link and removes it from unread.",
@@ -1187,7 +1359,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         changes: [],
         features: [
           "You can now run your agents on the new Codex gpt-5.6 models — Sol, Terra, and Luna.",
-          "Type or paste an issue key like PB-123 and it turns into a clickable issue link on its own.",
+          "Type or paste an issue key like MUL-123 and it turns into a clickable issue link on its own.",
           "When you upload an avatar, you can now crop, zoom, and rotate it before saving.",
           "When an agent ends without a text reply, chat now shows a clear no-reply note instead of a blank message.",
           "Mention a busy agent across several separate comment threads and each thread now gets its own answer.",
@@ -1298,7 +1470,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "The Codex agent's MCP settings are applied correctly again.",
           "The Pi agent's task result now shows only the final answer — intermediate thinking is hidden.",
           "Automations no longer accidentally run the same Issue twice in a row when a run takes longer than expected.",
-          "An Issue's PR list now shows only PRs with an explicit relation to that Issue; text in a PR never creates the relation.",
+          "An Issue's PR list only shows PRs that really target that Issue — PRs that just mention the key in passing (\"Related to MUL-…\") no longer appear.",
           "The Issue action menu's nested \"More\" item is now called \"Relations\", so you can tell what's inside without opening it.",
           "Every attachment upload button — chat, Issue creation, Issue description, feedback — now lets you pick multiple files at once from the system file dialog.",
         ],
@@ -1306,10 +1478,10 @@ export function createEnDict(allowSignup: boolean): LandingDict {
       {
         version: "0.3.36",
         date: "2026-07-03",
-        title: "Agent thread view memory, external PostgreSQL for Helm, and reliability fixes",
+        title: "Transcript view memory, external PostgreSQL for Helm, and reliability fixes",
         changes: [],
         features: [
-          "The Agent thread remembers your filter and expansion choices, and restores them the next time you open the run.",
+          "The task transcript remembers your filter and expansion choices, and restores them the next time you open the run.",
           "Self-hosted (Helm): a new `postgres.external.enabled` toggle points Patchbay at an externally managed PostgreSQL (RDS, CNPG, Cloud SQL, Neon…) and skips the built-in database.",
         ],
         fixes: [
@@ -1348,7 +1520,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Slack alert cards (Grafana, webhooks) whose body lives only in attachments, blocks, or rich_text are recovered on chat history reads.",
           "Inline base64 images (QR codes, screenshots, charts) render in Markdown and read-only Issue comments.",
           "Comment attachment links keep resolving when the comment moves between Issues.",
-          "Antigravity runs completing with empty stdout now surface recovered Agent events in the run timeline.",
+          "Antigravity runs completing with empty stdout now surface the recovered transcript in the run timeline.",
           "Attachment preview accepts the same text file types the frontend advertises.",
           "The Mermaid renderer no longer leaks its built-in error graphic on invalid syntax.",
           "Local skills are exposed to ACP-based runtimes again.",
@@ -1378,7 +1550,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         fixes: [
           "The Slack chat agent no longer narrates its channel-history reads — it reads silently and replies with the answer.",
           "Attachment previews again open on self-hosted local-disk deployments. (Community-reported.)",
-          "Cursor and Kiro runtime completion Agent event histories are recovered so the final result no longer goes missing.",
+          "Cursor and Kiro runtime completion transcripts are recovered so the final result no longer goes missing.",
           "Self-host: PATCHBAY_SLACK_SECRET_KEY is now passed through to the backend container in docker-compose.selfhost.yml. (Community-reported.)",
           "The Issues board \"N working\" chip counts distinct Issues instead of distinct agents.",
           "Anonymous self-host source-channel reports go back to the official Patchbay API endpoint.",
@@ -1395,7 +1567,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Slack channels can backfill their conversation history into Patchbay, so an agent has the prior context the moment it joins.",
           "Slack messages show a 👀 reaction while an agent is preparing its reply, and the reaction is always cleared on the way out.",
           "Skill bundles can be installed from a local .skill or .zip archive.",
-          "patchbay issue commands no longer accept short UUID prefixes — use the issue key (PB-123) or the full UUID.",
+          "patchbay issue commands no longer accept short UUID prefixes — use the issue key (MUL-123) or the full UUID.",
           "The Agents page is now usable on mobile.",
         ],
         improvements: [
@@ -1529,7 +1701,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Issue batch edit menus now show the real shared status, priority, and assignee for the selected Issues",
           "Dragging Issues across board and list views no longer snaps cards back before settling",
           "GitHub PR links and check updates are routed to the workspace that owns the repository",
-          "Live task Agent event histories now keep updating while a run is still in progress",
+          "Live task transcripts now keep updating while a run is still in progress",
           "Custom runtime deletion now removes the saved profile instead of only removing a row that could return later",
         ],
       },
@@ -1623,7 +1795,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Plain Issue IDs in comments now stay as text unless they are intentionally linked",
           "Google sign-in from command line login now returns to the command line correctly after browser authentication",
           "Chat file uploads wait until an active agent is ready, avoiding failed uploads during loading",
-          "Agent thread actions remain visible on touch devices where hover is unavailable",
+          "Transcript actions remain visible on touch devices where hover is unavailable",
           "Agent instructions for posting comments now avoid shell formatting problems that could drop assignees, projects, or other fields",
         ],
       },
@@ -1681,7 +1853,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Import results now clearly show which skills were added, updated, skipped, blocked by a conflict, or could not be imported",
         ],
         improvements: [
-          "Agent threads now show the newest past runs first on web and mobile, so recent progress is easier to scan",
+          "Execution logs now show the newest past runs first on web and mobile, so recent progress is easier to scan",
           "Changelog content was cleaned up so the latest release notes stay grouped under the right release",
         ],
         fixes: [
@@ -1697,7 +1869,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         changes: [],
         features: [
           "Comment boxes now show which agents or teams will start work before you send, with controls to avoid accidental runs",
-          "Run Agent event histories now include timestamps, making agent progress and handoffs easier to review",
+          "Run transcripts now include timestamps, making agent progress and handoffs easier to review",
           "Automation detail pages now show who created each automation",
           "Claude Fable 5 is now available in Patchbay's supported model and pricing list",
           "Issue conversations can now resolve a specific reply, making long threads easier to close while keeping the final answer visible",
@@ -1746,7 +1918,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         fixes: [
           "Swimlane filters now apply correctly",
           "Mobile workspace switching now shows workspace logos reliably and uses clearer English copy",
-          "Desktop update and Agent thread dialogs no longer act on windows or pages that have already closed",
+          "Desktop update and transcript dialogs no longer act on windows or pages that have already closed",
           "Runtime deletion now cleans archived teams and pauses automations as part of the same teardown",
           "Daemon runs now surface self-restart failures, stop local agents when terminal tasks are ended from the server, and clean stale branches during repository maintenance",
           "Self-hosted WebSocket connections work correctly behind proxies that set X-Forwarded-Host",
@@ -1882,7 +2054,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Claude runs are less likely to stall while prompts are being sent",
           "Self-hosted local runtime setup links now point users to the right addresses",
           "MCP setup guidance and runtime support checks now match what the product can run",
-          "Agent threads now clear active-row highlights after the related work finishes",
+          "Execution logs now clear active-row highlights after the related work finishes",
         ],
       },
       {
@@ -1922,7 +2094,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         ],
         improvements: [
           "Helm charts can be published to GHCR, and email setup docs are clearer",
-          "Task Agent event histories show shorter, safer working-folder labels",
+          "Task transcripts show shorter, safer working-folder labels",
           "New Issues stay at the top in manual boards, and deleted Issues stay out of recents",
           "Local runtime machines are grouped by device name",
         ],
@@ -1978,7 +2150,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Dependency checks are stricter, helping missing packages surface earlier before builds or desktop runs",
         ],
         fixes: [
-          "GitHub PRs now finish linked Issues only when their explicit relation includes close intent",
+          "GitHub PRs now finish linked Issues only when the PR clearly says it closes them, so reference-only links no longer close work by accident",
           "Parent/child Issue automation waits for dependency checks before starting queued follow-up work, and agent-driven status changes trigger the right assignee",
           "Issue threads and list pages keep their order when loading more content, and board drag positions stay stable",
           "Chat resize behavior, board-card assignee rows, and XML parsing security received smaller stability fixes",
@@ -2088,7 +2260,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         fixes: [
           "List editing exits cleanly from an empty top-level item when pressing Enter",
           "The installer falls back to release binaries when Homebrew setup fails and reports clearer diagnostics",
-          "Retrying from an Agent thread now reruns the agent that handled that work",
+          "Retrying an execution log row now reruns the agent that handled that row",
           "Chat and task-message loading ignore temporary IDs instead of calling invalid task routes",
           "OpenCode-backed daemon runs no longer enter invisible interactive question prompts",
           "Gemini runtimes use the correct official icon",
@@ -2110,7 +2282,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         improvements: [
           "The onboarding flow now asks one focused question at a time and can guide runtime setup with fewer manual steps",
           "My Issues now includes team-assigned work and labels the team-related tab more clearly",
-          "Agent thread events can be sorted in either direction when reviewing a run",
+          "Agent execution logs can be sorted in either direction when reviewing a run",
         ],
         fixes: [
           "HTML previews open more predictably from desktop, close the full-screen modal when needed, and support in-page links",
@@ -2227,7 +2399,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         title: "GitHub Integration, Chat Attachments & Safer Issue Navigation",
         changes: [],
         features: [
-          "Connect GitHub so explicitly attached pull requests appear on Patchbay issues, sync their status, and close the Patchbay issue automatically when an attached relation has close intent and the PR closes",
+          "Connect GitHub so linked pull requests appear on Patchbay issues, sync their status, and close the Patchbay issue automatically when the PR closes",
           "Chat messages can include file attachments and image previews",
           "Agents and runtimes can now be kept public or private for clearer team access",
           "Stopping a single agent task now asks for confirmation before it is terminated",
@@ -2290,7 +2462,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Quick Create lets you pick a project, and remembers your last choice",
           "Comment threads can be resolved and collapsed, keeping long discussions tidy",
           "Issue live banner now shows agent tasks waiting in queue",
-          "Failed or cancelled tasks can be rerun in one click from the Agent thread",
+          "Failed or cancelled tasks can be rerun in one click from the Execution Log",
           "Agent Create modal gains an expand button for editing long descriptions",
         ],
         improvements: [
@@ -2327,7 +2499,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "New `patchbay daemon disk-usage` CLI surfaces per-task and per-workspace disk footprint",
           "Skill picker in agent settings has a search box for fast lookup",
           "Daemon GC extends to chat, automation, and quick-create tasks",
-          "Issue detail breadcrumb now shows the PB-xxxx identifier for quick reference",
+          "Issue detail breadcrumb now shows the MUL-xxxx identifier for quick reference",
         ],
         improvements: [
           "Timeline page size bumped to 50, with per-pool keyset cursors for comments and activities",
@@ -2340,7 +2512,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Linux daemon self-restart uses `brew prefix` symlinks, so Homebrew Cellar deletion no longer orphans runtimes",
           "CLI short IDs now route correctly — copied prefixes no longer 404",
           "Windows non-ASCII comment / description input lands via new `--content-file` / `--description-file` flags",
-          "Windows / Linux desktop replaces the Electron placeholder with the Patchbay app icon",
+          "Windows / Linux desktop replaces the Electron placeholder icon with the Patchbay routing mark",
           "Orphaned timeline replies are now correctly surfaced",
           "Timeline comment pagination budget excludes activities, so heavy activity no longer crowds out real comments",
         ],
@@ -2461,7 +2633,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         changes: [],
         features: [
           "Create Issue by Agent — press `c`, write one line, pick an agent; issue creation runs async and the result lands in your inbox",
-          "Agent Presence v3 — availability and last-task split into clearer signals, with an Agent thread on the issue panel showing active and recent runs",
+          "Agent Presence v3 — availability and last-task split into clearer signals, with an execution log on the issue panel showing active and recent runs",
           "Daemon ↔ server heartbeat now flows over WebSocket with HTTP fallback, cutting task wakeup latency",
           "Mention picker ranks suggestions by your local recency",
         ],
@@ -2849,7 +3021,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         ],
         improvements: [
           "Sidebar redesign — Personal / Workspace grouping, user profile footer, ⌘K search input",
-          "Search ranking — case-insensitive matching, identifier search (PB-123), multi-word support",
+          "Search ranking — case-insensitive matching, identifier search (MUL-123), multi-word support",
           "Search result keyword highlighting",
           "Daily token usage chart with cleaner Y-axis and per-category tooltip",
           "Master Agent multiline input support",
@@ -2879,7 +3051,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Project picker in the create-issue modal and CLI project commands",
           "Full-text search for issues with pg_bigm",
           "Monorepo extraction — shared packages for core, UI, and views (Turborepo)",
-          "Fullscreen Agent thread view",
+          "Fullscreen agent execution transcript view",
           "Drag-and-drop file upload with file card display in the editor",
           "Attachment section with image grid and file cards on issues",
           "Runtime owner tracking, filtering, avatar display, and point-to-point update notifications",
@@ -3034,12 +3206,12 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         date: "2026-03-22",
         title: "Foundation",
         changes: [
-          "Rust backend with REST API, JWT auth, and real-time WebSocket",
+          "Go backend with REST API, JWT auth, and real-time WebSocket",
           "Next.js frontend with Linear-inspired UI",
           "Issues with board and list views and drag-and-drop kanban",
           "Agents, Inbox, and Settings pages",
           "One-click setup, migration CLI, and seed tool",
-          "Comprehensive test suite \u2014 Rust unit/integration, Vitest, Playwright E2E",
+          "Comprehensive test suite \u2014 Go unit/integration, Vitest, Playwright E2E",
         ],
       },
     ],

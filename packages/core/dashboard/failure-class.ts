@@ -1,6 +1,6 @@
 // Display grouping for `agent_task_queue.failure_reason`.
 //
-// The backend taxonomy (`patchbay-task-failure`) has 22 reasons, which is far
+// The backend taxonomy (server/pkg/taskfailure) has 22 reasons, which is far
 // too many series for a stacked chart or a scannable breakdown list. These
 // seven classes are the granularity an operator actually acts on: an auth
 // spike means "go re-auth", a rate-limit spike means "back off or raise the
@@ -26,7 +26,7 @@ export type FailureClass = (typeof FAILURE_CLASSES)[number];
 // Reason → class. Keys are the wire values written by the backend: the 22
 // canonical `taskfailure.Reason` strings, the `"unclassified"` sentinel the
 // failure rollups substitute for a failed row with an empty column, and the
-// pre-PB-1949 coarse values that still sit in historical rows.
+// pre-MUL-1949 coarse values that still sit in historical rows.
 //
 // Anything absent from this map falls through to "other" — including a new
 // reason from a backend newer than this client, which is the case that makes

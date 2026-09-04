@@ -10,7 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * moments that mean "you are about to type something new" — a fresh chat, an
  * agent switch, a project-context change.
  *
- * Opening the window is one of those moments (PB-5522): the whole point of the
+ * Opening the window is one of those moments (MUL-5522): the whole point of the
  * toggle shortcut is reaching chat without a mouse, so landing in a window you
  * still have to click into would defeat it — and the same courtesy applies to
  * opening it from the FAB.

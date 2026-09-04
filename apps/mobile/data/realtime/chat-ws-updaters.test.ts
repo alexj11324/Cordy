@@ -336,7 +336,7 @@ describe("applyChatQuickActionsToCache", () => {
     ).toBeUndefined();
   });
 
-  // Regression (PB-5149): the chat:done invalidate can leave a messages
+  // Regression (MUL-5149): the chat:done invalidate can leave a messages
   // refetch in flight that read the row before the actions were persisted. If
   // it resolves AFTER the supplement patch, it must not overwrite the patched
   // actions — the supplement cancels the in-flight refetch first. staleTime is

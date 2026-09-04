@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import { AlertCircle, Check, Loader2 } from "lucide-react";
 import { Card, CardContent } from "@patchbay/ui/components/ui/card";
 import { cn } from "@patchbay/ui/lib/utils";
-import { SettingsText } from "@patchbay/ui/components/common/lobe-settings";
 
 export type SettingsSaveStatus = "idle" | "saving" | "saved" | "error";
 
@@ -18,16 +17,11 @@ export function SettingsTab({
   return (
     <div className="space-y-8">
       <header>
-        <SettingsText as="h2" className="text-title-lg font-medium">
-          {title}
-        </SettingsText>
+        <h2 className="text-title-lg font-semibold tracking-tight">{title}</h2>
         {description ? (
-          <SettingsText
-            as="p"
-            className="mt-1 max-w-2xl text-body leading-5 text-muted-foreground"
-          >
+          <p className="mt-1 max-w-2xl text-body leading-6 text-muted-foreground">
             {description}
-          </SettingsText>
+          </p>
         ) : null}
       </header>
       {children}
@@ -53,18 +47,11 @@ export function SettingsSection({
       {title || description || action ? (
         <div className="flex min-w-0 items-end justify-between gap-4 px-0.5">
           <div className="min-w-0">
-            {title ? (
-              <SettingsText as="h3" className="text-body font-medium">
-                {title}
-              </SettingsText>
-            ) : null}
+            {title ? <h3 className="text-body font-semibold">{title}</h3> : null}
             {description ? (
-              <SettingsText
-                as="p"
-                className="mt-0.5 text-caption leading-5 text-muted-foreground"
-              >
+              <p className="mt-1 text-caption leading-5 text-muted-foreground">
                 {description}
-              </SettingsText>
+              </p>
             ) : null}
           </div>
           {action ? <div className="shrink-0">{action}</div> : null}
@@ -83,7 +70,7 @@ export function SettingsCard({
   className?: string;
 }) {
   return (
-    <Card className={cn("gap-0 rounded-lg py-0 shadow-none", className)}>
+    <Card className={cn("gap-0 py-0 shadow-none", className)}>
       <CardContent className="divide-y divide-surface-border px-0">
         {children}
       </CardContent>
@@ -138,16 +125,11 @@ export function SettingsRow({
       )}
     >
       <div className="min-w-0 flex-1">
-        <SettingsText as="div" className="text-body font-medium">
-          {label}
-        </SettingsText>
+        <div className="text-body font-medium">{label}</div>
         {description ? (
-          <SettingsText
-            as="div"
-            className="mt-0.5 text-caption leading-5 text-muted-foreground"
-          >
+          <div className="mt-0.5 text-caption leading-5 text-muted-foreground">
             {description}
-          </SettingsText>
+          </div>
         ) : null}
       </div>
       <div

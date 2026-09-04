@@ -1,26 +1,22 @@
 ---
 title: Feishu Bot
-description: Install a workspace-scoped Feishu Bot and hand work to agents from a DM or group chat.
+description: Connect an agent to Feishu and hand it work directly from a DM or a group chat.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Install a Feishu Bot for the Patchbay workspace and team members can DM it in
-Feishu, @-mention it in a group, or use `/issue` to create issues. Conversations
-and run records are still saved to the Patchbay workspace.
+Connect a Patchbay agent as a Feishu Bot and team members can DM it in Feishu, @-mention it in a group, or use `/issue` to create issues. Conversations and run records are still saved to the Patchbay workspace.
 
-The installation is workspace-scoped rather than tied to one computer or
-agent. Members can choose or switch the active agent with `/agents`; add a
-dedicated installation only when a separate Bot identity is required.
+Each Bot maps to exactly one agent. To use several agents in Feishu, connect a Bot for each of them.
 
 ## Connect a Bot
 
-Workspace owners and admins can start a connection:
+The agent's owner and workspace owners and admins can start a connection:
 
-1. Open **Settings → Integrations** and click **Bind to Feishu**.
-2. Choose the workspace-level installation.
+1. Open **Agents** and select the agent to connect to Feishu.
+2. Go to **Integrations** and click **Bind to Feishu**.
 3. Scan the QR code with Feishu and confirm the authorization.
-4. Return to Patchbay. Once the page shows **Connected to Feishu**, the Bot is ready for the workspace.
+4. Return to Patchbay. Once the page shows **Connected to Feishu**, the Bot is ready.
 
 
 The QR code is a one-time credential; if it expires, generate a new one. An agent that is already connected no longer shows the scan entry point; to rename the Bot or adjust its permissions, click **Manage in Feishu**.
@@ -68,10 +64,7 @@ After disconnecting, the Bot stops receiving new messages. Existing conversation
 
 ## Self-hosting setup
 
-Patchbay Cloud needs no extra configuration. A self-hosted deployment is
-server-managed: the app is read-only and does not accept Bot credentials.
-Follow the [self-hosted messaging deployment contract](/self-host-messaging)
-and run the setup helper on the server.
+Patchbay Cloud needs no extra configuration. A self-hosted deployment must first set a key used to encrypt Bot credentials:
 
 ```dotenv
 PATCHBAY_LARK_SECRET_KEY=<base64-encoded 32-byte key>
@@ -83,11 +76,7 @@ Generate one like this:
 openssl rand -base64 32
 ```
 
-Set `PATCHBAY_MESSAGING_BOOTSTRAP=true` with the server-owned workspace and
-installer IDs, add the Lark credentials to the deployment secret store, then
-restart the API server. Keep this key long-term: if it is rotated or lost,
-existing credentials can no longer be decrypted. Do not expect a Connect
-button in the self-hosted app.
+Restart the API server, then connect the Bot from the agent's **Integrations** page. Keep this key long-term: if it is rotated or lost, existing credentials can no longer be decrypted and the Bot must be reconnected.
 
 `PATCHBAY_LARK_HTTP_BASE_URL` and `PATCHBAY_LARK_CALLBACK_BASE_URL` exist only for special deployments such as proxies and testing; leave them unset in normal operation.
 

@@ -77,16 +77,6 @@ jobs:
           ref: ${{ needs.resolve-source.outputs.sha }}
           fetch-depth: 1
 
-      - name: Require the production Clerk publishable key
-        if: ${{ matrix.name == 'web' }}
-        env:
-          CLERK_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
-        run: |
-          if [ -z "${CLERK_KEY:-}" ]; then
-            echo "::error::Missing NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY"
-            exit 1
-          fi
-
       - name: Log in to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
@@ -98,11 +88,9 @@ jobs:
         id: buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
-      # The Dockerfile may use short-lived BuildKit cache mounts for Cargo
-      # downloads and compilation, but this workflow deliberately does not
-      # export a complete server-rs/target tree through actions/cache. The
-      # bounded Cargo/sccache caches in the Rust jobs and exact release
-      # artifacts are the durable CI inputs.
+      # Production builds the current Go server directly from Dockerfile.
+      # BuildKit's Go module cache is an optimization only; the immutable
+      # image digest and source labels are the deployment authority.
 
       - name: Build and publish backend
         if: ${{ matrix.name == 'backend' }}
@@ -141,7 +129,7 @@ jobs:
             org.opencontainers.image.revision=${{ needs.resolve-source.outputs.sha }}
           build-args: |
             NEXT_PUBLIC_APP_VERSION=sha-${{ needs.resolve-source.outputs.sha }}
-            NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+            COMMIT_SHA=${{ needs.resolve-source.outputs.sha }}
             NEXT_PUBLIC_DESKTOP_APP_ORIGIN=${{ vars.NEXT_PUBLIC_DESKTOP_APP_ORIGIN }}
           cache-from: type=gha,scope=production-web-linux-arm64
           cache-to: type=gha,mode=max,scope=production-web-linux-arm64
@@ -161,7 +149,9 @@ jobs:
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ needs.resolve-source.outputs.sha }}
-          build-args: NEXT_PUBLIC_APP_VERSION=sha-${{ needs.resolve-source.outputs.sha }}
+          build-args: |
+            NEXT_PUBLIC_APP_VERSION=sha-${{ needs.resolve-source.outputs.sha }}
+            COMMIT_SHA=${{ needs.resolve-source.outputs.sha }}
           cache-from: type=gha,scope=production-docs-linux-arm64
           cache-to: type=gha,mode=max,scope=production-docs-linux-arm64
           provenance: mode=max
@@ -180,7 +170,9 @@ jobs:
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ needs.resolve-source.outputs.sha }}
-          build-args: NEXT_PUBLIC_APP_VERSION=sha-${{ needs.resolve-source.outputs.sha }}
+          build-args: |
+            NEXT_PUBLIC_APP_VERSION=sha-${{ needs.resolve-source.outputs.sha }}
+            COMMIT_SHA=${{ needs.resolve-source.outputs.sha }}
           cache-from: type=gha,scope=production-auth-broker-linux-arm64
           cache-to: type=gha,mode=max,scope=production-auth-broker-linux-arm64
           provenance: mode=max
@@ -234,12 +226,17 @@ jobs:
           merge-multiple: true
 
       - name: Assemble deployment manifest
-        run: >-
-          node scripts/assemble-production-manifest.mjs
-          /tmp/production-images
-          ${{ needs.resolve-source.outputs.sha }}
-          /tmp/production-manifest.json
-          ${{ github.repository_owner }}
+        run: |
+          set -Eeuo pipefail
+          node scripts/assemble-production-manifest.mjs \
+            /tmp/production-images \
+            ${{ needs.resolve-source.outputs.sha }} \
+            /tmp/production-manifest.json \
+            ${{ github.repository_owner }}
+          (
+            cd /tmp
+            sha256sum production-manifest.json > production-manifest.json.sha256
+          )
 
       - name: Log in to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
@@ -262,7 +259,9 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: production-manifest-${{ needs.resolve-source.outputs.sha }}
-          path: /tmp/production-manifest.json
+          path: |
+            /tmp/production-manifest.json
+            /tmp/production-manifest.json.sha256
           if-no-files-found: error
           retention-days: 1
 
@@ -319,6 +318,12 @@ jobs:
           printf '%s\n' "$DEPLOY_KEY" > "$HOME/.ssh/production_ed25519"
           install -m 0600 /dev/null "$HOME/.ssh/known_hosts"
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+
+      - name: Verify deployment manifest checksum
+        run: |
+          set -Eeuo pipefail
+          cd /tmp/production
+          sha256sum --check production-manifest.json.sha256
 
       - name: Deploy, verify public routes, and roll back on failure
         env:
@@ -411,6 +416,6 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: production-browser-failure-${{ needs.resolve-source.outputs.sha }}
-          path: /tmp/production-browser-failure.png
+          path: ${{ runner.temp }}/production-browser-failure.png
           if-no-files-found: ignore
           retention-days: 1

@@ -7,8 +7,8 @@ In Patchbay, agents do not start work on their own. Every run is triggered by an
 
 | Method | Best for | How |
 | --- | --- | --- |
-| **Assign an issue** | The agent owns this work end to end | [Assign the issue to an agent](/assigning-issues); it starts immediately when the issue is in `todo` or a later status |
-| **@mention in a comment** | Ask an agent to handle one specific request without changing the issue's assignee | [@mention it in a comment](/mentioning-agents), or reply to the agent's comment to continue the conversation |
+| **Set an executor** | The agent executes this work end to end | [Set the issue's executor](/assigning-issues); it starts immediately when the issue is in `todo` or a later status |
+| **@mention in a comment** | Ask an agent to handle one specific request without changing the issue's executor | [@mention it in a comment](/mentioning-agents), or reply to the agent's comment to continue the conversation |
 | **Direct chat** | A question or a quick attempt that does not need an issue | [Start a chat with the agent](/chat); each message triggers one run |
 | **Automation** | Recurring work that should run on a schedule or on external events | [Create an automation](/automations), triggered by a schedule, a webhook, or manually |
 
@@ -16,10 +16,10 @@ All four methods share these rules:
 
 - You can only trigger agents you **have permission to run**, determined by the agent's Access setting — not by your workspace role.
 - Before you trigger from an issue, a **trigger preview** under the input shows exactly who this content will wake; use `/note` to leave a message without triggering any agent.
-- Issues in `backlog` do not trigger runs; move the issue to `todo` and the assigned agent starts.
+- Issues in `backlog` do not trigger runs; move the issue to `todo` and the issue's executor agent starts.
 
 ## Watch progress
 
-Every trigger creates a [task](/tasks). Progress streams back to where you triggered it — the issue's timeline or the chat window; the shared Agent thread shows the run and lets you continue or stop it when the provider session is available.
+Every trigger creates a [task](/tasks). Progress streams back to where you triggered it — the issue's timeline or the chat window; the execution log shows the full run and lets you stop or retry it.
 
 When a run takes long to start, the runtime is usually offline — check the section on tasks that do not start in [Troubleshooting](/troubleshooting).

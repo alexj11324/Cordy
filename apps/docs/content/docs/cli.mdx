@@ -15,6 +15,12 @@ The Patchbay CLI both connects local runtimes and manages workspaces, issues, ag
 curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash
 ```
 
+With Homebrew installed, you can also run:
+
+```bash
+brew install alexj11324/Cordy/patchbay
+```
+
 **Windows PowerShell**
 
 ```powershell
@@ -81,32 +87,32 @@ patchbay workspace member invite admin@example.com --role admin
 ```bash
 # View and search
 patchbay issue list
-patchbay issue get PB-123
+patchbay issue get MUL-123
 patchbay issue search "login failure"
 
 # Create and update
 patchbay issue create --title "Fix login failure"
-patchbay issue status PB-123 in_progress
-patchbay issue update PB-123 --executor "Backend Agent" --no-start
+patchbay issue status MUL-123 in_progress
+patchbay issue assign MUL-123 --to "Backend Agent"  # sets the executor
 
 # Comments and runs
-patchbay issue comment list PB-123
-patchbay issue comment add PB-123 --content "Check the regression tests first"
-patchbay issue runs PB-123
+patchbay issue comment list MUL-123
+patchbay issue comment add MUL-123 --content "Check the regression tests first"
+patchbay issue runs MUL-123
 ```
 
 Read long descriptions or comments from stdin to avoid dealing with newlines and quoting:
 
 ```bash
 patchbay issue create --title "Upgrade notes" --description-stdin < notes.md
-patchbay issue comment add PB-123 --content-stdin < review.md
+patchbay issue comment add MUL-123 --content-stdin < review.md
 ```
 
 View the messages of a single run, or stop a task:
 
 ```bash
-patchbay issue run-messages <task-id> --issue PB-123
-patchbay issue cancel-task <task-id> --issue PB-123
+patchbay issue run-messages <task-id> --issue MUL-123
+patchbay issue cancel-task <task-id> --issue MUL-123
 ```
 
 ## Agents and skills
@@ -156,7 +162,7 @@ See [Daemon and runtimes](/daemon-runtimes) for how it works and for custom prof
 
 | Command | Purpose |
 | --- | --- |
-| `issue` | Create, update, assign, and search issues; manage comments, subscribers, labels, properties, and runs |
+| `issue` | Create, update, set owner/executor/reviewer roles, and search issues; manage comments, subscribers, labels, properties, and runs |
 | `project` | Manage projects and their resources |
 | `label`, `property` | Manage workspace labels and custom properties |
 | `agent`, `skill`, `team` | Manage agents, skills, and teams |
@@ -174,7 +180,7 @@ See [Daemon and runtimes](/daemon-runtimes) for how it works and for custom prof
 
 ## IDs and output formats
 
-Issues use keys like `PB-123` or full UUIDs; short UUID prefixes are not accepted.
+Issues use keys like `MUL-123` or full UUIDs; short UUID prefixes are not accepted.
 
 `list` commands for other resources usually print copyable short IDs and support `--full-id` for the full UUID. When a short ID is ambiguous, the CLI asks for more characters or the full UUID. Short task IDs also require `--issue` to identify the owning issue.
 
@@ -226,15 +232,16 @@ The tables below cover every current top-level command, grouped the way the CLI 
 
 | Command | Subcommand | Purpose | Key flags |
 | --- | --- | --- | --- |
-| `issue` | `list` | List issues | `--status`, `--priority`, `--executor` / `--executor-id`, `--owner` / `--owner-id`, `--project`, `--metadata` (repeatable), `--limit`, `--offset`, `--sort`, `--full-id` |
+| `issue` | `list` | List issues | `--status`, `--priority`, `--owner`, `--owner-id`, `--executor`, `--executor-id`, `--project`, `--metadata` (repeatable), `--limit`, `--offset`, `--sort`, `--full-id` |
 | | `get <id>` | Show a single issue | |
-| | `create` | Create an issue | `--title` (required), `--description` / `--description-stdin` / `--description-file`, `--status`, `--priority`, `--executor` / `--executor-id`, `--owner` / `--owner-id`, `--reviewer` / `--reviewer-id`, `--parent`, `--stage`, `--project`, `--start-date`, `--due-date`, `--attachment` (repeatable) |
-| | `update <id>` | Update issue fields | Same fields as `create`, plus `--position`, `--no-start` |
-| | `assign <id>` | Legacy combined role assignment/clear | `--to`, `--to-id`, `--unassign`, `--no-start` |
+| | `create` | Create an issue | `--title` (required), `--description` / `--description-stdin` / `--description-file`, `--status`, `--priority`, `--owner` / `--owner-id`, `--executor` / `--executor-id`, `--reviewer` / `--reviewer-id`, `--parent`, `--stage`, `--project`, `--start-date`, `--due-date`, `--attachment` (repeatable) |
+| | `update <id>` | Update issue fields | Same role-specific fields as `create`, plus `--position`, `--no-start` |
+| | `assign <id>` | Set or clear the executor | `--to` (fuzzy name match against agents and teams), `--to-id`, `--unassign`, `--no-start` |
 | | `status <id> <status>` | Change status | `--no-start` |
 | | `reorder <id>` | Move within a column | |
 | | `search <query>` | Search issues | `--limit`, `--include-closed` |
 | | `children <id>` | List sub-issues grouped by stage | |
+| | `dependency-graph get <id>` / `apply <parent-id>` | Read or atomically apply a typed dependency graph | `get`: `--output`; `apply`: `--idempotency-key`, `--plan-file` / `--plan-stdin`, `--allow-external-file`, `--output` |
 | | `pull-requests <id>` | List linked PRs | |
 | | `comment list/add/delete/resolve/unresolve` | Manage comments | `add`: `--content` / `--content-stdin` / `--content-file`, `--parent`, `--attachment`; `list`: `--since`, `--thread`, `--tail` |
 | | `subscriber list/add/remove <issue-id>` | Manage subscribers | `--user`, `--user-id` (defaults to the current user) |
@@ -244,7 +251,7 @@ The tables below cover every current top-level command, grouped the way the CLI 
 | | `runs <issue-id>` | View run history | `--full-id` |
 | | `run-messages <task-id>` | View the messages of a single run | `--since`, `--issue` |
 | | `usage <issue-id>` | View aggregated token usage | |
-| | `rerun <id>` | Re-enqueue a run for the current assignee | |
+| | `rerun <id>` | Re-enqueue a run for the current executor | |
 | | `cancel-task <task-id>` | Cancel a running or queued task | `--issue` |
 | `project` | `list/get/create/update/delete` | Manage projects | |
 | | `status <id> <status>` | Change project status | |
@@ -258,7 +265,7 @@ The tables below cover every current top-level command, grouped the way the CLI 
 | | `env get/set <agent-id>` | Read and write custom environment variables (owner and admin only) | |
 | | `skills list/set/add <agent-id>` | Manage attached skills | `--skill-ids` (`set` replaces the full list, `add` appends) |
 | | `mcp list/add/enable/disable/remove <agent-id>` | Assign workspace MCP servers to this agent | Take the server id from `workspace mcp list`. A library entry does nothing until it is added here; `disable` stops sending it without dropping the assignment |
-| `automation` | `list/get/create/update/delete` | Manage automations | `create`: `--title`, `--agent`, `--mode` (all required), `--priority`, `--project`, `--subscriber` (repeatable) |
+| `automation` | `list/get/create/update/delete` | Manage automations | `create`: `--title`, `--agent`, `--mode` (all required), `--project`, `--subscriber` (repeatable) |
 | | `trigger <id>` | Trigger a run manually | |
 | | `runs <id>` | View run history | |
 | | `trigger-add/trigger-update/trigger-delete/trigger-rotate-url` | Manage schedule and webhook triggers | |
@@ -300,14 +307,33 @@ The tables below cover every current top-level command, grouped the way the CLI 
 | `update` | — | Update the CLI to the latest version | |
 | `version` | — | Print version information | `--output` (`text` or `json`) |
 
+## Dependency graph commands
+
+Use a typed plan when a parent issue is split into tasks with hard prerequisites:
+
+```bash
+patchbay issue dependency-graph get MUL-123 --output table
+patchbay issue dependency-graph apply MUL-123 \
+  --idempotency-key plan-mul-123-v1 --plan-file ./dependency-plan.json
+cat dependency-plan.json | patchbay issue dependency-graph apply MUL-123 \
+  --idempotency-key plan-mul-123-v1 --plan-stdin --output json
+```
+
+The plan's current role contract is explicit: `owner` is a workspace member;
+`executor` and `candidate_executors` are agents or teams; `reviewer` may be a
+member, agent, or team. The server validates the plan and derives `waves`;
+`get` and successful `apply` return the parent, children, nodes, edges, and
+readiness `unlock_condition`. Reusing the idempotency key replays the same
+plan. Graph mutations publish `dependency_graph:updated` for connected clients.
+
 ## Driving Patchbay from another coding agent
 
 If most of your work already happens inside Codex, Claude Code, or Cursor, you can
 operate Patchbay from there instead of switching to a terminal. The
-[Patchbay CLI skill](https://github.com/alexj11324/Cordy/tree/main/server-rs/crates/patchbay-cli) teaches those agents
+[Patchbay CLI skill](https://github.com/patchbay-ai/patchbay-cli) teaches those agents
 to drive the commands on this page safely: reading issues and comment threads
 without burning tokens, writing comments through a file, and handling the side
-effects that mentions, status changes, and assignments carry.
+effects that mentions, status changes, and owner/executor/reviewer changes carry.
 
 It runs entirely through your authenticated CLI and grants no access of its own —
 permissions still come from your login, selected profile, and workspace. It requires
@@ -317,7 +343,7 @@ Markdown instructions.
 
 ## Next steps
 
-- [Patchbay CLI skill](https://github.com/alexj11324/Cordy/tree/main/server-rs/crates/patchbay-cli) — operate Patchbay from Codex, Claude Code, or Cursor.
+- [Patchbay CLI skill](https://github.com/patchbay-ai/patchbay-cli) — operate Patchbay from Codex, Claude Code, or Cursor.
 - [Authentication and tokens](/auth-tokens) — creating, renewing, and revoking PATs.
 - [Troubleshooting](/troubleshooting) — diagnosing command errors and tasks that never start.
 - [Create and configure an agent](/agents-create) — the full semantics of every `agent create` field.

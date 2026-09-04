@@ -11,18 +11,13 @@ spec:
   replicas: {{ .Values.frontend.replicas }}
   selector:
     matchLabels:
-      {{- include "patchbay.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/name: patchbay
+      app.kubernetes.io/instance: {{ .Release.Name }}
       app.kubernetes.io/component: frontend
   template:
     metadata:
-      annotations:
-        # existingSecret is created out-of-band (not a chart template), so
-        # checksum the live object to roll frontend pods when the Clerk secret
-        # rotates. lookup is empty during helm template/dry-run and resolves
-        # the actual Secret during a real install/upgrade.
-        checksum/secret: {{ (lookup "v1" "Secret" .Release.Namespace (include "patchbay.existingSecret" .)).data | toYaml | sha256sum }}
       labels:
-        {{- include "patchbay.podLabels" . | nindent 8 }}
+        {{- include "patchbay.labels" . | nindent 8 }}
         app.kubernetes.io/component: frontend
     spec:
       containers:
@@ -39,6 +34,10 @@ spec:
               value: "3000"
             - name: REMOTE_API_URL
               value: {{ $remoteApiUrl | quote }}
+            {{- if .Values.frontend.config.clerkPublishableKey }}
+            - name: PATCHBAY_CLERK_PUBLISHABLE_KEY
+              value: {{ .Values.frontend.config.clerkPublishableKey | quote }}
+            {{- end }}
             {{- if .Values.frontend.config.docsUrl }}
             - name: DOCS_URL
               value: {{ .Values.frontend.config.docsUrl | quote }}
@@ -51,20 +50,6 @@ spec:
             - name: NEXT_PUBLIC_WS_URL
               value: {{ .Values.frontend.config.publicWsUrl | quote }}
             {{- end }}
-            - name: CLERK_SECRET_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "patchbay.existingSecret" . }}
-                  key: CLERK_SECRET_KEY
-                  optional: true
-            {{- if .Values.frontend.config.clerkPublishableKey }}
-            - name: NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
-              value: {{ .Values.frontend.config.clerkPublishableKey | quote }}
-            {{- end }}
-            - name: NEXT_PUBLIC_CLERK_SIGN_IN_URL
-              value: {{ .Values.frontend.config.clerkSignInUrl | quote }}
-            - name: NEXT_PUBLIC_CLERK_SIGN_UP_URL
-              value: {{ .Values.frontend.config.clerkSignUpUrl | quote }}
           resources:
             {{- toYaml .Values.frontend.resources | nindent 12 }}
       {{- with .Values.frontend.affinity }}
@@ -86,7 +71,8 @@ metadata:
 spec:
   type: ClusterIP
   selector:
-    {{- include "patchbay.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/name: patchbay
+    app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/component: frontend
   ports:
     - port: 3000

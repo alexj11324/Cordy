@@ -21,7 +21,7 @@ export function buildDesktopHandoffQuery(
 
 /**
  * Accept only renderer-generated URL-safe state and PKCE values before
- * starting a provider redirect. The Rust redeem endpoint remains the final
+ * starting a provider redirect. The Go redeem endpoint remains the final
  * authority for the PKCE proof.
  */
 export function readDesktopHandoffBinding(
@@ -29,7 +29,7 @@ export function readDesktopHandoffBinding(
 ): DesktopHandoffBinding | null {
   if (searchParams.get("platform") !== "desktop") return null;
   // The callback protocol is registered by the authenticated desktop directly
-  // with Rust. Browser parameters are never a source of callback authority.
+  // with Go. Browser parameters are never a source of callback authority.
   if (searchParams.has("app_origin")) return null;
   const codeChallenge = searchParams.get("code_challenge") ?? "";
   const state = searchParams.get("state") ?? "";

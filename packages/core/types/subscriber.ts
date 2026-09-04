@@ -1,6 +1,6 @@
 /**
  * Why someone is subscribed to an issue. `delegated` means an agent created
- * the issue on this member's behalf (PB-5483) — they never touched it
+ * the issue on this member's behalf (MUL-5483) — they never touched it
  * themselves, so the UI has to explain the subscription, and delivery for it
  * is narrower than for the direct reasons.
  *
@@ -10,14 +10,14 @@
  */
 export type IssueSubscriberReason =
   | "creator"
-  | "assignee"
+  | "owner"
+  | "executor"
+  | "reviewer"
   | "commenter"
   | "mentioned"
   | "manual"
   | "automation"
-  | "delegated"
-  | "executor"
-  | "owner";
+  | "delegated";
 
 export interface IssueSubscriber {
   issue_id: string;

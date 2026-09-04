@@ -181,7 +181,7 @@ describe("AgentLivePeekCard", () => {
     ];
     mockIssue.current = {
       id: "issue-42",
-      identifier: "PB-42",
+      identifier: "MUL-42",
       title: "Wire up live peek",
     };
     mockPresence.current = {
@@ -196,7 +196,7 @@ describe("AgentLivePeekCard", () => {
 
     expect(screen.getByText("Working")).toBeInTheDocument();
     // identifier + title both render under the same link.
-    const link = screen.getByRole("link", { name: /PB-42/ });
+    const link = screen.getByRole("link", { name: /MUL-42/ });
     expect(link).toHaveAttribute("href", "/test/issues/issue-42");
     expect(link.textContent).toContain("Wire up live peek");
   });

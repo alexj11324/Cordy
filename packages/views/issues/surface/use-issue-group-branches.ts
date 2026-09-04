@@ -26,6 +26,7 @@ import type {
   IssueTableQuerySpec,
   IssueTableRowsResponse,
 } from "@patchbay/core/types";
+import { getIssueExecutor } from "../utils/issue-executor";
 
 export interface IssueGroupPageState {
   total: number;
@@ -97,7 +98,7 @@ function issueMatchesDescriptor(
    * the status key itself. A category cell holds every custom status in it, so
    * matching on the raw key would drop exactly the cards the category contract
    * exists to deliver — `qa !== "in_review"` threw the QA card away after the
-   * server correctly returned it. (PB-6243)
+   * server correctly returned it. (MUL-6243)
    */
   secondaryIsCategory: boolean,
 ) {
@@ -110,11 +111,14 @@ function issueMatchesDescriptor(
   }
   const owner = primary?.value ?? value;
   switch (owner.kind) {
-    case "executor":
+    case "executor": {
+      const executor = getIssueExecutor(issue);
       return owner.actor
-        ? issue.executor_type === owner.actor.type &&
-            issue.executor_id === owner.actor.id
-        : issue.executor_type === null && issue.executor_id === null;
+        ? executor !== null &&
+            executor.type === owner.actor.type &&
+            executor.id === owner.actor.id
+        : executor === null;
+    }
     case "project":
       return issue.project_id === owner.project_id;
     case "parent":

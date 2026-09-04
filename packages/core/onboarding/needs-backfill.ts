@@ -14,7 +14,7 @@ import type { QuestionnaireAnswers } from "./types";
 export const SOURCE_BACKFILL_MAX_DISMISSALS = 3;
 
 /**
- * Minimum number of issues completed by an AI executor (agent or
+ * Minimum number of issues completed by an AI assignee (agent or
  * team) in the current workspace before the source prompt may open.
  *
  * Source is not asked during onboarding at all — attribution is a

@@ -3,7 +3,7 @@
  * (drives a native iOS ActionSheetIOS) and `isPressed` (drives the
  * caller's highlight ring while the sheet is on screen).
  *
- * iOS-native first per apps/mobile/AGENTS.md §UI components → waterfall
+ * iOS-native first per apps/mobile/CLAUDE.md §UI components → waterfall
  * step 1: `ActionSheetIOS.showActionSheetWithOptions`. Zero custom
  * layout, zero animation, zero overflow math, zero new deps.
  *
@@ -13,7 +13,7 @@
  * Mirrors `useCommentLongPress` in `components/issue/comment-context-
  * menu.tsx` — kept as a sibling rather than a shared primitive because
  * we have only 2 callers (chat + comments). Below the "3 callers + no
- * native alternative" threshold in apps/mobile/AGENTS.md.
+ * native alternative" threshold in apps/mobile/CLAUDE.md.
  */
 import { useCallback, useState } from "react";
 import { ActionSheetIOS } from "react-native";
@@ -21,11 +21,13 @@ import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import type { ChatMessage } from "@patchbay/core/types";
 import { useChatSelectStore } from "@/data/chat-select-store";
+import { useChatCopy } from "@/lib/use-chat-copy";
 
 export function useChatMessageLongPress(
   message: ChatMessage,
 ): { onLongPress: () => void; isPressed: boolean } {
   const [isPressed, setIsPressed] = useState(false);
+  const copy = useChatCopy();
 
   const onLongPress = useCallback(() => {
     const hasContent = !!message.content;
@@ -46,10 +48,10 @@ export function useChatMessageLongPress(
     };
 
     if (hasContent) {
-      push("Copy", { kind: "copy" });
-      push("Select Text", { kind: "select" });
+      push(copy.longPress.copy, { kind: "copy" });
+      push(copy.longPress.selectText, { kind: "select" });
     }
-    push("Cancel", { kind: "cancel" });
+    push(copy.longPress.cancel, { kind: "cancel" });
 
     const cancelButtonIndex = options.length - 1;
 
@@ -75,7 +77,7 @@ export function useChatMessageLongPress(
         }
       },
     );
-  }, [message]);
+  }, [copy, message]);
 
   return { onLongPress, isPressed };
 }

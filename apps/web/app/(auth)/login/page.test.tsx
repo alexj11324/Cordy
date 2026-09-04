@@ -293,7 +293,7 @@ describe("LoginPage", () => {
     );
   });
 
-  it("waits for the current Clerk identity to finish the Rust session exchange", async () => {
+  it("waits for the current Clerk identity to finish the Go session exchange", async () => {
     search.current =
       "platform=desktop&code_challenge=challenge-value&state=opaque-state";
     authState.current = { isLoaded: true, isSignedIn: true, getToken: vi.fn() };

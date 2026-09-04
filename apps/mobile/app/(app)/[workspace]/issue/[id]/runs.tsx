@@ -104,7 +104,6 @@ export default function IssueRunsRoute() {
     </View>
   );
 }
-
 function openTaskThread(
   workspace: string | null,
   issueId: string,

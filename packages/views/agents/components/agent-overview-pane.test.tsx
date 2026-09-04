@@ -144,6 +144,7 @@ function renderPane(
     back: vi.fn(),
     pathname: "/acme/agents/agent-1",
     searchParams: new URLSearchParams(),
+    hash: "",
     getShareableUrl: (path) => path,
   };
   return render(
@@ -189,6 +190,7 @@ describe("AgentOverviewPane MCP tab visibility", () => {
     ["Kiro", "kiro"],
     ["OpenCode", "opencode"],
     ["OpenClaw", "openclaw"],
+    ["Oh My Pi", "omp"],
   ])("renders the MCP tab when the agent runs on the %s runtime", (_label, provider) => {
     renderPane([makeRuntime(provider)]);
     openCapabilities();
@@ -275,7 +277,7 @@ describe("AgentOverviewPane Environment tab visibility", () => {
 
   it("hides the Environment tab from users who cannot manage the agent", () => {
     // The env endpoints admit the agent owner or a workspace owner/admin
-    // (PB-5438) — the rule `canEdit` already encodes. Anyone else who opens
+    // (MUL-5438) — the rule `canEdit` already encodes. Anyone else who opens
     // the tab hits a guaranteed 403 on "Reveal & edit".
     renderPane([makeRuntime("claude")], { canEdit: false });
     openSettings();

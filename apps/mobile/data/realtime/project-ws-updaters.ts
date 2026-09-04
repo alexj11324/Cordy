@@ -6,7 +6,7 @@
  * Why mobile-owned (and not importing from packages/core/projects):
  *   - Web doesn't have project ws-updaters yet — it invalidates via the
  *     query cache mutation surface. Mobile must patch (cellular-data rule
- *     in apps/mobile/AGENTS.md realtime § "Patch over invalidate").
+ *     in apps/mobile/CLAUDE.md realtime § "Patch over invalidate").
  *   - Even when web adds them, mobile keys come from its own
  *     `data/queries/projects.ts` factory; binding to a foreign factory
  *     would silently drift on key-shape changes.

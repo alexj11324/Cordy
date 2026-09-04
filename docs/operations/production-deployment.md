@@ -10,18 +10,18 @@ revision. Completion means all of the following are true:
    that same full SHA and published by immutable digest.
 3. The restricted server gateway accepted that SHA as the current remote
    `main`, deployed the four digests, and retained the preceding manifest.
-4. The API reports `server_version=sha-<full-sha>`; Web, Docs, and Auth Broker
-   report `X-Patchbay-Build: sha-<full-sha>`.
+4. The Go API, Web, Docs, and Accounts Auth Broker all report
+   `X-Patchbay-Build: sha-<full-sha>` and
+   `X-Patchbay-Commit: <full-sha>`.
 5. `/login` and `/docs` render with HTTP 200 through the public domain; API
    config and readiness routes return 200; the Accounts OAuth entry remains
    reachable.
-6. A real headless Chromium session starts a valid desktop Google OAuth handoff,
-   registers the attempt through the Rust API, and reaches `accounts.google.com`.
-   It then signs in as the dedicated synthetic user, exchanges Clerk for the
-   normal HttpOnly application session, and renders
-   `/production-smoke/issues` plus `/production-smoke/task-graph` at the exact
-   deployed Web SHA without a redirect, page exception, failed first-party
-   request, or server error. The task graph canvas itself must become visible.
+6. A real headless Chromium session starts directly at
+   `accounts.aspectlylabs.com/oauth/google`, registers the PKCE/state-bound
+   attempt through the Go API, and reaches `accounts.google.com`. A separate
+   single-use synthetic Clerk ticket completes the Accounts broker flow, redeems
+   the resulting one-time code through the Go API, and renders an authenticated
+   product route at the exact deployed Web build and commit.
 
 A merged PR, green image build, healthy Accounts domain, or successful SSH
 command alone does not satisfy this acceptance contract.
@@ -42,7 +42,7 @@ merge to main
 ```
 
 The matrix is only scheduling parallelism. It has no changed-path filter and no
-partial-image input. Incremental BuildKit and Cargo caches are performance
+partial-image input. Incremental BuildKit and Go module caches are performance
 optimizations; every run still executes each production Dockerfile.
 
 `workflow_run` is accepted only when the upstream workflow is `CI`, the event
@@ -68,7 +68,7 @@ with OpenSSH `restrict` plus a forced command, so it cannot open a shell,
 forward ports, copy files, or choose a server command. The forced command is
 the root-owned `/usr/local/bin/patchbay-production-deploy` gateway.
 
-The existing `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` build secret is also supplied
+The existing `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` environment secret is supplied
 to the browser verifier. The Clerk secret key stays only in the server's
 mode-0600 environment snapshot. After a successful local apply, the gateway
 uses it to issue one single-use five-minute sign-in ticket and one short-lived
@@ -94,19 +94,11 @@ has no digest) so the first automatic deployment also has a rollback target.
 Re-running the installer validates and preserves existing deployment history
 instead of bootstrapping over it.
 
-Provision the dedicated synthetic identity and its isolated empty workspace
-once before enabling automatic deployment. `--provision` is deliberately a
-separate operator action; normal deployments are read-only with respect to the
-fixture and fail closed if it was removed. Pipe a JSON object containing the
-server's `clerk_secret_key` and `clerk_publishable_key` to:
-
-```bash
-node scripts/verify-production-browser.mjs --provision
-```
-
-Do not put either value on a command line or in a repository file. The
-provisioner creates or reuses only `production-smoke@aspectlylabs.com` and the
-`production-smoke` workspace, then marks that synthetic account onboarded.
+Provision `production-smoke@aspectlylabs.com` once in the production Clerk
+instance before enabling automatic deployment. It must remain a dedicated
+synthetic formal user. No Clerk secret, testing token, sign-in ticket, JWT, or
+PKCE verifier belongs in a command line or repository file. Normal deployment
+creates only short-lived credentials and does not persist them in GitHub.
 
 That bootstrap target is checked for service readiness only, because it may
 predate this pipeline's complete acceptance contract (and may be the broken
@@ -148,8 +140,9 @@ After a successful state transition, the gateway keeps only the current and
 immediately preceding detached release worktrees. Older release worktrees are
 removed through the bare repository; compact JSON history remains for audit.
 
-Backend is made ready before Web, so migrations finish before new Web traffic.
-Every image update is followed by local readiness and version probes. If any
+The Go backend is made ready before Web, so migrations finish before new Web
+traffic. Every image update is followed by local readiness, build, and commit
+probes. If any
 command, local probe, or short-lived browser credential request fails, the
 gateway immediately reapplies the preceding manifest. If the later public or
 authenticated-browser probes fail, GitHub Actions sends a separate rollback
@@ -162,6 +155,26 @@ application image. Automatic image rollback cannot reverse a destructive
 schema migration safely; such a migration requires a separately reviewed
 expand/migrate/contract sequence.
 
+## Runtime and edge secrets
+
+The installer snapshots existing container configuration rather than inventing
+or rotating production credentials. Before bootstrap, the running Go backend
+must already have its database/JWT settings and Clerk authority configured,
+including `CLERK_SECRET_KEY`, `CLERK_JWT_KEY`, `CLERK_ISSUER`,
+`CLERK_AUTHORIZED_PARTIES=https://accounts.aspectlylabs.com`, and the shared
+`PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN`. The public URL settings are:
+
+- `PATCHBAY_PUBLIC_URL=https://api.aspectlylabs.com`
+- `PATCHBAY_APP_URL=https://patchbay.aspectlylabs.com`
+- `FRONTEND_ORIGIN=https://patchbay.aspectlylabs.com`
+
+The Accounts broker requires `CLERK_PUBLISHABLE_KEY`,
+`PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN`, and `PATCHBAY_ORIGIN_AUTH_TOKEN`.
+Cloudflare stores the same origin token as `ORIGIN_AUTH_TOKEN`; it is never
+forwarded to the broker. The private
+`accounts-origin.aspectlylabs.com` transport remains Cloudflare-only and is
+not a fourth product endpoint.
+
 ## Legacy infrastructure identities
 
 Two narrowly scoped legacy identities remain: the current GitHub repository
@@ -169,9 +182,16 @@ identity used by the gateway allow-list, and the existing production Compose
 project/container names used to reattach the live database and upload volumes.
 The platform owner owns both residuals. The repository literals are deleted
 only after an approved GitHub repository rename; the Compose/container literals
-are deleted only after a separately reviewed, backed-up volume migration. The
-legacy-marker CI check and the gateway bootstrap/deployment contracts verify
-that no unlisted product-facing legacy spelling is introduced.
+are deleted only after a separately reviewed, backed-up volume migration.
+
+What holds those residuals in place is narrow and worth stating precisely,
+because there is no repository-wide legacy-spelling scanner. The gateway's
+allow-lists reject any repository, registry, or image name outside the four
+pinned `ghcr.io/alexj11324/patchbay-*` entries, and
+`scripts/production-deployment-contract.test.mjs` asserts that neither the
+production workflow nor the origin Nginx map mentions a `patchbay.ai` domain.
+Both are enforced by the `production-delivery` CI job. A legacy spelling
+introduced anywhere else in the tree is not caught automatically.
 
 ## Main checkout and active tasks after merge
 
@@ -187,3 +207,34 @@ an informational event containing the PR number, merge commit, and old/new
 new tasks start from the new baseline. GitHub Actions cannot directly reach an
 offline developer checkout or the Codex desktop thread API, so this final local
 handoff is an agent/runtime responsibility rather than an SSH deployment step.
+
+## What automation proves, and what it cannot
+
+The `production-delivery` job in `CI` runs the deployment path's contract
+suites on every change: `node --test` over the manifest assembler, the
+workflow/Dockerfile/Nginx/gateway contract, and both verifiers' pure logic,
+plus `python3 -m unittest` over the restricted origin gateway. Those suites use
+only the Node and Python standard libraries. They deliberately assert no
+network behavior, so a green `production-delivery` proves the pipeline is
+internally consistent -- not that a deployment works.
+
+The following steps are provable only against the real production
+Environment, because each needs a credential or a host that does not exist
+outside it. Each fails loudly rather than degrading to a simulated success:
+
+- GHCR publication and digest resolution: needs `packages: write` on a real
+  runner. `assemble-production-manifest.mjs` rejects a missing or mismatched
+  image record; the workflow rejects any digest that is not
+  `sha256:<64 hex>`.
+- The SSH deployment itself: needs `PRODUCTION_SSH_*`. The workflow exits
+  non-zero on any missing secret before it opens a connection, and pins
+  `StrictHostKeyChecking=yes`.
+- The gateway's local apply and probes: need Docker, the live Compose
+  projects, and the mode-0600 environment snapshot. `--check` refuses to run
+  before `--bootstrap` rather than assuming a default.
+- The browser acceptance run: needs the production Clerk instance, the
+  `production-smoke@aspectlylabs.com` user, and
+  `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`. `verify-production-browser.mjs`
+  validates the publishable key and the deployment receipt before it launches
+  Chromium, so a missing credential fails immediately instead of producing a
+  browser session that silently proves nothing.

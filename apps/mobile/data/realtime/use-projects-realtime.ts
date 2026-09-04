@@ -11,7 +11,7 @@
  *   - reconnect       → invalidate project list (we may have missed
  *                       create/delete events while disconnected).
  *
- * Per the patch-over-invalidate rule in apps/mobile/AGENTS.md "Realtime →
+ * Per the patch-over-invalidate rule in apps/mobile/CLAUDE.md "Realtime →
  * Patch over invalidate (cellular-data rule)", every event with a full
  * payload patches the cache directly.
  */

@@ -1,20 +1,9 @@
-import type { SVGProps } from "react";
-
-export function WeixinMark(props: SVGProps<SVGSVGElement>) {
+/** The Weixin mark, kept as a small currentColor SVG for light/dark themes. */
+export function WeixinMark({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" {...props}>
-      <path
-        fill="#07C160"
-        d="M9.4 3C4.8 3 1 6.1 1 9.9c0 2.2 1.3 4.2 3.4 5.5l-.8 2.5 2.9-1.5c.9.3 1.9.4 2.9.4h.5a6.1 6.1 0 0 1-.3-1.8c0-3.7 3.6-6.7 8-6.7h.5C17.2 5.3 13.7 3 9.4 3Z"
-      />
-      <path
-        fill="#07C160"
-        d="M23 15c0-3.2-3.2-5.8-7.1-5.8S8.8 11.8 8.8 15s3.2 5.8 7.1 5.8c.9 0 1.7-.1 2.5-.4l2.5 1.3-.7-2.2C21.9 18.4 23 16.8 23 15Z"
-      />
-      <circle cx="6.7" cy="9" r="1" fill="white" />
-      <circle cx="12.1" cy="9" r="1" fill="white" />
-      <circle cx="13.5" cy="14.3" r=".8" fill="white" />
-      <circle cx="18.2" cy="14.3" r=".8" fill="white" />
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={className} fill="currentColor">
+      <path d="M10.1 4C5.63 4 2 6.8 2 10.26c0 1.96 1.1 3.75 2.9 4.93l-.7 2.58 2.6-1.38c.96.3 2.03.47 3.3.47.36 0 .72-.02 1.07-.05-.1-.34-.15-.7-.15-1.07 0-2.98 2.9-5.4 6.48-5.4.47 0 .94.04 1.38.12C18.36 6.77 14.8 4 10.1 4Zm-2.9 5.14a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8Zm5.8 0a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8Z" />
+      <path d="M17.5 12.04c-2.99 0-5.4 1.77-5.4 3.96 0 2.18 2.41 3.95 5.4 3.95.8 0 1.56-.13 2.23-.36l2.05 1.08-.53-1.94c1.03-.73 1.65-1.7 1.65-2.73 0-2.19-2.42-3.96-5.4-3.96Zm-1.8 3.1a.67.67 0 1 1 0 1.34.67.67 0 0 1 0-1.34Zm3.6 0a.67.67 0 1 1 0 1.34.67.67 0 0 1 0-1.34Z" />
     </svg>
   );
 }

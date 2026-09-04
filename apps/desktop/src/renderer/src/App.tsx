@@ -1,12 +1,26 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { CoreProvider } from "@patchbay/core/platform";
-import { pickLocale, type SupportedLocale } from "@patchbay/core/i18n";
+import type { ClientIdentity } from "@patchbay/core/platform";
+import {
+  pickLocale,
+  type LocaleAdapter,
+  type LocaleResources,
+  type SupportedLocale,
+} from "@patchbay/core/i18n";
+import { I18nProvider } from "@patchbay/core/i18n/react";
 import { useAuthStore } from "@patchbay/core/auth";
 import { useWelcomeStore } from "@patchbay/core/onboarding";
 import { workspaceKeys } from "@patchbay/core/workspace/queries";
 import { useWorkspaceList } from "@patchbay/core/workspace";
-import { api } from "@patchbay/core/api";
+import { api, ApiClient } from "@patchbay/core/api";
 import { useHasOnboarded } from "@patchbay/core/paths";
 import { setCurrentWorkspace } from "@patchbay/core/platform";
 import { ThemeProvider } from "@patchbay/ui/components/common/theme-provider";
@@ -14,6 +28,15 @@ import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
 import { Toaster } from "@patchbay/ui/components/ui/sonner";
 import { DesktopLoginPage } from "./pages/login";
 import { DesktopAuthRecoveryPage } from "./pages/auth-recovery";
+import {
+  completeDesktopHandoff,
+  createDesktopLoginUrl,
+} from "./pages/login-handoff";
+import {
+  GuestSessionRecoveryPage,
+  LocalGuestShell,
+} from "./pages/local-guest";
+import { DesktopEntryPage } from "./pages/desktop-entry";
 import { DesktopShell } from "./components/desktop-layout";
 import { UpdateNotification } from "./components/update-notification";
 import { IssueWindow } from "./components/issue-window";
@@ -22,16 +45,18 @@ import { useWindowOverlayStore } from "./stores/window-overlay-store";
 import { useOpenSettingsShortcut } from "./hooks/use-open-settings-shortcut";
 import { useDaemonIPCBridge } from "./platform/daemon-ipc-bridge";
 import { syncDaemonOnLogin } from "./platform/daemon-login-sync";
-import { reauthenticateDaemon } from "./platform/daemon-reauth";
 import { createDesktopLocaleAdapter } from "./platform/i18n-adapter";
-import { captureEvent } from "@patchbay/core/analytics";
 import { RESOURCES } from "@patchbay/views/locales";
 import { DesktopClientUsageReporter } from "./platform/client-usage-reporter";
 import { DiagnosticRouteReporter } from "./platform/diagnostic-route-reporter";
 import { flushFreezeBreadcrumb } from "./freeze-flush";
 import { DesktopAuthSessionBridge } from "./platform/auth-session-bridge";
-import { completeDesktopHandoff } from "./pages/login-handoff";
-import type { DaemonRecoveryReason } from "../../shared/daemon-types";
+import type { DesktopWindowContext } from "../../shared/issue-window";
+import type { RuntimeConfigResult } from "../../shared/runtime-config";
+import {
+  resolveDesktopStartupMode,
+  type LocalGuestSession,
+} from "../../shared/local-guest";
 
 // BCP-47 region tags for the <html lang> attribute, mirroring
 // apps/web/app/layout.tsx HTML_LANG. index.html ships a static lang="en";
@@ -60,11 +85,6 @@ function useCmdWCloseTab() {
     return window.desktopAPI.onCloseActiveTab(() => {
       if (window.desktopAPI.windowContext?.kind === "issue") {
         window.desktopAPI.closeWindow();
-        return;
-      }
-      const overlay = useWindowOverlayStore.getState();
-      if (overlay.overlay?.type === "settings") {
-        overlay.close();
         return;
       }
       const store = useTabStore.getState();
@@ -105,12 +125,11 @@ function IssueWindowContent() {
   return user ? <IssueWindow context={context} /> : <DesktopLoginPage />;
 }
 
-export function AppContent() {
+function AppContent() {
   const user = useAuthStore((s) => s.user);
   const isLoading = useAuthStore((s) => s.isLoading);
   const authStatus = useAuthStore((s) => s.status);
   const qc = useQueryClient();
-  const isElectronRenderer = window.desktopAPI.host === "electron";
 
   // Deep-link login runs loginWithToken → syncToken → listWorkspaces →
   // setQueryData sequentially. loginWithToken sets user+isLoading=false
@@ -120,25 +139,10 @@ export function AppContent() {
   // finishes, so IndexRedirect gets a definitive workspace state on
   // first render.
   const [bootstrapping, setBootstrapping] = useState(false);
-  const [daemonSyncRetry, setDaemonSyncRetry] = useState(0);
-  const [daemonRecoveryPending, setDaemonRecoveryPending] = useState(false);
-  const [daemonSyncState, setDaemonSyncState] = useState<
-    "idle" | "pending" | "ready" | "error"
-  >(isElectronRenderer ? "pending" : "ready");
-  const [daemonSyncError, setDaemonSyncError] =
-    useState<DaemonRecoveryReason | null>(null);
-  // A ready state is only valid for the exact authenticated identity and
-  // backend target that produced it. Keeping the key beside the state closes
-  // the render/effect gap during account or target switches: the previous
-  // account's ready state cannot mount DesktopShell for even one frame.
-  const [daemonSyncedKey, setDaemonSyncedKey] = useState<string | null>(null);
-  const daemonSyncGeneration = useRef(0);
 
   const runtimeConfig = window.desktopAPI.runtimeConfig.ok
     ? window.desktopAPI.runtimeConfig.config
     : null;
-  const daemonIdentityKey =
-    user && runtimeConfig ? `${user.id}\u0000${runtimeConfig.apiUrl}` : null;
 
   // Tell the main process which backend URL we talk to, so daemon-manager
   // can pick the matching CLI profile (server_url from ~/.patchbay config).
@@ -158,10 +162,8 @@ export function AppContent() {
     });
   }, []);
 
-  // Listen for the PKCE-bound one-time code delivered by the Electron deep
-  // link. daemonAPI.syncToken is handled
-  // separately by the [user] effect below, which fires whenever a user logs
-  // in (handoff, session restore, account switch).
+  // Redeem the PKCE-bound one-time code delivered via the desktop deep link.
+  // daemonAPI.syncToken is handled separately by the [user] effect below.
   useEffect(() => {
     return window.desktopAPI.onAuthHandoff(async ({ code, state }) => {
       setBootstrapping(true);
@@ -185,7 +187,7 @@ export function AppContent() {
         qc.setQueryData(workspaceKeys.list(), wsList);
         return completion.acknowledged;
       } catch {
-        // Token invalid or expired — user stays on login page
+        // Keep transient handoff failures queued for the preload retry signal.
         return acknowledged;
       } finally {
         setBootstrapping(false);
@@ -196,33 +198,10 @@ export function AppContent() {
   // Sync token and start the daemon whenever the user logs in. The ordering
   // inside syncDaemonOnLogin is load-bearing — see that module.
   useEffect(() => {
-    const generation = ++daemonSyncGeneration.current;
-    if (!user) {
-      setDaemonSyncState("idle");
-      setDaemonSyncError(null);
-      setDaemonSyncedKey(null);
-      return;
-    }
-    if (!isElectronRenderer || !runtimeConfig) {
-      setDaemonSyncState("ready");
-      setDaemonSyncError(null);
-      setDaemonSyncedKey(daemonIdentityKey);
-      return;
-    }
+    if (!user || !runtimeConfig) return;
     const token = localStorage.getItem("patchbay_token");
-    if (!token) {
-      // Token-mode Desktop sessions must have a renderer session token so the
-      // main process can mint the Desktop-owned daemon PAT. Do not mount the
-      // shell with a daemon that still belongs to another account.
-      setDaemonSyncState("error");
-      setDaemonSyncError("session_token_missing");
-      setDaemonSyncedKey(daemonIdentityKey);
-      return;
-    }
+    if (!token) return;
     const userId = user.id;
-    setDaemonSyncState("pending");
-    setDaemonSyncError(null);
-    setDaemonSyncedKey(null);
     (async () => {
       try {
         await syncDaemonOnLogin(
@@ -231,36 +210,11 @@ export function AppContent() {
           token,
           userId,
         );
-        if (generation === daemonSyncGeneration.current) {
-          setDaemonSyncState("ready");
-          setDaemonSyncedKey(daemonIdentityKey);
-        }
       } catch (err) {
         console.error("Failed to sync daemon on login", err);
-        if (generation === daemonSyncGeneration.current) {
-          setDaemonSyncState("error");
-          const reason = (err as { reason?: unknown })?.reason;
-          setDaemonSyncError(
-            reason === "auto_start_disabled" ||
-              reason === "cli_not_found" ||
-              reason === "auth_expired" ||
-              reason === "start_failed" ||
-              reason === "not_ready"
-              ? reason
-              : "start_failed",
-          );
-          setDaemonSyncedKey(daemonIdentityKey);
-        }
       }
     })();
-    return () => undefined;
-  }, [
-    user,
-    runtimeConfig,
-    daemonIdentityKey,
-    isElectronRenderer,
-    daemonSyncRetry,
-  ]);
+  }, [user, runtimeConfig]);
 
   // When a user who started the session with zero workspaces creates their
   // first one, restart the daemon so it picks up the new workspace
@@ -366,9 +320,7 @@ export function AppContent() {
     if (!workspaceListReady) return;
     const validSlugs = new Set(workspaces.map((w) => w.slug));
     useTabStore.getState().validateWorkspaceSlugs(validSlugs);
-    useWindowOverlayStore
-      .getState()
-      .validateSettingsWorkspace(validSlugs);
+    useWindowOverlayStore.getState().validateSettingsWorkspace(validSlugs);
     const { activeWorkspaceSlug, switchWorkspace } = useTabStore.getState();
     if (!activeWorkspaceSlug && workspaces.length > 0) {
       switchWorkspace(workspaces[0].slug);
@@ -398,56 +350,11 @@ export function AppContent() {
   if (authStatus === "recovering") {
     return <DesktopAuthRecoveryPage />;
   }
-  const daemonReadyForCurrentIdentity =
-    !isElectronRenderer ||
-    !user ||
-    !runtimeConfig ||
-    (daemonSyncState === "ready" && daemonSyncedKey === daemonIdentityKey);
-  const daemonFailedForCurrentIdentity =
-    !!user &&
-    isElectronRenderer &&
-    !!runtimeConfig &&
-    daemonSyncState === "error" &&
-    daemonSyncedKey === daemonIdentityKey;
-
-  if (
-    isLoading ||
-    bootstrapping ||
-    (user && !daemonReadyForCurrentIdentity && !daemonFailedForCurrentIdentity)
-  ) {
+  if (isLoading || bootstrapping) {
     return (
       <div className="flex h-screen items-center justify-center">
         <PatchbayIcon className="size-6 animate-pulse" />
       </div>
-    );
-  }
-
-  if (user && daemonFailedForCurrentIdentity) {
-    return (
-      <DesktopAuthRecoveryPage
-        onRetry={() => {
-          if (daemonRecoveryPending) return;
-          setDaemonRecoveryPending(true);
-          void (async () => {
-            try {
-              if (daemonSyncError === "cli_not_found") {
-                await window.daemonAPI.retryInstall();
-              } else if (daemonSyncError === "auto_start_disabled") {
-                await window.daemonAPI.setPrefs({ autoStart: true });
-              } else if (daemonSyncError === "auth_expired") {
-                await reauthenticateDaemon();
-              }
-              setDaemonSyncRetry((attempt) => attempt + 1);
-            } catch (error) {
-              console.error("Failed to repair daemon startup", error);
-            } finally {
-              setDaemonRecoveryPending(false);
-            }
-          })();
-        }}
-        isRetrying={daemonRecoveryPending}
-        errorReason={daemonSyncError ?? undefined}
-      />
     );
   }
 
@@ -487,24 +394,106 @@ function BlockingRuntimeConfigError({ message }: { message: string }) {
 // useLogout clears the storage key, but the live stores stay populated until
 // we explicitly reset them here.
 async function handleDaemonLogout() {
-  // The main-process clear-token operation owns one queue transaction: it
-  // stops the current Desktop daemon, then removes its credentials. Keeping
-  // this await before the callback completes prevents a new login from
-  // interleaving between stop and clear. The shared store has already removed
-  // auth, so renderer session publication and local resets belong in finally.
+  // Report synchronously before async daemon cleanup so a rapidly closed main
+  // window cannot leave authenticated issue renderers behind.
+  window.desktopAPI.reportAuthSession?.(null);
+  useTabStore.getState().reset();
+  useWindowOverlayStore.getState().close();
+  // Drop any post-onboarding welcome signal so user B logging in next
+  // doesn't inherit user A's pending modal state.
+  useWelcomeStore.getState().reset();
   try {
     await window.daemonAPI.clearToken();
-  } finally {
-    // Auth has already been cleared by the shared store. Always publish that
-    // state and clear client-owned data, while preserving the cleanup error so
-    // the caller can surface that the old daemon still needs attention.
-    window.desktopAPI.reportAuthSession?.(null);
-    useTabStore.getState().reset();
-    useWindowOverlayStore.getState().close();
-    // Drop any post-onboarding welcome signal so user B logging in next
-    // doesn't inherit user A's pending modal state.
-    useWelcomeStore.getState().reset();
+  } catch {
+    // Best-effort — clearing is followed by stop which also hardens state.
   }
+  try {
+    await window.daemonAPI.stop();
+  } catch {
+    // Daemon may already be stopped.
+  }
+  try {
+    await window.desktopAPI.disableCloudMode();
+  } catch {
+    // Main keeps the cloud mode gate closed even when teardown is best effort.
+  }
+}
+
+type BootState =
+  | { kind: "loading" }
+  | { kind: "entry" }
+  | { kind: "guest"; session: LocalGuestSession }
+  | { kind: "guest-error" }
+  | { kind: "cloud" };
+
+type DesktopCloudAppProps = {
+  identity: ClientIdentity;
+  locale: SupportedLocale;
+  resources: Record<string, LocaleResources>;
+  localeAdapter: LocaleAdapter;
+  runtimeConfigResult: RuntimeConfigResult;
+  windowContext: DesktopWindowContext;
+};
+
+function CloudApp({
+  identity,
+  locale,
+  resources,
+  localeAdapter,
+  runtimeConfigResult,
+  windowContext,
+}: DesktopCloudAppProps) {
+  useOpenSettingsShortcut();
+
+  // Cloud-only failure telemetry. Keeping the analytics import and breadcrumb
+  // flush below this branch means Local Guest boot has no analytics side
+  // effects or reporter subscriptions.
+  useEffect(() => {
+    let cancelled = false;
+    let cleanup: (() => void) | undefined;
+    void import("@patchbay/core/analytics").then(({ captureEvent }) => {
+      if (cancelled) return;
+      cleanup = flushFreezeBreadcrumb({
+        getLastFreeze: () => window.desktopAPI.getLastFreeze(),
+        ackFreeze: (ts) => window.desktopAPI.ackFreeze(ts),
+        capture: captureEvent,
+      });
+    });
+    return () => {
+      cancelled = true;
+      cleanup?.();
+    };
+  }, []);
+
+  if (!runtimeConfigResult.ok) {
+    return (
+      <BlockingRuntimeConfigError message={runtimeConfigResult.error.message} />
+    );
+  }
+  const runtimeConfig = runtimeConfigResult.config;
+
+  return (
+    <CoreProvider
+      apiBaseUrl={runtimeConfig.apiUrl}
+      wsUrl={runtimeConfig.wsUrl}
+      onLogout={windowContext.kind === "main" ? handleDaemonLogout : undefined}
+      identity={identity}
+      locale={locale}
+      resources={resources}
+      localeAdapter={localeAdapter}
+    >
+      <DesktopAuthSessionBridge />
+      {windowContext.kind === "main" && <DiagnosticRouteReporter />}
+      {windowContext.kind === "main" && (
+        <DesktopClientUsageReporter apiUrl={runtimeConfig.apiUrl} />
+      )}
+      {windowContext.kind === "issue" ? (
+        <IssueWindowContent />
+      ) : (
+        <AppContent />
+      )}
+    </CoreProvider>
+  );
 }
 
 export default function App() {
@@ -513,32 +502,17 @@ export default function App() {
   const runtimeConfigResult = window.desktopAPI.runtimeConfig;
   // The fallback keeps renderer HMR safe while a main/preload rebuild is
   // restarting Electron; packaged builds always expose windowContext.
-  const windowContext =
-    window.desktopAPI.windowContext ?? { kind: "main" as const };
-  const isBrowserRenderer = window.desktopAPI.host === "browser";
-  useCmdWCloseTab();
-  // Mounted at the App root for the same reason as Cmd+W: the chord has to
-  // work in every renderer state, not only inside the tab shell.
-  useOpenSettingsShortcut();
+  const windowContext: DesktopWindowContext =
+    window.desktopAPI.windowContext ?? { kind: "main" };
+  // Always "loading": even a dedicated issue window has to ask main which mode
+  // it is in before it may mount anything cloud-shaped.
+  const [bootState, setBootState] = useState<BootState>({ kind: "loading" });
 
-  // Flush a freeze/crash breadcrumb the main process parked from a previous
-  // session. A true hang or process death can't report itself when it happens
-  // (the renderer is blocked or gone), so the main process persists it and we
-  // emit it here on the next boot. The in-thread, recoverable freeze tier is
-  // handled separately by the shared watchdog in CoreProvider.
-  useEffect(
-    () =>
-      flushFreezeBreadcrumb({
-        getLastFreeze: () => window.desktopAPI.getLastFreeze(),
-        ackFreeze: (ts) => window.desktopAPI.ackFreeze(ts),
-        capture: captureEvent,
-      }),
-    [],
-  );
+  useCmdWCloseTab();
 
   // Stable identity reference so downstream effects (WS reconnect) don't
   // tear down on every parent render.
-  const identity = useMemo(
+  const identity = useMemo<ClientIdentity>(
     () => ({ platform: "desktop", version, os }),
     [version, os],
   );
@@ -549,7 +523,7 @@ export default function App() {
     [systemLocale],
   );
   const locale = useMemo(() => pickLocale(localeAdapter), [localeAdapter]);
-  const resources = useMemo(
+  const resources = useMemo<Record<string, LocaleResources>>(
     () => ({ [locale]: RESOURCES[locale] }),
     [locale],
   );
@@ -565,8 +539,8 @@ export default function App() {
 
   // React to OS-level language changes detected by main on focus regain.
   // Only act when the user is following the system signal (no explicit
-  // Settings choice) — otherwise their preference wins. Cross-device sync
-  // for the explicit-choice case is handled inside CoreProvider.
+  // Settings choice) — otherwise their preference wins. Cloud-only locale
+  // synchronization is handled by CoreProvider after this branch.
   useEffect(() => {
     return window.desktopAPI.onSystemLocaleChanged((nextSystemLocale) => {
       if (localeAdapter.getUserChoice()) return;
@@ -581,38 +555,173 @@ export default function App() {
     });
   }, [localeAdapter, locale]);
 
+  const startSignIn = useCallback(async () => {
+    if (!runtimeConfigResult.ok) {
+      throw new Error("Desktop runtime configuration is unavailable");
+    }
+    const runtimeConfig = runtimeConfigResult.config;
+    const handoffClient = new ApiClient(runtimeConfig.apiUrl);
+    const loginUrl = await createDesktopLoginUrl(
+      runtimeConfig.accountsUrl,
+      (state, codeChallenge) =>
+        handoffClient.initiateDesktopAuthHandoff(state, codeChallenge),
+    );
+    const result = await window.desktopAPI.enableCloudMode();
+    if (!result.ok) {
+      throw new Error(`Unable to enable cloud mode: ${result.reason}`);
+    }
+    try {
+      await window.desktopAPI.openExternal(loginUrl);
+    } catch (error) {
+      await window.desktopAPI.disableCloudMode().catch(() => undefined);
+      throw error;
+    }
+    setBootState({ kind: "cloud" });
+  }, [runtimeConfigResult]);
+
+  const enterGuest = useCallback((session: LocalGuestSession) => {
+    setBootState({ kind: "guest", session });
+  }, []);
+
+  const exitGuest = useCallback(async () => {
+    const result = await window.desktopAPI.clearGuestSession();
+    if (!result.ok) {
+      throw new Error(`Unable to clear Guest session: ${result.reason}`);
+    }
+    setBootState({ kind: "entry" });
+  }, []);
+
+  const switchGuestToCloud = useCallback(async () => {
+    const result = await window.desktopAPI.switchGuestToCloud();
+    if (!result.ok) {
+      throw new Error(`Unable to switch to cloud mode: ${result.reason}`);
+    }
+    setBootState({ kind: "cloud" });
+  }, []);
+
+  // Guest discovery is the only pre-CoreProvider boot work. It reads only the
+  // main-owned local Guest file; token/profile state is deliberately untouched.
+  useEffect(() => {
+    if (windowContext.kind === "issue") {
+      let active = true;
+      void window.desktopAPI
+        .getGuestMode()
+        .then((mode) => {
+          if (!active) return;
+          if (mode === "cloud") {
+            setBootState({ kind: "cloud" });
+          } else {
+            // Dedicated issue renderers have no Guest surface. Closing from
+            // main is the fail-closed path; this branch is only a short-lived
+            // fallback while Chromium tears the window down.
+            window.desktopAPI.closeWindow();
+          }
+        })
+        .catch(() => {
+          if (active) window.desktopAPI.closeWindow();
+        });
+      return () => {
+        active = false;
+      };
+    }
+    let active = true;
+    void window.desktopAPI
+      .getGuestSession()
+      .then(async (result) => {
+        if (!active) return;
+        const startupMode = resolveDesktopStartupMode(
+          result,
+          Boolean(localStorage.getItem("patchbay_token")),
+        );
+        if (startupMode === "guest-error") {
+          setBootState({ kind: "guest-error" });
+        } else if (startupMode === "guest" && result.ok && result.session) {
+          setBootState({ kind: "guest", session: result.session });
+        } else if (startupMode === "cloud") {
+          // Preserve the established Desktop behavior for an existing cloud
+          // session. Guest state wins above; only a machine without a Guest
+          // session may reactivate cloud services automatically.
+          const cloudResult = await window.desktopAPI.enableCloudMode();
+          if (!active) return;
+          setBootState(
+            cloudResult.ok ? { kind: "cloud" } : { kind: "entry" },
+          );
+        } else {
+          setBootState({ kind: "entry" });
+        }
+      })
+      .catch(() => {
+        if (active) setBootState({ kind: "guest-error" });
+      });
+    return () => {
+      active = false;
+    };
+  }, [windowContext.kind]);
+
+  useEffect(() => {
+    return window.desktopAPI.onGuestModeChanged((mode) => {
+      if (windowContext.kind === "issue") {
+        if (mode !== "cloud") window.desktopAPI.closeWindow();
+        return;
+      }
+      if (mode === "cloud") {
+        setBootState({ kind: "cloud" });
+      } else if (mode === "undecided") {
+        setBootState({ kind: "entry" });
+      }
+    });
+  }, [windowContext.kind]);
+
+  const localContent = (() => {
+    switch (bootState.kind) {
+      case "loading":
+        return (
+          <div className="flex h-screen items-center justify-center">
+            <PatchbayIcon className="size-6 animate-pulse" />
+          </div>
+        );
+      case "entry":
+        return (
+          <DesktopEntryPage
+            onSignIn={startSignIn}
+            onGuestSession={enterGuest}
+          />
+        );
+      case "guest":
+        return (
+          <LocalGuestShell
+            session={bootState.session}
+            onSwitchToCloud={switchGuestToCloud}
+            onExit={exitGuest}
+          />
+        );
+      case "guest-error":
+        return <GuestSessionRecoveryPage onReset={exitGuest} />;
+      case "cloud":
+        return null;
+    }
+  })();
+
   return (
     <ThemeProvider>
-      {runtimeConfigResult.ok ? (
-        <CoreProvider
-          apiBaseUrl={runtimeConfigResult.config.apiUrl}
-          wsUrl={runtimeConfigResult.config.wsUrl}
-          onLogout={
-            windowContext.kind === "main" ? handleDaemonLogout : undefined
-          }
+      {bootState.kind === "cloud" ? (
+        <CloudApp
           identity={identity}
           locale={locale}
           resources={resources}
           localeAdapter={localeAdapter}
-        >
-          <DesktopAuthSessionBridge />
-          {windowContext.kind === "main" && <DiagnosticRouteReporter />}
-          {windowContext.kind === "main" && !isBrowserRenderer && (
-            <DesktopClientUsageReporter
-              apiUrl={runtimeConfigResult.config.apiUrl}
-            />
-          )}
-          {windowContext.kind === "issue" ? (
-            <IssueWindowContent />
-          ) : (
-            <AppContent />
-          )}
-        </CoreProvider>
+          runtimeConfigResult={runtimeConfigResult}
+          windowContext={windowContext}
+        />
       ) : (
-        <BlockingRuntimeConfigError message={runtimeConfigResult.error.message} />
+        <I18nProvider locale={locale} resources={resources}>
+          {localContent}
+        </I18nProvider>
       )}
       <Toaster />
-      {windowContext.kind === "main" && <UpdateNotification />}
+      {bootState.kind === "cloud" && windowContext.kind === "main" && (
+        <UpdateNotification />
+      )}
     </ThemeProvider>
   );
 }

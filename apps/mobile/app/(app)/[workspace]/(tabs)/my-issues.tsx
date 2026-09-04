@@ -1,16 +1,18 @@
 /**
- * "My Issues" tab. Three scopes — assigned / created / agents — mirroring
+ * "My Issues" tab. Three scopes — owned / created / agents — mirroring
  * web's `packages/views/my-issues/components/my-issues-page.tsx:48-65`. The
- * `agents` scope label is "Agents and Teams" because the backend predicate
- * (`involves_user_id`, PB-2397) surfaces both the user's owned agents and
- * teams they're involved in (member / leader / has an owned agent inside).
+ * `assigned` scope key maps to the owner's `owner_id`; its user-facing label
+ * is "Owned". The `agents` scope label is "Agents and Teams" because the
+ * backend predicate (`involves_user_id`, MUL-2397) surfaces both the user's
+ * owned agents and teams they're involved in (member / leader / has an owned
+ * agent inside).
  *
  * Issues are grouped by status CATEGORY using SectionList in
  * `BOARD_CATEGORIES` order; empty sections are filtered out so the screen
  * doesn't fill with "(0)" headers. Grouping is by category, not by status key,
  * because a workspace's custom statuses live inside their category's section
  * rather than adding one of their own — bucketing by key is what made
- * custom-status issues disappear from this list (PB-6457). `cancelled` stays
+ * custom-status issues disappear from this list (MUL-6457). `cancelled` stays
  * excluded, so a custom status in that category is hidden here exactly like the
  * built-in Cancelled is: a custom status inherits its category's behavior.
  *
@@ -45,10 +47,10 @@ import { useAuthStore } from "@/data/auth-store";
 import { useWorkspaceStore } from "@/data/workspace-store";
 import { useMyIssuesViewStore } from "@/data/stores/my-issues-view-store";
 import { useClearFiltersOnWorkspaceChange } from "@/lib/use-clear-filters-on-workspace-change";
-import { PRIORITY_LABEL, STATUS_LABEL } from "@/lib/issue-status";
 import { useIssueStatuses } from "@/lib/use-issue-statuses";
 import { groupIssuesByCategory } from "@/lib/group-issues-by-category";
 import { filterIssues } from "@/lib/filter-issues";
+import { getIssuesCopy } from "@/lib/issues-copy";
 import { useColorScheme } from "@/lib/use-color-scheme";
 import { THEME } from "@/lib/theme";
 
@@ -56,19 +58,23 @@ import { THEME } from "@/lib/theme";
 // must fit in 343pt usable space, so the agents scope renders "Agents" — the
 // full "Agents and Teams" label (~135pt) blows past safe limits and breaks
 // under Dynamic Type. Semantics unchanged: same backend predicate
-// (`involves_user_id`, PB-2397) covers owned agents + related teams; the
+// (`involves_user_id`, MUL-2397) covers owned agents + related teams; the
 // empty state copy still says "agents or teams".
-const SCOPES: { value: MyIssuesScope; label: string }[] = [
-  { value: "assigned", label: "Assigned" },
-  { value: "created", label: "Created" },
-  { value: "agents", label: "Agents" },
-];
-
 export default function MyIssues() {
   const isFocused = useIsFocused();
   const userId = useAuthStore((s) => s.user?.id ?? null);
+  const language = useAuthStore((s) => s.user?.language);
   const wsId = useWorkspaceStore((s) => s.currentWorkspaceId);
   const wsSlug = useWorkspaceStore((s) => s.currentWorkspaceSlug);
+  const copy = useMemo(() => getIssuesCopy(language), [language]);
+  const scopes = useMemo(
+    () => [
+      { value: "assigned" as const, label: copy.scopes.owned },
+      { value: "created" as const, label: copy.scopes.created },
+      { value: "agents" as const, label: copy.scopes.agents },
+    ],
+    [copy],
+  );
 
   const scope = useMyIssuesViewStore((s) => s.scope);
   const setScope = useMyIssuesViewStore((s) => s.setScope);
@@ -100,7 +106,7 @@ export default function MyIssues() {
 
   // Only the active-filter chips need the catalog: sections group on the
   // category the server already resolved onto each issue, so the list never
-  // waits for this. (PB-6243)
+  // waits for this. (MUL-6243)
   const catalog = useIssueStatuses();
 
   // Apply client-side status + priority filter. Mirrors the predicate at
@@ -115,24 +121,25 @@ export default function MyIssues() {
   const hasActiveFilters =
     statusFilters.length > 0 || priorityFilters.length > 0;
 
-  const showEmptyState =
-    !isLoading && !error && filtered.length === 0;
+  const showEmptyState = !isLoading && !error && filtered.length === 0;
 
   return (
     <View className="flex-1 bg-background">
-      <Header title="My Issues" right={<HeaderActions />} />
+      <Header title={copy.myTitle} right={<HeaderActions />} />
       <ScopeToolbar
-        scopes={SCOPES}
+        scopes={scopes}
         scope={scope}
         onChange={(v) => setScope(v)}
         onOpenFilter={openFilter}
         hasActiveFilters={hasActiveFilters}
+        filterLabel={copy.filter}
       />
       {hasActiveFilters ? (
         <ActiveFilterChips
           statusFilters={statusFilters}
           priorityFilters={priorityFilters}
           statusLabelOf={catalog.labelOf}
+          priorityLabelOf={(priority) => copy.priority[priority]}
           onClearStatus={(s) =>
             useMyIssuesViewStore.getState().toggleStatusFilter(s)
           }
@@ -146,19 +153,20 @@ export default function MyIssues() {
       ) : error ? (
         <View className="px-4 gap-3 pt-4">
           <Text className="text-sm text-destructive">
-            Failed to load issues:{" "}
-            {error instanceof Error ? error.message : "unknown error"}
+            {copy.loadFailed(
+              error instanceof Error ? error.message : copy.unknownError,
+            )}
           </Text>
           <Button variant="outline" onPress={() => refetch()}>
-            <Text>Retry</Text>
+            <Text>{copy.retry}</Text>
           </Button>
         </View>
       ) : showEmptyState ? (
         <EmptyState
           message={
             hasActiveFilters
-              ? "No issues match the current filters."
-              : emptyMessageForScope(scope)
+              ? copy.filteredEmpty
+              : emptyMessageForScope(scope, copy)
           }
         />
       ) : (
@@ -173,12 +181,14 @@ export default function MyIssues() {
             <SectionHeader
               category={section.category}
               count={section.data.length}
+              label={catalog.labelOf(section.category)}
             />
           )}
           contentContainerClassName="pb-6"
           renderItem={({ item }) => (
             <IssueRow
               issue={item}
+              actorRole={scope === "assigned" ? "owner" : "executor"}
               onPress={() => {
                 if (wsSlug) router.push(`/${wsSlug}/issue/${item.id}`);
               }}
@@ -188,7 +198,6 @@ export default function MyIssues() {
           onRefresh={refetch}
         />
       )}
-
     </View>
   );
 }
@@ -204,9 +213,11 @@ export default function MyIssues() {
 function FilterButton({
   onPress,
   hasActiveFilters,
+  label,
 }: {
   onPress: () => void;
   hasActiveFilters: boolean;
+  label: string;
 }) {
   const { colorScheme } = useColorScheme();
   return (
@@ -215,7 +226,7 @@ function FilterButton({
         variant="outline"
         size="sm"
         onPress={onPress}
-        accessibilityLabel="Filter"
+        accessibilityLabel={label}
         className="w-9 px-0"
       >
         <Ionicons
@@ -248,12 +259,14 @@ function ScopeToolbar<S extends string>({
   onChange,
   onOpenFilter,
   hasActiveFilters,
+  filterLabel,
 }: {
   scopes: { value: S; label: string }[];
   scope: S;
   onChange: (value: S) => void;
   onOpenFilter: () => void;
   hasActiveFilters: boolean;
+  filterLabel: string;
 }) {
   return (
     <View className="flex-row items-center justify-between px-4 pt-2 pb-2">
@@ -271,7 +284,9 @@ function ScopeToolbar<S extends string>({
             >
               <Text
                 numberOfLines={1}
-                className={active ? "text-accent-foreground" : "text-muted-foreground"}
+                className={
+                  active ? "text-accent-foreground" : "text-muted-foreground"
+                }
               >
                 {s.label}
               </Text>
@@ -282,6 +297,7 @@ function ScopeToolbar<S extends string>({
       <FilterButton
         onPress={onOpenFilter}
         hasActiveFilters={hasActiveFilters}
+        label={filterLabel}
       />
     </View>
   );
@@ -291,6 +307,7 @@ function ActiveFilterChips({
   statusFilters,
   priorityFilters,
   statusLabelOf,
+  priorityLabelOf,
   onClearStatus,
   onClearPriority,
 }: {
@@ -298,16 +315,25 @@ function ActiveFilterChips({
   priorityFilters: IssuePriority[];
   /** Resolves a status KEY — which can be a custom one — to its label. */
   statusLabelOf: (statusKey: string) => string;
+  priorityLabelOf: (priority: IssuePriority) => string;
   onClearStatus: (s: IssueStatus) => void;
   onClearPriority: (p: IssuePriority) => void;
 }) {
   return (
     <View className="flex-row flex-wrap gap-1.5 px-4 pb-2">
       {statusFilters.map((s) => (
-        <Chip key={`s-${s}`} label={statusLabelOf(s)} onClear={() => onClearStatus(s)} />
+        <Chip
+          key={`s-${s}`}
+          label={statusLabelOf(s)}
+          onClear={() => onClearStatus(s)}
+        />
       ))}
       {priorityFilters.map((p) => (
-        <Chip key={`p-${p}`} label={PRIORITY_LABEL[p]} onClear={() => onClearPriority(p)} />
+        <Chip
+          key={`p-${p}`}
+          label={priorityLabelOf(p)}
+          onClear={() => onClearPriority(p)}
+        />
       ))}
     </View>
   );
@@ -336,16 +362,18 @@ function Chip({ label, onClear }: { label: string; onClear: () => void }) {
 function SectionHeader({
   category,
   count,
+  label,
 }: {
   category: IssueStatusCategory;
   count: number;
+  label: string;
 }) {
   return (
     <View className="flex-row items-center gap-2 px-4 py-2 bg-background">
       {/* A category IS a built-in status key, so it resolves to its own glyph. */}
       <StatusIcon status={category} size={14} />
       <Text className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-        {STATUS_LABEL[category]}
+        {label}
       </Text>
       <Text className="text-xs text-muted-foreground/60">{count}</Text>
     </View>
@@ -362,13 +390,16 @@ function EmptyState({ message }: { message: string }) {
   );
 }
 
-function emptyMessageForScope(scope: MyIssuesScope): string {
+function emptyMessageForScope(
+  scope: MyIssuesScope,
+  copy: ReturnType<typeof getIssuesCopy>,
+): string {
   switch (scope) {
     case "assigned":
-      return "No issues assigned to you.";
+      return copy.empty.owned;
     case "created":
-      return "You haven't created any issues.";
+      return copy.empty.created;
     case "agents":
-      return "No issues assigned to your agents or teams yet.";
+      return copy.empty.agents;
   }
 }

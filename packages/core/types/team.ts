@@ -86,7 +86,7 @@ export interface CreateTeamActivityLogRequest {
 }
 
 // TeamMemberStatus mirrors the five-way bucket the back-end derives in
-// the Rust team handler's derived member status. Kept as a string union here
+// handler/team.go::deriveTeamMemberStatus. Kept as a string union here
 // (rather than re-derived from snapshot data) so the team page can render
 // the freshest server-side judgement without re-fetching the agent
 // snapshot / runtime list. `archived` wins over every runtime/task signal.

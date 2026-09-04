@@ -54,7 +54,7 @@ export function automationRunsOptions(wsId: string, id: string) {
 
 // automationRunOptions fetches a single run with its full trigger_payload.
 // The list endpoint (automationRunsOptions) omits trigger_payload to keep
-// list responses small; callers (e.g. the agent-thread dialog) use this
+// list responses small; callers (e.g. the run-detail dialog) use this
 // query on demand when the user opens a run.
 export function automationRunOptions(
   wsId: string,

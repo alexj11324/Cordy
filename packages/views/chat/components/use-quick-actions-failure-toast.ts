@@ -11,7 +11,7 @@ import { useT } from "../../i18n";
 /**
  * Surfaces a toast when a session's explicit quick-actions refresh fails
  * asynchronously — the HTTP call was accepted but the daemon's regeneration
- * never produced suggestions, so the turn's pills are unchanged (PB-5149). The
+ * never produced suggestions, so the turn's pills are unchanged (MUL-5149). The
  * failure arrives over chat:quick_actions with failed=true, which
  * applyChatQuickActionsToCache turns into a one-shot client-only signal; this
  * hook consumes it and clears it. The synchronous HTTP-failure path (409 busy,

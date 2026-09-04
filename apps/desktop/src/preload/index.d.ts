@@ -14,9 +14,20 @@ import type {
 import type {
   DaemonStatus,
   DaemonPrefs,
-  DaemonAutoStartResult,
   LocalRuntimeProbe,
 } from "../shared/daemon-types";
+import type {
+  GuestCloudModeResult,
+  GuestCloudTeardownResult,
+  LocalGuestMode,
+  LocalGuestRunCancelResult,
+  LocalGuestRunHistoryResult,
+  LocalGuestRunRequest,
+  LocalGuestRunStartResult,
+  GuestSessionClearResult,
+  GuestSessionMutationResult,
+  GuestSessionReadResult,
+} from "../shared/local-guest";
 
 interface DesktopAPI {
   /** Host runtime for gating capabilities that only Electron can provide. */
@@ -25,7 +36,6 @@ interface DesktopAPI {
   appInfo: {
     version: string;
     os: "macos" | "windows" | "linux" | "unknown";
-    authCallbackProtocol: string;
   };
   /** OS-preferred locale (BCP 47) injected by main via additionalArguments. */
   systemLocale: string;
@@ -33,6 +43,25 @@ interface DesktopAPI {
   onSystemLocaleChanged: (callback: (locale: string) => void) => () => void;
   /** Validated runtime endpoint config, or a blocking config error. */
   runtimeConfig: RuntimeConfigResult;
+  /** Main-process-owned local Guest session. */
+  getGuestSession: () => Promise<GuestSessionReadResult>;
+  createGuestSession: (
+    displayName: string,
+  ) => Promise<GuestSessionMutationResult>;
+  clearGuestSession: () => Promise<GuestSessionClearResult>;
+  enableCloudMode: () => Promise<GuestCloudModeResult>;
+  switchGuestToCloud: () => Promise<GuestCloudModeResult>;
+  disableCloudMode: () => Promise<GuestCloudTeardownResult>;
+  getGuestMode: () => Promise<LocalGuestMode>;
+  onGuestModeChanged: (callback: (mode: LocalGuestMode) => void) => () => void;
+  probeLocalRuntimes: () => Promise<LocalRuntimeProbe>;
+  startGuestRun: (
+    request: LocalGuestRunRequest,
+  ) => Promise<LocalGuestRunStartResult>;
+  cancelGuestRun: (runId: string) => Promise<LocalGuestRunCancelResult>;
+  getGuestRunHistory: () => Promise<LocalGuestRunHistoryResult>;
+  clearGuestRunHistory: () => Promise<{ ok: boolean }>;
+  onGuestRunEvent: (callback: (value: unknown) => void) => () => void;
   /** Main tabbed window or a dedicated issue-only window. */
   windowContext: DesktopWindowContext;
   /** Read any freeze/crash breadcrumb from a previous session, so the renderer
@@ -46,10 +75,7 @@ interface DesktopAPI {
   reportAuthSession: (userId: string | null) => void;
   /** Listen for a PKCE-bound, one-time desktop login code delivered via deep link. */
   onAuthHandoff: (
-    callback: (payload: {
-      code: string;
-      state: string;
-    }) => boolean | Promise<boolean>,
+    callback: (payload: { code: string; state: string }) => boolean | Promise<boolean>,
   ) => () => void;
   /** Listen for invitation IDs delivered via deep link. Returns an unsubscribe function. */
   onInviteOpen: (callback: (invitationId: string) => void) => () => void;
@@ -93,17 +119,10 @@ interface DesktopAPI {
     reason?: "cancelled" | "no_window" | "error";
     error?: string;
   }>;
-  /** Open the OS folder picker with multi-select. Used by onboarding
-   *  to bind several local git repos as projects at once. */
-  pickDirectories: (
-    defaultPath?: string,
-  ) => Promise<{
+  /** Select multiple folders, one project per directory, during onboarding. */
+  pickDirectories: (defaultPath?: string) => Promise<{
     ok: boolean;
-    folders?: Array<{
-      path: string;
-      basename: string;
-      originUrl: string | null;
-    }>;
+    folders?: Array<{ path: string; basename: string }>;
     reason?: "cancelled" | "no_window" | "error";
     error?: string;
   }>;
@@ -162,12 +181,11 @@ interface DaemonAPI {
   isCliInstalled: () => Promise<boolean>;
   getPrefs: () => Promise<DaemonPrefs>;
   setPrefs: (prefs: Partial<DaemonPrefs>) => Promise<DaemonPrefs>;
-  autoStart: () => Promise<DaemonAutoStartResult>;
+  autoStart: () => Promise<void>;
   retryInstall: () => Promise<void>;
   startLogStream: () => void;
   stopLogStream: () => void;
   onLogLine: (callback: (line: string) => void) => () => void;
-  onLogReset: (callback: () => void) => () => void;
   openLogFile: () => Promise<{ success: boolean; error?: string }>;
 }
 

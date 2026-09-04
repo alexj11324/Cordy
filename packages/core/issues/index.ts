@@ -7,6 +7,8 @@ export * from "./workdir";
 export * from "./config";
 export * from "./stores";
 
+export { issueExecutorRef, type IssueExecutorRef } from "./issue-roles";
+
 export {
   issueBehavesAs,
   issueBehavesAsAny,

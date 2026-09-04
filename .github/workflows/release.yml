@@ -1,103 +1,40 @@
 name: Release
 
 on:
-  # Non-macOS-ARM publication is intentionally manual. The automatic
-  # macOS ARM64 path is owned by macos-release.yml and starts only after CI
-  # succeeds for a version tag.
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: Existing version tag to publish self-hosted artifacts for (for example, v0.2.1)
-        required: true
-        type: string
-      promote_latest:
-        description: Also promote the backend and web images to the latest tag
-        required: true
-        default: false
-        type: boolean
+  push:
+    tags:
+      # GitHub Actions uses glob patterns here, not regex. Match versioned
+      # tags broadly at the trigger layer, then enforce strict semver below.
+      - "v*.*.*"
+      - "!v*-dirty*"
 
 permissions:
   contents: write
   packages: write
-  checks: write
 
 concurrency:
-  group: production-release-${{ inputs.tag }}
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  macos-release-preflight:
-    # A production release is incomplete without trusted macOS installers.
-    # Fail before a draft Release is created unless every signing/notarization
-    # credential is present in the canonical repository's Actions secrets.
-    if: github.event_name == 'workflow_dispatch' && github.repository == 'alexj11324/Cordy'
-    runs-on: ubuntu-latest
-    env:
-      CSC_LINK: ${{ secrets.CSC_LINK }}
-      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-    steps:
-      - name: Require macOS signing and notarization credentials
-        shell: bash
-        run: |
-          missing=()
-          for name in \
-            CSC_LINK \
-            CSC_KEY_PASSWORD \
-            APPLE_ID \
-            APPLE_APP_SPECIFIC_PASSWORD \
-            APPLE_TEAM_ID; do
-            if [ -z "${!name:-}" ]; then
-              missing+=("$name")
-            fi
-          done
-          if [ "${#missing[@]}" -ne 0 ]; then
-            printf '::error::Missing required macOS release secret: %s\n' "${missing[@]}"
-            exit 1
-          fi
-
   verify:
-    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: pgvector/pgvector:pg17
-        env:
-          POSTGRES_DB: patchbay
-          POSTGRES_USER: patchbay
-          POSTGRES_PASSWORD: patchbay
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U patchbay -d patchbay"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
-    env:
-      DATABASE_URL: postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable
-      SQLX_OFFLINE: "false"
-      RUSTC_WRAPPER: sccache
-      SCCACHE_GHA_ENABLED: "true"
     outputs:
       tag_name: ${{ steps.release_meta.outputs.tag_name }}
-      commit_sha: ${{ steps.release_meta.outputs.commit_sha }}
       is_stable: ${{ steps.release_meta.outputs.is_stable }}
+      commit_sha: ${{ steps.release_meta.outputs.commit_sha }}
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Validate tag name
         id: release_meta
-        env:
-          REQUESTED_TAG: ${{ inputs.tag }}
         shell: bash
         run: |
-          tag="$REQUESTED_TAG"
+          tag="${GITHUB_REF_NAME}"
           echo "Triggered by tag: $tag"
           if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
             echo "::error::Release tags must look like vX.Y.Z or vX.Y.Z-suffix; got '$tag'."
@@ -107,10 +44,14 @@ jobs:
             echo "::error::Refusing to release from dirty tag '$tag'."
             exit 1
           fi
-          commit_sha="$(git rev-parse HEAD)"
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
-          if ! git merge-base --is-ancestor "$commit_sha" origin/main; then
-            echo "::error::Refusing to release '$tag' because commit '$commit_sha' is not contained in main."
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::Refusing to release '$tag' because its commit is not contained in main."
+            exit 1
+          fi
+          commit_sha="$(git rev-parse HEAD)"
+          if [[ ! "$commit_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Could not resolve a full verified commit SHA for '$tag'."
             exit 1
           fi
           echo "tag_name=$tag" >> "$GITHUB_OUTPUT"
@@ -121,323 +62,97 @@ jobs:
             echo "is_stable=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Install Rust toolchain
-        run: rustup toolchain install stable --profile minimal
-
-      - name: Use stable Rust
-        run: rustup default stable
-
-      - name: Restore Cargo registry and git downloads
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: release-cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('server-rs/Cargo.lock') }}
-          restore-keys: release-cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-
+          # Deliberately independent from the minimum patch in server/go.mod:
+          # releases follow the newest 1.26 patch available to setup-go.
+          go-version: "1.26.x"
+          check-latest: true
+          cache-dependency-path: server/go.sum
 
-      - name: Enable bounded shared compiler cache
-        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      - name: Record Go toolchain
+        run: go version
 
-      - name: Apply database migrations with the Rust runner
-        working-directory: server-rs
-        run: cargo run --locked -p patchbay-migrate --bin patchbay-migrate -- up
+      - name: Verify Go test wrapper
+        run: bash scripts/test-go.test.sh
 
-      - name: Run Rust workspace tests
-        working-directory: server-rs
-        run: cargo test --workspace --all-targets --locked
+      - name: Run tests
+        run: bash scripts/test-go.sh --race
 
-      - name: Scan Rust dependencies
+      - name: Build all Go packages
+        working-directory: server
+        run: go build ./...
+
+      - name: Scan Go vulnerabilities
         # Fail closed unless an administrator scopes the documented emergency
         # override to this exact tag. See .github/RELEASING.md.
-        if: ${{ vars.ALLOW_VULN_BYPASS_FOR_TAG != steps.release_meta.outputs.tag_name }}
-        uses: rustsec/audit-check@69366f33c96575abad1ee0dba8212993eecbe998 # v2.0.0
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          working-directory: server-rs
-          # SQLx 0.8 locks its optional MySQL driver for all-target resolution;
-          # the compiled Patchbay graph enables Postgres only. CloudFront signing
-          # no longer uses rsa and is implemented with ring/SHA-256.
-          ignore: RUSTSEC-2023-0071
+        if: ${{ vars.ALLOW_VULN_BYPASS_FOR_TAG != github.ref_name }}
+        working-directory: server
+        run: go tool govulncheck ./...
 
       - name: Record emergency vulnerability-scan bypass
-        if: ${{ vars.ALLOW_VULN_BYPASS_FOR_TAG == steps.release_meta.outputs.tag_name }}
-        env:
-          TAG_NAME: ${{ steps.release_meta.outputs.tag_name }}
-        run: echo "::warning::RustSec audit was explicitly skipped for ${TAG_NAME}; see .github/RELEASING.md"
+        if: ${{ vars.ALLOW_VULN_BYPASS_FOR_TAG == github.ref_name }}
+        run: echo "::warning::govulncheck was explicitly skipped for ${GITHUB_REF_NAME}; see .github/RELEASING.md"
 
-      - name: Report compiler cache effectiveness
-        if: always()
-        shell: bash
-        run: ${SCCACHE_PATH} --show-stats
-
-  self-hosted-prepare:
+  prepare-release:
     needs: verify
-    if: github.event_name == 'workflow_dispatch' && github.repository == 'alexj11324/Cordy'
-    runs-on: ubuntu-latest
-    outputs:
-      tag_name: ${{ steps.meta.outputs.tag_name }}
-      commit_sha: ${{ steps.meta.outputs.commit_sha }}
-      short_sha: ${{ steps.meta.outputs.short_sha }}
-      is_stable: ${{ steps.meta.outputs.is_stable }}
-    steps:
-      - name: Checkout requested version tag
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          ref: ${{ needs.verify.outputs.commit_sha }}
-          fetch-depth: 0
-
-      - name: Require Clerk publishable key for web image
-        env:
-          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
-        shell: bash
-        run: |
-          if [[ -z "${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-}" ]]; then
-            echo "::error::Missing required web release secret: NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY"
-            exit 1
-          fi
-
-      - name: Validate self-hosted release tag
-        id: meta
-        env:
-          REQUESTED_TAG: ${{ inputs.tag }}
-        shell: bash
-        run: |
-          if [[ ! "$REQUESTED_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::Self-hosted release tags must look like vX.Y.Z or vX.Y.Z-suffix; got '$REQUESTED_TAG'."
-            exit 1
-          fi
-          if [[ "$REQUESTED_TAG" == *-dirty* ]]; then
-            echo "::error::Refusing to publish self-hosted artifacts for dirty tag '$REQUESTED_TAG'."
-            exit 1
-          fi
-
-          commit_sha="$(git rev-parse HEAD)"
-          tag_commit="$(git rev-parse "$REQUESTED_TAG^{commit}")"
-          if [ "$tag_commit" != "$commit_sha" ]; then
-            echo "::error::Checked out commit '$commit_sha' does not match requested tag '$REQUESTED_TAG' ($tag_commit)."
-            exit 1
-          fi
-
-          is_stable=true
-          if [[ "$REQUESTED_TAG" == *-* ]]; then
-            is_stable=false
-          fi
-          {
-            echo "tag_name=$REQUESTED_TAG"
-            echo "commit_sha=$commit_sha"
-            echo "short_sha=${commit_sha:0:7}"
-            echo "is_stable=$is_stable"
-          } >> "$GITHUB_OUTPUT"
-
-  rust-cli-build:
-    name: Build Rust CLI (${{ matrix.os }}-${{ matrix.arch }})
-    needs: verify
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: ubuntu-latest
-            target: x86_64-unknown-linux-musl
-            os: linux
-            arch: amd64
-            runtime_platform: linux
-            runtime_arch: x64
-          - runner: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-musl
-            os: linux
-            arch: arm64
-            runtime_platform: linux
-            runtime_arch: arm64
-          - runner: macos-15-intel
-            target: x86_64-apple-darwin
-            os: darwin
-            arch: amd64
-            runtime_platform: darwin
-            runtime_arch: x64
-          - runner: macos-14
-            target: aarch64-apple-darwin
-            os: darwin
-            arch: arm64
-            runtime_platform: darwin
-            runtime_arch: arm64
-          - runner: windows-latest
-            target: x86_64-pc-windows-msvc
-            os: windows
-            arch: amd64
-            runtime_platform: win32
-            runtime_arch: x64
-          - runner: windows-11-arm
-            target: aarch64-pc-windows-msvc
-            os: windows
-            arch: arm64
-            runtime_platform: win32
-            runtime_arch: arm64
-    runs-on: ${{ matrix.runner }}
-    env:
-      RUSTC_WRAPPER: sccache
-      SCCACHE_GHA_ENABLED: "true"
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          ref: ${{ needs.verify.outputs.commit_sha }}
-          fetch-depth: 0
-
-      - name: Install Rust toolchain
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
-          rustup target add ${{ matrix.target }}
-
-      - name: Install Linux musl linker
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y musl-tools
-          if [ "${{ matrix.arch }}" = "arm64" ]; then
-            echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc" >> "$GITHUB_ENV"
-          else
-            echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc" >> "$GITHUB_ENV"
-          fi
-
-      - name: Restore Cargo registry and git downloads
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: release-cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('server-rs/Cargo.lock') }}
-          restore-keys: release-cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-${{ hashFiles('rust-toolchain.toml') }}-
-
-      - name: Enable target-scoped compiler cache
-        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-
-      - name: Build Rust CLI
-        working-directory: server-rs
-        shell: bash
-        env:
-          PATCHBAY_BUILD_VERSION: ${{ needs.verify.outputs.tag_name }}
-          PATCHBAY_BUILD_COMMIT: ${{ needs.verify.outputs.commit_sha }}
-        run: |
-          PATCHBAY_BUILD_DATE="$(git show -s --format=%cI "$PATCHBAY_BUILD_COMMIT")"
-          export PATCHBAY_BUILD_DATE
-          cargo build --locked --release --target ${{ matrix.target }} -p patchbay-cli
-
-      - name: Stage exact-commit CLI binary
-        working-directory: server-rs
-        shell: bash
-        env:
-          RELEASE_TAG: ${{ needs.verify.outputs.tag_name }}
-        run: |
-          binary="target/${{ matrix.target }}/release/patchbay"
-          if [ "${{ matrix.runtime_platform }}" = "win32" ]; then
-            binary="${binary}.exe"
-          fi
-          node ../apps/desktop/scripts/write-cli-artifact-manifest.mjs \
-            --binary "$binary" \
-            --output "$RUNNER_TEMP/patchbay-cli-bin" \
-            --target "${{ matrix.target }}" \
-            --platform "${{ matrix.runtime_platform }}" \
-            --arch "${{ matrix.runtime_arch }}" \
-            --version "$RELEASE_TAG"
-
-      - name: Upload exact-commit CLI binary
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: desktop-cli-bin-${{ matrix.os }}-${{ matrix.arch }}
-          path: ${{ runner.temp }}/patchbay-cli-bin/*
-          if-no-files-found: error
-          retention-days: 1
-
-      - name: Package Unix archives
-        if: runner.os != 'Windows'
-        working-directory: server-rs
-        env:
-          RELEASE_TAG: ${{ needs.verify.outputs.tag_name }}
-        run: |
-          version="${RELEASE_TAG#v}"
-          package_dir="$RUNNER_TEMP/patchbay-cli"
-          binary_dir="target/${{ matrix.target }}/release"
-          mkdir -p "$package_dir"
-          for prefix in "patchbay-cli-${version}-${{ matrix.os }}-${{ matrix.arch }}" "patchbay_${{ matrix.os }}_${{ matrix.arch }}"; do
-            tar -czf "$package_dir/${prefix}.tar.gz" \
-              -C "$binary_dir" patchbay \
-              -C "$GITHUB_WORKSPACE" LICENSE README.md README.zh.md NOTICE
-          done
-
-      - name: Package Windows archives
-        if: runner.os == 'Windows'
-        working-directory: server-rs
-        env:
-          RELEASE_TAG: ${{ needs.verify.outputs.tag_name }}
-        shell: pwsh
-        run: |
-          $version = $env:RELEASE_TAG.TrimStart('v')
-          $packageDir = Join-Path $env:RUNNER_TEMP "patchbay-cli"
-          $binary = Join-Path (Get-Location) "target/${{ matrix.target }}/release/patchbay.exe"
-          $metadata = @(
-              (Join-Path $env:GITHUB_WORKSPACE "LICENSE"),
-              (Join-Path $env:GITHUB_WORKSPACE "README.md"),
-              (Join-Path $env:GITHUB_WORKSPACE "README.zh.md"),
-              (Join-Path $env:GITHUB_WORKSPACE "NOTICE")
-          )
-          New-Item -ItemType Directory -Path $packageDir -Force | Out-Null
-          $files = @($binary) + $metadata
-          foreach ($prefix in @(
-              "patchbay-cli-$version-${{ matrix.os }}-${{ matrix.arch }}",
-              "patchbay_${{ matrix.os }}_${{ matrix.arch }}"
-          )) {
-              Compress-Archive -Path $files -DestinationPath (Join-Path $packageDir "$prefix.zip") -Force
-          }
-
-      - name: Upload Rust CLI archives
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: rust-cli-${{ matrix.os }}-${{ matrix.arch }}
-          path: ${{ runner.temp }}/patchbay-cli/*
-          if-no-files-found: error
-          retention-days: 1
-
-      - name: Report compiler cache effectiveness
-        if: always()
-        shell: bash
-        run: ${SCCACHE_PATH} --show-stats
-
-  release:
-    needs: [macos-release-preflight, verify, rust-cli-build]
-    # Only the canonical repository stages the final release asset set. A fork
-    # can still run verification and builds without creating release artifacts.
+    # Only run on the canonical repository. Forks don't have the
+    # Forks must not publish a formula or staged release. Keep this guard
+    # aligned with the actual repository; the project is currently hosted at
+    # alexj11324/Cordy.
     if: github.repository == 'alexj11324/Cordy'
     runs-on: ubuntu-latest
     steps:
-      - name: Download Rust CLI archives
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          pattern: rust-cli-*
-          path: release-assets
-          merge-multiple: true
-
-      - name: Create checksums
-        working-directory: release-assets
-        run: sha256sum -- ./* > checksums.txt
-
-      - name: Stage Rust CLI release assets
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: github-release-rust-cli
-          path: release-assets/*
-          if-no-files-found: error
-          retention-days: 1
+      - name: Create staged draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.verify.outputs.tag_name }}
+          VERIFIED_SHA: ${{ needs.verify.outputs.commit_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag_sha="$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG_NAME" --jq .sha)"
+          test "$tag_sha" = "$VERIFIED_SHA" || {
+            echo "::error::Release tag $TAG_NAME no longer targets the verified commit $VERIFIED_SHA (found $tag_sha)."
+            exit 1
+          }
+          if release_json="$(gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease 2>/dev/null)"; then
+            is_draft="$(jq -r '.isDraft' <<< "$release_json")"
+            is_prerelease="$(jq -r '.isPrerelease' <<< "$release_json")"
+            expected_prerelease=false
+            if [ "${{ needs.verify.outputs.is_stable }}" != "true" ]; then
+              expected_prerelease=true
+            fi
+            if [ "$is_prerelease" != "$expected_prerelease" ]; then
+              echo "::error::Release $TAG_NAME already exists with an incompatible channel state."
+              exit 1
+            fi
+            if [ "$is_draft" != "true" ]; then
+              echo "::error::Release $TAG_NAME is already public; refusing to append an un-gated artifact set."
+              exit 1
+            fi
+            echo "Reusing staged draft release $TAG_NAME"
+          else
+            channel_args=(--latest=false)
+            if [ "${{ needs.verify.outputs.is_stable }}" != "true" ]; then
+              channel_args+=(--prerelease)
+            fi
+            gh release create "$TAG_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --title "$TAG_NAME" \
+              --generate-notes \
+              --draft \
+              "${channel_args[@]}"
+          fi
 
   # Multi-arch images are built natively per platform on dedicated runners
   # (amd64 on ubuntu-latest, arm64 on ubuntu-24.04-arm) and merged into a
   # manifest list. This avoids QEMU emulation, which was making the Next.js
-  # arm64 build run for 30+ minutes. These self-hosted artifacts are manual;
-  # the full manual release stages Desktop assets until container and chart
-  # publication has also succeeded.
+  # arm64 build run for 30+ minutes per release.
   docker-backend-build:
-    needs: [self-hosted-prepare, verify]
+    needs: verify
     strategy:
       fail-fast: false
       matrix:
@@ -454,40 +169,33 @@ jobs:
           echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
 
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@v4
         with:
-          ref: ${{ needs.self-hosted-prepare.outputs.commit_sha }}
-          fetch-depth: 0
+          ref: ${{ needs.verify.outputs.commit_sha }}
 
       - name: Compute backend image labels
         id: meta
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
+        uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository_owner }}/patchbay-backend
           labels: |
             org.opencontainers.image.title=Patchbay Backend
             org.opencontainers.image.description=Patchbay self-hosted backend
+            org.opencontainers.image.revision=${{ needs.verify.outputs.commit_sha }}
 
       - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+        uses: docker/setup-buildx-action@v3
 
       - name: Login to GHCR
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Verify release tag before backend image publication
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ needs.self-hosted-prepare.outputs.tag_name }}
-          EXPECTED_COMMIT: ${{ needs.self-hosted-prepare.outputs.commit_sha }}
-        run: bash scripts/verify-release-tag.sh "$TAG_NAME" "$EXPECTED_COMMIT"
-
       - name: Build and push by digest
         id: build
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile
@@ -497,8 +205,8 @@ jobs:
           cache-from: type=gha,scope=release-backend-${{ env.PLATFORM_PAIR }}
           cache-to: type=gha,mode=max,scope=release-backend-${{ env.PLATFORM_PAIR }}
           build-args: |
-            VERSION=${{ needs.self-hosted-prepare.outputs.tag_name }}
-            COMMIT=${{ needs.self-hosted-prepare.outputs.commit_sha }}
+            VERSION=${{ needs.verify.outputs.tag_name }}
+            COMMIT=${{ needs.verify.outputs.commit_sha }}
           outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/patchbay-backend,push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
@@ -508,7 +216,7 @@ jobs:
           touch "/tmp/digests/${digest#sha256:}"
 
       - name: Upload digest
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@v4
         with:
           name: digests-backend-${{ env.PLATFORM_PAIR }}
           path: /tmp/digests/*
@@ -516,72 +224,47 @@ jobs:
           retention-days: 1
 
   docker-backend-merge:
-    needs: [self-hosted-prepare, verify, docker-backend-build]
+    needs: [verify, docker-backend-build]
     runs-on: ubuntu-latest
     concurrency:
-      group: self-hosted-docker-backend-${{ needs.self-hosted-prepare.outputs.tag_name }}
+      group: release-docker-backend-${{ github.ref }}
       cancel-in-progress: true
     steps:
-      - name: Checkout verified release commit
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          ref: ${{ needs.self-hosted-prepare.outputs.commit_sha }}
-          fetch-depth: 0
-
       - name: Download digests
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@v4
         with:
           path: /tmp/digests
           pattern: digests-backend-*
           merge-multiple: true
 
       - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+        uses: docker/setup-buildx-action@v3
 
       - name: Compute backend image tags
         id: meta
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
+        uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository_owner }}/patchbay-backend
           flavor: |
             latest=false
           tags: |
-            type=raw,value=${{ needs.self-hosted-prepare.outputs.tag_name }}
-            type=raw,value=sha-${{ needs.self-hosted-prepare.outputs.short_sha }}
+            type=raw,value=latest,enable=${{ needs.verify.outputs.is_stable == 'true' }}
+            type=raw,value=${{ needs.verify.outputs.tag_name }}
+            type=sha,prefix=sha-
 
       - name: Login to GHCR
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Verify release tag before backend manifest publication
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ needs.self-hosted-prepare.outputs.tag_name }}
-          EXPECTED_COMMIT: ${{ needs.self-hosted-prepare.outputs.commit_sha }}
-        run: bash scripts/verify-release-tag.sh "$TAG_NAME" "$EXPECTED_COMMIT"
-
       - name: Create manifest list and push
         working-directory: /tmp/digests
         run: |
-          tag_args=()
-          while IFS= read -r tag; do
-            tag_args+=(-t "$tag")
-          done < <(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
-          shopt -s nullglob
-          digest_files=(./*)
-          if [ "${#digest_files[@]}" -eq 0 ]; then
-            echo "::error::No backend image digests were downloaded"
-            exit 1
-          fi
-          digest_args=()
-          for digest_file in "${digest_files[@]}"; do
-            digest="${digest_file#./}"
-            digest_args+=("ghcr.io/${{ github.repository_owner }}/patchbay-backend@sha256:$digest")
-          done
-          docker buildx imagetools create "${tag_args[@]}" "${digest_args[@]}"
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf 'ghcr.io/${{ github.repository_owner }}/patchbay-backend@sha256:%s ' *)
 
       - name: Inspect image
         run: |
@@ -589,7 +272,7 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/patchbay-backend:${{ steps.meta.outputs.version }}
 
   docker-web-build:
-    needs: [self-hosted-prepare, verify]
+    needs: verify
     strategy:
       fail-fast: false
       matrix:
@@ -606,40 +289,33 @@ jobs:
           echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
 
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@v4
         with:
-          ref: ${{ needs.self-hosted-prepare.outputs.commit_sha }}
-          fetch-depth: 0
+          ref: ${{ needs.verify.outputs.commit_sha }}
 
       - name: Compute web image labels
         id: meta
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
+        uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository_owner }}/patchbay-web
           labels: |
             org.opencontainers.image.title=Patchbay Web
             org.opencontainers.image.description=Patchbay self-hosted web frontend
+            org.opencontainers.image.revision=${{ needs.verify.outputs.commit_sha }}
 
       - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+        uses: docker/setup-buildx-action@v3
 
       - name: Login to GHCR
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Verify release tag before web image publication
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ needs.self-hosted-prepare.outputs.tag_name }}
-          EXPECTED_COMMIT: ${{ needs.self-hosted-prepare.outputs.commit_sha }}
-        run: bash scripts/verify-release-tag.sh "$TAG_NAME" "$EXPECTED_COMMIT"
-
       - name: Build and push by digest
         id: build
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile.web
@@ -650,9 +326,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=release-web-${{ env.PLATFORM_PAIR }}
           build-args: |
             REMOTE_API_URL=http://backend:8080
-            NEXT_PUBLIC_APP_VERSION=${{ needs.self-hosted-prepare.outputs.tag_name }}
-            NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
-            NEXT_PUBLIC_DESKTOP_APP_ORIGIN=${{ vars.NEXT_PUBLIC_DESKTOP_APP_ORIGIN }}
+            NEXT_PUBLIC_APP_VERSION=${{ needs.verify.outputs.tag_name }}
           outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/patchbay-web,push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
@@ -662,7 +336,7 @@ jobs:
           touch "/tmp/digests/${digest#sha256:}"
 
       - name: Upload digest
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@v4
         with:
           name: digests-web-${{ env.PLATFORM_PAIR }}
           path: /tmp/digests/*
@@ -670,101 +344,178 @@ jobs:
           retention-days: 1
 
   docker-web-merge:
-    needs: [self-hosted-prepare, verify, docker-web-build]
+    needs: [verify, docker-web-build]
     runs-on: ubuntu-latest
     concurrency:
-      group: self-hosted-docker-web-${{ needs.self-hosted-prepare.outputs.tag_name }}
+      group: release-docker-web-${{ github.ref }}
       cancel-in-progress: true
     steps:
-      - name: Checkout verified release commit
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          ref: ${{ needs.self-hosted-prepare.outputs.commit_sha }}
-          fetch-depth: 0
-
       - name: Download digests
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@v4
         with:
           path: /tmp/digests
           pattern: digests-web-*
           merge-multiple: true
 
       - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+        uses: docker/setup-buildx-action@v3
 
       - name: Compute web image tags
         id: meta
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
+        uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository_owner }}/patchbay-web
           flavor: |
             latest=false
           tags: |
-            type=raw,value=${{ needs.self-hosted-prepare.outputs.tag_name }}
-            type=raw,value=sha-${{ needs.self-hosted-prepare.outputs.short_sha }}
+            type=raw,value=latest,enable=${{ needs.verify.outputs.is_stable == 'true' }}
+            type=raw,value=${{ needs.verify.outputs.tag_name }}
+            type=sha,prefix=sha-
 
       - name: Login to GHCR
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Verify release tag before web manifest publication
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ needs.self-hosted-prepare.outputs.tag_name }}
-          EXPECTED_COMMIT: ${{ needs.self-hosted-prepare.outputs.commit_sha }}
-        run: bash scripts/verify-release-tag.sh "$TAG_NAME" "$EXPECTED_COMMIT"
-
       - name: Create manifest list and push
         working-directory: /tmp/digests
         run: |
-          tag_args=()
-          while IFS= read -r tag; do
-            tag_args+=(-t "$tag")
-          done < <(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
-          shopt -s nullglob
-          digest_files=(./*)
-          if [ "${#digest_files[@]}" -eq 0 ]; then
-            echo "::error::No web image digests were downloaded"
-            exit 1
-          fi
-          digest_args=()
-          for digest_file in "${digest_files[@]}"; do
-            digest="${digest_file#./}"
-            digest_args+=("ghcr.io/${{ github.repository_owner }}/patchbay-web@sha256:$digest")
-          done
-          docker buildx imagetools create "${tag_args[@]}" "${digest_args[@]}"
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf 'ghcr.io/${{ github.repository_owner }}/patchbay-web@sha256:%s ' *)
 
       - name: Inspect image
         run: |
           docker buildx imagetools inspect \
             ghcr.io/${{ github.repository_owner }}/patchbay-web:${{ steps.meta.outputs.version }}
 
+  docker-auth-broker-build:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runs-on: ubuntu-latest
+          - platform: linux/arm64
+            runs-on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runs-on }}
+    steps:
+      - name: Prepare
+        run: |
+          platform=${{ matrix.platform }}
+          echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify.outputs.commit_sha }}
+      - name: Compute auth broker image labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/patchbay-auth-broker
+          labels: |
+            org.opencontainers.image.title=Patchbay Auth Broker
+            org.opencontainers.image.description=Patchbay accounts authentication broker
+            org.opencontainers.image.revision=${{ needs.verify.outputs.commit_sha }}
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.auth-broker
+          pull: true
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=release-auth-broker-${{ env.PLATFORM_PAIR }}
+          cache-to: type=gha,mode=max,scope=release-auth-broker-${{ env.PLATFORM_PAIR }}
+          build-args: NEXT_PUBLIC_APP_VERSION=${{ needs.verify.outputs.tag_name }}
+          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/patchbay-auth-broker,push-by-digest=true,name-canonical=true,push=true
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-auth-broker-${{ env.PLATFORM_PAIR }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  docker-auth-broker-merge:
+    needs: [verify, docker-auth-broker-build]
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-docker-auth-broker-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-auth-broker-*
+          merge-multiple: true
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Compute auth broker image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/patchbay-auth-broker
+          flavor: latest=false
+          tags: |
+            type=raw,value=latest,enable=${{ needs.verify.outputs.is_stable == 'true' }}
+            type=raw,value=${{ needs.verify.outputs.tag_name }}
+            type=sha,prefix=sha-
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create manifest list and push
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf 'ghcr.io/${{ github.repository_owner }}/patchbay-auth-broker@sha256:%s ' *)
+      - name: Inspect image
+        run: docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/patchbay-auth-broker:${{ steps.meta.outputs.version }}
+
   helm-chart:
-    needs: [self-hosted-prepare, verify, docker-backend-merge, docker-web-merge]
+    needs: [verify, docker-backend-merge, docker-web-merge, docker-auth-broker-merge]
     if: github.repository == 'alexj11324/Cordy'
     runs-on: ubuntu-latest
     concurrency:
-      group: self-hosted-helm-chart-${{ needs.self-hosted-prepare.outputs.tag_name }}
+      group: release-helm-chart-${{ github.ref }}
       cancel-in-progress: true
     env:
       CHART_DIR: deploy/helm/patchbay
       OCI_REGISTRY: oci://ghcr.io/${{ github.repository_owner }}/charts
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@v4
         with:
-          ref: ${{ needs.self-hosted-prepare.outputs.commit_sha }}
-          fetch-depth: 0
+          ref: ${{ needs.verify.outputs.commit_sha }}
 
       - name: Setup Helm
-        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5
+        uses: azure/setup-helm@v4
 
       - name: Sync chart metadata with release tag
         env:
-          TAG_NAME: ${{ needs.self-hosted-prepare.outputs.tag_name }}
+          TAG_NAME: ${{ needs.verify.outputs.tag_name }}
         run: |
           chart_version="${TAG_NAME#v}"
           sed -i -E "s/^version:.*/version: ${chart_version}/" "$CHART_DIR/Chart.yaml"
@@ -780,116 +531,37 @@ jobs:
       - name: Login to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
 
-      - name: Verify release tag before chart publication
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ needs.self-hosted-prepare.outputs.tag_name }}
-          EXPECTED_COMMIT: ${{ needs.self-hosted-prepare.outputs.commit_sha }}
-        run: bash scripts/verify-release-tag.sh "$TAG_NAME" "$EXPECTED_COMMIT"
-
       - name: Push chart to GHCR
         run: helm push ".chart-packages/patchbay-${CHART_VERSION}.tgz" "$OCI_REGISTRY"
 
       - name: Verify published chart
         run: helm show chart "$OCI_REGISTRY/patchbay" --version "$CHART_VERSION"
 
-  promote-self-hosted-latest:
-    needs:
-      [
-        self-hosted-prepare,
-        verify,
-        docker-backend-merge,
-        docker-web-merge,
-        desktop,
-        helm-chart,
-        publish-release,
-      ]
-    if: >-
-      inputs.promote_latest &&
-      needs.self-hosted-prepare.outputs.is_stable == 'true' &&
-      github.repository == 'alexj11324/Cordy'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout verified release commit
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          ref: ${{ needs.self-hosted-prepare.outputs.commit_sha }}
-          fetch-depth: 0
-
-      - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
-
-      - name: Login to GHCR
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Verify release tag before latest promotion
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ needs.self-hosted-prepare.outputs.tag_name }}
-          EXPECTED_COMMIT: ${{ needs.self-hosted-prepare.outputs.commit_sha }}
-        run: |
-          bash scripts/verify-release-tag.sh "$TAG_NAME" "$EXPECTED_COMMIT"
-          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
-          if ! git merge-base --is-ancestor "$EXPECTED_COMMIT" origin/main; then
-            echo "::error::Refusing to promote latest because prepared commit '$EXPECTED_COMMIT' is not contained in main."
-            exit 1
-          fi
-
-      - name: Promote stable image tags
-        env:
-          TAG_NAME: ${{ needs.self-hosted-prepare.outputs.tag_name }}
-        run: |
-          for image in patchbay-backend patchbay-web; do
-            docker buildx imagetools create \
-              --tag "ghcr.io/${GITHUB_REPOSITORY_OWNER}/${image}:latest" \
-              "ghcr.io/${GITHUB_REPOSITORY_OWNER}/${image}:${TAG_NAME}"
-            docker buildx imagetools inspect \
-              "ghcr.io/${GITHUB_REPOSITORY_OWNER}/${image}:latest"
-          done
-
-  # Build the Desktop installers for every supported platform and stage them
-  # as workflow artifacts. No matrix leg mutates the GitHub Release; the final
-  # publication job uploads only after every required build succeeds. macOS
-  # production builds require a Developer ID Application identity and
-  # successful Apple notarization.
+  # Build the Desktop installers for Linux, Windows, and macOS. They are
+  # uploaded to the staged draft only after every backend, web, and chart gate
+  # succeeds.
   desktop:
-    needs: [release, verify]
+    needs: [verify, prepare-release]
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
             target: linux
-            arch: x64
-            cli_artifact: desktop-cli-bin-linux-amd64
-          - os: ubuntu-24.04-arm
-            target: linux
-            arch: arm64
-            cli_artifact: desktop-cli-bin-linux-arm64
+            arch: all
+          - os: windows-latest
+            target: win
+            arch: all
           - os: macos-15-intel
             target: mac
             arch: x64
-            cli_artifact: desktop-cli-bin-darwin-amd64
           - os: macos-14
             target: mac
             arch: arm64
-            cli_artifact: desktop-cli-bin-darwin-arm64
-          - os: windows-latest
-            target: win
-            arch: x64
-            cli_artifact: desktop-cli-bin-windows-amd64
-          - os: windows-latest
-            target: win
-            arch: arm64
-            cli_artifact: desktop-cli-bin-windows-arm64
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@v4
         with:
           ref: ${{ needs.verify.outputs.commit_sha }}
           fetch-depth: 0
@@ -898,11 +570,44 @@ jobs:
         if: matrix.target == 'linux'
         run: sudo apt-get update && sudo apt-get install -y rpm
 
+      - name: Require macOS signing and notarization credentials
+        if: matrix.target == 'mac'
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        shell: bash
+        run: |
+          missing=()
+          for name in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!name:-}" ]; then
+              missing+=("$name")
+            fi
+          done
+          if [ "${#missing[@]}" -ne 0 ]; then
+            printf '::error::Missing required macOS release secret: %s\n' "${missing[@]}"
+            exit 1
+          fi
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          # Deliberately independent from the minimum patch in server/go.mod:
+          # releases follow the newest 1.26 patch available to setup-go.
+          go-version: "1.26.x"
+          check-latest: true
+          cache-dependency-path: server/go.sum
+
+      - name: Record Go toolchain
+        run: go version
+
       - name: Setup pnpm
-        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        uses: pnpm/action-setup@v4
 
       - name: Setup Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
@@ -910,272 +615,330 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Download exact-commit CLI binary
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: ${{ matrix.cli_artifact }}
-          path: ${{ runner.temp }}/patchbay-cli-bin
-
-      - name: Package Desktop installers (${{ matrix.target }})
-        if: matrix.target != 'mac'
-        working-directory: apps/desktop
-        env:
-          # Disable code signing on Linux/Windows for now — the public
-          # release is unsigned for these platforms, the CLI carries the
-          # trust boundary. Set CSC_LINK in repo secrets to enable
-          # Windows signing later.
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
-          PATCHBAY_PREBUILT_CLI_DIR: ${{ runner.temp }}/patchbay-cli-bin
-        run: node scripts/package.mjs --${{ matrix.target }} --${{ matrix.arch }} --publish never
-
-      - name: Package Desktop installers (macOS)
-        if: matrix.target == 'mac'
+      - name: Package Desktop installers (${{ matrix.target }} ${{ matrix.arch }})
         working-directory: apps/desktop
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.CSC_LINK != '' }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          PATCHBAY_PREBUILT_CLI_DIR: ${{ runner.temp }}/patchbay-cli-bin
-        run: node scripts/package.mjs --mac --${{ matrix.arch }} --publish never
-
-      - name: Verify Developer ID signature and notarization (macOS)
-        if: matrix.target == 'mac'
-        working-directory: apps/desktop
-        env:
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ matrix.target == 'mac' && 'true' || 'false' }}
         shell: bash
         run: |
-          app_path="$(find dist -type d -name 'Patchbay.app' -print -quit)"
-          if [ -z "$app_path" ]; then
-            echo "::error::Packaged Patchbay.app was not found"
-            exit 1
+          if [ "${{ matrix.target }}" = "mac" ]; then
+            node scripts/package.mjs --mac --${{ matrix.arch }} --publish never
+          else
+            node scripts/package.mjs --${{ matrix.target }} --x64 --arm64 --publish never
           fi
 
-          codesign --verify --deep --strict --verbose=4 "$app_path"
-          signature_details="$(codesign -dv --verbose=4 "$app_path" 2>&1)"
-          printf '%s\n' "$signature_details"
-          grep -Fq 'Authority=Developer ID Application:' <<<"$signature_details" || {
-            echo "::error::Patchbay.app is not signed with a Developer ID Application identity"
-            exit 1
-          }
-          grep -Fq "TeamIdentifier=$APPLE_TEAM_ID" <<<"$signature_details" || {
-            echo "::error::Patchbay.app was signed by an unexpected Apple team"
-            exit 1
-          }
-
-          xcrun stapler validate "$app_path"
-          assessment="$(spctl --assess --type execute --verbose=4 "$app_path" 2>&1)"
-          printf '%s\n' "$assessment"
-          grep -Fq 'source=Notarized Developer ID' <<<"$assessment" || {
-            echo "::error::Gatekeeper did not recognize Patchbay.app as notarized Developer ID software"
-            exit 1
-          }
-
-      - name: Collect Desktop release assets
+      - name: Validate macOS signature, notarization, and update assets
+        if: matrix.target == 'mac'
         working-directory: apps/desktop
-        env:
-          TAG_NAME: ${{ needs.verify.outputs.tag_name }}
-          TARGET: ${{ matrix.target }}
-          ARCH: ${{ matrix.arch }}
         shell: bash
         run: |
-          version="${TAG_NAME#v}"
-          stage_dir="$RUNNER_TEMP/patchbay-desktop-release"
-          mkdir -p "$stage_dir"
-          case "$TARGET:$ARCH" in
-            linux:x64)
-              required_assets=(
-                "dist/patchbay-desktop-$version-linux-x86_64.AppImage"
-                "dist/patchbay-desktop-$version-linux-amd64.deb"
-                "dist/patchbay-desktop-$version-linux-x86_64.rpm"
-                "dist/latest-linux.yml"
-              )
-              ;;
-            linux:arm64)
-              required_assets=(
-                "dist/patchbay-desktop-$version-linux-arm64.AppImage"
-                "dist/patchbay-desktop-$version-linux-arm64.deb"
-                "dist/patchbay-desktop-$version-linux-aarch64.rpm"
-                "dist/latest-linux-arm64.yml"
-              )
-              ;;
-            mac:x64)
-              required_assets=(
-                "dist/patchbay-desktop-$version-mac-x64.dmg"
-                "dist/patchbay-desktop-$version-mac-x64.zip"
-                "dist/latest-x64-mac.yml"
-              )
-              ;;
-            mac:arm64)
-              required_assets=(
-                "dist/patchbay-desktop-$version-mac-arm64.dmg"
-                "dist/patchbay-desktop-$version-mac-arm64.zip"
-                "dist/latest-mac.yml"
-              )
-              ;;
-            win:x64)
-              required_assets=(
-                "dist/patchbay-desktop-$version-windows-x64.exe"
-                "dist/patchbay-desktop-$version-windows-x64.exe.blockmap"
-                "dist/latest.yml"
-              )
-              ;;
-            win:arm64)
-              required_assets=(
-                "dist/patchbay-desktop-$version-windows-arm64.exe"
-                "dist/patchbay-desktop-$version-windows-arm64.exe.blockmap"
-                "dist/latest-arm64.yml"
-              )
-              ;;
+          set -euo pipefail
+          expected_runner_arch="x86_64"
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            expected_runner_arch="arm64"
+          fi
+          test "$(uname -m)" = "$expected_runner_arch" || {
+            echo "::error::The macOS ${{ matrix.arch }} release must run on a $expected_runner_arch runner."
+            exit 1
+          }
+          app_path="$(find dist -type d -name '*.app' -print -quit)"
+          test -n "$app_path" || {
+            echo "::error::electron-builder did not produce a macOS .app bundle."
+            exit 1
+          }
+          executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app_path/Contents/Info.plist")"
+          executable_path="$app_path/Contents/MacOS/$executable"
+          test -x "$executable_path" || {
+            echo "::error::macOS bundle executable is missing: $executable_path"
+            exit 1
+          }
+          archs="$(lipo -archs "$executable_path")"
+          test "$archs" = "$expected_runner_arch" || {
+            echo "::error::Expected a $expected_runner_arch-only executable, found: $archs"
+            exit 1
+          }
+          codesign --verify --deep --strict --verbose=2 "$app_path"
+          identity="$(codesign -dv --verbose=4 "$app_path" 2>&1 | sed -n 's/^Authority=//p' | head -n 1)"
+          case "$identity" in
+            "Developer ID Application:"*) ;;
             *)
-              echo "::error::Unsupported Desktop release target $TARGET:$ARCH"
+              echo "::error::macOS app is not signed with a Developer ID Application identity: ${identity:-unknown}"
               exit 1
               ;;
           esac
-          for asset in "${required_assets[@]}"; do
-            if [ ! -f "$asset" ]; then
-              echo "::error::Missing Desktop release asset $asset"
+          spctl --assess --type execute --verbose=4 "$app_path"
+          xcrun stapler validate "$app_path"
+          for extension in dmg zip; do
+            test -n "$(find dist -type f -name "*-mac-${{ matrix.arch }}.${extension}" -print -quit)" || {
+              echo "::error::The signed macOS ${{ matrix.arch }} ${extension} is missing from the desktop output."
               exit 1
-            fi
-            cp "$asset" "$stage_dir/"
+            }
           done
-
-          if [ "$TARGET" = 'mac' ]; then
-            blockmap="dist/patchbay-desktop-$version-mac-$ARCH.zip.blockmap"
-            if [ -f "$blockmap" ]; then
-              cp "$blockmap" "$stage_dir/"
-            fi
+          metadata="latest-mac.yml"
+          if [ "${{ matrix.arch }}" = "x64" ]; then
+            metadata="latest-x64-mac.yml"
           fi
+          test -n "$(find dist -type f -name "$metadata" -print -quit)" || {
+            echo "::error::The macOS ${{ matrix.arch }} updater metadata $metadata is missing."
+            exit 1
+          }
 
-      - name: Stage Desktop release assets
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - name: Stage Desktop artifacts and write manifest
+        env:
+          VERIFIED_SHA: ${{ needs.verify.outputs.commit_sha }}
+          TAG_NAME: ${{ needs.verify.outputs.tag_name }}
+          TARGET: ${{ matrix.target }}
+          ARCH: ${{ matrix.arch }}
+        working-directory: apps/desktop
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { createHash } from "node:crypto";
+          import {
+            copyFileSync,
+            mkdirSync,
+            readdirSync,
+            readFileSync,
+            rmSync,
+            statSync,
+            writeFileSync,
+          } from "node:fs";
+          import { basename, dirname, join, relative, resolve } from "node:path";
+
+          const target = process.env.TARGET;
+          const arch = process.env.ARCH;
+          if (!target || !arch) throw new Error("Desktop target and arch are required");
+          const dist = resolve("dist");
+          const stage = join(process.env.RUNNER_TEMP, `patchbay-desktop-${target}-${arch}`);
+          const manifestName = `patchbay-desktop-${target}-${arch}-manifest.json`;
+          const assetPattern = /(?:\.7z|\.AppImage|\.deb|\.dmg|\.exe|\.rpm|\.zip|\.blockmap|^latest.*\.ya?ml$)$/i;
+
+          rmSync(stage, { recursive: true, force: true });
+          mkdirSync(stage, { recursive: true });
+
+          function walk(directory) {
+            const entries = readdirSync(directory, { withFileTypes: true });
+            const files = [];
+            for (const entry of entries) {
+              const absolute = join(directory, entry.name);
+              if (entry.isDirectory()) files.push(...walk(absolute));
+              else if (entry.isFile()) files.push(absolute);
+            }
+            return files;
+          }
+
+          const sourceFiles = walk(dist).filter((file) => assetPattern.test(basename(file)));
+          if (sourceFiles.length === 0) throw new Error("No distributable desktop artifacts were produced");
+
+          const names = new Map();
+          const files = sourceFiles.map((source) => {
+            const name = basename(source);
+            const previous = names.get(name);
+            if (previous) throw new Error(`Duplicate desktop artifact filename '${name}' from '${previous}' and '${source}'`);
+            names.set(name, source);
+            const destination = join(stage, name);
+            copyFileSync(source, destination);
+            const bytes = statSync(destination).size;
+            const sha256 = createHash("sha256").update(readFileSync(destination)).digest("hex");
+            return { name, source: relative(dist, source).split("\\").join("/"), bytes, sha256 };
+          }).sort((left, right) => left.name.localeCompare(right.name));
+
+          const manifest = {
+            schemaVersion: 1,
+            artifact: `desktop-${target}-${arch}`,
+            target,
+            arch,
+            tag: process.env.TAG_NAME,
+            commit: process.env.VERIFIED_SHA,
+            files,
+          };
+          writeFileSync(join(stage, manifestName), `${JSON.stringify(manifest, null, 2)}\n`);
+          console.log(JSON.stringify({ stage, manifest: manifestName, files: files.length }));
+          NODE
+
+      - name: Upload Desktop artifacts for final publication
+        uses: actions/upload-artifact@v4
         with:
-          name: desktop-release-${{ matrix.target }}-${{ matrix.arch }}
-          path: ${{ runner.temp }}/patchbay-desktop-release/*
+          name: desktop-${{ matrix.target }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/patchbay-desktop-${{ matrix.target }}-${{ matrix.arch }}
           if-no-files-found: error
           retention-days: 1
 
   publish-release:
-    needs: [verify, release, desktop, helm-chart]
+    needs: [verify, prepare-release, docker-backend-merge, docker-web-merge, docker-auth-broker-merge, helm-chart, desktop]
     if: >-
       always() &&
       github.repository == 'alexj11324/Cordy' &&
       needs.verify.result == 'success' &&
-      needs.release.result == 'success' &&
-      needs.desktop.result == 'success' &&
-      needs.helm-chart.result == 'success'
+      needs.prepare-release.result == 'success' &&
+      needs.docker-backend-merge.result == 'success' &&
+      needs.docker-web-merge.result == 'success' &&
+      needs.docker-auth-broker-merge.result == 'success' &&
+      needs.helm-chart.result == 'success' &&
+      needs.desktop.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout verified release commit
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@v4
         with:
           ref: ${{ needs.verify.outputs.commit_sha }}
           fetch-depth: 0
 
-      - name: Download staged Rust CLI release assets
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
-          name: github-release-rust-cli
-          path: release-assets
+          go-version: "1.26.x"
+          check-latest: true
+          cache-dependency-path: server/go.sum
 
-      - name: Download staged Desktop release assets
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - name: Record Go toolchain
+        run: go version
+
+      - name: Setup Node 22 for artifact validation
+        uses: actions/setup-node@v4
         with:
-          pattern: desktop-release-*
-          path: release-assets
-          merge-multiple: true
+          node-version: 22
 
-      - name: Verify staged release assets
+      - name: Download staged Desktop artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: desktop-assets
+          pattern: desktop-*
+          merge-multiple: false
+
+      - name: Validate Desktop artifact manifests
         env:
+          VERIFIED_SHA: ${{ needs.verify.outputs.commit_sha }}
           TAG_NAME: ${{ needs.verify.outputs.tag_name }}
+        shell: bash
         run: |
-          version="${TAG_NAME#v}"
-          # electron-builder maps its `${arch}` macro per Linux package type:
-          # x64 becomes x86_64 for AppImage/RPM and amd64 for deb, while arm64
-          # becomes aarch64 for RPM. These are the actual uploaded filenames.
-          for asset in \
-            checksums.txt \
-            "patchbay-cli-$version-linux-amd64.tar.gz" \
-            "patchbay-cli-$version-linux-arm64.tar.gz" \
-            "patchbay-cli-$version-darwin-amd64.tar.gz" \
-            "patchbay-cli-$version-darwin-arm64.tar.gz" \
-            "patchbay-cli-$version-windows-amd64.zip" \
-            "patchbay-cli-$version-windows-arm64.zip" \
-            "patchbay-desktop-$version-linux-x86_64.AppImage" \
-            "patchbay-desktop-$version-linux-amd64.deb" \
-            "patchbay-desktop-$version-linux-x86_64.rpm" \
-            "patchbay-desktop-$version-linux-arm64.AppImage" \
-            "patchbay-desktop-$version-linux-arm64.deb" \
-            "patchbay-desktop-$version-linux-aarch64.rpm" \
-            "latest-linux.yml" \
-            "latest-linux-arm64.yml" \
-            "patchbay-desktop-$version-mac-arm64.dmg" \
-            "patchbay-desktop-$version-mac-arm64.zip" \
-            "patchbay-desktop-$version-mac-x64.dmg" \
-            "patchbay-desktop-$version-mac-x64.zip" \
-            "latest-mac.yml" \
-            "latest-x64-mac.yml" \
-            "patchbay-desktop-$version-windows-x64.exe" \
-            "patchbay-desktop-$version-windows-x64.exe.blockmap" \
-            "patchbay-desktop-$version-windows-arm64.exe" \
-            "patchbay-desktop-$version-windows-arm64.exe.blockmap" \
-            "latest.yml" \
-            "latest-arm64.yml"; do
-            test -f "release-assets/$asset" || {
-              echo "::error::Staged release is missing required asset $asset"
-              exit 1
-            }
-          done
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { createHash } from "node:crypto";
+          import { readdirSync, readFileSync, statSync } from "node:fs";
+          import { basename, dirname, join, relative, resolve } from "node:path";
 
-      - name: Upload and publish complete GitHub release
+          const root = resolve("desktop-assets");
+          const expectedVariants = new Set([
+            "linux:all",
+            "win:all",
+            "mac:x64",
+            "mac:arm64",
+          ]);
+
+          function walk(directory) {
+            const entries = readdirSync(directory, { withFileTypes: true });
+            const files = [];
+            for (const entry of entries) {
+              const absolute = join(directory, entry.name);
+              if (entry.isDirectory()) files.push(...walk(absolute));
+              else if (entry.isFile()) files.push(absolute);
+            }
+            return files;
+          }
+
+          const manifests = walk(root).filter((file) => /patchbay-desktop-(linux|win|mac)-(all|x64|arm64)-manifest\.json$/.test(basename(file)));
+          if (manifests.length !== expectedVariants.size) {
+            throw new Error(`Expected ${expectedVariants.size} desktop manifests, found ${manifests.length}`);
+          }
+          const seenVariants = new Set();
+          for (const manifestPath of manifests) {
+            const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+            if (manifest.schemaVersion !== 1) throw new Error(`Unsupported manifest schema: ${manifestPath}`);
+            const variant = `${manifest.target}:${manifest.arch}`;
+            if (!expectedVariants.has(variant) || seenVariants.has(variant)) {
+              throw new Error(`Unexpected or duplicate desktop variant in ${manifestPath}`);
+            }
+            if (manifest.artifact !== `desktop-${manifest.target}-${manifest.arch}`) {
+              throw new Error(`Desktop manifest artifact identity mismatch: ${manifestPath}`);
+            }
+            if (manifest.tag !== process.env.TAG_NAME || manifest.commit !== process.env.VERIFIED_SHA) {
+              throw new Error(`Desktop manifest identity mismatch: ${manifestPath}`);
+            }
+            if (!Array.isArray(manifest.files) || manifest.files.length === 0) {
+              throw new Error(`Desktop manifest has no files: ${manifestPath}`);
+            }
+            const manifestDirectory = dirname(manifestPath);
+            const names = new Set();
+            for (const file of manifest.files) {
+              if (!file || typeof file.name !== "string" || !/^[^/\\]+$/.test(file.name)) {
+                throw new Error(`Invalid artifact filename in ${manifestPath}`);
+              }
+              if (names.has(file.name)) throw new Error(`Duplicate artifact in ${manifestPath}: ${file.name}`);
+              names.add(file.name);
+              const artifactPath = join(manifestDirectory, file.name);
+              if (!statSync(artifactPath).isFile()) throw new Error(`Missing artifact for ${manifestPath}: ${file.name}`);
+              const bytes = statSync(artifactPath).size;
+              const sha256 = createHash("sha256").update(readFileSync(artifactPath)).digest("hex");
+              if (bytes !== file.bytes || sha256 !== file.sha256) {
+                throw new Error(`Artifact checksum/size mismatch: ${relative(root, artifactPath)}`);
+              }
+            }
+            seenVariants.add(variant);
+          }
+          for (const expected of expectedVariants) {
+            if (!seenVariants.has(expected)) {
+              throw new Error(`Missing desktop artifact variant: ${expected}`);
+            }
+          }
+          console.log(`Validated ${manifests.length} desktop artifact manifests for ${process.env.TAG_NAME} at ${process.env.VERIFIED_SHA}`);
+          NODE
+
+      - name: Upload Desktop artifacts to staged release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.verify.outputs.tag_name }}
-          EXPECTED_COMMIT: ${{ needs.verify.outputs.commit_sha }}
-          IS_STABLE: ${{ needs.verify.outputs.is_stable }}
+          VERIFIED_SHA: ${{ needs.verify.outputs.commit_sha }}
+        shell: bash
         run: |
-          bash scripts/verify-release-tag.sh "$TAG_NAME" "$EXPECTED_COMMIT"
-          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
-          if ! git merge-base --is-ancestor "$EXPECTED_COMMIT" origin/main; then
-            echo "::error::Refusing to publish release because prepared commit '$EXPECTED_COMMIT' is not contained in main."
+          set -euo pipefail
+          tag_sha="$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG_NAME" --jq .sha)"
+          test "$tag_sha" = "$VERIFIED_SHA" || {
+            echo "::error::Release tag $TAG_NAME moved after verification."
             exit 1
-          fi
-          release_channel=(--latest=true)
-          if [ "$IS_STABLE" != "true" ]; then
-            release_channel=(--prerelease --latest=false)
-          fi
-
-          # A failed final upload must be recoverable with GitHub's "rerun
-          # failed jobs" button. The automatic macOS workflow may already have
-          # published this exact tag; validate its channel before appending the
-          # now-complete staged asset set.
-          if release_json="$(gh release view "$TAG_NAME" \
-            --repo "$GITHUB_REPOSITORY" \
-            --json isDraft,isPrerelease 2>/dev/null)"; then
-            is_prerelease="$(jq -r '.isPrerelease' <<<"$release_json")"
-            expected_prerelease=false
-            if [ "$IS_STABLE" != "true" ]; then
-              expected_prerelease=true
-            fi
-            if [ "$is_prerelease" != "$expected_prerelease" ]; then
-              echo "::error::Release $TAG_NAME already exists with an incompatible channel"
-              exit 1
-            fi
-          else
-            gh release create "$TAG_NAME" \
+          }
+          while IFS= read -r -d '' asset; do
+            gh release upload "$TAG_NAME" "$asset" \
               --repo "$GITHUB_REPOSITORY" \
-              --verify-tag \
-              --title "$TAG_NAME" \
-              --generate-notes \
-              --draft \
-              "${release_channel[@]}"
-          fi
-          gh release upload "$TAG_NAME" release-assets/* \
-            --repo "$GITHUB_REPOSITORY" \
-            --clobber
-          gh release edit "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
+              --clobber
+          done < <(find desktop-assets -type f -print0)
+
+      - name: Publish Go CLI and Homebrew artifacts
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          # Keep GoReleaser in the already-created draft. The final step
+          # promotes it only after every desktop, image, chart, and CLI asset
+          # has succeeded.
+          args: release --clean --draft
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify staged release is still a draft at the verified commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.verify.outputs.tag_name }}
+          VERIFIED_SHA: ${{ needs.verify.outputs.commit_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = "true"
+          tag_sha="$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG_NAME" --jq .sha)"
+          test "$tag_sha" = "$VERIFIED_SHA" || {
+            echo "::error::Release tag $TAG_NAME moved before promotion."
+            exit 1
+          }
+
+      - name: Promote the fully gated release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.verify.outputs.tag_name }}
+        run: gh release edit "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --draft=false

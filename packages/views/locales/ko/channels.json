@@ -1,0 +1,39 @@
+{
+  "page": {
+    "title": "채널",
+    "description": "워크스페이스 공유 대화",
+    "new_button": "새 채널",
+    "empty_title": "아직 채널이 없습니다",
+    "empty_description": "채널을 만들어 공유 대화를 시작하세요",
+    "select_prompt": "메시지를 보려면 채널을 선택하세요",
+    "error_title": "채널을 불러올 수 없습니다",
+    "error_description": "다시 시도해 보세요",
+    "retry": "다시 시도"
+  },
+  "channel": {
+    "name": "이름",
+    "name_placeholder": "예: 제품 계획",
+    "slug": "슬러그",
+    "slug_placeholder": "예: product-planning",
+    "description": "설명",
+    "description_placeholder": "이 채널은 무엇을 위한 곳인가요?",
+    "create_title": "채널 만들기",
+    "create_description": "워크스페이스 채널의 이름과 안정적인 슬러그를 추가하세요.",
+    "cancel": "취소",
+    "create": "만들기",
+    "creating": "만드는 중…",
+    "archived": "보관됨",
+    "messages_empty": "아직 메시지가 없습니다. 대화를 시작하세요.",
+    "load_earlier": "이전 메시지 불러오기",
+    "loading_earlier": "이전 메시지를 불러오는 중…",
+    "message_placeholder": "이 채널에 메시지 보내기…",
+    "send": "보내기"
+  },
+  "toasts": {
+    "created": "채널을 만들었습니다",
+    "create_failed": "채널을 만들 수 없습니다",
+    "conflict": "해당 슬러그의 채널이 이미 있습니다",
+    "message_failed": "메시지를 보낼 수 없습니다",
+    "required": "이름과 슬러그는 필수입니다."
+  }
+}

@@ -205,8 +205,8 @@ describe("DeleteRuntimeDialog", () => {
   it("renders the light-mode prompt when no agents are bound", () => {
     renderDialog({ cachedAgents: [] });
 
-    expect(screen.getByText("Delete Device?")).toBeInTheDocument();
-    expect(screen.getByText("Delete device")).toBeInTheDocument();
+    expect(screen.getByText("Delete Runtime?")).toBeInTheDocument();
+    expect(screen.getByText("Delete runtime")).toBeInTheDocument();
     // No checkbox, no agent table in light mode.
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
     expect(screen.queryByText(/Unbind .* and delete this Runtime/)).not.toBeInTheDocument();
@@ -221,11 +221,11 @@ describe("DeleteRuntimeDialog", () => {
     });
 
     expect(
-      screen.getByText(/Unbind 2 agents and delete this Device/),
+      screen.getByText(/Unbind 2 agents and delete this Runtime/),
     ).toBeInTheDocument();
     // Destructive confirm starts disabled until the user ticks the checkbox.
     const confirm = screen.getByRole("button", {
-      name: /Unbind 2 agents and delete device/,
+      name: /Unbind 2 agents and delete runtime/,
     }) as HTMLButtonElement;
     expect(confirm.disabled).toBe(true);
 
@@ -260,12 +260,12 @@ describe("DeleteRuntimeDialog", () => {
 
     // We open in light mode, hit Delete, and expect the dialog to pivot to
     // cascade mode using the server-supplied agent list.
-    const lightConfirm = screen.getByRole("button", { name: "Delete device" });
+    const lightConfirm = screen.getByRole("button", { name: "Delete runtime" });
     fireEvent.click(lightConfirm);
 
     await waitFor(() =>
       expect(
-        screen.getByText(/Unbind 1 agent and delete this Device/),
+        screen.getByText(/Unbind 1 agent and delete this Runtime/),
       ).toBeInTheDocument(),
     );
     expect(screen.getByText("FreshAgent")).toBeInTheDocument();
@@ -298,13 +298,13 @@ describe("DeleteRuntimeDialog", () => {
     fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(
       screen.getByRole("button", {
-        name: /Unbind 2 agents and delete device/,
+        name: /Unbind 2 agents and delete runtime/,
       }),
     );
 
     await waitFor(() =>
       expect(
-        screen.getByText(/Unbind 3 agents and delete this Device/),
+        screen.getByText(/Unbind 3 agents and delete this Runtime/),
       ).toBeInTheDocument(),
     );
     // The new third agent shows in the plan.
@@ -321,7 +321,7 @@ describe("DeleteRuntimeDialog", () => {
     ).toBeInTheDocument();
   });
 
-  // PB-3352: the dialog used to refuse self-healing runtimes outright,
+  // MUL-3352: the dialog used to refuse self-healing runtimes outright,
   // both at the affordance and at confirm. The new contract is owner-led:
   // the affordance is always live, the dialog raises a warning banner so
   // the user understands the daemon will re-register a new row unless
@@ -347,10 +347,10 @@ describe("DeleteRuntimeDialog", () => {
     });
 
     expect(
-      screen.getByText(/registered from a custom device profile/i),
+      screen.getByText(/registered from a custom runtime profile/i),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/delete the custom device profile/i),
+      screen.getByText(/delete the custom runtime profile/i),
     ).toBeInTheDocument();
     expect(
       screen.queryByText(/managed by a running local daemon/i),
@@ -364,10 +364,10 @@ describe("DeleteRuntimeDialog", () => {
     });
 
     expect(
-      screen.getByText(/registered from a custom device profile/i),
+      screen.getByText(/registered from a custom runtime profile/i),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/Unbind 1 agent and delete this Device/),
+      screen.getByText(/Unbind 1 agent and delete this Runtime/),
     ).toBeInTheDocument();
   });
 
@@ -383,7 +383,7 @@ describe("DeleteRuntimeDialog", () => {
       screen.getByText(/managed by a running local daemon/i),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/Unbind 1 agent and delete this Device/),
+      screen.getByText(/Unbind 1 agent and delete this Runtime/),
     ).toBeInTheDocument();
   });
 
@@ -421,7 +421,7 @@ describe("DeleteRuntimeDialog", () => {
       onDeleted,
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete device" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete runtime" }));
     await waitFor(() =>
       expect(apiDeleteRuntime).toHaveBeenCalledWith("rt-1"),
     );

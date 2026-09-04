@@ -1,16 +1,13 @@
 ---
 title: Slack Bot
-description: Install a workspace-scoped Slack Bot and use it in DMs, channels, and the /issue command.
+description: Create a Slack Bot for an agent and use it in DMs, channels, and the /issue, /new, and /clear commands.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Patchbay uses your own Slack app. Once connected, team members can DM the Bot, @-mention it in a channel, or use `/issue` to create issues.
+Patchbay uses your own Slack app. Once connected, team members can DM the Bot, @-mention it in a channel, use `/issue` to create issues, use `/new` to start a new Patchbay Chat, or use `/clear` to reset the current Chat's agent context.
 
-The Slack app is installed at the Patchbay workspace level, not on a
-particular computer or agent. Members can choose or switch the active agent
-with `/agents`; create another Slack app only when you need a separate Bot
-identity.
+One Slack app maps to one Patchbay agent. To connect several agents, create a separate app for each.
 
 ## Before you start
 
@@ -38,6 +35,12 @@ features:
     - command: /issue
       description: Create a Patchbay issue
       usage_hint: "[description]"
+    - command: /new
+      description: Start a new Patchbay chat
+      usage_hint: "[message]"
+    - command: /clear
+      description: Clear the current Patchbay chat context
+      usage_hint: "[message]"
 oauth_config:
   scopes:
     bot:
@@ -66,7 +69,11 @@ settings:
   token_rotation_enabled: false
 ```
 
-Before creating, you can replace both occurrences of `Patchbay` with the agent's name. Do not remove scopes or events from the manifest, or DMs, channel mentions, replies, or `/issue` may stop working.
+Before creating, you can replace both occurrences of `Patchbay` with the agent's name. Do not remove scopes or events from the manifest, or DMs, channel mentions, replies, `/issue`, `/new`, or `/clear` may stop working.
+
+<Callout type="warning">
+Slack slash-command names are workspace-global. If another installed app already owns `/new` or `/clear`, Slack rejects the conflicting command when you create or update the app. Resolve the collision, or send the message form — `@Patchbay /new [message]` or `@Patchbay /clear [message]` — to bypass native slash-command interception.
+</Callout>
 
 <Callout type="warning">
 If this Slack app was installed before attachment support was available, add the `files:read` Bot scope and reinstall the app to the workspace. Slack does not apply newly added scopes to the existing Bot token until the app is reinstalled.
@@ -91,18 +98,17 @@ The Bot connects out to Slack over Socket Mode, so no public Request URL or OAut
 4. Generate and copy the token starting with `xapp-`.
 
 
-## 3. Connect it to the workspace
+## 3. Connect it to an agent
 
-1. In Patchbay, open **Settings → Integrations** and click **Connect Slack**.
-2. Choose the workspace-level installation (or a dedicated agent route if you
-   explicitly need one).
+1. In Patchbay, open **Agents** and select the agent to connect to Slack.
+2. Go to **Integrations** and click **Connect Slack**.
 3. Paste the Bot token and the App-level token.
 4. Click **Connect**.
 
 Patchbay verifies that the two tokens come from the same app. Once connected, the page shows **Connected to Slack**.
 
 <Callout type="warning">
-Both tokens are stored encrypted on the Patchbay server. Tokens are credentials — don't put them in issues, comments, or code repositories. An app already connected to another workspace can't be reused directly; disconnect the original connection first.
+Both tokens are stored encrypted on the Patchbay server. Tokens are credentials — don't put them in issues, comments, or code repositories. An app already connected to another agent or workspace can't be reused directly; disconnect the original connection first.
 </Callout>
 
 ## First use
@@ -141,6 +147,20 @@ In a channel or DM, type:
 
 This command needs no @-mention. Patchbay hands the description to the agent behind the current Bot, which writes up the title and body and creates the issue. Slack first shows an acknowledgment visible only to you; when the issue is created, you get a notification in your Patchbay inbox.
 
+### Start a new Chat with `/new`
+
+In a DM with the Bot, `/new` immediately creates a new, visible empty Chat. `/new <message>` creates the Chat and uses the message as its first turn. A bare `/new` displays as **New chat** until the first effective user message arrives; the title then follows the existing first-message title behavior.
+
+The previous Chat remains available and writable in Patchbay on the web, desktop, and mobile. Only subsequent messages from this Slack conversation are routed to the new Chat.
+
+In a channel or thread, Slack's native slash-command payload does not identify the target thread. Send `@Patchbay /new [message]` in the target thread instead.
+
+### Clear the current Chat context with `/clear`
+
+In a DM with the Bot, `/clear` keeps the current Patchbay Chat and resets only the context visible to the agent. The complete Chat history remains stored and visible in Patchbay. `/clear <message>` uses the message as the first turn in the new context; a bare `/clear` applies the boundary to the next real message.
+
+In a channel or thread, send `@Patchbay /clear [message]` in the target thread so Patchbay can apply the boundary to the correct conversation.
+
 ## Manage connections
 
 Open **Settings → Integrations** to view all connected Slack Bots. Workspace owners and admins can disconnect them.
@@ -149,10 +169,7 @@ After disconnecting, the Socket Mode connection stops and the Bot no longer rece
 
 ## Self-hosting setup
 
-Patchbay Cloud needs no extra configuration. A self-hosted deployment is
-server-managed: the app is read-only and does not accept Slack credentials.
-Follow the [self-hosted messaging deployment contract](/self-host-messaging)
-and run the setup helper on the server.
+Patchbay Cloud needs no extra configuration. A self-hosted deployment must first set a key used to encrypt Slack tokens:
 
 ```dotenv
 PATCHBAY_SLACK_SECRET_KEY=<base64-encoded 32-byte key>
@@ -164,11 +181,7 @@ Generate one like this:
 openssl rand -base64 32
 ```
 
-Set `PATCHBAY_MESSAGING_BOOTSTRAP=true` with the server-owned workspace and
-installer IDs, add the `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN`, team ID, and bot
-user ID to the deployment secret store, then restart the API server. Keep this
-key long-term: if it is rotated or lost, existing tokens can no longer be
-decrypted. Do not expect a Connect button in the self-hosted app.
+Restart the API server, then connect the Slack app. Keep this key long-term: if it is rotated or lost, existing tokens can no longer be decrypted and the Bot must be reconnected.
 
 Account binding links use `PATCHBAY_APP_URL`, falling back to `FRONTEND_ORIGIN` when unset; it must point to a Patchbay address members can reach.
 
@@ -178,7 +191,7 @@ Account binding links use `PATCHBAY_APP_URL`, falling back to `FRONTEND_ORIGIN` 
 - **App can't be verified**: confirm the manifest includes `users:read`, then reinstall the app after updating permissions.
 - **No DM entry point**: confirm `app_home.messages_tab_enabled` is `true`.
 - **No reply in a channel**: confirm the Bot has been invited to the channel and the message @-mentions it.
-- **`/issue` doesn't exist**: confirm the manifest includes the slash command and the `commands` scope, then reinstall the app.
+- **`/issue`, `/new`, or `/clear` doesn't exist**: confirm the manifest includes all three slash commands and the `commands` scope, then reinstall the app. If Slack reports that `/new` or `/clear` is already taken, use the `@Patchbay` message form or resolve the workspace-level command collision first.
 - **Files don't reach the agent**: confirm the manifest includes `files:read` and that the app was reinstalled after the scope was added, and check the file is 20 MiB or smaller.
 - **The Bot doesn't run**: check whether the agent is archived and whether the [runtime](/daemon-runtimes) it uses is online.
 

@@ -138,7 +138,7 @@ export function patchIssueInBuckets(
   const loc = findIssueLocation(resp, id);
   if (!loc) return resp;
   // Normalized so the merged entity's status_category matches the bucket it
-  // lands in; a bare spread would keep the previous category. (PB-6243)
+  // lands in; a bare spread would keep the previous category. (MUL-6243)
   const patch = normalizeStatusPatch(rawPatch);
   const merged: Issue = { ...loc.issue, ...patch };
 

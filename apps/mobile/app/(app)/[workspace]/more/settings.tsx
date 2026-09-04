@@ -31,8 +31,9 @@ import {
 } from "@/lib/use-color-scheme";
 import { THEME } from "@/lib/theme";
 import { cn } from "@/lib/utils";
+import { getW8Copy } from "@/lib/w8-copy";
 
-const THEME_OPTIONS: Array<{ value: ThemePreference; label: string }> = [
+const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
   { value: "light", label: "Light" },
   { value: "dark", label: "Dark" },
   { value: "system", label: "System" },
@@ -58,6 +59,7 @@ export default function SettingsPage() {
   const { data, isLoading, error } = useQuery(workspaceListOptions());
   const { preference, setPreference, colorScheme } = useColorScheme();
   const mutedFg = THEME[colorScheme].mutedForeground;
+  const copy = getW8Copy(user?.language);
 
   const onSwitch = async (ws: Workspace) => {
     if (ws.slug === currentSlug) return;
@@ -86,6 +88,9 @@ export default function SettingsPage() {
   const goProfile = () => router.push(`/${currentSlug}/more/settings/profile`);
   const goNotifications = () =>
     router.push(`/${currentSlug}/more/settings/notifications`);
+  const goWecom = () => {
+    if (currentSlug) router.push(`/${currentSlug}/more/settings/wecom`);
+  };
 
   return (
     <ScrollView
@@ -149,6 +154,15 @@ export default function SettingsPage() {
             );
           })
         )}
+      </SectionGroup>
+
+      <SectionGroup title={copy.wecom.integrations}>
+        <NavRow
+          onPress={goWecom}
+          chevronColor={mutedFg}
+          title={copy.wecom.title}
+          subtitle={copy.wecom.settingsSubtitle}
+        />
       </SectionGroup>
 
       <SectionGroup title="Appearance">

@@ -7,6 +7,8 @@ metadata:
 data:
   # --- Backend ---
   PORT: "8080"
+  PATCHBAY_DATABASE_STARTUP_TIMEOUT: {{ .Values.backend.config.databaseStartupTimeout | quote }}
+  PATCHBAY_DATABASE_CONNECT_TIMEOUT: {{ .Values.backend.config.databaseConnectTimeout | quote }}
   APP_ENV: {{ .Values.backend.config.appEnv | quote }}
   PATCHBAY_APP_URL: {{ .Values.backend.config.appUrl | quote }}
   FRONTEND_ORIGIN: {{ .Values.backend.config.frontendOrigin | quote }}
@@ -18,13 +20,12 @@ data:
   ALLOWED_EMAIL_DOMAINS: {{ .Values.backend.config.allowedEmailDomains | quote }}
   DISABLE_WORKSPACE_CREATION: {{ .Values.backend.config.disableWorkspaceCreation | quote }}
   PATCHBAY_VCS_INTEGRATION_ENABLED: {{ .Values.backend.config.vcsIntegrationEnabled | quote }}
-  PATCHBAY_ENTITLEMENT_POLICY_ENABLED: {{ .Values.backend.config.entitlementPolicy.enabled | quote }}
-  PATCHBAY_ENTITLEMENT_POLICY_URL: {{ .Values.backend.config.entitlementPolicy.url | quote }}
-  PATCHBAY_ENTITLEMENT_POLICY_TIMEOUT: {{ .Values.backend.config.entitlementPolicy.timeout | quote }}
-  PATCHBAY_ENTITLEMENT_STALE_GRACE: {{ .Values.backend.config.entitlementPolicy.staleGrace | quote }}
-  PATCHBAY_ENTITLEMENT_EMERGENCY_DISABLED: {{ .Values.backend.config.entitlementPolicy.emergencyDisabled | quote }}
-  CLERK_ISSUER: {{ .Values.backend.config.clerkIssuer | quote }}
-  CLERK_AUTHORIZED_PARTIES: {{ .Values.backend.config.clerkAuthorizedParties | quote }}
+  FF_LINEAR_INSTALLATION_FOUNDATION: {{ ternary "on" "off" .Values.backend.config.linearInstallationFoundation | quote }}
+  PATCHBAY_LINEAR_PULL_IMPORT_ENABLED: {{ .Values.backend.config.linearPullImportEnabled | quote }}
+  PATCHBAY_LINEAR_PUSH_ENABLED: {{ .Values.backend.config.linearPushEnabled | quote }}
+  PATCHBAY_CLOUD_URL: {{ .Values.backend.config.cloud.url | quote }}
+  GOOGLE_CLIENT_ID: {{ .Values.backend.config.googleClientId | quote }}
+  GOOGLE_REDIRECT_URI: {{ .Values.backend.config.googleRedirectUri | quote }}
   S3_BUCKET: {{ .Values.backend.config.s3Bucket | quote }}
   S3_REGION: {{ .Values.backend.config.s3Region | quote }}
   CLOUDFRONT_DOMAIN: {{ .Values.backend.config.cloudfrontDomain | quote }}
@@ -33,6 +34,6 @@ data:
 
   {{- if not .Values.postgres.external.enabled }}
   # --- PostgreSQL (consumed by the backend to build DATABASE_URL) ---
-  POSTGRES_DB: {{ include "patchbay.postgresDatabase" . | quote }}
-  POSTGRES_USER: {{ include "patchbay.postgresUser" . | quote }}
+  POSTGRES_DB: {{ .Values.postgres.database | quote }}
+  POSTGRES_USER: {{ .Values.postgres.user | quote }}
   {{- end }}

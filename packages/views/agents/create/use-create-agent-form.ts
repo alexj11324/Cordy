@@ -11,6 +11,8 @@ import { useQuery } from "@tanstack/react-query";
 import {
   EMPTY_AGENT_DRAFT,
   isDraftDescriptionWithinLimit,
+  AGENT_CONVERSATION_STARTER_LABEL_MAX_LENGTH,
+  AGENT_CONVERSATION_STARTER_MAX_LENGTH,
   type AgentDraft,
 } from "@patchbay/core/agents";
 import { useAuthStore } from "@patchbay/core/auth";
@@ -70,7 +72,7 @@ export function useCreateAgentForm(options?: {
    * Where the runtime comes from for a draft that already exists somewhere. A
    * resumed builder conversation runs on the runtime its carrier is bound to,
    * and the picker must show THAT — showing the first usable one instead is how
-   * PB-5163 presented runtime A while every message ran on B.
+   * MUL-5163 presented runtime A while every message ran on B.
    */
   runtimeSeed?: RuntimeSeed;
 }): CreateAgentForm {
@@ -124,6 +126,14 @@ export function useCreateAgentForm(options?: {
     draft.memberIds.size === 0 &&
     draft.teamIds.size === 0;
 
+  const conversationStartersInvalid = draft.conversationStarters.some(
+    (item) =>
+      item.label.trim().length === 0 ||
+      item.prompt.trim().length === 0 ||
+      [...item.label].length > AGENT_CONVERSATION_STARTER_LABEL_MAX_LENGTH ||
+      [...item.prompt].length > AGENT_CONVERSATION_STARTER_MAX_LENGTH,
+  );
+
   return {
     draft,
     setDraft,
@@ -139,6 +149,7 @@ export function useCreateAgentForm(options?: {
       selectedRuntime != null &&
       isRuntimeUsableForUser(selectedRuntime, currentUserId) &&
       isDraftDescriptionWithinLimit(draft.description) &&
-      !accessInvalid,
+      !accessInvalid &&
+      !conversationStartersInvalid,
   };
 }

@@ -34,7 +34,6 @@ import type {
   TaskQueuedPayload,
 } from "@patchbay/core/types";
 import { issueKeys } from "@/data/queries/issue-keys";
-import { agentThreadKeys } from "@/data/queries/agent-thread";
 import { useWSSubscriptions } from "@/lib/use-ws-subscriptions";
 import {
   addCommentReaction,
@@ -54,7 +53,6 @@ import {
   removeFromMyIssuesList,
   removeIssueReaction,
 } from "./issue-ws-updaters";
-import { appendTaskMessage } from "./chat-ws-updaters";
 
 type TaskEventPayload =
   | TaskQueuedPayload
@@ -83,13 +81,9 @@ export function useIssueRealtime(
       // AgentActivityRow + RunsSheet can refresh without forcing a full
       // timeline rebuild. WS task payloads only carry { task_id, agent_id,
       // issue_id, status } — not the full AgentTask object — so per
-      // apps/mobile/AGENTS.md "Patch over invalidate" rule #1 (payload is
+      // apps/mobile/CLAUDE.md "Patch over invalidate" rule #1 (payload is
       // just an id), invalidate is the correct primitive.
       const invalidateTaskQueries = () => {
-        // The Agent thread query is keyed by its original opener, not by the
-        // lifecycle event's child task id. Refresh the workspace prefix so a
-        // multi-turn thread cannot remain on an earlier chain snapshot.
-        qc.invalidateQueries({ queryKey: agentThreadKeys.all(wsId) });
         qc.invalidateQueries({ queryKey: issueKeys.activeTasks(wsId, issueId) });
         qc.invalidateQueries({ queryKey: issueKeys.tasks(wsId, issueId) });
       };
@@ -226,10 +220,6 @@ export function useIssueRealtime(
         ws.on("task:completed", onTaskEvent),
         ws.on("task:failed", onTaskEvent),
         ws.on("task:cancelled", onTaskEvent),
-        ws.on("task:message", (payload) => {
-          if (payload.issue_id !== issueId) return;
-          appendTaskMessage(qc, payload);
-        }),
 
         // ----- Reconnect -----
         ws.onReconnect(() => {

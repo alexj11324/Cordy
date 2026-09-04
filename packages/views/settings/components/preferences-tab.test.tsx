@@ -215,7 +215,7 @@ describe("PreferencesTab — Timezone section", () => {
   // Shrink the picker to the curated COMMON_TIMEZONES fallback. With the
   // real Intl.supportedValuesOf the popup renders ~600 options, and
   // userEvent traversal of that list blew past the per-test timeout on
-  // slow CI runners (PB-4427). Everything these tests pick — Asia/Tokyo
+  // slow CI runners (MUL-4427). Everything these tests pick — Asia/Tokyo
   // and the "(browser)" sentinel — exists in the fallback list too.
   const intlWithValues = Intl as typeof Intl & {
     supportedValuesOf?: (key: "timeZone") => string[];

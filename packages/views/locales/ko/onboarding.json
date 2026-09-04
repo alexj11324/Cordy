@@ -17,14 +17,37 @@
   },
   "welcome": {
     "wordmark": "Patchbay에 오신 것을 환영합니다",
-    "headline": "장시간 작업을 위해 개발된 멀티에이전트 시스템",
-    "lede": "작업을 자동으로 분할·편성·실행하며, 목표가 완료될 때까지 이어갑니다.",
-    "lede_web": "ACP로 내 구독을 사용하세요.",
+    "headline_line1": "AI 팀원과",
+    "headline_line2": "하나의",
+    "headline_emphasis": "워크스페이스에서.",
+    "lede": "동료에게 일을 맡기듯 태스크를 할당하세요. 에이전트가 이를 맡고, 상태를 업데이트하고, 끝나면 댓글을 남깁니다.",
+    "lede_web": "데스크톱에는 런타임이 포함되어 있어 따로 설치할 게 없습니다. 웹에서 계속하려면 내 CLI를 연결하세요.",
     "lede_desktop": "끝나면 실제 에이전트가 첫 태스크에 답하고 있을 겁니다.",
     "download_desktop": "데스크톱 다운로드",
     "continue_on_web": "웹에서 계속",
     "start_exploring": "둘러보기 시작",
-    "skip_existing": "이미 해봤습니다"
+    "skip_existing": "이미 해봤습니다",
+    "illustration_caption": "모든 태스크, 모든 스레드, 모든 결정이 팀과 에이전트에게 공유됩니다.",
+    "illustration": {
+      "card1_actor_name": "나",
+      "card1_actor_initial": "N",
+      "card1_body_prefix": " 짧은 출시 글 초안 작성해 줄래? ",
+      "card1_body_suffix": "의 인터뷰 결과를 참고해줘.",
+      "card1_mention_content": "@콘텐츠 에이전트",
+      "card1_mention_research": "@리서치 에이전트",
+      "card2_actor_name": "콘텐츠 에이전트",
+      "card2_body": "바로 할게요. 리서치 인용을 가져오고 \"절약한 시간\" 관점으로 초안 작성 중입니다...",
+      "card3_actor_name": "리서치 에이전트",
+      "card3_body": "이번 주 사용자 인터뷰 요약 — 통화 12건, 반복 주제 4개, 인용 후보 3개.",
+      "card3_timestamp": "15분 전",
+      "card4_actor_name": "리뷰 에이전트",
+      "card4_body": "월요일 초안을 검토하고 톤 관련 메모 4개를 남겼습니다. 새 초안을 기다리는 중입니다.",
+      "card5_actor_name": "코딩 에이전트",
+      "card5_body_prefix": "",
+      "card5_body_suffix": "님이 표시한 내보내기 기능을 배포했습니다. PR에 미리보기 링크가 있습니다.",
+      "card5_mention_you": "@나",
+      "card5_timestamp": "방금 전"
+    }
   },
   "common": {
     "back": "뒤로",
@@ -38,7 +61,8 @@
     "eyebrow": "간단한 질문 하나",
     "lede": "간단한 질문 하나예요. 어떤 사용자에게 Patchbay가 유용한지 파악하는 데 도움이 됩니다. 답하시면 바로 작업으로 돌아가실 수 있어요.",
     "submit": "제출",
-    "hint_ready": "좋습니다. 준비되면 제출을 눌러주세요."
+    "hint_ready": "좋습니다. 준비되면 제출을 눌러주세요.",
+    "save_failed_toast": "저장하지 못했습니다"
   },
   "questions": {
     "about_you": {
@@ -98,13 +122,13 @@
   },
   "cli_install": {
     "copy_aria": "복사",
-    "intro": "이 컴퓨터에서 에이전트를 실행하려면 Claude Code, Codex, Cursor 등을 설치해 기기로 연결해야 합니다. 서버와 원격 개발 환경에서도 사용할 수 있습니다.",
+    "intro": "이 컴퓨터에서 에이전트를 실행하려면 에이전트 런타임(Claude Code, Codex, Cursor 등)이 필요합니다. 서버와 원격 개발 환경에서도 사용할 수 있습니다.",
     "step1_label": "Patchbay CLI 설치",
     "step2_label": "데몬 시작"
   },
   "cloud_waitlist": {
-    "intro_main": "클라우드 기기는 아직 제공되지 않습니다. 이메일을 남겨주시면 준비되는 대로 연락드리겠습니다.",
-    "intro_warning": "주의: 기기가 없으면 에이전트가 작업을 실행할 수 없습니다. 지금 건너뛰면 다시 돌아와 설치하기 전까지 아무것도 실행되지 않습니다.",
+    "intro_main": "클라우드 런타임은 아직 제공되지 않습니다. 이메일을 남겨주시면 준비되는 대로 연락드리겠습니다.",
+    "intro_warning": "주의: 런타임이 없으면 에이전트가 작업을 실행할 수 없습니다. 지금 건너뛰면 다시 돌아와 설치하기 전까지 아무것도 실행되지 않습니다.",
     "email_label": "이메일",
     "email_placeholder": "you@work.com",
     "reason_label": "클라우드를 원하는 이유",
@@ -112,32 +136,43 @@
     "reason_placeholder": "예: 에이전트가 24시간 실행되면 좋겠어요. 팀이 여러 기기에서 작업합니다.",
     "join": "대기자 명단 등록",
     "on_list": "대기자 명단에 등록됨",
-    "success_toast": "대기자 명단에 등록했습니다. 클라우드 기기가 준비되면 이메일로 알려드릴게요.",
+    "success_toast": "대기자 명단에 등록했습니다. 클라우드 런타임이 준비되면 이메일로 알려드릴게요.",
     "failed_toast": "대기자 명단에 등록하지 못했습니다"
   },
   "welcome_after_onboarding": {
     "skip": {
       "loading": "워크스페이스 설정 중...",
       "title": "Patchbay에 오신 것을 환영합니다!",
-      "subtitle": "기기 연결을 돕는 태스크 하나를 추가했습니다. 준비되면 「기기」에서 Patrick과 시작하세요.",
+      "subtitle": "런타임 연결을 돕는 태스크 하나를 추가했습니다. 준비되면 Runtimes에서 Patrick과 시작하세요.",
       "got_it": "알겠습니다",
       "status_in_progress": "진행 중",
       "error_title": "준비하지 못했습니다",
-      "error_body": "기기 안내 태스크를 만들지 못했습니다. 다시 시도하거나, 준비되면 「기기」에서 기기를 연결하세요.",
+      "error_body": "런타임 안내 태스크를 만들지 못했습니다. 다시 시도하거나, 준비되면 Runtimes에서 런타임을 연결하세요.",
       "retry": "다시 시도",
       "dismiss": "나중에",
       "cards": {
         "install_runtime": {
-          "title": "기기 연결",
-          "subtitle": "Codex 또는 Kimi를 설치한 뒤 「기기」에서 Patrick 안내 채팅을 시작하세요."
+          "title": "런타임 연결",
+          "subtitle": "Codex 또는 Kimi를 설치한 뒤 Runtimes에서 Patrick 안내 채팅을 시작하세요."
         }
       }
     }
   },
   "step_workspace": {
+    "projects_label": "프로젝트 (선택)",
+    "projects_placeholder": "https://github.com/org/repo",
+    "projects_add": "추가",
+    "projects_pick_folders": "폴더 선택",
+    "projects_hint": "여러 개를 추가할 수 있어요. 나중에 더 추가해도 됩니다.",
+    "projects_invalid_url": "유효한 Git 저장소 URL을 입력하세요",
+    "projects_attach_failed": "워크스페이스는 만들어졌지만 일부 프로젝트를 연결하지 못했어요",
+    "projects_remove": "{{name}} 제거",
+    "projects_pick_failed": "폴더를 선택할 수 없어요. 다시 시도하세요.",
+    "projects_local_hint": "태스크가 이 기기에서 선택한 폴더를 직접 수정합니다.",
+    "projects_local_offline": "폴더를 연결하려면 로컬 런타임을 연결하세요. 저장소 URL은 지금 추가할 수 있어요.",
     "eyebrow_first": "첫 워크스페이스",
     "eyebrow_resume": "이어 하거나 새로 시작",
-    "headline_first": "첫 워크스페이스 설정하기",
+    "headline_first": "워크스페이스 이름을 정하세요.",
     "headline_resume": "{{name}}에서 계속하거나 새로 시작하세요.",
     "lede_first": "워크스페이스는 태스크, 에이전트, 프로젝트가 모이는 곳입니다. 나중에 팀원을 초대하거나 워크스페이스를 더 만들 수 있습니다.",
     "lede_resume": "이미 있는 워크스페이스에서 설정을 이어가거나 별도로 새 워크스페이스를 만드세요. 여러 워크스페이스에 속할 수 있습니다.",
@@ -173,33 +208,25 @@
     "creation_disabled_logout": "로그아웃",
     "creation_disabled_eyebrow_resume": "내 워크스페이스",
     "creation_disabled_headline_resume": "{{name}}에서 계속하세요.",
-    "creation_disabled_lede_resume": "이 instance에서는 워크스페이스 생성이 비활성화되어 있으므로 기존 워크스페이스로 계속 이동합니다.",
-    "projects_label": "프로젝트 연결 (선택)",
-    "projects_placeholder": "https://github.com/org/repo",
-    "projects_add": "추가",
-    "projects_pick_folders": "폴더 선택",
-    "projects_hint": "여러 개를 연결할 수 있습니다. 나중에 더 추가해도 됩니다.",
-    "projects_invalid_url": "유효한 Git 저장소 URL을 입력하세요",
-    "projects_attach_failed": "워크스페이스는 만들어졌지만 일부 프로젝트를 연결하지 못했습니다",
-    "projects_remove": "{{name}} 제거"
+    "creation_disabled_lede_resume": "이 instance에서는 워크스페이스 생성이 비활성화되어 있으므로 기존 워크스페이스로 계속 이동합니다."
   },
   "step_runtime": {
     "scanning_headline": "이 컴퓨터 연결 중...",
     "scanning_lede_prefix": "에이전트는 이미 사용하는 AI 코딩 도구를 통해 작업합니다. 예: ",
     "scanning_lede_suffix": " 등. 이 컴퓨터에 설치된 도구를 확인하는 중입니다.",
     "found_headline": "Patrick을 어디서 실행할까요?",
-    "found_lede": "이 컴퓨터에서 찾은 기기입니다. 나중에 바꾸거나 더 추가할 수 있습니다.",
-    "runtime_count_other": "기기 {{count}}대",
+    "found_lede": "이 컴퓨터에서 찾은 에이전트 런타임입니다. 나중에 바꾸거나 더 추가할 수 있습니다.",
+    "runtime_count_other": "에이전트 런타임 {{count}}개",
     "status_all_online": "모두 온라인",
     "status_none_online": "온라인 없음",
     "status_n_online": "{{count}}개 온라인",
     "online_label": "온라인",
     "offline_label": "오프라인",
-    "empty_headline": "아직 이 컴퓨터에서 기기를 찾지 못했습니다.",
-    "empty_lede_prefix": "기기는 우리가 연결하는 AI 코딩 도구입니다. 예: ",
+    "empty_headline": "아직 이 컴퓨터에서 에이전트 런타임을 찾지 못했습니다.",
+    "empty_lede_prefix": "에이전트 런타임은 우리가 연결하는 AI 코딩 도구입니다. 예: ",
     "empty_lede_suffix": ". 하나 설치하고 새로고침하거나 아래 경로를 선택하세요.",
     "empty_skip_title": "지금은 건너뛰기",
-    "empty_skip_subtitle": "먼저 워크스페이스에 들어갑니다. 이 컴퓨터에 기기를 연결하기 전까지 에이전트는 작업을 실행할 수 없지만, 탐색하고 계획하고 팀원을 초대할 수는 있습니다.",
+    "empty_skip_subtitle": "먼저 워크스페이스에 들어갑니다. 이 컴퓨터에 에이전트 런타임을 연결하기 전까지 에이전트는 작업을 실행할 수 없지만, 탐색하고 계획하고 팀원을 초대할 수는 있습니다.",
     "empty_skip_action": "건너뛰기",
     "empty_waitlist_title": "클라우드 컴퓨터 사용",
     "empty_waitlist_subtitle": "클라우드에서 컴퓨터를 실행해 드립니다. 아직 제공되지 않습니다.",
@@ -208,7 +235,7 @@
     "refresh": "새로고침",
     "refreshing": "새로고침 중...",
     "hint_selected": "선택됨: {{name}}",
-    "hint_pick": "Patrick과 시작하려면 위에서 기기를 선택하세요.",
+    "hint_pick": "Patrick과 시작하려면 위에서 에이전트 런타임을 선택하세요.",
     "hint_waiting": "첫 결과를 기다리는 중...",
     "hint_skip_or_refresh": "설치 후 새로고침하거나 건너뛰고 워크스페이스로 들어가세요.",
     "continue": "Patrick과 시작"

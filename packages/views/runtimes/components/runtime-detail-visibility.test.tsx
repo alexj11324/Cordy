@@ -74,7 +74,15 @@ vi.mock("@patchbay/core/auth", () => ({
     sel({ user: { id: "user-me" } }),
 }));
 
-vi.mock("@patchbay/core/runtimes", () => ({
+// isRuntimeUsableForUser is the shared owner/public rule the component reads
+// runtime access from, so the real implementation is kept rather than stubbed —
+// a stub here would just re-derive the rule this test is meant to pin down.
+vi.mock("@patchbay/core/runtimes", async () => ({
+  isRuntimeUsableForUser: (
+    await vi.importActual<typeof import("@patchbay/core/runtimes")>(
+      "@patchbay/core/runtimes",
+    )
+  ).isRuntimeUsableForUser,
   deriveRuntimeHealth: () => "online",
   runtimeDisplayName: (rt: { name: string; custom_name?: string | null }) =>
     rt.custom_name?.trim() || rt.name,
@@ -122,7 +130,9 @@ vi.mock("@patchbay/core/runtimes/mutations", () => ({
 // Stubbing ProviderLogo / UsageSection avoids dragging in chart libs and
 // additional query keys we don't care about here.
 vi.mock("./provider-logo", () => ({ ProviderLogo: () => null }));
-vi.mock("./usage-section", () => ({ UsageSection: () => null }));
+vi.mock("./usage-section", () => ({
+  UsageSection: () => <div data-testid="usage-section" />,
+}));
 vi.mock("./shared", () => ({ HealthBadge: () => null }));
 vi.mock("../../agents/presence", () => ({
   availabilityConfig: { offline: { dotClass: "", textClass: "" } },
@@ -267,7 +277,7 @@ describe("RuntimeDetail visibility section", () => {
     expect(screen.queryByText("Private")).not.toBeInTheDocument();
   });
 
-  // PB-6126: a workspace admin may rename or delete someone else's runtime,
+  // MUL-6126: a workspace admin may rename or delete someone else's runtime,
   // but not share it — sharing is the owner's consent to lend their machine,
   // and the PATCH refuses an admin regardless of what this UI renders.
   it("keeps visibility read-only for a workspace admin who does not own the runtime", () => {
@@ -282,7 +292,47 @@ describe("RuntimeDetail visibility section", () => {
     expect(screen.queryByText("Public")).not.toBeInTheDocument();
   });
 
-  // PB-3352: an owner viewing an online local (self-healing) runtime
+  it("hides usage from a workspace admin viewing another member's private runtime", () => {
+    mockQueryData.members = [
+      { user_id: "user-me", role: "admin" },
+      { user_id: "someone-else", role: "member" },
+    ];
+
+    renderDetail(
+      makeRuntime({ owner_id: "someone-else", visibility: "private" }),
+    );
+
+    expect(screen.queryByTestId("usage-section")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Delete runtime/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows usage to a workspace admin viewing another member's public runtime", () => {
+    mockQueryData.members = [
+      { user_id: "user-me", role: "admin" },
+      { user_id: "someone-else", role: "member" },
+    ];
+
+    renderDetail(
+      makeRuntime({ owner_id: "someone-else", visibility: "public" }),
+    );
+
+    expect(screen.getByTestId("usage-section")).toBeInTheDocument();
+  });
+
+  // An ownerless runtime is unreadable server-side (the read gate reuses
+  // canUseRuntimeForAgent, which is fail-closed without an owner), so the
+  // page must not render a Usage section that can only 404.
+  it("hides usage for an ownerless runtime even when it is public", () => {
+    mockQueryData.members = [{ user_id: "user-me", role: "admin" }];
+
+    renderDetail(makeRuntime({ owner_id: null, visibility: "public" }));
+
+    expect(screen.queryByTestId("usage-section")).not.toBeInTheDocument();
+  });
+
+  // MUL-3352: an owner viewing an online local (self-healing) runtime
   // used to see a disabled Delete button with only a hover tooltip
   // explaining why. The new contract: the button is always clickable
   // for owner/admin; the dialog now carries the self-heal warning.
@@ -295,7 +345,7 @@ describe("RuntimeDetail visibility section", () => {
       }),
     );
     const btn = screen.getByRole("button", {
-      name: /Delete device/i,
+      name: /Delete runtime/i,
     }) as HTMLButtonElement;
     expect(btn.disabled).toBe(false);
   });
@@ -309,7 +359,7 @@ describe("RuntimeDetail visibility section", () => {
       }),
     );
     expect(
-      screen.queryByRole("button", { name: /Delete device/i }),
+      screen.queryByRole("button", { name: /Delete runtime/i }),
     ).not.toBeInTheDocument();
   });
 
@@ -327,13 +377,13 @@ describe("RuntimeDetail visibility section", () => {
       }),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /Delete device/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Delete runtime/i }));
     expect(
-      screen.getByText("Delete custom device from workspace?"),
+      screen.getByText("Delete custom runtime from workspace?"),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("alertdialog", {
-        name: "Delete custom device from workspace?",
+        name: "Delete custom runtime from workspace?",
       }),
     ).toBeInTheDocument();
 
@@ -357,7 +407,7 @@ describe("RuntimeDetail visibility section", () => {
     );
 
     expect(
-      screen.queryByRole("button", { name: /Delete device/i }),
+      screen.queryByRole("button", { name: /Delete runtime/i }),
     ).not.toBeInTheDocument();
   });
 });

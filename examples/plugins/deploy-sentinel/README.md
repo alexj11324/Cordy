@@ -73,10 +73,15 @@ export PATCHBAY_PLUGIN_DEV_ORIGINS=https://127.0.0.1:8788,https://127.0.0.1:8789
 export PATCHBAY_PLUGIN_DEV_CA=/path/to/your-dev-ca.pem
 ```
 
-Install it as `local:deploy-sentinel`, fill in the config form, then open the
-`metrics` approval panel and tick the tools you want agents to reach. Nothing
-under `metrics` is callable until you do — that is the whole difference between
-the `mcp` transport and an `http` hook.
+Publish it from `PATCHBAY_PLUGIN_DIR` as `deploy-sentinel`, install the version
+that appears, fill in the config form, then open the `metrics` approval panel
+and tick the tools you want agents to reach. Nothing under `metrics` is callable
+until you do — that is the whole difference between the `mcp` transport and an
+`http` hook.
+
+Note what `PATCHBAY_PLUGIN_DIR` does and does not cover. It is a publishing
+shortcut for the FRONTEND artifact only; the two servers above are still yours
+to run, and the `net:` scopes are still what authorises reaching them.
 
 Both endpoints must be HTTPS even locally: the manifest validator requires it,
 and `PATCHBAY_PLUGIN_DEV_CA` is how you get a self-signed certificate trusted.
@@ -98,7 +103,11 @@ approve.
 
 ## Tested
 
-The Rust plugin service's contract tests cover manifest installation, skill and
-agent-hook registration, signed hook calls, MCP tool discovery, approval, and
-schema-digest pinning. This example exercises the same production manifest and
-wire contracts with the `.mjs` processes that you run by hand.
+`server/internal/handler/plugin_example_test.go` installs **this manifest**,
+not a copy, and drives it: the skill lands in the skill table, the agent tool
+list contains exactly the hooks that declare the `agent` trigger, an agent hook
+call goes out signed and comes back, and the `metrics` tools are discovered,
+refused before approval, and pinned by schema digest after it.
+
+The `.mjs` files are what you run by hand. The test uses Go servers that answer
+the same contract, so CI does not need node.

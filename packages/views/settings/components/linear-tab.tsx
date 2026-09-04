@@ -63,6 +63,7 @@ type BindingDraft = {
   syncMode: LinearSyncMode;
   initialSourceOfTruth: "linear" | "patchbay" | null;
   statusMapping: Record<string, unknown>;
+  agentLabelMapping: Record<string, unknown>;
 };
 
 const emptyDraft: BindingDraft = {
@@ -72,6 +73,7 @@ const emptyDraft: BindingDraft = {
   syncMode: "import",
   initialSourceOfTruth: "linear",
   statusMapping: {},
+  agentLabelMapping: {},
 };
 
 function selectClassName() {
@@ -397,6 +399,7 @@ function BindingWizard({
         syncMode: existing.sync_mode,
         initialSourceOfTruth: existing.initial_source_of_truth === "patchbay" ? "patchbay" : "linear",
         statusMapping: existing.status_mapping,
+        agentLabelMapping: existing.agent_label_mapping,
       }));
       return;
     }
@@ -434,6 +437,7 @@ function BindingWizard({
       initial_source_of_truth:
         draft.syncMode === "not_synced" ? null : draft.initialSourceOfTruth,
       status_mapping: draft.statusMapping,
+      agent_label_mapping: draft.agentLabelMapping,
     };
     void api
       .dryRunLinearBinding(workspaceId, body)
@@ -456,6 +460,7 @@ function BindingWizard({
     draft.linearTeamId,
     draft.patchbayProjectId,
     draft.statusMapping,
+    draft.agentLabelMapping,
     draft.syncMode,
     step,
     workspaceId,
@@ -498,6 +503,7 @@ function BindingWizard({
       sync_mode: draft.syncMode,
       initial_source_of_truth: draft.syncMode === "not_synced" ? null : draft.initialSourceOfTruth,
       status_mapping: draft.statusMapping,
+      agent_label_mapping: draft.agentLabelMapping,
     };
     try {
       const connection = await api.getLinearConnection(workspaceId);
@@ -612,6 +618,7 @@ function BindingWizard({
                     syncMode: "import",
                     initialSourceOfTruth: "linear",
                     statusMapping: {},
+                    agentLabelMapping: {},
                   }))
                 }
               >

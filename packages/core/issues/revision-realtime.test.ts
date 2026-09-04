@@ -14,7 +14,7 @@ function issue(revision: number, title: string): Issue {
   return {
     id: "issue-1",
     workspace_id: "ws-1",
-    identifier: "PB-1",
+    identifier: "MUL-1",
     number: 1,
     title,
     description: null,
@@ -225,7 +225,7 @@ describe("issue realtime revision admission", () => {
   });
 });
 
-// PB-6394: `getQueriesData` matches a key PREFIX, so a scan over `tableAll` /
+// MUL-6394: `getQueriesData` matches a key PREFIX, so a scan over `tableAll` /
 // `myAll` also sees sibling caches with a different shape. Reading `rows` /
 // `byStatus` off them threw "Cannot read properties of undefined (reading
 // 'some')" out of `useCreateComment`'s onSuccess — the comment was created,
@@ -268,7 +268,7 @@ describe("auxiliary revision — sibling caches under a shared key prefix", () =
       issueKeys.tableFacets("ws-1", { query, facets: [{ kind: "status" }] }),
       { query_fingerprint: "sha256:facets", total: 1, facets: [] },
     );
-    // The executor-grouped caches share the `my` prefix with the bucketed
+    // The assignee-grouped caches share the `my` prefix with the bucketed
     // ones but carry no `byStatus`.
     qc.setQueryData(issueKeys.myExecutorGroups("ws-1", "assigned", {}), {
       groups: [],

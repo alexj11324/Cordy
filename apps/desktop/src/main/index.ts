@@ -1,22 +1,19 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeImage, Notification, screen } from "electron";
-import { existsSync, renameSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import { pathToFileURL } from "url";
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
 import fixPath from "fix-path";
-import { setupAutoUpdater } from "./updater";
-import { setupDaemonManager } from "./daemon-manager";
 import { setupLocalDirectory } from "./local-directory";
-import { openExternalSafely, downloadURLSafely } from "./external-url";
+import { setupLocalGuestRuntime } from "./local-guest-runtime";
 import {
-  LEGACY_PROTOCOL,
-  PROTOCOL,
-  findDesktopProtocolUrl,
-  readDesktopAppSuffix,
-  readDesktopCallbackProtocol,
-  registerDesktopProtocolClients,
-} from "./protocol-registration";
+  setupLocalGuestSession,
+  type LocalGuestSessionController,
+} from "./local-guest-session";
+import { setupLocalGuestRunner } from "./local-guest-runner";
+import { GuestDeepLinkGate } from "./local-guest-deep-link-gate";
+import { LocalWorkspaceGrants } from "./local-guest-workspace";
+import { openExternalSafely, downloadURLSafely } from "./external-url";
 import { installContextMenu } from "./context-menu";
 import { handleAppShortcut } from "./keyboard-shortcuts";
 import { installNavigationGestures } from "./navigation-gestures";
@@ -61,32 +58,21 @@ import {
 } from "../shared/auth-session";
 import {
   MAIN_RENDERER_CHANNEL_STATE_CHANNEL,
-  MAIN_RENDERER_MESSAGE_ACK_CHANNEL,
   MainRendererMessageQueue,
-  parseMainRendererMessageAcknowledgement,
   parseMainRendererChannelState,
   type MainRendererMessageChannel,
 } from "../shared/main-renderer-messages";
+import type { LocalGuestMode } from "../shared/local-guest";
 import { AuthSessionCoordinator } from "./auth-session-coordinator";
 import {
   NotificationGate,
   parseNativeNotificationPayload,
 } from "./notification-gate";
-import { resolveDevAcceptanceCdpPort } from "./dev-acceptance-cdp";
 
 // Guards against registering the will-download handler more than once on the
 // same session. window.webContents.session is shared, and createWindow() can
 // be called again on macOS (app "activate" after all windows are closed).
 const downloadDialogSessions = new WeakSet<Electron.Session>();
-const authCallbackProtocol = process.defaultApp
-  ? (process.env.DESKTOP_AUTH_CALLBACK_PROTOCOL ??
-    readDesktopCallbackProtocol(process.argv) ??
-    "patchbay-canary")
-  : PROTOCOL;
-if (process.defaultApp && !process.env.DESKTOP_APP_SUFFIX) {
-  const recoveredSuffix = readDesktopAppSuffix(process.argv);
-  if (recoveredSuffix) process.env.DESKTOP_APP_SUFFIX = recoveredSuffix;
-}
 
 function installDownloadSaveDialogHandler(window: BrowserWindow): void {
   const { session } = window.webContents;
@@ -139,42 +125,7 @@ if (process.platform !== "win32") {
   process.env.PATH = `${fallbackPaths.join(":")}:${process.env.PATH ?? ""}`;
 }
 
-// The complete development acceptance runner needs a narrow control plane so
-// it can drive the *real* Electron renderer after a normal user login. Keep
-// this opt-in and loopback-only: ordinary `pnpm dev`, packaged builds, and
-// release builds never expose Chromium's remote debugging endpoint. Chromium's
-// CDP listener has no application-level authentication, so the acceptance
-// command is only safe on a trusted local machine and must never be forwarded.
-const devAcceptanceCdpPort = resolveDevAcceptanceCdpPort({
-  isDev: is.dev,
-  isPackaged: app.isPackaged,
-  enabled: process.env.VITE_PATCHBAY_DEV_ACCEPTANCE,
-  port:
-    process.env.VITE_PATCHBAY_DEV_ACCEPTANCE_CDP_PORT ??
-    process.env.PATCHBAY_DEV_ACCEPTANCE_CDP_PORT,
-});
-if (devAcceptanceCdpPort !== null) {
-  app.commandLine.appendSwitch("remote-debugging-address", "127.0.0.1");
-  app.commandLine.appendSwitch(
-    "remote-debugging-port",
-    String(devAcceptanceCdpPort),
-  );
-  console.info(
-    `[dev:acceptance] Electron CDP enabled on 127.0.0.1:${devAcceptanceCdpPort}`,
-  );
-}
-
-function migrateDataDirectory(source: string, destination: string): void {
-  if (!existsSync(source) || existsSync(destination)) return;
-  try {
-    renameSync(source, destination);
-  } catch (error) {
-    console.warn(
-      `[brand-migration] could not move ${source} to ${destination}:`,
-      error,
-    );
-  }
-}
+const PROTOCOL = "patchbay";
 const devLog = is.dev ? createBestEffortDevLog() : undefined;
 
 // Where the main process parks a freeze/crash breadcrumb until the next
@@ -196,6 +147,19 @@ const notificationGate = new NotificationGate();
 const mainRendererMessages = new MainRendererMessageQueue();
 let desktopInitialized = false;
 let authSessionGeneration = 0;
+let cloudServicesEnabled = false;
+let guestSessionController: LocalGuestSessionController | null = null;
+let localGuestRunnerController: ReturnType<typeof setupLocalGuestRunner> | null =
+  null;
+let cloudServicesTeardown: (() => Promise<void> | void) | null = null;
+// Reads the main-owned mode, never a renderer claim: the gate is the only
+// path from a deep link to renderer traffic.
+const guestDeepLinkGate = new GuestDeepLinkGate(
+  mainRendererMessages,
+  (channel, payload) => sendMainRendererMessage(channel, payload),
+  () => guestSessionController?.getMode() ?? "undecided",
+);
+const localWorkspaceGrants = new LocalWorkspaceGrants();
 const rendererRouteContexts = new WeakMap<
   Electron.WebContents,
   RendererRouteContext
@@ -205,6 +169,69 @@ let runtimeConfigResult: RuntimeConfigResult = {
   ok: false,
   error: { message: "Runtime config has not loaded yet" },
 };
+
+async function enableCloudServices(): Promise<void> {
+  if (cloudServicesEnabled) return;
+  cloudServicesEnabled = true;
+  try {
+    const [{ setupAutoUpdater }, { setupDaemonManager }] = await Promise.all([
+      import("./updater"),
+      import("./daemon-manager"),
+    ]);
+    // A cloud transition can only be requested by the main renderer. Keep the
+    // flag set until both lazy modules are registered so CloudApp never starts
+    // issuing IPC calls against an uninitialised daemon/updater boundary.
+    if (!cloudServicesEnabled) return;
+    const updaterTeardown = setupAutoUpdater(
+      () => mainWindow,
+      () => cloudServicesEnabled,
+    );
+    const daemonTeardown = setupDaemonManager(() => mainWindow);
+    cloudServicesTeardown = async () => {
+      await daemonTeardown();
+      updaterTeardown();
+    };
+  } catch (error) {
+    cloudServicesEnabled = false;
+    throw error;
+  }
+}
+
+async function disableCloudServices(): Promise<void> {
+  cloudServicesEnabled = false;
+  localGuestRunnerController?.cancel();
+  await cloudServicesTeardown?.();
+  cloudServicesTeardown = null;
+  guestDeepLinkGate.rejectCloudTraffic();
+  authSessionCoordinator.reportMain(null);
+}
+
+function isCloudMode(): boolean {
+  return cloudServicesEnabled && guestSessionController?.getMode() === "cloud";
+}
+
+function handleGuestModeChanged(mode: LocalGuestMode): void {
+  // The gate drops every deferred and queued cloud payload for a non-cloud
+  // mode, and only releases them once main itself has entered cloud mode.
+  const releasedDeepLinks = guestDeepLinkGate.applyMode(mode);
+  if (mode === "guest") {
+    authSessionCoordinator.reportMain(null);
+  } else {
+    // Leaving Guest ends the consent that Guest was given. Directory grants
+    // and the local run history are session-scoped local state, so neither the
+    // next Guest nor a cloud account inherits them.
+    localWorkspaceGrants.clear();
+    void localGuestRunnerController?.clear();
+  }
+  if (releasedDeepLinks) {
+    const window = ensureMainWindow();
+    if (window) focusMainWindow(window);
+  }
+  const window = mainWindow;
+  if (window && !window.isDestroyed()) {
+    window.webContents.send("guest-session:mode", mode);
+  }
+}
 
 // --- Deep link helpers ---------------------------------------------------
 
@@ -233,7 +260,10 @@ function dispatchToMainRenderer(
   channel: MainRendererMessageChannel,
   payload: unknown,
 ): void {
-  mainRendererMessages.enqueue(channel, payload, sendMainRendererMessage);
+  // Every main → renderer payload goes through the Guest gate, including the
+  // ones that do not look like deep links: a notification click is an issue
+  // deep link, and the settings chord targets a cloud-only tab.
+  if (!guestDeepLinkGate.dispatch(channel, payload)) return;
   const window = ensureMainWindow();
   if (window) focusMainWindow(window);
 }
@@ -241,15 +271,12 @@ function dispatchToMainRenderer(
 function handleDeepLink(url: string): void {
   try {
     const parsed = new URL(url);
-    if (
-      parsed.protocol !== `${PROTOCOL}:` &&
-      parsed.protocol !== `${LEGACY_PROTOCOL}:` &&
-      parsed.protocol !== `${authCallbackProtocol}:`
-    ) {
-      return;
-    }
+    if (parsed.protocol !== `${PROTOCOL}:`) return;
 
     // patchbay://auth/callback?code=<one-time-code>&state=<request-state>
+    // Never accept a bearer token from a custom-protocol URL. The browser
+    // completes a registered PKCE handoff and the renderer redeems this
+    // single-use code over HTTPS.
     if (parsed.hostname === "auth" && parsed.pathname === "/callback") {
       const code = parsed.searchParams.get("code");
       const state = parsed.searchParams.get("state");
@@ -329,7 +356,7 @@ function installWindowShortcutHandler(window: BrowserWindow): void {
       window.webContents.send("tab:close-active");
     } else if (result === "open-settings") {
       event.preventDefault();
-      // Settings is a first-class page owned by the main app window.
+      // Settings is a tab, so it can only live in the tabbed main window.
       // Routing through the queue means the chord also works from a
       // dedicated issue window — and from one that outlived the main window,
       // which is recreated and only then handed the request.
@@ -439,7 +466,7 @@ function createWindow(): BrowserWindow {
   installDownloadSaveDialogHandler(window);
 
   window.webContents.setWindowOpenHandler((details) => {
-    openExternalSafely(details.url);
+    if (cloudServicesEnabled) void openExternalSafely(details.url);
     return { action: "deny" };
   });
 
@@ -556,7 +583,7 @@ function createIssueWindow(context: IssueWindowContext): void {
   installDownloadSaveDialogHandler(window);
 
   window.webContents.setWindowOpenHandler((details) => {
-    void openExternalSafely(details.url);
+    if (cloudServicesEnabled) void openExternalSafely(details.url);
     return { action: "deny" };
   });
   installWindowShortcutHandler(window);
@@ -619,20 +646,9 @@ const DEV_APP_NAME = process.env.DESKTOP_APP_SUFFIX
   : "Patchbay Canary";
 
 if (is.dev) {
-  if (!process.env.DESKTOP_APP_SUFFIX) {
-    migrateDataDirectory(
-      join(app.getPath("appData"), "Cordy Canary"), // legacy-brand-compat
-      join(app.getPath("appData"), DEV_APP_NAME),
-    );
-  }
   app.setName(DEV_APP_NAME);
   app.setPath("userData", join(app.getPath("appData"), DEV_APP_NAME));
 } else {
-  const patchbayUserData = join(app.getPath("appData"), "Patchbay");
-  migrateDataDirectory(
-    join(app.getPath("appData"), "Cordy"), // legacy-brand-compat
-    patchbayUserData,
-  );
   // Pin the production app name in code. Electron's Linux WM_CLASS is set
   // from app.getName() when the first BrowserWindow is realized; the
   // packaged ASAR's package.json `productName` already steers app.getName()
@@ -640,23 +656,18 @@ if (is.dev) {
   // (declared in electron-builder.yml) survive a regression in
   // productName / the build pipeline. Must run before requestSingleInstanceLock().
   app.setName("Patchbay");
-  app.setPath("userData", patchbayUserData);
 }
-
-migrateDataDirectory(
-  join(homedir(), ".cordy"), // legacy-brand-compat
-  join(homedir(), ".patchbay"),
-);
 
 // --- Protocol registration -----------------------------------------------
 
-registerDesktopProtocolClients(app, {
-  isDefaultApp: Boolean(process.defaultApp),
-  platform: process.platform,
-  execPath: process.execPath,
-  authCallbackProtocol,
-  desktopAppSuffix: process.env.DESKTOP_APP_SUFFIX,
-});
+if (process.defaultApp) {
+  // In dev, register with the path to the electron binary + app path
+  app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [
+    app.getAppPath(),
+  ]);
+} else {
+  app.setAsDefaultProtocolClient(PROTOCOL);
+}
 
 // --- Single instance lock ------------------------------------------------
 
@@ -679,16 +690,15 @@ if (!gotTheLock) {
     if (window) focusMainWindow(window);
 
     // On Windows the deep link URL is the last argv entry
-    const deepLinkUrl = findDesktopProtocolUrl(argv, authCallbackProtocol);
+    const deepLinkUrl = argv.find((arg) => arg.startsWith(`${PROTOCOL}://`));
     if (deepLinkUrl) handleDeepLink(deepLinkUrl);
   });
 
   // Windows/Linux cold-start deep links are safe to parse now. Delivery is
   // queued because desktopInitialized remains false until runtime config and
   // IPC handlers are ready.
-  const coldStartDeepLink = findDesktopProtocolUrl(
-    process.argv,
-    authCallbackProtocol,
+  const coldStartDeepLink = process.argv.find((arg) =>
+    arg.startsWith(`${PROTOCOL}://`),
   );
   if (coldStartDeepLink) handleDeepLink(coldStartDeepLink);
 
@@ -734,7 +744,11 @@ if (!gotTheLock) {
     // is the single audit point for renderer-controlled URLs reaching the
     // OS shell under the app's intentional webSecurity: false configuration
     // (the renderer itself runs sandboxed).
-    ipcMain.handle("shell:openExternal", (_event, url: string) => {
+    ipcMain.handle("shell:openExternal", (event, url: unknown) => {
+      if (!isCloudMode() || !BrowserWindow.fromWebContents(event.sender)) {
+        return;
+      }
+      if (typeof url !== "string") return;
       return openExternalSafely(url);
     });
 
@@ -745,7 +759,10 @@ if (!gotTheLock) {
     });
 
     ipcMain.handle("window:open-issue", (event, request: unknown) => {
-      if (!BrowserWindow.fromWebContents(event.sender)) {
+      if (
+        !isCloudMode() ||
+        !BrowserWindow.fromWebContents(event.sender)
+      ) {
         return { ok: false, reason: "invalid_request" } as const;
       }
       const context = parseIssueWindowRequest(request);
@@ -756,10 +773,14 @@ if (!gotTheLock) {
       return { ok: true } as const;
     });
 
-    ipcMain.handle("file:download-url", (event, url: string) => {
+    ipcMain.handle("file:download-url", (event, url: unknown) => {
       const sourceWindow = BrowserWindow.fromWebContents(event.sender);
-      if (!sourceWindow) {
-        console.warn("[download] ignored file:download-url — source window torn down");
+      if (!isCloudMode() || !sourceWindow || typeof url !== "string") {
+        if (!sourceWindow) {
+          console.warn(
+            "[download] ignored file:download-url — source window torn down",
+          );
+        }
         return;
       }
       downloadURLSafely(sourceWindow, url);
@@ -772,11 +793,7 @@ if (!gotTheLock) {
     ipcMain.on("app:get-info", (event) => {
       const p = process.platform;
       const os = p === "darwin" ? "macos" : p === "win32" ? "windows" : p === "linux" ? "linux" : "unknown";
-      event.returnValue = {
-        version: getAppVersion(),
-        os,
-        authCallbackProtocol,
-      };
+      event.returnValue = { version: getAppVersion(), os };
     });
 
     // Sync IPC: read + clear any freeze/crash breadcrumb left by a previous
@@ -823,24 +840,6 @@ if (!gotTheLock) {
           parsed.channel,
           parsed.ready,
           sendMainRendererMessage,
-        );
-      },
-    );
-
-    // A native auth handoff stays in the main-process queue until the renderer
-    // has redeemed it. This lets a recreated BrowserWindow receive the same
-    // one-time payload after a transient renderer failure without exposing any
-    // bearer token to main or to the acknowledgement channel.
-    ipcMain.on(
-      MAIN_RENDERER_MESSAGE_ACK_CHANNEL,
-      (event, value: unknown) => {
-        if (!mainWindow || event.sender !== mainWindow.webContents) return;
-        const acknowledgement =
-          parseMainRendererMessageAcknowledgement(value);
-        if (!acknowledgement) return;
-        mainRendererMessages.acknowledge(
-          acknowledgement.channel,
-          acknowledgement.payload,
         );
       },
     );
@@ -934,12 +933,40 @@ if (!gotTheLock) {
       }
     });
 
+    // Load the main-owned Guest mode before creating any renderer. An issue
+    // window must never get a chance to boot CoreProvider while a persisted
+    // local Guest session is active.
+    guestSessionController = await setupLocalGuestSession(
+      () => mainWindow,
+      enableCloudServices,
+      disableCloudServices,
+      handleGuestModeChanged,
+    );
+    if (guestSessionController.getMode() === "guest") {
+      handleGuestModeChanged("guest");
+    }
+    if (
+      guestDeepLinkGate.hasDeferred() &&
+      guestSessionController.getMode() === "undecided"
+    ) {
+      // An auth/invite deep link is an explicit cloud intent. If no persisted
+      // Guest session won the startup race, promote the main-owned mode before
+      // the renderer is created and then deliver only the validated queue.
+      await guestSessionController.enterCloudFromMain();
+    }
     desktopInitialized = true;
     createWindow();
 
-    setupAutoUpdater(() => mainWindow);
-    setupDaemonManager(() => mainWindow);
-    setupLocalDirectory(() => mainWindow);
+    localGuestRunnerController = setupLocalGuestRunner(
+      () => mainWindow,
+      () => guestSessionController?.getMode() ?? "undecided",
+      localWorkspaceGrants,
+    );
+    setupLocalGuestRuntime(() => mainWindow);
+    // The OS directory picker is the only place the user expresses which
+    // directory a local run may touch, so it is also the only place a grant is
+    // created.
+    setupLocalDirectory(() => mainWindow, (path) => localWorkspaceGrants.grant(path));
 
     app.on("activate", () => {
       const window = ensureMainWindow();

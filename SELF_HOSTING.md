@@ -6,9 +6,9 @@ Deploy Patchbay on your own infrastructure in minutes.
 
 | Component | Description | Technology |
 |-----------|-------------|------------|
-| **Backend** | REST API + WebSocket server | Rust (`patchbay-server` binary) |
+| **Backend** | REST API + WebSocket server | Go (single binary) |
 | **Frontend** | Web application | Next.js 16 |
-| **Database** | Primary data store | PostgreSQL 17 with pgvector |
+| **Database** | Primary data store | PostgreSQL 17 (`pgcrypto` + `pg_trgm`) |
 
 Each user who runs AI agents locally also installs the **`patchbay` CLI** and runs the **agent daemon** on their own machine.
 
@@ -49,10 +49,10 @@ Open http://localhost:3000. To log in, configure `RESEND_API_KEY` in `.env` for 
 
 > **Prerequisites:** Docker and Docker Compose must be installed. The script checks for this and provides install links if missing.
 >
-> **CLI only?** If the self-host server is already running and you only need the CLI on a macOS/Linux machine, use the release installer:
+> **CLI only?** If the self-host server is already running and you only need the CLI on a macOS/Linux machine, install it with Homebrew:
 >
 > ```bash
-> curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash
+> brew install alexj11324/Cordy/patchbay
 > ```
 
 ---
@@ -67,7 +67,7 @@ If you prefer to run each step manually:
 
 ```bash
 git clone https://github.com/alexj11324/Cordy.git
-cd patchbay
+cd Cordy
 make selfhost
 ```
 
@@ -92,20 +92,20 @@ Open http://localhost:3000 in your browser. The Docker self-host stack defaults 
 - **Without email configured:** the verification code is generated server-side and printed to the backend container logs (look for `[DEV] Verification code for ...:`). Useful for one-off testing on a single machine.
 - **Deterministic local/private testing:** set `APP_ENV=development` and `PATCHBAY_DEV_VERIFICATION_CODE=888888` in `.env`, then restart the backend. This fixed code is ignored when `APP_ENV=production`.
 
-Changes to `ALLOW_SIGNUP` and `DISABLE_WORKSPACE_CREATION` take effect after restarting the backend / compose stack. See [Advanced Configuration → Signup Controls](SELF_HOSTING_ADVANCED.md#signup-controls-optional) for the recommended sequence to lock down workspace creation.
+Changes to `ALLOW_SIGNUP`, `DISABLE_WORKSPACE_CREATION`, and `GOOGLE_CLIENT_ID` also take effect after restarting the backend / compose stack. The web UI reads all three from `/api/config` at runtime, so no web rebuild is needed. See [Advanced Configuration → Signup Controls](SELF_HOSTING_ADVANCED.md#signup-controls-optional) for the recommended sequence to lock down workspace creation.
 
 > **Warning:** do **not** set `PATCHBAY_DEV_VERIFICATION_CODE` on a publicly reachable instance — anyone who knows an email address can then log in with that fixed code.
 
 ### Step 3 — Install CLI & Start Daemon
 
-The daemon runs on your local machine (not inside Docker). It detects installed AI agent CLIs, registers them with the server, and executes tasks when agents are assigned work.
+The daemon runs on your local machine (not inside Docker). It detects installed AI agent CLIs, registers them with the server, and executes tasks when agents receive routed executor work.
 
 Each team member who wants to run AI agents locally needs to:
 
 ### a) Install the CLI and an AI agent
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash
+brew install alexj11324/Cordy/patchbay
 ```
 
 You also need at least one AI agent CLI installed:
@@ -117,6 +117,7 @@ You also need at least one AI agent CLI installed:
 - [GitHub Copilot CLI](https://docs.github.com/en/copilot) (`copilot` on PATH)
 - [OpenClaw](https://github.com/openclaw/openclaw) (`openclaw` on PATH)
 - [OpenCode](https://github.com/anomalyco/opencode) (`opencode` on PATH)
+- [Huawei Cloud CodeArts](https://support.huaweicloud.com/qs-codeartssnap/codeartsagent_qs_0004.html) (`codearts` on PATH)
 - [Hermes](https://github.com/NousResearch/hermes) (`hermes` on PATH)
 - [Pi](https://pi.dev/) (`pi` on PATH)
 - [Cursor Agent](https://cursor.com/) (`cursor-agent` on PATH)
@@ -175,7 +176,7 @@ If you already run a Kubernetes cluster, you can deploy Patchbay there instead o
 The chart creates the following resources in the target namespace:
 
 - `patchbay-postgres` — `pgvector/pgvector:pg17` backed by a 10Gi PVC
-- `patchbay-backend` — Rust API/WS server. Backed by a 5Gi `ReadWriteOnce` uploads PVC by default; set `backend.uploads.persistence.enabled=false` when you have configured S3 (`backend.config.s3Bucket`) and don't want the chart to declare the PVC at all.
+- `patchbay-backend` — Go API/WS server. Backed by a 5Gi `ReadWriteOnce` uploads PVC by default; set `backend.uploads.persistence.enabled=false` when you have configured S3 (`backend.config.s3Bucket`) and don't want the chart to declare the PVC at all.
 - `patchbay-frontend` — Next.js standalone server
 - Two `Ingress` resources: one for the web host, one for the backend host
 - `patchbay-config` ConfigMap (rendered from `values.yaml`)
@@ -217,6 +218,7 @@ kubectl -n patchbay create secret generic patchbay-secrets \
   --from-literal=JWT_SECRET="$(openssl rand -hex 32)" \
   --from-literal=POSTGRES_PASSWORD="$(openssl rand -hex 16)" \
   --from-literal=RESEND_API_KEY="" \
+  --from-literal=GOOGLE_CLIENT_SECRET="" \
   --from-literal=CLOUDFRONT_PRIVATE_KEY="" \
   --from-literal=PATCHBAY_DEV_VERIFICATION_CODE=""
 ```
@@ -257,11 +259,11 @@ Watch the pods come up:
 kubectl -n patchbay get pods -w
 ```
 
-On a cold cluster the backend can sit `Running` but not `Ready` for a few minutes while it waits on PostgreSQL and runs migrations — a startupProbe absorbs this, so the pod should not restart. Once the backend reports `Ready`, migrations have completed and `/healthz` returns the Rust readiness response:
+On a cold cluster the backend can sit `Running` but not `Ready` for a few minutes while it waits on PostgreSQL and runs migrations — a startupProbe absorbs this, so the pod should not restart. Once the backend reports `Ready`, migrations have completed and `/healthz` returns OK:
 
 ```bash
 curl -H "Host: api.patchbay.dev.lan" http://<ingress-ip>/healthz
-# {"status":"ready"}
+# {"status":"ok","checks":{"db":"ok","migrations":"ok"}}
 ```
 
 Then open http://patchbay.dev.lan in your browser.
@@ -298,7 +300,7 @@ The chart defaults to `APP_ENV=production` (set in `values.yaml` under `backend.
   kubectl -n patchbay rollout restart deploy/patchbay-backend
   ```
 
-`ALLOW_SIGNUP` and `DISABLE_WORKSPACE_CREATION` likewise live under `backend.config.*` in `values.yaml` (as `allowSignup` and `disableWorkspaceCreation`). After `helm upgrade`, the backend pod will roll automatically because the ConfigMap hash changes.
+`ALLOW_SIGNUP`, `DISABLE_WORKSPACE_CREATION`, and `GOOGLE_CLIENT_ID` likewise live under `backend.config.*` in `values.yaml` (as `allowSignup`, `disableWorkspaceCreation`, and `googleClientId`). After `helm upgrade`, the backend pod will roll automatically because the ConfigMap hash changes; the web UI reads all three from `/api/config` at runtime, so no web rebuild is needed.
 
 > **Warning:** do **not** set `PATCHBAY_DEV_VERIFICATION_CODE` on a publicly reachable instance — anyone who knows an email address can then log in with that fixed code.
 
@@ -356,7 +358,7 @@ To roll back if an upgrade goes sideways:
 helm -n patchbay rollback patchbay
 ```
 
-> **Upgrading from `v0.3.4` to `v0.3.5+` fails with `refusing to drop legacy daily rollups: ...`?** As of PB-2957 the `migrate up` command runs an idempotent monthly-slice backfill automatically before applying migration `103`, so a clean upgrade is a single `helm upgrade` + backend rollout. If you are still on a pre-PB-2957 binary or the auto-hook fails, run the standalone backfill in a one-off Pod copied from the backend Pod, then restart the backend deployment to re-apply migrations. Do not use `kubectl exec`: the migration failure may already have stopped that container. See [Advanced Configuration → Usage Dashboard Rollup](SELF_HOSTING_ADVANCED.md#usage-dashboard-rollup) for the exact recovery flow.
+> **Upgrading from `v0.3.4` to `v0.3.5+` fails with `refusing to drop legacy daily rollups: ...`?** As of MUL-2957 the `migrate up` command runs an idempotent monthly-slice backfill automatically before applying migration `103`, so a clean upgrade is a single `helm upgrade` + backend rollout. If you are still on a pre-MUL-2957 binary or the auto-hook fails, run the standalone backfill against the same database the chart is using (`kubectl -n patchbay exec deploy/patchbay-backend -- ./backfill_task_usage_hourly --sleep-between-slices=2s`), then restart the backend deployment to re-apply migrations. See [Advanced Configuration → Usage Dashboard Rollup](SELF_HOSTING_ADVANCED.md#usage-dashboard-rollup) for the full recovery flow.
 
 ### Tearing down
 
@@ -372,11 +374,16 @@ kubectl delete namespace patchbay
 
 ## Usage Dashboard Rollup
 
-The Usage / Runtime dashboards read from a derived `task_usage_hourly` table populated by `rollup_task_usage_hourly()`. As of PB-2957 the backend runs this rollup **in-process** on every replica via a DB-backed scheduler (`sys_cron_executions`); a fresh self-host install needs no operator action and the bundled `pgvector/pgvector:pg17` image works without changes — you do **not** need to swap it for an image that ships `pg_cron`, register an external cron job, set up a systemd timer, or run a Kubernetes `CronJob`.
+The Usage / Runtime dashboards read from a derived `task_usage_hourly` table populated by `rollup_task_usage_hourly()`. As of MUL-2957 the backend runs this rollup **in-process** on every replica via a DB-backed scheduler (`sys_cron_executions`); a fresh self-host install needs no operator action and the bundled `pgvector/pgvector:pg17` image works without changes — you do **not** need to swap it for an image that ships `pg_cron`, register an external cron job, set up a systemd timer, or run a Kubernetes `CronJob`.
 
 Multiple backend replicas are safe: each replica ticks every 30 seconds and tries to claim the current 5-minute UTC plan, but the unique key `(job_name, scope_kind, scope_id, plan_time)` means only one wins each plan. Inspect steady-state operation:
 
-> **Exception — WeCom (企业微信) smart bot must run single-replica.** Unlike Slack and Lark, whose outbound is stateless HTTP that any replica can perform, the WeCom smart bot's only outbound path is an in-process WebSocket long connection. Agent replies and inbox pushes are delivered only by the replica currently holding a given bot's connection lease. If you run more than one backend replica with WeCom enabled (`PATCHBAY_WECOM_SECRET_KEY` set), responses produced on a replica that does not hold the lease are silently dropped and the WeCom user sees nothing. Until cross-replica outbound routing lands, run the WeCom-enabled backend as a single replica. Everything else (including the rollup scheduler above) is multi-replica safe.
+> **WeCom (企业微信) smart bot and replica count.** Unlike Slack and Lark, whose outbound is stateless HTTP that any replica can perform, the WeCom smart bot's only outbound path is an in-process WebSocket long connection, held by the replica that owns that bot's lease. What happens to a reply produced on a *different* replica depends on the realtime relay:
+>
+> - **Sharded or dual relay mode (`REDIS_URL` set, the default with Redis):** the reply or inbox push is forwarded to the lease holder over the relay and delivered. Multi-replica WeCom is supported in this mode.
+> - **Legacy relay mode, or no Redis:** the reply is dropped and the WeCom user sees nothing. Run the WeCom-enabled backend as a single replica in this configuration.
+>
+> In **every** mode there is one residual window: a reply produced while *no* replica holds a live connection to that bot — all of them mid-reconnect — is not delivered. It is **counted**: the replica that routed it checks afterwards whether any replica ever claimed the delivery, and increments `patchbay_wecom_outbound_dropped_total{reason="no_live_connection"}` when none did, so the window can be measured on a deployment rather than guessed at. If a rare lost reply during reconnects is unacceptable, a single replica remains the most conservative deployment. Everything else (including the rollup scheduler above) is multi-replica safe.
 
 ```sql
 SELECT plan_time, status, attempt, runner_id,
@@ -389,11 +396,11 @@ SELECT plan_time, status, attempt, runner_id,
 
 Full reference (audit table semantics, advisory lock 4246, the standalone backfill command, flag descriptions, the `v0.3.4 → v0.3.5+` migration auto-hook) lives in [Advanced Configuration → Usage Dashboard Rollup](SELF_HOSTING_ADVANCED.md#usage-dashboard-rollup).
 
-> **Upgrading from `v0.3.4` to `v0.3.5+`?** As of PB-2957 the `migrate up` command runs an idempotent monthly-slice backfill automatically right before applying migration `103`, so the upgrade completes in a single invocation — no operator step required. If you are still on a pre-PB-2957 binary or the auto-hook fails for an environmental reason, run `backfill_task_usage_hourly` against the same database and re-run the upgrade. See [Advanced Configuration → Usage Dashboard Rollup](SELF_HOSTING_ADVANCED.md#usage-dashboard-rollup) for the recovery flow.
+> **Upgrading from `v0.3.4` to `v0.3.5+`?** As of MUL-2957 the `migrate up` command runs an idempotent monthly-slice backfill automatically right before applying migration `103`, so the upgrade completes in a single invocation — no operator step required. If you are still on a pre-MUL-2957 binary or the auto-hook fails for an environmental reason, run `backfill_task_usage_hourly` against the same database and re-run the upgrade. See [Advanced Configuration → Usage Dashboard Rollup](SELF_HOSTING_ADVANCED.md#usage-dashboard-rollup) for the recovery flow.
 
 ### Compatibility paths (existing deployments only)
 
-External schedulers — **`pg_cron` registered on the database, an external cron job, a systemd timer, or a Kubernetes `CronJob`** — that call `SELECT rollup_task_usage_hourly()` directly were the only option before PB-2957 and remain a supported compatibility path. They are no longer the recommended setup; new deployments should rely on the in-process scheduler instead. The SQL function holds advisory lock 4246 internally, so the in-process scheduler and any pre-existing external schedule can coexist without ever double-writing the rollup.
+External schedulers — **`pg_cron` registered on the database, an external cron job, a systemd timer, or a Kubernetes `CronJob`** — that call `SELECT rollup_task_usage_hourly()` directly were the only option before MUL-2957 and remain a supported compatibility path. They are no longer the recommended setup; new deployments should rely on the in-process scheduler instead. The SQL function holds advisory lock 4246 internally, so the in-process scheduler and any pre-existing external schedule can coexist without ever double-writing the rollup.
 
 If you already have a `pg_cron` job in production, the safe sequence to retire it is:
 
@@ -439,13 +446,13 @@ patchbay daemon stop
 
 ## Switching to Patchbay Cloud
 
-If you've been self-hosting and want to switch your CLI to [Patchbay Cloud](https://patchbay.aspectlylabs.com):
+If you've been self-hosting and want to switch your CLI to [Patchbay Cloud](https://patchbay.ai):
 
 ```bash
 patchbay setup
 ```
 
-This reconfigures the CLI for patchbay.aspectlylabs.com, re-authenticates, and restarts the daemon. You will be prompted before overwriting the existing configuration.
+This reconfigures the CLI for patchbay.ai, re-authenticates, and restarts the daemon. You will be prompted before overwriting the existing configuration.
 
 > Your local Docker services are unaffected. Stop them separately if you no longer need them.
 
@@ -459,43 +466,7 @@ docker compose -f docker-compose.selfhost.yml up -d
 Pin `PATCHBAY_IMAGE_TAG` in `.env` to an exact version like `v0.2.4` if you want to stay on a specific release. Migrations run automatically on backend startup.
 If the selected GHCR tag has not been published yet, fall back to `make selfhost-build` or `docker compose -f docker-compose.selfhost.yml -f docker-compose.selfhost.build.yml up -d --build`.
 
-> **Upgrading from `v0.3.4` to `v0.3.5+` fails with `refusing to drop legacy daily rollups: ...`?** That's migration `103`'s fail-closed guard: it requires `task_usage_hourly` to be seeded before the legacy daily rollups are dropped. As of PB-2957 `migrate up` runs that backfill automatically right before applying `103`, so the upgrade completes in a single invocation. If you are still on a pre-PB-2957 binary or the auto-hook fails, run `backfill_task_usage_hourly` manually first, then re-run the upgrade. Full instructions in [Advanced Configuration → Usage Dashboard Rollup](SELF_HOSTING_ADVANCED.md#usage-dashboard-rollup).
-
-## Migration recovery
-
-The Rust migration runner serializes `up`, `down`, and `status` with the same
-PostgreSQL advisory lock. It waits at most five minutes by default, so a stuck
-or overlapping rollout fails instead of waiting forever. Override that bound
-with `PATCHBAY_MIGRATION_LOCK_TIMEOUT_SECONDS` or `--lock-timeout-seconds`; the CLI
-flag wins. Zero is rejected.
-
-Check a Compose deployment without changing the schema. `run` works even when
-the normal backend container exited during startup migration, and the explicit
-entrypoint bypasses its migrate-before-server path:
-
-```bash
-docker compose -f docker-compose.selfhost.yml run --rm --no-deps \
-  --entrypoint /app/migrate backend \
-  status --lock-timeout-seconds 30
-```
-
-For Kubernetes, copy the failed backend Pod so the one-off command retains its
-image, environment, secrets, service account, and network policy:
-
-```bash
-pod="$(kubectl -n patchbay get pod \
-  -l app.kubernetes.io/component=backend \
-  -o jsonpath='{.items[0].metadata.name}')"
-kubectl -n patchbay debug "$pod" --copy-to=patchbay-migrate-status --container=backend -- \
-  /app/migrate status --lock-timeout-seconds 30
-kubectl -n patchbay logs patchbay-migrate-status -c backend
-kubectl -n patchbay delete pod patchbay-migrate-status
-```
-
-A pending migration, lock timeout, database error, SIGINT, or SIGTERM exits
-nonzero. After an interrupted runner has exited, its PostgreSQL session releases
-the advisory lock; run `status` again and then `up`. Do not use `down` as an
-automatic retry—the rollback command intentionally changes the schema.
+> **Upgrading from `v0.3.4` to `v0.3.5+` fails with `refusing to drop legacy daily rollups: ...`?** That's migration `103`'s fail-closed guard: it requires `task_usage_hourly` to be seeded before the legacy daily rollups are dropped. As of MUL-2957 `migrate up` runs that backfill automatically right before applying `103`, so the upgrade completes in a single invocation. If you are still on a pre-MUL-2957 binary or the auto-hook fails, run `backfill_task_usage_hourly` manually first, then re-run the upgrade. Full instructions in [Advanced Configuration → Usage Dashboard Rollup](SELF_HOSTING_ADVANCED.md#usage-dashboard-rollup).
 
 ---
 
@@ -505,7 +476,7 @@ If you prefer running Docker Compose steps manually instead of `make selfhost`:
 
 ```bash
 git clone https://github.com/alexj11324/Cordy.git
-cd patchbay
+cd Cordy
 cp .env.example .env
 ```
 

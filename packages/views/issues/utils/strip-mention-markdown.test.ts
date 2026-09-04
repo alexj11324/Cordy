@@ -17,8 +17,8 @@ describe("stripMentionMarkdown", () => {
 
   it("strips issue mention (no @ prefix)", () => {
     expect(
-      stripMentionMarkdown("[PB-123](mention://issue/some-uuid)"),
-    ).toBe("PB-123");
+      stripMentionMarkdown("[MUL-123](mention://issue/some-uuid)"),
+    ).toBe("MUL-123");
   });
 
   it("handles escaped brackets in names", () => {

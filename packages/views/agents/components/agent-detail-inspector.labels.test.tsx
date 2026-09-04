@@ -45,9 +45,11 @@ const agent = {
 } as Agent;
 
 describe("AgentDetailInspector labels", () => {
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+  });
 
-  // Agent labels were removed from the product (PB-5600). Label Settings no
+  // Agent labels were removed from the product (MUL-5600). Label Settings no
   // longer manages an agent catalog, so an attach-only picker here would be a
   // dead end pointing at a catalog the user cannot populate.
   it("does not offer a label picker", () => {

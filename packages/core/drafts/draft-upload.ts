@@ -1,7 +1,7 @@
 import type { Attachment } from "../types";
 
 /**
- * Persistable upload placeholder + result (PB-5181, L2).
+ * Persistable upload placeholder + result (MUL-5181, L2).
  *
  * Before this, a composer draft stored only COMPLETED `Attachment` rows, so an
  * upload that was still mid-flight when the composer closed had no persisted
@@ -31,7 +31,7 @@ interface DraftUploadBase {
  * A placeholder whose bytes are not (or no longer) resolvable to an attachment:
  *  - `uploading`: request in flight (owned by the coordinator).
  *  - `failed`: the request errored; keep it so the user sees the failure.
- *  - `interrupted`: LEGACY, no longer produced. Builds before PB-5391 coerced
+ *  - `interrupted`: LEGACY, no longer produced. Builds before MUL-5391 coerced
  *    a reload-surviving `uploading` record into this; that record is now
  *    dropped instead. Still accepted, rendered, and dismissable so blobs those
  *    builds persisted keep working.

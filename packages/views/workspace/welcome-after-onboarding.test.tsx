@@ -15,7 +15,7 @@ import { WelcomeAfterOnboarding } from "./welcome-after-onboarding";
 const mockUser = {
   id: "user-1",
   name: "Test",
-  email: "test@example.com",
+  email: "test@patchbay.ai",
   avatar_url: null,
   onboarded_at: "2026-01-01T00:00:00Z",
   onboarding_questionnaire: {},
@@ -69,6 +69,7 @@ const navigationAdapter: NavigationAdapter = {
   back: vi.fn(),
   pathname: "/test",
   searchParams: new URLSearchParams(),
+  hash: "",
   getShareableUrl: (path: string) => `https://test.local${path}`,
 };
 
@@ -129,7 +130,7 @@ describe("WelcomeAfterOnboarding", () => {
   it("provisions the no-runtime guide, then opens the completion modal", async () => {
     mockCreateIssue.mockResolvedValueOnce({
       id: "issue-install",
-      identifier: "PB-1",
+      identifier: "MUL-1",
       workspace_id: "ws-1",
     });
     useWelcomeStore.getState().set({
@@ -146,10 +147,12 @@ describe("WelcomeAfterOnboarding", () => {
 
     expect(mockCreateIssue).toHaveBeenCalledTimes(1);
     expect(mockCreateIssue.mock.calls[0]![0]).toMatchObject({
-      title: "Connect a device to start with Patrick",
+      title: "Connect a runtime to start with Patrick",
       status: "in_progress",
-      owner_type: "member", owner_id: "user-1",
+      owner_type: "member",
+      owner_id: "user-1",
     });
+    expect(mockCreateIssue.mock.calls[0]![0]).not.toHaveProperty("executor_id");
     expect(mockCreateIssue.mock.calls[0]![0].description).toContain(
       "Start with Patrick",
     );

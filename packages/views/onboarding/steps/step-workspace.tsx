@@ -21,17 +21,22 @@ import {
 import { cn } from "@patchbay/ui/lib/utils";
 import { useCreateWorkspace } from "@patchbay/core/workspace/mutations";
 import { api } from "@patchbay/core/api";
-import type { Workspace } from "@patchbay/core/types";
+import type {
+  CreateProjectResourceRequest,
+  Workspace,
+} from "@patchbay/core/types";
 import { isImeComposing } from "@patchbay/core/utils";
 import { matchLocale } from "@patchbay/core/i18n";
 import { useConfigStore } from "@patchbay/core/config";
 import { workspaceUrlHost } from "@patchbay/core/workspace/workspace-url";
-import { isDesktopShell, pickDirectories } from "@patchbay/views/platform";
-import { useLogout } from "../../auth";
 import {
-  StepFooter,
-  StepHeading,
-} from "../components/step-shell";
+  isDesktopShell,
+  pickDirectories,
+} from "../../platform/local-directory";
+import { useLocalDaemonStatus } from "../../platform/use-local-daemon-status";
+import { parseGitRepoUrl } from "../git-repo-url";
+import { useLogout } from "../../auth";
+import { StepFooter, StepHeading } from "../components/step-shell";
 import { RadioMark } from "../components/option-card";
 import { WorkspaceAvatar } from "../../workspace/workspace-avatar";
 import { useT } from "../../i18n";
@@ -42,7 +47,6 @@ import {
   randomCelestialWorkspaceIdentity,
 } from "../../workspace/slug";
 import { isReservedSlug } from "@patchbay/core/paths";
-import { parseGitRepoUrl } from "../git-repo-url";
 
 /**
  * Step 2 — create your first workspace, or continue with one set up in
@@ -63,7 +67,7 @@ import { parseGitRepoUrl } from "../git-repo-url";
  * `Issues will look
  * like ACME-123` line shows the user what their issue IDs will read
  * like before they've created anything. The issue prefix behind that line
- * is an editable field pre-filled from the slug (PB-6050) — it used to be
+ * is an editable field pre-filled from the slug (MUL-6050) — it used to be
  * read-only, which left every non-ASCII-named workspace stuck on the
  * server's old `WS` fallback with no in-flow way out.
  *
@@ -92,14 +96,17 @@ function issuePrefix(slug: string): string {
 // settings tab applies, and the same shape the server now validates
 // (`^[A-Z0-9]{1,10}$`).
 function normalizePrefix(raw: string): string {
-  return raw.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 10);
+  return raw
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .slice(0, 10);
 }
 
 type PendingProject = {
   key: string;
   name: string;
-  url: string | null;
-  localPath?: string;
+  location: string;
+  resource: CreateProjectResourceRequest;
 };
 
 export function StepWorkspace({
@@ -116,7 +123,9 @@ export function StepWorkspace({
 }) {
   const { t, i18n } = useT("onboarding");
   const locale = matchLocale([i18n.resolvedLanguage ?? i18n.language]);
-  const workspaceCreationDisabled = useConfigStore((s) => s.workspaceCreationDisabled);
+  const workspaceCreationDisabled = useConfigStore(
+    (s) => s.workspaceCreationDisabled,
+  );
   const urlHost = workspaceUrlHost(useConfigStore((s) => s.daemonAppUrl));
   // Single source of truth for "can the user reach the create path on this
   // instance?" — drives the resume-mode picker, the eyebrow/headline/lede
@@ -138,8 +147,7 @@ export function StepWorkspace({
   );
   const pickExisting = () =>
     setMode((m) => (m === "existing" ? null : "existing"));
-  const pickCreate = () =>
-    setMode((m) => (m === "create" ? null : "create"));
+  const pickCreate = () => setMode((m) => (m === "create" ? null : "create"));
 
   // Form state for the create path. Mirrors CreateWorkspaceForm's
   // internals: slug auto-fills from name until the user manually edits
@@ -150,17 +158,19 @@ export function StepWorkspace({
   const [slugServerError, setSlugServerError] = useState<string | null>(null);
   const slugTouched = useRef(false);
   // Prefix follows the slug the same way the slug follows the name, and stops
-  // following the moment the user edits it (PB-6050). Editable here because
+  // following the moment the user edits it (MUL-6050). Editable here because
   // settings was the only place to change it, and a user who never noticed the
   // default would never go looking.
   const [prefix, setPrefix] = useState("");
   const prefixTouched = useRef(false);
   const desktop = isDesktopShell();
+  const daemon = useLocalDaemonStatus();
   const [pendingProjects, setPendingProjects] = useState<PendingProject[]>([]);
   const [projectUrlDraft, setProjectUrlDraft] = useState("");
-  const [projectUrlError, setProjectUrlError] = useState<string | null>(null);
+  const [projectError, setProjectError] = useState<string | null>(null);
   const [pickingFolders, setPickingFolders] = useState(false);
-  const [bindingProjects, setBindingProjects] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
 
   const slugValidationError =
     slug.length > 0 && !WORKSPACE_SLUG_REGEX.test(slug)
@@ -222,43 +232,76 @@ export function StepWorkspace({
   const addProjectFromUrl = () => {
     const parsed = parseGitRepoUrl(projectUrlDraft);
     if (!parsed) {
-      setProjectUrlError(t(($) => $.step_workspace.projects_invalid_url));
+      setProjectError(t(($) => $.step_workspace.projects_invalid_url));
       return;
     }
-    setPendingProjects((prev) => {
-      if (prev.some((item) => item.url === parsed.url)) return prev;
-      return [...prev, { key: parsed.url, name: parsed.name, url: parsed.url }];
-    });
+    const key = `repo:${parsed.url}`;
+    setPendingProjects((previous) =>
+      previous.some((project) => project.key === key)
+        ? previous
+        : [
+            ...previous,
+            {
+              key,
+              name: parsed.name,
+              location: parsed.url,
+              resource: {
+                resource_type: "github_repo",
+                resource_ref: { url: parsed.url },
+              },
+            },
+          ],
+    );
     setProjectUrlDraft("");
-    setProjectUrlError(null);
+    setProjectError(null);
   };
 
   const pickLocalProjects = async () => {
-    if (pickingFolders) return;
+    const daemonId = daemon.daemonId;
+    if (pickingFolders || submittingRef.current || !daemon.running || !daemonId)
+      return;
     setPickingFolders(true);
+    setProjectError(null);
     try {
       const result = await pickDirectories();
-      if (!result.ok || !result.folders) return;
-      setPendingProjects((prev) => {
-        const next = [...prev];
+      if (!result.ok) {
+        if (result.reason !== "cancelled")
+          setProjectError(t(($) => $.step_workspace.projects_pick_failed));
+        return;
+      }
+      setPendingProjects((previous) => {
+        const next = [...previous];
         for (const folder of result.folders ?? []) {
-          if (next.some((item) => item.localPath === folder.path)) continue;
+          const key = `local:${daemonId}:${folder.path}`;
+          if (next.some((project) => project.key === key)) continue;
           next.push({
-            key: folder.path,
+            key,
             name: folder.basename,
-            url: folder.originUrl,
-            localPath: folder.path,
+            location: folder.path,
+            resource: {
+              resource_type: "local_directory",
+              resource_ref: {
+                local_path: folder.path,
+                daemon_id: daemonId,
+                label: folder.basename,
+                execution_mode: "in_place",
+              },
+            },
           });
         }
         return next;
       });
+    } catch {
+      setProjectError(t(($) => $.step_workspace.projects_pick_failed));
     } finally {
       setPickingFolders(false);
     }
   };
 
   const handleCreate = async () => {
-    if (!canCreate || createWorkspace.isPending || bindingProjects) return;
+    if (!canCreate || submittingRef.current || pickingFolders) return;
+    submittingRef.current = true;
+    setSubmitting(true);
     try {
       const workspace = await createWorkspace.mutateAsync({
         name: name.trim(),
@@ -269,38 +312,21 @@ export function StepWorkspace({
         // is what makes an edited prefix stick.
         issue_prefix: effectivePrefix,
       });
-      if (pendingProjects.length > 0) {
-        setBindingProjects(true);
+      let attachmentFailed = false;
+      for (const project of pendingProjects) {
         try {
-          let failed = false;
-          for (const project of pendingProjects) {
-            try {
-              await api.createProject(
-                {
-                  title: project.name,
-                  resources: project.url
-                    ? [
-                        {
-                          resource_type: "github_repo",
-                          resource_ref: { url: project.url },
-                        },
-                      ]
-                    : undefined,
-                },
-                workspace.slug,
-              );
-            } catch {
-              failed = true;
-            }
-          }
-          if (failed) {
-            toast.error(t(($) => $.step_workspace.projects_attach_failed));
-          }
-        } finally {
-          setBindingProjects(false);
+          // The route still names the previous workspace until onCreated runs.
+          await api.createProject(
+            { title: project.name, resources: [project.resource] },
+            workspace.slug,
+          );
+        } catch {
+          attachmentFailed = true;
         }
       }
-      onCreated(workspace);
+      if (attachmentFailed)
+        toast.error(t(($) => $.step_workspace.projects_attach_failed));
+      await onCreated(workspace);
     } catch (error) {
       if (isWorkspaceSlugConflict(error)) {
         setSlugServerError(t(($) => $.step_workspace.slug_taken_error));
@@ -312,6 +338,9 @@ export function StepWorkspace({
           ? error.message
           : t(($) => $.step_workspace.create_failed_toast),
       );
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
     }
   };
 
@@ -322,7 +351,7 @@ export function StepWorkspace({
   // when this instance has DISABLE_WORKSPACE_CREATION=true, in which
   // case the create path is unreachable and a no-reusing user falls
   // through to the disabled notice (rendered separately below).
-  const isCreating = createWorkspace.isPending || bindingProjects;
+  const isCreating = createWorkspace.isPending || submitting;
   useEffect(() => {
     onBusyChange?.(isCreating);
     // Clear on unmount: a successful create advances the flow immediately, so
@@ -353,8 +382,10 @@ export function StepWorkspace({
       onContinue = () => {};
     } else if (canCreate) {
       hint = t(($) => $.step_workspace.hint_creating, { name: name.trim() });
-      continueLabel = t(($) => $.step_workspace.cta_create_named, { name: name.trim() });
-      continueDisabled = false;
+      continueLabel = t(($) => $.step_workspace.cta_create_named, {
+        name: name.trim(),
+      });
+      continueDisabled = pickingFolders;
       onContinue = handleCreate;
     } else {
       hint = t(($) => $.step_workspace.hint_name_first);
@@ -383,8 +414,7 @@ export function StepWorkspace({
         <div className="flex items-center gap-2">
           <Input
             id="ws-name"
-            name="workspace-name"
-            autoComplete="off"
+            disabled={isCreating}
             autoFocus
             type="text"
             value={name}
@@ -403,7 +433,7 @@ export function StepWorkspace({
             disabled={isCreating}
             className="shrink-0"
           >
-            <Dices aria-hidden="true" className="h-4 w-4" />
+            <Dices className="h-4 w-4" />
             {t(($) => $.step_workspace.random_name)}
           </Button>
         </div>
@@ -418,16 +448,13 @@ export function StepWorkspace({
           </InputGroupAddon>
           <InputGroupInput
             id="ws-slug"
-            name="workspace-slug"
+            disabled={isCreating}
             type="text"
             value={slug}
             onChange={(e) => handleSlugChange(e.target.value)}
             placeholder={t(($) => $.step_workspace.slug_placeholder)}
-            autoComplete="off"
-            autoCapitalize="none"
-            spellCheck={false}
-            aria-invalid={slugError ? true : undefined}
             className="font-mono"
+            aria-invalid={slugError ? true : undefined}
             onKeyDown={(e) => {
               if (isImeComposing(e)) return;
               if (e.key === "Enter") handleCreate();
@@ -452,7 +479,7 @@ export function StepWorkspace({
         </FieldLabel>
         <Input
           id="ws-issue-prefix"
-          name="workspace-issue-prefix"
+          disabled={isCreating}
           type="text"
           value={prefix}
           onChange={(e) => handlePrefixChange(e.target.value)}
@@ -481,94 +508,98 @@ export function StepWorkspace({
           )}
         </FieldDescription>
       </Field>
-      <Field data-invalid={projectUrlError ? true : undefined}>
+      <Field data-invalid={projectError ? true : undefined}>
         <FieldLabel htmlFor="ws-projects">
           {t(($) => $.step_workspace.projects_label)}
         </FieldLabel>
-        {desktop ? (
+        <div className="flex items-center gap-2">
+          <Input
+            id="ws-projects"
+            value={projectUrlDraft}
+            disabled={isCreating || pickingFolders}
+            placeholder={t(($) => $.step_workspace.projects_placeholder)}
+            autoComplete="off"
+            spellCheck={false}
+            aria-invalid={projectError ? true : undefined}
+            onChange={(event) => {
+              setProjectUrlDraft(event.target.value);
+              setProjectError(null);
+            }}
+            onKeyDown={(event) => {
+              if (isImeComposing(event)) return;
+              if (event.key === "Enter") {
+                event.preventDefault();
+                addProjectFromUrl();
+              }
+            }}
+          />
           <Button
             type="button"
             variant="outline"
-            onClick={() => void pickLocalProjects()}
-            disabled={isCreating || pickingFolders}
+            onClick={addProjectFromUrl}
+            disabled={isCreating || pickingFolders || !projectUrlDraft.trim()}
           >
-            <FolderOpen className="h-4 w-4" />
-            {t(($) => $.step_workspace.projects_pick_folders)}
+            <Plus className="size-4" aria-hidden="true" />
+            {t(($) => $.step_workspace.projects_add)}
           </Button>
-        ) : (
-          <div className="flex items-center gap-2">
-            <Input
-              id="ws-projects"
-              name="workspace-projects"
-              type="url"
-              value={projectUrlDraft}
-              onChange={(e) => {
-                setProjectUrlDraft(e.target.value);
-                if (projectUrlError) setProjectUrlError(null);
-              }}
-              placeholder={t(($) => $.step_workspace.projects_placeholder)}
-              autoComplete="off"
-              spellCheck={false}
-              aria-invalid={projectUrlError ? true : undefined}
-              onKeyDown={(e) => {
-                if (isImeComposing(e)) return;
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  addProjectFromUrl();
-                }
-              }}
-            />
+        </div>
+        {desktop && (
+          <>
             <Button
               type="button"
               variant="outline"
-              onClick={addProjectFromUrl}
-              disabled={isCreating || projectUrlDraft.trim().length === 0}
-              className="shrink-0"
+              onClick={() => void pickLocalProjects()}
+              disabled={
+                isCreating ||
+                pickingFolders ||
+                !daemon.running ||
+                !daemon.daemonId
+              }
             >
-              <Plus className="h-4 w-4" />
-              {t(($) => $.step_workspace.projects_add)}
+              <FolderOpen className="size-4" aria-hidden="true" />
+              {t(($) => $.step_workspace.projects_pick_folders)}
             </Button>
-          </div>
+            <FieldDescription>
+              {daemon.running && daemon.daemonId
+                ? t(($) => $.step_workspace.projects_local_hint)
+                : t(($) => $.step_workspace.projects_local_offline)}
+            </FieldDescription>
+          </>
         )}
-        {projectUrlError ? <FieldError>{projectUrlError}</FieldError> : null}
-        {pendingProjects.length > 0 ? (
-          <ul className="flex flex-col gap-1.5 pt-1">
+        {projectError && <FieldError>{projectError}</FieldError>}
+        {pendingProjects.length > 0 && (
+          <ul className="space-y-1.5">
             {pendingProjects.map((project) => (
               <li
                 key={project.key}
-                className="flex items-center gap-2 rounded-md border border-border px-2.5 py-1.5"
+                className="flex items-center gap-2 rounded-md border px-2.5 py-1.5"
               >
                 <span className="min-w-0 flex-1 truncate text-body">
                   {project.name}
-                  {project.url ? (
-                    <span className="block truncate text-caption text-muted-foreground">
-                      {project.url}
-                    </span>
-                  ) : project.localPath ? (
-                    <span className="block truncate text-caption text-muted-foreground">
-                      {project.localPath}
-                    </span>
-                  ) : null}
+                  <span className="block truncate text-caption text-muted-foreground">
+                    {project.location}
+                  </span>
                 </span>
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon-sm"
+                  disabled={isCreating || pickingFolders}
                   aria-label={t(($) => $.step_workspace.projects_remove, {
                     name: project.name,
                   })}
                   onClick={() =>
-                    setPendingProjects((prev) =>
-                      prev.filter((item) => item.key !== project.key),
+                    setPendingProjects((previous) =>
+                      previous.filter((item) => item.key !== project.key),
                     )
                   }
                 >
-                  <X className="h-3.5 w-3.5" />
+                  <X className="size-3.5" aria-hidden="true" />
                 </Button>
               </li>
             ))}
           </ul>
-        ) : null}
+        )}
         <FieldDescription>
           {t(($) => $.step_workspace.projects_hint)}
         </FieldDescription>
@@ -587,8 +618,12 @@ export function StepWorkspace({
           title={
             reusing
               ? workspaceCreationAllowed
-                ? t(($) => $.step_workspace.headline_resume, { name: reusing.name })
-                : t(($) => $.step_workspace.creation_disabled_headline_resume, { name: reusing.name })
+                ? t(($) => $.step_workspace.headline_resume, {
+                    name: reusing.name,
+                  })
+                : t(($) => $.step_workspace.creation_disabled_headline_resume, {
+                    name: reusing.name,
+                  })
               : workspaceCreationAllowed
                 ? t(($) => $.step_workspace.headline_first)
                 : t(($) => $.step_workspace.creation_disabled_headline)
@@ -599,7 +634,7 @@ export function StepWorkspace({
                 ? t(($) => $.step_workspace.lede_resume)
                 : t(($) => $.step_workspace.creation_disabled_lede_resume)
               : workspaceCreationAllowed
-                ? undefined
+                ? t(($) => $.step_workspace.lede_first)
                 : t(($) => $.step_workspace.creation_disabled_lede)
           }
         />
@@ -631,7 +666,6 @@ export function StepWorkspace({
             createFields
           )}
         </div>
-
       </div>
 
       {!(workspaceCreationDisabled && !reusing) && (
@@ -690,7 +724,11 @@ function ExistingWorkspaceCard({
           : "hover:border-foreground/20 hover:bg-accent/30",
       )}
     >
-      <WorkspaceAvatar name={workspace.name} avatarUrl={workspace.avatar_url} size="lg" />
+      <WorkspaceAvatar
+        name={workspace.name}
+        avatarUrl={workspace.avatar_url}
+        size="lg"
+      />
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="truncate text-body font-medium text-foreground">
           {workspace.name}

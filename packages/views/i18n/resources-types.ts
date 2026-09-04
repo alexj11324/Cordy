@@ -18,6 +18,7 @@ import type search from "../locales/en/search.json";
 import type inbox from "../locales/en/inbox.json";
 import type workspace from "../locales/en/workspace.json";
 import type projects from "../locales/en/projects.json";
+import type workProducts from "../locales/en/work-products.json";
 import type automations from "../locales/en/automations.json";
 import type skills from "../locales/en/skills.json";
 import type chat from "../locales/en/chat.json";
@@ -27,6 +28,8 @@ import type layout from "../locales/en/layout.json";
 import type usage from "../locales/en/usage.json";
 import type teams from "../locales/en/teams.json";
 import type billing from "../locales/en/billing.json";
+import type channels from "../locales/en/channels.json";
+import type taskGraph from "../locales/en/task-graph.json";
 
 // Module augmentation enables i18next v26 selector API across the monorepo:
 // `t($ => $.signin.title)` resolves to the value in en/auth.json.
@@ -59,6 +62,7 @@ declare global {
     inbox: typeof inbox;
     workspace: typeof workspace;
     projects: typeof projects;
+    "work-products": typeof workProducts;
     automations: typeof automations;
     skills: typeof skills;
     chat: typeof chat;
@@ -68,6 +72,8 @@ declare global {
     usage: typeof usage;
     teams: typeof teams;
     billing: typeof billing;
+    channels: typeof channels;
+    "task-graph": typeof taskGraph;
   }
 }
 

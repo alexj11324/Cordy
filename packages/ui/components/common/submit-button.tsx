@@ -33,9 +33,6 @@ interface SubmitButtonProps {
   tooltip?: ReactNode;
   /** Accessible name for the icon-only submit button. */
   ariaLabel?: string;
-  /** When the send control opens a follow-up menu instead of submitting. */
-  ariaHasPopup?: "menu" | "dialog" | "listbox" | "true";
-  ariaExpanded?: boolean;
   /** Tooltip shown over the stop button while a run is in progress. */
   stopTooltip?: ReactNode;
   /** Accessible name for the icon-only stop button. */
@@ -56,8 +53,6 @@ function SubmitButton({
   onStop,
   tooltip,
   ariaLabel,
-  ariaHasPopup,
-  ariaExpanded,
   stopTooltip,
   stopAriaLabel,
 }: SubmitButtonProps) {
@@ -89,8 +84,6 @@ function SubmitButton({
       disabled={disabled || loading || busy}
       aria-disabled={busy || undefined}
       aria-busy={loading || busy || undefined}
-      aria-haspopup={ariaHasPopup}
-      aria-expanded={ariaExpanded}
       onPointerDown={keepFocusInComposer}
       onMouseDown={keepFocusInComposer}
       onClick={onClick}

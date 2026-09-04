@@ -44,7 +44,11 @@ export function lockedDimensionsFromQuery(
   const nonEmptyArray = (v: unknown) => Array.isArray(v) && v.length > 0;
   if (nonEmptyArray(query.statusFilters)) locked.add("status");
   if (nonEmptyArray(query.priorityFilters)) locked.add("priority");
-  if (nonEmptyArray(query.executorFilters) || query.includeNoExecutor === true) {
+  if (
+    nonEmptyArray(query.executorFilters ?? query.assigneeFilters) ||
+    query.includeNoExecutor === true ||
+    query.includeNoAssignee === true
+  ) {
     locked.add("executor");
   }
   if (nonEmptyArray(query.creatorFilters)) locked.add("creator");

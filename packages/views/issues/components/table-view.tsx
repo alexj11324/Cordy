@@ -89,6 +89,7 @@ import {
 } from "@patchbay/core/issues/stores/view-store";
 import { useViewStore } from "@patchbay/core/issues/stores/view-store-context";
 import { propertyListOptions } from "@patchbay/core/properties";
+import { projectListOptions } from "@patchbay/core/projects/queries";
 import { useWorkspacePaths } from "@patchbay/core/paths";
 import { buildActorNameResolver, useActorName } from "@patchbay/core/workspace/hooks";
 import {
@@ -262,6 +263,7 @@ function rebaseServerBranchState(
 function tableGroupSpec(grouping: string): IssueTableGroupSpec {
   if (grouping === "status") return { kind: "status" };
   if (grouping === "executor") return { kind: "executor" };
+  if (grouping === "project") return { kind: "project" };
   const propertyId = propertyIdFromViewKey(grouping);
   if (propertyId) return { kind: "property", property_id: propertyId };
   return { kind: "none" };
@@ -655,7 +657,7 @@ export function InlineTitle({
   // guard keyed only on the current `editing` value is already gone by click
   // time, and the commit-click bubbles into row navigation (and could hit the
   // title's own open handler): clicking away to save a rename would also open
-  // the issue (PB-5108 review R1#2).
+  // the issue (MUL-5108 review R1#2).
   const gestureStartedWhileEditingRef = useRef(false);
 
   useEffect(() => {
@@ -923,7 +925,7 @@ function propertyDisplayValue(
  * realtime refetch, propertyById, actor names…) was a NEW element type and
  * React remounted every cell — closing any open picker popup and dropping
  * in-progress drafts the moment workspace activity refreshed the window
- * (PB-5108). Data flows through meta instead so the element types never
+ * (MUL-5108). Data flows through meta instead so the element types never
  * change.
  */
 type TableViewMeta = {
@@ -966,7 +968,7 @@ function getTableViewMeta(
  * structure keyed off it — would persist after the anchor row leaves the
  * viewport: the table would stay frozen, and scrolling the row back would
  * silently reopen the picker and discard any in-progress rename draft
- * (PB-5108 review R1#3). Clearing the key iff this unmounting cell still owns
+ * (MUL-5108 review R1#3). Clearing the key iff this unmounting cell still owns
  * it thaws the structure and closes the editor.
  *
  * Live values are read through refs so the empty-dep cleanup always sees the
@@ -1370,6 +1372,23 @@ export function TableView({
     [effectiveTableGrouping],
   );
   const usesServerGrouping = serverGroupSpec.kind !== "none";
+  // Project group rows carry only a project id; the title comes from the
+  // shared projects query the surface already primes for this grouping.
+  //
+  // Read `data` rather than defaulting it in the destructure: an un-settled
+  // query has no data, so `= []` would hand this memo a fresh array on every
+  // render and churn every consumer of the map below (MUL-5477).
+  const groupProjectsQuery = useQuery({
+    ...projectListOptions(wsId),
+    enabled: serverGroupSpec.kind === "project",
+  });
+  const groupProjectMap = useMemo(
+    () =>
+      new Map(
+        (groupProjectsQuery.data ?? []).map((project) => [project.id, project]),
+      ),
+    [groupProjectsQuery.data],
+  );
   const serverGroupsRequestGroup =
     serverGroupSpec.kind === "none"
       ? ({ kind: "status" } as const)
@@ -1504,7 +1523,7 @@ export function TableView({
           // placeholder to be recomputed and the result re-derived on every
           // render. The value comes from a ref Map and is already stable, and
           // the closure ignored both of the arguments the function form
-          // receives, so the two forms are equivalent (PB-5477).
+          // receives, so the two forms are equivalent (MUL-5477).
           ...(placeholder ? { placeholderData: placeholder } : {}),
           enabled:
             (branch.groupKey === null ||
@@ -1763,7 +1782,7 @@ export function TableView({
         // custom status must not read as its category. `resolveStatusLabel`
         // falls back to the raw key, which is also what keeps a status
         // introduced by a NEWER backend usable on an installed client instead
-        // of collapsing to the schema fallback or an empty label. (PB-6243)
+        // of collapsing to the schema fallback or an empty label. (MUL-6243)
         return resolveStatusLabel(value.status);
       }
       if (value.kind === "executor") {
@@ -1772,9 +1791,13 @@ export function TableView({
           : t(($) => $.table.unassigned);
       }
       if (value.kind === "project") {
-        return value.project_id
-          ? value.project_id
-          : t(($) => $.swimlane.no_project);
+        if (!value.project_id) return t(($) => $.swimlane.no_project);
+        // A project the query cannot resolve (deleted, or not visible to this
+        // member) reads as unavailable — never as its raw id.
+        return (
+          groupProjectMap.get(value.project_id)?.title ??
+          t(($) => $.table.value_unavailable)
+        );
       }
       if (value.kind === "parent") {
         if (value.value_state === "unset") {
@@ -1797,7 +1820,7 @@ export function TableView({
           ?.name ?? String(value.value ?? "")
       );
     },
-    [getActorName, propertyById, t],
+    [getActorName, groupProjectMap, propertyById, t],
   );
 
   const serverDisplayRows = useMemo<IssueTableDisplayRow[]>(() => {
@@ -2027,7 +2050,7 @@ export function TableView({
   // While a cell editor popup / rename input is open, hold the row structure
   // still: server branch pagination and realtime refetches can rebuild or
   // reorder the row list, moving the anchor row out of the virtualized render
-  // window and closing the popup the user just opened (PB-5108). The snapshot
+  // window and closing the popup the user just opened (MUL-5108). The snapshot
   // freezes ORDER only; issue objects inside the rows keep tracking live
   // server-query data so the open editor reflects optimistic updates. Live
   // structure snaps back the moment the editor closes. Ref writes happen
@@ -2101,8 +2124,8 @@ export function TableView({
 
   // Inline row edits are single-issue writes like the picker in the issue
   // detail or the right-click menu, so they route on the same gate: a status
-  // change that promotes an agent-owned issue, enters Review, or returns from
-  // Review must confirm rather than fire from one click (PB-6463).
+  // change that promotes an agent-owned issue out of the backlog category
+  // starts a run, and must confirm rather than fire from one click (MUL-6463).
   const updateIssue = useCallback(
     (issue: Issue, updates: Partial<UpdateIssueRequest>) => {
       const intent = runConfirmIntent(issue, updates, { entryOf });

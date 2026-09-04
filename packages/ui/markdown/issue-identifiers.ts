@@ -9,8 +9,8 @@ import {
 /**
  * Linear-style bare issue identifier autolinking for markdown preprocessing.
  *
- * Rewrites bare issue identifiers like `PB-123` / `TES-1` into canonical
- * mention links `[PB-123](mention://issue/PB-123)`, so the shared markdown
+ * Rewrites bare issue identifiers like `MUL-123` / `TES-1` into canonical
+ * mention links `[MUL-123](mention://issue/MUL-123)`, so the shared markdown
  * `a`/mention renderers can route them to a navigable issue chip.
  *
  * This module is intentionally PURE (packages/ui): it has no workspace or API
@@ -39,7 +39,7 @@ const IDENTIFIER_RE = /(?<![A-Za-z0-9_-])([A-Z][A-Z0-9]*-\d+)(?![A-Za-z0-9_-])/g
 export const ISSUE_IDENTIFIER_PATTERN = /^[A-Z][A-Z0-9]*-\d+$/
 
 /**
- * True when `value` is a bare issue identifier (e.g. "PB-123"). A UUID never
+ * True when `value` is a bare issue identifier (e.g. "MUL-123"). A UUID never
  * matches (lowercase hex, four dashes), so this cleanly separates autolinked
  * identifiers from real mention UUIDs at render time.
  */
@@ -88,13 +88,13 @@ export function preprocessIssueIdentifiers(text: string): string {
     // Dotted continuation such as `ABC-123.ts` (filename) or `ABC-123.tar.gz`:
     // a `.` immediately followed by an alphanumeric means the token is part of
     // a larger dotted name. A trailing `.` before whitespace/EOL is a sentence
-    // end ("see PB-1.") and stays linkable.
+    // end ("see MUL-1.") and stays linkable.
     const after = text[end]
     if (after === '.' && /[A-Za-z0-9]/.test(text[end + 1] ?? '')) continue
     // Path segment such as `FOO-1/bar` or `foo/BAR-1` — a `/` on either side
     // signals a path rather than a standalone reference.
     if (after === '/' || text[start - 1] === '/') continue
-    // Embedded in a dotted name on the left (`file.PB-1`).
+    // Embedded in a dotted name on the left (`file.MUL-1`).
     if (text[start - 1] === '.') continue
 
     result += text.slice(lastIndex, start)

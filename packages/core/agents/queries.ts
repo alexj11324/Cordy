@@ -48,7 +48,7 @@ export const agentRunCountsKeys = {
 //
 // Presence itself is derived from the active tasks only (see derive-presence.ts
 // and #1823). The one terminal row per agent is used solely for the Team hover
-// card's "last activity" line; PB-5436 tracks moving it to a dedicated lazy
+// card's "last activity" line; MUL-5436 tracks moving it to a dedicated lazy
 // endpoint so this hot query stops carrying history at all.
 //
 // The 30s staleTime is a safety net only; the primary freshness signal is

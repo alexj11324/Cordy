@@ -114,10 +114,10 @@ describe("ProjectPicker open state under create-dialog wiring", () => {
   });
 });
 
-// The pill's quick-clear (PB-5862). It is a sibling button inside the pill
+// The pill's quick-clear (MUL-5862). It is a sibling button inside the pill
 // shell, not an overlay on the trigger — the overlay version this replaces
 // needed every caller to reserve right padding and three of five didn't
-// (PB-5666). The trigger stays the popover's anchor, so pressing × must
+// (MUL-5666). The trigger stays the popover's anchor, so pressing × must
 // clear the field WITHOUT opening the list.
 describe("ProjectPicker clearable pill", () => {
   it("offers no × until a project is selected", async () => {

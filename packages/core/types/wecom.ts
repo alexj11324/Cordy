@@ -1,27 +1,22 @@
-import type {
-  MessagingInstallationRuntime,
-  MessagingInstallationSetup,
-} from "./messaging";
+import type { MessagingInstallationRuntime, MessagingInstallationSetup } from "./messaging";
 
 /**
- * A WeCom smart-bot ("智能机器人" / aibot) installation, optionally bound to
- * a Patchbay agent. Wire shape mirrors `WecomInstallationResponse` in
- * the Rust WeCom handler. Any new field the backend adds MUST
+ * A WeCom smart-bot ("智能机器人" / aibot) installation bound to a single
+ * Patchbay agent. Wire shape mirrors `WecomInstallationResponse` in
+ * `server/internal/handler/wecom_web.go`. Any new field the backend adds MUST
  * default to optional so older desktop builds keep parsing the response — see
- * AGENTS.md → API Compatibility.
+ * CLAUDE.md → API Compatibility.
  */
 export interface WecomInstallation {
   id: string;
   workspace_id: string;
-  /** Null for a workspace Hub; the channel selects an Agent with /agents. */
-  agent_id: string | null;
+  agent_id: string;
   /** The smart-bot identifier assigned by the WeCom admin console. */
   bot_id: string;
   installer_user_id: string;
-  status: "active" | "revoked" | string;
-  installed_at?: string;
-  created_at?: string;
-  updated_at?: string;
+  status: "installed" | "revoked" | string;
+  /** Canonical lifecycle field added while status remains a legacy wire alias. */
+  installation_status?: "installed" | "revoked" | string;
   runtime?: MessagingInstallationRuntime;
   setup?: MessagingInstallationSetup;
 }

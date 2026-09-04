@@ -14,8 +14,6 @@ export type RuntimeConfigResult =
   | { ok: true; config: RuntimeConfig }
   | { ok: false; error: RuntimeConfigError };
 
-// Approved hosted endpoint contract. DNS, TLS, and service readiness remain
-// deployment gates; operators can override every endpoint in desktop.json.
 export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = Object.freeze({
   schemaVersion: 1,
   apiUrl: "https://api.aspectlylabs.com",
@@ -107,20 +105,6 @@ export function parseRuntimeConfig(raw: string): RuntimeConfig {
         ? DEFAULT_RUNTIME_CONFIG.accountsUrl
         : normalizedAppUrl,
   };
-}
-
-/**
- * A development desktop.json can outlive the dev session that created it.
- * Only the exact built-in Vite localhost tuple is treated as stale; explicit
- * self-hosted URLs continue to use the packaged override path.
- */
-export function isStaleDevelopmentRuntimeConfig(config: RuntimeConfig): boolean {
-  return (
-    config.apiUrl === LOCAL_DEV_RUNTIME_CONFIG.apiUrl &&
-    config.wsUrl === LOCAL_DEV_RUNTIME_CONFIG.wsUrl &&
-    config.appUrl === LOCAL_DEV_RUNTIME_CONFIG.appUrl &&
-    config.accountsUrl === LOCAL_DEV_RUNTIME_CONFIG.accountsUrl
-  );
 }
 
 export function deriveWsUrl(apiUrl: string): string {

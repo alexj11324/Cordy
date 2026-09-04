@@ -5,7 +5,8 @@ node_modules
 # Build outputs
 .next
 dist
-/bin/
+server/bin
+server/tmp
 
 # Git
 .git
@@ -34,26 +35,12 @@ coverage
 /docs/
 *.md
 
-# Rust production binaries embed these crate-owned assets at compile time.
-# Re-include them after the repository-wide Markdown ignore.
-!server-rs/crates/patchbay-service/assets/
-!server-rs/crates/patchbay-service/assets/**
-!server-rs/crates/patchbay-handler/assets/
-!server-rs/crates/patchbay-handler/assets/**
-
-# Default-exclude app workspaces, then opt in only the production image
-# contexts maintained by the Dockerfiles in this repository.
+# Shipping frontend images use only web and auth-broker. Default-exclude future
+# app workspaces so they do not silently enter either build context.
 /apps/*
 !/apps/web/
-!/apps/web/**
-
-# The separately released accounts broker has its own production image.
 !/apps/auth-broker/
-!/apps/auth-broker/**
-
-# The production docs image is built from the exact docs workspace as well.
-!/apps/docs/
-!/apps/docs/**
+!/contracts/
 
 # Repository-only tooling
 /.github/

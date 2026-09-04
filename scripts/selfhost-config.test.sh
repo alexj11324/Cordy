@@ -23,6 +23,17 @@ require_config() {
   fi
 }
 
+require_text() {
+  local file=$1
+  local expected=$2
+
+  if ! grep -Fq -- "$expected" "$file"; then
+    echo "Missing expected self-host deployment contract in $file:"
+    echo "  $expected"
+    exit 1
+  fi
+}
+
 require_env() {
   local output=$1
   local expected=$2
@@ -41,7 +52,6 @@ tmp_dir="$(mktemp -d)"
 trap 'rm -f "$tmp_env"; rm -rf "$tmp_dir"' EXIT
 sed 's/^FRONTEND_PORT=.*/FRONTEND_PORT=3100/' .env.example >"$tmp_env"
 printf '\nBACKEND_PORT=9100\nSMTP_FROM_EMAIL=patchbay@example.com\n' >>"$tmp_env"
-printf 'PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN=%064d\n' 0 >>"$tmp_env"
 printf 'PATCHBAY_LLM_API_KEY=llm-key-from-env\nPATCHBAY_LLM_BASE_URL=http://gateway.example/v1\nPATCHBAY_LLM_DEFAULT_MODEL=model-from-env\nPATCHBAY_LLM_MAX_RETRIES=3\n' >>"$tmp_env"
 
 config="$(
@@ -54,9 +64,12 @@ config="$(
 require_config "$config" 'published: "3100"'
 require_config "$config" 'published: "9100"'
 require_config "$config" 'FRONTEND_ORIGIN: http://localhost:3100'
+require_config "$config" 'GOOGLE_REDIRECT_URI: http://localhost:3100/auth/callback'
 require_config "$config" 'PATCHBAY_APP_URL: http://localhost:3100'
 require_config "$config" 'SMTP_FROM_EMAIL: patchbay@example.com'
-require_config "$config" 'PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN: "0000000000000000000000000000000000000000000000000000000000000000"'
+require_config "$config" 'RESEND_FROM_EMAIL: noreply@invalid.invalid'
+require_config "$config" 'PATCHBAY_DATABASE_STARTUP_TIMEOUT: 3m'
+require_config "$config" 'PATCHBAY_DATABASE_CONNECT_TIMEOUT: 5s'
 
 # The backend environment is an explicit allowlist, so a variable documented in
 # .env.example but missing here silently never reaches the container: the
@@ -67,44 +80,49 @@ require_config "$config" 'PATCHBAY_LLM_API_KEY: llm-key-from-env'
 require_config "$config" 'PATCHBAY_LLM_BASE_URL: http://gateway.example/v1'
 require_config "$config" 'PATCHBAY_LLM_DEFAULT_MODEL: model-from-env'
 require_config "$config" 'PATCHBAY_LLM_MAX_RETRIES: "3"'
+require_config "$config" 'image: ghcr.io/alexj11324/patchbay-backend:latest'
+require_config "$config" 'image: ghcr.io/alexj11324/patchbay-web:latest'
 
-# NEXT_PUBLIC values are compiled into the Web client. Every supported local
-# image build must pass the exact desktop callback origin through BuildKit;
-# setting it only on the running container is too late for Next.js.
-for compose_file in docker-compose.selfhost.build.yml docker-compose.labs.yml; do
-  if ! grep -Fq \
-    'NEXT_PUBLIC_DESKTOP_APP_ORIGIN: ${NEXT_PUBLIC_DESKTOP_APP_ORIGIN:-}' \
-    "$compose_file"; then
-    echo "$compose_file does not pass NEXT_PUBLIC_DESKTOP_APP_ORIGIN to Dockerfile.web"
-    exit 1
-  fi
-done
+# Keep the self-host deployment surfaces on the same Go mainline image
+# namespace and the same safe sender/callback defaults. The Helm chart uses
+# Chart.appVersion for its empty tag, while Compose and .env.example use the
+# explicit latest channel; release promotion supplies the exact tag.
+require_text docker-compose.selfhost.yml 'image: ${PATCHBAY_BACKEND_IMAGE:-ghcr.io/alexj11324/patchbay-backend}:${PATCHBAY_IMAGE_TAG:-latest}'
+require_text docker-compose.selfhost.yml 'image: ${PATCHBAY_WEB_IMAGE:-ghcr.io/alexj11324/patchbay-web}:${PATCHBAY_IMAGE_TAG:-latest}'
+require_text deploy/helm/patchbay/values.yaml 'repository: ghcr.io/alexj11324/patchbay-backend'
+require_text deploy/helm/patchbay/values.yaml 'repository: ghcr.io/alexj11324/patchbay-web'
+require_text deploy/helm/patchbay/values.yaml 'resendFromEmail: noreply@invalid.invalid'
+require_text deploy/helm/patchbay/values.yaml 'googleRedirectUri: http://patchbay.dev.lan/auth/callback'
+require_text .env.example 'PATCHBAY_BACKEND_IMAGE=ghcr.io/alexj11324/patchbay-backend'
+require_text .env.example 'PATCHBAY_WEB_IMAGE=ghcr.io/alexj11324/patchbay-web'
+require_text SELF_HOSTING_ADVANCED.md 'The bundled self-host deployments use `noreply@invalid.invalid` as the empty-value'
+require_text scripts/selfhost-wait.sh 'PATCHBAY_BACKEND_IMAGE:-ghcr.io/alexj11324/patchbay-backend'
+require_text scripts/selfhost-wait.sh 'PATCHBAY_WEB_IMAGE:-ghcr.io/alexj11324/patchbay-web'
+require_text docker/entrypoint.sh './migrate up &'
+require_text docker/entrypoint.sh 'exec ./server'
+require_text deploy/helm/patchbay/templates/backend.yaml 'path: /healthz'
+require_text deploy/helm/patchbay/templates/backend.yaml 'path: /health'
+require_text scripts/selfhost-wait.sh 'curl -sf "${backend_url}/health"'
 
-# Hosted images use a repository variable so the callback stays disabled until
-# the approved HTTPS app origin is actually deployed. Never bake a speculative
-# production hostname into a public image.
-for workflow_file in .github/workflows/aspectlylabs-production-images.yml .github/workflows/release.yml; do
-  if ! grep -Fq \
-    'NEXT_PUBLIC_DESKTOP_APP_ORIGIN=${{ vars.NEXT_PUBLIC_DESKTOP_APP_ORIGIN }}' \
-    "$workflow_file"; then
-    echo "$workflow_file does not source the Desktop callback origin from repository configuration"
-    exit 1
-  fi
-done
+if grep -R -n -E 'ghcr\.io/patchbay-ai/(patchbay-backend|patchbay-web)' \
+  docker-compose.selfhost.yml deploy/helm/patchbay/values.yaml .env.example \
+  SELF_HOSTING_ADVANCED.md scripts/selfhost-wait.sh; then
+  echo "Self-host deployment files still contain the retired GHCR image namespace."
+  exit 1
+fi
 
-# Those hosted workflow contracts must run when either workflow changes.
-# Keep this scoped to the frontend filter; release.yml also appears in the
-# backend filter and would otherwise make a broad grep pass accidentally.
-frontend_filter="$(
-  sed -n "/^            frontend:/,/^            backend:/p" \
-    .github/workflows/ci.yml
+# A self-hosted deployment must not silently send through the Patchbay cloud
+# sender. The explicit operator value must still pass through unchanged.
+explicit_resend_env="$tmp_dir/.env.resend"
+cp "$tmp_env" "$explicit_resend_env"
+printf '\nRESEND_FROM_EMAIL=admin@example.com\n' >>"$explicit_resend_env"
+  explicit_resend_config="$(
+    docker compose \
+      --env-file "$explicit_resend_env" \
+      -f docker-compose.selfhost.yml \
+      config
 )"
-for workflow_file in .github/workflows/aspectlylabs-production-images.yml .github/workflows/release.yml; do
-  if ! grep -Fq -- "- '${workflow_file}'" <<<"$frontend_filter"; then
-    echo "$workflow_file must trigger the frontend deployment contract tests"
-    exit 1
-  fi
-done
+require_config "$explicit_resend_config" 'RESEND_FROM_EMAIL: admin@example.com'
 
 while IFS= read -r llm_var; do
   if ! grep -Eq "^[[:space:]]+${llm_var}: \\\$\{${llm_var}:-" docker-compose.selfhost.yml; then
@@ -136,6 +154,7 @@ local_env="$(
       "FRONTEND_PORT=${FRONTEND_PORT}" \
       "FRONTEND_ORIGIN=${FRONTEND_ORIGIN}" \
       "PATCHBAY_APP_URL=${PATCHBAY_APP_URL}" \
+      "GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI}" \
       "PATCHBAY_SERVER_URL=${PATCHBAY_SERVER_URL}" \
       "LOCAL_UPLOAD_BASE_URL=${LOCAL_UPLOAD_BASE_URL}" \
       "PLAYWRIGHT_BASE_URL=${PLAYWRIGHT_BASE_URL}"
@@ -146,6 +165,7 @@ require_env "$local_env" 'PORT=9100'
 require_env "$local_env" 'FRONTEND_PORT=3100'
 require_env "$local_env" 'FRONTEND_ORIGIN=http://localhost:3100'
 require_env "$local_env" 'PATCHBAY_APP_URL=http://localhost:3100'
+require_env "$local_env" 'GOOGLE_REDIRECT_URI=http://localhost:3100/auth/callback'
 require_env "$local_env" 'PATCHBAY_SERVER_URL=ws://localhost:9100/ws'
 require_env "$local_env" 'LOCAL_UPLOAD_BASE_URL=http://localhost:9100'
 require_env "$local_env" 'PLAYWRIGHT_BASE_URL=http://localhost:3100'

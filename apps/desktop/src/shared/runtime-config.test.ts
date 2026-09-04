@@ -35,7 +35,7 @@ describe("runtime config", () => {
     });
   });
 
-  it("preserves the approved hosted endpoint split when only apiUrl is configured", () => {
+  it("strips the leading api. label when deriving appUrl", () => {
     expect(
       parseRuntimeConfig(
         JSON.stringify({ schemaVersion: 1, apiUrl: "https://api.aspectlylabs.com" }),
@@ -53,7 +53,7 @@ describe("runtime config", () => {
     expect(deriveWsUrl("http://localhost:8080")).toBe("ws://localhost:8080/ws");
   });
 
-  it("accepts explicit app, accounts, and websocket URLs", () => {
+  it("accepts explicit appUrl and wsUrl", () => {
     expect(
       parseRuntimeConfig(
         JSON.stringify({
@@ -61,7 +61,6 @@ describe("runtime config", () => {
           apiUrl: "https://api.example.com/",
           wsUrl: "wss://ws.example.com/socket/",
           appUrl: "https://app.example.com/",
-          accountsUrl: "https://accounts.example.com/",
         }),
       ),
     ).toEqual({
@@ -69,7 +68,7 @@ describe("runtime config", () => {
       apiUrl: "https://api.example.com",
       wsUrl: "wss://ws.example.com/socket",
       appUrl: "https://app.example.com",
-      accountsUrl: "https://accounts.example.com",
+      accountsUrl: "https://app.example.com",
     });
   });
 
@@ -144,25 +143,18 @@ describe("runtime config", () => {
     });
   });
 
-  it("preserves hosted app and accounts origins for backend-enabled Vite", () => {
-    expect(
-      runtimeConfigFromDevEnv({ apiUrl: "https://api.aspectlylabs.com" }),
-    ).toEqual(DEFAULT_RUNTIME_CONFIG);
-  });
-
   it("dev VITE_APP_URL still wins over apiUrl-derived value", () => {
     expect(
       runtimeConfigFromDevEnv({
         apiUrl: "https://api.test.aspectlylabs.com",
         appUrl: "https://staging.aspectlylabs.com",
-        accountsUrl: "https://accounts.staging.aspectlylabs.com",
       }),
     ).toEqual({
       schemaVersion: 1,
       apiUrl: "https://api.test.aspectlylabs.com",
       wsUrl: "wss://api.test.aspectlylabs.com/ws",
       appUrl: "https://staging.aspectlylabs.com",
-      accountsUrl: "https://accounts.staging.aspectlylabs.com",
+      accountsUrl: "https://staging.aspectlylabs.com",
     });
   });
 });

@@ -1,6 +1,6 @@
 # Patchbay installer for Windows — one command to get started.
 #
-# Install CLI (default): connects to patchbay.aspectlylabs.com
+# Install CLI (default): connects to patchbay.ai
 #   irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex
 #
 # Self-host: starts a local Patchbay server + installs CLI + configures
@@ -9,17 +9,12 @@
 
 $ErrorActionPreference = "Stop"
 
-if (-not $env:PATCHBAY_INSTALL_DIR -and $env:CORDY_INSTALL_DIR) { $env:PATCHBAY_INSTALL_DIR = $env:CORDY_INSTALL_DIR } # legacy-brand-compat
-if (-not $env:PATCHBAY_MODE -and $env:CORDY_MODE) { $env:PATCHBAY_MODE = $env:CORDY_MODE } # legacy-brand-compat
-
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 $RepoUrl       = "https://github.com/alexj11324/Cordy.git"
 $RepoWebUrl    = "https://github.com/alexj11324/Cordy"
 $DefaultInstallDir = Join-Path $env:USERPROFILE ".patchbay\server"
-$PatchbayHome      = Join-Path $env:USERPROFILE ".patchbay"
-$LegacyPatchbayHome = Join-Path $env:USERPROFILE ".cordy" # legacy-brand-compat
 $InstallDir    = if ($env:PATCHBAY_INSTALL_DIR) { $env:PATCHBAY_INSTALL_DIR } else { $DefaultInstallDir }
 
 # Host ports Compose reported after `up -d`; set by Setup-Server and reused by
@@ -38,13 +33,6 @@ function Write-Fail  { param([string]$Msg) Write-Host "[ERROR] $Msg" -Foreground
 function Test-CommandExists {
     param([string]$Name)
     $null -ne (Get-Command $Name -ErrorAction SilentlyContinue)
-}
-
-function Move-LegacyPatchbayHome {
-    if (-not $env:PATCHBAY_INSTALL_DIR -and -not (Test-Path $PatchbayHome) -and (Test-Path $LegacyPatchbayHome -PathType Container)) {
-        Move-Item -Path $LegacyPatchbayHome -Destination $PatchbayHome
-        Write-Ok "Migrated the existing Patchbay home directory to $PatchbayHome"
-    }
 }
 
 function New-RandomHex {
@@ -121,70 +109,23 @@ function Get-SelfHostRef {
 function Checkout-ServerRef {
     param([string]$Ref)
 
-    git fetch origin $Ref --depth 1
-    if ($LASTEXITCODE -ne 0) {
-        Write-Fail "Could not fetch self-host ref '$Ref'."
-    }
-    git checkout --force --detach FETCH_HEAD
-    if ($LASTEXITCODE -ne 0) {
-        Write-Fail "Could not check out self-host ref '$Ref'."
-    }
-}
-
-function Update-LegacySelfHostImageRepositories {
-    param([Parameter(Mandatory = $true)][string]$EnvPath)
-
-    $canonicalBackend = "PATCHBAY_BACKEND_IMAGE=ghcr.io/alexj11324/patchbay-backend"
-    $canonicalWeb = "PATCHBAY_WEB_IMAGE=ghcr.io/alexj11324/patchbay-web"
-    $legacyImages = @{
-        "PATCHBAY_BACKEND_IMAGE=ghcr.io/cordy-ai/cordy-backend" = $canonicalBackend # legacy-brand-compat
-        "PATCHBAY_BACKEND_IMAGE=ghcr.io/alexj11324/cordy-backend" = $canonicalBackend # legacy-brand-compat
-        "PATCHBAY_WEB_IMAGE=ghcr.io/cordy-ai/cordy-web" = $canonicalWeb # legacy-brand-compat
-        "PATCHBAY_WEB_IMAGE=ghcr.io/alexj11324/cordy-web" = $canonicalWeb # legacy-brand-compat
-    }
-    $changed = $false
-    $content = @(Get-Content $EnvPath) | ForEach-Object {
-        $line = $_
-        if ($line -cmatch '^CORDY_') { # legacy-brand-compat
-            $changed = $true
-            $line = $line -creplace '^CORDY_', 'PATCHBAY_' # legacy-brand-compat
-        }
-        if ($legacyImages.ContainsKey($line)) {
-            $changed = $true
-            $legacyImages[$line]
-        } else {
-            $line
-        }
-    }
-    if ($changed) {
-        $content | Set-Content $EnvPath
-        Write-Ok "Migrated the existing self-host configuration to Patchbay identifiers"
-    }
-}
-
-function Set-SelfHostImageTag {
-    param([string]$Ref)
-
-    $imageTag = if ($Ref -eq "main") { "latest" } else { $Ref }
-    if ($imageTag -notmatch '^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$') {
-        Write-Fail "Self-host ref '$Ref' is not a valid container image tag. Use a release tag such as v0.4.10 or main."
+    if ($Ref -eq "main") {
+        git fetch origin main --depth 1 2>$null
+        git checkout --force main 2>$null
+        git reset --hard origin/main 2>$null
+        return
     }
 
-    $envPath = Join-Path $InstallDir ".env"
-    $content = @(Get-Content $envPath)
-    if ($content -match '^PATCHBAY_IMAGE_TAG=') {
-        $content = $content | ForEach-Object {
-            if ($_ -match '^PATCHBAY_IMAGE_TAG=') { "PATCHBAY_IMAGE_TAG=$imageTag" } else { $_ }
-        }
-        $content | Set-Content $envPath
-    } else {
-        Add-Content -Path $envPath -Value "`nPATCHBAY_IMAGE_TAG=$imageTag"
+    git fetch origin --tags --force 2>$null
+    $tagRef = "refs/tags/$Ref"
+    git show-ref --verify --quiet $tagRef 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        git checkout --force $Ref 2>$null
+        return
     }
 
-    # Compose gives the process environment precedence over .env. Pin both so
-    # an ambient value cannot silently defeat an explicit rollback ref.
-    $env:PATCHBAY_IMAGE_TAG = $imageTag
-    Write-Ok "Pinned backend and web images to $imageTag"
+    git fetch origin $Ref --depth 1 2>$null
+    git checkout --force $Ref 2>$null
 }
 
 function Pull-OfficialSelfHostImages {
@@ -320,9 +261,7 @@ function Install-CliBinary {
         Write-Fail "Failed to download CLI binary: $_"
     }
 
-    # Verify SHA256 checksum. A missing, malformed, or unavailable manifest is
-    # fatal: the release workflow publishes one for every CLI archive, and
-    # installing without it would silently remove the download integrity gate.
+    # Verify SHA256 checksum
     $checksumUrl = "https://github.com/alexj11324/Cordy/releases/download/$latest/checksums.txt"
     try {
         $checksums = Invoke-WebRequest -Uri $checksumUrl -UseBasicParsing -ErrorAction Stop
@@ -334,26 +273,25 @@ function Install-CliBinary {
         $zipFile = Join-Path $tmpDir "patchbay.zip"
         $actualHash = (Get-FileHash -Path $zipFile -Algorithm SHA256).Hash.ToLower()
         $releaseAsset = "patchbay-cli-$version-windows-$arch.zip"
-        $expectedHashes = @(
-            $checksumContent -split "`r?`n" | ForEach-Object {
-                if ($_ -match '^(?<hash>[0-9a-fA-F]{64})\s+\*?(?<name>\S+)\s*$' -and $Matches.name -eq $releaseAsset) {
-                    $Matches.hash.ToLowerInvariant()
-                }
+        $legacyAsset = "patchbay_windows_$arch.zip"
+        $expectedLine = ($checksumContent -split "`r?`n") |
+            Where-Object {
+                $_ -match [regex]::Escape($releaseAsset) -or
+                $_ -match [regex]::Escape($legacyAsset)
+            } |
+            Select-Object -First 1
+        if ($expectedLine) {
+            $expectedHash = ($expectedLine -split "\s+")[0].ToLower()
+            if ($actualHash -ne $expectedHash) {
+                Remove-Item $tmpDir -Recurse -Force
+                Write-Fail "Checksum verification failed. Expected: $expectedHash, Got: $actualHash"
             }
-        )
-        if ($expectedHashes.Count -ne 1) {
-            Remove-Item $tmpDir -Recurse -Force
-            Write-Fail "Checksum manifest has no unique valid entry for $releaseAsset."
+            Write-Ok "Checksum verified"
+        } else {
+            Write-Warn "Could not find checksum entry for $releaseAsset — skipping verification."
         }
-        $expectedHash = $expectedHashes[0]
-        if ($actualHash -ne $expectedHash) {
-            Remove-Item $tmpDir -Recurse -Force
-            Write-Fail "Checksum verification failed. Expected: $expectedHash, Got: $actualHash"
-        }
-        Write-Ok "Checksum verified"
     } catch {
-        Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Fail "Could not verify the CLI checksum: $_"
+        Write-Warn "Could not download checksums.txt — skipping verification."
     }
 
     Expand-Archive -Path (Join-Path $tmpDir "patchbay.zip") -DestinationPath $tmpDir -Force
@@ -501,9 +439,6 @@ function Install-Server {
         Write-Ok "Using existing .env"
     }
 
-    Update-LegacySelfHostImageRepositories -EnvPath (Join-Path $InstallDir ".env")
-    Set-SelfHostImageTag -Ref $serverRef
-
     Write-Info "Pulling official Patchbay images..."
     Pull-OfficialSelfHostImages
     Write-Info "Starting Patchbay services (this may take a few minutes on first run)..."
@@ -560,7 +495,7 @@ function Start-DefaultInstall {
     Write-Host ""
     Write-Host "  Next: configure your environment"
     Write-Host ""
-    Write-Host "     patchbay setup               " -NoNewline; Write-Host "# Connect to Patchbay Cloud (patchbay.aspectlylabs.com)" -ForegroundColor DarkGray
+    Write-Host "     patchbay setup               " -NoNewline; Write-Host "# Connect to Patchbay Cloud (patchbay.ai)" -ForegroundColor DarkGray
     Write-Host "     patchbay setup self-host      " -NoNewline; Write-Host "# Connect to a self-hosted server" -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "  Self-hosting? Install the server first:"
@@ -635,7 +570,6 @@ function Start-Stop {
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
-Move-LegacyPatchbayHome
 $mode = if ($env:PATCHBAY_MODE) { $env:PATCHBAY_MODE.ToLower() } else { "default" }
 
 switch ($mode) {

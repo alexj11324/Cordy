@@ -49,9 +49,9 @@ function initCore(
       ? identity.os
       : null,
   );
-  configureShortcutRuntime(
-    identity?.platform === "desktop" ? "desktop" : null,
-  );
+  // Authoritative override; before this runs (module-eval store hydration)
+  // detectShortcutRuntime() reads the preload globals and already agrees.
+  configureShortcutRuntime(identity?.platform === "desktop" ? "desktop" : null);
 
   const api = new ApiClient(apiBaseUrl, {
     logger: createLogger("api"),
@@ -63,10 +63,15 @@ function initCore(
   setApiInstance(api);
   setSchemaLogger(createLogger("api-schema"));
 
+  // In token mode, hydrate token from storage.
   if (!cookieAuth && !clerkAuth) {
     const token = storage.getItem("patchbay_token");
     if (token) api.setToken(token);
   }
+  // Workspace identity is URL-driven: the [workspaceSlug] layout resolves
+  // the slug and calls setCurrentWorkspace(slug, wsId) on mount. The api
+  // client reads the slug from that singleton for the X-Workspace-Slug
+  // header. No boot-time hydration from storage is required.
 
   authStore = createAuthStore({ api, storage, onLogin, onLogout, cookieAuth });
   registerAuthStore(authStore);

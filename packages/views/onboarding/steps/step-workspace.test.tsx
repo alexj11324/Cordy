@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { I18nProvider } from "@patchbay/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enOnboarding from "../../locales/en/onboarding.json";
@@ -37,18 +37,31 @@ vi.mock("@patchbay/core/config", () => ({
 }));
 
 const mockCreateMutate = vi.hoisted(() => vi.fn());
+const mockCreateProject = vi.hoisted(() => vi.fn());
+const mockPickDirectories = vi.hoisted(() => vi.fn());
+const mockDesktop = vi.hoisted(() => vi.fn(() => false));
+const mockDaemon = vi.hoisted(() =>
+  vi.fn(() => ({
+    daemonId: null as string | null,
+    deviceName: null as string | null,
+    running: false,
+  })),
+);
+const mockToastError = vi.hoisted(() => vi.fn());
+
+vi.mock("sonner", () => ({ toast: { error: mockToastError } }));
+vi.mock("../../platform/local-directory", () => ({
+  isDesktopShell: mockDesktop,
+  pickDirectories: mockPickDirectories,
+}));
+vi.mock("../../platform/use-local-daemon-status", () => ({
+  useLocalDaemonStatus: mockDaemon,
+}));
 
 vi.mock("@patchbay/core/workspace/mutations", () => ({
   useCreateWorkspace: () => ({
     mutate: mockCreateMutate,
-    mutateAsync: (...args: unknown[]) => {
-      mockCreateMutate(...args);
-      return Promise.resolve({
-        id: "ws-new",
-        name: "Created",
-        slug: "created",
-      });
-    },
+    mutateAsync: mockCreateMutate,
     isPending: false,
   }),
 }));
@@ -56,7 +69,7 @@ vi.mock("@patchbay/core/workspace/mutations", () => ({
 vi.mock("@patchbay/core/api", () => ({
   api: {
     getBaseUrl: () => "http://127.0.0.1:8080",
-    createProject: vi.fn(),
+    createProject: mockCreateProject,
   },
 }));
 
@@ -74,19 +87,20 @@ function renderStep({
   existing,
   disabled,
   daemonAppUrl = "",
+  onCreated = vi.fn(),
 }: {
   existing: Workspace | null;
   disabled: boolean;
   daemonAppUrl?: string;
+  onCreated?: (workspace: Workspace) => void;
 }) {
   mockUseConfigStore.mockImplementation(
     (selector: (state: MockConfigState) => unknown) =>
       selector({ workspaceCreationDisabled: disabled, daemonAppUrl }),
   );
-  return render(
-    <StepWorkspace existing={existing} onCreated={vi.fn()} />,
-    { wrapper: I18nWrapper },
-  );
+  return render(<StepWorkspace existing={existing} onCreated={onCreated} />, {
+    wrapper: I18nWrapper,
+  });
 }
 
 const EXISTING_WORKSPACE: Workspace = {
@@ -102,6 +116,152 @@ const EXISTING_WORKSPACE: Workspace = {
   updated_at: "2025-01-01T00:00:00Z",
 } as unknown as Workspace;
 
+beforeEach(() => {
+  mockCreateMutate.mockReset().mockResolvedValue(EXISTING_WORKSPACE);
+  mockCreateProject.mockReset().mockResolvedValue({ id: "project-1" });
+  mockPickDirectories.mockReset();
+  mockDesktop.mockReturnValue(false);
+  mockDaemon.mockReturnValue({
+    daemonId: null,
+    deviceName: null,
+    running: false,
+  });
+  mockToastError.mockClear();
+});
+
+describe("StepWorkspace — project attachment", () => {
+  function addRepository(url: string) {
+    fireEvent.change(screen.getByLabelText("Projects (optional)"), {
+      target: { value: url },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+  }
+
+  function submitWorkspace() {
+    fireEvent.change(screen.getByLabelText("Workspace name"), {
+      target: { value: "Acme" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Create Acme" }),
+    );
+  }
+
+  it("validates, deduplicates and removes repository drafts without making API calls", () => {
+    renderStep({ existing: null, disabled: false });
+    addRepository("not a repository");
+    expect(
+      screen.getByText("Enter a valid git repository URL"),
+    ).toBeInTheDocument();
+    addRepository("https://github.com/acme/api.git");
+    addRepository("https://github.com/acme/api.git");
+    expect(screen.getAllByRole("button", { name: "Remove api" })).toHaveLength(
+      1,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Remove api" }));
+    expect(
+      screen.queryByRole("button", { name: "Remove api" }),
+    ).not.toBeInTheDocument();
+    expect(mockCreateProject).not.toHaveBeenCalled();
+  });
+
+  it("attaches projects to the returned workspace before advancing", async () => {
+    const onCreated = vi.fn();
+    let finishProject!: () => void;
+    mockCreateProject.mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishProject = resolve;
+      }),
+    );
+    renderStep({ existing: null, disabled: false, onCreated });
+    addRepository("https://github.com/acme/api.git");
+    submitWorkspace();
+    await waitFor(() =>
+      expect(mockCreateProject).toHaveBeenCalledWith(
+        {
+          title: "api",
+          resources: [
+            {
+              resource_type: "github_repo",
+              resource_ref: { url: "https://github.com/acme/api.git" },
+            },
+          ],
+        },
+        "acme",
+      ),
+    );
+    expect(onCreated).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Creating…" })).toBeDisabled();
+    finishProject();
+    await waitFor(() =>
+      expect(onCreated).toHaveBeenCalledWith(EXISTING_WORKSPACE),
+    );
+  });
+
+  it("reports a partial attachment failure and still completes the created workspace", async () => {
+    const onCreated = vi.fn();
+    mockCreateProject.mockRejectedValueOnce(new Error("unavailable"));
+    renderStep({ existing: null, disabled: false, onCreated });
+    addRepository("https://github.com/acme/api");
+    addRepository("https://github.com/acme/web");
+    submitWorkspace();
+    await waitFor(() =>
+      expect(onCreated).toHaveBeenCalledWith(EXISTING_WORKSPACE),
+    );
+    expect(mockCreateProject).toHaveBeenCalledTimes(2);
+    expect(mockToastError).toHaveBeenCalledWith(
+      "Workspace created, but some projects could not be attached",
+    );
+    expect(mockCreateMutate).toHaveBeenCalledTimes(1);
+  });
+
+  it("binds multiple native folders to the actual local daemon, not a remote repository", async () => {
+    mockDesktop.mockReturnValue(true);
+    mockDaemon.mockReturnValue({
+      daemonId: "daemon-1",
+      deviceName: "My Mac",
+      running: true,
+    });
+    mockPickDirectories.mockResolvedValue({
+      ok: true,
+      folders: [
+        { path: "/projects/api", basename: "api" },
+        { path: "/projects/web", basename: "web" },
+      ],
+    });
+    renderStep({ existing: null, disabled: false });
+    fireEvent.click(screen.getByRole("button", { name: "Choose folders" }));
+    await screen.findByRole("button", { name: "Remove api" });
+    submitWorkspace();
+    await waitFor(() => expect(mockCreateProject).toHaveBeenCalledTimes(2));
+    expect(mockCreateProject).toHaveBeenCalledWith(
+      {
+        title: "api",
+        resources: [
+          {
+            resource_type: "local_directory",
+            resource_ref: {
+              local_path: "/projects/api",
+              daemon_id: "daemon-1",
+              label: "api",
+              execution_mode: "in_place",
+            },
+          },
+        ],
+      },
+      "acme",
+    );
+  });
+
+  it("keeps repository entry available when the desktop runtime is offline", () => {
+    mockDesktop.mockReturnValue(true);
+    renderStep({ existing: null, disabled: false });
+    expect(
+      screen.getByRole("button", { name: "Choose folders" }),
+    ).toBeDisabled();
+    expect(screen.getByLabelText("Projects (optional)")).toBeEnabled();
+  });
+});
+
 // Regression for #3433 (PR feedback): when DISABLE_WORKSPACE_CREATION is on,
 // every onboarding entry point must steer the user toward an existing
 // workspace or a logout escape — never toward the create form, even
@@ -111,7 +271,7 @@ describe("StepWorkspace — DISABLE_WORKSPACE_CREATION gate", () => {
     renderStep({ existing: null, disabled: false });
 
     expect(
-      screen.getByText("Set up your first workspace", { exact: false }),
+      screen.getByText("Name your workspace.", { exact: false }),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Workspace name")).toBeInTheDocument();
     expect(screen.getByLabelText("URL")).toBeInTheDocument();
@@ -127,7 +287,9 @@ describe("StepWorkspace — DISABLE_WORKSPACE_CREATION gate", () => {
     ).toBeInTheDocument();
     expect(screen.queryByLabelText("Workspace name")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("URL")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /log out/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /log out/i }),
+    ).toBeInTheDocument();
   });
 
   it("forces the existing-workspace-only state when the flag is on and the user already has a workspace", () => {
@@ -137,9 +299,7 @@ describe("StepWorkspace — DISABLE_WORKSPACE_CREATION gate", () => {
     expect(
       screen.getByText("Continue with Acme.", { exact: false }),
     ).toBeInTheDocument();
-    expect(
-      screen.queryByText(/start another/i),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/start another/i)).not.toBeInTheDocument();
     expect(
       screen.queryByText(/create a new one alongside it/i),
     ).not.toBeInTheDocument();
@@ -161,7 +321,7 @@ describe("StepWorkspace — DISABLE_WORKSPACE_CREATION gate", () => {
 });
 
 // #4263: the workspace URL prefix must reflect the deployment's own host on
-// self-hosted instances instead of the hardcoded hosted origin.
+// self-hosted instances instead of the hardcoded `patchbay.aspectlylabs.com`.
 describe("StepWorkspace — workspace URL prefix", () => {
   it("shows the brand host when no app URL is configured", () => {
     renderStep({ existing: null, disabled: false });
@@ -201,7 +361,7 @@ describe("StepWorkspace — random workspace identity", () => {
   });
 });
 
-// PB-6050: the issue prefix used to be a read-only preview derived
+// MUL-6050: the issue prefix used to be a read-only preview derived
 // server-side from the workspace NAME, so every workspace named in Chinese
 // (or Japanese, Korean, emoji…) was created as "WS" with no way to change it
 // in the create flow. It now derives from the slug — which the same form
@@ -304,7 +464,7 @@ describe("StepWorkspace — issue prefix", () => {
     expect(screen.getByText("FETEAM-123")).toBeInTheDocument();
   });
 
-  it("submits the prefix the user was shown", () => {
+  it("submits the prefix the user was shown", async () => {
     mockCreateMutate.mockClear();
     renderStep({ existing: null, disabled: false });
 
@@ -323,9 +483,12 @@ describe("StepWorkspace — issue prefix", () => {
       slug: "frontend",
       issue_prefix: "FE",
     });
+    await waitFor(() =>
+      expect(screen.getByLabelText("Workspace name")).toBeEnabled(),
+    );
   });
 
-  it("falls back to the slug-derived default when the field is cleared", () => {
+  it("falls back to the slug-derived default when the field is cleared", async () => {
     mockCreateMutate.mockClear();
     renderStep({ existing: null, disabled: false });
 
@@ -342,5 +505,8 @@ describe("StepWorkspace — issue prefix", () => {
     expect(mockCreateMutate.mock.calls[0]![0]).toMatchObject({
       issue_prefix: "ACME",
     });
+    await waitFor(() =>
+      expect(screen.getByLabelText("Workspace name")).toBeEnabled(),
+    );
   });
 });

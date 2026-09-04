@@ -1,33 +1,23 @@
 "use client";
-
 import { useEffect, useState } from "react";
 import en from "../locales/en.json";
 import ja from "../locales/ja.json";
 import ko from "../locales/ko.json";
 import zhHans from "../locales/zh-Hans.json";
+import { resolveAuthLocale, type AuthLocale } from "./auth-locale";
+type Messages = typeof en;
+const locales: Record<AuthLocale, Messages> = {
+  en,
+  ja,
+  ko,
+  "zh-Hans": zhHans,
+};
 
-const RESOURCES = { en, ja, ko, "zh-Hans": zhHans } as const;
-type SupportedLocale = keyof typeof RESOURCES;
-
-function resolveLocale(languages: readonly string[]): SupportedLocale {
-  for (const language of languages) {
-    const normalized = language.toLowerCase();
-    if (normalized.startsWith("zh")) return "zh-Hans";
-    if (normalized.startsWith("ja")) return "ja";
-    if (normalized.startsWith("ko")) return "ko";
-    if (normalized.startsWith("en")) return "en";
-  }
-  return "en";
-}
-
-export function useAuthMessages() {
-  const [locale, setLocale] = useState<SupportedLocale>("en");
+export function useAuthMessages(): Messages {
+  const [messages, setMessages] = useState<Messages>(en);
   useEffect(() => {
-    const resolved = resolveLocale(navigator.languages ?? [navigator.language]);
-    document.documentElement.lang = resolved;
-    setLocale(resolved);
+    const { locale } = resolveAuthLocale(navigator.language);
+    setMessages(locales[locale]);
   }, []);
-  return { locale, messages: RESOURCES[locale] };
+  return messages;
 }
-
-export { resolveLocale };

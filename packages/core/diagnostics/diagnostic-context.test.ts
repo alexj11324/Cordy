@@ -36,12 +36,13 @@ describe("bucketDiagnosticPath", () => {
   });
 
   it("templates every workspace detail route", () => {
-    expect(bucketDiagnosticPath("/acme/issues/PB-5345")).toBe("/:slug/issues/:id");
+    expect(bucketDiagnosticPath("/acme/issues/MUL-5345")).toBe("/:slug/issues/:id");
     expect(bucketDiagnosticPath("/acme/projects/p1")).toBe("/:slug/projects/:id");
+    expect(bucketDiagnosticPath("/acme/task-graph")).toBe("/:slug/task-graph");
     expect(bucketDiagnosticPath("/acme/automations/ap-7")).toBe("/:slug/automations/:id");
     expect(bucketDiagnosticPath("/acme/agents/agt_9")).toBe("/:slug/agents/:id");
     expect(bucketDiagnosticPath("/acme/members/m-3")).toBe("/:slug/members/:id");
-    expect(bucketDiagnosticPath("/acme/teams/team.4")).toBe("/:slug/teams/:id");
+    expect(bucketDiagnosticPath("/acme/teams/tm.4")).toBe("/:slug/teams/:id");
     expect(bucketDiagnosticPath("/acme/runtimes/machine-1")).toBe("/:slug/runtimes/:id");
     expect(bucketDiagnosticPath("/acme/skills/skl_123")).toBe("/:slug/skills/:id");
     expect(bucketDiagnosticPath("/acme/attachments/att-8/preview")).toBe(
@@ -50,14 +51,6 @@ describe("bucketDiagnosticPath", () => {
     expect(bucketDiagnosticPath("/acme/runtimes/machine-1/runtime/rt-2")).toBe(
       "/:slug/runtimes/:id/runtime/:runtimeId",
     );
-  });
-
-  it("recognizes the workspace integrations page", () => {
-    expect(bucketDiagnosticPath("/acme/integrations")).toBe("/:slug/integrations");
-  });
-
-  it("recognizes the workspace task graph page", () => {
-    expect(bucketDiagnosticPath("/acme/task-graph")).toBe("/:slug/task-graph");
   });
 
   // The previous implementation guessed from the shape of a segment, so any id
@@ -108,7 +101,7 @@ describe("bucketDiagnosticPath", () => {
   });
 
   it("drops query string and hash — they can carry resource ids", () => {
-    expect(bucketDiagnosticPath("/acme/issues?issue=PB-1#comment-3")).toBe(
+    expect(bucketDiagnosticPath("/acme/issues?issue=MUL-1#comment-3")).toBe(
       "/:slug/issues",
     );
   });
@@ -121,7 +114,7 @@ describe("bucketDiagnosticPath", () => {
   // A route we do not know is exactly the case where an id cannot be told from
   // a page name, so nothing from it travels.
   it("masks an unknown route instead of passing segments through", () => {
-    expect(bucketDiagnosticPath("/acme/issues/PB-1/secret-tab")).toBe(
+    expect(bucketDiagnosticPath("/acme/issues/MUL-1/secret-tab")).toBe(
       "/:slug/issues/*",
     );
     expect(bucketDiagnosticPath("/acme/not-a-section/raw-value")).toBe("/:slug/*");

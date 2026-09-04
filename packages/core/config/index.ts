@@ -6,9 +6,10 @@ interface ConfigState {
   cdnDomain: string;
   // True when cdnDomain serves private content via time-bounded signed URLs
   // (CloudFront signing enabled server-side). Renderers must not treat a raw
-  // storage URL on that domain as a loadable media source (PB-3254).
+  // storage URL on that domain as a loadable media source (MUL-3254).
   cdnSigned: boolean;
   allowSignup: boolean;
+  googleClientId: string;
   daemonServerUrl: string;
   daemonAppUrl: string;
   // Self-host gate (#3433): when true, every "Create workspace" affordance
@@ -32,11 +33,16 @@ interface ConfigState {
   // predate this signal are caught by the same net — indistinguishable from
   // here, and only one of the two answers is safe to guess.
   localWorktreeSupported: boolean;
-  /** Null means an older server did not advertise the capability contract. */
+  // Whether this server persists conversation_starters on agent create/update.
+  // Older handlers accepted the unknown field and returned success while
+  // dropping it, so absent must fail closed.
+  agentConversationStartersSupported: boolean;
+  /** Null means the server did not advertise a messaging setup contract. */
   messaging: MessagingCapabilities | null;
   setCdnConfig: (config: { cdnDomain: string; cdnSigned?: boolean }) => void;
   setAuthConfig: (config: {
     allowSignup: boolean;
+    googleClientId?: string;
     workspaceCreationDisabled?: boolean;
     vcsIntegrationAvailable?: boolean;
   }) => void;
@@ -47,6 +53,7 @@ interface ConfigState {
   setFeatureFlags: (flags?: Record<string, boolean>) => void;
   setServerVersion: (version?: string) => void;
   setLocalWorktreeSupported: (supported?: boolean) => void;
+  setAgentConversationStartersSupported: (supported?: boolean) => void;
   setMessagingConfig: (config?: MessagingCapabilities) => void;
 }
 
@@ -54,6 +61,7 @@ export const configStore = createStore<ConfigState>((set) => ({
   cdnDomain: "",
   cdnSigned: false,
   allowSignup: true,
+  googleClientId: "",
   daemonServerUrl: "",
   daemonAppUrl: "",
   workspaceCreationDisabled: false,
@@ -61,19 +69,23 @@ export const configStore = createStore<ConfigState>((set) => ({
   featureFlags: {},
   serverVersion: "",
   localWorktreeSupported: false,
+  agentConversationStartersSupported: false,
   messaging: null,
   setCdnConfig: ({ cdnDomain, cdnSigned = false }) => set({ cdnDomain, cdnSigned }),
   setAuthConfig: ({
     allowSignup,
+    googleClientId = "",
     workspaceCreationDisabled = false,
     vcsIntegrationAvailable = false,
-  }) => set({ allowSignup, workspaceCreationDisabled, vcsIntegrationAvailable }),
+  }) => set({ allowSignup, googleClientId, workspaceCreationDisabled, vcsIntegrationAvailable }),
   setDaemonConfig: ({ daemonServerUrl = "", daemonAppUrl = "" }) =>
     set({ daemonServerUrl, daemonAppUrl }),
   setFeatureFlags: (flags = {}) => set({ featureFlags: { ...flags } }),
   setServerVersion: (version = "") => set({ serverVersion: version }),
   setLocalWorktreeSupported: (supported = false) =>
     set({ localWorktreeSupported: supported === true }),
+  setAgentConversationStartersSupported: (supported = false) =>
+    set({ agentConversationStartersSupported: supported === true }),
   setMessagingConfig: (messaging) => set({ messaging: messaging ?? null }),
 }));
 

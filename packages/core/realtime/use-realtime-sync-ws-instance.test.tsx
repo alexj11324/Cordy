@@ -2,20 +2,18 @@
  * @vitest-environment jsdom
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { renderHook } from "@testing-library/react";
+import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import type { WSClient } from "../api/ws-client";
 import { defaultStorage } from "../platform/storage";
 import { issueKeys } from "../issues/queries";
 import { chatKeys } from "../chat/queries";
-import { agentThreadKeys } from "../agent-thread/queries";
 import { workspaceWorkingAgentsKeys } from "../agents/queries";
 import { workspaceKeys } from "../workspace/queries";
-import { dingtalkKeys } from "../dingtalk/queries";
-import { telegramKeys } from "../telegram/queries";
-import { weixinKeys } from "../weixin/queries";
 import { issueStatusKeys } from "../issue-statuses/queries";
+import { agentThreadKeys } from "../agent-thread/queries";
+import { dingtalkKeys } from "../dingtalk/queries";
 import {
   markWorkspaceDeletePending,
   unmarkWorkspaceDeletePending,
@@ -93,10 +91,10 @@ describe("useRealtimeSync — ws instance change", () => {
 
   it("does not invalidate when ws goes from instance to null", () => {
     const ws1 = createMockWs();
-    const { rerender } = renderHook(({ ws }) => useRealtimeSync(ws, stores), {
-      initialProps: { ws: ws1 as WSClient | null },
-      wrapper: createWrapper(qc),
-    });
+    const { rerender } = renderHook(
+      ({ ws }) => useRealtimeSync(ws, stores),
+      { initialProps: { ws: ws1 as WSClient | null }, wrapper: createWrapper(qc) },
+    );
 
     invalidateSpy.mockClear();
     rerender({ ws: null });
@@ -106,10 +104,10 @@ describe("useRealtimeSync — ws instance change", () => {
 
   it("invalidates exactly once when a new ws instance appears after null gap", () => {
     const ws1 = createMockWs();
-    const { rerender } = renderHook(({ ws }) => useRealtimeSync(ws, stores), {
-      initialProps: { ws: ws1 as WSClient | null },
-      wrapper: createWrapper(qc),
-    });
+    const { rerender } = renderHook(
+      ({ ws }) => useRealtimeSync(ws, stores),
+      { initialProps: { ws: ws1 as WSClient | null }, wrapper: createWrapper(qc) },
+    );
 
     // Simulate workspace switch: ws -> null -> new ws
     invalidateSpy.mockClear();
@@ -119,20 +117,20 @@ describe("useRealtimeSync — ws instance change", () => {
     const ws2 = createMockWs();
     rerender({ ws: ws2 });
 
-    // Should have called invalidateQueries for every reconnect recovery key:
-    // 21 workspace-scoped calls (including Agent threads, properties, status,
-    // and dependency graph) + 1 cross-workspace inbox summary + 6 per-issue
-    // prefixes + 5 chat/channel message prefixes + 1 draft-restore prefix +
-    // 1 workspace list = 35 calls.
-    expect(invalidateSpy).toHaveBeenCalledTimes(35);
+    // Should have called invalidateQueries for all workspace-scoped keys
+    // (17 workspace-scoped [incl. property definitions and Weixin] + 6 per-issue
+    // prefixes + the workspace working-agents projection + 5 per-chat
+    // prefixes + Work Product catalog + Agent Thread + workspace list +
+    // cross-workspace inbox unread summary = 34 calls)
+    expect(invalidateSpy).toHaveBeenCalledTimes(34);
   });
 
   it("does not re-invalidate when rerendered with the same ws instance", () => {
     const ws1 = createMockWs();
-    const { rerender } = renderHook(({ ws }) => useRealtimeSync(ws, stores), {
-      initialProps: { ws: ws1 as WSClient | null },
-      wrapper: createWrapper(qc),
-    });
+    const { rerender } = renderHook(
+      ({ ws }) => useRealtimeSync(ws, stores),
+      { initialProps: { ws: ws1 as WSClient | null }, wrapper: createWrapper(qc) },
+    );
 
     invalidateSpy.mockClear();
     // Rerender with same instance
@@ -143,10 +141,10 @@ describe("useRealtimeSync — ws instance change", () => {
 
   it("invalidates chat, pins, labels, and invitations queries on ws instance change", () => {
     const ws1 = createMockWs();
-    const { rerender } = renderHook(({ ws }) => useRealtimeSync(ws, stores), {
-      initialProps: { ws: ws1 as WSClient | null },
-      wrapper: createWrapper(qc),
-    });
+    const { rerender } = renderHook(
+      ({ ws }) => useRealtimeSync(ws, stores),
+      { initialProps: { ws: ws1 as WSClient | null }, wrapper: createWrapper(qc) },
+    );
 
     invalidateSpy.mockClear();
     rerender({ ws: null });
@@ -154,9 +152,7 @@ describe("useRealtimeSync — ws instance change", () => {
     const ws2 = createMockWs();
     rerender({ ws: ws2 });
 
-    const calls = invalidateSpy.mock.calls.map(
-      (call: [{ queryKey?: unknown }, ...unknown[]]) => call[0].queryKey,
-    );
+    const calls = invalidateSpy.mock.calls.map((call: [{ queryKey?: unknown }, ...unknown[]]) => call[0].queryKey);
     expect(calls).toContainEqual(["chat", "ws-1"]);
     expect(calls).toContainEqual(["labels", "ws-1"]);
     expect(calls).toContainEqual(["workspaces", "ws-1", "invitations"]);
@@ -171,10 +167,10 @@ describe("useRealtimeSync — ws instance change", () => {
     // their own invalidation on recovery — otherwise events missed while
     // disconnected leave them stale forever (staleTime: Infinity, #3953).
     const ws1 = createMockWs();
-    const { rerender } = renderHook(({ ws }) => useRealtimeSync(ws, stores), {
-      initialProps: { ws: ws1 as WSClient | null },
-      wrapper: createWrapper(qc),
-    });
+    const { rerender } = renderHook(
+      ({ ws }) => useRealtimeSync(ws, stores),
+      { initialProps: { ws: ws1 as WSClient | null }, wrapper: createWrapper(qc) },
+    );
 
     invalidateSpy.mockClear();
     rerender({ ws: null });
@@ -182,9 +178,7 @@ describe("useRealtimeSync — ws instance change", () => {
     const ws2 = createMockWs();
     rerender({ ws: ws2 });
 
-    const calls = invalidateSpy.mock.calls.map(
-      (call: [{ queryKey?: unknown }, ...unknown[]]) => call[0].queryKey,
-    );
+    const calls = invalidateSpy.mock.calls.map((call: [{ queryKey?: unknown }, ...unknown[]]) => call[0].queryKey);
     expect(calls).toContainEqual(["issues", "timeline"]);
     expect(calls).toContainEqual(["issues", "reactions"]);
     expect(calls).toContainEqual(["issues", "subscribers"]);
@@ -197,10 +191,10 @@ describe("useRealtimeSync — ws instance change", () => {
     // These keys are not under the ["chat", wsId] prefix, so they need their
     // own recovery invalidation when reconnecting after missed chat/task events.
     const ws1 = createMockWs();
-    const { rerender } = renderHook(({ ws }) => useRealtimeSync(ws, stores), {
-      initialProps: { ws: ws1 as WSClient | null },
-      wrapper: createWrapper(qc),
-    });
+    const { rerender } = renderHook(
+      ({ ws }) => useRealtimeSync(ws, stores),
+      { initialProps: { ws: ws1 as WSClient | null }, wrapper: createWrapper(qc) },
+    );
 
     invalidateSpy.mockClear();
     rerender({ ws: null });
@@ -208,9 +202,7 @@ describe("useRealtimeSync — ws instance change", () => {
     const ws2 = createMockWs();
     rerender({ ws: ws2 });
 
-    const calls = invalidateSpy.mock.calls.map(
-      (call: [{ queryKey?: unknown }, ...unknown[]]) => call[0].queryKey,
-    );
+    const calls = invalidateSpy.mock.calls.map((call: [{ queryKey?: unknown }, ...unknown[]]) => call[0].queryKey);
     expect(calls).toContainEqual(["chat", "messages"]);
     expect(calls).toContainEqual(["chat", "messages-page"]);
     expect(calls).toContainEqual(["chat", "pending-task"]);
@@ -228,9 +220,7 @@ describe("useRealtimeSync — ws instance change", () => {
     invalidateSpy.mockClear();
     reconnect!();
 
-    const calls = invalidateSpy.mock.calls.map(
-      (call: [{ queryKey?: unknown }, ...unknown[]]) => call[0].queryKey,
-    );
+    const calls = invalidateSpy.mock.calls.map((call: [{ queryKey?: unknown }, ...unknown[]]) => call[0].queryKey);
     expect(calls).toContainEqual(chatKeys.messagesAll());
     expect(calls).toContainEqual(chatKeys.messagesPageAll());
     expect(calls).toContainEqual(chatKeys.pendingTaskAll());
@@ -252,7 +242,6 @@ describe("useRealtimeSync — ws instance change", () => {
       queryKey: issueKeys.attachments("issue-1"),
     });
   });
-
   it("refetches the status catalog after an admin changes it elsewhere", async () => {
     const ws = createMockWs();
     renderHook(() => useRealtimeSync(ws, stores), {
@@ -261,10 +250,7 @@ describe("useRealtimeSync — ws instance change", () => {
     const onAny = vi.mocked(ws.onAny).mock.calls[0]?.[0];
     expect(onAny).toBeDefined();
 
-    onAny!({
-      type: "issue_status:changed",
-      payload: { action: "created" },
-    } as never);
+    onAny!({ type: "issue_status:changed", payload: { action: "created" } } as never);
     await new Promise((resolve) => setTimeout(resolve, 120));
 
     expect(invalidateSpy).toHaveBeenCalledWith({
@@ -274,13 +260,13 @@ describe("useRealtimeSync — ws instance change", () => {
     // color and category are resolved from the catalog at render time, so no
     // cached issue field can go stale here. Dragging every board and list along
     // would turn one admin rename into a workspace-wide refetch storm on every
-    // connected client. (PB-6458)
+    // connected client. (MUL-6458)
     expect(invalidateSpy).not.toHaveBeenCalledWith({
       queryKey: issueKeys.all("ws-1"),
     });
   });
 
-  it("invalidates DingTalk group routes after a route update event", async () => {
+  it("refreshes the current workspace group routes after a DingTalk reassignment", async () => {
     const ws = createMockWs();
     renderHook(() => useRealtimeSync(ws, stores), {
       wrapper: createWrapper(qc),
@@ -288,40 +274,44 @@ describe("useRealtimeSync — ws instance change", () => {
     const onAny = vi.mocked(ws.onAny).mock.calls[0]?.[0];
     expect(onAny).toBeDefined();
 
-    onAny!({ type: "dingtalk_group_route:updated", payload: {} } as never);
-    await new Promise((resolve) => setTimeout(resolve, 120));
+    onAny!({ type: "dingtalk_group_route:updated", payload: { id: "route-1" } });
 
-    expect(invalidateSpy).toHaveBeenCalledWith({
+    await waitFor(() => expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: dingtalkKeys.groupRoutes("ws-1"),
-    });
+    }));
   });
 
-  it("refreshes Telegram and WeChat installation status after verification events", async () => {
+  it("invalidates the current workspace chat list when a channel creates a session", () => {
     const ws = createMockWs();
     renderHook(() => useRealtimeSync(ws, stores), {
       wrapper: createWrapper(qc),
     });
-    const onAny = vi.mocked(ws.onAny).mock.calls[0]?.[0];
-    expect(onAny).toBeDefined();
+    const sessionCreated = vi
+      .mocked(ws.on)
+      .mock.calls.find(([event]) => event === "chat:session_created")?.[1];
+    expect(sessionCreated).toBeDefined();
 
-    onAny!({ type: "telegram_installation:verified", payload: {} } as never);
-    onAny!({ type: "weixin_installation:verified", payload: {} } as never);
-    await new Promise((resolve) => setTimeout(resolve, 120));
+    (sessionCreated as (payload: unknown) => void)({
+      workspace_id: "ws-1",
+      chat_session_id: "channel-session-1",
+    });
 
     expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: telegramKeys.installations("ws-1"),
+      queryKey: chatKeys.sessions("ws-1"),
     });
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: weixinKeys.installations("ws-1"),
-    });
+
+		invalidateSpy.mockClear();
+		(sessionCreated as (payload: unknown) => void)({
+			workspace_id: "ws-2",
+			chat_session_id: "other-workspace-session",
+		});
+		expect(invalidateSpy).not.toHaveBeenCalled();
   });
 });
 
 describe("useRealtimeSync — queued chat promotion", () => {
-  it("refetches the Agent event history when a queued prompt starts running", () => {
-    const qc = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
+  it("refetches the transcript when a queued prompt starts running", () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const ws = createMockWs();
     const invalidate = vi.spyOn(qc, "invalidateQueries");
     renderHook(() => useRealtimeSync(ws, createStores()), {
@@ -379,24 +369,6 @@ describe("useRealtimeSync — Table server membership invalidation", () => {
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: workspaceWorkingAgentsKeys.all("ws-1"),
     });
-    expect(invalidate).toHaveBeenCalledWith({
-      queryKey: agentThreadKeys.all("ws-1"),
-    });
-  });
-
-  it("invalidates Agent thread openers after a daemon pins a provider session", () => {
-    vi.useFakeTimers();
-    const ws = createMockWs();
-    const invalidate = vi.spyOn(qc, "invalidateQueries");
-    renderHook(() => useRealtimeSync(ws, stores), {
-      wrapper: createWrapper(qc),
-    });
-    const onAny = vi.mocked(ws.onAny).mock.calls[0]?.[0];
-    expect(onAny).toBeDefined();
-
-    onAny!({ type: "task:progress", payload: {} } as never);
-    vi.advanceTimersByTime(100);
-
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: agentThreadKeys.all("ws-1"),
     });
@@ -460,9 +432,7 @@ describe("useRealtimeSync — workspace:deleted self-initiated suppression", () 
 
     // useDeleteWorkspace.onSuccess owns cleanup for self-initiated deletes;
     // the handler must not have touched storage.
-    expect(defaultStorage.getItem("patchbay_issue_draft:delete-me")).toBe(
-      "draft",
-    );
+    expect(defaultStorage.getItem("patchbay_issue_draft:delete-me")).toBe("draft");
   });
 
   it("still cleans up for a delete initiated elsewhere", () => {

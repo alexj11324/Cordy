@@ -28,34 +28,41 @@ import type {
   Project,
 } from "@patchbay/core/types";
 import type { ExecutorValue } from "@/components/issue/pickers/executor-picker-body";
-import type { RoleValue } from "@/components/issue/pickers/role-picker-body";
+import type { RoleValue } from "@/lib/issue-role-options";
 
-interface NewIssueDraftState {
+type NewIssueDraftState = {
   status: IssueStatus;
   priority: IssuePriority;
-  executor: ExecutorValue;
   owner: RoleValue;
+  executor: ExecutorValue;
   reviewer: RoleValue;
   dueDate: string | null;
   project: Project | null;
   setStatus: (next: IssueStatus) => void;
   setPriority: (next: IssuePriority) => void;
-  setExecutor: (next: ExecutorValue) => void;
   setOwner: (next: RoleValue) => void;
+  setExecutor: (next: ExecutorValue) => void;
   setReviewer: (next: RoleValue) => void;
+  setReviewHandoff: (status: IssueStatus, reviewer: NonNullable<RoleValue>) => void;
   setDueDate: (next: string | null) => void;
   setProject: (next: Project | null) => void;
   reset: () => void;
-}
+};
 
 const INITIAL: Pick<
   NewIssueDraftState,
-  "status" | "priority" | "executor" | "owner" | "reviewer" | "dueDate" | "project"
+  | "status"
+  | "priority"
+  | "owner"
+  | "executor"
+  | "reviewer"
+  | "dueDate"
+  | "project"
 > = {
   status: "todo",
   priority: "none",
-  executor: null,
   owner: null,
+  executor: null,
   reviewer: null,
   dueDate: null,
   project: null,
@@ -65,9 +72,10 @@ export const useNewIssueDraftStore = create<NewIssueDraftState>((set) => ({
   ...INITIAL,
   setStatus: (next) => set({ status: next }),
   setPriority: (next) => set({ priority: next }),
-  setExecutor: (next) => set({ executor: next }),
   setOwner: (next) => set({ owner: next }),
+  setExecutor: (next) => set({ executor: next }),
   setReviewer: (next) => set({ reviewer: next }),
+  setReviewHandoff: (status, reviewer) => set({ status, reviewer }),
   setDueDate: (next) => set({ dueDate: next }),
   setProject: (next) => set({ project: next }),
   reset: () => set({ ...INITIAL }),

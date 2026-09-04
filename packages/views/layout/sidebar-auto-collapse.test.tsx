@@ -1,10 +1,9 @@
 import { act, fireEvent, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   Sidebar,
   SidebarProvider,
-  SidebarRail,
   useSidebar,
 } from "@patchbay/ui/components/ui/sidebar";
 import { renderWithI18n } from "../test/i18n";
@@ -47,28 +46,6 @@ function Probe() {
     <button type="button" data-testid="state" onClick={toggleSidebar}>
       {state}
     </button>
-  );
-}
-
-function HoverPortalProbe() {
-  const { setHoverRevealSuspended } = useSidebar();
-  return (
-    <>
-      <button
-        type="button"
-        data-testid="open-portal"
-        onClick={() => setHoverRevealSuspended(true)}
-      >
-        Open menu
-      </button>
-      <button
-        type="button"
-        data-testid="close-portal"
-        onClick={() => setHoverRevealSuspended(false)}
-      >
-        Close menu
-      </button>
-    </>
   );
 }
 
@@ -214,91 +191,5 @@ describe("sidebar auto-collapse between lg and xl", () => {
     setWidth(1100);
     expect(state()).toBe("collapsed");
     expect(document.cookie).not.toContain("sidebar_state");
-  });
-
-  it("temporarily reveals a collapsed sidebar from its edge rail", () => {
-    vi.useFakeTimers();
-    try {
-      const { container } = renderWithI18n(
-        <SidebarProvider defaultOpen={false} hoverReveal>
-          <Sidebar>
-            <SidebarRail />
-          </Sidebar>
-        </SidebarProvider>,
-      );
-
-      const root = container.querySelector<HTMLElement>("[data-slot='sidebar']")!;
-      const rail = container.querySelector<HTMLElement>("[data-slot='sidebar-rail']")!;
-      const inner = container.querySelector<HTMLElement>("[data-slot='sidebar-inner']")!;
-      const gap = container.querySelector<HTMLElement>("[data-slot='sidebar-gap']")!;
-
-      expect(root).toHaveAttribute("data-state", "collapsed");
-      expect(gap).toHaveAttribute("data-layout-collapsible", "offcanvas");
-      fireEvent.pointerEnter(rail);
-      expect(root).toHaveAttribute("data-state", "expanded");
-      expect(gap).toHaveAttribute("data-layout-collapsible", "offcanvas");
-
-      // The rail moves to the expanded sidebar edge. A stationary pointer must
-      // not collapse/reveal the nav in a loop when the rail itself moves out
-      // from under it.
-      act(() => vi.advanceTimersByTime(500));
-      expect(root).toHaveAttribute("data-state", "expanded");
-
-      // Moving from the trigger into the revealed sidebar remains inside the
-      // combined hover region, so leaving the rail alone does not close it.
-      fireEvent.pointerLeave(rail, { relatedTarget: inner });
-      fireEvent.pointerEnter(inner, { relatedTarget: rail });
-      act(() => vi.advanceTimersByTime(180));
-      expect(root).toHaveAttribute("data-state", "expanded");
-
-      // Only leaving the outer region closes the temporary reveal.
-      fireEvent.pointerLeave(root, { relatedTarget: document.body });
-      act(() => vi.advanceTimersByTime(180));
-      expect(root).toHaveAttribute("data-state", "collapsed");
-
-      // Hover reveal is temporary; an explicit click still changes the real
-      // preference so the sidebar stays open after the pointer leaves.
-      fireEvent.pointerEnter(rail);
-      fireEvent.click(rail);
-      fireEvent.pointerLeave(rail);
-      act(() => vi.advanceTimersByTime(180));
-      expect(root).toHaveAttribute("data-state", "expanded");
-      expect(gap).toHaveAttribute("data-layout-collapsible", "");
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("keeps a hover reveal open while an owned portalled menu is open", () => {
-    vi.useFakeTimers();
-    try {
-      const { container } = renderWithI18n(
-        <SidebarProvider defaultOpen={false} hoverReveal>
-          <Sidebar>
-            <SidebarRail />
-            <HoverPortalProbe />
-          </Sidebar>
-        </SidebarProvider>,
-      );
-
-      const root = container.querySelector<HTMLElement>("[data-slot='sidebar']")!;
-      const rail = container.querySelector<HTMLElement>("[data-slot='sidebar-rail']")!;
-      const portal = document.createElement("div");
-      document.body.appendChild(portal);
-
-      fireEvent.pointerEnter(rail);
-      fireEvent.click(screen.getByTestId("open-portal"));
-      fireEvent.pointerLeave(root, { relatedTarget: portal });
-      act(() => vi.advanceTimersByTime(500));
-      expect(root).toHaveAttribute("data-state", "expanded");
-
-      fireEvent.click(screen.getByTestId("close-portal"));
-      act(() => vi.advanceTimersByTime(180));
-      expect(root).toHaveAttribute("data-state", "collapsed");
-
-      portal.remove();
-    } finally {
-      vi.useRealTimers();
-    }
   });
 });

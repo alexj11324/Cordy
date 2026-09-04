@@ -70,7 +70,6 @@ import type {
   IssueGroupBranches,
   IssueGroupPageState,
 } from "../surface/use-issue-group-branches";
-import type { MoveIssueCallbacks } from "../surface/use-issue-surface-actions";
 
 const COLUMN_WIDTH = 280;
 const COLUMN_GAP = 16;
@@ -412,9 +411,9 @@ function buildExecutorLanes(
 ): LaneGroup[] {
   const seen = new Map<string, LaneGroup>();
   for (const issue of visibleIssues) {
-    if (issue.executor_type === null || issue.executor_id === null) continue;
-    const executorType: IssueExecutorType = issue.executor_type;
+    const executorType = issue.executor_type;
     const executorId = issue.executor_id;
+    if (executorType === null || executorId === null) continue;
     const rawId = `${executorType}:${executorId}`;
     const key = `executor:${rawId}`;
     if (seen.has(key)) continue;
@@ -430,15 +429,12 @@ function buildExecutorLanes(
       actor: { type: executorType, id: executorId },
       matches: (i) =>
         i.executor_type === executorType && i.executor_id === executorId,
-      moveUpdates: {
-        executor_type: executorType,
-        executor_id: executorId,
-      },
+      moveUpdates: { executor_type: executorType, executor_id: executorId },
     });
   }
 
-  // Sort by actor type (members before agents before teams) then by name.
-  const typeOrder: Record<string, number> = { member: 0, agent: 1, team: 2 };
+  // Sort by executor type (agents before teams) then by name.
+  const typeOrder: Record<string, number> = { agent: 0, team: 1 };
   const orderIndex = new Map<string, number>();
   storedOrder.forEach((id, idx) => orderIndex.set(`executor:${id}`, idx));
   const ordered = Array.from(seen.values()).sort((a, b) => {
@@ -509,12 +505,16 @@ function buildServerLanes(
       const actorRef = value.actor;
       const actor: { type: IssueExecutorType; id: string } | null =
         actorRef &&
-        (actorRef.type === "agent" || actorRef.type === "team")
+        (actorRef.type === "agent" ||
+          actorRef.type === "team")
           ? { type: actorRef.type, id: actorRef.id }
           : null;
       const rawId = actor ? `${actor.type}:${actor.id}` : NONE_LANE_ID;
       return [{
-        key: `executor:${rawId}`,
+        // Keep the opaque server key so pagination state and the rendered
+        // lane agree (`executor:unassigned` is intentionally not the local
+        // persisted-order sentinel `executor:none`).
+        key: descriptor.key,
         rawId,
         isPinned: actor === null,
         isOrphan: false,
@@ -529,7 +529,8 @@ function buildServerLanes(
           actor
             ? issue.executor_type === actor.type &&
               issue.executor_id === actor.id
-            : issue.executor_type === null && issue.executor_id === null,
+            : issue.executor_type === null &&
+              issue.executor_id === null,
         moveUpdates: actor
           ? { executor_type: actor.type, executor_id: actor.id }
           : { executor_type: null, executor_id: null },
@@ -631,8 +632,8 @@ function SwimLaneViewImpl({
   onMoveIssue: (
     issueId: string,
     updates: SwimLaneMoveUpdates,
-    callbacks?: MoveIssueCallbacks,
-  ) => boolean | void;
+    onSettled?: () => void,
+  ) => void;
   childProgressMap?: Map<string, ChildProgress>;
   projectMap?: Map<string, Project>;
   /** Pre-fills `project_id` on the create form for the in-cell "+" button. */
@@ -887,7 +888,7 @@ function SwimLaneViewImpl({
           }
           // Cells are CATEGORIES: a custom status belongs to the column it
           // behaves as, and keying the cell by the raw status key dropped
-          // those cards out of the grid entirely (PB-6409).
+          // those cards out of the grid entirely (MUL-6409).
           const status = issueColumnCategory(issue);
           if (result[lane.key]?.[status]) {
             result[lane.key]![status]!.push(issue.id);
@@ -979,7 +980,7 @@ function SwimLaneViewImpl({
   const [activeIssue, setActiveIssue] = useState<Issue | null>(null);
   // The outer scroll box is the customScrollParent for the lane Virtuoso.
   const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
-  // Pull-based scroll restoration (PB-4741): same wiring as board/list/
+  // Pull-based scroll restoration (MUL-4741): same wiring as board/list/
   // issue-detail — ref-attach assigns the saved offset pre-paint, and the
   // lane Virtuoso is born at it via initialScrollTop.
   const restoredScrollTop = useRestoredScrollOffset("swimlane");
@@ -1275,7 +1276,7 @@ function SwimLaneViewImpl({
         issueColumnCategory(currentIssue) === finalOverCell.status;
       // ...and a card already here on a CUSTOM status keeps it: writing the
       // cell's canonical key would rewrite `awaiting_response` to `in_review`
-      // — a real status change, which starts an agent run (PB-6409).
+      // — a real status change, which starts an agent run (MUL-6409).
       const keepsStatus =
         staysInCell && currentIssue?.status !== finalOverCell.status;
       if (
@@ -1288,7 +1289,7 @@ function SwimLaneViewImpl({
       }
 
       isSettlingRef.current = true;
-      const committed = onMoveIssue(
+      onMoveIssue(
         activeId,
         {
           ...targetLane.moveUpdates,
@@ -1296,17 +1297,11 @@ function SwimLaneViewImpl({
           position: newPosition,
           ...getMoveAnchors(finalIds, activeId),
         },
-        {
-          onSettled: () => {
-            isSettlingRef.current = false;
-            setSettleVersion((v) => v + 1);
-          },
+        () => {
+          isSettlingRef.current = false;
+          setSettleVersion((v) => v + 1);
         },
       );
-      if (committed === false) {
-        isSettlingRef.current = false;
-        setSettleVersion((v) => v + 1);
-      }
     },
     [cells, cellSet, laneByKey, laneGroups, onMoveIssue, swimlaneGrouping, viewStoreApi],
   );
@@ -1366,7 +1361,7 @@ function SwimLaneViewImpl({
   // An aborted drag (pointercancel, window resize, tab hide, Escape) fires
   // onDragCancel instead of onDragEnd. Releasing the drag lock here keeps
   // localCells resyncing with the cache afterwards — see the same handler in
-  // list-view for the touch path that makes this routine (PB-6240).
+  // list-view for the touch path that makes this routine (MUL-6240).
   const handleDragCancel = useCallback(() => {
     isDraggingRef.current = false;
     setActiveIssue(null);
@@ -1493,7 +1488,7 @@ function SwimLaneViewImpl({
           {/* Seed a bounded slice of real lanes while the scroll ref hasn't
               settled after a remount, so the lane area never paints blank; once
               it's set, mount the Virtuoso with a matching `initialItemCount` to
-              survive the measurement frame (PB-4750). */}
+              survive the measurement frame (MUL-4750). */}
           {scrollEl ? (
             <Virtuoso
               customScrollParent={scrollEl}

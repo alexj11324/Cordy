@@ -47,7 +47,7 @@ vi.mock("@patchbay/views/layout", () => ({
 }));
 
 vi.mock("@patchbay/views/platform", () => ({
-  DragStrip: () => <div data-testid="drag-strip" />,
+  DragStrip: () => null,
 }));
 
 vi.mock("../pages/issue-detail-page", () => ({
@@ -69,21 +69,19 @@ vi.mock("../pages/auth-recovery", () => ({
 }));
 
 vi.mock("../platform/issue-window-navigation", () => ({
-  IssueWindowNavigationProvider: ({
-    children,
-  }: {
-    children: React.ReactNode;
-  }) => <>{children}</>,
+  IssueWindowNavigationProvider: ({ children }: { children: React.ReactNode }) => (
+    <>{children}</>
+  ),
 }));
 
 import { IssueWindow } from "./issue-window";
 
 const context = {
   kind: "issue" as const,
-  path: "/acme/issues/PB-1",
-  title: "PB-1",
+  path: "/acme/issues/MUL-1",
+  title: "MUL-1",
   workspaceSlug: "acme",
-  issueId: "PB-1",
+  issueId: "MUL-1",
 };
 
 beforeEach(() => {
@@ -95,21 +93,10 @@ beforeEach(() => {
 });
 
 describe("IssueWindow", () => {
-  it("lets the issue header own the integrated titlebar", async () => {
-    state.ready = true;
-    state.workspaces = [{ id: "ws-1", slug: "acme" }];
-
-    render(<IssueWindow context={context} />);
-
-    expect(await screen.findByTestId("issue-detail")).toBeInTheDocument();
-    expect(screen.queryByTestId("drag-strip")).not.toBeInTheDocument();
-  });
-
   it("keeps loading after an initial workspace-list failure", async () => {
     render(<IssueWindow context={context} />);
 
     expect(await screen.findByTestId("workspace-loading")).toBeInTheDocument();
-    expect(screen.getByTestId("drag-strip")).toBeInTheDocument();
     expect(screen.queryByText("Issue unavailable")).toBeNull();
   });
 

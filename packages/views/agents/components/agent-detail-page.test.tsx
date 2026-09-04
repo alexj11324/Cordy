@@ -195,6 +195,7 @@ function renderPage() {
     back: vi.fn(),
     pathname: "/acme/agents/agent-1",
     searchParams: new URLSearchParams(),
+    hash: "",
     getShareableUrl: (path) => path,
   };
   const view = render(
@@ -383,7 +384,7 @@ describe("AgentDetailPage DM button", () => {
   });
 
   it("shows a toast instead of navigating when the user lacks chat access", async () => {
-    // Post-PB-3963 a workspace admin can VIEW another member's private agent
+    // Post-MUL-3963 a workspace admin can VIEW another member's private agent
     // but can no longer invoke (chat with) it — the exact case where the DM
     // button must explain itself rather than navigate.
     agentsRef.current = [
@@ -469,15 +470,15 @@ describe("AgentDetailPage DM button", () => {
     renderPage();
 
     expect(
-      await screen.findByText(/needs a device before it can run/i),
+      await screen.findByText(/needs a runtime before it can run/i),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Bind device" }),
+      screen.getByRole("button", { name: "Bind runtime" }),
     ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "DM" }));
     expect(mockToastError).toHaveBeenCalledWith(
-      "Bind a device before running this agent.",
+      "Bind a runtime before running this agent.",
     );
     expect(mockModalOpen).not.toHaveBeenCalled();
   });

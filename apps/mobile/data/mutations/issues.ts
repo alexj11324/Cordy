@@ -479,7 +479,7 @@ export function useToggleIssueReaction(issueId: string) {
 
 /**
  * Keeps `status_category` consistent with an optimistic `status` write
- * (PB-6243).
+ * (MUL-6243).
  *
  * A cached issue looks like `{status: "todo", status_category: "todo"}` while a
  * patch carries only `{status: "human_review"}`, so a bare spread would leave
@@ -497,7 +497,8 @@ function statusCategoryPatch(status: IssueStatus | undefined): Partial<Issue> {
 }
 
 /**
- * Update an issue's editable fields (status / priority / executor / due_date /
+ * Update an issue's editable fields (status / priority / owner / executor /
+ * reviewer / due_date /
  * project_id / etc). Predictable fields merge optimistically into the detail
  * cache; description stays authoritative because the server resolves it
  * against description_base and hidden channel-media markers. Settle invalidates
@@ -555,10 +556,23 @@ export function useUpdateIssue(issueId: string) {
         );
       }
     },
-    onSettled: () => {
+    onSettled: (_server, _error, patch) => {
       qc.invalidateQueries({ queryKey: issueKeys.detail(wsId, issueId) });
       qc.invalidateQueries({ queryKey: issueKeys.myAll(wsId) });
       qc.invalidateQueries({ queryKey: issueKeys.list(wsId) });
+      // A review handoff changes status and creates review-request inbox
+      // effects. Keep the current device correct even when its WS echo was
+      // interrupted between the HTTP response and the activity/inbox events.
+      if (
+        patch.status !== undefined ||
+        patch.reviewer_type !== undefined ||
+        patch.reviewer_id !== undefined
+      ) {
+        qc.invalidateQueries({ queryKey: inboxKeys.all(wsId) });
+        qc.invalidateQueries({
+          queryKey: issueKeys.timeline(wsId, issueId),
+        });
+      }
     },
   });
 }
@@ -650,13 +664,13 @@ export function useDetachLabel(issueId: string) {
 
 /**
  * Issue creation mutation. No optimistic insert — the my-issues list is
- * status-bucketed + scope-filtered (assigned/created/agents), so optimism
+ * status-bucketed + scope-filtered (owner/created/executor-related), so optimism
  * needs to decide which bucket + scope the row lands in, with rollback.
  * Invalidation is simpler and the hosted server returns in <300ms.
  *
  * Invalidates:
  *  - issueKeys.myAll(wsId)        my-issues list (all three scopes)
- *  - inboxKeys.all(wsId)          inbox (assignment notification if any) —
+ *  - inboxKeys.all(wsId)          inbox (role notification if any) —
  *                                 prefix-matches the inbox list key
  */
 export function useCreateIssue() {

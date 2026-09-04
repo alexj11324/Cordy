@@ -30,7 +30,7 @@ not a Patchbay problem.
 
 | Library | Path | Last release | Verdict for Patchbay |
 |---|---|---|---|
-| [`react-native-enriched-markdown`](https://github.com/software-mansion-labs/react-native-enriched-markdown) | A | v0.5.0 (Apr 2026) | **Selected for prose.** Expo officially recommends it in [Edit rich text](https://docs.expo.dev/guides/editing-richtext/) — A-tier endorsement. Software Mansion (same team as Reanimated / Gesture Handler) |
+| [`react-native-enriched-markdown`](https://github.com/software-mansion/enriched-markdown) | A | v0.6.0 (May 2026) | **Selected for prose.** Expo officially recommends it in [Edit rich text](https://docs.expo.dev/guides/editing-richtext/) — A-tier endorsement. Software Mansion (same team as Reanimated / Gesture Handler) |
 | [`react-native-streamdown`](https://github.com/software-mansion-labs/react-native-streamdown) | A + worklets | active 2026 | Not adopted. Built on enriched-markdown, optimised for AI streaming. Web/desktop don't use a streaming-specific renderer either, mobile streaming isn't currently a top product pain |
 | [`react-native-marked`](https://github.com/gmsgowtham/react-native-marked) | B | v8.1.0 (2026-05-14) | Not adopted. v7 removed `CustomToken`, v8 added "React component embedding" but no token-level customisation. Pure `<Text>` tree → would trigger nested-text bugs |
 | [`amilmohd155/react-native-markdown`](https://github.com/amilmohd155/react-native-markdown) | B | v0.8.5 (Jan 2026) | Not adopted. Same nested-`<Text>` constraint as `react-native-marked`. 14 ⭐, single maintainer, not production-validated |
@@ -106,9 +106,10 @@ enriched-markdown's `normalizeMarkdownStyle.js` carries a frozen table of
 ~30 hardcoded **light-mode** color defaults. Fields not explicitly
 overridden in `useMarkdownStyle()` use those hardcoded values and
 disappear (or render garishly) in dark mode. Every color field must be
-explicitly mapped to a `THEME[scheme]` token. **When upgrading
-enriched-markdown (v0.6+), re-audit `normalizeMarkdownStyle.js` for
-newly-added color fields** — they will also ship light-mode defaults.
+explicitly mapped to a `THEME[scheme]` token. Version 0.6.0 adds a transparent
+link background plus link-variant, superscript, and subscript defaults; none
+introduce a new opaque color. Re-audit `normalizeMarkdownStyle.js` on every
+upgrade because newly-added color fields may ship light-mode defaults.
 
 ---
 
@@ -136,7 +137,7 @@ newly-added color fields** — they will also ship light-mode defaults.
 
 **Inline code chip top-heavy padding** — visible as `~13pt empty space
 above` vs `~3pt below` glyphs in chips inside CJK paragraphs (seen in
-#PB-2397 and #PB-2395 dark screenshots, 2026-05-19).
+#MUL-2397 and #MUL-2395 dark screenshots, 2026-05-19).
 
 - **Root cause**: enriched-markdown applies hardcoded internal padding
   to inline code that cannot be turned off via `markdownStyle.code`. The
@@ -254,4 +255,4 @@ React-tree renderer:
 - `apps/mobile/lib/markdown/markdown-style.ts` — `useMarkdownStyle()` theme bridge
 - `apps/mobile/lib/markdown/code-block.tsx` — Shiki-powered code segment
 - `apps/mobile/lib/markdown/markdown-image.tsx` — lightbox-aware image segment
-- `apps/mobile/AGENTS.md` — mobile-wide rules including theme/CSS-variable system
+- `apps/mobile/CLAUDE.md` — mobile-wide rules including theme/CSS-variable system

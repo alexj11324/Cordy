@@ -16,6 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { View } from "react-native";
 import type { AgentAvailability } from "@patchbay/core/agents";
 import { Text } from "@/components/ui/text";
+import { useChatCopy } from "@/lib/use-chat-copy";
 
 interface Props {
   /** Display name for the copy. */
@@ -29,8 +30,9 @@ interface Props {
 }
 
 export function OfflineBanner({ agentName, availability }: Props) {
+  const copy = useChatCopy();
   if (availability !== "offline" && availability !== "unstable") return null;
-  const name = agentName?.trim() || "This agent";
+  const name = agentName?.trim() || copy.offlineFallbackName;
 
   if (availability === "unstable") {
     return (
@@ -40,7 +42,7 @@ export function OfflineBanner({ agentName, availability }: Props) {
           className="flex-1 text-xs text-warning"
           numberOfLines={1}
         >
-          {name} may have just disconnected — your message will queue.
+          {copy.offlineUnstable(name)}
         </Text>
       </View>
     );
@@ -53,7 +55,7 @@ export function OfflineBanner({ agentName, availability }: Props) {
         className="flex-1 text-xs text-muted-foreground"
         numberOfLines={1}
       >
-        {name} is offline. Messages will wait until its runtime is back.
+        {copy.offline(name)}
       </Text>
     </View>
   );

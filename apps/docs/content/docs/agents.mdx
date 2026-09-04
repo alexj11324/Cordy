@@ -15,6 +15,7 @@ An agent is not a continuously running process. It is a reusable identity and co
 |---|---|
 | **Name, avatar, and description** | Tell the team who the agent is and what it is good at. The description is display-only and never enters the execution prompt. |
 | **Instructions** | Define its responsibilities, working style, boundaries, and delivery requirements. Used on every run. |
+| **Conversation starters** | Give people up to three agent-specific examples, shown when they open a new chat with the agent. Selecting one fills the composer without sending. |
 | **Skills** | Provide reusable methods, reference material, and supporting files. |
 | **Runtime, model, and thinking level** | Decide which runtime, AI coding tool, and model it runs on; some tools (such as Codex) also offer a service tier. |
 | **Access** | Decides which members can run it. |
@@ -34,8 +35,8 @@ One runtime can host multiple agents, and one agent can complete many tasks over
 
 ## Ways an agent participates
 
-- **Own an issue** — set the agent as the assignee; it starts once the task is enqueued.
-- **Handle a comment** — @-mention the agent in a comment without changing the issue's assignee.
+- **Execute an issue** — set the agent as the executor; it starts once the task is enqueued.
+- **Handle a comment** — @-mention the agent in a comment without changing the issue's executor.
 - **Continue a discussion** — reply to the agent's comment; the new information feeds into subsequent runs.
 - **Chat directly** — start a conversation that isn't attached to an issue.
 - **Join projects and teams** — an agent can be a project lead, a team leader, or a team member.
@@ -74,7 +75,7 @@ The agent list shows two kinds of status side by side:
 
 ## Archive and restore
 
-Agents you no longer use can be archived. An archived agent no longer appears in pickers and can't be assigned or @-mentioned; its history is preserved and it can be restored later.
+Agents you no longer use can be archived. An archived agent no longer appears in pickers and can't be set as an executor or @-mentioned; its history is preserved and it can be restored later.
 
 <Callout type="warning">
 Archiving cancels all of the agent's unfinished tasks, including queued and running ones.

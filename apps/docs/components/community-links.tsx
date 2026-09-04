@@ -18,7 +18,7 @@ export function CommunityLinks({
     },
     {
       label: "GitHub",
-      href: "https://github.com/alexj11324/Cordy",
+      href: "https://github.com/patchbay-ai/patchbay",
       description: githubDescription,
       Icon: GitHubMark,
     },

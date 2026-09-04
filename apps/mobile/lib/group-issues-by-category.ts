@@ -1,5 +1,5 @@
 /**
- * Groups issues into the sections mobile's grouped lists render (PB-6457).
+ * Groups issues into the sections mobile's grouped lists render (MUL-6457).
  *
  * Extracted from `(tabs)/my-issues.tsx` + `more/issues.tsx` — which held the
  * same fifteen lines twice, and the same bug twice — so the rule is stated
@@ -10,7 +10,7 @@
  * statuses live inside their category's section rather than adding one of their
  * own, so bucketing by `issue.status` left every custom-status bucket unread
  * and its issues invisible — the "counts and visibility must agree" rule in
- * apps/mobile/AGENTS.md.
+ * apps/mobile/CLAUDE.md.
  *
  * An active status filter needs no special handling: callers filter the rows by
  * KEY first, so a bucket can only be non-empty if one of those rows landed in

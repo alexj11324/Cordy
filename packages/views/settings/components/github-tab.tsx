@@ -3,11 +3,11 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ExternalLink, GitCommitHorizontal, PanelRight } from "lucide-react";
+import { ExternalLink, GitCommitHorizontal, Link2, PanelRight } from "lucide-react";
 import { Button } from "@patchbay/ui/components/ui/button";
 import { Card, CardContent } from "@patchbay/ui/components/ui/card";
 import { Label } from "@patchbay/ui/components/ui/label";
-import { SettingsSwitch as Switch } from "@patchbay/ui/components/common/lobe-settings";
+import { Switch } from "@patchbay/ui/components/ui/switch";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -36,7 +36,8 @@ import { GitHubMark } from "./github-mark";
 type SettingsKey =
   | "github_enabled"
   | "github_pr_sidebar_enabled"
-  | "co_authored_by_enabled";
+  | "co_authored_by_enabled"
+  | "github_auto_link_prs_enabled";
 
 export function GitHubTab() {
   const { t } = useT("settings");
@@ -49,7 +50,7 @@ export function GitHubTab() {
   const { data: members = [] } = useQuery(memberListOptions(wsId));
   const currentMember = members.find((m) => m.user_id === user?.id) ?? null;
   // `canView` gates the read-only installation list (every workspace member
-  // sees it after PB-2413); `canManage` gates the Connect / Disconnect
+  // sees it after MUL-2413); `canManage` gates the Connect / Disconnect
   // actions and comes from the backend response (`can_manage`) so the
   // frontend never claims management rights the server would reject.
   const canView = !!currentMember;
@@ -279,7 +280,7 @@ export function GitHubTab() {
                 <p className="text-body text-muted-foreground">
                   {t(($) => $.github.feature_co_author_description_prefix)}{" "}
                   <code className="rounded bg-muted px-1 py-0.5 text-caption">
-                    {t(($) => $.github.feature_co_author_trailer)}
+                    {"Co-authored-by: patchbay-agent <github@patchbay.ai>"}
                   </code>{" "}
                   {t(($) => $.github.feature_co_author_description_suffix)}
                 </p>
@@ -287,6 +288,20 @@ export function GitHubTab() {
               checked={flags.coAuthor}
               disabled={!canManage || !flags.enabled || savingKey === "co_authored_by_enabled"}
               onCheckedChange={(v) => persistSetting("co_authored_by_enabled", v)}
+            />
+
+            <FeatureRow
+              id="github-auto-link"
+              icon={<Link2 className="h-4 w-4" />}
+              label={t(($) => $.github.feature_auto_link_label)}
+              description={
+                <p className="text-body text-muted-foreground">
+                  {t(($) => $.github.feature_auto_link_description)}
+                </p>
+              }
+              checked={flags.autoLinkPRs}
+              disabled={!canManage || !flags.enabled || savingKey === "github_auto_link_prs_enabled"}
+              onCheckedChange={(v) => persistSetting("github_auto_link_prs_enabled", v)}
             />
 
           </CardContent>

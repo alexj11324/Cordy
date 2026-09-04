@@ -12,7 +12,7 @@ const HEATMAP_WEEKS = 26;
 const CELL_SIZE = 16;
 const CELL_GAP = 3;
 // Monday-first row order, matching ISO 8601 and the rest of the Weekly
-// aggregation (see #PB-2382). Labelling alternating rows keeps the density
+// aggregation (see #MUL-2382). Labelling alternating rows keeps the density
 // readable without tying the chart structure to one language.
 const LABELED_WEEKDAY_INDICES = new Set([0, 2, 4]);
 // 2026-01-05 is a Monday, so walking 7 days from here lines the formatted

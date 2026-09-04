@@ -3,7 +3,7 @@
  *
  * The mention picker route (`app/(app)/[workspace]/issue/[id]/picker/mention.tsx`)
  * lives in its own formSheet and cannot share callbacks with the composer
- * that opened it. Same pattern as how label / role pickers
+ * that opened it. Same pattern as how label / owner/executor/reviewer pickers
  * communicate with their issue-detail screen — except those write straight
  * to a mutation (durable state), while this store holds purely client-side
  * draft state until the composer either sends or unmounts.
@@ -25,7 +25,7 @@ export interface MentionChipDraft {
   /** UUID for member / agent / team / issue; literal "all" for @all. */
   id: string;
   /** Display name without leading `@`. For type "issue" this stores the
-   *  human identifier (e.g. "PB-123"). */
+   *  human identifier (e.g. "MUL-123"). */
   name: string;
 }
 

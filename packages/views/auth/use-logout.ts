@@ -28,7 +28,7 @@ export function useLogout() {
   const authLogout = useAuthStore((s) => s.logout);
   const { push } = useNavigation();
 
-  return useCallback(async () => {
+  return useCallback(() => {
     // Reset draft stores' in-memory state FIRST, before removing persisted
     // keys. Each reset is a Zustand setState, and persist middleware writes
     // the new (empty) state straight back to storage under the still-active
@@ -63,10 +63,9 @@ export function useLogout() {
     defaultStorage.removeItem("patchbay_tabs");
 
     queryClient.clear();
-    await authLogout();
+    authLogout();
 
-    // Navigate to /login explicitly only after every platform session has
-    // been revoked. authLogout() clears state but doesn't
+    // Navigate to /login explicitly. authLogout() clears state but doesn't
     // move the URL — without this the caller might be on a workspace URL
     // which renders null (layout gates on user) and leaves the user
     // stuck on a blank page.

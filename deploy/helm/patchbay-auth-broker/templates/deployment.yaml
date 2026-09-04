@@ -1,7 +1,5 @@
-{{- if .Values.enabled -}}
-{{- if not (regexMatch "^sha256:[0-9a-f]{64}$" .Values.image.digest) -}}
-{{- fail "image.digest must be an immutable sha256 digest when the auth broker is enabled" -}}
-{{- end -}}
+{{- if .Values.enabled }}
+{{- if not (regexMatch "^sha256:[0-9a-f]{64}$" .Values.image.digest) }}{{ fail "image.digest must be an immutable sha256 digest" }}{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -10,89 +8,31 @@ metadata:
     {{- include "patchbay-auth-broker.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicas }}
-  selector:
-    matchLabels:
-      {{- include "patchbay-auth-broker.selectorLabels" . | nindent 6 }}
+  selector: { matchLabels: { app.kubernetes.io/name: patchbay-auth-broker } }
   template:
-    metadata:
-      annotations:
-        {{- toYaml .Values.podAnnotations | nindent 8 }}
-      labels:
-        {{- include "patchbay-auth-broker.selectorLabels" . | nindent 8 }}
+    metadata: { labels: { app.kubernetes.io/name: patchbay-auth-broker } }
     spec:
       automountServiceAccountToken: false
-      securityContext:
-        runAsNonRoot: true
-        seccompProfile:
-          type: RuntimeDefault
+      securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
       containers:
         - name: auth-broker
           image: "{{ .Values.image.repository }}@{{ .Values.image.digest }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: ["ALL"]
-            readOnlyRootFilesystem: true
-          ports:
-            - name: http
-              containerPort: 3000
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ["ALL"] } }
+          ports: [{ name: http, containerPort: 3000 }]
           env:
-            - name: PATCHBAY_API_ORIGIN
-              value: {{ .Values.config.apiOrigin | quote }}
-            - name: PATCHBAY_AUTH_BROKER_ORIGIN
-              value: {{ .Values.config.brokerOrigin | quote }}
-            - name: CLERK_PUBLISHABLE_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.existingSecret | quote }}
-                  key: {{ .Values.clerkPublishableKeySecretKey | quote }}
-            - name: PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.existingSecret | quote }}
-                  key: {{ .Values.rustBrokerAuthTokenSecretKey | quote }}
-          livenessProbe:
-            httpGet:
-              path: /healthz
-              port: http
-          readinessProbe:
-            httpGet:
-              path: /readyz
-              port: http
-          resources:
-            {{- toYaml .Values.resources | nindent 12 }}
-          volumeMounts:
-            - name: tmp
-              mountPath: /tmp
-            - name: next-cache
-              mountPath: /app/apps/auth-broker/.next/cache
-      volumes:
-        - name: tmp
-          emptyDir: {}
-        - name: next-cache
-          emptyDir: {}
-      {{- with .Values.affinity }}
-      affinity:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.tolerations }}
-      tolerations:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
+            - { name: PATCHBAY_API_ORIGIN, value: {{ .Values.config.apiOrigin | quote }} }
+            - { name: PATCHBAY_AUTH_BROKER_ORIGIN, value: {{ .Values.config.brokerOrigin | quote }} }
+            {{- range $name, $key := dict "CLERK_PUBLISHABLE_KEY" "clerk-publishable-key" "PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN" "desktop-broker-auth-token" "PATCHBAY_ORIGIN_AUTH_TOKEN" "origin-auth-token" }}
+            - name: {{ $name }}
+              valueFrom: { secretKeyRef: { name: {{ $.Values.existingSecret | quote }}, key: {{ $key | quote }} } }
+            {{- end }}
+          livenessProbe: { httpGet: { path: /healthz, port: http } }
+          readinessProbe: { httpGet: { path: /readyz, port: http } }
+          volumeMounts: [{ name: tmp, mountPath: /tmp }, { name: cache, mountPath: /app/apps/auth-broker/.next/cache }]
+      volumes: [{ name: tmp, emptyDir: {} }, { name: cache, emptyDir: {} }]
 ---
 apiVersion: v1
 kind: Service
-metadata:
-  name: {{ include "patchbay-auth-broker.fullname" . }}
-  labels:
-    {{- include "patchbay-auth-broker.labels" . | nindent 4 }}
-spec:
-  type: ClusterIP
-  selector:
-    {{- include "patchbay-auth-broker.selectorLabels" . | nindent 4 }}
-  ports:
-    - name: http
-      port: {{ .Values.service.port }}
-      targetPort: http
-{{- end -}}
+metadata: { name: {{ include "patchbay-auth-broker.fullname" . }} }
+spec: { selector: { app.kubernetes.io/name: patchbay-auth-broker }, ports: [{ name: http, port: {{ .Values.service.port }}, targetPort: http }] }
+{{- end }}

@@ -103,7 +103,7 @@ not require rebinding an IM identity.
 - Installation writes from the app are rejected with
   `server_managed_integration`; hiding a control in the frontend is not the
   security boundary.
-- A provider is shown as healthy only after its supervisor lease/transport
-  heartbeat is current. A database row with desired status `active` alone is
-  not a healthy connection.
+- A provider is shown as connected only after its supervisor lease/transport
+  heartbeat is current. An installation row with desired status `installed`
+  alone does not prove a live connection.
 - Self-hosted transports do not consume Patchbay Cloud hosted IM quotas.

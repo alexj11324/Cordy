@@ -402,7 +402,8 @@ class ProductionDeployment:
         web_env = self.container_environment(BOOTSTRAP_CONTAINERS["web"])
         postgres_env = self.container_environment("cordy632-postgres-1")  # legacy-brand-compat
         product_env = select_environment(
-            compose_variables(product_compose),
+            compose_variables(product_compose)
+            | compose_variables(self.static_directory / "production-product.override.yml"),
             [backend_env, web_env, postgres_env],
             {"BACKEND_PORT": "8210", "FRONTEND_PORT": "3110"},
         )
@@ -468,6 +469,16 @@ class ProductionDeployment:
         broker_env = os.environ.copy()
         broker_env.update(broker)
         broker_env["PATCHBAY_AUTH_BROKER_IMAGE"] = manifest["images"]["auth-broker"]
+        publishable_key = broker.get("CLERK_PUBLISHABLE_KEY")
+        if not isinstance(publishable_key, str) or not publishable_key.strip():
+            raise DeploymentError(
+                "auth broker environment must include CLERK_PUBLISHABLE_KEY"
+            )
+        # The browser key is public configuration, but the broker snapshot is
+        # the existing deployment source of truth. Copy it into the Web
+        # runtime environment so Next does not require a build-time public env
+        # value and the deployed Web and Accounts surfaces use one Clerk app.
+        product_env["PATCHBAY_CLERK_PUBLISHABLE_KEY"] = publishable_key.strip()
         return product_env, broker_env
 
     def issue_browser_acceptance_credentials(self) -> dict[str, str]:
@@ -523,7 +534,7 @@ class ProductionDeployment:
         url: str,
         *,
         expected_build: str | None = None,
-        expected_server_version: str | None = None,
+        expected_commit: str | None = None,
         headers: dict[str, str] | None = None,
     ) -> None:
         last_error: Exception | None = None
@@ -539,12 +550,11 @@ class ProductionDeployment:
                             raise DeploymentError(
                                 f"{url} reported build {actual!r}, expected {expected_build!r}"
                             )
-                    if expected_server_version is not None:
-                        payload = json.load(response)
-                        if payload.get("server_version") != expected_server_version:
+                    if expected_commit is not None:
+                        actual = response.headers.get("X-Patchbay-Commit")
+                        if actual != expected_commit:
                             raise DeploymentError(
-                                f"{url} reported server version {payload.get('server_version')!r}, "
-                                f"expected {expected_server_version!r}"
+                                f"{url} reported commit {actual!r}, expected {expected_commit!r}"
                             )
                 return
             except (
@@ -552,7 +562,6 @@ class ProductionDeployment:
                 HTTPError,
                 URLError,
                 TimeoutError,
-                json.JSONDecodeError,
             ) as error:
                 last_error = error
                 time.sleep(5)
@@ -626,21 +635,28 @@ class ProductionDeployment:
         is_bootstrap = manifest.get("bootstrap") is True
         expected = None if is_bootstrap else f"sha-{source_sha}"
         public_host_headers = {"Host": "patchbay.aspectlylabs.com", "X-Forwarded-Proto": "https"}
-        self.probe("http://127.0.0.1:8210/readyz")
-        if expected is None:
-            self.probe("http://127.0.0.1:8210/api/config")
-        else:
-            self.probe(
-                "http://127.0.0.1:8210/api/config",
-                expected_server_version=expected,
-            )
+        self.probe(
+            "http://127.0.0.1:8210/readyz",
+            expected_build=expected,
+            expected_commit=None if is_bootstrap else source_sha,
+        )
+        self.probe("http://127.0.0.1:8210/api/config")
         self.probe(
             "http://127.0.0.1:3110/login",
             expected_build=expected,
+            expected_commit=None if is_bootstrap else source_sha,
             headers=public_host_headers,
         )
-        self.probe("http://127.0.0.1:4000/docs", expected_build=expected)
-        self.probe("http://127.0.0.1:43100/readyz", expected_build=expected)
+        self.probe(
+            "http://127.0.0.1:4000/docs",
+            expected_build=expected,
+            expected_commit=None if is_bootstrap else source_sha,
+        )
+        self.probe(
+            "http://127.0.0.1:43100/readyz",
+            expected_build=expected,
+            expected_commit=None if is_bootstrap else source_sha,
+        )
 
     def deploy(self, request: dict[str, Any]) -> dict[str, Any]:
         source_sha = request["source_sha"]

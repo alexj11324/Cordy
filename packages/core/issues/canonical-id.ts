@@ -5,7 +5,7 @@ import { issueDetailOptions, issueKeys } from "./queries";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** True for a canonical issue UUID; false for an identifier like `PB-123`. */
+/** True for a canonical issue UUID; false for an identifier like `MUL-123`. */
 export function isIssueUuid(value: string): boolean {
   return UUID_RE.test(value);
 }
@@ -34,7 +34,7 @@ export interface CanonicalIssue {
 
 /**
  * Resolve a raw `/{ws}/issues/{segment}` route parameter — a UUID or a
- * human-readable identifier (`PB-123`) — to the issue and its UUID.
+ * human-readable identifier (`MUL-123`) — to the issue and its UUID.
  *
  * Why callers must key on the UUID rather than the raw segment: the realtime
  * updaters patch `issueKeys.detail(wsId, issue.id)` with the UUID carried by

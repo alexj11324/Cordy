@@ -233,7 +233,7 @@ function makeMember(user_id: string, name: string): MemberWithUser {
 
 function makeTeam(overrides: Partial<Team> = {}): Team {
   return {
-    id: "team-new",
+    id: "sq-new",
     workspace_id: "ws-1",
     name: "New Team",
     description: "",
@@ -379,7 +379,7 @@ describe("CreateTeamModal", () => {
 
     // 4. Submit and assert MineAgentTwo is NOT submitted as a member — the
     //    promotion must have permanently dropped it from selectedMembers.
-    mocks.createTeam.mockResolvedValue(makeTeam({ id: "team-3", leader_id: "agent-mine-1" }));
+    mocks.createTeam.mockResolvedValue(makeTeam({ id: "sq-3", leader_id: "agent-mine-1" }));
     fireEvent.change(screen.getByPlaceholderText(/e\.g\. Frontend Team/i), {
       target: { value: "Swap Team" },
     });
@@ -404,7 +404,7 @@ describe("CreateTeamModal", () => {
     // Click MineAgentOne in the leader picker (first occurrence is leader picker row).
     fireEvent.click(firstMatch("MineAgentOne"));
 
-    mocks.createTeam.mockResolvedValue(makeTeam({ id: "team-1", leader_id: "agent-mine-1" }));
+    mocks.createTeam.mockResolvedValue(makeTeam({ id: "tm-1", leader_id: "agent-mine-1" }));
 
     fireEvent.click(getSubmitButton());
 
@@ -421,7 +421,7 @@ describe("CreateTeamModal", () => {
     });
     expect(mocks.addTeamMember).not.toHaveBeenCalled();
     expect(mocks.toastWarning).not.toHaveBeenCalled();
-    expect(mocks.navigationPush).toHaveBeenCalledWith("/test-ws/teams/team-1");
+    expect(mocks.navigationPush).toHaveBeenCalledWith("/test-ws/teams/tm-1");
   });
 
   it("on success with partial member failure shows success + warning toasts and still navigates", async () => {
@@ -436,7 +436,7 @@ describe("CreateTeamModal", () => {
     fireEvent.click(lastMatch("OtherAgentOne"));
     fireEvent.click(lastMatch("Workspace Pal"));
 
-    mocks.createTeam.mockResolvedValue(makeTeam({ id: "team-2", leader_id: "agent-mine-1" }));
+    mocks.createTeam.mockResolvedValue(makeTeam({ id: "tm-2", leader_id: "agent-mine-1" }));
     mocks.addTeamMember
       .mockResolvedValueOnce({}) // first call succeeds
       .mockRejectedValueOnce(new Error("boom")); // second fails
@@ -453,7 +453,7 @@ describe("CreateTeamModal", () => {
       expect(mocks.toastSuccess).toHaveBeenCalledTimes(1);
     });
     expect(mocks.toastWarning).toHaveBeenCalledTimes(1);
-    expect(mocks.navigationPush).toHaveBeenCalledWith("/test-ws/teams/team-2");
+    expect(mocks.navigationPush).toHaveBeenCalledWith("/test-ws/teams/tm-2");
   });
 
   it("on createTeam failure shows an error toast, does not navigate, and re-enables submit", async () => {

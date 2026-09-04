@@ -29,6 +29,7 @@ import { useRecentContextStore } from "../chat/recent-context-store";
 import { useRecentIssuesStore } from "./stores";
 import type { InboxItem, Issue, IssueReaction } from "../types";
 import type {
+  CreateCommentSubIssueManualRequest,
   CreateIssueRequest,
   ListIssuesCache,
   MoveIssueRequest,
@@ -75,11 +76,13 @@ export type UpdateIssueMutationInput = {
 // Issue CRUD
 // ---------------------------------------------------------------------------
 
-export function useCreateIssue() {
+function useIssueCreateMutation<TVariables>(
+  mutationFn: (variables: TVariables) => Promise<Issue>,
+) {
   const qc = useQueryClient();
   const wsId = useWorkspaceId();
   return useMutation({
-    mutationFn: (data: CreateIssueRequest) => api.createIssue(data),
+    mutationFn,
     onSuccess: (newIssue) => {
       for (const [key, data] of qc.getQueriesData<ListIssuesCache>({ queryKey: issueKeys.list(wsId) })) {
         if (data) qc.setQueryData<ListIssuesCache>(key, addIssueToBuckets(data, newIssue));
@@ -103,6 +106,20 @@ export function useCreateIssue() {
       qc.invalidateQueries({ queryKey: projectKeys.all(wsId) });
     },
   });
+}
+
+export function useCreateIssue() {
+  return useIssueCreateMutation((data: CreateIssueRequest) => api.createIssue(data));
+}
+
+export function useCreateCommentSubIssue() {
+  return useIssueCreateMutation(({
+    anchorCommentId,
+    data,
+  }: {
+    anchorCommentId: string;
+    data: CreateCommentSubIssueManualRequest;
+  }) => api.createCommentSubIssue(anchorCommentId, data));
 }
 
 export function useUpdateIssue() {
@@ -138,8 +155,8 @@ export function useUpdateIssue() {
       qc.cancelQueries({ queryKey: issueKeys.myAll(wsId) });
       qc.cancelQueries({ queryKey: issueKeys.flatAll(wsId) });
       qc.cancelQueries({ queryKey: issueKeys.tableAll(wsId) });
-      if (patch.status !== undefined) {
-        qc.cancelQueries({ queryKey: inboxKeys.list(wsId) });
+      if (patch.status !== undefined || patch.priority !== undefined) {
+        qc.cancelQueries({ queryKey: inboxKeys.all(wsId) });
       }
       const prevDetail = qc.getQueryData<Issue>(issueKeys.detail(wsId, id));
       // The coordinator owns the cross-cache rules: surgical patch/rebucket
@@ -275,7 +292,7 @@ export function useUpdateIssue() {
       // the specific list keys the coordinator flagged as drifted (unknown
       // membership, enter/leave beyond the loaded window, bucket-count drift).
       // Those stale keys are the surgical replacement for the old blanket
-      // "invalidate myAll on project move" safety net (PB-3669 / #4548): the
+      // "invalidate myAll on project move" safety net (MUL-3669 / #4548): the
       // old project's loaded list already had the card removed in onMutate,
       // and only genuinely undecidable lists refetch here.
       invalidateIssueDerivatives(qc, wsId, {
@@ -437,8 +454,8 @@ export function useBatchUpdateIssues() {
       await qc.cancelQueries({ queryKey: issueKeys.myAll(wsId) });
       await qc.cancelQueries({ queryKey: issueKeys.flatAll(wsId) });
       await qc.cancelQueries({ queryKey: issueKeys.tableAll(wsId) });
-      if (patch.status !== undefined) {
-        await qc.cancelQueries({ queryKey: inboxKeys.list(wsId) });
+      if (patch.status !== undefined || patch.priority !== undefined) {
+        await qc.cancelQueries({ queryKey: inboxKeys.all(wsId) });
       }
 
       // Run every issue through the coordinator — the same rules table the
@@ -455,6 +472,7 @@ export function useBatchUpdateIssues() {
       >();
       const prevDetailById = new Map<string, Issue>();
       let prevInboxList: InboxItem[] | undefined;
+      let prevArchivedInboxList: InboxItem[] | undefined;
       const staleKeys: QueryKey[] = [];
       for (const id of ids) {
         const base = qc.getQueryData<Issue>(issueKeys.detail(wsId, id));
@@ -481,6 +499,12 @@ export function useBatchUpdateIssues() {
         if (change.prevDetail) prevDetailById.set(id, change.prevDetail);
         if (prevInboxList === undefined && change.prevInboxList !== undefined) {
           prevInboxList = change.prevInboxList;
+        }
+        if (
+          prevArchivedInboxList === undefined &&
+          change.prevArchivedInboxList !== undefined
+        ) {
+          prevArchivedInboxList = change.prevArchivedInboxList;
         }
         staleKeys.push(...change.staleKeys);
       }
@@ -510,6 +534,7 @@ export function useBatchUpdateIssues() {
         prevTableRows: [...prevTableRowByHash.values()],
         prevDetailById,
         prevInboxList,
+        prevArchivedInboxList,
         staleKeys,
         prevChildren,
         affectedParentIds,
@@ -539,6 +564,12 @@ export function useBatchUpdateIssues() {
       if (ctx?.prevInboxList !== undefined) {
         qc.setQueryData(inboxKeys.list(wsId), ctx.prevInboxList);
       }
+      if (ctx?.prevArchivedInboxList !== undefined) {
+        qc.setQueryData(
+          inboxKeys.archived(wsId),
+          ctx.prevArchivedInboxList,
+        );
+      }
       if (ctx?.prevChildren) {
         for (const [parentId, snapshot] of ctx.prevChildren) {
           qc.setQueryData(issueKeys.children(wsId, parentId), snapshot);
@@ -553,7 +584,7 @@ export function useBatchUpdateIssues() {
       // caches that cannot be recomputed from a single-issue patch are
       // refreshed below, plus the specific keys the coordinator flagged as
       // drifted — the surgical replacement for the old blanket "invalidate
-      // myAll on project move" safety net (PB-3669 / #4548).
+      // myAll on project move" safety net (MUL-3669 / #4548).
       invalidateIssueDerivatives(qc, wsId, {
         statusOrProjectChanged:
           _vars.updates.status !== undefined ||
@@ -1087,7 +1118,7 @@ export function useToggleIssueSubscriber(issueId: string) {
 }
 
 /**
- * Leave an issue AND its whole sub-tree (PB-5483). Not optimistic: it writes
+ * Leave an issue AND its whole sub-tree (MUL-5483). Not optimistic: it writes
  * to an unknown number of other issues' subscriber lists, so there is nothing
  * determinate to patch — invalidate every subscriber query instead and let the
  * server be the source of truth.

@@ -18,7 +18,7 @@ export function RuntimeDetailPage() {
   const runtime = runtimes?.find((candidate) => candidate.id === id);
   const context = useDesktopRuntimeContext();
 
-  useDocumentTitle(runtime ? runtimeDisplayLabel(runtime) : "Devices");
+  useDocumentTitle(runtime ? runtimeDisplayLabel(runtime) : "Runtimes");
 
   if (!id) return null;
   return (
@@ -42,7 +42,7 @@ export function RuntimeSettingsPage() {
   const { data: runtimes } = useQuery(runtimeListOptions(wsId));
   const runtime = runtimes?.find((candidate) => candidate.id === runtimeId);
 
-  useDocumentTitle(runtime ? runtimeDisplayLabel(runtime) : "Device");
+  useDocumentTitle(runtime ? runtimeDisplayLabel(runtime) : "Runtime");
 
   if (!id || !runtimeId) return null;
   return <SharedRuntimeSettingsPage machineId={id} runtimeId={runtimeId} />;

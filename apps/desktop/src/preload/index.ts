@@ -22,12 +22,21 @@ import {
 import { AUTH_SESSION_STATE_CHANNEL } from "../shared/auth-session";
 import type {
   DaemonStatus,
-  DaemonAutoStartResult,
   LocalRuntimeProbe,
 } from "../shared/daemon-types";
+import type {
+  GuestCloudModeResult,
+  GuestCloudTeardownResult,
+  LocalGuestMode,
+  LocalGuestRunCancelResult,
+  LocalGuestRunHistoryResult,
+  LocalGuestRunStartResult,
+  GuestSessionClearResult,
+  GuestSessionMutationResult,
+  GuestSessionReadResult,
+} from "../shared/local-guest";
 import {
   MAIN_RENDERER_CHANNEL_STATE_CHANNEL,
-  MAIN_RENDERER_MESSAGE_ACK_CHANNEL,
   type MainRendererMessageChannel,
 } from "../shared/main-renderer-messages";
 import {
@@ -39,27 +48,12 @@ import {
 // can pass it into CoreProvider during the initial render — the alternative
 // (async ipc.invoke) would race the ApiClient construction in initCore and
 // the first few HTTP requests would go out without X-Client-Version/OS.
-function fetchAppInfo(): {
-  version: string;
-  os: "macos" | "windows" | "linux" | "unknown";
-  authCallbackProtocol: string;
-} {
+function fetchAppInfo(): { version: string; os: "macos" | "windows" | "linux" | "unknown" } {
   try {
     const info = ipcRenderer.sendSync("app:get-info") as
-      | {
-          version: string;
-          os: "macos" | "windows" | "linux" | "unknown";
-          authCallbackProtocol: string;
-        }
+      | { version: string; os: "macos" | "windows" | "linux" | "unknown" }
       | undefined;
-    if (
-      info &&
-      typeof info.version === "string" &&
-      typeof info.os === "string" &&
-      typeof info.authCallbackProtocol === "string"
-    ) {
-      return info;
-    }
+    if (info && typeof info.version === "string" && typeof info.os === "string") return info;
   } catch {
     // fall through
   }
@@ -67,7 +61,7 @@ function fetchAppInfo(): {
   const p = process.platform;
   const os: "macos" | "windows" | "linux" | "unknown" =
     p === "darwin" ? "macos" : p === "win32" ? "windows" : p === "linux" ? "linux" : "unknown";
-  return { version: "unknown", os, authCallbackProtocol: "patchbay" };
+  return { version: "unknown", os };
 }
 
 function fetchRuntimeConfig(): RuntimeConfigResult {
@@ -119,8 +113,6 @@ function subscribeToMainRendererChannel<T>(
 }
 
 const desktopAPI = {
-  /** Identifies the native host for renderer capability decisions. */
-  host: "electron" as const,
   /** App version + normalized OS. Read once at preload time so the renderer
    *  can use it synchronously when initializing the API client. */
   appInfo,
@@ -140,6 +132,43 @@ const desktopAPI = {
   },
   /** Validated runtime endpoint config, or a blocking config error. */
   runtimeConfig,
+  /** Main-process-owned local Guest session. */
+  getGuestSession: (): Promise<GuestSessionReadResult> =>
+    ipcRenderer.invoke("guest-session:get"),
+  createGuestSession: (displayName: string): Promise<GuestSessionMutationResult> =>
+    ipcRenderer.invoke("guest-session:create", displayName),
+  clearGuestSession: (): Promise<GuestSessionClearResult> =>
+    ipcRenderer.invoke("guest-session:clear"),
+  enableCloudMode: (): Promise<GuestCloudModeResult> =>
+    ipcRenderer.invoke("guest-session:enable-cloud"),
+  switchGuestToCloud: (): Promise<GuestCloudModeResult> =>
+    ipcRenderer.invoke("guest-session:switch-to-cloud"),
+  disableCloudMode: (): Promise<GuestCloudTeardownResult> =>
+    ipcRenderer.invoke("guest-session:disable-cloud"),
+  getGuestMode: (): Promise<LocalGuestMode> =>
+    ipcRenderer.invoke("guest-session:mode"),
+  onGuestModeChanged: (callback: (mode: LocalGuestMode) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, mode: LocalGuestMode) =>
+      callback(mode);
+    ipcRenderer.on("guest-session:mode", handler);
+    return () => ipcRenderer.removeListener("guest-session:mode", handler);
+  },
+  probeLocalRuntimes: (): Promise<LocalRuntimeProbe> =>
+    ipcRenderer.invoke("guest-runtime:probe"),
+  startGuestRun: (request: unknown): Promise<LocalGuestRunStartResult> =>
+    ipcRenderer.invoke("guest-run:start", request),
+  cancelGuestRun: (runId: string): Promise<LocalGuestRunCancelResult> =>
+    ipcRenderer.invoke("guest-run:cancel", { runId }),
+  getGuestRunHistory: (): Promise<LocalGuestRunHistoryResult> =>
+    ipcRenderer.invoke("guest-run:history"),
+  clearGuestRunHistory: (): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke("guest-run:clear-history"),
+  onGuestRunEvent: (callback: (value: unknown) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, value: unknown) =>
+      callback(value);
+    ipcRenderer.on("guest-run:event", handler);
+    return () => ipcRenderer.removeListener("guest-run:event", handler);
+  },
   /** Identifies whether this renderer owns the main tabbed window or a
    *  dedicated issue window, parsed from validated launch arguments. */
   windowContext,
@@ -163,17 +192,9 @@ const desktopAPI = {
     ipcRenderer.send(AUTH_SESSION_STATE_CHANNEL, userId),
   /** Listen for a PKCE-bound, one-time desktop login code delivered via deep link. */
   onAuthHandoff: (
-    callback: (payload: {
-      code: string;
-      state: string;
-    }) => boolean | Promise<boolean>,
+    callback: (payload: AuthHandoffPayload) => boolean | Promise<boolean>,
   ) => {
-    const delivery = createAuthHandoffDelivery(callback, (payload) => {
-      ipcRenderer.send(MAIN_RENDERER_MESSAGE_ACK_CHANNEL, {
-        channel: "auth:handoff",
-        payload,
-      });
-    });
+    const delivery = createAuthHandoffDelivery(callback);
     const handler = (
       _event: Electron.IpcRendererEvent,
       payload: AuthHandoffPayload,
@@ -261,7 +282,7 @@ const desktopAPI = {
   /** Open the OS folder picker and return the chosen absolute path. */
   pickDirectory: (defaultPath?: string) =>
     ipcRenderer.invoke("local-directory:pick", defaultPath),
-  /** Open the OS folder picker with multi-select and read each folder's origin. */
+  /** Select multiple folders, one project per directory, during onboarding. */
   pickDirectories: (defaultPath?: string) =>
     ipcRenderer.invoke("local-directory:pick-many", defaultPath),
   /** Validate that a path is an existing readable+writable directory. */
@@ -279,8 +300,7 @@ const desktopAPI = {
   },
   /** Listen for Cmd/Ctrl+, requests to open Settings. Only the main window
    *  subscribes — main delivers the chord there even when it was pressed in
-   *  an issue window, because Settings belongs to the main app window.
-   *  Returns an unsubscribe fn. */
+   *  an issue window, because Settings is a tab. Returns an unsubscribe fn. */
   onOpenSettings: (callback: () => void) =>
     subscribeToMainRendererChannel("settings:open", () => callback()),
   /** Ask the main process to close the window (used after closing the last tab). */
@@ -330,7 +350,7 @@ const daemonAPI = {
     ipcRenderer.invoke("daemon:get-prefs"),
   setPrefs: (prefs: Partial<{ autoStart: boolean; autoStop: boolean }>): Promise<{ autoStart: boolean; autoStop: boolean }> =>
     ipcRenderer.invoke("daemon:set-prefs", prefs),
-  autoStart: (): Promise<DaemonAutoStartResult> =>
+  autoStart: (): Promise<void> =>
     ipcRenderer.invoke("daemon:auto-start"),
   retryInstall: (): Promise<void> =>
     ipcRenderer.invoke("daemon:retry-install"),
@@ -340,11 +360,6 @@ const daemonAPI = {
     const handler = (_: unknown, line: string) => callback(line);
     ipcRenderer.on("daemon:log-line", handler);
     return () => ipcRenderer.removeListener("daemon:log-line", handler);
-  },
-  onLogReset: (callback: () => void) => {
-    const handler = () => callback();
-    ipcRenderer.on("daemon:log-reset", handler);
-    return () => ipcRenderer.removeListener("daemon:log-reset", handler);
   },
   openLogFile: (): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke("daemon:open-log-file"),

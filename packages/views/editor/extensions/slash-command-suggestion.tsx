@@ -231,7 +231,7 @@ export function createSlashCommandSuggestion(qc: QueryClient): Omit<
     char: "/",
     pluginKey,
     // Only open over a `/` the user actually typed, so a pasted path
-    // (`/usr/local/bin`) never opens the skill picker (PB-5429).
+    // (`/usr/local/bin`) never opens the skill picker (MUL-5429).
     shouldShow: ({ editor, range }) => isTriggerArmedAt(editor, range.from),
     items: ({ query }) => buildItems(qc, query),
     command: ({ editor, range, props }) => {
@@ -281,7 +281,7 @@ export function createSlashCommandSuggestion(qc: QueryClient): Omit<
  * chat `/` picker (which lists the active agent's skills), these are a fixed,
  * hand-curated set. Currently only `/note`, which marks a comment as a
  * human-only note that won't trigger the assigned agent — mirrors the backend
- * the note-comment prefix in the Rust comment handler.
+ * `noteCommentPrefix` in server/internal/handler/comment.go.
  */
 export const BUILTIN_COMMANDS: SlashCommandItem[] = [
   { id: "note", label: "note", descriptionKey: "note" },
@@ -349,7 +349,7 @@ export function createBuiltinCommandSuggestion(
     char: "/",
     pluginKey,
     // Only open over a `/` the user actually typed, so a pasted path
-    // (`/usr/local/bin`) never opens the command menu (PB-5429).
+    // (`/usr/local/bin`) never opens the command menu (MUL-5429).
     shouldShow: ({ editor, range }) => isTriggerArmedAt(editor, range.from),
     items: ({ query }) => buildBuiltinCommandItems(query, options.getQuickActions?.() ?? []),
     command: ({ editor, range, props }) => {

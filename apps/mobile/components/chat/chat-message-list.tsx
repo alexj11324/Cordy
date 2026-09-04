@@ -4,16 +4,15 @@
  * when the user is anchored near the bottom; reading history is never
  * yanked down.
  *
- * Behavioral parity (apps/mobile/AGENTS.md):
+ * Behavioral parity (apps/mobile/CLAUDE.md):
  *   - Render ALL message roles. Unknown role values are downgraded to
  *     "assistant" by ChatMessageSchema's `.catch()`, so this list never
  *     needs to silently drop a row.
  *   - Render `failure_reason` messages with destructive styling — same
  *     boolean as web's destructive bubble + failureReasonLabel().
  *
- * v1 simplifications:
- *   - No "Replied in Ns" badge under assistant bubbles (elapsed_ms is
- *     parsed but not displayed). Easy v2 add — show below the bubble.
+ * Mobile-specific simplifications:
+ *   - No hover-only copy button; long-press exposes the native action sheet.
  *   - Attachments bound to a message but NOT referenced inline in `content`
  *     render as standalone cards below the bubble via `CommentAttachmentList`
  *     (same component the comment thread uses; mirrors web reusing
@@ -28,7 +27,7 @@
  * in `./message-long-press.tsx`.
  *
  * List engine: FlashList v2 (Shopify). FlatList was the original choice
- * (per the now-outdated "no FlashList" baseline in apps/mobile/AGENTS.md
+ * (per the now-outdated "no FlashList" baseline in apps/mobile/CLAUDE.md
  * — written before FlashList v2 stabilised). FlatList's `scrollToEnd` is
  * janky on variable-height lists by RN's own docs admission, and our
  * markdown bubbles render in multiple async passes (Shiki highlight,
@@ -46,6 +45,7 @@ import { FlashList } from "@shopify/flash-list";
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import type {
+  Agent,
   ChatMessage,
   ChatPendingTask,
   ChatQuickAction,
@@ -59,6 +59,7 @@ import { ImageSequenceProvider } from "@/lib/markdown/image-sequence";
 import { failureReasonLabel } from "@/lib/failure-reason-label";
 import { formatElapsedMs } from "@/lib/format-elapsed";
 import { cn } from "@/lib/utils";
+import { useChatCopy } from "@/lib/use-chat-copy";
 import { useChatSelectStore } from "@/data/chat-select-store";
 import { useChatMessageLongPress } from "./message-long-press";
 import { ChatEmptyState } from "./chat-empty-state";
@@ -79,9 +80,9 @@ interface Props {
   loading: boolean;
   /** Has the workspace ever started a chat? Drives empty-state copy. */
   hasSessions: boolean;
-  /** Currently picked / inherited agent's display name. */
-  agentName?: string;
-  /** Receive a starter-prompt tap. Caller writes into the draft store
+  /** Currently picked / inherited agent. */
+  agent: Agent | null;
+  /** Receive a conversation-starter tap. Caller writes into the draft store
    *  (or focuses the composer with the text) — empty state stays neutral
    *  about send vs. preview. */
   onPickPrompt: (text: string) => void;
@@ -105,7 +106,7 @@ export function ChatMessageList({
   messages,
   loading,
   hasSessions,
-  agentName,
+  agent,
   onPickPrompt,
   onQuickAction,
   quickActionsDisabled = false,
@@ -118,13 +119,13 @@ export function ChatMessageList({
   // passes through to the list cells / bubble long-press wrappers normally.
   const selectingId = useChatSelectStore((s) => s.selectingId);
 
-  // Every image in this session, in message order (PB-5752), so tapping one
+  // Every image in this session, in message order (MUL-5752), so tapping one
   // opens the lightbox at its position and a swipe walks the rest.
   //
   // Above the loading / empty early returns because hooks must run on every
   // render — an empty `messages` just yields an empty block list.
   //
-  // Persisted messages only — same boundary web draws: a task Agent thread's
+  // Persisted messages only — same boundary web draws: a task transcript's
   // images live behind a separate cache and inside a folded section, so they
   // keep opening on their own rather than joining a sequence the reader
   // cannot see the rest of.
@@ -151,7 +152,7 @@ export function ChatMessageList({
     return (
       <ChatEmptyState
         hasSessions={hasSessions}
-        agentName={agentName}
+        agent={agent}
         onPickPrompt={onPickPrompt}
       />
     );
@@ -272,6 +273,7 @@ function MessageRow({
 }) {
   const isUser = message.role === "user";
   const isFailure = !!message.failure_reason;
+  const copy = useChatCopy();
   const isSelecting = useChatSelectStore(
     (s) => s.selectingId === message.id,
   );
@@ -280,7 +282,11 @@ function MessageRow({
   if (isFailure) {
     return (
       <FailureBubble
-        reasonLabel={failureReasonLabel(message.failure_reason)}
+        reasonLabel={failureReasonLabel(
+          message.failure_reason,
+          copy.failure.labels,
+          copy.failure.fallback,
+        )}
         rawError={message.content}
         elapsedMs={message.elapsed_ms ?? null}
         isSelecting={isSelecting}
@@ -291,7 +297,7 @@ function MessageRow({
 
   if (isUser) {
     // User bubble: same Markdown pipeline as assistant — `@mention`
-    // serialisation `[PB-1](mention://issue/<id>)`, inline links, and
+    // serialisation `[MUL-1](mention://issue/<id>)`, inline links, and
     // inline code resolve identically to web's
     // `packages/views/chat/components/chat-message-list.tsx` user branch.
     // Width is capped at 80% so the bubble keeps the iMessage-style
@@ -370,6 +376,7 @@ function AssistantRow({
   onQuickAction?: (action: ChatQuickAction) => void | Promise<unknown>;
   quickActionsDisabled: boolean;
 }) {
+  const copy = useChatCopy();
   // Read the cached timeline if any. `enabled` (in taskMessagesOptions) is
   // gated on isTaskMessageTaskId — optimistic id prefixes never fetch, so
   // freshly-sent messages don't spam the API while waiting for the real
@@ -378,7 +385,7 @@ function AssistantRow({
   const { data: timeline = [] } = useQuery(
     taskMessagesOptions(message.task_id),
   );
-  // no_response (PB-4351, mirrors packages/views AssistantMessage): the agent
+  // no_response (MUL-4351, mirrors packages/views AssistantMessage): the agent
   // completed this turn without text. Keep the tool timeline and show a notice
   // instead of an empty Markdown block; caption reads "Finished in" not
   // "Replied in".
@@ -390,7 +397,7 @@ function AssistantRow({
       ) : null}
       {isNoResponse ? (
         <Text className="text-sm italic text-muted-foreground">
-          The agent finished this turn without a text reply.
+          {copy.noResponse}
         </Text>
       ) : (
         <Markdown
@@ -445,6 +452,7 @@ function QuickActions({
   onSelect: (action: ChatQuickAction) => void | Promise<unknown>;
 }) {
   const [submitting, setSubmitting] = useState(false);
+  const copy = useChatCopy();
   const blocked = disabled || submitting;
 
   const handleSelect = async (action: ChatQuickAction) => {
@@ -463,7 +471,7 @@ function QuickActions({
   return (
     <View
       className="flex-row flex-wrap gap-2 pt-0.5"
-      accessibilityLabel="Suggested follow-ups"
+      accessibilityLabel={copy.suggestedFollowUps}
     >
       {actions.slice(0, 3).map((action, index) => (
         <Pressable
@@ -508,12 +516,13 @@ function ElapsedCaption({
   variant: "replied" | "failed" | "finished";
   elapsedMs: number;
 }) {
+  const copy = useChatCopy();
   const label =
     variant === "replied"
-      ? `Replied in ${formatElapsedMs(elapsedMs)}`
+      ? copy.repliedIn(formatElapsedMs(elapsedMs))
       : variant === "finished"
-        ? `Finished in ${formatElapsedMs(elapsedMs)}`
-        : `Failed after ${formatElapsedMs(elapsedMs)}`;
+        ? copy.finishedIn(formatElapsedMs(elapsedMs))
+        : copy.failedAfter(formatElapsedMs(elapsedMs));
   return (
     <Text className="text-xs text-muted-foreground/80 mt-1">{label}</Text>
   );
@@ -533,6 +542,7 @@ function FailureBubble({
   longPress: ReturnType<typeof useChatMessageLongPress>;
 }) {
   const hasRawError = rawError.trim().length > 0;
+  const copy = useChatCopy();
 
   // B6: pass `selectable={isSelecting}` rather than hard-coding
   // `selectable` — otherwise UIKit's text-selection gesture pre-empts
@@ -557,7 +567,7 @@ function FailureBubble({
             <CollapsibleTrigger asChild>
               <View
                 accessibilityRole="button"
-                accessibilityLabel="Show error details"
+                accessibilityLabel={copy.showErrorDetails}
                 className="mt-1 flex-row items-center gap-1 active:opacity-70"
               >
                 <Ionicons
@@ -566,7 +576,7 @@ function FailureBubble({
                   color="#71717a"
                 />
                 <Text className="text-xs text-muted-foreground">
-                  Show details
+                  {copy.showDetails}
                 </Text>
               </View>
             </CollapsibleTrigger>

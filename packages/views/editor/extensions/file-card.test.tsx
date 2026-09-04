@@ -45,6 +45,7 @@ vi.mock("../../navigation", () => ({
     back: vi.fn(),
     pathname: "/acme/issues",
     searchParams: new URLSearchParams(),
+    hash: "",
     openInNewTab: vi.fn(),
     getShareableUrl: (p: string) => `https://app.example${p}`,
   }),
@@ -91,7 +92,7 @@ describe("FileCardView — HTML attachment routes through AttachmentBlock to ifr
   // Regression pin for file-card.tsx:59. The NodeView must render through
   // <AttachmentBlock>, not the older <AttachmentCard>. If someone reverts that
   // line, the dispatcher's html+attachmentId branch is bypassed and the user
-  // is left with the file-card chrome — exactly the bug PB-2330 surfaced.
+  // is left with the file-card chrome — exactly the bug MUL-2330 surfaced.
   it("renders an iframe (no file-card chrome) when the node resolves to an HTML attachment", async () => {
     resolveAttachmentMock.mockReturnValue({
       id: "att-1",

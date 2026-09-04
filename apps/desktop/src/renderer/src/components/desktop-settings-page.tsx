@@ -2,7 +2,6 @@ import { useLayoutEffect } from "react";
 import { ArrowLeft, Download, Server } from "lucide-react";
 import { SettingsPage } from "@patchbay/views/settings";
 import { useT } from "@patchbay/views/i18n";
-import { SettingsBackButton } from "@patchbay/ui/components/common/lobe-settings";
 import { getActiveTab, useTabStore } from "@/stores/tab-store";
 import { DaemonSettingsTab } from "./daemon-settings-tab";
 import { UpdatesSettingsTab } from "./updates-settings-tab";
@@ -39,7 +38,7 @@ export function DesktopSettingsPage({ onBack }: { onBack?: () => void }) {
       variant="standalone"
       navigationHeader={
         onBack ? (
-          <SettingsBackButton
+          <button
             type="button"
             onClick={onBack}
             data-settings-initial-focus
@@ -48,7 +47,7 @@ export function DesktopSettingsPage({ onBack }: { onBack?: () => void }) {
           >
             <ArrowLeft className="size-4" />
             {t(($) => $.page.back_to_app)}
-          </SettingsBackButton>
+          </button>
         ) : undefined
       }
       extraAccountTabs={[

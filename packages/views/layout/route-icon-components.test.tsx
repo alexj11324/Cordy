@@ -12,7 +12,7 @@ describe("ROUTE_ICON_COMPONENTS", () => {
 });
 
 describe("routeIconForPath", () => {
-  // The invariant this whole contract exists for (PB-4370): the sidebar and
+  // The invariant this whole contract exists for (MUL-4370): the sidebar and
   // the desktop tab bar both resolve from a path, so the same route can never
   // render two different icons.
   it("gives a route the same component wherever it is rendered", () => {

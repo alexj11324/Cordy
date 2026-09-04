@@ -9,8 +9,8 @@ import {
 } from "@patchbay/ui/components/ui/hover-card";
 import { useActorName } from "@patchbay/core/workspace/hooks";
 import type { WorkingAgentSummary } from "@patchbay/core/types";
+import { AgentAvatarStack } from "../../agents/components/agent-avatar-stack";
 import { useT } from "../../i18n";
-import { Bot } from "lucide-react";
 
 interface WorkspaceAgentWorkingChipProps {
   value: boolean;
@@ -66,7 +66,7 @@ export function chipAppearance(
  * surface really has nobody working, a non-empty list = the roster. Rendering
  * the empty sentence for an unresolved projection would assert "no agents
  * working right now" on no evidence — the same class of unearned claim the chip
- * count itself had (PB-5525).
+ * count itself had (MUL-5525).
  */
 export function WorkingAgentsHoverContent({
   agents,
@@ -128,7 +128,7 @@ export function WorkingAgentsHoverContent({
  * The number IS the post-click row count's authority: it counts the agents
  * working on rows this surface's scope AND active filters would show, resolved
  * by the surface controller from the server-side `working_agents` facet — the
- * same compiled query the rows come from. Before PB-5525 it ran its own
+ * same compiled query the rows come from. Before MUL-5525 it ran its own
  * workspace-wide `/api/working-agents` read, so on a project page it could
  * advertise agents working nowhere near that project and open an empty list.
  *
@@ -138,9 +138,7 @@ export function WorkingAgentsHoverContent({
  * the reader cannot tell them apart once one of them is rendered as the other.
  *
  * Clicking only toggles view state; the controller turns the running-issue set
- * into the query's `working_issue_ids` filter. The visible trigger stays
- * compact in every viewport (icon + count); the full sentence remains the
- * accessible name and hover-card explanation.
+ * into the query's `working_issue_ids` filter.
  */
 export function WorkspaceAgentWorkingChip({
   value,
@@ -160,19 +158,18 @@ export function WorkspaceAgentWorkingChip({
     <Button
       variant={appearance.variant}
       size="sm"
-      className={`${appearance.className} gap-1.5`}
+      className={appearance.className}
       onClick={onToggle}
       aria-pressed={value}
       aria-label={label}
-      title={label}
     >
-      <Bot aria-hidden="true" className="size-4" />
-      <span
-        aria-hidden="true"
-        className="inline-flex min-w-4 items-center justify-center rounded-full bg-current/10 px-1 text-micro font-medium leading-4 tabular-nums"
-      >
+      {activity === "some" && (
+        <AgentAvatarStack agentIds={agentIds} size="sm" max={3} />
+      )}
+      <span className="tabular-nums md:hidden">
         {activity === "unknown" ? "—" : agentIds.length}
       </span>
+      <span className="hidden tabular-nums md:inline">{label}</span>
     </Button>
   );
 

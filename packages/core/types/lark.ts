@@ -1,35 +1,33 @@
-import type {
-  MessagingInstallationRuntime,
-  MessagingInstallationSetup,
-} from "./messaging";
+import type { MessagingInstallationRuntime, MessagingInstallationSetup } from "./messaging";
 
-/** A Lark Bot installation, optionally bound to a Patchbay agent.
+/** A Lark Bot installation bound to a single Patchbay agent.
  *
  * Wire shape mirrors `LarkInstallationResponse` in
- * the Rust Lark handler. New fields the backend adds in the
+ * `server/internal/handler/lark.go`. New fields the backend adds in the
  * future MUST default to optional so older desktop builds keep parsing
- * the response — see AGENTS.md → API Response Compatibility. */
+ * the response — see CLAUDE.md → API Response Compatibility. */
 export interface LarkInstallation {
   id: string;
   workspace_id: string;
-  /** Null for a workspace Hub; the channel selects an Agent with /agents. */
-  agent_id: string | null;
+  agent_id: string;
   app_id: string;
   tenant_key?: string | null;
   bot_open_id: string;
   installer_user_id: string;
-  status: "active" | "revoked" | string;
+  status: "installed" | "revoked" | string;
+  /** Canonical lifecycle field added while status remains a legacy wire alias. */
+  installation_status?: "installed" | "revoked" | string;
+  runtime?: MessagingInstallationRuntime;
+  setup?: MessagingInstallationSetup;
   /** Which Lark cloud the bot lives on: "feishu" (mainland) or "lark"
    * (international). Auto-detected at install time. Optional so an older
    * desktop build parsing a newer server — or a newer build hitting a
    * server that predates the field — defaults to Feishu in the UI
-   * (see AGENTS.md → API Response Compatibility). */
+   * (see CLAUDE.md → API Response Compatibility). */
   region?: "feishu" | "lark" | string;
   installed_at: string;
   created_at: string;
   updated_at: string;
-  runtime?: MessagingInstallationRuntime;
-  setup?: MessagingInstallationSetup;
 }
 
 export interface ListLarkInstallationsResponse {

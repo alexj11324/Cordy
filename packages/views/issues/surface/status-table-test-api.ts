@@ -17,7 +17,7 @@ type LegacyListIssues = (
 
 /** One agent holding running issue tasks, as the working-agents projection
  *  reports it. `issue_ids` may name issues outside the queried surface — the
- *  facet is expected to drop those, which is the whole point of PB-5525. */
+ *  facet is expected to drop those, which is the whole point of MUL-5525. */
 export interface WorkingTaskFixture {
   id: string;
   issue_ids: readonly string[];
@@ -39,7 +39,7 @@ export interface WorkingAgentsFixture {
  * CATEGORY (`status_category:<category>`); the table still groups by concrete
  * status key. This fixture holds only built-in statuses, where a key IS its own
  * category, so the two axes select the same rows — only the key shape differs.
- * (PB-6243)
+ * (MUL-6243)
  */
 function statusAxis(group: { kind: string }): string {
   return group.kind === "status_category" ? "status_category" : "status";
@@ -59,9 +59,13 @@ function legacyParamsForStatus(
     limit: 50,
     offset: 0,
     ...(scope.kind === "project" ? { project_id: scope.project_id } : {}),
+    ...(scope.kind === "owner" && scope.actor
+      ? {
+          owner_id: scope.actor.id,
+        }
+      : {}),
     ...(scope.kind === "executor" && scope.actor
       ? {
-          executor_type: scope.actor.type,
           executor_id: scope.actor.id,
         }
       : {}),
@@ -147,7 +151,9 @@ function primaryDescriptor(
     const actor =
       issue.executor_type && issue.executor_id
         ? { type: issue.executor_type, id: issue.executor_id }
-        : null;
+        : issue.owner_type && issue.owner_id
+          ? { type: issue.owner_type, id: issue.owner_id }
+          : null;
     return {
       key: actor
         ? `executor:${actor.type}:${actor.id}`

@@ -146,12 +146,13 @@ describe("onboarding progress rail", () => {
   // The rail replaced a row of dots plus a "Step 2 of 3" counter, which said
   // how much was left but never what was coming — so the runtime step always
   // arrived unannounced. Naming every step is the whole point of the change.
-  it("names both remaining steps up front", () => {
-    const { container } = renderShell({ currentStep: "workspace" });
+  it("names all three steps up front", () => {
+    const { container } = renderShell({ currentStep: "about_you" });
 
     // Scoped to the rail: the compact bar also prints the current step's name,
     // so an unscoped query matches it twice.
     const rail = within(container.querySelector("aside")!);
+    expect(rail.getByText("About you")).toBeInTheDocument();
     expect(rail.getByText("Workspace")).toBeInTheDocument();
     expect(rail.getByText("Meet Patrick")).toBeInTheDocument();
   });
@@ -168,31 +169,32 @@ describe("onboarding progress rail", () => {
   // only the steps already behind the member are reachable from the rail.
   it("links completed steps and leaves the current and later ones inert", async () => {
     const onStepChange = vi.fn();
-    renderShell({ currentStep: "runtime", onStepChange });
+    renderShell({ currentStep: "workspace", onStepChange });
 
-    const back = screen.getByRole("button", { name: /workspace/i });
+    const back = screen.getByRole("button", { name: /about you/i });
     await userEvent.click(back);
-    expect(onStepChange).toHaveBeenCalledWith("workspace");
+    expect(onStepChange).toHaveBeenCalledWith("about_you");
 
     expect(screen.queryByRole("button", { name: /meet patrick/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^workspace/i })).toBeNull();
   });
 
   it("is display-only when the flow supplies no step handler", () => {
     renderShell({ currentStep: "runtime" });
 
+    expect(screen.queryByRole("button", { name: /about you/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /^workspace/i })).toBeNull();
-    expect(screen.queryByRole("button", { name: /meet patrick/i })).toBeNull();
   });
 
   // Back is disabled precisely while a step has a request in flight; letting
   // the rail jump away would abandon it mid-create.
   it("stops rail navigation while the step reports work in flight", () => {
     renderShell({
-      currentStep: "runtime",
+      currentStep: "workspace",
       onStepChange: vi.fn(),
       backDisabled: true,
     });
 
-    expect(screen.queryByRole("button", { name: /^workspace/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /about you/i })).toBeNull();
   });
 });

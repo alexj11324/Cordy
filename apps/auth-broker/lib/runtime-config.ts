@@ -1,81 +1,9 @@
 type RuntimeEnvironment = Record<string, string | undefined>;
-
-export type AuthBrokerRuntimeConfig = {
-  apiOrigin: string;
-  brokerOrigin: string;
-  clerkPublishableKey: string;
-  rustBrokerAuthToken: string;
-};
-
-export type RuntimeConfigResult =
-  | { ok: true; config: AuthBrokerRuntimeConfig }
-  | { ok: false; error: string };
-
-export function readAuthBrokerRuntimeConfig(
-  env: RuntimeEnvironment = process.env,
-): RuntimeConfigResult {
-  try {
-    const apiOrigin = requiredOrigin(env.PATCHBAY_API_ORIGIN, "PATCHBAY_API_ORIGIN");
-    const brokerOrigin = requiredOrigin(
-      env.PATCHBAY_AUTH_BROKER_ORIGIN,
-      "PATCHBAY_AUTH_BROKER_ORIGIN",
-    );
-    const clerkPublishableKey = requiredString(
-      env.CLERK_PUBLISHABLE_KEY,
-      "CLERK_PUBLISHABLE_KEY",
-    );
-    const rustBrokerAuthToken = requiredHexSecret(
-      env.PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN,
-      "PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN",
-    );
-    return {
-      ok: true,
-      config: { apiOrigin, brokerOrigin, clerkPublishableKey, rustBrokerAuthToken },
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : "invalid runtime configuration",
-    };
-  }
+export type AuthBrokerRuntimeConfig = { apiOrigin: string; brokerOrigin: string; clerkPublishableKey: string; goBrokerAuthToken: string; originAuthToken: string };
+export function readAuthBrokerRuntimeConfig(env: RuntimeEnvironment = process.env): { ok: true; config: AuthBrokerRuntimeConfig } | { ok: false; error: string } {
+  try { return { ok: true, config: { apiOrigin: origin(env.PATCHBAY_API_ORIGIN, "PATCHBAY_API_ORIGIN"), brokerOrigin: origin(env.PATCHBAY_AUTH_BROKER_ORIGIN, "PATCHBAY_AUTH_BROKER_ORIGIN"), clerkPublishableKey: text(env.CLERK_PUBLISHABLE_KEY, "CLERK_PUBLISHABLE_KEY"), goBrokerAuthToken: secret(env.PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN, "PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN"), originAuthToken: secret(env.PATCHBAY_ORIGIN_AUTH_TOKEN, "PATCHBAY_ORIGIN_AUTH_TOKEN") } }; }
+  catch (error) { return { ok: false, error: error instanceof Error ? error.message : "invalid runtime configuration" }; }
 }
-
-function requiredHexSecret(value: string | undefined, name: string): string {
-  const normalized = requiredString(value, name);
-  if (!/^[a-f0-9]{64}$/.test(normalized)) {
-    throw new Error(`${name} must be 64 lowercase hexadecimal characters`);
-  }
-  return normalized;
-}
-
-function requiredString(value: string | undefined, name: string): string {
-  const normalized = value?.trim() ?? "";
-  if (!normalized) throw new Error(`${name} is required`);
-  if (/[\r\n]/.test(normalized)) throw new Error(`${name} is invalid`);
-  return normalized;
-}
-
-function requiredOrigin(value: string | undefined, name: string): string {
-  const raw = requiredString(value, name);
-  let url: URL;
-  try {
-    url = new URL(raw);
-  } catch {
-    throw new Error(`${name} must be an HTTPS origin`);
-  }
-  const localDevelopment =
-    process.env.NODE_ENV !== "production" &&
-    url.protocol === "http:" &&
-    (url.hostname === "localhost" || url.hostname === "127.0.0.1");
-  if (
-    (!localDevelopment && url.protocol !== "https:") ||
-    url.username ||
-    url.password ||
-    url.pathname !== "/" ||
-    url.search ||
-    url.hash
-  ) {
-    throw new Error(`${name} must be an HTTPS origin`);
-  }
-  return url.origin;
-}
+function text(value: string | undefined, name: string): string { const out = value?.trim() ?? ""; if (!out || /[\r\n]/.test(out)) throw new Error(`${name} is required`); return out; }
+function secret(value: string | undefined, name: string): string { const out = text(value, name); if (!/^[a-f0-9]{64}$/.test(out)) throw new Error(`${name} must be 64 lowercase hexadecimal characters`); return out; }
+function origin(value: string | undefined, name: string): string { const url = new URL(text(value, name)); if (url.protocol !== "https:" || url.username || url.password || url.pathname !== "/" || url.search || url.hash) throw new Error(`${name} must be an HTTPS origin`); return url.origin; }

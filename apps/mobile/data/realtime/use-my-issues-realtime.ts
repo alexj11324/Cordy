@@ -4,8 +4,8 @@
  * issue list stays fresh regardless of which tab is foregrounded.
  *
  * issue:created     — invalidate myAll(wsId). We don't try to predict
- *                     whether the new issue belongs to assigned/created/
- *                     agents scope or matches the user's current filter;
+ *                     whether the new issue belongs to owned/created/
+ *                     agent-related scope or matches the user's current filter;
  *                     a fresh fetch is the cheapest correct answer.
  * issue:updated     — patch in-place across every cached list entry.
  *                     A status change re-buckets the SectionList on the

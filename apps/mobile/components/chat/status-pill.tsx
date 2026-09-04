@@ -41,6 +41,8 @@ import { Text } from "@/components/ui/text";
 import { formatElapsedSecs } from "@/lib/format-elapsed";
 import { useColorScheme } from "@/lib/use-color-scheme";
 import { THEME } from "@/lib/theme";
+import type { ChatCopy } from "@/lib/chat-copy";
+import { useChatCopy } from "@/lib/use-chat-copy";
 
 interface Props {
   pendingTask: ChatPendingTask | null | undefined;
@@ -57,42 +59,50 @@ interface Stage {
   static?: boolean;
 }
 
-const TOOL_LABELS: Record<string, string> = {
-  bash: "Running command",
-  exec: "Running command",
-  read: "Reading files",
-  glob: "Reading files",
-  grep: "Searching code",
-  write: "Making edits",
-  edit: "Making edits",
-  multi_edit: "Making edits",
-  multiedit: "Making edits",
-  web_search: "Searching web",
-  websearch: "Searching web",
+type ToolStatusKey =
+  | "runningCommand"
+  | "readingFiles"
+  | "searchingCode"
+  | "makingEdits"
+  | "searchingWeb";
+
+const TOOL_STATUS_KEYS: Record<string, ToolStatusKey> = {
+  bash: "runningCommand",
+  exec: "runningCommand",
+  read: "readingFiles",
+  glob: "readingFiles",
+  grep: "searchingCode",
+  write: "makingEdits",
+  edit: "makingEdits",
+  multi_edit: "makingEdits",
+  multiedit: "makingEdits",
+  web_search: "searchingWeb",
+  websearch: "searchingWeb",
 };
 
 function pickStage(
   status: string | undefined,
   taskMessages: readonly TaskMessagePayload[],
   availability: AgentAvailability | undefined,
+  copy: ChatCopy,
 ): Stage {
   // Mirrors web: deferred is an older turn waiting for retry backoff, not
   // active model work, so it must not fall through to "Thinking".
-  if (status === "deferred") return { label: "Retrying" };
+  if (status === "deferred") return { label: copy.status.retrying };
   if (
     (status === "queued" || status === "dispatched") &&
     availability === "offline"
   ) {
-    return { label: "Offline", static: true };
+    return { label: copy.status.offline, static: true };
   }
   if (
     (status === "queued" || status === "dispatched") &&
     availability === "unstable"
   ) {
-    return { label: "Reconnecting" };
+    return { label: copy.status.reconnecting };
   }
-  if (status === "queued") return { label: "Queued" };
-  if (status === "dispatched") return { label: "Starting up" };
+  if (status === "queued") return { label: copy.status.queued };
+  if (status === "dispatched") return { label: copy.status.startingUp };
 
   let latest: TaskMessagePayload | null = null;
   for (let i = taskMessages.length - 1; i >= 0; i--) {
@@ -102,14 +112,15 @@ function pickStage(
       break;
     }
   }
-  if (!latest) return { label: "Thinking" };
-  if (latest.type === "thinking") return { label: "Thinking" };
-  if (latest.type === "text") return { label: "Typing" };
+  if (!latest) return { label: copy.status.thinking };
+  if (latest.type === "thinking") return { label: copy.status.thinking };
+  if (latest.type === "text") return { label: copy.status.typing };
   if (latest.type === "tool_use") {
     const slug = (latest.tool ?? "").toLowerCase();
-    return { label: TOOL_LABELS[slug] ?? "Working" };
+    const key = TOOL_STATUS_KEYS[slug];
+    return { label: key ? copy.status[key] : copy.status.working };
   }
-  return { label: "Thinking" };
+  return { label: copy.status.thinking };
 }
 
 // Tabular figures for the 1Hz counter — proportional digits change the text
@@ -127,6 +138,7 @@ export function StatusPill({
   taskMessages = [],
   availability,
 }: Props) {
+  const copy = useChatCopy();
   const taskId = pendingTask?.task_id;
   const createdAt = pendingTask?.created_at;
 
@@ -154,7 +166,7 @@ export function StatusPill({
         ? "running"
         : pendingTask?.status;
   const elapsedSec = Math.max(0, Math.floor((Date.now() - anchorMs) / 1000));
-  const stage = pickStage(status, taskMessages, availability);
+  const stage = pickStage(status, taskMessages, availability, copy);
 
   return (
     <View

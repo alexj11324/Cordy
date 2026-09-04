@@ -56,10 +56,7 @@ function PatchbayMark() {
   );
 }
 
-/**
- * Inline rendering of the approved Patchbay routing mark. Socket rings inherit
- * the surrounding text color; the routed signal keeps the brand lime accent.
- */
+/** Inline rendering of the approved Patchbay routing mark. */
 export function PatchbayIcon({
   className,
   animate = false,

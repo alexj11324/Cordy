@@ -1,72 +1,9 @@
-const HANDOFF_VALUE_PATTERN = /^[A-Za-z0-9._~-]{43,128}$/;
-const DESKTOP_CODE_PATTERN = /^pbd_[A-Za-z0-9_-]{43,252}$/;
-const DESKTOP_CALLBACK_PROTOCOL_PATTERN =
-  /^(?:patchbay|patchbay-canary(?:-[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?)?)$/;
-
-export type DesktopHandoffBinding = {
-  codeChallenge: string;
-  state: string;
-  query: string;
-};
-
-export function readDesktopHandoffBinding(
-  searchParams: URLSearchParams,
-): DesktopHandoffBinding | null {
-  if (searchParams.get("platform") !== "desktop") return null;
-  if (searchParams.has("app_origin")) return null;
-  const codeChallenge = searchParams.get("code_challenge") ?? "";
-  const state = searchParams.get("state") ?? "";
-  if (
-    !HANDOFF_VALUE_PATTERN.test(codeChallenge) ||
-    !HANDOFF_VALUE_PATTERN.test(state)
-  ) {
-    return null;
-  }
-  const query = new URLSearchParams({
-    platform: "desktop",
-    code_challenge: codeChallenge,
-    state,
-  }).toString();
-  return { codeChallenge, state, query };
-}
-
-export function isDesktopHandoffInput(
-  value: unknown,
-): value is { code_challenge: string; state: string } {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const input = value as Record<string, unknown>;
-  return (
-    typeof input.code_challenge === "string" &&
-    typeof input.state === "string" &&
-    HANDOFF_VALUE_PATTERN.test(input.code_challenge) &&
-    HANDOFF_VALUE_PATTERN.test(input.state)
-  );
-}
-
-export function buildDesktopCallbackUrl(
-  code: string,
-  state: string,
-  callbackProtocol: string,
-): string {
-  if (
-    !DESKTOP_CODE_PATTERN.test(code) ||
-    !HANDOFF_VALUE_PATTERN.test(state) ||
-    !isDesktopCallbackProtocol(callbackProtocol)
-  ) {
-    throw new Error("invalid desktop callback");
-  }
-  const url = new URL(`${callbackProtocol}://auth/callback`);
-  url.searchParams.set("code", code);
-  url.searchParams.set("state", state);
-  return url.href;
-}
-
-export function isDesktopCallbackProtocol(value: unknown): value is string {
-  return (
-    typeof value === "string" && DESKTOP_CALLBACK_PROTOCOL_PATTERN.test(value)
-  );
-}
-
-export function isDesktopCode(value: unknown): value is string {
-  return typeof value === "string" && DESKTOP_CODE_PATTERN.test(value);
-}
+const VALUE = /^[A-Za-z0-9._~-]{43,128}$/;
+const CODE = /^pbd_[A-Za-z0-9_-]{43}$/;
+const PROTOCOL = /^(?:patchbay|patchbay-canary(?:-[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?)?)$/;
+export type DesktopBinding = { state: string; codeChallenge: string; query: string };
+export function readDesktopHandoffBinding(params: URLSearchParams): DesktopBinding | null { if (params.get("platform") !== "desktop" || params.has("app_origin")) return null; const state = params.get("state") ?? ""; const codeChallenge = params.get("code_challenge") ?? ""; if (!VALUE.test(state) || !VALUE.test(codeChallenge)) return null; return { state, codeChallenge, query: new URLSearchParams({ platform: "desktop", state, code_challenge: codeChallenge }).toString() }; }
+export function isDesktopHandoffInput(value: unknown): value is { state: string; code_challenge: string } { if (!value || typeof value !== "object" || Array.isArray(value)) return false; const input = value as Record<string, unknown>; return typeof input.state === "string" && typeof input.code_challenge === "string" && VALUE.test(input.state) && VALUE.test(input.code_challenge); }
+export function buildDesktopCallbackUrl(code: string, state: string, protocol: string): string { if (!isDesktopCode(code) || !VALUE.test(state) || !isDesktopCallbackProtocol(protocol)) throw new Error("invalid desktop callback"); const url = new URL(`${protocol}://auth/callback`); url.searchParams.set("code", code); url.searchParams.set("state", state); return url.href; }
+export const isDesktopCode = (value: unknown): value is string => typeof value === "string" && CODE.test(value);
+export const isDesktopCallbackProtocol = (value: unknown): value is string => typeof value === "string" && PROTOCOL.test(value);

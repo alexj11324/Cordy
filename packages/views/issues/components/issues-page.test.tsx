@@ -88,7 +88,9 @@ const mockListIssueTableGroups = vi.hoisted(() =>
           actor:
             group.executor_type && group.executor_id
               ? { type: group.executor_type, id: group.executor_id }
-              : null,
+              : group.owner_type && group.owner_id
+                ? { type: group.owner_type, id: group.owner_id }
+                : null,
         },
         count: group.total,
       })),
@@ -117,7 +119,7 @@ const mockListIssueTableRows = vi.hoisted(() =>
         next_cursor: null,
       };
     }
-    // Board / list surfaces page by CATEGORY since PB-6243. This fixture
+    // Board / list surfaces page by CATEGORY since MUL-6243. This fixture
     // holds only built-in statuses, where a key IS its own category.
     const status = request.group_key?.replace(/^status(_category)?:/, "");
     const response = await mockListIssues({
@@ -520,6 +522,12 @@ vi.mock("react-virtuoso", () => ({
 // ---------------------------------------------------------------------------
 
 const issueDefaults = {
+  owner_type: null,
+  owner_id: null,
+  executor_type: null,
+  executor_id: null,
+  reviewer_type: null,
+  reviewer_id: null,
   parent_issue_id: null,
   project_id: null,
   position: 0,
@@ -539,11 +547,8 @@ const mockIssues: Issue[] = [
     description: "Add JWT authentication",
     status: "todo",
     priority: "high",
-    owner_type: "member", owner_id: "user-1",
-    executor_type: null,
-    executor_id: null,
-    reviewer_type: null,
-    reviewer_id: null,
+    owner_type: "member",
+    owner_id: "user-1",
     creator_type: "member",
     creator_id: "user-1",
     start_date: null,
@@ -561,12 +566,8 @@ const mockIssues: Issue[] = [
     description: null,
     status: "in_progress",
     priority: "medium",
-    owner_type: null,
-    owner_id: null,
     executor_type: "agent",
     executor_id: "agent-1",
-    reviewer_type: null,
-    reviewer_id: null,
     creator_type: "member",
     creator_id: "user-1",
     start_date: null,
@@ -607,12 +608,8 @@ const mockIssues: Issue[] = [
     description: null,
     status: "todo",
     priority: "medium",
-    owner_type: null,
-    owner_id: null,
     executor_type: "team",
     executor_id: "team-1",
-    reviewer_type: null,
-    reviewer_id: null,
     creator_type: "member",
     creator_id: "user-1",
     start_date: null,
@@ -623,16 +620,20 @@ const mockIssues: Issue[] = [
 ];
 
 function mockExecutorGroups(issues: Issue[]) {
-  const groups = new Map<string, { executor_type: Issue["executor_type"]; executor_id: string | null; issues: Issue[] }>();
+  const groups = new Map<string, {
+    executor_type: Issue["executor_type"];
+    executor_id: string | null;
+    issues: Issue[];
+  }>();
   for (const issue of issues) {
+    const type = issue.executor_type;
+    const idValue = issue.executor_id;
     const id =
-      issue.executor_type && issue.executor_id
-        ? `executor:${issue.executor_type}:${issue.executor_id}`
-        : "executor:unassigned";
+      type && idValue ? `executor:${type}:${idValue}` : "executor:unassigned";
     if (!groups.has(id)) {
       groups.set(id, {
-        executor_type: issue.executor_type,
-        executor_id: issue.executor_id,
+        executor_type: type,
+        executor_id: idValue,
         issues: [],
       });
     }
@@ -731,7 +732,7 @@ describe("IssuesPage (shared)", () => {
 
     renderWithQuery(<IssuesPage />);
 
-    await screen.findByText("Implement auth");
+    await screen.findByText("Design landing page");
     expect(screen.getByText("Design landing page")).toBeInTheDocument();
     expect(screen.getByText("Write tests")).toBeInTheDocument();
   });
@@ -757,11 +758,9 @@ describe("IssuesPage (shared)", () => {
 
     renderWithQuery(<IssuesPage />);
 
-    // Human members are owners, not executor lanes. The executor grouping
-    // therefore contains only runnable agents/teams plus the unassigned lane.
-    expect(screen.queryByText("Test User")).not.toBeInTheDocument();
-    expect(await screen.findByText("Agent One")).toBeInTheDocument();
-    expect((await screen.findAllByText("Team One")).length).toBeGreaterThanOrEqual(1);
+    await screen.findAllByText("Agent One");
+    expect(screen.getAllByText("Agent One").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Team One").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("No executor")).toBeInTheDocument();
   });
 
@@ -771,7 +770,7 @@ describe("IssuesPage (shared)", () => {
 
     renderWithQuery(<IssuesPage />);
 
-    await screen.findByText("Implement auth");
+    await screen.findByText("Design landing page");
     expect(mockListIssueTableGroups).toHaveBeenCalledWith(
       expect.objectContaining({
         group: { kind: "executor" },
@@ -820,21 +819,19 @@ describe("IssuesPage (shared)", () => {
     expect(screen.getByText("Agents")).toBeInTheDocument();
   });
 
-  // The Members/Agents tabs filter server-side via executor_types (the same
-  // param the grouped endpoint takes), so the mock mirrors the server's
-  // WHERE clause instead of a client-side post-filter.
-  function mockListIssuesHonoringExecutorTypes() {
+  // Members are selected by ownership while Agents are selected by executor
+  // routing, so the mock mirrors the server's role-specific WHERE clauses.
+  function mockListIssuesHonoringRoleTypes() {
     mockListIssues.mockImplementation((params: any) => {
-      const matches = mockIssues.filter(
-        (i) =>
+      const matches = mockIssues.filter((i) => {
+        return (
           i.status === params?.status &&
-          (!params?.executor_types ||
-            (i.executor_type !== null &&
-              params.executor_types.includes(i.executor_type))) &&
           (!params?.owner_types ||
-            (i.owner_type !== null &&
-              params.owner_types.includes(i.owner_type))),
-      );
+            (i.owner_type !== null && params.owner_types.includes(i.owner_type))) &&
+          (!params?.executor_types ||
+            (i.executor_type !== null && params.executor_types.includes(i.executor_type)))
+        );
+      });
       return Promise.resolve({ issues: matches, total: matches.length });
     });
   }
@@ -842,7 +839,7 @@ describe("IssuesPage (shared)", () => {
   it("agents scope includes team-assigned issues", async () => {
     mockScope = "agents";
     mockViewState.viewMode = "list";
-    mockListIssuesHonoringExecutorTypes();
+    mockListIssuesHonoringRoleTypes();
     renderWithQuery(<IssuesPage />);
 
     // Team task and agent task should be visible
@@ -858,7 +855,7 @@ describe("IssuesPage (shared)", () => {
   it("members scope excludes team-assigned issues", async () => {
     mockScope = "members";
     mockViewState.viewMode = "list";
-    mockListIssuesHonoringExecutorTypes();
+    mockListIssuesHonoringRoleTypes();
     renderWithQuery(<IssuesPage />);
 
     await screen.findByText("Implement auth");

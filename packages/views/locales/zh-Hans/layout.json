@@ -2,18 +2,18 @@
   "nav": {
     "inbox": "收件箱",
     "chat": "聊天",
-    "channels": "频道",
     "my_issues": "我的任务",
     "issues": "任务",
-    "task_graph": "任务图",
+    "task_graph": "依赖图",
     "projects": "项目",
+    "work_products": "工作成果",
     "automations": "自动化",
     "agents": "智能体",
     "teams": "团队",
+    "channels": "频道",
     "usage": "统计",
-    "runtimes": "设备",
+    "runtimes": "运行时",
     "skills": "Skills",
-    "integrations": "集成",
     "settings": "设置"
   },
   "tab": {
@@ -25,7 +25,7 @@
     "team": "团队",
     "skill": "Skill",
     "machine": "机器",
-    "runtime": "设备",
+    "runtime": "运行时",
     "attachment": "附件",
     "create_agent": "创建智能体",
     "unknown": "未知页面"

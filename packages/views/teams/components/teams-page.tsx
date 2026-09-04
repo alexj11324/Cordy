@@ -11,6 +11,7 @@ import {
   MoreHorizontal,
   Plus,
   Trash2,
+  Users,
   X,
 } from "lucide-react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
@@ -80,7 +81,6 @@ import {
   TooltipTrigger,
 } from "@patchbay/ui/components/ui/tooltip";
 import { ActorAvatar as ActorAvatarBase } from "@patchbay/ui/components/common/actor-avatar";
-import { PeopleGroupIcon } from "@patchbay/ui/components/common/people-group-icon";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { FILTER_ITEM_CLASS, HoverCheck } from "../../common/hover-check";
 import { useIntentNavigate, useRowLink } from "../../navigation";
@@ -89,7 +89,7 @@ import {
   CollectionPageHeaderAction,
   CollectionPageState,
 } from "../../layout/collection-page";
-import { useT } from "../../i18n";
+import { useLocale, useT } from "../../i18n";
 import { PAGE_TOOLBAR } from "../../layout/page-header";
 
 // Column template — the simplest member of the ListGrid family (teams are
@@ -100,8 +100,8 @@ import { PAGE_TOOLBAR } from "../../layout/page-header";
 // / created are @2xl. The kebab track collapses when the viewer can't manage
 // any team (workspace admin only).
 const GRID_COLS =
-  "grid-cols-[0.75rem_minmax(120px,1fr)_var(--teamc-leader)_var(--teamc-kebab)_0.75rem] " +
-  "@2xl:grid-cols-[0.75rem_minmax(200px,1fr)_var(--teamc-leader)_var(--teamc-members)_var(--teamc-creator)_var(--teamc-created)_var(--teamc-kebab)_0.75rem]";
+  "grid-cols-[0.75rem_minmax(120px,1fr)_var(--sqc-leader)_var(--sqc-kebab)_0.75rem] " +
+  "@2xl:grid-cols-[0.75rem_minmax(200px,1fr)_var(--sqc-leader)_var(--sqc-members)_var(--sqc-creator)_var(--sqc-created)_var(--sqc-kebab)_0.75rem]";
 
 const LEADER_WIDTH = 160;
 const COLUMN_WIDTHS: Record<TeamColumnKey, number> = {
@@ -129,12 +129,12 @@ function columnTrackVars(
     ) +
     (showActions ? 28 : 0);
   return {
-    "--teamc-leader": `${LEADER_WIDTH}px`,
-    "--teamc-members": width("members"),
-    "--teamc-creator": width("creator"),
-    "--teamc-created": width("created"),
-    "--teamc-kebab": showActions ? "1.75rem" : "0px",
-    "--teamc-minw": `${minWidth}px`,
+    "--sqc-leader": `${LEADER_WIDTH}px`,
+    "--sqc-members": width("members"),
+    "--sqc-creator": width("creator"),
+    "--sqc-created": width("created"),
+    "--sqc-kebab": showActions ? "1.75rem" : "0px",
+    "--sqc-minw": `${minWidth}px`,
   } as React.CSSProperties;
 }
 
@@ -772,6 +772,7 @@ function TeamListToolbar({
 
 export function TeamsPage() {
   const { t } = useT("teams");
+  const locale = useLocale();
   const workspace = useCurrentWorkspace();
   const wsId = workspace?.id ?? "";
   const p = useWorkspacePaths();
@@ -900,7 +901,7 @@ export function TeamsPage() {
 
   // Reserve the row-actions (kebab) track when the current user can manage at
   // least one visible team. Workspace admins manage all teams; a regular
-  // member manages the teams they created (PB-4223).
+  // member manages the teams they created (MUL-4223).
   const canManageAnyRow = useMemo(
     () =>
       isWorkspaceAdmin ||
@@ -911,7 +912,7 @@ export function TeamsPage() {
   return (
     <div className="flex flex-1 min-h-0 flex-col">
       <CollectionPageHeader
-        icon={PeopleGroupIcon}
+        icon={Users}
         title={t(($) => $.page.title)}
         count={teams.length}
         actions={
@@ -927,7 +928,7 @@ export function TeamsPage() {
         <LoadingSkeleton />
       ) : teams.length === 0 ? (
         <CollectionPageState
-          icon={PeopleGroupIcon}
+          icon={Users}
           title={t(($) => $.page.empty_no_teams)}
           actions={
             <Button
@@ -961,7 +962,7 @@ export function TeamsPage() {
           />
           <div className="min-h-0 flex-1 overflow-auto @container">
             <ListGrid
-              className={`${GRID_COLS} @2xl:min-w-[var(--teamc-minw)]`}
+              className={`${GRID_COLS} @2xl:min-w-[var(--sqc-minw)]`}
               style={{
                 ...columnTrackVars(isColVisible, canManageAnyRow),
                 paddingBottom: LIST_GRID_BOTTOM_CLEARANCE,
@@ -1011,7 +1012,7 @@ export function TeamsPage() {
                     )}
                     {isColVisible("created") ? (
                       <ListGridCell className="hidden whitespace-nowrap text-caption tabular-nums text-muted-foreground @2xl:flex">
-                        {new Date(team.created_at).toLocaleDateString()}
+                        {new Date(team.created_at).toLocaleDateString(locale)}
                       </ListGridCell>
                     ) : (
                       <ListGridCell className="hidden px-0 @2xl:flex" />

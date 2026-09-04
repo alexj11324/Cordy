@@ -1,26 +1,23 @@
 /**
  * Mobile InboxDetailLabel — type-aware second-line for inbox rows.
  *
- * Mirrors packages/views/inbox/components/inbox-detail-label.tsx exactly:
- * for each InboxItemType the user sees the same label they would see on
- * web/desktop. This is a Behavioral parity concern — if web shows "Set
- * status to ✓ Done", mobile must show "Set status to ✓ Done" (rendered
- * with mobile primitives, not the literal HTML).
+ * Mirrors the per-type structure of
+ * packages/views/inbox/components/inbox-detail-label.tsx. Role details use
+ * explicit owner/executor wording so an incomplete executor payload cannot
+ * be rendered as a member assignment.
  *
- * Web is i18n-driven (useT). Mobile v1 is English-only; when mobile ships
- * i18n, mirror the namespace structure.
+ * Reviewer assignment/request copy follows the account language. Legacy
+ * non-review inbox labels retain their existing English copy until their own
+ * localization migration.
  */
 import { View } from "react-native";
-import type {
-  InboxItem,
-  InboxItemType,
-  IssuePriority,
-} from "@patchbay/core/types";
-import { formatDateOnly } from "@patchbay/core/issues/date";
+import type { InboxItem, IssuePriority } from "@patchbay/core/types";
 import { Text } from "@/components/ui/text";
 import { StatusIcon } from "@/components/ui/status-icon";
 import { PriorityIcon } from "@/components/ui/priority-icon";
 import { useActorLookup } from "@/data/use-actor-name";
+import { useAuthStore } from "@/data/auth-store";
+import { inboxDetailText } from "@/lib/inbox-detail-text";
 import { useIssueStatuses } from "@/lib/use-issue-statuses";
 import { cn } from "@/lib/utils";
 
@@ -33,38 +30,6 @@ const PRIORITY_LABEL: Record<IssuePriority, string> = {
   none: "No priority",
 };
 
-// Mirrors useTypeLabels in packages/views/inbox/components/inbox-detail-label.tsx
-const TYPE_LABEL: Record<InboxItemType, string> = {
-  issue_assigned: "Assigned",
-  issue_subscribed: "Subscribed",
-  unassigned: "Unassigned",
-  executor_changed: "Reassigned",
-  status_changed: "Status changed",
-  priority_changed: "Priority changed",
-  start_date_changed: "Start date changed",
-  due_date_changed: "Due date changed",
-  new_comment: "New comment",
-  mentioned: "Mentioned",
-  review_requested: "Review requested",
-  task_completed: "Task completed",
-  task_failed: "Task failed",
-  agent_blocked: "Agent blocked",
-  agent_completed: "Agent completed",
-  reaction_added: "Reaction added",
-  quick_create_done: "Quick-create done",
-  quick_create_failed: "Quick-create failed",
-  quick_create_unconfirmed: "Quick-create needs a check",
-};
-
-// due_date is a calendar day — format timezone-safely (no offset day shift).
-function shortDate(dateStr: string): string {
-  return formatDateOnly(dateStr, { month: "short", day: "numeric" }, "en-US");
-}
-
-function singleLine(value: string | null | undefined): string {
-  return (value ?? "").replace(/\s+/g, " ").trim();
-}
-
 export function InboxDetailLabel({
   item,
   className,
@@ -73,8 +38,9 @@ export function InboxDetailLabel({
   className?: string;
 }) {
   const { getName } = useActorLookup();
+  const language = useAuthStore((state) => state.user?.language);
   // `details.to` is a status KEY and may be a custom one, so its name, colour
-  // and glyph all resolve through the workspace catalog. (PB-6243)
+  // and glyph all resolve through the workspace catalog. (MUL-6243)
   const { categoryOf, colorOf, labelOf } = useIssueStatuses();
   const details = item.details ?? {};
 
@@ -110,50 +76,17 @@ export function InboxDetailLabel({
     );
   }
 
-  // Single-string cases.
-  const text = (() => {
-    switch (item.type) {
-      case "issue_assigned":
-      case "executor_changed":
-        if (details.new_executor_id) {
-          const name = getName(
-            (details.new_executor_type ?? "member") as "member" | "agent",
-            details.new_executor_id,
-          );
-          return `Assigned to ${name}`;
-        }
-        return TYPE_LABEL[item.type];
-      case "unassigned":
-        return "Removed executor";
-      case "due_date_changed":
-        return details.to
-          ? `Set due date to ${shortDate(details.to)}`
-          : "Removed due date";
-      case "new_comment":
-        return singleLine(item.body) || TYPE_LABEL[item.type];
-      case "reaction_added":
-        return details.emoji
-          ? `Reacted with ${details.emoji}`
-          : TYPE_LABEL[item.type];
-      case "quick_create_done":
-        return details.identifier
-          ? `Created with agent: ${details.identifier}`
-          : TYPE_LABEL[item.type];
-      case "quick_create_failed": {
-        const detail = singleLine(details.error) || singleLine(item.body);
-        return detail ? `Failed: ${detail}` : TYPE_LABEL[item.type];
+  const text = inboxDetailText(
+    item,
+    (type, id) => {
+      if (type === "member" || type === "agent" || type === "team") {
+        return getName(type, id);
       }
-      // Mirrors packages/views/inbox/components/inbox-detail-label.tsx: the
-      // unconfirmed outcome deliberately drops the "Failed:" prefix, because
-      // the issue may actually have been created.
-      case "quick_create_unconfirmed": {
-        const detail = singleLine(details.error) || singleLine(item.body);
-        return detail || TYPE_LABEL[item.type];
-      }
-      default:
-        return TYPE_LABEL[item.type] ?? item.type;
-    }
-  })();
+      return "Unknown";
+    },
+    language,
+    categoryOf,
+  );
 
   return (
     <Text

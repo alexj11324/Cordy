@@ -21,10 +21,8 @@ export interface IssueSurfaceActivity {
 function isQueuedTaskStatus(status: AgentTask["status"]) {
   return (
     status === "queued" ||
-    status === "deferred" ||
     status === "dispatched" ||
     status === "waiting_local_directory"
-    || status === "waiting_capacity"
   );
 }
 
@@ -67,12 +65,13 @@ export function deriveIssueSurfaceActivity(
       continue;
     }
 
-    const current = activityByIssueId.get(task.issue_id) ?? {
-      isWorking: false,
-      isQueued: false,
-      runningTasks: [],
-      queuedTasks: [],
-    };
+    const current =
+      activityByIssueId.get(task.issue_id) ?? {
+        isWorking: false,
+        isQueued: false,
+        runningTasks: [],
+        queuedTasks: [],
+      };
 
     if (task.status === "running") {
       current.runningTasks.push(task);

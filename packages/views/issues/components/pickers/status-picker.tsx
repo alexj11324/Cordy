@@ -55,7 +55,7 @@ export function StatusPicker({
    * Archived statuses are excluded: archiving retires a status from future
    * assignment while leaving the issues already on it untouched. Falls back to
    * the 7 built-ins until the catalog lands, so a cold render offers exactly
-   * what it always did instead of an empty popover. (PB-6243)
+   * what it always did instead of an empty popover. (MUL-6243)
    */
   const allOptions = useStatusOptions(wsId);
 

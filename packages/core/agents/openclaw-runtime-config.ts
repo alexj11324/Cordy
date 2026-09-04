@@ -2,7 +2,7 @@
 //
 // Stored under `agent.runtime_config` as freeform JSONB; only meaningful for
 // agents whose runtime provider is openclaw. The daemon decodes the same
-// schema in `server-rs/crates/patchbay-daemon/src/execenv/openclaw.rs` — keep both
+// schema in `server/internal/daemon/openclaw_runtime_config.go` — keep both
 // sides in lockstep when changing field names.
 
 export type OpenclawRoutingMode = "local" | "gateway";
@@ -22,7 +22,7 @@ export interface OpenclawRuntimeConfig {
 // Sentinel the API substitutes for a non-empty `gateway.token` on every read.
 // When the form re-submits the same sentinel, the backend's matching
 // preserve hook restores the persisted token instead of overwriting it.
-// Mirrors the gateway-token mask used by the Rust agent handler.
+// Mirrors `runtimeConfigGatewayTokenMask` in server/internal/handler/agent.go.
 export const OPENCLAW_GATEWAY_TOKEN_MASK = "***";
 
 // Parse an arbitrary runtime_config payload into the typed schema. Unknown

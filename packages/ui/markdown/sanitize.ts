@@ -11,7 +11,7 @@ import { defaultSchema, type Options } from 'rehype-sanitize'
  * for `==highlight==` and the chat fork did not. A security-relevant allow-list
  * maintained in two places means any future XSS fix has to land twice, and
  * missing one is a hole. Adding a surface means importing this, never copying
- * it (PB-4922).
+ * it (MUL-4922).
  *
  * The two gates below must agree on what a valid inline image is:
  * `protocols.src` + `attributes.img` (sanitize) and `markdownUrlTransform`

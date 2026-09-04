@@ -12,7 +12,7 @@ import {
 import { parseIssueWindowPath } from "../../../shared/issue-window";
 
 /**
- * Answer the `patchbay:navigate` event inside a dedicated issue window (PB-5208).
+ * Answer the `patchbay:navigate` event inside a dedicated issue window (MUL-5208).
  *
  * The event is what a link in content (comment, description) fires once it
  * resolves to an in-app destination, including an absolute URL on this
@@ -64,7 +64,7 @@ function useContentLinkHandler(
  * Navigation bridge for a dedicated issue window. Unlike the main Desktop
  * shell, this window owns a tiny MemoryRouter and intentionally accepts only
  * issue-detail routes. Keeping the bridge in the platform layer preserves the
- * PB-4741 boundary around direct router navigation.
+ * MUL-4741 boundary around direct router navigation.
  */
 export function IssueWindowNavigationProvider({
   children,
@@ -105,6 +105,7 @@ export function IssueWindowNavigationProvider({
       back: () => void navigate(-1),
       pathname: location.pathname,
       searchParams: new URLSearchParams(location.search),
+      hash: location.hash,
       openInNewTab: (path, title) => {
         void window.desktopAPI.openIssueWindow({
           path,
@@ -114,7 +115,13 @@ export function IssueWindowNavigationProvider({
       getShareableUrl: (path) =>
         runtimeConfig.ok ? `${runtimeConfig.config.appUrl}${path}` : path,
     };
-  }, [location.pathname, location.search, navigate, runtimeConfig]);
+  }, [
+    location.pathname,
+    location.search,
+    location.hash,
+    navigate,
+    runtimeConfig,
+  ]);
 
   return <NavigationProvider value={adapter}>{children}</NavigationProvider>;
 }

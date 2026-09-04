@@ -53,7 +53,7 @@ together and what must be delivered when you redistribute.
         `apps/web/`, `apps/desktop/`, `apps/mobile/`, `packages/views/`,
         and `packages/ui/` directories when running Patchbay from the raw
         source code, the frontend container image (published as
-        `ghcr.io/alexj11324/patchbay-web`) when running Patchbay with
+        `ghcr.io/patchbay-ai/patchbay-web`) when running Patchbay with
         Docker, and any compiled desktop or mobile application built from
         that code. That enumeration is illustrative rather than
         exhaustive: user interface code remains covered when it is
@@ -61,7 +61,7 @@ together and what must be delivered when you redistribute.
         repository.
       - This restriction is inapplicable to uses of Patchbay that do not
         involve a Patchbay user interface, such as running only the
-        `server-rs/` backend, the daemon, or the CLI without redistributing
+        `server/` backend, the daemon, or the CLI without redistributing
         or operating any Patchbay user interface. Such uses remain subject
         to condition (c) below.
 
@@ -71,7 +71,7 @@ together and what must be delivered when you redistribute.
       patent, trademark, and attribution notices present in the source
       code and in the NOTICE file, and state in your user-facing
       documentation that the product is built on Patchbay, including a link
-      to https://github.com/alexj11324/Cordy.
+      to https://github.com/patchbay-ai/patchbay.
 
    d. Relationship between grants: A branding waiver is not a commercial
       license and does not permit any use restricted by condition (a). A

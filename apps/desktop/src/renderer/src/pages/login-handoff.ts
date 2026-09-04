@@ -1,4 +1,3 @@
-import { buildDesktopGoogleLoginUrl } from "./login-url";
 import { ApiError } from "@patchbay/core/api";
 
 const PENDING_HANDOFF_KEY = "patchbay_desktop_login_handoff";
@@ -11,16 +10,12 @@ type PendingHandoff = {
 };
 
 export type DesktopHandoffCompletion = {
-  /** The callback is terminal and must not be offered to the renderer again. */
   acknowledged: boolean;
   authenticated: boolean;
 };
 
 function isTerminalRedeemFailure(error: unknown): boolean {
   if (!(error instanceof ApiError)) return false;
-  // The server uses 4xx responses for an invalid, expired, or already-used
-  // one-time code. Timeouts and rate limits can still recover, while 5xx and
-  // transport failures must retain the verifier for a later retry.
   return (
     error.status >= 400 &&
     error.status < 500 &&
@@ -44,8 +39,6 @@ function readPendingHandoffs(): PendingHandoff[] {
   if (!raw) return [];
   try {
     const parsed: unknown = JSON.parse(raw);
-    // Accept the previous single-entry shape so an in-flight update does not
-    // strand a verifier when the app is upgraded between login attempts.
     const entries = Array.isArray(parsed)
       ? parsed
       : isPendingHandoff(parsed)
@@ -55,9 +48,7 @@ function readPendingHandoffs(): PendingHandoff[] {
       (entry): entry is PendingHandoff =>
         isPendingHandoff(entry) && entry.expiresAt > Date.now(),
     );
-    if (active.length !== entries.length) {
-      writePendingHandoffs(active);
-    }
+    if (active.length !== entries.length) writePendingHandoffs(active);
     return active;
   } catch {
     return [];
@@ -88,20 +79,12 @@ function randomBase64Url(byteLength: number): string {
   return encodeBase64Url(bytes.buffer);
 }
 
-/**
- * Start a browser-based desktop login without putting a bearer in the custom
- * protocol URL. The verifier remains in app-local storage so a recreated
- * BrowserWindow can redeem the one-time code returned by the web login. The
- * selected callback protocol identifies the exact packaged or Canary app that
- * owns that verifier.
- */
-export async function createDesktopGoogleLoginUrl(
+/** Register a PKCE binding, then build the browser login URL. */
+export async function createDesktopLoginUrl(
   accountsUrl: string,
-  callbackProtocol: string,
   initiate: (
     state: string,
     codeChallenge: string,
-    callbackProtocol: string,
   ) => Promise<{ registered: boolean }>,
 ): Promise<string> {
   const verifier = randomBase64Url(32);
@@ -111,29 +94,26 @@ export async function createDesktopGoogleLoginUrl(
   );
   const state = randomBase64Url(32);
   const codeChallenge = encodeBase64Url(digest);
-  const pending: PendingHandoff = {
-    state,
-    verifier,
-    expiresAt: Date.now() + PENDING_HANDOFF_TTL_MS,
-  };
 
-  const { registered } = await initiate(state, codeChallenge, callbackProtocol);
-  if (!registered) {
-    throw new Error("Desktop Google OAuth initiation was rejected");
-  }
+  const { registered } = await initiate(state, codeChallenge);
+  if (!registered) throw new Error("Desktop login handoff was rejected");
 
   const pendingHandoffs = readPendingHandoffs().filter(
     (entry) => entry.state !== state,
   );
-  writePendingHandoffs([...pendingHandoffs, pending]);
-  const url = new URL(buildDesktopGoogleLoginUrl(accountsUrl));
-  url.searchParams.set("code_challenge", codeChallenge);
+  writePendingHandoffs([
+    ...pendingHandoffs,
+    { state, verifier, expiresAt: Date.now() + PENDING_HANDOFF_TTL_MS },
+  ]);
+
+  const url = new URL(`${accountsUrl.replace(/\/+$/, "")}/login`);
+  url.searchParams.set("platform", "desktop");
   url.searchParams.set("state", state);
+  url.searchParams.set("code_challenge", codeChallenge);
   return url.href;
 }
 
-/** Read the verifier only when the deep-link state matches this renderer. */
-export function readDesktopHandoffVerifier(state: string): string | null {
+function readDesktopHandoffVerifier(state: string): string | null {
   if (!state) return null;
   return (
     readPendingHandoffs().find((entry) => entry.state === state)?.verifier ??
@@ -141,20 +121,14 @@ export function readDesktopHandoffVerifier(state: string): string | null {
   );
 }
 
-/** Clear a completed handoff without discarding a verifier after a retryable failure. */
-export function clearDesktopHandoffVerifier(state: string): void {
+function clearDesktopHandoffVerifier(state: string): void {
   const pending = readPendingHandoffs();
   if (pending.some((entry) => entry.state === state)) {
     writePendingHandoffs(pending.filter((entry) => entry.state !== state));
   }
 }
 
-/**
- * Redeem a one-time code, then publish the resulting session. Once redeem
- * succeeds the code can never be used again, so clear its verifier immediately.
- * If user hydration fails after the token was persisted, restart the normal
- * auth initializer instead of attempting to redeem the consumed code again.
- */
+/** Redeem the one-time code and establish the native bearer session. */
 export async function completeDesktopHandoff(
   code: string,
   state: string,
@@ -177,6 +151,7 @@ export async function completeDesktopHandoff(
     }
     throw error;
   }
+
   clearDesktopHandoffVerifier(state);
   try {
     await dependencies.login(token);

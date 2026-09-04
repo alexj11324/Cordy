@@ -45,7 +45,7 @@ import type {
 
 // Mirrors `DailyCostStackData` in the runtimes utils, including its cache-read
 // segment — the dashboard feeds the very same DailyCostChart, so a category
-// missing here is a category missing from the chart's total (PB-6334).
+// missing here is a category missing from the chart's total (MUL-6334).
 export interface DailyCostStack {
   date: string;
   label: string;
@@ -259,10 +259,10 @@ export function mergeAgentDashboardRows(
 export const DELETED_AGENTS_ROW_ID = "__deleted_agents__";
 
 // Synthetic agentId the SERVER sends for the bucket aggregating every agent it
-// refuses to name (PB-5409): agents the viewer may not see, plus the hidden
+// refuses to name (MUL-5409): agents the viewer may not see, plus the hidden
 // system carriers behind agent-builder sessions, which no client can resolve to
 // a name for anyone. Mirrors `restrictedAgentsRowID` in
-// the Rust dashboard handler — the two strings must stay in sync.
+// server/internal/handler/dashboard.go — the two strings must stay in sync.
 //
 // Distinct from DELETED_AGENTS_ROW_ID on purpose: those agents are gone, these
 // are alive and still running. Labelling them "Deleted agents" told the user
@@ -275,10 +275,10 @@ export const RESTRICTED_AGENTS_ROW_ID = "__restricted_agents__";
 // and stay on the leaderboard as themselves; only hard-deleted agents fall out
 // of `knownAgentIds` and collapse into the bucket.
 //
-// PB-3771 (PR #4637) originally *dropped* these rows so they'd stop rendering
+// MUL-3771 (PR #4637) originally *dropped* these rows so they'd stop rendering
 // as a bare UUID — but the top-line Cost/Tokens KPIs still count their spend
 // (those totals aggregate `task_usage_hourly` without joining `agent`), so the
-// per-agent breakdown no longer reconciled with the totals (PB-3776, #4640).
+// per-agent breakdown no longer reconciled with the totals (MUL-3776, #4640).
 // Aggregating instead of dropping keeps `sum(visible rows) == KPI total` while
 // still never exposing a UUID. The bucket carries tokens + cost only; seconds
 // and taskCount stay 0 because the run-time rollups inner-join `agent`, so
@@ -755,7 +755,7 @@ export function sortAgentFailures(
 //
 // The privacy boundary itself now lives on the server: GetDashboardFailuresByAgent
 // folds agents the caller may not view onto RESTRICTED_AGENTS_ROW_ID before
-// serializing (PB-5409), because client-side filtering is decoration — one
+// serializing (MUL-5409), because client-side filtering is decoration — one
 // curl bypasses it. This function stays as the display-side backstop: it still
 // owns hard-deleted agents, whose ids the server has no reason to hide but
 // which resolve to no name, and it re-anonymizes the server's bucket into the

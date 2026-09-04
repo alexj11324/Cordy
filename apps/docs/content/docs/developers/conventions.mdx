@@ -47,7 +47,7 @@ If logic appears in both apps, it MUST be extracted to a shared package. There a
 - Tests: colocated as `<file>.test.ts(x)`
 - Stores (Zustand): `<feature>-store.ts`, exported as `use<Feature>Store`
 
-### Database (Rust + SQLx)
+### Database (Go + sqlc)
 
 - Tables: `snake_case` singular (`user`, `workspace`, `agent_runtime`)
 - Columns: `snake_case` (`workspace_id`, `created_at`, `last_seen_at`)
@@ -57,12 +57,12 @@ If logic appears in both apps, it MUST be extracted to a shared package. There a
 - Do not create database foreign keys or use cascade deletes or updates; enforce relationships and cleanup in the application layer.
 - Every index must use `CREATE INDEX CONCURRENTLY` or `CREATE UNIQUE INDEX CONCURRENTLY`, with each concurrent index in its own single-statement migration file.
 
-### Rust
+### Go
 
-- Standard `rustfmt` + `clippy`. No exceptions.
-- Handler files mirror domains: `agent.rs`, `auth.rs`, `runtime.rs`.
-- Tests live in colocated `#[cfg(test)]` modules or the crate's `tests/` directory.
-- Parse and validate boundary input explicitly; never panic on untrusted UUIDs or other request fields.
+- Standard `gofmt` + `go vet`. No exceptions.
+- Handler files mirror domain: `agent.go`, `auth.go`, `runtime.go`
+- Tests: `<file>_test.go` colocated
+- For UUID parsing in handlers, follow the rule in the root `CLAUDE.md` — `parseUUIDOrBadRequest` for boundary input, `parseUUID` (panicking) for trusted round-trips, never `util.ParseUUID` directly without checking the error.
 
 ### TypeScript
 
@@ -80,7 +80,7 @@ If logic appears in both apps, it MUST be extracted to a shared package. There a
 
 ### Runtime display names
 
-`AgentRuntime.name` is the daemon's raw technical name (e.g. `Codex (host)`); the user's alias lives in `custom_name`. User-visible copy must never render `runtime.name` directly — use the shared helpers so aliases and provider stay consistent (PB-5248, #5260):
+`AgentRuntime.name` is the daemon's raw technical name (e.g. `Codex (host)`); the user's alias lives in `custom_name`. User-visible copy must never render `runtime.name` directly — use the shared helpers so aliases and provider stay consistent (MUL-5248, #5260):
 
 - Standalone runtime label (lists, chips, confirm dialogs, document titles): `runtimeDisplayLabel(runtime)` → alias + provider, falling back to the daemon name.
 - When a provider icon/text already sits beside it: `runtimeDisplayName(runtime)` → alias only, no duplicated provider.
@@ -91,11 +91,11 @@ Raw `runtime.name` is allowed only for internal identity — hostname parsing, g
 
 ### Issue keys
 
-Every issue has a human-readable key like `PB-123`: workspace `issue_prefix` (uppercase letters and digits, typically 3 chars, max 10) + sequence number. Workspace admins can change the prefix in Settings → General; changing it renumbers every existing issue. Keys in PR titles, branch names, docs, and chat are human-readable/search context only; they never establish a Work Product relation. Use the current key for human references and explicitly Attach the Work Product when a relation is intended.
+Every issue has a human-readable key like `MUL-123`: workspace `issue_prefix` (uppercase letters and digits, typically 3 chars, max 10) + sequence number. Workspace admins can change the prefix in Settings → General; changing it renumbers every existing issue, so external references that embed the old prefix (PR titles, branch names, links in docs and chat) stop resolving.
 
 ### Comments in code
 
-English only. The repo enforces this for both Rust and TypeScript. If you find a Chinese comment in code, it's a bug — replace it.
+English only. The repo enforces this for both Go and TypeScript. If you find a Chinese comment in code, it's a bug — replace it.
 
 ### Commit messages
 
@@ -114,7 +114,7 @@ Patchbay's product nouns split into two categories:
 - **Everyday noun** — the word a user would say out loud for it. **Translate fully**, whether or not it is a database entity: `issue` → 任务, `workspace` → 工作区, `project` → 项目.
 - **Patchbay-specific term** — a concept no local word carries (`skill`), or a schema-level identifier a user may have to type or match (`todo`, `in_progress`, `task_id`). Render as **lowercase English** so it reads like a type name.
 
-The Chinese pages under `apps/docs/content/docs/*.zh.mdx` are the de facto voice standard for everything else on this page. They still carry the old English `issue` in prose and are being swept separately — follow the table below, not those pages, for this term.
+The Chinese pages under `apps/docs/content/docs/*.zh.mdx` are the de facto voice standard for everything else on this page. The `*.zh.mdx`, `*.ja.mdx`, and `*.ko.mdx` prose now follows the table below as well.
 
 ### `issue` is the product's task — translate it
 
@@ -132,14 +132,14 @@ What does not move:
 - **API / DB fields** stay `issue` / `task` / `skill` everywhere: `issue_status`, `task_id`, `skill_uuid`.
 - **Code references and literal commands** stay English: `patchbay issue ...`, the `/issue` Slack and Lark slash command.
 - **`skill`** keeps lowercase English in Chinese text — a Patchbay-specific concept with no established Chinese term; titles may capitalize as `Skills`.
-- **`issue` in the "problem" sense** (runtime health) is a plain noun, not the entity: `{{count}} issues` on a machine card is `{{count}} 个异常`, not `任务`.
+- **`issue` in the "problem" sense** (runtime health) is a plain noun, not the entity: `{{count}} issues` on a machine card is `{{count}} 个异常` / `問題 {{count}} 件` / `문제 {{count}}개`, never the entity word.
 
 **Why `issue` is translated while `skill` is not**: users file and read issues all day, and "issue" has no meaning in Chinese, Japanese, or Korean outside of dev jargon. The everyday task word is what people already say for this. `skill` is a Patchbay-specific concept where no local word carries the meaning.
 
 Other product nouns follow the same "translate what has a settled local word" test:
 
 - **`project` → "项目"**: settled mainstream Chinese word. Feishu / Tower / Teambition / PingCode / GitHub Projects — every Chinese product translates it. No product keeps `project` in Chinese context.
-- **`automation` → "自动化"**: use the established functional term for scheduled task execution. Notion and Feishu both use "自动化"; this keeps the product concept precise.
+- **`automation` → "自动化"**: in Chinese, "automation" associates with Tesla's "自动驾驶" and doesn't match what the feature does (run tasks on a schedule). Notion and Feishu both use "自动化"; that's the industry consensus.
 
 ### Don't translate — brands and acronyms
 
@@ -189,7 +189,7 @@ Other product nouns follow the same "translate what has a settled local word" te
 | Light / Dark / System | 浅色 / 深色 / 跟随系统 |
 | Active / Archived | 活跃 (or 启用) / 已归档 |
 | Status / Priority | 状态 / 优先级 |
-| Assignee / Reporter | 负责人 / 报告人 |
+| Owner / Executor / Reviewer / Reporter | Owner / Executor / Reviewer / Reporter |
 | Description / Title | 描述 / 标题 |
 | Date / Time | 日期 / 时间 |
 | Today / Yesterday / Tomorrow | 今天 / 昨天 / 明天 |
@@ -213,7 +213,7 @@ In UI, surface them in English (optionally `code-style` wrapped):
 Always put **a single space** between an English word (entity / brand / acronym) and surrounding Chinese:
 
 - "Create new issue" → "新建任务"（`任务` is Chinese, so no space)
-- "Assign to agent" → "分配给智能体"
+- "Set the executor" → "设置任务 executor"
 - "Configure runtime" → "配置运行时"
 - "Stop daemon" → "停止守护进程"
 
@@ -318,7 +318,7 @@ When the glossary doesn't cover a term, look at:
 
 If you change a rule here, also:
 
-1. Apply it in the relevant locale JSONs / AGENTS.md / docs page
+1. Apply it in the relevant locale JSONs / CLAUDE.md / docs page
 2. Note the change in the PR description so reviewers know to look for downstream sweep
 
 This page is the contract; nothing else overrides it.

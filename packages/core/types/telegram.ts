@@ -1,30 +1,28 @@
-import type {
-  MessagingInstallationRuntime,
-  MessagingInstallationSetup,
-} from "./messaging";
+import type { MessagingInstallationRuntime, MessagingInstallationSetup } from "./messaging";
 
-/** A Telegram bot installation, optionally bound to a Patchbay agent.
+/** A Telegram bot installation bound to a single Patchbay agent.
  *
  * Wire shape mirrors `TelegramInstallationResponse` in
- * the Rust Telegram handler. New fields the backend adds in the
+ * `server/internal/handler/telegram.go`. New fields the backend adds in the
  * future MUST default to optional so older desktop builds keep parsing the
- * response — see AGENTS.md → API Compatibility. */
+ * response — see CLAUDE.md → API Compatibility. */
 export interface TelegramInstallation {
   id: string;
   workspace_id: string;
-  /** Null for a workspace Hub; the channel selects an Agent with /agents. */
-  agent_id: string | null;
+  agent_id: string;
   /** The bot's numeric Telegram id (the token prefix), as a string. */
   bot_id: string;
   /** The bot's Telegram username (without the @). */
   bot_username: string;
   installer_user_id: string;
-  status: "active" | "revoked" | string;
+  status: "installed" | "revoked" | string;
+  /** Canonical lifecycle field added while status remains a legacy wire alias. */
+  installation_status?: "installed" | "revoked" | string;
+  runtime?: MessagingInstallationRuntime;
+  setup?: MessagingInstallationSetup;
   installed_at: string;
   created_at: string;
   updated_at: string;
-  runtime?: MessagingInstallationRuntime;
-  setup?: MessagingInstallationSetup;
 }
 
 export interface ListTelegramInstallationsResponse {

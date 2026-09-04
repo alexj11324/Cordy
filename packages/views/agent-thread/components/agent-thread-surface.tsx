@@ -29,13 +29,10 @@ export interface AgentThreadSurfaceProps {
   onOpenChange: (open: boolean) => void;
   agentId: string;
   agentName: string;
-  userId?: string;
-  userName?: string;
   title: ReactNode;
   description?: ReactNode;
   descriptionHint?: ReactNode;
   messages: ChatMessage[];
-  messageActors?: ComponentProps<typeof ChatMessageList>["messageActors"];
   pendingTask: ChatPendingTask | null | undefined;
   availability: AgentAvailability | undefined;
   isLoading?: boolean;
@@ -47,11 +44,10 @@ export interface AgentThreadSurfaceProps {
   unavailableReason?: ReactNode;
   quickActionsDisabled?: boolean;
   allowSubmitWhileRunning?: boolean;
-  chooseFollowUp?: boolean;
   onSend?: AgentThreadSubmit;
-  onSteer?: AgentThreadSubmit;
   onStop?: () => void;
   queueTasks?: ChatQueuedTask[];
+  onSendQueuedTaskNow?: (taskId: string) => Promise<void> | void;
   onEditQueuedTask?: (taskId: string) => Promise<void> | void;
   onRemoveQueuedTask?: (taskId: string) => Promise<void> | void;
   onClearQueuedTasks?: () => Promise<void> | void;
@@ -71,24 +67,20 @@ export function AgentThreadSurface({
   onOpenChange,
   agentId,
   agentName,
-  userId,
-  userName,
   title,
   description,
   descriptionHint,
   messages,
-  messageActors,
   pendingTask,
   availability,
   isLoading = false,
   unavailableReason,
   quickActionsDisabled = true,
   allowSubmitWhileRunning = false,
-  chooseFollowUp = false,
   onSend,
-  onSteer,
   onStop,
   queueTasks = [],
+  onSendQueuedTaskNow,
   onEditQueuedTask,
   onRemoveQueuedTask,
   onClearQueuedTasks,
@@ -98,7 +90,10 @@ export function AgentThreadSurface({
 }: AgentThreadSurfaceProps) {
   const hasComposer = !unavailableReason && !!onSend;
   const queueHandlersReady =
-    !!onEditQueuedTask && !!onRemoveQueuedTask && !!onClearQueuedTasks;
+    !!onSendQueuedTaskNow &&
+    !!onEditQueuedTask &&
+    !!onRemoveQueuedTask &&
+    !!onClearQueuedTasks;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -131,11 +126,6 @@ export function AgentThreadSurface({
           ) : (
             <ChatMessageList
               messages={messages}
-              messageActors={messageActors}
-              agentId={agentId}
-              agentName={agentName}
-              userId={userId}
-              userName={userName}
               pendingTask={pendingTask}
               availability={availability}
               quickActionsDisabled={quickActionsDisabled || !hasComposer}
@@ -150,44 +140,43 @@ export function AgentThreadSurface({
               {unavailableReason}
             </div>
           ) : hasComposer ? (
-            <ChatInput
-              onSend={onSend}
-              onSteer={onSteer}
-              onStop={onStop}
-              isRunning={!!pendingTask?.task_id}
-              allowSubmitWhileRunning={allowSubmitWhileRunning}
-              chooseFollowUp={chooseFollowUp}
-              queueSlot={
-                queueTasks.length > 0 ? (
-                  <ChatQueue
-                    tasks={queueTasks}
-                    headStatus={pendingTask?.status}
-                    readOnly={!queueHandlersReady}
-                    onEdit={queueHandlersReady ? onEditQueuedTask : undefined}
-                    onRemove={
-                      queueHandlersReady ? onRemoveQueuedTask : undefined
-                    }
-                    onClear={
-                      queueHandlersReady ? onClearQueuedTasks : undefined
-                    }
-                  />
-                ) : null
-              }
-              agentName={agentName}
-              leftAdornment={
-                leftAdornment ?? (
-                  <ActorAvatar
-                    actorType="agent"
-                    actorId={agentId}
-                    size="lg"
-                    profileLink={false}
-                    enableHoverCard
-                  />
-                )
-              }
-              draftKeyOverride={draftKey}
-              editorKeyOverride={editorKey ?? draftKey}
-            />
+            <>
+              {queueTasks.length > 0 ? (
+                <ChatQueue
+                  tasks={queueTasks}
+                  headStatus={pendingTask?.status}
+                  readOnly={!queueHandlersReady}
+                  onSendNow={onSendQueuedTaskNow}
+                  onEdit={queueHandlersReady ? onEditQueuedTask : undefined}
+                  onRemove={
+                    queueHandlersReady ? onRemoveQueuedTask : undefined
+                  }
+                  onClear={
+                    queueHandlersReady ? onClearQueuedTasks : undefined
+                  }
+                />
+              ) : null}
+              <ChatInput
+                onSend={onSend}
+                onStop={onStop}
+                isRunning={!!pendingTask?.task_id}
+                allowSubmitWhileRunning={allowSubmitWhileRunning}
+                agentName={agentName}
+                leftAdornment={
+                  leftAdornment ?? (
+                    <ActorAvatar
+                      actorType="agent"
+                      actorId={agentId}
+                      size="lg"
+                      profileLink={false}
+                      enableHoverCard
+                    />
+                  )
+                }
+                draftKeyOverride={draftKey}
+                editorKeyOverride={editorKey ?? draftKey}
+              />
+            </>
           ) : null}
         </div>
       </DialogContent>

@@ -1,5 +1,5 @@
 /**
- * Late CDN config must reprocess already-rendered content (PB-4922).
+ * Late CDN config must reprocess already-rendered content (MUL-4922).
  *
  * The CDN domain is fetched asynchronously after auth. File-card detection
  * happens in the markdown preprocess step, which used to read the domain once,

@@ -41,14 +41,14 @@ export const AUTOMATION_SORT_DEFAULT_DIRECTION: Record<
 
 /** Multi-select filter state. Empty array per dimension = inactive. */
 export interface AutomationListFilters {
-  executors: string[];
+  assignees: string[];
   modes: string[];
   triggerKinds: string[];
   creators: string[];
 }
 
 export const EMPTY_AUTOMATION_FILTERS: AutomationListFilters = {
-  executors: [],
+  assignees: [],
   modes: [],
   triggerKinds: [],
   creators: [],
@@ -57,7 +57,7 @@ export const EMPTY_AUTOMATION_FILTERS: AutomationListFilters = {
 // User-hideable columns. Name and the structural columns (checkbox, kebab)
 // are always visible.
 export type AutomationColumnKey =
-  | "executor"
+  | "assignee"
   | "trigger"
   | "lastRun"
   | "nextRun"

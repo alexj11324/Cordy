@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { CheckCircle2, ChevronRight, ListChevronsDownUp, Copy, Loader2, MoreHorizontal, Pencil, RotateCcw, Trash2 } from "lucide-react";
+import { CheckCircle2, ChevronRight, ListChevronsDownUp, Copy, Loader2, MessageSquarePlus, MoreHorizontal, Pencil, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Card } from "@patchbay/ui/components/ui/card";
 import { Button } from "@patchbay/ui/components/ui/button";
@@ -28,7 +28,7 @@ import { ReactionBar } from "@patchbay/ui/components/common/reaction-bar";
 import { cn } from "@patchbay/ui/lib/utils";
 import { copyText } from "@patchbay/ui/lib/clipboard";
 import { useActorName } from "@patchbay/core/workspace/hooks";
-import { useTimeAgo } from "../../i18n";
+import { useLocale, useTimeAgo } from "../../i18n";
 import { ContentEditor, type ContentEditorRef, ReadonlyContent, useFileDropZone, FileDropOverlay, Attachment as AttachmentRenderer, AttachmentDownloadProvider, useUploadGate, useComposerSubmit } from "../../editor";
 import { useCommentUploads } from "./use-comment-uploads";
 import { FileUploadButton } from "@patchbay/ui/components/common/file-upload-button";
@@ -102,7 +102,7 @@ interface CommentCardProps {
   /**
    * True when the current user is a workspace owner/admin and can therefore
    * moderate comments authored by anyone — restoring the admin override that
-   * the backend already grants in the Rust comment handler. Computed once in
+   * the backend already grants at `comment.go:507-512`. Computed once in
    * `issue-detail.tsx` and threaded down so neither this component nor
    * `CommentRow` has to rerun the rule per row.
    */
@@ -112,6 +112,7 @@ interface CommentCardProps {
   onEdit: (commentId: string, content: string, attachmentIds: string[], suppressAgentIds?: string[], contentBase?: string) => Promise<void>;
   onDelete: (commentId: string) => void;
   onToggleReaction: (commentId: string, emoji: string) => void;
+  onCreateSubIssue?: (commentId: string) => void;
   /** Resolve/unresolve any comment in this thread (commentId = the target row). */
   onResolveToggle?: (commentId: string, resolved: boolean) => void;
   /**
@@ -187,7 +188,7 @@ export function AttachmentList({
   if (!attachments?.length) return null;
   // Skip attachments whose URL (stable or legacy) is already referenced in the
   // markdown content, and duplicates of the same file that are referenced.
-  // Shared with the image-sequence builder (PB-5752) so the cards rendered
+  // Shared with the image-sequence builder (MUL-5752) so the cards rendered
   // here and the images the viewer pages through can't disagree.
   const standalone = selectStandaloneAttachments(content, attachments);
   if (!standalone.length) return null;
@@ -263,14 +264,14 @@ function TaskCommentRetryButton({
     try {
       await api.rerunIssue(issueId, taskId);
     } catch (e) {
-      // Rerun re-checks the operator's invoke permission (PB-4525); a
+      // Rerun re-checks the operator's invoke permission (MUL-4525); a
       // structured 403 is a permission block, not a transient failure.
       toast.error(
         dispatchReasonCode(e) === "invocation_not_allowed"
-          ? t(($) => $.agent_thread.retry_blocked)
+          ? t(($) => $.execution_log.retry_blocked)
           : e instanceof Error
             ? e.message
-            : t(($) => $.agent_thread.retry_failed),
+            : t(($) => $.execution_log.retry_failed),
       );
     } finally {
       setRetrying(false);
@@ -285,14 +286,14 @@ function TaskCommentRetryButton({
         variant="outline"
         onClick={handleRetry}
         disabled={retrying}
-        aria-label={t(($) => $.agent_thread.retry_task_aria)}
+        aria-label={t(($) => $.execution_log.retry_task_aria)}
       >
         {retrying ? (
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
         ) : (
           <RotateCcw className="h-3.5 w-3.5" />
         )}
-        {t(($) => $.agent_thread.retry_task_tooltip)}
+        {t(($) => $.execution_log.retry_task_tooltip)}
       </Button>
     </div>
   );
@@ -320,7 +321,7 @@ function useEditAttachmentState(
   const cancelledRef = useRef(false);
   const [content, setContent] = useState(entry.content ?? "");
   const [suppressedAgentIds, setSuppressedAgentIds] = useState<Set<string>>(() => new Set());
-  // Uploads for this edit session (PB-5181) — coordinator-owned, persisted in
+  // Uploads for this edit session (MUL-5181) — coordinator-owned, persisted in
   // the draft store keyed by the edit draft so scroll-out/close no longer drops
   // an in-flight upload.
   const draftKey = `edit:${issueId}:${entry.id}` as const;
@@ -417,11 +418,11 @@ function useEditAttachmentState(
     setRevisionConflict(false);
   };
 
-  // Await-then-render save (PB-5181): shared submit contract, with the edit-
+  // Await-then-render save (MUL-5181): shared submit contract, with the edit-
   // only concerns folded into onSubmit — the cancel-race guard, the no-op
   // short-circuit, and the failure toast. The hook owns the empty guard,
   // upload re-check, single-flight, and lock/spin via `submitting`.
-  // Stale-submit guard (PB-5181 P0) — see CommentInput. The edit hook lives
+  // Stale-submit guard (MUL-5181 P0) — see CommentInput. The edit hook lives
   // in CommentRow, so "unmounted" here means the issue detail closed.
   const editMountedRef = useRef(true);
   useEffect(() => {
@@ -445,7 +446,7 @@ function useEditAttachmentState(
       const activeIds = collectActiveAttachmentIds(
         trimmed,
         [...(entry.attachments ?? []), ...pendingAttachments],
-        // Body-referenced + retained-standalone only (PB-5181): an upload the
+        // Body-referenced + retained-standalone only (MUL-5181): an upload the
         // user removed from the body is really unbound. Close-surviving
         // uploads are written back into the body by the settle handler.
         retainedStandaloneIds,
@@ -555,21 +556,26 @@ function CommentRevisionConflict({
       localLabel={t(($) => $.revision.local_version)}
       serverValue={serverContent}
       localValue={localContent}
-      actions={(
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={saving}
-            onClick={onKeepLocal}
-          >
-            {t(($) => $.revision.keep_local)}
-          </Button>
-          <Button type="button" size="sm" variant="ghost" onClick={onUseServer}>
-            {t(($) => $.revision.use_server)}
-          </Button>
-        </div>
+      serverAction={(
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={onUseServer}
+        >
+          {t(($) => $.revision.use_server)}
+        </Button>
+      )}
+      localAction={(
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={saving}
+          onClick={onKeepLocal}
+        >
+          {t(($) => $.revision.keep_local)}
+        </Button>
       )}
     />
   );
@@ -589,6 +595,7 @@ function CommentRow({
   onEdit,
   onDelete,
   onToggleReaction,
+  onCreateSubIssue,
   onResolveToggle,
 }: {
   issueId: string;
@@ -602,9 +609,11 @@ function CommentRow({
   onEdit: (commentId: string, content: string, attachmentIds: string[], suppressAgentIds?: string[], contentBase?: string) => Promise<void>;
   onDelete: (commentId: string) => void;
   onToggleReaction: (commentId: string, emoji: string) => void;
+  onCreateSubIssue?: (commentId: string) => void;
   onResolveToggle?: (commentId: string, resolved: boolean) => void;
 }) {
   const { t } = useT("issues");
+  const locale = useLocale();
   const timeAgo = useTimeAgo();
   const { getActorName } = useActorName();
 
@@ -641,7 +650,7 @@ function CommentRow({
             }
           />
           <TooltipContent side="top">
-            {new Date(entry.created_at).toLocaleString()}
+            {new Date(entry.created_at).toLocaleString(locale)}
           </TooltipContent>
         </Tooltip>
 
@@ -655,8 +664,13 @@ function CommentRow({
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
-                <Button variant="ghost" size="icon-sm" className="text-muted-foreground">
-                  <MoreHorizontal className="h-4 w-4" />
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="text-muted-foreground"
+                  aria-label={t(($) => $.comment.more_actions)}
+                >
+                  <MoreHorizontal className="h-4 w-4" aria-hidden />
                 </Button>
               }
             />
@@ -669,6 +683,12 @@ function CommentRow({
                 <Copy className="h-3.5 w-3.5" />
                 {t(($) => $.comment.copy_action)}
               </DropdownMenuItem>
+              {onCreateSubIssue && entry.comment_type === "comment" && (
+                <DropdownMenuItem onClick={() => onCreateSubIssue(entry.id)}>
+                  <MessageSquarePlus className="h-3.5 w-3.5" aria-hidden />
+                  {t(($) => $.source_context.create_action)}
+                </DropdownMenuItem>
+              )}
               {onResolveToggle && (
                 <>
                   <DropdownMenuSeparator />
@@ -821,7 +841,7 @@ function CommentRow({
 // CommentCard — One Card per thread (parent + all replies flat inside)
 // ---------------------------------------------------------------------------
 
-// A quick action posts an ordinary comment and is rendered as one (PB-5465).
+// A quick action posts an ordinary comment and is rendered as one (MUL-5465).
 // It briefly had a collapsed one-line header that expanded to reveal the
 // prompt, on the theory that repeated runs would bury the discussion. In
 // practice the prompts are short, the header restated what the body already
@@ -839,6 +859,7 @@ function CommentCardImpl({
   onEdit,
   onDelete,
   onToggleReaction,
+  onCreateSubIssue,
   onResolveToggle,
   onCollapseResolved,
   expandedResolvedIds,
@@ -846,6 +867,7 @@ function CommentCardImpl({
   highlightedCommentId,
 }: CommentCardProps) {
   const { t } = useT("issues");
+  const locale = useLocale();
   const timeAgo = useTimeAgo();
   const { getActorName } = useActorName();
   const isCollapsed = useCommentCollapseStore((s) => s.isCollapsed(issueId, entry.id));
@@ -951,7 +973,7 @@ function CommentCardImpl({
                   }
                 />
                 <TooltipContent side="top">
-                  {new Date(entry.created_at).toLocaleString()}
+                  {new Date(entry.created_at).toLocaleString(locale)}
                 </TooltipContent>
               </Tooltip>
 
@@ -971,8 +993,13 @@ function CommentCardImpl({
                   <DropdownMenu>
                     <DropdownMenuTrigger
                       render={
-                        <Button variant="ghost" size="icon-sm" className="text-muted-foreground">
-                          <MoreHorizontal className="h-4 w-4" />
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          className="text-muted-foreground"
+                          aria-label={t(($) => $.comment.more_actions)}
+                        >
+                          <MoreHorizontal className="h-4 w-4" aria-hidden />
                         </Button>
                       }
                     />
@@ -985,6 +1012,12 @@ function CommentCardImpl({
                         <Copy className="h-3.5 w-3.5" />
                         {t(($) => $.comment.copy_action)}
                       </DropdownMenuItem>
+                      {onCreateSubIssue && entry.comment_type === "comment" && (
+                        <DropdownMenuItem onClick={() => onCreateSubIssue(entry.id)}>
+                          <MessageSquarePlus className="h-3.5 w-3.5" aria-hidden />
+                          {t(($) => $.source_context.create_action)}
+                        </DropdownMenuItem>
+                      )}
                       {onResolveToggle && (
                         <>
                           <DropdownMenuSeparator />
@@ -1177,6 +1210,7 @@ function CommentCardImpl({
                     onEdit={onEdit}
                     onDelete={onDelete}
                     onToggleReaction={onToggleReaction}
+                    onCreateSubIssue={onCreateSubIssue}
                     onResolveToggle={onResolveToggle}
                   />
                 </div>
@@ -1216,6 +1250,7 @@ function CommentCardImpl({
                     onEdit={onEdit}
                     onDelete={onDelete}
                     onToggleReaction={onToggleReaction}
+                    onCreateSubIssue={onCreateSubIssue}
                     onResolveToggle={onResolveToggle}
                   />
                 </div>

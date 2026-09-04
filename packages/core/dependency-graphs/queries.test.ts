@@ -1,71 +1,71 @@
+// @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
+import {
+  dependencyGraphKeys,
+  dependencyGraphsOptions,
+} from "./queries";
 
-import { setApiInstance } from "../api";
-import type { ApiClient } from "../api/client";
-import type { DependencyGraphResponse } from "../types";
-import { dependencyGraphsOptions } from "./queries";
+const listDependencyGraphs = vi.hoisted(() => vi.fn());
+const getDependencyGraph = vi.hoisted(() => vi.fn());
 
-const graph = (id: string) => ({ id }) as unknown as DependencyGraphResponse;
+vi.mock("../api", () => ({
+  api: { listDependencyGraphs, getDependencyGraph },
+  ApiError: class ApiError extends Error {
+    status = 500;
+  },
+}));
 
-describe("dependencyGraphsOptions", () => {
-  it("accepts a single terminal page without treating it as a repeated cursor", async () => {
-    const listDependencyGraphs = vi.fn().mockResolvedValueOnce({
-      graphs: [graph("only")],
-      next_cursor: null,
-    });
-    setApiInstance({ listDependencyGraphs } as unknown as ApiClient);
+describe("dependency graph queries", () => {
+  it("flattens cursor pages without dropping the terminal page", async () => {
+    listDependencyGraphs
+      .mockResolvedValueOnce({ graphs: [{ plan: { id: "plan-1" } }], next_cursor: "next" })
+      .mockResolvedValueOnce({ graphs: [{ plan: { id: "plan-2" } }], next_cursor: null });
 
-    const options = dependencyGraphsOptions("workspace-1");
-    if (!options.queryFn)
-      throw new Error("dependency graph query function is missing");
-    const result = await options.queryFn({} as never);
+    const options = dependencyGraphsOptions("ws-1");
+    const result = await options.queryFn!({
+      queryKey: options.queryKey,
+      signal: new AbortController().signal,
+    } as never);
 
-    expect(result).toEqual([graph("only")]);
-    expect(listDependencyGraphs).toHaveBeenCalledOnce();
-    expect(listDependencyGraphs).toHaveBeenCalledWith({ limit: 64 });
-  });
-
-  it("loads every cursor page while preserving the flat graph result", async () => {
-    const listDependencyGraphs = vi
-      .fn()
-      .mockResolvedValueOnce({
-        graphs: [graph("first")],
-        next_cursor: "page-2",
-      })
-      .mockResolvedValueOnce({ graphs: [graph("second")], next_cursor: null });
-    setApiInstance({ listDependencyGraphs } as unknown as ApiClient);
-
-    const options = dependencyGraphsOptions("workspace-1", "project-1");
-    if (!options.queryFn)
-      throw new Error("dependency graph query function is missing");
-    const result = await options.queryFn({} as never);
-
-    expect(result).toEqual([graph("first"), graph("second")]);
-    expect(listDependencyGraphs).toHaveBeenNthCalledWith(1, {
-      projectId: "project-1",
-      limit: 64,
-    });
-    expect(listDependencyGraphs).toHaveBeenNthCalledWith(2, {
-      projectId: "project-1",
-      limit: 64,
-      cursor: "page-2",
-    });
-  });
-
-  it("rejects a repeated non-terminal cursor", async () => {
-    const listDependencyGraphs = vi
-      .fn()
-      .mockResolvedValueOnce({ graphs: [], next_cursor: "page-2" })
-      .mockResolvedValueOnce({ graphs: [], next_cursor: "page-2" });
-    setApiInstance({ listDependencyGraphs } as unknown as ApiClient);
-
-    const options = dependencyGraphsOptions("workspace-1");
-    if (!options.queryFn)
-      throw new Error("dependency graph query function is missing");
-
-    await expect(options.queryFn({} as never)).rejects.toThrow(
-      "dependency graph pagination cursor did not advance",
+    expect(result).toHaveLength(2);
+    expect(listDependencyGraphs).toHaveBeenNthCalledWith(
+      1,
+      { limit: 64 },
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
-    expect(listDependencyGraphs).toHaveBeenCalledTimes(2);
+    expect(listDependencyGraphs).toHaveBeenNthCalledWith(
+      2,
+      { limit: 64, cursor: "next" },
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
+
+  it("fails closed when the server repeats a pagination cursor", async () => {
+    listDependencyGraphs
+      .mockResolvedValueOnce({ graphs: [], next_cursor: "same" })
+      .mockResolvedValueOnce({ graphs: [], next_cursor: "same" });
+
+    const options = dependencyGraphsOptions("ws-1", "project-1");
+    await expect(
+      options.queryFn!({
+        queryKey: options.queryKey,
+        signal: new AbortController().signal,
+      } as never),
+    ).rejects.toThrow("repeated cursor");
+  });
+
+  it("keeps list and detail cache entries under one workspace prefix", () => {
+    expect(dependencyGraphKeys.list("ws-1")).toEqual([
+      "dependency-graphs",
+      "ws-1",
+      "list",
+      null,
+    ]);
+    expect(dependencyGraphKeys.detail("ws-1", "issue-1")).toEqual([
+      "dependency-graphs",
+      "ws-1",
+      "detail",
+      "issue-1",
+    ]);
   });
 });

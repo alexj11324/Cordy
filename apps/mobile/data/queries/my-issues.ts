@@ -1,14 +1,14 @@
 /**
  * "My Issues" list, server-filtered by scope. Mirrors the three scopes web
  * exposes in `packages/views/my-issues/components/my-issues-page.tsx:48-65`:
- *   - assigned: issues where owner_id = me
+ *   - assigned (shown as "Owned"): issues where owner_id = me
  *   - created:  issues where creator_id  = me
  *   - agents:   issues where the executor is an *indirect* extension of me —
  *               an owned agent, OR a team I'm a human member of, lead, or
  *               have an owned agent inside. Driven server-side by the
- *               `involves_user_id` predicate (see PB-2397, 2026-05-19).
- *               Direct member assignment is intentionally EXCLUDED — that's
- *               the `assigned` scope's meaning.
+ *               `involves_user_id` predicate (see MUL-2397, 2026-05-19).
+ *               Direct member ownership is intentionally EXCLUDED — that's
+ *               the `assigned` scope key's meaning.
  *
  * Cache key shape is `issueKeys.myList(wsId, scope, filter)` — same prefix
  * as web's `packages/core/issues/queries.ts` so a future WS handler can

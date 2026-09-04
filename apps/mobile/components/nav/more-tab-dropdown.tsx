@@ -22,7 +22,7 @@
  * the More cell and stripping the label. The Option B pattern here
  * leaves the real tab button entirely alone.
  *
- * Visual conventions inside the popover (apps/mobile/AGENTS.md):
+ * Visual conventions inside the popover (apps/mobile/CLAUDE.md):
  *   - All glyphs are SF Symbols rendered via expo-image (`sf:` source),
  *     so they share the visual language of the bottom tab bar icons.
  *   - All colours route through THEME tokens (foreground /
@@ -57,6 +57,8 @@ import { useWorkspaceStore } from "@/data/workspace-store";
 import { useColorScheme } from "@/lib/use-color-scheme";
 import { THEME } from "@/lib/theme";
 import { cn } from "@/lib/utils";
+import { getW8Copy } from "@/lib/w8-copy";
+import { useChatCopy } from "@/lib/use-chat-copy";
 
 // iOS bottom tab bar default height (above safe-area). React Navigation
 // doesn't expose this as a layout constant, but the value is stable
@@ -77,7 +79,18 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Pinned", icon: "pin", path: "/more/pins" },
   { label: "Issues", icon: "list.bullet", path: "/more/issues" },
   { label: "Projects", icon: "square.stack", path: "/more/projects" },
+  { label: "Dependency Graph", icon: "arrow.triangle.branch", path: "/task-graph" },
+  { label: "Work Products", icon: "doc.on.doc", path: "/more/work-products" },
 ];
+
+export function navigationItems(agentsLabel: string): NavItem[] {
+  return [
+    ...NAV_ITEMS,
+    // The Agents screen is read-only on mobile: it is the native entry point
+    // for choosing an invokable Agent and opening the existing Chat tab.
+    { label: agentsLabel, icon: "cpu", path: "/more/agents" },
+  ];
+}
 
 export function MoreTabDropdownAnchor({
   triggerRef,
@@ -90,6 +103,8 @@ export function MoreTabDropdownAnchor({
   const pathname = usePathname();
   const { colorScheme } = useColorScheme();
   const t = THEME[colorScheme];
+  const copy = getW8Copy(user?.language);
+  const chatCopy = useChatCopy();
   const currentWorkspace = useCurrentWorkspace(slug);
 
   const isActive = (path: string) => {
@@ -148,7 +163,11 @@ export function MoreTabDropdownAnchor({
 
           <DropdownMenuSeparator />
 
-          {NAV_ITEMS.map((item) => (
+          {[...navigationItems(chatCopy.agents), {
+            label: copy.channel.title,
+            icon: "bubble.left.and.bubble.right",
+            path: "/channels",
+          }].map((item) => (
             <DropdownMenuItem
               key={item.path}
               onPress={() => slug && router.push(`/${slug}${item.path}`)}

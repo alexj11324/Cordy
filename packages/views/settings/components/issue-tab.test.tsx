@@ -37,8 +37,7 @@ describe("IssueTab", () => {
     expect(quickPriority).not.toBeChecked();
     expect(quickDueDate).not.toBeChecked();
 
-    // Manual create defaults to status, priority, executor, labels and
-    // project; owner, reviewer and dates start hidden.
+    // Manual create defaults to status, priority, executor, labels, project.
     const manual = switches.slice(3);
     expect(manual[0]).toBeChecked();
     expect(manual[1]).toBeChecked();

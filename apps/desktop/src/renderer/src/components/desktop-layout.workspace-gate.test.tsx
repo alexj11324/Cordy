@@ -6,7 +6,7 @@ import { I18nProvider } from "@patchbay/core/i18n/react";
 import { RESOURCES } from "@patchbay/views/locales";
 
 /**
- * Regression guard for PB-6231 / #7021: deleting the last workspace blanked
+ * Regression guard for MUL-6231 / #7021: deleting the last workspace blanked
  * the desktop client.
  *
  * The shell used to decide whether to mount workspace-scoped chrome from the
@@ -113,9 +113,9 @@ vi.mock("./tab-content", () => ({
 const { DesktopShell } = await import("./desktop-layout");
 
 function renderShell() {
-  (window as unknown as { desktopAPI: Record<string, unknown> }).desktopAPI = {
-    host: "electron",
-    appInfo: { version: "0.0.0-test", os: "macos" },
+  (
+    window as unknown as { desktopAPI: Record<string, unknown> }
+  ).desktopAPI = {
     onNavigationGesture: () => () => {},
     onInboxOpen: () => () => {},
   };
@@ -172,7 +172,7 @@ describe("DesktopShell workspace gating", () => {
     expect(queryByTestId("tab-content")).not.toBeNull();
   });
 
-  // The shell had no navigation feedback at all before PB-6404 — the bar
+  // The shell had no navigation feedback at all before MUL-6404 — the bar
   // only ever shipped inside web's DashboardLayout. It sits beside TabContent
   // in the canvas and, like it, is not workspace-gated: a cold workspace
   // resolve is exactly when the wait is longest.

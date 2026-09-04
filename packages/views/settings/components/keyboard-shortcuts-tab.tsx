@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { Keyboard, RotateCcw, Search, X } from "lucide-react";
 import { Button } from "@patchbay/ui/components/ui/button";
-import { SettingsInput as Input } from "@patchbay/ui/components/common/lobe-settings";
+import { Input } from "@patchbay/ui/components/ui/input";
 import {
   AlertDialog,
   AlertDialogAction,

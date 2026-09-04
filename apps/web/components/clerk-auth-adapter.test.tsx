@@ -16,27 +16,25 @@ const {
       retryGeneration: 0,
     },
   },
-    clerkState: {
-      current: {
-        isLoaded: true,
-        isSignedIn: true,
-        sessionId: "session-a",
-        userId: "user-a",
-      },
+  clerkState: {
+    current: {
+      isLoaded: true,
+      isSignedIn: true,
+      sessionId: "session-a",
+      userId: "user-a",
     },
-    getToken: vi.fn(),
-    loginWithClerk: vi.fn(),
-    logout: vi.fn(),
-    setAuthState: vi.fn(),
-    signOut: vi.fn(),
-  }));
+  },
+  getToken: vi.fn(),
+  loginWithClerk: vi.fn(),
+  logout: vi.fn(),
+  setAuthState: vi.fn(),
+  signOut: vi.fn(),
+}));
 
 vi.mock("@clerk/nextjs", () => ({
   useUser: () => ({
     isLoaded: clerkState.current.isLoaded,
-    user: clerkState.current.userId
-      ? { id: clerkState.current.userId }
-      : null,
+    user: clerkState.current.userId ? { id: clerkState.current.userId } : null,
   }),
   useAuth: () => ({
     getToken,
@@ -76,7 +74,9 @@ import {
 import { ApiError } from "@patchbay/core/api";
 
 function ExchangeStatus() {
-  return <output>{useClerkSessionExchangeReady() ? "ready" : "waiting"}</output>;
+  return (
+    <output>{useClerkSessionExchangeReady() ? "ready" : "waiting"}</output>
+  );
 }
 
 describe("ClerkAuthAdapter", () => {
@@ -89,18 +89,16 @@ describe("ClerkAuthAdapter", () => {
     };
     authState.current = { status: "authenticating", retryGeneration: 0 };
     getToken.mockReset().mockResolvedValue("clerk-session-token");
-    loginWithClerk
-      .mockReset()
-      .mockImplementation(async () => {
-        authState.current.status = "authenticated";
-        return { id: "patchbay-user" };
-      });
+    loginWithClerk.mockReset().mockImplementation(async () => {
+      authState.current.status = "authenticated";
+      return { id: "patchbay-user" };
+    });
     logout.mockReset().mockResolvedValue(undefined);
     setAuthState.mockReset();
     signOut.mockReset().mockResolvedValue(undefined);
   });
 
-  it("only marks the current Clerk identity ready after its Rust exchange", async () => {
+  it("only marks the current Clerk identity ready after its API session exchange", async () => {
     let finishSecondExchange: (() => void) | undefined;
     const secondExchange = new Promise<void>((resolve) => {
       finishSecondExchange = resolve;
@@ -161,7 +159,9 @@ describe("ClerkAuthAdapter", () => {
       </ClerkAuthAdapter>,
     );
 
-    await waitFor(() => expect(screen.getByText("waiting")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText("waiting")).toBeInTheDocument(),
+    );
     await waitFor(() => expect(loginWithClerk).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.getByText("ready")).toBeInTheDocument());
   });

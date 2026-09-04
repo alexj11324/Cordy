@@ -27,11 +27,39 @@ patchbay version
 
 ## Step 2: Install the Patchbay CLI
 
-> **Windows users:** Skip to [Option B: Windows (PowerShell)](#option-b-windows-powershell) below.
+> **Windows users:** Skip to [Option C: Windows (PowerShell)](#option-c-windows-powershell) below.
 
-### Option A: Download from GitHub Releases (macOS/Linux)
+### Option A: Homebrew (preferred — macOS/Linux)
 
-Download the binary directly from the canonical repository.
+Check if Homebrew is available:
+
+```bash
+which brew
+```
+
+If `brew` is found, install via Homebrew:
+
+```bash
+brew install alexj11324/Cordy/patchbay
+```
+
+Then verify:
+
+```bash
+patchbay version
+```
+
+If the version prints successfully, skip to **Step 3**.
+
+To upgrade later, run:
+
+```bash
+brew upgrade alexj11324/Cordy/patchbay
+```
+
+### Option B: Download from GitHub Releases (macOS/Linux, no Homebrew)
+
+If Homebrew is not available, download the binary directly.
 
 Detect OS and architecture, then download the correct archive:
 
@@ -66,7 +94,7 @@ patchbay version
 - On Linux, you may need `chmod +x /usr/local/bin/patchbay`.
 - If `sudo` is not available, install to a user-writable directory: `mv /tmp/patchbay ~/.local/bin/patchbay` and ensure `~/.local/bin` is in `$PATH`.
 
-### Option B: Windows (PowerShell)
+### Option C: Windows (PowerShell)
 
 Run in PowerShell (no admin required):
 
@@ -84,6 +112,7 @@ patchbay version
 
 **If this fails:**
 - Restart your terminal so the updated PATH takes effect.
+- The Windows installer downloads the release binary directly; Scoop is not required.
 - If your execution policy blocks the script: `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned` then re-run.
 
 ---
@@ -111,7 +140,7 @@ patchbay auth status
 Expected output should show the authenticated user and server URL.
 
 **If login fails:**
-- If no browser is available (headless environment), the user can generate a Personal Access Token at `https://patchbay.aspectlylabs.com/settings?tab=tokens` and run: `patchbay login --token <pby_...>` (use `--token=` with an empty value to be prompted interactively).
+- If no browser is available (headless environment), the user can generate a Personal Access Token at `https://patchbay.ai/settings?tab=tokens` and run: `patchbay login --token <pby_...>` (use `--token=` with an empty value to be prompted interactively).
 - If the server URL needs to be customized: `patchbay config set server_url <url>` before logging in.
 
 ---

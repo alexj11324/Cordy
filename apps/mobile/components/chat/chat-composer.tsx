@@ -29,12 +29,12 @@
 import { useCallback } from "react";
 import { Pressable, View } from "react-native";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
-import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { MessageComposer } from "@/components/composer/message-composer";
 import { useWorkspaceStore } from "@/data/workspace-store";
 import { useColorScheme } from "@/lib/use-color-scheme";
 import { THEME } from "@/lib/theme";
+import { useChatCopy } from "@/lib/use-chat-copy";
 
 interface Props {
   /** Current draft text (controlled). Empty string = no draft. */
@@ -48,7 +48,7 @@ interface Props {
   /** Cancel the in-flight agent task. Only callable while `sending===true`. */
   onStop: () => void;
   /** True while an agent task is running for the active session. The
-   *  composer shows Stop; queue-capable callers may also keep Send visible. */
+   *  composer swaps Send for Stop. */
   sending: boolean;
   /** Queued tasks remain busy, but do not expose Stop without draft restore. */
   allowStop?: boolean;
@@ -59,8 +59,7 @@ interface Props {
   disabled?: boolean;
   /** When `disabled`, replaces the pill label with the reason. */
   disabledReason?: string;
-  /** File/image controls are disabled for endpoints without attachment
-   *  binding support, such as a task-session continuation. */
+  /** Hide uploads when the owning endpoint cannot bind attachments. */
   allowAttachments?: boolean;
 }
 
@@ -79,6 +78,7 @@ export function ChatComposer({
   allowAttachments = true,
 }: Props) {
   const wsSlug = useWorkspaceStore((s) => s.currentWorkspaceSlug);
+  const copy = useChatCopy();
 
   const onSubmit = useCallback(
     async ({
@@ -111,13 +111,13 @@ export function ChatComposer({
         pathname: "/[workspace]/mention-picker",
         params: { workspace: wsSlug ?? "", mode: "chat" },
       }}
-      placeholder={sending ? "Agent is working…" : "Message…"}
+      placeholder={sending ? copy.inputWorking : copy.inputMessage}
       pillLabel={
         sending
-          ? "Agent is working…"
+          ? copy.inputWorking
           : disabled
-            ? (disabledReason ?? "Chat unavailable")
-            : "Message…"
+            ? (disabledReason ?? copy.inputUnavailable)
+            : copy.inputMessage
       }
       pillIcon="chatbubble-ellipses-outline"
       disabled={disabled}
@@ -125,9 +125,7 @@ export function ChatComposer({
       showAttachments={allowAttachments}
       isSending={sending}
       allowSubmitWhileSending={allowSubmitWhileRunning}
-      renderStop={
-        allowStop ? () => <StopButton onPress={handleStop} /> : undefined
-      }
+      renderStop={allowStop ? () => <StopButton onPress={handleStop} /> : undefined}
       manageKeyboard={false}
     />
   );
@@ -136,6 +134,7 @@ export function ChatComposer({
 function StopButton({ onPress }: { onPress: () => void }) {
   const { colorScheme } = useColorScheme();
   const theme = THEME[colorScheme];
+  const copy = useChatCopy();
   return (
     <Animated.View
       key="stop"
@@ -147,7 +146,7 @@ function StopButton({ onPress }: { onPress: () => void }) {
         className="h-8 w-8 items-center justify-center rounded-full bg-foreground active:opacity-80"
         hitSlop={12}
         accessibilityRole="button"
-        accessibilityLabel="Stop agent"
+        accessibilityLabel={copy.stopAgent}
       >
         <View
           style={{

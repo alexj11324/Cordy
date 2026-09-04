@@ -2,7 +2,7 @@
  * Resolve a server-relative attachment URL against the configured API base.
  *
  * Background: when the backend has no CloudFront signer configured (e.g.
- * the self-hosted RustFS / private-S3 case in PB-2976), `attachment.url`
+ * the self-hosted RustFS / private-S3 case in MUL-2976), `attachment.url`
  * and `attachment.download_url` come back as server-relative paths like
  * `/api/attachments/{id}/download`. Web is happy with that — same-origin
  * `<img src="/api/...">` resolves against the document base — but RN
@@ -13,7 +13,7 @@
  * Mirrors `packages/core/workspace/avatar-url.ts:resolvePublicFileUrl`
  * exactly. We don't import the core helper because its `getBaseUrl()`
  * pulls from a singleton ApiClient that lives in `@patchbay/core/api` —
- * not on the mobile sharing whitelist (apps/mobile/AGENTS.md "mirror,
+ * not on the mobile sharing whitelist (apps/mobile/CLAUDE.md "mirror,
  * don't import"). Mobile reads its own `EXPO_PUBLIC_API_URL` from the
  * Expo env, the same value the rest of `data/api.ts` uses.
  *

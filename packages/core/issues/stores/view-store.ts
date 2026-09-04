@@ -4,19 +4,23 @@ import { useEffect, useRef } from "react";
 import { create } from "zustand";
 import { createStore, type StoreApi } from "zustand/vanilla";
 import { createJSONStorage, persist } from "zustand/middleware";
-import type { IssueStatus, IssueStatusCategory, IssuePriority } from "../../types";
+import type { IssueStatus, IssueStatusCategory, IssuePriority, PropertyFilterValue } from "../../types";
 import { createWorkspaceAwareStorage, registerForWorkspaceRehydration } from "../../platform/workspace-storage";
 import { defaultStorage } from "../../platform/storage";
 
-export type ViewMode = "board" | "list" | "table" | "gantt" | "swimlane" | "graph";
+export type ViewMode = "board" | "list" | "table" | "gantt" | "swimlane";
 export type GanttZoom = "day" | "week" | "month";
 /**
- * Board grouping. Besides the two built-ins, a select-type custom property
+ * Board grouping. Besides the three built-ins, a select-type custom property
  * groups columns by its options via the `property:<definitionId>` form.
  * Persisted values may reference a since-archived definition — consumers must
  * fall back to "status" when the definition can't be resolved.
  */
-export type IssueGrouping = "status" | "executor" | `property:${string}`;
+export type IssueGrouping =
+  | "status"
+  | "executor"
+  | "project"
+  | `property:${string}`;
 export type SwimlaneGrouping = "parent" | "project" | "executor";
 /**
  * Sort key. `property:<definitionId>` is resolved server-side against the
@@ -55,7 +59,12 @@ export interface TableColumnConfig {
   key: TableColumnKey;
   width?: number;
 }
-export type TableGrouping = "none" | "status" | "executor" | `property:${string}`;
+export type TableGrouping =
+  | "none"
+  | "status"
+  | "executor"
+  | "project"
+  | `property:${string}`;
 export type TableCalculation = "none" | "sum" | "average" | "count";
 
 export const TABLE_SYSTEM_COLUMNS: readonly TableSystemColumnKey[] = [
@@ -118,7 +127,7 @@ export interface FilterSnapshot {
   projectFilters: string[];
   includeNoProject: boolean;
   labelFilters: string[];
-  propertyFilters: Record<string, string[]>;
+  propertyFilters: Record<string, PropertyFilterValue[]>;
 }
 
 /** Filter-bar chip dimensions. Date is excluded: `dateFilter` lives outside
@@ -155,6 +164,7 @@ export const SORT_OPTIONS: { value: StaticSortField; label: string }[] = [
 export const GROUPING_OPTIONS: { value: StaticIssueGrouping; label: string }[] = [
   { value: "status", label: "Status" },
   { value: "executor", label: "Executor" },
+  { value: "project", label: "Project" },
 ];
 
 export const CARD_PROPERTY_OPTIONS: { key: keyof CardProperties; label: string }[] = [
@@ -180,12 +190,14 @@ export interface IssueViewState {
   includeNoProject: boolean;
   labelFilters: string[];
   /**
-   * Custom-property filters: definition id → selected option ids (checkbox
-   * definitions use the pseudo-options "true"/"false"). Empty array = no
+   * Custom-property filters: definition id → selected values (checkbox
+   * definitions use the pseudo-options "true"/"false"; scalars hold the
+   * committed value as a bare string, or an operator object per
+   * `PropertyFilterValue`, plus the "__none__" sentinel). Empty array = no
    * filter for that definition; matching is OR within a definition and AND
    * across definitions, mirroring the other filter groups.
    */
-  propertyFilters: Record<string, string[]>;
+  propertyFilters: Record<string, PropertyFilterValue[]>;
   dateFilter: IssueDateFilter | null;
   // When true, the list only shows issues that currently have at least one
   // agent task in `running` status. Drives the workspace "agents working"
@@ -211,7 +223,7 @@ export interface IssueViewState {
    * more than one status: hiding Backlog wrote the other 6 built-in keys and
    * so silently filtered out every CUSTOM status too. Display state and the
    * exact-key filter are different questions and now have different fields.
-   * (PB-6243)
+   * (MUL-6243)
    */
   hiddenStatusCategories: IssueStatusCategory[];
   ganttZoom: GanttZoom;
@@ -245,6 +257,9 @@ export interface IssueViewState {
   toggleNoProject: () => void;
   toggleLabelFilter: (labelId: string) => void;
   togglePropertyFilter: (propertyId: string, optionId: string) => void;
+  /** Replace a property's full filter value set (used by scalar value inputs
+   *  for text/number/date/url, which build the array including "__none__"). */
+  setPropertyFilterValues: (propertyId: string, optionIds: PropertyFilterValue[]) => void;
   setDateFilter: (filter: IssueDateFilter | null) => void;
   toggleAgentRunningFilter: () => void;
   hideStatus: (category: IssueStatusCategory) => void;
@@ -388,6 +403,13 @@ export const viewStoreSlice = (set: StoreApi<IssueViewState>["setState"]): Issue
       const propertyFilters = { ...state.propertyFilters };
       if (next.length === 0) delete propertyFilters[propertyId];
       else propertyFilters[propertyId] = next;
+      return { propertyFilters };
+    }),
+  setPropertyFilterValues: (propertyId, optionIds) =>
+    set((state) => {
+      const propertyFilters = { ...state.propertyFilters };
+      if (optionIds.length === 0) delete propertyFilters[propertyId];
+      else propertyFilters[propertyId] = optionIds;
       return { propertyFilters };
     }),
   setDateFilter: (filter) => set({ dateFilter: filter }),
@@ -589,17 +611,14 @@ export function mergeViewStatePersisted<T extends IssueViewState>(
   persisted: unknown,
   current: T,
 ): T {
-  const isRecord = (v: unknown): v is Record<string, unknown> =>
-    v !== null && typeof v === "object" && !Array.isArray(v);
+  const isRecord = (value: unknown): value is Record<string, unknown> =>
+    value !== null && typeof value === "object" && !Array.isArray(value);
   const raw = isRecord(persisted) ? persisted : {};
-  const p = { ...raw } as Record<string, unknown>;
+  const normalized = { ...raw };
 
-  // The persist key predates the owner/executor split. Normalize the complete
-  // old shape before it is spread over defaults so stale enum values cannot
-  // reach query planning or overwrite the canonical fields. Member actor
-  // filters remain in `executorFilters` intentionally: the surface query
-  // projects member actors to owner filters and agent/team actors to executor
-  // filters in one place.
+  // Read old local/saved-view snapshots once at the persistence boundary.
+  // Shipping state uses executor exclusively; the legacy spelling must not
+  // leak back into view contracts or consumers.
   const actorArray = (value: unknown): ActorFilterValue[] =>
     Array.isArray(value)
       ? value.filter(
@@ -610,17 +629,17 @@ export function mergeViewStatePersisted<T extends IssueViewState>(
         )
       : [];
   const legacyActors = actorArray(raw.assigneeFilters);
-  if (raw.executorFilters === undefined && legacyActors.length > 0) {
-    p.executorFilters = legacyActors;
+  if (normalized.executorFilters === undefined && legacyActors.length > 0) {
+    normalized.executorFilters = legacyActors;
   }
-  if (raw.includeNoExecutor === undefined && raw.includeNoAssignee === true) {
-    p.includeNoExecutor = true;
+  if (normalized.includeNoExecutor === undefined && raw.includeNoAssignee === true) {
+    normalized.includeNoExecutor = true;
   }
-  delete p.assigneeFilters;
-  delete p.includeNoAssignee;
+  delete normalized.assigneeFilters;
+  delete normalized.includeNoAssignee;
 
   for (const key of ["grouping", "swimlaneGrouping", "tableGrouping"] as const) {
-    if (p[key] === "assignee") p[key] = "executor";
+    if (normalized[key] === "assignee") normalized[key] = "executor";
   }
 
   const migrateGroupingMap = (value: unknown): Record<string, unknown> | undefined => {
@@ -633,33 +652,38 @@ export function mergeViewStatePersisted<T extends IssueViewState>(
     return next;
   };
   const swimlaneOrders = migrateGroupingMap(raw.swimlaneOrders);
-  if (swimlaneOrders) p.swimlaneOrders = swimlaneOrders;
+  if (swimlaneOrders) normalized.swimlaneOrders = swimlaneOrders;
   const collapsedSwimlanes = migrateGroupingMap(raw.collapsedSwimlanes);
-  if (collapsedSwimlanes) p.collapsedSwimlanes = collapsedSwimlanes;
+  if (collapsedSwimlanes) normalized.collapsedSwimlanes = collapsedSwimlanes;
 
   if (isRecord(raw.cardProperties)) {
     const cardProperties = { ...raw.cardProperties };
-    if (cardProperties.executor === undefined && typeof cardProperties.assignee === "boolean") {
+    if (
+      cardProperties.executor === undefined &&
+      typeof cardProperties.assignee === "boolean"
+    ) {
       cardProperties.executor = cardProperties.assignee;
     }
     delete cardProperties.assignee;
-    p.cardProperties = cardProperties;
-  }
-  if (Array.isArray(raw.tableColumns)) {
-    p.tableColumns = raw.tableColumns.map((column) => {
-      if (!isRecord(column)) return column;
-      return { ...column, key: column.key === "assignee" ? "executor" : column.key };
-    });
+    normalized.cardProperties = cardProperties;
   }
 
-  const normalized = p as Partial<T>;
+  if (Array.isArray(raw.tableColumns)) {
+    normalized.tableColumns = raw.tableColumns.map((column) =>
+      isRecord(column) && column.key === "assignee"
+        ? { ...column, key: "executor" }
+        : column,
+    );
+  }
+
+  const p = normalized as Partial<T>;
   // `collapsedSwimlanes` changed shape from `string[]` to
   // `Record<SwimlaneGrouping, string[]>`. A snapshot saved in the old
   // shape would otherwise overwrite the default record with an array
   // and crash on first read — fall back to the default when the
   // persisted value isn't a plain object.
-  const persistedTableColumns = Array.isArray(normalized.tableColumns)
-    ? normalized.tableColumns.filter(
+  const persistedTableColumns = Array.isArray(p.tableColumns)
+    ? p.tableColumns.filter(
         (column): column is TableColumnConfig =>
           !!column &&
           typeof column === "object" &&
@@ -674,26 +698,26 @@ export function mergeViewStatePersisted<T extends IssueViewState>(
   );
   return {
     ...current,
-    ...normalized,
+    ...p,
     cardProperties: {
       ...current.cardProperties,
-      ...(normalized.cardProperties ?? {}),
+      ...(p.cardProperties ?? {}),
     },
-    swimlaneOrders: isRecord(normalized.swimlaneOrders)
-      ? { ...current.swimlaneOrders, ...normalized.swimlaneOrders }
+    swimlaneOrders: isRecord(p.swimlaneOrders)
+      ? { ...current.swimlaneOrders, ...p.swimlaneOrders }
       : current.swimlaneOrders,
-    collapsedSwimlanes: isRecord(normalized.collapsedSwimlanes)
-      ? { ...current.collapsedSwimlanes, ...normalized.collapsedSwimlanes }
+    collapsedSwimlanes: isRecord(p.collapsedSwimlanes)
+      ? { ...current.collapsedSwimlanes, ...p.collapsedSwimlanes }
       : current.collapsedSwimlanes,
     tableColumns: [
       persistedTitle ?? current.tableColumns[0] ?? { key: "title" },
       ...dedupedTableColumns,
     ],
-    tableCollapsedGroups: Array.isArray(normalized.tableCollapsedGroups)
-      ? normalized.tableCollapsedGroups
+    tableCollapsedGroups: Array.isArray(p.tableCollapsedGroups)
+      ? p.tableCollapsedGroups
       : current.tableCollapsedGroups,
-    tableCollapsedParents: Array.isArray(normalized.tableCollapsedParents)
-      ? normalized.tableCollapsedParents
+    tableCollapsedParents: Array.isArray(p.tableCollapsedParents)
+      ? p.tableCollapsedParents
       : current.tableCollapsedParents,
   };
 }

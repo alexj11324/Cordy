@@ -15,7 +15,7 @@ describe("quick create store", () => {
   // The store remembers the actor and nothing else about the last create.
   // Project is a property of the issue being filed, not a standing
   // preference, so carrying it forward files the next issue somewhere the
-  // user never picked (PB-5862).
+  // user never picked (MUL-5862).
   it("does not carry any project memory", () => {
     expect(useQuickCreateStore.getState()).not.toHaveProperty("lastProjectId");
     expect(useQuickCreateStore.getState()).not.toHaveProperty("setLastProjectId");

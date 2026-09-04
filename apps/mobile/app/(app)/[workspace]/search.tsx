@@ -99,7 +99,7 @@ function HighlightText({
         p.hit ? (
           // Inline hex (yellow-200) instead of a Tailwind class because the
           // mobile tailwind.config.js intentionally curates its own palette
-          // (no `yellow-*`) — see apps/mobile/AGENTS.md "Visual tokens".
+          // (no `yellow-*`) — see apps/mobile/CLAUDE.md "Visual tokens".
           <Text
             key={i}
             className="text-foreground"
@@ -159,8 +159,8 @@ interface SearchIssueRowProps {
 function SearchIssueRow({ item, query, slug }: SearchIssueRowProps) {
   // Web only renders the snippet line for comment matches
   // (packages/views/search/search-command.tsx:632) and the backend only
-  // populates `matched_snippet` for comment matches anyway. Keep mobile
-  // strictly aligned.
+  // populates `matched_snippet` for comment matches anyway
+  // (server/internal/handler/issue.go:592). Keep mobile strictly aligned.
   const showSnippet =
     item.match_source === "comment" && !!item.matched_snippet;
   const { colorOf, labelOf } = useIssueStatuses();

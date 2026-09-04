@@ -11,6 +11,8 @@ describe("paths.workspace(slug)", () => {
     expect(ws.issueDetail("abc-123")).toBe("/acme/issues/abc-123");
     expect(ws.projects()).toBe("/acme/projects");
     expect(ws.projectDetail("p1")).toBe("/acme/projects/p1");
+    expect(ws.workProducts()).toBe("/acme/work-products");
+    expect(ws.workProductDetail("wp/1")).toBe("/acme/work-products/wp%2F1");
     expect(ws.automations()).toBe("/acme/automations");
     expect(ws.automationDetail("a1")).toBe("/acme/automations/a1");
     expect(ws.agents()).toBe("/acme/agents");
@@ -19,7 +21,6 @@ describe("paths.workspace(slug)", () => {
     expect(ws.newAgentAiSession("sess_1")).toBe("/acme/agents/new/ai/sess_1");
     expect(ws.memberDetail("u1")).toBe("/acme/members/u1");
     expect(ws.inbox()).toBe("/acme/inbox");
-    expect(ws.channels()).toBe("/acme/channels");
     expect(ws.chatWithAgent("agent one")).toBe(
       "/acme/chat?agent=agent%20one",
     );
@@ -32,10 +33,9 @@ describe("paths.workspace(slug)", () => {
       "/acme/runtimes/machine%2Fruntime/runtime/runtime%20one",
     );
     expect(ws.skills()).toBe("/acme/skills");
-    expect(ws.integrations()).toBe("/acme/integrations");
     expect(ws.skillDetail("skl_123")).toBe("/acme/skills/skl_123");
     expect(ws.teams()).toBe("/acme/teams");
-    expect(ws.teamDetail("team_1")).toBe("/acme/teams/team_1");
+    expect(ws.teamDetail("tm_1")).toBe("/acme/teams/tm_1");
     expect(ws.settings()).toBe("/acme/settings");
     expect(ws.attachmentPreview("att_42")).toBe("/acme/attachments/att_42/preview");
   });

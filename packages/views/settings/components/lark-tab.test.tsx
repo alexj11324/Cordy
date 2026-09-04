@@ -43,12 +43,6 @@ const installationsRef = vi.hoisted(() => ({
   },
 }));
 
-const healthyRuntime = {
-  state: "healthy",
-  observedAt: null,
-  errorCode: null,
-} as const;
-
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (opts: { queryKey: unknown[]; enabled?: boolean }) => {
     if (opts.enabled === false) return { data: undefined, isLoading: false };
@@ -193,10 +187,10 @@ function resetFixtures() {
 describe("LarkAgentBindButton (CTA gate)", () => {
   beforeEach(resetFixtures);
 
-  it("shows the Feishu bind CTA but hides the Lark CTA for an owner (PB-3083)", () => {
+  it("shows the Feishu bind CTA but hides the Lark CTA for an owner (MUL-3083)", () => {
     // Mainland Feishu binding stays available; the Lark (international)
     // entry is temporarily hidden via LARK_INTL_CONNECT_ENABLED while its
-    // install→inbound pipeline is stabilized (PB-3083).
+    // install→inbound pipeline is stabilized (MUL-3083).
     render(<LarkAgentBindButton agentId="agent-1" agentName="Bot" />, {
       wrapper: I18nWrapper,
     });
@@ -204,7 +198,7 @@ describe("LarkAgentBindButton (CTA gate)", () => {
     expect(screen.queryByRole("button", { name: /Bind to Lark/i })).toBeNull();
   });
 
-  it("shows the Feishu bind CTA but hides the Lark CTA for an admin (PB-3083)", () => {
+  it("shows the Feishu bind CTA but hides the Lark CTA for an admin (MUL-3083)", () => {
     membersRef.current = [{ user_id: "user-1", role: "admin" }];
     render(<LarkAgentBindButton agentId="agent-1" agentName="Bot" />, {
       wrapper: I18nWrapper,
@@ -222,7 +216,7 @@ describe("LarkAgentBindButton (CTA gate)", () => {
     expect(container.querySelector("button")).toBeNull();
   });
 
-  it("shows the Feishu bind CTA for a non-admin agent owner (agentOwnerId matches the user, PB-4213)", () => {
+  it("shows the Feishu bind CTA for a non-admin agent owner (agentOwnerId matches the user, MUL-4213)", () => {
     // The backend authorizes the agent's owner via canManageAgent even when
     // they are only a plain workspace member, so the CTA must render for
     // them once the caller threads the agent's owner_id.
@@ -290,14 +284,14 @@ describe("LarkAgentBindButton (CTA gate)", () => {
     );
   });
 
-  // NOTE (PB-3083): the "clicking Bind to Lark begins an install with
+  // NOTE (MUL-3083): the "clicking Bind to Lark begins an install with
   // region='lark'" test was removed alongside the temporarily-hidden Lark
   // (international) CTA — there is no Lark button to click while
   // LARK_INTL_CONNECT_ENABLED is false. The Feishu region routing is still
   // pinned by the "clicking Bind to Feishu …" test above; restore the Lark
   // case when the entry is re-enabled.
 
-  it("swaps the bind CTAs for a 'Connected + Manage in Lark' badge when this agent already has an active installation", () => {
+  it("swaps the bind CTAs for a 'Connected + Manage in Lark' badge when this agent already has an installed installation", () => {
     // Anti-zombie guard: re-scanning the same agent upserts the row
     // and orphans the previously-created Lark PersonalAgent. The badge
     // closes the install entry point and links the user to the Bot's
@@ -311,8 +305,7 @@ describe("LarkAgentBindButton (CTA gate)", () => {
         app_id: "cli_existing_app",
         bot_open_id: "ou_existing_bot",
         installer_user_id: "user-1",
-        status: "active",
-        runtime: healthyRuntime,
+        status: "installed",
         installed_at: "2026-06-03T00:00:00Z",
         created_at: "2026-06-03T00:00:00Z",
         updated_at: "2026-06-03T00:00:00Z",
@@ -341,7 +334,8 @@ describe("LarkAgentBindButton (CTA gate)", () => {
 
   it("renders region-aware badge text and Manage link for a Lark-international (region=lark) installation", () => {
     // Dual-region: a bot installed against the Lark international cloud
-    // must show "Connected to Lark" + "Manage in Lark" copy, with the
+    // must preserve the Lark region and management link without treating an
+    // installed installation as a confirmed live connection. The
     // Manage link pointing at open.larksuite.com (not the Feishu
     // default). Without region-aware copy a user who clicked
     // "Bind to Feishu" and saw "Connected to Lark" would (rightly) be
@@ -354,9 +348,8 @@ describe("LarkAgentBindButton (CTA gate)", () => {
         app_id: "cli_lark_app",
         bot_open_id: "ou_lark_bot",
         installer_user_id: "user-1",
-        status: "active",
+        status: "installed",
         region: "lark",
-        runtime: healthyRuntime,
         installed_at: "2026-06-03T00:00:00Z",
         created_at: "2026-06-03T00:00:00Z",
         updated_at: "2026-06-03T00:00:00Z",
@@ -365,12 +358,13 @@ describe("LarkAgentBindButton (CTA gate)", () => {
     render(<LarkAgentBindButton agentId="agent-1" agentName="Bot" />, {
       wrapper: I18nWrapper,
     });
-    expect(screen.getByText(/Connected to Lark/i)).toBeTruthy();
+    expect(screen.getByRole("status", { name: "Connection status" }).textContent).toBe("Status unavailable");
+    expect(screen.getByText("Lark", { exact: true })).toBeTruthy();
     const link = screen.getByRole("link", { name: /Manage in Lark/i }) as HTMLAnchorElement;
     expect(link.href).toBe("https://open.larksuite.com/app/cli_lark_app");
   });
 
-  it("shows the Feishu CTA (Lark hidden) for an agent without its own installation, per-agent scoping (PB-3083)", () => {
+  it("shows the Feishu CTA (Lark hidden) for an agent without its own installation, per-agent scoping (MUL-3083)", () => {
     installationsRef.current.installations = [
       {
         id: "inst-other",
@@ -379,8 +373,7 @@ describe("LarkAgentBindButton (CTA gate)", () => {
         app_id: "cli_other",
         bot_open_id: "ou_other",
         installer_user_id: "user-1",
-        status: "active",
-        runtime: healthyRuntime,
+        status: "installed",
         installed_at: "2026-06-03T00:00:00Z",
         created_at: "2026-06-03T00:00:00Z",
         updated_at: "2026-06-03T00:00:00Z",
@@ -396,7 +389,7 @@ describe("LarkAgentBindButton (CTA gate)", () => {
   it("keeps the Connected + Manage badge for an already-installed agent even when new installs are unavailable (install_supported=false)", () => {
     // install_supported governs only NEW scan-installs — an already-installed
     // bot stays manageable when the device-flow transport is unwired
-    // (the Rust Lark handler: "already-installed bots still appear
+    // (server/internal/handler/lark.go: "already-installed bots still appear
     // and remain manageable"). Regression: the install_supported gate used to
     // run before the existing-installation check and hid the bound state.
     installationsRef.current.install_supported = false;
@@ -408,8 +401,7 @@ describe("LarkAgentBindButton (CTA gate)", () => {
         app_id: "cli_existing_app",
         bot_open_id: "ou_existing_bot",
         installer_user_id: "user-1",
-        status: "active",
-        runtime: healthyRuntime,
+        status: "installed",
         installed_at: "2026-06-03T00:00:00Z",
         created_at: "2026-06-03T00:00:00Z",
         updated_at: "2026-06-03T00:00:00Z",
@@ -433,7 +425,7 @@ describe("LarkAgentBindButton (CTA gate)", () => {
     ).toBeTruthy();
   });
 
-  it("shows the Feishu CTA (Lark hidden) when this agent's only installation is revoked (PB-3083)", () => {
+  it("shows the Feishu CTA (Lark hidden) when this agent's only installation is revoked (MUL-3083)", () => {
     installationsRef.current.installations = [
       {
         id: "inst-revoked",
@@ -462,7 +454,7 @@ describe("LarkAgentBindButton (CTA gate)", () => {
 // re-scan zombie-bot trap and the dual-bot conflict — these tests pin
 // the contract: confirm gating, deleteLarkInstallation wiring, cache
 // invalidation, and toast feedback on success / failure.
-describe("LarkAgentBotConnectedBadge (Unbind / Disconnect)", () => {
+describe("LarkAgentBotInstalledControls (Unbind / Disconnect)", () => {
   beforeEach(() => {
     resetFixtures();
     installationsRef.current.installations = [
@@ -473,8 +465,7 @@ describe("LarkAgentBotConnectedBadge (Unbind / Disconnect)", () => {
         app_id: "cli_existing_app",
         bot_open_id: "ou_existing_bot",
         installer_user_id: "user-1",
-        status: "active",
-        runtime: healthyRuntime,
+        status: "installed",
         installed_at: "2026-06-03T00:00:00Z",
         created_at: "2026-06-03T00:00:00Z",
         updated_at: "2026-06-03T00:00:00Z",
@@ -559,10 +550,10 @@ describe("LarkAgentBotConnectedBadge (Unbind / Disconnect)", () => {
     });
     // Cache must NOT be invalidated on failure — invalidating would
     // round-trip a refetch, momentarily flicker the row away even
-    // though the install is still active server-side.
+    // though the bot is still installed server-side.
     expect(mockInvalidate).not.toHaveBeenCalled();
     // Badge stays mounted so the user can retry.
-    expect(screen.getByTestId("lark-agent-bot-connected")).toBeTruthy();
+    expect(screen.getByTestId("lark-agent-bot-installed")).toBeTruthy();
   });
 
   it("disables the Cancel button while the request is in-flight (prevents racing the close)", async () => {
@@ -620,7 +611,7 @@ describe("LarkInstallDialog (polling terminal errors)", () => {
     render(<LarkAgentBindButton agentId="agent-1" agentName="Bot" />, {
       wrapper: I18nWrapper,
     });
-    // The Lark CTA is hidden (PB-3083); open the dialog via the Feishu CTA
+    // The Lark CTA is hidden (MUL-3083); open the dialog via the Feishu CTA
     // — the polling-error behavior under test is region-agnostic.
     await user.click(screen.getByRole("button", { name: /Bind to Feishu/i }));
     // Let the begin-session promise resolve and the QR render.
@@ -696,7 +687,7 @@ describe("LarkInstallDialog (polling terminal errors)", () => {
     render(<LarkAgentBindButton agentId="agent-1" agentName="Bot" />, {
       wrapper: StrictModeWrapper,
     });
-    // The Lark CTA is hidden (PB-3083); the StrictMode regression is about
+    // The Lark CTA is hidden (MUL-3083); the StrictMode regression is about
     // the dialog mount cycle, so open it via the Feishu CTA.
     await user.click(screen.getByRole("button", { name: /Bind to Feishu/i }));
 
@@ -719,12 +710,12 @@ describe("LarkInstallDialog (polling terminal errors)", () => {
   });
 });
 
-// The Connected bots list used to surface Lark's raw cli_… app_id and
+// The installation list used to surface Lark's raw cli_… app_id and
 // ou_… bot_open_id, which are meaningless to product users. The row now
 // renders the Patchbay agent's avatar + name (joined via inst.agent_id),
 // since the binding is 1:1 with an Agent. These tests pin that identity
 // rendering so the row never regresses to leaking the cli_ prefix.
-describe("LarkTab connected bots list (agent identity rendering)", () => {
+describe("LarkTab installation list (agent identity rendering)", () => {
   beforeEach(resetFixtures);
 
   it("renders the Patchbay agent's name and avatar instead of the raw Lark app_id / bot_open_id", () => {
@@ -737,8 +728,7 @@ describe("LarkTab connected bots list (agent identity rendering)", () => {
         app_id: "cli_aa941499d4f95cd9",
         bot_open_id: "ou_abc123",
         installer_user_id: "user-1",
-        status: "active",
-        runtime: healthyRuntime,
+        status: "installed",
         installed_at: "2026-06-03T00:00:00Z",
         created_at: "2026-06-03T00:00:00Z",
         updated_at: "2026-06-03T00:00:00Z",
@@ -774,8 +764,7 @@ describe("LarkTab connected bots list (agent identity rendering)", () => {
         app_id: "cli_orphan",
         bot_open_id: "ou_orphan",
         installer_user_id: "user-1",
-        status: "active",
-        runtime: healthyRuntime,
+        status: "installed",
         installed_at: "2026-06-03T00:00:00Z",
         created_at: "2026-06-03T00:00:00Z",
         updated_at: "2026-06-03T00:00:00Z",

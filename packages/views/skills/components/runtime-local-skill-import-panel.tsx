@@ -110,9 +110,9 @@ const INITIAL_BULK_STATE: BulkImportState = {
  * Max concurrent imports. Higher = faster but more daemon/network pressure.
  *
  * Timeout invariant: IMPORT_CONCURRENCY × heartbeat period (~15s) must stay
- * within runtimeLocalSkillPendingTimeout in the Rust runtime-local-skills handler
+ * within runtimeLocalSkillPendingTimeout (server/internal/handler/runtime_local_skills.go)
  * and IMPORT_POLL_TIMEOUT_MS (packages/core/runtimes/local-skills.ts).
- * See also the backend's maximum local-skill import batch.
+ * See also maxLocalSkillImportBatch in server/internal/handler/daemon.go.
  */
 const IMPORT_CONCURRENCY = 10;
 
@@ -529,7 +529,7 @@ export function RuntimeLocalSkillImportPanel({
 
   // Group the local runtimes by machine so the picker reads as
   // "machine → provider/runtime" (alias-aware) instead of a flat list of
-  // raw daemon names (PB-5248). Reuses the same source of truth as the
+  // raw daemon names (MUL-5248). Reuses the same source of truth as the
   // agent runtime picker.
   const runtimeMachines = useMemo(
     () =>

@@ -77,45 +77,7 @@ vi.mock("@patchbay/core/issues/mutations", () => ({
 }));
 
 vi.mock("@patchbay/core/workspace/hooks", () => ({
-  useActorName: () => ({
-    getActorName: (_type: string, id: string) => id === "agent-2" ? "Jessie" : "Walt",
-  }),
-}));
-
-vi.mock("../common/actor-avatar", () => ({
-  ActorAvatar: ({ actorId }: { actorId: string }) => <span data-testid={`avatar-${actorId}`} />,
-}));
-vi.mock("../issues/components/pickers/executor-picker", () => ({
-  ExecutorPicker: ({ onUpdate }: { onUpdate: (value: Record<string, string>) => void }) => (
-    <div>
-      <button type="button" onClick={() => onUpdate({ executor_type: "agent", executor_id: "agent-1" })}>
-        Choose current
-      </button>
-      <button type="button" onClick={() => onUpdate({ executor_type: "agent", executor_id: "agent-2" })}>
-        Choose Jessie
-      </button>
-    </div>
-  ),
-  ReviewerPicker: ({
-    onUpdate,
-  }: {
-    onUpdate: (value: Record<string, string>) => void;
-  }) => (
-    <div>
-      <button
-        type="button"
-        onClick={() => onUpdate({ reviewer_type: "agent", reviewer_id: "agent-1" })}
-      >
-        Choose current
-      </button>
-      <button
-        type="button"
-        onClick={() => onUpdate({ reviewer_type: "agent", reviewer_id: "agent-2" })}
-      >
-        Choose Jessie
-      </button>
-    </div>
-  ),
+  useActorName: () => ({ getActorName: () => "Walt" }),
 }));
 
 vi.mock("../i18n", () => ({
@@ -126,7 +88,7 @@ vi.mock("../i18n", () => ({
     ) => {
       // Resolve the accessor against a flat label map so assertions can target
       // text, then interpolate {{name}} / {{count}} the way i18next would — the
-      // headline substitutes the executor name and the batch count.
+      // headline substitutes the assignee name and the batch count.
       const labels = {
         run_confirm: {
           title_assign: "Confirm assignment?",
@@ -143,18 +105,18 @@ vi.mock("../i18n", () => ({
           confirm_promote: "Move and start",
           title_review: "Hand off for review",
           review_choose: "choose reviewer for {{status}}",
-          review_single: "handoff {{from}} to {{to}} for {{status}}",
-          title_review_return: "Return from review",
-          review_return_single: "return this issue to {{to}} in {{status}}",
+          review_single: "handoff from {{from}} to {{to}} at {{status}}",
+          title_review_return: "Return to implementation",
+          review_return_single: "return to {{to}} at {{status}}",
           reviewer_label: "Reviewer",
-          reviewer_must_change: "choose someone else",
+          reviewer_must_change: "choose another reviewer",
           unassigned: "Unassigned",
           confirm_review: "Hand off for review",
           confirm_review_return: "Return to implementation",
         },
         // useStatusLabel resolves BUILT-IN keys through i18n and custom ones
         // through the catalog, so the promote headline needs both sources.
-        status: { todo: "Todo", in_progress: "In Progress", in_review: "In Review" },
+        status: { todo: "Todo" },
       };
       return sel(labels).replace(/\{\{(\w+)\}\}/g, (_m, k) => String(vars?.[k] ?? ""));
     },
@@ -221,7 +183,7 @@ const single = {
 
 // Promoting a parked issue out of backlog starts the run on its own, so it
 // confirms through this same dialog — one behaviour for built-in `todo` and
-// every custom Todo-category status alike (PB-6463).
+// every custom Todo-category status alike (MUL-6463).
 const promote = {
   issueIds: ["issue-1"],
   mode: "promote" as const,
@@ -230,38 +192,18 @@ const promote = {
   executorId: "agent-1",
 };
 
-const review = {
-  issueIds: ["issue-1"],
-  mode: "review" as const,
-  status: "in_review",
-  fromExecutorType: "agent" as const,
-  fromExecutorId: "agent-1",
-  executorType: null,
-  executorId: null,
-  issueRevision: 7,
-};
-
-const reviewReturn = {
-  issueIds: ["issue-1"],
-  mode: "review-return" as const,
-  status: "in_progress",
-  executorType: "agent" as const,
-  executorId: "agent-1",
-  issueRevision: 7,
-};
-
 describe("RunConfirmModal", () => {
   it("is fully operable on the first frame — no preview request, no spinner", () => {
-    // The PB-5010 core: opening the dialog fires nothing and blocks nothing.
+    // The MUL-5010 core: opening the dialog fires nothing and blocks nothing.
     const { container } = render(<RunConfirmModal onClose={vi.fn()} data={single} />);
     expect(screen.queryByTestId("spinner")).not.toBeInTheDocument();
     expect(noteBox()).not.toBeDisabled();
     expect(confirmButton()).not.toBeDisabled();
-    // Headline reads across elements — the executor name is bolded in place.
+    // Headline reads across elements — the assignee name is bolded in place.
     expect(container.textContent).toContain("assign to Walt");
   });
 
-  it("single assign sends the executor change with the handoff note", async () => {
+  it("single assign sends the assignee change with the handoff note", async () => {
     render(<RunConfirmModal onClose={vi.fn()} data={single} />);
     fireEvent.change(noteBox(), { target: { value: "only login" } });
     fireEvent.click(confirmButton());
@@ -276,7 +218,7 @@ describe("RunConfirmModal", () => {
   });
 
   it("completes silently on success — closes with no result toast", async () => {
-    // Final scope: the dialog only confirms the assignment. The executor and any
+    // Final scope: the dialog only confirms the assignment. The assignee and any
     // run surface through the issue's normal updates, so submit adds no toast.
     const onClose = vi.fn();
     render(<RunConfirmModal onClose={onClose} data={single} />);
@@ -304,9 +246,9 @@ describe("RunConfirmModal", () => {
     expect(screen.getByText("runtime too old")).toBeInTheDocument();
   });
 
-  it("promote sends the status change with the handoff note and no executor fields", async () => {
+  it("promote sends the status change with the handoff note and no assignee fields", async () => {
     // The owner is already on the issue: re-sending it would turn a status
-    // write into an executor write on the server's side of the predicate.
+    // write into an assignee write on the server's side of the predicate.
     render(<RunConfirmModal onClose={vi.fn()} data={promote} />);
     fireEvent.change(noteBox(), { target: { value: "redo the migration" } });
     fireEvent.click(screen.getByRole("button", { name: "Move and start" }));
@@ -342,45 +284,6 @@ describe("RunConfirmModal", () => {
     expect(container.textContent).toContain("move to Todo, Walt starts");
   });
 
-  it("requires a different reviewer and submits status plus reviewer atomically", async () => {
-    render(<RunConfirmModal onClose={vi.fn()} data={review} />);
-    const submit = screen.getByRole("button", { name: "Hand off for review" });
-    expect(submit).toBeDisabled();
-
-    fireEvent.click(screen.getByRole("button", { name: "Choose current" }));
-    expect(screen.getByText("choose someone else")).toBeInTheDocument();
-    expect(submit).toBeDisabled();
-
-    fireEvent.click(screen.getByRole("button", { name: "Choose Jessie" }));
-    expect(submit).not.toBeDisabled();
-    fireEvent.click(submit);
-
-    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
-    expect(mockUpdate).toHaveBeenCalledWith({
-      id: "issue-1",
-      status: "in_review",
-      reviewer_type: "agent",
-      reviewer_id: "agent-2",
-      expected_revision: 7,
-    });
-  });
-
-  it("returns to the implementation owner with the note and suppress choices", async () => {
-    const { container } = render(<RunConfirmModal onClose={vi.fn()} data={reviewReturn} />);
-    expect(screen.getByText("Return from review")).toBeInTheDocument();
-    expect(container.textContent).toContain("return this issue to Walt in In Progress");
-    fireEvent.change(noteBox(), { target: { value: "address the review comments" } });
-    fireEvent.click(screen.getByRole("button", { name: "Return to implementation" }));
-
-    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
-    expect(mockUpdate).toHaveBeenCalledWith({
-      id: "issue-1",
-      status: "in_progress",
-      expected_revision: 7,
-      handoff_note: "address the review comments",
-    });
-  });
-
   it("resolves a team's verdict through its leader's runtime, locally", () => {
     // A team run is executed by its leader, so the leader's runtime decides.
     // The team list gives us leader_id, so this needs no server verdict.
@@ -396,7 +299,7 @@ describe("RunConfirmModal", () => {
   });
 
   it("leaves the note box enabled when the target runtime can't be resolved", () => {
-    // Unknown executor → no verdict. The note is a soft gate, so an
+    // Unknown assignee → no verdict. The note is a soft gate, so an
     // unresolvable target must not produce a spurious warning.
     cache.agents = [];
     render(<RunConfirmModal onClose={vi.fn()} data={single} />);
@@ -419,7 +322,7 @@ describe("RunConfirmModal", () => {
     expect(mockToast.success).not.toHaveBeenCalled();
   });
 
-  // --- Send chord (PB-5694) ------------------------------------------------
+  // --- Send chord (MUL-5694) ------------------------------------------------
   // The note box is where the caret starts, so the dialog has to submit from
   // the keyboard there, the same way the issue composer creates.
 

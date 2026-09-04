@@ -2,7 +2,7 @@ import { fromMarkdown } from "mdast-util-from-markdown";
 import type { Root, RootContent, Code } from "mdast";
 
 /**
- * Fenced-code closedness gate for streaming RichContent (PB-4922).
+ * Fenced-code closedness gate for streaming RichContent (MUL-4922).
  *
  * A Mermaid diagram or sandboxed HTML iframe must never be instantiated from a
  * fence the author is still typing: mid-stream the source is syntactically

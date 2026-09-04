@@ -3,7 +3,7 @@
 /**
  * ReadonlyContent — compatibility wrapper over the canonical <RichContent>.
  *
- * The renderer itself moved to packages/views/rich-content/ (PB-4922) so Chat,
+ * The renderer itself moved to packages/views/rich-content/ (MUL-4922) so Chat,
  * Issue descriptions and Comments all share ONE implementation of Markdown
  * parsing, sanitize, fenced-code dispatch, mentions, links and attachments.
  * This file stays only so existing document-density callers (comment cards,

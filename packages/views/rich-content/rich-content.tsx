@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * RichContent — the ONE product-level readonly content renderer (PB-4922).
+ * RichContent — the ONE product-level readonly content renderer (MUL-4922).
  *
  * Chat (user message, live assistant, persisted assistant, timeline text),
  * Issue descriptions and Comments all render through this component. There is
@@ -92,7 +92,7 @@ export type RichContentPhase = "streaming" | "settled";
 // components map. The map must stay referentially stable: react-markdown
 // re-runs the whole subtree when `components` changes identity, which rewrites
 // every highlighted <code>'s innerHTML and collapses an active text selection
-// inside a code block (PB-3621).
+// inside a code block (MUL-3621).
 
 const ClosedFenceContext = createContext<ReadonlySet<number>>(new Set<number>());
 
@@ -122,7 +122,7 @@ function IssueMentionLink({ issueId, label }: { issueId: string; label?: string 
 }
 
 /**
- * An issue addressed by identifier (e.g. `PB-123`) rather than by UUID.
+ * An issue addressed by identifier (e.g. `MUL-123`) rather than by UUID.
  * Resolves it against the current workspace and renders a navigable mention on
  * a hit.
  *
@@ -174,7 +174,7 @@ function childrenToLabel(children: ReactNode): string | undefined {
  *
  * Pasting a link copied out of the app is how people reference a project:
  * projects carry only a UUID and a free-text title, so unlike an issue they have
- * no `PB-123` shorthand for the autolink preprocessor to detect — the URL IS
+ * no `MUL-123` shorthand for the autolink preprocessor to detect — the URL IS
  * the reference. Rendering it as the same chip the `mention://project/<uuid>`
  * form produces closes that gap without inventing a new text form. Issue URLs
  * go through the same path for symmetry.
@@ -273,7 +273,7 @@ function RichLink({ href, children }: { href?: string; children?: ReactNode }) {
     ? unfurlableEntityLink(href, children, slug, appOrigin)
     : null;
   if (entity?.kind === "issue") {
-    // `PB-123` is the shape "Copy link" produces, so it is the shape most
+    // `MUL-123` is the shape "Copy link" produces, so it is the shape most
     // pasted issue URLs carry; it needs a lookup, and keeps the link on a miss.
     return isIssueIdentifier(entity.id) ? (
       <IdentifierIssueMentionLink identifier={entity.id} fallback={plainLink} />
@@ -539,7 +539,7 @@ export const RichContent = memo(function RichContent({
   // fresh `dangerouslySetInnerHTML` object each time; React then rewrites the
   // highlighted innerHTML even though the string is byte-identical, tearing
   // down every hljs <span> and collapsing any active text selection inside a
-  // code block (PB-3621). A stable element reference lets React bail out.
+  // code block (MUL-3621). A stable element reference lets React bail out.
   const markdown = useMemo(
     () => (
       <ClosedFenceContext.Provider value={closedFences}>

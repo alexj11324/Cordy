@@ -208,7 +208,7 @@ export function CreateProjectModal({ onClose }: { onClose: () => void }) {
   const { data: runtimes = [] } = useQuery(runtimeListOptions(wsId));
   // Capability, not version: a dev-built daemon reports a git-describe string
   // that the version floor exempts, so the version check passed for a binary
-  // with no worktree implementation (PB-5707). A backend too old to record the
+  // with no worktree implementation (MUL-5707). A backend too old to record the
   // capability at all is its own answer — blaming this machine for that sent a
   // user off to update the one piece already on the newest release (#7113).
   // Preselection only — the server gates the save, including on this bundled

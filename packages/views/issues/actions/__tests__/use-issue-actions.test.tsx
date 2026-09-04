@@ -51,7 +51,7 @@ vi.mock("@patchbay/core/issues/mutations", () => ({
 // The status catalog is server state; this suite only needs it to answer which
 // CATEGORY a key belongs to, so the entries are fed in directly. `later` parks
 // like Backlog and `rework` starts work like Todo — the two cases a raw
-// `status === "backlog"` / `=== "todo"` comparison gets wrong (PB-6463).
+// `status === "backlog"` / `=== "todo"` comparison gets wrong (MUL-6463).
 const catalogEntries: IssueStatusEntry[] = [
   ...(["backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"] as const).map(
     (key, i) => statusEntry({ id: key, key, name: key, category: key, is_system: true, position: i }),
@@ -96,6 +96,7 @@ vi.mock("../../../navigation", () => ({
     push: vi.fn(),
     pathname: "/test/issues/issue-1",
     searchParams: new URLSearchParams(),
+    hash: "",
     back: vi.fn(),
     replace: vi.fn(),
     getShareableUrl: (p: string) => `https://app.patchbay.com${p}`,
@@ -171,7 +172,7 @@ describe("useIssueActions", () => {
     );
   });
 
-  it("assigning an agent to a queued issue confirms execution admission", () => {
+  it("assigning an agent routes through the run-confirm modal instead of mutating directly", () => {
     const { result } = renderHook(() => useIssueActions(mockIssue), { wrapper });
 
     act(() => {
@@ -211,7 +212,7 @@ describe("useIssueActions", () => {
   // Which writes need confirming is decided by runConfirmIntent, whose matrix
   // (parked / unresolvable categories, every promotion target) is canonical in
   // ../run-confirm-gate.test.ts. These two only prove the hook routes on it.
-  it("moving an agent-owned parked issue to Todo confirms execution admission", () => {
+  it("promoting an agent-owned parked issue routes through the run-confirm modal", () => {
     const parked = {
       ...mockIssue,
       status: "backlog",
@@ -248,67 +249,20 @@ describe("useIssueActions", () => {
     expect(mockOpenModal).not.toHaveBeenCalled();
   });
 
-  it("moving into review opens the reviewer handoff flow", () => {
-    const active = {
-      ...mockIssue,
-      status: "in_progress",
-      executor_type: "agent",
-      executor_id: "agent-1",
-    } as Issue;
-    const { result } = renderHook(() => useIssueActions(active), { wrapper });
-
-    act(() => {
-      result.current.updateField({ status: "in_review" });
-    });
-
-    expect(mockOpenModal).toHaveBeenCalledWith("issue-run-confirm", {
-      issueIds: ["issue-1"],
-      mode: "review",
-      status: "in_review",
-      fromExecutorType: "agent",
-      fromExecutorId: "agent-1",
-      executorType: null,
-      executorId: null,
-      issueRevision: active.revision,
-    });
-    expect(mockUpdateMutate).not.toHaveBeenCalled();
-  });
-
-  it("returning from review opens the implementation handoff confirmation", () => {
-    const inReview = {
-      ...mockIssue,
-      status: "in_review",
-      executor_type: "agent",
-      executor_id: "agent-1",
-    } as Issue;
-    const { result } = renderHook(() => useIssueActions(inReview), { wrapper });
-
-    act(() => {
-      result.current.updateField({ status: "in_progress" });
-    });
-
-    expect(mockOpenModal).toHaveBeenCalledWith("issue-run-confirm", {
-      issueIds: ["issue-1"],
-      mode: "review-return",
-      status: "in_progress",
-      executorType: "agent",
-      executorId: "agent-1",
-      issueRevision: inReview.revision,
-    });
-    expect(mockUpdateMutate).not.toHaveBeenCalled();
-  });
-
   it("assigning a member applies directly without the run-confirm modal", () => {
     const { result } = renderHook(() => useIssueActions(mockIssue), { wrapper });
 
     act(() => {
       result.current.updateField({
-        owner_type: "member", owner_id: "user-1",
+        owner_type: "member",
+        owner_id: "user-1",
+        executor_type: null,
+        executor_id: null,
       });
     });
 
     expect(mockUpdateMutate).toHaveBeenCalledWith(
-      { id: "issue-1", owner_type: "member", owner_id: "user-1" },
+      { id: "issue-1", owner_type: "member", owner_id: "user-1", executor_type: null, executor_id: null },
       expect.any(Object),
     );
     expect(mockOpenModal).not.toHaveBeenCalled();
@@ -376,10 +330,12 @@ describe("useIssueActions", () => {
     });
   });
 
-  it("openCreateSubIssue seeds the parent's project and executor so the sub-issue inherits them", () => {
+  it("openCreateSubIssue independently inherits the parent's owner and executor", () => {
     const parentIssue = {
       ...mockIssue,
       project_id: "project-1",
+      owner_type: "member",
+      owner_id: "user-1",
       executor_type: "agent",
       executor_id: "agent-1",
     } as Issue;
@@ -393,12 +349,14 @@ describe("useIssueActions", () => {
       parent_issue_id: "issue-1",
       parent_issue_identifier: "TES-1",
       project_id: "project-1",
+      owner_type: "member",
+      owner_id: "user-1",
       executor_type: "agent",
       executor_id: "agent-1",
     });
   });
 
-  it("openCreateSubIssue omits executor when the parent has none", () => {
+  it("openCreateSubIssue omits role seeds when the parent has none", () => {
     const parentIssue = {
       ...mockIssue,
       project_id: "project-1",

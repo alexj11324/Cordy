@@ -14,7 +14,7 @@ import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
  * dropped, undone and server-loaded text produce a document identical to typed
  * text, so the plugin cannot tell them apart. With `allowSpaces` the match then
  * runs from the `@` to the end of the line, so pasting `npx @scope/pkg --token=…`
- * opens an empty picker that swallows Enter (PB-5429).
+ * opens an empty picker that swallows Enter (MUL-5429).
  *
  * That is upstream's known, unfixed design: ueberdosis/tiptap#4183 ("Suggestion
  * opens even if current user didn't type the trigger", open since 2023, labelled

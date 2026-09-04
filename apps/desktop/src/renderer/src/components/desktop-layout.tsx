@@ -20,30 +20,21 @@ import {
 } from "@patchbay/views/layout";
 import { SearchCommand, SearchTrigger } from "@patchbay/views/search";
 import { FloatingChat } from "@patchbay/views/chat";
-import {
-  WorkspaceSlugProvider,
-  paths,
-  useCurrentWorkspace,
-} from "@patchbay/core/paths";
+import { WorkspaceSlugProvider, paths, useCurrentWorkspace } from "@patchbay/core/paths";
 import { workspaceListOptions } from "@patchbay/core/workspace";
 import {
   useNavigation,
   type LinkClickIntent,
 } from "@patchbay/views/navigation";
-import {
-  getCurrentSlug,
-  subscribeToCurrentSlug,
-} from "@patchbay/core/platform";
+import { getCurrentSlug, subscribeToCurrentSlug } from "@patchbay/core/platform";
 import { useDesktopUnreadBadge } from "@patchbay/views/platform";
 import {
   DesktopNavigationProvider,
   routeContentLinkPath,
 } from "@/platform/navigation";
-import { useWindowOverlayStore } from "@/stores/window-overlay-store";
 import { TabBar } from "./tab-bar";
 import { TabContent } from "./tab-content";
 import { WindowOverlay } from "./window-overlay";
-import { DevAcceptanceBridge } from "@/platform/dev-acceptance-bridge";
 
 const TOP_BAR_HEIGHT_CLASS = "h-12";
 const WINDOW_TOOLBAR_CLEARANCE = 184;
@@ -122,20 +113,18 @@ function useNativeNavigationGestures() {
   }, [goBack, goForward]);
 }
 
+
 // The main area's top bar doubles as a window drag region. When the sidebar
 // is not occupying main-flow width, leave room for the fixed window toolbar
 // so tabs do not land beneath the traffic lights / navigation controls.
 function MainTopBar() {
-  const { open, isCompact } = useSidebar();
-  const sidebarHidden = !open || isCompact;
+  const { state, isCompact } = useSidebar();
+  const sidebarHidden = state === "collapsed" || isCompact;
 
   return (
     <motion.header
       animate={{ paddingLeft: sidebarHidden ? WINDOW_TOOLBAR_CLEARANCE : 0 }}
-      className={cn(
-        "relative shrink-0 flex items-center gap-2",
-        TOP_BAR_HEIGHT_CLASS,
-      )}
+      className={cn("relative shrink-0 flex items-center gap-2", TOP_BAR_HEIGHT_CLASS)}
       initial={false}
       transition={toolbarMotion}
     >
@@ -148,9 +137,7 @@ function MainTopBar() {
         style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
       />
       <div className="relative z-10 flex h-full min-w-0 max-w-full items-center">
-        <div className="relative -top-2 flex h-full min-w-0 max-w-full items-center">
-          <TabBar />
-        </div>
+        <TabBar />
       </div>
     </motion.header>
   );
@@ -160,8 +147,8 @@ function MainTopBar() {
 // leaves the main flow, the left margin must grow to mirror the fixed mr-2 so
 // the floating canvas sits symmetrically inside the window frame.
 function MainCanvas({ children }: { children: React.ReactNode }) {
-  const { open, isCompact } = useSidebar();
-  const sidebarHidden = !open || isCompact;
+  const { state, isCompact } = useSidebar();
+  const sidebarHidden = state === "collapsed" || isCompact;
 
   return (
     <motion.div
@@ -248,7 +235,7 @@ export function DesktopShell() {
     () => null,
   );
   // Chrome gates on "the slug still resolves to a workspace", NOT on "the
-  // singleton is non-null" (PB-6231 / #7021). The singleton is mutable
+  // singleton is non-null" (MUL-6231 / #7021). The singleton is mutable
   // process state that no single owner keeps in lockstep with the workspace
   // list, so after the active workspace is deleted it can still hold the dead
   // slug for a beat. Everything below mounts workspace-scoped components —
@@ -270,10 +257,7 @@ export function DesktopShell() {
       : null;
   const usesNativeVibrancy =
     window.desktopAPI.host === "electron" &&
-    window.desktopAPI.appInfo.os === "macos";
-  const settingsOpen = useWindowOverlayStore(
-    (state) => state.overlay?.type === "settings",
-  );
+    window.desktopAPI.appInfo?.os === "macos";
 
   return (
     <DesktopNavigationProvider>
@@ -287,67 +271,54 @@ export function DesktopShell() {
           window-level overlay (new-workspace flow) triggered by
           IndexRedirect, not a route. */}
       <WorkspaceSlugProvider slug={slug}>
+        <DesktopInboxBridge />
         <div
-          aria-hidden={settingsOpen ? true : undefined}
-          data-testid="desktop-application-underlay"
-          inert={settingsOpen ? true : undefined}
-          style={{ display: "contents" }}
+          className={cn(
+            "flex h-screen",
+            usesNativeVibrancy ? "bg-transparent" : "bg-app-shell",
+          )}
         >
-          <DesktopInboxBridge />
-          {slug && <DevAcceptanceBridge />}
-          <div
+          {/* Non-macOS keeps the opaque app-shell wrapper. On macOS, the shell
+              is transparent so Electron's native sidebar material can show
+              through; descendants that need an opaque fill still read the
+              app-shell token from --sidebar-wrapper-fill. */}
+          {/* hasExternalTrigger: WindowToolbar below parks a SidebarTrigger
+              beside the traffic lights, where it is always reachable. Page
+              headers inside the canvas must not add their own fallback one on
+              top of it — desktop windows sit below `xl`, exactly where that
+              fallback renders, so every page showed a second identical icon
+              50px under this one (MUL-6218). */}
+          <SidebarProvider
+            hasExternalTrigger
+            hoverReveal
+            glass
+            data-native-vibrancy={usesNativeVibrancy ? "true" : undefined}
             className={cn(
-              "flex h-screen",
+              "flex-1 [--sidebar-wrapper-fill:var(--app-shell)]",
               usesNativeVibrancy ? "bg-transparent" : "bg-app-shell",
             )}
           >
-            {/* Non-macOS keeps the opaque app-shell wrapper. On macOS, the shell
-                is transparent so Electron's native sidebar material can show
-                through; descendants that need an opaque fill still read the
-                app-shell token from --sidebar-wrapper-fill. */}
-            {/* hasExternalTrigger: WindowToolbar below parks a SidebarTrigger
-                beside the traffic lights, where it is always reachable. Page
-                headers inside the canvas must not add their own fallback one on
-                top of it — desktop windows sit below `xl`, exactly where that
-                fallback renders, so every page showed a second identical icon
-                50px under this one (PB-6218). */}
-            <SidebarProvider
-              hasExternalTrigger
-              hoverReveal
-              glass
-              data-native-vibrancy={usesNativeVibrancy ? "true" : undefined}
-              className={cn(
-                "flex-1 [--sidebar-wrapper-fill:var(--app-shell)]",
-                usesNativeVibrancy ? "bg-transparent" : "bg-app-shell",
-              )}
-            >
-              {slug && <GlobalShortcuts />}
-              {slug && <WindowToolbar />}
-              {slug && (
-                <AppSidebar
-                  topSlot={<SidebarTopSpacer />}
-                  searchSlot={<SearchTrigger />}
-                />
-              )}
-              {/* Right side: header + content container */}
-              <div className="flex flex-1 min-w-0 flex-col">
-                <MainTopBar />
-                <MainCanvas>
-                  {/* Same indicator, same anchor as web: DashboardLayout puts it
-                      at the top of SidebarInset, and MainCanvas is desktop's
-                      equivalent relative/overflow-hidden content box. Desktop
-                      used to have no navigation feedback at all — a click just
-                      froze until the destination committed (PB-6404). */}
-                  <NavigationProgress />
-                  <TabContent />
-                  {slug && <FloatingChat />}
-                </MainCanvas>
-              </div>
-            </SidebarProvider>
-          </div>
-          {slug && <ModalRegistry />}
-          {slug && <SearchCommand />}
+            {slug && <GlobalShortcuts />}
+            {slug && <WindowToolbar />}
+            {slug && <AppSidebar topSlot={<SidebarTopSpacer />} searchSlot={<SearchTrigger />} />}
+            {/* Right side: header + content container */}
+            <div className="flex flex-1 min-w-0 flex-col">
+              <MainTopBar />
+              <MainCanvas>
+                {/* Same indicator, same anchor as web: DashboardLayout puts it
+                    at the top of SidebarInset, and MainCanvas is desktop's
+                    equivalent relative/overflow-hidden content box. Desktop
+                    used to have no navigation feedback at all — a click just
+                    froze until the destination committed (MUL-6404). */}
+                <NavigationProgress />
+                <TabContent />
+                {slug && <FloatingChat />}
+              </MainCanvas>
+            </div>
+          </SidebarProvider>
         </div>
+        {slug && <ModalRegistry />}
+        {slug && <SearchCommand />}
         <WindowOverlay />
       </WorkspaceSlugProvider>
     </DesktopNavigationProvider>

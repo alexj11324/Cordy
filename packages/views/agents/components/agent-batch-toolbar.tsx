@@ -28,7 +28,7 @@ import type { AgentListRow } from "./agents-page";
 
 /**
  * Floating batch-toolbar for the agents list page. Renders archive/restore
- * actions (existing) and a "Set access scope" action (new, PB-4302 / 2026-07-14)
+ * actions (existing) and a "Set access scope" action (new, MUL-4302 / 2026-07-14)
  * that opens a single confirmation dialog with an embedded AccessPicker.
  *
  * The bulk action is gated by `isOwnedByMe` (not `canManage`) to match the

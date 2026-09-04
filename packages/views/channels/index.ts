@@ -1,1 +1,1 @@
-export { ChannelsPage } from "./channels-page";
+export { ChannelsPage, channelSlugFromName, formatChannelDate } from "./channels-page";

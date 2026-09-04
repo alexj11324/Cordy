@@ -11,7 +11,11 @@ import type { BoardColumnGroup } from "../components/board-column";
 
 export type DragMoveTargetUpdates = Pick<
   UpdateIssueRequest,
-  "status" | "executor_type" | "executor_id" | "position"
+  | "status"
+  | "executor_type"
+  | "executor_id"
+  | "project_id"
+  | "position"
 >;
 
 export type DragMoveUpdates = DragMoveTargetUpdates & {
@@ -48,6 +52,12 @@ export function executorGroupId(
   return type && id ? `executor:${type}:${id}` : UNASSIGNED_GROUP_ID;
 }
 
+/** Mirrors the server's project group key (`project:<id>` / `project:none`)
+ *  so a column built from a descriptor and one built from a card agree. */
+export function projectGroupId(projectId: string | null): string {
+  return `project:${projectId ?? "none"}`;
+}
+
 export function getIssueGroupId(
   issue: Issue,
   grouping: IssueGrouping,
@@ -56,8 +66,9 @@ export function getIssueGroupId(
   // Status columns are CATEGORIES, so the card buckets by the category it
   // behaves as. Bucketing by the raw key gave a custom status a column id no
   // column has, and the card was dropped from the board/list entirely
-  // (PB-6409).
+  // (MUL-6409).
   if (grouping === "status") return statusGroupId(issueColumnCategory(issue));
+  if (grouping === "project") return projectGroupId(issue.project_id ?? null);
   const propertyId = propertyIdFromViewKey(grouping);
   if (propertyId) {
     const value = issue.properties?.[propertyId];
@@ -71,7 +82,10 @@ export function getIssueGroupId(
     }
     return propertyGroupId(propertyId, optionId);
   }
-  return executorGroupId(issue.executor_type, issue.executor_id);
+  return executorGroupId(
+    issue.executor_type,
+    issue.executor_id,
+  );
 }
 
 export function buildColumns(
@@ -146,16 +160,21 @@ export function findColumn(
 export function issueMatchesGroup(issue: Issue, group: BoardColumnGroup): boolean {
   // "Is this card already in that column?" — a category question, like the
   // column itself. Comparing the raw key answered no for every custom status,
-  // so a drop that changed nothing still fired a status write (PB-6409).
+  // so a drop that changed nothing still fired a status write (MUL-6409).
   if (group.status) return issueColumnCategory(issue) === group.status;
   if (group.propertyId !== undefined) {
     const value = issue.properties?.[group.propertyId];
     const optionId = typeof value === "string" ? value : null;
     return optionId === (group.propertyOptionId ?? null);
   }
+  if (group.projectId !== undefined) {
+    return (issue.project_id ?? null) === group.projectId;
+  }
+  const type = issue.executor_type;
+  const id = issue.executor_id;
   return (
-    (issue.executor_type ?? null) === (group.executorType ?? null) &&
-    (issue.executor_id ?? null) === (group.executorId ?? null)
+    (type ?? null) === (group.executorType ?? null) &&
+    (id ?? null) === (group.executorId ?? null)
   );
 }
 
@@ -166,7 +185,7 @@ export function getMoveUpdates(
    *  CATEGORY, and a card on a custom status is already in that column under a
    *  DIFFERENT key — so writing the column's canonical key would silently
    *  rewrite `awaiting_response` to `in_review`, and a status change starts an
-   *  agent run, for a drag that only changed the row order (PB-6409). */
+   *  agent run, for a drag that only changed the row order (MUL-6409). */
   issue?: Pick<Issue, "status" | "status_category">,
 ): DragMoveTargetUpdates {
   if (group.status) {
@@ -180,8 +199,18 @@ export function getMoveUpdates(
   // Property columns: the value change is not part of UpdateIssueRequest —
   // the board applies it through useSetIssueProperty after the position move.
   if (group.propertyId !== undefined) return { position };
+  if (group.projectId !== undefined) {
+    return { project_id: group.projectId, position };
+  }
+  if (!group.executorType) {
+    return {
+      executor_type: null,
+      executor_id: null,
+      position,
+    };
+  }
   return {
-    executor_type: group.executorType ?? null,
+    executor_type: group.executorType,
     executor_id: group.executorId ?? null,
     position,
   };

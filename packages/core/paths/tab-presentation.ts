@@ -27,11 +27,11 @@ import type { TabActorType, TabSubject } from "./tab-subject";
 
 /** The leading visual a tab should render. */
 export type TabVisual =
-  /** A static route icon (page icon or resourceless type icon). */
+  /** A static Lucide icon (page icon or resourceless type icon). */
   | { kind: "icon"; icon: RouteIconName }
   /** An issue's live status glyph. `null` while the issue is loading.
    *  `category` is what selects the glyph — carried here so the tab strip
-   *  never has to resolve a custom status key on its own. (PB-6243) */
+   *  never has to resolve a custom status key on its own. (MUL-6243) */
   | { kind: "issue-status"; status: IssueStatus | null; category?: IssueStatusCategory }
   /** A project's own icon. `null` falls back to the default project glyph. */
   | { kind: "project-icon"; icon: string | null }
@@ -173,7 +173,7 @@ export function resolveTabPresentation(
       };
     case "automation":
       return {
-        visual: { kind: "icon", icon: "AlarmClockCheck" },
+        visual: { kind: "icon", icon: "Zap" },
         title: textOr(data.automation?.title, "automation"),
       };
     case "actor":

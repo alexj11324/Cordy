@@ -122,7 +122,7 @@ worktree="$tmp_dir/worktree"
 git init -q -b main "$repo"
 git -C "$repo" config user.name "Worktree DB Test"
 git -C "$repo" config user.email "worktree-db-test@example.com"
-printf '.env.worktree\nnode_modules/\nserver-rs/target/\n.patchbay-dev/\n' >"$repo/.gitignore"
+printf '.env.worktree\n' >"$repo/.gitignore"
 printf 'base\n' >"$repo/tracked.txt"
 mkdir -p "$repo/backend"
 printf 'nested\n' >"$repo/backend/tracked.txt"
@@ -161,44 +161,6 @@ if grep -Fq "Error" "$output"; then
   fail "remove-worktree printed an error after cancellation"
 fi
 
-worktree_git_dir="$(git -C "$worktree" rev-parse --absolute-git-dir)"
-mkdir "$worktree_git_dir/patchbay-dev-lifecycle.lock"
-: >"$docker_log"
-if printf 'y\n' | (cd "$repo" && PATH="$stub_dir:$PATH" DOCKER_LOG="$docker_log" \
-  bash "$root_dir/scripts/remove-worktree.sh" "$worktree") >"$output" 2>&1; then
-  fail "remove-worktree must refuse a concurrent development lifecycle"
-fi
-require_contains "$output" "development lifecycle is busy"
-if [ ! -d "$worktree" ]; then
-  fail "remove-worktree removed a worktree during a concurrent lifecycle"
-fi
-if [ -s "$docker_log" ]; then
-  fail "remove-worktree dropped the database before acquiring its lifecycle lock"
-fi
-rmdir "$worktree_git_dir/patchbay-dev-lifecycle.lock"
-
-mkdir -p "$worktree/node_modules/package" "$worktree/server-rs/target/debug" "$worktree/.patchbay-dev/bin"
-printf 'fixture\n' >"$worktree/node_modules/package/index.js"
-printf 'fixture\n' >"$worktree/server-rs/target/debug/binary"
-printf 'fixture\n' >"$worktree/.patchbay-dev/bin/patchbay-server"
-
-# A malformed or unverifiable process manifest must block database cleanup and
-# deletion instead of letting output cleanup erase the evidence.
-printf 'not-json\n' >"$worktree/.patchbay-dev/dev-process.json"
-: >"$docker_log"
-if printf 'y\n' | (cd "$repo" && PATH="$stub_dir:$PATH" DOCKER_LOG="$docker_log" \
-  bash "$root_dir/scripts/remove-worktree.sh" "$worktree") >"$output" 2>&1; then
-  fail "remove-worktree must refuse an unverifiable tracked development process"
-fi
-require_contains "$output" "invalid complete development process state"
-if [ ! -d "$worktree" ]; then
-  fail "remove-worktree removed a worktree with unverifiable process state"
-fi
-if [ -s "$docker_log" ]; then
-  fail "remove-worktree dropped the database before verifying process ownership"
-fi
-rm "$worktree/.patchbay-dev/dev-process.json"
-
 printf 'y\n' | (cd "$repo" && PATH="$stub_dir:$PATH" DOCKER_LOG="$docker_log" \
   bash "$root_dir/scripts/remove-worktree.sh" "$worktree") >"$output"
 if [ -e "$worktree" ]; then
@@ -206,9 +168,6 @@ if [ -e "$worktree" ]; then
 fi
 require_contains "$docker_log" \
   "compose exec -T postgres dropdb --username patchbay --maintenance-db postgres --if-exists --force -- patchbay_worktree_456"
-require_contains "$output" "Removing disposable worktree output: node_modules"
-require_contains "$output" "Removing disposable worktree output: server-rs/target"
-require_contains "$output" "Removing disposable worktree output: .patchbay-dev"
 
 dirty_worktree="$tmp_dir/dirty-worktree"
 git -C "$repo" worktree add -q -b dirty-feature "$dirty_worktree"

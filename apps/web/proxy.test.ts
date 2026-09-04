@@ -3,8 +3,7 @@ import { NextRequest } from "next/server";
 import { PATCHBAY_LOCALE_HEADER } from "./lib/locale-routing";
 
 vi.mock("@clerk/nextjs/server", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("@clerk/nextjs/server")>();
+  const actual = await importOriginal<typeof import("@clerk/nextjs/server")>();
   type TestClerkMiddlewareHandler = (
     auth: () => Promise<{ userId: string | null }>,
     request: NextRequest,
@@ -13,8 +12,8 @@ vi.mock("@clerk/nextjs/server", async (importOriginal) => {
 
   return {
     ...actual,
-    clerkMiddleware: (handler: TestClerkMiddlewareHandler) =>
-      async (request: NextRequest) =>
+    clerkMiddleware:
+      (handler: TestClerkMiddlewareHandler) => async (request: NextRequest) =>
         handler(
           async () => ({
             userId: request.cookies.has("patchbay_logged_in") ? "user-1" : null,
@@ -52,7 +51,9 @@ async function redirectLocation(
   cookies: Record<string, string> = {},
   host?: string,
 ) {
-  return (await runProxy(makeRequest(path, cookies, host))).headers.get("location");
+  return (await runProxy(makeRequest(path, cookies, host))).headers.get(
+    "location",
+  );
 }
 
 function restoreEnv(key: string, value: string | undefined) {
@@ -121,7 +122,9 @@ describe("proxy legacy workspace route redirects", () => {
 
   it("sends logged-in legacy URLs without a last workspace cookie to login", async () => {
     expect(
-      await redirectLocation("/teams?view=members", { patchbay_logged_in: "1" }),
+      await redirectLocation("/teams?view=members", {
+        patchbay_logged_in: "1",
+      }),
     ).toBe("https://app.patchbay.test/login");
   });
 
@@ -200,12 +203,7 @@ describe("proxy runtime upstream rewrites", () => {
       "/docs/zh/agents",
       "http://docs:4000/docs/zh/agents",
     ],
-    [
-      "REMOTE_API_URL",
-      "http://backend:8080",
-      "/ws",
-      "http://backend:8080/ws",
-    ],
+    ["REMOTE_API_URL", "http://backend:8080", "/ws", "http://backend:8080/ws"],
   ])(
     "rewrites %s requests to the runtime origin",
     async (key, origin, path, expected) => {

@@ -10,7 +10,7 @@
  *   - projectKeys.resources(...)  → `ProjectResource[]` (append / filter)
  *
  * No realtime-driven `project:*` updaters exist on web yet (see
- * apps/mobile/AGENTS.md realtime section) so mobile mirrors the design
+ * apps/mobile/CLAUDE.md realtime section) so mobile mirrors the design
  * — mobile-owned ws-updaters live in `data/realtime/project-ws-updaters.ts`
  * and are invoked by `use-projects-realtime.ts` + `use-project-realtime.ts`.
  */

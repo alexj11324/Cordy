@@ -4,7 +4,7 @@
  * Handles:
  * - Simple mentions: `[@Name](mention://agent/id)` → `@Name`
  * - Escaped brackets in names: `[@David\[TF\]](mention://agent/id)` → `@David[TF]`
- * - Issue mentions (no @): `[PB-123](mention://issue/id)` → `PB-123`
+ * - Issue mentions (no @): `[MUL-123](mention://issue/id)` → `MUL-123`
  * - Does NOT touch regular markdown links: `[docs](https://...)` stays unchanged
  * - Does NOT touch backslash-escaped mentions: `\[@Name](mention://...)` stays unchanged
  *

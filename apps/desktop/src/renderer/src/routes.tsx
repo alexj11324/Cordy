@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { createMemoryRouter, Outlet, useMatches } from "react-router-dom";
+import { createMemoryRouter, Outlet, useMatches, useParams } from "react-router-dom";
 import type { RouteObject } from "react-router-dom";
 import { IssueDetailPage } from "./pages/issue-detail-page";
 import { ProjectDetailPage } from "./pages/project-detail-page";
@@ -16,6 +16,7 @@ import { AttachmentPreviewRoute } from "./pages/attachment-preview-page";
 import { IssuesPage } from "@patchbay/views/issues/components";
 import { TaskGraphPage } from "@patchbay/views/task-graph";
 import { ProjectsPage } from "@patchbay/views/projects/components";
+import { WorkProductDetailPage, WorkProductsPage } from "@patchbay/views/work-products";
 import { DashboardPage } from "@patchbay/views/dashboard";
 import { AutomationsPage } from "@patchbay/views/automations/components";
 import { MyIssuesPage } from "@patchbay/views/my-issues";
@@ -31,23 +32,30 @@ import { TeamsPage, TeamDetailPage as TeamDetailPageView } from "@patchbay/views
 import { InboxPage } from "@patchbay/views/inbox";
 import { ChatPage } from "@patchbay/views/chat";
 import { ChannelsPage } from "@patchbay/views/channels";
-import { WorkspaceIntegrationsPage } from "@patchbay/views/integrations";
+import { DesktopSettingsPage } from "./components/desktop-settings-page";
 import { useT } from "@patchbay/views/i18n";
-import { useDocumentTitle } from "./hooks/use-document-title";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 import { WorkspaceRouteLayout } from "./components/workspace-route-layout";
 import { DesktopRouteErrorPage } from "./components/route-error-page";
-import { DesktopSettingsPage } from "./components/desktop-settings-page";
 
-function DesktopIntegrationsRoute() {
-  const { t } = useT("settings");
-  useDocumentTitle(t(($) => $.page.integrations_title));
-  return <WorkspaceIntegrationsPage />;
+/**
+ * Standalone desktop settings surface: owns the window title while open and
+ * injects the desktop-only daemon/updates tabs. The route element has to be
+ * a component (not a literal JSX value) for hooks to run.
+ */
+function DesktopSettingsRoute() {
+  return <DesktopSettingsPage />;
 }
 
-function TaskGraphRoute() {
-  const { t } = useT("issues");
-  useDocumentTitle(t(($) => $.graph.title));
-  return <TaskGraphPage />;
+function DesktopChannelsRoute() {
+  const { t } = useT("channels");
+  useDocumentTitle(t(($) => $.page.title));
+  return <ChannelsPage />;
+}
+
+function DesktopWorkProductDetailPage() {
+  const { id = "" } = useParams<{ id: string }>();
+  return <WorkProductDetailPage id={id} />;
 }
 
 /**
@@ -110,7 +118,7 @@ export const appRoutes: RouteObject[] = [
           // A bare `/{slug}` URL is normalized to `/{slug}/issues` by
           // sanitizeTabPath before it ever becomes a session, so the index
           // route is unreachable in practice; null keeps it a harmless
-          // safety net instead of an in-router <Navigate> (PB-4741
+          // safety net instead of an in-router <Navigate> (MUL-4741
           // invariant 1: the router never self-navigates).
           { index: true, element: null },
           {
@@ -119,13 +127,14 @@ export const appRoutes: RouteObject[] = [
             handle: { title: "Issues" },
           },
           {
-            path: "task-graph",
-            element: <TaskGraphRoute />,
-          },
-          {
             path: "issues/:id",
             element: <IssueDetailPage />,
             handle: { title: "Issue" },
+          },
+          {
+            path: "task-graph",
+            element: <TaskGraphPage />,
+            handle: { title: "Dependency Graph" },
           },
           {
             path: "projects",
@@ -136,6 +145,16 @@ export const appRoutes: RouteObject[] = [
             path: "projects/:id",
             element: <ProjectDetailPage />,
             handle: { title: "Project" },
+          },
+          {
+            path: "work-products",
+            element: <WorkProductsPage />,
+            handle: { title: "Work Products" },
+          },
+          {
+            path: "work-products/:id",
+            element: <DesktopWorkProductDetailPage />,
+            handle: { title: "Work Product" },
           },
           {
             path: "automations",
@@ -155,7 +174,7 @@ export const appRoutes: RouteObject[] = [
           {
             path: "runtimes",
             element: <DesktopRuntimesPage />,
-            handle: { title: "Devices" },
+            handle: { title: "Runtimes" },
           },
           {
             path: "runtimes/:id",
@@ -165,13 +184,9 @@ export const appRoutes: RouteObject[] = [
           {
             path: "runtimes/:id/runtime/:runtimeId",
             element: <RuntimeSettingsPage />,
-            handle: { title: "Device" },
+            handle: { title: "Runtime" },
           },
           { path: "skills", element: <SkillsPage />, handle: { title: "Skills" } },
-          {
-            path: "integrations",
-            element: <DesktopIntegrationsRoute />,
-          },
           {
             path: "skills/:id",
             element: <SkillDetailPage />,
@@ -216,7 +231,7 @@ export const appRoutes: RouteObject[] = [
           },
           { path: "inbox", element: <InboxPage />, handle: { title: "Inbox" } },
           { path: "chat", element: <ChatPage />, handle: { title: "Chat" } },
-          { path: "channels", element: <ChannelsPage />, handle: { title: "Channels" } },
+          { path: "channels", element: <DesktopChannelsRoute /> },
           {
             path: "attachments/:id/preview",
             element: <AttachmentPreviewRoute />,
@@ -229,7 +244,7 @@ export const appRoutes: RouteObject[] = [
           },
           {
             path: "settings",
-            element: <DesktopSettingsPage />,
+            element: <DesktopSettingsRoute />,
             handle: { title: "Settings" },
           },
         ],
@@ -239,7 +254,7 @@ export const appRoutes: RouteObject[] = [
 ];
 
 /**
- * Create THE app router (PB-4741 single-router session architecture).
+ * Create THE app router (MUL-4741 single-router session architecture).
  * There is exactly one instance, owned by the tab Coordinator; it projects
  * the active tab session's URL and is never navigated by anything else.
  */

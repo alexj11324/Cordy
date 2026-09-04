@@ -1,6 +1,6 @@
 ---
 title: 自托管 Git 代码托管
-description: 为每个工作区连接自托管的 Forgejo、Gitea 或 GitLab 实例，使显式关联的 Pull Request / Merge Request 在合并时移动 issue 到「完成」，并展示 CI 状态。
+description: 为每个工作区连接自托管的 Forgejo、Gitea 或 GitLab 实例，使引用了任务编号的 Pull Request / Merge Request 自动关联到对应任务，在合并时将其移动到「完成」，并展示 CI 状态。
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
@@ -9,7 +9,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 **仅适用于自部署的 Patchbay。** 此集成只在你**自己部署 Patchbay** 时可用，Patchbay 云端不提供。这里的「自托管」指的是 **Patchbay 本身自部署**——通常是为了让它能访问你自己网络内的 Git 实例。需要服务端运维开启（`PATCHBAY_VCS_INTEGRATION_ENABLED=true`）并设置 `PATCHBAY_VCS_SECRET_KEY`；在此之前，设置 → 集成里不会出现该板块。
 </Callout>
 
-Patchbay 按工作区连接自托管的 Git 代码托管：**Forgejo**、**Gitea** 或 **GitLab**。连接后，Pull Request（GitLab 为 Merge Request）会作为 Work Product 镜像。只有经鉴权的 task/run 登记，或工作区成员将其显式 Attach 到对应 [issue](/issues) 后，才会出现在 issue 侧栏的 **Pull requests** 中。分支名、标题或正文中的 `PB-123` 只是人类可读上下文，不会建立关联。显式关系启用关闭意图后，PR 合并才可能将 issue 移动到「完成」。head commit 的 CI 会以检查条的形式显示在卡片上。
+Patchbay 按工作区连接自托管的 Git 代码托管：**Forgejo**、**Gitea** 或 **GitLab**。连接后，任何在分支名、标题或正文中包含任务编号（例如 `MUL-123`）的 Pull Request（GitLab 为 Merge Request）都会**自动关联**到对应的 [任务](/issues)，出现在任务侧栏的 **Pull requests** 中；当带有关闭关键字的 PR 合并后，任务会被移动到「完成」。head commit 的 CI 会以检查条的形式显示在卡片上。
 
 这些代码托管与 GitHub 并行工作：一个工作区可任意组合使用。
 
@@ -44,8 +44,8 @@ PATCHBAY_VCS_SECRET_KEY=<base64 32 字节密钥>
 ## 连接工作区
 
 1. 在代码托管中创建具备仓库读取权限的访问令牌：
-   - **Forgejo / Gitea**：设置 → 应用。
-   - **GitLab**：具备 `read_api` 权限的个人（或群组/项目）访问令牌。
+ - **Forgejo / Gitea**：设置 → 应用。
+ - **GitLab**：具备 `read_api` 权限的个人（或群组/项目）访问令牌。
 2. 在 Patchbay 中打开 **设置 → 集成 → Git 代码托管**。
 3. 选择**提供方**，填写实例地址（例如 `https://forgejo.example.com`）和访问令牌，点击 **连接**。Patchbay 会先用该令牌访问实例进行校验，再保存。
 4. 复制连接后显示的 **Webhook 地址** 与 **Webhook 密钥**。
@@ -76,10 +76,8 @@ Patchbay 会用存储的密钥校验每次投递，因此没有匹配密钥的 W
 ## 镜像的内容
 
 - **Pull / Merge Request** —— open、closed、merged、draft 状态，以及作者、分支和（在代码托管提供时）diff 统计。
-- **Work Product 关系** —— Webhook 只镜像 provider 产物，不读取 PR 文本，也不创建 Issue 关系。请在 issue 中使用 Attach 操作/API 选择未关联产物；智能体路径通过 task/run 登记。显式关系启用关闭意图后，合并且没有仍处于 open 的关联 PR 时，issue 会被移动到「完成」。
+- **任务关联** —— 标题、正文或分支中的编号会将 PR 关联到任务。合并的 PR 带有关闭关键字（`Closes`/`Fixes`/`Resolves MUL-123`）且没有仍处于 open 的关联 PR 时，任务会被移动到「完成」。
 - **CI** —— Forgejo/Gitea 的提交状态与 GitLab 的流水线会汇总为 head commit 的通过/失败/进行中检查条。
-
-如果 task 结束时尚未登记，Patchbay 可以对 GitHub App 仓库使用该 task 持久化的仓库身份、执行 workspace 和精确 head branch 做一次确定性查询。只有唯一匹配会持久化；零匹配保持未关联，多匹配、共享或使用中的分支、默认/detached head、查询失败会记录为歧义或不符合条件，等待显式确认。Forgejo、Gitea 和 GitLab 产物不会走这条自动查询，必须由成员显式 Attach。分支只用于首次查询，不是长期关联键。
 
 ## 智能体创建 Pull Request
 

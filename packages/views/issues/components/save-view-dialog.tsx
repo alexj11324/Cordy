@@ -103,12 +103,12 @@ const LAYOUT_LABEL_KEY = {
   table: "table",
   swimlane: "swimlane",
   gantt: "gantt",
-  graph: "graph",
 } as const;
 
 const GROUPING_LABEL_KEY = {
   status: "group_status",
   executor: "group_executor",
+  project: "group_project",
 } as const;
 
 const SWIMLANE_LABEL_KEY = {

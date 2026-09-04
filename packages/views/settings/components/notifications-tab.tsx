@@ -5,7 +5,7 @@ import { useWorkspaceId } from "@patchbay/core/hooks";
 import { notificationPreferenceOptions } from "@patchbay/core/notification-preferences/queries";
 import { useUpdateNotificationPreferences } from "@patchbay/core/notification-preferences/mutations";
 import type { NotificationGroupKey, NotificationPreferences } from "@patchbay/core/types";
-import { SettingsSwitch as Switch } from "@patchbay/ui/components/common/lobe-settings";
+import { Switch } from "@patchbay/ui/components/ui/switch";
 import { toast } from "sonner";
 import { useT } from "../../i18n";
 import { BrowserNotificationSetting } from "./browser-notification-setting";

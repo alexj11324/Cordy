@@ -128,8 +128,8 @@ export function IssueActionsMenuItems({
   // that wrap every row in IssueActionsContextMenu pay nothing until the
   // menu actually opens.
   //
-  // The query shares its key with the issue-detail Agent surfaces, so
-  // navigating from the issue detail page is a free cache hit.
+  // The query shares its key with ExecutionLogSection, so navigating from
+  // the issue detail page is a free cache hit.
   const { data: tasks } = useQuery({
     queryKey: issueKeys.tasks(issue.id),
     queryFn: () => api.listTasksByIssue(issue.id),
@@ -186,7 +186,7 @@ export function IssueActionsMenuItems({
           {/* Catalog-driven, like the picker and the filter: every entry point
               that can change a status must offer the same set, or a custom
               status is unreachable from the board's right-click menu. One flat
-              list in canonical category order. (PB-6243) */}
+              list in canonical category order. (MUL-6243) */}
           {statusOptions.map((option) => (
             <P.Item
               key={option.key}
@@ -231,7 +231,7 @@ export function IssueActionsMenuItems({
       </P.Sub>
 
       {/* Executor — closes this menu and hands off to the shared
-          ExecutorPicker (members + agents + teams, with search and
+          ExecutorPicker (agents + teams, with search and
           permission checks). Keeps a single source of truth for the
           executor UX across detail sidebar, board cards, and right-click /
           3-dot menus. */}

@@ -1,24 +1,11 @@
 // @vitest-environment node
-import { mkdtemp, readFile, writeFile } from "fs/promises";
+import { mkdtemp, writeFile } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-
-const fsMocks = vi.hoisted(() => ({ writeFile: vi.fn() }));
-
-vi.mock("fs/promises", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("fs/promises")>();
-  fsMocks.writeFile.mockImplementation(actual.writeFile);
-  return { ...actual, writeFile: fsMocks.writeFile };
-});
-
+import { describe, expect, it } from "vitest";
 import { loadRuntimeConfig } from "./runtime-config-loader";
 
 describe("loadRuntimeConfig", () => {
-  beforeEach(() => {
-    fsMocks.writeFile.mockClear();
-  });
-
   it("uses dev env and ignores desktop.json during electron-vite dev", async () => {
     const dir = await mkdtemp(join(tmpdir(), "patchbay-desktop-config-"));
     const configPath = join(dir, "desktop.json");
@@ -69,106 +56,6 @@ describe("loadRuntimeConfig", () => {
     });
   });
 
-  it("ignores the built-in localhost dev tuple in packaged mode", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "patchbay-desktop-config-"));
-    const configPath = join(dir, "desktop.json");
-    await writeFile(
-      configPath,
-      JSON.stringify({
-        schemaVersion: 1,
-        apiUrl: "http://localhost:8080",
-        wsUrl: "ws://localhost:8080/ws",
-        appUrl: "http://localhost:3000",
-      }),
-    );
-
-    await expect(
-      loadRuntimeConfig({ isDev: false, configPath, env: {} }),
-    ).resolves.toEqual({
-      ok: true,
-      config: {
-        schemaVersion: 1,
-        apiUrl: "https://api.aspectlylabs.com",
-        wsUrl: "wss://api.aspectlylabs.com/ws",
-        appUrl: "https://patchbay.aspectlylabs.com",
-        accountsUrl: "https://accounts.aspectlylabs.com",
-      },
-    });
-    await expect(readFile(configPath, "utf-8")).resolves.toBe(
-      `${JSON.stringify(
-        {
-          schemaVersion: 1,
-          apiUrl: "https://api.aspectlylabs.com",
-          wsUrl: "wss://api.aspectlylabs.com/ws",
-          appUrl: "https://patchbay.aspectlylabs.com",
-          accountsUrl: "https://accounts.aspectlylabs.com",
-        },
-        null,
-        2,
-      )}\n`,
-    );
-  });
-
-  it("uses migrated cloud defaults when a stale config cannot be rewritten", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "patchbay-desktop-config-"));
-    const configPath = join(dir, "desktop.json");
-    const staleConfig = JSON.stringify({
-      schemaVersion: 1,
-      apiUrl: "http://localhost:8080",
-      wsUrl: "ws://localhost:8080/ws",
-      appUrl: "http://localhost:3000",
-    });
-    await writeFile(configPath, staleConfig);
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    fsMocks.writeFile.mockRejectedValueOnce(new Error("read-only config"));
-
-    try {
-      await expect(
-        loadRuntimeConfig({ isDev: false, configPath, env: {} }),
-      ).resolves.toEqual({
-        ok: true,
-        config: {
-          schemaVersion: 1,
-          apiUrl: "https://api.aspectlylabs.com",
-          wsUrl: "wss://api.aspectlylabs.com/ws",
-          appUrl: "https://patchbay.aspectlylabs.com",
-          accountsUrl: "https://accounts.aspectlylabs.com",
-        },
-      });
-      expect(warn).toHaveBeenCalledOnce();
-      await expect(readFile(configPath, "utf-8")).resolves.toBe(staleConfig);
-    } finally {
-      warn.mockRestore();
-    }
-  });
-
-  it("preserves explicit self-hosted packaged runtime URLs", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "patchbay-desktop-config-"));
-    const configPath = join(dir, "desktop.json");
-    const rawConfig = JSON.stringify({
-      schemaVersion: 1,
-      apiUrl: "https://api.example.com",
-      appUrl: "https://app.example.com",
-      wsUrl: "wss://ws.example.com/socket",
-      accountsUrl: "https://app.example.com",
-    });
-    await writeFile(configPath, rawConfig);
-
-    await expect(
-      loadRuntimeConfig({ isDev: false, configPath, env: {} }),
-    ).resolves.toEqual({
-      ok: true,
-      config: {
-        schemaVersion: 1,
-        apiUrl: "https://api.example.com",
-        appUrl: "https://app.example.com",
-        wsUrl: "wss://ws.example.com/socket",
-        accountsUrl: "https://app.example.com",
-      },
-    });
-    await expect(readFile(configPath, "utf-8")).resolves.toBe(rawConfig);
-  });
-
   it("parses a valid packaged desktop.json", async () => {
     const dir = await mkdtemp(join(tmpdir(), "patchbay-desktop-config-"));
     const configPath = join(dir, "desktop.json");
@@ -196,18 +83,12 @@ describe("loadRuntimeConfig", () => {
     const configPath = join(dir, "desktop.json");
     await writeFile(configPath, "{");
 
-    const result = await loadRuntimeConfig({
-      isDev: false,
-      configPath,
-      env: {},
-    });
+    const result = await loadRuntimeConfig({ isDev: false, configPath, env: {} });
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.message).toContain(configPath);
-      expect(result.error.message).toContain(
-        "Invalid desktop runtime config JSON",
-      );
+      expect(result.error.message).toContain("Invalid desktop runtime config JSON");
     }
   });
 });

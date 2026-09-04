@@ -20,10 +20,12 @@ import { ProjectIcon } from "@/components/ui/project-icon";
 import { StatusIcon } from "@/components/ui/status-icon";
 import { formatDateOnly } from "@patchbay/core/issues/date";
 import { useActorLookup } from "@/data/use-actor-name";
+import { useAuthStore } from "@/data/auth-store";
 import { useNewIssueDraftStore } from "@/data/stores/new-issue-draft-store";
 import { useWorkspaceStore } from "@/data/workspace-store";
 import { PRIORITY_LABEL } from "@/lib/issue-status";
 import { useIssueStatuses } from "@/lib/use-issue-statuses";
+import { getIssueRoleCopy } from "@/lib/issue-role-copy";
 
 /**
  * Picker fields the new-issue draft form can open. Bound to a typed map
@@ -60,13 +62,19 @@ export function CreateFormAttributeRow() {
   const project = useNewIssueDraftStore((s) => s.project);
 
   const { getName } = useActorLookup();
-  // The draft can hold a custom status the user picked in the sheet. (PB-6243)
+  const language = useAuthStore((s) => s.user?.language);
+  const roleCopy = getIssueRoleCopy(language);
+  // The draft can hold a custom status the user picked in the sheet. (MUL-6243)
   const { categoryOf, colorOf, labelOf } = useIssueStatuses();
+  const ownerLabel = owner
+    ? (getName(owner.type, owner.id) ?? roleCopy.unknownOwner)
+    : roleCopy.owner;
   const executorLabel = executor
-    ? getName(executor.type, executor.id)
-    : "Executor";
-  const ownerLabel = owner ? getName(owner.type, owner.id) : "Owner";
-  const reviewerLabel = reviewer ? getName(reviewer.type, reviewer.id) : "Reviewer";
+    ? (getName(executor.type, executor.id) ?? roleCopy.unknownExecutor)
+    : roleCopy.executor;
+  const reviewerLabel = reviewer
+    ? (getName(reviewer.type, reviewer.id) ?? roleCopy.unknownReviewer)
+    : roleCopy.reviewer;
   const priorityLabel =
     priority === "none" ? "Priority" : PRIORITY_LABEL[priority];
 
@@ -138,7 +146,11 @@ export function CreateFormAttributeRow() {
             reviewer ? (
               <ActorAvatar type={reviewer.type} id={reviewer.id} size={16} />
             ) : (
-              <Ionicons name="checkmark-circle-outline" size={16} color="#a1a1aa" />
+              <Ionicons
+                name="checkmark-circle-outline"
+                size={16}
+                color="#a1a1aa"
+              />
             )
           }
           label={reviewerLabel}

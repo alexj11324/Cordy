@@ -33,7 +33,9 @@ COPY packages/eslint-config/ packages/eslint-config/
 
 RUN pnpm install --frozen-lockfile --offline
 ARG NEXT_PUBLIC_APP_VERSION=dev
+ARG COMMIT_SHA=unknown
 ENV NEXT_PUBLIC_APP_VERSION=$NEXT_PUBLIC_APP_VERSION
+ENV NEXT_PUBLIC_COMMIT_SHA=$COMMIT_SHA
 ENV STANDALONE=true
 RUN pnpm --filter @patchbay/docs build
 

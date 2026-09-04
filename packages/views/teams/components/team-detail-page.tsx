@@ -15,7 +15,7 @@ import { useNavigation } from "../../navigation";
 import { AppLink } from "../../navigation";
 import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
 import { PageHeader } from "../../layout/page-header";
-import { Plus, Trash2, ArrowUpRight, Crown, Loader2, Pencil, FileText, Save } from "lucide-react";
+import { Users, Plus, Trash2, ArrowUpRight, Crown, Loader2, Pencil, FileText, Save } from "lucide-react";
 import { Button } from "@patchbay/ui/components/ui/button";
 import { Input } from "@patchbay/ui/components/ui/input";
 import { Label } from "@patchbay/ui/components/ui/label";
@@ -49,7 +49,6 @@ import {
   AlertDialogTitle,
 } from "@patchbay/ui/components/ui/alert-dialog";
 import { ActorAvatar as ActorAvatarBase } from "@patchbay/ui/components/common/actor-avatar";
-import { PeopleGroupIcon } from "@patchbay/ui/components/common/people-group-icon";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { AvatarUploadControl } from "../../common/avatar-upload-control";
 import { ContentEditor } from "../../editor/content-editor";
@@ -110,9 +109,9 @@ export function TeamDetailPage() {
   const isWorkspaceAdmin = myRole === "owner" || myRole === "admin";
   // Per-team management gate: workspace owner/admin manage every team; the
   // creator manages the teams they created. Mirrors canManageTeam in
-  // the Rust team handler so editable controls appear exactly when
+  // server/internal/handler/team.go so editable controls appear exactly when
   // the API will accept the write, and everyone else gets a read-only view
-  // instead of controls that 403 (PB-4223).
+  // instead of controls that 403 (MUL-4223).
   const canManage =
     isWorkspaceAdmin || (!!currentUser && team?.creator_id === currentUser.id);
 
@@ -135,16 +134,16 @@ export function TeamDetailPage() {
         member_id: input.id,
         role: input.role?.trim() || undefined,
       }),
-    onSuccess: () => { refetchMembers(); toast.success("Member added"); },
+    onSuccess: () => { refetchMembers(); toast.success(t(($) => $.toasts.member_added)); },
     onError: (err) =>
-      toast.error(err instanceof Error && err.message ? err.message : "Failed to add member"),
+      toast.error(err instanceof Error && err.message ? err.message : t(($) => $.toasts.member_add_failed)),
   });
 
   const removeMemberMut = useMutation({
     mutationFn: (m: TeamMember) => api.removeTeamMember(teamId, { member_type: m.member_type, member_id: m.member_id }),
-    onSuccess: () => { refetchMembers(); toast.success("Member removed"); },
+    onSuccess: () => { refetchMembers(); toast.success(t(($) => $.toasts.member_removed)); },
     onError: (err) =>
-      toast.error(err instanceof Error && err.message ? err.message : "Failed to remove member"),
+      toast.error(err instanceof Error && err.message ? err.message : t(($) => $.toasts.member_remove_failed)),
   });
 
   const updateRoleMut = useMutation({
@@ -154,9 +153,9 @@ export function TeamDetailPage() {
         member_id: input.member.member_id,
         role: input.role,
       }),
-    onSuccess: () => { refetchMembers(); toast.success("Role updated"); },
+    onSuccess: () => { refetchMembers(); toast.success(t(($) => $.toasts.role_updated)); },
     onError: (err) =>
-      toast.error(err instanceof Error && err.message ? err.message : "Failed to update role"),
+      toast.error(err instanceof Error && err.message ? err.message : t(($) => $.toasts.role_update_failed)),
   });
 
   const setLeaderMut = useMutation({
@@ -165,21 +164,17 @@ export function TeamDetailPage() {
       refetchTeam();
       refetchMembers();
       queryClient.invalidateQueries({ queryKey: workspaceKeys.teams(wsId) });
-      toast.success("Leader updated");
+      toast.success(t(($) => $.toasts.leader_updated));
     },
     onError: (err) =>
-      toast.error(err instanceof Error && err.message ? err.message : "Failed to update leader"),
+      toast.error(err instanceof Error && err.message ? err.message : t(($) => $.toasts.leader_update_failed)),
   });
 
   const deleteMut = useMutation({
     mutationFn: () => api.deleteTeam(teamId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: workspaceKeys.teams(wsId) });
-      push(p.teams());
-      toast.success(t(($) => $.archive_dialog.success));
-    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: workspaceKeys.teams(wsId) }); push(p.teams()); toast.success(t(($) => $.archive_dialog.success)); },
     onError: (err) =>
-      toast.error(err instanceof Error && err.message ? err.message : t(($) => $.archive_dialog.error)),
+      toast.error(err instanceof Error && err.message ? err.message : t(($) => $.toasts.archive_failed)),
   });
 
   const getEntityName = (type: string, id: string) => {
@@ -252,7 +247,7 @@ export function TeamDetailPage() {
           onSetLeader={(id) => setLeaderMut.mutate(id)}
           onRemoveMember={(m) => removeMemberMut.mutate(m)}
           onUpdateRole={async (m, role) => { await updateRoleMut.mutateAsync({ member: m, role }); }}
-          onSaveInstructions={async (next) => { await updateTeamMut.mutateAsync({ instructions: next }); toast.success("Instructions saved"); }}
+          onSaveInstructions={async (next) => { await updateTeamMut.mutateAsync({ instructions: next }); toast.success(t(($) => $.toasts.instructions_saved)); }}
           setLeaderPending={setLeaderMut.isPending}
         />
       </div>
@@ -334,11 +329,11 @@ function TeamDetailSkeleton() {
 }
 
 // Compact 16px avatar shown next to the name in the page header. Falls back
-// to the People Group icon when no custom avatar is set so the team still has a
+// to the Users icon when no custom avatar is set so the team still has a
 // recognisable glyph in the breadcrumb strip.
 function TeamHeaderAvatar({ team, initials }: { team: Team; initials: string }) {
   if (!team.avatar_url) {
-    return <PeopleGroupIcon className="h-4 w-4 text-muted-foreground" />;
+    return <Users className="h-4 w-4 text-muted-foreground" />;
   }
   return (
     <ActorAvatarBase
@@ -366,7 +361,7 @@ function TeamStaticAvatar({ team, initials }: { team: Team; initials: string }) 
         />
       ) : (
         <div className="flex h-full w-full items-center justify-center text-muted-foreground">
-          <PeopleGroupIcon className="h-7 w-7" />
+          <Users className="h-7 w-7" />
         </div>
       )}
     </div>
@@ -384,14 +379,15 @@ function TeamNameEditor({
   onSave: (next: string) => Promise<void>;
 }) {
   const { t } = useT("teams");
-
   return (
     <InlineEditPopover
       value={value}
       onSave={onSave}
       title={t(($) => $.name_editor.title)}
       placeholder={t(($) => $.name_editor.placeholder)}
-      validate={(v) => (v.trim().length > 0 ? null : "Name is required")}
+      validate={(v) =>
+        v.trim().length > 0 ? null : t(($) => $.name_editor.required)
+      }
     >
       {(triggerProps) => (
         <button
@@ -449,9 +445,9 @@ function InlineEditPopover({
     try {
       await onSave(draft);
       setOpen(false);
-      toast.success("Saved");
+      toast.success(t(($) => $.name_editor.saved));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to save");
+      toast.error(e instanceof Error ? e.message : t(($) => $.name_editor.save_failed));
     } finally {
       setSaving(false);
     }
@@ -492,7 +488,7 @@ function InlineEditPopover({
               {t(($) => $.name_editor.cancel)}
             </Button>
             <Button size="sm" onClick={() => void commit()} disabled={saving || draft === value}>
-              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save"}
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : t(($) => $.name_editor.save)}
             </Button>
           </div>
         </div>
@@ -503,7 +499,7 @@ function InlineEditPopover({
 
 // Two-step add-member dialog (mirrors CreateAgentDialog's compact layout):
 // 1) pick a target — Members + Agents in one searchable popover, each row
-//    with an avatar so visual recognition matches the issue executor picker;
+//    with an avatar so visual recognition matches the issue assignee picker;
 // 2) optionally describe the role they'll play in this team. Description
 //    lives here (not on the picker) because role is per-team context that
 //    only makes sense at the moment of joining.
@@ -562,10 +558,12 @@ function AddMemberDialog({
                 )}
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-medium">
-                    {target?.name ?? "Select a member or agent"}
+                    {target?.name ?? t(($) => $.add_member_dialog.select_target)}
                   </div>
                   {target && (
-                    <div className="truncate text-caption text-muted-foreground capitalize">{target.type}</div>
+                    <div className="truncate text-caption text-muted-foreground">
+                      {t(($) => $.member_type[target.type])}
+                    </div>
                   )}
                 </div>
                 <ChevronDown className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${pickerOpen ? "rotate-180" : ""}`} />
@@ -577,13 +575,13 @@ function AddMemberDialog({
                     type="text"
                     value={pickerFilter}
                     onChange={(e) => setPickerFilter(e.target.value)}
-                    placeholder="Search members or agents..."
+                    placeholder={t(($) => $.add_member_dialog.search_placeholder)}
                     className="w-full bg-transparent text-body placeholder:text-muted-foreground outline-none"
                   />
                 </div>
                 <div className="p-1 max-h-72 overflow-y-auto">
                   {filteredMembers.length > 0 && (
-                    <PickerSection label="Members">
+                    <PickerSection label={t(($) => $.add_member_dialog.members_section)}>
                       {filteredMembers.map((m) => (
                         <PickerItem
                           key={m.user_id}
@@ -601,7 +599,7 @@ function AddMemberDialog({
                     </PickerSection>
                   )}
                   {filteredAgents.length > 0 && (
-                    <PickerSection label="Agents">
+                    <PickerSection label={t(($) => $.add_member_dialog.agents_section)}>
                       {filteredAgents.map((a) => (
                         <PickerItem
                           key={a.id}
@@ -633,7 +631,7 @@ function AddMemberDialog({
               type="text"
               value={role}
               onChange={(e) => setRole(e.target.value)}
-              placeholder="e.g. Reviewer, Frontend Lead"
+              placeholder={t(($) => $.add_member_dialog.role_placeholder)}
               className="mt-1"
               onKeyDown={(e) => {
                 if (isImeComposing(e)) return;
@@ -646,7 +644,7 @@ function AddMemberDialog({
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>{t(($) => $.add_member_dialog.cancel)}</Button>
           <Button onClick={() => void handleSubmit()} disabled={!canSubmit}>
-            {submitting ? <Loader2 className="size-3.5 animate-spin" /> : "Add"}
+            {submitting ? <Loader2 className="size-3.5 animate-spin" /> : t(($) => $.add_member_dialog.add)}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -693,7 +691,7 @@ function RoleEditor({ value, onSave }: { value: string; onSave: (next: string) =
           else if (e.key === "Escape") { setDraft(value); setEditing(false); }
         }}
         disabled={saving}
-        placeholder="Role (e.g. Reviewer)"
+        placeholder={t(($) => $.role_editor.placeholder)}
         className="h-6 mt-0.5 text-caption px-1.5"
       />
     );
@@ -705,7 +703,7 @@ function RoleEditor({ value, onSave }: { value: string; onSave: (next: string) =
       onClick={() => setEditing(true)}
       className="text-caption text-muted-foreground mt-0.5 text-left hover:text-foreground transition-colors"
     >
-      {value || <span className="italic opacity-60">{t(($) => $.add_member_dialog.placeholder_role_inline)}</span>}
+      {value || <span className="italic opacity-60">{t(($) => $.role_editor.empty)}</span>}
     </button>
   );
 }
@@ -792,25 +790,25 @@ function TeamDetailInspector({
           {t(($) => $.inspector.details_section)}
         </div>
         <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
-          <InspectorRow label="Leader">
+          <InspectorRow label={t(($) => $.details.leader)}>
             <span className="flex min-w-0 items-center gap-1.5">
               <ActorAvatar actorType="agent" actorId={team.leader_id} size="xs" />
               <span className="truncate">{leaderName}</span>
             </span>
           </InspectorRow>
-          <InspectorRow label="Members">
+          <InspectorRow label={t(($) => $.details.members)}>
             <span className="text-muted-foreground tabular-nums">{memberCount}</span>
           </InspectorRow>
-          <InspectorRow label="Created by">
+          <InspectorRow label={t(($) => $.details.created_by)}>
             <span className="flex min-w-0 items-center gap-1.5">
               <ActorAvatar actorType="member" actorId={team.creator_id} size="xs" />
               <span className="truncate">{creatorName}</span>
             </span>
           </InspectorRow>
-          <InspectorRow label="Created">
+          <InspectorRow label={t(($) => $.details.created)}>
             <span className="text-muted-foreground">{timeAgo(team.created_at)}</span>
           </InspectorRow>
-          <InspectorRow label="Updated">
+          <InspectorRow label={t(($) => $.details.updated)}>
             <span className="text-muted-foreground">{timeAgo(team.updated_at)}</span>
           </InspectorRow>
         </div>
@@ -911,7 +909,7 @@ function TeamDescriptionEditorBody({
         autoFocus
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
-        placeholder={t(($) => $.description_dialog.placeholder)}
+        placeholder={t(($) => $.description_dialog.responsibility_placeholder)}
         rows={6}
         onKeyDown={(e) => {
           if (e.key === "Escape") { onClose(); return; }
@@ -926,7 +924,7 @@ function TeamDescriptionEditorBody({
       <DialogFooter>
         <Button variant="ghost" size="sm" onClick={onClose} disabled={saving}>{t(($) => $.description_dialog.cancel)}</Button>
         <Button size="sm" onClick={() => void commit()} disabled={saving || !dirty}>
-          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save"}
+          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : t(($) => $.description_dialog.save)}
         </Button>
       </DialogFooter>
     </>
@@ -940,9 +938,9 @@ function TeamDescriptionEditorBody({
 // ---------------------------------------------------------------------------
 type TeamDetailTab = "members" | "instructions";
 
-const teamDetailTabs: { id: TeamDetailTab; label: string; icon: typeof FileText }[] = [
-  { id: "members", label: "Members", icon: PeopleGroupIcon },
-  { id: "instructions", label: "Instructions", icon: FileText },
+const teamDetailTabs: { id: TeamDetailTab; icon: typeof FileText }[] = [
+  { id: "members", icon: Users },
+  { id: "instructions", icon: FileText },
 ];
 
 function TeamOverviewPane({
@@ -966,7 +964,7 @@ function TeamOverviewPane({
   memberStatusById: Map<string, TeamMemberStatus>;
   // Gates every mutating control in the Members and Instructions tabs. When
   // false the tabs render read-only (no add/remove/leader/role edits, no
-  // Save). Keep this aligned with the Rust team management gate.
+  // Save). See canManageTeam in server/internal/handler/team.go.
   canManage: boolean;
   isLeader: (m: TeamMember) => boolean;
   isArchived: (m: TeamMember) => boolean;
@@ -1016,7 +1014,7 @@ function TeamOverviewPane({
             }`}
           >
             <tab.icon className="h-3.5 w-3.5" />
-            {tab.label}
+            {t(($) => $.detail_tabs[tab.id])}
           </button>
         ))}
       </div>
@@ -1079,7 +1077,7 @@ function TeamOverviewPane({
 // same semantic tokens so a status dot here matches the agent page's dot.
 // Unknown / null statuses (human members, server-side enum drift) render as
 // a neutral muted pill; this is the "downgrade, don't crash" defense from
-// AGENTS.md > API Response Compatibility.
+// CLAUDE.md > API Response Compatibility.
 const TEAM_STATUS_DOT_CLASS: Record<TeamMemberStatusValue, string> = {
   working: "bg-success",
   idle: "bg-muted-foreground/40",
@@ -1188,7 +1186,9 @@ function TeamMembersTab({
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-body font-medium">{getEntityName(m.member_type, m.member_id)}</span>
-                  <span className="text-caption text-muted-foreground capitalize">{m.member_type}</span>
+                  <span className="text-caption text-muted-foreground">
+                    {t(($) => $.member_type[m.member_type])}
+                  </span>
                   {isLeader(m) && (
                     <span className="inline-flex items-center gap-0.5 text-caption bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded">
                       <Crown className="size-3" />
@@ -1310,7 +1310,7 @@ function TeamMembersTab({
 
 // Instructions tab body — mirrors agent's InstructionsTab. ContentEditor +
 // Save button. The team leader's prompt picks these up at task claim time
-// in the Rust daemon handler.
+// (server/internal/handler/daemon.go).
 function TeamInstructionsTab({
   team,
   canManage,
@@ -1369,7 +1369,7 @@ function TeamInstructionsTab({
           onUpdate={canManage ? setValue : () => {}}
           placeholder={
             canManage
-              ? "e.g. Always start by writing a failing test. Prefer small, atomic commits."
+              ? t(($) => $.instructions_tab.placeholder)
               : ""
           }
           debounceMs={150}

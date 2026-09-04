@@ -12,7 +12,7 @@ import {
 } from "./suggestion-trigger-arming";
 
 // ---------------------------------------------------------------------------
-// PB-5429. These drive the REAL pipeline end to end — a `paste` event on the
+// MUL-5429. These drive the REAL pipeline end to end — a `paste` event on the
 // editor DOM, and typing routed through `handleTextInput` exactly the way
 // prosemirror-view's readDOMChange does it. That matters: the previous attempt
 // at this fix passed its tests by hand-building transactions carrying a

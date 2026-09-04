@@ -78,6 +78,7 @@ export default function Login() {
           >
             <Text>{submitting ? "Sending..." : "Send code"}</Text>
           </Button>
+
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>

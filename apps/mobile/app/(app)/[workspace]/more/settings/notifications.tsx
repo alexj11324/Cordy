@@ -2,10 +2,9 @@
  * Notification preferences subscreen. 6 inbox groups + system_notifications
  * toggle, each backed by an optimistic PATCH /api/notification-preferences.
  *
- * Copy mirrors packages/views/settings/components/notifications-tab.tsx but
- * hardcoded English (mobile has no i18n infra yet). The group labels MUST
- * stay in sync with web — they describe the same server-side semantics,
- * and divergent labels would violate behavioral parity (apps/mobile/AGENTS.md).
+ * These labels describe the notification-group API contract. The role group
+ * follows the account language because it includes reviewer notifications;
+ * the other groups retain the screen's existing English copy.
  */
 import { ActivityIndicator, ScrollView, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
@@ -17,18 +16,21 @@ import { Text } from "@/components/ui/text";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { useWorkspaceStore } from "@/data/workspace-store";
+import { useAuthStore } from "@/data/auth-store";
 import { notificationPreferenceOptions } from "@/data/queries/notification-preferences";
 import { useUpdateNotificationPreferences } from "@/data/mutations/notification-preferences";
+import { getIssueRoleCopy } from "@/lib/issue-role-copy";
 
-const INBOX_GROUPS: Array<{
+const INBOX_GROUPS: {
   key: Exclude<NotificationGroupKey, "system_notifications">;
   label: string;
   description: string;
-}> = [
+}[] = [
   {
     key: "assignments",
-    label: "Assignments",
-    description: "When you're assigned an issue or removed as executor.",
+    label: "Role assignments",
+    description:
+      "When you become or stop being an issue owner, executor, or reviewer.",
   },
   {
     key: "status_changes",
@@ -59,6 +61,8 @@ const INBOX_GROUPS: Array<{
 
 export default function NotificationsSettingsScreen() {
   const wsId = useWorkspaceStore((s) => s.currentWorkspaceId);
+  const language = useAuthStore((s) => s.user?.language);
+  const roleCopy = getIssueRoleCopy(language);
   const { data, isLoading, error } = useQuery(
     notificationPreferenceOptions(wsId),
   );
@@ -107,6 +111,14 @@ export default function NotificationsSettingsScreen() {
         description="Which events show up in your inbox."
       >
         {INBOX_GROUPS.map((group, idx) => {
+          const label =
+            group.key === "assignments"
+              ? roleCopy.roleAssignments
+              : group.label;
+          const description =
+            group.key === "assignments"
+              ? roleCopy.roleAssignmentsDescription
+              : group.description;
           const enabled = preferences[group.key] !== "muted";
           const isLast = idx === INBOX_GROUPS.length - 1;
           return (
@@ -114,10 +126,10 @@ export default function NotificationsSettingsScreen() {
               <View className="flex-row items-center px-4 py-3 gap-3">
                 <View className="flex-1">
                   <Text className="text-base font-medium text-foreground">
-                    {group.label}
+                    {label}
                   </Text>
                   <Text className="text-xs text-muted-foreground mt-0.5">
-                    {group.description}
+                    {description}
                   </Text>
                 </View>
                 <Switch

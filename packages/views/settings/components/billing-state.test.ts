@@ -7,8 +7,7 @@ import type {
   WorkspaceSubscriptionSummary,
 } from "@patchbay/core/types";
 import {
-  canPurchaseWorkspaceSubscription,
-  hasManagedWorkspaceSubscription,
+  hasActiveWorkspaceSeatCapacity,
   resolveAutomationUsage,
 } from "./billing-state";
 
@@ -17,8 +16,10 @@ const freeEntitlements: WorkspaceSubscriptionEntitlements = {
   plan: "free",
   status: "inactive",
   seats: 3,
-  issueWindow: 17,
-  automationRuns: 7,
+  limits: {
+    issueCount: { mode: "limited", limit: 17 },
+    automationRuns: { mode: "limited", limit: 7 },
+  },
   currentPeriodEnd: null,
   snapshotExpiresAt: null,
   version: 1,
@@ -28,7 +29,9 @@ const quotaUsage: AutomationQuotaUsage = {
   action: "enforce",
   used: 3,
   reserved: 2,
+  total: 5,
   limit: 7,
+  reached: false,
   period_start: "2030-01-01T00:00:00Z",
   period_end: "2030-02-01T00:00:00Z",
   reset_at: "2030-02-01T00:00:00Z",
@@ -38,7 +41,7 @@ const quotaUsage: AutomationQuotaUsage = {
 describe("resolveAutomationUsage", () => {
   it("counts reserved runs toward progress and the reached decision", () => {
     expect(
-      resolveAutomationUsage(freeEntitlements, quotaUsage, false, false),
+      resolveAutomationUsage(freeEntitlements, quotaUsage, false),
     ).toEqual({
       kind: "metered",
       used: 3,
@@ -53,19 +56,23 @@ describe("resolveAutomationUsage", () => {
     expect(
       resolveAutomationUsage(
         freeEntitlements,
-        { ...quotaUsage, used: 5 },
-        false,
+        { ...quotaUsage, used: 5, total: 7, reached: true },
         false,
       ),
     ).toMatchObject({ total: 7, reached: true, progress: 100 });
   });
 
-  it("shows Pro as unlimited from entitlement even when usage is unavailable", () => {
+  it("renders the server's explicit unlimited mode", () => {
     expect(
       resolveAutomationUsage(
-        { ...freeEntitlements, plan: "pro", automationRuns: null },
+        {
+          ...freeEntitlements,
+          limits: {
+            ...freeEntitlements.limits,
+            automationRuns: { mode: "unlimited", limit: null },
+          },
+        },
         undefined,
-        true,
         true,
       ),
     ).toEqual({ kind: "unlimited" });
@@ -73,7 +80,7 @@ describe("resolveAutomationUsage", () => {
 
   it("does not turn missing or disabled limited usage into zero or unlimited", () => {
     expect(
-      resolveAutomationUsage(freeEntitlements, undefined, true, false),
+      resolveAutomationUsage(freeEntitlements, undefined, true),
     ).toEqual({ kind: "unavailable" });
     expect(
       resolveAutomationUsage(
@@ -83,92 +90,75 @@ describe("resolveAutomationUsage", () => {
           action: "off",
           used: null,
           reserved: null,
+          total: null,
           limit: null,
+          reached: null,
           reset_at: null,
         },
         false,
+      ),
+    ).toEqual({ kind: "unavailable" });
+    expect(
+      resolveAutomationUsage(
+        freeEntitlements,
+        {
+          ...quotaUsage,
+          action: "observe",
+          total: quotaUsage.limit,
+          reached: null,
+        },
         false,
       ),
     ).toEqual({ kind: "unavailable" });
   });
 
-  it("keeps authoritative metered usage independent of entitlement unlimited", () => {
+  it("uses the explicit limited mode even when plan and status say Pro", () => {
     expect(
       resolveAutomationUsage(
-        { ...freeEntitlements, plan: "pro", automationRuns: null },
+        {
+          ...freeEntitlements,
+          plan: "pro",
+          status: "active",
+        },
         quotaUsage,
         false,
-        false,
       ),
-    ).toMatchObject({ kind: "metered", total: 5, limit: 7 });
-  });
-
-  it("does not derive unlimited when the entitlement fact is not trusted", () => {
-    expect(
-      resolveAutomationUsage(
-        { ...freeEntitlements, plan: "pro", automationRuns: null },
-        undefined,
-        true,
-        false,
-      ),
-    ).toEqual({ kind: "unavailable" });
+    ).toMatchObject({ kind: "metered", limit: 7 });
   });
 });
 
 describe("billing subscription state", () => {
-  it("prefers subscription facts and keeps safe compatibility fallbacks", () => {
-    const summary = {
+  it("keeps billing history separate from current seat capacity", () => {
+    const canceledSummary = {
       entitlement: freeEntitlements,
       billingInterval: null,
-      actualSeats: 3,
-      billedSeats: null,
-      pendingSeatQuantity: null,
+      humanMembers: 3,
+      seatCapacity: null,
       cancelAtPeriodEnd: false,
       graceUntil: null,
       hasStripeCustomer: true,
+      availableActions: {
+        checkout: true,
+        portal: true,
+        purchaseSeats: false,
+      },
     } satisfies WorkspaceSubscriptionSummary;
 
-    expect(hasManagedWorkspaceSubscription(freeEntitlements, summary)).toBe(
-      true,
-    );
-    expect(
-      hasManagedWorkspaceSubscription(
-        { ...freeEntitlements, status: "incomplete_expired" },
-        undefined,
-      ),
-    ).toBe(true);
-    expect(hasManagedWorkspaceSubscription(freeEntitlements, undefined)).toBe(
-      false,
-    );
-  });
+    expect(hasActiveWorkspaceSeatCapacity(canceledSummary)).toBe(false);
 
-  it.each([
-    ["inactive", true],
-    ["canceled", true],
-    ["incomplete_expired", true],
-    ["active", false],
-    ["trialing", false],
-    ["past_due", false],
-    ["incomplete", false],
-    ["paused", false],
-    ["unpaid", false],
-    ["future_status", false],
-  ])("allows a Free workspace in %s to purchase: %s", (status, expected) => {
-    expect(
-      canPurchaseWorkspaceSubscription({
-        ...freeEntitlements,
-        status,
-      }),
-    ).toBe(expected);
-  });
-
-  it("never offers Checkout while Pro is currently enforced", () => {
-    expect(
-      canPurchaseWorkspaceSubscription({
-        ...freeEntitlements,
-        plan: "pro",
-        status: "active",
-      }),
-    ).toBe(false);
+    const activeSummary = {
+      ...canceledSummary,
+      seatCapacity: {
+        purchased: 5,
+        used: 3,
+        reserved: 1,
+        available: 1,
+        overcommitted: false,
+        version: 2,
+        pendingQuantity: null,
+        activePurchase: null,
+      },
+    } satisfies WorkspaceSubscriptionSummary;
+    expect(hasActiveWorkspaceSeatCapacity(activeSummary)).toBe(true);
   });
 });

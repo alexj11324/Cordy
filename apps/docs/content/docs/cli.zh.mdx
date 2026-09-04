@@ -1,11 +1,11 @@
 ---
 title: 使用 CLI
-description: 安装并登录 Patchbay CLI，在终端中管理工作区、issue、智能体和运行时。
+description: 安装并登录 Patchbay CLI，在终端中管理工作区、任务、智能体和运行时。
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Patchbay CLI 既负责连接本机运行时，也可以在终端中管理工作区、issue、智能体和自动化。这里介绍常用路径；当前版本支持的参数始终以命令自身的 `--help` 为准。
+Patchbay CLI 既负责连接本机运行时，也可以在终端中管理工作区、任务、智能体和自动化。这里介绍常用路径；当前版本支持的参数始终以命令自身的 `--help` 为准。
 
 ## 安装
 
@@ -13,6 +13,12 @@ Patchbay CLI 既负责连接本机运行时，也可以在终端中管理工作�
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash
+```
+
+安装了 Homebrew 时也可以运行：
+
+```bash
+brew install alexj11324/Cordy/patchbay
 ```
 
 **Windows PowerShell**
@@ -39,8 +45,8 @@ patchbay setup
 
 ```bash
 patchbay setup self-host \
-  --server-url https://api.example.com \
-  --app-url https://app.example.com
+ --server-url https://api.example.com \
+ --app-url https://app.example.com
 ```
 
 `setup` 会保存服务地址、打开浏览器完成登录，并启动守护进程。完成后检查：
@@ -76,37 +82,37 @@ patchbay workspace member invite teammate@example.com
 patchbay workspace member invite admin@example.com --role admin
 ```
 
-## 常用 issue 操作
+## 常用任务操作
 
 ```bash
 # 查看和搜索
 patchbay issue list
-patchbay issue get PB-123
+patchbay issue get MUL-123
 patchbay issue search "登录失败"
 
 # 创建和修改
 patchbay issue create --title "修复登录失败"
-patchbay issue status PB-123 in_progress
-patchbay issue update PB-123 --executor "Backend Agent" --no-start
+patchbay issue status MUL-123 in_progress
+patchbay issue assign MUL-123 --to "Backend Agent"
 
-# 评论和Agent 事件
-patchbay issue comment list PB-123
-patchbay issue comment add PB-123 --content "请先检查回归测试"
-patchbay issue runs PB-123
+# 评论和执行记录
+patchbay issue comment list MUL-123
+patchbay issue comment add MUL-123 --content "请先检查回归测试"
+patchbay issue runs MUL-123
 ```
 
 长描述或评论从 stdin 读取，避免处理换行和引号：
 
 ```bash
 patchbay issue create --title "升级说明" --description-stdin < notes.md
-patchbay issue comment add PB-123 --content-stdin < review.md
+patchbay issue comment add MUL-123 --content-stdin < review.md
 ```
 
 查看某次执行的消息，或停止 task：
 
 ```bash
-patchbay issue run-messages <task-id> --issue PB-123
-patchbay issue cancel-task <task-id> --issue PB-123
+patchbay issue run-messages <task-id> --issue MUL-123
+patchbay issue cancel-task <task-id> --issue MUL-123
 ```
 
 ## 智能体和 skill
@@ -156,7 +162,7 @@ patchbay runtime activity <runtime-id>
 
 | 命令 | 用途 |
 | --- | --- |
-| `issue` | 创建、更新、分配和搜索 issue；管理评论、订阅、标签、属性与Agent 事件 |
+| `issue` | 创建、更新、设置 executor 和搜索任务；管理评论、订阅、标签、属性与执行记录 |
 | `project` | 管理项目及其资源 |
 | `label`、`property` | 管理工作区标签和自定义属性 |
 | `agent`、`skill`、`team` | 管理智能体、skill 和团队 |
@@ -174,9 +180,9 @@ patchbay runtime activity <runtime-id>
 
 ## ID 和输出格式
 
-Issue 使用 `PB-123` 这样的 key 或完整 UUID，不接受 UUID 短前缀。
+任务使用 `MUL-123` 这样的 key 或完整 UUID，不接受 UUID 短前缀。
 
-其他资源的 `list` 命令通常显示可复制的短 ID，并支持 `--full-id` 输出完整 UUID。短 ID 不唯一时，CLI 会要求增加字符或改用完整 UUID。执行任务的短 ID 还需要通过 `--issue` 指明所属 issue。
+其他资源的 `list` 命令通常显示可复制的短 ID，并支持 `--full-id` 输出完整 UUID。短 ID 不唯一时，CLI 会要求增加字符或改用完整 UUID。task 的短 ID 还需要通过 `--issue` 指明所属任务。
 
 许多命令支持结构化输出：
 
@@ -193,8 +199,8 @@ patchbay agent list --output json
 
 ```bash
 patchbay setup self-host --profile staging \
-  --server-url https://api.staging.example.com \
-  --app-url https://app.staging.example.com
+ --server-url https://api.staging.example.com \
+ --app-url https://app.staging.example.com
 
 patchbay issue list --profile staging
 ```
@@ -218,25 +224,26 @@ CLI 配置文件包含可代表你访问 Patchbay 的令牌。不要提交到仓
 
 | 命令 | 子命令 | 用途 | 关键 flag |
 | --- | --- | --- | --- |
-| `issue` | `list` | 列出 issue | `--status`、`--priority`、`--executor` / `--executor-id`、`--owner` / `--owner-id`、`--project`、`--metadata`（可重复）、`--limit`、`--offset`、`--sort`、`--full-id` |
-| | `get <id>` | 查看单个 issue | |
-| | `create` | 创建 issue | `--title`（必填）、`--description` / `--description-stdin` / `--description-file`、`--status`、`--priority`、`--executor` / `--executor-id`、`--owner` / `--owner-id`、`--reviewer` / `--reviewer-id`、`--parent`、`--stage`、`--project`、`--start-date`、`--due-date`、`--attachment`（可重复） |
-| | `update <id>` | 更新 issue 字段 | 与 `create` 同类字段，另有 `--position`、`--no-start` |
-| | `assign <id>` | 兼容的组合角色设置/清除 | `--to`、`--to-id`、`--unassign`、`--no-start` |
+| `issue` | `list` | 列出任务 | `--status`、`--priority`、`--owner` / `--owner-id`、`--executor` / `--executor-id`、`--project`、`--metadata`（可重复）、`--limit`、`--offset`、`--sort`、`--full-id` |
+| | `get <id>` | 查看单个任务 | |
+| | `create` | 创建任务 | `--title`（必填）、`--description` / `--description-stdin` / `--description-file`、`--status`、`--priority`、`--owner` / `--owner-id`、`--executor` / `--executor-id`、`--reviewer` / `--reviewer-id`、`--parent`、`--stage`、`--project`、`--start-date`、`--due-date`、`--attachment`（可重复） |
+| | `update <id>` | 更新任务字段 | 与 `create` 同类字段，另有 `--position`、`--no-start` |
+| | `assign <id>` | 设置或清除 executor | `--to`（名称模糊匹配智能体或团队）、`--to-id`、`--unassign`、`--no-start` |
 | | `status <id> <status>` | 修改状态 | `--no-start` |
 | | `reorder <id>` | 在列内移动 | |
-| | `search <query>` | 搜索 issue | `--limit`、`--include-closed` |
-| | `children <id>` | 按阶段分组列出子 issue | |
+| | `search <query>` | 搜索任务 | `--limit`、`--include-closed` |
+| | `children <id>` | 按阶段分组列出子任务 | |
+| | `dependency-graph get <id>` / `apply <parent-id>` | 读取或一次性应用 typed dependency graph | `get`：`--output`；`apply`：`--idempotency-key`、`--plan-file` / `--plan-stdin`、`--allow-external-file`、`--output` |
 | | `pull-requests <id>` | 列出关联的 PR | |
 | | `comment list/add/delete/resolve/unresolve` | 管理评论 | `add`：`--content` / `--content-stdin` / `--content-file`、`--parent`、`--attachment`；`list`：`--since`、`--thread`、`--tail` |
 | | `subscriber list/add/remove <issue-id>` | 管理订阅者 | `--user`、`--user-id`（缺省为当前用户） |
-| | `label list/add/remove <issue-id>` | 管理 issue 上的标签 | |
-| | `metadata list/get/set/delete <issue-id>` | 管理 issue 级键值元数据 | |
+| | `label list/add/remove <issue-id>` | 管理任务上的标签 | |
+| | `metadata list/get/set/delete <issue-id>` | 管理任务级键值元数据 | |
 | | `property list/set/unset <issue-id>` | 设置自定义属性值 | `set`：`--name`、`--value`（`actor` / `multi_actor` 接受成员的名称、邮箱或 id） |
 | | `runs <issue-id>` | 查看执行历史 | `--full-id` |
 | | `run-messages <task-id>` | 查看单次执行的消息 | `--since`、`--issue` |
 | | `usage <issue-id>` | 查看聚合 token 用量 | |
-| | `rerun <id>` | 按当前指派重新入队执行 | |
+| | `rerun <id>` | 按当前 executor 重新入队执行 | |
 | | `cancel-task <task-id>` | 取消运行中或排队中的 task | `--issue` |
 | `project` | `list/get/create/update/delete` | 管理项目 | |
 | | `status <id> <status>` | 修改项目状态 | |
@@ -250,7 +257,7 @@ CLI 配置文件包含可代表你访问 Patchbay 的令牌。不要提交到仓
 | | `env get/set <agent-id>` | 读写自定义环境变量（仅 owner 和 admin） | |
 | | `skills list/set/add <agent-id>` | 管理绑定的 skill | `--skill-ids`（`set` 全量替换，`add` 增量添加） |
 | | `mcp list/add/enable/disable/remove <agent-id>` | 给该 agent 分配工作区 MCP 服务 | server id 从 `workspace mcp list` 获取。库里的条目在这里添加之前不会生效；`disable` 只停止下发，保留分配 |
-| `automation` | `list/get/create/update/delete` | 管理自动化 | `create`：`--title`、`--agent`、`--mode`（均必填）、`--priority`、`--project`、`--subscriber`（可重复） |
+| `automation` | `list/get/create/update/delete` | 管理自动化 | `create`：`--title`、`--agent`、`--mode`（均必填）、`--project`、`--subscriber`（可重复） |
 | | `trigger <id>` | 手动触发一次 | |
 | | `runs <id>` | 查看运行历史 | |
 | | `trigger-add/trigger-update/trigger-delete/trigger-rotate-url` | 管理定时和 webhook 触发器 | |
@@ -292,12 +299,30 @@ CLI 配置文件包含可代表你访问 Patchbay 的令牌。不要提交到仓
 | `update` | — | 更新 CLI 到最新版本 | |
 | `version` | — | 查看版本信息 | `--output`（`text` 或 `json`） |
 
+## 依赖图命令
+
+当一个父任务要拆成带有硬前置条件的多个任务时，请使用 typed plan：
+
+```bash
+patchbay issue dependency-graph get MUL-123 --output table
+patchbay issue dependency-graph apply MUL-123 \
+  --idempotency-key plan-mul-123-v1 --plan-file ./dependency-plan.json
+cat dependency-plan.json | patchbay issue dependency-graph apply MUL-123 \
+  --idempotency-key plan-mul-123-v1 --plan-stdin --output json
+```
+
+当前角色契约是显式的：`owner` 必须是工作区 member；`executor` 和
+`candidate_executors` 必须是 agent 或 team；`reviewer` 可以是 member、agent
+或 team。服务端会校验计划并推导 `waves`；`get` 和成功的 `apply` 会返回
+parent、children、nodes、edges 以及带有 `unlock_condition` 的就绪信息。重复使用
+幂等键会重放同一个计划。图发生变更时会发布 `dependency_graph:updated`，连接中的客户端会刷新数据。
+
 ## 在其他编码智能体里操作 Patchbay
 
 如果你的工作大多发生在 Codex、Claude Code 或 Cursor 里，可以直接在那里操作 Patchbay，
-不必切回终端。[Patchbay CLI skill](https://github.com/alexj11324/Cordy/tree/main/server-rs/crates/patchbay-cli)
-会教这些智能体安全地使用本页的命令：低成本地读 issue 和评论线程、通过文件写评论，
-以及正确处理 mention、状态变更和指派带来的副作用。
+不必切回终端。[Patchbay CLI skill](https://github.com/patchbay-ai/patchbay-cli)
+会教这些智能体安全地使用本页的命令：低成本地读任务和评论线程、通过文件写评论，
+以及正确处理 mention、状态变更和 owner、executor、reviewer 变更带来的副作用。
 
 它完全通过你已认证的 CLI 运行，本身不授予任何权限 —— 权限仍然只来自你的登录、
 所选 profile 和 workspace。要求 CLI 版本不低于 v0.4.26。该仓库的 README 说明了
@@ -306,7 +331,7 @@ Claude Code 插件市场、Codex skill 安装器、Cursor 以及其他任何加�
 
 ## 接下来
 
-- [Patchbay CLI skill](https://github.com/alexj11324/Cordy/tree/main/server-rs/crates/patchbay-cli) — 在 Codex、Claude Code 或 Cursor 里操作 Patchbay。
+- [Patchbay CLI skill](https://github.com/patchbay-ai/patchbay-cli) — 在 Codex、Claude Code 或 Cursor 里操作 Patchbay。
 - [认证与令牌](/auth-tokens) — PAT 的创建、续期和吊销。
-- [故障排查](/troubleshooting) — 命令报错和任务不开始的排查路径。
+- [故障排查](/troubleshooting) — 命令报错和 task 不开始的排查路径。
 - [创建和配置智能体](/agents-create) — `agent create` 各字段的完整语义。

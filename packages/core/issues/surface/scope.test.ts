@@ -90,7 +90,9 @@ describe("issue surface scope", () => {
 
 describe("roleFiltersForActorKind", () => {
   it("maps the three tabs to their API values", () => {
-    expect(roleFiltersForActorKind("members")).toEqual({ ownerTypes: ["member"] });
+    expect(roleFiltersForActorKind("members")).toEqual({
+      ownerTypes: ["member"],
+    });
     expect(roleFiltersForActorKind("agents")).toEqual({
       executorTypes: ["agent", "team"],
     });

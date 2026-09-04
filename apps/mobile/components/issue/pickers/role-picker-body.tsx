@@ -1,109 +1,101 @@
-/**
- * Native form-sheet picker for the three Issue roles.
- *
- * Owner is restricted to active workspace members. Reviewer accepts members,
- * agents, and teams; runnable agent/team rows are disabled when their runtime
- * is not bound. The route owns mutation/draft persistence, keeping this body
- * a pure list just like the executor picker.
- */
 import { useMemo } from "react";
 import { FlatList, Pressable, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useColorScheme } from "nativewind";
 import { useQuery } from "@tanstack/react-query";
-import type {
-  Agent,
-  IssueActorType,
-  MemberWithUser,
-  Team,
-} from "@patchbay/core/types";
 import { Text } from "@/components/ui/text";
 import { ActorAvatar } from "@/components/ui/actor-avatar";
 import { agentListOptions } from "@/data/queries/agents";
 import { memberListOptions } from "@/data/queries/members";
 import { teamListOptions } from "@/data/queries/teams";
+import { useAuthStore } from "@/data/auth-store";
 import { useWorkspaceStore } from "@/data/workspace-store";
+import { getIssueRoleCopy } from "@/lib/issue-role-copy";
+import {
+  buildIssueRoleOptions,
+  isIssueRoleOptionSelected,
+  type IssueRoleOptionActor,
+  type RolePickerKind,
+  type RoleValue,
+} from "@/lib/issue-role-options";
+import { isAgentRuntimeBound } from "@/lib/is-agent-runtime-bound";
 import { useScrollToTopOnChange } from "@/lib/use-scroll-to-top-on-change";
 import { THEME } from "@/lib/theme";
 import { cn } from "@/lib/utils";
-import { isAgentRuntimeBound } from "@/lib/is-agent-runtime-bound";
 
 const AVATAR_SIZE = 36;
 
-export type RoleValue = { type: IssueActorType; id: string } | null;
-export type RolePickerKind = "owner" | "reviewer";
+export type { RolePickerKind, RoleValue } from "@/lib/issue-role-options";
 
-type Props = {
+export function RolePickerBody({
+  kind,
+  value,
+  query,
+  onChange,
+  allowUnassigned = true,
+  excludedActor = null,
+  disabled = false,
+}: {
   kind: RolePickerKind;
   value: RoleValue;
   query: string;
   onChange: (next: RoleValue) => void;
-};
-
-type Row =
-  | { kind: "unassigned" }
-  | { kind: "member"; member: MemberWithUser }
-  | { kind: "agent"; agent: Agent }
-  | { kind: "team"; team: Team };
-
-function selected(value: RoleValue, row: Row): boolean {
-  if (row.kind === "unassigned") return value === null;
-  const id = rowId(row);
-  return value?.type === row.kind && value.id === id;
-}
-
-/** Issue role payloads use the canonical actor id. A member query row's `id`
- * is the workspace-membership id, so it must be projected to `user_id`. */
-function rowId(row: Exclude<Row, { kind: "unassigned" }>): string {
-  if (row.kind === "member") return row.member.user_id;
-  return row.kind === "agent" ? row.agent.id : row.team.id;
-}
-
-export function RolePickerBody({ kind, value, query, onChange }: Props) {
-  const wsId = useWorkspaceStore((s) => s.currentWorkspaceId);
+  allowUnassigned?: boolean;
+  excludedActor?: RoleValue;
+  disabled?: boolean;
+}) {
+  const wsId = useWorkspaceStore((state) => state.currentWorkspaceId);
+  const language = useAuthStore((state) => state.user?.language);
+  const copy = getIssueRoleCopy(language);
   const { data: members = [] } = useQuery(memberListOptions(wsId));
   const { data: agents = [] } = useQuery(agentListOptions(wsId));
   const { data: teams = [] } = useQuery(teamListOptions(wsId));
   const listRef = useScrollToTopOnChange(query);
   const { colorScheme } = useColorScheme();
-  const checkColor = colorScheme === "dark" ? THEME.dark.primary : THEME.light.primary;
-
-  const rows = useMemo<Row[]>(() => {
-    const q = query.trim().toLowerCase();
-    const matches = (name: string) => !q || name.toLowerCase().includes(q);
-    const memberRows: Row[] =
-      (kind === "owner" || kind === "reviewer")
-        ? members
-            .filter((member) => matches(member.name))
-            .sort((a, b) => a.name.localeCompare(b.name))
-            .map((member) => ({ kind: "member", member }))
-        : [];
-    const agentRows: Row[] =
-      kind === "reviewer"
-        ? agents
-            .filter((agent) => !agent.archived_at && matches(agent.name))
-            .sort((a, b) => a.name.localeCompare(b.name))
-            .map((agent) => ({ kind: "agent", agent }))
-        : [];
-    const teamRows: Row[] =
-      kind === "reviewer"
-        ? teams
-            .filter((team) => !team.archived_at && matches(team.name))
-            .sort((a, b) => a.name.localeCompare(b.name))
-            .map((team) => ({ kind: "team", team }))
-        : [];
-    const all = [...memberRows, ...agentRows, ...teamRows];
-    if (q) return all;
-    const current = all.find((row) => selected(value, row));
-    // Reviewers may not be cleared after one has been chosen: the server
-    // requires a concrete reviewer for reassignment while an issue is in
-    // review. Keep the unassigned option for owners and for an empty reviewer
-    // value, matching the web picker contract.
-    const unassigned = kind !== "reviewer" || value === null
-      ? [{ kind: "unassigned" as const }]
-      : [];
-    return [...unassigned, ...(current ? [current] : []), ...all.filter((row) => !selected(value, row))];
-  }, [agents, kind, members, query, teams, value]);
+  const checkColor =
+    colorScheme === "dark" ? THEME.dark.primary : THEME.light.primary;
+  const rows = useMemo(() => {
+    const actorOptions: IssueRoleOptionActor[] = [
+      ...members.map((member) => ({
+        type: "member" as const,
+        id: member.user_id,
+        name: member.name,
+      })),
+      ...agents.map((agent) => ({
+        type: "agent" as const,
+        id: agent.id,
+        name: agent.name,
+        archived: Boolean(agent.archived_at),
+        needsRuntime: !isAgentRuntimeBound(agent),
+      })),
+      ...teams.map((team) => ({
+        type: "team" as const,
+        id: team.id,
+        name: team.name,
+        archived: Boolean(team.archived_at),
+        needsRuntime: !agents.some(
+          (agent) => agent.id === team.leader_id && isAgentRuntimeBound(agent),
+        ),
+      })),
+    ];
+    return buildIssueRoleOptions({
+      kind,
+      value,
+      query,
+      actors: actorOptions,
+      allowUnassigned,
+      excludedActor,
+    });
+  }, [
+    agents,
+    allowUnassigned,
+    excludedActor,
+    kind,
+    members,
+    query,
+    teams,
+    value,
+  ]);
 
   return (
     <FlatList
@@ -113,41 +105,68 @@ export function RolePickerBody({ kind, value, query, onChange }: Props) {
       keyboardShouldPersistTaps="handled"
       automaticallyAdjustKeyboardInsets
       contentInsetAdjustmentBehavior="automatic"
-      keyExtractor={(row) => {
-        if (row.kind === "unassigned") return "unassigned";
-        return `${row.kind}:${rowId(row)}`;
-      }}
+      keyExtractor={(row) =>
+        row.kind === "unassigned"
+          ? "unassigned"
+          : `${row.actor.type}:${row.actor.id}`
+      }
       renderItem={({ item }) => {
         const needsRuntime =
-          (item.kind === "agent" && !isAgentRuntimeBound(item.agent)) ||
-          (item.kind === "team" && !agents.some((agent) => agent.id === item.team.leader_id && isAgentRuntimeBound(agent)));
-        const disabled = needsRuntime;
+          item.kind === "actor" && item.actor.needsRuntime === true;
         return (
           <Pressable
-            disabled={disabled}
-            onPress={() => {
-              onChange(item.kind === "unassigned" ? null : { type: item.kind, id: rowId(item) });
+            disabled={disabled || needsRuntime}
+            onPress={() =>
+              onChange(
+                item.kind === "unassigned"
+                  ? null
+                  : { type: item.actor.type, id: item.actor.id },
+              )
+            }
+            className={cn(
+              "flex-row items-center gap-3 px-4 py-3 active:bg-secondary",
+              (disabled || needsRuntime) && "opacity-50",
+            )}
+            accessibilityState={{
+              disabled: disabled || needsRuntime,
+              selected: isIssueRoleOptionSelected(value, item),
             }}
-            className={cn("flex-row items-center gap-3 px-4 py-3 active:bg-secondary", disabled && "opacity-50")}
           >
             {item.kind === "unassigned" ? (
-              <View className="rounded-full border border-dashed border-muted-foreground/40 items-center justify-center" style={{ width: AVATAR_SIZE, height: AVATAR_SIZE }}>
+              <View
+                className="items-center justify-center rounded-full border border-dashed border-muted-foreground/40"
+                style={{ width: AVATAR_SIZE, height: AVATAR_SIZE }}
+              >
                 <Text className="text-sm text-muted-foreground">∅</Text>
               </View>
             ) : (
-              <ActorAvatar type={item.kind} id={rowId(item)} size={AVATAR_SIZE} />
+              <ActorAvatar
+                type={item.actor.type}
+                id={item.actor.id}
+                size={AVATAR_SIZE}
+              />
             )}
             <Text className="flex-1 text-base text-foreground">
-              {item.kind === "unassigned" ? "Unassigned" : item[item.kind].name}
+              {item.kind === "unassigned" ? copy.unassigned : item.actor.name}
             </Text>
-            {needsRuntime ? <Text className="text-sm text-muted-foreground">Needs runtime</Text> : null}
-            {selected(value, item) ? <Ionicons name="checkmark" size={20} color={checkColor} /> : null}
+            {needsRuntime ? (
+              <Text className="text-sm text-muted-foreground">
+                {item.kind === "actor" && item.actor.type === "team"
+                  ? copy.leaderNeedsRuntime
+                  : copy.needsRuntime}
+              </Text>
+            ) : null}
+            {isIssueRoleOptionSelected(value, item) ? (
+              <Ionicons name="checkmark" size={20} color={checkColor} />
+            ) : null}
           </Pressable>
         );
       }}
       ListEmptyComponent={
-        <View className="px-3 py-8 items-center">
-          <Text className="text-sm text-muted-foreground">No matches.</Text>
+        <View className="items-center px-3 py-8">
+          <Text className="text-sm text-muted-foreground">
+            {copy.noMatches}
+          </Text>
         </View>
       }
     />

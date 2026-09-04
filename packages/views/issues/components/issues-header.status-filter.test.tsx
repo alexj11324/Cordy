@@ -5,14 +5,14 @@
  *
  * The filter lists every offerable status flat, in canonical category order,
  * with no category heading — the icon already carries the category, and a
- * heading per category doubled the menu's height (PB-6399).
+ * heading per category doubled the menu's height (MUL-6399).
  *
  * That is also what keeps the menu from crashing. `DropdownMenuLabel` renders
  * Base UI's `Menu.GroupLabel`, whose `useMenuGroupRootContext()` THROWS
  * without a `Menu.Group` ancestor; the heading only rendered once a workspace
  * held a custom status, so the missing group stayed invisible until the first
  * one was created — and then opening the filter took the whole app down, since
- * no error boundary sits above the issues surface (PB-6393, PB-4819).
+ * no error boundary sits above the issues surface (MUL-6393, MUL-4819).
  *
  * These tests therefore must NOT mock `@patchbay/ui/components/ui/dropdown-menu`:
  * a flattened mock renders a heading outside a group perfectly happily, which
@@ -117,7 +117,7 @@ describe("IssueFilterMenu status section", () => {
   it("lists a custom status inline, with no category heading", async () => {
     renderFilterMenu([...BUILT_INS, HUMAN_REVIEW]);
 
-    // Opening at all is the PB-6393 regression: the heading this list no
+    // Opening at all is the MUL-6393 regression: the heading this list no
     // longer renders used to throw out of Base UI's Menu.GroupLabel and
     // unmount the app.
     await openStatusSubmenu();

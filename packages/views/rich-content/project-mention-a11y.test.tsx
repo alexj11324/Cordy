@@ -1,5 +1,5 @@
 /**
- * Project mention accessibility (PB-4922).
+ * Project mention accessibility (MUL-4922).
  *
  * A mention is a link. It must be reachable by Tab, activatable by Enter, and
  * carry a real URL — not a `<span onClick>` that only answers to a mouse.
@@ -74,6 +74,7 @@ function makeAdapter(overrides: Partial<NavigationAdapter> = {}): NavigationAdap
     back: vi.fn(),
     pathname: "/",
     searchParams: new URLSearchParams(),
+    hash: "",
     getShareableUrl: (p) => p,
     ...overrides,
   };

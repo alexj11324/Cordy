@@ -1,10 +1,9 @@
 "use client";
 
 import { Suspense, lazy, useRef, useState } from "react";
-import { Bot, Camera, ImagePlus, Loader2, X } from "lucide-react";
+import { Bot, Camera, ImagePlus, Loader2, Users, X } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@patchbay/core/api";
-import { PeopleGroupIcon } from "@patchbay/ui/components/common/people-group-icon";
 import { useFileUpload } from "@patchbay/core/hooks/use-file-upload";
 import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
 import {
@@ -89,7 +88,7 @@ function AvatarFallback({
     return <Bot style={{ width: size * 0.5, height: size * 0.5 }} />;
   }
   if (variant === "team") {
-    return <PeopleGroupIcon style={{ width: size * 0.5, height: size * 0.5 }} />;
+    return <Users style={{ width: size * 0.5, height: size * 0.5 }} />;
   }
   const text =
     variant === "workspace"

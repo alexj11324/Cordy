@@ -13,7 +13,7 @@ test.describe("Navigation", () => {
     await page.getByRole("link", { name: "Inbox" }).click();
     await expect(page).toHaveURL(/\/inbox/, { timeout: ROUTE_CHANGE_TIMEOUT });
     await waitForPageText(page, "Inbox");
-    // Each destination renames the browser tab after itself (PB-6222).
+    // Each destination renames the browser tab after itself (MUL-6222).
     await expect(page).toHaveTitle("Inbox | Patchbay");
 
     await page.getByRole("link", { name: "Agents" }).click();

@@ -521,7 +521,7 @@ function EditorBubbleMenu({
       // The level itself, not one boolean per offered level: the schema accepts
       // h1-h6 so the cursor can sit in an H4-H6 that Markdown brought in, and
       // the dropdown has to report that honestly instead of falling through to
-      // "Normal text". It still only offers H1-H3 as choices (PB-6060).
+      // "Normal text". It still only offers H1-H3 as choices (MUL-6060).
       headingLevel: e.isActive("heading")
         ? (e.getAttributes("heading").level as number | undefined)
         : undefined,

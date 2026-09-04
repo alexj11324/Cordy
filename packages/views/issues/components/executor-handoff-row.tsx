@@ -38,13 +38,12 @@ function HandoffAvatarStack({
   const overflow = actors.length - visible.length;
   const px = AVATAR_SIZE_PX[size];
   const overlap = Math.round(px * 0.3);
-
   return (
     <span className="inline-flex items-center">
-      {visible.map((actor, i) => (
+      {visible.map((actor, index) => (
         <span
           key={`${actor.type}:${actor.id}`}
-          style={{ marginLeft: i === 0 ? 0 : -overlap }}
+          style={{ marginLeft: index === 0 ? 0 : -overlap }}
           className="inline-flex rounded-full ring-2 ring-background"
         >
           <ActorAvatar
@@ -55,7 +54,7 @@ function HandoffAvatarStack({
           />
         </span>
       ))}
-      {overflow > 0 && (
+      {overflow > 0 ? (
         <span
           style={{
             marginLeft: -overlap,
@@ -67,7 +66,7 @@ function HandoffAvatarStack({
         >
           +{overflow}
         </span>
-      )}
+      ) : null}
     </span>
   );
 }
@@ -81,16 +80,14 @@ function HandoffHistoryPopover({
 }) {
   const { t } = useT("issues");
   const { getActorName } = useActorName();
-  const label = t(($) => $.detail.handoff_stack_aria, { count: actors.length });
-
   return (
     <Popover>
       <PopoverTrigger
         className={cn(
-          "inline-flex shrink-0 items-center rounded px-0.5 -mx-0.5",
-          "hover:bg-accent/30 transition-colors",
+          "-mx-0.5 inline-flex shrink-0 items-center rounded px-0.5",
+          "transition-colors hover:bg-accent/30",
         )}
-        aria-label={label}
+        aria-label={t(($) => $.detail.handoff_stack_aria, { count: actors.length })}
       >
         <HandoffAvatarStack actors={actors} />
       </PopoverTrigger>
@@ -106,25 +103,12 @@ function HandoffHistoryPopover({
               key={`${hop.from.type}:${hop.from.id}->${hop.to.type}:${hop.to.id}:${index}`}
               className="flex min-w-0 items-center gap-1.5 text-caption"
             >
-              <ActorAvatar
-                actorType={hop.from.type}
-                actorId={hop.from.id}
-                size="sm"
-                profileLink={false}
-              />
+              <ActorAvatar actorType={hop.from.type} actorId={hop.from.id} size="sm" profileLink={false} />
               <span className="min-w-0 truncate font-medium">
                 {getActorName(hop.from.type, hop.from.id)}
               </span>
-              <ArrowRight
-                className="size-3.5 shrink-0 text-muted-foreground"
-                aria-hidden="true"
-              />
-              <ActorAvatar
-                actorType={hop.to.type}
-                actorId={hop.to.id}
-                size="sm"
-                profileLink={false}
-              />
+              <ArrowRight className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <ActorAvatar actorType={hop.to.type} actorId={hop.to.id} size="sm" profileLink={false} />
               <span className="min-w-0 truncate font-medium">
                 {getActorName(hop.to.type, hop.to.id)}
               </span>
@@ -154,13 +138,7 @@ export function ExecutorHandoffRow({
       actors: handoffStackActors(recorded, executor, reviewer),
       hops: handoffHopsForDisplay(recorded, executor, reviewer),
     };
-  }, [
-    timeline,
-    issue.executor_type,
-    issue.executor_id,
-    issue.reviewer_type,
-    issue.reviewer_id,
-  ]);
+  }, [timeline, issue.executor_type, issue.executor_id, issue.reviewer_type, issue.reviewer_id]);
 
   const stacked = actors.length > 1 && hops.length > 0;
   const picker = (
@@ -178,9 +156,7 @@ export function ExecutorHandoffRow({
       }
     />
   );
-
   if (!stacked) return picker;
-
   return (
     <div className="flex min-w-0 items-center gap-1.5">
       <HandoffHistoryPopover hops={hops} actors={actors} />

@@ -2,7 +2,7 @@ Patchbay
 Copyright 2025-2026 Patchbay, Inc.
 
 This product includes software developed at Patchbay, Inc.
-(https://github.com/alexj11324/Cordy).
+(https://github.com/patchbay-ai/patchbay).
 
 Patchbay is distributed under the Patchbay License, which incorporates the
 complete text of the Apache License, Version 2.0 together with additional
@@ -12,9 +12,3 @@ attribution for non-interface use. See the LICENSE file for the full text.
 
 This NOTICE file is provided for attribution purposes only and does not
 modify the Patchbay License.
-
-Third-party UI component
-------------------------
-This product includes @lobehub/ui 5.36.2, distributed under the MIT License.
-The corresponding copyright and permission notice is preserved in
-licenses/lobehub-ui-MIT.txt.
