@@ -813,12 +813,13 @@ jobs:
       - name: Download staged Desktop artifacts
         uses: actions/download-artifact@v4
         with:
-          path: desktop-assets
+          path: ${{ runner.temp }}/desktop-assets
           pattern: desktop-*
           merge-multiple: false
 
       - name: Validate Desktop artifact manifests
         env:
+          DESKTOP_ASSETS_DIR: ${{ runner.temp }}/desktop-assets
           VERIFIED_SHA: ${{ needs.verify.outputs.commit_sha }}
           TAG_NAME: ${{ needs.verify.outputs.tag_name }}
         shell: bash
@@ -829,7 +830,7 @@ jobs:
           import { readdirSync, readFileSync, statSync } from "node:fs";
           import { basename, dirname, join, relative, resolve } from "node:path";
 
-          const root = resolve("desktop-assets");
+          const root = resolve(process.env.DESKTOP_ASSETS_DIR);
           const expectedVariants = new Set([
             "linux:all",
             "win:all",
@@ -897,6 +898,7 @@ jobs:
 
       - name: Upload Desktop artifacts to staged release
         env:
+          DESKTOP_ASSETS_DIR: ${{ runner.temp }}/desktop-assets
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.verify.outputs.tag_name }}
           VERIFIED_SHA: ${{ needs.verify.outputs.commit_sha }}
@@ -912,7 +914,7 @@ jobs:
             gh release upload "$TAG_NAME" "$asset" \
               --repo "$GITHUB_REPOSITORY" \
               --clobber
-          done < <(find desktop-assets -type f -print0)
+          done < <(find "$DESKTOP_ASSETS_DIR" -type f -print0)
 
       - name: Publish Go CLI and Homebrew artifacts
         uses: goreleaser/goreleaser-action@v6

@@ -40,3 +40,20 @@ test("desktop release staging selects installers and updater metadata only", asy
   ]);
   assert.equal(new Set(selected).size, selected.length);
 });
+
+test("release publication keeps downloaded Desktop assets outside the checkout", async () => {
+  const workflow = await readFile(
+    new URL("../.github/workflows/release.yml", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(
+    workflow,
+    /DESKTOP_ASSETS_DIR: \$\{\{ runner\.temp \}\}\/desktop-assets/u,
+  );
+  assert.match(workflow, /path: \$\{\{ runner\.temp \}\}\/desktop-assets/u);
+  assert.match(workflow, /resolve\(process\.env\.DESKTOP_ASSETS_DIR\)/u);
+  assert.match(workflow, /find "\$DESKTOP_ASSETS_DIR" -type f -print0/u);
+  assert.doesNotMatch(workflow, /^\s+path: desktop-assets$/mu);
+  assert.doesNotMatch(workflow, /resolve\("desktop-assets"\)/u);
+});
