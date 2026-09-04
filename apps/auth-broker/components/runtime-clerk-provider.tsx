@@ -1,6 +1,5 @@
 "use client";
 import { ClerkProvider } from "@clerk/nextjs";
-import { shadcn } from "@clerk/themes";
 import { AuthShell } from "./auth-shell";
 import { useAuthMessages } from "@/lib/auth-messages";
 export function RuntimeClerkProvider({
@@ -18,10 +17,7 @@ export function RuntimeClerkProvider({
       </AuthShell>
     );
   return (
-    <ClerkProvider
-      publishableKey={publishableKey}
-      appearance={{ theme: shadcn }}
-    >
+    <ClerkProvider publishableKey={publishableKey}>
       {children}
     </ClerkProvider>
   );

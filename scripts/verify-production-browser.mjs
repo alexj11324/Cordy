@@ -86,7 +86,10 @@ async function verifyAccountsLoginSurface(browser, sourceSha) {
     await expect(brandPanel).toBeVisible();
     await expect(page.getByTestId("patchbay-mark")).toBeVisible();
     await expect(
-      page.getByRole("heading", { name: "Sign in to Patchbay", exact: true }),
+      page.getByRole("heading", { name: "Create an account", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Sign In with Email", exact: true }),
     ).toBeVisible();
 
     const [shellBox, formBox, brandBox] = await Promise.all([
@@ -95,13 +98,13 @@ async function verifyAccountsLoginSurface(browser, sourceSha) {
       brandPanel.boundingBox(),
     ]);
     assert.ok(shellBox, "Accounts split shell must have a rendered box");
-    assert.ok(formBox, "Accounts white form panel must have a rendered box");
-    assert.ok(brandBox, "Accounts black brand panel must have a rendered box");
+    assert.ok(formBox, "Accounts black form panel must have a rendered box");
+    assert.ok(brandBox, "Accounts charcoal brand panel must have a rendered box");
     assert.ok(
-      formBox.x < brandBox.x &&
+      brandBox.x < formBox.x &&
         formBox.width >= shellBox.width * 0.45 &&
         brandBox.width >= shellBox.width * 0.45,
-      "Accounts login must render white-left and black-right panels",
+      "Accounts login must render charcoal-left and black-right panels",
     );
   } finally {
     await context.close();

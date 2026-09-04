@@ -8,9 +8,10 @@ import {
   useRef,
   useState,
 } from "react";
-import { SignIn, useAuth, useClerk } from "@clerk/nextjs";
+import { useAuth, useClerk } from "@clerk/nextjs";
 import { useSearchParams } from "next/navigation";
 import { AuthShell } from "@/components/auth-shell";
+import { AccountsLoginForm } from "@/components/accounts-login-form";
 import {
   BrokerApiError,
   completeDesktopGoogleAttempt,
@@ -136,12 +137,7 @@ function Content() {
 
   return (
     <AuthShell>
-      <SignIn
-        routing="hash"
-        withSignUp
-        forceRedirectUrl={returnUrl}
-        signUpForceRedirectUrl={returnUrl}
-      />
+      <AccountsLoginForm returnUrl={returnUrl} />
     </AuthShell>
   );
 }

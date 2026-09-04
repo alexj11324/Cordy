@@ -38,3 +38,12 @@ test("desktop opens the Accounts login surface directly", () => {
   );
   assert.doesNotMatch(handoff, /localhost|\/oauth\/google/);
 });
+
+test("Accounts login uses the custom shadcn form instead of Clerk's card", () => {
+  const page = read("apps/auth-broker/app/login/page.tsx");
+  const form = read("apps/auth-broker/components/accounts-login-form.tsx");
+  assert.doesNotMatch(page, /<SignIn\b/u);
+  assert.match(form, /signIn\.emailCode\.sendCode/u);
+  assert.match(form, /signIn\.emailCode\.verifyCode/u);
+  assert.match(form, /Sign In with Email|emailButton/u);
+});

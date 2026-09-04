@@ -26,15 +26,14 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("@clerk/nextjs", () => ({
-  SignIn: (props: Record<string, unknown>) => (
-    <div
-      data-testid="clerk-sign-in"
-      data-routing={String(props.routing)}
-      data-redirect={String(props.forceRedirectUrl)}
-    />
-  ),
   useAuth: () => ({ ...mocks.auth, getToken: mocks.getToken }),
   useClerk: () => ({ signOut: mocks.signOut }),
+}));
+
+vi.mock("@/components/accounts-login-form", () => ({
+  AccountsLoginForm: ({ returnUrl }: { returnUrl: string }) => (
+    <div data-testid="accounts-login-form" data-return-url={returnUrl} />
+  ),
 }));
 
 vi.mock("@/lib/broker-client", () => ({
@@ -49,6 +48,9 @@ vi.mock("@/lib/broker-client", () => ({
 
 vi.mock("@/lib/auth-messages", () => ({
   useAuthMessages: () => ({
+    brand: "Patchbay",
+    quote: "Patchbay quote",
+    login: "Login",
     desktopFailed: "The desktop sign-in could not be completed.",
     opening: "Opening Patchbay…",
   }),
@@ -65,22 +67,18 @@ beforeEach(() => {
 });
 
 describe("Accounts desktop login", () => {
-  it("registers the desktop attempt before rendering Clerk SignIn", async () => {
+  it("registers the desktop attempt before rendering the custom login form", async () => {
     render(<Page />);
 
-    expect(screen.queryByTestId("clerk-sign-in")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("accounts-login-form")).not.toBeInTheDocument();
     await waitFor(() =>
       expect(mocks.register).toHaveBeenCalledWith({
         state: STATE,
         code_challenge: CHALLENGE,
       }),
     );
-    expect(await screen.findByTestId("clerk-sign-in")).toHaveAttribute(
-      "data-routing",
-      "hash",
-    );
-    expect(screen.getByTestId("clerk-sign-in")).toHaveAttribute(
-      "data-redirect",
+    expect(await screen.findByTestId("accounts-login-form")).toHaveAttribute(
+      "data-return-url",
       `/login?platform=desktop&state=${STATE}&code_challenge=${CHALLENGE}`,
     );
   });
