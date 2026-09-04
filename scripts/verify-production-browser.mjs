@@ -147,6 +147,19 @@ async function verifyAuthenticatedProduct(browser, sourceSha, token) {
   const publicContext = await browser.newContext({ locale: "en-US" });
   const publicPage = await publicContext.newPage();
   try {
+    const landing = await publicPage.goto(PRODUCT_ORIGIN, {
+      waitUntil: "domcontentloaded",
+    });
+    assert.ok(landing, "product landing page must return a response");
+    assert.equal(landing.status(), 200, "product landing page status");
+    requireBuildHeaders(landing.headers(), sourceSha, "Web landing page");
+    const loginLink = publicPage.locator('a[href="/login"]').first();
+    await expect(loginLink).toBeVisible();
+    await loginLink.click();
+    await publicPage.waitForURL((url) => {
+      return url.origin === PRODUCT_ORIGIN && url.pathname === "/login";
+    });
+
     const login = await publicPage.goto(`${PRODUCT_ORIGIN}/login`, {
       waitUntil: "domcontentloaded",
     });
