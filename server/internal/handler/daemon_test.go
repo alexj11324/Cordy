@@ -215,11 +215,12 @@ func createDispatchedClaimFixtureTask(t *testing.T, ctx context.Context, agentID
 	var taskID string
 	dbfx.QueryRow(t, `
 		INSERT INTO agent_task_queue (
-			agent_id, runtime_id, issue_id, status, priority, dispatched_at, started_at
+			agent_id, runtime_id, issue_id, status, priority, dispatched_at, started_at,
+			originator_user_id, accountable_user_id, originator_source
 		)
-		VALUES ($1, $2, $3, 'dispatched', 0, now() - ($4::interval), CASE WHEN $5::boolean THEN now() ELSE NULL END)
+		VALUES ($1, $2, $3, 'dispatched', 0, now() - ($4::interval), CASE WHEN $5::boolean THEN now() ELSE NULL END, $6, $6, 'direct_human')
 		RETURNING id
-	`, agentID, runtimeID, issueID, dispatchedAge, started).Scan(&taskID)
+	`, agentID, runtimeID, issueID, dispatchedAge, started, testUserID).Scan(&taskID)
 	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM agent_task_queue WHERE id = $1`, taskID) })
 
 	return taskID
@@ -2136,9 +2137,12 @@ func TestClaimTask_QuickCreateInjectsProjectDescription(t *testing.T) {
 		"project_id":   projectID,
 	})
 	dbfx.Exec(t, `
-		INSERT INTO agent_task_queue (agent_id, runtime_id, status, priority, context)
-		VALUES ($1, $2, 'queued', 2, $3)
-	`, agentID, runtimeID, quickContext)
+		INSERT INTO agent_task_queue (
+			agent_id, runtime_id, status, priority, context,
+			originator_user_id, accountable_user_id, originator_source
+		)
+		VALUES ($1, $2, 'queued', 2, $3, $4, $4, 'direct_human')
+	`, agentID, runtimeID, quickContext, testUserID)
 
 	task := claimTaskForRuntimeGuard(t, runtimeID, daemonID)
 	if task.ProjectID != projectID {
@@ -2892,10 +2896,10 @@ func TestClaimTask_IssuePriorSessionRuntimeGuard(t *testing.T) {
 	dbfx.Exec(t, `
 		INSERT INTO agent_task_queue (
 			agent_id, runtime_id, issue_id,
-			status, priority
+			status, priority, originator_user_id, accountable_user_id, originator_source
 		)
-		VALUES ($1, $2, $3, 'queued', 0)
-	`, agentID, runtimeID, skipIssueID)
+		VALUES ($1, $2, $3, 'queued', 0, $4, $4, 'direct_human')
+	`, agentID, runtimeID, skipIssueID, testUserID)
 
 	task := claimTaskForRuntimeGuard(t, runtimeID, daemonID)
 	if task.PriorSessionID != "" {
@@ -2929,10 +2933,10 @@ func TestClaimTask_IssuePriorSessionRuntimeGuard(t *testing.T) {
 	dbfx.Exec(t, `
 		INSERT INTO agent_task_queue (
 			agent_id, runtime_id, issue_id,
-			status, priority
+			status, priority, originator_user_id, accountable_user_id, originator_source
 		)
-		VALUES ($1, $2, $3, 'queued', 0)
-	`, agentID, runtimeID, resumeIssueID)
+		VALUES ($1, $2, $3, 'queued', 0, $4, $4, 'direct_human')
+	`, agentID, runtimeID, resumeIssueID, testUserID)
 
 	task = claimTaskForRuntimeGuard(t, runtimeID, daemonID)
 	if task.PriorSessionID != "same-runtime-session" {
@@ -2959,10 +2963,10 @@ func TestClaimTask_IssuePriorSessionRuntimeGuard(t *testing.T) {
 	dbfx.Exec(t, `
 		INSERT INTO agent_task_queue (
 			agent_id, runtime_id, issue_id, trigger_comment_id,
-			status, priority
+			status, priority, originator_user_id, accountable_user_id, originator_source
 		)
-		VALUES ($1, $2, $3, $4, 'queued', 0)
-	`, agentID, runtimeID, commentIssueID, triggerCommentID)
+		VALUES ($1, $2, $3, $4, 'queued', 0, $5, $5, 'direct_human')
+	`, agentID, runtimeID, commentIssueID, triggerCommentID, testUserID)
 
 	task = claimTaskForRuntimeGuard(t, runtimeID, daemonID)
 	// Comment-triggered tasks now resume the prior session by default (same
@@ -2994,10 +2998,11 @@ func TestClaimTask_IssuePriorSessionRuntimeGuard(t *testing.T) {
 	dbfx.Exec(t, `
 		INSERT INTO agent_task_queue (
 			agent_id, runtime_id, issue_id,
-			status, priority, force_fresh_session
+			status, priority, force_fresh_session,
+			originator_user_id, accountable_user_id, originator_source
 		)
-		VALUES ($1, $2, $3, 'queued', 0, TRUE)
-	`, agentID, runtimeID, freshIssueID)
+		VALUES ($1, $2, $3, 'queued', 0, TRUE, $4, $4, 'direct_human')
+	`, agentID, runtimeID, freshIssueID, testUserID)
 
 	task = claimTaskForRuntimeGuard(t, runtimeID, daemonID)
 	if task.PriorSessionID != "" {
@@ -3053,10 +3058,11 @@ func TestClaimTask_ManualRetryReusesWorkdir(t *testing.T) {
 		dbfx.Exec(t, `
 			INSERT INTO agent_task_queue (
 				agent_id, runtime_id, issue_id, status, priority,
-				rerun_of_task_id, force_fresh_session
+				rerun_of_task_id, force_fresh_session,
+				originator_user_id, accountable_user_id, originator_source
 			)
-			VALUES ($1, $2, $3, 'queued', 0, $4, TRUE)
-		`, agentID, runtimeID, issueID, sourceID)
+			VALUES ($1, $2, $3, 'queued', 0, $4, TRUE, $5, $5, 'direct_human')
+		`, agentID, runtimeID, issueID, sourceID, testUserID)
 		return claimTaskForRuntimeGuard(t, runtimeID, daemonID)
 	}
 
@@ -3121,10 +3127,11 @@ func TestClaimTask_ManualRetryReusesWorkdir(t *testing.T) {
 		dbfx.Exec(t, `
 			INSERT INTO agent_task_queue (
 				agent_id, runtime_id, issue_id, status, priority,
-				rerun_of_task_id, force_fresh_session
+				rerun_of_task_id, force_fresh_session,
+				originator_user_id, accountable_user_id, originator_source
 			)
-			VALUES ($1, $2, $3, 'queued', 0, $4, TRUE)
-		`, agentID, runtimeID, issueID, sourceID)
+			VALUES ($1, $2, $3, 'queued', 0, $4, TRUE, $5, $5, 'direct_human')
+		`, agentID, runtimeID, issueID, sourceID, testUserID)
 
 		task := claimTaskForRuntimeGuard(t, runtimeID, daemonID)
 		if task.PriorWorkDir != "" || task.PriorSessionID != "" {
@@ -3164,10 +3171,10 @@ func TestClaimTask_ChatPriorSessionRuntimeGuard(t *testing.T) {
 	dbfx.Exec(t, `
 		INSERT INTO agent_task_queue (
 			agent_id, runtime_id, chat_session_id,
-			status, priority
+			status, priority, originator_user_id, accountable_user_id, originator_source
 		)
-		VALUES ($1, $2, $3, 'queued', 0)
-	`, agentID, runtimeID, skipSessionID)
+		VALUES ($1, $2, $3, 'queued', 0, $4, $4, 'direct_human')
+	`, agentID, runtimeID, skipSessionID, testUserID)
 
 	task := claimTaskForRuntimeGuard(t, runtimeID, daemonID)
 	if task.PriorSessionID != "" {
@@ -3192,10 +3199,10 @@ func TestClaimTask_ChatPriorSessionRuntimeGuard(t *testing.T) {
 	dbfx.Exec(t, `
 		INSERT INTO agent_task_queue (
 			agent_id, runtime_id, chat_session_id,
-			status, priority
+			status, priority, originator_user_id, accountable_user_id, originator_source
 		)
-		VALUES ($1, $2, $3, 'queued', 0)
-	`, agentID, runtimeID, resumeSessionID)
+		VALUES ($1, $2, $3, 'queued', 0, $4, $4, 'direct_human')
+	`, agentID, runtimeID, resumeSessionID, testUserID)
 
 	task = claimTaskForRuntimeGuard(t, runtimeID, daemonID)
 	if task.PriorSessionID != "same-chat-session" {
@@ -3293,9 +3300,12 @@ func TestClaimTask_ChatDeliversAllUnansweredUserMessages(t *testing.T) {
 			($1, 'user', '还有青岛',   now() + interval '1 second')
 	`, sessionID)
 	dbfx.Exec(t, `
-		INSERT INTO agent_task_queue (agent_id, runtime_id, chat_session_id, status, priority)
-		VALUES ($1, $2, $3, 'queued', 2)
-	`, agentID, runtimeID, sessionID)
+		INSERT INTO agent_task_queue (
+			agent_id, runtime_id, chat_session_id, status, priority,
+			originator_user_id, accountable_user_id, originator_source
+		)
+		VALUES ($1, $2, $3, 'queued', 2, $4, $4, 'direct_human')
+	`, agentID, runtimeID, sessionID, testUserID)
 
 	task := claimTaskForRuntimeGuard(t, runtimeID, daemonID)
 	if task.ChatMessage != "看上海天气\n\n还有青岛" {
@@ -3320,9 +3330,12 @@ func TestClaimTask_ChatDeliversAllUnansweredUserMessages(t *testing.T) {
 		VALUES ($1, 'user', '深圳呢', now() + interval '3 second')
 	`, sessionID)
 	dbfx.Exec(t, `
-		INSERT INTO agent_task_queue (agent_id, runtime_id, chat_session_id, status, priority)
-		VALUES ($1, $2, $3, 'queued', 2)
-	`, agentID, runtimeID, sessionID)
+		INSERT INTO agent_task_queue (
+			agent_id, runtime_id, chat_session_id, status, priority,
+			originator_user_id, accountable_user_id, originator_source
+		)
+		VALUES ($1, $2, $3, 'queued', 2, $4, $4, 'direct_human')
+	`, agentID, runtimeID, sessionID, testUserID)
 
 	task = claimTaskForRuntimeGuard(t, runtimeID, daemonID)
 	if task.ChatMessage != "深圳呢" {
@@ -3360,8 +3373,11 @@ func TestClaimTask_ChatPopulatesInitiator(t *testing.T) {
 	`, sessionID)
 	// initiator_user_id = the real sender (testUserID), distinct from creator.
 	dbfx.Exec(t, `
-		INSERT INTO agent_task_queue (agent_id, runtime_id, chat_session_id, status, priority, initiator_user_id)
-		VALUES ($1, $2, $3, 'queued', 2, $4)
+		INSERT INTO agent_task_queue (
+			agent_id, runtime_id, chat_session_id, status, priority,
+			initiator_user_id, originator_user_id, accountable_user_id, originator_source
+		)
+		VALUES ($1, $2, $3, 'queued', 2, $4, $4, $4, 'direct_human')
 	`, agentID, runtimeID, sessionID, testUserID)
 
 	req := newDaemonTokenRequest("POST", "/api/daemon/runtimes/"+runtimeID+"/tasks/claim", nil, testWorkspaceID, daemonID)
@@ -3408,9 +3424,12 @@ func TestClaimTask_QuickCreatePopulatesThreadName(t *testing.T) {
 	})
 
 	dbfx.Exec(t, `
-		INSERT INTO agent_task_queue (agent_id, runtime_id, status, priority, context)
-		VALUES ($1, $2, 'queued', 2, $3)
-	`, agentID, runtimeID, quickContext)
+		INSERT INTO agent_task_queue (
+			agent_id, runtime_id, status, priority, context,
+			originator_user_id, accountable_user_id, originator_source
+		)
+		VALUES ($1, $2, 'queued', 2, $3, $4, $4, 'direct_human')
+	`, agentID, runtimeID, quickContext, testUserID)
 
 	task := claimTaskForRuntimeGuard(t, runtimeID, daemonID)
 	if task.ThreadName != quickPrompt {
@@ -3447,10 +3466,13 @@ func TestClaimTask_SourceContextQuickCreateBecomesTopLevelWhenSourceWasDeleted(t
 
 	var taskID string
 	dbfx.QueryRow(t, `
-		INSERT INTO agent_task_queue (agent_id, runtime_id, status, priority, context)
-		VALUES ($1, $2, 'queued', 2, $3)
+		INSERT INTO agent_task_queue (
+			agent_id, runtime_id, status, priority, context,
+			originator_user_id, accountable_user_id, originator_source
+		)
+		VALUES ($1, $2, 'queued', 2, $3, $4, $4, 'direct_human')
 		RETURNING id
-	`, agentID, runtimeID, quickContext).Scan(&taskID)
+	`, agentID, runtimeID, quickContext, testUserID).Scan(&taskID)
 	dbfx.Exec(t, `
 		INSERT INTO issue_source_context (
 			id, workspace_id, origin_task_id, source_issue_id, anchor_comment_id,
@@ -3536,10 +3558,11 @@ func TestClaimTask_ChatForceFreshSessionSkipsPriorSession(t *testing.T) {
 	dbfx.Exec(t, `
 		INSERT INTO agent_task_queue (
 			agent_id, runtime_id, chat_session_id,
-			status, priority, force_fresh_session
+			status, priority, force_fresh_session,
+			originator_user_id, accountable_user_id, originator_source
 		)
-		VALUES ($1, $2, $3, 'queued', 0, TRUE)
-	`, agentID, runtimeID, chatSessionID)
+		VALUES ($1, $2, $3, 'queued', 0, TRUE, $4, $4, 'direct_human')
+	`, agentID, runtimeID, chatSessionID, testUserID)
 
 	task := claimTaskForRuntimeGuard(t, runtimeID, daemonID)
 	if task.PriorSessionID != "" {
@@ -3581,10 +3604,10 @@ func TestClaimTask_ChatLegacyNullRuntimeFallsBackToTaskRow(t *testing.T) {
 	dbfx.Exec(t, `
 		INSERT INTO agent_task_queue (
 			agent_id, runtime_id, chat_session_id,
-			status, priority
+			status, priority, originator_user_id, accountable_user_id, originator_source
 		)
-		VALUES ($1, $2, $3, 'queued', 0)
-	`, agentID, runtimeID, legacySessionID)
+		VALUES ($1, $2, $3, 'queued', 0, $4, $4, 'direct_human')
+	`, agentID, runtimeID, legacySessionID, testUserID)
 
 	task := claimTaskForRuntimeGuard(t, runtimeID, daemonID)
 	if task.PriorSessionID != "legacy-fallback-session" {

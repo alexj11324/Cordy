@@ -316,10 +316,11 @@ func TestClaimTaskByRuntime_ChatProjectContext(t *testing.T) {
 	var taskID string
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO agent_task_queue (
-			agent_id, runtime_id, status, priority, chat_session_id
-		) VALUES ($1, $2, 'queued', 1000, $3)
+			agent_id, runtime_id, status, priority, chat_session_id,
+			originator_user_id, accountable_user_id, originator_source
+		) VALUES ($1, $2, 'queued', 1000, $3, $4, $4, 'direct_human')
 		RETURNING id
-	`, agentID, runtimeID, sessionID).Scan(&taskID); err != nil {
+	`, agentID, runtimeID, sessionID, testUserID).Scan(&taskID); err != nil {
 		t.Fatalf("create chat task: %v", err)
 	}
 	t.Cleanup(func() {

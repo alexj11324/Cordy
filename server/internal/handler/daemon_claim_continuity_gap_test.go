@@ -78,9 +78,12 @@ func TestClaimTaskByRuntime_ChatRolloutMissingDisclosesGap(t *testing.T) {
 
 	var taskID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO agent_task_queue (agent_id, runtime_id, status, priority, chat_session_id)
-		VALUES ($1, $2, 'queued', 1000, $3) RETURNING id
-	`, agentID, runtimeID, sessionID).Scan(&taskID); err != nil {
+		INSERT INTO agent_task_queue (
+			agent_id, runtime_id, status, priority, chat_session_id,
+			originator_user_id, accountable_user_id, originator_source
+		)
+		VALUES ($1, $2, 'queued', 1000, $3, $4, $4, 'direct_human') RETURNING id
+	`, agentID, runtimeID, sessionID, testUserID).Scan(&taskID); err != nil {
 		t.Fatalf("create chat follow-up task: %v", err)
 	}
 	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM agent_task_queue WHERE id = $1`, taskID) })
@@ -132,9 +135,12 @@ func TestClaimTaskByRuntime_RerunSourceRolloutMissingDisclosesGap(t *testing.T) 
 	// force_fresh_session=true; the disclosure must still fire from the source).
 	var taskID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO agent_task_queue (agent_id, runtime_id, issue_id, status, priority, rerun_of_task_id, force_fresh_session)
-		VALUES ($1, $2, $3, 'queued', 1000, $4, TRUE) RETURNING id
-	`, agentID, runtimeID, issueID, srcID).Scan(&taskID); err != nil {
+		INSERT INTO agent_task_queue (
+			agent_id, runtime_id, issue_id, status, priority, rerun_of_task_id,
+			force_fresh_session, originator_user_id, accountable_user_id, originator_source
+		)
+		VALUES ($1, $2, $3, 'queued', 1000, $4, TRUE, $5, $5, 'direct_human') RETURNING id
+	`, agentID, runtimeID, issueID, srcID, testUserID).Scan(&taskID); err != nil {
 		t.Fatalf("create rerun task: %v", err)
 	}
 	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM agent_task_queue WHERE id = $1`, taskID) })

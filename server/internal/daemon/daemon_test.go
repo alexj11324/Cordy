@@ -4587,7 +4587,7 @@ func TestHandleTask_BareErrorReportsFailureWithCancelledParent(t *testing.T) {
 	d := &Daemon{
 		client:             NewClient(srv.URL),
 		logger:             slog.New(slog.NewTextHandler(io.Discard, nil)),
-		runtimeIndex:       map[string]Runtime{"rt-1": {ID: "rt-1", Provider: "codex"}},
+		runtimeIndex:       map[string]Runtime{"rt-1": {ID: "rt-1", Provider: "handler_test_runtime"}},
 		cancelPollInterval: time.Hour,
 	}
 	d.runner = taskRunnerFunc(func(runCtx context.Context, _ Task, _ string, _ int, _ *slog.Logger) (TaskResult, error) {
@@ -4605,7 +4605,7 @@ func TestHandleTask_BareErrorReportsFailureWithCancelledParent(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	d.handleTask(ctx, Task{ID: "task-bare-error", RuntimeID: "rt-1"}, 0)
+		d.handleTask(ctx, Task{ID: "task-bare-error", RuntimeID: "rt-1"}, 0)
 
 	if got := failCalls.Load(); got != 1 {
 		t.Fatalf("fail callback calls = %d, want 1", got)
@@ -4677,6 +4677,9 @@ func TestHandleTask_ReportsUsageBeforeCancel(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case strings.HasSuffix(r.URL.Path, "/provider-authorization"):
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"allowed":true}`))
 		case strings.HasSuffix(r.URL.Path, "/start"):
 			recordCall("start")
 			w.WriteHeader(http.StatusOK)
@@ -4719,6 +4722,7 @@ func TestHandleTask_ReportsUsageBeforeCancel(t *testing.T) {
 		ID:        "task-abc",
 		RuntimeID: "rt-1",
 		IssueID:   "issue-xyz",
+		AuthToken: "mat_task-abc",
 		Agent:     &AgentData{Name: "test-agent"},
 	}
 
@@ -4772,6 +4776,9 @@ func TestHandleTask_ReportsUsageWhenCancelledByPoll(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case strings.HasSuffix(r.URL.Path, "/provider-authorization"):
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"allowed":true}`))
 		case strings.HasSuffix(r.URL.Path, "/start"):
 			w.WriteHeader(http.StatusOK)
 		case strings.HasSuffix(r.URL.Path, "/progress"):
@@ -4822,6 +4829,7 @@ func TestHandleTask_ReportsUsageWhenCancelledByPoll(t *testing.T) {
 		ID:        "task-poll",
 		RuntimeID: "rt-1",
 		IssueID:   "issue-poll",
+		AuthToken: "mat_task-poll",
 		Agent:     &AgentData{Name: "test-agent"},
 	}
 
@@ -5444,6 +5452,10 @@ func TestHandleTask_AcksCancelAfterPollCancelled(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case strings.HasSuffix(r.URL.Path, "/provider-authorization"):
+			recordCall("provider-authorization")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"allowed":true}`))
 		case strings.HasSuffix(r.URL.Path, "/cancel-ack"):
 			recordCall("cancel-ack")
 			var body map[string]any
@@ -5491,6 +5503,7 @@ func TestHandleTask_AcksCancelAfterPollCancelled(t *testing.T) {
 		ID:        "task-ack-poll",
 		RuntimeID: "rt-1",
 		IssueID:   "issue-ack-poll",
+		AuthToken: "mat_task-ack-poll",
 		Agent:     &AgentData{Name: "test-agent"},
 	}
 
@@ -5534,6 +5547,9 @@ func TestHandleTask_AcksCancelOnPostRunStatusCheck(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case strings.HasSuffix(r.URL.Path, "/provider-authorization"):
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"allowed":true}`))
 		case strings.HasSuffix(r.URL.Path, "/cancel-ack"):
 			ackCalls.Add(1)
 			var body map[string]any
@@ -5573,6 +5589,7 @@ func TestHandleTask_AcksCancelOnPostRunStatusCheck(t *testing.T) {
 		ID:        "task-ack-postrun",
 		RuntimeID: "rt-1",
 		IssueID:   "issue-ack-postrun",
+		AuthToken: "mat_task-ack-postrun",
 		Agent:     &AgentData{Name: "test-agent"},
 	}
 

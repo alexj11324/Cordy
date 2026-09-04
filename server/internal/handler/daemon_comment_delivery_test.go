@@ -211,11 +211,12 @@ func createCommentDeliveryFixture(t *testing.T, label string) commentDeliveryFix
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO agent_task_queue (
 			agent_id, runtime_id, issue_id, status, priority,
-			trigger_comment_id, coalesced_comment_ids
+			trigger_comment_id, coalesced_comment_ids,
+			originator_user_id, accountable_user_id, originator_source
 		)
-		VALUES ($1, $2, $3, 'queued', 0, $4, ARRAY[$5::uuid, $6::uuid])
+		VALUES ($1, $2, $3, 'queued', 0, $4, ARRAY[$5::uuid, $6::uuid], $7, $7, 'direct_human')
 		RETURNING id
-	`, agentID, runtimeID, issueID, ids[2], ids[1], ids[0]).Scan(&taskID); err != nil {
+	`, agentID, runtimeID, issueID, ids[2], ids[1], ids[0], testUserID).Scan(&taskID); err != nil {
 		t.Fatalf("insert comment delivery task: %v", err)
 	}
 	t.Cleanup(func() {
@@ -835,11 +836,12 @@ func TestSetTaskDeliveredCommentIDs_CASAndSubset(t *testing.T) {
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO agent_task_queue (
 			agent_id, runtime_id, issue_id, status, priority, dispatched_at,
-			trigger_comment_id, coalesced_comment_ids
+			trigger_comment_id, coalesced_comment_ids,
+			originator_user_id, accountable_user_id, originator_source
 		)
-		VALUES ($1, $2, $3, 'dispatched', 0, now(), $4, ARRAY[$5::uuid])
+		VALUES ($1, $2, $3, 'dispatched', 0, now(), $4, ARRAY[$5::uuid], $6, $6, 'direct_human')
 		RETURNING id
-	`, agentID, runtimeID, issueID, commentIDs[1], commentIDs[0]).Scan(&taskID); err != nil {
+	`, agentID, runtimeID, issueID, commentIDs[1], commentIDs[0], testUserID).Scan(&taskID); err != nil {
 		t.Fatalf("insert receipt CAS task: %v", err)
 	}
 	t.Cleanup(func() {

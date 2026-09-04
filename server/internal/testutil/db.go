@@ -247,9 +247,15 @@ func (f *Fixture) Agent(t TB, name, runtimeID string, over ...Cols) string {
 func (f *Fixture) Task(t TB, agentID string, over ...Cols) string {
 	t.Helper()
 	return f.Insert(t, "agent_task_queue", merge(Cols{
-		"agent_id": agentID,
-		"status":   "queued",
-		"priority": 0,
+		"agent_id":          agentID,
+		"status":            "queued",
+		"priority":          0,
+		// A generic task fixture represents a human-triggered run. Claim
+		// finalization now requires a provable initiating user; tests for
+		// automation/system work must opt into the explicit NULL shape.
+		"originator_user_id": f.UserID,
+		"accountable_user_id": f.UserID,
+		"originator_source":   "direct_human",
 	}, over))
 }
 

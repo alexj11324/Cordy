@@ -158,18 +158,25 @@ func TestClaimDoesNotLeakForeignWorkspaceTriggerCommentOrSummary(t *testing.T) {
 		t.Fatalf("stored originator_user_id must be NULL for a foreign-workspace comment, got %s", uuidToString(storedOriginator))
 	}
 
-	// Wire: the claim response must carry neither the body nor the summary.
-	got, content, summary, raw := claimTriggerFieldsForTest(t, runtimeID)
-	if got != taskID {
-		t.Fatalf("claimed task id = %q, want %q: %s", got, taskID, raw)
+	// The Go claim boundary now follows Rust: a task with no attributable
+	// initiating user is cancelled before a capability token can be minted.
+	// The security property is therefore fail-closed denial, rather than a
+	// successful tokenless claim response that callers might accidentally run.
+	w := httptest.NewRecorder()
+	req := newDaemonTokenRequest(http.MethodPost,
+		"/api/daemon/runtimes/"+runtimeID+"/tasks/claim", nil,
+		testWorkspaceID, "comment-workspace-scope")
+	req = withURLParam(req, "runtimeId", runtimeID)
+	testHandler.ClaimTaskByRuntime(w, req)
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("foreign-workspace trigger claim: expected fail-closed 500, got %d: %s", w.Code, w.Body.String())
 	}
-	if content != "" {
-		t.Fatalf("trigger_comment_content must be empty for a foreign-workspace comment, got %q", content)
+	if strings.Contains(w.Body.String(), secret) {
+		t.Fatalf("claim error leaked foreign-workspace comment text:\n%s", w.Body.String())
 	}
-	if summary != "" {
-		t.Fatalf("trigger_summary must be empty for a foreign-workspace comment, got %q", summary)
-	}
-	if strings.Contains(raw, secret) {
-		t.Fatalf("claim response leaked foreign-workspace comment text:\n%s", raw)
+	var status string
+	dbfx.QueryRow(t, `SELECT status FROM agent_task_queue WHERE id = $1`, taskID).Scan(&status)
+	if status != "cancelled" {
+		t.Fatalf("foreign-workspace trigger task status = %q, want cancelled", status)
 	}
 }

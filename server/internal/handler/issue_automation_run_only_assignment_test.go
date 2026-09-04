@@ -72,6 +72,7 @@ func newRunOnlyAutomationFixture(t *testing.T, targetAgentID, accountableUserID 
 		"runtime_id":          runtimeID,
 		"status":              "running",
 		"automation_run_id":    runID,
+		"originator_user_id":  nil,
 		"accountable_user_id": accountableUserID,
 		"originator_source":   "trigger_owner",
 	}

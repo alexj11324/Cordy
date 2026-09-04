@@ -50,7 +50,9 @@ func newProviderLeaseFixtureWithBootstrapGrant(t *testing.T, originatorUserID st
 		"provider":  "claude",
 		"daemon_id": providerAuthTestDaemonID,
 	})
-	agentID := dbfx.Agent(t, "Provider authorization agent", runtimeID)
+	agentID := dbfx.Agent(t, "Provider authorization agent", runtimeID, testutil.Cols{
+		"model": "claude-test-model",
+	})
 	issueID := dbfx.Issue(t, "Provider authorization issue")
 	taskID := dbfx.Task(t, agentID, testutil.Cols{
 		"runtime_id":          runtimeID,

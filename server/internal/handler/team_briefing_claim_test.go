@@ -113,10 +113,13 @@ func enqueueClaimTask(t *testing.T, ctx context.Context, fx teamBriefingClaimFix
 		teamArg = nil
 	}
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO agent_task_queue (agent_id, runtime_id, issue_id, status, priority, is_leader_task, team_id)
-		VALUES ($1, $2, $3, 'queued', 0, $4, $5)
+		INSERT INTO agent_task_queue (
+			agent_id, runtime_id, issue_id, status, priority, is_leader_task, team_id,
+			originator_user_id, accountable_user_id, originator_source
+		)
+		VALUES ($1, $2, $3, 'queued', 0, $4, $5, $6, $6, 'direct_human')
 		RETURNING id
-	`, fx.AgentID, fx.RuntimeID, fx.IssueID, isLeader, teamArg).Scan(&taskID); err != nil {
+	`, fx.AgentID, fx.RuntimeID, fx.IssueID, isLeader, teamArg, testUserID).Scan(&taskID); err != nil {
 		t.Fatalf("enqueue claim task: %v", err)
 	}
 	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM agent_task_queue WHERE id = $1`, taskID) })

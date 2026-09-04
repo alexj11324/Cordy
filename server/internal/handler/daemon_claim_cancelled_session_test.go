@@ -52,9 +52,12 @@ func TestClaimTask_ChatResumesCancelledTurnSession(t *testing.T) {
 		VALUES ($1, $2, $3, 'cancelled', 0, now(), now(), 'cancelled-turn-session', '/tmp/cancelled-turn-workdir')
 	`, agentID, runtimeID, chatSessionID)
 	dbfx.Exec(t, `
-		INSERT INTO agent_task_queue (agent_id, runtime_id, chat_session_id, status, priority)
-		VALUES ($1, $2, $3, 'queued', 0)
-	`, agentID, runtimeID, chatSessionID)
+		INSERT INTO agent_task_queue (
+			agent_id, runtime_id, chat_session_id, status, priority,
+			originator_user_id, accountable_user_id, originator_source
+		)
+		VALUES ($1, $2, $3, 'queued', 0, $4, $4, 'direct_human')
+	`, agentID, runtimeID, chatSessionID, testUserID)
 
 	task := claimTaskForRuntimeGuard(t, runtimeID, daemonID)
 	if task.PriorSessionID != "cancelled-turn-session" {
@@ -98,9 +101,12 @@ func TestClaimTask_ChatCancelledSessionStaysExcludedWhenRetired(t *testing.T) {
 		        'retired-cancelled-session')
 	`, agentID, runtimeID, chatSessionID)
 	dbfx.Exec(t, `
-		INSERT INTO agent_task_queue (agent_id, runtime_id, chat_session_id, status, priority)
-		VALUES ($1, $2, $3, 'queued', 0)
-	`, agentID, runtimeID, chatSessionID)
+		INSERT INTO agent_task_queue (
+			agent_id, runtime_id, chat_session_id, status, priority,
+			originator_user_id, accountable_user_id, originator_source
+		)
+		VALUES ($1, $2, $3, 'queued', 0, $4, $4, 'direct_human')
+	`, agentID, runtimeID, chatSessionID, testUserID)
 
 	task := claimTaskForRuntimeGuard(t, runtimeID, daemonID)
 	if task.PriorSessionID != "" {
@@ -131,9 +137,12 @@ func TestClaimTask_IssueResumesCancelledTaskSession(t *testing.T) {
 		VALUES ($1, $2, $3, 'cancelled', 0, now(), now(), 'cancelled-issue-session', '/tmp/cancelled-issue-workdir')
 	`, agentID, runtimeID, issueID)
 	dbfx.Exec(t, `
-		INSERT INTO agent_task_queue (agent_id, runtime_id, issue_id, status, priority)
-		VALUES ($1, $2, $3, 'queued', 0)
-	`, agentID, runtimeID, issueID)
+		INSERT INTO agent_task_queue (
+			agent_id, runtime_id, issue_id, status, priority,
+			originator_user_id, accountable_user_id, originator_source
+		)
+		VALUES ($1, $2, $3, 'queued', 0, $4, $4, 'direct_human')
+	`, agentID, runtimeID, issueID, testUserID)
 
 	task := claimTaskForRuntimeGuard(t, runtimeID, daemonID)
 	if task.PriorSessionID != "cancelled-issue-session" {
@@ -266,10 +275,13 @@ func TestCancelTask_PointerAdvanceIsAtomicWithStatusFlip(t *testing.T) {
 	})
 
 	// The follow-up the user queued while the turn was still running.
-	dbfx.Exec(t, `
-		INSERT INTO agent_task_queue (agent_id, runtime_id, chat_session_id, status, priority)
-		VALUES ($1, $2, $3, 'queued', 0)
-	`, agentID, runtimeID, chatSessionID)
+		dbfx.Exec(t, `
+		INSERT INTO agent_task_queue (
+			agent_id, runtime_id, chat_session_id, status, priority,
+			originator_user_id, accountable_user_id, originator_source
+		)
+		VALUES ($1, $2, $3, 'queued', 0, $4, $4, 'direct_human')
+	`, agentID, runtimeID, chatSessionID, testUserID)
 
 	// Hold the chat row from another connection so the pointer write blocks.
 	blockTx := beginWarmedTx(t, ctx)
@@ -352,10 +364,13 @@ func TestPinTaskSession_LateCancelledPinAdvancesChatPointer(t *testing.T) {
 
 	pinTaskSessionViaAPI(t, taskID, daemonID, "turn2-session", "/tmp/turn2-workdir")
 
-	dbfx.Exec(t, `
-		INSERT INTO agent_task_queue (agent_id, runtime_id, chat_session_id, status, priority)
-		VALUES ($1, $2, $3, 'queued', 0)
-	`, agentID, runtimeID, chatSessionID)
+		dbfx.Exec(t, `
+		INSERT INTO agent_task_queue (
+			agent_id, runtime_id, chat_session_id, status, priority,
+			originator_user_id, accountable_user_id, originator_source
+		)
+		VALUES ($1, $2, $3, 'queued', 0, $4, $4, 'direct_human')
+	`, agentID, runtimeID, chatSessionID, testUserID)
 
 	task := claimTaskForRuntimeGuard(t, runtimeID, daemonID)
 	if task.PriorSessionID != "turn2-session" {
@@ -440,10 +455,13 @@ func TestPinTaskSession_PointerAdvanceIsAtomicWithPin(t *testing.T) {
 		"completed_at":    testutil.Raw("now()"),
 	})
 
-	dbfx.Exec(t, `
-		INSERT INTO agent_task_queue (agent_id, runtime_id, chat_session_id, status, priority)
-		VALUES ($1, $2, $3, 'queued', 0)
-	`, agentID, runtimeID, chatSessionID)
+		dbfx.Exec(t, `
+		INSERT INTO agent_task_queue (
+			agent_id, runtime_id, chat_session_id, status, priority,
+			originator_user_id, accountable_user_id, originator_source
+		)
+		VALUES ($1, $2, $3, 'queued', 0, $4, $4, 'direct_human')
+	`, agentID, runtimeID, chatSessionID, testUserID)
 
 	blockTx := beginWarmedTx(t, ctx)
 	if _, err := blockTx.Exec(ctx, `SELECT id FROM chat_session WHERE id = $1 FOR UPDATE`, chatSessionID); err != nil {

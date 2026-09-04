@@ -145,8 +145,8 @@ func TestRunBatchPollerClaimsAcrossRuntimes(t *testing.T) {
 		if strings.HasSuffix(r.URL.Path, "/api/daemon/tasks/claim") {
 			if claimCalls.Add(1) == 1 {
 				w.Write([]byte(`{"tasks":[
-					{"id":"t1","runtime_id":"rt-1","issue_id":"i1","agent":{"name":"a"}},
-					{"id":"t2","runtime_id":"rt-2","issue_id":"i2","agent":{"name":"b"}}
+					{"id":"t1","runtime_id":"rt-1","issue_id":"i1","auth_token":"mat_t1","agent":{"name":"a"}},
+					{"id":"t2","runtime_id":"rt-2","issue_id":"i2","auth_token":"mat_t2","agent":{"name":"b"}}
 				]}`))
 				return
 			}

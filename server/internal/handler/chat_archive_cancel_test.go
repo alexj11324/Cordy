@@ -427,7 +427,7 @@ func (f *archiveCancelFixture) liveTaskTokens(t *testing.T) int {
 	t.Helper()
 	var n int
 	if err := testPool.QueryRow(context.Background(),
-		`SELECT count(*) FROM task_token WHERE task_id = $1`, f.runningTaskID).Scan(&n); err != nil {
+		`SELECT count(*) FROM task_token WHERE task_id = $1 AND revoked_at IS NULL`, f.runningTaskID).Scan(&n); err != nil {
 		t.Fatalf("count task tokens: %v", err)
 	}
 	return n

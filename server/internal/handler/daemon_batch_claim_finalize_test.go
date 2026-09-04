@@ -104,10 +104,13 @@ func seedCommentBackedQueuedTask(t *testing.T, ctx context.Context, agentID, run
 
 	var taskID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO agent_task_queue (agent_id, runtime_id, issue_id, trigger_comment_id, status, priority)
-		VALUES ($1, $2, $3, $4, 'queued', 0)
+		INSERT INTO agent_task_queue (
+			agent_id, runtime_id, issue_id, trigger_comment_id, status, priority,
+			originator_user_id, accountable_user_id, originator_source
+		)
+		VALUES ($1, $2, $3, $4, 'queued', 0, $5, $5, 'direct_human')
 		RETURNING id
-	`, agentID, runtimeID, issueID, commentID).Scan(&taskID); err != nil {
+	`, agentID, runtimeID, issueID, commentID, testUserID).Scan(&taskID); err != nil {
 		t.Fatalf("seed comment-backed task: %v", err)
 	}
 	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM agent_task_queue WHERE id = $1`, taskID) })
@@ -188,10 +191,13 @@ func TestClaimTasksByRuntime_StaleReclaimRecordsDeliveryReceipt(t *testing.T) {
 	// Stale dispatched, comment-backed, never started, past the 90s window.
 	var taskID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO agent_task_queue (agent_id, runtime_id, issue_id, trigger_comment_id, status, priority, dispatched_at, started_at)
-		VALUES ($1, $2, $3, $4, 'dispatched', 0, now() - interval '120 seconds', NULL)
+		INSERT INTO agent_task_queue (
+			agent_id, runtime_id, issue_id, trigger_comment_id, status, priority,
+			dispatched_at, started_at, originator_user_id, accountable_user_id, originator_source
+		)
+		VALUES ($1, $2, $3, $4, 'dispatched', 0, now() - interval '120 seconds', NULL, $5, $5, 'direct_human')
 		RETURNING id
-	`, a, rt, i, commentID).Scan(&taskID); err != nil {
+	`, a, rt, i, commentID, testUserID).Scan(&taskID); err != nil {
 		t.Fatalf("seed stale dispatched comment task: %v", err)
 	}
 	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM agent_task_queue WHERE id = $1`, taskID) })
@@ -303,10 +309,13 @@ func TestClaimTasksByRuntime_RepairsStaleCommentPlan(t *testing.T) {
 	// Stale plan: trigger_comment_id NULL, only coalesced survivor remains.
 	var staleID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO agent_task_queue (agent_id, runtime_id, issue_id, status, priority, coalesced_comment_ids)
-		VALUES ($1, $2, $3, 'queued', 0, ARRAY[$4]::uuid[])
+		INSERT INTO agent_task_queue (
+			agent_id, runtime_id, issue_id, status, priority, coalesced_comment_ids,
+			originator_user_id, accountable_user_id, originator_source
+		)
+		VALUES ($1, $2, $3, 'queued', 0, ARRAY[$4]::uuid[], $5, $5, 'direct_human')
 		RETURNING id
-	`, agentID, rt, issueID, survivorID).Scan(&staleID); err != nil {
+	`, agentID, rt, issueID, survivorID, testUserID).Scan(&staleID); err != nil {
 		t.Fatalf("seed stale task: %v", err)
 	}
 	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM agent_task_queue WHERE id = $1`, staleID) })

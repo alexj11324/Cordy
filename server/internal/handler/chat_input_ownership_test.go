@@ -672,10 +672,13 @@ func insertChannelChatTask(t *testing.T, ctx context.Context, agentID, runtimeID
 	t.Helper()
 	var taskID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO agent_task_queue (agent_id, runtime_id, chat_session_id, status, priority, started_at, dispatched_at)
-		VALUES ($1, $2, $3, 'running', 2, now(), now())
+		INSERT INTO agent_task_queue (
+			agent_id, runtime_id, chat_session_id, status, priority, started_at, dispatched_at,
+			originator_user_id, accountable_user_id, originator_source
+		)
+		VALUES ($1, $2, $3, 'running', 2, now(), now(), $4, $4, 'direct_human')
 		RETURNING id
-	`, agentID, runtimeID, sessionID).Scan(&taskID); err != nil {
+	`, agentID, runtimeID, sessionID, testUserID).Scan(&taskID); err != nil {
 		t.Fatalf("setup: create channel chat task: %v", err)
 	}
 	return taskID

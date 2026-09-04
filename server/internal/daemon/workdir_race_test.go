@@ -41,6 +41,9 @@ func TestHandleTask_DoesNotCallStartTaskItself(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case strings.HasSuffix(r.URL.Path, "/provider-authorization"):
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"allowed":true}`))
 		case strings.HasSuffix(r.URL.Path, "/start"):
 			startCalls.Add(1)
 		}
@@ -69,6 +72,7 @@ func TestHandleTask_DoesNotCallStartTaskItself(t *testing.T) {
 		WorkspaceID: "ws-no-start",
 		RuntimeID:   "rt-1",
 		IssueID:     "issue-no-start",
+		AuthToken:   "mat_task-no-start",
 		Agent:       &AgentData{Name: "test-agent"},
 	}
 
@@ -846,6 +850,11 @@ func TestHandleTask_KeepsEnvRootActiveAcrossCompletion(t *testing.T) {
 	}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/provider-authorization") {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"allowed":true}`))
+			return
+		}
 		if strings.HasSuffix(r.URL.Path, "/complete") {
 			completeCalled.Store(true)
 			// This is the exact window race B exposed: the inner deferred
@@ -879,6 +888,7 @@ func TestHandleTask_KeepsEnvRootActiveAcrossCompletion(t *testing.T) {
 		WorkspaceID: workspaceID,
 		RuntimeID:   "rt-1",
 		IssueID:     "issue-active-during-complete",
+		AuthToken:   "mat_task-active-during-complete",
 		Agent:       &AgentData{Name: "test-agent"},
 	}
 
