@@ -16,6 +16,10 @@ fi
 set -a
 # shellcheck disable=SC1090
 . "$ENV_FILE"
+if [ -f .env.local ]; then
+  # shellcheck disable=SC1091
+  . .env.local
+fi
 set +a
 
 # shellcheck disable=SC1091

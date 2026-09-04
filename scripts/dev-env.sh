@@ -310,6 +310,12 @@ load_env_file() {
   set -a
   # shellcheck disable=SC1090
   . "$root/$1"
+  # Quoted secrets (PEM keys with spaces) live here so GNU make's `include`
+  # of ENV_FILE does not have to parse them, and bash source still can.
+  if [ -f "$root/.env.local" ]; then
+    # shellcheck disable=SC1091
+    . "$root/.env.local"
+  fi
   set +a
   # shellcheck disable=SC1091
   . "$root/scripts/local-env.sh"
