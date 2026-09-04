@@ -93,7 +93,10 @@ export function PreferencesTab() {
   };
 
   return (
-    <SettingsTab title={t(($) => $.page.tabs.preferences)}>
+    <SettingsTab
+      title={t(($) => $.page.tabs.preferences)}
+      description={t(($) => $.preferences.page_description)}
+    >
       <SettingsSection title={t(($) => $.preferences.general_title)}>
         <SettingsCard>
           <SettingsRow

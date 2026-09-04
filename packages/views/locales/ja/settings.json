@@ -103,6 +103,7 @@
     "toast_saved": "変更を保存しました"
   },
   "preferences": {
+    "page_description": "Patchbay の見た目と、使う言語・タイムゾーンを選びます。",
     "general_title": "一般",
     "theme": {
       "title": "テーマ",
@@ -264,6 +265,7 @@
     }
   },
   "chat": {
+    "page_description": "すべてのページに重ねて表示するフローティングチャットウィンドウを制御します。",
     "floating_title": "フローティングウィンドウ",
     "floating_label": "フローティングチャット",
     "floating_hint": "すべてのページの隅にフローティングチャットボタンを表示します。デフォルトはオフ——オンにするとどこからでもチャットを呼び出せます。オフのときは専用タブでのみ利用できます。"
@@ -708,6 +710,7 @@
     }
   },
   "account": {
+    "page_description": "Patchbay 全体で表示される名前、アバター、自己紹介を更新します。",
     "section_profile": "個人情報",
     "avatar_label": "アバター",
     "click_avatar_hint": "クリックしてアバターをアップロード",
@@ -716,6 +719,11 @@
     "profile_description_hint": "あなたの代わりに作業するエージェントに共有されます。役割、技術スタック、好みなど、新しいコラボレーターに初日に伝えたいことを書いてください。",
     "profile_description_placeholder": "例: Go と Postgres を使うバックエンドエンジニア。簡潔な PR と変更に合わせたテストを好みます。",
     "profile_description_too_long": "プロフィールが長すぎます（最大 {{max}} 文字、現在 {{count}} 文字）。",
+    "edit": "編集",
+    "done": "完了",
+    "edit_aria": "プロフィール情報を編集",
+    "done_aria": "プロフィール情報の編集を完了",
+    "not_set": "未設定",
     "save": "プロフィールを更新",
     "saving": "更新中...",
     "toast_avatar_updated": "アバターを更新しました",
@@ -724,6 +732,7 @@
     "toast_profile_failed": "プロフィールを更新できませんでした"
   },
   "notifications": {
+    "page_description": "どのイベントをインボックスに届け、いつシステムが通知してよいかを選びます。",
     "title": "インボックス通知",
     "description": "どのイベントがインボックス通知を生成するかを制御します。ミュートしたイベントタイプは静かにフィルタされますが、タスクを直接開けば引き続き確認できます。",
     "toast_failed": "通知設定を更新できませんでした",
@@ -812,6 +821,7 @@
     }
   },
   "workspace": {
+    "page_description": "このワークスペースの名前、ロゴ、デフォルトを更新します。",
     "section_general": "ワークスペース情報",
     "logo_label": "ワークスペースロゴ",
     "name_label": "名前",

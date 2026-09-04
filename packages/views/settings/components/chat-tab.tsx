@@ -24,7 +24,10 @@ export function ChatTab() {
   const setEnabled = useChatStore((s) => s.setFloatingChatEnabled);
 
   return (
-    <SettingsTab title={t(($) => $.page.tabs.chat)}>
+    <SettingsTab
+      title={t(($) => $.page.tabs.chat)}
+      description={t(($) => $.chat.page_description)}
+    >
       <SettingsSection title={t(($) => $.chat.floating_title)}>
         <SettingsCard>
           <SettingsRow

@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, lazy, useRef, useState } from "react";
-import { Bot, Camera, ImagePlus, Loader2, Users, X } from "lucide-react";
+import { Bot, Camera, ImagePlus, Loader2, Pencil, Users, X } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@patchbay/core/api";
 import { useFileUpload } from "@patchbay/core/hooks/use-file-upload";
@@ -62,6 +62,12 @@ interface AvatarUploadControlProps {
    * avatar is out of scope).
    */
   onClear?: () => void;
+  /**
+   * Persistent pencil badge on the avatar's bottom-right, used by the
+   * settings profile page. Suppresses the hover camera overlay so the
+   * badge is the edit affordance.
+   */
+  editBadge?: boolean;
   className?: string;
   ariaLabel?: string;
 }
@@ -141,6 +147,7 @@ export function AvatarUploadControl({
   onUploaded,
   onEmojiSelected,
   onClear,
+  editBadge = false,
   className,
   ariaLabel,
 }: AvatarUploadControlProps) {
@@ -264,7 +271,7 @@ export function AvatarUploadControl({
         <AvatarFallback variant={variant} name={name} size={size} />
       )}
 
-      {!disabled && (
+      {!disabled && !editBadge && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
           {busy ? (
             <Loader2 className="h-5 w-5 animate-spin text-white" />
@@ -275,6 +282,8 @@ export function AvatarUploadControl({
       )}
     </button>
   );
+
+  const badgeSize = size >= 160 ? 54 : Math.max(32, Math.round(size * 0.23));
 
   return (
     <div className="relative shrink-0" style={{ width: size, height: size }}>
@@ -350,6 +359,26 @@ export function AvatarUploadControl({
       ) : (
         avatarButton
       )}
+
+      {editBadge && !disabled ? (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute flex items-center justify-center rounded-full bg-foreground text-background shadow-sm ring-4 ring-surface"
+          data-testid="avatar-edit-badge"
+          style={{
+            bottom: 0,
+            height: badgeSize,
+            right: 0,
+            width: badgeSize,
+          }}
+        >
+          {busy ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <Pencil className="size-4" />
+          )}
+        </div>
+      ) : null}
 
       {onClear && hasAvatar && !busy && !disabled && (
         <button

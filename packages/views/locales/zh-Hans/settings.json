@@ -103,6 +103,7 @@
     "toast_saved": "更改已保存"
   },
   "preferences": {
+    "page_description": "选择 Patchbay 的外观，以及你使用的语言和时区。",
     "general_title": "常规",
     "theme": {
       "title": "主题",
@@ -264,6 +265,7 @@
     }
   },
   "chat": {
+    "page_description": "控制覆盖在每个页面上的悬浮聊天窗口。",
     "floating_title": "悬浮窗",
     "floating_label": "悬浮聊天窗",
     "floating_hint": "在每个页面右下角显示悬浮聊天按钮。默认关闭——打开后可随处召唤聊天；关闭时，聊天只在此标签页中可用。"
@@ -708,6 +710,7 @@
     }
   },
   "account": {
+    "page_description": "更新你的姓名、头像和简介在 Patchbay 中的展示方式。",
     "section_profile": "个人信息",
     "avatar_label": "头像",
     "click_avatar_hint": "点击上传头像",
@@ -716,6 +719,11 @@
     "profile_description_hint": "会随 task 一起发送给为你工作的智能体——角色、技术栈、偏好，任何你会在第一天告诉新同事的内容。",
     "profile_description_placeholder": "例如：后端工程师（Go + Postgres）。喜欢简洁的 PR，改动同时附上测试。",
     "profile_description_too_long": "资料过长（最多 {{max}} 字符，当前 {{count}}）。",
+    "edit": "编辑",
+    "done": "完成",
+    "edit_aria": "编辑资料信息",
+    "done_aria": "完成编辑资料信息",
+    "not_set": "未设置",
     "save": "更新资料",
     "saving": "更新中...",
     "toast_avatar_updated": "头像已更新",
@@ -724,6 +732,7 @@
     "toast_profile_failed": "更新资料失败"
   },
   "notifications": {
+    "page_description": "选择哪些事件进入收件箱，以及系统何时可以通知你。",
     "title": "收件箱通知",
     "description": "控制哪些事件会产生收件箱通知。被静默的事件类型仍然存在——可以直接到任务页面查看。",
     "toast_failed": "更新通知设置失败",
@@ -812,6 +821,7 @@
     }
   },
   "workspace": {
+    "page_description": "更新这个工作区的名称、标志和默认设置。",
     "section_general": "工作区信息",
     "logo_label": "工作区标志",
     "change_logo_aria": "更换工作区图标",

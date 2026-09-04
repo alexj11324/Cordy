@@ -16,7 +16,9 @@ interface UseAutoSaveOptions<T> {
 
 interface AutoSaveResult<T> {
   status: SettingsSaveStatus;
-  flush: () => void;
+  /** Persist the latest draft now. Resolves true when that draft matches what
+   *  last succeeded; false if a request failed or saving was disabled. */
+  flush: () => Promise<boolean>;
   saveNow: (value: T) => void;
 }
 
@@ -40,6 +42,7 @@ export function useAutoSave<T>({
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savingRef = useRef(false);
   const queuedRef = useRef<T | null>(null);
+  const inFlightRef = useRef<Promise<void> | null>(null);
   const latestValueRef = useRef(value);
   const persistedRef = useRef(savedValue);
   const observedSavedRef = useRef(savedValue);
@@ -62,34 +65,61 @@ export function useAutoSave<T>({
   }
 
   const runSave = useCallback(async (next: T) => {
-    if (!enabledRef.current || isEqualRef.current(next, persistedRef.current)) {
-      return;
-    }
     if (savingRef.current) {
       queuedRef.current = next;
+      const inFlight = inFlightRef.current;
+      if (inFlight) await inFlight;
+      if (
+        enabledRef.current &&
+        !isEqualRef.current(next, persistedRef.current)
+      ) {
+        await runSave(next);
+      }
       return;
     }
 
+    if (!enabledRef.current || isEqualRef.current(next, persistedRef.current)) {
+      return;
+    }
+
+    queuedRef.current = next;
     savingRef.current = true;
+    let settleInFlight = () => {};
+    const inFlight = new Promise<void>((resolve) => {
+      settleInFlight = resolve;
+    });
+    inFlightRef.current = inFlight;
+
     let succeeded = false;
+    let lastSaved: T | null = null;
     if (mountedRef.current) setStatus("saving");
     try {
-      await onSaveRef.current(next);
-      persistedRef.current = next;
-      succeeded = true;
-    } catch (error) {
-      if (mountedRef.current) setStatus("error");
-      onErrorRef.current?.(error);
+      while (enabledRef.current) {
+        const toSave = queuedRef.current;
+        queuedRef.current = null;
+        if (toSave == null || isEqualRef.current(toSave, persistedRef.current)) {
+          break;
+        }
+        try {
+          await onSaveRef.current(toSave);
+          persistedRef.current = toSave;
+          lastSaved = toSave;
+          succeeded = true;
+        } catch (error) {
+          if (mountedRef.current) setStatus("error");
+          onErrorRef.current?.(error);
+          succeeded = false;
+          break;
+        }
+      }
+      if (succeeded && lastSaved != null && mountedRef.current) {
+        setStatus("saved");
+        onSuccessRef.current?.(lastSaved);
+      }
     } finally {
       savingRef.current = false;
-      const queued = queuedRef.current;
-      queuedRef.current = null;
-      if (queued && !isEqualRef.current(queued, persistedRef.current)) {
-        void runSave(queued);
-      } else if (succeeded && mountedRef.current) {
-        setStatus("saved");
-        onSuccessRef.current?.(next);
-      }
+      inFlightRef.current = null;
+      settleInFlight();
     }
   }, []);
 
@@ -104,9 +134,14 @@ export function useAutoSave<T>({
     [runSave],
   );
 
-  const flush = useCallback(() => {
-    saveNow(latestValueRef.current);
-  }, [saveNow]);
+  const flush = useCallback(async () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    await runSave(latestValueRef.current);
+    return isEqualRef.current(latestValueRef.current, persistedRef.current);
+  }, [runSave]);
 
   useEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current);

@@ -103,6 +103,7 @@
     "toast_saved": "변경사항을 저장했습니다"
   },
   "preferences": {
+    "page_description": "Patchbay의 모양과 사용할 언어, 시간대를 선택합니다.",
     "general_title": "일반",
     "theme": {
       "title": "테마",
@@ -264,6 +265,7 @@
     }
   },
   "chat": {
+    "page_description": "모든 페이지 위에 떠 있는 채팅 창을 제어합니다.",
     "floating_title": "플로팅 창",
     "floating_label": "플로팅 채팅 창",
     "floating_hint": "모든 페이지 모서리에 플로팅 채팅 버튼을 표시합니다. 기본값은 꺼짐 — 켜면 어디서나 채팅을 불러올 수 있고, 꺼면 채팅은 이 탭에서만 사용할 수 있습니다."
@@ -708,6 +710,7 @@
     }
   },
   "account": {
+    "page_description": "Patchbay 전역에 표시되는 이름, 아바타, 소개를 업데이트합니다.",
     "section_profile": "개인 정보",
     "avatar_label": "아바타",
     "click_avatar_hint": "클릭해서 아바타 업로드",
@@ -716,6 +719,11 @@
     "profile_description_hint": "나를 대신해 작업하는 에이전트에게 공유됩니다. 역할, 기술 스택, 선호 방식, 새 협업자에게 첫날 알려줄 만한 내용을 적어 주세요.",
     "profile_description_placeholder": "예: Go와 Postgres를 쓰는 백엔드 엔지니어. 간결한 PR과 변경사항에 맞춘 테스트를 선호합니다.",
     "profile_description_too_long": "프로필이 너무 깁니다(최대 {{max}}자, 현재 {{count}}자).",
+    "edit": "편집",
+    "done": "완료",
+    "edit_aria": "프로필 정보 편집",
+    "done_aria": "프로필 정보 편집 완료",
+    "not_set": "설정되지 않음",
     "save": "프로필 업데이트",
     "saving": "업데이트 중...",
     "toast_avatar_updated": "아바타를 업데이트했습니다",
@@ -724,6 +732,7 @@
     "toast_profile_failed": "프로필을 업데이트하지 못했습니다"
   },
   "notifications": {
+    "page_description": "어떤 이벤트가 인박스에 도착할지, 시스템이 언제 알릴 수 있을지 선택합니다.",
     "title": "인박스 알림",
     "description": "어떤 이벤트가 인박스 알림을 만들지 제어합니다. 음소거한 이벤트 유형은 조용히 걸러지지만, 태스크를 직접 열면 계속 볼 수 있습니다.",
     "toast_failed": "알림 설정을 업데이트하지 못했습니다",
@@ -812,6 +821,7 @@
     }
   },
   "workspace": {
+    "page_description": "이 워크스페이스의 이름, 로고, 기본값을 업데이트합니다.",
     "section_general": "워크스페이스 정보",
     "logo_label": "워크스페이스 로고",
     "change_logo_aria": "워크스페이스 로고 변경",
