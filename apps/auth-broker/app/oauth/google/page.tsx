@@ -5,7 +5,7 @@ import { useClerk, useSignIn } from "@clerk/nextjs";
 import { useSearchParams } from "next/navigation";
 import { AuthShell } from "@/components/auth-shell";
 import { registerDesktopGoogleAttempt } from "@/lib/broker-client";
-import { readDesktopHandoffBinding } from "@/lib/desktop-handoff";
+import { desktopAttemptStorageKey, readDesktopHandoffBinding } from "@/lib/desktop-handoff";
 import { hasClerkOAuthReturn, readGoogleSso, startGoogleOAuth } from "@/lib/google-oauth";
 import { useAuthMessages } from "@/lib/auth-messages";
 import { resolveStandaloneReturnUrl } from "@/lib/redirect";
@@ -43,13 +43,14 @@ function Content() {
       );
       return;
     }
-    if (binding && !registered) {
+    if (binding && !registered && window.sessionStorage.getItem(desktopAttemptStorageKey(binding.state)) !== binding.codeChallenge) {
       started.current = true;
       void registerDesktopGoogleAttempt({
         state: binding.state,
         code_challenge: binding.codeChallenge,
       })
         .then(() => {
+          window.sessionStorage.setItem(desktopAttemptStorageKey(binding.state), binding.codeChallenge);
           started.current = false;
           setRegistered(true);
         })

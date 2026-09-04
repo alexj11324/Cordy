@@ -329,7 +329,7 @@ export function AuthInitializer({
       const token = storage.getItem("patchbay_token");
       if (!token) {
         settled = true;
-        void onLogout?.();
+        void onLogout?.(undefined, { reason: "missing-session" });
         useAuthStore.setState({
           user: null,
           isLoading: false,

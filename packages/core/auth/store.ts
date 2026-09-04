@@ -14,6 +14,8 @@ export interface AuthStoreOptions {
 }
 
 export type AuthLogoutOptions = {
+  /** Initial session cleanup must not cancel a platform login already in progress. */
+  reason?: "missing-session";
   /** Prevent platform auth recovery when cleaning up a permanently rejected session. */
   rearmAuth?: boolean;
 };

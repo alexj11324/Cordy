@@ -43,7 +43,7 @@ vi.mock("./login-handoff", () => ({
   createDesktopLoginUrl: mocks.createDesktopLoginUrl,
 }));
 
-function renderPage() {
+function renderPage(handoffFailed = false) {
   Object.defineProperty(window, "desktopAPI", {
     configurable: true,
     value: {
@@ -60,13 +60,14 @@ function renderPage() {
 
   return render(
     <I18nProvider locale="en" resources={RESOURCES}>
-      <DesktopLoginPage />
+      <DesktopLoginPage handoffFailed={handoffFailed} />
     </I18nProvider>,
   );
 }
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  document.documentElement.lang = "en";
   mocks.createDesktopLoginUrl.mockImplementation(
     async (
       _accountsUrl: string,
@@ -111,10 +112,16 @@ describe("DesktopLoginPage", () => {
     expect(mocks.createDesktopLoginUrl).toHaveBeenCalledWith(
       "https://accounts.example",
       expect.any(Function),
-      { sessionApiUrl: undefined },
+      { sessionApiUrl: undefined, locale: "en" },
     );
     expect(mocks.openExternal).toHaveBeenCalledWith(
       "https://accounts.example/login?state=state-1",
     );
   });
+});
+
+it("shows a terminal callback failure instead of silently waiting", () => {
+  renderPage(true);
+  expect(screen.getByRole("alert")).toHaveTextContent("Sign-in could not be completed");
+  expect(screen.getByRole("button", { name: "Open sign-in" })).toBeEnabled();
 });

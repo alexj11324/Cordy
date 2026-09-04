@@ -78,3 +78,10 @@ describe("local Guest validation", () => {
     ).toEqual({ probeResult: "error" });
   });
 });
+
+// A callback may set main to cloud before the renderer subscribes to mode changes.
+it("restores main's cold-start login intent without overriding Guest isolation", () => {
+  expect(resolveDesktopStartupMode({ ok: true, session: null }, false, "cloud")).toBe("cloud");
+  expect(resolveDesktopStartupMode({ ok: true, session: { displayName: "Guest" } }, false, "cloud")).toBe("guest");
+  expect(resolveDesktopStartupMode({ ok: false, reason: "invalid" }, false, "cloud")).toBe("guest-error");
+});

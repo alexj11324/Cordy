@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -175,4 +176,21 @@ func TestDesktopIdentityBoundsRequestBody(t *testing.T) {
 	h := &Handler{}
 	body := `{"code":"pbl_` + strings.Repeat("a", 43) + `","code_verifier":"` + strings.Repeat("v", 43) + `","state":"` + strings.Repeat("s", 43) + `"}` + strings.Repeat(" ", 5000)
 	testutil.Call(t, h.RedeemDesktopLocalIdentity, testutil.JSONRequest(http.MethodPost, "/api/desktop-identity/redeem", body)).Want(401)
+}
+
+func TestDesktopIdentityDistinguishesRejectionFromUnavailable(t *testing.T) {
+	for _, status := range []int{401, 403, 429, 500, 502} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(status) }))
+			defer upstream.Close()
+			_, err := requestDesktopIdentity(t.Context(), desktopAuthHandoffRedeemRequest{}, upstream.Client(), upstream.URL)
+			want := errDesktopIdentityUnavailable
+			if status == 401 {
+				want = errDesktopIdentityRejected
+			}
+			if !errors.Is(err, want) {
+				t.Fatalf("status %d: got %v, want %v", status, err, want)
+			}
+		})
+	}
 }
