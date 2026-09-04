@@ -224,11 +224,11 @@ CLI 설정 파일에는 사용자를 대신해 Patchbay에 접근할 수 있는 
 
 | 명령 | 하위 명령 | 용도 | 주요 flag |
 | --- | --- | --- | --- |
-| `issue` | `list` | 태스크 목록 | `--status`, `--priority`, `--assignee`, `--project`, `--metadata`(반복 가능), `--limit`, `--offset`, `--sort`, `--full-id` |
+| `issue` | `list` | 태스크 목록 | `--status`, `--priority`, `--owner` / `--owner-id`, `--executor` / `--executor-id`, `--project`, `--metadata`(반복 가능), `--limit`, `--offset`, `--sort`, `--full-id` |
 | | `get <id>` | 태스크 하나 확인 | |
-| | `create` | 태스크 생성 | `--title`(필수), `--description` / `--description-stdin` / `--description-file`, `--status`, `--priority`, `--assignee`, `--parent`, `--stage`, `--project`, `--start-date`, `--due-date`, `--attachment`(반복 가능) |
+| | `create` | 태스크 생성 | `--title`(필수), `--description` / `--description-stdin` / `--description-file`, `--status`, `--priority`, `--owner` / `--owner-id`, `--executor` / `--executor-id`, `--reviewer` / `--reviewer-id`, `--parent`, `--stage`, `--project`, `--start-date`, `--due-date`, `--attachment`(반복 가능) |
 | | `update <id>` | 태스크 필드 업데이트 | `create`와 같은 종류의 필드에 `--position`, `--no-start` 추가 |
-| | `assign <id>` | 할당 또는 할당 해제 | `--to`(이름으로 멤버, 에이전트, 팀 fuzzy match), `--to-id`, `--unassign`, `--no-start` |
+| | `assign <id>` | executor 설정 또는 해제 | `--to`(이름으로 에이전트, 팀 fuzzy match), `--to-id`, `--unassign`, `--no-start` |
 | | `status <id> <status>` | 상태 변경 | `--no-start` |
 | | `reorder <id>` | 열 안에서 이동 | |
 | | `search <query>` | 태스크 검색 | `--limit`, `--include-closed` |
@@ -242,7 +242,7 @@ CLI 설정 파일에는 사용자를 대신해 Patchbay에 접근할 수 있는 
 | | `runs <issue-id>` | 실행 기록 확인 | `--full-id` |
 | | `run-messages <task-id>` | 단일 실행 메시지 확인 | `--since`, `--issue` |
 | | `usage <issue-id>` | 집계 token 사용량 확인 | |
-| | `rerun <id>` | 현재 할당을 기준으로 다시 큐에 넣어 실행 | |
+| | `rerun <id>` | 현재 executor를 기준으로 다시 큐에 넣어 실행 | |
 | | `cancel-task <task-id>` | 실행 중 또는 큐 대기 중인 작업 취소 | `--issue` |
 | `project` | `list/get/create/update/delete` | 프로젝트 관리 | |
 | | `status <id> <status>` | 프로젝트 상태 변경 | |

@@ -224,11 +224,11 @@ CLI の設定ファイルには、あなたとして Patchbay にアクセスで
 
 | コマンド | サブコマンド | 用途 | 主なフラグ |
 | --- | --- | --- | --- |
-| `issue` | `list` | タスクを一覧 | `--status`、`--priority`、`--assignee`、`--project`、`--metadata`（繰り返し可）、`--limit`、`--offset`、`--sort`、`--full-id` |
+| `issue` | `list` | タスクを一覧 | `--status`、`--priority`、`--owner` / `--owner-id`、`--executor` / `--executor-id`、`--project`、`--metadata`（繰り返し可）、`--limit`、`--offset`、`--sort`、`--full-id` |
 | | `get <id>` | 単一のタスクを表示 | |
-| | `create` | タスクを作成 | `--title`（必須）、`--description` / `--description-stdin` / `--description-file`、`--status`、`--priority`、`--assignee`、`--parent`、`--stage`、`--project`、`--start-date`、`--due-date`、`--attachment`（繰り返し可） |
+| | `create` | タスクを作成 | `--title`（必須）、`--description` / `--description-stdin` / `--description-file`、`--status`、`--priority`、`--owner` / `--owner-id`、`--executor` / `--executor-id`、`--reviewer` / `--reviewer-id`、`--parent`、`--stage`、`--project`、`--start-date`、`--due-date`、`--attachment`（繰り返し可） |
 | | `update <id>` | タスクのフィールドを更新 | `create` と同系のフィールドに加え `--position`、`--no-start` |
-| | `assign <id>` | 割り当てまたは割り当て解除 | `--to`（メンバー、エージェント、チームを名前であいまいマッチ）、`--to-id`、`--unassign`、`--no-start` |
+| | `assign <id>` | executor の設定または解除 | `--to`（エージェント、チームを名前であいまいマッチ）、`--to-id`、`--unassign`、`--no-start` |
 | | `status <id> <status>` | ステータスを変更 | `--no-start` |
 | | `reorder <id>` | カラム内で移動 | |
 | | `search <query>` | タスクを検索 | `--limit`、`--include-closed` |
@@ -242,7 +242,7 @@ CLI の設定ファイルには、あなたとして Patchbay にアクセスで
 | | `runs <issue-id>` | 実行履歴を表示 | `--full-id` |
 | | `run-messages <task-id>` | 1 回の実行のメッセージを表示 | `--since`、`--issue` |
 | | `usage <issue-id>` | 集計されたトークン使用量を表示 | |
-| | `rerun <id>` | 現在の担当者で実行を再キューイング | |
+| | `rerun <id>` | 現在の executor で実行を再キューイング | |
 | | `cancel-task <task-id>` | 実行中またはキュー中の作業をキャンセル | `--issue` |
 | `project` | `list/get/create/update/delete` | プロジェクトを管理 | |
 | | `status <id> <status>` | プロジェクトのステータスを変更 | |

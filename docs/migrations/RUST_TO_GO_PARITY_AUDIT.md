@@ -16,6 +16,9 @@ This document is a **partial, evidence-backed inventory**, not a completed
 whole-product audit or an estimate of all remaining work. The historical
 [W4–W9 plan](MIGRATION_PLAN_W4_W9.md) and the original Hoplite PR report are
 checkpoints, not proof that their acceptance gates passed in the current tree.
+For this work item, the maintained shipping-documentation and dependency-graph
+role-semantics inventory is complete below; the word “partial” applies only to
+the other product slices in this whole-product table.
 
 Delivery checkpoint: GitHub's event history attributes the closure of #729 at
 2026-09-03T14:30:02Z to `usehoplite[bot]`. Codex restored the original PR under
@@ -58,21 +61,89 @@ for the complete installed-state rename, focused tests and browser evidence.
 | Managed Slack credentials     | `377bb52a9` and `96afd5368` preserve Hoplite's credential work and restore encrypted rotation, health and lifecycle. Replacement CI [33762592403](https://github.com/alexj11324/Cordy/actions/runs/33762592403) passed all applicable checks on `1e54e1d9f`, including PostgreSQL-backed race tests and sqlc.                                            | Real Slack authorization/refresh/revoke and deployed mode acceptance.                                                  |
 | Workspace messaging Hub | Shared Hub selection, permissions, persistence, pending-run fencing, adapter wiring and per-Agent resume isolation passed CI. Workspace-owned NULL/zero-owner installations now enter supervision while orphan records and managed webhooks remain excluded; final CI 33785381994 passed. | Real provider and setup/UI acceptance. |
 | Messaging setup and connection UI | Durable observation ownership/projection, six provider reports, shared client validation, installed-state rename and six settings pages are implemented. Redis-authoritative leases are batch-read and token-matched in the public projection; final CI 33787309411 passed. | Workspace-level setup guide and installation modes; real native/provider and deployed acceptance. |
-| Hosted IM turn quota          | Rust entitlement/task service enforce `im_agent_turns`; no matching contract was found in the inspected Go server/core/views.                                                                                                                                                                                                                            | Per-turn admission, usage accounting/endpoint, UI, failure/rollback semantics and Cloud acceptance.                    |
-| Hosted workspace quota        | `hosted_workspace_limit` is an identified migration gate, not implemented/verified by the takeover.                                                                                                                                                                                                                                                      | Trace Rust admission and policy contract, port all creation paths, verify concurrency and hosted/self-hosted behavior. |
-| Authentication and delivery   | No current takeover evidence establishes shadcn login → real Clerk → Go session → API completion, or deployed Go backend/build identity.                                                                                                                                                                                                                 | Real browser authentication, native callback, release artifacts, production health/version and provider connectivity.  |
+| Dependency graph role semantics | Go now carries the Rust role contract through `server/internal/handler/dependency_graph.go`: `owner` is a member, `executor` and `candidate_executors` are agent/team targets, `reviewer` accepts member/agent/team, and `runtime_id`/`model_id` are paired. The transaction writes the explicit issue/node columns, and Core/View/Mobile graph consumers read `executor_*` and `candidate_executors`; no graph consumer uses the retired aliases. Focused Go and Core contract tests are present, but no completed CI run yet includes `395c5fb41`; earlier branch runs were superseded or canceled. | Replacement CI completion and real apply/read/realtime acceptance. Historical graph migrations retain the old columns only in the immutable up migration and rename-back down migration listed in the residual inventory. |
+| Hosted IM turn quota          | Go implementation is present in `79b2cac95`, `11ae5375b`, `server/internal/channelquota`, `server/internal/service/task.go`, `server/internal/handler/messaging_usage.go`, and the Settings/Core contracts. Managed channel-ingested turns use the Cloud `im_agent_turns` gate, count accepted plus in-flight turns, serialize admission on the workspace row, expose usage/reset data, and bypass self-hosted messaging. CI [`33798936215`](https://github.com/alexj11324/Cordy/actions/runs/33798936215) ran the targeted package/frontend jobs but was cancelled before the backend job completed. | Replacement CI on the final branch, Cloud entitlement rollout, deployed enablement, and real provider/deployment acceptance. The implementation is no longer an open migration gap, but its end-to-end shipping gate remains open. |
+| Hosted workspace quota        | Go implementation is present in `d1707c566` and `36f1b0724`: `server/internal/handler/workspace_capacity.go` resolves the Cloud `hosted_workspace_limit` gate and `server/internal/handler/workspace.go` applies it to workspace creation and owner promotion, with `server/internal/seatcapacity` serializing ownership decisions. CI [`33803663947`](https://github.com/alexj11324/Cordy/actions/runs/33803663947) reached the new tests but failed only because two fixtures sent multiple SQL commands through a prepared statement; `36f1b0724` split those statements, but replacement CI [`33804584389`](https://github.com/alexj11324/Cordy/actions/runs/33804584389) was cancelled by a later push. | Replacement CI on the final branch, Cloud entitlement rollout, deployed enablement, and live hosted/self-hosted acceptance. The implementation is no longer absent; concurrency and deployment evidence are not yet fully closed. |
+| Authentication and delivery   | Go source now contains the Clerk provider/adapter, split shadcn shell, SSO callback and Desktop handoff (`8f4d98b49`, `8cb3f6dbb`). Focused source/tests do not establish browser JavaScript → real Clerk → Go session → frontend API completion, or a deployed Go backend/build identity.                                                                                                                                                                                                                 | Real browser authentication, native callback, release artifacts, production health/version and provider connectivity.  |
 
 The table does not certify unaudited areas such as guest isolation, capability
 leases, work products, Linear, mobile, or all runtime adapters. Route/type/schema
 presence is insufficient evidence of behavioral parity.
 
-The frontend deletion inventory also includes the Rust-reference Clerk
-provider/adapter, `/sign-in`, `/sign-up`, SSO callback and Google OAuth route
-files. The current Go Web login explicitly hides Google except for a Desktop
-handoff, and its tests assert that email-only ordinary Web behavior. This needs
-source/flow reconciliation, not merely a visual login-card check. Other deleted
-files include Desktop development-runtime contracts and issue/chat UI surfaces;
-trace any replacement before classifying each as preserved or missing.
+The former frontend deletion inventory is now partly reconciled: `8f4d98b49`
+restores the Go Clerk provider/adapter, `/sign-in`, `/sign-up`, SSO callback and
+Google handoff route files, and `8cb3f6dbb` restores the split shadcn login
+shell. The current blocker is evidence, not source absence: no recorded browser
+run proves browser JavaScript → Clerk → `/auth/clerk` → Go session → frontend
+API completion, and no deployed identity has been checked. Other issue/chat and
+Desktop runtime surfaces have also received replacement commits; each row above
+still distinguishes source/CI evidence from native, provider, or deployment
+acceptance rather than treating a restored file as a closed user flow.
+
+## Stale open-claim reconciliation
+
+The previous version of this audit was written before the quota and several Hub
+follow-up commits landed. The following claims were stale and are corrected
+above or below:
+
+- **Quota absence:** both hosted quota rows now have current Go contracts and
+  focused tests. They remain open only at replacement-CI, Cloud rollout, and
+  hosted/deployed acceptance boundaries; “not implemented” is no longer true.
+- **Workspace Hub restoration:** the older retained boundary said to restore the
+  shared engine before presenting workspace setup as complete. `278a2b69b`,
+  `284aa95a1`, `14f2c2322`, and `3e3aad17d` provide the routing, resume-pointer,
+  workspace-owned supervision, and Redis projection fixes; CI `33787309411`
+  passed the applicable checks. The remaining Hub row is therefore live
+  provider/setup/deployment acceptance, not a missing shared-engine port.
+- **Login and frontend deletion wording:** Clerk and the split shadcn shell are
+  restored in source and covered by focused tests. The authentication row stays
+  open because the required browser and deployed-backend path has not been
+  observed; a source file or green unit test is not that acceptance.
+
+The following are reviewed but are not stale closures: native onboarding and
+Electron acceptance, real DingTalk/Slack/provider flows, deployed messaging
+setup, source-matched development-runtime preparation, and production
+authentication/deployment identity. They remain real acceptance items because
+the audit has no current runtime evidence for them.
+
+## Residual inventory and ownership
+
+The responsibility-domain searches classify the remaining legacy vocabulary as
+follows. No current dependency-graph request, response, Core type/schema, graph
+view, Mobile graph consumer, SQL query, or generated graph model uses the
+retired `assignee_*`/`candidate_assignees` fields.
+
+- **Intentional immutable graph history:**
+  `server/migrations/465_dependency_graph_domain.up.sql:33-35` records the
+  original columns, and
+  `server/migrations/519_dependency_graph_executor_fields.up.sql:2,5,8` plus
+  `server/migrations/519_dependency_graph_executor_fields.down.sql:2,5,8`
+  record the historical rename in both directions. These files are migration
+  history, not current schema or API authorities.
+- **Intentional negative test:**
+  `server/internal/handler/dependency_graph_test.go:72-73` constructs the word
+  in a split string and asserts that the explicit contract does not serialize
+  it. It is a focused rejection test, not a live alias.
+- **Historical public-site changelog:** the legacy wording in the `changelog`
+  entries of `apps/web/features/landing/i18n/en.ts`, `zh.ts`, `ja.ts`, and
+  `ko.ts` is immutable release history. Current hero/features/about copy and
+  all four maintained analytics use-cases now use owner/executor language.
+- **Different project-role vocabulary:**
+  `apps/docs/content/docs/projects.zh.mdx:19,51`,
+  `apps/docs/content/docs/project-resources.zh.mdx:143`,
+  `apps/docs/content/docs/projects.ko.mdx:19,51`, and
+  `apps/docs/content/docs/project-resources.ko.mdx:144` use localized “project
+  lead” wording. This is a project role, not the issue owner/executor/reviewer
+  contract, so it is retained.
+- **Outside this responsibility or currently owned elsewhere:**
+  `server/pkg/publicapi/v1/openapi.yaml:304-331` is the general public Issue
+  schema and still needs the general issue-role owner to coordinate its
+  contract update; `packages/core/api/schema.test.ts:427-428` is a tested
+  old-server Automation compatibility case; `CLAUDE.md` is the repository's
+  compatibility pointer and is not a maintained instruction source. General
+  Issue compatibility/admission code, daemon prompt files, and current Mobile
+  role/review files are not staged by this work item because they belong to
+  the other role/domain owners.
 
 ## Managed Slack credential acceptance
 
@@ -155,12 +226,14 @@ this subsequent Hub change.
 
 ### Retained acceptance boundaries
 
-Restore the shared engine behavior before presenting workspace-level setup as
-complete. The Rust reference resolves identity/membership before selecting the
-Agent; `/agents` control commands do not become Agent turns. Persisted selection
-must honor current invocation permissions. Slack `/issue` is a separate entry
-and must honor that selection too. Switching during a debounced pending turn
-must not run the old message under the newly selected Agent.
+The shared engine behavior is now restored in the Go source and covered by the
+Hub checkpoint above: the Rust reference resolves identity/membership before
+selecting the Agent; `/agents` control commands do not become Agent turns;
+persisted selection honors current invocation permissions; Slack `/issue` is a
+separate entry and honors that selection; switching during a debounced pending
+turn does not run the old message under the newly selected Agent. The remaining
+boundary is live provider/setup and deployed acceptance, not a missing shared
+engine port.
 
 Agent visibility is not invocation permission: the Go management list lets
 workspace admins see other members' private Agents, while the Rust Hub allows

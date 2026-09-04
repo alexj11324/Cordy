@@ -11,7 +11,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 ![一次执行的流程图：左侧 Patchbay 区域负责记录与调度，任务触发创建 Task；右侧"你的电脑"区域中，守护进程领取 task、启动 AI 编程工具、读写工作目录；过程消息实时流回执行日志，最终结果由守护进程写回任务](/images/docs/how-a-run-works.webp)
 
-1. **任务提供上下文。** 任务保存工作说明、讨论和负责人。分配给智能体后，系统会使用该智能体的指令、模型、skill 和运行时配置。
+1. **任务提供上下文。** 任务保存工作说明、讨论和 owner、executor、reviewer。设置 executor 为智能体后，系统会使用该智能体的指令、模型、skill 和运行时配置。
 2. **Patchbay 创建 task。** task 进入队列；没有在线运行时时，它会在队列中等待。
 3. **运行时领取 task。** 连接电脑上的在线运行时领取 task，并调用智能体配置的 AI 编程工具。
 4. **AI 编程工具在本地执行。** 工具读取工作目录、运行命令并生成结果。

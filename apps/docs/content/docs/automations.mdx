@@ -7,7 +7,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 Automations run work that happens over and over — a daily progress summary, a periodic dependency check, or an agent kicked off by an event from an external system.
 
-Each automation stores a Runbook, an assignee, and one or more triggers. When triggered, Patchbay creates an issue or runs the agent directly, and keeps a record of every run.
+Each automation stores a Runbook, an executor, and one or more triggers. When triggered, Patchbay creates an issue or runs the agent directly, and keeps a record of every run.
 
 ## Create an automation
 
@@ -15,7 +15,7 @@ Open **Automation** in the sidebar, pick a template or start from scratch, then 
 
 - **Name**: what this automation is responsible for;
 - **Runbook**: the goal, background, constraints, and steps the agent reads on every run;
-- **Assignee**: an agent or a team;
+- **Executor**: an agent or a team;
 - **Project**: optional; puts auto-created issues into a specific project;
 - **Execution mode**: create an issue, or run only;
 - **Subscribers**: members to notify after an issue is auto-created;
@@ -27,7 +27,7 @@ An automation is enabled by default after saving; **Run now** manually executes 
 
 | Mode | Behavior | Best for |
 |---|---|---|
-| **Create issue** | Each trigger first creates an issue, then assigns it to the assignee; discussion, status, and run records all live on the issue. | Work the team needs to review, confirm, or follow up on. |
+| **Create issue** | Each trigger first creates an issue, then sets its executor; discussion, status, and run records all live on the issue. | Work the team needs to review, confirm, or follow up on. |
 | **Run only** | Creates a task directly with no issue; results are visible only in the automation's run history. | Background runs that need no collaboration record. |
 
 **Create issue** mode uses the same task queue as regular issues: when the runtime is offline, the issue is still created and the task waits for the runtime to come online.

@@ -193,14 +193,14 @@ category rules. Two writes are literal-key exceptions, not category rules: the
 failed-task rollback below writes the literal `todo` key, and a merged PR with
 close intent writes the literal `done` key.
 
-- **`backlog`** parks an agent-assigned issue: the assignee is set but no task
-  fires. Moving `backlog → todo` (or any non-done/non-cancelled status) enqueues
-  the assigned agent then.
+- **`backlog`** parks an issue with an agent/team executor: the executor is set
+  but no task fires. Moving `backlog → todo` (or any non-done/non-cancelled
+  status) enqueues the executor then.
 - **`in_progress` / `in_review`** are agent-managed CLI mutations, not
   `StartTask` / `CompleteTask` side effects. The runtime brief asks agents to
   write the state the issue is in whenever their work changes it — not from
   the trigger type or the run's lifecycle, and not gated on being the
-  assignee. Writes happen whenever the state changes, mid-turn included: a
+  executor. Writes happen whenever the state changes, mid-turn included: a
   turn that advances the issue's own ask sets `in_progress` as soon as that
   is known, so the board shows the work while it runs; a blocker is recorded
   when it is hit; and the turn must not exit with a stale value — delivered
@@ -237,7 +237,7 @@ does not suppress a later status update:
 
 ```bash
 patchbay issue assign <issue-id> --to-id <agent-id> --no-start
-patchbay issue update <issue-id> --assignee-id <agent-id> --no-start
+patchbay issue update <issue-id> --executor-id <agent-id> --no-start
 patchbay issue status <issue-id> in_progress --no-start
 ```
 
@@ -250,20 +250,20 @@ serial chains and triage batches rely on that.
 
 ## Sub-issues: `todo` starts work now, `backlog` parks it
 
-On an agent-assigned issue, create status decides whether the assignee fires
-immediately. A non-backlog status (e.g. `todo`) enqueues the agent at create
-time; `backlog` sets the assignee without triggering.
+On an issue with an agent/team executor, create status decides whether the
+executor fires immediately. A non-backlog status (e.g. `todo`) enqueues the
+agent at create time; `backlog` sets the executor without triggering.
 
 Parallel children — all start now:
 
 ```bash
-patchbay issue create --title "..." --parent <issue-id> --assignee <agent> --status todo
+patchbay issue create --title "..." --parent <issue-id> --executor <agent> --status todo
 ```
 
 Strictly serial children — park later steps, promote one at a time:
 
 ```bash
-patchbay issue create --title "Step 2: ..." --parent <issue-id> --assignee <agent> --status backlog
+patchbay issue create --title "Step 2: ..." --parent <issue-id> --executor <agent> --status backlog
 patchbay issue status <child-id> todo   # promote when the previous step is truly done
 ```
 
@@ -272,7 +272,7 @@ Creating every serial step as `todo` enqueues the whole chain at once.
 ### Stages: order sub-issues into barrier groups
 
 `--stage <N>` (N ≥ 1) groups sub-issues under the same parent into ordered
-stages. The parent assignee is woken **once, when a whole stage finishes** —
+stages. The parent executor is woken **once, when a whole stage finishes** —
 i.e. every sub-issue in the lowest unfinished stage has reached a terminal
 status (`done`/`cancelled`). A completion that does not close a stage is silent
 (no comment, no wake). A sibling set with **no** stages is one implicit stage,
@@ -280,18 +280,18 @@ so the parent is woken once when the *last* sub-issue finishes — not on every
 child.
 
 Advancement is agent-driven: the server only detects the closed barrier and
-wakes the parent assignee, who then decides whether to promote the next stage's
+wakes the parent executor, who then decides whether to promote the next stage's
 `backlog` sub-issues to `todo`.
 
 ```bash
 # Stage 1 runs now; later stages parked until promoted
-patchbay issue create --title "Research A" --parent <id> --assignee <agent> --stage 1 --status todo
-patchbay issue create --title "Research B" --parent <id> --assignee <agent> --stage 1 --status todo
-patchbay issue create --title "Build"      --parent <id> --assignee <agent> --stage 2 --status backlog
-patchbay issue create --title "Ship"       --parent <id> --assignee <agent> --stage 3 --status backlog
+patchbay issue create --title "Research A" --parent <id> --executor <agent> --stage 1 --status todo
+patchbay issue create --title "Research B" --parent <id> --executor <agent> --stage 1 --status todo
+patchbay issue create --title "Build"      --parent <id> --executor <agent> --stage 2 --status backlog
+patchbay issue create --title "Ship"       --parent <id> --executor <agent> --stage 3 --status backlog
 ```
 
-When both Stage 1 sub-issues finish you (the parent assignee) are woken with a
+When both Stage 1 sub-issues finish you (the parent executor) are woken with a
 "Stage 1 complete" comment. Inspect the layout, then promote the next stage:
 
 ```bash
@@ -322,14 +322,14 @@ Serial / phased sub-issues (don't start the whole chain at once):
 
 ```bash
 # incorrect — all fire immediately, no ordering
-patchbay issue create --title "Step 2" --parent <issue-id> --assignee <agent> --status todo
-patchbay issue create --title "Step 3" --parent <issue-id> --assignee <agent> --status todo
+patchbay issue create --title "Step 2" --parent <issue-id> --executor <agent> --status todo
+patchbay issue create --title "Step 3" --parent <issue-id> --executor <agent> --status todo
 
 # correct — stage them; Stage 1 runs, later stages park and are promoted as
 # each stage's barrier closes
-patchbay issue create --title "Step 1" --parent <issue-id> --assignee <agent> --stage 1 --status todo
-patchbay issue create --title "Step 2" --parent <issue-id> --assignee <agent> --stage 2 --status backlog
-patchbay issue create --title "Step 3" --parent <issue-id> --assignee <agent> --stage 3 --status backlog
+patchbay issue create --title "Step 1" --parent <issue-id> --executor <agent> --stage 1 --status todo
+patchbay issue create --title "Step 2" --parent <issue-id> --executor <agent> --stage 2 --status backlog
+patchbay issue create --title "Step 3" --parent <issue-id> --executor <agent> --stage 3 --status backlog
 ```
 
 ## References

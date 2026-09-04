@@ -11,7 +11,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 ## 适用场景
 
-当工作需要多种能力，而且不能在创建任务时就确定具体负责人，可以使用团队。例如，一个产品交付团队可以包含前端、后端和测试智能体，由 leader 根据每条任务的内容进行分配。
+当工作需要多种能力，而且不能在创建任务时就确定具体 executor，可以使用团队。例如，一个产品交付团队可以包含前端、后端和测试智能体，由 leader 根据每条任务的内容进行分配。
 
 工作范围明确时，直接分配给对应的[智能体](/agents)即可。
 
@@ -45,7 +45,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 - **Team Operating Protocol（团队工作规范）**——一段硬编码的规则集：读任务 → 用 `@` 派活 → 保持简洁（不复述任务内容，被派的成员自己能读）→ 每次记 evaluation → 派完就停（派活轮结束时父任务处于 `in_progress`）→ 整体目标达成后才推 `in_review`。这段由系统管理，不可编辑。
 
- 其中状态相关的规则只对"确实分配给本团队"的任务生效。队长被别人任务里的 `@团队` 唤醒时，同样拿到花名册和派活规则，但会被明确告知不要改动那条任务的状态——状态仍归它自己的负责人。
+ 其中状态相关的规则只对"确实把本团队设为 executor"的任务生效。队长被别人任务里的 `@团队` 唤醒时，同样拿到花名册和派活规则，但会被明确告知不要改动那条任务的状态——状态仍归原任务自己的 owner/executor。
 - **Team Roster（团队花名册）**——队长一行 + 每个未归档成员一行，每行带可直接复制的 mention markdown（`[@Name](mention://agent/<uuid>)`）。纯文本 `@name` 不会触发任何人。
 - **Team Instructions（团队指令）**——你为这个团队写的自定义内容：路由规则（"数据库相关派给 Alice，前端派给 Bob"）、上报策略，或任务本身不会有的背景。
 
@@ -69,10 +69,10 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 ## 分配团队和 @团队
 
-| 操作 | 是否改变负责人 | 结果 |
+| 操作 | 是否改变 executor | 结果 |
 |---|---|---|
-| **把任务分配给团队** | 是 | 团队成为负责人，并触发 leader。 |
-| **在评论中 @团队** | 否 | 只让 leader 处理这条评论，原负责人不变。 |
+| **把任务的 executor 设置为团队** | 是 | 团队成为 executor，并触发 leader。 |
+| **在评论中 @团队** | 否 | 只让 leader 处理这条评论，原 task role 不变。 |
 
 直接 @某名成员时，工作会交给该成员处理。Patchbay 也会合并重复触发并阻止 leader 的评论再次触发自己，避免形成执行循环。
 
@@ -90,9 +90,9 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 ## 归档团队
 
-归档后，团队会从列表、负责人选择器和 @菜单中消失，也不能恢复。
+归档后，团队会从列表、Executor 选择器和 @菜单中消失，也不能恢复。
 
-为避免现有工作失去负责人，当前分配给团队的任务和自动化会转给原 leader 智能体。历史评论和活动记录仍然保留。如果之后还需要相同的路由，需要重新创建团队。
+为避免现有工作失去 executor，当前把团队作为 executor 的任务和自动化会转给原 leader 智能体。历史评论和活动记录仍然保留。如果之后还需要相同的路由，需要重新创建团队。
 
 <Callout type="warning">
 归档操作无法撤销。
@@ -112,6 +112,6 @@ patchbay team member add <team-id> \
 
 ## 接下来
 
-- [分配任务给智能体](/assigning-issues) — 比较成员、智能体和团队负责人。
+- [分配任务给智能体](/assigning-issues) — 比较 owner、executor 和 reviewer 角色。
 - [在评论中提及智能体](/mentioning-agents) — 了解 @提及的触发与路由规则。
 - [Task](/tasks) — 查看每一次智能体执行如何排队和记录。

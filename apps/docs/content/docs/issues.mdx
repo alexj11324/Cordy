@@ -1,6 +1,6 @@
 ---
 title: Issues
-description: An issue holds one piece of work's context, assignee, status, and execution history.
+description: An issue holds one piece of work's context, roles, status, and execution history.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
@@ -13,7 +13,7 @@ An issue is Patchbay's basic unit for organizing work: a feature, a bug, an inve
 |---|---|
 | **Title and description** | Goal, background, requirements, and acceptance criteria. |
 | **Status and priority** | Where the work stands and what to handle first. |
-| **Assignee** | A workspace member, an agent, or a team. |
+| **Roles** | An **owner** member is accountable; an **executor** agent or team runs the work; a **reviewer** can be a member, agent, or team. These roles are independent. |
 | **Dates, labels, and custom properties** | Planning, categorization, and your team's own fields. |
 | **Project and parent-child relationships** | Fits into a larger body of work, or splits into sub-issues. |
 | **Activity and execution log** | Comments, status changes, tasks, and results returned by agents. |
@@ -26,17 +26,17 @@ Create one from the **Issues** page or inside a project — a title is enough, a
 
 Each issue has a number, such as `MUL-123`. The digits increment within the workspace; after an admin changes the workspace's issue prefix, numbers display with the new prefix. See [Workspaces](/workspaces#create-a-workspace).
 
-## Choose an assignee
+## Choose issue roles
 
-| Assignee | Effect |
+| Role | Effect |
 |---|---|
-| **Member** | That member owns the follow-up; no task is created. |
-| **Agent** | A task is created for that agent. |
-| **Team** | The team leader receives it and decides who handles it. |
+| **Owner** | A workspace member owns the follow-up; no task is created. |
+| **Executor** | An agent receives a task; a team routes the task to its leader. |
+| **Reviewer** | Records who reviews the result. A member is notified; an agent or team can be invoked for review. |
 
-When assigned to an agent or a team, the issue enqueues immediately unless it is in `backlog`; if the runtime is offline, the task waits in the queue. Archived agents and teams cannot be assigned.
+Setting an executor to an agent or a team enqueues the issue immediately unless it is in `backlog`; if the runtime is offline, the task waits in the queue. Archived agents and teams cannot be selected as executors.
 
-Assignment does not bypass an agent's Access; when assigning to a team, the leader's Access is what gets checked. See [Assign issues to agents](/assigning-issues).
+Executor selection does not bypass an agent's Access; when selecting a team, the leader's Access is what gets checked. See [Assign issues to agents](/assigning-issues).
 
 ## Status
 
@@ -44,7 +44,7 @@ Every workspace starts with seven built-in statuses. They are also the seven **c
 
 | Status | Meaning |
 |---|---|
-| `backlog` | Not starting yet. An issue assigned to an agent only creates a task after it leaves `backlog`. |
+| `backlog` | Not starting yet. An issue with an executor only creates a task after it leaves `backlog`. |
 | `todo` | Scoped and waiting to start. |
 | `in_progress` | Being worked on. |
 | `in_review` | Has a result waiting for review. |
@@ -69,15 +69,15 @@ A workspace owner or admin can add statuses of their own under **Settings → Is
 
 | Category | What every status in it does |
 |---|---|
-| `backlog` | Parked: assigning an agent never starts a run. Moving the issue out of this category is what starts one, unless the target is `done` or `cancelled`. |
-| `todo` | Queued to start. Unlike `backlog`, assigning an agent to an issue here starts a run right away. |
+| `backlog` | Parked: setting an agent executor never starts a run. Moving the issue out of this category is what starts one, unless the target is `done` or `cancelled`. |
+| `todo` | Queued to start. Unlike `backlog`, setting an agent executor here starts a run right away. |
 | `in_progress` | Counts as actively worked on: a run that fails with nothing else in flight rolls the issue back to `todo`. |
 | `in_review` | Counts as delivered and waiting on review: it finalizes an [automation](/automations) run, and past run-failure notifications are archived automatically. |
 | `done` | Counts as finished: it closes out a sub-issue stage and counts toward the parent's progress. |
 | `blocked` | Stalled on something external; nothing resumes on its own. |
 | `cancelled` | No longer pursued, record kept; also terminal for a sub-issue stage. |
 
-So a `Code Review` status in the `in_review` category ends an automation run exactly like `in_review` does, and moving an issue out of `backlog` into a `Rework` status in the `todo` category starts the assigned agent exactly like moving it to `todo` would.
+So a `Code Review` status in the `in_review` category ends an automation run exactly like `in_review` does, and moving an issue out of `backlog` into a `Rework` status in the `todo` category starts its agent executor exactly like moving it to `todo` would.
 
 The name is what your team reads; the category is what the platform acts on. Wherever the rest of this documentation says a status triggers something, that rule belongs to the category, so a custom status inside it is covered too. It does not work in reverse: when the platform sets a status itself — the rollback to `todo` or the `done` on a merged PR above — it writes the built-in status, never a custom one from that category.
 
@@ -100,11 +100,11 @@ An issue belongs to at most one [project](/projects); the project provides share
 
 Larger work can be split into sub-issues: the parent issue keeps the overall goal while sub-issues progress independently. Parent and child statuses do not affect each other.
 
-Sub-issues can be given a **stage** to advance in batches — 1, 2, 3. When every sub-issue in the earliest unfinished stage reaches `done` or `cancelled`, the parent issue receives a "sub-issues completed" notification; when the parent's assignee is an agent, it wakes up and decides whether to start the next stage. Sub-issues without a stage count as one batch and notify once when they all finish.
+Sub-issues can be given a **stage** to advance in batches — 1, 2, 3. When every sub-issue in the earliest unfinished stage reaches `done` or `cancelled`, the parent issue receives a "sub-issues completed" notification; when the parent's executor is an agent or team, its agent (or team leader) wakes up and decides whether to start the next stage. Sub-issues without a stage count as one batch and notify once when they all finish.
 
 ## Switch views
 
-The Issues page offers five views — list, board, table, Gantt, and swimlane — filterable and sortable by status, assignee, project, and other properties. They all show the same issues.
+The Issues page offers five views — list, board, table, Gantt, and swimlane — filterable and sortable by status, owner, executor, reviewer, project, and other properties. They all show the same issues.
 
 ## Delete an issue
 

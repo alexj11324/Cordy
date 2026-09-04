@@ -147,7 +147,7 @@ Open a pull request when it is ready.
 
 ![새 태스크의 에이전트 모드: 생성자에 Engineer가 선택된 모습](/images/docs/tutorial-new-issue-agent-mode.webp)
 
-제출하면 Patchbay가 태스크를 만들고(번호는 `MUL-1`, 제목은 자동 생성) Engineer를 담당자로 지정합니다. Engineer는 곧바로 실행을 시작하고 상태가 진행 중으로 바뀝니다. 태스크 오른쪽에는 이 태스크의 모든 상황이 모입니다. 상태, 담당자, 연결된 pull request, 실행 기록입니다.
+제출하면 Patchbay가 태스크를 만들고(번호는 `MUL-1`, 제목은 자동 생성) Engineer를 executor로 지정합니다. Engineer는 곧바로 실행을 시작하고 상태가 진행 중으로 바뀝니다. 태스크 오른쪽에는 이 태스크의 모든 상황이 모입니다. 상태, owner, executor, reviewer, 연결된 pull request, 실행 기록입니다.
 
 실행에는 몇 분이 걸립니다. 진행 상황은 두 곳에서 확인합니다. 제목 옆의 작업 상태 배지, 그리고 오른쪽 **실행 로그**에서 현재 실행을 클릭하면 됩니다.
 
@@ -209,7 +209,7 @@ Engineer가 첫 번째 버전을 전달했지만 스스로 알아차리지 못�
 
 ![Reviewer의 설정](/images/docs/tutorial-reviewer-detail.webp)
 
-검토를 위해 태스크를 새로 만들거나 담당자를 바꿀 필요는 없습니다. MUL-1의 댓글 입력란으로 돌아와 `@Reviewer`로 멘션하고 할 일을 적어 보냅니다. 입력란 아래에는 전송하면 Reviewer가 실행을 시작한다는 안내가 표시됩니다.
+검토를 위해 태스크를 새로 만들거나 executor를 바꿀 필요는 없습니다. MUL-1의 댓글 입력란으로 돌아와 `@Reviewer`로 멘션하고 할 일을 적어 보냅니다. 입력란 아래에는 전송하면 Reviewer가 실행을 시작한다는 안내가 표시됩니다.
 
 ![댓글에서 @Reviewer를 멘션해 검토 시작](/images/docs/tutorial-comment-mention-reviewer.webp)
 
@@ -283,7 +283,7 @@ MUL-1의 순환은 잘 돌아갔지만 이어지는 단계는 매번 사람이 �
 
 ## 두 번째 태스크: 팀에 맡기기
 
-팀에 완결된 작업 하나를 맡깁니다. 웹사이트를 범용 템플릿으로 바꾸는 일입니다. 실제 이름은 플레이스홀더 사진작가 이름으로, 실제 이메일은 `hello@example.com`으로 바꾸고 레이아웃과 콘텐츠 구조는 그대로 둡니다. 이번 태스크는 직접 쓰지 않습니다. 채팅에서 Lead에게 요구 사항을 설명하고 **에이전트로 만들기**로 바로 만들며 담당자는 팀입니다. 팀도 에이전트, 멤버와 마찬가지로 담당자 자리에 올 수 있습니다.
+팀에 완결된 작업 하나를 맡깁니다. 웹사이트를 범용 템플릿으로 바꾸는 일입니다. 실제 이름은 플레이스홀더 사진작가 이름으로, 실제 이메일은 `hello@example.com`으로 바꾸고 레이아웃과 콘텐츠 구조는 그대로 둡니다. 이번 태스크는 직접 쓰지 않습니다. 채팅에서 Lead에게 요구 사항을 설명하고 **에이전트로 만들기**로 바로 만들며 executor는 팀입니다. team은 executor로 지정할 수 있지만 owner는 member, reviewer는 member/agent/team인 독립적인 역할입니다.
 
 ![대화에서 "에이전트로 만들기"로 태스크 만들기](/images/docs/tutorial-create-with-agent.webp)
 

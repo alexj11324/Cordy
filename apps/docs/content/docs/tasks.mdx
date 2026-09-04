@@ -9,12 +9,12 @@ Every time an agent starts working, Patchbay creates a **task**. It records what
 
 ## Issues and tasks
 
-An issue holds the goal, discussion, assignee, and final status of a piece of work; a task records one agent run against that work.
+An issue holds the goal, discussion, owner, executor, reviewer, and final status of a piece of work; a task records one agent run against that work.
 
 | | Issue | Task |
 | --- | --- | --- |
 | What it records | A piece of work moving forward | One agent run |
-| How long it lasts | Can be discussed, amended, and reassigned repeatedly | From trigger until completion, failure, or cancellation |
+| How long it lasts | Can be discussed, amended, and have its roles changed repeatedly | From trigger until completion, failure, or cancellation |
 | Cardinality | One issue can span many runs | Every run gets its own record |
 
 So the same issue can be handed to different agents in turn, or run again after a failure. Each run produces a new task; earlier records are never overwritten.
@@ -72,7 +72,7 @@ From here you can:
 ![Run record: status timeline, agent summary, and individual tool calls](/images/docs/task-transcript.webp)
 
 <Callout type="warning">
-Changing an issue's assignee or status does not stop a run that has already started. To interrupt one, stop the corresponding task in the execution log. Active tasks are cancelled along with an issue only when the issue is deleted.
+Changing an issue's owner, executor, reviewer, or status does not stop a run that has already started. To interrupt one, stop the corresponding task in the execution log. Active tasks are cancelled along with an issue only when the issue is deleted.
 </Callout>
 
 ## Failures and automatic retries
@@ -124,7 +124,7 @@ The failure reasons shown in the execution log and usage stats fall into two gro
 
 ## Manual retry
 
-Clicking the retry button on a row in the execution log invokes **the agent that ran that task at the time**. Even if the issue has since been reassigned, the retry does not switch to the new assignee.
+Clicking the retry button on a row in the execution log invokes **the agent that ran that task at the time**. Even if the issue's executor has since changed, the retry does not switch to the current executor.
 
 A retry keeps the files the previous run already wrote to the local directory whenever possible. If the original session is still safe and the same runtime claims the retry, it also continues the previous session. Errors that poison the session, such as context overflow or invalid requests, start a new session on top of the original working directory instead. When the original directory no longer exists, a fresh working directory is used.
 
@@ -134,7 +134,7 @@ You can also rerun the current issue from the CLI:
 patchbay issue rerun <issue-id>
 ```
 
-This form does not point at a specific past task, so it uses the issue's current agent assignee and starts with a fresh session and working directory.
+This form does not point at a specific past task, so it uses the issue's current agent executor and starts with a fresh session and working directory.
 
 ## Task completion and issue completion
 

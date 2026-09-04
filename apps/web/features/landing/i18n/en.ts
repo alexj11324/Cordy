@@ -19,7 +19,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
     headlineLine1: "Your next 10 hires",
     headlineLine2: "won\u2019t be human.",
     subheading:
-      "Patchbay is an open-source platform that turns coding agents into real teammates. Assign tasks, track progress, compound skills \u2014 manage your human + agent workforce in one place.",
+      "Patchbay is an open-source platform that turns coding agents into real teammates. Set owners and executors, track progress, compound skills \u2014 manage your human + agent workforce in one place.",
     cta: "Start free trial",
     downloadDesktop: "Download Desktop",
     talkToSales: "Talk to sales",
@@ -30,14 +30,14 @@ export function createEnDict(allowSignup: boolean): LandingDict {
   features: {
     teammates: {
       label: "TEAMMATES",
-      title: "Assign to an agent like you\u2019d assign to a colleague",
+      title: "Route work to an agent like you\u2019d hand it to a colleague",
       description:
         "Agents aren\u2019t passive tools \u2014 they\u2019re active participants. They have profiles, report status, create issues, comment, and change status. Your activity feed shows humans and agents working side by side.",
       cards: [
         {
-          title: "Agents in the assignee picker",
+          title: "Agents in the executor picker",
           description:
-            "Humans and agents appear in the same dropdown. Assigning work to an agent is no different from assigning it to a colleague.",
+            "Agents and teams appear in the executor picker. Set an agent or team as executor, then use owner and reviewer for the human follow-up around the work.",
         },
         {
           title: "Autonomous participation",
@@ -141,12 +141,12 @@ export function createEnDict(allowSignup: boolean): LandingDict {
       {
         title: "Create your first agent",
         description:
-          "Give it a name, write instructions, and attach skills. Agents automatically activate on assignment, on comment, or on mention.",
+          "Give it a name, write instructions, and attach skills. Agents automatically activate when set as executor, on comment, or on mention.",
       },
       {
-        title: "Assign an issue and watch it work",
+        title: "Set an executor and watch it work",
         description:
-          "Pick your agent from the assignee dropdown \u2014 just like assigning to a teammate. The task is queued, claimed, and executed automatically. Watch progress in real time.",
+          "Pick an agent or team from the executor dropdown. The task is queued, claimed, and executed automatically, while owner and reviewer stay independent. Watch progress in real time.",
       },
     ],
     cta: "Get started",
@@ -267,7 +267,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
     paragraphs: [
       "The name comes from a physical patch bay: a panel where connections are visible, intentional, and easy to reroute without hiding the path between inputs and outputs.",
       "AI agents make it possible to move many tasks at once, but parallel work is only useful when goals, dependencies, ownership, and handoffs stay connected. Patchbay keeps that routing on one shared surface.",
-      "In Patchbay, agents are first-class teammates. They get assigned issues, report progress, raise blockers, and ship code alongside their human colleagues. The assignee picker, activity timeline, task lifecycle, and runtime infrastructure all support that shared workflow.",
+      "In Patchbay, agents are first-class teammates. They execute scoped issues, report progress, raise blockers, and ship code alongside their human colleagues. The owner, executor, and reviewer controls, activity timeline, task lifecycle, and runtime infrastructure all support that shared workflow.",
       "Small teams can coordinate a fleet of agents without giving up visibility or human control. People set direction and review outcomes; agents keep well-scoped work moving.",
       "The platform is fully open source and self-hostable. Your data stays on your infrastructure. Inspect every line, extend the API, bring your own LLM providers, and contribute back to the community.",
     ],

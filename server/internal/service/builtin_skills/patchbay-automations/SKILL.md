@@ -23,7 +23,7 @@ Do not run `trigger`, `delete`, `trigger-delete`, or `trigger-rotate-url` to tes
 
 An automation is not an agent. It is a rule that dispatches work to an agent, or to a team's leader agent.
 
-The chain is: trigger fires (`schedule`, `webhook`, or `manual`) -> `automation_run` row -> `execution_mode` decides output -> assignee readiness check -> issue/task execution -> run status sync. Webhooks have a durable admission step in front: HTTP ingress stores a queued `webhook_delivery`, synchronously creates or reuses its idempotent run, and returns `200` with `status=accepted|skipped` plus `run_id`; a database-leased worker then resumes accepted runs and owns recoverable issue/task dispatch.
+The chain is: trigger fires (`schedule`, `webhook`, or `manual`) -> `automation_run` row -> `execution_mode` decides output -> executor readiness check -> issue/task execution -> run status sync. Webhooks have a durable admission step in front: HTTP ingress stores a queued `webhook_delivery`, synchronously creates or reuses its idempotent run, and returns `200` with `status=accepted|skipped` plus `run_id`; a database-leased worker then resumes accepted runs and owns recoverable issue/task dispatch.
 
 Execution modes:
 
@@ -55,7 +55,7 @@ Use `trigger` only when the user explicitly asks for a manual run. Use `trigger-
 
 For "why didn't it run":
 
-1. `patchbay automation get <id> --output json` — status, mode, assignee, triggers.
+1. `patchbay automation get <id> --output json` — status, mode, executor, triggers.
 2. `patchbay automation runs <id> --output json` — run status and failure reason.
 3. If assigned to a team, inspect the team: `patchbay team get <team-id> --output json`; execution goes to the leader.
 4. Inspect the target agent/runtime: `patchbay agent get <agent-id> --output json` and `patchbay runtime list --output json`.

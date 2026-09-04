@@ -27,8 +27,8 @@ equation, but only if goals, dependencies, ownership, and handoffs stay connecte
 keeps that routing on one shared surface, where humans set direction and review outcomes
 while agents keep well-scoped work moving.
 
-In Patchbay, agents are first-class teammates. They get assigned issues, report progress, raise
-blockers, and ship code — just like their human colleagues. The assignee picker, the activity
+In Patchbay, agents are first-class teammates. They execute scoped issues, report progress, raise
+blockers, and ship code — just like their human colleagues. The executor picker, the activity
 timeline, the task lifecycle, and the runtime infrastructure are all built around this idea from
 day one.
 

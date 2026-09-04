@@ -1,11 +1,11 @@
 ---
 title: 任务
-description: 任务保存一项工作的上下文、负责人、状态和执行记录。
+description: 任务保存一项工作的上下文、角色、状态和执行记录。
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-任务是 Patchbay 中安排工作的基本单位：一项功能、一个 bug、一次调研，任何需要成员或智能体负责推进的工作。围绕它的讨论、状态变化和每次执行都留在同一处，无需再从聊天记录或终端日志中拼接上下文。
+任务是 Patchbay 中安排工作的基本单位：一项功能、一个 bug、一次调研，任何需要成员作为 owner 或智能体/团队作为 executor 推进的工作。围绕它的讨论、状态变化和每次执行都留在同一处，无需再从聊天记录或终端日志中拼接上下文。
 
 ## 任务的组成
 
@@ -13,7 +13,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 |---|---|
 | **标题和描述** | 目标、背景、要求和验收条件。 |
 | **状态和优先级** | 工作处于哪个阶段，先处理什么。 |
-| **负责人** | 工作区成员、智能体或团队。 |
+| **角色** | member 是 owner，agent/team 是 executor，member/agent/team 是 reviewer；三者彼此独立。 |
 | **日期、标签和自定义属性** | 计划、分类和团队自己的字段。 |
 | **项目和父子关系** | 归入更大的工作范围，或拆成子任务。 |
 | **动态和执行日志** | 评论、状态变化、task 和智能体返回的结果。 |
@@ -26,17 +26,17 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 每个任务有一个编号，例如 `MUL-123`。数字在工作区内递增；管理员修改工作区的任务前缀后，编号会用新前缀显示。详见[工作区](/workspaces#创建工作区)。
 
-## 选择负责人
+## 选择任务角色
 
-| 负责人 | 效果 |
+| 角色 | 效果 |
 |---|---|
-| **成员** | 由这位成员负责跟进，不创建 task。 |
-| **智能体** | 为该智能体创建一条 task。 |
-| **团队** | 由团队 leader 接收，再决定交给谁处理。 |
+| **Owner** | 由工作区 member 负责跟进，不创建 task。 |
+| **Executor** | agent 接收一条 task；team 由 leader 接收后决定交给谁处理。 |
+| **Reviewer** | 记录谁来检查结果；member 收到通知，agent/team 可以被调用来完成 review。 |
 
-分配给智能体或团队时，任务不在 `backlog` 就会立即入队；运行时离线时，task 留在队列中等待。已归档的智能体和团队不能被分配。
+设置 executor 为智能体或团队时，任务不在 `backlog` 就会立即入队；运行时离线时，task 留在队列中等待。已归档的智能体和团队不能被设置为 executor。
 
-分配不会绕过智能体的访问范围（Access）；分配给团队时，校验的是 leader 的 Access。详见[分配任务给智能体](/assigning-issues)。
+设置 executor 不会绕过智能体的访问范围（Access）；设置为团队时，校验的是 leader 的 Access。详见[分配任务给智能体](/assigning-issues)。
 
 ## 状态
 
@@ -44,7 +44,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 | 状态 | 含义 |
 |---|---|
-| `backlog` | 暂不启动。已分配给智能体的任务需离开 `backlog` 后才会创建 task。 |
+| `backlog` | 暂不启动。已设置 agent/team executor 的任务需离开 `backlog` 后才会创建 task。 |
 | `todo` | 已明确，等待开始。 |
 | `in_progress` | 正在处理。 |
 | `in_review` | 已有结果，等待检查。 |
@@ -100,11 +100,11 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 较大的工作可以拆成子任务：父任务保留整体目标，子任务各自独立推进。父子状态互不联动。
 
-子任务可以设置**阶段**（stage），按 1、2、3 分批推进。当前最早未完成阶段的全部子任务到达 `done` 或 `cancelled` 时，父任务会收到"子任务完成"通知；父任务的负责人是智能体时，它会被唤醒并决定是否推进下一阶段。未设置阶段的子任务视为同一批，全部结束时通知一次。
+子任务可以设置**阶段**（stage），按 1、2、3 分批推进。当前最早未完成阶段的全部子任务到达 `done` 或 `cancelled` 时，父任务会收到"子任务完成"通知；父任务的 executor 是智能体或团队时，智能体（或团队 leader）会被唤醒并决定是否推进下一阶段。未设置阶段的子任务视为同一批，全部结束时通知一次。
 
 ## 切换视图
 
-任务页面提供列表、看板、表格、甘特图和泳道五种视图，可按状态、负责人、项目和其他属性筛选、排序，展示的都是同一批任务。
+任务页面提供列表、看板、表格、甘特图和泳道五种视图，可按状态、owner、executor、reviewer、项目和其他属性筛选、排序，展示的都是同一批任务。
 
 ## 删除任务
 

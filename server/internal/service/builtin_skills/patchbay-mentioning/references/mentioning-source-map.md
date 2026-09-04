@@ -66,11 +66,11 @@ a pointer.
 
 | Fact | Source |
 | --- | --- |
-| A direct reply to an agent resolves through `routeReplyToParentAuthor` before any assignee fallback | `server/internal/handler/comment.go` (search `parentComment.AuthorType == "agent"` inside `computeCommentAgentTriggers`) |
+| A direct reply to an agent resolves through `routeReplyToParentAuthor` before any executor fallback | `server/internal/handler/comment.go` (search `parentComment.AuthorType == "agent"` inside `computeCommentAgentTriggers`) |
 | A member-authored thread with an explicit or task-derived agent owner resolves through `routeThreadRootOwners` and returns before the final fallback | `server/internal/handler/comment.go` (search `routeThreadRootOwners` inside `computeCommentAgentTriggers`) |
-| If the direct parent is a member and no thread owner handled the reply, the reply returns no trigger instead of invoking `routeAssigneeFallback` | `server/internal/handler/comment.go` (search `A plain member-to-member reply`) |
-| Top-level member comments retain the final agent/team assignee fallback because they have no parent | `server/internal/handler/comment.go` (the final `routeAssigneeFallback` call in `computeCommentAgentTriggers`) |
-| Regression coverage checks Agent and Team assignees through both trigger preview and actual comment creation/enqueue | `server/internal/handler/comment_trigger_preview_test.go` (search `PlainReplyToUnownedMemberRootSkipsAssigneeFallback`) |
+| If the direct parent is a member and no thread owner handled the reply, the reply returns no trigger instead of invoking the executor fallback | `server/internal/handler/comment.go` (the plain member-to-member branch in `computeCommentAgentTriggers`) |
+| Top-level member comments retain the final agent/team executor fallback because they have no parent | `server/internal/handler/comment.go` (the final fallback branch in `computeCommentAgentTriggers`) |
+| Regression coverage checks Agent and Team executors through both trigger preview and actual comment creation/enqueue | `server/internal/handler/comment_trigger_preview_test.go` (the plain-reply fallback regression) |
 
 ## Edit-preview pending-task dedup
 
@@ -79,7 +79,7 @@ a pointer.
 | Default dedup query skips any queued or dispatched task for the issue and agent | `server/pkg/db/queries/agent.sql:544-548` |
 | Edit-preview dedup query excludes only tasks whose `trigger_comment_id` equals the edited comment | `server/pkg/db/queries/agent.sql:550-558` |
 | `hasPendingTaskForIssueAndAgent` selects the comment-scoped exclusion only when `ExcludeTriggerCommentID` is valid | `server/internal/handler/comment.go:1232-1244` |
-| Agent-assignee on-comment dedup uses the shared helper | `server/internal/handler/issue.go:2576-2594` |
+| Agent-executor on-comment dedup uses the shared helper | `server/internal/handler/issue.go:2576-2594` |
 | Assigned team leader on-comment dedup uses the shared helper | `server/internal/handler/comment.go:1197-1229` |
 | Mentioned team leader dedup uses the shared helper | `server/internal/handler/comment.go:1397-1435` |
 | Direct agent mention dedup uses the shared helper | `server/internal/handler/comment.go:1440-1464` |
@@ -111,12 +111,12 @@ that never parsed at all (a name where a UUID belongs) is a true silent no-op.
 | authority lineage is persisted per-action: only an agent editing its OWN comment re-stamps `source_task_id` to the current editing task (like create, cross-issue included); any other editor — including a workspace owner/admin editing an agent's comment (manage rights, not invoke rights) — CLEARS it, so an admin edit makes every authority/originator read fail closed, including the deferred completion-reconcile — preview, save, and reconcile agree (MUL-4857) | fails closed | `server/internal/handler/comment.go` (search `commentSourceTaskID` and the `isAuthor` branch in `UpdateComment`) |
 | an agent's comment records the run that WROTE it on `source_task_id`, whichever issue it lands on, so the human originator chain survives an agent coordinating on another issue; the same-issue requirement lives only in the consumers that need it (`automationDelegationAuthority`, the reply-parent guard), never in the stamp (MUL-6490) | chain preserved, gate unchanged | `server/internal/handler/comment.go` (search `sourceTaskID captures the agent's currently-executing task`) |
 
-## @all broadcast and assignee-trigger suppression
+## @all broadcast and executor-trigger suppression
 
 | Fact | Source |
 | --- | --- |
 | `HasMentionAll` reports whether any parsed mention is `all` | `server/internal/util/mention.go` (search `func HasMentionAll`) |
-| `@all` with no explicit `@agent`/`@team` suppresses every implicit route (assignee / thread parent / conversation) → no run | `server/internal/handler/comment.go` (search `if util.HasMentionAll(mentions)` inside `computeCommentAgentTriggers`) |
+| `@all` with no explicit `@agent`/`@team` suppresses every implicit route (executor / thread parent / conversation) → no run | `server/internal/handler/comment.go` (search `if util.HasMentionAll(mentions)` inside `computeCommentAgentTriggers`) |
 | `@all` does NOT suppress an EXPLICIT `@agent`/`@team` in the same comment — the explicit branch is evaluated first (MUL-5411) | `server/internal/handler/comment.go` (the `hasAgentOrTeamMention` branch immediately above the `HasMentionAll` short-circuit) |
 | `@all` never enqueues a specific agent: it is neither `team` nor `agent`, so it is skipped in the mention trigger computation | `server/internal/handler/comment.go` (search `if m.Type != "agent"` in `resolveMentionedAgentCommentTriggers`) |
 | Tests: `@all` alone → 0 agents; `@all` + `@agent` → the mentioned agent only; `@all` + `@team` → the leader; `@all` + `@member` → 0 agents | `server/internal/handler/comment_trigger_preview_test.go` (search `AllPlusExplicitAgentMentionStillTriggers`) |

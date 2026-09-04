@@ -147,7 +147,7 @@ Open a pull request when it is ready.
 
 ![新建任务的智能体模式，创建者已选 Engineer](/images/docs/tutorial-new-issue-agent-mode.webp)
 
-提交后，Patchbay 创建任务（编号 `MUL-1`，标题自动生成），把 Engineer 设为负责人；Engineer 随即开始执行，状态转为「进行中」。任务右侧是它的全部动态：状态、负责人、关联的 pull request 和执行记录。
+提交后，Patchbay 创建任务（编号 `MUL-1`，标题自动生成），把 Engineer 设为 executor；Engineer 随即开始执行，状态转为「进行中」。任务右侧是它的全部动态：状态、owner、executor、reviewer、关联的 pull request 和执行记录。
 
 执行需要几分钟，进展有两个入口：标题旁的工作状态徽章，和右侧的**执行日志**——点开当前这次运行：
 
@@ -209,7 +209,7 @@ Engineer 交付了第一版，但有些问题它自己意识不到。审查交�
 
 ![Reviewer 的配置](/images/docs/tutorial-reviewer-detail.webp)
 
-审查不用新开任务，也不用换负责人。回到 MUL-1 的评论框，输入 `@Reviewer` 提及它，写上要做的事再发送——评论框下方会提示：发送后 Reviewer 就开始执行：
+审查不用新开任务，也不用换 executor。回到 MUL-1 的评论框，输入 `@Reviewer` 提及它，写上要做的事再发送——评论框下方会提示：发送后 Reviewer 就开始执行：
 
 ![在评论中 @Reviewer 发起审查](/images/docs/tutorial-comment-mention-reviewer.webp)
 
@@ -283,7 +283,7 @@ Skill 是给智能体的知识包：一个 `SKILL.md` 加上可选的支持文�
 
 ## 第二条任务：交给团队
 
-给团队一件完整的工作：把网站改成通用模板——真实姓名换成占位的摄影师名字，真实邮箱换成 `hello@example.com`，布局和内容结构不动。这次任务不用自己写：在聊天里把需求说给 Lead，用**通过智能体创建**直接创建，负责人是团队——团队和智能体、成员一样，可以出现在任何负责人位置：
+给团队一件完整的工作：把网站改成通用模板——真实姓名换成占位的摄影师名字，真实邮箱换成 `hello@example.com`，布局和内容结构不动。这次任务不用自己写：在聊天里把需求说给 Lead，用**通过智能体创建**直接创建，executor 是团队——团队只能出现在 executor 角色中；owner 必须是 member，reviewer 可以是 member、agent 或 team：
 
 ![在聊天中用「通过智能体创建」新建任务](/images/docs/tutorial-create-with-agent.webp)
 

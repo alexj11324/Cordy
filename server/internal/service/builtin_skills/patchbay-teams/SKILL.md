@@ -80,9 +80,9 @@ Use it only when acting as the team leader after evaluating a trigger.
 
 Which issue it accepts: **the issue your current turn is running on**. The
 target issue does NOT need to be assigned to your team — a `@team` mention on
-an issue owned by an individual agent, or a leader task bound to a child issue,
+an issue whose executor is an individual agent, or a leader task bound to a child issue,
 all record fine. What the server checks is your task row (`is_leader_task` plus
-a stamped `team_id`), not the issue's assignee. A leader woken by a stage
+a stamped `team_id`), not the issue's executor. A leader woken by a stage
 barrier runs on the PARENT issue, so record against the parent, not the child
 you just read; passing an unrelated issue id is rejected and the error names the
 issue you should have used.
@@ -171,17 +171,17 @@ Issues can be assigned to teams with:
 
 ```text
 executor_type = "team"
-assignee_id = <team-id>
+executor_id = <team-id>
 ```
 
 Current behavior:
 
 - assignment routes work to `team.leader_id`;
 - it does not enqueue every team member;
-- assignment while status is `backlog` does not immediately start work;
-- moving a team-assigned issue out of `backlog` can trigger the leader;
-- changing assignee cancels existing tasks for the issue before enqueueing the
-  new assignee path;
+- setting a team executor while status is `backlog` does not immediately start work;
+- moving an issue with a team executor out of `backlog` can trigger the leader;
+- changing executor cancels existing tasks for the issue before enqueueing the
+  new executor path;
 - parent issue status is agent-managed (same model as direct agent assignment):
   the leader's first assignment turn should move the parent to `in_progress`
   and keep it there while members work; the leader moves the parent to
@@ -189,7 +189,7 @@ Current behavior:
   Completing a leader `task` (including the first dispatch) does not itself
   change issue status;
 - that status authority is granted only when the issue's `executor_type` /
-  `assignee_id` point at THIS team. The leader briefing is injected on every
+  `executor_id` point at THIS team. The leader briefing is injected on every
   leader path, including an `@team` mention on an issue owned by a plain agent
   — on those paths the protocol instead carries an explicit "do not change this
   issue's status".
@@ -227,7 +227,7 @@ Automations can be assigned to teams. For `executor_type = "team"`:
 - run attribution records team id where applicable.
 
 For `create_issue` automations, the created issue keeps `executor_type = "team"`
-and `assignee_id = <team-id>`, while the actual executing agent is the resolved
+and `executor_id = <team-id>`, while the actual executing agent is the resolved
 leader. For `run_only` automations, no issue is created; the task is created
 directly for the resolved leader agent.
 

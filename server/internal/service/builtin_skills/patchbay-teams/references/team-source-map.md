@@ -24,7 +24,7 @@ Key facts:
   metadata `archived_at`/`archived_by` (085), and `instructions` (088).
 - `team_member` stores `member_type`, `member_id`, and `role`.
 - `member_type` is constrained to `agent` or `member`.
-- issue `assignee_type` supports `team`.
+- issue `executor_type` supports `team`, with the team UUID in `executor_id`.
 
 ## CLI
 
@@ -93,8 +93,8 @@ Contracts:
   (team_briefing.go:104-117);
 - `buildTeamLeaderBriefing` takes an `ownsIssueStatus` argument selecting
   responsibility 6 via `teamOperatingProtocolFor`: the status grant
-  (`teamParentStatusOwned`) only when `issue.assignee_type == "team"` and
-  `issue.assignee_id == team.id`, otherwise an explicit prohibition
+  (`teamParentStatusOwned`) only when `issue.executor_type == "team"` and
+  `issue.executor_id == team.id`, otherwise an explicit prohibition
   (`teamParentStatusNotOwned`). Quick-create passes `false` — no issue exists
   yet. Injection is broader than authority on purpose: it is keyed off
   `is_leader_task`, which also fires for `@team` mentions on issues owned by
@@ -135,10 +135,10 @@ server/internal/handler/comment.go                # no_action comment rejection 
 
 Contracts:
 
-- authority is the TASK row from `X-Task-ID`, not the issue's assignee:
+- authority is the TASK row from `X-Task-ID`, not the issue's executor:
   `task.issue_id == issue.id`, `task.is_leader_task`, `task.team_id` valid.
   The team is loaded from `task.team_id`; the target issue may be assigned to
-  anyone (MUL-6622 / GH #7487). The pre-fix `issue.assignee_type == "team"`
+  anyone (MUL-6622 / GH #7487). The pre-fix issue-executor gate
   gate diverged from the claim-side `is_leader_task` gate and made the call
   unsatisfiable on `@team`-on-agent-issue and leader-task-on-child paths;
 - the task is loaded with `GetAgentTaskInWorkspace`, not `GetAgentTask`: the
@@ -168,17 +168,17 @@ Contracts:
 Source:
 
 ```text
-server/internal/handler/issue.go                  # assignee validation ~2614-2632
+server/internal/handler/issue.go                  # executor/role validation ~2614-2632
 server/internal/handler/team.go                   # shouldEnqueueTeamLeaderOnAssign ~990, enqueueTeamLeaderTask ~1027
 server/internal/service/task.go
 ```
 
 Contracts:
 
-- `assignee_type="team"` routes to `team.leader_id` (team.go:1028-1050);
-- backlog assignment does not immediately enqueue (team.go:991-993);
+- `executor_type="team"` routes to `team.leader_id` (team.go:1028-1050);
+- setting an executor while status is `backlog` does not immediately enqueue (team.go:991-993);
 - moving out of backlog can enqueue leader (team.go:990-994 → isTeamLeaderReady);
-- assignee change cancels existing issue tasks first;
+- executor change cancels existing issue tasks first;
 - private leader access is checked at assign-time (issue.go:2629-2632) and at
   enqueue-time via `canEnqueueTeamLeader` (team.go:1037);
 - archived team / archived leader rejected at assign-time (issue.go:2622-2627);
@@ -190,7 +190,7 @@ Contracts:
   that confirms the overall goal is met. Team Operating Protocol
   (`team_briefing.go`) still states the ongoing `in_progress` → later
   `in_review` responsibility for owning leaders. `StartTask` / `CompleteTask`
-  do not write issue status. There is no assignee gate anymore: a guest leader
+  do not write issue status. There is no executor gate anymore: a guest leader
   writes nothing not because it lacks a grant but because a turn that did not
   move the issue's state has nothing to record.
 - status names are category rules: custom statuses inherit their category's
@@ -231,7 +231,7 @@ Source:
 
 ```text
 server/internal/service/automation.go              # resolveAutomationLeader ~617-655, dispatch ~88-111
-server/internal/handler/automation.go              # save-time validateAutomationAssignee ~845-893
+server/internal/handler/automation.go              # save-time executor validation ~845-893
 ```
 
 Contracts:
@@ -252,7 +252,7 @@ Contracts:
 Source:
 
 ```text
-server/internal/handler/issue_child_done.go       # dispatchParentAssigneeTrigger ~246, triggerChildDoneTeam ~304
+server/internal/handler/issue_child_done.go       # parent executor trigger ~246, triggerChildDoneTeam ~304
 ```
 
 Contracts:
@@ -261,7 +261,7 @@ Contracts:
   team, the parent team leader is triggered (triggerChildDoneTeam in
   issue_child_done.go);
 - routing is leader-only — one `EnqueueTaskForTeamLeader` on the leader, no
-  member fan-out (triggerChildDoneTeam / dispatchParentAssigneeTrigger);
+  member fan-out (triggerChildDoneTeam / parent executor trigger);
 - no self-trigger guard: a same-team or shared-leader child still wakes the
   parent team leader — the wake is a serial handoff onto the PARENT and is the
   only carrier of the stage-barrier "advance / wrap up" instruction (MUL-3969,

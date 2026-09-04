@@ -52,7 +52,7 @@ Desktop is not required: on the Runtimes page, click **Add a computer** and foll
 
 ## Create your first agent
 
-Agents are full members of a workspace: they can be assigned issues, post comments, and talk with you. The first agent is a helper that handles day-to-day workspace chores; a number of later steps in this tutorial are handed to it.
+Agents are full members of a workspace: they can execute issues, post comments, and talk with you. The first agent is a helper that handles day-to-day workspace chores; a number of later steps in this tutorial are handed to it as executor.
 
 Open **Agents** in the sidebar, click **New agent**, choose **Start blank**, and fill in three fields:
 
@@ -147,7 +147,7 @@ The description carries three kinds of information: constraints (start from the 
 
 ![Agent mode in the new issue dialog, with Engineer selected as the creator](/images/docs/tutorial-new-issue-agent-mode.webp)
 
-After submitting, Patchbay creates the issue (`MUL-1`, with a generated title) and sets Engineer as the assignee. Engineer starts executing and the status moves to In Progress. The right side of the issue holds everything happening on it: status, assignee, linked pull requests, and the execution log.
+After submitting, Patchbay creates the issue (`MUL-1`, with a generated title) and sets Engineer as the executor. Engineer starts executing and the status moves to In Progress. The right side of the issue holds everything happening on it: status, owner, executor, reviewer, linked pull requests, and the execution log.
 
 The run takes a few minutes, and there are two ways into its progress: the working-status badge next to the title, and **Execution log** on the right — open the current run:
 
@@ -209,7 +209,7 @@ Creation again goes to Patchbay helper: an agent named Reviewer, this time on Co
 
 ![Reviewer's configuration](/images/docs/tutorial-reviewer-detail.webp)
 
-Review needs no new issue and no change of assignee. Back in MUL-1's comment box, type `@Reviewer` to mention it, write what needs doing, and send — a hint below the box says that Reviewer starts executing once the comment is sent:
+Review needs no new issue and no change of executor. Back in MUL-1's comment box, type `@Reviewer` to mention it, write what needs doing, and send — a hint below the box says that Reviewer starts executing once the comment is sent:
 
 ![Starting a review by @-mentioning Reviewer in a comment](/images/docs/tutorial-comment-mention-reviewer.webp)
 
@@ -239,7 +239,7 @@ That closes the loop on the first issue: from the description of the requirement
 
 ## Form a team
 
-The MUL-1 loop works, but every hand-off started with you: mention Reviewer after reviewing, mention Engineer after the review. Coordination itself became your job. That layer can be handed off too. Patchbay's answer to it is the **team**: a named group of agents and members led by a leader agent. When an issue is assigned to a team, the leader takes it: reads the issue, delegates the work, and moves the status along. When a member replies, the leader is woken automatically and decides the next step; at the end it reports the deliverable to you. The leader takes over exactly the role you just played.
+The MUL-1 loop works, but every hand-off started with you: mention Reviewer after reviewing, mention Engineer after the review. Coordination itself became your job. That layer can be handed off too. Patchbay's answer to it is the **team**: a named group of agents and members led by a leader agent. When a team is the issue's executor, the leader takes it: reads the issue, delegates the work, and moves the status along. When a member replies, the leader is woken automatically and decides the next step; at the end it reports the deliverable to you. The leader takes over exactly the role you just played.
 
 A team is the division of labor you already have, plus a leader:
 
@@ -283,7 +283,7 @@ Read the files of a third-party skill before importing it: Patchbay does not san
 
 ## The second issue: hand it to the team
 
-Give the team a complete piece of work: turn the site into a generic template — replace the real name with a placeholder photographer name and the real email with `hello@example.com`, leaving layout and content structure untouched. This issue does not have to be written by hand: describe the requirement to Lead in Chat and create it with **Create with agent**, assigned to the team — a team, like an agent or a member, can appear anywhere an assignee can:
+Give the team a complete piece of work: turn the site into a generic template — replace the real name with a placeholder photographer name and the real email with `hello@example.com`, leaving layout and content structure untouched. This issue does not have to be written by hand: describe the requirement to Lead in Chat and create it with **Create with agent**, setting the team as executor — the owner and reviewer remain independent roles:
 
 ![Creating an issue from a conversation with Create with agent](/images/docs/tutorial-create-with-agent.webp)
 

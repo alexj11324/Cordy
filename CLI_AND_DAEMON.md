@@ -496,15 +496,15 @@ patchbay workspace member list <workspace-id>
 ```bash
 patchbay issue list
 patchbay issue list --status in_progress
-patchbay issue list --priority urgent --assignee "Agent Name"
-patchbay issue list --assignee-id 5fb87ac7-23b5-4a7a-81fa-ed295a54545d
+patchbay issue list --priority urgent --executor "Agent Name"
+patchbay issue list --executor-id 5fb87ac7-23b5-4a7a-81fa-ed295a54545d
 patchbay issue list --full-id
 patchbay issue list --limit 20 --output json
 patchbay issue list --status todo --sort position       # board order (the default)
 patchbay issue list --sort created_at --direction desc  # newest first
 ```
 
-Table output shows a routable issue `KEY` such as `MUL-123`; copy that key into follow-up commands like `issue get`, `issue comment list`, `issue status`, or `--parent`. Add `--full-id` when you need canonical UUIDs. Available filters: `--status`, `--priority`, `--assignee` / `--assignee-id`, `--project`, `--metadata`, `--limit`. Use `--assignee-id <uuid>` for unambiguous filtering when names overlap.
+Table output shows a routable issue `KEY` such as `MUL-123`; copy that key into follow-up commands like `issue get`, `issue comment list`, `issue status`, or `--parent`. Add `--full-id` when you need canonical UUIDs. Available filters: `--status`, `--priority`, `--owner` / `--owner-id`, `--executor` / `--executor-id`, `--project`, `--metadata`, `--limit`. An owner is a workspace member; an executor is an agent or team. Use the role-specific ID flags for unambiguous filtering when names overlap.
 
 Results come back in board order (`position`, ascending) by default. Pass `--sort` to change the column (`position`, `title`, `created_at`, `start_date`, `due_date`, `priority`) and `--direction asc|desc` to flip the order. `position` is always ascending (it is the manual drag order), so `--direction` is rejected when `--sort` is `position` or omitted — use it only with `title`, `created_at`, `start_date`, `due_date`, or `priority`.
 
@@ -525,11 +525,11 @@ patchbay issue get <id> --output json
 ### Create Issue
 
 ```bash
-patchbay issue create --title "Fix login bug" --description "..." --priority high --assignee "Lambda"
-patchbay issue create --title "Fix login bug" --assignee-id 5fb87ac7-23b5-4a7a-81fa-ed295a54545d
+patchbay issue create --title "Fix login bug" --description "..." --priority high --executor "Lambda"
+patchbay issue create --title "Fix login bug" --executor-id 5fb87ac7-23b5-4a7a-81fa-ed295a54545d
 ```
 
-Flags: `--title` (required), `--description`, `--status`, `--priority`, `--assignee` / `--assignee-id`, `--parent`, `--project`, `--due-date`. Pass `--assignee-id <uuid>` (mutually exclusive with `--assignee`) when scripting against the IDs returned by `patchbay workspace member list --output json` / `patchbay agent list --output json`.
+Flags: `--title` (required), `--description`, `--status`, `--priority`, `--owner` / `--owner-id`, `--executor` / `--executor-id`, `--reviewer` / `--reviewer-id`, `--parent`, `--project`, `--due-date`. The owner must be a workspace member; the executor must be an agent or team; the reviewer may be a member, agent, or team. Use role-specific ID flags when scripting against the IDs returned by `patchbay workspace member list --output json` / `patchbay agent list --output json`.
 
 ### Update Issue
 

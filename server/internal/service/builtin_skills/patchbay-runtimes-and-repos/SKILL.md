@@ -68,7 +68,7 @@ The daemon still preserves the real `HOME` and XDG variables for provider tools 
 Check in this order:
 
 1. Was a task supposed to be created? Inspect issue/comment/automation context.
-2. Is the assignee an agent or team? A team routes to its leader.
+2. Is the issue executor an agent or team? A team routes to its leader.
 3. Is the agent archived or bound to a runtime the actor cannot use?
 4. Is the runtime online? `patchbay runtime list --output json`.
 5. Did the daemon heartbeat recently? Runtime `last_seen_at` is the visible clue.
