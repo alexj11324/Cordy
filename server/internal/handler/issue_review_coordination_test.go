@@ -7,7 +7,10 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/patchbay-ai/patchbay/server/internal/events"
 	"github.com/patchbay-ai/patchbay/server/internal/testutil"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
 )
 
 func TestUpdateIssue_ReviewReturnRetiresReviewerTaskAndRecordsExecutorHandoff(t *testing.T) {
@@ -127,6 +130,111 @@ func TestUpdateIssue_ReviewerReassignmentRetiresOldTaskAndRecordsExplicitReviewe
 		t.Fatalf("reviewer handoff = role %q owner %q/%q status %q", role, ownerType, ownerID, assignmentStatus)
 	}
 	assertNoActiveIssueTasks(t, issueID)
+}
+
+func TestAgentCoordinationRunOnceSelectsReviewerAndPublishesHandoff(t *testing.T) {
+	requireIssueCoordinationDatabase(t)
+
+	executorID := dbfx.Agent(t, "coordination implementation", testRuntimeID)
+	reviewerID := dbfx.Agent(t, "coordination reviewer", testRuntimeID)
+	issueID := dbfx.Issue(t, "coordination reviewer selection", testutil.Cols{
+		"status":        "in_progress",
+		"executor_type": "agent",
+		"executor_id":   executorID,
+	})
+	dbfx.Cleanup(t, `DELETE FROM agent_task_queue WHERE issue_id = $1`, issueID)
+	dbfx.Exec(t, `
+		INSERT INTO workspace_issue_category_policy (workspace_id, category, default_reviewer_agent_id)
+		VALUES ($1, 'in_review', $2)
+		ON CONFLICT (workspace_id, category) DO UPDATE
+		SET default_reviewer_agent_id = EXCLUDED.default_reviewer_agent_id, updated_at = now()
+	`, testWorkspaceID, reviewerID)
+	dbfx.Cleanup(t, `DELETE FROM workspace_issue_category_policy WHERE workspace_id = $1 AND category = 'in_review'`, testWorkspaceID)
+
+	// Seed the completed implementation task and its original executor
+	// assignment. RecordTaskCompleted is the producer boundary under test; the
+	// coordinator worker must then create the reviewer assignment and task.
+	sourceTaskID := dbfx.Task(t, executorID, testutil.Cols{
+		"runtime_id":   testRuntimeID,
+		"issue_id":     issueID,
+		"status":       "completed",
+		"completed_at": testutil.Raw("now()"),
+		"context":      testutil.Raw("'{}'::jsonb"),
+	})
+	sourceEventID := dbfx.Insert(t, "agent_coordination_outbox", testutil.Cols{
+		"event_key":    "coordination-source-" + uuid.NewString(),
+		"workspace_id": testWorkspaceID,
+		"issue_id":     issueID,
+		"source_task_id": nil,
+		"event_type":   "task_completed",
+		"status":       "completed",
+		"payload":      testutil.Raw("'{}'::jsonb"),
+	})
+	assignmentID := dbfx.Insert(t, "agent_coordination_assignment", testutil.Cols{
+		"event_id":           sourceEventID,
+		"workspace_id":       testWorkspaceID,
+		"issue_id":           issueID,
+		"source_task_id":     sourceTaskID,
+		"role":               "executor",
+		"status":             "dispatched",
+		"owner_type":         "agent",
+		"owner_id":           executorID,
+		"dispatched_task_id": sourceTaskID,
+	})
+	dbfx.Exec(t, `
+		UPDATE agent_task_queue
+		SET context = jsonb_build_object(
+			'coordination_assignment_id', $1,
+			'coordination_assignment_role', 'executor',
+			'coordination_owner_type', 'agent',
+			'coordination_owner_id', $2
+		)
+		WHERE id = $3
+	`, assignmentID, executorID, sourceTaskID)
+	cleanupIssueCoordinationRows(t, issueID)
+
+	var handoff events.Event
+	testHandler.Bus.Subscribe(protocol.EventIssueUpdated, func(event events.Event) {
+		payload, ok := event.Payload.(map[string]any)
+		if !ok || payload["coordination_event_id"] == nil {
+			return
+		}
+		issue, ok := payload["issue"].(map[string]any)
+		if ok && issue["id"] == issueID && payload["review_handoff"] == true {
+			handoff = event
+		}
+	})
+
+	task, err := testHandler.Queries.GetAgentTask(context.Background(), parseUUID(sourceTaskID))
+	if err != nil {
+		t.Fatalf("load completed implementation task: %v", err)
+	}
+	if err := testHandler.AgentCoordination.RecordTaskCompleted(context.Background(), task); err != nil {
+		t.Fatalf("record completed implementation task: %v", err)
+	}
+	testHandler.AgentCoordination.RunOnce(context.Background())
+
+	var issueStatus, gotReviewer string
+	dbfx.QueryRow(t, `SELECT status, reviewer_id::text FROM issue WHERE id = $1`, issueID).Scan(&issueStatus, &gotReviewer)
+	if issueStatus != "in_review" || gotReviewer != reviewerID {
+		t.Fatalf("coordinator issue state = %q/%q; want in_review/%q", issueStatus, gotReviewer, reviewerID)
+	}
+	var reviewerTasks int
+	dbfx.QueryRow(t, `
+		SELECT count(*) FROM agent_task_queue
+		WHERE issue_id = $1 AND agent_id = $2
+		  AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity', 'deferred')
+	`, issueID, reviewerID).Scan(&reviewerTasks)
+	if reviewerTasks != 1 {
+		t.Fatalf("reviewer active tasks = %d, want 1", reviewerTasks)
+	}
+	if handoff.Type != protocol.EventIssueUpdated {
+		t.Fatalf("handoff event = %+v, want issue:updated", handoff)
+	}
+	handoffPayload := handoff.Payload.(map[string]any)
+	if handoffPayload["coordination_publication"] != "review_handoff" || handoffPayload["coordination_event_id"] == "" || handoffPayload["coordination_publication_key"] == "" {
+		t.Fatalf("handoff publication metadata = %#v", handoffPayload)
+	}
 }
 
 func seedDispatchedReviewerCoordinationTask(t *testing.T, issueID, reviewerID string) string {
