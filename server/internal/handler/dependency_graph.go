@@ -1421,7 +1421,7 @@ func (h *Handler) applyDependencyGraphTransaction(ctx context.Context, input *de
 		if err != nil {
 			return dependencyGraphApplyResult{}, err
 		}
-		position, err := issueposition.NextTopPosition(ctx, tx, actor.WorkspaceID, issuestatus.Todo)
+		position, err := issueposition.NextTopPosition(ctx, tx, actor.WorkspaceID, status)
 		if err != nil {
 			return dependencyGraphApplyResult{}, dependencyGraphDatabase("allocate dependency graph issue position", err)
 		}
@@ -1623,9 +1623,6 @@ func (h *Handler) enqueueDependencyGraphRoots(ctx context.Context, result depend
 		}
 		switch root.assignment.executorType.String {
 		case "agent":
-			if !h.shouldEnqueueAgentTask(ctx, root.issue) {
-				continue
-			}
 			if _, err := h.TaskService.EnqueueTaskForIssue(ctx, root.issue); err != nil {
 				slog.WarnContext(ctx, "dependency graph root task enqueue failed", "issue_id", uuidToString(root.issue.ID), "error", err)
 			}
