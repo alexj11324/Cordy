@@ -29,7 +29,8 @@ on:
       - "turbo.json"
       - ".github/workflows/mobile-verify.yml"
   pull_request:
-    branches: [main]
+    # Keep the migration stack's upper PRs covered just like the main CI.
+    branches: [main, feat/go-mainline-patchbay, fix/go-front-align-727]
     paths:
       - "apps/mobile/**"
       - "packages/core/**"
