@@ -58,9 +58,6 @@
     "workspace_group": "워크스페이스",
     "configure_group": "설정",
     "unread_overflow": "99+",
-    "discord_card": {
-      "title": "Discord 참여하기",
-      "dismiss": "닫기"
-    }
+    "guest_account": "Guest"
   }
 }

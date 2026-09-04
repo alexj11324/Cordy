@@ -34,7 +34,6 @@ import {
   ContextMenuTrigger,
 } from "@patchbay/ui/components/ui/context-menu";
 import { useScrollFade } from "@patchbay/ui/hooks/use-scroll-fade";
-import { SIDEBAR_WRAPPER_FILL_CLASS } from "@patchbay/ui/components/ui/sidebar";
 import { cn } from "@patchbay/ui/lib/utils";
 import { useTabStore, useActiveGroup, type Tab } from "@/stores/tab-store";
 import { paths } from "@patchbay/core/paths";
@@ -46,55 +45,6 @@ import { parseIssueWindowPath } from "../../../shared/issue-window";
 
 const TAB_SCROLL_FADE_SIZE = 24;
 const TAB_ENTRY_EASE = [0.22, 1, 0.36, 1] as const;
-
-// Chrome-style merged tab: the active tab shares the content surface's fill and
-// flares into it through concave bottom corners. Each flare is a small square
-// whose radial gradient carves a quarter-circle notch (transparent, so the
-// strip behind the flare shows through), strokes a 1px arc that continues the
-// tab's side border into the content card's top ring, and fills the rest with
-// the surface colour. The 0.4px spread on either side of the --surface-border
-// pair anti-aliases that arc.
-//
-// That background-color is load-bearing, not decoration: the flare's bottom row
-// overlaps the content card's top ring, and in dark mode --surface-border is
-// translucent (oklch(1 0 0 / 10%)), so without an opaque layer beneath it the
-// arc would composite over the ring instead of replacing it and the two keylines
-// would stack into a markedly lighter line right where the straight ring meets
-// the curve. It therefore has to be the strip's real backdrop — the sidebar
-// wrapper's fill, which is conditional and not this file's to re-derive.
-// SIDEBAR_WRAPPER_FILL_CLASS reads it off the wrapper itself.
-//
-// The backing may only reach as far as it is needed, though. A flare hangs 9px
-// past the tab's edge, over the neighbouring tab, so an opaque square there
-// prints over whatever that neighbour draws: its hover pill lost the whole
-// corner it shares with the flare and read as a dark bite (MUL-6160). Masking
-// the notch away removes the backing exactly where the gradient is transparent
-// anyway, so the notch is a hole rather than a painted-on copy of the strip and
-// shows whatever is actually behind it — bare strip usually, the neighbour's
-// pill where it reaches in. The mask is opaque again by the radius where the
-// arc's anti-aliasing starts, so every pixel the arc and the canvas fill cover
-// keeps its backing.
-const TAB_FLARE_RADIUS = 10;
-const tabFlareGradient = (side: "left" | "right") => {
-  const r = TAB_FLARE_RADIUS;
-  return `radial-gradient(circle at top ${side}, transparent ${r - 1.2}px, var(--surface-border) ${r - 0.8}px, var(--surface-border) ${r - 0.2}px, var(--page-canvas) ${r + 0.2}px)`;
-};
-const tabFlareNotchMask = (side: "left" | "right") => {
-  const r = TAB_FLARE_RADIUS;
-  return `radial-gradient(circle at top ${side}, transparent ${r - 1.6}px, black ${r - 1.2}px)`;
-};
-// The flares are mirror images: the offset overlaps the tab edge by 1px so arc
-// and side border meet, and gradient and mask share the corner the offset picks.
-const tabFlareStyle = (side: "left" | "right"): React.CSSProperties => {
-  const overhang = -TAB_FLARE_RADIUS + 1;
-  const mask = tabFlareNotchMask(side);
-  return {
-    ...(side === "left" ? { left: overhang } : { right: overhang }),
-    backgroundImage: tabFlareGradient(side),
-    maskImage: mask,
-    WebkitMaskImage: mask,
-  };
-};
 
 type TabSnapshot = {
   workspaceSlug: string | null;
@@ -364,37 +314,20 @@ function SortableTabItem({
         transition={{ duration: isEntering ? 0.18 : 0, ease: TAB_ENTRY_EASE }}
         onAnimationComplete={() => setIsEntering(false)}
       >
-        {isActive ? (
-          // Merged-tab chrome: a bordered cap, a borderless base whose fill
-          // runs into the content card below (covering its top ring), and two
-          // flares whose arcs hand the keyline over to the card's ring. The
-          // flares overlap the tab edge by 1px so arc and side border meet.
-          <span
-            aria-hidden
-            className={cn(
-              "pointer-events-none absolute inset-0",
-              isDragging && "opacity-60",
-            )}
-          >
-            {/* Keep the fill inside the translucent keyline so it matches the
-                flare arcs and content card ring. */}
-            <span className="absolute inset-x-0 top-0 bottom-2.5 rounded-t-lg border border-b-0 border-surface-border bg-page-canvas bg-clip-padding" />
-            <span className="absolute inset-x-0 bottom-0 h-2.5 bg-page-canvas" />
-            <span
-              className={cn("absolute bottom-0 size-2.5", SIDEBAR_WRAPPER_FILL_CLASS)}
-              style={tabFlareStyle("left")}
-            />
-            <span
-              className={cn("absolute bottom-0 size-2.5", SIDEBAR_WRAPPER_FILL_CLASS)}
-              style={tabFlareStyle("right")}
-            />
-          </span>
-        ) : (
-          <span
-            aria-hidden
-            className="pointer-events-none absolute inset-x-0.5 top-1 bottom-1 rounded-lg bg-sidebar-accent opacity-0 transition-opacity group-hover/tab:opacity-100"
-          />
-        )}
+        {/* A plain rectangular tab, deliberately detached from the content
+            card. Active and hover states only change the rectangle's surface;
+            there are no browser-style concave flares or merged borders. */}
+        <span
+          aria-hidden
+          data-tab-surface
+          className={cn(
+            "pointer-events-none absolute inset-x-0.5 top-1 bottom-1 rounded-sm border transition-[background-color,border-color,box-shadow,opacity]",
+            isActive
+              ? "border-surface-border bg-page-canvas shadow-sm"
+              : "border-transparent bg-transparent group-hover/tab:bg-sidebar-accent",
+            isDragging && "opacity-60",
+          )}
+        />
         {showSeparator && (
           // Fades in step with the neighbouring hover pill: both use a bare
           // transition-opacity, so the hairline clears exactly as the pill
@@ -451,7 +384,7 @@ function SortableTabItem({
         {showAddedHighlight && (
           <motion.span
             aria-hidden
-            className="pointer-events-none absolute inset-x-0.5 top-1 bottom-1 rounded-lg bg-primary/10 ring-1 ring-inset ring-primary/20"
+            className="pointer-events-none absolute inset-x-0.5 top-1 bottom-1 rounded-sm bg-primary/10 ring-1 ring-inset ring-primary/20"
             initial={{ opacity: shouldReduceMotion ? 0.25 : 0.65 }}
             animate={{ opacity: 0 }}
             transition={{ duration: shouldReduceMotion ? 0.16 : 0.42 }}
@@ -657,13 +590,12 @@ export function TabBar() {
           modifiers={[restrictToHorizontalAxis, restrictToParentElement]}
           onDragEnd={handleDragEnd}
         >
-          {/* px-4 keeps the active tab's flares inside the scroller's clip
-              (overflow clips at the padding box) and clears the content
-              card's rounded top-left corner below the first tab. */}
+          {/* The strip only needs a small breathing inset now that tabs are
+              independent rectangles rather than overhanging browser caps. */}
           <div
             ref={tabScrollRef}
             data-tab-scroll-container
-            className="no-scrollbar flex h-full min-w-0 flex-1 items-end overflow-x-auto overflow-y-hidden overscroll-x-contain px-4"
+            className="no-scrollbar flex h-full min-w-0 flex-1 items-end overflow-x-auto overflow-y-hidden overscroll-x-contain px-1"
             style={tabFadeStyle}
           >
             <SortableContext items={tabIds} strategy={horizontalListSortingStrategy}>

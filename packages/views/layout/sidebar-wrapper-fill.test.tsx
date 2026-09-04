@@ -7,16 +7,17 @@ import {
 import { renderWithI18n } from "../test/i18n";
 
 // The wrapper's fill is conditional, and descendants that paint an opaque layer
-// over it have to match it exactly (the desktop tab flares do — #6874 shipped a
-// dark square under the active tab when they didn't). SIDEBAR_WRAPPER_FILL_CLASS
-// is the contract that keeps them in step. None of it is observable in jsdom, so
-// these assertions cover what a rename or a class-merge conflict would silently
+// over it have to match it exactly. SIDEBAR_WRAPPER_FILL_CLASS is the contract
+// that keeps them in step. None of it is observable in jsdom, so these
+// assertions cover what a rename or a class-merge conflict would silently
 // break; the compiled selectors themselves are Tailwind's business.
 describe("sidebar wrapper fill contract", () => {
   const variable = /^bg-\((--[a-z-]+)\)$/.exec(SIDEBAR_WRAPPER_FILL_CLASS)?.[1];
 
-  function wrapperOf(className?: string) {
-    const { container } = renderWithI18n(<SidebarProvider className={className} />);
+  function wrapperOf(className?: string, glass = false) {
+    const { container } = renderWithI18n(
+      <SidebarProvider className={className} glass={glass} />,
+    );
     return container.querySelector<HTMLElement>("[data-slot='sidebar-wrapper']")!;
   }
 
@@ -38,7 +39,7 @@ describe("sidebar wrapper fill contract", () => {
 
   // tailwind-merge drops same-group utilities, and the consumer's non-inset pair
   // arrives through the same cn() call as the inset pair above. All four have to
-  // survive: lose the variable and the flares fall back to transparent, lose the
+  // survive: lose the variable and opaque descendants fall back to transparent, lose the
   // background and the wrapper does.
   it("keeps a consumer's non-inset fill alongside the inset branch", () => {
     const classes = wrapperOf(
@@ -53,5 +54,17 @@ describe("sidebar wrapper fill contract", () => {
         `has-data-[variant=inset]:[${variable}:var(--sidebar)]`,
       ]),
     );
+  });
+
+  it("publishes a transparent inset fill for an explicit glass shell", () => {
+    const wrapper = wrapperOf(undefined, true);
+    const classes = wrapper.className.split(/\s+/);
+
+    expect(wrapper).toHaveAttribute("data-sidebar-glass", "true");
+    expect(classes).toContain("has-data-[variant=inset]:bg-transparent");
+    expect(classes).toContain(
+      `has-data-[variant=inset]:[${variable}:var(--app-shell)]`,
+    );
+    expect(classes).not.toContain("has-data-[variant=inset]:bg-sidebar");
   });
 });
