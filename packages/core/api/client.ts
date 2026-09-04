@@ -143,6 +143,10 @@ import type {
   IssueStatusEntry,
   CreateIssueStatusRequest,
   UpdateIssueStatusRequest,
+  IssueCategoryPolicyCategory,
+  IssueCategoryPolicy,
+  ListIssueCategoryPoliciesResponse,
+  UpdateIssueCategoryPolicyRequest,
   IssueLabelsResponse,
   LabelResourceType,
   ResourceLabelsResponse,
@@ -471,6 +475,8 @@ import {
   ListLabelsResponseSchema,
   ListIssueStatusesResponseSchema,
   IssueStatusEntrySchema,
+  ListIssueCategoryPoliciesResponseSchema,
+  IssueCategoryPolicySchema,
   IssuePropertySchema,
   ListPropertiesResponseSchema,
   IssuePropertiesResponseSchema,
@@ -489,6 +495,8 @@ import {
   EMPTY_LIST_LABELS_RESPONSE,
   EMPTY_LIST_ISSUE_STATUSES_RESPONSE,
   EMPTY_ISSUE_STATUS_ENTRY,
+  EMPTY_LIST_ISSUE_CATEGORY_POLICIES_RESPONSE,
+  EMPTY_ISSUE_CATEGORY_POLICY,
   EMPTY_RESOURCE_LABELS_RESPONSE,
   GitHubConnectResponseSchema,
   ListGitHubInstallationsResponseSchema,
@@ -4129,6 +4137,26 @@ export class ApiClient {
     const raw = await this.fetch<unknown>(`/api/issue-statuses/${id}`, { method: "DELETE" });
     return parseWithFallback(raw, IssueStatusEntrySchema, EMPTY_ISSUE_STATUS_ENTRY, {
       endpoint: "DELETE /api/issue-statuses/{id}",
+    });
+  }
+
+  async listIssueCategoryPolicies(): Promise<ListIssueCategoryPoliciesResponse> {
+    const raw = await this.fetch<unknown>(`/api/issue-category-policies`);
+    return parseWithFallback(raw, ListIssueCategoryPoliciesResponseSchema, EMPTY_LIST_ISSUE_CATEGORY_POLICIES_RESPONSE, {
+      endpoint: "GET /api/issue-category-policies",
+    });
+  }
+
+  async updateIssueCategoryPolicy(
+    category: IssueCategoryPolicyCategory,
+    data: UpdateIssueCategoryPolicyRequest,
+  ): Promise<IssueCategoryPolicy> {
+    const raw = await this.fetch<unknown>(`/api/issue-category-policies/${category}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+    return parseWithFallback(raw, IssueCategoryPolicySchema, EMPTY_ISSUE_CATEGORY_POLICY, {
+      endpoint: "PUT /api/issue-category-policies/{category}",
     });
   }
 

@@ -11,6 +11,10 @@ export type {
   ListIssueStatusesResponse,
   CreateIssueStatusRequest,
   UpdateIssueStatusRequest,
+  IssueCategoryPolicyCategory,
+  IssueCategoryPolicy,
+  ListIssueCategoryPoliciesResponse,
+  UpdateIssueCategoryPolicyRequest,
 } from "./issue-status";
 export type {
   Agent,

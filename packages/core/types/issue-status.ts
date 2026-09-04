@@ -75,3 +75,24 @@ export interface UpdateIssueStatusRequest {
   color?: string;
   position?: number;
 }
+
+/** Workspace defaults used when issues enter execution or review. */
+export type IssueCategoryPolicyCategory = "in_progress" | "in_review";
+
+export type IssueCategoryPolicy = {
+  workspace_id: string;
+  category: IssueCategoryPolicyCategory;
+  default_execution_agent_id: string | null;
+  default_reviewer_agent_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ListIssueCategoryPoliciesResponse = {
+  policies: IssueCategoryPolicy[];
+};
+
+export type UpdateIssueCategoryPolicyRequest = {
+  default_execution_agent_id?: string | null;
+  default_reviewer_agent_id?: string | null;
+};

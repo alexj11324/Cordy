@@ -123,6 +123,10 @@ const (
 	// self-describing); nothing routes on it.
 	EventIssueStatusChanged = "issue_status:changed"
 
+	// Workspace issue category policy writes invalidate the policy snapshot for
+	// any connected client that consumes this internal configuration contract.
+	EventIssueCategoryPolicyChanged = "issue_category_policy:changed"
+
 	// Pin events
 	EventPinCreated   = "pin:created"
 	EventPinDeleted   = "pin:deleted"

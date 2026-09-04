@@ -330,6 +330,54 @@ missing-tool/binary paths still permit old or release CLI fallback. Source-match
 dev runtime preparation, caches, isolated backend/database startup and packaged
 artifact acceptance remain open. No installer or production release was run.
 
+## Workspace issue category policy
+
+This responsibility block is now implemented end to end from the frozen Rust
+authority. The source contract is `server-rs/crates/patchbay-handler/src/issue_status.rs`
+(`GET /api/issue-category-policies` and
+`PUT /api/issue-category-policies/{category}`) plus
+`server-rs/crates/patchbay-service/src/category_policy.rs` and its typed DB
+query. The Go port is intentionally limited to the current migration checkout;
+the Rust source remains read-only.
+
+| Contract concern | Rust authority | Go implementation/evidence |
+| --- | --- | --- |
+| Route and workspace scope | Issue-status router; workspace context is supplied by the member guard | `server/cmd/server/router.go` mounts both paths inside `RequireWorkspaceMember`; `server/internal/handler/issue_category_policy.go` repeats the direct-handler membership check and scopes every query by workspace UUID |
+| Read/write permissions | GET is member-only; PUT requires `owner` or `admin` | `ListIssueCategoryPolicies` uses `requireWorkspaceMember`; `UpdateIssueCategoryPolicy` uses `requireWorkspaceRole` |
+| Input contract | Only `in_progress` and `in_review`; execution is required; review requires a reviewer; blank optional strings mean NULL | `updateIssueCategoryPolicyRequest`, category checks, UUID parsing, required checks, and malformed/trailing JSON rejection preserve the Rust error messages |
+| Agent safety | Agent must be a workspace-owned `kind='user'` agent, unarchived, with a runtime; execution/review IDs must differ | `GetAgentInWorkspace` is called through `qtx` inside the write transaction; `ArchivedAt` and `RuntimeID` are checked before upsert |
+| Atomicity and errors | Agent validation and upsert share a transaction; DB/commit failures are 500; policy validation is 400 | `server/internal/handler/issue_category_policy.go` begins/rolls back/commits around all validation writes and maps the Rust messages |
+| Event | Publish `issue_category_policy:changed` only after commit, workspace/member actor, `{category}` payload | `server/pkg/protocol/events.go` and the post-commit `h.publish` call; `packages/core/types/events.ts` carries the event/payload type |
+| Storage and teardown | Application-owned agent relationships; workspace/category uniqueness; workspace deletion explicitly removes policy rows | Existing Go migrations `server/migrations/521_issue_category_policy.*`, concurrent index `522_issue_category_policy_workspace_category.*`, generated model/query, and `workspace_delete.sql` are unchanged and already match the Rust schema/cleanup |
+
+The generated/query chain is complete in `server/pkg/db/queries/workspace_issue_category_policy.sql`
+and `server/pkg/db/generated/workspace_issue_category_policy.sql.go`. The shared
+frontend transport contract is complete in `packages/core/types/issue-status.ts`,
+`packages/core/api/schemas.ts`, and `packages/core/api/client.ts`; its focused
+malformed-response coverage is in
+`packages/core/api/issue-category-policy.test.ts`.
+
+Consumer inventory was searched across `packages/`, `apps/`, `contracts/`, and
+the internal/public API surfaces. There is no current Web, Desktop, or Mobile
+settings page, query hook, mutation hook, or i18n key for issue-category
+policies, and the Rust tree has no corresponding product entry beyond the
+server dependency-admission/review-handoff service. Therefore no UI or locale
+file was fabricated: the only current frontend consumer is the typed API
+client contract, while `issue_category_policy:changed` is typed for future
+cache consumers. The existing Go/Rust dependency-graph reads of the policy are
+preserved but deliberately untouched because dependency graph is outside this
+responsibility's write scope. `contracts/` contains auth-broker contracts and
+`server/pkg/publicapi/v1/openapi.yaml` is the plugin-only public API, so neither
+is a valid home for this internal workspace endpoint.
+
+Focused Go handler tests cover workspace isolation, membership and owner/admin
+permissions, category/UUID/required-field errors, malformed JSON, agent
+ownership/archive/runtime checks, same-agent rejection, committed persistence,
+and the post-commit event. Per repository policy, no local Go, Rust/Cargo, or
+Docker test/build command was run; generated SQL and the diff were statically
+reviewed. GitHub CI and deployed runtime apply/read/WebSocket observation remain
+pending for this commit.
+
 ## Full migration completion gate
 
 ### Connection status terminology

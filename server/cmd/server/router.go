@@ -2184,6 +2184,13 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				})
 			})
 
+			// Workspace issue category policies. Reads are open to any member;
+			// updates are gated to workspace owner/admin inside the handler.
+			r.Route("/api/issue-category-policies", func(r chi.Router) {
+				r.Get("/", h.ListIssueCategoryPolicies)
+				r.Put("/{category}", h.UpdateIssueCategoryPolicy)
+			})
+
 			// Projects
 			r.Route("/api/projects", func(r chi.Router) {
 				r.Get("/search", h.SearchProjects)

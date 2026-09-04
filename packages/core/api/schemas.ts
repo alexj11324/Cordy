@@ -85,6 +85,8 @@ import type {
   ListWebhookDeliveriesResponse,
   IssueStatusEntry,
   ListIssueStatusesResponse,
+  IssueCategoryPolicy,
+  ListIssueCategoryPoliciesResponse,
   NotificationPreferenceResponse,
   PluginInstallation,
   PluginInstallationListResponse,
@@ -803,6 +805,36 @@ export const EMPTY_LIST_ISSUE_STATUSES_RESPONSE: ListIssueStatusesResponse = {
   statuses: [],
   categories: ["backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"],
   total: 0,
+};
+
+// Workspace issue category policies. The category remains a string at the
+// response boundary so a newer server cannot make an older client discard the
+// entire list; the write client still accepts only the two Rust-supported path
+// values through IssueCategoryPolicyCategory.
+export const IssueCategoryPolicySchema = z.object({
+  workspace_id: z.string(),
+  category: z.string(),
+  default_execution_agent_id: z.string().nullable().optional().default(null),
+  default_reviewer_agent_id: z.string().nullable().optional().default(null),
+  created_at: z.string(),
+  updated_at: z.string(),
+}).loose();
+
+export const EMPTY_ISSUE_CATEGORY_POLICY: IssueCategoryPolicy = {
+  workspace_id: "",
+  category: "in_progress",
+  default_execution_agent_id: null,
+  default_reviewer_agent_id: null,
+  created_at: "",
+  updated_at: "",
+};
+
+export const ListIssueCategoryPoliciesResponseSchema = z.object({
+  policies: z.array(IssueCategoryPolicySchema).default([]),
+}).loose();
+
+export const EMPTY_LIST_ISSUE_CATEGORY_POLICIES_RESPONSE: ListIssueCategoryPoliciesResponse = {
+  policies: [],
 };
 
 export const ResourceLabelsResponseSchema = z.object({
