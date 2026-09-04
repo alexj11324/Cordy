@@ -983,12 +983,29 @@ func (q *Queries) RetryAgentCoordinationOutbox(ctx context.Context, arg RetryAge
 const selectCoordinationReviewer = `-- name: SelectCoordinationReviewer :one
 SELECT a.id, a.name
 FROM agent AS a
+JOIN agent_runtime AS runtime ON runtime.id = a.runtime_id
 WHERE a.workspace_id = $1
   AND a.kind = 'user'
   AND a.archived_at IS NULL
   AND a.runtime_id IS NOT NULL
-  AND ($2::uuid IS NULL OR a.id = $2::uuid)
-  AND ($3::uuid IS NULL OR a.id <> $3::uuid)
+  AND runtime.workspace_id = a.workspace_id
+  AND runtime.status = 'online'
+  AND COALESCE(runtime.last_seen_at, runtime.updated_at) >= now() - make_interval(
+      secs => GREATEST($2::double precision, 1.0)
+  )
+  AND (
+      runtime.visibility = 'public'
+      OR (
+          runtime.visibility = 'private'
+          AND (
+              runtime.owner_id IS NULL
+              OR a.owner_id IS NULL
+              OR runtime.owner_id = a.owner_id
+          )
+      )
+  )
+  AND ($3::uuid IS NULL OR a.id = $3::uuid)
+  AND ($4::uuid IS NULL OR a.id <> $4::uuid)
   AND (
       EXISTS (
           SELECT 1
@@ -1000,7 +1017,7 @@ WHERE a.workspace_id = $1
           WHERE tm.member_type = 'agent'
             AND tm.member_id = a.id
             AND tm.role = 'reviewer'
-            AND ($4::uuid IS NULL OR tm.team_id = $4::uuid)
+            AND ($5::uuid IS NULL OR tm.team_id = $5::uuid)
       )
       OR EXISTS (
           SELECT 1
@@ -1016,8 +1033,8 @@ WHERE a.workspace_id = $1
       WHERE q.agent_id = a.id
         AND q.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity')
         AND (
-            $5::uuid IS NULL
-            OR COALESCE(q.context->>'coordination_assignment_id', '') <> $5::uuid::text
+            $6::uuid IS NULL
+            OR COALESCE(q.context->>'coordination_assignment_id', '') <> $6::uuid::text
         )
   ) + (
       SELECT count(*)
@@ -1027,8 +1044,8 @@ WHERE a.workspace_id = $1
         AND reservation.status = 'assigned'
         AND reservation.dispatched_task_id IS NULL
         AND (
-            $5::uuid IS NULL
-            OR reservation.id <> $5::uuid
+            $6::uuid IS NULL
+            OR reservation.id <> $6::uuid
         )
   ) < a.max_concurrent_tasks
 ORDER BY CASE WHEN EXISTS (
@@ -1046,11 +1063,12 @@ FOR UPDATE SKIP LOCKED
 `
 
 type SelectCoordinationReviewerParams struct {
-	WorkspaceID   pgtype.UUID `json:"workspace_id"`
-	ReviewerID    pgtype.UUID `json:"reviewer_id"`
-	SourceAgentID pgtype.UUID `json:"source_agent_id"`
-	TeamID        pgtype.UUID `json:"team_id"`
-	AssignmentID  pgtype.UUID `json:"assignment_id"`
+	WorkspaceID         pgtype.UUID `json:"workspace_id"`
+	RuntimeStaleSeconds float64     `json:"runtime_stale_seconds"`
+	ReviewerID          pgtype.UUID `json:"reviewer_id"`
+	SourceAgentID       pgtype.UUID `json:"source_agent_id"`
+	TeamID              pgtype.UUID `json:"team_id"`
+	AssignmentID        pgtype.UUID `json:"assignment_id"`
 }
 
 type SelectCoordinationReviewerRow struct {
@@ -1066,6 +1084,7 @@ type SelectCoordinationReviewerRow struct {
 func (q *Queries) SelectCoordinationReviewer(ctx context.Context, arg SelectCoordinationReviewerParams) (SelectCoordinationReviewerRow, error) {
 	row := q.db.QueryRow(ctx, selectCoordinationReviewer,
 		arg.WorkspaceID,
+		arg.RuntimeStaleSeconds,
 		arg.ReviewerID,
 		arg.SourceAgentID,
 		arg.TeamID,
@@ -1204,6 +1223,78 @@ type UpdateIssueForCoordinationReviewParams struct {
 // update committed after the coordinator read from being overwritten.
 func (q *Queries) UpdateIssueForCoordinationReview(ctx context.Context, arg UpdateIssueForCoordinationReviewParams) (Issue, error) {
 	row := q.db.QueryRow(ctx, updateIssueForCoordinationReview,
+		arg.ReviewerID,
+		arg.IssueID,
+		arg.WorkspaceID,
+		arg.ExpectedRevision,
+	)
+	var i Issue
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Title,
+		&i.Description,
+		&i.Status,
+		&i.Priority,
+		&i.ExecutorType,
+		&i.ExecutorID,
+		&i.CreatorType,
+		&i.CreatorID,
+		&i.ParentIssueID,
+		&i.AcceptanceCriteria,
+		&i.ContextRefs,
+		&i.Position,
+		&i.DueDate,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Number,
+		&i.ProjectID,
+		&i.OriginType,
+		&i.OriginID,
+		&i.FirstExecutedAt,
+		&i.StartDate,
+		&i.Metadata,
+		&i.Stage,
+		&i.Properties,
+		&i.Revision,
+		&i.LastActivityAt,
+		&i.OwnerType,
+		&i.OwnerID,
+		&i.ReviewerType,
+		&i.ReviewerID,
+		&i.ExecutorGeneration,
+	)
+	return i, err
+}
+
+const updateIssueReviewerForCoordinationRecovery = `-- name: UpdateIssueReviewerForCoordinationRecovery :one
+UPDATE issue AS target
+SET reviewer_type = 'agent',
+    reviewer_id = $1,
+    revision = target.revision + 1,
+    updated_at = now(),
+    last_activity_at = GREATEST(COALESCE(target.last_activity_at, target.updated_at), now())
+WHERE target.id = $2
+  AND target.workspace_id = $3
+  AND target.revision = $4
+  AND issue_effective_status(target.workspace_id, target.status) = 'in_review'
+  AND target.executor_type IN ('agent', 'team')
+  AND target.executor_id IS NOT NULL
+RETURNING target.id, target.workspace_id, target.title, target.description, target.status, target.priority, target.executor_type, target.executor_id, target.creator_type, target.creator_id, target.parent_issue_id, target.acceptance_criteria, target.context_refs, target.position, target.due_date, target.created_at, target.updated_at, target.number, target.project_id, target.origin_type, target.origin_id, target.first_executed_at, target.start_date, target.metadata, target.stage, target.properties, target.revision, target.last_activity_at, target.owner_type, target.owner_id, target.reviewer_type, target.reviewer_id, target.executor_generation
+`
+
+type UpdateIssueReviewerForCoordinationRecoveryParams struct {
+	ReviewerID       pgtype.UUID `json:"reviewer_id"`
+	IssueID          pgtype.UUID `json:"issue_id"`
+	WorkspaceID      pgtype.UUID `json:"workspace_id"`
+	ExpectedRevision int64       `json:"expected_revision"`
+}
+
+// Reviewer recovery replaces an unavailable automatic reviewer without
+// changing the implementation status. The revision fence keeps a concurrent
+// human reviewer update from being overwritten by the coordinator.
+func (q *Queries) UpdateIssueReviewerForCoordinationRecovery(ctx context.Context, arg UpdateIssueReviewerForCoordinationRecoveryParams) (Issue, error) {
+	row := q.db.QueryRow(ctx, updateIssueReviewerForCoordinationRecovery,
 		arg.ReviewerID,
 		arg.IssueID,
 		arg.WorkspaceID,

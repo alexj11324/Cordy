@@ -257,10 +257,27 @@ WHERE agent.id = sqlc.arg('agent_id')
 -- name: SelectCoordinationReviewer :one
 SELECT a.id, a.name
 FROM agent AS a
+JOIN agent_runtime AS runtime ON runtime.id = a.runtime_id
 WHERE a.workspace_id = sqlc.arg('workspace_id')
   AND a.kind = 'user'
   AND a.archived_at IS NULL
   AND a.runtime_id IS NOT NULL
+  AND runtime.workspace_id = a.workspace_id
+  AND runtime.status = 'online'
+  AND COALESCE(runtime.last_seen_at, runtime.updated_at) >= now() - make_interval(
+      secs => GREATEST(sqlc.arg('runtime_stale_seconds')::double precision, 1.0)
+  )
+  AND (
+      runtime.visibility = 'public'
+      OR (
+          runtime.visibility = 'private'
+          AND (
+              runtime.owner_id IS NULL
+              OR a.owner_id IS NULL
+              OR runtime.owner_id = a.owner_id
+          )
+      )
+  )
   AND (sqlc.narg('reviewer_id')::uuid IS NULL OR a.id = sqlc.narg('reviewer_id')::uuid)
   AND (sqlc.narg('source_agent_id')::uuid IS NULL OR a.id <> sqlc.narg('source_agent_id')::uuid)
   AND (
@@ -378,6 +395,24 @@ WHERE assignment.id = sqlc.arg('assignment_id')
   AND owner_agent.workspace_id = assignment.workspace_id
   AND owner_agent.kind = 'user'
   AND owner_agent.archived_at IS NULL;
+
+-- Reviewer recovery replaces an unavailable automatic reviewer without
+-- changing the implementation status. The revision fence keeps a concurrent
+-- human reviewer update from being overwritten by the coordinator.
+-- name: UpdateIssueReviewerForCoordinationRecovery :one
+UPDATE issue AS target
+SET reviewer_type = 'agent',
+    reviewer_id = sqlc.arg('reviewer_id'),
+    revision = target.revision + 1,
+    updated_at = now(),
+    last_activity_at = GREATEST(COALESCE(target.last_activity_at, target.updated_at), now())
+WHERE target.id = sqlc.arg('issue_id')
+  AND target.workspace_id = sqlc.arg('workspace_id')
+  AND target.revision = sqlc.arg('expected_revision')
+  AND issue_effective_status(target.workspace_id, target.status) = 'in_review'
+  AND target.executor_type IN ('agent', 'team')
+  AND target.executor_id IS NOT NULL
+RETURNING target.*;
 
 -- name: CompleteAgentCoordinationAssignmentForTask :execrows
 -- A terminal task is the producer-side fence. The task status, task owner,

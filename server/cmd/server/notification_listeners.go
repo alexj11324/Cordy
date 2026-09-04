@@ -14,6 +14,7 @@ import (
 	"github.com/patchbay-ai/patchbay/server/internal/issuestatus"
 	"github.com/patchbay-ai/patchbay/server/internal/util"
 	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/pkg/dbid"
 	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
 )
 
@@ -421,7 +422,7 @@ func notifyIssueSubscribers(
 		}
 
 		item, err := createInboxItemForEvent(ctx, queries, e, db.CreateInboxItemParams{
-			ID:            pgtype.UUID{},
+			ID:            dbid.NewV7(),
 			WorkspaceID:   parseUUID(workspaceID),
 			RecipientType: "member",
 			RecipientID:   sub.UserID,
@@ -487,7 +488,7 @@ func notifyDirect(
 	}
 
 	item, err := createInboxItemForEvent(ctx, queries, e, db.CreateInboxItemParams{
-		ID:            pgtype.UUID{},
+		ID:            dbid.NewV7(),
 		WorkspaceID:   parseUUID(workspaceID),
 		RecipientType: recipientType,
 		RecipientID:   parseUUID(recipientID),
@@ -643,7 +644,7 @@ func notifyMentionedMembers(
 			continue
 		}
 		item, err := createInboxItemForEvent(context.Background(), queries, e, db.CreateInboxItemParams{
-			ID:            pgtype.UUID{},
+			ID:            dbid.NewV7(),
 			WorkspaceID:   parseUUID(e.WorkspaceID),
 			RecipientType: "member",
 			RecipientID:   parseUUID(id),
