@@ -3,12 +3,18 @@ import type { Issue } from "@patchbay/core/types";
 import {
   filterIssuesByScope,
   issueActorForRole,
+  issueRoleState,
   issueMatchesScope,
 } from "./issue-scope";
 
 type RoleIssue = Pick<
   Issue,
-  "owner_type" | "owner_id" | "executor_type" | "executor_id"
+  | "owner_type"
+  | "owner_id"
+  | "executor_type"
+  | "executor_id"
+  | "reviewer_type"
+  | "reviewer_id"
 >;
 
 function issue(overrides: Partial<RoleIssue> = {}): RoleIssue {
@@ -17,6 +23,8 @@ function issue(overrides: Partial<RoleIssue> = {}): RoleIssue {
     owner_id: null,
     executor_type: null,
     executor_id: null,
+    reviewer_type: null,
+    reviewer_id: null,
     ...overrides,
   };
 }
@@ -92,5 +100,34 @@ describe("workspace issue role scopes", () => {
       type: "agent",
       id: "agent-1",
     });
+  });
+
+  it("resolves reviewer independently from owner and executor", () => {
+    const withEveryRole = issue({
+      owner_type: "member",
+      owner_id: "member-1",
+      executor_type: "agent",
+      executor_id: "agent-1",
+      reviewer_type: "team",
+      reviewer_id: "team-1",
+    });
+
+    expect(issueActorForRole(withEveryRole, "reviewer")).toEqual({
+      type: "team",
+      id: "team-1",
+    });
+    expect(issueActorForRole(withEveryRole, "owner")?.id).toBe("member-1");
+    expect(issueActorForRole(withEveryRole, "executor")?.id).toBe("agent-1");
+  });
+
+  it("keeps an unsupported reviewer observable instead of treating it as a team", () => {
+    const future = {
+      ...issue(),
+      reviewer_type: "external_reviewer",
+      reviewer_id: "external-1",
+    } as unknown as RoleIssue;
+
+    expect(issueActorForRole(future, "reviewer")).toBeNull();
+    expect(issueRoleState(future, "reviewer")).toEqual({ kind: "unknown" });
   });
 });

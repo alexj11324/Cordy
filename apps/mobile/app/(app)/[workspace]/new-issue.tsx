@@ -31,7 +31,11 @@ import { MOBILE_PLACEHOLDER_COLOR } from "@/components/ui/input-tokens";
 import { useCreateIssue } from "@/data/mutations/issues";
 import { useNewIssueDraftStore } from "@/data/stores/new-issue-draft-store";
 import { useAuthStore } from "@/data/auth-store";
+import { getIssueRoleCopy } from "@/lib/issue-role-copy";
+import { issueRoleCreateFields } from "@/lib/issue-role-patch";
+import { reviewWorkflowViolation } from "@/lib/issue-review-workflow";
 import { useMentionInput } from "@/lib/use-mention-input";
+import { useIssueStatuses } from "@/lib/use-issue-statuses";
 
 export default function NewIssueModal() {
   const [title, setTitle] = useState("");
@@ -51,6 +55,9 @@ export default function NewIssueModal() {
   const project = useNewIssueDraftStore((s) => s.project);
   const resetDraft = useNewIssueDraftStore((s) => s.reset);
   const userId = useAuthStore((s) => s.user?.id ?? null);
+  const language = useAuthStore((s) => s.user?.language);
+  const roleCopy = getIssueRoleCopy(language);
+  const { categoryOf } = useIssueStatuses();
 
   useEffect(() => {
     resetDraft();
@@ -68,6 +75,25 @@ export default function NewIssueModal() {
   const onSubmit = useCallback(async () => {
     const trimmedTitle = title.trim();
     if (trimmedTitle.length === 0) return;
+    const violation = reviewWorkflowViolation({
+      previousCategory: null,
+      nextCategory: categoryOf(status),
+      executor,
+      reviewer,
+    });
+    if (violation) {
+      Alert.alert(
+        violation === "executor_required"
+          ? roleCopy.executor
+          : roleCopy.reviewHandoff,
+        violation === "executor_required"
+          ? roleCopy.executorRequired
+          : violation === "reviewer_required"
+            ? roleCopy.reviewerRequired
+            : roleCopy.reviewerMustDiffer,
+      );
+      return;
+    }
     const finalDescription = description.serialize().trim();
     try {
       await createIssue.mutateAsync({
@@ -75,15 +101,7 @@ export default function NewIssueModal() {
         description: finalDescription || undefined,
         status,
         priority,
-        ...(owner?.type === "member"
-          ? { owner_type: "member" as const, owner_id: owner.id }
-          : {}),
-        ...(executor
-          ? { executor_type: executor.type, executor_id: executor.id }
-          : {}),
-        ...(reviewer
-          ? { reviewer_type: reviewer.type, reviewer_id: reviewer.id }
-          : {}),
+        ...issueRoleCreateFields(owner, executor, reviewer),
         ...(dueDate ? { due_date: dueDate } : {}),
         ...(project ? { project_id: project.id } : {}),
       });
@@ -105,6 +123,8 @@ export default function NewIssueModal() {
     dueDate,
     project,
     createIssue,
+    categoryOf,
+    roleCopy,
   ]);
 
   const headerRight = useCallback(
@@ -140,10 +160,7 @@ export default function NewIssueModal() {
             returnKeyType="next"
             editable={!isSubmitting}
           />
-          <DescriptionField
-            description={description}
-            disabled={isSubmitting}
-          />
+          <DescriptionField description={description} disabled={isSubmitting} />
           <CreateFormAttributeRow />
         </ScrollView>
 

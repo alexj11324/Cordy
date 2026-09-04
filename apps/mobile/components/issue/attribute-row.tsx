@@ -21,10 +21,7 @@ import { useMemo } from "react";
 import { View } from "react-native";
 import { router } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
-import type {
-  Issue,
-  IssuePriority,
-} from "@patchbay/core/types";
+import type { Issue, IssuePriority } from "@patchbay/core/types";
 import { formatDateOnly } from "@patchbay/core/issues/date";
 import { Text } from "@/components/ui/text";
 import { StatusIcon } from "@/components/ui/status-icon";
@@ -39,6 +36,7 @@ import { useWorkspaceStore } from "@/data/workspace-store";
 import { PRIORITY_LABEL as PRIORITY_FULL_LABEL } from "@/lib/issue-status";
 import { useIssueStatuses } from "@/lib/use-issue-statuses";
 import { getIssueRoleCopy } from "@/lib/issue-role-copy";
+import { issueRoleState } from "@/lib/issue-scope";
 
 // Chip placeholder shortens `none` from "No priority" → "Priority" so the
 // unset chip reads as a placeholder, not as a confusing assigned value.
@@ -78,7 +76,9 @@ const ISSUE_PICKER_PATHNAMES = {
 // with the viewer's offset. Mirrors web's formatDate in list-row/board-card.
 function formatDueDate(iso: string | null): string | null {
   if (!iso) return null;
-  return formatDateOnly(iso, { month: "short", day: "numeric" }, "en-US") || null;
+  return (
+    formatDateOnly(iso, { month: "short", day: "numeric" }, "en-US") || null
+  );
 }
 
 export function AttributeRow({ issue }: { issue: Issue }) {
@@ -102,22 +102,16 @@ export function AttributeRow({ issue }: { issue: Issue }) {
 
   const labels = issue.labels ?? [];
 
-  const ownerValue =
-    issue.owner_type === "member" && issue.owner_id
-      ? { type: "member" as const, id: issue.owner_id }
-      : null;
+  const ownerState = issueRoleState(issue, "owner");
+  const executorState = issueRoleState(issue, "executor");
+  const reviewerState = issueRoleState(issue, "reviewer");
+  const ownerValue = ownerState.kind === "assigned" ? ownerState.actor : null;
   const executorValue =
-    issue.executor_type && issue.executor_id
-      ? { type: issue.executor_type, id: issue.executor_id }
-      : null;
+    executorState.kind === "assigned" ? executorState.actor : null;
   const reviewerValue =
-    issue.reviewer_type && issue.reviewer_id
-      ? { type: issue.reviewer_type, id: issue.reviewer_id }
-      : null;
+    reviewerState.kind === "assigned" ? reviewerState.actor : null;
 
-  const ownerName = ownerValue
-    ? getName(ownerValue.type, ownerValue.id)
-    : null;
+  const ownerName = ownerValue ? getName(ownerValue.type, ownerValue.id) : null;
   const executorName = executorValue
     ? getName(executorValue.type, executorValue.id)
     : null;
@@ -165,11 +159,17 @@ export function AttributeRow({ issue }: { issue: Issue }) {
           ownerValue ? (
             <ActorAvatar type="member" id={ownerValue.id} size={16} />
           ) : (
-            <View className="size-4 rounded-full border border-dashed border-muted-foreground/40" />
+            <RolePlaceholder unknown={ownerState.kind === "unknown"} />
           )
         }
-        label={ownerValue ? ownerName ?? roleCopy.unknown : roleCopy.owner}
-        variant={ownerValue ? "filled" : "dimmed"}
+        label={
+          ownerState.kind === "unknown"
+            ? roleCopy.unknownOwner
+            : ownerValue
+              ? (ownerName ?? roleCopy.unknownOwner)
+              : roleCopy.owner
+        }
+        variant={ownerState.kind === "unassigned" ? "dimmed" : "filled"}
         onPress={() => openPicker("owner")}
       />
 
@@ -184,17 +184,19 @@ export function AttributeRow({ issue }: { issue: Issue }) {
               showPresence
             />
           }
-          label={executorName ?? roleCopy.unknown}
+          label={executorName ?? roleCopy.unknownExecutor}
           variant="filled"
           onPress={() => openPicker("executor")}
         />
       ) : (
         <AttributeChip
-          icon={
-            <View className="size-4 rounded-full border border-dashed border-muted-foreground/40" />
+          icon={<RolePlaceholder unknown={executorState.kind === "unknown"} />}
+          label={
+            executorState.kind === "unknown"
+              ? roleCopy.unknownExecutor
+              : roleCopy.executor
           }
-          label={roleCopy.executor}
-          variant="dimmed"
+          variant={executorState.kind === "unknown" ? "filled" : "dimmed"}
           onPress={() => openPicker("executor")}
         />
       )}
@@ -209,15 +211,17 @@ export function AttributeRow({ issue }: { issue: Issue }) {
               size={16}
             />
           ) : (
-            <View className="size-4 rounded-full border border-dashed border-muted-foreground/40" />
+            <RolePlaceholder unknown={reviewerState.kind === "unknown"} />
           )
         }
         label={
-          reviewerValue
-            ? reviewerName ?? roleCopy.unknown
-            : roleCopy.reviewer
+          reviewerState.kind === "unknown"
+            ? roleCopy.unknownReviewer
+            : reviewerValue
+              ? (reviewerName ?? roleCopy.unknownReviewer)
+              : roleCopy.reviewer
         }
-        variant={reviewerValue ? "filled" : "dimmed"}
+        variant={reviewerState.kind === "unassigned" ? "dimmed" : "filled"}
         onPress={() => openPicker("reviewer")}
       />
 
@@ -274,6 +278,16 @@ export function AttributeRow({ issue }: { issue: Issue }) {
         variant={dueLabel ? "filled" : "dimmed"}
         onPress={() => openPicker("due-date")}
       />
+    </View>
+  );
+}
+
+function RolePlaceholder({ unknown }: { unknown: boolean }) {
+  return (
+    <View className="size-4 items-center justify-center rounded-full border border-dashed border-muted-foreground/40">
+      {unknown ? (
+        <Text className="text-[9px] leading-none text-muted-foreground">?</Text>
+      ) : null}
     </View>
   );
 }

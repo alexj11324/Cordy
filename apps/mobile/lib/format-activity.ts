@@ -10,7 +10,11 @@
  * mobile clients in the wild must render them as a generic fallback, not
  * crash).
  */
-import type { IssuePriority, TimelineEntry } from "@patchbay/core/types";
+import type {
+  IssuePriority,
+  IssueStatusCategory,
+  TimelineEntry,
+} from "@patchbay/core/types";
 import { formatDateOnly } from "@patchbay/core/issues/date";
 import { STATUS_LABEL, isIssueStatusCategory } from "@/lib/issue-status";
 
@@ -40,8 +44,36 @@ function statusName(
 }
 
 function priorityName(p: string | undefined): string {
-  if (p && p in PRIORITY_LABEL) return PRIORITY_LABEL[p as IssuePriority];
+  if (p && Object.prototype.hasOwnProperty.call(PRIORITY_LABEL, p)) {
+    return PRIORITY_LABEL[p as IssuePriority];
+  }
   return p ?? "?";
+}
+
+function detailString(
+  details: Record<string, unknown>,
+  key: string,
+): string | undefined {
+  const value = details[key];
+  return typeof value === "string" ? value : undefined;
+}
+
+function reviewActivityIsHandoff(
+  fromStatus: string | undefined,
+  toStatus: string | undefined,
+  resolveCategory?: (statusKey: string) => IssueStatusCategory,
+): boolean {
+  if (!fromStatus || !toStatus) return true;
+  const fromCategory =
+    resolveCategory?.(fromStatus) ??
+    (isIssueStatusCategory(fromStatus) ? fromStatus : undefined);
+  const toCategory =
+    resolveCategory?.(toStatus) ??
+    (isIssueStatusCategory(toStatus) ? toStatus : undefined);
+  if (fromCategory && toCategory) {
+    return fromCategory !== "in_review" && toCategory === "in_review";
+  }
+  return fromStatus !== toStatus;
 }
 
 // start_date / due_date are calendar days — format timezone-safely (no offset
@@ -58,75 +90,76 @@ export function formatActivity(
     id: string | null | undefined,
   ) => string,
   resolveStatusLabel?: (statusKey: string) => string,
+  resolveStatusCategory?: (statusKey: string) => IssueStatusCategory,
 ): string {
-  const details = (entry.details ?? {}) as Record<string, string>;
+  const details = entry.details ?? {};
   switch (entry.action) {
     case "created":
       return "created the issue";
     case "status_changed":
-      return `changed status: ${statusName(details.from, resolveStatusLabel)} → ${statusName(details.to, resolveStatusLabel)}`;
+      return `changed status: ${statusName(detailString(details, "from"), resolveStatusLabel)} → ${statusName(detailString(details, "to"), resolveStatusLabel)}`;
     case "priority_changed":
-      return `changed priority: ${priorityName(details.from)} → ${priorityName(details.to)}`;
+      return `changed priority: ${priorityName(detailString(details, "from"))} → ${priorityName(detailString(details, "to"))}`;
     case "executor_changed": {
-      const isSelf =
-        details.to_type === entry.actor_type &&
-        details.to_id === entry.actor_id;
+      const toType = detailString(details, "to_type");
+      const toId = detailString(details, "to_id");
+      const fromId = detailString(details, "from_id");
+      const isSelf = toType === entry.actor_type && toId === entry.actor_id;
       if (isSelf) return "set themselves as executor";
-      if (details.from_id && !details.to_id) return "removed executor";
-      const toName =
-        details.to_id && details.to_type
-          ? resolveActorName(details.to_type, details.to_id)
-          : null;
+      if (fromId && !toId) return "removed executor";
+      const toName = toId && toType ? resolveActorName(toType, toId) : null;
       if (toName) return `set executor to ${toName}`;
       return "changed executor";
     }
     case "owner_changed": {
-      const isSelf =
-        details.to_type === entry.actor_type &&
-        details.to_id === entry.actor_id;
+      const toType = detailString(details, "to_type");
+      const toId = detailString(details, "to_id");
+      const fromId = detailString(details, "from_id");
+      const isSelf = toType === entry.actor_type && toId === entry.actor_id;
       if (isSelf) return "set themselves as owner";
-      if (details.from_id && !details.to_id) return "removed owner";
-      const toName =
-        details.to_id && details.to_type
-          ? resolveActorName(details.to_type, details.to_id)
-          : null;
+      if (fromId && !toId) return "removed owner";
+      const toName = toId && toType ? resolveActorName(toType, toId) : null;
       if (toName) return `set owner to ${toName}`;
       return "changed owner";
     }
     case "review_handoff": {
+      const fromType = detailString(details, "from_type");
+      const fromId = detailString(details, "from_id");
+      const toType = detailString(details, "to_type");
+      const toId = detailString(details, "to_id");
       const fromName =
-        details.from_id && details.from_type
-          ? resolveActorName(details.from_type, details.from_id)
-          : "?";
-      const toName =
-        details.to_id && details.to_type
-          ? resolveActorName(details.to_type, details.to_id)
-          : "?";
+        fromId && fromType ? resolveActorName(fromType, fromId) : "?";
+      const toName = toId && toType ? resolveActorName(toType, toId) : "?";
 
       // The activity API uses one action for reviewer assignment/replacement
       // and a real handoff. The status pair is the contract-level
       // discriminator: a reviewer-only change leaves the status unchanged;
       // entering review transfers the review from the executor.
-      const hasStatusPair =
-        typeof details.from_status === "string" &&
-        typeof details.to_status === "string";
-      if (!hasStatusPair || details.from_status !== details.to_status) {
+      if (
+        reviewActivityIsHandoff(
+          detailString(details, "from_status"),
+          detailString(details, "to_status"),
+          resolveStatusCategory,
+        )
+      ) {
         return `handed review from ${fromName} to ${toName}`;
       }
-      if (!details.to_id) return "removed reviewer";
-      if (!details.from_id) return `assigned reviewer to ${toName}`;
+      if (!toId) return "removed reviewer";
+      if (!fromId) return `assigned reviewer to ${toName}`;
       return `changed reviewer from ${fromName} to ${toName}`;
     }
     case "start_date_changed": {
-      if (!details.to) return "removed start date";
-      return `set start date to ${shortDate(details.to)}`;
+      const to = detailString(details, "to");
+      if (!to) return "removed start date";
+      return `set start date to ${shortDate(to)}`;
     }
     case "due_date_changed": {
-      if (!details.to) return "removed due date";
-      return `set due date to ${shortDate(details.to)}`;
+      const to = detailString(details, "to");
+      if (!to) return "removed due date";
+      return `set due date to ${shortDate(to)}`;
     }
     case "title_changed":
-      return `renamed: "${details.from ?? "?"}" → "${details.to ?? "?"}"`;
+      return `renamed: "${detailString(details, "from") ?? "?"}" → "${detailString(details, "to") ?? "?"}"`;
     case "description_updated":
       return "updated description";
     case "task_completed": {
@@ -141,8 +174,8 @@ export function formatActivity(
       // Copy mirrors packages/views/locales/en/issues.json
       // (team_leader_action / team_leader_no_action / team_leader_failed,
       // each with an optional `_reason` variant).
-      const reason = details.reason?.trim();
-      switch (details.outcome) {
+      const reason = detailString(details, "reason")?.trim();
+      switch (detailString(details, "outcome")) {
         case "action":
           return reason
             ? `evaluated and took action: ${reason}`
@@ -152,9 +185,7 @@ export function formatActivity(
             ? `evaluated: no action needed (${reason})`
             : "evaluated: no action needed";
         case "failed":
-          return reason
-            ? `evaluation failed: ${reason}`
-            : "evaluation failed";
+          return reason ? `evaluation failed: ${reason}` : "evaluation failed";
         default:
           return "evaluated the team trigger";
       }

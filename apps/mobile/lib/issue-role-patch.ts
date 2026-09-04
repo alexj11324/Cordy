@@ -15,12 +15,13 @@
  * why the return type is exact rather than a partial spread of the request.
  */
 import type {
+  CreateIssueRequest,
   IssueExecutorType,
   IssueOwnerType,
   IssueReviewerType,
 } from "@patchbay/core/types";
 import type { ExecutorValue } from "@/components/issue/pickers/executor-picker-body";
-import type { RoleValue } from "@/components/issue/pickers/role-picker-body";
+import type { RoleValue } from "@/lib/issue-role-options";
 
 export type OwnerPatch = {
   owner_type: IssueOwnerType | null;
@@ -55,4 +56,34 @@ export function executorPatch(next: ExecutorValue): ExecutorPatch {
 export function reviewerPatch(next: RoleValue): ReviewerPatch {
   if (!next) return { reviewer_type: null, reviewer_id: null };
   return { reviewer_type: next.type, reviewer_id: next.id };
+}
+
+type IssueRoleCreateFields = Partial<
+  Pick<
+    CreateIssueRequest,
+    | "owner_type"
+    | "owner_id"
+    | "executor_type"
+    | "executor_id"
+    | "reviewer_type"
+    | "reviewer_id"
+  >
+>;
+
+export function issueRoleCreateFields(
+  owner: RoleValue,
+  executor: ExecutorValue,
+  reviewer: RoleValue,
+): IssueRoleCreateFields {
+  return {
+    ...(owner?.type === "member"
+      ? { owner_type: "member" as const, owner_id: owner.id }
+      : {}),
+    ...(executor
+      ? { executor_type: executor.type, executor_id: executor.id }
+      : {}),
+    ...(reviewer
+      ? { reviewer_type: reviewer.type, reviewer_id: reviewer.id }
+      : {}),
+  };
 }

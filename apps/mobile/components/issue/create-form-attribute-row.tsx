@@ -67,13 +67,13 @@ export function CreateFormAttributeRow() {
   // The draft can hold a custom status the user picked in the sheet. (MUL-6243)
   const { categoryOf, colorOf, labelOf } = useIssueStatuses();
   const ownerLabel = owner
-    ? getName(owner.type, owner.id) ?? roleCopy.unknown
+    ? (getName(owner.type, owner.id) ?? roleCopy.unknownOwner)
     : roleCopy.owner;
   const executorLabel = executor
-    ? getName(executor.type, executor.id) ?? roleCopy.unknown
+    ? (getName(executor.type, executor.id) ?? roleCopy.unknownExecutor)
     : roleCopy.executor;
   const reviewerLabel = reviewer
-    ? getName(reviewer.type, reviewer.id) ?? roleCopy.unknown
+    ? (getName(reviewer.type, reviewer.id) ?? roleCopy.unknownReviewer)
     : roleCopy.reviewer;
   const priorityLabel =
     priority === "none" ? "Priority" : PRIORITY_LABEL[priority];
@@ -144,11 +144,7 @@ export function CreateFormAttributeRow() {
         <AttributeChip
           icon={
             reviewer ? (
-              <ActorAvatar
-                type={reviewer.type}
-                id={reviewer.id}
-                size={16}
-              />
+              <ActorAvatar type={reviewer.type} id={reviewer.id} size={16} />
             ) : (
               <Ionicons
                 name="checkmark-circle-outline"

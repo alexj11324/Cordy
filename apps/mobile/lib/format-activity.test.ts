@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { TimelineEntry } from "@patchbay/core/types";
 import { formatActivity } from "./format-activity";
 
-function activity(action: string, details: Record<string, string>): TimelineEntry {
+function activity(
+  action: string,
+  details: Record<string, unknown>,
+): TimelineEntry {
   return {
     type: "activity",
     id: "activity-1",
@@ -14,8 +17,10 @@ function activity(action: string, details: Record<string, string>): TimelineEntr
   };
 }
 
-const actorName = (_type: string | null | undefined, id: string | null | undefined) =>
-  id === "agent-2" ? "Build Agent" : "Alex";
+const actorName = (
+  _type: string | null | undefined,
+  id: string | null | undefined,
+) => (id === "agent-2" ? "Build Agent" : "Alex");
 
 describe("formatActivity role changes", () => {
   it("renders executor changes with explicit role terminology", () => {
@@ -98,6 +103,49 @@ describe("formatActivity role changes", () => {
         actorName,
       ),
     ).toBe("removed reviewer");
+  });
+
+  it("does not mistake a custom in-review status change for a handoff", () => {
+    expect(
+      formatActivity(
+        activity("review_handoff", {
+          from_status: "qa_pending",
+          to_status: "qa_active",
+          from_type: "member",
+          from_id: "member-1",
+          to_type: "agent",
+          to_id: "agent-2",
+        }),
+        actorName,
+        undefined,
+        (status) =>
+          status === "qa_pending" || status === "qa_active"
+            ? "in_review"
+            : "todo",
+      ),
+    ).toBe("changed reviewer from Alex to Build Agent");
+  });
+
+  it("ignores malformed optional detail values without throwing", () => {
+    expect(
+      formatActivity(
+        activity("team_leader_evaluated", {
+          outcome: "action",
+          reason: 42,
+        }),
+        actorName,
+      ),
+    ).toBe("evaluated and took action");
+
+    expect(
+      formatActivity(
+        activity("priority_changed", {
+          from: "none",
+          to: "constructor",
+        }),
+        actorName,
+      ),
+    ).toBe("changed priority: No priority → constructor");
   });
 
   it("preserves the raw action for unknown activity events", () => {

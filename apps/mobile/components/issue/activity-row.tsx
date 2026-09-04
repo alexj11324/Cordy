@@ -123,10 +123,14 @@ export function ActivityRow({ entry }: { entry: TimelineEntry }) {
   const resolveName = (
     type: string | null | undefined,
     id: string | null | undefined,
-  ): string =>
-    getName(type as "member" | "agent" | null | undefined, id);
+  ): string => getName(type as "member" | "agent" | null | undefined, id);
   const actorName = resolveName(entry.actor_type, entry.actor_id);
-  const verb = formatActivity(entry, resolveName, catalog.labelOf);
+  const verb = formatActivity(
+    entry,
+    resolveName,
+    catalog.labelOf,
+    catalog.categoryOf,
+  );
   const showCoalesceBadge =
     (entry.coalesced_count ?? 1) > 1 &&
     entry.action !== "task_completed" &&
@@ -137,10 +141,7 @@ export function ActivityRow({ entry }: { entry: TimelineEntry }) {
       <View className="w-4 items-center justify-center shrink-0">
         <LeadIcon entry={entry} catalog={catalog} mutedFg={mutedFg} />
       </View>
-      <Text
-        className="text-xs text-muted-foreground flex-1"
-        numberOfLines={1}
-      >
+      <Text className="text-xs text-muted-foreground flex-1" numberOfLines={1}>
         <Text className="text-xs text-muted-foreground font-medium">
           {actorName}
         </Text>

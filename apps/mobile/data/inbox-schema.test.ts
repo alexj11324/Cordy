@@ -6,12 +6,11 @@ import { InboxListSchema } from "./schemas";
  *
  * Scope, stated precisely because the name of this file used to overclaim:
  * these are hand-written fixtures run against `InboxListSchema`. They pin how
- * this client REACTS to a given payload. They cannot fail when the Go server
- * starts sending something new — nothing here executes server code.
+ * this client REACTS to a given payload. They cannot fail when the API producer
+ * starts sending something new — nothing here executes the producer.
  *
- * The matching server-side guarantee is structural rather than a test: every
- * `details` map in server/cmd/server/notification_listeners.go is typed
- * `map[string]string`, so a non-string value is a compile error there.
+ * The matching producer-side guarantee is structural rather than exercised by
+ * this test: every `details` value in the API contract is a string.
  *
  * Why both halves exist: during MUL-5483 a new inbox type was added and the
  * mobile label map was updated so `tsc` passed — but a NUMBER went into
@@ -92,5 +91,24 @@ describe("inbox list schema", () => {
 
     const parsed = InboxListSchema.safeParse([future]);
     expect(parsed.success).toBe(true);
+  });
+
+  it("preserves reviewer details on review requests", () => {
+    const reviewRequest = {
+      id: "inbox-review",
+      recipient_type: "agent",
+      recipient_id: "agent-2",
+      type: "review_requested",
+      details: {
+        new_reviewer_type: "agent",
+        new_reviewer_id: "agent-2",
+      },
+    };
+
+    const parsed = InboxListSchema.safeParse([reviewRequest]);
+    expect(parsed.success).toBe(true);
+    expect(
+      parsed.success && parsed.data[0]?.details?.new_reviewer_id,
+    ).toBe("agent-2");
   });
 });

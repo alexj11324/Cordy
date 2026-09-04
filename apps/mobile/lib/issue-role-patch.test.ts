@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  issueRoleCreateFields,
   executorPatch,
   ownerPatch,
   reviewerPatch,
@@ -102,5 +103,24 @@ describe("issue role patches", () => {
       owner_type: null,
       owner_id: null,
     });
+  });
+
+  it("builds independent role pairs for issue creation", () => {
+    expect(
+      issueRoleCreateFields(
+        { type: "member", id: "member-1" },
+        { type: "agent", id: "agent-1" },
+        { type: "team", id: "team-1" },
+      ),
+    ).toEqual({
+      owner_type: "member",
+      owner_id: "member-1",
+      executor_type: "agent",
+      executor_id: "agent-1",
+      reviewer_type: "team",
+      reviewer_id: "team-1",
+    });
+
+    expect(issueRoleCreateFields(null, null, null)).toEqual({});
   });
 });

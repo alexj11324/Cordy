@@ -28,7 +28,7 @@ import type {
   Project,
 } from "@patchbay/core/types";
 import type { ExecutorValue } from "@/components/issue/pickers/executor-picker-body";
-import type { RoleValue } from "@/components/issue/pickers/role-picker-body";
+import type { RoleValue } from "@/lib/issue-role-options";
 
 type NewIssueDraftState = {
   status: IssueStatus;

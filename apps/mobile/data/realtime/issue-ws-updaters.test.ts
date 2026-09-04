@@ -34,6 +34,35 @@ describe("invalidateIssueAfterReconnect", () => {
 });
 
 describe("mobile issue revision gates", () => {
+  it("patches reviewer fields without replacing owner or executor", () => {
+    const qc = new QueryClient();
+    const key = issueKeys.detail(wsId, issueId);
+    qc.setQueryData<Issue>(key, {
+      id: issueId,
+      owner_type: "member",
+      owner_id: "member-1",
+      executor_type: "agent",
+      executor_id: "agent-1",
+      reviewer_type: null,
+      reviewer_id: null,
+      revision: 1,
+    } as Issue);
+
+    patchIssueDetail(qc, wsId, {
+      id: issueId,
+      reviewer_type: "team",
+      reviewer_id: "team-1",
+      revision: 2,
+    });
+
+    expect(qc.getQueryData<Issue>(key)).toMatchObject({
+      owner_id: "member-1",
+      executor_id: "agent-1",
+      reviewer_type: "team",
+      reviewer_id: "team-1",
+    });
+  });
+
   const wsId = "workspace-1";
   const issueId = "issue-1";
 

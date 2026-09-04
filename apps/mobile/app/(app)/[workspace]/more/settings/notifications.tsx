@@ -2,10 +2,8 @@
  * Notification preferences subscreen. 6 inbox groups + system_notifications
  * toggle, each backed by an optimistic PATCH /api/notification-preferences.
  *
- * Copy mirrors packages/views/settings/components/notifications-tab.tsx but
- * hardcoded English (mobile has no i18n infra yet). The group labels MUST
- * stay in sync with web — they describe the same server-side semantics,
- * and divergent labels would violate behavioral parity (apps/mobile/CLAUDE.md).
+ * These labels describe the notification-group API contract. Mobile keeps
+ * them local until this settings screen adopts the product locale layer.
  */
 import { ActivityIndicator, ScrollView, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
@@ -20,11 +18,11 @@ import { useWorkspaceStore } from "@/data/workspace-store";
 import { notificationPreferenceOptions } from "@/data/queries/notification-preferences";
 import { useUpdateNotificationPreferences } from "@/data/mutations/notification-preferences";
 
-const INBOX_GROUPS: Array<{
+const INBOX_GROUPS: {
   key: Exclude<NotificationGroupKey, "system_notifications">;
   label: string;
   description: string;
-}> = [
+}[] = [
   {
     key: "assignments",
     label: "Role assignments",

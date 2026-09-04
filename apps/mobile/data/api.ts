@@ -167,6 +167,10 @@ import { getCurrentSlug } from "./workspace-store";
 import { parseWithFallback } from "@/lib/parse-response";
 import { createRequestId } from "@/lib/request-id";
 import { buildCommentUpdateBody } from "./revision";
+import {
+  parseCreatedIssueResponse,
+  parseUpdatedIssueResponse,
+} from "./issue-response";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
@@ -829,10 +833,11 @@ class ApiClient {
   // CreateIssue). Mobile sends only the fields the form fills in; backend
   // applies its own defaults for anything omitted.
   async createIssue(body: CreateIssueRequest): Promise<Issue> {
-    return this.fetch<Issue>("/api/issues", {
+    const raw = await this.fetch<unknown>("/api/issues", {
       method: "POST",
       body: JSON.stringify(body),
     });
+    return parseCreatedIssueResponse(raw);
   }
 
   // Timeline returns the full ASC entry list in one shot — server-side
@@ -1013,15 +1018,17 @@ class ApiClient {
   }
 
   // --- Issue update ---
-  // Write endpoint — the mutation surface handles errors via rollback, so
-  // we let bad responses surface naturally (no parseWithFallback).
+  // Write endpoint — the mutation surface handles validation errors via
+  // rollback. A malformed success body is rejected before it can replace the
+  // optimistic issue snapshot.
   // Method is PUT to match backend router (server/cmd/server/router.go:327)
   // and web client (packages/core/api/client.ts:465).
   async updateIssue(id: string, body: UpdateIssueRequest): Promise<Issue> {
-    return this.fetch<Issue>(`/api/issues/${id}`, {
+    const raw = await this.fetch<unknown>(`/api/issues/${id}`, {
       method: "PUT",
       body: JSON.stringify(body),
     });
+    return parseUpdatedIssueResponse(id, raw);
   }
 
   // Backend returns 204 No Content on success
