@@ -94,23 +94,6 @@ func (q *Queries) CreateAuthorizationAuditEvent(ctx context.Context, arg CreateA
 const createProviderAuthorizationDecision = `-- name: CreateProviderAuthorizationDecision :one
 WITH budget_lock AS (
     SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))
-), reservation_totals AS (
-    SELECT COALESCE(sum(
-        CASE
-            WHEN event.context->>'provider_request_tokens' ~ '^[0-9]+$'
-            THEN (event.context->>'provider_request_tokens')::bigint
-            ELSE 0::bigint
-        END
-    ), 0)::bigint AS total_reserved
-    FROM authorization_audit_event event
-    CROSS JOIN budget_lock
-    WHERE event.workspace_id = $2
-      AND event.action = 'credential.use'
-      AND event.resource_type = 'provider_identity'
-      AND event.resource_id = $3
-      AND event.decision = 'allow'
-      AND event.matched_grant_ids && $4::uuid[]
-      AND event.context->>'provider_budget_reservation' = 'true'
 ), final_decision AS (
     SELECT
         CASE
@@ -134,7 +117,24 @@ WITH budget_lock AS (
             THEN 0::bigint
             ELSE $8::bigint
         END AS reservation
-	FROM reservation_totals
+    FROM (
+        SELECT COALESCE(sum(
+            CASE
+                WHEN event.context->>'provider_request_tokens' ~ '^[0-9]+$'
+                THEN (event.context->>'provider_request_tokens')::bigint
+                ELSE 0::bigint
+            END
+        ), 0)::bigint AS total_reserved
+        FROM authorization_audit_event AS event
+        CROSS JOIN budget_lock
+        WHERE event.workspace_id = $2
+          AND event.action = 'credential.use'
+          AND event.resource_type = 'provider_identity'
+          AND event.resource_id = $3
+          AND event.decision = 'allow'
+          AND event.matched_grant_ids && $4::uuid[]
+          AND event.context->>'provider_budget_reservation' = 'true'
+    ) AS reservation_totals
 )
 INSERT INTO authorization_audit_event (
     id, workspace_id, principal_type, principal_id, on_behalf_of_user_id,

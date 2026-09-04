@@ -71,23 +71,6 @@ RETURNING *;
 -- final decision atomically. It never stores bearer tokens or secrets.
 WITH budget_lock AS (
     SELECT pg_advisory_xact_lock(hashtextextended(@budget_lock_key::text, 0))
-), reservation_totals AS (
-    SELECT COALESCE(sum(
-        CASE
-            WHEN event.context->>'provider_request_tokens' ~ '^[0-9]+$'
-            THEN (event.context->>'provider_request_tokens')::bigint
-            ELSE 0::bigint
-        END
-    ), 0)::bigint AS total_reserved
-    FROM authorization_audit_event event
-    CROSS JOIN budget_lock
-    WHERE event.workspace_id = @workspace_id
-      AND event.action = 'credential.use'
-      AND event.resource_type = 'provider_identity'
-      AND event.resource_id = @resource_id
-      AND event.decision = 'allow'
-      AND event.matched_grant_ids && @matched_grant_ids::uuid[]
-      AND event.context->>'provider_budget_reservation' = 'true'
 ), final_decision AS (
     SELECT
         CASE
@@ -111,7 +94,24 @@ WITH budget_lock AS (
             THEN 0::bigint
             ELSE @reservation::bigint
         END AS reservation
-    FROM reservation_totals
+    FROM (
+        SELECT COALESCE(sum(
+            CASE
+                WHEN event.context->>'provider_request_tokens' ~ '^[0-9]+$'
+                THEN (event.context->>'provider_request_tokens')::bigint
+                ELSE 0::bigint
+            END
+        ), 0)::bigint AS total_reserved
+        FROM authorization_audit_event AS event
+        CROSS JOIN budget_lock
+        WHERE event.workspace_id = @workspace_id
+          AND event.action = 'credential.use'
+          AND event.resource_type = 'provider_identity'
+          AND event.resource_id = @resource_id
+          AND event.decision = 'allow'
+          AND event.matched_grant_ids && @matched_grant_ids::uuid[]
+          AND event.context->>'provider_budget_reservation' = 'true'
+    ) AS reservation_totals
 )
 INSERT INTO authorization_audit_event (
     id, workspace_id, principal_type, principal_id, on_behalf_of_user_id,
