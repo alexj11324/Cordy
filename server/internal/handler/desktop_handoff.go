@@ -7,11 +7,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"html"
 	"io"
 	"net/http"
-	"net/url"
 	"regexp"
 	"strings"
 
@@ -44,11 +41,13 @@ type desktopAuthHandoffRequest struct {
 }
 
 type desktopAuthHandoffRedeemRequest struct {
+	State        string `json:"state,omitempty"`
 	Code         string `json:"code"`
 	CodeVerifier string `json:"code_verifier"`
 }
 
 type desktopGoogleAttemptRequest struct {
+	Local         bool   `json:"local,omitempty"`
 	State         string `json:"state"`
 	CodeChallenge string `json:"code_challenge"`
 }
@@ -93,44 +92,6 @@ func decodeDesktopGoogleAttempt(w http.ResponseWriter, r *http.Request, dst *des
 
 func validDesktopGoogleAttempt(req desktopGoogleAttemptRequest) bool {
 	return desktopHandoffOpaquePattern.MatchString(req.State) && desktopHandoffOpaquePattern.MatchString(req.CodeChallenge)
-}
-
-func parseDesktopLoopbackSession(r *http.Request) (string, desktopGoogleAttemptRequest, bool) {
-	if err := r.ParseForm(); err != nil {
-		return "", desktopGoogleAttemptRequest{}, false
-	}
-	token := strings.TrimSpace(r.Form.Get("session"))
-	req := desktopGoogleAttemptRequest{
-		State:         r.Form.Get("state"),
-		CodeChallenge: r.Form.Get("code_challenge"),
-	}
-	if token == "" || len(token) > 8192 || strings.ContainsAny(token, "\r\n") || !validDesktopGoogleAttempt(req) {
-		return "", desktopGoogleAttemptRequest{}, false
-	}
-	return token, req, true
-}
-
-func desktopNativeCallbackURL(protocol, code, state string) (string, error) {
-	if !desktopHandoffCodePattern.MatchString(code) || !desktopHandoffOpaquePattern.MatchString(state) {
-		return "", errors.New("invalid desktop callback")
-	}
-	if protocol != desktopAuthCallbackProtocol && !strings.HasPrefix(protocol, "patchbay-canary") {
-		return "", errors.New("invalid desktop callback")
-	}
-	u := url.URL{Scheme: protocol, Host: "auth", Path: "/callback"}
-	query := u.Query()
-	query.Set("code", code)
-	query.Set("state", state)
-	u.RawQuery = query.Encode()
-	return u.String(), nil
-}
-
-func writeDesktopNativeRedirect(w http.ResponseWriter, callback string) {
-	escaped := html.EscapeString(callback)
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(http.StatusOK)
-	_, _ = fmt.Fprintf(w, `<!doctype html><meta http-equiv="refresh" content="0;url=%s"><script>location.replace(%q)</script><a href="%s">Open Patchbay</a>`, escaped, callback, escaped)
 }
 
 func (h *Handler) RegisterDesktopGoogleAttempt(w http.ResponseWriter, r *http.Request) {
@@ -194,6 +155,11 @@ func (h *Handler) finishDesktopGoogleAttempt(r *http.Request, token string, req 
 	if err != nil {
 		return "", "", http.StatusInternalServerError, "failed to create desktop auth handoff"
 	}
+	// Hash the complete purpose-prefixed code. Local identity grants can never
+	// be changed into production session grants by replacing their prefix.
+	if req.Local {
+		code = "pbl_" + strings.TrimPrefix(code, "pbd_")
+	}
 	protocol, err := h.Queries.CompleteDesktopAuthHandoff(r.Context(), db.CompleteDesktopAuthHandoffParams{State: req.State, UserID: user.ID, CodeHash: pgtype.Text{String: auth.HashToken(code), Valid: true}, CodeChallenge: req.CodeChallenge})
 	if err != nil {
 		return "", "", http.StatusConflict, "desktop Google OAuth attempt was already used"
@@ -221,25 +187,6 @@ func (h *Handler) CompleteDesktopGoogleAttempt(w http.ResponseWriter, r *http.Re
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"callback_protocol": protocol, "code": code})
-}
-
-func (h *Handler) CompleteDesktopLoopbackSession(w http.ResponseWriter, r *http.Request) {
-	token, req, ok := parseDesktopLoopbackSession(r)
-	if !ok {
-		writeError(w, http.StatusBadRequest, "invalid desktop session")
-		return
-	}
-	protocol, code, status, errMsg := h.finishDesktopGoogleAttempt(r, token, req)
-	if errMsg != "" {
-		writeError(w, status, errMsg)
-		return
-	}
-	callback, err := desktopNativeCallbackURL(protocol, code, req.State)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to create desktop auth handoff")
-		return
-	}
-	writeDesktopNativeRedirect(w, callback)
 }
 
 // desktopHandoffCodeChallenge derives the S256 PKCE challenge used by the
@@ -353,10 +300,17 @@ func (h *Handler) CompleteDesktopAuthHandoff(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *Handler) RedeemDesktopAuthHandoff(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	var req desktopAuthHandoffRedeemRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil ||
-		!desktopHandoffCodePattern.MatchString(req.Code) ||
-		!desktopHandoffOpaquePattern.MatchString(req.CodeVerifier) {
+	if !decodeDesktopHandoffRedeem(w, r, &req) {
+		writeError(w, http.StatusUnauthorized, "invalid desktop auth handoff")
+		return
+	}
+	if desktopLocalIdentityCodePattern.MatchString(req.Code) {
+		h.redeemLocalDesktopSession(w, r, req)
+		return
+	}
+	if !desktopHandoffCodePattern.MatchString(req.Code) {
 		writeError(w, http.StatusUnauthorized, "invalid desktop auth handoff")
 		return
 	}

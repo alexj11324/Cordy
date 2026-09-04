@@ -4513,3 +4513,11 @@ export const EMPTY_JOIN_SHARE_LINK_RESPONSE: {
   workspace_id: "",
   workspace_slug: "",
 };
+
+export const DesktopSessionResponseSchema = z.object({ token: z.string().min(1) });
+
+export const DesktopHandoffResponseSchema = z.object({
+  callback_protocol: z.literal("patchbay"),
+  code: z.string().regex(/^pbd_[A-Za-z0-9_-]{43}$/),
+  state: z.string().regex(/^[A-Za-z0-9._~-]{43,128}$/),
+});

@@ -6,7 +6,6 @@ import { useSearchParams } from "next/navigation";
 import { AuthShell } from "@/components/auth-shell";
 import { registerDesktopGoogleAttempt } from "@/lib/broker-client";
 import { readDesktopHandoffBinding } from "@/lib/desktop-handoff";
-import { loopbackFreshKey } from "@/lib/session-api";
 import { hasClerkOAuthReturn, readGoogleSso, startGoogleOAuth } from "@/lib/google-oauth";
 import { useAuthMessages } from "@/lib/auth-messages";
 import { resolveStandaloneReturnUrl } from "@/lib/redirect";
@@ -45,11 +44,6 @@ function Content() {
       return;
     }
     if (binding && !registered) {
-      if (binding.sessionApi) {
-        window.sessionStorage.setItem(loopbackFreshKey(binding.state), "1");
-        setRegistered(true);
-        return;
-      }
       started.current = true;
       void registerDesktopGoogleAttempt({
         state: binding.state,

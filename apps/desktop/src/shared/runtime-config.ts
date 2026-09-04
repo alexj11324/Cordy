@@ -57,7 +57,7 @@ export function runtimeConfigFromDevEnv(env: RuntimeConfigEnv): RuntimeConfig {
     appUrl,
     accountsUrl: env.accountsUrl
       ? normalizeHttpUrl(env.accountsUrl, "VITE_ACCOUNTS_URL")
-      : DEFAULT_RUNTIME_CONFIG.accountsUrl,
+      : defaultAccountsUrl(apiUrl, appUrl),
   };
 }
 

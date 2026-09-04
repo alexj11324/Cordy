@@ -138,7 +138,7 @@ describe("runtime config", () => {
       apiUrl: "http://dev-api.example.test:8080",
       wsUrl: "ws://dev-api.example.test:8080/ws",
       appUrl: "http://dev-app.example.test:3000",
-      accountsUrl: "https://accounts.aspectlylabs.com",
+      accountsUrl: "http://dev-app.example.test:3000",
     });
   });
 
@@ -178,7 +178,7 @@ describe("runtime config", () => {
       apiUrl: "https://api.test.aspectlylabs.com",
       wsUrl: "wss://api.test.aspectlylabs.com/ws",
       appUrl: "https://test.aspectlylabs.com",
-      accountsUrl: "https://accounts.aspectlylabs.com",
+      accountsUrl: "https://test.aspectlylabs.com",
     });
   });
 
@@ -193,7 +193,7 @@ describe("runtime config", () => {
       apiUrl: "https://api.test.aspectlylabs.com",
       wsUrl: "wss://api.test.aspectlylabs.com/ws",
       appUrl: "https://staging.aspectlylabs.com",
-      accountsUrl: "https://accounts.aspectlylabs.com",
+      accountsUrl: "https://staging.aspectlylabs.com",
     });
   });
 });

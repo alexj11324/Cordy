@@ -168,20 +168,52 @@ describe("CallbackPage", () => {
     }
   });
 
-  it("does not complete Desktop login on the product web callback", async () => {
-    mockSearchParams.set(
-      "state",
-      "platform:desktop,desktop_state:desktop-state,desktop_code_challenge:desktop-challenge",
-    );
-
-    render(<CallbackPage />);
-
-    await waitFor(() => {
-      expect(screen.getByText("Unsupported login callback")).toBeInTheDocument();
+  it("completes a desktop handoff after the Google exchange without exposing a JWT", async () => {
+    const hrefSetter = vi.fn();
+    const originalLocation = window.location;
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      writable: true,
+      value: {
+        ...originalLocation,
+        set href(value: string) {
+          hrefSetter(value);
+        },
+      },
     });
-    expect(mockGoogleLogin).not.toHaveBeenCalled();
-    expect(mockCompleteDesktopAuthHandoff).not.toHaveBeenCalled();
-    expect(screen.queryByText("Opening Patchbay")).not.toBeInTheDocument();
+
+    try {
+      mockSearchParams.set(
+        "state",
+        "platform:desktop,desktop_state:desktop-state,desktop_code_challenge:desktop-challenge",
+      );
+      mockGoogleLogin.mockResolvedValue({ token: "must-not-be-in-uri" });
+      mockCompleteDesktopAuthHandoff.mockResolvedValue({
+        callback_protocol: "patchbay",
+        code: "one-time-code",
+        state: "desktop-state",
+      });
+
+      render(<CallbackPage />);
+
+      await waitFor(() => {
+        expect(mockCompleteDesktopAuthHandoff).toHaveBeenCalledWith(
+          "desktop-state",
+          "desktop-challenge",
+        );
+      });
+      await waitFor(() => {
+        expect(hrefSetter).toHaveBeenCalledWith(
+          "patchbay://auth/callback?code=one-time-code&state=desktop-state",
+        );
+      });
+      expect(hrefSetter.mock.calls[0]?.[0]).not.toContain("must-not-be-in-uri");
+    } finally {
+      Object.defineProperty(window, "location", {
+        configurable: true,
+        value: originalLocation,
+      });
+    }
   });
 
 });

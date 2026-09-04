@@ -130,72 +130,28 @@ describe("Accounts desktop login", () => {
     );
   });
 
-  it("does not register a production Google attempt for a loopback session API", async () => {
-    mocks.searchParams.current = new URLSearchParams({
-      platform: "desktop",
-      state: STATE,
-      code_challenge: CHALLENGE,
-      session_api: "http://localhost:8080",
-    });
-
-    render(<Page />);
-
-    expect(await screen.findByTestId("accounts-login-form")).toBeInTheDocument();
-    expect(mocks.register).not.toHaveBeenCalled();
-    expect(mocks.complete).not.toHaveBeenCalled();
-  });
-
-  it("does not post an ambient Clerk session to the loopback API", async () => {
-    const submit = vi.fn();
-    HTMLFormElement.prototype.submit = submit;
+  it("rejects a browser-selected local token destination before requesting a token", async () => {
     mocks.auth.isSignedIn = true;
-    mocks.getToken.mockResolvedValue("ambient-clerk-token");
-    mocks.searchParams.current = new URLSearchParams({
-      platform: "desktop",
-      state: STATE,
-      code_challenge: CHALLENGE,
-      session_api: "http://localhost:8080",
-    });
-
+    mocks.searchParams.current.set("session_api", "http://localhost:19080");
     render(<Page />);
-
-    await waitFor(() => expect(mocks.signOut).toHaveBeenCalledOnce());
-    expect(submit).not.toHaveBeenCalled();
-    expect(mocks.complete).not.toHaveBeenCalled();
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(mocks.getToken).not.toHaveBeenCalled();
+    expect(document.querySelector('input[name="session"]')).toBeNull();
   });
 
-  it("posts the Clerk session to the loopback product API after a fresh sign-in", async () => {
-    const submit = vi.fn();
-    HTMLFormElement.prototype.submit = submit;
-    window.sessionStorage.setItem(
-      `patchbay_desktop_loopback_fresh:${STATE}`,
-      "1",
-    );
+  it("completes a local login through the broker without posting a bearer to localhost", async () => {
     mocks.auth.isSignedIn = true;
     mocks.getToken.mockResolvedValue("clerk-session-token");
-    mocks.searchParams.current = new URLSearchParams({
-      platform: "desktop",
-      state: STATE,
-      code_challenge: CHALLENGE,
-      session_api: "http://localhost:8080",
-    });
-
+    mocks.complete.mockResolvedValue({ code: `pbl_${"c".repeat(43)}`, callbackProtocol: "patchbay" });
+    mocks.searchParams.current.set("session_mode", "local");
     render(<Page />);
-
-    await waitFor(() => expect(submit).toHaveBeenCalledOnce());
-    const form = document.querySelector("form");
-    expect(form?.getAttribute("action")).toBe(
-      "http://localhost:8080/auth/desktop-session/complete",
-    );
-    expect(form?.getAttribute("method")).toBe("POST");
-    expect(
-      (form?.querySelector('input[name="session"]') as HTMLInputElement | null)
-        ?.value,
-    ).toBe("clerk-session-token");
-    expect(mocks.complete).not.toHaveBeenCalled();
-    expect(mocks.signOut).not.toHaveBeenCalled();
-    expect(screen.queryByText("Opening Patchbay…")).not.toBeInTheDocument();
-    expect(screen.getByText("Finishing sign-in…")).toBeInTheDocument();
+    await waitFor(() => expect(mocks.complete).toHaveBeenCalledWith("clerk-session-token", {
+      state: STATE, code_challenge: CHALLENGE, local: true,
+    }));
+    const link = await screen.findByRole("link", { name: "Open Patchbay" });
+    expect(link.getAttribute("href")).toContain("patchbay://auth/callback?code=pbl_");
+    expect(document.querySelector("form")).toBeNull();
+    expect(document.querySelector('input[name="session"]')).toBeNull();
   });
 
   it("completes a production desktop binding even if Clerk signs in while register is in flight", async () => {

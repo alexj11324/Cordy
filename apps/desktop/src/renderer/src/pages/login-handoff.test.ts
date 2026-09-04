@@ -50,7 +50,7 @@ describe("desktop auth handoff", () => {
     );
   });
 
-  it("binds a loopback product API into the Accounts login URL", async () => {
+  it("requests local identity without exposing the local API origin", async () => {
     const initiate = vi.fn().mockResolvedValue({ registered: true });
 
     const url = await createDesktopLoginUrl(
@@ -61,7 +61,13 @@ describe("desktop auth handoff", () => {
     const parsed = new URL(url);
 
     expect(parsed.origin).toBe("https://accounts.aspectlylabs.com");
-    expect(parsed.searchParams.get("session_api")).toBe("http://localhost:8080");
+    expect(parsed.searchParams.get("session_api")).toBeNull();
+    expect(parsed.searchParams.get("session_mode")).toBe("local");
+  });
+
+  it("keeps explicit self-hosted Accounts on its own handoff authority", async () => {
+    const url = await createDesktopLoginUrl("https://accounts.example.test", vi.fn().mockResolvedValue({ registered: true }), { sessionApiUrl: "http://localhost:8080" });
+    expect(new URL(url).searchParams.get("session_mode")).toBeNull();
   });
 
   it("does not advertise a non-loopback API as the session minting origin", async () => {

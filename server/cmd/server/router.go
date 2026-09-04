@@ -443,6 +443,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		AllowSignup:              os.Getenv("ALLOW_SIGNUP") != "false",
 		AllowedEmails:            splitAndTrim(os.Getenv("ALLOWED_EMAILS")),
 		AllowedEmailDomains:      splitAndTrim(os.Getenv("ALLOWED_EMAIL_DOMAINS")),
+		HostedDesktopIdentity:    os.Getenv("PATCHBAY_HOSTED_DESKTOP_IDENTITY") == "1",
 		DesktopBrokerAuthToken:   strings.TrimSpace(os.Getenv("PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN")),
 		ClerkSecretKey:           strings.TrimSpace(os.Getenv("CLERK_SECRET_KEY")),
 		ClerkJWTKey:              strings.TrimSpace(os.Getenv("CLERK_JWT_KEY")),
@@ -1537,7 +1538,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// this endpoint as its primary sign-in path.
 	r.With(authRL).Post("/auth/google", h.GoogleLogin)
 	r.With(authRL).Post("/auth/guest", h.CreateGuestAuth)
-	r.With(desktopHandoffRL).Post("/auth/desktop-session/complete", h.CompleteDesktopLoopbackSession)
+	r.With(desktopHandoffRL).Post("/api/desktop-identity/redeem", h.RedeemDesktopLocalIdentity)
 	r.With(desktopHandoffRL).Post("/api/desktop-handoff/initiate", h.InitiateDesktopAuthHandoff)
 	r.With(desktopHandoffRL).Post("/api/desktop-handoff/redeem", h.RedeemDesktopAuthHandoff)
 	r.With(handler.RequireDesktopBrokerAuth(signupConfig.DesktopBrokerAuthToken), desktopHandoffRL).Post("/api/desktop-google/attempt", h.RegisterDesktopGoogleAttempt)
@@ -2142,13 +2143,13 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Put("/metadata/{key}", h.SetIssueMetadataKey)
 					r.Delete("/metadata/{key}", h.DeleteIssueMetadataKey)
 					r.Put("/properties/{propertyId}", h.SetIssueProperty)
-						r.Delete("/properties/{propertyId}", h.DeleteIssueProperty)
-						r.Get("/work-products", h.ListWorkProductsForIssue)
-						r.Post("/work-products", h.AttachExistingWorkProduct)
-						r.Delete("/work-products/{workProductId}", h.DetachWorkProduct)
-						r.Get("/pull-requests", h.ListIssuePullRequests)
-						r.Post("/pull-requests", h.AttachIssuePullRequest)
-						r.Get("/dependency-graph", h.GetIssueDependencyGraph)
+					r.Delete("/properties/{propertyId}", h.DeleteIssueProperty)
+					r.Get("/work-products", h.ListWorkProductsForIssue)
+					r.Post("/work-products", h.AttachExistingWorkProduct)
+					r.Delete("/work-products/{workProductId}", h.DetachWorkProduct)
+					r.Get("/pull-requests", h.ListIssuePullRequests)
+					r.Post("/pull-requests", h.AttachIssuePullRequest)
+					r.Get("/dependency-graph", h.GetIssueDependencyGraph)
 					r.Post("/dependency-graph/apply", h.ApplyIssueDependencyGraph)
 				})
 			})
@@ -2531,16 +2532,16 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			r.Get("/api/chat/history", h.GetChatChannelHistory)
 			r.Get("/api/chat/thread", h.GetChatThread)
 
-				// Work products & provenance
-				r.Route("/api/work-products", func(r chi.Router) {
-					r.Get("/unassociated", h.ListUnassociatedWorkProducts)
-					r.Get("/", h.ListWorkProducts)
-					r.Post("/", h.CreateWorkProduct)
+			// Work products & provenance
+			r.Route("/api/work-products", func(r chi.Router) {
+				r.Get("/unassociated", h.ListUnassociatedWorkProducts)
+				r.Get("/", h.ListWorkProducts)
+				r.Post("/", h.CreateWorkProduct)
 				r.Route("/{id}", func(r chi.Router) {
 					r.Get("/", h.GetWorkProduct)
 				})
 			})
-				r.Get("/api/tasks/{taskId}/work-products", h.ListWorkProductsForTask)
+			r.Get("/api/tasks/{taskId}/work-products", h.ListWorkProductsForTask)
 			r.Route("/api/tasks/{taskId}/provenance", func(r chi.Router) {
 				r.Get("/", h.GetProvenanceByTask)
 				r.Post("/", h.UpsertProvenance)

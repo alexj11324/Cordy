@@ -1,5 +1,5 @@
 import { ApiError } from "@patchbay/core/api";
-import { loopbackSessionApiUrl } from "../../../shared/runtime-config";
+import { DEFAULT_RUNTIME_CONFIG, loopbackSessionApiUrl } from "../../../shared/runtime-config";
 
 const PENDING_HANDOFF_KEY = "patchbay_desktop_login_handoff";
 const PENDING_HANDOFF_TTL_MS = 10 * 60 * 1000;
@@ -113,7 +113,9 @@ export async function createDesktopLoginUrl(
   url.searchParams.set("state", state);
   url.searchParams.set("code_challenge", codeChallenge);
   const sessionApi = loopbackSessionApiUrl(options?.sessionApiUrl ?? "");
-  if (sessionApi) url.searchParams.set("session_api", sessionApi);
+  if (sessionApi && url.origin === DEFAULT_RUNTIME_CONFIG.accountsUrl) {
+    url.searchParams.set("session_mode", "local");
+  }
   return url.href;
 }
 

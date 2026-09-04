@@ -172,11 +172,15 @@ func (h *Handler) issueJWT(user db.User) (string, error) {
 // event fires on that edge, covering both the verification-code and Google
 // OAuth entry points.
 func (h *Handler) findOrCreateUser(ctx context.Context, email string) (user db.User, isNew bool, err error) {
+	return h.findOrCreateUserWithQueries(ctx, h.Queries, email)
+}
+
+func (h *Handler) findOrCreateUserWithQueries(ctx context.Context, queries *db.Queries, email string) (user db.User, isNew bool, err error) {
 	if auth.IsTemporarilyDisabledUserEmail(email) {
 		return db.User{}, false, auth.ErrTemporarilyDisabledUser
 	}
 
-	user, err = h.Queries.GetUserByEmail(ctx, email)
+	user, err = queries.GetUserByEmail(ctx, email)
 	isNew = isNotFound(err)
 	if err != nil && !isNew {
 		return db.User{}, false, err
@@ -197,7 +201,7 @@ func (h *Handler) findOrCreateUser(ctx context.Context, email string) (user db.U
 	if at := strings.Index(email, "@"); at > 0 {
 		name = email[:at]
 	}
-	created, err := h.Queries.CreateUser(ctx, db.CreateUserParams{
+	created, err := queries.CreateUser(ctx, db.CreateUserParams{
 		Name:  name,
 		Email: email,
 	})

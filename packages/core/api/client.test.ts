@@ -8,6 +8,32 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("ApiClient desktop handoff", () => {
+  it("completes self-hosted handoffs with the authenticated API", async () => {
+    const state = "s".repeat(43);
+    const handoff = { state, code: `pbd_${"c".repeat(43)}`, callback_protocol: "patchbay" };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(handoff)));
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await new ApiClient("https://selfhost.example.test").completeDesktopAuthHandoff(state, "challenge")).toEqual(handoff);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://selfhost.example.test/api/desktop-handoff/complete");
+  });
+  it.each([{}, { code: "invalid" }, { code: `pbl_${"c".repeat(43)}`, state: "s".repeat(43), callback_protocol: "patchbay" }])("rejects malformed completion: %j", async (payload) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(payload))));
+    await expect(new ApiClient("https://selfhost.example.test").completeDesktopAuthHandoff("s".repeat(43), "challenge")).rejects.toThrow("Invalid desktop handoff response");
+  });
+  it("sends the local state with the PKCE proof", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ token: "local-session" })));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new ApiClient("http://localhost:8080");
+    expect(await client.redeemDesktopHandoff("pbl_fixture", "verifier", "state")).toEqual({ token: "local-session" });
+    expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body)).toEqual({ code: "pbl_fixture", code_verifier: "verifier", state: "state" });
+  });
+  it.each([{}, { token: 123 }, { token: "" }, null])("rejects a malformed native session: %j", async (payload) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(payload))));
+    await expect(new ApiClient("https://api.example.test").redeemDesktopHandoff("code", "verifier")).rejects.toThrow("Invalid desktop session response");
+  });
+});
+
 describe("ApiClient Clerk exchange", () => {
   it("exchanges the Clerk session without putting it in the body", async () => {
     const fetchMock = vi.fn().mockResolvedValue(

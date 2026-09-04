@@ -12,7 +12,15 @@ import {
   CardDescription,
   CardContent,
 } from "@patchbay/ui/components/ui/card";
+import { Button } from "@patchbay/ui/components/ui/button";
 import { Loader2 } from "lucide-react";
+
+function redirectToDesktopHandoff(code: string, state: string): void {
+  const url = new URL("patchbay://auth/callback");
+  url.searchParams.set("code", code);
+  url.searchParams.set("state", state);
+  window.location.href = url.href;
+}
 
 function decodeStateValue(value: string, prefix: string): string | null {
   try {
@@ -25,6 +33,10 @@ function decodeStateValue(value: string, prefix: string): string | null {
 function CallbackContent() {
   const searchParams = useSearchParams();
   const [error, setError] = useState("");
+  const [desktopHandoff, setDesktopHandoff] = useState<{
+    code: string;
+    state: string;
+  } | null>(null);
 
   useEffect(() => {
     const errorParam = searchParams.get("error");
@@ -41,6 +53,20 @@ function CallbackContent() {
 
     const state = searchParams.get("state") || "";
     const stateParts = state.split(",");
+    const isDesktop = stateParts.includes("platform:desktop");
+    const desktopStatePart = stateParts.find((p) => p.startsWith("desktop_state:"));
+    const desktopCodeChallengePart = stateParts.find((p) =>
+      p.startsWith("desktop_code_challenge:"),
+    );
+    const desktopState = desktopStatePart
+      ? decodeStateValue(desktopStatePart, "desktop_state:")
+      : null;
+    const desktopCodeChallenge = desktopCodeChallengePart
+      ? decodeStateValue(
+          desktopCodeChallengePart,
+          "desktop_code_challenge:",
+        )
+      : null;
     // CLI callback params — carried across the Google OAuth round-trip so
     // headless/WSL2 `patchbay login` can receive the JWT after browser-based
     // Google auth completes.
@@ -73,14 +99,64 @@ function CallbackContent() {
         .catch((err) => {
           setError(err instanceof Error ? err.message : "Login failed");
         });
+    } else if (isDesktop) {
+      // Desktop flow: the Google exchange sets the browser cookie, then the
+      // authenticated session completes the registered PKCE handoff. Only a
+      // short-lived one-time code crosses the custom protocol boundary.
+      if (!desktopState || !desktopCodeChallenge) {
+        setError("Invalid desktop auth handoff");
+        return;
+      }
+      api
+        .googleLogin(code, redirectUri)
+        .then(async () => {
+          const handoff = await api.completeDesktopAuthHandoff(
+            desktopState,
+            desktopCodeChallenge,
+          );
+          setDesktopHandoff({ code: handoff.code, state: handoff.state });
+          redirectToDesktopHandoff(handoff.code, handoff.state);
+        })
+        .catch((err) => {
+          setError(err instanceof Error ? err.message : "Login failed");
+        });
     } else {
-      // Desktop login completes on Accounts, never on the product web origin.
+      // Google is a broker for Desktop and explicitly-authorized CLI flows.
       // Ordinary Web login uses the email send-code flow; accepting a bare
       // OAuth callback here would put the legacy /auth/google exchange back
       // on the Web main path and would also accept forged state-less links.
       setError("Unsupported login callback");
     }
   }, [searchParams]);
+
+  if (desktopHandoff) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <Card className="w-full max-w-sm">
+          <CardHeader className="text-center">
+            <CardTitle className="text-display-sm">Opening Patchbay</CardTitle>
+            <CardDescription>
+              You should see a prompt to open the Patchbay desktop app. If
+              nothing happens, click the button below.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex justify-center">
+            <Button
+              variant="outline"
+              onClick={() => {
+                redirectToDesktopHandoff(
+                  desktopHandoff.code,
+                  desktopHandoff.state,
+                );
+              }}
+            >
+              Open Patchbay Desktop
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   if (error) {
     return (

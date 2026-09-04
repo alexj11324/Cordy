@@ -16,38 +16,29 @@ describe("desktop handoff", () => {
           code_challenge: challenge,
         }),
       ),
-    ).toMatchObject({ state, codeChallenge: challenge, sessionApi: null });
+    ).toMatchObject({ state, codeChallenge: challenge, local: false });
   });
 
-  it("preserves an allowlisted loopback session API", () => {
-    const state = "s".repeat(43);
-    const challenge = "c".repeat(43);
-    const binding = readDesktopHandoffBinding(
-      new URLSearchParams({
-        platform: "desktop",
-        state,
-        code_challenge: challenge,
-        session_api: "http://localhost:8080/",
-      }),
-    );
-    expect(binding).toMatchObject({
-      sessionApi: "http://localhost:8080",
-    });
-    expect(binding?.query).toContain("session_api=http%3A%2F%2Flocalhost%3A8080");
-  });
-
-  it("drops a remote session API instead of forwarding it", () => {
-    const binding = readDesktopHandoffBinding(
-      new URLSearchParams({
-        platform: "desktop",
-        state: "s".repeat(43),
-        code_challenge: "c".repeat(43),
-        session_api: "https://api.aspectlylabs.com",
-      }),
-    );
-    expect(binding?.sessionApi).toBeNull();
+  it("uses a local identity grant without exposing a callback origin", () => {
+    const binding = readDesktopHandoffBinding(new URLSearchParams({
+      platform: "desktop", state: "s".repeat(43),
+      code_challenge: "c".repeat(43), session_mode: "local",
+    }));
+    expect(binding?.local).toBe(true);
+    expect(binding?.query).toContain("session_mode=local");
     expect(binding?.query).not.toContain("session_api");
+    expect(buildDesktopCallbackUrl(`pbl_${"c".repeat(43)}`, "s".repeat(43), "patchbay"))
+      .toContain("patchbay://auth/callback?");
   });
+
+  it.each(["http://localhost:8080", "http://127.0.0.1:19080", "https://evil.example"])(
+    "rejects obsolete browser-selected token destinations: %s", (sessionApi) => {
+      expect(readDesktopHandoffBinding(new URLSearchParams({
+        platform: "desktop", state: "s".repeat(43),
+        code_challenge: "c".repeat(43), session_api: sessionApi,
+      }))).toBeNull();
+    },
+  );
 
   it("rejects app_origin and unsafe protocols", () => {
     expect(

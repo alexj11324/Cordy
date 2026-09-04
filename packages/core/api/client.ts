@@ -289,6 +289,8 @@ import { createRequestId, createSafeId } from "../utils";
 import { getCurrentSlug } from "../platform/workspace-storage";
 import { parseWithFallback } from "./schema";
 import {
+  DesktopSessionResponseSchema,
+  DesktopHandoffResponseSchema,
   AgentTaskListSchema,
   AgentThreadResponseSchema,
   ContinueAgentThreadResponseSchema,
@@ -989,7 +991,7 @@ export class ApiClient {
     state: string,
     codeChallenge: string,
   ): Promise<{ callback_protocol: string; code: string; state: string }> {
-    return this.fetch("/api/desktop-handoff/complete", {
+    const raw = await this.fetch<unknown>("/api/desktop-handoff/complete", {
       method: "POST",
       body: JSON.stringify({
         state,
@@ -997,17 +999,28 @@ export class ApiClient {
         callback_protocol: "patchbay",
       }),
     });
+    const handoff = parseWithFallback(raw, DesktopHandoffResponseSchema, { callback_protocol: "", code: "", state: "" }, {
+      endpoint: "POST /api/desktop-handoff/complete",
+    });
+    if (!handoff.code || handoff.state !== state) throw new ApiError("Invalid desktop handoff response", 502, "Bad Gateway");
+    return handoff;
   }
 
   /** Redeem a single-use PKCE-bound desktop handoff for a native JWT. */
   async redeemDesktopHandoff(
     code: string,
     codeVerifier: string,
+    state?: string,
   ): Promise<{ token: string }> {
-    return this.fetch("/api/desktop-handoff/redeem", {
+    const raw = await this.fetch<unknown>("/api/desktop-handoff/redeem", {
       method: "POST",
-      body: JSON.stringify({ code, code_verifier: codeVerifier }),
+      body: JSON.stringify({ code, code_verifier: codeVerifier, ...(state ? { state } : {}) }),
     });
+    const session = parseWithFallback(raw, DesktopSessionResponseSchema, { token: "" }, {
+      endpoint: "POST /api/desktop-handoff/redeem",
+    });
+    if (!session.token) throw new ApiError("Invalid desktop session response", 502, "Bad Gateway");
+    return session;
   }
 
   async getMe(): Promise<User> {

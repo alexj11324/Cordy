@@ -37,15 +37,17 @@ describe("SignUpPage", () => {
     });
   });
 
-  it("does not keep Desktop handoff state on the product signup page", () => {
+  it("preserves the desktop handoff through signup and sign-in", () => {
     search.current =
       "platform=desktop&code_challenge=challenge-value&state=opaque-state";
 
     render(<SignUpPage />);
 
     expect(signUpProps.current).toMatchObject({
-      signInUrl: "/login",
-      fallbackRedirectUrl: "/",
+      signInUrl:
+        "/login?platform=desktop&code_challenge=challenge-value&state=opaque-state",
+      fallbackRedirectUrl:
+        "/login?platform=desktop&code_challenge=challenge-value&state=opaque-state",
     });
   });
 

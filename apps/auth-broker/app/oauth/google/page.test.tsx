@@ -3,7 +3,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { loopbackFreshKey } from "@/lib/session-api";
 import Page from "./page";
 
 const mocks = vi.hoisted(() => ({
@@ -69,20 +68,20 @@ describe("Accounts Google entry", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Starting");
   });
 
-  it("does not register a production Google attempt for a loopback session API", async () => {
+  it("registers the local identity attempt with the hosted broker before Google", async () => {
     const state = "s".repeat(43);
     const challenge = "c".repeat(43);
     mocks.searchParams.current = new URLSearchParams({
       platform: "desktop",
       state,
       code_challenge: challenge,
-      session_api: "http://localhost:8080",
+      session_mode: "local",
     });
 
     render(<Page />);
 
     await waitFor(() => expect(mocks.sso).toHaveBeenCalledOnce());
-    expect(mocks.register).not.toHaveBeenCalled();
-    expect(window.sessionStorage.getItem(loopbackFreshKey(state))).toBe("1");
+    expect(mocks.register).toHaveBeenCalledWith({ state, code_challenge: challenge });
+    expect(mocks.sso.mock.calls[0]?.[0].redirectUrl).toContain("session_mode=local");
   });
 });

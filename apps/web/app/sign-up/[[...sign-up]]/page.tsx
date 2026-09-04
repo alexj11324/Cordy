@@ -3,6 +3,7 @@
 import { Suspense } from "react";
 import { SignUp } from "@clerk/nextjs";
 import { ClerkAuthShell } from "@/components/clerk-auth-shell";
+import { buildDesktopHandoffQuery } from "@/features/auth/desktop-handoff";
 import {
   authRouteWithRedirect,
   resolveSafeRedirectUrl,
@@ -19,14 +20,24 @@ export default function SignUpPage() {
 
 function SignUpContent() {
   const searchParams = useWebSearchParams();
+  const desktopHandoff = searchParams.get("platform") === "desktop";
+  const desktopHandoffQuery = desktopHandoff
+    ? buildDesktopHandoffQuery(searchParams)
+    : "";
   const redirectUrl = resolveSafeRedirectUrl(searchParams.get("redirect_url"));
   return (
     <ClerkAuthShell>
       <SignUp
         routing="path"
         path="/sign-up"
-        signInUrl={authRouteWithRedirect("/sign-in", redirectUrl)}
-        fallbackRedirectUrl={redirectUrl}
+        signInUrl={
+          desktopHandoff
+            ? `/sign-in?${desktopHandoffQuery}`
+            : authRouteWithRedirect("/sign-in", redirectUrl)
+        }
+        fallbackRedirectUrl={
+          desktopHandoff ? `/login?${desktopHandoffQuery}` : redirectUrl
+        }
       />
     </ClerkAuthShell>
   );
