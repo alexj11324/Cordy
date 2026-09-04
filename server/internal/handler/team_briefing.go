@@ -23,7 +23,7 @@ import (
 const teamOperatingProtocolHeader = `## Team Operating Protocol
 
 **If you are reading this section, you have been activated as a team LEADER
-for this task — regardless of how the work reached you (direct assignment,
+for this task — regardless of how the work reached you (direct executor routing,
 an @team mention in a comment, quick-create, or automation).** Your job is to
 **coordinate**, NOT to do the work yourself. Even if the task reads like a
 direct request to "do X" (review this PR, fix this bug, write this code), you
@@ -58,7 +58,7 @@ Your responsibilities, in order:
    This is mandatory on every turn — it records your decision in the
    issue timeline so humans can see you evaluated the trigger.
    Record it against the issue THIS turn is running on (the issue id in
-   your task context). It does not need to be assigned to your team.
+   your task context). It does not need to use your team as its executor.
    If the call fails, make sure the turn still leaves a record, without
    breaking the one-comment-per-turn rule: post a short comment with the
    outcome and the error ONLY if you have not already commented this turn
@@ -78,7 +78,7 @@ Your responsibilities, in order:
    record ` + "`" + `no_action` + "`" + ` and exit silently.`
 
 // teamParentStatusOwned is responsibility 6 for the case where the issue this
-// leader was woken on is assigned to THIS team. Only then does the leader own
+// leader was woken on has THIS team as its executor. Only then does the leader own
 // the parent's status arc.
 //
 // Since MUL-6417 the runtime brief has no grant routing that consumes this
@@ -94,9 +94,9 @@ Your responsibilities, in order:
 // in_progress forever; the guest leader gets the prohibition instead
 // (teamParentStatusNotOwned). Both compositions are pinned by
 // handler/team_parent_status_contract_test.go.
-const teamParentStatusOwned = `6. **Own the parent issue status.** This issue is assigned to your team,
+const teamParentStatusOwned = `6. **Own the parent issue status.** This issue's executor is your team,
    so its status is yours to manage (unless Agent Identity forbids status
-   changes). On the first assignment turn, move the parent to
+   changes). On the first executor turn, move the parent to
    ` + "`" + `in_progress` + "`" + ` and keep it there while members work — a successful
    dispatch is not completion. On later turns, do not flip status for
    routine progress updates. When you confirm the overall goal is met, run
@@ -109,11 +109,11 @@ const teamParentStatusOwned = `6. **Own the parent issue status.** This issue is
 // an @team mention on an issue owned by someone else (MUL-3724), and
 // quick-create, where no issue exists yet on this turn. Granting status
 // ownership there would let a team that was merely pulled in to answer a
-// question push another assignee's in-flight issue to in_review.
-const teamParentStatusNotOwned = `6. **Do NOT change this issue's status.** This issue is not assigned to your
+// question push another issue executor's in-flight issue to in_review.
+const teamParentStatusNotOwned = `6. **Do NOT change this issue's status.** This issue's executor is not your
    team — you were pulled in by an @mention (or this is a quick-create turn,
    where the issue does not exist yet). Its status belongs to its own
-   assignee. Answer, delegate, or escalate as usual, but never run
+   executor. Answer, delegate, or escalate as usual, but never run
    ` + "`" + `patchbay issue status` + "`" + ` on it, no matter how complete the work looks
    to you.`
 
@@ -124,7 +124,7 @@ const teamOperatingProtocolHardRules = `Hard rules:
   if you skip the mention link, the task is never delivered and the
   issue stalls. This is non-negotiable: no mention link = no delegation.
 - Do NOT restate the issue body or prior comments in your delegation —
-  the assignee already has them. Repeating context is noise that
+  the executor already has them. Repeating context is noise that
   buries the actual instruction.
 - Do NOT do the implementation work yourself unless the team has no
   other suitable members. The team exists so work is split — bypassing
@@ -141,12 +141,12 @@ const teamOperatingProtocolHardRules = `Hard rules:
   posted no comment, leave one short comment instead; never let an
   evaluation end with no record at all, and never post a second comment
   just to report the error.
-- A child issue you create with ` + "`" + `--status todo` + "`" + ` and an agent assignee
-  already fires that agent automatically — the assignment IS the trigger.
+- A child issue you create with ` + "`" + `--status todo` + "`" + ` and an agent executor
+  already fires that agent automatically — the executor routing IS the trigger.
   If you also @mention the same agent on this parent issue for the same
   work, the agent runs twice in parallel (once from the mention, once
-  from the assignment). Pick exactly one path: either delegate by
-  @mention on this issue, or create a ` + "`" + `todo` + "`" + ` child issue assigned to
+  from the executor routing). Pick exactly one path: either delegate by
+  @mention on this issue, or create a ` + "`" + `todo` + "`" + ` child issue with an executor
   them. Never both for the same work.`
 
 // teamOperatingProtocolFor assembles the protocol, selecting the parent-status
@@ -160,7 +160,7 @@ func teamOperatingProtocolFor(ownsIssueStatus bool) string {
 }
 
 // buildTeamLeaderBriefing composes the full system briefing appended to a
-// team leader's Instructions when it claims a task on a team-assigned
+// team leader's Instructions when it claims a task for an issue with a team executor
 // issue. The returned string contains three sections:
 //
 //  1. Team Operating Protocol (constant, system-level rules).
@@ -170,7 +170,7 @@ func teamOperatingProtocolFor(ownsIssueStatus bool) string {
 //     empty so we don't leave a dangling heading).
 //
 // ownsIssueStatus must be true only when the issue this task is bound to is
-// assigned to this very team. The briefing is injected on every leader path,
+// whose executor is this very team. The briefing is injected on every leader path,
 // including ones where the team is a guest on someone else's issue, so this
 // flag is what keeps status authority from leaking along with the roster.
 //

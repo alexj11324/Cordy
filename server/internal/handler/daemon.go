@@ -1524,7 +1524,7 @@ func parseRuntimeConnectedAppsForClaim(raw []byte, taskID pgtype.UUID) []runtime
 
 // repairStaleCommentPlanIfNeeded handles the edit/delete race where a claimed
 // task's trigger_comment_id was cleared but coalesced_comment_ids survive: such
-// a task must never be dispatched as a generic assignment — its user-scoped MCP
+// a task must never be dispatched as a generic issue task — its user-scoped MCP
 // overlay still belongs to the deleted author, and the prompt would read issue
 // history exposing that stale user's capabilities. When it applies, the task is
 // cancelled and its surviving comments are replayed through normal routing
@@ -2053,7 +2053,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 				"task_id", uuidToString(task.ID), "agent_id", uuidToString(task.AgentID))
 			return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, h.failClaimedTaskBeforeLaunch(
 				r.Context(), task,
-				"Task identity is invalid: the assigned agent no longer exists.",
+				"Task identity is invalid: the target agent no longer exists.",
 				taskfailure.ReasonInvalidTaskIdentity,
 				"error_invalid_task_identity", http.StatusConflict, "task agent no longer exists",
 			)
@@ -2090,9 +2090,9 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 	}
 	if runtime.Visibility == "private" && runtime.OwnerID.Valid &&
 		(!agent.OwnerID.Valid || agent.OwnerID != runtime.OwnerID) {
-		userMessage := "This private runtime cannot run the assigned agent because the agent and runtime have different owners."
+		userMessage := "This private runtime cannot run the target agent because the agent and runtime have different owners."
 		if !agent.OwnerID.Valid {
-			userMessage = "This private runtime cannot run the assigned agent because the agent has no owner."
+			userMessage = "This private runtime cannot run the target agent because the agent has no owner."
 		}
 		slog.Warn("daemon claim: private runtime no longer permits task agent; refusing dispatch",
 			"task_id", uuidToString(task.ID),
@@ -2278,10 +2278,10 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 
 		// Team-leader briefing injection: keyed off the task being a
 		// leader-task (is_leader_task) carrying a team_id — NOT off the
-		// issue being assigned to a team. The task flag is stamped at
+		// issue whose executor is a team. The task flag is stamped at
 		// enqueue time and is true for every ISSUE-BOUND path that routes
 		// work to a team leader: direct assign-to-team, comment
-		// @team-mention (even when the issue itself is assigned to a
+		// @team-mention (even when the issue itself has another executor,
 		// plain agent — the MUL-3724 case), sub-issue done callback,
 		// automation team-executor, and retry-clone inheritance. The old
 		// issue.ExecutorType=="team" gate missed the comment-mention
@@ -2326,7 +2326,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 					// only @mentioned for help. Granting status ownership there
 					// would let a guest team push someone else's in-flight issue
 					// to in_review, so we gate it on the issue actually being
-					// assigned to this team.
+					// whose executor is this team.
 					ownsIssueStatus := issue.ExecutorType.Valid &&
 						issue.ExecutorType.String == "team" &&
 						uuidToString(issue.ExecutorID) == uuidToString(team.ID)
@@ -2889,7 +2889,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 
 	// Handoff note (MUL-3375) is populated by taskToResponse (the shared mapper
 	// resp came from above), so the daemon's prompt + issue_context.md render the
-	// assignment-handoff branch. Empty for all other task kinds.
+	// executor-handoff branch. Empty for all other task kinds.
 
 	// Quick-create task: no issue / chat / automation link — workspace and
 	// prompt come from the task's context JSONB. Resolve workspace from
@@ -3016,7 +3016,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 					}); err == nil && uuidToString(team.LeaderID) == resp.Agent.ID {
 						// Quick-create has no issue yet — there is no parent
 						// status to own on this turn. Once the leader opens the
-						// issue with the team as assignee, the issue-bound
+						// issue with the team as executor, the issue-bound
 						// claim path above grants ownership.
 						briefing := buildTeamLeaderBriefing(r.Context(), h.Queries, team, false)
 						if strings.TrimSpace(resp.Agent.Instructions) == "" {
@@ -3885,7 +3885,7 @@ func (h *Handler) CompleteTask(w http.ResponseWriter, r *http.Request) {
 
 // emitIssueExecutedOnFirstCompletion atomically flips issue.first_executed_at
 // and fires the issue_executed analytics event iff this is the first task on
-// the issue to reach terminal done. Retries / re-assignments / comment-
+// the issue to reach terminal done. Retries / executor changes / comment-
 // triggered follow-ups hit the WHERE first_executed_at IS NULL clause and
 // no-op, so the funnel counts unique issues, not tasks.
 func (h *Handler) emitIssueExecutedOnFirstCompletion(r *http.Request, task *db.AgentTaskQueue) {
@@ -3953,9 +3953,9 @@ func (h *Handler) emitIssueExecutedOnFirstCompletion(r *http.Request, task *db.A
 //   - MEMBER comments qualify as before, with their full routing. AGENT comments
 //     now also qualify, but ONLY through an explicit @agent/@team mention
 //     (keepExplicitMentionTriggers). Every non-mention agent route — the
-//     assigned-team-leader fallback, thread-parent / conversation continuation
+//     executor-team-leader fallback, thread-parent / conversation continuation
 //     — is intentionally excluded, so a plain agent reply / acknowledgement
-//     earns no follow-up here regardless of issue assignment. That is the
+//     earns no follow-up here regardless of issue executor. That is the
 //     anti-loop boundary the old member-only filter protected.
 //     This closes MUL-4304: an explicit agent→agent @mention that landed while
 //     the target already had a DISPATCHED task is dropped by the create-time
@@ -4079,12 +4079,12 @@ func (h *Handler) reconcileCommentsOnCompletion(ctx context.Context, task *db.Ag
 			AutomationDelegationAuthorityUserID: delegationAuthority,
 		})
 		// For an AGENT author, compensate ONLY explicit @agent/@team mentions.
-		// computeCommentAgentTriggers can also return the assigned-team-leader
+		// computeCommentAgentTriggers can also return the executor-team-leader
 		// fallback (Source = issue-executor) for a plain worker-agent reply on a
-		// team-assigned issue; that conversational routing is intentionally NOT
+		// issue with a team executor; that conversational routing is intentionally NOT
 		// replayed here. Restricting to the explicit-mention sources keeps the
 		// invariant unconditional — a plain agent reply / acknowledgement earns
-		// no follow-up regardless of issue assignment — which is the anti-loop
+		// no follow-up regardless of issue executor — which is the anti-loop
 		// boundary the old member-only filter protected (MUL-4304). Member
 		// comments are unaffected: they keep their full routing.
 		if actorType != "member" {
@@ -4138,7 +4138,7 @@ func (h *Handler) reconcileCommentsOnCompletion(ctx context.Context, task *db.Ag
 // keepExplicitMentionTriggers filters a computed trigger set down to the ones
 // produced by an EXPLICIT @agent / @team mention (MUL-4304). It is applied to
 // agent-authored comments during completion reconcile so that only a
-// deliberately-targeted mention earns a replay — the assigned-team-leader
+// deliberately-targeted mention earns a replay — the executor-team-leader
 // fallback, thread-parent / conversation continuation, and issue-executor
 // routing (all non-mention sources) are intentionally excluded, so a plain
 // agent reply or acknowledgement never earns a follow-up here. Member comments

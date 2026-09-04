@@ -15,7 +15,7 @@ import (
 
 // TestTeamOperatingProtocolRecordsAgainstTheTurnsIssue locks the recording
 // contract the protocol teaches (MUL-6622 / GH #7487): record against the issue
-// this turn runs on — team assignment of that issue is irrelevant — and, when
+// this turn runs on — the issue's team executor is irrelevant — and, when
 // the call fails, leave a trace WITHOUT breaking one-comment-per-turn. The
 // conditional matters: on the `action` path a delegation comment already exists,
 // so an unconditional "post a comment on failure" would demand a second one.
@@ -24,7 +24,7 @@ func TestTeamOperatingProtocolRecordsAgainstTheTurnsIssue(t *testing.T) {
 		compact := strings.Join(strings.Fields(teamOperatingProtocolFor(ownsStatus)), " ")
 		for _, want := range []string{
 			"Record it against the issue THIS turn is running on",
-			"It does not need to be assigned to your team",
+			"It does not need to use your team as its executor",
 			"without breaking the one-comment-per-turn rule",
 			"ONLY if you have not already commented this turn",
 			"do not add a second one",
@@ -60,7 +60,7 @@ func TestTeamOperatingProtocolOwnsParentStatus(t *testing.T) {
 
 // TestTeamOperatingProtocolScopesParentStatusOwnership is the guard for the
 // MUL-5156 review finding: the briefing is injected on every leader path,
-// including an @team mention on an issue assigned to someone else. Status
+// including an @team mention on an issue whose executor is someone else. Status
 // ownership must not ride along — a guest leader gets an explicit prohibition
 // instead of the grant, so the model never has to infer the boundary.
 func TestTeamOperatingProtocolScopesParentStatusOwnership(t *testing.T) {
@@ -69,7 +69,7 @@ func TestTeamOperatingProtocolScopesParentStatusOwnership(t *testing.T) {
 
 	for _, want := range []string{
 		"Do NOT change this issue's status",
-		"not assigned to your team",
+		"executor is not your team",
 		"never run `patchbay issue status` on it",
 	} {
 		if !strings.Contains(compactGuest, want) {
@@ -112,7 +112,7 @@ func TestTeamOperatingProtocolScopesParentStatusOwnership(t *testing.T) {
 
 // TestTeamOperatingProtocolWarnsAgainstDualTrigger locks in the rule
 // added for #3033: the protocol must tell the team leader that a `todo`
-// child issue with an agent assignee already fires that agent, so they
+// child issue with an agent executor already fires that agent, so they
 // must not also @mention the same agent on the parent issue for the
 // same work. Asserts behavior, not exact wording — keep the substrings
 // narrow so harmless rewording doesn't break the test.
@@ -120,7 +120,7 @@ func TestTeamOperatingProtocolWarnsAgainstDualTrigger(t *testing.T) {
 	protocol := teamOperatingProtocolFor(true)
 	compact := strings.Join(strings.Fields(protocol), " ")
 	for _, want := range []string{
-		"--status todo` and an agent assignee already fires that agent automatically",
+		"--status todo` and an agent executor already fires that agent automatically",
 		"Never both for the same work.",
 	} {
 		if !strings.Contains(compact, want) {
@@ -277,7 +277,7 @@ func assignSkillToAgent(t *testing.T, agentID, skillName string) {
 }
 
 // TestBuildTeamLeaderBriefing_MemberSkillsInRoster locks in the delegation
-// fix: an agent member's assigned skills appear in the leader roster so the
+// fix: an agent member's configured skills appear in the leader roster so the
 // leader can route by capability. Agents with no skills get an explicit
 // marker; human members never carry a skills segment.
 func TestBuildTeamLeaderBriefing_MemberSkillsInRoster(t *testing.T) {
@@ -410,7 +410,7 @@ func claimAndDecodeAgent(t *testing.T, runtimeID string) *TaskAgentData {
 	return resp.Task.Agent
 }
 
-// queueTeamIssueTaskFor creates an issue assigned to the team and a queued
+// queueTeamIssueTaskFor creates an issue executed by the team and a queued
 // task for the given (agentID, runtimeID). Returns the issue + task IDs.
 func queueTeamIssueTaskFor(t *testing.T, teamID, agentID, runtimeID string, issueNumber int) (issueID, taskID string) {
 	t.Helper()
@@ -423,7 +423,7 @@ executor_type, executor_id, number, position
 'team', $3, $4, 0)
 RETURNING id
 `, testWorkspaceID, testUserID, teamID, issueNumber).Scan(&issueID); err != nil {
-		t.Fatalf("create team-assigned issue: %v", err)
+		t.Fatalf("create team-executor issue: %v", err)
 	}
 	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM issue WHERE id = $1`, issueID) })
 
@@ -441,7 +441,7 @@ RETURNING id
 }
 
 // TestClaimTask_LeaderGetsBriefing — when the team leader claims a task on
-// a team-assigned issue, the response's agent.instructions must include
+// an issue with a team executor, the response's agent.instructions must include
 // the Operating Protocol + Roster + user instructions.
 func TestClaimTask_LeaderGetsBriefing(t *testing.T) {
 	if testHandler == nil {
@@ -480,7 +480,7 @@ func TestClaimTask_LeaderGetsBriefing(t *testing.T) {
 }
 
 // TestClaimTask_NonLeaderGetsNoBriefing — when a non-leader team member
-// claims a task on a team-assigned issue, NO briefing is injected.
+// claims a task on an issue with a team executor, NO briefing is injected.
 func TestClaimTask_NonLeaderGetsNoBriefing(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")

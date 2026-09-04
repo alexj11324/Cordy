@@ -2706,7 +2706,7 @@ WHERE a.workspace_id = $1
         AND i.workspace_id = a.workspace_id
         AND (
           (
-            -- `assigned` is the public relation spelling for member ownership.
+            -- assigned is the public relation spelling for member ownership.
             @mine_relation::text IN ('assigned', 'any')
             AND i.owner_type = 'member'
             AND i.owner_id = @member_id::uuid
