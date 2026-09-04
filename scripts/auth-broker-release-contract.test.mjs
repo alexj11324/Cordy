@@ -1,15 +1,25 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import YAML from "yaml";
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
+function releaseJob(source, name) {
+  const match = source.match(
+    new RegExp(`^  ${name}:\\n([\\s\\S]*?)(?=^  \\S+:|(?![\\s\\S]))`, "m"),
+  );
+  assert.ok(match, `release workflow must define ${name}`);
+  return match[1];
+}
+
 test("auth broker release remains an independently gated image", () => {
-  const workflow = YAML.parse(read(".github/workflows/release.yml"));
-  assert.ok(workflow.jobs["docker-auth-broker-build"]);
-  assert.ok(workflow.jobs["docker-auth-broker-merge"]);
-  assert.match(JSON.stringify(workflow.jobs["publish-release"].needs), /docker-auth-broker-merge/);
+  const workflow = read(".github/workflows/release.yml");
+  const build = releaseJob(workflow, "docker-auth-broker-build");
+  const merge = releaseJob(workflow, "docker-auth-broker-merge");
+  const publish = releaseJob(workflow, "publish-release");
+  assert.match(build, /^    needs: verify\n/u);
+  assert.match(merge, /^    needs: \[verify, docker-auth-broker-build\]/u);
+  assert.match(publish, /docker-auth-broker-merge/u);
   assert.match(read("Dockerfile.auth-broker"), /pnpm --filter @patchbay\/auth-broker build/);
   assert.match(
     read("Dockerfile.auth-broker"),
