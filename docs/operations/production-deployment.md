@@ -161,8 +161,10 @@ including `CLERK_SECRET_KEY`, `CLERK_JWT_KEY`, `CLERK_ISSUER`,
 
 The Accounts broker requires `CLERK_PUBLISHABLE_KEY`,
 `PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN`, and `PATCHBAY_ORIGIN_AUTH_TOKEN`.
-Cloudflare stores the same origin token as `ORIGIN_AUTH_TOKEN`; it is never
-forwarded to the broker. The private
+Cloudflare stores the same origin token as `ORIGIN_AUTH_TOKEN`. Nginx validates
+it after the Cloudflare source-range gate, forwards it to the Accounts broker
+for an independent constant-time check, and the broker strips it before route
+handling. The private
 `accounts-origin.aspectlylabs.com` transport remains Cloudflare-only and is
 not a fourth product endpoint.
 

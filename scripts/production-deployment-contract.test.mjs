@@ -158,7 +158,7 @@ test("public routing uses the Aspectly Labs product domains", () => {
   );
   assert.match(
     originNginx,
-    /proxy_set_header X-Patchbay-Origin-Auth "";/u,
+    /proxy_set_header X-Patchbay-Origin-Auth \$http_x_patchbay_origin_auth;/u,
   );
   assert.match(
     originNginx,
