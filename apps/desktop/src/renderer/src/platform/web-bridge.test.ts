@@ -47,6 +47,22 @@ describe("Vite browser Desktop bridge", () => {
     });
   });
 
+  it("keeps hosted Accounts when the local product API is on localhost", () => {
+    vi.stubEnv("VITE_API_URL", "http://localhost:8080");
+
+    expect(installWebDesktopBridge()).toBe(true);
+    expect(window.desktopAPI.runtimeConfig).toEqual({
+      ok: true,
+      config: {
+        schemaVersion: 1,
+        apiUrl: "http://localhost:8080",
+        wsUrl: "ws://localhost:8080/ws",
+        appUrl: "http://localhost:3000",
+        accountsUrl: "https://accounts.aspectlylabs.com",
+      },
+    });
+  });
+
   it("keeps the hosted broker when only the backend URL is configured", () => {
     vi.stubEnv("VITE_API_URL", "https://api.aspectlylabs.com");
 

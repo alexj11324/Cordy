@@ -66,6 +66,7 @@ type dbExecutor interface {
 }
 
 type Config struct {
+	HostedDesktopIdentity  bool
 	AllowSignup            bool
 	AllowedEmails          []string
 	AllowedEmailDomains    []string
@@ -202,27 +203,27 @@ type Handler struct {
 	Entitlements entitlement.Provider
 	// SeatCapacity executes Cloud's pre-purchased human-seat protocol. Nil or
 	// disabled preserves self-hosted behavior.
-	SeatCapacity          seatcapacity.Executor
-	SeatCapacityLocker    seatcapacity.WorkspaceLocker
-	SeatCapacityWorker    *seatcapacity.Worker
+	SeatCapacity       seatcapacity.Executor
+	SeatCapacityLocker seatcapacity.WorkspaceLocker
+	SeatCapacityWorker *seatcapacity.Worker
 	// HostedCapacity enforces the managed deployment's per-workspace cap on
 	// concurrent hosted channel installations (Cloud gate
 	// im_installation_limit). Nil (self-hosted, or the deployment flag off)
 	// keeps every install path exactly as it was: no cap reads, no pause
 	// markers, no admission refusals.
-	HostedCapacity        *hostedcapacity.Limiter
-	HostedCapacityWorker  *hostedcapacity.Worker
+	HostedCapacity       *hostedcapacity.Limiter
+	HostedCapacityWorker *hostedcapacity.Worker
 	// ChannelConnectionLeases is set only when Redis, rather than PostgreSQL,
 	// owns channel leases. Connection-status projection reads it for the already
 	// authorized installation IDs so it can validate the observation generation
 	// against the actual lease authority.
 	ChannelConnectionLeases ChannelConnectionLeaseReader
-	EmailService          *service.EmailService
-	UpdateStore           UpdateStore
-	ModelListStore        ModelListStore
-	LocalSkillListStore   LocalSkillListStore
-	LocalSkillImportStore LocalSkillImportStore
-	FeatureFlags          *featureflag.Service
+	EmailService            *service.EmailService
+	UpdateStore             UpdateStore
+	ModelListStore          ModelListStore
+	LocalSkillListStore     LocalSkillListStore
+	LocalSkillImportStore   LocalSkillImportStore
+	FeatureFlags            *featureflag.Service
 	// IssueStatusCatalog reads the workspace status catalog. Defaults to
 	// Queries; a test can substitute a counting wrapper to assert HOW MANY
 	// catalog reads a request performs, which is the only property that
@@ -431,8 +432,9 @@ type Handler struct {
 	// trigger is a no-op) when GITHUB_APP_ID / GITHUB_APP_PRIVATE_KEY are unset,
 	// so the feature degrades cleanly on deployments without a private key.
 	// Wired in cmd/server/router.go after New.
-	PRRefresh *ghsnapshot.Manager
-	ClerkAuth ClerkSessionVerifier
+	PRRefresh             *ghsnapshot.Manager
+	ClerkAuth             ClerkSessionVerifier
+	redeemDesktopIdentity func(context.Context, desktopAuthHandoffRedeemRequest) (ClerkIdentity, error)
 	// WorkProductDiscovery consumes terminal execution provenance and links a
 	// completed branch head to its exact external work product.
 	WorkProductDiscovery *WorkProductDiscoveryRuntime
@@ -554,6 +556,10 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 	}
 	h.PRRefresh = ghsnapshot.NewManager(ghClient, queries, txStarter, h.broadcastPRSnapshotApplied)
 	h.WorkProductDiscovery = NewWorkProductDiscoveryRuntime(h)
+
+	if cfg.HostedDesktopIdentity {
+		h.redeemDesktopIdentity = redeemHostedDesktopIdentity
+	}
 
 	return h
 }

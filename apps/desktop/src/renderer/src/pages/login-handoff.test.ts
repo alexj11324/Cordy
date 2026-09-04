@@ -41,12 +41,45 @@ describe("desktop auth handoff", () => {
     expect(parsed.searchParams.get("platform")).toBe("desktop");
     expect(parsed.searchParams.get("state")).toBe(pending.state);
     expect(parsed.searchParams.get("code_challenge")).toBeTruthy();
+    expect(parsed.searchParams.get("session_api")).toBeNull();
     expect(pending.verifier).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(pending.expiresAt).toBeGreaterThan(Date.now());
     expect(initiate).toHaveBeenCalledWith(
       pending.state,
       parsed.searchParams.get("code_challenge"),
     );
+  });
+
+  it("requests local identity without exposing the local API origin", async () => {
+    const initiate = vi.fn().mockResolvedValue({ registered: true });
+
+    const url = await createDesktopLoginUrl(
+      "https://accounts.aspectlylabs.com/",
+      initiate,
+      { sessionApiUrl: "http://localhost:8080/" },
+    );
+    const parsed = new URL(url);
+
+    expect(parsed.origin).toBe("https://accounts.aspectlylabs.com");
+    expect(parsed.searchParams.get("session_api")).toBeNull();
+    expect(parsed.searchParams.get("session_mode")).toBe("local");
+  });
+
+  it("keeps explicit self-hosted Accounts on its own handoff authority", async () => {
+    const url = await createDesktopLoginUrl("https://accounts.example.test", vi.fn().mockResolvedValue({ registered: true }), { sessionApiUrl: "http://localhost:8080" });
+    expect(new URL(url).searchParams.get("session_mode")).toBeNull();
+  });
+
+  it("does not advertise a non-loopback API as the session minting origin", async () => {
+    const initiate = vi.fn().mockResolvedValue({ registered: true });
+
+    const url = await createDesktopLoginUrl(
+      "https://accounts.aspectlylabs.com",
+      initiate,
+      { sessionApiUrl: "https://api.aspectlylabs.com" },
+    );
+
+    expect(new URL(url).searchParams.get("session_api")).toBeNull();
   });
 
   it("redeems once and makes a replay a no-op after clearing the verifier", async () => {

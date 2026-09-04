@@ -10,7 +10,7 @@ import {
 } from "react";
 import { SignIn, useAuth } from "@clerk/nextjs";
 import { useAuthStore } from "@patchbay/core/auth";
-import { api, ApiError } from "@patchbay/core/api";
+import { api } from "@patchbay/core/api";
 import {
   redirectToCliCallback,
   redirectToDesktopApp,
@@ -24,7 +24,6 @@ import {
 } from "@/features/auth/safe-redirect";
 import { useClerkSessionExchangeReady } from "@/components/clerk-auth-adapter";
 import { useWebSearchParams } from "@/platform/client-navigation";
-import { buildBrokerRoute } from "@/features/auth/broker-path";
 
 function desktopHandoffQuery(codeChallenge: string, state: string): string {
   const params = new URLSearchParams({ platform: "desktop" });
@@ -162,7 +161,6 @@ function DesktopHandoff({
   state: string;
   clerkSessionExchangeReady: boolean;
 }) {
-  const { getToken } = useAuth();
   const { t } = useT("auth");
   const authStatus = useAuthStore((state) => state.status);
   const backendSessionReady =
@@ -178,36 +176,19 @@ function DesktopHandoff({
       if (!codeChallenge || !state) {
         throw new Error("Patchbay desktop handoff is missing its binding");
       }
-      const sessionToken = await getToken();
-      if (!sessionToken) throw new Error("Clerk session token unavailable");
       const { callback_protocol: callbackProtocol, code } =
-        await api.completeDesktopGoogleAttempt(
-          sessionToken,
+        await api.completeDesktopAuthHandoff(
           state,
           codeChallenge,
         );
       if (!code) throw new Error("Patchbay desktop handoff code unavailable");
       redirectToDesktopApp(code, state, callbackProtocol);
       setLoading(false);
-    } catch (error) {
-      if (
-        error instanceof ApiError &&
-        (error.status === 401 || error.status === 409)
-      ) {
-        const startPath = buildBrokerRoute(
-          window.location.pathname,
-          "/login",
-          "/oauth/google",
-        );
-        window.location.replace(
-          `${startPath}?${desktopHandoffQuery(codeChallenge, state)}`,
-        );
-        return;
-      }
+    } catch {
       setError(t(($) => $.web.desktop_handoff.prepare_failed));
       setLoading(false);
     }
-  }, [codeChallenge, getToken, state, t]);
+  }, [codeChallenge, state, t]);
 
   useEffect(() => {
     if (!backendSessionReady || automaticAttempted.current) return;

@@ -5,16 +5,23 @@ import { Button } from "@patchbay/ui/components/ui/button";
 import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
 import { useT } from "@patchbay/views/i18n";
 import { DragStrip } from "@patchbay/views/platform";
+import { loopbackSessionApiUrl } from "../../../shared/runtime-config";
 import { createDesktopLoginUrl } from "./login-handoff";
 
-function requireRuntimeAccountsUrl(): string {
+function requireRuntimeConfig(): {
+  accountsUrl: string;
+  sessionApiUrl?: string;
+} {
   const runtimeConfig = window.desktopAPI.runtimeConfig;
   if (!runtimeConfig.ok) {
     throw new Error(
       "Invariant violated: DesktopLoginPage rendered before App accepted runtime config",
     );
   }
-  return runtimeConfig.config.accountsUrl;
+  return {
+    accountsUrl: runtimeConfig.config.accountsUrl,
+    sessionApiUrl: loopbackSessionApiUrl(runtimeConfig.config.apiUrl),
+  };
 }
 
 /**
@@ -22,7 +29,7 @@ function requireRuntimeAccountsUrl(): string {
  * Accounts origin so browser auth, cookies, and recovery stay in one place.
  */
 export function DesktopLoginPage() {
-  const accountsUrl = requireRuntimeAccountsUrl();
+  const { accountsUrl, sessionApiUrl } = requireRuntimeConfig();
   const { t } = useT("auth");
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState(false);
@@ -36,6 +43,7 @@ export function DesktopLoginPage() {
         accountsUrl,
         (state, codeChallenge) =>
           api.initiateDesktopAuthHandoff(state, codeChallenge),
+        { sessionApiUrl },
       );
       await window.desktopAPI.openExternal(url);
     } catch {

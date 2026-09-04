@@ -57,3 +57,23 @@ WHERE code_hash = $1
   AND completed_at IS NOT NULL
   AND expires_at > now()
 RETURNING user_id;
+
+-- name: RedeemDesktopLocalIdentity :one
+DELETE FROM desktop_auth_handoff
+WHERE code_hash = $1
+  AND state = $2
+  AND code_challenge = $3
+  AND user_id IS NOT NULL
+  AND completed_at IS NOT NULL
+  AND completed_at > now() - interval '1 minute'
+  AND expires_at > now()
+RETURNING user_id;
+
+-- name: ConsumeDesktopLocalAuthAttempt :execrows
+DELETE FROM desktop_auth_handoff
+WHERE state = $1
+  AND code_challenge = $2
+  AND user_id IS NULL
+  AND code_hash IS NULL
+  AND completed_at IS NULL
+  AND expires_at > now();

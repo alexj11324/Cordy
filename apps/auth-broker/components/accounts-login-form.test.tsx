@@ -110,6 +110,10 @@ describe("AccountsLoginForm", () => {
     expect(
       screen.getByRole("button", { name: "Continue with Google" }),
     ).toBeInTheDocument();
+    expect(screen.getByTestId("google-mark").tagName).toBe("svg");
+    expect(
+      screen.getByRole("button", { name: "Continue with Google" }),
+    ).not.toHaveTextContent(/^G/);
     expect(screen.getByText("Or continue with")).toBeInTheDocument();
     expect(screen.getByText(/Terms of Service/)).toBeInTheDocument();
     expect(document.querySelector('[data-slot="card"]')).not.toBeInTheDocument();

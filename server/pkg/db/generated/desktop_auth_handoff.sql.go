@@ -44,6 +44,29 @@ func (q *Queries) CompleteDesktopAuthHandoff(ctx context.Context, arg CompleteDe
 	return callback_protocol, err
 }
 
+const consumeDesktopLocalAuthAttempt = `-- name: ConsumeDesktopLocalAuthAttempt :execrows
+DELETE FROM desktop_auth_handoff
+WHERE state = $1
+  AND code_challenge = $2
+  AND user_id IS NULL
+  AND code_hash IS NULL
+  AND completed_at IS NULL
+  AND expires_at > now()
+`
+
+type ConsumeDesktopLocalAuthAttemptParams struct {
+	State         string `json:"state"`
+	CodeChallenge string `json:"code_challenge"`
+}
+
+func (q *Queries) ConsumeDesktopLocalAuthAttempt(ctx context.Context, arg ConsumeDesktopLocalAuthAttemptParams) (int64, error) {
+	result, err := q.db.Exec(ctx, consumeDesktopLocalAuthAttempt, arg.State, arg.CodeChallenge)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const createDesktopAuthHandoff = `-- name: CreateDesktopAuthHandoff :exec
 INSERT INTO desktop_auth_handoff (
     state,
@@ -106,6 +129,31 @@ type RedeemDesktopAuthHandoffParams struct {
 
 func (q *Queries) RedeemDesktopAuthHandoff(ctx context.Context, arg RedeemDesktopAuthHandoffParams) (pgtype.UUID, error) {
 	row := q.db.QueryRow(ctx, redeemDesktopAuthHandoff, arg.CodeHash, arg.CodeChallenge)
+	var user_id pgtype.UUID
+	err := row.Scan(&user_id)
+	return user_id, err
+}
+
+const redeemDesktopLocalIdentity = `-- name: RedeemDesktopLocalIdentity :one
+DELETE FROM desktop_auth_handoff
+WHERE code_hash = $1
+  AND state = $2
+  AND code_challenge = $3
+  AND user_id IS NOT NULL
+  AND completed_at IS NOT NULL
+  AND completed_at > now() - interval '1 minute'
+  AND expires_at > now()
+RETURNING user_id
+`
+
+type RedeemDesktopLocalIdentityParams struct {
+	CodeHash      pgtype.Text `json:"code_hash"`
+	State         string      `json:"state"`
+	CodeChallenge string      `json:"code_challenge"`
+}
+
+func (q *Queries) RedeemDesktopLocalIdentity(ctx context.Context, arg RedeemDesktopLocalIdentityParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, redeemDesktopLocalIdentity, arg.CodeHash, arg.State, arg.CodeChallenge)
 	var user_id pgtype.UUID
 	err := row.Scan(&user_id)
 	return user_id, err

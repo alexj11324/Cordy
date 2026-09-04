@@ -8,6 +8,7 @@ import Page from "./page";
 const mocks = vi.hoisted(() => ({
   searchParams: { current: new URLSearchParams() },
   sso: vi.fn(),
+  register: vi.fn(),
   clerk: { loaded: true, session: null as null | { id: string } },
 }));
 
@@ -26,6 +27,10 @@ vi.mock("@/components/auth-shell", () => ({
   ),
 }));
 
+vi.mock("@/lib/broker-client", () => ({
+  registerDesktopGoogleAttempt: mocks.register,
+}));
+
 vi.mock("@/lib/auth-messages", () => ({
   useAuthMessages: () => ({
     starting: "Starting",
@@ -35,10 +40,12 @@ vi.mock("@/lib/auth-messages", () => ({
 }));
 
 beforeEach(() => {
+  window.sessionStorage.clear();
   mocks.searchParams.current = new URLSearchParams({
     return_url: "https://patchbay.aspectlylabs.com/login",
   });
   mocks.sso.mockReset().mockResolvedValue({ error: null });
+  mocks.register.mockReset().mockResolvedValue(undefined);
   mocks.clerk.loaded = true;
   mocks.clerk.session = null;
 });
@@ -59,5 +66,22 @@ describe("Accounts Google entry", () => {
       new URL(call.redirectCallbackUrl).searchParams.get("return_url"),
     ).toBe("https://patchbay.aspectlylabs.com/login");
     expect(screen.getByRole("status")).toHaveTextContent("Starting");
+  });
+
+  it("registers the local identity attempt with the hosted broker before Google", async () => {
+    const state = "s".repeat(43);
+    const challenge = "c".repeat(43);
+    mocks.searchParams.current = new URLSearchParams({
+      platform: "desktop",
+      state,
+      code_challenge: challenge,
+      session_mode: "local",
+    });
+
+    render(<Page />);
+
+    await waitFor(() => expect(mocks.sso).toHaveBeenCalledOnce());
+    expect(mocks.register).toHaveBeenCalledWith({ state, code_challenge: challenge });
+    expect(mocks.sso.mock.calls[0]?.[0].redirectUrl).toContain("session_mode=local");
   });
 });
