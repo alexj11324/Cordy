@@ -86,7 +86,7 @@ async function verifyAccountsLoginSurface(browser, sourceSha) {
     await expect(brandPanel).toBeVisible();
     await expect(page.getByTestId("patchbay-mark")).toBeVisible();
     await expect(
-      page.getByRole("heading", { name: "Create an account", exact: true }),
+      page.getByRole("heading", { name: "Login", exact: true }),
     ).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Sign In with Email", exact: true }),
@@ -141,7 +141,7 @@ async function verifyStandaloneAccountsLoginSurface(browser, sourceSha) {
     await clerk.loaded({ page });
     await expect(page.getByTestId("accounts-auth-shell")).toBeVisible();
     await expect(
-      page.getByRole("heading", { name: "Create an account", exact: true }),
+      page.getByRole("heading", { name: "Login", exact: true }),
     ).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Continue with Google", exact: true }),
