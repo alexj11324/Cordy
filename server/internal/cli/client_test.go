@@ -166,6 +166,38 @@ func TestPostJSON(t *testing.T) {
 	})
 }
 
+func TestPostJSONWithHeaderPreservesClientContext(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/graph/apply" {
+			t.Fatalf("request = %s %s, want POST /graph/apply", r.Method, r.URL.Path)
+		}
+		if r.Header.Get("Idempotency-Key") != "graph-key" {
+			t.Fatalf("Idempotency-Key = %q, want graph-key", r.Header.Get("Idempotency-Key"))
+		}
+		if r.Header.Get("Authorization") != "Bearer test-token" || r.Header.Get("X-Workspace-ID") != "ws-1" {
+			t.Fatalf("client context headers missing: %#v", r.Header)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		if body["goal"] != "ship" {
+			t.Fatalf("body = %#v, want graph payload", body)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"status": "active"})
+	}))
+	defer srv.Close()
+
+	client := NewAPIClient(srv.URL, "ws-1", "test-token")
+	var response map[string]any
+	if err := client.PostJSONWithHeader(context.Background(), "/graph/apply", map[string]any{"goal": "ship"}, "Idempotency-Key", "graph-key", &response); err != nil {
+		t.Fatalf("PostJSONWithHeader: %v", err)
+	}
+	if response["status"] != "active" {
+		t.Fatalf("response = %#v, want active status", response)
+	}
+}
+
 func TestDeleteJSONResponse(t *testing.T) {
 	type respBody struct {
 		ID string `json:"id"`

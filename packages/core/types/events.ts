@@ -107,6 +107,18 @@ export interface IssueCreatedPayload {
   issue: Issue;
 }
 
+export type DependencyGraphUpdatedPayload = {
+  plan_id?: string | null;
+  plan_ids?: string[];
+  parent_issue_id?: string;
+  status?: string;
+  promoted_issue_ids?: string[];
+  attention_required?: boolean;
+  prerequisite_issue_id?: string;
+  reason?: string;
+  replayed?: boolean;
+};
+
 export interface IssueUpdatedPayload {
   issue: Issue;
   // The server stamps issue:updated with which fields actually changed
@@ -615,7 +627,7 @@ export interface WSEventPayloadMap {
   "project:created": ProjectCreatedPayload;
   "project:updated": ProjectUpdatedPayload;
   "project:deleted": ProjectDeletedPayload;
-  "dependency_graph:updated": unknown;
+  "dependency_graph:updated": DependencyGraphUpdatedPayload;
   "invitation:created": InvitationCreatedPayload;
   "invitation:accepted": InvitationAcceptedPayload;
   "invitation:declined": InvitationDeclinedPayload;

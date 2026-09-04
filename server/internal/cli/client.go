@@ -389,6 +389,40 @@ func (c *APIClient) PostJSON(ctx context.Context, path string, body any, out any
 	return wrapBodyRead(req, json.NewDecoder(resp.Body).Decode(out))
 }
 
+// PostJSONWithHeader performs a JSON POST with one request-specific header and
+// decodes the response. It keeps idempotency and other protocol headers at the
+// call site without making callers reconstruct the client's auth/workspace
+// headers.
+func (c *APIClient) PostJSONWithHeader(ctx context.Context, path string, body any, headerName, headerValue string, out any) error {
+	data, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+path, bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	c.setHeaders(req)
+	req.Header.Set(headerName, headerValue)
+
+	resp, err := c.HTTPClient.Do(req)
+	err = wrapTransport(req, err)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return newHTTPError(http.MethodPost, path, resp)
+	}
+	if out == nil {
+		return nil
+	}
+	return wrapBodyRead(req, json.NewDecoder(resp.Body).Decode(out))
+}
+
 // PutJSON performs a PUT request with a JSON body.
 func (c *APIClient) PutJSON(ctx context.Context, path string, body any, out any) error {
 	data, err := json.Marshal(body)

@@ -11,7 +11,9 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/patchbay-ai/patchbay/server/internal/events"
 	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
 )
 
 func dependencyGraphValidationFixture(edges []dependencyGraphEdgeInput) dependencyGraphApplyInput {
@@ -159,6 +161,12 @@ type nestedGraphResponse struct {
 	Plan struct {
 		ID string `json:"id"`
 	} `json:"plan"`
+	Parent struct {
+		ID string `json:"id"`
+	} `json:"parent"`
+	Children []struct {
+		ID string `json:"id"`
+	} `json:"children"`
 	Nodes []struct {
 		IssueID string `json:"issue_id"`
 		Issue   struct {
@@ -181,6 +189,16 @@ type nestedGraphResponse struct {
 		Ready   int `json:"ready"`
 		Blocked int `json:"blocked"`
 	} `json:"readiness"`
+	Waves [][]string `json:"waves"`
+}
+
+func dependencyGraphTestString(value any, key string) string {
+	record, ok := value.(map[string]any)
+	if !ok {
+		return ""
+	}
+	result, _ := record[key].(string)
+	return result
 }
 
 func TestListDependencyGraphsReturnsNestedResponses(t *testing.T) {
@@ -201,14 +219,17 @@ func TestListDependencyGraphsReturnsNestedResponses(t *testing.T) {
 	`, testWorkspaceID, parentID, "test-nested-"+t.Name(), "hash-nested", "ship it", testUserID).Scan(&planID); err != nil {
 		t.Fatalf("insert plan: %v", err)
 	}
-	for _, n := range []struct{ temp, issue, title string }{
-		{"a", issueAID, "task a"},
-		{"b", issueBID, "task b"},
+	for _, n := range []struct {
+		temp, issue, title string
+		wave              int
+	}{
+		{"a", issueAID, "task a", 0},
+		{"b", issueBID, "task b", 1},
 	} {
 		if _, err := testPool.Exec(ctx, `
 			INSERT INTO dependency_graph_node (plan_id, workspace_id, temp_id, issue_id, title, wave)
-			VALUES ($1, $2, $3, $4, $5, 0)
-		`, planID, testWorkspaceID, n.temp, n.issue, n.title); err != nil {
+			VALUES ($1, $2, $3, $4, $5, $6)
+		`, planID, testWorkspaceID, n.temp, n.issue, n.title, n.wave); err != nil {
 			t.Fatalf("insert node %s: %v", n.temp, err)
 		}
 	}
@@ -254,6 +275,12 @@ func TestListDependencyGraphsReturnsNestedResponses(t *testing.T) {
 	if found == nil {
 		t.Fatalf("list: plan %s missing from response (body: %s)", planID, bodyBytes)
 	}
+	if found.Parent.ID != parentID || len(found.Children) != 2 {
+		t.Fatalf("list: parent/children = %s/%d, want %s/2 (body: %s)", found.Parent.ID, len(found.Children), parentID, bodyBytes)
+	}
+	if len(found.Waves) != 2 || len(found.Waves[0]) != 1 || found.Waves[0][0] != "a" || len(found.Waves[1]) != 1 || found.Waves[1][0] != "b" {
+		t.Fatalf("list: waves = %+v, want [[a] [b]] (body: %s)", found.Waves, bodyBytes)
+	}
 	if len(found.Nodes) != 2 {
 		t.Fatalf("list: expected 2 nodes, got %d (body: %s)", len(found.Nodes), bodyBytes)
 	}
@@ -272,10 +299,241 @@ func TestListDependencyGraphsReturnsNestedResponses(t *testing.T) {
 	if nodeB.Readiness.State != "blocked" || nodeB.Readiness.TotalPrerequisites != 1 {
 		t.Fatalf("list: node B readiness = %+v, want state=blocked total=1 (body: %s)", nodeB.Readiness, bodyBytes)
 	}
-	if len(found.Edges) != 1 || found.Edges[0].From != issueAID || found.Edges[0].To != issueBID || found.Edges[0].Satisfied {
-		t.Fatalf("list: edges = %+v, want one unsatisfied a->b edge (body: %s)", found.Edges, bodyBytes)
+	if len(found.Edges) != 1 || found.Edges[0].From != "a" || found.Edges[0].To != "b" || found.Edges[0].Satisfied {
+		t.Fatalf("list: edges = %+v, want one unsatisfied a->b edge with temp-id endpoints (body: %s)", found.Edges, bodyBytes)
 	}
 	if found.Readiness.Total != 2 || found.Readiness.Ready != 1 || found.Readiness.Blocked != 1 {
 		t.Fatalf("list: graph readiness = %+v, want total=2 ready=1 blocked=1 (body: %s)", found.Readiness, bodyBytes)
+	}
+}
+
+// TestApplyDependencyGraphRoundTripsRolesAndRealtime is the handler-level
+// acceptance for the Rust graph contract. It exercises the durable boundary,
+// not only JSON validation: apply creates role-explicit child issues/nodes,
+// stores the prerequisite gate, read returns the same parent/children/waves,
+// and an idempotent replay emits the graph refresh event without duplicating
+// the plan or children.
+func TestApplyDependencyGraphRoundTripsRolesAndRealtime(t *testing.T) {
+	if testHandler == nil || testPool == nil || dbfx == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+	parentID := dbfx.Issue(t, "graph apply parent")
+	agentID := handlerSeededAgentID(t)
+	key := "graph-apply-" + strings.ToLower(strings.ReplaceAll(t.Name(), "/", "-"))
+
+	t.Cleanup(func() {
+		cleanupCtx := context.Background()
+		_, _ = testPool.Exec(cleanupCtx, `
+			DELETE FROM agent_task_queue
+			WHERE issue_id IN (SELECT id FROM issue WHERE parent_issue_id = $1)`, parentID)
+		_, _ = testPool.Exec(cleanupCtx, `
+			DELETE FROM dependency_graph_issue_created_outbox
+			WHERE plan_id IN (SELECT id FROM dependency_graph_plan WHERE parent_issue_id = $1)`, parentID)
+		_, _ = testPool.Exec(cleanupCtx, `
+			DELETE FROM dependency_graph_edge
+			WHERE plan_id IN (SELECT id FROM dependency_graph_plan WHERE parent_issue_id = $1)`, parentID)
+		_, _ = testPool.Exec(cleanupCtx, `
+			DELETE FROM dependency_graph_node
+			WHERE plan_id IN (SELECT id FROM dependency_graph_plan WHERE parent_issue_id = $1)`, parentID)
+		_, _ = testPool.Exec(cleanupCtx, `DELETE FROM dependency_graph_plan WHERE parent_issue_id = $1`, parentID)
+		_, _ = testPool.Exec(cleanupCtx, `DELETE FROM issue WHERE parent_issue_id = $1`, parentID)
+	})
+
+	var graphEvents []events.Event
+	testHandler.Bus.Subscribe(protocol.EventDependencyGraphUpdated, func(event events.Event) {
+		payload, ok := event.Payload.(map[string]any)
+		if !ok || payload["parent_issue_id"] != parentID {
+			return
+		}
+		graphEvents = append(graphEvents, event)
+	})
+
+	role := func(kind, id string) map[string]any {
+		return map[string]any{"type": kind, "id": id}
+	}
+	body := map[string]any{
+		"goal":            "round trip a dependency graph",
+		"parent_issue_id": parentID,
+		"tasks": []any{
+			map[string]any{
+				"temp_id":             "root",
+				"title":               "graph root",
+				"description":         "",
+				"acceptance_criteria": []string{"root is complete"},
+				"context":             map[string]any{},
+				"outputs":             []string{"root artifact"},
+				"owner":               role("member", testUserID),
+				"candidate_executors": []any{role("agent", agentID)},
+				"reviewer":            role("member", testUserID),
+			},
+			map[string]any{
+				"temp_id":             "child",
+				"title":               "graph child",
+				"description":         "",
+				"acceptance_criteria": []string{"child is complete"},
+				"context":             map[string]any{},
+				"outputs":             []string{"child artifact"},
+				"owner":               role("member", testUserID),
+				"candidate_executors": []any{},
+				"reviewer":            role("member", testUserID),
+			},
+		},
+		"edges": []any{
+			map[string]any{
+				"from":            "root",
+				"to":              "child",
+				"type":            "hard",
+				"reason":          "child consumes the root artifact",
+				"consumed_output": "root artifact",
+			},
+		},
+	}
+
+	apply := func() (*httptest.ResponseRecorder, map[string]any) {
+		req := withURLParam(newRequest(http.MethodPost, "/api/issues/"+parentID+"/dependency-graph/apply", body), "id", parentID)
+		req.Header.Set("Idempotency-Key", key)
+		w := httptest.NewRecorder()
+		testHandler.ApplyIssueDependencyGraph(w, req)
+		var decoded map[string]any
+		if err := json.Unmarshal(w.Body.Bytes(), &decoded); err != nil {
+			t.Fatalf("decode apply response: %v\n%s", err, w.Body.String())
+		}
+		return w, decoded
+	}
+
+	first, firstBody := apply()
+	if first.Code != http.StatusCreated {
+		t.Fatalf("apply: expected 201, got %d: %s", first.Code, first.Body.String())
+	}
+	if firstBody["replayed"] != false {
+		t.Fatalf("first apply replayed = %#v, want false", firstBody["replayed"])
+	}
+	plan, ok := firstBody["plan"].(map[string]any)
+	if !ok || dependencyGraphTestString(plan, "id") == "" {
+		t.Fatalf("first apply plan = %#v, want an id", firstBody["plan"])
+	}
+	planID := dependencyGraphTestString(plan, "id")
+	if dependencyGraphTestString(firstBody, "parent") != "" {
+		// The parent is an object in the wire contract; this branch only keeps
+		// the failure message useful if a server accidentally regresses it to a
+		// scalar.
+		t.Fatalf("first apply parent unexpectedly serialized as a string: %#v", firstBody["parent"])
+	}
+	parentResponse, ok := firstBody["parent"].(map[string]any)
+	if !ok || dependencyGraphTestString(parentResponse, "id") != parentID {
+		t.Fatalf("first apply parent = %#v, want %s", firstBody["parent"], parentID)
+	}
+	children, ok := firstBody["children"].([]any)
+	if !ok || len(children) != 2 {
+		t.Fatalf("first apply children = %#v, want two child issues", firstBody["children"])
+	}
+	waves, ok := firstBody["waves"].([]any)
+	if !ok || len(waves) != 2 {
+		t.Fatalf("first apply waves = %#v, want two waves", firstBody["waves"])
+	}
+	nodes, ok := firstBody["nodes"].([]any)
+	if !ok || len(nodes) != 2 {
+		t.Fatalf("first apply nodes = %#v, want two nodes", firstBody["nodes"])
+	}
+	byTempID := make(map[string]map[string]any, len(nodes))
+	for _, raw := range nodes {
+		node, ok := raw.(map[string]any)
+		if !ok {
+			t.Fatalf("first apply node = %#v, want object", raw)
+		}
+		byTempID[dependencyGraphTestString(node, "temp_id")] = node
+	}
+	root := byTempID["root"]
+	child := byTempID["child"]
+	if root == nil || child == nil {
+		t.Fatalf("first apply node temp ids = %#v", byTempID)
+	}
+	if dependencyGraphTestString(root, "owner_type") != "member" || dependencyGraphTestString(root, "owner_id") != testUserID || dependencyGraphTestString(root, "reviewer_type") != "member" || dependencyGraphTestString(root, "reviewer_id") != testUserID {
+		t.Fatalf("root role projection = %#v", root)
+	}
+	if dependencyGraphTestString(child, "status") != "blocked" {
+		t.Fatalf("child status = %q, want blocked", dependencyGraphTestString(child, "status"))
+	}
+	childReadiness, ok := child["readiness"].(map[string]any)
+	if !ok || dependencyGraphTestString(childReadiness, "state") != "blocked" || childReadiness["gate_open"] != false || childReadiness["total_prerequisites"] != float64(1) || !strings.Contains(dependencyGraphTestString(childReadiness, "unlock_condition"), "All 1 hard prerequisites") {
+		t.Fatalf("child readiness = %#v", child["readiness"])
+	}
+	edges, ok := firstBody["edges"].([]any)
+	if !ok || len(edges) != 1 {
+		t.Fatalf("first apply edges = %#v, want one edge", firstBody["edges"])
+	}
+	edge, ok := edges[0].(map[string]any)
+	if !ok || dependencyGraphTestString(edge, "from") != "root" || dependencyGraphTestString(edge, "to") != "child" {
+		t.Fatalf("first apply edge endpoints = %#v, want temp ids root -> child", edges[0])
+	}
+	if len(graphEvents) != 1 || graphEvents[0].Type != protocol.EventDependencyGraphUpdated {
+		t.Fatalf("graph events after apply = %+v, want one dependency_graph:updated event", graphEvents)
+	}
+
+	var rootStatus, childStatus string
+	var rootAcceptance, childAcceptance []byte
+	if err := testPool.QueryRow(ctx, `
+		SELECT root_issue.status, root_issue.acceptance_criteria,
+		       child_issue.status, child_issue.acceptance_criteria
+		FROM dependency_graph_node root_node
+		JOIN issue root_issue ON root_issue.id = root_node.issue_id
+		JOIN dependency_graph_edge graph_edge
+		  ON graph_edge.plan_id = root_node.plan_id
+		 AND graph_edge.from_issue_id = root_node.issue_id
+		JOIN dependency_graph_node child_node
+		  ON child_node.plan_id = graph_edge.plan_id
+		 AND child_node.issue_id = graph_edge.to_issue_id
+		JOIN issue child_issue ON child_issue.id = child_node.issue_id
+		WHERE root_node.plan_id = $1
+		  AND root_node.temp_id = 'root'
+		  AND child_node.temp_id = 'child'`, planID).Scan(&rootStatus, &rootAcceptance, &childStatus, &childAcceptance); err != nil {
+		t.Fatalf("read persisted child issues: %v", err)
+	}
+	if rootStatus != "todo" || childStatus != "blocked" {
+		t.Fatalf("persisted statuses = %s/%s, want todo/blocked", rootStatus, childStatus)
+	}
+	if string(rootAcceptance) != `["root is complete"]` || string(childAcceptance) != `["child is complete"]` {
+		t.Fatalf("persisted acceptance criteria = %s/%s", rootAcceptance, childAcceptance)
+	}
+
+	get := withURLParam(newRequest(http.MethodGet, "/api/issues/"+parentID+"/dependency-graph", nil), "id", parentID)
+	getResponse := httptest.NewRecorder()
+	testHandler.GetIssueDependencyGraph(getResponse, get)
+	if getResponse.Code != http.StatusOK {
+		t.Fatalf("read by parent: expected 200, got %d: %s", getResponse.Code, getResponse.Body.String())
+	}
+	var readBody map[string]any
+	if err := json.Unmarshal(getResponse.Body.Bytes(), &readBody); err != nil {
+		t.Fatalf("decode read response: %v", err)
+	}
+	if dependencyGraphTestString(readBody["plan"].(map[string]any), "id") != planID || len(readBody["children"].([]any)) != 2 || len(readBody["waves"].([]any)) != 2 {
+		t.Fatalf("read by parent lost graph material: %#v", readBody)
+	}
+
+	getPlan := withURLParam(newRequest(http.MethodGet, "/api/dependency-graphs/"+planID, nil), "id", planID)
+	getPlanResponse := httptest.NewRecorder()
+	testHandler.GetDependencyGraphByID(getPlanResponse, getPlan)
+	if getPlanResponse.Code != http.StatusOK {
+		t.Fatalf("read by plan: expected 200, got %d: %s", getPlanResponse.Code, getPlanResponse.Body.String())
+	}
+
+	replay, replayBody := apply()
+	if replay.Code != http.StatusOK || replayBody["replayed"] != true || dependencyGraphTestString(replayBody["plan"].(map[string]any), "id") != planID {
+		t.Fatalf("replay = %d/%#v, want 200, replayed=true, same plan", replay.Code, replayBody)
+	}
+	if len(graphEvents) != 2 || graphEvents[1].Payload.(map[string]any)["replayed"] != true {
+		t.Fatalf("graph events after replay = %+v, want second replay event", graphEvents)
+	}
+
+	var plans, childCount int64
+	if err := testPool.QueryRow(ctx, `SELECT COUNT(*) FROM dependency_graph_plan WHERE parent_issue_id = $1`, parentID).Scan(&plans); err != nil {
+		t.Fatalf("count plans: %v", err)
+	}
+	if err := testPool.QueryRow(ctx, `SELECT COUNT(*) FROM issue WHERE parent_issue_id = $1`, parentID).Scan(&childCount); err != nil {
+		t.Fatalf("count child issues: %v", err)
+	}
+	if plans != 1 || childCount != 2 {
+		t.Fatalf("replay duplicated durable rows: plans=%d children=%d, want 1/2", plans, childCount)
 	}
 }

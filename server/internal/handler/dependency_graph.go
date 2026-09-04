@@ -18,6 +18,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/patchbay-ai/patchbay/server/internal/events"
 	"github.com/patchbay-ai/patchbay/server/internal/issueposition"
 	"github.com/patchbay-ai/patchbay/server/internal/issuestatus"
 	"github.com/patchbay-ai/patchbay/server/internal/service"
@@ -623,8 +624,11 @@ type dependencyGraphReadinessResponse struct {
 
 type dependencyGraphResponse struct {
 	Plan      dependencyGraphPlanResponse   `json:"plan"`
+	Parent    IssueResponse                 `json:"parent"`
+	Children  []IssueResponse               `json:"children"`
 	Nodes     []dependencyGraphNodeResponse `json:"nodes"`
 	Edges     []dependencyGraphEdgeResponse `json:"edges"`
+	Waves     [][]string                     `json:"waves"`
 	Readiness dependencyGraphReadinessResponse `json:"readiness"`
 }
 
@@ -649,8 +653,11 @@ func dependencyGraphPlanToResponse(plan db.DependencyGraphPlan) dependencyGraphP
 func dependencyGraphResponseMap(response dependencyGraphResponse, includeReplay bool, replayed bool) map[string]any {
 	payload := map[string]any{
 		"plan":      response.Plan,
+		"parent":    response.Parent,
+		"children":  response.Children,
 		"nodes":     response.Nodes,
 		"edges":     response.Edges,
+		"waves":     response.Waves,
 		"readiness": response.Readiness,
 	}
 	if includeReplay {
@@ -672,6 +679,91 @@ func dependencyGraphJSONResponse(raw []byte, fallback string) (json.RawMessage, 
 		return nil, dependencyGraphIntegrity("dependency graph JSON could not be encoded")
 	}
 	return json.RawMessage(canonical), nil
+}
+
+func dependencyGraphUnlockCondition(satisfied, total int) string {
+	if total == 0 {
+		return "No hard prerequisites; ready immediately"
+	}
+	return fmt.Sprintf("All %d hard prerequisites must be Done (%d/%d currently satisfied)", total, satisfied, total)
+}
+
+func validateDependencyGraphPersistedRolePair(roleType pgtype.Text, roleID pgtype.UUID, field string, allowed map[string]struct{}) error {
+	if roleType.Valid != roleID.Valid {
+		return dependencyGraphIntegrity(field + " type and id must be provided together")
+	}
+	if !roleType.Valid {
+		return nil
+	}
+	if _, ok := allowed[roleType.String]; !ok {
+		return dependencyGraphIntegrity(field + " has an invalid role type")
+	}
+	if !roleID.Valid {
+		return dependencyGraphIntegrity(field + " has an invalid role id")
+	}
+	return nil
+}
+
+func validateDependencyGraphPersistedCandidates(raw []byte) (json.RawMessage, error) {
+	candidates, err := dependencyGraphJSONResponse(raw, "[]")
+	if err != nil {
+		return nil, err
+	}
+	var decoded []dependencyGraphRoleInput
+	if err := json.Unmarshal(candidates, &decoded); err != nil || decoded == nil {
+		return nil, dependencyGraphIntegrity("dependency graph candidate executors are not an array")
+	}
+	for index := range decoded {
+		if _, err := validateDependencyGraphExecutorShape(&decoded[index], fmt.Sprintf("candidate_executors[%d]", index)); err != nil {
+			return nil, dependencyGraphIntegrity(err.Error())
+		}
+	}
+	canonical, err := json.Marshal(decoded)
+	if err != nil {
+		return nil, dependencyGraphIntegrity("dependency graph candidate executors could not be encoded")
+	}
+	return canonical, nil
+}
+
+func dependencyGraphPersistedWaves(nodes []db.DependencyGraphNode, edges []db.DependencyGraphEdge) ([][]string, error) {
+	if len(nodes) == 0 {
+		return nil, dependencyGraphIntegrity("a dependency graph plan has no nodes")
+	}
+	waveByIssue := make(map[string]int32, len(nodes))
+	seenTempIDs := make(map[string]struct{}, len(nodes))
+	waves := make([][]string, 0, len(nodes))
+	for _, node := range nodes {
+		if !node.ID.Valid || !node.IssueID.Valid {
+			return nil, dependencyGraphIntegrity("dependency graph node contains an invalid identity")
+		}
+		if node.Wave < 0 || int(node.Wave) >= len(nodes) {
+			return nil, dependencyGraphIntegrity(fmt.Sprintf("node %q has invalid persisted wave %d", node.TempID, node.Wave))
+		}
+		issueKey := uuidToString(node.IssueID)
+		if _, exists := waveByIssue[issueKey]; exists {
+			return nil, dependencyGraphIntegrity("dependency graph contains duplicate node issues")
+		}
+		if _, exists := seenTempIDs[node.TempID]; exists {
+			return nil, dependencyGraphIntegrity("dependency graph contains duplicate temp ids")
+		}
+		seenTempIDs[node.TempID] = struct{}{}
+		waveByIssue[issueKey] = node.Wave
+		for len(waves) <= int(node.Wave) {
+			waves = append(waves, []string{})
+		}
+		waves[node.Wave] = append(waves[node.Wave], node.TempID)
+	}
+	for index := range waves {
+		sort.Strings(waves[index])
+	}
+	for _, edge := range edges {
+		fromWave, fromOK := waveByIssue[uuidToString(edge.FromIssueID)]
+		toWave, toOK := waveByIssue[uuidToString(edge.ToIssueID)]
+		if !fromOK || !toOK || fromWave >= toWave {
+			return nil, dependencyGraphIntegrity(fmt.Sprintf("edge %s does not point from an earlier wave", uuidToString(edge.ID)))
+		}
+	}
+	return waves, nil
 }
 
 type dependencyGraphActor struct {
@@ -748,12 +840,6 @@ func (h *Handler) dependencyGraphResponseForPlan(ctx context.Context, plan db.De
 	if !plan.ID.Valid || !plan.WorkspaceID.Valid || !plan.ParentIssueID.Valid {
 		return dependencyGraphResponse{}, dependencyGraphIntegrity("dependency graph plan contains an invalid identity")
 	}
-	if _, err := h.Queries.GetIssueInWorkspace(ctx, db.GetIssueInWorkspaceParams{ID: plan.ParentIssueID, WorkspaceID: plan.WorkspaceID}); err != nil {
-		if isNotFound(err) {
-			return dependencyGraphResponse{}, dependencyGraphIntegrity("dependency graph parent issue is missing")
-		}
-		return dependencyGraphResponse{}, dependencyGraphDatabase("load dependency graph parent issue", err)
-	}
 	nodes, err := h.Queries.ListDependencyGraphNodesByPlan(ctx, db.ListDependencyGraphNodesByPlanParams{PlanID: plan.ID, WorkspaceID: plan.WorkspaceID})
 	if err != nil {
 		return dependencyGraphResponse{}, dependencyGraphDatabase("load dependency graph nodes", err)
@@ -762,10 +848,34 @@ func (h *Handler) dependencyGraphResponseForPlan(ctx context.Context, plan db.De
 	if err != nil {
 		return dependencyGraphResponse{}, dependencyGraphDatabase("load dependency graph edges", err)
 	}
+	waves, err := dependencyGraphPersistedWaves(nodes, edges)
+	if err != nil {
+		return dependencyGraphResponse{}, err
+	}
 	issues := make(map[string]db.Issue, len(nodes))
+	tempIDByIssue := make(map[string]string, len(nodes))
+	parentIssue, err := h.Queries.GetIssueInWorkspace(ctx, db.GetIssueInWorkspaceParams{ID: plan.ParentIssueID, WorkspaceID: plan.WorkspaceID})
+	if err != nil {
+		if isNotFound(err) {
+			return dependencyGraphResponse{}, dependencyGraphIntegrity("dependency graph parent issue is missing")
+		}
+		return dependencyGraphResponse{}, dependencyGraphDatabase("load dependency graph parent issue", err)
+	}
+	sort.Slice(nodes, func(left, right int) bool {
+		return nodes[left].TempID < nodes[right].TempID
+	})
 	for _, node := range nodes {
-		if node.PlanID != plan.ID || node.WorkspaceID != plan.WorkspaceID || !node.IssueID.Valid {
+		if node.PlanID != plan.ID || node.WorkspaceID != plan.WorkspaceID || !node.ID.Valid || !node.IssueID.Valid {
 			return dependencyGraphResponse{}, dependencyGraphIntegrity("dependency graph node crosses its plan workspace")
+		}
+		if err := validateDependencyGraphPersistedRolePair(node.OwnerType, node.OwnerID, "owner", map[string]struct{}{"member": {}}); err != nil {
+			return dependencyGraphResponse{}, err
+		}
+		if err := validateDependencyGraphPersistedRolePair(node.ExecutorType, node.ExecutorID, "executor", map[string]struct{}{"agent": {}, "team": {}}); err != nil {
+			return dependencyGraphResponse{}, err
+		}
+		if err := validateDependencyGraphPersistedRolePair(node.ReviewerType, node.ReviewerID, "reviewer", map[string]struct{}{"member": {}, "agent": {}, "team": {}}); err != nil {
+			return dependencyGraphResponse{}, err
 		}
 		issue, err := h.Queries.GetIssueInWorkspace(ctx, db.GetIssueInWorkspaceParams{ID: node.IssueID, WorkspaceID: plan.WorkspaceID})
 		if err != nil {
@@ -779,6 +889,7 @@ func (h *Handler) dependencyGraphResponseForPlan(ctx context.Context, plan db.De
 			return dependencyGraphResponse{}, dependencyGraphIntegrity("dependency graph contains duplicate node issues")
 		}
 		issues[key] = issue
+		tempIDByIssue[key] = node.TempID
 	}
 	incoming := make(map[string][]string, len(nodes))
 	for _, edge := range edges {
@@ -802,12 +913,16 @@ func (h *Handler) dependencyGraphResponseForPlan(ctx context.Context, plan db.De
 	resolver := issuestatus.NewResolver(plan.WorkspaceID)
 	issuePrefix := h.getIssuePrefix(ctx, plan.WorkspaceID)
 	response := dependencyGraphResponse{
-		Plan:  dependencyGraphPlanToResponse(plan),
-		Nodes: make([]dependencyGraphNodeResponse, 0, len(nodes)),
-		Edges: make([]dependencyGraphEdgeResponse, 0, len(edges)),
+		Plan:           dependencyGraphPlanToResponse(plan),
+		Parent:         issueToResponse(parentIssue, issuePrefix),
+		Children:       make([]IssueResponse, 0, len(nodes)),
+		Nodes:          make([]dependencyGraphNodeResponse, 0, len(nodes)),
+		Edges:          make([]dependencyGraphEdgeResponse, 0, len(edges)),
+		Waves:          waves,
 	}
+	h.fillStatusCategory(ctx, plan.WorkspaceID, &response.Parent)
 	categoryOf := make(map[string]string, len(nodes))
-	stateOf := make(map[string]string, len(nodes))
+	readinessByIssue := make(map[string]dependencyGraphNodeReadinessResponse, len(nodes))
 	for _, node := range nodes {
 		issue := issues[uuidToString(node.IssueID)]
 		category := resolver.Effective(ctx, statusQueries, issue.Status)
@@ -844,21 +959,29 @@ func (h *Handler) dependencyGraphResponseForPlan(ctx context.Context, plan db.De
 		if err != nil {
 			return dependencyGraphResponse{}, err
 		}
+		candidates, err = validateDependencyGraphPersistedCandidates(candidates)
+		if err != nil {
+			return dependencyGraphResponse{}, err
+		}
 		issueKey := uuidToString(node.IssueID)
 		categoryOf[issueKey] = category
+		prerequisites := incoming[issueKey]
+		if plan.Status != "active" {
+			prerequisites = nil
+		}
 		satisfied := 0
-		for _, prerequisiteID := range incoming[issueKey] {
+		for _, prerequisiteID := range prerequisites {
 			if prerequisite, ok := issues[prerequisiteID]; ok {
 				if resolver.Effective(ctx, statusQueries, prerequisite.Status) == issuestatus.Done {
 					satisfied++
 				}
 			}
 		}
-		gateOpen := plan.Status == "active" && len(blockedBy) == 0 && category != issuestatus.Done && category != issuestatus.Cancelled
+		gateOpen := len(blockedBy) == 0
 		state := dependencyGraphNodeReadinessState(category, gateOpen, len(blockedBy) > 0)
-		stateOf[issueKey] = state
 		issueResponse := issueToResponse(issue, issuePrefix)
 		h.fillStatusCategory(ctx, plan.WorkspaceID, &issueResponse)
+		response.Children = append(response.Children, issueResponse)
 		response.Nodes = append(response.Nodes, dependencyGraphNodeResponse{
 			ID:                 uuidToString(node.ID),
 			PlanID:             uuidToString(node.PlanID),
@@ -891,10 +1014,11 @@ func (h *Handler) dependencyGraphResponseForPlan(ctx context.Context, plan db.De
 				State:                  state,
 				GateOpen:               gateOpen,
 				SatisfiedPrerequisites: satisfied,
-				TotalPrerequisites:     len(incoming[issueKey]),
-				UnlockCondition:        "",
+				TotalPrerequisites:     len(prerequisites),
+				UnlockCondition:        dependencyGraphUnlockCondition(satisfied, len(prerequisites)),
 			},
 		})
+		readinessByIssue[issueKey] = response.Nodes[len(response.Nodes)-1].Readiness
 	}
 	for _, edge := range edges {
 		fromKey := uuidToString(edge.FromIssueID)
@@ -905,9 +1029,9 @@ func (h *Handler) dependencyGraphResponseForPlan(ctx context.Context, plan db.De
 			fromStatus = fromIssue.Status
 			satisfied = categoryOf[fromKey] == issuestatus.Done
 		}
-		satisfiedCount := 0
-		if satisfied {
-			satisfiedCount = 1
+		targetReadiness, ok := readinessByIssue[toKey]
+		if !ok {
+			return dependencyGraphResponse{}, dependencyGraphIntegrity("dependency graph edge target readiness is missing")
 		}
 		response.Edges = append(response.Edges, dependencyGraphEdgeResponse{
 			ID:                     uuidToString(edge.ID),
@@ -915,17 +1039,17 @@ func (h *Handler) dependencyGraphResponseForPlan(ctx context.Context, plan db.De
 			WorkspaceID:            uuidToString(edge.WorkspaceID),
 			FromIssueID:            fromKey,
 			ToIssueID:              toKey,
-			From:                   fromKey,
-			To:                     toKey,
+			From:                   tempIDByIssue[fromKey],
+			To:                     tempIDByIssue[toKey],
 			Type:                   edge.Type,
 			Reason:                 edge.Reason,
 			ConsumedOutput:         edge.ConsumedOutput,
 			CreatedAt:              timestampToString(edge.CreatedAt),
 			PrerequisiteStatus:     fromStatus,
 			Satisfied:              satisfied,
-			SatisfiedPrerequisites: satisfiedCount,
-			TotalPrerequisites:     1,
-			UnlockCondition:        "",
+			SatisfiedPrerequisites: targetReadiness.SatisfiedPrerequisites,
+			TotalPrerequisites:     targetReadiness.TotalPrerequisites,
+			UnlockCondition:        targetReadiness.UnlockCondition,
 		})
 	}
 	for _, node := range response.Nodes {
@@ -958,16 +1082,21 @@ func dependencyGraphNodeReadinessState(category string, gateOpen bool, hasBlocke
 		return "cancelled"
 	case issuestatus.Blocked:
 		return "blocked"
-	case issuestatus.InProgress, issuestatus.InReview:
-		return "running"
 	}
-	if hasBlockers {
+	if !gateOpen || hasBlockers {
 		return "blocked"
 	}
-	if gateOpen {
+	switch category {
+	case issuestatus.InProgress, issuestatus.InReview:
+		return "running"
+	case issuestatus.Todo:
 		return "ready"
+	default:
+		// Unknown/custom categories are not admitted by the dependency
+		// scheduler. Keep them fail-closed instead of presenting a task as
+		// runnable merely because its edge gate is open.
+		return "blocked"
 	}
-	return "todo"
 }
 
 func dependencyGraphIdempotencyKey(r *http.Request) (string, error) {
@@ -1230,6 +1359,24 @@ func (h *Handler) applyDependencyGraphTransaction(ctx context.Context, input *de
 			}
 		}
 	}
+	var configuredDefaultExecutionAgentID pgtype.UUID
+	if err := tx.QueryRow(ctx, `
+		SELECT default_execution_agent_id
+		FROM workspace_issue_category_policy
+		WHERE workspace_id = $1 AND category = 'in_progress'`, actor.WorkspaceID).Scan(&configuredDefaultExecutionAgentID); err != nil && !isNotFound(err) {
+		return dependencyGraphApplyResult{}, dependencyGraphDatabase("load dependency graph execution policy", err)
+	}
+	var defaultExecutionAgentID pgtype.UUID
+	if configuredDefaultExecutionAgentID.Valid {
+		defaultAgent, err := qtx.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{ID: configuredDefaultExecutionAgentID, WorkspaceID: actor.WorkspaceID})
+		if err != nil {
+			if !isNotFound(err) {
+				return dependencyGraphApplyResult{}, dependencyGraphDatabase("load dependency graph default executor", err)
+			}
+		} else if !defaultAgent.ArchivedAt.Valid && defaultAgent.RuntimeID.Valid {
+			defaultExecutionAgentID = configuredDefaultExecutionAgentID
+		}
+	}
 	plan, err := qtx.CreateDependencyGraphPlan(ctx, db.CreateDependencyGraphPlanParams{
 		WorkspaceID:    actor.WorkspaceID,
 		ParentIssueID:  lockedID,
@@ -1254,6 +1401,22 @@ func (h *Handler) applyDependencyGraphTransaction(ctx context.Context, input *de
 	nodes := make([]db.DependencyGraphNode, 0, len(input.Tasks))
 	issueByTempID := make(map[string]pgtype.UUID, len(input.Tasks))
 	for index, task := range input.Tasks {
+		assignment := assignments[index]
+		if !assignment.executorID.Valid && defaultExecutionAgentID.Valid {
+			assignment.executorType = pgtype.Text{String: "agent", Valid: true}
+			assignment.executorID = defaultExecutionAgentID
+			assignments[index] = assignment
+		}
+		incomingCount := 0
+		for _, edge := range input.Edges {
+			if edge.To == task.TempID {
+				incomingCount++
+			}
+		}
+		status := issuestatus.Todo
+		if incomingCount > 0 {
+			status = issuestatus.Blocked
+		}
 		number, err := service.AllocateIssueNumber(ctx, qtx, actor.WorkspaceID, policy)
 		if err != nil {
 			return dependencyGraphApplyResult{}, err
@@ -1262,13 +1425,12 @@ func (h *Handler) applyDependencyGraphTransaction(ctx context.Context, input *de
 		if err != nil {
 			return dependencyGraphApplyResult{}, dependencyGraphDatabase("allocate dependency graph issue position", err)
 		}
-		assignment := assignments[index]
 		issue, err := qtx.CreateIssue(ctx, db.CreateIssueParams{
 			ID:            dbid.NewV7(),
 			WorkspaceID:   actor.WorkspaceID,
 			Title:         task.Title,
 			Description:   strToText(task.Description),
-			Status:        issuestatus.Todo,
+			Status:        status,
 			Priority:      "none",
 			ExecutorType:  assignment.executorType,
 			ExecutorID:    assignment.executorID,
@@ -1289,6 +1451,12 @@ func (h *Handler) applyDependencyGraphTransaction(ctx context.Context, input *de
 		acceptanceJSON, err := json.Marshal(task.AcceptanceCriteria)
 		if err != nil {
 			return dependencyGraphApplyResult{}, dependencyGraphDatabase("encode dependency graph acceptance criteria", err)
+		}
+		if _, err := tx.Exec(ctx, `
+			UPDATE issue
+			SET acceptance_criteria = $1::jsonb, updated_at = now()
+			WHERE id = $2 AND workspace_id = $3`, acceptanceJSON, issue.ID, actor.WorkspaceID); err != nil {
+			return dependencyGraphApplyResult{}, dependencyGraphDatabase("store dependency graph acceptance criteria", err)
 		}
 		outputsJSON, err := json.Marshal(task.Outputs)
 		if err != nil {
@@ -1372,6 +1540,7 @@ func (h *Handler) writeDependencyGraphReplay(w http.ResponseWriter, r *http.Requ
 		writeDependencyGraphError(w, err)
 		return
 	}
+	h.publishDependencyGraphUpdated(plan, response.Parent.ID, response.Plan.Status, plan.CreatedByType, uuidToString(plan.CreatedByID), true)
 	writeJSON(w, http.StatusOK, dependencyGraphResponseMap(response, true, true))
 }
 
@@ -1424,6 +1593,24 @@ func (h *Handler) publishDependencyGraphIssues(ctx context.Context, result depen
 			slog.WarnContext(ctx, "dependency graph issue-created outbox update failed", "plan_id", uuidToString(result.plan.ID), "node_id", uuidToString(result.nodes[index].ID), "error", err)
 		}
 	}
+}
+
+func (h *Handler) publishDependencyGraphUpdated(plan db.DependencyGraphPlan, parentIssueID, status, actorType, actorID string, replayed bool) {
+	if h.Bus == nil {
+		return
+	}
+	h.Bus.Publish(events.Event{
+		Type:        protocol.EventDependencyGraphUpdated,
+		WorkspaceID: uuidToString(plan.WorkspaceID),
+		ActorType:   actorType,
+		ActorID:     actorID,
+		Payload: map[string]any{
+			"plan_id":         uuidToString(plan.ID),
+			"parent_issue_id": parentIssueID,
+			"status":          status,
+			"replayed":        replayed,
+		},
+	})
 }
 
 func (h *Handler) enqueueDependencyGraphRoots(ctx context.Context, result dependencyGraphApplyResult) {
@@ -1695,6 +1882,7 @@ func (h *Handler) ApplyIssueDependencyGraph(w http.ResponseWriter, r *http.Reque
 	}
 	h.publishDependencyGraphIssues(r.Context(), result, actor)
 	h.enqueueDependencyGraphRoots(r.Context(), result)
+	h.publishDependencyGraphUpdated(result.plan, uuidToString(parentUUID), result.plan.Status, actor.Type, uuidToString(actor.ID), false)
 	response, err := h.dependencyGraphResponseForPlan(r.Context(), result.plan)
 	if err != nil {
 		writeDependencyGraphError(w, err)
@@ -1747,6 +1935,7 @@ func (h *Handler) RetireDependencyGraph(w http.ResponseWriter, r *http.Request) 
 		writeDependencyGraphError(w, dependencyGraphDatabase("commit dependency graph retire", err))
 		return
 	}
+	h.publishDependencyGraphUpdated(updated, uuidToString(updated.ParentIssueID), updated.Status, actor.Type, uuidToString(actor.ID), false)
 	response, err := h.dependencyGraphResponseForPlan(r.Context(), updated)
 	if err != nil {
 		writeDependencyGraphError(w, err)

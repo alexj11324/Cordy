@@ -47,6 +47,13 @@ describe("GET /api/issues/:id/dependency-graph contract", () => {
           status_category: "blocked",
           ready: false,
           blocked_by: ["source-1"],
+          readiness: {
+            state: "blocked",
+            gate_open: false,
+            satisfied_prerequisites: 0,
+            total_prerequisites: 1,
+            unlock_condition: "All 1 hard prerequisites must be Done (0/1 currently satisfied)",
+          },
           created_at: "2026-09-01T00:00:00Z",
           updated_at: "2026-09-01T00:00:00Z",
         }],
@@ -56,11 +63,22 @@ describe("GET /api/issues/:id/dependency-graph contract", () => {
           workspace_id: "ws-1",
           from_issue_id: "source-1",
           to_issue_id: "target",
+          from: "source",
+          to: "target",
           type: "hard",
           reason: "Needs source output",
           consumed_output: "artifact",
           created_at: "2026-09-01T00:00:00Z",
         }],
+        waves: [["source"], ["target"]],
+        readiness: {
+          total: 1,
+          ready: 0,
+          running: 0,
+          blocked: 1,
+          done: 0,
+          cancelled: 0,
+        },
       }), { status: 200, headers: { "Content-Type": "application/json" } }),
     );
     vi.stubGlobal("fetch", fetchMock);
@@ -81,11 +99,20 @@ describe("GET /api/issues/:id/dependency-graph contract", () => {
       runtime_id: "runtime-1",
       model_id: "model-1",
     });
+    expect(graph?.nodes[0]?.readiness).toMatchObject({
+      state: "blocked",
+      gate_open: false,
+      total_prerequisites: 1,
+    });
     expect(graph?.edges[0]).toMatchObject({
       from_issue_id: "source-1",
       to_issue_id: "target",
+      from: "source",
+      to: "target",
       type: "hard",
     });
+    expect(graph?.waves).toEqual([["source"], ["target"]]);
+    expect(graph?.readiness).toMatchObject({ total: 1, blocked: 1 });
     expect(fetchMock).toHaveBeenCalledWith(
       "https://api.example.test/api/issues/target/dependency-graph",
       expect.any(Object),

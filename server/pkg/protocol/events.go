@@ -98,6 +98,10 @@ const (
 	EventProjectResourceUpdated = "project_resource:updated"
 	EventProjectResourceDeleted = "project_resource:deleted"
 
+	// Dependency graph events. A graph mutation or readiness change invalidates
+	// the persisted plan/readiness snapshot for Web, Desktop and Mobile.
+	EventDependencyGraphUpdated = "dependency_graph:updated"
+
 	// Label events
 	EventLabelCreated       = "label:created"
 	EventLabelUpdated       = "label:updated"

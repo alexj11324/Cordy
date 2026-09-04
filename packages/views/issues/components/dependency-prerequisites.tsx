@@ -168,10 +168,9 @@ export function DependencyPrerequisites({ issueId }: { issueId: string }) {
       invalidate();
     }
   }, [graphNodeIDs, invalidate, issueId]);
-  // The Go API currently emits issue lifecycle events, not a dedicated
-  // dependency_graph:updated frame. Refresh on the real events that can
-  // create, complete, or remove a graph issue; retain the dedicated event
-  // subscription for newer servers that add it.
+  // Refresh on the dedicated graph event and retain issue lifecycle events for
+  // node status/creation/deletion changes that may arrive independently of a
+  // graph mutation.
   useWSEvent("issue:created", refreshForGraphIssueCreation);
   useWSEvent("issue:updated", refreshForIssueUpdate);
   useWSEvent("issue:deleted", refreshForIssueDeletion);
