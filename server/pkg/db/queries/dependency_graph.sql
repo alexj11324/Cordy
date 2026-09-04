@@ -170,7 +170,7 @@ ON CONFLICT (plan_id, node_id) DO NOTHING;
 UPDATE issue AS target
 SET status = 'todo',
     revision = revision + 1,
-    last_activity_at = GREATEST(COALESCE(last_activity_at, updated_at), now()),
+    last_activity_at = GREATEST(COALESCE(target.last_activity_at, target.updated_at), now()),
     updated_at = now()
 WHERE target.workspace_id = $1
   AND issue_effective_status(target.workspace_id, target.status) = 'blocked'
@@ -216,7 +216,7 @@ RETURNING target.id;
 UPDATE issue AS target
 SET status = 'todo',
     revision = revision + 1,
-    last_activity_at = GREATEST(COALESCE(last_activity_at, updated_at), now()),
+    last_activity_at = GREATEST(COALESCE(target.last_activity_at, target.updated_at), now()),
     updated_at = now()
 FROM agent agent_owner
 WHERE target.workspace_id = agent_owner.workspace_id

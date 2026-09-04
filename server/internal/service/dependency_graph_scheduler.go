@@ -158,22 +158,21 @@ func (s *TaskService) reconcileDependencyTasksForRuntime(ctx context.Context, ru
 		return nil
 	}
 
-	var promoted []pgtype.UUID
+	// This is one atomic UPDATE statement. Keep it on the base query handle so
+	// runtime recovery does not consume a caller's transaction sequence before
+	// the normal per-agent claim transactions (the batch claim path relies on
+	// those transactions remaining independently fenced).
+	promoted, err := s.Queries.PromoteReadyDependencyGraphIssuesForRuntime(ctx, runtimeID)
+	if err != nil {
+		return fmt.Errorf("promote runtime dependency graph tasks: %w", err)
+	}
 	var workspaceID pgtype.UUID
-	if err := s.runInTx(ctx, func(qtx *db.Queries) error {
-		var err error
-		promoted, err = qtx.PromoteReadyDependencyGraphIssuesForRuntime(ctx, runtimeID)
-		if err != nil || len(promoted) == 0 {
-			return err
-		}
-		issue, err := qtx.GetIssue(ctx, promoted[0])
+	if len(promoted) > 0 {
+		issue, err := s.Queries.GetIssue(ctx, promoted[0])
 		if err != nil {
 			return fmt.Errorf("load promoted dependency graph issue: %w", err)
 		}
 		workspaceID = issue.WorkspaceID
-		return nil
-	}); err != nil {
-		return fmt.Errorf("promote runtime dependency graph tasks: %w", err)
 	}
 
 	if len(promoted) > 0 && workspaceID.Valid {
