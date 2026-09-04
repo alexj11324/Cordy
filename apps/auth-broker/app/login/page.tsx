@@ -22,6 +22,7 @@ import {
   readDesktopHandoffBinding,
 } from "@/lib/desktop-handoff";
 import { useAuthMessages } from "@/lib/auth-messages";
+import { resolveStandaloneReturnUrl } from "@/lib/redirect";
 
 const ATTEMPT_STORAGE_PREFIX = "patchbay_desktop_attempt:";
 
@@ -36,14 +37,21 @@ export default function Page() {
 function Content() {
   const params = useSearchParams();
   const binding = useMemo(() => readDesktopHandoffBinding(params), [params]);
+  const desktopRequest = params.get("platform") === "desktop";
   const { isLoaded, isSignedIn, getToken } = useAuth();
   const { signOut } = useClerk();
   const messages = useAuthMessages();
   const attempted = useRef(false);
+  const redirecting = useRef(false);
   const [registered, setRegistered] = useState(false);
   const [error, setError] = useState(false);
 
-  const returnUrl = binding ? `/login?${binding.query}` : "/login";
+  const returnUrl = useMemo(() => {
+    if (binding) return `/login?${binding.query}`;
+    return resolveStandaloneReturnUrl(
+      params.get("return_url") ?? params.get("redirect_url"),
+    );
+  }, [binding, params]);
   const storageKey = binding
     ? `${ATTEMPT_STORAGE_PREFIX}${binding.state}`
     : ATTEMPT_STORAGE_PREFIX;
@@ -82,11 +90,19 @@ function Content() {
   }, [binding, getToken, returnUrl, signOut, storageKey]);
 
   useEffect(() => {
-    if (!binding) {
+    if (desktopRequest && !binding) {
       setError(true);
       return;
     }
     if (!isLoaded || attempted.current) return;
+
+    if (!binding) {
+      if (isSignedIn && !redirecting.current) {
+        redirecting.current = true;
+        window.location.assign(returnUrl);
+      }
+      return;
+    }
 
     if (isSignedIn) {
       attempted.current = true;
@@ -112,7 +128,7 @@ function Content() {
       .finally(() => {
         attempted.current = false;
       });
-  }, [binding, complete, isLoaded, isSignedIn, storageKey]);
+  }, [binding, complete, desktopRequest, isLoaded, isSignedIn, returnUrl, storageKey]);
 
   if (error) {
     return (
@@ -127,7 +143,7 @@ function Content() {
     );
   }
 
-  if (!binding || !isLoaded || isSignedIn || !registered) {
+  if (!isLoaded || isSignedIn || (binding && !registered)) {
     return (
       <AuthShell>
         <p role="status">{messages.opening}</p>

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useSignIn, useSignUp } from "@clerk/nextjs";
 import { useAuthMessages } from "@/lib/auth-messages";
+import { resolveAccountsReturnUrl } from "@/lib/redirect";
 
 type AccountsLoginFormProps = {
   returnUrl: string;
@@ -55,10 +56,17 @@ function clerkErrorCode(value: unknown): string | null {
   return asClerkError(value)?.errors?.find((item) => item.code)?.code ?? null;
 }
 
-function googleLoginUrl(returnUrl: string): string {
-  const destination = new URL(returnUrl, window.location.origin);
-  const url = new URL("/oauth/google", window.location.origin);
-  url.search = destination.search;
+export function buildGoogleLoginUrl(returnUrl: string, origin: string): string {
+  const destination = new URL(
+    resolveAccountsReturnUrl(returnUrl),
+    origin,
+  );
+  const url = new URL("/oauth/google", origin);
+  if (destination.searchParams.get("platform") === "desktop") {
+    url.search = destination.search;
+  } else {
+    url.searchParams.set("return_url", destination.href);
+  }
   return url.href;
 }
 
@@ -203,7 +211,7 @@ export function AccountsLoginForm({ returnUrl }: AccountsLoginFormProps) {
 
   const handleGoogleLogin = () => {
     if (loading) return;
-    window.location.assign(googleLoginUrl(returnUrl));
+    window.location.assign(buildGoogleLoginUrl(returnUrl, window.location.origin));
   };
 
   if (step === "code") {

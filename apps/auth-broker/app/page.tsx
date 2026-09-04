@@ -1,2 +1,2 @@
 import { redirect } from "next/navigation";
-export default function Page() { redirect("/oauth/google"); }
+export default function Page() { redirect("/login"); }

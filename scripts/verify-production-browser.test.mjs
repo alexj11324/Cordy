@@ -55,6 +55,16 @@ test("builds the PKCE-bound Accounts login page used by Desktop", () => {
   assert.equal(url.searchParams.has("app_origin"), false);
 });
 
+test("production browser acceptance includes the standalone broker and Go Clerk exchange", async () => {
+  const source = await import("node:fs/promises").then(({ readFile }) =>
+    readFile(new URL("./verify-production-browser.mjs", import.meta.url), "utf8"),
+  );
+  assert.match(source, /ACCOUNTS_ORIGIN\}\/login`/u);
+  assert.match(source, /url\.pathname === "\/auth\/clerk"/u);
+  assert.match(source, /Web Clerk session exchange/u);
+  assert.match(source, /user\?\.is_guest/u);
+});
+
 test("requires Google and not a lookalike OAuth destination", () => {
   assert.equal(
     requireGoogleOAuthNavigation("https://accounts.google.com/o/oauth2/auth")

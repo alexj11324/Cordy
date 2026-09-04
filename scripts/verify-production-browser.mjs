@@ -111,6 +111,32 @@ async function verifyAccountsLoginSurface(browser, sourceSha) {
   }
 }
 
+async function verifyStandaloneAccountsLoginSurface(browser, sourceSha) {
+  const context = await browser.newContext({
+    locale: "en-US",
+    viewport: { width: 1440, height: 900 },
+  });
+  const page = await context.newPage();
+  try {
+    const response = await page.goto(`${ACCOUNTS_ORIGIN}/login`, {
+      waitUntil: "domcontentloaded",
+    });
+    assert.ok(response, "standalone Accounts login page must return a response");
+    assert.equal(response.status(), 200, "standalone Accounts login page status");
+    requireBuildHeaders(response.headers(), sourceSha, "standalone Accounts login");
+    await clerk.loaded({ page });
+    await expect(page.getByTestId("accounts-auth-shell")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Create an account", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Continue with Google", exact: true }),
+    ).toBeVisible();
+  } finally {
+    await context.close();
+  }
+}
+
 async function verifyGoogleOAuthStart(browser) {
   const context = await browser.newContext({ locale: "en-US" });
   const page = await context.newPage();
@@ -183,6 +209,26 @@ async function redeemSyntheticLogin(browser, credentials, publishableKey) {
       return true;
     }, credentials.signInTicket);
     assert.equal(signedIn, true, "synthetic Clerk ticket sign-in");
+
+    // This is the browser-side identity boundary: the Web app obtains the
+    // active Clerk token, exchanges it at Go /auth/clerk, and only then can
+    // authenticated frontend requests use the Patchbay session cookie.
+    const clerkExchangePromise = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return (
+        (url.origin === PRODUCT_ORIGIN || url.origin === API_ORIGIN) &&
+        url.pathname === "/auth/clerk" &&
+        response.request().method() === "POST"
+      );
+    });
+    await page.goto(`${PRODUCT_ORIGIN}/login`, {
+      waitUntil: "domcontentloaded",
+    });
+    await clerk.loaded({ page });
+    const clerkExchange = await clerkExchangePromise;
+    assert.equal(clerkExchange.status(), 200, "Web Clerk session exchange");
+    const clerkPayload = await clerkExchange.json();
+    assert.equal(clerkPayload?.user?.is_guest, false, "Web session is formal");
 
     const completionPromise = page.waitForResponse((response) => {
       const url = new URL(response.url());
@@ -324,6 +370,7 @@ export async function verifyProductionBrowser(sourceSha, receipt) {
   );
   const browser = await chromium.launch({ headless: true });
   try {
+    await verifyStandaloneAccountsLoginSurface(browser, sourceSha);
     await verifyAccountsLoginSurface(browser, sourceSha);
     await verifyGoogleOAuthStart(browser);
     const token = await redeemSyntheticLogin(

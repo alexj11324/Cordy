@@ -6,5 +6,6 @@
   "broker": { "googleStartPath": "/oauth/google", "googleCallbackPath": "/oauth/google/callback", "desktopCompletionPath": "/login", "desktopAttemptPath": "/v1/desktop/google/attempt", "desktopCompletePath": "/v1/desktop/google/complete", "contractPath": "/v1/contract" },
   "goApi": { "desktopAttemptPath": "/api/desktop-google/attempt", "desktopCompletePath": "/api/desktop-google/complete", "desktopRedeemPath": "/api/desktop-handoff/redeem" },
   "desktop": { "callbackUrl": "patchbay://auth/callback", "queryParameters": ["code", "state"], "pkceMethod": "S256", "bearerAllowedInCallback": false },
+  "client": { "clerkExchangePath": "/auth/clerk", "guestPath": "/auth/guest", "logoutPath": "/auth/logout", "mePath": "/api/me", "websocketPath": "/ws", "guestTokenPrefix": "pbg_", "guestWorkspaceAccess": false, "guestWebsocketAccess": false },
   "authority": { "identity": "clerk", "patchbaySession": "go-api", "oneTimeGrant": "go-api", "brokerPersistence": "none" }
 }

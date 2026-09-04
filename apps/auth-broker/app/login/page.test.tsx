@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Page from "./page";
@@ -14,15 +14,11 @@ const mocks = vi.hoisted(() => ({
   getToken: vi.fn(),
   signOut: vi.fn(),
   auth: { isLoaded: true, isSignedIn: false },
+  searchParams: { current: new URLSearchParams() },
 }));
 
 vi.mock("next/navigation", () => ({
-  useSearchParams: () =>
-    new URLSearchParams({
-      platform: "desktop",
-      state: STATE,
-      code_challenge: CHALLENGE,
-    }),
+  useSearchParams: () => mocks.searchParams.current,
 }));
 
 vi.mock("@clerk/nextjs", () => ({
@@ -57,6 +53,7 @@ vi.mock("@/lib/auth-messages", () => ({
 }));
 
 beforeEach(() => {
+  cleanup();
   mocks.auth.isLoaded = true;
   mocks.auth.isSignedIn = false;
   mocks.register.mockReset().mockResolvedValue(undefined);
@@ -64,6 +61,11 @@ beforeEach(() => {
   mocks.getToken.mockReset();
   mocks.signOut.mockReset();
   window.sessionStorage.clear();
+  mocks.searchParams.current = new URLSearchParams({
+    platform: "desktop",
+    state: STATE,
+    code_challenge: CHALLENGE,
+  });
 });
 
 describe("Accounts desktop login", () => {
@@ -80,6 +82,32 @@ describe("Accounts desktop login", () => {
     expect(await screen.findByTestId("accounts-login-form")).toHaveAttribute(
       "data-return-url",
       `/login?platform=desktop&state=${STATE}&code_challenge=${CHALLENGE}`,
+    );
+  });
+
+  it("renders the custom form for a direct Accounts login without a Desktop binding", async () => {
+    mocks.searchParams.current = new URLSearchParams();
+
+    render(<Page />);
+
+    expect(await screen.findByTestId("accounts-login-form")).toHaveAttribute(
+      "data-return-url",
+      "https://patchbay.aspectlylabs.com/login",
+    );
+    expect(mocks.register).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("accepts only the product return target for a direct Accounts login", async () => {
+    mocks.searchParams.current = new URLSearchParams({
+      return_url: "https://patchbay.aspectlylabs.com/acme/issues",
+    });
+
+    render(<Page />);
+
+    expect(await screen.findByTestId("accounts-login-form")).toHaveAttribute(
+      "data-return-url",
+      "https://patchbay.aspectlylabs.com/acme/issues",
     );
   });
 });

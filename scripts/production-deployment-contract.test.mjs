@@ -16,8 +16,10 @@ const [
   webConfig,
   docsConfig,
   brokerConfig,
+  webLayout,
   deployGateway,
   originNginx,
+  productionOverride,
 ] = await Promise.all([
   read(".github/workflows/aspectlylabs-production-images.yml"),
   read(".github/workflows/release.yml"),
@@ -28,8 +30,10 @@ const [
   read("apps/web/next.config.ts"),
   read("apps/docs/next.config.mjs"),
   read("apps/auth-broker/next.config.ts"),
+  read("apps/web/app/layout.tsx"),
   read("deploy/origin/production_deploy.py"),
   read("deploy/origin/nginx/aspectlylabs-origin.conf"),
+  read("deploy/origin/production-product.override.yml"),
 ]);
 
 // The manifest assembler takes four positional operands and validates none of
@@ -152,4 +156,17 @@ test("public and authenticated browser acceptance gate success", () => {
   assert.match(workflow, /playwright install --with-deps chromium/u);
   assert.match(workflow, /browser_auth\.sign_in_ticket/u);
   assert.match(workflow, /browser_auth\.testing_token/u);
+});
+
+test("the deployed Web Clerk provider is runtime-configured and accepts both browser origins", () => {
+  assert.match(webLayout, /PATCHBAY_CLERK_PUBLISHABLE_KEY/u);
+  assert.match(
+    deployGateway,
+    /CLERK_PUBLISHABLE_KEY[\s\S]*PATCHBAY_CLERK_PUBLISHABLE_KEY/u,
+  );
+  assert.match(
+    productionOverride,
+    /CLERK_AUTHORIZED_PARTIES: https:\/\/accounts\.aspectlylabs\.com,https:\/\/patchbay\.aspectlylabs\.com/u,
+  );
+  assert.match(productionOverride, /PATCHBAY_CLERK_PUBLISHABLE_KEY/u);
 });

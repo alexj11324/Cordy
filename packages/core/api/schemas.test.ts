@@ -969,6 +969,16 @@ describe("UserSchema timezone drift", () => {
   });
 });
 
+describe("UserSchema guest identity", () => {
+  it("preserves guest identity and defaults legacy users to formal", () => {
+    expect(UserSchema.parse({ id: "guest-1", is_guest: true }).is_guest).toBe(
+      true,
+    );
+    expect(UserSchema.parse({ id: "user-1" }).is_guest).toBe(false);
+    expect(EMPTY_USER.is_guest).toBe(false);
+  });
+});
+
 describe("TeamListSchema member preview drift", () => {
   const baseTeam = {
     id: "team-1",

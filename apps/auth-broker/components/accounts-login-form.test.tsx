@@ -56,7 +56,10 @@ vi.mock("@/lib/auth-messages", () => ({
   }),
 }));
 
-import { AccountsLoginForm } from "./accounts-login-form";
+import {
+  AccountsLoginForm,
+  buildGoogleLoginUrl,
+} from "./accounts-login-form";
 
 beforeEach(() => {
   cleanup();
@@ -72,6 +75,28 @@ beforeEach(() => {
 });
 
 describe("AccountsLoginForm", () => {
+  it("keeps the standalone product return target on the Google broker route", () => {
+    expect(
+      buildGoogleLoginUrl(
+        "https://patchbay.aspectlylabs.com/login",
+        "https://accounts.aspectlylabs.com",
+      ),
+    ).toBe(
+      "https://accounts.aspectlylabs.com/oauth/google?return_url=https%3A%2F%2Fpatchbay.aspectlylabs.com%2Flogin",
+    );
+  });
+
+  it("keeps the Desktop binding query on the Google broker route", () => {
+    expect(
+      buildGoogleLoginUrl(
+        "/login?platform=desktop&state=state&code_challenge=challenge",
+        "https://accounts.aspectlylabs.com",
+      ),
+    ).toBe(
+      "https://accounts.aspectlylabs.com/oauth/google?platform=desktop&state=state&code_challenge=challenge",
+    );
+  });
+
   it("renders the cardless shadcn authentication controls", () => {
     render(<AccountsLoginForm returnUrl="/login" />);
 

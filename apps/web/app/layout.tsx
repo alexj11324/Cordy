@@ -188,7 +188,14 @@ export default async function RootLayout({
               strategy="beforeInteractive"
             />
           )}
-        <ClerkProvider>
+        <ClerkProvider
+          // Keep this server-read value runtime-configurable in standalone
+          // images. NEXT_PUBLIC_* values are otherwise frozen at build time.
+          publishableKey={
+            process.env.PATCHBAY_CLERK_PUBLISHABLE_KEY ??
+            process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+          }
+        >
           <ThemeProvider>
             {providers}
             <Toaster />

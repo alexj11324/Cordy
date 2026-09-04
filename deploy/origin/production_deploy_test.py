@@ -110,9 +110,30 @@ class ProductionDeployContractTests(unittest.TestCase):
             deployment.initialize_directories()
             deployment.atomic_json(deployment.current_path, self.manifest())
             deployment.atomic_json(deployment.secrets / "product-env.json", {})
-            deployment.atomic_json(deployment.secrets / "auth-broker-env.json", {})
+            deployment.atomic_json(
+                deployment.secrets / "auth-broker-env.json",
+                {"CLERK_PUBLISHABLE_KEY": "pk_live_fixture"},
+            )
 
             self.assertEqual(deployment.check()["action"], "check")
+
+    def test_web_runtime_reuses_the_broker_publishable_key(self):
+        with tempfile.TemporaryDirectory() as directory:
+            deployment = production_deploy.ProductionDeployment(Path(directory))
+            deployment.initialize_directories()
+            deployment.atomic_json(
+                deployment.secrets / "product-env.json",
+                {"CLERK_SECRET_KEY": "sk_live_fixture"},
+            )
+            deployment.atomic_json(
+                deployment.secrets / "auth-broker-env.json",
+                {"CLERK_PUBLISHABLE_KEY": " pk_live_fixture "},
+            )
+
+            product_env, broker_env = deployment.deployment_environment(self.manifest())
+
+            self.assertEqual(product_env["PATCHBAY_CLERK_PUBLISHABLE_KEY"], "pk_live_fixture")
+            self.assertEqual(broker_env["CLERK_PUBLISHABLE_KEY"], " pk_live_fixture ")
 
     def test_receipt_payload_is_json_serializable(self):
         self.assertEqual(json.loads(json.dumps(self.manifest()))["schema_version"], 1)

@@ -469,6 +469,16 @@ class ProductionDeployment:
         broker_env = os.environ.copy()
         broker_env.update(broker)
         broker_env["PATCHBAY_AUTH_BROKER_IMAGE"] = manifest["images"]["auth-broker"]
+        publishable_key = broker.get("CLERK_PUBLISHABLE_KEY")
+        if not isinstance(publishable_key, str) or not publishable_key.strip():
+            raise DeploymentError(
+                "auth broker environment must include CLERK_PUBLISHABLE_KEY"
+            )
+        # The browser key is public configuration, but the broker snapshot is
+        # the existing deployment source of truth. Copy it into the Web
+        # runtime environment so Next does not require a build-time public env
+        # value and the deployed Web and Accounts surfaces use one Clerk app.
+        product_env["PATCHBAY_CLERK_PUBLISHABLE_KEY"] = publishable_key.strip()
         return product_env, broker_env
 
     def issue_browser_acceptance_credentials(self) -> dict[str, str]:

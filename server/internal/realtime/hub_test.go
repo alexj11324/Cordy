@@ -83,6 +83,16 @@ func TestAuthenticateTokenRejectsTemporarilyDisabledPATUser(t *testing.T) {
 	}
 }
 
+func TestAuthenticateTokenRejectsGuestBearer(t *testing.T) {
+	uid, errMsg := authenticateToken("pbg_"+strings.Repeat("a", 40), nil, context.Background())
+	if uid != "" {
+		t.Fatalf("guest bearer returned user ID %q", uid)
+	}
+	if errMsg != `{"error":"invalid token"}` {
+		t.Fatalf("guest bearer error = %q, want invalid token", errMsg)
+	}
+}
+
 func newTestHub(t *testing.T) (*Hub, *httptest.Server) {
 	t.Helper()
 	hub := NewHub()

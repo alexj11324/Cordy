@@ -400,9 +400,9 @@ func RevokeGuestOnLogout(queries *db.Queries) func(http.Handler) http.Handler {
 // Priority: Authorization header > patchbay_auth cookie.
 func extractToken(r *http.Request) (token string, fromCookie bool) {
 	if authHeader := r.Header.Get("Authorization"); authHeader != "" {
-		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-		if tokenString != authHeader {
-			return tokenString, false
+		parts := strings.Fields(authHeader)
+		if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+			return parts[1], false
 		}
 	}
 

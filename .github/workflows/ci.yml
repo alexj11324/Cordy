@@ -853,6 +853,7 @@ jobs:
         run: |
           node --test \
             scripts/assemble-production-manifest.test.mjs \
+            scripts/auth-broker-release-contract.test.mjs \
             scripts/production-deployment-contract.test.mjs \
             scripts/verify-production-browser.test.mjs \
             scripts/verify-production-deployment.test.mjs

@@ -30,6 +30,20 @@ test("shipping contract names only the Go API authority", () => {
   assert.doesNotMatch(JSON.stringify(contract), /rust/i);
 });
 
+test("shipping contract makes Guest and WebSocket isolation explicit", () => {
+  const contract = JSON.parse(read("contracts/auth-broker/v1.json"));
+  assert.deepEqual(contract.client, {
+    clerkExchangePath: "/auth/clerk",
+    guestPath: "/auth/guest",
+    logoutPath: "/auth/logout",
+    mePath: "/api/me",
+    websocketPath: "/ws",
+    guestTokenPrefix: "pbg_",
+    guestWorkspaceAccess: false,
+    guestWebsocketAccess: false,
+  });
+});
+
 test("desktop opens the Accounts login surface directly", () => {
   const handoff = read("apps/desktop/src/renderer/src/pages/login-handoff.ts");
   assert.match(
@@ -42,6 +56,7 @@ test("desktop opens the Accounts login surface directly", () => {
 test("Accounts login uses the custom shadcn form instead of Clerk's card", () => {
   const page = read("apps/auth-broker/app/login/page.tsx");
   const form = read("apps/auth-broker/components/accounts-login-form.tsx");
+  assert.match(read("apps/auth-broker/app/page.tsx"), /redirect\("\/login"\)/u);
   assert.doesNotMatch(page, /<SignIn\b/u);
   assert.match(form, /signIn\.emailCode\.sendCode/u);
   assert.match(form, /signIn\.emailCode\.verifyCode/u);

@@ -4,7 +4,7 @@
   "title": "Patchbay auth broker contract",
   "type": "object",
   "additionalProperties": false,
-  "required": ["name", "version", "origins", "broker", "goApi", "desktop", "authority"],
+  "required": ["name", "version", "origins", "broker", "goApi", "desktop", "client", "authority"],
   "properties": {
     "$schema": { "type": "string" },
     "name": { "const": "patchbay-auth-broker" },
@@ -47,6 +47,20 @@
         "queryParameters": { "type": "array", "prefixItems": [{ "const": "code" }, { "const": "state" }], "items": false, "minItems": 2, "maxItems": 2 },
         "pkceMethod": { "const": "S256" },
         "bearerAllowedInCallback": { "const": false }
+      }
+    },
+    "client": {
+      "type": "object", "additionalProperties": false,
+      "required": ["clerkExchangePath", "guestPath", "logoutPath", "mePath", "websocketPath", "guestTokenPrefix", "guestWorkspaceAccess", "guestWebsocketAccess"],
+      "properties": {
+        "clerkExchangePath": { "const": "/auth/clerk" },
+        "guestPath": { "const": "/auth/guest" },
+        "logoutPath": { "const": "/auth/logout" },
+        "mePath": { "const": "/api/me" },
+        "websocketPath": { "const": "/ws" },
+        "guestTokenPrefix": { "const": "pbg_" },
+        "guestWorkspaceAccess": { "const": false },
+        "guestWebsocketAccess": { "const": false }
       }
     },
     "authority": {

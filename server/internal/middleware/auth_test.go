@@ -100,6 +100,26 @@ func TestAuth_NoBearerPrefix(t *testing.T) {
 	}
 }
 
+func TestAuth_AcceptsBearerSchemeCaseInsensitively(t *testing.T) {
+	token := generateToken(validClaims(), auth.JWTSecret())
+	for _, scheme := range []string{"bearer", "BEARER", "Bearer\t"} {
+		t.Run(scheme, func(t *testing.T) {
+			var gotUserID string
+			handler := authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotUserID = r.Header.Get("X-User-ID")
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			req := httptest.NewRequest("GET", "/api/me", nil)
+			req.Header.Set("Authorization", scheme+" "+token)
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, req)
+			if w.Code != http.StatusNoContent || gotUserID != "test-user-id" {
+				t.Fatalf("status=%d user=%q, want 204 and test-user-id", w.Code, gotUserID)
+			}
+		})
+	}
+}
+
 func TestAuth_InvalidToken(t *testing.T) {
 	handler := authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("next handler should not be called")

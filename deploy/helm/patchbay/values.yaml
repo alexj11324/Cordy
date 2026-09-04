@@ -172,6 +172,10 @@ backend:
 frontend:
   replicas: 1
   config:
+    # Public Clerk browser key. It is passed at container runtime so the
+    # standalone Web image can be promoted without rebuilding for each host.
+    # Leave empty only for deployments that provide no Clerk-backed auth.
+    clerkPublishableKey: ""
     # Backend origin used by the frontend runtime proxy for /v1, /api, /auth,
     # /uploads, and /ws. Empty defaults to this release's backend Service.
     remoteApiUrl: ""

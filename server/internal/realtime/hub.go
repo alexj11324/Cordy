@@ -677,6 +677,12 @@ func (h *Hub) Snapshot() map[string]any {
 
 // authenticateToken validates a JWT or PAT string and returns the user ID.
 func authenticateToken(tokenStr string, pr PATResolver, ctx context.Context) (string, string) {
+	// Guest bearers are account-lifecycle credentials only. They do not carry
+	// workspace membership and must never enter the realtime hub, even if a
+	// future JWT/PAT change would otherwise make the prefix parseable.
+	if strings.HasPrefix(tokenStr, "pbg_") {
+		return "", `{"error":"invalid token"}`
+	}
 	if strings.HasPrefix(tokenStr, "pby_") {
 		if pr == nil {
 			return "", `{"error":"invalid token"}`
