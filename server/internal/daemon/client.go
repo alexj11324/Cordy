@@ -405,6 +405,39 @@ func (c *Client) ExtendTaskPrepareLease(ctx context.Context, runtimeID, taskID s
 	return c.postJSON(ctx, fmt.Sprintf("/api/daemon/runtimes/%s/tasks/%s/prepare-lease", runtimeID, taskID), map[string]any{}, nil)
 }
 
+// ProviderAuthorizationDecision is the daemon-facing result of the server's
+// lease-bound provider pre-gate. A 403 is returned as requestError so callers
+// cannot accidentally treat a denied operation as a successful response.
+type ProviderAuthorizationDecision struct {
+	Allowed       bool   `json:"allowed"`
+	DecisionID    string `json:"decision_id"`
+	PolicyVersion string `json:"policy_version"`
+	Reason        string `json:"reason"`
+}
+
+// AuthorizeProviderOperation is called immediately before a provider CLI is
+// spawned. The daemon authenticates the HTTP request with its daemon credential
+// while the body carries the task-scoped bearer; the server therefore checks
+// both the machine caller and the exact lease without exposing the lease to a
+// broader daemon endpoint. preflight=true records an audit decision but does
+// not reserve a token budget.
+func (c *Client) AuthorizeProviderOperation(ctx context.Context, runtimeID, taskID, leaseToken, provider, model string, requestedMaxTokens int64, preflight bool) (*ProviderAuthorizationDecision, error) {
+	var response ProviderAuthorizationDecision
+	path := fmt.Sprintf("/api/daemon/runtimes/%s/tasks/%s/provider-authorization", runtimeID, taskID)
+	err := c.postJSON(ctx, path, map[string]any{
+		"lease_token":           leaseToken,
+		"provider":              provider,
+		"model":                 model,
+		"max_tokens":            requestedMaxTokens,
+		"requested_max_tokens":  requestedMaxTokens,
+		"preflight":             preflight,
+	}, &response)
+	if err != nil {
+		return nil, err
+	}
+	return &response, nil
+}
+
 func (c *Client) StartTask(ctx context.Context, taskID string) error {
 	return c.postJSON(ctx, fmt.Sprintf("/api/daemon/tasks/%s/start", taskID), map[string]any{}, nil)
 }

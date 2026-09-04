@@ -12,7 +12,7 @@ import (
 )
 
 const createTaskToken = `-- name: CreateTaskToken :one
-WITH target_agent_guard AS (
+WITH target_agent_guard AS MATERIALIZED (
     SELECT agent.id, agent.workspace_id
     FROM agent
     WHERE agent.id = $1
@@ -44,6 +44,9 @@ WITH target_agent_guard AS (
       AND token.device_id IS NOT DISTINCT FROM task.runtime_id
       AND token.on_behalf_of_user_id IS NOT DISTINCT FROM task.originator_user_id
       AND token.workspace_id = current_agent.workspace_id
+      AND task.agent_id = $1
+      AND task.runtime_id IS NOT DISTINCT FROM $6::uuid
+      AND task.originator_user_id IS NOT DISTINCT FROM $5::uuid
       AND current_agent.archived_at IS NULL
       AND task.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
     ORDER BY token.created_at DESC, token.id DESC
@@ -172,6 +175,78 @@ func (q *Queries) CreateTaskToken(ctx context.Context, arg CreateTaskTokenParams
 	return i, err
 }
 
+const getCurrentTaskCapabilityLease = `-- name: GetCurrentTaskCapabilityLease :one
+SELECT id, token_hash, task_id, agent_id, workspace_id, user_id,
+       expires_at, created_at, scope, parent_token_id, parent_fence,
+       delegation_depth, delegation_fence, claim_dispatched_at,
+       on_behalf_of_user_id, device_id, revoked_at, revoked_reason
+FROM task_token
+WHERE task_id = $1
+  AND workspace_id = $2
+  AND claim_dispatched_at IS NOT DISTINCT FROM $3::timestamptz
+  AND revoked_at IS NULL
+  AND expires_at > now()
+ORDER BY created_at DESC, id DESC
+LIMIT 1
+`
+
+type GetCurrentTaskCapabilityLeaseParams struct {
+	TaskID            pgtype.UUID        `json:"task_id"`
+	WorkspaceID       pgtype.UUID        `json:"workspace_id"`
+	ClaimDispatchedAt pgtype.Timestamptz `json:"claim_dispatched_at"`
+}
+
+func (q *Queries) GetCurrentTaskCapabilityLease(ctx context.Context, arg GetCurrentTaskCapabilityLeaseParams) (TaskToken, error) {
+	row := q.db.QueryRow(ctx, getCurrentTaskCapabilityLease, arg.TaskID, arg.WorkspaceID, arg.ClaimDispatchedAt)
+	var i TaskToken
+	err := row.Scan(
+		&i.ID,
+		&i.TokenHash,
+		&i.TaskID,
+		&i.AgentID,
+		&i.WorkspaceID,
+		&i.UserID,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.Scope,
+		&i.ParentTokenID,
+		&i.ParentFence,
+		&i.DelegationDepth,
+		&i.DelegationFence,
+		&i.ClaimDispatchedAt,
+		&i.OnBehalfOfUserID,
+		&i.DeviceID,
+		&i.RevokedAt,
+		&i.RevokedReason,
+	)
+	return i, err
+}
+
+const consumeTaskCapabilityLease = `-- name: ConsumeTaskCapabilityLease :execrows
+UPDATE task_token
+SET revoked_at = now(), revoked_reason = $1
+WHERE id = $2
+  AND workspace_id = $3
+  AND task_id = $4
+  AND revoked_at IS NULL
+  AND expires_at > now()
+`
+
+type ConsumeTaskCapabilityLeaseParams struct {
+	RevokedReason pgtype.Text `json:"revoked_reason"`
+	ID            pgtype.UUID `json:"id"`
+	WorkspaceID   pgtype.UUID `json:"workspace_id"`
+	TaskID        pgtype.UUID `json:"task_id"`
+}
+
+func (q *Queries) ConsumeTaskCapabilityLease(ctx context.Context, arg ConsumeTaskCapabilityLeaseParams) (int64, error) {
+	result, err := q.db.Exec(ctx, consumeTaskCapabilityLease, arg.RevokedReason, arg.ID, arg.WorkspaceID, arg.TaskID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteExpiredTaskTokens = `-- name: DeleteExpiredTaskTokens :exec
 DELETE FROM task_token WHERE expires_at <= now()
 `
@@ -242,10 +317,11 @@ WITH RECURSIVE lease_chain AS (
        OR lease.current_agent_archived_at IS NOT NULL
        OR lease.delegation_depth > 8
        OR (lease.parent_token_id IS NULL AND lease.delegation_depth <> 0)
-       OR (lease.parent_token_id IS NOT NULL AND (
+           OR (lease.parent_token_id IS NOT NULL AND (
               parent.id IS NULL
               OR lease.delegation_depth <> parent.delegation_depth + 1
               OR lease.parent_fence IS DISTINCT FROM parent.delegation_fence
+              OR lease.agent_id <> parent.agent_id
               OR lease.workspace_id <> parent.workspace_id
               OR lease.on_behalf_of_user_id IS DISTINCT FROM parent.on_behalf_of_user_id
               OR lease.device_id IS DISTINCT FROM parent.device_id

@@ -1,5 +1,5 @@
 -- name: CreateTaskToken :one
-WITH target_agent_guard AS (
+WITH target_agent_guard AS MATERIALIZED (
     SELECT agent.id, agent.workspace_id
     FROM agent
     WHERE agent.id = @agent_id
@@ -31,6 +31,9 @@ WITH target_agent_guard AS (
       AND token.device_id IS NOT DISTINCT FROM task.runtime_id
       AND token.on_behalf_of_user_id IS NOT DISTINCT FROM task.originator_user_id
       AND token.workspace_id = current_agent.workspace_id
+      AND task.agent_id = @agent_id
+      AND task.runtime_id IS NOT DISTINCT FROM @device_id::uuid
+      AND task.originator_user_id IS NOT DISTINCT FROM @on_behalf_of_user_id::uuid
       AND current_agent.archived_at IS NULL
       AND task.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
     ORDER BY token.created_at DESC, token.id DESC
@@ -80,6 +83,36 @@ WITH target_agent_guard AS (
     RETURNING *
 )
 SELECT id, token_hash, task_id, agent_id, workspace_id, user_id, expires_at, created_at, scope, parent_token_id, parent_fence, delegation_depth, delegation_fence, claim_dispatched_at, on_behalf_of_user_id, device_id, revoked_at, revoked_reason FROM inserted;
+
+-- name: GetCurrentTaskCapabilityLease :one
+-- Resolve the one active lease for the task's current dispatched claim. The
+-- task-token middleware validates the presented bearer separately; this query
+-- is for task-scoped consumers (notably quick-create) that need the server's
+-- lease id without trusting a client-supplied id.
+SELECT id, token_hash, task_id, agent_id, workspace_id, user_id,
+       expires_at, created_at, scope, parent_token_id, parent_fence,
+       delegation_depth, delegation_fence, claim_dispatched_at,
+       on_behalf_of_user_id, device_id, revoked_at, revoked_reason
+FROM task_token
+WHERE task_id = @task_id
+  AND workspace_id = @workspace_id
+  AND claim_dispatched_at IS NOT DISTINCT FROM @claim_dispatched_at::timestamptz
+  AND revoked_at IS NULL
+  AND expires_at > now()
+ORDER BY created_at DESC, id DESC
+LIMIT 1;
+
+-- name: ConsumeTaskCapabilityLease :execrows
+-- One-shot consumers must revoke, not delete: the row remains available to the
+-- explain/audit and replay paths while the update is atomic with the caller's
+-- transaction (IssueService.Create for quick-create).
+UPDATE task_token
+SET revoked_at = now(), revoked_reason = @revoked_reason
+WHERE id = @id
+  AND workspace_id = @workspace_id
+  AND task_id = @task_id
+  AND revoked_at IS NULL
+  AND expires_at > now();
 
 -- name: GetTaskTokenByHash :one
 WITH RECURSIVE lease_chain AS (
@@ -133,10 +166,11 @@ WITH RECURSIVE lease_chain AS (
        OR lease.current_agent_archived_at IS NOT NULL
        OR lease.delegation_depth > 8
        OR (lease.parent_token_id IS NULL AND lease.delegation_depth <> 0)
-       OR (lease.parent_token_id IS NOT NULL AND (
+           OR (lease.parent_token_id IS NOT NULL AND (
               parent.id IS NULL
               OR lease.delegation_depth <> parent.delegation_depth + 1
               OR lease.parent_fence IS DISTINCT FROM parent.delegation_fence
+              OR lease.agent_id <> parent.agent_id
               OR lease.workspace_id <> parent.workspace_id
               OR lease.on_behalf_of_user_id IS DISTINCT FROM parent.on_behalf_of_user_id
               OR lease.device_id IS DISTINCT FROM parent.device_id

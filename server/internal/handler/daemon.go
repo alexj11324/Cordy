@@ -1711,6 +1711,29 @@ func (h *Handler) ClaimTasksByRuntime(w http.ResponseWriter, r *http.Request) {
 			// the reclaim path.
 			continue
 		}
+		providerAllowed, providerErr := h.authorizeProviderTaskClaim(r.Context(), task, rt)
+		if providerErr != nil {
+			slog.Error("batch claim: provider authorization failed; requeueing claim",
+				"task_id", uuidToString(task.ID), "error", providerErr)
+			if _, rerr := h.TaskService.RequeueTaskAfterClaimFailure(r.Context(), task); rerr != nil {
+				slog.Error("batch claim: requeue after provider authorization failure failed",
+					"task_id", uuidToString(task.ID), "error", rerr)
+			}
+			continue
+		}
+		if !providerAllowed {
+			continue
+		}
+		if !task.OriginatorUserID.Valid {
+			slog.Error("batch claim: initiating user missing; cancelling task before token issuance",
+				"task_id", uuidToString(task.ID), "runtime_id", uuidToString(task.RuntimeID))
+			if _, cerr := h.TaskService.CancelTaskWithReason(r.Context(), task.ID,
+				"Task capability issuance requires an initiating user.", "authorization_denied"); cerr != nil {
+				slog.Error("batch claim: cancel after missing initiating user failed",
+					"task_id", uuidToString(task.ID), "error", cerr)
+			}
+			continue
+		}
 		if !rt.OwnerID.Valid {
 			slog.Error("batch claim: runtime owner missing; cancelling task to avoid unscoped agent credentials",
 				"task_id", uuidToString(task.ID), "runtime_id", uuidToString(task.RuntimeID))
@@ -1751,8 +1774,8 @@ func (h *Handler) ClaimTasksByRuntime(w http.ResponseWriter, r *http.Request) {
 			TaskID:            task.ID,
 			AgentID:           task.AgentID,
 			WorkspaceID:       parseUUID(resp.WorkspaceID),
-			UserID:            rt.OwnerID,
-			ExpiresAt:         pgtype.Timestamptz{Time: time.Now().Add(24 * time.Hour), Valid: true},
+			UserID:           task.OriginatorUserID,
+			ExpiresAt:        pgtype.Timestamptz{Time: time.Now().Add(2 * time.Hour), Valid: true},
 			Scope:             service.RootTaskCapabilityScope(task),
 			ClaimDispatchedAt: task.DispatchedAt,
 			OnBehalfOfUserID:  task.OriginatorUserID,
@@ -1761,6 +1784,21 @@ func (h *Handler) ClaimTasksByRuntime(w http.ResponseWriter, r *http.Request) {
 			DelegationFence:   service.TaskClaimFence(task),
 		}, deliveredCommentIDs, commentBackedTask, daemonTokens...)
 		if ferr != nil {
+			if errors.Is(ferr, service.ErrCapabilityLeaseAlreadyFinalized) {
+				slog.Warn("batch claim: finalization replay lost the immutable lease fence",
+					"task_id", uuidToString(task.ID))
+				continue
+			}
+			if errors.Is(ferr, service.ErrCapabilityLeaseIssuanceDenied) {
+				slog.Warn("batch claim: delegated capability issuance denied",
+					"task_id", uuidToString(task.ID), "error", ferr)
+				if _, cerr := h.TaskService.CancelTaskWithReason(r.Context(), task.ID,
+					"The delegated capability exceeds its parent task boundary.", "authorization_denied"); cerr != nil {
+					slog.Error("batch claim: settle rejected delegated capability failed",
+						"task_id", uuidToString(task.ID), "error", cerr)
+				}
+				continue
+			}
 			slog.Error("batch claim: finalize task claim failed; requeueing claim",
 				"task_id", uuidToString(task.ID), "error", ferr)
 			if _, rerr := h.TaskService.RequeueTaskAfterClaimFailure(r.Context(), task); rerr != nil {
@@ -3324,29 +3362,44 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 			)
 		}
 	}
+	providerAllowed, providerErr := h.authorizeProviderTaskClaim(r.Context(), *task, runtime)
+	if providerErr != nil {
+		outcome = "error_provider_authorization"
+		slog.Error("task claim: provider authorization failed; requeueing claim",
+			"task_id", uuidToString(task.ID), "error", providerErr)
+		requeueFailedClaim("provider_authorization")
+		writeError(w, http.StatusInternalServerError, "failed to evaluate provider authorization")
+		return
+	}
+	if !providerAllowed {
+		outcome = "authorization_denied"
+		payloadBytes, _ = writeMeasuredJSON(w, http.StatusOK, map[string]any{"task": nil})
+		return
+	}
 	// Mint a task-scoped `mat_` token bound to (agent, task, workspace,
-	// owner). The daemon will inject this as PATCHBAY_TOKEN into the agent
+	// initiating user). The daemon will inject this as PATCHBAY_TOKEN into the agent
 	// process instead of its own credential, so any API call the agent
 	// makes — even one that strips X-Agent-ID / X-Task-ID headers — is
 	// recognized server-side as actor=agent, closing the lateral-movement
-	// path on human-only endpoints (e.g. `/api/agents/{id}/env`). Runtime
-	// owner is required because task tokens are still bound to an owning user;
-	// without one, fail the claim explicitly instead of letting the daemon
+	// path on human-only endpoints (e.g. `/api/agents/{id}/env`). Both the
+	// runtime owner and initiating user are required; without either, fail the claim
+	// explicitly instead of letting the daemon
 	// fall back to a member/owner credential. MUL-3292.
-	// Token expires after the queue/runtime upper bound (24h) so it survives
-	// long-running tasks but cannot outlive a forgotten one.
-	if !runtime.OwnerID.Valid {
+	// Token expires after the lease upper bound (2h) so it cannot outlive a
+	// forgotten execution window.
+	if !runtime.OwnerID.Valid || !task.OriginatorUserID.Valid {
 		outcome = "error_token"
 		slog.Error("task claim: runtime owner missing; cancelling task to avoid unscoped agent credentials",
 			"task_id", uuidToString(task.ID),
 			"runtime_id", runtimeID,
 			"workspace_id", runtimeWorkspaceID,
 		)
-		if _, cerr := h.TaskService.CancelTask(r.Context(), task.ID); cerr != nil {
+		if _, cerr := h.TaskService.CancelTaskWithReason(r.Context(), task.ID,
+			"Task capability issuance requires an initiating user and runtime owner.", "authorization_denied"); cerr != nil {
 			slog.Error("task claim: cancel after missing runtime owner failed",
 				"task_id", uuidToString(task.ID), "error", cerr)
 		}
-		writeError(w, http.StatusInternalServerError, "runtime owner required to mint task token")
+		writeError(w, http.StatusInternalServerError, "initiating user and runtime owner required to mint task token")
 		return
 	}
 	tokenStr, terr := auth.GenerateAgentTaskToken()
@@ -3373,8 +3426,8 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 		TaskID:            task.ID,
 		AgentID:           task.AgentID,
 		WorkspaceID:       parseUUID(resp.WorkspaceID),
-		UserID:            runtime.OwnerID,
-		ExpiresAt:         pgtype.Timestamptz{Time: time.Now().Add(24 * time.Hour), Valid: true},
+		UserID:            task.OriginatorUserID,
+		ExpiresAt:         pgtype.Timestamptz{Time: time.Now().Add(2 * time.Hour), Valid: true},
 		Scope:             service.RootTaskCapabilityScope(*task),
 		ClaimDispatchedAt: task.DispatchedAt,
 		OnBehalfOfUserID:  task.OriginatorUserID,
@@ -3383,6 +3436,21 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 		DelegationFence:   service.TaskClaimFence(*task),
 	}, deliveredCommentIDs, commentBackedTask, daemonTokens...)
 	if ferr != nil {
+		if errors.Is(ferr, service.ErrCapabilityLeaseAlreadyFinalized) {
+			outcome = "claim_replay"
+			payloadBytes, _ = writeMeasuredJSON(w, http.StatusOK, map[string]any{"task": nil})
+			return
+		}
+		if errors.Is(ferr, service.ErrCapabilityLeaseIssuanceDenied) {
+			outcome = "authorization_denied"
+			if _, cerr := h.TaskService.CancelTaskWithReason(r.Context(), task.ID,
+				"The delegated capability exceeds its parent task boundary.", "authorization_denied"); cerr != nil {
+				slog.Error("task claim: settle rejected delegated capability failed",
+					"task_id", uuidToString(task.ID), "error", cerr)
+			}
+			payloadBytes, _ = writeMeasuredJSON(w, http.StatusOK, map[string]any{"task": nil})
+			return
+		}
 		outcome = "error_claim_finalize"
 		slog.Error("task claim: failed to finalize token and comment delivery receipt",
 			"task_id", uuidToString(task.ID), "error", ferr)
@@ -3869,13 +3937,13 @@ func (h *Handler) CompleteTask(w http.ResponseWriter, r *http.Request) {
 	h.TaskService.NotifyTaskFinished(*task)
 	h.kickWorkProductDiscovery(r.Context(), *task, workspaceUUID)
 
-	// Best-effort revoke of any agent task token minted at claim time.
-	// The token would naturally expire at the 24h watermark and is also
-	// cascaded on agent_task deletion, but eagerly deleting it on
-	// completion shrinks the window where a compromised agent process
-	// can keep making API calls after its task finishes. Failure here is
-	// non-fatal; the expiry / cascade are the durable guards.
-	if err := h.Queries.DeleteTaskTokensByTask(r.Context(), task.ID); err != nil {
+	// Best-effort revoke of any agent task token minted at claim time. Retain
+	// the row for replay/explain evidence; terminal revocation closes the
+	// authentication window without erasing the audit substrate.
+	if _, err := h.Queries.RevokeTaskTokensByTask(r.Context(), db.RevokeTaskTokensByTaskParams{
+		TaskID:        task.ID,
+		RevokedReason: pgtype.Text{String: "task_completed", Valid: true},
+	}); err != nil {
 		slog.Warn("complete task: failed to revoke task tokens", "task_id", uuidToString(task.ID), "error", err)
 	}
 
@@ -4567,9 +4635,12 @@ func (h *Handler) failTask(w http.ResponseWriter, r *http.Request, taskID, works
 	h.kickWorkProductDiscovery(r.Context(), *task, workspaceUUID)
 
 	// Best-effort revoke of the mat_ task token minted at claim. Same
-	// rationale as CompleteTask — eager deletion shrinks the post-
-	// terminal window. The 24h expiry / cascade are the durable guards.
-	if err := h.Queries.DeleteTaskTokensByTask(r.Context(), task.ID); err != nil {
+	// rationale as CompleteTask: terminal revocation shrinks the post-
+	// terminal window while retaining the durable row for forensics.
+	if _, err := h.Queries.RevokeTaskTokensByTask(r.Context(), db.RevokeTaskTokensByTaskParams{
+		TaskID:        task.ID,
+		RevokedReason: pgtype.Text{String: "task_failed", Valid: true},
+	}); err != nil {
 		slog.Warn("fail task: failed to revoke task tokens", "task_id", uuidToString(task.ID), "error", err)
 	}
 
@@ -5066,6 +5137,9 @@ func (h *Handler) ListTaskMessagesByUser(w http.ResponseWriter, r *http.Request)
 	wsID := h.TaskService.ResolveTaskWorkspaceID(r.Context(), task)
 	if wsID == "" || wsID != middleware.WorkspaceIDFromContext(r.Context()) {
 		writeError(w, http.StatusNotFound, "task not found")
+		return
+	}
+	if !h.taskLeaseAllows(w, r, parseUUID(wsID), task.ID, auth.ActionTaskRead) {
 		return
 	}
 

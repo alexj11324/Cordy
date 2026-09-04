@@ -2,18 +2,29 @@ package service
 
 import (
 	"encoding/json"
+	"errors"
 	"math"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/patchbay-ai/patchbay/server/internal/auth"
 	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
-type taskCapability struct {
-	Action       string `json:"action"`
-	ResourceType string `json:"resource_type"`
-	ResourceID   string `json:"resource_id"`
-}
+var (
+	// ErrCapabilityLeaseAlreadyFinalized is returned when the claim fence's
+	// unique slot already has a lease. Replaying the same daemon response must
+	// not mint a second bearer or duplicate its delivery receipt.
+	ErrCapabilityLeaseAlreadyFinalized = errors.New("capability lease already finalized")
+	// ErrCapabilityLeaseIssuanceDenied means the claim/parent/agent/workspace
+	// invariants rejected issuance. It is distinct from replay so callers can
+	// requeue/cancel without treating a malformed delegation as success.
+	ErrCapabilityLeaseIssuanceDenied = errors.New("capability lease issuance denied")
+)
+
+// Keep the historical private name as an alias so existing service tests and
+// callers cannot accidentally define a second, subtly different scope shape.
+type taskCapability = auth.Capability
 
 // RootTaskCapabilityScope is a server-owned ceiling. Resource ACLs and the
 // provider authorizer narrow it at use time; delegated claims are intersected
@@ -66,8 +77,8 @@ func TaskClaimFence(task db.AgentTaskQueue) int64 {
 // mints, so a lease minted for one runtime cannot spend another runtime's
 // provider identity.
 const (
-	ProviderCredentialAction = "credential.use"
-	ProviderIdentityResource = "provider_identity"
+	ProviderCredentialAction = auth.ActionCredentialUse
+	ProviderIdentityResource = auth.ResourceProviderIdentity
 )
 
 // LeaseAuthorizesProviderUse decides whether one structurally valid lease may
@@ -100,13 +111,18 @@ func scopeGrantsProviderCredential(scope []byte, runtimeID pgtype.UUID) bool {
 		return false
 	}
 	runtime := uuidText(runtimeID)
-	for _, capability := range capabilities {
-		if capability.Action != ProviderCredentialAction || capability.ResourceType != ProviderIdentityResource {
-			continue
-		}
-		if capability.ResourceID == "*" || (runtime != "" && capability.ResourceID == runtime) {
-			return true
-		}
+	return auth.ScopeCovers(capabilities, ProviderCredentialAction, ProviderIdentityResource, runtime)
+}
+
+// TaskLeaseAllows is the shared task-token gate for non-provider consumers.
+// A task token is an authority ceiling, not an actor label: every task-scoped
+// mutation that reaches this helper must still name an action/resource pair the
+// issued scope covers. "*" is the only resource wildcard; "$task" remains an
+// exact task resource.
+func TaskLeaseAllows(scope []byte, action, resourceType, resourceID string) bool {
+	var capabilities []auth.Capability
+	if len(scope) == 0 || json.Unmarshal(scope, &capabilities) != nil {
+		return false
 	}
-	return false
+	return auth.ScopeCovers(capabilities, action, resourceType, resourceID)
 }

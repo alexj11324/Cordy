@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"regexp"
 	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/patchbay-ai/patchbay/server/internal/auth"
 	"github.com/patchbay-ai/patchbay/server/internal/channelmedia"
 	"github.com/patchbay-ai/patchbay/server/internal/dispatch"
 	"github.com/patchbay-ai/patchbay/server/internal/issueguard"
@@ -300,6 +302,13 @@ func textOrEmpty(t pgtype.Text) string {
 		return ""
 	}
 	return t.String
+}
+
+func optionalString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return strings.TrimSpace(*value)
 }
 
 func uuidOrEmpty(id pgtype.UUID) string {
@@ -2517,6 +2526,9 @@ func (h *Handler) GetIssue(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !h.taskProjectResourceAllows(w, r, issue.ID, true, auth.ActionResourceRead) {
+		return
+	}
 	prefix := h.getIssuePrefix(r.Context(), issue.WorkspaceID)
 	resp := issueToResponse(issue, prefix)
 	h.fillStatusCategory(r.Context(), issue.WorkspaceID, &resp)
@@ -2536,15 +2548,17 @@ func (h *Handler) GetIssue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch issue-level attachments.
-	attachments, err := h.Queries.ListAttachmentsByIssue(r.Context(), db.ListAttachmentsByIssueParams{
-		IssueID:     issue.ID,
-		WorkspaceID: issue.WorkspaceID,
-	})
-	if err == nil && len(attachments) > 0 {
-		mode := attachmentURLModeFromRequest(r)
-		resp.Attachments = make([]AttachmentResponse, len(attachments))
-		for i, a := range attachments {
-			resp.Attachments[i] = h.attachmentToResponse(a, mode)
+	if r.Header.Get("X-Actor-Source") != "task_token" {
+		attachments, err := h.Queries.ListAttachmentsByIssue(r.Context(), db.ListAttachmentsByIssueParams{
+			IssueID:     issue.ID,
+			WorkspaceID: issue.WorkspaceID,
+		})
+		if err == nil && len(attachments) > 0 {
+			mode := attachmentURLModeFromRequest(r)
+			resp.Attachments = make([]AttachmentResponse, len(attachments))
+			for i, a := range attachments {
+				resp.Attachments[i] = h.attachmentToResponse(a, mode)
+			}
 		}
 	}
 
@@ -3329,6 +3343,65 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// A task-token issue create is the Rust quick-create capability consumer.
+	// Resolve the current lease from the server-stamped task headers, require the
+	// exact quick-create payload that was queued for that task, and consume the
+	// lease in IssueService.Create's transaction. Ordinary task runs cannot turn
+	// their broader task token into an arbitrary issue-creation capability.
+	var consumeTaskLeaseID pgtype.UUID
+	var consumeTaskLeaseTaskID pgtype.UUID
+	if r.Header.Get("X-Actor-Source") == "task_token" {
+		capability, present, capabilityErr := h.resolveTaskCapabilityContext(r.Context(), r, wsUUID)
+		if !present || capabilityErr != nil {
+			writeError(w, http.StatusForbidden, "task capability does not allow creating an issue")
+			return
+		}
+		var quickCreate service.QuickCreateContext
+		quickCreateAllowed := creatorType == "agent" && actualCreatorID == uuidToString(capability.Task.AgentID) &&
+			originType.Valid && originType.String == "quick_create" && originID == capability.Task.ID &&
+			!capability.Task.IssueID.Valid && !capability.Task.ChatSessionID.Valid && !capability.Task.AutomationRunID.Valid &&
+			!ownerType.Valid && !ownerID.Valid && !reviewerType.Valid && !reviewerID.Valid &&
+			!req.AllowDuplicate && len(req.LabelIDs) == 0
+		if quickCreateAllowed {
+			quickCreateAllowed = json.Unmarshal(capability.Task.Context, &quickCreate) == nil && quickCreate.Type == service.QuickCreateContextType &&
+				quickCreate.WorkspaceID == workspaceID && quickCreate.RequesterID == uuidToString(capability.Task.OriginatorUserID) &&
+				strings.TrimSpace(req.Priority) == quickCreate.Priority && optionalString(req.DueDate) == quickCreate.DueDate &&
+				optionalString(req.ProjectID) == quickCreate.ProjectID && optionalString(req.ParentIssueID) == quickCreate.ParentIssueID
+		}
+		if quickCreateAllowed {
+			requestedAttachments := make([]string, 0, len(attachmentIDs))
+			for _, attachmentID := range attachmentIDs {
+				requestedAttachments = append(requestedAttachments, uuidToString(attachmentID))
+			}
+			allowedAttachments := append([]string(nil), quickCreate.AttachmentIDs...)
+			sort.Strings(requestedAttachments)
+			sort.Strings(allowedAttachments)
+			quickCreateAllowed = slices.Equal(requestedAttachments, allowedAttachments)
+		}
+		if quickCreateAllowed {
+			teamID := quickCreate.TeamID
+			executorIsTeam := executorType.Valid && executorType.String == "team"
+			if teamID == "" {
+				quickCreateAllowed = !executorIsTeam
+			} else {
+				quickCreateAllowed = executorIsTeam && executorID.Valid && uuidToString(executorID) == teamID
+			}
+		}
+		resourceID := "*"
+		if projectID.Valid {
+			resourceID = uuidToString(projectID)
+		}
+		if quickCreateAllowed && !service.TaskLeaseAllows(capability.Lease.Scope, "resource.use", "project_resource", resourceID) {
+			quickCreateAllowed = false
+		}
+		if !quickCreateAllowed {
+			writeError(w, http.StatusForbidden, "task capability does not allow creating an issue")
+			return
+		}
+		consumeTaskLeaseID = capability.Lease.ID
+		consumeTaskLeaseTaskID = capability.Task.ID
+	}
+
 	// Prefix is workspace-level; pre-compute once so both the broadcast
 	// payload builder and the HTTP response share the same value.
 	prefix := h.getIssuePrefix(r.Context(), wsUUID)
@@ -3387,6 +3460,8 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 		AllowDuplicate: req.AllowDuplicate,
 	}, service.IssueCreateOpts{
 		ActorID:          actualCreatorID,
+		ConsumeTaskLeaseID:     consumeTaskLeaseID,
+		ConsumeTaskLeaseTaskID: consumeTaskLeaseTaskID,
 		AnalyticsAgentID: analyticsAgentID,
 		Platform:         func() string { p, _, _ := middleware.ClientMetadataFromContext(r.Context()); return p }(),
 		BroadcastPayload: func(issue db.Issue, atts []db.Attachment, labels []db.IssueLabel) map[string]any {
@@ -3434,6 +3509,10 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 	if errors.Is(err, service.ErrIssueStatusUnavailable) {
 		writeError(w, http.StatusConflict,
 			"the target status was archived while this request was in flight; reload the status list and retry")
+		return
+	}
+	if errors.Is(err, service.ErrCapabilityConsumed) {
+		writeError(w, http.StatusConflict, "task capability lease was already consumed")
 		return
 	}
 	if writeIssueLimitReached(w, err) {
@@ -3780,6 +3859,9 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	prevIssue, ok := h.loadIssueForUser(w, r, id)
 	if !ok {
+		return
+	}
+	if !h.taskProjectResourceAllows(w, r, prevIssue.ID, true, auth.ActionResourceUse) {
 		return
 	}
 	userID := requestUserID(r)

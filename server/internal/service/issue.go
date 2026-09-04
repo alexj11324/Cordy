@@ -135,6 +135,12 @@ type IssueCreateOpts struct {
 	// still resolving, then promotes the returned task after attachment binding.
 	// Zero preserves the ordinary immediate enqueue path.
 	ExecutorRunFireAt time.Time
+	// ConsumeTaskLeaseID is the server-resolved one-shot capability used by
+	// quick-create. It is revoked in the same transaction as the issue insert;
+	// a replay therefore cannot create a second issue, while a failed insert
+	// rolls the consumption back with the rest of the transaction.
+	ConsumeTaskLeaseID     pgtype.UUID
+	ConsumeTaskLeaseTaskID pgtype.UUID
 }
 
 // ErrActiveDuplicate signals that the duplicate guard found an active
@@ -168,6 +174,12 @@ var ErrIssueLabelNotFound = errors.New("issue label not found in this workspace"
 // transaction. Callers translate this into a 409 — the request was valid when
 // it arrived, so retrying against the refreshed catalog is the remedy.
 var ErrIssueStatusUnavailable = errors.New("issue status is no longer available")
+
+// ErrCapabilityConsumed means the task-scoped one-shot lease was already
+// revoked/expired or did not belong to the requested task/workspace. Callers
+// translate this to a conflict rather than retrying an operation that can never
+// be admitted by the same lease again.
+var ErrCapabilityConsumed = errors.New("task capability lease was already consumed")
 
 var ErrSourceContextAlreadyAttached = errors.New("source context is already attached")
 
@@ -223,6 +235,24 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 	}
 	defer tx.Rollback(ctx)
 	qtx := s.Queries.WithTx(tx)
+
+	if opts.ConsumeTaskLeaseID.Valid {
+		if !opts.ConsumeTaskLeaseTaskID.Valid {
+			return IssueCreateResult{}, ErrCapabilityConsumed
+		}
+		rows, err := qtx.ConsumeTaskCapabilityLease(ctx, db.ConsumeTaskCapabilityLeaseParams{
+			ID:            opts.ConsumeTaskLeaseID,
+			WorkspaceID:   p.WorkspaceID,
+			TaskID:        opts.ConsumeTaskLeaseTaskID,
+			RevokedReason: pgtype.Text{String: "quick_create_consumed", Valid: true},
+		})
+		if err != nil {
+			return IssueCreateResult{}, fmt.Errorf("consume task capability lease: %w", err)
+		}
+		if rows != 1 {
+			return IssueCreateResult{}, ErrCapabilityConsumed
+		}
+	}
 
 	if p.SourceContext != nil {
 		if _, err := qtx.LockIssueForDescriptionUpdate(ctx, db.LockIssueForDescriptionUpdateParams{

@@ -128,6 +128,22 @@ func TestLeaseAuthorizesProviderUseRequiresExactBinding(t *testing.T) {
 	}
 }
 
+func TestTaskLeaseAllowsKeepsTaskAndResourceScopesExact(t *testing.T) {
+	t.Parallel()
+	if !TaskLeaseAllows([]byte(`[{"action":"resource.use","resource_type":"project_resource","resource_id":"*"}]`), "resource.use", "project_resource", "project-1") {
+		t.Fatal("wildcard project capability did not cover a project")
+	}
+	if TaskLeaseAllows([]byte(`[{"action":"task.read","resource_type":"task_run","resource_id":"$task"}]`), "task.read", "task_run", "another-task") {
+		t.Fatal("$task capability covered another task")
+	}
+	if TaskLeaseAllows([]byte(`[{"action":"resource.use","resource_type":"project_resource","resource_id":"project-1"}]`), "resource.use", "project_resource", "project-2") {
+		t.Fatal("exact project capability covered another project")
+	}
+	if TaskLeaseAllows([]byte(`not-json`), "resource.use", "project_resource", "project-1") {
+		t.Fatal("malformed scope was accepted")
+	}
+}
+
 func withLease(base db.GetValidTaskCapabilityLeaseRow, mutate func(*db.GetValidTaskCapabilityLeaseRow)) db.GetValidTaskCapabilityLeaseRow {
 	mutate(&base)
 	return base

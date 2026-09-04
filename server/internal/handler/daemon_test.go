@@ -761,8 +761,8 @@ func TestClaimTaskByRuntime_MissingRuntimeOwnerCancelsAndRejects(t *testing.T) {
 		testWorkspaceID, "missing-owner-claim")
 	req = withURLParam(req, "runtimeId", runtimeID)
 	w := testutil.Call(t, testHandler.ClaimTaskByRuntime, req).Want(http.StatusInternalServerError)
-	if !strings.Contains(w.Body.String(), "runtime owner required to mint task token") {
-		t.Fatalf("ClaimTaskByRuntime body = %q, want runtime owner error", w.Body.String())
+	if !strings.Contains(w.Body.String(), "initiating user and runtime owner required to mint task token") {
+		t.Fatalf("ClaimTaskByRuntime body = %q, want task capability owner error", w.Body.String())
 	}
 
 	var status string

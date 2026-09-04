@@ -31,6 +31,7 @@ type providerLeaseFixture struct {
 	taskID     string
 	leaseToken string
 	leaseID    string
+	bootstrapGrantID string
 }
 
 // newProviderLeaseFixture claims a real task through the daemon claim endpoint
@@ -39,6 +40,10 @@ type providerLeaseFixture struct {
 // stopped issuing the provider capability would fail these tests instead of
 // silently authorizing nothing.
 func newProviderLeaseFixture(t *testing.T, originatorUserID string) providerLeaseFixture {
+	return newProviderLeaseFixtureWithBootstrapGrant(t, originatorUserID, false)
+}
+
+func newProviderLeaseFixtureWithBootstrapGrant(t *testing.T, originatorUserID string, bootstrapGrant bool) providerLeaseFixture {
 	t.Helper()
 
 	runtimeID := dbfx.Runtime(t, "Provider authorization runtime", testutil.Cols{
@@ -55,6 +60,17 @@ func newProviderLeaseFixture(t *testing.T, originatorUserID string) providerLeas
 		"originator_user_id":  originatorUserID,
 		"accountable_user_id": originatorUserID,
 	})
+	var bootstrapGrantID string
+	if bootstrapGrant {
+		bootstrapGrantID = uuid.NewString()
+		dbfx.Exec(t, `INSERT INTO authorization_grant
+			(id, workspace_id, principal_type, principal_id, action, resource_type, resource_id, effect, conditions, expires_at, created_by)
+			VALUES ($1, $2, 'user', $3, 'credential.use', 'provider_identity', $4, 'allow', $5::jsonb, now() + interval '1 hour', $6)`,
+			bootstrapGrantID, testWorkspaceID, originatorUserID, runtimeID,
+			`{"provider":"claude","provider_action":"provider.invoke","device_id":"`+runtimeID+`","models":["claude-test-model"],"max_tokens":100000}`,
+			testUserID)
+		dbfx.Cleanup(t, `DELETE FROM authorization_grant WHERE id = $1`, bootstrapGrantID)
+	}
 
 	claim := httptest.NewRecorder()
 	request := newDaemonTokenRequest(http.MethodPost, "/api/daemon/runtimes/"+runtimeID+"/tasks/claim", nil,
@@ -85,6 +101,7 @@ func newProviderLeaseFixture(t *testing.T, originatorUserID string) providerLeas
 		taskID:     taskID,
 		leaseToken: claimed.AuthToken,
 		leaseID:    leaseID,
+		bootstrapGrantID: bootstrapGrantID,
 	}
 }
 
@@ -283,7 +300,11 @@ func TestProviderGrantPermissions(t *testing.T) {
 
 	otherUserID := dbfx.User(t, "Provider grant other", "provider-grant-"+uuid.NewString()+"@example.com")
 	dbfx.Member(t, testWorkspaceID, otherUserID, "member")
-	fixture := newProviderLeaseFixture(t, otherUserID)
+	fixture := newProviderLeaseFixtureWithBootstrapGrant(t, otherUserID, true)
+	// Claim issuance now performs the Rust-aligned provider pre-gate. Revoke
+	// only the bootstrap grant after issuance so this test can still exercise
+	// the independent operation-time "no grant" decision.
+	dbfx.Exec(t, `UPDATE authorization_grant SET revoked_at = now(), revoked_by = $2 WHERE id = $1`, fixture.bootstrapGrantID, testUserID)
 
 	createGrant := func(t *testing.T, asUserID string, body map[string]any) (int, map[string]any) {
 		t.Helper()

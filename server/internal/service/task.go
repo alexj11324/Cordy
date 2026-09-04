@@ -802,12 +802,14 @@ func (s *TaskService) captureTaskCancelled(ctx context.Context, task db.AgentTas
 		s.Metrics.RecordTaskTerminal(util.UUIDToString(task.ID), source, runtimeMode, task.Status, taskRunSeconds(task), taskTotalSeconds(task), task.Attempt)
 	}
 	// Revoke any mat_ task tokens minted for this task. Cancellation is
-	// a terminal transition, so the running agent process no longer
-	// needs to call back; eagerly deleting the token closes the
-	// window where a compromised process could keep authenticating
-	// against the API until the 24h expiry. Failure is non-fatal — the
-	// expiry / FK cascade are the durable guards. MUL-2600.
-	if err := s.Queries.DeleteTaskTokensByTask(ctx, task.ID); err != nil {
+	// terminal, so the running agent process no longer needs to call back;
+	// retaining the row preserves replay/explain evidence while the revocation
+	// closes the post-terminal authentication window. Failure is non-fatal —
+	// expiry / explicit workspace cleanup remain durable guards. MUL-2600.
+	if _, err := s.Queries.RevokeTaskTokensByTask(ctx, db.RevokeTaskTokensByTaskParams{
+		TaskID:        task.ID,
+		RevokedReason: pgtype.Text{String: "task_cancelled", Valid: true},
+	}); err != nil {
 		slog.Warn("cancel task: failed to revoke task tokens",
 			"task_id", util.UUIDToString(task.ID), "error", err)
 	}
@@ -3879,6 +3881,18 @@ func (s *TaskService) FinalizeTaskClaim(
 	receipt := task.DeliveredCommentIds
 	err := s.runInTx(ctx, func(qtx *db.Queries) error {
 		if _, err := qtx.CreateTaskToken(ctx, token); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				exists, existsErr := qtx.TaskTokenExistsForClaim(ctx, db.TaskTokenExistsForClaimParams{
+					TaskID: token.TaskID, ClaimDispatchedAt: token.ClaimDispatchedAt,
+				})
+				if existsErr != nil {
+					return fmt.Errorf("check finalized task claim: %w", existsErr)
+				}
+				if exists {
+					return ErrCapabilityLeaseAlreadyFinalized
+				}
+				return ErrCapabilityLeaseIssuanceDenied
+			}
 			return fmt.Errorf("create task token: %w", err)
 		}
 		if len(daemonTokens) == 1 {

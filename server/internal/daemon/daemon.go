@@ -5328,6 +5328,44 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 		return
 	}
 	provider := rt.Provider
+	if providerUsesCredentialBroker(provider) {
+		model := ""
+		if task.Agent != nil {
+			model = task.Agent.Model
+		}
+		if strings.TrimSpace(task.AuthToken) == "" {
+			d.logger.Error("claimed provider task has no task capability token; refusing to start provider",
+				"task", shortID(task.ID), "runtime_id", task.RuntimeID, "provider", provider)
+			if err := d.reportTerminalTask(ctx, terminalTaskReport{
+				kind:          terminalTaskReportFail,
+				taskID:        task.ID,
+				errorMessage:  "provider authorization requires a task capability lease",
+				failureReason: "authorization_denied",
+			}); err != nil {
+				d.logger.Error("provider authorization denial callback failed", "task", shortID(task.ID), "error", err)
+			}
+			return
+		}
+		if _, err := d.client.AuthorizeProviderOperation(ctx, task.RuntimeID, task.ID, task.AuthToken, provider, model, 0, true); err != nil {
+			failureReason := "authorization_unavailable"
+			var requestErr *requestError
+			if errors.As(err, &requestErr) && requestErr.StatusCode == http.StatusForbidden {
+				failureReason = taskfailure.ReasonAgentProviderAuthOrAccess.String()
+			}
+			d.logger.Warn("provider pre-operation authorization denied; refusing to spawn provider",
+				"task", shortID(task.ID), "runtime_id", task.RuntimeID, "provider", provider,
+				"failure_reason", failureReason, "error", err)
+			if reportErr := d.reportTerminalTask(ctx, terminalTaskReport{
+				kind:          terminalTaskReportFail,
+				taskID:        task.ID,
+				errorMessage:  "provider authorization denied before provider start",
+				failureReason: failureReason,
+			}); reportErr != nil {
+				d.logger.Error("provider authorization failure callback failed", "task", shortID(task.ID), "error", reportErr)
+			}
+			return
+		}
+	}
 
 	// Task-scoped logger with short ID for readable concurrent logs.
 	taskLog := d.logger.With("task", shortID(task.ID))
@@ -5546,6 +5584,10 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 			}
 		}
 	}
+}
+
+func providerUsesCredentialBroker(provider string) bool {
+	return provider == "codex" || provider == "claude"
 }
 
 // worktreePreservedError marks a task error that must survive the cancel path:

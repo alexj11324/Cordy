@@ -2068,6 +2068,22 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			})
 		})
 
+		// Rust-compatible authorization control plane. These routes are
+		// workspace-header scoped (like the Rust WorkspaceContext), rather than
+		// nested under /api/workspaces/{id}; the old workspace-nested provider
+		// paths below remain compatibility aliases for clients shipped during the
+		// Go migration.
+		r.Route("/api/authorization", func(r chi.Router) {
+			r.Use(middleware.RequireWorkspaceMember(queries))
+			r.With(handler.RequireHumanActor).Get("/provider-grants", h.ListProviderAuthorizationGrants)
+			r.With(handler.RequireHumanActor).Post("/provider-grants", h.CreateProviderAuthorizationGrant)
+			r.With(handler.RequireHumanActor).Delete("/provider-grants/{grantId}", h.RevokeProviderAuthorizationGrant)
+			r.With(handler.RequireHumanActor).Get("/decisions/{decisionId}", h.ExplainProviderAuthorizationDecision)
+			// Lease validation is intentionally task-token capable; the handler
+			// requires the server-stamped X-Actor-Source/task headers.
+			r.Post("/provider-leases/validate", h.ValidateProviderLease)
+		})
+
 		// --- Workspace-scoped routes (all require workspace membership) ---
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireWorkspaceMember(queries))
@@ -2442,10 +2458,6 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Post("/nodes/exec", h.ExecCloudRuntimeNode)
 			})
 
-			// Provider authorization control plane. Human actors only: a
-			// task token must never be able to widen the authority of the
-			// task it belongs to, and these routes are exactly the surface
-			// that would let it.
 			r.Route("/api/provider-authorizations", func(r chi.Router) {
 				r.Use(handler.RequireHumanActor)
 				r.Get("/", h.ListProviderAuthorizationGrants)

@@ -1,17 +1,21 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/patchbay-ai/patchbay/server/internal/auth"
 	"github.com/patchbay-ai/patchbay/server/internal/service"
+	"github.com/patchbay-ai/patchbay/server/internal/util"
 	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
@@ -23,22 +27,32 @@ import (
 // has an answer that is not a guess.
 
 type providerGrantRequest struct {
-	GranteeType string   `json:"grantee_type"`
-	GranteeID   string   `json:"grantee_id"`
-	RuntimeID   string   `json:"runtime_id"`
-	Actions     []string `json:"actions"`
-	Models      []string `json:"models"`
-	MaxTokens   *int64   `json:"max_tokens"`
-	ExpiresAt   string   `json:"expires_at"`
-	TaskID      string   `json:"task_id"`
-	Effect      string   `json:"effect"`
+	GranteeType    string   `json:"grantee_type"`
+	GranteeID      string   `json:"grantee_id"`
+	RuntimeID      string   `json:"runtime_id"`
+	Actions        []string `json:"actions"`
+	AllowedActions []string `json:"allowed_actions"`
+	Models         []string `json:"models"`
+	MaxTokens      *int64   `json:"max_tokens"`
+	ExpiresAt      string   `json:"expires_at"`
+	TaskID         string   `json:"task_id"`
+	Effect         string   `json:"effect"`
+}
+
+func (request providerGrantRequest) allowedActionList() []string {
+	if len(request.AllowedActions) > 0 {
+		return request.AllowedActions
+	}
+	return request.Actions
 }
 
 type providerGrantResponse struct {
 	ID            string          `json:"id"`
+	WorkspaceID   string          `json:"workspace_id"`
 	GranteeType   string          `json:"grantee_type"`
 	GranteeID     string          `json:"grantee_id"`
 	RuntimeID     string          `json:"runtime_id"`
+	Provider      string          `json:"provider"`
 	Action        string          `json:"action"`
 	Effect        string          `json:"effect"`
 	Conditions    json.RawMessage `json:"conditions"`
@@ -69,6 +83,8 @@ type providerDecisionExplainResponse struct {
 	ResourceType     string          `json:"resource_type"`
 	ResourceID       string          `json:"resource_id"`
 	Context          json.RawMessage `json:"context"`
+	Obligations      json.RawMessage `json:"obligations"`
+	DelegationChain  json.RawMessage `json:"delegation_chain"`
 	CreatedAt        *string         `json:"created_at"`
 }
 
@@ -84,9 +100,24 @@ type providerAuthorizeRequest struct {
 	// bound to the task/agent/runtime/actor read server-side, not to how the
 	// lease was named.
 	LeaseID   string `json:"lease_id"`
+	RuntimeID string `json:"runtime_id"`
 	Provider  string `json:"provider"`
 	Model     string `json:"model"`
 	MaxTokens int64  `json:"max_tokens"`
+	// RequestedMaxTokens is the canonical Rust field name. MaxTokens remains a
+	// compatibility alias for the existing Go daemon client.
+	RequestedMaxTokens *int64 `json:"requested_max_tokens"`
+	// Preflight is used by the daemon at task start. It writes an allow decision
+	// without reserving a provider budget; later operation validations reserve
+	// atomically in the audit ledger.
+	Preflight bool `json:"preflight,omitempty"`
+}
+
+func (request providerAuthorizeRequest) requestedMaxTokens() int64 {
+	if request.RequestedMaxTokens != nil {
+		return *request.RequestedMaxTokens
+	}
+	return request.MaxTokens
 }
 
 func timestampPtr(ts pgtype.Timestamptz) *string {
@@ -104,9 +135,11 @@ func providerGrantToResponse(grant db.AuthorizationGrant) providerGrantResponse 
 	}
 	return providerGrantResponse{
 		ID:            uuidToString(grant.ID),
+		WorkspaceID:   uuidToString(grant.WorkspaceID),
 		GranteeType:   grant.PrincipalType,
 		GranteeID:     uuidToString(grant.PrincipalID),
 		RuntimeID:     uuidToString(grant.ResourceID),
+		Provider:      providerFromGrantConditions(conditions),
 		Action:        grant.Action,
 		Effect:        grant.Effect,
 		Conditions:    conditions,
@@ -116,6 +149,18 @@ func providerGrantToResponse(grant db.AuthorizationGrant) providerGrantResponse 
 		CreatedAt:     timestampPtr(grant.CreatedAt),
 		PolicyVersion: service.ProviderAuthorizationPolicyVersion,
 	}
+}
+
+func providerFromGrantConditions(conditions json.RawMessage) string {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(conditions, &fields) != nil {
+		return ""
+	}
+	var provider string
+	if json.Unmarshal(fields["provider"], &provider) != nil {
+		return ""
+	}
+	return provider
 }
 
 func decisionToResponse(decision service.ProviderAuthorizationDecision) providerDecisionResponse {
@@ -160,6 +205,8 @@ func writeProviderAuthorizationError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusForbidden, "you do not control this provider identity")
 	case errors.Is(err, service.ErrProviderAuthorizationNotFound):
 		writeError(w, http.StatusNotFound, "provider authorization record not found")
+	case errors.Is(err, pgx.ErrNoRows):
+		writeError(w, http.StatusNotFound, "provider authorization record not found")
 	default:
 		writeError(w, http.StatusBadRequest, err.Error())
 	}
@@ -196,7 +243,7 @@ func (h *Handler) CreateProviderAuthorizationGrant(w http.ResponseWriter, r *htt
 		GranteeType:    request.GranteeType,
 		GranteeID:      granteeID,
 		RuntimeID:      runtimeID,
-		AllowedActions: request.Actions,
+		AllowedActions: request.allowedActionList(),
 		Models:         request.Models,
 		MaxTokens:      request.MaxTokens,
 		ExpiresAt:      expiresAt,
@@ -299,6 +346,8 @@ func (h *Handler) ExplainProviderAuthorizationDecision(w http.ResponseWriter, r 
 		ResourceType:     event.ResourceType,
 		ResourceID:       uuidToString(event.ResourceID),
 		Context:          context,
+		Obligations:      json.RawMessage(event.Obligations),
+		DelegationChain:  json.RawMessage(event.DelegationChain),
 		CreatedAt:        timestampPtr(event.CreatedAt),
 	})
 }
@@ -321,6 +370,119 @@ func (h *Handler) RevokeProviderCapabilityLease(w http.ResponseWriter, r *http.R
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+type taskCapabilityRequestContext struct {
+	Task  db.AgentTaskQueue
+	Lease db.GetValidTaskCapabilityLeaseRow
+}
+
+// resolveTaskCapabilityContext is the Go adapter for Rust's
+// TaskAuthorizationContext. The task token middleware has already authenticated
+// the bearer; this second lookup binds task-scoped consumers to the current
+// claim fence and obtains the lease id without accepting a client-provided id.
+func (h *Handler) resolveTaskCapabilityContext(ctx context.Context, r *http.Request, workspaceID pgtype.UUID) (taskCapabilityRequestContext, bool, error) {
+	if r.Header.Get("X-Actor-Source") != "task_token" {
+		return taskCapabilityRequestContext{}, false, nil
+	}
+	taskID, err := util.ParseUUID(strings.TrimSpace(r.Header.Get("X-Task-ID")))
+	if err != nil {
+		return taskCapabilityRequestContext{}, true, fmt.Errorf("invalid task capability task id: %w", err)
+	}
+	agentID, err := util.ParseUUID(strings.TrimSpace(r.Header.Get("X-Agent-ID")))
+	if err != nil {
+		return taskCapabilityRequestContext{}, true, fmt.Errorf("invalid task capability agent id: %w", err)
+	}
+	task, err := h.Queries.GetAgentTaskInWorkspace(ctx, db.GetAgentTaskInWorkspaceParams{ID: taskID, WorkspaceID: workspaceID})
+	if err != nil {
+		return taskCapabilityRequestContext{}, true, fmt.Errorf("load task capability task: %w", err)
+	}
+	if task.AgentID != agentID || !task.RuntimeID.Valid || !task.OriginatorUserID.Valid {
+		return taskCapabilityRequestContext{}, true, service.ErrProviderAuthorizationForbidden
+	}
+	current, err := h.Queries.GetCurrentTaskCapabilityLease(ctx, db.GetCurrentTaskCapabilityLeaseParams{
+		TaskID: task.ID, WorkspaceID: workspaceID, ClaimDispatchedAt: task.DispatchedAt,
+	})
+	if err != nil {
+		return taskCapabilityRequestContext{}, true, fmt.Errorf("load current task capability lease: %w", err)
+	}
+	lease, err := h.Queries.GetValidTaskCapabilityLease(ctx, current.ID)
+	if err != nil {
+		return taskCapabilityRequestContext{}, true, fmt.Errorf("validate current task capability lease: %w", err)
+	}
+	if lease.TaskID != task.ID || lease.AgentID != task.AgentID || lease.WorkspaceID != workspaceID ||
+		lease.DeviceID != task.RuntimeID || lease.OnBehalfOfUserID != task.OriginatorUserID {
+		return taskCapabilityRequestContext{}, true, service.ErrProviderAuthorizationForbidden
+	}
+	return taskCapabilityRequestContext{Task: task, Lease: lease}, true, nil
+}
+
+// taskProjectResourceAllows is the Go adapter for Rust's
+// task_project_resource_allows. Human requests retain the workspace middleware
+// semantics; a task-token request must additionally name its own bound issue
+// and hold the exact action/resource capability in the current lease.
+func (h *Handler) taskProjectResourceAllows(w http.ResponseWriter, r *http.Request, issueID pgtype.UUID, requireBoundIssue bool, action string) bool {
+	if r.Header.Get("X-Actor-Source") != "task_token" {
+		return true
+	}
+	capability, present, err := h.resolveTaskCapabilityContext(r.Context(), r, parseUUID(ctxWorkspaceID(r.Context())))
+	if !present || err != nil || (requireBoundIssue && (!capability.Task.IssueID.Valid || capability.Task.IssueID != issueID)) ||
+		!service.TaskLeaseAllows(capability.Lease.Scope, action, auth.ResourceProject, uuidToString(issueID)) {
+		writeError(w, http.StatusForbidden, "task capability does not allow this issue operation")
+		return false
+	}
+	return true
+}
+
+// taskLeaseAllows is the adapter for Rust's task_lease_allows helper used by
+// user-facing task message/cancellation routes. URL task identity is compared
+// with the middleware-stamped current task before the lease scope is consulted;
+// "$task" is deliberately an exact relative task resource, never a wildcard.
+func (h *Handler) taskLeaseAllows(w http.ResponseWriter, r *http.Request, workspaceID, taskID pgtype.UUID, action string) bool {
+	if r.Header.Get("X-Actor-Source") != "task_token" {
+		return true
+	}
+	capability, present, err := h.resolveTaskCapabilityContext(r.Context(), r, workspaceID)
+	if !present || err != nil || capability.Task.ID != taskID ||
+		!service.TaskLeaseAllows(capability.Lease.Scope, action, auth.ResourceTaskRun, "$task") {
+		writeError(w, http.StatusForbidden, "task capability does not allow this task operation")
+		return false
+	}
+	return true
+}
+
+// authorizeProviderTaskClaim is called after the full claim payload has been
+// built but before a task token is minted. A deny/approval result terminally
+// settles the dispatched task so the daemon cannot retry the same unauthorized
+// work forever; a database failure is returned to the claim caller and no lease
+// is issued.
+func (h *Handler) authorizeProviderTaskClaim(ctx context.Context, task db.AgentTaskQueue, runtime db.AgentRuntime) (bool, error) {
+	if !service.ProviderUsesCredentialBroker(runtime.Provider) {
+		return true, nil
+	}
+	agent, err := h.Queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{ID: task.AgentID, WorkspaceID: runtime.WorkspaceID})
+	if err != nil {
+		return false, fmt.Errorf("load provider claim agent: %w", err)
+	}
+	model := ""
+	if agent.Model.Valid {
+		model = strings.TrimSpace(agent.Model.String)
+	}
+	decision, err := h.ProviderAuthorization.AuthorizeTaskClaim(ctx, service.ProviderClaimValidation{
+		WorkspaceID: runtime.WorkspaceID, TaskID: task.ID, AgentID: task.AgentID,
+		RuntimeID: runtime.ID, OnBehalfOfUserID: task.OriginatorUserID,
+		Provider: runtime.Provider, Model: model,
+	})
+	if err != nil {
+		return false, err
+	}
+	if decision.Allowed {
+		return true, nil
+	}
+	if _, err := h.TaskService.CancelTaskWithReason(ctx, task.ID, decision.Reason, "authorization_denied"); err != nil {
+		return false, fmt.Errorf("settle provider authorization denial: %w", err)
+	}
+	return false, nil
 }
 
 // AuthorizeProviderOperation is the daemon's pre-operation gate: nothing that
@@ -356,7 +518,7 @@ func (h *Handler) AuthorizeProviderOperation(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
-	if request.MaxTokens < 0 {
+	if request.requestedMaxTokens() < 0 {
 		writeError(w, http.StatusBadRequest, "invalid max_tokens")
 		return
 	}
@@ -369,11 +531,65 @@ func (h *Handler) AuthorizeProviderOperation(w http.ResponseWriter, r *http.Requ
 		OnBehalfOfUserID:   task.OriginatorUserID,
 		Provider:           request.Provider,
 		Model:              request.Model,
-		RequestedMaxTokens: request.MaxTokens,
+		RequestedMaxTokens: request.requestedMaxTokens(),
+		Preflight:          request.Preflight,
 	})
 	if err != nil {
 		slog.Warn("provider authorization decision failed",
 			"task_id", taskID, "runtime_id", runtimeID, "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to evaluate provider authorization")
+		return
+	}
+	status := http.StatusOK
+	if !decision.Allowed {
+		status = http.StatusForbidden
+	}
+	writeJSON(w, status, decisionToResponse(decision))
+}
+
+// ValidateProviderLease is the canonical Rust-compatible task-token route.
+// Unlike the daemon compatibility route above, task/runtime identity comes from
+// server-stamped headers and the request carries only runtime/provider/model and
+// requested_max_tokens.
+func (h *Handler) ValidateProviderLease(w http.ResponseWriter, r *http.Request) {
+	workspaceID, err := util.ParseUUID(ctxWorkspaceID(r.Context()))
+	if err != nil {
+		writeError(w, http.StatusForbidden, "provider lease workspace is required")
+		return
+	}
+	capability, present, err := h.resolveTaskCapabilityContext(r.Context(), r, workspaceID)
+	if !present || err != nil {
+		writeError(w, http.StatusForbidden, "task capability lease required")
+		return
+	}
+	var request providerAuthorizeRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	runtimeID, ok := parseUUIDOrBadRequest(w, request.RuntimeID, "runtime_id")
+	if !ok {
+		return
+	}
+	if runtimeID != capability.Task.RuntimeID {
+		writeError(w, http.StatusForbidden, "provider lease identity mismatch")
+		return
+	}
+	maxTokens := request.requestedMaxTokens()
+	if maxTokens < 0 {
+		writeError(w, http.StatusBadRequest, "invalid requested_max_tokens")
+		return
+	}
+	decision, err := h.ProviderAuthorization.ValidateLease(r.Context(), service.ProviderLeaseValidation{
+		WorkspaceID: workspaceID,
+		LeaseID: capability.Lease.ID, TaskID: capability.Task.ID,
+		AgentID: capability.Task.AgentID, RuntimeID: capability.Task.RuntimeID,
+		OnBehalfOfUserID: capability.Task.OriginatorUserID,
+		Provider: request.Provider, Model: request.Model,
+		RequestedMaxTokens: maxTokens, Preflight: request.Preflight,
+	})
+	if err != nil {
+		slog.Warn("canonical provider authorization decision failed", "task_id", uuidToString(capability.Task.ID), "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to evaluate provider authorization")
 		return
 	}

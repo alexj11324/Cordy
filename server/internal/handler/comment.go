@@ -16,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/patchbay-ai/patchbay/server/internal/auth"
 	"github.com/patchbay-ai/patchbay/server/internal/logger"
 	obsmetrics "github.com/patchbay-ai/patchbay/server/internal/metrics"
 	"github.com/patchbay-ai/patchbay/server/internal/service"
@@ -1601,6 +1602,9 @@ func (h *Handler) PreviewCommentTriggers(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
+	if !h.taskProjectResourceAllows(w, r, issue.ID, true, auth.ActionResourceUse) {
+		return
+	}
 
 	userID, ok := requireUserID(w, r)
 	if !ok {
@@ -1714,6 +1718,9 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 	issueID := chi.URLParam(r, "id")
 	issue, ok := h.loadIssueForUser(w, r, issueID)
 	if !ok {
+		return
+	}
+	if !h.taskProjectResourceAllows(w, r, issue.ID, true, auth.ActionResourceUse) {
 		return
 	}
 

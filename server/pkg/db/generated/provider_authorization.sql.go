@@ -91,6 +91,150 @@ func (q *Queries) CreateAuthorizationAuditEvent(ctx context.Context, arg CreateA
 	return i, err
 }
 
+const createProviderAuthorizationDecision = `-- name: CreateProviderAuthorizationDecision :one
+WITH budget_lock AS (
+    SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))
+), prior_reservations AS (
+    SELECT COALESCE(sum(
+        CASE
+            WHEN event.context->>'provider_request_tokens' ~ '^[0-9]+$'
+            THEN (event.context->>'provider_request_tokens')::bigint
+            ELSE 0::bigint
+        END
+    ), 0)::bigint AS reserved
+    FROM authorization_audit_event event
+    CROSS JOIN budget_lock
+    WHERE event.workspace_id = $2
+      AND event.action = 'credential.use'
+      AND event.resource_type = 'provider_identity'
+      AND event.resource_id = $3
+      AND event.decision = 'allow'
+      AND event.matched_grant_ids && $4::uuid[]
+      AND event.context->>'provider_budget_reservation' = 'true'
+), final_decision AS (
+    SELECT
+        CASE
+            WHEN $5::boolean
+             AND $6::text = 'allow'
+             AND prior_reservations.reserved > $7::bigint - $8::bigint
+            THEN 'deny'
+            ELSE $6::text
+        END AS decision,
+        CASE
+            WHEN $5::boolean
+             AND $6::text = 'allow'
+             AND prior_reservations.reserved > $7::bigint - $8::bigint
+            THEN $9::text
+            ELSE $10::text
+        END AS reason,
+        CASE
+            WHEN $5::boolean
+             AND $6::text = 'allow'
+             AND prior_reservations.reserved > $7::bigint - $8::bigint
+            THEN 0::bigint
+            ELSE $8::bigint
+        END AS reservation
+    FROM prior_reservations
+)
+INSERT INTO authorization_audit_event (
+    id, workspace_id, principal_type, principal_id, on_behalf_of_user_id,
+    via_agent_id, device_id, action, resource_type, resource_id, decision,
+    reason, matched_grant_ids, policy_version, obligations, delegation_chain,
+    context
+)
+SELECT
+    $11, $2, $12, $13, $14, $15, $16, $17, $18, $3,
+    final_decision.decision, final_decision.reason, $4, $19, $20, $21,
+    jsonb_set(
+        jsonb_set(
+            $22::jsonb,
+            '{provider_request_tokens}',
+            to_jsonb(final_decision.reservation)
+        ),
+        '{provider_budget_reservation}',
+        to_jsonb(final_decision.decision = 'allow' AND final_decision.reservation > 0)
+    )
+FROM final_decision
+RETURNING id, workspace_id, principal_type, principal_id, on_behalf_of_user_id,
+          via_agent_id, device_id, action, resource_type, resource_id, decision,
+          reason, matched_grant_ids, policy_version, obligations,
+          delegation_chain, context, created_at
+`
+
+type CreateProviderAuthorizationDecisionParams struct {
+	BudgetLockKey       string        `json:"budget_lock_key"`
+	WorkspaceID         pgtype.UUID   `json:"workspace_id"`
+	ResourceID          pgtype.UUID   `json:"resource_id"`
+	MatchedGrantIds     []pgtype.UUID `json:"matched_grant_ids"`
+	EnforceBudget       bool          `json:"enforce_budget"`
+	Decision            string        `json:"decision"`
+	BudgetLimit         int64         `json:"budget_limit"`
+	Reservation         int64         `json:"reservation"`
+	BudgetExhaustedReason string      `json:"budget_exhausted_reason"`
+	Reason              string        `json:"reason"`
+	ID                  pgtype.UUID   `json:"id"`
+	PrincipalType       string        `json:"principal_type"`
+	PrincipalID         pgtype.UUID   `json:"principal_id"`
+	OnBehalfOfUserID    pgtype.UUID   `json:"on_behalf_of_user_id"`
+	ViaAgentID          pgtype.UUID   `json:"via_agent_id"`
+	DeviceID            pgtype.UUID   `json:"device_id"`
+	Action              string        `json:"action"`
+	ResourceType        string        `json:"resource_type"`
+	PolicyVersion       string        `json:"policy_version"`
+	Obligations         []byte        `json:"obligations"`
+	DelegationChain     []byte        `json:"delegation_chain"`
+	Context             []byte        `json:"context"`
+}
+
+func (q *Queries) CreateProviderAuthorizationDecision(ctx context.Context, arg CreateProviderAuthorizationDecisionParams) (AuthorizationAuditEvent, error) {
+	row := q.db.QueryRow(ctx, createProviderAuthorizationDecision,
+		arg.BudgetLockKey,
+		arg.WorkspaceID,
+		arg.ResourceID,
+		arg.MatchedGrantIds,
+		arg.EnforceBudget,
+		arg.Decision,
+		arg.BudgetLimit,
+		arg.Reservation,
+		arg.BudgetExhaustedReason,
+		arg.Reason,
+		arg.ID,
+		arg.PrincipalType,
+		arg.PrincipalID,
+		arg.OnBehalfOfUserID,
+		arg.ViaAgentID,
+		arg.DeviceID,
+		arg.Action,
+		arg.ResourceType,
+		arg.PolicyVersion,
+		arg.Obligations,
+		arg.DelegationChain,
+		arg.Context,
+	)
+	var i AuthorizationAuditEvent
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.PrincipalType,
+		&i.PrincipalID,
+		&i.OnBehalfOfUserID,
+		&i.ViaAgentID,
+		&i.DeviceID,
+		&i.Action,
+		&i.ResourceType,
+		&i.ResourceID,
+		&i.Decision,
+		&i.Reason,
+		&i.MatchedGrantIds,
+		&i.PolicyVersion,
+		&i.Obligations,
+		&i.DelegationChain,
+		&i.Context,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createProviderAuthorizationGrant = `-- name: CreateProviderAuthorizationGrant :one
 INSERT INTO authorization_grant (
     id, workspace_id, principal_type, principal_id, action, resource_type,
@@ -307,10 +451,11 @@ WITH RECURSIVE lease_chain AS (
        OR lease.current_agent_archived_at IS NOT NULL
        OR lease.delegation_depth > 8
        OR (lease.parent_token_id IS NULL AND lease.delegation_depth <> 0)
-       OR (lease.parent_token_id IS NOT NULL AND (
+           OR (lease.parent_token_id IS NOT NULL AND (
               parent.id IS NULL
               OR lease.delegation_depth <> parent.delegation_depth + 1
               OR lease.parent_fence IS DISTINCT FROM parent.delegation_fence
+              OR lease.agent_id <> parent.agent_id
               OR lease.workspace_id <> parent.workspace_id
               OR lease.on_behalf_of_user_id IS DISTINCT FROM parent.on_behalf_of_user_id
               OR lease.device_id IS DISTINCT FROM parent.device_id
@@ -533,7 +678,13 @@ func (q *Queries) RevokeProviderAuthorizationGrant(ctx context.Context, arg Revo
 }
 
 const sumProviderAuthorizationReservations = `-- name: SumProviderAuthorizationReservations :one
-SELECT COALESCE(sum((context->>'provider_request_tokens')::bigint), 0)::bigint
+SELECT COALESCE(sum(
+    CASE
+        WHEN context->>'provider_request_tokens' ~ '^[0-9]+$'
+        THEN (context->>'provider_request_tokens')::bigint
+        ELSE 0::bigint
+    END
+), 0)::bigint
 FROM authorization_audit_event
 WHERE workspace_id = $1
   AND action = 'credential.use'

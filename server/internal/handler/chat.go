@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/patchbay-ai/patchbay/server/internal/analytics"
+	"github.com/patchbay-ai/patchbay/server/internal/auth"
 	obsmetrics "github.com/patchbay-ai/patchbay/server/internal/metrics"
 	"github.com/patchbay-ai/patchbay/server/internal/middleware"
 	"github.com/patchbay-ai/patchbay/server/internal/service"
@@ -1811,6 +1812,9 @@ func (h *Handler) CancelTaskByUser(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		writeError(w, http.StatusNotFound, "task not found")
+		return
+	}
+	if !h.taskLeaseAllows(w, r, wsUUID, task.ID, auth.ActionTaskUpdate) {
 		return
 	}
 
