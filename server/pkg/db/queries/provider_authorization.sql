@@ -71,47 +71,6 @@ RETURNING *;
 -- final decision atomically. It never stores bearer tokens or secrets.
 WITH budget_lock AS (
     SELECT pg_advisory_xact_lock(hashtextextended(@budget_lock_key::text, 0))
-), final_decision AS (
-    SELECT
-        CASE
-            WHEN @enforce_budget::boolean
-             AND @decision::text = 'allow'
-             AND reservation_totals.total_reserved > @budget_limit::bigint - @reservation::bigint
-            THEN 'deny'
-            ELSE @decision::text
-        END AS decision,
-        CASE
-            WHEN @enforce_budget::boolean
-             AND @decision::text = 'allow'
-             AND reservation_totals.total_reserved > @budget_limit::bigint - @reservation::bigint
-            THEN @budget_exhausted_reason::text
-            ELSE @reason::text
-        END AS reason,
-        CASE
-            WHEN @enforce_budget::boolean
-             AND @decision::text = 'allow'
-             AND reservation_totals.total_reserved > @budget_limit::bigint - @reservation::bigint
-            THEN 0::bigint
-            ELSE @reservation::bigint
-        END AS reservation
-    FROM (
-        SELECT COALESCE(sum(
-            CASE
-                WHEN event.context->>'provider_request_tokens' ~ '^[0-9]+$'
-                THEN (event.context->>'provider_request_tokens')::bigint
-                ELSE 0::bigint
-            END
-        ), 0)::bigint AS total_reserved
-        FROM authorization_audit_event AS event
-        CROSS JOIN budget_lock
-        WHERE event.workspace_id = @workspace_id
-          AND event.action = 'credential.use'
-          AND event.resource_type = 'provider_identity'
-          AND event.resource_id = @resource_id
-          AND event.decision = 'allow'
-          AND event.matched_grant_ids && @matched_grant_ids::uuid[]
-          AND event.context->>'provider_budget_reservation' = 'true'
-    ) AS reservation_totals
 )
 INSERT INTO authorization_audit_event (
     id, workspace_id, principal_type, principal_id, on_behalf_of_user_id,
@@ -122,18 +81,144 @@ INSERT INTO authorization_audit_event (
 SELECT
     @id, @workspace_id, @principal_type, @principal_id, @on_behalf_of_user_id,
     @via_agent_id, @device_id, @action, @resource_type, @resource_id,
-    final_decision.decision, final_decision.reason, @matched_grant_ids,
+    CASE
+        WHEN @enforce_budget::boolean
+         AND @decision::text = 'allow'
+         AND (
+             SELECT COALESCE(sum(
+                 CASE
+                     WHEN event.context->>'provider_request_tokens' ~ '^[0-9]+$'
+                     THEN (event.context->>'provider_request_tokens')::bigint
+                     ELSE 0::bigint
+                 END
+             ), 0)::bigint
+             FROM authorization_audit_event AS event
+             CROSS JOIN budget_lock
+             WHERE event.workspace_id = @workspace_id
+               AND event.action = 'credential.use'
+               AND event.resource_type = 'provider_identity'
+               AND event.resource_id = @resource_id
+               AND event.decision = 'allow'
+               AND event.matched_grant_ids && @matched_grant_ids::uuid[]
+               AND event.context->>'provider_budget_reservation' = 'true'
+         ) > @budget_limit::bigint - @reservation::bigint
+        THEN 'deny'
+        ELSE @decision::text
+    END,
+    CASE
+        WHEN @enforce_budget::boolean
+         AND @decision::text = 'allow'
+         AND (
+             SELECT COALESCE(sum(
+                 CASE
+                     WHEN event.context->>'provider_request_tokens' ~ '^[0-9]+$'
+                     THEN (event.context->>'provider_request_tokens')::bigint
+                     ELSE 0::bigint
+                 END
+             ), 0)::bigint
+             FROM authorization_audit_event AS event
+             CROSS JOIN budget_lock
+             WHERE event.workspace_id = @workspace_id
+               AND event.action = 'credential.use'
+               AND event.resource_type = 'provider_identity'
+               AND event.resource_id = @resource_id
+               AND event.decision = 'allow'
+               AND event.matched_grant_ids && @matched_grant_ids::uuid[]
+               AND event.context->>'provider_budget_reservation' = 'true'
+         ) > @budget_limit::bigint - @reservation::bigint
+        THEN @budget_exhausted_reason::text
+        ELSE @reason::text
+    END,
+    @matched_grant_ids,
     @policy_version, @obligations, @delegation_chain,
     jsonb_set(
         jsonb_set(
             @context::jsonb,
             '{provider_request_tokens}',
-            to_jsonb(final_decision.reservation)
+            to_jsonb(
+                CASE
+                    WHEN @enforce_budget::boolean
+                     AND @decision::text = 'allow'
+                     AND (
+                         SELECT COALESCE(sum(
+                             CASE
+                                 WHEN event.context->>'provider_request_tokens' ~ '^[0-9]+$'
+                                 THEN (event.context->>'provider_request_tokens')::bigint
+                                 ELSE 0::bigint
+                             END
+                         ), 0)::bigint
+                         FROM authorization_audit_event AS event
+                         CROSS JOIN budget_lock
+                         WHERE event.workspace_id = @workspace_id
+                           AND event.action = 'credential.use'
+                           AND event.resource_type = 'provider_identity'
+                           AND event.resource_id = @resource_id
+                           AND event.decision = 'allow'
+                           AND event.matched_grant_ids && @matched_grant_ids::uuid[]
+                           AND event.context->>'provider_budget_reservation' = 'true'
+                     ) > @budget_limit::bigint - @reservation::bigint
+                    THEN 0::bigint
+                    ELSE @reservation::bigint
+                END
+            )
         ),
         '{provider_budget_reservation}',
-        to_jsonb(final_decision.decision = 'allow' AND final_decision.reservation > 0)
+        to_jsonb(
+            (
+                CASE
+                    WHEN @enforce_budget::boolean
+                     AND @decision::text = 'allow'
+                     AND (
+                         SELECT COALESCE(sum(
+                             CASE
+                                 WHEN event.context->>'provider_request_tokens' ~ '^[0-9]+$'
+                                 THEN (event.context->>'provider_request_tokens')::bigint
+                                 ELSE 0::bigint
+                             END
+                         ), 0)::bigint
+                         FROM authorization_audit_event AS event
+                         CROSS JOIN budget_lock
+                         WHERE event.workspace_id = @workspace_id
+                           AND event.action = 'credential.use'
+                           AND event.resource_type = 'provider_identity'
+                           AND event.resource_id = @resource_id
+                           AND event.decision = 'allow'
+                           AND event.matched_grant_ids && @matched_grant_ids::uuid[]
+                           AND event.context->>'provider_budget_reservation' = 'true'
+                     ) > @budget_limit::bigint - @reservation::bigint
+                    THEN 'deny'
+                    ELSE @decision::text
+                END
+            ) = 'allow'
+            AND (
+                CASE
+                    WHEN @enforce_budget::boolean
+                     AND @decision::text = 'allow'
+                     AND (
+                         SELECT COALESCE(sum(
+                             CASE
+                                 WHEN event.context->>'provider_request_tokens' ~ '^[0-9]+$'
+                                 THEN (event.context->>'provider_request_tokens')::bigint
+                                 ELSE 0::bigint
+                             END
+                         ), 0)::bigint
+                         FROM authorization_audit_event AS event
+                         CROSS JOIN budget_lock
+                         WHERE event.workspace_id = @workspace_id
+                           AND event.action = 'credential.use'
+                           AND event.resource_type = 'provider_identity'
+                           AND event.resource_id = @resource_id
+                           AND event.decision = 'allow'
+                           AND event.matched_grant_ids && @matched_grant_ids::uuid[]
+                           AND event.context->>'provider_budget_reservation' = 'true'
+                     ) > @budget_limit::bigint - @reservation::bigint
+                    THEN 0::bigint
+                    ELSE @reservation::bigint
+                END
+            ) > 0
+        )
     )
-FROM final_decision
+FROM budget_lock
 RETURNING id, workspace_id, principal_type, principal_id, on_behalf_of_user_id,
           via_agent_id, device_id, action, resource_type, resource_id, decision,
           reason, matched_grant_ids, policy_version, obligations,
