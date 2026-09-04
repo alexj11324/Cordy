@@ -5045,9 +5045,6 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("batch update issue failed", "issue_id", issueID, "error", err)
 			continue
 		}
-		if statusChanged {
-			h.reconcileDependencyGraphTransition(r.Context(), prevIssue, issue)
-		}
 		if reviewPlan != nil {
 			if len(reviewPlan.cancelledTasks) > 0 {
 				h.TaskService.BroadcastCancelledTasks(r.Context(), workspaceID, reviewPlan.cancelledTasks)
@@ -5068,6 +5065,9 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 		executorChanged := !actorRefsEqual(prevResp.ExecutorType, prevResp.ExecutorID, resp.ExecutorType, resp.ExecutorID)
 		reviewerChanged := !actorRefsEqual(prevResp.ReviewerType, prevResp.ReviewerID, resp.ReviewerType, resp.ReviewerID)
 		statusChanged := req.Updates.Status != nil && prevIssue.Status != issue.Status
+		if statusChanged {
+			h.reconcileDependencyGraphTransition(r.Context(), prevIssue, issue)
+		}
 		reviewHandoff := prevResp.StatusCategory != issuestatus.InReview &&
 			resp.StatusCategory == issuestatus.InReview && resp.ReviewerType != nil && resp.ReviewerID != nil
 		priorityChanged := req.Updates.Priority != nil && prevIssue.Priority != issue.Priority
