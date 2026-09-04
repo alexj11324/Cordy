@@ -15,11 +15,11 @@ concurrency:
 jobs:
   # Decides whether the heavy frontend validation jobs, the backend Go jobs
   # and sqlc verification have anything to do.
-  # The frontend jobs validate the web/desktop apps, the shared packages,
+  # The frontend jobs validate the web/desktop/docs apps, the shared packages,
   # the install graph, and the selfhost / reserved-slugs scripts it runs;
-  # a pure backend-only or docs-only PR touches none of those and gains
-  # nothing from a full web build. Symmetrically, the backend jobs compile
-  # and test server/, so a frontend-only or docs-only PR gains nothing from
+  # a pure backend-only PR touches none of those and gains nothing from a
+  # full frontend build. Symmetrically, the backend jobs compile and test
+  # server/, so a frontend-only or docs-only PR gains nothing from
   # a `go test -race` run. The outputs are consumed by the focused jobs
   # below.
   changes:
@@ -40,9 +40,8 @@ jobs:
         id: filter
         uses: dorny/paths-filter@v3
         with:
-          # apps/docs is excluded from the frontend turbo run, but knip does
-          # analyze it, so a docs-only change still needs this job.
-          # apps/mobile has its own mobile-verify workflow. Everything else
+          # apps/docs is built by the frontend turbo run. apps/mobile has its
+          # own mobile-verify workflow. Everything else
           # the frontend job touches is listed here; bias toward
           # over-matching since a missed path silently skips validation.
           filters: |
@@ -277,12 +276,11 @@ jobs:
 
       - name: Build, type check, and lint
         if: ${{ needs.changes.outputs.frontend == 'true' }}
-        # Mobile lives in a parallel mobile-verify workflow (path-filtered
-        # to apps/mobile/** + packages/core/**) so it doesn't add
-        # ~50s of expo-lint + tsc to every web/desktop PR. Keep this
-        # filter in sync with the root package.json scripts, which also
-        # exclude @patchbay/mobile.
-        run: pnpm exec turbo build typecheck lint --filter='!@patchbay/docs' --filter='!@patchbay/mobile'
+        # Mobile lives in a parallel mobile-verify workflow. Keep this filter
+        # in sync with the root package.json scripts, which also exclude
+        # @patchbay/mobile. Docs must remain in this build: production ships
+        # its image and malformed MDX must fail before merge rather than deploy.
+        run: pnpm exec turbo build typecheck lint --filter='!@patchbay/mobile'
 
       # Blocking from the start: it reports nothing today, and it covers the
       # one regression knip structurally cannot see. packages/ui exports four
