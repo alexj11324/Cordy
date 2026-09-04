@@ -97,6 +97,14 @@ test("the Docker context includes every shipping frontend application", () => {
   }
 });
 
+test("the Docs image requests and produces a standalone Next server", () => {
+  assert.match(docsDockerfile, /ENV STANDALONE=true/u);
+  assert.match(
+    docsConfig,
+    /process\.env\.STANDALONE === "true"[\s\S]*output: "standalone"/u,
+  );
+});
+
 test("production backend is the Go server with no Rust runtime contract", () => {
   assert.match(backendDockerfile, /FROM golang:1\.26-alpine AS builder/u);
   assert.match(backendDockerfile, /go build[\s\S]*\.\/cmd\/server/u);
