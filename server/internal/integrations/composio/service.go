@@ -399,12 +399,13 @@ func (s *Service) Disconnect(ctx context.Context, userID, connectionID pgtype.UU
 
 // CreateMCPSession opens a Composio tool-router (MCP) session scoped to the
 // user's active connections. It returns (nil, nil) when the user has no active
-// connections — callers treat that as "no MCP overlay for this user".
+// connections — callers treat that as "no MCP overlay for this user". Task
+// dispatch uses the narrower BuildTaskOverlay seam in dispatch.go, which is
+// wired into TaskService; this helper remains the direct user-scoped session
+// primitive and is not the dispatch entrypoint.
 //
 // connected_accounts is pinned per toolkit to the user's own connected account
-// id array so the session cannot surface accounts the user did not connect. This
-// helper is NOT yet wired into task dispatch (Stage 3); it exists so that wiring
-// is a pure consumer of an already-tested seam.
+// id array so the session cannot surface accounts the user did not connect.
 //
 // Single-account constraint (v1, PR 4608 review follow-up): the MVP connect
 // flow assumes AT MOST ONE active connection per (user, toolkit) — there is no
@@ -414,11 +415,8 @@ func (s *Service) Disconnect(ctx context.Context, userID, connectionID pgtype.UU
 // recently connected account) instead of letting a later map write silently
 // select an older one.
 //
-// Stage 3 owns the real decision before this is wired into dispatch: either
-// enforce the single-active constraint at connect time (revoke the previous
-// active row for the same toolkit on a new connect) or extend CreateSession to
-// a multi-account request shape. Until then, newest-wins keeps behavior
-// deterministic rather than order-dependent.
+// Until the product supports multiple active accounts per toolkit, newest-wins
+// keeps behavior deterministic rather than order-dependent.
 func (s *Service) CreateMCPSession(ctx context.Context, userID pgtype.UUID) (*MCPSession, error) {
 	rows, err := s.store.ListActiveUserComposioConnections(ctx, userID)
 	if err != nil {

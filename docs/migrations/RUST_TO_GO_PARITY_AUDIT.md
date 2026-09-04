@@ -1,6 +1,6 @@
 # Rust → Go product parity audit
 
-Updated: 2026-09-03. Owner: Codex takeover on PR [#729](https://github.com/alexj11324/Cordy/pull/729).
+Updated: 2026-09-04. Owner: Codex takeover on PR [#729](https://github.com/alexj11324/Cordy/pull/729).
 
 ## Scope and evidence
 
@@ -48,6 +48,15 @@ Backend compilation, SQL generation and tests run in GitHub Actions. No local
 Go/Rust tooling or Docker build is part of this audit. Local frontend checks
 and browser fixtures complement CI; neither proves real provider connectivity,
 native UI completion, or production deployment.
+
+Live production checkpoint (2026-09-04): `GET https://api.aspectlylabs.com/health`
+and `/readyz` returned HTTP 200, but `/api/config` reported
+`server_version=sha-9df7c06cf767d599c697656a1d43d0eab3e3dea2`, the frozen Rust
+baseline rather than the current Go PR head. Production therefore has a healthy
+service, but it has not received this Go migration. The response also reported
+`messaging.mode=server_configured` with all six provider integrations disabled;
+no production provider or Go WebSocket acceptance was inferred from the health
+responses.
 
 Later connection/installation checkpoint: durable observer ownership, public
 runtime projection and six adapter reports are now implemented. CI
