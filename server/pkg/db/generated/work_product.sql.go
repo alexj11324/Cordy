@@ -754,7 +754,7 @@ WHERE product.workspace_id = $1
         AND relation.relation_source IN ('manual_explicit', 'task_explicit', 'execution_branch_discovery', 'provider_discovery')
   )
 ORDER BY product.updated_at DESC, product.id DESC
-LIMIT $4 OFFSET $5
+LIMIT $5 OFFSET $4
 `
 
 type ListUnassociatedWorkProductsParams struct {
@@ -770,8 +770,8 @@ func (q *Queries) ListUnassociatedWorkProducts(ctx context.Context, arg ListUnas
 		arg.WorkspaceID,
 		arg.Kind,
 		arg.Search,
-		arg.Limit,
 		arg.Offset,
+		arg.Limit,
 	)
 	if err != nil {
 		return nil, err

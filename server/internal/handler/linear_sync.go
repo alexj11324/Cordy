@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	linearapi "github.com/patchbay-ai/patchbay/server/internal/integrations/linear"
 	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/pkg/dbid"
 )
 
 var linearSharedFields = []string{"title", "description", "status", "priority", "due_date", "owner_id"}
@@ -143,7 +144,7 @@ func (w *LinearWorker) applyRemote(ctx context.Context, b workerBinding, remote 
 			var number int32; if err = tx.QueryRow(ctx, `UPDATE workspace SET issue_counter=issue_counter+1 WHERE id=$1 RETURNING issue_counter`, b.WorkspaceID).Scan(&number); err != nil { return err }
 			var position float64; _ = tx.QueryRow(ctx, `SELECT COALESCE(MIN(position)-1,0) FROM issue WHERE workspace_id=$1 AND status=$2`, b.WorkspaceID, remoteStatus(b,remote)).Scan(&position)
 			ownerType, ownerID, ownerErr := linearSyncOwnerPatch(ctx,tx,b,remote.AssigneeID,db.Issue{}); if ownerErr != nil { return ownerErr }
-			issue, err = queries.CreateIssueWithOrigin(ctx, db.CreateIssueWithOriginParams{WorkspaceID:b.WorkspaceID,Title:remote.Title,Description:pgtype.Text{String:linearapi.StripPatchbayIssueMarker(remote.Description),Valid:true},Status:remoteStatus(b,remote),Priority:remotePriority(remote.Priority),CreatorType:"member",CreatorID:b.CreatorID,Position:position,DueDate:linearSyncDate(remote.DueDate),Number:number,ProjectID:b.ProjectID,OriginType:pgtype.Text{String:"linear",Valid:true},OriginID:pgtype.UUID{Bytes:originID,Valid:true},ID:parseUUID(uuid.NewString()),OwnerType:ownerType,OwnerID:ownerID})
+			issue, err = queries.CreateIssueWithOrigin(ctx, db.CreateIssueWithOriginParams{WorkspaceID:b.WorkspaceID,Title:remote.Title,Description:pgtype.Text{String:linearapi.StripPatchbayIssueMarker(remote.Description),Valid:true},Status:remoteStatus(b,remote),Priority:remotePriority(remote.Priority),CreatorType:"member",CreatorID:b.CreatorID,Position:position,DueDate:linearSyncDate(remote.DueDate),Number:number,ProjectID:b.ProjectID,OriginType:pgtype.Text{String:"linear",Valid:true},OriginID:pgtype.UUID{Bytes:originID,Valid:true},ID:dbid.NewV7(),OwnerType:ownerType,OwnerID:ownerID})
 			if err != nil { return err }
 		} else if originErr != nil { return originErr }
 		base, _ := json.Marshal(linearSyncRemoteSnapshot(b,remote))
@@ -186,7 +187,7 @@ func (w *LinearWorker) applyRemote(ctx context.Context, b workerBinding, remote 
 	ownerType, ownerID, ownerErr := linearSyncOwnerPatch(ctx,tx,b,next["owner_id"],issue); if ownerErr != nil { return ownerErr }
 	if changed || issue.ProjectID != b.ProjectID {
 		issue, err = queries.UpdateIssue(ctx,linearSyncUpdateParams(issue,next,b.ProjectID,ownerType,ownerID)); if err != nil { return err }
-		details,_:=json.Marshal(map[string]any{"source":"linear","event_id":eventID,"remote_id":remote.ID}); activityID:=parseUUID(uuid.NewSHA1(uuid.NameSpaceOID,[]byte("linear:applied:"+eventID+":"+remote.ID)).String()); if _, err = queries.CreateActivity(ctx,db.CreateActivityParams{ID:activityID,WorkspaceID:b.WorkspaceID,IssueID:issue.ID,ActorType:pgtype.Text{String:"system",Valid:true},Action:"linear_sync_applied",Details:details}); err != nil { return err }
+		details,_:=json.Marshal(map[string]any{"source":"linear","event_id":eventID,"remote_id":remote.ID}); if _, err = queries.CreateActivity(ctx,db.CreateActivityParams{ID:dbid.NewV7(),WorkspaceID:b.WorkspaceID,IssueID:issue.ID,ActorType:pgtype.Text{String:"system",Valid:true},Action:"linear_sync_applied",Details:details}); err != nil { return err }
 	}
 	common := incoming; if conflicted { for _, field := range linearSharedFields { if valueEqual(next[field],local[field]) && !valueEqual(local[field],incoming[field]) { common[field] = local[field] } } }
 	snapshot, _ := json.Marshal(common)
