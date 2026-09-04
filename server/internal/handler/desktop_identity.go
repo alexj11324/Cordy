@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/mail"
 	"regexp"
 	"strings"
 	"time"
 
+	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/patchbay-ai/patchbay/server/internal/auth"
 	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
@@ -19,6 +21,7 @@ import (
 
 var desktopLocalIdentityCodePattern = regexp.MustCompile(`^pbl_[A-Za-z0-9_-]{43}$`)
 var errDesktopIdentityRejected = errors.New("desktop identity rejected")
+var errDesktopIdentityUnavailable = errors.New("desktop identity unavailable")
 
 type desktopIdentityResponse struct {
 	Email     string `json:"email"`
@@ -78,25 +81,33 @@ func requestDesktopIdentity(ctx context.Context, binding desktopAuthHandoffRedee
 	req.Header.Set("Accept", "application/json")
 	response, err := client.Do(req)
 	if err != nil {
-		return ClerkIdentity{}, errDesktopIdentityRejected
+		slog.WarnContext(ctx, "desktop identity request failed", "stage", "transport", "request_id", chimw.GetReqID(ctx))
+		return ClerkIdentity{}, errDesktopIdentityUnavailable
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return ClerkIdentity{}, errDesktopIdentityRejected
+		slog.WarnContext(ctx, "desktop identity request failed", "stage", "upstream_response", "upstream_status", response.StatusCode, "request_id", chimw.GetReqID(ctx))
+		if response.StatusCode == http.StatusUnauthorized {
+			return ClerkIdentity{}, errDesktopIdentityRejected
+		}
+		return ClerkIdentity{}, errDesktopIdentityUnavailable
 	}
 	raw, err := io.ReadAll(io.LimitReader(response.Body, 8193))
 	if err != nil || len(raw) > 8192 {
-		return ClerkIdentity{}, errDesktopIdentityRejected
+		slog.WarnContext(ctx, "desktop identity request failed", "stage", "response_body", "request_id", chimw.GetReqID(ctx))
+		return ClerkIdentity{}, errDesktopIdentityUnavailable
 	}
 	var identity desktopIdentityResponse
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if decoder.Decode(&identity) != nil || !errors.Is(decoder.Decode(&struct{}{}), io.EOF) {
-		return ClerkIdentity{}, errDesktopIdentityRejected
+		slog.WarnContext(ctx, "desktop identity request failed", "stage", "response_json", "request_id", chimw.GetReqID(ctx))
+		return ClerkIdentity{}, errDesktopIdentityUnavailable
 	}
 	address, err := mail.ParseAddress(identity.Email)
 	if err != nil || address.Address != identity.Email || len(identity.Email) > 320 || len(identity.Name) > 512 || len(identity.AvatarURL) > 2048 {
-		return ClerkIdentity{}, errDesktopIdentityRejected
+		slog.WarnContext(ctx, "desktop identity request failed", "stage", "identity_fields", "request_id", chimw.GetReqID(ctx))
+		return ClerkIdentity{}, errDesktopIdentityUnavailable
 	}
 	return ClerkIdentity{Email: strings.ToLower(identity.Email), Name: identity.Name, AvatarURL: identity.AvatarURL}, nil
 }
@@ -118,11 +129,17 @@ func (h *Handler) redeemLocalDesktopSession(w http.ResponseWriter, r *http.Reque
 	// Concurrent redemptions serialize here; user creation and consumption commit together.
 	consumed, err := queries.ConsumeDesktopLocalAuthAttempt(r.Context(), db.ConsumeDesktopLocalAuthAttemptParams{State: req.State, CodeChallenge: desktopHandoffCodeChallenge(req.CodeVerifier)})
 	if err != nil || consumed != 1 {
+		slog.WarnContext(r.Context(), "desktop login rejected", "stage", "local_binding", "database_error", err != nil, "request_id", chimw.GetReqID(r.Context()))
 		writeError(w, http.StatusUnauthorized, "invalid desktop identity grant")
 		return
 	}
 	identity, err := h.redeemDesktopIdentity(r.Context(), req)
 	if err != nil {
+		if errors.Is(err, errDesktopIdentityUnavailable) {
+			writeError(w, http.StatusBadGateway, "desktop login temporarily unavailable; sign in again")
+			return
+		}
+		slog.WarnContext(r.Context(), "desktop login rejected", "stage", "identity_grant", "request_id", chimw.GetReqID(r.Context()))
 		// A consumed remote grant cannot be recovered safely; start a fresh login.
 		writeError(w, http.StatusUnauthorized, "desktop login expired; sign in again")
 		return
@@ -155,5 +172,6 @@ func (h *Handler) redeemLocalDesktopSession(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusInternalServerError, "failed to create desktop session")
 		return
 	}
+	slog.InfoContext(r.Context(), "desktop login completed", "stage", "local_session_committed", "request_id", chimw.GetReqID(r.Context()))
 	writeJSON(w, http.StatusOK, map[string]string{"token": token})
 }

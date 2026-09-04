@@ -13,18 +13,16 @@ import { useSearchParams } from "next/navigation";
 import { AuthShell } from "@/components/auth-shell";
 import { AccountsLoginForm } from "@/components/accounts-login-form";
 import {
-  BrokerApiError,
   completeDesktopGoogleAttempt,
   registerDesktopGoogleAttempt,
 } from "@/lib/broker-client";
 import {
   buildDesktopCallbackUrl,
+  desktopAttemptStorageKey,
   readDesktopHandoffBinding,
 } from "@/lib/desktop-handoff";
 import { useAuthMessages } from "@/lib/auth-messages";
 import { resolveStandaloneReturnUrl } from "@/lib/redirect";
-
-const ATTEMPT_STORAGE_PREFIX = "patchbay_desktop_attempt:";
 
 export default function Page() {
   return (
@@ -38,13 +36,16 @@ function Content() {
   const params = useSearchParams();
   const binding = useMemo(() => readDesktopHandoffBinding(params), [params]);
   const desktopRequest = params.get("platform") === "desktop";
-  const { isLoaded, isSignedIn, getToken } = useAuth();
+  const { isLoaded, isSignedIn, sessionId, getToken } = useAuth();
   const { signOut } = useClerk();
   const messages = useAuthMessages();
   const redirecting = useRef(false);
   const handoffAttempted = useRef(false);
   const registering = useRef(false);
+  const retiringSession = useRef<string | null>(null);
   const [error, setError] = useState(false);
+  const [restartRequired, setRestartRequired] = useState(false);
+  const [prepared, setPrepared] = useState(false);
   const [callbackUrl, setCallbackUrl] = useState<string | null>(null);
   const [handoffStarted, setHandoffStarted] = useState(false);
 
@@ -55,8 +56,8 @@ function Content() {
     );
   }, [binding, params]);
   const storageKey = binding
-    ? `${ATTEMPT_STORAGE_PREFIX}${binding.state}`
-    : ATTEMPT_STORAGE_PREFIX;
+    ? desktopAttemptStorageKey(binding.state)
+    : "";
 
   const complete = useCallback(async () => {
     if (!binding) {
@@ -80,19 +81,12 @@ function Content() {
           result.callbackProtocol,
         ),
       );
-    } catch (failure) {
+    } catch {
+      setRestartRequired(true);
       setHandoffStarted(false);
-      if (
-        failure instanceof BrokerApiError &&
-        (failure.status === 401 || failure.status === 409)
-      ) {
-        window.sessionStorage.removeItem(storageKey);
-        await signOut({ redirectUrl: returnUrl }).catch(() => setError(true));
-        return;
-      }
       setError(true);
     }
-  }, [binding, getToken, returnUrl, signOut, storageKey]);
+  }, [binding, getToken, storageKey]);
 
   useEffect(() => {
     if (!callbackUrl) return;
@@ -119,35 +113,40 @@ function Content() {
       return;
     }
 
-    if (isSignedIn) {
-      if (handoffAttempted.current) return;
+    // A returning authentication has a registered attempt in this tab. A new
+    // Desktop request must prepare fresh authentication before rendering a form.
+    if (!prepared) {
+      if (window.sessionStorage.getItem(storageKey) === binding.codeChallenge) {
+        setPrepared(true);
+        return;
+      }
+      if (registering.current) return;
+      registering.current = true;
+      void (async () => {
+        await registerDesktopGoogleAttempt({ state: binding.state, code_challenge: binding.codeChallenge });
+        if (isSignedIn) {
+          if (!sessionId) throw new Error("Active session unavailable");
+          retiringSession.current = sessionId;
+          await signOut(() => undefined, { sessionId });
+        }
+        window.sessionStorage.setItem(storageKey, binding.codeChallenge);
+        setPrepared(true);
+      })().catch(() => setError(true));
+      return;
+    }
+    if (retiringSession.current && sessionId === retiringSession.current) return;
+    if (isSignedIn && !handoffAttempted.current) {
       handoffAttempted.current = true;
       void complete();
-      return;
     }
-
-    if (window.sessionStorage.getItem(storageKey) === binding.codeChallenge) {
-      return;
-    }
-    if (registering.current) return;
-    registering.current = true;
-    void registerDesktopGoogleAttempt({
-      state: binding.state,
-      code_challenge: binding.codeChallenge,
-    })
-      .then(() => {
-        window.sessionStorage.setItem(storageKey, binding.codeChallenge);
-      })
-      .catch(() => setError(true))
-      .finally(() => {
-        registering.current = false;
-      });
   }, [
     binding,
     complete,
     desktopRequest,
     isLoaded,
     isSignedIn,
+    sessionId,
+    prepared,
     returnUrl,
     signOut,
     storageKey,
@@ -157,16 +156,23 @@ function Content() {
     return (
       <AuthShell>
         <div className="accounts-auth-message">
-          <p role="alert">{messages.desktopFailed}</p>
-          <button type="button" onClick={() => window.location.reload()}>
+          <p role="alert">{restartRequired ? messages.desktopRestart : messages.desktopFailed}</p>
+          {!restartRequired && <button type="button" onClick={() => window.location.reload()}>
             {messages.retry}
-          </button>
+          </button>}
         </div>
       </AuthShell>
     );
   }
 
-  const finishing = Boolean(callbackUrl) || handoffStarted;
+  const awaitingSignOut = Boolean(retiringSession.current && sessionId === retiringSession.current);
+  if (!isLoaded || (binding && (!prepared || awaitingSignOut))) {
+    return <AuthShell><p role="status">{messages.preparing}</p></AuthShell>;
+  }
+
+  // Render from the authentication state itself: an effect must not briefly
+  // expose the account form before it starts completing an authenticated return.
+  const finishing = Boolean(callbackUrl) || handoffStarted || Boolean(isSignedIn);
 
   if (finishing) {
     return (

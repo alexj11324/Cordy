@@ -1,3 +1,5 @@
+import { resolveAuthLocale } from "./auth-locale";
+
 const VALUE = /^[A-Za-z0-9._~-]{43,128}$/;
 const CODE = /^pb[dl]_[A-Za-z0-9_-]{43}$/;
 const PROTOCOL =
@@ -28,6 +30,7 @@ export function readDesktopHandoffBinding(
     code_challenge: codeChallenge,
   });
   if (local) query.set("session_mode", "local");
+  if (params.has("locale")) query.set("locale", resolveAuthLocale(params.get("locale")).locale);
   return { state, codeChallenge, query: query.toString(), local };
 }
 
@@ -64,3 +67,5 @@ export const isDesktopCode = (value: unknown): value is string =>
 
 export const isDesktopCallbackProtocol = (value: unknown): value is string =>
   typeof value === "string" && PROTOCOL.test(value);
+
+export const desktopAttemptStorageKey = (state: string) => `patchbay_desktop_attempt:${state}`;

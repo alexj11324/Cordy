@@ -35,6 +35,7 @@ vi.mock("@clerk/nextjs", () => ({
 
 vi.mock("@/lib/auth-messages", () => ({
   useAuthMessages: () => ({
+    login: "Sign in",
     createAccount: "Create an account",
     emailDescription: "Enter your email below to create your account",
     emailPlaceholder: "name@example.com",
@@ -101,7 +102,7 @@ describe("AccountsLoginForm", () => {
     render(<AccountsLoginForm returnUrl="/login" />);
 
     expect(
-      screen.getByRole("heading", { name: "Create an account" }),
+      screen.getByRole("heading", { name: "Sign in" }),
     ).toBeInTheDocument();
     expect(screen.getByPlaceholderText("name@example.com")).toBeInTheDocument();
     expect(

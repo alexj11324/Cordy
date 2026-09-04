@@ -17,7 +17,6 @@ import {
 } from "@patchbay/core/i18n";
 import { I18nProvider } from "@patchbay/core/i18n/react";
 import { useAuthStore } from "@patchbay/core/auth";
-import { useWelcomeStore } from "@patchbay/core/onboarding";
 import { workspaceKeys } from "@patchbay/core/workspace/queries";
 import { useWorkspaceList } from "@patchbay/core/workspace";
 import { api, ApiClient } from "@patchbay/core/api";
@@ -44,6 +43,7 @@ import { useTabStore } from "./stores/tab-store";
 import { useWindowOverlayStore } from "./stores/window-overlay-store";
 import { useOpenSettingsShortcut } from "./hooks/use-open-settings-shortcut";
 import { useDaemonIPCBridge } from "./platform/daemon-ipc-bridge";
+import { handleDaemonLogout } from "./platform/daemon-logout";
 import { syncDaemonOnLogin } from "./platform/daemon-login-sync";
 import { createDesktopLocaleAdapter } from "./platform/i18n-adapter";
 import { RESOURCES } from "@patchbay/views/locales";
@@ -139,6 +139,7 @@ function AppContent() {
   // finishes, so IndexRedirect gets a definitive workspace state on
   // first render.
   const [bootstrapping, setBootstrapping] = useState(false);
+  const [handoffFailed, setHandoffFailed] = useState(false);
 
   const runtimeConfig = window.desktopAPI.runtimeConfig.ok
     ? window.desktopAPI.runtimeConfig.config
@@ -167,6 +168,7 @@ function AppContent() {
   useEffect(() => {
     return window.desktopAPI.onAuthHandoff(async ({ code, state }) => {
       setBootstrapping(true);
+      setHandoffFailed(false);
       let acknowledged = false;
       try {
         const completion = await completeDesktopHandoff(code, state, {
@@ -177,7 +179,10 @@ function AppContent() {
             useAuthStore.getState().retryAuthentication(),
         });
         acknowledged = completion.acknowledged;
-        if (!completion.authenticated) return completion.acknowledged;
+        if (!completion.authenticated) {
+          setHandoffFailed(true);
+          return completion.acknowledged;
+        }
         // Seed React Query cache with the workspace list so the index-route
         // redirect (routes.tsx `IndexRedirect`) can resolve the initial
         // destination without a second fetch. Workspace side-effects
@@ -187,6 +192,7 @@ function AppContent() {
         qc.setQueryData(workspaceKeys.list(), wsList);
         return completion.acknowledged;
       } catch {
+        setHandoffFailed(true);
         // Keep transient handoff failures queued for the preload retry signal.
         return acknowledged;
       } finally {
@@ -369,7 +375,9 @@ function AppContent() {
     );
   }
 
-  return user ? <DesktopShell /> : <DesktopLoginPage />;
+  return user ? <DesktopShell /> : (
+    <DesktopLoginPage handoffFailed={handoffFailed} onRestart={() => setHandoffFailed(false)} />
+  );
 }
 
 function BlockingRuntimeConfigError({ message }: { message: string }) {
@@ -386,37 +394,6 @@ function BlockingRuntimeConfigError({ message }: { message: string }) {
       </div>
     </div>
   );
-}
-
-// On logout, wipe desktop-only in-memory state and stop the daemon so that
-// a subsequent login as a different user never inherits the previous user's
-// tabs, overlay, or credentials. Zustand persist only writes to localStorage;
-// useLogout clears the storage key, but the live stores stay populated until
-// we explicitly reset them here.
-async function handleDaemonLogout() {
-  // Report synchronously before async daemon cleanup so a rapidly closed main
-  // window cannot leave authenticated issue renderers behind.
-  window.desktopAPI.reportAuthSession?.(null);
-  useTabStore.getState().reset();
-  useWindowOverlayStore.getState().close();
-  // Drop any post-onboarding welcome signal so user B logging in next
-  // doesn't inherit user A's pending modal state.
-  useWelcomeStore.getState().reset();
-  try {
-    await window.daemonAPI.clearToken();
-  } catch {
-    // Best-effort — clearing is followed by stop which also hardens state.
-  }
-  try {
-    await window.daemonAPI.stop();
-  } catch {
-    // Daemon may already be stopped.
-  }
-  try {
-    await window.desktopAPI.disableCloudMode();
-  } catch {
-    // Main keeps the cloud mode gate closed even when teardown is best effort.
-  }
 }
 
 type BootState =
@@ -565,7 +542,7 @@ export default function App() {
       runtimeConfig.accountsUrl,
       (state, codeChallenge) =>
         handoffClient.initiateDesktopAuthHandoff(state, codeChallenge),
-      { sessionApiUrl: runtimeConfig.apiUrl },
+      { sessionApiUrl: runtimeConfig.apiUrl, locale },
     );
     const result = await window.desktopAPI.enableCloudMode();
     if (!result.ok) {
@@ -578,7 +555,7 @@ export default function App() {
       throw error;
     }
     setBootState({ kind: "cloud" });
-  }, [runtimeConfigResult]);
+  }, [runtimeConfigResult, locale]);
 
   const enterGuest = useCallback((session: LocalGuestSession) => {
     setBootState({ kind: "guest", session });
@@ -630,9 +607,12 @@ export default function App() {
       .getGuestSession()
       .then(async (result) => {
         if (!active) return;
+        const mainMode = await window.desktopAPI.getGuestMode();
+        if (!active) return;
         const startupMode = resolveDesktopStartupMode(
           result,
           Boolean(localStorage.getItem("patchbay_token")),
+          mainMode,
         );
         if (startupMode === "guest-error") {
           setBootState({ kind: "guest-error" });

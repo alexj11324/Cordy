@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
   complete: vi.fn(),
   getToken: vi.fn(),
   signOut: vi.fn(),
-  auth: { isLoaded: true, isSignedIn: false },
+  auth: { isLoaded: true, isSignedIn: false, sessionId: "session-1" },
   searchParams: { current: new URLSearchParams() },
 }));
 
@@ -44,10 +44,12 @@ vi.mock("@/lib/broker-client", () => ({
 
 vi.mock("@/lib/auth-messages", () => ({
   useAuthMessages: () => ({
+    preparing: "Preparing sign-in…",
     brand: "Patchbay",
     quote: "Patchbay quote",
     login: "Login",
     desktopFailed: "The desktop sign-in could not be completed.",
+    desktopRestart: "Return to Patchbay and start sign-in again.",
     opening: "Opening Patchbay…",
     finishing: "Finishing sign-in…",
     open: "Open Patchbay",
@@ -62,6 +64,7 @@ beforeEach(() => {
   HTMLFormElement.prototype.submit = originalFormSubmit;
   mocks.auth.isLoaded = true;
   mocks.auth.isSignedIn = false;
+  mocks.auth.sessionId = "session-1";
   mocks.register.mockReset().mockResolvedValue(undefined);
   mocks.complete.mockReset();
   mocks.getToken.mockReset();
@@ -95,12 +98,13 @@ describe("Accounts desktop login", () => {
     );
   });
 
-  it("keeps the login form visible while Clerk is still loading a desktop binding", () => {
+  it("shows preparation until Clerk has determined the session", () => {
     mocks.auth.isLoaded = false;
 
     render(<Page />);
 
-    expect(screen.getByTestId("accounts-login-form")).toBeInTheDocument();
+    expect(screen.queryByTestId("accounts-login-form")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Preparing sign-in");
     expect(screen.queryByText("Opening Patchbay…")).not.toBeInTheDocument();
   });
 
@@ -140,6 +144,7 @@ describe("Accounts desktop login", () => {
   });
 
   it("completes a local login through the broker without posting a bearer to localhost", async () => {
+    window.sessionStorage.setItem(`patchbay_desktop_attempt:${STATE}`, CHALLENGE);
     mocks.auth.isSignedIn = true;
     mocks.getToken.mockResolvedValue("clerk-session-token");
     mocks.complete.mockResolvedValue({ code: `pbl_${"c".repeat(43)}`, callbackProtocol: "patchbay" });
@@ -154,37 +159,43 @@ describe("Accounts desktop login", () => {
     expect(document.querySelector('input[name="session"]')).toBeNull();
   });
 
-  it("completes a production desktop binding even if Clerk signs in while register is in flight", async () => {
-    let resolveRegister: ((value: undefined) => void) | undefined;
-    mocks.register.mockReturnValue(
-      new Promise((resolve) => {
-        resolveRegister = resolve;
-      }),
-    );
-
-    const { rerender } = render(<Page />);
-    expect(await screen.findByTestId("accounts-login-form")).toBeInTheDocument();
-    await waitFor(() => expect(mocks.register).toHaveBeenCalledOnce());
-
+  it("prepares an existing session before showing the form, without attempting completion or redirecting", async () => {
     mocks.auth.isSignedIn = true;
-    mocks.getToken.mockResolvedValue("clerk-session-token");
-    mocks.complete.mockResolvedValue({
-      code: `pbd_${"c".repeat(43)}`,
-      callbackProtocol: "patchbay",
-    });
-    rerender(<Page />);
+    mocks.signOut.mockImplementation(async () => { mocks.auth.isSignedIn = false; mocks.auth.sessionId = ""; });
+    render(<Page />);
+    expect(screen.getByRole("status")).toHaveTextContent("Preparing sign-in");
+    expect(await screen.findByTestId("accounts-login-form")).toBeInTheDocument();
+    expect(mocks.register).toHaveBeenCalledOnce();
+    expect(mocks.signOut).toHaveBeenCalledWith(expect.any(Function), { sessionId: "session-1" });
+    expect(mocks.complete).not.toHaveBeenCalled();
+  });
 
-    await waitFor(() => expect(mocks.complete).toHaveBeenCalledOnce());
-    expect(
-      await screen.findByRole("link", { name: "Open Patchbay" }),
-    ).toHaveAttribute(
-      "href",
-      `patchbay://auth/callback?code=pbd_${"c".repeat(43)}&state=${STATE}`,
-    );
+  it("does not expose the form or complete before registration finishes", async () => {
+    let resolveRegister: ((value: undefined) => void) | undefined;
+    mocks.register.mockReturnValue(new Promise((resolve) => { resolveRegister = resolve; }));
+    render(<Page />);
+    await waitFor(() => expect(mocks.register).toHaveBeenCalledOnce());
+    expect(screen.queryByTestId("accounts-login-form")).not.toBeInTheDocument();
+    expect(mocks.complete).not.toHaveBeenCalled();
     resolveRegister?.(undefined);
+    expect(await screen.findByTestId("accounts-login-form")).toBeInTheDocument();
+  });
+
+  it("shows a rejected completion without signing out and looping back to the form", async () => {
+    window.sessionStorage.setItem(`patchbay_desktop_attempt:${STATE}`, CHALLENGE);
+    mocks.auth.isSignedIn = true;
+    mocks.getToken.mockResolvedValue("token");
+    mocks.complete.mockRejectedValue(new Error("rejected"));
+    render(<Page />);
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(mocks.signOut).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("Return to Patchbay");
+    expect(screen.queryByTestId("accounts-login-form")).not.toBeInTheDocument();
   });
 
   it("keeps a clickable desktop callback when production complete cannot auto-open the app", async () => {
+    window.sessionStorage.setItem(`patchbay_desktop_attempt:${STATE}`, CHALLENGE);
     mocks.auth.isSignedIn = true;
     mocks.getToken.mockResolvedValue("clerk-session-token");
     mocks.complete.mockResolvedValue({
@@ -203,4 +214,16 @@ describe("Accounts desktop login", () => {
     expect(screen.getByText("Finishing sign-in…")).toBeInTheDocument();
     expect(screen.queryByText("Opening Patchbay…")).not.toBeInTheDocument();
   });
+});
+
+it("waits for the session notification after signOut resolves, without exposing a stale signed-in form", async () => {
+  mocks.auth.isSignedIn = true;
+  const { rerender } = render(<Page />);
+  await waitFor(() => expect(mocks.signOut).toHaveBeenCalledOnce());
+  expect(screen.queryByTestId("accounts-login-form")).not.toBeInTheDocument();
+  expect(mocks.complete).not.toHaveBeenCalled();
+  mocks.auth.isSignedIn = false;
+  mocks.auth.sessionId = "";
+  rerender(<Page />);
+  expect(await screen.findByTestId("accounts-login-form")).toBeInTheDocument();
 });

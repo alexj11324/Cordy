@@ -216,6 +216,13 @@ async function redeemSyntheticLogin(browser, credentials, publishableKey) {
       `desktop login attempt registration: ${registrationBody}`,
     );
 
+    // Prepare through the actual login page before using the synthetic ticket.
+    // This establishes the same tab-local attempt state as a human login.
+    await page.goto(`${ACCOUNTS_ORIGIN}/login?${query}`, {
+      waitUntil: "domcontentloaded",
+    });
+    await page.getByTestId("accounts-login-form").waitFor({ state: "visible" });
+
     await page.goto(`${ACCOUNTS_ORIGIN}/oauth/google/callback?${query}`, {
       waitUntil: "domcontentloaded",
     });

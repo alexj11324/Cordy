@@ -137,3 +137,8 @@ describe("desktop auth handoff", () => {
     expect(localStorage.getItem(PENDING_HANDOFF_KEY)).toBeNull();
   });
 });
+
+it("sends Desktop's language to the Accounts first render", async () => {
+  const url = await createDesktopLoginUrl("https://accounts.aspectlylabs.com", vi.fn().mockResolvedValue({ registered: true }), { locale: "zh-Hans" });
+  expect(new URL(url).searchParams.get("locale")).toBe("zh-Hans");
+});

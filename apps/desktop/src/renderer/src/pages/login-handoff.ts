@@ -87,7 +87,7 @@ export async function createDesktopLoginUrl(
     state: string,
     codeChallenge: string,
   ) => Promise<{ registered: boolean }>,
-  options?: { sessionApiUrl?: string },
+  options?: { sessionApiUrl?: string; locale?: string },
 ): Promise<string> {
   const verifier = randomBase64Url(32);
   const digest = await crypto.subtle.digest(
@@ -110,6 +110,7 @@ export async function createDesktopLoginUrl(
 
   const url = new URL(`${accountsUrl.replace(/\/+$/, "")}/login`);
   url.searchParams.set("platform", "desktop");
+  if (options?.locale) url.searchParams.set("locale", options.locale);
   url.searchParams.set("state", state);
   url.searchParams.set("code_challenge", codeChallenge);
   const sessionApi = loopbackSessionApiUrl(options?.sessionApiUrl ?? "");

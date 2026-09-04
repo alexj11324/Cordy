@@ -1,10 +1,10 @@
 "use client";
-import { useEffect, useState } from "react";
+import { createContext, createElement, useContext, type ReactNode } from "react";
 import en from "../locales/en.json";
 import ja from "../locales/ja.json";
 import ko from "../locales/ko.json";
 import zhHans from "../locales/zh-Hans.json";
-import { resolveAuthLocale, type AuthLocale } from "./auth-locale";
+import { type AuthLocale } from "./auth-locale";
 type Messages = typeof en;
 const locales: Record<AuthLocale, Messages> = {
   en,
@@ -13,11 +13,12 @@ const locales: Record<AuthLocale, Messages> = {
   "zh-Hans": zhHans,
 };
 
+const AuthMessagesContext = createContext<Messages>(en);
+
+export function AuthMessagesProvider({ locale, children }: { locale: AuthLocale; children: ReactNode }) {
+  return createElement(AuthMessagesContext.Provider, { value: locales[locale] }, children);
+}
+
 export function useAuthMessages(): Messages {
-  const [messages, setMessages] = useState<Messages>(en);
-  useEffect(() => {
-    const { locale } = resolveAuthLocale(navigator.language);
-    setMessages(locales[locale]);
-  }, []);
-  return messages;
+  return useContext(AuthMessagesContext);
 }

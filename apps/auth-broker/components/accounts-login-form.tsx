@@ -366,7 +366,7 @@ export function AccountsLoginForm({ returnUrl }: AccountsLoginFormProps) {
   return (
     <div className="accounts-login-form" data-testid="accounts-login-form">
       <div className="accounts-login-form__heading">
-        <h1>{messages.createAccount}</h1>
+        <h1>{messages.login}</h1>
         <p>{messages.emailDescription}</p>
       </div>
       <form className="accounts-login-form__fields" onSubmit={handleEmailSubmit}>

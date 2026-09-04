@@ -56,3 +56,11 @@ describe("desktop handoff", () => {
     ).toThrow();
   });
 });
+
+it("preserves Desktop's selected language through OAuth return URLs", () => {
+  const binding = readDesktopHandoffBinding(new URLSearchParams({
+    platform: "desktop", state: "s".repeat(43), code_challenge: "c".repeat(43),
+    locale: "zh-CN", session_mode: "local",
+  }));
+  expect(new URLSearchParams(binding?.query).get("locale")).toBe("zh-Hans");
+});

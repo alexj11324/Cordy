@@ -28,7 +28,10 @@ function requireRuntimeConfig(): {
  * Desktop owns only the native handoff boundary. All Clerk UI lives on the
  * Accounts origin so browser auth, cookies, and recovery stay in one place.
  */
-export function DesktopLoginPage() {
+export function DesktopLoginPage({ handoffFailed = false, onRestart }: {
+  handoffFailed?: boolean;
+  onRestart?: () => void;
+}) {
   const { accountsUrl, sessionApiUrl } = requireRuntimeConfig();
   const { t } = useT("auth");
   const [opening, setOpening] = useState(false);
@@ -38,12 +41,13 @@ export function DesktopLoginPage() {
     if (opening) return;
     setOpening(true);
     setError(false);
+    onRestart?.();
     try {
       const url = await createDesktopLoginUrl(
         accountsUrl,
         (state, codeChallenge) =>
           api.initiateDesktopAuthHandoff(state, codeChallenge),
-        { sessionApiUrl },
+        { sessionApiUrl, locale: document.documentElement.lang },
       );
       await window.desktopAPI.openExternal(url);
     } catch {
@@ -79,14 +83,16 @@ export function DesktopLoginPage() {
               ? t(($) => $.desktop.entry.browser_opening)
               : t(($) => $.desktop.entry.browser_button)}
           </Button>
-          {error && (
+          {(error || handoffFailed) && (
             <Alert
               variant="destructive"
               className="mt-5 border-red-900 bg-red-950/40 text-left"
               aria-live="polite"
             >
               <AlertDescription>
-                {t(($) => $.desktop.entry.login_error)}
+                {handoffFailed
+                  ? t(($) => $.desktop.entry.handoff_error)
+                  : t(($) => $.desktop.entry.login_error)}
               </AlertDescription>
             </Alert>
           )}
