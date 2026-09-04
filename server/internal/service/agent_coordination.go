@@ -1048,10 +1048,7 @@ func (s *AgentCoordinationService) processClaim(ctx context.Context, event db.Ag
 		return nil
 	})
 	if err == nil && reviewPublication != nil {
-		if !s.publishCoordinationReviewHandoff(ctx, *reviewPublication) {
-			return createdTask, created, errors.New("coordination: review publication bus is unavailable")
-		}
-		if finalizeErr := s.finalizeCoordinationReviewDispatch(ctx, *reviewPublication); finalizeErr != nil {
+		if finalizeErr := s.publishAndFinalizeCoordinationReviewDispatch(ctx, *reviewPublication); finalizeErr != nil {
 			return createdTask, created, finalizeErr
 		}
 	}
@@ -1481,13 +1478,59 @@ func (s *AgentCoordinationService) publishCoordinationReviewHandoff(ctx context.
 	return true
 }
 
-// finalizeCoordinationReviewDispatch is the second transaction of a review
-// handoff. The first transaction commits the issue transition, durable
-// activity, and inert task while leaving the outbox leased. Only after the
-// synchronous event bus has run subscriber/activity/notification listeners do
-// we promote the task and complete the assignment/outbox together.
-func (s *AgentCoordinationService) finalizeCoordinationReviewDispatch(ctx context.Context, publication coordinationReviewPublication) error {
+// publishAndFinalizeCoordinationReviewDispatch is the second phase of a
+// review handoff. It locks the current issue, revalidates the selected
+// reviewer, publishes all synchronous side effects while that lock is held,
+// then promotes the inert task and completes the assignment/outbox in the
+// same transaction. A retry after a crash reuses the durable assignment IDs.
+func (s *AgentCoordinationService) publishAndFinalizeCoordinationReviewDispatch(ctx context.Context, publication coordinationReviewPublication) error {
 	return s.runInTx(ctx, func(qtx *db.Queries) error {
+		currentIssue, err := qtx.LockAgentCoordinationIssueForUpdate(ctx, db.LockAgentCoordinationIssueForUpdateParams{
+			IssueID: publication.updated.ID,
+			WorkspaceID: publication.updated.WorkspaceID,
+		})
+		if err != nil {
+			return fmt.Errorf("coordination: revalidate review issue: %w", err)
+		}
+		assignment, err := qtx.GetAgentCoordinationAssignmentForLease(ctx, db.GetAgentCoordinationAssignmentForLeaseParams{
+			EventID:      publication.eventID,
+			WorkspaceID:  publication.updated.WorkspaceID,
+			IssueID:      publication.updated.ID,
+			LeaseOwner:   publication.eventLeaseOwner,
+		})
+		if err != nil {
+			return fmt.Errorf("coordination: reload review assignment: %w", err)
+		}
+		if !coordinationReviewPublicationStillCurrent(ctx, qtx, currentIssue, publication) {
+			if currentTask, taskErr := qtx.GetActiveCoordinationTask(ctx, db.GetActiveCoordinationTaskParams{
+				WorkspaceID:  publication.updated.WorkspaceID,
+				IssueID:      publication.updated.ID,
+				AgentID:      publication.updated.ReviewerID,
+				AssignmentID: assignment.ID,
+			}); taskErr == nil && (currentTask.Status == "deferred" || currentTask.Status == "queued") {
+				if _, cancelErr := qtx.CancelAgentTask(ctx, currentTask.ID); cancelErr != nil {
+					return fmt.Errorf("coordination: cancel stale review task: %w", cancelErr)
+				}
+			} else if taskErr != nil && !errors.Is(taskErr, pgx.ErrNoRows) {
+				return fmt.Errorf("coordination: load stale review task: %w", taskErr)
+			}
+			if err := s.completeClaimedAssignment(ctx, qtx, db.AgentCoordinationOutbox{
+				ID:          publication.eventID,
+				WorkspaceID: publication.updated.WorkspaceID,
+				IssueID:     publication.updated.ID,
+				LeaseOwner:  publication.eventLeaseOwner,
+			}, assignment, map[string]any{
+				"outcome": "stale_dispatch",
+				"reason":  "review handoff became stale before publication",
+			}, "review handoff became stale before publication"); err != nil {
+				return err
+			}
+			return nil
+		}
+		publication.updated = currentIssue
+		if !s.publishCoordinationReviewHandoff(ctx, publication) {
+			return errors.New("coordination: review publication bus is unavailable")
+		}
 		task, err := qtx.PromoteCoordinationAgentTaskForLease(ctx, db.PromoteCoordinationAgentTaskForLeaseParams{
 			AssignmentID: publication.assignmentID,
 			EventID:      publication.eventID,
@@ -1523,10 +1566,16 @@ func (s *AgentCoordinationService) finalizeCoordinationReviewDispatch(ctx contex
 			return ErrCoordinationLeaseLost
 		}
 		return s.completeClaimedOutbox(ctx, qtx, db.AgentCoordinationOutbox{
-			ID:        publication.eventID,
+			ID:         publication.eventID,
 			LeaseOwner: publication.eventLeaseOwner,
 		})
 	})
+}
+
+func coordinationReviewPublicationStillCurrent(ctx context.Context, qtx *db.Queries, issue db.Issue, publication coordinationReviewPublication) bool {
+	return issuestatus.Effective(ctx, qtx, issue.WorkspaceID, issue.Status) == issuestatus.InReview &&
+		coordinationText(issue.ReviewerType) == "agent" &&
+		sameCoordinationUUID(issue.ReviewerID, publication.updated.ReviewerID)
 }
 
 func coordinationIssueUpdatePublicationKey(publication string, issue db.Issue, previousReviewerType pgtype.Text, previousReviewerID pgtype.UUID) string {

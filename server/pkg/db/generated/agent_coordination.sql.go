@@ -836,6 +836,65 @@ func (q *Queries) LockAgentCoordinationIssue(ctx context.Context, arg LockAgentC
 	return i, err
 }
 
+const lockAgentCoordinationIssueForUpdate = `-- name: LockAgentCoordinationIssueForUpdate :one
+SELECT issue.id, issue.workspace_id, issue.title, issue.description, issue.status, issue.priority, issue.executor_type, issue.executor_id, issue.creator_type, issue.creator_id, issue.parent_issue_id, issue.acceptance_criteria, issue.context_refs, issue.position, issue.due_date, issue.created_at, issue.updated_at, issue.number, issue.project_id, issue.origin_type, issue.origin_id, issue.first_executed_at, issue.start_date, issue.metadata, issue.stage, issue.properties, issue.revision, issue.last_activity_at, issue.owner_type, issue.owner_id, issue.reviewer_type, issue.reviewer_id, issue.executor_generation
+FROM issue
+WHERE issue.id = $1
+  AND issue.workspace_id = $2
+FOR UPDATE
+`
+
+type LockAgentCoordinationIssueForUpdateParams struct {
+	IssueID     pgtype.UUID `json:"issue_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+// The publication phase holds the issue row while synchronous subscriber,
+// activity, and notification listeners run. A key-share lock protects the
+// delete boundary but still permits ordinary issue updates; publication needs
+// the stronger lock so a stale review handoff cannot be committed between
+// revalidation and event fanout.
+func (q *Queries) LockAgentCoordinationIssueForUpdate(ctx context.Context, arg LockAgentCoordinationIssueForUpdateParams) (Issue, error) {
+	row := q.db.QueryRow(ctx, lockAgentCoordinationIssueForUpdate, arg.IssueID, arg.WorkspaceID)
+	var i Issue
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Title,
+		&i.Description,
+		&i.Status,
+		&i.Priority,
+		&i.ExecutorType,
+		&i.ExecutorID,
+		&i.CreatorType,
+		&i.CreatorID,
+		&i.ParentIssueID,
+		&i.AcceptanceCriteria,
+		&i.ContextRefs,
+		&i.Position,
+		&i.DueDate,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Number,
+		&i.ProjectID,
+		&i.OriginType,
+		&i.OriginID,
+		&i.FirstExecutedAt,
+		&i.StartDate,
+		&i.Metadata,
+		&i.Stage,
+		&i.Properties,
+		&i.Revision,
+		&i.LastActivityAt,
+		&i.OwnerType,
+		&i.OwnerID,
+		&i.ReviewerType,
+		&i.ReviewerID,
+		&i.ExecutorGeneration,
+	)
+	return i, err
+}
+
 const promoteCoordinationAgentTaskForLease = `-- name: PromoteCoordinationAgentTaskForLease :one
 UPDATE agent_task_queue AS task
 SET status = CASE WHEN task.status = 'deferred' THEN 'queued' ELSE task.status END,

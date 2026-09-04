@@ -139,6 +139,18 @@ WHERE issue.id = sqlc.arg('issue_id')
   AND issue.workspace_id = sqlc.arg('workspace_id')
 FOR KEY SHARE;
 
+-- The publication phase holds the issue row while synchronous subscriber,
+-- activity, and notification listeners run. A key-share lock protects the
+-- delete boundary but still permits ordinary issue updates; publication needs
+-- the stronger lock so a stale review handoff cannot be committed between
+-- revalidation and event fanout.
+-- name: LockAgentCoordinationIssueForUpdate :one
+SELECT issue.*
+FROM issue
+WHERE issue.id = sqlc.arg('issue_id')
+  AND issue.workspace_id = sqlc.arg('workspace_id')
+FOR UPDATE;
+
 -- name: LockActiveReviewerTasksForReviewReturn :many
 -- Lock order is reviewer task -> issue, matching coordinator promotion. Only
 -- tasks correlated to a reviewer coordination assignment are eligible; plain
