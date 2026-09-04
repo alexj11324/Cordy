@@ -20,7 +20,7 @@ const previewCommentTriggers = vi.mocked(api.previewCommentTriggers);
 const waltAgent: CommentTriggerPreviewAgent = {
   id: "00000000-0000-0000-0000-000000000001",
   name: "Walt",
-  source: "issue_assignee",
+  source: "issue_executor",
   reason: "",
 };
 const kimAgent: CommentTriggerPreviewAgent = {

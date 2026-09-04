@@ -528,7 +528,7 @@
     "reply_count_other": "返信 {{count}} 件",
     "leave_comment_placeholder": "コメントを残す...",
     "send_tooltip": "送信",
-    "trigger_source_issue_assignee": "担当",
+    "trigger_source_issue_executor": "実行者",
     "trigger_source_mention_agent": "@メンション",
     "trigger_source_mention_team_leader": "Team",
     "trigger_source_unknown": "トリガー",

@@ -38,7 +38,7 @@ const (
 	// stage-completion wakeup). The parent task's accountable human is COPIED,
 	// not chained, so delegation cycles stay harmless (MUL-4302 §3.2).
 	SourceDelegation Source = "delegation"
-	// SourceCommentSource — the issue's standing assignee reacted to an
+	// SourceCommentSource — the issue's standing executor reacted to an
 	// agent/system-authored comment; the human is resolved through
 	// comment.source_task_id (a special case of delegation, MUL-4302 §3.3).
 	SourceCommentSource Source = "comment_source"
@@ -203,7 +203,7 @@ type CommentFacts struct {
 // ClassifyComment resolves attribution for a comment-triggered run from
 // already-fetched comment facts. agentAuthoredSource selects the label used
 // when the trigger comment is agent-authored: SourceCommentSource for the
-// issue-assignee-reacting path, SourceDelegation for an explicit mention /
+// issue-executor-reacting path, SourceDelegation for an explicit mention /
 // thread-parent / team-leader path. The returned UserID is byte-identical to
 // the legacy originator resolution so authorization behavior is unchanged.
 func ClassifyComment(f CommentFacts, agentAuthoredSource Source) Result {
@@ -253,7 +253,7 @@ type DirectFacts struct {
 	CreatorID   pgtype.UUID
 
 	// ActorUserID is the member who PERFORMED the action that enqueued this run
-	// (assigned the issue, promoted the backlog child, created-with-assignee).
+	// (assigned the issue, promoted the backlog child, created-with-executor).
 	// When valid it is the accountable human per MUL-4302 §4 ("执行 assign /
 	// promote 的成员") and takes precedence over the issue creator: the person who
 	// acted, not whoever happened to file the issue, is on the hook. Left invalid

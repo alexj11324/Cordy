@@ -540,7 +540,7 @@
     "reply_count_other": "{{count}} replies",
     "leave_comment_placeholder": "Leave a comment...",
     "send_tooltip": "Send",
-    "trigger_source_issue_assignee": "assignee",
+    "trigger_source_issue_executor": "executor",
     "trigger_source_mention_agent": "@mention",
     "trigger_source_mention_team_leader": "team",
     "trigger_source_unknown": "trigger",

@@ -123,8 +123,8 @@ func TestClassifyDirect_AutomationRootedOriginInheritsAccountableOnly(t *testing
 	}
 }
 
-func TestClassifyComment_AgentAuthoredUsesCommentSourceLabelForAssigneePath(t *testing.T) {
-	// Same facts, but the issue-assignee-reacting path passes comment_source.
+func TestClassifyComment_AgentAuthoredUsesCommentSourceLabelForExecutorPath(t *testing.T) {
+	// Same facts, but the issue-executor-reacting path passes comment_source.
 	got := ClassifyComment(CommentFacts{
 		CommentID:        comment,
 		AuthorType:       "agent",

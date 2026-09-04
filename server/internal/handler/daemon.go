@@ -2283,7 +2283,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		// work to a team leader: direct assign-to-team, comment
 		// @team-mention (even when the issue itself is assigned to a
 		// plain agent — the MUL-3724 case), sub-issue done callback,
-		// automation team-assignee, and retry-clone inheritance. The old
+		// automation team-executor, and retry-clone inheritance. The old
 		// issue.ExecutorType=="team" gate missed the comment-mention
 		// path, so the leader booted with zero team context and
 		// degraded into doing the work itself instead of orchestrating.
@@ -2295,7 +2295,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		// TeamID) and get their briefing from the separate quick-create
 		// branch further below (search `qc.TeamID`). Do not "unify" the
 		// two by deleting that branch: it also sets resp.TeamID /
-		// resp.TeamName so the new issue defaults to the team assignee,
+		// resp.TeamName so the new issue defaults to the team executor,
 		// and there is no issue row to hang this column-based path on.
 		//
 		// We resolve the team directly from task.TeamID rather than
@@ -3026,7 +3026,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 						}
 						// Surface the team identity to the daemon so the
 						// quick-create prompt defaults the new issue's
-						// assignee to the team, not the leader agent.
+						// executor to the team, not the leader agent.
 						resp.TeamID = uuidToString(team.ID)
 						resp.TeamName = team.Name
 						slog.Debug("injected team leader briefing for quick-create",
@@ -4080,7 +4080,7 @@ func (h *Handler) reconcileCommentsOnCompletion(ctx context.Context, task *db.Ag
 		})
 		// For an AGENT author, compensate ONLY explicit @agent/@team mentions.
 		// computeCommentAgentTriggers can also return the assigned-team-leader
-		// fallback (Source = issue-assignee) for a plain worker-agent reply on a
+		// fallback (Source = issue-executor) for a plain worker-agent reply on a
 		// team-assigned issue; that conversational routing is intentionally NOT
 		// replayed here. Restricting to the explicit-mention sources keeps the
 		// invariant unconditional — a plain agent reply / acknowledgement earns
@@ -4139,7 +4139,7 @@ func (h *Handler) reconcileCommentsOnCompletion(ctx context.Context, task *db.Ag
 // produced by an EXPLICIT @agent / @team mention (MUL-4304). It is applied to
 // agent-authored comments during completion reconcile so that only a
 // deliberately-targeted mention earns a replay — the assigned-team-leader
-// fallback, thread-parent / conversation continuation, and issue-assignee
+// fallback, thread-parent / conversation continuation, and issue-executor
 // routing (all non-mention sources) are intentionally excluded, so a plain
 // agent reply or acknowledgement never earns a follow-up here. Member comments
 // are never passed through this filter; they keep their full routing.

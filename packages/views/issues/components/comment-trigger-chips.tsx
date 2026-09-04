@@ -50,8 +50,8 @@ type IssuesT = ReturnType<typeof useT<"issues">>["t"];
 
 function sourceLabel(source: string, t: IssuesT): string {
   switch (source) {
-    case "issue_assignee":
-      return t(($) => $.comment.trigger_source_issue_assignee);
+    case "issue_executor":
+      return t(($) => $.comment.trigger_source_issue_executor);
     case "mention_agent":
       return t(($) => $.comment.trigger_source_mention_agent);
     case "mention_team_leader":
@@ -61,13 +61,13 @@ function sourceLabel(source: string, t: IssuesT): string {
   }
 }
 
-// Assignee / @mention reasons are intentionally omitted: the header
+// Executor / @mention reasons are intentionally omitted: the header
 // (name · source) already says why they fire, so a reason line there would
 // just restate it. Only the team-leader link (non-obvious) and the unknown
 // fallback carry information the header doesn't.
 function sourceReason(agent: CommentTriggerPreviewAgent, t: IssuesT): string | null {
   switch (agent.source) {
-    case "issue_assignee":
+    case "issue_executor":
     case "mention_agent":
       return null;
     case "mention_team_leader":

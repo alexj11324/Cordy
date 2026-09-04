@@ -66,7 +66,7 @@ func TestMergeCommentIntoPendingTask_FailClosedKeepsOriginalSnapshot(t *testing.
 		t.Fatalf("get agent: %v", err)
 	}
 	issue := db.Issue{ID: parseUUID(issueID), WorkspaceID: parseUUID(testWorkspaceID)}
-	trigger := commentAgentTrigger{Agent: agent, Source: commentTriggerSourceIssueAssignee}
+	trigger := commentAgentTrigger{Agent: agent, Source: commentTriggerSourceIssueExecutor}
 
 	readSnapshot := func() (triggerComment, originator, accountable, source string) {
 		if err := testPool.QueryRow(ctx, `

@@ -456,7 +456,7 @@ func (s *TaskService) resolveOriginatorFromTriggerComment(ctx context.Context, w
 // lookup to the task's workspace (MUL-4252).
 //
 // agentAuthoredSource selects the label for an agent-authored trigger comment:
-// attribution.SourceCommentSource for the issue-assignee-reacting path,
+// attribution.SourceCommentSource for the issue-executor-reacting path,
 // attribution.SourceDelegation for an explicit mention / thread-parent /
 // team-leader path.
 func (s *TaskService) attributionFromTriggerComment(ctx context.Context, workspaceID, commentID pgtype.UUID, agentAuthoredSource attribution.Source) attribution.Result {
@@ -542,7 +542,7 @@ func (s *TaskService) attributionForIssueTask(ctx context.Context, issue db.Issu
 		}
 		// A member/agent trigger comment resolves the human (direct_human / delegation
 		// / comment_source). A SYSTEM-authored comment — today the Stage-completion
-		// child-done comment (issue_child_done.go), which wakes the parent assignee
+		// child-done comment (issue_child_done.go), which wakes the parent executor
 		// and threads no actor — carries no human and is not part of any delegation
 		// chain. Classifying it would degrade straight to owner_fallback (the agent's
 		// own owner), which is wrong for a Stage cascade: the woken run should be
@@ -688,10 +688,10 @@ func isDuplicatePendingTaskErr(err error) bool {
 // pendingSlotTakenErr reports whether err means "the (issue, agent) pending slot
 // was already occupied when we tried to enqueue".
 //
-// Two shapes reach RerunIssue. The issue-assignee path surfaces the raw unique
+// Two shapes reach RerunIssue. The issue-executor path surfaces the raw unique
 // violation, while enqueueMentionTaskWithCommentPlan normalizes it into the bare
 // ErrDuplicatePendingTask sentinel — and that is the path taken by EVERY rerun
-// whose target is not the issue's current agent assignee: a team leader, a
+// whose target is not the issue's current agent executor: a team leader, a
 // displaced agent re-fired by task_id, a mentioned agent. Matching only the raw
 // pgconn error meant the reclaim never ran for those, so a system retry winning
 // the slot surfaced as a hard error instead.
@@ -1172,8 +1172,8 @@ func (s *TaskService) enqueueIssueTask(ctx context.Context, issue db.Issue, trig
 
 func (s *TaskService) enqueueIssueTaskWithCommentPlan(ctx context.Context, issue db.Issue, triggerCommentID pgtype.UUID, coalescedCommentIDs []pgtype.UUID, forceFreshSession bool, handoffNote string, actorUserID pgtype.UUID, rerunOfTaskID pgtype.UUID, fireAt pgtype.Timestamptz) (db.AgentTaskQueue, error) {
 	if !issue.ExecutorID.Valid {
-		slog.Error("task enqueue failed", "issue_id", util.UUIDToString(issue.ID), "error", "issue has no assignee")
-		return db.AgentTaskQueue{}, fmt.Errorf("issue has no assignee")
+		slog.Error("task enqueue failed", "issue_id", util.UUIDToString(issue.ID), "error", "issue has no executor")
+		return db.AgentTaskQueue{}, fmt.Errorf("issue has no executor")
 	}
 
 	agent, err := s.Queries.GetAgent(ctx, issue.ExecutorID)
@@ -1190,7 +1190,7 @@ func (s *TaskService) enqueueIssueTaskWithCommentPlan(ctx context.Context, issue
 		return db.AgentTaskQueue{}, fmt.Errorf("agent has no runtime")
 	}
 
-	// The issue assignee reacting to an agent-authored comment is a
+	// The issue executor reacting to an agent-authored comment is a
 	// comment_source attribution (a special case of delegation); a member
 	// comment or direct member assignment is direct_human. attr.UserID is the
 	// same value the pre-MUL-4302 resolver produced, so overlay/authorization
@@ -1289,7 +1289,7 @@ func (s *TaskService) enqueueIssueTaskWithCommentPlan(ctx context.Context, issue
 
 // EnqueueTaskForMention creates a queued task for a mentioned agent on an issue.
 // Unlike EnqueueTaskForIssue, this takes an explicit agent ID rather than
-// deriving it from the issue assignee.
+// deriving it from the issue executor.
 func (s *TaskService) EnqueueTaskForMention(ctx context.Context, issue db.Issue, agentID pgtype.UUID, triggerCommentID pgtype.UUID) (db.AgentTaskQueue, error) {
 	return s.enqueueMentionTask(ctx, issue, agentID, triggerCommentID, false, pgtype.UUID{}, false, "", pgtype.UUID{}, pgtype.UUID{})
 }
@@ -1406,9 +1406,9 @@ func (s *TaskService) enqueueMentionTaskWithCommentPlan(ctx context.Context, iss
 	return task, nil
 }
 
-// EnqueueDeferredAssigneeFallback creates an inert task that becomes claimable
+// EnqueueDeferredExecutorFallback creates an inert task that becomes claimable
 // only after PromoteDueDeferredTasksForRuntime flips it from deferred to queued.
-func (s *TaskService) EnqueueDeferredAssigneeFallback(ctx context.Context, issue db.Issue, agentID, teamID pgtype.UUID, escalationForTaskID pgtype.UUID, triggerCommentID pgtype.UUID, fireAt time.Time) (db.AgentTaskQueue, error) {
+func (s *TaskService) EnqueueDeferredExecutorFallback(ctx context.Context, issue db.Issue, agentID, teamID pgtype.UUID, escalationForTaskID pgtype.UUID, triggerCommentID pgtype.UUID, fireAt time.Time) (db.AgentTaskQueue, error) {
 	agent, err := s.Queries.GetAgent(ctx, agentID)
 	if err != nil {
 		slog.Error("deferred fallback enqueue failed: agent not found", "issue_id", util.UUIDToString(issue.ID), "agent_id", util.UUIDToString(agentID), "error", err)
@@ -1423,7 +1423,7 @@ func (s *TaskService) EnqueueDeferredAssigneeFallback(ctx context.Context, issue
 		return db.AgentTaskQueue{}, fmt.Errorf("agent has no runtime")
 	}
 
-	// The fallback assignee is reacting to the same trigger comment as the primary
+	// The fallback executor is reacting to the same trigger comment as the primary
 	// routed task, so resolve attribution from that comment (member author →
 	// direct_human; agent author → comment_source chain) and stamp it at creation.
 	// Promotion later only flips status, so stamping here keeps the eventual run
@@ -5630,14 +5630,14 @@ func transferPendingSourceContextToRetry(ctx context.Context, q *db.Queries, par
 // Target agent resolution:
 //   - sourceTaskID Valid: rerun the agent that ran that task (and reuse its
 //     leader/worker role). This is what the execution log retry button uses
-//     so a per-row retry survives a subsequent assignee change and correctly
+//     so a per-row retry survives a subsequent executor change and correctly
 //     re-fires the team worker or mention agent whose row was clicked. The
 //     source task's trigger_comment_id is also inherited (when the caller
 //     didn't pass one) so a per-row rerun of a comment- or mention-triggered
 //     task stays comment-triggered — the daemon's buildCommentPrompt path
 //     keys on TriggerCommentID, and losing it would degrade the rerun into
 //     a generic issue run that no longer carries the original comment.
-//   - sourceTaskID empty: fall back to the issue's current assignee (agent
+//   - sourceTaskID empty: fall back to the issue's current executor (agent
 //     or team leader). This preserves the CLI / API contract for callers
 //     that have an issue ID but no specific task to target.
 //
@@ -5670,7 +5670,7 @@ var ErrRerunInvokeNotAllowed = errors.New("rerun: operator not allowed to invoke
 //
 // canInvoke re-validates that the current operator may invoke the RESOLVED
 // target agent, keyed on the historical agent for a task_id rerun and on the
-// current assignee/leader otherwise (MUL-4525). It runs AFTER the target is
+// current executor/leader otherwise (MUL-4525). It runs AFTER the target is
 // resolved but BEFORE any prior task is cancelled or a new one is created, so a
 // caller who can see the issue but cannot invoke its private agent cannot use
 // rerun as a back door — and a blocked rerun mutates nothing. Pass nil only
@@ -5885,9 +5885,9 @@ func (s *TaskService) promoteNewestSurvivingComment(ctx context.Context, ids []p
 }
 
 // enqueueRerunTask enqueues a fresh task for the given agent on the issue.
-// When the target agent is the issue's single-agent assignee we use the
-// assignee-driven path (enqueueIssueTask) so the issue-assignee bookkeeping
-// stays in sync; otherwise (team member, prior assignee that has since been
+// When the target agent is the issue's single-agent executor we use the
+// executor-driven path (enqueueIssueTask) so the issue-executor bookkeeping
+// stays in sync; otherwise (team member, prior executor that has since been
 // reassigned, mention agent) we use the mention path.
 //
 // force_fresh_session is pinned to true on every rerun row on purpose. It is

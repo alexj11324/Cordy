@@ -19,7 +19,7 @@ vi.mock("../../common/actor-avatar", () => ({
 const walt: CommentTriggerPreviewAgent = {
   id: "agent-1",
   name: "Walt",
-  source: "issue_assignee",
+  source: "issue_executor",
   reason: "",
 };
 

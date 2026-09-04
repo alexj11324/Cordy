@@ -1492,7 +1492,7 @@ type CommentTriggerAgentResponse struct {
 type commentAgentTriggerSource string
 
 const (
-	commentTriggerSourceIssueAssignee      commentAgentTriggerSource = "issue_assignee"
+	commentTriggerSourceIssueExecutor      commentAgentTriggerSource = "issue_executor"
 	commentTriggerSourceMentionAgent       commentAgentTriggerSource = "mention_agent"
 	commentTriggerSourceMentionTeamLeader commentAgentTriggerSource = "mention_team_leader"
 	commentTriggerSourceThreadParent       commentAgentTriggerSource = "thread_parent"
@@ -1570,8 +1570,8 @@ func (o commentTriggerComputeOptions) effectiveInvoker() string {
 
 func commentAgentTriggerReason(trigger commentAgentTrigger) string {
 	switch trigger.Source {
-	case commentTriggerSourceIssueAssignee:
-		return "Current issue assignment will trigger this agent."
+	case commentTriggerSourceIssueExecutor:
+		return "This agent is the current issue executor."
 	case commentTriggerSourceMentionAgent:
 		return "This agent was mentioned in the comment."
 	case commentTriggerSourceMentionTeamLeader:
@@ -1790,7 +1790,7 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 	// comment.source_task_id → parent task's originator_user_id) intact across
 	// an agent→agent hop. Without this stamp, a private team leader's
 	// worker-agent whose completion wakes the leader via
-	// routeAssignedTeamLeaderFallback can't pass canInvokeAgent — the worker's
+	// routeTeamExecutorLeaderFallback can't pass canInvokeAgent — the worker's
 	// task originator is unattributed, effectiveUser resolves to "", and the
 	// private-agent gate denies the wake (MUL-4015).
 	//
@@ -2406,9 +2406,9 @@ func commentMergeTerminalOutcome(result commentMergeResult) (status DispatchStat
 func (h *Handler) mergeCommentIntoPendingTask(ctx context.Context, issue db.Issue, trigger commentAgentTrigger, newTriggerCommentID pgtype.UUID, headSha pgtype.Text) commentMergeResult {
 	// Re-attribute the coalescing run to the new comment's human atomically: the
 	// whole attribution snapshot moves, not just the person columns (MUL-4302). An
-	// issue-assignee reaction is comment_source; a mention / thread-parent /
+	// issue-executor reaction is comment_source; a mention / thread-parent /
 	// conversation hop is delegation.
-	isMention := trigger.Source != commentTriggerSourceIssueAssignee
+	isMention := trigger.Source != commentTriggerSourceIssueExecutor
 	attr, err := h.TaskService.AttributionForMergedComment(ctx, issue.WorkspaceID, newTriggerCommentID, isMention, trigger.Agent)
 	if err != nil {
 		// The new comment cannot be re-attributed. REFUSE the merge — keep the
@@ -2584,7 +2584,7 @@ func logCommentEnqueueFailure(msg string, err error, attrs ...any) {
 // fallback) stays best-effort logged and does not affect the returned error.
 func (h *Handler) enqueueSingleCommentTrigger(ctx context.Context, issue db.Issue, triggerCommentID pgtype.UUID, trigger commentAgentTrigger, getEscalationDelay func() time.Duration) error {
 	switch trigger.Source {
-	case commentTriggerSourceIssueAssignee:
+	case commentTriggerSourceIssueExecutor:
 		if trigger.Team != nil {
 			if _, err := h.TaskService.EnqueueTaskForTeamLeader(ctx, issue, trigger.Agent.ID, trigger.Team.ID, triggerCommentID); err != nil {
 				logCommentEnqueueFailure("enqueue team leader task failed", err,
@@ -2635,8 +2635,8 @@ func (h *Handler) enqueueSingleCommentTrigger(ctx context.Context, issue db.Issu
 		if trigger.EscalationFallback.Team != nil {
 			teamID = trigger.EscalationFallback.Team.ID
 		}
-		if _, err := h.TaskService.EnqueueDeferredAssigneeFallback(ctx, issue, trigger.EscalationFallback.Agent.ID, teamID, task.ID, triggerCommentID, time.Now().Add(getEscalationDelay())); err != nil {
-			slog.Warn("enqueue deferred assignee fallback failed",
+		if _, err := h.TaskService.EnqueueDeferredExecutorFallback(ctx, issue, trigger.EscalationFallback.Agent.ID, teamID, task.ID, triggerCommentID, time.Now().Add(getEscalationDelay())); err != nil {
+			slog.Warn("enqueue deferred executor fallback failed",
 				"issue_id", uuidToString(issue.ID),
 				"primary_agent_id", uuidToString(trigger.Agent.ID),
 				"fallback_agent_id", uuidToString(trigger.EscalationFallback.Agent.ID),
@@ -2649,7 +2649,7 @@ func (h *Handler) enqueueSingleCommentTrigger(ctx context.Context, issue db.Issu
 // computeCommentAgentTriggers resolves which agents a comment triggers (deduped
 // by executing agent), plus the per-target list for every EXPLICIT @agent /
 // @team mention (MUL-4525 §2). Targets come only from the explicit-mention path
-// — the implicit routing fallbacks (assignee, thread parent, conversation) were
+// — the implicit routing fallbacks (executor, thread parent, conversation) were
 // never named by the user, so a no-route there is not a silent no-op.
 func (h *Handler) computeCommentAgentTriggers(ctx context.Context, issue db.Issue, content string, parentComment *db.Comment, actorType, actorID string, opts commentTriggerComputeOptions) ([]commentAgentTrigger, []commentMentionTarget) {
 	if isNoteComment(content) {
@@ -2668,7 +2668,7 @@ func (h *Handler) computeCommentAgentTriggers(ctx context.Context, issue db.Issu
 
 	// EXPLICIT @agent / @team mentions are a direct request and win over the
 	// @all broadcast (MUL-5411). @all only suppresses the IMPLICIT routing
-	// fallbacks (assignee / thread parent / conversation) below — it must not
+	// fallbacks (executor / thread parent / conversation) below — it must not
 	// swallow a target the author named by hand. Before this ordering, a
 	// comment carrying both `@all` and `@Preflight` enqueued nothing at all.
 	// `all` is neither "agent" nor "team", so it is skipped inside
@@ -2686,16 +2686,16 @@ func (h *Handler) computeCommentAgentTriggers(ctx context.Context, issue db.Issu
 	if actorType != "member" {
 		// Agent-authored comments do not participate in the member-driven
 		// conversation routing (parent-author / thread-root continuation) or
-		// the member assignee fallback. They retain one narrow path restored
+		// the member executor fallback. They retain one narrow path restored
 		// after MUL-3794 (MUL-3879): a worker-agent result comment on a
 		// team-assigned issue can still wake the assigned team leader, so
 		// the leader→worker→leader coordination loop stays closed. The leader
 		// self-trigger guard lives in
-		// routeAssignedTeamLeaderFallback. Explicit @agent / @team mentions
+		// routeTeamExecutorLeaderFallback. Explicit @agent / @team mentions
 		// are already handled above, so this never double-enqueues a mentioned
 		// target alongside the assigned leader.
 		if issue.ExecutorType.Valid && issue.ExecutorType.String == "team" {
-			if trigger, ok := h.routeAssignedTeamLeaderFallback(ctx, issue, actorType, actorID, opts); ok {
+			if trigger, ok := h.routeTeamExecutorLeaderFallback(ctx, issue, actorType, actorID, opts); ok {
 				return []commentAgentTrigger{trigger}, nil
 			}
 		}
@@ -2734,7 +2734,7 @@ func (h *Handler) computeCommentAgentTriggers(ctx context.Context, issue db.Issu
 			}
 			return triggers, nil
 		}
-		// A plain member-to-member reply must not start the issue assignee just
+		// A plain member-to-member reply must not start the issue executor just
 		// because the thread has no agent owner. Explicit mentions and existing
 		// conversation owners were already resolved above.
 		if parentComment.AuthorType == "member" {
@@ -2924,15 +2924,15 @@ func (h *Handler) routeExecutorFallback(ctx context.Context, issue db.Issue, aut
 		if !ok {
 			return commentAgentTrigger{}, false
 		}
-		return commentAgentTrigger{Agent: agent, Source: commentTriggerSourceIssueAssignee, AlreadyPending: hasPending}, true
+		return commentAgentTrigger{Agent: agent, Source: commentTriggerSourceIssueExecutor, AlreadyPending: hasPending}, true
 	case "team":
-		return h.routeAssignedTeamLeaderFallback(ctx, issue, authorType, authorID, opts)
+		return h.routeTeamExecutorLeaderFallback(ctx, issue, authorType, authorID, opts)
 	default:
 		return commentAgentTrigger{}, false
 	}
 }
 
-func (h *Handler) routeAssignedTeamLeaderFallback(ctx context.Context, issue db.Issue, authorType, authorID string, opts commentTriggerComputeOptions) (commentAgentTrigger, bool) {
+func (h *Handler) routeTeamExecutorLeaderFallback(ctx context.Context, issue db.Issue, authorType, authorID string, opts commentTriggerComputeOptions) (commentAgentTrigger, bool) {
 	team, err := h.Queries.GetTeamInWorkspace(ctx, db.GetTeamInWorkspaceParams{
 		ID:          issue.ExecutorID,
 		WorkspaceID: issue.WorkspaceID,
@@ -2958,7 +2958,7 @@ func (h *Handler) routeAssignedTeamLeaderFallback(ctx context.Context, issue db.
 	if err != nil {
 		return commentAgentTrigger{}, false
 	}
-	return commentAgentTrigger{Agent: agent, Source: commentTriggerSourceIssueAssignee, Team: &team, AlreadyPending: hasPending}, true
+	return commentAgentTrigger{Agent: agent, Source: commentTriggerSourceIssueExecutor, Team: &team, AlreadyPending: hasPending}, true
 }
 
 func (h *Handler) hasPendingTaskForIssueAndAgent(ctx context.Context, issueID, agentID pgtype.UUID, opts commentTriggerComputeOptions) (bool, error) {
@@ -2986,7 +2986,7 @@ func (h *Handler) hasPendingTaskForIssueAndAgent(ctx context.Context, issueID, a
 // by non-owner members (only the agent owner or workspace admin/owner can
 // mention a private agent). Self-mentions are intentionally allowed so an
 // agent running in one issue can explicitly enqueue itself on another (e.g.
-// a child-issue run notifying the parent issue whose assignee is the same
+// a child-issue run notifying the parent issue whose executor is the same
 // agent); runaway loops are prevented by HasPendingTaskForIssueAndAgent
 // dedupe and the natural queued/dispatched coalescing of the task queue.
 // Note: no issue status gate here — @mention is an explicit action and should

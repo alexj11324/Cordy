@@ -46,17 +46,17 @@ func TestCommentMentionsAnyone(t *testing.T) {
 // would wake the issue's assigned team leader.
 func shouldEnqueueTeamLeaderOnCommentForTest(ctx context.Context, issue db.Issue, content, authorType, authorID string) bool {
 	triggers, _ := testHandler.computeCommentAgentTriggers(ctx, issue, content, nil, authorType, authorID, commentTriggerComputeOptions{})
-	return triggersContainIssueAssigneeTeamLeader(triggers)
+	return triggersContainIssueExecutorTeamLeader(triggers)
 }
 
 func shouldEnqueueTeamLeaderOnReplyForTest(ctx context.Context, issue db.Issue, content string, parent *db.Comment, authorType, authorID string) bool {
 	triggers, _ := testHandler.computeCommentAgentTriggers(ctx, issue, content, parent, authorType, authorID, commentTriggerComputeOptions{})
-	return triggersContainIssueAssigneeTeamLeader(triggers)
+	return triggersContainIssueExecutorTeamLeader(triggers)
 }
 
-func triggersContainIssueAssigneeTeamLeader(triggers []commentAgentTrigger) bool {
+func triggersContainIssueExecutorTeamLeader(triggers []commentAgentTrigger) bool {
 	for _, trigger := range triggers {
-		if trigger.Source == commentTriggerSourceIssueAssignee && trigger.Team != nil {
+		if trigger.Source == commentTriggerSourceIssueExecutor && trigger.Team != nil {
 			return true
 		}
 	}
@@ -313,7 +313,7 @@ func TestShouldEnqueueTeamLeaderOnComment_AgentAuthoredWorkerCommentsWakeLeader(
 //   - A member top-level comment that @mentions another agent does NOT
 //     enqueue the team leader (the mentioned agent owns the next step).
 //   - A subsequent member reply to that member-authored root with no explicit
-//     agent mention continues to the root owner instead of the assignee.
+//     agent mention continues to the root owner instead of the executor.
 func TestCreateComment_TeamPlainReplyToMemberParentKeepsRootMentionOwner(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")

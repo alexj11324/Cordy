@@ -509,7 +509,7 @@ func (h *Handler) DeleteTeam(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("transfer team assignees failed", "team_id", uuidToString(team.ID), "error", err)
 	}
 
-	// Mirror the issue-assignee transfer for automations that target this
+	// Mirror the issue-executor transfer for automations that target this
 	// team. Without this, automation.executor_id would still point at the
 	// archived team row and every subsequent dispatch would skip with
 	// "assignee team is archived" — visible to ops but useless to the

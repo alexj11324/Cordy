@@ -9,7 +9,7 @@ import (
 )
 
 // TestPendingSlotTakenErr_RecognizesBothShapes pins the two error shapes that can
-// reach RerunIssue's reclaim branch. The issue-assignee enqueue surfaces the raw
+// reach RerunIssue's reclaim branch. The issue-executor enqueue surfaces the raw
 // unique violation, but enqueueMentionTaskWithCommentPlan normalizes it into the
 // bare ErrDuplicatePendingTask sentinel — and that is the path EVERY rerun takes
 // whose target is not the issue's current agent assignee (team leader, an agent
@@ -24,7 +24,7 @@ func TestPendingSlotTakenErr_RecognizesBothShapes(t *testing.T) {
 		want bool
 	}{
 		{
-			name: "raw unique violation from the issue-assignee path",
+			name: "raw unique violation from the issue-executor path",
 			err:  &pgconn.PgError{Code: "23505", ConstraintName: "idx_one_pending_task_per_issue_agent_v2"},
 			want: true,
 		},

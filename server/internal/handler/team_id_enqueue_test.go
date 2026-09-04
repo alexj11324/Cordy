@@ -15,7 +15,7 @@ import (
 // it enqueues must carry team_id on the task row, so the daemon claim handler
 // can locate the team and inject the briefing (keyed off is_leader_task +
 // team_id, not issue assignee). The issue here is NOT assigned to the team —
-// exactly the comment-mention path that the old issue-assignee gate missed.
+// exactly the comment-mention path that the old issue-executor gate missed.
 func TestCreateComment_TeamMentionStampsTeamIDOnLeaderTask(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
