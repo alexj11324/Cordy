@@ -172,9 +172,8 @@ above or below:
 
 The following are reviewed but are not stale closures: native onboarding and
 Electron acceptance, real DingTalk/Slack/provider flows, deployed messaging
-setup, source-matched development-runtime preparation, and production
-authentication/deployment identity. They remain real acceptance items because
-the audit has no current runtime evidence for them.
+setup, and production authentication/deployment identity. They remain real
+acceptance items because the audit has no current runtime evidence for them.
 
 ## Residual inventory and ownership
 
@@ -322,7 +321,7 @@ events, shared UI and generated SQL. Do not insert a hard-coded/default Agent
 to conceal the missing routing stage. Keep ordinary Agent-owned BYO routing
 unchanged while adding the workspace-owned path.
 
-## Desktop ordinary-build boundary
+## Desktop ordinary-build and development-runtime boundary
 
 `55b539806` restores the Rust-reference split: the public Desktop `build` script
 runs only `electron-vite build`. The unchanged `package.mjs` still prepares the
@@ -333,11 +332,25 @@ main, preload and renderer outputs without a Go/Rust invocation. Renderer build
 time was 2.34s on this prepared worktree, not a backend cold-build benchmark.
 Existing CSS highlight and dynamic-import warnings remain.
 
-This does not complete development-runtime migration: `dev.mjs` still invokes
-the CLI bundler, whose timestamp prevents an exact no-op build claim and whose
-missing-tool/binary paths still permit old or release CLI fallback. Source-matched
-dev runtime preparation, caches, isolated backend/database startup and packaged
-artifact acceptance remain open. No installer or production release was run.
+`e44ab989f` restores the development-runtime boundary for the Go mainline.
+`apps/desktop/scripts/dev-runtime-cache.mjs` fingerprints every non-ignored file
+under `server/`, the target OS/architecture, Go toolchain identity and stable
+build variables; it stores checksum-verified CLI, backend and migration
+artifacts in a user-global content-addressed cache. `prepare-dev-runtime.mjs`
+stages the exact three artifacts into the worktree, while `scripts/dev.sh`
+runs the migration and backend binaries from that staged set before opening
+Electron. `dev.mjs` no longer invokes the packaging-only CLI bundler and sets
+`PATCHBAY_REQUIRE_SOURCE_CLI=1`; the Desktop daemon resolver then refuses
+managed release/PATH fallback in development. Packaging's `bundle-cli.mjs`
+also fails when Go or its output is missing instead of silently producing an
+app that executes another revision.
+
+Focused cache/launcher tests, Desktop's full 81-file/715-test suite, Node
+typecheck, shell syntax and the development-environment registry tests passed
+locally. GitHub Actions remains authoritative for the current head's backend
+and frontend checks. A human-run `make dev`/Electron/daemon smoke path is still
+required before calling native development runtime acceptance complete; agents
+do not run the local Go or Rust pipelines in this repository.
 
 ## Workspace issue category policy
 

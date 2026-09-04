@@ -1,17 +1,15 @@
 #!/usr/bin/env node
 // Builds the `patchbay` CLI from server/cmd/patchbay and copies the binary
-// into apps/desktop/resources/bin/ so electron-vite (dev) and electron-
-// builder (prod) pick it up. Development and packaging invoke this script;
-// ordinary frontend/Electron builds do not prepare a CLI. Source-matched
-// development caching and removal of the fallback below remain separate
-// migration work.
+// into apps/desktop/resources/bin/ so electron-builder can package the exact
+// source revision. Development uses prepare-dev-runtime.mjs instead; ordinary
+// frontend/Electron builds do not prepare a CLI.
 //
 // ldflags mirror `make build` so `patchbay --version` reports a meaningful
 // version / commit / date.
 //
-// Graceful: if `go` is not installed (e.g. frontend-only contributor), we
-// skip the build and fall through to auto-install at runtime. A genuine
-// Go compile error is fatal — you want that to block dev, not hide.
+// A missing Go toolchain or a genuine compile error is fatal. Packaging an app
+// that silently falls back to a release CLI would make the Desktop renderer
+// and backend advertise one revision while executing another.
 
 import { access, chmod, copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
@@ -88,15 +86,6 @@ function git(...args) {
   }
 }
 
-function hasGo() {
-  try {
-    execSync("go version", { stdio: "pipe" });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 async function exists(p) {
   try {
     await access(p, constants.F_OK);
@@ -106,54 +95,41 @@ async function exists(p) {
   }
 }
 
-if (hasGo()) {
-  const version =
-    git("describe", "--tags", "--match", "v[0-9]*", "--always", "--dirty") ||
-    "dev";
-  const commit = git("rev-parse", "--short", "HEAD") || "unknown";
-  const date = new Date().toISOString().replace(/\.\d+Z$/, "Z");
-  const ldflags = `-X main.version=${version} -X main.commit=${commit} -X main.date=${date}`;
+const version =
+  git("describe", "--tags", "--match", "v[0-9]*", "--always", "--dirty") ||
+  "dev";
+const commit = git("rev-parse", "--short", "HEAD") || "unknown";
+const date = new Date().toISOString().replace(/\.\d+Z$/, "Z");
+const ldflags = `-X main.version=${version} -X main.commit=${commit} -X main.date=${date}`;
 
-  console.log(
-    `[bundle-cli] go build → ${srcBinary} (${goos}/${goarch}, version=${version} commit=${commit})`,
-  );
-  await mkdir(join(serverDir, "bin", `${goos}-${goarch}`), { recursive: true });
-  execFileSync(
-    "go",
-    [
-      "build",
-      "-ldflags",
-      ldflags,
-      "-o",
-      srcBinary,
-      "./cmd/patchbay",
-    ],
-    {
-      cwd: serverDir,
-      stdio: "inherit",
-      env: {
-        ...process.env,
-        CGO_ENABLED: "0",
-        GOOS: goos,
-        GOARCH: goarch,
-      },
+console.log(
+  `[bundle-cli] go build → ${srcBinary} (${goos}/${goarch}, version=${version} commit=${commit})`,
+);
+await mkdir(join(serverDir, "bin", `${goos}-${goarch}`), { recursive: true });
+execFileSync(
+  "go",
+  [
+    "build",
+    "-ldflags",
+    ldflags,
+    "-o",
+    srcBinary,
+    "./cmd/patchbay",
+  ],
+  {
+    cwd: serverDir,
+    stdio: "inherit",
+    env: {
+      ...process.env,
+      CGO_ENABLED: "0",
+      GOOS: goos,
+      GOARCH: goarch,
     },
-  );
-} else {
-  console.warn(
-    "[bundle-cli] `go` not found in PATH — skipping CLI build. " +
-      "Desktop will use whatever is already in resources/bin/, or fall back " +
-      "to auto-installing the latest release at runtime.",
-  );
-}
+  },
+);
 
 if (!(await exists(srcBinary))) {
-  console.warn(
-    `[bundle-cli] ${srcBinary} not present — Desktop will fall back to ` +
-      `auto-installing the latest release at runtime.`,
-  );
-  await rm(destDir, { recursive: true, force: true });
-  process.exit(0);
+  throw new Error(`[bundle-cli] Go did not produce ${srcBinary}`);
 }
 
 await rm(destDir, { recursive: true, force: true });

@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dev": "bash scripts/dev.sh",
     "dev:web": "turbo dev --filter=@patchbay/web",
     "dev:docs": "turbo dev --filter=@patchbay/docs",
     "dev:desktop": "turbo dev --filter=@patchbay/desktop",

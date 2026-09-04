@@ -3,7 +3,8 @@
 //
 // Derives per-worktree isolation env (renderer port + app name) so multiple
 // worktrees can run `pnpm dev:desktop` side-by-side, then runs the same chain
-// as before — bundle the CLI, brand the dev Electron, start electron-vite —
+// as before — prepare source-matched Go runtime artifacts, brand the dev
+// Electron, start electron-vite —
 // inheriting the augmented env. A plain `&&` chain in package.json can't do
 // this: each `&&` step is its own process, so an env tweak in step 1 wouldn't
 // reach electron-vite in step 3. Args (e.g. `--mode staging`) pass through to
@@ -40,7 +41,12 @@ function run(command, args, { shell = false, env = process.env } = {}) {
 }
 
 const node = process.execPath;
-run(node, [join(here, "bundle-cli.mjs")]);
+// Development must never silently use a managed release or PATH CLI: that can
+// make the renderer and backend appear healthy while the daemon is executing a
+// different revision. The preparer uses the content-addressed Go cache and
+// fails on a cache miss when Go is unavailable.
+process.env.PATCHBAY_REQUIRE_SOURCE_CLI = "1";
+run(node, [join(here, "prepare-dev-runtime.mjs")]);
 run(node, [join(here, "brand-dev-electron.mjs")]);
 
 const isWin = process.platform === "win32";

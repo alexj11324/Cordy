@@ -412,12 +412,17 @@ function findCliOnPath(): string | null {
   return null;
 }
 
+function requiresSourceCli(): boolean {
+  return process.env.PATCHBAY_REQUIRE_SOURCE_CLI === "1";
+}
+
 /**
  * Returns the path to the CLI binary bundled inside the Desktop app.
  *
  * - Dev (`electron-vite dev`): `app.getAppPath()` → `apps/desktop`, resolving
- *   to `apps/desktop/resources/bin/patchbay`. `bundle-cli.mjs` populates this
- *   before dev starts, so iterating on Go changes is "make build → restart".
+ *   to `apps/desktop/resources/bin/patchbay`. `prepare-dev-runtime.mjs`
+ *   populates this before dev starts, so iterating on Go changes is
+ *   source-fingerprint cache hit or one explicit build → restart.
  * - Packaged: `app.getAppPath()` → `<Patchbay.app>/Contents/Resources/app.asar`.
  *   electron-builder's `asarUnpack: resources/**` extracts the binary to
  *   `app.asar.unpacked/`, so we swap the path segment to execute it.
@@ -463,10 +468,12 @@ async function probeCliBinary(
 /**
  * Returns a usable `patchbay` binary path. Priority:
  *   1. Cached result from a previous successful resolve.
- *   2. Bundled binary shipped with the Desktop app (`bundle-cli.mjs`).
- *   3. Managed binary already installed in userData (`managedCliPath`).
- *   4. Download + install latest release into userData.
- *   5. `patchbay` on PATH (dev convenience / user-installed via brew).
+ *   2. Bundled binary shipped with the Desktop app (`prepare-dev-runtime.mjs`
+ *      in development, `bundle-cli.mjs` during packaging).
+ *   3. Managed binary already installed in userData (`managedCliPath`) when
+ *      this is a packaged app or an explicitly non-source development run.
+ *   4. Download + install latest release into userData in that same mode.
+ *   5. `patchbay` on PATH in that same mode.
  * Returns `null` only when all of the above fail.
  *
  * Bundled is preferred so Desktop iterates in lockstep with Go changes in
@@ -490,6 +497,15 @@ async function resolveCliBinary(): Promise<string | null> {
         cachedCliBinaryVersion = version;
         return bundled;
       }
+    }
+
+    if (requiresSourceCli()) {
+      console.error(
+        `[daemon] source CLI required but the bundled Go CLI is missing or invalid: ${bundled}`,
+      );
+      cachedCliBinary = null;
+      cachedCliBinaryVersion = null;
+      return null;
     }
 
     const managed = managedCliPath();

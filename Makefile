@@ -304,7 +304,7 @@ remove-worktree: ## Drop a linked worktree's database, then remove it (WORKTREE=
 # ---------- Individual commands ----------
 ##@ Individual commands
 
-dev: ## Bootstrap this checkout end-to-end: create env if needed, ensure DB, migrate, start services
+dev: ## Bootstrap this checkout end-to-end: create env, migrate Go, start backend, and open Electron
 	@bash scripts/dev.sh
 
 server: ## Run only the Go server for the current checkout
