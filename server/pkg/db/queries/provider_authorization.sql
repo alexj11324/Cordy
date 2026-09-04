@@ -70,7 +70,7 @@ RETURNING *;
 -- the same remaining budget; this query serializes the read and records the
 -- final decision atomically. It never stores bearer tokens or secrets.
 WITH budget_lock AS (
-    SELECT pg_advisory_xact_lock(hashtextextended(@budget_lock_key::text, 0))
+    SELECT pg_advisory_xact_lock(hashtextextended(sqlc.arg('budget_lock_key')::text, 0))
 )
 INSERT INTO authorization_audit_event (
     id, workspace_id, principal_type, principal_id, on_behalf_of_user_id,
@@ -79,11 +79,11 @@ INSERT INTO authorization_audit_event (
     context
 )
 SELECT
-    @id, @workspace_id, @principal_type, @principal_id, @on_behalf_of_user_id,
-    @via_agent_id, @device_id, @action, @resource_type, @resource_id,
+    sqlc.arg('id'), sqlc.arg('workspace_id'), sqlc.arg('principal_type'), sqlc.arg('principal_id'), sqlc.arg('on_behalf_of_user_id'),
+    sqlc.arg('via_agent_id'), sqlc.arg('device_id'), sqlc.arg('action'), sqlc.arg('resource_type'), sqlc.arg('resource_id'),
     CASE
-        WHEN @enforce_budget::boolean
-         AND @decision::text = 'allow'
+        WHEN sqlc.arg('enforce_budget')::boolean
+         AND sqlc.arg('decision')::text = 'allow'
          AND (
              SELECT COALESCE(sum(
                  CASE
@@ -94,20 +94,20 @@ SELECT
              ), 0)::bigint
              FROM authorization_audit_event AS event
              CROSS JOIN budget_lock
-             WHERE event.workspace_id = @workspace_id
+             WHERE event.workspace_id = sqlc.arg('workspace_id')
                AND event.action = 'credential.use'
                AND event.resource_type = 'provider_identity'
-               AND event.resource_id = @resource_id
+               AND event.resource_id = sqlc.arg('resource_id')
                AND event.decision = 'allow'
-               AND event.matched_grant_ids && @matched_grant_ids::uuid[]
+               AND event.matched_grant_ids && sqlc.arg('matched_grant_ids')::uuid[]
                AND event.context->>'provider_budget_reservation' = 'true'
-         ) > @budget_limit::bigint - @reservation::bigint
+         ) > sqlc.arg('budget_limit')::bigint - sqlc.arg('reservation')::bigint
         THEN 'deny'
-        ELSE @decision::text
+        ELSE sqlc.arg('decision')::text
     END,
     CASE
-        WHEN @enforce_budget::boolean
-         AND @decision::text = 'allow'
+        WHEN sqlc.arg('enforce_budget')::boolean
+         AND sqlc.arg('decision')::text = 'allow'
          AND (
              SELECT COALESCE(sum(
                  CASE
@@ -118,27 +118,27 @@ SELECT
              ), 0)::bigint
              FROM authorization_audit_event AS event
              CROSS JOIN budget_lock
-             WHERE event.workspace_id = @workspace_id
+             WHERE event.workspace_id = sqlc.arg('workspace_id')
                AND event.action = 'credential.use'
                AND event.resource_type = 'provider_identity'
-               AND event.resource_id = @resource_id
+               AND event.resource_id = sqlc.arg('resource_id')
                AND event.decision = 'allow'
-               AND event.matched_grant_ids && @matched_grant_ids::uuid[]
+               AND event.matched_grant_ids && sqlc.arg('matched_grant_ids')::uuid[]
                AND event.context->>'provider_budget_reservation' = 'true'
-         ) > @budget_limit::bigint - @reservation::bigint
-        THEN @budget_exhausted_reason::text
-        ELSE @reason::text
+         ) > sqlc.arg('budget_limit')::bigint - sqlc.arg('reservation')::bigint
+        THEN sqlc.arg('budget_exhausted_reason')::text
+        ELSE sqlc.arg('reason')::text
     END,
-    @matched_grant_ids,
-    @policy_version, @obligations, @delegation_chain,
+    sqlc.arg('matched_grant_ids'),
+    sqlc.arg('policy_version'), sqlc.arg('obligations'), sqlc.arg('delegation_chain'),
     jsonb_set(
         jsonb_set(
-            @context::jsonb,
+            sqlc.arg('context')::jsonb,
             '{provider_request_tokens}',
             to_jsonb(
                 CASE
-                    WHEN @enforce_budget::boolean
-                     AND @decision::text = 'allow'
+                    WHEN sqlc.arg('enforce_budget')::boolean
+                     AND sqlc.arg('decision')::text = 'allow'
                      AND (
                          SELECT COALESCE(sum(
                              CASE
@@ -149,16 +149,16 @@ SELECT
                          ), 0)::bigint
                          FROM authorization_audit_event AS event
                          CROSS JOIN budget_lock
-                         WHERE event.workspace_id = @workspace_id
+                         WHERE event.workspace_id = sqlc.arg('workspace_id')
                            AND event.action = 'credential.use'
                            AND event.resource_type = 'provider_identity'
-                           AND event.resource_id = @resource_id
+                           AND event.resource_id = sqlc.arg('resource_id')
                            AND event.decision = 'allow'
-                           AND event.matched_grant_ids && @matched_grant_ids::uuid[]
+                           AND event.matched_grant_ids && sqlc.arg('matched_grant_ids')::uuid[]
                            AND event.context->>'provider_budget_reservation' = 'true'
-                     ) > @budget_limit::bigint - @reservation::bigint
+                     ) > sqlc.arg('budget_limit')::bigint - sqlc.arg('reservation')::bigint
                     THEN 0::bigint
-                    ELSE @reservation::bigint
+                    ELSE sqlc.arg('reservation')::bigint
                 END
             )
         ),
@@ -166,8 +166,8 @@ SELECT
         to_jsonb(
             (
                 CASE
-                    WHEN @enforce_budget::boolean
-                     AND @decision::text = 'allow'
+                    WHEN sqlc.arg('enforce_budget')::boolean
+                     AND sqlc.arg('decision')::text = 'allow'
                      AND (
                          SELECT COALESCE(sum(
                              CASE
@@ -178,22 +178,22 @@ SELECT
                          ), 0)::bigint
                          FROM authorization_audit_event AS event
                          CROSS JOIN budget_lock
-                         WHERE event.workspace_id = @workspace_id
+                         WHERE event.workspace_id = sqlc.arg('workspace_id')
                            AND event.action = 'credential.use'
                            AND event.resource_type = 'provider_identity'
-                           AND event.resource_id = @resource_id
+                           AND event.resource_id = sqlc.arg('resource_id')
                            AND event.decision = 'allow'
-                           AND event.matched_grant_ids && @matched_grant_ids::uuid[]
+                           AND event.matched_grant_ids && sqlc.arg('matched_grant_ids')::uuid[]
                            AND event.context->>'provider_budget_reservation' = 'true'
-                     ) > @budget_limit::bigint - @reservation::bigint
+                     ) > sqlc.arg('budget_limit')::bigint - sqlc.arg('reservation')::bigint
                     THEN 'deny'
-                    ELSE @decision::text
+                    ELSE sqlc.arg('decision')::text
                 END
             ) = 'allow'
             AND (
                 CASE
-                    WHEN @enforce_budget::boolean
-                     AND @decision::text = 'allow'
+                    WHEN sqlc.arg('enforce_budget')::boolean
+                     AND sqlc.arg('decision')::text = 'allow'
                      AND (
                          SELECT COALESCE(sum(
                              CASE
@@ -204,16 +204,16 @@ SELECT
                          ), 0)::bigint
                          FROM authorization_audit_event AS event
                          CROSS JOIN budget_lock
-                         WHERE event.workspace_id = @workspace_id
+                         WHERE event.workspace_id = sqlc.arg('workspace_id')
                            AND event.action = 'credential.use'
                            AND event.resource_type = 'provider_identity'
-                           AND event.resource_id = @resource_id
+                           AND event.resource_id = sqlc.arg('resource_id')
                            AND event.decision = 'allow'
-                           AND event.matched_grant_ids && @matched_grant_ids::uuid[]
+                           AND event.matched_grant_ids && sqlc.arg('matched_grant_ids')::uuid[]
                            AND event.context->>'provider_budget_reservation' = 'true'
-                     ) > @budget_limit::bigint - @reservation::bigint
+                     ) > sqlc.arg('budget_limit')::bigint - sqlc.arg('reservation')::bigint
                     THEN 0::bigint
-                    ELSE @reservation::bigint
+                    ELSE sqlc.arg('reservation')::bigint
                 END
             ) > 0
         )
