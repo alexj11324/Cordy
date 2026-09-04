@@ -27,8 +27,9 @@ const INBOX_GROUPS: Array<{
 }> = [
   {
     key: "assignments",
-    label: "Assignments",
-    description: "When you're assigned an issue or removed as assignee.",
+    label: "Role assignments",
+    description:
+      "When you become or stop being an issue owner, executor, or reviewer.",
   },
   {
     key: "status_changes",

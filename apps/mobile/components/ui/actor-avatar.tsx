@@ -8,7 +8,7 @@
  *     useActorLookup which reads the same MemberWithUser / Agent lists.
  *   - Agents get distinct visual treatment (brand-tinted background) to
  *     match web's "agents render with distinct styling" rule from the
- *     repo-root CLAUDE.md "Agent Assignees" section.
+ *     repo-root role semantics: agents and teams are execution targets.
  *
  * Presence dot: opt-in via `showPresence`. Mirrors web's `showStatusDot`
  * (`packages/views/common/actor-avatar.tsx:51`). The prop is opt-in (default
@@ -32,7 +32,7 @@ import { THEME } from "@/lib/theme";
 // this third value (packages/core/types/inbox.ts:28). `team` is a third
 // issue-role polymorphism (packages/core/types/issue.ts IssueActorType) — when
 // a team has an avatar_url we render it; otherwise fall back to a generic
-// group glyph so team-assigned issues from web never render blank.
+// group glyph so team-executed issues from web never render blank.
 interface Props {
   type: "member" | "agent" | "system" | "team" | null | undefined;
   id: string | null | undefined;

@@ -651,13 +651,13 @@ export function useDetachLabel(issueId: string) {
 
 /**
  * Issue creation mutation. No optimistic insert — the my-issues list is
- * status-bucketed + scope-filtered (assigned/created/agents), so optimism
+ * status-bucketed + scope-filtered (owner/created/executor-related), so optimism
  * needs to decide which bucket + scope the row lands in, with rollback.
  * Invalidation is simpler and the hosted server returns in <300ms.
  *
  * Invalidates:
  *  - issueKeys.myAll(wsId)        my-issues list (all three scopes)
- *  - inboxKeys.all(wsId)          inbox (assignment notification if any) —
+ *  - inboxKeys.all(wsId)          inbox (role notification if any) —
  *                                 prefix-matches the inbox list key
  */
 export function useCreateIssue() {

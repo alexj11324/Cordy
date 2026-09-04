@@ -1,8 +1,8 @@
 /**
  * Pure builders for the three independent issue role writes.
  *
- * Owner, executor and reviewer are separate columns on the issue, not three
- * views of one collapsed `assignee`. `useUpdateIssue` merges a patch into the
+ * Owner, executor and reviewer are separate columns on the issue, not one
+ * collapsed assignment. `useUpdateIssue` merges a patch into the
  * detail cache with a bare spread (`{...prev, ...patch}`), so a patch that
  * carries a key it did not mean to change silently clobbers that role — and
  * the optimistic cache is what every chip and list renders until the server

@@ -117,7 +117,7 @@ export default function WorkspaceLayout() {
   }, [matched, setCurrentWorkspace]);
 
   // Wipe cross-route Zustand draft stores whenever the active workspace
-  // changes — a draft picked under workspace A (assignee id, draft
+  // changes — a draft picked under workspace A (owner/executor id, draft
   // session id, etc.) is invalid in workspace B and must not leak.
   useNewIssueDraftResetOnWorkspaceChange(matched?.id ?? null);
   useNewProjectDraftResetOnWorkspaceChange(matched?.id ?? null);

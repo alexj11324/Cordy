@@ -1,9 +1,11 @@
 /**
- * "My Issues" tab. Three scopes — assigned / created / agents — mirroring
+ * "My Issues" tab. Three scopes — owned / created / agents — mirroring
  * web's `packages/views/my-issues/components/my-issues-page.tsx:48-65`. The
- * `agents` scope label is "Agents and Teams" because the backend predicate
- * (`involves_user_id`, MUL-2397) surfaces both the user's owned agents and
- * teams they're involved in (member / leader / has an owned agent inside).
+ * `assigned` scope key maps to the owner's `owner_id`; its user-facing label
+ * is "Owned". The `agents` scope label is "Agents and Teams" because the
+ * backend predicate (`involves_user_id`, MUL-2397) surfaces both the user's
+ * owned agents and teams they're involved in (member / leader / has an owned
+ * agent inside).
  *
  * Issues are grouped by status CATEGORY using SectionList in
  * `BOARD_CATEGORIES` order; empty sections are filtered out so the screen
@@ -59,7 +61,7 @@ import { THEME } from "@/lib/theme";
 // (`involves_user_id`, MUL-2397) covers owned agents + related teams; the
 // empty state copy still says "agents or teams".
 const SCOPES: { value: MyIssuesScope; label: string }[] = [
-  { value: "assigned", label: "Assigned" },
+  { value: "assigned", label: "Owned" },
   { value: "created", label: "Created" },
   { value: "agents", label: "Agents" },
 ];
@@ -179,6 +181,7 @@ export default function MyIssues() {
           renderItem={({ item }) => (
             <IssueRow
               issue={item}
+              actorRole={scope === "assigned" ? "owner" : "executor"}
               onPress={() => {
                 if (wsSlug) router.push(`/${wsSlug}/issue/${item.id}`);
               }}
@@ -365,10 +368,10 @@ function EmptyState({ message }: { message: string }) {
 function emptyMessageForScope(scope: MyIssuesScope): string {
   switch (scope) {
     case "assigned":
-      return "No issues assigned to you.";
+      return "No issues owned by you.";
     case "created":
       return "You haven't created any issues.";
     case "agents":
-      return "No issues assigned to your agents or teams yet.";
+      return "No issues have your agents or teams as executor yet.";
   }
 }

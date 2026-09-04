@@ -4,7 +4,7 @@
  * Linear iOS-inspired layout:
  *   - identifier (MUL-NN) above as a small muted label
  *   - title in a large bold treatment
- *   - attribute chip row below (status / priority / assignee / labels /
+ *   - attribute chip row below (status / priority / owner / executor / labels /
  *     project / due date) — tappable, opens picker sheets
  *
  * The native iOS Stack header still renders `issue.identifier` as the

@@ -18,7 +18,7 @@ const actorName = (_type: string | null | undefined, id: string | null | undefin
   id === "agent-2" ? "Build Agent" : "Alex";
 
 describe("formatActivity role changes", () => {
-  it("renders executor changes without assignee terminology", () => {
+  it("renders executor changes with explicit role terminology", () => {
     expect(
       formatActivity(
         activity("executor_changed", {

@@ -1,11 +1,10 @@
 /**
  * Mobile InboxDetailLabel — type-aware second-line for inbox rows.
  *
- * Mirrors packages/views/inbox/components/inbox-detail-label.tsx exactly:
- * for each InboxItemType the user sees the same label they would see on
- * web/desktop. This is a Behavioral parity concern — if web shows "Set
- * status to ✓ Done", mobile must show "Set status to ✓ Done" (rendered
- * with mobile primitives, not the literal HTML).
+ * Mirrors the per-type structure of
+ * packages/views/inbox/components/inbox-detail-label.tsx. Role details use
+ * explicit owner/executor wording so an incomplete executor payload cannot
+ * be rendered as a member assignment.
  *
  * Web is i18n-driven (useT). Mobile v1 is English-only; when mobile ships
  * i18n, mirror the namespace structure.
@@ -23,6 +22,10 @@ import { PriorityIcon } from "@/components/ui/priority-icon";
 import { useActorLookup } from "@/data/use-actor-name";
 import { useIssueStatuses } from "@/lib/use-issue-statuses";
 import { cn } from "@/lib/utils";
+import {
+  resolveInboxRoleActorType,
+  type InboxIssueRole,
+} from "@/lib/inbox-role";
 
 // Mirrors PRIORITY_CONFIG.label in packages/core/issues/config/priority.ts
 const PRIORITY_LABEL: Record<IssuePriority, string> = {
@@ -35,9 +38,9 @@ const PRIORITY_LABEL: Record<IssuePriority, string> = {
 
 // Mirrors useTypeLabels in packages/views/inbox/components/inbox-detail-label.tsx
 const TYPE_LABEL: Record<InboxItemType, string> = {
-  issue_assigned: "Assigned",
+  issue_assigned: "Role assigned",
   issue_subscribed: "Subscribed",
-  unassigned: "Unassigned",
+  unassigned: "Role cleared",
   owner_changed: "Owner changed",
   executor_changed: "Executor changed",
   status_changed: "Status changed",
@@ -64,6 +67,19 @@ function shortDate(dateStr: string): string {
 
 function singleLine(value: string | null | undefined): string {
   return (value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function roleActorName(
+  role: InboxIssueRole,
+  rawType: string | undefined,
+  id: string,
+  getName: (
+    type: "member" | "agent" | "team" | null | undefined,
+    id: string | null | undefined,
+  ) => string,
+): string | null {
+  const actorType = resolveInboxRoleActorType(role, rawType);
+  return actorType ? getName(actorType, id) : null;
 }
 
 export function InboxDetailLabel({
@@ -116,18 +132,22 @@ export function InboxDetailLabel({
     switch (item.type) {
       case "issue_assigned":
         if (details.new_owner_id) {
-          const name = getName(
-            (details.new_owner_type ?? "member") as "member" | "agent",
+          const name = roleActorName(
+            "owner",
+            details.new_owner_type,
             details.new_owner_id,
+            getName,
           );
-          return `Set owner to ${name}`;
+          return name ? `Set owner to ${name}` : "Owner assigned";
         }
         if (details.new_executor_id) {
-          const name = getName(
-            (details.new_executor_type ?? "member") as "member" | "agent",
+          const name = roleActorName(
+            "executor",
+            details.new_executor_type,
             details.new_executor_id,
+            getName,
           );
-          return `Set executor to ${name}`;
+          return name ? `Set executor to ${name}` : "Executor assigned";
         }
         return TYPE_LABEL[item.type];
       case "unassigned":
@@ -136,20 +156,24 @@ export function InboxDetailLabel({
         return TYPE_LABEL[item.type];
       case "owner_changed":
         if (details.new_owner_id) {
-          const name = getName(
-            (details.new_owner_type ?? "member") as "member" | "agent",
+          const name = roleActorName(
+            "owner",
+            details.new_owner_type,
             details.new_owner_id,
+            getName,
           );
-          return `Set owner to ${name}`;
+          return name ? `Set owner to ${name}` : TYPE_LABEL[item.type];
         }
         return TYPE_LABEL[item.type];
       case "executor_changed":
         if (details.new_executor_id) {
-          const name = getName(
-            (details.new_executor_type ?? "member") as "member" | "agent",
+          const name = roleActorName(
+            "executor",
+            details.new_executor_type,
             details.new_executor_id,
+            getName,
           );
-          return `Set executor to ${name}`;
+          return name ? `Set executor to ${name}` : TYPE_LABEL[item.type];
         }
         return TYPE_LABEL[item.type];
       case "due_date_changed":

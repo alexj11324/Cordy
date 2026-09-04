@@ -4,7 +4,7 @@
  * "empty array = show all" semantics — required by the same-N parity rule
  * in apps/mobile/CLAUDE.md.
  *
- * Mobile only filters on status + priority for now; assignee / project /
+ * Mobile only filters on status + priority for now; owner / executor / project /
  * label slots from the web filter are deferred to v2.
  */
 import type { Issue, IssuePriority, IssueStatus } from "@patchbay/core/types";

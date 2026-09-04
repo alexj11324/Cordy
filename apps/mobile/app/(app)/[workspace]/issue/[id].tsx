@@ -60,7 +60,7 @@ export default function IssueDetail() {
   const detail = useQuery(issueDetailOptions(wsId, id));
   const timeline = useQuery(issueTimelineOptions(wsId, id));
 
-  // Subscribe to per-issue WS events: status/priority/assignee/label
+  // Subscribe to per-issue WS events: status/priority/owner/executor/label
   // changes, comments, activity, reactions, agent task progress.
   // Mounted with `id` — cleans up automatically on navigate-away.
   // If another client deletes the issue we're viewing, pop back so the
@@ -108,7 +108,7 @@ export default function IssueDetail() {
   // Three-dot menu: Pin/Unpin / Copy link / Open on web (if web URL set) /
   // Delete. Mirrors apps/mobile/app/(app)/[workspace]/project/[id].tsx — same
   // ActionSheetIOS + Alert.alert confirm pattern. Property edits (status,
-  // priority, assignee, due_date) live on the IssueHeaderCard chips inside
+  // priority, owner, executor, due_date) live on the IssueHeaderCard chips inside
   // the timeline list, not in this menu — one entry per action.
   const onPressMore = useCallback(() => {
     if (!issue || !wsSlug) return;

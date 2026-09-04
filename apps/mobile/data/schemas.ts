@@ -635,7 +635,7 @@ const AgentInvocationTargetSchema: z.ZodType<AgentInvocationTarget> = z
 
 // Agent schema is loose on every enum / structural field — the agent table is
 // where new modes/visibilities/statuses get added most often. We need only id,
-// name, avatar_url, and a couple of flags for the assignee picker + chat
+// name, avatar_url, and a couple of flags for the executor picker + chat
 // header; everything else is informational and safe to default.
 export const AgentSchema: z.ZodType<Agent> = z.object({
   id: z.string(),

@@ -36,6 +36,14 @@ describe("workspace issue role scopes", () => {
 
     expect(issueMatchesScope(memberOwnedAndExecuted, "members")).toBe(true);
     expect(issueMatchesScope(agentExecutedOnly, "members")).toBe(false);
+    expect(issueActorForRole(memberOwnedAndExecuted, "owner")).toEqual({
+      type: "member",
+      id: "member-1",
+    });
+    expect(issueActorForRole(memberOwnedAndExecuted, "executor")).toEqual({
+      type: "agent",
+      id: "agent-1",
+    });
     expect(
       filterIssuesByScope(
         [memberOwnedAndExecuted, agentExecutedOnly],
@@ -55,6 +63,10 @@ describe("workspace issue role scopes", () => {
     expect(issueMatchesScope(agent, "agents")).toBe(true);
     expect(issueMatchesScope(team, "agents")).toBe(true);
     expect(issueMatchesScope(memberOwnedOnly, "agents")).toBe(false);
+    expect(issueActorForRole(team, "executor")).toEqual({
+      type: "team",
+      id: "team-1",
+    });
     expect(
       filterIssuesByScope([agent, team, memberOwnedOnly], "agents"),
     ).toEqual([agent, team]);

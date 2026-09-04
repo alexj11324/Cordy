@@ -3,7 +3,7 @@
  *
  * The mention picker route (`app/(app)/[workspace]/issue/[id]/picker/mention.tsx`)
  * lives in its own formSheet and cannot share callbacks with the composer
- * that opened it. Same pattern as how label / assignee pickers
+ * that opened it. Same pattern as how label / owner/executor/reviewer pickers
  * communicate with their issue-detail screen — except those write straight
  * to a mutation (durable state), while this store holds purely client-side
  * draft state until the composer either sends or unmounts.

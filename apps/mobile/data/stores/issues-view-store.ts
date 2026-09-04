@@ -4,7 +4,7 @@
  * Shape mirrors `useMyIssuesViewStore` plus a `scope` field — workspace
  * Issues has `all / members / agents` scope tabs (see web
  * `packages/views/issues/components/issues-page.tsx:32-94`), while
- * My Issues has its own `assigned / created / agents` scopes.
+ * My Issues has its own `assigned (Owned) / created / agents` scopes.
  *
  * The `scope` filter is **client-side** on owner/executor type — see
  * `more/issues.tsx`'s `scopedIssues` derivation. Server param stays unset

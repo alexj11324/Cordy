@@ -14,11 +14,11 @@
  * Differences vs My Issues (`(tabs)/my-issues.tsx`):
  *   - Workspace-wide list (all issues), not user-scoped.
  *   - Three scopes are `all / members / agents` (explicit owner/executor
- *     pre-filter), not `assigned / created / agents` (per-user predicates).
+ *     pre-filter), not `owned / created / agents` (per-user predicates).
  *   - Independent filter store (`useIssuesViewStore`) so workspace-level
  *     filters don't bleed into the per-user view.
  *
- * Filters beyond status/priority (assignee / project / label / creator)
+ * Filters beyond status/priority (owner / executor / project / label / creator)
  * are deferred — power-user features with non-trivial picker cost; ship
  * after the parity-critical scope tabs land.
  */

@@ -17,7 +17,7 @@
  * noise; `@` here means "reference a resource for the agent"):
  *   1. Recent — issues the user opened most recently (from the in-memory
  *      viewed-issues store), max 5
- *   2. My issues — assigned-to-me, deduped against Recent, max 10
+ *   2. My issues — owned-by-me, deduped against Recent, max 10
  *
  * Closed issues (status `done` / `cancelled`) are dimmed but selectable,
  * matching web's behaviour (mention-suggestion.tsx).
@@ -166,7 +166,7 @@ export function MentionSuggestionBar({
     // Agents: filter archived + drop ones the current user can't assign —
     // mirrors web (packages/views/editor/extensions/mention-suggestion.tsx:418-424).
     // A private agent shown in the suggestion list would create a mention the
-    // assignee can never act on; web hides them, mobile must too.
+    // executor can never act on; web hides them, mobile must too.
     const myRole =
       members.find((m) => m.user_id === userId)?.role ?? null;
     const runnableAgentIds = new Set(
