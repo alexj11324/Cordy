@@ -530,7 +530,7 @@ class ProductionDeployment:
         run(["docker", "compose", *arguments], env=env)
 
     def record_runtime_diagnostics(self, source_sha: str) -> None:
-        """Persist container state and recent logs before rollback replaces it."""
+        """Persist bounded container state and logs before rollback replaces it."""
         diagnostics: dict[str, Any] = {"source_sha": source_sha, "containers": {}}
         for container in BOOTSTRAP_CONTAINERS.values():
             entry: dict[str, Any] = {}
@@ -547,15 +547,25 @@ class ProductionDeployment:
                 ),
                 ("logs", ["docker", "logs", "--tail", "200", container]),
             ):
-                completed = subprocess.run(
-                    arguments,
-                    check=False,
-                    text=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                )
-                entry[label] = completed.stdout[-32_000:]
-                entry[f"{label}_exit_code"] = completed.returncode
+                try:
+                    completed = subprocess.run(
+                        arguments,
+                        check=False,
+                        text=True,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        timeout=5,
+                    )
+                    entry[label] = completed.stdout[-32_000:]
+                    entry[f"{label}_exit_code"] = completed.returncode
+                except subprocess.TimeoutExpired as error:
+                    partial = error.stdout or ""
+                    if isinstance(partial, bytes):
+                        partial = partial.decode("utf-8", errors="replace")
+                    entry[label] = (
+                        partial + "\n[diagnostic command timed out]"
+                    )[-32_000:]
+                    entry[f"{label}_exit_code"] = None
             diagnostics["containers"][container] = entry
         self.atomic_json(
             self.history / f"failed-runtime-{source_sha}.json",
