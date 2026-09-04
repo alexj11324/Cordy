@@ -20,6 +20,7 @@ const [
   deployGateway,
   originNginx,
   productionOverride,
+  dockerignore,
 ] = await Promise.all([
   read(".github/workflows/aspectlylabs-production-images.yml"),
   read(".github/workflows/release.yml"),
@@ -34,6 +35,7 @@ const [
   read("deploy/origin/production_deploy.py"),
   read("deploy/origin/nginx/aspectlylabs-origin.conf"),
   read("deploy/origin/production-product.override.yml"),
+  read(".dockerignore"),
 ]);
 
 // The manifest assembler takes four positional operands and validates none of
@@ -87,6 +89,12 @@ test("one source SHA produces the complete immutable image set", () => {
   assert.match(workflow, /sha256sum production-manifest\.json/u);
   assert.match(workflow, /sha256sum --check production-manifest\.json\.sha256/u);
   assert.doesNotMatch(workflow, /paths:/u);
+});
+
+test("the Docker context includes every shipping frontend application", () => {
+  for (const app of ["web", "docs", "auth-broker"]) {
+    assert.match(dockerignore, new RegExp(`!/apps/${app}/`, "u"));
+  }
 });
 
 test("production backend is the Go server with no Rust runtime contract", () => {
