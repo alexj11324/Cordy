@@ -86,7 +86,7 @@ describe("web app manifest", () => {
     expect(await launch({})).toContain("/login");
   });
 
-  it("never launches onto the marketing site for a session with no known workspace", async () => {
+  it("launches to login for a session with no known workspace", async () => {
     const target = await launch({ patchbay_logged_in: "1" });
 
     expect(target).toContain("/login");

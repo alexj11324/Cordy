@@ -2,7 +2,7 @@ import nextConfig from "@patchbay/eslint-config/next";
 
 export default [
   ...nextConfig,
-  { ignores: [".next/", ".source/"] },
+  { ignores: [".next/"] },
   {
     files: ["**/*.test.{ts,tsx}", "**/test/**/*.{ts,tsx}"],
     rules: {

@@ -141,20 +141,16 @@ describe("proxy legacy workspace route redirects", () => {
     expect(await redirectLocation("/acme/teams", sessionCookies)).toBeNull();
   });
 
-  it("redirects app-host root URLs to the last workspace", async () => {
-    expect(await redirectLocation("/", sessionCookies)).toBe(
-      "https://app.patchbay.test/acme/issues",
-    );
-  });
-
-  it.each(["patchbay.aspectlylabs.com"])(
-    "does not redirect public marketing root on %s",
+  it.each(["app.patchbay.test", "patchbay.aspectlylabs.com"])(
+    "redirects root URLs to the last workspace on %s",
     async (host) => {
-      expect(await redirectLocation("/", sessionCookies, host)).toBeNull();
+      expect(await redirectLocation("/", sessionCookies, host)).toBe(
+        `https://${host}/acme/issues`,
+      );
     },
   );
 
-  it("still redirects explicit legacy app routes on the public marketing host", async () => {
+  it("redirects explicit legacy app routes on every host", async () => {
     expect(
       await redirectLocation(
         "/issues/ABC-123",
