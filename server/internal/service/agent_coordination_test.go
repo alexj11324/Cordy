@@ -191,6 +191,7 @@ func TestCoordinationTeamOwnerUsesTeamProvenanceAndLeaderTask(t *testing.T) {
 		AssignmentRole: CoordinationAssignmentExecutor,
 		OwnerType:      "team",
 		OwnerID:        util.UUIDToString(teamID),
+		OwnerGeneration: int64Ptr(6),
 	}
 	if !coordinationAssignmentMatchesTask(assignment, task, context) {
 		t.Fatal("team assignment should accept the team's leader task")

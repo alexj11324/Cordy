@@ -183,10 +183,10 @@ func TestAgentCoordinationRunOnceSelectsReviewerAndPublishesHandoff(t *testing.T
 	dbfx.Exec(t, `
 		UPDATE agent_task_queue
 		SET context = jsonb_build_object(
-			'coordination_assignment_id', $1,
+			'coordination_assignment_id', $1::text,
 			'coordination_assignment_role', 'executor',
 			'coordination_owner_type', 'agent',
-			'coordination_owner_id', $2
+			'coordination_owner_id', $2::text
 		)
 		WHERE id = $3
 	`, assignmentID, executorID, sourceTaskID)
@@ -293,12 +293,16 @@ func TestAgentCoordinationRunOnceRecoversUnpublishedReviewHandoff(t *testing.T) 
 	testHandler.AgentCoordination.RunOnce(context.Background())
 
 	var eventStatus, assignmentStatus, taskStatus string
-	var dispatchedTaskID string
+	var dispatchedTaskID *string
 	dbfx.QueryRow(t, `SELECT status FROM agent_coordination_outbox WHERE id = $1`, eventID).Scan(&eventStatus)
 	dbfx.QueryRow(t, `SELECT status, dispatched_task_id::text FROM agent_coordination_assignment WHERE id = $1`, assignmentID).Scan(&assignmentStatus, &dispatchedTaskID)
 	dbfx.QueryRow(t, `SELECT status FROM agent_task_queue WHERE id = $1`, taskID).Scan(&taskStatus)
-	if eventStatus != "completed" || assignmentStatus != "dispatched" || taskStatus != "queued" || dispatchedTaskID != taskID {
-		t.Fatalf("recovered handoff = event %q assignment %q task %q dispatched %q; want completed/dispatched/queued/%q", eventStatus, assignmentStatus, taskStatus, dispatchedTaskID, taskID)
+	if eventStatus != "completed" || assignmentStatus != "dispatched" || taskStatus != "queued" || dispatchedTaskID == nil || *dispatchedTaskID != taskID {
+		var dispatchedTask string
+		if dispatchedTaskID != nil {
+			dispatchedTask = *dispatchedTaskID
+		}
+		t.Fatalf("recovered handoff = event %q assignment %q task %q dispatched %q; want completed/dispatched/queued/%q", eventStatus, assignmentStatus, taskStatus, dispatchedTask, taskID)
 	}
 }
 
