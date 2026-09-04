@@ -7,6 +7,7 @@ import {
   type WebContents,
 } from "electron";
 import { isSafeExternalHttpUrl, openExternalSafely } from "./external-url";
+import { preferredAppLocaleFromLanguages } from "./os-locale";
 
 // Electron ships with no default right-click menu, so a user selecting text
 // in the renderer has no way to copy it. Mirror Chrome's minimal clipboard
@@ -125,14 +126,7 @@ const labelsByLocale: Record<string, ContextMenuLabels> = {
 // another Patchbay window — so the wording matches what actually
 // happens.
 function pickLabels(): ContextMenuLabels {
-  const preferred = app.getPreferredSystemLanguages()[0]?.toLowerCase() ?? "";
-  if (preferred.startsWith("zh")) {
-    // All Chinese variants get the Simplified copy — Patchbay only
-    // ships zh-Hans, and zh-Hant users falling through to en would be
-    // worse than reading Simplified Chinese.
-    return labelsByLocale["zh-Hans"];
-  }
-  if (preferred.startsWith("ja")) return labelsByLocale.ja;
-  if (preferred.startsWith("ko")) return labelsByLocale.ko;
-  return labelsByLocale.en;
+  return labelsByLocale[
+    preferredAppLocaleFromLanguages(app.getPreferredSystemLanguages())
+  ];
 }
