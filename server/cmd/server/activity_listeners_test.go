@@ -199,12 +199,14 @@ func TestActivityIssueUpdated_ReviewHandoff(t *testing.T) {
 		Type: protocol.EventIssueUpdated, WorkspaceID: testWorkspaceID,
 		ActorType: "member", ActorID: testUserID,
 		Payload: map[string]any{
-			"issue": handler.IssueResponse{
-				ID: issueID, WorkspaceID: testWorkspaceID, Status: "in_review",
-				Priority: "medium", CreatorType: "member", CreatorID: testUserID,
-				ExecutorType: &executorType, ExecutorID: &executorID,
-				ReviewerType: &reviewerType, ReviewerID: &reviewerID,
+			"issue": map[string]any{
+				"id": issueID, "workspace_id": testWorkspaceID, "title": "review handoff",
+				"status": "in_review", "priority": "medium",
+				"creator_type": "member", "creator_id": testUserID,
+				"executor_type": &executorType, "executor_id": &executorID,
+				"reviewer_type": &reviewerType, "reviewer_id": &reviewerID,
 			},
+			"coordination_event_id": "00000000-0000-0000-0000-000000000001",
 			"status_changed":     true,
 			"executor_changed":   false,
 			"reviewer_changed":   true,

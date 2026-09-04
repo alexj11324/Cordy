@@ -836,6 +836,114 @@ func (q *Queries) LockAgentCoordinationIssue(ctx context.Context, arg LockAgentC
 	return i, err
 }
 
+const promoteCoordinationAgentTaskForLease = `-- name: PromoteCoordinationAgentTaskForLease :one
+UPDATE agent_task_queue AS task
+SET status = CASE WHEN task.status = 'deferred' THEN 'queued' ELSE task.status END,
+    fire_at = NULL,
+    updated_at = now()
+FROM agent_coordination_assignment AS assignment
+JOIN agent_coordination_outbox AS event ON event.id = assignment.event_id
+WHERE assignment.id = $1
+  AND assignment.event_id = $2
+  AND assignment.workspace_id = $3
+  AND assignment.issue_id = $4
+  AND assignment.owner_type = 'agent'
+  AND assignment.owner_id = task.agent_id
+  AND assignment.status IN ('assigned', 'dispatched')
+  AND task.issue_id = assignment.issue_id
+  AND task.context->>'coordination_assignment_id' = assignment.id::text
+  AND task.status IN ('deferred', 'queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity')
+  AND event.workspace_id = assignment.workspace_id
+  AND event.issue_id = assignment.issue_id
+  AND event.status = 'processing'
+  AND event.lease_owner = $5
+  AND event.lease_expires_at > now()
+RETURNING task.id, task.agent_id, task.issue_id, task.status, task.priority, task.dispatched_at, task.started_at, task.completed_at, task.result, task.error, task.created_at, task.context, task.runtime_id, task.session_id, task.work_dir, task.trigger_comment_id, task.chat_session_id, task.automation_run_id, task.attempt, task.max_attempts, task.parent_task_id, task.failure_reason, task.trigger_summary, task.force_fresh_session, task.is_leader_task, task.wait_reason, task.initiator_user_id, task.handoff_note, task.prepare_lease_expires_at, task.team_id, task.runtime_mcp_overlay, task.escalation_for_task_id, task.fire_at, task.originator_user_id, task.runtime_connected_apps, task.coalesced_comment_ids, task.delivered_comment_ids, task.chat_input_task_id, task.chat_finalize_deferred_at, task.originator_source, task.delegated_from_task_id, task.retry_of_task_id, task.rerun_of_task_id, task.rule_version_id, task.trigger_evidence_kind, task.trigger_evidence_ref_id, task.accountable_user_id, task.session_rollout_missing, task.retired_session_id, task.quick_actions_disabled, task.regenerate_quick_actions_for, task.branch_name, task.durable_work_dir, task.channel_context_revision, task.execution_lane_key, task.model_id, task.policy_revision, task.failover_reason
+`
+
+type PromoteCoordinationAgentTaskForLeaseParams struct {
+	AssignmentID pgtype.UUID `json:"assignment_id"`
+	EventID      pgtype.UUID `json:"event_id"`
+	WorkspaceID  pgtype.UUID `json:"workspace_id"`
+	IssueID      pgtype.UUID `json:"issue_id"`
+	LeaseOwner   pgtype.Text `json:"lease_owner"`
+}
+
+// A coordinator task is inert until the issue/update side effects have been
+// published. This is idempotent for a retry after the task was already
+// promoted but before the assignment/outbox finalize transaction committed.
+func (q *Queries) PromoteCoordinationAgentTaskForLease(ctx context.Context, arg PromoteCoordinationAgentTaskForLeaseParams) (AgentTaskQueue, error) {
+	row := q.db.QueryRow(ctx, promoteCoordinationAgentTaskForLease,
+		arg.AssignmentID,
+		arg.EventID,
+		arg.WorkspaceID,
+		arg.IssueID,
+		arg.LeaseOwner,
+	)
+	var i AgentTaskQueue
+	err := row.Scan(
+		&i.ID,
+		&i.AgentID,
+		&i.IssueID,
+		&i.Status,
+		&i.Priority,
+		&i.DispatchedAt,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.Result,
+		&i.Error,
+		&i.CreatedAt,
+		&i.Context,
+		&i.RuntimeID,
+		&i.SessionID,
+		&i.WorkDir,
+		&i.TriggerCommentID,
+		&i.ChatSessionID,
+		&i.AutomationRunID,
+		&i.Attempt,
+		&i.MaxAttempts,
+		&i.ParentTaskID,
+		&i.FailureReason,
+		&i.TriggerSummary,
+		&i.ForceFreshSession,
+		&i.IsLeaderTask,
+		&i.WaitReason,
+		&i.InitiatorUserID,
+		&i.HandoffNote,
+		&i.PrepareLeaseExpiresAt,
+		&i.TeamID,
+		&i.RuntimeMcpOverlay,
+		&i.EscalationForTaskID,
+		&i.FireAt,
+		&i.OriginatorUserID,
+		&i.RuntimeConnectedApps,
+		&i.CoalescedCommentIds,
+		&i.DeliveredCommentIds,
+		&i.ChatInputTaskID,
+		&i.ChatFinalizeDeferredAt,
+		&i.OriginatorSource,
+		&i.DelegatedFromTaskID,
+		&i.RetryOfTaskID,
+		&i.RerunOfTaskID,
+		&i.RuleVersionID,
+		&i.TriggerEvidenceKind,
+		&i.TriggerEvidenceRefID,
+		&i.AccountableUserID,
+		&i.SessionRolloutMissing,
+		&i.RetiredSessionID,
+		&i.QuickActionsDisabled,
+		&i.RegenerateQuickActionsFor,
+		&i.BranchName,
+		&i.DurableWorkDir,
+		&i.ChannelContextRevision,
+		&i.ExecutionLaneKey,
+		&i.ModelID,
+		&i.PolicyRevision,
+		&i.FailoverReason,
+	)
+	return i, err
+}
+
 const retryAgentCoordinationOutbox = `-- name: RetryAgentCoordinationOutbox :execrows
 UPDATE agent_coordination_outbox
 SET status = 'pending',
@@ -1015,6 +1123,51 @@ func (q *Queries) SetAgentCoordinationAssignmentOwner(ctx context.Context, arg S
 		arg.WorkspaceID,
 		arg.IssueID,
 		arg.Role,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const updateAgentCoordinationAssignmentDecisionForLease = `-- name: UpdateAgentCoordinationAssignmentDecisionForLease :execrows
+UPDATE agent_coordination_assignment AS assignment
+SET decision = assignment.decision || $1::jsonb,
+    updated_at = now()
+FROM agent_coordination_outbox AS event
+WHERE assignment.id = $2
+  AND assignment.event_id = $3
+  AND assignment.workspace_id = $4
+  AND assignment.issue_id = $5
+  AND event.id = assignment.event_id
+  AND event.workspace_id = assignment.workspace_id
+  AND event.issue_id = assignment.issue_id
+  AND event.status = 'processing'
+  AND event.lease_owner = $6
+  AND event.lease_expires_at > now()
+`
+
+type UpdateAgentCoordinationAssignmentDecisionForLeaseParams struct {
+	Decision     []byte      `json:"decision"`
+	AssignmentID pgtype.UUID `json:"assignment_id"`
+	EventID      pgtype.UUID `json:"event_id"`
+	WorkspaceID  pgtype.UUID `json:"workspace_id"`
+	IssueID      pgtype.UUID `json:"issue_id"`
+	LeaseOwner   pgtype.Text `json:"lease_owner"`
+}
+
+// Persist post-transaction publication metadata without changing the
+// assignment owner/status. The event lease remains the fence, so a worker
+// that lost ownership cannot acknowledge a publication belonging to its
+// successor.
+func (q *Queries) UpdateAgentCoordinationAssignmentDecisionForLease(ctx context.Context, arg UpdateAgentCoordinationAssignmentDecisionForLeaseParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateAgentCoordinationAssignmentDecisionForLease,
+		arg.Decision,
+		arg.AssignmentID,
+		arg.EventID,
+		arg.WorkspaceID,
+		arg.IssueID,
+		arg.LeaseOwner,
 	)
 	if err != nil {
 		return 0, err

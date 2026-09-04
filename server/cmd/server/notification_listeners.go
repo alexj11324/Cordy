@@ -3,15 +3,17 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/patchbay-ai/patchbay/server/internal/events"
 	"github.com/patchbay-ai/patchbay/server/internal/handler"
 	"github.com/patchbay-ai/patchbay/server/internal/issuestatus"
 	"github.com/patchbay-ai/patchbay/server/internal/util"
 	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/dbid"
 	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
 )
 
@@ -418,8 +420,8 @@ func notifyIssueSubscribers(
 			continue
 		}
 
-		item, err := queries.CreateInboxItem(ctx, db.CreateInboxItemParams{
-			ID:            dbid.NewV7(),
+		item, err := createInboxItemForEvent(ctx, queries, e, db.CreateInboxItemParams{
+			ID:            pgtype.UUID{},
 			WorkspaceID:   parseUUID(workspaceID),
 			RecipientType: "member",
 			RecipientID:   sub.UserID,
@@ -484,8 +486,8 @@ func notifyDirect(
 		}
 	}
 
-	item, err := queries.CreateInboxItem(ctx, db.CreateInboxItemParams{
-		ID:            dbid.NewV7(),
+	item, err := createInboxItemForEvent(ctx, queries, e, db.CreateInboxItemParams{
+		ID:            pgtype.UUID{},
 		WorkspaceID:   parseUUID(workspaceID),
 		RecipientType: recipientType,
 		RecipientID:   parseUUID(recipientID),
@@ -513,6 +515,47 @@ func notifyDirect(
 		ActorID:     e.ActorID,
 		Payload:     map[string]any{"item": resp},
 	})
+}
+
+// createInboxItemForEvent makes coordinator publication retries idempotent.
+// The database row is the durable side-effect fence; the event bus may replay
+// the same publication after a worker crash, so a second UUID must not create
+// a second inbox item.
+func createInboxItemForEvent(
+	ctx context.Context,
+	queries *db.Queries,
+	e events.Event,
+	params db.CreateInboxItemParams,
+) (db.InboxItem, error) {
+	stableID, stable := durableCoordinationID(e, "inbox",
+		params.RecipientType,
+		util.UUIDToString(params.RecipientID),
+		params.Type,
+		util.UUIDToString(params.IssueID),
+	)
+	if stable {
+		params.ID = stableID
+	}
+	item, err := queries.CreateInboxItem(ctx, params)
+	if !errors.Is(err, pgx.ErrNoRows) || !stable {
+		return item, err
+	}
+
+	existing, loadErr := queries.GetInboxItemInWorkspace(ctx, db.GetInboxItemInWorkspaceParams{
+		ID:          stableID,
+		WorkspaceID: params.WorkspaceID,
+	})
+	if loadErr != nil {
+		return db.InboxItem{}, fmt.Errorf("reload durable coordination inbox item: %w", loadErr)
+	}
+	if existing.WorkspaceID != params.WorkspaceID ||
+		existing.RecipientType != params.RecipientType ||
+		existing.RecipientID != params.RecipientID ||
+		existing.Type != params.Type ||
+		existing.IssueID != params.IssueID {
+		return db.InboxItem{}, fmt.Errorf("durable coordination inbox item %s has mismatched identity", util.UUIDToString(stableID))
+	}
+	return existing, nil
 }
 
 // notifyMentionedMembers creates inbox items for each @mentioned member,
@@ -599,8 +642,8 @@ func notifyMentionedMembers(
 		if p, ok := mentionPrefs[id]; ok && isNotifMuted(p, "mentioned") {
 			continue
 		}
-		item, err := queries.CreateInboxItem(context.Background(), db.CreateInboxItemParams{
-			ID:            dbid.NewV7(),
+		item, err := createInboxItemForEvent(context.Background(), queries, e, db.CreateInboxItemParams{
+			ID:            pgtype.UUID{},
 			WorkspaceID:   parseUUID(e.WorkspaceID),
 			RecipientType: "member",
 			RecipientID:   parseUUID(id),
@@ -716,7 +759,7 @@ func registerNotificationListeners(bus *events.Bus, queries *db.Queries) {
 		if !ok {
 			return
 		}
-		issue, ok := payload["issue"].(handler.IssueResponse)
+		issue, ok := extractIssueForSideEffect(payload)
 		if !ok {
 			return
 		}

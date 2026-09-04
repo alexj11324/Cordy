@@ -290,6 +290,9 @@ func extractIssueFields(v any) (handler.IssueResponse, bool) {
 	issue := handler.IssueResponse{}
 	issue.ID, _ = m["id"].(string)
 	issue.WorkspaceID, _ = m["workspace_id"].(string)
+	issue.Title, _ = m["title"].(string)
+	issue.Status, _ = m["status"].(string)
+	issue.Priority, _ = m["priority"].(string)
 	issue.CreatorType, _ = m["creator_type"].(string)
 	issue.CreatorID, _ = m["creator_id"].(string)
 	issue.ExecutorType, _ = m["executor_type"].(*string)
@@ -303,6 +306,21 @@ func extractIssueFields(v any) (handler.IssueResponse, bool) {
 		return handler.IssueResponse{}, false
 	}
 	return issue, true
+}
+
+// extractIssueForSideEffect accepts the typed HTTP payload everywhere, and
+// additionally accepts the map payload used by durable coordinator
+// publications. Other background map broadcasts intentionally remain outside
+// the activity/notification listeners until they have their own complete
+// side-effect contract.
+func extractIssueForSideEffect(payload map[string]any) (handler.IssueResponse, bool) {
+	if issue, ok := payload["issue"].(handler.IssueResponse); ok {
+		return issue, true
+	}
+	if _, ok := payload["coordination_event_id"]; !ok {
+		return handler.IssueResponse{}, false
+	}
+	return extractIssueFields(payload["issue"])
 }
 
 // addSubscriber adds a user as an issue subscriber and publishes a

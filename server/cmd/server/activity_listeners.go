@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/patchbay-ai/patchbay/server/internal/events"
 	"github.com/patchbay-ai/patchbay/server/internal/handler"
 	"github.com/patchbay-ai/patchbay/server/internal/util"
@@ -55,7 +57,7 @@ func registerActivityListeners(bus *events.Bus, queries *db.Queries) {
 		if !ok {
 			return
 		}
-		issue, ok := payload["issue"].(handler.IssueResponse)
+		issue, ok := extractIssueForSideEffect(payload)
 		if !ok {
 			return
 		}
@@ -88,11 +90,19 @@ func registerActivityListeners(bus *events.Bus, queries *db.Queries) {
 				detailsMap["to_id"] = *issue.ReviewerID
 			}
 			details, _ := json.Marshal(detailsMap)
+			activityID := dbid.NewV7()
+			stableActivityID, stable := durableCoordinationID(e, "activity", "review_handoff")
+			if stable {
+				activityID = stableActivityID
+			}
 			activity, err := queries.CreateActivity(ctx, db.CreateActivityParams{
-				ID: dbid.NewV7(), WorkspaceID: parseUUID(issue.WorkspaceID),
+				ID: activityID, WorkspaceID: parseUUID(issue.WorkspaceID),
 				IssueID: parseUUID(issue.ID), ActorType: util.StrToText(e.ActorType),
 				ActorID: optionalUUID(e.ActorID), Action: "review_handoff", Details: details,
 			})
+			if errors.Is(err, pgx.ErrNoRows) && stable {
+				activity, err = queries.GetActivity(ctx, stableActivityID)
+			}
 			if err != nil {
 				slog.Error("activity: failed to record review handoff", "issue_id", issue.ID, "error", err)
 			} else {

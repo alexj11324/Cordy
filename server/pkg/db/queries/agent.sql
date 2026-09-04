@@ -385,7 +385,7 @@ SELECT
     sqlc.arg('agent_id'),
     sqlc.arg('runtime_id'),
     sqlc.arg('issue_id'),
-    'queued',
+    sqlc.arg('initial_status'),
     sqlc.arg('priority'),
     sqlc.narg('context')::jsonb,
     sqlc.narg('handoff_note'),

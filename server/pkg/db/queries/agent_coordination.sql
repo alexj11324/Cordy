@@ -523,3 +523,50 @@ WHERE event.id = assignment.event_id
   AND event.lease_expires_at > now()
   AND target_team.workspace_id = assignment.workspace_id
   AND target_team.archived_at IS NULL;
+
+-- Persist post-transaction publication metadata without changing the
+-- assignment owner/status. The event lease remains the fence, so a worker
+-- that lost ownership cannot acknowledge a publication belonging to its
+-- successor.
+-- name: UpdateAgentCoordinationAssignmentDecisionForLease :execrows
+UPDATE agent_coordination_assignment AS assignment
+SET decision = assignment.decision || sqlc.arg('decision')::jsonb,
+    updated_at = now()
+FROM agent_coordination_outbox AS event
+WHERE assignment.id = sqlc.arg('assignment_id')
+  AND assignment.event_id = sqlc.arg('event_id')
+  AND assignment.workspace_id = sqlc.arg('workspace_id')
+  AND assignment.issue_id = sqlc.arg('issue_id')
+  AND event.id = assignment.event_id
+  AND event.workspace_id = assignment.workspace_id
+  AND event.issue_id = assignment.issue_id
+  AND event.status = 'processing'
+  AND event.lease_owner = sqlc.arg('lease_owner')
+  AND event.lease_expires_at > now();
+
+-- A coordinator task is inert until the issue/update side effects have been
+-- published. This is idempotent for a retry after the task was already
+-- promoted but before the assignment/outbox finalize transaction committed.
+-- name: PromoteCoordinationAgentTaskForLease :one
+UPDATE agent_task_queue AS task
+SET status = CASE WHEN task.status = 'deferred' THEN 'queued' ELSE task.status END,
+    fire_at = NULL,
+    updated_at = now()
+FROM agent_coordination_assignment AS assignment
+JOIN agent_coordination_outbox AS event ON event.id = assignment.event_id
+WHERE assignment.id = sqlc.arg('assignment_id')
+  AND assignment.event_id = sqlc.arg('event_id')
+  AND assignment.workspace_id = sqlc.arg('workspace_id')
+  AND assignment.issue_id = sqlc.arg('issue_id')
+  AND assignment.owner_type = 'agent'
+  AND assignment.owner_id = task.agent_id
+  AND assignment.status IN ('assigned', 'dispatched')
+  AND task.issue_id = assignment.issue_id
+  AND task.context->>'coordination_assignment_id' = assignment.id::text
+  AND task.status IN ('deferred', 'queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity')
+  AND event.workspace_id = assignment.workspace_id
+  AND event.issue_id = assignment.issue_id
+  AND event.status = 'processing'
+  AND event.lease_owner = sqlc.arg('lease_owner')
+  AND event.lease_expires_at > now()
+RETURNING task.*;

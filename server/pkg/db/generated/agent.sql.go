@@ -2642,17 +2642,17 @@ SELECT
     $1,
     $2,
     $3,
-    'queued',
     $4,
-    $5::jsonb,
-    $6,
-    $7::uuid,
+    $5,
+    $6::jsonb,
+    $7,
     $8::uuid,
     $9::uuid,
-    $10,
+    $10::uuid,
     $11,
-    $12::uuid,
-    COALESCE($13::uuid, gen_random_uuid())
+    $12,
+    $13::uuid,
+    COALESCE($14::uuid, gen_random_uuid())
 FROM agent AS target_agent
 JOIN issue AS target_issue ON target_issue.id = $3
 JOIN agent_runtime AS target_runtime ON target_runtime.id = $2
@@ -2660,7 +2660,7 @@ WHERE target_agent.id = $1
   AND target_agent.archived_at IS NULL
   AND target_agent.kind = 'user'
   AND target_agent.runtime_id = target_runtime.id
-  AND target_agent.workspace_id = $14
+  AND target_agent.workspace_id = $15
   AND target_issue.workspace_id = target_agent.workspace_id
   AND target_runtime.workspace_id = target_agent.workspace_id
   AND lock_task_owner_rows(
@@ -2675,6 +2675,7 @@ type CreateCoordinationAgentTaskParams struct {
 	AgentID              pgtype.UUID `json:"agent_id"`
 	RuntimeID            pgtype.UUID `json:"runtime_id"`
 	IssueID              pgtype.UUID `json:"issue_id"`
+	InitialStatus        string      `json:"initial_status"`
 	Priority             int32       `json:"priority"`
 	Context              []byte      `json:"context"`
 	HandoffNote          pgtype.Text `json:"handoff_note"`
@@ -2697,6 +2698,7 @@ func (q *Queries) CreateCoordinationAgentTask(ctx context.Context, arg CreateCoo
 		arg.AgentID,
 		arg.RuntimeID,
 		arg.IssueID,
+		arg.InitialStatus,
 		arg.Priority,
 		arg.Context,
 		arg.HandoffNote,
