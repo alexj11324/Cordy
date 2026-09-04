@@ -1623,6 +1623,9 @@ func (h *Handler) enqueueDependencyGraphRoots(ctx context.Context, result depend
 		}
 		switch root.assignment.executorType.String {
 		case "agent":
+			if !h.shouldEnqueueExecutorTask(ctx, root.issue) {
+				continue
+			}
 			if _, err := h.TaskService.EnqueueTaskForIssue(ctx, root.issue); err != nil {
 				slog.WarnContext(ctx, "dependency graph root task enqueue failed", "issue_id", uuidToString(root.issue.ID), "error", err)
 			}
