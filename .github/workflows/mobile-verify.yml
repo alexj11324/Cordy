@@ -2,7 +2,8 @@ name: Mobile Verify
 
 # Runs lint + typecheck for apps/mobile only, parallel to the main CI
 # workflow. Branch protection requires the `mobile` check for every PR, so
-# this workflow must run even when a change does not touch a mobile path.
+# the stable job still reports green on unrelated changes while its expensive
+# pnpm/turbo steps are gated by an explicit dependency-complete path filter.
 #
 # Mobile's vitest suite is intentionally narrow (Node env, pure-function
 # tests under apps/mobile/lib/*.test.ts — see apps/mobile/vitest.config.ts).
@@ -19,23 +20,78 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  mobile:
+  changes:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      mobile: ${{ steps.filter.outputs.mobile }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Filter mobile paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          # Ignored for pull requests; on main it compares only the commits in
+          # the completed push, avoiding a second full Mobile run after merge.
+          base: ${{ github.ref }}
+          filters: |
+            mobile:
+              - 'apps/mobile/**'
+              - 'packages/core/**'
+              - 'packages/tsconfig/**'
+              - 'packages/eslint-config/**'
+              - 'patches/**'
+              - 'package.json'
+              - '.npmrc'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'turbo.json'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/mobile-verify.yml'
+
+  mobile:
+    needs: changes
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check mobile path decision
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          MOBILE_CHANGED: ${{ needs.changes.outputs.mobile }}
+        run: |
+          if [ "$CHANGES_RESULT" != "success" ]; then
+            echo "::error::mobile path detection failed"
+            exit 1
+          fi
+          if [ "$MOBILE_CHANGED" != "true" ] && [ "$MOBILE_CHANGED" != "false" ]; then
+            echo "::error::mobile path filter returned an invalid decision"
+            exit 1
+          fi
+          echo "mobile changed: $MOBILE_CHANGED"
+
+      - name: Checkout
+        if: ${{ needs.changes.outputs.mobile == 'true' }}
+        uses: actions/checkout@v6
+
       - name: Setup pnpm
+        if: ${{ needs.changes.outputs.mobile == 'true' }}
         uses: pnpm/action-setup@v4
 
       - name: Setup Node.js
+        if: ${{ needs.changes.outputs.mobile == 'true' }}
         uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
 
       - name: Install dependencies
+        if: ${{ needs.changes.outputs.mobile == 'true' }}
         run: pnpm install
 
       - name: Type check, lint, and test
+        if: ${{ needs.changes.outputs.mobile == 'true' }}
         run: pnpm exec turbo typecheck lint test --filter=@patchbay/mobile
