@@ -7,19 +7,13 @@ import (
 
 // NoopConnector satisfies EventConnector by holding the run context
 // open without dialing anything and without emitting any inbound
-// events. It exists so the Hub can be wired into the boot path before
-// the real Lark long-connection client lands: the lease lifecycle,
-// supervisor / renewer goroutines, sweep + shutdown plumbing all run
-// against a real DB, and the operator sees the Hub's "lease acquired"
-// log lines once an installation exists — without the Hub silently
-// retrying a half-finished real connector and looking like the wire
-// protocol is broken when it has not been implemented yet.
-//
-// The next stage of the MVP (MUL-2671) replaces this with a connector
-// that opens the actual Lark WebSocket long connection, decodes
-// events, and calls emit. At that point the NoopConnectorFactory call
-// site in router.go swaps to the real factory; the Hub itself does
-// not change.
+// events. It is the explicit degraded connector used when the real
+// Lark long-connection transport cannot be initialized from deployment
+// configuration. The normal router path constructs WSLongConnConnector;
+// keeping this fallback lets the lease lifecycle, supervisor / renewer
+// goroutines and shutdown plumbing stay observable while the operator
+// repairs the endpoint configuration. Inbound messages are intentionally
+// dropped in this mode.
 type NoopConnector struct {
 	logger *slog.Logger
 }
@@ -36,12 +30,11 @@ func NewNoopConnector(logger *slog.Logger) *NoopConnector {
 
 // Run blocks until ctx is cancelled and then returns nil. A nil return
 // tells the Hub the connection ended cleanly (no backoff retry storm
-// on shutdown / lease loss). Because Run never errors and runs for as
-// long as the lease is held, the Hub's "uptime >= ResetBackoffAfter"
-// branch will reset the backoff on every supervisor cycle — which is
-// the right thing for a placeholder.
+// on shutdown / lease loss). Because this is a deliberate configuration
+// fallback rather than a transport error, the Hub keeps the degraded
+// state visible in its logs until the connector can be initialized.
 func (c *NoopConnector) Run(ctx context.Context, inst Installation, _ EventEmitter) error {
-	c.logger.Info("lark noop connector: holding lease (real long-conn not yet implemented)",
+	c.logger.Info("lark noop connector: holding lease (long-conn configuration unavailable)",
 		"installation_id", uuidString(inst.ID),
 		"app_id", inst.AppID,
 	)
@@ -53,9 +46,9 @@ func (c *NoopConnector) Run(ctx context.Context, inst Installation, _ EventEmitt
 }
 
 // NoopConnectorFactory returns a ConnectorFactory that hands every
-// installation a NoopConnector sharing the supplied logger. Used by
-// the router during the bootstrap stage; replaced by the real
-// connector factory once the wire-protocol implementation lands.
+// installation a NoopConnector sharing the supplied logger. It remains
+// available for tests and explicit degraded deployments; production's
+// normal router path uses the real shared WS long-connection connector.
 func NoopConnectorFactory(logger *slog.Logger) ConnectorFactory {
 	c := NewNoopConnector(logger)
 	return func(_ Installation) (EventConnector, error) {
