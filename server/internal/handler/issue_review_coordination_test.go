@@ -236,6 +236,72 @@ func TestAgentCoordinationRunOnceSelectsReviewerAndPublishesHandoff(t *testing.T
 	}
 }
 
+func TestAgentCoordinationRunOnceRecoversUnpublishedReviewHandoff(t *testing.T) {
+	requireIssueCoordinationDatabase(t)
+
+	executorID := dbfx.Agent(t, "coordination recovery executor", testRuntimeID)
+	reviewerID := dbfx.Agent(t, "coordination recovery reviewer", testRuntimeID)
+	issueID := dbfx.Issue(t, "coordination recovery", testutil.Cols{
+		"status":        "in_review",
+		"executor_type": "agent",
+		"executor_id":   executorID,
+		"reviewer_type": "agent",
+		"reviewer_id":   reviewerID,
+	})
+	dbfx.Cleanup(t, `DELETE FROM agent_task_queue WHERE issue_id = $1`, issueID)
+	cleanupIssueCoordinationRows(t, issueID)
+
+	eventID := dbfx.Insert(t, "agent_coordination_outbox", testutil.Cols{
+		"event_key":    "coordination-recovery-" + uuid.NewString(),
+		"workspace_id": testWorkspaceID,
+		"issue_id":     issueID,
+		"event_type":   "task_completed",
+		"status":       "pending",
+		"payload": testutil.Raw(`'{"assignment_role":"executor","agent_id":"` + executorID + `"}'::jsonb`),
+	})
+	assignmentID := dbfx.Insert(t, "agent_coordination_assignment", testutil.Cols{
+		"event_id":     eventID,
+		"workspace_id": testWorkspaceID,
+		"issue_id":     issueID,
+		"role":         "reviewer",
+		"status":       "assigned",
+		"owner_type":   "agent",
+		"owner_id":     reviewerID,
+		"decision": testutil.Raw(`'{
+			"role":"reviewer",
+			"review_publication":"review_handoff",
+			"issue_update_publication_key":"review_handoff:recovery",
+			"candidate_agent_id":"` + reviewerID + `",
+			"explicit_reviewer":false,
+			"previous_status":"in_progress",
+			"previous_executor_type":"agent",
+			"previous_executor_id":"` + executorID + `"
+		}'::jsonb`),
+	})
+	taskID := dbfx.Task(t, reviewerID, testutil.Cols{
+		"runtime_id": testRuntimeID,
+		"issue_id":   issueID,
+		"status":     "deferred",
+		"context": testutil.Raw(`'{
+			"coordination_assignment_id":"` + assignmentID + `",
+			"coordination_assignment_role":"reviewer",
+			"coordination_owner_type":"agent",
+			"coordination_owner_id":"` + reviewerID + `"
+		}'::jsonb`),
+	})
+
+	testHandler.AgentCoordination.RunOnce(context.Background())
+
+	var eventStatus, assignmentStatus, taskStatus string
+	var dispatchedTaskID string
+	dbfx.QueryRow(t, `SELECT status FROM agent_coordination_outbox WHERE id = $1`, eventID).Scan(&eventStatus)
+	dbfx.QueryRow(t, `SELECT status, dispatched_task_id::text FROM agent_coordination_assignment WHERE id = $1`, assignmentID).Scan(&assignmentStatus, &dispatchedTaskID)
+	dbfx.QueryRow(t, `SELECT status FROM agent_task_queue WHERE id = $1`, taskID).Scan(&taskStatus)
+	if eventStatus != "completed" || assignmentStatus != "dispatched" || taskStatus != "queued" || dispatchedTaskID != taskID {
+		t.Fatalf("recovered handoff = event %q assignment %q task %q dispatched %q; want completed/dispatched/queued/%q", eventStatus, assignmentStatus, taskStatus, dispatchedTaskID, taskID)
+	}
+}
+
 func seedDispatchedReviewerCoordinationTask(t *testing.T, issueID, reviewerID string) string {
 	t.Helper()
 	eventID := dbfx.Insert(t, "agent_coordination_outbox", testutil.Cols{
