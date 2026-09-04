@@ -37,6 +37,11 @@ test("release publishes the CLI as a cask in the dedicated Homebrew tap", async 
   assert.match(workflow, /scripts\/publish-homebrew-cask\.test\.mjs/u);
   assert.match(workflow, /node scripts\/publish-homebrew-cask\.mjs/u);
   assert.match(workflow, /^  publish-homebrew:$/mu);
+  assert.match(workflow, /^  group: release-\$\{\{ github\.ref \}\}$/mu);
+  assert.doesNotMatch(
+    workflow,
+    /^  group: release-\$\{\{ github\.repository \}\}$/mu,
+  );
   assert.match(
     workflow,
     /needs\.verify\.outputs\.is_stable == 'true'/u,

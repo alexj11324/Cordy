@@ -13,9 +13,7 @@ permissions:
   packages: write
 
 concurrency:
-  # Serialize tags so an older release cannot overwrite the stable Homebrew
-  # cask after a newer tag has already published it.
-  group: release-${{ github.repository }}
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
