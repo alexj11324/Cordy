@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+
 import { fireEvent, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -114,6 +116,65 @@ describe("SettingsPage nav trigger", () => {
       screen.queryByRole("button", { name: "Toggle left sidebar" }),
     ).not.toBeInTheDocument();
     expect(screen.getByText("Settings")).toBeInTheDocument();
+  });
+
+  it("floats the panel in a rounded surface on the app shell", () => {
+    const { container } = renderWithI18n(<SettingsPage />);
+
+    expect(container.querySelector("[data-settings-variant=embedded]")).toHaveClass(
+      "bg-app-shell",
+    );
+    expect(
+      container.querySelector("[data-slot=settings-content-surface]")?.parentElement,
+    ).toHaveClass("rounded-2xl");
+  });
+
+  it("keeps every settings section that existed before the redesign", () => {
+    layout.compact = false;
+    configStore.getState().setFeatureFlags({
+      [PLUGINS_V1_FLAG]: true,
+      [BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG]: true,
+    });
+
+    renderWithI18n(<SettingsPage />);
+
+    for (const name of [
+      "Profile",
+      "Preferences",
+      "Shortcuts",
+      "Issue",
+      "Chat",
+      "Notifications",
+      "API Tokens",
+      "General",
+      "Repositories",
+      "GitHub",
+      "Integrations",
+      "Labs",
+      "Members",
+      "Billing",
+      "Labels",
+      "Issue Statuses",
+      "Properties",
+      "Quick Actions",
+      "MCP",
+      "Plugins",
+    ]) {
+      expect(screen.getByRole("tab", { name })).toBeInTheDocument();
+    }
+  });
+
+  it("keeps the same floating card when opened as a standalone window", () => {
+    const { container } = renderWithI18n(
+      <SettingsPage variant="standalone" />,
+    );
+
+    expect(container.querySelector("[data-settings-variant=standalone]")).toHaveClass(
+      "bg-app-shell",
+    );
+    expect(
+      container.querySelector("[data-slot=settings-content-surface]")?.parentElement,
+    ).toHaveClass("rounded-2xl");
   });
 });
 

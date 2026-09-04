@@ -62,7 +62,10 @@ export function NotificationsTab() {
   const systemEnabled = preferences.system_notifications !== "muted";
 
   return (
-    <SettingsTab title={t(($) => $.page.tabs.notifications)}>
+    <SettingsTab
+      title={t(($) => $.page.tabs.notifications)}
+      description={t(($) => $.notifications.page_description)}
+    >
       <SettingsSection
         title={t(($) => $.notifications.title)}
         description={t(($) => $.notifications.description)}

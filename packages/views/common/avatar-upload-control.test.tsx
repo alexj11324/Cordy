@@ -267,4 +267,18 @@ describe("AvatarUploadControl", () => {
     fireEvent.click(trigger);
     expect(screen.queryByText("Upload image")).not.toBeInTheDocument();
   });
+
+  it("shows a persistent pencil badge instead of the hover overlay", () => {
+    renderWithI18n(
+      <AvatarUploadControl
+        variant="user"
+        value={null}
+        size={192}
+        editBadge
+        onUploaded={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("avatar-edit-badge")).toBeInTheDocument();
+  });
 });

@@ -362,18 +362,19 @@ export function RepositoriesTab() {
   if (!workspace) return null;
 
   return (
-    <SettingsTab title={t(($) => $.page.tabs.repositories)}>
-      <SettingsSection
-        description={t(($) => $.repositories.description)}
-        action={
-          <SettingsSaveState
-            status={autoSave.status}
-            savingLabel={t(($) => $.auto_save.saving)}
-            savedLabel={t(($) => $.auto_save.saved)}
-            errorLabel={t(($) => $.auto_save.failed)}
-          />
-        }
-      >
+    <SettingsTab
+      title={t(($) => $.page.tabs.repositories)}
+      description={t(($) => $.repositories.description)}
+      action={
+        <SettingsSaveState
+          status={autoSave.status}
+          savingLabel={t(($) => $.auto_save.saving)}
+          savedLabel={t(($) => $.auto_save.saved)}
+          errorLabel={t(($) => $.auto_save.failed)}
+        />
+      }
+    >
+      <SettingsSection>
         <SettingsCard>
           {repositories.length === 0 ? (
             <div className="px-4 py-8 text-center text-caption text-muted-foreground">

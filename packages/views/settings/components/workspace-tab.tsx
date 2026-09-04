@@ -301,7 +301,10 @@ export function WorkspaceTab() {
   if (!workspace) return null;
 
   return (
-    <SettingsTab title={t(($) => $.page.tabs.general)}>
+    <SettingsTab
+      title={t(($) => $.page.tabs.general)}
+      description={t(($) => $.workspace.page_description)}
+    >
       <SettingsSection
         title={t(($) => $.workspace.section_general)}
         action={

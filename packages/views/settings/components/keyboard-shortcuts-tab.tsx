@@ -116,28 +116,30 @@ export function KeyboardShortcutsTab() {
       title={t(($) => $.shortcuts.title)}
       description={t(($) => $.shortcuts.description)}
     >
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative min-w-0 flex-1 sm:max-w-sm">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={t(($) => $.shortcuts.search_placeholder)}
-            aria-label={t(($) => $.shortcuts.search_placeholder)}
-            className="pl-8"
-          />
+      <div>
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative min-w-0 flex-1 sm:max-w-sm">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={t(($) => $.shortcuts.search_placeholder)}
+              aria-label={t(($) => $.shortcuts.search_placeholder)}
+              className="pl-8"
+            />
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setResetConfirmOpen(true)}
+            disabled={Object.keys(overrides).length === 0}
+          >
+            <RotateCcw className="size-3.5" />
+            {t(($) => $.shortcuts.reset_all)}
+          </Button>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setResetConfirmOpen(true)}
-          disabled={Object.keys(overrides).length === 0}
-        >
-          <RotateCcw className="size-3.5" />
-          {t(($) => $.shortcuts.reset_all)}
-        </Button>
-      </div>
 
+        <div className="space-y-12">
       {groups.map((category) => {
         const actions = visibleActions.filter(
           (action) => action.category === category,
@@ -203,6 +205,8 @@ export function KeyboardShortcutsTab() {
           <FixedShortcutRow label={t(($) => $.shortcuts.fixed.close_dialog)} shortcut={createShortcutChord("Escape")} />
         </SettingsCard>
       </SettingsSection>
+        </div>
+      </div>
 
       <AlertDialog open={resetConfirmOpen} onOpenChange={setResetConfirmOpen}>
         <AlertDialogContent>

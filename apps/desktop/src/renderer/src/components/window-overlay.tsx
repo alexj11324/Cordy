@@ -59,7 +59,7 @@ function SettingsWindow() {
   return (
     <div
       ref={containerRef}
-      className="fixed inset-0 z-50 flex min-h-0 bg-background"
+      className="fixed inset-0 z-50 flex min-h-0 bg-app-shell"
     >
       <div
         aria-hidden

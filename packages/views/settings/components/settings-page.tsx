@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { GitHubMark } from "./github-mark";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@patchbay/ui/components/ui/tabs";
+import { cn } from "@patchbay/ui/lib/utils";
 import { useIsMobile } from "@patchbay/ui/hooks/use-mobile";
 import { useCurrentWorkspace } from "@patchbay/core/paths";
 import { useFeatureEnabled } from "@patchbay/core/config";
@@ -123,7 +124,14 @@ const LEGACY_WORKSPACE_TAB_REDIRECTS: Record<string, string> = {
 };
 
 const SETTINGS_TAB_TRIGGER_CLASS =
-  "h-8 shrink-0 px-2.5 hover:bg-surface-hover data-active:!bg-surface-selected data-active:!text-surface-selected-foreground data-active:hover:!bg-surface-selected md:!w-full md:px-2 md:after:hidden";
+  "h-8 shrink-0 justify-start gap-2 rounded-lg px-2 hover:bg-surface-hover hover:text-foreground data-active:!bg-surface-selected data-active:!text-surface-selected-foreground data-active:hover:!bg-surface-selected data-active:hover:!text-surface-selected-foreground md:!w-full md:after:hidden";
+
+const WIDE_CONTENT_TABS = new Set([
+  "labels",
+  "issue-statuses",
+  "properties",
+  "quick-actions",
+]);
 
 export interface ExtraSettingsTab {
   value: string;
@@ -198,51 +206,40 @@ export function SettingsPage({
     navigation.replace(`${navigation.pathname}?${params.toString()}`);
   };
 
+  const contentClassName = cn(
+    "mx-auto flex w-full flex-col",
+    WIDE_CONTENT_TABS.has(activeTab) ? "max-w-5xl" : "max-w-4xl",
+  );
+
   return (
     <Tabs
       value={activeTab}
       onValueChange={handleTabChange}
       orientation={isMobile ? "horizontal" : "vertical"}
       data-settings-variant={variant}
-      className="flex flex-1 min-h-0 flex-col gap-0 overflow-y-auto md:flex-row md:overflow-hidden"
+      className="flex h-full min-h-0 flex-1 flex-col gap-0 overflow-y-auto bg-app-shell md:flex-row md:overflow-hidden"
     >
-      {/* Structural navigation; bounded setting groups remain in the content surface.
-          Stays on the content surface color (no shell tint): the desktop's active
-          tab merges into the card top, and a tinted panel under the first tabs
-          breaks that seam (MUL-4439). Zoning comes from the divider instead.
-          Standalone windows opt into the sidebar tint explicitly. */}
+      {/* Nav sits on the app shell; the panel to the right is the floating
+          content card. Same chrome on web (inside the dashboard inset) and
+          desktop (the settings overlay). */}
       <div
-        className={
-          variant === "standalone"
-            ? "shrink-0 overflow-x-auto border-b border-sidebar-border bg-sidebar p-2 text-sidebar-text-primary md:w-80 md:overflow-y-auto md:border-b-0 md:border-r md:p-4"
-            : "shrink-0 overflow-x-auto border-b border-surface-border p-2 md:w-56 md:overflow-y-auto md:border-b-0 md:border-r md:p-4"
-        }
+        data-slot="settings-nav"
+        className="flex shrink-0 flex-col overflow-x-auto p-2 text-sidebar-text-primary md:w-64 md:overflow-y-auto md:p-3"
       >
         {navigationHeader ? <div>{navigationHeader}</div> : null}
         {/* This page builds its own chrome instead of a PageHeader, so it has
             to supply the nav trigger itself — below `xl` the nav is a sheet or
             auto-collapsed, and settings has no other way back to it. */}
-        {/* The gap below this row belongs to the row, not to the heading: with
-            `items-center`, a bottom margin on the `h1` is part of the box being
-            centred, so it offsets the heading against the trigger beside it. */}
-        <div className="flex items-center md:mb-4">
+        <div className="flex items-center">
           {navigationHeader ? null : <CollapsedNavTrigger />}
-          <h1
-            className={
-              variant === "standalone"
-                ? "sr-only font-semibold md:not-sr-only md:px-2 text-title"
-                : "sr-only text-body font-semibold md:not-sr-only md:px-2"
-            }
-          >
-            {t(($) => $.page.title)}
-          </h1>
+          <h1 className="sr-only">{t(($) => $.page.title)}</h1>
         </div>
         <TabsList
           variant="line"
-          className="flex w-max min-w-full flex-row items-center gap-1 p-0 md:w-full md:flex-col md:items-stretch"
+          className="flex w-max min-w-full flex-row items-center gap-0.5 p-0 md:w-full md:flex-col md:items-stretch"
         >
           {/* My Account group */}
-          <span className="hidden px-2 pb-1 pt-2 text-caption font-medium text-muted-foreground md:block">
+          <span className="hidden px-2 pb-1.5 pt-3 text-caption font-semibold text-muted-foreground md:block">
             {t(($) => $.page.my_account)}
           </span>
           {ACCOUNT_TAB_KEYS.map((key) => {
@@ -270,7 +267,7 @@ export function SettingsPage({
           ))}
 
           {/* Workspace group */}
-          <span className="hidden truncate px-2 pb-1 pt-4 text-caption font-medium text-muted-foreground md:block">
+          <span className="hidden truncate px-2 pb-1.5 pt-5 text-caption font-semibold text-muted-foreground md:block">
             {workspaceName ?? t(($) => $.page.workspace_fallback)}
           </span>
           {visibleWorkspaceTabKeys.map((key) => {
@@ -289,38 +286,60 @@ export function SettingsPage({
         </TabsList>
       </div>
 
-      {/* Right content */}
-      <div className="min-w-0 flex-1 md:overflow-y-auto">
-        <div className={`mx-auto w-full p-4 sm:p-6 md:p-8 ${activeTab === "labels" || activeTab === "issue-statuses" || activeTab === "properties" || activeTab === "quick-actions"
-              ? "max-w-5xl"
-              : "max-w-3xl"}`}>
-          <TabsContent value="profile"><AccountTab /></TabsContent>
-          <TabsContent value="preferences"><PreferencesTab /></TabsContent>
-          <TabsContent value="shortcuts"><KeyboardShortcutsTab /></TabsContent>
-          <TabsContent value="issue"><IssueTab /></TabsContent>
-          <TabsContent value="chat"><ChatTab /></TabsContent>
-          <TabsContent value="notifications"><NotificationsTab /></TabsContent>
-          <TabsContent value="tokens"><TokensTab /></TabsContent>
-          <TabsContent value="workspace"><WorkspaceTab /></TabsContent>
-          <TabsContent value="repositories"><RepositoriesTab /></TabsContent>
-          <TabsContent value="github"><GitHubTab /></TabsContent>
-          <TabsContent value="integrations"><IntegrationsTab /></TabsContent>
-          <TabsContent value="labs"><LabsTab /></TabsContent>
-          <TabsContent value="members"><MembersTab /></TabsContent>
-          {billingEnabled ? (
-            <TabsContent value="billing"><BillingTab /></TabsContent>
-          ) : null}
-          <TabsContent value="labels"><LabelsTab /></TabsContent>
-          <TabsContent value="issue-statuses"><IssueStatusesTab /></TabsContent>
-          <TabsContent value="properties"><PropertiesTab /></TabsContent>
-          <TabsContent value="quick-actions"><QuickActionsTab /></TabsContent>
-          <TabsContent value="mcp"><McpTab /></TabsContent>
-          {pluginsEnabled ? <TabsContent value="plugins"><PluginsTab /></TabsContent> : null}
-          {extraAccountTabs?.map((tab) => (
-            <TabsContent key={tab.value} value={tab.value}>{tab.content}</TabsContent>
-          ))}
+      <div className="relative z-10 mb-2 ml-px mr-2 mt-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl bg-surface shadow-[var(--surface-shadow)] ring-1 ring-surface-border">
+        <div
+          className="min-h-0 flex-1 overflow-y-auto px-5 pb-12 pt-6 sm:px-6"
+          data-slot="settings-content-surface"
+        >
+          <div className={contentClassName}>
+            <SettingsTabPanels
+              billingEnabled={billingEnabled}
+              extraAccountTabs={extraAccountTabs}
+              pluginsEnabled={pluginsEnabled}
+            />
+          </div>
         </div>
       </div>
     </Tabs>
+  );
+}
+
+function SettingsTabPanels({
+  billingEnabled,
+  extraAccountTabs,
+  pluginsEnabled,
+}: {
+  billingEnabled: boolean;
+  extraAccountTabs?: ExtraSettingsTab[];
+  pluginsEnabled: boolean;
+}) {
+  return (
+    <>
+      <TabsContent value="profile"><AccountTab /></TabsContent>
+      <TabsContent value="preferences"><PreferencesTab /></TabsContent>
+      <TabsContent value="shortcuts"><KeyboardShortcutsTab /></TabsContent>
+      <TabsContent value="issue"><IssueTab /></TabsContent>
+      <TabsContent value="chat"><ChatTab /></TabsContent>
+      <TabsContent value="notifications"><NotificationsTab /></TabsContent>
+      <TabsContent value="tokens"><TokensTab /></TabsContent>
+      <TabsContent value="workspace"><WorkspaceTab /></TabsContent>
+      <TabsContent value="repositories"><RepositoriesTab /></TabsContent>
+      <TabsContent value="github"><GitHubTab /></TabsContent>
+      <TabsContent value="integrations"><IntegrationsTab /></TabsContent>
+      <TabsContent value="labs"><LabsTab /></TabsContent>
+      <TabsContent value="members"><MembersTab /></TabsContent>
+      {billingEnabled ? (
+        <TabsContent value="billing"><BillingTab /></TabsContent>
+      ) : null}
+      <TabsContent value="labels"><LabelsTab /></TabsContent>
+      <TabsContent value="issue-statuses"><IssueStatusesTab /></TabsContent>
+      <TabsContent value="properties"><PropertiesTab /></TabsContent>
+      <TabsContent value="quick-actions"><QuickActionsTab /></TabsContent>
+      <TabsContent value="mcp"><McpTab /></TabsContent>
+      {pluginsEnabled ? <TabsContent value="plugins"><PluginsTab /></TabsContent> : null}
+      {extraAccountTabs?.map((tab) => (
+        <TabsContent key={tab.value} value={tab.value}>{tab.content}</TabsContent>
+      ))}
+    </>
   );
 }
