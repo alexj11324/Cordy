@@ -181,9 +181,9 @@ WITH tombstoned AS (
     DELETE FROM linear_sync_outbox
     WHERE binding_id IN (SELECT id FROM tombstoned) AND workspace_id = $2
 )
-UPDATE linear_issue_link
+UPDATE linear_issue_link AS issue_link
 SET sync_status = 'deleted', updated_at = now()
-WHERE binding_id IN (SELECT id FROM tombstoned) AND workspace_id = $2;
+WHERE issue_link.binding_id IN (SELECT id FROM tombstoned) AND issue_link.workspace_id = $2;
 
 -- name: ListLinearMemberBindings :many
 SELECT id, workspace_id, connection_id, patchbay_user_id, linear_user_id,

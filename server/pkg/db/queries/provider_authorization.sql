@@ -93,25 +93,25 @@ WITH budget_lock AS (
         CASE
             WHEN @enforce_budget::boolean
              AND @decision::text = 'allow'
-             AND reservations.reserved > @budget_limit::bigint - @reservation::bigint
+             AND reserved > @budget_limit::bigint - @reservation::bigint
             THEN 'deny'
             ELSE @decision::text
         END AS decision,
         CASE
             WHEN @enforce_budget::boolean
              AND @decision::text = 'allow'
-             AND reservations.reserved > @budget_limit::bigint - @reservation::bigint
+             AND reserved > @budget_limit::bigint - @reservation::bigint
             THEN @budget_exhausted_reason::text
             ELSE @reason::text
         END AS reason,
         CASE
             WHEN @enforce_budget::boolean
              AND @decision::text = 'allow'
-             AND reservations.reserved > @budget_limit::bigint - @reservation::bigint
+             AND reserved > @budget_limit::bigint - @reservation::bigint
             THEN 0::bigint
             ELSE @reservation::bigint
         END AS reservation
-    FROM prior_reservations AS reservations
+    FROM prior_reservations
 )
 INSERT INTO authorization_audit_event (
     id, workspace_id, principal_type, principal_id, on_behalf_of_user_id,

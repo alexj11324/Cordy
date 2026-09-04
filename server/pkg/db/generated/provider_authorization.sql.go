@@ -116,25 +116,25 @@ WITH budget_lock AS (
         CASE
             WHEN $5::boolean
              AND $6::text = 'allow'
-			 AND reservations.reserved > $7::bigint - $8::bigint
+             AND reserved > $7::bigint - $8::bigint
             THEN 'deny'
             ELSE $6::text
         END AS decision,
         CASE
             WHEN $5::boolean
              AND $6::text = 'allow'
-			 AND reservations.reserved > $7::bigint - $8::bigint
+             AND reserved > $7::bigint - $8::bigint
             THEN $9::text
             ELSE $10::text
         END AS reason,
         CASE
             WHEN $5::boolean
              AND $6::text = 'allow'
-			 AND reservations.reserved > $7::bigint - $8::bigint
+             AND reserved > $7::bigint - $8::bigint
             THEN 0::bigint
             ELSE $8::bigint
         END AS reservation
-	FROM prior_reservations AS reservations
+	FROM prior_reservations
 )
 INSERT INTO authorization_audit_event (
     id, workspace_id, principal_type, principal_id, on_behalf_of_user_id,
