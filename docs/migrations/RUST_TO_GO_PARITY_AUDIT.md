@@ -44,6 +44,31 @@ also passed on the same SHA. This is the current source/contract/test/CI
 evidence for the graph responsibility block; no production deployment or
 deployed apply/read/WebSocket observation has occurred.
 
+Review-handoff responsibility checkpoint: the complete executor → reviewer →
+review-return coordination path is now covered in Go, including durable
+assignment ownership, team-leader provenance, reviewer availability and
+replacement recovery, publication replay, issue/reviewer revalidation, and
+task/outbox finalization. CI [`33865409754`](https://github.com/alexj11324/Cordy/actions/runs/33865409754)
+on `bbe20dcda` passed backend tests, SQLC, frontend, Mobile Verify, Windows,
+installer, vulnerability, and delivery checks. The preceding CI run exposed a
+real recovery defect: the promotion query wrote the nonexistent
+`agent_task_queue.updated_at`, leaving a recovered task deferred and its event
+processing. Commit `bbe20dcda` removed that write and the replacement run
+verified the durable final state `event=completed`, `assignment=dispatched`,
+and `task=queued`. This closes the source/contract/test/CI gate for this
+responsibility block; deployed Go runtime and real provider acceptance remain
+separate open gates.
+
+Subagent responsibility rule for this migration: an assignment names one
+complete responsibility domain, not a slice. “Done” requires source inventory,
+contract/schema and generated artifacts, backend behavior, every current UI or
+client consumer, focused regression tests, CI, and the requested runtime or
+deployment evidence for that domain. A subagent may report an intermediate
+checkpoint, but it must not report completion until all of those gates are
+closed or the remaining gates are explicitly recorded with an owner and
+blocking reason. A green test for one layer, a file restoration, or a partial
+commit is not domain completion.
+
 Backend compilation, SQL generation and tests run in GitHub Actions. No local
 Go/Rust tooling or Docker build is part of this audit. Local frontend checks
 and browser fixtures complement CI; neither proves real provider connectivity,
@@ -85,6 +110,7 @@ for the complete installed-state rename, focused tests and browser evidence.
 | Dependency graph role semantics | Go now carries the Rust role contract through `server/internal/handler/dependency_graph.go`: `owner` is a member, `executor` and `candidate_executors` are agent/team targets, `reviewer` accepts member/agent/team, and `runtime_id`/`model_id` are paired. Apply writes those explicit issue/node columns and acceptance criteria atomically; read returns Rust-shaped `parent`, `children`, `nodes`, `edges`, derived `waves`, temp-id edge endpoints, and fail-closed readiness. The scheduler now promotes and admits ready agent/team nodes, wakes dependents after prerequisite completion, marks attention on failed/cancelled prerequisites, replays runtime recovery before the empty-claim fast path, and cancels graph children/tasks atomically on plan retirement or parent deletion. `patchbay issue dependency-graph get/apply` forwards the typed plan and idempotency header. Core/View/Mobile consumers use `executor_*`, `candidate_executors`, readiness, and `dependency_graph:updated`; no current graph consumer uses the retired aliases. `TestApplyDependencyGraphRoundTripsRolesAndRealtime`, the retirement/delete cleanup tests, `TestListDependencyGraphsReturnsNestedResponses`, the CLI request/output tests, `TestPostJSONWithHeaderPreservesClientContext`, and `TestRegisterListeners_DependencyGraphUpdatedBroadcastsWorkspaceFrame` are the focused acceptance set. Replacement CI [`33856818700`](https://github.com/alexj11324/Cordy/actions/runs/33856818700) passed on `6376d38be`, with Mobile Verify [`33856818664`](https://github.com/alexj11324/Cordy/actions/runs/33856818664) also green. | Source/contract/test/CI acceptance is closed. A deployed Go service still needs an actual apply → read-by-parent/read-by-plan → WebSocket refresh observation. No local Go test is permitted by repository rules. Historical graph migrations retain the old columns only in the immutable up migration and rename-back down migration listed in the residual inventory. |
 | Hosted IM turn quota          | Go implementation is present in `79b2cac95`, `11ae5375b`, `server/internal/channelquota`, `server/internal/service/task.go`, `server/internal/handler/messaging_usage.go`, and the Settings/Core contracts. Managed channel-ingested turns use the Cloud `im_agent_turns` gate, count accepted plus in-flight turns, serialize admission on the workspace row, expose usage/reset data, and bypass self-hosted messaging. The earlier targeted run [`33798936215`](https://github.com/alexj11324/Cordy/actions/runs/33798936215) was cancelled before backend completion, but replacement CI [`33824678711`](https://github.com/alexj11324/Cordy/actions/runs/33824678711) on `0c71849dc` passed the complete applicable backend/frontend/sqlc suite. | Cloud entitlement rollout, deployed enablement, and real provider/deployment acceptance. The implementation and replacement-CI gates are no longer open; its end-to-end shipping gate remains open. |
 | Hosted workspace quota        | Go implementation is present in `d1707c566` and `36f1b0724`: `server/internal/handler/workspace_capacity.go` resolves the Cloud `hosted_workspace_limit` gate and `server/internal/handler/workspace.go` applies it to workspace creation and owner promotion, with `server/internal/seatcapacity` serializing ownership decisions. CI [`33803663947`](https://github.com/alexj11324/Cordy/actions/runs/33803663947) first exposed two fixtures sending multiple SQL commands through a prepared statement; `36f1b0724` split those statements, and replacement CI [`33824678711`](https://github.com/alexj11324/Cordy/actions/runs/33824678711) on `0c71849dc` passed the complete applicable backend, sqlc, and frontend suite. | Cloud entitlement rollout, deployed enablement, and live hosted/self-hosted acceptance. The implementation, fixture fix, and replacement-CI gates are closed; concurrency and deployment evidence still need live acceptance. |
+| Review handoff coordination | Go now carries the complete executor → reviewer → review-return path with durable assignment/outbox ownership, agent/team provenance, reviewer availability and replacement recovery, replay-safe activity/inbox publication, issue/reviewer revision fences, and deferred-task promotion. Focused DB tests cover initial reviewer selection, team leader provenance, stale ownership, publication recovery, and final durable state. CI [`33865409754`](https://github.com/alexj11324/Cordy/actions/runs/33865409754) on `bbe20dcda` passed backend, SQLC, frontend, Mobile Verify, Windows, installer, vulnerability, and delivery checks. | Deployed Go runtime and a real UI/runtime observation of completion → review → return remain open. |
 | Authentication and delivery   | Go source now contains the Clerk provider/adapter, split shadcn shell, SSO callback and Desktop handoff (`8f4d98b49`, `8cb3f6dbb`). Focused source/tests do not establish browser JavaScript → real Clerk → Go session → frontend API completion, or a deployed Go backend/build identity.                                                                                                                                                                                                                 | Real browser authentication, native callback, release artifacts, production health/version and provider connectivity.  |
 
 The table does not certify unaudited areas such as guest isolation, capability
