@@ -22,13 +22,13 @@ func TestLinearWorkerWiringRequiresCompleteCredentials(t *testing.T) {
 	}
 }
 
-func TestLinearWorkerWiringFailsClosedOnMissingWebhookSecret(t *testing.T) {
+func TestLinearWorkerWiringKeepsOAuthWhenWebhookSecretIsMissing(t *testing.T) {
 	t.Setenv("PATCHBAY_LINEAR_SECRET_KEY", base64.StdEncoding.EncodeToString(make([]byte, 32)))
 	t.Setenv("LINEAR_CLIENT_ID", "client")
 	t.Setenv("LINEAR_CLIENT_SECRET", "secret")
 	t.Setenv("LINEAR_WEBHOOK_SECRET", "")
 	_, h := NewRouterWithOptions(nil, realtime.NewHub(), events.New(), analytics.NoopClient{}, nil, RouterOptions{})
-	if h.LinearSecretBox != nil || h.LinearWorker != nil {
-		t.Fatal("incomplete Linear credentials must leave integration disabled")
+	if h.LinearSecretBox == nil || h.LinearWorker == nil {
+		t.Fatal("missing webhook secret must not disable OAuth and polling")
 	}
 }

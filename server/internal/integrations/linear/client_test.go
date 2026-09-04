@@ -9,6 +9,27 @@ import (
 	"testing"
 )
 
+func TestHTTPClientOAuthUsesPKCEAndRejectsIncompleteTokens(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil { t.Fatal(err) }
+		if r.Form.Get("grant_type") != "authorization_code" || r.Form.Get("code_verifier") != "verifier" || r.Form.Get("redirect_uri") != "https://app/callback" { t.Fatalf("oauth form = %v", r.Form) }
+		_ = json.NewEncoder(w).Encode(map[string]any{"access_token":"access","refresh_token":"refresh","scope":[]string{"read","issues:create"},"expires_in":3600})
+	}))
+	defer server.Close()
+	client := NewHTTPClient(server.Client()); client.TokenURL = server.URL
+	token, err := client.ExchangeAuthorizationCode(context.Background(),"code","https://app/callback","verifier","client","secret")
+	if err != nil || token.AccessToken != "access" || token.RefreshToken != "refresh" || token.Scope != "read issues:create" { t.Fatalf("token=%+v err=%v",token,err) }
+	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _ = json.NewEncoder(w).Encode(map[string]any{"access_token":"access","refresh_token":"refresh","expires_in":0}) }))
+	defer bad.Close(); client.TokenURL = bad.URL
+	if _, err = client.RefreshToken(context.Background(),"refresh","client","secret"); err == nil || !IsKind(err, ErrorInvalidResponse) { t.Fatalf("incomplete token err=%v",err) }
+}
+
+func TestPatchbayIssueMarkerRoundTrip(t *testing.T) {
+	description := DescriptionWithPatchbayMarker("body", "issue-1")
+	if PatchbayIssueIDFromDescription(description) != "issue-1" { t.Fatalf("marker=%q",description) }
+	if got := StripPatchbayIssueMarker(description); got != "body" { t.Fatalf("stripped=%q",got) }
+}
+
 func TestHTTPClientTokenRefreshAndRevokeContracts(t *testing.T) {
 	var revoked bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -50,7 +71,7 @@ func TestHTTPClientTokenRefreshAndRevokeContracts(t *testing.T) {
 func TestHTTPClientGraphQLIssueContracts(t *testing.T) {
 	seen := map[string]bool{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "access" {
+		if r.Header.Get("Authorization") != "Bearer access" {
 			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
 		}
 		var request struct {

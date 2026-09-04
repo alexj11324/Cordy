@@ -38,6 +38,15 @@ type fakeLinearAPI struct {
 	authErr  error
 }
 
+func (f *fakeLinearAPI) ExchangeAuthorizationCode(context.Context, string, string, string, string, string) (linear.Token, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.authErr != nil {
+		return linear.Token{}, f.authErr
+	}
+	return f.refresh, nil
+}
+
 func (f *fakeLinearAPI) RefreshToken(context.Context, string, string, string) (linear.Token, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -61,18 +70,71 @@ func (f *fakeLinearAPI) ListIssues(context.Context, string, string, string) ([]l
 	return f.listed, f.err
 }
 
+func (f *fakeLinearAPI) DiscoverIdentity(context.Context, string) (linear.Identity, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.authErr != nil {
+		return linear.Identity{}, f.authErr
+	}
+	return linear.Identity{ID: "viewer", OrganizationID: "org", OrganizationName: "Test org", ActorID: "viewer"}, nil
+}
+
+func (f *fakeLinearAPI) Catalog(context.Context, string) (linear.Catalog, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.authErr != nil {
+		return linear.Catalog{}, f.authErr
+	}
+	return linear.Catalog{}, nil
+}
+
+func (f *fakeLinearAPI) ValidateBinding(context.Context, string, string, string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.authErr
+}
+
+func (f *fakeLinearAPI) DryRunCounts(context.Context, string, string, string, map[string]any) (linear.DryRunCounts, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.authErr != nil {
+		return linear.DryRunCounts{}, f.authErr
+	}
+	return linear.DryRunCounts{RemoteIssues: len(f.listed)}, nil
+}
+
+func (f *fakeLinearAPI) FetchIssue(_ context.Context, _ string, id string) (linear.Issue, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return linear.Issue{}, false, f.err
+	}
+	for _, issue := range f.listed {
+		if issue.ID == id {
+			return issue, true, nil
+		}
+	}
+	return linear.Issue{}, false, nil
+}
+
 func (f *fakeLinearAPI) CreateIssue(_ context.Context, _ string, in linear.IssueInput) (linear.Issue, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.created = append(f.created, in)
-	return linear.Issue{ID: "10000000-0000-0000-0000-000000000001", Identifier: "ENG-1", Title: in.Title, Description: in.Description, Priority: in.Priority, UpdatedAt: time.Now()}, f.err
+	issue := linear.Issue{ID: "10000000-0000-0000-0000-000000000001", Identifier: "ENG-1", Title: in.Title, Description: in.Description, Priority: in.Priority, DueDate: in.DueDate, UpdatedAt: time.Now(), ProjectID: in.ProjectID, TeamID: in.TeamID}
+	if in.AssigneeID != nil { issue.AssigneeID = *in.AssigneeID }
+	f.listed = append(f.listed, issue)
+	return issue, f.err
 }
 
 func (f *fakeLinearAPI) UpdateIssue(_ context.Context, _ string, id string, in linear.IssueInput) (linear.Issue, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.updated = append(f.updated, in)
-	return linear.Issue{ID: id, Identifier: "ENG-1", Title: in.Title, Description: in.Description, Priority: in.Priority, UpdatedAt: time.Now()}, f.err
+	issue := linear.Issue{ID: id, Identifier: "ENG-1", Title: in.Title, Description: in.Description, Priority: in.Priority, DueDate: in.DueDate, UpdatedAt: time.Now(), ProjectID: in.ProjectID, TeamID: in.TeamID}
+	if in.AssigneeID != nil { issue.AssigneeID = *in.AssigneeID }
+	for index := range f.listed { if f.listed[index].ID == id { f.listed[index] = issue } }
+	return issue, f.err
 }
 
 func (f *fakeLinearAPI) DeleteIssue(_ context.Context, _ string, id string) error {
@@ -181,6 +243,15 @@ func webhookPayload(t *testing.T, action string, at int64, issue map[string]any)
 
 func (f linearFixture) queueWebhook(t *testing.T, delivery string, body []byte) string {
 	t.Helper()
+	var envelope webhookEnvelope
+	if json.Unmarshal(body, &envelope) == nil && envelope.Data.ID != "" && f.api != nil {
+		remote := remoteFromWebhook(envelope)
+		f.api.mu.Lock()
+		found := false
+		for index := range f.api.listed { if f.api.listed[index].ID == remote.ID { f.api.listed[index] = remote; found = true } }
+		if !found && !remote.Deleted { f.api.listed = append(f.api.listed, remote) }
+		f.api.mu.Unlock()
+	}
 	return dbfx.Insert(t, "linear_sync_inbox", testutil.Cols{
 		"connection_id": f.connectionID,
 		"delivery_id":   delivery,
@@ -985,9 +1056,11 @@ func TestHandleLinearWebhookPersistsDedupesAndWakesWorker(t *testing.T) {
 	if err := testPool.QueryRow(context.Background(), `SELECT organization_id FROM linear_connection WHERE id=$1`, f.connectionID).Scan(&organizationID); err != nil {
 		t.Fatal(err)
 	}
+	timestamp := time.Now().UnixMilli()
 	body, err := json.Marshal(map[string]any{
 		"type": "Issue", "action": "update", "organizationId": organizationID,
-		"webhookTimestamp": time.Now().UnixMilli(),
+		"webhookId": "linear-hook-1",
+		"webhookTimestamp": timestamp,
 		"data":             map[string]any{"id": "40000000-0000-0000-0000-000000000004"},
 	})
 	if err != nil {
@@ -996,6 +1069,7 @@ func TestHandleLinearWebhookPersistsDedupesAndWakesWorker(t *testing.T) {
 	send := func(delivery string) *httptest.ResponseRecorder {
 		request := httptest.NewRequest(http.MethodPost, "/api/webhooks/linear", strings.NewReader(string(body)))
 		request.Header.Set("Linear-Signature", linearTestSignature(t, "webhook-secret", body))
+		request.Header.Set("Linear-Timestamp", fmt.Sprint(timestamp))
 		request.Header.Set("Linear-Delivery", delivery)
 		recorder := httptest.NewRecorder()
 		h.HandleLinearWebhook(recorder, request)
@@ -1010,7 +1084,7 @@ func TestHandleLinearWebhookPersistsDedupesAndWakesWorker(t *testing.T) {
 	}
 
 	first := send("delivery-1")
-	if first.Code != http.StatusAccepted {
+	if first.Code != http.StatusOK {
 		t.Fatalf("status = %d body = %s", first.Code, first.Body.String())
 	}
 	select {
@@ -1020,7 +1094,7 @@ func TestHandleLinearWebhookPersistsDedupesAndWakesWorker(t *testing.T) {
 	}
 
 	replay := send("delivery-1")
-	if replay.Code != http.StatusAccepted || !strings.Contains(replay.Body.String(), `"duplicate":true`) {
+	if replay.Code != http.StatusOK || !strings.Contains(replay.Body.String(), `"duplicate":true`) {
 		t.Fatalf("redelivery status = %d body = %s", replay.Code, replay.Body.String())
 	}
 	var stored int
@@ -1032,11 +1106,10 @@ func TestHandleLinearWebhookPersistsDedupesAndWakesWorker(t *testing.T) {
 	}
 }
 
-// Disconnecting has to revoke the tokens at the provider before it forgets
-// them locally, and must leave nothing behind that a later webhook could match
-// against — while keeping the workspace's own issues, which are not
-// integration state.
-func TestDisconnectLinearRevokesAndPurgesWorkspaceState(t *testing.T) {
+// Disconnecting revokes the provider credential and tombstones only the
+// connection. Binding/link history remains auditable and can be reactivated by
+// a later OAuth install; workspace deletion owns the destructive cleanup.
+func TestDisconnectLinearRevokesAndMarksConnection(t *testing.T) {
 	api := &fakeLinearAPI{}
 	f := setupLinearWorker(t, "two_way", api)
 	h := linearIntegrationHandler(t, f)
@@ -1059,22 +1132,17 @@ func TestDisconnectLinearRevokesAndPurgesWorkspaceState(t *testing.T) {
 		t.Fatalf("revoked = %v, want the stored access token", api.revoked)
 	}
 
-	for _, table := range []string{"linear_connection", "linear_project_binding", "linear_issue_link", "linear_member_binding", "linear_sync_outbox", "linear_sync_conflict"} {
-		var remaining int
-		if err := testPool.QueryRow(context.Background(), fmt.Sprintf(`SELECT count(*) FROM %s WHERE workspace_id=$1`, table), testWorkspaceID).Scan(&remaining); err != nil {
-			t.Fatal(err)
-		}
-		if remaining != 0 {
-			t.Fatalf("%s kept %d rows after disconnect", table, remaining)
-		}
-	}
-	var inbox int
-	if err := testPool.QueryRow(context.Background(), `SELECT count(*) FROM linear_sync_inbox WHERE connection_id=$1`, f.connectionID).Scan(&inbox); err != nil {
+	var status string
+	if err := testPool.QueryRow(context.Background(), `SELECT status FROM linear_connection WHERE id=$1`, f.connectionID).Scan(&status); err != nil {
 		t.Fatal(err)
 	}
-	if inbox != 0 {
-		t.Fatalf("inbox kept %d rows after disconnect", inbox)
+	if status != "revoked" {
+		t.Fatalf("connection status=%q, want revoked", status)
 	}
+	var bindings, links int
+	if err := testPool.QueryRow(context.Background(), `SELECT count(*) FROM linear_project_binding WHERE workspace_id=$1`, testWorkspaceID).Scan(&bindings); err != nil { t.Fatal(err) }
+	if err := testPool.QueryRow(context.Background(), `SELECT count(*) FROM linear_issue_link WHERE workspace_id=$1`, testWorkspaceID).Scan(&links); err != nil { t.Fatal(err) }
+	if bindings != 1 || links != 1 { t.Fatalf("disconnect removed audit state: bindings=%d links=%d", bindings, links) }
 	var issues int
 	if err := testPool.QueryRow(context.Background(), `SELECT count(*) FROM issue WHERE id=$1`, issueID).Scan(&issues); err != nil {
 		t.Fatal(err)

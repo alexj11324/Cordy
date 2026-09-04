@@ -8,16 +8,20 @@ import (
 	"log/slog"
 	"math"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/patchbay-ai/patchbay/server/internal/events"
 	linearapi "github.com/patchbay-ai/patchbay/server/internal/integrations/linear"
+	"github.com/patchbay-ai/patchbay/server/internal/service"
 	"github.com/patchbay-ai/patchbay/server/internal/util/secretbox"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
-const linearWorkerLease = 90 * time.Second
+const linearWorkerLease = 60 * time.Second
 
 type LinearWorker struct {
 	db           dbExecutor
@@ -31,6 +35,8 @@ type LinearWorker struct {
 	workerID     string
 	wake         chan struct{}
 	interval     time.Duration
+	queries      *db.Queries
+	bus          *events.Bus
 	// pollInterval is the webhook-independent reconcile cadence. Linear
 	// webhooks are the fast path, but a dropped delivery, a webhook that was
 	// never registered, or a connection that was offline while the provider
@@ -42,8 +48,19 @@ type LinearWorker struct {
 	nextPoll     time.Time
 }
 
-func NewLinearWorker(db dbExecutor, txs txStarter, box *secretbox.Box, api linearapi.API, clientID, clientSecret string, pull, push bool) *LinearWorker {
-	return &LinearWorker{db: db, txStarter: txs, box: box, api: api, clientID: clientID, clientSecret: clientSecret, pullEnabled: pull, pushEnabled: push, workerID: uuid.NewString(), wake: make(chan struct{}, 1), interval: 30 * time.Second, pollInterval: 5 * time.Minute}
+func NewLinearWorker(executor dbExecutor, txs txStarter, box *secretbox.Box, api linearapi.API, clientID, clientSecret string, pull, push bool) *LinearWorker {
+	return &LinearWorker{db: executor, txStarter: txs, box: box, api: api, clientID: clientID, clientSecret: clientSecret, pullEnabled: pull, pushEnabled: push, workerID: uuid.NewString(), wake: make(chan struct{}, 1), interval: 30 * time.Second, pollInterval: 5 * time.Minute, queries: db.New(executor)}
+}
+
+func (w *LinearWorker) SetDependencies(queries *db.Queries, bus *events.Bus) {
+	if w == nil { return }
+	if queries != nil { w.queries = queries }
+	w.bus = bus
+}
+
+func (w *LinearWorker) publishIssueEvent(issue db.Issue, eventType string) {
+	if w == nil || w.bus == nil { return }
+	w.bus.Publish(events.Event{Type: eventType, WorkspaceID: uuidToString(issue.WorkspaceID), ActorType: "system", ActorID: uuid.Nil.String(), Payload: map[string]any{"issue": service.IssueToMap(issue, "")}, TaskID: uuidToString(issue.ID)})
 }
 
 func (w *LinearWorker) Wake() {
@@ -139,7 +156,10 @@ func (w *LinearWorker) processOneInbox(ctx context.Context) bool {
 	if !ok {
 		return false
 	}
+	stopRenew := make(chan struct{})
+	go w.renewLease(ctx, "linear_sync_inbox", c.ID, stopRenew)
 	err = w.handleInbox(ctx, c)
+	close(stopRenew)
 	w.finish(ctx, "linear_sync_inbox", c.ID, c.ConnectionID, c.Attempts, c.MaxAttempts, err)
 	return true
 }
@@ -186,16 +206,34 @@ func (w *LinearWorker) processOneOutbox(ctx context.Context) bool {
 	if !ok {
 		return false
 	}
+	stopRenew := make(chan struct{})
+	go w.renewLease(ctx, "linear_sync_outbox", c.ID, stopRenew)
 	err = w.handleOutbox(ctx, c)
+	close(stopRenew)
 	var connectionID pgtype.UUID
-	if err != nil {
-		// Push failures are connection health just as much as pull failures
-		// are; without this the workspace's Linear panel keeps reporting a
-		// healthy connection while nothing it publishes is landing.
-		_ = w.db.QueryRow(ctx, `SELECT connection_id FROM linear_project_binding WHERE id=$1`, c.BindingID).Scan(&connectionID)
-	}
+	// Push successes complete the outbox in the same transaction as the link,
+	// so finish may observe zero rows. Load the connection unconditionally and
+	// update its health after either the atomic completion or the retry path.
+	_ = w.db.QueryRow(ctx, `SELECT connection_id FROM linear_project_binding WHERE id=$1`, c.BindingID).Scan(&connectionID)
 	w.finish(ctx, "linear_sync_outbox", c.ID, connectionID, c.Attempts, c.MaxAttempts, err)
+	if err == nil && connectionID.Valid { _, _ = w.db.Exec(ctx, `UPDATE linear_connection SET last_success_at=now(),last_error=NULL,updated_at=now() WHERE id=$1 AND status='active'`, connectionID) }
 	return true
+}
+
+func (w *LinearWorker) renewLease(ctx context.Context, table string, id pgtype.UUID, stop <-chan struct{}) {
+	ticker := time.NewTicker(20 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			_, err := w.db.Exec(ctx, `UPDATE `+table+` SET locked_until=now()+make_interval(secs=>$2)`+func() string { if table == "linear_sync_outbox" { return `,updated_at=now()` }; return `` }()+` WHERE id=$1 AND locked_by=$3 AND processed_at IS NULL AND dead_lettered_at IS NULL`, id, int(linearWorkerLease/time.Second), w.workerID)
+			if err != nil { slog.WarnContext(ctx, "linear lease renewal failed", "queue", table, "id", uuidToString(id), "error", err); return }
+		}
+	}
 }
 
 func retryDelay(attempt int32) time.Duration {
@@ -204,13 +242,13 @@ func retryDelay(attempt int32) time.Duration {
 }
 func (w *LinearWorker) finish(ctx context.Context, table string, id, connectionID pgtype.UUID, attempts, maxAttempts int32, processErr error) {
 	if processErr == nil {
-		_, _ = w.db.Exec(ctx, `UPDATE `+table+` SET processed_at=now(),locked_by=NULL,locked_until=NULL,last_error=NULL`+func() string {
+		tag, _ := w.db.Exec(ctx, `UPDATE `+table+` SET processed_at=now(),locked_by=NULL,locked_until=NULL,last_error=NULL`+func() string {
 			if table == "linear_sync_outbox" {
 				return `,updated_at=now()`
 			}
 			return ``
-		}()+` WHERE id=$1`, id)
-		if connectionID.Valid {
+		}()+` WHERE id=$1 AND locked_by=$2`, id, w.workerID)
+		if tag.RowsAffected() == 1 && connectionID.Valid {
 			_, _ = w.db.Exec(ctx, `UPDATE linear_connection SET last_success_at=now(),last_error=NULL,updated_at=now() WHERE id=$1`, connectionID)
 		}
 		return
@@ -221,7 +259,7 @@ func (w *LinearWorker) finish(ctx context.Context, table string, id, connectionI
 			return `,updated_at=now()`
 		}
 		return ``
-	}()+` WHERE id=$1`, id, int(retryDelay(attempts)/time.Second), processErr.Error(), dead)
+	}()+` WHERE id=$1 AND locked_by=$5`, id, int(retryDelay(attempts)/time.Second), processErr.Error(), dead, w.workerID)
 	if connectionID.Valid {
 		_, _ = w.db.Exec(ctx, `UPDATE linear_connection SET last_error=$2,updated_at=now() WHERE id=$1`, connectionID, processErr.Error())
 	}
@@ -253,9 +291,9 @@ func (w *LinearWorker) bindingForRemote(ctx context.Context, connectionID pgtype
 	return w.loadBinding(ctx, id)
 }
 
-func (w *LinearWorker) accessToken(ctx context.Context, connectionID pgtype.UUID) (string, error) {
+func (w *LinearWorker) accessTokenLegacy(ctx context.Context, connectionID pgtype.UUID) (string, error) {
 	var access, refresh []byte
-	var expires time.Time
+	var expires pgtype.Timestamptz
 	var status string
 	err := w.db.QueryRow(ctx, `SELECT access_token_encrypted,refresh_token_encrypted,token_expires_at,status FROM linear_connection WHERE id=$1`, connectionID).Scan(&access, &refresh, &expires, &status)
 	if err != nil {
@@ -268,21 +306,20 @@ func (w *LinearWorker) accessToken(ctx context.Context, connectionID pgtype.UUID
 	if err != nil {
 		return "", err
 	}
-	if time.Until(expires) > 2*time.Minute {
+	if expires.Valid && time.Until(expires.Time) > 5*time.Minute {
 		return string(plain), nil
 	}
 	refreshPlain, err := w.box.Open(refresh)
 	if err != nil {
 		return "", err
 	}
+	if strings.TrimSpace(string(refreshPlain)) == "" { return "", errors.New("Linear refresh token is empty") }
 	token, err := w.api.RefreshToken(ctx, string(refreshPlain), w.clientID, w.clientSecret)
 	if err != nil {
 		_, _ = w.db.Exec(ctx, `UPDATE linear_connection SET status='reauthorization_required',last_error=$2,updated_at=now() WHERE id=$1`, connectionID, err.Error())
 		return "", err
 	}
-	if token.ExpiresIn <= 0 {
-		token.ExpiresIn = 30 * 24 * time.Hour
-	}
+	if token.ExpiresIn <= 0 || strings.TrimSpace(token.AccessToken) == "" || strings.TrimSpace(token.RefreshToken) == "" { return "", errors.New("Linear refresh returned an invalid token") }
 	newAccess, err := w.box.Seal([]byte(token.AccessToken))
 	if err != nil {
 		return "", err
@@ -291,7 +328,7 @@ func (w *LinearWorker) accessToken(ctx context.Context, connectionID pgtype.UUID
 	if err != nil {
 		return "", err
 	}
-	_, err = w.db.Exec(ctx, `UPDATE linear_connection SET access_token_encrypted=$2,refresh_token_encrypted=$3,token_expires_at=$4,scopes=CASE WHEN $5='' THEN scopes ELSE to_jsonb(regexp_split_to_array($5,'[, ]+')) END,last_error=NULL,updated_at=now() WHERE id=$1`, connectionID, newAccess, newRefresh, time.Now().Add(token.ExpiresIn), token.Scope)
+	_, err = w.db.Exec(ctx, `UPDATE linear_connection SET access_token_encrypted=$2,refresh_token_encrypted=$3,token_expires_at=$4,scopes=CASE WHEN $5='' THEN scopes ELSE to_jsonb(regexp_split_to_array($5,'[, ]+')) END,status='active',last_error=NULL,updated_at=now() WHERE id=$1 AND status='active'`, connectionID, newAccess, newRefresh, time.Now().UTC().Add(token.ExpiresIn), token.Scope)
 	return token.AccessToken, err
 }
 
@@ -300,6 +337,7 @@ type webhookIssue struct {
 	Identifier  string    `json:"identifier"`
 	Title       string    `json:"title"`
 	Description *string   `json:"description"`
+	DueDate     *string   `json:"dueDate"`
 	Priority    int       `json:"priority"`
 	UpdatedAt   time.Time `json:"updatedAt"`
 	Project     *struct {
@@ -323,7 +361,7 @@ type webhookEnvelope struct {
 }
 
 func remoteFromWebhook(e webhookEnvelope) linearapi.Issue {
-	i := linearapi.Issue{ID: e.Data.ID, Identifier: e.Data.Identifier, Title: e.Data.Title, Priority: e.Data.Priority, UpdatedAt: e.Data.UpdatedAt}
+	i := linearapi.Issue{ID: e.Data.ID, Identifier: e.Data.Identifier, Title: e.Data.Title, Priority: e.Data.Priority, DueDate: e.Data.DueDate, UpdatedAt: e.Data.UpdatedAt}
 	if e.Data.Description != nil {
 		i.Description = *e.Data.Description
 	}
@@ -404,15 +442,30 @@ func (w *LinearWorker) handleInbox(ctx context.Context, c linearClaim) error {
 	if e.Type != "Issue" && e.Type != "issue" {
 		return nil
 	}
+	if strings.TrimSpace(e.Data.ID) == "" { return nil }
 	remote := remoteFromWebhook(e)
+	eventAt := e.WebhookTimestamp
+	if e.Action == "remove" || e.Action == "delete" { remote.Deleted = true }
+	if !remote.Deleted {
+		token, tokenErr := w.accessToken(ctx, c.ConnectionID); if tokenErr != nil { return tokenErr }
+		fetched, found, fetchErr := w.api.FetchIssue(ctx, token, e.Data.ID)
+		if fetchErr != nil { return fetchErr }
+		if !found { remote.Deleted = true } else { remote = fetched; if eventAt == 0 { eventAt = fetched.UpdatedAt.UnixMilli() } }
+	}
 	b, err := w.bindingForRemote(ctx, c.ConnectionID, remote.ProjectID, remote.TeamID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil
+		// A remove event may not include the project, and a moved issue can no
+		// longer match its old binding. Resolve the existing link by connection
+		// and remote id so deletion/rebind remains workspace-scoped.
+		if remote.Deleted {
+			err = w.db.QueryRow(ctx, `SELECT b.id FROM linear_project_binding b JOIN linear_issue_link l ON l.binding_id=b.id WHERE b.connection_id=$1 AND l.linear_issue_id=$2 AND l.sync_status<>'deleted' ORDER BY l.updated_at DESC LIMIT 1`, c.ConnectionID, e.Data.ID).Scan(&b.ID)
+			if err == nil { b, err = w.loadBinding(ctx, b.ID) }
+		}
+		if errors.Is(err, pgx.ErrNoRows) { return nil }
 	}
-	if err != nil {
-		return err
-	}
-	return w.applyRemote(ctx, b, remote, "webhook:"+c.DeliveryID, e.WebhookTimestamp)
+	if err != nil { return err }
+	if eventAt == 0 { eventAt = remote.UpdatedAt.UnixMilli() }
+	return w.applyRemote(ctx, b, remote, "webhook:"+c.DeliveryID, eventAt)
 }
 
 func remoteStatus(b workerBinding, i linearapi.Issue) string {
@@ -454,7 +507,7 @@ func valueEqual(a, b any) bool {
 	y, _ := json.Marshal(b)
 	return string(x) == string(y)
 }
-func (w *LinearWorker) applyRemote(ctx context.Context, b workerBinding, remote linearapi.Issue, eventID string, eventAt int64) error {
+func (w *LinearWorker) applyRemoteLegacy(ctx context.Context, b workerBinding, remote linearapi.Issue, eventID string, eventAt int64) error {
 	tx, err := w.txStarter.Begin(ctx)
 	if err != nil {
 		return err
@@ -596,7 +649,7 @@ func stateForLocal(b workerBinding, status string) string {
 	}
 	return ""
 }
-func (w *LinearWorker) handleOutbox(ctx context.Context, c linearOutboxClaim) error {
+func (w *LinearWorker) handleOutboxLegacy(ctx context.Context, c linearOutboxClaim) error {
 	b, err := w.loadBinding(ctx, c.BindingID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		// Pausing or deleting a binding is how an operator stops publishing.
@@ -640,7 +693,9 @@ func (w *LinearWorker) handleOutbox(ctx context.Context, c linearOutboxClaim) er
 	}
 	var assignee string
 	_ = w.db.QueryRow(ctx, `SELECT mb.linear_user_id FROM issue i JOIN linear_member_binding mb ON mb.workspace_id=i.workspace_id AND mb.patchbay_user_id=i.executor_id WHERE i.id=$1 AND i.workspace_id=$2`, c.IssueID, b.WorkspaceID).Scan(&assignee)
-	input := linearapi.IssueInput{TeamID: b.TeamID.String, ProjectID: b.LinearProjectID, Title: title, Description: description.String, Priority: localPriority(priority), StateID: stateForLocal(b, status), AssigneeID: assignee}
+	var assigneePtr *string
+	if assignee != "" { assigneePtr = &assignee }
+	input := linearapi.IssueInput{TeamID: b.TeamID.String, ProjectID: b.LinearProjectID, Title: title, Description: description.String, Priority: localPriority(priority), StateID: stateForLocal(b, status), AssigneeID: assigneePtr}
 	var remote linearapi.Issue
 	if errors.Is(linkErr, pgx.ErrNoRows) {
 		remote, err = w.api.CreateIssue(ctx, token, input)

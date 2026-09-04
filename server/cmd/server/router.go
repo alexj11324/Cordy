@@ -1313,11 +1313,15 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			h.LinearWebhookSecret = strings.TrimSpace(os.Getenv("LINEAR_WEBHOOK_SECRET"))
 			h.LinearPullEnabled = envBool("PATCHBAY_LINEAR_PULL_IMPORT_ENABLED", true)
 			h.LinearPushEnabled = envBool("PATCHBAY_LINEAR_PUSH_ENABLED", false)
-			if h.LinearClientID == "" || h.LinearClientSecret == "" || h.LinearWebhookSecret == "" {
-				slog.Warn("linear integration credentials incomplete; integration disabled")
+			if h.LinearClientID == "" || h.LinearClientSecret == "" {
+				slog.Warn("linear OAuth credentials incomplete; integration disabled")
 				h.LinearSecretBox = nil
 			} else {
 				h.LinearWorker = handler.NewLinearWorker(pool, pool, box, linearapi.NewHTTPClient(nil), h.LinearClientID, h.LinearClientSecret, h.LinearPullEnabled, h.LinearPushEnabled)
+				h.LinearWorker.SetDependencies(queries, bus)
+				if h.LinearWebhookSecret == "" {
+					slog.Warn("linear webhook secret is not configured; OAuth/sync polling remain available")
+				}
 				bus.Subscribe(protocol.EventIssueCreated, func(events.Event) { h.LinearWorker.Wake() })
 				bus.Subscribe(protocol.EventIssueUpdated, func(events.Event) { h.LinearWorker.Wake() })
 				bus.Subscribe(protocol.EventIssueDeleted, func(events.Event) { h.LinearWorker.Wake() })
