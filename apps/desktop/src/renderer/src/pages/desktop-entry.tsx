@@ -105,30 +105,32 @@ export function DesktopEntryPage({
           >
             <Button
               type="button"
-              className="h-11 min-w-28 rounded-full bg-white px-6 text-zinc-950 hover:bg-zinc-200"
+              className="h-11 min-w-28 rounded-full bg-white px-6 text-zinc-950 transition-none hover:bg-zinc-200 active:not-aria-[haspopup]:translate-y-0 disabled:opacity-100"
               disabled={cloudSubmitting}
+              aria-busy={cloudSubmitting}
               onClick={() => {
                 void handleCloudSignIn();
               }}
             >
-              {cloudSubmitting
-                ? t(($) => $.guest.signin_loading)
-                : t(($) => $.guest.signin_button)}
+              {t(($) => $.guest.signin_button)}
             </Button>
             <Button
               type="button"
               variant="outline"
-              className="h-11 min-w-28 rounded-full border-zinc-700 bg-zinc-900 px-6 text-white hover:bg-zinc-800 hover:text-white"
+              className="h-11 min-w-28 rounded-full border-zinc-700 bg-zinc-900 px-6 text-white transition-none hover:bg-zinc-800 hover:text-white active:not-aria-[haspopup]:translate-y-0 disabled:opacity-100"
+              disabled={cloudSubmitting}
               onClick={openGuestDialog}
             >
               {t(($) => $.guest.button)}
             </Button>
           </div>
-          {cloudError && (
-            <p role="alert" className="mt-4 text-caption text-red-400">
-              {t(($) => $.desktop.entry.login_error)}
-            </p>
-          )}
+          <div data-testid="desktop-entry-feedback" className="mt-4 min-h-5">
+            {cloudError && (
+              <p role="alert" className="text-caption text-red-400">
+                {t(($) => $.desktop.entry.login_error)}
+              </p>
+            )}
+          </div>
         </div>
       </main>
 

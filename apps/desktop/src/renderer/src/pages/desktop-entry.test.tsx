@@ -62,6 +62,33 @@ describe("DesktopEntryPage", () => {
     await waitFor(() => expect(onSignIn).toHaveBeenCalledOnce());
   });
 
+  it("keeps the sign-in controls visually stable while opening", async () => {
+    installDesktopAPI(vi.fn());
+    let finish!: () => void;
+    const onSignIn = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    renderEntry({ onSignIn });
+
+    const button = screen.getByRole("button", { name: "登录" });
+    fireEvent.click(button);
+
+    await waitFor(() => expect(button).toHaveAttribute("aria-busy", "true"));
+    expect(button).toHaveTextContent("登录");
+    expect(button).toHaveClass(
+      "disabled:opacity-100",
+      "transition-none",
+      "active:not-aria-[haspopup]:translate-y-0",
+    );
+    expect(screen.getByTestId("desktop-entry-feedback")).toHaveClass(
+      "min-h-5",
+    );
+    finish();
+  });
+
   it("opens the localized Guest username dialog and creates a local session", async () => {
     const createGuestSession = vi.fn().mockResolvedValue({
       ok: true,
