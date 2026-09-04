@@ -127,6 +127,16 @@ func (m *Manager) PullRequestsByHead(ctx context.Context, installationID int64, 
 	return m.client.PullRequestsByHead(ctx, installationID, owner, repo, branch)
 }
 
+// PullRequestMetadata exposes the authenticated provider lookup used by the
+// explicit GitHub attach path. Keeping it behind Manager preserves the same
+// disabled-feature boundary as branch discovery.
+func (m *Manager) PullRequestMetadata(ctx context.Context, installationID int64, owner, repo string, number int32) (PullRequestMetadata, error) {
+	if !m.Enabled() {
+		return PullRequestMetadata{}, errors.New("ghsnapshot: client not configured")
+	}
+	return m.client.PullRequestMetadata(ctx, installationID, owner, repo, number)
+}
+
 // Start launches the worker pool and the TTL sweeper under ctx. No-op (and
 // safe) when the manager is disabled.
 func (m *Manager) Start(ctx context.Context) {

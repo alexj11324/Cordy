@@ -23,6 +23,21 @@ const (
 )
 
 const (
+	workProductRelationSourceManual    = "manual_explicit"
+	workProductRelationSourceTask      = "task_explicit"
+	workProductRelationSourceDiscovery = "execution_branch_discovery"
+)
+
+func isExplicitWorkProductRelationSource(source string) bool {
+	switch source {
+	case workProductRelationSourceManual, workProductRelationSourceTask, workProductRelationSourceDiscovery:
+		return true
+	default:
+		return false
+	}
+}
+
+const (
 	workProductColumns           = `id, workspace_id, kind, provider, external_identity, external_url, provider_record_type, provider_record_id, created_at, updated_at`
 	workProductRelationColumns   = `id, workspace_id, work_product_id, issue_id, task_id, run_id, relation_key, relation_source, attached_by_type, attached_by_id, attached_at, close_intent, detached_at, detached_by_type, detached_by_id, detached_task_id, detached_run_id`
 	workProductProvenanceColumns = `task_id, workspace_id, run_id, repo_identity, execution_workspace, head_branch, head_sha, head_state, started_at, finished_at, discovery_status, discovery_lease_id, discovery_match_count, discovery_reason, discovery_work_product_id, discovery_at, updated_at`
@@ -306,13 +321,18 @@ func (h *Handler) resolveWorkProductRelationActor(w http.ResponseWriter, r *http
 	// X-Actor-Source is stamped by Auth after stripping client input. A
 	// client-supplied X-Agent-ID/X-Task-ID pair is therefore never enough to
 	// impersonate an agent on this ownership-sensitive endpoint.
-	if r.Header.Get("X-Actor-Source") != "task_token" {
+	actorSource := r.Header.Get("X-Actor-Source")
+	if actorSource == "" {
 		actorUUID, err := util.ParseUUID(strings.TrimSpace(requestUserID(r)))
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, "user not authenticated")
 			return workProductRelationActor{}, false
 		}
 		return workProductRelationActor{Type: "member", ID: actorUUID}, true
+	}
+	if actorSource != "task_token" {
+		writeError(w, http.StatusForbidden, "a machine credential cannot attach work products as a member")
+		return workProductRelationActor{}, false
 	}
 
 	actorUUID, err := util.ParseUUID(strings.TrimSpace(r.Header.Get("X-Agent-ID")))
@@ -389,6 +409,67 @@ func (h *Handler) ListWorkProducts(w http.ResponseWriter, r *http.Request) {
 		"page":     int(offset/limit) + 1,
 		"per_page": limit,
 		"has_more": hasMore,
+	})
+}
+
+// ListUnassociatedWorkProducts mirrors provider objects that are not attached
+// to an issue by one of the three canonical relation sources. Provider text is
+// deliberately not inspected here: a caller must select a product and invoke
+// an explicit attach endpoint.
+func (h *Handler) ListUnassociatedWorkProducts(w http.ResponseWriter, r *http.Request) {
+	_, workspaceUUID, ok := h.workProductWorkspace(w, r)
+	if !ok || h.Queries == nil {
+		if ok {
+			writeError(w, http.StatusInternalServerError, "database unavailable")
+		}
+		return
+	}
+	page := 1
+	perPage := 20
+	if raw := strings.TrimSpace(r.URL.Query().Get("page")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > workProductMaxPage {
+			writeError(w, http.StatusBadRequest, "invalid page")
+			return
+		}
+		page = parsed
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("per_page")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 50 {
+			writeError(w, http.StatusBadRequest, "invalid per_page")
+			return
+		}
+		perPage = parsed
+	}
+	search := strings.TrimSpace(r.URL.Query().Get("query"))
+	if utf8.RuneCountInString(search) > 200 {
+		writeError(w, http.StatusBadRequest, "query is too long")
+		return
+	}
+	products, err := h.Queries.ListUnassociatedWorkProducts(r.Context(), db.ListUnassociatedWorkProductsParams{
+		WorkspaceID: workspaceUUID,
+		Kind:        "pull_request",
+		Search:      search,
+		Limit:       int32(perPage + 1),
+		Offset:      int32((page - 1) * perPage),
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list unassociated work products")
+		return
+	}
+	nextPage := any(nil)
+	if len(products) > perPage {
+		nextPage = page + 1
+		products = products[:perPage]
+	}
+	responses := make([]map[string]any, 0, len(products))
+	for _, product := range products {
+		responses = append(responses, workProductCatalogResponse(product, nil))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"work_products": responses,
+		"next_page":     nextPage,
 	})
 }
 
@@ -510,7 +591,7 @@ func (h *Handler) ListWorkProductRelationsByIssue(w http.ResponseWriter, r *http
 	// PR body. They are evidence somebody typed the identifier, not a claim
 	// that the PR does the work, so they stay out of the issue's list for the
 	// same reason they stay out of the close gate.
-	rows, err := executor.Query(r.Context(), `SELECT `+workProductRelationColumns+` FROM work_product_relation WHERE workspace_id = $1 AND issue_id = $2 AND detached_at IS NULL AND relation_source <> 'provider_reference' ORDER BY attached_at DESC, id DESC LIMIT $3 OFFSET $4`, workspaceUUID, iid, limit+1, offset)
+	rows, err := executor.Query(r.Context(), `SELECT `+workProductRelationColumns+` FROM work_product_relation WHERE workspace_id = $1 AND issue_id = $2 AND detached_at IS NULL AND relation_source IN ('manual_explicit', 'task_explicit', 'execution_branch_discovery', 'provider_discovery') ORDER BY attached_at DESC, id DESC LIMIT $3 OFFSET $4`, workspaceUUID, iid, limit+1, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "database error")
 		return
@@ -765,6 +846,14 @@ func (h *Handler) GetProvenanceByTask(w http.ResponseWriter, r *http.Request) {
 	}
 	executor, ok := h.requireWorkProductDB(w)
 	if !ok {
+		return
+	}
+	if h.Queries == nil {
+		writeError(w, http.StatusInternalServerError, "database unavailable")
+		return
+	}
+	if _, err := h.Queries.GetAgentTaskInWorkspace(r.Context(), db.GetAgentTaskInWorkspaceParams{ID: taskID, WorkspaceID: workspaceUUID}); err != nil {
+		writeErrorCode(w, http.StatusNotFound, "not_found", "task not found")
 		return
 	}
 	p, err := scanWorkProductProvenance(executor.QueryRow(r.Context(), `SELECT `+workProductProvenanceColumns+` FROM agent_task_execution_provenance WHERE workspace_id = $1 AND task_id = $2 ORDER BY updated_at DESC, repo_identity ASC, execution_workspace ASC LIMIT 1`, workspaceUUID, taskID))

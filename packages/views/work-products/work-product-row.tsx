@@ -65,7 +65,7 @@ export function WorkProductRow({
   detachPending,
 }: {
   product: WorkProductView;
-  onDetach?: (relationId: string) => void;
+  onDetach?: (workProductId: string) => void;
   detachPending?: boolean;
 }) {
   const { t } = useT("work-products");
@@ -117,7 +117,7 @@ export function WorkProductRow({
           disabled={detachPending}
           aria-label={t(($) => $.relations.detach)}
           title={t(($) => $.relations.detach)}
-          onClick={() => onDetach(product.relation.id)}
+          onClick={() => onDetach(product.id)}
           className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-50"
         >
           <X aria-hidden="true" className="h-3 w-3" />

@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { I18nProvider } from "@patchbay/core/i18n/react";
-import type { ReactNode } from "react";
+import type { InputHTMLAttributes, ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import enWorkProducts from "../locales/en/work-products.json";
 import { WorkProductRelationsSection } from "./work-product-relations-section";
@@ -60,10 +60,8 @@ const productListState = {
   data: {
     pages: [
       {
-        products: [product],
-        page: 1,
-        per_page: 64,
-        has_more: false,
+        work_products: [product],
+        next_page: null,
       },
     ],
   },
@@ -98,21 +96,22 @@ const issueProductsState = {
   },
 };
 
-const { createRelation } = vi.hoisted(() => ({
-  createRelation: vi.fn(),
+const { attachExisting, attachPullRequest } = vi.hoisted(() => ({
+  attachExisting: vi.fn(),
+  attachPullRequest: vi.fn(),
 }));
 
 vi.mock("@patchbay/core/work-products", () => ({
-  useCreateWorkProductRelation: () => ({ isPending: false, mutate: createRelation }),
-  useDetachWorkProductRelation: () => ({ isPending: false, mutate: vi.fn() }),
+  useAttachExistingWorkProduct: () => ({ isPending: false, mutate: attachExisting }),
+  useAttachIssuePullRequest: () => ({ isPending: false, mutate: attachPullRequest }),
+  useDetachWorkProduct: () => ({ isPending: false, mutate: vi.fn() }),
   issueWorkProductsInfiniteOptions: (_wsId: string | null, issueId: string) => ({
     queryKey: ["work-products", "issue", issueId, "infinite"],
   }),
   workProductDetailOptions: (_wsId: string | null, id: string) => ({
     queryKey: ["work-product-detail", id],
   }),
-  workProductListInfiniteOptions: () => ({ queryKey: ["work-products", "list-infinite"] }),
-  workProductRelationsInfiniteOptions: () => ({ queryKey: ["work-product-relations"] }),
+  unassociatedWorkProductListInfiniteOptions: () => ({ queryKey: ["work-products", "ws-1", "unassociated"] }),
 }));
 
 vi.mock("@tanstack/react-query", async (importOriginal) => ({
@@ -163,6 +162,10 @@ vi.mock("@patchbay/ui/components/ui/checkbox", () => ({
   Checkbox: ({ checked }: { checked?: boolean }) => (
     <input type="checkbox" checked={checked} readOnly />
   ),
+}));
+
+vi.mock("@patchbay/ui/components/ui/input", () => ({
+  Input: (props: InputHTMLAttributes<HTMLInputElement>) => <input {...props} />,
 }));
 
 vi.mock("@patchbay/ui/components/ui/dialog", () => ({

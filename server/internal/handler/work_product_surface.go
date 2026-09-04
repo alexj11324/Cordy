@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"github.com/patchbay-ai/patchbay/server/internal/logger"
 	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 	"github.com/patchbay-ai/patchbay/server/pkg/dbid"
+	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
 )
 
 // Work Product is the single contract for "something an issue or a task
@@ -62,6 +64,7 @@ type WorkProductView struct {
 	ProviderRecordID   *string                    `json:"provider_record_id"`
 	CreatedAt          string                     `json:"created_at"`
 	UpdatedAt          string                     `json:"updated_at"`
+	AssociationState   string                     `json:"association_state"`
 	Relation           WorkProductRelationView    `json:"relation"`
 	PullRequest        *GitHubPullRequestResponse `json:"pull_request,omitempty"`
 }
@@ -164,6 +167,7 @@ func workProductViewFromRow(row workProductRow) WorkProductView {
 		ProviderRecordID:   workProductUUIDPtr(row.Product.ProviderRecordID),
 		CreatedAt:          timestampToString(row.Product.CreatedAt),
 		UpdatedAt:          timestampToString(row.Product.UpdatedAt),
+		AssociationState:   "associated",
 		Relation: WorkProductRelationView{
 			ID:             uuidToString(row.RelationID),
 			IssueID:        workProductUUIDPtr(row.RelationIssueID),
@@ -175,6 +179,68 @@ func workProductViewFromRow(row workProductRow) WorkProductView {
 			AttachedAt:     timestampToString(row.AttachedAt),
 			CloseIntent:    row.CloseIntent,
 		},
+	}
+}
+
+func workProductRelationViewFromDB(relation db.WorkProductRelation) WorkProductRelationView {
+	return WorkProductRelationView{
+		ID:             uuidToString(relation.ID),
+		IssueID:        workProductUUIDPtr(relation.IssueID),
+		TaskID:         workProductUUIDPtr(relation.TaskID),
+		RunID:          workProductUUIDPtr(relation.RunID),
+		RelationSource: relation.RelationSource,
+		AttachedByType: relation.AttachedByType,
+		AttachedByID:   workProductUUIDPtr(relation.AttachedByID),
+		AttachedAt:     timestampToString(relation.AttachedAt),
+		CloseIntent:    relation.CloseIntent,
+	}
+}
+
+// workProductCatalogResponse is shared by the explicit attach, unassociated
+// catalog, and detach event contracts. The optional relation is deliberate:
+// an unassociated provider mirror has no issue claim to expose.
+func workProductCatalogResponse(product db.WorkProduct, relation *db.WorkProductRelation) map[string]any {
+	var relationResponse any
+	associationState := "unassociated"
+	if relation != nil {
+		relationResponse = workProductRelationViewFromDB(*relation)
+		associationState = "associated"
+	}
+	return map[string]any{
+		"id":                   uuidToString(product.ID),
+		"workspace_id":         uuidToString(product.WorkspaceID),
+		"kind":                 product.Kind,
+		"provider":             product.Provider,
+		"external_identity":    product.ExternalIdentity,
+		"external_url":         workProductTextPtr(product.ExternalUrl),
+		"provider_record_type": workProductTextPtr(product.ProviderRecordType),
+		"provider_record_id":   workProductUUIDPtr(product.ProviderRecordID),
+		"created_at":           timestampToString(product.CreatedAt),
+		"updated_at":           timestampToString(product.UpdatedAt),
+		"association_state":    associationState,
+		"relation":             relationResponse,
+	}
+}
+
+func workProductRelationResponse(relation db.WorkProductRelation) map[string]any {
+	return map[string]any{
+		"id":               uuidToString(relation.ID),
+		"workspace_id":     uuidToString(relation.WorkspaceID),
+		"work_product_id":  uuidToString(relation.WorkProductID),
+		"issue_id":         workProductUUIDPtr(relation.IssueID),
+		"task_id":          workProductUUIDPtr(relation.TaskID),
+		"run_id":           workProductUUIDPtr(relation.RunID),
+		"relation_key":     relation.RelationKey,
+		"relation_source":  relation.RelationSource,
+		"attached_by_type":  relation.AttachedByType,
+		"attached_by_id":   workProductUUIDPtr(relation.AttachedByID),
+		"attached_at":      timestampToString(relation.AttachedAt),
+		"close_intent":     relation.CloseIntent,
+		"detached_at":      timestampToPtr(relation.DetachedAt),
+		"detached_by_type": workProductTextPtr(relation.DetachedByType),
+		"detached_by_id":   workProductUUIDPtr(relation.DetachedByID),
+		"detached_task_id": workProductUUIDPtr(relation.DetachedTaskID),
+		"detached_run_id":  workProductUUIDPtr(relation.DetachedRunID),
 	}
 }
 
@@ -192,19 +258,22 @@ func (h *Handler) hydratePullRequest(r *http.Request, view *WorkProductView, row
 		if err != nil {
 			return
 		}
-		card := githubWorkProductPullRequestToResponse(pr, h.PRRefresh.Enabled())
+		snapshotEnabled := h.PRRefresh != nil && h.PRRefresh.Enabled()
+		card := githubWorkProductPullRequestToResponse(pr, snapshotEnabled)
 		view.PullRequest = &card
 		// Page-visit trigger (MUL-5265): a card whose snapshot is missing or
 		// past the view TTL kicks an async refresh. Non-blocking — the
 		// possibly stale card ships now and the fresh snapshot arrives over
 		// the pull_request:updated realtime event.
-		h.PRRefresh.MaybeEnqueueOnView(
-			pr.InstallationID, pr.RepoOwner, pr.RepoName, pr.PrNumber,
-			pr.SnapshotFetchedAt.Time,
-			pr.SnapshotFetchedAt.Valid &&
-				pr.SnapshotHeadSha != "" &&
-				pr.SnapshotHeadSha == pr.HeadSha,
-		)
+		if h.PRRefresh != nil {
+			h.PRRefresh.MaybeEnqueueOnView(
+				pr.InstallationID, pr.RepoOwner, pr.RepoName, pr.PrNumber,
+				pr.SnapshotFetchedAt.Time,
+				pr.SnapshotFetchedAt.Valid &&
+					pr.SnapshotHeadSha != "" &&
+					pr.SnapshotHeadSha == pr.HeadSha,
+			)
+		}
 	case "vcs_pull_request":
 		pr, err := h.Queries.GetVCSPullRequestForWorkProduct(r.Context(), row.Product.ProviderRecordID)
 		if err != nil {
@@ -247,27 +316,19 @@ func (h *Handler) ListWorkProductsForIssue(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	issueID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "issue id")
-	if !ok {
-		return
-	}
-	limit, offset, err := workProductPage(r)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
 	if h.Queries == nil {
 		writeError(w, http.StatusInternalServerError, "database unavailable")
 		return
 	}
-	if _, ok := h.requireWorkProductIssue(w, r, workspaceUUID, issueID); !ok {
+	issue, ok := h.resolveWorkProductIssue(w, r, workspaceUUID)
+	if !ok {
 		return
 	}
 	rows, err := h.Queries.ListWorkProductsByIssue(r.Context(), db.ListWorkProductsByIssueParams{
 		WorkspaceID: workspaceUUID,
-		IssueID:     issueID,
-		Limit:       limit + 1,
-		Offset:      offset,
+		IssueID:     issue.ID,
+		Limit:       workProductMaxPage,
+		Offset:      0,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "database error")
@@ -277,8 +338,8 @@ func (h *Handler) ListWorkProductsForIssue(w http.ResponseWriter, r *http.Reques
 	for _, row := range rows {
 		converted = append(converted, workProductRowFromIssue(row))
 	}
-	views, hasMore := h.workProductViews(r, converted, limit)
-	writeWorkProductPage(w, views, limit, offset, hasMore)
+	views, _ := h.workProductViews(r, converted, int32(len(converted)))
+	writeJSON(w, http.StatusOK, map[string]any{"work_products": views})
 }
 
 // ListWorkProductsForTask (GET /api/tasks/{taskId}/work-products) answers
@@ -291,11 +352,6 @@ func (h *Handler) ListWorkProductsForTask(w http.ResponseWriter, r *http.Request
 	}
 	taskID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "taskId"), "task id")
 	if !ok {
-		return
-	}
-	limit, offset, err := workProductPage(r)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if h.Queries == nil {
@@ -317,8 +373,8 @@ func (h *Handler) ListWorkProductsForTask(w http.ResponseWriter, r *http.Request
 	rows, err := h.Queries.ListWorkProductsByTask(r.Context(), db.ListWorkProductsByTaskParams{
 		WorkspaceID: workspaceUUID,
 		TaskID:      taskID,
-		Limit:       limit + 1,
-		Offset:      offset,
+		Limit:       workProductMaxPage,
+		Offset:      0,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "database error")
@@ -328,23 +384,126 @@ func (h *Handler) ListWorkProductsForTask(w http.ResponseWriter, r *http.Request
 	for _, row := range rows {
 		converted = append(converted, workProductRowFromTask(row))
 	}
-	views, hasMore := h.workProductViews(r, converted, limit)
-	writeWorkProductPage(w, views, limit, offset, hasMore)
+	views, _ := h.workProductViews(r, converted, int32(len(converted)))
+	provenances, err := h.Queries.ListExecutionProvenanceByTask(r.Context(), db.ListExecutionProvenanceByTaskParams{
+		WorkspaceID: workspaceUUID,
+		TaskID:      taskID,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load execution provenance")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"task_id":       uuidToString(taskID),
+		"provenances":   provenances,
+		"work_products": views,
+	})
 }
 
-// DetachWorkProductRelation (DELETE
-// /api/issues/{id}/work-product-relations/{relationId}) retracts an attach.
-//
-// The row is never deleted. A relation records a claim somebody made about
-// what resolved an issue; deleting it would erase the claim along with the
-// retraction, leaving no way to answer "who said this PR closed it, and who
-// disagreed". detached_at plus the detaching actor keeps both halves.
-//
-// Who may retract is decided in SQL, not here: a member may detach anything on
-// the issue, an agent only what its own task attached. Putting the gate in the
-// UPDATE's WHERE clause means a future caller cannot reach the write without
-// it, and a rejected detach is indistinguishable from a missing relation —
-// neither reveals whether some other task's relation exists.
+// DetachWorkProduct (DELETE /api/issues/{id}/work-products/{workProductId})
+// retracts every live claim for the product on this issue that the
+// authenticated actor may retract. The relation rows remain as an audit trail.
+func (h *Handler) DetachWorkProduct(w http.ResponseWriter, r *http.Request) {
+	workspaceID, workspaceUUID, ok := h.workProductWorkspace(w, r)
+	if !ok {
+		return
+	}
+	productID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "workProductId"), "work product id")
+	if !ok {
+		return
+	}
+	issue, ok := h.resolveWorkProductIssue(w, r, workspaceUUID)
+	if !ok {
+		return
+	}
+	issueID := issue.ID
+	actor, ok := h.resolveWorkProductRelationActor(w, r, workspaceID, workspaceUUID, issueID)
+	if !ok {
+		return
+	}
+	if h.Queries == nil {
+		writeError(w, http.StatusInternalServerError, "database unavailable")
+		return
+	}
+	// 'user' and 'agent' are the schema's actor vocabulary; the handler's own
+	// word for a human is "member", so it is translated once, here.
+	detachedByType := "user"
+	if actor.Type == "agent" {
+		detachedByType = "agent"
+	}
+	product, err := h.Queries.GetWorkProductByID(r.Context(), db.GetWorkProductByIDParams{ID: productID, WorkspaceID: workspaceUUID})
+	if err != nil {
+		if isNotFound(err) {
+			writeErrorCode(w, http.StatusNotFound, "not_found", "work product not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	if h.TxStarter == nil {
+		writeError(w, http.StatusInternalServerError, "database unavailable")
+		return
+	}
+	tx, err := h.TxStarter.Begin(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	rollback := func() { _ = tx.Rollback(r.Context()) }
+	var lockedIssue pgtype.UUID
+	if err := tx.QueryRow(r.Context(), `SELECT id FROM issue WHERE id = $1 AND workspace_id = $2 FOR UPDATE`, issueID, workspaceUUID).Scan(&lockedIssue); err != nil {
+		rollback()
+		writeError(w, http.StatusNotFound, "issue not found")
+		return
+	}
+	detached, err := h.Queries.WithTx(tx).DetachWorkProductRelationsForIssue(r.Context(), db.DetachWorkProductRelationsForIssueParams{
+		WorkProductID:  productID,
+		WorkspaceID:    workspaceUUID,
+		IssueID:        issueID,
+		DetachedByType: pgtype.Text{String: detachedByType, Valid: true},
+		DetachedByID:   actor.ID,
+		DetachedTaskID: actor.TaskID,
+		DetachedRunID:  actor.RunID,
+	})
+	if err != nil {
+		rollback()
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	if len(detached) == 0 {
+		rollback()
+		writeErrorCode(w, http.StatusNotFound, "not_found", "work product relation not found")
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		rollback()
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	for _, relation := range detached {
+		h.recordWorkProductRelationActivity(r, workProductDetachedActivity, actor, relation)
+	}
+	payload := map[string]any{
+		"work_product":     workProductCatalogResponse(product, nil),
+		"linked_issue_ids": []string{},
+		"detached":         true,
+	}
+	if actor.TaskID.Valid {
+		h.publishTask(protocol.EventPullRequestUpdated, workspaceID, "agent", uuidToString(actor.ID), uuidToString(actor.TaskID), payload)
+	} else {
+		h.publish(protocol.EventPullRequestUpdated, workspaceID, "member", uuidToString(actor.ID), payload)
+	}
+	if issue, ok := h.loadWorkProductIssueForCompletion(r.Context(), issueID, workspaceUUID); ok {
+		h.maybeCompleteWorkProductIssue(r.Context(), issue)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"detached": len(detached)})
+}
+
+// DetachWorkProductRelation preserves the relation-id handler used by older
+// internal callers and fixtures. The canonical issue surface now detaches by
+// work-product id so all live claims are retracted together, but removing this
+// small adapter would break existing server-side callers without improving the
+// new contract.
 func (h *Handler) DetachWorkProductRelation(w http.ResponseWriter, r *http.Request) {
 	workspaceID, workspaceUUID, ok := h.workProductWorkspace(w, r)
 	if !ok {
@@ -369,8 +528,6 @@ func (h *Handler) DetachWorkProductRelation(w http.ResponseWriter, r *http.Reque
 	if _, ok := h.requireWorkProductIssue(w, r, workspaceUUID, issueID); !ok {
 		return
 	}
-	// 'user' and 'agent' are the schema's actor vocabulary; the handler's own
-	// word for a human is "member", so it is translated once, here.
 	detachedByType := "user"
 	if actor.Type == "agent" {
 		detachedByType = "agent"
@@ -394,6 +551,14 @@ func (h *Handler) DetachWorkProductRelation(w http.ResponseWriter, r *http.Reque
 	}
 	h.recordWorkProductRelationActivity(r, workProductDetachedActivity, actor, relation)
 	writeJSON(w, http.StatusOK, map[string]any{"relation": relation})
+}
+
+func (h *Handler) loadWorkProductIssueForCompletion(ctx context.Context, issueID, workspaceID pgtype.UUID) (db.Issue, bool) {
+	if h.Queries == nil {
+		return db.Issue{}, false
+	}
+	issue, err := h.Queries.GetIssueInWorkspace(ctx, db.GetIssueInWorkspaceParams{ID: issueID, WorkspaceID: workspaceID})
+	return issue, err == nil
 }
 
 // requireWorkProductIssue resolves the path issue inside the workspace. Every

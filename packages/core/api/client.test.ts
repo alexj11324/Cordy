@@ -234,7 +234,7 @@ describe("ApiClient issue work-product response schema", () => {
   }
 
   it("parses a product with its relation and pull-request card", async () => {
-    stubResponse({ work_products: [validProduct], page: 1, per_page: 64, has_more: false });
+    stubResponse({ work_products: [validProduct] });
 
     const result = await new ApiClient("https://api.example.test").listIssueWorkProducts("issue-1");
     expect(result.work_products[0]).toMatchObject({
@@ -248,7 +248,7 @@ describe("ApiClient issue work-product response schema", () => {
   // old PR-only endpoint could assume every row had a card; this one cannot.
   it("keeps a product that carries no pull-request card", async () => {
     const { pull_request: _card, ...withoutCard } = validProduct;
-    stubResponse({ work_products: [withoutCard], page: 1, per_page: 64, has_more: false });
+    stubResponse({ work_products: [withoutCard] });
 
     const result = await new ApiClient("https://api.example.test").listIssueWorkProducts("issue-1");
     expect(result.work_products).toHaveLength(1);
@@ -260,7 +260,7 @@ describe("ApiClient issue work-product response schema", () => {
 
     await expect(
       new ApiClient("https://api.example.test").listIssueWorkProducts("issue-1"),
-    ).resolves.toEqual({ work_products: [], page: 1, per_page: 64, has_more: false });
+    ).resolves.toEqual({ work_products: [] });
   });
 });
 

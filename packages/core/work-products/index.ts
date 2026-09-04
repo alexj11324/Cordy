@@ -1,4 +1,5 @@
 export type {
+  AttachExistingWorkProductRequest,
   CreateWorkProductRelationRequest,
   ExecutionProvenance,
   ExecutionProvenancePage,
@@ -9,7 +10,14 @@ export type {
   WorkProductRelationPage,
   WorkProductRelationSummary,
   WorkProductView,
+  WorkProductViewListResponse,
   WorkProductViewPage,
+  UnassociatedWorkProductPage,
+  IssuePullRequestAttachRequest,
+  IssuePullRequestAttachResponse,
+  IssuePullRequestListResponse,
+  TaskWorkProductsResponse,
+  WorkProductAttachmentResponse,
 } from "../types";
 export {
   issueWorkProductsInfiniteOptions,
@@ -22,11 +30,11 @@ export {
   workProductListOptions,
   workProductProvenanceInfiniteOptions,
   workProductProvenanceOptions,
-  workProductRelationsInfiniteOptions,
-  workProductRelationsOptions,
+  unassociatedWorkProductListInfiniteOptions,
   WORK_PRODUCT_PAGE_SIZE,
 } from "./queries";
 export {
-  useCreateWorkProductRelation,
-  useDetachWorkProductRelation,
+  useAttachExistingWorkProduct,
+  useAttachIssuePullRequest,
+  useDetachWorkProduct,
 } from "./mutations";

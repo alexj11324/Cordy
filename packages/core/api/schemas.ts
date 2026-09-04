@@ -113,12 +113,18 @@ import type {
   ListWorkspaceChannelMessagesResponse,
   ExecutionProvenance,
   ExecutionProvenancePage,
+  IssuePullRequestAttachResponse,
+  IssuePullRequestListResponse,
+  TaskWorkProductsResponse,
+  UnassociatedWorkProductPage,
   WorkProduct,
+  WorkProductAttachmentResponse,
   WorkProductPage,
   WorkProductRelation,
   WorkProductRelationPage,
   WorkProductRelationSummary,
   WorkProductView,
+  WorkProductViewListResponse,
   WorkProductViewPage,
   BeginManagedSlackInstallResponse,
 } from "../types";
@@ -1404,7 +1410,7 @@ export const CommentsListSchema = z.array(CommentSchema);
 // UI treats it as "could not read the result" rather than a successful run.
 export const EMPTY_COMMENT: Comment = {
   id: "",
-  issue_id: "",
+  issue_id: null,
   author_type: "member",
   author_id: "",
   content: "",
@@ -1876,6 +1882,7 @@ export const WorkProductSchema: z.ZodType<WorkProduct> = z.object({
   provider_record_id: workProductNullableString(),
   created_at: workProductString(),
   updated_at: workProductString(),
+  association_state: z.string().optional(),
 }).loose() as z.ZodType<WorkProduct>;
 
 export const EMPTY_WORK_PRODUCT: WorkProduct = {
@@ -1909,13 +1916,13 @@ export const WorkProductRelationSchema: z.ZodType<WorkProductRelation> = z.objec
   id: workProductString(),
   workspace_id: workProductString(),
   work_product_id: workProductString(),
-  issue_id: workProductString(),
+  issue_id: workProductNullableString(),
   task_id: workProductNullableString(),
   run_id: workProductNullableString(),
   relation_key: workProductString(),
   relation_source: workProductString(),
   attached_by_type: workProductString(),
-  attached_by_id: workProductString(),
+  attached_by_id: workProductNullableString(),
   attached_at: workProductString(),
   close_intent: z.boolean().default(false).catch(false),
   detached_at: workProductNullableString(),
@@ -1942,7 +1949,7 @@ export const EMPTY_WORK_PRODUCT_RELATION: WorkProductRelation = {
   relation_key: "",
   relation_source: "",
   attached_by_type: "",
-  attached_by_id: "",
+  attached_by_id: null,
   attached_at: "",
   close_intent: false,
   detached_at: null,
@@ -1997,6 +2004,7 @@ export const WorkProductViewSchema: z.ZodType<WorkProductView> = z.object({
   provider_record_id: workProductNullableString(),
   created_at: workProductString(),
   updated_at: workProductString(),
+  association_state: z.string().default("associated"),
   relation: WorkProductRelationSummarySchema.catch(EMPTY_WORK_PRODUCT_RELATION_SUMMARY),
   pull_request: GitHubPullRequestSchema.optional(),
 }).loose() as z.ZodType<WorkProductView>;
@@ -2013,6 +2021,70 @@ export const EMPTY_WORK_PRODUCT_VIEW_PAGE: WorkProductViewPage = {
   page: 1,
   per_page: 64,
   has_more: false,
+};
+
+export const WorkProductViewListResponseSchema: z.ZodType<WorkProductViewListResponse> = z.object({
+  work_products: z.array(WorkProductViewSchema).default([]),
+}).loose() as z.ZodType<WorkProductViewListResponse>;
+
+export const EMPTY_WORK_PRODUCT_VIEW_LIST_RESPONSE: WorkProductViewListResponse = {
+  work_products: [],
+};
+
+export const UnassociatedWorkProductPageSchema: z.ZodType<UnassociatedWorkProductPage> = z.object({
+  work_products: z.array(WorkProductSchema).default([]),
+  next_page: z.number().int().positive().nullable().default(null),
+}).loose() as z.ZodType<UnassociatedWorkProductPage>;
+
+export const EMPTY_UNASSOCIATED_WORK_PRODUCT_PAGE: UnassociatedWorkProductPage = {
+  work_products: [],
+  next_page: null,
+};
+
+export const WorkProductAttachmentResponseSchema: z.ZodType<WorkProductAttachmentResponse> = z.object({
+  work_product: WorkProductSchema,
+  relation: WorkProductRelationSchema,
+}).loose() as z.ZodType<WorkProductAttachmentResponse>;
+
+export const EMPTY_WORK_PRODUCT_ATTACHMENT_RESPONSE: WorkProductAttachmentResponse = {
+  work_product: EMPTY_WORK_PRODUCT,
+  relation: EMPTY_WORK_PRODUCT_RELATION,
+};
+
+export const IssuePullRequestListResponseSchema: z.ZodType<IssuePullRequestListResponse> = z.object({
+  pull_requests: z.array(GitHubPullRequestSchema).default([]),
+}).loose() as z.ZodType<IssuePullRequestListResponse>;
+
+export const EMPTY_ISSUE_PULL_REQUEST_LIST_RESPONSE: IssuePullRequestListResponse = {
+  pull_requests: [],
+};
+
+export const IssuePullRequestAttachResponseSchema: z.ZodType<IssuePullRequestAttachResponse> = z.object({
+  pull_request: GitHubPullRequestSchema,
+  work_product: WorkProductSchema,
+  relation: WorkProductRelationSchema,
+}).loose() as z.ZodType<IssuePullRequestAttachResponse>;
+
+export const EMPTY_ISSUE_PULL_REQUEST_ATTACH_RESPONSE: IssuePullRequestAttachResponse = {
+  pull_request: {
+    id: "",
+    workspace_id: "",
+    repo_owner: "",
+    repo_name: "",
+    number: 0,
+    title: "",
+    state: "open",
+    html_url: "",
+    branch: null,
+    author_login: null,
+    author_avatar_url: null,
+    merged_at: null,
+    closed_at: null,
+    pr_created_at: "",
+    pr_updated_at: "",
+  },
+  work_product: EMPTY_WORK_PRODUCT,
+  relation: EMPTY_WORK_PRODUCT_RELATION,
 };
 
 // Managed Slack OAuth begin response. authorize_url is required downstream —
@@ -2049,6 +2121,18 @@ export const ExecutionProvenanceSchema: z.ZodType<ExecutionProvenance> = z.objec
   discovery_at: workProductNullableString(),
   updated_at: workProductString(),
 }).loose() as z.ZodType<ExecutionProvenance>;
+
+export const TaskWorkProductsResponseSchema: z.ZodType<TaskWorkProductsResponse> = z.object({
+  task_id: workProductString(),
+  provenances: z.array(ExecutionProvenanceSchema).default([]),
+  work_products: z.array(WorkProductViewSchema).default([]),
+}).loose() as z.ZodType<TaskWorkProductsResponse>;
+
+export const EMPTY_TASK_WORK_PRODUCTS_RESPONSE: TaskWorkProductsResponse = {
+  task_id: "",
+  provenances: [],
+  work_products: [],
+};
 
 export const ExecutionProvenancePageSchema: z.ZodType<ExecutionProvenancePage> = z.object({
   provenance: z.array(ExecutionProvenanceSchema).default([]),

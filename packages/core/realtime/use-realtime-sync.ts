@@ -31,6 +31,7 @@ import { dingtalkKeys } from "../dingtalk/queries";
 import { wecomKeys } from "../wecom/queries";
 import { weixinKeys } from "../weixin/queries";
 import { telegramKeys } from "../telegram/queries";
+import { workProductKeys } from "../work-products/queries";
 import {
   onIssueCreated,
   onIssueUpdated,
@@ -667,6 +668,7 @@ function invalidateWorkspaceScopedQueries(qc: QueryClient): void {
     // 5-minute staleTime — long enough to offer a status the server already
     // archived, or to keep painting its old name.
     qc.invalidateQueries({ queryKey: issueStatusKeys.all(wsId) });
+    qc.invalidateQueries({ queryKey: workProductKeys.all(wsId) });
   }
   // Cross-workspace, so outside the wsId guard: a reconnect may have missed
   // inbox events from any workspace, so re-pull the switcher-dot summary.
@@ -894,6 +896,8 @@ export function useRealtimeSync(
         // every issue's list is invalidated — the open issue detail page is
         // the only one that refetches.
         qc.invalidateQueries({ queryKey: ["work-products", "issue"] });
+        const wsId = getCurrentWsId();
+        if (wsId) qc.invalidateQueries({ queryKey: workProductKeys.all(wsId) });
       },
       // Powers the agent presence cache: any task lifecycle change
       // (dispatch / completed / failed / cancelled) refreshes the

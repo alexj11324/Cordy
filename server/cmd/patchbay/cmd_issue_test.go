@@ -658,7 +658,7 @@ func TestRunIssueWorkProductsListsAttachedProductsAsJSON(t *testing.T) {
 						"external_url":      "https://github.com/patchbay-ai/patchbay/pull/42",
 						"relation": map[string]any{
 							"id":              "relation-uuid",
-							"relation_source": "provider_discovery",
+							"relation_source": "execution_branch_discovery",
 							"close_intent":    true,
 						},
 						"pull_request": map[string]any{
@@ -793,7 +793,7 @@ func TestRunIssueWorkProductsTableIncludesCoreFields(t *testing.T) {
 		"external_identity": "patchbay-ai/patchbay#42",
 		"external_url":      "https://github.com/patchbay-ai/patchbay/pull/42",
 		"kind":              "pull_request",
-		"relation":          map[string]any{"relation_source": "provider_discovery"},
+		"relation":          map[string]any{"relation_source": "execution_branch_discovery"},
 		"pull_request":      map[string]any{"state": "open"},
 	}}
 
@@ -807,7 +807,7 @@ func TestRunIssueWorkProductsTableIncludesCoreFields(t *testing.T) {
 	text := string(out)
 	for _, want := range []string{
 		"IDENTITY", "KIND", "STATE", "SOURCE", "URL",
-		"patchbay-ai/patchbay#42", "pull_request", "open", "provider_discovery",
+			"patchbay-ai/patchbay#42", "pull_request", "open", "execution_branch_discovery",
 		"https://github.com/patchbay-ai/patchbay/pull/42",
 	} {
 		if !strings.Contains(text, want) {

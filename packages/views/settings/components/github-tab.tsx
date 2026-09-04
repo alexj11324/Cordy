@@ -303,6 +303,7 @@ export function GitHubTab() {
               disabled={!canManage || !flags.enabled || savingKey === "github_auto_link_prs_enabled"}
               onCheckedChange={(v) => persistSetting("github_auto_link_prs_enabled", v)}
             />
+
           </CardContent>
         </Card>
       </section>

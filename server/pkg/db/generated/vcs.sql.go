@@ -67,7 +67,7 @@ WITH combined AS (
     JOIN work_product_relation relation ON relation.work_product_id = product.id
     WHERE relation.issue_id = $1
       AND relation.detached_at IS NULL
-      AND relation.relation_source <> 'provider_reference'
+      AND relation.relation_source IN ('manual_explicit', 'task_explicit', 'execution_branch_discovery', 'provider_discovery')
     UNION ALL
     SELECT pr.state AS state, relation.close_intent AS close_intent
     FROM vcs_pull_request pr
@@ -77,7 +77,7 @@ WITH combined AS (
     JOIN work_product_relation relation ON relation.work_product_id = product.id
     WHERE relation.issue_id = $1
       AND relation.detached_at IS NULL
-      AND relation.relation_source <> 'provider_reference'
+      AND relation.relation_source IN ('manual_explicit', 'task_explicit', 'execution_branch_discovery', 'provider_discovery')
 )
 SELECT
     COALESCE(SUM(CASE WHEN state IN ('open', 'draft') THEN 1 ELSE 0 END), 0)::bigint AS open_count,
@@ -309,7 +309,7 @@ JOIN work_product_relation relation ON relation.work_product_id = product.id
 WHERE pr.connection_id = $1 AND pr.head_sha = $2 AND pr.head_sha <> ''
   AND relation.issue_id IS NOT NULL
   AND relation.detached_at IS NULL
-  AND relation.relation_source <> 'provider_reference'
+  AND relation.relation_source IN ('manual_explicit', 'task_explicit', 'execution_branch_discovery', 'provider_discovery')
 `
 
 type ListIssueIDsForVCSPRHeadParams struct {

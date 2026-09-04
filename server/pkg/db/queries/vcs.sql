@@ -157,7 +157,7 @@ WITH combined AS (
     JOIN work_product_relation relation ON relation.work_product_id = product.id
     WHERE relation.issue_id = $1
       AND relation.detached_at IS NULL
-      AND relation.relation_source <> 'provider_reference'
+      AND relation.relation_source IN ('manual_explicit', 'task_explicit', 'execution_branch_discovery', 'provider_discovery')
     UNION ALL
     SELECT pr.state AS state, relation.close_intent AS close_intent
     FROM vcs_pull_request pr
@@ -167,7 +167,7 @@ WITH combined AS (
     JOIN work_product_relation relation ON relation.work_product_id = product.id
     WHERE relation.issue_id = $1
       AND relation.detached_at IS NULL
-      AND relation.relation_source <> 'provider_reference'
+      AND relation.relation_source IN ('manual_explicit', 'task_explicit', 'execution_branch_discovery', 'provider_discovery')
 )
 SELECT
     COALESCE(SUM(CASE WHEN state IN ('open', 'draft') THEN 1 ELSE 0 END), 0)::bigint AS open_count,
@@ -206,18 +206,15 @@ JOIN work_product_relation relation ON relation.work_product_id = product.id
 WHERE pr.connection_id = $1 AND pr.head_sha = $2 AND pr.head_sha <> ''
   AND relation.issue_id IS NOT NULL
   AND relation.detached_at IS NULL
-  AND relation.relation_source <> 'provider_reference';
+  AND relation.relation_source IN ('manual_explicit', 'task_explicit', 'execution_branch_discovery', 'provider_discovery');
 
 -- =====================
 -- Issue ↔ VCS PR link
 -- =====================
 
 -- name: LinkIssueToVCSPullRequest :exec
--- mention_only marks a link justified ONLY by a bare body mention (no closing
--- keyword and no title/branch reference), mirroring the GitHub link upsert. It
--- is stored as a `provider_reference` relation source rather than a flag.
--- preserve_close_intent freezes both close_intent and the relation source once
--- a terminal merge/close event has been recorded.
+-- Keep the existing identifier-based self-hosted VCS auto-link contract while
+-- storing its relation in the unified Work Product model.
 WITH product AS (
     INSERT INTO work_product (
         workspace_id, kind, provider, external_identity, external_url,

@@ -8,31 +8,69 @@ FROM work_product WHERE id = $1 AND workspace_id = $2;
 SELECT id, workspace_id, kind, provider, external_identity, external_url, provider_record_type, provider_record_id, created_at, updated_at
 FROM work_product WHERE workspace_id = $1 ORDER BY updated_at DESC, id DESC LIMIT $2 OFFSET $3;
 
+-- name: ListUnassociatedWorkProducts :many
+SELECT id, workspace_id, kind, provider, external_identity, external_url, provider_record_type, provider_record_id, created_at, updated_at
+FROM work_product product
+WHERE product.workspace_id = $1
+  AND product.kind = $2
+  AND (
+      $3 = ''
+      OR strpos(lower(product.external_identity), lower($3)) > 0
+      OR strpos(lower(COALESCE(product.external_url, '')), lower($3)) > 0
+  )
+  AND NOT EXISTS (
+      SELECT 1
+      FROM work_product_relation relation
+      WHERE relation.workspace_id = product.workspace_id
+        AND relation.work_product_id = product.id
+        AND relation.detached_at IS NULL
+        AND relation.issue_id IS NOT NULL
+        AND relation.relation_source IN ('manual_explicit', 'task_explicit', 'execution_branch_discovery', 'provider_discovery')
+  )
+ORDER BY product.updated_at DESC, product.id DESC
+LIMIT $4 OFFSET $5;
+
 -- name: ListWorkProductsByIssue :many
 -- The issue's Work Product list. Each row carries the product and the live
 -- relation that put it there, so a caller never has to correlate two lists to
 -- learn why a product is attached or which relation to detach.
 --
--- provider_reference relations are excluded: those record a bare mention in a
--- PR body, which is evidence that somebody typed the identifier, not a claim
--- that the PR does the issue's work. Surfacing them would let any passing
--- mention masquerade as delivered work.
-SELECT product.id, product.workspace_id, product.kind, product.provider,
-       product.external_identity, product.external_url,
-       product.provider_record_type, product.provider_record_id,
-       product.created_at, product.updated_at,
-       relation.id AS relation_id, relation.issue_id AS relation_issue_id,
-       relation.task_id AS relation_task_id, relation.run_id AS relation_run_id,
-       relation.relation_source, relation.attached_by_type,
-       relation.attached_by_id, relation.attached_at, relation.close_intent
-FROM work_product product
-JOIN work_product_relation relation ON relation.work_product_id = product.id
-WHERE product.workspace_id = $1
-  AND relation.workspace_id = $1
-  AND relation.issue_id = $2
-  AND relation.detached_at IS NULL
-  AND relation.relation_source <> 'provider_reference'
-ORDER BY relation.attached_at DESC, product.id DESC
+-- One product may have a discovery claim and a later explicit confirmation.
+-- Return one row per product and prefer the strongest current claim, matching
+-- the Rust source's DISTINCT ON policy.
+WITH linked AS (
+    SELECT DISTINCT ON (product.id)
+           product.id, product.workspace_id, product.kind, product.provider,
+           product.external_identity, product.external_url,
+           product.provider_record_type, product.provider_record_id,
+           product.created_at, product.updated_at,
+           relation.id AS relation_id, relation.issue_id AS relation_issue_id,
+           relation.task_id AS relation_task_id, relation.run_id AS relation_run_id,
+           relation.relation_source, relation.attached_by_type,
+           relation.attached_by_id, relation.attached_at, relation.close_intent
+    FROM work_product product
+    JOIN work_product_relation relation
+      ON relation.work_product_id = product.id
+     AND relation.workspace_id = product.workspace_id
+     AND relation.issue_id = $2
+     AND relation.detached_at IS NULL
+     AND relation.relation_source IN ('manual_explicit', 'task_explicit', 'execution_branch_discovery', 'provider_discovery')
+    WHERE product.workspace_id = $1
+    ORDER BY product.id,
+        CASE relation.relation_source
+            WHEN 'manual_explicit' THEN 0
+            WHEN 'task_explicit' THEN 1
+            ELSE 2
+        END,
+        relation.attached_at DESC,
+        relation.id DESC
+)
+SELECT id, workspace_id, kind, provider, external_identity, external_url,
+       provider_record_type, provider_record_id, created_at, updated_at,
+       relation_id, relation_issue_id, relation_task_id, relation_run_id,
+       relation_source, attached_by_type, attached_by_id, attached_at, close_intent
+FROM linked
+ORDER BY 18 DESC, 1 DESC
 LIMIT $3 OFFSET $4;
 
 -- name: ListWorkProductsByTask :many
@@ -78,7 +116,7 @@ FROM work_product_relation WHERE id = $1 AND workspace_id = $2;
 SELECT id, workspace_id, work_product_id, issue_id, task_id, run_id, relation_key, relation_source, attached_by_type, attached_by_id, attached_at, close_intent, detached_at, detached_by_type, detached_by_id, detached_task_id, detached_run_id
 FROM work_product_relation
 WHERE workspace_id = $1 AND issue_id = $2 AND detached_at IS NULL
-  AND relation_source <> 'provider_reference'
+  AND relation_source IN ('manual_explicit', 'task_explicit', 'execution_branch_discovery', 'provider_discovery')
 ORDER BY attached_at DESC, id DESC LIMIT $3 OFFSET $4;
 
 -- name: ListWorkProductRelationsByProduct :many
@@ -89,6 +127,14 @@ FROM work_product_relation WHERE workspace_id = $1 AND work_product_id = $2 AND 
 SELECT id, workspace_id, work_product_id, issue_id, task_id, run_id, relation_key, relation_source, attached_by_type, attached_by_id, attached_at, close_intent, detached_at, detached_by_type, detached_by_id, detached_task_id, detached_run_id
 FROM work_product_relation WHERE workspace_id = $1 AND task_id = $2 AND detached_at IS NULL ORDER BY attached_at DESC, id DESC;
 
+-- name: ListIssueIDsForWorkProduct :many
+SELECT DISTINCT issue_id
+FROM work_product_relation
+WHERE workspace_id = $1 AND work_product_id = $2
+  AND issue_id IS NOT NULL AND detached_at IS NULL
+  AND relation_source IN ('manual_explicit', 'task_explicit', 'execution_branch_discovery', 'provider_discovery')
+ORDER BY issue_id;
+
 -- name: CreateWorkProductRelation :one
 WITH product_scope AS (
     SELECT id FROM work_product WHERE id = $2 AND workspace_id = $1
@@ -97,8 +143,8 @@ WITH product_scope AS (
     UNION ALL
     SELECT NULL::uuid WHERE sqlc.narg('issue_id')::uuid IS NULL
 )
-INSERT INTO work_product_relation (workspace_id, work_product_id, issue_id, task_id, run_id, relation_key, relation_source, attached_by_type, attached_by_id, id)
-SELECT $1, $2, sqlc.narg('issue_id'), sqlc.narg('task_id'), sqlc.narg('run_id'), $3, $4, $5, $6, COALESCE(sqlc.narg('id')::uuid, gen_random_uuid())
+INSERT INTO work_product_relation (workspace_id, work_product_id, issue_id, task_id, run_id, relation_key, relation_source, attached_by_type, attached_by_id, close_intent, id)
+SELECT $1, $2, sqlc.narg('issue_id'), sqlc.narg('task_id'), sqlc.narg('run_id'), $3, $4, $5, $6, sqlc.arg('close_intent'), COALESCE(sqlc.narg('id')::uuid, gen_random_uuid())
 FROM product_scope, issue_scope
 WHERE (sqlc.narg('task_id')::uuid IS NULL OR EXISTS (
     SELECT 1 FROM agent_task_queue task
@@ -165,6 +211,27 @@ WHERE id = sqlc.arg('id')
   AND workspace_id = sqlc.arg('workspace_id')
   AND issue_id = sqlc.arg('issue_id')
   AND detached_at IS NULL
+  AND (
+      sqlc.arg('detached_by_type')::text = 'user'
+      OR task_id = sqlc.narg('detached_task_id')::uuid
+  )
+RETURNING id, workspace_id, work_product_id, issue_id, task_id, run_id, relation_key, relation_source, attached_by_type, attached_by_id, attached_at, close_intent, detached_at, detached_by_type, detached_by_id, detached_task_id, detached_run_id;
+
+-- name: DetachWorkProductRelationsForIssue :many
+-- Canonical detach addresses the product rather than a relation id. A product
+-- can have several live claims for one issue, so all claims visible to the
+-- authenticated actor are soft-detached in one statement and remain auditable.
+UPDATE work_product_relation
+SET detached_at = now(),
+    detached_by_type = sqlc.arg('detached_by_type'),
+    detached_by_id = sqlc.arg('detached_by_id'),
+    detached_task_id = sqlc.narg('detached_task_id'),
+    detached_run_id = sqlc.narg('detached_run_id')
+WHERE work_product_id = sqlc.arg('work_product_id')
+  AND workspace_id = sqlc.arg('workspace_id')
+  AND issue_id = sqlc.arg('issue_id')
+  AND detached_at IS NULL
+  AND relation_source IN ('manual_explicit', 'task_explicit', 'execution_branch_discovery', 'provider_discovery')
   AND (
       sqlc.arg('detached_by_type')::text = 'user'
       OR task_id = sqlc.narg('detached_task_id')::uuid

@@ -80,33 +80,33 @@ describe("ApiClient Work Product / provenance endpoints", () => {
     );
   });
 
-  it("encodes resource ids and sends only server-safe relation intent", async () => {
+  it("uses canonical catalog and explicit attachment routes", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse(product))
       .mockResolvedValueOnce(
-        jsonResponse({ relations: [relation], page: 1, per_page: 64, has_more: false }),
+        jsonResponse({ work_products: [product], next_page: null }),
       )
-      .mockResolvedValueOnce(jsonResponse(relation));
+      .mockResolvedValueOnce(jsonResponse({ work_product: product, relation }));
     vi.stubGlobal("fetch", fetchMock);
     const client = new ApiClient("https://api.example.test");
 
     await expect(client.getWorkProduct("product/1")).resolves.toEqual(product);
     await expect(
-      client.listWorkProductRelations("issue/1", { page: 1, per_page: 64 }),
-    ).resolves.toMatchObject({ relations: [relation] });
+      client.listUnassociatedWorkProducts({ page: 1, per_page: 20 }),
+    ).resolves.toMatchObject({ work_products: [product] });
     await expect(
-      client.createWorkProductRelation("issue/1", {
+      client.attachExistingWorkProduct("issue/1", {
         work_product_id: "product-1",
         close_intent: true,
       }),
-    ).resolves.toEqual(relation);
+    ).resolves.toMatchObject({ relation });
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
       "https://api.example.test/api/work-products/product%2F1",
     );
     expect(fetchMock.mock.calls[1]?.[0]).toBe(
-      "https://api.example.test/api/issues/issue%2F1/work-product-relations?page=1&per_page=64",
+      "https://api.example.test/api/work-products/unassociated?page=1&per_page=20",
     );
     expect(JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body))).toEqual({
       work_product_id: "product-1",

@@ -6,13 +6,15 @@ import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import {
   issueWorkProductsInfiniteOptions,
-  useCreateWorkProductRelation,
-  useDetachWorkProductRelation,
-  workProductListInfiniteOptions,
+  unassociatedWorkProductListInfiniteOptions,
+  useAttachExistingWorkProduct,
+  useAttachIssuePullRequest,
+  useDetachWorkProduct,
 } from "@patchbay/core/work-products";
 import { useWorkspaceId } from "@patchbay/core/hooks";
 import { Button } from "@patchbay/ui/components/ui/button";
 import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
+import { Input } from "@patchbay/ui/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -44,20 +46,22 @@ export function WorkProductRelationsSection({ issueId }: { issueId: string }) {
   const { t } = useT("work-products");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedProductId, setSelectedProductId] = useState("");
+  const [pullRequestURL, setPullRequestURL] = useState("");
   const [closeIntent, setCloseIntent] = useState(false);
   const productsQuery = useInfiniteQuery(issueWorkProductsInfiniteOptions(wsId, issueId));
   const availableProductsQuery = useInfiniteQuery(
-    workProductListInfiniteOptions(wsId, undefined, dialogOpen),
+    unassociatedWorkProductListInfiniteOptions(wsId, 20, "", dialogOpen),
   );
-  const createRelation = useCreateWorkProductRelation();
-  const detachRelation = useDetachWorkProductRelation();
+  const attachExisting = useAttachExistingWorkProduct();
+  const attachPullRequest = useAttachIssuePullRequest();
+  const detachProduct = useDetachWorkProduct();
   const products = useMemo(
     () => productsQuery.data?.pages.flatMap((page) => page.work_products) ?? [],
     [productsQuery.data],
   );
   const availableProducts = useMemo(() => {
     const seen = new Set<string>();
-    return (availableProductsQuery.data?.pages.flatMap((page) => page.products) ?? []).filter(
+    return (availableProductsQuery.data?.pages.flatMap((page) => page.work_products) ?? []).filter(
       (product) => {
         if (!product.id || seen.has(product.id)) return false;
         seen.add(product.id);
@@ -73,31 +77,29 @@ export function WorkProductRelationsSection({ issueId }: { issueId: string }) {
   function closeDialog() {
     setDialogOpen(false);
     setSelectedProductId("");
+    setPullRequestURL("");
     setCloseIntent(false);
   }
 
   function submit() {
-    if (!selectedProductId || createRelation.isPending) return;
-    createRelation.mutate(
-      {
-        issueId,
-        work_product_id: selectedProductId,
-        close_intent: closeIntent,
-      },
-      {
-        onSuccess: () => {
-          closeDialog();
-          toast.success(t(($) => $.relations.success));
-        },
-        onError: () => toast.error(t(($) => $.relations.error)),
-      },
-    );
+    if (attachExisting.isPending || attachPullRequest.isPending) return;
+    const onSuccess = () => {
+      closeDialog();
+      toast.success(t(($) => $.relations.success));
+    };
+    const onError = () => toast.error(t(($) => $.relations.error));
+    if (pullRequestURL.trim()) {
+      attachPullRequest.mutate({ issueId, url: pullRequestURL.trim(), close_intent: closeIntent }, { onSuccess, onError });
+      return;
+    }
+    if (!selectedProductId) return;
+    attachExisting.mutate({ issueId, work_product_id: selectedProductId, close_intent: closeIntent }, { onSuccess, onError });
   }
 
-  function detach(relationId: string) {
-    if (detachRelation.isPending) return;
-    detachRelation.mutate(
-      { issueId, relationId },
+  function detach(workProductId: string) {
+    if (detachProduct.isPending) return;
+    detachProduct.mutate(
+      { issueId, workProductId },
       {
         onSuccess: () => toast.success(t(($) => $.relations.detach_success)),
         onError: () => toast.error(t(($) => $.relations.detach_error)),
@@ -136,7 +138,7 @@ export function WorkProductRelationsSection({ issueId }: { issueId: string }) {
               key={product.relation.id || product.id}
               product={product}
               onDetach={detach}
-              detachPending={detachRelation.isPending}
+              detachPending={detachProduct.isPending}
             />
           ))}
         </div>
@@ -166,6 +168,18 @@ export function WorkProductRelationsSection({ issueId }: { issueId: string }) {
             <DialogDescription>{t(($) => $.relations.select_label)}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor={`pull-request-url-${issueId}`}>
+                {t(($) => $.relations.url_label)}
+              </Label>
+              <Input
+                id={`pull-request-url-${issueId}`}
+                value={pullRequestURL}
+                onChange={(event) => setPullRequestURL(event.target.value)}
+                placeholder={t(($) => $.relations.url_placeholder)}
+                inputMode="url"
+              />
+            </div>
             {availableProductsQuery.isPending ? (
               <p className="text-caption text-muted-foreground">{t(($) => $.relations.loading)}</p>
             ) : availableProducts.length === 0 ? (
@@ -212,8 +226,8 @@ export function WorkProductRelationsSection({ issueId }: { issueId: string }) {
             <Button variant="outline" onClick={closeDialog}>
               {t(($) => $.relations.cancel)}
             </Button>
-            <Button disabled={!selectedProductId || createRelation.isPending} onClick={submit}>
-              {t(($) => $.relations.link)}
+            <Button disabled={(!selectedProductId && !pullRequestURL.trim()) || attachExisting.isPending || attachPullRequest.isPending} onClick={submit}>
+              {pullRequestURL.trim() ? t(($) => $.relations.attach_url) : t(($) => $.relations.link)}
             </Button>
           </DialogFooter>
         </DialogContent>

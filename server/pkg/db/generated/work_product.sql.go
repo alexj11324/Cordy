@@ -60,6 +60,74 @@ func (q *Queries) CreateWorkProduct(ctx context.Context, arg CreateWorkProductPa
 	return i, err
 }
 
+const listUnassociatedWorkProducts = `-- name: ListUnassociatedWorkProducts :many
+SELECT id, workspace_id, kind, provider, external_identity, external_url, provider_record_type, provider_record_id, created_at, updated_at
+FROM work_product product
+WHERE product.workspace_id = $1
+  AND product.kind = $2
+  AND (
+      $3 = ''
+      OR strpos(lower(product.external_identity), lower($3)) > 0
+      OR strpos(lower(COALESCE(product.external_url, '')), lower($3)) > 0
+  )
+  AND NOT EXISTS (
+      SELECT 1
+      FROM work_product_relation relation
+      WHERE relation.workspace_id = product.workspace_id
+        AND relation.work_product_id = product.id
+        AND relation.detached_at IS NULL
+        AND relation.issue_id IS NOT NULL
+        AND relation.relation_source IN ('manual_explicit', 'task_explicit', 'execution_branch_discovery', 'provider_discovery')
+  )
+ORDER BY product.updated_at DESC, product.id DESC
+LIMIT $4 OFFSET $5
+`
+
+type ListUnassociatedWorkProductsParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	Kind        string      `json:"kind"`
+	Search      string      `json:"search"`
+	Limit       int32       `json:"limit"`
+	Offset      int32       `json:"offset"`
+}
+
+func (q *Queries) ListUnassociatedWorkProducts(ctx context.Context, arg ListUnassociatedWorkProductsParams) ([]WorkProduct, error) {
+	rows, err := q.db.Query(ctx, listUnassociatedWorkProducts,
+		arg.WorkspaceID,
+		arg.Kind,
+		arg.Search,
+		arg.Limit,
+		arg.Offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []WorkProduct{}
+	for rows.Next() {
+		var i WorkProduct
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.Kind,
+			&i.Provider,
+			&i.ExternalIdentity,
+			&i.ExternalUrl,
+			&i.ProviderRecordType,
+			&i.ProviderRecordID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const createWorkProductRelation = `-- name: CreateWorkProductRelation :one
 WITH product_scope AS (
     SELECT id FROM work_product WHERE id = $2 AND workspace_id = $1
@@ -68,8 +136,8 @@ WITH product_scope AS (
     UNION ALL
     SELECT NULL::uuid WHERE $7::uuid IS NULL
 )
-INSERT INTO work_product_relation (workspace_id, work_product_id, issue_id, task_id, run_id, relation_key, relation_source, attached_by_type, attached_by_id, id)
-SELECT $1, $2, $7, $8, $9, $3, $4, $5, $6, COALESCE($10::uuid, gen_random_uuid())
+INSERT INTO work_product_relation (workspace_id, work_product_id, issue_id, task_id, run_id, relation_key, relation_source, attached_by_type, attached_by_id, close_intent, id)
+SELECT $1, $2, $7, $8, $9, $3, $4, $5, $6, $10, COALESCE($11::uuid, gen_random_uuid())
 FROM product_scope, issue_scope
 WHERE ($8::uuid IS NULL OR EXISTS (
     SELECT 1 FROM agent_task_queue task
@@ -119,6 +187,7 @@ type CreateWorkProductRelationParams struct {
 	IssueID        pgtype.UUID `json:"issue_id"`
 	TaskID         pgtype.UUID `json:"task_id"`
 	RunID          pgtype.UUID `json:"run_id"`
+	CloseIntent    bool        `json:"close_intent"`
 	ID             pgtype.UUID `json:"id"`
 }
 
@@ -133,6 +202,7 @@ func (q *Queries) CreateWorkProductRelation(ctx context.Context, arg CreateWorkP
 		arg.IssueID,
 		arg.TaskID,
 		arg.RunID,
+		arg.CloseIntent,
 		arg.ID,
 	)
 	var i WorkProductRelation
@@ -271,6 +341,81 @@ func (q *Queries) DetachWorkProductRelationForIssue(ctx context.Context, arg Det
 		&i.DetachedRunID,
 	)
 	return i, err
+}
+
+const detachWorkProductRelationsForIssue = `-- name: DetachWorkProductRelationsForIssue :many
+UPDATE work_product_relation
+SET detached_at = now(),
+    detached_by_type = $1,
+    detached_by_id = $2,
+    detached_task_id = $3,
+    detached_run_id = $4
+WHERE work_product_id = $5
+  AND workspace_id = $6
+  AND issue_id = $7
+  AND detached_at IS NULL
+  AND relation_source IN ('manual_explicit', 'task_explicit', 'execution_branch_discovery', 'provider_discovery')
+  AND (
+      $1::text = 'user'
+      OR task_id = $3::uuid
+  )
+RETURNING id, workspace_id, work_product_id, issue_id, task_id, run_id, relation_key, relation_source, attached_by_type, attached_by_id, attached_at, close_intent, detached_at, detached_by_type, detached_by_id, detached_task_id, detached_run_id
+`
+
+type DetachWorkProductRelationsForIssueParams struct {
+	DetachedByType pgtype.Text `json:"detached_by_type"`
+	DetachedByID   pgtype.UUID `json:"detached_by_id"`
+	DetachedTaskID pgtype.UUID `json:"detached_task_id"`
+	DetachedRunID  pgtype.UUID `json:"detached_run_id"`
+	WorkProductID  pgtype.UUID `json:"work_product_id"`
+	WorkspaceID    pgtype.UUID `json:"workspace_id"`
+	IssueID        pgtype.UUID `json:"issue_id"`
+}
+
+func (q *Queries) DetachWorkProductRelationsForIssue(ctx context.Context, arg DetachWorkProductRelationsForIssueParams) ([]WorkProductRelation, error) {
+	rows, err := q.db.Query(ctx, detachWorkProductRelationsForIssue,
+		arg.DetachedByType,
+		arg.DetachedByID,
+		arg.DetachedTaskID,
+		arg.DetachedRunID,
+		arg.WorkProductID,
+		arg.WorkspaceID,
+		arg.IssueID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []WorkProductRelation{}
+	for rows.Next() {
+		var i WorkProductRelation
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.WorkProductID,
+			&i.IssueID,
+			&i.TaskID,
+			&i.RunID,
+			&i.RelationKey,
+			&i.RelationSource,
+			&i.AttachedByType,
+			&i.AttachedByID,
+			&i.AttachedAt,
+			&i.CloseIntent,
+			&i.DetachedAt,
+			&i.DetachedByType,
+			&i.DetachedByID,
+			&i.DetachedTaskID,
+			&i.DetachedRunID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getIssueProvenanceForDiscovery = `-- name: GetIssueProvenanceForDiscovery :many
@@ -624,7 +769,7 @@ const listWorkProductRelationsByIssue = `-- name: ListWorkProductRelationsByIssu
 SELECT id, workspace_id, work_product_id, issue_id, task_id, run_id, relation_key, relation_source, attached_by_type, attached_by_id, attached_at, close_intent, detached_at, detached_by_type, detached_by_id, detached_task_id, detached_run_id
 FROM work_product_relation
 WHERE workspace_id = $1 AND issue_id = $2 AND detached_at IS NULL
-  AND relation_source <> 'provider_reference'
+  AND relation_source IN ('manual_explicit', 'task_explicit', 'execution_branch_discovery', 'provider_discovery')
 ORDER BY attached_at DESC, id DESC LIMIT $3 OFFSET $4
 `
 
@@ -774,23 +919,74 @@ func (q *Queries) ListWorkProductRelationsByTask(ctx context.Context, arg ListWo
 	return items, nil
 }
 
+const listIssueIDsForWorkProduct = `-- name: ListIssueIDsForWorkProduct :many
+SELECT DISTINCT issue_id
+FROM work_product_relation
+WHERE workspace_id = $1 AND work_product_id = $2
+  AND issue_id IS NOT NULL AND detached_at IS NULL
+  AND relation_source IN ('manual_explicit', 'task_explicit', 'execution_branch_discovery', 'provider_discovery')
+ORDER BY issue_id
+`
+
+type ListIssueIDsForWorkProductParams struct {
+	WorkspaceID   pgtype.UUID `json:"workspace_id"`
+	WorkProductID pgtype.UUID `json:"work_product_id"`
+}
+
+func (q *Queries) ListIssueIDsForWorkProduct(ctx context.Context, arg ListIssueIDsForWorkProductParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listIssueIDsForWorkProduct, arg.WorkspaceID, arg.WorkProductID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []pgtype.UUID{}
+	for rows.Next() {
+		var issueID pgtype.UUID
+		if err := rows.Scan(&issueID); err != nil {
+			return nil, err
+		}
+		items = append(items, issueID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listWorkProductsByIssue = `-- name: ListWorkProductsByIssue :many
-SELECT product.id, product.workspace_id, product.kind, product.provider,
-       product.external_identity, product.external_url,
-       product.provider_record_type, product.provider_record_id,
-       product.created_at, product.updated_at,
-       relation.id AS relation_id, relation.issue_id AS relation_issue_id,
-       relation.task_id AS relation_task_id, relation.run_id AS relation_run_id,
-       relation.relation_source, relation.attached_by_type,
-       relation.attached_by_id, relation.attached_at, relation.close_intent
-FROM work_product product
-JOIN work_product_relation relation ON relation.work_product_id = product.id
-WHERE product.workspace_id = $1
-  AND relation.workspace_id = $1
-  AND relation.issue_id = $2
-  AND relation.detached_at IS NULL
-  AND relation.relation_source <> 'provider_reference'
-ORDER BY relation.attached_at DESC, product.id DESC
+WITH linked AS (
+    SELECT DISTINCT ON (product.id)
+           product.id, product.workspace_id, product.kind, product.provider,
+           product.external_identity, product.external_url,
+           product.provider_record_type, product.provider_record_id,
+           product.created_at, product.updated_at,
+           relation.id AS relation_id, relation.issue_id AS relation_issue_id,
+           relation.task_id AS relation_task_id, relation.run_id AS relation_run_id,
+           relation.relation_source, relation.attached_by_type,
+           relation.attached_by_id, relation.attached_at, relation.close_intent
+    FROM work_product product
+    JOIN work_product_relation relation
+      ON relation.work_product_id = product.id
+     AND relation.workspace_id = product.workspace_id
+     AND relation.issue_id = $2
+     AND relation.detached_at IS NULL
+     AND relation.relation_source IN ('manual_explicit', 'task_explicit', 'execution_branch_discovery', 'provider_discovery')
+    WHERE product.workspace_id = $1
+    ORDER BY product.id,
+        CASE relation.relation_source
+            WHEN 'manual_explicit' THEN 0
+            WHEN 'task_explicit' THEN 1
+            ELSE 2
+        END,
+        relation.attached_at DESC,
+        relation.id DESC
+)
+SELECT id, workspace_id, kind, provider, external_identity, external_url,
+       provider_record_type, provider_record_id, created_at, updated_at,
+       relation_id, relation_issue_id, relation_task_id, relation_run_id,
+       relation_source, attached_by_type, attached_by_id, attached_at, close_intent
+FROM linked
+ORDER BY 18 DESC, 1 DESC
 LIMIT $3 OFFSET $4
 `
 

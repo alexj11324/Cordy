@@ -6,11 +6,13 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/patchbay-ai/patchbay/server/internal/integrations/vcs"
-	"github.com/patchbay-ai/patchbay/server/internal/issuestatus"
 	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
 )
@@ -158,7 +160,21 @@ func (h *Handler) mirrorVCSPullRequest(ctx context.Context, conn db.VcsConnectio
 		return
 	}
 
-	pr, err := h.Queries.UpsertVCSPullRequest(ctx, db.UpsertVCSPullRequestParams{
+	if h.Queries == nil || h.TxStarter == nil {
+		return
+	}
+	tx, err := h.TxStarter.Begin(ctx)
+	if err != nil {
+		slog.Warn("vcs: begin pull request mirror transaction failed", "err", err)
+		return
+	}
+	rollback := func() { _ = tx.Rollback(ctx) }
+	queries := h.Queries.WithTx(tx)
+	if _, err := tx.Exec(ctx, `SELECT id FROM vcs_connection WHERE id = $1 AND workspace_id = $2 FOR UPDATE`, conn.ID, conn.WorkspaceID); err != nil {
+		rollback()
+		return
+	}
+	pr, err := queries.UpsertVCSPullRequest(ctx, db.UpsertVCSPullRequestParams{
 		WorkspaceID:     conn.WorkspaceID,
 		ConnectionID:    conn.ID,
 		Provider:        conn.Provider,
@@ -181,97 +197,89 @@ func (h *Handler) mirrorVCSPullRequest(ctx context.Context, conn db.VcsConnectio
 		HeadSha:         ev.HeadSHA,
 	})
 	if err != nil {
+		rollback()
 		slog.Warn("vcs: upsert pr failed", "err", err)
 		return
 	}
 
-	// Out-of-order guard for the link metadata. UpsertVCSPullRequest keeps the
-	// newer persisted row on a stale redelivery, so `pr` may reflect a newer
-	// event than this `ev`. Everything the link write derives below —
-	// close_intent, reference_only, preserveCloseIntent — comes from `ev`, so
-	// rewriting the link from a stale event would corrupt what the newer event
-	// already set (e.g. a redelivered older "opened" event flipping a merged
-	// PR's link back to reference_only, blocking auto-advance). If the persisted
-	// row is strictly newer than this event, the newer event already linked and
-	// published — stop here. (An event with no usable timestamp falls back to
-	// now(), which is never strictly after the stored value, so it proceeds.)
+	// UpsertVCSPullRequest keeps newer metadata on stale redelivery. Do not emit
+	// an older provider snapshot or re-run any association side effect.
 	evUpdatedAt := parseGHTimeRequired(ev.UpdatedAt)
 	if pr.PrUpdatedAt.Valid && evUpdatedAt.Valid && pr.PrUpdatedAt.Time.After(evUpdatedAt.Time) {
+		rollback()
 		return
 	}
-
-	workspaceID := uuidToString(conn.WorkspaceID)
-	resp := vcsPullRequestToResponse(pr)
-
-	// Auto-link to issues by identifiers in title/body/branch. Connecting a
-	// a provider is the opt-in, so there is no separate per-workspace flag. The
-	// issue-side machinery is shared with GitHub.
-	linkedIssueIDs := make([]string, 0)
+	product, err := queries.CreateWorkProduct(ctx, db.CreateWorkProductParams{
+		WorkspaceID:        conn.WorkspaceID,
+		Kind:               "pull_request",
+		Provider:           conn.Provider,
+		ExternalIdentity:   uuidToString(conn.ID) + ":" + strings.ToLower(ev.RepoOwner) + "/" + strings.ToLower(ev.RepoName) + "#" + strconv.Itoa(int(ev.Number)),
+		ExternalUrl:        pgtype.Text{String: ev.HTMLURL, Valid: ev.HTMLURL != ""},
+		ProviderRecordType: pgtype.Text{String: "vcs_pull_request", Valid: true},
+		ProviderRecordID:   pr.ID,
+	})
+	if err != nil {
+		rollback()
+		slog.Warn("vcs: upsert work product failed", "err", err)
+		return
+	}
+	reevalIssues := make([]db.Issue, 0)
 	idents := extractIdentifiers(ev.Title, ev.Body, ev.Branch)
 	closingIdents := map[string]struct{}{}
-	for _, c := range extractClosingIdentifiers(ev.Title, ev.Body) {
-		closingIdents[c] = struct{}{}
+	for _, identifier := range extractClosingIdentifiers(ev.Title, ev.Body) {
+		closingIdents[identifier] = struct{}{}
 	}
-	// qualifyingIdents genuinely tie this PR to an issue: a title prefix, a
-	// branch-name reference, or a body closing keyword. An identifier matched
-	// ONLY by a bare body mention is reference_only — it links (so the PR shows
-	// in history) but is hidden from the issue PR list and excluded from the
-	// close aggregate, so a drive-by "Related MUL-1" neither looks like a
-	// working PR nor blocks a genuine Closes sibling from advancing the issue.
-	// Mirrors the GitHub path (MUL-3739); branch is deliberately excluded from
-	// the closing-keyword scan there and here.
 	qualifyingIdents := map[string]struct{}{}
-	for _, id := range extractIdentifiers(ev.Title, ev.Branch) {
-		qualifyingIdents[id] = struct{}{}
+	for _, identifier := range extractIdentifiers(ev.Title, ev.Branch) {
+		qualifyingIdents[identifier] = struct{}{}
 	}
-	for c := range closingIdents {
-		qualifyingIdents[c] = struct{}{}
+	for identifier := range closingIdents {
+		qualifyingIdents[identifier] = struct{}{}
 	}
-	// Freeze close_intent once the terminal merge/close event has arrived.
 	preserveCloseIntent := !ev.Terminal() && (ev.State == "merged" || ev.State == "closed")
 	prefix := h.getIssuePrefix(ctx, conn.WorkspaceID)
-	reevalIssues := make([]db.Issue, 0, len(idents))
-	for _, id := range idents {
-		issue, ok := h.lookupIssueByIdentifier(ctx, conn.WorkspaceID, prefix, id)
+	for _, identifier := range idents {
+		issue, ok := h.lookupIssueByIdentifier(ctx, conn.WorkspaceID, prefix, identifier)
 		if !ok {
 			continue
 		}
-		_, declared := closingIdents[id]
-		closeIntent := declared && !preserveCloseIntent
-		_, qualifies := qualifyingIdents[id]
-		// Authored as `system`, like the GitHub side: the webhook has no user
-		// or agent identity to borrow for the relation's actor columns.
-		if err := h.Queries.LinkIssueToVCSPullRequest(ctx, db.LinkIssueToVCSPullRequestParams{
+		_, declared := closingIdents[identifier]
+		_, qualifies := qualifyingIdents[identifier]
+		if err := queries.LinkIssueToVCSPullRequest(ctx, db.LinkIssueToVCSPullRequestParams{
 			IssueID:             issue.ID,
 			PullRequestID:       pr.ID,
-			CloseIntent:         closeIntent,
+			CloseIntent:         declared && !preserveCloseIntent,
 			MentionOnly:         !qualifies,
 			PreserveCloseIntent: preserveCloseIntent,
 		}); err != nil {
+			rollback()
 			slog.Warn("vcs: link failed", "err", err)
-			continue
+			return
 		}
-		linkedIssueIDs = append(linkedIssueIDs, uuidToString(issue.ID))
 		reevalIssues = append(reevalIssues, issue)
 	}
-
+	issueIDs, err := queries.ListIssueIDsForWorkProduct(ctx, db.ListIssueIDsForWorkProductParams{WorkspaceID: conn.WorkspaceID, WorkProductID: product.ID})
+	if err != nil {
+		rollback()
+		slog.Warn("vcs: list linked issues failed", "err", err)
+		return
+	}
+	if err := tx.Commit(ctx); err != nil {
+		rollback()
+		slog.Warn("vcs: commit pull request mirror failed", "err", err)
+		return
+	}
+	linkedIssueIDs := make([]string, 0, len(issueIDs))
+	for _, issueID := range issueIDs {
+		linkedIssueIDs = append(linkedIssueIDs, uuidToString(issueID))
+	}
 	if ev.State == "merged" || ev.State == "closed" {
 		for _, issue := range reevalIssues {
-			// A custom terminal status counts as terminal here. (MUL-6243)
-			if s := issuestatus.Effective(ctx, h.Queries, issue.WorkspaceID, issue.Status); s == "done" || s == "cancelled" {
-				continue
-			}
-			counts, err := h.Queries.GetIssueCombinedPullRequestCloseAggregate(ctx, issue.ID)
-			if err != nil {
-				slog.Warn("vcs: count linked pr states failed", "err", err, "issue_id", uuidToString(issue.ID))
-				continue
-			}
-			if counts.OpenCount == 0 && counts.MergedWithCloseIntentCount > 0 {
-				h.advanceIssueToDone(ctx, issue, workspaceID)
-			}
+			h.maybeCompleteWorkProductIssue(ctx, issue)
 		}
 	}
-
+	workspaceID := uuidToString(conn.WorkspaceID)
+	resp := vcsPullRequestToResponse(pr)
 	h.publish(protocol.EventPullRequestUpdated, workspaceID, "system", "", map[string]any{
 		"pull_request":     resp,
 		"linked_issue_ids": linkedIssueIDs,
@@ -282,11 +290,21 @@ func (h *Handler) mirrorVCSCIStatus(ctx context.Context, conn db.VcsConnection, 
 	if ev.SHA == "" || ev.State == "" {
 		return
 	}
+	if h.Queries == nil || h.TxStarter == nil {
+		return
+	}
 	// Use the provider's own event timestamp so UpsertVCSCommitStatus's
 	// monotonic guard has something real to compare — writing time.Now() here
 	// made the guard always true, so an out-of-order redelivery could regress a
 	// status. Falls back to now() only when the payload carried no timestamp.
-	if err := h.Queries.UpsertVCSCommitStatus(ctx, db.UpsertVCSCommitStatusParams{
+	tx, err := h.TxStarter.Begin(ctx)
+	if err != nil {
+		slog.Warn("vcs: begin status mirror transaction failed", "err", err)
+		return
+	}
+	rollback := func() { _ = tx.Rollback(ctx) }
+	queries := h.Queries.WithTx(tx)
+	if err := queries.UpsertVCSCommitStatus(ctx, db.UpsertVCSCommitStatusParams{
 		ConnectionID: conn.ID,
 		Sha:          ev.SHA,
 		Context:      ev.Context,
@@ -295,16 +313,23 @@ func (h *Handler) mirrorVCSCIStatus(ctx context.Context, conn db.VcsConnection, 
 		Description:  ptrToText(strPtrOrNil(ev.Description)),
 		UpdatedAt:    parseGHTimeRequired(ev.UpdatedAt),
 	}); err != nil {
+		rollback()
 		slog.Warn("vcs: upsert commit status failed", "err", err)
 		return
 	}
 
-	issueIDs, err := h.Queries.ListIssueIDsForVCSPRHead(ctx, db.ListIssueIDsForVCSPRHeadParams{
+	issueIDs, err := queries.ListIssueIDsForVCSPRHead(ctx, db.ListIssueIDsForVCSPRHeadParams{
 		ConnectionID: conn.ID,
 		HeadSha:      ev.SHA,
 	})
 	if err != nil {
+		rollback()
 		slog.Warn("vcs: lookup issues for status failed", "err", err)
+		return
+	}
+	if err := tx.Commit(ctx); err != nil {
+		rollback()
+		slog.Warn("vcs: commit status mirror failed", "err", err)
 		return
 	}
 	workspaceID := uuidToString(conn.WorkspaceID)

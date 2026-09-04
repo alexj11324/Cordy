@@ -16,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/patchbay-ai/patchbay/server/internal/integrations/ghsnapshot"
+	"github.com/patchbay-ai/patchbay/server/internal/middleware"
 	"github.com/patchbay-ai/patchbay/server/internal/util"
 	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
@@ -299,6 +300,10 @@ type daemonExecutionProvenanceRequest struct {
 // snapshot from the daemon. It is authenticated by the existing daemon route
 // and retains the same task/workspace binding as all other daemon task APIs.
 func (h *Handler) RecordTaskExecutionProvenance(w http.ResponseWriter, r *http.Request) {
+	if middleware.DaemonAuthPathFromContext(r.Context()) != middleware.DaemonAuthPathDaemonToken {
+		writeError(w, http.StatusForbidden, "execution provenance requires a daemon token")
+		return
+	}
 	taskID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "taskId"), "task id")
 	if !ok {
 		return
@@ -542,49 +547,6 @@ func (r *WorkProductDiscoveryRuntime) discoverOne(ctx context.Context, task db.A
 	if r.handler.PRRefresh == nil || !r.handler.PRRefresh.Enabled() {
 		return finish("ineligible", "github_app_not_configured", 0, pgtype.UUID{})
 	}
-	installations, err := r.handler.Queries.ListGitHubInstallationsByWorkspace(ctx, item.WorkspaceID)
-	if err != nil {
-		return err
-	}
-	if len(installations) == 0 {
-		return finish("ineligible", "github_installation_not_found", 0, pgtype.UUID{})
-	}
-
-	matches := make([]ghsnapshot.PullRequestHeadMatch, 0)
-	lookupErr := false
-	mismatch := false
-	seenNumbers := make(map[int32]struct{})
-	matchInstallationIDs := make(map[int32]int64)
-	for _, installation := range installations {
-		found, lookupError := r.handler.PRRefresh.PullRequestsByHead(ctx, installation.InstallationID, parts[0], parts[1], branch)
-		if lookupError != nil {
-			lookupErr = true
-			continue
-		}
-		for _, candidate := range found {
-			metadata := candidate.Metadata
-			if metadata.Branch != branch || !headRepositoryMatches(metadata.HeadRepoIdentity, repoIdentity) || !strings.EqualFold(metadata.HeadSHA, sha) {
-				mismatch = true
-				continue
-			}
-			if _, seen := seenNumbers[candidate.Number]; seen {
-				continue
-			}
-			seenNumbers[candidate.Number] = struct{}{}
-			matchInstallationIDs[candidate.Number] = installation.InstallationID
-			matches = append(matches, candidate)
-		}
-	}
-	sort.Slice(matches, func(i, j int) bool {
-		return matches[i].Number < matches[j].Number
-	})
-	if lookupErr {
-		return finish("ambiguous", "github_lookup_failed", int32(len(matches)), pgtype.UUID{})
-	}
-	if len(matches) == 0 && mismatch {
-		return finish("ambiguous", "pull_request_head_mismatch", 0, pgtype.UUID{})
-	}
-
 	if r.handler.TxStarter == nil {
 		return errors.New("database unavailable")
 	}
@@ -651,6 +613,94 @@ WHERE workspace_id = $1 AND repo_identity = $2 AND head_branch = $3
 		return explicitErr
 	}
 
+	// The provider lookup is deliberately inside the transaction, after the
+	// task/branch/lease locks and explicit-relation recheck. This is the same
+	// fence used by Rust: a slow GitHub response cannot race a manual attach or
+	// let a stale discovery result become authoritative after a competing claim.
+	installations, err := r.handler.Queries.WithTx(tx).ListGitHubInstallationsByWorkspace(ctx, item.WorkspaceID)
+	if err != nil {
+		rollback()
+		return err
+	}
+	if len(installations) == 0 {
+		if err := recordWorkProductDiscoveryExec(ctx, tx, item, "ineligible", 0, "github_installation_not_found", pgtype.UUID{}); err != nil {
+			rollback()
+			return err
+		}
+		if err := tx.Commit(ctx); err != nil {
+			rollback()
+			return err
+		}
+		return nil
+	}
+	matches := make([]ghsnapshot.PullRequestHeadMatch, 0)
+	lookupErr := false
+	mismatch := false
+	seenNumbers := make(map[int32]struct{})
+	matchInstallationIDs := make(map[int32]int64)
+	for _, installation := range installations {
+		found, lookupError := r.handler.PRRefresh.PullRequestsByHead(ctx, installation.InstallationID, parts[0], parts[1], branch)
+		if lookupError != nil {
+			lookupErr = true
+			continue
+		}
+		for _, candidate := range found {
+			metadata := candidate.Metadata
+			if metadata.Branch != branch || !headRepositoryMatches(metadata.HeadRepoIdentity, repoIdentity) || !strings.EqualFold(metadata.HeadSHA, sha) {
+				mismatch = true
+				continue
+			}
+			if _, seen := seenNumbers[candidate.Number]; seen {
+				continue
+			}
+			seenNumbers[candidate.Number] = struct{}{}
+			matchInstallationIDs[candidate.Number] = installation.InstallationID
+			matches = append(matches, candidate)
+		}
+	}
+	sort.Slice(matches, func(i, j int) bool {
+		return matches[i].Number < matches[j].Number
+	})
+	if lookupErr {
+		if err := recordWorkProductDiscoveryExec(ctx, tx, item, "ambiguous", int32(len(matches)), "github_lookup_failed", pgtype.UUID{}); err != nil {
+			rollback()
+			return err
+		}
+		if err := tx.Commit(ctx); err != nil {
+			rollback()
+			return err
+		}
+		return nil
+	}
+	if len(matches) == 0 && mismatch {
+		if err := recordWorkProductDiscoveryExec(ctx, tx, item, "ambiguous", 0, "pull_request_head_mismatch", pgtype.UUID{}); err != nil {
+			rollback()
+			return err
+		}
+		if err := tx.Commit(ctx); err != nil {
+			rollback()
+			return err
+		}
+		return nil
+	}
+	var postLookupExplicitProductID pgtype.UUID
+	postLookupExplicitErr := tx.QueryRow(ctx, `SELECT work_product_id FROM work_product_relation WHERE workspace_id = $1 AND task_id = $2 AND relation_source = 'task_explicit' AND detached_at IS NULL ORDER BY attached_at ASC, id ASC LIMIT 1`, item.WorkspaceID, item.TaskID).Scan(&postLookupExplicitProductID)
+	if postLookupExplicitErr == nil {
+		if err := recordWorkProductDiscoveryExec(ctx, tx, item, "associated", 1, "explicit_relation_exists", postLookupExplicitProductID); err != nil {
+			rollback()
+			return err
+		}
+		if err := tx.Commit(ctx); err != nil {
+			rollback()
+			return err
+		}
+		return nil
+	}
+	if !isNotFound(postLookupExplicitErr) {
+		rollback()
+		return postLookupExplicitErr
+	}
+
 	decision := classifyBranchDiscovery(item.HeadState, int(otherExecutionCount), len(matches))
 	if decision.Status != "associated" {
 		if !lookupErr && decision.Status == "unassociated" && mismatch {
@@ -684,6 +734,11 @@ WHERE workspace_id = $1 AND repo_identity = $2 AND head_branch = $3
 		ProviderRecordID:   mirrored.ID,
 	})
 	if err != nil {
+		rollback()
+		return err
+	}
+	var lockedProductID pgtype.UUID
+	if err := tx.QueryRow(ctx, `SELECT id FROM work_product WHERE id = $1 AND workspace_id = $2 FOR UPDATE`, product.ID, item.WorkspaceID).Scan(&lockedProductID); err != nil {
 		rollback()
 		return err
 	}

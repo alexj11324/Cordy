@@ -199,7 +199,7 @@ SELECT head_sha FROM (
     JOIN work_product_relation relation ON relation.work_product_id = product.id
     WHERE relation.issue_id = $1 AND pr.head_sha <> ''
       AND relation.detached_at IS NULL
-      AND relation.relation_source <> 'provider_reference'
+      AND relation.relation_source IN ('manual_explicit', 'task_explicit', 'execution_branch_discovery', 'provider_discovery')
     UNION ALL
     SELECT pr.head_sha AS head_sha, pr.state AS state, pr.pr_updated_at AS pr_updated_at
     FROM vcs_pull_request pr
@@ -209,7 +209,7 @@ SELECT head_sha FROM (
     JOIN work_product_relation relation ON relation.work_product_id = product.id
     WHERE relation.issue_id = $1 AND pr.head_sha <> ''
       AND relation.detached_at IS NULL
-      AND relation.relation_source <> 'provider_reference'
+      AND relation.relation_source IN ('manual_explicit', 'task_explicit', 'execution_branch_discovery', 'provider_discovery')
 ) combined
 ORDER BY (state IN ('open', 'draft')) DESC, pr_updated_at DESC
 LIMIT 1;
@@ -222,53 +222,17 @@ WHERE product.provider_record_type = 'github_pull_request'
   AND product.provider_record_id = $1
   AND relation.issue_id IS NOT NULL
   AND relation.detached_at IS NULL
-  AND relation.relation_source <> 'provider_reference';
-
--- name: GetIssuePullRequestCloseAggregate :one
--- Aggregates the issue's linked PRs into the two counts that gate
--- auto-advance: how many are still in flight (`open` or `draft`) and how
--- many merged PRs declared explicit closing intent on the link row. The
--- webhook auto-advances the issue when open_count = 0 AND
--- merged_with_close_intent_count > 0. Both the PR state and the link row
--- (with close_intent) are persisted before this query runs, so the result
--- is event-agnostic — a link-only sibling closing after a closing-keyword
--- PR has already merged still resolves the issue.
---
--- provider_reference relations (a PR that merely mentions the issue identifier
--- in its body) are excluded: they are hidden from the issue's Work Product
--- list, so they must not silently gate auto-advance either. An open body-only
--- mention would otherwise keep open_count > 0 and block the issue from
--- advancing while being invisible in the UI. (These relations never carry
--- close_intent, so excluding them does not change
--- merged_with_close_intent_count.)
-SELECT
-    COALESCE(SUM(CASE WHEN pr.state IN ('open', 'draft') THEN 1 ELSE 0 END), 0)::bigint AS open_count,
-    COALESCE(SUM(CASE WHEN pr.state = 'merged' AND relation.close_intent THEN 1 ELSE 0 END), 0)::bigint AS merged_with_close_intent_count
-FROM github_pull_request pr
-JOIN work_product product
-  ON product.provider_record_type = 'github_pull_request'
- AND product.provider_record_id = pr.id
-JOIN work_product_relation relation ON relation.work_product_id = product.id
-WHERE relation.issue_id = $1
-  AND relation.detached_at IS NULL
-  AND relation.relation_source <> 'provider_reference';
+  AND relation.relation_source IN ('manual_explicit', 'task_explicit', 'execution_branch_discovery', 'provider_discovery');
 
 -- =====================
 -- Issue ↔ Pull Request link
 -- =====================
 
 -- name: LinkIssueToPullRequest :exec
--- close_intent reflects the PR's explicit close declaration at the moment
--- the webhook is allowed to update that intent. Open/edit/merge webhooks use
--- the current title/body parse result so authors can remove a closing keyword
--- before merge. Post-terminal edits can opt into preserving the stored value,
--- keeping the merge-time decision stable.
---
--- mention_only marks a link justified ONLY by a bare body mention (no closing
--- keyword, no title/branch reference). It follows the same preserve gate as
--- close_intent so a post-terminal edit can't retroactively hide a PR that did
--- the work. Such a link is stored as a `provider_reference` relation, which
--- every issue-facing read filters out (see ListWorkProductsByIssue).
+-- Preserve the existing identifier-based GitHub auto-link contract. The
+-- relation is still written to the unified Work Product tables, so the
+-- current provider discovery behavior and the new explicit Work Product
+-- surface share one durable representation.
 WITH product AS (
     INSERT INTO work_product (
         workspace_id, kind, provider, external_identity, external_url,
@@ -316,3 +280,32 @@ ON CONFLICT (work_product_id, relation_key) WHERE detached_at IS NULL DO UPDATE 
         WHEN sqlc.arg('preserve_close_intent') THEN work_product_relation.relation_source
         ELSE EXCLUDED.relation_source
     END;
+
+-- name: GetIssuePullRequestCloseAggregate :one
+-- Aggregates the issue's linked PRs into the two counts that gate
+-- auto-advance: how many are still in flight (`open` or `draft`) and how
+-- many merged PRs declared explicit closing intent on the link row. The
+-- webhook auto-advances the issue when open_count = 0 AND
+-- merged_with_close_intent_count > 0. Both the PR state and the link row
+-- (with close_intent) are persisted before this query runs, so the result
+-- is event-agnostic — a link-only sibling closing after a closing-keyword
+-- PR has already merged still resolves the issue.
+--
+-- provider_reference relations (a PR that merely mentions the issue identifier
+-- in its body) are excluded: they are hidden from the issue's Work Product
+-- list, so they must not silently gate auto-advance either. An open body-only
+-- mention would otherwise keep open_count > 0 and block the issue from
+-- advancing while being invisible in the UI. (These relations never carry
+-- close_intent, so excluding them does not change
+-- merged_with_close_intent_count.)
+SELECT
+    COALESCE(SUM(CASE WHEN pr.state IN ('open', 'draft') THEN 1 ELSE 0 END), 0)::bigint AS open_count,
+    COALESCE(SUM(CASE WHEN pr.state = 'merged' AND relation.close_intent THEN 1 ELSE 0 END), 0)::bigint AS merged_with_close_intent_count
+FROM github_pull_request pr
+JOIN work_product product
+  ON product.provider_record_type = 'github_pull_request'
+ AND product.provider_record_id = pr.id
+JOIN work_product_relation relation ON relation.work_product_id = product.id
+WHERE relation.issue_id = $1
+  AND relation.detached_at IS NULL
+  AND relation.relation_source IN ('manual_explicit', 'task_explicit', 'execution_branch_discovery', 'provider_discovery');

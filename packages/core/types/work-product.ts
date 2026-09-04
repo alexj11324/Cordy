@@ -21,19 +21,20 @@ export type WorkProduct = {
   provider_record_id: string | null;
   created_at: string;
   updated_at: string;
+  association_state?: "associated" | "unassociated" | string;
 };
 
 export type WorkProductRelation = {
   id: string;
   workspace_id: string;
   work_product_id: string;
-  issue_id: string;
+  issue_id: string | null;
   task_id: string | null;
   run_id: string | null;
   relation_key: string;
   relation_source: string;
   attached_by_type: string;
-  attached_by_id: string;
+  attached_by_id: string | null;
   attached_at: string;
   close_intent: boolean;
   detached_at: string | null;
@@ -90,9 +91,46 @@ export type ExecutionProvenancePage = {
  * context; accepting those fields here would suggest an unsafe impersonation
  * contract to callers.
  */
-export type CreateWorkProductRelationRequest = {
+export type AttachExistingWorkProductRequest = {
   work_product_id: string;
   close_intent?: boolean;
+};
+
+export type IssuePullRequestAttachRequest = {
+  url: string;
+  title?: string;
+  state?: string;
+  branch?: string;
+  head_ref_name?: string;
+  head_sha?: string;
+  author_login?: string;
+  close_intent?: boolean;
+};
+
+export type WorkProductAttachmentResponse = {
+  work_product: WorkProduct;
+  relation: WorkProductRelation;
+};
+
+export type UnassociatedWorkProductPage = {
+  work_products: WorkProduct[];
+  next_page: number | null;
+};
+
+export type IssuePullRequestListResponse = {
+  pull_requests: GitHubPullRequest[];
+};
+
+export type IssuePullRequestAttachResponse = {
+  pull_request: GitHubPullRequest;
+  work_product: WorkProduct;
+  relation: WorkProductRelation;
+};
+
+export type TaskWorkProductsResponse = {
+  task_id: string;
+  provenances: ExecutionProvenance[];
+  work_products: WorkProductView[];
 };
 
 export type WorkProductPageParams = {
@@ -136,3 +174,12 @@ export type WorkProductViewPage = {
   per_page: number;
   has_more: boolean;
 };
+
+// Canonical issue/task lists are unpaged in the Rust contract. Keep the page
+// type above for the workspace catalog/provenance endpoints only.
+export type WorkProductViewListResponse = {
+  work_products: WorkProductView[];
+};
+
+/** @deprecated use AttachExistingWorkProductRequest. */
+export type CreateWorkProductRelationRequest = AttachExistingWorkProductRequest;

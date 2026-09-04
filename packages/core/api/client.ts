@@ -117,13 +117,17 @@ import type {
   ListDependencyGraphsResponse,
   ExecutionProvenance,
   ExecutionProvenancePage,
+  AttachExistingWorkProductRequest,
+  IssuePullRequestAttachRequest,
+  IssuePullRequestAttachResponse,
+  IssuePullRequestListResponse,
+  TaskWorkProductsResponse,
+  UnassociatedWorkProductPage,
   WorkProduct,
+  WorkProductAttachmentResponse,
   WorkProductPage,
-  WorkProductRelation,
-  WorkProductRelationPage,
-  CreateWorkProductRelationRequest,
   WorkProductPageParams,
-  WorkProductViewPage,
+  WorkProductViewListResponse,
   Label,
   IssueProperty,
   IssuePropertyValue,
@@ -382,14 +386,22 @@ import {
   RuntimeUsageListSchema,
   SearchIssuesResponseSchema,
   SearchProjectsResponseSchema,
-  EMPTY_WORK_PRODUCT_VIEW_PAGE,
+  EMPTY_WORK_PRODUCT_VIEW_LIST_RESPONSE,
+  EMPTY_UNASSOCIATED_WORK_PRODUCT_PAGE,
+  EMPTY_WORK_PRODUCT_ATTACHMENT_RESPONSE,
+  EMPTY_ISSUE_PULL_REQUEST_LIST_RESPONSE,
+  EMPTY_ISSUE_PULL_REQUEST_ATTACH_RESPONSE,
+  EMPTY_TASK_WORK_PRODUCTS_RESPONSE,
   BeginManagedSlackInstallResponseSchema,
   EMPTY_BEGIN_MANAGED_SLACK_INSTALL_RESPONSE,
   WorkProductPageSchema,
-  WorkProductViewPageSchema,
+  WorkProductViewListResponseSchema,
+  UnassociatedWorkProductPageSchema,
+  WorkProductAttachmentResponseSchema,
+  IssuePullRequestListResponseSchema,
+  IssuePullRequestAttachResponseSchema,
+  TaskWorkProductsResponseSchema,
   WorkProductSchema,
-  WorkProductRelationPageSchema,
-  WorkProductRelationSchema,
   ExecutionProvenancePageSchema,
   ExecutionProvenanceSchema,
   EMPTY_WORK_PRODUCT,
@@ -3885,47 +3897,40 @@ export class ApiClient {
     });
   }
 
-  async listWorkProductRelations(
-    issueId: string,
-    params: WorkProductPageParams = {},
+  async listUnassociatedWorkProducts(
+    params: WorkProductPageParams & { query?: string } = {},
     opts?: { signal?: AbortSignal },
-  ): Promise<WorkProductRelationPage> {
+  ): Promise<UnassociatedWorkProductPage> {
     const search = new URLSearchParams();
     if (params.page != null) search.set("page", String(params.page));
     if (params.per_page != null) search.set("per_page", String(params.per_page));
+    if (params.query != null) search.set("query", params.query);
     const query = search.toString();
     const raw = await this.fetch<unknown>(
-      `/api/issues/${encodeURIComponent(issueId)}/work-product-relations${query ? `?${query}` : ""}`,
+      `/api/work-products/unassociated${query ? `?${query}` : ""}`,
       { signal: opts?.signal },
     );
-    return parseWithFallback(
-      raw,
-      WorkProductRelationPageSchema,
-      EMPTY_WORK_PRODUCT_RELATION_PAGE,
-      { endpoint: "GET /api/issues/:id/work-product-relations" },
-    );
+    return parseWithFallback(raw, UnassociatedWorkProductPageSchema, EMPTY_UNASSOCIATED_WORK_PRODUCT_PAGE, {
+      endpoint: "GET /api/work-products/unassociated",
+    });
   }
 
-  async createWorkProductRelation(
+  async attachExistingWorkProduct(
     issueId: string,
-    data: CreateWorkProductRelationRequest,
-  ): Promise<WorkProductRelation> {
+    data: AttachExistingWorkProductRequest,
+  ): Promise<WorkProductAttachmentResponse> {
     const raw = await this.fetch<unknown>(
-      `/api/issues/${encodeURIComponent(issueId)}/work-product-relations`,
+      `/api/issues/${encodeURIComponent(issueId)}/work-products`,
       { method: "POST", body: JSON.stringify(data) },
     );
     const parsed = parseWithFallback(
       raw,
-      WorkProductRelationSchema,
-      EMPTY_WORK_PRODUCT_RELATION,
-      { endpoint: "POST /api/issues/:id/work-product-relations" },
+      WorkProductAttachmentResponseSchema,
+      EMPTY_WORK_PRODUCT_ATTACHMENT_RESPONSE,
+      { endpoint: "POST /api/issues/:id/work-products" },
     );
-    if (
-      !parsed.id ||
-      !parsed.work_product_id ||
-      parsed.issue_id !== issueId
-    ) {
-      throw new Error("Invalid work product relation response");
+    if (!parsed.work_product.id || !parsed.relation.id) {
+      throw new Error("Invalid work product attachment response");
     }
     return parsed;
   }
@@ -3935,38 +3940,65 @@ export class ApiClient {
   // lists meant two answers to "what closed this issue".
   async listIssueWorkProducts(
     issueId: string,
-    params: WorkProductPageParams = {},
     opts?: { signal?: AbortSignal },
-  ): Promise<WorkProductViewPage> {
+  ): Promise<WorkProductViewListResponse> {
     const raw = await this.fetch<unknown>(
-      `/api/issues/${encodeURIComponent(issueId)}/work-products${workProductPageQuery(params)}`,
+      `/api/issues/${encodeURIComponent(issueId)}/work-products`,
       { signal: opts?.signal },
     );
-    return parseWithFallback(raw, WorkProductViewPageSchema, EMPTY_WORK_PRODUCT_VIEW_PAGE, {
+    return parseWithFallback(raw, WorkProductViewListResponseSchema, EMPTY_WORK_PRODUCT_VIEW_LIST_RESPONSE, {
       endpoint: "GET /api/issues/:id/work-products",
     });
   }
 
   async listTaskWorkProducts(
     taskId: string,
-    params: WorkProductPageParams = {},
     opts?: { signal?: AbortSignal },
-  ): Promise<WorkProductViewPage> {
+  ): Promise<TaskWorkProductsResponse> {
     const raw = await this.fetch<unknown>(
-      `/api/tasks/${encodeURIComponent(taskId)}/work-products${workProductPageQuery(params)}`,
+      `/api/tasks/${encodeURIComponent(taskId)}/work-products`,
       { signal: opts?.signal },
     );
-    return parseWithFallback(raw, WorkProductViewPageSchema, EMPTY_WORK_PRODUCT_VIEW_PAGE, {
+    return parseWithFallback(raw, TaskWorkProductsResponseSchema, EMPTY_TASK_WORK_PRODUCTS_RESPONSE, {
       endpoint: "GET /api/tasks/:taskId/work-products",
     });
   }
 
   // Detach retracts an attach; the server soft-closes the relation and keeps
   // the row, so the response is discarded and callers refetch the list.
-  async detachWorkProductRelation(issueId: string, relationId: string): Promise<void> {
+  async detachWorkProduct(issueId: string, workProductId: string): Promise<void> {
     await this.fetch(
-      `/api/issues/${encodeURIComponent(issueId)}/work-product-relations/${encodeURIComponent(relationId)}`,
+      `/api/issues/${encodeURIComponent(issueId)}/work-products/${encodeURIComponent(workProductId)}`,
       { method: "DELETE" },
+    );
+  }
+
+  async listIssuePullRequests(
+    issueId: string,
+    opts?: { signal?: AbortSignal },
+  ): Promise<IssuePullRequestListResponse> {
+    const raw = await this.fetch<unknown>(
+      `/api/issues/${encodeURIComponent(issueId)}/pull-requests`,
+      { signal: opts?.signal },
+    );
+    return parseWithFallback(raw, IssuePullRequestListResponseSchema, EMPTY_ISSUE_PULL_REQUEST_LIST_RESPONSE, {
+      endpoint: "GET /api/issues/:id/pull-requests",
+    });
+  }
+
+  async attachIssuePullRequest(
+    issueId: string,
+    data: IssuePullRequestAttachRequest,
+  ): Promise<IssuePullRequestAttachResponse> {
+    const raw = await this.fetch<unknown>(
+      `/api/issues/${encodeURIComponent(issueId)}/pull-requests`,
+      { method: "POST", body: JSON.stringify(data) },
+    );
+    return parseWithFallback(
+      raw,
+      IssuePullRequestAttachResponseSchema,
+      EMPTY_ISSUE_PULL_REQUEST_ATTACH_RESPONSE,
+      { endpoint: "POST /api/issues/:id/pull-requests" },
     );
   }
 

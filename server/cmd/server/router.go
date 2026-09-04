@@ -2121,9 +2121,13 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Put("/metadata/{key}", h.SetIssueMetadataKey)
 					r.Delete("/metadata/{key}", h.DeleteIssueMetadataKey)
 					r.Put("/properties/{propertyId}", h.SetIssueProperty)
-					r.Delete("/properties/{propertyId}", h.DeleteIssueProperty)
-					r.Get("/work-products", h.ListWorkProductsForIssue)
-					r.Get("/dependency-graph", h.GetIssueDependencyGraph)
+						r.Delete("/properties/{propertyId}", h.DeleteIssueProperty)
+						r.Get("/work-products", h.ListWorkProductsForIssue)
+						r.Post("/work-products", h.AttachExistingWorkProduct)
+						r.Delete("/work-products/{workProductId}", h.DetachWorkProduct)
+						r.Get("/pull-requests", h.ListIssuePullRequests)
+						r.Post("/pull-requests", h.AttachIssuePullRequest)
+						r.Get("/dependency-graph", h.GetIssueDependencyGraph)
 					r.Post("/dependency-graph/apply", h.ApplyIssueDependencyGraph)
 				})
 			})
@@ -2510,24 +2514,16 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			r.Get("/api/chat/history", h.GetChatChannelHistory)
 			r.Get("/api/chat/thread", h.GetChatThread)
 
-			// Work products & provenance
-			r.Route("/api/work-products", func(r chi.Router) {
-				r.Get("/", h.ListWorkProducts)
-				r.Post("/", h.CreateWorkProduct)
+				// Work products & provenance
+				r.Route("/api/work-products", func(r chi.Router) {
+					r.Get("/unassociated", h.ListUnassociatedWorkProducts)
+					r.Get("/", h.ListWorkProducts)
+					r.Post("/", h.CreateWorkProduct)
 				r.Route("/{id}", func(r chi.Router) {
 					r.Get("/", h.GetWorkProduct)
 				})
 			})
-			r.Route("/api/issues/{id}/work-product-relations", func(r chi.Router) {
-				r.Get("/", h.ListWorkProductRelationsByIssue)
-				r.Post("/", h.CreateWorkProductRelation)
-				// Detach is a soft close on the relation, so it is addressed
-				// by relation id rather than by product: the same product can
-				// be attached to one issue by a member and by a task, and only
-				// the relation says which claim is being retracted.
-				r.Delete("/{relationId}", h.DetachWorkProductRelation)
-			})
-			r.Get("/api/tasks/{taskId}/work-products", h.ListWorkProductsForTask)
+				r.Get("/api/tasks/{taskId}/work-products", h.ListWorkProductsForTask)
 			r.Route("/api/tasks/{taskId}/provenance", func(r chi.Router) {
 				r.Get("/", h.GetProvenanceByTask)
 				r.Post("/", h.UpsertProvenance)

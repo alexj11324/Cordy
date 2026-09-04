@@ -311,6 +311,58 @@ func (c *Client) PullRequestsByHead(ctx context.Context, installationID int64, o
 	}
 }
 
+// PullRequestMetadata fetches the provider-owned facts needed for an explicit
+// issue attach. The caller may use request-body values as display fallbacks for
+// a human attach, but task-scoped attaches must use this response as the
+// ownership proof. In particular, this endpoint never derives an issue from
+// the PR title, body, or branch name.
+func (c *Client) PullRequestMetadata(ctx context.Context, installationID int64, owner, repo string, number int32) (PullRequestMetadata, error) {
+	if !c.Enabled() {
+		return PullRequestMetadata{}, errors.New("ghsnapshot: client not configured")
+	}
+	owner = strings.TrimSpace(owner)
+	repo = strings.TrimSpace(repo)
+	if owner == "" || repo == "" || number <= 0 {
+		return PullRequestMetadata{}, errors.New("ghsnapshot: pull request metadata requires owner, repository, and positive number")
+	}
+	token, err := c.installationToken(ctx, installationID)
+	if err != nil {
+		return PullRequestMetadata{}, err
+	}
+	endpoint := strings.TrimRight(c.apiBase, "/") + "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(repo) + "/pulls/" + strconv.Itoa(int(number))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return PullRequestMetadata{}, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return PullRequestMetadata{}, err
+	}
+	body, readErr := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
+	_ = resp.Body.Close()
+	if readErr != nil {
+		return PullRequestMetadata{}, errors.New("github pull request metadata: failed to read response")
+	}
+	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests {
+		return PullRequestMetadata{}, rateLimitFromResponse(resp, c.now())
+	}
+	if resp.StatusCode != http.StatusOK {
+		return PullRequestMetadata{}, fmt.Errorf("github pull request metadata: unexpected status %d", resp.StatusCode)
+	}
+	var payload githubPullRequestREST
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return PullRequestMetadata{}, errors.New("github pull request metadata: malformed response")
+	}
+	metadata, ok := payload.metadata()
+	if !ok || metadata.Number != number {
+		return PullRequestMetadata{}, errors.New("github pull request metadata: incomplete response")
+	}
+	return metadata, nil
+}
+
 func githubLinkHasNext(header string) bool {
 	for _, link := range strings.Split(header, ",") {
 		for _, parameter := range strings.Split(link, ";")[1:] {

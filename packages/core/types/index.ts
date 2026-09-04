@@ -216,6 +216,7 @@ export type {
   ListDependencyGraphsResponse,
 } from "./dependency-graph";
 export type {
+  AttachExistingWorkProductRequest,
   CreateWorkProductRelationRequest,
   ExecutionProvenance,
   ExecutionProvenancePage,
@@ -226,7 +227,14 @@ export type {
   WorkProductRelationPage,
   WorkProductRelationSummary,
   WorkProductView,
+  WorkProductViewListResponse,
   WorkProductViewPage,
+  UnassociatedWorkProductPage,
+  IssuePullRequestAttachRequest,
+  IssuePullRequestAttachResponse,
+  IssuePullRequestListResponse,
+  TaskWorkProductsResponse,
+  WorkProductAttachmentResponse,
 } from "./work-product";
 export type { PinnedItem, PinnedItemType, CreatePinRequest, ReorderPinsRequest } from "./pin";
 export type {

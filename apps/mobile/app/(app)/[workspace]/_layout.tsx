@@ -14,6 +14,7 @@ import { useDependencyGraphsRealtime } from "@/data/realtime/use-dependency-grap
 import { usePinsRealtime } from "@/data/realtime/use-pins-realtime";
 import { usePresenceRealtime } from "@/data/realtime/use-presence-realtime";
 import { useChannelsRealtime } from "@/data/realtime/use-channels-realtime";
+import { useWorkProductsRealtime } from "@/data/realtime/use-work-products-realtime";
 import { useWorkspacePresencePrefetch } from "@/lib/use-workspace-presence-prefetch";
 import { ModalCloseButton } from "@/components/ui/modal-close-button";
 import { useNewIssueDraftResetOnWorkspaceChange } from "@/data/stores/new-issue-draft-store";
@@ -89,6 +90,7 @@ function RealtimeSubscriptions() {
   useWorkspacePresencePrefetch();
   usePresenceRealtime();
   useChannelsRealtime();
+  useWorkProductsRealtime();
   return null;
 }
 

@@ -322,7 +322,7 @@ JOIN work_product product
 JOIN work_product_relation relation ON relation.work_product_id = product.id
 WHERE relation.issue_id = $1
   AND relation.detached_at IS NULL
-  AND relation.relation_source <> 'provider_reference'
+  AND relation.relation_source IN ('manual_explicit', 'task_explicit', 'execution_branch_discovery', 'provider_discovery')
 `
 
 type GetIssuePullRequestCloseAggregateRow struct {
@@ -363,7 +363,7 @@ SELECT head_sha FROM (
     JOIN work_product_relation relation ON relation.work_product_id = product.id
     WHERE relation.issue_id = $1 AND pr.head_sha <> ''
       AND relation.detached_at IS NULL
-      AND relation.relation_source <> 'provider_reference'
+      AND relation.relation_source IN ('manual_explicit', 'task_explicit', 'execution_branch_discovery', 'provider_discovery')
     UNION ALL
     SELECT pr.head_sha AS head_sha, pr.state AS state, pr.pr_updated_at AS pr_updated_at
     FROM vcs_pull_request pr
@@ -373,7 +373,7 @@ SELECT head_sha FROM (
     JOIN work_product_relation relation ON relation.work_product_id = product.id
     WHERE relation.issue_id = $1 AND pr.head_sha <> ''
       AND relation.detached_at IS NULL
-      AND relation.relation_source <> 'provider_reference'
+      AND relation.relation_source IN ('manual_explicit', 'task_explicit', 'execution_branch_discovery', 'provider_discovery')
 ) combined
 ORDER BY (state IN ('open', 'draft')) DESC, pr_updated_at DESC
 LIMIT 1
@@ -592,7 +592,7 @@ WHERE product.provider_record_type = 'github_pull_request'
   AND product.provider_record_id = $1
   AND relation.issue_id IS NOT NULL
   AND relation.detached_at IS NULL
-  AND relation.relation_source <> 'provider_reference'
+  AND relation.relation_source IN ('manual_explicit', 'task_explicit', 'execution_branch_discovery', 'provider_discovery')
 `
 
 func (q *Queries) ListIssueIDsForPullRequest(ctx context.Context, providerRecordID pgtype.UUID) ([]pgtype.UUID, error) {

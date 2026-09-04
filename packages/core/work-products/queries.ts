@@ -15,8 +15,6 @@ export const workProductKeys = {
     ] as const,
   detail: (wsId: string | null, id: string) =>
     [...workProductKeys.all(wsId), "detail", id] as const,
-  relationsRoot: (wsId: string | null, issueId: string) =>
-    [...workProductKeys.all(wsId), "relations", issueId] as const,
   // The issue's delivery list — products plus the relation that attached each
   // one. Kept under a root of its own so a realtime PR update can invalidate
   // every open issue's list without touching the workspace catalog.
@@ -24,16 +22,8 @@ export const workProductKeys = {
     ["work-products", "issue", issueId] as const,
   taskProductsRoot: (wsId: string | null, taskId: string) =>
     [...workProductKeys.all(wsId), "task-products", taskId] as const,
-  relations: (
-    wsId: string | null,
-    issueId: string,
-    params: WorkProductPageParams = {},
-  ) =>
-    [
-      ...workProductKeys.relationsRoot(wsId, issueId),
-      params.page ?? 1,
-      params.per_page ?? WORK_PRODUCT_PAGE_SIZE,
-    ] as const,
+  unassociated: (wsId: string | null, query = "", perPage = 20) =>
+    [...workProductKeys.all(wsId), "unassociated", query, perPage] as const,
   provenanceRoot: (wsId: string | null) =>
     [...workProductKeys.all(wsId), "provenance"] as const,
   provenance: (wsId: string | null, params: WorkProductPageParams = {}) =>
@@ -89,32 +79,19 @@ export function workProductDetailOptions(wsId: string | null, id: string) {
   });
 }
 
-export function workProductRelationsOptions(
+export function unassociatedWorkProductListInfiniteOptions(
   wsId: string | null,
-  issueId: string,
-  params: WorkProductPageParams = {},
-) {
-  return queryOptions({
-    queryKey: workProductKeys.relations(wsId, issueId, params),
-    queryFn: ({ signal }) =>
-      api.listWorkProductRelations(issueId, pageParams(params), { signal }),
-    enabled: !!wsId && !!issueId,
-  });
-}
-
-export function workProductRelationsInfiniteOptions(
-  wsId: string | null,
-  issueId: string,
-  perPage = WORK_PRODUCT_PAGE_SIZE,
+  perPage = 20,
+  query = "",
+  enabled = true,
 ) {
   return infiniteQueryOptions({
-    queryKey: [...workProductKeys.relationsRoot(wsId, issueId), "infinite", perPage] as const,
+    queryKey: workProductKeys.unassociated(wsId, query, perPage),
     initialPageParam: 1,
     queryFn: ({ pageParam, signal }) =>
-      api.listWorkProductRelations(issueId, { page: pageParam, per_page: perPage }, { signal }),
-    getNextPageParam: (lastPage) =>
-      lastPage.has_more ? lastPage.page + 1 : undefined,
-    enabled: !!wsId && !!issueId,
+      api.listUnassociatedWorkProducts({ page: pageParam, per_page: perPage, query }, { signal }),
+    getNextPageParam: (lastPage) => lastPage.next_page ?? undefined,
+    enabled: !!wsId && enabled,
   });
 }
 
@@ -156,12 +133,10 @@ export function taskProvenanceOptions(wsId: string | null, taskId: string) {
 export function issueWorkProductsOptions(
   wsId: string | null,
   issueId: string,
-  params: WorkProductPageParams = {},
 ) {
   return queryOptions({
-    queryKey: [...workProductKeys.issueProductsRoot(issueId), params.page ?? 1, params.per_page ?? WORK_PRODUCT_PAGE_SIZE] as const,
-    queryFn: ({ signal }) =>
-      api.listIssueWorkProducts(issueId, pageParams(params), { signal }),
+    queryKey: workProductKeys.issueProductsRoot(issueId),
+    queryFn: ({ signal }) => api.listIssueWorkProducts(issueId, { signal }),
     enabled: !!wsId && !!issueId,
   });
 }
@@ -174,10 +149,8 @@ export function issueWorkProductsInfiniteOptions(
   return infiniteQueryOptions({
     queryKey: [...workProductKeys.issueProductsRoot(issueId), "infinite", perPage] as const,
     initialPageParam: 1,
-    queryFn: ({ pageParam, signal }) =>
-      api.listIssueWorkProducts(issueId, { page: pageParam, per_page: perPage }, { signal }),
-    getNextPageParam: (lastPage) =>
-      lastPage.has_more ? lastPage.page + 1 : undefined,
+    queryFn: ({ signal }) => api.listIssueWorkProducts(issueId, { signal }),
+    getNextPageParam: () => undefined,
     enabled: !!wsId && !!issueId,
   });
 }
@@ -185,12 +158,10 @@ export function issueWorkProductsInfiniteOptions(
 export function taskWorkProductsOptions(
   wsId: string | null,
   taskId: string,
-  params: WorkProductPageParams = {},
 ) {
   return queryOptions({
-    queryKey: [...workProductKeys.taskProductsRoot(wsId, taskId), params.page ?? 1, params.per_page ?? WORK_PRODUCT_PAGE_SIZE] as const,
-    queryFn: ({ signal }) =>
-      api.listTaskWorkProducts(taskId, pageParams(params), { signal }),
+    queryKey: workProductKeys.taskProductsRoot(wsId, taskId),
+    queryFn: ({ signal }) => api.listTaskWorkProducts(taskId, { signal }),
     enabled: !!wsId && !!taskId,
   });
 }
