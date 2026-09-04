@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import { resolveInboxRoleActorType } from "./inbox-role";
 
 describe("inbox issue role actor types", () => {
-  it("keeps owners member-only even when the payload omits the type", () => {
+  it("only infers members for omitted or explicit member owner types", () => {
     expect(resolveInboxRoleActorType("owner", undefined)).toBe("member");
-    expect(resolveInboxRoleActorType("owner", "agent")).toBe("member");
+    expect(resolveInboxRoleActorType("owner", "member")).toBe("member");
+    expect(resolveInboxRoleActorType("owner", "agent")).toBeNull();
+    expect(resolveInboxRoleActorType("owner", "team")).toBeNull();
+    expect(resolveInboxRoleActorType("owner", "future_actor")).toBeNull();
   });
 
   it("accepts both explicit executor actor types", () => {
