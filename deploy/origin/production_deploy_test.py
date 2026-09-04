@@ -371,6 +371,28 @@ class ProductionDeployContractTests(unittest.TestCase):
         self.assertNotIn("http://127.0.0.1:3110/acme/issues", urls)
         self.assertNotIn("http://127.0.0.1:3110/acme/task-graph", urls)
 
+    def test_probe_retries_a_connection_reset_during_container_replacement(self):
+        with tempfile.TemporaryDirectory() as directory:
+            deployment = production_deploy.ProductionDeployment(Path(directory))
+            response = mock.MagicMock()
+            response.status = 200
+            response.headers = {}
+            connection = mock.MagicMock()
+            connection.__enter__.return_value = response
+
+            with (
+                mock.patch.object(
+                    production_deploy,
+                    "urlopen",
+                    side_effect=[ConnectionResetError("peer reset"), connection],
+                ) as urlopen,
+                mock.patch.object(production_deploy.time, "sleep") as sleep,
+            ):
+                deployment.probe("http://127.0.0.1:8210/readyz")
+
+            self.assertEqual(urlopen.call_count, 2)
+            sleep.assert_called_once_with(5)
+
 
 if __name__ == "__main__":
     unittest.main()

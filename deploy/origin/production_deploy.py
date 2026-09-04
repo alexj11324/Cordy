@@ -559,6 +559,7 @@ class ProductionDeployment:
                 return
             except (
                 DeploymentError,
+                ConnectionError,
                 HTTPError,
                 URLError,
                 TimeoutError,
