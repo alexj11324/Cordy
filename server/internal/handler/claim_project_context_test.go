@@ -174,9 +174,12 @@ func TestClaimTask_QuickCreateProjectInForeignWorkspace_DegradesToWorkspaceRepos
 		"project_id":   foreignProjectID,
 	})
 	dbfx.Exec(t, `
-		INSERT INTO agent_task_queue (agent_id, runtime_id, status, priority, context)
-		VALUES ($1, $2, 'queued', 2, $3)
-	`, agentID, runtimeID, quickContext)
+		INSERT INTO agent_task_queue (
+			agent_id, runtime_id, status, priority, context,
+			originator_user_id, accountable_user_id, originator_source
+		)
+		VALUES ($1, $2, 'queued', 2, $3, $4, $4, 'direct_human')
+	`, agentID, runtimeID, quickContext, testUserID)
 
 	req := newDaemonTokenRequest("POST", "/api/daemon/runtimes/"+runtimeID+"/claim", nil,
 		testWorkspaceID, daemonID)
