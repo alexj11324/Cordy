@@ -9,7 +9,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/patchbay-ai/patchbay/server/internal/events"
 	"github.com/patchbay-ai/patchbay/server/internal/testutil"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
 )
 
