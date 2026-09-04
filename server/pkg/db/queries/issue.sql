@@ -426,7 +426,7 @@ cleared_dependency_graph_issue_created_outbox AS (
     DELETE FROM dependency_graph_issue_created_outbox
     WHERE workspace_id = $2
       AND plan_id IN (SELECT id FROM affected_dependency_graph_plans)
-    RETURNING id
+    RETURNING plan_id
 ),
 cleared_dependency_graph_edges AS (
     DELETE FROM dependency_graph_edge
