@@ -12,9 +12,12 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/patchbay-ai/patchbay/server/internal/events"
+	"github.com/patchbay-ai/patchbay/server/internal/issuestatus"
 	"github.com/patchbay-ai/patchbay/server/internal/util"
 	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 	"github.com/patchbay-ai/patchbay/server/pkg/dbid"
+	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
 )
 
 // The database CHECK constraint is deliberately the source of truth for this
@@ -73,6 +76,7 @@ type coordinationTaskContext struct {
 type coordinationEventPayload struct {
 	AssignmentID    string `json:"assignment_id,omitempty"`
 	AssignmentRole  string `json:"assignment_role,omitempty"`
+	AgentID         string `json:"agent_id,omitempty"`
 	OwnerType       string `json:"owner_type,omitempty"`
 	OwnerID         string `json:"owner_id,omitempty"`
 	OwnerGeneration *int64 `json:"owner_generation,omitempty"`
@@ -93,6 +97,14 @@ type coordinationEventPayload struct {
 	TriggerEvidenceKind  string `json:"trigger_evidence_kind,omitempty"`
 	TriggerEvidenceRefID string `json:"trigger_evidence_ref_id,omitempty"`
 	TeamID               string `json:"team_id,omitempty"`
+}
+
+type coordinationReviewPublication struct {
+	eventID        pgtype.UUID
+	publicationKey string
+	previous       db.Issue
+	updated        db.Issue
+	activity       db.ActivityLog
 }
 
 // AgentCoordinationService is the durable producer/consumer for the
@@ -591,6 +603,7 @@ func (s *AgentCoordinationService) enqueueCoordinationEvent(
 func (s *AgentCoordinationService) processClaim(ctx context.Context, event db.AgentCoordinationOutbox) (db.AgentTaskQueue, bool, error) {
 	var createdTask db.AgentTaskQueue
 	var created bool
+	var reviewPublication *coordinationReviewPublication
 	err := s.runInTx(ctx, func(qtx *db.Queries) error {
 		payload, payloadErr := decodeCoordinationEventPayload(event.Payload)
 		if payloadErr != nil {
@@ -649,6 +662,147 @@ func (s *AgentCoordinationService) processClaim(ctx context.Context, event db.Ag
 			// outbox retryable, but do not silently unblock it by dispatching a
 			// child task; another writer may later move it back to assigned.
 			return s.retryClaim(ctx, qtx, event, "assignment is blocked", coordinationTransientRetry)
+		}
+
+		// An implementation completion creates a reviewer assignment, but the
+		// reviewer may be a human/team role rather than a concrete agent. Resolve
+		// that role while the coordination event is leased, lock the selected agent,
+		// and atomically move the issue into review before dispatching the reviewer
+		// task. This is the durable Rust handoff boundary; dispatching directly from
+		// the member/team placeholder would leave the event retrying forever.
+		if event.EventType == CoordinationEventTaskCompleted &&
+			payload.AssignmentRole != CoordinationAssignmentReviewer &&
+			assignment.Role == CoordinationAssignmentReviewer {
+			category := issuestatus.Effective(ctx, qtx, issue.WorkspaceID, issue.Status)
+			if category != issuestatus.InProgress {
+				return s.completeClaimedAssignment(ctx, qtx, event, assignment, map[string]any{
+					"outcome": "ignored",
+					"reason":  "issue_not_in_progress",
+				}, "")
+			}
+
+			if !issueExecutorCanCoordinate(issue) {
+				return s.completeClaimedAssignment(ctx, qtx, event, assignment, map[string]any{
+					"outcome": "blocked",
+					"reason":  "implementation_owner_not_agent_or_team",
+				}, "implementation owner is not an agent or team")
+			}
+
+			previousIssue := issue
+			reviewerID := pgtype.UUID{}
+			if assignment.OwnerType.Valid && assignment.OwnerType.String == "agent" && assignment.OwnerID.Valid {
+				reviewerID = assignment.OwnerID
+			} else if coordinationText(issue.ReviewerType) == "agent" && issue.ReviewerID.Valid {
+				reviewerID = issue.ReviewerID
+			}
+			explicitReviewerType := coordinationText(issue.ReviewerType)
+			if explicitReviewerType != "" && explicitReviewerType != "agent" {
+				return s.deferClaim(ctx, qtx, event, assignment, "explicit reviewer is not an agent or is unavailable")
+			}
+
+			teamID := pgtype.UUID{}
+			if coordinationText(issue.ExecutorType) == "team" {
+				teamID = issue.ExecutorID
+			}
+			candidate, err := qtx.SelectCoordinationReviewer(ctx, db.SelectCoordinationReviewerParams{
+				WorkspaceID:   issue.WorkspaceID,
+				ReviewerID:    reviewerID,
+				SourceAgentID: optionalUUID(payload.AgentID),
+				TeamID:        teamID,
+				AssignmentID:  assignment.ID,
+			})
+			if errors.Is(err, pgx.ErrNoRows) {
+				return s.deferClaim(ctx, qtx, event, assignment, "no reviewer with role=reviewer and a bound runtime")
+			}
+			if err != nil {
+				return s.deferClaim(ctx, qtx, event, assignment, "select reviewer: "+err.Error())
+			}
+
+			updated, err := qtx.UpdateIssueForCoordinationReview(ctx, db.UpdateIssueForCoordinationReviewParams{
+				ReviewerID:       candidate.ID,
+				IssueID:          issue.ID,
+				WorkspaceID:      issue.WorkspaceID,
+				ExpectedRevision: issue.Revision,
+			})
+			if errors.Is(err, pgx.ErrNoRows) {
+				return s.retryClaim(ctx, qtx, event, "issue changed before reviewer handoff", coordinationTransientRetry)
+			}
+			if err != nil {
+				return fmt.Errorf("coordination: promote issue to review: %w", err)
+			}
+
+			publicationKey := coordinationIssueUpdatePublicationKey(
+				"review_handoff", updated, previousIssue.ReviewerType, previousIssue.ReviewerID,
+			)
+			decision, err := json.Marshal(map[string]any{
+				"policy":                         map[bool]string{true: "team_reviewer_role", false: "workspace_reviewer_role"}[teamID.Valid],
+				"role":                           CoordinationAssignmentReviewer,
+				"review_publication":             "review_handoff",
+				"issue_update_publication_key":   publicationKey,
+				"assignment_activity_published": false,
+				"candidate_agent_id":             util.UUIDToString(candidate.ID),
+				"candidate_agent_name":           candidate.Name,
+				"explicit_reviewer":              explicitReviewerType != "",
+				"previous_status":                previousIssue.Status,
+				"previous_executor_type":         coordinationText(previousIssue.ExecutorType),
+				"previous_executor_id":           util.UUIDToString(previousIssue.ExecutorID),
+				"previous_reviewer_type":           coordinationText(previousIssue.ReviewerType),
+				"previous_reviewer_id":           util.UUIDToString(previousIssue.ReviewerID),
+			})
+			if err != nil {
+				return fmt.Errorf("coordination: encode reviewer decision: %w", err)
+			}
+			changed, err := qtx.AssignAgentCoordinationAssignmentForLease(ctx, db.AssignAgentCoordinationAssignmentForLeaseParams{
+				AssignmentID: assignment.ID,
+				EventID:      event.ID,
+				WorkspaceID:  event.WorkspaceID,
+				IssueID:      event.IssueID,
+				OwnerID:      candidate.ID,
+				Decision:     decision,
+				LeaseOwner:   event.LeaseOwner,
+			})
+			if err != nil {
+				return fmt.Errorf("coordination: record reviewer decision: %w", err)
+			}
+			if changed != 1 {
+				return ErrCoordinationLeaseLost
+			}
+			assignment.OwnerType = pgtype.Text{String: "agent", Valid: true}
+			assignment.OwnerID = candidate.ID
+			assignment.Status = "assigned"
+			assignment.Decision = decision
+			issue = updated
+
+			audit, err := json.Marshal(map[string]any{
+				"event_id":       util.UUIDToString(event.ID),
+				"assignment_id":  util.UUIDToString(assignment.ID),
+				"source_task_id": util.UUIDToString(event.SourceTaskID),
+				"role":           CoordinationAssignmentReviewer,
+				"owner_type":     "agent",
+				"owner_id":       util.UUIDToString(candidate.ID),
+				"reason":         "implementation task completed",
+			})
+			if err != nil {
+				return fmt.Errorf("coordination: encode reviewer activity: %w", err)
+			}
+			activity, err := qtx.CreateActivity(ctx, db.CreateActivityParams{
+				ID:          dbid.NewV7(),
+				WorkspaceID: issue.WorkspaceID,
+				IssueID:     issue.ID,
+				ActorType:   pgtype.Text{String: "system", Valid: true},
+				Action:      "coordinator_assignment",
+				Details:     audit,
+			})
+			if err != nil {
+				return fmt.Errorf("coordination: record reviewer activity: %w", err)
+			}
+			reviewPublication = &coordinationReviewPublication{
+				eventID:        event.ID,
+				publicationKey: publicationKey,
+				previous:       previousIssue,
+				updated:        updated,
+				activity:       activity,
+			}
 		}
 
 		ownerType, ownerID, ownerErr := coordinationDispatchOwner(event, payload, assignment, issue)
@@ -778,6 +932,9 @@ func (s *AgentCoordinationService) processClaim(ctx context.Context, event db.Ag
 		createdTask = activeTask
 		return nil
 	})
+	if err == nil && reviewPublication != nil {
+		s.publishCoordinationReviewHandoff(ctx, *reviewPublication)
+	}
 	return createdTask, created, err
 }
 
@@ -789,6 +946,110 @@ func (s *AgentCoordinationService) completeClaimedOutbox(ctx context.Context, qt
 		return ErrCoordinationLeaseLost
 	}
 	return err
+}
+
+func (s *AgentCoordinationService) completeClaimedAssignment(
+	ctx context.Context,
+	qtx *db.Queries,
+	event db.AgentCoordinationOutbox,
+	assignment db.AgentCoordinationAssignment,
+	decision map[string]any,
+	lastError string,
+) error {
+	decisionJSON, err := json.Marshal(decision)
+	if err != nil {
+		return fmt.Errorf("coordination: encode terminal decision: %w", err)
+	}
+	changed, err := qtx.CompleteAgentCoordinationAssignmentForLease(ctx, db.CompleteAgentCoordinationAssignmentForLeaseParams{
+		AssignmentID: assignment.ID,
+		EventID:      event.ID,
+		WorkspaceID:  event.WorkspaceID,
+		IssueID:      event.IssueID,
+		Status:       "completed",
+		Decision:     decisionJSON,
+		LastError:    optionalText(lastError),
+		LeaseOwner:   event.LeaseOwner,
+	})
+	if err != nil {
+		return fmt.Errorf("coordination: complete assignment: %w", err)
+	}
+	if changed != 1 {
+		return ErrCoordinationLeaseLost
+	}
+	return s.completeClaimedOutbox(ctx, qtx, event)
+}
+
+func (s *AgentCoordinationService) publishCoordinationReviewHandoff(ctx context.Context, publication coordinationReviewPublication) {
+	if s == nil || s.Tasks == nil || s.Tasks.Bus == nil {
+		return
+	}
+	workspaceID := util.UUIDToString(publication.updated.WorkspaceID)
+	issuePayload := IssueToMapResolved(ctx, s.Tasks.Queries, publication.updated, s.Tasks.getIssuePrefix(publication.updated.WorkspaceID))
+	payload := map[string]any{
+		"issue":                         issuePayload,
+		"executor_changed":              false,
+		"status_changed":                true,
+		"review_handoff":                true,
+		"coordination_publication":      "review_handoff",
+		"coordination_publication_key":  publication.publicationKey,
+		"coordination_event_id":         util.UUIDToString(publication.eventID),
+		"priority_changed":              false,
+		"project_changed":               false,
+		"start_date_changed":            false,
+		"due_date_changed":              false,
+		"description_changed":           false,
+		"title_changed":                 false,
+		"prev_status":                   publication.previous.Status,
+		"prev_executor_type":            util.TextToPtr(publication.previous.ExecutorType),
+		"prev_executor_id":              util.UUIDToPtr(publication.previous.ExecutorID),
+		"prev_reviewer_type":            util.TextToPtr(publication.previous.ReviewerType),
+		"prev_reviewer_id":              util.UUIDToPtr(publication.previous.ReviewerID),
+	}
+	s.Tasks.Bus.Publish(events.Event{
+		Type:        protocol.EventIssueUpdated,
+		WorkspaceID: workspaceID,
+		ActorType:   "system",
+		Payload:     payload,
+	})
+
+	activity := publication.activity
+	if !activity.ID.Valid {
+		return
+	}
+	actorType := coordinationText(activity.ActorType)
+	s.Tasks.Bus.Publish(events.Event{
+		Type:        protocol.EventActivityCreated,
+		WorkspaceID: workspaceID,
+		ActorType:   "system",
+		Payload: map[string]any{
+			"issue_id": util.UUIDToString(activity.IssueID),
+			"entry": map[string]any{
+				"type":       "activity",
+				"id":         util.UUIDToString(activity.ID),
+				"actor_type": actorType,
+				"actor_id":   util.UUIDToString(activity.ActorID),
+				"action":     activity.Action,
+				"details":    json.RawMessage(activity.Details),
+				"created_at": util.TimestampToString(activity.CreatedAt),
+			},
+		},
+	})
+}
+
+func coordinationIssueUpdatePublicationKey(publication string, issue db.Issue, previousReviewerType pgtype.Text, previousReviewerID pgtype.UUID) string {
+	return fmt.Sprintf("%s:%d:%s:%s:%s:%s",
+		publication,
+		issue.Revision,
+		coordinationText(previousReviewerType),
+		util.UUIDToString(previousReviewerID),
+		coordinationText(issue.ReviewerType),
+		util.UUIDToString(issue.ReviewerID),
+	)
+}
+
+func issueExecutorCanCoordinate(issue db.Issue) bool {
+	ownerType := coordinationText(issue.ExecutorType)
+	return (ownerType == "agent" || ownerType == "team") && issue.ExecutorID.Valid
 }
 
 func (s *AgentCoordinationService) retryClaimWithoutAssignment(ctx context.Context, qtx *db.Queries, event db.AgentCoordinationOutbox, message string, delay time.Duration) error {
@@ -972,6 +1233,7 @@ func coordinationCompletionPayload(task db.AgentTaskQueue, assignment db.AgentCo
 
 func coordinationTaskPayload(task db.AgentTaskQueue) coordinationEventPayload {
 	return coordinationEventPayload{
+		AgentID:              util.UUIDToString(task.AgentID),
 		OriginatorUserID:     util.UUIDToString(task.OriginatorUserID),
 		AccountableUserID:    util.UUIDToString(task.AccountableUserID),
 		OriginatorSource:     coordinationText(task.OriginatorSource),

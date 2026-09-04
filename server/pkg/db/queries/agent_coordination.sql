@@ -238,6 +238,94 @@ WHERE agent.id = sqlc.arg('agent_id')
       )
   );
 
+-- Selects or locks the reviewer that may receive a coordinator handoff. A
+-- non-nil reviewer_id revalidates an explicit reviewer; NULL selects the
+-- workspace/team reviewer role using the same capacity reservation rule.
+-- The assignment reservation is excluded during revalidation so the selected
+-- reviewer is not counted against its own slot.
+-- name: SelectCoordinationReviewer :one
+SELECT a.id, a.name
+FROM agent AS a
+WHERE a.workspace_id = sqlc.arg('workspace_id')
+  AND a.kind = 'user'
+  AND a.archived_at IS NULL
+  AND a.runtime_id IS NOT NULL
+  AND (sqlc.narg('reviewer_id')::uuid IS NULL OR a.id = sqlc.narg('reviewer_id')::uuid)
+  AND (sqlc.narg('source_agent_id')::uuid IS NULL OR a.id <> sqlc.narg('source_agent_id')::uuid)
+  AND (
+      EXISTS (
+          SELECT 1
+          FROM team_member AS tm
+          JOIN team AS t
+            ON t.id = tm.team_id
+           AND t.workspace_id = a.workspace_id
+           AND t.archived_at IS NULL
+          WHERE tm.member_type = 'agent'
+            AND tm.member_id = a.id
+            AND tm.role = 'reviewer'
+            AND (sqlc.narg('team_id')::uuid IS NULL OR tm.team_id = sqlc.narg('team_id')::uuid)
+      )
+      OR EXISTS (
+          SELECT 1
+          FROM workspace_issue_category_policy AS policy
+          WHERE policy.workspace_id = a.workspace_id
+            AND policy.category = 'in_review'
+            AND policy.default_reviewer_agent_id = a.id
+      )
+  )
+  AND (
+      SELECT count(*)
+      FROM agent_task_queue AS q
+      WHERE q.agent_id = a.id
+        AND q.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity')
+        AND (
+            sqlc.narg('assignment_id')::uuid IS NULL
+            OR COALESCE(q.context->>'coordination_assignment_id', '') <> sqlc.narg('assignment_id')::uuid::text
+        )
+  ) + (
+      SELECT count(*)
+      FROM agent_coordination_assignment AS reservation
+      WHERE reservation.owner_type = 'agent'
+        AND reservation.owner_id = a.id
+        AND reservation.status = 'assigned'
+        AND reservation.dispatched_task_id IS NULL
+        AND (
+            sqlc.narg('assignment_id')::uuid IS NULL
+            OR reservation.id <> sqlc.narg('assignment_id')::uuid
+        )
+  ) < a.max_concurrent_tasks
+ORDER BY CASE WHEN EXISTS (
+             SELECT 1
+             FROM workspace_issue_category_policy AS policy
+             WHERE policy.workspace_id = a.workspace_id
+               AND policy.category = 'in_review'
+               AND policy.default_reviewer_agent_id = a.id
+         ) THEN 0 ELSE 1 END,
+         CASE WHEN a.status = 'idle' THEN 0 ELSE 1 END,
+         a.updated_at ASC,
+         a.id ASC
+LIMIT 1
+FOR UPDATE SKIP LOCKED;
+
+-- The coordinator changes an implementation issue to in_review only after a
+-- reviewer has been selected and locked. The revision fence prevents a user
+-- update committed after the coordinator read from being overwritten.
+-- name: UpdateIssueForCoordinationReview :one
+UPDATE issue AS target
+SET status = 'in_review',
+    reviewer_type = 'agent',
+    reviewer_id = sqlc.arg('reviewer_id'),
+    revision = target.revision + 1,
+    updated_at = now(),
+    last_activity_at = GREATEST(COALESCE(target.last_activity_at, target.updated_at), now())
+WHERE target.id = sqlc.arg('issue_id')
+  AND target.workspace_id = sqlc.arg('workspace_id')
+  AND target.revision = sqlc.arg('expected_revision')
+  AND issue_effective_status(target.workspace_id, target.status) = 'in_progress'
+  AND target.executor_type IN ('agent', 'team')
+  AND target.executor_id IS NOT NULL
+RETURNING target.*;
+
 -- name: AssignAgentCoordinationAssignmentForLease :execrows
 -- Records a deterministic owner decision while the event lease is held. The
 -- same-owner update is a no-op for attempt/decision purposes, which makes a
