@@ -937,7 +937,6 @@ jobs:
           name: homebrew-cask
           path: dist/homebrew/Casks/patchbay.rb
           if-no-files-found: error
-          retention-days: 1
 
       - name: Verify staged release is still a draft at the verified commit
         env:

@@ -52,6 +52,69 @@ test("publishes a newer cask and verifies the stored bytes", async () => {
   assert.equal(Buffer.from(body.content, "base64").toString("utf8"), candidate);
 });
 
+test("re-reads the tap after a concurrent contents update", async () => {
+  const candidate = cask("0.2.10");
+  const calls = [];
+  const responses = [
+    Response.json({
+      sha: "stale-sha",
+      encoding: "base64",
+      content: encoded(cask("0.2.8")),
+    }),
+    new Response("sha conflict", { status: 409 }),
+    Response.json({
+      sha: "fresh-sha",
+      encoding: "base64",
+      content: encoded(cask("0.2.9")),
+    }),
+    Response.json({ content: { sha: "published-sha" } }),
+    Response.json({
+      sha: "published-sha",
+      encoding: "base64",
+      content: encoded(candidate),
+    }),
+  ];
+  const fetchImpl = async (_url, init = {}) => {
+    calls.push(init.method ?? "GET");
+    return responses.shift();
+  };
+
+  const result = await publishHomebrewCask({
+    token: "secret",
+    tag: "v0.2.10",
+    caskContent: candidate,
+    fetchImpl,
+  });
+  assert.deepEqual(result, { status: "updated", version: "0.2.10" });
+  assert.deepEqual(calls, ["GET", "PUT", "GET", "PUT", "GET"]);
+});
+
+test("accepts a newer cask that wins after this run writes", async () => {
+  const candidate = cask("0.2.9");
+  const responses = [
+    Response.json({
+      sha: "old-sha",
+      encoding: "base64",
+      content: encoded(cask("0.2.8")),
+    }),
+    Response.json({ content: { sha: "our-sha" } }),
+    Response.json({
+      sha: "newer-sha",
+      encoding: "base64",
+      content: encoded(cask("0.3.0")),
+    }),
+  ];
+  const fetchImpl = async () => responses.shift();
+
+  const result = await publishHomebrewCask({
+    token: "secret",
+    tag: "v0.2.9",
+    caskContent: candidate,
+    fetchImpl,
+  });
+  assert.deepEqual(result, { status: "superseded", version: "0.3.0" });
+});
+
 test("creates the first cask when the tap has no current file", async () => {
   const candidate = cask("0.2.9");
   const methods = [];

@@ -47,6 +47,15 @@ test("release publishes the CLI as a cask in the dedicated Homebrew tap", async 
     /needs\.verify\.outputs\.is_stable == 'true'/u,
   );
   assert.match(workflow, /path: dist\/homebrew\/Casks\/patchbay\.rb/u);
+  const stageCask = workflow.match(
+    /- name: Stage stable Homebrew cask[\s\S]*?(?=\n      - name:)/u,
+  )?.[0];
+  assert.ok(stageCask, "release must stage the generated stable cask");
+  assert.doesNotMatch(
+    stageCask,
+    /retention-days:/u,
+    "the recovery artifact must use the repository retention period",
+  );
   assert.match(
     publisher,
     /repos\/alexj11324\/homebrew-tap\/contents\/Casks\/patchbay\.rb/u,
