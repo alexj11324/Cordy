@@ -31,7 +31,7 @@ describe("loadRuntimeConfig", () => {
         apiUrl: "http://localhost:8080",
         wsUrl: "ws://localhost:8080/ws",
         appUrl: "http://localhost:3000",
-        accountsUrl: "http://localhost:3000",
+        accountsUrl: "https://accounts.aspectlylabs.com",
       },
     });
   });

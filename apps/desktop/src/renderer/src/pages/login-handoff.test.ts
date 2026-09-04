@@ -41,12 +41,39 @@ describe("desktop auth handoff", () => {
     expect(parsed.searchParams.get("platform")).toBe("desktop");
     expect(parsed.searchParams.get("state")).toBe(pending.state);
     expect(parsed.searchParams.get("code_challenge")).toBeTruthy();
+    expect(parsed.searchParams.get("session_api")).toBeNull();
     expect(pending.verifier).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(pending.expiresAt).toBeGreaterThan(Date.now());
     expect(initiate).toHaveBeenCalledWith(
       pending.state,
       parsed.searchParams.get("code_challenge"),
     );
+  });
+
+  it("binds a loopback product API into the Accounts login URL", async () => {
+    const initiate = vi.fn().mockResolvedValue({ registered: true });
+
+    const url = await createDesktopLoginUrl(
+      "https://accounts.aspectlylabs.com/",
+      initiate,
+      { sessionApiUrl: "http://localhost:8080/" },
+    );
+    const parsed = new URL(url);
+
+    expect(parsed.origin).toBe("https://accounts.aspectlylabs.com");
+    expect(parsed.searchParams.get("session_api")).toBe("http://localhost:8080");
+  });
+
+  it("does not advertise a non-loopback API as the session minting origin", async () => {
+    const initiate = vi.fn().mockResolvedValue({ registered: true });
+
+    const url = await createDesktopLoginUrl(
+      "https://accounts.aspectlylabs.com",
+      initiate,
+      { sessionApiUrl: "https://api.aspectlylabs.com" },
+    );
+
+    expect(new URL(url).searchParams.get("session_api")).toBeNull();
   });
 
   it("redeems once and makes a replay a no-op after clearing the verifier", async () => {

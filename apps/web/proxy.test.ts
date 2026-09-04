@@ -265,16 +265,67 @@ describe("proxy root and locale handling", () => {
     expect(await redirectLocation("/auth/callback")).toBeNull();
   });
 
-  it("leaves the provider-specific Google broker and callback public", async () => {
-    expect(
-      await redirectLocation(
-        `/oauth/google?platform=desktop&code_challenge=${"a".repeat(43)}&state=${"b".repeat(43)}`,
-      ),
-    ).toBeNull();
-    expect(
-      await redirectLocation(
-        `/oauth/google/callback?platform=desktop&code_challenge=${"a".repeat(43)}&state=${"b".repeat(43)}`,
-      ),
-    ).toBeNull();
+  it("sends Desktop Google broker routes to hosted Accounts", async () => {
+    const previous = process.env.PATCHBAY_AUTH_BROKER_ORIGIN;
+    process.env.PATCHBAY_AUTH_BROKER_ORIGIN =
+      "https://accounts.aspectlylabs.com";
+    try {
+      expect(
+        await redirectLocation(
+          `/oauth/google?platform=desktop&code_challenge=${"a".repeat(43)}&state=${"b".repeat(43)}`,
+        ),
+      ).toBe(
+        `https://accounts.aspectlylabs.com/oauth/google?platform=desktop&code_challenge=${"a".repeat(43)}&state=${"b".repeat(43)}`,
+      );
+      expect(
+        await redirectLocation(
+          `/oauth/google/callback?platform=desktop&code_challenge=${"a".repeat(43)}&state=${"b".repeat(43)}`,
+        ),
+      ).toBe(
+        `https://accounts.aspectlylabs.com/oauth/google/callback?platform=desktop&code_challenge=${"a".repeat(43)}&state=${"b".repeat(43)}`,
+      );
+    } finally {
+      restoreEnv("PATCHBAY_AUTH_BROKER_ORIGIN", previous);
+    }
+  });
+
+  it("sends Desktop login off the product web origin onto hosted Accounts", async () => {
+    const previous = process.env.PATCHBAY_AUTH_BROKER_ORIGIN;
+    process.env.PATCHBAY_AUTH_BROKER_ORIGIN =
+      "https://accounts.aspectlylabs.com";
+    const challenge = "a".repeat(43);
+    const state = "b".repeat(43);
+    try {
+      expect(
+        await redirectLocation(
+          `/login?platform=desktop&code_challenge=${challenge}&state=${state}&session_api=http%3A%2F%2Flocalhost%3A8080`,
+        ),
+      ).toBe(
+        `https://accounts.aspectlylabs.com/login?platform=desktop&code_challenge=${challenge}&state=${state}&session_api=http%3A%2F%2Flocalhost%3A8080`,
+      );
+    } finally {
+      restoreEnv("PATCHBAY_AUTH_BROKER_ORIGIN", previous);
+    }
+  });
+
+  it("does not send self-host Desktop login to production Accounts", async () => {
+    const previousBroker = process.env.PATCHBAY_AUTH_BROKER_ORIGIN;
+    const previousAccounts = process.env.NEXT_PUBLIC_ACCOUNTS_URL;
+    delete process.env.PATCHBAY_AUTH_BROKER_ORIGIN;
+    delete process.env.NEXT_PUBLIC_ACCOUNTS_URL;
+    try {
+      expect(
+        await redirectLocation(
+          `/login?platform=desktop&code_challenge=${"a".repeat(43)}&state=${"b".repeat(43)}`,
+        ),
+      ).toBeNull();
+    } finally {
+      restoreEnv("PATCHBAY_AUTH_BROKER_ORIGIN", previousBroker);
+      restoreEnv("NEXT_PUBLIC_ACCOUNTS_URL", previousAccounts);
+    }
+  });
+
+  it("does not send ordinary web login to Accounts", async () => {
+    expect(await redirectLocation("/login")).toBeNull();
   });
 });

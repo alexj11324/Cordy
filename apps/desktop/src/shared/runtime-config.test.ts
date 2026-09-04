@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_RUNTIME_CONFIG,
   deriveWsUrl,
+  loopbackSessionApiUrl,
   parseRuntimeConfig,
   runtimeConfigFromDevEnv,
 } from "./runtime-config";
@@ -51,6 +52,31 @@ describe("runtime config", () => {
 
   it("derives ws for http api URLs", () => {
     expect(deriveWsUrl("http://localhost:8080")).toBe("ws://localhost:8080/ws");
+  });
+
+  it("keeps hosted accounts when a packaged config only names a loopback API", () => {
+    expect(
+      parseRuntimeConfig(
+        JSON.stringify({ schemaVersion: 1, apiUrl: "http://localhost:8080" }),
+      ),
+    ).toEqual({
+      schemaVersion: 1,
+      apiUrl: "http://localhost:8080",
+      wsUrl: "ws://localhost:8080/ws",
+      appUrl: "http://localhost:8080",
+      accountsUrl: "https://accounts.aspectlylabs.com",
+    });
+  });
+
+  it("exposes a loopback session API only for local product backends", () => {
+    expect(loopbackSessionApiUrl("http://localhost:8080/")).toBe(
+      "http://localhost:8080",
+    );
+    expect(loopbackSessionApiUrl("http://127.0.0.1:19080")).toBe(
+      "http://127.0.0.1:19080",
+    );
+    expect(loopbackSessionApiUrl("https://api.aspectlylabs.com")).toBeUndefined();
+    expect(loopbackSessionApiUrl("https://evil.example")).toBeUndefined();
   });
 
   it("accepts explicit appUrl and wsUrl", () => {
@@ -112,17 +138,30 @@ describe("runtime config", () => {
       apiUrl: "http://dev-api.example.test:8080",
       wsUrl: "ws://dev-api.example.test:8080/ws",
       appUrl: "http://dev-app.example.test:3000",
-      accountsUrl: "http://dev-app.example.test:3000",
+      accountsUrl: "https://accounts.aspectlylabs.com",
     });
   });
 
-  it("falls back to local web URL when dev apiUrl is localhost", () => {
+  it("keeps hosted accounts when the local product API is on localhost", () => {
     expect(runtimeConfigFromDevEnv({ apiUrl: "http://localhost:8080" })).toEqual({
       schemaVersion: 1,
       apiUrl: "http://localhost:8080",
       wsUrl: "ws://localhost:8080/ws",
       appUrl: "http://localhost:3000",
-      accountsUrl: "http://localhost:3000",
+      accountsUrl: "https://accounts.aspectlylabs.com",
+    });
+  });
+
+  it("lets an explicit accounts origin override the hosted broker", () => {
+    expect(
+      runtimeConfigFromDevEnv({
+        apiUrl: "http://localhost:8080",
+        accountsUrl: "https://accounts.staging.aspectlylabs.com/",
+      }),
+    ).toMatchObject({
+      apiUrl: "http://localhost:8080",
+      appUrl: "http://localhost:3000",
+      accountsUrl: "https://accounts.staging.aspectlylabs.com",
     });
   });
 
@@ -139,7 +178,7 @@ describe("runtime config", () => {
       apiUrl: "https://api.test.aspectlylabs.com",
       wsUrl: "wss://api.test.aspectlylabs.com/ws",
       appUrl: "https://test.aspectlylabs.com",
-      accountsUrl: "https://test.aspectlylabs.com",
+      accountsUrl: "https://accounts.aspectlylabs.com",
     });
   });
 
@@ -154,7 +193,7 @@ describe("runtime config", () => {
       apiUrl: "https://api.test.aspectlylabs.com",
       wsUrl: "wss://api.test.aspectlylabs.com/ws",
       appUrl: "https://staging.aspectlylabs.com",
-      accountsUrl: "https://staging.aspectlylabs.com",
+      accountsUrl: "https://accounts.aspectlylabs.com",
     });
   });
 });

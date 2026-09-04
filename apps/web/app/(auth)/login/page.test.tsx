@@ -9,8 +9,6 @@ const {
   issueCliToken,
   completeDesktopGoogleAttempt,
   redirectToCliCallback,
-  redirectToDesktopApp,
-  exchangeReady,
 } = vi.hoisted(() => ({
   signInProps: { current: {} as Record<string, unknown> },
   authState: {
@@ -21,8 +19,6 @@ const {
   issueCliToken: vi.fn(),
   completeDesktopGoogleAttempt: vi.fn(),
   redirectToCliCallback: vi.fn(),
-  redirectToDesktopApp: vi.fn(),
-  exchangeReady: { current: true },
 }));
 
 vi.mock("@patchbay/core/auth", () => ({
@@ -53,12 +49,8 @@ vi.mock("@patchbay/core/api", async (importOriginal) => {
 vi.mock("@patchbay/views/auth", async (importOriginal) => {
   const original =
     await importOriginal<typeof import("@patchbay/views/auth")>();
-  return { ...original, redirectToCliCallback, redirectToDesktopApp };
+  return { ...original, redirectToCliCallback };
 });
-
-vi.mock("@/components/clerk-auth-adapter", () => ({
-  useClerkSessionExchangeReady: () => exchangeReady.current,
-}));
 
 vi.mock("@patchbay/views/i18n", () => ({
   useT: () => ({
@@ -103,11 +95,9 @@ describe("LoginPage", () => {
       isSignedIn: false,
       getToken: vi.fn(),
     };
-    exchangeReady.current = true;
     issueCliToken.mockReset();
     completeDesktopGoogleAttempt.mockReset();
     redirectToCliCallback.mockReset();
-    redirectToDesktopApp.mockReset();
   });
 
   it("renders the Clerk sign-in flow at the canonical login route", () => {
@@ -167,18 +157,27 @@ describe("LoginPage", () => {
     expect(signInProps.current.signUpUrl).toBe("/signup");
   });
 
-  it("preserves the desktop handoff through Clerk sign-in", () => {
+  it("does not keep a retired Desktop handoff surface on the product login page", () => {
     search.current =
       "platform=desktop&code_challenge=challenge-value&state=opaque-state";
+    authState.current = {
+      isLoaded: true,
+      isSignedIn: true,
+      getToken: vi.fn().mockResolvedValue("clerk-session-token"),
+    };
+    authStoreState.current = { status: "authenticated" };
 
     render(<LoginPage />);
 
-    expect(signInProps.current).toMatchObject({
-      signUpUrl:
-        "/signup?platform=desktop&code_challenge=challenge-value&state=opaque-state",
-      forceRedirectUrl:
-        "/login?platform=desktop&code_challenge=challenge-value&state=opaque-state",
-    });
+    expect(completeDesktopGoogleAttempt).not.toHaveBeenCalled();
+    expect(screen.queryByText("Opening Patchbay")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Open Patchbay Desktop" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Preparing Desktop sign-in..." }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("clerk-sign-in")).toBeInTheDocument();
   });
 
   it("offers CLI authorization after Clerk has established the session", () => {
@@ -260,92 +259,5 @@ describe("LoginPage", () => {
       }),
     ).not.toBeInTheDocument();
     expect(issueCliToken).not.toHaveBeenCalled();
-  });
-
-  it("automatically hands a signed-in desktop session to the Patchbay app", async () => {
-    search.current =
-      "platform=desktop&code_challenge=challenge-value&state=opaque-state&callback_protocol=patchbay-canary-attacker";
-    authState.current = {
-      isLoaded: true,
-      isSignedIn: true,
-      getToken: vi.fn().mockResolvedValue("clerk-session-token"),
-    };
-    authStoreState.current = { status: "authenticated" };
-    completeDesktopGoogleAttempt.mockResolvedValue({
-      callback_protocol: "patchbay-canary-login-fix-123",
-      code: "desktop-handoff-code",
-    });
-
-    render(<LoginPage />);
-
-    await waitFor(() =>
-      expect(completeDesktopGoogleAttempt).toHaveBeenCalledOnce(),
-    );
-    expect(completeDesktopGoogleAttempt).toHaveBeenCalledWith(
-      "clerk-session-token",
-      "opaque-state",
-      "challenge-value",
-    );
-    expect(redirectToDesktopApp).toHaveBeenCalledWith(
-      "desktop-handoff-code",
-      "opaque-state",
-      "patchbay-canary-login-fix-123",
-    );
-  });
-
-  it("waits for the current Clerk identity to finish the Go session exchange", async () => {
-    search.current =
-      "platform=desktop&code_challenge=challenge-value&state=opaque-state";
-    authState.current = { isLoaded: true, isSignedIn: true, getToken: vi.fn() };
-    authStoreState.current = { status: "authenticated" };
-    exchangeReady.current = false;
-
-    render(<LoginPage />);
-
-    expect(completeDesktopGoogleAttempt).not.toHaveBeenCalled();
-    expect(
-      screen.getByRole("button", { name: "Preparing Desktop sign-in..." }),
-    ).toBeDisabled();
-  });
-
-  it("restarts Google instead of accepting an ambient signed-in session", async () => {
-    const { ApiError } = await import("@patchbay/core/api");
-    const codeChallenge = "c".repeat(43);
-    const state = "s".repeat(43);
-    search.current = `platform=desktop&code_challenge=${codeChallenge}&state=${state}`;
-    authState.current = {
-      isLoaded: true,
-      isSignedIn: true,
-      getToken: vi.fn().mockResolvedValue("ambient-clerk-token"),
-    };
-    authStoreState.current = { status: "authenticated" };
-    completeDesktopGoogleAttempt.mockRejectedValue(
-      new ApiError("fresh Google authorization is required", 409, "Conflict"),
-    );
-    const locationReplace = vi.fn();
-    vi.stubGlobal("location", {
-      pathname: "/login",
-      replace: locationReplace,
-    });
-
-    render(<LoginPage />);
-
-    await waitFor(() => expect(locationReplace).toHaveBeenCalledOnce());
-    expect(locationReplace).toHaveBeenCalledWith(
-      `/oauth/google?platform=desktop&code_challenge=${codeChallenge}&state=${state}`,
-    );
-    expect(redirectToDesktopApp).not.toHaveBeenCalled();
-  });
-
-  it("does not mint a desktop handoff without a renderer binding", async () => {
-    search.current = "platform=desktop";
-    authState.current = { isLoaded: true, isSignedIn: true, getToken: vi.fn() };
-    authStoreState.current = { status: "authenticated" };
-
-    render(<LoginPage />);
-
-    await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
-    expect(completeDesktopGoogleAttempt).not.toHaveBeenCalled();
-    expect(redirectToDesktopApp).not.toHaveBeenCalled();
   });
 });

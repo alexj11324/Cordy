@@ -1,4 +1,5 @@
 import { ApiError } from "@patchbay/core/api";
+import { loopbackSessionApiUrl } from "../../../shared/runtime-config";
 
 const PENDING_HANDOFF_KEY = "patchbay_desktop_login_handoff";
 const PENDING_HANDOFF_TTL_MS = 10 * 60 * 1000;
@@ -86,6 +87,7 @@ export async function createDesktopLoginUrl(
     state: string,
     codeChallenge: string,
   ) => Promise<{ registered: boolean }>,
+  options?: { sessionApiUrl?: string },
 ): Promise<string> {
   const verifier = randomBase64Url(32);
   const digest = await crypto.subtle.digest(
@@ -110,6 +112,8 @@ export async function createDesktopLoginUrl(
   url.searchParams.set("platform", "desktop");
   url.searchParams.set("state", state);
   url.searchParams.set("code_challenge", codeChallenge);
+  const sessionApi = loopbackSessionApiUrl(options?.sessionApiUrl ?? "");
+  if (sessionApi) url.searchParams.set("session_api", sessionApi);
   return url.href;
 }
 

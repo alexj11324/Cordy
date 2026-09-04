@@ -21,6 +21,10 @@ import {
   buildDesktopCallbackUrl,
   readDesktopHandoffBinding,
 } from "@/lib/desktop-handoff";
+import {
+  desktopSessionCompleteUrl,
+  loopbackFreshKey,
+} from "@/lib/session-api";
 import { useAuthMessages } from "@/lib/auth-messages";
 import { resolveStandaloneReturnUrl } from "@/lib/redirect";
 
@@ -64,6 +68,15 @@ function Content() {
     try {
       const token = await getToken();
       if (!token) throw new Error("Clerk session token unavailable");
+      if (binding.sessionApi) {
+        window.sessionStorage.removeItem(loopbackFreshKey(binding.state));
+        submitLoopbackDesktopSession(binding.sessionApi, {
+          session: token,
+          state: binding.state,
+          code_challenge: binding.codeChallenge,
+        });
+        return;
+      }
       const result = await completeDesktopGoogleAttempt(token, {
         state: binding.state,
         code_challenge: binding.codeChallenge,
@@ -104,6 +117,23 @@ function Content() {
       return;
     }
 
+    if (binding.sessionApi) {
+      setRegistered(true);
+      const freshKey = loopbackFreshKey(binding.state);
+      if (isSignedIn && window.sessionStorage.getItem(freshKey) === "1") {
+        attempted.current = true;
+        void complete();
+        return;
+      }
+      if (isSignedIn) {
+        attempted.current = true;
+        void signOut({ redirectUrl: returnUrl }).catch(() => setError(true));
+        return;
+      }
+      window.sessionStorage.setItem(freshKey, "1");
+      return;
+    }
+
     if (isSignedIn) {
       attempted.current = true;
       void complete();
@@ -128,7 +158,16 @@ function Content() {
       .finally(() => {
         attempted.current = false;
       });
-  }, [binding, complete, desktopRequest, isLoaded, isSignedIn, returnUrl, storageKey]);
+  }, [
+    binding,
+    complete,
+    desktopRequest,
+    isLoaded,
+    isSignedIn,
+    returnUrl,
+    signOut,
+    storageKey,
+  ]);
 
   if (error) {
     return (
@@ -156,4 +195,23 @@ function Content() {
       <AccountsLoginForm returnUrl={returnUrl} />
     </AuthShell>
   );
+}
+
+function submitLoopbackDesktopSession(
+  sessionApi: string,
+  fields: { session: string; state: string; code_challenge: string },
+): void {
+  const form = document.createElement("form");
+  form.method = "POST";
+  form.action = desktopSessionCompleteUrl(sessionApi);
+  form.acceptCharset = "UTF-8";
+  for (const [name, value] of Object.entries(fields)) {
+    const input = document.createElement("input");
+    input.type = "hidden";
+    input.name = name;
+    input.value = value;
+    form.appendChild(input);
+  }
+  document.body.appendChild(form);
+  form.submit();
 }

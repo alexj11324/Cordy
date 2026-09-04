@@ -1,7 +1,6 @@
 "use client";
 
 import { AuthenticateWithRedirectCallback } from "@clerk/nextjs";
-import { buildDesktopHandoffQuery } from "@/features/auth/desktop-handoff";
 import {
   authRouteWithRedirect,
   resolveSafeRedirectUrl,
@@ -18,21 +17,10 @@ export function ClerkSSOCallback({
   signUpPath,
 }: ClerkSSOCallbackProps) {
   const searchParams = useWebSearchParams();
-  const desktopHandoff = searchParams.get("platform") === "desktop";
-
-  const desktopHandoffQuery = desktopHandoff
-    ? buildDesktopHandoffQuery(searchParams)
-    : "";
   const redirectUrl = resolveSafeRedirectUrl(searchParams.get("redirect_url"));
-  const loginUrl = desktopHandoff
-    ? `${signInPath}?${desktopHandoffQuery}`
-    : authRouteWithRedirect(signInPath, redirectUrl);
-  const signUpUrl = desktopHandoff
-    ? `${signUpPath}?${desktopHandoffQuery}`
-    : authRouteWithRedirect(signUpPath, redirectUrl);
-  const returnUrl = desktopHandoff
-    ? `/login?${desktopHandoffQuery}`
-    : redirectUrl;
+  const loginUrl = authRouteWithRedirect(signInPath, redirectUrl);
+  const signUpUrl = authRouteWithRedirect(signUpPath, redirectUrl);
+  const returnUrl = redirectUrl;
 
   return (
     <AuthenticateWithRedirectCallback

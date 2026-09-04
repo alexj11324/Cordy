@@ -2,7 +2,7 @@
 
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Page from "./page";
 
 const STATE = "s".repeat(43);
@@ -52,20 +52,27 @@ vi.mock("@/lib/auth-messages", () => ({
   }),
 }));
 
+const originalFormSubmit = HTMLFormElement.prototype.submit;
+
 beforeEach(() => {
   cleanup();
+  HTMLFormElement.prototype.submit = originalFormSubmit;
   mocks.auth.isLoaded = true;
   mocks.auth.isSignedIn = false;
   mocks.register.mockReset().mockResolvedValue(undefined);
   mocks.complete.mockReset();
   mocks.getToken.mockReset();
-  mocks.signOut.mockReset();
+  mocks.signOut.mockReset().mockResolvedValue(undefined);
   window.sessionStorage.clear();
   mocks.searchParams.current = new URLSearchParams({
     platform: "desktop",
     state: STATE,
     code_challenge: CHALLENGE,
   });
+});
+
+afterEach(() => {
+  HTMLFormElement.prototype.submit = originalFormSubmit;
 });
 
 describe("Accounts desktop login", () => {
@@ -109,5 +116,71 @@ describe("Accounts desktop login", () => {
       "data-return-url",
       "https://patchbay.aspectlylabs.com/acme/issues",
     );
+  });
+
+  it("does not register a production Google attempt for a loopback session API", async () => {
+    mocks.searchParams.current = new URLSearchParams({
+      platform: "desktop",
+      state: STATE,
+      code_challenge: CHALLENGE,
+      session_api: "http://localhost:8080",
+    });
+
+    render(<Page />);
+
+    expect(await screen.findByTestId("accounts-login-form")).toBeInTheDocument();
+    expect(mocks.register).not.toHaveBeenCalled();
+    expect(mocks.complete).not.toHaveBeenCalled();
+  });
+
+  it("does not post an ambient Clerk session to the loopback API", async () => {
+    const submit = vi.fn();
+    HTMLFormElement.prototype.submit = submit;
+    mocks.auth.isSignedIn = true;
+    mocks.getToken.mockResolvedValue("ambient-clerk-token");
+    mocks.searchParams.current = new URLSearchParams({
+      platform: "desktop",
+      state: STATE,
+      code_challenge: CHALLENGE,
+      session_api: "http://localhost:8080",
+    });
+
+    render(<Page />);
+
+    await waitFor(() => expect(mocks.signOut).toHaveBeenCalledOnce());
+    expect(submit).not.toHaveBeenCalled();
+    expect(mocks.complete).not.toHaveBeenCalled();
+  });
+
+  it("posts the Clerk session to the loopback product API after a fresh sign-in", async () => {
+    const submit = vi.fn();
+    HTMLFormElement.prototype.submit = submit;
+    window.sessionStorage.setItem(
+      `patchbay_desktop_loopback_fresh:${STATE}`,
+      "1",
+    );
+    mocks.auth.isSignedIn = true;
+    mocks.getToken.mockResolvedValue("clerk-session-token");
+    mocks.searchParams.current = new URLSearchParams({
+      platform: "desktop",
+      state: STATE,
+      code_challenge: CHALLENGE,
+      session_api: "http://localhost:8080",
+    });
+
+    render(<Page />);
+
+    await waitFor(() => expect(submit).toHaveBeenCalledOnce());
+    const form = document.querySelector("form");
+    expect(form?.getAttribute("action")).toBe(
+      "http://localhost:8080/auth/desktop-session/complete",
+    );
+    expect(form?.getAttribute("method")).toBe("POST");
+    expect(
+      (form?.querySelector('input[name="session"]') as HTMLInputElement | null)
+        ?.value,
+    ).toBe("clerk-session-token");
+    expect(mocks.complete).not.toHaveBeenCalled();
+    expect(mocks.signOut).not.toHaveBeenCalled();
   });
 });

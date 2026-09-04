@@ -565,6 +565,7 @@ export default function App() {
       runtimeConfig.accountsUrl,
       (state, codeChallenge) =>
         handoffClient.initiateDesktopAuthHandoff(state, codeChallenge),
+      { sessionApiUrl: runtimeConfig.apiUrl },
     );
     const result = await window.desktopAPI.enableCloudMode();
     if (!result.ok) {

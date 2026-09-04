@@ -3,11 +3,13 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { loopbackFreshKey } from "@/lib/session-api";
 import Page from "./page";
 
 const mocks = vi.hoisted(() => ({
   searchParams: { current: new URLSearchParams() },
   sso: vi.fn(),
+  register: vi.fn(),
   clerk: { loaded: true, session: null as null | { id: string } },
 }));
 
@@ -26,6 +28,10 @@ vi.mock("@/components/auth-shell", () => ({
   ),
 }));
 
+vi.mock("@/lib/broker-client", () => ({
+  registerDesktopGoogleAttempt: mocks.register,
+}));
+
 vi.mock("@/lib/auth-messages", () => ({
   useAuthMessages: () => ({
     starting: "Starting",
@@ -35,10 +41,12 @@ vi.mock("@/lib/auth-messages", () => ({
 }));
 
 beforeEach(() => {
+  window.sessionStorage.clear();
   mocks.searchParams.current = new URLSearchParams({
     return_url: "https://patchbay.aspectlylabs.com/login",
   });
   mocks.sso.mockReset().mockResolvedValue({ error: null });
+  mocks.register.mockReset().mockResolvedValue(undefined);
   mocks.clerk.loaded = true;
   mocks.clerk.session = null;
 });
@@ -59,5 +67,22 @@ describe("Accounts Google entry", () => {
       new URL(call.redirectCallbackUrl).searchParams.get("return_url"),
     ).toBe("https://patchbay.aspectlylabs.com/login");
     expect(screen.getByRole("status")).toHaveTextContent("Starting");
+  });
+
+  it("does not register a production Google attempt for a loopback session API", async () => {
+    const state = "s".repeat(43);
+    const challenge = "c".repeat(43);
+    mocks.searchParams.current = new URLSearchParams({
+      platform: "desktop",
+      state,
+      code_challenge: challenge,
+      session_api: "http://localhost:8080",
+    });
+
+    render(<Page />);
+
+    await waitFor(() => expect(mocks.sso).toHaveBeenCalledOnce());
+    expect(mocks.register).not.toHaveBeenCalled();
+    expect(window.sessionStorage.getItem(loopbackFreshKey(state))).toBe("1");
   });
 });

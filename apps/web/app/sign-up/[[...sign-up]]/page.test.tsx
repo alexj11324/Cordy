@@ -36,7 +36,7 @@ describe("SignUpPage (sign-up route)", () => {
     });
   });
 
-  it("preserves the desktop handoff through the alternate signup route", () => {
+  it("does not keep Desktop handoff state on the alternate signup route", () => {
     search.current =
       "platform=desktop&code_challenge=challenge-value&state=opaque-state";
 
@@ -45,10 +45,8 @@ describe("SignUpPage (sign-up route)", () => {
     expect(screen.getByTestId("clerk-sign-up")).toBeInTheDocument();
     expect(signUpProps.current).toMatchObject({
       path: "/sign-up",
-      signInUrl:
-        "/sign-in?platform=desktop&code_challenge=challenge-value&state=opaque-state",
-      fallbackRedirectUrl:
-        "/login?platform=desktop&code_challenge=challenge-value&state=opaque-state",
+      signInUrl: "/sign-in",
+      fallbackRedirectUrl: "/",
     });
   });
 });

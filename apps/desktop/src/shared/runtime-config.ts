@@ -27,7 +27,7 @@ const LOCAL_DEV_RUNTIME_CONFIG: RuntimeConfig = Object.freeze({
   apiUrl: "http://localhost:8080",
   wsUrl: "ws://localhost:8080/ws",
   appUrl: "http://localhost:3000",
-  accountsUrl: "http://localhost:3000",
+  accountsUrl: DEFAULT_RUNTIME_CONFIG.accountsUrl,
 });
 
 export interface RuntimeConfigEnv {
@@ -57,9 +57,7 @@ export function runtimeConfigFromDevEnv(env: RuntimeConfigEnv): RuntimeConfig {
     appUrl,
     accountsUrl: env.accountsUrl
       ? normalizeHttpUrl(env.accountsUrl, "VITE_ACCOUNTS_URL")
-      : usesHostedApi
-        ? DEFAULT_RUNTIME_CONFIG.accountsUrl
-        : appUrl,
+      : DEFAULT_RUNTIME_CONFIG.accountsUrl,
   };
 }
 
@@ -101,10 +99,41 @@ export function parseRuntimeConfig(raw: string): RuntimeConfig {
     appUrl: normalizedAppUrl,
     accountsUrl: accountsUrl
       ? normalizeHttpUrl(accountsUrl, "accountsUrl")
-      : usesHostedApi
-        ? DEFAULT_RUNTIME_CONFIG.accountsUrl
-        : normalizedAppUrl,
+      : defaultAccountsUrl(normalizedApiUrl, normalizedAppUrl),
   };
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1";
+}
+
+function defaultAccountsUrl(apiUrl: string, appUrl: string): string {
+  if (apiUrl === DEFAULT_RUNTIME_CONFIG.apiUrl || isLoopbackHttpUrl(apiUrl)) {
+    return DEFAULT_RUNTIME_CONFIG.accountsUrl;
+  }
+  return appUrl;
+}
+
+/** Loopback product APIs may mint the desktop session; hosted identity never does. */
+export function loopbackSessionApiUrl(apiUrl: string): string | undefined {
+  if (!apiUrl) return undefined;
+  try {
+    const url = new URL(apiUrl);
+    if (url.protocol !== "http:" || !isLoopbackHostname(url.hostname)) {
+      return undefined;
+    }
+    return url.origin;
+  } catch {
+    return undefined;
+  }
+}
+
+export function isLoopbackHttpUrl(value: string): boolean {
+  try {
+    return isLoopbackHostname(new URL(value).hostname);
+  } catch {
+    return false;
+  }
 }
 
 export function deriveWsUrl(apiUrl: string): string {

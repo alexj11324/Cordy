@@ -1537,6 +1537,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// this endpoint as its primary sign-in path.
 	r.With(authRL).Post("/auth/google", h.GoogleLogin)
 	r.With(authRL).Post("/auth/guest", h.CreateGuestAuth)
+	r.With(desktopHandoffRL).Post("/auth/desktop-session/complete", h.CompleteDesktopLoopbackSession)
 	r.With(desktopHandoffRL).Post("/api/desktop-handoff/initiate", h.InitiateDesktopAuthHandoff)
 	r.With(desktopHandoffRL).Post("/api/desktop-handoff/redeem", h.RedeemDesktopAuthHandoff)
 	r.With(handler.RequireDesktopBrokerAuth(signupConfig.DesktopBrokerAuthToken), desktopHandoffRL).Post("/api/desktop-google/attempt", h.RegisterDesktopGoogleAttempt)

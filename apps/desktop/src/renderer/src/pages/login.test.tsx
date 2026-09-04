@@ -49,7 +49,10 @@ function renderPage() {
     value: {
       runtimeConfig: {
         ok: true,
-        config: { accountsUrl: "https://accounts.example" },
+        config: {
+          accountsUrl: "https://accounts.example",
+          apiUrl: "https://api.aspectlylabs.com",
+        },
       },
       openExternal: mocks.openExternal,
     },
@@ -108,6 +111,7 @@ describe("DesktopLoginPage", () => {
     expect(mocks.createDesktopLoginUrl).toHaveBeenCalledWith(
       "https://accounts.example",
       expect.any(Function),
+      { sessionApiUrl: undefined },
     );
     expect(mocks.openExternal).toHaveBeenCalledWith(
       "https://accounts.example/login?state=state-1",
