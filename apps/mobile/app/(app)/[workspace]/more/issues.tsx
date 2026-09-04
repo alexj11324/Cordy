@@ -25,7 +25,7 @@
 import { useMemo } from "react";
 import { Pressable, SectionList, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
-import { router } from "expo-router";
+import { router, Stack } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import type {
   IssuePriority,
@@ -48,11 +48,12 @@ import {
   type IssuesScope,
 } from "@/data/stores/issues-view-store";
 import { useClearFiltersOnWorkspaceChange } from "@/lib/use-clear-filters-on-workspace-change";
-import { PRIORITY_LABEL } from "@/lib/issue-status";
 import { useIssueStatuses } from "@/lib/use-issue-statuses";
 import { groupIssuesByCategory } from "@/lib/group-issues-by-category";
 import { filterIssues } from "@/lib/filter-issues";
 import { filterIssuesByScope } from "@/lib/issue-scope";
+import { useAuthStore } from "@/data/auth-store";
+import { getIssuesCopy } from "@/lib/issues-copy";
 import { useColorScheme } from "@/lib/use-color-scheme";
 import { THEME } from "@/lib/theme";
 
@@ -61,15 +62,19 @@ import { THEME } from "@/lib/theme";
 // either, and on SE3 (375pt) "(123)" appended to each label pushes the
 // row past the safe width when filter icon shares the row. Per-status
 // counts still appear on the SectionList headers below.
-const SCOPES: { value: IssuesScope; label: string }[] = [
-  { value: "all", label: "All" },
-  { value: "members", label: "Members" },
-  { value: "agents", label: "Agents" },
-];
-
 export default function IssuesPage() {
   const wsId = useWorkspaceStore((s) => s.currentWorkspaceId);
   const wsSlug = useWorkspaceStore((s) => s.currentWorkspaceSlug);
+  const language = useAuthStore((s) => s.user?.language);
+  const copy = useMemo(() => getIssuesCopy(language), [language]);
+  const scopes = useMemo(
+    () => [
+      { value: "all" as const, label: copy.scopes.all },
+      { value: "members" as const, label: copy.scopes.members },
+      { value: "agents" as const, label: copy.scopes.agents },
+    ],
+    [copy],
+  );
 
   const scope = useIssuesViewStore((s) => s.scope);
   const setScope = useIssuesViewStore((s) => s.setScope);
@@ -118,18 +123,21 @@ export default function IssuesPage() {
 
   return (
     <View className="flex-1 bg-background">
+      <Stack.Screen options={{ title: copy.title, headerBackTitle: copy.back }} />
       <ScopeToolbar
-        scopes={SCOPES}
+        scopes={scopes}
         scope={scope}
         onChange={(v) => setScope(v)}
         onOpenFilter={openFilter}
         hasActiveFilters={hasActiveFilters}
+        filterLabel={copy.filter}
       />
       {hasActiveFilters ? (
         <ActiveFilterChips
           statusFilters={statusFilters}
           priorityFilters={priorityFilters}
           statusLabelOf={catalog.labelOf}
+          priorityLabelOf={(priority) => copy.priority[priority]}
           onClearStatus={(s) =>
             useIssuesViewStore.getState().toggleStatusFilter(s)
           }
@@ -143,19 +151,20 @@ export default function IssuesPage() {
       ) : error ? (
         <View className="px-4 gap-3 pt-4">
           <Text className="text-sm text-destructive">
-            Failed to load issues:{" "}
-            {error instanceof Error ? error.message : "unknown error"}
+            {copy.loadFailed(
+              error instanceof Error ? error.message : copy.unknownError,
+            )}
           </Text>
           <Button variant="outline" onPress={() => refetch()}>
-            <Text>Retry</Text>
+            <Text>{copy.retry}</Text>
           </Button>
         </View>
       ) : showEmptyState ? (
         <EmptyState
           message={
             hasActiveFilters
-              ? "No issues match the current filters."
-              : emptyMessageForScope(scope)
+              ? copy.filteredEmpty
+              : emptyMessageForScope(scope, copy)
           }
         />
       ) : (
@@ -199,9 +208,11 @@ export default function IssuesPage() {
 function FilterButton({
   onPress,
   hasActiveFilters,
+  label,
 }: {
   onPress: () => void;
   hasActiveFilters: boolean;
+  label: string;
 }) {
   const { colorScheme } = useColorScheme();
   return (
@@ -210,7 +221,7 @@ function FilterButton({
         variant="outline"
         size="sm"
         onPress={onPress}
-        accessibilityLabel="Filter"
+        accessibilityLabel={label}
         className="w-9 px-0"
       >
         <Ionicons
@@ -243,12 +254,14 @@ function ScopeToolbar<S extends string>({
   onChange,
   onOpenFilter,
   hasActiveFilters,
+  filterLabel,
 }: {
   scopes: { value: S; label: string }[];
   scope: S;
   onChange: (value: S) => void;
   onOpenFilter: () => void;
   hasActiveFilters: boolean;
+  filterLabel: string;
 }) {
   return (
     <View className="flex-row items-center justify-between px-4 pt-2 pb-2">
@@ -279,6 +292,7 @@ function ScopeToolbar<S extends string>({
       <FilterButton
         onPress={onOpenFilter}
         hasActiveFilters={hasActiveFilters}
+        label={filterLabel}
       />
     </View>
   );
@@ -288,6 +302,7 @@ function ActiveFilterChips({
   statusFilters,
   priorityFilters,
   statusLabelOf,
+  priorityLabelOf,
   onClearStatus,
   onClearPriority,
 }: {
@@ -295,6 +310,7 @@ function ActiveFilterChips({
   priorityFilters: IssuePriority[];
   /** Resolves a status KEY — which can be a custom one — to its label. */
   statusLabelOf: (statusKey: string) => string;
+  priorityLabelOf: (priority: IssuePriority) => string;
   onClearStatus: (s: IssueStatus) => void;
   onClearPriority: (p: IssuePriority) => void;
 }) {
@@ -310,7 +326,7 @@ function ActiveFilterChips({
       {priorityFilters.map((p) => (
         <Chip
           key={`p-${p}`}
-          label={PRIORITY_LABEL[p]}
+          label={priorityLabelOf(p)}
           onClear={() => onClearPriority(p)}
         />
       ))}
@@ -369,13 +385,16 @@ function EmptyState({ message }: { message: string }) {
   );
 }
 
-function emptyMessageForScope(scope: IssuesScope): string {
+function emptyMessageForScope(
+  scope: IssuesScope,
+  copy: ReturnType<typeof getIssuesCopy>,
+): string {
   switch (scope) {
     case "all":
-      return "No issues in this workspace.";
+      return copy.empty.workspace;
     case "members":
-      return "No issues have a member as owner.";
+      return copy.empty.memberOwner;
     case "agents":
-      return "No issues have an agent or team as executor.";
+      return copy.empty.agentExecutor;
   }
 }

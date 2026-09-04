@@ -47,10 +47,10 @@ import { useAuthStore } from "@/data/auth-store";
 import { useWorkspaceStore } from "@/data/workspace-store";
 import { useMyIssuesViewStore } from "@/data/stores/my-issues-view-store";
 import { useClearFiltersOnWorkspaceChange } from "@/lib/use-clear-filters-on-workspace-change";
-import { PRIORITY_LABEL } from "@/lib/issue-status";
 import { useIssueStatuses } from "@/lib/use-issue-statuses";
 import { groupIssuesByCategory } from "@/lib/group-issues-by-category";
 import { filterIssues } from "@/lib/filter-issues";
+import { getIssuesCopy } from "@/lib/issues-copy";
 import { useColorScheme } from "@/lib/use-color-scheme";
 import { THEME } from "@/lib/theme";
 
@@ -60,17 +60,21 @@ import { THEME } from "@/lib/theme";
 // under Dynamic Type. Semantics unchanged: same backend predicate
 // (`involves_user_id`, MUL-2397) covers owned agents + related teams; the
 // empty state copy still says "agents or teams".
-const SCOPES: { value: MyIssuesScope; label: string }[] = [
-  { value: "assigned", label: "Owned" },
-  { value: "created", label: "Created" },
-  { value: "agents", label: "Agents" },
-];
-
 export default function MyIssues() {
   const isFocused = useIsFocused();
   const userId = useAuthStore((s) => s.user?.id ?? null);
+  const language = useAuthStore((s) => s.user?.language);
   const wsId = useWorkspaceStore((s) => s.currentWorkspaceId);
   const wsSlug = useWorkspaceStore((s) => s.currentWorkspaceSlug);
+  const copy = useMemo(() => getIssuesCopy(language), [language]);
+  const scopes = useMemo(
+    () => [
+      { value: "assigned" as const, label: copy.scopes.owned },
+      { value: "created" as const, label: copy.scopes.created },
+      { value: "agents" as const, label: copy.scopes.agents },
+    ],
+    [copy],
+  );
 
   const scope = useMyIssuesViewStore((s) => s.scope);
   const setScope = useMyIssuesViewStore((s) => s.setScope);
@@ -121,19 +125,21 @@ export default function MyIssues() {
 
   return (
     <View className="flex-1 bg-background">
-      <Header title="My Issues" right={<HeaderActions />} />
+      <Header title={copy.myTitle} right={<HeaderActions />} />
       <ScopeToolbar
-        scopes={SCOPES}
+        scopes={scopes}
         scope={scope}
         onChange={(v) => setScope(v)}
         onOpenFilter={openFilter}
         hasActiveFilters={hasActiveFilters}
+        filterLabel={copy.filter}
       />
       {hasActiveFilters ? (
         <ActiveFilterChips
           statusFilters={statusFilters}
           priorityFilters={priorityFilters}
           statusLabelOf={catalog.labelOf}
+          priorityLabelOf={(priority) => copy.priority[priority]}
           onClearStatus={(s) =>
             useMyIssuesViewStore.getState().toggleStatusFilter(s)
           }
@@ -147,19 +153,20 @@ export default function MyIssues() {
       ) : error ? (
         <View className="px-4 gap-3 pt-4">
           <Text className="text-sm text-destructive">
-            Failed to load issues:{" "}
-            {error instanceof Error ? error.message : "unknown error"}
+            {copy.loadFailed(
+              error instanceof Error ? error.message : copy.unknownError,
+            )}
           </Text>
           <Button variant="outline" onPress={() => refetch()}>
-            <Text>Retry</Text>
+            <Text>{copy.retry}</Text>
           </Button>
         </View>
       ) : showEmptyState ? (
         <EmptyState
           message={
             hasActiveFilters
-              ? "No issues match the current filters."
-              : emptyMessageForScope(scope)
+              ? copy.filteredEmpty
+              : emptyMessageForScope(scope, copy)
           }
         />
       ) : (
@@ -206,9 +213,11 @@ export default function MyIssues() {
 function FilterButton({
   onPress,
   hasActiveFilters,
+  label,
 }: {
   onPress: () => void;
   hasActiveFilters: boolean;
+  label: string;
 }) {
   const { colorScheme } = useColorScheme();
   return (
@@ -217,7 +226,7 @@ function FilterButton({
         variant="outline"
         size="sm"
         onPress={onPress}
-        accessibilityLabel="Filter"
+        accessibilityLabel={label}
         className="w-9 px-0"
       >
         <Ionicons
@@ -250,12 +259,14 @@ function ScopeToolbar<S extends string>({
   onChange,
   onOpenFilter,
   hasActiveFilters,
+  filterLabel,
 }: {
   scopes: { value: S; label: string }[];
   scope: S;
   onChange: (value: S) => void;
   onOpenFilter: () => void;
   hasActiveFilters: boolean;
+  filterLabel: string;
 }) {
   return (
     <View className="flex-row items-center justify-between px-4 pt-2 pb-2">
@@ -286,6 +297,7 @@ function ScopeToolbar<S extends string>({
       <FilterButton
         onPress={onOpenFilter}
         hasActiveFilters={hasActiveFilters}
+        label={filterLabel}
       />
     </View>
   );
@@ -295,6 +307,7 @@ function ActiveFilterChips({
   statusFilters,
   priorityFilters,
   statusLabelOf,
+  priorityLabelOf,
   onClearStatus,
   onClearPriority,
 }: {
@@ -302,6 +315,7 @@ function ActiveFilterChips({
   priorityFilters: IssuePriority[];
   /** Resolves a status KEY — which can be a custom one — to its label. */
   statusLabelOf: (statusKey: string) => string;
+  priorityLabelOf: (priority: IssuePriority) => string;
   onClearStatus: (s: IssueStatus) => void;
   onClearPriority: (p: IssuePriority) => void;
 }) {
@@ -317,7 +331,7 @@ function ActiveFilterChips({
       {priorityFilters.map((p) => (
         <Chip
           key={`p-${p}`}
-          label={PRIORITY_LABEL[p]}
+          label={priorityLabelOf(p)}
           onClear={() => onClearPriority(p)}
         />
       ))}
@@ -376,13 +390,16 @@ function EmptyState({ message }: { message: string }) {
   );
 }
 
-function emptyMessageForScope(scope: MyIssuesScope): string {
+function emptyMessageForScope(
+  scope: MyIssuesScope,
+  copy: ReturnType<typeof getIssuesCopy>,
+): string {
   switch (scope) {
     case "assigned":
-      return "No issues owned by you.";
+      return copy.empty.owned;
     case "created":
-      return "You haven't created any issues.";
+      return copy.empty.created;
     case "agents":
-      return "No issues have your agents or teams as executor yet.";
+      return copy.empty.agents;
   }
 }
