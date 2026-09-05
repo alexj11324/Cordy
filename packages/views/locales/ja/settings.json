@@ -912,7 +912,7 @@
     "feature_co_author_description_prefix": "エージェントが作成したコミットに",
     "feature_co_author_description_suffix": "を追加します。",
     "feature_auto_link_label": "課題と PR の自動リンク",
-    "feature_auto_link_description": "PR のタイトル、本文、ブランチ名から課題識別子を照合し、自動的にリンクを作成します。",
+    "feature_auto_link_description": "PR の関連付けには2つの方法があります。この設定を有効にすると、PR のタイトルやブランチ名に課題 ID（例：MUL-123）、または本文に Fixes MUL-123 を記載することで自動的に関連付けられます。課題詳細の成果物から手動で PR を関連付けるか、エージェントが直接紐付けることもできます。直接の関連付けは PR 内の課題 ID が不要で、この設定に関係なく利用できます。",
     "section_repositories": "リポジトリ",
     "repositories_shortcut_label": "リポジトリ URL はリポジトリタブにあります",
     "repositories_shortcut_link": "リポジトリを管理 →",
