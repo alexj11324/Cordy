@@ -173,6 +173,8 @@ func (b *claudeBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 		terminalReasonError := ""
 		var sessionID string
 		var recoveryError string
+		var terminalCleanupDone chan struct{}
+		var resultErrors []string
 		var assistantErrorCode, providerErrorCode, blockingAssistantErrorCode string
 		sawAsyncLaunch := false
 		usage := make(map[string]TokenUsage)
@@ -262,6 +264,7 @@ func (b *claudeBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 				trySend(msgCh, Message{Type: MessageStatus, Status: "running", SessionID: sessionID})
 			case "result":
 				sawResult = true
+				resultErrors = msg.Errors
 				finalResultText = msg.ResultText
 				resultIsError = msg.IsError
 				providerErrorCode = assistantErrorCode
@@ -287,6 +290,19 @@ func (b *claudeBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 					usage = resultUsage
 				}
 				closeStdin()
+				if msg.IsError && terminalCleanupDone == nil {
+					// A failed turn is terminal even if MCP workers outlive the
+					// CLI. Preserve graceful shutdown, then bound stubborn workers.
+					terminalCleanupDone = make(chan struct{})
+					signalProcessGroup(cmd, syscall.SIGTERM)
+					go func() {
+						defer close(terminalCleanupDone)
+						if !waitProcessGroupGone(cmd, claudeTerminateGrace()) {
+							signalProcessGroup(cmd, syscall.SIGKILL)
+						}
+						_ = stdout.Close()
+					}()
+				}
 			case "log":
 				if msg.Log != nil {
 					trySend(msgCh, Message{
@@ -311,7 +327,10 @@ func (b *claudeBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 
 		// Wait for process exit, then release the cancellation handler.
 		exitErr := cmd.Wait()
-		cleanupConfirmed := cmd.ProcessState != nil && waitProcessGroupGone(cmd, 0)
+		if terminalCleanupDone != nil {
+			<-terminalCleanupDone
+		}
+		cleanupConfirmed := cmd.ProcessState != nil && waitProcessGroupGone(cmd, claudeTerminateGrace())
 		close(procDone)
 		// The leader is reaped; drop ownership. On Windows that closes the Job
 		// Object, which kills anything still inside it — precisely what should
@@ -387,8 +406,16 @@ func (b *claudeBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 
 		// CC's broad rate_limit error can also accompany subscription exhaustion.
 		// Explicit terminal quota/auth diagnostics must never become an endless retry.
-		if providerErrorCode == "rate_limit" || providerErrorCode == "overloaded" {
-			switch taskfailure.Classify(finalError) {
+		if providerErrorCode == "" || providerErrorCode == "rate_limit" || providerErrorCode == "overloaded" {
+			finalReason := taskfailure.Classify(finalError)
+			for i := len(resultErrors) - 1; i >= 0; i-- {
+				reason := taskfailure.Classify(resultErrors[i])
+				if reason != taskfailure.ReasonAgentUnknown && reason != taskfailure.ReasonAgentProviderCapacityOrRateLimit {
+					finalReason = reason
+					break
+				}
+			}
+			switch finalReason {
 			case taskfailure.ReasonAgentProviderQuotaLimit:
 				providerErrorCode = "billing_error"
 			case taskfailure.ReasonAgentProviderAuthOrAccess:
@@ -396,7 +423,7 @@ func (b *claudeBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 			case taskfailure.ReasonAgentProviderCapacityOrRateLimit, taskfailure.ReasonAgentUnknown:
 				// Generic diagnostics can retain the structured temporary cause.
 			default:
-				providerErrorCode = "other" // final model/config/context/process failures are not capacity
+				providerErrorCode = finalReason.String() // preserve the final classified cause independently of earlier array text
 			}
 		}
 
@@ -418,7 +445,7 @@ func (b *claudeBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 			SessionID:          reportedSessionID,
 			Usage:              usage,
 			ResumeRejected:     resumeRejected,
-			RecoveryResumeSafe: cleanupConfirmed && scanErr == nil && writeErr == nil && completionGuardError == "" && terminalReasonError == "" && recoveryError == "" && sessionID != "" && sawResult && resultIsError,
+			RecoveryResumeSafe: cleanupConfirmed && (scanErr == nil || (terminalCleanupDone != nil && errors.Is(scanErr, os.ErrClosed))) && writeErr == nil && completionGuardError == "" && terminalReasonError == "" && recoveryError == "" && sessionID != "" && sawResult && resultIsError,
 		}
 	}()
 

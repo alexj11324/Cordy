@@ -17,15 +17,23 @@ import (
 )
 
 func TestCursorWindowsCapacityWaitsForWorkerCleanup(t *testing.T) {
+	testWindowsCapacityWorkerCleanup(t, "cursor")
+}
+func TestClaudeWindowsCapacityWaitsForWorkerCleanup(t *testing.T) {
+	testWindowsCapacityWorkerCleanup(t, "claude")
+}
+
+func testWindowsCapacityWorkerCleanup(t *testing.T, provider string) {
+	t.Helper()
 	dir := testexec.TempDir(t)
 	sourcePath := filepath.Join(dir, "cursor.go")
 	exePath := filepath.Join(dir, "cursor.exe")
 	pidPath := filepath.Join(dir, "worker.pid")
 	source := `package main
-import("fmt";"io";"os";"os/exec";"time")
+import("bufio";"fmt";"io";"os";"os/exec";"time")
 func main(){
  if len(os.Args)>1 && os.Args[1]=="worker" {time.Sleep(time.Minute);return}
- io.Copy(io.Discard,os.Stdin)
+ if os.Getenv("AGENT_PROVIDER")=="claude" {bufio.NewReader(os.Stdin).ReadString('\n')} else {io.Copy(io.Discard,os.Stdin)}
  child:=exec.Command(os.Args[0],"worker")
  if err:=child.Start();err!=nil{panic(err)}
  if err:=os.WriteFile(os.Getenv("WORKER_PID"),[]byte(fmt.Sprint(child.Process.Pid)),0600);err!=nil{panic(err)}
@@ -48,7 +56,7 @@ func main(){
 			}
 		}
 	})
-	b, err := New("cursor", Config{ExecutablePath: exePath, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Env: map[string]string{"WORKER_PID": pidPath}})
+	b, err := New(provider, Config{ExecutablePath: exePath, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Env: map[string]string{"WORKER_PID": pidPath, "AGENT_PROVIDER": provider}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -204,7 +204,7 @@ type Result struct {
 	Status string // "completed", "failed", "aborted", "timeout", "cancelled"
 	Output string // final user-facing output selected by the backend
 	Error  string // error message if failed
-	// ProviderErrorCode preserves structured upstream errors independently of display text.
+	// ProviderErrorCode carries structured or normalized provider errors independently of display text.
 	ProviderErrorCode string
 	// RecoveryResumeSafe means the prior process was reaped and a thread ID is available.
 	RecoveryResumeSafe bool

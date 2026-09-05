@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/patchbay-ai/patchbay/server/pkg/agent"
+	"github.com/patchbay-ai/patchbay/server/pkg/taskfailure"
 )
 
 func capacityResult(code, message string) agent.Result {
@@ -138,5 +139,12 @@ func TestCapacityRecoveryRetainsUsageBeforeFreshFallback(t *testing.T) {
 	r, _, err := d.recoverCapacity(context.Background(), b, combined, tools, agent.ExecOptions{}, d.logger, "task", "", &seq, func(context.Context, time.Duration) error { return nil })
 	if err != nil || r.Usage["model"].InputTokens != 260 {
 		t.Fatalf("prior-session usage lost: %+v err=%v", r, err)
+	}
+}
+
+func TestCapacityFailureReasonPreservesTerminalArrayClassification(t *testing.T) {
+	r := agent.Result{ProviderErrorCode: taskfailure.ReasonAgentModelNotFoundOrUnavailable.String(), Error: "rate limit reached\nmodel not found"}
+	if got := providerFailureReason(r); got != taskfailure.ReasonAgentModelNotFoundOrUnavailable {
+		t.Fatalf("got %s", got)
 	}
 }

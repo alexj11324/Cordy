@@ -74,3 +74,42 @@ func TestCodexCapacityStrictResume(t *testing.T) {
 		})
 	}
 }
+
+func TestCodexCapacityKeepsSafeInitializeRetry(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX fixture")
+	}
+	dir := testexec.TempDir(t)
+	bin := filepath.Join(dir, "codex")
+	script := `#!/bin/sh
+if [ "$1" = "--version" ]; then echo 'codex-cli test'; exit; fi
+STATE="$(dirname "$0")/attempt"
+if [ ! -f "$STATE" ]; then
+ touch "$STATE"
+ read line
+ read ignored
+ exit
+fi
+read line
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{}}'
+read line
+read line
+case "$line" in *thread/resume*original*) ;; *) exit 71;; esac
+printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"thread":{"id":"original"}}}'
+read line
+printf '%s\n' '{"jsonrpc":"2.0","id":3,"result":{}}'
+printf '%s\n' '{"jsonrpc":"2.0","method":"turn/started","params":{"threadId":"original","turn":{"id":"turn"}}}'
+printf '%s\n' '{"jsonrpc":"2.0","method":"turn/completed","params":{"threadId":"original","turn":{"id":"turn","status":"completed"}}}'
+cat > /dev/null
+`
+	if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "sessions"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	r, _ := executeFakeCodexCollectingMessagesWithConfig(t, bin, Config{Env: map[string]string{"CODEX_HOME": dir}}, ExecOptions{RequireResume: true, ResumeSessionID: "original", HandshakeTimeout: time.Second, Timeout: 5 * time.Second}, 10*time.Second)
+	if r.Status != "completed" || r.SessionID != "original" {
+		t.Fatalf("safe initialization retry was suppressed: %+v", r)
+	}
+}

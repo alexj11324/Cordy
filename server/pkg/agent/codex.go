@@ -899,7 +899,7 @@ func (b *codexBackend) Execute(ctx context.Context, prompt string, opts ExecOpti
 			case result.codexStartupRefreshRetrySafe:
 				retryReason = "model_catalog_refresh"
 			}
-			if retryReason == "" || attempt == 2 || opts.RequireResume {
+			if retryReason == "" || attempt == 2 || (opts.RequireResume && retryReason == "model_catalog_refresh") {
 				flushHeldPins()
 				resCh <- result
 				return

@@ -21,6 +21,11 @@ func providerFailureReason(result agent.Result) taskfailure.Reason {
 	case "unauthorized", "authentication_failed", "oauth_org_not_allowed", "account_on_hold":
 		return taskfailure.ReasonAgentProviderAuthOrAccess
 	}
+	for _, reason := range taskfailure.AllReasons() {
+		if reason.IsAgentError() && reason.String() == result.ProviderErrorCode {
+			return reason
+		}
+	}
 	return taskfailure.Classify(result.Error)
 }
 

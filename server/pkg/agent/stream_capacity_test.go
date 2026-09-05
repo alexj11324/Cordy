@@ -191,3 +191,13 @@ func TestClaudeCapacityFinalNonTransientErrorOverridesMetadata(t *testing.T) {
 		})
 	}
 }
+
+func TestClaudeCapacityPermanentArrayEntryOverridesEarlierLimit(t *testing.T) {
+	frames := `{"type":"system","subtype":"init","session_id":"original"}` + "\n" +
+		`{"type":"assistant","error":"overloaded","session_id":"original","message":{"role":"assistant","content":[]}}` + "\n" +
+		`{"type":"result","subtype":"error_during_execution","is_error":true,"session_id":"original","errors":["rate limit reached","model not found"]}`
+	r, _ := runCapacityStreamFixture(t, "claude", frames, ExecOptions{})
+	if r.ProviderErrorCode == "overloaded" || r.ProviderErrorCode == "rate_limit" {
+		t.Fatalf("earlier transient array entry masked terminal failure: %+v", r)
+	}
+}
