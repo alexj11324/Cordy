@@ -15,10 +15,11 @@ waits for the existing Clerk-to-Go exchange before its post-login redirect.
 Live production Clerk configuration observed during this task uses email_code
 but auth_password.required=true. The custom email-only form cannot supply a
 required password. Proposed narrow configuration change: auth_password.required
-becomes false, preserving password support and every other security setting.
-This production configuration change has been dry-run only; user choice and
-live new-account acceptance are pending. Do not treat UI rendering as proof
-that signup completes.
+became false with user approval on 2026-09-05, preserving password support and
+every other security setting. Read-back confirmed required=false, email_code,
+and verify_at_sign_up=true. The verification_code email template is delivered
+by Clerk. Actual inbox delivery and live new-account acceptance are pending;
+do not treat UI rendering as proof that signup completes.
 
 ## Deployment
 
@@ -29,6 +30,7 @@ browser authentication. Target retains accounts.aspectlylabs.com,
 patchbay.aspectlylabs.com and api.aspectlylabs.com, and the existing Clerk
 instance and database. No new domain or independent account store is created.
 
-Production was inspected read-only. No new production release or database
-change was made by this work. Merge/deployment and a real registration plus
+Production application deployment and the database were inspected read-only.
+Clerk registration configuration was updated as recorded above; no new
+application release or database change was made by this work. Merge/deployment and a real registration plus
 login-to-Go-API round trip remain required before claiming seamless rollout.

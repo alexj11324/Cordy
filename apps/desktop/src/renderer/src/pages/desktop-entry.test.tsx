@@ -42,7 +42,7 @@ describe("DesktopEntryPage", () => {
 
     expect(screen.getByTestId("desktop-entry")).toHaveClass("bg-zinc-950");
     expect(screen.getByTestId("desktop-entry-brand")).toHaveTextContent(
-      "Patchbay",
+      "Orvilo",
     );
     expect(screen.getByTestId("desktop-entry-actions")).toContainElement(
       screen.getByRole("button", { name: "登录" }),
