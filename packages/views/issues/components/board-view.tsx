@@ -697,7 +697,7 @@ function BoardViewImpl({
         onPointerUp={pan.onPointerUp}
         onPointerCancel={pan.onPointerCancel}
         onLostPointerCapture={pan.onLostPointerCapture}
-        className="flex flex-1 min-h-0 gap-4 overflow-x-auto p-2"
+        className="flex flex-1 min-h-0 gap-2 overflow-x-auto px-3 py-2"
       >
         {groups.length === 0 ? (
           groupBranches?.isError ? (

@@ -12,12 +12,10 @@ import { propertyListOptions } from "@patchbay/core/properties";
 import { CustomPropertyValueDisplay } from "./pickers/custom-property-picker";
 import { descriptionPreview } from "./description-preview";
 import { formatDateOnly, isPastDateOnly } from "@patchbay/core/issues/date";
-import { CalendarClock, CalendarDays } from "lucide-react";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { PropertyIcon } from "../../common/property-icon";
 import { useWorkspacePaths } from "@patchbay/core/paths";
-import { useActorName } from "@patchbay/core/workspace/hooks";
-import { useLocale, useT, useTimeAgo } from "../../i18n";
+import { useLocale, useT } from "../../i18n";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { PriorityIcon } from "./priority-icon";
 import { PriorityPicker, ExecutorPicker, StartDatePicker, DueDatePicker } from "./pickers";
@@ -29,6 +27,8 @@ import { LabelChip } from "../../labels/label-chip";
 import { IssueAgentActivityIndicator } from "./issue-agent-activity-indicator";
 import { CustomStatusChip, useIsCustomStatus } from "./custom-status-chip";
 import { useIssueSurfaceActionsOptional } from "../surface/actions-context";
+import { cn } from "@patchbay/ui/lib/utils";
+
 function formatDate(date: string, locale: string): string {
   return formatDateOnly(date, { month: "short", day: "numeric" }, locale);
 }
@@ -46,6 +46,9 @@ function PickerWrapper({ children, className }: { children: React.ReactNode; cla
   );
 }
 
+const HOVER_REVEAL_CLASS =
+  "opacity-0 transition-opacity group-hover/card:opacity-100 group-data-[popup-open]/card:opacity-100 focus-within:opacity-100 has-[[data-open]]:opacity-100 has-[[data-popup-open]]:opacity-100 [@media(hover:none)]:opacity-100";
+
 export const BoardCardContent = memo(function BoardCardContent({
   issue,
   editable = false,
@@ -59,7 +62,6 @@ export const BoardCardContent = memo(function BoardCardContent({
 }) {
   const { t } = useT("issues");
   const locale = useLocale();
-  const timeAgo = useTimeAgo();
   const storeProperties = useViewStore((s) => s.cardProperties);
   const cardPropertyIds = useViewStore((s) => s.cardPropertyIds);
   const cardWsId = useWorkspaceId();
@@ -83,11 +85,15 @@ export const BoardCardContent = memo(function BoardCardContent({
   const canEdit = editable && !!surfaceActions;
 
   const showPriority = storeProperties.priority;
+  const isNonePriority = issue.priority === "none";
   const showDescription = storeProperties.description && issue.description;
   const showExecutorSection = storeProperties.executor;
   const hasExecutor = !!issue.executor_type && !!issue.executor_id;
+  const showAssignedExecutor = showExecutorSection && hasExecutor;
+  const showUnassignedAssign = showExecutorSection && !hasExecutor && canEdit;
   const showStartDate = storeProperties.startDate && issue.start_date;
   const showDueDate = storeProperties.dueDate && issue.due_date;
+  const showCreatedDate = !showStartDate && !showDueDate;
   const showProject = storeProperties.project && project;
   const showChildProgress = storeProperties.childProgress && childProgress;
   const showLabels = storeProperties.labels && labels.length > 0;
@@ -95,18 +101,17 @@ export const BoardCardContent = memo(function BoardCardContent({
   // chip is the only thing in it and it decides to render nothing.
   const showCustomStatus = useIsCustomStatus(issue.status);
 
-  const showExecutorName = showExecutorSection && hasExecutor && !showStartDate && !showDueDate;
-  const showUpdatedHint = showExecutorName && !showChildProgress;
-  const { getActorName } = useActorName();
-  const executorName =
-    showExecutorName && issue.executor_type && issue.executor_id
-      ? getActorName(issue.executor_type, issue.executor_id)
-      : null;
-
   const priorityLabel = t(($) => $.priority[issue.priority]);
-  const priorityIconNode = showPriority ? (
+  const showPriorityControl = showPriority && (!isNonePriority || canEdit);
+  const priorityIconNode = showPriorityControl ? (
     canEdit ? (
-      <PickerWrapper className="flex">
+      <PickerWrapper
+        className={cn(
+          "flex",
+          isNonePriority &&
+            "hidden group-hover/card:flex group-data-[popup-open]/card:flex focus-within:flex has-[[data-open]]:flex has-[[data-popup-open]]:flex [@media(hover:none)]:flex",
+        )}
+      >
         <PriorityPicker
           priority={issue.priority}
           onUpdate={handleUpdate}
@@ -131,33 +136,31 @@ export const BoardCardContent = memo(function BoardCardContent({
     )
   ) : null;
 
-  // The parent row gives this container the leftover space; min-w-0 and
-  // max-w-full make the nested picker trigger respect that limit.
-  const executorContainerClass = executorName
-    ? "flex min-w-0 max-w-full items-center"
-    : "inline-flex items-center";
-
-  const executorInner = hasExecutor ? (
-    <span className="flex min-w-0 max-w-full items-center gap-1.5">
+  const assignedExecutor = showAssignedExecutor ? (
+    <span className="flex shrink-0 items-center">
       <ActorAvatar
         actorType={issue.executor_type!}
         actorId={issue.executor_id!}
-        size="sm"
+        size="xs"
         enableHoverCard
         profileLink={false}
         className="shrink-0"
       />
-      {executorName && (
-        <span className="min-w-0 truncate text-caption text-foreground">{executorName}</span>
-      )}
     </span>
-  ) : (
-    <span className="text-caption text-muted-foreground">{t(($) => $.pickers.executor.trigger_unassigned)}</span>
-  );
+  ) : null;
 
-  const executorNode = showExecutorSection ? (
+  const unassignedAssign = showUnassignedAssign ? (
+    <span
+      className="flex size-4 shrink-0 rounded-full border border-dashed border-muted-foreground/50"
+      aria-label={t(($) => $.pickers.executor.trigger_unassigned)}
+    />
+  ) : null;
+
+  const executorInner = assignedExecutor ?? unassignedAssign;
+
+  const executorNode = executorInner ? (
     canEdit ? (
-      <PickerWrapper className={executorContainerClass}>
+      <PickerWrapper className={cn("inline-flex items-center", showUnassignedAssign && HOVER_REVEAL_CLASS)}>
         <ExecutorPicker
           executorType={issue.executor_type}
           executorId={issue.executor_id}
@@ -166,16 +169,21 @@ export const BoardCardContent = memo(function BoardCardContent({
         />
       </PickerWrapper>
     ) : (
-      <span className={executorContainerClass}>{executorInner}</span>
+      <span className="inline-flex items-center">{executorInner}</span>
     )
   ) : null;
 
-  const showMetaRow = showExecutorSection || showStartDate || showDueDate || showChildProgress;
-  const showRightMeta = !!showStartDate || !!showDueDate || !!showChildProgress || showUpdatedHint;
+  const showMetaRow =
+    showCreatedDate ||
+    !!showStartDate ||
+    !!showDueDate ||
+    !!showChildProgress ||
+    showAssignedExecutor ||
+    showUnassignedAssign;
 
   return (
-    <div className="rounded-lg border-[0.5px] border-surface-border bg-surface py-3 px-2.5 shadow-[var(--surface-shadow)] transition-colors group-hover/card:border-foreground/15 group-hover/card:bg-surface-hover group-data-[popup-open]/card:border-foreground/15 group-data-[popup-open]/card:bg-surface-hover">
-      {/* Row 1: priority + identifier (left), agent activity + executor (right) */}
+    <div className="rounded-lg border-[0.5px] border-surface-border bg-surface py-2 px-2.5 shadow-[var(--surface-shadow)] transition-colors group-hover/card:border-foreground/15 group-hover/card:bg-surface-hover group-data-[popup-open]/card:border-foreground/15 group-data-[popup-open]/card:bg-surface-hover">
+      {/* Row 1: priority + identifier (left), agent activity (right) */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 min-w-0">
           {priorityIconNode}
@@ -206,18 +214,18 @@ export const BoardCardContent = memo(function BoardCardContent({
         <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
           <CustomStatusChip status={issue.status} />
           {showProject && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-1.5 py-0.5 text-micro text-muted-foreground max-w-[160px]">
+            <span className="inline-flex items-center gap-1 text-micro text-muted-foreground max-w-[160px]">
               <ProjectIcon project={project} size="sm" />
               <span className="truncate">{project!.title}</span>
             </span>
           )}
           {showLabels && labels.map((label) => (
-            <LabelChip key={label.id} label={label} />
+            <LabelChip key={label.id} label={label} variant="dot" />
           ))}
           {cardCustomProperties.map((property) => (
             <span
               key={property.id}
-              className="inline-flex max-w-[160px] items-center gap-1 rounded-full bg-muted/60 px-1.5 py-0.5 text-micro text-muted-foreground"
+              className="inline-flex max-w-[160px] items-center gap-1 text-micro text-muted-foreground"
             >
               <PropertyIcon property={property} className="size-3 text-micro" />
               <CustomPropertyValueDisplay property={property} value={issue.properties?.[property.id]} />
@@ -226,52 +234,44 @@ export const BoardCardContent = memo(function BoardCardContent({
         </div>
       )}
 
-      {/* Meta row: executor (left), start date, due date, child progress (right) */}
+      {/* Meta row: dates (left), child progress + executor avatar (right) */}
       {showMetaRow && (
-        <div className="mt-2 flex items-center justify-between gap-2">
-          {showExecutorSection && (
-            <div className="min-w-0 flex-1">
-              {executorNode}
-            </div>
-          )}
-          {showRightMeta && (
-            <div className="ml-auto flex shrink-0 items-center gap-2">
+        <div className="mt-1.5 flex items-center gap-2">
+          {(showStartDate || showDueDate || showCreatedDate) && (
+            <div className="flex min-w-0 flex-1 items-center gap-2">
               {showStartDate && (
                 canEdit ? (
-                  <PickerWrapper className="flex shrink-0">
+                  <PickerWrapper className="flex min-w-0">
                     <StartDatePicker
                       startDate={issue.start_date}
                       onUpdate={handleUpdate}
                       trigger={
-                        <span className="flex items-center gap-1 text-caption text-muted-foreground">
-                          <CalendarClock className="size-3" />
+                        <span className="truncate text-caption text-muted-foreground">
                           {formatDate(issue.start_date!, locale)}
                         </span>
                       }
                     />
                   </PickerWrapper>
                 ) : (
-                  <span className="flex shrink-0 items-center gap-1 text-caption text-muted-foreground">
-                    <CalendarClock className="size-3" />
+                  <span className="truncate text-caption text-muted-foreground">
                     {formatDate(issue.start_date!, locale)}
                   </span>
                 )
               )}
               {showDueDate && (
                 canEdit ? (
-                  <PickerWrapper className="flex shrink-0">
+                  <PickerWrapper className="flex min-w-0">
                     <DueDatePicker
                       dueDate={issue.due_date}
                       onUpdate={handleUpdate}
                       trigger={
                         <span
-                          className={`flex items-center gap-1 text-caption ${
+                          className={`truncate text-caption ${
                             isPastDateOnly(issue.due_date)
                               ? "text-destructive"
                               : "text-muted-foreground"
                           }`}
                         >
-                          <CalendarDays className="size-3" />
                           {formatDate(issue.due_date!, locale)}
                         </span>
                       }
@@ -279,17 +279,25 @@ export const BoardCardContent = memo(function BoardCardContent({
                   </PickerWrapper>
                 ) : (
                   <span
-                    className={`flex shrink-0 items-center gap-1 text-caption ${
+                    className={`truncate text-caption ${
                       isPastDateOnly(issue.due_date)
                         ? "text-destructive"
                         : "text-muted-foreground"
                     }`}
                   >
-                    <CalendarDays className="size-3" />
                     {formatDate(issue.due_date!, locale)}
                   </span>
                 )
               )}
+              {showCreatedDate && (
+                <span className="truncate text-caption text-muted-foreground">
+                  {formatDate(issue.created_at, locale)}
+                </span>
+              )}
+            </div>
+          )}
+          {(!!showChildProgress || executorNode) && (
+            <div className="ml-auto flex shrink-0 items-center gap-1.5">
               {showChildProgress && (
                 <div className="inline-flex shrink-0 items-center gap-1">
                   <ProgressRing done={childProgress!.done} total={childProgress!.total} size={14} />
@@ -298,11 +306,7 @@ export const BoardCardContent = memo(function BoardCardContent({
                   </span>
                 </div>
               )}
-              {showUpdatedHint && (
-                <span className="shrink-0 text-caption text-muted-foreground">
-                  {t(($) => $.card.updated_ago, { time: timeAgo(issue.updated_at) })}
-                </span>
-              )}
+              {executorNode}
             </div>
           )}
         </div>
