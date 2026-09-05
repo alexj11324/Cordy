@@ -83,3 +83,21 @@ html:has([data-native-vibrancy="true"]),
 html:has([data-native-vibrancy="true"]) body {
   background: transparent;
 }
+
+/* Settings takes over the window. Its dashboard stays mounted but invisible,
+   so the settings glass reveals native material rather than navigation below. */
+html:has([data-native-vibrancy="true"]) [data-slot="settings-window"],
+html:has([data-native-vibrancy="true"]) [data-slot="settings-window"] [data-settings-variant="standalone"] {
+  background: transparent;
+}
+
+/* Native sidebar material already supplies blur and tint. Do not paint a
+   second darkened glass layer over it; keep the solid accessibility fallback. */
+@media not (prefers-reduced-transparency: reduce) {
+  html:has([data-native-vibrancy="true"]) [data-sidebar-glass="true"] [data-slot="sidebar-container"],
+  html:has([data-native-vibrancy="true"]) [data-slot="settings-nav"] {
+    background: transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
