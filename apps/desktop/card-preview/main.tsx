@@ -88,12 +88,12 @@ function Preview() {
   return (
     <main className={dark ? "dark preview" : "preview"}>
       <div className="preview-shell">
-        <p className="text-xs tracking-widest text-muted-foreground">
+        <p className="text-caption tracking-widest text-muted-foreground">
           PATCHBAY / LOCAL PREVIEW
         </p>
-        <h1 className="mt-3 text-2xl font-semibold">卡片状态预览</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          正式组件 · 内存数据 · 不连接后端、不启动 Agent
+        <h1 className="mt-3 text-title font-semibold">卡片状态预览</h1>
+        <p className="mt-2 text-body text-muted-foreground">
+          正式组件 · 内存数据 · 不连接后端、不启动智能体
         </p>
         <section className="preview-controls" aria-label="预览控制">
           <label htmlFor="issue-status">
@@ -153,7 +153,7 @@ function Preview() {
         </section>
         <section className="preview-canvas" aria-label="正式卡片">
           <div style={{ width, maxWidth: "100%" }}>
-            <h2 className="mb-3 text-sm font-medium">
+            <h2 className="mb-3 text-body font-medium">
               {status === "in_progress" ? "In progress" : "In review"}
             </h2>
             <div className="group/card" data-testid="preview-card">
@@ -161,9 +161,9 @@ function Preview() {
             </div>
           </div>
         </section>
-        <p className="mt-5 text-xs leading-6 text-muted-foreground">
-          任务状态与执行状态独立。Running 使用正式卡片现有的 Working
-          文字流光；Idle 不显示运行标记。
+        <p className="mt-5 text-caption leading-6 text-muted-foreground">
+          任务状态与执行状态独立。Running 使用正式卡片的边框跑马灯和
+          Working 文字流光；Idle 不显示运行标记。
           <br />
           修改共享组件后刷新此页。此入口不验证真实任务调度，不能替代 staging
           联调。

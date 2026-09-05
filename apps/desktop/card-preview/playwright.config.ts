@@ -2,8 +2,11 @@
 import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
-  testDir: ".",
-  testMatch: "preview.spec.ts",
+  testDir: "../../..",
+  testMatch: [
+    "apps/desktop/card-preview/preview.spec.ts",
+    "packages/views/issues/components/board-card.browser.spec.ts",
+  ],
   outputDir: "../../../test-results/card-preview",
   use: {
     baseURL: "http://127.0.0.1:5188",

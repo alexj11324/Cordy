@@ -129,6 +129,7 @@
     "zustand": "catalog:"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@patchbay/eslint-config": "workspace:*",
     "@patchbay/plugin-sdk": "workspace:*",
     "@patchbay/tsconfig": "workspace:*",

@@ -14,7 +14,7 @@ Different deployed revisions can still look different until deployed.
 Issue status (`in_progress` / `in_review`) and execution (`idle` / `queued` /
 `running`) are separate controls. Running supplies an in-memory `AgentTask`
 snapshot; it does not create a task. The existing Working text shimmers; this
-change does not introduce a new production border animation.
+also exercises the restored running border beam from the shared production card.
 
 The preview has its own in-memory QueryClient and view store. Query fetching is
 paused, API methods fail locally, and CSP blocks fetch, XHR, WebSocket and beacon

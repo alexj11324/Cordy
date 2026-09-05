@@ -21,7 +21,8 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
 }
 .preview-controls select {
   min-height: 36px;

@@ -1075,6 +1075,9 @@ importers:
       '@patchbay/tsconfig':
         specifier: workspace:*
         version: link:../tsconfig
+      '@playwright/test':
+        specifier: ^1.58.2
+        version: 1.58.2
       '@testing-library/jest-dom':
         specifier: 'catalog:'
         version: 6.9.1

@@ -1,6 +1,6 @@
 import type { Agent, AgentTask, Issue, Workspace } from "@patchbay/core/types";
 
-const timestamp = "2026-09-05T12:00:00Z";
+const timestamp = new Date().toISOString();
 export const workspace: Workspace = {
   id: "card-preview-workspace",
   slug: "card-preview",

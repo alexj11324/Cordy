@@ -226,6 +226,11 @@
   pointer-events: none;
 }
 
+/* A card only animates while its real task snapshot contains running work. */
+.running-task-card:not(:has([data-issue-agent-activity="running"]))::before {
+  display: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .border-beam::before {
     animation: none;
