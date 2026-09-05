@@ -295,7 +295,7 @@ describe("CreateProjectModal — local directory execution mode", () => {
     await pickLocalDirectory(user);
 
     expect(screen.getByRole("radio", { name: /Run in parallel, isolated/i })).toBeDisabled();
-    expect(screen.getAllByText(/Patchbay server is too old/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Orvilo server is too old/i).length).toBeGreaterThan(0);
     // And it must not have been preselected either — that would submit a mode
     // the server would silently downgrade.
     expect(screen.getByRole("button", { name: /^Parallel$/i })).toBeInTheDocument();

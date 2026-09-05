@@ -97,7 +97,7 @@ describe("LocalDirectoryModeDialog", () => {
 
     const option = worktreeOption();
     expect(option.hasAttribute("disabled")).toBe(true);
-    const notice = screen.getByText(/Patchbay server is too old/i);
+    const notice = screen.getByText(/Orvilo server is too old/i);
     expect(notice.textContent).toMatch(/Update the server/i);
 
     fireEvent.click(option);
@@ -112,7 +112,7 @@ describe("LocalDirectoryModeDialog", () => {
   it("shows a server rejection inline so the dialog stays actionable", () => {
     renderDialog({
       errorMessage:
-        "the Patchbay runtime on that machine does not support it. Update the Patchbay app on that machine",
+        "the Orvilo runtime on that machine does not support it. Update the Orvilo app on that machine",
     });
     expect(screen.getByText(/does not support it/i)).toBeTruthy();
   });
