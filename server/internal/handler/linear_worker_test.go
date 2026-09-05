@@ -31,11 +31,28 @@ type fakeLinearAPI struct {
 	created  []linear.IssueInput
 	updated  []linear.IssueInput
 	deleted  []string
+	attached []string
 	revoked  []string
 	refresh  linear.Token
 	refreshN int
 	err      error
 	authErr  error
+}
+
+func (f *fakeLinearAPI) ListComments(context.Context, string, string) ([]linear.Comment, error) {
+	return nil, f.err
+}
+func (f *fakeLinearAPI) FetchComment(context.Context, string, string) (linear.Comment, bool, error) {
+	return linear.Comment{}, false, f.err
+}
+func (f *fakeLinearAPI) CreateComment(context.Context, string, string, string, string, string, string) (linear.Comment, error) {
+	return linear.Comment{}, errors.New("comment create not configured in fixture")
+}
+func (f *fakeLinearAPI) UpdateComment(context.Context, string, string, string) error {
+	return errors.New("comment update not configured in fixture")
+}
+func (f *fakeLinearAPI) DeleteComment(context.Context, string, string) error {
+	return errors.New("comment delete not configured in fixture")
 }
 
 func (f *fakeLinearAPI) ExchangeAuthorizationCode(context.Context, string, string, string, string, string) (linear.Token, error) {
@@ -122,7 +139,9 @@ func (f *fakeLinearAPI) CreateIssue(_ context.Context, _ string, in linear.Issue
 	defer f.mu.Unlock()
 	f.created = append(f.created, in)
 	issue := linear.Issue{ID: "10000000-0000-0000-0000-000000000001", Identifier: "ENG-1", Title: in.Title, Description: in.Description, Priority: in.Priority, DueDate: in.DueDate, UpdatedAt: time.Now(), ProjectID: in.ProjectID, TeamID: in.TeamID}
-	if in.AssigneeID != nil { issue.AssigneeID = *in.AssigneeID }
+	if in.AssigneeID != nil {
+		issue.AssigneeID = *in.AssigneeID
+	}
 	f.listed = append(f.listed, issue)
 	return issue, f.err
 }
@@ -132,8 +151,14 @@ func (f *fakeLinearAPI) UpdateIssue(_ context.Context, _ string, id string, in l
 	defer f.mu.Unlock()
 	f.updated = append(f.updated, in)
 	issue := linear.Issue{ID: id, Identifier: "ENG-1", Title: in.Title, Description: in.Description, Priority: in.Priority, DueDate: in.DueDate, UpdatedAt: time.Now(), ProjectID: in.ProjectID, TeamID: in.TeamID}
-	if in.AssigneeID != nil { issue.AssigneeID = *in.AssigneeID }
-	for index := range f.listed { if f.listed[index].ID == id { f.listed[index] = issue } }
+	if in.AssigneeID != nil {
+		issue.AssigneeID = *in.AssigneeID
+	}
+	for index := range f.listed {
+		if f.listed[index].ID == id {
+			f.listed[index] = issue
+		}
+	}
 	return issue, f.err
 }
 
@@ -141,6 +166,13 @@ func (f *fakeLinearAPI) DeleteIssue(_ context.Context, _ string, id string) erro
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.deleted = append(f.deleted, id)
+	return f.err
+}
+
+func (f *fakeLinearAPI) UpsertAttachment(_ context.Context, _, issueID, title, rawURL string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.attached = append(f.attached, issueID+"|"+title+"|"+rawURL)
 	return f.err
 }
 
@@ -219,6 +251,7 @@ func purgeLinearState(t *testing.T) {
 	for _, stmt := range []string{
 		`DELETE FROM issue WHERE workspace_id=$1 AND origin_type='linear'`,
 		`DELETE FROM linear_sync_conflict WHERE workspace_id=$1`,
+		`DELETE FROM linear_comment_link WHERE workspace_id=$1`,
 		`DELETE FROM linear_issue_link WHERE workspace_id=$1`,
 		`DELETE FROM linear_project_binding WHERE workspace_id=$1`,
 		`DELETE FROM linear_sync_outbox WHERE workspace_id=$1`,
@@ -248,8 +281,15 @@ func (f linearFixture) queueWebhook(t *testing.T, delivery string, body []byte) 
 		remote := remoteFromWebhook(envelope)
 		f.api.mu.Lock()
 		found := false
-		for index := range f.api.listed { if f.api.listed[index].ID == remote.ID { f.api.listed[index] = remote; found = true } }
-		if !found && !remote.Deleted { f.api.listed = append(f.api.listed, remote) }
+		for index := range f.api.listed {
+			if f.api.listed[index].ID == remote.ID {
+				f.api.listed[index] = remote
+				found = true
+			}
+		}
+		if !found && !remote.Deleted {
+			f.api.listed = append(f.api.listed, remote)
+		}
 		f.api.mu.Unlock()
 	}
 	return dbfx.Insert(t, "linear_sync_inbox", testutil.Cols{
@@ -1059,7 +1099,7 @@ func TestHandleLinearWebhookPersistsDedupesAndWakesWorker(t *testing.T) {
 	timestamp := time.Now().UnixMilli()
 	body, err := json.Marshal(map[string]any{
 		"type": "Issue", "action": "update", "organizationId": organizationID,
-		"webhookId": "linear-hook-1",
+		"webhookId":        "linear-hook-1",
 		"webhookTimestamp": timestamp,
 		"data":             map[string]any{"id": "40000000-0000-0000-0000-000000000004"},
 	})
@@ -1140,9 +1180,15 @@ func TestDisconnectLinearRevokesAndMarksConnection(t *testing.T) {
 		t.Fatalf("connection status=%q, want revoked", status)
 	}
 	var bindings, links int
-	if err := testPool.QueryRow(context.Background(), `SELECT count(*) FROM linear_project_binding WHERE workspace_id=$1`, testWorkspaceID).Scan(&bindings); err != nil { t.Fatal(err) }
-	if err := testPool.QueryRow(context.Background(), `SELECT count(*) FROM linear_issue_link WHERE workspace_id=$1`, testWorkspaceID).Scan(&links); err != nil { t.Fatal(err) }
-	if bindings != 1 || links != 1 { t.Fatalf("disconnect removed audit state: bindings=%d links=%d", bindings, links) }
+	if err := testPool.QueryRow(context.Background(), `SELECT count(*) FROM linear_project_binding WHERE workspace_id=$1`, testWorkspaceID).Scan(&bindings); err != nil {
+		t.Fatal(err)
+	}
+	if err := testPool.QueryRow(context.Background(), `SELECT count(*) FROM linear_issue_link WHERE workspace_id=$1`, testWorkspaceID).Scan(&links); err != nil {
+		t.Fatal(err)
+	}
+	if bindings != 1 || links != 1 {
+		t.Fatalf("disconnect removed audit state: bindings=%d links=%d", bindings, links)
+	}
 	var issues int
 	if err := testPool.QueryRow(context.Background(), `SELECT count(*) FROM issue WHERE id=$1`, issueID).Scan(&issues); err != nil {
 		t.Fatal(err)

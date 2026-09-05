@@ -222,6 +222,7 @@ func (w *LinearWorker) handleOutbox(ctx context.Context, c linearOutboxClaim) er
 	if b.WorkspaceID != c.WorkspaceID { return errors.New("Linear outbox workspace mismatch") }
 	if b.Mode != "publish" && b.Mode != "two_way" { return nil }
 	token, err := w.accessToken(ctx,b.ConnectionID); if err != nil { return err }
+	if strings.HasPrefix(c.EventType, "comment_") { return w.handleCommentOutbox(ctx,c,b,token) }
 	queries := db.New(w.db)
 	issue, err := queries.GetIssueInWorkspace(ctx,db.GetIssueInWorkspaceParams{ID:c.IssueID,WorkspaceID:b.WorkspaceID})
 	if err != nil && c.EventType != "issue_deleted" { return err }
@@ -263,6 +264,7 @@ func (w *LinearWorker) handleOutbox(ctx context.Context, c linearOutboxClaim) er
 	if err != nil { return err }
 	if strings.TrimSpace(remote.ID) == "" || strings.TrimSpace(remote.Identifier) == "" { return errors.New("Linear mutation returned an incomplete issue") }
 	if remote.UpdatedAt.IsZero() { remote.UpdatedAt = time.Now().UTC() }
+	if err = w.publishLinearWorkProducts(ctx,b,c.IssueID,remote.ID,token);err!=nil{return err}
 	tx, err := w.txStarter.Begin(ctx); if err != nil { return err }; defer tx.Rollback(ctx)
 	if _, err = tx.Exec(ctx,`SELECT set_config('patchbay.linear_remote_apply','on',true)`); err != nil { return err }
 	qtx := db.New(tx)

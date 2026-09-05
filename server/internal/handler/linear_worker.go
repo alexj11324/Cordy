@@ -424,6 +424,7 @@ func (w *LinearWorker) importBinding(ctx context.Context, payload []byte, eventP
 		if err := w.applyRemote(ctx, b, issue, eventID, issue.UpdatedAt.UnixMilli()); err != nil {
 			return err
 		}
+		if err := w.importComments(ctx, b, token, issue.ID); err != nil { return err }
 	}
 	return nil
 }
@@ -438,6 +439,9 @@ func (w *LinearWorker) handleInbox(ctx context.Context, c linearClaim) error {
 	var e webhookEnvelope
 	if err := json.Unmarshal(c.Payload, &e); err != nil {
 		return err
+	}
+	if strings.EqualFold(e.Type, "Comment") {
+		return w.handleCommentInbox(ctx, c)
 	}
 	if e.Type != "Issue" && e.Type != "issue" {
 		return nil
