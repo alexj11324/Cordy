@@ -13,6 +13,7 @@
     "./common/actor-avatar": "./common/actor-avatar.tsx",
     "./editor": "./editor/index.ts",
     "./issues/components": "./issues/components/index.ts",
+    "./issues/board-card": "./issues/components/board-card.tsx",
     "./issues/hooks": "./issues/hooks/index.ts",
     "./issues/utils/filter": "./issues/utils/filter.ts",
     "./issues/utils/sort": "./issues/utils/sort.ts",
@@ -128,6 +129,7 @@
     "zustand": "catalog:"
   },
   "devDependencies": {
+    "@playwright/test": "catalog:",
     "@patchbay/eslint-config": "workspace:*",
     "@patchbay/plugin-sdk": "workspace:*",
     "@patchbay/tsconfig": "workspace:*",

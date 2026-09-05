@@ -9,6 +9,9 @@ catalogs:
     '@formatjs/intl-localematcher':
       specifier: ^0.8.4
       version: 0.8.4
+    '@playwright/test':
+      specifier: ^1.58.2
+      version: 1.58.2
     '@tailwindcss/postcss':
       specifier: ^4
       version: 4.2.2
@@ -130,7 +133,7 @@ importers:
         specifier: 2.2.31
         version: 2.2.31(@playwright/test@1.58.2)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       '@playwright/test':
-        specifier: ^1.58.2
+        specifier: 'catalog:'
         version: 1.58.2
       '@types/node':
         specifier: 'catalog:'
@@ -275,6 +278,9 @@ importers:
       '@patchbay/tsconfig':
         specifier: workspace:*
         version: link:../../packages/tsconfig
+      '@playwright/test':
+        specifier: 'catalog:'
+        version: 1.58.2
       '@tailwindcss/vite':
         specifier: ^4
         version: 4.2.2(vite@8.0.1(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)(@types/node@25.5.0)(jiti@2.7.0)(terser@5.47.1)(yaml@2.9.0))
@@ -317,6 +323,9 @@ importers:
       typescript:
         specifier: 'catalog:'
         version: 5.9.3
+      vite:
+        specifier: 8.0.1
+        version: 8.0.1(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)(@types/node@25.5.0)(jiti@2.7.0)(terser@5.47.1)(yaml@2.9.0)
       vitest:
         specifier: 'catalog:'
         version: 4.1.0(@opentelemetry/api@1.9.1)(@types/node@25.5.0)(jsdom@29.0.1(@noble/hashes@1.8.0))(msw@2.12.14(@types/node@25.5.0)(typescript@5.9.3))(vite@8.0.1(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)(@types/node@25.5.0)(jiti@2.7.0)(terser@5.47.1)(yaml@2.9.0))
@@ -1069,6 +1078,9 @@ importers:
       '@patchbay/tsconfig':
         specifier: workspace:*
         version: link:../tsconfig
+      '@playwright/test':
+        specifier: 'catalog:'
+        version: 1.58.2
       '@testing-library/jest-dom':
         specifier: 'catalog:'
         version: 6.9.1
