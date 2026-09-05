@@ -138,20 +138,19 @@ export const BoardCardContent = memo(function BoardCardContent({
   );
   const canEdit = editable && !!surfaceActions;
   const statusLabel = statusLabelOf(issue.status);
-  // size-3 matches `--text-caption` (12px) and the column-header glyph. A
-  // size-5 hit box made the icon sit in a 20px slot next to 16px caption
-  // type, which reads as "not on the same line" even though the flex row
-  // is shared with the identifier.
+  // size-3 matches `--text-caption` (12px) and the column-header glyph. The
+  // identifier uses leading-none so its box is also 12px — caption's default
+  // 16px line-height made VISU-n sit lower than the circle.
   const statusIcon = (
     <StatusIcon
       status={issue.status}
       category={issueStatusCategory(issue) ?? statusCatalog.categoryOf(issue.status)}
       color={statusCatalog.colorOf(issue.status)}
-      className="size-3 shrink-0"
+      className="block size-3 shrink-0"
     />
   );
   const statusControl = canEdit ? (
-    <PickerWrapper className="inline-flex items-center">
+    <PickerWrapper className="inline-flex size-3 items-center justify-center">
       <StatusPicker
         status={issue.status}
         onUpdate={handleUpdate}
@@ -159,7 +158,7 @@ export const BoardCardContent = memo(function BoardCardContent({
           <button
             type="button"
             aria-label={statusLabel}
-            className="inline-flex items-center justify-center rounded hover:bg-muted/60"
+            className="inline-flex size-3 items-center justify-center rounded hover:bg-muted/60"
           >
             {statusIcon}
           </button>
@@ -170,7 +169,7 @@ export const BoardCardContent = memo(function BoardCardContent({
     <span
       role="img"
       aria-label={statusLabel}
-      className="inline-flex items-center"
+      className="inline-flex size-3 items-center justify-center"
     >
       {statusIcon}
     </span>
@@ -340,12 +339,12 @@ export const BoardCardContent = memo(function BoardCardContent({
   return (
     <div className="rounded-lg border-[0.5px] border-surface-border bg-surface py-2 px-2.5 shadow-[var(--surface-shadow)] transition-colors group-hover/card:border-foreground/15 group-hover/card:bg-surface-hover group-data-[popup-open]/card:border-foreground/15 group-data-[popup-open]/card:bg-surface-hover">
       {/* Row 1: status glyph + identifier (left), activity + owner/executor stack (right).
-          h-4 locks this cluster to caption line-height so the 12px glyph and
-          VISU-n sit on one baseline instead of a taller hit-box. */}
+          Both the 12px glyph and the caption occupy one 12px-tall items-center
+          cluster so they share a baseline instead of a taller hit-box. */}
       <div className="flex items-center justify-between gap-2">
-        <div className="flex h-4 min-w-0 items-center gap-1">
+        <div className="flex h-3 min-w-0 items-center gap-1">
           {statusControl}
-          <span className="min-w-0 truncate text-caption leading-none text-muted-foreground">{issue.identifier}</span>
+          <span className="min-w-0 truncate text-caption !leading-none text-muted-foreground">{issue.identifier}</span>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <IssueAgentActivityIndicator issueId={issue.id} hideAvatars />
