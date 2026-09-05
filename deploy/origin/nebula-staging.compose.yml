@@ -24,7 +24,8 @@ services:
       CLERK_JWT_KEY: ${CLERK_JWT_KEY:?required}
       CLERK_ISSUER: ${CLERK_ISSUER:?required}
       PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN: ${PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN:?required}
-      DATABASE_URL: postgres://patchbay:${POSTGRES_PASSWORD:?required}@postgres:5432/patchbay?sslmode=disable
+      DATABASE_URL: ${STAGING_DATABASE_URL:?required}
+      PATCHBAY_TRUSTED_PROXIES: ${STAGING_TRUSTED_PROXY:?required}
       PORT: '8080'
       FRONTEND_ORIGIN: https://patchbay-staging.nebula-spaces.com
       PATCHBAY_APP_URL: https://patchbay-staging.nebula-spaces.com

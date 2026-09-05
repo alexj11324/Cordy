@@ -20,11 +20,23 @@ Each container has CPU, memory and PID limits; their combined memory ceiling
 is 2560 MiB. PostgreSQL has no published port.
 
 Install the Compose file, starter and the exact manifest.json in the server
-installation directory. The starter fetches credentials into process memory;
+installation directory, using the committed `nebula-staging.manifest.json`
+as the manifest (retain that filename). Install `nebula-staging-realip.conf`
+under `/etc/nginx/snippets/` before validating the nginx configuration.
+The starter fetches credentials into process memory;
 only nginx's transport token is rendered into the private runtime directory.
 The systemd service starts after nginx and reloads it after successful startup.
 The wildcard nginx include permits production nginx to start even when staging
 cannot retrieve its credential.
+
+Startup probes all four applications for HTTP 200 and the snapshot commit
+before publishing the nginx credential and reporting success. Web/API ingress
+allows 101 MiB requests for the product's 100 MiB upload limit and multipart
+overhead. Cloudflare client addresses are accepted only from published proxy
+ranges, nginx overwrites forwarded IP headers, and Go trusts only the discovered
+Docker network gateway. Web `/api/` traffic goes directly to Go to preserve that
+single trusted proxy hop. Update the real-IP ranges from Cloudflare's published
+`https://www.cloudflare.com/ips-v4` and `https://www.cloudflare.com/ips-v6` lists.
 
 Restart with `sudo systemctl restart patchbay-nebula-staging`. Inspect with
 `docker compose -p patchbay-nebula-staging ps` and
