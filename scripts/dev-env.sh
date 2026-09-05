@@ -1460,6 +1460,17 @@ urlencode() {
   node -e 'process.stdout.write(encodeURIComponent(process.argv[1]))' "$1"
 }
 
+# slugify() is the environment-name slugifier: it maps punctuation to "_",
+# which the workspace slug pattern (^[a-z0-9]+(?:-[a-z0-9]+)*$ in
+# server/internal/handler/workspace.go) rejects. A dot in the email local part
+# is the common case — john.doe@example.com — so a per-user workspace needs the
+# workspace rules, not this script's.
+workspace_slugify() {
+  local slug
+  slug="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g; s/--*/-/g; s/^-//; s/-$//')"
+  printf '%s' "${slug:-user}"
+}
+
 open_url() {
   if command -v open >/dev/null 2>&1; then open "$1" >/dev/null 2>&1 && return 0; fi
   if command -v xdg-open >/dev/null 2>&1; then xdg-open "$1" >/dev/null 2>&1 && return 0; fi
@@ -1491,7 +1502,7 @@ dev_workspace_slug() {
   # app root and has to create a workspace through the UI — which is the click
   # path this command exists to remove.
   local candidate
-  for candidate in "$WORKSPACE_SLUG" "${WORKSPACE_SLUG}-$(slugify "${email%%@*}")"; do
+  for candidate in "$WORKSPACE_SLUG" "${WORKSPACE_SLUG}-$(workspace_slugify "${email%%@*}")"; do
     created="$(curl -sS --max-time 10 -X POST "$server/api/workspaces" -H "Authorization: Bearer $token" \
       -H 'Content-Type: application/json' \
       -d "{\"name\":\"$(json_escape "$WORKSPACE_NAME")\",\"slug\":\"$(json_escape "$candidate")\"}")"
@@ -1501,7 +1512,10 @@ dev_workspace_slug() {
       return 0
     fi
   done
-  warn "Workspace creation failed: $created"
+  # stderr, not stdout: the caller captures this function's stdout as the slug,
+  # so a diagnostic printed there would become the workspace name and land in
+  # the redirect path instead of falling back to the app root.
+  warn "Workspace creation failed: $created" >&2
   return 1
 }
 

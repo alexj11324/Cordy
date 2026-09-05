@@ -156,6 +156,7 @@ PATCHBAY_PUBLIC_URL=https://api.patchbay.example.com
 | `REDIS_DISABLE_CLIENT_NAME` | `false` | 托管 Redis 禁止 `CLIENT SETNAME` 时设为 `true` |
 | `RATE_LIMIT_AUTH` | `5` | 单 IP 每分钟发送验证码或发起 Google 登录的次数 |
 | `RATE_LIMIT_AUTH_VERIFY` | `20` | 单 IP 每分钟验证验证码的次数 |
+| `RATE_LIMIT_DEV_LOGIN` | `60` | 单 IP 每分钟请求 `/auth/dev-login` 的次数（仅在 `PATCHBAY_DEV_LOGIN=1` 时生效）|
 | `RATE_LIMIT_INVITATION_ACTOR_10M` | `10` | 每位邀请人在 10 分钟滑动窗口内可创建的工作区邀请数；设为 `0` 可关闭此项限流 |
 | `RATE_LIMIT_INVITATION_WORKSPACE_24H` | `50` | 同一工作区内所有管理员在 24 小时滑动窗口内可创建的邀请总数；设为 `0` 可关闭此项限流 |
 | `RATE_LIMIT_INVITATION_RECIPIENT_24H` | `6` | 同一规范化收件邮箱跨工作区在 24 小时滑动窗口内可收到的邀请数；设为 `0` 可关闭此项限流 |

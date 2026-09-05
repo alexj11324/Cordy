@@ -152,6 +152,43 @@ func TestDevLoginGetRedirectsIntoTheApp(t *testing.T) {
 	}
 }
 
+// A body sent with chunked transfer encoding reports ContentLength -1. Gating
+// the decode on a positive length silently dropped the caller's email and
+// signed them in as the default user instead.
+func TestDevLoginReadsBodyWithUnknownContentLength(t *testing.T) {
+	enableDevLogin(t)
+	const email = "dev-login-chunked@patchbay.ai"
+	deleteUserAfterTest(t, email)
+
+	req := testutil.JSONRequest(http.MethodPost, "/auth/dev-login", map[string]string{"email": email})
+	req.ContentLength = -1
+
+	var body LoginResponse
+	testutil.Call(t, testHandler.DevLogin, req).Want(http.StatusOK).JSON(&body)
+
+	if body.User.Email != email {
+		t.Fatalf("dev login: streamed body was ignored — signed in as %q, want %q", body.User.Email, email)
+	}
+}
+
+// PATCHBAY_APP_URL is the repository's user-facing app URL; a deployment that
+// sets it away from FRONTEND_ORIGIN means the browser to land on the former.
+func TestDevLoginRedirectPrefersConfiguredAppURL(t *testing.T) {
+	enableDevLogin(t)
+	t.Setenv("FRONTEND_ORIGIN", "http://localhost:13000")
+	t.Setenv("PATCHBAY_APP_URL", "https://app.example.com")
+	const email = "dev-login-appurl@patchbay.ai"
+	deleteUserAfterTest(t, email)
+
+	res := testutil.Call(t, testHandler.DevLogin,
+		httptest.NewRequest(http.MethodGet, "/auth/dev-login?email="+email+"&redirect=/dev/issues", nil))
+	res.Want(http.StatusFound)
+
+	if got := res.Header().Get("Location"); got != "https://app.example.com/dev/issues" {
+		t.Fatalf("dev login: expected the redirect to use PATCHBAY_APP_URL, got %q", got)
+	}
+}
+
 // The redirect target is attacker-controllable input on a request that sets a
 // session cookie, so the matrix for what counts as a same-origin path lives
 // here rather than being re-run through the handler.

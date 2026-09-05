@@ -17,6 +17,7 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -85,18 +86,6 @@ func devLoginRedirect(raw string) string {
 	return path
 }
 
-// devLoginAppOrigin is where a browser sign-in lands. FRONTEND_ORIGIN is what
-// the cookie flags are already derived from, so the redirect follows the same
-// value rather than a second, possibly divergent, notion of "the app".
-func devLoginAppOrigin() string {
-	for _, candidate := range []string{os.Getenv("FRONTEND_ORIGIN"), os.Getenv("PATCHBAY_APP_URL")} {
-		if origin := strings.TrimRight(strings.TrimSpace(candidate), "/"); origin != "" {
-			return origin
-		}
-	}
-	return ""
-}
-
 // DevLogin signs in as an email without a verification code.
 //
 // GET redirects to the web app with the session cookies set — that is the
@@ -109,8 +98,12 @@ func (h *Handler) DevLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req devLoginRequest
-	if r.Method == http.MethodPost && r.ContentLength > 0 {
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if r.Method == http.MethodPost {
+		// Decode unconditionally rather than gating on ContentLength: a chunked
+		// or otherwise streamed body reports -1, and skipping it there would
+		// silently sign the caller in as the default user instead of the email
+		// they sent. An absent body is io.EOF, which is legal here.
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
 			writeError(w, http.StatusBadRequest, "invalid request body")
 			return
 		}
@@ -184,7 +177,11 @@ func (h *Handler) DevLogin(w http.ResponseWriter, r *http.Request) {
 	slog.Info("dev login", append(logger.RequestAttrs(r), "user_id", uuidToString(user.ID), "email", user.Email)...)
 
 	if r.Method == http.MethodGet {
-		http.Redirect(w, r, devLoginAppOrigin()+devLoginRedirect(req.Redirect), http.StatusFound)
+		// resolveFrontendAppURL is the repository's app-URL contract
+		// (PATCHBAY_APP_URL, then FRONTEND_ORIGIN); a deployment where the two
+		// differ means the browser to land on the configured app, not on
+		// whatever origin the cookie flags happen to be derived from.
+		http.Redirect(w, r, resolveFrontendAppURL()+devLoginRedirect(req.Redirect), http.StatusFound)
 		return
 	}
 	writeJSON(w, http.StatusOK, LoginResponse{Token: token, User: h.userToResponse(user)})
