@@ -5,9 +5,11 @@ import { AppLink } from "../../navigation";
 import { useSortable, defaultAnimateLayoutChanges } from "@dnd-kit/sortable";
 import type { AnimateLayoutChanges } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { issueStatusCategory } from "@patchbay/core/issues";
 import type { Issue, IssueProperty, Project, UpdateIssueRequest } from "@patchbay/core/types";
 import { useQuery } from "@tanstack/react-query";
 import { useWorkspaceId } from "@patchbay/core/hooks";
+import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
 import { propertyListOptions } from "@patchbay/core/properties";
 import { CustomPropertyValueDisplay } from "./pickers/custom-property-picker";
 import { descriptionPreview } from "./description-preview";
@@ -18,7 +20,7 @@ import { useWorkspacePaths } from "@patchbay/core/paths";
 import { useLocale, useT } from "../../i18n";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { PriorityIcon } from "./priority-icon";
-import { PriorityPicker, OwnerPicker, ExecutorPicker, StartDatePicker, DueDatePicker } from "./pickers";
+import { StatusPicker, PriorityPicker, OwnerPicker, ExecutorPicker, StartDatePicker, DueDatePicker } from "./pickers";
 import { useViewStore } from "@patchbay/core/issues/stores/view-store-context";
 import { ProgressRing } from "./progress-ring";
 import type { ChildProgress } from "./list-row";
@@ -26,6 +28,8 @@ import { IssueActionsContextMenu } from "../actions";
 import { LabelChip } from "../../labels/label-chip";
 import { IssueAgentActivityIndicator } from "./issue-agent-activity-indicator";
 import { CustomStatusChip, useIsCustomStatus } from "./custom-status-chip";
+import { StatusIcon } from "./status-icon";
+import { useStatusLabel } from "../utils/status-label";
 import { useIssueSurfaceActionsOptional } from "../surface/actions-context";
 import { cn } from "@patchbay/ui/lib/utils";
 import { AVATAR_SIZE_PX } from "@patchbay/ui/lib/avatar-size";
@@ -113,6 +117,8 @@ export const BoardCardContent = memo(function BoardCardContent({
   const storeProperties = useViewStore((s) => s.cardProperties);
   const cardPropertyIds = useViewStore((s) => s.cardPropertyIds);
   const cardWsId = useWorkspaceId();
+  const statusCatalog = useIssueStatuses(cardWsId);
+  const statusLabelOf = useStatusLabel(cardWsId);
   const { data: workspaceProperties = [] } = useQuery(propertyListOptions(cardWsId));
   // Custom properties toggled on in Display options, in toggle order, only
   // when this issue actually carries a value.
@@ -131,6 +137,40 @@ export const BoardCardContent = memo(function BoardCardContent({
     [issue.id, surfaceActions, t],
   );
   const canEdit = editable && !!surfaceActions;
+  const statusLabel = statusLabelOf(issue.status);
+  const statusIcon = (
+    <StatusIcon
+      status={issue.status}
+      category={issueStatusCategory(issue) ?? statusCatalog.categoryOf(issue.status)}
+      color={statusCatalog.colorOf(issue.status)}
+      className="h-3.5 w-3.5 shrink-0"
+    />
+  );
+  const statusControl = canEdit ? (
+    <PickerWrapper className="flex">
+      <StatusPicker
+        status={issue.status}
+        onUpdate={handleUpdate}
+        triggerRender={
+          <button
+            type="button"
+            aria-label={statusLabel}
+            className="inline-flex size-5 shrink-0 items-center justify-center rounded hover:bg-muted/60"
+          >
+            {statusIcon}
+          </button>
+        }
+      />
+    </PickerWrapper>
+  ) : (
+    <span
+      role="img"
+      aria-label={statusLabel}
+      className="inline-flex size-5 shrink-0 items-center justify-center"
+    >
+      {statusIcon}
+    </span>
+  );
 
   const showPriority = storeProperties.priority;
   const isNonePriority = issue.priority === "none";
@@ -295,9 +335,12 @@ export const BoardCardContent = memo(function BoardCardContent({
 
   return (
     <div className="rounded-lg border-[0.5px] border-surface-border bg-surface py-2 px-2.5 shadow-[var(--surface-shadow)] transition-colors group-hover/card:border-foreground/15 group-hover/card:bg-surface-hover group-data-[popup-open]/card:border-foreground/15 group-data-[popup-open]/card:bg-surface-hover">
-      {/* Row 1: identifier (left), activity + owner/executor stack (right) */}
+      {/* Row 1: status glyph + identifier (left), activity + owner/executor stack (right) */}
       <div className="flex items-center justify-between gap-2">
-        <p className="min-w-0 truncate text-caption text-muted-foreground">{issue.identifier}</p>
+        <div className="flex min-w-0 items-center gap-1">
+          {statusControl}
+          <p className="min-w-0 truncate text-caption text-muted-foreground">{issue.identifier}</p>
+        </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <IssueAgentActivityIndicator issueId={issue.id} hideAvatars />
           {actorStack}

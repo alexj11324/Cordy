@@ -313,4 +313,44 @@ describe("BoardCardContent executor picker", () => {
     expect(chipRow).toContainElement(priority);
     expect(chipRow).toContainElement(feature);
   });
+
+  it("places the status icon before the identifier, not on the chip row", () => {
+    renderCard(makeIssue("agent", { status: "in_progress" }));
+
+    const status = screen.getByRole("button", { name: "status.in_progress" });
+    const identifier = screen.getByText("MUL-6082");
+    const identifierRow = identifier.closest(".justify-between");
+    const chipRow = identifier.closest("[data-board-chip-row]");
+    if (!(identifierRow instanceof HTMLElement)) {
+      throw new Error("expected identifier row");
+    }
+
+    expect(identifierRow).toContainElement(status);
+    expect(chipRow).toBeNull();
+    expect(status.compareDocumentPosition(identifier) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(status.querySelector('svg[viewBox="0 0 14 14"]')).not.toBeNull();
+  });
+
+  it("uses a different status glyph for backlog, todo, and in progress", () => {
+    const { unmount } = renderCard(makeIssue("agent", { status: "todo" }));
+    const todo = screen.getByRole("button", { name: "status.todo" }).innerHTML;
+    unmount();
+    const second = renderCard(makeIssue("agent", { status: "backlog" }));
+    const backlog = screen.getByRole("button", { name: "status.backlog" }).innerHTML;
+    second.unmount();
+    renderCard(makeIssue("agent", { status: "in_progress" }));
+    const inProgress = screen.getByRole("button", { name: "status.in_progress" }).innerHTML;
+
+    expect(todo).not.toEqual(backlog);
+    expect(todo).not.toEqual(inProgress);
+    expect(backlog).not.toEqual(inProgress);
+  });
+
+  it("opens the status picker from the identifier-row icon without navigating", () => {
+    renderCard(makeIssue("agent", { status: "todo" }));
+
+    expect(fireEvent.click(screen.getByRole("button", { name: "status.todo" }))).toBe(false);
+    expect(document.querySelector("[data-picker-item]")).not.toBeNull();
+    expect(navigation.push).not.toHaveBeenCalled();
+  });
 });
