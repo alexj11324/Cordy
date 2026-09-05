@@ -43,6 +43,12 @@ interface LabelChipProps {
    * the issue sidebar and future board/list card rows.
    */
   fullName?: boolean;
+  /**
+   * `pill` (default) is the filled chip used in the issue sidebar, pickers,
+   * and list rows. `dot` is the quiet board-card form: a 6px color swatch
+   * plus muted name, matching Linear's board density.
+   */
+  variant?: "pill" | "dot";
 }
 
 /**
@@ -50,10 +56,51 @@ interface LabelChipProps {
  * an × button that calls it. Used in the issue-detail sidebar, the picker,
  * and the management dialog.
  */
-export function LabelChip({ label, onRemove, className, fullName }: LabelChipProps) {
+export function LabelChip({
+  label,
+  onRemove,
+  className,
+  fullName,
+  variant = "pill",
+}: LabelChipProps) {
   const { t } = useT("labels");
-  const textColor = contrastTextColor(label.color);
   const nameClass = fullName ? "break-all" : "truncate max-w-[12rem]";
+  const removeButton = onRemove ? (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onRemove();
+      }}
+      // bg-current/20 uses the computed text color so the hover state is
+      // visible on both light and dark chip backgrounds. hover:bg-black/10
+      // was invisible on darker chips (anything requiring light text).
+      className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full hover:bg-current/20 focus:outline-none focus:ring-1 focus:ring-current"
+      aria-label={t(($) => $.remove_label, { name: label.name })}
+    >
+      <X className="h-2.5 w-2.5" strokeWidth={2.5} />
+    </button>
+  ) : null;
+
+  if (variant === "dot") {
+    return (
+      <span
+        className={`inline-flex min-w-0 items-center gap-1 text-micro text-muted-foreground ${className ?? ""}`}
+        aria-label={label.name}
+        title={label.name}
+      >
+        <span
+          className="size-1.5 shrink-0 rounded-full"
+          style={{ backgroundColor: label.color }}
+          aria-hidden
+        />
+        <span className={nameClass}>{label.name}</span>
+        {removeButton}
+      </span>
+    );
+  }
+
+  const textColor = contrastTextColor(label.color);
   return (
     <span
       // `min-w-0` lets the chip shrink when it is a flex item in a width-capped
@@ -68,22 +115,7 @@ export function LabelChip({ label, onRemove, className, fullName }: LabelChipPro
       title={label.name}
     >
       <span className={nameClass}>{label.name}</span>
-      {onRemove && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onRemove();
-          }}
-          // bg-current/20 uses the computed text color so the hover state is
-          // visible on both light and dark chip backgrounds. hover:bg-black/10
-          // was invisible on darker chips (anything requiring light text).
-          className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full hover:bg-current/20 focus:outline-none focus:ring-1 focus:ring-current"
-          aria-label={t(($) => $.remove_label, { name: label.name })}
-        >
-          <X className="h-2.5 w-2.5" strokeWidth={2.5} />
-        </button>
-      )}
+      {removeButton}
     </span>
   );
 }

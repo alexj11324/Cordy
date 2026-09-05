@@ -1,26 +1,26 @@
 "use client";
 
-import { useCallback, memo } from "react";
+import { useCallback, memo, type ReactNode, type SyntheticEvent } from "react";
 import { AppLink } from "../../navigation";
 import { useSortable, defaultAnimateLayoutChanges } from "@dnd-kit/sortable";
 import type { AnimateLayoutChanges } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { issueStatusCategory } from "@patchbay/core/issues";
 import type { Issue, IssueProperty, Project, UpdateIssueRequest } from "@patchbay/core/types";
 import { useQuery } from "@tanstack/react-query";
 import { useWorkspaceId } from "@patchbay/core/hooks";
+import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
 import { propertyListOptions } from "@patchbay/core/properties";
 import { CustomPropertyValueDisplay } from "./pickers/custom-property-picker";
 import { descriptionPreview } from "./description-preview";
 import { formatDateOnly, isPastDateOnly } from "@patchbay/core/issues/date";
-import { CalendarClock, CalendarDays } from "lucide-react";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { PropertyIcon } from "../../common/property-icon";
 import { useWorkspacePaths } from "@patchbay/core/paths";
-import { useActorName } from "@patchbay/core/workspace/hooks";
-import { useLocale, useT, useTimeAgo } from "../../i18n";
+import { useLocale, useT } from "../../i18n";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { PriorityIcon } from "./priority-icon";
-import { PriorityPicker, ExecutorPicker, StartDatePicker, DueDatePicker } from "./pickers";
+import { StatusPicker, PriorityPicker, OwnerPicker, ExecutorPicker, StartDatePicker, DueDatePicker } from "./pickers";
 import { useViewStore } from "@patchbay/core/issues/stores/view-store-context";
 import { ProgressRing } from "./progress-ring";
 import type { ChildProgress } from "./list-row";
@@ -28,14 +28,19 @@ import { IssueActionsContextMenu } from "../actions";
 import { LabelChip } from "../../labels/label-chip";
 import { IssueAgentActivityIndicator } from "./issue-agent-activity-indicator";
 import { CustomStatusChip, useIsCustomStatus } from "./custom-status-chip";
+import { StatusIcon } from "./status-icon";
+import { useStatusLabel } from "../utils/status-label";
 import { useIssueSurfaceActionsOptional } from "../surface/actions-context";
+import { cn } from "@patchbay/ui/lib/utils";
+import { AVATAR_SIZE_PX } from "@patchbay/ui/lib/avatar-size";
+
 function formatDate(date: string, locale: string): string {
   return formatDateOnly(date, { month: "short", day: "numeric" }, locale);
 }
 
 /** Stops event from bubbling to Link/drag handlers */
-function PickerWrapper({ children, className }: { children: React.ReactNode; className?: string }) {
-  const stop = (e: React.SyntheticEvent) => {
+function PickerWrapper({ children, className }: { children: ReactNode; className?: string }) {
+  const stop = (e: SyntheticEvent) => {
     e.stopPropagation();
     e.preventDefault();
   };
@@ -43,6 +48,56 @@ function PickerWrapper({ children, className }: { children: React.ReactNode; cla
     <div onClick={stop} onMouseDown={stop} onPointerDown={stop} className={className}>
       {children}
     </div>
+  );
+}
+
+const HOVER_REVEAL_OPACITY_CLASS =
+  "opacity-0 transition-opacity group-hover/card:opacity-100 group-data-[popup-open]/card:opacity-100 focus-within:opacity-100 has-[[data-open]]:opacity-100 has-[[data-popup-open]]:opacity-100 [@media(hover:none)]:opacity-100";
+
+const HOVER_REVEAL_FLEX_CLASS =
+  "hidden group-hover/card:inline-flex group-data-[popup-open]/card:inline-flex focus-within:inline-flex has-[[data-open]]:inline-flex has-[[data-popup-open]]:inline-flex [@media(hover:none)]:inline-flex";
+
+const BOARD_ACTOR_SIZE = "xs" as const;
+// xs heads are 16px; 30% (the sm-stack default) only shifts 5px and still
+// reads as two adjacent dots. Half-overlap is what makes owner+executor a
+// single stacked chip in the identifier row.
+const BOARD_ACTOR_OVERLAP_PX = Math.round(AVATAR_SIZE_PX[BOARD_ACTOR_SIZE] * 0.5);
+
+function UnassignedActorSlot({ label }: { label: string }) {
+  return (
+    <span
+      className="flex size-4 shrink-0 rounded-full border border-dashed border-muted-foreground/50"
+      aria-label={label}
+    />
+  );
+}
+
+function BoardActorStackSlot({
+  revealOnHover,
+  peekLeft,
+  overlapLeft,
+  children,
+}: {
+  revealOnHover: boolean;
+  peekLeft: boolean;
+  overlapLeft: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex rounded-full ring-2 ring-surface",
+        peekLeft ? "absolute z-[1]" : "relative z-[2]",
+        revealOnHover && HOVER_REVEAL_FLEX_CLASS,
+      )}
+      style={
+        peekLeft
+          ? { right: "100%", marginRight: -BOARD_ACTOR_OVERLAP_PX }
+          : { marginLeft: overlapLeft ? -BOARD_ACTOR_OVERLAP_PX : 0 }
+      }
+    >
+      {children}
+    </span>
   );
 }
 
@@ -59,10 +114,11 @@ export const BoardCardContent = memo(function BoardCardContent({
 }) {
   const { t } = useT("issues");
   const locale = useLocale();
-  const timeAgo = useTimeAgo();
   const storeProperties = useViewStore((s) => s.cardProperties);
   const cardPropertyIds = useViewStore((s) => s.cardPropertyIds);
   const cardWsId = useWorkspaceId();
+  const statusCatalog = useIssueStatuses(cardWsId);
+  const statusLabelOf = useStatusLabel(cardWsId);
   const { data: workspaceProperties = [] } = useQuery(propertyListOptions(cardWsId));
   // Custom properties toggled on in Display options, in toggle order, only
   // when this issue actually carries a value.
@@ -81,13 +137,57 @@ export const BoardCardContent = memo(function BoardCardContent({
     [issue.id, surfaceActions, t],
   );
   const canEdit = editable && !!surfaceActions;
+  const statusLabel = statusLabelOf(issue.status);
+  // size-3 matches `--text-caption` (12px) and the column-header glyph. The
+  // identifier uses leading-none so its box is also 12px — caption's default
+  // 16px line-height made VISU-n sit lower than the circle.
+  const statusIcon = (
+    <StatusIcon
+      status={issue.status}
+      category={issueStatusCategory(issue) ?? statusCatalog.categoryOf(issue.status)}
+      color={statusCatalog.colorOf(issue.status)}
+      className="block size-3 shrink-0"
+    />
+  );
+  const statusControl = canEdit ? (
+    <PickerWrapper className="inline-flex size-3 items-center justify-center">
+      <StatusPicker
+        status={issue.status}
+        onUpdate={handleUpdate}
+        triggerRender={
+          <button
+            type="button"
+            aria-label={statusLabel}
+            className="inline-flex size-3 items-center justify-center rounded hover:bg-muted/60"
+          >
+            {statusIcon}
+          </button>
+        }
+      />
+    </PickerWrapper>
+  ) : (
+    <span
+      role="img"
+      aria-label={statusLabel}
+      className="inline-flex size-3 items-center justify-center"
+    >
+      {statusIcon}
+    </span>
+  );
 
   const showPriority = storeProperties.priority;
+  const isNonePriority = issue.priority === "none";
   const showDescription = storeProperties.description && issue.description;
-  const showExecutorSection = storeProperties.executor;
+  const showActorStack = storeProperties.executor;
+  const hasOwner = !!issue.owner_type && !!issue.owner_id;
   const hasExecutor = !!issue.executor_type && !!issue.executor_id;
+  const showAssignedOwner = showActorStack && hasOwner;
+  const showUnassignedOwner = showActorStack && !hasOwner && canEdit;
+  const showAssignedExecutor = showActorStack && hasExecutor;
+  const showUnassignedExecutor = showActorStack && !hasExecutor && canEdit;
   const showStartDate = storeProperties.startDate && issue.start_date;
   const showDueDate = storeProperties.dueDate && issue.due_date;
+  const showCreatedDate = !showStartDate && !showDueDate;
   const showProject = storeProperties.project && project;
   const showChildProgress = storeProperties.childProgress && childProgress;
   const showLabels = storeProperties.labels && labels.length > 0;
@@ -95,18 +195,25 @@ export const BoardCardContent = memo(function BoardCardContent({
   // chip is the only thing in it and it decides to render nothing.
   const showCustomStatus = useIsCustomStatus(issue.status);
 
-  const showExecutorName = showExecutorSection && hasExecutor && !showStartDate && !showDueDate;
-  const showUpdatedHint = showExecutorName && !showChildProgress;
-  const { getActorName } = useActorName();
-  const executorName =
-    showExecutorName && issue.executor_type && issue.executor_id
-      ? getActorName(issue.executor_type, issue.executor_id)
-      : null;
-
   const priorityLabel = t(($) => $.priority[issue.priority]);
-  const priorityIconNode = showPriority ? (
+  const showPriorityControl = showPriority && (!isNonePriority || canEdit);
+  const showVisibleChipRow =
+    showCustomStatus ||
+    showProject ||
+    showLabels ||
+    cardCustomProperties.length > 0 ||
+    (showPriority && !isNonePriority);
+  const showHoverOnlyPriority = !!showPriorityControl && isNonePriority && !showVisibleChipRow;
+  const showChipRow = showVisibleChipRow || showHoverOnlyPriority;
+  const priorityIconNode = showPriorityControl ? (
     canEdit ? (
-      <PickerWrapper className="flex">
+      <PickerWrapper
+        className={cn(
+          "flex",
+          isNonePriority &&
+            "hidden group-hover/card:flex group-data-[popup-open]/card:flex focus-within:flex has-[[data-open]]:flex has-[[data-popup-open]]:flex [@media(hover:none)]:flex",
+        )}
+      >
         <PriorityPicker
           priority={issue.priority}
           onUpdate={handleUpdate}
@@ -131,57 +238,118 @@ export const BoardCardContent = memo(function BoardCardContent({
     )
   ) : null;
 
-  // The parent row gives this container the leftover space; min-w-0 and
-  // max-w-full make the nested picker trigger respect that limit.
-  const executorContainerClass = executorName
-    ? "flex min-w-0 max-w-full items-center"
-    : "inline-flex items-center";
+  const ownerInner = showAssignedOwner ? (
+    <ActorAvatar
+      actorType={issue.owner_type!}
+      actorId={issue.owner_id!}
+      size={BOARD_ACTOR_SIZE}
+      enableHoverCard
+      profileLink={false}
+      className="shrink-0"
+    />
+  ) : showUnassignedOwner ? (
+    <UnassignedActorSlot label={t(($) => $.pickers.owner.trigger_unassigned)} />
+  ) : null;
 
-  const executorInner = hasExecutor ? (
-    <span className="flex min-w-0 max-w-full items-center gap-1.5">
-      <ActorAvatar
-        actorType={issue.executor_type!}
-        actorId={issue.executor_id!}
-        size="sm"
-        enableHoverCard
-        profileLink={false}
-        className="shrink-0"
-      />
-      {executorName && (
-        <span className="min-w-0 truncate text-caption text-foreground">{executorName}</span>
-      )}
-    </span>
-  ) : (
-    <span className="text-caption text-muted-foreground">{t(($) => $.pickers.executor.trigger_unassigned)}</span>
-  );
+  const executorInner = showAssignedExecutor ? (
+    <ActorAvatar
+      actorType={issue.executor_type!}
+      actorId={issue.executor_id!}
+      size={BOARD_ACTOR_SIZE}
+      enableHoverCard
+      profileLink={false}
+      className="shrink-0"
+    />
+  ) : showUnassignedExecutor ? (
+    <UnassignedActorSlot label={t(($) => $.pickers.executor.trigger_unassigned)} />
+  ) : null;
 
-  const executorNode = showExecutorSection ? (
+  const wrapActorPicker = (inner: ReactNode, picker: ReactNode) =>
     canEdit ? (
-      <PickerWrapper className={executorContainerClass}>
+      <PickerWrapper className="inline-flex items-center">{picker}</PickerWrapper>
+    ) : (
+      <span className="inline-flex items-center">{inner}</span>
+    );
+
+  const actorSlots: { key: "owner" | "executor"; node: ReactNode; revealOnHover: boolean }[] = [];
+  if (ownerInner) {
+    actorSlots.push({
+      key: "owner",
+      revealOnHover: showUnassignedOwner && showAssignedExecutor,
+      node: wrapActorPicker(
+        ownerInner,
+        <OwnerPicker
+          ownerType={issue.owner_type}
+          ownerId={issue.owner_id}
+          onUpdate={handleUpdate}
+          trigger={ownerInner}
+        />,
+      ),
+    });
+  }
+  if (executorInner) {
+    actorSlots.push({
+      key: "executor",
+      revealOnHover: showUnassignedExecutor && showAssignedOwner,
+      node: wrapActorPicker(
+        executorInner,
         <ExecutorPicker
           executorType={issue.executor_type}
           executorId={issue.executor_id}
           onUpdate={handleUpdate}
           trigger={executorInner}
-        />
-      </PickerWrapper>
-    ) : (
-      <span className={executorContainerClass}>{executorInner}</span>
-    )
-  ) : null;
+        />,
+      ),
+    });
+  }
 
-  const showMetaRow = showExecutorSection || showStartDate || showDueDate || showChildProgress;
-  const showRightMeta = !!showStartDate || !!showDueDate || !!showChildProgress || showUpdatedHint;
+  const onlyUnassignedActors =
+    !showAssignedOwner &&
+    !showAssignedExecutor &&
+    (showUnassignedOwner || showUnassignedExecutor);
+
+  const actorStack =
+    actorSlots.length > 0 ? (
+      <span
+        data-board-actor-stack=""
+        className={cn(
+          "relative inline-flex items-center",
+          onlyUnassignedActors && HOVER_REVEAL_OPACITY_CLASS,
+        )}
+      >
+        {actorSlots.map((slot, index) => {
+          const inFlowIndex = actorSlots.slice(0, index).filter((item) => !item.revealOnHover).length;
+          return (
+            <BoardActorStackSlot
+              key={slot.key}
+              revealOnHover={slot.revealOnHover}
+              peekLeft={slot.revealOnHover && index === 0}
+              overlapLeft={slot.revealOnHover || inFlowIndex > 0}
+            >
+              {slot.node}
+            </BoardActorStackSlot>
+          );
+        })}
+      </span>
+    ) : null;
+
+  const showMetaRow =
+    showCreatedDate || !!showStartDate || !!showDueDate || !!showChildProgress;
 
   return (
-    <div className="rounded-lg border-[0.5px] border-surface-border bg-surface py-3 px-2.5 shadow-[var(--surface-shadow)] transition-colors group-hover/card:border-foreground/15 group-hover/card:bg-surface-hover group-data-[popup-open]/card:border-foreground/15 group-data-[popup-open]/card:bg-surface-hover">
-      {/* Row 1: priority + identifier (left), agent activity + executor (right) */}
+    <div className="rounded-lg border-[0.5px] border-surface-border bg-surface py-2 px-2.5 shadow-[var(--surface-shadow)] transition-colors group-hover/card:border-foreground/15 group-hover/card:bg-surface-hover group-data-[popup-open]/card:border-foreground/15 group-data-[popup-open]/card:bg-surface-hover">
+      {/* Row 1: status glyph + identifier (left), activity + owner/executor stack (right).
+          Both the 12px glyph and the caption occupy one 12px-tall items-center
+          cluster so they share a baseline instead of a taller hit-box. */}
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 min-w-0">
-          {priorityIconNode}
-          <p className="text-caption text-muted-foreground truncate">{issue.identifier}</p>
+        <div className="flex h-3 min-w-0 items-center gap-1">
+          {statusControl}
+          <span className="min-w-0 truncate text-caption !leading-none text-muted-foreground">{issue.identifier}</span>
         </div>
-        <IssueAgentActivityIndicator issueId={issue.id} />
+        <div className="flex shrink-0 items-center gap-1.5">
+          <IssueAgentActivityIndicator issueId={issue.id} hideAvatars />
+          {actorStack}
+        </div>
       </div>
 
       {/* Row 2: Title */}
@@ -199,25 +367,33 @@ export const BoardCardContent = memo(function BoardCardContent({
         );
       })()}
 
-      {/* Chip row: status + project + labels + custom property values.
+      {/* Chip row: priority + status + project + labels + custom property values.
+          Priority sits with labels the way Linear does, not next to the id.
           The status chip renders only for a CUSTOM status — the column header
           already names the category. (MUL-6243) */}
-      {(showCustomStatus || showProject || showLabels || cardCustomProperties.length > 0) && (
-        <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+      {showChipRow && (
+        <div
+          data-board-chip-row=""
+          className={cn(
+            "mt-1.5 items-center gap-1.5 flex-wrap",
+            showHoverOnlyPriority ? HOVER_REVEAL_FLEX_CLASS : "flex",
+          )}
+        >
+          {priorityIconNode}
           <CustomStatusChip status={issue.status} />
           {showProject && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-1.5 py-0.5 text-micro text-muted-foreground max-w-[160px]">
+            <span className="inline-flex items-center gap-1 text-micro text-muted-foreground max-w-[160px]">
               <ProjectIcon project={project} size="sm" />
               <span className="truncate">{project!.title}</span>
             </span>
           )}
           {showLabels && labels.map((label) => (
-            <LabelChip key={label.id} label={label} />
+            <LabelChip key={label.id} label={label} variant="dot" />
           ))}
           {cardCustomProperties.map((property) => (
             <span
               key={property.id}
-              className="inline-flex max-w-[160px] items-center gap-1 rounded-full bg-muted/60 px-1.5 py-0.5 text-micro text-muted-foreground"
+              className="inline-flex max-w-[160px] items-center gap-1 text-micro text-muted-foreground"
             >
               <PropertyIcon property={property} className="size-3 text-micro" />
               <CustomPropertyValueDisplay property={property} value={issue.properties?.[property.id]} />
@@ -226,52 +402,44 @@ export const BoardCardContent = memo(function BoardCardContent({
         </div>
       )}
 
-      {/* Meta row: executor (left), start date, due date, child progress (right) */}
+      {/* Meta row: dates (left), child progress (right) */}
       {showMetaRow && (
-        <div className="mt-2 flex items-center justify-between gap-2">
-          {showExecutorSection && (
-            <div className="min-w-0 flex-1">
-              {executorNode}
-            </div>
-          )}
-          {showRightMeta && (
-            <div className="ml-auto flex shrink-0 items-center gap-2">
+        <div className="mt-1.5 flex items-center gap-2">
+          {(showStartDate || showDueDate || showCreatedDate) && (
+            <div className="flex min-w-0 flex-1 items-center gap-2">
               {showStartDate && (
                 canEdit ? (
-                  <PickerWrapper className="flex shrink-0">
+                  <PickerWrapper className="flex min-w-0">
                     <StartDatePicker
                       startDate={issue.start_date}
                       onUpdate={handleUpdate}
                       trigger={
-                        <span className="flex items-center gap-1 text-caption text-muted-foreground">
-                          <CalendarClock className="size-3" />
+                        <span className="truncate text-caption text-muted-foreground">
                           {formatDate(issue.start_date!, locale)}
                         </span>
                       }
                     />
                   </PickerWrapper>
                 ) : (
-                  <span className="flex shrink-0 items-center gap-1 text-caption text-muted-foreground">
-                    <CalendarClock className="size-3" />
+                  <span className="truncate text-caption text-muted-foreground">
                     {formatDate(issue.start_date!, locale)}
                   </span>
                 )
               )}
               {showDueDate && (
                 canEdit ? (
-                  <PickerWrapper className="flex shrink-0">
+                  <PickerWrapper className="flex min-w-0">
                     <DueDatePicker
                       dueDate={issue.due_date}
                       onUpdate={handleUpdate}
                       trigger={
                         <span
-                          className={`flex items-center gap-1 text-caption ${
+                          className={`truncate text-caption ${
                             isPastDateOnly(issue.due_date)
                               ? "text-destructive"
                               : "text-muted-foreground"
                           }`}
                         >
-                          <CalendarDays className="size-3" />
                           {formatDate(issue.due_date!, locale)}
                         </span>
                       }
@@ -279,30 +447,29 @@ export const BoardCardContent = memo(function BoardCardContent({
                   </PickerWrapper>
                 ) : (
                   <span
-                    className={`flex shrink-0 items-center gap-1 text-caption ${
+                    className={`truncate text-caption ${
                       isPastDateOnly(issue.due_date)
                         ? "text-destructive"
                         : "text-muted-foreground"
                     }`}
                   >
-                    <CalendarDays className="size-3" />
                     {formatDate(issue.due_date!, locale)}
                   </span>
                 )
               )}
-              {showChildProgress && (
-                <div className="inline-flex shrink-0 items-center gap-1">
-                  <ProgressRing done={childProgress!.done} total={childProgress!.total} size={14} />
-                  <span className="text-micro text-muted-foreground tabular-nums font-medium">
-                    {childProgress!.done}/{childProgress!.total}
-                  </span>
-                </div>
-              )}
-              {showUpdatedHint && (
-                <span className="shrink-0 text-caption text-muted-foreground">
-                  {t(($) => $.card.updated_ago, { time: timeAgo(issue.updated_at) })}
+              {showCreatedDate && (
+                <span className="truncate text-caption text-muted-foreground">
+                  {formatDate(issue.created_at, locale)}
                 </span>
               )}
+            </div>
+          )}
+          {showChildProgress && (
+            <div className="ml-auto inline-flex shrink-0 items-center gap-1">
+              <ProgressRing done={childProgress!.done} total={childProgress!.total} size={14} />
+              <span className="text-micro text-muted-foreground tabular-nums font-medium">
+                {childProgress!.done}/{childProgress!.total}
+              </span>
             </div>
           )}
         </div>
