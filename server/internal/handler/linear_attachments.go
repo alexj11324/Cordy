@@ -23,12 +23,7 @@ func (w *LinearWorker) publishLinearWorkProducts(ctx context.Context, b workerBi
 			if product.Kind != "pull_request" || !product.ExternalUrl.Valid || product.ExternalUrl.String == "" {
 				continue
 			}
-			u, parseErr := url.Parse(product.ExternalUrl.String)
-			if parseErr != nil || u.Scheme != "https" || u.Host == "" || u.User != nil {
-				scheme := ""
-				if u != nil {
-					scheme = u.Scheme
-				}
+			if ok, scheme := linearAttachmentURLSupported(product.ExternalUrl.String); !ok {
 				slog.WarnContext(ctx, "skipping unsupported Linear PR attachment URL", "work_product_id", uuidToString(product.ID), "scheme", scheme)
 				continue
 			}
@@ -65,6 +60,9 @@ func (w *LinearWorker) deleteLinearWorkProductAttachment(ctx context.Context, b 
 	if event.URL == "" {
 		return errors.New("Linear attachment deletion omitted URL")
 	}
+	if ok, _ := linearAttachmentURLSupported(event.URL); !ok {
+		return nil
+	}
 	var remoteID string
 	err := w.db.QueryRow(ctx, `SELECT linear_issue_id FROM linear_issue_link WHERE workspace_id=$1 AND binding_id=$2 AND patchbay_issue_id=$3 AND sync_status<>'deleted'`, b.WorkspaceID, b.ID, issueID).Scan(&remoteID)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -74,4 +72,12 @@ func (w *LinearWorker) deleteLinearWorkProductAttachment(ctx context.Context, b 
 		return err
 	}
 	return api.DeleteAttachmentByURL(ctx, token, remoteID, event.URL)
+}
+
+func linearAttachmentURLSupported(rawURL string) (bool, string) {
+	u, err := url.Parse(rawURL)
+	if err != nil || u == nil {
+		return false, ""
+	}
+	return u.Scheme == "https" && u.Host != "" && u.User == nil, u.Scheme
 }

@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -22,6 +23,11 @@ func (a *commentMemoryAPI) FetchComment(_ context.Context, _ string, id string) 
 	return c, ok, nil
 }
 func (a *commentMemoryAPI) CreateComment(_ context.Context, _ string, id, issueID, parentID, body, author string) (linearapi.Comment, error) {
+	if parentID != "" {
+		if _, ok := a.comments[parentID]; !ok {
+			return linearapi.Comment{}, errors.New("parent comment does not exist")
+		}
+	}
 	a.creates++
 	c := linearapi.Comment{ID: id, Body: body, UpdatedAt: time.Now()}
 	c.Issue.ID = issueID
@@ -171,6 +177,10 @@ func TestLinearBindingSeedIncludesExistingComments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	reply, err := db.New(testPool).CreateComment(ctx, db.CreateCommentParams{IssueID: parseUUID(issueID), WorkspaceID: parseUUID(testWorkspaceID), AuthorType: "member", AuthorID: parseUUID(testUserID), Content: "Existing reply", Type: "comment", ParentID: created.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err = testPool.Exec(ctx, `DELETE FROM linear_sync_outbox WHERE binding_id=$1`, f.bindingID); err != nil {
 		t.Fatal(err)
 	}
@@ -197,6 +207,23 @@ func TestLinearBindingSeedIncludesExistingComments(t *testing.T) {
 	}
 	if queued != 1 || linked != 1 {
 		t.Fatalf("queued=%d linked=%d", queued, linked)
+	}
+	api := &commentMemoryAPI{fakeLinearAPI: f.api, comments: map[string]linearapi.Comment{}}
+	f.worker.api = api
+	for range 3 {
+		if !f.worker.processOneOutbox(ctx) {
+			t.Fatal("seeded issue/comment outbox was not processed in FIFO order")
+		}
+	}
+	if api.creates != 2 || len(api.comments) != 2 {
+		t.Fatalf("seeded comments created=%d remote=%d", api.creates, len(api.comments))
+	}
+	var replyLinked int
+	if err = testPool.QueryRow(ctx, `SELECT count(*) FROM linear_comment_link WHERE binding_id=$1 AND comment_id=$2`, f.bindingID, reply.ID).Scan(&replyLinked); err != nil {
+		t.Fatal(err)
+	}
+	if replyLinked != 1 {
+		t.Fatal("existing reply was not linked for publishing")
 	}
 }
 
@@ -281,12 +308,52 @@ func TestLinearWorkProductPublishesPullRequestAttachment(t *testing.T) {
 		t.Fatalf("hard-deleted attachments=%v", api.detached)
 	}
 	httpProduct := dbfx.Insert(t, "work_product", testutil.Cols{"workspace_id": testWorkspaceID, "kind": "pull_request", "provider": "gitea", "external_identity": "PR #45", "external_url": "http://git.internal/acme/repo/pulls/45"})
-	dbfx.Insert(t, "work_product_relation", testutil.Cols{"workspace_id": testWorkspaceID, "work_product_id": httpProduct, "issue_id": issueID, "relation_key": "test-http-pr", "relation_source": "manual_explicit", "attached_by_type": "user", "attached_by_id": testUserID})
+	httpRelation := dbfx.Insert(t, "work_product_relation", testutil.Cols{"workspace_id": testWorkspaceID, "work_product_id": httpProduct, "issue_id": issueID, "relation_key": "test-http-pr", "relation_source": "manual_explicit", "attached_by_type": "user", "attached_by_id": testUserID})
 	if !f.worker.processOneOutbox(ctx) {
 		t.Fatal("HTTP PR relation prevented issue sync")
 	}
 	if len(api.attached) != 5 {
 		t.Fatalf("unsupported HTTP attachment was published: %v", api.attached)
+	}
+	if _, err := testPool.Exec(ctx, `UPDATE work_product_relation SET detached_at=now(),detached_by_type='user',detached_by_id=$2 WHERE id=$1`, httpRelation, testUserID); err != nil {
+		t.Fatal(err)
+	}
+	if !f.worker.processOneOutbox(ctx) {
+		t.Fatal("HTTP PR detach was not acknowledged")
+	}
+	if len(api.detached) != 5 {
+		t.Fatalf("unsupported HTTP attachment deletion reached provider: %v", api.detached)
+	}
+}
+
+func TestLinearAttachmentDeletionWaitsForLastLiveRelation(t *testing.T) {
+	f := setupLinearWorker(t, "two_way", &fakeLinearAPI{})
+	ctx := context.Background()
+	issueID := dbfx.Issue(t, "Shared PR relation", testutil.Cols{"project_id": f.projectID})
+	if !f.worker.processOneOutbox(ctx) {
+		t.Fatal("issue not published")
+	}
+	productID := dbfx.Insert(t, "work_product", testutil.Cols{"workspace_id": testWorkspaceID, "kind": "pull_request", "provider": "github", "external_identity": "PR shared", "external_url": "https://github.com/acme/repo/pull/50"})
+	relation1 := dbfx.Insert(t, "work_product_relation", testutil.Cols{"workspace_id": testWorkspaceID, "work_product_id": productID, "issue_id": issueID, "relation_key": "shared-1", "relation_source": "manual_explicit", "attached_by_type": "user", "attached_by_id": testUserID})
+	relation2 := dbfx.Insert(t, "work_product_relation", testutil.Cols{"workspace_id": testWorkspaceID, "work_product_id": productID, "issue_id": issueID, "relation_key": "shared-2", "relation_source": "manual_explicit", "attached_by_type": "user", "attached_by_id": testUserID})
+	if _, err := testPool.Exec(ctx, `UPDATE work_product_relation SET detached_at=now(),detached_by_type='user',detached_by_id=$2 WHERE id=$1`, relation1, testUserID); err != nil {
+		t.Fatal(err)
+	}
+	var deletions int
+	if err := testPool.QueryRow(ctx, `SELECT count(*) FROM linear_sync_outbox WHERE binding_id=$1 AND issue_id=$2 AND event_type='attachment_deleted'`, f.bindingID, issueID).Scan(&deletions); err != nil {
+		t.Fatal(err)
+	}
+	if deletions != 0 {
+		t.Fatalf("first detach queued %d attachment deletions while another relation remained", deletions)
+	}
+	if _, err := testPool.Exec(ctx, `UPDATE work_product_relation SET detached_at=now(),detached_by_type='user',detached_by_id=$2 WHERE id=$1`, relation2, testUserID); err != nil {
+		t.Fatal(err)
+	}
+	if err := testPool.QueryRow(ctx, `SELECT count(*) FROM linear_sync_outbox WHERE binding_id=$1 AND issue_id=$2 AND event_type='attachment_deleted'`, f.bindingID, issueID).Scan(&deletions); err != nil {
+		t.Fatal(err)
+	}
+	if deletions != 1 {
+		t.Fatalf("last detach queued %d attachment deletions, want 1", deletions)
 	}
 }
 

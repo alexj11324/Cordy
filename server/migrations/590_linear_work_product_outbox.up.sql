@@ -19,6 +19,15 @@ BEGIN
     ELSE
         RETURN COALESCE(NEW, OLD);
     END IF;
+    IF operation='attachment_deleted' AND EXISTS (
+        SELECT 1 FROM work_product_relation other
+        WHERE other.workspace_id=source_relation.workspace_id
+          AND other.work_product_id=source_relation.work_product_id
+          AND other.issue_id=source_relation.issue_id
+          AND other.id<>source_relation.id
+          AND other.detached_at IS NULL
+          AND other.relation_source IN ('manual_explicit','task_explicit','execution_branch_discovery','provider_discovery')
+    ) THEN RETURN COALESCE(NEW, OLD); END IF;
     FOR binding IN
         SELECT b.id FROM linear_project_binding b
         JOIN issue i ON i.project_id=b.patchbay_project_id AND i.workspace_id=b.workspace_id
