@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/patchbay-ai/patchbay/server/internal/testexec"
+
 	"github.com/patchbay-ai/patchbay/server/pkg/agent"
 	"github.com/patchbay-ai/patchbay/server/pkg/taskfailure"
 )
@@ -23,7 +25,7 @@ func TestStreamCapacityRecoveryProtocol(t *testing.T) {
 	for _, provider := range []string{"claude", "cursor"} {
 		for _, outcome := range []string{"success", "quota", "bare429", "cancel"} {
 			t.Run(provider+"/"+outcome, func(t *testing.T) {
-				root := t.TempDir()
+				root := testexec.TempDir(t)
 				bin := filepath.Join(root, provider)
 				script := `#!/bin/sh
 set -eu

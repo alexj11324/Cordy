@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -276,6 +277,9 @@ func (b *cursorBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 				// Current Cursor Agent versions can emit the terminal result
 				// event but keep a worker process alive. Treat result as the
 				// protocol boundary so the daemon can report completion.
+				// Signal synchronously: os/exec may skip its cancellation hook if
+				// the leader exits first, leaving an owned worker alive.
+				signalProcessGroup(cmd, syscall.SIGKILL)
 				cancel()
 
 			case "error":
@@ -344,7 +348,7 @@ func (b *cursorBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 		}
 
 		exitErr := cmd.Wait()
-		cleanupConfirmed := cmd.ProcessState != nil && waitProcessGroupGone(cmd, 0)
+		cleanupConfirmed := cmd.ProcessState != nil && waitProcessGroupGone(cmd, 5*time.Second)
 		releaseProcessGroup(cmd)
 		duration := time.Since(startTime)
 
@@ -463,7 +467,7 @@ func (b *cursorBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 			DurationMs:         duration.Milliseconds(),
 			SessionID:          sessionID,
 			Usage:              resultUsage,
-			RecoveryResumeSafe: cleanupConfirmed && (scanErr == nil || resultSeen) && recoveryError == "" && sessionID != "" && ((resultSeen && resultIsError) || protocolError != ""),
+			RecoveryResumeSafe: cleanupConfirmed && writeErr == nil && (scanErr == nil || resultSeen) && recoveryError == "" && sessionID != "" && ((resultSeen && resultIsError) || protocolError != ""),
 		}
 	}()
 

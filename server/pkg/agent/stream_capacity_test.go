@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/patchbay-ai/patchbay/server/internal/testexec"
 )
 
 // Run only a test-owned executable, never a user-installed coding agent.
@@ -18,7 +20,7 @@ func runCapacityStreamFixture(t *testing.T, provider, frames string, opts ExecOp
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX shell fixture")
 	}
-	root := t.TempDir()
+	root := testexec.TempDir(t)
 	bin := filepath.Join(root, provider)
 	readInput := "read line\n"
 	if provider == "cursor" {

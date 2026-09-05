@@ -3,10 +3,14 @@ package agent
 import (
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/patchbay-ai/patchbay/server/internal/testexec"
 )
 
 func TestCodexCapacityErrorMetadata(t *testing.T) {
@@ -47,15 +51,19 @@ func TestCodexCapacityStrictResume(t *testing.T) {
 	for _, response := range []string{`{"error":{"code":-32000,"message":"thread not found"}}`, `{"result":{"thread":{"id":"different"}}}`, `{"result":{}}`} {
 		t.Run(response, func(t *testing.T) {
 			reply := strings.TrimPrefix(response, "{")
-			bin := writeFakeCodexAppServer(t, `read line
+			bin := filepath.Join(testexec.TempDir(t), "codex")
+			script := "#!/bin/sh\n" + `read line
  echo '{"jsonrpc":"2.0","id":1,"result":{}}'
  read line
  read line
- echo '{"jsonrpc":"2.0","id":2,`+reply+`'
+ echo '{"jsonrpc":"2.0","id":2,` + reply + `'
  while read line; do
   echo '{"jsonrpc":"2.0","id":3,"result":{"thread":{"id":"unexpected-fresh"}}}'
  done
-`)
+`
+			if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
+				t.Fatal(err)
+			}
 			r := executeFakeCodex(t, bin, ExecOptions{RequireResume: true, ResumeSessionID: "original", Timeout: 3 * time.Second})
 			if r.Status != "failed" || r.SessionID != "" {
 				t.Fatalf("unexpected fresh execution: %+v", r)

@@ -16,13 +16,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/patchbay-ai/patchbay/server/internal/testexec"
+
 	"github.com/patchbay-ai/patchbay/server/pkg/agent"
 )
 
 // Drive real Codex adapter subprocesses and daemon message reporting. Only the
 // upstream model is simulated; no installed CLI or account is accessed.
 func TestCapacityRecoveryProtocolRuntime(t *testing.T) {
-	root := t.TempDir()
+	root := testexec.TempDir(t)
 	// Keep usage discovery inside the fixture rather than the user's history.
 	if err := os.MkdirAll(filepath.Join(root, "home", "sessions"), 0700); err != nil {
 		t.Fatal(err)
