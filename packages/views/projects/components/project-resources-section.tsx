@@ -140,6 +140,15 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
   const attachedUrls = new Set(
     resources.filter(isGithubRef).map((r) => r.resource_ref.url),
   );
+  // A project may not have a project-level github_repo yet. Workspace remotes
+  // are the fallback source shown when a member is binding the project on a
+  // second machine; once a project-specific source exists, it is the only
+  // source offered for cloning.
+  const projectRepoUrls = [...attachedUrls];
+  const availableCloneUrls =
+    projectRepoUrls.length > 0
+      ? projectRepoUrls
+      : (workspace?.repos ?? []).map((repo) => repo.url);
   const attachedLocalPaths = new Set(
     resources
       .filter(isLocalDirectoryRef)
@@ -475,7 +484,7 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
           </Popover>
           {desktopMode && (
             <div className="flex flex-col">
-              {!hasLocalDirectoryForCurrentDaemon && [...attachedUrls].map(url => (
+              {!hasLocalDirectoryForCurrentDaemon && availableCloneUrls.map(url => (
                 <Button key={url} variant="ghost" size="sm" className="h-auto justify-start whitespace-normal px-2 text-caption"
                   disabled={picking || createResource.isPending || !daemonStatus.running}
                   onClick={() => void handleAttachLocalDirectory(url)}>
