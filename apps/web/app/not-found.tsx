@@ -12,7 +12,7 @@ export default function NotFound() {
         The page you are looking for doesn&rsquo;t exist or has been moved.
       </p>
       <Link href="/" className={buttonVariants({ className: "mt-2" })}>
-        Back to Patchbay
+        Back to Orvilo
       </Link>
     </main>
   );

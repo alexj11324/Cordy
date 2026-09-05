@@ -651,7 +651,7 @@ async function mintPat(jwt: string): Promise<string> {
       Authorization: `Bearer ${jwt}`,
     },
     // Omit expires_in_days → server treats as null → non-expiring PAT.
-    body: JSON.stringify({ name: "Patchbay Desktop" }),
+    body: JSON.stringify({ name: "Orvilo Desktop" }),
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");

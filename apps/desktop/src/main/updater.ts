@@ -113,13 +113,13 @@ const menuUpdateCopyByLocale: Record<
 > = {
   en: {
     upToDate: "You're up to date",
-    upToDateDetail: (version) => `Patchbay ${version} is the latest version.`,
+    upToDateDetail: (version) => `Orvilo ${version} is the latest version.`,
     updateAvailable: "A new version is available",
     updateAvailableDetail: (version) =>
       `Version ${version} is downloading in the background. You'll be notified when it's ready to install.`,
     readyMessage: "Update ready",
     readyDetail: (version) =>
-      `Version ${version} is ready to install. Restart Patchbay to apply it.`,
+      `Version ${version} is ready to install. Restart Orvilo to apply it.`,
     restartNow: "Restart Now",
     later: "Later",
     checkFailed: "Couldn't check for updates",
@@ -132,7 +132,7 @@ const menuUpdateCopyByLocale: Record<
     updateAvailableDetail: (version) =>
       `正在后台下载 ${version}，就绪后会通知你。`,
     readyMessage: "更新已就绪",
-    readyDetail: (version) => `版本 ${version} 已准备好安装。重启 Patchbay 以完成更新。`,
+    readyDetail: (version) => `版本 ${version} 已准备好安装。重启 Orvilo 以完成更新。`,
     restartNow: "立即重启",
     later: "稍后",
     checkFailed: "无法检查更新",

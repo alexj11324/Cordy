@@ -93,7 +93,7 @@ export function DesktopEntryPage({
               noSpin
             />
             <h1 className="text-5xl font-semibold tracking-[-0.04em] text-white sm:text-6xl">
-              Patchbay
+              Orvilo
             </h1>
           </div>
           <p className="mt-12 max-w-lg text-balance text-title leading-relaxed font-medium text-zinc-200 sm:text-display-sm">

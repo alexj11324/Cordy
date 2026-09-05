@@ -419,7 +419,7 @@ describe("runMenuUpdateCheck", () => {
       expect.objectContaining({
         type: "info",
         message: "You're up to date",
-        detail: "Patchbay 0.3.17 is the latest version.",
+        detail: "Orvilo 0.3.17 is the latest version.",
       }),
     );
     expect(ctx.quitAndInstall).not.toHaveBeenCalled();

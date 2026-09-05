@@ -2,21 +2,21 @@ import type { ReactNode } from "react";
 import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
 
 /**
- * The approved shadcn authentication composition: a white form panel on the
+ * The approved shadcn authentication composition: a dark form panel on the
  * left and a black brand panel on the right. Small screens keep the form
  * usable by collapsing the decorative panel.
  */
-export function ClerkAuthShell({ children }: { children: ReactNode }) {
+export function AuthShell({ children }: { children: ReactNode }) {
   return (
     <main
-      data-testid="clerk-auth-shell"
-      className="grid min-h-dvh w-full bg-white md:grid-cols-2"
+      data-testid="auth-shell"
+      className="grid min-h-dvh w-full bg-zinc-950 md:grid-cols-2"
     >
-      <section className="grid min-h-dvh overflow-y-auto bg-white p-6 text-zinc-950 [place-items:safe_center] md:p-10">
+      <section className="grid min-h-dvh overflow-y-auto bg-zinc-950 p-6 text-white [place-items:safe_center] md:p-10">
         {children}
       </section>
       <aside
-        data-testid="clerk-auth-brand-panel"
+        data-testid="auth-brand-panel"
         className="relative hidden min-h-dvh overflow-hidden bg-zinc-950 text-white md:flex md:items-center md:justify-center"
         aria-hidden="true"
       >

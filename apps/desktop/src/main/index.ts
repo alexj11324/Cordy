@@ -655,16 +655,18 @@ const DEV_APP_NAME = process.env.DESKTOP_APP_SUFFIX
   : "Patchbay Canary";
 
 if (is.dev) {
-  app.setName(DEV_APP_NAME);
+  app.setName(DEV_APP_NAME.replace("Patchbay", "Orvilo"));
   app.setPath("userData", join(app.getPath("appData"), DEV_APP_NAME));
 } else {
   // Pin the production app name in code. Electron's Linux WM_CLASS is set
   // from app.getName() when the first BrowserWindow is realized; the
   // packaged ASAR's package.json `productName` already steers app.getName()
-  // to "Patchbay", but anchoring it here makes WM_CLASS ↔ StartupWMClass
+  // to "Orvilo", but anchoring it here makes WM_CLASS ↔ StartupWMClass
   // (declared in electron-builder.yml) survive a regression in
   // productName / the build pipeline. Must run before requestSingleInstanceLock().
-  app.setName("Patchbay");
+  // Keep existing sessions and settings in the pre-rebrand directory.
+  app.setPath("userData", join(app.getPath("appData"), "Patchbay"));
+  app.setName("Orvilo");
 }
 
 // --- Protocol registration -----------------------------------------------

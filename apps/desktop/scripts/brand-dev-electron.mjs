@@ -20,7 +20,7 @@ export function devBundleIdentity(appRoot, suffix) {
   const bundleId = `ai.patchbay.desktop.canary.${hash}`;
   const callbackProtocol = callbackProtocolForPath(appRoot);
   return {
-    name: suffix ? `Patchbay Canary ${suffix}` : "Patchbay Canary",
+    name: suffix ? `Orvilo Canary ${suffix}` : "Orvilo Canary",
     bundleId,
     callbackProtocol,
     callbackSchemes: [callbackProtocol],
