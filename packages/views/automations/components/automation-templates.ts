@@ -246,7 +246,9 @@ Invariants are the "this must stay true" rules in this repo (layering, no FK cas
     trigger: "issue_created",
     action: "send_slack",
     triggerKind: "webhook",
-    eventFilters: [{ event: "issues", actions: ["opened"] }],
+    // Linear normalizes to `linear.issue.create`, not GitHub's
+    // `issues`/`opened` pair — see inferProviderEvent in the server handler.
+    eventFilters: [{ event: "issue", actions: ["create"] }],
     prompt: `# Goal
 Triage dependency-vulnerability tickets and open upgrade PRs when the fix is safe.
 
@@ -265,6 +267,8 @@ This run fires when a dependency advisory issue is created. Do not bump majors b
     trigger: "new_message_in_channel",
     action: "send_slack",
     triggerKind: "webhook",
+    // Slack nests the real event under `event.type`, which normalizes to
+    // `slack.message[.<subtype>]`.
     eventFilters: [{ event: "message" }],
     prompt: `# Goal
 Monitor a channel for bug reports, investigate the codebase, and fix with a pull request when the issue is real and scoped.
@@ -322,6 +326,8 @@ This run fires when checks complete. Only act on the default branch. Do not figh
     trigger: "incident_triggered",
     action: "datadog",
     triggerKind: "webhook",
+    // PagerDuty V3 nests `event.event_type`, which normalizes to
+    // `pagerduty.incident.<action>`; an action-less filter takes them all.
     eventFilters: [{ event: "incident" }],
     prompt: `# Goal
 Investigate a newly triggered incident using observability data and code context, then write a first-pass diagnosis.
@@ -341,7 +347,9 @@ This run fires when an incident is triggered. Speed and a clear timeline matter 
     trigger: "sentry_issue_event",
     action: "send_slack",
     triggerKind: "webhook",
-    eventFilters: [{ event: "error" }],
+    // Sentry names the resource in `Sentry-Hook-Resource`: issue alerts send
+    // `issue`, error webhooks send `error`. Accept both.
+    eventFilters: [{ event: "error" }, { event: "issue" }],
     prompt: `# Goal
 Investigate errors from Sentry, identify root causes, and propose fixes.
 
@@ -379,7 +387,7 @@ This is a scheduled look at the error budget, not a page. Focus on the top recur
     trigger: "issue_created",
     action: "send_slack",
     triggerKind: "webhook",
-    eventFilters: [{ event: "issues", actions: ["opened"] }],
+    eventFilters: [{ event: "issue", actions: ["create"] }],
     prompt: `# Goal
 Triage new issues by investigating bugs, planning feature requests, and opening PRs for easy fixes.
 
@@ -453,6 +461,8 @@ Numbers without a comparison are trivia. Always show WoW/WoW and call out the se
     trigger: "new_message_in_channel",
     action: "notion",
     triggerKind: "webhook",
+    // Slack nests the real event under `event.type`, which normalizes to
+    // `slack.message[.<subtype>]`.
     eventFilters: [{ event: "message" }],
     prompt: `# Goal
 Answer product questions in a dedicated channel using Slack, Notion, issue, and repository context.

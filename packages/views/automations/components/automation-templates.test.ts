@@ -55,6 +55,37 @@ describe("automation template catalog", () => {
     ]);
   });
 
+  // The server normalizes provider deliveries to `<provider>.<event>[.<action>]`
+  // (see inferProviderEvent in server/internal/handler/automation_webhook.go).
+  // A seeded filter that cannot match its own provider makes the template look
+  // installed while every delivery is recorded as `event_filtered`.
+  it("seeds event filters the intended provider can actually satisfy", () => {
+    const filtersFor = (id: (typeof AUTOMATION_TEMPLATE_IDS)[number]) => {
+      const template = AUTOMATION_TEMPLATES[id];
+      return template.triggerKind === "webhook" ? template.eventFilters : [];
+    };
+    // Linear: `{"type":"Issue","action":"create"}` -> linear.issue.create
+    for (const id of [
+      "triage_linear_issues",
+      "remediate_dependency_vulnerabilities",
+    ] as const) {
+      expect(filtersFor(id)).toEqual([{ event: "issue", actions: ["create"] }]);
+    }
+    // Slack: `{"event":{"type":"message"}}` -> slack.message
+    for (const id of ["fix_bugs_reported_in_slack", "product_faq"] as const) {
+      expect(filtersFor(id)).toEqual([{ event: "message" }]);
+    }
+    // PagerDuty: `{"event":{"event_type":"incident.triggered"}}`
+    expect(filtersFor("investigate_pagerduty_incidents")).toEqual([
+      { event: "incident" },
+    ]);
+    // Sentry names the resource in a header: `issue` or `error`.
+    expect(filtersFor("investigate_sentry_issues")).toEqual([
+      { event: "error" },
+      { event: "issue" },
+    ]);
+  });
+
   it("keeps catalog ids aligned with the English locale keys", () => {
     const templates = enAutomations.templates;
     const categories = enAutomations.template_categories;

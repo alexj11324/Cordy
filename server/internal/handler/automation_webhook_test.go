@@ -353,3 +353,146 @@ func TestSplitWebhookEvent(t *testing.T) {
 		}
 	}
 }
+
+// ── Provider shapes whose event is not a top-level string ───────────────────
+//
+// These four providers back shipped automation templates. Each case pairs the
+// delivery shape the provider actually sends with the event filter the
+// template seeds, so a normalization regression surfaces as a template that
+// silently records `event_filtered`.
+
+func TestNormalizeWebhookPayload_SlackNestedEvent(t *testing.T) {
+	body := []byte(`{"type":"event_callback","team_id":"T1","event":{"type":"message","text":"it crashed","channel":"C1"}}`)
+	env, err := normalizeWebhookPayload(body, http.Header{})
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	if env.Event != "slack.message" {
+		t.Fatalf("event: got %q, want slack.message", env.Event)
+	}
+	if !webhookEventAllowedByTriggerScope([]byte(`[{"event":"message"}]`), env) {
+		t.Fatal("fix_bugs_reported_in_slack filter should accept a Slack message event")
+	}
+}
+
+func TestNormalizeWebhookPayload_SlackNestedEventSubtypeIsAction(t *testing.T) {
+	body := []byte(`{"type":"event_callback","event":{"type":"message","subtype":"bot_message"}}`)
+	env, err := normalizeWebhookPayload(body, http.Header{})
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	if env.Event != "slack.message.bot_message" {
+		t.Fatalf("event: got %q, want slack.message.bot_message", env.Event)
+	}
+	// An action-less filter still takes every subtype.
+	if !webhookEventAllowedByTriggerScope([]byte(`[{"event":"message"}]`), env) {
+		t.Fatal("action-less message filter should accept a subtyped message")
+	}
+	if webhookEventAllowedByTriggerScope([]byte(`[{"event":"message","actions":["channel_join"]}]`), env) {
+		t.Fatal("subtype should be filterable as an action")
+	}
+}
+
+func TestNormalizeWebhookPayload_SlackUrlVerificationKeepsTopLevelType(t *testing.T) {
+	body := []byte(`{"type":"url_verification","challenge":"abc"}`)
+	env, err := normalizeWebhookPayload(body, http.Header{})
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	if env.Event != "url_verification" {
+		t.Fatalf("event: got %q, want url_verification", env.Event)
+	}
+}
+
+func TestNormalizeWebhookPayload_LinearHeaderAndBody(t *testing.T) {
+	body := []byte(`{"action":"create","type":"Issue","data":{"id":"iss_1","title":"Bug"}}`)
+
+	withHeader := http.Header{}
+	withHeader.Set("Linear-Event", "Issue")
+	env, err := normalizeWebhookPayload(body, withHeader)
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	if env.Event != "linear.issue.create" {
+		t.Fatalf("event with header: got %q, want linear.issue.create", env.Event)
+	}
+
+	// Same payload without the header still resolves: `type` + a Linear
+	// action + `data` is enough to claim the envelope.
+	env, err = normalizeWebhookPayload(body, http.Header{})
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	if env.Event != "linear.issue.create" {
+		t.Fatalf("event without header: got %q, want linear.issue.create", env.Event)
+	}
+	if !webhookEventAllowedByTriggerScope([]byte(`[{"event":"issue","actions":["create"]}]`), env) {
+		t.Fatal("triage_linear_issues filter should accept a Linear issue-created event")
+	}
+	if webhookEventAllowedByTriggerScope([]byte(`[{"event":"issues","actions":["opened"]}]`), env) {
+		t.Fatal("GitHub-shaped filter must not silently match a Linear event")
+	}
+}
+
+func TestNormalizeWebhookPayload_LinearShapeNotClaimedWithoutEnvelope(t *testing.T) {
+	// `type` + `action` alone is a common generic shape; without Linear's
+	// `data` object we must not relabel it as Linear.
+	body := []byte(`{"type":"Order","action":"create"}`)
+	env, err := normalizeWebhookPayload(body, http.Header{})
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	if env.Event != "Order" {
+		t.Fatalf("event: got %q, want Order", env.Event)
+	}
+}
+
+func TestNormalizeWebhookPayload_PagerDutyNestedEventType(t *testing.T) {
+	body := []byte(`{"event":{"id":"01","event_type":"incident.triggered","resource_type":"incident","data":{"id":"PX"}}}`)
+	env, err := normalizeWebhookPayload(body, http.Header{})
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	if env.Event != "pagerduty.incident.triggered" {
+		t.Fatalf("event: got %q, want pagerduty.incident.triggered", env.Event)
+	}
+	if !webhookEventAllowedByTriggerScope([]byte(`[{"event":"incident"}]`), env) {
+		t.Fatal("investigate_pagerduty_incidents filter should accept a triggered incident")
+	}
+}
+
+func TestNormalizeWebhookPayload_SentryResourceHeader(t *testing.T) {
+	for _, tc := range []struct {
+		resource string
+		want     string
+	}{
+		{"error", "sentry.error.created"},
+		{"issue", "sentry.issue.created"},
+	} {
+		headers := http.Header{}
+		headers.Set("Sentry-Hook-Resource", tc.resource)
+		env, err := normalizeWebhookPayload([]byte(`{"action":"created","data":{"issue":{"id":"1"}}}`), headers)
+		if err != nil {
+			t.Fatalf("normalize %s: %v", tc.resource, err)
+		}
+		if env.Event != tc.want {
+			t.Fatalf("event for %s: got %q, want %q", tc.resource, env.Event, tc.want)
+		}
+		if !webhookEventAllowedByTriggerScope([]byte(`[{"event":"error"},{"event":"issue"}]`), env) {
+			t.Fatalf("investigate_sentry_issues filter should accept a %s delivery", tc.resource)
+		}
+	}
+}
+
+func TestNormalizeWebhookPayload_CallerEnvelopeStillWinsOverProviderShape(t *testing.T) {
+	// An explicit `{event, eventPayload}` envelope is the documented escape
+	// hatch and must not be reinterpreted by provider inference.
+	body := []byte(`{"event":"custom.thing","eventPayload":{"type":"event_callback"}}`)
+	env, err := normalizeWebhookPayload(body, http.Header{})
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	if env.Event != "custom.thing" {
+		t.Fatalf("event: got %q, want custom.thing", env.Event)
+	}
+}
