@@ -43,5 +43,12 @@ func run(ctx context.Context) error {
 	}
 	fmt.Printf("Seeded %s (%s): %d issues, %d graph nodes, %d graph edges.\n",
 		result.Workspace, result.WorkspaceID, result.Issues, result.GraphNodes, result.GraphEdges)
+	// The fixtures live in their own workspace, not the one a fresh sign-in
+	// lands on, so a seed that does not say where to look reads as a seed that
+	// did nothing.
+	if origin := strings.TrimRight(strings.TrimSpace(os.Getenv("FRONTEND_ORIGIN")), "/"); origin != "" {
+		fmt.Printf("Open %s/%s/issues to see them (`make dev-login ARGS=\"--path /%s/issues\"` signs in and lands there).\n",
+			origin, devseed.WorkspaceSlug, devseed.WorkspaceSlug)
+	}
 	return nil
 }

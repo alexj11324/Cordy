@@ -87,6 +87,7 @@ make stop             # stop app processes for this checkout
 make db-drop          # permanently drop this checkout's local database
 make remove-worktree WORKTREE=../path  # drop a linked worktree DB, then remove it
 make dev-login        # sign in without the login page (URL + bearer token)
+make seed-dev         # sample issues + dependency graph, in the dev-fixtures workspace
 make server           # run Go server only
 make daemon           # run local daemon
 make test             # Go tests

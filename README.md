@@ -226,17 +226,33 @@ Contributors: start with the [Contributing Guide](CONTRIBUTING.md).
 **Prerequisites:** [Node.js](https://nodejs.org/) 22, [pnpm](https://pnpm.io/) 10.28.2, [Go](https://go.dev/) 1.26.6, [Docker](https://www.docker.com/)
 
 ```bash
-make dev
+make up          # install deps, prepare the database, start API + Web
+make dev-login   # sign in — open the URL it prints, no login page, no code
+make seed-dev    # optional: sample issues, in the dev-fixtures workspace
 ```
 
-`make dev` auto-detects your environment (main checkout or worktree), creates the env file,
-installs dependencies, sets up the database, runs migrations, and starts every service.
+`make up` allocates this checkout's ports and database, so several checkouts and worktrees run
+side by side; `make status` proves what is running is yours, `make down` stops it, `make destroy`
+deletes it. `make dev` is the alternative when you want everything in the foreground of one
+terminal with Ctrl-C to stop it.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow, worktree support, testing, and
 troubleshooting. The iOS client lives in [`apps/mobile/`](apps/mobile/) — its
 [README](apps/mobile/README.md) covers building it onto your own iPhone.
 
 We release most weekdays, so `main` moves quickly — pull often.
+
+### Which document do I want?
+
+| I want to… | Read |
+| --- | --- |
+| Contribute code | [CONTRIBUTING.md](CONTRIBUTING.md) — environments, daily workflow, testing, troubleshooting |
+| Run Patchbay on my own infrastructure | [SELF_HOSTING.md](SELF_HOSTING.md), then [SELF_HOSTING_ADVANCED.md](SELF_HOSTING_ADVANCED.md) and [SELF_HOSTING_AI.md](SELF_HOSTING_AI.md) |
+| Install and drive the CLI or daemon | [CLI_INSTALL.md](CLI_INSTALL.md), then [CLI_AND_DAEMON.md](CLI_AND_DAEMON.md) |
+| Have an AI agent work in this repo | [AGENTS.md](AGENTS.md) (entry point) and [CLAUDE.md](CLAUDE.md) (full rules) |
+| Understand where the product is going | [VISION.md](VISION.md) |
+| Cut a release | [.github/RELEASING.md](.github/RELEASING.md) |
+| Use Patchbay as a product | [the documentation site](https://patchbay.aspectlylabs.com/docs) |
 
 ---
 

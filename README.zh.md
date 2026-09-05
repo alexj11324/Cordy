@@ -218,17 +218,32 @@ Patchbay 不自带模型。它驱动的是你本来就装好、登录好的那�
 **环境要求：**[Node.js](https://nodejs.org/) 22、[pnpm](https://pnpm.io/) 10.28.2、[Go](https://go.dev/) 1.26.6、[Docker](https://www.docker.com/)
 
 ```bash
-make dev
+make up          # 装依赖、准备数据库、启动 API + Web
+make dev-login   # 登录——打开它打印的链接即可，不用登录页，也不用验证码
+make seed-dev    # 可选：注入示例 issue，落在 dev-fixtures 工作区
 ```
 
-`make dev` 会自己认出你在主 checkout 还是 worktree 里，然后创建 env 文件、装依赖、初始化数据库、
-跑迁移，最后把所有服务拉起来。
+`make up` 会为当前 checkout 分配独立的端口和数据库，所以多个 checkout、多个 worktree 可以同时跑；
+`make status` 能证明正在跑的就是你这份，`make down` 停掉，`make destroy` 删干净。
+如果你想让所有服务跑在同一个终端的前台、用 Ctrl-C 一起停，那就用 `make dev`。
 
 完整的开发流程、worktree 支持、测试和问题排查见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 iOS 客户端在 [`apps/mobile/`](apps/mobile/)，怎么编译装到自己 iPhone 上见它的
 [README](apps/mobile/README.md)。
 
 我们几乎每个工作日都发版，`main` 走得很快——记得常拉最新代码。
+
+### 我该看哪份文档？
+
+| 我想… | 看这里 |
+| --- | --- |
+| 参与开发 | [CONTRIBUTING.md](CONTRIBUTING.md)——环境、日常流程、测试、排查 |
+| 自己部署 Patchbay | [SELF_HOSTING.md](SELF_HOSTING.md)，进阶看 [SELF_HOSTING_ADVANCED.md](SELF_HOSTING_ADVANCED.md) 和 [SELF_HOSTING_AI.md](SELF_HOSTING_AI.md) |
+| 安装并使用 CLI / 守护进程 | [CLI_INSTALL.md](CLI_INSTALL.md)，进阶看 [CLI_AND_DAEMON.md](CLI_AND_DAEMON.md) |
+| 让 AI 智能体在这个仓库里干活 | [AGENTS.md](AGENTS.md)（入口）和 [CLAUDE.md](CLAUDE.md)（完整规则） |
+| 了解产品方向 | [VISION.zh.md](VISION.zh.md) |
+| 发版 | [.github/RELEASING.md](.github/RELEASING.md) |
+| 把 Patchbay 当产品用 | [文档站](https://patchbay.aspectlylabs.com/docs) |
 
 ---
 

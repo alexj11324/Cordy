@@ -13,6 +13,20 @@ It covers:
 - full-stack isolated testing (backend + frontend + daemon from source)
 - troubleshooting and destructive reset options
 
+## Day One
+
+Three commands, from a fresh clone:
+
+```bash
+make up          # install deps, prepare this checkout's database, start API + Web
+make dev-login   # sign in — open the URL it prints, no login page, no code
+make seed-dev    # optional: sample issues, in the dev-fixtures workspace
+```
+
+`make status` shows what is running and proves it belongs to this checkout, `make down` stops it
+keeping the database, and `make destroy` deletes the database, profile and slot. Everything below
+expands on those; [Environments](#environments) is the section to read first.
+
 ## Contribution Terms
 
 By submitting a contribution to Patchbay — a pull request, a patch, or any
@@ -192,7 +206,7 @@ terminal, which is the right thing when you want Ctrl-C to stop everything.
 From any checkout (main or worktree):
 
 ```bash
-make dev
+make up
 ```
 
 This single command:
@@ -201,10 +215,22 @@ This single command:
 - creates the appropriate env file (`.env` or `.env.worktree`) if it doesn't exist
 - checks that prerequisites (Node.js, pnpm, Go, Docker) are installed
 - installs JavaScript dependencies
-- ensures the shared PostgreSQL container is running
-- creates the application database if it does not exist
-- runs all migrations
-- starts both backend and frontend
+- allocates this checkout's ports and database name under a lock, and records them in
+  `~/.patchbay/dev/` so the environment can be listed, inspected and deleted later
+- creates the application database if it does not exist and runs all migrations
+- starts the selected components (`api,web` by default) in the background
+
+Then `make dev-login` to get into the app, and `make seed-dev` if you want sample content.
+
+#### `make dev`: the same thing in the foreground
+
+```bash
+make dev
+```
+
+`make dev` does the same setup but runs backend and frontend in the foreground of your terminal,
+which is what you want when Ctrl-C should stop everything. It does not register an environment,
+so `make status`, `make list` and `make destroy` do not track it.
 
 ### Explicit Setup (advanced)
 
@@ -257,14 +283,19 @@ Use a worktree when you want isolated data and separate app ports.
 ```bash
 git worktree add ../patchbay-feature -b feat/my-change main
 cd ../patchbay-feature
-make dev
+make up
 ```
+
+`make up` detects the worktree, generates `.env.worktree`, and allocates ports and a database
+that do not collide with the main checkout.
 
 After that, day-to-day commands are:
 
 ```bash
-make dev              # start (re-runs setup if needed, idempotent)
-make stop-worktree    # stop
+make up               # start (idempotent: reuses anything already healthy)
+make dev-login        # sign in to this worktree's environment
+make status           # what is running here, with proof it is this checkout's
+make down             # stop, keeping the database
 make check-worktree   # verify
 ```
 
@@ -359,12 +390,19 @@ make start
 make stop
 make check
 make dev
+make dev-login
+make seed-dev
 make test
 make migrate-up
 make migrate-down
 ```
 
 These generic targets require a valid env file in the current directory.
+
+`make seed-dev` installs deterministic sample content — issues with a dependency graph — into a
+separate `dev-fixtures` workspace, so it never mixes with whatever you are building in your own
+workspace. It needs the developer user to exist, which `make dev-login` creates: run the two in
+that order. The seed is idempotent and preserves rows you edited after the first run.
 
 ## How Database Creation Works
 
@@ -614,7 +652,8 @@ Warning:
 ### Stable Main Environment
 
 ```bash
-make dev
+make up
+make dev-login
 ```
 
 ### Feature Worktree
@@ -622,7 +661,8 @@ make dev
 ```bash
 git worktree add ../patchbay-feature -b feat/my-change main
 cd ../patchbay-feature
-make dev
+make up
+make dev-login
 ```
 
 ### Return to a Previously Configured Worktree

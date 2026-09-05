@@ -54,6 +54,7 @@ pnpm test             # TS unit tests (Vitest)
 make test             # Go tests
 make check            # Full verification pipeline
 make dev-login        # Sign in to the local app with no login page
+make seed-dev         # Sample content to look at, in the dev-fixtures workspace
 ```
 
 `make dev-login` prints a URL that installs the session cookie and lands on this
@@ -61,6 +62,10 @@ environment's issues page, plus a bearer token for `curl` — use it instead of
 requesting a verification code when you need to check a change in the running
 app. It works because `make up` writes `PATCHBAY_DEV_LOGIN=1` into the env file;
 the endpoint is not registered when `APP_ENV=production`.
+
+`make seed-dev` needs that user to exist, so run it after `make dev-login`. Its
+issues land in a separate `dev-fixtures` workspace, not the one a fresh sign-in
+opens — the command prints the URL to open.
 
 See CLAUDE.md for the expanded rules and common commands incorporated by this
 entry point.

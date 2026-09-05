@@ -22,19 +22,18 @@ Patchbay は Go バックエンドと pnpm monorepo で構成されています�
 ```bash
 git clone https://github.com/patchbay-ai/patchbay.git
 cd patchbay
-make dev
+make up          # 依存関係のインストール、データベース準備、API + Web の起動
+make dev-login   # サインイン — 表示された URL を開くだけ。ログイン画面もコードも不要
+make seed-dev    # 任意: サンプル issue を dev-fixtures ワークスペースに投入
 ```
 
-メイン checkout は `.env` を使用します。ファイルがなければ `make dev` が `.env.example` から作成し、共有 PostgreSQL を起動して依存関係をインストールし、migration を実行して API と Web を起動します。
+メイン checkout は `.env` を使用します。ファイルがなければ `make up` が `.env.example` から作成し、PostgreSQL を用意して依存関係をインストールし、migration を実行して API と Web を起動します。
 
-デフォルトのアドレス:
+`make up` はロックの下でこの checkout 用のポートとデータベースを割り当てて記録するため、複数の checkout や worktree を同時に動かせ、`make status` / `make down` / `make destroy` はそのうちの一つだけに作用します。割り当てたアドレスは実行時に表示されます。既定の `http://localhost:3000` と `http://localhost:8080` を使い、すべてを一つのターミナルのフォアグラウンドで動かしたい場合は `make dev` を使ってください。
 
-```text
-Web: http://localhost:3000
-API: http://localhost:8080
-```
+`make dev-login` が使えるのは、`make up` がローカルの env ファイルに `PATCHBAY_DEV_LOGIN=1` を書き込むためです — [サインインとサインアップ](/auth-setup#開発環境でログイン画面を省く)を参照。公開インスタンスでは絶対に有効化せず、ローカルの `.env` を公開デプロイに使わないでください。
 
-ローカルの固定確認コードは開発環境の設定から取得されます。ローカルの `.env` を公開インターネット向けのデプロイに使用しないでください。
+環境、worktree、テストの階層、トラブルシューティング、破壊的リセットまで含む完全な貢献ガイドは、リポジトリの [CONTRIBUTING.md](https://github.com/patchbay-ai/patchbay/blob/main/CONTRIBUTING.md) です。このページは短縮版です。
 
 ## worktree での開発
 
