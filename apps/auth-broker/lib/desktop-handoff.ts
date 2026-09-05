@@ -3,7 +3,7 @@ import { resolveAuthLocale } from "./auth-locale";
 const VALUE = /^[A-Za-z0-9._~-]{43,128}$/;
 const CODE = /^pb[dl]_[A-Za-z0-9_-]{43}$/;
 const PROTOCOL =
-  /^(?:patchbay|patchbay-canary(?:-[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?)?)$/;
+  /^(?:patchbay|patchbay-canary-[a-f0-9]{16})$/;
 
 export type DesktopBinding = {
   state: string;

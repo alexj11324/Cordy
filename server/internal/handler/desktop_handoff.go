@@ -20,8 +20,6 @@ import (
 	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
-const desktopAuthCallbackProtocol = "patchbay"
-
 const (
 	desktopBrokerAuthHeader = "X-Patchbay-Desktop-Broker-Auth"
 	authContractHeader      = "X-Patchbay-Auth-Contract-Version"
@@ -29,9 +27,10 @@ const (
 )
 
 var (
-	desktopHandoffOpaquePattern = regexp.MustCompile(`^[A-Za-z0-9._~-]{43,128}$`)
-	desktopHandoffCodePattern   = regexp.MustCompile(`^pbd_[A-Za-z0-9_-]{43}$`)
-	desktopBrokerSecretPattern  = regexp.MustCompile(`^[a-f0-9]{64}$`)
+	desktopHandoffOpaquePattern    = regexp.MustCompile(`^[A-Za-z0-9._~-]{43,128}$`)
+	desktopHandoffCodePattern      = regexp.MustCompile(`^pbd_[A-Za-z0-9_-]{43}$`)
+	desktopBrokerSecretPattern     = regexp.MustCompile(`^[a-f0-9]{64}$`)
+	desktopCallbackProtocolPattern = regexp.MustCompile(`^(?:patchbay|patchbay-canary-[a-f0-9]{16})$`)
 )
 
 type desktopAuthHandoffRequest struct {
@@ -205,10 +204,20 @@ func generateDesktopHandoffCode() (string, error) {
 	return "pbd_" + base64.RawURLEncoding.EncodeToString(bytes), nil
 }
 
-func validateDesktopHandoffRequest(req desktopAuthHandoffRequest) bool {
-	return desktopHandoffOpaquePattern.MatchString(req.State) &&
-		desktopHandoffOpaquePattern.MatchString(req.CodeChallenge) &&
-		req.CallbackProtocol == desktopAuthCallbackProtocol
+func validateDesktopHandoffInitiate(req desktopAuthHandoffRequest) bool {
+	return validDesktopHandoffBinding(req.State, req.CodeChallenge) &&
+		desktopCallbackProtocolPattern.MatchString(req.CallbackProtocol)
+}
+
+func validateDesktopHandoffComplete(req desktopAuthHandoffRequest) bool {
+	// The browser must not choose the OS handler. Complete is bound by PKCE
+	// state + challenge; the callback scheme is the one stored at initiate.
+	return validDesktopHandoffBinding(req.State, req.CodeChallenge)
+}
+
+func validDesktopHandoffBinding(state, codeChallenge string) bool {
+	return desktopHandoffOpaquePattern.MatchString(state) &&
+		desktopHandoffOpaquePattern.MatchString(codeChallenge)
 }
 
 // requireFormalDesktopAuthActor is a handler-level backstop for the
@@ -227,7 +236,7 @@ func requireFormalDesktopAuthActor(w http.ResponseWriter, r *http.Request) bool 
 
 func (h *Handler) InitiateDesktopAuthHandoff(w http.ResponseWriter, r *http.Request) {
 	var req desktopAuthHandoffRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || !validateDesktopHandoffRequest(req) {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || !validateDesktopHandoffInitiate(req) {
 		writeError(w, http.StatusBadRequest, "invalid desktop auth handoff")
 		return
 	}
@@ -264,7 +273,7 @@ func (h *Handler) CompleteDesktopAuthHandoff(w http.ResponseWriter, r *http.Requ
 	}
 
 	var req desktopAuthHandoffRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || !validateDesktopHandoffRequest(req) {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || !validateDesktopHandoffComplete(req) {
 		writeError(w, http.StatusBadRequest, "invalid desktop auth handoff")
 		return
 	}

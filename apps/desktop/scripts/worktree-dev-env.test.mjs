@@ -6,7 +6,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   appSuffixForPath,
   applyWorktreeDevEnv,
+  callbackProtocolForPath,
   cksum,
+  identityHashForPath,
   offsetForPath,
   rendererPortForPath,
 } from "./worktree-dev-env.mjs";
@@ -72,23 +74,36 @@ describe("worktree-dev-env", () => {
     expect(ports.has(5173)).toBe(false);
   });
 
-  it("suffix is '<folder>-<offset>' so it stays recognizable and unique", () => {
+  it("suffix is '<folder>-<path-hash>' so data and locks stay unique", () => {
     expect(appSuffixForPath("/work/MUL-3724_Desktop")).toBe(
-      `mul-3724-desktop-${offsetForPath("/work/MUL-3724_Desktop")}`,
+      `mul-3724-desktop-${identityHashForPath("/work/MUL-3724_Desktop").slice(0, 12)}`,
     );
     expect(appSuffixForPath("/work/feat/some thing")).toBe(
-      `some-thing-${offsetForPath("/work/feat/some thing")}`,
+      `some-thing-${identityHashForPath("/work/feat/some thing").slice(0, 12)}`,
     );
-    // empty/non-ascii slug falls back to "worktree", still disambiguated by offset
-    expect(appSuffixForPath("/work/___")).toBe(`worktree-${offsetForPath("/work/___")}`);
+    // empty/non-ascii slug falls back to "worktree", still disambiguated by hash
+    expect(appSuffixForPath("/work/___")).toBe(
+      `worktree-${identityHashForPath("/work/___").slice(0, 12)}`,
+    );
   });
 
   it("disambiguates worktrees that share a folder name at different paths", () => {
-    // Same basename "patchbay", different parent dirs → different offsets/suffixes,
-    // so each gets its own single-instance lock.
-    expect(offsetForPath("/tmp/a/patchbay")).not.toBe(offsetForPath("/tmp/b/patchbay"));
+    // Same basename "patchbay", different parent dirs → different suffixes,
+    // so each gets its own userData and single-instance lock.
     expect(appSuffixForPath("/tmp/a/patchbay")).not.toBe(
       appSuffixForPath("/tmp/b/patchbay"),
+    );
+  });
+
+  it("derives a stable callback protocol from the full app path", () => {
+    expect(callbackProtocolForPath("/tmp/a/patchbay/apps/desktop")).toMatch(
+      /^patchbay-canary-[a-f0-9]{16}$/,
+    );
+    expect(callbackProtocolForPath("/tmp/a/patchbay/apps/desktop")).toBe(
+      callbackProtocolForPath("/tmp/a/patchbay/apps/desktop"),
+    );
+    expect(callbackProtocolForPath("/tmp/a/patchbay/apps/desktop")).not.toBe(
+      callbackProtocolForPath("/tmp/b/patchbay/apps/desktop"),
     );
   });
 
@@ -98,22 +113,35 @@ describe("worktree-dev-env", () => {
     applyWorktreeDevEnv(env, { root });
     expect(env.DESKTOP_RENDERER_PORT).toBe(String(rendererPortForPath(root)));
     expect(env.DESKTOP_APP_SUFFIX).toBe(appSuffixForPath(root));
+    expect(env.DESKTOP_CALLBACK_PROTOCOL).toBe(
+      callbackProtocolForPath(join(root, "apps", "desktop")),
+    );
   });
 
-  it("leaves the primary checkout untouched (.git is a dir)", () => {
+  it("keeps primary port/name defaults while isolating its callback protocol", () => {
     const root = tmpRoot("dir");
     const env = {};
     applyWorktreeDevEnv(env, { root });
     expect(env.DESKTOP_RENDERER_PORT).toBeUndefined();
     expect(env.DESKTOP_APP_SUFFIX).toBeUndefined();
+    expect(env.DESKTOP_CALLBACK_PROTOCOL).toBe(
+      callbackProtocolForPath(join(root, "apps", "desktop")),
+    );
   });
 
-  it("respects explicit env overrides", () => {
+  it("respects port/name overrides but keeps callback ownership path-bound", () => {
     const root = tmpRoot("file");
-    const env = { DESKTOP_RENDERER_PORT: "9999", DESKTOP_APP_SUFFIX: "manual" };
+    const env = {
+      DESKTOP_RENDERER_PORT: "9999",
+      DESKTOP_APP_SUFFIX: "manual",
+      DESKTOP_CALLBACK_PROTOCOL: "patchbay-canary-0000000000000000",
+    };
     applyWorktreeDevEnv(env, { root });
     expect(env.DESKTOP_RENDERER_PORT).toBe("9999");
     expect(env.DESKTOP_APP_SUFFIX).toBe("manual");
+    expect(env.DESKTOP_CALLBACK_PROTOCOL).toBe(
+      callbackProtocolForPath(join(root, "apps", "desktop")),
+    );
   });
 
   it("fills only the missing knob when one is set explicitly", () => {

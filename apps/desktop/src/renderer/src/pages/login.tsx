@@ -6,11 +6,15 @@ import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
 import { useT } from "@patchbay/views/i18n";
 import { DragStrip } from "@patchbay/views/platform";
 import { loopbackSessionApiUrl } from "../../../shared/runtime-config";
-import { createDesktopLoginUrl } from "./login-handoff";
+import {
+  createDesktopLoginUrl,
+  createHostedDesktopHandoffInitiate,
+} from "./login-handoff";
 
 function requireRuntimeConfig(): {
   accountsUrl: string;
   sessionApiUrl?: string;
+  callbackProtocol: string;
 } {
   const runtimeConfig = window.desktopAPI.runtimeConfig;
   if (!runtimeConfig.ok) {
@@ -18,9 +22,16 @@ function requireRuntimeConfig(): {
       "Invariant violated: DesktopLoginPage rendered before App accepted runtime config",
     );
   }
+  const callbackProtocol = window.desktopAPI.callbackProtocol;
+  if (!callbackProtocol) {
+    throw new Error(
+      "Invariant violated: Desktop login is missing its callback protocol",
+    );
+  }
   return {
     accountsUrl: runtimeConfig.config.accountsUrl,
     sessionApiUrl: loopbackSessionApiUrl(runtimeConfig.config.apiUrl),
+    callbackProtocol,
   };
 }
 
@@ -32,7 +43,7 @@ export function DesktopLoginPage({ handoffFailed = false, onRestart }: {
   handoffFailed?: boolean;
   onRestart?: () => void;
 }) {
-  const { accountsUrl, sessionApiUrl } = requireRuntimeConfig();
+  const { accountsUrl, sessionApiUrl, callbackProtocol } = requireRuntimeConfig();
   const { t } = useT("auth");
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState(false);
@@ -46,8 +57,20 @@ export function DesktopLoginPage({ handoffFailed = false, onRestart }: {
       const url = await createDesktopLoginUrl(
         accountsUrl,
         (state, codeChallenge) =>
-          api.initiateDesktopAuthHandoff(state, codeChallenge),
-        { sessionApiUrl, locale: document.documentElement.lang },
+          api.initiateDesktopAuthHandoff(
+            state,
+            codeChallenge,
+            callbackProtocol,
+          ),
+        {
+          sessionApiUrl,
+          locale: document.documentElement.lang,
+          callbackProtocol,
+          initiateHosted: createHostedDesktopHandoffInitiate(
+            accountsUrl,
+            sessionApiUrl ?? "",
+          ),
+        },
       );
       await window.desktopAPI.openExternal(url);
     } catch {

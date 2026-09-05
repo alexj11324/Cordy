@@ -1,19 +1,30 @@
 #!/usr/bin/env node
 // Prepare this worktree's Electron.app before launch. macOS discovers URL
 // schemes and application identity from Info.plist, not app.setName().
+// Every development checkout declares only its path-derived callback scheme.
+// A development build must never claim production patchbay:// or another
+// checkout's callback.
 // https://www.electronjs.org/docs/latest/api/app#appsetasdefaultprotocolclientprotocol-path-args
 import { createRequire } from "node:module";
-import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  callbackProtocolForPath,
+  identityHashForPath,
+} from "./worktree-dev-env.mjs";
 
 export function devBundleIdentity(appRoot, suffix) {
-  const hash = createHash("sha256").update(resolve(appRoot)).digest("hex").slice(0, 16);
+  const hash = identityHashForPath(appRoot);
+  const bundleId = `ai.patchbay.desktop.canary.${hash}`;
+  const callbackProtocol = callbackProtocolForPath(appRoot);
   return {
     name: suffix ? `Patchbay Canary ${suffix}` : "Patchbay Canary",
-    bundleId: `ai.patchbay.desktop.canary.${hash}`,
+    bundleId,
+    callbackProtocol,
+    callbackSchemes: [callbackProtocol],
+    callbackUrlName: `${bundleId}.callback`,
   };
 }
 
@@ -35,12 +46,24 @@ function plistSet(plistPath, key, value) {
   }
 }
 
+function declaredCallbackSchemesMatch(plistPath, schemes) {
+  return (
+    schemes.every(
+      (scheme, index) =>
+        plistGet(plistPath, `CFBundleURLTypes:0:CFBundleURLSchemes:${index}`) === scheme,
+    ) &&
+    plistGet(plistPath, `CFBundleURLTypes:0:CFBundleURLSchemes:${schemes.length}`) === ""
+  );
+}
+
 export function configureDevPlist(plistPath, identity) {
   if (
     plistGet(plistPath, "CFBundleName") === identity.name &&
     plistGet(plistPath, "CFBundleDisplayName") === identity.name &&
     plistGet(plistPath, "CFBundleIdentifier") === identity.bundleId &&
-    plistGet(plistPath, "CFBundleURLTypes:0:CFBundleURLSchemes:0") === "patchbay" &&
+    plistGet(plistPath, "CFBundleURLTypes:0:CFBundleURLName") ===
+      identity.callbackUrlName &&
+    declaredCallbackSchemesMatch(plistPath, identity.callbackSchemes) &&
     plistGet(plistPath, "NSPrincipalClass") === "AtomApplication"
   ) return false;
 
@@ -55,12 +78,16 @@ export function configureDevPlist(plistPath, identity) {
   if (plistGet(plistPath, "CFBundleURLTypes")) {
     execFileSync("/usr/libexec/PlistBuddy", ["-c", "Delete :CFBundleURLTypes", plistPath]);
   }
+  const schemeCommands = identity.callbackSchemes.map(
+    (scheme, index) =>
+      `Add :CFBundleURLTypes:0:CFBundleURLSchemes:${index} string ${scheme}`,
+  );
   for (const command of [
     "Add :CFBundleURLTypes array",
     "Add :CFBundleURLTypes:0 dict",
-    "Add :CFBundleURLTypes:0:CFBundleURLName string Patchbay",
+    `Add :CFBundleURLTypes:0:CFBundleURLName string ${identity.callbackUrlName}`,
     "Add :CFBundleURLTypes:0:CFBundleURLSchemes array",
-    "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string patchbay",
+    ...schemeCommands,
   ]) execFileSync("/usr/libexec/PlistBuddy", ["-c", command, plistPath]);
   return true;
 }
@@ -72,8 +99,10 @@ if (process.platform === "darwin" && process.argv[1] && resolve(process.argv[1])
   const identity = devBundleIdentity(resolve(dirname(fileURLToPath(import.meta.url)), ".."), process.env.DESKTOP_APP_SUFFIX);
   configureDevPlist(plistPath, identity);
   // Publish the build-time declaration before Electron selects itself as the
-  // protocol handler. Each worktree has its own bundle ID, despite the common
-  // Electron.app filename. Only this app is registered; no global cache reset.
+  // protocol handler. Each worktree has its own bundle ID and callback scheme,
+  // despite the common Electron.app filename.
   execFileSync("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister", ["-f", resolve(plistPath, "../..")]);
-  console.log(`[brand-dev-electron] ${identity.name} (${identity.bundleId}) declares patchbay://`);
+  console.log(
+    `[brand-dev-electron] ${identity.name} (${identity.bundleId}) declares ${identity.callbackProtocol}://`,
+  );
 }
