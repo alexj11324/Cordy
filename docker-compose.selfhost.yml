@@ -180,9 +180,9 @@ services:
       PATCHBAY_VCS_INTEGRATION_ENABLED: ${PATCHBAY_VCS_INTEGRATION_ENABLED:-true}
       # VCS integration at-rest encryption key for token-based providers
       PATCHBAY_VCS_SECRET_KEY: ${PATCHBAY_VCS_SECRET_KEY:-}
-      # Linear OAuth and two-way sync. Leave the release flag off until the
-      # callback/webhook URLs and all three secrets have been provisioned.
-      FF_LINEAR_INSTALLATION_FOUNDATION: ${FF_LINEAR_INSTALLATION_FOUNDATION:-off}
+      # Linear is visible by default. OAuth credentials are required to connect;
+      # webhook delivery and outbound publishing are configured separately.
+      FF_LINEAR_INSTALLATION_FOUNDATION: ${FF_LINEAR_INSTALLATION_FOUNDATION:-on}
       LINEAR_CLIENT_ID: ${LINEAR_CLIENT_ID:-}
       LINEAR_CLIENT_SECRET: ${LINEAR_CLIENT_SECRET:-}
       LINEAR_WEBHOOK_SECRET: ${LINEAR_WEBHOOK_SECRET:-}

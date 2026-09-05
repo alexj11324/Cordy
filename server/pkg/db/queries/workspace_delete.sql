@@ -624,6 +624,9 @@ DELETE FROM vcs_pull_request WHERE vcs_pull_request.workspace_id = $1;
 WITH linear_connections AS MATERIALIZED (
     SELECT id FROM linear_connection WHERE workspace_id = $1
 ),
+deleted_linear_comment_links AS (
+    DELETE FROM linear_comment_link WHERE workspace_id = $1
+),
 deleted_linear_conflicts AS (
     DELETE FROM linear_sync_conflict WHERE workspace_id = $1
 ),

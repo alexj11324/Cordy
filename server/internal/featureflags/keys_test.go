@@ -63,10 +63,10 @@ func TestPluginsV1DefaultsOff(t *testing.T) {
 	}
 }
 
-func TestLinearInstallationFoundationDefaultsOff(t *testing.T) {
+func TestLinearInstallationFoundationDefaultsOn(t *testing.T) {
 	flags := EvaluateFrontendPublicFlags(context.Background(), nil)
-	if flags[LinearInstallationFoundation] {
-		t.Fatal("linear_installation_foundation must stay disabled unless explicitly enabled")
+	if !flags[LinearInstallationFoundation] || !LinearInstallationFoundationEnabled(context.Background(), nil) {
+		t.Fatal("Linear must be discoverable by default")
 	}
 }
 

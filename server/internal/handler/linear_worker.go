@@ -386,7 +386,7 @@ func remoteFromWebhook(e webhookEnvelope) linearapi.Issue {
 // remote issue's own updatedAt, so re-listing a project whose issues have not
 // moved converges on no local write at all — which is what makes it safe to
 // run this on a timer next to the webhooks.
-func (w *LinearWorker) importBinding(ctx context.Context, payload []byte, eventPrefix string) error {
+func (w *LinearWorker) importBinding(ctx context.Context, payload []byte, eventPrefix string, includeComments bool) error {
 	var p struct {
 		BindingID string `json:"binding_id"`
 	}
@@ -424,6 +424,15 @@ func (w *LinearWorker) importBinding(ctx context.Context, payload []byte, eventP
 		if err := w.applyRemote(ctx, b, issue, eventID, issue.UpdatedAt.UnixMilli()); err != nil {
 			return err
 		}
+		// Comments are bulk-fetched only during the operator-triggered initial
+		// import. Linear webhooks own incremental comment delivery afterwards;
+		// polling every issue's full discussion history would be an unbounded
+		// N+1 request pattern for established projects.
+		if includeComments {
+			if err := w.importComments(ctx, b, token, issue.ID); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
@@ -431,13 +440,16 @@ func (w *LinearWorker) importBinding(ctx context.Context, payload []byte, eventP
 func (w *LinearWorker) handleInbox(ctx context.Context, c linearClaim) error {
 	switch c.EventType {
 	case "initial_import":
-		return w.importBinding(ctx, c.Payload, "initial-import:")
+		return w.importBinding(ctx, c.Payload, "initial-import:", true)
 	case "binding_poll":
-		return w.importBinding(ctx, c.Payload, "poll:")
+		return w.importBinding(ctx, c.Payload, "poll:", false)
 	}
 	var e webhookEnvelope
 	if err := json.Unmarshal(c.Payload, &e); err != nil {
 		return err
+	}
+	if strings.EqualFold(e.Type, "Comment") {
+		return w.handleCommentInbox(ctx, c)
 	}
 	if e.Type != "Issue" && e.Type != "issue" {
 		return nil

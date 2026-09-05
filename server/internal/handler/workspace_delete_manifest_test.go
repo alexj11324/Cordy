@@ -99,6 +99,7 @@ var workspaceDeletionManifest = map[string]workspaceDeleteAction{
 	"lark_outbound_card_message":               workspaceDelete,
 	"lark_user_binding":                        workspaceDelete,
 	"linear_connection":                        workspaceDelete,
+	"linear_comment_link":                      workspaceDelete,
 	"linear_issue_link":                        workspaceDelete,
 	"linear_member_binding":                    workspaceDelete,
 	"linear_oauth_state":                       workspaceDelete,
