@@ -6,7 +6,7 @@ import { readAuthBrokerRuntimeConfig } from "@/lib/runtime-config";
 import { AuthMessagesProvider } from "@/lib/auth-messages";
 import "./globals.css";
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Sign in · Patchbay", robots: { index: false, follow: false } };
+export const metadata: Metadata = { title: "Sign in · Orvilo", robots: { index: false, follow: false } };
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const runtime = readAuthBrokerRuntimeConfig();
   const requestHeaders = await headers();

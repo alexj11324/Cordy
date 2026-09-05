@@ -1,27 +1,27 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { ClerkAuthShell } from "./clerk-auth-shell";
+import { AuthShell } from "./auth-shell";
 
 vi.mock("@patchbay/ui/components/common/patchbay-icon", () => ({
   PatchbayIcon: () => <div data-testid="patchbay-icon" />,
 }));
 
-describe("ClerkAuthShell", () => {
-  it("renders the approved white-left, black-right shadcn layout", () => {
+describe("AuthShell", () => {
+  it("renders the custom dark shadcn form and brand layout", () => {
     render(
-      <ClerkAuthShell>
+      <AuthShell>
         <div data-testid="auth-form" />
-      </ClerkAuthShell>,
+      </AuthShell>,
     );
 
-    expect(screen.getByTestId("clerk-auth-shell")).toHaveClass(
-      "bg-white",
+    expect(screen.getByTestId("auth-shell")).toHaveClass(
+      "bg-zinc-950",
       "md:grid-cols-2",
     );
     expect(screen.getByTestId("auth-form").parentElement).toHaveClass(
-      "bg-white",
+      "bg-zinc-950",
     );
-    expect(screen.getByTestId("clerk-auth-brand-panel")).toHaveClass(
+    expect(screen.getByTestId("auth-brand-panel")).toHaveClass(
       "bg-zinc-950",
       "md:flex",
     );

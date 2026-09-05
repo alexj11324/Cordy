@@ -15,7 +15,8 @@
     "@clerk/nextjs": "^7.7.9",
     "next": "^16.2.5",
     "react": "catalog:",
-    "react-dom": "catalog:"
+    "react-dom": "catalog:",
+    "@patchbay/auth-ui": "workspace:*"
   },
   "devDependencies": {
     "@patchbay/eslint-config": "workspace:*",

@@ -636,7 +636,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                         )}
                       </span>
                       <span className="flex-1 truncate font-medium">
-                        {workspace?.name ?? "Patchbay"}
+                        {workspace?.name ?? "Orvilo"}
                       </span>
                       <ChevronDown className="size-3 text-sidebar-icon-secondary" />
                     </SidebarMenuButton>

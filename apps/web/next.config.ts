@@ -39,7 +39,7 @@ const allowedDevOrigins = process.env.CORS_ALLOWED_ORIGINS
 
 const nextConfig: NextConfig = {
   ...(process.env.STANDALONE === "true" ? { output: "standalone" as const } : {}),
-  transpilePackages: ["@patchbay/core", "@patchbay/ui", "@patchbay/views"],
+  transpilePackages: ["@patchbay/auth-ui", "@patchbay/core", "@patchbay/ui", "@patchbay/views"],
   ...(allowedDevOrigins && allowedDevOrigins.length > 0
     ? { allowedDevOrigins }
     : {}),

@@ -1,9 +1,9 @@
 {
   "name": "@patchbay/desktop",
-  "productName": "Patchbay",
+  "productName": "Orvilo",
   "version": "0.1.0",
   "private": true,
-  "description": "Patchbay Desktop — native desktop client for the Patchbay platform.",
+  "description": "Orvilo Desktop — native desktop client for the Orvilo platform.",
   "homepage": "https://patchbay.aspectlylabs.com",
   "repository": {
     "type": "git",
