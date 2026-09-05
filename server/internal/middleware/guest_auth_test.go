@@ -79,7 +79,7 @@ func (d *guestLogoutRaceDB) QueryRow(_ context.Context, query string, _ ...inter
 
 	switch {
 	case strings.Contains(query, "UPDATE guest_session"):
-		if d.session.Status != guestSessionActive {
+		if d.session.Status != auth.GuestSessionActive {
 			return guestAuthTestRow{err: pgx.ErrNoRows}
 		}
 		d.session.Status = "revoked"
@@ -151,7 +151,7 @@ func userScanValues(user db.User) []any {
 }
 
 func guestAuthTestToken() string {
-	return guestTokenPrefix + strings.Repeat("a", guestTokenHexLength)
+	return auth.GuestTokenPrefix + strings.Repeat("a", 40)
 }
 
 func guestAuthTestUser(isGuest bool) db.User {
@@ -185,7 +185,7 @@ func assertGuestErrorDoesNotLeakSecret(t *testing.T, body, token string) {
 func TestAuth_GuestBearerAuthenticatesActiveGuest(t *testing.T) {
 	token := guestAuthTestToken()
 	user := guestAuthTestUser(true)
-	session := guestAuthTestSession(token, guestSessionActive)
+	session := guestAuthTestSession(token, auth.GuestSessionActive)
 	store := &guestAuthTestDB{session: session, user: user, revoked: session}
 
 	var gotUserID, gotEmail, gotGuest, gotAgent, gotTask, gotWorkspace, gotActor string
@@ -236,7 +236,7 @@ func TestAuth_GuestBearerRejectsMalformedAndUnavailable(t *testing.T) {
 	}{
 		{
 			name:  "malformed pbg token",
-			token: guestTokenPrefix + "not-hex",
+			token: auth.GuestTokenPrefix + "not-hex",
 			want:  http.StatusUnauthorized,
 		},
 		{
@@ -282,7 +282,7 @@ func TestAuth_GuestBearerRejectsTerminalOrFormalOwner(t *testing.T) {
 	}{
 		{name: "revoked session", status: "revoked", ownerGuest: true},
 		{name: "claimed session", status: "claimed", ownerGuest: true},
-		{name: "formal owner", status: guestSessionActive, ownerGuest: false},
+		{name: "formal owner", status: auth.GuestSessionActive, ownerGuest: false},
 	}
 
 	for _, tt := range tests {
@@ -330,7 +330,7 @@ func TestAuth_NonGuestJWTCannotForgeGuestMarker(t *testing.T) {
 
 func TestRevokeGuestOnLogoutConsumesPresentedBearer(t *testing.T) {
 	token := guestAuthTestToken()
-	session := guestAuthTestSession(token, guestSessionActive)
+	session := guestAuthTestSession(token, auth.GuestSessionActive)
 	revoked := session
 	revoked.Status = "revoked"
 	store := &guestAuthTestDB{session: session, revoked: revoked}
@@ -402,7 +402,7 @@ func TestRevokeGuestOnLogoutIsIdempotentAndFailClosed(t *testing.T) {
 
 func TestRevokeGuestOnLogoutConcurrentRequestsAreIdempotent(t *testing.T) {
 	token := guestAuthTestToken()
-	store := &guestLogoutRaceDB{session: guestAuthTestSession(token, guestSessionActive)}
+	store := &guestLogoutRaceDB{session: guestAuthTestSession(token, auth.GuestSessionActive)}
 	handler := RevokeGuestOnLogout(db.New(store))(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))

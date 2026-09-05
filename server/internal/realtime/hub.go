@@ -28,8 +28,8 @@ type MembershipChecker interface {
 // SlugResolver translates a workspace slug to its UUID.
 type SlugResolver func(ctx context.Context, slug string) (workspaceID string, err error)
 
-// PATResolver resolves a Personal Access Token to a user ID.
-type PATResolver interface {
+// OpaqueTokenResolver validates a database-backed PAT or Guest session.
+type OpaqueTokenResolver interface {
 	ResolveToken(ctx context.Context, token string) (userID string, ok bool)
 }
 
@@ -221,11 +221,12 @@ func sk(t, id string) scopeKey { return scopeKey{Type: t, ID: id} }
 // Client represents a single WebSocket connection with identity and the set
 // of scopes it is currently subscribed to.
 type Client struct {
-	hub         *Hub
-	conn        *websocket.Conn
-	send        chan []byte
-	userID      string
-	workspaceID string
+	hub             *Hub
+	conn            *websocket.Conn
+	send            chan []byte
+	userID          string
+	workspaceID     string
+	validateSession func(context.Context) bool
 
 	// subscriptions is guarded by hub.mu. Tracks the scopes this client is
 	// currently in. Used to clean up rooms on disconnect.
@@ -675,15 +676,12 @@ func (h *Hub) Snapshot() map[string]any {
 	}
 }
 
-// authenticateToken validates a JWT or PAT string and returns the user ID.
-func authenticateToken(tokenStr string, pr PATResolver, ctx context.Context) (string, string) {
-	// Guest bearers are account-lifecycle credentials only. They do not carry
-	// workspace membership and must never enter the realtime hub, even if a
-	// future JWT/PAT change would otherwise make the prefix parseable.
-	if strings.HasPrefix(tokenStr, "pbg_") {
+// authenticateToken validates JWT, PAT or Guest credentials and returns identity.
+func authenticateToken(tokenStr string, pr OpaqueTokenResolver, ctx context.Context) (string, string) {
+	if strings.HasPrefix(tokenStr, auth.GuestTokenPrefix) && !auth.ValidGuestToken(tokenStr) {
 		return "", `{"error":"invalid token"}`
 	}
-	if strings.HasPrefix(tokenStr, "pby_") {
+	if strings.HasPrefix(tokenStr, "pby_") || strings.HasPrefix(tokenStr, auth.GuestTokenPrefix) {
 		if pr == nil {
 			return "", `{"error":"invalid token"}`
 		}
@@ -778,7 +776,7 @@ func writeWSAuthErrorAndClose(conn *websocket.Conn, payload []byte, attrs ...any
 
 // HandleWebSocket upgrades an HTTP connection to WebSocket with cookie or
 // first-message auth.
-func HandleWebSocket(hub *Hub, mc MembershipChecker, pr PATResolver, resolveSlug SlugResolver, w http.ResponseWriter, r *http.Request) {
+func HandleWebSocket(hub *Hub, mc MembershipChecker, pr OpaqueTokenResolver, resolveSlug SlugResolver, w http.ResponseWriter, r *http.Request) {
 	workspaceID := r.URL.Query().Get("workspace_id")
 	if workspaceID == "" {
 		if slug := r.URL.Query().Get("workspace_slug"); slug != "" && resolveSlug != nil {
@@ -796,6 +794,7 @@ func HandleWebSocket(hub *Hub, mc MembershipChecker, pr PATResolver, resolveSlug
 	}
 
 	var userID string
+	var guestCredential string
 	if cookie, err := r.Cookie(auth.AuthCookieName); err == nil && cookie.Value != "" {
 		uid, errMsg := authenticateToken(cookie.Value, pr, r.Context())
 		if errMsg != "" {
@@ -811,6 +810,9 @@ func HandleWebSocket(hub *Hub, mc MembershipChecker, pr PATResolver, resolveSlug
 			return
 		}
 		userID = uid
+		if strings.HasPrefix(cookie.Value, auth.GuestTokenPrefix) {
+			guestCredential = cookie.Value
+		}
 	}
 
 	conn, err := upgrader.Upgrade(w, r, nil)
@@ -848,6 +850,9 @@ func HandleWebSocket(hub *Hub, mc MembershipChecker, pr PATResolver, resolveSlug
 			return
 		}
 		userID = uid
+		if strings.HasPrefix(tokenStr, auth.GuestTokenPrefix) {
+			guestCredential = tokenStr
+		}
 
 		if !writeWSAuthFrame(
 			conn,
@@ -883,10 +888,28 @@ func HandleWebSocket(hub *Hub, mc MembershipChecker, pr PATResolver, resolveSlug
 		userID:      userID,
 		workspaceID: workspaceID,
 	}
+	if guestCredential != "" {
+		// Unlike a cached PAT, this revocable session is checked for every
+		// inbound operation and outbound delivery, including across server nodes.
+		// No new polling loop or transport-specific Guest policy is introduced.
+		client.validateSession = func(ctx context.Context) bool {
+			uid, errMsg := authenticateToken(guestCredential, pr, ctx)
+			return errMsg == "" && uid == userID
+		}
+	}
 	hub.register <- client
 
 	go client.writePump()
 	go client.readPump()
+}
+
+func (c *Client) sessionAuthorized() bool {
+	if c.validateSession == nil {
+		return true
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), writeWait)
+	defer cancel()
+	return c.validateSession(ctx)
 }
 
 // inboundFrame describes the subset of inbound JSON messages the server
@@ -930,6 +953,9 @@ func (c *Client) readPump() {
 				slog.Debug("websocket read error", "error", err, "user_id", c.userID, "workspace_id", c.workspaceID)
 			}
 			break
+		}
+		if !c.sessionAuthorized() {
+			return
 		}
 		c.handleFrame(raw)
 	}
@@ -1063,11 +1089,17 @@ func (c *Client) writePump() {
 				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
+			if !c.sessionAuthorized() {
+				return
+			}
 			if err := c.conn.WriteMessage(websocket.TextMessage, message); err != nil {
 				slog.Warn("websocket write error", "error", err, "user_id", c.userID, "workspace_id", c.workspaceID)
 				return
 			}
 		case <-ticker.C:
+			if !c.sessionAuthorized() {
+				return
+			}
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
