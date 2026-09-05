@@ -79,8 +79,21 @@ function fetchRuntimeConfig(): RuntimeConfigResult {
   return { ok: false, error: { message: "Runtime config unavailable" } };
 }
 
+function fetchCallbackProtocol(): string {
+  try {
+    const protocol = ipcRenderer.sendSync("auth:callback-protocol");
+    if (typeof protocol === "string" && protocol.length > 0) return protocol;
+  } catch {
+    // fall through
+  }
+  // Never let an IPC/bootstrap failure turn a development login into a claim
+  // on the production app's protocol. Renderers treat empty as unavailable.
+  return "";
+}
+
 const appInfo = fetchAppInfo();
 const runtimeConfig = fetchRuntimeConfig();
+const callbackProtocol = fetchCallbackProtocol();
 const windowContext = readDesktopWindowContext(process.argv);
 
 // Read the OS-preferred locale that main injected via additionalArguments.
@@ -131,6 +144,8 @@ const desktopAPI = {
       ipcRenderer.removeListener("locale:system-changed", handler);
     };
   },
+  /** OS-level URL scheme this process registered for auth/invite callbacks. */
+  callbackProtocol,
   /** Validated runtime endpoint config, or a blocking config error. */
   runtimeConfig,
   /** Main-process-owned local Guest session. */

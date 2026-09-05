@@ -8,7 +8,6 @@ export type {
 } from "./store";
 export { sanitizeNextUrl } from "./utils";
 export {
-  DEVELOPMENT_DESKTOP_CALLBACK_PROTOCOL,
   PRODUCTION_DESKTOP_CALLBACK_PROTOCOL,
   isDesktopCallbackProtocol,
 } from "./desktop-callback-protocol";

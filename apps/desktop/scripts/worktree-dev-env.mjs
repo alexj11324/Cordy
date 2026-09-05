@@ -6,15 +6,17 @@
 // already exist — electron.vite.config.ts reads DESKTOP_RENDERER_PORT and
 // src/main/index.ts reads DESKTOP_APP_SUFFIX — but nothing derives unique
 // values per worktree. This module does, mirroring the offset scheme that
-// scripts/init-worktree-env.sh already uses for backend/frontend ports.
+// scripts/init-worktree-env.sh already uses for backend/frontend ports and
+// adding a collision-resistant callback scheme derived from the full path.
 //
 // Backend targeting is deliberately NOT touched here: which backend the desktop
 // connects to stays driven by apps/desktop/.env* (VITE_API_URL / VITE_WS_URL),
-// exactly as documented. This module only adds the two knobs needed for two
-// Electron processes to coexist.
+// exactly as documented. This module adds the process identity knobs needed
+// for Electron instances and their OS callbacks to coexist.
 
+import { createHash } from "node:crypto";
 import { statSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, join, resolve } from "node:path";
 
 // Worktree renderer ports start at 5174 so they never reuse 5173 — the primary
 // checkout's default — even when a worktree's offset is 0 (e.g. POSIX cksum of
@@ -78,20 +80,30 @@ export function rendererPortForPath(path) {
   return avoidRestrictedPort(RENDERER_PORT_BASE + offsetForPath(path));
 }
 
-// Worktree → a readable, unique, filesystem-safe suffix "<folder>-<offset>".
-// The dev app then shows e.g. "Patchbay Canary mul-3724-194" in Cmd+Tab and gets
-// its own userData / single-instance lock under that name. The offset is what
-// makes the lock unique: the folder name alone collides for worktrees that share
-// a basename at different paths (e.g. /a/patchbay vs /b/patchbay) or whose names
-// slug to the same fallback — those would share one lock and the second Electron
-// would still be blocked.
+export function identityHashForPath(path) {
+  return createHash("sha256")
+    .update(resolve(path))
+    .digest("hex")
+    .slice(0, 16);
+}
+
+// Worktree → a readable, collision-resistant, filesystem-safe suffix.
+// The path hash keeps userData and the single-instance lock unique even when
+// two worktrees share a basename or the 1000-slot port allocator wraps.
 export function appSuffixForPath(path) {
   const slug =
     basename(path)
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "") || "worktree";
-  return `${slug}-${offsetForPath(path)}`;
+  return `${slug}-${identityHashForPath(path).slice(0, 12)}`;
+}
+
+// The OS callback identity must not share the 1000-slot port namespace. A
+// truncated SHA-256 of the full app path stays stable for this checkout and
+// makes collisions between arbitrary worktree locations negligible.
+export function callbackProtocolForPath(appPath) {
+  return `patchbay-canary-${identityHashForPath(appPath)}`;
 }
 
 // A linked git worktree has a `.git` FILE (a "gitdir:" pointer); the primary
@@ -110,21 +122,32 @@ export function repoRootFromScriptDir(scriptDir) {
   return join(scriptDir, "..", "..", "..");
 }
 
-// Populate DESKTOP_RENDERER_PORT / DESKTOP_APP_SUFFIX on `env` for a worktree
-// checkout, without overriding values the caller set explicitly. Returns `env`.
+// Populate DESKTOP_RENDERER_PORT / DESKTOP_APP_SUFFIX for a linked worktree and
+// DESKTOP_CALLBACK_PROTOCOL for every development checkout, without overriding
+// explicit values. Returns `env`.
 export function applyWorktreeDevEnv(env, { root, log = false } = {}) {
   const hasPort = Boolean(env.DESKTOP_RENDERER_PORT);
   const hasSuffix = Boolean(env.DESKTOP_APP_SUFFIX);
-  if (hasPort && hasSuffix) return env; // explicit overrides win outright
-  if (!isLinkedWorktree(root)) return env; // primary checkout → keep defaults
+  const linked = isLinkedWorktree(root);
 
-  if (!hasPort) env.DESKTOP_RENDERER_PORT = String(rendererPortForPath(root));
-  if (!hasSuffix) env.DESKTOP_APP_SUFFIX = appSuffixForPath(root);
+  if (linked && !hasPort) {
+    env.DESKTOP_RENDERER_PORT = String(rendererPortForPath(root));
+  }
+  if (linked && !hasSuffix) env.DESKTOP_APP_SUFFIX = appSuffixForPath(root);
+  // Callback ownership is not an override knob: letting ambient shell state
+  // choose it can make two otherwise isolated checkouts claim one OS scheme.
+  env.DESKTOP_CALLBACK_PROTOCOL = callbackProtocolForPath(
+    join(root, "apps", "desktop"),
+  );
 
   if (log) {
+    const appName = env.DESKTOP_APP_SUFFIX
+      ? `Patchbay Canary ${env.DESKTOP_APP_SUFFIX}`
+      : "Patchbay Canary";
+    const renderer = env.DESKTOP_RENDERER_PORT ?? "5173";
     console.log(
-      `[dev:desktop] worktree isolation → renderer port ${env.DESKTOP_RENDERER_PORT}, ` +
-        `app "Patchbay Canary ${env.DESKTOP_APP_SUFFIX}"`,
+      `[dev:desktop] checkout isolation → renderer port ${renderer}, ` +
+        `app "${appName}", callback ${env.DESKTOP_CALLBACK_PROTOCOL}://`,
     );
   }
   return env;

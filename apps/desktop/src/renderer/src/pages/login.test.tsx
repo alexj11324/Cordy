@@ -41,6 +41,7 @@ vi.mock("@patchbay/views/platform", () => ({
 
 vi.mock("./login-handoff", () => ({
   createDesktopLoginUrl: mocks.createDesktopLoginUrl,
+  createHostedDesktopHandoffInitiate: vi.fn(() => undefined),
 }));
 
 function renderPage(handoffFailed = false) {
@@ -54,6 +55,7 @@ function renderPage(handoffFailed = false) {
           apiUrl: "https://api.aspectlylabs.com",
         },
       },
+      callbackProtocol: "patchbay-canary-5718c47b86bf9ece",
       openExternal: mocks.openExternal,
     },
   });
@@ -107,12 +109,18 @@ describe("DesktopLoginPage", () => {
       expect(mocks.initiateDesktopAuthHandoff).toHaveBeenCalledWith(
         "state-1",
         "challenge-1",
+        "patchbay-canary-5718c47b86bf9ece",
       );
     });
     expect(mocks.createDesktopLoginUrl).toHaveBeenCalledWith(
       "https://accounts.example",
       expect.any(Function),
-      { sessionApiUrl: undefined, locale: "en" },
+      {
+        sessionApiUrl: undefined,
+        locale: "en",
+        callbackProtocol: "patchbay-canary-5718c47b86bf9ece",
+        initiateHosted: undefined,
+      },
     );
     expect(mocks.openExternal).toHaveBeenCalledWith(
       "https://accounts.example/login?state=state-1",

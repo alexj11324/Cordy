@@ -60,6 +60,40 @@ func TestValidateDesktopGoogleAttemptMatchesBrokerPKCERange(t *testing.T) {
 	}
 }
 
+func TestDesktopHandoffInitiateAcceptsWorktreeCallbackProtocols(t *testing.T) {
+	binding := desktopAuthHandoffRequest{
+		State:         strings.Repeat("s", 43),
+		CodeChallenge: strings.Repeat("c", 43),
+	}
+	for _, protocol := range []string{"patchbay", "patchbay-canary-5718c47b86bf9ece"} {
+		binding.CallbackProtocol = protocol
+		if !validateDesktopHandoffInitiate(binding) {
+			t.Fatalf("owned protocol %q rejected", protocol)
+		}
+	}
+	for _, protocol := range []string{"evil-app", "patchbay-canary", "patchbay-canary-01zp-25"} {
+		binding.CallbackProtocol = protocol
+		if validateDesktopHandoffInitiate(binding) {
+			t.Fatalf("unowned protocol %q accepted", protocol)
+		}
+	}
+}
+
+func TestDesktopHandoffCompleteIgnoresBrowserSelectedProtocol(t *testing.T) {
+	req := desktopAuthHandoffRequest{
+		State:            strings.Repeat("s", 43),
+		CodeChallenge:    strings.Repeat("c", 43),
+		CallbackProtocol: "evil-app",
+	}
+	if !validateDesktopHandoffComplete(req) {
+		t.Fatal("complete rejected a valid PKCE binding because of callback_protocol")
+	}
+	req.State = "short"
+	if validateDesktopHandoffComplete(req) {
+		t.Fatal("complete accepted a malformed PKCE binding")
+	}
+}
+
 func TestRequireFormalDesktopAuthActorRejectsGuestAndMachineCredentials(t *testing.T) {
 	tests := []struct {
 		name   string

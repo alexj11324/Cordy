@@ -30,6 +30,7 @@ import { DesktopAuthRecoveryPage } from "./pages/auth-recovery";
 import {
   completeDesktopHandoff,
   createDesktopLoginUrl,
+  createHostedDesktopHandoffInitiate,
 } from "./pages/login-handoff";
 import {
   GuestSessionRecoveryPage,
@@ -537,12 +538,28 @@ export default function App() {
       throw new Error("Desktop runtime configuration is unavailable");
     }
     const runtimeConfig = runtimeConfigResult.config;
+    const callbackProtocol = window.desktopAPI.callbackProtocol;
+    if (!callbackProtocol) {
+      throw new Error("Desktop callback protocol is unavailable");
+    }
     const handoffClient = new ApiClient(runtimeConfig.apiUrl);
     const loginUrl = await createDesktopLoginUrl(
       runtimeConfig.accountsUrl,
       (state, codeChallenge) =>
-        handoffClient.initiateDesktopAuthHandoff(state, codeChallenge),
-      { sessionApiUrl: runtimeConfig.apiUrl, locale },
+        handoffClient.initiateDesktopAuthHandoff(
+          state,
+          codeChallenge,
+          callbackProtocol,
+        ),
+      {
+        sessionApiUrl: runtimeConfig.apiUrl,
+        locale,
+        callbackProtocol,
+        initiateHosted: createHostedDesktopHandoffInitiate(
+          runtimeConfig.accountsUrl,
+          runtimeConfig.apiUrl,
+        ),
+      },
     );
     const result = await window.desktopAPI.enableCloudMode();
     if (!result.ok) {
