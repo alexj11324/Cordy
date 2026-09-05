@@ -328,7 +328,9 @@ describe("BoardCardContent executor picker", () => {
     expect(identifierRow).toContainElement(status);
     expect(chipRow).toBeNull();
     expect(status.compareDocumentPosition(identifier) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
-    expect(status.querySelector('svg[viewBox="0 0 14 14"]')).not.toBeNull();
+    expect(identifier.parentElement).toHaveClass("h-4", "items-center");
+    expect(status).not.toHaveClass("size-5");
+    expect(status.querySelector("svg")).toHaveClass("size-3");
   });
 
   it("uses a different status glyph for backlog, todo, and in progress", () => {
