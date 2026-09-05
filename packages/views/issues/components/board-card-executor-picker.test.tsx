@@ -281,4 +281,36 @@ describe("BoardCardContent executor picker", () => {
     ).toBeInTheDocument();
     expect(navigation.push).not.toHaveBeenCalled();
   });
+
+  it("places priority on the chip row with labels, not next to the identifier", () => {
+    viewState.cardProperties.priority = true;
+    viewState.cardProperties.labels = true;
+    const { container } = renderCard(
+      makeIssue("agent", {
+        priority: "high",
+        labels: [
+          {
+            id: "label-1",
+            workspace_id: "ws-1",
+            name: "Feature",
+            color: "#8b5cf6",
+            created_at: "2026-08-12T00:00:00Z",
+            updated_at: "2026-08-12T00:00:00Z",
+          },
+        ],
+      }),
+    );
+
+    const chipRow = container.querySelector("[data-board-chip-row]");
+    const identifierRow = screen.getByText("MUL-6082").closest(".justify-between");
+    const priority = screen.getByLabelText("priority.high");
+    const feature = screen.getByLabelText("Feature");
+    if (!(chipRow instanceof HTMLElement) || !(identifierRow instanceof HTMLElement)) {
+      throw new Error("expected identifier row and chip row");
+    }
+
+    expect(identifierRow).not.toContainElement(priority);
+    expect(chipRow).toContainElement(priority);
+    expect(chipRow).toContainElement(feature);
+  });
 });

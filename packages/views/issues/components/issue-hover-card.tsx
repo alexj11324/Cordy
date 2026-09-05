@@ -169,8 +169,9 @@ function IssueHoverCardBody({
 
   return (
     <div className="flex flex-col gap-1.5">
-      {/* Priority, status, identifier — the same lead-with-priority order as
-          BoardCardContent, at the icon size the status glyph already uses.
+      {/* Priority, status, identifier — lead-with-priority so the popup
+          names severity before the ticket id, at the icon size the status
+          glyph already uses.
           StatusIcon and PriorityIcon both render a bare <svg> that forwards no
           aria props, so each glyph is named by an `role="img"` wrapper: on a
           role-less span an aria-label is dropped by assistive tech. */}
