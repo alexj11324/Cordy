@@ -27,6 +27,17 @@ func localDirRef(t *testing.T, path, daemonID, mode string) json.RawMessage {
 	return raw
 }
 
+func localDirRefWithBase(t *testing.T, path, daemonID, mode, base string) json.RawMessage {
+	t.Helper()
+	raw, err := json.Marshal(map[string]string{
+		"local_path": path, "daemon_id": daemonID, "execution_mode": mode, "worktree_base": base,
+	})
+	if err != nil {
+		t.Fatalf("marshal ref: %v", err)
+	}
+	return raw
+}
+
 func runtimeWithVersion(daemonID, cliVersion string) db.AgentRuntime {
 	rt := db.AgentRuntime{DaemonID: pgtype.Text{String: daemonID, Valid: daemonID != ""}}
 	if cliVersion != "" {
@@ -48,7 +59,7 @@ func TestWorktreeClaimBlockReason(t *testing.T) {
 	}}
 
 	t.Run("blocks a runtime that does not advertise the capability", func(t *testing.T) {
-		reason := worktreeClaimBlockReason(worktreeRes, runtimeWithVersion(daemon, "0.4.10"), false)
+		reason := worktreeClaimBlockReason(worktreeRes, runtimeWithVersion(daemon, "0.4.10"), false, false)
 		if reason == "" {
 			t.Fatal("an outdated runtime was allowed to claim a worktree task")
 		}
@@ -60,14 +71,27 @@ func TestWorktreeClaimBlockReason(t *testing.T) {
 	t.Run("blocks a runtime that advertises nothing at all", func(t *testing.T) {
 		// Fail closed: "no version" is what a daemon far older than the field
 		// looks like, which is exactly the dangerous case.
-		if worktreeClaimBlockReason(worktreeRes, runtimeWithVersion(daemon, ""), false) == "" {
+		if worktreeClaimBlockReason(worktreeRes, runtimeWithVersion(daemon, ""), false, false) == "" {
 			t.Error("a runtime advertising nothing was allowed to claim")
 		}
 	})
 
 	t.Run("allows a runtime that advertises the capability", func(t *testing.T) {
-		if reason := worktreeClaimBlockReason(worktreeRes, runtimeWithVersion(daemon, "9.9.9"), true); reason != "" {
+		if reason := worktreeClaimBlockReason(worktreeRes, runtimeWithVersion(daemon, "9.9.9"), true, false); reason != "" {
 			t.Errorf("a capable runtime was blocked: %q", reason)
+		}
+	})
+
+	t.Run("requires the committed-base capability for a HEAD baseline", func(t *testing.T) {
+		res := []ProjectResourceData{{
+			ID: "r1", ResourceType: "local_directory",
+			ResourceRef: localDirRefWithBase(t, "/Users/dev/game", daemon, "worktree", "head"),
+		}}
+		if reason := worktreeClaimBlockReason(res, runtimeWithVersion(daemon, "9.9.9"), true, false); reason == "" {
+			t.Fatal("a runtime with only legacy worktree capability was allowed to claim a committed-baseline task")
+		}
+		if reason := worktreeClaimBlockReason(res, runtimeWithVersion(daemon, "9.9.9"), true, true); reason != "" {
+			t.Fatalf("a runtime with both capabilities was blocked: %q", reason)
 		}
 	})
 
@@ -77,7 +101,7 @@ func TestWorktreeClaimBlockReason(t *testing.T) {
 				ID: "r1", ResourceType: "local_directory",
 				ResourceRef: localDirRef(t, "/Users/dev/game", daemon, mode),
 			}}
-			if reason := worktreeClaimBlockReason(res, runtimeWithVersion(daemon, "0.1.0"), false); reason != "" {
+			if reason := worktreeClaimBlockReason(res, runtimeWithVersion(daemon, "0.1.0"), false, false); reason != "" {
 				t.Errorf("mode %q blocked a daemon that can run it fine: %q", mode, reason)
 			}
 		}
@@ -90,7 +114,7 @@ func TestWorktreeClaimBlockReason(t *testing.T) {
 			ID: "r1", ResourceType: "local_directory",
 			ResourceRef: localDirRef(t, "/Users/dev/game", "daemon-b", "worktree"),
 		}}
-		if reason := worktreeClaimBlockReason(other, runtimeWithVersion(daemon, "0.1.0"), false); reason != "" {
+		if reason := worktreeClaimBlockReason(other, runtimeWithVersion(daemon, "0.1.0"), false, false); reason != "" {
 			t.Errorf("another machine's resource blocked this claim: %q", reason)
 		}
 	})
@@ -100,13 +124,13 @@ func TestWorktreeClaimBlockReason(t *testing.T) {
 			ID: "r1", ResourceType: "github_repo",
 			ResourceRef: json.RawMessage(`{"url":"https://github.com/a/b"}`),
 		}}
-		if reason := worktreeClaimBlockReason(repo, runtimeWithVersion(daemon, "0.1.0"), false); reason != "" {
+		if reason := worktreeClaimBlockReason(repo, runtimeWithVersion(daemon, "0.1.0"), false, false); reason != "" {
 			t.Errorf("github_repo resource blocked a claim: %q", reason)
 		}
 	})
 
 	t.Run("ignores a runtime with no daemon id", func(t *testing.T) {
-		if reason := worktreeClaimBlockReason(worktreeRes, runtimeWithVersion("", "0.1.0"), false); reason != "" {
+		if reason := worktreeClaimBlockReason(worktreeRes, runtimeWithVersion("", "0.1.0"), false, false); reason != "" {
 			t.Errorf("cloud runtime blocked: %q", reason)
 		}
 	})
@@ -116,7 +140,7 @@ func TestWorktreeClaimBlockReason(t *testing.T) {
 			ID: "r1", ResourceType: "local_directory",
 			ResourceRef: json.RawMessage(`{"local_path": 42}`),
 		}}
-		if reason := worktreeClaimBlockReason(bad, runtimeWithVersion(daemon, "0.1.0"), false); reason != "" {
+		if reason := worktreeClaimBlockReason(bad, runtimeWithVersion(daemon, "0.1.0"), false, false); reason != "" {
 			t.Errorf("malformed ref produced a block: %q", reason)
 		}
 	})
@@ -856,7 +880,7 @@ func TestWorktreeClaimGateIgnoresVersionStrings(t *testing.T) {
 		"9.9.9",                 // far above it
 		"",                      // none reported
 	} {
-		if worktreeClaimBlockReason(res, runtimeWithVersion(daemon, version), false) == "" {
+		if worktreeClaimBlockReason(res, runtimeWithVersion(daemon, version), false, false) == "" {
 			t.Errorf("version %q was allowed to claim without advertising the capability", version)
 		}
 	}
@@ -864,7 +888,7 @@ func TestWorktreeClaimGateIgnoresVersionStrings(t *testing.T) {
 	// And the converse: a capable daemon runs regardless of how old its version
 	// string looks, so the gate can never strand a runtime that actually works.
 	for _, version := range []string{"v0.4.21-24-gcd3c0bb89", "0.0.1", ""} {
-		if reason := worktreeClaimBlockReason(res, runtimeWithVersion(daemon, version), true); reason != "" {
+		if reason := worktreeClaimBlockReason(res, runtimeWithVersion(daemon, version), true, false); reason != "" {
 			t.Errorf("version %q blocked a capable runtime: %q", version, reason)
 		}
 	}
@@ -939,6 +963,17 @@ func TestDaemonAdvertisesWorktreeUsesNewestRow(t *testing.T) {
 		}
 		if !daemonAdvertisesWorktree(rows, daemon) {
 			t.Error("an upgraded daemon was not recognised")
+		}
+	})
+
+	t.Run("committed baseline requires its distinct capability", func(t *testing.T) {
+		legacy := []db.AgentRuntime{runtimeRow(daemon, newer, "local-worktree-v1")}
+		if daemonAdvertisesWorktreeCommittedBase(legacy, daemon) {
+			t.Error("legacy worktree capability was treated as committed-baseline support")
+		}
+		current := []db.AgentRuntime{runtimeRow(daemon, newer, "local-worktree-v1", "local-worktree-committed-base-v1")}
+		if !daemonAdvertisesWorktreeCommittedBase(current, daemon) {
+			t.Error("committed-baseline capability was not recognised")
 		}
 	})
 

@@ -652,6 +652,9 @@ func TestGetConfigDeclaresLocalWorktreeSupport(t *testing.T) {
 	if !cfg.LocalWorktreeSupported {
 		t.Fatal("this build runs the worktree save gate but does not advertise it; clients will hide the mode")
 	}
+	if !cfg.LocalWorktreeCommittedBaseSupported {
+		t.Fatal("this build supports the committed worktree baseline but does not advertise it")
+	}
 	// Serialised as a real key, not omitted when false-by-accident: the client
 	// distinguishes "absent" (old server) from an explicit answer.
 	var raw map[string]any
@@ -660,6 +663,9 @@ func TestGetConfigDeclaresLocalWorktreeSupport(t *testing.T) {
 	}
 	if _, ok := raw["local_worktree_supported"]; !ok {
 		t.Fatal("local_worktree_supported missing from the JSON body")
+	}
+	if _, ok := raw["local_worktree_committed_base_supported"]; !ok {
+		t.Fatal("local_worktree_committed_base_supported missing from the JSON body")
 	}
 }
 

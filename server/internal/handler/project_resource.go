@@ -143,16 +143,18 @@ type localDirectoryRef struct {
 	DaemonID      string `json:"daemon_id"`
 	Label         string `json:"label,omitempty"`
 	ExecutionMode string `json:"execution_mode,omitempty"`
+	WorktreeBase  string `json:"worktree_base,omitempty"`
 }
 
 // requireWorktreeCapableDaemon rejects saving a local_directory ref that asks
 // for execution_mode=worktree while the daemon owning the path is too old to
-// implement the mode. An old daemon does not know the field exists: it would
-// json-skip it and run tasks IN PLACE, editing the working copy the user
-// explicitly asked to isolate — and it predates the daemon-side unknown-mode
-// refusal, so only the server can stop it. Gating at save time surfaces the
-// failure at the moment the user can act on it (upgrade the daemon), instead
-// of as a silently-wrong task later.
+// implement the mode. A ref that requests worktree_base=head additionally
+// requires the committed-baseline capability. An old daemon does not know the
+// field exists: it would json-skip it and run tasks IN PLACE, editing the
+// working copy the user explicitly asked to isolate — and it predates the
+// daemon-side unknown-mode refusal, so only the server can stop it. Gating at
+// save time surfaces the failure at the moment the user can act on it (upgrade
+// the daemon), instead of as a silently-wrong task later.
 //
 // Residual gap, accepted for now: a daemon downgraded AFTER the resource was
 // saved is not caught here; closing that needs a claim-time gate.
@@ -181,16 +183,23 @@ func (h *Handler) requireWorktreeCapableDaemon(w http.ResponseWriter, r *http.Re
 	// its runtime row at registration. Version numbers cannot answer this — a
 	// dev-built daemon reports a git-describe string that the version floor
 	// deliberately exempts (MUL-5707).
-	if daemonAdvertisesWorktree(runtimes, ref.DaemonID) {
+	worktreeSupported := daemonAdvertisesWorktree(runtimes, ref.DaemonID)
+	committedBaseSupported := ref.WorktreeBase != "head" || daemonAdvertisesWorktreeCommittedBase(runtimes, ref.DaemonID)
+	if worktreeSupported && committedBaseSupported {
 		return true
 	}
-	// Fail closed when no runtime for this daemon advertises it — including a
-	// daemon_id with no registered runtime at all: a worktree resource that can
-	// never dispatch correctly is worse than a save-time error.
+	// Fail closed when no runtime for this daemon advertises the required
+	// capability — including a daemon_id with no registered runtime at all: a
+	// worktree resource that can never dispatch correctly is worse than a
+	// save-time error.
+	baseline := "parallel (worktree) mode"
+	if ref.WorktreeBase == "head" {
+		baseline = "the committed HEAD worktree baseline"
+	}
 	writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
 		"error": fmt.Sprintf(
-			"local_directory: %q is set to parallel (worktree) mode, but the Patchbay runtime on that machine does not support it. Update the Patchbay app on that machine to the latest version, or keep the resource on in_place.",
-			ref.LocalPath),
+			"local_directory: %q is set to %s, but the Patchbay runtime on that machine does not support it. Update the Patchbay app on that machine to the latest version, or keep the resource on in_place.",
+			ref.LocalPath, baseline),
 		"code":            "daemon_version_unsupported",
 		"current_version": latestDaemonCLIVersion(runtimes, ref.DaemonID),
 		"min_version":     agentpkg.MinLocalWorktreeCLIVersion,
@@ -212,6 +221,14 @@ func (h *Handler) requireWorktreeCapableDaemon(w http.ResponseWriter, r *http.Re
 // A row missing the capability is never skipped: being the newest is what makes
 // it authoritative, not whether its answer is convenient.
 func daemonAdvertisesWorktree(runtimes []db.AgentRuntime, daemonID string) bool {
+	return daemonAdvertisesCapability(runtimes, daemonID, protocol.DaemonCapabilityLocalWorktreeV1)
+}
+
+func daemonAdvertisesWorktreeCommittedBase(runtimes []db.AgentRuntime, daemonID string) bool {
+	return daemonAdvertisesCapability(runtimes, daemonID, protocol.DaemonCapabilityLocalWorktreeCommittedBaseV1)
+}
+
+func daemonAdvertisesCapability(runtimes []db.AgentRuntime, daemonID, capability string) bool {
 	if strings.TrimSpace(daemonID) == "" {
 		return false
 	}
@@ -228,7 +245,7 @@ func daemonAdvertisesWorktree(runtimes []db.AgentRuntime, daemonID string) bool 
 	if newest == nil {
 		return false
 	}
-	return runtimeHasCapability(newest.Metadata, protocol.DaemonCapabilityLocalWorktreeV1)
+	return runtimeHasCapability(newest.Metadata, capability)
 }
 
 // runtimeSeenAfter orders two rows of the same daemon by last_seen_at. A row
@@ -283,6 +300,9 @@ func validateLocalDirectoryRef(ref json.RawMessage) (json.RawMessage, error) {
 	payload.DaemonID = strings.TrimSpace(payload.DaemonID)
 	if payload.DaemonID == "" {
 		return nil, errors.New("local_directory: daemon_id is required")
+	}
+	if payload.WorktreeBase != "" && payload.WorktreeBase != "head" {
+		return nil, errors.New("local_directory: worktree_base must be head")
 	}
 	payload.Label = strings.TrimSpace(payload.Label)
 	payload.ExecutionMode = strings.TrimSpace(payload.ExecutionMode)

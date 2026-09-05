@@ -20,6 +20,13 @@ const (
 	// unblocked, which let exactly such a daemon through (MUL-5707). A daemon
 	// that implements the mode says so; one that does not, cannot.
 	DaemonCapabilityLocalWorktreeV1 = "local-worktree-v1"
+	// DaemonCapabilityLocalWorktreeCommittedBaseV1 advertises that the daemon
+	// understands worktree_base=head and starts a task from the committed HEAD
+	// without replaying the source directory's dirty state. It is separate from
+	// local-worktree-v1 so older worktree daemons can remain compatible with the
+	// legacy snapshot behavior while clients fail closed for the stronger
+	// committed-baseline contract.
+	DaemonCapabilityLocalWorktreeCommittedBaseV1 = "local-worktree-committed-base-v1"
 	// DaemonCapabilitySourceContextQuickCreateV1 advertises support for the
 	// two-section quick-create prompt that keeps a new instruction separate
 	// from immutable historical source context.

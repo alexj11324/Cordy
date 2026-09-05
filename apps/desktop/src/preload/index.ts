@@ -302,6 +302,9 @@ const desktopAPI = {
   pickDirectories: (defaultPath?: string) =>
     ipcRenderer.invoke("local-directory:pick-many", defaultPath),
   /** Validate that a path is an existing readable+writable directory. */
+  cloneProjectRepository: (url: string) => ipcRenderer.invoke("local-directory:clone", url),
+  confirmProjectRepository: (path: string, urls: string[]) => ipcRenderer.invoke("local-directory:confirm-repository", path, urls),
+
   validateLocalDirectory: (path: string) =>
     ipcRenderer.invoke("local-directory:validate", path),
   /** Listen for Cmd/Ctrl+W tab-close requests from the main process.

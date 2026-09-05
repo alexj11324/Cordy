@@ -130,6 +130,8 @@ interface DesktopAPI {
   }>;
   /** Validate that a path is an existing readable+writable directory.
    *  Mirrors the daemon's runtime check so the user sees errors before submit. */
+  cloneProjectRepository: (url: string) => Promise<{ ok: boolean; path?: string; basename?: string; reason?: string }>;
+  confirmProjectRepository: (path: string, urls: string[]) => Promise<boolean>;
   validateLocalDirectory: (
     path: string,
   ) => Promise<{
@@ -145,6 +147,8 @@ interface DesktopAPI {
     /** Whether the path sits inside a git working tree. Only set when ok=true.
      *  Drives the worktree execution-mode option in the resource UI. */
     is_git_repo?: boolean;
+    has_commits?: boolean;
+    remotes?: Array<{ name: string; url: string }>;
   }>;
   /** Listen for Cmd/Ctrl+W tab-close requests from the main process.
    *  Returns an unsubscribe function. */

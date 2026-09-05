@@ -135,7 +135,14 @@
     "mode_badge_worktree_tooltip": "task 在各自的 git worktree 中同时运行，并以分支形式交付结果。你的工作区不会被改动。",
     "toast_local_mode_updated": "已更新执行方式",
     "toast_local_mode_update_failed": "无法更新执行方式",
-    "mode_badge_in_place": "原地"
+    "mode_badge_in_place": "原地",
+    "clone_repository": "下载 {{repo}} 到这台电脑…",
+    "clone_authentication_required": "请在这台电脑登录 GitHub 或更新 Git 凭据，然后重试。",
+    "clone_access_denied": "当前账号无法访问该仓库。请切换账号或向仓库所有者申请权限。",
+    "clone_repository_unavailable": "仓库不存在，或当前账号无法访问。请核对仓库地址和账号。",
+    "clone_network_error": "无法连接 Git 服务器。请检查网络后重试。",
+    "clone_destination_exists": "该文件夹已存在。请绑定已有项目，或选择新文件夹。",
+    "clone_failed": "下载仓库失败。请检查 Git 认证和存放位置；该位置可能保留了部分下载内容。"
   },
   "delete_dialog": {
     "title": "删除项目",

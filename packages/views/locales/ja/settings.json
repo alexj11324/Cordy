@@ -1367,11 +1367,11 @@
   },
   "repositories": {
     "section_title": "リポジトリ",
-    "description": "このワークスペースに関連付けられた Git リポジトリです。エージェントはこれらをクローンしてコードを作業します。",
+    "description": "",
     "url_placeholder": "https://git.example.com/org/repo.git または git@git.example.com:org/repo.git",
     "url_empty": "（空の URL）",
     "description_placeholder": "説明（例: Go バックエンド + Next.js フロントエンド）",
-    "add": "リポジトリを追加",
+    "add": "リモートリポジトリを追加",
     "connect_github": "GitHub に接続",
     "choose_from_github": "GitHub から選択",
     "github_not_configured": "この環境では GitHub 接続が設定されていません。",
@@ -1406,7 +1406,13 @@
     "delete_confirm_action": "リポジトリを削除",
     "manage_hint": "リポジトリを管理できるのは admin と owner のみです。",
     "toast_saved": "リポジトリを保存しました",
-    "toast_save_failed": "リポジトリを保存できませんでした"
+    "toast_save_failed": "リポジトリを保存できませんでした",
+    "choose_local_project": "ローカルプロジェクトを選択",
+    "local_projects_title": "プロジェクトフォルダー",
+    "local_projects_empty": "プロジェクトはまだありません。",
+    "remote_projects_title": "リモートソース",
+    "remote_details": "リモートアドレス",
+    "remote_entry_hint": "Git アドレスを入力するか、GitHub ボタンでリポジトリを選択してください。"
   },
   "desktop": {
     "tabs": {
