@@ -311,7 +311,8 @@ export const viewStoreSlice = (set: StoreApi<IssueViewState>["setState"]): Issue
   sortDirection: "asc",
   cardProperties: {
     priority: true,
-    description: true,
+    // Board cards stay dense unless the user opts into a description preview.
+    description: false,
     executor: true,
     startDate: true,
     dueDate: true,

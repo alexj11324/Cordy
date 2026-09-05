@@ -13,7 +13,7 @@ export function StatusHeading({
   const { t } = useT("issues");
   return (
     <div className="flex items-center gap-2">
-      <span className="inline-flex items-center gap-1.5 text-caption font-semibold">
+      <span className="inline-flex items-center gap-1.5 text-caption font-medium">
         <StatusIcon status={status} className="h-3 w-3" />
         {t(($) => $.status[statusCategoryOfKey(status)])}
       </span>
