@@ -18,7 +18,7 @@
     "last_run_empty": "--",
     "empty": {
       "title": "还没有自动化",
-      "hint": "为你的智能体安排周期性 task。从模板选一个，或从空白开始。"
+      "hint": "为你的智能体安排定时或 webhook 驱动的 task。从模板选一个，或从空白开始。"
     },
     "scope_all": "全部",
     "no_matches": "没有匹配的自动化",
@@ -40,30 +40,135 @@
     "days_ago": "{{count}} 天前",
     "months_ago": "{{count}} 个月前"
   },
+  "template_categories": {
+    "popular": "热门",
+    "code_review": "代码审查",
+    "security": "安全",
+    "incidents_triage": "事故与分诊",
+    "data_research": "数据与调研",
+    "environment": "环境"
+  },
+  "template_flow": {
+    "trigger": {
+      "scheduled": "定时",
+      "pr_opened": "PR 打开",
+      "pr_pushed": "PR 推送",
+      "pr_review_comment": "PR review 评论",
+      "new_message_in_channel": "频道新消息",
+      "workflow_run_completed": "workflow 运行完成",
+      "checks_completed": "Checks 完成",
+      "incident_triggered": "事故触发",
+      "sentry_issue_event": "任意 Sentry 错误",
+      "issue_created": "任务创建"
+    },
+    "action": {
+      "send_slack": "发送 Slack",
+      "pr_comment": "PR 评论",
+      "request_reviewers": "请求 reviewer",
+      "granola": "Granola",
+      "databricks_sql": "Databricks SQL",
+      "notion": "Notion",
+      "stripe": "Stripe",
+      "slack": "Slack",
+      "datadog": "Datadog"
+    }
+  },
   "templates": {
-    "daily_news": {
-      "title": "每日新闻摘要",
-      "summary": "搜索并汇总今天的新闻给团队"
+    "find_critical_bugs": {
+      "title": "查找严重 bug",
+      "summary": "分析近期提交，找出高严重度正确性 bug，并只提交有把握的修复"
     },
-    "pr_review": {
-      "title": "PR review 提醒",
-      "summary": "标记需要 review 的滞留 pull request"
+    "scan_codebase_vulnerabilities": {
+      "title": "扫描代码库漏洞",
+      "summary": "按计划审查整个仓库，只对已验证、高影响的安全问题发出告警"
     },
-    "bug_triage": {
-      "title": "Bug 分诊",
-      "summary": "评估并安排新提交的 bug"
+    "generate_docs": {
+      "title": "生成文档",
+      "summary": "为近期改动或文档不足的代码创建并更新开发者文档"
     },
-    "weekly_progress": {
-      "title": "每周进度报告",
-      "summary": "汇总团队本周进展"
+    "add_test_coverage": {
+      "title": "补充测试覆盖",
+      "summary": "审查近期改动，为高风险且覆盖不足的逻辑补测试"
     },
-    "dependency_audit": {
-      "title": "依赖审计",
-      "summary": "扫描安全漏洞和过时的依赖包"
+    "find_vulnerabilities": {
+      "title": "查找漏洞",
+      "summary": "审查 pull request 中可利用的安全问题，合并前只标记已验证的发现"
     },
-    "documentation_check": {
-      "title": "文档检查",
-      "summary": "检查近期改动是否缺失文档"
+    "assign_pr_reviewers": {
+      "title": "分配 PR reviewer",
+      "summary": "按代码改动分配 reviewer，并对低风险 PR 自动 approve"
+    },
+    "autofix_pr_review_comments": {
+      "title": "自动修复 PR review 评论",
+      "summary": "先处理 PR diff 上的行内 review 评论"
+    },
+    "monitor_engineering_invariants": {
+      "title": "监控工程不变量",
+      "summary": "按计划复查仓库的关键不变量，仅在规则回退时告警"
+    },
+    "remediate_dependency_vulnerabilities": {
+      "title": "修复依赖漏洞",
+      "summary": "分诊来自 Linear 的依赖漏洞工单，确认升级安全后再开 PR"
+    },
+    "fix_bugs_reported_in_slack": {
+      "title": "修复 Slack 中上报的 bug",
+      "summary": "监听 Slack 频道里的 bug 报告，调查代码库，并用 PR 修复"
+    },
+    "triage_failed_github_actions": {
+      "title": "分诊失败的 GitHub Actions",
+      "summary": "调查失败或被取消的 workflow 运行，并把结论发到 Slack"
+    },
+    "fix_ci_failures": {
+      "title": "修复 CI 失败",
+      "summary": "检测 main 上的 CI 失败，并在可安全修复时自动开 PR"
+    },
+    "investigate_pagerduty_incidents": {
+      "title": "调查 PagerDuty 事故",
+      "summary": "结合 Datadog 与代码上下文调查事故"
+    },
+    "investigate_sentry_issues": {
+      "title": "调查 Sentry 错误",
+      "summary": "调查来自 Sentry 的错误，定位根因并提出修复"
+    },
+    "investigate_top_datadog_errors": {
+      "title": "调查 Datadog 高频错误",
+      "summary": "调查 Datadog 中反复出现的生产错误，定位根因并提出修复"
+    },
+    "triage_linear_issues": {
+      "title": "分诊 Linear 任务",
+      "summary": "调查 bug、规划功能请求，并对容易修的项开 PR"
+    },
+    "summarize_changes_daily": {
+      "title": "每日汇总改动",
+      "summary": "把前一天仓库里值得注意的改动和风险汇总成每日 Slack 摘要"
+    },
+    "customer_health_monitoring": {
+      "title": "客户健康监控智能体",
+      "summary": "结合用量分析、通话记录、Slack 升级和 Linear 阻塞，找出有流失风险的客户"
+    },
+    "product_analytics": {
+      "title": "产品分析智能体",
+      "summary": "从 Databricks 汇总每周产品用量、激活、留存和功能采用情况"
+    },
+    "product_faq": {
+      "title": "产品 FAQ 智能体",
+      "summary": "在专用 Slack 频道回答产品问题，上下文来自 Slack、Notion、Linear 和 GitHub"
+    },
+    "product_finance": {
+      "title": "产品财务智能体",
+      "summary": "分析 Stripe 收入、流失信号和产品定价机会"
+    },
+    "slack_digest": {
+      "title": "Slack 摘要智能体",
+      "summary": "汇总重要 DM、@提及，以及用户最活跃的 Slack 频道"
+    },
+    "investigate_environment_setup_failures": {
+      "title": "调查环境准备失败",
+      "summary": "分析近期云端智能体运行，从 setup 日志、转录和相关任务定位环境准备失败的根因"
+    },
+    "monitor_environment_build_health": {
+      "title": "监控环境构建健康度",
+      "summary": "检查云环境构建健康度，并对失败构建做根因分析"
     }
   },
   "detail": {
