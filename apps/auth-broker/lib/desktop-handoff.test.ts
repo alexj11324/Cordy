@@ -29,6 +29,8 @@ describe("desktop handoff", () => {
     expect(binding?.query).not.toContain("session_api");
     expect(buildDesktopCallbackUrl(`pbl_${"c".repeat(43)}`, "s".repeat(43), "patchbay"))
       .toContain("patchbay://auth/callback?");
+    expect(buildDesktopCallbackUrl(`pbl_${"c".repeat(43)}`, "s".repeat(43), "patchbay-canary-5718c47b86bf9ece"))
+      .toContain("patchbay-canary-5718c47b86bf9ece://auth/callback?");
   });
 
   it.each(["http://localhost:8080", "http://127.0.0.1:19080", "https://evil.example"])(

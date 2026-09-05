@@ -39,6 +39,8 @@ interface DesktopAPI {
   };
   /** OS-preferred locale (BCP 47) injected by main via additionalArguments. */
   systemLocale: string;
+  /** OS-level URL scheme this process registered for auth/invite callbacks. */
+  callbackProtocol: string;
   /** Subscribe to OS language changes detected after boot. Returns an unsubscribe function. */
   onSystemLocaleChanged: (callback: (locale: string) => void) => () => void;
   /** Validated runtime endpoint config, or a blocking config error. */

@@ -1,6 +1,8 @@
+// @vitest-environment jsdom
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@patchbay/core/api";
-import { completeDesktopHandoff, createDesktopLoginUrl } from "./login-handoff";
+import { completeDesktopHandoff, createDesktopLoginUrl, hostedDesktopHandoffApiUrl } from "./login-handoff";
 
 const PENDING_HANDOFF_KEY = "patchbay_desktop_login_handoff";
 
@@ -52,17 +54,86 @@ describe("desktop auth handoff", () => {
 
   it("requests local identity without exposing the local API origin", async () => {
     const initiate = vi.fn().mockResolvedValue({ registered: true });
+    const initiateHosted = vi.fn().mockResolvedValue({ registered: true });
 
     const url = await createDesktopLoginUrl(
       "https://accounts.aspectlylabs.com/",
       initiate,
-      { sessionApiUrl: "http://localhost:8080/" },
+      {
+        sessionApiUrl: "http://localhost:8080/",
+        callbackProtocol: "patchbay-canary-5718c47b86bf9ece",
+        initiateHosted,
+      },
     );
     const parsed = new URL(url);
 
     expect(parsed.origin).toBe("https://accounts.aspectlylabs.com");
     expect(parsed.searchParams.get("session_api")).toBeNull();
     expect(parsed.searchParams.get("session_mode")).toBe("local");
+    expect(initiateHosted).toHaveBeenCalledWith(
+      parsed.searchParams.get("state"),
+      parsed.searchParams.get("code_challenge"),
+      "patchbay-canary-5718c47b86bf9ece",
+    );
+  });
+
+  it("fails closed when hosted Accounts cannot bind the checkout protocol", async () => {
+    const initiateHosted = vi
+      .fn()
+      .mockRejectedValue(new Error("invalid desktop auth handoff"));
+    await expect(
+      createDesktopLoginUrl(
+        "https://accounts.aspectlylabs.com",
+        vi.fn().mockResolvedValue({ registered: true }),
+        {
+          sessionApiUrl: "http://localhost:8080",
+          callbackProtocol: "patchbay-canary-5718c47b86bf9ece",
+          initiateHosted,
+        },
+      ),
+    ).rejects.toThrow("invalid desktop auth handoff");
+    expect(initiateHosted).toHaveBeenCalledOnce();
+    expect(localStorage.getItem(PENDING_HANDOFF_KEY)).toBeNull();
+  });
+
+  it("requires the hosted binding authority for a loopback product API", async () => {
+    await expect(
+      createDesktopLoginUrl(
+        "https://accounts.aspectlylabs.com",
+        vi.fn().mockResolvedValue({ registered: true }),
+        {
+          sessionApiUrl: "http://localhost:8080",
+          callbackProtocol: "patchbay-canary-5718c47b86bf9ece",
+        },
+      ),
+    ).rejects.toThrow("Hosted desktop handoff is unavailable");
+  });
+
+  it("uses the bound checkout protocol without a shared-scheme fallback", async () => {
+    await createDesktopLoginUrl(
+      "https://accounts.aspectlylabs.com",
+      vi.fn().mockResolvedValue({ registered: true }),
+      {
+        sessionApiUrl: "http://localhost:8080",
+        callbackProtocol: "patchbay-canary-5718c47b86bf9ece",
+        initiateHosted: vi.fn().mockResolvedValue({ registered: true }),
+      },
+    );
+  });
+
+  it("does not bind a worktree protocol on self-hosted Accounts", () => {
+    expect(
+      hostedDesktopHandoffApiUrl(
+        "https://accounts.example.test",
+        "http://localhost:8080",
+      ),
+    ).toBeUndefined();
+    expect(
+      hostedDesktopHandoffApiUrl(
+        "https://accounts.aspectlylabs.com",
+        "http://localhost:18105",
+      ),
+    ).toBe("https://api.aspectlylabs.com");
   });
 
   it("keeps explicit self-hosted Accounts on its own handoff authority", async () => {

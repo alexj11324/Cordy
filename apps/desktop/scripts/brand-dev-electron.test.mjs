@@ -13,6 +13,15 @@ describe("macOS development bundle identity", () => {
     expect(a.bundleId).not.toBe(devBundleIdentity("/worktrees/second/apps/desktop", "first").bundleId);
     expect(a.bundleId).toMatch(/^ai\.patchbay\.desktop\.canary\.[a-f0-9]{16}$/);
     expect(a.name).toBe("Patchbay Canary first");
+    expect(a.callbackProtocol).toMatch(/^patchbay-canary-[a-f0-9]{16}$/);
+    expect(a.callbackProtocol).toBe(
+      `patchbay-canary-${a.bundleId.split(".").at(-1)}`,
+    );
+    expect(a.callbackSchemes).toEqual([a.callbackProtocol]);
+    expect(a.callbackUrlName).toBe(`${a.bundleId}.callback`);
+    expect(a.callbackProtocol).not.toBe(
+      devBundleIdentity("/worktrees/second/apps/desktop", "first").callbackProtocol,
+    );
   });
 
   it.runIf(process.platform === "darwin")("repairs an already-branded app missing its native callback without changing its shared inode", () => {
@@ -27,7 +36,8 @@ describe("macOS development bundle identity", () => {
       expect(configureDevPlist(target, identity)).toBe(true);
       const plist = JSON.parse(execFileSync("plutil", ["-convert", "json", "-o", "-", target], { encoding:"utf8" }));
       expect(plist.CFBundleIdentifier).toBe(identity.bundleId);
-      expect(plist.CFBundleURLTypes[0].CFBundleURLSchemes).toEqual(["patchbay"]);
+      expect(plist.CFBundleURLTypes[0].CFBundleURLSchemes).toEqual(identity.callbackSchemes);
+      expect(plist.CFBundleURLTypes[0].CFBundleURLName).toBe(identity.callbackUrlName);
       expect(plist.NSPrincipalClass).toBe("AtomApplication");
       expect(readFileSync(original, "utf8")).toBe(xml);
       expect(configureDevPlist(target, identity)).toBe(false);

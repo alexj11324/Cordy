@@ -93,7 +93,6 @@ SELECT created_at
 FROM desktop_auth_handoff
 WHERE state = $1
   AND code_challenge = $2
-  AND callback_protocol = 'patchbay'
   AND user_id IS NULL
   AND code_hash IS NULL
   AND completed_at IS NULL
@@ -170,7 +169,6 @@ VALUES ($1, $2, 'patchbay', now() + interval '5 minutes')
 ON CONFLICT (state) DO UPDATE
 SET state = EXCLUDED.state
 WHERE desktop_auth_handoff.code_challenge = EXCLUDED.code_challenge
-  AND desktop_auth_handoff.callback_protocol = 'patchbay'
   AND desktop_auth_handoff.user_id IS NULL
   AND desktop_auth_handoff.code_hash IS NULL
   AND desktop_auth_handoff.completed_at IS NULL

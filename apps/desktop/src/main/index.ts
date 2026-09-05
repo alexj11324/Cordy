@@ -49,6 +49,11 @@ import {
 } from "./window-state";
 import { resolveMainWindowAppearance } from "./window-appearance";
 import {
+  isDesktopDeepLink,
+  PRODUCTION_DESKTOP_CALLBACK_PROTOCOL,
+  resolveDesktopCallbackProtocol,
+} from "../shared/callback-protocol";
+import {
   encodeIssueWindowArgument,
   parseIssueWindowRequest,
   type IssueWindowContext,
@@ -126,7 +131,10 @@ if (process.platform !== "win32") {
   process.env.PATH = `${fallbackPaths.join(":")}:${process.env.PATH ?? ""}`;
 }
 
-const PROTOCOL = "patchbay";
+const PROTOCOL = resolveDesktopCallbackProtocol({
+  packaged: !is.dev,
+  developmentProtocol: process.env.DESKTOP_CALLBACK_PROTOCOL,
+});
 const devLog = is.dev ? createBestEffortDevLog() : undefined;
 
 // Where the main process parks a freeze/crash breadcrumb until the next
@@ -274,7 +282,7 @@ function handleDeepLink(url: string): void {
     const parsed = new URL(url);
     if (parsed.protocol !== `${PROTOCOL}:`) return;
 
-    // patchbay://auth/callback?code=<one-time-code>&state=<request-state>
+    // {protocol}://auth/callback?code=<one-time-code>&state=<request-state>
     // Never accept a bearer token from a custom-protocol URL. The browser
     // completes a registered PKCE handoff and the renderer redeems this
     // single-use code over HTTPS.
@@ -661,14 +669,23 @@ if (is.dev) {
 
 // --- Protocol registration -----------------------------------------------
 
-if (process.defaultApp) {
-  // In dev, register with the path to the electron binary + app path
-  app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [
-    app.getAppPath(),
-  ]);
-} else {
-  app.setAsDefaultProtocolClient(PROTOCOL);
+function registerProtocolClient(protocol: string): void {
+  if (process.platform === "win32" && process.defaultApp) {
+    // Windows development needs the Electron binary plus the app path.
+    app.setAsDefaultProtocolClient(protocol, process.execPath, [
+      app.getAppPath(),
+    ]);
+    return;
+  }
+  app.setAsDefaultProtocolClient(protocol);
 }
+
+if (is.dev) {
+  // Clean up registrations created by older Canary builds that claimed the
+  // production scheme. Electron scopes removal to the current executable.
+  app.removeAsDefaultProtocolClient(PRODUCTION_DESKTOP_CALLBACK_PROTOCOL);
+}
+registerProtocolClient(PROTOCOL);
 
 // --- Single instance lock ------------------------------------------------
 
@@ -691,7 +708,9 @@ if (!gotTheLock) {
     if (window) focusMainWindow(window);
 
     // On Windows the deep link URL is the last argv entry
-    const deepLinkUrl = argv.find((arg) => arg.startsWith(`${PROTOCOL}://`));
+    const deepLinkUrl = argv.find((arg) =>
+      isDesktopDeepLink(arg, PROTOCOL),
+    );
     if (deepLinkUrl) handleDeepLink(deepLinkUrl);
   });
 
@@ -699,7 +718,7 @@ if (!gotTheLock) {
   // queued because desktopInitialized remains false until runtime config and
   // IPC handlers are ready.
   const coldStartDeepLink = process.argv.find((arg) =>
-    arg.startsWith(`${PROTOCOL}://`),
+    isDesktopDeepLink(arg, PROTOCOL),
   );
   if (coldStartDeepLink) handleDeepLink(coldStartDeepLink);
 
@@ -800,6 +819,10 @@ if (!gotTheLock) {
       const p = process.platform;
       const os = p === "darwin" ? "macos" : p === "win32" ? "windows" : p === "linux" ? "linux" : "unknown";
       event.returnValue = { version: getAppVersion(), os };
+    });
+
+    ipcMain.on("auth:callback-protocol", (event) => {
+      event.returnValue = PROTOCOL;
     });
 
     // Sync IPC: read + clear any freeze/crash breadcrumb left by a previous
