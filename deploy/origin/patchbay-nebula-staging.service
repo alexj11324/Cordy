@@ -1,0 +1,18 @@
+[Unit]
+Description=Patchbay isolated staging
+Wants=network-online.target
+After=network-online.target docker.service nginx.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+RuntimeDirectory=patchbay-nebula-staging
+RuntimeDirectoryMode=0700
+RemainAfterExit=yes
+ExecStart=/usr/bin/python3 /home/ubuntu/patchbay-nebula-staging/nebula-staging-start.py
+ExecStartPost=/usr/bin/sudo /usr/bin/systemctl reload nginx.service
+TimeoutStartSec=420
+
+[Install]
+WantedBy=multi-user.target

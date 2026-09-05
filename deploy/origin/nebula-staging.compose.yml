@@ -1,0 +1,82 @@
+name: patchbay-nebula-staging
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: patchbay
+      POSTGRES_DB: patchbay
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    mem_limit: 768m
+    cpus: 1
+    pids_limit: 256
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U patchbay -d patchbay]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+  backend:
+    image: ${BACKEND_IMAGE:?required}
+    environment:
+      JWT_SECRET: ${JWT_SECRET:?required}
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:?required}
+      CLERK_JWT_KEY: ${CLERK_JWT_KEY:?required}
+      CLERK_ISSUER: ${CLERK_ISSUER:?required}
+      PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN: ${PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN:?required}
+      DATABASE_URL: postgres://patchbay:${POSTGRES_PASSWORD:?required}@postgres:5432/patchbay?sslmode=disable
+      PORT: '8080'
+      FRONTEND_ORIGIN: https://patchbay-staging.nebula-spaces.com
+      PATCHBAY_APP_URL: https://patchbay-staging.nebula-spaces.com
+      PATCHBAY_PUBLIC_URL: https://patchbay-staging-api.nebula-spaces.com
+      CORS_ALLOWED_ORIGINS: https://patchbay-staging.nebula-spaces.com,https://patchbay-staging-accounts.nebula-spaces.com
+      CLERK_AUTHORIZED_PARTIES: https://patchbay-staging.nebula-spaces.com,https://patchbay-staging-accounts.nebula-spaces.com
+      COOKIE_DOMAIN: ''
+      APP_ENV: staging
+      ANALYTICS_DISABLED: 'true'
+    ports: ['127.0.0.1:18211:8080']
+    volumes: [uploads:/app/data/uploads]
+    depends_on:
+      postgres: {condition: service_healthy}
+    mem_limit: 512m
+    cpus: 1
+    pids_limit: 256
+    restart: unless-stopped
+  frontend:
+    image: ${WEB_IMAGE:?required}
+    environment:
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:?required}
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY:?required}
+      PATCHBAY_CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY:?required}
+      HOSTNAME: 0.0.0.0
+      REMOTE_API_URL: http://backend:8080
+      PATCHBAY_AUTH_BROKER_ORIGIN: https://patchbay-staging-accounts.nebula-spaces.com
+      NEXT_PUBLIC_ACCOUNTS_URL: https://patchbay-staging-accounts.nebula-spaces.com
+    ports: ['127.0.0.1:13111:3000']
+    mem_limit: 512m
+    cpus: 1
+    pids_limit: 256
+    restart: unless-stopped
+  docs:
+    image: ${DOCS_IMAGE:?required}
+    ports: ['127.0.0.1:14001:3000']
+    mem_limit: 384m
+    cpus: 0.5
+    pids_limit: 128
+    restart: unless-stopped
+  broker:
+    image: ${BROKER_IMAGE:?required}
+    environment:
+      CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY:?required}
+      PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN: ${PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN:?required}
+      PATCHBAY_ORIGIN_AUTH_TOKEN: ${PATCHBAY_ORIGIN_AUTH_TOKEN:?required}
+      PATCHBAY_API_ORIGIN: https://patchbay-staging-api.nebula-spaces.com
+      PATCHBAY_AUTH_BROKER_ORIGIN: https://patchbay-staging-accounts.nebula-spaces.com
+    ports: ['127.0.0.1:14301:3000']
+    mem_limit: 384m
+    cpus: 0.5
+    pids_limit: 128
+    restart: unless-stopped
+volumes:
+  pgdata:
+  uploads:
