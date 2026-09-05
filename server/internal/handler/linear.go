@@ -841,6 +841,7 @@ func (h *Handler) HandleLinearWebhook(w http.ResponseWriter, r *http.Request) {
 	if _, err = tx.Exec(r.Context(), `UPDATE linear_connection SET last_success_at=now(),last_error=NULL,updated_at=now() WHERE id=$1 AND status='active'`, cid); err != nil { writeError(w, 500, "failed to update Linear webhook health"); return }
 	if err = tx.Commit(r.Context()); err != nil { writeError(w, 500, "failed to commit Linear webhook"); return }
 	if tag.RowsAffected() > 0 && h.LinearWorker != nil { h.LinearWorker.Wake() }
+	h.fanoutLinearAutomations(r.Context(), cid, eventType, event.Action, delivery, body)
 	writeJSON(w, http.StatusOK, map[string]any{"accepted": true, "duplicate": tag.RowsAffected() == 0})
 }
 

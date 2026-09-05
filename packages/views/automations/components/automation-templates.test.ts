@@ -8,6 +8,7 @@ import {
   TEMPLATE_CATEGORIES,
   TEMPLATE_CATEGORY_IDS,
   TEMPLATE_TRIGGER_IDS,
+  templateTriggerPreset,
 } from "./automation-templates";
 
 describe("automation template catalog", () => {
@@ -84,6 +85,23 @@ describe("automation template catalog", () => {
       { event: "error" },
       { event: "issue" },
     ]);
+  });
+
+  it("maps webhook templates onto native catalog presets", () => {
+    expect(templateTriggerPreset("pr_opened")).toBe("github.pull_request.opened");
+    expect(templateTriggerPreset("pr_pushed")).toBe("github.pull_request.pushed");
+    expect(templateTriggerPreset("pr_review_comment")).toBe(
+      "github.pull_request.review_comment",
+    );
+    expect(templateTriggerPreset("new_message_in_channel")).toBe("slack.message");
+    expect(templateTriggerPreset("workflow_run_completed")).toBe(
+      "github.workflow_run.completed",
+    );
+    expect(templateTriggerPreset("checks_completed")).toBe("github.ci_completed");
+    expect(templateTriggerPreset("issue_created")).toBe("linear.issue.created");
+    expect(templateTriggerPreset("scheduled")).toBeNull();
+    expect(templateTriggerPreset("incident_triggered")).toBeNull();
+    expect(templateTriggerPreset("sentry_issue_event")).toBeNull();
   });
 
   it("keeps catalog ids aligned with the English locale keys", () => {

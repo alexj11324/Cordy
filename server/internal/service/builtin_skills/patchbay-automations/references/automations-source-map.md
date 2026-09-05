@@ -7,6 +7,9 @@
 - `resolveAutomationLeader` resolves team-assigned automations to the team leader.
 - `AgentReadiness` blocks archived/runtime-unready agents before enqueue.
 - `server/cmd/server/router.go` exposes authenticated `/api/automations` routes and unauthenticated webhook ingress `/api/webhooks/automations/{token}`.
+- Native GitHub/Slack/Linear automations do not use that public token URL. `server/internal/handler/automation_native_fanout.go` fans workspace platform webhooks out to matching `automation_trigger` rows (`provider` + `preset`), persists `webhook_delivery` as `queued`, and notifies `WebhookDeliveryWorker`. Mapping lives in `server/internal/service/automation_event.go`; catalog ids in `server/internal/service/automation_trigger_catalog.go` (keep in sync with `packages/core/automations/trigger-catalog.ts`).
+- `trigger-add --preset` writes the catalog id. Native presets skip token minting; `webhook.received` and legacy github-without-preset still mint a URL. Slack/Linear creates require a preset.
+- Operator env/subscription checklist (no secrets in git): `references/codex-secrets-handoff.md`.
 - `server/internal/handler/automation_webhook.go` durably stores public webhook deliveries, synchronously admits an idempotent run for the compatible `200 accepted|skipped` + `run_id` response, and wakes the worker.
 - `server/internal/handler/webhook_delivery_worker.go` claims queued deliveries with expiring database leases, applies per-trigger dispatch pacing, and resumes admitted runs using `automation_run.webhook_delivery_id` so recovery cannot duplicate a run/task.
 - `GET /api/automations/cron-preview?expr=&tz=` (`server/internal/handler/automation_cron_preview.go`) returns `{next_runs}` — the next 3 occurrences as RFC3339 UTC — or 400 with the parser/timezone error. Compute-only (no automation is touched), gated by workspace membership; schedule editors use it instead of approximating the next run client-side.

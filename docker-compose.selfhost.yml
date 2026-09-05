@@ -173,6 +173,7 @@ services:
       # in the database, so this single deployment-wide key is all the operator
       # needs to set here.
       PATCHBAY_SLACK_SECRET_KEY: ${PATCHBAY_SLACK_SECRET_KEY:-}
+      PATCHBAY_SLACK_SIGNING_SECRET: ${PATCHBAY_SLACK_SIGNING_SECRET:-}
       # Self-hosted Git provider integration (Forgejo / Gitea / GitLab). This
       # is a self-host-only feature, so the compose file turns it on by default;
       # the managed cloud leaves it unset (off). It still needs a valid

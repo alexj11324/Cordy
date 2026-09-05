@@ -1,6 +1,6 @@
 ---
 name: patchbay-automations
-description: "Use when creating, updating, inspecting, triggering, or debugging a Patchbay automation (scheduled, webhook, or manual)."
+description: "Use when creating, updating, inspecting, triggering, or debugging a Patchbay automation (scheduled, GitHub/Slack/Linear, generic webhook, or manual)."
 user-invocable: false
 allowed-tools: Bash(patchbay *)
 ---
@@ -42,12 +42,20 @@ patchbay automation create --title "<title>" --description "<task prompt>" --age
 patchbay automation update <automation-id> --status active|paused --output json
 patchbay automation runs <automation-id> --output json
 patchbay automation trigger-add <automation-id> --kind schedule --cron "0 9 * * *" --timezone Asia/Shanghai --output json
-patchbay automation trigger-add <automation-id> --kind webhook --label "ci" --output json
+patchbay automation trigger-add <automation-id> --kind webhook --preset github.pull_request.opened --output json
+patchbay automation trigger-add <automation-id> --kind webhook --preset slack.message --output json
+patchbay automation trigger-add <automation-id> --kind webhook --preset webhook.received --label "ci" --output json
 patchbay automation trigger <automation-id> --output json
 patchbay automation trigger-rotate-url <automation-id> <trigger-id> --yes --output json
 ```
 
-Use `trigger` only when the user explicitly asks for a manual run. Use `trigger-rotate-url` only when rotating a webhook URL; the old URL stops being valid.
+Use `trigger` only when the user explicitly asks for a manual run. Use `trigger-rotate-url` only when rotating a **generic** webhook URL (`preset=webhook.received` or a legacy minted token); native GitHub/Slack/Linear triggers have no public URL. The old URL stops being valid.
+
+`--preset` is the catalog id (`github.pull_request.opened`, `slack.message`, `linear.issue.created`, `webhook.received`, …). Native GitHub/Slack/Linear presets keep `kind=webhook` but do **not** mint `/api/webhooks/automations/{token}`. They fire from the workspace GitHub App / Slack Events / Linear webhook already configured for the workspace. `webhook.received` (and legacy `provider=github` with no preset) still mint a public URL.
+
+Native fan-out: the platform webhook handler matches enabled triggers by `provider` + `preset` (+ optional `config` filters), persists a queued `webhook_delivery`, and wakes the existing delivery worker. Do not call the public automation webhook URL for native sources.
+
+Operator secrets for those platform apps are **not** in this skill. The checklist is `references/codex-secrets-handoff.md` — fill env and expand GitHub/Slack/Linear subscriptions; the code path is already wired. Missing secrets make the platform webhook return 503 / ignore events, which is expected.
 
 `automation get` redacts `webhook_token`, `webhook_path`, and `webhook_url` by default while reporting whether a token exists and its non-sensitive hint. Only add `--show-secrets` when the user explicitly asks to retrieve the live webhook credential; the command warns on stderr. Do not paste webhook tokens or signing material into comments, logs, docs, or PRs.
 

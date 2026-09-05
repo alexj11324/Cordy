@@ -37,6 +37,12 @@ export interface Automation {
   pause_reason?: string | null;
   execution_mode: AutomationExecutionMode;
   issue_title_template: string | null;
+  // Optional model override for this automation. Absent/null on older
+  // servers and when the executor agent's model should be used.
+  model?: string | null;
+  // Tool allowlist overlay (memories / slack_send / mcp_server_ids).
+  // Absent on older servers; treat as {}.
+  tools?: Record<string, unknown> | null;
   created_by_type: string;
   created_by_id: string;
   last_run_at: string | null;
@@ -109,6 +115,12 @@ export interface AutomationTrigger {
   // event_filters is only present for webhook triggers. Null/empty means
   // "accept all events".
   event_filters?: WebhookEventFilter[] | null;
+  // Catalog preset id (github.pull_request.opened, slack.message, …).
+  // Absent on older servers and on schedule triggers that predate presets.
+  provider?: string | null;
+  preset?: string | null;
+  config?: Record<string, unknown> | null;
+  has_signing_secret?: boolean;
   last_fired_at: string | null;
   created_at: string;
   updated_at: string;
@@ -163,6 +175,8 @@ export interface CreateAutomationRequest {
   executor_id: string;
   execution_mode: AutomationExecutionMode;
   issue_title_template?: string;
+  model?: string | null;
+  tools?: Record<string, unknown> | null;
   subscribers?: AutomationSubscriberInput[];
 }
 
@@ -177,6 +191,8 @@ export interface UpdateAutomationRequest {
   status?: AutomationStatus;
   execution_mode?: AutomationExecutionMode;
   issue_title_template?: string | null;
+  model?: string | null;
+  tools?: Record<string, unknown> | null;
   // When present, fully replaces the automation's subscriber template;
   // omit to leave it untouched.
   subscribers?: AutomationSubscriberInput[];
@@ -189,6 +205,9 @@ export interface CreateAutomationTriggerRequest {
   label?: string;
   // event_filters is only meaningful for webhook triggers.
   event_filters?: WebhookEventFilter[];
+  provider?: string | null;
+  preset?: string | null;
+  config?: Record<string, unknown> | null;
 }
 
 export interface UpdateAutomationTriggerRequest {
@@ -198,6 +217,8 @@ export interface UpdateAutomationTriggerRequest {
   label?: string;
   // event_filters is only meaningful for webhook triggers.
   event_filters?: WebhookEventFilter[] | null;
+  preset?: string | null;
+  config?: Record<string, unknown> | null;
 }
 
 export interface CronPreviewResponse {

@@ -355,6 +355,7 @@ var concurrentIndexCleanups = map[string]string{
 	"574_channel_installation_runtime_observation_index":        "channel_installation_runtime_observation_uidx",
 	"575_idx_chat_message_channel_task":                         "idx_chat_message_channel_task",
 	"579_channel_installation_installed_lease_index":            "idx_channel_installation_installed_lease",
+	"593_automation_trigger_event_index":                       "idx_automation_trigger_native_event",
 }
 
 // concurrentDownIndexCleanups covers every migration whose down direction

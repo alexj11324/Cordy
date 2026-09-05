@@ -107,15 +107,20 @@ type ManagedWebhookConfig struct {
 	Slash         slashEnqueuer
 	SigningSecret string
 	Logger        *slog.Logger
+	// OnNativeEvent is an optional post-ACK hook for automations that listen
+	// on Slack Events API types (message, reaction, channel_created). It must
+	// not delay the HTTP ACK; HandleEvents already returns 200 first.
+	OnNativeEvent func(ctx context.Context, inst db.ChannelInstallation, body []byte)
 }
 
 // ManagedWebhook serves the deployment-wide Slack Events API webhook.
 type ManagedWebhook struct {
-	q      appIDLookupQueries
-	handle channel.InboundHandler
-	slash  slashEnqueuer
-	secret string
-	logger *slog.Logger
+	q        appIDLookupQueries
+	handle   channel.InboundHandler
+	slash    slashEnqueuer
+	secret   string
+	logger   *slog.Logger
+	onNative func(ctx context.Context, inst db.ChannelInstallation, body []byte)
 }
 
 // NewManagedWebhook builds the ingress. Handle may be nil in tests that only
@@ -128,7 +133,7 @@ func NewManagedWebhook(cfg ManagedWebhookConfig) (*ManagedWebhook, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &ManagedWebhook{q: cfg.Queries, handle: cfg.Handle, slash: cfg.Slash, secret: cfg.SigningSecret, logger: logger}, nil
+	return &ManagedWebhook{q: cfg.Queries, handle: cfg.Handle, slash: cfg.Slash, secret: cfg.SigningSecret, logger: logger, onNative: cfg.OnNativeEvent}, nil
 }
 
 // verifiedBody reads the bounded body and checks the HMAC-SHA256 request
@@ -194,7 +199,7 @@ func (w *ManagedWebhook) HandleEvents(rw http.ResponseWriter, r *http.Request) {
 		// ACK first: Slack retries on anything but 2xx inside ~3s, and the
 		// engine pipeline (identity, session, enqueue) is far slower.
 		rw.WriteHeader(http.StatusOK)
-		w.dispatchDetached(event)
+		w.dispatchDetached(event, body)
 		return
 	default:
 		rw.WriteHeader(http.StatusOK)
@@ -264,13 +269,23 @@ func (w *ManagedWebhook) HandleSlash(rw http.ResponseWriter, r *http.Request) {
 // slackChannel.dispatchEventsAPI. The bot identity comes from the resolved
 // installation's stored config (not from a per-connection fixed id, since one
 // webhook serves every managed team). A nil engine handle (tests) ACKs only.
-func (w *ManagedWebhook) dispatchDetached(event slackevents.EventsAPIEvent) {
-	if w.handle == nil {
+func (w *ManagedWebhook) dispatchDetached(event slackevents.EventsAPIEvent, body []byte) {
+	if w.onNative == nil && w.handle == nil {
 		return
 	}
+	payload := append([]byte(nil), body...)
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), managedWebhookTimeout)
 		defer cancel()
+		if w.onNative != nil {
+			inst, err := lookupInstallation(ctx, w.q, event.APIAppID, event.TeamID)
+			if err == nil && inst.Status == "installed" {
+				w.onNative(ctx, inst, payload)
+			}
+		}
+		if w.handle == nil {
+			return
+		}
 		msg, ok := w.translate(ctx, event)
 		if !ok {
 			return

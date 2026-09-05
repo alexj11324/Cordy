@@ -911,6 +911,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				Slash:         slackSlash,
 				SigningSecret: strings.TrimSpace(os.Getenv("PATCHBAY_SLACK_SIGNING_SECRET")),
 				Logger:        slog.Default(),
+				OnNativeEvent: h.HandleSlackNativeAutomation,
 			})
 			if werr != nil {
 				slog.Error("slack: ManagedWebhook init failed; managed ingress disabled", "error", werr)

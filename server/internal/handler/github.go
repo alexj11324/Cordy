@@ -1042,6 +1042,7 @@ func (h *Handler) HandleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
 		// Acknowledge every event so GitHub doesn't mark the endpoint failing,
 		// but ignore types we don't model.
 	}
+	h.fanoutGitHubAutomations(ctx, event, body, r.Header.Get("X-GitHub-Delivery"))
 	w.WriteHeader(http.StatusAccepted)
 }
 

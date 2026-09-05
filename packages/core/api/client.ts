@@ -359,6 +359,8 @@ import {
   IssueTableRowsResponseSchema,
   ListAutomationsResponseSchema,
   EMPTY_LIST_AUTOMATIONS_RESPONSE,
+  GetAutomationResponseSchema,
+  fallbackGetAutomation,
   AutomationRunSchema,
   AutomationQuotaUsageSchema,
   FALLBACK_AUTOMATION_RUN,
@@ -4655,7 +4657,13 @@ export class ApiClient {
   }
 
   async getAutomation(id: string): Promise<GetAutomationResponse> {
-    return this.fetch(`/api/automations/${id}`);
+    const raw = await this.fetch<unknown>(`/api/automations/${id}`);
+    return parseWithFallback(
+      raw,
+      GetAutomationResponseSchema,
+      fallbackGetAutomation(id),
+      { endpoint: "GET /api/automations/:id" },
+    );
   }
 
   async createAutomation(data: CreateAutomationRequest): Promise<Automation> {

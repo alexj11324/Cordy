@@ -854,6 +854,55 @@ describe("ApiClient schema fallback", () => {
     });
   });
 
+  describe("getAutomation", () => {
+    it("keeps additive model, tools, and trigger preset fields", async () => {
+      stubFetchJson({
+        automation: {
+          id: "ap-1",
+          workspace_id: "ws-1",
+          title: "Find bugs",
+          executor_type: "agent",
+          executor_id: "ag-1",
+          status: "active",
+          execution_mode: "run_only",
+          created_by_type: "member",
+          created_by_id: "u-1",
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+          model: "claude-opus-4.6",
+          tools: { memories: { enabled: true } },
+        },
+        triggers: [
+          {
+            id: "tr-1",
+            automation_id: "ap-1",
+            kind: "webhook",
+            enabled: true,
+            provider: "github",
+            preset: "github.pull_request.opened",
+            config: { branch: "main" },
+            created_at: "2026-01-01T00:00:00Z",
+            updated_at: "2026-01-01T00:00:00Z",
+          },
+        ],
+      });
+      const client = new ApiClient("https://api.example.test");
+      const detail = await client.getAutomation("ap-1");
+      expect(detail.automation.model).toBe("claude-opus-4.6");
+      expect(detail.automation.tools).toEqual({ memories: { enabled: true } });
+      expect(detail.triggers[0]?.preset).toBe("github.pull_request.opened");
+      expect(detail.triggers[0]?.config).toEqual({ branch: "main" });
+    });
+
+    it("falls back to a placeholder carrying the requested id", async () => {
+      stubFetchJson({ wrong: "shape" });
+      const client = new ApiClient("https://api.example.test");
+      const detail = await client.getAutomation("ap-1");
+      expect(detail.automation.id).toBe("ap-1");
+      expect(detail.triggers).toEqual([]);
+    });
+  });
+
   describe("listAgentBuilderSessions", () => {
     it("falls back to no drafts when the response is malformed", async () => {
       stubFetchJson({ unexpected: "shape" });

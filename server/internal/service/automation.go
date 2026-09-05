@@ -1759,6 +1759,15 @@ func (s *AutomationService) buildIssueDescription(ap db.Automation, run db.Autom
 		b.WriteString("\n```")
 	}
 
+	if notes := automationToolsDispatchNotes(ap.Tools); notes != "" {
+		b.WriteString("\n\n")
+		b.WriteString(notes)
+	}
+	if ap.Model.Valid && strings.TrimSpace(ap.Model.String) != "" {
+		b.WriteString("\n\nPreferred model for this automation: ")
+		b.WriteString(strings.TrimSpace(ap.Model.String))
+	}
+
 	return pgtype.Text{String: b.String(), Valid: true}
 }
 
