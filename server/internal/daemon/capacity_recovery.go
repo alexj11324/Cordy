@@ -1,0 +1,99 @@
+package daemon
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"strings"
+	"sync/atomic"
+	"time"
+
+	"github.com/patchbay-ai/patchbay/server/pkg/agent"
+	"github.com/patchbay-ai/patchbay/server/pkg/taskfailure"
+)
+
+func codexFailureReason(result agent.Result) taskfailure.Reason {
+	switch result.ProviderErrorCode {
+	case "usageLimitExceeded", "sessionBudgetExceeded":
+		return taskfailure.ReasonAgentProviderQuotaLimit
+	case "rateLimitExceeded", "serverOverloaded":
+		return taskfailure.ReasonAgentProviderCapacityOrRateLimit
+	case "unauthorized":
+		return taskfailure.ReasonAgentProviderAuthOrAccess
+	}
+	return taskfailure.Classify(result.Error)
+}
+
+func canRecoverCodexCapacity(result agent.Result) bool {
+	if result.Status != "failed" || !result.RecoveryResumeSafe || result.SessionID == "" || result.ResumeRejected {
+		return false
+	}
+	// Structured errors take precedence over human-readable messages. Unknown
+	// variants fail closed; a bare 429 is not evidence of temporary rate limiting.
+	if result.ProviderErrorCode != "" {
+		return result.ProviderErrorCode == "serverOverloaded" || result.ProviderErrorCode == "rateLimitExceeded"
+	}
+	if taskfailure.Classify(result.Error) != taskfailure.ReasonAgentProviderCapacityOrRateLimit {
+		return false
+	}
+	lower := strings.ToLower(result.Error)
+	return strings.Contains(lower, "selected model is at capacity") || strings.Contains(lower, "no capacity available") || strings.Contains(lower, "server overloaded") || strings.Contains(lower, "rate limit") || strings.Contains(lower, "rate_limit")
+}
+
+func capacityRecoveryDelay(attempt int) time.Duration {
+	delays := [...]time.Duration{15 * time.Second, 30 * time.Second, time.Minute, 2 * time.Minute, 5 * time.Minute}
+	if attempt >= len(delays) {
+		return delays[len(delays)-1]
+	}
+	return delays[attempt]
+}
+
+const capacityRecoveryPrompt = "Continue the interrupted task from the current conversation and working directory. Check the actual progress and the outcome of any previous tool action before repeating it. Do not restart completed work."
+
+// recoverCodexCapacity keeps the task lease and cancellation context while the
+// provider is busy. Each executeAndDrain has already joined the old process and
+// flushed its messages. Waiting happens outside its inactivity watchdog. Only
+// a real terminal result finishes recovery; a successful handshake does not.
+func (d *Daemon) recoverCodexCapacity(ctx context.Context, backend agent.Backend, result agent.Result, tools int32, opts agent.ExecOptions, logger *slog.Logger, taskID, codexHome string, seq *atomic.Int32, wait func(context.Context, time.Duration) error) (agent.Result, int32, error) {
+	for attempt := 0; canRecoverCodexCapacity(result); attempt++ {
+		if ctx.Err() != nil {
+			result.Status = "cancelled"
+			return result, tools, nil
+		}
+		delay := capacityRecoveryDelay(attempt)
+		logger.Warn("model capacity recovery waiting", "task_id", taskID, "session_id", result.SessionID, "attempt", attempt+1, "delay", delay, "error", result.Error)
+		// Use the existing transcript channel so all clients can see why the task
+		// remains active without introducing a new task state or UI-only timer.
+		notice := fmt.Sprintf("\n\nModel temporarily busy. Progress is preserved; retrying in %s (attempt %d). You can stop this task at any time.\n\n", delay, attempt+1)
+		reportCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		reportErr := d.client.ReportTaskMessages(reportCtx, taskID, []TaskMessageData{{Seq: int(seq.Add(1)), Type: "thinking", Content: notice}})
+		cancel()
+		if reportErr != nil {
+			logger.Warn("capacity recovery notice failed", "error", reportErr)
+		}
+		if err := wait(ctx, delay); err != nil || ctx.Err() != nil {
+			result.Status = "cancelled"
+			return result, tools, nil
+		}
+		opts.ResumeSessionID = result.SessionID
+		opts.RequireResume = true
+		prior := result
+		next, nextTools, err := d.executeAndDrain(ctx, backend, capacityRecoveryPrompt, opts, logger, taskID, codexHome, seq)
+		tools += nextTools
+		if err != nil {
+			// Preserve progress and usage, but stop on an unclassified launch failure.
+			prior.Status = "failed"
+			prior.Error = err.Error()
+			prior.ProviderErrorCode = ""
+			prior.RecoveryResumeSafe = false
+			return prior, tools, nil
+		}
+		next.Usage = mergeUsage(prior.Usage, next.Usage)
+		if next.SessionID == "" {
+			next.SessionID = prior.SessionID
+			next.RecoveryResumeSafe = false
+		}
+		result = next
+	}
+	return result, tools, nil
+}

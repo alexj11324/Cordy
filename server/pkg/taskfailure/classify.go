@@ -144,6 +144,7 @@ func Classify(rawError string) Reason {
 			"rate limit",
 			"overloaded",
 			"no capacity available",
+			"selected model is at capacity",
 		):
 		return ReasonAgentProviderCapacityOrRateLimit
 
