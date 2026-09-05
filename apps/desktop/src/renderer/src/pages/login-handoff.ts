@@ -187,6 +187,11 @@ function clearDesktopHandoffVerifier(state: string): void {
   }
 }
 
+export function cancelDesktopLogin(state?: string): void {
+  if (state) { clearDesktopHandoffVerifier(state); return; }
+  localStorage.removeItem(PENDING_HANDOFF_KEY);
+}
+
 /** Redeem the one-time code and establish the native bearer session. */
 export async function completeDesktopHandoff(
   code: string,
@@ -211,6 +216,9 @@ export async function completeDesktopHandoff(
     throw error;
   }
 
+  if (readDesktopHandoffVerifier(state) !== verifier) {
+    return { acknowledged: true, authenticated: false };
+  }
   clearDesktopHandoffVerifier(state);
   try {
     await dependencies.login(token);

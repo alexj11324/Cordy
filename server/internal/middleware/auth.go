@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"context"
-	"encoding/hex"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -16,21 +15,6 @@ import (
 	"github.com/patchbay-ai/patchbay/server/internal/util"
 	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
-
-const (
-	guestTokenPrefix    = "pbg_"
-	guestTokenHexLength = 40
-	guestTokenLength    = len(guestTokenPrefix) + guestTokenHexLength
-	guestSessionActive  = "active"
-)
-
-func validGuestToken(raw string) bool {
-	if len(raw) != guestTokenLength || !strings.HasPrefix(raw, guestTokenPrefix) {
-		return false
-	}
-	_, err := hex.DecodeString(raw[len(guestTokenPrefix):])
-	return err == nil
-}
 
 func uuidToString(u pgtype.UUID) string { return util.UUIDToString(u) }
 
@@ -98,8 +82,8 @@ func Auth(queries *db.Queries, patCache *auth.PATCache, cloudPAT *auth.CloudPATV
 			// Guest bearer: pbg_ tokens are opaque, database-backed credentials.
 			// Resolve the session on every request so a revoke/claim takes effect
 			// immediately; unlike PATs, this path deliberately has no cache.
-			if strings.HasPrefix(tokenString, guestTokenPrefix) {
-				if !validGuestToken(tokenString) {
+			if strings.HasPrefix(tokenString, auth.GuestTokenPrefix) {
+				if !auth.ValidGuestToken(tokenString) {
 					http.Error(w, `{"error":"invalid token"}`, http.StatusUnauthorized)
 					return
 				}
@@ -108,33 +92,14 @@ func Auth(queries *db.Queries, patCache *auth.PATCache, cloudPAT *auth.CloudPATV
 					return
 				}
 
-				guestSession, err := queries.GetGuestSessionByTokenHash(r.Context(), auth.HashToken(tokenString))
+				guestUser, err := auth.ResolveGuestUser(r.Context(), queries, tokenString)
 				if err != nil {
-					if errors.Is(err, pgx.ErrNoRows) {
+					if errors.Is(err, auth.ErrInvalidGuestToken) {
 						http.Error(w, `{"error":"invalid token"}`, http.StatusUnauthorized)
 						return
 					}
-					slog.Warn("auth: guest session lookup unavailable", "path", r.URL.Path, "error", err)
+					slog.Warn("auth: guest identity lookup unavailable", "path", r.URL.Path, "error", err)
 					http.Error(w, `{"error":"authentication temporarily unavailable"}`, http.StatusServiceUnavailable)
-					return
-				}
-				if guestSession.Status != guestSessionActive || !guestSession.ID.Valid || !guestSession.UserID.Valid {
-					http.Error(w, `{"error":"invalid token"}`, http.StatusUnauthorized)
-					return
-				}
-
-				guestUser, err := queries.GetUser(r.Context(), guestSession.UserID)
-				if err != nil {
-					if errors.Is(err, pgx.ErrNoRows) {
-						http.Error(w, `{"error":"invalid token"}`, http.StatusUnauthorized)
-						return
-					}
-					slog.Warn("auth: guest user lookup unavailable", "path", r.URL.Path, "error", err)
-					http.Error(w, `{"error":"authentication temporarily unavailable"}`, http.StatusServiceUnavailable)
-					return
-				}
-				if !guestUser.IsGuest || !guestUser.ID.Valid || guestUser.ID != guestSession.UserID {
-					http.Error(w, `{"error":"invalid token"}`, http.StatusUnauthorized)
 					return
 				}
 
@@ -356,7 +321,7 @@ func RevokeGuestOnLogout(queries *db.Queries) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			tokenString, fromCookie := extractToken(r)
-			if fromCookie || !validGuestToken(tokenString) {
+			if fromCookie || !auth.ValidGuestToken(tokenString) {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -375,7 +340,7 @@ func RevokeGuestOnLogout(queries *db.Queries) func(http.Handler) http.Handler {
 				http.Error(w, `{"error":"guest session revocation unavailable"}`, http.StatusServiceUnavailable)
 				return
 			}
-			if guestSession.Status != guestSessionActive || !guestSession.ID.Valid {
+			if guestSession.Status != auth.GuestSessionActive || !guestSession.ID.Valid {
 				next.ServeHTTP(w, r)
 				return
 			}

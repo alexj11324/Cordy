@@ -1,78 +1,37 @@
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
 import { Button } from "@patchbay/ui/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Label } from "@patchbay/ui/components/ui/label";
 import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
 import { useT } from "@patchbay/views/i18n";
 import { DragStrip } from "@patchbay/views/platform";
-import type {
-  LocalGuestSession,
-  GuestSessionMutationResult,
-} from "../../../shared/local-guest";
 
 type DesktopEntryPageProps = {
   onSignIn: () => Promise<void>;
-  onGuestSession: (session: LocalGuestSession) => void;
+  onResetGuest?: () => Promise<void>;
+  /** Mints an email-less cloud account and boots straight into the app. */
+  onGuestSession: () => Promise<void>;
 };
 
 export function DesktopEntryPage({
   onSignIn,
   onGuestSession,
+  onResetGuest,
 }: DesktopEntryPageProps) {
   const { t } = useT("auth");
-  const [guestDialogOpen, setGuestDialogOpen] = useState(false);
-  const [displayName, setDisplayName] = useState("");
-  const [guestError, setGuestError] = useState(false);
-  const [guestSubmitting, setGuestSubmitting] = useState(false);
-  const [cloudSubmitting, setCloudSubmitting] = useState(false);
-  const [cloudError, setCloudError] = useState(false);
+  // Which button is mid-flight, so only that one shows a busy state while both
+  // stay disabled.
+  const [pending, setPending] = useState<"cloud" | "guest" | "reset" | null>(null);
+  const [failed, setFailed] = useState<"cloud" | "guest" | "reset" | null>(null);
 
-  const openGuestDialog = () => {
-    setGuestError(false);
-    setGuestDialogOpen(true);
-  };
-
-  const handleGuestSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (guestSubmitting) return;
-
-    setGuestSubmitting(true);
-    setGuestError(false);
+  const run = async (which: "cloud" | "guest" | "reset", action: () => Promise<void>) => {
+    if (pending) return;
+    setPending(which);
+    setFailed(null);
     try {
-      const result: GuestSessionMutationResult =
-        await window.desktopAPI.createGuestSession(displayName);
-      if (!result.ok) {
-        setGuestError(true);
-        return;
-      }
-      setGuestDialogOpen(false);
-      setDisplayName("");
-      onGuestSession(result.session);
+      await action();
     } catch {
-      setGuestError(true);
+      setFailed(which);
     } finally {
-      setGuestSubmitting(false);
-    }
-  };
-
-  const handleCloudSignIn = async () => {
-    if (cloudSubmitting) return;
-    setCloudSubmitting(true);
-    setCloudError(false);
-    try {
-      await onSignIn();
-    } catch {
-      setCloudError(true);
-    } finally {
-      setCloudSubmitting(false);
+      setPending(null);
     }
   };
 
@@ -106,10 +65,10 @@ export function DesktopEntryPage({
             <Button
               type="button"
               className="h-11 min-w-28 rounded-full bg-white px-6 text-zinc-950 transition-none hover:bg-zinc-200 active:not-aria-[haspopup]:translate-y-0 disabled:opacity-100"
-              disabled={cloudSubmitting}
-              aria-busy={cloudSubmitting}
+              disabled={pending !== null}
+              aria-busy={pending === "cloud"}
               onClick={() => {
-                void handleCloudSignIn();
+                void run("cloud", onSignIn);
               }}
             >
               {t(($) => $.guest.signin_button)}
@@ -118,75 +77,42 @@ export function DesktopEntryPage({
               type="button"
               variant="outline"
               className="h-11 min-w-28 rounded-full border-zinc-700 bg-zinc-900 px-6 text-white transition-none hover:bg-zinc-800 hover:text-white active:not-aria-[haspopup]:translate-y-0 disabled:opacity-100"
-              disabled={cloudSubmitting}
-              onClick={openGuestDialog}
+              disabled={pending !== null}
+              aria-busy={pending === "guest"}
+              onClick={() => {
+                void run("guest", onGuestSession);
+              }}
             >
-              {t(($) => $.guest.button)}
+              {pending === "guest"
+                ? t(($) => $.guest.creating)
+                : t(($) => $.guest.button)}
             </Button>
           </div>
+          <p className="mt-5 text-caption text-zinc-500">
+            {t(($) => $.guest.entry_description)}
+          </p>
+          {onResetGuest && (
+            <div className="mt-4 text-center text-caption">
+              <p>{t(($) => $.guest.session_error)}</p>
+              <Button variant="link" disabled={pending !== null} onClick={() => { void run("reset", onResetGuest); }}>
+                {t(($) => $.guest.reset)}
+              </Button>
+            </div>
+          )}
           <div data-testid="desktop-entry-feedback" className="mt-4 min-h-5">
-            {cloudError && (
+            {failed === "cloud" && (
               <p role="alert" className="text-caption text-red-400">
                 {t(($) => $.desktop.entry.login_error)}
+              </p>
+            )}
+            {(failed === "guest" || failed === "reset") && (
+              <p role="alert" className="text-caption text-red-400">
+                {t(($) => $.guest.unavailable)}
               </p>
             )}
           </div>
         </div>
       </main>
-
-      <Dialog
-        open={guestDialogOpen}
-        onOpenChange={(open) => {
-          if (!guestSubmitting) setGuestDialogOpen(open);
-        }}
-      >
-        <DialogContent showCloseButton={!guestSubmitting}>
-          <form onSubmit={(event) => void handleGuestSubmit(event)}>
-            <DialogHeader>
-              <DialogTitle>{t(($) => $.guest.name_prompt)}</DialogTitle>
-              <DialogDescription>
-                {t(($) => $.guest.name_description)}
-              </DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-2 py-4">
-              <Label htmlFor="guest-display-name">
-                {t(($) => $.guest.display_name_label)}
-              </Label>
-              <Input
-                id="guest-display-name"
-                autoFocus
-                autoComplete="off"
-                maxLength={64}
-                value={displayName}
-                onChange={(event) => setDisplayName(event.target.value)}
-                placeholder={t(($) => $.guest.display_name_placeholder)}
-                disabled={guestSubmitting}
-                aria-invalid={guestError}
-              />
-              {guestError && (
-                <p role="alert" className="text-caption text-destructive">
-                  {t(($) => $.guest.invalid_name)}
-                </p>
-              )}
-            </div>
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={guestSubmitting}
-                onClick={() => setGuestDialogOpen(false)}
-              >
-                {t(($) => $.guest.cancel)}
-              </Button>
-              <Button type="submit" disabled={guestSubmitting}>
-                {guestSubmitting
-                  ? t(($) => $.guest.creating)
-                  : t(($) => $.guest.continue)}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
