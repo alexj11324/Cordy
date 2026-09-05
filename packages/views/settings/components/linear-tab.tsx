@@ -997,6 +997,8 @@ export function LinearIntegrationCard({
     action = <span className="text-caption text-muted-foreground">{t(($) => $.page.linear.admin_only)}</span>;
   } else if (connectionQuery.isLoading) {
     action = <Loader2 className="size-4 animate-spin text-muted-foreground" />;
+  } else if (connectionQuery.isError || hasUnknownStatus) {
+    action = <span className="text-caption text-muted-foreground">{t(($) => $.page.linear.unavailable)}</span>;
   } else if (!configured) {
     action = <span className="text-caption text-muted-foreground">{t(($) => $.page.linear.server_configuration_required)}</span>;
   } else if (isReauthorizationRequired || !isConnected) {

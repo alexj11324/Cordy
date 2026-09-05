@@ -213,7 +213,7 @@ export function IntegrationsTab({
 
   const linearEnabled = useFeatureEnabled(
     LINEAR_INSTALLATION_FOUNDATION_FLAG,
-    false,
+    true,
   );
   const composioEnabled = useFeatureEnabled(COMPOSIO_MCP_APPS_FLAG, false);
   const composioToolkits = useQuery({
