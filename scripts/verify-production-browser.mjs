@@ -260,18 +260,25 @@ async function redeemSyntheticLogin(browser, credentials, publishableKey) {
     const clerkPayload = await clerkExchange.json();
     assert.equal(clerkPayload?.user?.is_guest, false, "Web session is formal");
 
-    const completionPromise = page.waitForResponse((response) => {
-      const url = new URL(response.url());
-      return (
-        url.origin === ACCOUNTS_ORIGIN &&
-        url.pathname === "/v1/desktop/google/complete" &&
-        response.request().method() === "POST"
-      );
-    });
-    await page.goto(`${ACCOUNTS_ORIGIN}/login?${query}`, {
-      waitUntil: "domcontentloaded",
-    });
-    const completion = await completionPromise;
+    // The login page redirects after the exchange. Let that navigation settle
+    // before leaving Web, otherwise it can interrupt the next Accounts visit.
+    await page.waitForURL((url) =>
+      url.origin === PRODUCT_ORIGIN && url.pathname !== "/login",
+    );
+
+    const [completion] = await Promise.all([
+      page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return (
+          url.origin === ACCOUNTS_ORIGIN &&
+          url.pathname === "/v1/desktop/google/complete" &&
+          response.request().method() === "POST"
+        );
+      }),
+      page.goto(`${ACCOUNTS_ORIGIN}/login?${query}`, {
+        waitUntil: "domcontentloaded",
+      }),
+    ]);
     assert.equal(completion.status(), 200, "desktop login completion");
     const code = requireDesktopCompletion(await completion.json());
 

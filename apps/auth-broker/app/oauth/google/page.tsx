@@ -1,12 +1,12 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { useClerk, useSignIn } from "@clerk/nextjs";
+import { useAuth, useClerk } from "@clerk/nextjs";
 import { useSearchParams } from "next/navigation";
 import { AuthShell } from "@/components/auth-shell";
 import { registerDesktopGoogleAttempt } from "@/lib/broker-client";
 import { desktopAttemptStorageKey, readDesktopHandoffBinding } from "@/lib/desktop-handoff";
-import { hasClerkOAuthReturn, readGoogleSso, startGoogleOAuth } from "@/lib/google-oauth";
+import { hasClerkOAuthReturn, startGoogleOAuth } from "@/lib/google-oauth";
 import { useAuthMessages } from "@/lib/auth-messages";
 import { resolveStandaloneReturnUrl } from "@/lib/redirect";
 
@@ -23,8 +23,7 @@ function Content() {
     );
   }, [binding, params]);
   const clerk = useClerk();
-  const clerkLoaded = clerk.loaded;
-  const { signIn } = useSignIn();
+  const { isLoaded: clerkLoaded } = useAuth();
   const messages = useAuthMessages();
   const started = useRef(false);
   const [registered, setRegistered] = useState(false);
@@ -76,14 +75,18 @@ function Content() {
     const query = binding
       ? binding.query
       : new URLSearchParams({ return_url: returnUrl }).toString();
-    if (!readGoogleSso(signIn)) return;
+    const client = clerk.client;
+    if (!client) return;
+    // An unfinished email attempt makes Clerk SSO return without navigating.
+    // Read the new resource after reset; hook resources can retain the old attempt.
+    client.resetSignIn();
     started.current = true;
-    void startGoogleOAuth(signIn, window.location.origin, query)
+    void startGoogleOAuth(client.signIn, window.location.origin, query)
       .then(({ error: failure }) => {
         if (failure) setError(true);
       })
       .catch(() => setError(true));
-  }, [binding, clerk, clerkLoaded, desktopRequest, error, params, registered, returnUrl, signIn]);
+  }, [binding, clerk, clerkLoaded, desktopRequest, error, params, registered, returnUrl]);
 
   return <AuthShell><p role={error ? "alert" : "status"}>{error ? messages.startFailed : messages.starting}</p>{error && <button onClick={() => window.location.reload()}>{messages.retry}</button>}</AuthShell>;
 }

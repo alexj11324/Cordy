@@ -1,26 +1,36 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Page from "./page";
 
-const mocks = vi.hoisted(() => ({
-  searchParams: { current: new URLSearchParams() },
-  sso: vi.fn(),
-  register: vi.fn(),
-  signIn: { sso: undefined as undefined | ReturnType<typeof vi.fn> },
-  clerk: { loaded: true, session: null as null | { id: string } },
-}));
+const mocks = vi.hoisted(() => {
+  const client = { signIn: { __internal_future: { sso: vi.fn() } }, resetSignIn: vi.fn() };
+  return {
+    searchParams: { current: new URLSearchParams() },
+    sso: vi.fn(),
+    register: vi.fn(),
+    listeners: new Set<() => void>(),
+    client,
+    clerk: { loaded: true, session: null as null | { id: string }, client },
+  };
+});
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => mocks.searchParams.current,
 }));
 
-vi.mock("@clerk/nextjs", () => ({
+vi.mock("@clerk/nextjs", async () => {
+  const { useSyncExternalStore } = await import("react");
+  return {
+  useAuth: () => ({ isLoaded: useSyncExternalStore(
+    (listener) => { mocks.listeners.add(listener); return () => { mocks.listeners.delete(listener); }; },
+    () => mocks.clerk.loaded,
+  ) }),
   useClerk: () => mocks.clerk,
-  useSignIn: () => ({ signIn: mocks.signIn }),
-}));
+  };
+});
 
 vi.mock("@/components/auth-shell", () => ({
   AuthShell: ({ children }: { children: React.ReactNode }) => (
@@ -49,7 +59,10 @@ beforeEach(() => {
   });
   mocks.sso.mockReset().mockResolvedValue({ error: null });
   mocks.register.mockReset().mockResolvedValue(undefined);
-  mocks.signIn.sso = mocks.sso;
+  mocks.client.resetSignIn.mockReset().mockImplementation(() => {
+    mocks.client.signIn = { __internal_future: { sso: mocks.sso } };
+  });
+  mocks.client.signIn = { __internal_future: { sso: vi.fn() } };
   mocks.clerk.loaded = true;
   mocks.clerk.session = null;
 });
@@ -57,17 +70,22 @@ beforeEach(() => {
 describe("Accounts Google entry", () => {
   it("starts when Clerk finishes loading without replacing its resource objects", async () => {
     mocks.clerk.loaded = false;
-    const view = render(<Page />);
+    render(<Page />);
     expect(mocks.sso).not.toHaveBeenCalled();
-    mocks.clerk.loaded = true;
-    view.rerender(<Page />);
+    act(() => {
+      mocks.clerk.loaded = true;
+      mocks.listeners.forEach((listener) => listener());
+    });
     await waitFor(() => expect(mocks.sso).toHaveBeenCalledOnce());
   });
 
   it("starts standalone Google OAuth without registering a Desktop attempt", async () => {
+    const staleSso = mocks.client.signIn.__internal_future.sso;
     render(<Page />);
 
     await waitFor(() => expect(mocks.sso).toHaveBeenCalledOnce());
+    expect(staleSso).not.toHaveBeenCalled();
+    expect(mocks.client.resetSignIn).toHaveBeenCalledOnce();
     const call = mocks.sso.mock.calls[0]?.[0] as {
       redirectUrl: string;
       redirectCallbackUrl: string;
@@ -95,6 +113,8 @@ describe("Accounts Google entry", () => {
 
     await waitFor(() => expect(mocks.sso).toHaveBeenCalledOnce());
     expect(mocks.register).toHaveBeenCalledWith({ state, code_challenge: challenge });
+    expect(mocks.client.resetSignIn).toHaveBeenCalledOnce();
+    expect(mocks.client.resetSignIn.mock.invocationCallOrder[0]).toBeGreaterThan(mocks.register.mock.invocationCallOrder[0]!);
     expect(mocks.sso.mock.calls[0]?.[0].redirectUrl).toContain("session_mode=local");
   });
 });
