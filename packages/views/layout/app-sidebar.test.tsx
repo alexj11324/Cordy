@@ -535,10 +535,10 @@ describe("workspace nav — Work Products", () => {
     navigation.current = { pathname: "/acme/issues" };
   });
 
-  it("renders a Work Products nav link to the workspace route", () => {
+  it("keeps Work Products out of the standalone workspace navigation", () => {
     const { container } = render(<AppSidebar />);
     expect(
       container.querySelector<HTMLElement>('button[data-href="/acme/work-products"]'),
-    ).not.toBeNull();
+    ).toBeNull();
   });
 });
