@@ -22,10 +22,13 @@ Treat the root `package.json`, `server/go.mod`, and CI workflows as the source o
 ```bash
 git clone https://github.com/patchbay-ai/patchbay.git
 cd patchbay
-make up          # install deps, prepare the database, start API + Web
-make dev-login   # sign in — open the URL it prints, no login page, no code
-make seed-dev    # optional: sample issues, in the dev-fixtures workspace
+make up C=desktop   # install deps, prepare the database, start the backend and Electron
+make seed-dev       # optional: sample issues, in the dev-fixtures workspace
 ```
+
+Changes are verified in the desktop app, not the browser: `make up C=desktop` starts Electron against this checkout's backend, already signed in and in a workspace. Use `make up C=api,web` plus `make dev-login` — which prints a URL that signs a browser in, and a bearer token for `curl` — when the change is web-only platform wiring.
+
+Desktop cannot use that URL: it authenticates with a stored bearer token rather than the browser's cookie, so `make up C=desktop` mints one into the gitignored `apps/desktop/.env.development.local`. An existing session always wins, so it never signs you out of an account you are testing with.
 
 The primary checkout uses `.env`. If the file does not exist, `make up` creates it from `.env.example`, then ensures PostgreSQL, installs dependencies, runs migrations, and starts API and Web.
 

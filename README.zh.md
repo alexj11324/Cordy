@@ -218,10 +218,13 @@ Patchbay 不自带模型。它驱动的是你本来就装好、登录好的那�
 **环境要求：**[Node.js](https://nodejs.org/) 22、[pnpm](https://pnpm.io/) 10.28.2、[Go](https://go.dev/) 1.26.6、[Docker](https://www.docker.com/)
 
 ```bash
-make up          # 装依赖、准备数据库、启动 API + Web
-make dev-login   # 登录——打开它打印的链接即可，不用登录页，也不用验证码
-make seed-dev    # 可选：注入示例 issue，落在 dev-fixtures 工作区
+make up C=desktop   # 后端 + Electron 桌面端，并且已经是登录状态
+make seed-dev       # 可选：注入示例 issue，落在 dev-fixtures 工作区
 ```
+
+**改动在桌面端验证，不在浏览器里验证。** `make up C=desktop` 会用当前 checkout 的后端把 Electron
+拉起来并自动登录，你要看的效果就在那里。只有当改动是 Web 独有的平台接线时，才用
+`make up C=api,web`（配合 `make dev-login` 拿一个已登录的浏览器）。
 
 `make up` 会为当前 checkout 分配独立的端口和数据库，所以多个 checkout、多个 worktree 可以同时跑；
 `make status` 能证明正在跑的就是你这份，`make down` 停掉，`make destroy` 删干净。

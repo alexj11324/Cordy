@@ -22,10 +22,13 @@ Patchbay は Go バックエンドと pnpm monorepo で構成されています�
 ```bash
 git clone https://github.com/patchbay-ai/patchbay.git
 cd patchbay
-make up          # 依存関係のインストール、データベース準備、API + Web の起動
-make dev-login   # サインイン — 表示された URL を開くだけ。ログイン画面もコードも不要
-make seed-dev    # 任意: サンプル issue を dev-fixtures ワークスペースに投入
+make up C=desktop   # 依存関係のインストール、データベース準備、バックエンドと Electron の起動
+make seed-dev       # 任意: サンプル issue を dev-fixtures ワークスペースに投入
 ```
+
+変更の確認はブラウザではなくデスクトップアプリで行います。`make up C=desktop` はこの checkout のバックエンドに対して Electron を起動し、サインイン済み・ワークスペース内の状態で開きます。Web 固有のプラットフォーム配線を変更した場合にのみ、`make up C=api,web` と `make dev-login`（ブラウザにサインインさせる URL と、`curl` 用のベアラートークンを表示します）を使ってください。
+
+デスクトップはその URL を使えません。ブラウザの Cookie ではなく保存されたベアラートークンで認証するためで、`make up C=desktop` が gitignore 済みの `apps/desktop/.env.development.local` にトークンを書き込みます。既存のセッションが常に優先されるので、テスト中のアカウントからサインアウトさせられることはありません。
 
 メイン checkout は `.env` を使用します。ファイルがなければ `make up` が `.env.example` から作成し、PostgreSQL を用意して依存関係をインストールし、migration を実行して API と Web を起動します。
 

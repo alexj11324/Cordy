@@ -53,9 +53,14 @@ pnpm typecheck        # TypeScript check
 pnpm test             # TS unit tests (Vitest)
 make test             # Go tests
 make check            # Full verification pipeline
-make dev-login        # Sign in to the local app with no login page
+make up C=desktop     # Backend + Electron, signed in — verify product changes here
+make dev-login        # Sign in a browser / get a bearer token for curl (web only)
 make seed-dev         # Sample content to look at, in the dev-fixtures workspace
 ```
+
+**Verify in Electron, not the browser.** `make up C=desktop` starts the desktop app against this
+environment's backend and signs it in, which is where client changes are checked. The web app is the
+secondary target, for web-only platform wiring. Say which client you verified on.
 
 `make dev-login` prints a URL that installs the session cookie and lands on this
 environment's issues page, plus a bearer token for `curl` — use it instead of

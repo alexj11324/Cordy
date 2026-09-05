@@ -480,6 +480,16 @@ launch_detached() {
 
 health_json() { curl -sf --max-time 3 "http://localhost:${BACKEND_PORT}/health" 2>/dev/null; }
 
+# POST /auth/dev-login once, printing the body with the HTTP status on its own
+# last line. Both callers need to tell a 404 (the endpoint is not served by this
+# backend) from a 200 without spending a second request, so the request lives
+# here rather than being written twice.
+dev_login_request() {
+  local server=$1 email=$2
+  curl -sS --max-time 10 -o - -w '\n%{http_code}' -X POST "$server/auth/dev-login" \
+    -H 'Content-Type: application/json' -d "{\"email\":\"$(json_escape "$email")\"}"
+}
+
 json_field() {
   node -e '
     let payload;
@@ -751,12 +761,34 @@ start_desktop() {
   # The marker makes destroy remove only a file this tool owns. Explicit
   # renderer/app values bind Desktop to the registry allocation rather than
   # independently hashing the checkout path again.
+  # Desktop authenticates with a bearer token in renderer storage, so the cookie
+  # `make dev-login` sets in a browser does nothing for it. Minting one here is
+  # what lets Electron — the client changes are verified on — start signed in
+  # instead of stopping at the login form. Best-effort: a backend without
+  # PATCHBAY_DEV_LOGIN=1 simply gets no token and shows the login page.
+  local desktop_login desktop_login_status desktop_token=""
+  desktop_login="$(dev_login_request "http://localhost:${BACKEND_PORT}" "$DEV_EMAIL" 2>/dev/null || true)"
+  desktop_login_status="${desktop_login##*$'\n'}"
+  if [ "$desktop_login_status" = 200 ]; then
+    desktop_token="$(json_field "${desktop_login%$'\n'*}" token || true)"
+  fi
+
   cat > "$DESKTOP_ENV_FILE" <<EOF
 # Managed by scripts/dev-env.sh for environment ${NAME}.
 VITE_API_URL=http://localhost:${BACKEND_PORT}
 VITE_WS_URL=ws://localhost:${BACKEND_PORT}/ws
 VITE_ACCOUNTS_URL=https://accounts.aspectlylabs.com
 EOF
+  if [ -n "$desktop_token" ]; then
+    printf 'VITE_DEV_LOGIN_TOKEN=%s\n' "$desktop_token" >> "$DESKTOP_ENV_FILE"
+    # Signed in with no workspace lands on the create-workspace flow, which is
+    # not the state someone verifying a change wants to start from.
+    local desktop_slug
+    desktop_slug="$(dev_workspace_slug "http://localhost:${BACKEND_PORT}" "$desktop_token" "$DEV_EMAIL" 2>/dev/null || true)"
+    info "Desktop will start signed in as $DEV_EMAIL${desktop_slug:+ in workspace $desktop_slug} (dev token in $(basename "$DESKTOP_ENV_FILE"))."
+  else
+    warn "Could not mint a desktop dev token; Electron will show the login page. Is PATCHBAY_DEV_LOGIN=1 in $ENV_FILE and the backend restarted?"
+  fi
   launch_detached desktop env \
     DESKTOP_RENDERER_PORT="$DESKTOP_RENDERER_PORT" DESKTOP_APP_SUFFIX="$DESKTOP_APP_SUFFIX" \
     make -C "$REPO_ROOT" -s desktop-dev ENV_FILE="$ENV_FILE"
@@ -1547,10 +1579,7 @@ cmd_login() {
   health_json >/dev/null || die "No backend answering on $server. Run 'make up' first."
 
   local status body response
-  # -w splits the status onto its own last line so a 404 (the endpoint is not
-  # served) is told apart from a 200 without a second request.
-  response="$(curl -sS --max-time 10 -o - -w '\n%{http_code}' -X POST "$server/auth/dev-login" \
-    -H 'Content-Type: application/json' -d "{\"email\":\"$(json_escape "$email")\"}")"
+  response="$(dev_login_request "$server" "$email")"
   status="${response##*$'\n'}"
   body="${response%$'\n'*}"
   case "$status" in

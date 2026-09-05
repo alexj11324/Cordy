@@ -226,10 +226,14 @@ Contributors: start with the [Contributing Guide](CONTRIBUTING.md).
 **Prerequisites:** [Node.js](https://nodejs.org/) 22, [pnpm](https://pnpm.io/) 10.28.2, [Go](https://go.dev/) 1.26.6, [Docker](https://www.docker.com/)
 
 ```bash
-make up          # install deps, prepare the database, start API + Web
-make dev-login   # sign in — open the URL it prints, no login page, no code
-make seed-dev    # optional: sample issues, in the dev-fixtures workspace
+make up C=desktop   # backend + the Electron app, already signed in
+make seed-dev       # optional: sample issues, in the dev-fixtures workspace
 ```
+
+**Changes are verified in the desktop app, not the browser.** `make up C=desktop` starts Electron
+against this checkout's backend and signs it in, so that is where you look at what you built. Add
+`make up C=api,web` (and `make dev-login` to get a signed-in browser) when the change is web-only
+platform wiring.
 
 `make up` allocates this checkout's ports and database, so several checkouts and worktrees run
 side by side; `make status` proves what is running is yours, `make down` stops it, `make destroy`

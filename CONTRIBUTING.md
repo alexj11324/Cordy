@@ -15,13 +15,17 @@ It covers:
 
 ## Day One
 
-Three commands, from a fresh clone:
+Two commands, from a fresh clone:
 
 ```bash
-make up          # install deps, prepare this checkout's database, start API + Web
-make dev-login   # sign in — open the URL it prints, no login page, no code
-make seed-dev    # optional: sample issues, in the dev-fixtures workspace
+make up C=desktop   # backend + the Electron app, already signed in
+make seed-dev       # optional: sample issues, in the dev-fixtures workspace
 ```
+
+**Changes are verified in the desktop app, not the browser.** `make up C=desktop` starts Electron
+against this checkout's backend and signs it in, so that is where you look at what you built. Add
+`make up C=api,web` (and `make dev-login` to get a signed-in browser) when the change is web-only
+platform wiring.
 
 `make status` shows what is running and proves it belongs to this checkout, `make down` stops it
 keeping the database, and `make destroy` deletes the database, profile and slot. Everything below
@@ -499,8 +503,19 @@ second path-derived identity. `make destroy` removes the marked env file and
 this environment's Electron userData. Direct `pnpm dev:desktop` still uses its
 path-derived fallback when it is run outside `make up`.
 
-Log in with `make dev-login`, or with `dev@localhost` and code `888888` on the
-login page.
+Desktop starts signed in: `make up C=desktop` mints a token from `/auth/dev-login` and writes it
+into the gitignored `apps/desktop/.env.development.local` as `VITE_DEV_LOGIN_TOKEN`, which the
+renderer seeds into storage at boot. It also creates the dev workspace if this environment has
+none, so Electron opens on a usable screen rather than the create-workspace flow.
+
+This is deliberately not the same mechanism as the browser: Desktop authenticates with a stored
+bearer token, so the HttpOnly cookie `make dev-login` installs does nothing for it. An existing
+session always wins — the seed only fills an empty storage, so it never logs you out of an account
+you are testing with.
+
+If the token could not be minted (a backend started before `PATCHBAY_DEV_LOGIN=1` was in the env
+file), `make up C=desktop` says so and Electron shows the login page; `make down && make up
+C=desktop` fixes it. You can always fall back to `dev@localhost` with code `888888` on that page.
 
 ### Isolation Guarantee
 

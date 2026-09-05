@@ -22,10 +22,13 @@ Patchbay 是 Go backend 与 pnpm monorepo。最简单的本地启动方式是 `m
 ```bash
 git clone https://github.com/patchbay-ai/patchbay.git
 cd patchbay
-make up          # 装依赖、准备数据库、启动 API + Web
-make dev-login   # 登录——打开它打印的链接即可，不用登录页，也不用验证码
-make seed-dev    # 可选：注入示例 issue，落在 dev-fixtures 工作区
+make up C=desktop   # 装依赖、准备数据库、启动后端和 Electron 桌面端
+make seed-dev       # 可选：注入示例 issue，落在 dev-fixtures 工作区
 ```
+
+改动在桌面端验证，不在浏览器里验证：`make up C=desktop` 会用当前 checkout 的后端把 Electron 拉起来，并且已经是登录状态、已经在一个工作区里。只有当改动是 Web 独有的平台接线时，才用 `make up C=api,web` 配合 `make dev-login`——后者会打印一个能让浏览器直接登录的链接，以及一个给 `curl` 用的 bearer token。
+
+桌面端用不了那个链接：它靠存储里的 bearer token 认证，而不是浏览器的 cookie，所以 `make up C=desktop` 会单独签发一个，写进被 gitignore 的 `apps/desktop/.env.development.local`。已有的会话优先，所以它绝不会把你正在测试的账号挤下线。
 
 主 checkout 会使用 `.env`。文件不存在时，`make up` 会从 `.env.example` 创建；然后确保 PostgreSQL 可用、安装依赖、执行 migration，并运行 API 与 Web。
 
