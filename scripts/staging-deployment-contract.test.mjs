@@ -91,10 +91,14 @@ test("staging origin routing uses isolated loopback ports", () => {
   );
   assert.equal(staging.ports.backend, 8211);
   assert.equal(production.ports.backend, 8210);
-  const stagingApiBlock =
-    originNginx.match(
-      /server_name api\.staging\.aspectlylabs\.com;[\s\S]*?^}/mu,
-    )?.[0] ?? "";
+  const stagingApiMarker = "server_name api.staging.aspectlylabs.com;";
+  const stagingApiStart = originNginx.indexOf(stagingApiMarker);
+  assert.notEqual(stagingApiStart, -1);
+  const stagingApiEnd = originNginx.indexOf("\n}", stagingApiStart);
+  const stagingApiBlock = originNginx.slice(
+    stagingApiStart,
+    stagingApiEnd === -1 ? undefined : stagingApiEnd + 2,
+  );
   assert.match(stagingApiBlock, /server_name api\.staging\.aspectlylabs\.com;/u);
   assert.doesNotMatch(stagingApiBlock, /127\.0\.0\.1:8210/u);
 });
