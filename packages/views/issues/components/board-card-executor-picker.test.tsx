@@ -256,13 +256,15 @@ describe("BoardCardContent executor picker", () => {
     );
     const stack = container.querySelector("[data-board-actor-stack]");
     const identifierRow = screen.getByText("MUL-6082").closest(".justify-between");
-    const avatars = stack?.querySelectorAll('[data-slot="avatar"]');
-    const slots = stack?.querySelectorAll(":scope > span");
+    if (!(stack instanceof HTMLElement) || !(identifierRow instanceof HTMLElement)) {
+      throw new Error("expected owner/executor stack in the identifier row");
+    }
+    const avatars = stack.querySelectorAll('[data-slot="avatar"]');
+    const slots = stack.querySelectorAll(":scope > span");
 
-    expect(stack).not.toBeNull();
     expect(identifierRow).toContainElement(stack);
     expect(avatars).toHaveLength(2);
-    expect(slots?.[1]).toHaveStyle({ marginLeft: "-8px" });
+    expect(slots[1]).toHaveStyle({ marginLeft: "-8px" });
     expect(screen.queryByText("Assigned member")).not.toBeInTheDocument();
     expect(screen.queryByText("Assigned agent")).not.toBeInTheDocument();
   });
