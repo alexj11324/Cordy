@@ -9,11 +9,17 @@ import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export function devBundleIdentity(appRoot, suffix) {
+// Keep names and bundle-id prefixes aligned with
+// apps/desktop/src/shared/desktop-app-identity.ts. This script runs before
+// Electron boots, so it cannot import that TS module.
+export function devBundleIdentity(appRoot, suffix, channel = "development") {
   const hash = createHash("sha256").update(resolve(appRoot)).digest("hex").slice(0, 16);
+  const staging = channel === "staging";
+  const baseName = staging ? "Patchbay Staging" : "Patchbay Canary";
+  const prefix = staging ? "ai.patchbay.desktop.staging" : "ai.patchbay.desktop.canary";
   return {
-    name: suffix ? `Patchbay Canary ${suffix}` : "Patchbay Canary",
-    bundleId: `ai.patchbay.desktop.canary.${hash}`,
+    name: suffix ? `${baseName} ${suffix}` : baseName,
+    bundleId: `${prefix}.${hash}`,
   };
 }
 
@@ -69,7 +75,11 @@ if (process.platform === "darwin" && process.argv[1] && resolve(process.argv[1])
   const require = createRequire(import.meta.url);
   const electronBin = require("electron");
   const plistPath = resolve(electronBin, "../../Info.plist");
-  const identity = devBundleIdentity(resolve(dirname(fileURLToPath(import.meta.url)), ".."), process.env.DESKTOP_APP_SUFFIX);
+  const identity = devBundleIdentity(
+    resolve(dirname(fileURLToPath(import.meta.url)), ".."),
+    process.env.DESKTOP_APP_SUFFIX,
+    process.env.PATCHBAY_DESKTOP_CHANNEL,
+  );
   configureDevPlist(plistPath, identity);
   // Publish the build-time declaration before Electron selects itself as the
   // protocol handler. Each worktree has its own bundle ID, despite the common

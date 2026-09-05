@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "environments": {
+    "development": {
+      "kind": "local",
+      "public": false,
+      "official_cloud": false,
+      "api_url": "http://localhost:8080",
+      "app_url": "http://localhost:3000",
+      "accounts_url": "https://accounts.aspectlylabs.com",
+      "desktop_channel": "development",
+      "desktop_app_name": "Patchbay Canary",
+      "mobile_bundle_id": "ai.patchbay.mobile.dev"
+    },
+    "staging": {
+      "kind": "hosted",
+      "public": false,
+      "official_cloud": false,
+      "api_url": "https://api.staging.aspectlylabs.com",
+      "app_url": "https://staging.aspectlylabs.com",
+      "accounts_url": "https://accounts.staging.aspectlylabs.com",
+      "accounts_origin_url": "https://accounts-origin.staging.aspectlylabs.com",
+      "desktop_channel": "staging",
+      "desktop_app_name": "Patchbay Staging",
+      "mobile_bundle_id": "ai.patchbay.mobile.staging",
+      "cli_profile": "staging",
+      "github_environment": "staging",
+      "compose_project": "patchbay-staging",
+      "docs_compose_project": "patchbay-staging-docs",
+      "auth_broker_compose_project": "patchbay-staging-auth-broker",
+      "state_root": "/var/lib/patchbay-staging",
+      "ports": {
+        "backend": 8211,
+        "web": 3111,
+        "docs": 4001,
+        "auth_broker": 43101
+      }
+    },
+    "production": {
+      "kind": "hosted",
+      "public": true,
+      "official_cloud": true,
+      "api_url": "https://api.aspectlylabs.com",
+      "app_url": "https://patchbay.aspectlylabs.com",
+      "accounts_url": "https://accounts.aspectlylabs.com",
+      "accounts_origin_url": "https://accounts-origin.aspectlylabs.com",
+      "desktop_channel": "production",
+      "desktop_app_name": "Patchbay",
+      "mobile_bundle_id": "ai.patchbay.mobile",
+      "github_environment": "production",
+      "compose_project": "cordy632",
+      "docs_compose_project": "cordy",
+      "auth_broker_compose_project": "patchbay-auth-broker",
+      "state_root": "/var/lib/patchbay-production",
+      "ports": {
+        "backend": 8210,
+        "web": 3110,
+        "docs": 4000,
+        "auth_broker": 43100
+      }
+    }
+  }
+}

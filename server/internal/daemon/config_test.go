@@ -198,7 +198,7 @@ func TestDefaultGCCompletedTaskTTLOnlyBoundsOfficialCloudHost(t *testing.T) {
 		{"official cloud with port and path", "https://API.AspectlyLabs.Com:443/api", DefaultGCCompletedTaskTTLCloud},
 		// Staging and previews inherit the self-host value for the same reason
 		// officialCloudHost excludes them from the auto-update default.
-		{"staging", "https://api-staging.aspectlylabs.com", DefaultGCCompletedTaskTTLSelfHost},
+		{"staging", "https://api.staging.aspectlylabs.com", DefaultGCCompletedTaskTTLSelfHost},
 		{"self-host", "https://patchbay.example.com", DefaultGCCompletedTaskTTLSelfHost},
 		{"localhost", "http://localhost:8080", DefaultGCCompletedTaskTTLSelfHost},
 		{"unparseable", "://nope", DefaultGCCompletedTaskTTLSelfHost},
@@ -405,6 +405,7 @@ func TestIsOfficialCloudServer(t *testing.T) {
 		// safer self-host default until explicitly opted in.
 		{"aspectlylabs.com apex is not the api host", "https://aspectlylabs.com", false},
 		{"staging subdomain is self-host", "https://staging.aspectlylabs.com", false},
+		{"staging api host is self-host", "https://api.staging.aspectlylabs.com", false},
 		{"preview subdomain is self-host", "https://api-preview.aspectlylabs.com", false},
 		// Malformed inputs must not falsely match.
 		{"empty string is self-host", "", false},

@@ -22,6 +22,7 @@ import { installNavigationGuard } from "./navigation-guard";
 import { createRendererWebPreferences } from "./renderer-web-preferences";
 import { getAppVersion } from "./app-version";
 import { loadRuntimeConfig } from "./runtime-config-loader";
+import { resolveDesktopAppIdentity } from "../shared/desktop-app-identity";
 import type { RuntimeConfigResult } from "../shared/runtime-config";
 import {
   RENDERER_ROUTE_CONTEXT_CHANNEL,
@@ -630,33 +631,28 @@ function createIssueWindow(context: IssueWindowContext): void {
   loadRenderer(window);
 }
 
-// --- Dev / production isolation -------------------------------------------
-// Give dev mode a separate app name and userData path so it gets its own
-// single-instance lock file and doesn't conflict with the packaged production
-// app. Must run BEFORE requestSingleInstanceLock() because the lock location
-// is derived from the userData path. (Same approach VS Code uses for
+// --- Dev / staging / production isolation --------------------------------
+// Each hosted channel gets its own app name and userData path so the
+// single-instance lock, session cookies, and local guest state cannot leak
+// across local Canary, internal Staging, and the packaged production app.
+// Must run BEFORE requestSingleInstanceLock() because the lock location is
+// derived from the userData path. (Same approach VS Code uses for
 // Stable / Insiders coexistence.)
+//
+// DESKTOP_APP_SUFFIX lets parallel worktrees run the same channel
+// side-by-side. The suffix is appended to the app name + userData path.
+const desktopIdentity = resolveDesktopAppIdentity({
+  isDev: is.dev,
+  mode: import.meta.env.MODE,
+  suffix: process.env.DESKTOP_APP_SUFFIX,
+});
 
-// DESKTOP_APP_SUFFIX lets parallel worktrees run dev Electron side-by-side
-// without fighting for the shared single-instance lock. The suffix is
-// appended to the app name + userData path, so each worktree gets its own
-// lock file. Default (no env var) keeps behavior unchanged — the common
-// single-worktree case still lands at "Patchbay Canary".
-const DEV_APP_NAME = process.env.DESKTOP_APP_SUFFIX
-  ? `Patchbay Canary ${process.env.DESKTOP_APP_SUFFIX}`
-  : "Patchbay Canary";
-
-if (is.dev) {
-  app.setName(DEV_APP_NAME);
-  app.setPath("userData", join(app.getPath("appData"), DEV_APP_NAME));
-} else {
-  // Pin the production app name in code. Electron's Linux WM_CLASS is set
-  // from app.getName() when the first BrowserWindow is realized; the
-  // packaged ASAR's package.json `productName` already steers app.getName()
-  // to "Patchbay", but anchoring it here makes WM_CLASS ↔ StartupWMClass
-  // (declared in electron-builder.yml) survive a regression in
-  // productName / the build pipeline. Must run before requestSingleInstanceLock().
-  app.setName("Patchbay");
+app.setName(desktopIdentity.name);
+if (desktopIdentity.isolateUserData) {
+  app.setPath(
+    "userData",
+    join(app.getPath("appData"), desktopIdentity.userDataDirName),
+  );
 }
 
 // --- Protocol registration -----------------------------------------------
@@ -724,9 +720,7 @@ if (!gotTheLock) {
       },
     });
 
-    electronApp.setAppUserModelId(
-      is.dev ? "ai.patchbay.desktop.dev" : "ai.patchbay.desktop",
-    );
+    electronApp.setAppUserModelId(desktopIdentity.appUserModelId);
 
     installApplicationMenu(async () => {
       const { runMenuUpdateCheck } = await import("./updater");
