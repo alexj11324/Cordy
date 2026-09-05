@@ -1,20 +1,24 @@
 # Proposal: one request, one visible plan
 
-Status: interaction proposal, not implemented or accepted visual delivery.
+Status: interaction direction approved by the user; revised visual prototype and production implementation pending.
 Date: 2026-09-05
 
 ## Confirmed direction
 
 The user wants a Linear-like, restrained interface. The most common entry is one sentence describing a need. The agent should understand the request, resolve consequential ambiguity using short choices when possible, split the work into tasks, and present the plan visually. Reduce human-authored text and repeated context entry. The first styling iteration in PR #760 did not satisfy this direction.
 
-## Proposed experience
+The user explicitly approved the conversation-first composition: the request conversation is the main surface; the decomposition plan is embedded in that conversation; task details expand only when selected; confirmation creates tasks and a separate Start action begins execution. The same embedded plan shows subsequent progress.
+
+The full-page dependency canvas with a permanently visible right-hand detail panel was explicitly rejected. It is not an implementation target. Preserve the previously approved black/white component character and Linear-like information density; minimalism means fewer decisions and repeated inputs, not excessive empty space.
+
+## Approved interaction sequence
 
 1. **Express the outcome.** One primary input accepts a sentence, a screenshot, or pasted material. The current project supplies context, shown compactly and editable. The user does not first choose a manual/agent mode or fill out task metadata.
 2. **Clarify only what changes the plan.** Read available context before asking. A question offers two or three concrete alternatives and permits a custom answer. Routine defaults remain visible assumptions; consequential ambiguity stays unresolved until answered. Do not ask a fixed questionnaire for every request.
-3. **Show the proposed work.** Keep the understood outcome above a compact plan. Each node initially shows only its task title. Display real dependencies and parallel branches; avoid a full canvas with minimap/zoom toolbars for a four-task plan. A sequential list is an equivalent view. Selecting a task reveals its output, acceptance criteria and relevant context in a detail panel.
+3. **Show the proposed work inside the conversation.** Embed one compact, interactive plan alongside the agent response. Each task initially shows its title and a concise relationship cue. Express sequence and parallel work within that plan; do not navigate to a separate full-page graph editor. Selecting a task expands its output, acceptance criteria and context on demand, preferably within the plan. No permanent right-hand detail panel.
 4. **Adjust in place.** Let the user select a task and refine it, remove it, or ask the agent to merge/split/reorder work. The agent should describe meaningful changes and preserve stable task identity across revisions. A request can be answered without generating tasks if it is only a question; a simple actionable request may produce one task.
 5. **Start at a clear boundary.** Confirmed user decision: accepting the plan creates tasks only. The tasks remain not started until the user separately chooses Start. A draft plan must never show live execution states. Confirmation must refer to the current revision, not an earlier plan.
-6. **Keep the plan during execution.** The same nodes gain working / waiting for your answer / blocked / ready-to-review states, driven by real events. Running work can be steered when the provider supports it. Logs live behind details. Results expose previews, diffs or documents with verified and unverified outcomes.
+6. **Keep the embedded plan during execution.** The same task entries gain working / waiting for your answer / blocked / ready-to-review states, driven by real events. Running work can be steered when the provider supports it. Logs live behind details. Results expose previews, diffs or documents with verified and unverified outcomes.
 
 Example: “让应用支持一致的黑白两套主题” can become inspect current surfaces → shared component theme and native window appearance in parallel → verify and deliver previews. This is an illustrative proposal, not an instruction to execute those tasks.
 
@@ -44,7 +48,9 @@ One end-to-end path: sentence → necessary choice → draft plan → revision �
 Acceptance:
 
 - A user describes an outcome once; title, descriptions and initial metadata are generated without retyping.
-- The plan shows real proposed task identities and dependency relationships and supports a scoped correction.
+- The plan is embedded in the request conversation, shows real proposed task identities/dependencies, and supports a scoped correction.
+- Details appear only on selection; the default view has no full-page canvas or permanent detail sidebar.
+- Clarification, proposal, task creation and execution progress preserve the same conversation and plan rather than requiring the user to re-enter the request.
 - Draft display creates no formal child tasks. Confirm creates the current revision's tasks once without admitting agent runs; a separate Start action admits the eligible work.
 - Missing information and rejected actions remain actionable and visible; no simulated success or fabricated running states.
 - The same scenario is visually reviewed in light/dark and narrow/wide layouts before calling it complete.
@@ -53,4 +59,4 @@ Confirmed transition: **draft plan → Confirm and create tasks → created, not
 
 Suggested primary-action labels: “创建 4 个 tasks” while reviewing a four-task proposal; “开始” after creation. The exact task count comes from the current proposal, not fixed copy. Keep the same visual plan in both states.
 
-Prototype design remains pending user review; the new concept is not production implementation.
+The interaction direction above is approved. A revised visual prototype matching that composition still needs review; the rejected full-page graph image must not be used as visual acceptance. No new interaction implementation is claimed.
