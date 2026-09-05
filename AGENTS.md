@@ -3,8 +3,9 @@
 This file provides guidance to AI agents when working with code in this repository.
 
 > **Single source of truth:** This file is the entry point for repository agent
-> rules. Read **CLAUDE.md** at the project root for the expanded architecture,
-> coding, testing, and release requirements referenced by this file.
+> rules. Consult **CLAUDE.md** when a task needs expanded architecture, coding,
+> testing, or release guidance; ordinary localized edits do not require reading
+> it end to end.
 > Use `Makefile`, `package.json`, and `pnpm-workspace.yaml` as the
 > source of truth for the full command list.
 

@@ -914,7 +914,7 @@
     "feature_co_author_description_prefix": "Append",
     "feature_co_author_description_suffix": "to commits authored by agents.",
     "feature_auto_link_label": "Auto-link issues and PRs",
-    "feature_auto_link_description": "Match PR titles, bodies, and branch names against issue identifiers and create the link automatically.",
+    "feature_auto_link_description": "Link PRs in two ways: enable this option to match an issue ID in the PR title or branch name (e.g. MUL-123), or Fixes MUL-123 in the description. You can also attach a PR manually from Work products in issue details, or have an agent attach it directly. Direct linking needs no issue ID in the PR and works independently of this toggle.",
     "section_repositories": "Repositories",
     "repositories_shortcut_label": "Repository URLs live in the Repositories tab",
     "repositories_shortcut_link": "Manage repositories →",
