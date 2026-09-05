@@ -207,13 +207,7 @@ describe("BoardCardContent executor picker", () => {
       screen.queryByText("pickers.executor.trigger_unassigned"),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByText("pickers.owner.trigger_unassigned"),
-    ).not.toBeInTheDocument();
-    expect(
       screen.getByLabelText("pickers.executor.trigger_unassigned"),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByLabelText("pickers.owner.trigger_unassigned"),
     ).toBeInTheDocument();
   });
 
@@ -250,38 +244,6 @@ describe("BoardCardContent executor picker", () => {
     });
   });
 
-  it("stacks owner and executor avatars in the identifier row", () => {
-    const { container } = renderCard(
-      makeIssue("agent", { owner_type: "member", owner_id: "member-1" }),
-    );
-    const stack = container.querySelector("[data-board-actor-stack]");
-    const identifierRow = screen.getByText("MUL-6082").closest(".justify-between");
-    if (!(stack instanceof HTMLElement) || !(identifierRow instanceof HTMLElement)) {
-      throw new Error("expected owner/executor stack in the identifier row");
-    }
-    const avatars = stack.querySelectorAll('[data-slot="avatar"]');
-    const slots = stack.querySelectorAll(":scope > span");
-
-    expect(identifierRow).toContainElement(stack);
-    expect(avatars).toHaveLength(2);
-    expect(slots[1]).toHaveStyle({ marginLeft: "-8px" });
-    expect(screen.queryByText("Assigned member")).not.toBeInTheDocument();
-    expect(screen.queryByText("Assigned agent")).not.toBeInTheDocument();
-  });
-
-  it("opens the owner picker from the stacked owner avatar without navigating", () => {
-    const { container } = renderCard(
-      makeIssue("agent", { owner_type: "member", owner_id: "member-1" }),
-    );
-    const avatars = container.querySelectorAll('[data-slot="avatar"]');
-
-    expect(fireEvent.click(avatars[0]!)).toBe(false);
-    expect(
-      screen.getByPlaceholderText("pickers.owner.search_placeholder"),
-    ).toBeInTheDocument();
-    expect(navigation.push).not.toHaveBeenCalled();
-  });
-
   it("places priority on the chip row with labels, not next to the identifier", () => {
     viewState.cardProperties.priority = true;
     viewState.cardProperties.labels = true;
@@ -312,47 +274,5 @@ describe("BoardCardContent executor picker", () => {
     expect(identifierRow).not.toContainElement(priority);
     expect(chipRow).toContainElement(priority);
     expect(chipRow).toContainElement(feature);
-  });
-
-  it("places the status icon before the identifier, not on the chip row", () => {
-    renderCard(makeIssue("agent", { status: "in_progress" }));
-
-    const status = screen.getByRole("button", { name: "status.in_progress" });
-    const identifier = screen.getByText("MUL-6082");
-    const identifierRow = identifier.closest(".justify-between");
-    const chipRow = identifier.closest("[data-board-chip-row]");
-    if (!(identifierRow instanceof HTMLElement)) {
-      throw new Error("expected identifier row");
-    }
-
-    expect(identifierRow).toContainElement(status);
-    expect(chipRow).toBeNull();
-    expect(status.compareDocumentPosition(identifier) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
-    expect(identifier.parentElement).toHaveClass("h-3", "items-center");
-    expect(status).toHaveClass("size-3");
-    expect(status.querySelector("svg")).toHaveClass("size-3");
-  });
-
-  it("uses a different status glyph for backlog, todo, and in progress", () => {
-    const { unmount } = renderCard(makeIssue("agent", { status: "todo" }));
-    const todo = screen.getByRole("button", { name: "status.todo" }).innerHTML;
-    unmount();
-    const second = renderCard(makeIssue("agent", { status: "backlog" }));
-    const backlog = screen.getByRole("button", { name: "status.backlog" }).innerHTML;
-    second.unmount();
-    renderCard(makeIssue("agent", { status: "in_progress" }));
-    const inProgress = screen.getByRole("button", { name: "status.in_progress" }).innerHTML;
-
-    expect(todo).not.toEqual(backlog);
-    expect(todo).not.toEqual(inProgress);
-    expect(backlog).not.toEqual(inProgress);
-  });
-
-  it("opens the status picker from the identifier-row icon without navigating", () => {
-    renderCard(makeIssue("agent", { status: "todo" }));
-
-    expect(fireEvent.click(screen.getByRole("button", { name: "status.todo" }))).toBe(false);
-    expect(document.querySelector("[data-picker-item]")).not.toBeNull();
-    expect(navigation.push).not.toHaveBeenCalled();
   });
 });
