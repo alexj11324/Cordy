@@ -76,6 +76,26 @@ PATCHBAY_DEV_VERIFICATION_CODE=888888
 不要在公网实例中启用固定验证码。生产环境的组合是 `APP_ENV=production` 加空的 `PATCHBAY_DEV_VERIFICATION_CODE`。
 </Callout>
 
+## 开发环境跳过登录页
+
+固定验证码仍然要发一次验证码、填一次表单。想两者都省掉：
+
+```dotenv
+APP_ENV=development
+PATCHBAY_DEV_LOGIN=1
+```
+
+此时后端会提供 `/auth/dev-login`：
+
+- `GET /auth/dev-login?email=dev@localhost&redirect=/dev/issues` 会写入会话 Cookie 并跳转到 Web 应用，打开这个链接就等于完成登录。
+- `POST /auth/dev-login`，请求体 `{"email":"dev@localhost"}`，返回与 `verify-code` 相同的 `{ token, user }`，供 curl 和脚本使用。
+
+`email` 默认取 `PATCHBAY_DEV_EMAIL`（再回退到 `dev@localhost`）；`redirect` 只接受同源路径；除非传 `onboarding=keep`，否则会直接标记引导完成。在本仓库中，`make dev-login` 会打印该链接、bearer token 和要打开的工作区。
+
+<Callout type="warning">
+绝不要在公网实例上设置 `PATCHBAY_DEV_LOGIN`：任何知道邮箱地址的人都能免验证码登录为该用户。`APP_ENV=production` 时它会被忽略，且只有该变量为 `1` 时后端才会注册这个路由。
+</Callout>
+
 ## Google 登录
 
 1. 在 [Google Cloud Console](https://console.cloud.google.com/) 创建 OAuth 2.0 client。

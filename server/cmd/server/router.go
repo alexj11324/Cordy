@@ -1537,6 +1537,19 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// broker flows; the Web login page uses email send-code and does not expose
 	// this endpoint as its primary sign-in path.
 	r.With(authRL).Post("/auth/google", h.GoogleLogin)
+	// Development sign-in. Registered only when PATCHBAY_DEV_LOGIN=1 and
+	// APP_ENV is non-production, so an ordinary deployment does not serve the
+	// path at all — see server/internal/handler/dev_login.go. It gets its own
+	// limiter rather than authRL: this endpoint exists to escape login
+	// throttling, and one `make dev-login` already spends two requests (the
+	// POST for the token, the GET when the printed URL is opened), so the
+	// 5/min auth budget would 429 the third run of the very workflow it is
+	// for. There is no credential to brute-force here — the endpoint is a
+	// deliberate bypass — so the limit only stops accidental hammering.
+	if handler.DevLoginEnabled() {
+		devLoginRL := middleware.RateLimit(rdb, envPositiveInt("RATE_LIMIT_DEV_LOGIN", 60), time.Minute, trustedProxies)
+		r.With(devLoginRL).HandleFunc("/auth/dev-login", h.DevLogin)
+	}
 	r.With(authRL).Post("/auth/guest", h.CreateGuestAuth)
 	r.With(desktopHandoffRL).Post("/api/desktop-identity/redeem", h.RedeemDesktopLocalIdentity)
 	r.With(desktopHandoffRL).Post("/api/desktop-handoff/initiate", h.InitiateDesktopAuthHandoff)
