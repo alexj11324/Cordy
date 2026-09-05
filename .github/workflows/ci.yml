@@ -888,6 +888,10 @@ jobs:
             scripts/assemble-production-manifest.test.mjs \
             scripts/auth-broker-release-contract.test.mjs \
             scripts/production-deployment-contract.test.mjs \
+            scripts/hosted-environments-contract.test.mjs \
+            scripts/staging-deployment-contract.test.mjs \
+            scripts/resolve-published-image-records.test.mjs \
+            scripts/verify-staging-deployment.test.mjs \
             scripts/publish-homebrew-cask.test.mjs \
             scripts/release-desktop-artifact-contract.test.mjs \
             scripts/release-homebrew-contract.test.mjs \
@@ -896,4 +900,4 @@ jobs:
 
       - name: Test the restricted origin deployment gateway
         working-directory: deploy/origin
-        run: python3 -m unittest production_deploy_test -v
+        run: python3 -m unittest production_deploy_test staging_deploy_test -v

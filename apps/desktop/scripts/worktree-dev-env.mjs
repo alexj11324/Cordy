@@ -122,9 +122,10 @@ export function applyWorktreeDevEnv(env, { root, log = false } = {}) {
   if (!hasSuffix) env.DESKTOP_APP_SUFFIX = appSuffixForPath(root);
 
   if (log) {
+    const channel = env.PATCHBAY_DESKTOP_CHANNEL === "staging" ? "Staging" : "Canary";
     console.log(
       `[dev:desktop] worktree isolation → renderer port ${env.DESKTOP_RENDERER_PORT}, ` +
-        `app "Patchbay Canary ${env.DESKTOP_APP_SUFFIX}"`,
+        `app "Patchbay ${channel} ${env.DESKTOP_APP_SUFFIX}"`,
     );
   }
   return env;

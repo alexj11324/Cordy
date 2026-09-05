@@ -1,0 +1,213 @@
+name: Aspectlylabs staging
+
+on:
+  workflow_run:
+    workflows: [Aspectlylabs production]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Already-published 40-character main SHA to deploy to staging
+        required: true
+
+permissions:
+  contents: read
+  packages: read
+
+# Staging is a single mutable internal target, isolated from production.
+concurrency:
+  group: aspectlylabs-staging
+  cancel-in-progress: false
+
+jobs:
+  resolve-source:
+    # Staging never gates production: this job is skipped when production
+    # failed, was skipped, or ran from a fork. A staging failure also cannot
+    # change the production workflow conclusion.
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.head_branch == 'main' &&
+          github.event.workflow_run.head_repository.full_name == github.repository
+        )
+      }}
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - name: Checkout the candidate source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.sha || github.event.workflow_run.head_sha }}
+          fetch-depth: 1
+
+      - name: Require the current main tip
+        id: source
+        run: |
+          set -Eeuo pipefail
+          git fetch --no-tags origin main
+          source_sha="$(git rev-parse HEAD)"
+          main_sha="$(git rev-parse origin/main)"
+          if [ "$source_sha" != "$main_sha" ]; then
+            echo "::error::Refusing to stage stale source $source_sha; current main is $main_sha."
+            exit 1
+          fi
+          echo "sha=$source_sha" >> "$GITHUB_OUTPUT"
+
+  resolve-images:
+    needs: resolve-source
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout staging tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.resolve-source.outputs.sha }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Resolve published image digests
+        run: |
+          set -Eeuo pipefail
+          node scripts/resolve-published-image-records.mjs \
+            /tmp/staging-images \
+            ${{ needs.resolve-source.outputs.sha }} \
+            ${{ github.repository_owner }}
+
+      - name: Assemble deployment manifest
+        run: |
+          set -Eeuo pipefail
+          node scripts/assemble-production-manifest.mjs \
+            /tmp/staging-images \
+            ${{ needs.resolve-source.outputs.sha }} \
+            /tmp/staging-manifest.json \
+            ${{ github.repository_owner }}
+          (
+            cd /tmp
+            sha256sum staging-manifest.json > staging-manifest.json.sha256
+          )
+
+      - name: Verify every immutable image is pullable
+        run: |
+          set -Eeuo pipefail
+          jq -r '.images[]' /tmp/staging-manifest.json | while IFS= read -r image; do
+            docker buildx imagetools inspect "$image" >/dev/null
+          done
+
+      - name: Upload staging manifest
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: staging-manifest-${{ needs.resolve-source.outputs.sha }}
+          path: |
+            /tmp/staging-manifest.json
+            /tmp/staging-manifest.json.sha256
+          if-no-files-found: error
+          retention-days: 1
+
+  deploy-staging:
+    needs: [resolve-source, resolve-images]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    environment:
+      name: staging
+      url: https://staging.aspectlylabs.com
+    steps:
+      - name: Checkout staging verification
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.resolve-source.outputs.sha }}
+
+      - name: Download staging manifest
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: staging-manifest-${{ needs.resolve-source.outputs.sha }}
+          path: /tmp/staging
+
+      - name: Configure restricted staging SSH identity
+        env:
+          DEPLOY_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+          KNOWN_HOSTS: ${{ secrets.STAGING_SSH_KNOWN_HOSTS }}
+          DEPLOY_HOST: ${{ secrets.STAGING_SSH_HOST }}
+          DEPLOY_USER: ${{ secrets.STAGING_SSH_USER }}
+        run: |
+          set -Eeuo pipefail
+          for name in DEPLOY_KEY KNOWN_HOSTS DEPLOY_HOST DEPLOY_USER; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Missing staging environment secret: $name"
+              exit 1
+            fi
+          done
+          install -d -m 0700 "$HOME/.ssh"
+          install -m 0600 /dev/null "$HOME/.ssh/staging_ed25519"
+          printf '%s\n' "$DEPLOY_KEY" > "$HOME/.ssh/staging_ed25519"
+          install -m 0600 /dev/null "$HOME/.ssh/known_hosts"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+
+      - name: Verify deployment manifest checksum
+        run: |
+          set -Eeuo pipefail
+          cd /tmp/staging
+          sha256sum --check staging-manifest.json.sha256
+
+      - name: Deploy and verify staging
+        env:
+          DEPLOY_HOST: ${{ secrets.STAGING_SSH_HOST }}
+          DEPLOY_USER: ${{ secrets.STAGING_SSH_USER }}
+          SOURCE_SHA: ${{ needs.resolve-source.outputs.sha }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          ssh_args=(
+            -i "$HOME/.ssh/staging_ed25519"
+            -o BatchMode=yes
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=yes
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
+            "$DEPLOY_USER@$DEPLOY_HOST"
+          )
+          deployment_run_id="$(
+            jq -er \
+              '.workflow_run_id | select(test("^[1-9][0-9]{0,19}$"))' \
+              /tmp/staging/staging-manifest.json
+          )"
+
+          ssh "${ssh_args[@]}" \
+            < /tmp/staging/staging-manifest.json \
+            > /tmp/staging/deployment-receipt.json
+          jq -e \
+            --arg source_sha "$SOURCE_SHA" \
+            --arg workflow_run_id "$deployment_run_id" \
+            '.ok == true and .action == "deploy" and .source_sha == $source_sha
+              and .workflow_run_id == $workflow_run_id
+              and ((.browser_auth.sign_in_ticket | type) == "string")
+              and ((.browser_auth.sign_in_ticket | length) > 0)
+              and ((.browser_auth.testing_token | type) == "string")
+              and ((.browser_auth.testing_token | length) > 0)' \
+            /tmp/staging/deployment-receipt.json >/dev/null
+          while IFS= read -r credential; do
+            echo "::add-mask::$credential"
+          done < <(
+            jq -r \
+              '.browser_auth.sign_in_ticket, .browser_auth.testing_token' \
+              /tmp/staging/deployment-receipt.json
+          )
+
+          node scripts/verify-staging-deployment.mjs "$SOURCE_SHA"
+
+          {
+            echo "### Staging deployment"
+            echo "- Source: \`$SOURCE_SHA\`"
+            echo "- Isolated from production Compose projects, volumes, ports, and Clerk"
+            echo "- Runtime verification: passed"
+          } >> "$GITHUB_STEP_SUMMARY"

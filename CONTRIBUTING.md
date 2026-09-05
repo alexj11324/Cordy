@@ -440,17 +440,21 @@ Log in with `dev@localhost` and `888888`.
 
 ### Isolation Guarantee
 
-Nothing in this flow touches the system-installed `patchbay` or the default
-`~/.patchbay/config.json`:
+Nothing in this flow touches the system-installed `patchbay`, the default
+`~/.patchbay/config.json`, or the public production app. Staging is a third
+channel with its own hosted backend — see
+[docs/operations/environments.md](docs/operations/environments.md).
 
-| Resource | System / Production | Local Dev (per environment) |
-|---|---|---|
-| Config | `~/.patchbay/config.json` | `~/.patchbay/profiles/dev-<slug>-<offset>/config.json` |
-| Daemon PID | `~/.patchbay/daemon.pid` | `~/.patchbay/profiles/dev-<slug>-<offset>/daemon.pid` |
-| Workspaces dir | `~/patchbay_workspaces/` | `~/patchbay_workspaces_dev-<slug>-<offset>/` |
-| Database | remote / production | local: `patchbay_<slug>_<offset>` |
-| Registry | — | `~/.patchbay/dev/envs/<name>/` |
-| Desktop profile | `desktop-api.patchbay.ai` | `desktop-localhost-<port>` |
+| Resource | Public / Production | Testing / Staging | Local Dev (per environment) |
+|---|---|---|---|
+| Config | `~/.patchbay/config.json` | `~/.patchbay/profiles/staging/config.json` | `~/.patchbay/profiles/dev-<slug>-<offset>/config.json` |
+| Daemon PID | `~/.patchbay/daemon.pid` | `~/.patchbay/profiles/staging/daemon.pid` | `~/.patchbay/profiles/dev-<slug>-<offset>/daemon.pid` |
+| Workspaces dir | `~/patchbay_workspaces/` | `~/patchbay_workspaces_staging/` | `~/patchbay_workspaces_dev-<slug>-<offset>/` |
+| Database | production | staging (`patchbay-staging` Compose project) | local: `patchbay_<slug>_<offset>` |
+| Desktop app | `Patchbay` | `Patchbay Staging` | `Patchbay Canary` |
+| Desktop profile | `desktop-api.aspectlylabs.com` | `desktop-api.staging.aspectlylabs.com` | `desktop-localhost-<port>` |
+| API | `https://api.aspectlylabs.com` | `https://api.staging.aspectlylabs.com` | local backend port |
+| Registry | — | `/var/lib/patchbay-staging/` on the origin | `~/.patchbay/dev/envs/<name>/` |
 
 Multiple environments run simultaneously without conflict; `make list` shows
 all of them.
