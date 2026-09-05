@@ -81,7 +81,11 @@ Transient faults — a runtime going briefly offline, a daemon restart, an execu
 
 Errors returned by the agent itself are usually not retried automatically. Expired credentials, exhausted quota, misconfiguration, or a model unable to complete the request all need the cause fixed first, followed by a manual retry.
 
-An Automation's **run only** mode does not retry automatically, to avoid overlapping with the next scheduled run. The **create issue** mode produces regular issue tasks, so infrastructure failures still retry under the rules above. Both modes show their final result in the Automation run history.
+Codex, Claude Code, and Cursor have a shared, same-task recovery path for confirmed model capacity errors and temporary rate limits. After the coding tool finishes its own retries and its process has exited, the daemon waits 15 seconds, 30 seconds, 1 minute, 2 minutes, then 5 minutes between further attempts. There is no attempt limit while the task remains active. The transcript shows each wait; stopping the task cancels recovery. Recovery keeps the original conversation and working directory and refuses to start a replacement conversation if resume fails. A successful connection alone does not complete the task.
+
+Codex's `usageLimitExceeded` and `sessionBudgetExceeded` stop recovery immediately. A bare HTTP 429, an unknown error, or an ordinary 503 without a confirmed capacity error does not enable this path. Existing network-failure retries remain unchanged. Claude Code billing and authentication errors also stop recovery, including quota exhaustion reported under its broad `rate_limit` error. Claude Code and Cursor verify the original session ID before forwarding resumed activity; custom flags that would select another session or working directory block recovery. Other adapters retain their existing behavior.
+
+An Automation's **run only** mode does not create retry tasks automatically, to avoid overlapping with the next scheduled run. The **create issue** mode produces regular issue tasks, so infrastructure failures still retry under the rules above. Capacity recovery stays inside the existing run in either mode. Both modes show their final result in the Automation run history.
 
 When an issue has no other active task and no new retry waiting to run, a failure moves an `in_progress` issue back to `todo`.
 
@@ -108,8 +112,8 @@ The failure reasons shown in the execution log and usage stats fall into two gro
 | Reason | Meaning | What to do |
 | --- | --- | --- |
 | `provider_auth_or_access` | Model provider authentication failed or access denied (401/403) | Sign in again in that AI coding tool, or check the API key |
-| `provider_quota_limit` | Quota or balance exhausted (402) | Top up or switch accounts |
-| `provider_capacity_or_rate_limit` | Rate limited or out of capacity (429/529) | Retry later |
+| `provider_quota_limit` | Quota or balance exhausted (for example, 402 or Codex `usageLimitExceeded`) | Top up or switch accounts |
+| `provider_capacity_or_rate_limit` | Rate limited or out of capacity (429/529) | Confirmed Codex, Claude Code, and Cursor capacity errors recover automatically; other cases require a manual retry |
 | `provider_server_error` | Model provider server error (5xx) | Retry later |
 | `provider_network` | Network failure reaching the model provider | Retries automatically; check the executing machine's network if it persists |
 | `model_not_found_or_unavailable` | The model does not exist or is currently unavailable | Pick an available model in the agent settings |

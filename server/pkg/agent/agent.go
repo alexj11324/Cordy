@@ -72,6 +72,8 @@ type ExecOptions struct {
 	// the backend surfaces a continuity notice instead of silently
 	// restarting. Currently honoured by the codex backend (MUL-4424).
 	ResumeExpected bool
+	// RequireResume enforces the original session in Codex, Claude Code and Cursor recovery.
+	RequireResume bool
 	// ResumeContinuityNotice is the text to prepend to the first turn when
 	// ResumeExpected holds but the backend lands on a fresh thread anyway. The
 	// caller owns the wording because only it knows what the surface lost — an
@@ -199,12 +201,21 @@ const CostUSDTicksPerUSD = 10_000_000_000
 
 // Result is the final outcome after an agent session completes.
 type Result struct {
-	Status     string // "completed", "failed", "aborted", "timeout", "cancelled"
-	Output     string // final user-facing output selected by the backend
-	Error      string // error message if failed
-	DurationMs int64
-	SessionID  string
-	Usage      map[string]TokenUsage // keyed by model name
+	Status string // "completed", "failed", "aborted", "timeout", "cancelled"
+	Output string // final user-facing output selected by the backend
+	Error  string // error message if failed
+	// ProviderErrorCode carries structured or normalized provider errors independently of display text.
+	ProviderErrorCode string
+	// RecoveryResumeSafe means the prior process was reaped and a thread ID is available.
+	RecoveryResumeSafe bool
+	// UsageCumulative marks authoritative session totals, rather than per-attempt increments.
+	UsageCumulative bool
+	// UsageOutsideSession is daemon bookkeeping for preceding fresh-session attempts.
+	// It is included in Usage, but must survive replacement of current session totals.
+	UsageOutsideSession map[string]TokenUsage
+	DurationMs          int64
+	SessionID           string
+	Usage               map[string]TokenUsage // keyed by model name
 	// ResumeRejected is positive evidence that this run's requested resume
 	// was permanently refused — the transcript is gone, the session belongs to
 	// another provider account, OR the session still exists but its history
