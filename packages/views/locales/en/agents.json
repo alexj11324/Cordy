@@ -45,7 +45,7 @@
   },
   "empty": {
     "title": "No agents yet",
-    "description": "Create an agent and assign it issues, like any teammate. Local agents run on your machine; cloud agents run on Patchbay's runtime."
+    "description": "Create an agent and assign it issues, like any teammate. Local agents run on your machine; cloud agents run on Orvilo's runtime."
   },
   "no_matches": {
     "title": "No matches",
@@ -473,12 +473,12 @@
       "intro": "Set the system prompt used for every task. Markdown is supported.",
       "system_prompt_label": "System prompt",
       "placeholder": "Define this agent's role, expertise, and working style.\n\n# Example\nYou are a frontend engineer specializing in React and TypeScript.\n\n## Working Style\n- Write small, focused PRs — one commit per logical change\n- Prefer composition over inheritance\n- Always add unit tests for new components\n\n## Constraints\n- Do not modify shared/ types without explicit approval\n- Follow the existing component patterns in features/",
-      "system_layer_label": "Maintained by Patchbay",
-      "system_layer_hint": "Updates with each Patchbay release. You can't edit it, and your notes below are never overwritten.",
+      "system_layer_label": "Maintained by Orvilo",
+      "system_layer_hint": "Updates with each Orvilo release. You can't edit it, and your notes below are never overwritten.",
       "system_layer_show": "Show",
       "system_layer_hide": "Hide",
       "workspace_notes_label": "Workspace notes",
-      "workspace_notes_intro": "Add your team's context and preferences below. They apply on top of the instructions Patchbay maintains for this agent. Markdown is supported.",
+      "workspace_notes_intro": "Add your team's context and preferences below. They apply on top of the instructions Orvilo maintains for this agent. Markdown is supported.",
       "workspace_notes_placeholder": "Add context this agent should always have.\n\n# Example\nOur main repository is github.com/acme/platform.\nWrite issues in English even when we chat in Chinese.\nWe do not deploy on Fridays."
     },
     "env": {
@@ -532,12 +532,12 @@
       "save_failed_toast": "Failed to save custom arguments"
     },
     "mcp_config": {
-      "managed_title": "Managed by Patchbay",
-      "managed_empty": "No MCP servers are managed by Patchbay yet.",
+      "managed_title": "Managed by Orvilo",
+      "managed_empty": "No MCP servers are managed by Orvilo yet.",
       "add_action": "Add MCP",
       "agent_disabled_badge": "Off for agent",
       "runtime_disabled_badge": "Off in runtime",
-      "runtime_overridden_badge": "Overridden by Patchbay",
+      "runtime_overridden_badge": "Overridden by Orvilo",
       "workspace_title": "From the workspace library",
       "workspace_action_failed": "Could not update this agent's MCP servers",
       "workspace_removed_toast": "MCP server removed from this agent",

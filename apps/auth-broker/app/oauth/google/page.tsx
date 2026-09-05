@@ -23,6 +23,7 @@ function Content() {
     );
   }, [binding, params]);
   const clerk = useClerk();
+  const clerkLoaded = clerk.loaded;
   const { signIn } = useSignIn();
   const messages = useAuthMessages();
   const started = useRef(false);
@@ -35,7 +36,7 @@ function Content() {
       setError(true);
       return;
     }
-    if (!clerk.loaded) return;
+    if (!clerkLoaded) return;
     if (hasClerkOAuthReturn(params, window.location.hash)) {
       started.current = true;
       window.location.replace(
@@ -82,7 +83,7 @@ function Content() {
         if (failure) setError(true);
       })
       .catch(() => setError(true));
-  }, [binding, clerk, desktopRequest, error, params, registered, returnUrl, signIn]);
+  }, [binding, clerk, clerkLoaded, desktopRequest, error, params, registered, returnUrl, signIn]);
 
   return <AuthShell><p role={error ? "alert" : "status"}>{error ? messages.startFailed : messages.starting}</p>{error && <button onClick={() => window.location.reload()}>{messages.retry}</button>}</AuthShell>;
 }

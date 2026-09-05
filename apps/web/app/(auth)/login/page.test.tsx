@@ -31,11 +31,14 @@ vi.mock("@patchbay/core/auth", () => ({
 }));
 
 vi.mock("@clerk/nextjs", () => ({
-  SignIn: (props: Record<string, unknown>) => {
-    signInProps.current = props;
-    return <div data-testid="clerk-sign-in" />;
-  },
   useAuth: () => authState.current,
+}));
+
+vi.mock("@/components/accounts-login-form", () => ({
+  WebAccountsLoginForm: (props: Record<string, unknown>) => {
+    signInProps.current = props;
+    return <div data-testid="accounts-login-form" />;
+  },
 }));
 
 vi.mock("next/navigation", () => ({
@@ -110,25 +113,22 @@ describe("LoginPage", () => {
     redirectToDesktopApp.mockReset();
   });
 
-  it("renders the Clerk sign-in flow at the canonical login route", () => {
+  it("renders the shared custom form at the canonical login route", () => {
     render(<LoginPage />);
 
-    expect(screen.getByTestId("clerk-sign-in")).toBeInTheDocument();
+    expect(screen.getByTestId("accounts-login-form")).toBeInTheDocument();
     expect(signInProps.current).toMatchObject({
-      routing: "path",
-      path: "/login",
-      signUpUrl: "/signup",
-      forceRedirectUrl: "/",
+      returnUrl: "/",
     });
   });
 
-  it("preserves a validated CLI callback through Clerk sign-in", () => {
+  it("preserves a validated CLI callback through the custom form", () => {
     search.current =
       "cli_callback=http%3A%2F%2F127.0.0.1%3A43821%2Fcallback&cli_state=opaque-state";
 
     render(<LoginPage />);
 
-    expect(signInProps.current.forceRedirectUrl).toBe(
+    expect(signInProps.current.returnUrl).toBe(
       "/login?cli_callback=http%3A%2F%2F127.0.0.1%3A43821%2Fcallback&cli_state=opaque-state",
     );
   });
@@ -142,19 +142,16 @@ describe("LoginPage", () => {
     expect(screen.getByRole("alert")).toHaveTextContent(
       "Localized invalid CLI callback",
     );
-    expect(screen.queryByTestId("clerk-sign-in")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("accounts-login-form")).not.toBeInTheDocument();
   });
 
-  it("preserves the requested app path and query through Clerk sign-in", () => {
+  it("preserves the requested app path and query through the custom form", () => {
     search.current = "redirect_url=%2Fusage%3Ftab%3Dbilling%23summary";
 
     render(<LoginPage />);
 
-    expect(signInProps.current.forceRedirectUrl).toBe(
+    expect(signInProps.current.returnUrl).toBe(
       "/usage?tab=billing#summary",
-    );
-    expect(signInProps.current.signUpUrl).toBe(
-      "/signup?redirect_url=%2Fusage%3Ftab%3Dbilling%23summary",
     );
   });
 
@@ -163,20 +160,17 @@ describe("LoginPage", () => {
 
     render(<LoginPage />);
 
-    expect(signInProps.current.forceRedirectUrl).toBe("/");
-    expect(signInProps.current.signUpUrl).toBe("/signup");
+    expect(signInProps.current.returnUrl).toBe("/");
   });
 
-  it("preserves the desktop handoff through Clerk sign-in", () => {
+  it("preserves the desktop handoff through the custom form", () => {
     search.current =
       "platform=desktop&code_challenge=challenge-value&state=opaque-state";
 
     render(<LoginPage />);
 
     expect(signInProps.current).toMatchObject({
-      signUpUrl:
-        "/signup?platform=desktop&code_challenge=challenge-value&state=opaque-state",
-      forceRedirectUrl:
+      returnUrl:
         "/login?platform=desktop&code_challenge=challenge-value&state=opaque-state",
     });
   });
@@ -197,7 +191,7 @@ describe("LoginPage", () => {
     expect(
       screen.getByText("Localized CLI authorization prompt"),
     ).toBeInTheDocument();
-    expect(screen.queryByTestId("clerk-sign-in")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("accounts-login-form")).not.toBeInTheDocument();
   });
 
   it("exchanges the Clerk session for a native Patchbay CLI token", async () => {
@@ -253,7 +247,8 @@ describe("LoginPage", () => {
 
     render(<LoginPage />);
 
-    expect(screen.getByTestId("clerk-sign-in")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toBeInTheDocument();
+    expect(screen.queryByTestId("accounts-login-form")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", {
         name: "Localized CLI authorization button",

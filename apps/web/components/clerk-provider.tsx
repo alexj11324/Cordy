@@ -1,7 +1,6 @@
 "use client";
 
 import { ClerkProvider as BaseClerkProvider } from "@clerk/nextjs";
-import { shadcn } from "@clerk/themes";
 
 export function ClerkProvider({
   children,
@@ -11,10 +10,7 @@ export function ClerkProvider({
   publishableKey?: string;
 }) {
   return (
-    <BaseClerkProvider
-      publishableKey={publishableKey}
-      appearance={{ theme: shadcn }}
-    >
+    <BaseClerkProvider publishableKey={publishableKey}>
       {children}
     </BaseClerkProvider>
   );

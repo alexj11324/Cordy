@@ -33,7 +33,7 @@ describe("IntegrationSetupGuide", () => {
       </I18nProvider>,
     );
 
-    expect(screen.getByRole("button", { name: "View Patchbay manifest" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "View Orvilo manifest" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open Slack app dashboard" })).toBeInTheDocument();
   });
 
@@ -45,7 +45,7 @@ describe("IntegrationSetupGuide", () => {
     );
 
     expect(screen.getByText(/Click Connect Slack on this page/)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "View Patchbay manifest" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "View Orvilo manifest" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Open Slack app dashboard" })).not.toBeInTheDocument();
   });
 });

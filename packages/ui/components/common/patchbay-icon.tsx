@@ -34,29 +34,13 @@ function PatchbayMark() {
       fill="none"
       aria-hidden="true"
     >
-      <g stroke="currentColor" strokeWidth="8">
-        <circle cx="64" cy="28" r="10" />
-        <circle cx="100" cy="28" r="10" />
-        <circle cx="28" cy="64" r="10" />
-        <circle cx="100" cy="64" r="10" />
-        <circle cx="28" cy="100" r="10" />
-        <circle cx="64" cy="100" r="10" />
-      </g>
-      <g
-        stroke="#B6F000"
-        strokeWidth="8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <circle cx="28" cy="28" r="10" />
-        <path d="M28 38C28 46 34 50 42 50H50C60 50 64 54 64 64V72C64 82 68 86 78 86H82C92 86 96 90 96 100" />
-        <circle cx="100" cy="100" r="10" />
-      </g>
+      <path fill="currentColor" d="M47 39C48 26 56 20 68 20H85C100 20 108 28 108 43V64C108 79 99 87 86 87H67C79 79 85 70 85 59C85 47 77 39 64 39Z" />
+      <path fill="currentColor" d="M81 89C80 102 72 108 60 108H43C28 108 20 100 20 85V64C20 49 29 41 42 41H61C49 49 43 58 43 69C43 81 51 89 64 89Z" />
     </svg>
   );
 }
 
-/** Inline rendering of the approved Patchbay routing mark. */
+/** Inline rendering of the approved Orvilo mark. */
 export function PatchbayIcon({
   className,
   animate = false,

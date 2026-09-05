@@ -338,17 +338,19 @@ async function verifyAuthenticatedProduct(browser, sourceSha, auth) {
     requireBuildHeaders(login.headers(), sourceSha, "Web login");
     await expect(
       publicPage.getByRole("heading", {
-        name: "Sign in to Patchbay",
+        name: "Login",
         exact: true,
       }),
     ).toBeVisible();
-    const authShell = publicPage.getByTestId("clerk-auth-shell");
+    await expect(publicPage.getByTestId("accounts-login-form")).toBeVisible();
+    await expect(publicPage.locator(".cl-signIn-root, .cl-signUp-root")).toHaveCount(0);
+    const authShell = publicPage.getByTestId("auth-shell");
     const formPanel = authShell.locator(":scope > section");
-    const brandPanel = publicPage.getByTestId("clerk-auth-brand-panel");
-    await expect(authShell).toHaveClass(/\bbg-white\b/u);
+    const brandPanel = publicPage.getByTestId("auth-brand-panel");
+    await expect(authShell).toHaveClass(/\bbg-zinc-950\b/u);
     await expect(authShell).toHaveClass(/\bmd:grid-cols-2\b/u);
     await expect(formPanel).toBeVisible();
-    await expect(formPanel).toHaveClass(/\bbg-white\b/u);
+    await expect(formPanel).toHaveClass(/\bbg-zinc-950\b/u);
     await expect(brandPanel).toBeVisible();
     await expect(brandPanel).toHaveClass(/\bbg-zinc-950\b/u);
 
@@ -358,12 +360,12 @@ async function verifyAuthenticatedProduct(browser, sourceSha, auth) {
       brandPanel.boundingBox(),
     ]);
     assert.ok(shellBox, "split login shell must have a rendered box");
-    assert.ok(formBox, "white login form panel must have a rendered box");
+    assert.ok(formBox, "custom login form panel must have a rendered box");
     assert.ok(brandBox, "black login brand panel must have a rendered box");
     assert.ok(
       formBox.width >= shellBox.width * 0.45 &&
         brandBox.width >= shellBox.width * 0.45,
-      "login must render as white-left / black-right split panels",
+      "login must render as custom form / brand split panels",
     );
   } finally {
     await publicContext.close();
