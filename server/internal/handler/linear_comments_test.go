@@ -92,7 +92,7 @@ func TestLinearCommentsImportDeduplicatesAndDoesNotEcho(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	createdAt := time.Now().UTC().Add(-24 * time.Hour)
+	createdAt := time.Now().UTC().Add(-24 * time.Hour).Truncate(time.Microsecond)
 	remote := linearapi.Comment{ID: "remote-comment", Body: "Hello", CreatedAt: createdAt, UpdatedAt: createdAt.Add(time.Hour)}
 	remote.Issue.ID = linkedRemoteID(t, issueID)
 	if err = f.worker.applyLinearComment(ctx, b, remote, false); err != nil {
