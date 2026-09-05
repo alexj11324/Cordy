@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, memo } from "react";
+import { useCallback, memo, type ReactNode, type SyntheticEvent } from "react";
 import { AppLink } from "../../navigation";
 import { useSortable, defaultAnimateLayoutChanges } from "@dnd-kit/sortable";
 import type { AnimateLayoutChanges } from "@dnd-kit/sortable";
@@ -18,7 +18,7 @@ import { useWorkspacePaths } from "@patchbay/core/paths";
 import { useLocale, useT } from "../../i18n";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { PriorityIcon } from "./priority-icon";
-import { PriorityPicker, ExecutorPicker, StartDatePicker, DueDatePicker } from "./pickers";
+import { PriorityPicker, OwnerPicker, ExecutorPicker, StartDatePicker, DueDatePicker } from "./pickers";
 import { useViewStore } from "@patchbay/core/issues/stores/view-store-context";
 import { ProgressRing } from "./progress-ring";
 import type { ChildProgress } from "./list-row";
@@ -28,14 +28,15 @@ import { IssueAgentActivityIndicator } from "./issue-agent-activity-indicator";
 import { CustomStatusChip, useIsCustomStatus } from "./custom-status-chip";
 import { useIssueSurfaceActionsOptional } from "../surface/actions-context";
 import { cn } from "@patchbay/ui/lib/utils";
+import { AVATAR_SIZE_PX } from "@patchbay/ui/lib/avatar-size";
 
 function formatDate(date: string, locale: string): string {
   return formatDateOnly(date, { month: "short", day: "numeric" }, locale);
 }
 
 /** Stops event from bubbling to Link/drag handlers */
-function PickerWrapper({ children, className }: { children: React.ReactNode; className?: string }) {
-  const stop = (e: React.SyntheticEvent) => {
+function PickerWrapper({ children, className }: { children: ReactNode; className?: string }) {
+  const stop = (e: SyntheticEvent) => {
     e.stopPropagation();
     e.preventDefault();
   };
@@ -46,8 +47,55 @@ function PickerWrapper({ children, className }: { children: React.ReactNode; cla
   );
 }
 
-const HOVER_REVEAL_CLASS =
+const HOVER_REVEAL_OPACITY_CLASS =
   "opacity-0 transition-opacity group-hover/card:opacity-100 group-data-[popup-open]/card:opacity-100 focus-within:opacity-100 has-[[data-open]]:opacity-100 has-[[data-popup-open]]:opacity-100 [@media(hover:none)]:opacity-100";
+
+const HOVER_REVEAL_FLEX_CLASS =
+  "hidden group-hover/card:inline-flex group-data-[popup-open]/card:inline-flex focus-within:inline-flex has-[[data-open]]:inline-flex has-[[data-popup-open]]:inline-flex [@media(hover:none)]:inline-flex";
+
+const BOARD_ACTOR_SIZE = "xs" as const;
+// xs heads are 16px; 30% (the sm-stack default) only shifts 5px and still
+// reads as two adjacent dots. Half-overlap is what makes owner+executor a
+// single stacked chip in the identifier row.
+const BOARD_ACTOR_OVERLAP_PX = Math.round(AVATAR_SIZE_PX[BOARD_ACTOR_SIZE] * 0.5);
+
+function UnassignedActorSlot({ label }: { label: string }) {
+  return (
+    <span
+      className="flex size-4 shrink-0 rounded-full border border-dashed border-muted-foreground/50"
+      aria-label={label}
+    />
+  );
+}
+
+function BoardActorStackSlot({
+  revealOnHover,
+  peekLeft,
+  overlapLeft,
+  children,
+}: {
+  revealOnHover: boolean;
+  peekLeft: boolean;
+  overlapLeft: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex rounded-full ring-2 ring-surface",
+        peekLeft ? "absolute z-[1]" : "relative z-[2]",
+        revealOnHover && HOVER_REVEAL_FLEX_CLASS,
+      )}
+      style={
+        peekLeft
+          ? { right: "100%", marginRight: -BOARD_ACTOR_OVERLAP_PX }
+          : { marginLeft: overlapLeft ? -BOARD_ACTOR_OVERLAP_PX : 0 }
+      }
+    >
+      {children}
+    </span>
+  );
+}
 
 export const BoardCardContent = memo(function BoardCardContent({
   issue,
@@ -87,10 +135,13 @@ export const BoardCardContent = memo(function BoardCardContent({
   const showPriority = storeProperties.priority;
   const isNonePriority = issue.priority === "none";
   const showDescription = storeProperties.description && issue.description;
-  const showExecutorSection = storeProperties.executor;
+  const showActorStack = storeProperties.executor;
+  const hasOwner = !!issue.owner_type && !!issue.owner_id;
   const hasExecutor = !!issue.executor_type && !!issue.executor_id;
-  const showAssignedExecutor = showExecutorSection && hasExecutor;
-  const showUnassignedAssign = showExecutorSection && !hasExecutor && canEdit;
+  const showAssignedOwner = showActorStack && hasOwner;
+  const showUnassignedOwner = showActorStack && !hasOwner && canEdit;
+  const showAssignedExecutor = showActorStack && hasExecutor;
+  const showUnassignedExecutor = showActorStack && !hasExecutor && canEdit;
   const showStartDate = storeProperties.startDate && issue.start_date;
   const showDueDate = storeProperties.dueDate && issue.due_date;
   const showCreatedDate = !showStartDate && !showDueDate;
@@ -136,60 +187,116 @@ export const BoardCardContent = memo(function BoardCardContent({
     )
   ) : null;
 
-  const assignedExecutor = showAssignedExecutor ? (
-    <span className="flex shrink-0 items-center">
-      <ActorAvatar
-        actorType={issue.executor_type!}
-        actorId={issue.executor_id!}
-        size="xs"
-        enableHoverCard
-        profileLink={false}
-        className="shrink-0"
-      />
-    </span>
-  ) : null;
-
-  const unassignedAssign = showUnassignedAssign ? (
-    <span
-      className="flex size-4 shrink-0 rounded-full border border-dashed border-muted-foreground/50"
-      aria-label={t(($) => $.pickers.executor.trigger_unassigned)}
+  const ownerInner = showAssignedOwner ? (
+    <ActorAvatar
+      actorType={issue.owner_type!}
+      actorId={issue.owner_id!}
+      size={BOARD_ACTOR_SIZE}
+      enableHoverCard
+      profileLink={false}
+      className="shrink-0"
     />
+  ) : showUnassignedOwner ? (
+    <UnassignedActorSlot label={t(($) => $.pickers.owner.trigger_unassigned)} />
   ) : null;
 
-  const executorInner = assignedExecutor ?? unassignedAssign;
+  const executorInner = showAssignedExecutor ? (
+    <ActorAvatar
+      actorType={issue.executor_type!}
+      actorId={issue.executor_id!}
+      size={BOARD_ACTOR_SIZE}
+      enableHoverCard
+      profileLink={false}
+      className="shrink-0"
+    />
+  ) : showUnassignedExecutor ? (
+    <UnassignedActorSlot label={t(($) => $.pickers.executor.trigger_unassigned)} />
+  ) : null;
 
-  const executorNode = executorInner ? (
+  const wrapActorPicker = (inner: ReactNode, picker: ReactNode) =>
     canEdit ? (
-      <PickerWrapper className={cn("inline-flex items-center", showUnassignedAssign && HOVER_REVEAL_CLASS)}>
+      <PickerWrapper className="inline-flex items-center">{picker}</PickerWrapper>
+    ) : (
+      <span className="inline-flex items-center">{inner}</span>
+    );
+
+  const actorSlots: { key: "owner" | "executor"; node: ReactNode; revealOnHover: boolean }[] = [];
+  if (ownerInner) {
+    actorSlots.push({
+      key: "owner",
+      revealOnHover: showUnassignedOwner && showAssignedExecutor,
+      node: wrapActorPicker(
+        ownerInner,
+        <OwnerPicker
+          ownerType={issue.owner_type}
+          ownerId={issue.owner_id}
+          onUpdate={handleUpdate}
+          trigger={ownerInner}
+        />,
+      ),
+    });
+  }
+  if (executorInner) {
+    actorSlots.push({
+      key: "executor",
+      revealOnHover: showUnassignedExecutor && showAssignedOwner,
+      node: wrapActorPicker(
+        executorInner,
         <ExecutorPicker
           executorType={issue.executor_type}
           executorId={issue.executor_id}
           onUpdate={handleUpdate}
           trigger={executorInner}
-        />
-      </PickerWrapper>
-    ) : (
-      <span className="inline-flex items-center">{executorInner}</span>
-    )
-  ) : null;
+        />,
+      ),
+    });
+  }
+
+  const onlyUnassignedActors =
+    !showAssignedOwner &&
+    !showAssignedExecutor &&
+    (showUnassignedOwner || showUnassignedExecutor);
+
+  const actorStack =
+    actorSlots.length > 0 ? (
+      <span
+        data-board-actor-stack=""
+        className={cn(
+          "relative inline-flex items-center",
+          onlyUnassignedActors && HOVER_REVEAL_OPACITY_CLASS,
+        )}
+      >
+        {actorSlots.map((slot, index) => {
+          const inFlowIndex = actorSlots.slice(0, index).filter((item) => !item.revealOnHover).length;
+          return (
+            <BoardActorStackSlot
+              key={slot.key}
+              revealOnHover={slot.revealOnHover}
+              peekLeft={slot.revealOnHover && index === 0}
+              overlapLeft={slot.revealOnHover || inFlowIndex > 0}
+            >
+              {slot.node}
+            </BoardActorStackSlot>
+          );
+        })}
+      </span>
+    ) : null;
 
   const showMetaRow =
-    showCreatedDate ||
-    !!showStartDate ||
-    !!showDueDate ||
-    !!showChildProgress ||
-    showAssignedExecutor ||
-    showUnassignedAssign;
+    showCreatedDate || !!showStartDate || !!showDueDate || !!showChildProgress;
 
   return (
     <div className="rounded-lg border-[0.5px] border-surface-border bg-surface py-2 px-2.5 shadow-[var(--surface-shadow)] transition-colors group-hover/card:border-foreground/15 group-hover/card:bg-surface-hover group-data-[popup-open]/card:border-foreground/15 group-data-[popup-open]/card:bg-surface-hover">
-      {/* Row 1: priority + identifier (left), agent activity (right) */}
+      {/* Row 1: priority + identifier (left), activity + owner/executor stack (right) */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 min-w-0">
           {priorityIconNode}
           <p className="text-caption text-muted-foreground truncate">{issue.identifier}</p>
         </div>
-        <IssueAgentActivityIndicator issueId={issue.id} />
+        <div className="flex shrink-0 items-center gap-1.5">
+          <IssueAgentActivityIndicator issueId={issue.id} hideAvatars />
+          {actorStack}
+        </div>
       </div>
 
       {/* Row 2: Title */}
@@ -234,7 +341,7 @@ export const BoardCardContent = memo(function BoardCardContent({
         </div>
       )}
 
-      {/* Meta row: dates (left), child progress + executor avatar (right) */}
+      {/* Meta row: dates (left), child progress (right) */}
       {showMetaRow && (
         <div className="mt-1.5 flex items-center gap-2">
           {(showStartDate || showDueDate || showCreatedDate) && (
@@ -296,17 +403,12 @@ export const BoardCardContent = memo(function BoardCardContent({
               )}
             </div>
           )}
-          {(!!showChildProgress || executorNode) && (
-            <div className="ml-auto flex shrink-0 items-center gap-1.5">
-              {showChildProgress && (
-                <div className="inline-flex shrink-0 items-center gap-1">
-                  <ProgressRing done={childProgress!.done} total={childProgress!.total} size={14} />
-                  <span className="text-micro text-muted-foreground tabular-nums font-medium">
-                    {childProgress!.done}/{childProgress!.total}
-                  </span>
-                </div>
-              )}
-              {executorNode}
+          {showChildProgress && (
+            <div className="ml-auto inline-flex shrink-0 items-center gap-1">
+              <ProgressRing done={childProgress!.done} total={childProgress!.total} size={14} />
+              <span className="text-micro text-muted-foreground tabular-nums font-medium">
+                {childProgress!.done}/{childProgress!.total}
+              </span>
             </div>
           )}
         </div>

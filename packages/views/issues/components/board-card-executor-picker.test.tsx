@@ -207,7 +207,13 @@ describe("BoardCardContent executor picker", () => {
       screen.queryByText("pickers.executor.trigger_unassigned"),
     ).not.toBeInTheDocument();
     expect(
+      screen.queryByText("pickers.owner.trigger_unassigned"),
+    ).not.toBeInTheDocument();
+    expect(
       screen.getByLabelText("pickers.executor.trigger_unassigned"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("pickers.owner.trigger_unassigned"),
     ).toBeInTheDocument();
   });
 
@@ -242,5 +248,35 @@ describe("BoardCardContent executor picker", () => {
     expect(chip.querySelector('[aria-hidden="true"]')).toHaveStyle({
       backgroundColor: "rgb(139, 92, 246)",
     });
+  });
+
+  it("stacks owner and executor avatars in the identifier row", () => {
+    const { container } = renderCard(
+      makeIssue("agent", { owner_type: "member", owner_id: "member-1" }),
+    );
+    const stack = container.querySelector("[data-board-actor-stack]");
+    const identifierRow = screen.getByText("MUL-6082").closest(".justify-between");
+    const avatars = stack?.querySelectorAll('[data-slot="avatar"]');
+    const slots = stack?.querySelectorAll(":scope > span");
+
+    expect(stack).not.toBeNull();
+    expect(identifierRow).toContainElement(stack);
+    expect(avatars).toHaveLength(2);
+    expect(slots?.[1]).toHaveStyle({ marginLeft: "-8px" });
+    expect(screen.queryByText("Assigned member")).not.toBeInTheDocument();
+    expect(screen.queryByText("Assigned agent")).not.toBeInTheDocument();
+  });
+
+  it("opens the owner picker from the stacked owner avatar without navigating", () => {
+    const { container } = renderCard(
+      makeIssue("agent", { owner_type: "member", owner_id: "member-1" }),
+    );
+    const avatars = container.querySelectorAll('[data-slot="avatar"]');
+
+    expect(fireEvent.click(avatars[0]!)).toBe(false);
+    expect(
+      screen.getByPlaceholderText("pickers.owner.search_placeholder"),
+    ).toBeInTheDocument();
+    expect(navigation.push).not.toHaveBeenCalled();
   });
 });

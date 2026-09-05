@@ -47,6 +47,10 @@ interface IssueAgentActivityIndicatorProps {
   // Whether hovering opens the activity card. Opt OUT where the card's only
   // incremental information is not worth a popup (Inbox — see below).
   hoverCard?: boolean;
+  // Board cards already show the executor's face in the people stack, so
+  // repeating those heads here just crowds the identifier row. Text-only
+  // keeps the working/queued cue without a second avatar group.
+  hideAvatars?: boolean;
 }
 
 /**
@@ -90,6 +94,7 @@ export const IssueAgentActivityIndicator = memo(function IssueAgentActivityIndic
   issueId,
   size = "xs",
   hoverCard = true,
+  hideAvatars = false,
 }: IssueAgentActivityIndicatorProps) {
   const { t } = useT("issues");
   const wsId = useWorkspaceId();
@@ -119,12 +124,14 @@ export const IssueAgentActivityIndicator = memo(function IssueAgentActivityIndic
 
   const badge = (
     <>
-      <AgentAvatarStack
-        agentIds={agentIds}
-        size={size}
-        opacity={opacity}
-        max={3}
-      />
+      {hideAvatars ? null : (
+        <AgentAvatarStack
+          agentIds={agentIds}
+          size={size}
+          opacity={opacity}
+          max={3}
+        />
+      )}
       {/* No leading-none: the shimmer paints glyphs via background-clip:
           text, and the background only covers the line box — a squeezed
           line box leaves descenders transparent. */}
