@@ -21,7 +21,7 @@ func canonicalPath(path string) (string, error) {
 // The entrypoint's parent is still canonicalized. This keeps paths stable when
 // their containing directory is a symlink or an ephemeral version-manager
 // prefix, while retaining the basename the dispatcher needs — the same
-// semantics buildLoginShellResolveScript has always applied via `pwd -P`.
+// semantics of resolving the parent directory while preserving the command name.
 func discoveredExecutablePath(path string) string {
 	real := canonicalExecutablePath(path)
 	if !isNameDispatchingAgentShim(real) {

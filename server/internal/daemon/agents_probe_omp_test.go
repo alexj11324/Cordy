@@ -29,12 +29,11 @@ func TestProbeAgentCLIs_DiscoversPiAndOmpSeparately(t *testing.T) {
 	}
 
 	// Stub the login-shell resolver so it doesn't try to fork a shell.
-	orig := resolveAgentsViaLoginShell
-	t.Cleanup(func() { resolveAgentsViaLoginShell = orig })
-	resolveAgentsViaLoginShell = func([]string) map[string]string {
+	orig := resolveAgentsFromInstallPaths
+	t.Cleanup(func() { resolveAgentsFromInstallPaths = orig })
+	resolveAgentsFromInstallPaths = func([]string) map[string]string {
 		return map[string]string{}
 	}
-	resetShellResolveCacheForTest(t)
 
 	t.Setenv("PATH", fakeDir)
 	t.Setenv("PATCHBAY_PI_PATH", "")
@@ -106,10 +105,9 @@ func TestRegisterRuntimes_PiAndOmpBothReachTheServer(t *testing.T) {
 		writeDaemonTestExecutable(t, filepath.Join(fakeDir, name), []byte("#!/bin/sh\nexit 0\n"))
 	}
 
-	origResolve := resolveAgentsViaLoginShell
-	t.Cleanup(func() { resolveAgentsViaLoginShell = origResolve })
-	resolveAgentsViaLoginShell = func([]string) map[string]string { return map[string]string{} }
-	resetShellResolveCacheForTest(t)
+	origResolve := resolveAgentsFromInstallPaths
+	t.Cleanup(func() { resolveAgentsFromInstallPaths = origResolve })
+	resolveAgentsFromInstallPaths = func([]string) map[string]string { return map[string]string{} }
 
 	t.Setenv("PATH", fakeDir)
 	t.Setenv("PATCHBAY_PI_PATH", "")

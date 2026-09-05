@@ -15,20 +15,9 @@ import (
 	"github.com/patchbay-ai/patchbay/server/pkg/agent"
 )
 
-// TestDefaultAgentCommandNamesCoversAllProbes guards the invariant documented
-// on defaultAgentCommandNames: the shell-fallback resolver only pre-fetches
-// canonical paths for the bare command names in that list, so every agent the
-// probe loop tries must appear there. A GUI/Launchpad-started daemon does not
-// inherit the interactive shell PATH, so an agent missing from this list is
-// undetectable when its binary lives only on the login-shell PATH (e.g. an
-// `npm install -g` global). This test parses the probe(...) calls so a new
-// probe can't silently diverge from the fallback list.
-//
-// It parses agents_probe.go, which is where probeAgentCLIs now lives. It used
-// to parse config.go and silently degraded into a no-op when the probe loop
-// moved out of that file — which is how the missing "qodercli" entry survived
-// (MUL-5524). probeSourceFile is asserted to actually contain probe() calls so
-// a future move fails loudly instead of vacuously passing.
+// Parse actual probe calls to keep the audited inventory aligned with built-in
+// providers. Assert the file contains calls so moving discovery cannot make
+// this check pass vacuously.
 const probeSourceFile = "agents_probe.go"
 
 func TestDefaultAgentCommandNamesCoversAllProbes(t *testing.T) {
@@ -55,7 +44,7 @@ func TestDefaultAgentCommandNamesCoversAllProbes(t *testing.T) {
 			return true
 		}
 		// probe(envPathVar, commandName, envModelVar): the command name is the
-		// second argument and is the value pre-fetched by the shell fallback.
+		// second argument and is the value listed in the audited command inventory.
 		if len(call.Args) < 2 {
 			return true
 		}
@@ -97,7 +86,7 @@ func TestDefaultAgentCommandNamesCoversAllProbes(t *testing.T) {
 	if len(missing) > 0 {
 		sort.Strings(missing)
 		t.Fatalf("probe() command names missing from defaultAgentCommandNames: %v; "+
-			"add them so GUI-launched daemons can resolve these agents via the login shell", missing)
+			"add them to keep the command inventory aligned", missing)
 	}
 }
 

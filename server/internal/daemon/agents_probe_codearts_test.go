@@ -24,10 +24,9 @@ func TestProbeAgentCLIsDiscoversCodeArtsDefaultInstallPath(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	origResolve := resolveAgentsViaLoginShell
-	t.Cleanup(func() { resolveAgentsViaLoginShell = origResolve })
-	resolveAgentsViaLoginShell = func([]string) map[string]string { return map[string]string{} }
-	resetShellResolveCacheForTest(t)
+	origResolve := resolveAgentsFromInstallPaths
+	t.Cleanup(func() { resolveAgentsFromInstallPaths = origResolve })
+	resolveAgentsFromInstallPaths = func([]string) map[string]string { return map[string]string{} }
 
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)

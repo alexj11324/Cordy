@@ -42,3 +42,16 @@ Release signing/notarization and production application identity are unchanged.
 
 Rebuilding is required after merging. An old browser handoff link is not a new
 login attempt and may already be cancelled, consumed or expired.
+
+## Automatic executable discovery
+
+Opening the app and automatic daemon discovery do not execute login/interactive
+shell initialization. Discovery checks inherited PATH, explicit
+`PATCHBAY_<PROVIDER>_PATH` settings, conventional installer directories and
+existing provider-specific app locations. Candidate discovery does not execute
+the candidate. Version probes and task execution are separate operations.
+
+An installation exposed only by arbitrary shell rc logic must supply an explicit
+executable path or launch with the intended PATH. The app does not run rc files
+to infer it: those scripts can access protected folders, start processes, and
+outlive a timeout. No TCC reset or blanket filesystem permission is required.
