@@ -148,3 +148,10 @@ func TestCapacityFailureReasonPreservesTerminalArrayClassification(t *testing.T)
 		t.Fatalf("got %s", got)
 	}
 }
+
+func TestCapacityRecoveryRejectsPoisonedRequestBeforeTypedLimit(t *testing.T) {
+	r := capacityResult("rate_limit", "rate limit reached\nAPI Error: 400 {\"error\":{\"type\":\"invalid_request_error\",\"message\":\"Could not process image\"}}")
+	if canRecoverCapacity(r) {
+		t.Fatal("a permanent request error must override earlier rate-limit metadata")
+	}
+}

@@ -33,6 +33,11 @@ func canRecoverCapacity(result agent.Result) bool {
 	if result.Status != "failed" || !result.RecoveryResumeSafe || result.SessionID == "" || result.ResumeRejected {
 		return false
 	}
+	// Apply the same permanent-request guard used by terminal task reporting
+	// before a transient code can admit the run into unbounded recovery.
+	if _, poisoned := classifyPoisonedError(result.Error); poisoned {
+		return false
+	}
 	// Structured errors take precedence over human-readable messages. Unknown
 	// variants fail closed; a bare 429 is not evidence of temporary rate limiting.
 	if result.ProviderErrorCode != "" {
