@@ -139,9 +139,9 @@ backend:
     # Set false to hide and reject the integration for this deployment.
     vcsIntegrationEnabled: true
     # Linear credentials and PATCHBAY_LINEAR_SECRET_KEY belong in
-    # existingSecret. Keep this release toggle off until its OAuth callback and
-    # webhook are registered; push remains separately disabled by default.
-    linearInstallationFoundation: false
+    # existingSecret. Missing credentials show a setup-required state;
+    # push remains separately disabled by default.
+    linearInstallationFoundation: true
     linearPullImportEnabled: true
     linearPushEnabled: false
     # Managed patchbay-cloud connection. Empty keeps self-hosting independent.

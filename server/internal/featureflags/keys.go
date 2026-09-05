@@ -24,8 +24,8 @@ const (
 	// mutate an immutable execution manifest that is already in flight.
 	PluginsV1 = "plugins_v1"
 	// LinearInstallationFoundation gates the workspace Linear connection,
-	// project-binding, import, and conflict-resolution surfaces while operators
-	// provision OAuth and webhook credentials.
+	// project-binding, import, and conflict-resolution APIs. It defaults on;
+	// operators may explicitly disable it. OAuth still requires credentials.
 	LinearInstallationFoundation = "linear_installation_foundation"
 	// agentBuilderCompat is no longer a release flag. Keep publishing the key
 	// as enabled so installed desktop clients that still gate the AI creation
@@ -52,7 +52,7 @@ var frontendPublicFlags = []string{
 }
 
 func LinearInstallationFoundationEnabled(ctx context.Context, flags *featureflag.Service) bool {
-	return flags.IsEnabled(ctx, LinearInstallationFoundation, false)
+	return flags.IsEnabled(ctx, LinearInstallationFoundation, true)
 }
 
 func BillingWorkspaceSubscriptionsEnabled(ctx context.Context, flags *featureflag.Service) bool {
@@ -70,7 +70,7 @@ func PluginsV1Enabled(ctx context.Context, flags *featureflag.Service) bool {
 func EvaluateFrontendPublicFlags(ctx context.Context, flags *featureflag.Service) map[string]bool {
 	out := make(map[string]bool, len(frontendPublicFlags)+3)
 	for _, key := range frontendPublicFlags {
-		out[key] = flags.IsEnabled(ctx, key, false)
+		out[key] = flags.IsEnabled(ctx, key, key == LinearInstallationFoundation)
 	}
 	out[agentBuilderCompat] = true
 	out[agentSkillTogglesCompat] = true

@@ -1202,6 +1202,17 @@ type LarkUserBinding struct {
 	BoundAt        pgtype.Timestamptz `json:"bound_at"`
 }
 
+type LinearCommentLink struct {
+	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
+	BindingID       pgtype.UUID        `json:"binding_id"`
+	IssueID         pgtype.UUID        `json:"issue_id"`
+	CommentID       pgtype.UUID        `json:"comment_id"`
+	LinearCommentID string             `json:"linear_comment_id"`
+	Origin          string             `json:"origin"`
+	RemoteUpdatedAt pgtype.Timestamptz `json:"remote_updated_at"`
+	Deleted         bool               `json:"deleted"`
+}
+
 type LinearConnection struct {
 	ID                    pgtype.UUID        `json:"id"`
 	WorkspaceID           pgtype.UUID        `json:"workspace_id"`

@@ -997,6 +997,8 @@ export function LinearIntegrationCard({
     action = <span className="text-caption text-muted-foreground">{t(($) => $.page.linear.admin_only)}</span>;
   } else if (connectionQuery.isLoading) {
     action = <Loader2 className="size-4 animate-spin text-muted-foreground" />;
+  } else if (connectionQuery.isError || hasUnknownStatus) {
+    action = <span className="text-caption text-muted-foreground">{t(($) => $.page.linear.unavailable)}</span>;
   } else if (!configured) {
     action = <span className="text-caption text-muted-foreground">{t(($) => $.page.linear.server_configuration_required)}</span>;
   } else if (isReauthorizationRequired || !isConnected) {
@@ -1005,7 +1007,6 @@ export function LinearIntegrationCard({
     action = (
       <div className="flex flex-wrap items-center justify-end gap-2">
         <Button onClick={() => setWizardOpen(true)} size="sm" variant="outline"><Settings2 />{t(($) => $.page.linear.manage)}</Button>
-        <Button onClick={() => void connect()} size="sm" variant="outline">{t(($) => $.page.linear.reconnect)}</Button>
         <Button className="text-destructive hover:text-destructive" onClick={() => setDisconnectOpen(true)} size="sm" variant="ghost"><Trash2 />{t(($) => $.page.linear.disconnect)}</Button>
       </div>
     );
