@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "source_sha": "61a3adba7ba2d717160ce586a86b07bea9ff6251",
+  "workflow_run_id": "33940998112",
+  "images": {
+    "auth-broker": "ghcr.io/alexj11324/patchbay-auth-broker@sha256:e3dcbbbeda60af5f479128d7b9f7f6181d3b6cb61ef67f1a6787fbe20521433c",
+    "backend": "ghcr.io/alexj11324/patchbay-backend@sha256:cbf778a07d29fdc419a3c76917708d6a243c73ac5668020ab2204de3a30b7e61",
+    "docs": "ghcr.io/alexj11324/patchbay-docs@sha256:ae82aa3cf9f365b1ea89ed7af2f53533204b8d8ca37d495d2231cf30a58c2e49",
+    "web": "ghcr.io/alexj11324/patchbay-web@sha256:12cf20ddbd5fbb8a2bfcd646e27355670371501e5c949695dfdb3e033899a47e"
+  }
+}

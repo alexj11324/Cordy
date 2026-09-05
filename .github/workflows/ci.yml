@@ -896,4 +896,4 @@ jobs:
 
       - name: Test the restricted origin deployment gateway
         working-directory: deploy/origin
-        run: python3 -m unittest production_deploy_test -v
+        run: python3 -m unittest production_deploy_test nebula_staging_test -v
