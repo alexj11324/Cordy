@@ -1,11 +1,14 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   Bot,
+  EllipsisVertical,
+  LayoutGrid,
   Lock,
   Plus,
+  Rows3,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -31,6 +34,7 @@ import {
   AGENT_SCOPES,
   type AgentColumnKey,
   type AgentsScope,
+  type AgentViewMode,
   type AgentSortField,
 } from "@patchbay/core/agents/stores";
 import { useAuthStore } from "@patchbay/core/auth";
@@ -59,20 +63,29 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@patchbay/ui/components/ui/tooltip";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@patchbay/ui/components/ui/dropdown-menu";
 import { useNavigation, useRowLink } from "../../navigation";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { ProviderLogo } from "../../runtimes/components/provider-logo";
-import {
-  CollectionPageHeader,
-  CollectionPageHeaderAction,
-  CollectionPageState,
-} from "../../layout/collection-page";
+import { CollectionPageState } from "../../layout/collection-page";
 import { availabilityConfig } from "../presence";
 import { AgentRowActions } from "./agent-row-actions";
 import {
   AgentListToolbar,
   countActiveFilterDimensions,
 } from "./agent-list-toolbar";
+import {
+  AgentCard,
+  AgentCardsLoadingSkeleton,
+  AgentCreateCard,
+  AGENT_CARD_GRID_CLASS,
+} from "./agent-card";
+import { AgentProfilePanel } from "./agent-profile-panel";
 import { useLocale, useT } from "../../i18n";
 import { matchesPinyin } from "../../editor/extensions/pinyin-match";
 
@@ -249,31 +262,63 @@ export interface AgentsPageProps {
 // ---------------------------------------------------------------------------
 
 function PageHeaderBar({
-  totalCount,
+  onViewModeChange,
   onCreate,
+  viewMode,
 }: {
-  totalCount: number;
+  onViewModeChange?: (mode: AgentViewMode) => void;
   onCreate: () => void;
+  viewMode?: AgentViewMode;
 }) {
   const { t } = useT("agents");
   return (
-    <CollectionPageHeader
-      icon={Bot}
-      title={t(($) => $.page.title)}
-      count={totalCount}
-      description={t(($) => $.page.tagline)}
-      learnMore={{
-        href: "https://patchbay.aspectlylabs.com/docs/agents",
-        label: t(($) => $.page.learn_more),
-      }}
-      actions={
-        <CollectionPageHeaderAction
-          icon={Plus}
-          label={t(($) => $.page.new_agent)}
-          onClick={onCreate}
-        />
-      }
-    />
+    <header className="flex shrink-0 items-start justify-between gap-4 px-6 pb-5 pt-7 sm:px-8">
+      <div className="min-w-0 space-y-1">
+        <h1 className="truncate text-display-sm font-semibold tracking-tight">
+          {t(($) => $.page.title)}
+        </h1>
+        <p className="text-title-sm text-muted-foreground">
+          {t(($) => $.page.tagline)}
+        </p>
+      </div>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              aria-label={t(($) => $.page.actions_aria)}
+              className="shrink-0"
+              size="icon"
+              type="button"
+              variant="outline"
+            />
+          }
+        >
+          <EllipsisVertical aria-hidden="true" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-auto">
+          <DropdownMenuItem onClick={onCreate}>
+            <Plus aria-hidden="true" className="size-3.5" />
+            {t(($) => $.page.new_agent)}
+          </DropdownMenuItem>
+          {onViewModeChange && viewMode ? (
+            <DropdownMenuItem
+              onClick={() =>
+                onViewModeChange(viewMode === "cards" ? "table" : "cards")
+              }
+            >
+              {viewMode === "cards" ? (
+                <Rows3 aria-hidden="true" className="size-3.5" />
+              ) : (
+                <LayoutGrid aria-hidden="true" className="size-3.5" />
+              )}
+              {viewMode === "cards"
+                ? t(($) => $.page.view_table)
+                : t(($) => $.page.view_cards)}
+            </DropdownMenuItem>
+          ) : null}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </header>
   );
 }
 
@@ -289,7 +334,7 @@ function ListError({
   const { t } = useT("agents");
   return (
     <div className="flex flex-1 min-h-0 flex-col">
-      <PageHeaderBar totalCount={0} onCreate={onCreate} />
+      <PageHeaderBar onCreate={onCreate} />
       <CollectionPageState
         role="alert"
         tone="destructive"
@@ -790,10 +835,14 @@ export function AgentsPage(_props: AgentsPageProps = {}) {
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(
     new Set(),
   );
+  const [profileAgentId, setProfileAgentId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
   const rawScope = useAgentsViewStore((s) => s.scope);
   const scope = AGENT_SCOPES.includes(rawScope) ? rawScope : "mine";
+  const rawViewMode = useAgentsViewStore((s) => s.viewMode);
+  const viewMode: AgentViewMode = rawViewMode === "table" ? "table" : "cards";
+  const setViewMode = useAgentsViewStore((s) => s.setViewMode);
   const setScope = useAgentsViewStore((s) => s.setScope);
   const sortField = useAgentsViewStore((s) => s.sortField);
   const sortDirection = useAgentsViewStore((s) => s.sortDirection);
@@ -896,6 +945,20 @@ export function AgentsPage(_props: AgentsPageProps = {}) {
     runCountsById,
     isWorkspaceAdmin,
   ]);
+
+  const profileRow = useMemo(
+    () =>
+      profileAgentId === null
+        ? null
+        : (scopeRows.find((row) => row.agent.id === profileAgentId) ?? null),
+    [profileAgentId, scopeRows],
+  );
+
+  useEffect(() => {
+    if (profileAgentId !== null && profileRow === null) {
+      setProfileAgentId(null);
+    }
+  }, [profileAgentId, profileRow]);
 
   // Visible rows: local search + filters, then sort.
   const rows = useMemo<AgentListRow[]>(() => {
@@ -1001,7 +1064,6 @@ export function AgentsPage(_props: AgentsPageProps = {}) {
     );
   }
 
-  const totalCount = agents.filter((a) => !a.archived_at).length;
   const showEmpty = !isLoading && agents.length === 0;
 
   // The active sort field / availability filter reads columns that arrive in
@@ -1025,22 +1087,41 @@ export function AgentsPage(_props: AgentsPageProps = {}) {
     (!needsRunCounts || !runCountsPending) &&
     (!needsPresence || !presenceLoading);
 
+  const openNewAgent = () => navigation.push(paths.newAgent());
+
   return (
-    // relative: positioning anchor for the batch toolbar (page-centered,
-    // not viewport-centered).
-    <div className="relative flex flex-1 min-h-0 flex-col">
-      <PageHeaderBar
-        totalCount={totalCount}
-        onCreate={() => navigation.push(paths.newAgent())}
-      />
+    // The list owns the left side of the split surface. Buzz keeps the
+    // profile panel beside the gallery instead of turning the profile into a
+    // second page, so card selection stays in this same layout.
+    <div className="relative flex min-h-0 flex-1 flex-row">
+      <div className="relative flex min-w-0 flex-1 flex-col">
+        <PageHeaderBar
+          onCreate={openNewAgent}
+          onViewModeChange={setViewMode}
+          viewMode={viewMode}
+        />
 
       {isLoading || (!showEmpty && !listReady) ? (
-        <div className="flex-1 overflow-y-auto @container">
-          <LoadingSkeleton />
+        <div className="min-h-0 flex-1 overflow-y-auto @container">
+          <div className="mx-auto w-full max-w-6xl p-4 sm:p-6">
+            {viewMode === "table" ? (
+              <LoadingSkeleton />
+            ) : (
+              <AgentCardsLoadingSkeleton />
+            )}
+          </div>
         </div>
       ) : showEmpty ? (
-        <div className="flex flex-1 items-center justify-center">
-          <EmptyState onCreate={() => navigation.push(paths.newAgent())} />
+        <div className="min-h-0 flex-1 overflow-y-auto @container">
+          <div className="mx-auto w-full max-w-6xl p-4 sm:p-6">
+            <div className={`grid gap-4 ${AGENT_CARD_GRID_CLASS}`}>
+              <AgentCreateCard
+                ariaLabel={t(($) => $.page.new_agent)}
+                onClick={openNewAgent}
+              />
+            </div>
+            <EmptyState onCreate={openNewAgent} />
+          </div>
         </div>
       ) : (
         <>
@@ -1062,7 +1143,9 @@ export function AgentsPage(_props: AgentsPageProps = {}) {
             allRows={scopeRows}
             members={members}
             visibleCount={rows.length}
+            viewMode={viewMode}
           />
+          {viewMode === "table" ? (
           <div
             ref={listScrollRef}
             className="min-h-0 flex-1 overflow-auto @container"
@@ -1177,6 +1260,38 @@ export function AgentsPage(_props: AgentsPageProps = {}) {
               </ListGridBody>
             </ListGrid>
           </div>
+          ) : (
+            <div className="min-h-0 flex-1 overflow-y-auto @container">
+              <div className="mx-auto w-full max-w-6xl p-4 sm:p-6">
+                <div
+                  className={`grid gap-4 ${AGENT_CARD_GRID_CLASS}`}
+                  style={{ paddingBottom: LIST_GRID_BOTTOM_CLEARANCE }}
+                >
+                  {scope !== "archived" && (
+                    <AgentCreateCard
+                      ariaLabel={t(($) => $.page.new_agent)}
+                      onClick={openNewAgent}
+                    />
+                  )}
+                  {rows.map((row) => (
+                    <AgentCard
+                      duplicateHref={duplicateHref(row.agent)}
+                      key={row.agent.id}
+                      row={row}
+                      selected={selectedIds.has(row.agent.id)}
+                      onOpenSummary={() => setProfileAgentId(row.agent.id)}
+                      onToggleSelected={() => toggleSelected(row.agent.id)}
+                    />
+                  ))}
+                </div>
+                {rows.length === 0 && (
+                  <div className="py-16 text-center text-body text-muted-foreground">
+                    {noMatchText}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </>
       )}
 
@@ -1186,7 +1301,13 @@ export function AgentsPage(_props: AgentsPageProps = {}) {
         currentUserId={currentUser?.id ?? null}
         onClear={() => setSelectedIds(new Set())}
       />
-
+      </div>
+      {profileRow ? (
+        <AgentProfilePanel
+          row={profileRow}
+          onClose={() => setProfileAgentId(null)}
+        />
+      ) : null}
     </div>
   );
 }

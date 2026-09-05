@@ -26,7 +26,7 @@ beforeAll(() => {
 
 beforeEach(() => {
   localStorage.clear();
-  useAgentsViewStore.setState({ scope: "mine" });
+  useAgentsViewStore.setState({ scope: "mine", viewMode: "cards" });
   setCurrentWorkspace(null, null);
 });
 
@@ -35,6 +35,15 @@ afterEach(() => {
 });
 
 describe("useAgentsViewStore", () => {
+  it("defaults to the Buzz-style card directory", () => {
+    expect(useAgentsViewStore.getState().viewMode).toBe("cards");
+  });
+
+  it("setViewMode mutates the presentation mode", () => {
+    useAgentsViewStore.getState().setViewMode("table");
+    expect(useAgentsViewStore.getState().viewMode).toBe("table");
+  });
+
   it("defaults to 'mine'", () => {
     expect(useAgentsViewStore.getState().scope).toBe("mine");
   });
@@ -58,8 +67,10 @@ describe("useAgentsViewStore", () => {
       "scope",
       "sortDirection",
       "sortField",
+      "viewMode",
     ]);
     expect(parsed.state.scope).toBe("all");
+    expect(parsed.state.viewMode).toBe("cards");
   });
 
   it("rehydrates a different saved scope on workspace switch", async () => {

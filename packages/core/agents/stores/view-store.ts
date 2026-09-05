@@ -23,6 +23,10 @@ export type AgentsScope = "mine" | "all" | "archived";
 
 export const AGENT_SCOPES: AgentsScope[] = ["mine", "all", "archived"];
 
+/** Presentation mode for the directory. Cards are the identity-first default;
+ * the table remains available for deliberate field comparison. */
+export type AgentViewMode = "cards" | "table";
+
 export type AgentSortField = "lastActive" | "name" | "runs" | "created";
 
 export type AgentSortDirection = "asc" | "desc";
@@ -84,11 +88,13 @@ export const AGENT_DEFAULT_HIDDEN_COLUMNS: AgentColumnKey[] = [
 ];
 
 export interface AgentsViewState {
+  viewMode: AgentViewMode;
   scope: AgentsScope;
   sortField: AgentSortField;
   sortDirection: AgentSortDirection;
   hiddenColumns: AgentColumnKey[];
   filters: AgentListFilters;
+  setViewMode: (mode: AgentViewMode) => void;
   setScope: (scope: AgentsScope) => void;
   /** Header click: toggles direction on the active field, otherwise switches
    *  to the field with its default direction. */
@@ -102,6 +108,7 @@ export interface AgentsViewState {
 }
 
 const DEFAULTS = {
+  viewMode: "cards" as AgentViewMode,
   // "mine" is the historical default — most members care about their own
   // agents first; admins flip to "all".
   scope: "mine" as AgentsScope,
@@ -115,6 +122,7 @@ export const useAgentsViewStore = create<AgentsViewState>()(
   persist(
     (set) => ({
       ...DEFAULTS,
+      setViewMode: (viewMode) => set({ viewMode }),
       // "Mine" is the clean personal view: entering it clears all filters,
       // so Mine never carries filters. Switching to all/archived leaves
       // filters intact (you can carry "owner = Bob" between them).
@@ -167,6 +175,7 @@ export const useAgentsViewStore = create<AgentsViewState>()(
         createWorkspaceAwareStorage(defaultStorage),
       ),
       partialize: (state) => ({
+        viewMode: state.viewMode,
         scope: state.scope,
         sortField: state.sortField,
         sortDirection: state.sortDirection,

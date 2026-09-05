@@ -1,9 +1,12 @@
 {
   "page": {
     "title": "Agents",
-    "tagline": "AI teammates that pick up issues, comment, and update status.",
+    "tagline": "Set up and manage your agents.",
     "learn_more": "Learn more →",
     "new_agent": "New agent",
+    "actions_aria": "Agent actions",
+    "view_cards": "Card view",
+    "view_table": "Table view",
     "search_placeholder": "Search agents…",
     "show_archived": "Show archived ({{count}}) →",
     "of_total": "{{visible}} of {{total}}",
@@ -815,6 +818,25 @@
     "unknown_runtime": "Unknown runtime",
     "model_label": "Model",
     "model_unset": "No model selected"
+  },
+  "profile_panel": {
+    "title": "Profile",
+    "edit": "Edit",
+    "close": "Close profile",
+    "tab_info": "Info",
+    "tab_runtime": "Runtime",
+    "tab_capabilities": "Capabilities",
+    "tab_work": "Work",
+    "agent_id": "Agent ID",
+    "agent_type": "Agent type",
+    "agent_type_value": "Agent",
+    "agent_instructions": "Agent instructions",
+    "select": "Select {{name}}",
+    "deselect": "Deselect {{name}}",
+    "no_instruction": "No instruction set.",
+    "open_details": "Open full settings",
+    "configured": "Configured",
+    "not_configured": "Not configured"
   },
   "live_peek": {
     "current_issue_label": "Now on",
