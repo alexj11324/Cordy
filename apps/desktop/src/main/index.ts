@@ -1,9 +1,9 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeImage, Notification, screen } from "electron";
 import { homedir } from "os";
+import { readFileSync } from "fs";
 import { join } from "path";
 import { pathToFileURL } from "url";
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
-import fixPath from "fix-path";
 import { setupLocalDirectory } from "./local-directory";
 import { setupLocalGuestRuntime } from "./local-guest-runtime";
 import {
@@ -52,6 +52,7 @@ import {
   isDesktopDeepLink,
   PRODUCTION_DESKTOP_CALLBACK_PROTOCOL,
   resolveDesktopCallbackProtocol,
+  parseDesktopPreviewIdentity,
 } from "../shared/callback-protocol";
 import {
   encodeIssueWindowArgument,
@@ -111,18 +112,10 @@ const BUNDLED_ICON_PATH = join(__dirname, "../../resources/icon.png").replace(
   "app.asar.unpacked",
 );
 
-// macOS/Linux GUI launches inherit a minimal PATH from launchd that omits
-// the user's shell config (~/.zshrc, Homebrew, nvm, ~/.local/bin, etc.).
-// Run the user's login shell once to recover the real PATH so the bundled
-// patchbay CLI can find agent binaries like claude/codex/opencode. Must run
-// before any child_process.spawn / execFile call in the main process —
-// ES module imports are hoisted, so this block executes before createWindow
-// or any daemon-manager spawn.
+// GUI launches have a minimal PATH. Add standard install locations without
+// running shell startup scripts: those can access protected folders (e.g.
+// Conda hooks) and block the app on a TCC prompt before a window exists.
 if (process.platform !== "win32") {
-  fixPath();
-  // Fallback: prepend common install locations in case fix-path came up
-  // short (broken shell rc, non-interactive $SHELL, missing entries). Safe
-  // to duplicate — PATH lookups short-circuit on first match.
   const fallbackPaths = [
     "/opt/homebrew/bin",
     "/usr/local/bin",
@@ -131,7 +124,11 @@ if (process.platform !== "win32") {
   process.env.PATH = `${fallbackPaths.join(":")}:${process.env.PATH ?? ""}`;
 }
 
+const previewIdentity = app.isPackaged
+  ? parseDesktopPreviewIdentity(JSON.parse(readFileSync(join(app.getAppPath(), "package.json"), "utf8")).desktopPreview)
+  : null;
 const PROTOCOL = resolveDesktopCallbackProtocol({
+  previewIdentity,
   packaged: !is.dev,
   developmentProtocol: process.env.DESKTOP_CALLBACK_PROTOCOL,
 });
@@ -193,7 +190,7 @@ async function enableCloudServices(): Promise<void> {
     if (!cloudServicesEnabled) return;
     const updaterTeardown = setupAutoUpdater(
       () => mainWindow,
-      () => cloudServicesEnabled,
+      () => cloudServicesEnabled && !previewIdentity,
     );
     const daemonTeardown = setupDaemonManager(() => mainWindow);
     cloudServicesTeardown = async () => {
@@ -654,9 +651,9 @@ const DEV_APP_NAME = process.env.DESKTOP_APP_SUFFIX
   ? `Patchbay Canary ${process.env.DESKTOP_APP_SUFFIX}`
   : "Patchbay Canary";
 
-if (is.dev) {
-  app.setName(DEV_APP_NAME.replace("Patchbay", "Orvilo"));
-  app.setPath("userData", join(app.getPath("appData"), DEV_APP_NAME));
+if (is.dev || previewIdentity) {
+  app.setName(previewIdentity?.name ?? DEV_APP_NAME.replace("Patchbay", "Orvilo"));
+  app.setPath("userData", join(app.getPath("appData"), previewIdentity?.dataName ?? DEV_APP_NAME));
 } else {
   // Pin the production app name in code. Electron's Linux WM_CLASS is set
   // from app.getName() when the first BrowserWindow is realized; the
@@ -733,7 +730,7 @@ if (!gotTheLock) {
     };
 
     runtimeConfigResult = await loadRuntimeConfig({
-      isDev: is.dev,
+      isDev: is.dev && import.meta.env.DEV,
       // electron-vite exposes VITE_* on import.meta.env for the main process;
       // keep dev URL overrides on the same source the renderer used before
       // runtime config moved endpoint resolution into main/preload.

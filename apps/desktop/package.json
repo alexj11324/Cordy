@@ -27,7 +27,7 @@
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck:cards": "tsc --noEmit -p card-preview/tsconfig.json",
     "typecheck": "pnpm run typecheck:node && pnpm run typecheck:web && pnpm run typecheck:cards",
-    "preview": "electron-vite preview",
+    "preview": "node scripts/preview.mjs",
     "package": "node scripts/package.mjs",
     "package:all": "node scripts/package.mjs --all-platforms --publish never",
     "lint": "eslint .",
