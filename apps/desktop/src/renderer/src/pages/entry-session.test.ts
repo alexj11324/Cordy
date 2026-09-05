@@ -18,10 +18,10 @@ describe("desktop workspace entry", () => {
     expect(ipc.switchGuestToCloud).toHaveBeenCalledOnce();
   });
 
-  it("persists Guest credentials before main emits the workspace mode event", async () => {
+  it("activates workspace mode before creating Guest credentials", async () => {
     const ipc = bridge();
     ipc.enableCloudMode.mockImplementation(async () => {
-      expect(localStorage.getItem("patchbay_token")).toBe("guest-token");
+      expect(localStorage.getItem("patchbay_token")).toBeNull();
       return { ok: true };
     });
     await startWorkspaceGuest({
@@ -29,17 +29,20 @@ describe("desktop workspace entry", () => {
       storage: localStorage, bridge: ipc,
     });
     expect(ipc.switchGuestToCloud).not.toHaveBeenCalled();
+    expect(localStorage.getItem("patchbay_token")).toBe("guest-token");
   });
 
   it("restores existing credentials if the mode transition fails", async () => {
     localStorage.setItem("patchbay_token", "previous");
     const ipc = bridge();
+    const create = vi.fn();
     ipc.enableCloudMode.mockResolvedValue({ ok: false, reason: "unavailable" });
     await expect(startWorkspaceGuest({
-      create: async () => ({ token: "guest-token", user: { is_guest: true } }),
+      create,
       storage: localStorage, bridge: ipc,
     })).rejects.toThrow("unavailable");
     expect(localStorage.getItem("patchbay_token")).toBe("previous");
+    expect(create).not.toHaveBeenCalled();
   });
 
   it("does not enter the workspace when guest creation fails", async () => {
@@ -48,7 +51,7 @@ describe("desktop workspace entry", () => {
       create: async () => { throw new Error("offline"); },
       storage: localStorage, bridge: ipc,
     })).rejects.toThrow("offline");
-    expect(ipc.enableCloudMode).not.toHaveBeenCalled();
+    expect(ipc.enableCloudMode).toHaveBeenCalledOnce();
     expect(localStorage.getItem("patchbay_token")).toBeNull();
   });
 });

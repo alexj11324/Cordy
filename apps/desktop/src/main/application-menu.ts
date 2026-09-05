@@ -28,7 +28,7 @@ export function checkForUpdatesMenuLabel(
  * users look for it. Other platforms keep the same command on Help.
  */
 export function buildApplicationMenuTemplate(
-  onCheckForUpdates: () => void | Promise<void>,
+  onCheckForUpdates: (() => void | Promise<void>) | undefined,
   platform: NodeJS.Platform = process.platform,
   languages: readonly string[] = app.getPreferredSystemLanguages(),
 ): MenuItemConstructorOptions[] {
@@ -41,7 +41,7 @@ export function buildApplicationMenuTemplate(
       );
       if (item) item.enabled = false;
       try {
-        await onCheckForUpdates();
+        await onCheckForUpdates?.();
       } finally {
         if (item) item.enabled = true;
       }
@@ -56,8 +56,7 @@ export function buildApplicationMenuTemplate(
       submenu: [
         { role: "about" },
         { type: "separator" },
-        checkItem,
-        { type: "separator" },
+        ...(onCheckForUpdates ? [checkItem, { type: "separator" as const }] : []),
         { role: "services" },
         { type: "separator" },
         { role: "hide" },
@@ -79,7 +78,7 @@ export function buildApplicationMenuTemplate(
   } else {
     template.push({
       role: "help",
-      submenu: [checkItem, { type: "separator" }, { role: "about" }],
+      submenu: [...(onCheckForUpdates ? [checkItem, { type: "separator" as const }] : []), { role: "about" }],
     });
   }
 
@@ -87,7 +86,7 @@ export function buildApplicationMenuTemplate(
 }
 
 export function installApplicationMenu(
-  onCheckForUpdates: () => void | Promise<void>,
+  onCheckForUpdates: (() => void | Promise<void>) | undefined,
 ): void {
   Menu.setApplicationMenu(
     Menu.buildFromTemplate(buildApplicationMenuTemplate(onCheckForUpdates)),

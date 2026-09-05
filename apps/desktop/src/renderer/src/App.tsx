@@ -538,6 +538,9 @@ export default function App() {
     });
   }, [localeAdapter, locale]);
 
+  // Main mode events report capability readiness, not completion of an entry
+  // action. Login/Guest mount the workspace only after their session is ready.
+  const entryTransition = useRef(false);
   const logoutTransition = useRef<Promise<void>>(Promise.resolve());
   const returnToEntry = useCallback((cleanup: Promise<void>) => {
     logoutTransition.current = cleanup;
@@ -546,53 +549,63 @@ export default function App() {
 
   const startSignIn = useCallback(async () => {
     await logoutTransition.current;
-    if (!runtimeConfigResult.ok) {
-      throw new Error("Desktop runtime configuration is unavailable");
-    }
-    const runtimeConfig = runtimeConfigResult.config;
-    const callbackProtocol = window.desktopAPI.callbackProtocol;
-    if (!callbackProtocol) {
-      throw new Error("Desktop callback protocol is unavailable");
-    }
-    const handoffClient = new ApiClient(runtimeConfig.apiUrl);
-    const loginUrl = await createDesktopLoginUrl(
-      runtimeConfig.accountsUrl,
-      (state, codeChallenge) =>
-        handoffClient.initiateDesktopAuthHandoff(
-          state,
-          codeChallenge,
-          callbackProtocol,
-        ),
-      {
-        sessionApiUrl: runtimeConfig.apiUrl,
-        locale,
-        callbackProtocol,
-        initiateHosted: createHostedDesktopHandoffInitiate(
-          runtimeConfig.accountsUrl,
-          runtimeConfig.apiUrl,
-        ),
-      },
-    );
-    await enableWorkspaceMode(window.desktopAPI);
+    entryTransition.current = true;
     try {
-      await window.desktopAPI.openExternal(loginUrl);
-    } catch (error) {
-      await window.desktopAPI.disableCloudMode().catch(() => undefined);
-      throw error;
+      if (!runtimeConfigResult.ok) {
+        throw new Error("Desktop runtime configuration is unavailable");
+      }
+      const runtimeConfig = runtimeConfigResult.config;
+      const callbackProtocol = window.desktopAPI.callbackProtocol;
+      if (!callbackProtocol) {
+        throw new Error("Desktop callback protocol is unavailable");
+      }
+      const handoffClient = new ApiClient(runtimeConfig.apiUrl);
+      const loginUrl = await createDesktopLoginUrl(
+        runtimeConfig.accountsUrl,
+        (state, codeChallenge) =>
+          handoffClient.initiateDesktopAuthHandoff(
+            state,
+            codeChallenge,
+            callbackProtocol,
+          ),
+        {
+          sessionApiUrl: runtimeConfig.apiUrl,
+          locale,
+          callbackProtocol,
+          initiateHosted: createHostedDesktopHandoffInitiate(
+            runtimeConfig.accountsUrl,
+            runtimeConfig.apiUrl,
+          ),
+        },
+      );
+      await enableWorkspaceMode(window.desktopAPI);
+      try {
+        await window.desktopAPI.openExternal(loginUrl);
+      } catch (error) {
+        await window.desktopAPI.disableCloudMode().catch(() => undefined);
+        throw error;
+      }
+      setBootState({ kind: "cloud" });
+    } finally {
+      entryTransition.current = false;
     }
-    setBootState({ kind: "cloud" });
   }, [runtimeConfigResult, locale]);
 
   const startGuestSession = useCallback(async () => {
     await logoutTransition.current;
-    if (!runtimeConfigResult.ok) throw new Error("Desktop runtime configuration is unavailable");
-    const guestClient = new ApiClient(runtimeConfigResult.config.apiUrl);
-    await startWorkspaceGuest({
-      create: () => guestClient.createGuestSession(),
-      storage: localStorage,
-      bridge: window.desktopAPI,
-    });
-    setBootState({ kind: "cloud" });
+    entryTransition.current = true;
+    try {
+      if (!runtimeConfigResult.ok) throw new Error("Desktop runtime configuration is unavailable");
+      const guestClient = new ApiClient(runtimeConfigResult.config.apiUrl);
+      await startWorkspaceGuest({
+        create: () => guestClient.createGuestSession(),
+        storage: localStorage,
+        bridge: window.desktopAPI,
+      });
+      setBootState({ kind: "cloud" });
+    } finally {
+      entryTransition.current = false;
+    }
   }, [runtimeConfigResult]);
 
   // Guest discovery is the only pre-CoreProvider boot work. It reads only the
@@ -663,7 +676,7 @@ export default function App() {
         if (mode !== "cloud") window.desktopAPI.closeWindow();
         return;
       }
-      if (mode === "cloud") {
+      if (mode === "cloud" && !entryTransition.current) {
         setBootState({ kind: "cloud" });
       } else if (mode === "undecided") {
         setBootState({ kind: "entry" });

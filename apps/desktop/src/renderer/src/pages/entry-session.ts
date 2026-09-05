@@ -20,16 +20,10 @@ export async function startWorkspaceGuest({ create, storage, bridge }: {
   storage: Pick<Storage, "getItem" | "setItem" | "removeItem">;
   bridge: ModeBridge;
 }): Promise<void> {
+  // Activate local capabilities before allocating a server session. The entry
+  // owner mounts CoreProvider only after this entire operation succeeds.
+  await enableWorkspaceMode(bridge);
   const { token, user } = await create();
   if (!token || user.is_guest !== true) throw new Error("Invalid Guest session");
-  const previous = storage.getItem("patchbay_token");
-  // The IPC mode event can mount CoreProvider before the IPC promise resolves.
   storage.setItem("patchbay_token", token);
-  try {
-    await enableWorkspaceMode(bridge);
-  } catch (error) {
-    if (previous) storage.setItem("patchbay_token", previous);
-    else storage.removeItem("patchbay_token");
-    throw error;
-  }
 }

@@ -746,7 +746,7 @@ if (!gotTheLock) {
       is.dev ? "ai.patchbay.desktop.dev" : "ai.patchbay.desktop",
     );
 
-    installApplicationMenu(async () => {
+    installApplicationMenu(previewIdentity ? undefined : async () => {
       const { runMenuUpdateCheck } = await import("./updater");
       await runMenuUpdateCheck(() => mainWindow);
     });
