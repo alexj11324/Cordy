@@ -340,6 +340,25 @@ ensure_dev_code() {
   info "Set PATCHBAY_DEV_VERIFICATION_CODE=$DEV_CODE_DEFAULT in $1 (ignored when APP_ENV=production)."
 }
 
+# `dev-env.sh login` needs the endpoint to exist in the process it talks to, and
+# the backend reads this variable once at startup — so, like the verification
+# code, it has to be in the file before `up` launches anything. Writing it here
+# is what makes a login possible without a second restart.
+ensure_dev_login() {
+  local file="$REPO_ROOT/$1" tmp
+  if grep -qE '^PATCHBAY_DEV_LOGIN=1$' "$file"; then
+    return 0
+  fi
+  if grep -q '^PATCHBAY_DEV_LOGIN=' "$file"; then
+    tmp="$(mktemp)"
+    sed 's/^PATCHBAY_DEV_LOGIN=.*/PATCHBAY_DEV_LOGIN=1/' "$file" > "$tmp"
+    mv "$tmp" "$file"
+  else
+    printf '\nPATCHBAY_DEV_LOGIN=1\n' >> "$file"
+  fi
+  info "Set PATCHBAY_DEV_LOGIN=1 in $1 (ignored when APP_ENV=production)."
+}
+
 rewrite_env_ports() {
   local file="$REPO_ROOT/$1" offset=$2 backend=$3 frontend=$4 db=$5 tmp database_url escaped_database_url
   database_url="$(database_url_with_name "${DATABASE_URL:-}" "$db")" \
@@ -987,7 +1006,8 @@ print_handoff() {
 ${C_GREEN}✓ Environment ready.${C_OFF}
 
   ${entrypoint}
-  Sign in     ${DEV_EMAIL}  ·  code ${PATCHBAY_DEV_VERIFICATION_CODE:-$DEV_CODE_DEFAULT}
+  Sign in     ${C_BOLD}make dev-login${C_OFF}  (no login page; prints a session URL + bearer token)
+              or ${DEV_EMAIL} with code ${PATCHBAY_DEV_VERIFICATION_CODE:-$DEV_CODE_DEFAULT} on the login page
   Backend     http://localhost:${BACKEND_PORT}   (GET /health reports pid + commit + started_at)
   Commit      $(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)
   Environment ${NAME}$( [ "${TTL_HOURS:-0}" != 0 ] && printf ' (expires %s)' "$EXPIRES_AT" )
@@ -1116,6 +1136,7 @@ Start the rest with 'make up C=api,web', or run 'make up C=daemon' from your own
     info "Created $ENV_FILE"
   fi
   ensure_dev_code "$ENV_FILE"
+  ensure_dev_login "$ENV_FILE"
   load_env_file "$ENV_FILE"
 
   acquire_lock
@@ -1435,6 +1456,138 @@ cmd_exec() {
   exec "${CLEAN_ENV[@]}" PATCHBAY_WORKSPACES_ROOT="$WORKSPACES_ROOT" "$@"
 }
 
+urlencode() {
+  node -e 'process.stdout.write(encodeURIComponent(process.argv[1]))' "$1"
+}
+
+open_url() {
+  if command -v open >/dev/null 2>&1; then open "$1" >/dev/null 2>&1 && return 0; fi
+  if command -v xdg-open >/dev/null 2>&1; then xdg-open "$1" >/dev/null 2>&1 && return 0; fi
+  warn "No browser opener found; open the URL above by hand."
+}
+
+# The dev user starts with no workspace, and the app sends a member without one
+# to /workspaces/new — so a URL pointing at an issues page would bounce. Reuse
+# the dev workspace when it exists, create it when it does not, and let the
+# caller land on a real page either way.
+dev_workspace_slug() {
+  local server=$1 token=$2 email=$3 list slug created
+  list="$(curl -sS --max-time 10 "$server/api/workspaces" -H "Authorization: Bearer $token")"
+  slug="$(node -e '
+    let list;
+    try { list = JSON.parse(process.argv[1]); } catch { process.exit(1); }
+    const rows = Array.isArray(list) ? list : (list && Array.isArray(list.workspaces) ? list.workspaces : []);
+    const match = rows.find(w => w && w.slug === process.argv[2]) || rows.find(w => w && w.slug);
+    if (!match) process.exit(1);
+    process.stdout.write(String(match.slug));
+  ' "$list" "$WORKSPACE_SLUG" 2>/dev/null || true)"
+  if [ -n "$slug" ]; then
+    printf '%s' "$slug"
+    return 0
+  fi
+
+  # The shared dev slug is taken as soon as a second `--email` signs in, so the
+  # second candidate is per-user. Without it every extra tester lands on the
+  # app root and has to create a workspace through the UI — which is the click
+  # path this command exists to remove.
+  local candidate
+  for candidate in "$WORKSPACE_SLUG" "${WORKSPACE_SLUG}-$(slugify "${email%%@*}")"; do
+    created="$(curl -sS --max-time 10 -X POST "$server/api/workspaces" -H "Authorization: Bearer $token" \
+      -H 'Content-Type: application/json' \
+      -d "{\"name\":\"$(json_escape "$WORKSPACE_NAME")\",\"slug\":\"$(json_escape "$candidate")\"}")"
+    slug="$(json_field "$created" slug || true)"
+    if [ -n "$slug" ]; then
+      printf '%s' "$slug"
+      return 0
+    fi
+  done
+  warn "Workspace creation failed: $created"
+  return 1
+}
+
+# Signing in by hand costs a code request, an inbox or a log grep, and a form:
+# send-code allows one code per email per minute and a second attempt on the
+# same code locks it out, which is exactly the wrong shape for "reload the app
+# and look at it again". `login` trades all of that for one call to
+# /auth/dev-login (see server/internal/handler/dev_login.go) and prints a URL
+# that carries the session — opening it IS the login.
+cmd_login() {
+  local name="" email="" path="" open_browser=0 as_json=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --email) [ $# -ge 2 ] || die "--email needs an email address."; email="$2"; shift 2 ;;
+      --path) [ $# -ge 2 ] || die "--path needs a path starting with /."; path="$2"; shift 2 ;;
+      --open) open_browser=1; shift ;;
+      --json) as_json=1; shift ;;
+      -h|--help) usage; return 0 ;;
+      -*) die "Unknown flag $1. Usage: dev-env.sh login [name] [--email E] [--path /p] [--open] [--json]" ;;
+      *) name="$1"; shift ;;
+    esac
+  done
+
+  resolve_env_for_read "$name"
+  load_env_file "$ENV_FILE" "$DIR"
+  email="${email:-${PATCHBAY_DEV_EMAIL:-$DEV_EMAIL}}"
+
+  local server="http://localhost:${BACKEND_PORT}"
+  health_json >/dev/null || die "No backend answering on $server. Run 'make up' first."
+
+  local status body response
+  # -w splits the status onto its own last line so a 404 (the endpoint is not
+  # served) is told apart from a 200 without a second request.
+  response="$(curl -sS --max-time 10 -o - -w '\n%{http_code}' -X POST "$server/auth/dev-login" \
+    -H 'Content-Type: application/json' -d "{\"email\":\"$(json_escape "$email")\"}")"
+  status="${response##*$'\n'}"
+  body="${response%$'\n'*}"
+  case "$status" in
+    200) ;;
+    404) die "This backend does not serve /auth/dev-login.
+Set PATCHBAY_DEV_LOGIN=1 in $ENV_FILE (a fresh 'make up' does it for you), keep APP_ENV non-production, then restart: make down && make up." ;;
+    403) die "Sign-in refused for $email: $body
+Check ALLOW_SIGNUP / ALLOWED_EMAILS / ALLOWED_EMAIL_DOMAINS in $ENV_FILE." ;;
+    *) die "POST /auth/dev-login returned $status: $body" ;;
+  esac
+
+  local token
+  token="$(json_field "$body" token || true)"
+  [ -n "$token" ] || die "dev-login returned no token: $body"
+
+  local slug
+  slug="$(dev_workspace_slug "$server" "$token" "$email" || true)"
+  [ -n "$slug" ] || warn "Could not resolve a workspace; the URL will land on the app root."
+  [ -n "$path" ] || path="$( [ -n "$slug" ] && printf '/%s/issues' "$slug" || printf '/' )"
+
+  # The browser URL goes through the backend on purpose: the session lives in
+  # an HttpOnly cookie that only a Set-Cookie response can install, and the
+  # endpoint sets it and then redirects to the web app.
+  local url="$server/auth/dev-login?email=$(urlencode "$email")&redirect=$(urlencode "$path")"
+
+  if [ "$as_json" = 1 ]; then
+    printf '{"url":"%s","token":"%s","email":"%s","workspace_slug":"%s","app":"http://localhost:%s","api":"%s"}\n' \
+      "$(json_escape "$url")" "$(json_escape "$token")" "$(json_escape "$email")" \
+      "$(json_escape "${slug:-}")" "$FRONTEND_PORT" "$server"
+    return 0
+  fi
+
+  cat <<EOF
+
+${C_GREEN}✓ Signed in as ${email} — no login page, no verification code.${C_OFF}
+
+  Open        ${C_BOLD}${url}${C_OFF}
+              (sets the session cookie, then redirects to http://localhost:${FRONTEND_PORT}${path})
+
+  Bearer      ${token}
+  curl        curl -s ${server}/api/me -H "Authorization: Bearer \$TOKEN"
+  Workspace   ${slug:-<none>}   ·   Environment ${NAME}
+
+  Different user   make dev-login ARGS="--email you@example.com"
+  Onboarding flow  open ${server}/auth/dev-login?onboarding=keep
+EOF
+
+  [ "$open_browser" = 1 ] && open_url "$url"
+  return 0
+}
+
 usage() {
   cat <<'EOF'
 Local development environments: named, listable, deletable.
@@ -1447,12 +1600,16 @@ Local development environments: named, listable, deletable.
   dev-env.sh destroy [name] [--yes]
   dev-env.sh gc      [--dry-run]
   dev-env.sh exec    [name] -- <command> [args...]
+  dev-env.sh login   [name] [--email E] [--path /p] [--open] [--json]
 
 Components: api (Go backend), web (Next.js), daemon (agent daemon),
 desktop (Electron). Anything selected implies api.
 
 down keeps the database, the CLI profile and the allocated slot.
 destroy consumes them.
+
+login signs in without the login page: it prints a URL that installs the
+session cookie and lands in the app, plus a bearer token for curl.
 EOF
 }
 
@@ -1467,6 +1624,7 @@ main() {
     destroy) cmd_destroy "$@" ;;
     gc) cmd_gc "$@" ;;
     exec) cmd_exec "$@" ;;
+    login) cmd_login "$@" ;;
     ""|-h|--help|help) usage ;;
     *) usage >&2; exit 2 ;;
   esac

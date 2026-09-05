@@ -122,6 +122,7 @@ make list                    # every environment on this machine
 make down                    # stop the processes, keep the data
 make destroy                 # stop, then drop the database and free the slot
 make gc                      # collect expired environments or ones whose checkout is gone
+make dev-login               # sign in without the login page
 ```
 
 Components are `api` (Go backend), `web` (Next.js), `daemon` (agent daemon) and
@@ -156,6 +157,30 @@ Run any command inside an environment's variables without repeating them:
 ```bash
 make env-exec ARGS="-- pnpm exec playwright test"
 ```
+
+### Signing in without the login page
+
+`make up` writes `PATCHBAY_DEV_LOGIN=1` into the env file, which makes the
+backend serve `/auth/dev-login`. `make dev-login` uses it and prints:
+
+- a URL that installs the session cookie and lands on this environment's issues
+  page — opening it *is* the login, so there is no code to fetch and no form to
+  fill;
+- a bearer token for `curl`, and the workspace it signed you into. The dev
+  workspace is created on the first login if it does not exist yet.
+
+```bash
+make dev-login                                        # dev@localhost
+make dev-login ARGS="--email you@example.com --open"  # another user, open the browser
+make dev-login ARGS="--path /dev/inbox"               # land somewhere else
+make dev-login ARGS=--json                            # url + token for a script
+```
+
+The endpoint exists only when `PATCHBAY_DEV_LOGIN=1` and `APP_ENV` is
+non-production; a production build does not register the route at all. Add
+`?onboarding=keep` to the URL when you want to test the onboarding flow itself.
+Backends started before this variable was in the env file need one
+`make down && make up` to pick it up.
 
 `make dev` (below) still runs backend and frontend in the foreground of your
 terminal, which is the right thing when you want Ctrl-C to stop everything.
@@ -436,7 +461,8 @@ second path-derived identity. `make destroy` removes the marked env file and
 this environment's Electron userData. Direct `pnpm dev:desktop` still uses its
 path-derived fallback when it is run outside `make up`.
 
-Log in with `dev@localhost` and `888888`.
+Log in with `make dev-login`, or with `dev@localhost` and code `888888` on the
+login page.
 
 ### Isolation Guarantee
 

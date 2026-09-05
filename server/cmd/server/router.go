@@ -1537,6 +1537,12 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// broker flows; the Web login page uses email send-code and does not expose
 	// this endpoint as its primary sign-in path.
 	r.With(authRL).Post("/auth/google", h.GoogleLogin)
+	// Development sign-in. Registered only when PATCHBAY_DEV_LOGIN=1 and
+	// APP_ENV is non-production, so an ordinary deployment does not serve the
+	// path at all — see server/internal/handler/dev_login.go.
+	if handler.DevLoginEnabled() {
+		r.With(authRL).HandleFunc("/auth/dev-login", h.DevLogin)
+	}
 	r.With(authRL).Post("/auth/guest", h.CreateGuestAuth)
 	r.With(desktopHandoffRL).Post("/api/desktop-identity/redeem", h.RedeemDesktopLocalIdentity)
 	r.With(desktopHandoffRL).Post("/api/desktop-handoff/initiate", h.InitiateDesktopAuthHandoff)

@@ -1,4 +1,4 @@
-.PHONY: help makehelp dev server daemon cli patchbay build test migrate-up migrate-down sqlc seed-dev clean setup start stop check worktree-env setup-main start-main stop-main check-main setup-worktree start-worktree stop-worktree check-worktree remove-worktree db-up db-down db-drop db-reset selfhost selfhost-build selfhost-stop up down status list destroy gc env-exec api-dev web-dev desktop-dev
+.PHONY: help makehelp dev server daemon cli patchbay build test migrate-up migrate-down sqlc seed-dev clean setup start stop check worktree-env setup-main start-main stop-main check-main setup-worktree start-worktree stop-worktree check-worktree remove-worktree db-up db-down db-drop db-reset selfhost selfhost-build selfhost-stop up down status list destroy gc env-exec dev-login api-dev web-dev desktop-dev
 
 MAIN_ENV_FILE ?= .env
 WORKTREE_ENV_FILE ?= .env.worktree
@@ -174,6 +174,12 @@ gc: ## Collect environments whose directory is gone or whose TTL expired
 
 env-exec: ## Run a command with this environment's variables (ARGS="-- pnpm dev:desktop")
 	@bash scripts/dev-env.sh exec $(ARGS)
+
+# Skips the login page entirely: prints a URL that installs the session cookie
+# and lands in the app, plus a bearer token for curl. Needs PATCHBAY_DEV_LOGIN=1
+# in the env file, which `make up` writes.
+dev-login: ## Sign in to this environment with no login page (ARGS="--email you@example.com --open")
+	@bash scripts/dev-env.sh login $(ARGS)
 
 seed-dev: ## Add persistent issues and a dependency graph to this checkout's local database
 	@bash scripts/dev-env.sh exec -- env PATCHBAY_ENABLE_DEV_SEED=1 go -C server run ./cmd/dev-seed
