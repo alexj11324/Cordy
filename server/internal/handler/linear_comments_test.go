@@ -86,7 +86,8 @@ func TestLinearCommentsImportDeduplicatesAndDoesNotEcho(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	remote := linearapi.Comment{ID: "remote-comment", Body: "Hello", UpdatedAt: time.Now().UTC()}
+	createdAt := time.Now().UTC().Add(-24 * time.Hour)
+	remote := linearapi.Comment{ID: "remote-comment", Body: "Hello", CreatedAt: createdAt, UpdatedAt: createdAt.Add(time.Hour)}
 	remote.Issue.ID = linkedRemoteID(t, issueID)
 	if err = f.worker.applyLinearComment(ctx, b, remote, false); err != nil {
 		t.Fatal(err)
@@ -95,14 +96,21 @@ func TestLinearCommentsImportDeduplicatesAndDoesNotEcho(t *testing.T) {
 		t.Fatal(err)
 	}
 	var count, outbound int
+	var persistedCreatedAt time.Time
 	if err = testPool.QueryRow(ctx, `SELECT count(*) FROM comment WHERE issue_id=$1`, issueID).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
 	if err = testPool.QueryRow(ctx, `SELECT count(*) FROM linear_sync_outbox WHERE issue_id=$1 AND event_type LIKE 'comment_%'`, issueID).Scan(&outbound); err != nil {
 		t.Fatal(err)
 	}
+	if err = testPool.QueryRow(ctx, `SELECT created_at FROM comment WHERE issue_id=$1`, issueID).Scan(&persistedCreatedAt); err != nil {
+		t.Fatal(err)
+	}
 	if count != 1 || outbound != 0 {
 		t.Fatalf("comments=%d outbound=%d", count, outbound)
+	}
+	if !persistedCreatedAt.Equal(createdAt) {
+		t.Fatalf("created_at=%s, want provider timestamp %s", persistedCreatedAt, createdAt)
 	}
 	newer := remote
 	newer.Body = "Edited"
@@ -152,6 +160,57 @@ func TestLinearCommentsLocalWriteQueuesDurably(t *testing.T) {
 	}
 	if len(remoteID) != 36 {
 		t.Fatalf("missing durable provider ID: %q", remoteID)
+	}
+}
+
+func TestLinearBindingSeedIncludesExistingComments(t *testing.T) {
+	f := setupLinearWorker(t, "publish", &fakeLinearAPI{})
+	ctx := context.Background()
+	issueID := dbfx.Issue(t, "Existing discussion", testutil.Cols{"project_id": f.projectID})
+	created, err := db.New(testPool).CreateComment(ctx, db.CreateCommentParams{IssueID: parseUUID(issueID), WorkspaceID: parseUUID(testWorkspaceID), AuthorType: "member", AuthorID: parseUUID(testUserID), Content: "Before binding", Type: "comment"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = testPool.Exec(ctx, `DELETE FROM linear_sync_outbox WHERE binding_id=$1`, f.bindingID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = testPool.Exec(ctx, `DELETE FROM linear_comment_link WHERE binding_id=$1`, f.bindingID); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := testPool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = testHandler.seedLinearOutbound(ctx, tx, parseUUID(testWorkspaceID), parseUUID(f.bindingID), parseUUID(f.projectID)); err != nil {
+		_ = tx.Rollback(ctx)
+		t.Fatal(err)
+	}
+	if err = tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var queued, linked int
+	if err = testPool.QueryRow(ctx, `SELECT count(*) FROM linear_sync_outbox WHERE binding_id=$1 AND event_type='comment_created' AND payload->>'comment_id'=$2`, f.bindingID, uuidToString(created.ID)).Scan(&queued); err != nil {
+		t.Fatal(err)
+	}
+	if err = testPool.QueryRow(ctx, `SELECT count(*) FROM linear_comment_link WHERE binding_id=$1 AND comment_id=$2`, f.bindingID, created.ID).Scan(&linked); err != nil {
+		t.Fatal(err)
+	}
+	if queued != 1 || linked != 1 {
+		t.Fatalf("queued=%d linked=%d", queued, linked)
+	}
+}
+
+func TestLinearCommentWebhookRetriesUntilIssueLinkExists(t *testing.T) {
+	remoteIssue := linearapi.Issue{ID: "remote-pending-issue", ProjectID: "linear-project", TeamID: "linear-team", UpdatedAt: time.Now()}
+	api := &fakeLinearAPI{listed: []linearapi.Issue{remoteIssue}}
+	f := setupLinearWorker(t, "two_way", api)
+	payload, err := json.Marshal(map[string]any{"action": "create", "type": "Comment", "data": map[string]any{"id": "remote-pending-comment", "issueId": remoteIssue.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim := linearClaim{ConnectionID: parseUUID(f.connectionID), Payload: payload}
+	if err = f.worker.handleCommentInbox(context.Background(), claim); err == nil {
+		t.Fatal("comment webhook was acknowledged before its issue link existed")
 	}
 }
 
@@ -220,6 +279,14 @@ func TestLinearWorkProductPublishesPullRequestAttachment(t *testing.T) {
 	}
 	if len(api.detached) != 5 || api.detached[4] != linkedRemoteID(t, issueID)+"|https://github.com/acme/repo/pull/44" {
 		t.Fatalf("hard-deleted attachments=%v", api.detached)
+	}
+	httpProduct := dbfx.Insert(t, "work_product", testutil.Cols{"workspace_id": testWorkspaceID, "kind": "pull_request", "provider": "gitea", "external_identity": "PR #45", "external_url": "http://git.internal/acme/repo/pulls/45"})
+	dbfx.Insert(t, "work_product_relation", testutil.Cols{"workspace_id": testWorkspaceID, "work_product_id": httpProduct, "issue_id": issueID, "relation_key": "test-http-pr", "relation_source": "manual_explicit", "attached_by_type": "user", "attached_by_id": testUserID})
+	if !f.worker.processOneOutbox(ctx) {
+		t.Fatal("HTTP PR relation prevented issue sync")
+	}
+	if len(api.attached) != 5 {
+		t.Fatalf("unsupported HTTP attachment was published: %v", api.attached)
 	}
 }
 

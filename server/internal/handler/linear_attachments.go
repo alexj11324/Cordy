@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
+	"net/url"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -19,6 +21,15 @@ func (w *LinearWorker) publishLinearWorkProducts(ctx context.Context, b workerBi
 		}
 		for _, product := range products {
 			if product.Kind != "pull_request" || !product.ExternalUrl.Valid || product.ExternalUrl.String == "" {
+				continue
+			}
+			u, parseErr := url.Parse(product.ExternalUrl.String)
+			if parseErr != nil || u.Scheme != "https" || u.Host == "" || u.User != nil {
+				scheme := ""
+				if u != nil {
+					scheme = u.Scheme
+				}
+				slog.WarnContext(ctx, "skipping unsupported Linear PR attachment URL", "work_product_id", uuidToString(product.ID), "scheme", scheme)
 				continue
 			}
 			api, ok := w.api.(interface {

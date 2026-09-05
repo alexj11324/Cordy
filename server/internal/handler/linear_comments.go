@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -40,21 +41,29 @@ func (w *LinearWorker) importComments(ctx context.Context, b workerBinding, toke
 		pending[c.ID] = c
 	}
 	for len(pending) > 0 {
-		progress := false
-		for id, c := range pending {
+		ready := make([]linearapi.Comment, 0, len(pending))
+		for _, c := range pending {
 			if c.Parent != nil {
 				if _, waiting := pending[c.Parent.ID]; waiting {
 					continue
 				}
 			}
+			ready = append(ready, c)
+		}
+		if len(ready) == 0 {
+			return errors.New("Linear comment reply graph contains a cycle")
+		}
+		sort.Slice(ready, func(i, j int) bool {
+			if ready[i].CreatedAt.Equal(ready[j].CreatedAt) {
+				return ready[i].ID < ready[j].ID
+			}
+			return ready[i].CreatedAt.Before(ready[j].CreatedAt)
+		})
+		for _, c := range ready {
 			if err := w.applyLinearComment(ctx, b, c, false); err != nil {
 				return err
 			}
-			delete(pending, id)
-			progress = true
-		}
-		if !progress {
-			return errors.New("Linear comment reply graph contains a cycle")
+			delete(pending, c.ID)
 		}
 	}
 	return nil
@@ -82,6 +91,25 @@ func (w *LinearWorker) handleCommentInbox(ctx context.Context, claim linearClaim
 	var bindingID pgtype.UUID
 	err := w.db.QueryRow(ctx, `SELECT b.id FROM linear_project_binding b JOIN linear_issue_link l ON l.binding_id=b.id AND l.workspace_id=b.workspace_id WHERE b.connection_id=$1 AND l.linear_issue_id=$2 AND b.status='active' AND b.sync_mode IN ('import','two_way') AND l.sync_status<>'deleted'`, claim.ConnectionID, envelope.Data.IssueID).Scan(&bindingID)
 	if errors.Is(err, pgx.ErrNoRows) {
+		// A new issue and its first comment are separate webhook deliveries and
+		// may arrive in either order. Retry only when the issue belongs to an
+		// active import binding; comments on unbound projects remain ignored.
+		token, tokenErr := w.accessToken(ctx, claim.ConnectionID)
+		if tokenErr != nil {
+			return tokenErr
+		}
+		issue, found, fetchErr := w.api.FetchIssue(ctx, token, envelope.Data.IssueID)
+		if fetchErr != nil {
+			return fetchErr
+		}
+		if !found {
+			return nil
+		}
+		if _, bindingErr := w.bindingForRemote(ctx, claim.ConnectionID, issue.ProjectID, issue.TeamID); bindingErr == nil {
+			return errors.New("Linear comment arrived before its issue link")
+		} else if !errors.Is(bindingErr, pgx.ErrNoRows) {
+			return bindingErr
+		}
 		return nil
 	}
 	if err != nil {
@@ -187,6 +215,13 @@ func (w *LinearWorker) applyLinearComment(ctx context.Context, b workerBinding, 
 		}
 		comment = created.Comment()
 		issueRevision = created.IssueRevision
+		if !remote.CreatedAt.IsZero() {
+			if _, err = tx.Exec(ctx, `UPDATE comment SET created_at=$2,updated_at=$3 WHERE id=$1 AND workspace_id=$4`, localID, remote.CreatedAt, remote.UpdatedAt, b.WorkspaceID); err != nil {
+				return err
+			}
+			comment.CreatedAt = pgtype.Timestamptz{Time: remote.CreatedAt, Valid: true}
+			comment.UpdatedAt = pgtype.Timestamptz{Time: remote.UpdatedAt, Valid: true}
+		}
 		_, err = tx.Exec(ctx, `INSERT INTO linear_comment_link(workspace_id,binding_id,issue_id,comment_id,linear_comment_id,origin,remote_updated_at) VALUES($1,$2,$3,$4,$5,'linear',$6)`, b.WorkspaceID, b.ID, issueID, localID, remote.ID, remote.UpdatedAt)
 	} else {
 		updated, updateErr := q.UpdateComment(ctx, db.UpdateCommentParams{ID: localID, Content: body})
@@ -204,6 +239,13 @@ func (w *LinearWorker) applyLinearComment(ctx context.Context, b workerBinding, 
 			}
 			comment = created.Comment()
 			issueRevision = created.IssueRevision
+			if !remote.CreatedAt.IsZero() {
+				if _, err = tx.Exec(ctx, `UPDATE comment SET created_at=$2,updated_at=$3 WHERE id=$1 AND workspace_id=$4`, localID, remote.CreatedAt, remote.UpdatedAt, b.WorkspaceID); err != nil {
+					return err
+				}
+				comment.CreatedAt = pgtype.Timestamptz{Time: remote.CreatedAt, Valid: true}
+				comment.UpdatedAt = pgtype.Timestamptz{Time: remote.UpdatedAt, Valid: true}
+			}
 			createdLocal = true
 		} else if updateErr != nil {
 			return updateErr
