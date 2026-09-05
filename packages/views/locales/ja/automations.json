@@ -18,7 +18,7 @@
     "last_run_empty": "--",
     "empty": {
       "title": "まだオートパイロットがありません",
-      "hint": "AI エージェントの繰り返し作業をスケジュールしましょう。テンプレートを選ぶか、ゼロから始められます。"
+      "hint": "AI エージェントのスケジュール作業や webhook 起動の作業をセットアップしましょう。テンプレートを選ぶか、ゼロから始められます。"
     },
     "scope_all": "すべて",
     "no_matches": "該当する自動化はありません",
@@ -40,30 +40,135 @@
     "days_ago": "{{count}} 日前",
     "months_ago": "{{count}} か月前"
   },
+  "template_categories": {
+    "popular": "人気",
+    "code_review": "コードレビュー",
+    "security": "セキュリティ",
+    "incidents_triage": "インシデントとトリアージ",
+    "data_research": "データとリサーチ",
+    "environment": "環境"
+  },
+  "template_flow": {
+    "trigger": {
+      "scheduled": "スケジュール",
+      "pr_opened": "PR オープン",
+      "pr_pushed": "PR プッシュ",
+      "pr_review_comment": "PR レビューコメント",
+      "new_message_in_channel": "チャンネルの新規メッセージ",
+      "workflow_run_completed": "ワークフロー完了",
+      "checks_completed": "Checks 完了",
+      "incident_triggered": "インシデント発生",
+      "sentry_issue_event": "任意の Sentry エラー",
+      "issue_created": "タスク作成"
+    },
+    "action": {
+      "send_slack": "Slack に送信",
+      "pr_comment": "PR コメント",
+      "request_reviewers": "Reviewer をリクエスト",
+      "granola": "Granola",
+      "databricks_sql": "Databricks SQL",
+      "notion": "Notion",
+      "stripe": "Stripe",
+      "slack": "Slack",
+      "datadog": "Datadog"
+    }
+  },
   "templates": {
-    "daily_news": {
-      "title": "日次ニュースダイジェスト",
-      "summary": "今日のニュースを検索し、チーム向けに要約します"
+    "find_critical_bugs": {
+      "title": "重大なバグを見つける",
+      "summary": "直近のコミットから重大度の高い正しさのバグを分析し、安全な修正だけ提出します"
     },
-    "pr_review": {
-      "title": "PR レビューのリマインダー",
-      "summary": "レビューが必要な滞留中の Pull request を表示します"
+    "scan_codebase_vulnerabilities": {
+      "title": "コードベースの脆弱性をスキャン",
+      "summary": "リポジトリ全体を定期的に見直し、検証済みの高影響セキュリティ問題だけアラートします"
     },
-    "bug_triage": {
-      "title": "バグのトリアージ",
-      "summary": "新しいバグレポートを評価し、優先順位を付けます"
+    "generate_docs": {
+      "title": "ドキュメントを生成",
+      "summary": "最近変更された、またはドキュメント不足のコード向けに開発者ドキュメントを作成・更新します"
     },
-    "weekly_progress": {
-      "title": "週次進捗レポート",
-      "summary": "チームの進捗を週次でまとめます"
+    "add_test_coverage": {
+      "title": "テストカバレッジを追加",
+      "summary": "直近の変更を見直し、カバレッジ不足の高リスクロジックにテストを追加します"
     },
-    "dependency_audit": {
-      "title": "依存関係の監査",
-      "summary": "セキュリティ脆弱性と古いパッケージをスキャンします"
+    "find_vulnerabilities": {
+      "title": "脆弱性を見つける",
+      "summary": "pull request の悪用可能なセキュリティ問題をレビューし、検証できた発見だけマージ前に指摘します"
     },
-    "documentation_check": {
-      "title": "ドキュメントの点検",
-      "summary": "最近の変更にドキュメントの不足がないか確認します"
+    "assign_pr_reviewers": {
+      "title": "PR reviewer を割り当て",
+      "summary": "コード変更に基づいて reviewer を割り当て、低リスク PR は自動 approve します"
+    },
+    "autofix_pr_review_comments": {
+      "title": "PR レビューコメントを自動修正",
+      "summary": "PR diff 上のインラインレビューコメントにまず対応します"
+    },
+    "monitor_engineering_invariants": {
+      "title": "エンジニアリング不変条件を監視",
+      "summary": "リポジトリの重要な不変条件を定期的に再確認し、ルールが退行したときだけアラートします"
+    },
+    "remediate_dependency_vulnerabilities": {
+      "title": "依存関係の脆弱性を修復",
+      "summary": "Linear の依存関係脆弱性チケットをトリアージし、安全なときだけアップグレード PR を開きます"
+    },
+    "fix_bugs_reported_in_slack": {
+      "title": "Slack で報告されたバグを修正",
+      "summary": "Slack チャンネルのバグレポートを監視し、コードベースを調査して PR で修正します"
+    },
+    "triage_failed_github_actions": {
+      "title": "失敗した GitHub Actions をトリアージ",
+      "summary": "失敗またはキャンセルされたワークフロー実行を調査し、結果を Slack に報告します"
+    },
+    "fix_ci_failures": {
+      "title": "CI 失敗を修正",
+      "summary": "main の CI 失敗を検出し、安全に直せる場合は自動で PR を開きます"
+    },
+    "investigate_pagerduty_incidents": {
+      "title": "PagerDuty インシデントを調査",
+      "summary": "Datadog とコードの文脈を使ってインシデントを調査します"
+    },
+    "investigate_sentry_issues": {
+      "title": "Sentry のエラーを調査",
+      "summary": "Sentry のエラーを調査し、根本原因を特定して修正を提案します"
+    },
+    "investigate_top_datadog_errors": {
+      "title": "Datadog の主要エラーを調査",
+      "summary": "Datadog の繰り返し発生する本番エラーを調査し、根本原因を特定して修正を提案します"
+    },
+    "triage_linear_issues": {
+      "title": "Linear のタスクをトリアージ",
+      "summary": "バグ調査・機能リクエストの計画を行い、簡単な修正は PR を開きます"
+    },
+    "summarize_changes_daily": {
+      "title": "変更を毎日要約",
+      "summary": "前日の注目すべきリポジトリ変更とリスクを日次 Slack ダイジェストとして投稿します"
+    },
+    "customer_health_monitoring": {
+      "title": "顧客ヘルス監視エージェント",
+      "summary": "利用分析、通話メモ、Slack エスカレーション、Linear のブロッカーから離脱リスクのある顧客を見つけます"
+    },
+    "product_analytics": {
+      "title": "プロダクト分析エージェント",
+      "summary": "Databricks から週次の利用・アクティベーション・リテンション・機能採用ダイジェストを作ります"
+    },
+    "product_faq": {
+      "title": "プロダクト FAQ エージェント",
+      "summary": "専用 Slack チャンネルで、Slack・Notion・Linear・GitHub の文脈を使って製品の質問に答えます"
+    },
+    "product_finance": {
+      "title": "プロダクト財務エージェント",
+      "summary": "Stripe の売上、チャーン兆候、価格設定の機会を分析します"
+    },
+    "slack_digest": {
+      "title": "Slack ダイジェストエージェント",
+      "summary": "重要な DM、メンション、よく使う Slack チャンネルを要約します"
+    },
+    "investigate_environment_setup_failures": {
+      "title": "環境セットアップ失敗を調査",
+      "summary": "最近のクラウドエージェント実行を分析し、セットアップログとトランスクリプトから環境準備失敗の根本原因を特定します"
+    },
+    "monitor_environment_build_health": {
+      "title": "環境ビルドの健全性を監視",
+      "summary": "クラウド環境のビルドをヘルスチェックし、失敗したビルドの根本原因を分析します"
     }
   },
   "detail": {

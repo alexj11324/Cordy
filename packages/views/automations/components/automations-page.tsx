@@ -2,17 +2,12 @@
 
 import { useMemo, useRef, useState } from "react";
 import {
+  AlarmClock,
   AlertCircle,
-  BarChart3,
-  Bug,
   Clock,
   Code,
-  FileSearch,
-  GitPullRequest,
-  Newspaper,
   Pause,
   Plus,
-  Shield,
   Webhook,
   Zap,
 } from "lucide-react";
@@ -58,7 +53,8 @@ import {
   AutomationBatchToolbar,
   AutomationRowActions,
 } from "./automation-list-actions";
-import type { ScheduleConfig } from "./schedule-editor/model";
+import { AutomationTemplateGallery } from "./automation-template-gallery";
+import type { AutomationTemplate } from "./automation-templates";
 import { useLocale, useT, useTimeAgo } from "../../i18n";
 
 // Column template — single source of truth for header, rows, and skeletons.
@@ -117,94 +113,6 @@ function columnTrackVars(
     "--apc-minw": `${minWidth}px`,
   } as React.CSSProperties;
 }
-
-// ---------------------------------------------------------------------------
-// Templates for the empty state (unchanged from the previous page version).
-// Prompts stay raw English because they're injected directly into the
-// agent's task input.
-// ---------------------------------------------------------------------------
-
-type TemplateId =
-  | "daily_news"
-  | "pr_review"
-  | "bug_triage"
-  | "weekly_progress"
-  | "dependency_audit"
-  | "documentation_check";
-
-interface AutomationTemplate {
-  id: TemplateId;
-  prompt: string;
-  icon: typeof Zap;
-  schedule: Pick<ScheduleConfig, "time" | "days">;
-}
-
-const WEEKDAYS: ScheduleConfig["days"] = { kind: "weekly", daysOfWeek: [1, 2, 3, 4, 5] };
-const MONDAY: ScheduleConfig["days"] = { kind: "weekly", daysOfWeek: [1] };
-
-const TEMPLATES: AutomationTemplate[] = [
-  {
-    id: "daily_news",
-    prompt: `1. Search the web for news and announcements published today only (strictly today's date)
-2. Filter for topics relevant to our team and industry
-3. For each item, write a short summary including: title, source, key takeaways
-4. Compile everything into a single digest post
-5. Post the digest as a comment on this issue and @mention all workspace members`,
-    icon: Newspaper,
-    schedule: { time: { kind: "at", time: "09:00" }, days: { kind: "every" } },
-  },
-  {
-    id: "pr_review",
-    prompt: `1. List all open pull requests in the repository
-2. Identify PRs that have been open for more than 24 hours without a review
-3. For each stale PR, note the author, age, and a one-line summary of the change
-4. Post a comment on this issue listing all stale PRs with links
-5. @mention the team to remind them to review`,
-    icon: GitPullRequest,
-    schedule: { time: { kind: "at", time: "10:00" }, days: WEEKDAYS },
-  },
-  {
-    id: "bug_triage",
-    prompt: `1. List all backlog issues that have not been prioritized
-2. For each issue, read the description and any attached logs or screenshots
-3. Assess severity (critical / high / medium / low) based on user impact and scope
-4. Set the priority field on the issue accordingly
-5. Add a comment explaining your assessment and suggested next steps`,
-    icon: Bug,
-    schedule: { time: { kind: "at", time: "09:00" }, days: WEEKDAYS },
-  },
-  {
-    id: "weekly_progress",
-    prompt: `1. Gather all issues completed (status "done") in the past 7 days
-2. Gather all issues currently in progress
-3. Identify any blocked issues and their blockers
-4. Calculate key metrics: issues closed, issues opened, net change
-5. Write a structured weekly report with sections: Completed, In Progress, Blocked, Metrics
-6. Post the report as a comment on this issue`,
-    icon: BarChart3,
-    schedule: { time: { kind: "at", time: "17:00" }, days: MONDAY },
-  },
-  {
-    id: "dependency_audit",
-    prompt: `1. Run dependency audit tools on the project (npm audit, go vuln check, etc.)
-2. Identify any packages with known security vulnerabilities
-3. List outdated packages that are more than 2 major versions behind
-4. For each finding, note the severity, affected package, and recommended fix
-5. Post a summary report as a comment with actionable items`,
-    icon: Shield,
-    schedule: { time: { kind: "at", time: "08:00" }, days: MONDAY },
-  },
-  {
-    id: "documentation_check",
-    prompt: `1. List all code changes merged in the past 7 days (via git log)
-2. For each significant change, check if related documentation was updated
-3. Identify any new APIs, config options, or features missing documentation
-4. Create a list of documentation gaps with file paths and suggested content
-5. Post the findings as a comment on this issue`,
-    icon: FileSearch,
-    schedule: { time: { kind: "at", time: "14:00" }, days: MONDAY },
-  },
-];
 
 // ---------------------------------------------------------------------------
 // Cells
@@ -766,7 +674,7 @@ export function AutomationsPage() {
     <div className="relative flex flex-1 min-h-0 flex-col">
       {/* Header */}
       <CollectionPageHeader
-        icon={Zap}
+        icon={AlarmClock}
         title={t(($) => $.page.title)}
         count={totalCount}
         actions={
@@ -802,46 +710,11 @@ export function AutomationsPage() {
           <LoadingSkeleton />
         </div>
       ) : showEmpty ? (
-        <div className="flex flex-col items-center px-5 py-16">
-          <Zap className="mb-3 h-10 w-10 text-faint-foreground" />
-          <p className="text-body text-muted-foreground">
-            {t(($) => $.page.empty.title)}
-          </p>
-          <p className="mb-6 mt-1 text-caption text-muted-foreground">
-            {t(($) => $.page.empty.hint)}
-          </p>
-          <div className="grid w-full max-w-3xl grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {TEMPLATES.map((tpl) => {
-              const Icon = tpl.icon;
-              return (
-                <button
-                  key={tpl.id}
-                  type="button"
-                  className="flex items-start gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-accent/40"
-                  onClick={() => openCreate(tpl)}
-                >
-                  <Icon className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
-                  <div className="min-w-0">
-                    <div className="text-body font-medium">
-                      {t(($) => $.templates[tpl.id].title)}
-                    </div>
-                    <div className="mt-0.5 line-clamp-2 text-caption text-muted-foreground">
-                      {t(($) => $.templates[tpl.id].summary)}
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-          <Button
-            size="sm"
-            variant="outline"
-            className="mt-4"
-            onClick={() => openCreate()}
-          >
-            <Plus className="mr-1 h-3.5 w-3.5" />
-            {t(($) => $.page.start_blank)}
-          </Button>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <AutomationTemplateGallery
+            onSelectTemplate={openCreate}
+            onStartBlank={() => openCreate()}
+          />
         </div>
       ) : (
         <>
@@ -976,7 +849,17 @@ export function AutomationsPage() {
                 }
               : undefined
           }
-          initialSchedule={selectedTemplate ? selectedTemplate.schedule : undefined}
+          initialSchedule={
+            selectedTemplate?.triggerKind === "schedule"
+              ? selectedTemplate.schedule
+              : undefined
+          }
+          initialTriggerKind={selectedTemplate?.triggerKind}
+          initialEventFilters={
+            selectedTemplate?.triggerKind === "webhook"
+              ? selectedTemplate.eventFilters
+              : undefined
+          }
         />
       )}
     </div>
