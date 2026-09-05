@@ -459,6 +459,9 @@ func TestApplyDependencyGraphRoundTripsRolesAndRealtime(t *testing.T) {
 	}
 	ctx := context.Background()
 	parentID := dbfx.Issue(t, "graph apply parent")
+	// Fixture inserts do not advance the production allocator's counter.
+	dbfx.Exec(t, `UPDATE workspace SET issue_counter = GREATEST(issue_counter,
+		(SELECT COALESCE(MAX(number), 0) FROM issue WHERE workspace_id = $1)) WHERE id = $1`, testWorkspaceID)
 	agentID := handlerSeededAgentID(t)
 	key := "graph-apply-" + strings.ToLower(strings.ReplaceAll(t.Name(), "/", "-"))
 
