@@ -912,7 +912,7 @@
     "feature_co_author_description_prefix": "에이전트가 작성한 커밋에",
     "feature_co_author_description_suffix": "을(를) 추가합니다.",
     "feature_auto_link_label": "이슈와 PR 자동 연결",
-    "feature_auto_link_description": "PR 제목, 본문, 브랜치 이름에서 이슈 식별자를 찾아 자동으로 연결합니다.",
+    "feature_auto_link_description": "PR을 연결하는 방법은 두 가지입니다. 이 옵션을 켜면 PR 제목이나 브랜치 이름의 이슈 ID(예: MUL-123), 또는 본문의 Fixes MUL-123을 인식해 자동으로 연결합니다. 이슈 상세의 작업 결과물에서 PR을 수동으로 연결하거나 에이전트가 직접 연결할 수도 있습니다. 직접 연결은 PR에 이슈 ID를 적을 필요가 없으며 이 설정과 관계없이 사용할 수 있습니다.",
     "section_repositories": "저장소",
     "repositories_shortcut_label": "저장소 URL은 저장소 탭에 있습니다",
     "repositories_shortcut_link": "저장소 관리 →",

@@ -912,7 +912,7 @@
     "feature_co_author_description_prefix": "在智能体提交的 commit 中追加",
     "feature_co_author_description_suffix": "。",
     "feature_auto_link_label": "任务 ↔ PR 自动关联",
-    "feature_auto_link_description": "根据 PR 标题、正文和分支名匹配任务编号并自动建立链接。",
+    "feature_auto_link_description": "PR 有两种关联方式：开启此项后，在 PR 标题或分支名中写入任务编号（如 MUL-123），或在正文中写入 Fixes MUL-123，即可自动关联。也可以在任务详情的工作成果中手动关联 PR，或由智能体直接绑定，无需在 PR 中写入任务编号，也不受此开关影响。",
     "section_repositories": "代码仓库",
     "repositories_shortcut_label": "仓库 URL 仍在\"代码仓库\"标签页中管理",
     "repositories_shortcut_link": "前往管理 →",
