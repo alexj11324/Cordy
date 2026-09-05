@@ -604,7 +604,7 @@ export function AgentCreatePanel({
         <DialogTitle className="sr-only">{t(($) => $.create_issue.sr_agent)}</DialogTitle>
 
         {/* Header */}
-        <div className="flex items-center justify-between px-5 pt-3 pb-2 shrink-0">
+        <div className="flex items-center justify-between px-6 pt-5 pb-4 shrink-0">
           <div className="flex items-center gap-1.5 text-caption">
             <span className="text-muted-foreground">{workspaceName}</span>
             <ChevronRight className="size-3 text-faint-foreground" />
@@ -620,7 +620,7 @@ export function AgentCreatePanel({
               onClick={() => setIsExpanded(!isExpanded)}
               title={isExpanded ? t(($) => $.common.collapse_tooltip) : t(($) => $.common.expand_tooltip)}
               aria-label={isExpanded ? t(($) => $.common.collapse_tooltip) : t(($) => $.common.expand_tooltip)}
-              className="rounded-sm p-1.5 opacity-70 hover:opacity-100 hover:bg-accent/60 transition-all cursor-pointer"
+              className="rounded-full p-2 text-muted-foreground bg-secondary hover:text-foreground hover:bg-accent transition-all cursor-pointer"
             >
               {isExpanded ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
             </button>
@@ -629,7 +629,7 @@ export function AgentCreatePanel({
               onClick={onClose}
               title={t(($) => $.common.close)}
               aria-label={t(($) => $.common.close)}
-              className="rounded-sm p-1.5 opacity-70 hover:opacity-100 hover:bg-accent/60 transition-all cursor-pointer"
+              className="rounded-full p-2 text-muted-foreground bg-secondary hover:text-foreground hover:bg-accent transition-all cursor-pointer"
             >
               <XIcon className="size-4" />
             </button>
@@ -676,7 +676,7 @@ export function AgentCreatePanel({
             editor unbounded and pushed the modal past the viewport. */}
         <div
           {...dropZoneProps}
-          className="relative px-5 pb-3 flex flex-1 min-h-[140px] overflow-y-auto"
+          className="relative mx-6 mb-3 rounded-lg border border-border bg-muted px-3 py-2 flex flex-1 min-h-[140px] overflow-y-auto focus-within:ring-2 focus-within:ring-ring/50"
         >
           <ContentEditor
             ref={editorRef}
@@ -724,7 +724,7 @@ export function AgentCreatePanel({
             avoids "where did this end up?" surprise. We deliberately keep
             it non-editable: changing the parent is a `Set parent` action on
             the parent itself, not a knob in the quick-create flow. */}
-        <div className="flex items-center gap-1.5 px-4 pb-2 shrink-0 flex-wrap">
+        <div className="flex items-center gap-2 px-6 pb-3 shrink-0 flex-wrap">
           {(visibleFields.includes("project") ||
             projectId !== null ||
             fieldPickerOpen === "project") && (
@@ -844,7 +844,7 @@ export function AgentCreatePanel({
               attach group reproduces what `justify-between` did when the
               children were two wrapper divs, and `justify-self-end` goes
               inert on flex items. */}
-        <div className="grid grid-cols-[auto_1fr] items-center gap-x-2 gap-y-2.5 border-t px-4 py-3 shrink-0 sm:flex sm:flex-wrap">
+        <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-3 border-t px-6 py-4 shrink-0 sm:flex sm:flex-wrap">
           <div className="flex min-h-7 items-center gap-2 sm:mr-auto">
             {/* Deliberately NOT disabled while uploading: each file is its
                 own queue entry, so queueing a second one is safe and waiting
@@ -867,7 +867,7 @@ export function AgentCreatePanel({
             aria-disabled={gate.uploading || undefined}
             aria-busy={gate.uploading || undefined}
             title={t(($) => $.create_issue.switch_to_manual_tooltip)}
-            className="flex shrink-0 items-center gap-1.5 justify-self-end text-caption px-2 py-1 rounded-sm text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex shrink-0 items-center gap-1.5 justify-self-end text-caption px-2.5 py-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
           >
             <ArrowLeftRight className="size-3.5" />
             {t(($) => $.create_issue.switch_to_manual)}
@@ -894,7 +894,7 @@ export function AgentCreatePanel({
             }
             className={cn(
               "justify-self-end min-w-28",
-              justSent && "!bg-emerald-600 !text-white",
+              justSent && "!bg-primary !text-primary-foreground",
             )}
           >
             {submitting ? t(($) => $.create_issue.agent.sending) : gate.uploading ? t(($) => $.create_issue.agent.uploading) : justSent ? (

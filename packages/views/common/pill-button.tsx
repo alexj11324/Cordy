@@ -15,7 +15,7 @@ import { cn } from "@patchbay/ui/lib/utils";
 // only drops `min-width: auto` once its overflow is hidden); leading icons are
 // `shrink-0`, so the text yields first.
 const PILL_CHROME =
-  "inline-flex items-center rounded-full border text-caption min-w-0 max-w-56 overflow-hidden transition-colors";
+  "inline-flex items-center rounded-full border border-border bg-secondary text-label min-w-0 max-w-56 overflow-hidden transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 has-focus-visible:ring-2 has-focus-visible:ring-ring/50";
 
 export function PillButton({
   children,
@@ -27,8 +27,8 @@ export function PillButton({
       type="button"
       className={cn(
         PILL_CHROME,
-        "gap-1.5 px-2.5 py-1",
-        "hover:bg-accent/60 cursor-pointer",
+        "gap-1.5 px-3 py-1.5",
+        "hover:bg-accent cursor-pointer",
         "data-popup-open:bg-accent data-popup-open:text-accent-foreground",
         "disabled:cursor-not-allowed disabled:hover:bg-transparent",
         className,
@@ -82,7 +82,7 @@ export function ClearablePillButton({
     <span
       className={cn(
         PILL_CHROME,
-        !disabled && "hover:bg-accent/60",
+        !disabled && "hover:bg-accent",
         // The open-state highlight lives on the trigger (Base UI stamps the
         // attribute there), but it has to paint the whole pill.
         "has-[[data-popup-open]]:bg-accent has-[[data-popup-open]]:text-accent-foreground",
@@ -93,7 +93,7 @@ export function ClearablePillButton({
         type="button"
         disabled={disabled}
         className={cn(
-          "flex min-w-0 items-center gap-1.5 overflow-hidden py-1 pl-2.5 cursor-pointer",
+          "flex min-w-0 items-center gap-1.5 overflow-hidden py-1.5 pl-3 cursor-pointer",
           clearable ? "pr-1" : "pr-2.5",
           "disabled:cursor-not-allowed",
         )}

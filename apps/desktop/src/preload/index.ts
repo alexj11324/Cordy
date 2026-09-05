@@ -244,6 +244,8 @@ const desktopAPI = {
    *  avoids browser rendering of HTML files on Linux.
    *  On non-desktop platforms this property is undefined. */
   downloadURL: (url: string) => ipcRenderer.invoke("file:download-url", url),
+  setNativeTheme: (theme: "light" | "dark" | "system") =>
+    ipcRenderer.send("window:setTheme", theme),
   /** Toggle immersive mode — hide macOS traffic lights for full-screen modals */
   setImmersiveMode: (immersive: boolean) =>
     ipcRenderer.invoke("window:setImmersive", immersive),

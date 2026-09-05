@@ -218,22 +218,18 @@ describe("brand Button variants resolve to brand colour in the real stylesheet",
     });
   });
 
-  // The two ways the brand colour has actually been lost. Both are asserted
-  // as the FAILURE they are, so the reason for the current shape is executable
-  // rather than a comment someone can quietly undo.
+  // Guard against the two ways brand color was previously lost: dark-only
+  // outline backgrounds and caller text overrides.
   describe("the mistakes this design prevents", () => {
-    it("shows why layering brand over `outline` cannot work in dark mode", () => {
+    it("keeps the neutral outline free of dark-only background overrides", () => {
       const layered = cn(
         buttonVariants({ variant: "outline", size: "sm" }),
         "border-brand bg-brand text-brand-foreground",
       );
 
-      // tailwind-merge cannot drop outline's dark: rules — different modifier
-      // group, so there is no conflict for it to resolve...
-      expect(layered).toContain("dark:bg-input/30");
-      // ...and `:is(.dark *)` then outranks the bare .bg-brand.
-      expect(bg(layered, { dark: true })).toBe("dark:bg-input/30");
-      // Light mode looks fine, which is exactly why this shipped unnoticed.
+      // Both appearances now resolve through the same semantic surface tokens.
+      expect(layered).not.toContain("dark:bg-input/30");
+      expect(bg(layered, { dark: true })).toBe("bg-brand");
       expect(bg(layered, {})).toBe("bg-brand");
     });
 

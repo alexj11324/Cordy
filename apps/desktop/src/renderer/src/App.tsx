@@ -51,6 +51,7 @@ import { RESOURCES } from "@patchbay/views/locales";
 import { DesktopClientUsageReporter } from "./platform/client-usage-reporter";
 import { DiagnosticRouteReporter } from "./platform/diagnostic-route-reporter";
 import { flushFreezeBreadcrumb } from "./freeze-flush";
+import { NativeThemeBridge } from "./platform/native-theme-bridge";
 import { DesktopAuthSessionBridge } from "./platform/auth-session-bridge";
 import type { DesktopWindowContext } from "../../shared/issue-window";
 import type { RuntimeConfigResult } from "../../shared/runtime-config";
@@ -702,6 +703,7 @@ export default function App() {
 
   return (
     <ThemeProvider>
+      <NativeThemeBridge enabled={windowContext.kind === "main"} />
       {bootState.kind === "cloud" ? (
         <CloudApp
           identity={identity}

@@ -201,7 +201,7 @@ export function PropertyPicker({
       )}
       <PopoverContent align={align} side={side} className={`${width} gap-0 p-0`}>
         {searchable && (
-          <div className="px-2 py-1.5 border-b">
+          <div className="m-2 mb-1 rounded-lg border border-border bg-muted px-3 py-2 focus-within:ring-2 focus-within:ring-ring/50">
             <input
               type="text"
               value={query}
@@ -218,7 +218,7 @@ export function PropertyPicker({
           </div>
         )}
         {header && <div className="border-b">{header}</div>}
-        <div ref={listRef} className="p-1 max-h-72 overflow-y-auto">{children}</div>
+        <div ref={listRef} className="p-1.5 max-h-72 overflow-y-auto">{children}</div>
         {footer && <div className="border-t p-1">{footer}</div>}
       </PopoverContent>
     </Popover>
@@ -266,7 +266,7 @@ export function PickerItem({
       {...(emptyValue ? { [EMPTY_ITEM_ATTR]: "" } : {})}
       disabled={disabled}
       onClick={onClick}
-      className={`flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left text-body ${disabled ? "opacity-50 cursor-not-allowed" : hoverClassName ?? "hover:bg-accent"} transition-colors`}
+      className={`flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left text-body ${disabled ? "opacity-50 cursor-not-allowed" : hoverClassName ?? "hover:bg-accent"} transition-colors`}
     >
       {/* min-w-0 lets long children (like truncated label names) shrink
           inside the flex row instead of pushing the selected checkmark off

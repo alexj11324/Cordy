@@ -923,7 +923,6 @@ export function ManualCreatePanel({
   // per branch is how the keycaps drifted out of one of them before.
   const createButton = (
     <Button
-      size="sm"
       onClick={handleSubmit}
       // Native `disabled` for the transient busy states, but `aria-disabled`
       // for a missing title — a native-disabled button is not focusable, so
@@ -936,6 +935,7 @@ export function ManualCreatePanel({
       // would otherwise stay a fully lit, pressable-looking primary button.
       // Deliberately no `pointer-events-none`: this control still has to hover
       // its tooltip and take the click that focuses the title.
+      size="lg"
       className="justify-self-end aria-disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:active:translate-y-0"
     >
       {submitState === "submitting" ? (
@@ -967,7 +967,7 @@ export function ManualCreatePanel({
             <DialogTitle className="sr-only">{t(($) => $.create_issue.sr_manual)}</DialogTitle>
 
             {/* Header */}
-            <div className="flex items-center justify-between px-5 pt-3 pb-2 shrink-0">
+            <div className="flex items-center justify-between px-6 pt-5 pb-4 shrink-0">
               <div className="flex items-center gap-1.5 text-caption">
                 <span className="text-muted-foreground">{workspaceName}</span>
                 <ChevronRight className="size-3 text-faint-foreground" />
@@ -980,7 +980,7 @@ export function ManualCreatePanel({
                       <button
                         type="button"
                         onClick={() => setIsExpanded(!isExpanded)}
-                        className="rounded-sm p-1.5 opacity-70 hover:opacity-100 hover:bg-accent/60 transition-all cursor-pointer"
+                        className="rounded-full p-2 text-muted-foreground bg-secondary hover:text-foreground hover:bg-accent transition-all cursor-pointer"
                       >
                         {isExpanded ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
                       </button>
@@ -998,7 +998,7 @@ export function ManualCreatePanel({
                       <button
                         type="button"
                         onClick={onClose}
-                        className="rounded-sm p-1.5 opacity-70 hover:opacity-100 hover:bg-accent/60 transition-all cursor-pointer"
+                        className="rounded-full p-2 text-muted-foreground bg-secondary hover:text-foreground hover:bg-accent transition-all cursor-pointer"
                       >
                         <XIcon className="size-4" />
                       </button>
@@ -1010,14 +1010,14 @@ export function ManualCreatePanel({
             </div>
 
             {/* Title */}
-            <div className="px-5 pb-2 shrink-0">
+            <div className="px-6 pb-4 shrink-0">
               <TitleEditor
                 key={formResetKey}
                 ref={titleEditorRef}
                 autoFocus
                 defaultValue={draft.manual.title}
                 placeholder={t(($) => $.create_issue.title_placeholder)}
-                className="text-title font-semibold"
+                className="text-display-sm font-semibold tracking-tight"
                 onChange={(v) => updateTitle(v)}
                 // Chord only — plain Enter still just ends title editing (#5532).
                 onSubmitShortcut={handleSubmit}
@@ -1025,7 +1025,7 @@ export function ManualCreatePanel({
             </div>
 
             {/* Description — takes remaining space */}
-            <div {...descDropZoneProps} className="relative flex flex-1 min-h-0 overflow-y-auto px-5">
+            <div {...descDropZoneProps} className="relative mx-6 mb-3 flex flex-1 min-h-0 overflow-y-auto rounded-lg border border-border bg-muted px-3 py-2 focus-within:ring-2 focus-within:ring-ring/50">
               <ContentEditor
                 ref={descEditorRef}
                 defaultValue={draft.manual.description}
@@ -1059,7 +1059,7 @@ export function ManualCreatePanel({
 
             {/* Property toolbar — each field renders per the Settings → Issue
                 selection (see showField above). */}
-            <div className="flex items-center gap-1.5 px-4 py-2 shrink-0 flex-wrap">
+            <div className="flex items-center gap-2 px-6 py-3 shrink-0 flex-wrap">
               {/* Status */}
               {showField.status && (
                 <StatusPicker
@@ -1488,7 +1488,7 @@ export function ManualCreatePanel({
                 for why (MUL-6236). TooltipProvider/Tooltip render no DOM and
                 TooltipContent is portaled, so the Create button stays a direct
                 grid child in both branches below. */}
-            <div className="grid grid-cols-[auto_1fr] items-center gap-x-2 gap-y-2.5 border-t px-4 py-3 shrink-0 sm:flex sm:flex-wrap">
+            <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-3 border-t px-6 py-4 shrink-0 sm:flex sm:flex-wrap">
               <div className="flex min-h-7 items-center gap-2 sm:mr-auto">
                 <FileUploadButton
                   size="sm"
@@ -1503,9 +1503,9 @@ export function ManualCreatePanel({
                 aria-disabled={gate.uploading || undefined}
                 aria-busy={gate.uploading || undefined}
                 title={t(($) => $.create_issue.switch_to_agent_tooltip)}
-                className="border-beam group flex shrink-0 items-center gap-1.5 justify-self-end text-caption px-2 py-1 rounded-sm text-muted-foreground bg-brand/5 hover:bg-brand/10 hover:text-foreground transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+                className="group flex shrink-0 items-center gap-1.5 justify-self-end text-caption px-2.5 py-1.5 rounded-md text-muted-foreground bg-secondary hover:bg-accent hover:text-foreground transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <ArrowLeftRight className="size-3.5 text-brand transition-transform duration-300 group-hover:rotate-180" />
+                <ArrowLeftRight className="size-3.5 transition-transform duration-300 group-hover:rotate-180" />
                 {t(($) => $.create_issue.switch_to_agent)}
               </button>
               <label className="flex shrink-0 items-center gap-1.5 text-caption text-muted-foreground cursor-pointer select-none">
@@ -1545,12 +1545,12 @@ export function manualDialogContentClass(isExpanded: boolean) {
     // Phone gutter — see the matching note in create-issue-dialog.tsx: the
     // `!important` widths below also override DialogContent's
     // `max-w-[calc(100%-2rem)]`, leaving the card edge to edge on a phone
-    // (MUL-6236). `!h-96` stays a hard height; it already fits the shortest
-    // phone we support.
+    // (MUL-6236). Cap the taller form to the viewport so the footer stays
+    // reachable on short screens.
     "!w-full !max-w-[calc(100vw-1.5rem)]",
     isExpanded
       ? "!h-5/6 !-translate-y-1/2 sm:!max-w-4xl"
-      : "!h-96 !-translate-y-1/2 sm:!max-w-2xl",
+      : "!h-[28rem] !max-h-[calc(100dvh-2rem)] !-translate-y-1/2 sm:!max-w-2xl",
   );
 }
 
