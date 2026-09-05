@@ -86,6 +86,8 @@ interface DesktopAPI {
   /** Download a file by URL through Electron's native download system.
    *  Shows a native save dialog. On non-desktop platforms this is undefined. */
   downloadURL: (url: string) => Promise<void>;
+  /** Match native window materials to the app appearance preference. */
+  setNativeTheme: (theme: "light" | "dark" | "system") => void;
   /** Hide macOS traffic lights for full-screen modals; restore when false. */
   setImmersiveMode: (immersive: boolean) => Promise<void>;
   /** Show a native OS notification for a new inbox item. */

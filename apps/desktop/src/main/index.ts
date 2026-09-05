@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeImage, Notification, screen } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, nativeTheme, Notification, screen } from "electron";
 import { homedir } from "os";
 import { join } from "path";
 import { pathToFileURL } from "url";
@@ -890,6 +890,15 @@ if (!gotTheLock) {
       }
       if (issueWindows.has(sourceWindow)) {
         authSessionCoordinator.reportIssue(sourceWindow, userId);
+      }
+    });
+
+    // The main renderer owns the app-wide preference. Native vibrancy must
+    // follow that preference too, including restoring live OS tracking.
+    ipcMain.on("window:setTheme", (event, theme: unknown) => {
+      if (event.sender !== mainWindow?.webContents || event.senderFrame !== event.sender.mainFrame) return;
+      if (theme === "light" || theme === "dark" || theme === "system") {
+        nativeTheme.themeSource = theme;
       }
     });
 
