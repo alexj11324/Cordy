@@ -1,5 +1,5 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
 import type { Issue, IssueExecutorType } from "@patchbay/core/types";
 import { AppLink, NavigationProvider, type NavigationAdapter } from "../../navigation";
 import {
@@ -68,7 +68,22 @@ vi.mock("@patchbay/core/workspace/hooks", () => ({
 
 vi.mock("../../i18n", () => ({
   useLocale: () => "en",
-  useT: () => ({ t: () => "Translated" }),
+  useT: () => ({
+    t: (selector: (dict: Record<string, unknown>) => unknown) => {
+      const path: string[] = [];
+      const proxy: Record<string, unknown> = new Proxy(
+        {},
+        {
+          get: (_target, prop: string) => {
+            path.push(prop);
+            return proxy;
+          },
+        },
+      );
+      selector(proxy);
+      return path.join(".");
+    },
+  }),
   useTimeAgo: () => () => "now",
 }));
 
@@ -111,9 +126,12 @@ const actions: IssueSurfaceActions = {
   batchDelete: vi.fn().mockResolvedValue(undefined),
 };
 
-function makeIssue(executorType: IssueExecutorType): Issue {
+function makeIssue(
+  executorType: IssueExecutorType | null,
+  extras: Partial<Issue> = {},
+): Issue {
   return {
-    id: `issue-${executorType}`,
+    id: `issue-${executorType ?? "none"}`,
     workspace_id: "ws-1",
     number: 6082,
     identifier: "MUL-6082",
@@ -124,7 +142,7 @@ function makeIssue(executorType: IssueExecutorType): Issue {
     owner_type: null,
     owner_id: null,
     executor_type: executorType,
-    executor_id: `${executorType}-1`,
+    executor_id: executorType ? `${executorType}-1` : null,
     reviewer_type: null,
     reviewer_id: null,
     creator_type: "member",
@@ -140,30 +158,89 @@ function makeIssue(executorType: IssueExecutorType): Issue {
     labels: [],
     created_at: "2026-08-12T00:00:00Z",
     updated_at: "2026-08-12T00:00:00Z",
+    ...extras,
   };
 }
 
+const defaultCardProperties = { ...viewState.cardProperties };
+
+function renderCard(issue: Issue) {
+  return render(
+    <NavigationProvider value={navigation}>
+      <IssueSurfaceActionsProvider actions={actions}>
+        <AppLink href={`/acme/issues/${issue.id}`}>
+          <BoardCardContent issue={issue} editable />
+        </AppLink>
+      </IssueSurfaceActionsProvider>
+    </NavigationProvider>,
+  );
+}
+
 describe("BoardCardContent executor picker", () => {
+  afterEach(() => {
+    viewState.cardProperties = { ...defaultCardProperties };
+    vi.clearAllMocks();
+  });
+
   it.each<IssueExecutorType>(["agent", "team"])(
     "opens the picker from an avatar-only %s executor without navigating the card",
     (executorType) => {
       const issue = makeIssue(executorType);
-      const { container } = render(
-        <NavigationProvider value={navigation}>
-          <IssueSurfaceActionsProvider actions={actions}>
-            <AppLink href={`/acme/issues/${issue.id}`}>
-              <BoardCardContent issue={issue} editable />
-            </AppLink>
-          </IssueSurfaceActionsProvider>
-        </NavigationProvider>,
-      );
+      const { container } = renderCard(issue);
       const avatar = container.querySelector('[data-slot="avatar"]');
 
       expect(avatar).not.toBeNull();
       expect(avatar!.closest('[role="link"]')).toBeNull();
+      expect(screen.queryByText("Assigned agent")).not.toBeInTheDocument();
+      expect(screen.queryByText("Assigned team")).not.toBeInTheDocument();
       expect(fireEvent.click(avatar!)).toBe(false);
       expect(screen.getByRole("textbox")).toBeInTheDocument();
       expect(navigation.push).not.toHaveBeenCalled();
     },
   );
+
+  it("does not render Unassigned copy on an empty executor slot", () => {
+    const { container } = renderCard(makeIssue(null));
+
+    expect(container.querySelector('[data-slot="avatar"]')).toBeNull();
+    expect(
+      screen.queryByText("pickers.executor.trigger_unassigned"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByLabelText("pickers.executor.trigger_unassigned"),
+    ).toBeInTheDocument();
+  });
+
+  it("opens the picker from the unassigned hover target without navigating", () => {
+    renderCard(makeIssue(null));
+
+    fireEvent.click(screen.getByLabelText("pickers.executor.trigger_unassigned"));
+
+    expect(screen.getByRole("textbox")).toBeInTheDocument();
+    expect(navigation.push).not.toHaveBeenCalled();
+  });
+
+  it("renders board labels as a color dot instead of a filled pill", () => {
+    viewState.cardProperties.labels = true;
+    renderCard(
+      makeIssue("agent", {
+        labels: [
+          {
+            id: "label-1",
+            workspace_id: "ws-1",
+            name: "Feature",
+            color: "#8b5cf6",
+            created_at: "2026-08-12T00:00:00Z",
+            updated_at: "2026-08-12T00:00:00Z",
+          },
+        ],
+      }),
+    );
+
+    const chip = screen.getByLabelText("Feature");
+    expect(chip).not.toHaveStyle({ backgroundColor: "rgb(139, 92, 246)" });
+    expect(chip.querySelector('[aria-hidden="true"]')).toHaveStyle({
+      backgroundColor: "rgb(139, 92, 246)",
+    });
+  });
 });
