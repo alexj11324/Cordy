@@ -6,11 +6,19 @@ export type RepositoryResult = { ok: true } | { ok: false; reason: RepositoryFai
 
 /** Never persist credentials from a user's configured remote in shared resources. */
 export function cleanRemote(value: string): string | null {
-  const scp = /^([^@/:\s]+)@([^/:\s]+):([^\s]+)$/.exec(value);
+  const scp = !value.includes("://")
+    ? /^(?:([^@/:\s]+)@)?([^/:\s]+):([^\s]+)$/.exec(value)
+    : null;
   try {
-    const url = new URL(scp ? `ssh://${scp[1]}@${scp[2]}/${scp[3]}` : value);
-    if (!["https:", "ssh:"].includes(url.protocol) || !url.hostname || url.pathname === "/") return null;
-    if (url.protocol !== "ssh:") url.username = "";
+    const url = new URL(
+      scp
+        ? `ssh://${scp[1] ? `${scp[1]}@` : ""}${scp[2]}/${scp[3]}`
+        : value,
+    );
+    if (!["http:", "https:", "ssh:", "git:"].includes(url.protocol) || !url.hostname || url.pathname === "/") return null;
+    // SSH's username is part of the transport (`alice@host`); HTTP(S) and
+    // git:// remotes must never carry credentials into a shared resource.
+    if (["http:", "https:", "git:"].includes(url.protocol)) url.username = "";
     url.password = "";
     url.search = "";
     url.hash = "";

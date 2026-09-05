@@ -22,6 +22,9 @@ describe("local repository binding", () => {
     expect(cleanRemote("ssh://alice@git.example.com/team/app.git")).toBe("ssh://alice@git.example.com/team/app.git");
     expect(repositoryIdentity("/local/folder")).toBeNull();
     expect(repositoryIdentity("alice@git.example.com:team/app.git")).toBe("git.example.com/team/app");
+    expect(cleanRemote("git.example.com:team/app.git")).toBe("ssh://git.example.com/team/app.git");
+    expect(cleanRemote("http://user:password@git.example.com/team/app.git")).toBe("http://git.example.com/team/app.git");
+    expect(cleanRemote("git://git.example.com/team/app.git")).toBe("git://git.example.com/team/app.git");
   });
   it("reads all remotes while preserving uncommitted work", async () => {
     const root = await fixture();

@@ -29,6 +29,7 @@ import type {
 import { isImeComposing } from "@patchbay/core/utils";
 import { matchLocale } from "@patchbay/core/i18n";
 import { useConfigStore } from "@patchbay/core/config";
+import { runtimeAdvertisesLocalWorktreeCommittedBase } from "@patchbay/core/runtimes";
 import { workspaceUrlHost } from "@patchbay/core/workspace/workspace-url";
 import {
   isDesktopShell,
@@ -171,6 +172,9 @@ export function StepWorkspace({
   const desktop = isDesktopShell();
   const daemon = useLocalDaemonStatus();
   const serverValidatesWorktree = useConfigStore(state => state.localWorktreeSupported);
+  const serverSupportsCommittedBase = useConfigStore(
+    state => state.localWorktreeCommittedBaseSupported,
+  );
   const [pendingProjects, setPendingProjects] = useState<PendingProject[]>([]);
   const [projectUrlDraft, setProjectUrlDraft] = useState("");
   const [projectError, setProjectError] = useState<string | null>(null);
@@ -299,7 +303,6 @@ export function StepWorkspace({
                 daemon_id: daemonId,
                 label: folder.basename,
                 execution_mode: "worktree",
-                worktree_base: "head",
               },
             },
           });
@@ -327,12 +330,52 @@ export function StepWorkspace({
         // is what makes an edited prefix stick.
         issue_prefix: effectivePrefix,
       });
+      // The new workspace has no route-driven workspace context while this
+      // form is open, so capability discovery happens after creation and
+      // before local projects are attached. If the daemon row is absent or
+      // the lookup fails, omit the stronger field and keep the compatible
+      // legacy worktree behavior.
+      let committedBaseSupported = false;
+      if (
+        serverSupportsCommittedBase &&
+        desktop &&
+        daemon.daemonId &&
+        pendingProjects.some(project => project.resource.resource_type === "local_directory")
+      ) {
+        try {
+          const runtimes = await api.listRuntimes(
+            { workspace_id: workspace.id },
+            workspace.slug,
+          );
+          committedBaseSupported = runtimeAdvertisesLocalWorktreeCommittedBase(
+            runtimes,
+            daemon.daemonId,
+          );
+        } catch {
+          committedBaseSupported = false;
+        }
+      }
       let attachmentFailed = false;
       for (const project of pendingProjects) {
         try {
+          let resource = project.resource;
+          if (project.resource.resource_type === "local_directory") {
+            const resourceRef: LocalDirectoryResourceRef = {
+              ...(project.resource.resource_ref as LocalDirectoryResourceRef),
+            };
+            if (
+              resourceRef.execution_mode === "worktree" &&
+              committedBaseSupported
+            ) {
+              resourceRef.worktree_base = "head";
+            } else {
+              delete resourceRef.worktree_base;
+            }
+            resource = { ...project.resource, resource_ref: resourceRef };
+          }
           // The route still names the previous workspace until onCreated runs.
           await api.createProject(
-            { title: project.name, resources: [project.resource, ...(project.remoteUrl ? [{ resource_type: "github_repo" as const, resource_ref: { url: project.remoteUrl } }] : [])] },
+            { title: project.name, resources: [resource, ...(project.remoteUrl ? [{ resource_type: "github_repo" as const, resource_ref: { url: project.remoteUrl } }] : [])] },
             workspace.slug,
           );
         } catch {
@@ -616,7 +659,15 @@ export function StepWorkspace({
                     <LocalDirectoryModeOptions
                       value={(project.resource.resource_ref as LocalDirectoryResourceRef).execution_mode === "in_place" ? "in_place" : "worktree"}
                       unavailableReason={project.isGitRepo === false ? "not_git" : !serverValidatesWorktree ? "server_outdated" : undefined}
-                      onChange={mode => setPendingProjects(previous => previous.map(item => item.key === project.key ? {...item, resource: {...item.resource, resource_ref: {...item.resource.resource_ref, execution_mode: mode}}} : item))}
+                      onChange={mode => setPendingProjects(previous => previous.map(item => {
+                        if (item.key !== project.key) return item;
+                        const resourceRef: LocalDirectoryResourceRef = {
+                          ...(item.resource.resource_ref as LocalDirectoryResourceRef),
+                          execution_mode: mode,
+                        };
+                        delete resourceRef.worktree_base;
+                        return { ...item, resource: { ...item.resource, resource_ref: resourceRef } };
+                      }))}
                     />
                   </div>
                 )}

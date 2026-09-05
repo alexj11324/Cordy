@@ -53,7 +53,8 @@ import { projectListOptions } from "@patchbay/core/projects";
 import { useModalStore } from "@patchbay/core/modals";
 import { ProjectResourcesSection } from "../../projects/components/project-resources-section";
 import { isDesktopShell } from "../../platform/local-directory";
-import { githubShortLabel } from "../../common/github-url";
+import { githubShortLabel, repositoryIdentity } from "../../common/github-url";
+export { repositoryIdentity } from "../../common/github-url";
 import { useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
 import {
@@ -80,36 +81,6 @@ function repositoriesEqual(left: WorkspaceRepo[], right: WorkspaceRepo[]) {
       repo.url === right[index]?.url &&
       (repo.description ?? "") === (right[index]?.description ?? ""),
   );
-}
-
-export function repositoryIdentity(rawURL: string): string | null {
-  const value = rawURL.trim();
-  if (!value) return null;
-
-  let host = "";
-  let path = "";
-  if (!value.includes("://")) {
-    const scpLike = value.match(/^(?:[^@\s/]+@)?([^:\s/]+):(.+)$/);
-    if (scpLike) {
-      host = scpLike[1] ?? "";
-      path = scpLike[2] ?? "";
-    }
-  }
-  if (!host) {
-    try {
-      const parsed = new URL(value);
-      host = parsed.hostname;
-      path = parsed.pathname;
-    } catch {
-      return null;
-    }
-  }
-
-  const normalizedPath = path
-    .replace(/^\/+|\/+$/g, "")
-    .replace(/\.git$/i, "");
-  if (!host || !normalizedPath) return null;
-  return `${host.toLowerCase()}/${normalizedPath}`;
 }
 
 export function RepositoriesTab() {
@@ -402,7 +373,10 @@ export function RepositoriesTab() {
                   <span className="text-body font-medium">{project.title}</span>
                 </SettingsListRow>
                 <div className="px-4 pb-3">
-                  <ProjectResourcesSection projectId={project.id} />
+                  <ProjectResourcesSection
+                    projectId={project.id}
+                    deferUntilExpanded
+                  />
                 </div>
               </div>
             ))

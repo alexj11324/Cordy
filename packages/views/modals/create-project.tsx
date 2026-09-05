@@ -69,6 +69,10 @@ import {
 import { useLocalDaemonStatus } from "../platform/use-local-daemon-status";
 import { useConfigStore } from "@patchbay/core/config";
 import type { LocalDirectoryExecutionMode } from "@patchbay/core/types";
+import {
+  runtimeAdvertisesLocalWorktreeCommittedBase,
+  runtimeListOptions,
+} from "@patchbay/core/runtimes";
 import { LocalDirectoryModeOptions } from "../projects/components/local-directory-mode-dialog";
 
 /**
@@ -85,18 +89,22 @@ export function buildLocalDirectoryResourceRef({
   daemonId,
   label,
   mode,
+  committedBaseSupported = false,
 }: {
   localPath: string;
   daemonId: string;
   label: string | null;
   mode: LocalDirectoryExecutionMode;
+  committedBaseSupported?: boolean;
 }): Record<string, unknown> {
   return {
     local_path: localPath,
     daemon_id: daemonId,
     ...(label ? { label } : {}),
     execution_mode: mode,
-    worktree_base: "head",
+    ...(mode === "worktree" && committedBaseSupported
+      ? { worktree_base: "head" }
+      : {}),
   };
 }
 
@@ -176,6 +184,10 @@ export function CreateProjectModal({ onClose }: { onClose: () => void }) {
   // and shared remote are saved together. Remote-only setup remains on web.
   const desktop = isDesktopShell();
   const daemonStatus = useLocalDaemonStatus();
+  const { data: runtimes = [] } = useQuery({
+    ...runtimeListOptions(wsId),
+    enabled: desktop && !!wsId,
+  });
   const [sourceMode, setSourceMode] = useState<"repos" | "local">(desktop ? "local" : "repos");
   const [selectedLocalPath, setSelectedLocalPath] = useState<string | null>(null);
   const [selectedLocalLabel, setSelectedLocalLabel] = useState<string | null>(null);
@@ -196,6 +208,15 @@ export function CreateProjectModal({ onClose }: { onClose: () => void }) {
   const [localModeOpen, setLocalModeOpen] = useState(false);
 
   const serverValidatesWorktree = useConfigStore((state) => state.localWorktreeSupported);
+  const serverSupportsCommittedBase = useConfigStore(
+    (state) => state.localWorktreeCommittedBaseSupported,
+  );
+  // A committed baseline is stronger than ordinary worktree mode. Do not
+  // serialize it unless both the API and this machine's newest runtime row
+  // explicitly advertise the contract.
+  const committedBaseSupported =
+    serverSupportsCommittedBase &&
+    runtimeAdvertisesLocalWorktreeCommittedBase(runtimes, daemonStatus.daemonId);
   const worktreeUnavailableReason =
     localIsGitRepo === false
       ? ("not_git" as const)
@@ -304,6 +325,7 @@ export function CreateProjectModal({ onClose }: { onClose: () => void }) {
             daemonId: daemonStatus.daemonId,
             label: selectedLocalLabel,
             mode: effectiveLocalMode,
+            committedBaseSupported,
           }),
         },
       ];

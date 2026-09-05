@@ -42,3 +42,19 @@ func TestWorktreeCapabilityTokenMatchesFrontend(t *testing.T) {
 			got, protocol.DaemonCapabilityLocalWorktreeV1)
 	}
 }
+
+func TestCommittedWorktreeCapabilityTokenMatchesFrontend(t *testing.T) {
+	path := filepath.Join("..", "..", "..", "packages", "core", "runtimes", "cli-version.ts")
+	src, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	m := regexp.MustCompile(`LOCAL_WORKTREE_COMMITTED_BASE_CAPABILITY\s*=\s*\n?\s*"([^"]+)"`).FindSubmatch(src)
+	if m == nil {
+		t.Fatal("LOCAL_WORKTREE_COMMITTED_BASE_CAPABILITY not found in packages/core/runtimes/cli-version.ts")
+	}
+	if got := string(m[1]); got != protocol.DaemonCapabilityLocalWorktreeCommittedBaseV1 {
+		t.Errorf("frontend looks for %q but the daemon advertises %q; committed worktree baselines would be invisible to the UI",
+			got, protocol.DaemonCapabilityLocalWorktreeCommittedBaseV1)
+	}
+}

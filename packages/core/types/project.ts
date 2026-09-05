@@ -63,7 +63,7 @@ export interface ListProjectsResponse {
 // Known types (UI must default-case unknown server-side additions):
 //   - github_repo: cloud-side git checkout, ref = { url, ref?, default_branch_hint? }
 //   - local_directory: agent execution on a specific daemon,
-//     ref = { local_path, daemon_id, label?, execution_mode? }
+//     ref = { local_path, daemon_id, label?, execution_mode?, worktree_base? }
 export type ProjectResourceType = "github_repo" | "local_directory";
 
 export interface GithubRepoResourceRef {

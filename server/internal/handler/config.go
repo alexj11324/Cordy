@@ -89,6 +89,12 @@ type AppConfig struct {
 	// them, and only one of the two guesses is safe.
 	LocalWorktreeSupported bool `json:"local_worktree_supported"`
 
+	// LocalWorktreeCommittedBaseSupported tells clients this server preserves
+	// local_directory worktree_base=head end to end. Older servers may support
+	// worktree mode while silently dropping this stronger field, so clients must
+	// omit it unless this explicit declaration is present.
+	LocalWorktreeCommittedBaseSupported bool `json:"local_worktree_committed_base_supported"`
+
 	// AgentConversationStartersSupported tells independently deployed clients
 	// that agent create/update persists conversation_starters. Older handlers
 	// ignored the unknown JSON field and still returned success, so clients
@@ -115,12 +121,13 @@ func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 	config := AppConfig{
 		// A property of this build, not of the deployment: if this code is
 		// running, the save gate is running with it.
-		LocalWorktreeSupported:             true,
-		AgentConversationStartersSupported: true,
-		AllowSignup:                        os.Getenv("ALLOW_SIGNUP") != "false",
-		GoogleClientID:                     os.Getenv("GOOGLE_CLIENT_ID"),
-		WorkspaceCreationDisabled:          os.Getenv("DISABLE_WORKSPACE_CREATION") == "true",
-		Messaging:                          messagingCapabilitiesFromEnv(),
+		LocalWorktreeSupported:              true,
+		LocalWorktreeCommittedBaseSupported: true,
+		AgentConversationStartersSupported:  true,
+		AllowSignup:                         os.Getenv("ALLOW_SIGNUP") != "false",
+		GoogleClientID:                      os.Getenv("GOOGLE_CLIENT_ID"),
+		WorkspaceCreationDisabled:           os.Getenv("DISABLE_WORKSPACE_CREATION") == "true",
+		Messaging:                           messagingCapabilitiesFromEnv(),
 	}
 	if h.Storage != nil {
 		config.CdnDomain = h.Storage.CdnDomain()

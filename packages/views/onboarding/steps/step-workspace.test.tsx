@@ -19,6 +19,7 @@ type MockConfigState = {
   workspaceCreationDisabled: boolean;
   daemonAppUrl: string;
   localWorktreeSupported?: boolean;
+  localWorktreeCommittedBaseSupported?: boolean;
 };
 
 const mockLogout = vi.hoisted(() => vi.fn());
@@ -72,6 +73,15 @@ vi.mock("@patchbay/core/api", () => ({
   api: {
     getBaseUrl: () => "http://127.0.0.1:8080",
     createProject: mockCreateProject,
+    listRuntimes: vi.fn().mockResolvedValue([
+      {
+        daemon_id: "daemon-1",
+        metadata: {
+          capabilities: ["local-worktree-v1", "local-worktree-committed-base-v1"],
+        },
+        last_seen_at: "2026-08-13T00:00:00Z",
+      },
+    ]),
   },
 }));
 
@@ -98,7 +108,7 @@ function renderStep({
 }) {
   mockUseConfigStore.mockImplementation(
     (selector: (state: MockConfigState) => unknown) =>
-      selector({ workspaceCreationDisabled: disabled, daemonAppUrl, localWorktreeSupported: true }),
+      selector({ workspaceCreationDisabled: disabled, daemonAppUrl, localWorktreeSupported: true, localWorktreeCommittedBaseSupported: true }),
   );
   return render(<StepWorkspace existing={existing} onCreated={onCreated} />, {
     wrapper: I18nWrapper,

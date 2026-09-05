@@ -19,6 +19,10 @@ import {
   useDeleteProjectResource,
   useUpdateProjectResource,
 } from "@patchbay/core/projects";
+import {
+  runtimeAdvertisesLocalWorktreeCommittedBase,
+  runtimeListOptions,
+} from "@patchbay/core/runtimes";
 import { useWorkspaceId } from "@patchbay/core/hooks";
 import { useCurrentWorkspace } from "@patchbay/core/paths";
 import type {
@@ -55,7 +59,7 @@ import {
 } from "./local-directory-mode-dialog";
 import { localDirectoryLabel } from "./local-directory-label";
 import { useT } from "../../i18n";
-import { githubShortLabel } from "../../common/github-url";
+import { githubShortLabel, repositoryIdentity } from "../../common/github-url";
 
 // Project Resources sidebar section.
 //
@@ -101,22 +105,35 @@ type ModeDialogState = {
   remoteUrl?: string;
 };
 
-export function ProjectResourcesSection({ projectId }: { projectId: string }) {
+export function ProjectResourcesSection({
+  projectId,
+  deferUntilExpanded = false,
+}: {
+  projectId: string;
+  /** Settings renders many project rows; fetch each resource list on expand. */
+  deferUntilExpanded?: boolean;
+}) {
   const { t } = useT("projects");
   const wsId = useWorkspaceId();
   const workspace = useCurrentWorkspace();
   const daemonStatus = useLocalDaemonStatus();
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(!deferUntilExpanded);
   const [addOpen, setAddOpen] = useState(false);
   const [repoSearch, setRepoSearch] = useState("");
   const [picking, setPicking] = useState(false);
   const [modeDialog, setModeDialog] = useState<ModeDialogState | null>(null);
   const [modeSaving, setModeSaving] = useState(false);
   const [modeError, setModeError] = useState<string | null>(null);
+  const desktopMode = isDesktopShell();
 
-  const { data: resources = [] } = useQuery(
-    projectResourcesOptions(wsId, projectId),
-  );
+  const { data: resources = [] } = useQuery({
+    ...projectResourcesOptions(wsId, projectId),
+    enabled: !deferUntilExpanded || open,
+  });
+  const { data: runtimes = [] } = useQuery({
+    ...runtimeListOptions(wsId),
+    enabled: desktopMode && !!wsId,
+  });
   const createResource = useCreateProjectResource(wsId, projectId);
   const updateResource = useUpdateProjectResource(wsId, projectId);
   const deleteResource = useDeleteProjectResource(wsId, projectId);
@@ -125,21 +142,39 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
   // there don't see an action they can never complete — the spec calls for
   // read-only on web because the daemon-id check can't be performed in the
   // browser.
-  const desktopMode = isDesktopShell();
   const localDaemonId = daemonStatus.daemonId;
 
-  // Only ever used to decide what to PRESELECT. Whether the machine can run
-  // worktree mode is the server's call — it knows its own version, the client
-  // would have to infer it from data the server wrote, and that inference is
-  // what told a user on the newest release to upgrade it (#7113). The save is
+  // The legacy worktree flag is only used to decide whether the mode can be
+  // offered. Whether the machine can run it is the server's call — it knows
+  // its own version, the client would have to infer it from data the server
+  // wrote, and that inference is what told a user on the newest release to
+  // upgrade it (#7113). The save is
   // gated server-side and surfaced here as an inline error instead.
   // The one thing the client must still check up front: whether this server
   // performs that gate at all. One declared boolean, no inference — servers
   // that predate it drop execution_mode and answer 201.
   const serverValidatesWorktree = useConfigStore((state) => state.localWorktreeSupported);
+  const serverSupportsCommittedBase = useConfigStore(
+    (state) => state.localWorktreeCommittedBaseSupported,
+  );
+  // The stronger `worktree_base=head` field is sent only when both halves of
+  // the path explicitly advertise it: this server flag and the newest runtime
+  // row for the daemon bound to the local folder.
+  const committedBaseSupported =
+    serverSupportsCommittedBase &&
+    runtimeAdvertisesLocalWorktreeCommittedBase(runtimes, localDaemonId);
   const attachedUrls = new Set(
     resources.filter(isGithubRef).map((r) => r.resource_ref.url),
   );
+  const attachedRepositoryIdentities = new Set(
+    [...attachedUrls]
+      .map(repositoryIdentity)
+      .filter((identity): identity is string => !!identity),
+  );
+  const isRepositoryAttached = (url: string) => {
+    const identity = repositoryIdentity(url);
+    return identity ? attachedRepositoryIdentities.has(identity) : attachedUrls.has(url);
+  };
   // A project may not have a project-level github_repo yet. Workspace remotes
   // are the fallback source shown when a member is binding the project on a
   // second machine; once a project-specific source exists, it is the only
@@ -170,6 +205,7 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
     workspace?.repos?.filter((repo) => repo.url.toLowerCase().includes(repoQuery)) ?? [];
 
   const handleAttach = async (url: string) => {
+    if (isRepositoryAttached(url)) return;
     try {
       await createResource.mutateAsync({
         resource_type: "github_repo",
@@ -229,7 +265,7 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
         );
         return;
       }
-      if (!await confirmProjectRepository(path, [...attachedUrls])) return;
+      if (!await confirmProjectRepository(path, availableCloneUrls)) return;
       const remotes = validation.remotes ?? [];
       const remoteUrl = remotes.find(remote => remote.name === "origin")?.url ?? (remotes.length === 1 ? remotes[0]?.url : undefined);
       setModeError(null);
@@ -262,30 +298,59 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
           setModeDialog(null);
           return;
         }
+        const nextRef = { ...ref, execution_mode: mode };
+        if (mode === "worktree" && committedBaseSupported) {
+          nextRef.worktree_base = "head";
+        } else {
+          delete nextRef.worktree_base;
+        }
         await updateResource.mutateAsync({
           resourceId: modeDialog.resource.id,
           data: {
             // Spread first so every other ref field survives the edit — the
             // server replaces the whole ref, it does not deep-merge.
-            resource_ref: { ...ref, execution_mode: mode, worktree_base: "head" },
+            resource_ref: nextRef,
           },
         });
         toast.success(t(($) => $.resources.toast_local_mode_updated));
       } else {
         if (!localDaemonId) return;
-        if (modeDialog.remoteUrl && !attachedUrls.has(modeDialog.remoteUrl)) {
-          await createResource.mutateAsync({ resource_type: "github_repo", resource_ref: { url: modeDialog.remoteUrl } });
-        }
-        await createResource.mutateAsync({
-          resource_type: "local_directory",
-          resource_ref: {
+        let createdRemote: ProjectResource | null = null;
+        try {
+          if (modeDialog.remoteUrl && !isRepositoryAttached(modeDialog.remoteUrl)) {
+            createdRemote = await createResource.mutateAsync({
+              resource_type: "github_repo",
+              resource_ref: { url: modeDialog.remoteUrl },
+            });
+          }
+          const resourceRef: LocalDirectoryResourceRef = {
             local_path: modeDialog.path,
             daemon_id: localDaemonId,
             label: modeDialog.label ?? modeDialog.path,
             execution_mode: mode,
-    worktree_base: "head",
-          },
-        });
+          };
+          if (mode === "worktree" && committedBaseSupported) {
+            resourceRef.worktree_base = "head";
+          }
+          await createResource.mutateAsync({
+            resource_type: "local_directory",
+            resource_ref: resourceRef,
+          });
+        } catch (error) {
+          // The remote and local resources represent one binding operation. If
+          // the local save is rejected (for example by a daemon capability
+          // gate), remove the remote created above so a failed binding cannot
+          // leave a misleading project-level source behind.
+          if (createdRemote) {
+            try {
+              await deleteResource.mutateAsync(createdRemote.id);
+            } catch {
+              // Keep the original error visible; the stale remote is still
+              // invalidated by the mutation and can be removed manually.
+            }
+          }
+          throw error;
+        }
         toast.success(t(($) => $.resources.toast_local_attached));
       }
       setModeDialog(null);
@@ -437,7 +502,7 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
                       </p>
                     )}
                     {filteredRepos.map((repo) => {
-                      const isAttached = attachedUrls.has(repo.url);
+                      const isAttached = isRepositoryAttached(repo.url);
                       const isDisabled = isAttached || createResource.isPending;
                       return (
                         // Use aria-disabled instead of the native `disabled` attribute so

@@ -48,7 +48,7 @@ vi.mock("@tanstack/react-query", () => ({
             // A capability-aware server always writes the key — null when the
             // daemon sent no header — so its absence means the SERVER is old.
             ...(runtimeWorktreeMetadata === "advertised"
-              ? { capabilities: ["local-worktree-v1"] }
+              ? { capabilities: ["local-worktree-v1", "local-worktree-committed-base-v1"] }
               : runtimeWorktreeMetadata === "daemon_cannot"
                 ? { capabilities: ["skill-bundles-v1"] }
                 : {}),
@@ -90,9 +90,10 @@ vi.mock("@patchbay/core/projects", () => ({
 // Whether the connected server validates execution_mode at all. Absent on every
 // release before the worktree save gate.
 let serverValidatesWorktree = true;
+let serverSupportsCommittedBase = true;
 vi.mock("@patchbay/core/config", () => ({
-  useConfigStore: (selector: (state: { localWorktreeSupported: boolean }) => unknown) =>
-    selector({ localWorktreeSupported: serverValidatesWorktree }),
+  useConfigStore: (selector: (state: { localWorktreeSupported: boolean; localWorktreeCommittedBaseSupported: boolean }) => unknown) =>
+    selector({ localWorktreeSupported: serverValidatesWorktree, localWorktreeCommittedBaseSupported: serverSupportsCommittedBase }),
 }));
 
 vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "workspace-1" }));
@@ -180,6 +181,7 @@ describe("CreateProjectModal — local directory execution mode", () => {
     runtimeCliVersion = "9.9.9";
     runtimeWorktreeMetadata = "advertised";
     serverValidatesWorktree = true;
+    serverSupportsCommittedBase = true;
     pickedIsGitRepo = true;
   });
 
@@ -323,6 +325,7 @@ describe("buildLocalDirectoryResourceRef", () => {
         daemonId: "daemon-1",
         label: "game-client",
         mode: "worktree",
+        committedBaseSupported: true,
       }),
     ).toEqual({
       local_path: "/Users/dev/work/game-client",
@@ -343,6 +346,6 @@ describe("buildLocalDirectoryResourceRef", () => {
         label: null,
         mode: "in_place",
       }),
-    ).toEqual({ local_path: "/tmp/x", daemon_id: "d", execution_mode: "in_place", worktree_base: "head" });
+    ).toEqual({ local_path: "/tmp/x", daemon_id: "d", execution_mode: "in_place" });
   });
 });
