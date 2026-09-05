@@ -72,7 +72,7 @@ type ExecOptions struct {
 	// the backend surfaces a continuity notice instead of silently
 	// restarting. Currently honoured by the codex backend (MUL-4424).
 	ResumeExpected bool
-	// RequireResume forbids Codex from replacing a recovery thread with a fresh one.
+	// RequireResume enforces the original session in Codex, Claude Code and Cursor recovery.
 	RequireResume bool
 	// ResumeContinuityNotice is the text to prepend to the first turn when
 	// ResumeExpected holds but the backend lands on a fresh thread anyway. The

@@ -12,32 +12,32 @@ import (
 	"github.com/patchbay-ai/patchbay/server/pkg/taskfailure"
 )
 
-func codexFailureReason(result agent.Result) taskfailure.Reason {
+func providerFailureReason(result agent.Result) taskfailure.Reason {
 	switch result.ProviderErrorCode {
-	case "usageLimitExceeded", "sessionBudgetExceeded":
+	case "usageLimitExceeded", "sessionBudgetExceeded", "billing_error":
 		return taskfailure.ReasonAgentProviderQuotaLimit
-	case "rateLimitExceeded", "serverOverloaded":
+	case "rateLimitExceeded", "serverOverloaded", "rate_limit", "overloaded":
 		return taskfailure.ReasonAgentProviderCapacityOrRateLimit
-	case "unauthorized":
+	case "unauthorized", "authentication_failed", "oauth_org_not_allowed", "account_on_hold":
 		return taskfailure.ReasonAgentProviderAuthOrAccess
 	}
 	return taskfailure.Classify(result.Error)
 }
 
-func canRecoverCodexCapacity(result agent.Result) bool {
+func canRecoverCapacity(result agent.Result) bool {
 	if result.Status != "failed" || !result.RecoveryResumeSafe || result.SessionID == "" || result.ResumeRejected {
 		return false
 	}
 	// Structured errors take precedence over human-readable messages. Unknown
 	// variants fail closed; a bare 429 is not evidence of temporary rate limiting.
 	if result.ProviderErrorCode != "" {
-		return result.ProviderErrorCode == "serverOverloaded" || result.ProviderErrorCode == "rateLimitExceeded"
+		return result.ProviderErrorCode == "serverOverloaded" || result.ProviderErrorCode == "rateLimitExceeded" || result.ProviderErrorCode == "rate_limit" || result.ProviderErrorCode == "overloaded"
 	}
 	if taskfailure.Classify(result.Error) != taskfailure.ReasonAgentProviderCapacityOrRateLimit {
 		return false
 	}
 	lower := strings.ToLower(result.Error)
-	return strings.Contains(lower, "selected model is at capacity") || strings.Contains(lower, "no capacity available") || strings.Contains(lower, "server overloaded") || strings.Contains(lower, "rate limit") || strings.Contains(lower, "rate_limit")
+	return strings.Contains(lower, "selected model is at capacity") || strings.Contains(lower, "no capacity available") || strings.Contains(lower, "overloaded") || strings.Contains(lower, "rate limit") || strings.Contains(lower, "rate_limit")
 }
 
 func capacityRecoveryDelay(attempt int) time.Duration {
@@ -50,12 +50,12 @@ func capacityRecoveryDelay(attempt int) time.Duration {
 
 const capacityRecoveryPrompt = "Continue the interrupted task from the current conversation and working directory. Check the actual progress and the outcome of any previous tool action before repeating it. Do not restart completed work."
 
-// recoverCodexCapacity keeps the task lease and cancellation context while the
+// recoverCapacity keeps the task lease and cancellation context while the
 // provider is busy. Each executeAndDrain has already joined the old process and
 // flushed its messages. Waiting happens outside its inactivity watchdog. Only
 // a real terminal result finishes recovery; a successful handshake does not.
-func (d *Daemon) recoverCodexCapacity(ctx context.Context, backend agent.Backend, result agent.Result, tools int32, opts agent.ExecOptions, logger *slog.Logger, taskID, codexHome string, seq *atomic.Int32, wait func(context.Context, time.Duration) error) (agent.Result, int32, error) {
-	for attempt := 0; canRecoverCodexCapacity(result); attempt++ {
+func (d *Daemon) recoverCapacity(ctx context.Context, backend agent.Backend, result agent.Result, tools int32, opts agent.ExecOptions, logger *slog.Logger, taskID, codexHome string, seq *atomic.Int32, wait func(context.Context, time.Duration) error) (agent.Result, int32, error) {
+	for attempt := 0; canRecoverCapacity(result); attempt++ {
 		if ctx.Err() != nil {
 			result.Status = "cancelled"
 			return result, tools, nil

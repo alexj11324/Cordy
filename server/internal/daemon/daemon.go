@@ -8283,8 +8283,8 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		result, tools = reconcileFreshRetryResult(firstResult, firstUsage, firstTools, retryResult, retryTools, retryErr)
 	}
 
-	if provider == "codex" {
-		result, tools, err = d.recoverCodexCapacity(ctx, backend, result, tools, execOpts, taskLog, task.ID, env.CodexHome, &msgSeq, sleepWithContext)
+	if provider == "codex" || provider == "claude" || provider == "cursor" {
+		result, tools, err = d.recoverCapacity(ctx, backend, result, tools, execOpts, taskLog, task.ID, env.CodexHome, &msgSeq, sleepWithContext)
 		if err != nil {
 			return TaskResult{}, err
 		}
@@ -8509,8 +8509,8 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 			// MUL-1949 offline backfill to re-classify after the
 			// fact.
 			failureReason = taskfailure.Classify(errMsg).String()
-			if provider == "codex" {
-				failureReason = codexFailureReason(result).String()
+			if result.ProviderErrorCode != "" {
+				failureReason = providerFailureReason(result).String()
 			}
 		}
 		// After the classifiers above have read errMsg. The hint is fixed

@@ -97,11 +97,11 @@ cat > /dev/null
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !canRecoverCodexCapacity(first) {
+	if !canRecoverCapacity(first) {
 		t.Fatalf("capacity not recoverable: %+v", first)
 	}
 	waits := 0
-	result, _, err := d.recoverCodexCapacity(ctx, backend, first, tools, opts, logger, "task", "", &seq, func(_ context.Context, delay time.Duration) error {
+	result, _, err := d.recoverCapacity(ctx, backend, first, tools, opts, logger, "task", "", &seq, func(_ context.Context, delay time.Duration) error {
 		waits++
 		if _, err := os.Stat(filepath.Join(root, "active")); !os.IsNotExist(err) {
 			t.Fatal("previous child still active")

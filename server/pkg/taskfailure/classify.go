@@ -142,6 +142,7 @@ func Classify(rawError string) Reason {
 	case httpCapacityCodeRe.MatchString(lower),
 		containsAny(lower,
 			"rate limit",
+			"rate_limit_error",
 			"overloaded",
 			"no capacity available",
 			"selected model is at capacity",
