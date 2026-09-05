@@ -171,7 +171,7 @@ func TestLinearWorkProductPublishesPullRequestAttachment(t *testing.T) {
 	if len(api.attached) != 1 || api.attached[0] != linkedRemoteID(t, issueID)+"|PR #42|https://github.com/acme/repo/pull/42" {
 		t.Fatalf("attachments=%v", api.attached)
 	}
-	if _, err := testPool.Exec(ctx, `UPDATE work_product SET external_url='https://github.com/acme/repo/pull/43' WHERE id=$1`, productID); err != nil {
+	if _, err := testPool.Exec(ctx, `UPDATE work_product SET external_url='https://github.com/acme/repo/pull/43',updated_at=now()+interval '1 second' WHERE id=$1`, productID); err != nil {
 		t.Fatal(err)
 	}
 	for range 2 {
@@ -185,14 +185,41 @@ func TestLinearWorkProductPublishesPullRequestAttachment(t *testing.T) {
 	if len(api.detached) != 1 || api.detached[0] != linkedRemoteID(t, issueID)+"|https://github.com/acme/repo/pull/42" {
 		t.Fatalf("replaced attachments not deleted: %v", api.detached)
 	}
+	for index, rawURL := range []string{"https://github.com/acme/repo/pull/42", "https://github.com/acme/repo/pull/43"} {
+		if _, err := testPool.Exec(ctx, `UPDATE work_product SET external_url=$2,updated_at=now()+make_interval(secs => $3) WHERE id=$1`, productID, rawURL, index+2); err != nil {
+			t.Fatal(err)
+		}
+		for range 2 {
+			if !f.worker.processOneOutbox(ctx) {
+				t.Fatal("repeated URL transition outbox not processed")
+			}
+		}
+	}
+	if len(api.attached) != 4 || api.attached[3] != linkedRemoteID(t, issueID)+"|PR #42|https://github.com/acme/repo/pull/43" {
+		t.Fatalf("round-trip attachments=%v", api.attached)
+	}
 	if _, err := testPool.Exec(ctx, `UPDATE work_product_relation SET detached_at=now(),detached_by_type='user',detached_by_id=$2 WHERE id=$1`, relationID, testUserID); err != nil {
 		t.Fatal(err)
 	}
 	if !f.worker.processOneOutbox(ctx) {
 		t.Fatal("attachment deletion outbox not processed")
 	}
-	if len(api.detached) != 2 || api.detached[1] != linkedRemoteID(t, issueID)+"|https://github.com/acme/repo/pull/43" {
+	if len(api.detached) != 4 || api.detached[3] != linkedRemoteID(t, issueID)+"|https://github.com/acme/repo/pull/43" {
 		t.Fatalf("deleted attachments=%v", api.detached)
+	}
+	product2 := dbfx.Insert(t, "work_product", testutil.Cols{"workspace_id": testWorkspaceID, "kind": "pull_request", "provider": "github", "external_identity": "PR #44", "external_url": "https://github.com/acme/repo/pull/44"})
+	relation2 := dbfx.Insert(t, "work_product_relation", testutil.Cols{"workspace_id": testWorkspaceID, "work_product_id": product2, "issue_id": issueID, "relation_key": "test-pr-delete", "relation_source": "manual_explicit", "attached_by_type": "user", "attached_by_id": testUserID})
+	if !f.worker.processOneOutbox(ctx) {
+		t.Fatal("second attachment outbox not processed")
+	}
+	if _, err := testPool.Exec(ctx, `DELETE FROM work_product_relation WHERE id=$1`, relation2); err != nil {
+		t.Fatal(err)
+	}
+	if !f.worker.processOneOutbox(ctx) {
+		t.Fatal("hard-delete attachment outbox not processed")
+	}
+	if len(api.detached) != 5 || api.detached[4] != linkedRemoteID(t, issueID)+"|https://github.com/acme/repo/pull/44" {
+		t.Fatalf("hard-deleted attachments=%v", api.detached)
 	}
 }
 
@@ -221,7 +248,6 @@ func TestLinearImportedCommentReappearsAfterLocalDeletion(t *testing.T) {
 		t.Fatal(err)
 	}
 	remote.Body = "Restored"
-	remote.UpdatedAt = time.Now()
 	if err = f.worker.applyLinearComment(ctx, b, remote, false); err != nil {
 		t.Fatal(err)
 	}
@@ -231,5 +257,43 @@ func TestLinearImportedCommentReappearsAfterLocalDeletion(t *testing.T) {
 	}
 	if body != "Linear user · Linear\n\nRestored" {
 		t.Fatalf("restored body=%q", body)
+	}
+}
+
+func TestLinearReplyWaitsForUnseenParent(t *testing.T) {
+	f := setupLinearWorker(t, "two_way", &fakeLinearAPI{})
+	ctx := context.Background()
+	issueID := dbfx.Issue(t, "Remote reply ordering", testutil.Cols{"project_id": f.projectID})
+	if !f.worker.processOneOutbox(ctx) {
+		t.Fatal("issue not published")
+	}
+	b, err := f.worker.loadBinding(ctx, parseUUID(f.bindingID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	updatedAt := time.Now()
+	parent := linearapi.Comment{ID: "remote-parent", Body: "Parent", UpdatedAt: updatedAt}
+	parent.Issue.ID = linkedRemoteID(t, issueID)
+	child := linearapi.Comment{ID: "remote-child", Body: "Child", UpdatedAt: updatedAt}
+	child.Issue.ID = parent.Issue.ID
+	if err = json.Unmarshal([]byte(`{"id":"remote-child","parent":{"id":"remote-parent"}}`), &child); err != nil {
+		t.Fatal(err)
+	}
+	child.Body, child.UpdatedAt, child.Issue.ID = "Child", updatedAt, parent.Issue.ID
+	if err = f.worker.applyLinearComment(ctx, b, child, false); err == nil {
+		t.Fatal("child imported before its unseen parent")
+	}
+	if err = f.worker.applyLinearComment(ctx, b, parent, false); err != nil {
+		t.Fatal(err)
+	}
+	if err = f.worker.applyLinearComment(ctx, b, child, false); err != nil {
+		t.Fatal(err)
+	}
+	var linked bool
+	if err = testPool.QueryRow(ctx, `SELECT child.parent_id=parent.id FROM comment child JOIN comment parent ON parent.id=child.parent_id JOIN linear_comment_link cl ON cl.comment_id=child.id WHERE cl.binding_id=$1 AND cl.linear_comment_id=$2`, f.bindingID, child.ID).Scan(&linked); err != nil {
+		t.Fatal(err)
+	}
+	if !linked {
+		t.Fatal("child was not linked to imported parent")
 	}
 }

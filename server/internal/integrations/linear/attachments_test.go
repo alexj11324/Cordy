@@ -58,7 +58,14 @@ func TestDeleteAttachmentByURLScopesDeletionToIssue(t *testing.T) {
 			if !strings.Contains(request.Query, "attachmentsForURL") {
 				t.Fatalf("query=%s", request.Query)
 			}
-			_, _ = w.Write([]byte(`{"data":{"attachmentsForURL":{"nodes":[{"id":"ours","issue":{"id":"issue"}},{"id":"other","issue":{"id":"other-issue"}}]}}}`))
+			_, _ = w.Write([]byte(`{"data":{"attachmentsForURL":{"nodes":[{"id":"other","issue":{"id":"other-issue"}}],"pageInfo":{"hasNextPage":true,"endCursor":"page-2"}}}}`))
+			return
+		}
+		if requests == 2 {
+			if string(request.Variables["after"]) != `"page-2"` {
+				t.Fatalf("second page cursor=%s", request.Variables["after"])
+			}
+			_, _ = w.Write([]byte(`{"data":{"attachmentsForURL":{"nodes":[{"id":"ours","issue":{"id":"issue"}}],"pageInfo":{"hasNextPage":false}}}}`))
 			return
 		}
 		if !strings.Contains(request.Query, "attachmentDelete") || string(request.Variables["id"]) != `"ours"` {
@@ -72,7 +79,7 @@ func TestDeleteAttachmentByURLScopesDeletionToIssue(t *testing.T) {
 	if err := client.DeleteAttachmentByURL(context.Background(), "token", "issue", "https://github.com/acme/repo/pull/1"); err != nil {
 		t.Fatal(err)
 	}
-	if requests != 2 {
-		t.Fatalf("requests=%d, want list plus one scoped delete", requests)
+	if requests != 3 {
+		t.Fatalf("requests=%d, want two list pages plus one scoped delete", requests)
 	}
 }

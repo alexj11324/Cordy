@@ -31,6 +31,7 @@ cleared_relations AS (
 cleared_products AS (
     DELETE FROM work_product
     WHERE id IN (SELECT target_products.id FROM target_products)
+      AND (SELECT count(*) FROM cleared_relations) >= 0
 ),
 cleared_statuses AS (
     DELETE FROM vcs_commit_status WHERE connection_id IN (SELECT target.id FROM target)

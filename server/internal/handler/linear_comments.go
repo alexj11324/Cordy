@@ -139,8 +139,17 @@ func (w *LinearWorker) applyLinearComment(ctx context.Context, b workerBinding, 
 	}
 	// The originating system owns its comment edits. This also suppresses the
 	// webhook for our own commentCreate before its local acknowledgement.
-	if origin == "patchbay" || tombstone || (remoteTime.Valid && !remote.UpdatedAt.After(remoteTime.Time)) {
+	if origin == "patchbay" || tombstone {
 		return tx.Commit(ctx)
+	}
+	if remoteTime.Valid && !remote.UpdatedAt.After(remoteTime.Time) {
+		var localExists bool
+		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM comment WHERE id=$1 AND workspace_id=$2)`, localID, b.WorkspaceID).Scan(&localExists); err != nil {
+			return err
+		}
+		if localExists {
+			return tx.Commit(ctx)
+		}
 	}
 	if deleted && newLink {
 		return tx.Commit(ctx)
@@ -150,8 +159,12 @@ func (w *LinearWorker) applyLinearComment(ctx context.Context, b workerBinding, 
 	}
 	parentID := pgtype.UUID{}
 	if remote.Parent != nil && !deleted {
-		if err = tx.QueryRow(ctx, `SELECT l.comment_id FROM linear_comment_link l JOIN comment c ON c.id=l.comment_id AND c.workspace_id=l.workspace_id WHERE l.binding_id=$1 AND l.linear_comment_id=$2 AND l.issue_id=$3 AND l.workspace_id=$4`, b.ID, remote.Parent.ID, issueID, b.WorkspaceID).Scan(&parentID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		var parentExists bool
+		if err = tx.QueryRow(ctx, `SELECT l.comment_id, c.id IS NOT NULL FROM linear_comment_link l LEFT JOIN comment c ON c.id=l.comment_id AND c.workspace_id=l.workspace_id WHERE l.binding_id=$1 AND l.linear_comment_id=$2 AND l.issue_id=$3 AND l.workspace_id=$4`, b.ID, remote.Parent.ID, issueID, b.WorkspaceID).Scan(&parentID, &parentExists); err != nil {
 			return fmt.Errorf("Linear reply parent is not imported: %w", err)
+		}
+		if !parentExists {
+			parentID = pgtype.UUID{}
 		}
 	}
 	author := "Linear user"
