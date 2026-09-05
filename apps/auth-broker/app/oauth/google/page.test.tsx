@@ -1,14 +1,15 @@
 // @vitest-environment jsdom
 
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Page from "./page";
 
 const mocks = vi.hoisted(() => ({
   searchParams: { current: new URLSearchParams() },
   sso: vi.fn(),
   register: vi.fn(),
+  signIn: { sso: undefined as undefined | ReturnType<typeof vi.fn> },
   clerk: { loaded: true, session: null as null | { id: string } },
 }));
 
@@ -18,7 +19,7 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@clerk/nextjs", () => ({
   useClerk: () => mocks.clerk,
-  useSignIn: () => ({ signIn: { sso: mocks.sso } }),
+  useSignIn: () => ({ signIn: mocks.signIn }),
 }));
 
 vi.mock("@/components/auth-shell", () => ({
@@ -39,6 +40,8 @@ vi.mock("@/lib/auth-messages", () => ({
   }),
 }));
 
+afterEach(cleanup);
+
 beforeEach(() => {
   window.sessionStorage.clear();
   mocks.searchParams.current = new URLSearchParams({
@@ -46,11 +49,21 @@ beforeEach(() => {
   });
   mocks.sso.mockReset().mockResolvedValue({ error: null });
   mocks.register.mockReset().mockResolvedValue(undefined);
+  mocks.signIn.sso = mocks.sso;
   mocks.clerk.loaded = true;
   mocks.clerk.session = null;
 });
 
 describe("Accounts Google entry", () => {
+  it("starts when Clerk finishes loading without replacing its resource objects", async () => {
+    mocks.clerk.loaded = false;
+    const view = render(<Page />);
+    expect(mocks.sso).not.toHaveBeenCalled();
+    mocks.clerk.loaded = true;
+    view.rerender(<Page />);
+    await waitFor(() => expect(mocks.sso).toHaveBeenCalledOnce());
+  });
+
   it("starts standalone Google OAuth without registering a Desktop attempt", async () => {
     render(<Page />);
 
