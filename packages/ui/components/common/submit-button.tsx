@@ -10,6 +10,7 @@ import {
 } from "@patchbay/ui/components/ui/tooltip";
 
 interface SubmitButtonProps {
+  size?: "icon-sm" | "icon";
   onClick: () => void;
   disabled?: boolean;
   loading?: boolean;
@@ -45,6 +46,7 @@ function keepFocusInComposer(event: SyntheticEvent<HTMLButtonElement>) {
 }
 
 function SubmitButton({
+  size = "icon-sm",
   onClick,
   disabled,
   loading,
@@ -59,7 +61,7 @@ function SubmitButton({
   if (running) {
     const stopButton = (
       <Button
-        size="icon-sm"
+        size={size}
         className="rounded-full"
         onPointerDown={keepFocusInComposer}
         onMouseDown={keepFocusInComposer}
@@ -79,7 +81,7 @@ function SubmitButton({
 
   const submitButton = (
     <Button
-      size="icon-sm"
+      size={size}
       className="rounded-full"
       disabled={disabled || loading || busy}
       aria-disabled={busy || undefined}

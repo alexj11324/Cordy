@@ -1338,7 +1338,6 @@ describe("CreateIssueModal", () => {
       "flex-1",
       "min-h-0",
       "overflow-y-auto",
-      "px-5",
     );
     expect(sourceContext).toHaveClass("shrink-0");
     expect(description?.parentElement).toBe(sourceContext?.parentElement);
