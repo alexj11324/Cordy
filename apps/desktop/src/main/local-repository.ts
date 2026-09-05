@@ -1,8 +1,5 @@
-import { execFile } from "node:child_process";
 import { lstat, mkdir } from "node:fs/promises";
 import { isAbsolute } from "node:path";
-import { promisify } from "node:util";
-const execute = promisify(execFile);
 
 export type RepositoryFailure = "invalid_url" | "destination_exists" | "authentication_required" | "access_denied" | "repository_unavailable" | "network_error" | "error";
 export type RepositoryResult = { ok: true } | { ok: false; reason: RepositoryFailure };
@@ -28,10 +25,37 @@ export function repositoryIdentity(value: string): string | null {
   return url.hostname === "github.com" ? identity.toLowerCase() : identity;
 }
 
-function git(args: string[], timeout = 30_000) {
-  return execute("git", args, {
-    timeout, maxBuffer: 1024 * 1024,
-    env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "never", GIT_SSH_COMMAND: "ssh -o BatchMode=yes -o StrictHostKeyChecking=yes" },
+async function git(args: string[], timeout = 30_000): Promise<{ stdout: string; stderr: string }> {
+  // Resolve child_process only when a repository operation is requested. Some
+  // desktop tests mock the module with only the process primitive they exercise;
+  // importing execFile eagerly would make unrelated local Guest tests fail at
+  // module load time.
+  const { execFile } = await import("node:child_process");
+  if (typeof execFile !== "function") {
+    throw new Error("Git process execution is unavailable in this desktop runtime");
+  }
+  return new Promise((resolve, reject) => {
+    execFile(
+      "git",
+      args,
+      {
+        timeout,
+        maxBuffer: 1024 * 1024,
+        env: {
+          ...process.env,
+          GIT_TERMINAL_PROMPT: "0",
+          GCM_INTERACTIVE: "never",
+          GIT_SSH_COMMAND: "ssh -o BatchMode=yes -o StrictHostKeyChecking=yes",
+        },
+      },
+      (error, stdout, stderr) => {
+        if (error) {
+          reject(Object.assign(error, { stdout, stderr }));
+          return;
+        }
+        resolve({ stdout, stderr });
+      },
+    );
   });
 }
 export async function inspectRepository(path: string) {
