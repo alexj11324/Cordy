@@ -253,7 +253,8 @@
  * No edge border or drop shadow: the content plane is its own card, and a
  * sidebar glow reads as a divider against it (LobeHub-style glass sits flush). */
 [data-slot="sidebar-wrapper"][data-sidebar-glass="true"]
-  [data-slot="sidebar-container"] {
+  [data-slot="sidebar-container"],
+[data-settings-variant="standalone"] [data-slot="settings-nav"] {
   background-color: var(--sidebar);
   background:
     linear-gradient(
@@ -275,7 +276,8 @@
 
 @media (prefers-reduced-transparency: reduce) {
   [data-slot="sidebar-wrapper"][data-sidebar-glass="true"]
-    [data-slot="sidebar-container"] {
+    [data-slot="sidebar-container"],
+  [data-settings-variant="standalone"] [data-slot="settings-nav"] {
     background: var(--sidebar);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
