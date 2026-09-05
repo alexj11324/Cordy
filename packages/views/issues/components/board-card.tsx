@@ -154,6 +154,14 @@ export const BoardCardContent = memo(function BoardCardContent({
 
   const priorityLabel = t(($) => $.priority[issue.priority]);
   const showPriorityControl = showPriority && (!isNonePriority || canEdit);
+  const showVisibleChipRow =
+    showCustomStatus ||
+    showProject ||
+    showLabels ||
+    cardCustomProperties.length > 0 ||
+    (showPriority && !isNonePriority);
+  const showHoverOnlyPriority = !!showPriorityControl && isNonePriority && !showVisibleChipRow;
+  const showChipRow = showVisibleChipRow || showHoverOnlyPriority;
   const priorityIconNode = showPriorityControl ? (
     canEdit ? (
       <PickerWrapper
@@ -287,12 +295,9 @@ export const BoardCardContent = memo(function BoardCardContent({
 
   return (
     <div className="rounded-lg border-[0.5px] border-surface-border bg-surface py-2 px-2.5 shadow-[var(--surface-shadow)] transition-colors group-hover/card:border-foreground/15 group-hover/card:bg-surface-hover group-data-[popup-open]/card:border-foreground/15 group-data-[popup-open]/card:bg-surface-hover">
-      {/* Row 1: priority + identifier (left), activity + owner/executor stack (right) */}
+      {/* Row 1: identifier (left), activity + owner/executor stack (right) */}
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 min-w-0">
-          {priorityIconNode}
-          <p className="text-caption text-muted-foreground truncate">{issue.identifier}</p>
-        </div>
+        <p className="min-w-0 truncate text-caption text-muted-foreground">{issue.identifier}</p>
         <div className="flex shrink-0 items-center gap-1.5">
           <IssueAgentActivityIndicator issueId={issue.id} hideAvatars />
           {actorStack}
@@ -314,11 +319,19 @@ export const BoardCardContent = memo(function BoardCardContent({
         );
       })()}
 
-      {/* Chip row: status + project + labels + custom property values.
+      {/* Chip row: priority + status + project + labels + custom property values.
+          Priority sits with labels the way Linear does, not next to the id.
           The status chip renders only for a CUSTOM status — the column header
           already names the category. (MUL-6243) */}
-      {(showCustomStatus || showProject || showLabels || cardCustomProperties.length > 0) && (
-        <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+      {showChipRow && (
+        <div
+          data-board-chip-row=""
+          className={cn(
+            "mt-1.5 items-center gap-1.5 flex-wrap",
+            showHoverOnlyPriority ? HOVER_REVEAL_FLEX_CLASS : "flex",
+          )}
+        >
+          {priorityIconNode}
           <CustomStatusChip status={issue.status} />
           {showProject && (
             <span className="inline-flex items-center gap-1 text-micro text-muted-foreground max-w-[160px]">
