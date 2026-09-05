@@ -1007,7 +1007,6 @@ export function LinearIntegrationCard({
     action = (
       <div className="flex flex-wrap items-center justify-end gap-2">
         <Button onClick={() => setWizardOpen(true)} size="sm" variant="outline"><Settings2 />{t(($) => $.page.linear.manage)}</Button>
-        <Button onClick={() => void connect()} size="sm" variant="outline">{t(($) => $.page.linear.reconnect)}</Button>
         <Button className="text-destructive hover:text-destructive" onClick={() => setDisconnectOpen(true)} size="sm" variant="ghost"><Trash2 />{t(($) => $.page.linear.disconnect)}</Button>
       </div>
     );

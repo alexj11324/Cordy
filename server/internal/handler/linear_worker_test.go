@@ -26,20 +26,25 @@ import (
 // is recorded so the tests can assert what the worker decided to send, which is
 // the half of bilateral sync no database assertion can see.
 type fakeLinearAPI struct {
-	mu       sync.Mutex
-	listed   []linear.Issue
-	created  []linear.IssueInput
-	updated  []linear.IssueInput
-	deleted  []string
-	attached []string
-	revoked  []string
-	refresh  linear.Token
-	refreshN int
-	err      error
-	authErr  error
+	mu           sync.Mutex
+	listed       []linear.Issue
+	created      []linear.IssueInput
+	updated      []linear.IssueInput
+	deleted      []string
+	attached     []string
+	detached     []string
+	revoked      []string
+	refresh      linear.Token
+	refreshN     int
+	commentLists int
+	err          error
+	authErr      error
 }
 
 func (f *fakeLinearAPI) ListComments(context.Context, string, string) ([]linear.Comment, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.commentLists++
 	return nil, f.err
 }
 func (f *fakeLinearAPI) FetchComment(context.Context, string, string) (linear.Comment, bool, error) {
@@ -173,6 +178,13 @@ func (f *fakeLinearAPI) UpsertAttachment(_ context.Context, _, issueID, title, r
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.attached = append(f.attached, issueID+"|"+title+"|"+rawURL)
+	return f.err
+}
+
+func (f *fakeLinearAPI) DeleteAttachmentByURL(_ context.Context, _, issueID, rawURL string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.detached = append(f.detached, issueID+"|"+rawURL)
 	return f.err
 }
 
@@ -649,6 +661,12 @@ func TestLinearWorkerReimportOfUnchangedIssueTouchesNothing(t *testing.T) {
 	}
 	if echoes != 0 {
 		t.Fatalf("unchanged re-import enqueued %d outbound events", echoes)
+	}
+	api.mu.Lock()
+	commentLists := api.commentLists
+	api.mu.Unlock()
+	if commentLists != 1 {
+		t.Fatalf("comment history lists=%d, want one initial import and none during poll", commentLists)
 	}
 }
 

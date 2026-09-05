@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -39,5 +40,39 @@ func TestUpsertAttachmentRejectsUnsafeURL(t *testing.T) {
 		if err := client.UpsertAttachment(context.Background(), "token", "issue", "PR", value); err == nil {
 			t.Fatalf("accepted %q", value)
 		}
+	}
+}
+
+func TestDeleteAttachmentByURLScopesDeletionToIssue(t *testing.T) {
+	var requests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		var request struct {
+			Query     string                     `json:"query"`
+			Variables map[string]json.RawMessage `json:"variables"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Error(err)
+		}
+		if requests == 1 {
+			if !strings.Contains(request.Query, "attachmentsForURL") {
+				t.Fatalf("query=%s", request.Query)
+			}
+			_, _ = w.Write([]byte(`{"data":{"attachmentsForURL":{"nodes":[{"id":"ours","issue":{"id":"issue"}},{"id":"other","issue":{"id":"other-issue"}}]}}}`))
+			return
+		}
+		if !strings.Contains(request.Query, "attachmentDelete") || string(request.Variables["id"]) != `"ours"` {
+			t.Fatalf("delete request=%+v", request)
+		}
+		_, _ = w.Write([]byte(`{"data":{"attachmentDelete":{"success":true}}}`))
+	}))
+	defer server.Close()
+	client := NewHTTPClient(server.Client())
+	client.GraphQLURL = server.URL
+	if err := client.DeleteAttachmentByURL(context.Background(), "token", "issue", "https://github.com/acme/repo/pull/1"); err != nil {
+		t.Fatal(err)
+	}
+	if requests != 2 {
+		t.Fatalf("requests=%d, want list plus one scoped delete", requests)
 	}
 }

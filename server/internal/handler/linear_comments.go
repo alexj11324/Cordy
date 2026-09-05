@@ -150,7 +150,7 @@ func (w *LinearWorker) applyLinearComment(ctx context.Context, b workerBinding, 
 	}
 	parentID := pgtype.UUID{}
 	if remote.Parent != nil && !deleted {
-		if err = tx.QueryRow(ctx, `SELECT comment_id FROM linear_comment_link WHERE binding_id=$1 AND linear_comment_id=$2 AND issue_id=$3 AND workspace_id=$4`, b.ID, remote.Parent.ID, issueID, b.WorkspaceID).Scan(&parentID); err != nil {
+		if err = tx.QueryRow(ctx, `SELECT l.comment_id FROM linear_comment_link l JOIN comment c ON c.id=l.comment_id AND c.workspace_id=l.workspace_id WHERE l.binding_id=$1 AND l.linear_comment_id=$2 AND l.issue_id=$3 AND l.workspace_id=$4`, b.ID, remote.Parent.ID, issueID, b.WorkspaceID).Scan(&parentID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("Linear reply parent is not imported: %w", err)
 		}
 	}
@@ -165,6 +165,7 @@ func (w *LinearWorker) applyLinearComment(ctx context.Context, b workerBinding, 
 	q := db.New(tx)
 	var comment db.Comment
 	var issueRevision int64
+	createdLocal := newLink
 	if newLink {
 		localID = dbid.NewV7()
 		created, createErr := q.CreateComment(ctx, db.CreateCommentParams{ID: localID, IssueID: issueID, WorkspaceID: b.WorkspaceID, AuthorType: "system", AuthorID: parseUUID(uuid.Nil.String()), Content: body, Type: "comment", ParentID: parentID})
@@ -176,11 +177,27 @@ func (w *LinearWorker) applyLinearComment(ctx context.Context, b workerBinding, 
 		_, err = tx.Exec(ctx, `INSERT INTO linear_comment_link(workspace_id,binding_id,issue_id,comment_id,linear_comment_id,origin,remote_updated_at) VALUES($1,$2,$3,$4,$5,'linear',$6)`, b.WorkspaceID, b.ID, issueID, localID, remote.ID, remote.UpdatedAt)
 	} else {
 		updated, updateErr := q.UpdateComment(ctx, db.UpdateCommentParams{ID: localID, Content: body})
-		if updateErr != nil {
-			return updateErr
+		if errors.Is(updateErr, pgx.ErrNoRows) && deleted {
+			_, err = tx.Exec(ctx, `UPDATE linear_comment_link SET remote_updated_at=$3,deleted=true WHERE binding_id=$1 AND comment_id=$2 AND workspace_id=$4`, b.ID, localID, remote.UpdatedAt, b.WorkspaceID)
+			if err != nil {
+				return err
+			}
+			return tx.Commit(ctx)
 		}
-		comment = updated.Comment()
-		issueRevision = updated.IssueRevision
+		if errors.Is(updateErr, pgx.ErrNoRows) {
+			created, createErr := q.CreateComment(ctx, db.CreateCommentParams{ID: localID, IssueID: issueID, WorkspaceID: b.WorkspaceID, AuthorType: "system", AuthorID: parseUUID(uuid.Nil.String()), Content: body, Type: "comment", ParentID: parentID})
+			if createErr != nil {
+				return createErr
+			}
+			comment = created.Comment()
+			issueRevision = created.IssueRevision
+			createdLocal = true
+		} else if updateErr != nil {
+			return updateErr
+		} else {
+			comment = updated.Comment()
+			issueRevision = updated.IssueRevision
+		}
 		_, err = tx.Exec(ctx, `UPDATE linear_comment_link SET remote_updated_at=$3,deleted=$4 WHERE binding_id=$1 AND comment_id=$2 AND workspace_id=$5`, b.ID, localID, remote.UpdatedAt, deleted, b.WorkspaceID)
 	}
 	if err != nil {
@@ -191,7 +208,7 @@ func (w *LinearWorker) applyLinearComment(ctx context.Context, b workerBinding, 
 	}
 	if w.bus != nil {
 		eventType := protocol.EventCommentUpdated
-		if newLink {
+		if createdLocal {
 			eventType = protocol.EventCommentCreated
 		}
 		response := commentToResponse(comment, nil, nil)

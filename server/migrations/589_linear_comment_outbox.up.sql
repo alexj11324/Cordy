@@ -1,6 +1,6 @@
 ALTER TABLE linear_sync_outbox DROP CONSTRAINT linear_sync_outbox_event_type_check;
 ALTER TABLE linear_sync_outbox ADD CONSTRAINT linear_sync_outbox_event_type_check
-    CHECK (event_type IN ('issue_created','issue_updated','issue_deleted','comment_created','comment_updated','comment_deleted'));
+    CHECK (event_type IN ('issue_created','issue_updated','issue_deleted','comment_created','comment_updated','comment_deleted','attachment_deleted'));
 
 CREATE FUNCTION enqueue_linear_comment_outbox() RETURNS trigger AS $$
 DECLARE

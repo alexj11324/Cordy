@@ -164,11 +164,72 @@ func TestLinearWorkProductPublishesPullRequestAttachment(t *testing.T) {
 		t.Fatal("issue not published")
 	}
 	productID := dbfx.Insert(t, "work_product", testutil.Cols{"workspace_id": testWorkspaceID, "kind": "pull_request", "provider": "github", "external_identity": "PR #42", "external_url": "https://github.com/acme/repo/pull/42"})
-	dbfx.Insert(t, "work_product_relation", testutil.Cols{"workspace_id": testWorkspaceID, "work_product_id": productID, "issue_id": issueID, "relation_key": "test-pr", "relation_source": "manual_explicit", "attached_by_type": "user", "attached_by_id": testUserID})
+	relationID := dbfx.Insert(t, "work_product_relation", testutil.Cols{"workspace_id": testWorkspaceID, "work_product_id": productID, "issue_id": issueID, "relation_key": "test-pr", "relation_source": "manual_explicit", "attached_by_type": "user", "attached_by_id": testUserID})
 	if !f.worker.processOneOutbox(ctx) {
 		t.Fatal("attachment outbox not processed")
 	}
 	if len(api.attached) != 1 || api.attached[0] != linkedRemoteID(t, issueID)+"|PR #42|https://github.com/acme/repo/pull/42" {
 		t.Fatalf("attachments=%v", api.attached)
+	}
+	if _, err := testPool.Exec(ctx, `UPDATE work_product SET external_url='https://github.com/acme/repo/pull/43' WHERE id=$1`, productID); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if !f.worker.processOneOutbox(ctx) {
+			t.Fatal("URL replacement outbox not processed")
+		}
+	}
+	if len(api.attached) != 2 || api.attached[1] != linkedRemoteID(t, issueID)+"|PR #42|https://github.com/acme/repo/pull/43" {
+		t.Fatalf("replacement attachments=%v", api.attached)
+	}
+	if len(api.detached) != 1 || api.detached[0] != linkedRemoteID(t, issueID)+"|https://github.com/acme/repo/pull/42" {
+		t.Fatalf("replaced attachments not deleted: %v", api.detached)
+	}
+	if _, err := testPool.Exec(ctx, `UPDATE work_product_relation SET detached_at=now(),detached_by_type='user',detached_by_id=$2 WHERE id=$1`, relationID, testUserID); err != nil {
+		t.Fatal(err)
+	}
+	if !f.worker.processOneOutbox(ctx) {
+		t.Fatal("attachment deletion outbox not processed")
+	}
+	if len(api.detached) != 2 || api.detached[1] != linkedRemoteID(t, issueID)+"|https://github.com/acme/repo/pull/43" {
+		t.Fatalf("deleted attachments=%v", api.detached)
+	}
+}
+
+func TestLinearImportedCommentReappearsAfterLocalDeletion(t *testing.T) {
+	f := setupLinearWorker(t, "two_way", &fakeLinearAPI{})
+	ctx := context.Background()
+	issueID := dbfx.Issue(t, "Remote discussion recovery", testutil.Cols{"project_id": f.projectID})
+	if !f.worker.processOneOutbox(ctx) {
+		t.Fatal("issue not published")
+	}
+	remoteIssueID := linkedRemoteID(t, issueID)
+	b, err := f.worker.loadBinding(ctx, parseUUID(f.bindingID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	remote := linearapi.Comment{ID: "remote-comment-recovery", Body: "Original", UpdatedAt: time.Now().Add(-time.Minute)}
+	remote.Issue.ID = remoteIssueID
+	if err = f.worker.applyLinearComment(ctx, b, remote, false); err != nil {
+		t.Fatal(err)
+	}
+	var localID string
+	if err = testPool.QueryRow(ctx, `SELECT comment_id FROM linear_comment_link WHERE binding_id=$1 AND linear_comment_id=$2`, f.bindingID, remote.ID).Scan(&localID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = testPool.Exec(ctx, `DELETE FROM comment WHERE id=$1`, localID); err != nil {
+		t.Fatal(err)
+	}
+	remote.Body = "Restored"
+	remote.UpdatedAt = time.Now()
+	if err = f.worker.applyLinearComment(ctx, b, remote, false); err != nil {
+		t.Fatal(err)
+	}
+	var body string
+	if err = testPool.QueryRow(ctx, `SELECT content FROM comment WHERE id=$1`, localID).Scan(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body != "Linear user · Linear\n\nRestored" {
+		t.Fatalf("restored body=%q", body)
 	}
 }

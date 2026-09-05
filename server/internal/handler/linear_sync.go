@@ -223,6 +223,7 @@ func (w *LinearWorker) handleOutbox(ctx context.Context, c linearOutboxClaim) er
 	if b.Mode != "publish" && b.Mode != "two_way" { return nil }
 	token, err := w.accessToken(ctx,b.ConnectionID); if err != nil { return err }
 	if strings.HasPrefix(c.EventType, "comment_") { return w.handleCommentOutbox(ctx,c,b,token) }
+	if c.EventType == "attachment_deleted" { return w.deleteLinearWorkProductAttachment(ctx,b,c.IssueID,token,c.Payload) }
 	queries := db.New(w.db)
 	issue, err := queries.GetIssueInWorkspace(ctx,db.GetIssueInWorkspaceParams{ID:c.IssueID,WorkspaceID:b.WorkspaceID})
 	if err != nil && c.EventType != "issue_deleted" { return err }
