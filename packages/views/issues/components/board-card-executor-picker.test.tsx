@@ -328,8 +328,8 @@ describe("BoardCardContent executor picker", () => {
     expect(identifierRow).toContainElement(status);
     expect(chipRow).toBeNull();
     expect(status.compareDocumentPosition(identifier) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
-    expect(identifier.parentElement).toHaveClass("h-4", "items-center");
-    expect(status).not.toHaveClass("size-5");
+    expect(identifier.parentElement).toHaveClass("h-3", "items-center");
+    expect(status).toHaveClass("size-3");
     expect(status.querySelector("svg")).toHaveClass("size-3");
   });
 
