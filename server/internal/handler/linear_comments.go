@@ -14,6 +14,7 @@ import (
 	"github.com/patchbay-ai/patchbay/server/internal/events"
 	linearapi "github.com/patchbay-ai/patchbay/server/internal/integrations/linear"
 	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/pkg/dbid"
 	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
 )
 
@@ -165,7 +166,7 @@ func (w *LinearWorker) applyLinearComment(ctx context.Context, b workerBinding, 
 	var comment db.Comment
 	var issueRevision int64
 	if newLink {
-		localID = parseUUID(uuid.NewString())
+		localID = dbid.NewV7()
 		created, createErr := q.CreateComment(ctx, db.CreateCommentParams{ID: localID, IssueID: issueID, WorkspaceID: b.WorkspaceID, AuthorType: "system", AuthorID: parseUUID(uuid.Nil.String()), Content: body, Type: "comment", ParentID: parentID})
 		if createErr != nil {
 			return createErr
