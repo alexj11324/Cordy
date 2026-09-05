@@ -380,6 +380,17 @@ func TestLinearAttachmentDeletionWaitsForLastLiveRelation(t *testing.T) {
 	if deletions != 1 {
 		t.Fatalf("last detach queued %d attachment deletions, want 1", deletions)
 	}
+	transitionProduct := dbfx.Insert(t, "work_product", testutil.Cols{"workspace_id": testWorkspaceID, "kind": "pull_request", "provider": "github", "external_identity": "PR transition", "external_url": "https://github.com/acme/repo/pull/51"})
+	transitionRelation := dbfx.Insert(t, "work_product_relation", testutil.Cols{"workspace_id": testWorkspaceID, "work_product_id": transitionProduct, "issue_id": issueID, "relation_key": "source-transition", "relation_source": "provider_discovery", "attached_by_type": "system"})
+	if _, err := testPool.Exec(ctx, `UPDATE work_product_relation SET relation_source='provider_reference' WHERE id=$1`, transitionRelation); err != nil {
+		t.Fatal(err)
+	}
+	if err := testPool.QueryRow(ctx, `SELECT count(*) FROM linear_sync_outbox WHERE binding_id=$1 AND event_key=$2 AND event_type='attachment_deleted'`, f.bindingID, "work-product:"+transitionRelation+":attachment_deleted").Scan(&deletions); err != nil {
+		t.Fatal(err)
+	}
+	if deletions != 1 {
+		t.Fatalf("publishable-to-reference transition queued %d deletions, want 1", deletions)
+	}
 }
 
 func TestLinearImportedCommentReappearsAfterLocalDeletion(t *testing.T) {
