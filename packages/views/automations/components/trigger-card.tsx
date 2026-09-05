@@ -85,9 +85,8 @@ export function TriggerCard({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [rotateOpen, setRotateOpen] = useState(false);
   const preset = automationTriggerPreset(trigger.preset);
-  const presetLabels = t(($) => $.presets) as Record<string, string>;
   const title = preset
-    ? (presetLabels[preset.labelKey] ?? preset.id)
+    ? (t(($) => $.presets[preset.labelKey as keyof typeof $.presets]) || preset.id)
     : t(($) => $.trigger_kind[trigger.kind]);
   const parsed = useMemo(
     () => parseAutomationTriggerConfig(trigger.config),
@@ -102,7 +101,7 @@ export function TriggerCard({
     if (!canWrite || sameConfig(config, parsed)) return;
     const handle = window.setTimeout(() => {
       updateTrigger.mutate(
-        { automationId, triggerId: trigger.id, config: compactConfig(config) },
+        { automationId, triggerId: trigger.id, config: { ...compactConfig(config) } },
         {
           onError: (err) => {
             toast.error(err instanceof Error ? err.message : t(($) => $.trigger_row.toast_delete_failed));

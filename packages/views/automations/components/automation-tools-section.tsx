@@ -29,7 +29,7 @@ export function AutomationToolsSection({
 
   const persist = (next: AutomationToolsConfig) => {
     updateAutomation.mutate(
-      { id: automation.id, tools: next },
+      { id: automation.id, tools: { ...next } },
       {
         onSuccess: () => toast.success(t(($) => $.settings.toast_tools_updated)),
         onError: (err) => {

@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react";
 import { Clock, GitBranch, MessageSquare, Plus, Webhook } from "lucide-react";
 import {
-  AUTOMATION_TRIGGER_SOURCES,
   presetsForSource,
   searchTriggerCatalog,
   type AutomationTriggerPreset,
@@ -39,14 +38,6 @@ function sourceIcon(source: AutomationTriggerSource["id"]) {
   }
 }
 
-function catalogText(
-  group: Record<string, string>,
-  key: string,
-  fallback: string,
-): string {
-  return group[key] ?? fallback;
-}
-
 export function TriggerAddMenu({
   canWrite,
   onPickSchedule,
@@ -59,8 +50,10 @@ export function TriggerAddMenu({
   const { t } = useT("automations");
   const [query, setQuery] = useState("");
   const filtered = useMemo(() => searchTriggerCatalog(query), [query]);
-  const sources = t(($) => $.trigger_sources) as Record<string, string>;
-  const presetLabels = t(($) => $.presets) as Record<string, string>;
+  const sourceLabel = (key: string) =>
+    t(($) => $.trigger_sources[key as keyof typeof $.trigger_sources]) || key;
+  const presetLabel = (key: string) =>
+    t(($) => $.presets[key as keyof typeof $.presets]) || key;
 
   if (!canWrite) return null;
 
@@ -86,7 +79,7 @@ export function TriggerAddMenu({
         </div>
         {filtered.sources.map((source) => {
           const Icon = sourceIcon(source.id);
-          const label = catalogText(sources, source.labelKey, source.id);
+          const label = sourceLabel(source.labelKey);
           if (!source.nested) {
             return (
               <DropdownMenuItem
@@ -118,7 +111,7 @@ export function TriggerAddMenu({
               <DropdownMenuSubContent className="max-h-72 min-w-56 overflow-y-auto">
                 {core.map((preset) => (
                   <DropdownMenuItem key={preset.id} onClick={() => onPickPreset(preset)}>
-                    {catalogText(presetLabels, preset.labelKey, preset.id)}
+                    {presetLabel(preset.labelKey)}
                   </DropdownMenuItem>
                 ))}
                 {extra.length > 0 && (
@@ -127,7 +120,7 @@ export function TriggerAddMenu({
                     <DropdownMenuLabel>{t(($) => $.presets_group.github_only)}</DropdownMenuLabel>
                     {extra.map((preset) => (
                       <DropdownMenuItem key={preset.id} onClick={() => onPickPreset(preset)}>
-                        {catalogText(presetLabels, preset.labelKey, preset.id)}
+                        {presetLabel(preset.labelKey)}
                       </DropdownMenuItem>
                     ))}
                   </>
