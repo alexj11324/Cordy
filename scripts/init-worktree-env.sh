@@ -33,6 +33,7 @@ DATABASE_URL=postgres://patchbay:patchbay@localhost:${postgres_port}/${postgres_
 PORT=${backend_port}
 JWT_SECRET=change-me-in-production
 PATCHBAY_DEV_VERIFICATION_CODE=888888
+PATCHBAY_DEV_LOGIN=1
 PATCHBAY_SERVER_URL=ws://localhost:${backend_port}/ws
 PATCHBAY_PUBLIC_URL=http://localhost:${backend_port}
 PATCHBAY_APP_URL=${frontend_origin}
