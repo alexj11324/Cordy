@@ -2,10 +2,11 @@ package daemon
 
 import (
 	"context"
-	"github.com/patchbay-ai/patchbay/server/pkg/agent"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/patchbay-ai/patchbay/server/pkg/agent"
 )
 
 func capacityResult(code, message string) agent.Result {
@@ -106,5 +107,36 @@ func TestCapacityRecoveryCancelAndQuota(t *testing.T) {
 				t.Fatalf("quota retried: %+v", r)
 			}
 		})
+	}
+}
+
+func TestCapacityRecoveryDoesNotSumCursorSessionTotals(t *testing.T) {
+	d := newTestDaemon(t)
+	first := capacityResult("serverOverloaded", "busy")
+	first.Usage = map[string]agent.TokenUsage{"model": {InputTokens: 100}}
+	first.UsageCumulative = true
+	next := capacityResult("serverOverloaded", "busy")
+	next.Usage = map[string]agent.TokenUsage{"model": {InputTokens: 150}}
+	next.UsageCumulative = true
+	b := &fakeBackend{results: []agent.Result{next, {Status: "completed", SessionID: "original", UsageCumulative: true, Usage: map[string]agent.TokenUsage{"model": {InputTokens: 160}}}}}
+	var seq atomic.Int32
+	r, _, err := d.recoverCapacity(context.Background(), b, first, 0, agent.ExecOptions{}, d.logger, "task", "", &seq, func(context.Context, time.Duration) error { return nil })
+	if err != nil || r.Usage["model"].InputTokens != 160 {
+		t.Fatalf("cumulative usage was added: %+v err=%v", r, err)
+	}
+}
+
+func TestCapacityRecoveryRetainsUsageBeforeFreshFallback(t *testing.T) {
+	d := newTestDaemon(t)
+	first := agent.Result{Status: "failed", SessionID: "old", Usage: map[string]agent.TokenUsage{"model": {InputTokens: 100}}}
+	fresh := capacityResult("serverOverloaded", "busy")
+	fresh.UsageCumulative = true
+	fresh.Usage = map[string]agent.TokenUsage{"model": {InputTokens: 150}}
+	combined, tools := reconcileFreshRetryResult(first, first.Usage, 0, fresh, 0, nil)
+	b := &fakeBackend{results: []agent.Result{{Status: "completed", SessionID: "original", UsageCumulative: true, Usage: map[string]agent.TokenUsage{"model": {InputTokens: 160}}}}}
+	var seq atomic.Int32
+	r, _, err := d.recoverCapacity(context.Background(), b, combined, tools, agent.ExecOptions{}, d.logger, "task", "", &seq, func(context.Context, time.Duration) error { return nil })
+	if err != nil || r.Usage["model"].InputTokens != 260 {
+		t.Fatalf("prior-session usage lost: %+v err=%v", r, err)
 	}
 }

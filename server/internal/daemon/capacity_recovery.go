@@ -88,7 +88,22 @@ func (d *Daemon) recoverCapacity(ctx context.Context, backend agent.Backend, res
 			prior.RecoveryResumeSafe = false
 			return prior, tools, nil
 		}
-		next.Usage = mergeUsage(prior.Usage, next.Usage)
+		if next.UsageCumulative && next.SessionID == prior.SessionID {
+			// Cursor reports authoritative totals for this same session. Keep
+			// the latest snapshot, retaining models absent from that snapshot.
+			totals := make(map[string]agent.TokenUsage, len(prior.Usage)+len(next.Usage))
+			for model, usage := range prior.Usage {
+				totals[model] = usage
+			}
+			sessionTotals := mergeUsage(prior.UsageOutsideSession, next.Usage)
+			for model := range next.Usage {
+				totals[model] = sessionTotals[model]
+			}
+			next.Usage = totals
+		} else {
+			next.Usage = mergeUsage(prior.Usage, next.Usage)
+		}
+		next.UsageOutsideSession = prior.UsageOutsideSession
 		if next.SessionID == "" {
 			next.SessionID = prior.SessionID
 			next.RecoveryResumeSafe = false

@@ -467,6 +467,7 @@ func (b *cursorBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 			DurationMs:         duration.Milliseconds(),
 			SessionID:          sessionID,
 			Usage:              resultUsage,
+			UsageCumulative:    hasResultUsage,
 			RecoveryResumeSafe: cleanupConfirmed && writeErr == nil && (scanErr == nil || resultSeen) && recoveryError == "" && sessionID != "" && ((resultSeen && resultIsError) || protocolError != ""),
 		}
 	}()

@@ -267,11 +267,8 @@ func (b *claudeBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 				providerErrorCode = assistantErrorCode
 				if msg.IsError && len(msg.Errors) > 0 {
 					finalResultText = strings.Join(msg.Errors, "\n")
-					// Do not erase a definite billing/auth failure with a generic final diagnostic.
-					switch providerErrorCode {
-					case "", "rate_limit", "overloaded", "unknown":
-						providerErrorCode = ""
-					}
+					// The array may contain only HTTP 429; retain the assistant's
+					// typed cause. Final quota/auth diagnostics override it below.
 				}
 				if msg.IsError && msg.Subtype != "" && msg.Subtype != "success" && msg.Subtype != "error_during_execution" {
 					providerErrorCode = msg.Subtype
@@ -396,6 +393,10 @@ func (b *claudeBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 				providerErrorCode = "billing_error"
 			case taskfailure.ReasonAgentProviderAuthOrAccess:
 				providerErrorCode = "authentication_failed"
+			case taskfailure.ReasonAgentProviderCapacityOrRateLimit, taskfailure.ReasonAgentUnknown:
+				// Generic diagnostics can retain the structured temporary cause.
+			default:
+				providerErrorCode = "other" // final model/config/context/process failures are not capacity
 			}
 		}
 

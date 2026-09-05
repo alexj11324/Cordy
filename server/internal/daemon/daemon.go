@@ -8678,6 +8678,7 @@ func reconcileFreshRetryResult(first agent.Result, firstUsage map[string]agent.T
 		first.Usage = firstUsage
 		return first, firstTools
 	case retry.SessionID != "":
+		retry.UsageOutsideSession = mergeUsage(firstUsage, retry.UsageOutsideSession)
 		retry.Usage = mergeUsage(firstUsage, retry.Usage)
 		return retry, retryTools
 	case retry.Status == "completed":

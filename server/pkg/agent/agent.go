@@ -208,9 +208,14 @@ type Result struct {
 	ProviderErrorCode string
 	// RecoveryResumeSafe means the prior process was reaped and a thread ID is available.
 	RecoveryResumeSafe bool
-	DurationMs         int64
-	SessionID          string
-	Usage              map[string]TokenUsage // keyed by model name
+	// UsageCumulative marks authoritative session totals, rather than per-attempt increments.
+	UsageCumulative bool
+	// UsageOutsideSession is daemon bookkeeping for preceding fresh-session attempts.
+	// It is included in Usage, but must survive replacement of current session totals.
+	UsageOutsideSession map[string]TokenUsage
+	DurationMs          int64
+	SessionID           string
+	Usage               map[string]TokenUsage // keyed by model name
 	// ResumeRejected is positive evidence that this run's requested resume
 	// was permanently refused — the transcript is gone, the session belongs to
 	// another provider account, OR the session still exists but its history

@@ -50,8 +50,11 @@ func runCapacityStreamFixture(t *testing.T, provider, frames string, opts ExecOp
 func TestStreamCapacityCleanupEvidence(t *testing.T) {
 	for _, provider := range []string{"claude", "cursor"} {
 		t.Run(provider, func(t *testing.T) {
-			frames := `{"type":"system","subtype":"init","session_id":"original"}` + "\n" + `{"type":"result","is_error":true,"session_id":"original","result":"API Error: 529 overloaded_error"}`
+			frames := `{"type":"system","subtype":"init","session_id":"original"}` + "\n" + `{"type":"result","is_error":true,"session_id":"original","result":"API Error: 529 overloaded_error","inputTokens":100}`
 			result, _ := runCapacityStreamFixture(t, provider, frames, ExecOptions{})
+			if result.UsageCumulative != (provider == "cursor") {
+				t.Fatalf("wrong usage basis: %+v", result)
+			}
 			if result.Status != "failed" || result.SessionID != "original" || !result.RecoveryResumeSafe {
 				t.Fatalf("no safe recovery evidence: %+v", result)
 			}
@@ -95,7 +98,7 @@ func TestClaudeCapacityStructuredFailure(t *testing.T) {
 		{"native rate limit", `{"type":"assistant","error":"rate_limit","session_id":"original","message":{"role":"assistant","content":[{"type":"text","text":"429"}]}}` + "\n" + `{"type":"result","is_error":true,"session_id":"original","result":"429"}`, "rate_limit", "429"},
 		{"terminal error array", `{"type":"result","subtype":"error_during_execution","is_error":true,"session_id":"original","errors":["API Error: 529 overloaded_error"]}`, "", "overloaded_error"},
 		{"budget beats overloaded", `{"type":"assistant","error":"overloaded","session_id":"original","message":{"role":"assistant","content":[]}}` + "\n" + `{"type":"result","subtype":"error_max_budget_usd","is_error":true,"session_id":"original","errors":["budget exceeded"]}`, "billing_error", "budget exceeded"},
-		{"quota beats prior overloaded", `{"type":"assistant","error":"overloaded","session_id":"original","message":{"role":"assistant","content":[]}}` + "\n" + `{"type":"result","subtype":"error_during_execution","is_error":true,"session_id":"original","errors":["usage limit reached"]}`, "", "usage limit"},
+		{"quota beats prior overloaded", `{"type":"assistant","error":"overloaded","session_id":"original","message":{"role":"assistant","content":[]}}` + "\n" + `{"type":"result","subtype":"error_during_execution","is_error":true,"session_id":"original","errors":["usage limit reached"]}`, "billing_error", "usage limit"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r, _ := runCapacityStreamFixture(t, "claude", `{"type":"system","subtype":"init","session_id":"original"}`+"\n"+tc.frames, ExecOptions{})
@@ -156,6 +159,34 @@ func TestClaudeCapacityBlockingErrorSurvivesLaterAssistant(t *testing.T) {
 			r, _ := runCapacityStreamFixture(t, "claude", frames, ExecOptions{})
 			if r.ProviderErrorCode != "billing_error" {
 				t.Fatalf("definite blocking error lost: %+v", r)
+			}
+		})
+	}
+}
+
+func TestClaudeCapacityPreservesTypedErrorWithGenericArray(t *testing.T) {
+	for _, code := range []string{"rate_limit", "overloaded"} {
+		t.Run(code, func(t *testing.T) {
+			frames := `{"type":"system","subtype":"init","session_id":"original"}` + "\n" +
+				`{"type":"assistant","error":"` + code + `","session_id":"original","message":{"role":"assistant","content":[]}}` + "\n" +
+				`{"type":"result","subtype":"error_during_execution","is_error":true,"session_id":"original","errors":["HTTP 429"]}`
+			r, _ := runCapacityStreamFixture(t, "claude", frames, ExecOptions{})
+			if r.ProviderErrorCode != code {
+				t.Fatalf("typed transient failure was erased: %+v", r)
+			}
+		})
+	}
+}
+
+func TestClaudeCapacityFinalNonTransientErrorOverridesMetadata(t *testing.T) {
+	for _, message := range []string{"model not found", "context length exceeded", "missing API key"} {
+		t.Run(message, func(t *testing.T) {
+			frames := `{"type":"system","subtype":"init","session_id":"original"}` + "\n" +
+				`{"type":"assistant","error":"overloaded","session_id":"original","message":{"role":"assistant","content":[]}}` + "\n" +
+				`{"type":"result","subtype":"error_during_execution","is_error":true,"session_id":"original","errors":["` + message + `"]}`
+			r, _ := runCapacityStreamFixture(t, "claude", frames, ExecOptions{})
+			if r.ProviderErrorCode == "overloaded" || r.ProviderErrorCode == "rate_limit" {
+				t.Fatalf("terminal non-transient error became retryable: %+v", r)
 			}
 		})
 	}
