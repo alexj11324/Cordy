@@ -8,6 +8,8 @@
     "dev:web": "turbo dev --filter=@patchbay/web",
     "dev:docs": "turbo dev --filter=@patchbay/docs",
     "dev:desktop": "turbo dev --filter=@patchbay/desktop",
+    "dev:cards": "pnpm --filter @patchbay/desktop dev:cards",
+    "test:cards": "playwright test --config apps/desktop/card-preview/playwright.config.ts",
     "dev:desktop:staging": "turbo dev:staging --filter=@patchbay/desktop",
     "dev:mobile": "pnpm -C apps/mobile dev",
     "dev:mobile:staging": "pnpm -C apps/mobile dev:staging",

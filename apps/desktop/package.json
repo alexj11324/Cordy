@@ -20,11 +20,13 @@
     "bundle-cli": "node scripts/bundle-cli.mjs",
     "brand-dev-electron": "node scripts/brand-dev-electron.mjs",
     "dev": "node scripts/dev.mjs",
+    "dev:cards": "vite --config card-preview/vite.config.ts",
     "dev:staging": "node scripts/dev.mjs --mode staging",
     "build": "electron-vite build",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
-    "typecheck": "pnpm run typecheck:node && pnpm run typecheck:web",
+    "typecheck:cards": "tsc --noEmit -p card-preview/tsconfig.json",
+    "typecheck": "pnpm run typecheck:node && pnpm run typecheck:web && pnpm run typecheck:cards",
     "preview": "electron-vite preview",
     "package": "node scripts/package.mjs",
     "package:all": "node scripts/package.mjs --all-platforms --publish never",
@@ -62,6 +64,7 @@
     "@electron-toolkit/tsconfig": "^2.0.0",
     "@patchbay/eslint-config": "workspace:*",
     "@patchbay/tsconfig": "workspace:*",
+    "@playwright/test": "^1.58.2",
     "@tailwindcss/vite": "^4",
     "@testing-library/jest-dom": "catalog:",
     "@testing-library/react": "catalog:",
@@ -76,6 +79,7 @@
     "jsdom": "catalog:",
     "tailwindcss": "^4",
     "typescript": "catalog:",
+    "vite": "8.0.1",
     "vitest": "catalog:"
   }
 }
