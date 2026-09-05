@@ -181,6 +181,14 @@ func TestLinearBindingSeedIncludesExistingComments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	systemParent, err := db.New(testPool).CreateComment(ctx, db.CreateCommentParams{IssueID: parseUUID(issueID), WorkspaceID: parseUUID(testWorkspaceID), AuthorType: "system", AuthorID: parseUUID("00000000-0000-0000-0000-000000000000"), Content: "Internal progress", Type: "progress_update"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	orphanedReply, err := db.New(testPool).CreateComment(ctx, db.CreateCommentParams{IssueID: parseUUID(issueID), WorkspaceID: parseUUID(testWorkspaceID), AuthorType: "member", AuthorID: parseUUID(testUserID), Content: "Reply to internal progress", Type: "comment", ParentID: systemParent.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err = testPool.Exec(ctx, `DELETE FROM linear_sync_outbox WHERE binding_id=$1`, f.bindingID); err != nil {
 		t.Fatal(err)
 	}
@@ -208,14 +216,21 @@ func TestLinearBindingSeedIncludesExistingComments(t *testing.T) {
 	if queued != 1 || linked != 1 {
 		t.Fatalf("queued=%d linked=%d", queued, linked)
 	}
+	var degraded int
+	if err = testPool.QueryRow(ctx, `SELECT count(*) FROM linear_sync_outbox WHERE binding_id=$1 AND payload->>'comment_id'=$2 AND payload->'parent_id'='null'::jsonb`, f.bindingID, uuidToString(orphanedReply.ID)).Scan(&degraded); err != nil {
+		t.Fatal(err)
+	}
+	if degraded != 1 {
+		t.Fatal("reply to excluded system comment was not seeded as a root")
+	}
 	api := &commentMemoryAPI{fakeLinearAPI: f.api, comments: map[string]linearapi.Comment{}}
 	f.worker.api = api
-	for range 3 {
+	for range 4 {
 		if !f.worker.processOneOutbox(ctx) {
 			t.Fatal("seeded issue/comment outbox was not processed in FIFO order")
 		}
 	}
-	if api.creates != 2 || len(api.comments) != 2 {
+	if api.creates != 3 || len(api.comments) != 3 {
 		t.Fatalf("seeded comments created=%d remote=%d", api.creates, len(api.comments))
 	}
 	var replyLinked int
@@ -334,12 +349,22 @@ func TestLinearAttachmentDeletionWaitsForLastLiveRelation(t *testing.T) {
 		t.Fatal("issue not published")
 	}
 	productID := dbfx.Insert(t, "work_product", testutil.Cols{"workspace_id": testWorkspaceID, "kind": "pull_request", "provider": "github", "external_identity": "PR shared", "external_url": "https://github.com/acme/repo/pull/50"})
+	reference := dbfx.Insert(t, "work_product_relation", testutil.Cols{"workspace_id": testWorkspaceID, "work_product_id": productID, "issue_id": issueID, "relation_key": "provider-reference", "relation_source": "provider_reference", "attached_by_type": "system"})
+	if _, err := testPool.Exec(ctx, `UPDATE work_product_relation SET detached_at=now(),detached_by_type='user',detached_by_id=$2 WHERE id=$1`, reference, testUserID); err != nil {
+		t.Fatal(err)
+	}
+	var deletions int
+	if err := testPool.QueryRow(ctx, `SELECT count(*) FROM linear_sync_outbox WHERE binding_id=$1 AND issue_id=$2 AND event_type='attachment_deleted'`, f.bindingID, issueID).Scan(&deletions); err != nil {
+		t.Fatal(err)
+	}
+	if deletions != 0 {
+		t.Fatalf("provider_reference detach queued %d deletion events", deletions)
+	}
 	relation1 := dbfx.Insert(t, "work_product_relation", testutil.Cols{"workspace_id": testWorkspaceID, "work_product_id": productID, "issue_id": issueID, "relation_key": "shared-1", "relation_source": "manual_explicit", "attached_by_type": "user", "attached_by_id": testUserID})
 	relation2 := dbfx.Insert(t, "work_product_relation", testutil.Cols{"workspace_id": testWorkspaceID, "work_product_id": productID, "issue_id": issueID, "relation_key": "shared-2", "relation_source": "manual_explicit", "attached_by_type": "user", "attached_by_id": testUserID})
 	if _, err := testPool.Exec(ctx, `UPDATE work_product_relation SET detached_at=now(),detached_by_type='user',detached_by_id=$2 WHERE id=$1`, relation1, testUserID); err != nil {
 		t.Fatal(err)
 	}
-	var deletions int
 	if err := testPool.QueryRow(ctx, `SELECT count(*) FROM linear_sync_outbox WHERE binding_id=$1 AND issue_id=$2 AND event_type='attachment_deleted'`, f.bindingID, issueID).Scan(&deletions); err != nil {
 		t.Fatal(err)
 	}

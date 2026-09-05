@@ -7,6 +7,7 @@ DECLARE
 BEGIN
     IF TG_OP = 'DELETE' THEN source_relation := OLD; ELSE source_relation := NEW; END IF;
     IF source_relation.issue_id IS NULL THEN RETURN COALESCE(NEW, OLD); END IF;
+    IF source_relation.relation_source NOT IN ('manual_explicit','task_explicit','execution_branch_discovery','provider_discovery') THEN RETURN COALESCE(NEW, OLD); END IF;
     SELECT kind, external_url INTO product FROM work_product
     WHERE id=source_relation.work_product_id AND workspace_id=source_relation.workspace_id;
     IF product.kind <> 'pull_request' OR COALESCE(product.external_url, '') = '' THEN RETURN COALESCE(NEW, OLD); END IF;
