@@ -22,6 +22,14 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url));
 
+function desktopChannelFromArgv(argv) {
+  const modeIndex = argv.indexOf("--mode");
+  if (modeIndex >= 0 && argv[modeIndex + 1] === "staging") return "staging";
+  return "development";
+}
+
+process.env.PATCHBAY_DESKTOP_CHANNEL = desktopChannelFromArgv(process.argv.slice(2));
+
 applyWorktreeDevEnv(process.env, {
   root: repoRootFromScriptDir(here),
   log: true,

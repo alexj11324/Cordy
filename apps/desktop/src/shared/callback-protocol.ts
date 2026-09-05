@@ -3,7 +3,7 @@
 
 export const PRODUCTION_DESKTOP_CALLBACK_PROTOCOL = "patchbay";
 const DEVELOPMENT_DESKTOP_CALLBACK_PROTOCOL =
-  /^patchbay-canary-[a-f0-9]{16}$/;
+  /^patchbay-(?:canary|staging)-[a-f0-9]{16}$/;
 
 export interface DesktopPreviewIdentity {
   bundleId: string;

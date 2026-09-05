@@ -30,7 +30,7 @@ var (
 	desktopHandoffOpaquePattern    = regexp.MustCompile(`^[A-Za-z0-9._~-]{43,128}$`)
 	desktopHandoffCodePattern      = regexp.MustCompile(`^pbd_[A-Za-z0-9_-]{43}$`)
 	desktopBrokerSecretPattern     = regexp.MustCompile(`^[a-f0-9]{64}$`)
-	desktopCallbackProtocolPattern = regexp.MustCompile(`^(?:patchbay|patchbay-canary-[a-f0-9]{16})$`)
+	desktopCallbackProtocolPattern = regexp.MustCompile(`^(?:patchbay|patchbay-(?:canary|staging)-[a-f0-9]{16})$`)
 )
 
 type desktopAuthHandoffRequest struct {

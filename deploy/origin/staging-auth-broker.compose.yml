@@ -1,0 +1,19 @@
+name: patchbay-staging-auth-broker
+services:
+  broker:
+    image: ${PATCHBAY_AUTH_BROKER_IMAGE:?Set PATCHBAY_AUTH_BROKER_IMAGE to an immutable GHCR digest}
+    restart: unless-stopped
+    read_only: true
+    ports:
+      - "127.0.0.1:43101:3000"
+    environment:
+      PATCHBAY_API_ORIGIN: ${PATCHBAY_API_ORIGIN:-https://api.staging.aspectlylabs.com}
+      PATCHBAY_AUTH_BROKER_ORIGIN: ${PATCHBAY_AUTH_BROKER_ORIGIN:-https://accounts.staging.aspectlylabs.com}
+      CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY:?Set CLERK_PUBLISHABLE_KEY}
+      PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN: ${PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN:?Set PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN}
+      PATCHBAY_ORIGIN_AUTH_TOKEN: ${PATCHBAY_ORIGIN_AUTH_TOKEN:?Set PATCHBAY_ORIGIN_AUTH_TOKEN}
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m,uid=1001,gid=1001
+      - /app/apps/auth-broker/.next/cache:rw,noexec,nosuid,size=32m,uid=1001,gid=1001
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]

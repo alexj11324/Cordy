@@ -24,6 +24,20 @@ describe("macOS development bundle identity", () => {
     );
   });
 
+  it("keeps staging identities off the Canary and production prefixes", () => {
+    const staging = devBundleIdentity("/worktrees/first/apps/desktop", "first", "staging");
+    const canary = devBundleIdentity("/worktrees/first/apps/desktop", "first");
+    expect(staging.name).toBe("Orvilo Staging first");
+    expect(staging.bundleId).toMatch(/^ai\.patchbay\.desktop\.staging\.[a-f0-9]{16}$/);
+    expect(staging.callbackProtocol).toMatch(/^patchbay-staging-[a-f0-9]{16}$/);
+    expect(staging.callbackProtocol).toBe(
+      `patchbay-staging-${staging.bundleId.split(".").at(-1)}`,
+    );
+    expect(staging.bundleId).not.toBe(canary.bundleId);
+    expect(staging.callbackProtocol).not.toBe(canary.callbackProtocol);
+    expect(staging.name).not.toBe(canary.name);
+  });
+
   it.runIf(process.platform === "darwin")("repairs an already-branded app missing its native callback without changing its shared inode", () => {
     const dir = mkdtempSync(join(tmpdir(), "patchbay-dev-plist-"));
     try {

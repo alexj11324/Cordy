@@ -38,6 +38,21 @@ describe("desktop callback protocol", () => {
     ).toBe("patchbay-canary-5718c47b86bf9ece");
   });
 
+  it("isolates Desktop staging from Canary and production callbacks", () => {
+    expect(
+      resolveDesktopCallbackProtocol({
+        packaged: false,
+        developmentProtocol: "patchbay-staging-5718c47b86bf9ece",
+      }),
+    ).toBe("patchbay-staging-5718c47b86bf9ece");
+    expect(() =>
+      resolveDesktopCallbackProtocol({
+        packaged: false,
+        developmentProtocol: "patchbay-staging",
+      }),
+    ).toThrow("development callback protocol");
+  });
+
   it("rejects a missing or shared development protocol", () => {
     expect(() =>
       resolveDesktopCallbackProtocol({ packaged: false }),

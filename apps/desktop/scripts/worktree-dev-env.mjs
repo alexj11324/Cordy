@@ -102,8 +102,9 @@ export function appSuffixForPath(path) {
 // The OS callback identity must not share the 1000-slot port namespace. A
 // truncated SHA-256 of the full app path stays stable for this checkout and
 // makes collisions between arbitrary worktree locations negligible.
-export function callbackProtocolForPath(appPath) {
-  return `patchbay-canary-${identityHashForPath(appPath)}`;
+export function callbackProtocolForPath(appPath, channel = "development") {
+  const prefix = channel === "staging" ? "patchbay-staging" : "patchbay-canary";
+  return `${prefix}-${identityHashForPath(appPath)}`;
 }
 
 // A linked git worktree has a `.git` FILE (a "gitdir:" pointer); the primary
@@ -136,14 +137,17 @@ export function applyWorktreeDevEnv(env, { root, log = false } = {}) {
   if (linked && !hasSuffix) env.DESKTOP_APP_SUFFIX = appSuffixForPath(root);
   // Callback ownership is not an override knob: letting ambient shell state
   // choose it can make two otherwise isolated checkouts claim one OS scheme.
+  const channel = env.PATCHBAY_DESKTOP_CHANNEL === "staging" ? "staging" : "development";
   env.DESKTOP_CALLBACK_PROTOCOL = callbackProtocolForPath(
     join(root, "apps", "desktop"),
+    channel,
   );
 
   if (log) {
+    const display = channel === "staging" ? "Orvilo Staging" : "Orvilo Canary";
     const appName = env.DESKTOP_APP_SUFFIX
-      ? `Patchbay Canary ${env.DESKTOP_APP_SUFFIX}`
-      : "Patchbay Canary";
+      ? `${display} ${env.DESKTOP_APP_SUFFIX}`
+      : display;
     const renderer = env.DESKTOP_RENDERER_PORT ?? "5173";
     console.log(
       `[dev:desktop] checkout isolation → renderer port ${renderer}, ` +
