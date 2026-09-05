@@ -18,6 +18,7 @@ const TEST_RESOURCES = {
 type MockConfigState = {
   workspaceCreationDisabled: boolean;
   daemonAppUrl: string;
+  localWorktreeSupported?: boolean;
 };
 
 const mockLogout = vi.hoisted(() => vi.fn());
@@ -53,6 +54,7 @@ vi.mock("sonner", () => ({ toast: { error: mockToastError } }));
 vi.mock("../../platform/local-directory", () => ({
   isDesktopShell: mockDesktop,
   pickDirectories: mockPickDirectories,
+  validateLocalDirectory: vi.fn().mockResolvedValue({ok: true, is_git_repo: true, has_commits: true}),
 }));
 vi.mock("../../platform/use-local-daemon-status", () => ({
   useLocalDaemonStatus: mockDaemon,
@@ -96,7 +98,7 @@ function renderStep({
 }) {
   mockUseConfigStore.mockImplementation(
     (selector: (state: MockConfigState) => unknown) =>
-      selector({ workspaceCreationDisabled: disabled, daemonAppUrl }),
+      selector({ workspaceCreationDisabled: disabled, daemonAppUrl, localWorktreeSupported: true }),
   );
   return render(<StepWorkspace existing={existing} onCreated={onCreated} />, {
     wrapper: I18nWrapper,
@@ -243,7 +245,8 @@ describe("StepWorkspace — project attachment", () => {
               local_path: "/projects/api",
               daemon_id: "daemon-1",
               label: "api",
-              execution_mode: "in_place",
+              execution_mode: "worktree",
+              worktree_base: "head",
             },
           },
         ],

@@ -27,10 +27,6 @@ import type {
   LocalDirectoryResourceRef,
   ProjectResource,
 } from "@patchbay/core/types";
-import {
-  runtimeAdvertisesLocalWorktree,
-  runtimeListOptions,
-} from "@patchbay/core/runtimes";
 import { useConfigStore } from "@patchbay/core/config";
 import { Badge } from "@patchbay/ui/components/ui/badge";
 import { Button } from "@patchbay/ui/components/ui/button";
@@ -47,6 +43,8 @@ import {
 import {
   isDesktopShell,
   pickDirectory,
+  cloneProjectRepository,
+  confirmProjectRepository,
   useLocalDaemonStatus,
   validateLocalDirectory,
   type ValidateLocalDirectoryResult,
@@ -100,6 +98,7 @@ type ModeDialogState = {
   resource?: ProjectResource & { resource_ref: LocalDirectoryResourceRef };
   /** Only used when adding. */
   label?: string;
+  remoteUrl?: string;
 };
 
 export function ProjectResourcesSection({ projectId }: { projectId: string }) {
@@ -134,22 +133,10 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
   // would have to infer it from data the server wrote, and that inference is
   // what told a user on the newest release to upgrade it (#7113). The save is
   // gated server-side and surfaced here as an inline error instead.
-  const { data: runtimes = [] } = useQuery(runtimeListOptions(wsId));
   // The one thing the client must still check up front: whether this server
   // performs that gate at all. One declared boolean, no inference — servers
   // that predate it drop execution_mode and answer 201.
   const serverValidatesWorktree = useConfigStore((state) => state.localWorktreeSupported);
-  // Keyed on the resource's OWN daemon, not the machine the browser happens to
-  // be on: a resource is pinned to one machine, and its mode can legitimately
-  // be changed from the web app or from a different device. Using the local
-  // daemon here would report "too old" for every resource whenever the viewer
-  // is not on that machine.
-  // Capability, not version, and judged by the daemon's newest runtime row —
-  // see runtimeAdvertisesLocalWorktree for why an any-match would keep saying
-  // yes after a downgrade.
-  const advertisesWorktree = (daemonId: string | null) =>
-    runtimeAdvertisesLocalWorktree(runtimes, daemonId);
-
   const attachedUrls = new Set(
     resources.filter(isGithubRef).map((r) => r.resource_ref.url),
   );
@@ -186,7 +173,7 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
     }
   };
 
-  const handleAttachLocalDirectory = async () => {
+  const handleAttachLocalDirectory = async (cloneUrl?: string) => {
     if (picking) return;
     setPicking(true);
     try {
@@ -201,11 +188,13 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
         toast.error(t(($) => $.resources.toast_local_daemon_already_attached));
         return;
       }
-      const picked = await pickDirectory();
+      const picked = cloneUrl ? await cloneProjectRepository(cloneUrl) : await pickDirectory();
       if (!picked.ok) {
         if (picked.reason && picked.reason !== "cancelled") {
           toast.error(
-            picked.error ?? t(($) => $.resources.toast_local_pick_failed),
+            cloneUrl
+              ? cloneFailureMessage(picked.reason, t)
+              : ("error" in picked && typeof picked.error === "string" ? picked.error : t(($) => $.resources.toast_local_pick_failed)),
           );
         }
         return;
@@ -231,25 +220,15 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
         );
         return;
       }
-      // Ask for the execution mode before creating. It is part of what the
-      // user is choosing — whether tasks edit this folder or hand back a
-      // branch — not a setting to discover afterwards.
+      if (!await confirmProjectRepository(path, [...attachedUrls])) return;
+      const remotes = validation.remotes ?? [];
+      const remoteUrl = remotes.find(remote => remote.name === "origin")?.url ?? (remotes.length === 1 ? remotes[0]?.url : undefined);
       setModeError(null);
       setModeDialog({
-        path,
-        daemonId: localDaemonId,
-        // Same preselection rule as the create-project flow: a git repo this
-        // daemon can actually run worktree mode on starts on parallel, anything
-        // else starts on direct. Only the PRESELECTION differs by folder — the
-        // user still confirms, and existing resources keep whatever they have.
-        mode:
-          validation.is_git_repo === true &&
-          serverValidatesWorktree &&
-          advertisesWorktree(localDaemonId)
-            ? "worktree"
-            : "in_place",
-        isGitRepo: validation.is_git_repo,
+        path, daemonId: localDaemonId, mode: "worktree",
+        isGitRepo: validation.is_git_repo === true && validation.has_commits === false ? false : validation.is_git_repo,
         label: fallbackLabel,
+        remoteUrl: attachedUrls.size === 0 ? remoteUrl : undefined,
       });
       setAddOpen(false);
     } catch (err) {
@@ -279,12 +258,15 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
           data: {
             // Spread first so every other ref field survives the edit — the
             // server replaces the whole ref, it does not deep-merge.
-            resource_ref: { ...ref, execution_mode: mode },
+            resource_ref: { ...ref, execution_mode: mode, worktree_base: "head" },
           },
         });
         toast.success(t(($) => $.resources.toast_local_mode_updated));
       } else {
         if (!localDaemonId) return;
+        if (modeDialog.remoteUrl && !attachedUrls.has(modeDialog.remoteUrl)) {
+          await createResource.mutateAsync({ resource_type: "github_repo", resource_ref: { url: modeDialog.remoteUrl } });
+        }
         await createResource.mutateAsync({
           resource_type: "local_directory",
           resource_ref: {
@@ -292,6 +274,7 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
             daemon_id: localDaemonId,
             label: modeDialog.label ?? modeDialog.path,
             execution_mode: mode,
+    worktree_base: "head",
           },
         });
         toast.success(t(($) => $.resources.toast_local_attached));
@@ -381,7 +364,7 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
                   key={resource.id}
                   resource={resource}
                   localDaemonId={localDaemonId}
-                  canEdit={desktopMode}
+                  canEdit={desktopMode && (!isLocalDirectoryRef(resource) || resource.resource_ref.daemon_id === localDaemonId)}
                   onRemove={() => handleRemove(resource)}
                   onRenameLocalDirectory={handleRenameLocalDirectory}
                   onEditLocalDirectoryMode={(target) => {
@@ -492,6 +475,14 @@ export function ProjectResourcesSection({ projectId }: { projectId: string }) {
           </Popover>
           {desktopMode && (
             <div className="flex flex-col">
+              {!hasLocalDirectoryForCurrentDaemon && [...attachedUrls].map(url => (
+                <Button key={url} variant="ghost" size="sm" className="h-auto justify-start whitespace-normal px-2 text-caption"
+                  disabled={picking || createResource.isPending || !daemonStatus.running}
+                  onClick={() => void handleAttachLocalDirectory(url)}>
+                  <FolderGit className="size-3 shrink-0" />
+                  {t(($) => $.resources.clone_repository, { repo: githubShortLabel(url) })}
+                </Button>
+              ))}
               <Button
                 variant="ghost"
                 size="sm"
@@ -883,5 +874,16 @@ function localValidationMessage(
     case "error":
     default:
       return result.error ?? strings.fallback;
+  }
+}
+
+function cloneFailureMessage(reason: string | undefined, t: ReturnType<typeof useT<"projects">>["t"]) {
+  switch (reason) {
+    case "authentication_required": return t(($) => $.resources.clone_authentication_required);
+    case "access_denied": return t(($) => $.resources.clone_access_denied);
+    case "repository_unavailable": return t(($) => $.resources.clone_repository_unavailable);
+    case "network_error": return t(($) => $.resources.clone_network_error);
+    case "destination_exists": return t(($) => $.resources.clone_destination_exists);
+    default: return t(($) => $.resources.clone_failed);
   }
 }

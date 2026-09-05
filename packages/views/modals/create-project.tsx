@@ -67,10 +67,6 @@ import {
   validateLocalDirectory,
 } from "../platform/local-directory";
 import { useLocalDaemonStatus } from "../platform/use-local-daemon-status";
-import {
-  runtimeAdvertisesLocalWorktree,
-  runtimeListOptions,
-} from "@patchbay/core/runtimes";
 import { useConfigStore } from "@patchbay/core/config";
 import type { LocalDirectoryExecutionMode } from "@patchbay/core/types";
 import { LocalDirectoryModeOptions } from "../projects/components/local-directory-mode-dialog";
@@ -100,6 +96,7 @@ export function buildLocalDirectoryResourceRef({
     daemon_id: daemonId,
     ...(label ? { label } : {}),
     execution_mode: mode,
+    worktree_base: "head",
   };
 }
 
@@ -175,17 +172,14 @@ export function CreateProjectModal({ onClose }: { onClose: () => void }) {
     repo.url.toLowerCase().includes(repoQuery),
   );
 
-  // A project's source is binary: either a set of GitHub repos OR a local
-  // working directory — never both. Mode is the source of truth for what
-  // gets persisted on submit; switching mode does NOT clear the other
-  // side's stash, so toggling back and forth restores the user's prior
-  // selection. Only the mode-matching side is sent to the API. Local mode
-  // is hidden entirely on web (no daemon to bind the path to).
+  // Local selection discovers its remote automatically; the local directory
+  // and shared remote are saved together. Remote-only setup remains on web.
   const desktop = isDesktopShell();
   const daemonStatus = useLocalDaemonStatus();
-  const [sourceMode, setSourceMode] = useState<"repos" | "local">("repos");
+  const [sourceMode, setSourceMode] = useState<"repos" | "local">(desktop ? "local" : "repos");
   const [selectedLocalPath, setSelectedLocalPath] = useState<string | null>(null);
   const [selectedLocalLabel, setSelectedLocalLabel] = useState<string | null>(null);
+  const [detectedRemote, setDetectedRemote] = useState<string | undefined>();
   const [localPickError, setLocalPickError] = useState<string | null>(null);
   const [localPicking, setLocalPicking] = useState(false);
   // Execution mode is chosen here rather than after creation: it decides
@@ -201,25 +195,6 @@ export function CreateProjectModal({ onClose }: { onClose: () => void }) {
   const [localIsGitRepo, setLocalIsGitRepo] = useState<boolean | undefined>(undefined);
   const [localModeOpen, setLocalModeOpen] = useState(false);
 
-  // Worktree mode needs a daemon new enough to implement it; the server refuses
-  // to save the resource otherwise. In this flow the resource is attached in the
-  // same call that creates the project, so an un-caught rejection would fail the
-  // whole creation — check up front and disable the option instead.
-  const { data: runtimes = [] } = useQuery(runtimeListOptions(wsId));
-  // Capability, not version: a dev-built daemon reports a git-describe string
-  // that the version floor exempts, so the version check passed for a binary
-  // with no worktree implementation (MUL-5707). A backend too old to record the
-  // capability at all is its own answer — blaming this machine for that sent a
-  // user off to update the one piece already on the newest release (#7113).
-  // Preselection only — the server gates the save, including on this bundled
-  // create path, and rejects with a message the modal surfaces.
-  const localAdvertisesWorktree = runtimeAdvertisesLocalWorktree(
-    runtimes,
-    daemonStatus.daemonId,
-  );
-  // One declared boolean from the live server. Servers older than the worktree
-  // save gate drop execution_mode and answer 201, so "the backend will check"
-  // is only true once the backend says it checks (#7113).
   const serverValidatesWorktree = useConfigStore((state) => state.localWorktreeSupported);
   const worktreeUnavailableReason =
     localIsGitRepo === false
@@ -227,28 +202,8 @@ export function CreateProjectModal({ onClose }: { onClose: () => void }) {
       : !serverValidatesWorktree
         ? ("server_outdated" as const)
         : undefined;
-  // Preselection, not a default behavior change: when the folder is a git repo
-  // and the machine has advertised that it can run worktree mode, parallel is
-  // the better fit, so it starts selected — visibly, in a control the user can
-  // flip in one click before creating anything. A plain folder starts on
-  // direct, and so does a machine that has not advertised: it may still be able
-  // to (an old row proves nothing), but choosing it FOR the user is how a
-  // rejected save would turn into a failed project creation.
-  //
-  // `localIsGitRepo === undefined` (an older desktop build that doesn't report
-  // it) preselects direct. The asymmetry is deliberate: permissive about what
-  // the user MAY choose, conservative about what we choose FOR them.
-  const preselectedLocalMode: LocalDirectoryExecutionMode =
-    localIsGitRepo === true && localAdvertisesWorktree && worktreeUnavailableReason === undefined
-      ? "worktree"
-      : "in_place";
-  // Never submit a mode the picker would have blocked — the folder can change
-  // after a mode was chosen (pick a git repo, choose worktree, then pick a
-  // plain folder), and the stale choice would fail at task time.
-  const effectiveLocalMode: LocalDirectoryExecutionMode =
-    worktreeUnavailableReason !== undefined
-      ? "in_place"
-      : (localMode ?? preselectedLocalMode);
+  const effectiveLocalMode: LocalDirectoryExecutionMode = localMode ?? "worktree";
+  const blockedLocalMode = sourceMode === "local" && !!selectedLocalPath && effectiveLocalMode === "worktree" && worktreeUnavailableReason !== undefined;
 
   const handleSourceModeChange = (mode: "repos" | "local") => {
     setSourceMode(mode);
@@ -278,7 +233,9 @@ export function CreateProjectModal({ onClose }: { onClose: () => void }) {
       }
       setSelectedLocalPath(picked.path);
       setSelectedLocalLabel(picked.basename ?? null);
-      setLocalIsGitRepo(validation.is_git_repo);
+      setLocalIsGitRepo(validation.is_git_repo === true && validation.has_commits === false ? false : validation.is_git_repo);
+      const remotes = validation.remotes ?? [];
+      setDetectedRemote(remotes.find(remote => remote.name === "origin")?.url ?? (remotes.length === 1 ? remotes[0]?.url : undefined));
     } finally {
       setLocalPicking(false);
     }
@@ -286,6 +243,7 @@ export function CreateProjectModal({ onClose }: { onClose: () => void }) {
 
   const clearLocalDirectory = () => {
     setSelectedLocalPath(null);
+    setDetectedRemote(undefined);
     setSelectedLocalLabel(null);
     setLocalPickError(null);
     setLocalIsGitRepo(undefined);
@@ -319,6 +277,7 @@ export function CreateProjectModal({ onClose }: { onClose: () => void }) {
   const createProject = useCreateProject();
 
   const handleSubmit = async () => {
+    if (blockedLocalMode) return;
     if (!title.trim() || submitting) return;
     // `sourceMode` decides which side's stash gets persisted — the other
     // side is silently dropped, so repos picked then abandoned for local
@@ -337,6 +296,7 @@ export function CreateProjectModal({ onClose }: { onClose: () => void }) {
       daemonStatus.daemonId
     ) {
       resources = [
+        ...(detectedRemote ? [{ resource_type: "github_repo" as const, resource_ref: { url: detectedRemote } }] : []),
         {
           resource_type: "local_directory" as const,
           resource_ref: buildLocalDirectoryResourceRef({
@@ -689,9 +649,8 @@ export function CreateProjectModal({ onClose }: { onClose: () => void }) {
               }
             />
             <PopoverContent side="top" align="start" className="w-72 p-2 space-y-2">
-              {/* Source mode is binary — repo OR local directory, never both.
-                  Local option is desktop-only because a local_directory
-                  resource has to be pinned to a daemon_id, which doesn't
+              {/* Local selection is desktop-only because the directory binding
+                  has to be pinned to a daemon_id, which doesn't
                   exist on the web. */}
               {desktop && (
                 <div className="grid grid-cols-2 gap-1 rounded-md bg-muted/60 p-0.5">
@@ -936,6 +895,8 @@ export function CreateProjectModal({ onClose }: { onClose: () => void }) {
                     </Button>
                   )}
 
+                  {detectedRemote && <p className="text-caption text-muted-foreground">{githubShortLabel(detectedRemote)}</p>}
+                  {blockedLocalMode && <p className="text-caption text-destructive">{worktreeUnavailableReason === "server_outdated" ? tProjects(($) => $.resources.mode_worktree_needs_server_upgrade) : tProjects(($) => $.resources.mode_worktree_needs_git)}</p>}
                   {localPickError && (
                     <p className="text-micro text-destructive">{localPickError}</p>
                   )}
@@ -984,7 +945,7 @@ export function CreateProjectModal({ onClose }: { onClose: () => void }) {
           <Button
             size="sm"
             onClick={handleSubmit}
-            disabled={!title.trim() || submitting}
+            disabled={!title.trim() || submitting || blockedLocalMode}
             className="shrink-0"
           >
             {submitting ? t(($) => $.create_project.submitting) : t(($) => $.create_project.submit)}

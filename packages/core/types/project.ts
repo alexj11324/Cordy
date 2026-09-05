@@ -97,6 +97,7 @@ export interface LocalDirectoryResourceRef {
   daemon_id: string;
   label?: string;
   execution_mode?: LocalDirectoryExecutionMode;
+  worktree_base?: "head";
 }
 
 export type ProjectResourceRef =

@@ -1367,11 +1367,11 @@
   },
   "repositories": {
     "section_title": "代码仓库",
-    "description": "与该工作区关联的 Git 仓库。智能体会从这里 clone 代码并完成工作。",
+    "description": "管理工作区的代码仓库，并为项目绑定这台电脑上的文件夹。",
     "url_placeholder": "https://git.example.com/org/repo.git 或 git@git.example.com:org/repo.git",
     "url_empty": "（空 URL）",
     "description_placeholder": "描述（例如：Go 后端 + Next.js 前端）",
-    "add": "添加仓库",
+    "add": "添加远程仓库",
     "connect_github": "连接 GitHub",
     "choose_from_github": "从 GitHub 选择",
     "github_not_configured": "当前部署尚未配置 GitHub 连接。",
@@ -1406,7 +1406,10 @@
     "delete_confirm_action": "删除仓库",
     "manage_hint": "只有管理员和所有者可以管理代码仓库。",
     "toast_saved": "已保存代码仓库",
-    "toast_save_failed": "保存代码仓库失败"
+    "toast_save_failed": "保存代码仓库失败",
+    "choose_local_project": "选择本地项目",
+    "remote_details": "远程地址",
+    "remote_entry_hint": "输入 Git 地址，或通过 GitHub 按钮选择仓库。"
   },
   "desktop": {
     "tabs": {

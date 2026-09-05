@@ -143,6 +143,7 @@ type localDirectoryRef struct {
 	DaemonID      string `json:"daemon_id"`
 	Label         string `json:"label,omitempty"`
 	ExecutionMode string `json:"execution_mode,omitempty"`
+	WorktreeBase  string `json:"worktree_base,omitempty"`
 }
 
 // requireWorktreeCapableDaemon rejects saving a local_directory ref that asks
@@ -283,6 +284,9 @@ func validateLocalDirectoryRef(ref json.RawMessage) (json.RawMessage, error) {
 	payload.DaemonID = strings.TrimSpace(payload.DaemonID)
 	if payload.DaemonID == "" {
 		return nil, errors.New("local_directory: daemon_id is required")
+	}
+	if payload.WorktreeBase != "" && payload.WorktreeBase != "head" {
+		return nil, errors.New("local_directory: worktree_base must be head")
 	}
 	payload.Label = strings.TrimSpace(payload.Label)
 	payload.ExecutionMode = strings.TrimSpace(payload.ExecutionMode)

@@ -1370,11 +1370,11 @@
   },
   "repositories": {
     "section_title": "Repositories",
-    "description": "Git repositories associated with this workspace. Agents use these to clone and work on code.",
+    "description": "Git repositories available to this workspace. Bind a local folder for each project on this computer.",
     "url_placeholder": "https://git.example.com/org/repo.git or git@git.example.com:org/repo.git",
     "url_empty": "(empty URL)",
     "description_placeholder": "Description (e.g. Go backend + Next.js frontend)",
-    "add": "Add repository",
+    "add": "Add a remote repository",
     "connect_github": "Connect GitHub",
     "choose_from_github": "Choose from GitHub",
     "github_not_configured": "GitHub connection is not configured for this deployment.",
@@ -1409,7 +1409,10 @@
     "delete_confirm_action": "Delete repository",
     "manage_hint": "Only admins and owners can manage repositories.",
     "toast_saved": "Repositories saved",
-    "toast_save_failed": "Failed to save repositories"
+    "toast_save_failed": "Failed to save repositories",
+    "choose_local_project": "Choose a local project",
+    "remote_details": "Remote address",
+    "remote_entry_hint": "Enter a Git address, or choose a repository with the GitHub button."
   },
   "desktop": {
     "tabs": {

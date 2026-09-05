@@ -136,7 +136,14 @@
     "mode_badge_worktree_tooltip": "Tasks run at the same time in their own git worktree and hand back a branch. Your working copy is untouched.",
     "toast_local_mode_updated": "Execution mode updated",
     "toast_local_mode_update_failed": "Could not update the execution mode",
-    "mode_badge_in_place": "Direct"
+    "mode_badge_in_place": "Direct",
+    "clone_repository": "Download {{repo}} to this computer…",
+    "clone_authentication_required": "Sign in to GitHub on this computer, or renew your Git credentials, then try again.",
+    "clone_access_denied": "This account cannot access the repository. Switch accounts or request access from its owner.",
+    "clone_repository_unavailable": "The repository does not exist or this account cannot access it. Check the address and account.",
+    "clone_network_error": "Could not connect to the Git server. Check your network and try again.",
+    "clone_destination_exists": "That folder already exists. Bind it as an existing project, or choose a new folder.",
+    "clone_failed": "Could not download the repository. Check Git authentication and the selected location. A partial download may remain."
   },
   "delete_dialog": {
     "title": "Delete project",

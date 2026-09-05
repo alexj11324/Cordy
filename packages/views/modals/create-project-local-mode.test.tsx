@@ -170,7 +170,6 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 import { CreateProjectModal, buildLocalDirectoryResourceRef } from "./create-project";
 
 async function pickLocalDirectory(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole("button", { name: /Local directory/i }));
   await user.click(screen.getByRole("button", { name: /Choose directory/i }));
   await waitFor(() => expect(screen.getByText("/Users/dev/work/game-client")).toBeInTheDocument());
 }
@@ -201,14 +200,14 @@ describe("CreateProjectModal — local directory execution mode", () => {
     );
   });
 
-  it("preselects direct for a plain folder", async () => {
+  it("requires an explicit direct choice for a plain folder", async () => {
     pickedIsGitRepo = false;
     const user = userEvent.setup();
     renderWithI18n(<CreateProjectModal onClose={vi.fn()} />);
 
     await pickLocalDirectory(user);
 
-    expect(screen.getByRole("button", { name: /^Direct$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Parallel$/i })).toBeInTheDocument();
   });
 
   // A machine that has not advertised the capability must not be preselected
@@ -216,27 +215,27 @@ describe("CreateProjectModal — local directory execution mode", () => {
   // whole project creation over a mode the user never chose. It stays
   // SELECTABLE — an un-advertised machine may still be able to run it, and only
   // the server can say (#7113).
-  it("preselects direct when the machine has not advertised the capability", async () => {
+  it("preselects worktree when the machine has not advertised the capability", async () => {
     runtimeWorktreeMetadata = "daemon_cannot";
     const user = userEvent.setup();
     renderWithI18n(<CreateProjectModal onClose={vi.fn()} />);
 
     await pickLocalDirectory(user);
 
-    expect(screen.getByRole("button", { name: /^Direct$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Parallel$/i })).toBeInTheDocument();
   });
 
   // Older desktop builds do not report is_git_repo. The option stays available
   // (the daemon has the final say), but we do not guess parallel on the user's
   // behalf without evidence.
-  it("preselects direct when the desktop build cannot report git-ness", async () => {
+  it("preselects worktree when the desktop build cannot report git-ness", async () => {
     pickedIsGitRepo = undefined;
     const user = userEvent.setup();
     renderWithI18n(<CreateProjectModal onClose={vi.fn()} />);
 
     await pickLocalDirectory(user);
 
-    expect(screen.getByRole("button", { name: /^Direct$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Parallel$/i })).toBeInTheDocument();
     // Still selectable — unknown is permissive about what the user MAY choose.
     expect(screen.getByRole("radio", { name: /Run in parallel, isolated/i })).not.toBeDisabled();
   });
@@ -294,10 +293,10 @@ describe("CreateProjectModal — local directory execution mode", () => {
     await pickLocalDirectory(user);
 
     expect(screen.getByRole("radio", { name: /Run in parallel, isolated/i })).toBeDisabled();
-    expect(screen.getByText(/Patchbay server is too old/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Patchbay server is too old/i).length).toBeGreaterThan(0);
     // And it must not have been preselected either — that would submit a mode
     // the server would silently downgrade.
-    expect(screen.getByRole("button", { name: /^Direct$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Parallel$/i })).toBeInTheDocument();
   });
 
   it("blocks parallel mode for a folder that is not a git repository", async () => {
@@ -308,7 +307,7 @@ describe("CreateProjectModal — local directory execution mode", () => {
     await pickLocalDirectory(user);
 
     expect(screen.getByRole("radio", { name: /Run in parallel, isolated/i })).toBeDisabled();
-    expect(screen.getByText(/not a git repository/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/not a git repository/i).length).toBeGreaterThan(0);
   });
 });
 
@@ -330,6 +329,7 @@ describe("buildLocalDirectoryResourceRef", () => {
       daemon_id: "daemon-1",
       label: "game-client",
       execution_mode: "worktree",
+      worktree_base: "head",
     });
   });
 
@@ -343,6 +343,6 @@ describe("buildLocalDirectoryResourceRef", () => {
         label: null,
         mode: "in_place",
       }),
-    ).toEqual({ local_path: "/tmp/x", daemon_id: "d", execution_mode: "in_place" });
+    ).toEqual({ local_path: "/tmp/x", daemon_id: "d", execution_mode: "in_place", worktree_base: "head" });
   });
 });

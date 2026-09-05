@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { LoaderCircle, Plus } from "lucide-react";
+import { FolderOpen, FolderGit, LoaderCircle, Plus } from "lucide-react";
 import { Badge } from "@patchbay/ui/components/ui/badge";
 import { Button } from "@patchbay/ui/components/ui/button";
 import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
@@ -49,6 +49,11 @@ import type {
   Workspace,
   WorkspaceRepo,
 } from "@patchbay/core/types";
+import { projectListOptions } from "@patchbay/core/projects";
+import { useModalStore } from "@patchbay/core/modals";
+import { ProjectResourcesSection } from "../../projects/components/project-resources-section";
+import { isDesktopShell } from "../../platform/local-directory";
+import { githubShortLabel } from "../../common/github-url";
 import { useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
 import {
@@ -115,6 +120,9 @@ export function RepositoriesTab() {
   const queryClient = useQueryClient();
   const navigation = useNavigation();
   const { data: members = [] } = useQuery(memberListOptions(wsId));
+  const { data: projects = [] } = useQuery(projectListOptions(wsId));
+  const [remoteDialogOpen, setRemoteDialogOpen] = useState(false);
+  const [remoteDraft, setRemoteDraft] = useState("");
   const [repositories, setRepositories] = useState<WorkspaceRepo[]>(
     workspace?.repos ?? EMPTY_REPOSITORIES,
   );
@@ -264,20 +272,14 @@ export function RepositoriesTab() {
     isEqual: repositoriesEqual,
   });
 
-  const updateRepository = (
-    index: number,
-    field: keyof WorkspaceRepo,
-    value: string,
-  ) => {
-    setRepositories((current) =>
-      current.map((repo, repoIndex) =>
-        repoIndex === index ? { ...repo, [field]: value } : repo,
-      ),
-    );
-  };
-
   const addRepository = () => {
-    setRepositories((current) => [...current, { url: "" }]);
+    const url = remoteDraft.trim();
+    if (!repositoryIdentity(url)) return;
+    const next = repositories.some(repo => repositoryIdentity(repo.url) === repositoryIdentity(url)) ? repositories : [...repositories, {url}];
+    setRepositories(next);
+    autoSave.saveNow(next);
+    setRemoteDraft("");
+    setRemoteDialogOpen(false);
   };
 
   const openGitHubPicker = () => {
@@ -379,6 +381,17 @@ export function RepositoriesTab() {
       }
     >
       <SettingsSection>
+        {isDesktopShell() && (
+          <SettingsPillButton icon={FolderOpen} onClick={() => useModalStore.getState().open("create-project")}>
+            {t(($) => $.repositories.choose_local_project)}
+          </SettingsPillButton>
+        )}
+        {projects.map(project => (
+          <SettingsCard key={project.id}>
+            <SettingsListRow><span className="text-body font-medium">{project.title}</span></SettingsListRow>
+            <div className="p-3"><ProjectResourcesSection projectId={project.id} /></div>
+          </SettingsCard>
+        ))}
         <SettingsCard>
           {repositories.length === 0 ? (
             <SettingsEmpty title={t(($) => $.repositories.empty)} />
@@ -389,36 +402,13 @@ export function RepositoriesTab() {
               key={index}
               className="flex-col items-stretch gap-2 sm:flex-row sm:items-center"
             >
-              <SettingsField
-                type="text"
-                name={`repository-${index}-url`}
-                autoComplete="off"
-                spellCheck={false}
-                aria-label={t(($) => $.repositories.url_placeholder)}
-                value={repository.url}
-                onChange={(event) =>
-                  updateRepository(index, "url", event.target.value)
-                }
-                onBlur={autoSave.flush}
-                disabled={!canManageWorkspace}
-                aria-invalid={!repository.url.trim()}
-                placeholder={t(($) => $.repositories.url_placeholder)}
-                className="flex-1 font-mono text-caption"
-              />
-              <SettingsField
-                type="text"
-                name={`repository-${index}-description`}
-                autoComplete="off"
-                aria-label={t(($) => $.repositories.description_placeholder)}
-                value={repository.description ?? ""}
-                onChange={(event) =>
-                  updateRepository(index, "description", event.target.value)
-                }
-                onBlur={autoSave.flush}
-                disabled={!canManageWorkspace}
-                placeholder={t(($) => $.repositories.description_placeholder)}
-                className="flex-1"
-              />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 text-body font-medium"><FolderGit className="size-4 shrink-0" />{githubShortLabel(repository.url)}</div>
+                <details className="mt-1 text-caption text-muted-foreground">
+                  <summary className="cursor-pointer">{t(($) => $.repositories.remote_details)}</summary>
+                  <p className="break-all font-mono">{repository.url}</p>
+                </details>
+              </div>
               {canManageWorkspace ? (
                 <SettingsPillButton
                   tone="destructive"
@@ -434,7 +424,7 @@ export function RepositoriesTab() {
           {canManageWorkspace ? (
             <SettingsListRow className="flex-wrap justify-between">
               <div className="flex flex-wrap items-center gap-2">
-                <SettingsPillButton icon={Plus} onClick={addRepository}>
+                <SettingsPillButton icon={Plus} onClick={() => setRemoteDialogOpen(true)}>
                   {t(($) => $.repositories.add)}
                 </SettingsPillButton>
                 <SettingsPillButton
@@ -475,6 +465,17 @@ export function RepositoriesTab() {
           )}
         </SettingsCard>
       </SettingsSection>
+
+      <Dialog open={remoteDialogOpen} onOpenChange={setRemoteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t(($) => $.repositories.add)}</DialogTitle>
+            <DialogDescription>{t(($) => $.repositories.remote_entry_hint)}</DialogDescription>
+          </DialogHeader>
+          <SettingsField aria-label={t(($) => $.repositories.url_placeholder)} placeholder={t(($) => $.repositories.url_placeholder)} value={remoteDraft} onChange={event => setRemoteDraft(event.target.value)} />
+          <DialogFooter><Button disabled={!repositoryIdentity(remoteDraft)} onClick={addRepository}>{t(($) => $.repositories.add)}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={githubPickerOpen}

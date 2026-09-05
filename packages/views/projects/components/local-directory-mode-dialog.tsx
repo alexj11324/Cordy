@@ -38,7 +38,7 @@ interface LocalDirectoryModeDialogProps {
   onOpenChange: (open: boolean) => void;
   /** Absolute path being configured, shown so the user knows what they picked. */
   path: string;
-  /** Mode to preselect — the current mode when editing, in_place when adding. */
+  /** Mode to preselect — the current mode when editing, worktree when adding. */
   value: LocalDirectoryExecutionMode;
   /** Set when worktree cannot be chosen; the option renders disabled with a reason. */
   unavailableReason?: WorktreeUnavailableReason;
@@ -114,7 +114,7 @@ export function LocalDirectoryModeDialog({
           >
             {t(($) => $.resources.mode_cancel)}
           </Button>
-          <Button onClick={() => onConfirm(selected)} disabled={saving}>
+          <Button onClick={() => onConfirm(selected)} disabled={saving || (selected === "worktree" && unavailableReason !== undefined)}>
             {confirmLabel}
           </Button>
         </DialogFooter>
@@ -145,7 +145,7 @@ export function LocalDirectoryModeOptions({
   const worktreeDisabled = unavailableReason !== undefined;
 
   return (
-    <div className="flex flex-col gap-2">
+    <div role="radiogroup" aria-label={t(($) => $.resources.mode_dialog_title)} className="flex flex-col gap-2">
       <ModeOption
         icon={<Pencil className="size-4" />}
         title={t(($) => $.resources.mode_in_place_title)}
