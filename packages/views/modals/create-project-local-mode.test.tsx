@@ -48,7 +48,7 @@ vi.mock("@tanstack/react-query", () => ({
             // A capability-aware server always writes the key — null when the
             // daemon sent no header — so its absence means the SERVER is old.
             ...(runtimeWorktreeMetadata === "advertised"
-              ? { capabilities: ["local-worktree-v1"] }
+              ? { capabilities: ["local-worktree-v1", "local-worktree-committed-base-v1"] }
               : runtimeWorktreeMetadata === "daemon_cannot"
                 ? { capabilities: ["skill-bundles-v1"] }
                 : {}),
@@ -90,9 +90,10 @@ vi.mock("@patchbay/core/projects", () => ({
 // Whether the connected server validates execution_mode at all. Absent on every
 // release before the worktree save gate.
 let serverValidatesWorktree = true;
+let serverSupportsCommittedBase = true;
 vi.mock("@patchbay/core/config", () => ({
-  useConfigStore: (selector: (state: { localWorktreeSupported: boolean }) => unknown) =>
-    selector({ localWorktreeSupported: serverValidatesWorktree }),
+  useConfigStore: (selector: (state: { localWorktreeSupported: boolean; localWorktreeCommittedBaseSupported: boolean }) => unknown) =>
+    selector({ localWorktreeSupported: serverValidatesWorktree, localWorktreeCommittedBaseSupported: serverSupportsCommittedBase }),
 }));
 
 vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "workspace-1" }));
@@ -170,7 +171,6 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 import { CreateProjectModal, buildLocalDirectoryResourceRef } from "./create-project";
 
 async function pickLocalDirectory(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole("button", { name: /Local directory/i }));
   await user.click(screen.getByRole("button", { name: /Choose directory/i }));
   await waitFor(() => expect(screen.getByText("/Users/dev/work/game-client")).toBeInTheDocument());
 }
@@ -181,6 +181,7 @@ describe("CreateProjectModal — local directory execution mode", () => {
     runtimeCliVersion = "9.9.9";
     runtimeWorktreeMetadata = "advertised";
     serverValidatesWorktree = true;
+    serverSupportsCommittedBase = true;
     pickedIsGitRepo = true;
   });
 
@@ -201,14 +202,14 @@ describe("CreateProjectModal — local directory execution mode", () => {
     );
   });
 
-  it("preselects direct for a plain folder", async () => {
+  it("requires an explicit direct choice for a plain folder", async () => {
     pickedIsGitRepo = false;
     const user = userEvent.setup();
     renderWithI18n(<CreateProjectModal onClose={vi.fn()} />);
 
     await pickLocalDirectory(user);
 
-    expect(screen.getByRole("button", { name: /^Direct$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Parallel$/i })).toBeInTheDocument();
   });
 
   // A machine that has not advertised the capability must not be preselected
@@ -216,27 +217,27 @@ describe("CreateProjectModal — local directory execution mode", () => {
   // whole project creation over a mode the user never chose. It stays
   // SELECTABLE — an un-advertised machine may still be able to run it, and only
   // the server can say (#7113).
-  it("preselects direct when the machine has not advertised the capability", async () => {
+  it("preselects worktree when the machine has not advertised the capability", async () => {
     runtimeWorktreeMetadata = "daemon_cannot";
     const user = userEvent.setup();
     renderWithI18n(<CreateProjectModal onClose={vi.fn()} />);
 
     await pickLocalDirectory(user);
 
-    expect(screen.getByRole("button", { name: /^Direct$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Parallel$/i })).toBeInTheDocument();
   });
 
   // Older desktop builds do not report is_git_repo. The option stays available
   // (the daemon has the final say), but we do not guess parallel on the user's
   // behalf without evidence.
-  it("preselects direct when the desktop build cannot report git-ness", async () => {
+  it("preselects worktree when the desktop build cannot report git-ness", async () => {
     pickedIsGitRepo = undefined;
     const user = userEvent.setup();
     renderWithI18n(<CreateProjectModal onClose={vi.fn()} />);
 
     await pickLocalDirectory(user);
 
-    expect(screen.getByRole("button", { name: /^Direct$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Parallel$/i })).toBeInTheDocument();
     // Still selectable — unknown is permissive about what the user MAY choose.
     expect(screen.getByRole("radio", { name: /Run in parallel, isolated/i })).not.toBeDisabled();
   });
@@ -294,10 +295,10 @@ describe("CreateProjectModal — local directory execution mode", () => {
     await pickLocalDirectory(user);
 
     expect(screen.getByRole("radio", { name: /Run in parallel, isolated/i })).toBeDisabled();
-    expect(screen.getByText(/Patchbay server is too old/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Patchbay server is too old/i).length).toBeGreaterThan(0);
     // And it must not have been preselected either — that would submit a mode
     // the server would silently downgrade.
-    expect(screen.getByRole("button", { name: /^Direct$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Parallel$/i })).toBeInTheDocument();
   });
 
   it("blocks parallel mode for a folder that is not a git repository", async () => {
@@ -308,7 +309,7 @@ describe("CreateProjectModal — local directory execution mode", () => {
     await pickLocalDirectory(user);
 
     expect(screen.getByRole("radio", { name: /Run in parallel, isolated/i })).toBeDisabled();
-    expect(screen.getByText(/not a git repository/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/not a git repository/i).length).toBeGreaterThan(0);
   });
 });
 
@@ -324,12 +325,14 @@ describe("buildLocalDirectoryResourceRef", () => {
         daemonId: "daemon-1",
         label: "game-client",
         mode: "worktree",
+        committedBaseSupported: true,
       }),
     ).toEqual({
       local_path: "/Users/dev/work/game-client",
       daemon_id: "daemon-1",
       label: "game-client",
       execution_mode: "worktree",
+      worktree_base: "head",
     });
   });
 

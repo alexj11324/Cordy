@@ -3185,6 +3185,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		resp.ProjectResources,
 		runtime,
 		requestHasClientCapability(r, protocol.DaemonCapabilityLocalWorktreeV1),
+		requestHasClientCapability(r, protocol.DaemonCapabilityLocalWorktreeCommittedBaseV1),
 	); reason != "" {
 		slog.Error("task claim: runtime too old for worktree mode; cancelling rather than running in place",
 			"task_id", uuidToString(task.ID),
@@ -3250,11 +3251,8 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 // Only resources bound to the claiming runtime's own daemon are considered: a
 // project may carry one local_directory per machine, and another machine's
 // worktree resource says nothing about this one's ability to run the task.
-func worktreeClaimBlockReason(resources []ProjectResourceData, runtime db.AgentRuntime, hasWorktreeCapability bool) string {
+func worktreeClaimBlockReason(resources []ProjectResourceData, runtime db.AgentRuntime, hasWorktreeCapability, hasCommittedBaseCapability bool) string {
 	if !runtime.DaemonID.Valid || runtime.DaemonID.String == "" {
-		return ""
-	}
-	if hasWorktreeCapability {
 		return ""
 	}
 	for _, res := range resources {
@@ -3267,6 +3265,16 @@ func worktreeClaimBlockReason(resources []ProjectResourceData, runtime db.AgentR
 		}
 		if ref.ExecutionMode != localDirectoryModeWorktree || ref.DaemonID != runtime.DaemonID.String {
 			continue
+		}
+		if hasWorktreeCapability && (ref.WorktreeBase != "head" || hasCommittedBaseCapability) {
+			continue
+		}
+		if ref.WorktreeBase == "head" && !hasCommittedBaseCapability {
+			return fmt.Sprintf(
+				"This machine's Patchbay runtime does not support the committed HEAD baseline requested by %q. "+
+					"Update the Patchbay app on that machine to the latest version, then re-run this task. "+
+					"Refusing to run with a legacy dirty snapshot while the project is configured for a committed baseline.",
+				ref.LocalPath)
 		}
 		return fmt.Sprintf(
 			"This machine's Patchbay runtime does not support parallel (worktree) mode, which %q is set to use. "+

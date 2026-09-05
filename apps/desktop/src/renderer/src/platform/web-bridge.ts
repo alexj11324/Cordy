@@ -144,6 +144,8 @@ export function installWebDesktopBridge(): boolean {
       ok: false,
       reason: "unsupported",
     }),
+    cloneProjectRepository: async () => ({ ok: false, reason: "unsupported" }),
+    confirmProjectRepository: async () => false,
     validateLocalDirectory: async (_path: string) => ({
       ok: false,
       reason: "unsupported",

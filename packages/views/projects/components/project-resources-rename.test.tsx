@@ -45,13 +45,14 @@ vi.mock("@patchbay/core/projects", () => ({
 // A backend that predates the capability signal: the client must assume it
 // would silently drop execution_mode.
 vi.mock("@patchbay/core/config", () => ({
-  useConfigStore: (selector: (state: { localWorktreeSupported: boolean }) => unknown) =>
-    selector({ localWorktreeSupported: false }),
+  useConfigStore: (selector: (state: { localWorktreeSupported: boolean; localWorktreeCommittedBaseSupported: boolean }) => unknown) =>
+    selector({ localWorktreeSupported: false, localWorktreeCommittedBaseSupported: false }),
 }));
 
 vi.mock("@patchbay/core/runtimes", () => ({
   runtimeListOptions: () => ({ queryKey: ["runtimes"], queryFn: vi.fn() }),
   runtimeAdvertisesLocalWorktree: () => true,
+  runtimeAdvertisesLocalWorktreeCommittedBase: () => false,
 }));
 vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "workspace-1" }));
 vi.mock("@patchbay/core/paths", () => ({

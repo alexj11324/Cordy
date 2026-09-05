@@ -5,6 +5,8 @@ export { openExternal } from "./open-external";
 export {
   isDesktopShell,
   pickDirectory,
+  cloneProjectRepository,
+  confirmProjectRepository,
   pickDirectories,
   validateLocalDirectory,
   type PickDirectoryResult,

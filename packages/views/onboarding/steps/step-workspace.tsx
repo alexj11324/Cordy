@@ -23,16 +23,20 @@ import { useCreateWorkspace } from "@patchbay/core/workspace/mutations";
 import { api } from "@patchbay/core/api";
 import type {
   CreateProjectResourceRequest,
+  LocalDirectoryResourceRef,
   Workspace,
 } from "@patchbay/core/types";
 import { isImeComposing } from "@patchbay/core/utils";
 import { matchLocale } from "@patchbay/core/i18n";
 import { useConfigStore } from "@patchbay/core/config";
+import { runtimeAdvertisesLocalWorktreeCommittedBase } from "@patchbay/core/runtimes";
 import { workspaceUrlHost } from "@patchbay/core/workspace/workspace-url";
 import {
   isDesktopShell,
   pickDirectories,
+  validateLocalDirectory,
 } from "../../platform/local-directory";
+import { LocalDirectoryModeOptions } from "../../projects/components/local-directory-mode-dialog";
 import { useLocalDaemonStatus } from "../../platform/use-local-daemon-status";
 import { parseGitRepoUrl } from "../git-repo-url";
 import { useLogout } from "../../auth";
@@ -107,6 +111,8 @@ type PendingProject = {
   name: string;
   location: string;
   resource: CreateProjectResourceRequest;
+  remoteUrl?: string;
+  isGitRepo?: boolean;
 };
 
 export function StepWorkspace({
@@ -165,6 +171,10 @@ export function StepWorkspace({
   const prefixTouched = useRef(false);
   const desktop = isDesktopShell();
   const daemon = useLocalDaemonStatus();
+  const serverValidatesWorktree = useConfigStore(state => state.localWorktreeSupported);
+  const serverSupportsCommittedBase = useConfigStore(
+    state => state.localWorktreeCommittedBaseSupported,
+  );
   const [pendingProjects, setPendingProjects] = useState<PendingProject[]>([]);
   const [projectUrlDraft, setProjectUrlDraft] = useState("");
   const [projectError, setProjectError] = useState<string | null>(null);
@@ -181,8 +191,9 @@ export function StepWorkspace({
       ? t(($) => $.step_workspace.slug_reserved_error)
       : null;
   const slugError = slugValidationError ?? slugReservedError ?? slugServerError;
+  const localModeBlocked = pendingProjects.some(project => project.resource.resource_type === "local_directory" && (project.resource.resource_ref as LocalDirectoryResourceRef).execution_mode === "worktree" && (project.isGitRepo === false || !serverValidatesWorktree));
   const canCreate =
-    name.trim().length > 0 && slug.trim().length > 0 && !slugError;
+    name.trim().length > 0 && slug.trim().length > 0 && !slugError && !localModeBlocked;
 
   // What the workspace will actually be created with. Clearing the prefix
   // input reverts to the slug-derived default rather than blocking the CTA —
@@ -269,22 +280,29 @@ export function StepWorkspace({
           setProjectError(t(($) => $.step_workspace.projects_pick_failed));
         return;
       }
+      const folders = await Promise.all((result.folders ?? []).map(async folder => {
+        const validation = await validateLocalDirectory(folder.path);
+        if (!validation.ok) throw new Error("Folder validation failed");
+        return { ...folder, validation };
+      }));
       setPendingProjects((previous) => {
         const next = [...previous];
-        for (const folder of result.folders ?? []) {
+        for (const folder of folders) {
           const key = `local:${daemonId}:${folder.path}`;
           if (next.some((project) => project.key === key)) continue;
           next.push({
             key,
             name: folder.basename,
             location: folder.path,
+            isGitRepo: folder.validation.is_git_repo === true && folder.validation.has_commits === false ? false : folder.validation.is_git_repo,
+            remoteUrl: folder.validation.remotes?.find(remote => remote.name === "origin")?.url ?? (folder.validation.remotes?.length === 1 ? folder.validation.remotes[0]?.url : undefined),
             resource: {
               resource_type: "local_directory",
               resource_ref: {
                 local_path: folder.path,
                 daemon_id: daemonId,
                 label: folder.basename,
-                execution_mode: "in_place",
+                execution_mode: "worktree",
               },
             },
           });
@@ -312,12 +330,52 @@ export function StepWorkspace({
         // is what makes an edited prefix stick.
         issue_prefix: effectivePrefix,
       });
+      // The new workspace has no route-driven workspace context while this
+      // form is open, so capability discovery happens after creation and
+      // before local projects are attached. If the daemon row is absent or
+      // the lookup fails, omit the stronger field and keep the compatible
+      // legacy worktree behavior.
+      let committedBaseSupported = false;
+      if (
+        serverSupportsCommittedBase &&
+        desktop &&
+        daemon.daemonId &&
+        pendingProjects.some(project => project.resource.resource_type === "local_directory")
+      ) {
+        try {
+          const runtimes = await api.listRuntimes(
+            { workspace_id: workspace.id },
+            workspace.slug,
+          );
+          committedBaseSupported = runtimeAdvertisesLocalWorktreeCommittedBase(
+            runtimes,
+            daemon.daemonId,
+          );
+        } catch {
+          committedBaseSupported = false;
+        }
+      }
       let attachmentFailed = false;
       for (const project of pendingProjects) {
         try {
+          let resource = project.resource;
+          if (project.resource.resource_type === "local_directory") {
+            const resourceRef: LocalDirectoryResourceRef = {
+              ...(project.resource.resource_ref as LocalDirectoryResourceRef),
+            };
+            if (
+              resourceRef.execution_mode === "worktree" &&
+              committedBaseSupported
+            ) {
+              resourceRef.worktree_base = "head";
+            } else {
+              delete resourceRef.worktree_base;
+            }
+            resource = { ...project.resource, resource_ref: resourceRef };
+          }
           // The route still names the previous workspace until onCreated runs.
           await api.createProject(
-            { title: project.name, resources: [project.resource] },
+            { title: project.name, resources: [resource, ...(project.remoteUrl ? [{ resource_type: "github_repo" as const, resource_ref: { url: project.remoteUrl } }] : [])] },
             workspace.slug,
           );
         } catch {
@@ -572,7 +630,7 @@ export function StepWorkspace({
             {pendingProjects.map((project) => (
               <li
                 key={project.key}
-                className="flex items-center gap-2 rounded-md border px-2.5 py-1.5"
+                className="flex flex-wrap items-center gap-2 rounded-md border px-2.5 py-1.5"
               >
                 <span className="min-w-0 flex-1 truncate text-body">
                   {project.name}
@@ -596,6 +654,23 @@ export function StepWorkspace({
                 >
                   <X className="size-3.5" aria-hidden="true" />
                 </Button>
+                {project.resource.resource_type === "local_directory" && (
+                  <div className="w-full">
+                    <LocalDirectoryModeOptions
+                      value={(project.resource.resource_ref as LocalDirectoryResourceRef).execution_mode === "in_place" ? "in_place" : "worktree"}
+                      unavailableReason={project.isGitRepo === false ? "not_git" : !serverValidatesWorktree ? "server_outdated" : undefined}
+                      onChange={mode => setPendingProjects(previous => previous.map(item => {
+                        if (item.key !== project.key) return item;
+                        const resourceRef: LocalDirectoryResourceRef = {
+                          ...(item.resource.resource_ref as LocalDirectoryResourceRef),
+                          execution_mode: mode,
+                        };
+                        delete resourceRef.worktree_base;
+                        return { ...item, resource: { ...item.resource, resource_ref: resourceRef } };
+                      }))}
+                    />
+                  </div>
+                )}
               </li>
             ))}
           </ul>

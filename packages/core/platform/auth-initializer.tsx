@@ -83,6 +83,11 @@ export function AuthInitializer({
         configStore
           .getState()
           .setLocalWorktreeSupported(cfg.local_worktree_supported === true);
+        configStore
+          .getState()
+          .setLocalWorktreeCommittedBaseSupported(
+            cfg.local_worktree_committed_base_supported === true,
+          );
         // Older agent handlers returned success while silently dropping this
         // additive field, so writes stay disabled unless the server declares
         // the persistence contract explicitly.

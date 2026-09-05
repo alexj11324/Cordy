@@ -135,7 +135,14 @@
     "mode_badge_worktree_tooltip": "作業はそれぞれの git ワークツリーで同時に実行され、ブランチとして成果を返します。作業コピーは変更されません。",
     "toast_local_mode_updated": "実行モードを更新しました",
     "toast_local_mode_update_failed": "実行モードを更新できませんでした",
-    "mode_badge_in_place": "直接"
+    "mode_badge_in_place": "直接",
+    "clone_repository": "このコンピューターに {{repo}} をダウンロード…",
+    "clone_authentication_required": "このコンピューターで GitHub にログインするか、Git 認証情報を更新して再試行してください。",
+    "clone_access_denied": "このアカウントはリポジトリにアクセスできません。アカウントを切り替えるか、所有者にアクセスを依頼してください。",
+    "clone_repository_unavailable": "リポジトリが存在しないか、このアカウントではアクセスできません。アドレスとアカウントを確認してください。",
+    "clone_network_error": "Git サーバーに接続できません。ネットワークを確認してください。",
+    "clone_destination_exists": "フォルダーは既に存在します。既存のプロジェクトとして接続するか、新しいフォルダーを選択してください。",
+    "clone_failed": "ダウンロードできませんでした。Git 認証と保存先を確認してください。途中のファイルが残っている場合があります。"
   },
   "delete_dialog": {
     "title": "プロジェクトを削除",
