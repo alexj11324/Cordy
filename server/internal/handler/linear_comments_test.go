@@ -385,11 +385,23 @@ func TestLinearAttachmentDeletionWaitsForLastLiveRelation(t *testing.T) {
 	if _, err := testPool.Exec(ctx, `UPDATE work_product_relation SET relation_source='provider_reference' WHERE id=$1`, transitionRelation); err != nil {
 		t.Fatal(err)
 	}
-	if err := testPool.QueryRow(ctx, `SELECT count(*) FROM linear_sync_outbox WHERE binding_id=$1 AND event_key=$2 AND event_type='attachment_deleted'`, f.bindingID, "work-product:"+transitionRelation+":attachment_deleted").Scan(&deletions); err != nil {
+	if err := testPool.QueryRow(ctx, `SELECT count(*) FROM linear_sync_outbox WHERE binding_id=$1 AND event_key LIKE $2 AND event_type='attachment_deleted'`, f.bindingID, "work-product:"+transitionRelation+":attachment_deleted:%").Scan(&deletions); err != nil {
 		t.Fatal(err)
 	}
 	if deletions != 1 {
 		t.Fatalf("publishable-to-reference transition queued %d deletions, want 1", deletions)
+	}
+	if _, err := testPool.Exec(ctx, `UPDATE work_product_relation SET relation_source='provider_discovery' WHERE id=$1`, transitionRelation); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testPool.Exec(ctx, `UPDATE work_product_relation SET relation_source='provider_reference' WHERE id=$1`, transitionRelation); err != nil {
+		t.Fatal(err)
+	}
+	if err := testPool.QueryRow(ctx, `SELECT count(*) FROM linear_sync_outbox WHERE binding_id=$1 AND event_key LIKE $2 AND event_type='attachment_deleted'`, f.bindingID, "work-product:"+transitionRelation+":attachment_deleted:%").Scan(&deletions); err != nil {
+		t.Fatal(err)
+	}
+	if deletions != 2 {
+		t.Fatalf("repeated source downgrade queued %d deletions, want 2", deletions)
 	}
 }
 

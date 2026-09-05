@@ -3,6 +3,7 @@ DECLARE
     binding RECORD;
     product RECORD;
     operation TEXT;
+    event_version TEXT := '';
     source_relation work_product_relation%ROWTYPE;
 BEGIN
     IF TG_OP = 'DELETE' THEN source_relation := OLD; ELSE source_relation := NEW; END IF;
@@ -14,6 +15,9 @@ BEGIN
         operation := 'attachment_deleted';
     ELSIF source_relation.relation_source NOT IN ('manual_explicit','task_explicit','execution_branch_discovery','provider_discovery') THEN
         RETURN COALESCE(NEW, OLD);
+    END IF;
+    IF TG_OP='UPDATE' AND OLD.relation_source IS DISTINCT FROM NEW.relation_source THEN
+        event_version := ':'||gen_random_uuid()::text;
     END IF;
     SELECT kind, external_url INTO product FROM work_product
     WHERE id=source_relation.work_product_id AND workspace_id=source_relation.workspace_id;
@@ -46,7 +50,7 @@ BEGIN
     LOOP
         INSERT INTO linear_sync_outbox(id,workspace_id,binding_id,issue_id,event_key,event_type,payload)
         VALUES(gen_random_uuid(),source_relation.workspace_id,binding.id,source_relation.issue_id,
-            'work-product:'||source_relation.id::text||':'||operation,operation,
+            'work-product:'||source_relation.id::text||':'||operation||event_version,operation,
             CASE WHEN operation='attachment_deleted' THEN jsonb_build_object('url',product.external_url) ELSE '{}'::jsonb END)
         ON CONFLICT(binding_id,event_key) DO NOTHING;
     END LOOP;
