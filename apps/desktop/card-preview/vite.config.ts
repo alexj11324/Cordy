@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { previewPort } from "./port";
 
 // Separate from electron-vite and Next: never a route in a shipped application.
 export default defineConfig(({ command }) => {
@@ -13,7 +14,7 @@ export default defineConfig(({ command }) => {
     plugins: [react(), tailwindcss()],
     server: {
       host: "127.0.0.1",
-      port: 5188,
+      port: previewPort,
       strictPort: true,
       // Deliberately manual refresh: connect-src none also blocks HMR sockets.
       hmr: false,

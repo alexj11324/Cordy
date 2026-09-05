@@ -2,6 +2,10 @@
 
 From the repository root, run `pnpm dev:cards`, then open
 <http://127.0.0.1:5188>. No server, database, login, Electron, or daemon is needed.
+For concurrent worktrees, assign each an unused port, for example
+`CARD_PREVIEW_PORT=15188 pnpm dev:cards`. Pass that same variable to
+`pnpm test:cards`; the listener and Playwright URL share the validated setting.
+Keep the default 5188 only when no other preview or Desktop renderer uses it.
 Refresh after editing shared components; HMR is intentionally disabled because
 the page's CSP denies all connections (Vite's client may log a blocked socket).
 
