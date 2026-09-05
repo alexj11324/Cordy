@@ -1370,7 +1370,7 @@
   },
   "repositories": {
     "section_title": "Repositories",
-    "description": "Git repositories available to this workspace. Bind a local folder for each project on this computer.",
+    "description": "",
     "url_placeholder": "https://git.example.com/org/repo.git or git@git.example.com:org/repo.git",
     "url_empty": "(empty URL)",
     "description_placeholder": "Description (e.g. Go backend + Next.js frontend)",
@@ -1411,6 +1411,9 @@
     "toast_saved": "Repositories saved",
     "toast_save_failed": "Failed to save repositories",
     "choose_local_project": "Choose a local project",
+    "local_projects_title": "Project folders",
+    "local_projects_empty": "No projects yet.",
+    "remote_projects_title": "Remote sources",
     "remote_details": "Remote address",
     "remote_entry_hint": "Enter a Git address, or choose a repository with the GitHub button."
   },

@@ -1367,7 +1367,7 @@
   },
   "repositories": {
     "section_title": "代码仓库",
-    "description": "管理工作区的代码仓库，并为项目绑定这台电脑上的文件夹。",
+    "description": "",
     "url_placeholder": "https://git.example.com/org/repo.git 或 git@git.example.com:org/repo.git",
     "url_empty": "（空 URL）",
     "description_placeholder": "描述（例如：Go 后端 + Next.js 前端）",
@@ -1408,6 +1408,9 @@
     "toast_saved": "已保存代码仓库",
     "toast_save_failed": "保存代码仓库失败",
     "choose_local_project": "选择本地项目",
+    "local_projects_title": "项目文件夹",
+    "local_projects_empty": "暂无项目。",
+    "remote_projects_title": "远程来源",
     "remote_details": "远程地址",
     "remote_entry_hint": "输入 Git 地址，或通过 GitHub 按钮选择仓库。"
   },

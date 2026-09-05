@@ -1367,7 +1367,7 @@
   },
   "repositories": {
     "section_title": "リポジトリ",
-    "description": "ワークスペースのリポジトリと、このコンピューター上のプロジェクトフォルダーを管理します。",
+    "description": "",
     "url_placeholder": "https://git.example.com/org/repo.git または git@git.example.com:org/repo.git",
     "url_empty": "（空の URL）",
     "description_placeholder": "説明（例: Go バックエンド + Next.js フロントエンド）",
@@ -1408,6 +1408,9 @@
     "toast_saved": "リポジトリを保存しました",
     "toast_save_failed": "リポジトリを保存できませんでした",
     "choose_local_project": "ローカルプロジェクトを選択",
+    "local_projects_title": "プロジェクトフォルダー",
+    "local_projects_empty": "プロジェクトはまだありません。",
+    "remote_projects_title": "リモートソース",
     "remote_details": "リモートアドレス",
     "remote_entry_hint": "Git アドレスを入力するか、GitHub ボタンでリポジトリを選択してください。"
   },

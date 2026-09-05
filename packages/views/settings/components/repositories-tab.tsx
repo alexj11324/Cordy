@@ -370,7 +370,6 @@ export function RepositoriesTab() {
   return (
     <SettingsTab
       title={t(($) => $.page.tabs.repositories)}
-      description={t(($) => $.repositories.description)}
       action={
         <SettingsSaveState
           status={autoSave.status}
@@ -380,18 +379,38 @@ export function RepositoriesTab() {
         />
       }
     >
-      <SettingsSection>
-        {isDesktopShell() && (
-          <SettingsPillButton icon={FolderOpen} onClick={() => useModalStore.getState().open("create-project")}>
-            {t(($) => $.repositories.choose_local_project)}
-          </SettingsPillButton>
-        )}
-        {projects.map(project => (
-          <SettingsCard key={project.id}>
-            <SettingsListRow><span className="text-body font-medium">{project.title}</span></SettingsListRow>
-            <div className="p-3"><ProjectResourcesSection projectId={project.id} /></div>
-          </SettingsCard>
-        ))}
+      <SettingsSection
+        title={t(($) => $.repositories.local_projects_title)}
+        action={
+          isDesktopShell() ? (
+            <SettingsPillButton
+              icon={FolderOpen}
+              onClick={() => useModalStore.getState().open("create-project")}
+            >
+              {t(($) => $.repositories.choose_local_project)}
+            </SettingsPillButton>
+          ) : undefined
+        }
+      >
+        <SettingsCard>
+          {projects.length === 0 ? (
+            <SettingsEmpty title={t(($) => $.repositories.local_projects_empty)} />
+          ) : (
+            projects.map((project) => (
+              <div key={project.id} className="border-b last:border-b-0">
+                <SettingsListRow>
+                  <span className="text-body font-medium">{project.title}</span>
+                </SettingsListRow>
+                <div className="px-4 pb-3">
+                  <ProjectResourcesSection projectId={project.id} />
+                </div>
+              </div>
+            ))
+          )}
+        </SettingsCard>
+      </SettingsSection>
+
+      <SettingsSection title={t(($) => $.repositories.remote_projects_title)}>
         <SettingsCard>
           {repositories.length === 0 ? (
             <SettingsEmpty title={t(($) => $.repositories.empty)} />
@@ -407,6 +426,7 @@ export function RepositoriesTab() {
                 <details className="mt-1 text-caption text-muted-foreground">
                   <summary className="cursor-pointer">{t(($) => $.repositories.remote_details)}</summary>
                   <p className="break-all font-mono">{repository.url}</p>
+                  {repository.description?.trim() ? <p className="mt-1">{repository.description}</p> : null}
                 </details>
               </div>
               {canManageWorkspace ? (
