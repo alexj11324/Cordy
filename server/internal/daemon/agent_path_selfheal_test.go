@@ -83,10 +83,10 @@ func TestResolveAgentEntry_SelfHealsAfterInPlaceUpgrade(t *testing.T) {
 	root := t.TempDir()
 	stableBin := filepath.Join(root, "bin") // the stable "/opt/homebrew/bin" analogue
 	t.Setenv("PATH", stableBin)
-	// Pin resolution to the daemon's own PATH: an unsupported shell disables the
-	// login-shell fallback so the test can't accidentally resolve a real codex
+	// Pin resolution to the daemon's own PATH by excluding standard install
+	// directories, so the test cannot accidentally resolve a real codex
 	// installed on the host running it.
-	t.Setenv("SHELL", filepath.Join(t.TempDir(), "fish"))
+	stubAgentInstallDirectories(t, nil)
 
 	v1 := installVersionedCodex(t, root, "0.144.1", stableBin)
 	if !strings.Contains(v1, "0.144.1") {
@@ -151,7 +151,7 @@ func TestResolveAgentEntry_RejectsBelowMinVersionAfterUpgrade(t *testing.T) {
 	root := t.TempDir()
 	stableBin := filepath.Join(root, "bin")
 	t.Setenv("PATH", stableBin)
-	t.Setenv("SHELL", filepath.Join(t.TempDir(), "fish"))
+	stubAgentInstallDirectories(t, nil)
 
 	v1 := installVersionedCodex(t, root, "0.144.1", stableBin)
 
@@ -201,7 +201,7 @@ func TestResolveAgentEntry_ReturnsVersionPairedWithCachedPath(t *testing.T) {
 	root := t.TempDir()
 	stableBin := filepath.Join(root, "bin")
 	t.Setenv("PATH", stableBin)
-	t.Setenv("SHELL", filepath.Join(t.TempDir(), "fish"))
+	stubAgentInstallDirectories(t, nil)
 
 	v1 := installVersionedCodex(t, root, "0.144.1", stableBin)
 	d := newSelfHealTestDaemon()
@@ -249,7 +249,7 @@ func TestResolveAgentEntry_HealedPathWinsOverReappearingPinnedPath(t *testing.T)
 	root := t.TempDir()
 	stableBin := filepath.Join(root, "bin")
 	t.Setenv("PATH", stableBin)
-	t.Setenv("SHELL", filepath.Join(t.TempDir(), "fish"))
+	stubAgentInstallDirectories(t, nil)
 
 	v1 := installVersionedCodex(t, root, "0.144.1", stableBin)
 	d := newSelfHealTestDaemon()
@@ -294,9 +294,9 @@ func TestResolveAgentEntry_UninstalledLeavesEntryUnchanged(t *testing.T) {
 	root := t.TempDir()
 	stableBin := filepath.Join(root, "bin")
 	t.Setenv("PATH", stableBin)
-	// Disable the login-shell fallback so an actual codex on the host running
+	// Disable the install-path fallback so an actual codex on the host running
 	// this test can't stand in for the "uninstalled" binary.
-	t.Setenv("SHELL", filepath.Join(t.TempDir(), "fish"))
+	stubAgentInstallDirectories(t, nil)
 	pinned := installVersionedCodex(t, root, "0.144.1", stableBin)
 
 	// Uninstall entirely: remove the versioned tree and the stable symlink.

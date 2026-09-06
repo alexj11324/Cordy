@@ -29,13 +29,11 @@ import { DesktopLoginPage } from "./pages/login";
 import { DesktopAuthRecoveryPage } from "./pages/auth-recovery";
 import {
   completeDesktopHandoff,
+  cancelDesktopLogin,
   createDesktopLoginUrl,
   createHostedDesktopHandoffInitiate,
 } from "./pages/login-handoff";
-import {
-  GuestSessionRecoveryPage,
-  LocalGuestShell,
-} from "./pages/local-guest";
+import { enableWorkspaceMode, startWorkspaceGuest } from "./pages/entry-session";
 import { DesktopEntryPage } from "./pages/desktop-entry";
 import { DesktopShell } from "./components/desktop-layout";
 import { UpdateNotification } from "./components/update-notification";
@@ -56,7 +54,6 @@ import type { DesktopWindowContext } from "../../shared/issue-window";
 import type { RuntimeConfigResult } from "../../shared/runtime-config";
 import {
   resolveDesktopStartupMode,
-  type LocalGuestSession,
 } from "../../shared/local-guest";
 
 // BCP-47 region tags for the <html lang> attribute, mirroring
@@ -377,7 +374,7 @@ function AppContent() {
   }
 
   return user ? <DesktopShell /> : (
-    <DesktopLoginPage handoffFailed={handoffFailed} onRestart={() => setHandoffFailed(false)} />
+    <DesktopLoginPage handoffFailed={handoffFailed} onRestart={() => setHandoffFailed(false)} onBack={() => useAuthStore.getState().logout()} />
   );
 }
 
@@ -400,11 +397,11 @@ function BlockingRuntimeConfigError({ message }: { message: string }) {
 type BootState =
   | { kind: "loading" }
   | { kind: "entry" }
-  | { kind: "guest"; session: LocalGuestSession }
   | { kind: "guest-error" }
   | { kind: "cloud" };
 
 type DesktopCloudAppProps = {
+  onReturnToEntry: (cleanup: Promise<void>) => void;
   identity: ClientIdentity;
   locale: SupportedLocale;
   resources: Record<string, LocaleResources>;
@@ -414,6 +411,7 @@ type DesktopCloudAppProps = {
 };
 
 function CloudApp({
+  onReturnToEntry,
   identity,
   locale,
   resources,
@@ -454,7 +452,14 @@ function CloudApp({
     <CoreProvider
       apiBaseUrl={runtimeConfig.apiUrl}
       wsUrl={runtimeConfig.wsUrl}
-      onLogout={windowContext.kind === "main" ? handleDaemonLogout : undefined}
+      onLogout={windowContext.kind === "main" ? (serverLogout, options) => {
+        const cleanup = Promise.resolve(handleDaemonLogout(serverLogout, options));
+        if (options?.reason !== "missing-session") {
+          cancelDesktopLogin();
+          onReturnToEntry(cleanup);
+        }
+        return cleanup;
+      } : undefined}
       identity={identity}
       locale={locale}
       resources={resources}
@@ -533,66 +538,75 @@ export default function App() {
     });
   }, [localeAdapter, locale]);
 
-  const startSignIn = useCallback(async () => {
-    if (!runtimeConfigResult.ok) {
-      throw new Error("Desktop runtime configuration is unavailable");
-    }
-    const runtimeConfig = runtimeConfigResult.config;
-    const callbackProtocol = window.desktopAPI.callbackProtocol;
-    if (!callbackProtocol) {
-      throw new Error("Desktop callback protocol is unavailable");
-    }
-    const handoffClient = new ApiClient(runtimeConfig.apiUrl);
-    const loginUrl = await createDesktopLoginUrl(
-      runtimeConfig.accountsUrl,
-      (state, codeChallenge) =>
-        handoffClient.initiateDesktopAuthHandoff(
-          state,
-          codeChallenge,
-          callbackProtocol,
-        ),
-      {
-        sessionApiUrl: runtimeConfig.apiUrl,
-        locale,
-        callbackProtocol,
-        initiateHosted: createHostedDesktopHandoffInitiate(
-          runtimeConfig.accountsUrl,
-          runtimeConfig.apiUrl,
-        ),
-      },
-    );
-    const result = await window.desktopAPI.enableCloudMode();
-    if (!result.ok) {
-      throw new Error(`Unable to enable cloud mode: ${result.reason}`);
-    }
-    try {
-      await window.desktopAPI.openExternal(loginUrl);
-    } catch (error) {
-      await window.desktopAPI.disableCloudMode().catch(() => undefined);
-      throw error;
-    }
-    setBootState({ kind: "cloud" });
-  }, [runtimeConfigResult, locale]);
-
-  const enterGuest = useCallback((session: LocalGuestSession) => {
-    setBootState({ kind: "guest", session });
-  }, []);
-
-  const exitGuest = useCallback(async () => {
-    const result = await window.desktopAPI.clearGuestSession();
-    if (!result.ok) {
-      throw new Error(`Unable to clear Guest session: ${result.reason}`);
-    }
+  // Main mode events report capability readiness, not completion of an entry
+  // action. Login/Guest mount the workspace only after their session is ready.
+  const entryTransition = useRef(false);
+  const logoutTransition = useRef<Promise<void>>(Promise.resolve());
+  const returnToEntry = useCallback((cleanup: Promise<void>) => {
+    logoutTransition.current = cleanup;
     setBootState({ kind: "entry" });
   }, []);
 
-  const switchGuestToCloud = useCallback(async () => {
-    const result = await window.desktopAPI.switchGuestToCloud();
-    if (!result.ok) {
-      throw new Error(`Unable to switch to cloud mode: ${result.reason}`);
+  const startSignIn = useCallback(async () => {
+    await logoutTransition.current;
+    entryTransition.current = true;
+    try {
+      if (!runtimeConfigResult.ok) {
+        throw new Error("Desktop runtime configuration is unavailable");
+      }
+      const runtimeConfig = runtimeConfigResult.config;
+      const callbackProtocol = window.desktopAPI.callbackProtocol;
+      if (!callbackProtocol) {
+        throw new Error("Desktop callback protocol is unavailable");
+      }
+      const handoffClient = new ApiClient(runtimeConfig.apiUrl);
+      const loginUrl = await createDesktopLoginUrl(
+        runtimeConfig.accountsUrl,
+        (state, codeChallenge) =>
+          handoffClient.initiateDesktopAuthHandoff(
+            state,
+            codeChallenge,
+            callbackProtocol,
+          ),
+        {
+          sessionApiUrl: runtimeConfig.apiUrl,
+          locale,
+          callbackProtocol,
+          initiateHosted: createHostedDesktopHandoffInitiate(
+            runtimeConfig.accountsUrl,
+            runtimeConfig.apiUrl,
+          ),
+        },
+      );
+      await enableWorkspaceMode(window.desktopAPI);
+      try {
+        await window.desktopAPI.openExternal(loginUrl);
+      } catch (error) {
+        await window.desktopAPI.disableCloudMode().catch(() => undefined);
+        throw error;
+      }
+      setBootState({ kind: "cloud" });
+    } finally {
+      entryTransition.current = false;
     }
-    setBootState({ kind: "cloud" });
-  }, []);
+  }, [runtimeConfigResult, locale]);
+
+  const startGuestSession = useCallback(async () => {
+    await logoutTransition.current;
+    entryTransition.current = true;
+    try {
+      if (!runtimeConfigResult.ok) throw new Error("Desktop runtime configuration is unavailable");
+      const guestClient = new ApiClient(runtimeConfigResult.config.apiUrl);
+      await startWorkspaceGuest({
+        create: () => guestClient.createGuestSession(),
+        storage: localStorage,
+        bridge: window.desktopAPI,
+      });
+      setBootState({ kind: "cloud" });
+    } finally {
+      entryTransition.current = false;
+    }
+  }, [runtimeConfigResult]);
 
   // Guest discovery is the only pre-CoreProvider boot work. It reads only the
   // main-owned local Guest file; token/profile state is deliberately untouched.
@@ -634,7 +648,7 @@ export default function App() {
         if (startupMode === "guest-error") {
           setBootState({ kind: "guest-error" });
         } else if (startupMode === "guest" && result.ok && result.session) {
-          setBootState({ kind: "guest", session: result.session });
+          setBootState({ kind: "entry" });
         } else if (startupMode === "cloud") {
           // Preserve the established Desktop behavior for an existing cloud
           // session. Guest state wins above; only a machine without a Guest
@@ -662,7 +676,7 @@ export default function App() {
         if (mode !== "cloud") window.desktopAPI.closeWindow();
         return;
       }
-      if (mode === "cloud") {
+      if (mode === "cloud" && !entryTransition.current) {
         setBootState({ kind: "cloud" });
       } else if (mode === "undecided") {
         setBootState({ kind: "entry" });
@@ -679,22 +693,18 @@ export default function App() {
           </div>
         );
       case "entry":
+      case "guest-error":
         return (
           <DesktopEntryPage
             onSignIn={startSignIn}
-            onGuestSession={enterGuest}
+            onGuestSession={startGuestSession}
+            onResetGuest={bootState.kind === "guest-error" ? async () => {
+              const result = await window.desktopAPI.clearGuestSession();
+              if (!result.ok) throw new Error("Unable to reset local Guest marker");
+              setBootState({ kind: "entry" });
+            } : undefined}
           />
         );
-      case "guest":
-        return (
-          <LocalGuestShell
-            session={bootState.session}
-            onSwitchToCloud={switchGuestToCloud}
-            onExit={exitGuest}
-          />
-        );
-      case "guest-error":
-        return <GuestSessionRecoveryPage onReset={exitGuest} />;
       case "cloud":
         return null;
     }
@@ -704,6 +714,7 @@ export default function App() {
     <ThemeProvider>
       {bootState.kind === "cloud" ? (
         <CloudApp
+          onReturnToEntry={returnToEntry}
           identity={identity}
           locale={locale}
           resources={resources}

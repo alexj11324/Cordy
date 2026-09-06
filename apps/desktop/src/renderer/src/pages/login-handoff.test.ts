@@ -2,7 +2,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@patchbay/core/api";
-import { completeDesktopHandoff, createDesktopLoginUrl, hostedDesktopHandoffApiUrl } from "./login-handoff";
+import { cancelDesktopLogin, completeDesktopHandoff, createDesktopLoginUrl, hostedDesktopHandoffApiUrl } from "./login-handoff";
 
 const PENDING_HANDOFF_KEY = "patchbay_desktop_login_handoff";
 
@@ -27,6 +27,28 @@ function pendingHandoff(): {
 describe("desktop auth handoff", () => {
   beforeEach(() => {
     localStorage.clear();
+  });
+
+  it("ignores a returned browser code after the user cancels login", async () => {
+    await createDesktopLoginUrl("https://accounts.example", vi.fn().mockResolvedValue({ registered: true }));
+    const { state } = pendingHandoff();
+    cancelDesktopLogin();
+    const dependencies = { redeem: vi.fn(), login: vi.fn(), recoverPersistedToken: vi.fn() };
+    expect(await completeDesktopHandoff("old-code", state, dependencies)).toEqual({ acknowledged: true, authenticated: false });
+    expect(dependencies.redeem).not.toHaveBeenCalled();
+  });
+
+  it("does not establish a session if cancellation occurs during redemption", async () => {
+    await createDesktopLoginUrl("https://accounts.example", vi.fn().mockResolvedValue({ registered: true }));
+    const { state } = pendingHandoff();
+    let finish!: (result: { token: string }) => void;
+    const redeem = vi.fn(() => new Promise<{ token: string }>(resolve => { finish = resolve; }));
+    const login = vi.fn();
+    const pending = completeDesktopHandoff("code", state, { redeem, login, recoverPersistedToken: vi.fn() });
+    cancelDesktopLogin();
+    finish({ token: "cancelled-token" });
+    expect(await pending).toEqual({ acknowledged: true, authenticated: false });
+    expect(login).not.toHaveBeenCalled();
   });
 
   it("registers a PKCE binding before building the browser URL", async () => {

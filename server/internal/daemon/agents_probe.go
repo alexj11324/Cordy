@@ -7,72 +7,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/patchbay-ai/patchbay/server/pkg/agent"
 )
-
-// shellResolveTTL bounds how long one login-shell PATH resolution is reused
-// across probeAgentCLIs calls.
-//
-// This is deliberately much longer than agentDiscoveryInterval so the frequent
-// discovery round stays a pure exec.LookPath sweep: resolveAgentsViaLoginShell
-// forks the user's login shell and runs their rc files, and there is almost
-// always at least one uninstalled provider to miss LookPath on, so a short TTL
-// would turn discovery into a shell fork every few minutes for the life of the
-// daemon.
-//
-// The practical effect: a CLI on the daemon's own PATH is discovered within
-// agentDiscoveryInterval, while one reachable only through the login shell
-// (nvm/fnm shims, a ~/.local/bin that only ~/.zshrc adds) takes up to this long
-// — still without a restart, which is the part that was previously impossible.
-var shellResolveTTL = 30 * time.Minute
-
-var (
-	shellResolveMu    sync.Mutex
-	shellResolveCache map[string]string
-	shellResolveKey   string
-	shellResolvedAt   time.Time
-)
-
-// shellResolveEnvKey fingerprints the environment that determines what a login
-// shell resolves. A change to any of these invalidates the cache immediately,
-// independent of the TTL — the cached answer was for a different environment.
-func shellResolveEnvKey() string {
-	return strings.Join([]string{
-		os.Getenv("PATH"),
-		os.Getenv("SHELL"),
-		os.Getenv("HOME"),
-	}, "\x00")
-}
-
-// cachedShellResolvedAgents resolves every standard agent command name through
-// the user's login shell, reusing the previous result for shellResolveTTL as
-// long as the resolution-relevant environment is unchanged.
-//
-// resolveAgentsViaLoginShell forks the user's login shell, which runs their rc
-// files, so this must stay a cache and not a per-probe call: probeAgentCLIs now
-// runs periodically on a live daemon, and there is almost always at least one
-// uninstalled provider to miss LookPath on.
-func cachedShellResolvedAgents() map[string]string {
-	shellResolveMu.Lock()
-	defer shellResolveMu.Unlock()
-	key := shellResolveEnvKey()
-	if shellResolveCache != nil && shellResolveKey == key && time.Since(shellResolvedAt) < shellResolveTTL {
-		return shellResolveCache
-	}
-	resolved := resolveAgentsViaLoginShell(defaultAgentCommandNames)
-	if resolved == nil {
-		// Distinguish "resolved nothing" from "never resolved" so a failing
-		// shell doesn't get re-forked on every probe inside the TTL window.
-		resolved = map[string]string{}
-	}
-	shellResolveCache = resolved
-	shellResolveKey = key
-	shellResolvedAt = time.Now()
-	return shellResolveCache
-}
 
 // probeAgentCLIs discovers which built-in agent CLIs are installed on this
 // machine and returns one AgentEntry per provider that resolved.
@@ -90,29 +28,8 @@ func cachedShellResolvedAgents() map[string]string {
 //
 // A var so tests can stub discovery without installing real CLIs.
 var probeAgentCLIs = func() map[string]AgentEntry {
-	// Probe available agent CLIs. exec.LookPath is the primary path, but on
-	// macOS/Linux a GUI-launched daemon (Electron, Launchpad) does not
-	// inherit the user's interactive shell PATH — fnm/nvm/volta multishells,
-	// the Anthropic native installer prefix, and per-user npm prefixes all
-	// live in dirs that only get added to PATH by ~/.zshrc or ~/.bashrc.
-	// shellResolvedAgents asks the user's login shell, lazily on first miss,
-	// to resolve every standard agent name to its canonical absolute path,
-	// so we can find binaries the bare daemon process can't see. See
-	// resolveAgentsViaLoginShell for the details and constraints.
-	//
-	// Laziness matters: the happy path (every agent on the daemon's PATH or
-	// pinned to an explicit PATCHBAY_*_PATH) must not pay the cost of
-	// spawning the user's login shell — that touches their rc files and
-	// adds startup latency that scales with whatever they put in there. We
-	// only fork a shell when a bare command name actually missed LookPath.
-	//
-	// The resolution is cached process-wide with a TTL (not per call) because
-	// this function now also runs periodically on a live daemon: a per-call
-	// sync.Once would fork a login shell on every discovery round, since there
-	// is almost always at least one uninstalled provider to miss on. The TTL
-	// still lets a CLI installed into a login-shell-only PATH dir (nvm, fnm,
-	// ~/.local/bin via ~/.zshrc) be discovered without a restart (MUL-5439).
-	getShellResolved := cachedShellResolvedAgents
+	// Discovery is a file lookup: inherited PATH, conventional install paths,
+	// then provider-specific bundled executables. Never execute shell rc files.
 	probe := func(envVar, defaultCmd, modelEnv string) (AgentEntry, bool) {
 		cmd := envOrDefault(envVar, defaultCmd)
 		if path, err := resolveAgentExecutablePath(cmd); err == nil {
@@ -122,14 +39,14 @@ var probeAgentCLIs = func() map[string]AgentEntry {
 				Model:   strings.TrimSpace(os.Getenv(modelEnv)),
 			}, true
 		}
-		// The shell fallback only rescues bare command names. An operator
+		// Install-path discovery only rescues bare command names. An operator
 		// who pinned PATCHBAY_*_PATH to an absolute or relative path that
 		// doesn't exist should hard-miss, not silently get a different
 		// binary.
 		if strings.ContainsAny(cmd, "/\\") {
 			return AgentEntry{}, false
 		}
-		if path, ok := getShellResolved()[cmd]; ok {
+		if path, ok := resolveAgentsFromInstallPaths([]string{cmd})[cmd]; ok {
 			return AgentEntry{
 				Path:    path,
 				Command: cmd,
@@ -243,10 +160,8 @@ var probeAgentCLIs = func() map[string]AgentEntry {
 	}
 	// Qoder CLI ships as the `qodercli` binary (Qoder Desktop does not put it
 	// on PATH; users install it separately, often via an npm global prefix).
-	// It must go through probe() like every other provider so the login-shell
-	// fallback applies: a GUI/Launchpad-started daemon does not inherit the
-	// interactive shell PATH, and without the fallback a perfectly good
-	// qodercli install stayed invisible across restarts (MUL-5524).
+	// Use the shared lookup so conventional Qoder installations are found
+	// even when a GUI launch did not inherit their bin directory on PATH.
 	if e, ok := probe("PATCHBAY_QODER_PATH", "qodercli", "PATCHBAY_QODER_MODEL"); ok {
 		agents["qoder"] = e
 	}

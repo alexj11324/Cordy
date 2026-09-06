@@ -1473,7 +1473,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 
 	// WebSocket
 	mc := &membershipChecker{queries: queries}
-	pr := &patResolver{queries: queries, cache: patCache}
+	pr := &opaqueTokenResolver{queries: queries, cache: patCache}
 	slugResolver := realtime.SlugResolver(func(ctx context.Context, slug string) (string, error) {
 		ws, err := queries.GetWorkspaceBySlug(ctx, slug)
 		if err != nil {
@@ -2688,16 +2688,31 @@ func (mc *membershipChecker) IsMember(ctx context.Context, userID, workspaceID s
 	return err == nil
 }
 
-// patResolver implements realtime.PATResolver using database queries.
+// opaqueTokenResolver implements realtime.OpaqueTokenResolver using database queries.
 // patCache is shared with the Auth and DaemonAuth middlewares so a token
 // revoke through any path invalidates the cache for all of them. Nil
 // cache is supported and degrades to direct DB lookups.
-type patResolver struct {
+type opaqueTokenResolver struct {
 	queries *db.Queries
 	cache   *auth.PATCache
 }
 
-func (pr *patResolver) ResolveToken(ctx context.Context, token string) (string, bool) {
+func (pr *opaqueTokenResolver) ResolveToken(ctx context.Context, token string) (string, bool) {
+	if strings.HasPrefix(token, auth.GuestTokenPrefix) {
+		if pr.queries == nil {
+			return "", false
+		}
+		user, err := auth.ResolveGuestUser(ctx, pr.queries, token)
+		if err != nil {
+			return "", false
+		}
+		uid := util.UUIDToString(user.ID)
+		if auth.IsTemporarilyDisabledUser(uid, user.Email) {
+			return "", false
+		}
+		return uid, true
+	}
+
 	hash := auth.HashToken(token)
 
 	if userID, ok := pr.cache.Get(ctx, hash); ok {

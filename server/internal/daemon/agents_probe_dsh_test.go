@@ -38,10 +38,9 @@ func TestProbeAgentCLIsRequiresDshPatchbayProfile(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixture")
 	}
-	originalResolver := resolveAgentsViaLoginShell
-	t.Cleanup(func() { resolveAgentsViaLoginShell = originalResolver })
-	resolveAgentsViaLoginShell = func([]string) map[string]string { return map[string]string{} }
-	resetShellResolveCacheForTest(t)
+	originalResolver := resolveAgentsFromInstallPaths
+	t.Cleanup(func() { resolveAgentsFromInstallPaths = originalResolver })
+	resolveAgentsFromInstallPaths = func([]string) map[string]string { return map[string]string{} }
 
 	for _, tc := range []struct {
 		name string

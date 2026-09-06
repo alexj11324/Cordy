@@ -7,11 +7,9 @@ import (
 	"time"
 )
 
-// agentDiscoveryInterval is how often a running daemon re-checks which agent
-// CLIs are installed. A round is a handful of exec.LookPath calls — the
-// login-shell fallback is separately rate-limited by the much longer
-// shellResolveTTL — so this can be short enough that installing a CLI feels
-// immediate. Overridable for tests.
+// agentDiscoveryInterval bounds file-only checks of PATH and conventional
+// installer directories. A newly installed CLI is visible on the next round.
+// Overridable for tests.
 var agentDiscoveryInterval = 2 * time.Minute
 
 // agentConvergeMaxBackoff caps the retry delay for a discovered provider that

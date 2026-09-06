@@ -742,9 +742,9 @@ func vanishedPinnedPath(t *testing.T) (missing, healed string) {
 	// stub still wins deterministically over any codex installed on the host,
 	// while goroutines left running by earlier tests can still resolve git/sh.
 	t.Setenv("PATH", stableBin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	// An unsupported shell disables the login-shell fallback, which would only
+	// Disable host install directories for this isolated fixture, which would only
 	// run if the lookup above missed.
-	t.Setenv("SHELL", filepath.Join(t.TempDir(), "fish"))
+	stubAgentInstallDirectories(t, nil)
 	return filepath.Join(root, "gone", "codex"), canonicalExecutablePath(filepath.Join(stableBin, "codex"))
 }
 
