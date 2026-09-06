@@ -53,18 +53,18 @@ patchbay login --token
 PAT を `Authorization` ヘッダーに入れます:
 
 ```bash
-export PATCHBAY_TOKEN='pby_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+export ORVILO_TOKEN='pby_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
 
 curl https://api.aspectlylabs.com/api/me \
-  -H "Authorization: Bearer $PATCHBAY_TOKEN"
+  -H "Authorization: Bearer $ORVILO_TOKEN"
 ```
 
 ワークスペースレベルの API を呼び出すときは、エンドポイントの要求に応じてワークスペースも指定します:
 
 ```bash
 curl https://api.aspectlylabs.com/api/issues \
-  -H "Authorization: Bearer $PATCHBAY_TOKEN" \
-  -H "X-Workspace-ID: $PATCHBAY_WORKSPACE_ID"
+  -H "Authorization: Bearer $ORVILO_TOKEN" \
+  -H "X-Workspace-ID: $ORVILO_WORKSPACE_ID"
 ```
 
 スクリプト内のトークンは secret manager か保護された環境変数から取得し、ハードコードしないでください。セルフホストインスタンスでは、ドメインを自分の公開 API アドレスに置き換えます。

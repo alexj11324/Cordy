@@ -38,8 +38,8 @@ func TestTeamMemberSetRoleCommandIsRegistered(t *testing.T) {
 
 func TestRunTeamMemberSetRolePatchesRole(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "workspace-123")
+	t.Setenv("ORVILO_TOKEN", "test-token")
+	t.Setenv("ORVILO_WORKSPACE_ID", "workspace-123")
 
 	var gotMethod, gotPath string
 	var gotBody map[string]any
@@ -61,7 +61,7 @@ func TestRunTeamMemberSetRolePatchesRole(t *testing.T) {
 		})
 	}))
 	defer srv.Close()
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
 
 	cmd := newTeamMemberSetRoleTestCmd()
 	_ = cmd.Flags().Set("member-id", "member-456")

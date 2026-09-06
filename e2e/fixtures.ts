@@ -80,7 +80,7 @@ export class TestApiClient {
         throw new Error(`No verification code found for ${email}`);
       }
 
-      const configuredDevCode = process.env.PATCHBAY_DEV_VERIFICATION_CODE?.trim();
+      const configuredDevCode = process.env.ORVILO_DEV_VERIFICATION_CODE?.trim();
       const code = configuredDevCode || result.rows[0].code;
 
       // Step 3: Verify code to get JWT

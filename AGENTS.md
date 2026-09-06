@@ -65,7 +65,7 @@ secondary target, for web-only platform wiring. Say which client you verified on
 `make dev-login` prints a URL that installs the session cookie and lands on this
 environment's issues page, plus a bearer token for `curl` — use it instead of
 requesting a verification code when you need to check a change in the running
-app. It works because `make up` writes `PATCHBAY_DEV_LOGIN=1` into the env file;
+app. It works because `make up` writes `ORVILO_DEV_LOGIN=1` into the env file;
 the endpoint is not registered when `APP_ENV=production`.
 
 `make seed-dev` needs that user to exist, so run it after `make dev-login`. Its

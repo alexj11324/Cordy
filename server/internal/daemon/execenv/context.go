@@ -16,7 +16,7 @@ import (
 
 // TaskContextMarkerRelPath is a non-secret marker the daemon writes under the
 // task workdir. The CLI uses it as a fallback daemon-task signal when a child
-// sandbox strips all PATCHBAY_* env vars before invoking `patchbay`.
+// sandbox strips all ORVILO_* env vars before invoking `patchbay`.
 const TaskContextMarkerRelPath = ".patchbay/daemon_task_context.json"
 
 // TaskContextMarkerManagedBy is the marker discriminator the CLI checks before
@@ -35,7 +35,7 @@ type taskContextMarkerFile struct {
 //
 // The per-workdir marker only protects `patchbay` invocations whose cwd is
 // inside the workdir, because the CLI discovers markers by walking *up* from
-// cwd. A sandboxed subprocess that lost every PATCHBAY_* env var and escaped
+// cwd. A sandboxed subprocess that lost every ORVILO_* env var and escaped
 // to the workdir's parent directory sits above that marker, finds no daemon
 // signal, and would fall back to the user's config PAT — a confirmed
 // impersonation path. Every directory under workspacesRoot is daemon-owned,

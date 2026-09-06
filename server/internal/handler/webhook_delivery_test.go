@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/patchbay-ai/patchbay/server/internal/service"
 	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
@@ -577,6 +578,113 @@ func TestCreateAutomationTrigger_AcceptsGitHubProvider(t *testing.T) {
 	if resp.Provider == nil || *resp.Provider != "github" {
 		t.Fatalf("provider: %v", resp.Provider)
 	}
+	if resp.WebhookToken == nil || *resp.WebhookToken == "" {
+		t.Fatal("legacy github-without-preset must still mint a public URL")
+	}
+}
+
+func TestCreateAutomationTrigger_NativeGitHubDoesNotMintToken(t *testing.T) {
+	agentID := createWebhookTestAgent(t, "NativeGH Agent")
+	apID := createWebhookTestAutomation(t, agentID, "active", "run_only")
+
+	w := httptest.NewRecorder()
+	req := newRequest("POST", "/api/automations/"+apID+"/triggers", map[string]any{
+		"kind":   "webhook",
+		"preset": "github.pull_request.opened",
+	})
+	req = withURLParam(req, "id", apID)
+	testHandler.CreateAutomationTrigger(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", w.Code, w.Body.String())
+	}
+	var resp AutomationTriggerResponse
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.Provider == nil || *resp.Provider != "github" {
+		t.Fatalf("provider: %v", resp.Provider)
+	}
+	if resp.Preset == nil || *resp.Preset != "github.pull_request.opened" {
+		t.Fatalf("preset: %v", resp.Preset)
+	}
+	if resp.WebhookToken != nil && *resp.WebhookToken != "" {
+		t.Fatalf("native github trigger must not mint a token, got %v", resp.WebhookToken)
+	}
+	if resp.WebhookURL != nil {
+		t.Fatalf("native github trigger must not expose a URL, got %v", resp.WebhookURL)
+	}
+}
+
+func TestCreateAutomationTrigger_SlackRequiresPreset(t *testing.T) {
+	agentID := createWebhookTestAgent(t, "SlackPreset Agent")
+	apID := createWebhookTestAutomation(t, agentID, "active", "run_only")
+
+	w := httptest.NewRecorder()
+	req := newRequest("POST", "/api/automations/"+apID+"/triggers", map[string]any{
+		"kind":     "webhook",
+		"provider": "slack",
+	})
+	req = withURLParam(req, "id", apID)
+	testHandler.CreateAutomationTrigger(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestNativeFanout_DispatchesMatchingTrigger(t *testing.T) {
+	agentID := createWebhookTestAgent(t, "NativeFanout Agent")
+	apID := createWebhookTestAutomation(t, agentID, "active", "run_only")
+
+	w := httptest.NewRecorder()
+	req := newRequest("POST", "/api/automations/"+apID+"/triggers", map[string]any{
+		"kind":   "webhook",
+		"preset": "github.pull_request.opened",
+	})
+	req = withURLParam(req, "id", apID)
+	testHandler.CreateAutomationTrigger(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", w.Code, w.Body.String())
+	}
+	var trig AutomationTriggerResponse
+	json.Unmarshal(w.Body.Bytes(), &trig)
+
+	ctx := context.Background()
+	body := []byte(`{"action":"opened","pull_request":{"draft":false,"number":12},"installation":{"id":1}}`)
+	testHandler.FanoutNativeAutomationEvent(
+		ctx,
+		parseUUID(testWorkspaceID),
+		"github",
+		"github.pull_request.opened",
+		"native-fanout-1",
+		"github_delivery",
+		body,
+		service.GitHubTriggerMatch(body),
+	)
+	processQueuedWebhookDelivery(t, mustLatestQueuedDeliveryID(t, trig.ID))
+
+	rows, err := testHandler.Queries.ListAutomationRuns(ctx, db.ListAutomationRunsParams{
+		AutomationID: parseUUID(apID),
+		Limit:        50,
+		Offset:       0,
+	})
+	if err != nil {
+		t.Fatalf("list runs: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 run, got %d", len(rows))
+	}
+}
+
+func mustLatestQueuedDeliveryID(t *testing.T, triggerID string) string {
+	t.Helper()
+	var id string
+	if err := testPool.QueryRow(context.Background(), `
+		SELECT id::text FROM webhook_delivery
+		WHERE trigger_id = $1
+		ORDER BY received_at DESC
+		LIMIT 1
+	`, triggerID).Scan(&id); err != nil {
+		t.Fatalf("lookup delivery for trigger %s: %v", triggerID, err)
+	}
+	return id
 }
 
 // run_only automations have no issue-title duplicate guard, so dedupe via

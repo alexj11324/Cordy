@@ -89,7 +89,7 @@ type ExecOptions struct {
 	ResumeContinuityNotice string
 	// ExtraArgs is honoured only by backends that opt in by reading it; the
 	// rest ignore it. Deliberately not enumerated here — the previous list
-	// went stale as backends were added, which is how PATCHBAY_QWENPAW_ARGS
+	// went stale as backends were added, which is how ORVILO_QWENPAW_ARGS
 	// shipped plumbed but dropped. Grep for ExtraArgs to see today's set.
 	ExtraArgs        []string        // daemon-wide default CLI arguments appended before CustomArgs
 	CustomArgs       []string        // per-agent CLI arguments appended after ExtraArgs

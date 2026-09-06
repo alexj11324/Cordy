@@ -3,7 +3,7 @@
  * Schedule Pulse handler — the plugin author's side of a durable scheduled Hook.
  *
  * Run:
- *   PATCHBAY_SIGNING_SECRET=whsec_... node handler.mjs
+ *   ORVILO_SIGNING_SECRET=whsec_... node handler.mjs
  */
 
 import { createServer as createHTTPServer } from "node:http";
@@ -12,12 +12,12 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 const PORT = Number(process.env.PORT ?? 8787);
-const SIGNING_SECRET = process.env.PATCHBAY_SIGNING_SECRET ?? "";
+const SIGNING_SECRET = process.env.ORVILO_SIGNING_SECRET ?? "";
 const TOLERANCE_SECONDS = 5 * 60;
 const PULSE_KEY = "last_pulse";
 
 if (!SIGNING_SECRET) {
-  console.error("PATCHBAY_SIGNING_SECRET is required. Rotate the plugin token in Patchbay to obtain it.");
+  console.error("ORVILO_SIGNING_SECRET is required. Rotate the plugin token in Patchbay to obtain it.");
   process.exit(1);
 }
 
@@ -82,8 +82,8 @@ async function loadPulse(body) {
   }
 }
 
-const tlsCert = process.env.PATCHBAY_HOOK_TLS_CERT;
-const tlsKey = process.env.PATCHBAY_HOOK_TLS_KEY;
+const tlsCert = process.env.ORVILO_HOOK_TLS_CERT;
+const tlsKey = process.env.ORVILO_HOOK_TLS_KEY;
 const createServer = tlsCert && tlsKey
   ? (handler) => createHTTPSServer({ cert: readFileSync(tlsCert), key: readFileSync(tlsKey) }, handler)
   : createHTTPServer;

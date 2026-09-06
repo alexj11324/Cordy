@@ -391,7 +391,7 @@ func (c *HTTPClient) FetchIssue(ctx context.Context, token, issueID string) (Iss
 	var data struct {
 		Issue *issueNode `json:"issue"`
 	}
-	if err := c.graphql(ctx, token, `query PatchbayIssue($id:ID!){issue(id:$id){`+issueFields+`}}`, map[string]any{"id": issueID}, &data); err != nil {
+	if err := c.graphql(ctx, token, `query PatchbayIssue($id:String!){issue(id:$id){`+issueFields+`}}`, map[string]any{"id": issueID}, &data); err != nil {
 		return Issue{}, false, err
 	}
 	if data.Issue == nil {

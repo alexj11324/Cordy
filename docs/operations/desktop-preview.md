@@ -47,7 +47,7 @@ login attempt and may already be cancelled, consumed or expired.
 
 Opening the app and automatic daemon discovery do not execute login/interactive
 shell initialization. Discovery checks inherited PATH, explicit
-`PATCHBAY_<PROVIDER>_PATH` settings, conventional installer directories and
+`ORVILO_<PROVIDER>_PATH` settings, conventional installer directories and
 existing provider-specific app locations. Candidate discovery does not execute
 the candidate. Version probes and task execution are separate operations.
 

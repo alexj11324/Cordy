@@ -36,8 +36,8 @@ func TestProbeAgentCLIs_DiscoversPiAndOmpSeparately(t *testing.T) {
 	}
 
 	t.Setenv("PATH", fakeDir)
-	t.Setenv("PATCHBAY_PI_PATH", "")
-	t.Setenv("PATCHBAY_OMP_PATH", "")
+	t.Setenv("ORVILO_PI_PATH", "")
+	t.Setenv("ORVILO_OMP_PATH", "")
 
 	agents := probeAgentCLIs()
 
@@ -110,8 +110,8 @@ func TestRegisterRuntimes_PiAndOmpBothReachTheServer(t *testing.T) {
 	resolveAgentsFromInstallPaths = func([]string) map[string]string { return map[string]string{} }
 
 	t.Setenv("PATH", fakeDir)
-	t.Setenv("PATCHBAY_PI_PATH", "")
-	t.Setenv("PATCHBAY_OMP_PATH", "")
+	t.Setenv("ORVILO_PI_PATH", "")
+	t.Setenv("ORVILO_OMP_PATH", "")
 
 	agents := probeAgentCLIs()
 	piEntry, ok := agents["pi"]

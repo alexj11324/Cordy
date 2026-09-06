@@ -319,6 +319,8 @@ type Automation struct {
 	ExecutorType       string             `json:"executor_type"`
 	ProjectID          pgtype.UUID        `json:"project_id"`
 	PauseReason        pgtype.Text        `json:"pause_reason"`
+	Model              pgtype.Text        `json:"model"`
+	Tools              []byte             `json:"tools"`
 }
 
 type AutomationCollaborator struct {
@@ -413,6 +415,8 @@ type AutomationTrigger struct {
 	PublishedByType pgtype.Text `json:"published_by_type"`
 	// The member/agent currently responsible for this trigger's effective config (creator, then last substantive editor). For a member this is the accountable human of runs the trigger fires (source=trigger_owner). No FK, app-layer integrity. NULL on pre-migration triggers, which degrade to rule_owner (MUL-4302).
 	PublishedByID pgtype.UUID `json:"published_by_id"`
+	Preset        pgtype.Text `json:"preset"`
+	Config        []byte      `json:"config"`
 }
 
 type ChannelBindingToken struct {

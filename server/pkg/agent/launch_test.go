@@ -319,7 +319,7 @@ func TestBackendFactoriesSetCommandLogProvider(t *testing.T) {
 // TestOnlyLaunchGoSpawnsRuntimeProcesses is the structural half of this fix.
 //
 // Distributed opt-in is what let ExtraArgs rot: it was honoured by six of
-// twenty-one backends, and PATCHBAY_QWENPAW_ARGS shipped plumbed-but-dropped
+// twenty-one backends, and ORVILO_QWENPAW_ARGS shipped plumbed-but-dropped
 // because nothing failed when a backend forgot to read it. Re-establishing the
 // same convention for the launch prefix would rot the same way, so the rule is
 // mechanical instead: every runtime process in this package is constructed in

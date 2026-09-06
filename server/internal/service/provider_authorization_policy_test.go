@@ -52,3 +52,61 @@ func TestProviderGrantConditionsRequireExactTaskForDelegatedAllow(t *testing.T) 
 		t.Fatal("delegated allow with exact task condition was rejected")
 	}
 }
+
+func TestAutomationRootedProviderTaskKeepsNullOriginatorFailClosedExceptKnownSources(t *testing.T) {
+	t.Parallel()
+
+	accountable := testUUID(11)
+	for _, source := range []string{"trigger_owner", "rule_owner"} {
+		task := db.AgentTaskQueue{
+			AccountableUserID: accountable,
+			OriginatorSource:  pgtype.Text{String: source, Valid: true},
+		}
+		if !IsAutomationRootedTask(task) {
+			t.Errorf("source %q did not identify an automation-rooted task", source)
+		}
+	}
+
+	for name, task := range map[string]db.AgentTaskQueue{
+		"direct human": {
+			OriginatorUserID:  accountable,
+			AccountableUserID: accountable,
+			OriginatorSource:  pgtype.Text{String: "direct_human", Valid: true},
+		},
+		"unattributed": {
+			AccountableUserID: accountable,
+			OriginatorSource:  pgtype.Text{String: "unattributed", Valid: true},
+		},
+		"owner fallback": {
+			AccountableUserID: accountable,
+			OriginatorSource:  pgtype.Text{String: "owner_fallback", Valid: true},
+		},
+		"missing source": {
+			AccountableUserID: accountable,
+		},
+		"missing accountable": {
+			OriginatorSource: pgtype.Text{String: "trigger_owner", Valid: true},
+		},
+	} {
+		if IsAutomationRootedTask(task) {
+			t.Errorf("%s was accepted as an automation-rooted provider task", name)
+		}
+	}
+
+	runtimeOwner := testUUID(12)
+	if got, ok := TaskTokenUserID(db.AgentTaskQueue{OriginatorUserID: accountable}, runtimeOwner); !ok || got != accountable {
+		t.Fatalf("human task token user = %v, %v; want originator %v, true", got, ok, accountable)
+	}
+	if got, ok := TaskTokenUserID(db.AgentTaskQueue{
+		AccountableUserID: accountable,
+		OriginatorSource:  pgtype.Text{String: "trigger_owner", Valid: true},
+	}, runtimeOwner); !ok || got != runtimeOwner {
+		t.Fatalf("automation task token user = %v, %v; want runtime owner %v, true", got, ok, runtimeOwner)
+	}
+	if got, ok := TaskTokenUserID(db.AgentTaskQueue{
+		AccountableUserID: accountable,
+		OriginatorSource:  pgtype.Text{String: "unattributed", Valid: true},
+	}, runtimeOwner); ok || got.Valid {
+		t.Fatalf("unattributed task token user = %v, %v; want invalid, false", got, ok)
+	}
+}

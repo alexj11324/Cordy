@@ -187,7 +187,7 @@ func TestEvictRepoCache_DisabledWhenTTLZero(t *testing.T) {
 	stats := runRepoGC(d)
 
 	if _, err := os.Stat(barePath); err != nil {
-		t.Fatalf("PATCHBAY_GC_REPO_TTL=0 must disable eviction entirely: %v", err)
+		t.Fatalf("ORVILO_GC_REPO_TTL=0 must disable eviction entirely: %v", err)
 	}
 	if stats.repoCachesReclaimed != 0 {
 		t.Errorf("repo_caches_reclaimed = %d, want 0", stats.repoCachesReclaimed)

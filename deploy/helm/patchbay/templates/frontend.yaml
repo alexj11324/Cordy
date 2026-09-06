@@ -35,7 +35,7 @@ spec:
             - name: REMOTE_API_URL
               value: {{ $remoteApiUrl | quote }}
             {{- if .Values.frontend.config.clerkPublishableKey }}
-            - name: PATCHBAY_CLERK_PUBLISHABLE_KEY
+            - name: ORVILO_CLERK_PUBLISHABLE_KEY
               value: {{ .Values.frontend.config.clerkPublishableKey | quote }}
             {{- end }}
             {{- if .Values.frontend.config.docsUrl }}

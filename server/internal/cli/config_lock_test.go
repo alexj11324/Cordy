@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const configLockHelperEnv = "PATCHBAY_TEST_CONFIG_LOCK_HELPER"
+const configLockHelperEnv = "ORVILO_TEST_CONFIG_LOCK_HELPER"
 
 func TestConfigLockTimesOutWithoutDeletingOrTruncatingHeldLock(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".config.lock")
@@ -74,8 +74,8 @@ func TestConfigLockReusesStaleUnlockedFile(t *testing.T) {
 
 func TestConfigLockCrossProcessCrashRecovery(t *testing.T) {
 	if os.Getenv(configLockHelperEnv) == "1" {
-		path := os.Getenv("PATCHBAY_TEST_CONFIG_LOCK_PATH")
-		ready := os.Getenv("PATCHBAY_TEST_CONFIG_LOCK_READY")
+		path := os.Getenv("ORVILO_TEST_CONFIG_LOCK_PATH")
+		ready := os.Getenv("ORVILO_TEST_CONFIG_LOCK_READY")
 		lock, err := acquireConfigLock(path, time.Second)
 		if err != nil {
 			os.Exit(2)
@@ -94,8 +94,8 @@ func TestConfigLockCrossProcessCrashRecovery(t *testing.T) {
 	command := exec.Command(os.Args[0], "-test.run=^TestConfigLockCrossProcessCrashRecovery$")
 	command.Env = append(os.Environ(),
 		configLockHelperEnv+"=1",
-		"PATCHBAY_TEST_CONFIG_LOCK_PATH="+path,
-		"PATCHBAY_TEST_CONFIG_LOCK_READY="+ready,
+		"ORVILO_TEST_CONFIG_LOCK_PATH="+path,
+		"ORVILO_TEST_CONFIG_LOCK_READY="+ready,
 	)
 	if err := command.Start(); err != nil {
 		t.Fatal(err)

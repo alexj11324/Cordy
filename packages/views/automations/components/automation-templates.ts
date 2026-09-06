@@ -27,6 +27,32 @@ export const TEMPLATE_TRIGGER_IDS = [
 
 export type TemplateTriggerId = (typeof TEMPLATE_TRIGGER_IDS)[number];
 
+/** Catalog preset written when creating from a template. `null` means
+ *  either a schedule trigger (see `triggerKind`) or "create the automation
+ *  and add the trigger later" (PagerDuty / Sentry — no native source yet). */
+export function templateTriggerPreset(trigger: TemplateTriggerId): string | null {
+  switch (trigger) {
+    case "pr_opened":
+      return "github.pull_request.opened";
+    case "pr_pushed":
+      return "github.pull_request.pushed";
+    case "pr_review_comment":
+      return "github.pull_request.review_comment";
+    case "new_message_in_channel":
+      return "slack.message";
+    case "workflow_run_completed":
+      return "github.workflow_run.completed";
+    case "checks_completed":
+      return "github.ci_completed";
+    case "issue_created":
+      return "linear.issue.created";
+    case "scheduled":
+    case "incident_triggered":
+    case "sentry_issue_event":
+      return null;
+  }
+}
+
 export const TEMPLATE_ACTION_IDS = [
   "send_slack",
   "pr_comment",

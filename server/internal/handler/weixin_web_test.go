@@ -15,7 +15,7 @@ import (
 )
 
 func TestListWeixinInstallationsNotConfiguredReturnsEmpty(t *testing.T) {
-	t.Setenv("PATCHBAY_WEIXIN_SECRET_KEY", "")
+	t.Setenv("ORVILO_WEIXIN_SECRET_KEY", "")
 	h := &Handler{}
 	req := httptest.NewRequest(http.MethodGet, "/api/workspaces/x/weixin/installations", nil)
 	w := httptest.NewRecorder()
@@ -39,7 +39,7 @@ func TestListWeixinInstallationsNotConfiguredReturnsEmpty(t *testing.T) {
 }
 
 func TestWeixinMutationHandlersRejectUnconfiguredDeployment(t *testing.T) {
-	t.Setenv("PATCHBAY_WEIXIN_SECRET_KEY", "")
+	t.Setenv("ORVILO_WEIXIN_SECRET_KEY", "")
 	tests := []struct {
 		name string
 		verb string

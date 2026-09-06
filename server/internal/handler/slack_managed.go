@@ -35,7 +35,7 @@ type BeginManagedSlackInstallResponse struct {
 
 // managedSlackCallbackURL rebuilds the exact redirect_uri the authorize URL
 // carried, so the token exchange presents the same value Slack authorized.
-// Empty when PATCHBAY_PUBLIC_URL is unset — OAuth cannot work without an exact
+// Empty when ORVILO_PUBLIC_URL is unset — OAuth cannot work without an exact
 // registered callback, so callers fail loudly instead of exchanging against a
 // wrong URI.
 func (h *Handler) managedSlackCallbackURL() string {
@@ -53,7 +53,7 @@ func (h *Handler) managedSlackCallbackURL() string {
 // from the URL — the same boundary shape as RegisterSlackBYO.
 //
 // State issuance needs no client credentials, so it runs first; the authorize
-// URL does, so a deployment without PATCHBAY_SLACK_CLIENT_ID/_SECRET (or
+// URL does, so a deployment without ORVILO_SLACK_CLIENT_ID/_SECRET (or
 // without a public URL to build the callback from) mints the state and then
 // fails loudly with 503 instead of handing out a URL that could never work.
 func (h *Handler) BeginManagedSlackInstall(w http.ResponseWriter, r *http.Request) {

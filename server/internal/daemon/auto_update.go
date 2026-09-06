@@ -104,7 +104,7 @@ var selfReloadProbeTimeout = 10 * time.Second
 // the next launch and re-execing would fight the app's own lifecycle.
 //
 // The GitHub half is additionally skipped when the operator opted out
-// (--no-auto-update / PATCHBAY_DAEMON_AUTO_UPDATE=false), when the server is
+// (--no-auto-update / ORVILO_DAEMON_AUTO_UPDATE=false), when the server is
 // self-hosted (default-off, MUL-2381), or when the running version isn't a
 // tagged release — source builds (`make daemon`) report a `git describe`-style
 // version and upgrading them to a public release would silently discard the dev
@@ -307,8 +307,8 @@ func (d *Daemon) tryAutoUpdate(ctx context.Context) {
 // skipped by isReleaseVersion, and installing something GitHub doesn't consider
 // newer (a deliberate downgrade, or an intermediate version). It is also up to
 // a full check interval slow. This check closes all of that, which is why it
-// has its own switch (--no-auto-reload / PATCHBAY_DAEMON_AUTO_RELOAD=false /
-// disable_auto_reload) rather than riding on PATCHBAY_DAEMON_AUTO_UPDATE.
+// has its own switch (--no-auto-reload / ORVILO_DAEMON_AUTO_RELOAD=false /
+// disable_auto_reload) rather than riding on ORVILO_DAEMON_AUTO_UPDATE.
 //
 // Restart mechanics are shared with tryAutoUpdate rather than reinvented:
 // the same trySetClaimBarrier keeps a running task from being interrupted, and

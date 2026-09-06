@@ -9,8 +9,8 @@ import { Callout } from "fumadocs-ui/components/callout";
 **Self-hosted Patchbay only.** This integration is available only when you run
 Patchbay yourself; it is not offered on Patchbay Cloud. "Self-hosted" here means
 **Patchbay** is self-hosted — typically so it can reach a Git instance on your own
-network. A server operator must enable it (`PATCHBAY_VCS_INTEGRATION_ENABLED=true`)
-and set `PATCHBAY_VCS_SECRET_KEY`; until then the section does not appear in
+network. A server operator must enable it (`ORVILO_VCS_INTEGRATION_ENABLED=true`)
+and set `ORVILO_VCS_SECRET_KEY`; until then the section does not appear in
 Settings → Integrations.
 </Callout>
 
@@ -27,7 +27,7 @@ Unlike GitHub, these providers have no "App" model. Each workspace stores its ow
 Turn the integration on for this deployment. It is off by default, so the section stays hidden until you set:
 
 ```sh
-PATCHBAY_VCS_INTEGRATION_ENABLED=true
+ORVILO_VCS_INTEGRATION_ENABLED=true
 ```
 
 The official self-hosted `docker compose` file (`docker-compose.selfhost.yml`) sets this for you.
@@ -39,12 +39,12 @@ openssl rand -base64 32
 ```
 
 ```sh
-PATCHBAY_VCS_SECRET_KEY=<base64 32-byte key>
+ORVILO_VCS_SECRET_KEY=<base64 32-byte key>
 ```
 
 Both are required: the switch decides whether the feature is offered, and the key encrypts the stored token and webhook secret. Connect, webhook, and rotate all require both.
 
-Set `PATCHBAY_PUBLIC_URL` to the server's public base URL so Patchbay can show a ready-to-paste webhook URL. Without it, the UI shows only the webhook path and you prepend your own origin.
+Set `ORVILO_PUBLIC_URL` to the server's public base URL so Patchbay can show a ready-to-paste webhook URL. Without it, the UI shows only the webhook path and you prepend your own origin.
 
 ## Connect a workspace
 

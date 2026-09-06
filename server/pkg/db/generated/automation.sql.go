@@ -96,12 +96,12 @@ const createAutomation = `-- name: CreateAutomation :one
 INSERT INTO automation (
     workspace_id, title, description, executor_type, executor_id,
     status, execution_mode, issue_title_template, project_id,
-    created_by_type, created_by_id
+    created_by_type, created_by_id, model, tools
 ) VALUES (
     $1, $2, $9, $3, $4,
     $5, $6, $10, $11,
-    $7, $8
-) RETURNING id, workspace_id, title, description, executor_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, executor_type, project_id, pause_reason
+    $7, $8, $12, COALESCE($13, '{}'::jsonb)
+) RETURNING id, workspace_id, title, description, executor_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, executor_type, project_id, pause_reason, model, tools
 `
 
 type CreateAutomationParams struct {
@@ -116,6 +116,8 @@ type CreateAutomationParams struct {
 	Description        pgtype.Text `json:"description"`
 	IssueTitleTemplate pgtype.Text `json:"issue_title_template"`
 	ProjectID          pgtype.UUID `json:"project_id"`
+	Model              pgtype.Text `json:"model"`
+	Tools              interface{} `json:"tools"`
 }
 
 func (q *Queries) CreateAutomation(ctx context.Context, arg CreateAutomationParams) (Automation, error) {
@@ -131,6 +133,8 @@ func (q *Queries) CreateAutomation(ctx context.Context, arg CreateAutomationPara
 		arg.Description,
 		arg.IssueTitleTemplate,
 		arg.ProjectID,
+		arg.Model,
+		arg.Tools,
 	)
 	var i Automation
 	err := row.Scan(
@@ -150,6 +154,8 @@ func (q *Queries) CreateAutomation(ctx context.Context, arg CreateAutomationPara
 		&i.ExecutorType,
 		&i.ProjectID,
 		&i.PauseReason,
+		&i.Model,
+		&i.Tools,
 	)
 	return i, err
 }
@@ -420,14 +426,15 @@ const createAutomationTrigger = `-- name: CreateAutomationTrigger :one
 INSERT INTO automation_trigger (
     automation_id, kind, enabled, cron_expression, timezone,
     next_run_at, webhook_token, label, provider, event_filters,
-    published_by_type, published_by_id
+    published_by_type, published_by_id, preset, config
 ) VALUES (
     $1, $2, $3, $4, $5,
     $6, $7, $8,
     COALESCE($9::text, 'generic'),
     $10,
-    $11, $12
-) RETURNING id, automation_id, kind, enabled, cron_expression, timezone, next_run_at, webhook_token, label, last_fired_at, created_at, updated_at, provider, signing_secret, event_filters, published_by_type, published_by_id
+    $11, $12,
+    $13, COALESCE($14, '{}'::jsonb)
+) RETURNING id, automation_id, kind, enabled, cron_expression, timezone, next_run_at, webhook_token, label, last_fired_at, created_at, updated_at, provider, signing_secret, event_filters, published_by_type, published_by_id, preset, config
 `
 
 type CreateAutomationTriggerParams struct {
@@ -443,6 +450,8 @@ type CreateAutomationTriggerParams struct {
 	EventFilters    []byte             `json:"event_filters"`
 	PublishedByType pgtype.Text        `json:"published_by_type"`
 	PublishedByID   pgtype.UUID        `json:"published_by_id"`
+	Preset          pgtype.Text        `json:"preset"`
+	Config          interface{}        `json:"config"`
 }
 
 func (q *Queries) CreateAutomationTrigger(ctx context.Context, arg CreateAutomationTriggerParams) (AutomationTrigger, error) {
@@ -459,6 +468,8 @@ func (q *Queries) CreateAutomationTrigger(ctx context.Context, arg CreateAutomat
 		arg.EventFilters,
 		arg.PublishedByType,
 		arg.PublishedByID,
+		arg.Preset,
+		arg.Config,
 	)
 	var i AutomationTrigger
 	err := row.Scan(
@@ -479,6 +490,8 @@ func (q *Queries) CreateAutomationTrigger(ctx context.Context, arg CreateAutomat
 		&i.EventFilters,
 		&i.PublishedByType,
 		&i.PublishedByID,
+		&i.Preset,
+		&i.Config,
 	)
 	return i, err
 }
@@ -689,7 +702,7 @@ func (q *Queries) GetActiveAutomationRuleVersion(ctx context.Context, arg GetAct
 }
 
 const getAutomation = `-- name: GetAutomation :one
-SELECT id, workspace_id, title, description, executor_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, executor_type, project_id, pause_reason FROM automation
+SELECT id, workspace_id, title, description, executor_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, executor_type, project_id, pause_reason, model, tools FROM automation
 WHERE id = $1
 `
 
@@ -713,12 +726,14 @@ func (q *Queries) GetAutomation(ctx context.Context, id pgtype.UUID) (Automation
 		&i.ExecutorType,
 		&i.ProjectID,
 		&i.PauseReason,
+		&i.Model,
+		&i.Tools,
 	)
 	return i, err
 }
 
 const getAutomationInWorkspace = `-- name: GetAutomationInWorkspace :one
-SELECT id, workspace_id, title, description, executor_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, executor_type, project_id, pause_reason FROM automation
+SELECT id, workspace_id, title, description, executor_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, executor_type, project_id, pause_reason, model, tools FROM automation
 WHERE id = $1 AND workspace_id = $2
 `
 
@@ -747,6 +762,8 @@ func (q *Queries) GetAutomationInWorkspace(ctx context.Context, arg GetAutomatio
 		&i.ExecutorType,
 		&i.ProjectID,
 		&i.PauseReason,
+		&i.Model,
+		&i.Tools,
 	)
 	return i, err
 }
@@ -1004,7 +1021,7 @@ func (q *Queries) GetAutomationTaskByRun(ctx context.Context, automationRunID pg
 }
 
 const getAutomationTrigger = `-- name: GetAutomationTrigger :one
-SELECT id, automation_id, kind, enabled, cron_expression, timezone, next_run_at, webhook_token, label, last_fired_at, created_at, updated_at, provider, signing_secret, event_filters, published_by_type, published_by_id FROM automation_trigger
+SELECT id, automation_id, kind, enabled, cron_expression, timezone, next_run_at, webhook_token, label, last_fired_at, created_at, updated_at, provider, signing_secret, event_filters, published_by_type, published_by_id, preset, config FROM automation_trigger
 WHERE id = $1
 `
 
@@ -1029,12 +1046,14 @@ func (q *Queries) GetAutomationTrigger(ctx context.Context, id pgtype.UUID) (Aut
 		&i.EventFilters,
 		&i.PublishedByType,
 		&i.PublishedByID,
+		&i.Preset,
+		&i.Config,
 	)
 	return i, err
 }
 
 const getWebhookTriggerByToken = `-- name: GetWebhookTriggerByToken :one
-SELECT t.id, t.automation_id, t.kind, t.enabled, t.cron_expression, t.timezone, t.next_run_at, t.webhook_token, t.label, t.last_fired_at, t.created_at, t.updated_at, t.provider, t.signing_secret, t.event_filters, t.published_by_type, t.published_by_id, a.workspace_id AS automation_workspace_id
+SELECT t.id, t.automation_id, t.kind, t.enabled, t.cron_expression, t.timezone, t.next_run_at, t.webhook_token, t.label, t.last_fired_at, t.created_at, t.updated_at, t.provider, t.signing_secret, t.event_filters, t.published_by_type, t.published_by_id, t.preset, t.config, a.workspace_id AS automation_workspace_id
 FROM automation_trigger t
 JOIN automation a ON a.id = t.automation_id
 WHERE t.kind = 'webhook'
@@ -1059,6 +1078,8 @@ type GetWebhookTriggerByTokenRow struct {
 	EventFilters          []byte             `json:"event_filters"`
 	PublishedByType       pgtype.Text        `json:"published_by_type"`
 	PublishedByID         pgtype.UUID        `json:"published_by_id"`
+	Preset                pgtype.Text        `json:"preset"`
+	Config                []byte             `json:"config"`
 	AutomationWorkspaceID pgtype.UUID        `json:"automation_workspace_id"`
 }
 
@@ -1088,6 +1109,8 @@ func (q *Queries) GetWebhookTriggerByToken(ctx context.Context, webhookToken pgt
 		&i.EventFilters,
 		&i.PublishedByType,
 		&i.PublishedByID,
+		&i.Preset,
+		&i.Config,
 		&i.AutomationWorkspaceID,
 	)
 	return i, err
@@ -1316,7 +1339,7 @@ func (q *Queries) ListAutomationSubscribersForAutomations(ctx context.Context, d
 
 const listAutomationTriggers = `-- name: ListAutomationTriggers :many
 
-SELECT id, automation_id, kind, enabled, cron_expression, timezone, next_run_at, webhook_token, label, last_fired_at, created_at, updated_at, provider, signing_secret, event_filters, published_by_type, published_by_id FROM automation_trigger
+SELECT id, automation_id, kind, enabled, cron_expression, timezone, next_run_at, webhook_token, label, last_fired_at, created_at, updated_at, provider, signing_secret, event_filters, published_by_type, published_by_id, preset, config FROM automation_trigger
 WHERE automation_id = $1
 ORDER BY created_at ASC
 `
@@ -1351,6 +1374,8 @@ func (q *Queries) ListAutomationTriggers(ctx context.Context, automationID pgtyp
 			&i.EventFilters,
 			&i.PublishedByType,
 			&i.PublishedByID,
+			&i.Preset,
+			&i.Config,
 		); err != nil {
 			return nil, err
 		}
@@ -1365,7 +1390,7 @@ func (q *Queries) ListAutomationTriggers(ctx context.Context, automationID pgtyp
 const listAutomations = `-- name: ListAutomations :many
 
 SELECT
-  a.id, a.workspace_id, a.title, a.description, a.executor_id, a.status, a.execution_mode, a.issue_title_template, a.created_by_type, a.created_by_id, a.last_run_at, a.created_at, a.updated_at, a.executor_type, a.project_id, a.pause_reason,
+  a.id, a.workspace_id, a.title, a.description, a.executor_id, a.status, a.execution_mode, a.issue_title_template, a.created_by_type, a.created_by_id, a.last_run_at, a.created_at, a.updated_at, a.executor_type, a.project_id, a.pause_reason, a.model, a.tools,
   (
     SELECT array_agg(DISTINCT t.kind ORDER BY t.kind)
     FROM automation_trigger t
@@ -1439,9 +1464,73 @@ func (q *Queries) ListAutomations(ctx context.Context, arg ListAutomationsParams
 			&i.Automation.ExecutorType,
 			&i.Automation.ProjectID,
 			&i.Automation.PauseReason,
+			&i.Automation.Model,
+			&i.Automation.Tools,
 			&i.TriggerKinds,
 			&i.NextRunAt,
 			&i.LastRunStatus,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEnabledAutomationTriggersForEvent = `-- name: ListEnabledAutomationTriggersForEvent :many
+SELECT t.id, t.automation_id, t.kind, t.enabled, t.cron_expression, t.timezone, t.next_run_at, t.webhook_token, t.label, t.last_fired_at, t.created_at, t.updated_at, t.provider, t.signing_secret, t.event_filters, t.published_by_type, t.published_by_id, t.preset, t.config
+FROM automation_trigger t
+JOIN automation a ON a.id = t.automation_id
+WHERE a.workspace_id = $1
+  AND a.status = 'active'
+  AND t.enabled
+  AND t.kind = 'webhook'
+  AND t.provider = $2
+  AND t.preset = $3
+ORDER BY t.created_at ASC
+`
+
+type ListEnabledAutomationTriggersForEventParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	Provider    string      `json:"provider"`
+	Preset      pgtype.Text `json:"preset"`
+}
+
+// Native GitHub/Slack/Linear fan-out: enabled webhook triggers in this
+// workspace whose catalog preset matches the inbound event. Generic
+// URL webhooks are excluded (they fire through the public token ingress).
+func (q *Queries) ListEnabledAutomationTriggersForEvent(ctx context.Context, arg ListEnabledAutomationTriggersForEventParams) ([]AutomationTrigger, error) {
+	rows, err := q.db.Query(ctx, listEnabledAutomationTriggersForEvent, arg.WorkspaceID, arg.Provider, arg.Preset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AutomationTrigger{}
+	for rows.Next() {
+		var i AutomationTrigger
+		if err := rows.Scan(
+			&i.ID,
+			&i.AutomationID,
+			&i.Kind,
+			&i.Enabled,
+			&i.CronExpression,
+			&i.Timezone,
+			&i.NextRunAt,
+			&i.WebhookToken,
+			&i.Label,
+			&i.LastFiredAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Provider,
+			&i.SigningSecret,
+			&i.EventFilters,
+			&i.PublishedByType,
+			&i.PublishedByID,
+			&i.Preset,
+			&i.Config,
 		); err != nil {
 			return nil, err
 		}
@@ -1526,7 +1615,7 @@ func (q *Queries) ListSchedulableAutomationTriggers(ctx context.Context) ([]List
 }
 
 const lockAutomationForUpdate = `-- name: LockAutomationForUpdate :one
-SELECT id, workspace_id, title, description, executor_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, executor_type, project_id, pause_reason FROM automation
+SELECT id, workspace_id, title, description, executor_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, executor_type, project_id, pause_reason, model, tools FROM automation
 WHERE id = $1 AND workspace_id = $2
 FOR UPDATE
 `
@@ -1559,6 +1648,8 @@ func (q *Queries) LockAutomationForUpdate(ctx context.Context, arg LockAutomatio
 		&i.ExecutorType,
 		&i.ProjectID,
 		&i.PauseReason,
+		&i.Model,
+		&i.Tools,
 	)
 	return i, err
 }
@@ -1581,7 +1672,7 @@ WHERE a.status = 'active'
       )
     )
   )
-RETURNING a.id, a.workspace_id, a.title, a.description, a.executor_id, a.status, a.execution_mode, a.issue_title_template, a.created_by_type, a.created_by_id, a.last_run_at, a.created_at, a.updated_at, a.executor_type, a.project_id, a.pause_reason
+RETURNING a.id, a.workspace_id, a.title, a.description, a.executor_id, a.status, a.execution_mode, a.issue_title_template, a.created_by_type, a.created_by_id, a.last_run_at, a.created_at, a.updated_at, a.executor_type, a.project_id, a.pause_reason, a.model, a.tools
 `
 
 // A runtime delete is a persistent admission failure, not a per-tick event.
@@ -1614,6 +1705,8 @@ func (q *Queries) PauseAutomationsByUnboundAgents(ctx context.Context, agentIds 
 			&i.ExecutorType,
 			&i.ProjectID,
 			&i.PauseReason,
+			&i.Model,
+			&i.Tools,
 		); err != nil {
 			return nil, err
 		}
@@ -1633,7 +1726,7 @@ SET status = 'paused',
 WHERE status = 'active'
   AND executor_type = 'team'
   AND executor_id = $1
-RETURNING id, workspace_id, title, description, executor_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, executor_type, project_id, pause_reason
+RETURNING id, workspace_id, title, description, executor_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, executor_type, project_id, pause_reason, model, tools
 `
 
 // Rotating a team to an already-unbound leader has the same persistent
@@ -1665,6 +1758,8 @@ func (q *Queries) PauseAutomationsByUnrunnableTeam(ctx context.Context, teamID p
 			&i.ExecutorType,
 			&i.ProjectID,
 			&i.PauseReason,
+			&i.Model,
+			&i.Tools,
 		); err != nil {
 			return nil, err
 		}
@@ -1750,7 +1845,7 @@ SET webhook_token = $2,
     updated_at = now()
 WHERE id = $1
   AND kind = 'webhook'
-RETURNING id, automation_id, kind, enabled, cron_expression, timezone, next_run_at, webhook_token, label, last_fired_at, created_at, updated_at, provider, signing_secret, event_filters, published_by_type, published_by_id
+RETURNING id, automation_id, kind, enabled, cron_expression, timezone, next_run_at, webhook_token, label, last_fired_at, created_at, updated_at, provider, signing_secret, event_filters, published_by_type, published_by_id, preset, config
 `
 
 type RotateAutomationTriggerWebhookTokenParams struct {
@@ -1782,6 +1877,8 @@ func (q *Queries) RotateAutomationTriggerWebhookToken(ctx context.Context, arg R
 		&i.EventFilters,
 		&i.PublishedByType,
 		&i.PublishedByID,
+		&i.Preset,
+		&i.Config,
 	)
 	return i, err
 }
@@ -1916,7 +2013,7 @@ SET signing_secret = $2,
     updated_at = now()
 WHERE id = $1
   AND kind = 'webhook'
-RETURNING id, automation_id, kind, enabled, cron_expression, timezone, next_run_at, webhook_token, label, last_fired_at, created_at, updated_at, provider, signing_secret, event_filters, published_by_type, published_by_id
+RETURNING id, automation_id, kind, enabled, cron_expression, timezone, next_run_at, webhook_token, label, last_fired_at, created_at, updated_at, provider, signing_secret, event_filters, published_by_type, published_by_id, preset, config
 `
 
 type SetAutomationTriggerSigningSecretParams struct {
@@ -1950,6 +2047,8 @@ func (q *Queries) SetAutomationTriggerSigningSecret(ctx context.Context, arg Set
 		&i.EventFilters,
 		&i.PublishedByType,
 		&i.PublishedByID,
+		&i.Preset,
+		&i.Config,
 	)
 	return i, err
 }
@@ -1959,7 +2058,7 @@ UPDATE automation_trigger
 SET webhook_token = $2,
     updated_at = now()
 WHERE id = $1
-RETURNING id, automation_id, kind, enabled, cron_expression, timezone, next_run_at, webhook_token, label, last_fired_at, created_at, updated_at, provider, signing_secret, event_filters, published_by_type, published_by_id
+RETURNING id, automation_id, kind, enabled, cron_expression, timezone, next_run_at, webhook_token, label, last_fired_at, created_at, updated_at, provider, signing_secret, event_filters, published_by_type, published_by_id, preset, config
 `
 
 type SetAutomationTriggerWebhookTokenParams struct {
@@ -1993,6 +2092,8 @@ func (q *Queries) SetAutomationTriggerWebhookToken(ctx context.Context, arg SetA
 		&i.EventFilters,
 		&i.PublishedByType,
 		&i.PublishedByID,
+		&i.Preset,
+		&i.Config,
 	)
 	return i, err
 }
@@ -2001,7 +2102,7 @@ const systemPauseAutomation = `-- name: SystemPauseAutomation :one
 UPDATE automation
 SET status = 'paused', pause_reason = NULL, updated_at = now()
 WHERE id = $1 AND status = 'active'
-RETURNING id, workspace_id, title, description, executor_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, executor_type, project_id, pause_reason
+RETURNING id, workspace_id, title, description, executor_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, executor_type, project_id, pause_reason, model, tools
 `
 
 // Atomically pauses an automation only if it is currently active. Returns no
@@ -2028,6 +2129,8 @@ func (q *Queries) SystemPauseAutomation(ctx context.Context, id pgtype.UUID) (Au
 		&i.ExecutorType,
 		&i.ProjectID,
 		&i.PauseReason,
+		&i.Model,
+		&i.Tools,
 	)
 	return i, err
 }
@@ -2062,9 +2165,11 @@ UPDATE automation SET
     execution_mode = COALESCE($7, execution_mode),
     issue_title_template = $8,
     project_id = $9,
+    model = COALESCE($10, model),
+    tools = COALESCE($11, tools),
     updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, title, description, executor_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, executor_type, project_id, pause_reason
+RETURNING id, workspace_id, title, description, executor_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, executor_type, project_id, pause_reason, model, tools
 `
 
 type UpdateAutomationParams struct {
@@ -2077,6 +2182,8 @@ type UpdateAutomationParams struct {
 	ExecutionMode      pgtype.Text `json:"execution_mode"`
 	IssueTitleTemplate pgtype.Text `json:"issue_title_template"`
 	ProjectID          pgtype.UUID `json:"project_id"`
+	Model              pgtype.Text `json:"model"`
+	Tools              []byte      `json:"tools"`
 }
 
 func (q *Queries) UpdateAutomation(ctx context.Context, arg UpdateAutomationParams) (Automation, error) {
@@ -2090,6 +2197,8 @@ func (q *Queries) UpdateAutomation(ctx context.Context, arg UpdateAutomationPara
 		arg.ExecutionMode,
 		arg.IssueTitleTemplate,
 		arg.ProjectID,
+		arg.Model,
+		arg.Tools,
 	)
 	var i Automation
 	err := row.Scan(
@@ -2109,6 +2218,8 @@ func (q *Queries) UpdateAutomation(ctx context.Context, arg UpdateAutomationPara
 		&i.ExecutorType,
 		&i.ProjectID,
 		&i.PauseReason,
+		&i.Model,
+		&i.Tools,
 	)
 	return i, err
 }
@@ -2504,9 +2615,11 @@ UPDATE automation_trigger SET
     next_run_at = $5,
     label = COALESCE($6, label),
     event_filters = COALESCE($7, event_filters),
+    preset = COALESCE($8, preset),
+    config = COALESCE($9, config),
     updated_at = now()
 WHERE id = $1
-RETURNING id, automation_id, kind, enabled, cron_expression, timezone, next_run_at, webhook_token, label, last_fired_at, created_at, updated_at, provider, signing_secret, event_filters, published_by_type, published_by_id
+RETURNING id, automation_id, kind, enabled, cron_expression, timezone, next_run_at, webhook_token, label, last_fired_at, created_at, updated_at, provider, signing_secret, event_filters, published_by_type, published_by_id, preset, config
 `
 
 type UpdateAutomationTriggerParams struct {
@@ -2517,6 +2630,8 @@ type UpdateAutomationTriggerParams struct {
 	NextRunAt      pgtype.Timestamptz `json:"next_run_at"`
 	Label          pgtype.Text        `json:"label"`
 	EventFilters   []byte             `json:"event_filters"`
+	Preset         pgtype.Text        `json:"preset"`
+	Config         []byte             `json:"config"`
 }
 
 func (q *Queries) UpdateAutomationTrigger(ctx context.Context, arg UpdateAutomationTriggerParams) (AutomationTrigger, error) {
@@ -2528,6 +2643,8 @@ func (q *Queries) UpdateAutomationTrigger(ctx context.Context, arg UpdateAutomat
 		arg.NextRunAt,
 		arg.Label,
 		arg.EventFilters,
+		arg.Preset,
+		arg.Config,
 	)
 	var i AutomationTrigger
 	err := row.Scan(
@@ -2548,6 +2665,8 @@ func (q *Queries) UpdateAutomationTrigger(ctx context.Context, arg UpdateAutomat
 		&i.EventFilters,
 		&i.PublishedByType,
 		&i.PublishedByID,
+		&i.Preset,
+		&i.Config,
 	)
 	return i, err
 }

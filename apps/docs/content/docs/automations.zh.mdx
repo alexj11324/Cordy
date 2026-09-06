@@ -19,9 +19,27 @@ import { Callout } from "fumadocs-ui/components/callout";
 - **关联项目**：可选，让自动创建的任务进入指定项目；
 - **输出模式**：创建任务，或仅运行；
 - **订阅者**：自动创建任务后需要收到通知的成员；
-- **触发方式**：时间表或 Webhook。
+- **触发方式**：保存后在详情页用 **+ Add Trigger** 添加（按时间、GitHub、Slack、Linear，或 Webhook 触发）。模板如果已经知道来源，会在创建时写入对应触发器。
 
 保存后自动化默认为启用状态；**立即运行**可随时手动执行一次完整流程。
+
+## 触发器
+
+详情页的**设置**就是编辑器。**+ Add Trigger** 是嵌套菜单：
+
+| 来源 | 何时触发 | 公开 URL？ |
+|---|---|---|
+| **按时间** | 时间表编辑器里的 cron | 无 |
+| **GitHub** | PR、评论、评审、CI、工作流运行 | 无 — 使用工作区的 GitHub App |
+| **Slack** | 频道消息、表情、新频道 | 无 — 使用工作区的 Slack 安装 |
+| **Linear** | 任务创建、状态变化、周期结束 | 无 — 使用工作区的 Linear 连接 |
+| **Webhook 触发** | 菜单最后一项。向唯一 URL POST JSON | 有 — `/api/webhooks/automations/{token}` |
+
+触发器卡片如果提示未连接，到工作区设置里连接 GitHub、Slack 或 Linear。原生触发器不会签发 URL，也不能轮换。通用 Webhook URL 的轮换方式和以前一样。
+
+同一设置页还包含指令（Runbook）、可选的模型覆盖，以及记忆 / 发到 Slack / MCP 的工具白名单。运行历史在另一个标签。
+
+PagerDuty 和 Sentry 的模板卡片仍会创建自动化；等对应产品接上后再加触发器，或用 **Webhook 触发** 加过滤。
 
 ## 选择输出模式
 
@@ -58,10 +76,10 @@ Cron 不包含秒，时区使用 `Asia/Shanghai` 这样的 IANA 名称。保存�
 
 ## 通过 Webhook 运行
 
-添加 Webhook 触发器后，Patchbay 会生成一个唯一 URL。向它发送 JSON 对象或数组，即可触发自动化：
+**Webhook 触发**会签发唯一 URL。向它发送 JSON 对象或数组，即可触发自动化：
 
 ```bash
-curl -X POST "$PATCHBAY_WEBHOOK_URL" \
+curl -X POST "$ORVILO_WEBHOOK_URL" \
  -H "Content-Type: application/json" \
  -H "Idempotency-Key: demo-001" \
  -d '{"event":"build.completed","eventPayload":{"status":"success"}}'

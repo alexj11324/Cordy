@@ -13,7 +13,7 @@ cleanup() {
 trap cleanup EXIT
 
 mkdir -p "$BIN_DIR"
-export PATCHBAY_TEST_GO_CALLS="$CALLS_FILE"
+export ORVILO_TEST_GO_CALLS="$CALLS_FILE"
 
 cat >"$BIN_DIR/go" <<'EOF'
 #!/usr/bin/env bash
@@ -32,7 +32,7 @@ case "${1:-}" in
       github.com/patchbay-ai/patchbay/server/pkg/agent/internal/testutil
     ;;
   test)
-    printf '%s\n' "$*" >>"$PATCHBAY_TEST_GO_CALLS"
+    printf '%s\n' "$*" >>"$ORVILO_TEST_GO_CALLS"
     ;;
   *)
     echo "unexpected go command: $*" >&2

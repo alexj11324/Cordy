@@ -19,9 +19,27 @@ Open **Automation** in the sidebar, pick a template or start from scratch, then 
 - **Project**: optional; puts auto-created issues into a specific project;
 - **Execution mode**: create an issue, or run only;
 - **Subscribers**: members to notify after an issue is auto-created;
-- **Triggers**: a schedule or a webhook.
+- **Triggers**: add them after save from **+ Add Trigger** (Scheduled, GitHub, Slack, Linear, or Webhook Triggered). Templates that already know their source write that trigger on create.
 
 An automation is enabled by default after saving; **Run now** manually executes the full flow once at any time.
+
+## Triggers
+
+The detail page **Settings** tab is the editor. **+ Add Trigger** is a nested menu:
+
+| Source | What fires it | Public URL? |
+|---|---|---|
+| **Scheduled** | Cron in the schedule editor | No |
+| **GitHub** | PRs, comments, reviews, CI, workflow runs | No — uses the workspace GitHub App |
+| **Slack** | Channel messages, reactions, new channels | No — uses the workspace Slack install |
+| **Linear** | Issue created, status changed, cycle ended | No — uses the workspace Linear connection |
+| **Webhook Triggered** | Last item in the menu. Any JSON POST to a unique URL | Yes — `/api/webhooks/automations/{token}` |
+
+Connect GitHub, Slack, or Linear in workspace settings if a trigger card asks you to. Native triggers do not mint a URL and cannot be rotated. Generic webhook URLs still rotate the same way as before.
+
+Instructions (the runbook) and an optional model override live on the same Settings tab, with a Tools allowlist for memories, Slack send, and MCP servers. Run history is the other tab.
+
+PagerDuty and Sentry gallery cards still create the automation; add a matching trigger after those products are connected, or use **Webhook Triggered** with filters.
 
 ## Choose an execution mode
 
@@ -58,10 +76,10 @@ Cron has no seconds field, and timezones use IANA names like `Asia/Shanghai`. Be
 
 ## Run from a webhook
 
-After adding a webhook trigger, Patchbay generates a unique URL. Send it a JSON object or array to trigger the automation:
+**Webhook Triggered** mints a unique URL. Send it a JSON object or array to trigger the automation:
 
 ```bash
-curl -X POST "$PATCHBAY_WEBHOOK_URL" \
+curl -X POST "$ORVILO_WEBHOOK_URL" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: demo-001" \
   -d '{"event":"build.completed","eventPayload":{"status":"success"}}'

@@ -39,10 +39,10 @@ func init() {
 	// server can split logs/metrics by client version.
 	cli.ClientVersion = version
 
-	rootCmd.PersistentFlags().String("server-url", "", "Patchbay server URL (env: PATCHBAY_SERVER_URL)")
-	rootCmd.PersistentFlags().String("workspace-id", "", "Workspace ID (env: PATCHBAY_WORKSPACE_ID)")
+	rootCmd.PersistentFlags().String("server-url", "", "Patchbay server URL (env: ORVILO_SERVER_URL)")
+	rootCmd.PersistentFlags().String("workspace-id", "", "Workspace ID (env: ORVILO_WORKSPACE_ID)")
 	rootCmd.PersistentFlags().String("profile", "", "Configuration profile name (e.g. dev) — isolates config, daemon state, and workspaces")
-	rootCmd.PersistentFlags().BoolVar(&debugFlag, "debug", false, "Print full error details on failure (env: PATCHBAY_DEBUG)")
+	rootCmd.PersistentFlags().BoolVar(&debugFlag, "debug", false, "Print full error details on failure (env: ORVILO_DEBUG)")
 
 	// Core commands
 	issueCmd.GroupID = groupCore

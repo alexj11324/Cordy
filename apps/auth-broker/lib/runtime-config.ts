@@ -1,7 +1,7 @@
 type RuntimeEnvironment = Record<string, string | undefined>;
 export type AuthBrokerRuntimeConfig = { apiOrigin: string; brokerOrigin: string; clerkPublishableKey: string; goBrokerAuthToken: string; originAuthToken: string };
 export function readAuthBrokerRuntimeConfig(env: RuntimeEnvironment = process.env): { ok: true; config: AuthBrokerRuntimeConfig } | { ok: false; error: string } {
-  try { return { ok: true, config: { apiOrigin: origin(env.PATCHBAY_API_ORIGIN, "PATCHBAY_API_ORIGIN"), brokerOrigin: origin(env.PATCHBAY_AUTH_BROKER_ORIGIN, "PATCHBAY_AUTH_BROKER_ORIGIN"), clerkPublishableKey: text(env.CLERK_PUBLISHABLE_KEY, "CLERK_PUBLISHABLE_KEY"), goBrokerAuthToken: secret(env.PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN, "PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN"), originAuthToken: secret(env.PATCHBAY_ORIGIN_AUTH_TOKEN, "PATCHBAY_ORIGIN_AUTH_TOKEN") } }; }
+  try { return { ok: true, config: { apiOrigin: origin(env.ORVILO_API_ORIGIN, "ORVILO_API_ORIGIN"), brokerOrigin: origin(env.ORVILO_AUTH_BROKER_ORIGIN, "ORVILO_AUTH_BROKER_ORIGIN"), clerkPublishableKey: text(env.CLERK_PUBLISHABLE_KEY, "CLERK_PUBLISHABLE_KEY"), goBrokerAuthToken: secret(env.ORVILO_DESKTOP_BROKER_AUTH_TOKEN, "ORVILO_DESKTOP_BROKER_AUTH_TOKEN"), originAuthToken: secret(env.ORVILO_ORIGIN_AUTH_TOKEN, "ORVILO_ORIGIN_AUTH_TOKEN") } }; }
   catch (error) { return { ok: false, error: error instanceof Error ? error.message : "invalid runtime configuration" }; }
 }
 function text(value: string | undefined, name: string): string { const out = value?.trim() ?? ""; if (!out || /[\r\n]/.test(out)) throw new Error(`${name} is required`); return out; }

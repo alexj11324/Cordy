@@ -19,8 +19,8 @@ import (
 )
 
 const (
-	longPathExecutableHelperEnv = "PATCHBAY_LONG_PATH_EXECUTABLE_HELPER"
-	longPathExecutableMarkerEnv = "PATCHBAY_LONG_PATH_EXECUTABLE_MARKER"
+	longPathExecutableHelperEnv = "ORVILO_LONG_PATH_EXECUTABLE_HELPER"
+	longPathExecutableMarkerEnv = "ORVILO_LONG_PATH_EXECUTABLE_MARKER"
 )
 
 func TestLongPathExecutableHelper(t *testing.T) {

@@ -77,7 +77,7 @@ func larkInstallationToResponse(row lark.Installation) LarkInstallationResponse 
 //     UI hides the tab.
 //   - install_supported: the device-flow install path is wired
 //     end-to-end: a RegistrationService exists (deployment supplied
-//     PATCHBAY_LARK_SECRET_KEY) AND the APIClient.IsConfigured signal
+//     ORVILO_LARK_SECRET_KEY) AND the APIClient.IsConfigured signal
 //     is true (the real Lark HTTP client is in place — the stub
 //     cannot complete the post-poll GetBotInfo call). When false,
 //     the agent-detail "Bind" button stays hidden and the Settings

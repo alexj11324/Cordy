@@ -46,12 +46,12 @@ func TestCodexShellEnvAllowlistUsesExactTaskAndSafeInheritedNames(t *testing.T) 
 		"SDKROOT=/opt/sdk",
 		"OPENAI_API_KEY=host-secret",
 		"GH_TOKEN=host-secret",
-		"PATCHBAY_LLM_API_KEY=daemon-secret",
-		"PATCHBAY_SERVER_URL=https://wrong.example",
+		"ORVILO_LLM_API_KEY=daemon-secret",
+		"ORVILO_SERVER_URL=https://wrong.example",
 	}
 	explicit := map[string]string{
-		"PATCHBAY_TOKEN":      "mat_task",
-		"PATCHBAY_SERVER_URL": "https://task.example",
+		"ORVILO_TOKEN":      "mat_task",
+		"ORVILO_SERVER_URL": "https://task.example",
 		"CUSTOM_FLAG":        "enabled",
 		"ANTHROPIC_API_KEY":  "agent-secret",
 	}
@@ -66,8 +66,8 @@ func TestCodexShellEnvAllowlistUsesExactTaskAndSafeInheritedNames(t *testing.T) 
 		"HTTPS_PROXY",
 		"LANG",
 		"LOCALAPPDATA",
-		"PATCHBAY_SERVER_URL",
-		"PATCHBAY_TOKEN",
+		"ORVILO_SERVER_URL",
+		"ORVILO_TOKEN",
 		"PATH",
 		"PATHEXT",
 		"SDKROOT",
@@ -87,14 +87,14 @@ func TestCodexShellEnvAllowlistOnlyAuthorizesExplicitCustomSecrets(t *testing.T)
 		"PATH=/usr/bin",
 		"CUSTOM_ACCESS_TOKEN=host-secret",
 		"HOST_SECRET=host-secret",
-		"PATCHBAY_TOKEN=daemon-secret",
+		"ORVILO_TOKEN=daemon-secret",
 	}
 	explicit := map[string]string{
 		"CUSTOM_ACCESS_TOKEN": "agent-secret",
 		"x_secret":            "agent-secret",
 		"Y_KEY":               "agent-secret",
 		"UNAUTHORIZED_TOKEN":  "daemon-secret",
-		"PATCHBAY_TOKEN":       "mat_task",
+		"ORVILO_TOKEN":       "mat_task",
 	}
 	authorizedExplicit := []string{
 		"custom_access_token", // Authorization matching is case-insensitive.
@@ -106,7 +106,7 @@ func TestCodexShellEnvAllowlistOnlyAuthorizesExplicitCustomSecrets(t *testing.T)
 	got := CodexShellEnvAllowlist(inherited, explicit, authorizedExplicit)
 	want := []string{
 		"CUSTOM_ACCESS_TOKEN",
-		"PATCHBAY_TOKEN",
+		"ORVILO_TOKEN",
 		"PATH",
 		"x_secret",
 		"Y_KEY",
@@ -155,14 +155,14 @@ include_only = [
   "PATH",
   "HOME",
 ]
-set = { FOO = "bar", PATCHBAY_TOKEN = "stale" }
+set = { FOO = "bar", ORVILO_TOKEN = "stale" }
 
 [features]
 # keep feature comment
 foo = true
 `,
 			kept:    []string{`model = "gpt-5.6"`, "# policy-local comment remains harmless", "# keep feature comment", "[features]", "foo = true"},
-			removed: []string{"legal quoted table", `FOO = "bar"`, `PATCHBAY_TOKEN = "stale"`},
+			removed: []string{"legal quoted table", `FOO = "bar"`, `ORVILO_TOKEN = "stale"`},
 		},
 		{
 			name: "inline root and profile policies",
@@ -202,7 +202,7 @@ foo = true
 		},
 	}
 
-	includeOnly := []string{"CUSTOM_FLAG", "PATCHBAY_SERVER_URL", "PATCHBAY_TOKEN", "PATH", "SystemRoot"}
+	includeOnly := []string{"CUSTOM_FLAG", "ORVILO_SERVER_URL", "ORVILO_TOKEN", "PATH", "SystemRoot"}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
@@ -230,8 +230,8 @@ foo = true
 					t.Errorf("stale policy content %q remains:\n%s", unwanted, s)
 				}
 			}
-			if strings.Contains(s, `"PATCHBAY_*"`) {
-				t.Fatalf("managed policy must not use a PATCHBAY_* wildcard:\n%s", s)
+			if strings.Contains(s, `"ORVILO_*"`) {
+				t.Fatalf("managed policy must not use a ORVILO_* wildcard:\n%s", s)
 			}
 			if n := strings.Count(s, "[shell_environment_policy]"); n != 1 {
 				t.Fatalf("expected exactly one managed policy table, got %d:\n%s", n, s)
@@ -255,7 +255,7 @@ func TestEnsureCodexShellEnvPolicyConfigRejectsInvalidInputWithoutWriting(t *tes
 	if err := os.WriteFile(configPath, existing, 0o644); err != nil {
 		t.Fatalf("write config.toml: %v", err)
 	}
-	if err := EnsureCodexShellEnvPolicyConfig(configPath, []string{"PATCHBAY_TOKEN", "PATH"}, testLogger()); err == nil {
+	if err := EnsureCodexShellEnvPolicyConfig(configPath, []string{"ORVILO_TOKEN", "PATH"}, testLogger()); err == nil {
 		t.Fatal("expected malformed input to fail")
 	}
 	got, err := os.ReadFile(configPath)
@@ -270,7 +270,7 @@ func TestEnsureCodexShellEnvPolicyConfigRejectsInvalidInputWithoutWriting(t *tes
 func TestEnsureCodexShellEnvPolicyConfigIsIdempotent(t *testing.T) {
 	t.Parallel()
 	configPath := filepath.Join(t.TempDir(), "config.toml")
-	includeOnly := []string{"PATCHBAY_SERVER_URL", "PATCHBAY_TOKEN", "PATH"}
+	includeOnly := []string{"ORVILO_SERVER_URL", "ORVILO_TOKEN", "PATH"}
 
 	for i := 0; i < 3; i++ {
 		if err := EnsureCodexShellEnvPolicyConfig(configPath, includeOnly, testLogger()); err != nil {

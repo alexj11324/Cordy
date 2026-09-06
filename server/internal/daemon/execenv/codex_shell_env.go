@@ -15,7 +15,7 @@ import (
 
 // Codex filters environment variables before running shell tool subprocesses.
 // Its default secret guard drops names containing KEY, SECRET, or TOKEN, so a
-// daemon-spawned Codex process can have PATCHBAY_TOKEN while `patchbay issue ...`
+// daemon-spawned Codex process can have ORVILO_TOKEN while `patchbay issue ...`
 // inside a shell tool does not. The daemon therefore owns the shell policy in
 // each task's isolated Codex home.
 const (
@@ -46,9 +46,9 @@ type tomlByteRange struct {
 // names containing KEY, SECRET, or TOKEN. Credential-looking explicit values
 // are included only when their names also appear in authorizedExplicit, which
 // daemon.go derives solely from the current agent's blocklist-checked
-// custom_env. Inherited PATCHBAY_* variables are always dropped because they
+// custom_env. Inherited ORVILO_* variables are always dropped because they
 // belong to the daemon process, not necessarily to this task. Explicit
-// PATCHBAY_* values are safe to include because daemon.go blocklists that
+// ORVILO_* values are safe to include because daemon.go blocklists that
 // namespace from agent custom_env and constructs those values from the current
 // task.
 func CodexShellEnvAllowlist(inherited []string, explicit map[string]string, authorizedExplicit []string) []string {
@@ -67,7 +67,7 @@ func CodexShellEnvAllowlist(inherited []string, explicit map[string]string, auth
 			return
 		}
 		upper := strings.ToUpper(key)
-		if strings.HasPrefix(upper, "PATCHBAY_") {
+		if strings.HasPrefix(upper, "ORVILO_") {
 			if !isExplicit {
 				return
 			}

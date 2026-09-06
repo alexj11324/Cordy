@@ -370,7 +370,7 @@ artifacts in a user-global content-addressed cache. `prepare-dev-runtime.mjs`
 stages the exact three artifacts into the worktree, while `scripts/dev.sh`
 runs the migration and backend binaries from that staged set before opening
 Electron. `dev.mjs` no longer invokes the packaging-only CLI bundler and sets
-`PATCHBAY_REQUIRE_SOURCE_CLI=1`; the Desktop daemon resolver then refuses
+`ORVILO_REQUIRE_SOURCE_CLI=1`; the Desktop daemon resolver then refuses
 managed release/PATH fallback in development. Packaging's `bundle-cli.mjs`
 also fails when Go or its output is missing instead of silently producing an
 app that executes another revision.

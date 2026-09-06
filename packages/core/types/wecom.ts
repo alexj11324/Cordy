@@ -23,7 +23,7 @@ export interface WecomInstallation {
 
 export interface ListWecomInstallationsResponse {
   installations: WecomInstallation[];
-  /** Whether PATCHBAY_WECOM_SECRET_KEY is set on this deployment. When false the
+  /** Whether ORVILO_WECOM_SECRET_KEY is set on this deployment. When false the
    * BYO Connect button is hidden and the panel renders an "ask the operator"
    * state. */
   configured: boolean;
@@ -36,7 +36,7 @@ export interface ListWecomInstallationsResponse {
 /** Request body for the Web UI's BYO Connect dialog. The first two fields are
  * copied from the WeCom admin console's smart-bot page: the bot's stable
  * identifier and its long-connection secret. The backend seals the secret
- * with the deployment's PATCHBAY_WECOM_SECRET_KEY before writing it, so
+ * with the deployment's ORVILO_WECOM_SECRET_KEY before writing it, so
  * plaintext never lands in the DB. */
 export interface RegisterWecomBYORequest {
   bot_id: string;

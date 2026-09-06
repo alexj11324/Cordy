@@ -63,10 +63,12 @@ func NewAutomationService(q *db.Queries, tx TxStarter, bus *events.Bus, taskSvc 
 // rule (recording the editing member + timestamp), the summary just carries the
 // automation row's core config.
 type automationRuleConfigSummary struct {
-	ExecutorType  string `json:"executor_type"`
-	ExecutorID    string `json:"executor_id"`
-	Status        string `json:"status"`
-	ExecutionMode string `json:"execution_mode"`
+	ExecutorType  string          `json:"executor_type"`
+	ExecutorID    string          `json:"executor_id"`
+	Status        string          `json:"status"`
+	ExecutionMode string          `json:"execution_mode"`
+	Model         string          `json:"model,omitempty"`
+	Tools         json.RawMessage `json:"tools,omitempty"`
 }
 
 // RecordAutomationRuleVersion appends one rule-version snapshot for a substantive
@@ -82,12 +84,14 @@ func RecordAutomationRuleVersion(ctx context.Context, q *db.Queries, ap db.Autom
 		ExecutorID:    util.UUIDToString(ap.ExecutorID),
 		Status:        ap.Status,
 		ExecutionMode: ap.ExecutionMode,
+		Model:         ap.Model.String,
+		Tools:         json.RawMessage(ap.Tools),
 	})
 	if err != nil {
 		return fmt.Errorf("marshal rule version config summary: %w", err)
 	}
 	if _, err := q.CreateAutomationRuleVersion(ctx, db.CreateAutomationRuleVersionParams{
-		AutomationID:     ap.ID,
+		AutomationID:    ap.ID,
 		WorkspaceID:     ap.WorkspaceID,
 		PublishedByType: publishedByType,
 		PublishedByID:   publishedByID,
@@ -218,12 +222,12 @@ func (s *AutomationService) AdmitAutomationWebhookDelivery(
 	}
 	run, _, err := s.createAutomationRunWithQuota(ctx, automation.WorkspaceID, "webhook", "webhook:"+util.UUIDToString(deliveryID), db.CreateAutomationRunParams{
 		ID:                dbid.NewV7(),
-		AutomationID:       automation.ID,
+		AutomationID:      automation.ID,
 		TriggerID:         triggerID,
 		Source:            "webhook",
 		Status:            initialStatus,
 		TriggerPayload:    payload,
-		TeamID:           automationTeamAttribution(automation),
+		TeamID:            automationTeamAttribution(automation),
 		WebhookDeliveryID: deliveryID,
 	})
 	if err != nil {
@@ -535,12 +539,12 @@ func (s *AutomationService) dispatchAutomation(
 
 	run, reused, err := s.createAutomationRunWithQuota(ctx, automation.WorkspaceID, source, idempotencyKey, db.CreateAutomationRunParams{
 		ID:                dbid.NewV7(),
-		AutomationID:       automation.ID,
+		AutomationID:      automation.ID,
 		TriggerID:         triggerID,
 		Source:            source,
 		Status:            initialStatus,
 		TriggerPayload:    payload,
-		TeamID:           automationTeamAttribution(automation),
+		TeamID:            automationTeamAttribution(automation),
 		PlannedAt:         plannedAt,
 		WebhookDeliveryID: webhookDeliveryID,
 	})
@@ -606,10 +610,10 @@ func (s *AutomationService) dispatchAutomationRun(
 		WorkspaceID: util.UUIDToString(automation.WorkspaceID),
 		ActorType:   "system",
 		Payload: map[string]any{
-			"run_id":       util.UUIDToString(run.ID),
+			"run_id":        util.UUIDToString(run.ID),
 			"automation_id": util.UUIDToString(automation.ID),
-			"source":       source,
-			"status":       run.Status,
+			"source":        source,
+			"status":        run.Status,
 		},
 	})
 
@@ -849,7 +853,7 @@ func (s *AutomationService) notifyAutomationSubscribersOnCreate(
 	}
 	details, _ := json.Marshal(map[string]string{
 		"automation_id": util.UUIDToString(ap.ID),
-		"reason":       "automation",
+		"reason":        "automation",
 	})
 	for _, sub := range subscribers {
 		// Automation subscribers are restricted to user_type='member' at the
@@ -988,10 +992,10 @@ func (s *AutomationService) dispatchRunOnly(ctx context.Context, ap db.Automatio
 	}
 	apSource, _, apEvidenceKind, apEvidenceRef := attributionCreateParams(automationAttr)
 	task, err := s.Queries.CreateAutomationTask(ctx, db.CreateAutomationTaskParams{
-		ID:             dbid.NewV7(),
-		AgentID:        agent.ID,
-		RuntimeID:      agent.RuntimeID,
-		Priority:       0,
+		ID:              dbid.NewV7(),
+		AgentID:         agent.ID,
+		RuntimeID:       agent.RuntimeID,
+		Priority:        0,
 		AutomationRunID: run.ID,
 		// Snapshot the automation title so task rows self-describe later
 		// without joining back to automation. Truncated for the same
@@ -1460,12 +1464,12 @@ func (s *AutomationService) recordSkippedRun(
 	}
 	run, err := s.Queries.CreateAutomationRun(ctx, db.CreateAutomationRunParams{
 		ID:                dbid.NewV7(),
-		AutomationID:       automation.ID,
+		AutomationID:      automation.ID,
 		TriggerID:         triggerID,
 		Source:            source,
 		Status:            "skipped",
 		TriggerPayload:    payload,
-		TeamID:           automationTeamAttribution(automation),
+		TeamID:            automationTeamAttribution(automation),
 		PlannedAt:         plannedAt,
 		WebhookDeliveryID: webhookDeliveryID,
 		ReasonCode:        code,
@@ -1507,9 +1511,9 @@ func (s *AutomationService) publishRunDone(workspaceID string, run db.Automation
 		WorkspaceID: workspaceID,
 		ActorType:   "system",
 		Payload: map[string]any{
-			"run_id":       util.UUIDToString(run.ID),
+			"run_id":        util.UUIDToString(run.ID),
 			"automation_id": util.UUIDToString(run.AutomationID),
-			"status":       status,
+			"status":        status,
 		},
 	})
 }
@@ -1757,6 +1761,11 @@ func (s *AutomationService) buildIssueDescription(ap db.Automation, run db.Autom
 		b.WriteString("\n\nWebhook payload:\n```json\n")
 		b.Write(payloadJSON)
 		b.WriteString("\n```")
+	}
+
+	if notes := automationToolsDispatchNotes(ap.Tools); notes != "" {
+		b.WriteString("\n\n")
+		b.WriteString(notes)
 	}
 
 	return pgtype.Text{String: b.String(), Valid: true}

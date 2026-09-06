@@ -60,12 +60,12 @@ class ProductionDeployContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             compose = Path(directory) / "compose.yml"
             compose.write_text(
-                "image: ${PATCHBAY_IMAGE:?required}\nport: ${PORT:-8080}\n",
+                "image: ${ORVILO_IMAGE:?required}\nport: ${PORT:-8080}\n",
                 encoding="utf-8",
             )
             self.assertEqual(
                 production_deploy.compose_variables(compose),
-                {"PATCHBAY_IMAGE", "PORT"},
+                {"ORVILO_IMAGE", "PORT"},
             )
 
     def test_environment_snapshot_prefers_explicit_safe_ports(self):
@@ -132,7 +132,7 @@ class ProductionDeployContractTests(unittest.TestCase):
 
             product_env, broker_env = deployment.deployment_environment(self.manifest())
 
-            self.assertEqual(product_env["PATCHBAY_CLERK_PUBLISHABLE_KEY"], "pk_live_fixture")
+            self.assertEqual(product_env["ORVILO_CLERK_PUBLISHABLE_KEY"], "pk_live_fixture")
             self.assertEqual(broker_env["CLERK_PUBLISHABLE_KEY"], " pk_live_fixture ")
 
     def test_receipt_payload_is_json_serializable(self):

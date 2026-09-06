@@ -5,7 +5,7 @@ const ORIGIN_AUTH_HEADER = "x-patchbay-origin-auth";
 
 export function proxy(request: NextRequest) {
   if (request.nextUrl.pathname === "/healthz" || request.nextUrl.pathname === "/readyz") return NextResponse.next();
-  const expected = process.env.PATCHBAY_ORIGIN_AUTH_TOKEN?.trim() ?? "";
+  const expected = process.env.ORVILO_ORIGIN_AUTH_TOKEN?.trim() ?? "";
   const supplied = request.headers.get(ORIGIN_AUTH_HEADER) ?? "";
   const valid = /^[a-f0-9]{64}$/.test(expected) && constantTimeEqual(supplied, expected);
   if (!valid) return new NextResponse("Not Found\n", { status: 404, headers: { "cache-control": "no-store", "content-type": "text/plain; charset=utf-8" } });

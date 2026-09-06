@@ -126,6 +126,40 @@ func TestHTTPClientGraphQLIssueContracts(t *testing.T) {
 	}
 }
 
+func TestHTTPClientFetchIssueUsesStringIdentifierVariable(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Query string `json:"query"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(request.Query, "PatchbayIssue($id:String!)") {
+			_ = json.NewEncoder(w).Encode(map[string]any{"errors": []any{map[string]any{
+				"message": "Variable \"$id\" of type \"ID!\" used in position expecting type \"String!\".",
+			}}})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{
+			"issue": map[string]any{
+				"id":         "issue-1",
+				"identifier": "DAY-1",
+				"title":      "Webhook issue",
+				"priority":   1,
+				"updatedAt":  "2026-09-06T00:00:00Z",
+			},
+		}})
+	}))
+	defer server.Close()
+
+	client := NewHTTPClient(server.Client())
+	client.GraphQLURL = server.URL
+	issue, found, err := client.FetchIssue(context.Background(), "access", "issue-1")
+	if err != nil || !found || issue.ID != "issue-1" || issue.Identifier != "DAY-1" {
+		t.Fatalf("issue=%+v found=%t err=%v", issue, found, err)
+	}
+}
+
 func issueMutation(name, id string) map[string]any {
 	return map[string]any{"data": map[string]any{name: map[string]any{"success": true, "issue": map[string]any{"id": id, "identifier": "ENG-2", "title": "Synced", "priority": 3, "updatedAt": "2026-01-01T00:00:00Z", "team": map[string]any{"id": "team-1"}}}}}
 }

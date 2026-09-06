@@ -1,24 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
-  Zap, Play, Clock, Plus, Trash2, CheckCircle2, XCircle, Loader2, Pencil,
+  Play, Clock, Trash2, CheckCircle2, XCircle, Loader2, Pencil,
   Ban, ChevronDown, ChevronRight,
-  Webhook, RotateCw, Server,
+  Server,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { automationDetailOptions, automationRunsOptions, automationRunOptions } from "@patchbay/core/automations/queries";
 import { projectDetailOptions } from "@patchbay/core/projects/queries";
+import { agentListOptions, teamListOptions } from "@patchbay/core/workspace/queries";
+import { isAgentRuntimeBound } from "@patchbay/core/agents";
+import type { AutomationTriggerPreset } from "@patchbay/core/automations";
 import {
   useUpdateAutomation,
   useDeleteAutomation,
   useTriggerAutomation,
   useCreateAutomationTrigger,
-  useDeleteAutomationTrigger,
-  useRotateAutomationTriggerWebhookToken,
 } from "@patchbay/core/automations/mutations";
-import { buildAutomationWebhookUrl } from "@patchbay/core/automations";
-import { api, clientErrorMessage, dispatchReasonCode } from "@patchbay/core/api";
+import { clientErrorMessage, dispatchReasonCode } from "@patchbay/core/api";
 import { useWorkspaceId } from "@patchbay/core/hooks";
 import { useWorkspacePaths } from "@patchbay/core/paths";
 import { useActorName } from "@patchbay/core/workspace/hooks";
@@ -46,22 +46,20 @@ import {
   AlertDialogTitle,
 } from "@patchbay/ui/components/ui/alert-dialog";
 import { ScheduleEditor } from "./schedule-editor/schedule-editor";
-import { WebhookUrlField } from "./webhook-url-field";
 import { getDefaultScheduleConfig, type ScheduleConfig } from "./schedule-editor/model";
 import { browserTimezone } from "../../common/timezone-select";
-import { cronFields, parseCron, toCron } from "./schedule-editor/cron-mapping";
-import { useDescribeSchedule } from "./schedule-editor/describe";
+import { toCron } from "./schedule-editor/cron-mapping";
 import { formatInTimeZone } from "../../common/format-in-time-zone";
 import { SegmentedToggle } from "../../common/segmented-toggle";
 import { useScheduleSubmitGate } from "./schedule-editor/validate";
 import type {
+  Automation,
   AutomationExecutionMode,
   AutomationRun,
   AutomationSubscriber,
-  AutomationTrigger,
 } from "@patchbay/core/types";
 import type { AgentTask } from "@patchbay/core/types/agent";
-import { ReadonlyContent } from "../../editor";
+import { ContentEditor, ReadonlyContent } from "../../editor";
 import { TranscriptButton } from "../../common/task-transcript";
 import { AutomationDialog } from "./automation-dialog";
 import { runNowToastKind, runNowBlockedKey } from "./run-now-toast";
@@ -70,6 +68,10 @@ import { WebhookDeliveriesSection } from "./webhook-deliveries-section";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { useT } from "../../i18n";
 import { PageHeader } from "../../layout/page-header";
+import { ModelDropdown } from "../../agents/components/model-dropdown";
+import { TriggerAddMenu } from "./trigger-add-menu";
+import { TriggerCard } from "./trigger-card";
+import { AutomationToolsSection } from "./automation-tools-section";
 
 // A run that already happened is an instant in the reader's day, so it reads in
 // the reader's zone (no timeZone passed). A run that is still to come belongs to
@@ -255,208 +257,6 @@ function SkippedRunsGroup({
   );
 }
 
-function TriggerRow({ trigger, automationId, canWrite }: { trigger: AutomationTrigger; automationId: string; canWrite: boolean }) {
-  const { t, i18n } = useT("automations");
-  const describeSchedule = useDescribeSchedule();
-  const deleteTrigger = useDeleteAutomationTrigger();
-  const rotateToken = useRotateAutomationTriggerWebhookToken();
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [rotateOpen, setRotateOpen] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-
-  const handleDelete = async () => {
-    setDeleting(true);
-    try {
-      await deleteTrigger.mutateAsync({ automationId, triggerId: trigger.id });
-      toast.success(t(($) => $.trigger_row.toast_deleted));
-      setConfirmOpen(false);
-    } catch (err) {
-      toast.error(
-        err instanceof Error && err.message
-          ? err.message
-          : t(($) => $.trigger_row.toast_delete_failed),
-      );
-    } finally {
-      setDeleting(false);
-    }
-  };
-
-  const isWebhook = trigger.kind === "webhook";
-  const isApi = trigger.kind === "api";
-  // Resolve the URL from the server's webhook_url first, then compose
-  // from the API base URL (desktop) or window.origin (web). Falls back
-  // to the relative path if neither is available.
-  const webhookUrl = isWebhook
-    ? buildAutomationWebhookUrl({
-        trigger,
-        apiBaseUrl: api.getBaseUrl(),
-        currentOrigin: typeof window !== "undefined" ? window.location.origin : undefined,
-      })
-    : null;
-
-  const handleRotate = async () => {
-    try {
-      await rotateToken.mutateAsync({ automationId, triggerId: trigger.id });
-      toast.success(t(($) => $.trigger_row.toast_rotated));
-      setRotateOpen(false);
-    } catch (err) {
-      toast.error(
-        err instanceof Error && err.message
-          ? err.message
-          : t(($) => $.trigger_row.toast_rotate_failed),
-      );
-    }
-  };
-
-  const Icon = isWebhook ? Webhook : isApi ? Zap : Clock;
-  const showWebhookUrlRow = isWebhook && webhookUrl;
-  // null when the expression is beyond the structured model — those rows keep
-  // showing the raw cron on its own.
-  const scheduleConfig = trigger.cron_expression
-    ? parseCron(trigger.cron_expression, trigger.timezone ?? "UTC")
-    : null;
-  const scheduleDescription = scheduleConfig ? describeSchedule(scheduleConfig) : null;
-
-  // Delete control extracted so a webhook trigger can render it inline
-  // with Copy / Rotate on the URL action row (where the other action
-  // buttons live), while schedule / api triggers — which have no URL row
-  // — keep it pinned to the row's top-right corner. Without this the
-  // trash icon visually floats above the URL action buttons because the
-  // outer flex uses `items-start`.
-  const deleteButton = canWrite ? (
-    <Button
-      size="icon"
-      variant="ghost"
-      className="h-7 w-7 shrink-0"
-      onClick={() => setConfirmOpen(true)}
-      title={t(($) => $.trigger_row.delete_dialog.confirm)}
-    >
-      <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
-    </Button>
-  ) : null;
-
-  return (
-    <div className="flex items-start gap-3 rounded-md border px-3 py-2">
-      <Icon className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5" />
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-body font-medium">{t(($) => $.trigger_kind[trigger.kind])}</span>
-          {trigger.label && (
-            <span className="text-caption text-muted-foreground">({trigger.label})</span>
-          )}
-          {!trigger.enabled && (
-            <span className="text-caption bg-muted px-1.5 py-0.5 rounded">
-              {t(($) => $.trigger_row.disabled_badge)}
-            </span>
-          )}
-          {isApi && (
-            <span className="text-caption bg-muted px-1.5 py-0.5 rounded">
-              {t(($) => $.trigger_row.deprecated_badge)}
-            </span>
-          )}
-        </div>
-        {trigger.cron_expression && (
-          // The plain-language line leads; the raw expression drops to a
-          // secondary line so the two never run together as one blob.
-          <div className="mt-0.5 space-y-0.5">
-            <div className="text-caption text-muted-foreground">
-              {scheduleDescription ?? trigger.cron_expression}
-              {trigger.timezone && ` (${trigger.timezone})`}
-            </div>
-            {scheduleDescription !== null && scheduleConfig !== null && (
-              // Fields only: the zone already reads out in the sentence above,
-              // where a person can use it — same rule as the editor's readback.
-              <div className="font-mono text-micro text-muted-foreground">
-                {cronFields(scheduleConfig)}
-              </div>
-            )}
-          </div>
-        )}
-        {trigger.next_run_at && (
-          <div className="text-caption text-muted-foreground">
-            {t(($) => $.trigger_row.next_label, {
-              date: formatInTimeZone(
-                trigger.next_run_at,
-                trigger.timezone ?? undefined,
-                i18n.language,
-              ),
-            })}
-          </div>
-        )}
-        {showWebhookUrlRow && (
-          <div className="mt-1.5">
-            <WebhookUrlField
-              url={webhookUrl}
-              actions={
-                <>
-                  {canWrite && (
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-7 w-7 shrink-0"
-                      onClick={() => setRotateOpen(true)}
-                      title={t(($) => $.trigger_row.rotate_url)}
-                      disabled={rotateToken.isPending}
-                    >
-                      <RotateCw className={cn("h-3.5 w-3.5 text-muted-foreground", rotateToken.isPending && "animate-spin")} />
-                    </Button>
-                  )}
-                  {deleteButton}
-                </>
-              }
-            />
-          </div>
-        )}
-      </div>
-      {!showWebhookUrlRow && deleteButton}
-      <AlertDialog open={confirmOpen} onOpenChange={(v) => { if (!v && !deleting) setConfirmOpen(false); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t(($) => $.trigger_row.delete_dialog.title)}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t(($) => $.trigger_row.delete_dialog.description)}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>
-              {t(($) => $.trigger_row.delete_dialog.cancel)}
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDelete}
-              disabled={deleting}
-              className="bg-destructive text-white hover:bg-destructive/90"
-            >
-              {deleting
-                ? t(($) => $.trigger_row.delete_dialog.deleting)
-                : t(($) => $.trigger_row.delete_dialog.confirm)}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      <AlertDialog open={rotateOpen} onOpenChange={(v) => { if (!v && !rotateToken.isPending) setRotateOpen(false); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t(($) => $.trigger_row.rotate_confirm_title)}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t(($) => $.trigger_row.rotate_confirm_description)}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={rotateToken.isPending}>
-              {t(($) => $.trigger_row.rotate_confirm_cancel)}
-            </AlertDialogCancel>
-            <AlertDialogAction onClick={handleRotate} disabled={rotateToken.isPending}>
-              {rotateToken.isPending
-                ? t(($) => $.trigger_row.rotate_in_progress)
-                : t(($) => $.trigger_row.rotate_confirm_action)}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
-  );
-}
-
 function AddTriggerDialog({
   open,
   onOpenChange,
@@ -469,49 +269,35 @@ function AddTriggerDialog({
   const { t } = useT("automations");
   const wsId = useWorkspaceId();
   const createTrigger = useCreateAutomationTrigger();
-  const [kind, setKind] = useState<"schedule" | "webhook">("schedule");
   const [config, setConfig] = useState<ScheduleConfig>(() =>
     getDefaultScheduleConfig(browserTimezone()),
   );
-  const [label, setLabel] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const scheduleGate = useScheduleSubmitGate(wsId);
-  const canSubmit = !submitting && (kind !== "schedule" || scheduleGate.scheduleValid);
+  const canSubmit = !submitting && scheduleGate.scheduleValid;
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
     setSubmitting(true);
     try {
-      if (kind === "schedule") {
-        if (!(await scheduleGate.ensureAccepted(config))) {
-          setSubmitting(false);
-          return;
-        }
-        const cronExpr = toCron(config);
-        if (!cronExpr.trim()) {
-          setSubmitting(false);
-          return;
-        }
-        await createTrigger.mutateAsync({
-          automationId,
-          kind: "schedule",
-          cron_expression: cronExpr,
-          timezone: config.timezone || undefined,
-          label: label.trim() || undefined,
-        });
-        toast.success(t(($) => $.add_trigger_dialog.toast_added_schedule));
-      } else {
-        await createTrigger.mutateAsync({
-          automationId,
-          kind: "webhook",
-          label: label.trim() || undefined,
-        });
-        toast.success(t(($) => $.add_trigger_dialog.toast_added_webhook));
+      if (!(await scheduleGate.ensureAccepted(config))) {
+        setSubmitting(false);
+        return;
       }
+      const cronExpr = toCron(config);
+      if (!cronExpr.trim()) {
+        setSubmitting(false);
+        return;
+      }
+      await createTrigger.mutateAsync({
+        automationId,
+        kind: "schedule",
+        cron_expression: cronExpr,
+        timezone: config.timezone || undefined,
+      });
+      toast.success(t(($) => $.add_trigger_dialog.toast_added_schedule));
       onOpenChange(false);
-      setKind("schedule");
       setConfig(getDefaultScheduleConfig(browserTimezone()));
-      setLabel("");
     } catch (err) {
       toast.error(
         err instanceof Error && err.message
@@ -526,72 +312,18 @@ function AddTriggerDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm">
-        <DialogTitle>{t(($) => $.add_trigger_dialog.title)}</DialogTitle>
-        {/* DialogContent is a grid, so without min-w-0 this item's min-width is
-            its content's — and the cron readback is one unbreakable line that
-            would push the track past the dialog instead of truncating. */}
+        <DialogTitle>{t(($) => $.presets.scheduled)}</DialogTitle>
         <div className="min-w-0 space-y-4 pt-2">
-          <div>
-            <label className="text-caption font-medium text-muted-foreground">
-              {t(($) => $.add_trigger_dialog.type_label)}
-            </label>
-            <div className="mt-1">
-              <SegmentedToggle
-                value={kind}
-                onChange={setKind}
-                buttonClassName="px-3 py-1.5 text-body"
-                options={[
-                  [
-                    "schedule",
-                    <span key="schedule" className="flex items-center justify-center gap-1.5">
-                      <Clock className="h-3.5 w-3.5" />
-                      {t(($) => $.add_trigger_dialog.type_schedule)}
-                    </span>,
-                  ],
-                  [
-                    "webhook",
-                    <span key="webhook" className="flex items-center justify-center gap-1.5">
-                      <Webhook className="h-3.5 w-3.5" />
-                      {t(($) => $.add_trigger_dialog.type_webhook)}
-                    </span>,
-                  ],
-                ]}
-              />
-            </div>
-          </div>
-
-          {kind === "schedule" ? (
-            <ScheduleEditor
-              value={config}
-              onChange={(next) => {
-                scheduleGate.clearRejection();
-                setConfig(next);
-              }}
-              wsId={wsId}
-              onValidityChange={scheduleGate.onValidityChange}
-              // Same reason as the automation dialog: the submit path reads the
-              // schedule, validates it over the network, then writes what it
-              // read — an edit landing inside that window would be discarded.
-              disabled={submitting}
-            />
-          ) : (
-            <p className="rounded-md bg-muted/50 px-3 py-2 text-caption text-muted-foreground">
-              {t(($) => $.add_trigger_dialog.webhook_help)}
-            </p>
-          )}
-
-          <div>
-            <label className="text-caption font-medium text-muted-foreground">
-              {t(($) => $.add_trigger_dialog.label_field)}
-            </label>
-            <input
-              type="text"
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-              placeholder={t(($) => $.add_trigger_dialog.label_placeholder)}
-              className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-body outline-none focus:ring-1 focus:ring-ring"
-            />
-          </div>
+          <ScheduleEditor
+            value={config}
+            onChange={(next) => {
+              scheduleGate.clearRejection();
+              setConfig(next);
+            }}
+            wsId={wsId}
+            onValidityChange={scheduleGate.onValidityChange}
+            disabled={submitting}
+          />
           <div className="flex justify-end pt-1">
             <Button size="sm" onClick={handleSubmit} disabled={!canSubmit}>
               {submitting
@@ -602,6 +334,86 @@ function AddTriggerDialog({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function InstructionsSection({
+  automation,
+  canWrite,
+  runtimeId,
+}: {
+  automation: Automation;
+  canWrite: boolean;
+  runtimeId: string | null;
+}) {
+  const { t } = useT("automations");
+  const updateAutomation = useUpdateAutomation();
+  const lastSaved = useRef(automation.description ?? "");
+
+  const persistDescription = (next: string) => {
+    if (!canWrite || next === lastSaved.current) return;
+    lastSaved.current = next;
+    updateAutomation.mutate(
+      { id: automation.id, description: next || null },
+      {
+        onError: (err) => {
+          lastSaved.current = automation.description ?? "";
+          toast.error(
+            err instanceof Error ? err.message : t(($) => $.dialog.toast_update_failed),
+          );
+        },
+      },
+    );
+  };
+
+  return (
+    <section className="space-y-3">
+      <h2 className="text-body font-medium text-muted-foreground uppercase tracking-wider">
+        {t(($) => $.settings.section_instructions)}
+      </h2>
+      <div className="rounded-lg border bg-background">
+        {canWrite ? (
+          <div className="min-h-[200px] px-4 py-3">
+            <ContentEditor
+              value={automation.description ?? ""}
+              placeholder={t(($) => $.dialog.description_placeholder)}
+              onUpdate={persistDescription}
+              debounceMs={1200}
+              flushPendingOnUnmount
+              showBubbleMenu={false}
+            />
+          </div>
+        ) : automation.description ? (
+          <div className="px-4 py-3">
+            <ReadonlyContent content={automation.description} />
+          </div>
+        ) : (
+          <p className="px-4 py-3 text-body text-muted-foreground">
+            {t(($) => $.dialog.description_placeholder)}
+          </p>
+        )}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">
+          <div>
+            <p className="text-caption font-medium">{t(($) => $.settings.section_model)}</p>
+            <p className="text-caption text-muted-foreground">
+              {t(($) => $.settings.model_default)}
+            </p>
+          </div>
+          <div className="min-w-[12rem]">
+            <ModelDropdown
+              runtimeId={runtimeId}
+              runtimeOnline={Boolean(runtimeId)}
+              value={automation.model ?? ""}
+              onChange={(model) => {
+                if (!canWrite) return;
+                updateAutomation.mutate({ id: automation.id, model: model || "" });
+              }}
+              disabled={!canWrite}
+            />
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -648,19 +460,34 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
 
   const { data, isLoading } = useQuery(automationDetailOptions(wsId, automationId));
   const { data: runs = [], isLoading: runsLoading } = useQuery(automationRunsOptions(wsId, automationId));
+  const { data: agents = [] } = useQuery(agentListOptions(wsId));
+  const { data: teams = [] } = useQuery(teamListOptions(wsId));
   const updateAutomation = useUpdateAutomation();
   const deleteAutomation = useDeleteAutomation();
   const triggerAutomation = useTriggerAutomation();
+  const createTrigger = useCreateAutomationTrigger();
   const projectId = data?.automation.project_id ?? null;
   const { data: project, isLoading: projectLoading } = useQuery({
     ...projectDetailOptions(wsId, projectId ?? ""),
     enabled: Boolean(projectId),
   });
 
+  const [detailTab, setDetailTab] = useState<"settings" | "runs">("settings");
   const [triggerDialogOpen, setTriggerDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  const executorAgentId =
+    data?.automation.executor_type === "team"
+      ? (teams.find((team) => team.id === data.automation.executor_id)?.leader_id ?? null)
+      : (data?.automation.executor_id ?? null);
+  const executorAgent = useMemo(
+    () => (executorAgentId ? agents.find((agent) => agent.id === executorAgentId) ?? null : null),
+    [agents, executorAgentId],
+  );
+  const runtimeId =
+    executorAgent && isAgentRuntimeBound(executorAgent) ? executorAgent.runtime_id : null;
 
   if (isLoading) {
     return (
@@ -773,6 +600,25 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
     updateAutomation.mutate({ id: automationId, status: checked ? "active" : "paused" });
   };
 
+  const handlePickPreset = async (preset: AutomationTriggerPreset) => {
+    try {
+      await createTrigger.mutateAsync({
+        automationId,
+        kind: preset.kind,
+        preset: preset.id,
+      });
+      toast.success(t(($) => $.settings.toast_trigger_added));
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : t(($) => $.settings.toast_trigger_add_failed),
+      );
+    }
+  };
+
+  const hasGenericWebhook = triggers.some(
+    (trig) => trig.kind === "webhook" && Boolean(trig.webhook_token),
+  );
+
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
@@ -851,8 +697,23 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
         </div>
       )}
 
+      <div className="flex shrink-0 items-center border-b px-6 py-2">
+        <div className="w-64">
+          <SegmentedToggle
+            value={detailTab}
+            onChange={setDetailTab}
+            options={[
+              ["settings", t(($) => $.settings.tab_settings)],
+              ["runs", t(($) => $.settings.tab_runs)],
+            ]}
+          />
+        </div>
+      </div>
+
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-4xl mx-auto p-6 space-y-8">
+          {detailTab === "settings" ? (
+            <>
           {/* Properties */}
           <section className="space-y-4">
             <h2 className="text-body font-medium text-muted-foreground uppercase tracking-wider">
@@ -932,14 +793,6 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
                   />
                 </div>
               )}
-              {automation.description && (
-                <div className="col-span-2">
-                  <label className="text-caption text-muted-foreground">{t(($) => $.detail.field_prompt)}</label>
-                  <div className="mt-1">
-                    <ReadonlyContent content={automation.description} />
-                  </div>
-                </div>
-              )}
             </div>
           </section>
 
@@ -949,12 +802,11 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
               <h2 className="text-body font-medium text-muted-foreground uppercase tracking-wider">
                 {t(($) => $.detail.section_triggers)}
               </h2>
-              {canWrite && (
-                <Button size="sm" variant="outline" onClick={() => setTriggerDialogOpen(true)}>
-                  <Plus className="h-3.5 w-3.5 mr-1" />
-                  {t(($) => $.detail.add_trigger)}
-                </Button>
-              )}
+              <TriggerAddMenu
+                canWrite={canWrite}
+                onPickSchedule={() => setTriggerDialogOpen(true)}
+                onPickPreset={handlePickPreset}
+              />
             </div>
             {triggers.length === 0 ? (
               <div className="rounded-md border border-dashed p-4 text-center text-body text-muted-foreground">
@@ -963,21 +815,46 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
             ) : (
               <div className="space-y-2">
                 {triggers.map((trig) => (
-                  <TriggerRow key={trig.id} trigger={trig} automationId={automationId} canWrite={canWrite} />
+                  <TriggerCard
+                    key={trig.id}
+                    trigger={trig}
+                    automationId={automationId}
+                    canWrite={canWrite}
+                  />
                 ))}
               </div>
             )}
           </section>
 
-          {/* Webhook deliveries — only renders when at least one webhook
-              trigger is configured. The component does its own fetch so
-              schedule-only automations don't pay for an empty list query. */}
-          <WebhookDeliveriesSection
-            automationId={automationId}
-            hasWebhookTrigger={triggers.some((trig) => trig.kind === "webhook")}
+          <InstructionsSection
+            automation={automation}
+            canWrite={canWrite}
+            runtimeId={runtimeId}
           />
 
-          {/* Run History */}
+          <AutomationToolsSection automation={automation} canWrite={canWrite} />
+
+          {/* Generic webhook deliveries only — native GitHub/Slack/Linear
+              triggers have no public URL and share the platform ingress. */}
+          <WebhookDeliveriesSection
+            automationId={automationId}
+            hasWebhookTrigger={hasGenericWebhook}
+          />
+
+          {/* Danger zone */}
+          {canWrite && (
+            <section className="space-y-3 pt-4 border-t">
+              <h2 className="text-body font-medium text-destructive uppercase tracking-wider">
+                {t(($) => $.detail.section_danger)}
+              </h2>
+              <Button size="sm" variant="destructive" onClick={() => setDeleteConfirmOpen(true)}>
+                <Trash2 className="h-3.5 w-3.5 mr-1" />
+                {t(($) => $.detail.delete_button)}
+              </Button>
+            </section>
+          )}
+            </>
+          ) : (
           <section className="space-y-3">
             <h2 className="text-body font-medium text-muted-foreground uppercase tracking-wider">
               {t(($) => $.detail.section_run_history)}
@@ -1000,18 +877,6 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
               />
             )}
           </section>
-
-          {/* Danger zone */}
-          {canWrite && (
-            <section className="space-y-3 pt-4 border-t">
-              <h2 className="text-body font-medium text-destructive uppercase tracking-wider">
-                {t(($) => $.detail.section_danger)}
-              </h2>
-              <Button size="sm" variant="destructive" onClick={() => setDeleteConfirmOpen(true)}>
-                <Trash2 className="h-3.5 w-3.5 mr-1" />
-                {t(($) => $.detail.delete_button)}
-              </Button>
-            </section>
           )}
         </div>
       </div>

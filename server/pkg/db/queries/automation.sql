@@ -56,11 +56,11 @@ FOR UPDATE;
 INSERT INTO automation (
     workspace_id, title, description, executor_type, executor_id,
     status, execution_mode, issue_title_template, project_id,
-    created_by_type, created_by_id
+    created_by_type, created_by_id, model, tools
 ) VALUES (
     $1, $2, sqlc.narg('description'), $3, $4,
     $5, $6, sqlc.narg('issue_title_template'), sqlc.narg('project_id'),
-    $7, $8
+    $7, $8, sqlc.narg('model'), COALESCE(sqlc.narg('tools'), '{}'::jsonb)
 ) RETURNING *;
 
 -- name: UpdateAutomation :one
@@ -77,6 +77,8 @@ UPDATE automation SET
     execution_mode = COALESCE(sqlc.narg('execution_mode'), execution_mode),
     issue_title_template = sqlc.narg('issue_title_template'),
     project_id = sqlc.narg('project_id'),
+    model = COALESCE(sqlc.narg('model'), model),
+    tools = COALESCE(sqlc.narg('tools'), tools),
     updated_at = now()
 WHERE id = $1
 RETURNING *;
@@ -172,13 +174,14 @@ WHERE id = $1;
 INSERT INTO automation_trigger (
     automation_id, kind, enabled, cron_expression, timezone,
     next_run_at, webhook_token, label, provider, event_filters,
-    published_by_type, published_by_id
+    published_by_type, published_by_id, preset, config
 ) VALUES (
     $1, $2, $3, sqlc.narg('cron_expression'), sqlc.narg('timezone'),
     sqlc.narg('next_run_at'), sqlc.narg('webhook_token'), sqlc.narg('label'),
     COALESCE(sqlc.narg('provider')::text, 'generic'),
     sqlc.narg('event_filters'),
-    sqlc.narg('published_by_type'), sqlc.narg('published_by_id')
+    sqlc.narg('published_by_type'), sqlc.narg('published_by_id'),
+    sqlc.narg('preset'), COALESCE(sqlc.narg('config'), '{}'::jsonb)
 ) RETURNING *;
 
 -- name: SetAutomationTriggerPublisher :exec
@@ -207,6 +210,8 @@ UPDATE automation_trigger SET
     next_run_at = sqlc.narg('next_run_at'),
     label = COALESCE(sqlc.narg('label'), label),
     event_filters = COALESCE(sqlc.narg('event_filters'), event_filters),
+    preset = COALESCE(sqlc.narg('preset'), preset),
+    config = COALESCE(sqlc.narg('config'), config),
     updated_at = now()
 WHERE id = $1
 RETURNING *;
@@ -232,6 +237,21 @@ FROM automation_trigger t
 JOIN automation a ON a.id = t.automation_id
 WHERE t.kind = 'webhook'
   AND t.webhook_token = $1;
+
+-- name: ListEnabledAutomationTriggersForEvent :many
+-- Native GitHub/Slack/Linear fan-out: enabled webhook triggers in this
+-- workspace whose catalog preset matches the inbound event. Generic
+-- URL webhooks are excluded (they fire through the public token ingress).
+SELECT t.*
+FROM automation_trigger t
+JOIN automation a ON a.id = t.automation_id
+WHERE a.workspace_id = $1
+  AND a.status = 'active'
+  AND t.enabled
+  AND t.kind = 'webhook'
+  AND t.provider = $2
+  AND t.preset = $3
+ORDER BY t.created_at ASC;
 
 -- name: TouchAutomationTriggerFiredAt :exec
 -- Bumps last_fired_at after a webhook fires, regardless of whether the

@@ -109,7 +109,7 @@ export function TelegramTab() {
             <p className="text-caption text-muted-foreground">
               {t(($) => $.telegram.not_enabled_description_prefix)}{" "}
               <code className="rounded bg-muted px-1 py-0.5 text-micro">
-                PATCHBAY_TELEGRAM_SECRET_KEY
+                ORVILO_TELEGRAM_SECRET_KEY
               </code>{" "}
               {t(($) => $.telegram.not_enabled_description_suffix)}{" "}
               {t(($) => $.telegram.not_enabled_self_host_hint)}

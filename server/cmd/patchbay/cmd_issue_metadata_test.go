@@ -86,9 +86,9 @@ func metadataTestServer(t *testing.T, metadataHandler http.HandlerFunc) (*httpte
 		}
 	}))
 	t.Cleanup(srv.Close)
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+	t.Setenv("ORVILO_TOKEN", "test-token")
 	return srv, &paths
 }
 

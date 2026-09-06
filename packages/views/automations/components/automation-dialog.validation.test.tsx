@@ -189,5 +189,6 @@ describe("AutomationDialog required-field feedback", () => {
       executor_type: "agent",
       executor_id: "agent-1",
     });
+    expect(mockCreateTrigger).not.toHaveBeenCalled();
   });
 });

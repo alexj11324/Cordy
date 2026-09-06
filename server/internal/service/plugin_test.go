@@ -176,7 +176,7 @@ func TestConfigFieldsForManifestKeepsDeclarationOrder(t *testing.T) {
 
 // readLocalFile is the only path left that touches the filesystem on behalf of
 // an API caller. The directory name arrives over HTTP, so it must not be able to
-// escape PATCHBAY_PLUGIN_DIR or name a dotfile path.
+// escape ORVILO_PLUGIN_DIR or name a dotfile path.
 func TestReadLocalFileStaysInsideThePluginDirectory(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "hello"), 0o755); err != nil {
@@ -216,7 +216,7 @@ func TestReadLocalFileStaysInsideThePluginDirectory(t *testing.T) {
 
 	disabled := &PluginService{}
 	if _, err := disabled.readLocalFile("hello", plugincontract.ManifestFilename); err == nil {
-		t.Fatal("local sources must require PATCHBAY_PLUGIN_DIR")
+		t.Fatal("local sources must require ORVILO_PLUGIN_DIR")
 	}
 }
 

@@ -24,7 +24,7 @@ describe("Go development runtime launcher contract", () => {
   it("prepares source-matched Go artifacts before opening Electron", () => {
     expect(desktopDev).toContain("prepare-dev-runtime.mjs");
     expect(desktopDev).not.toContain('"bundle-cli.mjs"');
-    expect(desktopDev).toContain("PATCHBAY_REQUIRE_SOURCE_CLI");
+    expect(desktopDev).toContain("ORVILO_REQUIRE_SOURCE_CLI");
     expect(rootDev).toContain("prepare-dev-runtime.mjs");
     expect(rootDev).toContain(".patchbay-dev/bin/server");
     expect(rootDev).toContain(".patchbay-dev/bin/migrate");
@@ -36,7 +36,7 @@ describe("Go development runtime launcher contract", () => {
   it("never turns a missing Go build into a release or PATH fallback", () => {
     expect(bundleCli).not.toContain("auto-installing the latest release");
     expect(bundleCli).not.toContain("go not found in PATH");
-    expect(daemonManager).toContain("PATCHBAY_REQUIRE_SOURCE_CLI");
+    expect(daemonManager).toContain("ORVILO_REQUIRE_SOURCE_CLI");
     expect(daemonManager).toContain(
       "source CLI required but the bundled Go CLI is missing or invalid",
     );

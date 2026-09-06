@@ -226,7 +226,7 @@ func LegacyDaemonUUIDs() ([]string, error) {
 }
 
 // filterLegacyIDs removes any entry equal to current (e.g. when the user
-// explicitly pins PATCHBAY_DAEMON_ID to the hostname itself, there's nothing
+// explicitly pins ORVILO_DAEMON_ID to the hostname itself, there's nothing
 // to migrate — the row is already keyed on the current id).
 func filterLegacyIDs(ids []string, current string) []string {
 	if current == "" {

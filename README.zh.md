@@ -104,7 +104,7 @@ curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/insta
 patchbay setup self-host
 ```
 
-Windows 上先设 `$env:PATCHBAY_MODE="with-server"`，再跑 PowerShell 安装脚本：
+Windows 上先设 `$env:ORVILO_MODE="with-server"`，再跑 PowerShell 安装脚本：
 `irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex`。
 
 这会拉取 GHCR 上的官方镜像，需要 Docker。详见[自部署指南](SELF_HOSTING.md)。如果你选的 GHCR

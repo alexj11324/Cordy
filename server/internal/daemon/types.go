@@ -10,7 +10,7 @@ import (
 // AgentEntry describes a single available agent CLI.
 type AgentEntry struct {
 	Path string // stable startup-resolved CLI entry point; launch resolution may follow platform links to a concrete path
-	// Command is the bare command name or PATCHBAY_*_PATH value that Path was
+	// Command is the bare command name or ORVILO_*_PATH value that Path was
 	// resolved from at startup. It is kept so the daemon can re-resolve Path
 	// if the pinned executable later vanishes — e.g. a version manager
 	// (Homebrew Cask, nvm/fnm) does an in-place upgrade that deletes the old
@@ -182,7 +182,7 @@ type Task struct {
 	InitiatorName  string `json:"initiator_name,omitempty"`
 	InitiatorEmail string `json:"initiator_email,omitempty"`
 	// AuthToken is the task-scoped credential the server mints at claim time.
-	// The daemon injects it into the spawned agent as PATCHBAY_TOKEN so the
+	// The daemon injects it into the spawned agent as ORVILO_TOKEN so the
 	// agent never sees the daemon's own (often workspace-owner) credential.
 	// Empty or non-task-scoped values are fatal for writable agent tasks; the
 	// daemon must not fall back to its own token. See MUL-3292.

@@ -77,7 +77,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 Patchbay Cloud 用户可跳过本节。自托管部署需要先设置一个用于加密钉钉 `AppSecret` 的密钥：
 
 ```dotenv
-PATCHBAY_DINGTALK_SECRET_KEY=<base64-encoded 32-byte key>
+ORVILO_DINGTALK_SECRET_KEY=<base64-encoded 32-byte key>
 ```
 
 可以这样生成：
@@ -88,7 +88,7 @@ openssl rand -base64 32
 
 重启 API 服务后，再连接钉钉。该密钥需要长期保存：更换或丢失后，已有 token 无法解密，需要重新连接。
 
-账号绑定链接使用 `PATCHBAY_APP_URL`，未设置时回退到 `FRONTEND_ORIGIN`；它需要指向成员可以访问的 Patchbay 地址。
+账号绑定链接使用 `ORVILO_APP_URL`，未设置时回退到 `FRONTEND_ORIGIN`；它需要指向成员可以访问的 Patchbay 地址。
 
 
 ## 接下来

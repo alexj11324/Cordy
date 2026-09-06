@@ -278,13 +278,13 @@ printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"session_id
 	}
 }
 
-// TestTaskTempBaseDir covers the PATCHBAY_AGENT_TEMP_BASE validation contract:
+// TestTaskTempBaseDir covers the ORVILO_AGENT_TEMP_BASE validation contract:
 // Windows ignores it, while Unix honors a valid absolute directory and reports
 // unusable configured bases from the real task-directory creation instead of
 // silently falling back to /tmp.
 func TestTaskTempBaseDir(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Setenv("PATCHBAY_AGENT_TEMP_BASE", `C:\configured-but-ignored`)
+		t.Setenv("ORVILO_AGENT_TEMP_BASE", `C:\configured-but-ignored`)
 		got, configured, err := taskTempBaseDir()
 		if err != nil {
 			t.Fatalf("taskTempBaseDir(): %v", err)
@@ -316,10 +316,10 @@ func TestTaskTempBaseDir(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// Register the restore hook in both branches: t.Setenv remembers
 			// whether the variable was originally set and undoes either case.
-			t.Setenv("PATCHBAY_AGENT_TEMP_BASE", tc.value)
+			t.Setenv("ORVILO_AGENT_TEMP_BASE", tc.value)
 			if !tc.set {
-				if err := os.Unsetenv("PATCHBAY_AGENT_TEMP_BASE"); err != nil {
-					t.Fatalf("unset PATCHBAY_AGENT_TEMP_BASE: %v", err)
+				if err := os.Unsetenv("ORVILO_AGENT_TEMP_BASE"); err != nil {
+					t.Fatalf("unset ORVILO_AGENT_TEMP_BASE: %v", err)
 				}
 			}
 			got, configured, err := taskTempBaseDir()
@@ -332,8 +332,8 @@ func TestTaskTempBaseDir(t *testing.T) {
 				}
 				// The message must name the variable the operator set, so the
 				// failure is actionable rather than a bare mkdir/stat error.
-				if !strings.Contains(err.Error(), "PATCHBAY_AGENT_TEMP_BASE") {
-					t.Fatalf("error %q does not mention PATCHBAY_AGENT_TEMP_BASE", err)
+				if !strings.Contains(err.Error(), "ORVILO_AGENT_TEMP_BASE") {
+					t.Fatalf("error %q does not mention ORVILO_AGENT_TEMP_BASE", err)
 				}
 				return
 			}
@@ -347,7 +347,7 @@ func TestTaskTempBaseDir(t *testing.T) {
 	}
 
 	t.Run("configured base creates private 0700 task dir", func(t *testing.T) {
-		t.Setenv("PATCHBAY_AGENT_TEMP_BASE", validBase)
+		t.Setenv("ORVILO_AGENT_TEMP_BASE", validBase)
 		dir, lock, err := ensureTaskTempDir("root", "ws", "task")
 		if err != nil {
 			t.Fatalf("ensureTaskTempDir(): %v", err)
@@ -385,7 +385,7 @@ func TestTaskTempBaseDir(t *testing.T) {
 		{name: "non-writable dir rejected", base: readOnlyBase},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("PATCHBAY_AGENT_TEMP_BASE", tc.base)
+			t.Setenv("ORVILO_AGENT_TEMP_BASE", tc.base)
 			dir, lock, err := ensureTaskTempDir("root", "ws", "task")
 			if err == nil {
 				execenv.ReleaseTaskTempLock(lock)
@@ -393,16 +393,16 @@ func TestTaskTempBaseDir(t *testing.T) {
 				if tc.base == readOnlyBase {
 					t.Skip("process can write to the read-only fixture")
 				}
-				t.Fatalf("ensureTaskTempDir() = %q with unusable PATCHBAY_AGENT_TEMP_BASE, want error", dir)
+				t.Fatalf("ensureTaskTempDir() = %q with unusable ORVILO_AGENT_TEMP_BASE, want error", dir)
 			}
-			if !strings.Contains(err.Error(), "PATCHBAY_AGENT_TEMP_BASE") {
-				t.Fatalf("error %q does not mention PATCHBAY_AGENT_TEMP_BASE", err)
+			if !strings.Contains(err.Error(), "ORVILO_AGENT_TEMP_BASE") {
+				t.Fatalf("error %q does not mention ORVILO_AGENT_TEMP_BASE", err)
 			}
 		})
 	}
 }
 
-// TestRunTask_TaskTempBaseOverride is the PATCHBAY_AGENT_TEMP_BASE counterpart
+// TestRunTask_TaskTempBaseOverride is the ORVILO_AGENT_TEMP_BASE counterpart
 // of TestRunTask_InjectsPrivateTaskTempDir: with the variable set, all three
 // temp vars point at one fresh private dir under the configured base, agent
 // custom_env still cannot override them, and the dir is removed on task exit.
@@ -412,7 +412,7 @@ func TestRunTask_TaskTempBaseOverride(t *testing.T) {
 	}
 
 	tempBase := t.TempDir()
-	t.Setenv("PATCHBAY_AGENT_TEMP_BASE", tempBase)
+	t.Setenv("ORVILO_AGENT_TEMP_BASE", tempBase)
 
 	workspacesRoot := t.TempDir()
 	workspaceID := "ws-temp-base"
@@ -510,7 +510,7 @@ printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"session_id
 
 // TestRunTask_TaskTempBaseInvalidFailsStartup pins the "no silent fallback"
 // half of the contract at the level operators experience it: an unusable
-// PATCHBAY_AGENT_TEMP_BASE fails the task with a message naming the variable,
+// ORVILO_AGENT_TEMP_BASE fails the task with a message naming the variable,
 // and the agent never starts against a /tmp dir it did not ask for.
 func TestRunTask_TaskTempBaseInvalidFailsStartup(t *testing.T) {
 	if runtime.GOOS == "windows" {
@@ -518,7 +518,7 @@ func TestRunTask_TaskTempBaseInvalidFailsStartup(t *testing.T) {
 	}
 
 	missingBase := filepath.Join(t.TempDir(), "does-not-exist")
-	t.Setenv("PATCHBAY_AGENT_TEMP_BASE", missingBase)
+	t.Setenv("ORVILO_AGENT_TEMP_BASE", missingBase)
 
 	workspacesRoot := t.TempDir()
 	captureFile := filepath.Join(t.TempDir(), "agent-env.txt")
@@ -568,10 +568,10 @@ printf 'ran\n' > "$CAPTURE_FILE"
 	taskLog := slog.New(slog.NewTextHandler(io.Discard, nil))
 	_, err := d.runTask(context.Background(), task, "claude", 0, taskLog)
 	if err == nil {
-		t.Fatal("runTask() succeeded with an unusable PATCHBAY_AGENT_TEMP_BASE, want failure")
+		t.Fatal("runTask() succeeded with an unusable ORVILO_AGENT_TEMP_BASE, want failure")
 	}
-	if !strings.Contains(err.Error(), "PATCHBAY_AGENT_TEMP_BASE") {
-		t.Fatalf("runTask() error = %v, want it to name PATCHBAY_AGENT_TEMP_BASE", err)
+	if !strings.Contains(err.Error(), "ORVILO_AGENT_TEMP_BASE") {
+		t.Fatalf("runTask() error = %v, want it to name ORVILO_AGENT_TEMP_BASE", err)
 	}
 	if _, statErr := os.Stat(captureFile); !os.IsNotExist(statErr) {
 		t.Fatalf("agent ran despite the temp-base failure, stat err=%v", statErr)

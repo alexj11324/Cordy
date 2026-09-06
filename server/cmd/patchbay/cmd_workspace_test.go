@@ -89,9 +89,9 @@ func TestRunWorkspaceCreatePostsWorkspaceAndDoesNotSwitchDefault(t *testing.T) {
 	defer srv.Close()
 
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "existing-workspace")
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_TOKEN", "test-token")
+	t.Setenv("ORVILO_WORKSPACE_ID", "existing-workspace")
 	if err := cli.SaveCLIConfig(cli.CLIConfig{WorkspaceID: "existing-workspace"}); err != nil {
 		t.Fatalf("seed config: %v", err)
 	}
@@ -244,8 +244,8 @@ func TestRunWorkspaceCreatePrintsTable(t *testing.T) {
 	defer srv.Close()
 
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_TOKEN", "test-token")
 
 	cmd := newWorkspaceCreateTestCmd()
 	_ = cmd.Flags().Set("name", "Support Team")
@@ -281,9 +281,9 @@ func TestRunWorkspaceSwitch(t *testing.T) {
 
 	// Isolate HOME so the test never touches the developer's ~/.patchbay.
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "")
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_TOKEN", "test-token")
+	t.Setenv("ORVILO_WORKSPACE_ID", "")
 
 	t.Run("switches by slug and persists workspace_id", func(t *testing.T) {
 		cmd := newWorkspaceSwitchTestCmd()
@@ -349,12 +349,12 @@ func TestRunWorkspaceSwitch(t *testing.T) {
 
 func TestRunWorkspaceSwitchFailsClosedInTaskContext(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("PATCHBAY_AGENT_ID", "agent-test")
-	t.Setenv("PATCHBAY_TASK_ID", "task-test")
-	t.Setenv("PATCHBAY_TOKEN", "mat_task_sentinel")
-	t.Setenv("PATCHBAY_SERVER_URL", "https://task.invalid")
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "task-workspace")
-	t.Setenv("PATCHBAY_TASK_CONFIG_ROOT", filepath.Join(t.TempDir(), "task-patchbay"))
+	t.Setenv("ORVILO_AGENT_ID", "agent-test")
+	t.Setenv("ORVILO_TASK_ID", "task-test")
+	t.Setenv("ORVILO_TOKEN", "mat_task_sentinel")
+	t.Setenv("ORVILO_SERVER_URL", "https://task.invalid")
+	t.Setenv("ORVILO_WORKSPACE_ID", "task-workspace")
+	t.Setenv("ORVILO_TASK_CONFIG_ROOT", filepath.Join(t.TempDir(), "task-patchbay"))
 
 	err := runWorkspaceSwitch(newWorkspaceSwitchTestCmd(), []string{"target"})
 	if err == nil || !strings.Contains(err.Error(), "not available inside a daemon-managed task") {
@@ -365,18 +365,18 @@ func TestRunWorkspaceSwitchFailsClosedInTaskContext(t *testing.T) {
 func TestFetchWorkspacesExplainsPortOnlyFailClosedContext(t *testing.T) {
 	t.Chdir(t.TempDir())
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("PATCHBAY_AGENT_ID", "")
-	t.Setenv("PATCHBAY_TASK_ID", "")
+	t.Setenv("ORVILO_AGENT_ID", "")
+	t.Setenv("ORVILO_TASK_ID", "")
 	t.Setenv(cli.TaskConfigRootEnv, "")
-	t.Setenv("PATCHBAY_DAEMON_PORT", "20032")
-	t.Setenv("PATCHBAY_SERVER_URL", "https://api.example.test")
-	t.Setenv("PATCHBAY_TOKEN", "")
+	t.Setenv("ORVILO_DAEMON_PORT", "20032")
+	t.Setenv("ORVILO_SERVER_URL", "https://api.example.test")
+	t.Setenv("ORVILO_TOKEN", "")
 	if err := cli.SaveCLIConfig(cli.CLIConfig{Token: "pby_owner_pat"}); err != nil {
 		t.Fatalf("seed config: %v", err)
 	}
 
 	_, err := fetchWorkspaces(t.Context(), newWorkspaceSwitchTestCmd())
-	if err == nil || !strings.Contains(err.Error(), "PATCHBAY_DAEMON_PORT") || !strings.Contains(err.Error(), "remove") {
+	if err == nil || !strings.Contains(err.Error(), "ORVILO_DAEMON_PORT") || !strings.Contains(err.Error(), "remove") {
 		t.Fatalf("fetchWorkspaces error = %v, want stale port recovery guidance", err)
 	}
 }
@@ -705,8 +705,8 @@ func TestWorkspaceMemberInviteCommandIsRegistered(t *testing.T) {
 
 func TestRunWorkspaceMemberInvitePostsInvitation(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "workspace-123")
+	t.Setenv("ORVILO_TOKEN", "test-token")
+	t.Setenv("ORVILO_WORKSPACE_ID", "workspace-123")
 
 	var gotMethod, gotPath string
 	var gotBody map[string]any
@@ -727,7 +727,7 @@ func TestRunWorkspaceMemberInvitePostsInvitation(t *testing.T) {
 		})
 	}))
 	defer srv.Close()
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
 
 	cmd := newWorkspaceMemberInviteTestCmd()
 	// A mixed-case email should be lowercased before it is sent.
@@ -750,7 +750,7 @@ func TestRunWorkspaceMemberInvitePostsInvitation(t *testing.T) {
 
 func TestRunWorkspaceMemberInviteUsesWorkspaceArgAndRoleFlag(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
+	t.Setenv("ORVILO_TOKEN", "test-token")
 
 	const wsUUID = "11111111-1111-1111-1111-111111111111"
 	var gotPath string
@@ -764,7 +764,7 @@ func TestRunWorkspaceMemberInviteUsesWorkspaceArgAndRoleFlag(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"invitee_email": "bob@example.com", "role": "admin", "status": "pending"})
 	}))
 	defer srv.Close()
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
 
 	cmd := newWorkspaceMemberInviteTestCmd()
 	_ = cmd.Flags().Set("role", "admin")
@@ -782,15 +782,15 @@ func TestRunWorkspaceMemberInviteUsesWorkspaceArgAndRoleFlag(t *testing.T) {
 
 func TestRunWorkspaceMemberInviteRejectsOwnerRole(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "workspace-123")
+	t.Setenv("ORVILO_TOKEN", "test-token")
+	t.Setenv("ORVILO_WORKSPACE_ID", "workspace-123")
 
 	called := false
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
 	}))
 	defer srv.Close()
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
 
 	cmd := newWorkspaceMemberInviteTestCmd()
 	_ = cmd.Flags().Set("role", "owner")
@@ -804,8 +804,8 @@ func TestRunWorkspaceMemberInviteRejectsOwnerRole(t *testing.T) {
 
 func TestRunWorkspaceMemberInviteRejectsUnknownRole(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "workspace-123")
+	t.Setenv("ORVILO_TOKEN", "test-token")
+	t.Setenv("ORVILO_WORKSPACE_ID", "workspace-123")
 
 	cmd := newWorkspaceMemberInviteTestCmd()
 	_ = cmd.Flags().Set("role", "superuser")

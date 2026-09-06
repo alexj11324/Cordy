@@ -2,15 +2,15 @@
 
 Required broker values:
 
-- `PATCHBAY_API_ORIGIN=https://api.aspectlylabs.com`
-- `PATCHBAY_AUTH_BROKER_ORIGIN=https://accounts.aspectlylabs.com`
+- `ORVILO_API_ORIGIN=https://api.aspectlylabs.com`
+- `ORVILO_AUTH_BROKER_ORIGIN=https://accounts.aspectlylabs.com`
 - `CLERK_PUBLISHABLE_KEY`
-- `PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN` (64 lowercase hexadecimal characters;
+- `ORVILO_DESKTOP_BROKER_AUTH_TOKEN` (64 lowercase hexadecimal characters;
   identical in broker and Go API)
-- `PATCHBAY_ORIGIN_AUTH_TOKEN` (a distinct 64-character hexadecimal secret;
+- `ORVILO_ORIGIN_AUTH_TOKEN` (a distinct 64-character hexadecimal secret;
   identical in the Cloudflare Worker and broker origin)
 
-Required Go API values are `PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN`,
+Required Go API values are `ORVILO_DESKTOP_BROKER_AUTH_TOKEN`,
 `CLERK_SECRET_KEY`, `CLERK_JWT_KEY`, `CLERK_ISSUER`, and
 `CLERK_AUTHORIZED_PARTIES=https://accounts.aspectlylabs.com`.
 
@@ -33,7 +33,7 @@ The broker authenticates its request to the hosted Go API.
 For local mode, Go mints a `pbl_` identity grant. Accounts returns only that code
 and state through `patchbay://auth/callback`. Electron supplies its saved
 verifier and state to its configured local API. With
-`PATCHBAY_HOSTED_DESKTOP_IDENTITY=1` (enabled by local development scripts),
+`ORVILO_HOSTED_DESKTOP_IDENTITY=1` (enabled by local development scripts),
 that API claims its unexpired initiation row in a transaction and exchanges
 the grant against the fixed HTTPS authority at
 `https://api.aspectlylabs.com/api/desktop-identity/redeem`.

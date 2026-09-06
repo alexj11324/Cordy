@@ -4,7 +4,7 @@ import {
   type SupportedLocale,
 } from "@patchbay/core/i18n";
 
-export const PATCHBAY_LOCALE_HEADER = "x-patchbay-locale";
+export const ORVILO_LOCALE_HEADER = "x-patchbay-locale";
 
 export function isSupportedLocale(
   value: string | null,

@@ -55,7 +55,7 @@ Use this option when your deployment cannot reach the public internet or you alr
 
 STARTTLS is used automatically when advertised by the server. Port 465 (SMTPS / implicit TLS) is supported and auto-enables implicit TLS; set `SMTP_TLS=implicit` (aliases `smtps`, `ssl`) to force it on a non-standard port.
 
-> **Note:** If neither Resend nor SMTP is configured, generated verification codes are printed to backend logs — copy them from there to log in. A fixed local testing code (e.g. `888888`) is **opt-in only**: set `PATCHBAY_DEV_VERIFICATION_CODE=888888` in `.env` and keep `APP_ENV` non-production. The Docker self-host stack pins `APP_ENV=production`, so the shortcut is ignored there. **Never enable a fixed code on a publicly reachable instance**, and never set `PATCHBAY_DEV_LOGIN=1` there either — it serves `/auth/dev-login`, which signs in as any email with no code at all.
+> **Note:** If neither Resend nor SMTP is configured, generated verification codes are printed to backend logs — copy them from there to log in. A fixed local testing code (e.g. `888888`) is **opt-in only**: set `ORVILO_DEV_VERIFICATION_CODE=888888` in `.env` and keep `APP_ENV` non-production. The Docker self-host stack pins `APP_ENV=production`, so the shortcut is ignored there. **Never enable a fixed code on a publicly reachable instance**, and never set `ORVILO_DEV_LOGIN=1` there either — it serves `/auth/dev-login`, which signs in as any email with no code at all.
 
 ### Google OAuth (Optional)
 
@@ -181,7 +181,7 @@ rewrite configuration. Its backend fallback therefore accepts
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PATCHBAY_WECOM_TRACE` | empty (off) | `1` records every WeCom frame the backend reads and writes, including the first 120 runes of each message body. Anything else is off. |
+| `ORVILO_WECOM_TRACE` | empty (off) | `1` records every WeCom frame the backend reads and writes, including the first 120 runes of each message body. Anything else is off. |
 
 Turn it on for a debugging session and unset it when the session ends. Before
 you do:
@@ -207,36 +207,36 @@ These are configured on each user's machine, not on the server:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PATCHBAY_SERVER_URL` | `ws://localhost:8080/ws` | WebSocket URL for daemon → server connection |
-| `PATCHBAY_APP_URL` | `http://localhost:3000` | Frontend URL for CLI login flow |
-| `PATCHBAY_DAEMON_POLL_INTERVAL` | `30s` | Catch-up poll for tasks; WebSocket wake signals normally deliver work sooner |
-| `PATCHBAY_DAEMON_HEARTBEAT_INTERVAL` | `15s` | Heartbeat frequency |
+| `ORVILO_SERVER_URL` | `ws://localhost:8080/ws` | WebSocket URL for daemon → server connection |
+| `ORVILO_APP_URL` | `http://localhost:3000` | Frontend URL for CLI login flow |
+| `ORVILO_DAEMON_POLL_INTERVAL` | `30s` | Catch-up poll for tasks; WebSocket wake signals normally deliver work sooner |
+| `ORVILO_DAEMON_HEARTBEAT_INTERVAL` | `15s` | Heartbeat frequency |
 
 Agent-specific overrides:
 
 | Variable | Description |
 |----------|-------------|
-| `PATCHBAY_CLAUDE_PATH` | Custom path to the `claude` binary |
-| `PATCHBAY_CLAUDE_MODEL` | Override the Claude model used |
-| `PATCHBAY_CODEX_PATH` | Custom path to the `codex` binary |
-| `PATCHBAY_CODEX_MODEL` | Override the Codex model used |
-| `PATCHBAY_COPILOT_PATH` | Custom path to the `copilot` (GitHub Copilot CLI) binary |
-| `PATCHBAY_COPILOT_MODEL` | Override the Copilot model used (note: GitHub Copilot routes models through your account entitlement, so this may not be honoured) |
-| `PATCHBAY_OPENCODE_PATH` | Custom path to the `opencode` binary |
-| `PATCHBAY_OPENCODE_MODEL` | Override the OpenCode model used |
-| `PATCHBAY_CODEARTS_PATH` | Custom path to the `codearts` launcher or binary |
-| `PATCHBAY_CODEARTS_MODEL` | Override the CodeArts model used |
-| `PATCHBAY_OPENCLAW_PATH` | Custom path to the `openclaw` binary |
-| `PATCHBAY_OPENCLAW_MODEL` | Override the OpenClaw model used |
-| `PATCHBAY_OPENCLAW_CLI_TIMEOUT` | Deadline for each `openclaw config ...` call during task preparation (default 30s; accepts `45s` or `45`). Raise it when the local CLI is slow to start; the daemon also reads it from `backends.openclaw.cli_timeout` in the CLI config |
-| `PATCHBAY_HERMES_PATH` | Custom path to the `hermes` binary |
-| `PATCHBAY_HERMES_MODEL` | Override the Hermes model used |
-| `PATCHBAY_PI_PATH` | Custom path to the `pi` binary |
-| `PATCHBAY_PI_MODEL` | Override the Pi model used |
-| `PATCHBAY_CURSOR_PATH` | Custom path to the `cursor-agent` binary |
-| `PATCHBAY_CURSOR_MODEL` | Override the Cursor Agent model used |
-| `PATCHBAY_GROK_PATH` | Custom path to the `grok` binary |
-| `PATCHBAY_GROK_MODEL` | Override the Grok model used (e.g. `grok-4.5`) |
+| `ORVILO_CLAUDE_PATH` | Custom path to the `claude` binary |
+| `ORVILO_CLAUDE_MODEL` | Override the Claude model used |
+| `ORVILO_CODEX_PATH` | Custom path to the `codex` binary |
+| `ORVILO_CODEX_MODEL` | Override the Codex model used |
+| `ORVILO_COPILOT_PATH` | Custom path to the `copilot` (GitHub Copilot CLI) binary |
+| `ORVILO_COPILOT_MODEL` | Override the Copilot model used (note: GitHub Copilot routes models through your account entitlement, so this may not be honoured) |
+| `ORVILO_OPENCODE_PATH` | Custom path to the `opencode` binary |
+| `ORVILO_OPENCODE_MODEL` | Override the OpenCode model used |
+| `ORVILO_CODEARTS_PATH` | Custom path to the `codearts` launcher or binary |
+| `ORVILO_CODEARTS_MODEL` | Override the CodeArts model used |
+| `ORVILO_OPENCLAW_PATH` | Custom path to the `openclaw` binary |
+| `ORVILO_OPENCLAW_MODEL` | Override the OpenClaw model used |
+| `ORVILO_OPENCLAW_CLI_TIMEOUT` | Deadline for each `openclaw config ...` call during task preparation (default 30s; accepts `45s` or `45`). Raise it when the local CLI is slow to start; the daemon also reads it from `backends.openclaw.cli_timeout` in the CLI config |
+| `ORVILO_HERMES_PATH` | Custom path to the `hermes` binary |
+| `ORVILO_HERMES_MODEL` | Override the Hermes model used |
+| `ORVILO_PI_PATH` | Custom path to the `pi` binary |
+| `ORVILO_PI_MODEL` | Override the Pi model used |
+| `ORVILO_CURSOR_PATH` | Custom path to the `cursor-agent` binary |
+| `ORVILO_CURSOR_MODEL` | Override the Cursor Agent model used |
+| `ORVILO_GROK_PATH` | Custom path to the `grok` binary |
+| `ORVILO_GROK_MODEL` | Override the Grok model used (e.g. `grok-4.5`) |
 
 ## Database Setup
 
@@ -665,5 +665,5 @@ docker compose -f docker-compose.selfhost.yml pull
 docker compose -f docker-compose.selfhost.yml up -d
 ```
 
-Pin `PATCHBAY_IMAGE_TAG` in `.env` to an exact release like `v0.2.4` if you want to stay on a specific version. Migrations run automatically on backend startup. They are idempotent — running them multiple times has no effect.
+Pin `ORVILO_IMAGE_TAG` in `.env` to an exact release like `v0.2.4` if you want to stay on a specific version. Migrations run automatically on backend startup. They are idempotent — running them multiple times has no effect.
 If the selected GHCR tag has not been published yet, fall back to `docker compose -f docker-compose.selfhost.yml -f docker-compose.selfhost.build.yml up -d --build`.

@@ -627,7 +627,7 @@ func TestResolveMediaSurvivesAConnectionThatWentAway(t *testing.T) {
 // nothing on its own, and the one thing it learns that cannot be recovered
 // later is what Content-Disposition the object came with — the URL it came
 // from lapses in five minutes, so a filename questioned tomorrow can never be
-// checked against the header that produced it. Under PATCHBAY_WECOM_TRACE the
+// checked against the header that produced it. Under ORVILO_WECOM_TRACE the
 // raw value goes to the log beside the name parsed out of it, on both ingest
 // paths, and the pre-signed URL does not.
 //

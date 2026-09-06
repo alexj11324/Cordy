@@ -436,7 +436,7 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 	// removed while the daemon runs is restored before the agent spawns. The
 	// per-workdir marker written below only covers cwds inside the workdir;
 	// the root marker keeps the CLI fail-closed guard active for subprocesses
-	// that lose all PATCHBAY_* env vars AND escape above the workdir. Non-fatal:
+	// that lose all ORVILO_* env vars AND escape above the workdir. Non-fatal:
 	// without it the workdir marker still protects the common case.
 	if err := EnsureWorkspacesRootMarker(params.WorkspacesRoot); err != nil && logger != nil {
 		logger.Warn("execenv: workspaces root marker not written; fail-closed guard limited to the task workdir", "error", err)

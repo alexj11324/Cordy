@@ -32,7 +32,7 @@ func TestAgentDiscoveryDoesNotExecuteUserCode(t *testing.T) {
 	if err := os.WriteFile(candidate, body, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("PATCHBAY_CLAUDE_PATH", "discovery-test-agent")
+	t.Setenv("ORVILO_CLAUDE_PATH", "discovery-test-agent")
 	agents := probeAgentCLIs()
 	if _, err := os.Stat(marker); !os.IsNotExist(err) {
 		t.Fatalf("discovery executed user code: %v", err)

@@ -397,7 +397,8 @@ func (h *Handler) resolveTaskCapabilityContext(ctx context.Context, r *http.Requ
 	if err != nil {
 		return taskCapabilityRequestContext{}, true, fmt.Errorf("load task capability task: %w", err)
 	}
-	if task.AgentID != agentID || !task.RuntimeID.Valid || !task.OriginatorUserID.Valid {
+	if task.AgentID != agentID || !task.RuntimeID.Valid ||
+		(!task.OriginatorUserID.Valid && !service.IsAutomationRootedTask(task)) {
 		return taskCapabilityRequestContext{}, true, service.ErrProviderAuthorizationForbidden
 	}
 	current, err := h.Queries.GetCurrentTaskCapabilityLease(ctx, db.GetCurrentTaskCapabilityLeaseParams{
@@ -452,11 +453,13 @@ func (h *Handler) taskLeaseAllows(w http.ResponseWriter, r *http.Request, worksp
 }
 
 // authorizeProviderTaskClaim is called after the full claim payload has been
-// built but before a task token is minted. A deny/approval result terminally
-// settles the dispatched task so the daemon cannot retry the same unauthorized
-// work forever; a database failure is returned to the claim caller and no lease
-// is issued.
-func (h *Handler) authorizeProviderTaskClaim(ctx context.Context, task db.AgentTaskQueue, runtime db.AgentRuntime) (bool, error) {
+// built but before a task token is minted. The optional model override is the
+// exact model placed in that payload, so provider authorization evaluates the
+// same automation setting the daemon will invoke. A deny/approval result
+// terminally settles the dispatched task so the daemon cannot retry the same
+// unauthorized work forever; a database failure is returned to the claim caller
+// and no lease is issued.
+func (h *Handler) authorizeProviderTaskClaim(ctx context.Context, task db.AgentTaskQueue, runtime db.AgentRuntime, modelOverride ...string) (bool, error) {
 	if !service.ProviderUsesCredentialBroker(runtime.Provider) {
 		return true, nil
 	}
@@ -467,6 +470,9 @@ func (h *Handler) authorizeProviderTaskClaim(ctx context.Context, task db.AgentT
 	model := ""
 	if agent.Model.Valid {
 		model = strings.TrimSpace(agent.Model.String)
+	}
+	if len(modelOverride) > 0 && strings.TrimSpace(modelOverride[0]) != "" {
+		model = strings.TrimSpace(modelOverride[0])
 	}
 	decision, err := h.ProviderAuthorization.AuthorizeTaskClaim(ctx, service.ProviderClaimValidation{
 		WorkspaceID: runtime.WorkspaceID, TaskID: task.ID, AgentID: task.AgentID,
@@ -582,10 +588,10 @@ func (h *Handler) ValidateProviderLease(w http.ResponseWriter, r *http.Request) 
 	}
 	decision, err := h.ProviderAuthorization.ValidateLease(r.Context(), service.ProviderLeaseValidation{
 		WorkspaceID: workspaceID,
-		LeaseID: capability.Lease.ID, TaskID: capability.Task.ID,
+		LeaseID:     capability.Lease.ID, TaskID: capability.Task.ID,
 		AgentID: capability.Task.AgentID, RuntimeID: capability.Task.RuntimeID,
 		OnBehalfOfUserID: capability.Task.OriginatorUserID,
-		Provider: request.Provider, Model: request.Model,
+		Provider:         request.Provider, Model: request.Model,
 		RequestedMaxTokens: maxTokens, Preflight: request.Preflight,
 	})
 	if err != nil {

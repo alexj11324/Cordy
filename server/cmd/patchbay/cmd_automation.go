@@ -163,6 +163,7 @@ func init() {
 	automationTriggerAddCmd.Flags().String("cron", "", "Cron expression (required for --kind schedule)")
 	automationTriggerAddCmd.Flags().String("timezone", "", "IANA timezone (default UTC; schedule only)")
 	automationTriggerAddCmd.Flags().String("label", "", "Optional human-readable label")
+	automationTriggerAddCmd.Flags().String("preset", "", "Catalog preset id (e.g. github.pull_request.opened, slack.message, webhook.received)")
 	automationTriggerAddCmd.Flags().String("output", "json", "Output format: table or json")
 
 	// trigger-list
@@ -739,6 +740,9 @@ func runAutomationTriggerAdd(cmd *cobra.Command, args []string) error {
 	if v, _ := cmd.Flags().GetString("label"); v != "" {
 		body["label"] = v
 	}
+	if v, _ := cmd.Flags().GetString("preset"); v != "" {
+		body["preset"] = v
+	}
 
 	ctx, cancel := cli.APIContext(context.Background())
 	defer cancel()
@@ -947,7 +951,7 @@ func resolveAgent(ctx context.Context, client *cli.APIClient, nameOrID string) (
 		return nameOrID, nil
 	}
 	if client.WorkspaceID == "" {
-		return "", fmt.Errorf("workspace ID is required to resolve agents; use --workspace-id or set PATCHBAY_WORKSPACE_ID")
+		return "", fmt.Errorf("workspace ID is required to resolve agents; use --workspace-id or set ORVILO_WORKSPACE_ID")
 	}
 
 	var agents []map[string]any

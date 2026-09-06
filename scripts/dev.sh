@@ -107,8 +107,8 @@ done
 
 export VITE_API_URL="$backend_url"
 export VITE_WS_URL="ws://127.0.0.1:${PORT:-8080}/ws"
-export PATCHBAY_REQUIRE_SOURCE_CLI=1
-export PATCHBAY_DEV_ENV_FILE="$ENV_FILE"
+export ORVILO_REQUIRE_SOURCE_CLI=1
+export ORVILO_DEV_ENV_FILE="$ENV_FILE"
 
 echo "✓ Go backend ready. Starting Electron with the source-matched CLI."
 node apps/desktop/scripts/dev.mjs

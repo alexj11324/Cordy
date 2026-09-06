@@ -74,12 +74,12 @@ Bot 通过发送并编辑 Telegram 消息来流式展示文字回复，引用触
 启动 API 服务器前配置一个长期稳定的 32 字节加密密钥：
 
 ```dotenv
-PATCHBAY_TELEGRAM_SECRET_KEY=<base64 编码的 32 字节密钥>
+ORVILO_TELEGRAM_SECRET_KEY=<base64 编码的 32 字节密钥>
 ```
 
 可用 `openssl rand -base64 32` 生成。丢失或轮换此密钥后，已有 Bot token 无法解密，需要逐个重新连接。
 
-绑定链接使用 `PATCHBAY_APP_URL`，未设置时回退到 `FRONTEND_ORIGIN`；生成的地址必须能被成员访问。服务器网络或代理还必须允许 HTTPS 访问 `api.telegram.org`；Go 会读取标准的 `HTTPS_PROXY` 和 `NO_PROXY` 环境变量。
+绑定链接使用 `ORVILO_APP_URL`，未设置时回退到 `FRONTEND_ORIGIN`；生成的地址必须能被成员访问。服务器网络或代理还必须允许 HTTPS 访问 `api.telegram.org`；Go 会读取标准的 `HTTPS_PROXY` 和 `NO_PROXY` 环境变量。
 
 ## 故障排查
 

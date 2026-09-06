@@ -34,7 +34,7 @@ make seed-dev       # 任意: サンプル issue を dev-fixtures ワークス�
 
 `make up` はロックの下でこの checkout 用のポートとデータベースを割り当てて記録するため、複数の checkout や worktree を同時に動かせ、`make status` / `make down` / `make destroy` はそのうちの一つだけに作用します。割り当てたアドレスは実行時に表示されます。`make dev` は既定のポートで、一つのターミナルのフォアグラウンドで動かす方法です。バックエンドを起動して Electron を開きますが、Web アプリは起動しません。
 
-`make dev-login` が使えるのは、`make up` がローカルの env ファイルに `PATCHBAY_DEV_LOGIN=1` を書き込むためです — [サインインとサインアップ](/auth-setup#開発環境でログイン画面を省く)を参照。公開インスタンスでは絶対に有効化せず、ローカルの `.env` を公開デプロイに使わないでください。
+`make dev-login` が使えるのは、`make up` がローカルの env ファイルに `ORVILO_DEV_LOGIN=1` を書き込むためです — [サインインとサインアップ](/auth-setup#開発環境でログイン画面を省く)を参照。公開インスタンスでは絶対に有効化せず、ローカルの `.env` を公開デプロイに使わないでください。
 
 環境、worktree、テストの階層、トラブルシューティング、破壊的リセットまで含む完全な貢献ガイドは、リポジトリの [CONTRIBUTING.md](https://github.com/patchbay-ai/patchbay/blob/main/CONTRIBUTING.md) です。このページは短縮版です。
 

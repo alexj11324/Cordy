@@ -255,30 +255,30 @@ func newAPIClient(cmd *cobra.Command) (*cli.APIClient, error) {
 	taskContext := inDaemonManagedExecutionContext()
 	token := resolveToken(cmd)
 	if taskContext && !strings.HasPrefix(token, "mat_") {
-		// When the ONLY daemon signal is a workdir marker (no PATCHBAY_AGENT_ID /
-		// PATCHBAY_TASK_ID / PATCHBAY_DAEMON_PORT), the likeliest cause outside a
+		// When the ONLY daemon signal is a workdir marker (no ORVILO_AGENT_ID /
+		// ORVILO_TASK_ID / ORVILO_DAEMON_PORT), the likeliest cause outside a
 		// real task is a leftover marker from a crashed daemon task in a
 		// local_directory. Name the exact file so a normal user can recover
 		// instead of hitting an opaque "requires mat_ token" error. Shares its
 		// wording with requireHumanLocalCommand: same cause, same remedy.
 		if markerPath := leftoverDaemonTaskMarkerPath(); markerPath != "" {
-			return nil, fmt.Errorf("agent execution context requires PATCHBAY_TOKEN to be a task-scoped mat_ token%s", leftoverMarkerSuffix(markerPath))
+			return nil, fmt.Errorf("agent execution context requires ORVILO_TOKEN to be a task-scoped mat_ token%s", leftoverMarkerSuffix(markerPath))
 		}
-		return nil, fmt.Errorf("agent execution context requires PATCHBAY_TOKEN to be a task-scoped mat_ token%s", daemonPortOnlyContextHint())
+		return nil, fmt.Errorf("agent execution context requires ORVILO_TOKEN to be a task-scoped mat_ token%s", daemonPortOnlyContextHint())
 	}
 
 	serverURL := resolveServerURL(cmd)
 	workspaceID := resolveWorkspaceID(cmd)
 	if serverURL == "" {
-		return nil, fmt.Errorf("server URL not set: use --server-url flag, PATCHBAY_SERVER_URL env, or 'patchbay config set server_url <url>'")
+		return nil, fmt.Errorf("server URL not set: use --server-url flag, ORVILO_SERVER_URL env, or 'patchbay config set server_url <url>'")
 	}
 
 	client := cli.NewAPIClient(serverURL, workspaceID, token)
 	// When running inside a daemon task, attribute actions to the agent.
-	if agentID := os.Getenv("PATCHBAY_AGENT_ID"); agentID != "" {
+	if agentID := os.Getenv("ORVILO_AGENT_ID"); agentID != "" {
 		client.AgentID = agentID
 	}
-	if taskID := os.Getenv("PATCHBAY_TASK_ID"); taskID != "" {
+	if taskID := os.Getenv("ORVILO_TASK_ID"); taskID != "" {
 		client.TaskID = taskID
 	}
 	return client, nil
@@ -301,7 +301,7 @@ func tryResolveServerURL(cmd *cobra.Command) string {
 
 // tryResolveHumanServerURL is reserved for a human/local command after it has
 // passed requireHumanLocalCommand. Unlike the general resolver, a stale
-// PATCHBAY_DAEMON_PORT in a host/container environment must not hide the human
+// ORVILO_DAEMON_PORT in a host/container environment must not hide the human
 // profile that login is explicitly meant to update.
 func tryResolveHumanServerURL(cmd *cobra.Command) string {
 	if val := tryResolveExplicitServerURL(cmd); val != "" {
@@ -311,7 +311,7 @@ func tryResolveHumanServerURL(cmd *cobra.Command) string {
 }
 
 func tryResolveExplicitServerURL(cmd *cobra.Command) string {
-	val := cli.FlagOrEnv(cmd, "server-url", "PATCHBAY_SERVER_URL", "")
+	val := cli.FlagOrEnv(cmd, "server-url", "ORVILO_SERVER_URL", "")
 	if val == "" {
 		return ""
 	}
@@ -367,21 +367,21 @@ func normalizeAPIBaseURL(raw string) string {
 // inAgentExecutionContext reports whether the CLI has explicit task identity
 // markers from a daemon-managed agent task.
 func inAgentExecutionContext() bool {
-	return os.Getenv("PATCHBAY_AGENT_ID") != "" || os.Getenv("PATCHBAY_TASK_ID") != ""
+	return os.Getenv("ORVILO_AGENT_ID") != "" || os.Getenv("ORVILO_TASK_ID") != ""
 }
 
 // inDaemonManagedExecutionContext reports whether the CLI is being invoked
-// from inside a daemon-managed agent task. PATCHBAY_DAEMON_PORT is included as
-// a defense-in-depth marker for subprocesses that lose PATCHBAY_AGENT_ID or
-// PATCHBAY_TASK_ID but still run under the daemon environment. In this context
+// from inside a daemon-managed agent task. ORVILO_DAEMON_PORT is included as
+// a defense-in-depth marker for subprocesses that lose ORVILO_AGENT_ID or
+// ORVILO_TASK_ID but still run under the daemon environment. In this context
 // workspace and token must come from daemon-provided env; falling back to
 // user-global ~/.patchbay/config.json can make agent writes land as a member.
 func inDaemonManagedExecutionContext() bool {
-	return inAgentExecutionContext() || os.Getenv("PATCHBAY_DAEMON_PORT") != "" || hasDaemonTaskContextMarker()
+	return inAgentExecutionContext() || os.Getenv("ORVILO_DAEMON_PORT") != "" || hasDaemonTaskContextMarker()
 }
 
 // inDaemonTaskIdentityContext reports strong evidence that the current process
-// belongs to a daemon-managed task. PATCHBAY_DAEMON_PORT is deliberately not
+// belongs to a daemon-managed task. ORVILO_DAEMON_PORT is deliberately not
 // sufficient: older host/container setups may export that otherwise inert
 // task hint before login or daemon startup.
 func inDaemonTaskIdentityContext() bool {
@@ -391,10 +391,10 @@ func inDaemonTaskIdentityContext() bool {
 }
 
 func daemonPortOnlyContextHint() string {
-	if strings.TrimSpace(os.Getenv("PATCHBAY_DAEMON_PORT")) == "" || inDaemonTaskIdentityContext() {
+	if strings.TrimSpace(os.Getenv("ORVILO_DAEMON_PORT")) == "" || inDaemonTaskIdentityContext() {
 		return ""
 	}
-	return "; PATCHBAY_DAEMON_PORT is set without task identity — if this is a host or container startup shell, remove that variable and retry"
+	return "; ORVILO_DAEMON_PORT is set without task identity — if this is a host or container startup shell, remove that variable and retry"
 }
 
 // requireTaskLocalConfigRoot prevents daemon-managed subprocesses that lost
@@ -479,7 +479,7 @@ func daemonTaskContextMarkerPath() string {
 }
 
 func resolveWorkspaceID(cmd *cobra.Command) string {
-	val := cli.FlagOrEnv(cmd, "workspace-id", "PATCHBAY_WORKSPACE_ID", "")
+	val := cli.FlagOrEnv(cmd, "workspace-id", "ORVILO_WORKSPACE_ID", "")
 	if val != "" {
 		return val
 	}
@@ -500,9 +500,9 @@ func requireWorkspaceID(cmd *cobra.Command) (string, error) {
 	id := resolveWorkspaceID(cmd)
 	if id == "" {
 		if inDaemonManagedExecutionContext() {
-			return "", fmt.Errorf("workspace_id is required: PATCHBAY_WORKSPACE_ID must be set by the daemon in agent execution context (no fallback to user config)")
+			return "", fmt.Errorf("workspace_id is required: ORVILO_WORKSPACE_ID must be set by the daemon in agent execution context (no fallback to user config)")
 		}
-		return "", fmt.Errorf("workspace_id is required: use --workspace-id flag, set PATCHBAY_WORKSPACE_ID env, or run 'patchbay config set workspace_id <id>'")
+		return "", fmt.Errorf("workspace_id is required: use --workspace-id flag, set ORVILO_WORKSPACE_ID env, or run 'patchbay config set workspace_id <id>'")
 	}
 	return id, nil
 }

@@ -14,9 +14,9 @@ import (
 )
 
 const (
-	qwenShimHelperEnv      = "PATCHBAY_QWEN_SHIM_HELPER"
-	qwenShimHelperArgvFile = "PATCHBAY_QWEN_SHIM_ARGV_FILE"
-	qwenShimHelperInFile   = "PATCHBAY_QWEN_SHIM_STDIN_FILE"
+	qwenShimHelperEnv      = "ORVILO_QWEN_SHIM_HELPER"
+	qwenShimHelperArgvFile = "ORVILO_QWEN_SHIM_ARGV_FILE"
+	qwenShimHelperInFile   = "ORVILO_QWEN_SHIM_STDIN_FILE"
 )
 
 // TestQwenShimHelperProcess is re-executed by the fake qwen.ps1 as its native

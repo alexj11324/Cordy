@@ -26,7 +26,7 @@ test("auth broker release remains an independently gated image", () => {
     /COPY --from=builder[^\n]*apps\/auth-broker\/public/u,
   );
   const deployment = read("deploy/helm/patchbay-auth-broker/templates/deployment.yaml");
-  for (const name of ["CLERK_PUBLISHABLE_KEY", "PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN", "PATCHBAY_ORIGIN_AUTH_TOKEN"]) assert.match(deployment, new RegExp(name));
+  for (const name of ["CLERK_PUBLISHABLE_KEY", "ORVILO_DESKTOP_BROKER_AUTH_TOKEN", "ORVILO_ORIGIN_AUTH_TOKEN"]) assert.match(deployment, new RegExp(name));
   assert.match(deployment, /image\.digest must be an immutable sha256 digest/);
 });
 

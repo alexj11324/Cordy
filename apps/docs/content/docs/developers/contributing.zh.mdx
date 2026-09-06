@@ -34,7 +34,7 @@ make seed-dev       # 可选：注入示例 issue，落在 dev-fixtures 工作�
 
 `make up` 会在加锁的前提下为当前 checkout 分配端口和数据库名并记录下来，所以多个 checkout 和 worktree 可以同时运行，`make status` / `make down` / `make destroy` 也能精确作用到其中一个。它会打印分配到的地址。`make dev` 是另一种方式：用默认端口、跑在同一个终端的前台——它启动后端并打开 Electron，不会启动 Web 应用。
 
-`make dev-login` 能用，是因为 `make up` 会把 `PATCHBAY_DEV_LOGIN=1` 写进本地 env 文件——见[登录与注册](/auth-setup#开发环境跳过登录页)。绝不要在公网部署上启用它，也不要把本地 `.env` 用到公网部署。
+`make dev-login` 能用，是因为 `make up` 会把 `ORVILO_DEV_LOGIN=1` 写进本地 env 文件——见[登录与注册](/auth-setup#开发环境跳过登录页)。绝不要在公网部署上启用它，也不要把本地 `.env` 用到公网部署。
 
 完整的贡献指南——环境、worktree、测试分层、排查和彻底重置——在仓库的 [CONTRIBUTING.md](https://github.com/patchbay-ai/patchbay/blob/main/CONTRIBUTING.md)。本页是简版。
 

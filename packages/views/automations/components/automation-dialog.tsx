@@ -7,7 +7,6 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
-  Clock,
   FilePlus2,
   FolderKanban,
   Maximize2,
@@ -16,7 +15,6 @@ import {
   Plus,
   Rocket,
   Users,
-  Webhook,
   X as XIcon,
   Zap,
 } from "lucide-react";
@@ -46,17 +44,15 @@ import {
   useUpdateAutomation,
   useUpdateAutomationTrigger,
 } from "@patchbay/core/automations/mutations";
-import { buildAutomationWebhookUrl } from "@patchbay/core/automations";
-import { api } from "@patchbay/core/api";
 import type {
   AutomationAssigneeType,
   AutomationCollaborator,
   AutomationExecutionMode,
   AutomationTrigger,
+  WebhookEventFilter,
 } from "@patchbay/core/types";
 import { TitleEditor, ContentEditor, type TitleEditorRef } from "../../editor";
 import { ActorAvatar } from "../../common/actor-avatar";
-import { SegmentedToggle } from "../../common/segmented-toggle";
 import { ProjectPicker } from "../../projects/components/project-picker";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { AgentPicker, type AssigneeSelection } from "./pickers/agent-picker";
@@ -68,10 +64,8 @@ import { browserTimezone } from "../../common/timezone-select";
 import { parseCron, toCron } from "./schedule-editor/cron-mapping";
 import { useScheduleSubmitGate } from "./schedule-editor/validate";
 import { WebhookEventFilterSection } from "./webhook-event-filter-section";
-import { WebhookUrlField } from "./webhook-url-field";
 import { useT } from "../../i18n";
 import { formatSchedulePartialFailureToast } from "./automation-dialog-toast";
-import type { WebhookEventFilter } from "@patchbay/core/types";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -94,8 +88,10 @@ export type AutomationDialogProps =
       onOpenChange: (v: boolean) => void;
       initial?: Partial<AutomationInitial>;
       initialSchedule?: Pick<ScheduleConfig, "time" | "days">;
-      initialTriggerKind?: "schedule" | "webhook";
-      initialEventFilters?: WebhookEventFilter[];
+      // Native catalog preset (github.pull_request.opened, slack.message, …).
+      // Blank creates write no trigger; schedule templates use initialSchedule.
+      initialPreset?: string | null;
+      onCreated?: (automationId: string) => void;
     }
   | {
       mode: "edit";
@@ -195,22 +191,20 @@ export function AutomationDialog(props: AutomationDialogProps) {
   // writes what it shows whether or not they touched the default.
   const [scheduleAdded, setScheduleAdded] = useState(false);
 
-  // Trigger kind selector. Only meaningful in create mode — edit mode does
-  // not support converting between kinds inline (PLAN.md calls that
-  // out as "delete old, create new" rather than ambiguous in-place
-  // updates), so the toggle is hidden when editing. The kind is
-  // initialized from the first existing trigger so we render the right
-  // panel without surprising the user.
+  // Edit mode still shows the schedule vs webhook panel that already exists
+  // on the automation. Create mode no longer asks Schedule vs Webhook:
+  // templates write a schedule or a native preset, and blank creates add
+  // triggers on the detail page.
   const initialKind: "schedule" | "webhook" = (() => {
-    if (isCreate) return props.initialTriggerKind ?? "schedule";
+    if (isCreate) return "schedule";
     const first = props.triggers[0];
     if (first?.kind === "webhook") return "webhook";
     return "schedule";
   })();
-  const [triggerKind, setTriggerKind] = useState<"schedule" | "webhook">(initialKind);
+  const [triggerKind] = useState<"schedule" | "webhook">(initialKind);
 
   const initialEventFilters: WebhookEventFilter[] = isCreate
-    ? (props.initialEventFilters ?? [])
+    ? []
     : props.triggers[0]?.event_filters
       ? props.triggers[0].event_filters
       : [];
@@ -266,13 +260,10 @@ export function AutomationDialog(props: AutomationDialogProps) {
   const updateTrigger = useUpdateAutomationTrigger();
   const [submitting, setSubmitting] = useState(false);
 
-  // After a successful webhook-kind create, we don't close the dialog —
-  // we swap to a confirmation state showing the freshly minted URL with
-  // copy / done affordances. This avoids the "now go find your automation
-  // and click into it to grab the URL" friction.
-  const [createdWebhookTrigger, setCreatedWebhookTrigger] = useState<AutomationTrigger | null>(null);
-
   const scheduleGate = useScheduleSubmitGate(wsId);
+
+  const createWritesSchedule = isCreate && Boolean(props.initialSchedule);
+  const createPreset = isCreate ? (props.initialPreset ?? null) : null;
 
   // The schedule only gates submit when this save would actually write it. A
   // locked schedule (2+ triggers) or a stored one the user never touched is not
@@ -280,10 +271,13 @@ export function AutomationDialog(props: AutomationDialogProps) {
   // accepted once and may now reject, e.g. a timezone its tzdata dropped — must
   // not veto edits to the title, prompt or assignee. A schedule the user just
   // added has no stored counterpart to differ from: adding it IS the change.
+  // Blank creates write no trigger; only a template's initialSchedule does.
   const scheduleWillBeWritten =
-    triggerKind === "schedule" &&
     !schedulePillDisabled &&
-    (isCreate || (existingSchedule !== null ? scheduleDirty : scheduleAdded));
+    (createWritesSchedule ||
+      (!isCreate &&
+        triggerKind === "schedule" &&
+        (existingSchedule !== null ? scheduleDirty : scheduleAdded)));
 
   // The FIRST empty required field in reading order — the user fills one, the
   // next surfaces. Only these two are answered here: a rejected schedule is
@@ -331,20 +325,22 @@ export function AutomationDialog(props: AutomationDialogProps) {
         });
         let triggerOk = true;
         let triggerErrMessage: string | null = null;
-        let webhookTrigger: AutomationTrigger | null = null;
         try {
-          if (triggerKind === "webhook") {
-            webhookTrigger = await createTrigger.mutateAsync({
-              automationId: automation.id,
-              kind: "webhook",
-              event_filters: eventFilters.length > 0 ? eventFilters : undefined,
-            });
-          } else {
+          if (createWritesSchedule) {
             await createTrigger.mutateAsync({
               automationId: automation.id,
               kind: "schedule",
               cron_expression: toCron(schedule),
               timezone: schedule.timezone,
+            });
+          } else if (createPreset) {
+            await createTrigger.mutateAsync({
+              automationId: automation.id,
+              kind: "webhook",
+              preset: createPreset,
+              ...(createPreset === "github.workflow_run.completed" || createPreset === "github.ci_completed"
+                ? { config: { on_failure: true } }
+                : {}),
             });
           }
         } catch (err) {
@@ -352,20 +348,14 @@ export function AutomationDialog(props: AutomationDialogProps) {
           triggerErrMessage =
             err instanceof Error && err.message ? err.message : null;
         }
-        if (triggerKind === "webhook" && webhookTrigger) {
-          // Stay in the dialog and surface the URL inline so the user
-          // can copy it without first navigating to the detail page.
-          setCreatedWebhookTrigger(webhookTrigger);
-          toast.success(t(($) => $.dialog.toast_created));
-          return;
-        }
+        props.onCreated?.(automation.id);
         onOpenChange(false);
         if (triggerOk) {
           toast.success(t(($) => $.dialog.toast_created));
         } else {
-          // Partial success: automation saved, schedule failed. Show the
-          // server-provided reason so the user can act on it (cron syntax
-          // error, conflict, etc.) instead of seeing a generic message.
+          // Partial success: automation saved, trigger failed. Show the
+          // server-provided reason so the user can act on it instead of
+          // seeing a generic message.
           toast.error(formatSchedulePartialFailureToast(t, "create", triggerErrMessage));
         }
       } else {
@@ -551,16 +541,6 @@ export function AutomationDialog(props: AutomationDialogProps) {
           </div>
         </div>
 
-        {createdWebhookTrigger ? (
-          <WebhookCreatedPanel
-            trigger={createdWebhookTrigger}
-            onClose={() => {
-              setCreatedWebhookTrigger(null);
-              onOpenChange(false);
-            }}
-          />
-        ) : (
-          <>
         {/* Body: two columns (stacks on narrow screens via flex-wrap at container level) */}
         <div
           key={contentKey}
@@ -647,11 +627,19 @@ export function AutomationDialog(props: AutomationDialogProps) {
               />
             )}
 
-            {isCreate && (
-              <TriggerKindSection kind={triggerKind} onChange={setTriggerKind} />
-            )}
-
-            {triggerKind === "schedule" ? (
+            {isCreate ? (
+              createWritesSchedule ? (
+                <div>
+                  <SectionLabel>{t(($) => $.dialog.section_schedule)}</SectionLabel>
+                  <ScheduleEditor
+                    value={schedule}
+                    onChange={setSchedule}
+                    wsId={wsId}
+                    disabled={submitting}
+                  />
+                </div>
+              ) : null
+            ) : triggerKind === "schedule" ? (
               <div>
                 <SectionLabel>{t(($) => $.dialog.section_schedule)}</SectionLabel>
                 {showScheduleEmptyState ? (
@@ -682,7 +670,7 @@ export function AutomationDialog(props: AutomationDialogProps) {
               </div>
             ) : (
               <WebhookSection
-                isCreate={isCreate}
+                isCreate={false}
                 eventFilters={eventFilters}
                 onEventFiltersChange={setEventFilters}
               />
@@ -698,7 +686,8 @@ export function AutomationDialog(props: AutomationDialogProps) {
               slot itself stays, or `justify-between` would walk the buttons
               over to the left edge. */}
           <div className="flex items-center gap-1.5 text-caption text-muted-foreground min-w-0">
-            {!showScheduleEmptyState && (
+            {((isCreate && (createWritesSchedule || Boolean(createPreset))) ||
+              (!isCreate && !showScheduleEmptyState)) && (
               <>
                 <Zap className="size-3.5 text-amber-500 shrink-0" />
                 <span className="truncate">{t(($) => $.dialog.auto_run_hint)}</span>
@@ -730,8 +719,6 @@ export function AutomationDialog(props: AutomationDialogProps) {
             </Button>
           </div>
         </div>
-          </>
-        )}
       </DialogContent>
     </Dialog>
   );
@@ -989,46 +976,6 @@ function ScheduleEmptyState({ onAdd }: { onAdd: () => void }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Trigger kind segmented control + webhook help section
-// ---------------------------------------------------------------------------
-
-function TriggerKindSection({
-  kind,
-  onChange,
-}: {
-  kind: "schedule" | "webhook";
-  onChange: (kind: "schedule" | "webhook") => void;
-}) {
-  const { t } = useT("automations");
-  return (
-    <div>
-      <SectionLabel>{t(($) => $.dialog.section_trigger_kind)}</SectionLabel>
-      <SegmentedToggle
-        value={kind}
-        onChange={onChange}
-        buttonClassName="px-3 py-1.5 text-body"
-        options={[
-          [
-            "schedule",
-            <span key="schedule" className="flex items-center justify-center gap-1.5">
-              <Clock className="h-3.5 w-3.5" />
-              {t(($) => $.dialog.trigger_kind_schedule)}
-            </span>,
-          ],
-          [
-            "webhook",
-            <span key="webhook" className="flex items-center justify-center gap-1.5">
-              <Webhook className="h-3.5 w-3.5" />
-              {t(($) => $.dialog.trigger_kind_webhook)}
-            </span>,
-          ],
-        ]}
-      />
-    </div>
-  );
-}
-
 function WebhookSection({
   isCreate,
   eventFilters,
@@ -1054,66 +1001,5 @@ function WebhookSection({
         onChange={onEventFiltersChange}
       />
     </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Post-create state for webhook automations: shows the freshly minted URL
-// inline so the user can copy it without leaving the dialog.
-// ---------------------------------------------------------------------------
-
-function WebhookCreatedPanel({
-  trigger,
-  onClose,
-}: {
-  trigger: AutomationTrigger;
-  onClose: () => void;
-}) {
-  const { t } = useT("automations");
-
-  // Same URL composition the trigger row uses: prefer the server-provided
-  // webhook_url, fall back to apiBaseUrl + webhook_path, then origin + path.
-  const url =
-    buildAutomationWebhookUrl({
-      trigger,
-      apiBaseUrl: api.getBaseUrl(),
-      currentOrigin: typeof window !== "undefined" ? window.location.origin : undefined,
-    }) ?? "";
-
-  return (
-    <>
-      <div className="flex-1 min-h-0 overflow-y-auto px-8 py-10">
-        <div className="mx-auto max-w-xl space-y-5">
-          <div className="flex items-center gap-3">
-            <span className="inline-flex size-9 items-center justify-center rounded-full bg-primary/15 text-primary">
-              <Webhook className="size-4" />
-            </span>
-            <h2 className="text-title font-semibold tracking-tight">
-              {t(($) => $.dialog.webhook_created_title)}
-            </h2>
-          </div>
-          <p className="text-body text-muted-foreground leading-relaxed">
-            {t(($) => $.dialog.webhook_created_description)}
-          </p>
-
-          <div>
-            <div className="text-micro font-semibold tracking-[0.08em] text-muted-foreground uppercase mb-2">
-              {t(($) => $.trigger_row.webhook_url_label)}
-            </div>
-            <WebhookUrlField url={url} size="md" />
-          </div>
-
-          <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-caption text-amber-700 dark:text-amber-400 leading-relaxed">
-            {t(($) => $.dialog.webhook_created_warning)}
-          </div>
-        </div>
-      </div>
-
-      <div className="flex items-center justify-end gap-3 px-5 py-3 border-t shrink-0 bg-background">
-        <Button size="sm" onClick={onClose}>
-          {t(($) => $.dialog.webhook_created_done)}
-        </Button>
-      </div>
-    </>
   );
 }

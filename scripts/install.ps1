@@ -4,7 +4,7 @@
 #   irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex
 #
 # Self-host: starts a local Patchbay server + installs CLI + configures
-#   $env:PATCHBAY_MODE="local"; irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex
+#   $env:ORVILO_MODE="local"; irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex
 #
 
 $ErrorActionPreference = "Stop"
@@ -15,7 +15,7 @@ $ErrorActionPreference = "Stop"
 $RepoUrl       = "https://github.com/alexj11324/Cordy.git"
 $RepoWebUrl    = "https://github.com/alexj11324/Cordy"
 $DefaultInstallDir = Join-Path $env:USERPROFILE ".patchbay\server"
-$InstallDir    = if ($env:PATCHBAY_INSTALL_DIR) { $env:PATCHBAY_INSTALL_DIR } else { $DefaultInstallDir }
+$InstallDir    = if ($env:ORVILO_INSTALL_DIR) { $env:ORVILO_INSTALL_DIR } else { $DefaultInstallDir }
 
 # Host ports Compose reported after `up -d`; set by Setup-Server and reused by
 # the summary so the health check and the printed URLs cannot diverge.
@@ -94,8 +94,8 @@ function Get-LatestVersion {
 }
 
 function Get-SelfHostRef {
-    if ($env:PATCHBAY_SELFHOST_REF) {
-        return $env:PATCHBAY_SELFHOST_REF
+    if ($env:ORVILO_SELFHOST_REF) {
+        return $env:ORVILO_SELFHOST_REF
     }
 
     $latest = Get-LatestVersion
@@ -380,7 +380,7 @@ Docker is not installed. Patchbay self-hosting requires Docker and Docker Compos
 Install Docker Desktop for Windows:
   https://docs.docker.com/desktop/install/windows-install/
 
-After installing Docker, re-run this script with `$env:PATCHBAY_MODE="local"`.
+After installing Docker, re-run this script with `$env:ORVILO_MODE="local"`.
 "@
     }
 
@@ -499,7 +499,7 @@ function Start-DefaultInstall {
     Write-Host "     patchbay setup self-host      " -NoNewline; Write-Host "# Connect to a self-hosted server" -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "  Self-hosting? Install the server first:"
-    Write-Host '     $env:PATCHBAY_MODE="with-server"; irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex'
+    Write-Host '     $env:ORVILO_MODE="with-server"; irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex'
     Write-Host ""
 }
 
@@ -533,7 +533,7 @@ function Start-LocalInstall {
     Write-Host "  or read the generated code from backend logs when Resend is unset."
     Write-Host ""
     Write-Host "  To stop all services:"
-    Write-Host '     $env:PATCHBAY_MODE="stop"; irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex'
+    Write-Host '     $env:ORVILO_MODE="stop"; irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex'
     Write-Host ""
 }
 
@@ -570,7 +570,7 @@ function Start-Stop {
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
-$mode = if ($env:PATCHBAY_MODE) { $env:PATCHBAY_MODE.ToLower() } else { "default" }
+$mode = if ($env:ORVILO_MODE) { $env:ORVILO_MODE.ToLower() } else { "default" }
 
 switch ($mode) {
     "with-server" { Start-LocalInstall }

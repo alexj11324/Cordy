@@ -892,6 +892,10 @@ type persistDeliveryInput struct {
 // (existing-row, true, nil) after bumping attempt_count on the prior row.
 // Any other error bubbles up so the handler can 500 cleanly.
 func (h *Handler) persistInboundDelivery(r *http.Request, in persistDeliveryInput) (db.WebhookDelivery, bool, error) {
+	return h.persistInboundDeliveryCtx(r.Context(), in)
+}
+
+func (h *Handler) persistInboundDeliveryCtx(ctx context.Context, in persistDeliveryInput) (db.WebhookDelivery, bool, error) {
 	params := db.CreateWebhookDeliveryParams{
 		ID:              dbid.NewV7(),
 		WorkspaceID:     in.WorkspaceID,
@@ -912,7 +916,7 @@ func (h *Handler) persistInboundDelivery(r *http.Request, in persistDeliveryInpu
 		params.ContentType = pgtype.Text{String: in.ContentType, Valid: true}
 	}
 
-	delivery, err := h.Queries.CreateWebhookDelivery(r.Context(), params)
+	delivery, err := h.Queries.CreateWebhookDelivery(ctx, params)
 	if err == nil {
 		return delivery, false, nil
 	}
@@ -920,14 +924,14 @@ func (h *Handler) persistInboundDelivery(r *http.Request, in persistDeliveryInpu
 		return db.WebhookDelivery{}, false, err
 	}
 	// Dedupe collision: fetch the original row, bump attempt count.
-	existing, lookupErr := h.Queries.GetWebhookDeliveryByTriggerAndDedupe(r.Context(), db.GetWebhookDeliveryByTriggerAndDedupeParams{
+	existing, lookupErr := h.Queries.GetWebhookDeliveryByTriggerAndDedupe(ctx, db.GetWebhookDeliveryByTriggerAndDedupeParams{
 		TriggerID: in.TriggerID,
 		DedupeKey: pgtype.Text{String: in.DedupeKey, Valid: true},
 	})
 	if lookupErr != nil {
 		return db.WebhookDelivery{}, false, fmt.Errorf("lookup duplicate delivery: %w", lookupErr)
 	}
-	bumped, bumpErr := h.Queries.BumpWebhookDeliveryAttempt(r.Context(), existing.ID)
+	bumped, bumpErr := h.Queries.BumpWebhookDeliveryAttempt(ctx, existing.ID)
 	if bumpErr != nil {
 		// Still treat as duplicate; just log the bump failure so the
 		// operator can investigate, returning the row we DID read.
@@ -1041,7 +1045,7 @@ func writeWebhookRateLimit(w http.ResponseWriter, r *http.Request, limiter Webho
 //
 // Default behaviour: use the host portion of r.RemoteAddr. Forwarded
 // headers (X-Forwarded-For, X-Real-IP) are IGNORED unless the operator
-// has explicitly opted in via PATCHBAY_TRUSTED_PROXIES — and even then
+// has explicitly opted in via ORVILO_TRUSTED_PROXIES — and even then
 // only when r.RemoteAddr is itself inside one of the listed CIDRs.
 func (h *Handler) clientIPForRateLimit(r *http.Request) string {
 	remoteIP := remoteAddrHost(r.RemoteAddr)

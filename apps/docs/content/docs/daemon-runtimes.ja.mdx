@@ -44,7 +44,7 @@ patchbay daemon start
 | `patchbay daemon stop` | デーモンを停止する |
 | `patchbay daemon start --foreground` | デバッグ用に現在のターミナルで実行する |
 
-作業の作業ディレクトリを別のディスクに置くには、`patchbay config set workspaces_root <path>` で現在のプロファイルにルートを保存するか、`daemon start` または `daemon restart` に `--workspaces-root <path>` を渡します。フラグは `PATCHBAY_WORKSPACES_ROOT` より優先され、環境変数はプロファイル設定より優先されます。ルートを変更しても既存の作業ディレクトリは移動されません。
+作業の作業ディレクトリを別のディスクに置くには、`patchbay config set workspaces_root <path>` で現在のプロファイルにルートを保存するか、`daemon start` または `daemon restart` に `--workspaces-root <path>` を渡します。フラグは `ORVILO_WORKSPACES_ROOT` より優先され、環境変数はプロファイル設定より優先されます。ルートを変更しても既存の作業ディレクトリは移動されません。
 
 起動時、デーモンは `PATH` 上の対応する AI コーディングツールを検出し、あなたが接続を許可されているワークスペースにランタイムを登録します。ツールをインストールまたはログインした直後の場合は、デーモンを再起動すると再検出されます。
 
@@ -71,7 +71,7 @@ patchbay daemon start
 
 1 つのデーモンはデフォルトで最大 20 件の作業を同時に実行します。各エージェントはデフォルトで最大 6 件です。実効的な同時実行数は両者の小さい方になります。
 
-上限に達すると、新しい作業はキューで待ち続けます。個々のエージェントの同時実行数はエージェント設定で、マシン全体の上限は `PATCHBAY_DAEMON_MAX_CONCURRENT_TASKS` で調整できます。並列実行は、マシンの性能、ツールアカウントのクォータ、同じ作業ディレクトリを同時に取り合います。
+上限に達すると、新しい作業はキューで待ち続けます。個々のエージェントの同時実行数はエージェント設定で、マシン全体の上限は `ORVILO_DAEMON_MAX_CONCURRENT_TASKS` で調整できます。並列実行は、マシンの性能、ツールアカウントのクォータ、同じ作業ディレクトリを同時に取り合います。
 
 ## プライベートと公開
 

@@ -39,7 +39,7 @@ import {
   type ListGridSortDirection,
 } from "@patchbay/ui/components/ui/list-grid";
 import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
-import { useRowLink } from "../../navigation";
+import { useNavigation, useRowLink } from "../../navigation";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { formatInTimeZone } from "../../common/format-in-time-zone";
 import {
@@ -55,6 +55,7 @@ import {
 } from "./automation-list-actions";
 import { AutomationTemplateGallery } from "./automation-template-gallery";
 import type { AutomationTemplate } from "./automation-templates";
+import { templateTriggerPreset } from "./automation-templates";
 import { useLocale, useT, useTimeAgo } from "../../i18n";
 
 // Column template — single source of truth for header, rows, and skeletons.
@@ -511,6 +512,7 @@ export function AutomationsPage() {
   const locale = useLocale();
   const wsId = useWorkspaceId();
   const wsPaths = useWorkspacePaths();
+  const navigation = useNavigation();
   const rowLink = useRowLink();
   const {
     data: automations = [],
@@ -854,12 +856,10 @@ export function AutomationsPage() {
               ? selectedTemplate.schedule
               : undefined
           }
-          initialTriggerKind={selectedTemplate?.triggerKind}
-          initialEventFilters={
-            selectedTemplate?.triggerKind === "webhook"
-              ? selectedTemplate.eventFilters
-              : undefined
+          initialPreset={
+            selectedTemplate ? templateTriggerPreset(selectedTemplate.trigger) : null
           }
+          onCreated={(id) => navigation.push(wsPaths.automationDetail(id))}
         />
       )}
     </div>

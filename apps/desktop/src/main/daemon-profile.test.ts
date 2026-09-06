@@ -15,8 +15,8 @@ import {
   profileUserIdPath,
 } from "./daemon-profile";
 
-const PATCHBAY_DIR = join(homedir(), ".patchbay");
-const DEFAULT_CLI_CONFIG = join(PATCHBAY_DIR, "config.json");
+const ORVILO_DIR = join(homedir(), ".patchbay");
+const DEFAULT_CLI_CONFIG = join(ORVILO_DIR, "config.json");
 
 describe("deriveProfileName", () => {
   it("names the profile after the target host", () => {
@@ -44,7 +44,7 @@ describe("deriveProfileName", () => {
 
 describe("profile paths", () => {
   it("always resolves under profiles/<name>", () => {
-    const dir = join(PATCHBAY_DIR, "profiles", "desktop-api.aspectlylabs.com");
+    const dir = join(ORVILO_DIR, "profiles", "desktop-api.aspectlylabs.com");
     expect(profileDir("desktop-api.aspectlylabs.com")).toBe(dir);
     expect(profileConfigPath("desktop-api.aspectlylabs.com")).toBe(
       join(dir, "config.json"),

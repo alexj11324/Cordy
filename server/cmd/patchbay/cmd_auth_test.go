@@ -15,13 +15,13 @@ import (
 
 func TestMain(m *testing.M) {
 	for _, key := range []string{
-		"PATCHBAY_AGENT_ID",
-		"PATCHBAY_TASK_ID",
-		"PATCHBAY_TOKEN",
-		"PATCHBAY_DAEMON_PORT",
-		"PATCHBAY_WORKSPACE_ID",
-		"PATCHBAY_SERVER_URL",
-		"PATCHBAY_TASK_CONFIG_ROOT",
+		"ORVILO_AGENT_ID",
+		"ORVILO_TASK_ID",
+		"ORVILO_TOKEN",
+		"ORVILO_DAEMON_PORT",
+		"ORVILO_WORKSPACE_ID",
+		"ORVILO_SERVER_URL",
+		"ORVILO_TASK_CONFIG_ROOT",
 	} {
 		os.Unsetenv(key)
 	}
@@ -39,8 +39,8 @@ func testCmd() *cobra.Command {
 func TestResolveAppURL(t *testing.T) {
 	cmd := testCmd()
 
-	t.Run("prefers PATCHBAY_APP_URL", func(t *testing.T) {
-		t.Setenv("PATCHBAY_APP_URL", "http://localhost:14000")
+	t.Run("prefers ORVILO_APP_URL", func(t *testing.T) {
+		t.Setenv("ORVILO_APP_URL", "http://localhost:14000")
 		t.Setenv("FRONTEND_ORIGIN", "http://localhost:13000")
 
 		if got := resolveAppURL(cmd); got != "http://localhost:14000" {
@@ -49,7 +49,7 @@ func TestResolveAppURL(t *testing.T) {
 	})
 
 	t.Run("falls back to FRONTEND_ORIGIN", func(t *testing.T) {
-		t.Setenv("PATCHBAY_APP_URL", "")
+		t.Setenv("ORVILO_APP_URL", "")
 		t.Setenv("FRONTEND_ORIGIN", "http://localhost:13026")
 
 		if got := resolveAppURL(cmd); got != "http://localhost:13026" {
@@ -334,10 +334,10 @@ func TestLoginTokenFlagParsing(t *testing.T) {
 func TestRunAuthStatusTaskContextDoesNotPrintCredential(t *testing.T) {
 	const fakeTaskToken = "mat_task_status_sentinel"
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("PATCHBAY_AGENT_ID", "agent-test")
-	t.Setenv("PATCHBAY_TASK_ID", "task-test")
-	t.Setenv("PATCHBAY_TOKEN", fakeTaskToken)
-	t.Setenv("PATCHBAY_TASK_CONFIG_ROOT", filepath.Join(t.TempDir(), "task-patchbay"))
+	t.Setenv("ORVILO_AGENT_ID", "agent-test")
+	t.Setenv("ORVILO_TASK_ID", "task-test")
+	t.Setenv("ORVILO_TOKEN", fakeTaskToken)
+	t.Setenv("ORVILO_TASK_CONFIG_ROOT", filepath.Join(t.TempDir(), "task-patchbay"))
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/me" {
@@ -350,7 +350,7 @@ func TestRunAuthStatusTaskContextDoesNotPrintCredential(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]string{"name": "Task Agent", "email": "task@example.test"})
 	}))
 	defer srv.Close()
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
 
 	stderr := captureStderr(t)
 	if err := runAuthStatus(testCmd(), nil); err != nil {
@@ -373,9 +373,9 @@ func TestRunAuthStatusTaskContextDoesNotPrintCredential(t *testing.T) {
 func TestRunAuthStatusTaskContextRequiresTaskToken(t *testing.T) {
 	ownerHome := t.TempDir()
 	t.Setenv("HOME", ownerHome)
-	t.Setenv("PATCHBAY_AGENT_ID", "agent-test")
-	t.Setenv("PATCHBAY_TASK_ID", "task-test")
-	t.Setenv("PATCHBAY_TASK_CONFIG_ROOT", filepath.Join(t.TempDir(), "task-patchbay"))
+	t.Setenv("ORVILO_AGENT_ID", "agent-test")
+	t.Setenv("ORVILO_TASK_ID", "task-test")
+	t.Setenv("ORVILO_TASK_CONFIG_ROOT", filepath.Join(t.TempDir(), "task-patchbay"))
 
 	ownerPath := filepath.Join(ownerHome, ".patchbay", "config.json")
 	if err := os.MkdirAll(filepath.Dir(ownerPath), 0o755); err != nil {
@@ -392,7 +392,7 @@ func TestRunAuthStatusTaskContextRequiresTaskToken(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]string{"name": "Unexpected", "email": "unexpected@example.test"})
 	}))
 	defer srv.Close()
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
 
 	for _, tc := range []struct {
 		name  string
@@ -402,7 +402,7 @@ func TestRunAuthStatusTaskContextRequiresTaskToken(t *testing.T) {
 		{name: "human token", token: "pby_owner_sentinel"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("PATCHBAY_TOKEN", tc.token)
+			t.Setenv("ORVILO_TOKEN", tc.token)
 			requestCount = 0
 			stderr := captureStderr(t)
 			err := runAuthStatus(testCmd(), nil)
@@ -434,11 +434,11 @@ func TestRunAuthStatusTaskContextRequiresTaskToken(t *testing.T) {
 func TestHumanAuthCommandsFailClosedInTaskContext(t *testing.T) {
 	ownerHome := t.TempDir()
 	t.Setenv("HOME", ownerHome)
-	t.Setenv("PATCHBAY_AGENT_ID", "agent-test")
-	t.Setenv("PATCHBAY_TASK_ID", "task-test")
-	t.Setenv("PATCHBAY_TOKEN", "mat_task_sentinel")
-	t.Setenv("PATCHBAY_SERVER_URL", "https://task.invalid")
-	t.Setenv("PATCHBAY_TASK_CONFIG_ROOT", filepath.Join(t.TempDir(), "task-patchbay"))
+	t.Setenv("ORVILO_AGENT_ID", "agent-test")
+	t.Setenv("ORVILO_TASK_ID", "task-test")
+	t.Setenv("ORVILO_TOKEN", "mat_task_sentinel")
+	t.Setenv("ORVILO_SERVER_URL", "https://task.invalid")
+	t.Setenv("ORVILO_TASK_CONFIG_ROOT", filepath.Join(t.TempDir(), "task-patchbay"))
 
 	ownerPath := filepath.Join(ownerHome, ".patchbay", "config.json")
 	if err := os.MkdirAll(filepath.Dir(ownerPath), 0o755); err != nil {

@@ -27,7 +27,7 @@ simplification for the example: Patchbay serves the entry inside one generated
 document with no module graph, so a bare module specifier has nowhere to
 resolve. Bundle your dependencies in.
 
-While you are iterating, `PATCHBAY_PLUGIN_DIR` publishes straight from disk
+While you are iterating, `ORVILO_PLUGIN_DIR` publishes straight from disk
 instead of asking you to zip and upload after every edit. It still produces an
 ordinary version — re-publishing an unchanged version number lands as
 `1.0.0+dev.N` — so a panel always runs code somebody consented to.

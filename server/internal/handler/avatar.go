@@ -362,7 +362,7 @@ func (h *Handler) avatarObjectLoadsUnauthenticated(rawURL string) bool {
 	return h.storageURLIsPubliclyReadable(rawURL)
 }
 
-// absolutizeAvatarPath anchors the served path on PATCHBAY_PUBLIC_URL when it
+// absolutizeAvatarPath anchors the served path on ORVILO_PUBLIC_URL when it
 // is configured, so clients that don't share the API's document origin
 // (Desktop, mobile webview) can load it. Same policy as buildMarkdownURL;
 // falling back to the site-relative path is safe because every client

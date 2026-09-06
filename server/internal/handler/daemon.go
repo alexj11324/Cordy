@@ -1711,7 +1711,11 @@ func (h *Handler) ClaimTasksByRuntime(w http.ResponseWriter, r *http.Request) {
 			// the reclaim path.
 			continue
 		}
-		providerAllowed, providerErr := h.authorizeProviderTaskClaim(r.Context(), task, rt)
+		effectiveModel := ""
+		if resp.Agent != nil {
+			effectiveModel = resp.Agent.Model
+		}
+		providerAllowed, providerErr := h.authorizeProviderTaskClaim(r.Context(), task, rt, effectiveModel)
 		if providerErr != nil {
 			slog.Error("batch claim: provider authorization failed; requeueing claim",
 				"task_id", uuidToString(task.ID), "error", providerErr)
@@ -1724,21 +1728,22 @@ func (h *Handler) ClaimTasksByRuntime(w http.ResponseWriter, r *http.Request) {
 		if !providerAllowed {
 			continue
 		}
-		if !task.OriginatorUserID.Valid {
-			slog.Error("batch claim: initiating user missing; cancelling task before token issuance",
-				"task_id", uuidToString(task.ID), "runtime_id", uuidToString(task.RuntimeID))
-			if _, cerr := h.TaskService.CancelTaskWithReason(r.Context(), task.ID,
-				"Task capability issuance requires an initiating user.", "authorization_denied"); cerr != nil {
-				slog.Error("batch claim: cancel after missing initiating user failed",
-					"task_id", uuidToString(task.ID), "error", cerr)
-			}
-			continue
-		}
 		if !rt.OwnerID.Valid {
 			slog.Error("batch claim: runtime owner missing; cancelling task to avoid unscoped agent credentials",
 				"task_id", uuidToString(task.ID), "runtime_id", uuidToString(task.RuntimeID))
 			if _, cerr := h.TaskService.CancelTask(r.Context(), task.ID); cerr != nil {
 				slog.Error("batch claim: cancel after missing runtime owner failed",
+					"task_id", uuidToString(task.ID), "error", cerr)
+			}
+			continue
+		}
+		tokenUserID, tokenUserOK := service.TaskTokenUserID(task, rt.OwnerID)
+		if !tokenUserOK {
+			slog.Error("batch claim: task token user missing; cancelling task before token issuance",
+				"task_id", uuidToString(task.ID), "runtime_id", uuidToString(task.RuntimeID))
+			if _, cerr := h.TaskService.CancelTaskWithReason(r.Context(), task.ID,
+				"Task capability issuance requires a task token user.", "authorization_denied"); cerr != nil {
+				slog.Error("batch claim: cancel after missing task token user failed",
 					"task_id", uuidToString(task.ID), "error", cerr)
 			}
 			continue
@@ -1774,8 +1779,8 @@ func (h *Handler) ClaimTasksByRuntime(w http.ResponseWriter, r *http.Request) {
 			TaskID:            task.ID,
 			AgentID:           task.AgentID,
 			WorkspaceID:       parseUUID(resp.WorkspaceID),
-			UserID:           task.OriginatorUserID,
-			ExpiresAt:        pgtype.Timestamptz{Time: time.Now().Add(2 * time.Hour), Valid: true},
+			UserID:            tokenUserID,
+			ExpiresAt:         pgtype.Timestamptz{Time: time.Now().Add(2 * time.Hour), Valid: true},
 			Scope:             service.RootTaskCapabilityScope(task),
 			ClaimDispatchedAt: task.DispatchedAt,
 			OnBehalfOfUserID:  task.OriginatorUserID,
@@ -1905,7 +1910,7 @@ func (h *Handler) rejectClaimSkillLoad(task *db.AgentTaskQueue, err error) *clai
 
 // rejectClaimOnWorkspaceMismatch enforces the claim's tenant boundary against
 // the workspace that OWNS the task's context (issue / chat session / automation
-// / quick-create), which is the only authority for PATCHBAY_WORKSPACE_ID in the
+// / quick-create), which is the only authority for ORVILO_WORKSPACE_ID in the
 // agent env. An empty value would make the CLI silently fall back to the
 // user-global config and talk to whatever workspace the user happened to last
 // configure; a value that doesn't match the runtime's workspace means upstream
@@ -2158,10 +2163,11 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 			slog.Warn("failed to unmarshal agent custom_args", "agent_id", uuidToString(agent.ID), "error", err)
 		}
 	}
-	var mcpConfig json.RawMessage
+	var agentMCPConfig json.RawMessage
 	if agent.McpConfig != nil {
-		mcpConfig = json.RawMessage(agent.McpConfig)
+		agentMCPConfig = json.RawMessage(agent.McpConfig)
 	}
+	mcpConfig := agentMCPConfig
 	// Fold in the workspace MCP servers this agent has been explicitly
 	// given (GH #6062). Only bound AND enabled servers are read, so a
 	// workspace library entry nobody added reaches nothing. Read on every
@@ -2177,7 +2183,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		for _, server := range bound {
 			bindings = append(bindings, WorkspaceMcpBinding{Name: server.Name, Config: json.RawMessage(server.Config)})
 		}
-		if resolved, err := ResolveAgentMcpConfig(bindings, mcpConfig); err != nil {
+		if resolved, err := ResolveAgentMcpConfig(bindings, agentMCPConfig); err != nil {
 			slog.Warn("daemon claim: resolve agent mcp servers failed; falling back to agent mcp_config",
 				"task_id", uuidToString(task.ID), "agent_id", uuidToString(agent.ID), "error", err)
 		} else {
@@ -2313,6 +2319,20 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		}
 		resp.ThreadName = issue.Title
 		issueNumber = issue.Number
+
+		// create_issue automations link their task through the generated issue,
+		// not automation_run_id. Rehydrate the automation settings here so the
+		// same model override and MCP allowlist apply to both execution modes.
+		if issue.OriginType.Valid && issue.OriginType.String == "automation" && issue.OriginID.Valid {
+			if ap, apErr := h.Queries.GetAutomation(r.Context(), issue.OriginID); apErr == nil {
+				if failure := h.applyAutomationClaimSettings(r.Context(), ap, *task, agentMCPConfig, resp.Agent, composioMCPEnabled); failure != nil {
+					return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, failure
+				}
+			} else if !errors.Is(apErr, pgx.ErrNoRows) {
+				return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount,
+					h.rejectClaimSourceLoad(r.Context(), task, apErr, "automation", uuidToString(issue.OriginID))
+			}
+		}
 
 		// Team-leader briefing injection: keyed off the task being a
 		// leader-task (is_leader_task) carrying a team_id — NOT off the
@@ -2893,6 +2913,9 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		if failure := h.rejectClaimOnWorkspaceMismatch(r.Context(), task, resp.WorkspaceID, runtimeID, runtimeWorkspaceID, false); failure != nil {
 			return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, failure
 		}
+		if failure := h.applyAutomationClaimSettings(r.Context(), ap, *task, agentMCPConfig, resp.Agent, composioMCPEnabled); failure != nil {
+			return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, failure
+		}
 
 		resp.AutomationID = uuidToString(run.AutomationID)
 		resp.AutomationSource = run.Source
@@ -3237,6 +3260,100 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 	return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, nil
 }
 
+// applyAutomationClaimSettings applies execution settings that belong to the
+// automation rather than the executor agent. It runs after the automation has
+// been resolved so both run_only tasks and issues created by create_issue
+// receive the same effective capabilities.
+//
+// The normal claim path mounts enabled workspace MCP bindings. An explicit
+// automation allowlist replaces that workspace layer with exactly the selected
+// library entries; the executor's own mcp_config and the separate per-task
+// Composio overlay remain independent layers. An empty configured list is an
+// intentional deny-all for workspace library servers, not the same as an old
+// automation that has no allowlist field.
+func (h *Handler) applyAutomationClaimSettings(
+	ctx context.Context,
+	ap db.Automation,
+	task db.AgentTaskQueue,
+	baseAgentMCPConfig json.RawMessage,
+	agentData *TaskAgentData,
+	composioMCPEnabled bool,
+) *claimBuildFailure {
+	if agentData == nil {
+		return nil
+	}
+	if ap.Model.Valid && strings.TrimSpace(ap.Model.String) != "" {
+		// TaskAgentData.Model is consumed by the daemon's provider invocation;
+		// keeping the override here avoids turning a model selection into prompt
+		// prose and covers both automation execution modes.
+		agentData.Model = strings.TrimSpace(ap.Model.String)
+	}
+	ids, configured, err := service.AutomationMCPServerAllowlist(ap.Tools)
+	if err != nil {
+		return &claimBuildFailure{
+			outcome: "error_automation_tools",
+			status:  http.StatusInternalServerError,
+			message: "automation tools configuration is invalid",
+		}
+	}
+	if !configured {
+		return nil
+	}
+
+	servers, err := h.Queries.ListWorkspaceMcpServers(ctx, ap.WorkspaceID)
+	if err != nil {
+		slog.Error("daemon claim: load automation MCP allowlist failed",
+			"task_id", uuidToString(task.ID),
+			"automation_id", uuidToString(ap.ID),
+			"error", err,
+		)
+		return &claimBuildFailure{
+			outcome: "error_automation_tools_load",
+			status:  http.StatusInternalServerError,
+			message: "failed to load automation tools",
+		}
+	}
+	wanted := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		wanted[strings.ToLower(strings.TrimSpace(id))] = struct{}{}
+	}
+	bindings := make([]WorkspaceMcpBinding, 0, len(wanted))
+	for _, server := range servers {
+		if _, ok := wanted[strings.ToLower(uuidToString(server.ID))]; !ok {
+			continue
+		}
+		bindings = append(bindings, WorkspaceMcpBinding{
+			Name:   server.Name,
+			Config: json.RawMessage(server.Config),
+		})
+	}
+	resolved, err := ResolveAgentMcpConfig(bindings, baseAgentMCPConfig)
+	if err != nil {
+		slog.Error("daemon claim: resolve automation MCP allowlist failed",
+			"task_id", uuidToString(task.ID),
+			"automation_id", uuidToString(ap.ID),
+			"error", err,
+		)
+		return &claimBuildFailure{
+			outcome: "error_automation_tools",
+			status:  http.StatusInternalServerError,
+			message: "failed to resolve automation tools",
+		}
+	}
+	if composioMCPEnabled && len(task.RuntimeMcpOverlay) > 0 {
+		if merged, mergeErr := mergeMCPOverlay(resolved, json.RawMessage(task.RuntimeMcpOverlay)); mergeErr == nil {
+			resolved = merged
+		} else {
+			// Match the ordinary claim path's fail-soft overlay behavior while
+			// retaining the explicit workspace allowlist we just enforced.
+			slog.Warn("daemon claim: merge automation MCP overlay failed; using allowlisted servers",
+				"task_id", uuidToString(task.ID), "error", mergeErr)
+		}
+	}
+	agentData.McpConfig = resolved
+	return nil
+}
+
 // worktreeClaimBlockReason returns a user-facing reason when this runtime must
 // not run the task, or "" when it may proceed.
 //
@@ -3370,7 +3487,11 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 			)
 		}
 	}
-	providerAllowed, providerErr := h.authorizeProviderTaskClaim(r.Context(), *task, runtime)
+	effectiveModel := ""
+	if resp.Agent != nil {
+		effectiveModel = resp.Agent.Model
+	}
+	providerAllowed, providerErr := h.authorizeProviderTaskClaim(r.Context(), *task, runtime, effectiveModel)
 	if providerErr != nil {
 		outcome = "error_provider_authorization"
 		slog.Error("task claim: provider authorization failed; requeueing claim",
@@ -3385,17 +3506,19 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Mint a task-scoped `mat_` token bound to (agent, task, workspace,
-	// initiating user). The daemon will inject this as PATCHBAY_TOKEN into the agent
+	// token user). The daemon will inject this as ORVILO_TOKEN into the agent
 	// process instead of its own credential, so any API call the agent
 	// makes — even one that strips X-Agent-ID / X-Task-ID headers — is
 	// recognized server-side as actor=agent, closing the lateral-movement
 	// path on human-only endpoints (e.g. `/api/agents/{id}/env`). Both the
-	// runtime owner and initiating user are required; without either, fail the claim
-	// explicitly instead of letting the daemon
+	// runtime owner and a task token user are required. Autonomous automation tasks
+	// use the runtime owner as the token's workspace identity while keeping their
+	// NULL originator for authorization. Without either, fail the claim explicitly
+	// instead of letting the daemon
 	// fall back to a member/owner credential. MUL-3292.
 	// Token expires after the lease upper bound (2h) so it cannot outlive a
 	// forgotten execution window.
-	if !runtime.OwnerID.Valid || !task.OriginatorUserID.Valid {
+	if !runtime.OwnerID.Valid {
 		outcome = "error_token"
 		slog.Error("task claim: runtime owner missing; cancelling task to avoid unscoped agent credentials",
 			"task_id", uuidToString(task.ID),
@@ -3408,6 +3531,22 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 				"task_id", uuidToString(task.ID), "error", cerr)
 		}
 		writeError(w, http.StatusInternalServerError, "initiating user and runtime owner required to mint task token")
+		return
+	}
+	tokenUserID, tokenUserOK := service.TaskTokenUserID(*task, runtime.OwnerID)
+	if !tokenUserOK {
+		outcome = "error_token"
+		slog.Error("task claim: task token user missing; cancelling task before token issuance",
+			"task_id", uuidToString(task.ID),
+			"runtime_id", runtimeID,
+			"workspace_id", runtimeWorkspaceID,
+		)
+		if _, cerr := h.TaskService.CancelTaskWithReason(r.Context(), task.ID,
+			"Task capability issuance requires a task token user.", "authorization_denied"); cerr != nil {
+			slog.Error("task claim: cancel after missing task token user failed",
+				"task_id", uuidToString(task.ID), "error", cerr)
+		}
+		writeError(w, http.StatusInternalServerError, "task token user required to mint task token")
 		return
 	}
 	tokenStr, terr := auth.GenerateAgentTaskToken()
@@ -3434,7 +3573,7 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 		TaskID:            task.ID,
 		AgentID:           task.AgentID,
 		WorkspaceID:       parseUUID(resp.WorkspaceID),
-		UserID:            task.OriginatorUserID,
+		UserID:            tokenUserID,
 		ExpiresAt:         pgtype.Timestamptz{Time: time.Now().Add(2 * time.Hour), Valid: true},
 		Scope:             service.RootTaskCapabilityScope(*task),
 		ClaimDispatchedAt: task.DispatchedAt,

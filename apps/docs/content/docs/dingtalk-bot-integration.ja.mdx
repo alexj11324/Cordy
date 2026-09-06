@@ -77,7 +77,7 @@ DM とグループチャットのどちらでも、テキストと画像を混�
 Patchbay Cloud ユーザーはこのセクションをスキップできます。セルフホスト環境では、DingTalk の `AppSecret` を暗号化するためのキーを先に設定します。
 
 ```dotenv
-PATCHBAY_DINGTALK_SECRET_KEY=<base64-encoded 32-byte key>
+ORVILO_DINGTALK_SECRET_KEY=<base64-encoded 32-byte key>
 ```
 
 次のコマンドで生成できます。
@@ -88,7 +88,7 @@ openssl rand -base64 32
 
 API サービスを再起動した後、DingTalk に接続します。このキーは長期間保存してください。変更または紛失すると、既存のトークンを復号できず、再接続が必要になります。
 
-アカウント連携リンクは `PATCHBAY_APP_URL` を使用し、未設定の場合は `FRONTEND_ORIGIN` にフォールバックします。メンバーがアクセスできる Patchbay のアドレスを指定してください。
+アカウント連携リンクは `ORVILO_APP_URL` を使用し、未設定の場合は `FRONTEND_ORIGIN` にフォールバックします。メンバーがアクセスできる Patchbay のアドレスを指定してください。
 
 
 ## 次に

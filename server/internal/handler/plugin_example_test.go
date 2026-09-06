@@ -65,7 +65,7 @@ func hostOf(t *testing.T, rawURL string) string {
 	return parsed.Hostname()
 }
 
-// stageExamplePlugin copies the example into a temp PATCHBAY_PLUGIN_DIR and
+// stageExamplePlugin copies the example into a temp ORVILO_PLUGIN_DIR and
 // repoints its two endpoints (and the net: scopes that authorise them) at the
 // running test servers.
 func stageExamplePlugin(t *testing.T, servers exampleServers) (string, []string) {
@@ -231,7 +231,7 @@ func quietServer(t *testing.T, handler http.HandlerFunc) *httptest.Server {
 //
 // remotemcp.Discover builds its own HTTP client, so the only way for it to
 // trust this certificate is the same one a plugin author uses locally —
-// PATCHBAY_PLUGIN_DEV_CA, pointing at a CA bundle.
+// ORVILO_PLUGIN_DEV_CA, pointing at a CA bundle.
 func metricsServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	server := httptest.NewTLSServer(http.HandlerFunc(serveMetricsMCP))

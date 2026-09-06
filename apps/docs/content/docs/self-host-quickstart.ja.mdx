@@ -48,7 +48,7 @@ make selfhost
 初回実行時、`make selfhost` は次を行います。
 
 1. `.env.example` から `.env` を作成する
-2. `JWT_SECRET`、PostgreSQL パスワード、`PATCHBAY_VCS_SECRET_KEY`（セルフホストの Git 連携用の暗号化キー）をランダム生成する
+2. `JWT_SECRET`、PostgreSQL パスワード、`ORVILO_VCS_SECRET_KEY`（セルフホストの Git 連携用の暗号化キー）をランダム生成する
 3. PostgreSQL、Patchbay backend、Patchbay frontend のイメージを取得する
 4. 永続化ボリュームを作成し、3 つのコンテナを起動する
 5. backend がヘルスチェックに応答し始めるまで待機する
@@ -107,8 +107,8 @@ Docker Compose はデフォルトで `3000` と `8080` を `127.0.0.1` だけに
 
 ```bash
 FRONTEND_ORIGIN=https://app.example.com
-PATCHBAY_APP_URL=https://app.example.com
-PATCHBAY_PUBLIC_URL=https://api.example.com
+ORVILO_APP_URL=https://app.example.com
+ORVILO_PUBLIC_URL=https://api.example.com
 ```
 
 この構成ではブラウザのトラフィックがすべて app ドメインを経由し、cookie がドメインをまたがないため、`COOKIE_DOMAIN` の設定は不要です。ブラウザに api ドメインへ直接アクセスさせる場合は設定が必須です。[環境変数](/environment-variables)を参照してください。
@@ -170,7 +170,7 @@ patchbay.example.com {
 }
 ```
 
-単一オリジンでは、2 つの URL をどちらもそこに向けます（`.env` の `FRONTEND_ORIGIN` と `PATCHBAY_APP_URL`、および `patchbay setup self-host` の `--server-url` と `--app-url`）。
+単一オリジンでは、2 つの URL をどちらもそこに向けます（`.env` の `FRONTEND_ORIGIN` と `ORVILO_APP_URL`、および `patchbay setup self-host` の `--server-url` と `--app-url`）。
 
 Caddy が TLS 証明書を取得し、WebSocket を転送します。`.env` を変更したら、`up -d` でコンテナを作り直して新しい設定を反映します。
 
@@ -180,7 +180,7 @@ curl -fsS https://api.example.com/readyz
 curl -fsS https://app.example.com/api/config | grep -o '"daemon_server_url":"[^"]*"'
 ```
 
-最後のコマンドは `daemon_server_url`（デーモンが API に接続するための URL）を出力します: `PATCHBAY_DAEMON_SERVER_URL` が設定されていればそれを、次に `PATCHBAY_PUBLIC_URL`、どちらも未設定ならアプリ URL（`PATCHBAY_APP_URL`、未設定なら `FRONTEND_ORIGIN` にフォールバック）を使います。`PATCHBAY_APP_URL` と `FRONTEND_ORIGIN` のどちらも未設定の場合、`PATCHBAY_DAEMON_SERVER_URL` や `PATCHBAY_PUBLIC_URL` が設定されていてもこのフィールドはレスポンスから丸ごと省略されます（上の grep は何も出力しません）。`localhost` と出力される場合は `.env` がまだローカルのデフォルトのままです: `.env.example` からコピーした `${FRONTEND_PORT}` 参照に頼らず、`FRONTEND_ORIGIN` と `PATCHBAY_APP_URL` を公開 URL として明示的に設定し、コンテナを作り直してください。
+最後のコマンドは `daemon_server_url`（デーモンが API に接続するための URL）を出力します: `ORVILO_DAEMON_SERVER_URL` が設定されていればそれを、次に `ORVILO_PUBLIC_URL`、どちらも未設定ならアプリ URL（`ORVILO_APP_URL`、未設定なら `FRONTEND_ORIGIN` にフォールバック）を使います。`ORVILO_APP_URL` と `FRONTEND_ORIGIN` のどちらも未設定の場合、`ORVILO_DAEMON_SERVER_URL` や `ORVILO_PUBLIC_URL` が設定されていてもこのフィールドはレスポンスから丸ごと省略されます（上の grep は何も出力しません）。`localhost` と出力される場合は `.env` がまだローカルのデフォルトのままです: `.env.example` からコピーした `${FRONTEND_PORT}` 参照に頼らず、`FRONTEND_ORIGIN` と `ORVILO_APP_URL` を公開 URL として明示的に設定し、コンテナを作り直してください。
 
 <Callout type="warning">
 `docker compose restart` は既存のコンテナを再起動するだけで、`.env` を読み直しません。設定を変更した後に `.env` を読み直すには、`docker compose -f docker-compose.selfhost.yml up -d` を実行してください。
@@ -206,7 +206,7 @@ docker compose -f docker-compose.selfhost.yml logs backend \
 コードを入力して、最初のワークスペースを作成します。Resend または SMTP を設定すると認証コードはメールで送信され、メンバーがコンテナログを読む必要はなくなります。詳しくは[ログインとサインアップ設定](/auth-setup)を参照してください。
 
 <Callout type="warning">
-セルフホストのデプロイはデフォルトで `APP_ENV=production` を使い、固定の認証コードは有効になりません。公開インスタンスで `PATCHBAY_DEV_VERIFICATION_CODE` を設定しないでください。
+セルフホストのデプロイはデフォルトで `APP_ENV=production` を使い、固定の認証コードは有効になりません。公開インスタンスで `ORVILO_DEV_VERIFICATION_CODE` を設定しないでください。
 </Callout>
 
 ## 5. 実行用コンピュータを接続する
@@ -314,11 +314,11 @@ docker compose -f docker-compose.selfhost.yml up -d
 実際に動くバージョンを決めるのは `docker compose pull` で、そのタグが今どのイメージを指しているかを GHCR に問い合わせます。したがって数か月更新していない checkout でも今日の `latest` イメージを取得できますし、逆に `git pull` だけではイメージを取得してコンテナを作り直すまで何も変わりません。
 
 <Callout type="warning">
-**`PATCHBAY_IMAGE_TAG` を固定している場合、どちらのコマンドでもアップグレードされません。** 両方のイメージが `${PATCHBAY_IMAGE_TAG:-latest}` として解決され（`docker-compose.selfhost.yml`）、`.env.example` は `PATCHBAY_IMAGE_TAG=latest` を同梱しています。`.env` で特定のリリースに固定していると、`pull` は同じタグを取り直すだけで、古いバージョンのままです — エラーも警告も出ません。アップグレード前に確認してください。
+**`ORVILO_IMAGE_TAG` を固定している場合、どちらのコマンドでもアップグレードされません。** 両方のイメージが `${ORVILO_IMAGE_TAG:-latest}` として解決され（`docker-compose.selfhost.yml`）、`.env.example` は `ORVILO_IMAGE_TAG=latest` を同梱しています。`.env` で特定のリリースに固定していると、`pull` は同じタグを取り直すだけで、古いバージョンのままです — エラーも警告も出ません。アップグレード前に確認してください。
 
 ```bash
-grep PATCHBAY_IMAGE_TAG .env
-# PATCHBAY_IMAGE_TAG=v0.4.5   ← 固定されている: 先に latest（または希望のリリース）へ変更する
+grep ORVILO_IMAGE_TAG .env
+# ORVILO_IMAGE_TAG=v0.4.5   ← 固定されている: 先に latest（または希望のリリース）へ変更する
 ```
 </Callout>
 
@@ -366,7 +366,7 @@ HTTP 200 かつ両方のチェックが `ok` でない場合、新しいバー�
 
 Helm には独自のアップグレード経路があります。values ファイルで `images.backend.tag` / `images.frontend.tag` に目的のリリースを設定し、`helm upgrade` を実行してください。タグを変えると Pod スペックが変わるため、Kubernetes が新しいイメージを取得して Deployment をロールします — これが確実な経路です。
 
-`kubectl -n patchbay rollout restart` はそれ単体ではアップグレードになりません。チャートは `pullPolicy: IfNotPresent` を同梱しているため（`deploy/helm/patchbay/values.yaml`）、そのタグをすでにキャッシュしているノードでは古いイメージが再利用され、restart しても何も変わりません — `PATCHBAY_IMAGE_TAG` の固定と同種の落とし穴です。浮動タグでこの方法を使いたい場合は、先に `images.backend.pullPolicy` / `images.frontend.pullPolicy` を `Always` に設定してください。リポジトリの [Self-hosting guide](https://github.com/alexj11324/Cordy/blob/main/SELF_HOSTING.md#kubernetes-deployment-alternative) を参照してください。
+`kubectl -n patchbay rollout restart` はそれ単体ではアップグレードになりません。チャートは `pullPolicy: IfNotPresent` を同梱しているため（`deploy/helm/patchbay/values.yaml`）、そのタグをすでにキャッシュしているノードでは古いイメージが再利用され、restart しても何も変わりません — `ORVILO_IMAGE_TAG` の固定と同種の落とし穴です。浮動タグでこの方法を使いたい場合は、先に `images.backend.pullPolicy` / `images.frontend.pullPolicy` を `Always` に設定してください。リポジトリの [Self-hosting guide](https://github.com/alexj11324/Cordy/blob/main/SELF_HOSTING.md#kubernetes-deployment-alternative) を参照してください。
 
 <Callout type="warning">
 `docker compose down` は `pgdata` と `backend_uploads` を保持します。`-v` を付けると、データベースを含むこれらのボリュームが削除されます。インスタンスを消去するつもりがない限り、`docker compose down -v` を実行しないでください。

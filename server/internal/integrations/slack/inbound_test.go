@@ -72,6 +72,32 @@ func TestInboundFromMessage_DM(t *testing.T) {
 	}
 }
 
+func TestNativeEventEligibleMatchesMessageTranslator(t *testing.T) {
+	eligible := []string{
+		`{"event":{"type":"message","user":"U1","channel":"C1","ts":"1"}}`,
+		`{"event":{"type":"message","subtype":"file_share","user":"U1","channel":"C1","ts":"2"}}`,
+		`{"event":{"type":"app_mention","user":"U1","channel":"C1","ts":"3"}}`,
+		`{"event":{"type":"reaction_added","user":"U1","item":{"channel":"C1","ts":"4"}}}`,
+	}
+	for _, body := range eligible {
+		if !nativeEventEligible([]byte(body), "UBOT") {
+			t.Errorf("eligible native event rejected: %s", body)
+		}
+	}
+	for _, body := range []string{
+		`{"event":{"type":"message","user":"U1","bot_id":"B1","channel":"C1","ts":"5"}}`,
+		`{"event":{"type":"message","user":"U1","subtype":"message_changed","channel":"C1","ts":"6"}}`,
+		`not json`,
+	} {
+		if nativeEventEligible([]byte(body), "UBOT") {
+			t.Errorf("ineligible native event accepted: %s", body)
+		}
+	}
+	if nativeEventEligible([]byte(`{"event":{"type":"message","user":"UBOT","channel":"C1","ts":"7"}}`), "UBOT") {
+		t.Fatal("the connected bot's own user message must not reach native automation")
+	}
+}
+
 func TestInboundFromMessage_ChannelMention(t *testing.T) {
 	msg, ok := translateMessage("UBOT", eventsAPI(nil), &slackevents.MessageEvent{
 		User:        "UALICE",

@@ -77,7 +77,7 @@ function isLoopbackHostname(hostname: string): boolean {
  */
 export function resolveAccountsOrigin(env: RuntimeEnv): string | undefined {
   const configured =
-    cleanHttpUrl(env.PATCHBAY_AUTH_BROKER_ORIGIN) ??
+    cleanHttpUrl(env.ORVILO_AUTH_BROKER_ORIGIN) ??
     cleanHttpUrl(env.NEXT_PUBLIC_ACCOUNTS_URL);
   if (!configured) return undefined;
   try {

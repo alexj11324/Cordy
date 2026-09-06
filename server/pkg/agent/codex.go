@@ -2033,7 +2033,7 @@ func stopTimer(timer *time.Timer) {
 // wait unless the semantic timeout is raised too; LoadConfig warns when it does
 // not. See the run loop's competing-timer select for the interaction.
 //
-// An explicit configured override (PATCHBAY_CODEX_FIRST_TURN_TIMEOUT) is honored
+// An explicit configured override (ORVILO_CODEX_FIRST_TURN_TIMEOUT) is honored
 // as-is, upward included: an operator whose app-server is legitimately slow to
 // its first event (a heavy MCP boot, a cold model catalog) can lift this ceiling
 // past the default that the semantic-inactivity timeout alone can never raise

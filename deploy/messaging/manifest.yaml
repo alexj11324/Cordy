@@ -6,11 +6,11 @@
 version: 1
 mode: server_configured
 bootstrap:
-  # Set PATCHBAY_MESSAGING_BOOTSTRAP=true to materialize the provider rows at
+  # Set ORVILO_MESSAGING_BOOTSTRAP=true to materialize the provider rows at
   # server start. These ids are deployment-owned, never browser form fields.
-  workspace_id_env: PATCHBAY_MESSAGING_WORKSPACE_ID
-  installer_user_id_env: PATCHBAY_MESSAGING_INSTALLER_USER_ID
-  agent_id_env: PATCHBAY_MESSAGING_AGENT_ID
+  workspace_id_env: ORVILO_MESSAGING_WORKSPACE_ID
+  installer_user_id_env: ORVILO_MESSAGING_INSTALLER_USER_ID
+  agent_id_env: ORVILO_MESSAGING_AGENT_ID
 public:
   # Must be the HTTPS app host reachable from phones and external IM users.
   app_url: https://app.example.com
@@ -46,4 +46,4 @@ providers:
     bot_name_env: WECOM_BOT_NAME
   weixin:
     transport: polling
-    secret_key_env: PATCHBAY_WEIXIN_SECRET_KEY
+    secret_key_env: ORVILO_WEIXIN_SECRET_KEY

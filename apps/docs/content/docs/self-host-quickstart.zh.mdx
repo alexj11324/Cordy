@@ -48,7 +48,7 @@ make selfhost
 第一次运行时，`make selfhost` 会：
 
 1. 从 `.env.example` 创建 `.env`
-2. 随机生成 `JWT_SECRET`、PostgreSQL 密码和 `PATCHBAY_VCS_SECRET_KEY`（自托管 Git 集成的加密密钥）
+2. 随机生成 `JWT_SECRET`、PostgreSQL 密码和 `ORVILO_VCS_SECRET_KEY`（自托管 Git 集成的加密密钥）
 3. 拉取 PostgreSQL、Patchbay backend 和 Patchbay frontend 镜像
 4. 创建持久化数据卷并启动三个容器
 5. 等待 backend 开始响应健康检查
@@ -107,8 +107,8 @@ Docker Compose 默认只把 `3000` 和 `8080` 绑定到 `127.0.0.1`。不要直�
 
 ```bash
 FRONTEND_ORIGIN=https://app.example.com
-PATCHBAY_APP_URL=https://app.example.com
-PATCHBAY_PUBLIC_URL=https://api.example.com
+ORVILO_APP_URL=https://app.example.com
+ORVILO_PUBLIC_URL=https://api.example.com
 ```
 
 以上配置让浏览器流量全部走 app 域，cookie 不跨域，因此不需要配置 `COOKIE_DOMAIN`。如果改为让浏览器直接访问 api 域，则必须配置它，见[环境变量](/environment-variables)。
@@ -170,7 +170,7 @@ patchbay.example.com {
 }
 ```
 
-单一 origin 模式下，两个 URL 都指向它（`.env` 里的 `FRONTEND_ORIGIN` 和 `PATCHBAY_APP_URL`，以及 `patchbay setup self-host` 的 `--server-url` 和 `--app-url`）。
+单一 origin 模式下，两个 URL 都指向它（`.env` 里的 `FRONTEND_ORIGIN` 和 `ORVILO_APP_URL`，以及 `patchbay setup self-host` 的 `--server-url` 和 `--app-url`）。
 
 Caddy 会申请 TLS 证书并转发 WebSocket。修改 `.env` 后，用 `up -d` 重新创建容器，让新配置生效：
 
@@ -180,7 +180,7 @@ curl -fsS https://api.example.com/readyz
 curl -fsS https://app.example.com/api/config | grep -o '"daemon_server_url":"[^"]*"'
 ```
 
-最后一条命令输出 `daemon_server_url`——daemon 连接 API 用的地址：设了 `PATCHBAY_DAEMON_SERVER_URL` 时用它，其次是 `PATCHBAY_PUBLIC_URL`，否则用 app URL（`PATCHBAY_APP_URL`，未设置时回退到 `FRONTEND_ORIGIN`）。当 `PATCHBAY_APP_URL` 和 `FRONTEND_ORIGIN` 都没设时，这个字段会整个从响应里省略（上面的 grep 无输出）——即使设了 `PATCHBAY_DAEMON_SERVER_URL` 或 `PATCHBAY_PUBLIC_URL` 也是如此。如果输出的是 `localhost`，说明 `.env` 里还是本地默认值：不要依赖从 `.env.example` 复制来的 `${FRONTEND_PORT}` 引用，把 `FRONTEND_ORIGIN` 和 `PATCHBAY_APP_URL` 显式设置为公网地址，然后重建容器。
+最后一条命令输出 `daemon_server_url`——daemon 连接 API 用的地址：设了 `ORVILO_DAEMON_SERVER_URL` 时用它，其次是 `ORVILO_PUBLIC_URL`，否则用 app URL（`ORVILO_APP_URL`，未设置时回退到 `FRONTEND_ORIGIN`）。当 `ORVILO_APP_URL` 和 `FRONTEND_ORIGIN` 都没设时，这个字段会整个从响应里省略（上面的 grep 无输出）——即使设了 `ORVILO_DAEMON_SERVER_URL` 或 `ORVILO_PUBLIC_URL` 也是如此。如果输出的是 `localhost`，说明 `.env` 里还是本地默认值：不要依赖从 `.env.example` 复制来的 `${FRONTEND_PORT}` 引用，把 `FRONTEND_ORIGIN` 和 `ORVILO_APP_URL` 显式设置为公网地址，然后重建容器。
 
 <Callout type="warning">
 `docker compose restart` 只重启现有容器，不会重新读取 `.env`。修改配置后，重新读取 `.env` 需要运行 `docker compose -f docker-compose.selfhost.yml up -d`。
@@ -206,7 +206,7 @@ docker compose -f docker-compose.selfhost.yml logs backend \
 输入验证码并创建第一个工作区。配置 Resend 或 SMTP 后，验证码通过邮件发送，成员无需读取容器日志，具体见[登录与注册配置](/auth-setup)。
 
 <Callout type="warning">
-自托管部署默认使用 `APP_ENV=production`，不会启用固定验证码。不要在公网实例上设置 `PATCHBAY_DEV_VERIFICATION_CODE`。
+自托管部署默认使用 `APP_ENV=production`，不会启用固定验证码。不要在公网实例上设置 `ORVILO_DEV_VERIFICATION_CODE`。
 </Callout>
 
 ## 5. 连接执行电脑
@@ -314,11 +314,11 @@ docker compose -f docker-compose.selfhost.yml up -d
 真正决定你跑哪个版本的是 `docker compose pull`：它去 GHCR 查这个 tag 当前指向哪个镜像。所以一个几个月没更新的 checkout 照样能拉到今天的 `latest` 镜像；反过来，只跑 `git pull` 而不拉镜像、不重建容器，什么都不会变。
 
 <Callout type="warning">
-**如果你在 `.env` 里钉死了 `PATCHBAY_IMAGE_TAG`，两种写法都升不上去。** 两个镜像都写成 `${PATCHBAY_IMAGE_TAG:-latest}`（`docker-compose.selfhost.yml`），而 `.env.example` 里默认是 `PATCHBAY_IMAGE_TAG=latest`。一旦你把它改成了具体版本，`pull` 只是把同一个 tag 重拉一遍，版本原地不动——不报错，也没有任何警告。升级前先确认：
+**如果你在 `.env` 里钉死了 `ORVILO_IMAGE_TAG`，两种写法都升不上去。** 两个镜像都写成 `${ORVILO_IMAGE_TAG:-latest}`（`docker-compose.selfhost.yml`），而 `.env.example` 里默认是 `ORVILO_IMAGE_TAG=latest`。一旦你把它改成了具体版本，`pull` 只是把同一个 tag 重拉一遍，版本原地不动——不报错，也没有任何警告。升级前先确认：
 
 ```bash
-grep PATCHBAY_IMAGE_TAG .env
-# PATCHBAY_IMAGE_TAG=v0.4.5 ← 钉死了：先改成 latest（或你想要的版本）
+grep ORVILO_IMAGE_TAG .env
+# ORVILO_IMAGE_TAG=v0.4.5 ← 钉死了：先改成 latest（或你想要的版本）
 ```
 </Callout>
 
@@ -366,7 +366,7 @@ curl -s localhost:8080/readyz
 
 Helm 有自己的升级路径：在 values 文件里把 `images.backend.tag` / `images.frontend.tag` 设成你要的版本，然后 `helm upgrade`。改 tag 就改了 pod spec，Kubernetes 会拉新镜像并滚动更新——这是可靠的路径。
 
-`kubectl -n patchbay rollout restart` 本身**不是**升级。chart 默认 `pullPolicy: IfNotPresent`（`deploy/helm/patchbay/values.yaml`），节点上已经缓存过这个 tag 的话，restart 只会用回旧镜像，什么都没变——和钉死 `PATCHBAY_IMAGE_TAG` 是同一类坑。真要靠浮动 tag 走这条路，得先把 `images.backend.pullPolicy` / `images.frontend.pullPolicy` 设成 `Always`。详见仓库的 [Self-hosting guide](https://github.com/alexj11324/Cordy/blob/main/SELF_HOSTING.md#kubernetes-deployment-alternative)。
+`kubectl -n patchbay rollout restart` 本身**不是**升级。chart 默认 `pullPolicy: IfNotPresent`（`deploy/helm/patchbay/values.yaml`），节点上已经缓存过这个 tag 的话，restart 只会用回旧镜像，什么都没变——和钉死 `ORVILO_IMAGE_TAG` 是同一类坑。真要靠浮动 tag 走这条路，得先把 `images.backend.pullPolicy` / `images.frontend.pullPolicy` 设成 `Always`。详见仓库的 [Self-hosting guide](https://github.com/alexj11324/Cordy/blob/main/SELF_HOSTING.md#kubernetes-deployment-alternative)。
 
 <Callout type="warning">
 `docker compose down` 会保留 `pgdata` 和 `backend_uploads`。加上 `-v` 会删除这些数据卷，包括数据库；除非确定要清空实例，否则不要运行 `docker compose down -v`。

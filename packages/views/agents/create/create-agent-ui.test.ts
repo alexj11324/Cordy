@@ -256,7 +256,7 @@ describe("Unfinished draft preview", () => {
       draftPreview({
         last_message_role: "user",
         last_message_content:
-          'PATCHBAY_AGENT_BUILDER_INPUT\n{"user_request":"Create a release manager","current_draft":{"name":"X"}}',
+          'ORVILO_AGENT_BUILDER_INPUT\n{"user_request":"Create a release manager","current_draft":{"name":"X"}}',
       }),
     ).toBe("Create a release manager");
   });

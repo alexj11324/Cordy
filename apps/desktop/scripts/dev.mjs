@@ -45,7 +45,7 @@ const node = process.execPath;
 // make the renderer and backend appear healthy while the daemon is executing a
 // different revision. The preparer uses the content-addressed Go cache and
 // fails on a cache miss when Go is unavailable.
-process.env.PATCHBAY_REQUIRE_SOURCE_CLI = "1";
+process.env.ORVILO_REQUIRE_SOURCE_CLI = "1";
 run(node, [join(here, "prepare-dev-runtime.mjs")]);
 run(node, [join(here, "brand-dev-electron.mjs")]);
 

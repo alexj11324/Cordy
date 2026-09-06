@@ -44,7 +44,7 @@ patchbay daemon start
 | `patchbay daemon stop` | 停止守护进程 |
 | `patchbay daemon start --foreground` | 在当前终端中运行，便于调试 |
 
-如需把 task 工作目录放到其他磁盘，可用 `patchbay config set workspaces_root <path>` 为当前 profile 持久化根目录，也可在 `daemon start` 或 `daemon restart` 中传入 `--workspaces-root <path>`。flag 的优先级高于 `PATCHBAY_WORKSPACES_ROOT`，环境变量又高于 profile 配置。修改根目录不会迁移已有的 task 目录。
+如需把 task 工作目录放到其他磁盘，可用 `patchbay config set workspaces_root <path>` 为当前 profile 持久化根目录，也可在 `daemon start` 或 `daemon restart` 中传入 `--workspaces-root <path>`。flag 的优先级高于 `ORVILO_WORKSPACES_ROOT`，环境变量又高于 profile 配置。修改根目录不会迁移已有的 task 目录。
 
 启动时，守护进程会检测 `PATH` 中受支持的 AI 编程工具，并为你有权连接的工作区注册运行时。如果一款工具刚刚安装或登录，重启守护进程即可重新检测。
 
@@ -71,7 +71,7 @@ patchbay daemon start
 
 一台守护进程默认最多同时执行 20 条 task；每个智能体默认最多同时执行 6 条。实际并发取两者中的较小值。
 
-达到上限后，新 task 会继续排队。你可以在智能体设置中调整单个智能体的并发数，也可以通过 `PATCHBAY_DAEMON_MAX_CONCURRENT_TASKS` 调整整台电脑的上限。并行执行会同时占用机器性能、工具账号额度和同一工作目录。
+达到上限后，新 task 会继续排队。你可以在智能体设置中调整单个智能体的并发数，也可以通过 `ORVILO_DAEMON_MAX_CONCURRENT_TASKS` 调整整台电脑的上限。并行执行会同时占用机器性能、工具账号额度和同一工作目录。
 
 ## 私有与公开
 

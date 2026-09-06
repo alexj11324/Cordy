@@ -413,7 +413,7 @@ func TestCLIConfig_TaskRootOverridesOwnerHome(t *testing.T) {
 	ownerHome := t.TempDir()
 	taskRoot := filepath.Join(t.TempDir(), "task-patchbay")
 	t.Setenv("HOME", ownerHome)
-	t.Setenv("PATCHBAY_TASK_CONFIG_ROOT", taskRoot)
+	t.Setenv("ORVILO_TASK_CONFIG_ROOT", taskRoot)
 
 	ownerPath := filepath.Join(ownerHome, ".patchbay", "config.json")
 	if err := os.MkdirAll(filepath.Dir(ownerPath), 0o755); err != nil {
@@ -474,7 +474,7 @@ func TestCLIConfig_TaskRootOverridesOwnerHome(t *testing.T) {
 func TestCLIConfig_NoTaskRootKeepsInteractiveHomeResolution(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("PATCHBAY_TASK_CONFIG_ROOT", "")
+	t.Setenv("ORVILO_TASK_CONFIG_ROOT", "")
 
 	path, err := CLIConfigPathForProfile("dev")
 	if err != nil {
@@ -487,7 +487,7 @@ func TestCLIConfig_NoTaskRootKeepsInteractiveHomeResolution(t *testing.T) {
 }
 
 func TestCLIConfig_TaskRootRejectsProfilePathTraversal(t *testing.T) {
-	t.Setenv("PATCHBAY_TASK_CONFIG_ROOT", filepath.Join(t.TempDir(), "task-patchbay"))
+	t.Setenv("ORVILO_TASK_CONFIG_ROOT", filepath.Join(t.TempDir(), "task-patchbay"))
 
 	for _, profile := range []string{".", "..", "../owner", "nested/profile", filepath.Join(string(filepath.Separator), "owner")} {
 		if path, err := CLIConfigPathForProfile(profile); err == nil {
@@ -500,7 +500,7 @@ func TestCLIConfig_TaskRootRejectsProfilePathTraversal(t *testing.T) {
 }
 
 func TestCLIConfig_TaskRootMustBeAbsolute(t *testing.T) {
-	t.Setenv("PATCHBAY_TASK_CONFIG_ROOT", "relative/task-patchbay")
+	t.Setenv("ORVILO_TASK_CONFIG_ROOT", "relative/task-patchbay")
 
 	if _, err := CLIConfigPath(); err == nil || !strings.Contains(err.Error(), "must be an absolute path") {
 		t.Fatalf("CLIConfigPath error = %v, want absolute path validation", err)

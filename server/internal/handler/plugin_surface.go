@@ -155,7 +155,7 @@ func (h *Handler) GetPluginSurfaceLaunch(w http.ResponseWriter, r *http.Request)
 	}
 	origin, err := parsePluginSurfaceOrigin(h.cfg.PluginSurfaceOrigin)
 	if err != nil || h.PluginSurfaceTokens == nil {
-		writeError(w, http.StatusServiceUnavailable, "Plugin surfaces are unavailable: PATCHBAY_PLUGIN_SURFACE_ORIGIN and PATCHBAY_PLUGIN_SECRET_KEY must be configured")
+		writeError(w, http.StatusServiceUnavailable, "Plugin surfaces are unavailable: ORVILO_PLUGIN_SURFACE_ORIGIN and ORVILO_PLUGIN_SECRET_KEY must be configured")
 		return
 	}
 	if !h.pluginSurfaceOriginIsDedicated(origin) {
