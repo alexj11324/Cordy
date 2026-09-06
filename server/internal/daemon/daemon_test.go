@@ -150,7 +150,8 @@ func TestIsBlockedEnvKey(t *testing.T) {
 		want bool
 	}{
 		{key: "ORVILO_TOKEN", want: true},
-		{key: "patchbay_runtime_id", want: true},
+		{key: "orvilo_runtime_id", want: true},
+		{key: "patchbay_runtime_id", want: false},
 		{key: "HOME", want: true},
 		{key: "PATH", want: true},
 		{key: "TMPDIR", want: true},
