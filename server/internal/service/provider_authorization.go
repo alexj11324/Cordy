@@ -493,6 +493,10 @@ func (s *ProviderAuthorizationService) authorizeProviderRequest(ctx context.Cont
 	if task.AgentID != input.AgentID || task.RuntimeID != input.RuntimeID || task.OriginatorUserID != input.OnBehalfOfUserID {
 		return s.recordDecision(ctx, input, auth.EffectDeny, "provider lease task identity mismatch", nil, 0)
 	}
+	automationRooted := IsAutomationRootedTask(task)
+	if !input.OnBehalfOfUserID.Valid && !automationRooted {
+		return s.recordDecision(ctx, input, auth.EffectDeny, "provider lease actor is not a current workspace member", nil, 0)
+	}
 	agent, err := s.Queries.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{ID: input.AgentID, WorkspaceID: input.WorkspaceID})
 	if err != nil || agent.ArchivedAt.Valid || agent.RuntimeID != input.RuntimeID {
 		return s.recordDecision(ctx, input, auth.EffectDeny, "provider lease workspace or agent mismatch", nil, 0)
@@ -501,18 +505,23 @@ func (s *ProviderAuthorizationService) authorizeProviderRequest(ctx context.Cont
 	if err != nil || runtime.Provider != input.Provider || !runtime.OwnerID.Valid {
 		return s.recordDecision(ctx, input, auth.EffectDeny, "provider lease runtime or provider mismatch", nil, 0)
 	}
-	member, err := s.Queries.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{UserID: input.OnBehalfOfUserID, WorkspaceID: input.WorkspaceID})
-	if err != nil || !member.UserID.Valid {
-		return s.recordDecision(ctx, input, auth.EffectDeny, "provider lease actor is not a current workspace member", nil, 0)
+	if input.OnBehalfOfUserID.Valid {
+		member, memberErr := s.Queries.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{UserID: input.OnBehalfOfUserID, WorkspaceID: input.WorkspaceID})
+		if memberErr != nil || !member.UserID.Valid {
+			return s.recordDecision(ctx, input, auth.EffectDeny, "provider lease actor is not a current workspace member", nil, 0)
+		}
 	}
 	taskIDs, chain, err := s.taskLineage(ctx, task)
 	if err != nil {
 		return s.recordDecision(ctx, input, auth.EffectDeny, "provider task delegation chain is invalid", nil, 0)
 	}
 	input.DelegationChain = chain
-	teams, err := s.Queries.ListTeamsByMember(ctx, db.ListTeamsByMemberParams{WorkspaceID: input.WorkspaceID, MemberType: "member", MemberID: input.OnBehalfOfUserID})
-	if err != nil {
-		return ProviderAuthorizationDecision{}, err
+	teams := []db.Team{}
+	if input.OnBehalfOfUserID.Valid {
+		teams, err = s.Queries.ListTeamsByMember(ctx, db.ListTeamsByMemberParams{WorkspaceID: input.WorkspaceID, MemberType: "member", MemberID: input.OnBehalfOfUserID})
+		if err != nil {
+			return ProviderAuthorizationDecision{}, err
+		}
 	}
 	teamIDs := make(map[pgtype.UUID]struct{}, len(teams))
 	for _, team := range teams {

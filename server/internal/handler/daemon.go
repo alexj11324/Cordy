@@ -1728,21 +1728,22 @@ func (h *Handler) ClaimTasksByRuntime(w http.ResponseWriter, r *http.Request) {
 		if !providerAllowed {
 			continue
 		}
-		if !task.OriginatorUserID.Valid {
-			slog.Error("batch claim: initiating user missing; cancelling task before token issuance",
-				"task_id", uuidToString(task.ID), "runtime_id", uuidToString(task.RuntimeID))
-			if _, cerr := h.TaskService.CancelTaskWithReason(r.Context(), task.ID,
-				"Task capability issuance requires an initiating user.", "authorization_denied"); cerr != nil {
-				slog.Error("batch claim: cancel after missing initiating user failed",
-					"task_id", uuidToString(task.ID), "error", cerr)
-			}
-			continue
-		}
 		if !rt.OwnerID.Valid {
 			slog.Error("batch claim: runtime owner missing; cancelling task to avoid unscoped agent credentials",
 				"task_id", uuidToString(task.ID), "runtime_id", uuidToString(task.RuntimeID))
 			if _, cerr := h.TaskService.CancelTask(r.Context(), task.ID); cerr != nil {
 				slog.Error("batch claim: cancel after missing runtime owner failed",
+					"task_id", uuidToString(task.ID), "error", cerr)
+			}
+			continue
+		}
+		tokenUserID, tokenUserOK := service.TaskTokenUserID(task, rt.OwnerID)
+		if !tokenUserOK {
+			slog.Error("batch claim: task token user missing; cancelling task before token issuance",
+				"task_id", uuidToString(task.ID), "runtime_id", uuidToString(task.RuntimeID))
+			if _, cerr := h.TaskService.CancelTaskWithReason(r.Context(), task.ID,
+				"Task capability issuance requires a task token user.", "authorization_denied"); cerr != nil {
+				slog.Error("batch claim: cancel after missing task token user failed",
 					"task_id", uuidToString(task.ID), "error", cerr)
 			}
 			continue
@@ -1778,7 +1779,7 @@ func (h *Handler) ClaimTasksByRuntime(w http.ResponseWriter, r *http.Request) {
 			TaskID:            task.ID,
 			AgentID:           task.AgentID,
 			WorkspaceID:       parseUUID(resp.WorkspaceID),
-			UserID:            task.OriginatorUserID,
+			UserID:            tokenUserID,
 			ExpiresAt:         pgtype.Timestamptz{Time: time.Now().Add(2 * time.Hour), Valid: true},
 			Scope:             service.RootTaskCapabilityScope(task),
 			ClaimDispatchedAt: task.DispatchedAt,
@@ -3505,17 +3506,19 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Mint a task-scoped `mat_` token bound to (agent, task, workspace,
-	// initiating user). The daemon will inject this as ORVILO_TOKEN into the agent
+	// token user). The daemon will inject this as ORVILO_TOKEN into the agent
 	// process instead of its own credential, so any API call the agent
 	// makes — even one that strips X-Agent-ID / X-Task-ID headers — is
 	// recognized server-side as actor=agent, closing the lateral-movement
 	// path on human-only endpoints (e.g. `/api/agents/{id}/env`). Both the
-	// runtime owner and initiating user are required; without either, fail the claim
-	// explicitly instead of letting the daemon
+	// runtime owner and a task token user are required. Autonomous automation tasks
+	// use the runtime owner as the token's workspace identity while keeping their
+	// NULL originator for authorization. Without either, fail the claim explicitly
+	// instead of letting the daemon
 	// fall back to a member/owner credential. MUL-3292.
 	// Token expires after the lease upper bound (2h) so it cannot outlive a
 	// forgotten execution window.
-	if !runtime.OwnerID.Valid || !task.OriginatorUserID.Valid {
+	if !runtime.OwnerID.Valid {
 		outcome = "error_token"
 		slog.Error("task claim: runtime owner missing; cancelling task to avoid unscoped agent credentials",
 			"task_id", uuidToString(task.ID),
@@ -3528,6 +3531,22 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 				"task_id", uuidToString(task.ID), "error", cerr)
 		}
 		writeError(w, http.StatusInternalServerError, "initiating user and runtime owner required to mint task token")
+		return
+	}
+	tokenUserID, tokenUserOK := service.TaskTokenUserID(*task, runtime.OwnerID)
+	if !tokenUserOK {
+		outcome = "error_token"
+		slog.Error("task claim: task token user missing; cancelling task before token issuance",
+			"task_id", uuidToString(task.ID),
+			"runtime_id", runtimeID,
+			"workspace_id", runtimeWorkspaceID,
+		)
+		if _, cerr := h.TaskService.CancelTaskWithReason(r.Context(), task.ID,
+			"Task capability issuance requires a task token user.", "authorization_denied"); cerr != nil {
+			slog.Error("task claim: cancel after missing task token user failed",
+				"task_id", uuidToString(task.ID), "error", cerr)
+		}
+		writeError(w, http.StatusInternalServerError, "task token user required to mint task token")
 		return
 	}
 	tokenStr, terr := auth.GenerateAgentTaskToken()
@@ -3554,7 +3573,7 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 		TaskID:            task.ID,
 		AgentID:           task.AgentID,
 		WorkspaceID:       parseUUID(resp.WorkspaceID),
-		UserID:            task.OriginatorUserID,
+		UserID:            tokenUserID,
 		ExpiresAt:         pgtype.Timestamptz{Time: time.Now().Add(2 * time.Hour), Valid: true},
 		Scope:             service.RootTaskCapabilityScope(*task),
 		ClaimDispatchedAt: task.DispatchedAt,

@@ -397,7 +397,8 @@ func (h *Handler) resolveTaskCapabilityContext(ctx context.Context, r *http.Requ
 	if err != nil {
 		return taskCapabilityRequestContext{}, true, fmt.Errorf("load task capability task: %w", err)
 	}
-	if task.AgentID != agentID || !task.RuntimeID.Valid || !task.OriginatorUserID.Valid {
+	if task.AgentID != agentID || !task.RuntimeID.Valid ||
+		(!task.OriginatorUserID.Valid && !service.IsAutomationRootedTask(task)) {
 		return taskCapabilityRequestContext{}, true, service.ErrProviderAuthorizationForbidden
 	}
 	current, err := h.Queries.GetCurrentTaskCapabilityLease(ctx, db.GetCurrentTaskCapabilityLeaseParams{
