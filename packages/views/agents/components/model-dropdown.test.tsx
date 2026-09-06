@@ -75,7 +75,7 @@ function openDropdown(container: HTMLElement) {
 }
 
 describe("ModelDropdown", () => {
-  it("embeds all three columns without a trigger and saves model plus effort together", async () => {
+  it("embeds all four columns without a trigger and saves model plus effort together", async () => {
     const onSelection = vi.fn();
     const { container, onChange } = renderDropdown({
       inline: true,
@@ -91,6 +91,7 @@ describe("ModelDropdown", () => {
       runtimeId: "rt-codex",
       model: "gpt-5.6-terra",
       thinkingLevel: "",
+      serviceTier: "",
       catalog: CODEX_MODELS.models,
     });
     expect(onChange).not.toHaveBeenCalled();

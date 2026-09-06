@@ -949,6 +949,8 @@
     "clear_selection": "選択を解除"
   },
   "model_selector": {
+    "no_speed": "このモデルには速度オプションがありません。",
+    "speed_inherited": "速度は既存のエージェントまたはランタイムの設定に従います。",
     "providers": "プロバイダー",
     "favorites": "お気に入り",
     "effort": "思考の強度",

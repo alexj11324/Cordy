@@ -23,7 +23,6 @@ import {
   SettingsSection,
 } from "../../settings/components/settings-layout";
 import { CharCounter } from "../components/char-counter";
-import { ServiceTierSettingField } from "../components/inspector/service-tier-setting-field";
 import type { ModelSelection } from "../components/model-selector-content";
 import { ModelDropdown } from "../components/model-dropdown";
 import { SkillMultiSelect } from "../components/skill-multi-select";
@@ -192,13 +191,14 @@ export function AgentConfigurationPanel({
             runtimeOnline={selectedRuntime?.status === "online"}
             value={draft.model}
             thinkingLevel={draft.thinkingLevel}
+            serviceTier={draft.serviceTier}
             provider={selectedRuntime?.provider}
             runtimes={runtimes.filter((runtime) =>
               isRuntimeUsableForUser(runtime, currentUserId),
             )}
             onSelection={(selection) => {
               if (onModelSelection) return onModelSelection(selection);
-              const { runtimeId, model, thinkingLevel } = selection;
+              const { runtimeId, model, thinkingLevel, serviceTier } = selection;
               return onChange({
                 ...applyDraftModelChange(
                   runtimeId === draft.runtimeId
@@ -207,6 +207,7 @@ export function AgentConfigurationPanel({
                   model,
                 ),
                 thinkingLevel,
+                serviceTier,
               });
             }}
             onChange={(value) => onChange(applyDraftModelChange(draft, value))}
@@ -219,13 +220,7 @@ export function AgentConfigurationPanel({
               {t(($) => $.creation_studio.builder.switch_runtime_pending)}
             </p>
           )}
-          {/* Only advertised speed controls are shown. */}
-          <AgentExecutionOverrides
-            draft={draft}
-            runtime={selectedRuntime}
-            disabled={runtimeLocked}
-            onChange={onChange}
-          />
+
         </div>
       </SettingsSection>
 
@@ -363,45 +358,6 @@ export function AgentNameField({
         ) : null}
       </div>
     </DraftFieldRow>
-  );
-}
-
-/**
- * Per-model execution overrides (thinking level + Codex speed) for the create
- * flow. Capability comes from the exact selected model's live catalog on the
- * selected runtime, so nothing renders while that cannot be resolved — an
- * offline runtime, failed discovery, or an empty "use the runtime default"
- * model. That is the same fail-closed rule the settings page follows, and it is
- * why no value can be sent that the daemon would refuse to honour.
- */
-export function AgentExecutionOverrides({
-  draft,
-  runtime,
-  disabled = false,
-  onChange,
-}: {
-  draft: AgentDraft;
-  runtime: RuntimeDevice | null;
-  disabled?: boolean;
-  onChange: (draft: AgentDraft) => void;
-}) {
-  const { t } = useT("agents");
-  const runtimeOnline = runtime?.status === "online";
-  return (
-    <>
-      <ServiceTierSettingField
-        standalone
-        label={t(($) => $.creation_studio.speed_label)}
-        runtimeId={runtime?.id ?? null}
-        workspaceId={runtime?.workspace_id}
-        runtimeOnline={runtimeOnline}
-        provider={runtime?.provider ?? ""}
-        model={draft.model}
-        value={draft.serviceTier}
-        canEdit={!disabled}
-        onChange={(serviceTier) => onChange({ ...draft, serviceTier })}
-      />
-    </>
   );
 }
 

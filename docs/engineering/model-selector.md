@@ -1,8 +1,10 @@
 # Model selector and discovery
 
-The shared selector presents runtime providers, models, and thinking effort in
-three columns. Agent settings embed it directly; speed (when supported) and
-concurrency are separate settings cards. Favorites preserve the runtime ID,
+The shared selector presents execution settings in
+four columns: provider, model, thinking effort, and speed. Agent settings
+embed it directly; concurrency remains a separate settings card. Speed options
+come from the selected model catalog. A provider without advertised tiers shows
+an unavailable state; model-only entry points show inherited speed. Favorites preserve the runtime ID,
 model ID, and thinking effort together. The runtime ID distinguishes separate
 installations/accounts of the same provider.
 
@@ -48,7 +50,7 @@ cached response is immediate; reduced-motion preferences disable rotation.
   provider adapters have their own fallback or capability restrictions.
 - Antigravity reads its native `agy models` command.
 - Speed is currently implemented on the backend for Codex. The UI displays the
-  speed row only when the returned catalog supports it or an existing override
+  speed choices only when the returned catalog supports them or an existing override
   needs to be cleared. This does not imply other providers lack speed features.
 
 The local GPT-6 omission and config parse failure were traced to terminal Codex
@@ -80,3 +82,8 @@ not be copied into its messages without implementing version negotiation.
 
 The T3 Code visual adaptation and retained MIT license are documented in
 [third-party/t3code.md](../../third-party/t3code.md).
+
+Changing speed saves it with the model and thinking effort in one update.
+Favorites still store model and effort, preserving the current speed only when
+compatible on the same runtime. Switching runtimes or choosing runtime defaults
+clears the previous speed override.

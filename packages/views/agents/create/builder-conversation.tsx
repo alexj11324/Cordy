@@ -86,11 +86,12 @@ export function BuilderSetup({
             runtimeOnline={selectedRuntime?.status === "online"}
             value={draft.model}
             thinkingLevel={draft.thinkingLevel}
+            serviceTier={draft.serviceTier}
             provider={selectedRuntime?.provider}
             runtimes={runtimes.filter((runtime) =>
               isRuntimeUsableForUser(runtime, currentUserId),
             )}
-            onSelection={({ runtimeId, model, thinkingLevel }) =>
+            onSelection={({ runtimeId, model, thinkingLevel, serviceTier }) =>
               onChange({
                 ...applyDraftModelChange(
                   runtimeId === draft.runtimeId
@@ -99,6 +100,7 @@ export function BuilderSetup({
                   model,
                 ),
                 thinkingLevel,
+                serviceTier,
               })
             }
             onChange={(model) =>

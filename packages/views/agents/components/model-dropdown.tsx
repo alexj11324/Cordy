@@ -26,6 +26,7 @@ export interface ModelDropdownProps {
   disabled?: boolean;
   provider?: string;
   thinkingLevel?: string;
+  serviceTier?: string;
   runtimes?: ModelSelectorRuntime[];
   onSelection?: (selection: ModelSelection) => Promise<void> | void;
   showLabel?: boolean;
@@ -33,6 +34,7 @@ export interface ModelDropdownProps {
   clearUnsupported?: boolean;
   inline?: boolean;
   allowEffort?: boolean;
+  allowSpeed?: boolean;
 }
 
 export function ModelDropdown({
@@ -43,6 +45,7 @@ export function ModelDropdown({
   disabled,
   provider = "",
   thinkingLevel = "",
+  serviceTier = "",
   runtimes,
   onSelection,
   showLabel = true,
@@ -50,11 +53,15 @@ export function ModelDropdown({
   clearUnsupported = true,
   inline = false,
   allowEffort,
+  allowSpeed,
 }: ModelDropdownProps) {
   const { t } = useT("agents");
   const [open, setOpen] = useState(false);
   const modelsQuery = useQuery(
-    runtimeModelsOptions(runtimeOnline ? runtimeId : null, runtimes?.find((runtime) => runtime.id === runtimeId)?.workspace_id),
+    runtimeModelsOptions(
+      runtimeOnline ? runtimeId : null,
+      runtimes?.find((runtime) => runtime.id === runtimeId)?.workspace_id,
+    ),
   );
   const supported = modelsQuery.data?.supported ?? true;
   const effortEditable = allowEffort ?? Boolean(onSelection);
@@ -99,7 +106,9 @@ export function ModelDropdown({
           runtimeId={runtimeId ?? ""}
           model={value}
           thinkingLevel={thinkingLevel}
+          serviceTier={serviceTier}
           allowEffort={effortEditable}
+          allowSpeed={allowSpeed ?? effortEditable}
           className="h-96"
           autoFocus={false}
           preferFavorites={false}
@@ -159,7 +168,9 @@ export function ModelDropdown({
                 runtimeId={runtimeId ?? ""}
                 model={value}
                 thinkingLevel={thinkingLevel}
+                serviceTier={serviceTier}
                 allowEffort={effortEditable}
+                allowSpeed={allowSpeed ?? effortEditable}
                 onSelect={async (selection) => {
                   if (onSelection) await onSelection(selection);
                   else await onChange(selection.model);

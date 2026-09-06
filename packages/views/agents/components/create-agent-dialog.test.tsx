@@ -2,7 +2,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import type { Agent, MemberWithUser, RuntimeDevice } from "@patchbay/core/types";
 import { I18nProvider } from "@patchbay/core/i18n/react";
 import { WorkspaceSlugProvider } from "@patchbay/core/paths";
@@ -33,7 +33,7 @@ vi.mock("@patchbay/core/hooks", () => ({
 vi.mock("./model-dropdown", () => ({
   ModelDropdown: (props: import("./model-dropdown").ModelDropdownProps) => <div>
     <span className="truncate">{props.runtimes?.find((runtime) => runtime.id === props.runtimeId)?.name}</span>
-    {props.runtimes?.map((runtime) => <button key={runtime.id} type="button" onClick={() => void props.onSelection?.({ runtimeId: runtime.id, model: "", thinkingLevel: "", catalog: [] })}>{runtime.name}</button>)}
+    {props.runtimes?.map((runtime) => <button key={runtime.id} type="button" onClick={() => void props.onSelection?.({ runtimeId: runtime.id, model: "", thinkingLevel: "", serviceTier: "", catalog: [] })}>{runtime.name}</button>)}
   </div>,
 }));
 
@@ -164,6 +164,14 @@ describe("CreateAgentDialog runtime visibility gate", () => {
   afterEach(() => {
     cleanup();
     document.body.innerHTML = "";
+  });
+
+  it("preserves the selected model, effort and speed when duplicating on the same runtime", async () => {
+    const runtime = makeRuntime({ id: "rt-codex", provider: "codex", owner_id: ME });
+    const template = { ...makeDuplicateSource(runtime.id), model: "gpt-6-astra", thinking_level: "high", service_tier: "priority" };
+    const { onCreate } = renderDialog([runtime], template);
+    fireEvent.click(screen.getByText("Create"));
+    await waitFor(() => expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({ runtime_id: "rt-codex", model: "gpt-6-astra", thinking_level: "high", service_tier: "priority" })));
   });
 
   it("omits another member's private runtime from the selector", () => {

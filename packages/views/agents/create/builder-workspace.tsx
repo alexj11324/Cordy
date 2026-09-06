@@ -279,6 +279,7 @@ export function BuilderWorkspace({
         selection.model,
       ),
       thinkingLevel: selection.thinkingLevel,
+      serviceTier: selection.serviceTier,
     }));
   };
 

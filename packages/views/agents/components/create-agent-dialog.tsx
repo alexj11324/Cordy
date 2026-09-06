@@ -139,6 +139,7 @@ export function CreateAgentDialog({
       target_id: tgt.target_id as string,
     }));
 
+  const [serviceTier, setServiceTier] = useState(template?.service_tier ?? "");
   const [thinkingLevel, setThinkingLevel] = useState(template?.thinking_level ?? "");
   const [model, setModel] = useState(template?.model ?? "");
   const [instructions, setInstructions] = useState(template?.instructions ?? "");
@@ -173,6 +174,7 @@ export function CreateAgentDialog({
     setSelectedRuntimeId(candidate.id);
     setModel("");
     setThinkingLevel("");
+    setServiceTier("");
   }, [selectedRuntimeId, runtimesLoading, runtimes, currentUserId]);
   // Defense-in-depth: even if a locked runtime somehow ends up selected
   // (e.g. duplicate of an agent whose template runtime is now locked, and
@@ -237,6 +239,7 @@ export function CreateAgentDialog({
         runtime_id: selectedRuntime.id,
         model: model.trim() || undefined,
         thinking_level: thinkingLevel.trim() || undefined,
+        service_tier: serviceTier.trim() || undefined,
         instructions: trimmedInstructions || undefined,
         avatar_url: avatarUrl ?? undefined,
         skill_ids: [...selectedSkillIds],
@@ -438,16 +441,19 @@ export function CreateAgentDialog({
               onChange={(model) => {
                 setModel(model);
                 setThinkingLevel("");
+                setServiceTier("");
               }}
               thinkingLevel={thinkingLevel}
+              serviceTier={serviceTier}
               provider={selectedRuntime?.provider}
               runtimes={runtimes.filter((runtime) =>
                 isRuntimeUsableForUser(runtime, currentUserId),
               )}
-              onSelection={({ runtimeId, model, thinkingLevel }) => {
+              onSelection={({ runtimeId, model, thinkingLevel, serviceTier }) => {
                 setSelectedRuntimeId(runtimeId);
                 setModel(model);
                 setThinkingLevel(thinkingLevel);
+                setServiceTier(serviceTier);
               }}
               disabled={runtimesLoading || creating}
             />

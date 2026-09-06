@@ -343,11 +343,13 @@ function InstructionsSection({
   canWrite,
   runtimeId,
   thinkingLevel,
+  serviceTier,
 }: {
   automation: Automation;
   canWrite: boolean;
   runtimeId: string | null;
   thinkingLevel: string;
+  serviceTier: string;
 }) {
   const { t } = useT("automations");
   const updateAutomation = useUpdateAutomation();
@@ -411,6 +413,7 @@ function InstructionsSection({
               allowEffort={false}
               provider={runtime?.provider}
               thinkingLevel={thinkingLevel}
+              serviceTier={serviceTier}
               runtimes={runtime ? [runtime] : []}
               runtimeId={runtimeId}
               runtimeOnline={runtime?.status === "online"}
@@ -842,6 +845,7 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
             canWrite={canWrite}
             runtimeId={runtimeId}
             thinkingLevel={executorAgent?.thinking_level ?? ""}
+            serviceTier={executorAgent?.service_tier ?? ""}
           />
 
           <AutomationToolsSection automation={automation} canWrite={canWrite} />

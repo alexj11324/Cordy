@@ -30,7 +30,6 @@ import {
   buildModelChangeUpdate,
   type ModelCatalog,
 } from "./inspector/model-change-cleanup";
-import { ServiceTierSettingField } from "./inspector/service-tier-setting-field";
 
 interface InspectorProps {
   agent: Agent;
@@ -248,37 +247,21 @@ export function AgentDetailInspector({
             canEdit={canEdit}
             provider={runtime?.provider}
             thinkingLevel={agent.thinking_level ?? ""}
+            serviceTier={agent.service_tier ?? ""}
             runtimes={runtimes.filter((item) =>
               isRuntimeUsableForUser(item, currentUserId),
             )}
-            onSelection={({ runtimeId, model, thinkingLevel, catalog }) =>
+            onSelection={({ runtimeId, model, thinkingLevel, serviceTier }) =>
               update({
-                ...(runtimeId === agent.runtime_id
-                  ? buildModelChangeUpdate({
-                      provider: runtime?.provider ?? "",
-                      model,
-                      thinkingLevel,
-                      serviceTier: agent.service_tier ?? "",
-                      catalog,
-                    })
-                  : { runtime_id: runtimeId, model, service_tier: "" }),
+                ...(runtimeId !== agent.runtime_id ? { runtime_id: runtimeId } : {}),
+                model,
                 thinking_level: thinkingLevel,
+                service_tier: serviceTier,
               })
             }
             onChange={handleModelChange}
           />
-            <ServiceTierSettingField
-              standalone
-              label={t(($) => $.inspector.prop_speed)}
-              runtimeId={agent.runtime_id}
-              workspaceId={runtime?.workspace_id}
-              runtimeOnline={canDiscoverRuntimeModels}
-              provider={runtime?.provider ?? ""}
-              model={agent.model ?? ""}
-              value={agent.service_tier ?? ""}
-              canEdit={canEdit}
-              onChange={(serviceTier) => update({ service_tier: serviceTier })}
-            />
+
         <SettingsCard>
           <SettingsRow
             label={t(($) => $.inspector.prop_concurrency)}

@@ -28,6 +28,10 @@ const catalogs = {
     {
       id: "gpt",
       label: "GPT",
+      supports_explicit_standard_service_tier: true,
+      service_tiers: [
+        { id: "priority", name: "Fast", description: "Faster responses" },
+      ],
       thinking: {
         supported_levels: [
           { value: "low", label: "Low" },
@@ -58,7 +62,11 @@ vi.mock("@patchbay/core/runtimes", () => ({
     }),
   }),
 }));
-function mount(onSelect = vi.fn(), options = runtimes) {
+function mount(
+  onSelect = vi.fn(),
+  options = runtimes,
+  props: Partial<React.ComponentProps<typeof ModelSelectorContent>> = {},
+) {
   render(
     <I18nProvider
       locale="en"
@@ -75,6 +83,7 @@ function mount(onSelect = vi.fn(), options = runtimes) {
           model="gpt"
           thinkingLevel="low"
           onSelect={onSelect}
+          {...props}
         />
       </QueryClientProvider>
     </I18nProvider>,
@@ -83,7 +92,84 @@ function mount(onSelect = vi.fn(), options = runtimes) {
 }
 beforeEach(() => useModelFavoritesStore.setState({ favorites: [] }));
 afterEach(cleanup);
-describe("three-column model selector", () => {
+describe("four-column model selector", () => {
+  it("keeps a stale saved speed visible until the user explicitly clears it", async () => {
+    const onSelect = mount(vi.fn(), runtimes, { serviceTier: "retired-fast" });
+    await screen.findByText("GPT");
+    expect(screen.getByText("retired-fast")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Runtime default" }));
+    await waitFor(() =>
+      expect(onSelect).toHaveBeenCalledWith(
+        expect.objectContaining({
+          model: "gpt",
+          thinkingLevel: "low",
+          serviceTier: "",
+        }),
+      ),
+    );
+  });
+  it("saves speed with the currently selected model and effort", async () => {
+    const onSelect = mount();
+    fireEvent.click(await screen.findByRole("button", { name: /^Fast/ }));
+    await waitFor(() =>
+      expect(onSelect).toHaveBeenCalledWith({
+        runtimeId: "codex",
+        model: "gpt",
+        thinkingLevel: "low",
+        serviceTier: "priority",
+        catalog: catalogs.codex,
+      }),
+    );
+  });
+  it("preserves supported speed when changing thinking effort", async () => {
+    const onSelect = mount(vi.fn(), runtimes, { serviceTier: "priority" });
+    fireEvent.click(await screen.findByRole("button", { name: "Extra high" }));
+    await waitFor(() =>
+      expect(onSelect).toHaveBeenCalledWith(
+        expect.objectContaining({
+          model: "gpt",
+          thinkingLevel: "xhigh",
+          serviceTier: "priority",
+        }),
+      ),
+    );
+  });
+  it("clears speed when switching to a different runtime", async () => {
+    const onSelect = mount(vi.fn(), runtimes, { serviceTier: "priority" });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Claude Work · claude" }),
+    );
+    fireEvent.click(await screen.findByText("Opus"));
+    fireEvent.click(screen.getByRole("button", { name: "High" }));
+    await waitFor(() =>
+      expect(onSelect).toHaveBeenCalledWith(
+        expect.objectContaining({ runtimeId: "claude", serviceTier: "" }),
+      ),
+    );
+    expect(screen.queryByRole("button", { name: /^Fast/ })).toBeNull();
+    expect(screen.getByText(enAgents.model_selector.no_speed)).toBeTruthy();
+  });
+  it("offers explicit standard independently from the runtime default", async () => {
+    const onSelect = mount();
+    fireEvent.click(await screen.findByRole("button", { name: /^Standard/ }));
+    await waitFor(() =>
+      expect(onSelect).toHaveBeenCalledWith(
+        expect.objectContaining({ serviceTier: "default" }),
+      ),
+    );
+  });
+  it("shows inherited speed without writable options on model-only entries", async () => {
+    mount(vi.fn(), runtimes, {
+      allowEffort: false,
+      allowSpeed: false,
+      serviceTier: "priority",
+    });
+    await screen.findByText("GPT");
+    expect(
+      screen.getByText(enAgents.model_selector.speed_inherited),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Fast/ })).toBeNull();
+  });
   it("finishes a visible refresh revolution after an immediate cached response", async () => {
     mount();
     await screen.findByText("GPT");
@@ -118,6 +204,7 @@ describe("three-column model selector", () => {
         runtimeId: "qwenpaw",
         model: "",
         thinkingLevel: "",
+        serviceTier: "",
         catalog: [],
       }),
     );
@@ -146,6 +233,7 @@ describe("three-column model selector", () => {
         runtimeId: "agy",
         model: "gemini-low",
         thinkingLevel: "",
+        serviceTier: "",
         catalog: catalogs.agy,
       }),
     );
@@ -166,6 +254,7 @@ describe("three-column model selector", () => {
         runtimeId: "claude",
         model: "opus",
         thinkingLevel: "high",
+        serviceTier: "",
         catalog: catalogs.claude,
       }),
     );
@@ -187,6 +276,7 @@ describe("three-column model selector", () => {
         runtimeId: "codex",
         model: "gpt",
         thinkingLevel: "xhigh",
+        serviceTier: "",
         catalog: catalogs.codex,
       }),
     );

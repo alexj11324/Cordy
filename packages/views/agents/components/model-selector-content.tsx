@@ -27,6 +27,8 @@ import {
   groupModelSelectorOptions,
   nativeEffortLabel,
 } from "./model-selector-options";
+import { ModelSpeedColumn } from "./model-speed-column";
+import { buildModelChangeUpdate } from "./inspector/model-change-cleanup";
 import { findModelCapabilityEntry } from "./inspector/model-capability";
 
 export type ModelSelectorRuntime = Pick<
@@ -34,15 +36,20 @@ export type ModelSelectorRuntime = Pick<
   "id" | "provider" | "name" | "status"
 > &
   Partial<Pick<RuntimeDevice, "workspace_id">>;
-export type ModelSelection = ModelFavorite & { catalog: RuntimeModel[] | null };
+export type ModelSelection = ModelFavorite & {
+  catalog: RuntimeModel[] | null;
+  serviceTier: string;
+};
 
 export function ModelSelectorContent({
   runtimes,
   runtimeId,
   model,
   thinkingLevel,
+  serviceTier = "",
   onSelect,
   allowEffort = true,
+  allowSpeed = allowEffort,
   className,
   autoFocus = true,
   preferFavorites = true,
@@ -51,8 +58,10 @@ export function ModelSelectorContent({
   runtimeId: string;
   model: string;
   thinkingLevel: string;
+  serviceTier?: string;
   onSelect: (selection: ModelSelection) => Promise<void> | void;
   allowEffort?: boolean;
+  allowSpeed?: boolean;
   className?: string;
   autoFocus?: boolean;
   preferFavorites?: boolean;
@@ -131,7 +140,36 @@ export function ModelSelectorContent({
       (item) => modelFavoriteKey(item) === modelFavoriteKey(choice),
     );
 
-  async function select(choice: ModelFavorite, fromFavorite = false) {
+  function compatibleSpeed(
+    choice: ModelFavorite,
+    selectedCatalog: RuntimeModel[] | null,
+  ) {
+    if (choice.runtimeId !== runtimeId) return "";
+    return (
+      buildModelChangeUpdate({
+        provider:
+          runtimes.find((item) => item.id === choice.runtimeId)?.provider ?? "",
+        model: choice.model,
+        thinkingLevel: choice.thinkingLevel,
+        serviceTier,
+        catalog: selectedCatalog,
+      }).service_tier ?? serviceTier
+    );
+  }
+  const browsingChoice = currentChoice(
+    browsingRuntimeId === runtimeId && browsingModel === model
+      ? thinkingLevel
+      : "",
+  );
+  const browsingServiceTier =
+    browsingRuntimeId === runtimeId && browsingModel === model
+      ? serviceTier
+      : compatibleSpeed(browsingChoice, catalog);
+
+  async function select(
+    choice: ModelFavorite & { serviceTier?: string },
+    fromFavorite = false,
+  ) {
     if (busy.current) return;
     busy.current = true;
     setSaving(true);
@@ -166,6 +204,9 @@ export function ModelSelectorContent({
         runtimeId: choice.runtimeId,
         model: choice.model,
         thinkingLevel: choice.thinkingLevel,
+        serviceTier: allowSpeed
+          ? (choice.serviceTier ?? compatibleSpeed(choice, selectedCatalog))
+          : serviceTier,
         catalog: selectedCatalog,
       });
     } catch (cause) {
@@ -249,16 +290,16 @@ export function ModelSelectorContent({
     >
       <nav
         aria-label={t(($) => $.model_selector.providers)}
-        className="w-11 shrink-0 overflow-y-auto border-r border-border/60 bg-muted/30 p-1"
+        className="w-16 shrink-0 overflow-y-auto border-r border-border/60 bg-background [scrollbar-width:none]"
       >
         <button
           type="button"
           aria-label={t(($) => $.model_selector.favorites)}
           aria-pressed={section === "favorites"}
           className={cn(
-            "relative mb-1 flex size-9 items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring",
+            "flex aspect-square w-full items-center justify-center hover:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
             section === "favorites" &&
-              "bg-accent text-accent-foreground ring-1 ring-inset ring-border",
+              "bg-primary/10 text-accent-foreground hover:bg-primary/15",
           )}
           onClick={() => {
             setSection("favorites");
@@ -266,9 +307,9 @@ export function ModelSelectorContent({
             setError("");
           }}
         >
-          <Star className="size-5 fill-current" aria-hidden />
+          <Star className="size-7 fill-current" aria-hidden />
         </button>
-        <div className="mb-1 border-b border-border/70" />
+        <div className="border-b border-border/70" />
         {runtimes.map((item) => (
           <button
             key={item.id}
@@ -278,15 +319,12 @@ export function ModelSelectorContent({
             aria-pressed={section === item.id}
             onClick={() => showRuntime(item.id)}
             className={cn(
-              "relative mb-1 flex size-9 items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring",
+              "flex aspect-square w-full items-center justify-center hover:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
               section === item.id &&
-                "bg-accent text-accent-foreground ring-1 ring-inset ring-border",
+                "bg-primary/10 text-accent-foreground hover:bg-primary/15",
             )}
           >
-            <ProviderLogo provider={item.provider} className="size-5" />
-            {section === item.id && (
-              <span className="pointer-events-none absolute -right-1 top-1/2 h-5 w-0.75 -translate-y-1/2 rounded-l-full bg-primary" />
-            )}
+            <ProviderLogo provider={item.provider} className="size-7" />
           </button>
         ))}
       </nav>
@@ -416,7 +454,7 @@ export function ModelSelectorContent({
             )}
           </div>
         ) : (
-          <div className="flex min-h-0 flex-1">
+          <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)]">
             <div
               className="min-w-0 flex-1 overflow-y-auto p-1.5"
               aria-label={t(($) => $.model_dropdown.label)}
@@ -536,6 +574,7 @@ export function ModelSelectorContent({
                     runtimeId: browsingRuntimeId,
                     model: "",
                     thinkingLevel: "",
+                    serviceTier: "",
                   })
                 }
               >
@@ -549,7 +588,7 @@ export function ModelSelectorContent({
             </div>
             <div
               aria-label={t(($) => $.model_selector.effort)}
-              className="w-36 shrink-0 overflow-y-auto border-l border-border/60 p-1.5 sm:w-44"
+              className="min-w-0 overflow-y-auto border-l border-border/60 p-1.5"
             >
               <p className="px-2 py-1 text-micro text-muted-foreground">
                 {t(($) => $.model_selector.effort)}
@@ -639,6 +678,19 @@ export function ModelSelectorContent({
                 </p>
               )}
             </div>
+            <ModelSpeedColumn
+              tiers={entry?.service_tiers ?? []}
+              supportsExplicitStandard={models.some(
+                (candidate) =>
+                  candidate.supports_explicit_standard_service_tier === true,
+              )}
+              value={allowSpeed ? browsingServiceTier : serviceTier}
+              editable={allowSpeed}
+              disabled={saving}
+              onSelect={(nextTier) =>
+                void select({ ...browsingChoice, serviceTier: nextTier })
+              }
+            />
           </div>
         )}
       </div>

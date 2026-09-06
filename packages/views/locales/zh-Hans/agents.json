@@ -949,6 +949,8 @@
     "clear_selection": "清除选择"
   },
   "model_selector": {
+    "no_speed": "此模型未提供速度选项。",
+    "speed_inherited": "速度沿用智能体或运行时设置。",
     "providers": "提供商",
     "favorites": "收藏",
     "effort": "思考强度",

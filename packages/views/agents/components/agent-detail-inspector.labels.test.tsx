@@ -32,9 +32,7 @@ vi.mock("./inspector/thinking-prop-row", () => ({
   ThinkingSettingField: () => <div data-testid="thinking-field" />,
 }));
 
-vi.mock("./inspector/service-tier-setting-field", () => ({
-  ServiceTierSettingField: () => <div data-testid="service-tier-field" />,
-}));
+
 
 const agent = {
   id: "agent-1",

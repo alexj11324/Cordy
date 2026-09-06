@@ -971,6 +971,8 @@
     "clear_selection": "Clear selection"
   },
   "model_selector": {
+    "no_speed": "This model has no advertised speed options.",
+    "speed_inherited": "Speed follows the existing agent or runtime settings.",
     "providers": "Providers",
     "favorites": "Favorites",
     "effort": "Thinking effort",
