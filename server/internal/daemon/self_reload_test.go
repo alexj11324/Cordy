@@ -263,7 +263,7 @@ func TestTrySelfReload_ReleasesBarrierWhenHandoffFails(t *testing.T) {
 
 // TestAutoUpdateLoop_WatchesTheBinaryWhenAutoUpdateIsOff is the review's first
 // product decision: the on-disk check must not sit behind
-// PATCHBAY_DAEMON_AUTO_UPDATE. Self-hosted daemons default auto-update off
+// ORVILO_DAEMON_AUTO_UPDATE. Self-hosted daemons default auto-update off
 // (MUL-2381), and "don't pull from GitHub" is not "don't follow the binary I
 // replaced myself".
 func TestAutoUpdateLoop_WatchesTheBinaryWhenAutoUpdateIsOff(t *testing.T) {

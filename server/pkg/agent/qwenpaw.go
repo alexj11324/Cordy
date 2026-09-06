@@ -72,7 +72,7 @@ func (b *qwenpawBackend) Execute(ctx context.Context, prompt string, opts ExecOp
 	// auto-approves in hermesClient.handleAgentRequest by selecting
 	// a safe granting option for each session/request_permission request.
 	//
-	// ExtraArgs (PATCHBAY_QWENPAW_ARGS, daemon-wide) precede CustomArgs
+	// ExtraArgs (ORVILO_QWENPAW_ARGS, daemon-wide) precede CustomArgs
 	// (per-agent), matching the documented precedence and the other backends
 	// that accept both.
 	qwenpawArgs := []string{"acp"}

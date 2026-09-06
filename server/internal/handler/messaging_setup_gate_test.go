@@ -8,8 +8,8 @@ import (
 )
 
 func TestServerConfiguredMessagingRejectsEveryInstallationWrite(t *testing.T) {
-	t.Setenv("PATCHBAY_APP_URL", "https://app.example.test")
-	t.Setenv("PATCHBAY_MESSAGING_MODE", "server_configured")
+	t.Setenv("ORVILO_APP_URL", "https://app.example.test")
+	t.Setenv("ORVILO_MESSAGING_MODE", "server_configured")
 	h := &Handler{}
 	tests := []struct {
 		name string

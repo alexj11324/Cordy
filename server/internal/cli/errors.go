@@ -342,12 +342,12 @@ func DetectLanguage() Language {
 // kindMessages holds the {English, Chinese} user-facing message for each kind.
 var kindMessages = map[ErrorKind][2]string{
 	KindNetworkTimeout: {
-		"Request timed out: the server did not respond in time. Check your network connection or try again later. You can raise the limit with PATCHBAY_HTTP_TIMEOUT.",
-		"请求超时：服务器未在规定时间内响应。请检查网络连接或稍后重试。可通过 PATCHBAY_HTTP_TIMEOUT 调高超时时间。",
+		"Request timed out: the server did not respond in time. Check your network connection or try again later. You can raise the limit with ORVILO_HTTP_TIMEOUT.",
+		"请求超时：服务器未在规定时间内响应。请检查网络连接或稍后重试。可通过 ORVILO_HTTP_TIMEOUT 调高超时时间。",
 	},
 	KindNetworkStalled: {
-		"Transfer stalled: the connection stopped sending data before the response was complete. Check your network connection or try again. You can raise the no-progress budget with PATCHBAY_HTTP_STALL_TIMEOUT.",
-		"传输中断：响应尚未接收完毕，连接就停止发送数据。请检查网络连接或重试。可通过 PATCHBAY_HTTP_STALL_TIMEOUT 调高无进展等待时间。",
+		"Transfer stalled: the connection stopped sending data before the response was complete. Check your network connection or try again. You can raise the no-progress budget with ORVILO_HTTP_STALL_TIMEOUT.",
+		"传输中断：响应尚未接收完毕，连接就停止发送数据。请检查网络连接或重试。可通过 ORVILO_HTTP_STALL_TIMEOUT 调高无进展等待时间。",
 	},
 	KindNetworkDNS: {
 		"Could not resolve the Patchbay server address. Check your network connection or the --server-url setting.",
@@ -438,7 +438,7 @@ func messageFor(kind ErrorKind, lang Language) string {
 //
 // When debug is false it skips the internal verb chain ("resolve issue: ...")
 // and the raw URL/JSON body, showing only the friendly message. When debug is
-// true (or PATCHBAY_DEBUG is set) it additionally prints the full original
+// true (or ORVILO_DEBUG is set) it additionally prints the full original
 // error chain for troubleshooting.
 func FormatError(err error, debug bool) string {
 	if err == nil {
@@ -570,7 +570,7 @@ func looksLikeMachineCode(s string) bool {
 }
 
 // debugDetail renders the full original error chain plus any structured
-// details from typed errors, for --debug / PATCHBAY_DEBUG output.
+// details from typed errors, for --debug / ORVILO_DEBUG output.
 func debugDetail(err error) string {
 	var sb strings.Builder
 	sb.WriteString("[debug] ")
@@ -588,9 +588,9 @@ func debugDetail(err error) string {
 	return sb.String()
 }
 
-// debugEnabled reports whether PATCHBAY_DEBUG requests debug output.
+// debugEnabled reports whether ORVILO_DEBUG requests debug output.
 func debugEnabled() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("PATCHBAY_DEBUG"))) {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("ORVILO_DEBUG"))) {
 	case "", "0", "false", "no", "off":
 		return false
 	default:

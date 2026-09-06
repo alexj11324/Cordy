@@ -644,7 +644,7 @@ func TestGrokAttributesUsageOnResumeWithoutConfiguredModel(t *testing.T) {
 		t.Fatalf("new grok backend: %v", err)
 	}
 	// No Model: the daemon leaves it empty whenever neither the agent nor
-	// PATCHBAY_GROK_MODEL pins one (see daemon.go resolveModel).
+	// ORVILO_GROK_MODEL pins one (see daemon.go resolveModel).
 	session, err := backend.Execute(context.Background(), "continue", ExecOptions{
 		ResumeSessionID: "ses_existing",
 		Timeout:         5 * time.Second,

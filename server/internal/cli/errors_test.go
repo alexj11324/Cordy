@@ -355,7 +355,7 @@ func TestHTTPTimeout(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("PATCHBAY_HTTP_TIMEOUT", tc.val)
+			t.Setenv("ORVILO_HTTP_TIMEOUT", tc.val)
 			if got := httpTimeout().String(); got != tc.want {
 				t.Errorf("httpTimeout() with %q = %s, want %s", tc.val, got, tc.want)
 			}

@@ -46,8 +46,8 @@ func captureStdout(t *testing.T, fn func() error) (string, error) {
 
 func TestRunSkillImportJsonTreatsDuplicateAsConflictResult(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "workspace-123")
+	t.Setenv("ORVILO_TOKEN", "test-token")
+	t.Setenv("ORVILO_WORKSPACE_ID", "workspace-123")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -81,7 +81,7 @@ func TestRunSkillImportJsonTreatsDuplicateAsConflictResult(t *testing.T) {
 		})
 	}))
 	defer srv.Close()
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
 
 	cmd := newSkillImportTestCmd()
 	_ = cmd.Flags().Set("url", "https://skills.sh/acme/review-helper")
@@ -115,8 +115,8 @@ func TestRunSkillImportJsonTreatsDuplicateAsConflictResult(t *testing.T) {
 
 func TestRunSkillImportSendsOnConflictAndPrintsStructuredResult(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "workspace-123")
+	t.Setenv("ORVILO_TOKEN", "test-token")
+	t.Setenv("ORVILO_WORKSPACE_ID", "workspace-123")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any
@@ -137,7 +137,7 @@ func TestRunSkillImportSendsOnConflictAndPrintsStructuredResult(t *testing.T) {
 		})
 	}))
 	defer srv.Close()
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
 
 	cmd := newSkillImportTestCmd()
 	_ = cmd.Flags().Set("url", "https://skills.sh/acme/review-helper")
@@ -183,9 +183,9 @@ func TestRunSkillSearchRequestsSearchEndpoint(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+	t.Setenv("ORVILO_TOKEN", "test-token")
 
 	cmd := &cobra.Command{Use: "search"}
 	cmd.Flags().String("output", "json", "")
@@ -265,9 +265,9 @@ func newSkillBodyCaptureServer(t *testing.T, wantMethod, wantPath string, body *
 
 func setSkillServerEnv(t *testing.T, serverURL string) {
 	t.Helper()
-	t.Setenv("PATCHBAY_SERVER_URL", serverURL)
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
+	t.Setenv("ORVILO_SERVER_URL", serverURL)
+	t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+	t.Setenv("ORVILO_TOKEN", "test-token")
 }
 
 func TestRunSkillCreateReadsContentFileVerbatim(t *testing.T) {
@@ -463,8 +463,8 @@ func TestRunSkillInlineEmptyContentKeepsExistingBehavior(t *testing.T) {
 
 func TestRunSkillRefreshPostsToRefreshEndpointAndPrintsTable(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "workspace-123")
+	t.Setenv("ORVILO_TOKEN", "test-token")
+	t.Setenv("ORVILO_WORKSPACE_ID", "workspace-123")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -487,7 +487,7 @@ func TestRunSkillRefreshPostsToRefreshEndpointAndPrintsTable(t *testing.T) {
 		})
 	}))
 	defer srv.Close()
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
 
 	cmd := &cobra.Command{Use: "refresh"}
 	cmd.Flags().String("server-url", "", "")
@@ -508,8 +508,8 @@ func TestRunSkillRefreshPostsToRefreshEndpointAndPrintsTable(t *testing.T) {
 
 func TestRunSkillRefreshJsonPrintsSkill(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "workspace-123")
+	t.Setenv("ORVILO_TOKEN", "test-token")
+	t.Setenv("ORVILO_WORKSPACE_ID", "workspace-123")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -520,7 +520,7 @@ func TestRunSkillRefreshJsonPrintsSkill(t *testing.T) {
 		})
 	}))
 	defer srv.Close()
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
 
 	cmd := &cobra.Command{Use: "refresh"}
 	cmd.Flags().String("server-url", "", "")

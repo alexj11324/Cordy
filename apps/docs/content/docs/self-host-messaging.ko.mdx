@@ -23,7 +23,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 - `DELETE /api/workspaces/{id}/slack/installations/{installationId}` — 연결 해제(owner / admin). 행은 감사 기록용으로 남고, 다시 연결하면 active로 돌아갑니다.
 - `POST /api/slack/binding/redeem` — "계정 연결" 링크에서 Slack user id를 로그인한 Patchbay 사용자에게 바인딩합니다.
 
-호스팅 전용(`PATCHBAY_SLACK_CLIENT_ID/_SECRET` 없이는 동작하지 않음):
+호스팅 전용(`ORVILO_SLACK_CLIENT_ID/_SECRET` 없이는 동작하지 않음):
 
 - `POST /api/workspaces/{id}/slack/install/managed` — 매니지드 OAuth 승인을 시작합니다(owner/admin). Body: `{ "redirect_url": "…" }`.
 - `GET /api/integrations/slack/oauth/callback` — Slack 리디렉션용 공개 엔드포인트. 일회용 state를 소비하고 code를 교환한 뒤 바인딩된 redirect URL로 302합니다.
@@ -32,7 +32,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 ## 1. BYO Socket Mode 배포
 
-1. `PATCHBAY_SLACK_SECRET_KEY` 를 설정하고([자격 증명 취급](#4-자격-증명-취급) 참조) 백엔드를 다시 시작합니다. 이 키가 없으면 Slack 연동 전체가 비활성화됩니다.
+1. `ORVILO_SLACK_SECRET_KEY` 를 설정하고([자격 증명 취급](#4-자격-증명-취급) 참조) 백엔드를 다시 시작합니다. 이 키가 없으면 Slack 연동 전체가 비활성화됩니다.
 2. [Slack Bot 연동](/slack-bot-integration) 의 manifest로 에이전트마다 Slack app을 만들고 Slack workspace에 설치한 뒤, `xoxb-` Bot token과 `xapp-` App-level Token(`connections:write` scope)을 복사합니다.
 3. Patchbay에서 해당 에이전트의 **연동** 페이지를 열어 두 token을 붙여넣거나, `POST .../slack/install/byo?agent_id=…` 를 직접 호출합니다.
 4. Patchbay는 저장 전에 쌍을 검증합니다.
@@ -45,7 +45,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 Go 백엔드에는 BYO와 별도로 호스트형(매니지드) OAuth 서비스가 포함되어 있습니다(`server/internal/integrations/slack/managed_oauth.go`). 일회용·10분 유효·해시 저장 방식의 설치 state를 발급하고(DB에 닿는 것은 state 해시뿐입니다), 콜백 code를 `https://slack.com/api/oauth.v2.access` 에서 교환합니다. 설치자가 방문하는 주소는 `https://slack.com/oauth/v2/authorize` 이며, scope는 `ManagedSlackBotScopes` (`app_mentions:read,channels:history,chat:write,commands,files:read,groups:history,im:history,mpim:history,reactions:write,users:read`)입니다. 매니지드 클라이언트 자격 증명이 없으면 교환이 어중간하게 동작하지 않고 명시적으로 실패합니다.
 
-자체 호스팅 배포는 BYO 경로를 그대로 사용하므로 OAuth 콜백 설정이 필요 없습니다. Go 서버의 매니지드 begin / callback 라우트는 호스팅 클라이언트 자격 증명(`PATCHBAY_SLACK_CLIENT_ID/_SECRET`) 없이는 동작하지 않습니다. BYO 설치 자체에는 OAuth code 교환이 없습니다. 자체 호스팅용 설치의 app manifest에 Slack redirect URL을 추가하지 마세요. Socket Mode에는 필요 없습니다.
+자체 호스팅 배포는 BYO 경로를 그대로 사용하므로 OAuth 콜백 설정이 필요 없습니다. Go 서버의 매니지드 begin / callback 라우트는 호스팅 클라이언트 자격 증명(`ORVILO_SLACK_CLIENT_ID/_SECRET`) 없이는 동작하지 않습니다. BYO 설치 자체에는 OAuth code 교환이 없습니다. 자체 호스팅용 설치의 app manifest에 Slack redirect URL을 추가하지 마세요. Socket Mode에는 필요 없습니다.
 
 ## 3. localhost 바인딩 경고
 
@@ -59,17 +59,17 @@ Go 백엔드에는 BYO와 별도로 호스트형(매니지드) OAuth 서비스�
 
 메시징 링크가 동작하는지는 두 URL 설정에 달려 있습니다.
 
-- 계정 연결 링크는 `PATCHBAY_APP_URL` 을 사용하고, 미설정 시 `FRONTEND_ORIGIN` 으로 폴백합니다. `PATCHBAY_PUBLIC_URL` (백엔드 / API용 URL)은 사용하지 않습니다. 모든 멤버가 접근할 수 있는 Patchbay 주소를 지정하고, loopback 주소는 피하세요.
+- 계정 연결 링크는 `ORVILO_APP_URL` 을 사용하고, 미설정 시 `FRONTEND_ORIGIN` 으로 폴백합니다. `ORVILO_PUBLIC_URL` (백엔드 / API용 URL)은 사용하지 않습니다. 모든 멤버가 접근할 수 있는 Patchbay 주소를 지정하고, loopback 주소는 피하세요.
 - 자체 호스팅 환경에서는 `FRONTEND_ORIGIN` 을 공개 app origin으로 반드시 설정합니다. 초대 링크, cookie 속성, WebSocket origin 검사가 모두 여기서 파생됩니다.
 
-연결 링크나 `/api/config` 의 `daemon_server_url` 가 여전히 `localhost` 라면 `.env` 에 로컬 기본값이 남아 있는 것입니다. `FRONTEND_ORIGIN` 과 `PATCHBAY_APP_URL` 을 공개 URL로 명시 설정한 뒤 `docker compose -f docker-compose.selfhost.yml up -d` 로 컨테이너를 다시 만드세요(`restart` 만으로는 `.env` 가 다시 읽히지 않습니다).
+연결 링크나 `/api/config` 의 `daemon_server_url` 가 여전히 `localhost` 라면 `.env` 에 로컬 기본값이 남아 있는 것입니다. `FRONTEND_ORIGIN` 과 `ORVILO_APP_URL` 을 공개 URL로 명시 설정한 뒤 `docker compose -f docker-compose.selfhost.yml up -d` 로 컨테이너를 다시 만드세요(`restart` 만으로는 `.env` 가 다시 읽히지 않습니다).
 
 ## 4. 자격 증명 취급
 
-- `PATCHBAY_SLACK_SECRET_KEY` 는 Slack용 단일 배포 전체 키로, base64로 인코딩한 32바이트입니다.
+- `ORVILO_SLACK_SECRET_KEY` 는 Slack용 단일 배포 전체 키로, base64로 인코딩한 32바이트입니다.
 
   ```dotenv
-  PATCHBAY_SLACK_SECRET_KEY=<base64로 인코딩한 32바이트 키>
+  ORVILO_SLACK_SECRET_KEY=<base64로 인코딩한 32바이트 키>
   ```
 
   ```bash

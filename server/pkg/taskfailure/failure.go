@@ -126,7 +126,7 @@ const (
 	// provider was contacted. Deliberately NOT retryable — the stall is
 	// local and deterministic, so retrying re-pays the same wall-clock and
 	// fails identically. The user-facing fix is to raise
-	// PATCHBAY_OPENCLAW_CLI_TIMEOUT or speed the CLI up, which is why the
+	// ORVILO_OPENCLAW_CLI_TIMEOUT or speed the CLI up, which is why the
 	// copy names the CLI instead of blaming the network. Written by
 	// taskRunFailureReason in daemon/daemon.go.
 	ReasonRuntimeCLITimeout Reason = "runtime_cli_timeout"

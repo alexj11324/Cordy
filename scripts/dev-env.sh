@@ -27,17 +27,17 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-DEV_HOME="${PATCHBAY_DEV_HOME:-$HOME/.patchbay/dev}"
+DEV_HOME="${ORVILO_DEV_HOME:-$HOME/.patchbay/dev}"
 ENVS_DIR="$DEV_HOME/envs"
 LOCK_DIR="$DEV_HOME/lock.d"
-DEV_WORKSPACES_PARENT="${PATCHBAY_DEV_WORKSPACES_PARENT:-$HOME}"
-DEV_DESKTOP_APP_DATA="${PATCHBAY_DEV_DESKTOP_APP_DATA:-}"
-DEV_PROFILES_HOME="${PATCHBAY_DEV_PROFILES_HOME:-$HOME/.patchbay/profiles}"
+DEV_WORKSPACES_PARENT="${ORVILO_DEV_WORKSPACES_PARENT:-$HOME}"
+DEV_DESKTOP_APP_DATA="${ORVILO_DEV_DESKTOP_APP_DATA:-}"
+DEV_PROFILES_HOME="${ORVILO_DEV_PROFILES_HOME:-$HOME/.patchbay/profiles}"
 
-DEV_EMAIL="${PATCHBAY_DEV_EMAIL:-dev@localhost}"
+DEV_EMAIL="${ORVILO_DEV_EMAIL:-dev@localhost}"
 DEV_CODE_DEFAULT=888888
-WORKSPACE_NAME="${PATCHBAY_DEV_WORKSPACE_NAME:-Dev}"
-WORKSPACE_SLUG="${PATCHBAY_DEV_WORKSPACE_SLUG:-dev}"
+WORKSPACE_NAME="${ORVILO_DEV_WORKSPACE_NAME:-Dev}"
+WORKSPACE_SLUG="${ORVILO_DEV_WORKSPACE_SLUG:-dev}"
 
 ALL_COMPONENTS="api web daemon desktop"
 DEFAULT_COMPONENTS="api web"
@@ -45,20 +45,20 @@ DEFAULT_COMPONENTS="api web"
 # An agent runs with TMPDIR=/tmp/patchbay-task-<id>, deleted when the run ends.
 # Anything the Go toolchain builds there goes with it, so a binary started from
 # such a build stops being re-executable the moment its creator finishes.
-DEV_TMPDIR="${PATCHBAY_DEV_TMPDIR:-$HOME/.patchbay/dev-tmp}"
+DEV_TMPDIR="${ORVILO_DEV_TMPDIR:-$HOME/.patchbay/dev-tmp}"
 
-# The agent runtime exports these pointing at PRODUCTION, and PATCHBAY_SERVER_URL
+# The agent runtime exports these pointing at PRODUCTION, and ORVILO_SERVER_URL
 # silently outranks server_url in a saved profile config. Every long-lived child
 # is launched without them, so a local daemon cannot authenticate its local
 # token against the production API — which fails as a bare 401 and reads like a
 # product bug. PATH is never stripped: the daemon resolves agent CLI paths by
 # forking the login shell.
 CLEAN_ENV=(env
-  -u PATCHBAY_SERVER_URL -u PATCHBAY_TOKEN -u PATCHBAY_WORKSPACE_ID
-  -u PATCHBAY_DAEMON_PORT -u PATCHBAY_AGENT_ID -u PATCHBAY_AGENT_NAME
-  -u PATCHBAY_TASK_ID -u PATCHBAY_TASK_SLOT
-  -u PATCHBAY_TASK_CONFIG_ROOT -u PATCHBAY_TASK_WORKSPACES_ROOT
-  -u PATCHBAY_WORKSPACES_ROOT)
+  -u ORVILO_SERVER_URL -u ORVILO_TOKEN -u ORVILO_WORKSPACE_ID
+  -u ORVILO_DAEMON_PORT -u ORVILO_AGENT_ID -u ORVILO_AGENT_NAME
+  -u ORVILO_TASK_ID -u ORVILO_TASK_SLOT
+  -u ORVILO_TASK_CONFIG_ROOT -u ORVILO_TASK_WORKSPACES_ROOT
+  -u ORVILO_WORKSPACES_ROOT)
 
 # ---------------------------------------------------------------- output ----
 
@@ -327,17 +327,17 @@ load_env_file() {
 # makes `up` able to log itself in without a human reading a log for a code.
 ensure_dev_code() {
   local file="$REPO_ROOT/$1" tmp
-  if grep -qE '^PATCHBAY_DEV_VERIFICATION_CODE=[0-9]{6}$' "$file"; then
+  if grep -qE '^ORVILO_DEV_VERIFICATION_CODE=[0-9]{6}$' "$file"; then
     return 0
   fi
-  if grep -q '^PATCHBAY_DEV_VERIFICATION_CODE=' "$file"; then
+  if grep -q '^ORVILO_DEV_VERIFICATION_CODE=' "$file"; then
     tmp="$(mktemp)"
-    sed "s/^PATCHBAY_DEV_VERIFICATION_CODE=.*/PATCHBAY_DEV_VERIFICATION_CODE=$DEV_CODE_DEFAULT/" "$file" > "$tmp"
+    sed "s/^ORVILO_DEV_VERIFICATION_CODE=.*/ORVILO_DEV_VERIFICATION_CODE=$DEV_CODE_DEFAULT/" "$file" > "$tmp"
     mv "$tmp" "$file"
   else
-    printf '\nPATCHBAY_DEV_VERIFICATION_CODE=%s\n' "$DEV_CODE_DEFAULT" >> "$file"
+    printf '\nORVILO_DEV_VERIFICATION_CODE=%s\n' "$DEV_CODE_DEFAULT" >> "$file"
   fi
-  info "Set PATCHBAY_DEV_VERIFICATION_CODE=$DEV_CODE_DEFAULT in $1 (ignored when APP_ENV=production)."
+  info "Set ORVILO_DEV_VERIFICATION_CODE=$DEV_CODE_DEFAULT in $1 (ignored when APP_ENV=production)."
 }
 
 # `dev-env.sh login` needs the endpoint to exist in the process it talks to, and
@@ -346,17 +346,17 @@ ensure_dev_code() {
 # is what makes a login possible without a second restart.
 ensure_dev_login() {
   local file="$REPO_ROOT/$1" tmp
-  if grep -qE '^PATCHBAY_DEV_LOGIN=1$' "$file"; then
+  if grep -qE '^ORVILO_DEV_LOGIN=1$' "$file"; then
     return 0
   fi
-  if grep -q '^PATCHBAY_DEV_LOGIN=' "$file"; then
+  if grep -q '^ORVILO_DEV_LOGIN=' "$file"; then
     tmp="$(mktemp)"
-    sed 's/^PATCHBAY_DEV_LOGIN=.*/PATCHBAY_DEV_LOGIN=1/' "$file" > "$tmp"
+    sed 's/^ORVILO_DEV_LOGIN=.*/ORVILO_DEV_LOGIN=1/' "$file" > "$tmp"
     mv "$tmp" "$file"
   else
-    printf '\nPATCHBAY_DEV_LOGIN=1\n' >> "$file"
+    printf '\nORVILO_DEV_LOGIN=1\n' >> "$file"
   fi
-  info "Set PATCHBAY_DEV_LOGIN=1 in $1 (ignored when APP_ENV=production)."
+  info "Set ORVILO_DEV_LOGIN=1 in $1 (ignored when APP_ENV=production)."
 }
 
 rewrite_env_ports() {
@@ -371,9 +371,9 @@ rewrite_env_ports() {
     -e "s|^FRONTEND_ORIGIN=.*|FRONTEND_ORIGIN=http://localhost:${frontend}|" \
     -e "s|^POSTGRES_DB=.*|POSTGRES_DB=${db}|" \
     -e "s|^DATABASE_URL=.*|DATABASE_URL=${escaped_database_url}|" \
-    -e "s|^PATCHBAY_SERVER_URL=.*|PATCHBAY_SERVER_URL=ws://localhost:${backend}/ws|" \
-    -e "s|^PATCHBAY_PUBLIC_URL=.*|PATCHBAY_PUBLIC_URL=http://localhost:${backend}|" \
-    -e "s|^PATCHBAY_APP_URL=.*|PATCHBAY_APP_URL=http://localhost:${frontend}|" \
+    -e "s|^ORVILO_SERVER_URL=.*|ORVILO_SERVER_URL=ws://localhost:${backend}/ws|" \
+    -e "s|^ORVILO_PUBLIC_URL=.*|ORVILO_PUBLIC_URL=http://localhost:${backend}|" \
+    -e "s|^ORVILO_APP_URL=.*|ORVILO_APP_URL=http://localhost:${frontend}|" \
     -e "s|^NEXT_PUBLIC_API_URL=.*|NEXT_PUBLIC_API_URL=http://localhost:${backend}|" \
     -e "s|^NEXT_PUBLIC_WS_URL=.*|NEXT_PUBLIC_WS_URL=ws://localhost:${backend}/ws|" \
     "$file" > "$tmp"
@@ -481,13 +481,13 @@ launch_detached() {
 health_json() { curl -sf --max-time 3 "http://localhost:${BACKEND_PORT}/health" 2>/dev/null; }
 
 # DEV_EMAIL is initialized from the ambient environment before any env file is
-# read, so a PATCHBAY_DEV_EMAIL that lives only in .env / .env.worktree is not
+# read, so a ORVILO_DEV_EMAIL that lives only in .env / .env.worktree is not
 # visible yet at that point. Every consumer runs after load_env_file, so they
 # must resolve the address here rather than trust the startup default — sending
 # the stale default would sign the app in as a different user than the one
 # `make seed-dev` then looks for.
 dev_email() {
-  printf '%s' "${PATCHBAY_DEV_EMAIL:-$DEV_EMAIL}"
+  printf '%s' "${ORVILO_DEV_EMAIL:-$DEV_EMAIL}"
 }
 
 # POST /auth/dev-login once, printing the body with the HTTP status on its own
@@ -508,7 +508,7 @@ dev_login_request() {
 # typed into a URL — so the browser's `?onboarding=keep` escape hatch needs an
 # equivalent here.
 dev_login_onboarding_mode() {
-  [ "${PATCHBAY_DEV_KEEP_ONBOARDING:-}" = 1 ] && printf 'keep' || true
+  [ "${ORVILO_DEV_KEEP_ONBOARDING:-}" = 1 ] && printf 'keep' || true
 }
 
 json_field() {
@@ -657,7 +657,7 @@ EOF
 
 ensure_credentials() {
   local server="http://localhost:${BACKEND_PORT}" config="$PROFILE_DIR/config.json"
-  local code="${PATCHBAY_DEV_VERIFICATION_CODE:-$DEV_CODE_DEFAULT}"
+  local code="${ORVILO_DEV_VERIFICATION_CODE:-$DEV_CODE_DEFAULT}"
   local verify jwt pat ws
 
   if [ -f "$config" ]; then
@@ -673,7 +673,7 @@ ensure_credentials() {
 
   curl -sf -X POST "$server/auth/send-code" -H 'Content-Type: application/json' \
     -d "{\"email\":\"$(dev_email)\"}" >/dev/null \
-    || die "send-code failed. Is PATCHBAY_DEV_VERIFICATION_CODE set and APP_ENV non-production?"
+    || die "send-code failed. Is ORVILO_DEV_VERIFICATION_CODE set and APP_ENV non-production?"
 
   verify="$(curl -sS -X POST "$server/auth/verify-code" -H 'Content-Type: application/json' \
     -d "{\"email\":\"$(dev_email)\",\"code\":\"${code}\"}")"
@@ -741,14 +741,14 @@ start_daemon() {
   # `go run` the toolchain deletes that binary when the launcher exits, so the
   # daemon registers, heartbeats, and then fails every task with
   # "fork/exec .../go-build.../exe/patchbay: no such file or directory".
-  info "Building $PATCHBAY_BIN (a go run daemon would fail every task later)."
+  info "Building $ORVILO_BIN (a go run daemon would fail every task later)."
   (cd "$REPO_ROOT/server" && go build -o bin/patchbay ./cmd/patchbay) || die "Failed to build the patchbay CLI."
 
-  "${CLEAN_ENV[@]}" PATCHBAY_WORKSPACES_ROOT="$WORKSPACES_ROOT" \
-    "$PATCHBAY_BIN" daemon start --profile "$PROFILE" 2>&1 | sed 's/^/    /' || true
+  "${CLEAN_ENV[@]}" ORVILO_WORKSPACES_ROOT="$WORKSPACES_ROOT" \
+    "$ORVILO_BIN" daemon start --profile "$PROFILE" 2>&1 | sed 's/^/    /' || true
 
-  status="$("${CLEAN_ENV[@]}" PATCHBAY_WORKSPACES_ROOT="$WORKSPACES_ROOT" \
-    "$PATCHBAY_BIN" daemon status --profile "$PROFILE" --output json 2>/dev/null || true)"
+  status="$("${CLEAN_ENV[@]}" ORVILO_WORKSPACES_ROOT="$WORKSPACES_ROOT" \
+    "$ORVILO_BIN" daemon status --profile "$PROFILE" --output json 2>/dev/null || true)"
   state="$(json_field "$status" status || echo unknown)"
   # `daemon status` reports "stopped" plus port_conflict when the daemon
   # answering this profile's health port belongs to another profile, so a
@@ -773,7 +773,7 @@ start_desktop() {
   #
   # Desktop authenticates with a bearer token in renderer storage, so the cookie
   # `make dev-login` sets in a browser does nothing for it. Best-effort: a
-  # backend without PATCHBAY_DEV_LOGIN=1 simply gets no token and shows the
+  # backend without ORVILO_DEV_LOGIN=1 simply gets no token and shows the
   # login page.
   local desktop_email desktop_login desktop_login_status desktop_token=""
   desktop_email="$(dev_email)"
@@ -815,7 +815,7 @@ EOF
     desktop_slug="$(dev_workspace_slug "http://localhost:${BACKEND_PORT}" "$desktop_token" "$desktop_email" 2>/dev/null || true)"
     info "Desktop will start signed in as $desktop_email${desktop_slug:+ in workspace $desktop_slug} (dev token in $(basename "$DESKTOP_ENV_FILE"))."
   else
-    warn "Could not mint a desktop dev token; Electron will show the login page. Is PATCHBAY_DEV_LOGIN=1 in $ENV_FILE and the backend restarted?"
+    warn "Could not mint a desktop dev token; Electron will show the login page. Is ORVILO_DEV_LOGIN=1 in $ENV_FILE and the backend restarted?"
   fi
   launch_detached desktop env \
     DESKTOP_RENDERER_PORT="$DESKTOP_RENDERER_PORT" DESKTOP_APP_SUFFIX="$DESKTOP_APP_SUFFIX" \
@@ -868,13 +868,13 @@ stop_component() {
   local name=$1 pid launcher="" status state recorded_listener=""
   case "$name" in
     daemon)
-      if [ -x "$PATCHBAY_BIN" ]; then
-        if "${CLEAN_ENV[@]}" PATCHBAY_WORKSPACES_ROOT="$WORKSPACES_ROOT" \
-          "$PATCHBAY_BIN" daemon stop --profile "$PROFILE" >/dev/null 2>&1; then
+      if [ -x "$ORVILO_BIN" ]; then
+        if "${CLEAN_ENV[@]}" ORVILO_WORKSPACES_ROOT="$WORKSPACES_ROOT" \
+          "$ORVILO_BIN" daemon stop --profile "$PROFILE" >/dev/null 2>&1; then
           ok "daemon stopped"
         else
-          status="$("${CLEAN_ENV[@]}" PATCHBAY_WORKSPACES_ROOT="$WORKSPACES_ROOT" \
-            "$PATCHBAY_BIN" daemon status --profile "$PROFILE" --output json 2>/dev/null || true)"
+          status="$("${CLEAN_ENV[@]}" ORVILO_WORKSPACES_ROOT="$WORKSPACES_ROOT" \
+            "$ORVILO_BIN" daemon status --profile "$PROFILE" --output json 2>/dev/null || true)"
           state="$(json_field "$status" status || echo stopped)"
           if [ "$state" = running ]; then
             warn "daemon for profile $PROFILE is still running"
@@ -982,9 +982,9 @@ component_state() {
       ;;
     daemon)
       local status state
-      if [ -x "$PATCHBAY_BIN" ]; then
-        status="$("${CLEAN_ENV[@]}" PATCHBAY_WORKSPACES_ROOT="$WORKSPACES_ROOT" \
-          "$PATCHBAY_BIN" daemon status --profile "$PROFILE" --output json 2>/dev/null || true)"
+      if [ -x "$ORVILO_BIN" ]; then
+        status="$("${CLEAN_ENV[@]}" ORVILO_WORKSPACES_ROOT="$WORKSPACES_ROOT" \
+          "$ORVILO_BIN" daemon status --profile "$PROFILE" --output json 2>/dev/null || true)"
         state="$(json_field "$status" status || echo stopped)"
         printf '%s|%s|pid %s' "$state" "$PROFILE" "$(json_field "$status" pid || echo '-')"
       else
@@ -1073,7 +1073,7 @@ ${C_GREEN}✓ Environment ready.${C_OFF}
 
   ${entrypoint}
   Sign in     ${C_BOLD}make dev-login${C_OFF}  (no login page; prints a session URL + bearer token)
-              or $(dev_email) with code ${PATCHBAY_DEV_VERIFICATION_CODE:-$DEV_CODE_DEFAULT} on the login page
+              or $(dev_email) with code ${ORVILO_DEV_VERIFICATION_CODE:-$DEV_CODE_DEFAULT} on the login page
   Backend     http://localhost:${BACKEND_PORT}   (GET /health reports pid + commit + started_at)
   Commit      $(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)
   Environment ${NAME}$( [ "${TTL_HOURS:-0}" != 0 ] && printf ' (expires %s)' "$EXPIRES_AT" )
@@ -1107,9 +1107,9 @@ bind_paths() {
   DESKTOP_USER_DATA_DIR="${DESKTOP_USER_DATA_DIR:-$(desktop_user_data_dir "$DESKTOP_APP_SUFFIX")}"
   DESKTOP_ENV_FILE="${DESKTOP_ENV_FILE:-$DIR/apps/desktop/.env.development.local}"
   EXPIRES_AT="${EXPIRES_AT:-}"
-  PATCHBAY_BIN="$DIR/server/bin/patchbay"
-  if [ ! -x "$PATCHBAY_BIN" ] && [ -x "$REPO_ROOT/server/bin/patchbay" ]; then
-    PATCHBAY_BIN="$REPO_ROOT/server/bin/patchbay"
+  ORVILO_BIN="$DIR/server/bin/patchbay"
+  if [ ! -x "$ORVILO_BIN" ] && [ -x "$REPO_ROOT/server/bin/patchbay" ]; then
+    ORVILO_BIN="$REPO_ROOT/server/bin/patchbay"
   fi
   mkdir -p "$LOG_DIR"
 }
@@ -1504,7 +1504,7 @@ EOF
 }
 
 # Runs a command with this environment's variables, without the agent runtime's
-# production PATCHBAY_* values and with a durable TMPDIR. Replaces the prefix
+# production ORVILO_* values and with a durable TMPDIR. Replaces the prefix
 # people used to have to copy out of a document by hand.
 cmd_exec() {
   local name=""
@@ -1518,8 +1518,8 @@ cmd_exec() {
   load_env_file "$ENV_FILE" "$DIR"
   export PORT="$BACKEND_PORT" FRONTEND_PORT DATABASE_URL POSTGRES_DB="$DB_NAME"
   export TMPDIR="$DEV_TMPDIR" TMP="$DEV_TMPDIR" TEMP="$DEV_TMPDIR"
-  export PATCHBAY_DEV_PROFILE="$PROFILE"
-  exec "${CLEAN_ENV[@]}" PATCHBAY_WORKSPACES_ROOT="$WORKSPACES_ROOT" "$@"
+  export ORVILO_DEV_PROFILE="$PROFILE"
+  exec "${CLEAN_ENV[@]}" ORVILO_WORKSPACES_ROOT="$WORKSPACES_ROOT" "$@"
 }
 
 urlencode() {
@@ -1619,7 +1619,7 @@ cmd_login() {
   case "$status" in
     200) ;;
     404) die "This backend does not serve /auth/dev-login.
-Set PATCHBAY_DEV_LOGIN=1 in $ENV_FILE (a fresh 'make up' does it for you), keep APP_ENV non-production, then restart: make down && make up." ;;
+Set ORVILO_DEV_LOGIN=1 in $ENV_FILE (a fresh 'make up' does it for you), keep APP_ENV non-production, then restart: make down && make up." ;;
     403) die "Sign-in refused for $email: $body
 Check ALLOW_SIGNUP / ALLOWED_EMAILS / ALLOWED_EMAIL_DOMAINS in $ENV_FILE." ;;
     *) die "POST /auth/dev-login returned $status: $body" ;;

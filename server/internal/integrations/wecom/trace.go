@@ -10,7 +10,7 @@ package wecom
 // describe what they saw on a phone, which is slow, lossy, and impossible for
 // anything about ordering or timing.
 //
-// With PATCHBAY_WECOM_TRACE=1 the server records enough to check a real-device
+// With ORVILO_WECOM_TRACE=1 the server records enough to check a real-device
 // session afterwards: which way the frame went, what chat it was addressed
 // to, whether that chat is a room or a person, and what the server said back.
 // The switch also covers the one thing a frame does not carry — what an
@@ -50,7 +50,7 @@ import (
 var tracing atomic.Bool
 
 // SetTrace turns frame tracing on or off. Called from the server wiring with
-// PATCHBAY_WECOM_TRACE; returns what it set so the caller can log it.
+// ORVILO_WECOM_TRACE; returns what it set so the caller can log it.
 func SetTrace(on bool) bool {
 	tracing.Store(on)
 	return on
@@ -96,7 +96,7 @@ const traceHeaderRunes = 2048
 //
 // The redaction is not optional. OutboundReplier.sendBindingPrompt builds
 // "👋 请先绑定你的 Patchbay 账号，才能与我对话：\n" + appURL + "/wecom/bind?token=" +
-// a 43-character token, and with a normal PATCHBAY_APP_URL the token's last
+// a 43-character token, and with a normal ORVILO_APP_URL the token's last
 // character lands at rune 107-112 — inside the cap. Without this, turning
 // tracing on for a debugging session would log live binding credentials in
 // full. A binding token is a bearer credential (RedeemAndBind checks only

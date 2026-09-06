@@ -83,7 +83,7 @@ const (
 // A nil ChatQuickActionsLLM, or one whose Enabled() is false, disables the
 // feature entirely: no pending marker is raised and no pills are generated.
 // That is the expected state for a self-hosted deployment with no
-// PATCHBAY_LLM_API_KEY / PATCHBAY_LLM_BASE_URL, and matches how chat auto-titling
+// ORVILO_LLM_API_KEY / ORVILO_LLM_BASE_URL, and matches how chat auto-titling
 // already degrades.
 type ChatQuickActionsLLM interface {
 	Enabled() bool
@@ -214,7 +214,7 @@ func (s *TaskService) GenerateChatQuickActionsForTask(ctx context.Context, task 
 	}
 
 	raw, err := s.QuickActions.GenerateJSON(ctx,
-		"", // deployment default: PATCHBAY_LLM_DEFAULT_MODEL, else llm.FallbackModel
+		"", // deployment default: ORVILO_LLM_DEFAULT_MODEL, else llm.FallbackModel
 		chatQuickActionsSystemPrompt,
 		prompt,
 		chatQuickActionsTemperature,

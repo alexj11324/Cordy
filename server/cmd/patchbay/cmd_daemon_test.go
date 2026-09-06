@@ -52,9 +52,9 @@ func TestDaemonAlive(t *testing.T) {
 }
 
 func TestDaemonLocalCommandsFailClosedInTaskContext(t *testing.T) {
-	t.Setenv("PATCHBAY_AGENT_ID", "agent-test")
-	t.Setenv("PATCHBAY_TASK_ID", "task-test")
-	t.Setenv("PATCHBAY_TASK_CONFIG_ROOT", filepath.Join(t.TempDir(), "task-patchbay"))
+	t.Setenv("ORVILO_AGENT_ID", "agent-test")
+	t.Setenv("ORVILO_TASK_ID", "task-test")
+	t.Setenv("ORVILO_TASK_CONFIG_ROOT", filepath.Join(t.TempDir(), "task-patchbay"))
 
 	cases := map[string]func() error{
 		"probe-runtimes": func() error { return runDaemonProbeRuntimes(daemonProbeRuntimesCmd, nil) },
@@ -76,9 +76,9 @@ func TestDaemonProbeRuntimesLocalDoesNotLoadPatchbayProfile(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	t.Setenv("SHELL", "/bin/false")
 	for _, key := range []string{
-		"PATCHBAY_AGENT_ID",
-		"PATCHBAY_TASK_ID",
-		"PATCHBAY_TASK_CONFIG_ROOT",
+		"ORVILO_AGENT_ID",
+		"ORVILO_TASK_ID",
+		"ORVILO_TASK_CONFIG_ROOT",
 	} {
 		t.Setenv(key, "")
 	}
@@ -569,7 +569,7 @@ func newRestartTestCmd(t *testing.T, profile string) *cobra.Command {
 // the replacement child dies in preflight, leaving no daemon at all (#5165).
 func TestDaemonRestartRejectedTokenFailsBeforeStopping(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("PATCHBAY_SERVER_URL", "")
+	t.Setenv("ORVILO_SERVER_URL", "")
 
 	const profile = "restart-401test"
 
@@ -604,7 +604,7 @@ func TestDaemonRestartRejectedTokenFailsBeforeStopping(t *testing.T) {
 // replacement child would die in preflight against the same dead server.
 func TestDaemonRestartUnreachableServerFailsBeforeStopping(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("PATCHBAY_SERVER_URL", "")
+	t.Setenv("ORVILO_SERVER_URL", "")
 
 	const profile = "restart-unreachable-test"
 
@@ -671,7 +671,7 @@ func TestPrintDaemonStatusAlignsValuesWithProfileLabel(t *testing.T) {
 func TestPrintDiskUsageOtherRootsHintSuggestsProfilesWithTasks(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("PATCHBAY_WORKSPACES_ROOT", "")
+	t.Setenv("ORVILO_WORKSPACES_ROOT", "")
 
 	mkdirProfile(t, home, "empty")
 	mkdirProfile(t, home, "one-task")
@@ -719,7 +719,7 @@ func TestPrintDiskUsageOtherRootsHintSuggestsProfilesWithTasks(t *testing.T) {
 func TestPrintDiskUsageOtherRootsHintFiresWhenCurrentRootNonEmpty(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("PATCHBAY_WORKSPACES_ROOT", "")
+	t.Setenv("ORVILO_WORKSPACES_ROOT", "")
 
 	mkdirProfile(t, home, "desktop-host")
 	writeDiskUsageTaskFile(t, home, "desktop-host", "ws1", "task1", "workdir/main.go")
@@ -739,7 +739,7 @@ func TestPrintDiskUsageOtherRootsHintFiresWhenCurrentRootNonEmpty(t *testing.T) 
 func TestPrintDiskUsageOtherRootsHintSuggestsDefaultFromNamedProfile(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("PATCHBAY_WORKSPACES_ROOT", "")
+	t.Setenv("ORVILO_WORKSPACES_ROOT", "")
 
 	writeDefaultDiskUsageTaskFile(t, home, "ws0", "task0", "workdir/main.go")
 
@@ -758,7 +758,7 @@ func TestPrintDiskUsageOtherRootsHintUsesProfileConfig(t *testing.T) {
 	home := t.TempDir()
 	customRoot := filepath.Join(t.TempDir(), "custom-profile-root")
 	t.Setenv("HOME", home)
-	t.Setenv("PATCHBAY_WORKSPACES_ROOT", "")
+	t.Setenv("ORVILO_WORKSPACES_ROOT", "")
 	if err := cli.SaveCLIConfigForProfile(cli.CLIConfig{WorkspacesRoot: customRoot}, "custom"); err != nil {
 		t.Fatalf("SaveCLIConfigForProfile: %v", err)
 	}
@@ -781,7 +781,7 @@ func TestPrintDiskUsageOtherRootsHintUsesProfileConfig(t *testing.T) {
 func TestPrintDiskUsageOtherRootsHintSkipsExplicitRootOverride(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("PATCHBAY_WORKSPACES_ROOT", "")
+	t.Setenv("ORVILO_WORKSPACES_ROOT", "")
 
 	mkdirProfile(t, home, "has-task")
 	writeDiskUsageTaskFile(t, home, "has-task", "ws1", "task1", "workdir/main.go")
@@ -799,7 +799,7 @@ func TestPrintDiskUsageOtherRootsHintSkipsExplicitRootOverride(t *testing.T) {
 func TestEnumerateDiskUsageRoots(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("PATCHBAY_WORKSPACES_ROOT", "")
+	t.Setenv("ORVILO_WORKSPACES_ROOT", "")
 
 	// Two profiles configured under ~/.patchbay/profiles, but only one has its
 	// workspaces root created on disk; the other (never-run) profile is skipped.
@@ -956,7 +956,7 @@ func TestDaemonStatusHealthPortInTaskContext(t *testing.T) {
 	t.Run("port-only host context derives the port from the profile", func(t *testing.T) {
 		t.Chdir(t.TempDir())
 		clearDaemonTaskEnv(t)
-		t.Setenv("PATCHBAY_DAEMON_PORT", strconv.Itoa(injectedPort))
+		t.Setenv("ORVILO_DAEMON_PORT", strconv.Itoa(injectedPort))
 
 		cmd := &cobra.Command{}
 		cmd.Flags().String("profile", "", "")
@@ -978,8 +978,8 @@ func TestDaemonStatusHealthPortInTaskContext(t *testing.T) {
 	t.Run("inside a task uses the injected port", func(t *testing.T) {
 		t.Chdir(t.TempDir())
 		clearDaemonTaskEnv(t)
-		t.Setenv("PATCHBAY_TASK_ID", "task-test")
-		t.Setenv("PATCHBAY_DAEMON_PORT", strconv.Itoa(injectedPort))
+		t.Setenv("ORVILO_TASK_ID", "task-test")
+		t.Setenv("ORVILO_DAEMON_PORT", strconv.Itoa(injectedPort))
 
 		got, err := daemonStatusHealthPort(testCmd())
 		if err != nil {
@@ -996,8 +996,8 @@ func TestDaemonStatusHealthPortInTaskContext(t *testing.T) {
 	t.Run("inside a task rejects --profile", func(t *testing.T) {
 		t.Chdir(t.TempDir())
 		clearDaemonTaskEnv(t)
-		t.Setenv("PATCHBAY_TASK_ID", "task-test")
-		t.Setenv("PATCHBAY_DAEMON_PORT", strconv.Itoa(injectedPort))
+		t.Setenv("ORVILO_TASK_ID", "task-test")
+		t.Setenv("ORVILO_DAEMON_PORT", strconv.Itoa(injectedPort))
 
 		cmd := &cobra.Command{}
 		cmd.Flags().String("profile", "", "")
@@ -1015,11 +1015,11 @@ func TestDaemonStatusHealthPortInTaskContext(t *testing.T) {
 			t.Run(name, func(t *testing.T) {
 				t.Chdir(t.TempDir())
 				clearDaemonTaskEnv(t)
-				t.Setenv("PATCHBAY_TASK_ID", "task-test")
-				t.Setenv("PATCHBAY_DAEMON_PORT", value)
+				t.Setenv("ORVILO_TASK_ID", "task-test")
+				t.Setenv("ORVILO_DAEMON_PORT", value)
 
 				if _, err := daemonStatusHealthPort(testCmd()); err == nil {
-					t.Fatalf("PATCHBAY_DAEMON_PORT=%q resolved a port, want fail closed", value)
+					t.Fatalf("ORVILO_DAEMON_PORT=%q resolved a port, want fail closed", value)
 				}
 			})
 		}
@@ -1031,10 +1031,10 @@ func TestDaemonStatusHealthPortInTaskContext(t *testing.T) {
 func clearDaemonTaskEnv(t *testing.T) {
 	t.Helper()
 	for _, key := range []string{
-		"PATCHBAY_AGENT_ID",
-		"PATCHBAY_TASK_ID",
-		"PATCHBAY_DAEMON_PORT",
-		"PATCHBAY_TASK_CONFIG_ROOT",
+		"ORVILO_AGENT_ID",
+		"ORVILO_TASK_ID",
+		"ORVILO_DAEMON_PORT",
+		"ORVILO_TASK_CONFIG_ROOT",
 		daemon.TaskWorkspacesRootEnv,
 	} {
 		t.Setenv(key, "")

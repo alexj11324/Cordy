@@ -48,7 +48,7 @@ make selfhost
 처음 실행할 때 `make selfhost`가 다음 작업을 수행합니다.
 
 1. `.env.example`에서 `.env` 생성
-2. `JWT_SECRET`, PostgreSQL 비밀번호, `PATCHBAY_VCS_SECRET_KEY`(자체 호스팅 Git 연동 암호화 키)를 임의 생성
+2. `JWT_SECRET`, PostgreSQL 비밀번호, `ORVILO_VCS_SECRET_KEY`(자체 호스팅 Git 연동 암호화 키)를 임의 생성
 3. PostgreSQL, Patchbay backend, Patchbay frontend 이미지 pull
 4. persistent data volume 생성 및 세 컨테이너 시작
 5. backend가 health check에 응답할 때까지 대기
@@ -107,8 +107,8 @@ Docker Compose는 기본적으로 `3000`과 `8080`을 `127.0.0.1`에만 bind합�
 
 ```bash
 FRONTEND_ORIGIN=https://app.example.com
-PATCHBAY_APP_URL=https://app.example.com
-PATCHBAY_PUBLIC_URL=https://api.example.com
+ORVILO_APP_URL=https://app.example.com
+ORVILO_PUBLIC_URL=https://api.example.com
 ```
 
 이 설정에서는 모든 브라우저 트래픽이 app 도메인을 거치고 cookie가 도메인을 넘지 않으므로 `COOKIE_DOMAIN`을 설정할 필요가 없습니다. 브라우저에서 api 도메인에 직접 접근하게 바꾼다면 반드시 설정해야 합니다. [환경 변수](/environment-variables)를 참고하세요.
@@ -170,7 +170,7 @@ patchbay.example.com {
 }
 ```
 
-단일 오리진에서는 두 URL을 모두 그 오리진으로 지정합니다(`.env`의 `FRONTEND_ORIGIN`과 `PATCHBAY_APP_URL`, 그리고 `patchbay setup self-host`의 `--server-url`과 `--app-url`).
+단일 오리진에서는 두 URL을 모두 그 오리진으로 지정합니다(`.env`의 `FRONTEND_ORIGIN`과 `ORVILO_APP_URL`, 그리고 `patchbay setup self-host`의 `--server-url`과 `--app-url`).
 
 Caddy가 TLS 인증서를 발급하고 WebSocket을 전달합니다. `.env`를 수정한 뒤 `up -d`로 컨테이너를 다시 만들어 새 설정을 적용합니다.
 
@@ -180,7 +180,7 @@ curl -fsS https://api.example.com/readyz
 curl -fsS https://app.example.com/api/config | grep -o '"daemon_server_url":"[^"]*"'
 ```
 
-마지막 명령은 `daemon_server_url`(데몬이 API에 연결할 때 쓰는 URL)을 출력합니다: `PATCHBAY_DAEMON_SERVER_URL`이 설정되어 있으면 그 값을, 그다음 `PATCHBAY_PUBLIC_URL`, 둘 다 미설정이면 앱 URL(`PATCHBAY_APP_URL`, 미설정이면 `FRONTEND_ORIGIN`으로 폴백)을 사용합니다. `PATCHBAY_APP_URL`과 `FRONTEND_ORIGIN` 둘 다 설정되어 있지 않으면 `PATCHBAY_DAEMON_SERVER_URL`이나 `PATCHBAY_PUBLIC_URL`이 설정되어 있어도 이 필드는 응답에서 통째로 생략됩니다(위의 grep은 아무것도 출력하지 않음). `localhost`가 출력되면 `.env`가 아직 로컬 기본값인 것입니다: `.env.example`에서 복사한 `${FRONTEND_PORT}` 참조에 의존하지 말고 `FRONTEND_ORIGIN`과 `PATCHBAY_APP_URL`을 공개 URL로 명시적으로 설정한 뒤 컨테이너를 다시 만드세요.
+마지막 명령은 `daemon_server_url`(데몬이 API에 연결할 때 쓰는 URL)을 출력합니다: `ORVILO_DAEMON_SERVER_URL`이 설정되어 있으면 그 값을, 그다음 `ORVILO_PUBLIC_URL`, 둘 다 미설정이면 앱 URL(`ORVILO_APP_URL`, 미설정이면 `FRONTEND_ORIGIN`으로 폴백)을 사용합니다. `ORVILO_APP_URL`과 `FRONTEND_ORIGIN` 둘 다 설정되어 있지 않으면 `ORVILO_DAEMON_SERVER_URL`이나 `ORVILO_PUBLIC_URL`이 설정되어 있어도 이 필드는 응답에서 통째로 생략됩니다(위의 grep은 아무것도 출력하지 않음). `localhost`가 출력되면 `.env`가 아직 로컬 기본값인 것입니다: `.env.example`에서 복사한 `${FRONTEND_PORT}` 참조에 의존하지 말고 `FRONTEND_ORIGIN`과 `ORVILO_APP_URL`을 공개 URL로 명시적으로 설정한 뒤 컨테이너를 다시 만드세요.
 
 <Callout type="warning">
 `docker compose restart`는 기존 컨테이너만 다시 시작하며 `.env`를 다시 읽지 않습니다. 설정을 수정한 뒤 `.env`를 다시 읽게 하려면 `docker compose -f docker-compose.selfhost.yml up -d`를 실행하세요.
@@ -206,7 +206,7 @@ docker compose -f docker-compose.selfhost.yml logs backend \
 인증 코드를 입력하고 첫 워크스페이스를 만듭니다. Resend 또는 SMTP를 설정하면 이메일로 인증 코드가 전달되므로 멤버가 컨테이너 로그를 읽을 필요가 없습니다. 자세한 내용은 [로그인 및 가입 설정](/auth-setup)을 참고하세요.
 
 <Callout type="warning">
-자체 호스팅 환경은 기본적으로 `APP_ENV=production`을 사용하므로 고정 인증 코드가 활성화되지 않습니다. 공개 인터넷 인스턴스에 `PATCHBAY_DEV_VERIFICATION_CODE`를 설정하지 마세요.
+자체 호스팅 환경은 기본적으로 `APP_ENV=production`을 사용하므로 고정 인증 코드가 활성화되지 않습니다. 공개 인터넷 인스턴스에 `ORVILO_DEV_VERIFICATION_CODE`를 설정하지 마세요.
 </Callout>
 
 ## 5. 실행 컴퓨터 연결
@@ -314,11 +314,11 @@ docker compose -f docker-compose.selfhost.yml up -d
 실제로 어떤 버전이 뜰지는 `docker compose pull`이 결정합니다. 이 명령이 GHCR에 해당 태그가 지금 어떤 이미지를 가리키는지 물어보기 때문입니다. 그래서 몇 달 묵은 checkout에서도 오늘자 `latest` 이미지를 받을 수 있고, 반대로 `git pull`만 해서는 이미지를 받아 컨테이너를 다시 만들기 전까지 아무것도 바뀌지 않습니다.
 
 <Callout type="warning">
-**`PATCHBAY_IMAGE_TAG`를 고정해 뒀다면 두 방법 모두 업그레이드되지 않습니다.** 두 이미지 모두 `${PATCHBAY_IMAGE_TAG:-latest}`로 해석되며(`docker-compose.selfhost.yml`), `.env.example`에는 `PATCHBAY_IMAGE_TAG=latest`가 들어 있습니다. `.env`에서 특정 릴리스로 고정해 뒀다면 `pull`은 같은 태그를 다시 받아올 뿐이라 예전 버전에 그대로 머무릅니다 — 오류도, 경고도 없습니다. 업그레이드 전에 확인하세요.
+**`ORVILO_IMAGE_TAG`를 고정해 뒀다면 두 방법 모두 업그레이드되지 않습니다.** 두 이미지 모두 `${ORVILO_IMAGE_TAG:-latest}`로 해석되며(`docker-compose.selfhost.yml`), `.env.example`에는 `ORVILO_IMAGE_TAG=latest`가 들어 있습니다. `.env`에서 특정 릴리스로 고정해 뒀다면 `pull`은 같은 태그를 다시 받아올 뿐이라 예전 버전에 그대로 머무릅니다 — 오류도, 경고도 없습니다. 업그레이드 전에 확인하세요.
 
 ```bash
-grep PATCHBAY_IMAGE_TAG .env
-# PATCHBAY_IMAGE_TAG=v0.4.5   ← 고정됨: 먼저 latest(또는 원하는 릴리스)로 수정
+grep ORVILO_IMAGE_TAG .env
+# ORVILO_IMAGE_TAG=v0.4.5   ← 고정됨: 먼저 latest(또는 원하는 릴리스)로 수정
 ```
 </Callout>
 
@@ -366,7 +366,7 @@ HTTP 200이면서 두 검사가 모두 `ok`가 아니라면 새 버전이 migrat
 
 Helm은 자체 업그레이드 경로가 있습니다. values 파일에서 `images.backend.tag` / `images.frontend.tag`를 원하는 릴리스로 설정한 뒤 `helm upgrade`를 실행하세요. 태그가 바뀌면 파드 스펙이 바뀌므로 Kubernetes가 새 이미지를 받아 Deployment를 롤아웃합니다 — 이것이 확실한 경로입니다.
 
-`kubectl -n patchbay rollout restart`는 그 자체로는 업그레이드가 **아닙니다**. 차트는 `pullPolicy: IfNotPresent`로 배포되므로(`deploy/helm/patchbay/values.yaml`), 해당 태그를 이미 캐시한 노드는 예전 이미지를 재사용하고 restart를 해도 아무것도 바뀌지 않습니다 — `PATCHBAY_IMAGE_TAG` 고정과 같은 부류의 함정입니다. 부동 태그로 이 방식을 쓰려면 먼저 `images.backend.pullPolicy` / `images.frontend.pullPolicy`를 `Always`로 설정하세요. 저장소의 [Self-hosting guide](https://github.com/alexj11324/Cordy/blob/main/SELF_HOSTING.md#kubernetes-deployment-alternative)를 참고하세요.
+`kubectl -n patchbay rollout restart`는 그 자체로는 업그레이드가 **아닙니다**. 차트는 `pullPolicy: IfNotPresent`로 배포되므로(`deploy/helm/patchbay/values.yaml`), 해당 태그를 이미 캐시한 노드는 예전 이미지를 재사용하고 restart를 해도 아무것도 바뀌지 않습니다 — `ORVILO_IMAGE_TAG` 고정과 같은 부류의 함정입니다. 부동 태그로 이 방식을 쓰려면 먼저 `images.backend.pullPolicy` / `images.frontend.pullPolicy`를 `Always`로 설정하세요. 저장소의 [Self-hosting guide](https://github.com/alexj11324/Cordy/blob/main/SELF_HOSTING.md#kubernetes-deployment-alternative)를 참고하세요.
 
 <Callout type="warning">
 `docker compose down`은 `pgdata`와 `backend_uploads`를 유지합니다. `-v`를 추가하면 데이터베이스를 포함한 이 data volume이 삭제됩니다. 인스턴스를 비우려는 것이 확실하지 않다면 `docker compose down -v`를 실행하지 마세요.

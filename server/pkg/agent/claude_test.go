@@ -609,12 +609,12 @@ func TestMergeEnvFiltersClaudeCodeVars(t *testing.T) {
 		"CLAUDE_CODE_GIT_BASH_PATH=C:\\Program Files\\Git\\bin\\bash.exe",
 		"CLAUDE_CODE_USE_BEDROCK=1",
 		"CLAUDE_CODE_TMPDIR=/custom/tmp",
-		"PATCHBAY_LLM_API_KEY=daemon-secret",
-		"PATCHBAY_SERVER_URL=https://daemon.example",
+		"ORVILO_LLM_API_KEY=daemon-secret",
+		"ORVILO_SERVER_URL=https://daemon.example",
 	}, map[string]string{
 		"FOO":                "bar",
-		"PATCHBAY_SERVER_URL": "https://task.example",
-		"PATCHBAY_TOKEN":      "mat_task",
+		"ORVILO_SERVER_URL": "https://task.example",
+		"ORVILO_TOKEN":      "mat_task",
 	})
 
 	// Internal runtime/session markers must be stripped so the child does not
@@ -625,8 +625,8 @@ func TestMergeEnvFiltersClaudeCodeVars(t *testing.T) {
 		"CLAUDE_CODE_EXECPATH=/opt/claude",
 		"CLAUDE_CODE_SESSION_ID=abc123",
 		"CLAUDE_CODE_SSE_PORT=9999",
-		"PATCHBAY_LLM_API_KEY=daemon-secret",
-		"PATCHBAY_SERVER_URL=https://daemon.example",
+		"ORVILO_LLM_API_KEY=daemon-secret",
+		"ORVILO_SERVER_URL=https://daemon.example",
 	}
 	for _, entry := range env {
 		for _, banned := range filteredOut {
@@ -663,8 +663,8 @@ func TestMergeEnvFiltersClaudeCodeVars(t *testing.T) {
 	if !found["FOO=bar"] {
 		t.Fatalf("expected extra env var to be appended, got %v", env)
 	}
-	if !found["PATCHBAY_SERVER_URL=https://task.example"] || !found["PATCHBAY_TOKEN=mat_task"] {
-		t.Fatalf("expected explicit task PATCHBAY_* values to be appended, got %v", env)
+	if !found["ORVILO_SERVER_URL=https://task.example"] || !found["ORVILO_TOKEN=mat_task"] {
+		t.Fatalf("expected explicit task ORVILO_* values to be appended, got %v", env)
 	}
 }
 

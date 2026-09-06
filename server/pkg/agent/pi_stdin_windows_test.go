@@ -16,10 +16,10 @@ import (
 )
 
 const (
-	piShimHelperEnv      = "PATCHBAY_PI_SHIM_HELPER"
-	piShimHelperRPCEnv   = "PATCHBAY_PI_SHIM_RPC_HELPER"
-	piShimHelperArgvFile = "PATCHBAY_PI_SHIM_ARGV_FILE"
-	piShimHelperInFile   = "PATCHBAY_PI_SHIM_STDIN_FILE"
+	piShimHelperEnv      = "ORVILO_PI_SHIM_HELPER"
+	piShimHelperRPCEnv   = "ORVILO_PI_SHIM_RPC_HELPER"
+	piShimHelperArgvFile = "ORVILO_PI_SHIM_ARGV_FILE"
+	piShimHelperInFile   = "ORVILO_PI_SHIM_STDIN_FILE"
 )
 
 // TestPiShimHelperProcess is re-executed by the fake pi.ps1 as its native
@@ -198,7 +198,7 @@ func assertPiPromptSurvivesShim(t *testing.T) {
 		self)
 	writeFile(t, filepath.Join(dir, "pi.ps1"), ps1)
 
-	prompt := "PATCHBAY_AGENT_BUILDER_INPUT\n" +
+	prompt := "ORVILO_AGENT_BUILDER_INPUT\n" +
 		`{"instructions":"Run go build -ldflags \"-X main.version=foo\"","description":"- local work"}`
 	backend, err := New("pi", Config{ExecutablePath: cmdPath, Logger: slog.Default()})
 	if err != nil {
@@ -227,7 +227,7 @@ func assertPiPromptSurvivesShim(t *testing.T) {
 		t.Fatalf("native child never recorded stdin: %v; result=%+v", err, result)
 	}
 	for _, arg := range strings.Split(strings.TrimSuffix(string(argvRaw), "\n"), "\n") {
-		for _, needle := range []string{"PATCHBAY_AGENT_BUILDER_INPUT", "instructions", "-X", "local work"} {
+		for _, needle := range []string{"ORVILO_AGENT_BUILDER_INPUT", "instructions", "-X", "local work"} {
 			if strings.Contains(arg, needle) {
 				t.Errorf("prompt fragment %q leaked into native child argv element %q", needle, arg)
 			}

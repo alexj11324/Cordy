@@ -98,9 +98,9 @@ func TestRunConfigCommandsUseTaskLocalConfigWithoutTouchingOwner(t *testing.T) {
 	ownerHome := t.TempDir()
 	taskRoot := filepath.Join(t.TempDir(), "task-patchbay")
 	t.Setenv("HOME", ownerHome)
-	t.Setenv("PATCHBAY_AGENT_ID", "agent-test")
-	t.Setenv("PATCHBAY_TASK_ID", "task-test")
-	t.Setenv("PATCHBAY_TASK_CONFIG_ROOT", taskRoot)
+	t.Setenv("ORVILO_AGENT_ID", "agent-test")
+	t.Setenv("ORVILO_TASK_ID", "task-test")
+	t.Setenv("ORVILO_TASK_CONFIG_ROOT", taskRoot)
 
 	ownerPath := filepath.Join(ownerHome, ".patchbay", "config.json")
 	if err := os.MkdirAll(filepath.Dir(ownerPath), 0o755); err != nil {
@@ -151,9 +151,9 @@ func TestRunConfigCommandsUseTaskLocalConfigWithoutTouchingOwner(t *testing.T) {
 func TestRunConfigCommandsFailClosedWithoutTaskRoot(t *testing.T) {
 	ownerHome := t.TempDir()
 	t.Setenv("HOME", ownerHome)
-	t.Setenv("PATCHBAY_AGENT_ID", "agent-test")
-	t.Setenv("PATCHBAY_TASK_ID", "task-test")
-	t.Setenv("PATCHBAY_TASK_CONFIG_ROOT", "")
+	t.Setenv("ORVILO_AGENT_ID", "agent-test")
+	t.Setenv("ORVILO_TASK_ID", "task-test")
+	t.Setenv("ORVILO_TASK_CONFIG_ROOT", "")
 
 	ownerPath := filepath.Join(ownerHome, ".patchbay", "config.json")
 	if err := os.MkdirAll(filepath.Dir(ownerPath), 0o755); err != nil {
@@ -255,7 +255,7 @@ func TestApplyConfigSetNormalizesWorkspacesRoot(t *testing.T) {
 }
 
 func TestApplyConfigSetPositiveDurationRoundTripsToDaemonResolver(t *testing.T) {
-	const envName = "TEST_PATCHBAY_PERSISTED_DURATION"
+	const envName = "TEST_ORVILO_PERSISTED_DURATION"
 	t.Setenv(envName, "")
 
 	cases := []struct {

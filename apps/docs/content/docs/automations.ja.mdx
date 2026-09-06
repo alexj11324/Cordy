@@ -61,7 +61,7 @@ Cron に秒は含まれません。タイムゾーンには `Asia/Shanghai` の�
 Webhook トリガーを追加すると、Patchbay が一意の URL を生成します。この URL に JSON オブジェクトまたは配列を送ると、オートパイロットをトリガーできます。
 
 ```bash
-curl -X POST "$PATCHBAY_WEBHOOK_URL" \
+curl -X POST "$ORVILO_WEBHOOK_URL" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: demo-001" \
   -d '{"event":"build.completed","eventPayload":{"status":"success"}}'

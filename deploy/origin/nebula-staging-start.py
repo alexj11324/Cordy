@@ -52,7 +52,7 @@ def main():
     env = {key: value for key, value in os.environ.items() if key in ('PATH', 'HOME', 'LANG')}
     env.update(secrets)
     env['STAGING_DATABASE_URL'] = database_url(secrets['POSTGRES_PASSWORD'])
-    origin_token = secrets['PATCHBAY_ORIGIN_AUTH_TOKEN']
+    origin_token = secrets['ORVILO_ORIGIN_AUTH_TOKEN']
     if not re.fullmatch('[a-f0-9]{64}', origin_token):
         raise ValueError('Invalid staging origin token')
     for name, variable in [('backend', 'BACKEND_IMAGE'), ('web', 'WEB_IMAGE'),

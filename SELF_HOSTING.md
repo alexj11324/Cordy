@@ -36,7 +36,7 @@ patchbay setup self-host
 
 ```powershell
 # 1. Install CLI + provision the self-host server
-$env:PATCHBAY_MODE="with-server"; irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex
+$env:ORVILO_MODE="with-server"; irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex
 
 # 2. Configure CLI, authenticate, and start the daemon
 patchbay setup self-host
@@ -90,11 +90,11 @@ Open http://localhost:3000 in your browser. The Docker self-host stack defaults 
 
 - **Recommended (production):** configure `RESEND_API_KEY` in `.env`, then restart the backend. Real verification codes will be sent to the email address you enter. See [Advanced Configuration → Email](SELF_HOSTING_ADVANCED.md#email-required-for-authentication).
 - **Without email configured:** the verification code is generated server-side and printed to the backend container logs (look for `[DEV] Verification code for ...:`). Useful for one-off testing on a single machine.
-- **Deterministic local/private testing:** set `APP_ENV=development` and `PATCHBAY_DEV_VERIFICATION_CODE=888888` in `.env`, then restart the backend. This fixed code is ignored when `APP_ENV=production`.
+- **Deterministic local/private testing:** set `APP_ENV=development` and `ORVILO_DEV_VERIFICATION_CODE=888888` in `.env`, then restart the backend. This fixed code is ignored when `APP_ENV=production`.
 
 Changes to `ALLOW_SIGNUP`, `DISABLE_WORKSPACE_CREATION`, and `GOOGLE_CLIENT_ID` also take effect after restarting the backend / compose stack. The web UI reads all three from `/api/config` at runtime, so no web rebuild is needed. See [Advanced Configuration → Signup Controls](SELF_HOSTING_ADVANCED.md#signup-controls-optional) for the recommended sequence to lock down workspace creation.
 
-> **Warning:** do **not** set `PATCHBAY_DEV_VERIFICATION_CODE` or `PATCHBAY_DEV_LOGIN` on a publicly reachable instance — the first lets anyone who knows an email address log in with that fixed code, and the second (`/auth/dev-login`, a local development shortcut) lets them log in with no code at all. Both are ignored when `APP_ENV=production`.
+> **Warning:** do **not** set `ORVILO_DEV_VERIFICATION_CODE` or `ORVILO_DEV_LOGIN` on a publicly reachable instance — the first lets anyone who knows an email address log in with that fixed code, and the second (`/auth/dev-login`, a local development shortcut) lets them log in with no code at all. Both are ignored when `APP_ENV=production`.
 
 ### Step 3 — Install CLI & Start Daemon
 
@@ -220,7 +220,7 @@ kubectl -n patchbay create secret generic patchbay-secrets \
   --from-literal=RESEND_API_KEY="" \
   --from-literal=GOOGLE_CLIENT_SECRET="" \
   --from-literal=CLOUDFRONT_PRIVATE_KEY="" \
-  --from-literal=PATCHBAY_DEV_VERIFICATION_CODE=""
+  --from-literal=ORVILO_DEV_VERIFICATION_CODE=""
 ```
 
 Leave optional values empty for now — you can fill them in later (see [Step 5 — Log In](#step-5--log-in)).
@@ -288,7 +288,7 @@ The chart defaults to `APP_ENV=production` (set in `values.yaml` under `backend.
   kubectl -n patchbay logs -f deploy/patchbay-backend | grep "Verification code"
   ```
 
-- **Deterministic local/private testing:** set `backend.config.appEnv: development` in your values file and `PATCHBAY_DEV_VERIFICATION_CODE=888888` in the Secret, then `helm upgrade` and restart. This fixed code is ignored when `APP_ENV=production`.
+- **Deterministic local/private testing:** set `backend.config.appEnv: development` in your values file and `ORVILO_DEV_VERIFICATION_CODE=888888` in the Secret, then `helm upgrade` and restart. This fixed code is ignored when `APP_ENV=production`.
 
   ```bash
   helm upgrade patchbay oci://ghcr.io/alexj11324/charts/patchbay \
@@ -296,13 +296,13 @@ The chart defaults to `APP_ENV=production` (set in `values.yaml` under `backend.
     -n patchbay \
     -f my-values.yaml --set backend.config.appEnv=development
   kubectl -n patchbay patch secret patchbay-secrets --type=merge \
-    -p '{"stringData":{"PATCHBAY_DEV_VERIFICATION_CODE":"888888"}}'
+    -p '{"stringData":{"ORVILO_DEV_VERIFICATION_CODE":"888888"}}'
   kubectl -n patchbay rollout restart deploy/patchbay-backend
   ```
 
 `ALLOW_SIGNUP`, `DISABLE_WORKSPACE_CREATION`, and `GOOGLE_CLIENT_ID` likewise live under `backend.config.*` in `values.yaml` (as `allowSignup`, `disableWorkspaceCreation`, and `googleClientId`). After `helm upgrade`, the backend pod will roll automatically because the ConfigMap hash changes; the web UI reads all three from `/api/config` at runtime, so no web rebuild is needed.
 
-> **Warning:** do **not** set `PATCHBAY_DEV_VERIFICATION_CODE` or `PATCHBAY_DEV_LOGIN` on a publicly reachable instance — the first lets anyone who knows an email address log in with that fixed code, and the second (`/auth/dev-login`, a local development shortcut) lets them log in with no code at all. Both are ignored when `APP_ENV=production`.
+> **Warning:** do **not** set `ORVILO_DEV_VERIFICATION_CODE` or `ORVILO_DEV_LOGIN` on a publicly reachable instance — the first lets anyone who knows an email address log in with that fixed code, and the second (`/auth/dev-login`, a local development shortcut) lets them log in with no code at all. Both are ignored when `APP_ENV=production`.
 
 ### Step 6 — Install CLI & Start Daemon
 
@@ -463,7 +463,7 @@ docker compose -f docker-compose.selfhost.yml pull
 docker compose -f docker-compose.selfhost.yml up -d
 ```
 
-Pin `PATCHBAY_IMAGE_TAG` in `.env` to an exact version like `v0.2.4` if you want to stay on a specific release. Migrations run automatically on backend startup.
+Pin `ORVILO_IMAGE_TAG` in `.env` to an exact version like `v0.2.4` if you want to stay on a specific release. Migrations run automatically on backend startup.
 If the selected GHCR tag has not been published yet, fall back to `make selfhost-build` or `docker compose -f docker-compose.selfhost.yml -f docker-compose.selfhost.build.yml up -d --build`.
 
 > **Upgrading from `v0.3.4` to `v0.3.5+` fails with `refusing to drop legacy daily rollups: ...`?** That's migration `103`'s fail-closed guard: it requires `task_usage_hourly` to be seeded before the legacy daily rollups are dropped. As of MUL-2957 `migrate up` runs that backfill automatically right before applying `103`, so the upgrade completes in a single invocation. If you are still on a pre-MUL-2957 binary or the auto-hook fails, run `backfill_task_usage_hourly` manually first, then re-run the upgrade. Full instructions in [Advanced Configuration → Usage Dashboard Rollup](SELF_HOSTING_ADVANCED.md#usage-dashboard-rollup).

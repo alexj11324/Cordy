@@ -11,7 +11,7 @@ if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then
   exit 1
 fi
 
-deploy_user="${PATCHBAY_DEPLOY_USER:-ubuntu}"
+deploy_user="${ORVILO_DEPLOY_USER:-ubuntu}"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 state_dir="/var/lib/patchbay-production"
 static_dir="/usr/local/share/patchbay-production"

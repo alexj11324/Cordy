@@ -108,7 +108,7 @@ curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/insta
 patchbay setup self-host
 ```
 
-On Windows, set `$env:PATCHBAY_MODE="with-server"`, then run the PowerShell installer:
+On Windows, set `$env:ORVILO_MODE="with-server"`, then run the PowerShell installer:
 `irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex`.
 
 This pulls the official images from GHCR and requires Docker. See the

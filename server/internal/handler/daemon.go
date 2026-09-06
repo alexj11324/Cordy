@@ -1909,7 +1909,7 @@ func (h *Handler) rejectClaimSkillLoad(task *db.AgentTaskQueue, err error) *clai
 
 // rejectClaimOnWorkspaceMismatch enforces the claim's tenant boundary against
 // the workspace that OWNS the task's context (issue / chat session / automation
-// / quick-create), which is the only authority for PATCHBAY_WORKSPACE_ID in the
+// / quick-create), which is the only authority for ORVILO_WORKSPACE_ID in the
 // agent env. An empty value would make the CLI silently fall back to the
 // user-global config and talk to whatever workspace the user happened to last
 // configure; a value that doesn't match the runtime's workspace means upstream
@@ -3505,7 +3505,7 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Mint a task-scoped `mat_` token bound to (agent, task, workspace,
-	// initiating user). The daemon will inject this as PATCHBAY_TOKEN into the agent
+	// initiating user). The daemon will inject this as ORVILO_TOKEN into the agent
 	// process instead of its own credential, so any API call the agent
 	// makes — even one that strips X-Agent-ID / X-Task-ID headers — is
 	// recognized server-side as actor=agent, closing the lateral-movement

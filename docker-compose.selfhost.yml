@@ -53,7 +53,7 @@ services:
       retries: 5
 
   backend:
-    image: ${PATCHBAY_BACKEND_IMAGE:-ghcr.io/alexj11324/patchbay-backend}:${PATCHBAY_IMAGE_TAG:-latest}
+    image: ${ORVILO_BACKEND_IMAGE:-ghcr.io/alexj11324/patchbay-backend}:${ORVILO_IMAGE_TAG:-latest}
     depends_on:
       postgres:
         condition: service_healthy
@@ -97,19 +97,19 @@ services:
       CLOUDFRONT_PRIVATE_KEY: ${CLOUDFRONT_PRIVATE_KEY:-}
       COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
       APP_ENV: ${APP_ENV:-production}
-      PATCHBAY_DEV_VERIFICATION_CODE: ${PATCHBAY_DEV_VERIFICATION_CODE:-}
-      PATCHBAY_APP_URL: ${PATCHBAY_APP_URL:-http://localhost:3000}
-      PATCHBAY_DATABASE_STARTUP_TIMEOUT: ${PATCHBAY_DATABASE_STARTUP_TIMEOUT:-3m}
-      PATCHBAY_DATABASE_CONNECT_TIMEOUT: ${PATCHBAY_DATABASE_CONNECT_TIMEOUT:-5s}
-      PATCHBAY_SHUTDOWN_HOLD_DURATION: ${PATCHBAY_SHUTDOWN_HOLD_DURATION:-}
-      PATCHBAY_RUNTIME_RECONNECT_GRACE: ${PATCHBAY_RUNTIME_RECONNECT_GRACE:-}
+      ORVILO_DEV_VERIFICATION_CODE: ${ORVILO_DEV_VERIFICATION_CODE:-}
+      ORVILO_APP_URL: ${ORVILO_APP_URL:-http://localhost:3000}
+      ORVILO_DATABASE_STARTUP_TIMEOUT: ${ORVILO_DATABASE_STARTUP_TIMEOUT:-3m}
+      ORVILO_DATABASE_CONNECT_TIMEOUT: ${ORVILO_DATABASE_CONNECT_TIMEOUT:-5s}
+      ORVILO_SHUTDOWN_HOLD_DURATION: ${ORVILO_SHUTDOWN_HOLD_DURATION:-}
+      ORVILO_RUNTIME_RECONNECT_GRACE: ${ORVILO_RUNTIME_RECONNECT_GRACE:-}
       ALLOW_SIGNUP: ${ALLOW_SIGNUP:-true}
       ALLOWED_EMAILS: ${ALLOWED_EMAILS:-}
       ALLOWED_EMAIL_DOMAINS: ${ALLOWED_EMAIL_DOMAINS:-}
       DISABLE_WORKSPACE_CREATION: ${DISABLE_WORKSPACE_CREATION:-}
       # Managed Cloud stays off for self-hosting. All managed Cloud clients use
       # this single URL when it is configured.
-      PATCHBAY_CLOUD_URL: ${PATCHBAY_CLOUD_URL:-}
+      ORVILO_CLOUD_URL: ${ORVILO_CLOUD_URL:-}
       GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
       GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
       # App API credentials. The pull_request webhook is what mirrors a PR
@@ -129,33 +129,33 @@ services:
       # from window.origin + webhook_path in that case. Headers are
       # intentionally NOT used to derive this value, to avoid Host /
       # X-Forwarded-Host spoofing on misconfigured proxies.
-      PATCHBAY_PUBLIC_URL: ${PATCHBAY_PUBLIC_URL:-}
+      ORVILO_PUBLIC_URL: ${ORVILO_PUBLIC_URL:-}
       # Surface HTML must use a second, cookie-free browser origin routed to
       # this backend. Both settings are optional only in the sense that leaving
       # either empty disables plugin surfaces rather than weakening isolation.
-      PATCHBAY_PLUGIN_SECRET_KEY: ${PATCHBAY_PLUGIN_SECRET_KEY:-}
-      PATCHBAY_PLUGIN_SURFACE_ORIGIN: ${PATCHBAY_PLUGIN_SURFACE_ORIGIN:-}
-      PATCHBAY_PLUGIN_API_URL: ${PATCHBAY_PLUGIN_API_URL:-}
-      PATCHBAY_PLUGIN_DIR: ${PATCHBAY_PLUGIN_DIR:-}
+      ORVILO_PLUGIN_SECRET_KEY: ${ORVILO_PLUGIN_SECRET_KEY:-}
+      ORVILO_PLUGIN_SURFACE_ORIGIN: ${ORVILO_PLUGIN_SURFACE_ORIGIN:-}
+      ORVILO_PLUGIN_API_URL: ${ORVILO_PLUGIN_API_URL:-}
+      ORVILO_PLUGIN_DIR: ${ORVILO_PLUGIN_DIR:-}
       # Optional API URL shown in self-host daemon setup commands. Set this
       # when the daemon reaches the API through a different URL than the one
-      # used for public webhook URLs; otherwise PATCHBAY_PUBLIC_URL is used.
-      PATCHBAY_DAEMON_SERVER_URL: ${PATCHBAY_DAEMON_SERVER_URL:-}
+      # used for public webhook URLs; otherwise ORVILO_PUBLIC_URL is used.
+      ORVILO_DAEMON_SERVER_URL: ${ORVILO_DAEMON_SERVER_URL:-}
       # Comma-separated CIDRs whose source IP is allowed to set
       # X-Forwarded-For / X-Real-IP for the webhook per-IP rate limiter.
       # Empty default = headers ignored, RemoteAddr used. Set e.g.
       # "127.0.0.1/32" when running behind a same-host reverse proxy.
-      PATCHBAY_TRUSTED_PROXIES: ${PATCHBAY_TRUSTED_PROXIES:-}
+      ORVILO_TRUSTED_PROXIES: ${ORVILO_TRUSTED_PROXIES:-}
       # Server-side LLM layer, backing internal helpers such as chat title
       # generation. Both the API key and the base URL empty = layer disabled,
-      # and callers fall back silently rather than failing. PATCHBAY_LLM_MAX_RETRIES
+      # and callers fall back silently rather than failing. ORVILO_LLM_MAX_RETRIES
       # is the retry budget: unset = 2, 0 = disabled, 1-5 = an exact ceiling.
       # Anything else fails the boot instead of being silently corrected.
-      PATCHBAY_LLM_API_KEY: ${PATCHBAY_LLM_API_KEY:-}
-      PATCHBAY_LLM_BASE_URL: ${PATCHBAY_LLM_BASE_URL:-}
-      PATCHBAY_LLM_DEFAULT_MODEL: ${PATCHBAY_LLM_DEFAULT_MODEL:-}
-      PATCHBAY_LLM_MAX_RETRIES: ${PATCHBAY_LLM_MAX_RETRIES:-}
-      # Lark / Feishu bot integration. PATCHBAY_LARK_SECRET_KEY is the
+      ORVILO_LLM_API_KEY: ${ORVILO_LLM_API_KEY:-}
+      ORVILO_LLM_BASE_URL: ${ORVILO_LLM_BASE_URL:-}
+      ORVILO_LLM_DEFAULT_MODEL: ${ORVILO_LLM_DEFAULT_MODEL:-}
+      ORVILO_LLM_MAX_RETRIES: ${ORVILO_LLM_MAX_RETRIES:-}
+      # Lark / Feishu bot integration. ORVILO_LARK_SECRET_KEY is the
       # opt-in: unset = integration disabled. Mainland 飞书 and international
       # Lark are auto-detected per installation and served side by side, so
       # the two base-URL knobs should normally stay EMPTY. They are optional
@@ -164,53 +164,53 @@ services:
       # used https://open.larksuite.com here? The server relabels existing
       # installs to region=lark on first boot, then you can clear them.
       # See docs/lark-bot-integration.
-      PATCHBAY_LARK_SECRET_KEY: ${PATCHBAY_LARK_SECRET_KEY:-}
-      PATCHBAY_LARK_HTTP_BASE_URL: ${PATCHBAY_LARK_HTTP_BASE_URL:-}
-      PATCHBAY_LARK_CALLBACK_BASE_URL: ${PATCHBAY_LARK_CALLBACK_BASE_URL:-}
-      # Slack bot integration. PATCHBAY_SLACK_SECRET_KEY is the opt-in: unset =
+      ORVILO_LARK_SECRET_KEY: ${ORVILO_LARK_SECRET_KEY:-}
+      ORVILO_LARK_HTTP_BASE_URL: ${ORVILO_LARK_HTTP_BASE_URL:-}
+      ORVILO_LARK_CALLBACK_BASE_URL: ${ORVILO_LARK_CALLBACK_BASE_URL:-}
+      # Slack bot integration. ORVILO_SLACK_SECRET_KEY is the opt-in: unset =
       # integration disabled. It decrypts the per-installation bot/app tokens,
       # which are brought by each workspace via OAuth/BYO and stored encrypted
       # in the database, so this single deployment-wide key is all the operator
       # needs to set here.
-      PATCHBAY_SLACK_SECRET_KEY: ${PATCHBAY_SLACK_SECRET_KEY:-}
-      PATCHBAY_SLACK_SIGNING_SECRET: ${PATCHBAY_SLACK_SIGNING_SECRET:-}
+      ORVILO_SLACK_SECRET_KEY: ${ORVILO_SLACK_SECRET_KEY:-}
+      ORVILO_SLACK_SIGNING_SECRET: ${ORVILO_SLACK_SIGNING_SECRET:-}
       # Self-hosted Git provider integration (Forgejo / Gitea / GitLab). This
       # is a self-host-only feature, so the compose file turns it on by default;
       # the managed cloud leaves it unset (off). It still needs a valid
-      # PATCHBAY_VCS_SECRET_KEY below to actually work.
-      PATCHBAY_VCS_INTEGRATION_ENABLED: ${PATCHBAY_VCS_INTEGRATION_ENABLED:-true}
+      # ORVILO_VCS_SECRET_KEY below to actually work.
+      ORVILO_VCS_INTEGRATION_ENABLED: ${ORVILO_VCS_INTEGRATION_ENABLED:-true}
       # VCS integration at-rest encryption key for token-based providers
-      PATCHBAY_VCS_SECRET_KEY: ${PATCHBAY_VCS_SECRET_KEY:-}
+      ORVILO_VCS_SECRET_KEY: ${ORVILO_VCS_SECRET_KEY:-}
       # Linear is visible by default. OAuth credentials are required to connect;
       # webhook delivery and outbound publishing are configured separately.
       FF_LINEAR_INSTALLATION_FOUNDATION: ${FF_LINEAR_INSTALLATION_FOUNDATION:-on}
       LINEAR_CLIENT_ID: ${LINEAR_CLIENT_ID:-}
       LINEAR_CLIENT_SECRET: ${LINEAR_CLIENT_SECRET:-}
       LINEAR_WEBHOOK_SECRET: ${LINEAR_WEBHOOK_SECRET:-}
-      PATCHBAY_LINEAR_SECRET_KEY: ${PATCHBAY_LINEAR_SECRET_KEY:-}
-      PATCHBAY_LINEAR_PULL_IMPORT_ENABLED: ${PATCHBAY_LINEAR_PULL_IMPORT_ENABLED:-true}
-      PATCHBAY_LINEAR_PUSH_ENABLED: ${PATCHBAY_LINEAR_PUSH_ENABLED:-false}
-      # WeCom smart-bot integration. PATCHBAY_WECOM_SECRET_KEY is the
+      ORVILO_LINEAR_SECRET_KEY: ${ORVILO_LINEAR_SECRET_KEY:-}
+      ORVILO_LINEAR_PULL_IMPORT_ENABLED: ${ORVILO_LINEAR_PULL_IMPORT_ENABLED:-true}
+      ORVILO_LINEAR_PUSH_ENABLED: ${ORVILO_LINEAR_PUSH_ENABLED:-false}
+      # WeCom smart-bot integration. ORVILO_WECOM_SECRET_KEY is the
       # opt-in: unset = integration disabled. It encrypts each installation's
       # smart-bot secret at rest. The server needs it to unseal a bot's
       # subscribe credentials at connection time, and to seal the secret when
       # an installation is created from the WeCom settings tab.
-      PATCHBAY_WECOM_SECRET_KEY: ${PATCHBAY_WECOM_SECRET_KEY:-}
+      ORVILO_WECOM_SECRET_KEY: ${ORVILO_WECOM_SECRET_KEY:-}
       # Comma-separated ranges the inbound media fetcher may dial even though
       # they look reserved. Empty (the default) keeps the SSRF guard as strict
       # as it ships; set it only behind a fake-IP proxy whose pool would
       # otherwise get every attachment refused. See .env.example.
-      PATCHBAY_WECOM_MEDIA_ALLOW_CIDRS: ${PATCHBAY_WECOM_MEDIA_ALLOW_CIDRS:-}
+      ORVILO_WECOM_MEDIA_ALLOW_CIDRS: ${ORVILO_WECOM_MEDIA_ALLOW_CIDRS:-}
       # 1 = log every inbound and outbound WeCom frame, including the first
       # 120 runes of each message body, so a real-device session can be
       # checked against the server afterwards. Off unless set; turn it on only
       # for a debugging session and unset it when that session ends, because
       # what it records is user message content.
-      PATCHBAY_WECOM_TRACE: ${PATCHBAY_WECOM_TRACE:-}
+      ORVILO_WECOM_TRACE: ${ORVILO_WECOM_TRACE:-}
     restart: unless-stopped
 
   frontend:
-    image: ${PATCHBAY_WEB_IMAGE:-ghcr.io/alexj11324/patchbay-web}:${PATCHBAY_IMAGE_TAG:-latest}
+    image: ${ORVILO_WEB_IMAGE:-ghcr.io/alexj11324/patchbay-web}:${ORVILO_IMAGE_TAG:-latest}
     depends_on:
       - backend
     ports:

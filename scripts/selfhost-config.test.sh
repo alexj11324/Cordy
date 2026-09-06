@@ -52,7 +52,7 @@ tmp_dir="$(mktemp -d)"
 trap 'rm -f "$tmp_env"; rm -rf "$tmp_dir"' EXIT
 sed 's/^FRONTEND_PORT=.*/FRONTEND_PORT=3100/' .env.example >"$tmp_env"
 printf '\nBACKEND_PORT=9100\nSMTP_FROM_EMAIL=patchbay@example.com\n' >>"$tmp_env"
-printf 'PATCHBAY_LLM_API_KEY=llm-key-from-env\nPATCHBAY_LLM_BASE_URL=http://gateway.example/v1\nPATCHBAY_LLM_DEFAULT_MODEL=model-from-env\nPATCHBAY_LLM_MAX_RETRIES=3\n' >>"$tmp_env"
+printf 'ORVILO_LLM_API_KEY=llm-key-from-env\nORVILO_LLM_BASE_URL=http://gateway.example/v1\nORVILO_LLM_DEFAULT_MODEL=model-from-env\nORVILO_LLM_MAX_RETRIES=3\n' >>"$tmp_env"
 
 config="$(
   docker compose \
@@ -65,21 +65,21 @@ require_config "$config" 'published: "3100"'
 require_config "$config" 'published: "9100"'
 require_config "$config" 'FRONTEND_ORIGIN: http://localhost:3100'
 require_config "$config" 'GOOGLE_REDIRECT_URI: http://localhost:3100/auth/callback'
-require_config "$config" 'PATCHBAY_APP_URL: http://localhost:3100'
+require_config "$config" 'ORVILO_APP_URL: http://localhost:3100'
 require_config "$config" 'SMTP_FROM_EMAIL: patchbay@example.com'
 require_config "$config" 'RESEND_FROM_EMAIL: noreply@invalid.invalid'
-require_config "$config" 'PATCHBAY_DATABASE_STARTUP_TIMEOUT: 3m'
-require_config "$config" 'PATCHBAY_DATABASE_CONNECT_TIMEOUT: 5s'
+require_config "$config" 'ORVILO_DATABASE_STARTUP_TIMEOUT: 3m'
+require_config "$config" 'ORVILO_DATABASE_CONNECT_TIMEOUT: 5s'
 
 # The backend environment is an explicit allowlist, so a variable documented in
 # .env.example but missing here silently never reaches the container: the
 # operator configures it, the server never sees it, and nothing reports the gap.
 # Assert the values actually land, then assert the allowlist has not drifted
 # behind the documentation the next time an LLM knob is added.
-require_config "$config" 'PATCHBAY_LLM_API_KEY: llm-key-from-env'
-require_config "$config" 'PATCHBAY_LLM_BASE_URL: http://gateway.example/v1'
-require_config "$config" 'PATCHBAY_LLM_DEFAULT_MODEL: model-from-env'
-require_config "$config" 'PATCHBAY_LLM_MAX_RETRIES: "3"'
+require_config "$config" 'ORVILO_LLM_API_KEY: llm-key-from-env'
+require_config "$config" 'ORVILO_LLM_BASE_URL: http://gateway.example/v1'
+require_config "$config" 'ORVILO_LLM_DEFAULT_MODEL: model-from-env'
+require_config "$config" 'ORVILO_LLM_MAX_RETRIES: "3"'
 require_config "$config" 'image: ghcr.io/alexj11324/patchbay-backend:latest'
 require_config "$config" 'image: ghcr.io/alexj11324/patchbay-web:latest'
 
@@ -87,17 +87,17 @@ require_config "$config" 'image: ghcr.io/alexj11324/patchbay-web:latest'
 # namespace and the same safe sender/callback defaults. The Helm chart uses
 # Chart.appVersion for its empty tag, while Compose and .env.example use the
 # explicit latest channel; release promotion supplies the exact tag.
-require_text docker-compose.selfhost.yml 'image: ${PATCHBAY_BACKEND_IMAGE:-ghcr.io/alexj11324/patchbay-backend}:${PATCHBAY_IMAGE_TAG:-latest}'
-require_text docker-compose.selfhost.yml 'image: ${PATCHBAY_WEB_IMAGE:-ghcr.io/alexj11324/patchbay-web}:${PATCHBAY_IMAGE_TAG:-latest}'
+require_text docker-compose.selfhost.yml 'image: ${ORVILO_BACKEND_IMAGE:-ghcr.io/alexj11324/patchbay-backend}:${ORVILO_IMAGE_TAG:-latest}'
+require_text docker-compose.selfhost.yml 'image: ${ORVILO_WEB_IMAGE:-ghcr.io/alexj11324/patchbay-web}:${ORVILO_IMAGE_TAG:-latest}'
 require_text deploy/helm/patchbay/values.yaml 'repository: ghcr.io/alexj11324/patchbay-backend'
 require_text deploy/helm/patchbay/values.yaml 'repository: ghcr.io/alexj11324/patchbay-web'
 require_text deploy/helm/patchbay/values.yaml 'resendFromEmail: noreply@invalid.invalid'
 require_text deploy/helm/patchbay/values.yaml 'googleRedirectUri: http://patchbay.dev.lan/auth/callback'
-require_text .env.example 'PATCHBAY_BACKEND_IMAGE=ghcr.io/alexj11324/patchbay-backend'
-require_text .env.example 'PATCHBAY_WEB_IMAGE=ghcr.io/alexj11324/patchbay-web'
+require_text .env.example 'ORVILO_BACKEND_IMAGE=ghcr.io/alexj11324/patchbay-backend'
+require_text .env.example 'ORVILO_WEB_IMAGE=ghcr.io/alexj11324/patchbay-web'
 require_text SELF_HOSTING_ADVANCED.md 'The bundled self-host deployments use `noreply@invalid.invalid` as the empty-value'
-require_text scripts/selfhost-wait.sh 'PATCHBAY_BACKEND_IMAGE:-ghcr.io/alexj11324/patchbay-backend'
-require_text scripts/selfhost-wait.sh 'PATCHBAY_WEB_IMAGE:-ghcr.io/alexj11324/patchbay-web'
+require_text scripts/selfhost-wait.sh 'ORVILO_BACKEND_IMAGE:-ghcr.io/alexj11324/patchbay-backend'
+require_text scripts/selfhost-wait.sh 'ORVILO_WEB_IMAGE:-ghcr.io/alexj11324/patchbay-web'
 require_text docker/entrypoint.sh './migrate up &'
 require_text docker/entrypoint.sh 'exec ./server'
 require_text deploy/helm/patchbay/templates/backend.yaml 'path: /healthz'
@@ -130,7 +130,7 @@ while IFS= read -r llm_var; do
     echo "service in docker-compose.selfhost.yml, so self-hosted deployments cannot set it."
     exit 1
   fi
-done < <(grep -oE '^PATCHBAY_LLM_[A-Z_]+' .env.example)
+done < <(grep -oE '^ORVILO_LLM_[A-Z_]+' .env.example)
 
 for script in scripts/dev.sh scripts/check.sh; do
   if ! grep -Fq '. scripts/local-env.sh' "$script"; then
@@ -153,9 +153,9 @@ local_env="$(
       "PORT=${PORT}" \
       "FRONTEND_PORT=${FRONTEND_PORT}" \
       "FRONTEND_ORIGIN=${FRONTEND_ORIGIN}" \
-      "PATCHBAY_APP_URL=${PATCHBAY_APP_URL}" \
+      "ORVILO_APP_URL=${ORVILO_APP_URL}" \
       "GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI}" \
-      "PATCHBAY_SERVER_URL=${PATCHBAY_SERVER_URL}" \
+      "ORVILO_SERVER_URL=${ORVILO_SERVER_URL}" \
       "LOCAL_UPLOAD_BASE_URL=${LOCAL_UPLOAD_BASE_URL}" \
       "PLAYWRIGHT_BASE_URL=${PLAYWRIGHT_BASE_URL}"
   ' _ "$tmp_env"
@@ -164,16 +164,16 @@ local_env="$(
 require_env "$local_env" 'PORT=9100'
 require_env "$local_env" 'FRONTEND_PORT=3100'
 require_env "$local_env" 'FRONTEND_ORIGIN=http://localhost:3100'
-require_env "$local_env" 'PATCHBAY_APP_URL=http://localhost:3100'
+require_env "$local_env" 'ORVILO_APP_URL=http://localhost:3100'
 require_env "$local_env" 'GOOGLE_REDIRECT_URI=http://localhost:3100/auth/callback'
-require_env "$local_env" 'PATCHBAY_SERVER_URL=ws://localhost:9100/ws'
+require_env "$local_env" 'ORVILO_SERVER_URL=ws://localhost:9100/ws'
 require_env "$local_env" 'LOCAL_UPLOAD_BASE_URL=http://localhost:9100'
 require_env "$local_env" 'PLAYWRIGHT_BASE_URL=http://localhost:3100'
 
 worktree_env="$tmp_dir/.env.worktree"
 WORKTREE_NAME=selfhost-config-test bash scripts/init-worktree-env.sh "$worktree_env" >/dev/null
 worktree_backend_port="$(sed -n 's/^PORT=//p' "$worktree_env")"
-require_env "$(cat "$worktree_env")" "PATCHBAY_PUBLIC_URL=http://localhost:${worktree_backend_port}"
+require_env "$(cat "$worktree_env")" "ORVILO_PUBLIC_URL=http://localhost:${worktree_backend_port}"
 
 resolve_local_public_url() {
   env -i PATH="$PATH" bash -c '
@@ -185,7 +185,7 @@ resolve_local_public_url() {
     set +a
     # shellcheck disable=SC1091
     . scripts/local-env.sh
-    printf "%s\n" "$PATCHBAY_PUBLIC_URL"
+    printf "%s\n" "$ORVILO_PUBLIC_URL"
   ' _ "$1"
 }
 
@@ -193,7 +193,7 @@ make_env_probe="$tmp_dir/print-public-url.mk"
 printf '%s\n' \
   '.PHONY: print-public-url' \
   'print-public-url:' \
-  '	@printf "%s\n" "$$PATCHBAY_PUBLIC_URL"' \
+  '	@printf "%s\n" "$$ORVILO_PUBLIC_URL"' \
   >"$make_env_probe"
 
 resolve_make_public_url() {
@@ -207,7 +207,7 @@ resolve_make_public_url() {
 }
 
 old_worktree_env="$tmp_dir/.env.worktree.old"
-grep -v '^PATCHBAY_PUBLIC_URL=' "$worktree_env" >"$old_worktree_env"
+grep -v '^ORVILO_PUBLIC_URL=' "$worktree_env" >"$old_worktree_env"
 require_env \
   "$(resolve_local_public_url "$old_worktree_env")" \
   "http://localhost:${worktree_backend_port}"
@@ -217,7 +217,7 @@ require_env \
 
 explicit_worktree_env="$tmp_dir/.env.worktree.explicit"
 cp "$old_worktree_env" "$explicit_worktree_env"
-printf '\nPATCHBAY_PUBLIC_URL=https://api.explicit.example\n' >>"$explicit_worktree_env"
+printf '\nORVILO_PUBLIC_URL=https://api.explicit.example\n' >>"$explicit_worktree_env"
 require_env \
   "$(resolve_local_public_url "$explicit_worktree_env")" \
   "https://api.explicit.example"

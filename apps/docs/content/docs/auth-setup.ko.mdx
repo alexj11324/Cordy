@@ -67,13 +67,13 @@ SMTP_EHLO_NAME=mail.example.com
 
 ```dotenv
 APP_ENV=development
-PATCHBAY_DEV_VERIFICATION_CODE=888888
+ORVILO_DEV_VERIFICATION_CODE=888888
 ```
 
 인증 코드는 6자리 숫자여야 합니다. `APP_ENV=production`에서는 고정 코드가 무시됩니다.
 
 <Callout type="warning">
-공개 인터넷에 노출된 인스턴스에서 고정 인증 코드를 사용하지 마세요. 프로덕션 환경에서는 `APP_ENV=production`을 사용하고 `PATCHBAY_DEV_VERIFICATION_CODE`를 비워 둡니다.
+공개 인터넷에 노출된 인스턴스에서 고정 인증 코드를 사용하지 마세요. 프로덕션 환경에서는 `APP_ENV=production`을 사용하고 `ORVILO_DEV_VERIFICATION_CODE`를 비워 둡니다.
 </Callout>
 
 ## 개발 환경에서 로그인 화면 건너뛰기
@@ -82,7 +82,7 @@ PATCHBAY_DEV_VERIFICATION_CODE=888888
 
 ```dotenv
 APP_ENV=development
-PATCHBAY_DEV_LOGIN=1
+ORVILO_DEV_LOGIN=1
 ```
 
 그러면 백엔드가 `/auth/dev-login`을 제공합니다.
@@ -90,10 +90,10 @@ PATCHBAY_DEV_LOGIN=1
 - `GET /auth/dev-login?email=dev@localhost&redirect=/dev/issues`는 세션 쿠키를 설정하고 웹 앱으로 리디렉션합니다. 이 URL을 여는 것이 곧 로그인입니다.
 - `POST /auth/dev-login`에 `{"email":"dev@localhost"}`를 보내면 `verify-code`와 동일한 `{ token, user }`를 돌려줍니다. curl과 스크립트용입니다.
 
-`email`의 기본값은 `PATCHBAY_DEV_EMAIL`(그다음 `dev@localhost`)이고, `redirect`는 같은 오리진의 경로만 받으며, `onboarding=keep`을 넘기지 않으면 온보딩은 완료로 표시됩니다. 이 저장소에서는 `make dev-login`이 URL, 베어러 토큰, 열어야 할 워크스페이스를 출력합니다.
+`email`의 기본값은 `ORVILO_DEV_EMAIL`(그다음 `dev@localhost`)이고, `redirect`는 같은 오리진의 경로만 받으며, `onboarding=keep`을 넘기지 않으면 온보딩은 완료로 표시됩니다. 이 저장소에서는 `make dev-login`이 URL, 베어러 토큰, 열어야 할 워크스페이스를 출력합니다.
 
 <Callout type="warning">
-공개 인터넷에 노출된 인스턴스에는 `PATCHBAY_DEV_LOGIN`을 절대 설정하지 마세요. 이메일 주소만 알면 누구나 코드 없이 그 사용자로 로그인할 수 있습니다. `APP_ENV=production`에서는 무시되며, 이 변수가 `1`일 때만 라우트가 등록됩니다.
+공개 인터넷에 노출된 인스턴스에는 `ORVILO_DEV_LOGIN`을 절대 설정하지 마세요. 이메일 주소만 알면 누구나 코드 없이 그 사용자로 로그인할 수 있습니다. `APP_ENV=production`에서는 무시되며, 이 변수가 `1`일 때만 라우트가 등록됩니다.
 </Callout>
 
 ## Google 로그인

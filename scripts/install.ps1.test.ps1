@@ -177,8 +177,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 if (-not $env:USERPROFILE) { $env:USERPROFILE = [System.IO.Path]::GetTempPath() }
-$env:PATCHBAY_INSTALL_DIR = $WorkDir
-$env:PATCHBAY_SELFHOST_REF = "main"
+$env:ORVILO_INSTALL_DIR = $WorkDir
+$env:ORVILO_SELFHOST_REF = "main"
 
 $source = Get-Content -Raw -Path $InstallerPath
 $index = $source.IndexOf("# Entry point")

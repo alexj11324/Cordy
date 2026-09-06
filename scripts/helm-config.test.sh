@@ -32,10 +32,10 @@ default_config="$(
   helm template patchbay "$CHART_DIR" \
     --show-only templates/configmap.yaml
 )"
-require_rendered_value "$default_config" 'PATCHBAY_VCS_INTEGRATION_ENABLED: "true"'
-require_rendered_value "$default_config" 'PATCHBAY_CLOUD_URL: ""'
-require_rendered_value "$default_config" 'PATCHBAY_DATABASE_STARTUP_TIMEOUT: "3m"'
-require_rendered_value "$default_config" 'PATCHBAY_DATABASE_CONNECT_TIMEOUT: "5s"'
+require_rendered_value "$default_config" 'ORVILO_VCS_INTEGRATION_ENABLED: "true"'
+require_rendered_value "$default_config" 'ORVILO_CLOUD_URL: ""'
+require_rendered_value "$default_config" 'ORVILO_DATABASE_STARTUP_TIMEOUT: "3m"'
+require_rendered_value "$default_config" 'ORVILO_DATABASE_CONNECT_TIMEOUT: "5s"'
 
 default_backend="$(
   helm template patchbay "$CHART_DIR" \
@@ -51,13 +51,13 @@ disabled_config="$(
     --show-only templates/configmap.yaml \
     --set backend.config.vcsIntegrationEnabled=false
 )"
-require_rendered_value "$disabled_config" 'PATCHBAY_VCS_INTEGRATION_ENABLED: "false"'
+require_rendered_value "$disabled_config" 'ORVILO_VCS_INTEGRATION_ENABLED: "false"'
 
 capacity_config="$(
   helm template patchbay "$CHART_DIR" \
     --show-only templates/configmap.yaml \
     --set-string backend.config.cloud.url=https://patchbay-cloud.internal
 )"
-require_rendered_value "$capacity_config" 'PATCHBAY_CLOUD_URL: "https://patchbay-cloud.internal"'
+require_rendered_value "$capacity_config" 'ORVILO_CLOUD_URL: "https://patchbay-cloud.internal"'
 
 echo "helm config rendering ok"

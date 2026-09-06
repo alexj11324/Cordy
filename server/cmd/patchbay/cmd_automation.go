@@ -951,7 +951,7 @@ func resolveAgent(ctx context.Context, client *cli.APIClient, nameOrID string) (
 		return nameOrID, nil
 	}
 	if client.WorkspaceID == "" {
-		return "", fmt.Errorf("workspace ID is required to resolve agents; use --workspace-id or set PATCHBAY_WORKSPACE_ID")
+		return "", fmt.Errorf("workspace ID is required to resolve agents; use --workspace-id or set ORVILO_WORKSPACE_ID")
 	}
 
 	var agents []map[string]any

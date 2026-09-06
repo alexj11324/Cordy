@@ -110,7 +110,7 @@ func TestPluginActionRouteTrustBoundaries(t *testing.T) {
 }
 
 func TestPluginActionBaseURLPrefersDedicatedVersionedBase(t *testing.T) {
-	t.Setenv("PATCHBAY_PLUGIN_API_URL", " https://plugin-api.example.com/api/v1/plugin/ ")
+	t.Setenv("ORVILO_PLUGIN_API_URL", " https://plugin-api.example.com/api/v1/plugin/ ")
 
 	if got := pluginActionBaseURL("https://api.example.com/"); got != "https://plugin-api.example.com/api/v1/plugin" {
 		t.Fatalf("pluginActionBaseURL() = %q", got)
@@ -118,7 +118,7 @@ func TestPluginActionBaseURLPrefersDedicatedVersionedBase(t *testing.T) {
 }
 
 func TestPluginActionBaseURLFallsBackToPublicURL(t *testing.T) {
-	t.Setenv("PATCHBAY_PLUGIN_API_URL", "")
+	t.Setenv("ORVILO_PLUGIN_API_URL", "")
 
 	if got := pluginActionBaseURL(" https://api.example.com/ "); got != "https://api.example.com/api/v1/plugin" {
 		t.Fatalf("pluginActionBaseURL() = %q", got)
@@ -126,7 +126,7 @@ func TestPluginActionBaseURLFallsBackToPublicURL(t *testing.T) {
 }
 
 func TestPluginActionBaseURLOmittedWithoutPublicOrigin(t *testing.T) {
-	t.Setenv("PATCHBAY_PLUGIN_API_URL", "")
+	t.Setenv("ORVILO_PLUGIN_API_URL", "")
 
 	if got := pluginActionBaseURL(""); got != "" {
 		t.Fatalf("pluginActionBaseURL() = %q, want empty", got)

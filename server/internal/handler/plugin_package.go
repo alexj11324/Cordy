@@ -97,7 +97,7 @@ func (h *Handler) PublishPluginPackage(w http.ResponseWriter, r *http.Request) {
 const multipartOverheadBytes = 64 * 1024
 
 type publishLocalPluginRequest struct {
-	// Name is a directory under PATCHBAY_PLUGIN_DIR.
+	// Name is a directory under ORVILO_PLUGIN_DIR.
 	Name string `json:"name"`
 }
 

@@ -20,11 +20,11 @@ env_file="$tmp_dir/.env.messaging"
   --app-url https://app.example.com \
   --api-url https://api.example.com \
   --env-file "$env_file" >"$tmp_dir/init.out"
-grep -Fq 'PATCHBAY_MESSAGING_MODE=server_configured' "$env_file"
-grep -Fq 'PATCHBAY_APP_URL=https://app.example.com' "$env_file"
-grep -Fq 'PATCHBAY_PUBLIC_URL=https://api.example.com' "$env_file"
-grep -Fq 'PATCHBAY_MESSAGING_BOOTSTRAP=false' "$env_file"
-grep -Fq 'PATCHBAY_MESSAGING_WORKSPACE_ID=' "$env_file"
+grep -Fq 'ORVILO_MESSAGING_MODE=server_configured' "$env_file"
+grep -Fq 'ORVILO_APP_URL=https://app.example.com' "$env_file"
+grep -Fq 'ORVILO_PUBLIC_URL=https://api.example.com' "$env_file"
+grep -Fq 'ORVILO_MESSAGING_BOOTSTRAP=false' "$env_file"
+grep -Fq 'ORVILO_MESSAGING_WORKSPACE_ID=' "$env_file"
 grep -Fq 'SLACK_APP_TOKEN=' "$env_file"
 grep -Fq 'TELEGRAM_BOT_TOKEN=' "$env_file"
 

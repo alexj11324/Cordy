@@ -46,7 +46,7 @@ const openclawUserSnapshotFile = "openclaw-user-snapshot.json"
 // inside the outer 5-minute task preparation deadline, so a genuinely hung CLI
 // fails with this specific, actionable reason instead of the generic prepare
 // timeout. Hosts outside that envelope can override with
-// PATCHBAY_OPENCLAW_CLI_TIMEOUT (or backends.openclaw.cli_timeout in the CLI
+// ORVILO_OPENCLAW_CLI_TIMEOUT (or backends.openclaw.cli_timeout in the CLI
 // config, which the daemon translates into the same env var).
 //
 // The gap that used to be documented here — that this was a deadline and not a
@@ -88,7 +88,7 @@ const openclawCLITimeout = 30 * time.Second
 // [openclawCLIMinTimeout, openclawCLIMaxTimeout] are clamped, and anything
 // unparseable is ignored, so a typo degrades to the default instead of
 // disabling the deadline.
-const OpenclawCLITimeoutEnv = "PATCHBAY_OPENCLAW_CLI_TIMEOUT"
+const OpenclawCLITimeoutEnv = "ORVILO_OPENCLAW_CLI_TIMEOUT"
 
 const (
 	// openclawCLIMinTimeout keeps an override from being so small that no real
@@ -157,7 +157,7 @@ func (e *openclawCLITimeoutError) Unwrap() []error {
 }
 
 // resolveOpenclawCLITimeout picks the deadline for one CLI invocation:
-// explicit (tests) > PATCHBAY_OPENCLAW_CLI_TIMEOUT > openclawCLITimeout.
+// explicit (tests) > ORVILO_OPENCLAW_CLI_TIMEOUT > openclawCLITimeout.
 func resolveOpenclawCLITimeout(explicit time.Duration, logger *slog.Logger) time.Duration {
 	if explicit > 0 {
 		return explicit
@@ -199,7 +199,7 @@ type OpenclawConfigPrep struct {
 	OpenclawBin string
 	// Timeout sets the context deadline for each CLI invocation — not a
 	// guaranteed cap on how long the call takes; see openclawCLITimeout. Zero
-	// falls back to the PATCHBAY_OPENCLAW_CLI_TIMEOUT override, then to
+	// falls back to the ORVILO_OPENCLAW_CLI_TIMEOUT override, then to
 	// openclawCLITimeout.
 	Timeout time.Duration
 	// CacheDir is the directory holding this daemon profile's shared

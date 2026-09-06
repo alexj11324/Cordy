@@ -67,13 +67,13 @@ Local automated tests can set a fixed verification code:
 
 ```dotenv
 APP_ENV=development
-PATCHBAY_DEV_VERIFICATION_CODE=888888
+ORVILO_DEV_VERIFICATION_CODE=888888
 ```
 
 The code must be 6 digits. The fixed code is ignored when `APP_ENV=production`.
 
 <Callout type="warning">
-Do not enable a fixed code on a publicly reachable instance. The production combination is `APP_ENV=production` with an empty `PATCHBAY_DEV_VERIFICATION_CODE`.
+Do not enable a fixed code on a publicly reachable instance. The production combination is `APP_ENV=production` with an empty `ORVILO_DEV_VERIFICATION_CODE`.
 </Callout>
 
 ## Skipping the login page in development
@@ -82,7 +82,7 @@ A fixed code still costs a code request and a form. To sign in with neither:
 
 ```dotenv
 APP_ENV=development
-PATCHBAY_DEV_LOGIN=1
+ORVILO_DEV_LOGIN=1
 ```
 
 The backend then serves `/auth/dev-login`:
@@ -90,10 +90,10 @@ The backend then serves `/auth/dev-login`:
 - `GET /auth/dev-login?email=dev@localhost&redirect=/dev/issues` sets the session cookie and redirects into the web app, so opening the URL is the login.
 - `POST /auth/dev-login` with `{"email":"dev@localhost"}` returns the same `{ token, user }` as `verify-code`, for curl and scripts.
 
-`email` defaults to `PATCHBAY_DEV_EMAIL` (then `dev@localhost`), `redirect` accepts a same-origin path only, and onboarding is marked complete unless you pass `onboarding=keep`. In this repository, `make dev-login` prints the URL, the bearer token and the workspace to open.
+`email` defaults to `ORVILO_DEV_EMAIL` (then `dev@localhost`), `redirect` accepts a same-origin path only, and onboarding is marked complete unless you pass `onboarding=keep`. In this repository, `make dev-login` prints the URL, the bearer token and the workspace to open.
 
 <Callout type="warning">
-Never set `PATCHBAY_DEV_LOGIN` on a publicly reachable instance: anyone who knows an email address can sign in as that user with no code. It is ignored when `APP_ENV=production`, and the route is not registered at all unless the variable is `1`.
+Never set `ORVILO_DEV_LOGIN` on a publicly reachable instance: anyone who knows an email address can sign in as that user with no code. It is ignored when `APP_ENV=production`, and the route is not registered at all unless the variable is `1`.
 </Callout>
 
 ## Google sign-in

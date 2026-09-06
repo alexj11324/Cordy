@@ -61,7 +61,7 @@ var configSetCmd = &cobra.Command{
 		"disable_auto_update, auto_update_check_interval, disable_auto_reload) mirror their " +
 		"--flag / env counterparts and are read by `daemon start` when " +
 		"neither the flag nor the env var is set. " +
-		"Precedence: --flag > PATCHBAY_… env > config.json > built-in default. " +
+		"Precedence: --flag > ORVILO_… env > config.json > built-in default. " +
 		"Duration keys take a positive Go duration (e.g. '10s', '500ms', '1m30s'); " +
 		"'0s' and negative values are rejected — except agent_timeout, where " +
 		"'0s' is meaningful and explicitly disables the wall-clock cap. " +

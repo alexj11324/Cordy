@@ -149,12 +149,12 @@ describe("verifyBundledCli", () => {
 
 describe("localGuestChildEnvironment", () => {
   it("hands the local runner no Patchbay configuration at all", async () => {
-    // PATCHBAY_* is how the CLI is pointed at a server, a profile or a token.
+    // ORVILO_* is how the CLI is pointed at a server, a profile or a token.
     // Inheriting even one of them would turn a local Guest run into a cloud
     // call, which is exactly what Guest mode exists to prevent.
-    vi.stubEnv("PATCHBAY_SERVER_URL", "https://api.aspectlylabs.com");
-    vi.stubEnv("PATCHBAY_TOKEN", "secret");
-    vi.stubEnv("PATCHBAY_PROFILE", "work");
+    vi.stubEnv("ORVILO_SERVER_URL", "https://api.aspectlylabs.com");
+    vi.stubEnv("ORVILO_TOKEN", "secret");
+    vi.stubEnv("ORVILO_PROFILE", "work");
     try {
       const environment = await localGuestChildEnvironment();
 

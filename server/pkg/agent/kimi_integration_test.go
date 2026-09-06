@@ -164,7 +164,7 @@ func TestKimiRealMcpConfigReachesSessionSmoke(t *testing.T) {
 	if !bytes.Contains(spawned, []byte("tools/list")) {
 		t.Fatalf("kimi started the MCP server but never listed its tools: %q", spawned)
 	}
-	if !strings.Contains(result.Output, "PATCHBAY_MCP_OK") {
+	if !strings.Contains(result.Output, "ORVILO_MCP_OK") {
 		t.Fatalf("agent output does not contain the tool's sentinel: %q", result.Output)
 	}
 }
@@ -184,10 +184,10 @@ while IFS= read -r line; do
       printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-06-18","capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"patchbay-probe","version":"1.0.0"}}}\n' "$id"
       ;;
     *'"method":"tools/list"'*)
-      printf '{"jsonrpc":"2.0","id":%s,"result":{"tools":[{"name":"patchbay_probe_ping","description":"Returns PATCHBAY_MCP_OK.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}}]}}\n' "$id"
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"tools":[{"name":"patchbay_probe_ping","description":"Returns ORVILO_MCP_OK.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}}]}}\n' "$id"
       ;;
     *'"method":"tools/call"'*)
-      printf '{"jsonrpc":"2.0","id":%s,"result":{"content":[{"type":"text","text":"PATCHBAY_MCP_OK"}],"isError":false}}\n' "$id"
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"content":[{"type":"text","text":"ORVILO_MCP_OK"}],"isError":false}}\n' "$id"
       ;;
     *'"method":"resources/list"'*)
       printf '{"jsonrpc":"2.0","id":%s,"result":{"resources":[]}}\n' "$id"

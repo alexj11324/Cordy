@@ -171,12 +171,12 @@ func TestDevLoginReadsBodyWithUnknownContentLength(t *testing.T) {
 	}
 }
 
-// PATCHBAY_APP_URL is the repository's user-facing app URL; a deployment that
+// ORVILO_APP_URL is the repository's user-facing app URL; a deployment that
 // sets it away from FRONTEND_ORIGIN means the browser to land on the former.
 func TestDevLoginRedirectPrefersConfiguredAppURL(t *testing.T) {
 	enableDevLogin(t)
 	t.Setenv("FRONTEND_ORIGIN", "http://localhost:13000")
-	t.Setenv("PATCHBAY_APP_URL", "https://app.example.com")
+	t.Setenv("ORVILO_APP_URL", "https://app.example.com")
 	const email = "dev-login-appurl@patchbay.ai"
 	deleteUserAfterTest(t, email)
 
@@ -185,7 +185,7 @@ func TestDevLoginRedirectPrefersConfiguredAppURL(t *testing.T) {
 	res.Want(http.StatusFound)
 
 	if got := res.Header().Get("Location"); got != "https://app.example.com/dev/issues" {
-		t.Fatalf("dev login: expected the redirect to use PATCHBAY_APP_URL, got %q", got)
+		t.Fatalf("dev login: expected the redirect to use ORVILO_APP_URL, got %q", got)
 	}
 }
 

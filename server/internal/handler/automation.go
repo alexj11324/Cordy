@@ -133,7 +133,7 @@ type AutomationTriggerResponse struct {
 	// triggers; nil for schedule/api. Not stored — see triggerToResponse.
 	WebhookPath *string `json:"webhook_path"`
 	// WebhookURL is the absolute URL composed from the server's
-	// PATCHBAY_PUBLIC_URL setting. Nil when the server has no public URL
+	// ORVILO_PUBLIC_URL setting. Nil when the server has no public URL
 	// configured; clients then build the URL themselves from webhook_path
 	// plus their API base / current origin.
 	WebhookURL *string `json:"webhook_url"`

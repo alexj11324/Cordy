@@ -153,14 +153,14 @@ or rotating production credentials. Before bootstrap, the running Go backend
 must already have its database/JWT settings and Clerk authority configured,
 including `CLERK_SECRET_KEY`, `CLERK_JWT_KEY`, `CLERK_ISSUER`,
 `CLERK_AUTHORIZED_PARTIES=https://accounts.aspectlylabs.com`, and the shared
-`PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN`. The public URL settings are:
+`ORVILO_DESKTOP_BROKER_AUTH_TOKEN`. The public URL settings are:
 
-- `PATCHBAY_PUBLIC_URL=https://api.aspectlylabs.com`
-- `PATCHBAY_APP_URL=https://patchbay.aspectlylabs.com`
+- `ORVILO_PUBLIC_URL=https://api.aspectlylabs.com`
+- `ORVILO_APP_URL=https://patchbay.aspectlylabs.com`
 - `FRONTEND_ORIGIN=https://patchbay.aspectlylabs.com`
 
 The Accounts broker requires `CLERK_PUBLISHABLE_KEY`,
-`PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN`, and `PATCHBAY_ORIGIN_AUTH_TOKEN`.
+`ORVILO_DESKTOP_BROKER_AUTH_TOKEN`, and `ORVILO_ORIGIN_AUTH_TOKEN`.
 Cloudflare stores the same origin token as `ORIGIN_AUTH_TOKEN`. Nginx validates
 it after the Cloudflare source-range gate, forwards it to the Accounts broker
 for an independent constant-time check, and the broker strips it before route

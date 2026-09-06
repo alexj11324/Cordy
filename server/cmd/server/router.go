@@ -136,11 +136,11 @@ func allowedOrigins() []string {
 }
 
 // appURLFromEnv resolves the user-facing web app URL. It prefers
-// PATCHBAY_APP_URL and falls back to FRONTEND_ORIGIN, matching how the backend
+// ORVILO_APP_URL and falls back to FRONTEND_ORIGIN, matching how the backend
 // resolves the app URL elsewhere (handler.daemonSetupURLsFromEnv) and the CLI
 // login flow (cmd/patchbay tryResolveAppURL). Empty when neither is set.
 func appURLFromEnv() string {
-	if v := strings.TrimRight(strings.TrimSpace(os.Getenv("PATCHBAY_APP_URL")), "/"); v != "" {
+	if v := strings.TrimRight(strings.TrimSpace(os.Getenv("ORVILO_APP_URL")), "/"); v != "" {
 		return v
 	}
 	return strings.TrimRight(strings.TrimSpace(os.Getenv("FRONTEND_ORIGIN")), "/")
@@ -148,10 +148,10 @@ func appURLFromEnv() string {
 
 // pluginActionBaseURL resolves the versioned public base a hook handler calls
 // back into. Managed deployments give the Plugin API its own hostname through
-// PATCHBAY_PLUGIN_API_URL; self-hosted and local deployments can leave it empty
-// and serve the same /api/v1/plugin contract on PATCHBAY_PUBLIC_URL.
+// ORVILO_PLUGIN_API_URL; self-hosted and local deployments can leave it empty
+// and serve the same /api/v1/plugin contract on ORVILO_PUBLIC_URL.
 func pluginActionBaseURL(publicURL string) string {
-	if value := strings.TrimRight(strings.TrimSpace(os.Getenv("PATCHBAY_PLUGIN_API_URL")), "/"); value != "" {
+	if value := strings.TrimRight(strings.TrimSpace(os.Getenv("ORVILO_PLUGIN_API_URL")), "/"); value != "" {
 		return value
 	}
 	publicURL = strings.TrimRight(strings.TrimSpace(publicURL), "/")
@@ -162,7 +162,7 @@ func pluginActionBaseURL(publicURL string) string {
 }
 
 // parseTrustedProxies parses a comma-separated list of CIDR prefixes from the
-// PATCHBAY_TRUSTED_PROXIES env var. Invalid entries are dropped with a single
+// ORVILO_TRUSTED_PROXIES env var. Invalid entries are dropped with a single
 // warn-line per entry rather than crashing the server — a typo in one CIDR
 // shouldn't take the whole API down. Returns nil for empty input, which the
 // rate limiter treats as "trust no proxy headers, use RemoteAddr only".
@@ -179,7 +179,7 @@ func parseTrustedProxies(raw string) []netip.Prefix {
 		}
 		p, err := netip.ParsePrefix(s)
 		if err != nil {
-			slog.Warn("PATCHBAY_TRUSTED_PROXIES: ignoring invalid CIDR",
+			slog.Warn("ORVILO_TRUSTED_PROXIES: ignoring invalid CIDR",
 				"value", s, "error", err)
 			continue
 		}
@@ -267,8 +267,8 @@ type RouterOptions struct {
 	// BatchedHeartbeatScheduler here so the caller can also drive Run/Stop;
 	// tests leave this nil and get the legacy synchronous behavior.
 	HeartbeatScheduler handler.HeartbeatScheduler
-	// LLMMaxRetries carries the parsed PATCHBAY_LLM_MAX_RETRIES budget. Unlike
-	// its three PATCHBAY_LLM_* siblings it is injected rather than read here,
+	// LLMMaxRetries carries the parsed ORVILO_LLM_MAX_RETRIES budget. Unlike
+	// its three ORVILO_LLM_* siblings it is injected rather than read here,
 	// because an invalid value must fail the boot and only main() can exit —
 	// terminating the process from inside a router constructor would also kill
 	// any test that happened to have the variable set. nil means unset, which
@@ -443,26 +443,26 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		AllowSignup:              os.Getenv("ALLOW_SIGNUP") != "false",
 		AllowedEmails:            splitAndTrim(os.Getenv("ALLOWED_EMAILS")),
 		AllowedEmailDomains:      splitAndTrim(os.Getenv("ALLOWED_EMAIL_DOMAINS")),
-		HostedDesktopIdentity:    os.Getenv("PATCHBAY_HOSTED_DESKTOP_IDENTITY") == "1",
-		DesktopBrokerAuthToken:   strings.TrimSpace(os.Getenv("PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN")),
+		HostedDesktopIdentity:    os.Getenv("ORVILO_HOSTED_DESKTOP_IDENTITY") == "1",
+		DesktopBrokerAuthToken:   strings.TrimSpace(os.Getenv("ORVILO_DESKTOP_BROKER_AUTH_TOKEN")),
 		ClerkSecretKey:           strings.TrimSpace(os.Getenv("CLERK_SECRET_KEY")),
 		ClerkJWTKey:              strings.TrimSpace(os.Getenv("CLERK_JWT_KEY")),
 		ClerkIssuer:              strings.TrimRight(strings.TrimSpace(os.Getenv("CLERK_ISSUER")), "/"),
 		ClerkAuthorizedParties:   splitAndTrim(os.Getenv("CLERK_AUTHORIZED_PARTIES")),
 		DisableWorkspaceCreation: os.Getenv("DISABLE_WORKSPACE_CREATION") == "true",
-		VCSIntegrationEnabled:    os.Getenv("PATCHBAY_VCS_INTEGRATION_ENABLED") == "true",
-		PublicURL:                strings.TrimRight(strings.TrimSpace(os.Getenv("PATCHBAY_PUBLIC_URL")), "/"),
+		VCSIntegrationEnabled:    os.Getenv("ORVILO_VCS_INTEGRATION_ENABLED") == "true",
+		PublicURL:                strings.TrimRight(strings.TrimSpace(os.Getenv("ORVILO_PUBLIC_URL")), "/"),
 		AppURL:                   appURLFromEnv(),
-		TrustedProxies:           parseTrustedProxies(os.Getenv("PATCHBAY_TRUSTED_PROXIES")),
-		CloudURL:                 strings.TrimSpace(os.Getenv("PATCHBAY_CLOUD_URL")),
+		TrustedProxies:           parseTrustedProxies(os.Getenv("ORVILO_TRUSTED_PROXIES")),
+		CloudURL:                 strings.TrimSpace(os.Getenv("ORVILO_CLOUD_URL")),
 		CloudTimeout:             35 * time.Second,
 		AttachmentDownloadMode:   os.Getenv("ATTACHMENT_DOWNLOAD_MODE"),
 		AttachmentDownloadURLTTL: envDuration("ATTACHMENT_DOWNLOAD_URL_TTL", 30*time.Minute),
 		AttachmentFrameAncestors: origins,
-		PluginSurfaceOrigin:      strings.TrimRight(strings.TrimSpace(os.Getenv("PATCHBAY_PLUGIN_SURFACE_ORIGIN")), "/"),
-		LLMAPIKey:                strings.TrimSpace(os.Getenv("PATCHBAY_LLM_API_KEY")),
-		LLMBaseURL:               strings.TrimSpace(os.Getenv("PATCHBAY_LLM_BASE_URL")),
-		LLMDefaultModel:          strings.TrimSpace(os.Getenv("PATCHBAY_LLM_DEFAULT_MODEL")),
+		PluginSurfaceOrigin:      strings.TrimRight(strings.TrimSpace(os.Getenv("ORVILO_PLUGIN_SURFACE_ORIGIN")), "/"),
+		LLMAPIKey:                strings.TrimSpace(os.Getenv("ORVILO_LLM_API_KEY")),
+		LLMBaseURL:               strings.TrimSpace(os.Getenv("ORVILO_LLM_BASE_URL")),
+		LLMDefaultModel:          strings.TrimSpace(os.Getenv("ORVILO_LLM_DEFAULT_MODEL")),
 		LLMMaxRetries:            opts.LLMMaxRetries,
 		ServerVersion:            normalizeServerVersion(version),
 	}
@@ -508,11 +508,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// im_installation_limit decides the per-workspace cap on concurrent
 	// channel installations; the limiter reconciles durable pause markers on
 	// every resolve and the worker keeps them convergent between installs.
-	// PATCHBAY_HOSTED_IM_CAPACITY is the deployment switch — self-hosted
+	// ORVILO_HOSTED_IM_CAPACITY is the deployment switch — self-hosted
 	// leaves it off and every install path runs exactly as before. An enabled
 	// switch without a Cloud policy source fails closed (503) rather than
 	// letting a workspace grow past an unreadable cap.
-	hostedResolver := hostedcapacity.NewResolver(os.Getenv("PATCHBAY_HOSTED_IM_CAPACITY") == "true", h.Entitlements)
+	hostedResolver := hostedcapacity.NewResolver(os.Getenv("ORVILO_HOSTED_IM_CAPACITY") == "true", h.Entitlements)
 	if hostedResolver.Enabled() {
 		h.HostedCapacity = hostedcapacity.NewLimiter(hostedResolver, queries, pool, slog.Default())
 		h.HostedCapacityWorker = hostedcapacity.NewWorker(hostedResolver, queries, pool, hostedcapacity.WorkerConfig{})
@@ -595,7 +595,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		opts,
 	)
 
-	// Lark integration. Only wired when PATCHBAY_LARK_SECRET_KEY is set:
+	// Lark integration. Only wired when ORVILO_LARK_SECRET_KEY is set:
 	// the InstallationService refuses to fall back to plaintext storage
 	// for app_secret, and the BindingTokenService cannot mint usable
 	// tokens without it either. When the key is absent the Lark
@@ -603,7 +603,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// continues to start so self-host deployments that have not opted
 	// in to Lark are unaffected. Feishu registers its Factory + ResolverSet
 	// into the channel engine above.
-	if larkKey, err := secretbox.LoadKey("PATCHBAY_LARK_SECRET_KEY"); err == nil {
+	if larkKey, err := secretbox.LoadKey("ORVILO_LARK_SECRET_KEY"); err == nil {
 		box, err := secretbox.New(larkKey)
 		if err != nil {
 			slog.Error("lark: secretbox.New failed; lark integration disabled", "error", err)
@@ -618,15 +618,15 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 
 				// APIClient: wire the real Lark Open Platform HTTP client
 				// (IM v1 send/patch + binding-prompt + bot info). Setting
-				// PATCHBAY_LARK_SECRET_KEY is the operator's opt-in for
+				// ORVILO_LARK_SECRET_KEY is the operator's opt-in for
 				// the integration as a whole; we don't expose a separate
 				// "HTTP enabled" knob because the inbound dispatcher
 				// without outbound replies is not a useful production
 				// state, and CI / integration tests that want to avoid
-				// real Lark traffic can point PATCHBAY_LARK_HTTP_BASE_URL
+				// real Lark traffic can point ORVILO_LARK_HTTP_BASE_URL
 				// at a mock server.
 				//
-				// PATCHBAY_LARK_HTTP_BASE_URL is an OPTIONAL deployment-wide
+				// ORVILO_LARK_HTTP_BASE_URL is an OPTIONAL deployment-wide
 				// override. Normal operation leaves it empty: each call then
 				// resolves its open-platform host from the installation's
 				// region (open.feishu.cn vs open.larksuite.com), so one
@@ -634,7 +634,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				// installation onto one host — a proxy, a mock for tests, or
 				// a single-cloud staging setup.
 				larkClient := lark.NewHTTPAPIClient(lark.HTTPClientConfig{
-					BaseURL: strings.TrimSpace(os.Getenv("PATCHBAY_LARK_HTTP_BASE_URL")),
+					BaseURL: strings.TrimSpace(os.Getenv("ORVILO_LARK_HTTP_BASE_URL")),
 					Logger:  slog.Default(),
 				})
 				h.LarkAPIClient = larkClient
@@ -695,7 +695,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				// every read with a ctx-cancel watchdog so lease loss /
 				// shutdown breaks the blocking ReadMessage in bounded time —
 				// the invariant §4.4 leans on. If the endpoint fetcher fails
-				// to initialize (bad PATCHBAY_LARK_CALLBACK_BASE_URL or
+				// to initialize (bad ORVILO_LARK_CALLBACK_BASE_URL or
 				// similar), buildLarkConnector logs and falls back to the
 				// NoopConnector so the lease / supervisor lifecycle still runs
 				// against real DB rows — inbound messages are silently dropped
@@ -736,8 +736,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				// deployments. Off the hot startup path like the union_id
 				// backfill. MUL-3083.
 				go lark.BackfillRegionFromLegacyOverride(context.Background(), cs,
-					strings.TrimSpace(os.Getenv("PATCHBAY_LARK_HTTP_BASE_URL")),
-					strings.TrimSpace(os.Getenv("PATCHBAY_LARK_CALLBACK_BASE_URL")),
+					strings.TrimSpace(os.Getenv("ORVILO_LARK_HTTP_BASE_URL")),
+					strings.TrimSpace(os.Getenv("ORVILO_LARK_CALLBACK_BASE_URL")),
 					slog.Default())
 
 				// Device-flow registration service: end-to-end install
@@ -745,11 +745,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				// for the QR-scan handshake and then commits the
 				// resulting Bot credentials + the installer's
 				// lark_user_binding in one DB transaction. The optional
-				// PATCHBAY_LARK_REGISTRATION_DOMAIN / _LARK_DOMAIN env
+				// ORVILO_LARK_REGISTRATION_DOMAIN / _LARK_DOMAIN env
 				// vars override the protocol hosts for staging / dev.
 				regCfg := lark.RegistrationConfig{
-					Domain:     strings.TrimSpace(os.Getenv("PATCHBAY_LARK_REGISTRATION_DOMAIN")),
-					LarkDomain: strings.TrimSpace(os.Getenv("PATCHBAY_LARK_REGISTRATION_LARK_DOMAIN")),
+					Domain:     strings.TrimSpace(os.Getenv("ORVILO_LARK_REGISTRATION_DOMAIN")),
+					LarkDomain: strings.TrimSpace(os.Getenv("ORVILO_LARK_REGISTRATION_LARK_DOMAIN")),
 				}
 				regClient := lark.NewRegistrationClient(regCfg)
 				regSvc, rerr := lark.NewRegistrationService(
@@ -777,7 +777,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			}
 		}
 	} else {
-		slog.Info("lark integration disabled (PATCHBAY_LARK_SECRET_KEY not set)")
+		slog.Info("lark integration disabled (ORVILO_LARK_SECRET_KEY not set)")
 	}
 
 	// Slack integration. Multi-tenant B2 model (MUL-3666): Patchbay hosts ONE
@@ -786,11 +786,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// stage-3 per-installation connection model (MUL-3516).
 	//
 	// Two deployment-level env vars gate the two halves:
-	//   - PATCHBAY_SLACK_SECRET_KEY decrypts the per-installation bot token
+	//   - ORVILO_SLACK_SECRET_KEY decrypts the per-installation bot token
 	//     (xoxb-) stored on the channel_installation row. It gates the inbound
 	//     ResolverSet + the outbound reply subscriber, so without it there is no
 	//     Slack at all.
-	//   - PATCHBAY_SLACK_APP_TOKEN is the app-level token (xapp-) authorizing the
+	//   - ORVILO_SLACK_APP_TOKEN is the app-level token (xapp-) authorizing the
 	//     single Socket Mode connection. It cannot be obtained via OAuth, so it
 	//     is a one-time operator config. Without it, inbound is disabled (the
 	//     ResolverSet + outbound are still wired so an existing install's replies
@@ -802,7 +802,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// installation is a bring-your-own-app (BYO) install carrying its OWN
 	// app-level token, so a per-installation Slack Factory is registered and the
 	// Supervisor drives one Socket Mode connection per installation (like Feishu).
-	if slackKey, err := secretbox.LoadKey("PATCHBAY_SLACK_SECRET_KEY"); err == nil {
+	if slackKey, err := secretbox.LoadKey("ORVILO_SLACK_SECRET_KEY"); err == nil {
 		box, err := secretbox.New(slackKey)
 		if err != nil {
 			slog.Error("slack: secretbox.New failed; slack integration disabled", "error", err)
@@ -818,7 +818,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				Binding: slackBindingSvc,
 				Decrypt: box.Open,
 				// The bind link (/slack/bind) is a web-app page, so it must use the
-				// app URL (PATCHBAY_APP_URL ?? FRONTEND_ORIGIN), NOT PATCHBAY_PUBLIC_URL
+				// app URL (ORVILO_APP_URL ?? FRONTEND_ORIGIN), NOT ORVILO_PUBLIC_URL
 				// (the backend/API URL). Mirrors the Lark replier (appURLFromEnv).
 				AppURL:  appURLFromEnv(),
 				Queries: queries,
@@ -901,12 +901,12 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			// it needs no secretbox; persistence still goes through InstallService
 			// above, and the callback 503s without it. Client credentials are
 			// optional at boot — begin mints state regardless but refuses the
-			// authorize URL with 503 until PATCHBAY_SLACK_CLIENT_ID/_SECRET are
+			// authorize URL with 503 until ORVILO_SLACK_CLIENT_ID/_SECRET are
 			// set, so a deployment without a hosted app fails loudly.
 			managedOAuth, merr := slack.NewManagedOAuthService(slack.ManagedOAuthConfig{
 				Queries:      queries,
-				ClientID:     strings.TrimSpace(os.Getenv("PATCHBAY_SLACK_CLIENT_ID")),
-				ClientSecret: strings.TrimSpace(os.Getenv("PATCHBAY_SLACK_CLIENT_SECRET")),
+				ClientID:     strings.TrimSpace(os.Getenv("ORVILO_SLACK_CLIENT_ID")),
+				ClientSecret: strings.TrimSpace(os.Getenv("ORVILO_SLACK_CLIENT_SECRET")),
 				Logger:       slog.Default(),
 			})
 			if merr != nil {
@@ -923,7 +923,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				Queries:       queries,
 				Handle:        channelRouter.Handle,
 				Slash:         slackSlash,
-				SigningSecret: strings.TrimSpace(os.Getenv("PATCHBAY_SLACK_SIGNING_SECRET")),
+				SigningSecret: strings.TrimSpace(os.Getenv("ORVILO_SLACK_SIGNING_SECRET")),
 				Logger:        slog.Default(),
 				OnNativeEvent: h.HandleSlackNativeAutomation,
 			})
@@ -935,13 +935,13 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			slog.Info("slack integration enabled (BYO per-installation socket mode)")
 		}
 	} else {
-		slog.Info("slack integration disabled (PATCHBAY_SLACK_SECRET_KEY not set)")
+		slog.Info("slack integration disabled (ORVILO_SLACK_SECRET_KEY not set)")
 	}
 
 	// DingTalk uses one outbound Stream connection per BYO installation. The
 	// AppSecret is encrypted at rest and the integration is inert unless its
 	// dedicated deployment key is configured.
-	if dingtalkKey, err := secretbox.LoadKey("PATCHBAY_DINGTALK_SECRET_KEY"); err == nil {
+	if dingtalkKey, err := secretbox.LoadKey("ORVILO_DINGTALK_SECRET_KEY"); err == nil {
 		box, err := secretbox.New(dingtalkKey)
 		if err != nil {
 			slog.Error("dingtalk: secretbox.New failed; integration disabled", "error", err)
@@ -985,7 +985,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			slog.Info("dingtalk integration enabled (BYO per-installation stream mode)")
 		}
 	} else {
-		slog.Info("dingtalk integration disabled (PATCHBAY_DINGTALK_SECRET_KEY not set)")
+		slog.Info("dingtalk integration disabled (ORVILO_DINGTALK_SECRET_KEY not set)")
 	}
 
 	// WeCom smart-bot integration ("智能机器人" / aibot). Per-installation
@@ -994,11 +994,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// by the shared ws_lease_token so multi-replica deployments still hold
 	// at most one active socket per bot (WeCom itself only permits one).
 	//
-	// Gated by PATCHBAY_WECOM_SECRET_KEY. Without it, the whole block is
+	// Gated by ORVILO_WECOM_SECRET_KEY. Without it, the whole block is
 	// skipped and the wecom Web-UI endpoints return 503; existing deployments
 	// are unaffected. The smart-bot flow does NOT require any public HTTP
 	// callback, so nothing else needs to be exposed to the internet.
-	if wecomKey, err := secretbox.LoadKey("PATCHBAY_WECOM_SECRET_KEY"); err == nil {
+	if wecomKey, err := secretbox.LoadKey("ORVILO_WECOM_SECRET_KEY"); err == nil {
 		box, err := secretbox.New(wecomKey)
 		if err != nil {
 			slog.Error("wecom: secretbox.New failed; wecom integration disabled", "error", err)
@@ -1129,7 +1129,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				// proxy's pool (198.18.0.0/15 is the common one), so WeCom's
 				// own COS host is indistinguishable from a metadata endpoint
 				// by address alone and every attachment is refused.
-				if raw := strings.TrimSpace(os.Getenv("PATCHBAY_WECOM_MEDIA_ALLOW_CIDRS")); raw != "" {
+				if raw := strings.TrimSpace(os.Getenv("ORVILO_WECOM_MEDIA_ALLOW_CIDRS")); raw != "" {
 					for _, err := range wecom.SetMediaAllowedPrefixes(strings.Split(raw, ",")) {
 						slog.Error("wecom: ignoring malformed media allow cidr", "error", err)
 					}
@@ -1142,8 +1142,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				// it is on has to be visible in the log it is writing into —
 				// otherwise a session gets left switched on and nobody
 				// notices message content accumulating.
-				if wecom.SetTrace(os.Getenv("PATCHBAY_WECOM_TRACE") == "1") {
-					slog.Warn("wecom: frame tracing ON — records message text; unset PATCHBAY_WECOM_TRACE when done")
+				if wecom.SetTrace(os.Getenv("ORVILO_WECOM_TRACE") == "1") {
+					slog.Warn("wecom: frame tracing ON — records message text; unset ORVILO_WECOM_TRACE when done")
 				}
 
 				slog.Info("wecom integration enabled (smart bot, long connection)")
@@ -1166,17 +1166,17 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			}
 		}
 	} else {
-		slog.Info("wecom integration disabled (PATCHBAY_WECOM_SECRET_KEY not set)")
+		slog.Info("wecom integration disabled (ORVILO_WECOM_SECRET_KEY not set)")
 	}
 
 	// Telegram integration. Same shape as Slack: BYO bot token pasted at
 	// install, one getUpdates long-polling loop per active installation
 	// supervised by the shared engine.Supervisor, resolvers on the generic
 	// channel_* tables, outbound streaming via throttled editMessageText on
-	// the event bus. Gated by PATCHBAY_TELEGRAM_SECRET_KEY (the at-rest token
+	// the event bus. Gated by ORVILO_TELEGRAM_SECRET_KEY (the at-rest token
 	// encryption key); when unset the handlers return 503 and no Factory is
 	// registered.
-	if telegramKey, err := secretbox.LoadKey("PATCHBAY_TELEGRAM_SECRET_KEY"); err == nil {
+	if telegramKey, err := secretbox.LoadKey("ORVILO_TELEGRAM_SECRET_KEY"); err == nil {
 		box, err := secretbox.New(telegramKey)
 		if err != nil {
 			slog.Error("telegram: secretbox.New failed; telegram integration disabled", "error", err)
@@ -1210,7 +1210,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			slog.Info("telegram integration enabled (per-installation long polling)")
 		}
 	} else {
-		slog.Info("telegram integration disabled (PATCHBAY_TELEGRAM_SECRET_KEY not set)")
+		slog.Info("telegram integration disabled (ORVILO_TELEGRAM_SECRET_KEY not set)")
 	}
 
 	// Native Weixin/iLink integration. This is the personal-WeChat QR + HTTP
@@ -1219,7 +1219,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// shared engine session/dedup pipeline, and the same installation lease.
 	// The at-rest key gates all provider wiring; handlers remain registered and
 	// return a clear 503 when an operator has not opted in.
-	if weixinKey, err := secretbox.LoadKey("PATCHBAY_WEIXIN_SECRET_KEY"); err == nil {
+	if weixinKey, err := secretbox.LoadKey("ORVILO_WEIXIN_SECRET_KEY"); err == nil {
 		box, err := secretbox.New(weixinKey)
 		if err != nil {
 			slog.Error("weixin: secretbox.New failed; weixin integration disabled", "error", err)
@@ -1239,7 +1239,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			slog.Info("weixin integration enabled (iLink QR + HTTP long polling)")
 		}
 	} else {
-		slog.Info("weixin integration disabled (PATCHBAY_WEIXIN_SECRET_KEY not set)")
+		slog.Info("weixin integration disabled (ORVILO_WEIXIN_SECRET_KEY not set)")
 	}
 
 	// Composio integration (MUL-3720). Gated by COMPOSIO_API_KEY plus the
@@ -1249,7 +1249,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// flag-disabled the whole block is skipped and the composio HTTP handlers
 	// return 503; existing deployments are unaffected. An operator opts in by
 	// setting COMPOSIO_API_KEY plus a callback base
-	// (COMPOSIO_CALLBACK_BASE_URL, falling back to PATCHBAY_PUBLIC_URL). The
+	// (COMPOSIO_CALLBACK_BASE_URL, falling back to ORVILO_PUBLIC_URL). The
 	// toolkit→auth-config mapping is NOT configured here — it is resolved
 	// dynamically from the project's /auth_configs at request time, so enabling
 	// a toolkit is a dashboard action, not a redeploy. State signing uses
@@ -1268,7 +1268,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				case len(stateSecret) == 0:
 					slog.Error("composio: no state secret (set COMPOSIO_STATE_SECRET or JWT_SECRET); composio integration disabled")
 				case callbackBase == "":
-					slog.Error("composio: no callback base url (set COMPOSIO_CALLBACK_BASE_URL or PATCHBAY_PUBLIC_URL); composio integration disabled")
+					slog.Error("composio: no callback base url (set COMPOSIO_CALLBACK_BASE_URL or ORVILO_PUBLIC_URL); composio integration disabled")
 				default:
 					svc, serr := composiointeg.NewService(sdkClient, queries, composiointeg.Config{
 						StateSecret:     stateSecret,
@@ -1303,7 +1303,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// webhook secrets for token-based providers (Forgejo / Gitea / GitLab).
 	// Without it, connect/webhook handlers return 503 (so a misconfigured
 	// self-host never stores plaintext secrets).
-	if vcsKey, err := secretbox.LoadKey("PATCHBAY_VCS_SECRET_KEY"); err == nil {
+	if vcsKey, err := secretbox.LoadKey("ORVILO_VCS_SECRET_KEY"); err == nil {
 		box, err := secretbox.New(vcsKey)
 		if err != nil {
 			slog.Error("vcs: secretbox.New failed; vcs integration disabled", "error", err)
@@ -1312,13 +1312,13 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			slog.Info("vcs integration enabled")
 		}
 	} else {
-		slog.Info("vcs integration disabled (PATCHBAY_VCS_SECRET_KEY not set)")
+		slog.Info("vcs integration disabled (ORVILO_VCS_SECRET_KEY not set)")
 	}
 
 	// Linear OAuth credentials and the at-rest key form one fail-closed unit.
 	// Feature-flag exposure is separate, allowing operators to provision and
 	// validate secrets before enabling the product surface.
-	if linearKey, err := secretbox.LoadKey("PATCHBAY_LINEAR_SECRET_KEY"); err == nil {
+	if linearKey, err := secretbox.LoadKey("ORVILO_LINEAR_SECRET_KEY"); err == nil {
 		box, boxErr := secretbox.New(linearKey)
 		if boxErr != nil {
 			slog.Error("linear: secretbox.New failed; integration disabled", "error", boxErr)
@@ -1327,8 +1327,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			h.LinearClientID = strings.TrimSpace(os.Getenv("LINEAR_CLIENT_ID"))
 			h.LinearClientSecret = strings.TrimSpace(os.Getenv("LINEAR_CLIENT_SECRET"))
 			h.LinearWebhookSecret = strings.TrimSpace(os.Getenv("LINEAR_WEBHOOK_SECRET"))
-			h.LinearPullEnabled = envBool("PATCHBAY_LINEAR_PULL_IMPORT_ENABLED", true)
-			h.LinearPushEnabled = envBool("PATCHBAY_LINEAR_PUSH_ENABLED", false)
+			h.LinearPullEnabled = envBool("ORVILO_LINEAR_PULL_IMPORT_ENABLED", true)
+			h.LinearPushEnabled = envBool("ORVILO_LINEAR_PUSH_ENABLED", false)
 			if h.LinearClientID == "" || h.LinearClientSecret == "" {
 				slog.Warn("linear OAuth credentials incomplete; integration disabled")
 				h.LinearSecretBox = nil
@@ -1345,14 +1345,14 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			}
 		}
 	} else {
-		slog.Info("linear integration disabled (PATCHBAY_LINEAR_SECRET_KEY not set)")
+		slog.Info("linear integration disabled (ORVILO_LINEAR_SECRET_KEY not set)")
 	}
 
 	// Plugin secrets use a dedicated deployment key. Keeping this separate from
 	// VCS and channel secrets gives operators an isolated rotation and blast
 	// radius; without it, saving a `secret` config field fails closed rather
 	// than storing plaintext.
-	if pluginKey, err := secretbox.LoadKey("PATCHBAY_PLUGIN_SECRET_KEY"); err == nil {
+	if pluginKey, err := secretbox.LoadKey("ORVILO_PLUGIN_SECRET_KEY"); err == nil {
 		box, err := secretbox.New(pluginKey)
 		if err != nil {
 			slog.Error("plugins: secretbox.New failed; Plugin secrets disabled", "error", err)
@@ -1372,7 +1372,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			slog.Info("Plugin secret encryption enabled")
 		}
 	} else {
-		slog.Info("Plugin secrets disabled (PATCHBAY_PLUGIN_SECRET_KEY not set)")
+		slog.Info("Plugin secrets disabled (ORVILO_PLUGIN_SECRET_KEY not set)")
 	}
 
 	// Hook engine. Event-triggered hooks are dispatched off the bus onto a
@@ -1387,7 +1387,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		if baseURL := pluginActionBaseURL(signupConfig.PublicURL); baseURL != "" {
 			h.PluginService.CallbackBaseURL = baseURL
 		} else {
-			slog.Warn("plugins: PATCHBAY_PLUGIN_API_URL and PATCHBAY_PUBLIC_URL are not set; hook callbacks will carry no callback_url")
+			slog.Warn("plugins: ORVILO_PLUGIN_API_URL and ORVILO_PUBLIC_URL are not set; hook callbacks will carry no callback_url")
 		}
 		// The flag reaches the event path only through the service: a worker has
 		// no request to read it from.
@@ -1414,7 +1414,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// Fleet. Returns nil when no Cloud URL is configured — the Auth /
 	// DaemonAuth middlewares treat nil as "mcn_ not supported" and
 	// reject with 401, instead of falling through to pby_/JWT paths.
-	// Reuses PATCHBAY_CLOUD_URL (the same URL the cloud-runtime proxy uses) so a
+	// Reuses ORVILO_CLOUD_URL (the same URL the cloud-runtime proxy uses) so a
 	// deployment has one authoritative patchbay-cloud connection.
 	cloudPATVerifier := auth.NewCloudPATVerifier(auth.CloudPATVerifierConfig{
 		FleetBaseURL: signupConfig.CloudURL,
@@ -1456,7 +1456,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// Share allowed origins with WebSocket origin checker.
 	realtime.SetAllowedOrigins(origins)
 
-	// Share the same trusted-proxy CIDRs (PATCHBAY_TRUSTED_PROXIES) so the
+	// Share the same trusted-proxy CIDRs (ORVILO_TRUSTED_PROXIES) so the
 	// WebSocket origin check honors X-Forwarded-Host only from trusted proxies,
 	// using one config source instead of a parallel one.
 	realtime.SetTrustedProxies(signupConfig.TrustedProxies)
@@ -1552,7 +1552,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// broker flows; the Web login page uses email send-code and does not expose
 	// this endpoint as its primary sign-in path.
 	r.With(authRL).Post("/auth/google", h.GoogleLogin)
-	// Development sign-in. Registered only when PATCHBAY_DEV_LOGIN=1 and
+	// Development sign-in. Registered only when ORVILO_DEV_LOGIN=1 and
 	// APP_ENV is non-production, so an ordinary deployment does not serve the
 	// path at all — see server/internal/handler/dev_login.go. It gets its own
 	// limiter rather than authRL: this endpoint exists to escape login
@@ -2629,7 +2629,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 // feishuChannel hands it the per-installation row.
 //
 // If the endpoint fetcher fails to initialize (typically a malformed
-// PATCHBAY_LARK_CALLBACK_BASE_URL), we log and fall back to the
+// ORVILO_LARK_CALLBACK_BASE_URL), we log and fall back to the
 // NoopConnector so the lease / supervisor lifecycle still exercises
 // against real DB rows. Inbound messages are silently dropped until
 // the config is fixed; the boot log labels the mode "noop" so the
@@ -2639,7 +2639,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 // "ws-long-conn" in the healthy case, "noop" in the fallback case.
 func buildLarkConnector(installSvc *lark.InstallationService, apiClient lark.APIClient) (lark.EventConnector, string) {
 	endpointFetcher, err := lark.NewHTTPConnectionTokenFetcher(lark.HTTPConnectionTokenConfig{
-		BaseURL: strings.TrimSpace(os.Getenv("PATCHBAY_LARK_CALLBACK_BASE_URL")),
+		BaseURL: strings.TrimSpace(os.Getenv("ORVILO_LARK_CALLBACK_BASE_URL")),
 		Logger:  slog.Default(),
 	})
 	if err != nil {
@@ -2648,7 +2648,7 @@ func buildLarkConnector(installSvc *lark.InstallationService, apiClient lark.API
 	}
 	decoder := lark.NewLarkJSONFrameDecoder()
 	dialer := lark.NewGorillaDialer()
-	if proxyURL := strings.TrimSpace(os.Getenv("PATCHBAY_LARK_WS_PROXY_URL")); proxyURL != "" {
+	if proxyURL := strings.TrimSpace(os.Getenv("ORVILO_LARK_WS_PROXY_URL")); proxyURL != "" {
 		dialer.ProxyURL = proxyURL
 	}
 	credsProvider := lark.CredentialsProviderFunc(func(ctx context.Context, inst lark.Installation) (lark.InstallationCredentials, error) {
@@ -2805,7 +2805,7 @@ func composioStateSecret() []byte {
 
 // composioCallbackBaseURL resolves the public API base used to build the
 // Composio callback URL. Prefers COMPOSIO_CALLBACK_BASE_URL, then the
-// already-resolved PATCHBAY_PUBLIC_URL, then the app URL.
+// already-resolved ORVILO_PUBLIC_URL, then the app URL.
 func composioCallbackBaseURL(publicURL string) string {
 	if v := strings.TrimRight(strings.TrimSpace(os.Getenv("COMPOSIO_CALLBACK_BASE_URL")), "/"); v != "" {
 		return v

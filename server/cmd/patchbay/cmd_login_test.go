@@ -21,7 +21,7 @@ func newLoginTestCmd() *cobra.Command {
 
 func TestResolveLoginTokenServerURLDefaultsToCloud(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("PATCHBAY_SERVER_URL", "")
+	t.Setenv("ORVILO_SERVER_URL", "")
 
 	if got := resolveLoginTokenServerURL(newLoginTestCmd()); got != defaultCloudServerURL {
 		t.Fatalf("resolveLoginTokenServerURL() = %q, want %q", got, defaultCloudServerURL)
@@ -31,13 +31,13 @@ func TestResolveLoginTokenServerURLDefaultsToCloud(t *testing.T) {
 func TestResolveLoginTokenServerURLPrefersConfiguredServer(t *testing.T) {
 	t.Chdir(t.TempDir())
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("PATCHBAY_SERVER_URL", "")
+	t.Setenv("ORVILO_SERVER_URL", "")
 	// A stale host/container value is not proof that this process is running
 	// inside a daemon task. Login still needs the selected human profile.
-	t.Setenv("PATCHBAY_AGENT_ID", "")
-	t.Setenv("PATCHBAY_TASK_ID", "")
+	t.Setenv("ORVILO_AGENT_ID", "")
+	t.Setenv("ORVILO_TASK_ID", "")
 	t.Setenv(cli.TaskConfigRootEnv, "")
-	t.Setenv("PATCHBAY_DAEMON_PORT", "20032")
+	t.Setenv("ORVILO_DAEMON_PORT", "20032")
 	cmd := newLoginTestCmd()
 	if err := cmd.Flags().Set("profile", "jcode"); err != nil {
 		t.Fatalf("set profile: %v", err)
@@ -54,15 +54,15 @@ func TestResolveLoginTokenServerURLPrefersConfiguredServer(t *testing.T) {
 func TestRunLoginTokenAutoWatchesDiscoveredWorkspaces(t *testing.T) {
 	t.Chdir(t.TempDir())
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("PATCHBAY_TOKEN", "")
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "")
+	t.Setenv("ORVILO_TOKEN", "")
+	t.Setenv("ORVILO_WORKSPACE_ID", "")
 	// Regression for #6779: older container setups may leave this daemon-
 	// injected task hint in the host environment. It must not block the
 	// explicitly human login flow or hide the profile just written by it.
-	t.Setenv("PATCHBAY_AGENT_ID", "")
-	t.Setenv("PATCHBAY_TASK_ID", "")
+	t.Setenv("ORVILO_AGENT_ID", "")
+	t.Setenv("ORVILO_TASK_ID", "")
 	t.Setenv(cli.TaskConfigRootEnv, "")
-	t.Setenv("PATCHBAY_DAEMON_PORT", "20032")
+	t.Setenv("ORVILO_DAEMON_PORT", "20032")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer pby_test_token" {
@@ -84,7 +84,7 @@ func TestRunLoginTokenAutoWatchesDiscoveredWorkspaces(t *testing.T) {
 		}
 	}))
 	defer srv.Close()
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
 
 	cmd := newLoginTestCmd()
 	if err := cmd.Flags().Set("token", "pby_test_token"); err != nil {

@@ -16,10 +16,10 @@ workspace webhooks 503 or ignore events. That is expected.
 | `GITHUB_WEBHOOK_SECRET` | HMAC on GitHub App webhook deliveries |
 | `GITHUB_APP_ID` | App authentication (installation tokens) |
 | `GITHUB_APP_PRIVATE_KEY` | PEM for the App (quoted, real newlines) |
-| `PATCHBAY_SLACK_SECRET_KEY` | Encrypt bot tokens at rest (opt-in for Slack) |
-| `PATCHBAY_SLACK_CLIENT_ID` | Hosted Slack OAuth |
-| `PATCHBAY_SLACK_CLIENT_SECRET` | Hosted Slack OAuth |
-| `PATCHBAY_SLACK_SIGNING_SECRET` | HMAC on managed Slack Events API |
+| `ORVILO_SLACK_SECRET_KEY` | Encrypt bot tokens at rest (opt-in for Slack) |
+| `ORVILO_SLACK_CLIENT_ID` | Hosted Slack OAuth |
+| `ORVILO_SLACK_CLIENT_SECRET` | Hosted Slack OAuth |
+| `ORVILO_SLACK_SIGNING_SECRET` | HMAC on managed Slack Events API |
 | `LINEAR_WEBHOOK_SECRET` | HMAC on Linear workspace webhook |
 
 Placeholders live in `.env.example`. Copy into the running environment; do not
@@ -52,7 +52,7 @@ On the Patchbay Slack app (Events API / bot events), subscribe:
 - `reaction_added` / `reaction_removed` → `slack.reaction`
 - `channel_created` → `slack.channel_created`
 
-Managed webhook still requires `PATCHBAY_SLACK_SIGNING_SECRET`. Empty secret →
+Managed webhook still requires `ORVILO_SLACK_SIGNING_SECRET`. Empty secret →
 503, never unsigned accept.
 
 ## Linear webhook

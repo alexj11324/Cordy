@@ -49,16 +49,16 @@ const clearSlashCommand = "/clear"
 // User-facing ephemeral replies. Kept terse; only the invoker sees them.
 const (
 	slashUsageText            = "Tell me what to file, e.g. `/issue the login button does nothing on Safari`."
-	slashQueuedText           = "✅ On it — I'm turning that into an issue. You'll get a Patchbay notification when it's ready."
-	slashNotMemberText        = "You're not a member of this Patchbay workspace, so I can't file an issue for you."
-	slashLinkAccountFallback  = "Link your Slack account to Patchbay first, then try `/issue` again."
-	slashIssueLimitText       = "⚠️ This workspace has reached its issue limit. Open Patchbay to view the available recovery options."
+	slashQueuedText           = "✅ On it — I'm turning that into an issue. You'll get an Orvilo notification when it's ready."
+	slashNotMemberText        = "You're not a member of this Orvilo workspace, so I can't file an issue for you."
+	slashLinkAccountFallback  = "Link your Slack account to Orvilo first, then try `/issue` again."
+	slashIssueLimitText       = "⚠️ This workspace has reached its issue limit. Open Orvilo to view the available recovery options."
 	slashInternalErrorText    = "⚠️ Something went wrong creating the issue. Please try again."
-	slashDisabledText         = "This Slack app isn't connected to Patchbay (or was disconnected). Ask a workspace admin to reconnect it."
-	slashNewStartedText       = "✅ Started a new Patchbay chat."
-	slashNewThreadGuideText   = "In a channel, start the new chat from the target thread with `@Patchbay /new`."
-	slashClearStartedText     = "✅ Cleared the agent context in this Patchbay chat."
-	slashClearThreadGuideText = "In a channel, clear the target thread's context with `@Patchbay /clear`."
+	slashDisabledText         = "This Slack app isn't connected to Orvilo (or was disconnected). Ask a workspace admin to reconnect it."
+	slashNewStartedText       = "✅ Started a new Orvilo chat."
+	slashNewThreadGuideText   = "In a channel, start the new chat from the target thread with `@Orvilo /new`."
+	slashClearStartedText     = "✅ Cleared the agent context in this Orvilo chat."
+	slashClearThreadGuideText = "In a channel, clear the target thread's context with `@Orvilo /clear`."
 )
 
 // slashQueries is the narrow slice of generated queries the slash-command
@@ -467,6 +467,6 @@ func (p *SlashCommandProcessor) bindingText(ctx context.Context, inst engine.Res
 	bindURL := p.appURL + p.bindingPath + "?token=" + url.QueryEscape(token.Raw)
 	// Wrap the URL as an explicit Slack link so the base64url token's `_`/`-`
 	// are not mangled by mrkdwn (same reasoning as the replier).
-	return "👋 To file issues, link your Slack account to Patchbay: <" +
+	return "👋 To file issues, link your Slack account to Orvilo: <" +
 		bindURL + "|link your account>\n(This link expires in 15 minutes.)"
 }

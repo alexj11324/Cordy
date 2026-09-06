@@ -601,7 +601,7 @@ export function DingTalkTab() {
             <p className="text-caption text-muted-foreground">
               {t(($) => $.dingtalk.not_enabled_description_prefix)}{" "}
               <code className="rounded bg-muted px-1 py-0.5 text-micro">
-                PATCHBAY_DINGTALK_SECRET_KEY
+                ORVILO_DINGTALK_SECRET_KEY
               </code>{" "}
               {t(($) => $.dingtalk.not_enabled_description_suffix)}{" "}
               {t(($) => $.dingtalk.not_enabled_self_host_hint)}

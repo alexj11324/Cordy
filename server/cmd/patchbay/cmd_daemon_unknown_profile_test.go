@@ -325,8 +325,8 @@ func TestDaemonLifecycleCommandsRejectUnknownProfile(t *testing.T) {
 func TestDaemonStatusTaskContextRejectsProfileBeforeListing(t *testing.T) {
 	clearDaemonTaskEnv(t)
 	mkProfiles(t, "owner-secret-profile")
-	t.Setenv("PATCHBAY_TASK_ID", "task-test")
-	t.Setenv("PATCHBAY_DAEMON_PORT", "19601")
+	t.Setenv("ORVILO_TASK_ID", "task-test")
+	t.Setenv("ORVILO_DAEMON_PORT", "19601")
 
 	out, err := captureStdout(t, func() error {
 		return runDaemonStatus(daemonStatusCmdFor(t, "whatever", "json"), nil)

@@ -107,7 +107,7 @@ export interface AutomationTrigger {
   // "/api/webhooks/automations/{token}"). Optional so older servers can be
   // talked to gracefully.
   webhook_path?: string | null;
-  // webhook_url is only present when PATCHBAY_PUBLIC_URL is configured
+  // webhook_url is only present when ORVILO_PUBLIC_URL is configured
   // server-side. Clients fall back to composing from getBaseUrl/origin +
   // webhook_path when this is missing.
   webhook_url?: string | null;

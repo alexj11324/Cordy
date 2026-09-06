@@ -1,6 +1,6 @@
 package wecom
 
-// trace_test.go — guards for the PATCHBAY_WECOM_TRACE operator switch. Six
+// trace_test.go — guards for the ORVILO_WECOM_TRACE operator switch. Six
 // things have to hold or the switch is not shippable: it records nothing at
 // all when off, it records enough to be worth turning on, what it records is
 // never a credential, the order it records outbound frames in is the order
@@ -172,7 +172,7 @@ func runOneCallback(t *testing.T, text string) string {
 // ---- the guards ----
 
 // TestTraceOffRecordsNothing is the one that makes the switch safe to ship:
-// with PATCHBAY_WECOM_TRACE unset, a real inbound message and the frames around
+// with ORVILO_WECOM_TRACE unset, a real inbound message and the frames around
 // it must leave no trace line at all. The logger is at LevelDebug — the
 // package default (logger.parseLevel falls through to debug) — so a trace line
 // that is merely "debug level" would still be written here.
@@ -233,7 +233,7 @@ func TestTraceNeverLogsTheSmartBotSecret(t *testing.T) {
 
 // TestTraceNeverLogsABindingToken is the defect this PR had to close before
 // the switch could ship. sendBindingPrompt mints a 43-character bearer token
-// and puts it in a URL inside the message body; with a normal PATCHBAY_APP_URL
+// and puts it in a URL inside the message body; with a normal ORVILO_APP_URL
 // that whole URL lands inside the 120-rune preview, so an unredacted preview
 // prints a live credential. This drives the real replier path — mint, URL,
 // sendText, write, traceOut — and asserts the raw token never appears.
@@ -779,7 +779,7 @@ func TestTraceOffRecordsNoOutcomeEither(t *testing.T) {
 // arrives as nothing but percent escapes: nine runes per Chinese character,
 // after 23 runes of `attachment; filename=""` scaffolding. Under
 // tracePreviewRunes (120) an eleven-character name is already over, and the
-// cut lands inside an escape — so an operator who turned PATCHBAY_WECOM_TRACE
+// cut lands inside an escape — so an operator who turned ORVILO_WECOM_TRACE
 // on precisely to learn how the CDN encodes a Chinese name got a prefix
 // ending in half an escape, which cannot even be decoded back into the
 // character it stood for.

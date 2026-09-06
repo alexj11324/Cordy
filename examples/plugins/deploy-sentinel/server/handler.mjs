@@ -6,7 +6,7 @@
 //
 //   node server/handler.mjs
 //
-// Env: PATCHBAY_SIGNING_SECRET (the whsec_… shown once when the token was issued)
+// Env: ORVILO_SIGNING_SECRET (the whsec_… shown once when the token was issued)
 //      PORT (default 8788)
 
 import { createServer } from "node:https";
@@ -14,14 +14,14 @@ import { readFileSync } from "node:fs";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 // HTTPS, not HTTP. A hook's transport URL must be an https:// URL or the
-// manifest will not install, and PATCHBAY_PLUGIN_DEV_CA only changes WHICH
+// manifest will not install, and ORVILO_PLUGIN_DEV_CA only changes WHICH
 // certificate Patchbay trusts — it never turns verification off. Generate one:
 //
 //   openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
 //     -keyout dev-key.pem -out dev-cert.pem \
 //     -subj "/CN=127.0.0.1" -addext "subjectAltName=IP:127.0.0.1"
 //
-// then point PATCHBAY_PLUGIN_DEV_CA at dev-cert.pem.
+// then point ORVILO_PLUGIN_DEV_CA at dev-cert.pem.
 function tlsOptions() {
   const cert = process.env.TLS_CERT ?? "dev-cert.pem";
   const key = process.env.TLS_KEY ?? "dev-key.pem";
@@ -35,7 +35,7 @@ function tlsOptions() {
 }
 
 const PORT = Number(process.env.PORT ?? 8788);
-const SIGNING_SECRET = process.env.PATCHBAY_SIGNING_SECRET ?? "";
+const SIGNING_SECRET = process.env.ORVILO_SIGNING_SECRET ?? "";
 const REPLAY_WINDOW_SECONDS = 300;
 
 // Stand-in for the deploy system this plugin would really talk to. Deploy ids
@@ -231,6 +231,6 @@ const server = createServer(tlsOptions(), async (req, res) => {
 server.listen(PORT, () => {
   console.log(`Deploy Sentinel listening on https://127.0.0.1:${PORT}`);
   if (!SIGNING_SECRET) {
-    console.warn("PATCHBAY_SIGNING_SECRET is not set — every request will be refused.");
+    console.warn("ORVILO_SIGNING_SECRET is not set — every request will be refused.");
   }
 });

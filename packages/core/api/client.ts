@@ -3006,7 +3006,7 @@ export class ApiClient {
   }
 
   /**
-   * Publishes from a directory the operator hosts (PATCHBAY_PLUGIN_DIR) — the
+   * Publishes from a directory the operator hosts (ORVILO_PLUGIN_DIR) — the
    * development channel, so iterating on a surface does not mean zipping and
    * uploading after every edit. It still produces an immutable version.
    */
@@ -5454,7 +5454,7 @@ export class ApiClient {
 
   // registerWecomBYO performs a bring-your-own-app install: the admin pastes
   // the bot id and long-connection secret from the WeCom admin console,
-  // and the backend seals the secret with PATCHBAY_WECOM_SECRET_KEY before
+  // and the backend seals the secret with ORVILO_WECOM_SECRET_KEY before
   // persisting, returning the new installation.
   async registerWecomBYO(
     workspaceId: string,

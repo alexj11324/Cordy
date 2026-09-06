@@ -4,18 +4,18 @@
 # callback URL: Slack opens the outbound Socket Mode connection to the server,
 # so a public Request URL or an OAuth redirect is not part of this flow.
 display_information:
-  name: Patchbay
+  name: Orvilo
 features:
   app_home:
     home_tab_enabled: false
     messages_tab_enabled: true
     messages_tab_read_only_enabled: false
   bot_user:
-    display_name: Patchbay
+    display_name: Orvilo
     always_online: true
   slash_commands:
     - command: /issue
-      description: Create a Patchbay issue
+      description: Create an Orvilo issue
       usage_hint: "[description]"
 oauth_config:
   scopes:

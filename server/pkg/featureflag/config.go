@@ -11,8 +11,8 @@ import (
 
 // EnvFlagFile is the environment variable consulted by NewServiceFromEnv to
 // locate a YAML rule file. It follows the same convention as the other
-// PATCHBAY_*_CONFIG / PATCHBAY_*_FILE knobs documented in .env.example.
-const EnvFlagFile = "PATCHBAY_FEATURE_FLAGS_FILE"
+// ORVILO_*_CONFIG / ORVILO_*_FILE knobs documented in .env.example.
+const EnvFlagFile = "ORVILO_FEATURE_FLAGS_FILE"
 
 // EnvOverridePrefix is the prefix EnvProvider uses when NewServiceFromEnv
 // composes the standard provider chain. Individual flags can be overridden
@@ -120,10 +120,10 @@ func parseRulesYAML(data []byte) (map[string]Rule, error) {
 // config sources, in order of decreasing precedence:
 //
 //  1. EnvProvider (FF_<KEY> overrides — Ops kill switches, fastest path).
-//  2. StaticProvider loaded from the YAML file at PATCHBAY_FEATURE_FLAGS_FILE
+//  2. StaticProvider loaded from the YAML file at ORVILO_FEATURE_FLAGS_FILE
 //     (when the env var is set and the file exists).
 //
-// When PATCHBAY_FEATURE_FLAGS_FILE is unset, the Service still works — the
+// When ORVILO_FEATURE_FLAGS_FILE is unset, the Service still works — the
 // EnvProvider is the sole layer, and IsEnabled falls through to the
 // caller's default for any flag without an FF_<KEY> override. The server
 // can therefore boot before any flag config is authored.

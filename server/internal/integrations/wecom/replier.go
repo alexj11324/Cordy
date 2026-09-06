@@ -57,8 +57,8 @@ type OutboundReplierConfig struct {
 
 	// AppURL is the Patchbay web app host the user clicks into to redeem
 	// the binding token (e.g. https://patchbay.example). It comes from
-	// PATCHBAY_APP_URL (falling back to FRONTEND_ORIGIN) and is
-	// intentionally separate from PATCHBAY_PUBLIC_URL, which is the
+	// ORVILO_APP_URL (falling back to FRONTEND_ORIGIN) and is
+	// intentionally separate from ORVILO_PUBLIC_URL, which is the
 	// backend/API URL — the bind page (/wecom/bind) is served by the web
 	// app, so the link must point at the app host.
 	AppURL      string

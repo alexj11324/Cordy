@@ -79,7 +79,7 @@ Cron has no seconds field, and timezones use IANA names like `Asia/Shanghai`. Be
 **Webhook Triggered** mints a unique URL. Send it a JSON object or array to trigger the automation:
 
 ```bash
-curl -X POST "$PATCHBAY_WEBHOOK_URL" \
+curl -X POST "$ORVILO_WEBHOOK_URL" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: demo-001" \
   -d '{"event":"build.completed","eventPayload":{"status":"success"}}'

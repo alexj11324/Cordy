@@ -31,7 +31,7 @@ export function defaultDevRuntimeCacheDir({
   platform = process.platform,
   home = homedir(),
 } = {}) {
-  const configured = env.PATCHBAY_DEV_RUNTIME_CACHE_DIR;
+  const configured = env.ORVILO_DEV_RUNTIME_CACHE_DIR;
   if (configured) return resolve(configured);
   if (platform === "darwin") {
     return join(home, "Library", "Caches", "Patchbay", "dev-runtime");

@@ -18,7 +18,7 @@ cleanup() {
 trap cleanup EXIT
 
 mkdir -p "$BIN_DIR"
-export PATCHBAY_TEST_PNPM_CALLS="$CALLS_FILE"
+export ORVILO_TEST_PNPM_CALLS="$CALLS_FILE"
 
 # Stub pnpm: record every invocation, and optionally fail the prebuild so the
 # abort-before-run case can be exercised.
@@ -26,9 +26,9 @@ cat >"$BIN_DIR/pnpm" <<'EOF'
 #!/usr/bin/env bash
 set -eu
 
-printf '%s\n' "$*" >>"$PATCHBAY_TEST_PNPM_CALLS"
+printf '%s\n' "$*" >>"$ORVILO_TEST_PNPM_CALLS"
 
-if [ -n "${PATCHBAY_TEST_FAIL_PREBUILD:-}" ]; then
+if [ -n "${ORVILO_TEST_FAIL_PREBUILD:-}" ]; then
   case "$*" in
     *prebuild*)
       echo "stub prebuild failure" >&2
@@ -75,7 +75,7 @@ expected_prebuild='exec expo prebuild -p ios --no-install'
 # --- a failed prebuild aborts before run:ios --------------------------------
 : >"$CALLS_FILE"
 set +e
-PATCHBAY_TEST_FAIL_PREBUILD=1 "$SCRIPT_DIR/ios-run.sh" >/dev/null 2>&1
+ORVILO_TEST_FAIL_PREBUILD=1 "$SCRIPT_DIR/ios-run.sh" >/dev/null 2>&1
 status=$?
 set -e
 

@@ -43,7 +43,7 @@ func TestNormalizeLocalRunRequestCanonicalizesDirectoryAndTimeout(t *testing.T) 
 }
 
 func TestValidateLocalRunEnvironmentRejectsPatchbaySettings(t *testing.T) {
-	t.Setenv("PATCHBAY_SERVER_URL", "https://example.invalid")
+	t.Setenv("ORVILO_SERVER_URL", "https://example.invalid")
 	if err := validateLocalRunEnvironment(); err == nil {
 		t.Fatal("validateLocalRunEnvironment() accepted Patchbay environment")
 	}

@@ -160,7 +160,7 @@ This is separate from the GitHub self-update poller: disabling that does not sto
 the daemon from following a binary you installed yourself. To turn it off:
 
 ```bash
-PATCHBAY_DAEMON_AUTO_RELOAD=0 patchbay daemon start
+ORVILO_DAEMON_AUTO_RELOAD=0 patchbay daemon start
 # or
 patchbay daemon start --no-auto-reload
 # or persist it
@@ -268,54 +268,54 @@ Daemon behavior is configured via flags or environment variables:
 
 | Setting | Flag | Env Variable | Default |
 |---------|------|--------------|---------|
-| Poll interval | `--poll-interval` | `PATCHBAY_DAEMON_POLL_INTERVAL` | `30s` (catch-up fallback; WebSocket wake signals deliver work sooner) |
-| Heartbeat interval | `--heartbeat-interval` | `PATCHBAY_DAEMON_HEARTBEAT_INTERVAL` | `15s` |
-| Agent timeout | `--agent-timeout` | `PATCHBAY_AGENT_TIMEOUT` | `0` (no cap; bounded by the watchdogs) |
-| Agent idle watchdog | — | `PATCHBAY_AGENT_IDLE_WATCHDOG` | `2h` (`0` disables the whole watchdog suite) |
-| Agent tool watchdog | — | `PATCHBAY_AGENT_TOOL_WATCHDOG` | same as the idle watchdog (`0` = never force-stop during a tool call) |
-| Codex semantic inactivity timeout | `--codex-semantic-inactivity-timeout` | `PATCHBAY_CODEX_SEMANTIC_INACTIVITY_TIMEOUT` | same as the idle watchdog (Codex's timer is not tool-aware, so it tracks the larger of the idle / tool budgets) |
-| Codex first-turn no-progress timeout | — | `PATCHBAY_CODEX_FIRST_TURN_TIMEOUT` | `0` (keeps the built-in `60s` ceiling) |
-| Codex handshake timeout | `--codex-handshake-timeout` | `PATCHBAY_CODEX_HANDSHAKE_TIMEOUT` | `30s`; `thread/start` and `thread/resume`: `60s` (an explicit value overrides both budgets globally) |
-| OpenCode idle watchdog | — | `PATCHBAY_OPENCODE_IDLE_WATCHDOG` | `10m` (`0` falls back to the generic idle watchdog; cannot extend it) |
-| Max concurrent tasks | `--max-concurrent-tasks` | `PATCHBAY_DAEMON_MAX_CONCURRENT_TASKS` | `20` |
-| Daemon ID | `--daemon-id` | `PATCHBAY_DAEMON_ID` | hostname |
-| Device name | `--device-name` | `PATCHBAY_DAEMON_DEVICE_NAME` | hostname |
-| Runtime name | `--runtime-name` | `PATCHBAY_AGENT_RUNTIME_NAME` | `Local Agent` |
-| Workspaces root | — | `PATCHBAY_WORKSPACES_ROOT` | `~/patchbay_workspaces` |
-| GC enabled | — | `PATCHBAY_GC_ENABLED` | `true` (set `false`/`0` to disable) |
-| GC scan interval | — | `PATCHBAY_GC_INTERVAL` | `2h` |
-| GC TTL (done/cancelled issues) | — | `PATCHBAY_GC_TTL` | `24h` |
-| GC completed-task TTL (issue tasks) | — | `PATCHBAY_GC_COMPLETED_TASK_TTL` | `14d` on Patchbay Cloud, `0` (disabled) elsewhere |
-| GC orphan TTL (no `.gc_meta.json`) | — | `PATCHBAY_GC_ORPHAN_TTL` | `72h` |
-| GC artifact TTL (completed tasks) | — | `PATCHBAY_GC_ARTIFACT_TTL` | `12h` (set `0` to disable) |
-| GC artifact patterns | — | `PATCHBAY_GC_ARTIFACT_PATTERNS` | `node_modules,.next,.turbo` |
-| GC repo cache TTL (`.repos`) | — | `PATCHBAY_GC_REPO_TTL` | `720h` (30d; set `0` to disable) |
-| GC repo maintenance | — | `PATCHBAY_GC_REPO_MAINTENANCE_ENABLED` | `true` (set `false`/`0` to disable heavy Git maintenance only) |
-| GC Hermes memory TTL (per-agent `memories/`) | — | `PATCHBAY_GC_HERMES_MEMORY_TTL` | `2160h` (90d; set `0` to disable) |
-| GC Hermes session TTL (per-conversation `state.db`) | — | `PATCHBAY_GC_HERMES_SESSION_TTL` | `336h` (14d; set `0` to disable) |
-| GC task temp legacy TTL (pre-lock `patchbay-task-*`) | — | `PATCHBAY_GC_TASK_TEMP_LEGACY_TTL` | `0` (disabled; set a duration to opt in) |
+| Poll interval | `--poll-interval` | `ORVILO_DAEMON_POLL_INTERVAL` | `30s` (catch-up fallback; WebSocket wake signals deliver work sooner) |
+| Heartbeat interval | `--heartbeat-interval` | `ORVILO_DAEMON_HEARTBEAT_INTERVAL` | `15s` |
+| Agent timeout | `--agent-timeout` | `ORVILO_AGENT_TIMEOUT` | `0` (no cap; bounded by the watchdogs) |
+| Agent idle watchdog | — | `ORVILO_AGENT_IDLE_WATCHDOG` | `2h` (`0` disables the whole watchdog suite) |
+| Agent tool watchdog | — | `ORVILO_AGENT_TOOL_WATCHDOG` | same as the idle watchdog (`0` = never force-stop during a tool call) |
+| Codex semantic inactivity timeout | `--codex-semantic-inactivity-timeout` | `ORVILO_CODEX_SEMANTIC_INACTIVITY_TIMEOUT` | same as the idle watchdog (Codex's timer is not tool-aware, so it tracks the larger of the idle / tool budgets) |
+| Codex first-turn no-progress timeout | — | `ORVILO_CODEX_FIRST_TURN_TIMEOUT` | `0` (keeps the built-in `60s` ceiling) |
+| Codex handshake timeout | `--codex-handshake-timeout` | `ORVILO_CODEX_HANDSHAKE_TIMEOUT` | `30s`; `thread/start` and `thread/resume`: `60s` (an explicit value overrides both budgets globally) |
+| OpenCode idle watchdog | — | `ORVILO_OPENCODE_IDLE_WATCHDOG` | `10m` (`0` falls back to the generic idle watchdog; cannot extend it) |
+| Max concurrent tasks | `--max-concurrent-tasks` | `ORVILO_DAEMON_MAX_CONCURRENT_TASKS` | `20` |
+| Daemon ID | `--daemon-id` | `ORVILO_DAEMON_ID` | hostname |
+| Device name | `--device-name` | `ORVILO_DAEMON_DEVICE_NAME` | hostname |
+| Runtime name | `--runtime-name` | `ORVILO_AGENT_RUNTIME_NAME` | `Local Agent` |
+| Workspaces root | — | `ORVILO_WORKSPACES_ROOT` | `~/patchbay_workspaces` |
+| GC enabled | — | `ORVILO_GC_ENABLED` | `true` (set `false`/`0` to disable) |
+| GC scan interval | — | `ORVILO_GC_INTERVAL` | `2h` |
+| GC TTL (done/cancelled issues) | — | `ORVILO_GC_TTL` | `24h` |
+| GC completed-task TTL (issue tasks) | — | `ORVILO_GC_COMPLETED_TASK_TTL` | `14d` on Patchbay Cloud, `0` (disabled) elsewhere |
+| GC orphan TTL (no `.gc_meta.json`) | — | `ORVILO_GC_ORPHAN_TTL` | `72h` |
+| GC artifact TTL (completed tasks) | — | `ORVILO_GC_ARTIFACT_TTL` | `12h` (set `0` to disable) |
+| GC artifact patterns | — | `ORVILO_GC_ARTIFACT_PATTERNS` | `node_modules,.next,.turbo` |
+| GC repo cache TTL (`.repos`) | — | `ORVILO_GC_REPO_TTL` | `720h` (30d; set `0` to disable) |
+| GC repo maintenance | — | `ORVILO_GC_REPO_MAINTENANCE_ENABLED` | `true` (set `false`/`0` to disable heavy Git maintenance only) |
+| GC Hermes memory TTL (per-agent `memories/`) | — | `ORVILO_GC_HERMES_MEMORY_TTL` | `2160h` (90d; set `0` to disable) |
+| GC Hermes session TTL (per-conversation `state.db`) | — | `ORVILO_GC_HERMES_SESSION_TTL` | `336h` (14d; set `0` to disable) |
+| GC task temp legacy TTL (pre-lock `patchbay-task-*`) | — | `ORVILO_GC_TASK_TEMP_LEGACY_TTL` | `0` (disabled; set a duration to opt in) |
 
 #### Workspace garbage collection
 
-The daemon periodically scans `PATCHBAY_WORKSPACES_ROOT` and applies several disk-reclamation policies:
+The daemon periodically scans `ORVILO_WORKSPACES_ROOT` and applies several disk-reclamation policies:
 
-- **Full task cleanup** — when an issue's status is `done` or `cancelled` and has been idle for `PATCHBAY_GC_TTL`, the entire task directory is removed.
-- **Completed-task retention bound** — `PATCHBAY_GC_COMPLETED_TASK_TTL` fully removes an inactive issue task once its `.gc_meta.json` `completed_at` age exceeds the configured duration, even while the parent issue remains open. Cleanup waits for a successful parent-issue status check, never removes an active environment, and never fully removes a `local_directory` environment. A later rerun provisions a fresh environment instead of resuming the removed checkout.
+- **Full task cleanup** — when an issue's status is `done` or `cancelled` and has been idle for `ORVILO_GC_TTL`, the entire task directory is removed.
+- **Completed-task retention bound** — `ORVILO_GC_COMPLETED_TASK_TTL` fully removes an inactive issue task once its `.gc_meta.json` `completed_at` age exceeds the configured duration, even while the parent issue remains open. Cleanup waits for a successful parent-issue status check, never removes an active environment, and never fully removes a `local_directory` environment. A later rerun provisions a fresh environment instead of resuming the removed checkout.
   - The default depends on where the daemon points: `14d` against Patchbay Cloud, and `0` (disabled, retain indefinitely) for self-host and every other origin — including cloud staging and previews. Set the variable to opt in or out on either side; an explicit `0` disables the policy on Cloud too.
-  - Removing an environment discards work an agent left uncommitted or unpushed on its branch, along with that task's `output/` and `logs/`. The per-issue Codex session store lives outside `PATCHBAY_WORKSPACES_ROOT` under its own TTL, so a later rerun still resumes the agent's prior session — it just starts from a fresh checkout. Size the TTL against that trade, and keep it comfortably above `PATCHBAY_GC_INTERVAL`: the active-root guard protects a task that is currently running, not one whose follow-up run is queued but unclaimed.
-- **Orphan cleanup** — task directories with no `.gc_meta.json` (e.g. left over from a daemon crash) are removed once they exceed `PATCHBAY_GC_ORPHAN_TTL`.
-- **Artifact-only cleanup** — when a task has been completed for at least `PATCHBAY_GC_ARTIFACT_TTL` but the issue is still open, regenerable build outputs whose directory basename matches `PATCHBAY_GC_ARTIFACT_PATTERNS` are removed. The daemon also reclaims the exact managed path `codex-home/.sandbox-bin`; old task metadata without `completed_at` becomes eligible for this managed-only cleanup after its `.gc_meta.json` file has been idle for `PATCHBAY_GC_ORPHAN_TTL`. The rest of the task (source, `.git`, `output/`, `logs/`, `.gc_meta.json`, Codex auth/config/session state) is preserved so the agent can resume it.
-- **Managed-cache reclamation** — the exact managed path above is reclaimed for *every* task kind once the task has been completed for `PATCHBAY_GC_ARTIFACT_TTL`, not just for issue tasks whose issue is still open. It applies even while the parent record says the directory itself must stay — an active chat session, a still-running automation run — and even when the parent record could not be reached this cycle, because the contents are regenerable and the next run re-provisions them on demand. A task currently running on the directory is never touched. Set `PATCHBAY_GC_ARTIFACT_TTL=0` to disable this along with the rest of artifact cleanup.
+  - Removing an environment discards work an agent left uncommitted or unpushed on its branch, along with that task's `output/` and `logs/`. The per-issue Codex session store lives outside `ORVILO_WORKSPACES_ROOT` under its own TTL, so a later rerun still resumes the agent's prior session — it just starts from a fresh checkout. Size the TTL against that trade, and keep it comfortably above `ORVILO_GC_INTERVAL`: the active-root guard protects a task that is currently running, not one whose follow-up run is queued but unclaimed.
+- **Orphan cleanup** — task directories with no `.gc_meta.json` (e.g. left over from a daemon crash) are removed once they exceed `ORVILO_GC_ORPHAN_TTL`.
+- **Artifact-only cleanup** — when a task has been completed for at least `ORVILO_GC_ARTIFACT_TTL` but the issue is still open, regenerable build outputs whose directory basename matches `ORVILO_GC_ARTIFACT_PATTERNS` are removed. The daemon also reclaims the exact managed path `codex-home/.sandbox-bin`; old task metadata without `completed_at` becomes eligible for this managed-only cleanup after its `.gc_meta.json` file has been idle for `ORVILO_GC_ORPHAN_TTL`. The rest of the task (source, `.git`, `output/`, `logs/`, `.gc_meta.json`, Codex auth/config/session state) is preserved so the agent can resume it.
+- **Managed-cache reclamation** — the exact managed path above is reclaimed for *every* task kind once the task has been completed for `ORVILO_GC_ARTIFACT_TTL`, not just for issue tasks whose issue is still open. It applies even while the parent record says the directory itself must stay — an active chat session, a still-running automation run — and even when the parent record could not be reached this cycle, because the contents are regenerable and the next run re-provisions them on demand. A task currently running on the directory is never touched. Set `ORVILO_GC_ARTIFACT_TTL=0` to disable this along with the rest of artifact cleanup.
 
-- **Repo cache eviction** — the bare git clones under `.repos/` are shared object stores: each task workdir is a `git worktree` off one of them rather than its own clone, so a task's `.git` is only a pointer file. They are evicted only when all of the following hold: the repo is no longer attached to any workspace this daemon watches, it has no worktrees left, and no task has created a worktree from it for `PATCHBAY_GC_REPO_TTL`. A cache created before this stamp existed is not treated as ancient — its clock starts at the first GC cycle that sees it, so upgrading does not wipe every cache. Evicting is safe by construction: the next task that needs the repo re-clones it on demand, so a wrong eviction costs a clone, not a failure.
+- **Repo cache eviction** — the bare git clones under `.repos/` are shared object stores: each task workdir is a `git worktree` off one of them rather than its own clone, so a task's `.git` is only a pointer file. They are evicted only when all of the following hold: the repo is no longer attached to any workspace this daemon watches, it has no worktrees left, and no task has created a worktree from it for `ORVILO_GC_REPO_TTL`. A cache created before this stamp existed is not treated as ancient — its clock starts at the first GC cycle that sees it, so upgrading does not wipe every cache. Evicting is safe by construction: the next task that needs the repo re-clones it on demand, so a wrong eviction costs a clone, not a failure.
 
-  Short worktree cleanup and eligible cache eviction continue on every GC cycle, including while agents are active. Heavy repo maintenance (`reflog expire` and `git gc`) starts only while the daemon is otherwise idle. A checkout or newly claimed task cancels it and takes priority; interrupted work remains pending for a later idle GC cycle. Operators can disable only these heavy commands with `PATCHBAY_GC_REPO_MAINTENANCE_ENABLED=false` without disabling worktree cleanup or cache eviction.
+  Short worktree cleanup and eligible cache eviction continue on every GC cycle, including while agents are active. Heavy repo maintenance (`reflog expire` and `git gc`) starts only while the daemon is otherwise idle. A checkout or newly claimed task cancels it and takes priority; interrupted work remains pending for a later idle GC cycle. Operators can disable only these heavy commands with `ORVILO_GC_REPO_MAINTENANCE_ENABLED=false` without disabling worktree cleanup or cache eviction.
 
-- **Hermes session store reclamation** — a conversation's Hermes transcript (`state.db`) lives at `<profile dir>/hermes-sessions/<agent-id>/<hermes-profile>/<conversation>/`, outside any task directory, so a follow-up turn can resume it (see [Hermes agent memory](#hermes-agent-memory)). A store untouched for `PATCHBAY_GC_HERMES_SESSION_TTL` is removed. The default matches the Codex session store rather than the memory store above: these hold full transcripts, and reclaiming an idle one costs a thread that starts fresh (with a continuity notice), not an agent that forgot what it learned. A store a running task holds is never reclaimed.
-- **Hermes memory store reclamation** — a Hermes agent's long-term memory (`memories/`) lives at `<profile dir>/hermes-state/<agent-id>/<hermes-profile>/`, outside any task directory, so it survives across tasks and issues (see [Hermes agent memory](#hermes-agent-memory)). A store untouched for `PATCHBAY_GC_HERMES_MEMORY_TTL` is removed, giving a deleted agent's memory an eventual-reclamation guarantee. The default is deliberately long: these are a handful of markdown files, and reclaiming one is user-visible amnesia rather than a cache miss. A store a running task holds is never reclaimed.
-- **Task temp dir reclamation** — every task gets a private temp directory (`patchbay-task-*`) under the system temp base (`/tmp`, or `PATCHBAY_AGENT_TEMP_BASE`), exported to the agent as `TMPDIR`/`TMP`/`TEMP`. It is removed when the run ends, but that removal never happens when the daemon is killed and does not succeed while a file inside is still open — common on Windows, where an open handle makes the delete fail outright. These directories live outside `PATCHBAY_WORKSPACES_ROOT`, so nothing else reclaimed them and whatever the end-of-run removal missed accumulated forever. Every GC cycle now sweeps the temp base. Liveness is decided by the directory's `.task_lock` — the same OS advisory lock an env root uses, which the kernel releases when the holding process dies — not by age: a directory still in use is never removed however old it is, including one owned by a different daemon sharing the same temp base, and a directory whose owner is gone is removed on the next cycle however new it is. Directories left by a daemon predating that lock carry no lock file, so nothing can be proven about them and age is the only signal available. Reclaiming those is an operator's explicit decision: `PATCHBAY_GC_TASK_TEMP_LEGACY_TTL` defaults to `0`, which leaves them in place. Set it to a duration only once you know no pre-lock daemon is still running tasks on this machine — a task may legitimately run for weeks (there is no default agent timeout), a daemon on another profile can still be on the old binary, and every daemon on the machine shares one temp base, so a TTL here can delete a `TMPDIR` that is still in use. Each GC cycle logs how many such directories it left alone. Even with a TTL set, a directory holding no task content is never reclaimed on age — an old empty leftover, or a shell left by a daemon that died between creating the directory and publishing its lock — because holding no content is exactly what a directory currently being published looks like, and deleting one of those would take the `TMPDIR` of a task that is starting. Those shells are a few bytes each. Only entries carrying the `patchbay-task-` prefix are ever considered — the temp base itself is usually shared with other programs — and a directory this sweep cannot read is never touched.
+- **Hermes session store reclamation** — a conversation's Hermes transcript (`state.db`) lives at `<profile dir>/hermes-sessions/<agent-id>/<hermes-profile>/<conversation>/`, outside any task directory, so a follow-up turn can resume it (see [Hermes agent memory](#hermes-agent-memory)). A store untouched for `ORVILO_GC_HERMES_SESSION_TTL` is removed. The default matches the Codex session store rather than the memory store above: these hold full transcripts, and reclaiming an idle one costs a thread that starts fresh (with a continuity notice), not an agent that forgot what it learned. A store a running task holds is never reclaimed.
+- **Hermes memory store reclamation** — a Hermes agent's long-term memory (`memories/`) lives at `<profile dir>/hermes-state/<agent-id>/<hermes-profile>/`, outside any task directory, so it survives across tasks and issues (see [Hermes agent memory](#hermes-agent-memory)). A store untouched for `ORVILO_GC_HERMES_MEMORY_TTL` is removed, giving a deleted agent's memory an eventual-reclamation guarantee. The default is deliberately long: these are a handful of markdown files, and reclaiming one is user-visible amnesia rather than a cache miss. A store a running task holds is never reclaimed.
+- **Task temp dir reclamation** — every task gets a private temp directory (`patchbay-task-*`) under the system temp base (`/tmp`, or `ORVILO_AGENT_TEMP_BASE`), exported to the agent as `TMPDIR`/`TMP`/`TEMP`. It is removed when the run ends, but that removal never happens when the daemon is killed and does not succeed while a file inside is still open — common on Windows, where an open handle makes the delete fail outright. These directories live outside `ORVILO_WORKSPACES_ROOT`, so nothing else reclaimed them and whatever the end-of-run removal missed accumulated forever. Every GC cycle now sweeps the temp base. Liveness is decided by the directory's `.task_lock` — the same OS advisory lock an env root uses, which the kernel releases when the holding process dies — not by age: a directory still in use is never removed however old it is, including one owned by a different daemon sharing the same temp base, and a directory whose owner is gone is removed on the next cycle however new it is. Directories left by a daemon predating that lock carry no lock file, so nothing can be proven about them and age is the only signal available. Reclaiming those is an operator's explicit decision: `ORVILO_GC_TASK_TEMP_LEGACY_TTL` defaults to `0`, which leaves them in place. Set it to a duration only once you know no pre-lock daemon is still running tasks on this machine — a task may legitimately run for weeks (there is no default agent timeout), a daemon on another profile can still be on the old binary, and every daemon on the machine shares one temp base, so a TTL here can delete a `TMPDIR` that is still in use. Each GC cycle logs how many such directories it left alone. Even with a TTL set, a directory holding no task content is never reclaimed on age — an old empty leftover, or a shell left by a daemon that died between creating the directory and publishing its lock — because holding no content is exactly what a directory currently being published looks like, and deleting one of those would take the `TMPDIR` of a task that is starting. Those shells are a few bytes each. Only entries carrying the `patchbay-task-` prefix are ever considered — the temp base itself is usually shared with other programs — and a directory this sweep cannot read is never touched.
 
-Configured patterns are basename-only — entries containing `/` or `\` are silently dropped — and `.git` subtrees are never descended into. The managed Codex cache is matched by its exact relative path, so a repository's own `.sandbox-bin` is not removed unless an operator explicitly adds that basename to `PATCHBAY_GC_ARTIFACT_PATTERNS`. The default list (`node_modules`, `.next`, `.turbo`) is intentionally narrow; extend it per deployment if your repos consistently produce other regenerable directories (for example, `PATCHBAY_GC_ARTIFACT_PATTERNS=node_modules,.next,.turbo,target,__pycache__`). To disable artifact cleanup entirely, including the managed Codex cache, set `PATCHBAY_GC_ARTIFACT_TTL=0`.
+Configured patterns are basename-only — entries containing `/` or `\` are silently dropped — and `.git` subtrees are never descended into. The managed Codex cache is matched by its exact relative path, so a repository's own `.sandbox-bin` is not removed unless an operator explicitly adds that basename to `ORVILO_GC_ARTIFACT_PATTERNS`. The default list (`node_modules`, `.next`, `.turbo`) is intentionally narrow; extend it per deployment if your repos consistently produce other regenerable directories (for example, `ORVILO_GC_ARTIFACT_PATTERNS=node_modules,.next,.turbo,target,__pycache__`). To disable artifact cleanup entirely, including the managed Codex cache, set `ORVILO_GC_ARTIFACT_TTL=0`.
 
 `patchbay daemon disk-usage` reports the `.repos` footprint on its own line rather than folding it into the per-task totals — every task in a workspace checks out from that shared cache, so attributing it to individual task directories would double-count it. Note that the repo cache is reclaimed on the schedule above and not by any per-issue status change, so it is normal for it to persist after every task directory is gone.
 
@@ -323,58 +323,58 @@ Agent-specific overrides:
 
 | Variable | Description |
 |----------|-------------|
-| `PATCHBAY_CLAUDE_PATH` | Custom path to the `claude` binary |
-| `PATCHBAY_CLAUDE_MODEL` | Override the Claude model used |
-| `PATCHBAY_CLAUDE_ARGS` | Default extra arguments for Claude Code runs |
-| `PATCHBAY_ANTIGRAVITY_PATH` | Custom path to the `agy` binary |
-| `PATCHBAY_ANTIGRAVITY_MODEL` | Override the Antigravity model used |
-| `PATCHBAY_CODEBUDDY_PATH` | Custom path to the `codebuddy` binary |
-| `PATCHBAY_CODEBUDDY_MODEL` | Override the CodeBuddy model used |
-| `PATCHBAY_CODEBUDDY_ARGS` | Default extra arguments for CodeBuddy runs |
-| `PATCHBAY_CODEARTS_PATH` | Custom path to the `codearts` launcher or binary |
-| `PATCHBAY_CODEARTS_MODEL` | Override the CodeArts model used |
-| `PATCHBAY_DEVECO_PATH` | Custom path to the `deveco` binary |
-| `PATCHBAY_DEVECO_MODEL` | Override the DevEco Code model used |
-| `PATCHBAY_CODEX_PATH` | Custom path to the `codex` binary |
-| `PATCHBAY_CODEX_MODEL` | Override the Codex model used |
-| `PATCHBAY_CODEX_ARGS` | Default extra arguments for Codex runs |
-| `PATCHBAY_COPILOT_PATH` | Custom path to the `copilot` binary |
-| `PATCHBAY_COPILOT_MODEL` | Override the Copilot model used (note: GitHub Copilot routes models through your account entitlement, so this may not be honoured) |
-| `PATCHBAY_OPENCODE_PATH` | Custom path to the `opencode` binary |
-| `PATCHBAY_OPENCODE_MODEL` | Override the OpenCode model used |
-| `PATCHBAY_OPENCLAW_PATH` | Custom path to the `openclaw` binary |
-| `PATCHBAY_OPENCLAW_MODEL` | Override the OpenClaw model used |
-| `PATCHBAY_OPENCLAW_CLI_TIMEOUT` | Deadline for each `openclaw config ...` call during task preparation (default 30s; accepts `45s` or `45`). Raise it when the local CLI is slow to start; the daemon also reads it from `backends.openclaw.cli_timeout` in the CLI config |
-| `PATCHBAY_HERMES_PATH` | Custom path to the `hermes` binary |
-| `PATCHBAY_HERMES_MODEL` | Override the Hermes model used |
-| `PATCHBAY_PI_PATH` | Custom path to the `pi` binary |
-| `PATCHBAY_PI_MODEL` | Override the Pi model used |
-| `PATCHBAY_CURSOR_PATH` | Custom path to the `cursor-agent` binary |
-| `PATCHBAY_CURSOR_MODEL` | Override the Cursor Agent model used |
-| `PATCHBAY_KIMI_PATH` | Custom path to the `kimi` binary |
-| `PATCHBAY_KIMI_MODEL` | Override the Kimi model used |
-| `PATCHBAY_REASONIX_PATH` | Custom path to the `reasonix` binary |
-| `PATCHBAY_REASONIX_MODEL` | Override the Reasonix model used |
-| `PATCHBAY_DIM_PATH` | Custom path to the `dim` binary |
-| `PATCHBAY_DIM_MODEL` | Override the Dim model used |
-| `PATCHBAY_KIRO_PATH` | Custom path to the `kiro-cli` binary |
-| `PATCHBAY_KIRO_MODEL` | Override the Kiro model used |
-| `PATCHBAY_QODER_PATH` | Custom path to the `qodercli` binary |
-| `PATCHBAY_QODER_MODEL` | Override the Qoder model used |
-| `PATCHBAY_QODERCLICN_PATH` | Custom path to the `qoderclicn` binary |
-| `PATCHBAY_QODERCLICN_MODEL` | Override the Qoder CN model used |
-| `PATCHBAY_TRAECLI_PATH` | Custom path to the `traecli` binary |
-| `PATCHBAY_TRAECLI_MODEL` | Override the Trae model used (a model id from your logged-in traecli catalog, e.g. `Doubao-Seed-2.1-Pro`) |
-| `PATCHBAY_GROK_PATH` | Custom path to the `grok` binary (defaults to `grok` on PATH; often `~/.grok/bin/grok`) |
-| `PATCHBAY_GROK_MODEL` | Override the Grok model used (e.g. `grok-4.5`) |
-| `PATCHBAY_QWEN_PATH` | Custom path to the `qwen` binary |
-| `PATCHBAY_QWEN_MODEL` | Override the Qwen Code model used |
-| `PATCHBAY_QWEN_ARGS` | Daemon-wide extra Qwen arguments (POSIX shellword parsing; managed protocol flags are filtered) |
-| `PATCHBAY_QWENPAW_PATH` | Custom path to the `qwenpaw` binary |
-| `PATCHBAY_QWENPAW_ARGS` | Daemon-wide extra QwenPaw arguments (POSIX shellword parsing; managed protocol flags are filtered) |
-| `PATCHBAY_MCODE_PATH` | Custom path to the `mcode` binary |
-| `PATCHBAY_DSH_PATH` | Custom path to the `dsh` binary |
-| `PATCHBAY_DSH_MODEL` | Override the DeepSeek Harness model used (a model id from the dsh catalog, e.g. `deepseek-official/deepseek-chat`) |
+| `ORVILO_CLAUDE_PATH` | Custom path to the `claude` binary |
+| `ORVILO_CLAUDE_MODEL` | Override the Claude model used |
+| `ORVILO_CLAUDE_ARGS` | Default extra arguments for Claude Code runs |
+| `ORVILO_ANTIGRAVITY_PATH` | Custom path to the `agy` binary |
+| `ORVILO_ANTIGRAVITY_MODEL` | Override the Antigravity model used |
+| `ORVILO_CODEBUDDY_PATH` | Custom path to the `codebuddy` binary |
+| `ORVILO_CODEBUDDY_MODEL` | Override the CodeBuddy model used |
+| `ORVILO_CODEBUDDY_ARGS` | Default extra arguments for CodeBuddy runs |
+| `ORVILO_CODEARTS_PATH` | Custom path to the `codearts` launcher or binary |
+| `ORVILO_CODEARTS_MODEL` | Override the CodeArts model used |
+| `ORVILO_DEVECO_PATH` | Custom path to the `deveco` binary |
+| `ORVILO_DEVECO_MODEL` | Override the DevEco Code model used |
+| `ORVILO_CODEX_PATH` | Custom path to the `codex` binary |
+| `ORVILO_CODEX_MODEL` | Override the Codex model used |
+| `ORVILO_CODEX_ARGS` | Default extra arguments for Codex runs |
+| `ORVILO_COPILOT_PATH` | Custom path to the `copilot` binary |
+| `ORVILO_COPILOT_MODEL` | Override the Copilot model used (note: GitHub Copilot routes models through your account entitlement, so this may not be honoured) |
+| `ORVILO_OPENCODE_PATH` | Custom path to the `opencode` binary |
+| `ORVILO_OPENCODE_MODEL` | Override the OpenCode model used |
+| `ORVILO_OPENCLAW_PATH` | Custom path to the `openclaw` binary |
+| `ORVILO_OPENCLAW_MODEL` | Override the OpenClaw model used |
+| `ORVILO_OPENCLAW_CLI_TIMEOUT` | Deadline for each `openclaw config ...` call during task preparation (default 30s; accepts `45s` or `45`). Raise it when the local CLI is slow to start; the daemon also reads it from `backends.openclaw.cli_timeout` in the CLI config |
+| `ORVILO_HERMES_PATH` | Custom path to the `hermes` binary |
+| `ORVILO_HERMES_MODEL` | Override the Hermes model used |
+| `ORVILO_PI_PATH` | Custom path to the `pi` binary |
+| `ORVILO_PI_MODEL` | Override the Pi model used |
+| `ORVILO_CURSOR_PATH` | Custom path to the `cursor-agent` binary |
+| `ORVILO_CURSOR_MODEL` | Override the Cursor Agent model used |
+| `ORVILO_KIMI_PATH` | Custom path to the `kimi` binary |
+| `ORVILO_KIMI_MODEL` | Override the Kimi model used |
+| `ORVILO_REASONIX_PATH` | Custom path to the `reasonix` binary |
+| `ORVILO_REASONIX_MODEL` | Override the Reasonix model used |
+| `ORVILO_DIM_PATH` | Custom path to the `dim` binary |
+| `ORVILO_DIM_MODEL` | Override the Dim model used |
+| `ORVILO_KIRO_PATH` | Custom path to the `kiro-cli` binary |
+| `ORVILO_KIRO_MODEL` | Override the Kiro model used |
+| `ORVILO_QODER_PATH` | Custom path to the `qodercli` binary |
+| `ORVILO_QODER_MODEL` | Override the Qoder model used |
+| `ORVILO_QODERCLICN_PATH` | Custom path to the `qoderclicn` binary |
+| `ORVILO_QODERCLICN_MODEL` | Override the Qoder CN model used |
+| `ORVILO_TRAECLI_PATH` | Custom path to the `traecli` binary |
+| `ORVILO_TRAECLI_MODEL` | Override the Trae model used (a model id from your logged-in traecli catalog, e.g. `Doubao-Seed-2.1-Pro`) |
+| `ORVILO_GROK_PATH` | Custom path to the `grok` binary (defaults to `grok` on PATH; often `~/.grok/bin/grok`) |
+| `ORVILO_GROK_MODEL` | Override the Grok model used (e.g. `grok-4.5`) |
+| `ORVILO_QWEN_PATH` | Custom path to the `qwen` binary |
+| `ORVILO_QWEN_MODEL` | Override the Qwen Code model used |
+| `ORVILO_QWEN_ARGS` | Daemon-wide extra Qwen arguments (POSIX shellword parsing; managed protocol flags are filtered) |
+| `ORVILO_QWENPAW_PATH` | Custom path to the `qwenpaw` binary |
+| `ORVILO_QWENPAW_ARGS` | Daemon-wide extra QwenPaw arguments (POSIX shellword parsing; managed protocol flags are filtered) |
+| `ORVILO_MCODE_PATH` | Custom path to the `mcode` binary |
+| `ORVILO_DSH_PATH` | Custom path to the `dsh` binary |
+| `ORVILO_DSH_MODEL` | Override the DeepSeek Harness model used (a model id from the dsh catalog, e.g. `deepseek-official/deepseek-chat`) |
 
 If a previously generated `~/.patchbay/hooks` wrapper is first on `PATH` and calls the same command name again, the daemon skips that hooks directory during built-in agent discovery and records the real binary path behind it. If your interactive shell still recurses when you run `claude`, `codex`, or `hermes` manually, remove the hooks entry from your shell startup file or replace the wrapper body with an absolute `exec /path/to/real-binary "$@"`.
 
@@ -395,7 +395,7 @@ Two consequences are worth knowing before debugging a missing MCP tool:
 If a configured server produces no tools, check the daemon log for those warnings first, then confirm the runtime itself exposes the server's tools to the model — some ACP adapters apply their own tool-profile filtering after connecting.
 
 
-The daemon launches QwenPaw as `qwenpaw acp --workspace <per-task dir>`. It writes the task brief to `AGENTS.md`, and materialises the run's bound skills into `<per-task dir>/skills/` plus a `skill.json` manifest, so QwenPaw discovers them through its own workspace skill discovery. `acp` and `--workspace` are reserved: `custom_args` cannot override them. QwenPaw is the one runtime with no `PATCHBAY_QWENPAW_MODEL`: its `session/set_model` writes to a shared, persistent agent config rather than the session, so Patchbay never sends it a model and leaves that choice to QwenPaw's own configuration.
+The daemon launches QwenPaw as `qwenpaw acp --workspace <per-task dir>`. It writes the task brief to `AGENTS.md`, and materialises the run's bound skills into `<per-task dir>/skills/` plus a `skill.json` manifest, so QwenPaw discovers them through its own workspace skill discovery. `acp` and `--workspace` are reserved: `custom_args` cannot override them. QwenPaw is the one runtime with no `ORVILO_QWENPAW_MODEL`: its `session/set_model` writes to a shared, persistent agent config rather than the session, so Patchbay never sends it a model and leaves that choice to QwenPaw's own configuration.
 
 The daemon launches MiniMax Code as `mcode acp`, writes the task brief to `AGENTS.md`, and injects bound skills under `.minimax/skills/`. MCode owns model selection and currently advertises `loadSession: false`; Patchbay therefore starts a fresh MCode session when a later run cannot load the saved session.
 
@@ -417,7 +417,7 @@ Consequences worth knowing:
 - **Concurrent tasks of one agent are last-writer-wins.** Hermes rewrites its memory files whole, so two tasks writing memory at the same time can overwrite each other.
 - **Every Hermes agent gets the overlay in practice**, so every one of them gets a persistent memory store. The daemon builds the overlay only when a task carries skills, but the server appends Patchbay's built-in skills to every agent's skill set (`LoadAgentSkillBundles`), so that list is never empty — leaving an agent's own skill list empty does not opt out of the overlay, and is not a way to keep using the host's `~/.hermes/memories`.
 
-`PATCHBAY_CLAUDE_ARGS`, `PATCHBAY_CODEX_ARGS`, `PATCHBAY_CODEBUDDY_ARGS`, `PATCHBAY_QWEN_ARGS`, and `PATCHBAY_QWENPAW_ARGS` are parsed with POSIX shellword quoting, so values such as `--model "gpt-5.1 codex" --sandbox read-only` are split like a shell command line. Agent arguments are applied in this order: hardcoded Patchbay defaults, daemon-wide env defaults, then per-agent `custom_args` from the task.
+`ORVILO_CLAUDE_ARGS`, `ORVILO_CODEX_ARGS`, `ORVILO_CODEBUDDY_ARGS`, `ORVILO_QWEN_ARGS`, and `ORVILO_QWENPAW_ARGS` are parsed with POSIX shellword quoting, so values such as `--model "gpt-5.1 codex" --sandbox read-only` are split like a shell command line. Agent arguments are applied in this order: hardcoded Patchbay defaults, daemon-wide env defaults, then per-agent `custom_args` from the task.
 
 ### Self-Hosted Server
 
@@ -470,7 +470,7 @@ Each profile gets its own config directory (`~/.patchbay/profiles/<name>/`), dae
 Every command runs against a single workspace. The CLI resolves which one in this order (highest priority first):
 
 1. `--workspace-id <id>` flag on the command
-2. `PATCHBAY_WORKSPACE_ID` environment variable
+2. `ORVILO_WORKSPACE_ID` environment variable
 3. The default workspace stored in your current profile (set by `patchbay workspace switch` or `patchbay login`)
 
 `patchbay workspace switch <id|slug>` is the day-to-day way to change the default workspace. For scripting and headless setups where you don't want any stored state, prefer the `--workspace-id` flag or the env variable. `patchbay config set workspace_id <id>` is the low-level equivalent of `switch` (it writes the same setting but skips the access check).
@@ -494,7 +494,7 @@ patchbay workspace switch <workspace-id>
 patchbay workspace switch <slug>
 ```
 
-Verifies you have access to the workspace, then sets it as the default for the current profile. Subsequent commands without `--workspace-id` and `PATCHBAY_WORKSPACE_ID` target this workspace. Pair `--profile` if you want to change a non-default profile's workspace.
+Verifies you have access to the workspace, then sets it as the default for the current profile. Subsequent commands without `--workspace-id` and `ORVILO_WORKSPACE_ID` target this workspace. Pair `--profile` if you want to change a non-default profile's workspace.
 
 ### Get Details
 
@@ -958,7 +958,7 @@ layer.) The underlying detail is still available on demand (see `--debug`).
   connection refused, TLS) and HTTP status failures (401/403/404/409/400·422/
   429/5xx) are each rendered as one clear sentence with a next step — for
   example a timeout suggests checking the network or raising
-  `PATCHBAY_HTTP_TIMEOUT`, and a 401 tells you to run `patchbay login`.
+  `ORVILO_HTTP_TIMEOUT`, and a 401 tells you to run `patchbay login`.
 - **Server-provided validation messages are preserved.** For a 400/422 that
   carries a message from the server, that message is shown verbatim
   (`Invalid request: <server message>`); only when there is none do you get the
@@ -997,25 +997,25 @@ if [ $? -eq 4 ]; then echo "no such issue"; fi
 
 ### Seeing the full detail (`--debug`)
 
-Pass the global `--debug` flag (or set `PATCHBAY_DEBUG=1`) to print the complete
+Pass the global `--debug` flag (or set `ORVILO_DEBUG=1`) to print the complete
 original error chain — the internal verb chain, the request method/path/status,
 and the raw server body — underneath the friendly message. Use it when you need
 to file a bug or understand exactly what the server returned:
 
 ```bash
 patchbay issue list --debug
-PATCHBAY_DEBUG=1 patchbay issue update MUL-1234 --title "x"
+ORVILO_DEBUG=1 patchbay issue update MUL-1234 --title "x"
 ```
 
 ### Request timeout
 
 API requests use a default timeout of 30 seconds. Override it with
-`PATCHBAY_HTTP_TIMEOUT` when you are on a slow network; it accepts a Go duration
+`ORVILO_HTTP_TIMEOUT` when you are on a slow network; it accepts a Go duration
 (`45s`, `2m`) or a plain number of seconds (`45`). Command-level deadlines are
 always at least this value, so raising it takes effect across all commands.
 
 ```bash
-PATCHBAY_HTTP_TIMEOUT=60s patchbay issue list
+ORVILO_HTTP_TIMEOUT=60s patchbay issue list
 ```
 
 ### Stall detection (skill commands)
@@ -1030,13 +1030,13 @@ of *progress* instead:
 - A transfer that keeps producing bytes runs to completion, however long it
   takes, behind a loose **10 minute** whole-request ceiling.
 
-Override the no-progress budget with `PATCHBAY_HTTP_STALL_TIMEOUT` (same format
-as `PATCHBAY_HTTP_TIMEOUT`). If only `PATCHBAY_HTTP_TIMEOUT` is set it applies on
+Override the no-progress budget with `ORVILO_HTTP_STALL_TIMEOUT` (same format
+as `ORVILO_HTTP_TIMEOUT`). If only `ORVILO_HTTP_TIMEOUT` is set it applies on
 this path too, as the no-progress budget — it keeps meaning "the longest I will
 wait for this server", not "the longest this download may take".
 
 ```bash
-PATCHBAY_HTTP_STALL_TIMEOUT=45s patchbay skill get <id>
+ORVILO_HTTP_STALL_TIMEOUT=45s patchbay skill get <id>
 ```
 
 Every other command still uses the total-elapsed timeout above. Stall detection

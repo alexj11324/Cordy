@@ -19,7 +19,7 @@ import (
 
 // blockingChildEnv marks a re-executed copy of this test binary as the
 // stand-in daemon process rather than a normal test run.
-const blockingChildEnv = "PATCHBAY_TEST_BLOCKING_CHILD"
+const blockingChildEnv = "ORVILO_TEST_BLOCKING_CHILD"
 
 // TestBlockingChildProcess is not a test. It is the entry point the child from
 // startBlockingChild runs, and it returns immediately unless that child's env
@@ -333,8 +333,8 @@ func TestDaemonStatusInTaskContextReportsNamedProfileHost(t *testing.T) {
 		stub := serveHealthAs(t, "host-named-profile", map[string]any{
 			"profile": "host-named-profile", "launched_by": "desktop",
 		})
-		t.Setenv("PATCHBAY_TASK_ID", "task-test")
-		t.Setenv("PATCHBAY_DAEMON_PORT", strconv.Itoa(stub.port))
+		t.Setenv("ORVILO_TASK_ID", "task-test")
+		t.Setenv("ORVILO_DAEMON_PORT", strconv.Itoa(stub.port))
 	}
 
 	t.Run("table reports the host as running", func(t *testing.T) {

@@ -17,7 +17,7 @@ import (
 // startup itself was not reachable from a test — it validates the endpoint as a
 // public HTTPS URL, and the fixture serves plain HTTP on a loopback address. So
 // the layer carrying the whole approval guarantee ran zero times. These tests
-// exist because PATCHBAY_PLUGIN_DEV_ORIGINS now lets a caller name that origin.
+// exist because ORVILO_PLUGIN_DEV_ORIGINS now lets a caller name that origin.
 
 // The version remotemcptest.Server negotiates. Named once so a fixture change
 // is a single edit rather than four.

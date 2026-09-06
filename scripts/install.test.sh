@@ -44,7 +44,7 @@ if [[ -z "$out" ]]; then
   echo "stub curl expected -o" >&2
   exit 2
 fi
-cp "$PATCHBAY_TEST_ARCHIVE" "$out"
+cp "$ORVILO_TEST_ARCHIVE" "$out"
 STUB
   chmod +x "$stub_bin/curl"
 }
@@ -54,8 +54,8 @@ _run_installer() {
   local out="$tmp/install.out"
   local err="$tmp/install.err"
   if ! PATH="$tmp/stub-bin:$tmp/install-bin:/usr/bin:/bin" \
-    PATCHBAY_BIN_DIR="$tmp/install-bin" \
-    PATCHBAY_TEST_ARCHIVE="$tmp/patchbay.tar.gz" \
+    ORVILO_BIN_DIR="$tmp/install-bin" \
+    ORVILO_TEST_ARCHIVE="$tmp/patchbay.tar.gz" \
     bash "$ROOT_DIR/scripts/install.sh" >"$out" 2>"$err"; then
     echo "install.sh exited non-zero" >&2
     cat "$out" >&2 || true
@@ -367,7 +367,7 @@ STUB
 set -uo pipefail
 for arg in "$@"; do
   case "$arg" in
-    http*) printf '%s\n' "$arg" >>"$PATCHBAY_TEST_CURL_LOG" ;;
+    http*) printf '%s\n' "$arg" >>"$ORVILO_TEST_CURL_LOG" ;;
   esac
 done
 exit 0
@@ -389,9 +389,9 @@ _run_with_server() {
   if ! env -i \
     PATH="$tmp/stub-bin:/usr/bin:/bin" \
     HOME="$tmp" \
-    PATCHBAY_INSTALL_DIR="$tmp/server" \
-    PATCHBAY_SELFHOST_REF="main" \
-    PATCHBAY_TEST_CURL_LOG="$tmp/curl.log" \
+    ORVILO_INSTALL_DIR="$tmp/server" \
+    ORVILO_SELFHOST_REF="main" \
+    ORVILO_TEST_CURL_LOG="$tmp/curl.log" \
     "$@" \
     bash "$ROOT_DIR/scripts/install.sh" --with-server \
     >"$tmp/install.out" 2>"$tmp/install.err"; then

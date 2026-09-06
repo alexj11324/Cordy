@@ -138,7 +138,7 @@ export function WeixinTab() {
             <p className="text-caption text-muted-foreground">
               {t(($) => $.weixin.not_enabled_description_prefix)}{" "}
               <code className="rounded bg-muted px-1 py-0.5 text-micro" translate="no">
-                PATCHBAY_WEIXIN_SECRET_KEY
+                ORVILO_WEIXIN_SECRET_KEY
               </code>{" "}
               {t(($) => $.weixin.not_enabled_description_suffix)}{" "}
               {t(($) => $.weixin.not_enabled_self_host_hint)}

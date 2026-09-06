@@ -238,7 +238,7 @@ func NewEmailService() *EmailService {
 	case client != nil:
 		fmt.Printf("EmailService: Resend API from=%s\n", from)
 	default:
-		fmt.Println("EmailService: DEV mode — codes printed to stdout (set PATCHBAY_DEV_VERIFICATION_CODE in .env for a fixed local code)")
+		fmt.Println("EmailService: DEV mode — codes printed to stdout (set ORVILO_DEV_VERIFICATION_CODE in .env for a fixed local code)")
 	}
 
 	return &EmailService{

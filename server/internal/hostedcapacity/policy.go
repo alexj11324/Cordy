@@ -78,8 +78,8 @@ type Resolver struct {
 }
 
 // NewResolver builds the resolver. enabled comes from the deployment switch
-// (PATCHBAY_HOSTED_IM_CAPACITY); provider is the shared entitlement client,
-// which is only connected when PATCHBAY_CLOUD_URL is set.
+// (ORVILO_HOSTED_IM_CAPACITY); provider is the shared entitlement client,
+// which is only connected when ORVILO_CLOUD_URL is set.
 func NewResolver(enabled bool, provider entitlement.Provider) *Resolver {
 	return &Resolver{enabled: enabled, provider: provider}
 }

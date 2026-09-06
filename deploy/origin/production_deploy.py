@@ -460,12 +460,12 @@ class ProductionDeployment:
 
         product_env = os.environ.copy()
         product_env.update(product)
-        product_env["PATCHBAY_BACKEND_IMAGE_REF"] = manifest["images"]["backend"]
-        product_env["PATCHBAY_WEB_IMAGE_REF"] = manifest["images"]["web"]
-        product_env["PATCHBAY_DOCS_IMAGE_REF"] = manifest["images"]["docs"]
+        product_env["ORVILO_BACKEND_IMAGE_REF"] = manifest["images"]["backend"]
+        product_env["ORVILO_WEB_IMAGE_REF"] = manifest["images"]["web"]
+        product_env["ORVILO_DOCS_IMAGE_REF"] = manifest["images"]["docs"]
         broker_env = os.environ.copy()
         broker_env.update(broker)
-        broker_env["PATCHBAY_AUTH_BROKER_IMAGE"] = manifest["images"]["auth-broker"]
+        broker_env["ORVILO_AUTH_BROKER_IMAGE"] = manifest["images"]["auth-broker"]
         publishable_key = broker.get("CLERK_PUBLISHABLE_KEY")
         if not isinstance(publishable_key, str) or not publishable_key.strip():
             raise DeploymentError(
@@ -475,7 +475,7 @@ class ProductionDeployment:
         # the existing deployment source of truth. Copy it into the Web
         # runtime environment so Next does not require a build-time public env
         # value and the deployed Web and Accounts surfaces use one Clerk app.
-        product_env["PATCHBAY_CLERK_PUBLISHABLE_KEY"] = publishable_key.strip()
+        product_env["ORVILO_CLERK_PUBLISHABLE_KEY"] = publishable_key.strip()
         return product_env, broker_env
 
     def issue_browser_acceptance_credentials(self) -> dict[str, str]:
@@ -772,7 +772,7 @@ def main() -> int:
     parser.add_argument(
         "--root",
         type=Path,
-        default=Path(os.environ.get("PATCHBAY_PRODUCTION_ROOT", DEFAULT_ROOT)),
+        default=Path(os.environ.get("ORVILO_PRODUCTION_ROOT", DEFAULT_ROOT)),
     )
     arguments = parser.parse_args()
     deployment = ProductionDeployment(arguments.root)

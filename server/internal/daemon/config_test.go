@@ -92,9 +92,9 @@ func TestResolveAgentExecutablePath_CanonicalizesOrdinaryVersionTarget(t *testin
 }
 
 func TestPatternsFromEnv_DefaultsWhenUnset(t *testing.T) {
-	t.Setenv("PATCHBAY_GC_ARTIFACT_PATTERNS", "")
+	t.Setenv("ORVILO_GC_ARTIFACT_PATTERNS", "")
 	defaults := []string{"node_modules", ".next", ".turbo"}
-	got := patternsFromEnv("PATCHBAY_GC_ARTIFACT_PATTERNS", defaults)
+	got := patternsFromEnv("ORVILO_GC_ARTIFACT_PATTERNS", defaults)
 	if !reflect.DeepEqual(got, defaults) {
 		t.Fatalf("expected defaults %v, got %v", defaults, got)
 	}
@@ -118,7 +118,7 @@ func TestLoadConfig_CompletedTaskTTLDefaultsDisabledOnSelfHostAndReadsEnv(t *tes
 	stageFakeAgent(t)
 	t.Setenv("HOME", t.TempDir())
 	stubAgentInstallDirectories(t, nil)
-	t.Setenv("PATCHBAY_GC_COMPLETED_TASK_TTL", "")
+	t.Setenv("ORVILO_GC_COMPLETED_TASK_TTL", "")
 
 	overrides := Overrides{
 		ServerURL:      "http://localhost:0",
@@ -132,7 +132,7 @@ func TestLoadConfig_CompletedTaskTTLDefaultsDisabledOnSelfHostAndReadsEnv(t *tes
 		t.Fatalf("GCCompletedTaskTTL = %s, want disabled", cfg.GCCompletedTaskTTL)
 	}
 
-	t.Setenv("PATCHBAY_GC_COMPLETED_TASK_TTL", "36h")
+	t.Setenv("ORVILO_GC_COMPLETED_TASK_TTL", "36h")
 	cfg, err = LoadConfig(overrides)
 	if err != nil {
 		t.Fatalf("LoadConfig with completed-task TTL: %v", err)
@@ -141,8 +141,8 @@ func TestLoadConfig_CompletedTaskTTLDefaultsDisabledOnSelfHostAndReadsEnv(t *tes
 		t.Fatalf("GCCompletedTaskTTL = %s, want 36h", cfg.GCCompletedTaskTTL)
 	}
 
-	t.Setenv("PATCHBAY_GC_COMPLETED_TASK_TTL", "not-a-duration")
-	if _, err := LoadConfig(overrides); err == nil || !strings.Contains(err.Error(), "PATCHBAY_GC_COMPLETED_TASK_TTL") {
+	t.Setenv("ORVILO_GC_COMPLETED_TASK_TTL", "not-a-duration")
+	if _, err := LoadConfig(overrides); err == nil || !strings.Contains(err.Error(), "ORVILO_GC_COMPLETED_TASK_TTL") {
 		t.Fatalf("LoadConfig invalid completed-task TTL error = %v, want named validation error", err)
 	}
 }
@@ -151,7 +151,7 @@ func TestLoadConfig_CompletedTaskTTLDefaultsBoundedOnOfficialCloud(t *testing.T)
 	stageFakeAgent(t)
 	t.Setenv("HOME", t.TempDir())
 	stubAgentInstallDirectories(t, nil)
-	t.Setenv("PATCHBAY_GC_COMPLETED_TASK_TTL", "")
+	t.Setenv("ORVILO_GC_COMPLETED_TASK_TTL", "")
 
 	overrides := Overrides{
 		ServerURL:      "https://" + officialCloudHost,
@@ -167,7 +167,7 @@ func TestLoadConfig_CompletedTaskTTLDefaultsBoundedOnOfficialCloud(t *testing.T)
 
 	// An explicit 0 has to win on cloud too — otherwise the only way back to the
 	// previous retention behavior would be downgrading the daemon.
-	t.Setenv("PATCHBAY_GC_COMPLETED_TASK_TTL", "0")
+	t.Setenv("ORVILO_GC_COMPLETED_TASK_TTL", "0")
 	cfg, err = LoadConfig(overrides)
 	if err != nil {
 		t.Fatalf("LoadConfig with cloud opt-out: %v", err)
@@ -176,7 +176,7 @@ func TestLoadConfig_CompletedTaskTTLDefaultsBoundedOnOfficialCloud(t *testing.T)
 		t.Fatalf("GCCompletedTaskTTL = %s, want an explicit 0 to disable the cloud default", cfg.GCCompletedTaskTTL)
 	}
 
-	t.Setenv("PATCHBAY_GC_COMPLETED_TASK_TTL", "36h")
+	t.Setenv("ORVILO_GC_COMPLETED_TASK_TTL", "36h")
 	cfg, err = LoadConfig(overrides)
 	if err != nil {
 		t.Fatalf("LoadConfig with cloud override: %v", err)
@@ -213,20 +213,20 @@ func TestDefaultGCCompletedTaskTTLOnlyBoundsOfficialCloudHost(t *testing.T) {
 }
 
 func TestRepoMaintenanceKillSwitchDefaultsOnAndCanDisable(t *testing.T) {
-	t.Setenv("PATCHBAY_GC_REPO_MAINTENANCE_ENABLED", "")
-	if !boolFromEnv("PATCHBAY_GC_REPO_MAINTENANCE_ENABLED", true) {
+	t.Setenv("ORVILO_GC_REPO_MAINTENANCE_ENABLED", "")
+	if !boolFromEnv("ORVILO_GC_REPO_MAINTENANCE_ENABLED", true) {
 		t.Fatal("repo maintenance kill switch should default to enabled")
 	}
 
-	t.Setenv("PATCHBAY_GC_REPO_MAINTENANCE_ENABLED", "false")
-	if boolFromEnv("PATCHBAY_GC_REPO_MAINTENANCE_ENABLED", true) {
+	t.Setenv("ORVILO_GC_REPO_MAINTENANCE_ENABLED", "false")
+	if boolFromEnv("ORVILO_GC_REPO_MAINTENANCE_ENABLED", true) {
 		t.Fatal("repo maintenance kill switch should accept false")
 	}
 }
 
 func TestPatternsFromEnv_DropsSeparatorBearingEntries(t *testing.T) {
-	t.Setenv("PATCHBAY_GC_ARTIFACT_PATTERNS", "node_modules, .next ,foo/bar, ../etc, ,target")
-	got := patternsFromEnv("PATCHBAY_GC_ARTIFACT_PATTERNS", nil)
+	t.Setenv("ORVILO_GC_ARTIFACT_PATTERNS", "node_modules, .next ,foo/bar, ../etc, ,target")
+	got := patternsFromEnv("ORVILO_GC_ARTIFACT_PATTERNS", nil)
 	want := []string{"node_modules", ".next", "target"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("expected %v, got %v", want, got)
@@ -304,10 +304,10 @@ func stageFakeAgent(t *testing.T) string {
 		t.Fatalf("write fake claude: %v", err)
 	}
 	t.Setenv("PATH", binDir)
-	t.Setenv("PATCHBAY_DAEMON_ID", "11111111-1111-1111-1111-111111111111")
+	t.Setenv("ORVILO_DAEMON_ID", "11111111-1111-1111-1111-111111111111")
 	// Clear any inherited env-var override so the test sees the URL-based
 	// default, not whatever the developer happens to have exported.
-	t.Setenv("PATCHBAY_DAEMON_AUTO_UPDATE", "")
+	t.Setenv("ORVILO_DAEMON_AUTO_UPDATE", "")
 	return binDir
 }
 
@@ -322,8 +322,8 @@ func TestLoadConfig_DiscoversQwenCode(t *testing.T) {
 	}
 	// Exclude host installations; this fixture exercises ordinary PATH discovery.
 	stubAgentInstallDirectories(t, nil)
-	t.Setenv("PATCHBAY_QWEN_MODEL", "qwen3.8-max-preview")
-	t.Setenv("PATCHBAY_QWEN_ARGS", "--verbose --foo=bar")
+	t.Setenv("ORVILO_QWEN_MODEL", "qwen3.8-max-preview")
+	t.Setenv("ORVILO_QWEN_ARGS", "--verbose --foo=bar")
 
 	cfg, err := LoadConfig(Overrides{
 		ServerURL:      "http://localhost:0",
@@ -375,7 +375,7 @@ func TestLoadConfig_SkipsPatchbayHooksShadowingAgentBinaries(t *testing.T) {
 
 	t.Setenv("PATH", hooksDir+string(os.PathListSeparator)+realBinDir)
 	stubAgentInstallDirectories(t, nil)
-	t.Setenv("PATCHBAY_DAEMON_ID", "11111111-1111-1111-1111-111111111111")
+	t.Setenv("ORVILO_DAEMON_ID", "11111111-1111-1111-1111-111111111111")
 
 	cfg, err := LoadConfig(Overrides{
 		ServerURL:      "http://localhost:0",
@@ -420,7 +420,7 @@ func TestLoadConfig_AutoUpdateDefault_SelfHostOff(t *testing.T) {
 
 func TestLoadConfig_CodexHandshakeTimeout(t *testing.T) {
 	stageFakeAgent(t)
-	t.Setenv("PATCHBAY_CODEX_HANDSHAKE_TIMEOUT", "")
+	t.Setenv("ORVILO_CODEX_HANDSHAKE_TIMEOUT", "")
 
 	cfg, err := LoadConfig(Overrides{
 		ServerURL:      "http://localhost:8080",
@@ -436,7 +436,7 @@ func TestLoadConfig_CodexHandshakeTimeout(t *testing.T) {
 		t.Fatalf("CodexThreadHandshakeTimeout = %s, want default %s", cfg.CodexThreadHandshakeTimeout, DefaultCodexThreadHandshakeTimeout)
 	}
 
-	t.Setenv("PATCHBAY_CODEX_HANDSHAKE_TIMEOUT", "47s")
+	t.Setenv("ORVILO_CODEX_HANDSHAKE_TIMEOUT", "47s")
 
 	cfg, err = LoadConfig(Overrides{
 		ServerURL:      "http://localhost:8080",
@@ -452,7 +452,7 @@ func TestLoadConfig_CodexHandshakeTimeout(t *testing.T) {
 		t.Fatalf("CodexThreadHandshakeTimeout = %s, want legacy 47s env override", cfg.CodexThreadHandshakeTimeout)
 	}
 
-	t.Setenv("PATCHBAY_CODEX_HANDSHAKE_TIMEOUT", "1d")
+	t.Setenv("ORVILO_CODEX_HANDSHAKE_TIMEOUT", "1d")
 	cfg, err = LoadConfig(Overrides{
 		ServerURL:      "http://localhost:8080",
 		WorkspacesRoot: t.TempDir(),
@@ -467,7 +467,7 @@ func TestLoadConfig_CodexHandshakeTimeout(t *testing.T) {
 		t.Fatalf("CodexThreadHandshakeTimeout = %s, want legacy 24h env override", cfg.CodexThreadHandshakeTimeout)
 	}
 
-	t.Setenv("PATCHBAY_CODEX_HANDSHAKE_TIMEOUT", "0")
+	t.Setenv("ORVILO_CODEX_HANDSHAKE_TIMEOUT", "0")
 	cfg, err = LoadConfig(Overrides{
 		ServerURL:      "http://localhost:8080",
 		WorkspacesRoot: t.TempDir(),
@@ -499,13 +499,13 @@ func TestLoadConfig_CodexHandshakeTimeout(t *testing.T) {
 }
 
 // TestLoadConfig_CodexFirstTurnNoProgressTimeout pins the env-only
-// PATCHBAY_CODEX_FIRST_TURN_TIMEOUT resolution (GH #3262 / #5959): unset and an
+// ORVILO_CODEX_FIRST_TURN_TIMEOUT resolution (GH #3262 / #5959): unset and an
 // explicit "0" both mean "keep the backend default" (0 = unset), while a positive
 // value is honored verbatim. There is deliberately no Overrides/CLI parity — this
 // knob is environment-only.
 func TestLoadConfig_CodexFirstTurnNoProgressTimeout(t *testing.T) {
 	stageFakeAgent(t)
-	t.Setenv("PATCHBAY_CODEX_FIRST_TURN_TIMEOUT", "")
+	t.Setenv("ORVILO_CODEX_FIRST_TURN_TIMEOUT", "")
 
 	cfg, err := LoadConfig(Overrides{
 		ServerURL:      "http://localhost:8080",
@@ -518,7 +518,7 @@ func TestLoadConfig_CodexFirstTurnNoProgressTimeout(t *testing.T) {
 		t.Fatalf("CodexFirstTurnNoProgressTimeout = %s, want 0 when unset", cfg.CodexFirstTurnNoProgressTimeout)
 	}
 
-	t.Setenv("PATCHBAY_CODEX_FIRST_TURN_TIMEOUT", "30m")
+	t.Setenv("ORVILO_CODEX_FIRST_TURN_TIMEOUT", "30m")
 	cfg, err = LoadConfig(Overrides{
 		ServerURL:      "http://localhost:8080",
 		WorkspacesRoot: t.TempDir(),
@@ -530,7 +530,7 @@ func TestLoadConfig_CodexFirstTurnNoProgressTimeout(t *testing.T) {
 		t.Fatalf("CodexFirstTurnNoProgressTimeout = %s, want 30m from env", cfg.CodexFirstTurnNoProgressTimeout)
 	}
 
-	t.Setenv("PATCHBAY_CODEX_FIRST_TURN_TIMEOUT", "0")
+	t.Setenv("ORVILO_CODEX_FIRST_TURN_TIMEOUT", "0")
 	cfg, err = LoadConfig(Overrides{
 		ServerURL:      "http://localhost:8080",
 		WorkspacesRoot: t.TempDir(),
@@ -552,7 +552,7 @@ func TestLoadConfig_CodexFirstTurnNoProgressTimeout(t *testing.T) {
 func TestLoadConfig_CodexFirstTurnTimeoutEqualToSemanticWarns(t *testing.T) {
 	stageFakeAgent(t)
 
-	const warnNeedle = "PATCHBAY_CODEX_FIRST_TURN_TIMEOUT is greater than or equal to the semantic-inactivity timeout"
+	const warnNeedle = "ORVILO_CODEX_FIRST_TURN_TIMEOUT is greater than or equal to the semantic-inactivity timeout"
 
 	loadWithLoggedWarnings := func(t *testing.T, semantic, firstTurn string) string {
 		t.Helper()
@@ -561,8 +561,8 @@ func TestLoadConfig_CodexFirstTurnTimeoutEqualToSemanticWarns(t *testing.T) {
 		slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
 		t.Cleanup(func() { slog.SetDefault(prev) })
 
-		t.Setenv("PATCHBAY_CODEX_SEMANTIC_INACTIVITY_TIMEOUT", semantic)
-		t.Setenv("PATCHBAY_CODEX_FIRST_TURN_TIMEOUT", firstTurn)
+		t.Setenv("ORVILO_CODEX_SEMANTIC_INACTIVITY_TIMEOUT", semantic)
+		t.Setenv("ORVILO_CODEX_FIRST_TURN_TIMEOUT", firstTurn)
 		if _, err := LoadConfig(Overrides{
 			ServerURL:      "http://localhost:8080",
 			WorkspacesRoot: t.TempDir(),
@@ -597,8 +597,8 @@ func TestLoadConfig_CodexFirstTurnTimeoutEqualToSemanticWarns(t *testing.T) {
 // lower, invisible ceiling.
 func TestLoadConfig_ToolWatchdogDefaultsToIdleWatchdog(t *testing.T) {
 	stageFakeAgent(t)
-	t.Setenv("PATCHBAY_AGENT_IDLE_WATCHDOG", "")
-	t.Setenv("PATCHBAY_AGENT_TOOL_WATCHDOG", "")
+	t.Setenv("ORVILO_AGENT_IDLE_WATCHDOG", "")
+	t.Setenv("ORVILO_AGENT_TOOL_WATCHDOG", "")
 
 	load := func(t *testing.T) Config {
 		t.Helper()
@@ -621,7 +621,7 @@ func TestLoadConfig_ToolWatchdogDefaultsToIdleWatchdog(t *testing.T) {
 	}
 
 	// Raising only the idle budget must carry the tool budget with it.
-	t.Setenv("PATCHBAY_AGENT_IDLE_WATCHDOG", "6h")
+	t.Setenv("ORVILO_AGENT_IDLE_WATCHDOG", "6h")
 	cfg = load(t)
 	if cfg.AgentIdleWatchdog != 6*time.Hour || cfg.AgentToolWatchdog != 6*time.Hour {
 		t.Fatalf("idle=%s tool=%s, want both 6h", cfg.AgentIdleWatchdog, cfg.AgentToolWatchdog)
@@ -629,7 +629,7 @@ func TestLoadConfig_ToolWatchdogDefaultsToIdleWatchdog(t *testing.T) {
 
 	// An explicit tool override still wins, so "tools may run longer than the
 	// model may think" stays expressible.
-	t.Setenv("PATCHBAY_AGENT_TOOL_WATCHDOG", "12h")
+	t.Setenv("ORVILO_AGENT_TOOL_WATCHDOG", "12h")
 	cfg = load(t)
 	if cfg.AgentIdleWatchdog != 6*time.Hour {
 		t.Fatalf("AgentIdleWatchdog = %s, want 6h", cfg.AgentIdleWatchdog)
@@ -640,15 +640,15 @@ func TestLoadConfig_ToolWatchdogDefaultsToIdleWatchdog(t *testing.T) {
 
 	// Zero keeps its distinct meaning: never force-stop while a tool is in
 	// flight. It must NOT be re-derived from the idle budget.
-	t.Setenv("PATCHBAY_AGENT_TOOL_WATCHDOG", "0")
+	t.Setenv("ORVILO_AGENT_TOOL_WATCHDOG", "0")
 	cfg = load(t)
 	if cfg.AgentToolWatchdog != 0 {
 		t.Fatalf("AgentToolWatchdog = %s, want 0 from env", cfg.AgentToolWatchdog)
 	}
 
 	// Disabling the suite disables both.
-	t.Setenv("PATCHBAY_AGENT_IDLE_WATCHDOG", "0")
-	t.Setenv("PATCHBAY_AGENT_TOOL_WATCHDOG", "")
+	t.Setenv("ORVILO_AGENT_IDLE_WATCHDOG", "0")
+	t.Setenv("ORVILO_AGENT_TOOL_WATCHDOG", "")
 	cfg = load(t)
 	if cfg.AgentIdleWatchdog != 0 || cfg.AgentToolWatchdog != 0 {
 		t.Fatalf("idle=%s tool=%s, want both 0", cfg.AgentIdleWatchdog, cfg.AgentToolWatchdog)
@@ -663,9 +663,9 @@ func TestLoadConfig_ToolWatchdogDefaultsToIdleWatchdog(t *testing.T) {
 func TestLoadConfig_CodexSemanticInactivityDerivesFromWatchdog(t *testing.T) {
 	stageFakeAgent(t)
 	for _, key := range []string{
-		"PATCHBAY_AGENT_IDLE_WATCHDOG",
-		"PATCHBAY_AGENT_TOOL_WATCHDOG",
-		"PATCHBAY_CODEX_SEMANTIC_INACTIVITY_TIMEOUT",
+		"ORVILO_AGENT_IDLE_WATCHDOG",
+		"ORVILO_AGENT_TOOL_WATCHDOG",
+		"ORVILO_CODEX_SEMANTIC_INACTIVITY_TIMEOUT",
 	} {
 		t.Setenv(key, "")
 	}
@@ -688,7 +688,7 @@ func TestLoadConfig_CodexSemanticInactivityDerivesFromWatchdog(t *testing.T) {
 	}
 
 	// Raising the idle budget carries Codex with it.
-	t.Setenv("PATCHBAY_AGENT_IDLE_WATCHDOG", "6h")
+	t.Setenv("ORVILO_AGENT_IDLE_WATCHDOG", "6h")
 	if got := load(t).CodexSemanticInactivityTimeout; got != 6*time.Hour {
 		t.Fatalf("CodexSemanticInactivityTimeout = %s, want 6h", got)
 	}
@@ -696,7 +696,7 @@ func TestLoadConfig_CodexSemanticInactivityDerivesFromWatchdog(t *testing.T) {
 	// A wider tool budget wins: this timer cannot see that a tool is in flight,
 	// so it has to be sized like the larger of the two or it re-creates the very
 	// bug being fixed, one tier up.
-	t.Setenv("PATCHBAY_AGENT_TOOL_WATCHDOG", "9h")
+	t.Setenv("ORVILO_AGENT_TOOL_WATCHDOG", "9h")
 	if got := load(t).CodexSemanticInactivityTimeout; got != 9*time.Hour {
 		t.Fatalf("CodexSemanticInactivityTimeout = %s, want the wider tool budget 9h", got)
 	}
@@ -704,22 +704,22 @@ func TestLoadConfig_CodexSemanticInactivityDerivesFromWatchdog(t *testing.T) {
 	// A tool budget of 0 means "never force-stop during a tool", which this
 	// timer cannot express; it falls back to the idle budget rather than
 	// silently running unbounded.
-	t.Setenv("PATCHBAY_AGENT_TOOL_WATCHDOG", "0")
+	t.Setenv("ORVILO_AGENT_TOOL_WATCHDOG", "0")
 	if got := load(t).CodexSemanticInactivityTimeout; got != 6*time.Hour {
 		t.Fatalf("CodexSemanticInactivityTimeout = %s, want the idle budget 6h when the tool budget is unbounded", got)
 	}
 
 	// The explicit env still wins over the derivation.
-	t.Setenv("PATCHBAY_CODEX_SEMANTIC_INACTIVITY_TIMEOUT", "20m")
+	t.Setenv("ORVILO_CODEX_SEMANTIC_INACTIVITY_TIMEOUT", "20m")
 	if got := load(t).CodexSemanticInactivityTimeout; got != 20*time.Minute {
 		t.Fatalf("CodexSemanticInactivityTimeout = %s, want 20m from env", got)
 	}
 
 	// Disabling the watchdog suite has never disabled this timer; Codex keeps
 	// its own built-in default rather than becoming unbounded.
-	t.Setenv("PATCHBAY_CODEX_SEMANTIC_INACTIVITY_TIMEOUT", "")
-	t.Setenv("PATCHBAY_AGENT_IDLE_WATCHDOG", "0")
-	t.Setenv("PATCHBAY_AGENT_TOOL_WATCHDOG", "")
+	t.Setenv("ORVILO_CODEX_SEMANTIC_INACTIVITY_TIMEOUT", "")
+	t.Setenv("ORVILO_AGENT_IDLE_WATCHDOG", "0")
+	t.Setenv("ORVILO_AGENT_TOOL_WATCHDOG", "")
 	if got := load(t).CodexSemanticInactivityTimeout; got != DefaultCodexSemanticInactivityTimeout {
 		t.Fatalf("CodexSemanticInactivityTimeout = %s, want the codex built-in %s when watchdogs are off", got, DefaultCodexSemanticInactivityTimeout)
 	}
@@ -727,7 +727,7 @@ func TestLoadConfig_CodexSemanticInactivityDerivesFromWatchdog(t *testing.T) {
 
 func TestLoadConfig_OpenCodeIdleWatchdog(t *testing.T) {
 	stageFakeAgent(t)
-	t.Setenv("PATCHBAY_OPENCODE_IDLE_WATCHDOG", "")
+	t.Setenv("ORVILO_OPENCODE_IDLE_WATCHDOG", "")
 
 	cfg, err := LoadConfig(Overrides{
 		ServerURL:      "http://localhost:8080",
@@ -740,7 +740,7 @@ func TestLoadConfig_OpenCodeIdleWatchdog(t *testing.T) {
 		t.Fatalf("OpenCodeIdleWatchdog = %s, want default %s", cfg.OpenCodeIdleWatchdog, DefaultOpenCodeIdleWatchdog)
 	}
 
-	t.Setenv("PATCHBAY_OPENCODE_IDLE_WATCHDOG", "7m")
+	t.Setenv("ORVILO_OPENCODE_IDLE_WATCHDOG", "7m")
 	cfg, err = LoadConfig(Overrides{
 		ServerURL:      "http://localhost:8080",
 		WorkspacesRoot: t.TempDir(),
@@ -754,7 +754,7 @@ func TestLoadConfig_OpenCodeIdleWatchdog(t *testing.T) {
 
 	// Zero disables the OpenCode-specific override while leaving the generic
 	// AgentIdleWatchdog as the fallback for OpenCode runs.
-	t.Setenv("PATCHBAY_OPENCODE_IDLE_WATCHDOG", "0")
+	t.Setenv("ORVILO_OPENCODE_IDLE_WATCHDOG", "0")
 	cfg, err = LoadConfig(Overrides{
 		ServerURL:      "http://localhost:8080",
 		WorkspacesRoot: t.TempDir(),
@@ -790,7 +790,7 @@ func TestLoadConfig_AutoUpdateDefault_CloudOn(t *testing.T) {
 // re-enable auto-update via env var, overriding the new conservative default.
 func TestLoadConfig_AutoUpdateEnv_ForcesOnForSelfHost(t *testing.T) {
 	stageFakeAgent(t)
-	t.Setenv("PATCHBAY_DAEMON_AUTO_UPDATE", "true")
+	t.Setenv("ORVILO_DAEMON_AUTO_UPDATE", "true")
 	cfg, err := LoadConfig(Overrides{
 		ServerURL:      "http://localhost:8080",
 		WorkspacesRoot: t.TempDir(),
@@ -799,7 +799,7 @@ func TestLoadConfig_AutoUpdateEnv_ForcesOnForSelfHost(t *testing.T) {
 		t.Fatalf("LoadConfig: %v", err)
 	}
 	if !cfg.AutoUpdateEnabled {
-		t.Fatalf("AutoUpdateEnabled = false after explicit PATCHBAY_DAEMON_AUTO_UPDATE=true, want true")
+		t.Fatalf("AutoUpdateEnabled = false after explicit ORVILO_DAEMON_AUTO_UPDATE=true, want true")
 	}
 }
 
@@ -807,7 +807,7 @@ func TestLoadConfig_AutoUpdateEnv_ForcesOnForSelfHost(t *testing.T) {
 // user can still opt out via env var.
 func TestLoadConfig_AutoUpdateEnv_ForcesOffForCloud(t *testing.T) {
 	stageFakeAgent(t)
-	t.Setenv("PATCHBAY_DAEMON_AUTO_UPDATE", "false")
+	t.Setenv("ORVILO_DAEMON_AUTO_UPDATE", "false")
 	cfg, err := LoadConfig(Overrides{
 		ServerURL:      "https://api.aspectlylabs.com",
 		WorkspacesRoot: t.TempDir(),
@@ -816,7 +816,7 @@ func TestLoadConfig_AutoUpdateEnv_ForcesOffForCloud(t *testing.T) {
 		t.Fatalf("LoadConfig: %v", err)
 	}
 	if cfg.AutoUpdateEnabled {
-		t.Fatalf("AutoUpdateEnabled = true after explicit PATCHBAY_DAEMON_AUTO_UPDATE=false, want false")
+		t.Fatalf("AutoUpdateEnabled = true after explicit ORVILO_DAEMON_AUTO_UPDATE=false, want false")
 	}
 }
 
@@ -825,7 +825,7 @@ func TestLoadConfig_AutoUpdateEnv_ForcesOffForCloud(t *testing.T) {
 // forces auto-update off even when the cloud default and env var would enable.
 func TestLoadConfig_AutoUpdate_NoFlagWinsOverCloudDefault(t *testing.T) {
 	stageFakeAgent(t)
-	t.Setenv("PATCHBAY_DAEMON_AUTO_UPDATE", "true")
+	t.Setenv("ORVILO_DAEMON_AUTO_UPDATE", "true")
 	cfg, err := LoadConfig(Overrides{
 		ServerURL:         "https://api.aspectlylabs.com",
 		WorkspacesRoot:    t.TempDir(),
@@ -847,8 +847,8 @@ func TestLoadConfig_AutoUpdate_NoFlagWinsOverCloudDefault(t *testing.T) {
 // installed by hand.
 func TestLoadConfig_AutoReload_DefaultsOnEvenForSelfHost(t *testing.T) {
 	stageFakeAgent(t)
-	t.Setenv("PATCHBAY_DAEMON_AUTO_UPDATE", "")
-	t.Setenv("PATCHBAY_DAEMON_AUTO_RELOAD", "")
+	t.Setenv("ORVILO_DAEMON_AUTO_UPDATE", "")
+	t.Setenv("ORVILO_DAEMON_AUTO_RELOAD", "")
 	cfg, err := LoadConfig(Overrides{
 		ServerURL:      "http://localhost:8080",
 		WorkspacesRoot: t.TempDir(),
@@ -869,8 +869,8 @@ func TestLoadConfig_AutoReload_DefaultsOnEvenForSelfHost(t *testing.T) {
 // from following a hand-installed binary.
 func TestLoadConfig_AutoReload_NotGatedOnAutoUpdateEnv(t *testing.T) {
 	stageFakeAgent(t)
-	t.Setenv("PATCHBAY_DAEMON_AUTO_UPDATE", "false")
-	t.Setenv("PATCHBAY_DAEMON_AUTO_RELOAD", "")
+	t.Setenv("ORVILO_DAEMON_AUTO_UPDATE", "false")
+	t.Setenv("ORVILO_DAEMON_AUTO_RELOAD", "")
 	cfg, err := LoadConfig(Overrides{
 		ServerURL:      "https://api.aspectlylabs.com",
 		WorkspacesRoot: t.TempDir(),
@@ -879,7 +879,7 @@ func TestLoadConfig_AutoReload_NotGatedOnAutoUpdateEnv(t *testing.T) {
 		t.Fatalf("LoadConfig: %v", err)
 	}
 	if !cfg.AutoReloadEnabled {
-		t.Fatalf("PATCHBAY_DAEMON_AUTO_UPDATE=false disabled auto-reload; the two switches are independent")
+		t.Fatalf("ORVILO_DAEMON_AUTO_UPDATE=false disabled auto-reload; the two switches are independent")
 	}
 }
 
@@ -902,7 +902,7 @@ func TestLoadConfig_AutoReload_OffSwitches(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			stageFakeAgent(t)
-			t.Setenv("PATCHBAY_DAEMON_AUTO_RELOAD", tc.env)
+			t.Setenv("ORVILO_DAEMON_AUTO_RELOAD", tc.env)
 			overrides := tc.overrides
 			overrides.ServerURL = "https://api.aspectlylabs.com"
 			overrides.WorkspacesRoot = t.TempDir()
@@ -933,8 +933,8 @@ func TestLoadConfig_UsesCodexDesktopAppBundleFallback(t *testing.T) {
 
 	t.Setenv("PATH", t.TempDir())
 	stubAgentInstallDirectories(t, nil)
-	t.Setenv("PATCHBAY_DAEMON_ID", "11111111-1111-1111-1111-111111111111")
-	t.Setenv("PATCHBAY_CODEX_MODEL", "gpt-5")
+	t.Setenv("ORVILO_DAEMON_ID", "11111111-1111-1111-1111-111111111111")
+	t.Setenv("ORVILO_CODEX_MODEL", "gpt-5")
 	pinNonCodexAgentsToMissingPaths(t)
 
 	cfg, err := LoadConfig(Overrides{
@@ -979,7 +979,7 @@ func TestLoadConfig_UsesChatGPTAppBundleCodexPath(t *testing.T) {
 
 	t.Setenv("PATH", t.TempDir())
 	stubAgentInstallDirectories(t, nil)
-	t.Setenv("PATCHBAY_DAEMON_ID", "11111111-1111-1111-1111-111111111111")
+	t.Setenv("ORVILO_DAEMON_ID", "11111111-1111-1111-1111-111111111111")
 	pinNonCodexAgentsToMissingPaths(t)
 
 	cfg, err := LoadConfig(Overrides{
@@ -1046,14 +1046,14 @@ func TestLoadConfig_CodexDesktopFallbackDoesNotOverrideExplicitPath(t *testing.T
 
 	t.Setenv("PATH", t.TempDir())
 	stubAgentInstallDirectories(t, nil)
-	t.Setenv("PATCHBAY_DAEMON_ID", "11111111-1111-1111-1111-111111111111")
-	t.Setenv("PATCHBAY_CODEX_PATH", filepath.Join(t.TempDir(), "missing-codex"))
+	t.Setenv("ORVILO_DAEMON_ID", "11111111-1111-1111-1111-111111111111")
+	t.Setenv("ORVILO_CODEX_PATH", filepath.Join(t.TempDir(), "missing-codex"))
 	pinNonCodexAgentsToMissingPaths(t)
 	fakeClaude := filepath.Join(t.TempDir(), "claude")
 	if err := os.WriteFile(fakeClaude, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatalf("write fake claude: %v", err)
 	}
-	t.Setenv("PATCHBAY_CLAUDE_PATH", fakeClaude)
+	t.Setenv("ORVILO_CLAUDE_PATH", fakeClaude)
 
 	cfg, err := LoadConfig(Overrides{
 		ServerURL:      "http://localhost:0",
@@ -1063,7 +1063,7 @@ func TestLoadConfig_CodexDesktopFallbackDoesNotOverrideExplicitPath(t *testing.T
 		t.Fatalf("LoadConfig: %v", err)
 	}
 	if got, ok := cfg.Agents["codex"]; ok {
-		t.Fatalf("explicit missing PATCHBAY_CODEX_PATH should not fall back to Desktop bundle, got %#v", got)
+		t.Fatalf("explicit missing ORVILO_CODEX_PATH should not fall back to Desktop bundle, got %#v", got)
 	}
 }
 
@@ -1071,18 +1071,18 @@ func pinNonCodexAgentsToMissingPaths(t *testing.T) {
 	t.Helper()
 	missingDir := t.TempDir()
 	for _, name := range []string{
-		"PATCHBAY_CLAUDE_PATH",
-		"PATCHBAY_OPENCODE_PATH",
-		"PATCHBAY_OPENCLAW_PATH",
-		"PATCHBAY_HERMES_PATH",
-		"PATCHBAY_PI_PATH",
-		"PATCHBAY_CURSOR_PATH",
-		"PATCHBAY_COPILOT_PATH",
-		"PATCHBAY_KIMI_PATH",
-		"PATCHBAY_REASONIX_PATH",
-		"PATCHBAY_DSH_PATH",
-		"PATCHBAY_KIRO_PATH",
-		"PATCHBAY_GROK_PATH",
+		"ORVILO_CLAUDE_PATH",
+		"ORVILO_OPENCODE_PATH",
+		"ORVILO_OPENCLAW_PATH",
+		"ORVILO_HERMES_PATH",
+		"ORVILO_PI_PATH",
+		"ORVILO_CURSOR_PATH",
+		"ORVILO_COPILOT_PATH",
+		"ORVILO_KIMI_PATH",
+		"ORVILO_REASONIX_PATH",
+		"ORVILO_DSH_PATH",
+		"ORVILO_KIRO_PATH",
+		"ORVILO_GROK_PATH",
 	} {
 		t.Setenv(name, filepath.Join(missingDir, strings.ToLower(name)))
 	}
@@ -1109,13 +1109,13 @@ func writeCLIConfigForProfile(t *testing.T, profile string, cfg cli.CLIConfig) {
 // existing probe / spawn flow remains undisturbed.
 func TestApplyOpenclawOverride_DoesNothingWhenNil(t *testing.T) {
 	// Pre-set both env vars to known values; verify they survive untouched.
-	t.Setenv("PATCHBAY_OPENCLAW_PATH", "/before/openclaw")
+	t.Setenv("ORVILO_OPENCLAW_PATH", "/before/openclaw")
 	t.Setenv("OPENCLAW_STATE_DIR", "/before/state")
 
 	applyOpenclawOverride(nil)
 
-	if got := os.Getenv("PATCHBAY_OPENCLAW_PATH"); got != "/before/openclaw" {
-		t.Errorf("PATCHBAY_OPENCLAW_PATH mutated: got %q, want /before/openclaw", got)
+	if got := os.Getenv("ORVILO_OPENCLAW_PATH"); got != "/before/openclaw" {
+		t.Errorf("ORVILO_OPENCLAW_PATH mutated: got %q, want /before/openclaw", got)
 	}
 	if got := os.Getenv("OPENCLAW_STATE_DIR"); got != "/before/state" {
 		t.Errorf("OPENCLAW_STATE_DIR mutated: got %q, want /before/state", got)
@@ -1126,12 +1126,12 @@ func TestApplyOpenclawOverride_DoesNothingWhenNil(t *testing.T) {
 // neither env var is set, the override has both fields, both env vars get
 // set to the override values.
 func TestApplyOpenclawOverride_SetsBothWhenEnvUnset(t *testing.T) {
-	t.Setenv("PATCHBAY_OPENCLAW_PATH", "")
+	t.Setenv("ORVILO_OPENCLAW_PATH", "")
 	t.Setenv("OPENCLAW_STATE_DIR", "")
-	os.Unsetenv("PATCHBAY_OPENCLAW_PATH")
+	os.Unsetenv("ORVILO_OPENCLAW_PATH")
 	os.Unsetenv("OPENCLAW_STATE_DIR")
 	t.Cleanup(func() {
-		os.Unsetenv("PATCHBAY_OPENCLAW_PATH")
+		os.Unsetenv("ORVILO_OPENCLAW_PATH")
 		os.Unsetenv("OPENCLAW_STATE_DIR")
 	})
 
@@ -1140,8 +1140,8 @@ func TestApplyOpenclawOverride_SetsBothWhenEnvUnset(t *testing.T) {
 		StateDir:   "/from/config/state",
 	})
 
-	if got := os.Getenv("PATCHBAY_OPENCLAW_PATH"); got != "/from/config/openclaw" {
-		t.Errorf("PATCHBAY_OPENCLAW_PATH: got %q, want /from/config/openclaw", got)
+	if got := os.Getenv("ORVILO_OPENCLAW_PATH"); got != "/from/config/openclaw" {
+		t.Errorf("ORVILO_OPENCLAW_PATH: got %q, want /from/config/openclaw", got)
 	}
 	if got := os.Getenv("OPENCLAW_STATE_DIR"); got != "/from/config/state" {
 		t.Errorf("OPENCLAW_STATE_DIR: got %q, want /from/config/state", got)
@@ -1152,11 +1152,11 @@ func TestApplyOpenclawOverride_SetsBothWhenEnvUnset(t *testing.T) {
 // agreed with @YOMXXX in #3875 review: an env var set upstream by the user
 // (shell export, launchctl, systemd unit) MUST take precedence over the
 // config-file value. This is the back-compat contract — anyone with
-// PATCHBAY_OPENCLAW_PATH already in their environment must not see the
+// ORVILO_OPENCLAW_PATH already in their environment must not see the
 // daemon silently change its meaning when they later add a config file.
 func TestApplyOpenclawOverride_EnvWinsOverConfig(t *testing.T) {
 	// User has already exported these in their shell.
-	t.Setenv("PATCHBAY_OPENCLAW_PATH", "/from/env/openclaw")
+	t.Setenv("ORVILO_OPENCLAW_PATH", "/from/env/openclaw")
 	t.Setenv("OPENCLAW_STATE_DIR", "/from/env/state")
 
 	applyOpenclawOverride(&cli.OpenClawOverride{
@@ -1164,8 +1164,8 @@ func TestApplyOpenclawOverride_EnvWinsOverConfig(t *testing.T) {
 		StateDir:   "/from/config/state",
 	})
 
-	if got := os.Getenv("PATCHBAY_OPENCLAW_PATH"); got != "/from/env/openclaw" {
-		t.Errorf("PATCHBAY_OPENCLAW_PATH: env should win, got %q want /from/env/openclaw", got)
+	if got := os.Getenv("ORVILO_OPENCLAW_PATH"); got != "/from/env/openclaw" {
+		t.Errorf("ORVILO_OPENCLAW_PATH: env should win, got %q want /from/env/openclaw", got)
 	}
 	if got := os.Getenv("OPENCLAW_STATE_DIR"); got != "/from/env/state" {
 		t.Errorf("OPENCLAW_STATE_DIR: env should win, got %q want /from/env/state", got)
@@ -1175,23 +1175,23 @@ func TestApplyOpenclawOverride_EnvWinsOverConfig(t *testing.T) {
 // TestApplyOpenclawOverride_PartialFields_OnlySetsConfigured verifies that
 // an override with only one field set leaves the other env var alone (does
 // not Setenv to ""). This matters: a user who only configures state_dir
-// must not have their PATCHBAY_OPENCLAW_PATH discovery path forcibly
+// must not have their ORVILO_OPENCLAW_PATH discovery path forcibly
 // short-circuited to an empty string.
 func TestApplyOpenclawOverride_PartialFields_OnlySetsConfigured(t *testing.T) {
-	os.Unsetenv("PATCHBAY_OPENCLAW_PATH")
+	os.Unsetenv("ORVILO_OPENCLAW_PATH")
 	os.Unsetenv("OPENCLAW_STATE_DIR")
 	t.Cleanup(func() {
-		os.Unsetenv("PATCHBAY_OPENCLAW_PATH")
+		os.Unsetenv("ORVILO_OPENCLAW_PATH")
 		os.Unsetenv("OPENCLAW_STATE_DIR")
 	})
 
 	applyOpenclawOverride(&cli.OpenClawOverride{
 		StateDir: "/from/config/state",
-		// BinaryPath intentionally empty — must NOT call Setenv("PATCHBAY_OPENCLAW_PATH", "")
+		// BinaryPath intentionally empty — must NOT call Setenv("ORVILO_OPENCLAW_PATH", "")
 	})
 
-	if _, set := os.LookupEnv("PATCHBAY_OPENCLAW_PATH"); set {
-		t.Errorf("PATCHBAY_OPENCLAW_PATH should remain unset when BinaryPath is empty; got %q", os.Getenv("PATCHBAY_OPENCLAW_PATH"))
+	if _, set := os.LookupEnv("ORVILO_OPENCLAW_PATH"); set {
+		t.Errorf("ORVILO_OPENCLAW_PATH should remain unset when BinaryPath is empty; got %q", os.Getenv("ORVILO_OPENCLAW_PATH"))
 	}
 	if got := os.Getenv("OPENCLAW_STATE_DIR"); got != "/from/config/state" {
 		t.Errorf("OPENCLAW_STATE_DIR: got %q, want /from/config/state", got)
@@ -1233,10 +1233,10 @@ func TestLoadConfig_AppliesBackendOverridesFromConfigFile(t *testing.T) {
 	}
 
 	// Make sure no env-var override is leaking in from the test runner.
-	os.Unsetenv("PATCHBAY_OPENCLAW_PATH")
+	os.Unsetenv("ORVILO_OPENCLAW_PATH")
 	os.Unsetenv("OPENCLAW_STATE_DIR")
 	t.Cleanup(func() {
-		os.Unsetenv("PATCHBAY_OPENCLAW_PATH")
+		os.Unsetenv("ORVILO_OPENCLAW_PATH")
 		os.Unsetenv("OPENCLAW_STATE_DIR")
 	})
 
@@ -1286,10 +1286,10 @@ func TestLoadConfig_BackendOverrides_BackwardCompat_NoConfigFile(t *testing.T) {
 
 	// Point HOME at an empty dir — no config.json present.
 	t.Setenv("HOME", t.TempDir())
-	os.Unsetenv("PATCHBAY_OPENCLAW_PATH")
+	os.Unsetenv("ORVILO_OPENCLAW_PATH")
 	os.Unsetenv("OPENCLAW_STATE_DIR")
 	t.Cleanup(func() {
-		os.Unsetenv("PATCHBAY_OPENCLAW_PATH")
+		os.Unsetenv("ORVILO_OPENCLAW_PATH")
 		os.Unsetenv("OPENCLAW_STATE_DIR")
 	})
 

@@ -53,18 +53,18 @@ patchbay login --token
 把 PAT 放进 `Authorization` header：
 
 ```bash
-export PATCHBAY_TOKEN='pby_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+export ORVILO_TOKEN='pby_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
 
 curl https://api.aspectlylabs.com/api/me \
- -H "Authorization: Bearer $PATCHBAY_TOKEN"
+ -H "Authorization: Bearer $ORVILO_TOKEN"
 ```
 
 调用工作区级 API 时，还需要按接口要求提供工作区：
 
 ```bash
 curl https://api.aspectlylabs.com/api/issues \
- -H "Authorization: Bearer $PATCHBAY_TOKEN" \
- -H "X-Workspace-ID: $PATCHBAY_WORKSPACE_ID"
+ -H "Authorization: Bearer $ORVILO_TOKEN" \
+ -H "X-Workspace-ID: $ORVILO_WORKSPACE_ID"
 ```
 
 脚本中的令牌取自 secret manager 或受保护的环境变量，不要硬编码。自托管实例把域名替换为自己的公开 API 地址。

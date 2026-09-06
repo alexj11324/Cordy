@@ -53,18 +53,18 @@ patchbay login --token
 PAT를 `Authorization` header에 넣습니다.
 
 ```bash
-export PATCHBAY_TOKEN='pby_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+export ORVILO_TOKEN='pby_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
 
 curl https://api.aspectlylabs.com/api/me \
-  -H "Authorization: Bearer $PATCHBAY_TOKEN"
+  -H "Authorization: Bearer $ORVILO_TOKEN"
 ```
 
 워크스페이스 수준 API를 호출할 때는 인터페이스 요구 사항에 따라 워크스페이스도 제공해야 합니다.
 
 ```bash
 curl https://api.aspectlylabs.com/api/issues \
-  -H "Authorization: Bearer $PATCHBAY_TOKEN" \
-  -H "X-Workspace-ID: $PATCHBAY_WORKSPACE_ID"
+  -H "Authorization: Bearer $ORVILO_TOKEN" \
+  -H "X-Workspace-ID: $ORVILO_WORKSPACE_ID"
 ```
 
 스크립트의 토큰은 secret manager나 보호된 환경 변수에서 가져오고 하드코딩하지 마세요. 자체 호스팅 인스턴스에서는 도메인을 공개 API 주소로 바꿉니다.

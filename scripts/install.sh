@@ -16,7 +16,7 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 REPO_URL="https://github.com/alexj11324/Cordy.git"
 REPO_WEB_URL="https://github.com/alexj11324/Cordy"  # without .git, for GitHub web APIs
-INSTALL_DIR="${PATCHBAY_INSTALL_DIR:-$HOME/.patchbay/server}"
+INSTALL_DIR="${ORVILO_INSTALL_DIR:-$HOME/.patchbay/server}"
 BREW_PACKAGE="alexj11324/tap/patchbay"
 
 # Host ports Compose reported after `up -d`; set by setup_server and reused by
@@ -168,8 +168,8 @@ install_cli_binary() {
   tar -xzf "$tmp_dir/patchbay.tar.gz" -C "$tmp_dir" patchbay
 
   # Try /usr/local/bin first, fall back to ~/.local/bin. Tests and scripted
-  # installs can override the first choice with PATCHBAY_BIN_DIR.
-  local bin_dir="${PATCHBAY_BIN_DIR:-/usr/local/bin}"
+  # installs can override the first choice with ORVILO_BIN_DIR.
+  local bin_dir="${ORVILO_BIN_DIR:-/usr/local/bin}"
   if [ -w "$bin_dir" ]; then
     mv "$tmp_dir/patchbay" "$bin_dir/patchbay"
   elif command_exists sudo; then
@@ -206,8 +206,8 @@ get_latest_version() {
 }
 
 get_selfhost_ref() {
-  if [ -n "${PATCHBAY_SELFHOST_REF:-}" ]; then
-    printf '%s' "$PATCHBAY_SELFHOST_REF"
+  if [ -n "${ORVILO_SELFHOST_REF:-}" ]; then
+    printf '%s' "$ORVILO_SELFHOST_REF"
     return
   fi
 
@@ -527,12 +527,12 @@ main() {
         echo "  --stop          Stop a self-hosted installation"
         echo ""
         echo "Environment variables:"
-        echo "  PATCHBAY_INSTALL_DIR   Self-host server install directory"
+        echo "  ORVILO_INSTALL_DIR   Self-host server install directory"
         echo "                        (default: \$HOME/.patchbay/server)"
-        echo "  PATCHBAY_BIN_DIR       Target directory for the CLI binary when"
+        echo "  ORVILO_BIN_DIR       Target directory for the CLI binary when"
         echo "                        installing from GitHub Releases"
         echo "                        (default: /usr/local/bin, then \$HOME/.local/bin)"
-        echo "  PATCHBAY_SELFHOST_REF  Git ref to check out for self-host assets"
+        echo "  ORVILO_SELFHOST_REF  Git ref to check out for self-host assets"
         echo "                        (default: latest release tag, falling back to main)"
         echo ""
         echo "After installation, run 'patchbay setup' to configure your environment."

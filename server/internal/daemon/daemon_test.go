@@ -149,7 +149,7 @@ func TestIsBlockedEnvKey(t *testing.T) {
 		key  string
 		want bool
 	}{
-		{key: "PATCHBAY_TOKEN", want: true},
+		{key: "ORVILO_TOKEN", want: true},
 		{key: "patchbay_runtime_id", want: true},
 		{key: "HOME", want: true},
 		{key: "PATH", want: true},
@@ -289,10 +289,10 @@ func TestLayerCustomEnvAndHermesHome(t *testing.T) {
 		},
 		{
 			name:        "blocklisted key dropped, overlay still applied",
-			customEnv:   map[string]string{"CODEX_HOME": "/evil", "PATCHBAY_TOKEN": "x"},
+			customEnv:   map[string]string{"CODEX_HOME": "/evil", "ORVILO_TOKEN": "x"},
 			overlayHome: "/tmp/task/hermes-home",
 			wantHermes:  "/tmp/task/hermes-home",
-			wantAbsent:  []string{"CODEX_HOME", "PATCHBAY_TOKEN"},
+			wantAbsent:  []string{"CODEX_HOME", "ORVILO_TOKEN"},
 		},
 	}
 
@@ -360,15 +360,15 @@ func TestConfigureCodexTaskShellEnvironment(t *testing.T) {
 			"SystemRoot=C:\\Windows",
 			"USERPROFILE=C:\\Users\\test",
 			"OPENAI_API_KEY=host-secret",
-			"PATCHBAY_LLM_API_KEY=daemon-secret",
+			"ORVILO_LLM_API_KEY=daemon-secret",
 		}
 		agentEnv := map[string]string{
 			"CUSTOM_ACCESS_TOKEN":       "agent-secret",
 			"CUSTOM_FLAG":               "enabled",
 			"UNAUTHORIZED_TOKEN":        "daemon-secret",
-			"PATCHBAY_TASK_CONFIG_ROOT": "/task/patchbay-config",
-			"PATCHBAY_SERVER_URL":       "https://task.example",
-			"PATCHBAY_TOKEN":            "mat_task",
+			"ORVILO_TASK_CONFIG_ROOT": "/task/patchbay-config",
+			"ORVILO_SERVER_URL":       "https://task.example",
+			"ORVILO_TOKEN":            "mat_task",
 		}
 		agentCustomEnv := map[string]string{
 			"CUSTOM_ACCESS_TOKEN": "agent-secret",
@@ -382,12 +382,12 @@ func TestConfigureCodexTaskShellEnvironment(t *testing.T) {
 			t.Fatalf("read config.toml: %v", err)
 		}
 		config := string(data)
-		for _, want := range []string{"SystemRoot", "USERPROFILE", "CUSTOM_ACCESS_TOKEN", "CUSTOM_FLAG", "PATCHBAY_TASK_CONFIG_ROOT", "PATCHBAY_SERVER_URL", "PATCHBAY_TOKEN"} {
+		for _, want := range []string{"SystemRoot", "USERPROFILE", "CUSTOM_ACCESS_TOKEN", "CUSTOM_FLAG", "ORVILO_TASK_CONFIG_ROOT", "ORVILO_SERVER_URL", "ORVILO_TOKEN"} {
 			if !strings.Contains(config, want) {
 				t.Errorf("config.toml missing %q:\n%s", want, config)
 			}
 		}
-		for _, unwanted := range []string{"OPENAI_API_KEY", "PATCHBAY_LLM_API_KEY", "UNAUTHORIZED_TOKEN", "PATCHBAY_*", "agent-secret", "daemon-secret", "mat_task"} {
+		for _, unwanted := range []string{"OPENAI_API_KEY", "ORVILO_LLM_API_KEY", "UNAUTHORIZED_TOKEN", "ORVILO_*", "agent-secret", "daemon-secret", "mat_task"} {
 			if strings.Contains(config, unwanted) {
 				t.Errorf("config.toml unexpectedly contains %q:\n%s", unwanted, config)
 			}
@@ -396,7 +396,7 @@ func TestConfigureCodexTaskShellEnvironment(t *testing.T) {
 
 	t.Run("Codex without task home fails closed", func(t *testing.T) {
 		t.Parallel()
-		err := configureCodexTaskShellEnvironment("codex", "", nil, map[string]string{"PATCHBAY_TOKEN": "mat_task"}, nil, slog.Default())
+		err := configureCodexTaskShellEnvironment("codex", "", nil, map[string]string{"ORVILO_TOKEN": "mat_task"}, nil, slog.Default())
 		if err == nil || !strings.Contains(err.Error(), "CODEX_HOME is missing") {
 			t.Fatalf("error = %v, want missing CODEX_HOME", err)
 		}
@@ -427,9 +427,9 @@ func TestCodexTaskShellEnvInheritsRealHome(t *testing.T) {
 	// task-scoped CODEX_HOME, and — since MUL-5578 — no HOME/XDG entry.
 	explicit := map[string]string{
 		"CODEX_HOME":                codexHome,
-		"PATCHBAY_TASK_CONFIG_ROOT": "/task/patchbay-config",
-		"PATCHBAY_TOKEN":            "mat_task",
-		"PATCHBAY_SERVER_URL":       "https://task.example",
+		"ORVILO_TASK_CONFIG_ROOT": "/task/patchbay-config",
+		"ORVILO_TOKEN":            "mat_task",
+		"ORVILO_SERVER_URL":       "https://task.example",
 	}
 
 	if err := configureCodexTaskShellEnvironment("codex", codexHome, inherited, explicit, nil, slog.Default()); err != nil {
@@ -461,8 +461,8 @@ func TestCodexTaskShellEnvInheritsRealHome(t *testing.T) {
 	if !slices.Contains(include, "CODEX_HOME") {
 		t.Errorf("include_only missing CODEX_HOME, got %v", include)
 	}
-	if !slices.Contains(include, "PATCHBAY_TASK_CONFIG_ROOT") {
-		t.Errorf("include_only missing PATCHBAY_TASK_CONFIG_ROOT, got %v", include)
+	if !slices.Contains(include, "ORVILO_TASK_CONFIG_ROOT") {
+		t.Errorf("include_only missing ORVILO_TASK_CONFIG_ROOT, got %v", include)
 	}
 }
 
@@ -472,7 +472,7 @@ func TestCodexShellAuthorizedCustomEnvNamesUsesDaemonBlocklist(t *testing.T) {
 	got := codexShellAuthorizedCustomEnvNames(map[string]string{
 		"CUSTOM_ACCESS_TOKEN": "agent-secret",
 		"custom_secret":       "agent-secret",
-		"PATCHBAY_TOKEN":      "must-not-authorize",
+		"ORVILO_TOKEN":      "must-not-authorize",
 		"PATH":                "/must/not/override",
 		"HOME":                "/must/not/override",
 		"CODEX_HOME":          "/must/not/override",
@@ -550,16 +550,16 @@ func TestTaskPatchbayEnvironmentIncludesPrivateConfigRoot(t *testing.T) {
 	env := taskPatchbayEnvironment(task, "agent-name", fakeToken, taskRoot, workspacesRoot, "https://task.example", 19514, 3, "/task/tmp")
 
 	want := map[string]string{
-		"PATCHBAY_TOKEN":                fakeToken,
-		"PATCHBAY_TASK_CONFIG_ROOT":     taskRoot,
-		"PATCHBAY_TASK_WORKSPACES_ROOT": workspacesRoot,
-		"PATCHBAY_SERVER_URL":           "https://task.example",
-		"PATCHBAY_DAEMON_PORT":          "19514",
-		"PATCHBAY_WORKSPACE_ID":         "workspace-test",
-		"PATCHBAY_AGENT_NAME":           "agent-name",
-		"PATCHBAY_AGENT_ID":             "agent-test",
-		"PATCHBAY_TASK_ID":              "task-test",
-		"PATCHBAY_TASK_SLOT":            "3",
+		"ORVILO_TOKEN":                fakeToken,
+		"ORVILO_TASK_CONFIG_ROOT":     taskRoot,
+		"ORVILO_TASK_WORKSPACES_ROOT": workspacesRoot,
+		"ORVILO_SERVER_URL":           "https://task.example",
+		"ORVILO_DAEMON_PORT":          "19514",
+		"ORVILO_WORKSPACE_ID":         "workspace-test",
+		"ORVILO_AGENT_NAME":           "agent-name",
+		"ORVILO_AGENT_ID":             "agent-test",
+		"ORVILO_TASK_ID":              "task-test",
+		"ORVILO_TASK_SLOT":            "3",
 		"TMPDIR":                        "/task/tmp",
 		"TMP":                           "/task/tmp",
 		"TEMP":                          "/task/tmp",
@@ -569,17 +569,17 @@ func TestTaskPatchbayEnvironmentIncludesPrivateConfigRoot(t *testing.T) {
 	}
 
 	layerCustomEnvAndHermesHome(env, map[string]string{
-		"PATCHBAY_TASK_CONFIG_ROOT":     "/owner/config",
-		"PATCHBAY_TASK_WORKSPACES_ROOT": "/owner/patchbay_workspaces",
-		"PATCHBAY_TOKEN":                "pby_owner_sentinel",
+		"ORVILO_TASK_CONFIG_ROOT":     "/owner/config",
+		"ORVILO_TASK_WORKSPACES_ROOT": "/owner/patchbay_workspaces",
+		"ORVILO_TOKEN":                "pby_owner_sentinel",
 	}, "", nil)
-	if env["PATCHBAY_TASK_CONFIG_ROOT"] != taskRoot {
-		t.Fatalf("custom env replaced task config root: %q", env["PATCHBAY_TASK_CONFIG_ROOT"])
+	if env["ORVILO_TASK_CONFIG_ROOT"] != taskRoot {
+		t.Fatalf("custom env replaced task config root: %q", env["ORVILO_TASK_CONFIG_ROOT"])
 	}
 	if env[TaskWorkspacesRootEnv] != workspacesRoot {
 		t.Fatalf("custom env replaced task workspaces root: %q", env[TaskWorkspacesRootEnv])
 	}
-	if env["PATCHBAY_TOKEN"] != fakeToken {
+	if env["ORVILO_TOKEN"] != fakeToken {
 		t.Fatal("custom env replaced task-scoped token")
 	}
 }
@@ -4131,8 +4131,8 @@ func TestContextLockCancelsWaitWithoutConsumingToken(t *testing.T) {
 }
 
 func TestShellArgsFromEnv(t *testing.T) {
-	t.Setenv("PATCHBAY_CLAUDE_ARGS", `--max-turns 60 --append-system-prompt "multi word"`)
-	got, err := shellArgsFromEnv("PATCHBAY_CLAUDE_ARGS")
+	t.Setenv("ORVILO_CLAUDE_ARGS", `--max-turns 60 --append-system-prompt "multi word"`)
+	got, err := shellArgsFromEnv("ORVILO_CLAUDE_ARGS")
 	if err != nil {
 		t.Fatalf("shellArgsFromEnv: %v", err)
 	}
@@ -4143,8 +4143,8 @@ func TestShellArgsFromEnv(t *testing.T) {
 }
 
 func TestShellArgsFromEnvEmptyIsNil(t *testing.T) {
-	t.Setenv("PATCHBAY_CODEX_ARGS", "   ")
-	got, err := shellArgsFromEnv("PATCHBAY_CODEX_ARGS")
+	t.Setenv("ORVILO_CODEX_ARGS", "   ")
+	got, err := shellArgsFromEnv("ORVILO_CODEX_ARGS")
 	if err != nil {
 		t.Fatalf("shellArgsFromEnv: %v", err)
 	}
@@ -5377,12 +5377,12 @@ func TestSanitizeAgentEnv(t *testing.T) {
 	in := map[string]string{
 		"HOME":        "/evil",
 		"PATH":        "/evil/bin",
-		"PATCHBAY_X":  "1",
+		"ORVILO_X":  "1",
 		"TEAM_SKILLS": "/srv/team",
 		"HERMES_HOME": "/some/home",
 	}
 	got := sanitizeAgentEnv(in)
-	for _, blocked := range []string{"HOME", "PATH", "PATCHBAY_X"} {
+	for _, blocked := range []string{"HOME", "PATH", "ORVILO_X"} {
 		if _, ok := got[blocked]; ok {
 			t.Errorf("blocklisted key %q must be dropped from the effective env", blocked)
 		}

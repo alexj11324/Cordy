@@ -37,7 +37,7 @@ Patchbay 不会替你做文件系统沙箱。如果守护进程跑在你的个�
 
 - **每 task 独立工作目录。** 每个 task 在 `~/patchbay_workspaces/` 下拥有独立 workdir，并发 task 不会在同一份 checkout 上打架。
 - **每 task 独立的智能体状态。** Codex task 拥有 task 级 `CODEX_HOME`，保存配置、会话与技能，不会污染你的 `~/.codex/`。
-- **task 级 API token。** 交给 task 的 `PATCHBAY_TOKEN` 由服务端绑定到该智能体与该 task，因此 task 无法通过 Patchbay API 以你或其他智能体的身份行事。
+- **task 级 API token。** 交给 task 的 `ORVILO_TOKEN` 由服务端绑定到该智能体与该 task，因此 task 无法通过 Patchbay API 以你或其他智能体的身份行事。
 
 ## 不构成边界的部分
 

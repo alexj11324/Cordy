@@ -51,11 +51,11 @@ type AppConfig struct {
 	DaemonServerURL string `json:"daemon_server_url,omitempty"`
 	DaemonAppURL    string `json:"daemon_app_url,omitempty"`
 
-	// VCSIntegrationAvailable mirrors the PATCHBAY_VCS_INTEGRATION_ENABLED
+	// VCSIntegrationAvailable mirrors the ORVILO_VCS_INTEGRATION_ENABLED
 	// deployment switch so the Settings UI can hide the whole self-hosted Git
 	// provider section on deployments where it is off (the managed cloud),
 	// instead of rendering it and surfacing an operator-only "missing
-	// PATCHBAY_VCS_SECRET_KEY" hint a cloud user cannot resolve. Omitted when
+	// ORVILO_VCS_SECRET_KEY" hint a cloud user cannot resolve. Omitted when
 	// false so the managed-cloud response keeps its previous shape; the UI
 	// defaults absent to false (hidden).
 	VCSIntegrationAvailable bool `json:"vcs_integration_available,omitempty"`
@@ -160,19 +160,19 @@ func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 func messagingCapabilitiesFromEnv() MessagingCapabilities {
 	appURL := resolveFrontendAppURL()
 	officialCloud := isOfficialCloudDaemonConfig(appURL)
-	requested := strings.TrimSpace(os.Getenv("PATCHBAY_MESSAGING_MODE"))
+	requested := strings.TrimSpace(os.Getenv("ORVILO_MESSAGING_MODE"))
 	configured := false
 	platforms := make([]MessagingPlatformCapability, 0, 6)
 	for _, item := range []struct {
 		channelType string
 		keyEnv      string
 	}{
-		{"lark", "PATCHBAY_LARK_SECRET_KEY"},
-		{"slack", "PATCHBAY_SLACK_SECRET_KEY"},
-		{"dingtalk", "PATCHBAY_DINGTALK_SECRET_KEY"},
-		{"wecom", "PATCHBAY_WECOM_SECRET_KEY"},
-		{"telegram", "PATCHBAY_TELEGRAM_SECRET_KEY"},
-		{"weixin", "PATCHBAY_WEIXIN_SECRET_KEY"},
+		{"lark", "ORVILO_LARK_SECRET_KEY"},
+		{"slack", "ORVILO_SLACK_SECRET_KEY"},
+		{"dingtalk", "ORVILO_DINGTALK_SECRET_KEY"},
+		{"wecom", "ORVILO_WECOM_SECRET_KEY"},
+		{"telegram", "ORVILO_TELEGRAM_SECRET_KEY"},
+		{"weixin", "ORVILO_WEIXIN_SECRET_KEY"},
 	} {
 		_, err := secretbox.LoadKey(item.keyEnv)
 		enabled := err == nil
@@ -240,9 +240,9 @@ func isPublicHTTPSURL(raw string) bool {
 }
 
 func daemonSetupURLsFromEnv() (string, string) {
-	serverURL := normalizePublicURL(os.Getenv("PATCHBAY_DAEMON_SERVER_URL"))
+	serverURL := normalizePublicURL(os.Getenv("ORVILO_DAEMON_SERVER_URL"))
 	if serverURL == "" {
-		serverURL = normalizePublicURL(os.Getenv("PATCHBAY_PUBLIC_URL"))
+		serverURL = normalizePublicURL(os.Getenv("ORVILO_PUBLIC_URL"))
 	}
 	appURL := resolveFrontendAppURL()
 	if appURL == "" {
@@ -259,11 +259,11 @@ func daemonSetupURLsFromEnv() (string, string) {
 }
 
 // resolveFrontendAppURL returns the operator-configured frontend origin
-// (PATCHBAY_APP_URL, falling back to FRONTEND_ORIGIN), normalized. Shared by
+// (ORVILO_APP_URL, falling back to FRONTEND_ORIGIN), normalized. Shared by
 // the daemon-setup URLs and the managed-cloud detection so both read the same
 // signal.
 func resolveFrontendAppURL() string {
-	appURL := normalizePublicURL(os.Getenv("PATCHBAY_APP_URL"))
+	appURL := normalizePublicURL(os.Getenv("ORVILO_APP_URL"))
 	if appURL == "" {
 		appURL = normalizePublicURL(os.Getenv("FRONTEND_ORIGIN"))
 	}
@@ -279,10 +279,10 @@ func normalizePublicURL(raw string) string {
 // (patchbay.aspectlylabs.com). The
 // daemon setup for the managed cloud is always
 // `patchbay setup` (which hardcodes api.aspectlylabs.com), so the per-deployment URLs
-// must be omitted from /api/config even when PATCHBAY_PUBLIC_URL is unset or
+// must be omitted from /api/config even when ORVILO_PUBLIC_URL is unset or
 // misconfigured. Previously this also required
 // serverURL==api.aspectlylabs.com, so a
-// cloud deployment that forgot PATCHBAY_PUBLIC_URL fell through and emitted a
+// cloud deployment that forgot ORVILO_PUBLIC_URL fell through and emitted a
 // `setup self-host --server-url https://patchbay.aspectlylabs.com` command — pointing the
 // daemon's backend at the frontend (no /health, no WebSocket proxy).
 func isOfficialCloudDaemonConfig(appURL string) bool {

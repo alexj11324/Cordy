@@ -176,8 +176,8 @@ func TestRunDaemonDiskUsageByWorkspaceTableMakesNoRequest(t *testing.T) {
 	pinHumanCLIContext(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("PATCHBAY_WORKSPACES_ROOT", "")
-	t.Setenv("PATCHBAY_SERVER_URL", "")
+	t.Setenv("ORVILO_WORKSPACES_ROOT", "")
+	t.Setenv("ORVILO_SERVER_URL", "")
 
 	rec := &gcCheckRecorder{}
 	srv := newGCCheckServer(t, rec)
@@ -207,8 +207,8 @@ func TestRunDaemonDiskUsageTaskTableResolvesStatus(t *testing.T) {
 	pinHumanCLIContext(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("PATCHBAY_WORKSPACES_ROOT", "")
-	t.Setenv("PATCHBAY_SERVER_URL", "")
+	t.Setenv("ORVILO_WORKSPACES_ROOT", "")
+	t.Setenv("ORVILO_SERVER_URL", "")
 
 	rec := &gcCheckRecorder{}
 	srv := newGCCheckServer(t, rec)
@@ -234,8 +234,8 @@ func TestRunDaemonDiskUsageJSONSurvivesServerFailure(t *testing.T) {
 	pinHumanCLIContext(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("PATCHBAY_WORKSPACES_ROOT", "")
-	t.Setenv("PATCHBAY_SERVER_URL", "")
+	t.Setenv("ORVILO_WORKSPACES_ROOT", "")
+	t.Setenv("ORVILO_SERVER_URL", "")
 
 	rec := &gcCheckRecorder{statusCode: http.StatusInternalServerError}
 	srv := newGCCheckServer(t, rec)
@@ -279,8 +279,8 @@ func TestRunDaemonDiskUsageAllProfilesUsesPerProfileToken(t *testing.T) {
 	pinHumanCLIContext(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("PATCHBAY_WORKSPACES_ROOT", "")
-	t.Setenv("PATCHBAY_SERVER_URL", "")
+	t.Setenv("ORVILO_WORKSPACES_ROOT", "")
+	t.Setenv("ORVILO_SERVER_URL", "")
 
 	rec := &gcCheckRecorder{}
 	srv := newGCCheckServer(t, rec)
@@ -377,8 +377,8 @@ func setupTaskDiskUsageContext(t *testing.T, home, ownerServerURL string) string
 	t.Helper()
 	t.Chdir(t.TempDir())
 	t.Setenv("HOME", home)
-	t.Setenv("PATCHBAY_WORKSPACES_ROOT", "")
-	t.Setenv("PATCHBAY_SERVER_URL", "")
+	t.Setenv("ORVILO_WORKSPACES_ROOT", "")
+	t.Setenv("ORVILO_SERVER_URL", "")
 
 	// Owner profile: a real token plus a task dir under the HOME-derived root.
 	setupDiskUsageProfile(t, home, "", "token-owner", ownerServerURL,
@@ -388,9 +388,9 @@ func setupTaskDiskUsageContext(t *testing.T, home, ownerServerURL string) string
 	writeDiskUsageIssueTask(t, injectedRoot,
 		"22222222-2222-2222-2222-222222222222", "7a5c0000", "issue-task")
 
-	t.Setenv("PATCHBAY_AGENT_ID", "agent-test")
-	t.Setenv("PATCHBAY_TASK_ID", "task-test")
-	t.Setenv("PATCHBAY_TASK_CONFIG_ROOT", filepath.Join(t.TempDir(), "task-patchbay"))
+	t.Setenv("ORVILO_AGENT_ID", "agent-test")
+	t.Setenv("ORVILO_TASK_ID", "task-test")
+	t.Setenv("ORVILO_TASK_CONFIG_ROOT", filepath.Join(t.TempDir(), "task-patchbay"))
 	t.Setenv(daemon.TaskWorkspacesRootEnv, injectedRoot)
 	return injectedRoot
 }
@@ -483,7 +483,7 @@ func TestResolveDiskUsageRootTaskContext(t *testing.T) {
 	t.Run("outside a task keeps profile resolution", func(t *testing.T) {
 		home := t.TempDir()
 		t.Setenv("HOME", home)
-		t.Setenv("PATCHBAY_WORKSPACES_ROOT", "")
+		t.Setenv("ORVILO_WORKSPACES_ROOT", "")
 		t.Setenv(daemon.TaskWorkspacesRootEnv, filepath.Join(t.TempDir(), "ignored"))
 
 		got, err := resolveDiskUsageRoot(false, "staging", "")
@@ -501,7 +501,7 @@ func TestRunDaemonDiskUsageHonorsProfileWorkspacesRoot(t *testing.T) {
 	home := t.TempDir()
 	customRoot := filepath.Join(t.TempDir(), "configured-workspaces")
 	t.Setenv("HOME", home)
-	t.Setenv("PATCHBAY_WORKSPACES_ROOT", "")
+	t.Setenv("ORVILO_WORKSPACES_ROOT", "")
 	if err := cli.SaveCLIConfig(cli.CLIConfig{WorkspacesRoot: customRoot}); err != nil {
 		t.Fatalf("SaveCLIConfig: %v", err)
 	}
@@ -529,7 +529,7 @@ func TestResolveDiskUsageRootEnvOverridesProfileConfig(t *testing.T) {
 	configRoot := filepath.Join(t.TempDir(), "configured-workspaces")
 	envRoot := filepath.Join(t.TempDir(), "env-workspaces")
 	t.Setenv("HOME", home)
-	t.Setenv("PATCHBAY_WORKSPACES_ROOT", envRoot)
+	t.Setenv("ORVILO_WORKSPACES_ROOT", envRoot)
 	if err := cli.SaveCLIConfig(cli.CLIConfig{WorkspacesRoot: configRoot}); err != nil {
 		t.Fatalf("SaveCLIConfig: %v", err)
 	}
@@ -551,7 +551,7 @@ func TestEnumerateDiskUsageRootsUsesAndDeduplicatesProfileConfig(t *testing.T) {
 	uniqueRoot := filepath.Join(t.TempDir(), "unique-root")
 	neverRanRoot := filepath.Join(t.TempDir(), "never-ran-root")
 	t.Setenv("HOME", home)
-	t.Setenv("PATCHBAY_WORKSPACES_ROOT", "")
+	t.Setenv("ORVILO_WORKSPACES_ROOT", "")
 
 	configs := []struct {
 		profile string

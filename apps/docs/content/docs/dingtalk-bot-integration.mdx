@@ -77,7 +77,7 @@ Send `/clear` to keep the current Patchbay Chat while applying a fresh agent-vis
 Patchbay Cloud users can skip this section. A self-hosted deployment must first set a key for encrypting the DingTalk `AppSecret`:
 
 ```dotenv
-PATCHBAY_DINGTALK_SECRET_KEY=<base64-encoded 32-byte key>
+ORVILO_DINGTALK_SECRET_KEY=<base64-encoded 32-byte key>
 ```
 
 Generate one with:
@@ -88,7 +88,7 @@ openssl rand -base64 32
 
 Restart the API service, then connect DingTalk. Keep this key permanently: if it is changed or lost, existing tokens cannot be decrypted and the connection must be set up again.
 
-Account-linking URLs use `PATCHBAY_APP_URL`, falling back to `FRONTEND_ORIGIN` when it is unset. The URL must point to a Patchbay address that members can access.
+Account-linking URLs use `ORVILO_APP_URL`, falling back to `FRONTEND_ORIGIN` when it is unset. The URL must point to a Patchbay address that members can access.
 
 
 ## Next

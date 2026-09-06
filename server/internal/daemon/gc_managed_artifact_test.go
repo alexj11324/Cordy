@@ -119,7 +119,7 @@ func TestManagedArtifact_FreshActiveChatKeepsSandboxBin(t *testing.T) {
 	assertKept(t, taskDir, sandboxBinRel+"/codex")
 }
 
-// PATCHBAY_GC_ARTIFACT_TTL=0 disables the managed reclaim along with the rest of
+// ORVILO_GC_ARTIFACT_TTL=0 disables the managed reclaim along with the rest of
 // artifact cleanup — the documented opt-out.
 func TestManagedArtifact_ArtifactTTLZeroDisablesFallback(t *testing.T) {
 	t.Parallel()

@@ -23,10 +23,10 @@ import (
 )
 
 const (
-	bootstrapFlag    = "PATCHBAY_MESSAGING_BOOTSTRAP"
-	workspaceIDEnv   = "PATCHBAY_MESSAGING_WORKSPACE_ID"
-	installerUserEnv = "PATCHBAY_MESSAGING_INSTALLER_USER_ID"
-	agentIDEnv       = "PATCHBAY_MESSAGING_AGENT_ID"
+	bootstrapFlag    = "ORVILO_MESSAGING_BOOTSTRAP"
+	workspaceIDEnv   = "ORVILO_MESSAGING_WORKSPACE_ID"
+	installerUserEnv = "ORVILO_MESSAGING_INSTALLER_USER_ID"
+	agentIDEnv       = "ORVILO_MESSAGING_AGENT_ID"
 	serverConfigured = "server_configured"
 )
 
@@ -141,11 +141,11 @@ func slackSpec() (*installationSpec, error) {
 	if err != nil {
 		return nil, err
 	}
-	botEncrypted, err := sealBase64("PATCHBAY_SLACK_SECRET_KEY", botToken)
+	botEncrypted, err := sealBase64("ORVILO_SLACK_SECRET_KEY", botToken)
 	if err != nil {
 		return nil, err
 	}
-	appEncrypted, err := sealBase64("PATCHBAY_SLACK_SECRET_KEY", appToken)
+	appEncrypted, err := sealBase64("ORVILO_SLACK_SECRET_KEY", appToken)
 	if err != nil {
 		return nil, err
 	}
@@ -169,7 +169,7 @@ func telegramSpec() (*installationSpec, error) {
 			return nil, errors.New("TELEGRAM_BOT_TOKEN has an invalid bot token shape")
 		}
 	}
-	encrypted, err := sealBase64("PATCHBAY_TELEGRAM_SECRET_KEY", botToken)
+	encrypted, err := sealBase64("ORVILO_TELEGRAM_SECRET_KEY", botToken)
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +188,7 @@ func larkSpec() (*installationSpec, error) {
 	if !appOK || !secretOK {
 		return nil, errors.New("LARK_APP_ID and LARK_APP_SECRET must be configured together")
 	}
-	encrypted, err := sealBase64("PATCHBAY_LARK_SECRET_KEY", appSecret)
+	encrypted, err := sealBase64("ORVILO_LARK_SECRET_KEY", appSecret)
 	if err != nil {
 		return nil, err
 	}
@@ -214,7 +214,7 @@ func dingtalkSpec() (*installationSpec, error) {
 	if !appOK || !secretOK {
 		return nil, errors.New("DINGTALK_CLIENT_ID and DINGTALK_CLIENT_SECRET must be configured together")
 	}
-	encrypted, err := sealBase64("PATCHBAY_DINGTALK_SECRET_KEY", appSecret)
+	encrypted, err := sealBase64("ORVILO_DINGTALK_SECRET_KEY", appSecret)
 	if err != nil {
 		return nil, err
 	}
@@ -236,7 +236,7 @@ func wecomSpec() (*installationSpec, error) {
 	if !botOK || !secretOK {
 		return nil, errors.New("WECOM_BOT_ID and WECOM_SECRET must be configured together")
 	}
-	sealed, err := sealBytes("PATCHBAY_WECOM_SECRET_KEY", secret)
+	sealed, err := sealBytes("ORVILO_WECOM_SECRET_KEY", secret)
 	if err != nil {
 		return nil, err
 	}

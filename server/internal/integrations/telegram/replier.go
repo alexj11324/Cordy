@@ -59,7 +59,7 @@ type OutboundReplierConfig struct {
 	Binding bindingMinter
 	Decrypt Decrypter
 	// AppURL is the Patchbay web app host for the redeem link, same sourcing as
-	// the Slack replier (PATCHBAY_APP_URL ?? FRONTEND_ORIGIN).
+	// the Slack replier (ORVILO_APP_URL ?? FRONTEND_ORIGIN).
 	AppURL      string
 	BindingPath string // default "/telegram/bind"
 	APIBase     string

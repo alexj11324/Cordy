@@ -178,7 +178,7 @@ make env-exec ARGS="-- pnpm exec playwright test"
 
 ### Signing in without the login page
 
-`make up` writes `PATCHBAY_DEV_LOGIN=1` into the env file, which makes the
+`make up` writes `ORVILO_DEV_LOGIN=1` into the env file, which makes the
 backend serve `/auth/dev-login`. `make dev-login` uses it and prints:
 
 - a URL that installs the session cookie and lands on this environment's issues
@@ -194,7 +194,7 @@ make dev-login ARGS="--path /dev/inbox"               # land somewhere else
 make dev-login ARGS=--json                            # url + token for a script
 ```
 
-The endpoint exists only when `PATCHBAY_DEV_LOGIN=1` and `APP_ENV` is
+The endpoint exists only when `ORVILO_DEV_LOGIN=1` and `APP_ENV` is
 non-production; a production build does not register the route at all. Add
 `?onboarding=keep` to the URL when you want to test the onboarding flow itself.
 Backends started before this variable was in the env file need one
@@ -514,12 +514,12 @@ bearer token, so the HttpOnly cookie `make dev-login` installs does nothing for 
 session always wins — the seed only fills an empty storage, so it never logs you out of an account
 you are testing with.
 
-If the token could not be minted (a backend started before `PATCHBAY_DEV_LOGIN=1` was in the env
+If the token could not be minted (a backend started before `ORVILO_DEV_LOGIN=1` was in the env
 file), `make up C=desktop` says so and Electron shows the login page; `make down && make up
 C=desktop` fixes it. You can always fall back to `dev@localhost` with code `888888` on that page.
 
 To exercise the onboarding flow itself — which starts from a user who has not completed it — run
-`PATCHBAY_DEV_KEEP_ONBOARDING=1 make up C=desktop`. The browser equivalent is `?onboarding=keep` on
+`ORVILO_DEV_KEEP_ONBOARDING=1 make up C=desktop`. The browser equivalent is `?onboarding=keep` on
 the URL `make dev-login` prints.
 
 ### Isolation Guarantee

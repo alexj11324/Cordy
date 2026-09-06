@@ -22,7 +22,7 @@ It does not create issues. That is a later Plugin Action API, not this trigger.
 ## Running the handler
 
 ```bash
-PATCHBAY_SIGNING_SECRET=whsec_… node server/handler.mjs
+ORVILO_SIGNING_SECRET=whsec_… node server/handler.mjs
 ```
 
 The signing secret is shown once, next to the install token, when an admin
@@ -32,7 +32,7 @@ Point `transport.url` at this process and declare the matching `net:` scope.
 Local development also needs:
 
 ```bash
-export PATCHBAY_PLUGIN_DEV_ORIGINS=https://localhost:8787
+export ORVILO_PLUGIN_DEV_ORIGINS=https://localhost:8787
 ```
 
 Without that opt-in the host refuses a private address.

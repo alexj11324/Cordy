@@ -79,7 +79,7 @@ Cron 不包含秒，时区使用 `Asia/Shanghai` 这样的 IANA 名称。保存�
 **Webhook 触发**会签发唯一 URL。向它发送 JSON 对象或数组，即可触发自动化：
 
 ```bash
-curl -X POST "$PATCHBAY_WEBHOOK_URL" \
+curl -X POST "$ORVILO_WEBHOOK_URL" \
  -H "Content-Type: application/json" \
  -H "Idempotency-Key: demo-001" \
  -d '{"event":"build.completed","eventPayload":{"status":"success"}}'

@@ -525,7 +525,7 @@ func TestRuntimesAndReposSkillCoversClaimAndCheckoutChain(t *testing.T) {
 		"daemon polls/claims the task",
 		"patchbay runtime list --output json",
 		"patchbay repo checkout <url>",
-		"PATCHBAY_DAEMON_PORT",
+		"ORVILO_DAEMON_PORT",
 		"resource_ref.ref",
 		"github_repo",
 		"local_directory",

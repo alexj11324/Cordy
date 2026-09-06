@@ -1,15 +1,15 @@
-# Official Patchbay Cloud Slack app. This is intentionally separate from the
+# Official Orvilo Cloud Slack app. This is intentionally separate from the
 # self-hosted Socket Mode manifest: one hosted app uses OAuth + signed Events
 # API callbacks and routes each event by app_id + team_id.
 display_information:
-  name: Patchbay
+  name: Orvilo
 features:
   app_home:
     home_tab_enabled: false
     messages_tab_enabled: true
     messages_tab_read_only_enabled: false
   bot_user:
-    display_name: Patchbay
+    display_name: Orvilo
     always_online: true
   slash_commands:
     - command: /agents
@@ -19,7 +19,7 @@ features:
       should_escape: false
     - command: /issue
       url: https://api.aspectlylabs.com/api/integrations/slack/commands
-      description: Create a Patchbay issue with an Agent
+      description: Create an Orvilo issue with an Agent
       usage_hint: "what should be filed"
       should_escape: false
 oauth_config:

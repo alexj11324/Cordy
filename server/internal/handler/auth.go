@@ -38,7 +38,7 @@ func (e SignupError) Error() string {
 var ErrSignupProhibited = SignupError{Message: "user registration is disabled on this self-hosted instance"}
 var ErrEmailNotAllowed = SignupError{Message: "email address or domain not allowed on this instance"}
 
-const devVerificationCodeEnv = "PATCHBAY_DEV_VERIFICATION_CODE"
+const devVerificationCodeEnv = "ORVILO_DEV_VERIFICATION_CODE"
 
 // supportedLanguages mirrors `SUPPORTED_LOCALES` in packages/core/i18n/types.ts.
 // Keep both lists in sync when adding a locale — the user-controlled `language`

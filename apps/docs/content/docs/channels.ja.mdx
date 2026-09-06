@@ -89,11 +89,11 @@ Patchbay がエージェントを実行するのは、アカウント連携が�
 セルフホスト環境では、Patchbay が接続エンドポイントを有効にする前に、プラットフォームごとに 32 バイトの暗号化キーを設定する必要があります。
 
 ```dotenv
-PATCHBAY_LARK_SECRET_KEY=<base64-encoded 32-byte key>
-PATCHBAY_SLACK_SECRET_KEY=<base64-encoded 32-byte key>
-PATCHBAY_DINGTALK_SECRET_KEY=<base64-encoded 32-byte key>
-PATCHBAY_WECOM_SECRET_KEY=<base64-encoded 32-byte key>
-PATCHBAY_TELEGRAM_SECRET_KEY=<base64-encoded 32-byte key>
+ORVILO_LARK_SECRET_KEY=<base64-encoded 32-byte key>
+ORVILO_SLACK_SECRET_KEY=<base64-encoded 32-byte key>
+ORVILO_DINGTALK_SECRET_KEY=<base64-encoded 32-byte key>
+ORVILO_WECOM_SECRET_KEY=<base64-encoded 32-byte key>
+ORVILO_TELEGRAM_SECRET_KEY=<base64-encoded 32-byte key>
 ```
 
 これらのキーは、保存された Bot の認証情報を暗号化します。生成、保管、ローテーションの方法は[環境変数](/environment-variables)を参照してください。Patchbay Cloud ではすでに設定済みです。

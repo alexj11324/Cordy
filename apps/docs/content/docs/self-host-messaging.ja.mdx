@@ -23,7 +23,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 - `DELETE /api/workspaces/{id}/slack/installations/{installationId}` — 接続解除（owner / admin）。行は監査用に残り、再接続で active に戻ります。
 - `POST /api/slack/binding/redeem` —「アカウントを連携」リンクから、Slack user id をサインイン中の Patchbay ユーザーに紐付けます。
 
-ホスト専用（`PATCHBAY_SLACK_CLIENT_ID/_SECRET` なしでは動作しません）：
+ホスト専用（`ORVILO_SLACK_CLIENT_ID/_SECRET` なしでは動作しません）：
 
 - `POST /api/workspaces/{id}/slack/install/managed` — マネージド OAuth 認可を開始します（owner/admin）。Body: `{ "redirect_url": "…" }`。
 - `GET /api/integrations/slack/oauth/callback` — Slack リダイレクト用の公開エンドポイント。使い捨て state を消費して code を交換し、紐付け済み redirect URL へ 302 します。
@@ -32,7 +32,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 ## 1. BYO Socket Mode のデプロイ
 
-1. `PATCHBAY_SLACK_SECRET_KEY` を設定し（[認証情報の扱い](#4-認証情報の扱い) を参照）、バックエンドを再起動します。これがないと Slack 連携全体が無効になります。
+1. `ORVILO_SLACK_SECRET_KEY` を設定し（[認証情報の扱い](#4-認証情報の扱い) を参照）、バックエンドを再起動します。これがないと Slack 連携全体が無効になります。
 2. [Slack Bot 連携](/slack-bot-integration) の manifest からエージェントごとに Slack app を作成し、Slack workspace にインストールして、`xoxb-` Bot token と `xapp-` App-level Token（`connections:write` scope）を取得します。
 3. Patchbay で対象エージェントの**連携**ページを開いて 2 つの token を貼り付けるか、`POST .../slack/install/byo?agent_id=…` を直接呼びます。
 4. Patchbay は保存前にペアを検証します。
@@ -45,7 +45,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 Go バックエンドには BYO とは別にホスト型（マネージド）OAuth サービスが同梱されています（`server/internal/integrations/slack/managed_oauth.go`）。使い捨て・10 分有効・ハッシュ保存のインストール state を発行し（DB に届くのは state ハッシュのみ）、コールバック code を `https://slack.com/api/oauth.v2.access` で交換します。インストーラーが開くのは `https://slack.com/oauth/v2/authorize` で、scope は `ManagedSlackBotScopes`（`app_mentions:read,channels:history,chat:write,commands,files:read,groups:history,im:history,mpim:history,reactions:write,users:read`）です。マネージドのクライアント認証情報がない場合、交換は中途半端に動かず明示的に失敗します。
 
-セルフホスト環境は BYO のまま使うため、OAuth コールバックの設定は不要です。Go サーバーのマネージド begin / callback ルートは、ホスト用クライアント認証情報（`PATCHBAY_SLACK_CLIENT_ID/_SECRET`）なしでは動作しません。BYO インストール自体に OAuth code 交換はありません。セルフホスト用インストールの app manifest に Slack redirect URL を追加しないでください。Socket Mode には不要です。
+セルフホスト環境は BYO のまま使うため、OAuth コールバックの設定は不要です。Go サーバーのマネージド begin / callback ルートは、ホスト用クライアント認証情報（`ORVILO_SLACK_CLIENT_ID/_SECRET`）なしでは動作しません。BYO インストール自体に OAuth code 交換はありません。セルフホスト用インストールの app manifest に Slack redirect URL を追加しないでください。Socket Mode には不要です。
 
 ## 3. localhost バインドの警告
 
@@ -55,17 +55,17 @@ Docker Compose はポート `3000` と `8080` を `127.0.0.1` にだけバイン
 
 メッセージングのリンクが動くかは 2 つの URL 設定で決まります。
 
-- アカウント連携リンクは `PATCHBAY_APP_URL` を使い、未設定時は `FRONTEND_ORIGIN` にフォールバックします。`PATCHBAY_PUBLIC_URL`（バックエンド / API 用 URL）は使いません。全メンバーが到達できる Patchbay のアドレスを指定し、loopback アドレスは避けてください。
+- アカウント連携リンクは `ORVILO_APP_URL` を使い、未設定時は `FRONTEND_ORIGIN` にフォールバックします。`ORVILO_PUBLIC_URL`（バックエンド / API 用 URL）は使いません。全メンバーが到達できる Patchbay のアドレスを指定し、loopback アドレスは避けてください。
 - 自ホスト環境では `FRONTEND_ORIGIN` を公開 app オリジンに必ず設定します。招待リンク、cookie 属性、WebSocket オリジン判定はすべてここから導出されます。
 
-連携リンクや `/api/config` の `daemon_server_url` がまだ `localhost` の場合、`.env` にローカル初期値が残っています。`FRONTEND_ORIGIN` と `PATCHBAY_APP_URL` を公開 URL に明示設定し、`docker compose -f docker-compose.selfhost.yml up -d` でコンテナを作り直します（`restart` だけでは `.env` は再読込されません）。
+連携リンクや `/api/config` の `daemon_server_url` がまだ `localhost` の場合、`.env` にローカル初期値が残っています。`FRONTEND_ORIGIN` と `ORVILO_APP_URL` を公開 URL に明示設定し、`docker compose -f docker-compose.selfhost.yml up -d` でコンテナを作り直します（`restart` だけでは `.env` は再読込されません）。
 
 ## 4. 認証情報の扱い
 
-- `PATCHBAY_SLACK_SECRET_KEY` は Slack 用の単一のデプロイ全体キーで、base64 エンコードされた 32 バイトです。
+- `ORVILO_SLACK_SECRET_KEY` は Slack 用の単一のデプロイ全体キーで、base64 エンコードされた 32 バイトです。
 
   ```dotenv
-  PATCHBAY_SLACK_SECRET_KEY=<base64-encoded 32-byte key>
+  ORVILO_SLACK_SECRET_KEY=<base64-encoded 32-byte key>
   ```
 
   ```bash

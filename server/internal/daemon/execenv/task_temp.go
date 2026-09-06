@@ -269,7 +269,7 @@ func PruneTaskTempDirs(base string, legacyTTL time.Duration, now time.Time, logg
 		logger.Info("gc: pre-lock task temp dirs left in place",
 			"base", base,
 			"count", legacyKept,
-			"hint", "set PATCHBAY_GC_TASK_TEMP_LEGACY_TTL to reclaim them on age",
+			"hint", "set ORVILO_GC_TASK_TEMP_LEGACY_TTL to reclaim them on age",
 		)
 	}
 	return removed, bytesFreed

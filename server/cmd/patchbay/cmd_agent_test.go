@@ -70,10 +70,10 @@ func chdirWithDaemonTaskMarker(t *testing.T) {
 
 func TestHumanLocalCommandDistinguishesPortHintFromTaskIdentity(t *testing.T) {
 	t.Chdir(t.TempDir())
-	t.Setenv("PATCHBAY_AGENT_ID", "")
-	t.Setenv("PATCHBAY_TASK_ID", "")
+	t.Setenv("ORVILO_AGENT_ID", "")
+	t.Setenv("ORVILO_TASK_ID", "")
 	t.Setenv(cli.TaskConfigRootEnv, "")
-	t.Setenv("PATCHBAY_DAEMON_PORT", "20032")
+	t.Setenv("ORVILO_DAEMON_PORT", "20032")
 
 	if err := requireHumanLocalCommand("login"); err != nil {
 		t.Fatalf("port-only host context rejected login: %v", err)
@@ -87,10 +87,10 @@ func TestHumanLocalCommandDistinguishesPortHintFromTaskIdentity(t *testing.T) {
 
 func TestHumanLocalCommandRejectsWorkdirTaskMarker(t *testing.T) {
 	chdirWithDaemonTaskMarker(t)
-	t.Setenv("PATCHBAY_AGENT_ID", "")
-	t.Setenv("PATCHBAY_TASK_ID", "")
+	t.Setenv("ORVILO_AGENT_ID", "")
+	t.Setenv("ORVILO_TASK_ID", "")
 	t.Setenv(cli.TaskConfigRootEnv, "")
-	t.Setenv("PATCHBAY_DAEMON_PORT", "")
+	t.Setenv("ORVILO_DAEMON_PORT", "")
 
 	if err := requireHumanLocalCommand("daemon stop"); err == nil || !strings.Contains(err.Error(), "daemon-managed task") {
 		t.Fatalf("workdir task marker did not reject daemon stop: %v", err)
@@ -103,15 +103,15 @@ func TestHumanLocalCommandRejectsExplicitTaskIdentity(t *testing.T) {
 		envName string
 		command string
 	}{
-		{name: "agent ID blocks setup", envName: "PATCHBAY_AGENT_ID", command: "setup"},
-		{name: "task ID blocks daemon stop", envName: "PATCHBAY_TASK_ID", command: "daemon stop"},
+		{name: "agent ID blocks setup", envName: "ORVILO_AGENT_ID", command: "setup"},
+		{name: "task ID blocks daemon stop", envName: "ORVILO_TASK_ID", command: "daemon stop"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Chdir(t.TempDir())
-			t.Setenv("PATCHBAY_AGENT_ID", "")
-			t.Setenv("PATCHBAY_TASK_ID", "")
+			t.Setenv("ORVILO_AGENT_ID", "")
+			t.Setenv("ORVILO_TASK_ID", "")
 			t.Setenv(cli.TaskConfigRootEnv, "")
-			t.Setenv("PATCHBAY_DAEMON_PORT", "")
+			t.Setenv("ORVILO_DAEMON_PORT", "")
 			t.Setenv(tc.envName, "task-identity")
 
 			if err := requireHumanLocalCommand(tc.command); err == nil || !strings.Contains(err.Error(), "daemon-managed task") {
@@ -123,19 +123,19 @@ func TestHumanLocalCommandRejectsExplicitTaskIdentity(t *testing.T) {
 
 func TestMissingServerConfigMessageExplainsPortOnlyContext(t *testing.T) {
 	t.Chdir(t.TempDir())
-	t.Setenv("PATCHBAY_AGENT_ID", "")
-	t.Setenv("PATCHBAY_TASK_ID", "")
+	t.Setenv("ORVILO_AGENT_ID", "")
+	t.Setenv("ORVILO_TASK_ID", "")
 	t.Setenv(cli.TaskConfigRootEnv, "")
-	t.Setenv("PATCHBAY_DAEMON_PORT", "20032")
+	t.Setenv("ORVILO_DAEMON_PORT", "20032")
 
 	message := missingServerConfigMessage()
-	if !strings.Contains(message, "PATCHBAY_DAEMON_PORT") || !strings.Contains(message, "remove") {
+	if !strings.Contains(message, "ORVILO_DAEMON_PORT") || !strings.Contains(message, "remove") {
 		t.Fatalf("missing server message = %q, want stale port recovery guidance", message)
 	}
 }
 
 // TestNewAPIClient_WorkdirParentEscapeFailsClosed reproduces the confirmed
-// impersonation escape: a sandbox fault strips every PATCHBAY_* env var from
+// impersonation escape: a sandbox fault strips every ORVILO_* env var from
 // an agent subprocess, which then runs `patchbay` from the *parent* directory
 // of its workdir. The per-workdir marker sits below cwd, so the upward walk
 // used to find no daemon signal and silently fell back to the user's config
@@ -183,11 +183,11 @@ func TestNewAPIClient_WorkdirParentEscapeFailsClosed(t *testing.T) {
 			t.Fatalf("restore cwd: %v", err)
 		}
 	})
-	t.Setenv("PATCHBAY_AGENT_ID", "")
-	t.Setenv("PATCHBAY_TASK_ID", "")
-	t.Setenv("PATCHBAY_DAEMON_PORT", "")
-	t.Setenv("PATCHBAY_TOKEN", "")
-	t.Setenv("PATCHBAY_SERVER_URL", "http://127.0.0.1:8080")
+	t.Setenv("ORVILO_AGENT_ID", "")
+	t.Setenv("ORVILO_TASK_ID", "")
+	t.Setenv("ORVILO_DAEMON_PORT", "")
+	t.Setenv("ORVILO_TOKEN", "")
+	t.Setenv("ORVILO_SERVER_URL", "http://127.0.0.1:8080")
 
 	if got := resolveToken(testCmd()); got != "" {
 		t.Fatalf("resolveToken() = %q, want empty (config PAT must not leak into an escaped daemon subprocess)", got)
@@ -205,11 +205,11 @@ func TestNewAPIClient_WorkdirParentEscapeFailsClosed(t *testing.T) {
 // rather than an opaque "requires mat_ token" error.
 func TestNewAPIClient_LeftoverMarkerActionableError(t *testing.T) {
 	chdirWithDaemonTaskMarker(t)
-	t.Setenv("PATCHBAY_AGENT_ID", "")
-	t.Setenv("PATCHBAY_TASK_ID", "")
-	t.Setenv("PATCHBAY_DAEMON_PORT", "")
-	t.Setenv("PATCHBAY_TOKEN", "")
-	t.Setenv("PATCHBAY_SERVER_URL", "http://127.0.0.1:8080")
+	t.Setenv("ORVILO_AGENT_ID", "")
+	t.Setenv("ORVILO_TASK_ID", "")
+	t.Setenv("ORVILO_DAEMON_PORT", "")
+	t.Setenv("ORVILO_TOKEN", "")
+	t.Setenv("ORVILO_SERVER_URL", "http://127.0.0.1:8080")
 
 	if _, err := newAPIClient(testCmd()); err == nil {
 		t.Fatal("newAPIClient(): expected error for leftover daemon-task marker, got nil")
@@ -222,7 +222,7 @@ func TestNewAPIClient_LeftoverMarkerActionableError(t *testing.T) {
 
 // TestResolveWorkspaceID_AgentContextSkipsConfig is a regression test for
 // the cross-workspace contamination bug (#1235). Inside a daemon-spawned
-// agent task (PATCHBAY_AGENT_ID / PATCHBAY_TASK_ID set), the CLI must NOT
+// agent task (ORVILO_AGENT_ID / ORVILO_TASK_ID set), the CLI must NOT
 // silently read the user-global ~/.patchbay/config.json to recover a missing
 // workspace — that fallback is how agent operations leaked into an
 // unrelated workspace when the daemon failed to inject the right value.
@@ -239,10 +239,10 @@ func TestResolveWorkspaceID_AgentContextSkipsConfig(t *testing.T) {
 	}
 
 	t.Run("outside agent context falls back to config", func(t *testing.T) {
-		t.Setenv("PATCHBAY_AGENT_ID", "")
-		t.Setenv("PATCHBAY_TASK_ID", "")
-		t.Setenv("PATCHBAY_DAEMON_PORT", "")
-		t.Setenv("PATCHBAY_WORKSPACE_ID", "")
+		t.Setenv("ORVILO_AGENT_ID", "")
+		t.Setenv("ORVILO_TASK_ID", "")
+		t.Setenv("ORVILO_DAEMON_PORT", "")
+		t.Setenv("ORVILO_WORKSPACE_ID", "")
 
 		got := resolveWorkspaceID(testCmd())
 		if got != "config-file-ws" {
@@ -251,10 +251,10 @@ func TestResolveWorkspaceID_AgentContextSkipsConfig(t *testing.T) {
 	})
 
 	t.Run("agent context with explicit env uses env", func(t *testing.T) {
-		t.Setenv("PATCHBAY_AGENT_ID", "agent-123")
-		t.Setenv("PATCHBAY_TASK_ID", "task-456")
-		t.Setenv("PATCHBAY_DAEMON_PORT", "")
-		t.Setenv("PATCHBAY_WORKSPACE_ID", "env-ws")
+		t.Setenv("ORVILO_AGENT_ID", "agent-123")
+		t.Setenv("ORVILO_TASK_ID", "task-456")
+		t.Setenv("ORVILO_DAEMON_PORT", "")
+		t.Setenv("ORVILO_WORKSPACE_ID", "env-ws")
 
 		got := resolveWorkspaceID(testCmd())
 		if got != "env-ws" {
@@ -263,10 +263,10 @@ func TestResolveWorkspaceID_AgentContextSkipsConfig(t *testing.T) {
 	})
 
 	t.Run("agent context without env returns empty, never config", func(t *testing.T) {
-		t.Setenv("PATCHBAY_AGENT_ID", "agent-123")
-		t.Setenv("PATCHBAY_TASK_ID", "task-456")
-		t.Setenv("PATCHBAY_DAEMON_PORT", "")
-		t.Setenv("PATCHBAY_WORKSPACE_ID", "")
+		t.Setenv("ORVILO_AGENT_ID", "agent-123")
+		t.Setenv("ORVILO_TASK_ID", "task-456")
+		t.Setenv("ORVILO_DAEMON_PORT", "")
+		t.Setenv("ORVILO_WORKSPACE_ID", "")
 
 		got := resolveWorkspaceID(testCmd())
 		if got != "" {
@@ -275,10 +275,10 @@ func TestResolveWorkspaceID_AgentContextSkipsConfig(t *testing.T) {
 	})
 
 	t.Run("task marker alone also counts as agent context", func(t *testing.T) {
-		t.Setenv("PATCHBAY_AGENT_ID", "")
-		t.Setenv("PATCHBAY_TASK_ID", "task-456")
-		t.Setenv("PATCHBAY_DAEMON_PORT", "")
-		t.Setenv("PATCHBAY_WORKSPACE_ID", "")
+		t.Setenv("ORVILO_AGENT_ID", "")
+		t.Setenv("ORVILO_TASK_ID", "task-456")
+		t.Setenv("ORVILO_DAEMON_PORT", "")
+		t.Setenv("ORVILO_WORKSPACE_ID", "")
 
 		if got := resolveWorkspaceID(testCmd()); got != "" {
 			t.Fatalf("resolveWorkspaceID() = %q, want empty", got)
@@ -286,10 +286,10 @@ func TestResolveWorkspaceID_AgentContextSkipsConfig(t *testing.T) {
 	})
 
 	t.Run("daemon port marker also skips config", func(t *testing.T) {
-		t.Setenv("PATCHBAY_AGENT_ID", "")
-		t.Setenv("PATCHBAY_TASK_ID", "")
-		t.Setenv("PATCHBAY_DAEMON_PORT", "27182")
-		t.Setenv("PATCHBAY_WORKSPACE_ID", "")
+		t.Setenv("ORVILO_AGENT_ID", "")
+		t.Setenv("ORVILO_TASK_ID", "")
+		t.Setenv("ORVILO_DAEMON_PORT", "27182")
+		t.Setenv("ORVILO_WORKSPACE_ID", "")
 
 		if got := resolveWorkspaceID(testCmd()); got != "" {
 			t.Fatalf("resolveWorkspaceID() = %q, want empty", got)
@@ -298,10 +298,10 @@ func TestResolveWorkspaceID_AgentContextSkipsConfig(t *testing.T) {
 
 	t.Run("workdir marker also skips config when env is stripped", func(t *testing.T) {
 		chdirWithDaemonTaskMarker(t)
-		t.Setenv("PATCHBAY_AGENT_ID", "")
-		t.Setenv("PATCHBAY_TASK_ID", "")
-		t.Setenv("PATCHBAY_DAEMON_PORT", "")
-		t.Setenv("PATCHBAY_WORKSPACE_ID", "")
+		t.Setenv("ORVILO_AGENT_ID", "")
+		t.Setenv("ORVILO_TASK_ID", "")
+		t.Setenv("ORVILO_DAEMON_PORT", "")
+		t.Setenv("ORVILO_WORKSPACE_ID", "")
 
 		if got := resolveWorkspaceID(testCmd()); got != "" {
 			t.Fatalf("resolveWorkspaceID() = %q, want empty", got)
@@ -309,10 +309,10 @@ func TestResolveWorkspaceID_AgentContextSkipsConfig(t *testing.T) {
 	})
 
 	t.Run("requireWorkspaceID surfaces agent-context error", func(t *testing.T) {
-		t.Setenv("PATCHBAY_AGENT_ID", "agent-123")
-		t.Setenv("PATCHBAY_TASK_ID", "task-456")
-		t.Setenv("PATCHBAY_DAEMON_PORT", "")
-		t.Setenv("PATCHBAY_WORKSPACE_ID", "")
+		t.Setenv("ORVILO_AGENT_ID", "agent-123")
+		t.Setenv("ORVILO_TASK_ID", "task-456")
+		t.Setenv("ORVILO_DAEMON_PORT", "")
+		t.Setenv("ORVILO_WORKSPACE_ID", "")
 
 		_, err := requireWorkspaceID(testCmd())
 		if err == nil {
@@ -332,10 +332,10 @@ func TestResolveToken_AgentContextSkipsConfig(t *testing.T) {
 	}
 
 	t.Run("outside agent context falls back to config", func(t *testing.T) {
-		t.Setenv("PATCHBAY_AGENT_ID", "")
-		t.Setenv("PATCHBAY_TASK_ID", "")
-		t.Setenv("PATCHBAY_DAEMON_PORT", "")
-		t.Setenv("PATCHBAY_TOKEN", "")
+		t.Setenv("ORVILO_AGENT_ID", "")
+		t.Setenv("ORVILO_TASK_ID", "")
+		t.Setenv("ORVILO_DAEMON_PORT", "")
+		t.Setenv("ORVILO_TOKEN", "")
 
 		if got := resolveToken(testCmd()); got != "pby_profile_token" {
 			t.Fatalf("resolveToken() = %q, want profile token", got)
@@ -343,12 +343,12 @@ func TestResolveToken_AgentContextSkipsConfig(t *testing.T) {
 	})
 
 	t.Run("explicit server URL alone still allows normal config token fallback", func(t *testing.T) {
-		t.Setenv("PATCHBAY_AGENT_ID", "")
-		t.Setenv("PATCHBAY_TASK_ID", "")
-		t.Setenv("PATCHBAY_DAEMON_PORT", "")
-		t.Setenv("PATCHBAY_SERVER_URL", "http://127.0.0.1:8080")
-		t.Setenv("PATCHBAY_TOKEN", "")
-		t.Setenv("PATCHBAY_DAEMON_PORT", "")
+		t.Setenv("ORVILO_AGENT_ID", "")
+		t.Setenv("ORVILO_TASK_ID", "")
+		t.Setenv("ORVILO_DAEMON_PORT", "")
+		t.Setenv("ORVILO_SERVER_URL", "http://127.0.0.1:8080")
+		t.Setenv("ORVILO_TOKEN", "")
+		t.Setenv("ORVILO_DAEMON_PORT", "")
 
 		if got := resolveToken(testCmd()); got != "pby_profile_token" {
 			t.Fatalf("resolveToken() = %q, want profile token", got)
@@ -356,38 +356,38 @@ func TestResolveToken_AgentContextSkipsConfig(t *testing.T) {
 	})
 
 	t.Run("agent context without env never reads config", func(t *testing.T) {
-		t.Setenv("PATCHBAY_AGENT_ID", "agent-123")
-		t.Setenv("PATCHBAY_TASK_ID", "task-456")
-		t.Setenv("PATCHBAY_DAEMON_PORT", "")
-		t.Setenv("PATCHBAY_TOKEN", "")
+		t.Setenv("ORVILO_AGENT_ID", "agent-123")
+		t.Setenv("ORVILO_TASK_ID", "task-456")
+		t.Setenv("ORVILO_DAEMON_PORT", "")
+		t.Setenv("ORVILO_TOKEN", "")
 
 		if got := resolveToken(testCmd()); got != "" {
-			t.Fatalf("resolveToken() = %q, want empty in agent context without PATCHBAY_TOKEN", got)
+			t.Fatalf("resolveToken() = %q, want empty in agent context without ORVILO_TOKEN", got)
 		}
 	})
 
 	t.Run("daemon port marker without env never reads config", func(t *testing.T) {
-		t.Setenv("PATCHBAY_AGENT_ID", "")
-		t.Setenv("PATCHBAY_TASK_ID", "")
-		t.Setenv("PATCHBAY_DAEMON_PORT", "27182")
-		t.Setenv("PATCHBAY_SERVER_URL", "http://127.0.0.1:8080")
-		t.Setenv("PATCHBAY_TOKEN", "")
+		t.Setenv("ORVILO_AGENT_ID", "")
+		t.Setenv("ORVILO_TASK_ID", "")
+		t.Setenv("ORVILO_DAEMON_PORT", "27182")
+		t.Setenv("ORVILO_SERVER_URL", "http://127.0.0.1:8080")
+		t.Setenv("ORVILO_TOKEN", "")
 
 		if got := resolveToken(testCmd()); got != "" {
-			t.Fatalf("resolveToken() = %q, want empty in daemon-managed context without PATCHBAY_TOKEN", got)
+			t.Fatalf("resolveToken() = %q, want empty in daemon-managed context without ORVILO_TOKEN", got)
 		}
 	})
 
 	t.Run("workdir marker without env never reads config", func(t *testing.T) {
 		chdirWithDaemonTaskMarker(t)
-		t.Setenv("PATCHBAY_AGENT_ID", "")
-		t.Setenv("PATCHBAY_TASK_ID", "")
-		t.Setenv("PATCHBAY_DAEMON_PORT", "")
-		t.Setenv("PATCHBAY_SERVER_URL", "http://127.0.0.1:8080")
-		t.Setenv("PATCHBAY_TOKEN", "")
+		t.Setenv("ORVILO_AGENT_ID", "")
+		t.Setenv("ORVILO_TASK_ID", "")
+		t.Setenv("ORVILO_DAEMON_PORT", "")
+		t.Setenv("ORVILO_SERVER_URL", "http://127.0.0.1:8080")
+		t.Setenv("ORVILO_TOKEN", "")
 
 		if got := resolveToken(testCmd()); got != "" {
-			t.Fatalf("resolveToken() = %q, want empty in daemon-managed context without PATCHBAY_TOKEN", got)
+			t.Fatalf("resolveToken() = %q, want empty in daemon-managed context without ORVILO_TOKEN", got)
 		}
 	})
 
@@ -418,11 +418,11 @@ func TestResolveToken_AgentContextSkipsConfig(t *testing.T) {
 			}
 		})
 
-		t.Setenv("PATCHBAY_AGENT_ID", "")
-		t.Setenv("PATCHBAY_TASK_ID", "")
-		t.Setenv("PATCHBAY_DAEMON_PORT", "")
-		t.Setenv("PATCHBAY_SERVER_URL", "")
-		t.Setenv("PATCHBAY_TOKEN", "")
+		t.Setenv("ORVILO_AGENT_ID", "")
+		t.Setenv("ORVILO_TASK_ID", "")
+		t.Setenv("ORVILO_DAEMON_PORT", "")
+		t.Setenv("ORVILO_SERVER_URL", "")
+		t.Setenv("ORVILO_TOKEN", "")
 
 		if got := resolveToken(testCmd()); got != "pby_profile_token" {
 			t.Fatalf("resolveToken() = %q, want profile token (unreadable marker path must not fail closed)", got)
@@ -430,21 +430,21 @@ func TestResolveToken_AgentContextSkipsConfig(t *testing.T) {
 	})
 
 	t.Run("agent context uses explicit task token env", func(t *testing.T) {
-		t.Setenv("PATCHBAY_AGENT_ID", "agent-123")
-		t.Setenv("PATCHBAY_TASK_ID", "task-456")
-		t.Setenv("PATCHBAY_DAEMON_PORT", "")
-		t.Setenv("PATCHBAY_TOKEN", "mat_task_token")
+		t.Setenv("ORVILO_AGENT_ID", "agent-123")
+		t.Setenv("ORVILO_TASK_ID", "task-456")
+		t.Setenv("ORVILO_DAEMON_PORT", "")
+		t.Setenv("ORVILO_TOKEN", "mat_task_token")
 
 		if got := resolveToken(testCmd()); got != "mat_task_token" {
-			t.Fatalf("resolveToken() = %q, want PATCHBAY_TOKEN", got)
+			t.Fatalf("resolveToken() = %q, want ORVILO_TOKEN", got)
 		}
 	})
 
 	t.Run("daemon port set without agent context avoids config fallback", func(t *testing.T) {
-		t.Setenv("PATCHBAY_AGENT_ID", "")
-		t.Setenv("PATCHBAY_TASK_ID", "")
-		t.Setenv("PATCHBAY_TOKEN", "")
-		t.Setenv("PATCHBAY_DAEMON_PORT", "19514")
+		t.Setenv("ORVILO_AGENT_ID", "")
+		t.Setenv("ORVILO_TASK_ID", "")
+		t.Setenv("ORVILO_TOKEN", "")
+		t.Setenv("ORVILO_DAEMON_PORT", "19514")
 
 		if got := resolveToken(testCmd()); got != "" {
 			t.Fatalf("resolveToken() = %q, want empty (daemon port set, fail closed)", got)
@@ -452,26 +452,26 @@ func TestResolveToken_AgentContextSkipsConfig(t *testing.T) {
 	})
 
 	t.Run("daemon port set with explicit task token uses task token", func(t *testing.T) {
-		t.Setenv("PATCHBAY_AGENT_ID", "")
-		t.Setenv("PATCHBAY_TASK_ID", "")
-		t.Setenv("PATCHBAY_TOKEN", "mat_task_token")
-		t.Setenv("PATCHBAY_DAEMON_PORT", "19514")
+		t.Setenv("ORVILO_AGENT_ID", "")
+		t.Setenv("ORVILO_TASK_ID", "")
+		t.Setenv("ORVILO_TOKEN", "mat_task_token")
+		t.Setenv("ORVILO_DAEMON_PORT", "19514")
 
 		if got := resolveToken(testCmd()); got != "mat_task_token" {
-			t.Fatalf("resolveToken() = %q, want PATCHBAY_TOKEN (task token wins over daemon signal)", got)
+			t.Fatalf("resolveToken() = %q, want ORVILO_TOKEN (task token wins over daemon signal)", got)
 		}
 	})
 
-	// PATCHBAY_SERVER_URL is a user-facing env var that may be set in a
+	// ORVILO_SERVER_URL is a user-facing env var that may be set in a
 	// normal shell. It is NOT a daemon identity signal — only
-	// PATCHBAY_DAEMON_PORT is. The config fallback must still work when
+	// ORVILO_DAEMON_PORT is. The config fallback must still work when
 	// SERVER_URL is set but no daemon signal is present.
-	t.Run("PATCHBAY_SERVER_URL alone does not block config fallback", func(t *testing.T) {
-		t.Setenv("PATCHBAY_AGENT_ID", "")
-		t.Setenv("PATCHBAY_TASK_ID", "")
-		t.Setenv("PATCHBAY_TOKEN", "")
-		t.Setenv("PATCHBAY_DAEMON_PORT", "")
-		t.Setenv("PATCHBAY_SERVER_URL", "https://api.aspectlylabs.com")
+	t.Run("ORVILO_SERVER_URL alone does not block config fallback", func(t *testing.T) {
+		t.Setenv("ORVILO_AGENT_ID", "")
+		t.Setenv("ORVILO_TASK_ID", "")
+		t.Setenv("ORVILO_TOKEN", "")
+		t.Setenv("ORVILO_DAEMON_PORT", "")
+		t.Setenv("ORVILO_SERVER_URL", "https://api.aspectlylabs.com")
 
 		if got := resolveToken(testCmd()); got != "pby_profile_token" {
 			t.Fatalf("resolveToken() = %q, want profile token (SERVER_URL is not a daemon identity signal)", got)
@@ -482,11 +482,11 @@ func TestResolveToken_AgentContextSkipsConfig(t *testing.T) {
 	// config token must be reachable. This is the most basic path and
 	// must not be broken by any daemon-signal guard expansion.
 	t.Run("no daemon signals, normal CLI reads config token", func(t *testing.T) {
-		t.Setenv("PATCHBAY_AGENT_ID", "")
-		t.Setenv("PATCHBAY_TASK_ID", "")
-		t.Setenv("PATCHBAY_TOKEN", "")
-		t.Setenv("PATCHBAY_DAEMON_PORT", "")
-		t.Setenv("PATCHBAY_SERVER_URL", "")
+		t.Setenv("ORVILO_AGENT_ID", "")
+		t.Setenv("ORVILO_TASK_ID", "")
+		t.Setenv("ORVILO_TOKEN", "")
+		t.Setenv("ORVILO_DAEMON_PORT", "")
+		t.Setenv("ORVILO_SERVER_URL", "")
 
 		if got := resolveToken(testCmd()); got != "pby_profile_token" {
 			t.Fatalf("resolveToken() = %q, want profile token (normal CLI flow)", got)
@@ -495,13 +495,13 @@ func TestResolveToken_AgentContextSkipsConfig(t *testing.T) {
 }
 
 func TestNewAPIClient_AgentContextRequiresTaskToken(t *testing.T) {
-	t.Setenv("PATCHBAY_SERVER_URL", "http://127.0.0.1:8080")
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "workspace-123")
-	t.Setenv("PATCHBAY_AGENT_ID", "agent-123")
-	t.Setenv("PATCHBAY_TASK_ID", "task-456")
+	t.Setenv("ORVILO_SERVER_URL", "http://127.0.0.1:8080")
+	t.Setenv("ORVILO_WORKSPACE_ID", "workspace-123")
+	t.Setenv("ORVILO_AGENT_ID", "agent-123")
+	t.Setenv("ORVILO_TASK_ID", "task-456")
 
 	t.Run("missing token fails closed", func(t *testing.T) {
-		t.Setenv("PATCHBAY_TOKEN", "")
+		t.Setenv("ORVILO_TOKEN", "")
 
 		_, err := newAPIClient(testCmd())
 		if err == nil {
@@ -513,7 +513,7 @@ func TestNewAPIClient_AgentContextRequiresTaskToken(t *testing.T) {
 	})
 
 	t.Run("member token fails closed", func(t *testing.T) {
-		t.Setenv("PATCHBAY_TOKEN", "pby_member_token")
+		t.Setenv("ORVILO_TOKEN", "pby_member_token")
 
 		_, err := newAPIClient(testCmd())
 		if err == nil {
@@ -525,7 +525,7 @@ func TestNewAPIClient_AgentContextRequiresTaskToken(t *testing.T) {
 	})
 
 	t.Run("task token succeeds", func(t *testing.T) {
-		t.Setenv("PATCHBAY_TOKEN", "mat_task_token")
+		t.Setenv("ORVILO_TOKEN", "mat_task_token")
 
 		client, err := newAPIClient(testCmd())
 		if err != nil {
@@ -540,12 +540,12 @@ func TestNewAPIClient_AgentContextRequiresTaskToken(t *testing.T) {
 func TestNewAPIClient_DaemonPortRequiresTaskToken(t *testing.T) {
 	t.Chdir(t.TempDir())
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("PATCHBAY_SERVER_URL", "http://127.0.0.1:8080")
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "workspace-123")
-	t.Setenv("PATCHBAY_AGENT_ID", "")
-	t.Setenv("PATCHBAY_TASK_ID", "")
-	t.Setenv("PATCHBAY_DAEMON_PORT", "27182")
-	t.Setenv("PATCHBAY_TOKEN", "")
+	t.Setenv("ORVILO_SERVER_URL", "http://127.0.0.1:8080")
+	t.Setenv("ORVILO_WORKSPACE_ID", "workspace-123")
+	t.Setenv("ORVILO_AGENT_ID", "")
+	t.Setenv("ORVILO_TASK_ID", "")
+	t.Setenv("ORVILO_DAEMON_PORT", "27182")
+	t.Setenv("ORVILO_TOKEN", "")
 
 	if err := cli.SaveCLIConfig(cli.CLIConfig{Token: "pby_profile_token", WorkspaceID: "config-file-ws"}); err != nil {
 		t.Fatalf("seed config: %v", err)
@@ -558,18 +558,18 @@ func TestNewAPIClient_DaemonPortRequiresTaskToken(t *testing.T) {
 	if !strings.Contains(err.Error(), "mat_ token") {
 		t.Fatalf("newAPIClient() error = %q, want mat_ token guidance", err.Error())
 	}
-	if !strings.Contains(err.Error(), "PATCHBAY_DAEMON_PORT") || !strings.Contains(err.Error(), "remove") {
+	if !strings.Contains(err.Error(), "ORVILO_DAEMON_PORT") || !strings.Contains(err.Error(), "remove") {
 		t.Fatalf("newAPIClient() error = %q, want stale port recovery guidance", err.Error())
 	}
 }
 
 func TestNewAPIClient_WorkdirMarkerRequiresTaskToken(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("PATCHBAY_SERVER_URL", "http://127.0.0.1:8080")
-	t.Setenv("PATCHBAY_AGENT_ID", "")
-	t.Setenv("PATCHBAY_TASK_ID", "")
-	t.Setenv("PATCHBAY_DAEMON_PORT", "")
-	t.Setenv("PATCHBAY_TOKEN", "")
+	t.Setenv("ORVILO_SERVER_URL", "http://127.0.0.1:8080")
+	t.Setenv("ORVILO_AGENT_ID", "")
+	t.Setenv("ORVILO_TASK_ID", "")
+	t.Setenv("ORVILO_DAEMON_PORT", "")
+	t.Setenv("ORVILO_TOKEN", "")
 	chdirWithDaemonTaskMarker(t)
 
 	if err := cli.SaveCLIConfig(cli.CLIConfig{Token: "pby_profile_token", WorkspaceID: "config-file-ws"}); err != nil {
@@ -673,11 +673,11 @@ func TestParseCustomEnv(t *testing.T) {
 // surface their replacement so users discover the new audited path.
 func TestAgentUpdateNoFieldsErrorPointsAtEnvCommand(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("PATCHBAY_SERVER_URL", "http://127.0.0.1:0")
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "test-ws")
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
-	t.Setenv("PATCHBAY_AGENT_ID", "")
-	t.Setenv("PATCHBAY_TASK_ID", "")
+	t.Setenv("ORVILO_SERVER_URL", "http://127.0.0.1:0")
+	t.Setenv("ORVILO_WORKSPACE_ID", "test-ws")
+	t.Setenv("ORVILO_TOKEN", "test-token")
+	t.Setenv("ORVILO_AGENT_ID", "")
+	t.Setenv("ORVILO_TASK_ID", "")
 
 	cmd := &cobra.Command{Use: "update"}
 	cmd.Flags().String("name", "", "")
@@ -741,11 +741,11 @@ func TestAgentMaxConcurrentTasksFlagValidation(t *testing.T) {
 	defer srv.Close()
 
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
-	t.Setenv("PATCHBAY_AGENT_ID", "")
-	t.Setenv("PATCHBAY_TASK_ID", "")
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+	t.Setenv("ORVILO_TOKEN", "test-token")
+	t.Setenv("ORVILO_AGENT_ID", "")
+	t.Setenv("ORVILO_TASK_ID", "")
 
 	newCreateCmd := func(t *testing.T, value string) *cobra.Command {
 		t.Helper()
@@ -1323,9 +1323,9 @@ func TestAgentSkillsAddCallsAdditiveEndpoint(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+	t.Setenv("ORVILO_TOKEN", "test-token")
 
 	cmd := &cobra.Command{Use: "add"}
 	cmd.Flags().StringSlice("skill-ids", nil, "")
@@ -1350,9 +1350,9 @@ func TestAgentSkillsAddCallsAdditiveEndpoint(t *testing.T) {
 }
 
 func TestAgentSkillsAddRequiresSkillIDs(t *testing.T) {
-	t.Setenv("PATCHBAY_SERVER_URL", "http://127.0.0.1:0")
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
+	t.Setenv("ORVILO_SERVER_URL", "http://127.0.0.1:0")
+	t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+	t.Setenv("ORVILO_TOKEN", "test-token")
 
 	cmd := &cobra.Command{Use: "add"}
 	cmd.Flags().StringSlice("skill-ids", nil, "")
@@ -1412,9 +1412,9 @@ func TestAgentAvatarHappyPath(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+	t.Setenv("ORVILO_TOKEN", "test-token")
 
 	cmd := &cobra.Command{Use: "avatar"}
 	cmd.Flags().String("file", "", "")
@@ -1435,9 +1435,9 @@ func TestAgentAvatarHappyPath(t *testing.T) {
 
 // TestAgentAvatarUnsupportedFormat rejects files with unsupported extensions.
 func TestAgentAvatarUnsupportedFormat(t *testing.T) {
-	t.Setenv("PATCHBAY_SERVER_URL", "http://127.0.0.1:0")
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
+	t.Setenv("ORVILO_SERVER_URL", "http://127.0.0.1:0")
+	t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+	t.Setenv("ORVILO_TOKEN", "test-token")
 
 	dir := t.TempDir()
 	txtPath := filepath.Join(dir, "avatar.txt")
@@ -1464,9 +1464,9 @@ func TestAgentAvatarUnsupportedFormat(t *testing.T) {
 
 // TestAgentAvatarOversizedFile rejects files larger than 5MB.
 func TestAgentAvatarOversizedFile(t *testing.T) {
-	t.Setenv("PATCHBAY_SERVER_URL", "http://127.0.0.1:0")
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
+	t.Setenv("ORVILO_SERVER_URL", "http://127.0.0.1:0")
+	t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+	t.Setenv("ORVILO_TOKEN", "test-token")
 
 	dir := t.TempDir()
 	bigPath := filepath.Join(dir, "big.png")
@@ -1510,9 +1510,9 @@ func TestAgentAvatarMissingAgent(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+	t.Setenv("ORVILO_TOKEN", "test-token")
 
 	cmd := &cobra.Command{Use: "avatar"}
 	cmd.Flags().String("file", "", "")
@@ -1552,9 +1552,9 @@ func TestAgentAvatarUploadFailure(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+	t.Setenv("ORVILO_TOKEN", "test-token")
 
 	cmd := &cobra.Command{Use: "avatar"}
 	cmd.Flags().String("file", "", "")
@@ -1601,9 +1601,9 @@ func TestAgentAvatarUpdateFailure(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+	t.Setenv("ORVILO_TOKEN", "test-token")
 
 	cmd := &cobra.Command{Use: "avatar"}
 	cmd.Flags().String("file", "", "")
@@ -1624,9 +1624,9 @@ func TestAgentAvatarUpdateFailure(t *testing.T) {
 
 // TestAgentAvatarMissingFileFlag rejects when --file is not provided.
 func TestAgentAvatarMissingFileFlag(t *testing.T) {
-	t.Setenv("PATCHBAY_SERVER_URL", "http://127.0.0.1:0")
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
+	t.Setenv("ORVILO_SERVER_URL", "http://127.0.0.1:0")
+	t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+	t.Setenv("ORVILO_TOKEN", "test-token")
 
 	cmd := &cobra.Command{Use: "avatar"}
 	cmd.Flags().String("file", "", "")
@@ -1644,9 +1644,9 @@ func TestAgentAvatarMissingFileFlag(t *testing.T) {
 
 // TestAgentAvatarNonexistentFile rejects when the file path does not exist.
 func TestAgentAvatarNonexistentFile(t *testing.T) {
-	t.Setenv("PATCHBAY_SERVER_URL", "http://127.0.0.1:0")
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
+	t.Setenv("ORVILO_SERVER_URL", "http://127.0.0.1:0")
+	t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+	t.Setenv("ORVILO_TOKEN", "test-token")
 
 	cmd := &cobra.Command{Use: "avatar"}
 	cmd.Flags().String("file", "", "")
@@ -1667,9 +1667,9 @@ func TestAgentAvatarNonexistentFile(t *testing.T) {
 
 // TestAgentAvatarSizeBoundary verifies that exactly 5MB passes and 5MB+1 fails.
 func TestAgentAvatarSizeBoundary(t *testing.T) {
-	t.Setenv("PATCHBAY_SERVER_URL", "http://127.0.0.1:0")
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
+	t.Setenv("ORVILO_SERVER_URL", "http://127.0.0.1:0")
+	t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+	t.Setenv("ORVILO_TOKEN", "test-token")
 
 	t.Run("exactly 5MB passes", func(t *testing.T) {
 		dir := t.TempDir()
@@ -1722,9 +1722,9 @@ func TestAgentAvatarSizeBoundary(t *testing.T) {
 
 // TestAgentAvatarCaseInsensitiveExtension verifies uppercase extensions are accepted.
 func TestAgentAvatarCaseInsensitiveExtension(t *testing.T) {
-	t.Setenv("PATCHBAY_SERVER_URL", "http://127.0.0.1:0")
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
+	t.Setenv("ORVILO_SERVER_URL", "http://127.0.0.1:0")
+	t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+	t.Setenv("ORVILO_TOKEN", "test-token")
 
 	for _, ext := range []string{"avatar.PNG", "avatar.JPG", "avatar.JPEG", "avatar.GIF", "avatar.WEBP"} {
 		t.Run(ext, func(t *testing.T) {
@@ -1769,9 +1769,9 @@ func TestAgentGetTableIncludesAvatarURL(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+	t.Setenv("ORVILO_TOKEN", "test-token")
 
 	cmd := &cobra.Command{Use: "get"}
 	cmd.Flags().String("output", "table", "")
@@ -1817,11 +1817,11 @@ func TestAgentCreateSendsThinkingLevel(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
-	t.Setenv("PATCHBAY_AGENT_ID", "")
-	t.Setenv("PATCHBAY_TASK_ID", "")
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+	t.Setenv("ORVILO_TOKEN", "test-token")
+	t.Setenv("ORVILO_AGENT_ID", "")
+	t.Setenv("ORVILO_TASK_ID", "")
 
 	cmd := &cobra.Command{Use: "create"}
 	cmd.Flags().String("name", "", "")
@@ -1862,11 +1862,11 @@ func TestAgentCreateOmitsThinkingLevelWhenUnset(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
-	t.Setenv("PATCHBAY_AGENT_ID", "")
-	t.Setenv("PATCHBAY_TASK_ID", "")
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+	t.Setenv("ORVILO_TOKEN", "test-token")
+	t.Setenv("ORVILO_AGENT_ID", "")
+	t.Setenv("ORVILO_TASK_ID", "")
 
 	cmd := &cobra.Command{Use: "create"}
 	cmd.Flags().String("name", "", "")
@@ -1913,11 +1913,11 @@ func TestAgentUpdateSendsThinkingLevel(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
-			t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-			t.Setenv("PATCHBAY_TOKEN", "test-token")
-			t.Setenv("PATCHBAY_AGENT_ID", "")
-			t.Setenv("PATCHBAY_TASK_ID", "")
+			t.Setenv("ORVILO_SERVER_URL", srv.URL)
+			t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+			t.Setenv("ORVILO_TOKEN", "test-token")
+			t.Setenv("ORVILO_AGENT_ID", "")
+			t.Setenv("ORVILO_TASK_ID", "")
 
 			cmd := &cobra.Command{Use: "update"}
 			cmd.Flags().String("thinking-level", "", "")
@@ -1986,11 +1986,11 @@ func TestAgentServiceTierFlagsAndBodies(t *testing.T) {
 			json.NewEncoder(w).Encode(map[string]any{"id": "agent-123"})
 		}))
 		defer srv.Close()
-		t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
-		t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-		t.Setenv("PATCHBAY_TOKEN", "test-token")
-		t.Setenv("PATCHBAY_AGENT_ID", "")
-		t.Setenv("PATCHBAY_TASK_ID", "")
+		t.Setenv("ORVILO_SERVER_URL", srv.URL)
+		t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+		t.Setenv("ORVILO_TOKEN", "test-token")
+		t.Setenv("ORVILO_AGENT_ID", "")
+		t.Setenv("ORVILO_TASK_ID", "")
 
 		cmd := &cobra.Command{Use: "create"}
 		cmd.Flags().String("name", "", "")
@@ -2019,11 +2019,11 @@ func TestAgentServiceTierFlagsAndBodies(t *testing.T) {
 			json.NewEncoder(w).Encode(map[string]any{"id": "agent-123"})
 		}))
 		defer srv.Close()
-		t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
-		t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-		t.Setenv("PATCHBAY_TOKEN", "test-token")
-		t.Setenv("PATCHBAY_AGENT_ID", "")
-		t.Setenv("PATCHBAY_TASK_ID", "")
+		t.Setenv("ORVILO_SERVER_URL", srv.URL)
+		t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+		t.Setenv("ORVILO_TOKEN", "test-token")
+		t.Setenv("ORVILO_AGENT_ID", "")
+		t.Setenv("ORVILO_TASK_ID", "")
 
 		cmd := &cobra.Command{Use: "update"}
 		cmd.Flags().String("service-tier", "", "")
@@ -2055,11 +2055,11 @@ func TestAgentCreateThinkingLevelServerRejectionSurfaces(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
-	t.Setenv("PATCHBAY_AGENT_ID", "")
-	t.Setenv("PATCHBAY_TASK_ID", "")
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+	t.Setenv("ORVILO_TOKEN", "test-token")
+	t.Setenv("ORVILO_AGENT_ID", "")
+	t.Setenv("ORVILO_TASK_ID", "")
 
 	cmd := &cobra.Command{Use: "create"}
 	cmd.Flags().String("name", "", "")

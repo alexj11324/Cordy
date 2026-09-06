@@ -61,7 +61,7 @@ Cron에는 초가 없으며 시간대에는 `Asia/Shanghai` 같은 IANA 이름�
 Webhook 트리거를 추가하면 Patchbay가 고유 URL을 생성합니다. 이 URL에 JSON 객체나 배열을 보내 오토파일럿를 트리거할 수 있습니다.
 
 ```bash
-curl -X POST "$PATCHBAY_WEBHOOK_URL" \
+curl -X POST "$ORVILO_WEBHOOK_URL" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: demo-001" \
   -d '{"event":"build.completed","eventPayload":{"status":"success"}}'

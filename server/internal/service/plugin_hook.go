@@ -262,7 +262,7 @@ func (s *PluginService) callHookEndpoint(ctx context.Context, invocation HookInv
 	var endpoint *url.URL
 	client := &http.Client{}
 	if s.isDevOrigin(invocation.Hook.Transport.URL) {
-		// The operator named this exact origin in PATCHBAY_PLUGIN_DEV_ORIGINS —
+		// The operator named this exact origin in ORVILO_PLUGIN_DEV_ORIGINS —
 		// the same opt-in that lets a manifest be served from a local dev
 		// server, for the same reason: an author building a hook has nowhere
 		// public to point it yet.
@@ -452,10 +452,10 @@ func (s *PluginService) SignHookPayload(installationID pgtype.UUID, timestamp st
 // one is stored hashed. Same deployment key, opposite directions.
 func (s *PluginService) hookSigningKey(installationID pgtype.UUID) ([]byte, error) {
 	if len(s.DeploymentKey) == 0 {
-		return nil, pluginErrf(PluginErrorUnavailable, "hooks are disabled: PATCHBAY_PLUGIN_SECRET_KEY is not configured")
+		return nil, pluginErrf(PluginErrorUnavailable, "hooks are disabled: ORVILO_PLUGIN_SECRET_KEY is not configured")
 	}
 	if len(s.DeploymentKey) != 32 {
-		return nil, pluginErrf(PluginErrorUnavailable, "hooks are disabled: PATCHBAY_PLUGIN_SECRET_KEY must decode to 32 bytes")
+		return nil, pluginErrf(PluginErrorUnavailable, "hooks are disabled: ORVILO_PLUGIN_SECRET_KEY must decode to 32 bytes")
 	}
 	mac := hmac.New(sha256.New, s.DeploymentKey)
 	mac.Write([]byte("patchbay-plugin-hook-signature:v1:"))

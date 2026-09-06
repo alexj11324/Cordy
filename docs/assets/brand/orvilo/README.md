@@ -12,7 +12,10 @@ copies live in apps/desktop/build and apps/desktop/resources. Web launcher
 sizes derive from the desktop render; maskable and touch icons derive from
 apps/web/public/icons/icon.svg. Mobile's icon.png is an opaque iOS export.
 
-The brand changes display names, not machine identity. Existing package names,
-app IDs, callback schemes, storage keys, desktop data directories, API headers,
+The brand changes display names and the deployment environment namespace without
+changing machine identity. `ORVILO_*` is the sole environment-variable
+namespace; the old `PATCHBAY_*` names are not read. Existing package names, app
+IDs, callback schemes, storage keys, desktop data directories, API headers,
 artifact names, credentials and service origins retain their Patchbay identity.
-This avoids disconnecting existing users during a visual rebrand.
+This keeps existing users and provider connections stable while making the
+configuration migration explicit.

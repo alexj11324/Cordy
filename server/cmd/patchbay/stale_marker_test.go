@@ -71,9 +71,9 @@ func refusalPaths() map[string]func() error {
 
 func clearDaemonEnvSignals(t *testing.T) {
 	t.Helper()
-	t.Setenv("PATCHBAY_AGENT_ID", "")
-	t.Setenv("PATCHBAY_TASK_ID", "")
-	t.Setenv("PATCHBAY_DAEMON_PORT", "")
+	t.Setenv("ORVILO_AGENT_ID", "")
+	t.Setenv("ORVILO_TASK_ID", "")
+	t.Setenv("ORVILO_DAEMON_PORT", "")
 	t.Setenv(cli.TaskConfigRootEnv, "")
 }
 
@@ -91,8 +91,8 @@ func TestLeftoverMarkerReportedIdenticallyOnEveryRefusalPath(t *testing.T) {
 		t.Run(marker.name, func(t *testing.T) {
 			markerPath := seedMarker(t, marker.body)
 			clearDaemonEnvSignals(t)
-			t.Setenv("PATCHBAY_TOKEN", "")
-			t.Setenv("PATCHBAY_SERVER_URL", "http://127.0.0.1:8080")
+			t.Setenv("ORVILO_TOKEN", "")
+			t.Setenv("ORVILO_SERVER_URL", "http://127.0.0.1:8080")
 
 			for name, refuse := range refusalPaths() {
 				err := refuse()
@@ -125,8 +125,8 @@ func TestLeftoverMarkerReportedIdenticallyOnEveryRefusalPath(t *testing.T) {
 func TestWorkspacesRootMarkerNeverReportedAsLeftover(t *testing.T) {
 	markerPath := seedMarker(t, workspacesRootMarker())
 	clearDaemonEnvSignals(t)
-	t.Setenv("PATCHBAY_TOKEN", "")
-	t.Setenv("PATCHBAY_SERVER_URL", "http://127.0.0.1:8080")
+	t.Setenv("ORVILO_TOKEN", "")
+	t.Setenv("ORVILO_SERVER_URL", "http://127.0.0.1:8080")
 
 	if got := leftoverDaemonTaskMarkerPath(); got != "" {
 		t.Fatalf("leftoverDaemonTaskMarkerPath() = %q; want \"\" for the workspaces root marker", got)
@@ -153,10 +153,10 @@ func TestWorkspacesRootMarkerNeverReportedAsLeftover(t *testing.T) {
 // as a stale file to delete.
 func TestLeftoverMarkerNotReportedUnderRealTaskIdentity(t *testing.T) {
 	for _, tc := range []struct{ name, env, value string }{
-		{name: "agent id", env: "PATCHBAY_AGENT_ID", value: "agent-1"},
-		{name: "task id", env: "PATCHBAY_TASK_ID", value: "task-1"},
+		{name: "agent id", env: "ORVILO_AGENT_ID", value: "agent-1"},
+		{name: "task id", env: "ORVILO_TASK_ID", value: "task-1"},
 		{name: "task config root", env: cli.TaskConfigRootEnv, value: "/tmp/task-patchbay"},
-		{name: "daemon port", env: "PATCHBAY_DAEMON_PORT", value: "20032"},
+		{name: "daemon port", env: "ORVILO_DAEMON_PORT", value: "20032"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			markerPath := seedDaemonTaskMarker(t)
@@ -166,7 +166,7 @@ func TestLeftoverMarkerNotReportedUnderRealTaskIdentity(t *testing.T) {
 			if got := leftoverDaemonTaskMarkerPath(); got != "" {
 				t.Fatalf("leftoverDaemonTaskMarkerPath() = %q; want \"\" under real task identity", got)
 			}
-			// PATCHBAY_DAEMON_PORT alone is not task identity, so it does not by
+			// ORVILO_DAEMON_PORT alone is not task identity, so it does not by
 			// itself make a human-local command fail; the others do, and when
 			// they do the message must stay the plain one.
 			if err := requireHumanLocalCommand("daemon stop"); err != nil {

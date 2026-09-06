@@ -31,7 +31,7 @@ line=$(basename "$0")
 if [ "$#" -gt 0 ]; then
   line="$line [arguments redacted]"
 fi
-printf '%s\n' "$line" >>"$PATCHBAY_AGENT_CLI_GUARD_MARKER"
+printf '%s\n' "$line" >>"$ORVILO_AGENT_CLI_GUARD_MARKER"
 exit 126
 EOF
   chmod 755 "$sentinel"
@@ -46,7 +46,7 @@ if [ "$#" -eq 0 ]; then
 fi
 
 set +e
-PATH="$BIN_DIR:$PATH" PATCHBAY_AGENT_CLI_GUARD_MARKER="$MARKER_FILE" "$@"
+PATH="$BIN_DIR:$PATH" ORVILO_AGENT_CLI_GUARD_MARKER="$MARKER_FILE" "$@"
 command_status=$?
 set -e
 

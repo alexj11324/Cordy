@@ -846,7 +846,7 @@ func TestCodexFirstTurnNoProgressTimeoutClamp(t *testing.T) {
 }
 
 // TestCodexFirstTurnNoProgressTimeoutExplicitOverride covers the
-// PATCHBAY_CODEX_FIRST_TURN_TIMEOUT path added for GH #3262 / #5959: a positive
+// ORVILO_CODEX_FIRST_TURN_TIMEOUT path added for GH #3262 / #5959: a positive
 // configured value is honored as-is for the first-turn watchdog ceiling,
 // including upward past the default that the semantic inactivity timeout alone
 // can never raise. This resolver only sets that one timer's duration; the
@@ -3295,7 +3295,7 @@ func TestCodexExecuteFirstTurnNoProgressSurfacesDiagnostics(t *testing.T) {
 }
 
 // TestCodexExecuteFirstTurnOverrideAboveSemanticIsTruncated pins the competing-
-// timer contract for PATCHBAY_CODEX_FIRST_TURN_TIMEOUT (GH #3262 / #5959): the
+// timer contract for ORVILO_CODEX_FIRST_TURN_TIMEOUT (GH #3262 / #5959): the
 // first status:running arms the semantic-inactivity timer and the first-turn
 // timer together, so a first-turn override ABOVE the semantic timeout cannot
 // extend the first-item wait — the semantic timer fires first. That also

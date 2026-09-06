@@ -398,7 +398,7 @@ func TestKiroIssueCommentAddCommand(t *testing.T) {
 		{"patchbay issue comment add issue-1 --content-file ./reply.md", true},
 		{"./patchbay issue comment add issue-1 --content-file ./reply.md", true},
 		{"/usr/local/bin/patchbay issue comment add issue-1 --content-file ./reply.md", true},
-		{"PATCHBAY_TOKEN=x patchbay issue comment add issue-1 --content-file ./reply.md", true},
+		{"ORVILO_TOKEN=x patchbay issue comment add issue-1 --content-file ./reply.md", true},
 		{"FOO=1 BAR=2 ./patchbay issue comment add issue-1", true},
 		{`sh -c "patchbay issue comment add issue-1 --content-file ./reply.md"`, true},
 		{`bash -c 'patchbay issue comment add issue-1'`, true},

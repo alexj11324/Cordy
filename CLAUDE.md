@@ -230,8 +230,8 @@ Rules:
 - Keep an assertion where the test wrote it when its message says something the shared one cannot. `.Want()` prints the request line, both statuses and the response body; it does not know which case in a loop was running.
 - Helpers in `internal/testutil` insert rows, run handlers and report mismatches. They must not assert a product rule on a test's behalf — a helper that knows what a correct response looks like has taken the assertion away from the test making it.
 - Default tests must never resolve or execute user-installed agent CLIs. Pass a test-created fake executable path or a test-created missing path to agent subprocess code.
-- Real-agent smoke tests belong behind the `agentintegration` build tag and must check `PATCHBAY_RUN_REAL_AGENT_SMOKE=1` before executable lookup or account access.
-- Run an explicitly authorized real-agent smoke test with `(cd server && PATCHBAY_RUN_REAL_AGENT_SMOKE=1 go test -tags=agentintegration ./pkg/agent -run '<test-name>' -count=1 -v)`. This command may access an authenticated account and consume quota.
+- Real-agent smoke tests belong behind the `agentintegration` build tag and must check `ORVILO_RUN_REAL_AGENT_SMOKE=1` before executable lookup or account access.
+- Run an explicitly authorized real-agent smoke test with `(cd server && ORVILO_RUN_REAL_AGENT_SMOKE=1 go test -tags=agentintegration ./pkg/agent -run '<test-name>' -count=1 -v)`. This command may access an authenticated account and consume quota.
 - When adding a default agent command, add it to `scripts/agent-cli-command-names.txt`; the normal Linux/macOS test entry points fail on ambient agent CLI execution.
 
 ## Verification

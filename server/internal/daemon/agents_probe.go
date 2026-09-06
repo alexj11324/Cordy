@@ -23,7 +23,7 @@ import (
 // It is called once from LoadConfig at startup and again from the periodic
 // workspace sync (refreshAgentAvailability), so a CLI the user installs while
 // the daemon is already running gets picked up without a restart (MUL-5439).
-// Everything it reads is process-external (PATH, PATCHBAY_*_PATH, PATCHBAY_*_MODEL),
+// Everything it reads is process-external (PATH, ORVILO_*_PATH, ORVILO_*_MODEL),
 // so re-running it is the only way to observe such an install.
 //
 // A var so tests can stub discovery without installing real CLIs.
@@ -40,7 +40,7 @@ var probeAgentCLIs = func() map[string]AgentEntry {
 			}, true
 		}
 		// Install-path discovery only rescues bare command names. An operator
-		// who pinned PATCHBAY_*_PATH to an absolute or relative path that
+		// who pinned ORVILO_*_PATH to an absolute or relative path that
 		// doesn't exist should hard-miss, not silently get a different
 		// binary.
 		if strings.ContainsAny(cmd, "/\\") {
@@ -70,18 +70,18 @@ var probeAgentCLIs = func() map[string]AgentEntry {
 	}
 
 	agents := map[string]AgentEntry{}
-	if e, ok := probe("PATCHBAY_CLAUDE_PATH", "claude", "PATCHBAY_CLAUDE_MODEL"); ok {
+	if e, ok := probe("ORVILO_CLAUDE_PATH", "claude", "ORVILO_CLAUDE_MODEL"); ok {
 		agents["claude"] = e
 	}
-	if e, ok := probe("PATCHBAY_CODEX_PATH", "codex", "PATCHBAY_CODEX_MODEL"); ok {
+	if e, ok := probe("ORVILO_CODEX_PATH", "codex", "ORVILO_CODEX_MODEL"); ok {
 		agents["codex"] = e
 	}
-	if e, ok := probe("PATCHBAY_OPENCODE_PATH", "opencode", "PATCHBAY_OPENCODE_MODEL"); ok {
+	if e, ok := probe("ORVILO_OPENCODE_PATH", "opencode", "ORVILO_OPENCODE_MODEL"); ok {
 		agents["opencode"] = e
 	}
-	if e, ok := probe("PATCHBAY_CODEARTS_PATH", "codearts", "PATCHBAY_CODEARTS_MODEL"); ok {
+	if e, ok := probe("ORVILO_CODEARTS_PATH", "codearts", "ORVILO_CODEARTS_MODEL"); ok {
 		agents["codearts"] = e
-	} else if strings.TrimSpace(os.Getenv("PATCHBAY_CODEARTS_PATH")) == "" {
+	} else if strings.TrimSpace(os.Getenv("ORVILO_CODEARTS_PATH")) == "" {
 		// The native CodeArts installer may update PATH only for future
 		// terminals. A GUI-launched daemon can still discover its stable
 		// user-level launcher. An explicit but invalid override remains a hard
@@ -97,22 +97,22 @@ var probeAgentCLIs = func() map[string]AgentEntry {
 				agents["codearts"] = AgentEntry{
 					Path:    path,
 					Command: "codearts",
-					Model:   strings.TrimSpace(os.Getenv("PATCHBAY_CODEARTS_MODEL")),
+					Model:   strings.TrimSpace(os.Getenv("ORVILO_CODEARTS_MODEL")),
 				}
 				break
 			}
 		}
 	}
-	if e, ok := probe("PATCHBAY_DEVECO_PATH", "deveco", "PATCHBAY_DEVECO_MODEL"); ok {
+	if e, ok := probe("ORVILO_DEVECO_PATH", "deveco", "ORVILO_DEVECO_MODEL"); ok {
 		agents["deveco"] = e
 	}
-	if e, ok := probe("PATCHBAY_OPENCLAW_PATH", "openclaw", "PATCHBAY_OPENCLAW_MODEL"); ok {
+	if e, ok := probe("ORVILO_OPENCLAW_PATH", "openclaw", "ORVILO_OPENCLAW_MODEL"); ok {
 		agents["openclaw"] = e
 	}
-	if e, ok := probe("PATCHBAY_HERMES_PATH", "hermes", "PATCHBAY_HERMES_MODEL"); ok {
+	if e, ok := probe("ORVILO_HERMES_PATH", "hermes", "ORVILO_HERMES_MODEL"); ok {
 		agents["hermes"] = e
 	}
-	if e, ok := probe("PATCHBAY_PI_PATH", "pi", "PATCHBAY_PI_MODEL"); ok {
+	if e, ok := probe("ORVILO_PI_PATH", "pi", "ORVILO_PI_MODEL"); ok {
 		agents["pi"] = e
 	}
 	// Built-in runtime identities (e.g. omp) are derived from the descriptor
@@ -127,67 +127,67 @@ var probeAgentCLIs = func() map[string]AgentEntry {
 			agents[desc.ID] = e
 		}
 	}
-	if e, ok := probe("PATCHBAY_CURSOR_PATH", "cursor-agent", "PATCHBAY_CURSOR_MODEL"); ok {
+	if e, ok := probe("ORVILO_CURSOR_PATH", "cursor-agent", "ORVILO_CURSOR_MODEL"); ok {
 		agents["cursor"] = e
 	}
-	if e, ok := probe("PATCHBAY_COPILOT_PATH", "copilot", "PATCHBAY_COPILOT_MODEL"); ok {
+	if e, ok := probe("ORVILO_COPILOT_PATH", "copilot", "ORVILO_COPILOT_MODEL"); ok {
 		agents["copilot"] = e
 	}
-	if e, ok := probe("PATCHBAY_KIMI_PATH", "kimi", "PATCHBAY_KIMI_MODEL"); ok {
+	if e, ok := probe("ORVILO_KIMI_PATH", "kimi", "ORVILO_KIMI_MODEL"); ok {
 		agents["kimi"] = e
 	}
-	if e, ok := probe("PATCHBAY_REASONIX_PATH", "reasonix", "PATCHBAY_REASONIX_MODEL"); ok {
+	if e, ok := probe("ORVILO_REASONIX_PATH", "reasonix", "ORVILO_REASONIX_MODEL"); ok {
 		agents["reasonix"] = e
 	}
 	// DSH is registered only when its Patchbay runtime profile is installed.
 	// A bare dsh binary is not enough: without the bundle it has no --stdio
 	// protocol and every task would fail after being advertised as healthy.
-	if e, ok := probe("PATCHBAY_DSH_PATH", "dsh", "PATCHBAY_DSH_MODEL"); ok && probeDshPatchbayProfile(e.Path) {
+	if e, ok := probe("ORVILO_DSH_PATH", "dsh", "ORVILO_DSH_MODEL"); ok && probeDshPatchbayProfile(e.Path) {
 		agents["dsh"] = e
 	}
-	if e, ok := probe("PATCHBAY_KIRO_PATH", "kiro-cli", "PATCHBAY_KIRO_MODEL"); ok {
+	if e, ok := probe("ORVILO_KIRO_PATH", "kiro-cli", "ORVILO_KIRO_MODEL"); ok {
 		agents["kiro"] = e
 	}
-	if e, ok := probe("PATCHBAY_CODEBUDDY_PATH", "codebuddy", "PATCHBAY_CODEBUDDY_MODEL"); ok {
+	if e, ok := probe("ORVILO_CODEBUDDY_PATH", "codebuddy", "ORVILO_CODEBUDDY_MODEL"); ok {
 		agents["codebuddy"] = e
 	}
 	// agy 1.0.6 added a `--model` flag (MUL-3125), so Antigravity now takes a
-	// model env like every other backend. PATCHBAY_ANTIGRAVITY_MODEL seeds the
+	// model env like every other backend. ORVILO_ANTIGRAVITY_MODEL seeds the
 	// daemon-wide default; its value is the exact `agy models` display string
 	// (e.g. "Claude Opus 4.6 (Thinking)"), not a provider/model slug.
-	if e, ok := probe("PATCHBAY_ANTIGRAVITY_PATH", "agy", "PATCHBAY_ANTIGRAVITY_MODEL"); ok {
+	if e, ok := probe("ORVILO_ANTIGRAVITY_PATH", "agy", "ORVILO_ANTIGRAVITY_MODEL"); ok {
 		agents["antigravity"] = e
 	}
 	// Qoder CLI ships as the `qodercli` binary (Qoder Desktop does not put it
 	// on PATH; users install it separately, often via an npm global prefix).
 	// Use the shared lookup so conventional Qoder installations are found
 	// even when a GUI launch did not inherit their bin directory on PATH.
-	if e, ok := probe("PATCHBAY_QODER_PATH", "qodercli", "PATCHBAY_QODER_MODEL"); ok {
+	if e, ok := probe("ORVILO_QODER_PATH", "qodercli", "ORVILO_QODER_MODEL"); ok {
 		agents["qoder"] = e
 	}
 	// Qoder CN CLI exposes the same ACP transport as Qoder CLI under a
 	// separate `qoderclicn` binary and account/config root. Register it as an
 	// independent provider so hosts with either or both editions get the
 	// matching runtime without a custom profile.
-	if e, ok := probe("PATCHBAY_QODERCLICN_PATH", "qoderclicn", "PATCHBAY_QODERCLICN_MODEL"); ok {
+	if e, ok := probe("ORVILO_QODERCLICN_PATH", "qoderclicn", "ORVILO_QODERCLICN_MODEL"); ok {
 		agents["qoderclicn"] = e
 	}
 	// ByteDance official TRAE CLI (the `traecli` binary from https://docs.trae.cn/cli),
-	// driven over ACP via `traecli acp serve --yolo`. PATCHBAY_TRAECLI_MODEL seeds
+	// driven over ACP via `traecli acp serve --yolo`. ORVILO_TRAECLI_MODEL seeds
 	// the daemon-wide default model (a model id from the user's logged-in traecli
 	// catalog).
-	if e, ok := probe("PATCHBAY_TRAECLI_PATH", "traecli", "PATCHBAY_TRAECLI_MODEL"); ok {
+	if e, ok := probe("ORVILO_TRAECLI_PATH", "traecli", "ORVILO_TRAECLI_MODEL"); ok {
 		agents["traecli"] = e
 	}
 	// xAI Grok Build CLI (`grok`), driven over ACP via
-	// `grok agent --always-approve stdio`. PATCHBAY_GROK_MODEL seeds the
+	// `grok agent --always-approve stdio`. ORVILO_GROK_MODEL seeds the
 	// daemon-wide default (e.g. grok-4.5).
-	if e, ok := probe("PATCHBAY_GROK_PATH", "grok", "PATCHBAY_GROK_MODEL"); ok {
+	if e, ok := probe("ORVILO_GROK_PATH", "grok", "ORVILO_GROK_MODEL"); ok {
 		agents["grok"] = e
 	}
 	// Qwen Code (`qwen`) runs headlessly with -p and stream-json. Its native
 	// QWEN.md and .qwen/skills task context is prepared by execenv.
-	if e, ok := probe("PATCHBAY_QWEN_PATH", "qwen", "PATCHBAY_QWEN_MODEL"); ok {
+	if e, ok := probe("ORVILO_QWEN_PATH", "qwen", "ORVILO_QWEN_MODEL"); ok {
 		agents["qwen"] = e
 	}
 	// QwenPaw (`qwenpaw`) is the QwenPaw CLI agent, driven over ACP via
@@ -195,18 +195,18 @@ var probeAgentCLIs = func() map[string]AgentEntry {
 	// session/set_model (it would rewrite QwenPaw's shared agent config), so
 	// ExecOptions.Model is ignored — see ModelSelectionSupported. Reading one
 	// here would only advertise a knob that silently does nothing.
-	if e, ok := probe("PATCHBAY_QWENPAW_PATH", "qwenpaw", ""); ok {
+	if e, ok := probe("ORVILO_QWENPAW_PATH", "qwenpaw", ""); ok {
 		agents["qwenpaw"] = e
 	}
 	// Dim (`dim`) is the DimCode CLI agent, driven over ACP via `dim acp`.
-	// PATCHBAY_DIM_MODEL seeds the daemon-wide default (a model id from the
+	// ORVILO_DIM_MODEL seeds the daemon-wide default (a model id from the
 	// user's logged-in dim catalog).
-	if e, ok := probe("PATCHBAY_DIM_PATH", "dim", "PATCHBAY_DIM_MODEL"); ok {
+	if e, ok := probe("ORVILO_DIM_PATH", "dim", "ORVILO_DIM_MODEL"); ok {
 		agents["dim"] = e
 	}
 	// MiniMax Code (`mcode`) exposes an ACP v1 server through `mcode acp`.
 	// Model selection is owned by the MCode runtime, so there is no model env.
-	if e, ok := probe("PATCHBAY_MCODE_PATH", "mcode", ""); ok {
+	if e, ok := probe("ORVILO_MCODE_PATH", "mcode", ""); ok {
 		agents["mcode"] = e
 	}
 	// ZeroClaw (`zeroclaw`) is a Rust-based generic agent CLI, driven over
@@ -215,7 +215,7 @@ var probeAgentCLIs = func() map[string]AgentEntry {
 	// comes from ZeroClaw's own agent profile and ExecOptions.Model can never
 	// be applied — see ModelSelectionSupported. Reading one here would only
 	// advertise a knob that silently does nothing.
-	if e, ok := probe("PATCHBAY_ZEROCLAW_PATH", "zeroclaw", ""); ok {
+	if e, ok := probe("ORVILO_ZEROCLAW_PATH", "zeroclaw", ""); ok {
 		agents["zeroclaw"] = e
 	}
 	return agents

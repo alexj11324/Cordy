@@ -47,7 +47,7 @@ func captureRuntimeStdout(t *testing.T, fn func() error) (string, error) {
 
 func TestRunRuntimeDeleteStrictSuccessPrintsJSON(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
+	t.Setenv("ORVILO_TOKEN", "test-token")
 
 	var deleteCount int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -88,7 +88,7 @@ func TestRunRuntimeDeleteStrictSuccessPrintsJSON(t *testing.T) {
 
 func TestRunRuntimeDeleteConflictSuggestsCascade(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
+	t.Setenv("ORVILO_TOKEN", "test-token")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodDelete || r.URL.Path != "/api/runtimes/rt-1" {
@@ -117,7 +117,7 @@ func TestRunRuntimeDeleteConflictSuggestsCascade(t *testing.T) {
 
 func TestRunRuntimeDeleteCascadeConfirmsActiveAgentSnapshot(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
+	t.Setenv("ORVILO_TOKEN", "test-token")
 
 	var gotExpectedIDs []string
 	var deleteCount, cascadeCount int
