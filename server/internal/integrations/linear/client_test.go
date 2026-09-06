@@ -83,6 +83,12 @@ func TestHTTPClientGraphQLIssueContracts(t *testing.T) {
 		}
 		switch {
 		case strings.Contains(request.Query, "PatchbayIssues"):
+			if !strings.Contains(request.Query, "PatchbayIssues($project:String!") {
+				_ = json.NewEncoder(w).Encode(map[string]any{"errors": []any{map[string]any{
+					"message": `Variable "$project" of type "ID!" used in position expecting type "String!".`,
+				}}})
+				return
+			}
 			seen["list"] = true
 			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"issues": map[string]any{"nodes": []any{map[string]any{"id": "remote-1", "identifier": "ENG-1", "title": "Imported", "priority": 2, "updatedAt": "2026-01-01T00:00:00Z", "team": map[string]any{"id": "team-1"}}}, "pageInfo": map[string]any{"hasNextPage": false, "endCursor": nil}}}})
 		case strings.Contains(request.Query, "PatchbayCreateIssue"):

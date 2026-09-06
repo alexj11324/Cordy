@@ -402,7 +402,7 @@ func (c *HTTPClient) FetchIssue(ctx context.Context, token, issueID string) (Iss
 }
 
 func (c *HTTPClient) ListIssues(ctx context.Context, token, projectID, teamID string) ([]Issue, error) {
-	const q = `query PatchbayIssues($project:ID!,$after:String){issues(first:100,after:$after,filter:{project:{id:{eq:$project}}}){nodes{` + issueFields + `}pageInfo{hasNextPage endCursor}}}`
+	const q = `query PatchbayIssues($project:String!,$after:String){issues(first:100,after:$after,filter:{project:{id:{eq:$project}}}){nodes{` + issueFields + `}pageInfo{hasNextPage endCursor}}}`
 	var all []Issue
 	var after any
 	var previous string
@@ -512,7 +512,7 @@ func (c *HTTPClient) ValidateBinding(ctx context.Context, token, projectID, team
 }
 
 func (c *HTTPClient) DryRunCounts(ctx context.Context, token, projectID, teamID string, statusMapping map[string]any) (DryRunCounts, error) {
-	const q = `query PatchbayIssuePreview($project:ID!,$after:String){issues(first:100,after:$after,filter:{project:{id:{eq:$project}}}){nodes{` + issueFields + `}pageInfo{hasNextPage endCursor}}}`
+	const q = `query PatchbayIssuePreview($project:String!,$after:String){issues(first:100,after:$after,filter:{project:{id:{eq:$project}}}){nodes{` + issueFields + `}pageInfo{hasNextPage endCursor}}}`
 	result := DryRunCounts{}
 	var after *string
 	var previous string
