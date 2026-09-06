@@ -12,6 +12,7 @@ import { Button } from "@patchbay/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -117,12 +118,14 @@ export function TriggerAddMenu({
                 {extra.length > 0 && (
                   <>
                     <DropdownMenuSeparator />
-                    <DropdownMenuLabel>{t(($) => $.presets_group.github_only)}</DropdownMenuLabel>
-                    {extra.map((preset) => (
-                      <DropdownMenuItem key={preset.id} onClick={() => onPickPreset(preset)}>
-                        {presetLabel(preset.labelKey)}
-                      </DropdownMenuItem>
-                    ))}
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel>{t(($) => $.presets_group.github_only)}</DropdownMenuLabel>
+                      {extra.map((preset) => (
+                        <DropdownMenuItem key={preset.id} onClick={() => onPickPreset(preset)}>
+                          {presetLabel(preset.labelKey)}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuGroup>
                   </>
                 )}
               </DropdownMenuSubContent>
