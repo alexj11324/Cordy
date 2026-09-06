@@ -24,6 +24,7 @@ import "@fontsource-variable/source-serif-4/wght-italic.css";
 // class instead of chasing weights one at a time.
 import "@fontsource-variable/geist-mono";
 import "./globals.css";
+import { seedDevLoginToken } from "../../shared/dev-login-token";
 
 // react-grab: dev-only element inspector. Hold ⌘C (Mac) / Ctrl+C and click any
 // element to copy its source path + line + component stack for pasting to an AI.
@@ -37,6 +38,15 @@ if (import.meta.env.DEV && import.meta.env.VITE_REACT_GRAB) {
   grab.src = "//unpkg.com/react-grab/dist/index.global.js";
   grab.crossOrigin = "anonymous";
   document.head.appendChild(grab);
+}
+
+// Development sign-in. `make up C=desktop` writes VITE_DEV_LOGIN_TOKEN into the
+// gitignored apps/desktop/.env.development.local; seeding it here is what makes
+// the Electron app start signed in, since Desktop authenticates with a stored
+// bearer token and cannot use the cookie `make dev-login` sets in a browser.
+// An existing session always wins — see seedDevLoginToken.
+if (import.meta.env.DEV && import.meta.env.VITE_DEV_LOGIN_TOKEN) {
+  seedDevLoginToken(localStorage, import.meta.env.VITE_DEV_LOGIN_TOKEN);
 }
 
 installWebDesktopBridge();

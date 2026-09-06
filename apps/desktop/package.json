@@ -12,7 +12,7 @@
   },
   "author": {
     "name": "Patchbay",
-    "email": "support@patchbay.ai"
+    "email": "support@aspectlylabs.com"
   },
   "license": "SEE LICENSE IN ../../LICENSE",
   "main": "./out/main/index.js",
