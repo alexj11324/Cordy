@@ -22,19 +22,21 @@ Treat the root `package.json`, `server/go.mod`, and CI workflows as the source o
 ```bash
 git clone https://github.com/patchbay-ai/patchbay.git
 cd patchbay
-make dev
+make up C=desktop   # install deps, prepare the database, start the backend and Electron
+make seed-dev       # optional: sample issues, in the dev-fixtures workspace
 ```
 
-The primary checkout uses `.env`. If the file does not exist, `make dev` creates it from `.env.example`, then starts the shared PostgreSQL instance, installs dependencies, runs migrations, and starts API and Web.
+Changes are verified in the desktop app, not the browser: `make up C=desktop` starts Electron against this checkout's backend, already signed in and in a workspace. Use `make up C=api,web` plus `make dev-login` — which prints a URL that signs a browser in, and a bearer token for `curl` — when the change is web-only platform wiring.
 
-Default addresses:
+Desktop cannot use that URL: it authenticates with a stored bearer token rather than the browser's cookie, so `make up C=desktop` mints one into the gitignored `apps/desktop/.env.development.local`. An existing session always wins, so it never signs you out of an account you are testing with.
 
-```text
-Web: http://localhost:3000
-API: http://localhost:8080
-```
+The primary checkout uses `.env`. If the file does not exist, `make up` creates it from `.env.example`, then ensures PostgreSQL, installs dependencies, runs migrations, and starts API and Web.
 
-The fixed local verification code comes from the development configuration. Do not use a local `.env` for an internet-facing deployment.
+`make up` allocates this checkout's ports and database under a lock and records them, so several checkouts and worktrees run side by side and `make status` / `make down` / `make destroy` can act on exactly one of them. It prints the addresses it allocated. `make dev` is the alternative that runs in the foreground of one terminal on the default ports — it starts the backend and opens Electron, and does not start the web app.
+
+`make dev-login` works because `make up` writes `PATCHBAY_DEV_LOGIN=1` into the local env file — see [Sign-in and signup](/auth-setup#skipping-the-login-page-in-development). Never enable it on an internet-facing deployment, and do not use a local `.env` for one either.
+
+The full contributor guide — environments, worktrees, testing layers, troubleshooting and destructive reset — is [CONTRIBUTING.md](https://github.com/patchbay-ai/patchbay/blob/main/CONTRIBUTING.md) in the repository. This page is the short version.
 
 ## Developing in a worktree
 

@@ -179,7 +179,10 @@ func Seed(ctx context.Context, pool *pgxpool.Pool, developerEmail string) (Resul
 	var developerID pgtype.UUID
 	if err := tx.QueryRow(ctx, `SELECT id FROM "user" WHERE email = $1`, developerEmail).Scan(&developerID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return Result{}, fmt.Errorf("developer user %q does not exist; run `make up` once before `make seed-dev`", developerEmail)
+			// `make up` alone does not create this user — it starts an
+			// environment. Signing in does, so name the command that actually
+			// fixes the state the caller is in.
+			return Result{}, fmt.Errorf("developer user %q does not exist; run `make dev-login` first (it creates the user), then `make seed-dev`", developerEmail)
 		}
 		return Result{}, fmt.Errorf("find developer user: %w", err)
 	}
