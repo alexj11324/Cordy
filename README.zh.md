@@ -18,7 +18,7 @@ Patchbay 是一个开源的团队工作区。你像给同事派活一样，把�
 [![GitHub stars](https://img.shields.io/github/stars/patchbay-ai/patchbay?style=flat)](https://github.com/patchbay-ai/patchbay/stargazers)
 [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/W8gYBn226t)
 
-[Web 应用](https://patchbay.aspectlylabs.com) · [文档](https://patchbay.aspectlylabs.com/docs) · [快速开始](https://patchbay.aspectlylabs.com/docs/cloud-quickstart) · [下载](https://github.com/alexj11324/Cordy/releases/latest) · [愿景](VISION.zh.md) · [自部署](SELF_HOSTING.md) · [Discord](https://discord.gg/W8gYBn226t) · [X](https://x.com/PatchbayAI)
+[Web 应用](https://patchbay.aspectlylabs.com) · [文档](https://patchbay.aspectlylabs.com/docs) · [快速开始](https://patchbay.aspectlylabs.com/docs/cloud-quickstart) · [下载](https://github.com/alexj11324/Cordy/releases/latest) · [自部署](SELF_HOSTING.md) · [Discord](https://discord.gg/W8gYBn226t) · [X](https://x.com/PatchbayAI)
 
 **[English](README.md) | 简体中文**
 
@@ -244,7 +244,6 @@ iOS 客户端在 [`apps/mobile/`](apps/mobile/)，怎么编译装到自己 iPhon
 | 自己部署 Patchbay | [SELF_HOSTING.md](SELF_HOSTING.md)，进阶看 [SELF_HOSTING_ADVANCED.md](SELF_HOSTING_ADVANCED.md) 和 [SELF_HOSTING_AI.md](SELF_HOSTING_AI.md) |
 | 安装并使用 CLI / 守护进程 | [CLI_INSTALL.md](CLI_INSTALL.md)，进阶看 [CLI_AND_DAEMON.md](CLI_AND_DAEMON.md) |
 | 让 AI 智能体在这个仓库里干活 | [AGENTS.md](AGENTS.md)（入口）和 [CLAUDE.md](CLAUDE.md)（完整规则） |
-| 了解产品方向 | [VISION.zh.md](VISION.zh.md) |
 | 发版 | [.github/RELEASING.md](.github/RELEASING.md) |
 | 把 Patchbay 当产品用 | [文档站](https://patchbay.aspectlylabs.com/docs) |
 
@@ -256,8 +255,6 @@ iOS 客户端在 [`apps/mobile/`](apps/mobile/)，怎么编译装到自己 iPhon
 
 智能体让很多任务可以同时推进，但并行只有在目标、依赖、归属和交接都连在一起时才有用。Patchbay 把
 这些路由放在同一块共享表面上。小团队不该因为人少，就只能干出小团队的量。
-
-更长的论证，以及我们认为这件事会走到哪里：**[VISION.zh.md](VISION.zh.md)**。
 
 ---
 

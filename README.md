@@ -19,7 +19,7 @@ back for review. Self-hostable, works with 26 agent CLIs, no lock-in.
 [![GitHub stars](https://img.shields.io/github/stars/patchbay-ai/patchbay?style=flat)](https://github.com/patchbay-ai/patchbay/stargazers)
 [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/W8gYBn226t)
 
-[Web App](https://patchbay.aspectlylabs.com) · [Docs](https://patchbay.aspectlylabs.com/docs) · [Quickstart](https://patchbay.aspectlylabs.com/docs/cloud-quickstart) · [Download](https://github.com/alexj11324/Cordy/releases/latest) · [Vision](VISION.md) · [Self-Hosting](SELF_HOSTING.md) · [Discord](https://discord.gg/W8gYBn226t) · [X](https://x.com/PatchbayAI)
+[Web App](https://patchbay.aspectlylabs.com) · [Docs](https://patchbay.aspectlylabs.com/docs) · [Quickstart](https://patchbay.aspectlylabs.com/docs/cloud-quickstart) · [Download](https://github.com/alexj11324/Cordy/releases/latest) · [Self-Hosting](SELF_HOSTING.md) · [Discord](https://discord.gg/W8gYBn226t) · [X](https://x.com/PatchbayAI)
 
 **English | [简体中文](README.zh.md)**
 
@@ -254,7 +254,6 @@ We release most weekdays, so `main` moves quickly — pull often.
 | Run Patchbay on my own infrastructure | [SELF_HOSTING.md](SELF_HOSTING.md), then [SELF_HOSTING_ADVANCED.md](SELF_HOSTING_ADVANCED.md) and [SELF_HOSTING_AI.md](SELF_HOSTING_AI.md) |
 | Install and drive the CLI or daemon | [CLI_INSTALL.md](CLI_INSTALL.md), then [CLI_AND_DAEMON.md](CLI_AND_DAEMON.md) |
 | Have an AI agent work in this repo | [AGENTS.md](AGENTS.md) (entry point) and [CLAUDE.md](CLAUDE.md) (full rules) |
-| Understand where the product is going | [VISION.md](VISION.md) |
 | Cut a release | [.github/RELEASING.md](.github/RELEASING.md) |
 | Use Patchbay as a product | [the documentation site](https://patchbay.aspectlylabs.com/docs) |
 
@@ -268,8 +267,6 @@ and easy to reroute without hiding the path between inputs and outputs.
 AI agents make it possible to move many tasks at once, but parallel work is only useful when
 goals, dependencies, ownership, and handoffs stay connected. Patchbay keeps that routing on
 one shared surface. A small team shouldn't feel small.
-
-The longer argument, and where we think this goes: **[VISION.md](VISION.md)**.
 
 ---
 
