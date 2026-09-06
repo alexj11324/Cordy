@@ -471,9 +471,9 @@ func (c *HTTPClient) Catalog(ctx context.Context, token string) (Catalog, error)
 	after = nil
 	for page := 0; ; page++ {
 		if page >= maxIssuePages { return Catalog{}, &ProviderError{Kind: ErrorInvalidResponse, Message: "Linear project pagination exceeded safety limit"} }
-		var data struct { Projects struct { Nodes []struct { ID, Name string; Teams []struct { ID string `json:"id"` } `json:"teams"` }; PageInfo pageInfo `json:"pageInfo"` } `json:"projects"` }
-		if err := c.graphql(ctx, token, `query PatchbayCatalogProjects($after:String){projects(first:250,after:$after){nodes{id name teams{id}}pageInfo{hasNextPage endCursor}}}`, map[string]any{"after": after}, &data); err != nil { return Catalog{}, err }
-		for _, project := range data.Projects.Nodes { if len(project.Teams) == 0 { out.ProjectCatalog = append(out.ProjectCatalog, CatalogProject{ID: project.ID, Name: project.Name}) }; for _, team := range project.Teams { out.ProjectCatalog = append(out.ProjectCatalog, CatalogProject{ID: project.ID, Name: project.Name, TeamID: team.ID}) } }
+		var data struct { Projects struct { Nodes []struct { ID, Name string; Teams struct { Nodes []struct { ID string `json:"id"` } `json:"nodes"` } `json:"teams"` }; PageInfo pageInfo `json:"pageInfo"` } `json:"projects"` }
+		if err := c.graphql(ctx, token, `query PatchbayCatalogProjects($after:String){projects(first:250,after:$after){nodes{id name teams{nodes{id}}}pageInfo{hasNextPage endCursor}}}`, map[string]any{"after": after}, &data); err != nil { return Catalog{}, err }
+		for _, project := range data.Projects.Nodes { if len(project.Teams.Nodes) == 0 { out.ProjectCatalog = append(out.ProjectCatalog, CatalogProject{ID: project.ID, Name: project.Name}) }; for _, team := range project.Teams.Nodes { out.ProjectCatalog = append(out.ProjectCatalog, CatalogProject{ID: project.ID, Name: project.Name, TeamID: team.ID}) } }
 		next, err := nextCatalogCursor(after, data.Projects.PageInfo); if err != nil { return Catalog{}, err }; if next == nil { break }; after = next
 	}
 	after = nil
@@ -504,10 +504,10 @@ func (c *HTTPClient) Catalog(ctx context.Context, token string) (Catalog, error)
 }
 
 func (c *HTTPClient) ValidateBinding(ctx context.Context, token, projectID, teamID string) error {
-	var data struct { Project *struct { Teams []struct { ID string `json:"id"` } `json:"teams"` } `json:"project"` }
-	if err := c.graphql(ctx, token, `query PatchbayBinding($project:String!){project(id:$project){teams{id}}}`, map[string]any{"project": projectID}, &data); err != nil { return err }
+	var data struct { Project *struct { Teams struct { Nodes []struct { ID string `json:"id"` } `json:"nodes"` } `json:"teams"` } `json:"project"` }
+	if err := c.graphql(ctx, token, `query PatchbayBinding($project:String!){project(id:$project){teams{nodes{id}}}}`, map[string]any{"project": projectID}, &data); err != nil { return err }
 	if data.Project == nil { return &ProviderError{Kind: ErrorMutationRejected, Message: "Linear project does not exist"} }
-	for _, team := range data.Project.Teams { if team.ID == teamID { return nil } }
+	for _, team := range data.Project.Teams.Nodes { if team.ID == teamID { return nil } }
 	return &ProviderError{Kind: ErrorMutationRejected, Message: "Linear project is not associated with the selected team"}
 }
 
