@@ -11,6 +11,10 @@ services:
       CLERK_JWT_KEY: ${CLERK_JWT_KEY:?Set CLERK_JWT_KEY}
       CLERK_ISSUER: ${CLERK_ISSUER:?Set CLERK_ISSUER}
       CLERK_AUTHORIZED_PARTIES: https://accounts.staging.aspectlylabs.com,https://staging.aspectlylabs.com
+      # docker-compose.selfhost.yml defaults APP_ENV to production, and the
+      # analytics client falls back to it, so staging must label its own
+      # events or internal QA activity lands in the production PostHog funnels.
+      ANALYTICS_ENVIRONMENT: staging
       PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN: ${PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN:?Set PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN}
 
   frontend:

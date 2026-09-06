@@ -114,6 +114,7 @@ test("staging compose overlays never reattach production projects", () => {
     /CLERK_AUTHORIZED_PARTIES: https:\/\/accounts\.staging\.aspectlylabs\.com,https:\/\/staging\.aspectlylabs\.com/u,
   );
   assert.match(stagingOverride, /PATCHBAY_APP_URL to https:\/\/staging\.aspectlylabs\.com/u);
+  assert.match(stagingOverride, /ANALYTICS_ENVIRONMENT: staging/u);
   assert.doesNotMatch(stagingOverride, /patchbay\.aspectlylabs\.com/u);
 });
 
