@@ -8,10 +8,46 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/slack-go/slack"
 
 	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
 )
+
+func TestSlackFactoryCarriesNativeAutomationHookAndInstallation(t *testing.T) {
+	installationID := pgtype.UUID{Bytes: [16]byte{1, 2, 3}, Valid: true}
+	hookCalled := false
+	factory := newSlackFactory(ChannelDeps{
+		OnNativeEvent: func(ctx context.Context, id pgtype.UUID, body []byte) {
+			hookCalled = true
+			_ = ctx
+			_ = id
+			_ = body
+		},
+	})
+	ch, err := factory(channel.Config{
+		ID:      installationID,
+		Raw:     []byte(`{"app_id":"A1","bot_user_id":"U1","app_token_encrypted":"eGFwcC0x","bot_token_encrypted":"eG94Yi0x"}`),
+		Handler: func(context.Context, channel.InboundMessage) error { return nil },
+	})
+	if err != nil {
+		t.Fatalf("factory: %v", err)
+	}
+	got, ok := ch.(*slackChannel)
+	if !ok {
+		t.Fatalf("channel type = %T, want *slackChannel", ch)
+	}
+	if got.installationID != installationID {
+		t.Fatalf("installation id = %v, want %v", got.installationID, installationID)
+	}
+	if got.onNativeEvent == nil {
+		t.Fatal("native automation hook was not carried into Socket Mode channel")
+	}
+	got.onNativeEvent(context.Background(), installationID, []byte(`{}`))
+	if !hookCalled {
+		t.Fatal("native automation hook did not execute")
+	}
+}
 
 func TestChunkMessage(t *testing.T) {
 	if got := chunkMessage("short", 100); len(got) != 1 || got[0] != "short" {

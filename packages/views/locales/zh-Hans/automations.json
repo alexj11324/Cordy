@@ -619,7 +619,7 @@
     "tools_mcp": "MCP 服务器",
     "tools_mcp_empty": "这个工作区还没有 MCP 服务器。",
     "tools_mcp_hint": "为这条自动化指定可用的 MCP 服务器。",
-    "config_channel": "频道",
+    "config_channel": "频道 ID",
     "config_keyword": "关键词",
     "config_regex": "正则",
     "config_emoji": "表情",

@@ -622,7 +622,7 @@
     "tools_mcp": "MCP servers",
     "tools_mcp_empty": "No MCP servers in this workspace.",
     "tools_mcp_hint": "Allowlist MCP servers for this automation.",
-    "config_channel": "Channel",
+    "config_channel": "Channel ID",
     "config_keyword": "Keyword",
     "config_regex": "Regex",
     "config_emoji": "Emoji",

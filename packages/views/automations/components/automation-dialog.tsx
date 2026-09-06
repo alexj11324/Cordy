@@ -338,6 +338,9 @@ export function AutomationDialog(props: AutomationDialogProps) {
               automationId: automation.id,
               kind: "webhook",
               preset: createPreset,
+              ...(createPreset === "github.workflow_run.completed" || createPreset === "github.ci_completed"
+                ? { config: { on_failure: true } }
+                : {}),
             });
           }
         } catch (err) {
@@ -1000,4 +1003,3 @@ function WebhookSection({
     </div>
   );
 }
-

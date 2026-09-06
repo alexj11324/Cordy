@@ -25,6 +25,19 @@ func (h *Handler) FanoutNativeAutomationEvent(
 	if preset == "" {
 		return
 	}
+	if len(body) > maxWebhookBodyBytes {
+		// Native provider ingress is allowed to accept larger payloads for its
+		// own consumers, but automation deliveries share the same bounded agent
+		// context/storage contract as generic webhooks. Drop an oversized event
+		// before it is copied once per matching trigger.
+		slog.Warn("automation native fan-out: payload too large",
+			"provider", provider,
+			"preset", preset,
+			"bytes", len(body),
+			"max_bytes", maxWebhookBodyBytes,
+		)
+		return
+	}
 	triggers, err := h.Queries.ListEnabledAutomationTriggersForEvent(ctx, db.ListEnabledAutomationTriggersForEventParams{
 		WorkspaceID: workspaceID,
 		Provider:    provider,

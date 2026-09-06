@@ -1711,7 +1711,11 @@ func (h *Handler) ClaimTasksByRuntime(w http.ResponseWriter, r *http.Request) {
 			// the reclaim path.
 			continue
 		}
-		providerAllowed, providerErr := h.authorizeProviderTaskClaim(r.Context(), task, rt)
+		effectiveModel := ""
+		if resp.Agent != nil {
+			effectiveModel = resp.Agent.Model
+		}
+		providerAllowed, providerErr := h.authorizeProviderTaskClaim(r.Context(), task, rt, effectiveModel)
 		if providerErr != nil {
 			slog.Error("batch claim: provider authorization failed; requeueing claim",
 				"task_id", uuidToString(task.ID), "error", providerErr)
@@ -1774,8 +1778,8 @@ func (h *Handler) ClaimTasksByRuntime(w http.ResponseWriter, r *http.Request) {
 			TaskID:            task.ID,
 			AgentID:           task.AgentID,
 			WorkspaceID:       parseUUID(resp.WorkspaceID),
-			UserID:           task.OriginatorUserID,
-			ExpiresAt:        pgtype.Timestamptz{Time: time.Now().Add(2 * time.Hour), Valid: true},
+			UserID:            task.OriginatorUserID,
+			ExpiresAt:         pgtype.Timestamptz{Time: time.Now().Add(2 * time.Hour), Valid: true},
 			Scope:             service.RootTaskCapabilityScope(task),
 			ClaimDispatchedAt: task.DispatchedAt,
 			OnBehalfOfUserID:  task.OriginatorUserID,
@@ -2158,10 +2162,11 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 			slog.Warn("failed to unmarshal agent custom_args", "agent_id", uuidToString(agent.ID), "error", err)
 		}
 	}
-	var mcpConfig json.RawMessage
+	var agentMCPConfig json.RawMessage
 	if agent.McpConfig != nil {
-		mcpConfig = json.RawMessage(agent.McpConfig)
+		agentMCPConfig = json.RawMessage(agent.McpConfig)
 	}
+	mcpConfig := agentMCPConfig
 	// Fold in the workspace MCP servers this agent has been explicitly
 	// given (GH #6062). Only bound AND enabled servers are read, so a
 	// workspace library entry nobody added reaches nothing. Read on every
@@ -2177,7 +2182,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		for _, server := range bound {
 			bindings = append(bindings, WorkspaceMcpBinding{Name: server.Name, Config: json.RawMessage(server.Config)})
 		}
-		if resolved, err := ResolveAgentMcpConfig(bindings, mcpConfig); err != nil {
+		if resolved, err := ResolveAgentMcpConfig(bindings, agentMCPConfig); err != nil {
 			slog.Warn("daemon claim: resolve agent mcp servers failed; falling back to agent mcp_config",
 				"task_id", uuidToString(task.ID), "agent_id", uuidToString(agent.ID), "error", err)
 		} else {
@@ -2313,6 +2318,20 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		}
 		resp.ThreadName = issue.Title
 		issueNumber = issue.Number
+
+		// create_issue automations link their task through the generated issue,
+		// not automation_run_id. Rehydrate the automation settings here so the
+		// same model override and MCP allowlist apply to both execution modes.
+		if issue.OriginType.Valid && issue.OriginType.String == "automation" && issue.OriginID.Valid {
+			if ap, apErr := h.Queries.GetAutomation(r.Context(), issue.OriginID); apErr == nil {
+				if failure := h.applyAutomationClaimSettings(r.Context(), ap, *task, agentMCPConfig, resp.Agent, composioMCPEnabled); failure != nil {
+					return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, failure
+				}
+			} else if !errors.Is(apErr, pgx.ErrNoRows) {
+				return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount,
+					h.rejectClaimSourceLoad(r.Context(), task, apErr, "automation", uuidToString(issue.OriginID))
+			}
+		}
 
 		// Team-leader briefing injection: keyed off the task being a
 		// leader-task (is_leader_task) carrying a team_id — NOT off the
@@ -2893,6 +2912,9 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		if failure := h.rejectClaimOnWorkspaceMismatch(r.Context(), task, resp.WorkspaceID, runtimeID, runtimeWorkspaceID, false); failure != nil {
 			return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, failure
 		}
+		if failure := h.applyAutomationClaimSettings(r.Context(), ap, *task, agentMCPConfig, resp.Agent, composioMCPEnabled); failure != nil {
+			return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, failure
+		}
 
 		resp.AutomationID = uuidToString(run.AutomationID)
 		resp.AutomationSource = run.Source
@@ -3237,6 +3259,100 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 	return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, nil
 }
 
+// applyAutomationClaimSettings applies execution settings that belong to the
+// automation rather than the executor agent. It runs after the automation has
+// been resolved so both run_only tasks and issues created by create_issue
+// receive the same effective capabilities.
+//
+// The normal claim path mounts enabled workspace MCP bindings. An explicit
+// automation allowlist replaces that workspace layer with exactly the selected
+// library entries; the executor's own mcp_config and the separate per-task
+// Composio overlay remain independent layers. An empty configured list is an
+// intentional deny-all for workspace library servers, not the same as an old
+// automation that has no allowlist field.
+func (h *Handler) applyAutomationClaimSettings(
+	ctx context.Context,
+	ap db.Automation,
+	task db.AgentTaskQueue,
+	baseAgentMCPConfig json.RawMessage,
+	agentData *TaskAgentData,
+	composioMCPEnabled bool,
+) *claimBuildFailure {
+	if agentData == nil {
+		return nil
+	}
+	if ap.Model.Valid && strings.TrimSpace(ap.Model.String) != "" {
+		// TaskAgentData.Model is consumed by the daemon's provider invocation;
+		// keeping the override here avoids turning a model selection into prompt
+		// prose and covers both automation execution modes.
+		agentData.Model = strings.TrimSpace(ap.Model.String)
+	}
+	ids, configured, err := service.AutomationMCPServerAllowlist(ap.Tools)
+	if err != nil {
+		return &claimBuildFailure{
+			outcome: "error_automation_tools",
+			status:  http.StatusInternalServerError,
+			message: "automation tools configuration is invalid",
+		}
+	}
+	if !configured {
+		return nil
+	}
+
+	servers, err := h.Queries.ListWorkspaceMcpServers(ctx, ap.WorkspaceID)
+	if err != nil {
+		slog.Error("daemon claim: load automation MCP allowlist failed",
+			"task_id", uuidToString(task.ID),
+			"automation_id", uuidToString(ap.ID),
+			"error", err,
+		)
+		return &claimBuildFailure{
+			outcome: "error_automation_tools_load",
+			status:  http.StatusInternalServerError,
+			message: "failed to load automation tools",
+		}
+	}
+	wanted := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		wanted[strings.ToLower(strings.TrimSpace(id))] = struct{}{}
+	}
+	bindings := make([]WorkspaceMcpBinding, 0, len(wanted))
+	for _, server := range servers {
+		if _, ok := wanted[strings.ToLower(uuidToString(server.ID))]; !ok {
+			continue
+		}
+		bindings = append(bindings, WorkspaceMcpBinding{
+			Name:   server.Name,
+			Config: json.RawMessage(server.Config),
+		})
+	}
+	resolved, err := ResolveAgentMcpConfig(bindings, baseAgentMCPConfig)
+	if err != nil {
+		slog.Error("daemon claim: resolve automation MCP allowlist failed",
+			"task_id", uuidToString(task.ID),
+			"automation_id", uuidToString(ap.ID),
+			"error", err,
+		)
+		return &claimBuildFailure{
+			outcome: "error_automation_tools",
+			status:  http.StatusInternalServerError,
+			message: "failed to resolve automation tools",
+		}
+	}
+	if composioMCPEnabled && len(task.RuntimeMcpOverlay) > 0 {
+		if merged, mergeErr := mergeMCPOverlay(resolved, json.RawMessage(task.RuntimeMcpOverlay)); mergeErr == nil {
+			resolved = merged
+		} else {
+			// Match the ordinary claim path's fail-soft overlay behavior while
+			// retaining the explicit workspace allowlist we just enforced.
+			slog.Warn("daemon claim: merge automation MCP overlay failed; using allowlisted servers",
+				"task_id", uuidToString(task.ID), "error", mergeErr)
+		}
+	}
+	agentData.McpConfig = resolved
+	return nil
+}
+
 // worktreeClaimBlockReason returns a user-facing reason when this runtime must
 // not run the task, or "" when it may proceed.
 //
@@ -3370,7 +3486,11 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 			)
 		}
 	}
-	providerAllowed, providerErr := h.authorizeProviderTaskClaim(r.Context(), *task, runtime)
+	effectiveModel := ""
+	if resp.Agent != nil {
+		effectiveModel = resp.Agent.Model
+	}
+	providerAllowed, providerErr := h.authorizeProviderTaskClaim(r.Context(), *task, runtime, effectiveModel)
 	if providerErr != nil {
 		outcome = "error_provider_authorization"
 		slog.Error("task claim: provider authorization failed; requeueing claim",

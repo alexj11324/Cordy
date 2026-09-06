@@ -39,7 +39,6 @@ App's webhook permissions / subscribed events, add or confirm:
 - `pull_request_review_thread`
 - `workflow_run` (completed)
 - `check_suite` (completed)
-- `check_run` (completed)
 
 These map to catalog presets in `packages/core/automations/trigger-catalog.ts`.
 `ping` stays a no-op. The existing App webhook path is unchanged; fan-out runs

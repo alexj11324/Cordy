@@ -29,6 +29,35 @@ type slackRawEvent struct {
 	Files       []slackRawFile `json:"files,omitempty"`
 }
 
+// nativeEventEligible mirrors the channel translator's bot/subtype guard for
+// the separate automation fan-out. Native automation callbacks run before the
+// normal translator, so applying the guard here prevents bot replies, edits,
+// deletes, and other system subtypes from becoming automation triggers.
+func nativeEventEligible(body []byte, botUserID string) bool {
+	var envelope struct {
+		Event struct {
+			Type    string `json:"type"`
+			SubType string `json:"subtype"`
+			BotID   string `json:"bot_id"`
+			User    string `json:"user"`
+		} `json:"event"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return false
+	}
+	if botUserID != "" && envelope.Event.User == botUserID {
+		return false
+	}
+	switch envelope.Event.Type {
+	case "message":
+		return envelope.Event.User != "" && envelope.Event.BotID == "" && isIngestableSubtype(envelope.Event.SubType)
+	case "app_mention":
+		return envelope.Event.User != "" && envelope.Event.BotID == ""
+	default:
+		return true
+	}
+}
+
 // InboundFromAgentsCommand re-enters shared identity, permission, dedup and Hub
 // routing after Slack intercepts a slash command before Events API delivery.
 func InboundFromAgentsCommand(cmd slack.SlashCommand) (channel.InboundMessage, bool) {

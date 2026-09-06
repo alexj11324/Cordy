@@ -619,7 +619,7 @@
     "tools_mcp": "MCP 서버",
     "tools_mcp_empty": "이 워크스페이스에 MCP 서버가 없습니다.",
     "tools_mcp_hint": "이 오토파일럿에서 쓸 MCP 서버를 지정합니다.",
-    "config_channel": "채널",
+    "config_channel": "채널 ID",
     "config_keyword": "키워드",
     "config_regex": "정규식",
     "config_emoji": "이모지",

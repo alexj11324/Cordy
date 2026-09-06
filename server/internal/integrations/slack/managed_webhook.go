@@ -279,7 +279,7 @@ func (w *ManagedWebhook) dispatchDetached(event slackevents.EventsAPIEvent, body
 		defer cancel()
 		if w.onNative != nil {
 			inst, err := lookupInstallation(ctx, w.q, event.APIAppID, event.TeamID)
-			if err == nil && inst.Status == "installed" {
+			if err == nil && inst.Status == "installed" && nativeEventEligible(payload, installBotUserID(inst.Config)) {
 				w.onNative(ctx, inst, payload)
 			}
 		}

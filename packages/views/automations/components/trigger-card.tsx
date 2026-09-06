@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Clock, RotateCw, Trash2, Webhook } from "lucide-react";
 import {
@@ -93,24 +93,58 @@ export function TriggerCard({
     [trigger.config],
   );
   const [config, setConfig] = useState<AutomationTriggerConfig>(parsed);
+  const pendingConfigRef = useRef<AutomationTriggerConfig | null>(null);
+  const saveTimerRef = useRef<number | null>(null);
+
+  const flushPendingConfig = useCallback(() => {
+    const pending = pendingConfigRef.current;
+    if (!canWrite || !pending) return;
+    pendingConfigRef.current = null;
+    if (sameConfig(pending, parsed)) return;
+    updateTrigger.mutate(
+      { automationId, triggerId: trigger.id, config: { ...pending } },
+      {
+        onError: (err) => {
+          toast.error(err instanceof Error ? err.message : t(($) => $.trigger_row.toast_delete_failed));
+        },
+      },
+    );
+  }, [automationId, canWrite, parsed, t, trigger.id, updateTrigger]);
+
+  const latestFlushRef = useRef(flushPendingConfig);
+  useEffect(() => {
+    latestFlushRef.current = flushPendingConfig;
+  }, [flushPendingConfig]);
+
+  // A route change unmounts the card before the debounce timer fires. Flush
+  // the last compacted value so the autosave promise is not lost on navigation.
+  useEffect(() => () => latestFlushRef.current(), []);
+
   useEffect(() => {
     setConfig(parsed);
   }, [parsed]);
 
   useEffect(() => {
-    if (!canWrite || sameConfig(config, parsed)) return;
-    const handle = window.setTimeout(() => {
-      updateTrigger.mutate(
-        { automationId, triggerId: trigger.id, config: { ...compactConfig(config) } },
-        {
-          onError: (err) => {
-            toast.error(err instanceof Error ? err.message : t(($) => $.trigger_row.toast_delete_failed));
-          },
-        },
-      );
+    if (saveTimerRef.current !== null) {
+      window.clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    if (!canWrite || sameConfig(config, parsed)) {
+      pendingConfigRef.current = null;
+      return;
+    }
+    pendingConfigRef.current = compactConfig(config);
+    saveTimerRef.current = window.setTimeout(() => {
+      saveTimerRef.current = null;
+      flushPendingConfig();
     }, 500);
-    return () => window.clearTimeout(handle);
-  }, [automationId, canWrite, config, parsed, t, trigger.id, updateTrigger]);
+    return () => {
+      if (saveTimerRef.current !== null) {
+        window.clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+    };
+  }, [canWrite, config, flushPendingConfig, parsed]);
 
   const github = useQuery(githubInstallationsOptions(wsId));
   const slack = useQuery(slackInstallationsOptions(wsId));
@@ -244,17 +278,20 @@ export function TriggerCard({
 
       {canWrite && native && (
         <div className="grid gap-2 sm:grid-cols-2">
-          {(trigger.preset === "slack.message" || trigger.preset === "slack.reaction") && (
+          {trigger.preset === "slack.message" && (
             <>
               <ConfigField
                 label={t(($) => $.settings.config_channel)}
                 value={config.channel ?? ""}
                 onChange={(channel) => setConfig((prev) => ({ ...prev, channel }))}
+                onBlur={flushPendingConfig}
+                placeholder="C123…"
               />
               <ConfigField
                 label={t(($) => $.settings.config_keyword)}
                 value={config.keyword ?? ""}
                 onChange={(keyword) => setConfig((prev) => ({ ...prev, keyword }))}
+                onBlur={flushPendingConfig}
               />
             </>
           )}
@@ -263,6 +300,7 @@ export function TriggerCard({
               label={t(($) => $.settings.config_regex)}
               value={config.regex ?? ""}
               onChange={(regex) => setConfig((prev) => ({ ...prev, regex }))}
+              onBlur={flushPendingConfig}
             />
           )}
           {trigger.preset === "slack.reaction" && (
@@ -270,6 +308,7 @@ export function TriggerCard({
               label={t(($) => $.settings.config_emoji)}
               value={config.emoji ?? ""}
               onChange={(emoji) => setConfig((prev) => ({ ...prev, emoji }))}
+              onBlur={flushPendingConfig}
             />
           )}
           {provider === "github" && (
@@ -278,11 +317,13 @@ export function TriggerCard({
                 label={t(($) => $.settings.config_branch)}
                 value={config.branch ?? ""}
                 onChange={(branch) => setConfig((prev) => ({ ...prev, branch }))}
+                onBlur={flushPendingConfig}
               />
               <ConfigField
                 label={t(($) => $.settings.config_label)}
                 value={config.label ?? ""}
                 onChange={(label) => setConfig((prev) => ({ ...prev, label }))}
+                onBlur={flushPendingConfig}
               />
             </>
           )}
@@ -341,15 +382,19 @@ function ConfigField({
   label,
   value,
   onChange,
+  onBlur,
+  placeholder,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
+  onBlur?: () => void;
+  placeholder?: string;
 }) {
   return (
     <label className="space-y-1">
       <span className="text-caption text-muted-foreground">{label}</span>
-      <Input value={value} onChange={(event) => onChange(event.target.value)} className="h-8" />
+      <Input value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} onBlur={onBlur} className="h-8" />
     </label>
   );
 }

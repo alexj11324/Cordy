@@ -619,7 +619,7 @@
     "tools_mcp": "MCP サーバー",
     "tools_mcp_empty": "このワークスペースに MCP サーバーはありません。",
     "tools_mcp_hint": "このオートパイロットで使える MCP サーバーを指定します。",
-    "config_channel": "チャンネル",
+    "config_channel": "チャンネル ID",
     "config_keyword": "キーワード",
     "config_regex": "正規表現",
     "config_emoji": "絵文字",

@@ -122,7 +122,7 @@ type AutomationSubscriberEntry struct {
 
 type AutomationTriggerResponse struct {
 	ID             string  `json:"id"`
-	AutomationID    string  `json:"automation_id"`
+	AutomationID   string  `json:"automation_id"`
 	Kind           string  `json:"kind"`
 	Enabled        bool    `json:"enabled"`
 	CronExpression *string `json:"cron_expression"`
@@ -165,7 +165,7 @@ type AutomationTriggerResponse struct {
 
 type AutomationRunResponse struct {
 	ID            string  `json:"id"`
-	AutomationID   string  `json:"automation_id"`
+	AutomationID  string  `json:"automation_id"`
 	TriggerID     *string `json:"trigger_id"`
 	Source        string  `json:"source"`
 	Status        string  `json:"status"`
@@ -228,7 +228,7 @@ func automationToResponse(a db.Automation, subscribers []db.AutomationSubscriber
 func (h *Handler) triggerToResponse(t db.AutomationTrigger) AutomationTriggerResponse {
 	resp := AutomationTriggerResponse{
 		ID:             uuidToString(t.ID),
-		AutomationID:    uuidToString(t.AutomationID),
+		AutomationID:   uuidToString(t.AutomationID),
 		Kind:           t.Kind,
 		Enabled:        t.Enabled,
 		CronExpression: textToPtr(t.CronExpression),
@@ -325,7 +325,7 @@ func runToResponse(r db.AutomationRun) AutomationRunResponse {
 	}
 	return AutomationRunResponse{
 		ID:             uuidToString(r.ID),
-		AutomationID:    uuidToString(r.AutomationID),
+		AutomationID:   uuidToString(r.AutomationID),
 		TriggerID:      uuidToPtr(r.TriggerID),
 		Source:         r.Source,
 		Status:         r.Status,
@@ -370,15 +370,15 @@ type CreateAutomationRequest struct {
 }
 
 type UpdateAutomationRequest struct {
-	Title              *string `json:"title"`
-	Description        *string `json:"description"`
-	ProjectID          *string `json:"project_id"`
-	ExecutorType       *string `json:"executor_type"`
-	ExecutorID         *string `json:"executor_id"`
-	Status             *string `json:"status"`
-	ExecutionMode      *string `json:"execution_mode"`
-	IssueTitleTemplate *string `json:"issue_title_template"`
-	Model              *string `json:"model"`
+	Title              *string         `json:"title"`
+	Description        *string         `json:"description"`
+	ProjectID          *string         `json:"project_id"`
+	ExecutorType       *string         `json:"executor_type"`
+	ExecutorID         *string         `json:"executor_id"`
+	Status             *string         `json:"status"`
+	ExecutionMode      *string         `json:"execution_mode"`
+	IssueTitleTemplate *string         `json:"issue_title_template"`
+	Model              *string         `json:"model"`
 	Tools              json.RawMessage `json:"tools"`
 	// Wholesale replacement when present; omit to leave subscribers untouched.
 	Subscribers []SubscriberInput `json:"subscribers"`
@@ -400,8 +400,8 @@ type CreateAutomationTriggerRequest struct {
 	//
 	// Legacy github-without-preset still mints a public URL. Native
 	// github/slack/linear triggers require a catalog preset and do not.
-	Provider *string `json:"provider"`
-	Preset   *string `json:"preset"`
+	Provider *string         `json:"provider"`
+	Preset   *string         `json:"preset"`
 	Config   json.RawMessage `json:"config"`
 	// EventFilters is an optional list of {event, actions?} scopes. Only
 	// meaningful for webhook triggers. nil/empty means "accept all events".
@@ -594,7 +594,7 @@ func (h *Handler) GetAutomation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"automation":     resp,
+		"automation":    resp,
 		"triggers":      triggerResp,
 		"collaborators": collabResp,
 	})
@@ -645,7 +645,7 @@ func (h *Handler) memberCanWriteAutomation(ctx context.Context, ap db.Automation
 	}
 	granted, err := h.Queries.IsAutomationCollaborator(ctx, db.IsAutomationCollaboratorParams{
 		AutomationID: ap.ID,
-		UserID:      member.UserID,
+		UserID:       member.UserID,
 	})
 	return err == nil && granted
 }
@@ -803,8 +803,8 @@ func (h *Handler) CreateAutomation(w http.ResponseWriter, r *http.Request) {
 	for _, subscriber := range subscribers {
 		if err := qtx.AddAutomationSubscriber(r.Context(), db.AddAutomationSubscriberParams{
 			AutomationID: automation.ID,
-			UserType:    "member",
-			UserID:      subscriber.UserID,
+			UserType:     "member",
+			UserID:       subscriber.UserID,
 		}); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to add automation subscriber")
 			return
@@ -1106,7 +1106,8 @@ func (h *Handler) UpdateAutomation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// A substantive change (target / enabled-state / execution mode) republishes the
+	// A substantive change (target / enabled-state / execution mode / execution
+	// settings) republishes the
 	// rule: append a new version with THIS member as publisher, so a later run
 	// attributes to whoever last changed what the rule does — not the original
 	// creator. Cosmetic edits (title / description / template) write no version and
@@ -1120,7 +1121,7 @@ func (h *Handler) UpdateAutomation(w http.ResponseWriter, r *http.Request) {
 		// for each firing trigger transfers to this editor (source=trigger_owner). A
 		// trigger-scoped edit re-stamps only its own row (see UpdateAutomationTrigger).
 		if err := qtx.SetAutomationTriggerPublishersByAutomation(r.Context(), db.SetAutomationTriggerPublishersByAutomationParams{
-			AutomationID:     automation.ID,
+			AutomationID:    automation.ID,
 			PublishedByType: pgtype.Text{String: "member", Valid: true},
 			PublishedByID:   parseUUID(userID),
 		}); err != nil {
@@ -1137,8 +1138,8 @@ func (h *Handler) UpdateAutomation(w http.ResponseWriter, r *http.Request) {
 		for _, subscriber := range subscribers {
 			if err := qtx.AddAutomationSubscriber(r.Context(), db.AddAutomationSubscriberParams{
 				AutomationID: automation.ID,
-				UserType:    "member",
-				UserID:      subscriber.UserID,
+				UserType:     "member",
+				UserID:       subscriber.UserID,
 			}); err != nil {
 				writeError(w, http.StatusInternalServerError, "failed to add automation subscriber")
 				return
@@ -1188,7 +1189,9 @@ func automationRuleSubstantiveChange(prev, next db.Automation) bool {
 		prev.Status != next.Status ||
 		prev.ExecutionMode != next.ExecutionMode ||
 		prev.Description != next.Description ||
-		prev.IssueTitleTemplate != next.IssueTitleTemplate
+		prev.IssueTitleTemplate != next.IssueTitleTemplate ||
+		prev.Model != next.Model ||
+		!bytes.Equal(prev.Tools, next.Tools)
 }
 
 // recordAutomationRuleVersion appends one rule-version snapshot for a substantive
@@ -1349,9 +1352,9 @@ func (h *Handler) AddAutomationCollaborator(w http.ResponseWriter, r *http.Reque
 
 	if _, err := h.Queries.AddAutomationCollaborator(r.Context(), db.AddAutomationCollaboratorParams{
 		AutomationID: ap.ID,
-		UserType:    "member",
-		UserID:      targetUUID,
-		GrantedBy:   grantedByUUID,
+		UserType:     "member",
+		UserID:       targetUUID,
+		GrantedBy:    grantedByUUID,
 	}); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to grant access")
 		return
@@ -1386,8 +1389,8 @@ func (h *Handler) RemoveAutomationCollaborator(w http.ResponseWriter, r *http.Re
 
 	if err := h.Queries.DeleteAutomationCollaborator(r.Context(), db.DeleteAutomationCollaboratorParams{
 		AutomationID: ap.ID,
-		UserType:    "member",
-		UserID:      targetUUID,
+		UserType:     "member",
+		UserID:       targetUUID,
 	}); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to revoke access")
 		return
@@ -1470,7 +1473,14 @@ func (h *Handler) CreateAutomationTrigger(w http.ResponseWriter, r *http.Request
 	// dedupe / signature behaviour.
 	provider := "generic"
 	presetText := pgtype.Text{}
-	configBytes := optionalJSONObject(req.Config)
+	var configBytes []byte
+	if raw := bytes.TrimSpace(req.Config); len(raw) > 0 && !bytes.Equal(raw, []byte("null")) {
+		configBytes = optionalJSONObject(req.Config)
+		if configBytes == nil {
+			writeError(w, http.StatusBadRequest, "config must be a JSON object")
+			return
+		}
+	}
 	if req.Preset != nil && strings.TrimSpace(*req.Preset) != "" {
 		spec, ok := service.LookupAutomationTriggerPreset(strings.TrimSpace(*req.Preset))
 		if !ok {
@@ -1503,6 +1513,10 @@ func (h *Handler) CreateAutomationTrigger(w http.ResponseWriter, r *http.Request
 	}
 	if req.Kind == "webhook" && (provider == "slack" || provider == "linear") && !presetText.Valid {
 		writeError(w, http.StatusBadRequest, "preset is required for slack and linear triggers")
+		return
+	}
+	if err := service.ValidateAutomationTriggerConfig(presetText.String, configBytes); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -1542,7 +1556,7 @@ func (h *Handler) CreateAutomationTrigger(w http.ResponseWriter, r *http.Request
 			return
 		}
 		var (
-			trigger db.AutomationTrigger
+			trigger   db.AutomationTrigger
 			createErr error
 		)
 		if service.IsNativeAutomationProvider(provider) && presetText.Valid {
@@ -1557,7 +1571,7 @@ func (h *Handler) CreateAutomationTrigger(w http.ResponseWriter, r *http.Request
 		resp := h.triggerToResponse(trigger)
 		h.publish(protocol.EventAutomationUpdated, workspaceID, "member", userID, map[string]any{
 			"automation_id": uuidToString(ap.ID),
-			"trigger":      resp,
+			"trigger":       resp,
 		})
 		writeJSON(w, http.StatusCreated, resp)
 		return
@@ -1573,7 +1587,7 @@ func (h *Handler) CreateAutomationTrigger(w http.ResponseWriter, r *http.Request
 	qtx := h.Queries.WithTx(tx)
 
 	trigger, err := qtx.CreateAutomationTrigger(r.Context(), db.CreateAutomationTriggerParams{
-		AutomationID:    ap.ID,
+		AutomationID:   ap.ID,
 		Kind:           req.Kind,
 		Enabled:        true,
 		CronExpression: cronText,
@@ -1605,7 +1619,7 @@ func (h *Handler) CreateAutomationTrigger(w http.ResponseWriter, r *http.Request
 	resp := h.triggerToResponse(trigger)
 	h.publish(protocol.EventAutomationUpdated, workspaceID, "member", userID, map[string]any{
 		"automation_id": uuidToString(ap.ID),
-		"trigger":      resp,
+		"trigger":       resp,
 	})
 	writeJSON(w, http.StatusCreated, resp)
 }
@@ -1645,7 +1659,7 @@ func (h *Handler) createWebhookTriggerWithMintedToken(
 		}
 		qtx := h.Queries.WithTx(tx)
 		trigger, err := qtx.CreateAutomationTrigger(ctx, db.CreateAutomationTriggerParams{
-			AutomationID:  ap.ID,
+			AutomationID: ap.ID,
 			Kind:         "webhook",
 			Enabled:      true,
 			Label:        label,
@@ -1940,13 +1954,25 @@ func (h *Handler) UpdateAutomationTrigger(w http.ResponseWriter, r *http.Request
 		}
 		params.Preset = pgtype.Text{String: spec.ID, Valid: true}
 	}
-	if len(req.Config) > 0 && string(req.Config) != "null" {
+	if raw := bytes.TrimSpace(req.Config); len(raw) > 0 && !bytes.Equal(raw, []byte("null")) {
 		encoded := optionalJSONObject(req.Config)
 		if encoded == nil {
 			writeError(w, http.StatusBadRequest, "config must be a JSON object")
 			return
 		}
 		params.Config = encoded
+	}
+	presetID := prev.Preset.String
+	if params.Preset.Valid {
+		presetID = params.Preset.String
+	}
+	configForValidation := prev.Config
+	if params.Config != nil {
+		configForValidation = params.Config
+	}
+	if err := service.ValidateAutomationTriggerConfig(presetID, configForValidation); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 
 	// Recompute next_run_at if cron or timezone changed.
@@ -2027,7 +2053,7 @@ func (h *Handler) UpdateAutomationTrigger(w http.ResponseWriter, r *http.Request
 	resp := h.triggerToResponse(trigger)
 	h.publish(protocol.EventAutomationUpdated, workspaceID, "member", userID, map[string]any{
 		"automation_id": uuidToString(ap.ID),
-		"trigger":      resp,
+		"trigger":       resp,
 	})
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -2099,7 +2125,7 @@ func (h *Handler) DeleteAutomationTrigger(w http.ResponseWriter, r *http.Request
 
 	h.publish(protocol.EventAutomationUpdated, workspaceID, "member", userID, map[string]any{
 		"automation_id": uuidToString(automationUUID),
-		"trigger_id":   uuidToString(triggerUUID),
+		"trigger_id":    uuidToString(triggerUUID),
 	})
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -2167,7 +2193,7 @@ func (h *Handler) RotateAutomationTriggerWebhookToken(w http.ResponseWriter, r *
 	userID, _ := requireUserID(w, r)
 	h.publish(protocol.EventAutomationUpdated, workspaceID, "member", userID, map[string]any{
 		"automation_id": uuidToString(ap.ID),
-		"trigger":      resp,
+		"trigger":       resp,
 	})
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -2238,7 +2264,7 @@ func (h *Handler) SetAutomationTriggerSigningSecret(w http.ResponseWriter, r *ht
 	// which excludes the secret.
 	h.publish(protocol.EventAutomationUpdated, workspaceID, "member", userID, map[string]any{
 		"automation_id": uuidToString(ap.ID),
-		"trigger":      resp,
+		"trigger":       resp,
 	})
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -2272,8 +2298,8 @@ func (h *Handler) ListAutomationRuns(w http.ResponseWriter, r *http.Request) {
 
 	runs, err := h.Queries.ListAutomationRuns(r.Context(), db.ListAutomationRunsParams{
 		AutomationID: automation.ID,
-		Limit:       limit,
-		Offset:      offset,
+		Limit:        limit,
+		Offset:       offset,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list runs")
