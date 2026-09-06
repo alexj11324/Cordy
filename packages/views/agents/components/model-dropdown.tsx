@@ -161,11 +161,13 @@ export function ModelDropdown({
           className={cn(
             "flex min-w-0 items-center text-left transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50",
             compact
-              ? "h-7 max-w-[16rem] gap-1 rounded-md border border-border bg-background px-2 text-caption"
+              ? "h-7 max-w-[16rem] gap-0.5 rounded-md px-1.5 text-caption text-muted-foreground hover:bg-muted"
               : "mt-1.5 w-full gap-3 rounded-lg border border-border bg-background px-3 py-2.5 text-body",
           )}
         >
-          <Cpu className={cn("shrink-0 text-muted-foreground", compact ? "h-3.5 w-3.5" : "h-4 w-4")} />
+          {!compact && (
+            <Cpu className="h-4 w-4 shrink-0 text-muted-foreground" />
+          )}
           <div className="min-w-0 flex-1">
             {/* Wrapped in flex to mirror RuntimePicker's trigger DOM. The
                 two pickers sit side-by-side; inline-in-flex vs block-line-

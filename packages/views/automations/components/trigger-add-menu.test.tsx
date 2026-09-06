@@ -24,7 +24,7 @@ describe("TriggerAddMenu", () => {
     await user.keyboard("{ArrowRight}");
 
     expect(
-      screen.getByRole("menuitem", { name: "PR opened" }),
+      screen.getByRole("menuitem", { name: "Pull request opened" }),
     ).toBeInTheDocument();
   });
 });

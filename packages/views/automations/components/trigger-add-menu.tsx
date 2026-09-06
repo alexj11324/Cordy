@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Clock, GitBranch, MessageSquare, Plus, Search, Webhook } from "lucide-react";
+import { useMemo, useState, type ReactNode } from "react";
+import { Clock, Plus, Search, Webhook } from "lucide-react";
 import {
   presetsForSource,
   searchTriggerCatalog,
@@ -23,20 +23,24 @@ import {
 } from "@patchbay/ui/components/ui/dropdown-menu";
 import { Input } from "@patchbay/ui/components/ui/input";
 import { cn } from "@patchbay/ui/lib/utils";
+import { GitHubMark } from "../../settings/components/github-mark";
+import { LinearMark } from "../../settings/components/linear-mark";
+import { SlackMark } from "../../settings/components/slack-mark";
 import { useT } from "../../i18n";
 
-function sourceIcon(source: AutomationTriggerSource["id"]) {
+function sourceGlyph(source: AutomationTriggerSource["id"]): ReactNode {
+  const className = "size-3.5 shrink-0 text-muted-foreground";
   switch (source) {
     case "scheduled":
-      return Clock;
+      return <Clock className={className} />;
     case "github":
-      return GitBranch;
+      return <GitHubMark className={className} />;
     case "slack":
-      return MessageSquare;
+      return <SlackMark className={className} />;
     case "linear":
-      return GitBranch;
+      return <LinearMark className={className} />;
     default:
-      return Webhook;
+      return <Webhook className={className} />;
   }
 }
 
@@ -79,9 +83,9 @@ export function TriggerAddMenu({
           </Button>
         }
       />
-      <DropdownMenuContent align={variant === "inset" ? "start" : "end"} className="w-64">
-        <div className="relative px-2 pb-2">
-          <Search className="pointer-events-none absolute top-2.5 left-4 size-3.5 text-muted-foreground" />
+      <DropdownMenuContent align={variant === "inset" ? "start" : "end"} className="w-72 p-1.5">
+        <div className="relative px-1 pb-1.5">
+          <Search className="pointer-events-none absolute top-1/2 left-3.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
@@ -91,7 +95,6 @@ export function TriggerAddMenu({
           />
         </div>
         {filtered.sources.map((source) => {
-          const Icon = sourceIcon(source.id);
           const label = sourceLabel(source.labelKey);
           if (!source.nested) {
             return (
@@ -106,7 +109,7 @@ export function TriggerAddMenu({
                   if (preset) onPickPreset(preset);
                 }}
               >
-                <Icon className="size-3.5 text-muted-foreground" />
+                {sourceGlyph(source.id)}
                 <span>{label}</span>
               </DropdownMenuItem>
             );
@@ -118,7 +121,7 @@ export function TriggerAddMenu({
           return (
             <DropdownMenuSub key={source.id}>
               <DropdownMenuSubTrigger>
-                <Icon className="size-3.5 text-muted-foreground" />
+                {sourceGlyph(source.id)}
                 <span className="flex-1">{label}</span>
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent className="max-h-72 min-w-56 overflow-y-auto">

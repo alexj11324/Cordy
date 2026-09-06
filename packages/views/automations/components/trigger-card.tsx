@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, Clock, GitBranch, RotateCw, Trash2, Webhook } from "lucide-react";
+import { ChevronDown, ChevronRight, Clock, ExternalLink, RotateCw, Trash2, Webhook } from "lucide-react";
+import { toast } from "sonner";
 import {
   automationTriggerPreset,
   buildAutomationWebhookUrl,
@@ -26,11 +27,20 @@ import type { AutomationTrigger } from "@patchbay/core/types";
 import { Button } from "@patchbay/ui/components/ui/button";
 import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
 import { Input } from "@patchbay/ui/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@patchbay/ui/components/ui/select";
 import { Switch } from "@patchbay/ui/components/ui/switch";
-import { toast } from "sonner";
+import { cn } from "@patchbay/ui/lib/utils";
 import { AppLink } from "../../navigation";
+import { GitHubMark } from "../../settings/components/github-mark";
 import { useDescribeSchedule } from "./schedule-editor/describe";
-import { parseCron } from "./schedule-editor/cron-mapping";
+import { parseCron, toCron } from "./schedule-editor/cron-mapping";
+import { pad2 } from "./schedule-editor/model";
 import { WebhookUrlField } from "./webhook-url-field";
 import { useT } from "../../i18n";
 import { formatInTimeZone } from "../../common/format-in-time-zone";
@@ -83,6 +93,39 @@ function hasConfigurableFilters(trigger: AutomationTrigger, provider: string | n
   if (trigger.preset === "slack.message" || trigger.preset === "slack.reaction") return true;
   if (provider === "github") return true;
   return false;
+}
+
+function shortTimeZoneName(timeZone: string, locale: string): string {
+  try {
+    const parts = new Intl.DateTimeFormat(locale, {
+      timeZone,
+      timeZoneName: "short",
+    }).formatToParts(new Date());
+    return parts.find((part) => part.type === "timeZoneName")?.value ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function dailyAtTime(config: ReturnType<typeof parseCron> | null): string | null {
+  if (!config || config.raw !== null) return null;
+  if (config.time.kind !== "at" || config.days.kind !== "every") return null;
+  return config.time.time;
+}
+
+function scheduleTimeItems(current: string): { value: string; label: string }[] {
+  const items: { value: string; label: string }[] = [];
+  for (let hour = 0; hour < 24; hour += 1) {
+    for (const minute of [0, 30] as const) {
+      const value = `${pad2(hour)}:${pad2(minute)}`;
+      items.push({ value, label: value });
+    }
+  }
+  if (!items.some((item) => item.value === current)) {
+    items.push({ value: current, label: current });
+    items.sort((a, b) => a.value.localeCompare(b.value));
+  }
+  return items;
 }
 
 export function TriggerCard({
@@ -195,13 +238,22 @@ export function TriggerCard({
   const scheduleDescription = scheduleConfig ? describeSchedule(scheduleConfig) : null;
   const showFilters = hasConfigurableFilters(trigger, provider);
   const summary = filterSummary(compactConfig(config));
-  const primaryTitle = scheduleDescription ?? title;
-  const secondary =
+  const dailyTime = dailyAtTime(scheduleConfig);
+  const timeItems = dailyTime ? scheduleTimeItems(dailyTime) : [];
+  const primaryTitle = dailyTime
+    ? t(($) => $.settings.schedule_every_day_at)
+    : (scheduleDescription ?? title);
+  const tzShort =
+    trigger.kind === "schedule"
+      ? shortTimeZoneName(trigger.timezone ?? "UTC", i18n.language)
+      : "";
+  const nextRun =
     trigger.kind === "schedule" && trigger.next_run_at
       ? t(($) => $.settings.next_run, {
           date: formatInTimeZone(trigger.next_run_at, trigger.timezone ?? undefined, i18n.language),
         })
-      : (!scheduleDescription && summary ? summary : null);
+      : (!dailyTime && !scheduleDescription && summary ? summary : null);
+  const needsConnection = native && !connected;
 
   const handleDelete = async () => {
     try {
@@ -224,74 +276,120 @@ export function TriggerCard({
   };
 
   return (
-    <div className="px-4 py-3">
-      <div className="flex items-start gap-3">
+    <div className="group/trigger px-3.5 py-3">
+      <div className="flex items-center gap-2">
         <TriggerGlyph provider={provider} kind={trigger.kind} />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <p className="truncate text-body">{primaryTitle}</p>
-            {!trigger.enabled && (
-              <span className="text-caption text-muted-foreground">
-                {t(($) => $.trigger_row.disabled_badge)}
-              </span>
-            )}
-          </div>
-          {secondary && (
-            <p className="mt-0.5 text-caption text-muted-foreground">{secondary}</p>
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          <p className="shrink-0 text-body">{primaryTitle}</p>
+          {dailyTime && scheduleConfig && (
+            <Select
+              items={timeItems}
+              value={dailyTime}
+              disabled={!canWrite}
+              onValueChange={(time) => {
+                if (!canWrite || !time || time === dailyTime) return;
+                updateTrigger.mutate({
+                  automationId,
+                  triggerId: trigger.id,
+                  cron_expression: toCron({
+                    ...scheduleConfig,
+                    time: { kind: "at", time },
+                  }),
+                });
+              }}
+            >
+              <SelectTrigger
+                size="sm"
+                aria-label={t(($) => $.settings.schedule_time_aria)}
+                className="h-6 min-w-0 gap-1 rounded-md border-0 bg-muted px-1.5 py-0 text-body shadow-none dark:bg-muted [&_svg]:size-3"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align="start" className="max-h-64 min-w-24">
+                {timeItems.map((item) => (
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          {tzShort ? (
+            <span className="shrink-0 text-body text-muted-foreground">{tzShort}</span>
+          ) : null}
+          {!trigger.enabled && !needsConnection && (
+            <span className="shrink-0 text-caption text-muted-foreground">
+              {t(($) => $.trigger_row.disabled_badge)}
+            </span>
+          )}
+          {needsConnection && (
+            <span className="shrink-0 text-caption text-amber-600 dark:text-amber-400">
+              {t(($) => $.settings.tools_requires_connection)}
+            </span>
+          )}
+          {nextRun && (
+            <span className="min-w-0 truncate text-caption text-muted-foreground">
+              {nextRun}
+            </span>
           )}
         </div>
         {canWrite && (
-          <div className="flex items-center gap-1 shrink-0">
-            {showFilters && (
+          <div className="ml-auto flex shrink-0 items-center gap-1">
+            {needsConnection && provider && (
+              <Button
+                size="sm"
+                className="h-7 px-2.5"
+                render={
+                  <AppLink href={settingsPathForTriggerProvider(wsPaths.settings(), provider)} />
+                }
+              >
+                {t(($) => $.settings.tools_connect)}
+                <ExternalLink className="size-3.5" />
+              </Button>
+            )}
+            <div
+              className={cn(
+                "flex items-center gap-1",
+                filtersOpen
+                  ? "opacity-100"
+                  : "opacity-0 group-hover/trigger:opacity-100 focus-within:opacity-100",
+              )}
+            >
+              {showFilters && (
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  className="text-muted-foreground"
+                  onClick={() => setFiltersOpen((open) => !open)}
+                  aria-expanded={filtersOpen}
+                  aria-label={t(($) => $.settings.configure_filters)}
+                >
+                  {filtersOpen ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+                </Button>
+              )}
+              {!needsConnection && (
+                <Switch
+                  size="sm"
+                  checked={trigger.enabled}
+                  onCheckedChange={(checked) => {
+                    updateTrigger.mutate({ automationId, triggerId: trigger.id, enabled: checked });
+                  }}
+                  aria-label={title}
+                />
+              )}
               <Button
                 size="icon-sm"
                 variant="ghost"
-                className="text-muted-foreground"
-                onClick={() => setFiltersOpen((open) => !open)}
-                aria-expanded={filtersOpen}
-                aria-label={t(($) => $.settings.configure_filters)}
+                className="text-muted-foreground hover:text-destructive"
+                onClick={() => setConfirmOpen(true)}
+                aria-label={t(($) => $.trigger_row.delete_dialog.title)}
               >
-                {filtersOpen ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+                <Trash2 className="size-3.5" />
               </Button>
-            )}
-            <Switch
-              size="sm"
-              checked={trigger.enabled}
-              onCheckedChange={(checked) => {
-                updateTrigger.mutate({ automationId, triggerId: trigger.id, enabled: checked });
-              }}
-              aria-label={title}
-            />
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              className="text-muted-foreground hover:text-destructive"
-              onClick={() => setConfirmOpen(true)}
-              aria-label={t(($) => $.trigger_row.delete_dialog.title)}
-            >
-              <Trash2 className="size-3.5" />
-            </Button>
+            </div>
           </div>
         )}
       </div>
-
-      {native && !connected && (
-        <div className="mt-2 rounded-md bg-muted/50 px-3 py-2 text-caption text-muted-foreground">
-          <span>
-            {provider === "github"
-              ? t(($) => $.settings.connect_github)
-              : provider === "slack"
-                ? t(($) => $.settings.connect_slack)
-                : t(($) => $.settings.connect_linear)}
-          </span>{" "}
-          <AppLink
-            href={settingsPathForTriggerProvider(wsPaths.settings(), provider)}
-            className="font-medium text-foreground underline underline-offset-2"
-          >
-            {t(($) => $.settings.connect_cta)}
-          </AppLink>
-        </div>
-      )}
 
       {webhookUrl && (
         <div className="mt-2">
@@ -426,10 +524,10 @@ function TriggerGlyph({
   provider: string | null;
   kind: AutomationTrigger["kind"];
 }) {
-  const className = "mt-0.5 size-4 shrink-0 text-muted-foreground";
+  const className = "size-4 shrink-0 text-muted-foreground";
   if (kind === "schedule") return <Clock className={className} />;
   if (provider === "slack") return <SlackMark className={className} />;
-  if (provider === "github") return <GitBranch className={className} />;
+  if (provider === "github") return <GitHubMark className={className} />;
   return <Webhook className={className} />;
 }
 

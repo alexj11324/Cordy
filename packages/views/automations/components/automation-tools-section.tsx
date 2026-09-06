@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Brain, ExternalLink, Plus, Trash2 } from "lucide-react";
+import { Brain, ExternalLink, Plus, Trash2 } from "lucide-react";
 import { parseAutomationTools, type AutomationToolsConfig } from "@patchbay/core/automations";
 import { useUpdateAutomation } from "@patchbay/core/automations/mutations";
 import { slackInstallationsOptions } from "@patchbay/core/slack/queries";
@@ -60,25 +60,22 @@ export function AutomationToolsSection({
 
   const memoriesEnabled = tools.memories?.enabled === true;
   const slackEnabled = tools.slack_send?.enabled === true;
-  const needsAuth = !slackConnected;
 
   return (
-    <section className="space-y-3" data-testid="automation-tools">
-      <h2 className="text-title-sm font-semibold text-foreground">
+    <section className="space-y-2" data-testid="automation-tools">
+      <h2 className="text-caption font-medium uppercase tracking-wider text-muted-foreground">
         {t(($) => $.settings.section_tools)}
       </h2>
-      <div className="rounded-lg border bg-background divide-y">
-        <div className="flex items-center gap-3 px-4 py-3">
+      <div className="space-y-1">
+        <div className="flex items-center gap-3 py-1.5">
           <Brain className="size-4 shrink-0 text-muted-foreground" />
-          <div className="min-w-0 flex-1">
-            <p className="text-body">{t(($) => $.settings.tools_memories)}</p>
-          </div>
+          <p className="min-w-0 flex-1 text-body">{t(($) => $.settings.tools_memories)}</p>
           {canWrite && (
             <div className="flex items-center gap-1 shrink-0">
               <Popover open={memoriesOpen} onOpenChange={setMemoriesOpen}>
                 <PopoverTrigger
                   render={
-                    <Button size="sm" variant="ghost" className="text-caption">
+                    <Button size="sm" variant="ghost" className="h-7 text-caption">
                       {t(($) => $.settings.tools_manage)}
                     </Button>
                   }
@@ -111,20 +108,21 @@ export function AutomationToolsSection({
           )}
         </div>
 
-        <div className="px-4 py-3 space-y-2">
+        <div className="space-y-2 py-1.5">
           <div className="flex items-center gap-3">
             <SlackMark className="size-4 shrink-0 text-muted-foreground" />
-            <div className="min-w-0 flex-1">
-              <p className="text-body">{t(($) => $.settings.tools_slack)}</p>
+            <p className="min-w-0 flex-1 text-body">
+              {t(($) => $.settings.tools_slack)}
               {!slackConnected && (
-                <p className="text-caption text-amber-600 dark:text-amber-400">
+                <span className="ml-2 text-caption text-amber-600 dark:text-amber-400">
                   {t(($) => $.settings.tools_requires_connection)}
-                </p>
+                </span>
               )}
-            </div>
+            </p>
             {!slackConnected ? (
               <Button
                 size="sm"
+                className="h-7 px-2.5"
                 render={
                   <AppLink href={settingsPathForTriggerProvider(wsPaths.settings(), "slack")} />
                 }
@@ -170,60 +168,52 @@ export function AutomationToolsSection({
         </div>
 
         {canWrite && (
-          <div className="px-2 py-1">
-            <Popover open={mcpOpen} onOpenChange={setMcpOpen}>
-              <PopoverTrigger
-                render={
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-8 w-full justify-start px-2 font-normal text-muted-foreground hover:text-foreground"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    {t(($) => $.settings.tools_add)}
-                  </Button>
-                }
-              />
-              <PopoverContent align="start" className="w-72 p-3 space-y-2">
+          <Popover open={mcpOpen} onOpenChange={setMcpOpen}>
+            <PopoverTrigger
+              render={
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 w-full justify-start px-0 font-normal text-muted-foreground hover:text-foreground"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  {t(($) => $.settings.tools_add)}
+                </Button>
+              }
+            />
+            <PopoverContent align="start" className="w-72 p-3 space-y-2">
+              <p className="text-caption text-muted-foreground">
+                {t(($) => $.settings.tools_mcp_hint)}
+              </p>
+              {servers.length === 0 ? (
                 <p className="text-caption text-muted-foreground">
-                  {t(($) => $.settings.tools_mcp_hint)}
+                  {t(($) => $.settings.tools_mcp_empty)}
                 </p>
-                {servers.length === 0 ? (
-                  <p className="text-caption text-muted-foreground">
-                    {t(($) => $.settings.tools_mcp_empty)}
-                  </p>
-                ) : (
-                  <ul className="space-y-1.5">
-                    {servers.map((server) => {
-                      const selected = tools.mcp_server_ids?.includes(server.id) === true;
-                      return (
-                        <li key={server.id} className="flex items-center gap-2">
-                          <Checkbox
-                            checked={selected}
-                            onCheckedChange={(checked) => {
-                              const current = new Set(tools.mcp_server_ids ?? []);
-                              if (checked === true) current.add(server.id);
-                              else current.delete(server.id);
-                              persist({ ...tools, mcp_server_ids: [...current] });
-                            }}
-                          />
-                          <span className="text-body">{server.name}</span>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </PopoverContent>
-            </Popover>
-          </div>
+              ) : (
+                <ul className="space-y-1.5">
+                  {servers.map((server) => {
+                    const selected = tools.mcp_server_ids?.includes(server.id) === true;
+                    return (
+                      <li key={server.id} className="flex items-center gap-2">
+                        <Checkbox
+                          checked={selected}
+                          onCheckedChange={(checked) => {
+                            const current = new Set(tools.mcp_server_ids ?? []);
+                            if (checked === true) current.add(server.id);
+                            else current.delete(server.id);
+                            persist({ ...tools, mcp_server_ids: [...current] });
+                          }}
+                        />
+                        <span className="text-body">{server.name}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </PopoverContent>
+          </Popover>
         )}
       </div>
-      {needsAuth && (
-        <p className="flex items-start gap-2 text-caption text-amber-700 dark:text-amber-300">
-          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-          <span>{t(($) => $.settings.tools_auth_warning)}</span>
-        </p>
-      )}
     </section>
   );
 }

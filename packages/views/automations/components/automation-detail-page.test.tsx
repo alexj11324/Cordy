@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderWithI18n } from "../../test/i18n";
 
@@ -120,6 +120,23 @@ vi.mock("@patchbay/core/automations/queries", () => ({
           created_at: "2026-01-01T00:00:00Z",
           updated_at: "2026-01-01T00:00:00Z",
         },
+        {
+          id: "trg-2",
+          automation_id: "auto-1",
+          kind: "webhook",
+          enabled: true,
+          cron_expression: null,
+          timezone: null,
+          next_run_at: null,
+          webhook_token: null,
+          provider: "github",
+          preset: "github.pull_request.opened",
+          config: {},
+          label: null,
+          last_fired_at: null,
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+        },
       ],
       collaborators: [],
     }),
@@ -216,16 +233,21 @@ describe("AutomationDetailPage settings layout", () => {
     expect(screen.getByText("By Person user-1")).toBeInTheDocument();
     expect(screen.getByText("Inactive")).toBeInTheDocument();
     expect(screen.getByText("No project")).toBeInTheDocument();
+    expect(screen.getByText(/Every day at/)).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Time" })).toHaveTextContent("07:00");
+    expect(screen.getByText(/Next run/)).toBeInTheDocument();
   });
 
-  it("uses underline Settings / Run History tabs", async () => {
+  it("places Settings / Run History pills under the title", async () => {
     renderPage();
 
-    expect(await screen.findByRole("tab", { name: "Settings" })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
+    const title = await screen.findByTestId("automation-settings-title");
+    const settings = screen.getByRole("tab", { name: "Settings" });
+    expect(settings).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("tab", { name: "Run History" })).toBeInTheDocument();
+    expect(title.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(settings).toHaveClass("data-active:bg-muted");
+    expect(settings).toHaveClass("after:hidden");
   });
 
   it("keeps Add Trigger inside the Triggers card", async () => {
@@ -236,10 +258,11 @@ describe("AutomationDetailPage settings layout", () => {
     expect(screen.getByRole("button", { name: /Add Trigger/ })).toBeInTheDocument();
   });
 
-  it("embeds a compact model picker in Agent Instructions", async () => {
+  it("embeds a compact model picker in the instructions editor", async () => {
     renderPage();
 
-    expect(await screen.findByText("Agent Instructions")).toBeInTheDocument();
+    expect(await screen.findByTestId("automation-instructions")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Agent Instructions" })).not.toBeInTheDocument();
     const editor = screen.getByTestId("instructions-editor");
     expect(editor).toHaveTextContent("## Goal");
     const model = screen.getByTestId("model-dropdown");
@@ -255,9 +278,7 @@ describe("AutomationDetailPage settings layout", () => {
     expect(tools).toHaveTextContent("Memories");
     expect(tools).toHaveTextContent("Send to Slack");
     expect(tools).toHaveTextContent("Requires connection");
-    expect(tools).toHaveTextContent("Add Tool or MCP");
-    await waitFor(() => {
-      expect(screen.getByText(/require additional authentication/)).toBeInTheDocument();
-    });
+    expect(tools).toHaveTextContent("Add MCP");
+    expect(screen.getByText(/triggers require additional authentication/)).toBeInTheDocument();
   });
 });

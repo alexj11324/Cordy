@@ -3,8 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import {
   Play, Clock, Trash2, CheckCircle2, XCircle, Loader2, Pencil,
-  Ban, ChevronDown, ChevronRight, FolderKanban, MoreHorizontal,
-  Server,
+  Ban, ChevronDown, ChevronRight, FolderKanban, MoreHorizontal, Server, AlertTriangle,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { automationDetailOptions, automationRunsOptions, automationRunOptions } from "@patchbay/core/automations/queries";
@@ -12,6 +11,10 @@ import { projectDetailOptions } from "@patchbay/core/projects/queries";
 import { agentListOptions, teamListOptions } from "@patchbay/core/workspace/queries";
 import { isAgentRuntimeBound } from "@patchbay/core/agents";
 import type { AutomationTriggerPreset } from "@patchbay/core/automations";
+import { isNativeAutomationProvider } from "@patchbay/core/automations";
+import { githubInstallationsOptions } from "@patchbay/core/github/queries";
+import { slackInstallationsOptions } from "@patchbay/core/slack/queries";
+import { linearConnectionOptions } from "@patchbay/core/linear/queries";
 import {
   useUpdateAutomation,
   useDeleteAutomation,
@@ -372,13 +375,10 @@ function InstructionsSection({
   };
 
   return (
-    <section className="space-y-3" data-testid="automation-instructions">
-      <h2 className="text-title-sm font-semibold text-foreground">
-        {t(($) => $.settings.section_instructions)}
-      </h2>
-      <div className="rounded-lg border bg-muted/40">
+    <section className="space-y-2" data-testid="automation-instructions">
+      <div className="rounded-lg border bg-background">
         {canWrite ? (
-          <div className="automation-instructions min-h-[200px] px-4 py-3">
+          <div className="automation-instructions min-h-[220px] px-4 pt-3 pb-1">
             <ContentEditor
               value={automation.description ?? ""}
               placeholder={t(($) => $.dialog.description_placeholder)}
@@ -389,7 +389,7 @@ function InstructionsSection({
             />
           </div>
         ) : automation.description ? (
-          <div className="automation-instructions px-4 py-3">
+          <div className="automation-instructions px-4 pt-3 pb-1">
             <ReadonlyContent content={automation.description} />
           </div>
         ) : (
@@ -397,7 +397,7 @@ function InstructionsSection({
             {t(($) => $.dialog.description_placeholder)}
           </p>
         )}
-        <div className="flex items-center border-t border-border/60 px-3 py-2">
+        <div className="flex items-center px-3 pb-2">
           <ModelDropdown
             compact
             runtimeId={runtimeId}
@@ -435,6 +435,9 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
     ...projectDetailOptions(wsId, projectId ?? ""),
     enabled: Boolean(projectId),
   });
+  const github = useQuery(githubInstallationsOptions(wsId));
+  const slack = useQuery(slackInstallationsOptions(wsId));
+  const linear = useQuery(linearConnectionOptions(wsId));
 
   const [detailTab, setDetailTab] = useState<"settings" | "runs">("settings");
   const [triggerDialogOpen, setTriggerDialogOpen] = useState(false);
@@ -571,13 +574,26 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
   const hasGenericWebhook = triggers.some(
     (trig) => trig.kind === "webhook" && Boolean(trig.webhook_token),
   );
+  const githubConnected = (github.data?.installations.length ?? 0) > 0;
+  const slackConnected = (slack.data?.installations ?? []).some(
+    (row) => row.status === "installed" || row.installation_status === "installed",
+  );
+  const linearConnected = linear.data?.connected === true;
+  const triggersNeedAuth = triggers.some((trig) => {
+    const provider = trig.provider;
+    if (!isNativeAutomationProvider(provider)) return false;
+    if (provider === "github") return !githubConnected;
+    if (provider === "slack") return !slackConnected;
+    if (provider === "linear") return !linearConnected;
+    return false;
+  });
 
   return (
     <div className="flex h-full flex-col">
       <BreadcrumbHeader
         segments={[{ href: wsPaths.automations(), label: t(($) => $.page.title) }]}
         leaf={
-          <span className="min-w-0 truncate text-body text-muted-foreground">
+          <span className="min-w-0 truncate text-caption text-muted-foreground">
             {automation.title}
           </span>
         }
@@ -590,6 +606,7 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
               </Button>
               <Button
                 size="sm"
+                variant="outline"
                 onClick={handleRunNow}
                 disabled={automation.status !== "active" || triggerAutomation.isPending}
                 className="px-2 sm:px-2.5"
@@ -656,105 +673,102 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
         onValueChange={(value) => setDetailTab(value as "settings" | "runs")}
         className="flex min-h-0 flex-1 flex-col gap-0"
       >
-        <div className="flex shrink-0 items-center border-b px-6">
-          <TabsList variant="line" className="gap-0 p-0 group-data-horizontal/tabs:h-10">
-            <TabsTrigger
-              value="settings"
-              className="h-full rounded-none px-2.5 text-label group-data-horizontal/tabs:after:bottom-0"
-            >
-              {t(($) => $.settings.tab_settings)}
-            </TabsTrigger>
-            <TabsTrigger
-              value="runs"
-              className="h-full rounded-none px-2.5 text-label group-data-horizontal/tabs:after:bottom-0"
-            >
-              {t(($) => $.settings.tab_runs)}
-            </TabsTrigger>
-          </TabsList>
-        </div>
-
         <div className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-3xl px-6 py-8">
-            <TabsContent value="settings" className="mt-0 space-y-8">
-              <header className="space-y-3">
-                <h1
-                  data-testid="automation-settings-title"
-                  className="text-display-sm font-bold leading-snug tracking-tight text-foreground"
-                >
-                  {automation.title}
-                </h1>
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                  <div className="flex items-center gap-1.5">
-                    <Switch
-                      size="sm"
-                      checked={automation.status === "active"}
-                      onCheckedChange={handleToggleStatus}
-                      disabled={automation.status === "archived" || !canWrite}
-                      aria-label={
-                        automation.status === "active"
-                          ? t(($) => $.detail.pause_aria)
-                          : t(($) => $.detail.activate_aria)
-                      }
-                    />
-                    <span className={cn(
-                      "text-caption font-medium",
-                      automation.status === "active" ? "text-emerald-500" : "text-muted-foreground",
-                    )}>
-                      {automation.status === "active"
-                        ? t(($) => $.status.active)
-                        : t(($) => $.detail.status_inactive)}
-                    </span>
-                  </div>
-                  <ProjectPicker
-                    projectId={automation.project_id ?? null}
-                    disabled={!canWrite}
-                    onUpdate={(updates) => {
-                      if (!canWrite || updates.project_id === undefined) return;
-                      updateAutomation.mutate({
-                        id: automationId,
-                        project_id: updates.project_id,
-                      });
-                    }}
-                    triggerRender={
-                      <button
-                        type="button"
-                        disabled={!canWrite}
-                        className="inline-flex h-7 max-w-[14rem] items-center gap-1 rounded-md border border-border bg-background px-2 text-caption hover:bg-accent/30 disabled:pointer-events-none disabled:opacity-50"
-                      >
-                        {projectLoading ? (
-                          <Skeleton className="h-3.5 w-20" />
-                        ) : project ? (
-                          <>
-                            <ProjectIcon project={project} size="sm" />
-                            <span className="truncate">{project.title}</span>
-                          </>
-                        ) : (
-                          <>
-                            <FolderKanban className="size-3.5 shrink-0 text-muted-foreground" />
-                            <span className="truncate text-muted-foreground">
-                              {t(($) => $.detail.no_project)}
-                            </span>
-                          </>
-                        )}
-                        <ChevronDown className="size-3 shrink-0 text-muted-foreground" />
-                      </button>
+          <div className="mx-auto max-w-3xl space-y-8 px-8 py-8">
+            <header className="space-y-4">
+              <h1
+                data-testid="automation-settings-title"
+                className="text-display-sm font-bold leading-snug tracking-tight text-foreground"
+              >
+                {automation.title}
+              </h1>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                <div className="flex items-center gap-1.5">
+                  <Switch
+                    size="sm"
+                    checked={automation.status === "active"}
+                    onCheckedChange={handleToggleStatus}
+                    disabled={automation.status === "archived" || !canWrite}
+                    aria-label={
+                      automation.status === "active"
+                        ? t(($) => $.detail.pause_aria)
+                        : t(($) => $.detail.activate_aria)
                     }
                   />
-                  <span className="text-caption text-muted-foreground">
-                    {t(($) => $.detail.created_by_line, {
-                      name: getActorName(automation.created_by_type, automation.created_by_id),
-                    })}
+                  <span className={cn(
+                    "text-caption font-medium",
+                    automation.status === "active" ? "text-emerald-500" : "text-muted-foreground",
+                  )}>
+                    {automation.status === "active"
+                      ? t(($) => $.status.active)
+                      : t(($) => $.detail.status_inactive)}
                   </span>
                 </div>
-              </header>
+                <span aria-hidden className="hidden h-3 w-px bg-border sm:block" />
+                <ProjectPicker
+                  projectId={automation.project_id ?? null}
+                  disabled={!canWrite}
+                  onUpdate={(updates) => {
+                    if (!canWrite || updates.project_id === undefined) return;
+                    updateAutomation.mutate({
+                      id: automationId,
+                      project_id: updates.project_id,
+                    });
+                  }}
+                  triggerRender={
+                    <button
+                      type="button"
+                      disabled={!canWrite}
+                      className="inline-flex h-7 max-w-[14rem] items-center gap-1 rounded-md px-1 text-caption text-muted-foreground hover:bg-accent/30 disabled:pointer-events-none disabled:opacity-50"
+                    >
+                      {projectLoading ? (
+                        <Skeleton className="h-3.5 w-20" />
+                      ) : project ? (
+                        <>
+                          <ProjectIcon project={project} size="sm" />
+                          <span className="truncate text-foreground">{project.title}</span>
+                        </>
+                      ) : (
+                        <>
+                          <FolderKanban className="size-3.5 shrink-0" />
+                          <span className="truncate">{t(($) => $.detail.no_project)}</span>
+                        </>
+                      )}
+                      <ChevronDown className="size-3 shrink-0" />
+                    </button>
+                  }
+                />
+                <span aria-hidden className="hidden h-3 w-px bg-border sm:block" />
+                <span className="text-caption text-muted-foreground">
+                  {t(($) => $.detail.created_by_line, {
+                    name: getActorName(automation.created_by_type, automation.created_by_id),
+                  })}
+                </span>
+              </div>
+              <TabsList className="h-7 bg-transparent p-0">
+                <TabsTrigger
+                  value="settings"
+                  className="h-7 flex-none rounded-md px-2.5 text-label after:hidden data-active:bg-muted data-active:shadow-none"
+                >
+                  {t(($) => $.settings.tab_settings)}
+                </TabsTrigger>
+                <TabsTrigger
+                  value="runs"
+                  className="h-7 flex-none rounded-md px-2.5 text-label after:hidden data-active:bg-muted data-active:shadow-none"
+                >
+                  {t(($) => $.settings.tab_runs)}
+                </TabsTrigger>
+              </TabsList>
+            </header>
 
-              <section className="space-y-3">
-                <h2 className="text-title-sm font-semibold text-foreground">
+            <TabsContent value="settings" className="mt-0 space-y-8">
+              <section className="space-y-2">
+                <h2 className="text-caption font-medium uppercase tracking-wider text-muted-foreground">
                   {t(($) => $.detail.section_triggers)}
                 </h2>
                 <div
                   data-testid="automation-triggers-card"
-                  className="rounded-lg border bg-background divide-y"
+                  className="divide-y rounded-lg border bg-background"
                 >
                   {triggers.length === 0 && !canWrite ? (
                     <p className="px-4 py-6 text-center text-body text-muted-foreground">
@@ -779,6 +793,12 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
                     />
                   </div>
                 </div>
+                {triggersNeedAuth && (
+                  <p className="flex items-start gap-2 text-caption text-amber-700 dark:text-amber-300">
+                    <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                    <span>{t(($) => $.settings.triggers_auth_warning)}</span>
+                  </p>
+                )}
               </section>
 
               <InstructionsSection

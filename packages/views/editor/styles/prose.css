@@ -85,11 +85,27 @@
   line-height: 1.5;
 }
 
-/* Compact headings inside the automation instructions editor only.
- * Issue descriptions keep the page-level h1/h2 scale above; a runbook that
- * starts with `## Goal` must not look like a second page title. */
-.automation-instructions .rich-text-editor h1,
-.automation-instructions .rich-text-editor h2,
+/* Automation instructions: the first markdown heading is the visible
+ * section title (Cursor-style), so h2 reads as a medium heading. Issue
+ * descriptions keep the page-level h1/h2 scale above. */
+.automation-instructions .rich-text-editor h1 {
+  font-size: var(--text-title);
+  font-weight: 600;
+  margin-top: 0.75rem;
+  margin-bottom: 0.35rem;
+  line-height: 1.4;
+  letter-spacing: 0;
+}
+
+.automation-instructions .rich-text-editor h2 {
+  font-size: var(--text-title-sm);
+  font-weight: 600;
+  margin-top: 0.75rem;
+  margin-bottom: 0.35rem;
+  line-height: 1.4;
+  letter-spacing: 0;
+}
+
 .automation-instructions .rich-text-editor h3 {
   font-size: var(--text-body);
   font-weight: 600;
